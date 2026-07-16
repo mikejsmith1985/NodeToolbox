@@ -13,7 +13,7 @@ import {
 import { useEffect, useRef, useState } from 'react';
 import { useAiAssistStore } from '../../store/aiAssistStore.ts';
 import { HygieneFixControl } from './HygieneFixControl.tsx';
-import { HygieneMonitorPanel } from './components/HygieneMonitorPanel.tsx';
+import { HygieneAiPanel } from './ai/HygieneAiPanel.tsx';
 import { useHygieneState } from './hooks/useHygieneState.ts';
 import { buildCheckIssueKeys, buildJiraIssueNavigatorUrl } from './utils/buildHygieneJqlUrl.ts';
 import IssueDetailPanel from '../../components/IssueDetailPanel/index.tsx';
@@ -264,8 +264,18 @@ export default function HygieneView({
         </div>
       )}
 
-      {/* AI Assist-gated monitor panel — only visible after Ctrl+Alt+Z unlock */}
-      {isAiAssistUnlocked && <HygieneMonitorPanel />}
+      {/* AI Assist hygiene fixes — only visible after Ctrl+Alt+Z unlock. Propose-only: the panel
+          builds a prompt, ingests the agent's structured reply, and every proposed fix is accepted
+          or declined individually before anything is written to Jira. */}
+      {isAiAssistUnlocked && (
+        <HygieneAiPanel
+          fieldConfig={fixFieldConfig}
+          findings={hygieneState.findings}
+          onIssueFixed={() => {
+            void hygieneState.loadHygiene();
+          }}
+        />
+      )}
     </section>
   );
 }

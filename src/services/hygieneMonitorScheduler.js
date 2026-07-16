@@ -1,21 +1,23 @@
 // hygieneMonitorScheduler.js — Proactive daily hygiene monitor for Jira issues.
 //
-// Runs on a per-team schedule, evaluates server-side hygiene rules against
-// open Jira issues, dispatches violations to AI Assist for FIXABLE/UNFIXABLE
-// classification, applies Jira fixes for FIXABLE items, posts Jira comments
-// for UNFIXABLE items, then emails a digest via reportWebhookDelivery (an Atlassian
+// Runs on a per-team schedule, evaluates server-side hygiene rules against open
+// Jira issues, then emails a digest via reportWebhookDelivery (an Atlassian
 // Automation rule composes the email; an inbox rule forwards it to Teams).
 //
+// REPORT-ONLY BY DESIGN: this scheduler never writes to Jira. It used to send
+// violations to AI Assist for FIXABLE/UNFIXABLE classification and then apply
+// field fixes and post comments unsupervised — that pipeline is retired. The
+// automated AI channel no longer exists, and AI-proposed fixes now live in the
+// Hygiene page's AI Assist panel, where a human accepts or declines each one.
+//
 // Key exports:
-//   parseAiAssistClassifications(text) — pure helper, no side effects
 //   buildHygieneDigest(scan, priorScan) — pure helper, no side effects
-//   runHygieneScan(teamConfig, configuration) — orchestrates one full scan
+//   runHygieneScan(teamConfig, configuration) — one scan + digest delivery
 //   getLastScanStatus() — returns the cached scan status summary
 
 'use strict';
 
 const { makeJiraApiRequest } = require('../utils/httpClient');
-const { requestAiAssistText, isAiAssistEnabled } = require('./aiAssistEnrichment');
 const { deliverReport } = require('./reportWebhookDelivery');
 const { evaluateHygieneRules } = require('./hygieneRules');
 const { loadFiredDates, recordFiredDate, isScheduledTimeReached } = require('./schedulerFiredState');
@@ -32,64 +34,12 @@ const HYGIENE_JIRA_FIELDS = [
 // Maximum issues fetched per project key batch (Jira paginates at 100 by default).
 const JIRA_HYGIENE_MAX_RESULTS = 100;
 
-// Maximum number of violations batched into a single AI Assist classification prompt.
-// Keeps prompts within AI Assist's context window.
-const AI_ASSIST_BATCH_SIZE = 50;
-
 // ── Trend calculation ─────────────────────────────────────────────────────────
 
 const TREND_DOWN = 'down';
 const TREND_UP = 'up';
 const TREND_FLAT = 'flat';
 const TREND_NOT_AVAILABLE = 'n/a';
-
-// ── parseAiAssistClassifications ──────────────────────────────────────────────────
-
-/**
- * Parses AI Assist's deterministic classification output into structured objects.
- *
- * AI Assist outputs one line per issue in one of two formats:
- *   FIXABLE: ISSUE-KEY | fieldId | suggested-value
- *   UNFIXABLE: ISSUE-KEY | checkId | human-readable guidance
- *
- * Lines that do not match either pattern are silently skipped — AI Assist may
- * include preamble or explanatory paragraphs around the structured lines.
- *
- * @param {string | null | undefined} responseText - Raw AI Assist response text.
- * @returns {Array<{ issueKey: string, type: 'FIXABLE'|'UNFIXABLE', field?: string, value?: string, checkId?: string, guidance?: string }>}
- */
-function parseAiAssistClassifications(responseText) {
-  if (!responseText) return [];
-
-  const classifications = [];
-  const linePattern = /^(FIXABLE|UNFIXABLE):\s*(.+?)\s*\|\s*(.+?)\s*\|\s*(.+)$/;
-
-  for (const rawLine of String(responseText).split('\n')) {
-    const trimmedLine = rawLine.trim();
-    const patternMatch = trimmedLine.match(linePattern);
-    if (!patternMatch) continue;
-
-    const [, classificationType, issueKey, secondField, thirdField] = patternMatch;
-
-    if (classificationType === 'FIXABLE') {
-      classifications.push({
-        issueKey: issueKey.trim(),
-        type: 'FIXABLE',
-        field: secondField.trim(),
-        value: thirdField.trim(),
-      });
-    } else {
-      classifications.push({
-        issueKey: issueKey.trim(),
-        type: 'UNFIXABLE',
-        checkId: secondField.trim(),
-        guidance: thirdField.trim(),
-      });
-    }
-  }
-
-  return classifications;
-}
 
 // ── buildHygieneDigest ────────────────────────────────────────────────────────
 
@@ -191,118 +141,6 @@ async function fetchOpenIssuesForTeam(projectKeys, jiraConfig, isTlsVerified) {
   }
 }
 
-// ── AI Assist classification prompt builder ───────────────────────────────────────
-
-/**
- * Builds the structured AI Assist prompt for a batch of hygiene violations.
- * Instructs AI Assist to respond with one FIXABLE or UNFIXABLE line per violation.
- *
- * @param {string} teamName - Display name of the team being scanned.
- * @param {Array<{ issueKey: string, summary: string, checkId: string, label: string }>} violations
- * @returns {string} The formatted prompt text.
- */
-function buildHygieneClassificationPrompt(teamName, violations) {
-  const violationLines = violations.map((violation) =>
-    violation.issueKey + ': [' + violation.checkId + '] ' + violation.label + ' — "' + violation.summary + '"'
-  ).join('\n');
-
-  return [
-    'You are reviewing Jira hygiene violations for team "' + teamName + '".',
-    'For each violation below, classify it on a single line using EXACTLY one of these formats:',
-    '  FIXABLE: <ISSUE-KEY> | <fieldId> | <suggested-value>',
-    '  UNFIXABLE: <ISSUE-KEY> | <checkId> | <one-sentence guidance for the assignee>',
-    '',
-    'Rules:',
-    '- FIXABLE means you can suggest a concrete field value Toolbox should write (e.g. story points, acceptance criteria text, a date).',
-    '- UNFIXABLE means a human must act (e.g. no-assignee, missing parent link, ambiguous feature link).',
-    '- Use the field ID from the violation for FIXABLE lines (e.g. customfield_10028 for story points).',
-    '- For "no-ac" violations: draft acceptance criteria from the issue summary as the FIXABLE value.',
-    '- For "missing-sp" violations: estimate story points (1, 2, 3, 5, 8) from the summary complexity as the FIXABLE value.',
-    '- For "stale-issue" violations: classify UNFIXABLE with a prompt asking the assignee for a status update.',
-    '- Output ONLY the classification lines — no preamble, no explanation, no blank lines between them.',
-    '',
-    'Violations:',
-    violationLines,
-  ].join('\n');
-}
-
-// ── FIXABLE — apply Jira field updates ───────────────────────────────────────
-
-/**
- * Attempts to apply a FIXABLE classification as a Jira field update.
- * Returns true on success, false when the update is rejected by Jira.
- * On rejection, the violation is re-classified as UNFIXABLE for this run.
- *
- * @param {{ issueKey: string, field: string, value: string }} classification
- * @param {object} jiraConfig - Jira service config.
- * @param {boolean} isTlsVerified - TLS verification flag.
- * @returns {Promise<boolean>} True when the update succeeded (2xx status).
- */
-async function applyJiraFieldFix(classification, jiraConfig, isTlsVerified) {
-  const issueUpdatePath = '/rest/api/2/issue/' + encodeURIComponent(classification.issueKey);
-  const requestBody = { fields: { [classification.field]: classification.value } };
-
-  try {
-    const updateResponse = await makeJiraApiRequest('PUT', issueUpdatePath, requestBody, jiraConfig, isTlsVerified);
-    const isSuccess = updateResponse.status >= 200 && updateResponse.status < 300;
-    if (!isSuccess) {
-      console.warn('[HygieneMonitor] Field update rejected for ' + classification.issueKey
-        + ' field=' + classification.field + ' status=' + updateResponse.status);
-    }
-    return isSuccess;
-  } catch (updateError) {
-    console.error('[HygieneMonitor] Field update threw for ' + classification.issueKey + ': ' + updateError.message);
-    return false;
-  }
-}
-
-// ── UNFIXABLE — post Jira comments ───────────────────────────────────────────
-
-/**
- * Posts a single Jira comment to the issue flagged as UNFIXABLE.
- * Addresses the assignee when available, then the reporter, then neither.
- * Uses a per-cycle dedup set to post at most one comment per (issueKey, checkId) pair
- * per scan run — prevents comment spam when a violation recurs across multiple cycles.
- *
- * @param {{ issueKey: string, checkId: string, guidance: string }} classification
- * @param {object} issue - Full Jira issue object (for assignee/reporter lookup).
- * @param {Set<string>} postedCommentKeys - Dedup set mutated by this call.
- * @param {object} jiraConfig - Jira service config.
- * @param {boolean} isTlsVerified - TLS verification flag.
- * @returns {Promise<boolean>} True when the comment was posted successfully.
- */
-async function postUnfixableComment(classification, issue, postedCommentKeys, jiraConfig, isTlsVerified) {
-  const dedupKey = classification.issueKey + '|' + classification.checkId;
-  if (postedCommentKeys.has(dedupKey)) return false;
-  postedCommentKeys.add(dedupKey);
-
-  const assigneeName = (issue && issue.fields.assignee && issue.fields.assignee.displayName) || null;
-  const reporterName = (issue && issue.fields.reporter && issue.fields.reporter.displayName) || null;
-  const addressee = assigneeName || reporterName;
-  const greeting = addressee ? 'Hi ' + addressee + ', ' : '';
-
-  const commentBody = greeting
-    + '[Hygiene Monitor] ' + classification.guidance
-    + '\n\n_This comment was added automatically by the NodeToolbox Hygiene Monitor. '
-    + 'Check ID: ' + classification.checkId + '_';
-
-  const commentPath = '/rest/api/2/issue/' + encodeURIComponent(classification.issueKey) + '/comment';
-
-  try {
-    const commentResponse = await makeJiraApiRequest(
-      'POST',
-      commentPath,
-      { body: commentBody },
-      jiraConfig,
-      isTlsVerified
-    );
-    return commentResponse.status === 200 || commentResponse.status === 201;
-  } catch (commentError) {
-    console.error('[HygieneMonitor] Comment post threw for ' + classification.issueKey + ': ' + commentError.message);
-    return false;
-  }
-}
-
 // ── Digest delivery ───────────────────────────────────────────────────────────
 
 /**
@@ -390,13 +228,12 @@ async function runHygieneScan(teamConfig, configuration) {
     : null;
 
   let issuesScanned = 0;
-  let fixesApplied = 0;
-  let actionsRequired = 0;
   let unassignedCount = 0;
+  // Report-only: this scheduler never writes to Jira, so nothing is ever "applied" and no
+  // comment is ever posted. The fields stay in the result so the digest/status shape is stable.
+  const fixesApplied = 0;
+  const actionsRequired = 0;
   const scanFailures = [];
-
-  // Per-cycle dedup set: prevents duplicate comments within a single scan run.
-  const postedCommentKeys = new Set();
 
   // ── Step 1: Fetch open issues from Jira ──────────────────────────────────
 
@@ -425,84 +262,6 @@ async function runHygieneScan(teamConfig, configuration) {
 
   console.log('[HygieneMonitor] Team "' + teamConfig.teamName + '": ' + totalViolationCount + ' violations across '
     + issueViolationMap.size + ' issues.');
-
-  // ── Step 3: Dispatch violations to AI Assist for classification ───────────────
-
-  const allClassifications = [];
-
-  if (isAiAssistEnabled(configuration) && issueViolationMap.size > 0) {
-    // Flatten all (issueKey, flag) pairs into a flat violation list for batching.
-    const flatViolations = [];
-    for (const [issueKey, { issue, flags }] of issueViolationMap.entries()) {
-      for (const flag of flags) {
-        flatViolations.push({
-          issueKey,
-          summary: (issue.fields.summary || '').substring(0, 120),
-          checkId: flag.checkId,
-          label:   flag.label,
-        });
-      }
-    }
-
-    // Process in batches of AI_ASSIST_BATCH_SIZE to stay within AI Assist's context window.
-    for (let batchStart = 0; batchStart < flatViolations.length; batchStart += AI_ASSIST_BATCH_SIZE) {
-      const batchViolations = flatViolations.slice(batchStart, batchStart + AI_ASSIST_BATCH_SIZE);
-      const classificationPrompt = buildHygieneClassificationPrompt(teamConfig.teamName, batchViolations);
-
-      console.log('[HygieneMonitor] Dispatching batch ' + (Math.floor(batchStart / AI_ASSIST_BATCH_SIZE) + 1)
-        + ' (' + batchViolations.length + ' violations) to AI Assist...');
-
-      const aiAssistResponse = await requestAiAssistText(configuration, classificationPrompt, { label: 'hygiene-' + teamConfig.teamName });
-      if (aiAssistResponse) {
-        allClassifications.push(...parseAiAssistClassifications(aiAssistResponse));
-      } else {
-        console.warn('[HygieneMonitor] AI Assist returned no classification for batch starting at index ' + batchStart);
-      }
-    }
-  } else if (issueViolationMap.size > 0) {
-    console.log('[HygieneMonitor] AI Assist not enabled — all ' + issueViolationMap.size + ' violating issues will receive comments only.');
-  }
-
-  // ── Step 4: Apply FIXABLE fixes via Jira proxy ──────────────────────────
-
-  for (const classification of allClassifications) {
-    if (classification.type !== 'FIXABLE') continue;
-
-    const wasFixApplied = await applyJiraFieldFix(classification, jiraConfig, isTlsVerified);
-    if (wasFixApplied) {
-      fixesApplied++;
-    } else {
-      // Rejected by Jira — re-classify as UNFIXABLE so the assignee is notified.
-      const issueEntry = issueViolationMap.get(classification.issueKey);
-      if (issueEntry) {
-        const wasCommentPosted = await postUnfixableComment(
-          { issueKey: classification.issueKey, checkId: classification.field, guidance: 'Automated fix was rejected by Jira for field ' + classification.field + '. Please update manually.' },
-          issueEntry.issue,
-          postedCommentKeys,
-          jiraConfig,
-          isTlsVerified
-        );
-        if (wasCommentPosted) actionsRequired++;
-      }
-      scanFailures.push({ issueKey: classification.issueKey, reason: 'Jira field update rejected for field ' + classification.field });
-    }
-  }
-
-  // ── Step 5: Post UNFIXABLE comments ──────────────────────────────────────
-
-  for (const classification of allClassifications) {
-    if (classification.type !== 'UNFIXABLE') continue;
-
-    const issueEntry = issueViolationMap.get(classification.issueKey);
-    const wasCommentPosted = await postUnfixableComment(
-      classification,
-      issueEntry ? issueEntry.issue : null,
-      postedCommentKeys,
-      jiraConfig,
-      isTlsVerified
-    );
-    if (wasCommentPosted) actionsRequired++;
-  }
 
   // ── Step 6: Build digest, email it (via Automation), append to history ────────────
 
@@ -633,7 +392,6 @@ function startHygieneMonitorScheduler(configuration) {
 }
 
 module.exports = {
-  parseAiAssistClassifications,
   buildHygieneDigest,
   runHygieneScan,
   getLastScanStatus,

@@ -632,3 +632,108 @@
   font-size: 11px;
   line-height: 1.3;
 }
+
+/* ── AI Assist hygiene fixes (the Ctrl+Alt+Z panel) ── */
+
+.aiEmptyNote {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.aiStatusNote {
+  margin: 8px 0 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.aiWarningNote {
+  margin: 8px 0 0;
+  color: var(--color-warning, #f59e0b);
+  font-size: var(--font-size-sm);
+}
+
+.aiProposalList {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.aiProposalRow {
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-surface-2);
+}
+
+.aiProposalHeader {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+}
+
+.aiProposalCheck {
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+
+.aiProposalValue {
+  margin: 6px 0 0;
+  font-size: var(--font-size-sm);
+  white-space: pre-wrap;
+}
+
+.aiProposalRationale {
+  margin: 4px 0 0;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-style: italic;
+}
+
+.aiProposalError {
+  margin: 6px 0 0;
+  color: var(--color-danger, #ef4444);
+  font-size: 12px;
+}
+
+.aiProposalActions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.aiProposalAccept,
+.aiProposalDecline {
+  padding: 4px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.aiProposalAccept {
+  border-color: #22c55e;
+  color: #22c55e;
+}
+
+.aiProposalAccept:disabled,
+.aiProposalDecline:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.aiProposalDecline {
+  border-color: #f87171;
+  color: #f87171;
+}
+
+.aiProposalApplied {
+  color: #22c55e;
+  font-size: 13px;
+  font-weight: 600;
+}
