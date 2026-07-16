@@ -1,13 +1,32 @@
 // monthlyDeliveryScheduler.test.js — Unit tests for the Monthly Delivery Report scheduler:
-// pure date math (2nd Tuesday, covered month, window), the once-per-month guard, and the DI tick.
+// pure date math (2nd Tuesday, covered month, window), the once-per-month guard, the run
+// orchestration (honest per-team failures + persisted RunResult), and the DI tick.
 
 'use strict';
 
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+
+// Mock ONLY the Jira fetch functions; classification, grouping, and the prompt builder run for real
+// so these tests exercise the genuine pipeline on fixture issues.
+jest.mock('./monthlyDeliveryReport', () => {
+  const actualReportModule = jest.requireActual('./monthlyDeliveryReport');
+  return {
+    ...actualReportModule,
+    fetchTeamDeliveryData: jest.fn(),
+    fetchFeatureSummaries: jest.fn(),
+  };
+});
+
+const { fetchTeamDeliveryData, fetchFeatureSummaries } = require('./monthlyDeliveryReport');
 const {
   computeSecondTuesdayDate,
   resolveCoveredMonth,
   buildCoveredMonthWindow,
   hasAlreadyFiredThisMonth,
+  runMonthlyDeliveryNow,
+  readLastRunResult,
 } = require('./monthlyDeliveryScheduler');
 
 describe('computeSecondTuesdayDate', () => {
@@ -68,5 +87,123 @@ describe('hasAlreadyFiredThisMonth', () => {
     expect(hasAlreadyFiredThisMonth('2026-06-10', '2026-07-16')).toBe(false);
     expect(hasAlreadyFiredThisMonth(undefined, '2026-07-16')).toBe(false);
     expect(hasAlreadyFiredThisMonth('', '2026-07-16')).toBe(false);
+  });
+});
+
+// ── Run orchestration ──
+
+/** A minimal issue that entered done inside June 2026. */
+function buildDoneInJuneIssue(issueKey) {
+  return {
+    key: issueKey,
+    changelog: {
+      histories: [{ id: '1', created: '2026-06-11T10:00:00.000Z', items: [{ field: 'status', toString: 'Accepted' }] }],
+    },
+    fields: {
+      summary: 'Done work ' + issueKey,
+      status: { name: 'Accepted', statusCategory: { key: 'done' } },
+      issuetype: { name: 'Story' },
+      created: '2026-04-01T00:00:00.000Z',
+      fixVersions: [],
+      customfield_10108: 'FEAT-1',
+    },
+  };
+}
+
+/** A minimal issue that entered Ready for QA inside June 2026 and is still there. */
+function buildExternalTestInJuneIssue(issueKey) {
+  return {
+    key: issueKey,
+    changelog: {
+      histories: [{ id: '1', created: '2026-06-05T10:00:00.000Z', items: [{ field: 'status', toString: 'Ready for QA' }] }],
+    },
+    fields: {
+      summary: 'Testing work ' + issueKey,
+      status: { name: 'Ready for QA', statusCategory: { key: 'indeterminate' } },
+      issuetype: { name: 'Story' },
+      created: '2026-04-01T00:00:00.000Z',
+      fixVersions: [],
+    },
+  };
+}
+
+describe('runMonthlyDeliveryNow', () => {
+  let temporaryResultsPath;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    temporaryResultsPath = path.join(os.tmpdir(), 'tbx-monthly-delivery-test-' + process.pid + '-' + Math.random().toString(36).slice(2) + '.json');
+    process.env.TBX_MONTHLY_DELIVERY_RESULTS_PATH = temporaryResultsPath;
+    fetchFeatureSummaries.mockResolvedValue(new Map([['FEAT-1', 'Payments revamp']]));
+  });
+
+  afterEach(() => {
+    delete process.env.TBX_MONTHLY_DELIVERY_RESULTS_PATH;
+    try { fs.unlinkSync(temporaryResultsPath); } catch (_cleanupError) { /* file may not exist */ }
+  });
+
+  function buildConfiguration(teams) {
+    return { scheduler: { monthlyDelivery: { isEnabled: true, scheduleTime: '08:00', featureLinkFieldId: 'customfield_10108', teams } } };
+  }
+
+  const RUN_DEPS = { today: '2026-07-14', nowIso: () => '2026-07-14T08:00:00.000Z', requestJira: async () => ({ status: 200, body: {} }) };
+
+  it('produces a persisted RunResult covering the prior month with per-team counts', async () => {
+    fetchTeamDeliveryData.mockResolvedValue({
+      issues: [buildDoneInJuneIssue('TRFM-1'), buildExternalTestInJuneIssue('TRFM-2')],
+      releasedVersionsInWindow: new Map(),
+    });
+    const configuration = buildConfiguration([{ teamName: 'Transformers', projectKey: 'TRFM', boardId: '42' }]);
+
+    const outcome = await runMonthlyDeliveryNow(configuration, RUN_DEPS);
+
+    expect(outcome.ok).toBe(true);
+    expect(outcome.result.coveredMonth).toBe('2026-06');
+    expect(outcome.result.trigger).toBe('manual');
+    expect(outcome.result.teams).toEqual([
+      { teamName: 'Transformers', status: 'ok', productionCount: 1, externalTestCount: 1, message: '' },
+    ]);
+    expect(outcome.result.promptText).toContain('=== Team: Transformers ===');
+    expect(outcome.result.promptText).toContain('Feature FEAT-1 — Payments revamp:');
+    expect(outcome.result.promptText).toContain('- TRFM-1: Done work TRFM-1 (reached production 2026-06-11)');
+    // The result survives on disk for the status route.
+    expect(readLastRunResult()).toEqual(outcome.result);
+  });
+
+  it('reports a failed team honestly and keeps going for the rest (never a fake clean result)', async () => {
+    fetchTeamDeliveryData
+      .mockRejectedValueOnce(new Error('Jira search failed: 401'))
+      .mockResolvedValueOnce({ issues: [buildDoneInJuneIssue('CLNC-1')], releasedVersionsInWindow: new Map() });
+    const configuration = buildConfiguration([
+      { teamName: 'Broken Team', projectKey: 'BRKN', boardId: '1' },
+      { teamName: 'Cleanup Crew', projectKey: 'CLNC', boardId: '2' },
+    ]);
+
+    const outcome = await runMonthlyDeliveryNow(configuration, RUN_DEPS);
+
+    expect(outcome.ok).toBe(true);
+    expect(outcome.result.teams[0]).toEqual(
+      { teamName: 'Broken Team', status: 'error', productionCount: 0, externalTestCount: 0, message: 'Jira search failed: 401' },
+    );
+    expect(outcome.result.teams[1].status).toBe('ok');
+    expect(outcome.result.promptText).toContain('DATA UNAVAILABLE: Jira search failed: 401');
+    expect(outcome.result.promptText).toContain('- CLNC-1: Done work CLNC-1 (reached production 2026-06-11)');
+  });
+
+  it('marks a team with no qualifying work as empty and says so in the prompt', async () => {
+    fetchTeamDeliveryData.mockResolvedValue({ issues: [], releasedVersionsInWindow: new Map() });
+    const configuration = buildConfiguration([{ teamName: 'Quiet Team', projectKey: 'QUIET', boardId: '3' }]);
+
+    const outcome = await runMonthlyDeliveryNow(configuration, RUN_DEPS);
+
+    expect(outcome.result.teams[0].status).toBe('empty');
+    expect(outcome.result.promptText).toContain('No recorded deliveries this month.');
+  });
+
+  it('refuses to run with no teams configured instead of emitting an empty prompt', async () => {
+    const outcome = await runMonthlyDeliveryNow(buildConfiguration([]), RUN_DEPS);
+    expect(outcome.ok).toBe(false);
+    expect(outcome.message).toMatch(/no teams configured/i);
+    expect(fetchTeamDeliveryData).not.toHaveBeenCalled();
   });
 });

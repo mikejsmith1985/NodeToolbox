@@ -5,10 +5,20 @@
 'use strict';
 
 jest.mock('../config/loader', () => ({ saveConfigToDisk: jest.fn() }));
+jest.mock('../services/monthlyDeliveryScheduler', () => ({
+  runMonthlyDeliveryNow: jest.fn(),
+  isMonthlyDeliveryRunInProgress: jest.fn(() => false),
+  readLastRunResult: jest.fn(),
+}));
 
 const express = require('express');
 const request = require('supertest');
 const { saveConfigToDisk } = require('../config/loader');
+const {
+  runMonthlyDeliveryNow,
+  isMonthlyDeliveryRunInProgress,
+  readLastRunResult,
+} = require('../services/monthlyDeliveryScheduler');
 const createMonthlyDeliveryRouter = require('./monthlyDelivery');
 
 function makeApp(configuration) {
@@ -101,5 +111,66 @@ describe('POST /api/monthly-delivery/config', () => {
       .post('/api/monthly-delivery/config')
       .send({ featureLinkFieldId: '  ', teams: [] });
     expect(configuration.scheduler.monthlyDelivery.featureLinkFieldId).toBe('customfield_10108');
+  });
+});
+
+describe('POST /api/monthly-delivery/run-now', () => {
+  const CONFIGURED = {
+    scheduler: { monthlyDelivery: { isEnabled: true, scheduleTime: '08:00', featureLinkFieldId: 'customfield_10108', teams: [{ teamName: 'T', projectKey: 'T', boardId: '1' }] } },
+  };
+
+  it('runs immediately and returns the RunResult (per-team errors stay inside a 200)', async () => {
+    const runResult = {
+      hasRun: true, ranAtIso: 'now', coveredMonth: '2026-06', trigger: 'manual', promptText: 'PROMPT',
+      teams: [{ teamName: 'T', status: 'error', productionCount: 0, externalTestCount: 0, message: 'Jira search failed: 401' }],
+    };
+    runMonthlyDeliveryNow.mockResolvedValue({ ok: true, result: runResult });
+
+    const response = await request(makeApp(CONFIGURED)).post('/api/monthly-delivery/run-now');
+
+    expect(response.status).toBe(200);
+    expect(response.body.ok).toBe(true);
+    expect(response.body.result.teams[0].status).toBe('error');
+    expect(runMonthlyDeliveryNow).toHaveBeenCalledWith(CONFIGURED, { trigger: 'manual' });
+  });
+
+  it('returns 400 when no teams are configured', async () => {
+    const response = await request(makeApp({})).post('/api/monthly-delivery/run-now');
+    expect(response.status).toBe(400);
+    expect(response.body.message).toMatch(/no teams configured/i);
+    expect(runMonthlyDeliveryNow).not.toHaveBeenCalled();
+  });
+
+  it('returns 409 while a run is already in progress', async () => {
+    isMonthlyDeliveryRunInProgress.mockReturnValueOnce(true);
+    const response = await request(makeApp(CONFIGURED)).post('/api/monthly-delivery/run-now');
+    expect(response.status).toBe(409);
+    expect(runMonthlyDeliveryNow).not.toHaveBeenCalled();
+  });
+
+  it('returns 500 only for an infrastructure failure of the run itself', async () => {
+    runMonthlyDeliveryNow.mockRejectedValue(new Error('results disk full'));
+    const response = await request(makeApp(CONFIGURED)).post('/api/monthly-delivery/run-now');
+    expect(response.status).toBe(500);
+    expect(response.body.ok).toBe(false);
+  });
+});
+
+describe('GET /api/monthly-delivery/status', () => {
+  it('returns the persisted last RunResult verbatim, including the prompt', async () => {
+    readLastRunResult.mockReturnValue({
+      hasRun: true, ranAtIso: 'x', coveredMonth: '2026-06', trigger: 'scheduled', promptText: 'PROMPT',
+      teams: [{ teamName: 'T', status: 'ok', productionCount: 2, externalTestCount: 1, message: '' }],
+    });
+    const response = await request(makeApp({})).get('/api/monthly-delivery/status');
+    expect(response.status).toBe(200);
+    expect(response.body.promptText).toBe('PROMPT');
+    expect(response.body.teams[0].productionCount).toBe(2);
+  });
+
+  it('reports hasRun false before any run has completed', async () => {
+    readLastRunResult.mockReturnValue({ hasRun: false });
+    const response = await request(makeApp({})).get('/api/monthly-delivery/status');
+    expect(response.body).toEqual({ hasRun: false });
   });
 });
