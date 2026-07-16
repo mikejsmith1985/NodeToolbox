@@ -15,7 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   "Ready for QA"-or-later delivered run that month), grouped under their parent Features. The output is a single
   plain-text prompt — data plus analysis instructions — built for manual pasting into an AI agent that answers
   "What was accomplished?". Fires on the 2nd Tuesday of each month at a configurable time (default 08:00, with
-  same-month catch-up after downtime, never twice in a month); a **Run Now** button generates it ad-hoc and
+  same-month catch-up after downtime, never twice in a month); a **Run Now** button generates it ad-hoc —
+  without consuming that month's scheduled fire — and
   **Copy Prompt** puts the artifact on the clipboard. The team list is an explicit **Snapshot Teams** copy of the
   Team Dashboard profiles (the server cannot read browser storage) — re-snapshot and save to pick up team changes.
   A team whose data collection fails is flagged **DATA UNAVAILABLE** in the prompt and the panel — the run

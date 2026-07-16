@@ -118,22 +118,22 @@ issue history, honest per-team failure, prompt pastes cleanly into the in-house 
 
 ### Tests for User Story 2 (RED first)
 
-- [ ] T015 [P] [US2] Create `src/services/monthlyDeliveryReport.test.js` (Jest, fully mocked I/O) with failing
+- [X] T015 [P] [US2] Create `src/services/monthlyDeliveryReport.test.js` (Jest, fully mocked I/O) with failing
       cases per data-model.md classification rules: Production via done-entry in window; Production via released
       fixVersion without in-month transition (`isDeliveredIssue` precondition); External Test via
       `resolveDeliveryDateIso` in window; Production-beats-External precedence; prior-month External entry NOT
       re-reported; missing changelog excluded; Feature grouping via candidate fields → `parent.key` → "No
       Feature"; dedupe across the two queries
-- [ ] T016 [P] [US2] Add failing prompt-builder cases to `src/services/monthlyDeliveryReport.test.js` per
+- [X] T016 [P] [US2] Add failing prompt-builder cases to `src/services/monthlyDeliveryReport.test.js` per
       `contracts/prompt-format.md`: instructions-then-banner-then-teams order, fixed bucket order, sorted Feature
       groups with "No Feature" last, sorted issue lines with exact line format, "No recorded deliveries this
       month." for empty teams, "DATA UNAVAILABLE: reason" for failed teams, every configured team present in
       config order (snapshot-style assertions on the full text)
-- [ ] T017 [P] [US2] Add failing route cases to `test/unit/monthlyDeliveryRoute.test.js`: `POST run-now` → 200
+- [X] T017 [P] [US2] Add failing route cases to `test/unit/monthlyDeliveryRoute.test.js`: `POST run-now` → 200
       with RunResult, 400 when teams empty, 409 while a run is in progress; per-team Jira failure stays inside a
       200 (`teams[].status === 'error'`); `GET status` returns persisted RunResult verbatim incl. `promptText`,
       `{hasRun: false}` before any run
-- [ ] T018 [P] [US2] Add failing panel cases to `MonthlyDeliveryPanel.test.tsx`: Run Now disabled while dirty
+- [X] T018 [P] [US2] Add failing panel cases to `MonthlyDeliveryPanel.test.tsx`: Run Now disabled while dirty
       (PiReview gating precedent); Run Now POSTs and refreshes status without clobbering unsaved edits; last-run
       line renders `ranAtIso`/`coveredMonth`/per-team outcomes incl. error teams; prompt in readonly textarea;
       Copy Prompt disabled when empty, writes clipboard (stubbed) and flips to `✓ Copied!`; when the saved config
@@ -142,26 +142,26 @@ issue history, honest per-team failure, prompt pastes cleanly into the in-house 
 
 ### Implementation for User Story 2
 
-- [ ] T019 [US2] GREEN (data): in `src/services/monthlyDeliveryReport.js` implement the Jira fetch layer —
+- [X] T019 [US2] GREEN (data): in `src/services/monthlyDeliveryReport.js` implement the Jira fetch layer —
       `searchJiraIssuesPaginated` (`startAt` loop, drift justification comment per research.md D3), query A
       (`status CHANGED DURING` JQL builder with `yyyy/MM/dd` dates), query B (project `/versions` fetch filtered
       to `released === true` + in-window `releaseDate`, then `fixVersion in (...)` search), key-based dedupe;
       fields `summary,status,issuetype,fixVersions,<featureLinkFieldId>,customfield_10108,customfield_10014,parent`,
       `expand=changelog`; `makeJiraApiRequest` from `src/utils/httpClient`
-- [ ] T020 [US2] GREEN (classification): same file — `classifyDeliveryRecords` using the bundled engine
+- [X] T020 [US2] GREEN (classification): same file — `classifyDeliveryRecords` using the bundled engine
       (`resolveDoneEntryDateIso`, `resolveDeliveryDateIso`, `isDeliveredIssue`) per data-model.md rules 1–4, and
       `groupRecordsByFeature` (engine `extractFeatureKeyFromIssueFields` + one batched `key in (...)` summary
       fetch per run, key-fallback on fetch failure)
-- [ ] T021 [US2] GREEN (prompt): same file — `buildMonthlyDeliveryPrompt(coveredMonth, ranAtIso, trigger,
+- [X] T021 [US2] GREEN (prompt): same file — `buildMonthlyDeliveryPrompt(coveredMonth, ranAtIso, trigger,
       teamSections)` exactly per `contracts/prompt-format.md`; deterministic sorting; all tests from T016 green
-- [ ] T022 [US2] GREEN (orchestration): in `src/services/monthlyDeliveryScheduler.js` implement
+- [X] T022 [US2] GREEN (orchestration): in `src/services/monthlyDeliveryScheduler.js` implement
       `runMonthlyDeliveryNow(configuration, deps = {})` — per-team try/catch → TeamOutcome (`ok`/`empty`/`error`,
       counts, honest messages), module-level in-progress guard, RunResult write via `writeLastRunResult` /
       `readLastRunResult` to `monthly-delivery-last-run.json` (env override `TBX_MONTHLY_DELIVERY_RESULTS_PATH`,
       piReview results-file pattern); injectable `deps` (jira request, now) for tests
-- [ ] T023 [US2] GREEN (routes): add `POST /api/monthly-delivery/run-now` (no body; 409 overlap; 400 no teams)
+- [X] T023 [US2] GREEN (routes): add `POST /api/monthly-delivery/run-now` (no body; 409 overlap; 400 no teams)
       and `GET /api/monthly-delivery/status` to `src/routes/monthlyDelivery.js` per `contracts/http-api.md`
-- [ ] T024 [US2] GREEN (panel): extend `MonthlyDeliveryPanel.tsx` — Run Now button (dirty-gated + warning line),
+- [X] T024 [US2] GREEN (panel): extend `MonthlyDeliveryPanel.tsx` — Run Now button (dirty-gated + warning line),
       last-run status display (per-team outcomes, error styling), readonly prompt `<textarea>`, Copy Prompt via
       `navigator.clipboard.writeText` with transient `✓ Copied!` label and disabled-when-empty
       (StandupBriefingPanel idiom), and the zero-teams notice + Run Now disabling from T018 (FR-006)
@@ -181,7 +181,7 @@ the optional live catch-up smoke
 
 ### Tests for User Story 3 (RED first)
 
-- [ ] T025 [P] [US3] Add failing DI-tick cases to `src/services/monthlyDeliveryScheduler.test.js`
+- [X] T025 [P] [US3] Add failing DI-tick cases to `src/services/monthlyDeliveryScheduler.test.js`
       (`piReviewScheduler.test.js` pattern — injected `currentTime`, `today`, `firedDates`, `recordFired`,
       `runReport`): disabled → idle; no teams → idle WITHOUT writing fired state; before 2nd Tuesday → idle; on
       2nd Tuesday before `scheduleTime` → idle; on it at/after → fires once and records; later same month
@@ -192,11 +192,11 @@ the optional live catch-up smoke
 
 ### Implementation for User Story 3
 
-- [ ] T026 [US3] GREEN: implement `checkAndFireMonthlyDelivery(configuration, options = {})` and
+- [X] T026 [US3] GREEN: implement `checkAndFireMonthlyDelivery(configuration, options = {})` and
       `startMonthlyDeliveryScheduler(configuration)` (60-second `setInterval`, stop function, fired state seeded
       via `loadFiredDates('monthlyDelivery')` / recorded via `recordFiredDate`, fire rule per data-model.md state
       diagram, scheduled runs call the same `runMonthlyDeliveryNow` with `trigger: 'scheduled'`)
-- [ ] T027 [US3] Wire `startMonthlyDeliveryScheduler(configuration)` into the `server.js` startup block
+- [X] T027 [US3] Wire `startMonthlyDeliveryScheduler(configuration)` into the `server.js` startup block
       (~line 665, beside the sibling schedulers)
 
 **Checkpoint**: all DI-tick cases green; optional live smoke (set time 2 min out on a post-2nd-Tuesday day,
@@ -206,12 +206,12 @@ clear fired key, restart → fires once; second restart → does not)
 
 ## Phase 6: Polish & Cross-Cutting Concerns
 
-- [ ] T028 [P] Add the feature entry to `CHANGELOG.md` (`## [Unreleased]`, Keep-a-Changelog style — the single
+- [X] T028 [P] Add the feature entry to `CHANGELOG.md` (`## [Unreleased]`, Keep-a-Changelog style — the single
       source of truth for the behavior change)
-- [ ] T029 [P] Update `CLAUDE.md` 018 block: status → implemented, and promote the engine-bundle standing
+- [X] T029 [P] Update `CLAUDE.md` 018 block: status → implemented, and promote the engine-bundle standing
       constraint (changes to `workflowDelivery.ts`/`featureLink.ts` must keep `npm run
       build:monthly-delivery-engine` + server Jest green) to match the 015 precedent wording
-- [ ] T030 Full regression sweep: `npm test` (server Jest incl. new suites), `cd client && npx vitest run`,
+- [X] T030 Full regression sweep: `npm test` (server Jest incl. new suites), `cd client && npx vitest run`,
       `npm run build:pi-review-engine`, `npm run test:dom`, `cd client && npx vite build` — all green; then
       execute the remaining quickstart regression guardrails (existing scheduler routes spot-check)
 - [ ] T031 Open the PR (`feature/monthly-delivery-report` → `main`) with the spec/plan links and the quickstart

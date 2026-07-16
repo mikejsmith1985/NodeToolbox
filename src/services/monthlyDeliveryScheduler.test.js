@@ -27,6 +27,7 @@ const {
   hasAlreadyFiredThisMonth,
   runMonthlyDeliveryNow,
   readLastRunResult,
+  checkAndFireMonthlyDelivery,
 } = require('./monthlyDeliveryScheduler');
 
 describe('computeSecondTuesdayDate', () => {
@@ -205,5 +206,123 @@ describe('runMonthlyDeliveryNow', () => {
     expect(outcome.ok).toBe(false);
     expect(outcome.message).toMatch(/no teams configured/i);
     expect(fetchTeamDeliveryData).not.toHaveBeenCalled();
+  });
+});
+
+// ── Scheduled tick (DI pattern from piReviewScheduler tests) ──
+// July 2026's 2nd Tuesday is the 14th; August 2026's is the 11th.
+
+describe('checkAndFireMonthlyDelivery', () => {
+  function buildTickConfiguration(overrides = {}) {
+    return {
+      scheduler: {
+        monthlyDelivery: {
+          isEnabled: true,
+          scheduleTime: '08:00',
+          featureLinkFieldId: 'customfield_10108',
+          teams: [{ teamName: 'Transformers', projectKey: 'TRFM', boardId: '42' }],
+          ...overrides,
+        },
+      },
+    };
+  }
+
+  function buildTickOptions(overrides = {}) {
+    return {
+      today: '2026-07-14',
+      currentTime: '08:00',
+      firedDates: new Map(),
+      recordFired: jest.fn(),
+      runReport: jest.fn().mockResolvedValue({ ok: true }),
+      isRunBusy: () => false,
+      ...overrides,
+    };
+  }
+
+  it('stays idle when the scheduler is disabled', () => {
+    const options = buildTickOptions();
+    expect(checkAndFireMonthlyDelivery(buildTickConfiguration({ isEnabled: false }), options)).toBe(false);
+    expect(options.runReport).not.toHaveBeenCalled();
+  });
+
+  it('skips without firing (and without consuming the month) when no teams are configured', () => {
+    const options = buildTickOptions();
+    expect(checkAndFireMonthlyDelivery(buildTickConfiguration({ teams: [] }), options)).toBe(false);
+    expect(options.recordFired).not.toHaveBeenCalled();
+  });
+
+  it('stays idle before the 2nd Tuesday of the month', () => {
+    const options = buildTickOptions({ today: '2026-07-10' });
+    expect(checkAndFireMonthlyDelivery(buildTickConfiguration(), options)).toBe(false);
+  });
+
+  it('stays idle on the 2nd Tuesday before the scheduled time', () => {
+    const options = buildTickOptions({ currentTime: '07:59' });
+    expect(checkAndFireMonthlyDelivery(buildTickConfiguration(), options)).toBe(false);
+  });
+
+  it('fires once on the 2nd Tuesday at the scheduled time and records the month', () => {
+    const options = buildTickOptions();
+    expect(checkAndFireMonthlyDelivery(buildTickConfiguration(), options)).toBe(true);
+    expect(options.recordFired).toHaveBeenCalledWith('monthlyDelivery', '2026-07-14');
+    expect(options.runReport).toHaveBeenCalledTimes(1);
+  });
+
+  it('catches up on a later day in the same month regardless of the time of day', () => {
+    const options = buildTickOptions({ today: '2026-07-20', currentTime: '00:30' });
+    expect(checkAndFireMonthlyDelivery(buildTickConfiguration(), options)).toBe(true);
+  });
+
+  it('never double-fires within a month (fired-state guard)', () => {
+    const options = buildTickOptions({
+      today: '2026-07-20',
+      firedDates: new Map([['monthlyDelivery', '2026-07-14']]),
+    });
+    expect(checkAndFireMonthlyDelivery(buildTickConfiguration(), options)).toBe(false);
+    expect(options.runReport).not.toHaveBeenCalled();
+  });
+
+  it('fires again the next month', () => {
+    const options = buildTickOptions({
+      today: '2026-08-11',
+      firedDates: new Map([['monthlyDelivery', '2026-07-14']]),
+    });
+    expect(checkAndFireMonthlyDelivery(buildTickConfiguration(), options)).toBe(true);
+  });
+
+  it('skips (without consuming the month) while a run is already in flight', () => {
+    const options = buildTickOptions({ isRunBusy: () => true });
+    expect(checkAndFireMonthlyDelivery(buildTickConfiguration(), options)).toBe(false);
+    expect(options.recordFired).not.toHaveBeenCalled();
+  });
+
+  it('honors live config changes between ticks without a restart (FR-004)', () => {
+    const configuration = buildTickConfiguration({ isEnabled: false });
+    const options = buildTickOptions();
+    expect(checkAndFireMonthlyDelivery(configuration, options)).toBe(false);
+
+    configuration.scheduler.monthlyDelivery.isEnabled = true;
+    expect(checkAndFireMonthlyDelivery(configuration, options)).toBe(true);
+  });
+
+  it('is not consumed by a manual run — the scheduled fire still happens afterwards (FR-003)', async () => {
+    const manualRunResultsPath = path.join(os.tmpdir(), 'tbx-monthly-delivery-tick-test-' + process.pid + '.json');
+    process.env.TBX_MONTHLY_DELIVERY_RESULTS_PATH = manualRunResultsPath;
+    try {
+      fetchTeamDeliveryData.mockResolvedValue({ issues: [], releasedVersionsInWindow: new Map() });
+      fetchFeatureSummaries.mockResolvedValue(new Map());
+      const configuration = buildTickConfiguration();
+      const options = buildTickOptions();
+
+      // A manual Run Now earlier the same day must not write fired state...
+      await runMonthlyDeliveryNow(configuration, { today: '2026-07-14', nowIso: () => 'x', requestJira: async () => ({ status: 200, body: {} }) });
+      expect(options.firedDates.size).toBe(0);
+
+      // ...so the scheduled tick still fires.
+      expect(checkAndFireMonthlyDelivery(configuration, options)).toBe(true);
+    } finally {
+      delete process.env.TBX_MONTHLY_DELIVERY_RESULTS_PATH;
+      try { fs.unlinkSync(manualRunResultsPath); } catch (_cleanupError) { /* file may not exist */ }
+    }
   });
 });
