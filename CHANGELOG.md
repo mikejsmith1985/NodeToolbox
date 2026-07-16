@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Hygiene AI Assist is now propose-only — the panel builds a prompt, ingests the reply, and every fix needs
+  your click (GH #167)**: the Ctrl+Alt+Z panel at the bottom of the Hygiene page was a status readout for a
+  server-side monitor that sent violations to AI Assist on a schedule and **applied fixes to Jira unsupervised**.
+  It is now the same workflow as every other AI surface in the app: it builds **one prompt** covering the page's
+  AI-fixable flags (missing summary, acceptance criteria, due/target dates, fix version, PI, story points — plus a
+  proposed nudge *comment* for stale tickets), you hand that to an agent (copy/paste or the automatic exchange),
+  the panel **ingests the structured reply**, and each proposed fix is listed with its rationale for an individual
+  **Accept or Decline**. Accepting writes that one field (or posts that one comment) through the same helpers the
+  inline Fix buttons use, then rescans so the cleared flag disappears. Proposals naming issues not on the page are
+  reported and dropped; malformed dates, non-numeric points and blank-ish values never reach a field; a PI value
+  must match one of Jira's allowed options or the row shows an error instead of writing. Flags that are a human
+  judgement call (who should own this?) are never offered to the model.
+  Correspondingly, the **server-side hygiene monitor is now report-only**: the automated AI channel no longer
+  exists, so its classify-and-auto-fix pipeline is retired — it scans, computes violations, and emails the digest,
+  and never writes to Jira.
+
 ### Fixed
 - **Monthly Delivery panel never loaded in the released exe (v0.74.0/v0.74.1)**: the release script calls
   `npx pkg` directly, bypassing the `prebuild:exe` hook, so the gitignored `monthlyDeliveryEngine.cjs` bundle
