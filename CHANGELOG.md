@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **PI Review AI Assistance — accept the fields you want, not the whole row**: an accepted suggestion used to apply
+  everything it carried in one click. Each proposed change — the point estimate, the notes, the Dev Work box, the
+  Test Support box — is now its own **ticked checkbox** in the review list, and you clear the ones you don't want
+  before clicking Accept. An XXL Feature whose estimate still needs a number no longer blocks Accept if you simply
+  untick the estimate and take its notes. Alongside this, **Implementation Notes are now overwritten, not appended**
+  — the same way the point estimate replaces its cell rather than adding to it — so accepting the same suggestion
+  twice can't stack duplicate note lines. Because overwrite could otherwise erase notes you typed yourself, the
+  per-field opt-out is the safeguard: untick **Notes** and your text stands. A suggestion that has nothing to say
+  about the notes still never blanks them. *(feature 016)*
 - **PI Review AI Assistance now judges the Dev Work and Test Support boxes**: alongside the point estimate and the
   notes, the AI now reads each Feature and says whether your team is being asked to **build** it (**Dev Work**) or
   **only to support another team's testing** of what they built (**Test Support**) — the distinction a PO otherwise

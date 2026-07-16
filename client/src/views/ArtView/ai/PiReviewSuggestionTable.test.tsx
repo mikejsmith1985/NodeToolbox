@@ -74,7 +74,52 @@ describe('PiReviewSuggestionTable', () => {
     fireEvent.click(screen.getAllByRole('button', { name: /^accept$/i })[1])
 
     expect(onAccept).toHaveBeenCalledTimes(1)
-    expect(onAccept).toHaveBeenCalledWith(expect.objectContaining({ issueKey: 'ALPHA-2' }))
+    expect(onAccept).toHaveBeenCalledWith(expect.objectContaining({ issueKey: 'ALPHA-2' }), expect.anything())
+  })
+
+  // ── Per-field selection: pick and choose, not all-or-nothing ──
+
+  it('accepts every offered field by default, so a plain Accept applies the whole suggestion', () => {
+    const { onAccept } = renderTable([suggestion({ size: 'M', derivedPoints: 40, riskNote: 'A risk.', devWork: true })])
+
+    fireEvent.click(screen.getByRole('button', { name: /^accept$/i }))
+
+    expect(onAccept).toHaveBeenCalledWith(
+      expect.objectContaining({ issueKey: 'ALPHA-1' }),
+      { pointEstimate: true, notes: true, devWork: true, testSupport: false },
+    )
+  })
+
+  it('excludes a field the user unticks before accepting', () => {
+    const { onAccept } = renderTable([suggestion({ size: 'M', derivedPoints: 40, riskNote: 'A risk.' })])
+
+    // Untick the notes so only the estimate is applied.
+    fireEvent.click(screen.getByRole('checkbox', { name: /overwrite implementation notes for alpha-1/i }))
+    fireEvent.click(screen.getByRole('button', { name: /^accept$/i }))
+
+    expect(onAccept).toHaveBeenCalledWith(
+      expect.objectContaining({ issueKey: 'ALPHA-1' }),
+      expect.objectContaining({ pointEstimate: true, notes: false }),
+    )
+  })
+
+  it('lets an XXL suggestion be accepted for its notes alone by unticking the estimate', () => {
+    renderTable([suggestion({ size: 'XXL', derivedPoints: null, state: 'needsPoints', riskNote: 'A risk.' })])
+
+    // Blocked while the (still-numberless) estimate is selected…
+    expect(screen.getByRole('button', { name: /^accept$/i })).toBeDisabled()
+    // …but unticking the estimate lifts the block, because no number is needed for a field not applied.
+    fireEvent.click(screen.getByRole('checkbox', { name: /apply point estimate for alpha-1/i }))
+    expect(screen.getByRole('button', { name: /^accept$/i })).toBeEnabled()
+  })
+
+  it('disables Accept when the user unticks every offered field', () => {
+    renderTable([suggestion({ size: 'M', derivedPoints: 40, riskNote: 'A risk.' })])
+
+    fireEvent.click(screen.getByRole('checkbox', { name: /apply point estimate for alpha-1/i }))
+    fireEvent.click(screen.getByRole('checkbox', { name: /overwrite implementation notes for alpha-1/i }))
+
+    expect(screen.getByRole('button', { name: /^accept$/i })).toBeDisabled()
   })
 
   it('calls onReject with the suggestion', () => {
