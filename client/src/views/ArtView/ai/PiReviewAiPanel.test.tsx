@@ -257,9 +257,13 @@ describe('PiReviewAiPanel — accepting', () => {
     await ingestReply(replyFor([{ issueKey: 'ALPHA-1', size: 'M', riskNote: 'Vendor SLA unconfirmed.' }]))
     fireEvent.click(await screen.findByRole('button', { name: /^accept$/i }))
 
-    // The panel hands the suggestion up; the tab owns the row edit and the unsaved-changes flag.
+    // The panel hands the suggestion up (with the field selection); the tab owns the row edit and
+    // the unsaved-changes flag.
     expect(onApply).toHaveBeenCalledTimes(1)
-    expect(onApply).toHaveBeenCalledWith(expect.objectContaining({ issueKey: 'ALPHA-1', size: 'M', derivedPoints: 40 }))
+    expect(onApply).toHaveBeenCalledWith(
+      expect.objectContaining({ issueKey: 'ALPHA-1', size: 'M', derivedPoints: 40 }),
+      expect.objectContaining({ pointEstimate: true }),
+    )
   })
 
   it('never writes to Confluence when accepting (invariant CW-4)', async () => {

@@ -182,3 +182,8 @@ src/embeddedClient.js
 
 # Generated server-consumable PI Review engine bundle (esbuild from client TS — never hand-edit)
 src/services/generated/
+
+# Playwright e2e artifacts (traces, screenshots, videos) — transient, regenerated per run.
+test-results/
+client/test-results/
+playwright-report/

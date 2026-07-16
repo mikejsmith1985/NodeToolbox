@@ -22,6 +22,7 @@ import {
   type PiReviewAiColumnAvailability,
   type PiReviewAiSuggestion,
 } from './piReviewAiAssist.ts'
+import type { PiReviewSuggestionFieldSelection } from './piReviewAiApply.ts'
 import { fetchPiReviewAiContexts, type PiReviewAiFeatureContext } from './piReviewAiFetch.ts'
 import { PiReviewSuggestionTable } from './PiReviewSuggestionTable.tsx'
 import styles from './PiReviewAi.module.css'
@@ -45,8 +46,11 @@ export interface PiReviewAiPanelProps {
    * so the prompt must not ask for a verdict the table has nowhere to put.
    */
   columnAvailability: PiReviewAiColumnAvailability
-  /** Called once per accepted suggestion; the tab applies it to the row and marks the page dirty. */
-  onApplySuggestion: (suggestion: PiReviewAiSuggestion) => void
+  /**
+   * Called once per accepted suggestion, with the subset of fields the user kept ticked; the tab
+   * applies just those to the row and marks the page dirty.
+   */
+  onApplySuggestion: (suggestion: PiReviewAiSuggestion, selection: PiReviewSuggestionFieldSelection) => void
 }
 
 /** Reads each Feature's current estimate so the review can show a conflict rather than hide it. */
@@ -143,8 +147,8 @@ export function PiReviewAiPanel({ rows, columnAvailability, onApplySuggestion }:
     setSuggestions((current) => current.filter((suggestion) => suggestion.issueKey !== decided.issueKey))
   }, [])
 
-  const handleAccept = useCallback((accepted: PiReviewAiSuggestion) => {
-    onApplySuggestion(accepted)
+  const handleAccept = useCallback((accepted: PiReviewAiSuggestion, selection: PiReviewSuggestionFieldSelection) => {
+    onApplySuggestion(accepted, selection)
     dropSuggestion(accepted)
   }, [dropSuggestion, onApplySuggestion])
 

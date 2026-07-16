@@ -17,7 +17,7 @@ import type { ArtTeam } from './hooks/useArtData.ts';
 import { downloadPiReviewPanelImage } from './piReviewPdf.ts';
 import { PiReviewAiPanel } from './ai/PiReviewAiPanel.tsx';
 import { PiReviewSizingCard } from './ai/PiReviewSizingCard.tsx';
-import { applyPiReviewSuggestion } from './ai/piReviewAiApply.ts';
+import { applyPiReviewSuggestion, type PiReviewSuggestionFieldSelection } from './ai/piReviewAiApply.ts';
 import type { PiReviewAiSuggestion } from './ai/piReviewAiAssist.ts';
 import {
   CONFIDENCE_VOTE_COLUMN_LABELS,
@@ -984,14 +984,15 @@ function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverri
    * in as on a page load. The PI and Product Owner together scope the pull; both are required.
    */
   /**
-   * Applies one accepted AI suggestion to its row. The panel reviews; the tab writes — and only ever
-   * to Point Estimate and Implementation Notes (see ai/piReviewAiApply.ts). This marks the page
-   * dirty; publishing stays a deliberate Save to Confluence click.
+   * Applies one accepted AI suggestion to its row, limited to the fields the reviewer kept ticked.
+   * The panel reviews; the tab writes — and only ever to Point Estimate, Implementation Notes, Dev
+   * Work and Test Support (see ai/piReviewAiApply.ts). This marks the page dirty; publishing stays a
+   * deliberate Save to Confluence click.
    */
-  function handleApplyAiSuggestion(suggestion: PiReviewAiSuggestion) {
+  function handleApplyAiSuggestion(suggestion: PiReviewAiSuggestion, selection: PiReviewSuggestionFieldSelection) {
     setRows((currentRows) => currentRows.map((row) => (
       extractPiReviewFeatureKey(row.feature) === suggestion.issueKey
-        ? applyPiReviewSuggestion(row, suggestion)
+        ? applyPiReviewSuggestion(row, suggestion, selection)
         : row
     )));
     setHasUnsavedChanges(true);
@@ -2060,7 +2061,7 @@ function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverri
                 {visiblePiReviewColumnKeys.map((columnKey) => (
                   <th key={columnKey} scope="col">{PI_REVIEW_COLUMN_LABELS[columnKey]}</th>
                 ))}
-                {canEditContent && <th scope="col">Actions</th>}
+                {canEditContent && <th className={styles.rowActionHeader} scope="col">Actions</th>}
               </tr>
             </thead>
             <tbody>
