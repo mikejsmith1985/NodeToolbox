@@ -2061,7 +2061,7 @@ function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverri
                 {visiblePiReviewColumnKeys.map((columnKey) => (
                   <th key={columnKey} scope="col">{PI_REVIEW_COLUMN_LABELS[columnKey]}</th>
                 ))}
-                {canEditContent && <th className={styles.rowActionHeader} scope="col">Actions</th>}
+                {canEditContent && <th scope="col">Actions</th>}
               </tr>
             </thead>
             <tbody>
@@ -2081,11 +2081,16 @@ function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverri
                         const isLongTextColumn = LONG_TEXT_COLUMNS.has(columnKey);
                         const isCheckboxColumn = CHECKBOX_COLUMNS.has(columnKey);
                         const isJiraSyncedColumn = columnKey === 'priority' || columnKey === 'dependency' || columnKey === 'risks';
+                        // Dependency/Risks are long columns but read-only in edit mode — give them a compact
+                        // width there so the editable columns and Actions keep the table inside the window.
+                        const isSyncedReadOnlyLongColumn = canEditContent && isJiraSyncedColumn && isLongTextColumn;
                         const cellClassName = columnKey === FEATURE_COLUMN_KEY
                           ? styles.featureCell
-                          : isLongTextColumn
-                            ? styles.longCell
-                            : styles.shortCell;
+                          : isSyncedReadOnlyLongColumn
+                            ? styles.syncedLongCell
+                            : isLongTextColumn
+                              ? styles.longCell
+                              : styles.shortCell;
 
                         return (
                           <td className={cellClassName} key={columnKey}>
