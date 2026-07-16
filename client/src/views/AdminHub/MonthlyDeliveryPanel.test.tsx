@@ -99,6 +99,40 @@ describe('MonthlyDeliveryPanel — configuration & team snapshot (US1)', () => {
     expect(savedTeams[1].projectKey).toBe('CLNC')
   })
 
+  it('shows the load error with a Retry button — never an eternal loading state (v0.74.0 exe bug)', async () => {
+    // A server whose monthly-delivery routes failed to mount answers /api/* with the SPA fallback
+    // HTML; response.json() then rejects. The panel must surface that, not sit on "Loading…".
+    const fetchSpy = vi.fn(async () => ({
+      ok: true, status: 200, statusText: 'OK',
+      json: async () => { throw new Error('Unexpected token < in JSON') },
+    } as unknown as Response))
+    vi.stubGlobal('fetch', fetchSpy)
+
+    render(<MonthlyDeliveryPanel />)
+
+    expect(await screen.findByRole('button', { name: /retry/i })).toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent(/could not load|failed|unexpected token/i)
+    expect(screen.queryByText(/loading monthly delivery scheduler/i)).not.toBeInTheDocument()
+  })
+
+  it('recovers when Retry succeeds after a failed load', async () => {
+    let hasFailedOnce = false
+    const fetchSpy = vi.fn(async (url: string) => {
+      if (!hasFailedOnce) {
+        hasFailedOnce = true
+        return { ok: true, status: 200, statusText: 'OK', json: async () => { throw new Error('bad json') } } as unknown as Response
+      }
+      const body = String(url).includes('/status') ? noRunYet() : savedConfig()
+      return { ok: true, status: 200, statusText: 'OK', json: async () => body } as unknown as Response
+    })
+    vi.stubGlobal('fetch', fetchSpy)
+
+    render(<MonthlyDeliveryPanel />)
+    fireEvent.click(await screen.findByRole('button', { name: /retry/i }))
+
+    expect(await screen.findByLabelText('Enable monthly schedule')).toBeChecked()
+  })
+
   it('marks the panel dirty when the schedule time is edited', async () => {
     installFetch({
       'GET /api/monthly-delivery/config': () => savedConfig(),

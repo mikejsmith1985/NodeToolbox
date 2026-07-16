@@ -95,12 +95,21 @@ export function MonthlyDeliveryPanel() {
       setConfig(loadedConfig)
       setLastRun(loadedLastRun)
       setIsDirty(false)
+      setStatusMessage('')
     } catch (loadError) {
+      // A server whose monthly-delivery routes failed to mount (e.g. a build missing the engine
+      // bundle) answers with the SPA fallback, so json() rejects — surface it, never hang on Loading.
       setStatusMessage(loadError instanceof Error ? loadError.message : 'Failed to load configuration.')
     } finally {
       setIsLoading(false)
     }
   }, [])
+
+  /** Re-attempts the initial load after a failure (shown on the error screen). */
+  const handleRetryLoad = useCallback(() => {
+    setIsLoading(true)
+    void loadEverything()
+  }, [loadEverything])
 
   // Defer the initial load to a macrotask (house pattern) so the effect never setStates synchronously.
   useEffect(() => {
@@ -165,8 +174,24 @@ export function MonthlyDeliveryPanel() {
     setTimeout(() => setCopyLabel(COPY_PROMPT_IDLE_LABEL), COPY_LABEL_RESET_MS)
   }
 
-  if (isLoading || config === null) {
+  if (isLoading) {
     return <p>Loading Monthly Delivery scheduler…</p>
+  }
+
+  // Load finished but produced no config — the failure state, NOT a loading state. Without this
+  // branch a failed load rendered "Loading…" forever (shipped in v0.74.0).
+  if (config === null) {
+    return (
+      <div className={styles.panelSection}>
+        <h2>📅 Monthly Delivery Report</h2>
+        <p role="status" className={styles.panelStatusLine}>
+          Could not load the Monthly Delivery scheduler: {statusMessage || 'unknown error'}.
+          If this persists after a retry, the server build may be missing the monthly-delivery engine —
+          check the server log for &quot;Monthly Delivery routes unavailable&quot;.
+        </p>
+        <button type="button" onClick={handleRetryLoad}>Retry</button>
+      </div>
+    )
   }
 
   const hasNoTeamsConfigured = config.teams.length === 0
