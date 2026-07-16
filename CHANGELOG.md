@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Every tool page silently gave up ~20% of the window at A+/A++ text size — the real cause behind PI Review
+  "not fitting" (GH #160)**: the A+/A++ text buttons scale tool pages with CSS `zoom`, paired with a
+  `width: calc(100% / zoom)` compensation written for the old browser behavior where zoom stretched percentage
+  widths back out. Chromium **standardized `zoom` in 2024** and stopped doing that — so the division now simply
+  shrinks the page: ~11% of the window lost at A+, ~19% at A++, as a dead right margin on **every** tool page, on
+  every display (the connection-bar header, which sits outside the zoomed region, kept using the full width — which
+  is why the gap was so visible). The compensation is removed; tool pages now fill the window at every text size.
+  This is also why the PI Review table kept getting "cut off" no matter how it was styled: it was being handed
+  roughly 65% of the real window before its own layout even started.
+- **PI Review — the card layout is removed; the editor is a table again at every size**: with the width bug above
+  fixed, the full 11-column table (Dev Work + Test Support on) fits a normal window as a plain table — verified in
+  a real browser at A++ on the reported configuration. The stacked-card fallback added in v0.72.0 is reverted.
+  The column minimums are now fixed floors instead of viewport-proportional (`vw`) clamps — the old clamps made
+  the table demand *more* room on *wider* windows, defeating the fit; the table is `width: 100%`, so columns
+  already share extra space naturally. On a window genuinely narrower than the floors, the table scrolls
+  horizontally inside its own frame and the page never widens or clips. Playwright layout tests cover full-width
+  at all three text sizes, the 11-column fit (including at A++), and the narrow-window scroll fallback. *(GH #160)*
+
 ### Added
 - **PI Review — the editor is now genuinely responsive: it reflows into cards when the columns don't fit**: with
   every optional column on (Dev Work + Test Support), the edit table is eleven columns wide and no amount of

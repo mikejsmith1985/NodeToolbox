@@ -245,8 +245,11 @@
   height: 20px;
 }
 
+/* Cell minimums are FIXED floors, not vw-proportional: the table is width:100%, so columns already
+   share any extra space — a viewport-scaled minimum only made the table demand MORE room on wider
+   windows, defeating the fit. Below the summed floors the shell scrolls horizontally. */
 .shortCell {
-  min-width: clamp(88px, 12vw, 110px);
+  min-width: 88px;
 }
 
 .readOnlyValue {
@@ -281,11 +284,11 @@
 }
 
 .featureCell {
-  min-width: clamp(180px, 24vw, 220px);
+  min-width: 180px;
 }
 
 .longCell {
-  min-width: clamp(200px, 24vw, 300px);
+  min-width: 200px;
 }
 
 /* The Jira-synced columns (Dependency, Risks) are READ-ONLY in edit mode — they show a value and a
@@ -294,7 +297,7 @@
    which is what keeps the whole edit-mode table inside the window instead of overflowing. In view
    mode they carry real dependency/risk text and keep the full .longCell width. */
 .syncedLongCell {
-  min-width: clamp(120px, 12vw, 150px);
+  min-width: 120px;
 }
 
 .rowActionCell {
@@ -306,100 +309,6 @@
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-}
-
-/* ── Responsive card layout ──
-   When the panel is too narrow to fit every column, the SAME table reflows into one card per row.
-   Only `display` and a few widths change — the DOM, every input/checkbox/textarea/button and their
-   handlers are byte-identical, so nothing about editing can break. The panel decides when to switch
-   (it measures its width against the columns' needed width and adds the `.cardLayout` class), which
-   is why this adapts to 8 or 11 columns rather than a guessed breakpoint. Selectors use
-   `.dataTable.cardLayout` so they out-specify the base `.dataTable td` / `.dataTable th` rules. */
-.dataTable.cardLayout {
-  display: block;
-}
-
-.dataTable.cardLayout thead {
-  display: none;
-}
-
-.dataTable.cardLayout tbody {
-  display: block;
-}
-
-/* Each row becomes a bordered card. */
-.dataTable.cardLayout tbody tr {
-  display: block;
-  margin-bottom: 14px;
-  padding: 10px 14px;
-  border: 1px solid var(--color-border);
-  border-radius: 12px;
-  background: var(--color-surface-1);
-}
-
-/* Each cell becomes a full-width stacked block; its column header travels with it as a label. */
-.dataTable.cardLayout td {
-  display: block;
-  min-width: 0;
-  width: auto;
-  white-space: normal;
-  padding: 6px 0;
-  border-bottom: 1px solid var(--color-border);
-  vertical-align: baseline;
-}
-
-.dataTable.cardLayout tbody tr td:last-child {
-  border-bottom: none;
-}
-
-.dataTable.cardLayout td[data-label]::before {
-  content: attr(data-label);
-  display: block;
-  margin-bottom: 4px;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--color-text-secondary);
-}
-
-/* The min-width cell classes must not reassert a wide column inside a card. */
-.dataTable.cardLayout .featureCell,
-.dataTable.cardLayout .longCell,
-.dataTable.cardLayout .syncedLongCell,
-.dataTable.cardLayout .shortCell,
-.dataTable.cardLayout .rowActionCell {
-  min-width: 0;
-  width: auto;
-  white-space: normal;
-}
-
-/* In table mode the row tint is set on the td; in card mode it belongs on the card (the tr). */
-.dataTable.cardLayout tbody tr:nth-child(odd) td,
-.dataTable.cardLayout tbody tr:hover td {
-  background: transparent;
-}
-
-.dataTable.cardLayout tbody tr:hover {
-  border-color: var(--color-primary, rgba(56, 189, 248, 0.6));
-}
-
-/* The row actions sit as a wrapping button row at the foot of the card, with no field label. */
-.dataTable.cardLayout .rowActionCell {
-  padding-top: 10px;
-}
-
-/* The full-width interstitial rows (Stretch Goals boundary, custom grouping line) stay full width
-   and carry no per-column label. */
-.dataTable.cardLayout .commitmentBoundaryRow,
-.dataTable.cardLayout .customGroupingLineRow {
-  display: block;
-}
-
-.dataTable.cardLayout .commitmentBoundaryRow td,
-.dataTable.cardLayout .customGroupingLineRow td {
-  display: block;
-  border-bottom: none;
 }
 
 .featureEditor,
