@@ -7,7 +7,10 @@
 import { normalizeRichTextToPlainText } from '../../../utils/richTextPlainText.ts';
 import type { EnterpriseRequiredFieldRule } from '../../AdminHub/enterpriseRules.ts';
 
-const STALE_THRESHOLD_DAYS = 14;
+// Fallback only — every live surface passes the team's configured staleDaysThreshold (dashboard
+// default 5). Keeping this aligned with that default means a caller that forgets the argument
+// cannot quietly apply a different staleness rule than every other surface (GH #167).
+const STALE_THRESHOLD_DAYS = 5;
 const OLD_IN_SPRINT_THRESHOLD_DAYS = 30;
 const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000;
 const MODERN_STORY_POINTS_FIELD = 'customfield_10028';

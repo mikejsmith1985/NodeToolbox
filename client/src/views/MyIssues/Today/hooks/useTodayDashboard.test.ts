@@ -165,4 +165,30 @@ describe('useTodayDashboard', () => {
     expect(result.current.categories['my-stale'].count).toBe(1);
     expect(result.current.categories.unassigned.count).toBe(1);
   });
+
+  it('points every card at a destination that answers the same question the card counted (GH #167)', async () => {
+    mockJiraGet.mockResolvedValue({ issues: [] });
+
+    const { result } = renderHook(() => useTodayDashboard());
+    await waitFor(() => expect(result.current.categories['my-stale'].status).toBe('ready'));
+    const categories = result.current.categories;
+
+    // My-stale counts cross-project personal issues → Hygiene opens in that exact scope, stale-filtered.
+    expect(categories['my-stale'].destination).toEqual({
+      kind: 'myIssuesTab',
+      tab: 'hygiene',
+      search: { hygieneScope: 'mine', hygieneFilter: 'stale' },
+    });
+    // Unassigned and commitment-gap counts come from TEAM sprint issues → the team Hygiene tab.
+    // The personal tab filters to assignee = currentUser(), where an unassigned issue can never
+    // appear — the old link was a guaranteed zero.
+    expect(categories.unassigned.destination).toEqual({ kind: 'sprintTab', tab: 'hygiene' });
+    expect(categories['commitment-gaps'].destination).toEqual({ kind: 'sprintTab', tab: 'hygiene' });
+    // Due/overdue is a my+team union; the cross-project personal scope shows the "my" half honestly.
+    expect(categories['due-overdue'].destination).toEqual({
+      kind: 'myIssuesTab',
+      tab: 'hygiene',
+      search: { hygieneScope: 'mine' },
+    });
+  });
 });

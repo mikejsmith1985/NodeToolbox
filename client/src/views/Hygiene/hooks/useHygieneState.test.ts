@@ -78,6 +78,16 @@ describe('useHygieneState helpers', () => {
     expect(decodedSearchPath).not.toContain('AND assignee');
   });
 
+  it('buildHygieneSearchPath drops the project clause for the "All my projects" scope (GH #167)', () => {
+    // The cross-project personal scope the Today cards count with: no project=, but the assignee
+    // clause stays so the query is still bounded to the current user's work.
+    const searchPath = buildHygieneSearchPath('', '');
+    const decodedSearchPath = decodeURIComponent(searchPath);
+
+    expect(decodedSearchPath).toContain('jql=statusCategory != Done AND assignee = currentUser()');
+    expect(decodedSearchPath).not.toContain('project=');
+  });
+
   it('mapJiraIssueToHygieneFinding returns null for healthy issues and flags unhealthy issues', () => {
     const healthyFinding = mapJiraIssueToHygieneFinding(buildJiraIssue());
     const unhealthyFinding = mapJiraIssueToHygieneFinding(
