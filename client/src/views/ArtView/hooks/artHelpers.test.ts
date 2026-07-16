@@ -56,19 +56,26 @@ describe('isIssueDone', () => {
     expect(isIssueDone(issue)).toBe(false);
   });
 
-  it('returns false when statusCategory key is "indeterminate"', () => {
+  it('returns false when statusCategory key is "indeterminate" and the status is not delivered', () => {
     const issue = buildTestIssue({ status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } } });
+    expect(isIssueDone(issue)).toBe(false);
+  });
+
+  it('treats delivered statuses (Ready for QA / Ready to Accept) as done per the ART delivered rule', () => {
+    const externalTestingIssue = buildTestIssue({ status: { name: 'Ready for QA', statusCategory: { key: 'indeterminate' } } });
+    expect(isIssueDone(externalTestingIssue)).toBe(true);
+    const readyToAcceptIssue = buildTestIssue({ status: { name: 'Ready to Accept', statusCategory: { key: 'indeterminate' } } });
+    expect(isIssueDone(readyToAcceptIssue)).toBe(true);
+  });
+
+  it('does not treat Internal Testing (Ready for Testing) as done', () => {
+    const issue = buildTestIssue({ status: { name: 'Ready for Testing', statusCategory: { key: 'indeterminate' } } });
     expect(isIssueDone(issue)).toBe(false);
   });
 
   it('falls back to status name "done" (case-insensitive) when statusCategory key is empty', () => {
     const issue = buildTestIssue({ status: { name: 'DONE', statusCategory: { key: '' } } });
     expect(isIssueDone(issue)).toBe(true);
-  });
-
-  it('returns false on fallback when status name is not done', () => {
-    const issue = buildTestIssue({ status: { name: 'Closed', statusCategory: { key: '' } } });
-    expect(isIssueDone(issue)).toBe(false);
   });
 });
 

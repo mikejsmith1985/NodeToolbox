@@ -6,7 +6,7 @@
 // a full reload.
 
 import type { JiraIssue } from '../../types/jira.ts';
-import { DONE_STATUS_NAMES, isDoneIssue } from './hooks/sprintDashboardIssueUtils.ts';
+import { isDeliveredIssue, isDeliveredWorkflowStatusName } from '../../utils/workflowDelivery.ts';
 
 /** Defined here rather than imported: the view keeps its own copy, as do several other modules. */
 const MS_PER_DAY = 86_400_000;
@@ -19,14 +19,16 @@ export const BURN_COMPLETED_KEY = 'completed';
 export const BURN_PROJECTED_KEY = 'projected';
 
 /**
- * Checks whether a given status is treated as completed.
+ * Checks whether a given status counts as completed for burn-down purposes.
+ * "Completed" follows the ART delivered rule (Ready for QA or later), so the chart burns when work
+ * reaches External Testing — the team's Definition of Done — not only at statusCategory Done.
  */
-function isStatusDone(statusName: string, issue: JiraIssue): boolean {
+function isStatusDelivered(statusName: string, issue: JiraIssue): boolean {
   if (!statusName) return false;
   if (statusName.toLowerCase() === issue.fields.status.name.toLowerCase()) {
-    return isDoneIssue(issue);
+    return isDeliveredIssue(issue);
   }
-  return DONE_STATUS_NAMES.includes(statusName.toLowerCase());
+  return isDeliveredWorkflowStatusName(statusName);
 }
 
 /**
@@ -111,8 +113,8 @@ export function buildBurnDownData(
           // Fallback when no changelog is available:
           // If the issue is currently done, check if we are past the issue's updated timestamp.
           // Otherwise assume it was not done (e.g. "To Do")
-          const currentDone = isDoneIssue(parsed.issue);
-          if (currentDone) {
+          const isCurrentlyDelivered = isDeliveredIssue(parsed.issue);
+          if (isCurrentlyDelivered) {
             if (dayTimestamp >= parsed.updatedMs) {
               statusName = parsed.issue.fields.status.name;
             } else {
@@ -138,7 +140,7 @@ export function buildBurnDownData(
           }
         }
 
-        const isDone = isStatusDone(statusName, parsed.issue);
+        const isDone = isStatusDelivered(statusName, parsed.issue);
         if (isDone) {
           doneCount++;
         } else {

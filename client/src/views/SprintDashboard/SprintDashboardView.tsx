@@ -51,6 +51,17 @@ import type { IssueFeatureVector } from './storyPointEstimator.ts';
 import BoardPicker from './BoardPicker.tsx';
 import { assessBoardHealth, computeAverageVelocity } from './sprintMetrics.ts';
 import { parsePiDateRange, timeElapsedFraction } from '../FeatureCanvas/logic/piSchedule.ts';
+import {
+  classifyStatusBucket,
+  EXTERNAL_TESTING_STATUS_NAME,
+  groupInProgressIssuesBySubGroup,
+  groupIssuesByStatusBucket,
+  isDeliveredForCredit,
+  isDeliveredIssue,
+  isDeliveredWorkflowStatusName,
+  READY_TO_ACCEPT_STATUS_NAME,
+  type DeliveryWindow,
+} from '../../utils/workflowDelivery.ts';
 import FeatureReviewTab from './FeatureReviewTab.tsx';
 import { BacklogRemediationPanel } from './backlogRemediation/BacklogRemediationPanel.tsx';
 import MoveToSprintButton from './MoveToSprintButton.tsx';
@@ -66,7 +77,6 @@ import { useStandupRosterStore } from './hooks/useStandupRosterStore.ts';
 import {
   calculateIssueAgeDays,
   isBlockedIssue,
-  isDoneIssue,
   isStaleIssue,
   readStoryPoints,
   readStoryPointsValue,
@@ -146,8 +156,6 @@ const DASHBOARD_TEAM_NAME_PLACEHOLDER = 'e.g. Payments Team';
 const BURNUP_TOGGLE_LABEL = 'Show Burnup';
 const JIRA_BROWSE_URL_PREFIX = 'https://jira.healthspring-jira-prod.aws.zilverton.com/browse/';
 const OVERVIEW_GROUP_ORDER = ['In Progress', 'To Do', 'Done'] as const;
-const OVERVIEW_IN_PROGRESS_STATUS_TOKENS = ['progress', 'review', 'dev', 'test'];
-const OVERVIEW_TO_DO_STATUS_TOKENS = ['to do', 'open', 'backlog', 'new'];
 const BLOCKERS_FILTER_LABEL = 'Show:';
 
 const RELEASE_FIELDS =
@@ -787,9 +795,9 @@ interface ReleaseImportModalState {
   errorMessage: string | null;
 }
 
-/** Mirrors the legacy release radar status classification for done / progress / to-do. */
+/** Release radar status classification — "done" follows the ART delivered rule (Ready for QA or later). */
 function classifyReleaseIssueStatus(issue: JiraIssue): 'done' | 'progress' | 'todo' {
-  if (isDoneIssue(issue)) {
+  if (isDeliveredIssue(issue)) {
     return 'done';
   }
 
@@ -1122,7 +1130,8 @@ async function fetchAllCycleTimeIssues(
 ): Promise<{ issues: JiraIssue[]; total: number; wasCapped: boolean }> {
   const jqlClauses = [
     `project = "${escapeJqlValue(projectKey)}"`,
-    'statusCategory = Done',
+    // Delivered rule: work at External Testing or later has completed its cycle, not only category-Done.
+    `(statusCategory = Done OR status IN ("${EXTERNAL_TESTING_STATUS_NAME}", "${READY_TO_ACCEPT_STATUS_NAME}"))`,
     'updated >= -90d',
   ];
   if (scopeClause) {
@@ -1199,15 +1208,10 @@ function computeAssigneeMetrics(
   assigneeIssues: JiraIssue[],
   customStoryPointsFieldId: string,
 ): AssigneeMetrics {
-  const doneCount = assigneeIssues.filter(
-    isDoneIssue,
-  ).length;
-  const inProgressCount = assigneeIssues.filter(
-    (issue) => issue.fields.status.statusCategory.key === 'indeterminate',
-  ).length;
-  const toDoCount = assigneeIssues.filter(
-    (issue) => issue.fields.status.statusCategory.key === 'new',
-  ).length;
+  // Lane badges are status REPORTING, so they follow the statusCategory display buckets exactly.
+  const doneCount = assigneeIssues.filter((issue) => classifyStatusBucket(issue) === 'Done').length;
+  const inProgressCount = assigneeIssues.filter((issue) => classifyStatusBucket(issue) === 'In Progress').length;
+  const toDoCount = assigneeIssues.filter((issue) => classifyStatusBucket(issue) === 'To Do').length;
   const hasAnyPoints = assigneeIssues.some(
     (issue) => readStoryPointsValue(issue, customStoryPointsFieldId) !== null,
   );
@@ -1219,24 +1223,6 @@ function computeAssigneeMetrics(
     : null;
 
   return { assigneeName, totalCount: assigneeIssues.length, doneCount, inProgressCount, toDoCount, totalStoryPoints };
-}
-
-function groupIssuesByOverviewSection(issues: JiraIssue[]): Record<(typeof OVERVIEW_GROUP_ORDER)[number], JiraIssue[]> {
-  return issues.reduce<Record<(typeof OVERVIEW_GROUP_ORDER)[number], JiraIssue[]>>(
-    (currentGroups, issue) => {
-      const normalizedStatusName = issue.fields.status.name.toLowerCase();
-      const targetGroup = isDoneIssue(issue)
-        ? 'Done'
-        : OVERVIEW_IN_PROGRESS_STATUS_TOKENS.some((statusToken) => normalizedStatusName.includes(statusToken))
-          ? 'In Progress'
-          : OVERVIEW_TO_DO_STATUS_TOKENS.some((statusToken) => normalizedStatusName.includes(statusToken))
-            ? 'To Do'
-            : 'To Do';
-      currentGroups[targetGroup].push(issue);
-      return currentGroups;
-    },
-    { 'In Progress': [], 'To Do': [], Done: [] },
-  );
 }
 
 /** Calculates flow counts (total / in-progress / in-review / blocked / done) for the stats bar. */
@@ -1490,22 +1476,22 @@ function SprintInfoCard({
 function OverviewStatCards({
   issues,
   customStoryPointsFieldId,
+  deliveryWindow,
 }: {
   issues: JiraIssue[];
   customStoryPointsFieldId: string;
+  deliveryWindow: DeliveryWindow | null;
 }) {
+  // Count chips mirror the display buckets (statusCategory) so they always match the sections below;
+  // Points Done is a COMPLETION metric, so it credits delivered work (Ready for QA or later) instead.
+  const bucketedIssues = groupIssuesByStatusBucket(issues);
   const totalCount = issues.length;
-  const doneCount = issues.filter(isDoneIssue).length;
-  const inProgressCount = issues.filter(
-    (issue) => issue.fields.status.statusCategory.key === 'indeterminate',
-  ).length;
-  const toDoCount = totalCount - doneCount - inProgressCount;
   const totalStoryPoints = issues.reduce(
     (currentPoints, issue) => currentPoints + readStoryPoints(issue, customStoryPointsFieldId),
     0,
   );
-  const doneStoryPoints = issues
-    .filter(isDoneIssue)
+  const deliveredStoryPoints = issues
+    .filter((issue) => isDeliveredForCredit(issue, deliveryWindow))
     .reduce(
       (currentPoints, issue) => currentPoints + readStoryPoints(issue, customStoryPointsFieldId),
       0,
@@ -1514,10 +1500,10 @@ function OverviewStatCards({
   return (
     <div className={styles.flowStatsBar}>
       <StatChip label="Total" value={totalCount} />
-      <StatChip label="To Do" value={toDoCount} />
-      <StatChip label="In Progress" value={inProgressCount} />
-      <StatChip label="Done" value={doneCount} />
-      {totalStoryPoints > 0 && <StatChip label="Points Done" value={`${doneStoryPoints}/${totalStoryPoints}`} />}
+      <StatChip label="To Do" value={bucketedIssues['To Do'].length} />
+      <StatChip label="In Progress" value={bucketedIssues['In Progress'].length} />
+      <StatChip label="Done" value={bucketedIssues.Done.length} />
+      {totalStoryPoints > 0 && <StatChip label="Points Done" value={`${deliveredStoryPoints}/${totalStoryPoints}`} />}
     </div>
   );
 }
@@ -1598,15 +1584,20 @@ function FlowStatsBar({ issues }: { issues: JiraIssue[] }) {
 function HealthBadge({
   issues,
   customStoryPointsFieldId,
+  deliveryWindow,
   windowElapsedFraction,
 }: {
   issues: JiraIssue[];
   customStoryPointsFieldId: string;
+  deliveryWindow: DeliveryWindow | null;
   windowElapsedFraction: number | null;
 }) {
   const blockedCount = issues.filter(isBlockedIssue).length;
   const pointsTotal = issues.reduce((sum, issue) => sum + readStoryPoints(issue, customStoryPointsFieldId), 0);
-  const pointsDone = issues.filter(isDoneIssue).reduce((sum, issue) => sum + readStoryPoints(issue, customStoryPointsFieldId), 0);
+  // Completion credit follows the ART delivered rule: Ready for QA or later, dated within the window.
+  const pointsDone = issues
+    .filter((issue) => isDeliveredForCredit(issue, deliveryWindow))
+    .reduce((sum, issue) => sum + readStoryPoints(issue, customStoryPointsFieldId), 0);
   const status = assessBoardHealth({ pointsDone, pointsTotal, timeElapsedFraction: windowElapsedFraction, blockedCount });
 
   // A short "why" so the verdict is transparent (e.g. "32% done · 67% elapsed").
@@ -1729,19 +1720,20 @@ function OverviewTab({
   onMoveToSprint: (issueKey: string, targetSprintId: number) => Promise<void>;
   onIssueUpdated: () => void;
 }) {
-  const groupedIssues = groupIssuesByOverviewSection(issues);
+  const groupedIssues = groupIssuesByStatusBucket(issues);
   const shouldRenderBoardSummary = sprintInfo !== null || issues.length > 0 || sprintState.boardId !== null;
 
-  // How far through the current window we are — a sprint's own dates when scoped to a sprint, else the
-  // PI's date range parsed from its name (sprints have no PI field; they just fall within the dates).
+  // The current date window — a sprint's own dates when scoped to a sprint, else the PI's date range
+  // parsed from its name (sprints have no PI field; they just fall within the dates). The same window
+  // decides schedule progress AND which deliveries earn credit in this view (carry-over rule).
   const todayIso = new Date().toISOString().slice(0, 10);
-  const windowElapsedFraction = (() => {
-    if (sprintInfo?.startDate && sprintInfo?.endDate) {
-      return timeElapsedFraction(sprintInfo.startDate.slice(0, 10), sprintInfo.endDate.slice(0, 10), todayIso);
-    }
-    const piRange = parsePiDateRange(sprintState.selectedPiValue);
-    return piRange ? timeElapsedFraction(piRange.startIso, piRange.endIso, todayIso) : null;
-  })();
+  const deliveryWindow: DeliveryWindow | null =
+    sprintInfo?.startDate && sprintInfo?.endDate
+      ? { startIso: sprintInfo.startDate.slice(0, 10), endIso: sprintInfo.endDate.slice(0, 10) }
+      : parsePiDateRange(sprintState.selectedPiValue);
+  const windowElapsedFraction = deliveryWindow
+    ? timeElapsedFraction(deliveryWindow.startIso, deliveryWindow.endIso, todayIso)
+    : null;
 
   return (
     <div>
@@ -1758,9 +1750,15 @@ function OverviewTab({
           />
           <OverviewStatCards
             customStoryPointsFieldId={configState.customStoryPointsFieldId}
+            deliveryWindow={deliveryWindow}
             issues={issues}
           />
-          <HealthBadge issues={issues} customStoryPointsFieldId={configState.customStoryPointsFieldId} windowElapsedFraction={windowElapsedFraction} />
+          <HealthBadge
+            customStoryPointsFieldId={configState.customStoryPointsFieldId}
+            deliveryWindow={deliveryWindow}
+            issues={issues}
+            windowElapsedFraction={windowElapsedFraction}
+          />
           <FlowStatsBar issues={issues} />
           {sprintInfo && <BurnDownChart issues={issues} sprintInfo={sprintInfo} />}
         </>
@@ -1776,27 +1774,48 @@ function OverviewTab({
           return null;
         }
 
+        const renderIssueGrid = (gridIssues: JiraIssue[]) => (
+          <div className={styles.laneIssueGrid}>
+            {gridIssues.map((issue) => (
+              <IssueCardWithMove
+                availableSprints={sprintState.availableSprints}
+                currentSprintId={sprintState.sprintInfo?.id ?? null}
+                isLoadingAvailableSprints={sprintState.isLoadingAvailableSprints}
+                issue={issue}
+                key={issue.key}
+                onFetchSprints={onFetchSprints}
+                onIssueUpdated={onIssueUpdated}
+                onMoveToSprint={onMoveToSprint}
+                staleDaysThreshold={configState.staleDaysThreshold}
+              />
+            ))}
+          </div>
+        );
+
+        // In Progress splits into workflow sub-groups (Active / Internal Testing / External Testing /
+        // Ready to Accept). Headers only appear once a testing-or-later sub-group exists, so teams
+        // that have nothing in testing keep the familiar flat list.
+        const inProgressSubGroups = groupLabel === 'In Progress' ? groupInProgressIssuesBySubGroup(groupIssues) : [];
+        const shouldRenderSubGroups =
+          inProgressSubGroups.length > 1 || (inProgressSubGroups.length === 1 && inProgressSubGroups[0].subGroup !== 'Active');
+
         return (
           <div className={styles.blockersSection} key={groupLabel}>
             <div className={styles.blockersSectionHeader}>
               <h3 className={styles.blockersSectionTitle}>{groupLabel}</h3>
               <span className={styles.countBadge}>{groupIssues.length}</span>
             </div>
-            <div className={styles.laneIssueGrid}>
-              {groupIssues.map((issue) => (
-                <IssueCardWithMove
-                  availableSprints={sprintState.availableSprints}
-                  currentSprintId={sprintState.sprintInfo?.id ?? null}
-                  isLoadingAvailableSprints={sprintState.isLoadingAvailableSprints}
-                  issue={issue}
-                  key={issue.key}
-                  onFetchSprints={onFetchSprints}
-                  onIssueUpdated={onIssueUpdated}
-                  onMoveToSprint={onMoveToSprint}
-                  staleDaysThreshold={configState.staleDaysThreshold}
-                />
-              ))}
-            </div>
+            {shouldRenderSubGroups
+              ? inProgressSubGroups.map((subGroupIssues) => (
+                  <div key={subGroupIssues.subGroup}>
+                    <div className={styles.overviewSubGroupHeader}>
+                      <h4 className={styles.overviewSubGroupTitle}>{subGroupIssues.subGroup}</h4>
+                      <span className={styles.overviewSubGroupCount}>{subGroupIssues.issues.length}</span>
+                    </div>
+                    {renderIssueGrid(subGroupIssues.issues)}
+                  </div>
+                ))
+              : renderIssueGrid(groupIssues)}
           </div>
         );
       })}
@@ -3114,9 +3133,12 @@ function MetricsTab({
                 startTime = transitionTime;
               }
 
+              // Default endpoint follows the ART delivered rule (Ready for QA or later) unless the
+              // team configured exact done statuses in Settings.
               const isDoneTransition = (exactDoneStatuses.length > 0 && exactDoneStatuses.includes(toStatusName))
                 || (exactDoneStatuses.length === 0 && (
                   mapStatusCategory(toStatusName, statusCategoryMap) === 'done'
+                  || isDeliveredWorkflowStatusName(toStatusName)
                   || toStatusName === currentStatusLower
                 ));
               if (isDoneTransition) {
@@ -3227,10 +3249,8 @@ function MetricsTab({
                 const sprintIssuesResponse = await jiraGet<{ issues?: JiraIssue[] }>(
                   `/rest/agile/1.0/sprint/${closedSprint.id}/issue?maxResults=200&fields=status,customfield_10016,customfield_10028,${customStoryPointsFieldId}`,
                 );
-                const completedIssues = (sprintIssuesResponse.issues ?? []).filter((issue) => {
-                  const normalizedStatusName = issue.fields.status.name.toLowerCase();
-                  return ['done', 'accepted', 'closed', 'resolved', 'complete'].includes(normalizedStatusName);
-                });
+                // Throughput credits delivered work (Ready for QA or later), per the ART rule.
+                const completedIssues = (sprintIssuesResponse.issues ?? []).filter(isDeliveredIssue);
                 return {
                   name: closedSprint.name.replace(/^Sprint /i, 'S'),
                   itemCount: completedIssues.length,
@@ -3250,9 +3270,15 @@ function MetricsTab({
           );
         } else {
           const weeksToAnalyze = Math.max(1, Math.round(config.kanbanPeriodDays / 7));
+          // Delivered rule in JQL form: the issue entered the delivered set during the window AND is
+          // still delivered now (a regression back to active work forfeits the credit).
+          const deliveredChangedToClause = [EXTERNAL_TESTING_STATUS_NAME, READY_TO_ACCEPT_STATUS_NAME, 'Done', 'Accepted']
+            .map((statusName) => `status CHANGED TO "${statusName}" DURING (-${weeksToAnalyze}w, now())`)
+            .join(' OR ');
           const throughputJqlClauses = [
             `project = "${escapeJqlValue(normalizedProjectKey)}"`,
-            `status CHANGED TO "Done" DURING (-${weeksToAnalyze}w, now())`,
+            `(${deliveredChangedToClause})`,
+            `(statusCategory = Done OR status IN ("${EXTERNAL_TESTING_STATUS_NAME}", "${READY_TO_ACCEPT_STATUS_NAME}"))`,
           ];
           if (workScopeClause) {
             throughputJqlClauses.push(workScopeClause);

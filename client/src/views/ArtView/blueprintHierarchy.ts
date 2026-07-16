@@ -1,6 +1,7 @@
 // blueprintHierarchy.ts — Legacy-compatible bottom-up Jira query flow for the Art View Blueprint tab.
 
 import { jiraGet } from '../../services/jiraApi.ts';
+import { isDeliveredWorkflowStatusName } from '../../utils/workflowDelivery.ts';
 // The feature-link resolution (candidate field order, value-shape handling) is shared with the reports so
 // a child is linked to its feature identically everywhere. Aliased to the long-standing local names.
 import {
@@ -147,7 +148,6 @@ const DONE_STATUS_KEYWORDS = ['done', 'closed', 'resolved', 'complete'];
 const BLOCKED_STATUS_KEYWORDS = ['blocked', 'impediment'];
 const WORKING_STATUS_KEYWORDS = ['work', 'working', 'in progress', 'implementing'];
 const TESTING_STATUS_KEYWORDS = ['test', 'testing'];
-const READY_TO_ACCEPT_KEYWORD = 'ready to accept';
 const DEFAULT_UNPOINTED_STORY_WEIGHT = 1;
 
 function loadArtSettings(): ArtAdvancedSettings {
@@ -188,9 +188,13 @@ function extractProgramEpicKeyFromIssue(issueFields: BlueprintIssueFields, paren
   return issueFields.parent?.key ?? null;
 }
 
+/** Story completion follows the ART delivered rule: Ready for QA or later counts as done. */
 function isStatusDone(statusName: string): boolean {
   const normalizedStatusName = statusName.toLowerCase();
-  return DONE_STATUS_KEYWORDS.some((keyword) => normalizedStatusName.includes(keyword));
+  return (
+    isDeliveredWorkflowStatusName(normalizedStatusName)
+    || DONE_STATUS_KEYWORDS.some((keyword) => normalizedStatusName.includes(keyword))
+  );
 }
 
 function computeBlueprintHealth(storyNodes: BlueprintStoryNode[]): BlueprintHealthStatus {
@@ -227,8 +231,10 @@ function readStoryCompletionWeight(storyNode: BlueprintStoryNode): number {
     return 1;
   }
 
-  if (normalizedStatusName.includes(READY_TO_ACCEPT_KEYWORD)) {
-    return 0.9;
+  // Delivered rule: External Testing ("Ready for QA") and beyond satisfies the team's Definition
+  // of Done, so those stories carry full completion weight even while statusCategory is In Progress.
+  if (isDeliveredWorkflowStatusName(normalizedStatusName)) {
+    return 1;
   }
 
   if (TESTING_STATUS_KEYWORDS.some((statusKeyword) => normalizedStatusName.includes(statusKeyword))) {

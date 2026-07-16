@@ -325,8 +325,10 @@ describe('blueprintHierarchy', () => {
 
     const programEpics = await fetchBlueprintHierarchy(MOCK_TEAMS, 'PI 25.1');
 
-    expect(programEpics[0].features[0].completionPercent).toBe(51);
-    expect(programEpics[0].completionPercent).toBe(51);
+    // Implementing 0.2×1pt + Ready to Accept 1.0×1pt (delivered rule: full credit) +
+    // Integrated Testing 0.5×8pt = 5.2 of 10 weighted points → 52%.
+    expect(programEpics[0].features[0].completionPercent).toBe(52);
+    expect(programEpics[0].completionPercent).toBe(52);
   });
 
   it('weights completion by story points instead of treating every child equally', async () => {
