@@ -219,6 +219,48 @@ export function resolveDeliveryDateIso(issue: JiraIssue): string | null {
   return deliveredRunEntryIso;
 }
 
+/** Returns true when a status NAME belongs to the done category (changelogs carry no statusCategory). */
+function isDoneCategoryStatusName(statusName: string): boolean {
+  return DONE_CATEGORY_STATUS_NAMES.includes(statusName.toLowerCase());
+}
+
+/** Returns true when the issue's CURRENT status is done — by category, or by name for changelog parity. */
+function isCurrentStatusDone(issue: JiraIssue): boolean {
+  return (
+    issue.fields.status.statusCategory.key === STATUS_CATEGORY_DONE
+    || isDoneCategoryStatusName(issue.fields.status.name)
+  );
+}
+
+/**
+ * Returns the ISO timestamp at which the issue ENTERED its current uninterrupted DONE run — the moment
+ * production credit is earned (Monthly Delivery Report, feature 018). Same walk as
+ * resolveDeliveryDateIso but anchored on done-category statuses instead of the delivered set:
+ *   • hops between done statuses (Resolved → Closed) keep the original entry date, and
+ *   • a reopen resets the anchor, so a re-done issue is credited to its re-done month.
+ * Returns null when the issue never reached done, regressed out of done, or has no changelog
+ * (attribution unknown). A done issue with zero transitions falls back to its created date.
+ */
+export function resolveDoneEntryDateIso(issue: JiraIssue): string | null {
+  const statusTransitions = readStatusTransitions(issue);
+  if (statusTransitions === null) {
+    return null;
+  }
+  if (statusTransitions.length === 0) {
+    return isCurrentStatusDone(issue) ? issue.fields.created : null;
+  }
+
+  let doneRunEntryIso: string | null = null;
+  for (const statusTransition of statusTransitions) {
+    if (isDoneCategoryStatusName(statusTransition.toStatusName)) {
+      doneRunEntryIso = doneRunEntryIso ?? statusTransition.atIso;
+    } else {
+      doneRunEntryIso = null;
+    }
+  }
+  return doneRunEntryIso;
+}
+
 /** Length of a date-only ISO string (YYYY-MM-DD), used to detect day-precision window bounds. */
 const DATE_ONLY_ISO_LENGTH = 10;
 

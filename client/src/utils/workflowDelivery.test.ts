@@ -13,6 +13,7 @@ import {
   isDeliveredWithinWindow,
   isDeliveredWorkflowStatusName,
   resolveDeliveryDateIso,
+  resolveDoneEntryDateIso,
 } from './workflowDelivery.ts';
 
 /** One status move for the changelog builder: the status the issue moved to and when. */
@@ -160,6 +161,54 @@ describe('resolveDeliveryDateIso', () => {
 
   it('returns null for issues that are simply not delivered', () => {
     expect(resolveDeliveryDateIso(createIssue('Working', 'indeterminate', []))).toBeNull();
+  });
+});
+
+describe('resolveDoneEntryDateIso', () => {
+  it('anchors at the entry into the current done run, not later hops within done', () => {
+    // Resolved (June) → Closed (July) is one uninterrupted done run: production credit lands in June.
+    const issue = createIssue('Closed', 'done', [
+      { toStatusName: 'Ready for QA', atIso: '2026-05-20T10:00:00.000Z' },
+      { toStatusName: 'Resolved', atIso: '2026-06-11T10:00:00.000Z' },
+      { toStatusName: 'Closed', atIso: '2026-07-02T10:00:00.000Z' },
+    ]);
+    expect(resolveDoneEntryDateIso(issue)).toBe('2026-06-11T10:00:00.000Z');
+  });
+
+  it('re-anchors on the re-done date after a reopen-and-fix cycle', () => {
+    const redoneIssue = createIssue('Accepted', 'done', [
+      { toStatusName: 'Accepted', atIso: '2026-05-05T10:00:00.000Z' },
+      { toStatusName: 'Working', atIso: '2026-06-03T10:00:00.000Z' },
+      { toStatusName: 'Accepted', atIso: '2026-07-08T10:00:00.000Z' },
+    ]);
+    expect(resolveDoneEntryDateIso(redoneIssue)).toBe('2026-07-08T10:00:00.000Z');
+  });
+
+  it('returns null once the issue has regressed out of done and stayed out', () => {
+    const reopenedIssue = createIssue('Working', 'indeterminate', [
+      { toStatusName: 'Accepted', atIso: '2026-06-05T10:00:00.000Z' },
+      { toStatusName: 'Working', atIso: '2026-07-01T10:00:00.000Z' },
+    ]);
+    expect(resolveDoneEntryDateIso(reopenedIssue)).toBeNull();
+  });
+
+  it('returns null for issues that never reached a done-category status (delivered is not done)', () => {
+    const externalTestIssue = createIssue('Ready for QA', 'indeterminate', [
+      { toStatusName: 'Ready for QA', atIso: '2026-06-01T10:00:00.000Z' },
+    ]);
+    expect(resolveDoneEntryDateIso(externalTestIssue)).toBeNull();
+  });
+
+  it('returns null when the changelog was never fetched (attribution unknown)', () => {
+    expect(resolveDoneEntryDateIso(createIssue('Accepted', 'done'))).toBeNull();
+  });
+
+  it('falls back to the created date when a done issue has no status transitions at all', () => {
+    expect(resolveDoneEntryDateIso(createIssue('Accepted', 'done', []))).toBe('2026-05-01T00:00:00.000Z');
+  });
+
+  it('returns null for a not-done issue with an empty transition history', () => {
+    expect(resolveDoneEntryDateIso(createIssue('Working', 'indeterminate', []))).toBeNull();
   });
 });
 

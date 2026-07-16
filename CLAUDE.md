@@ -9,6 +9,21 @@
 <!-- SPECKIT START -->
 ## Active Spec Kit Feature
 
+- **018-monthly-delivery-report** — *(planned — next `/speckit-tasks`)* a server-side **Monthly Delivery Report**
+  scheduler: on the **2nd Tuesday, 08:00** (configurable time), for every snapshotted Team Dashboard team, classify
+  prior-month Stories/Tasks into 🚀 **Production** (done-category entry in-month OR fixVersion `released` in-month)
+  vs 🧪 **External Test** (entered "Ready for QA"+ run in-month), grouped under parent Features, and emit **one
+  plain-text AI prompt** (no automated AI — manual paste into the in-house agent). Admin-Hub-only UI
+  (`MonthlyDeliveryPanel`, StandupBriefingPanel model): Snapshot Teams / Save / Run Now / Copy Prompt.
+  Plan: `specs/018-monthly-delivery-report/plan.md`. Contracts: `http-api.md`, `engine-bundle.md`, `prompt-format.md`.
+  Key design: classification reuses `workflowDelivery.ts` + `featureLink.ts` **bundled server-side** via a new
+  esbuild entry (`build:monthly-delivery-engine`, 015 precedent); scheduler copies the `piReviewScheduler.js`
+  DI-tick chassis with a new once-per-month guard (`YYYY-MM` prefix compare — `schedulerFiredState` unchanged).
+  **Gotcha**: the new `configuration.scheduler.monthlyDelivery` block MUST be added to the `saveConfigToDisk`
+  whitelist in `src/config/loader.js` or it silently fails to persist.
+  **Standing constraint (once implemented)**: `workflowDelivery.ts`/`featureLink.ts` become bundled server-engine
+  sources — changes must keep `npm run build:monthly-delivery-engine` and server Jest green.
+
 - **017-po-feature-tools** — a new **PO Tool** that mounts the existing Feature Review + PI Review tabs (same
   components, own team/PI selection) and adds two authoring tabs: **Feature Splitter** (a Feature → smaller peer
   Features; original kept + linked, never closed) and **Feature Composition** (uploaded spreadsheets + Confluence
