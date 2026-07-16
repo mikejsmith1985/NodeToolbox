@@ -66,6 +66,51 @@ import styles from './PiReviewTab.module.css';
 const LONG_TEXT_COLUMNS = new Set<PiReviewColumnKey>(['dependency', 'risks', 'notes']);
 const CHECKBOX_COLUMNS = new Set<PiReviewColumnKey>(['carryOver', 'committed', 'devWork', 'testSupport']);
 const FEATURE_COLUMN_KEY = 'feature';
+
+// ── Responsive card layout ──
+// Below the width at which every column fits, the table reflows into one card per row (same DOM,
+// CSS only). The switch is decided here, in JS, by comparing the panel's measured width against the
+// visible columns' combined needed width — so it adapts to 8 or 11 columns rather than a fixed
+// breakpoint that only works for one column count. Widths are deliberate over-estimates (roughly the
+// rendered minimums) so we err toward cards a touch early rather than leave a column clipped.
+const CARD_LAYOUT_COLUMN_WIDTHS: Record<PiReviewColumnKey, number> = {
+  carryOver: 96,
+  priority: 128,
+  feature: 220,
+  pointEstimate: 112,
+  dependency: 150,
+  risks: 150,
+  committed: 112,
+  notes: 300,
+  devWork: 104,
+  testSupport: 104,
+};
+// Dependency and Risks are compact (read-only) while editing but carry full content in view mode.
+const CARD_LAYOUT_SYNCED_VIEW_WIDTH = 300;
+const CARD_LAYOUT_ACTIONS_WIDTH = 220;
+const CARD_LAYOUT_CELL_PADDING = 20;
+
+/**
+ * Estimates the width the edit/readout table needs for the given visible columns, so the panel can
+ * decide whether to reflow into cards. Not pixel-exact — just close enough to switch at a sensible
+ * width for any column count.
+ */
+function estimatePiReviewTableWidth(
+  visibleColumnKeys: readonly PiReviewColumnKey[],
+  hasActionsColumn: boolean,
+): number {
+  const columnsWidth = visibleColumnKeys.reduce((runningWidth, columnKey) => {
+    const isCompactSyncedInEdit = (columnKey === 'dependency' || columnKey === 'risks') && hasActionsColumn;
+    const columnWidth = isCompactSyncedInEdit
+      ? CARD_LAYOUT_COLUMN_WIDTHS[columnKey]
+      : (columnKey === 'dependency' || columnKey === 'risks')
+        ? CARD_LAYOUT_SYNCED_VIEW_WIDTH
+        : CARD_LAYOUT_COLUMN_WIDTHS[columnKey];
+    return runningWidth + columnWidth;
+  }, 0);
+  const totalColumnCount = visibleColumnKeys.length + (hasActionsColumn ? 1 : 0);
+  return columnsWidth + (hasActionsColumn ? CARD_LAYOUT_ACTIONS_WIDTH : 0) + totalColumnCount * CARD_LAYOUT_CELL_PADDING;
+}
 const FIST_OF_FIVE_VALUES = ['1', '2', '3', '4', '5'] as const;
 const CONFIDENCE_VOTE_MIN = 0;
 const CONFIDENCE_VOTE_MAX = 5;
@@ -751,6 +796,10 @@ function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverri
   const loadedSnapshotRef = useRef<PiReviewLoadedSnapshot | null>(null);
   const [hasLoadedSnapshot, setHasLoadedSnapshot] = useState(false);
   const pagePanelRef = useRef<HTMLElement>(null);
+  // Live width of the table's scroll shell, watched so the table can reflow into cards the moment it
+  // no longer fits — see estimatePiReviewTableWidth and the .cardLayout styles.
+  const tableShellResizeObserverRef = useRef<ResizeObserver | null>(null);
+  const [tableShellWidth, setTableShellWidth] = useState(0);
   const liveCapacitySummary = capacitySummaryOverride;
   const displayedCapacitySummary = liveCapacitySummary ?? savedCapacitySummary;
   const committedPointTotal = useMemo(
@@ -776,6 +825,31 @@ function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverri
     ],
     [visibleOptionalColumns],
   );
+  // The width the current columns need to render as a table; below it the panel reflows into cards.
+  const requiredTableWidth = useMemo(
+    () => estimatePiReviewTableWidth(visiblePiReviewColumnKeys, canEditContent),
+    [visiblePiReviewColumnKeys, canEditContent],
+  );
+  // Measuring the (stable) shell width and only toggling the table's `display` means the switch never
+  // feeds back into the measurement, so there is no resize loop.
+  const isCardLayout = tableShellWidth > 0 && tableShellWidth < requiredTableWidth;
+
+  // A callback ref re-attaches the observer whenever the table's shell mounts (it is conditional).
+  const attachTableShellObserver = useCallback((shellNode: HTMLDivElement | null) => {
+    tableShellResizeObserverRef.current?.disconnect();
+    if (shellNode === null || typeof ResizeObserver === 'undefined') {
+      return;
+    }
+    const observer = new ResizeObserver((entries) => {
+      setTableShellWidth(entries[0]?.contentRect.width ?? 0);
+    });
+    observer.observe(shellNode);
+    tableShellResizeObserverRef.current = observer;
+    setTableShellWidth(shellNode.clientWidth);
+  }, []);
+
+  useEffect(() => () => tableShellResizeObserverRef.current?.disconnect(), []);
+
   const canExportPanelImage = rows.length > 0 || confidenceRows.length > 0 || displayedCapacitySummary !== null;
   const isPiReviewTemplateRequired = canShowAuthoringToolbar && !tableBinding;
 
@@ -2054,8 +2128,8 @@ function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverri
       )}
 
       {rows.length > 0 && (
-        <div className={styles.tableShell} data-export-expand="true">
-          <table className={styles.dataTable}>
+        <div className={styles.tableShell} data-export-expand="true" ref={attachTableShellObserver}>
+          <table className={joinClassNames(styles.dataTable, isCardLayout && styles.cardLayout)}>
             <thead>
               <tr>
                 {visiblePiReviewColumnKeys.map((columnKey) => (
@@ -2093,7 +2167,7 @@ function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverri
                               : styles.shortCell;
 
                         return (
-                          <td className={cellClassName} key={columnKey}>
+                          <td className={cellClassName} data-label={PI_REVIEW_COLUMN_LABELS[columnKey]} key={columnKey}>
                             {canEditContent && isCheckboxColumn ? (
                               <input
                                 aria-label={`${PI_REVIEW_COLUMN_LABELS[columnKey]} for ${target.targetLabel} row ${rowIndex + 1}`}
