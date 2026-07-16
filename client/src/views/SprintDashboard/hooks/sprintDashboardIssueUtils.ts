@@ -78,7 +78,11 @@ export function isBlockedIssue(issue: JiraIssue): boolean {
   return isStatusBlockedIssue(issue) || hasBlockingLink(issue);
 }
 
-/** Returns true when the issue should be treated as completed in legacy dashboard logic. */
+/**
+ * Returns true when the issue is CLOSED (statusCategory Done or a done-named status) — use this to
+ * filter finished work out of lists. For completion CREDIT (points done, % complete), use the ART
+ * delivered rule in utils/workflowDelivery.ts instead: work counts once it reaches "Ready for QA".
+ */
 export function isDoneIssue(issue: JiraIssue): boolean {
   return issue.fields.status.statusCategory.key === 'done'
     || DONE_STATUS_NAMES.includes(issue.fields.status.name.toLowerCase());

@@ -1165,6 +1165,34 @@
   font-weight: 600;
 }
 
+/* Overview "In Progress" sub-group headers (Active / Internal Testing / External Testing / Ready to Accept). */
+.overviewSubGroupHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin: var(--spacing-sm) 0;
+  padding-left: var(--spacing-sm);
+  border-left: 3px solid var(--color-accent);
+}
+
+.overviewSubGroupTitle {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 0;
+}
+
+.overviewSubGroupCount {
+  font-size: var(--font-size-xs);
+  padding: 1px var(--spacing-sm);
+  border-radius: 999px;
+  background: var(--color-bg-subtle);
+  color: var(--color-text-secondary);
+  font-weight: 600;
+}
+
 .issueCardWrapper {
   display: flex;
   flex-direction: column;

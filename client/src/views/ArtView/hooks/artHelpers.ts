@@ -3,6 +3,7 @@
 // panel, or hook within the ART View without introducing circular dependencies.
 
 import type { JiraIssue } from '../../../types/jira.ts';
+import { isDeliveredWorkflowStatusName } from '../../../utils/workflowDelivery.ts';
 
 // ── Constants ──
 
@@ -14,14 +15,14 @@ const TWO_DIGIT_YEAR_BASE = 2000;
 // ── Status helpers ──
 
 /**
- * Returns true when a Jira issue is in a "done" state.
- * Checks the statusCategory key first; falls back to the status display name
- * for Jira instances that do not populate category metadata.
+ * Returns true when a Jira issue counts as done for ART completion metrics.
+ * Follows the ART delivered rule: statusCategory Done, or a delivered status name
+ * ("Ready for QA" / "Ready to Accept" — External Testing satisfies the Definition of Done).
  */
 export function isIssueDone(issue: JiraIssue): boolean {
   const categoryKey = issue.fields.status.statusCategory?.key;
-  if (categoryKey) return categoryKey === STATUS_CATEGORY_DONE;
-  return issue.fields.status.name.toLowerCase() === 'done';
+  if (categoryKey === STATUS_CATEGORY_DONE) return true;
+  return isDeliveredWorkflowStatusName(issue.fields.status.name);
 }
 
 /**

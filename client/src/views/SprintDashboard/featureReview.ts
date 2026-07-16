@@ -3,6 +3,7 @@
 import { jiraGet } from '../../services/jiraApi.ts';
 import type { JiraIssue } from '../../types/jira.ts';
 import { normalizeRichTextToPlainText } from '../../utils/richTextPlainText.ts';
+import { isDeliveredWorkflowStatusName } from '../../utils/workflowDelivery.ts';
 import {
   loadEnterpriseRulesFromStorage,
   readEnabledBuiltInCheckIds,
@@ -181,9 +182,13 @@ async function buildFeatureKeysWithPointedChildren(
   );
 }
 
+/** Child-story completion follows the ART delivered rule: Ready for QA or later counts as done. */
 function isDoneStatus(statusName: string): boolean {
   const normalizedStatusName = statusName.toLowerCase();
-  return DONE_STATUS_KEYWORDS.some((keyword) => normalizedStatusName.includes(keyword));
+  return (
+    isDeliveredWorkflowStatusName(normalizedStatusName)
+    || DONE_STATUS_KEYWORDS.some((keyword) => normalizedStatusName.includes(keyword))
+  );
 }
 
 function isBlockedStatus(statusName: string): boolean {
