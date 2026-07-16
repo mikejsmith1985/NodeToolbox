@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Hygiene AI — no more "any update?" nudges on tickets that already explain themselves**: the stale-nudge
+  proposals ignored context, so the AI would draft an update request for an issue whose last comment already said
+  "blocked till ESI Recon work is complete". Two layers now prevent that. Deterministically, an issue in a
+  blocked-like **status** (blocked / impeded / on hold) is never offered as a stale ask at all — that's app data,
+  not a judgement call. For everything else, the prompt now carries each stale issue's **status and last comment**
+  (author, date, excerpt — fetched on demand, only for stale asks), with a standing rule: if the ticket already
+  explains why it's waiting (blocked by other work, waiting on a dependency, deprioritized), **omit the nudge** —
+  asking for an update the ticket has already given is noise, not hygiene.
+- **Hygiene — the inline fix controls painted over the Type card**: the finding row's flags column was narrower
+  (12rem) than the editors inside it were allowed to be (14rem), so the Choose/Fix controls overlapped the
+  neighbouring meta cards. The column now fits its editors, and the editors can never exceed their column —
+  verified in a real browser with a Playwright layout test.
+
 ### Changed
 - **Hygiene AI Assist is now propose-only — the panel builds a prompt, ingests the reply, and every fix needs
   your click (GH #167)**: the Ctrl+Alt+Z panel at the bottom of the Hygiene page was a status readout for a

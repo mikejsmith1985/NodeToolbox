@@ -199,7 +199,9 @@
    * badge and cards out of line with every other row. A fixed badge column plus
    * a capped meta column keeps every row's cards in the same vertical position.
    */
-  grid-template-columns: minmax(18rem, 1fr) 12rem minmax(18rem, 48rem);
+  /* The flags/fix column is 15rem: wide enough for the 14rem inline editors plus their padding.
+     At 12rem the editors (max-width 14rem) overflowed the track and painted over the Type card. */
+  grid-template-columns: minmax(18rem, 1fr) 15rem minmax(18rem, 48rem);
   gap: var(--spacing-md);
   align-items: center;
   padding: var(--spacing-md);
@@ -264,6 +266,8 @@
   display: flex;
   flex-wrap: wrap;
   gap: var(--spacing-xs);
+  /* Let the fixed grid track actually constrain the inline editors instead of being overpainted. */
+  min-width: 0;
 }
 
 .flagChipWarn,
@@ -576,7 +580,10 @@
   background: var(--color-surface, #fff);
   color: var(--color-text-primary);
   font-size: var(--font-size-sm);
-  max-width: 14rem;
+  /* Never wider than the flags column: an editor that cannot fit shrinks inside its track
+     rather than painting over the neighbouring meta cards (the overlap in GH #167's report). */
+  max-width: min(14rem, 100%);
+  min-width: 0;
 }
 
 .fixButton {
