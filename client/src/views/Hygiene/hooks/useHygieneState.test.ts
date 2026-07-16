@@ -141,6 +141,67 @@ describe('useHygieneState', () => {
     expect(result.current.findings).toEqual([]);
   });
 
+  it('runs without a project key in the all-projects scope, dropping the project clause (GH #167)', async () => {
+    mockJiraGet.mockResolvedValueOnce(EMPTY_FIELD_METADATA).mockResolvedValueOnce({ issues: [] });
+    const { result } = renderHook(() => useHygieneState({ initialAllProjects: true }));
+
+    await act(async () => {
+      await result.current.loadHygiene();
+    });
+
+    const searchPath = decodeURIComponent(String(mockJiraGet.mock.calls[1][0]));
+    expect(searchPath).toContain('jql=statusCategory != Done AND assignee = currentUser()');
+    expect(searchPath).not.toContain('project=');
+  });
+
+  it('tracks how many issues the run scanned, and clears it on failure (GH #167)', async () => {
+    mockJiraGet.mockResolvedValueOnce(EMPTY_FIELD_METADATA).mockResolvedValueOnce({
+      issues: [buildJiraIssue({}, 'TBX-101'), buildJiraIssue({}, 'TBX-102')],
+    });
+    const { result } = renderHook(() => useHygieneState());
+
+    act(() => result.current.setProjectKey('TBX'));
+    await act(async () => {
+      await result.current.loadHygiene();
+    });
+    expect(result.current.scannedIssueCount).toBe(2);
+
+    mockJiraGet.mockReset();
+    mockJiraGet.mockRejectedValue(new Error('Jira down'));
+    await act(async () => {
+      await result.current.loadHygiene();
+    });
+    // A failed run has no scan data — the view must not keep presenting the previous run's count.
+    expect(result.current.scannedIssueCount).toBeNull();
+    expect(result.current.loadError).toContain('Jira down');
+  });
+
+  it('degrades to skipping the pointed-child check when the child rollup query fails (GH #167)', async () => {
+    // A Feature triggers the child-story rollup (the third Jira call). When that secondary query
+    // fails — e.g. a registry-only field rejected with a 400 — the run must survive: other flags
+    // still surface, and the pointed-child check is skipped rather than flagging every Feature.
+    const featureIssue = buildJiraIssue(
+      { issuetype: { name: 'Feature' }, assignee: null, customfield_10028: 3 },
+      'TBX-201',
+    );
+    mockJiraGet
+      .mockResolvedValueOnce(EMPTY_FIELD_METADATA)
+      .mockResolvedValueOnce({ issues: [featureIssue] })
+      .mockRejectedValueOnce(new Error("Field 'cf[10014]' does not exist"));
+    const { result } = renderHook(() => useHygieneState());
+
+    act(() => result.current.setProjectKey('TBX'));
+    await act(async () => {
+      await result.current.loadHygiene();
+    });
+
+    expect(result.current.loadError).toBeNull(); // the run survived
+    expect(result.current.scannedIssueCount).toBe(1);
+    const raisedCheckIds = result.current.findings.flatMap((finding) => finding.flags.map((flag) => flag.checkId));
+    expect(raisedCheckIds).toContain('no-assignee'); // other checks still ran
+    expect(raisedCheckIds).not.toContain('missing-child-story-points'); // skipped, not false-flagged
+  });
+
   it('calls jiraGet with project JQL, extra JQL, and maps only flagged issues', async () => {
     mockJiraGet.mockResolvedValue({
       issues: [],

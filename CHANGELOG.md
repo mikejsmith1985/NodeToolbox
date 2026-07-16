@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Hygiene — a failed run no longer reads as a perfect score, and one bad field can no longer kill the whole
+  scan (GH #167, round 2)**: the new "All my projects" scan could die with a Jira 400 because the child-story
+  rollup query named fields Jira lists in its registry but refuses in JQL (e.g. `cf[10014]`, one of the built-in
+  *defaults*, which may not even exist on the instance) — and the error then rendered **beside** a green 100/100
+  and "No Hygiene flags found". Three fixes: the feature-link fields used to build JQL are now filtered to fields
+  this instance actually has and can query (an admin's explicitly configured field is trusted as-is); a failure in
+  that secondary rollup now degrades gracefully — the pointed-child-story check is skipped for the run instead of
+  the whole scan dying (or worse, false-flagging every Feature); and a failed run now shows a dash for the score
+  with no clean-state message, because a run that didn't happen has no health to report.
+- **Hygiene — checks that never ran no longer show a clean 0**: Missing Product Owner, Missing Initiative Type
+  and Missing Application have no built-in field default; when the Jira instance has no matching field they
+  silently skip — and their tiles showed a `0` indistinguishable from "checked and clean". Those tiles now show
+  a dash with "not checked — no matching Jira field", so a quiet zero can be told apart from a real pass.
 - **Team Dashboard grouped "Working" items under To Do — status buckets now follow Jira statusCategory exactly**:
   the Overview tab classified issues by matching tokens in the status *name* (`progress`, `review`, `dev`, `test`),
   so any approved-workflow status the list didn't anticipate ("Working") fell through to To Do. Every tab now

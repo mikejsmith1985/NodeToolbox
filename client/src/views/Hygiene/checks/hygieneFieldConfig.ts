@@ -93,12 +93,13 @@ export function matchFieldIdsByName(availableFields: JiraField[], fieldNames: st
 export async function loadHygieneFieldConfig(): Promise<HygieneFieldConfig> {
   const availableFields = await jiraGet<JiraField[]>('/rest/api/2/field');
   const artSettings = readHygieneArtSettings();
+  const configuredFeatureLinkField = artSettings.featureLinkField || DEFAULT_FEATURE_LINK_FIELD;
 
-  return resolveHygieneFieldConfig({
+  const resolvedConfig = resolveHygieneFieldConfig({
     acceptanceCriteriaFieldIds: matchFieldIdsByName(availableFields, ['Acceptance Criteria']),
     applicationFieldIds: matchFieldIdsByName(availableFields, ['Application']),
     featureLinkFieldIds: [
-      artSettings.featureLinkField || DEFAULT_FEATURE_LINK_FIELD,
+      configuredFeatureLinkField,
       ...matchFieldIdsByName(availableFields, ['Feature Link', 'Epic Link']),
     ],
     initiativeTypeFieldIds: matchFieldIdsByName(availableFields, ['Initiative Type']),
@@ -117,4 +118,25 @@ export async function loadHygieneFieldConfig(): Promise<HygieneFieldConfig> {
       ...matchFieldIdsByName(availableFields, ['Target End']),
     ],
   });
+
+  // Feature-link ids are the one list used to BUILD JQL (the child-story rollup), so it must hold
+  // only fields this instance can actually query. Jira 400s a JQL clause naming a field that does
+  // not exist here or is registry-only (not searchable) — and the resolver merges in platform
+  // DEFAULTS (e.g. customfield_10014) that may be neither, which used to kill the whole hygiene
+  // run (GH #167). The admin's explicitly configured field is trusted as-is; 'parent' is native.
+  // Reading a field off an issue has no such restriction, so the other lists stay unfiltered.
+  const searchableFieldIds = new Set(
+    availableFields
+      .filter((availableField) => availableField.searchable !== false)
+      .map((availableField) => availableField.id),
+  );
+  // Only a field the admin explicitly set bypasses the instance check — our own fallback default
+  // gets no such trust, because "we guessed it" is exactly how a nonexistent field reaches JQL.
+  const adminConfiguredFeatureLinkField = artSettings.featureLinkField || '';
+  return {
+    ...resolvedConfig,
+    featureLinkFieldIds: resolvedConfig.featureLinkFieldIds.filter((fieldId) =>
+      fieldId === 'parent' || fieldId === adminConfiguredFeatureLinkField || searchableFieldIds.has(fieldId),
+    ),
+  };
 }

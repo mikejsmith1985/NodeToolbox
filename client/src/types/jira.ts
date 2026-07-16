@@ -163,6 +163,8 @@ export interface JiraField {
   id: string;
   name: string;
   schema?: { type: string };
+  /** Whether the field can be used in a JQL clause — false for registry-only fields (GH #167). */
+  searchable?: boolean;
 }
 
 /** Jira project metadata returned by /rest/api/2/project. */
