@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Team Dashboard now opens on the tab you asked for — the Today cards' team drill-throughs actually land
+  (GH #167)**: clicking a team-scoped card on My Issues → Today ("Team stale issues", "Unassigned in-progress",
+  "Sprint commitment gaps", "Unblock issues") stores the target tab and navigates to the Team Dashboard — which
+  then **discarded the stored tab and always opened Overview**, so every drill-through appeared to go nowhere.
+  The dashboard now honors the persisted tab (validated against the real tab list), which also means it reopens
+  wherever you last were instead of resetting to Overview on every visit — the behaviour its own persistence
+  comment always promised. First-time setup still lands on Settings.
+
 ### Added
 - **Monthly Delivery Report (Admin Hub) — a scheduled, AI-ready "what did each team deliver last month?" prompt**:
   a new server-side scheduler that, for every Team Dashboard team snapshotted into its Admin Hub panel, classifies
