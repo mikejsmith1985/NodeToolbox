@@ -625,3 +625,10 @@
   color: var(--color-text-muted);
   font-size: var(--font-size-xs, 0.75rem);
 }
+
+/* Small print on a tile whose check never ran (no matching Jira field on this instance). */
+.tileHint {
+  color: var(--color-text-muted, var(--color-text-secondary));
+  font-size: 11px;
+  line-height: 1.3;
+}

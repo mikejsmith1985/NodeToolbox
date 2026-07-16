@@ -182,6 +182,41 @@ describe('HygieneView', () => {
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
   });
 
+  it('never renders a perfect score or the clean-state message when the run failed (GH #167)', () => {
+    // A failed search has no scan data; showing 100/100 and "no flags found" beside the error was
+    // half of the confusion — the tiles said healthy while the run had not happened at all.
+    mockUseHygieneState.mockReturnValue(buildHookState({
+      projectKey: 'TBX',
+      loadError: "Field 'cf[10014]' does not exist or you do not have permission to view it.",
+      scannedIssueCount: null,
+    }));
+
+    render(<HygieneView />);
+
+    expect(screen.getByRole('alert')).toHaveTextContent(/cf\[10014\]/);
+    expect(screen.getByLabelText('Hygiene score tile')).toHaveTextContent('—');
+    expect(screen.getByLabelText('Hygiene score tile')).not.toHaveTextContent('100/100');
+    expect(screen.queryByText(/No Hygiene flags found/i)).not.toBeInTheDocument();
+  });
+
+  it('marks a check whose Jira field does not exist as "not checked" instead of a clean 0 (GH #167)', () => {
+    // Product Owner / Initiative Type / Application have no default field and silently skip when
+    // the instance has none — a bare 0 from a check that never ran reads exactly like clean.
+    mockUseHygieneState.mockReturnValue(buildHookState({
+      projectKey: 'TBX',
+      summary: buildSummary(),
+      availableCheckIds: ['missing-product-owner'],
+      checkLabelsById: { 'missing-product-owner': 'Missing Product Owner' },
+    }));
+
+    render(<HygieneView />);
+
+    // resolveHygieneFieldConfig() (the test default) has no Product Owner field configured.
+    const tile = screen.getByLabelText('Missing Product Owner not configured');
+    expect(tile).toHaveTextContent('—');
+    expect(tile).toHaveTextContent(/not checked — no matching Jira field/i);
+  });
+
   it('surfaces the scanned-issue count on the summary tile', () => {
     mockUseHygieneState.mockReturnValue(buildHookState({ projectKey: 'TBX', scannedIssueCount: 42 }));
 
