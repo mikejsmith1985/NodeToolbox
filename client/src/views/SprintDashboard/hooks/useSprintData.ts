@@ -203,6 +203,12 @@ function readPersistedProjectKey(): string {
   return settingsState.sprintDashboardProjectKey || settingsState.dsuProjectKey;
 }
 
+/** Every tab id the dashboard can restore; guards the persisted string against stale/foreign values. */
+const VALID_DASHBOARD_TABS: ReadonlySet<string> = new Set<DashboardTab>([
+  'overview', 'assignee', 'blockers', 'defects', 'hygiene', 'standup', 'settings', 'metrics',
+  'pipeline', 'planning', 'releases', 'pointing', 'pireview', 'featurereview', 'backlogremediation',
+]);
+
 /** Chooses the initial Team Dashboard tab based on setup readiness. */
 function readPersistedActiveTab(): DashboardTab {
   const storedActiveTab = useSettingsStore.getState().sprintDashboardActiveTab;
@@ -214,8 +220,15 @@ function readPersistedActiveTab(): DashboardTab {
   const hasConfiguredBoardId = readPersistedBoardId() !== null;
   const isJiraReady = useConnectionStore.getState().isJiraReady;
   const isInitialDashboardSetupComplete = hasConfiguredProjectKey && hasConfiguredBoardId && isJiraReady;
+  if (!isInitialDashboardSetupComplete) {
+    return 'settings';
+  }
 
-  return isInitialDashboardSetupComplete ? DEFAULT_DASHBOARD_TAB : 'settings';
+  // Honor the persisted tab — it is both "reopen where I left off" AND the deep-link channel the
+  // My Issues Today cards use (they store a tab, then navigate here). Discarding it, as this
+  // function used to, sent every Today drill-through (Team stale, Unassigned, Commitment gaps,
+  // Blockers) to Overview instead of the tab that answers the card's question (GH #167).
+  return VALID_DASHBOARD_TABS.has(storedActiveTab) ? (storedActiveTab as DashboardTab) : DEFAULT_DASHBOARD_TAB;
 }
 
 /** Restores the last Team Dashboard scope mode and falls back to sprint when invalid. */

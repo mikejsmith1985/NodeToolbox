@@ -139,6 +139,36 @@ describe('useSprintData', () => {
     expect(result.current.state.boardType).toBeNull();
   });
 
+  it('reopens on the persisted tab once setup is complete — the Today cards deep-link through it (GH #167)', () => {
+    // The My Issues Today cards store a tab (e.g. 'hygiene') and then navigate here. This function
+    // used to discard the stored value and always land on Overview, breaking every drill-through.
+    useSettingsStore.setState({
+      sprintDashboardProjectKey: 'TBX',
+      sprintDashboardBoardId: '42',
+      sprintDashboardActiveTab: 'hygiene',
+    });
+    useConnectionStore.setState({ isJiraReady: true });
+    mockJiraGet.mockResolvedValue({ values: [], issues: [] });
+
+    const { result } = renderHook(() => useSprintData());
+
+    expect(result.current.state.activeTab).toBe('hygiene');
+  });
+
+  it('falls back to Overview when the persisted tab is not a real dashboard tab', () => {
+    useSettingsStore.setState({
+      sprintDashboardProjectKey: 'TBX',
+      sprintDashboardBoardId: '42',
+      sprintDashboardActiveTab: 'not-a-tab',
+    });
+    useConnectionStore.setState({ isJiraReady: true });
+    mockJiraGet.mockResolvedValue({ values: [], issues: [] });
+
+    const { result } = renderHook(() => useSprintData());
+
+    expect(result.current.state.activeTab).toBe('overview');
+  });
+
   it('sets projectKey when setProjectKey is called', () => {
     const { result } = renderHook(() => useSprintData());
 
@@ -180,7 +210,10 @@ describe('useSprintData', () => {
     expect(result.current.state.selectedPiValue).toBe('PI-24.1');
   });
 
-  it('opens Overview by default once project, board, and Jira readiness are all configured', () => {
+  it('reopens on the persisted workspace tab once project, board, and Jira readiness are all configured', () => {
+    // Previously this asserted the stored tab was DISCARDED in favor of Overview — which broke
+    // every My Issues Today drill-through (they store a tab, then navigate here) and contradicted
+    // persistActiveTab's documented purpose of reopening the same workspace (GH #167).
     useSettingsStore.getState().setSprintDashboardProjectKey('ENFCT');
     useSettingsStore.getState().setSprintDashboardBoardId('42');
     useSettingsStore.getState().setSprintDashboardActiveTab('standup');
@@ -190,7 +223,7 @@ describe('useSprintData', () => {
 
     expect(result.current.state.projectKey).toBe('ENFCT');
     expect(result.current.state.boardId).toBe(42);
-    expect(result.current.state.activeTab).toBe('overview');
+    expect(result.current.state.activeTab).toBe('standup');
   });
 
   it('falls back to the DSU project key when Sprint Dashboard has not saved its own project yet', () => {
