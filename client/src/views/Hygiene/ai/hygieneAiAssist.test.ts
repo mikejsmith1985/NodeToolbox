@@ -66,6 +66,50 @@ describe('buildHygieneAiPrompt', () => {
 
     expect(promptText).not.toContain('no-assignee')
   })
+
+  // ── Stale asks carry context, and parked tickets are never nudged ──
+
+  it('drops the stale ask outright for an issue in a blocked-like status', () => {
+    const blockedFinding = finding('TBX-1', ['stale', 'missing-sp'], { status: { name: 'Blocked' } })
+
+    const promptText = buildHygieneAiPrompt([blockedFinding])
+
+    // The other fix survives; the nudge does not — a blocked ticket already says why it waits.
+    expect(promptText).toContain('missing-sp')
+    expect(promptText).not.toContain('stale:')
+  })
+
+  it('omits the issue entirely when a blocked status removes its only fixable flag', () => {
+    const blockedFinding = finding('TBX-1', ['stale'], { status: { name: 'On Hold — vendor' } })
+
+    const promptText = buildHygieneAiPrompt([blockedFinding, finding('TBX-2', ['missing-sp'])])
+
+    expect(promptText).not.toContain('TBX-1')
+    expect(promptText).toContain('TBX-2')
+  })
+
+  it('carries the status and last comment beside a stale ask so the nudge is a judgement', () => {
+    const staleFinding = finding('TBX-1', ['stale'], { status: { name: 'In Progress' } })
+
+    const promptText = buildHygieneAiPrompt([staleFinding], {
+      'TBX-1': {
+        lastCommentAuthor: 'Jordan, John',
+        lastCommentDate: '2026-07-01',
+        lastCommentBody: 'Blocked till ESI Recon work is complete.',
+      },
+    })
+
+    expect(promptText).toContain('status: In Progress')
+    expect(promptText).toContain('last comment (Jordan, John, 2026-07-01): Blocked till ESI Recon work is complete.')
+    // And the standing rule that tells the model when to say nothing.
+    expect(promptText).toContain('OMIT the stale fix')
+  })
+
+  it('says "(none)" rather than omitting the comment line when a stale issue has no comments', () => {
+    const promptText = buildHygieneAiPrompt([finding('TBX-1', ['stale'], { status: { name: 'In Progress' } })])
+
+    expect(promptText).toContain('last comment: (none)')
+  })
 })
 
 describe('parseHygieneAiReply', () => {

@@ -25,6 +25,14 @@ const DESCRIPTION_EXCERPT_LENGTH = 400
 const BLANKISH_VALUES = new Set(['', 'n/a', 'na', 'none', 'no', '-', '--', 'tbd', 'unknown'])
 /** ISO date shape the date-fix checks require (Jira's own field format). */
 const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
+/**
+ * Status-name fragments that mean the issue is deliberately parked. A stale NUDGE on a blocked
+ * issue is noise, not hygiene — the assignee already knows why it isn't moving — so those issues
+ * never get a stale ask at all. Mirrors the blocked detection the Today tab uses.
+ */
+const BLOCKED_STATUS_FRAGMENTS = ['blocked', 'impeded', 'on hold'] as const
+/** How much of the last comment the prompt carries — enough to judge, not the whole thread. */
+const LAST_COMMENT_EXCERPT_LENGTH = 300
 
 /**
  * The flags the AI may propose fixes for, with the per-flag instruction the prompt carries.
@@ -66,17 +74,55 @@ export interface HygieneAiRunResult {
   unparsedCount: number
 }
 
+/** The last comment on a stale issue, fetched on demand so the model can judge a nudge's worth. */
+export interface StaleIssueContext {
+  lastCommentAuthor: string | null
+  lastCommentDate: string | null
+  lastCommentBody: string | null
+}
+
 // ── Prompt ──
+
+/** True when the issue sits in a deliberately-parked status (blocked / impeded / on hold). */
+export function isBlockedStatusIssue(finding: HygieneFinding): boolean {
+  const statusName = (finding.issue.fields.status?.name ?? '').toLowerCase()
+  return BLOCKED_STATUS_FRAGMENTS.some((blockedFragment) => statusName.includes(blockedFragment))
+}
+
+/**
+ * The flags the AI will actually be asked about for this finding.
+ *
+ * The stale ask is dropped outright for blocked-status issues — that exclusion is deterministic
+ * app data, so it is enforced here rather than hoped for in the prompt (GH #167 follow-up: "don't
+ * ask for an update when the ticket already says why it's waiting").
+ */
+export function readAiFixableFlags(finding: HygieneFinding): HygieneFinding['flags'] {
+  return finding.flags.filter((flag) => {
+    if (!(flag.checkId in AI_FIXABLE_CHECK_INSTRUCTIONS)) return false
+    if (flag.checkId === 'stale' && isBlockedStatusIssue(finding)) return false
+    return true
+  })
+}
 
 /** True when this finding carries at least one flag the AI is allowed to propose a fix for. */
 export function hasAiFixableFlags(finding: HygieneFinding): boolean {
-  return finding.flags.some((flag) => flag.checkId in AI_FIXABLE_CHECK_INSTRUCTIONS)
+  return readAiFixableFlags(finding).length > 0
+}
+
+/** The stale ask's context lines: current status plus the last comment, so a nudge is a judgement. */
+function buildStaleContextLines(finding: HygieneFinding, staleContext: StaleIssueContext | undefined): string[] {
+  const statusName = finding.issue.fields.status?.name ?? '(unknown)'
+  const lastCommentLine = staleContext?.lastCommentBody
+    ? `    last comment (${staleContext.lastCommentAuthor ?? 'unknown'}, ${staleContext.lastCommentDate ?? 'undated'}): ${staleContext.lastCommentBody.slice(0, LAST_COMMENT_EXCERPT_LENGTH)}`
+    : '    last comment: (none)'
+  return [`    status: ${statusName}`, lastCommentLine]
 }
 
 /** One issue's block: identity and signals on the header, the fixable flags as numbered asks. */
-function buildFindingBlock(finding: HygieneFinding): string {
+function buildFindingBlock(finding: HygieneFinding, staleContextsByKey: Record<string, StaleIssueContext>): string {
   const issueFields = finding.issue.fields
-  const fixableFlags = finding.flags.filter((flag) => flag.checkId in AI_FIXABLE_CHECK_INSTRUCTIONS)
+  const fixableFlags = readAiFixableFlags(finding)
+  const isStaleAsked = fixableFlags.some((flag) => flag.checkId === 'stale')
   const rawDescription = typeof issueFields.description === 'string' ? issueFields.description : ''
   const descriptionExcerpt = rawDescription.slice(0, DESCRIPTION_EXCERPT_LENGTH)
 
@@ -84,6 +130,7 @@ function buildFindingBlock(finding: HygieneFinding): string {
     `- ${finding.issue.key} · ${issueFields.issuetype?.name ?? 'issue'} · ${issueFields.summary ?? '(no summary)'}`,
     `    description: ${descriptionExcerpt.trim() || '(none in Jira)'}`,
     finding.programIncrement ? `    program increment: ${finding.programIncrement}` : '',
+    ...(isStaleAsked ? buildStaleContextLines(finding, staleContextsByKey[finding.issue.key]) : []),
     `    fixes needed:`,
     ...fixableFlags.map((flag) => `      * ${flag.checkId}: ${AI_FIXABLE_CHECK_INSTRUCTIONS[flag.checkId]}`),
   ]
@@ -94,9 +141,13 @@ function buildFindingBlock(finding: HygieneFinding): string {
  * Builds the single prompt covering every AI-fixable flag currently on the page.
  *
  * Findings whose flags are all outside the AI's remit are omitted entirely — the model should
- * never see an issue it has nothing to propose for.
+ * never see an issue it has nothing to propose for. Stale asks carry the issue's status and last
+ * comment (when supplied) so the model can decline to nudge a ticket that already explains itself.
  */
-export function buildHygieneAiPrompt(findings: readonly HygieneFinding[]): string {
+export function buildHygieneAiPrompt(
+  findings: readonly HygieneFinding[],
+  staleContextsByKey: Record<string, StaleIssueContext> = {},
+): string {
   const fixableFindings = findings.filter(hasAiFixableFlags)
   const issueKeyList = fixableFindings.map((finding) => finding.issue.key).join(', ')
 
@@ -110,10 +161,15 @@ Rules:
   - Keep field values under ${MAX_AI_FIX_VALUE_LENGTH} characters; a stale-nudge comment under ${MAX_AI_COMMENT_LENGTH}.
   - Omit a fix entirely when the context is not enough to propose responsibly — a human has to
     catch every bad guess, so say nothing rather than guess.
+  - For "stale" fixes: read the issue's status and last comment first. If they already explain why
+    the ticket is waiting (blocked by other work, waiting on a dependency or another team,
+    deprioritized, scheduled for later), OMIT the stale fix for that issue — asking for an update
+    the ticket has already given is noise, not hygiene. Only propose a nudge when the ticket is
+    genuinely silent about why it has stalled.
   - Give a one-line "rationale" per fix so the reviewer understands your reasoning.
 
 Issues (${fixableFindings.length}):
-${fixableFindings.map(buildFindingBlock).join('\n')}
+${fixableFindings.map((finding) => buildFindingBlock(finding, staleContextsByKey)).join('\n')}
 
 Issue keys you may use: ${issueKeyList}
 
