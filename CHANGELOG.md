@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Team Dashboard grouped "Working" items under To Do — status buckets now follow Jira statusCategory exactly**:
+  the Overview tab classified issues by matching tokens in the status *name* (`progress`, `review`, `dev`, `test`),
+  so any approved-workflow status the list didn't anticipate ("Working") fell through to To Do. Every tab now
+  buckets by statusCategory: `new` → To Do, `indeterminate` → In Progress, `done` → Done. Inside In Progress the
+  Overview shows the approved workflow stages as sub-group headers: **Active**, **Internal Testing** ("Ready for
+  Testing"), **External Testing** ("Ready for QA"), and **Ready to Accept**.
 - **Hygiene surfaces now agree with each other (GH #167)**: the Today report, the My Issues Hygiene tab and the
   Team Dashboard Hygiene tab all run the same rules, but each answered a *different question* without saying so —
   which is why "My stale issues: 2" could open a tab showing 0, and one team's 35 infractions sat next to another
@@ -44,6 +50,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   already share extra space naturally. On a window genuinely narrower than the floors, the table scrolls
   horizontally inside its own frame and the page never widens or clips. Playwright layout tests cover full-width
   at all three text sizes, the 11-column fit (including at A++), and the narrow-window scroll fallback. *(GH #160)*
+
+### Changed
+- **Completion metrics across the ART now credit work when it is DELIVERED — at "Ready for QA" (External Testing)
+  or later — not when it reaches statusCategory Done ("Accepted")**: per the ART's Definition of Done, delivery to
+  External Test completes the team's work; the story is still tracked through "Ready to Accept" and "Accepted" but
+  earns its credit at hand-off to QA. The new shared rule (`client/src/utils/workflowDelivery.ts`) drives Points
+  Done, the On Track / At Risk health badge, the burn-down "completed" line, Scrum and Kanban throughput, default
+  cycle-time endpoints, Release Radar done counts, Feature Review done-child counts, blueprint feature completion
+  percent (delivered stories now weigh 1.0, up from 0.9 for "Ready to Accept" and 0.5 for "Ready for QA"), and ART
+  velocity / monthly stats. PI attribution follows the changelog: credit lands in the PI whose dates contain the
+  issue's entry into its current delivered run, so work delivered after the PI's last day is carry-over for the
+  next PI — and a regression out of "Ready for QA" (e.g. back to "Working" for a fix) forfeits the credit until
+  the work is re-delivered. Statuses report as statuses; delivery drives the math. *(Known limitation: the Metrics
+  tab's sprint predictability rows still use Jira's own sprint-report completed sets.)*
 
 ### Added
 - **PI Review — the editor is now genuinely responsive: it reflows into cards when the columns don't fit**: with

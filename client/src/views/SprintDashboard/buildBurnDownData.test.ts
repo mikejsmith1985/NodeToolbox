@@ -155,6 +155,43 @@ describe('buildBurnDownData', () => {
     expect(result[5].completed).toBe(1);
   });
 
+  it('burns an issue as completed the day it reaches Ready for QA (the ART delivered rule)', () => {
+    // External Testing satisfies the team's Definition of Done even though statusCategory is
+    // still In Progress — the burn-down must credit it from that day.
+    const deliveredIssue = buildBurnDownIssue({
+      id: '1',
+      key: 'TBX-1',
+      status: { name: 'Ready for QA', statusCategory: { key: 'indeterminate' } },
+      created: '2025-01-01T00:00:00.000Z',
+      updated: '2025-01-06T08:00:00.000Z',
+      changelog: {
+        histories: [
+          {
+            id: 'h1',
+            created: '2025-01-06T08:00:00.000Z', // Day 5
+            items: [
+              {
+                field: 'status',
+                fieldtype: 'jira',
+                from: 'Working',
+                fromString: 'Working',
+                to: 'Ready for QA',
+                toString: 'Ready for QA',
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    const result = buildBurnDownData(startDate, endDate, [deliveredIssue], true);
+
+    expect(result[4].completed).toBe(0);
+    expect(result[4].remaining).toBe(1);
+    expect(result[5].completed).toBe(1);
+    expect(result[5].remaining).toBe(0);
+  });
+
   it('respects the active sprint todayDayIndex limit', () => {
     // Suppose today is Day 3
     const today = new Date('2025-01-04T12:00:00.000Z');
