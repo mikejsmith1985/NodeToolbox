@@ -10,7 +10,7 @@
 // dispatch/poll, extractJsonPayload/{kind,items[]} is the shared envelope (via hygieneAiAssist),
 // and featureReviewFixes are the writes (via hygieneAiApply). Only the review list here is new.
 
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { useAiAssistExchange } from '../../SnowHub/hooks/useAiAssistExchange.ts'
 import { ReportAiPanel } from '../../ReportsHub/ReportAiPanel.tsx'
@@ -20,8 +20,10 @@ import {
   hasAiFixableFlags,
   parseHygieneAiReply,
   type HygieneAiProposal,
+  type StaleIssueContext,
 } from './hygieneAiAssist.ts'
 import { applyHygieneAiProposal } from './hygieneAiApply.ts'
+import { fetchStaleIssueContexts } from './hygieneAiFetch.ts'
 import styles from '../HygieneView.module.css'
 
 /**
@@ -60,9 +62,27 @@ export function HygieneAiPanel({ findings, fieldConfig, onIssueFixed }: HygieneA
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
 
   const fixableFindings = useMemo(() => findings.filter(hasAiFixableFlags), [findings])
+
+  // The stale asks carry each issue's LAST COMMENT so the model can decline to nudge a ticket that
+  // already explains its delay. Fetched on demand, only for stale-flagged issues; failures degrade
+  // to "no comment context" inside the fetcher, so the prompt always builds.
+  const [staleContextsByKey, setStaleContextsByKey] = useState<Record<string, StaleIssueContext>>({})
+  useEffect(() => {
+    if (fixableFindings.length === 0) {
+      return
+    }
+    let isActive = true
+    void fetchStaleIssueContexts(fixableFindings).then((contexts) => {
+      if (isActive) setStaleContextsByKey(contexts)
+    })
+    return () => {
+      isActive = false
+    }
+  }, [fixableFindings])
+
   const promptText = useMemo(
-    () => (fixableFindings.length === 0 ? '' : buildHygieneAiPrompt(fixableFindings)),
-    [fixableFindings],
+    () => (fixableFindings.length === 0 ? '' : buildHygieneAiPrompt(fixableFindings, staleContextsByKey)),
+    [fixableFindings, staleContextsByKey],
   )
 
   // Both paths land here. Auto is a shortcut past the paste box, never a second pipeline.
