@@ -58,14 +58,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   thing on the page (the edit-mode table, whose columns each carry a minimum width) set the width of everything
   above it, and the table's own horizontal scrollbar never got the chance to do its job. The layout now lets those
   containers shrink, so the page fits the window and the table scrolls inside its own frame. *(GH #160)*
-- **PI Review — the row controls fell off the right edge, and Notes boxes opened too small to read (GH #160)**:
-  once the edit-mode table scrolled inside its frame, its widest section — the **Actions** column holding Move
-  up/down, the Stretch Goals and custom-line buttons, and Remove — sat at the far right, so reaching a row's
-  controls meant scrolling the whole table sideways every time. That column is now **pinned to the right edge**:
-  it stays in view as a solid rail no matter how far the table is scrolled, with the other columns sliding
-  underneath it. The **Implementation Notes** boxes also opened barely a line tall, forcing a manual drag on every
-  row; they now default to a comfortably readable height (still resizable), and their column is wider. Verified in
-  a real browser via a Playwright layout test (`test/e2e/pi-review-edit-layout.spec.js`). *(GH #160)*
+- **PI Review — row controls were unreachable, and Notes boxes opened too small to read (GH #160)**: once the
+  edit-mode table scrolled inside its frame, its **Actions** column (Move up/down, the Stretch Goals and
+  custom-line buttons, Remove) sat off the right edge, so reaching a row's controls meant scrolling sideways every
+  time. The fix is to make the table **fit the window** rather than paper over the overflow: the Jira-**synced**
+  columns (Dependency, Risks) are read-only while editing — they only show a value and a "synced from Jira" note,
+  never an input — so in edit mode they now take a compact width, freeing the horizontal room the editable columns
+  and Actions need. On a normal window the whole table fits with no sideways scroll and Actions is always visible;
+  on a genuinely narrow one it falls back to ordinary horizontal scroll where every column stays reachable.
+  Separately, the **Implementation Notes** boxes opened barely a line tall, forcing a manual drag on every row;
+  they now default to a comfortably readable height (still resizable) in a wider column. Verified in a real browser
+  via a Playwright layout test (`test/e2e/pi-review-edit-layout.spec.js`) that asserts the table fits and the
+  Actions column never overlaps Notes. *(GH #160)*
 - **Hygiene — the user and issue pickers briefly showed results for what you had already stopped typing**: the
   fix controls' search boxes kept whatever the last search returned, with no record of which search it answered,
   so typing on past "abc" left the "abc" matches on screen until the newer results arrived. Results are now tied

@@ -288,35 +288,18 @@
   min-width: clamp(200px, 24vw, 300px);
 }
 
-/* Pin the row controls to the right edge so Move / Remove / grouping actions stay reachable no
-   matter how far the wide edit-mode table (up to 11 columns) is scrolled horizontally. */
+/* The Jira-synced columns (Dependency, Risks) are READ-ONLY in edit mode — they show a value and a
+   "synced from Jira" note, never an input. So in edit mode they take a compact width, leaving the
+   horizontal room for the columns the user actually types in (Feature, Notes) and the row Actions,
+   which is what keeps the whole edit-mode table inside the window instead of overflowing. In view
+   mode they carry real dependency/risk text and keep the full .longCell width. */
+.syncedLongCell {
+  min-width: clamp(120px, 12vw, 150px);
+}
+
 .rowActionCell {
-  position: sticky;
-  right: 0;
-  z-index: 1;
   width: 1%;
   white-space: nowrap;
-  /* Fully opaque (not the translucent surface tokens) so columns scrolling underneath cannot
-     bleed through the pinned rail. */
-  background: var(--color-bg);
-  box-shadow: -10px 0 14px -10px rgba(15, 23, 42, 0.5);
-}
-
-/* Compound selector so the opaque fill beats `.dataTable th`'s translucent gradient (which is
-   more specific than a lone class) — the header cell must not let Dependency bleed through. */
-.dataTable th.rowActionHeader {
-  position: sticky;
-  right: 0;
-  z-index: 2;
-  background: var(--color-bg);
-  box-shadow: -10px 0 14px -10px rgba(15, 23, 42, 0.5);
-}
-
-/* Keep the pinned action rail opaque through the odd-row tint and row hover, otherwise the
-   cells scrolling underneath would bleed through the sticky column. */
-.dataTable tbody tr:nth-child(odd) td.rowActionCell,
-.dataTable tbody tr:hover td.rowActionCell {
-  background: var(--color-bg);
 }
 
 .rowActionGroup {

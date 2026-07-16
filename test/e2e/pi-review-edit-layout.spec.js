@@ -1,15 +1,16 @@
 // test/e2e/pi-review-edit-layout.spec.js — Browser-level layout regression for the PI Review editor.
 //
-// Proves two edit-mode layout fixes hold in a real browser (jsdom cannot measure layout):
-//   1. The Actions column stays pinned to the right edge (position: sticky) so Move / Remove /
-//      grouping controls remain reachable even when the wide table is scrolled fully right — the
-//      "far edge of the form is cut off" report from GH #160.
-//   2. The Implementation Notes textareas default to a comfortably readable height without a
-//      manual drag.
+// jsdom cannot measure layout, so these invariants are asserted in a real browser:
+//   1. The edit-mode table FITS a normal window — its read-only Jira-synced columns (Dependency,
+//      Risks) take a compact width so the editable columns and the Actions column stay inside the
+//      frame, rather than overflowing and pushing Actions off the right edge (the GH #160 report).
+//   2. The Actions column NEVER overlaps the Implementation Notes column. An earlier fix pinned
+//      Actions with position:sticky, which then covered the Notes cell the user was editing; this
+//      guards against that regression by asserting Notes always sits fully left of Actions.
+//   3. The Implementation Notes textareas default to a readable height.
 //
-// The PI Review tab is reached through the PO Tool (/po-tool), which mounts the editor directly in
-// authoring mode. All Confluence/Jira traffic is stubbed; team + roster state is seeded into
-// localStorage before the bundle evaluates.
+// The PI Review tab is reached through the PO Tool (/po-tool). All Confluence/Jira traffic is
+// stubbed; team + roster state is seeded into localStorage before the bundle evaluates.
 
 'use strict';
 
@@ -24,9 +25,13 @@ const TEAM_PROFILE_ID = 'team-e2e';
 const CONFLUENCE_PAGE_ID = '900001';
 const NETWORK_IDLE_TIMEOUT_MS = 10_000;
 
-// A deliberately narrow viewport so the ~9-column edit-mode table is guaranteed to overflow its
-// scroll container — reproducing the horizontal-scroll condition behind the cut-off report.
-const NARROW_VIEWPORT = { width: 900, height: 820 };
+// A typical modern content width. At this size the edit-mode table is meant to fit without a
+// horizontal scrollbar; that "fits" claim is asserted below rather than assumed.
+const CONTENT_VIEWPORT = { width: 1600, height: 860 };
+
+// Small allowances for sub-pixel rounding in getBoundingClientRect / scrollWidth.
+const FIT_TOLERANCE_PX = 8;
+const OVERLAP_TOLERANCE_PX = 2;
 
 // Minimum readable textarea height (border-box px). The CSS min-height is 132px content plus
 // padding/border; 120 is a safe lower bound that still fails the old 72px default.
@@ -35,6 +40,11 @@ const MIN_READABLE_TEXTAREA_HEIGHT_PX = 120;
 const SCREENSHOT_DIR =
   'C:\\Users\\mikej\\AppData\\Local\\Temp\\claude\\C--ProjectsWin-NodeToolbox\\fb0e7472-5632-4b02-9c65-013b65e2f88f\\scratchpad';
 
+// A long note so the Implementation Notes cell is genuinely used — the column that the removed
+// sticky overlay used to cover.
+const LONG_NOTE = 'Risk note availability could interrupt downstream enrollment and create rework '
+  + 'across teams if the vendor window slips again this PI.';
+
 /** A PI Review table with three populated rows and plain-text feature names (no Jira keys → no
  *  Jira traffic). Header carries all eight core columns so parsePiReviewTable binds it. */
 const PI_REVIEW_STORAGE_HTML = [
@@ -42,9 +52,9 @@ const PI_REVIEW_STORAGE_HTML = [
   '<th>Carry-Over</th><th>Priority</th><th>Feature</th><th>Point Estimate</th>',
   '<th>Dependency</th><th>Risks</th><th>Committed to PI?</th><th>Implementation Notes</th>',
   '</tr></thead><tbody>',
-  '<tr><td></td><td>High</td><td>Login flow</td><td>5</td><td></td><td></td><td>Yes</td><td>Notes one</td></tr>',
-  '<tr><td></td><td>Medium</td><td>Search revamp</td><td>8</td><td></td><td></td><td>Yes</td><td>Notes two</td></tr>',
-  '<tr><td></td><td>Low</td><td>Reporting</td><td>3</td><td></td><td></td><td>No</td><td>Notes three</td></tr>',
+  `<tr><td></td><td>High</td><td>Login flow</td><td>5</td><td></td><td></td><td>Yes</td><td>${LONG_NOTE}</td></tr>`,
+  `<tr><td></td><td>Medium</td><td>Search revamp</td><td>8</td><td></td><td></td><td>Yes</td><td>${LONG_NOTE}</td></tr>`,
+  `<tr><td></td><td>Low</td><td>Reporting</td><td>3</td><td></td><td></td><td>No</td><td>${LONG_NOTE}</td></tr>`,
   '</tbody></table>',
 ].join('');
 
@@ -126,7 +136,7 @@ async function stubIntegrationTraffic(page) {
 }
 
 /**
- * Reads an element's on-screen rectangle so the test can compare edges after scrolling.
+ * Reads an element's on-screen rectangle so the test can compare column edges.
  *
  * @param {import('@playwright/test').Locator} locator
  * @returns {Promise<{ left: number, right: number, width: number, height: number }>}
@@ -140,8 +150,8 @@ async function readClientRect(locator) {
 
 // ── Test ──────────────────────────────────────────────────────────────────────
 
-test('PI Review editor: Actions column stays pinned right and Notes textareas are readable', async ({ page }) => {
-  await page.setViewportSize(NARROW_VIEWPORT);
+test('PI Review editor: table fits, Actions never covers Notes, Notes are readable', async ({ page }) => {
+  await page.setViewportSize(CONTENT_VIEWPORT);
   await seedPoToolState(page);
   await stubIntegrationTraffic(page);
 
@@ -161,48 +171,34 @@ test('PI Review editor: Actions column stays pinned right and Notes textareas ar
   const tableShell = page.locator('section[aria-label$="PI Review"] [class*="tableShell"]').first();
   await expect(tableShell).toBeVisible();
 
-  // 1a. The table must actually overflow its container — otherwise there is no cut-off to guard.
+  // 1. The table fits this normal window — Actions is reachable without a horizontal scroll.
   const shellScroll = await tableShell.evaluate((element) => ({
     scrollWidth: element.scrollWidth,
     clientWidth: element.clientWidth,
   }));
-  expect(shellScroll.scrollWidth).toBeGreaterThan(shellScroll.clientWidth);
+  expect(shellScroll.scrollWidth).toBeLessThanOrEqual(shellScroll.clientWidth + FIT_TOLERANCE_PX);
 
+  // 2. The Actions column never overlaps the Implementation Notes column, at either scroll extreme.
+  const firstNotesCell = page.getByLabel(`Implementation Notes for ${SELECTED_PI_NAME} row 1`);
   const firstRowActionCell = page.locator('section[aria-label$="PI Review"] [class*="rowActionCell"]').first();
+  await expect(firstNotesCell).toBeVisible();
   await expect(firstRowActionCell).toBeVisible();
 
-  // 1b. Scrolled hard LEFT (start), the pinned Actions cell must sit fully inside the viewport —
-  //     without sticky, it would be off the right edge here.
-  await tableShell.evaluate((element) => {
-    element.scrollLeft = 0;
-  });
-  const shellRectAtStart = await readClientRect(tableShell);
-  const actionRectAtStart = await readClientRect(firstRowActionCell);
-  expect(actionRectAtStart.right).toBeLessThanOrEqual(shellRectAtStart.right + 1);
-  expect(actionRectAtStart.left).toBeGreaterThanOrEqual(shellRectAtStart.left - 1);
+  for (const scrollLeft of ['start', 'end']) {
+    await tableShell.evaluate((element, edge) => {
+      element.scrollLeft = edge === 'end' ? element.scrollWidth : 0;
+    }, scrollLeft);
+    const notesRect = await readClientRect(firstNotesCell);
+    const actionRect = await readClientRect(firstRowActionCell);
+    // Notes must end at or before Actions begins — never hidden behind it.
+    expect(notesRect.right, `Notes must not be covered by Actions at scroll ${scrollLeft}`)
+      .toBeLessThanOrEqual(actionRect.left + OVERLAP_TOLERANCE_PX);
+  }
 
-  // 1c. Scrolled hard RIGHT (end), it must still be fully inside — the cut-off condition.
-  await tableShell.evaluate((element) => {
-    element.scrollLeft = element.scrollWidth;
-  });
-  const shellRectAtEnd = await readClientRect(tableShell);
-  const actionRectAtEnd = await readClientRect(firstRowActionCell);
-  expect(actionRectAtEnd.right).toBeLessThanOrEqual(shellRectAtEnd.right + 1);
-  expect(actionRectAtEnd.left).toBeGreaterThanOrEqual(shellRectAtEnd.left - 1);
-
-  // Visual evidence, scrolled hard right — what the user sees at the "cut-off" edge, with the
-  // pinned Actions column overlaid on the right.
-  await tableShell.screenshot({ path: `${SCREENSHOT_DIR}\\pi-review-scrolled-right.png` });
-
-  // 2. The Notes textarea defaults to a readable height (the old default was 72px).
-  const firstNotesTextarea = page.getByLabel(`Implementation Notes for ${SELECTED_PI_NAME} row 1`);
-  await expect(firstNotesTextarea).toBeVisible();
-  const notesRect = await readClientRect(firstNotesTextarea);
+  // 3. The Notes textarea defaults to a readable height (the old default was 72px).
+  const notesRect = await readClientRect(firstNotesCell);
   expect(notesRect.height).toBeGreaterThanOrEqual(MIN_READABLE_TEXTAREA_HEIGHT_PX);
 
-  // Visual evidence, scrolled hard left — Notes textarea height and the same pinned Actions rail.
-  await tableShell.evaluate((element) => {
-    element.scrollLeft = 0;
-  });
-  await tableShell.screenshot({ path: `${SCREENSHOT_DIR}\\pi-review-scrolled-left.png` });
+  // Visual evidence for manual review.
+  await tableShell.screenshot({ path: `${SCREENSHOT_DIR}\\pi-review-edit-layout.png` });
 });
