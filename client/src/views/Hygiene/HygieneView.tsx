@@ -35,6 +35,15 @@ const EMPTY_SCOPE_MESSAGE =
   'The current scope matched no Jira issues — check the project key, PI, and extra JQL. '
   + 'No score is shown for an empty scope.';
 const EMPTY_SCOPE_SCORE_LABEL = '—';
+// The checks that have NO default field and silently skip themselves when the instance has no
+// matching field. Their tiles must say "not configured", because a bare 0 from a check that never
+// ran reads exactly like a clean result — the same lie as the empty-scope perfect score (GH #167).
+const FIELD_DEPENDENT_CHECKS: ReadonlyArray<{ checkId: string; fieldConfigKey: keyof HygieneFieldConfig }> = [
+  { checkId: 'missing-product-owner', fieldConfigKey: 'productOwnerFieldIds' },
+  { checkId: 'missing-initiative-type', fieldConfigKey: 'initiativeTypeFieldIds' },
+  { checkId: 'missing-application', fieldConfigKey: 'applicationFieldIds' },
+];
+const NOT_CONFIGURED_TILE_LABEL = 'not checked — no matching Jira field';
 const NO_VALUE_LABEL = '—';
 const JIRA_BROWSE_PREFIX = 'https://jira.healthspring-jira-prod.aws.zilverton.com/browse/';
 const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -93,10 +102,14 @@ export default function HygieneView({
   const isScopeEmpty = !hygieneState.isLoading
     && hygieneState.loadError === null
     && hygieneState.scannedIssueCount === 0;
+  // A score exists only when a run actually scanned issues. Before the first run, after a failed
+  // run (scannedIssueCount is null), or on an empty scope, the tile shows a dash — a failed search
+  // rendering a green 100/100 next to its own error message was half of GH #167's confusion.
+  const hasScoreData = (hygieneState.scannedIssueCount ?? 0) > 0;
   const shouldShowNoFlags = !hygieneState.isLoading
     && hasRunnableScope
     && !hasVisibleFindings
-    && !isScopeEmpty;
+    && hasScoreData;
   const [expandedIssueKey, setExpandedIssueKey] = useState<string | null>(null);
   const [copiedCheckId, setCopiedCheckId] = useState<string | null>(null);
   // Fall back to defaults so the inline fix controls still resolve system fields before the first
@@ -189,8 +202,9 @@ export default function HygieneView({
 
       <div className={styles.summaryGrid} aria-label="Hygiene summary tiles">
         <div className={styles.scoreTile} aria-label="Hygiene score tile">
-          {/* A scope that matched nothing has no health to score — a dash, never a perfect 100. */}
-          <strong>{isScopeEmpty ? EMPTY_SCOPE_SCORE_LABEL : `${hygieneScore}/100`}</strong>
+          {/* No scan data (never ran, failed, or matched nothing) has no health to score — a dash,
+              never a perfect 100. */}
+          <strong>{hasScoreData ? `${hygieneScore}/100` : EMPTY_SCOPE_SCORE_LABEL}</strong>
           <span className={styles.scoreLabel}>
             Hygiene Score
             <span className={styles.scoreInfoWrapper}>
@@ -267,6 +281,20 @@ function renderSummaryTile(
   const checkLabel = hygieneState.checkLabelsById[checkId] ?? checkId;
   const hasCopyableIssues = issueCount > 0;
   const justCopied = copiedCheckId === checkId;
+  // A check whose instance field does not exist never ran — its tile must not show a clean 0.
+  const fieldDependency = FIELD_DEPENDENT_CHECKS.find((dependency) => dependency.checkId === checkId);
+  const isCheckUnconfigured = fieldDependency !== undefined
+    && hygieneState.fieldConfig[fieldDependency.fieldConfigKey].length === 0;
+
+  if (isCheckUnconfigured) {
+    return (
+      <div key={checkId} className={styles.summaryTile} aria-label={`${checkLabel} not configured`}>
+        <strong>{EMPTY_SCOPE_SCORE_LABEL}</strong>
+        <span>{checkLabel}</span>
+        <span className={styles.tileHint}>{NOT_CONFIGURED_TILE_LABEL}</span>
+      </div>
+    );
+  }
 
   function handleTileKeyDown(keyEvent: React.KeyboardEvent) {
     if (keyEvent.key === 'Enter' || keyEvent.key === ' ') {

@@ -90,6 +90,21 @@ describe('loadHygieneFieldConfig', () => {
     expect(fieldConfig.productOwnerFieldIds).toContain('customfield_20002');
   });
 
+  it('excludes non-searchable fields from the feature-link list, which builds JQL (GH #167)', async () => {
+    // Jira lists registry-only fields in /rest/api/2/field but rejects them in a JQL clause with a
+    // 400 — one such match (cf[10014] "Epic Link") used to kill the whole hygiene run. Lists that
+    // only READ issue fields keep every match; the JQL-building list must not.
+    mockJiraGet.mockResolvedValue([
+      { id: 'customfield_10108', name: 'Feature Link', searchable: true },
+      { id: 'customfield_10014', name: 'Epic Link', searchable: false },
+    ]);
+
+    const fieldConfig = await loadHygieneFieldConfig();
+
+    expect(fieldConfig.featureLinkFieldIds).toContain('customfield_10108');
+    expect(fieldConfig.featureLinkFieldIds).not.toContain('customfield_10014');
+  });
+
   it('leaves a concept the instance has no field for unresolved, so its check skips', async () => {
     // The engine skips a check whose field list is empty — that is how an unused field avoids
     // false-flagging every issue (FR-028). This test is the guard on that behaviour.

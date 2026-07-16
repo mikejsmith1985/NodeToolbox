@@ -291,11 +291,21 @@ export function useHygieneState(options: useHygieneStateOptions = {}): HygieneSt
         ),
       );
       const loadedIssues = jiraSearchResponse.issues ?? [];
-      const featureKeysWithPointedStories = await loadFeatureKeysWithPointedStories(loadedIssues, hygieneFieldConfig, customStoryPointsFieldId);
+      // The child-story rollup is a SECONDARY query over instance-matched fields; a surprise on it
+      // (an unexpected 400, a permission gap) must not take down the whole run. On failure the
+      // missing-pointed-child-story check is skipped for this run — an empty rollup set would
+      // instead flag every Feature as unpointed, which is worse than saying nothing (GH #167).
+      let featureKeysWithPointedStories = new Set<string>();
+      let runCheckIds = enabledBuiltInCheckIds;
+      try {
+        featureKeysWithPointedStories = await loadFeatureKeysWithPointedStories(loadedIssues, hygieneFieldConfig, customStoryPointsFieldId);
+      } catch {
+        runCheckIds = new Set([...enabledBuiltInCheckIds].filter((checkId) => checkId !== 'missing-child-story-points'));
+      }
       setScannedIssueCount(loadedIssues.length);
       setFindings(mapIssuesToFindings(loadedIssues, {
         customRules: enabledCustomRules,
-        enabledBuiltInCheckIds,
+        enabledBuiltInCheckIds: runCheckIds,
         fieldConfig: hygieneFieldConfig,
         featureKeysWithPointedStories,
         customStoryPointsFieldId,
