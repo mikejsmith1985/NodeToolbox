@@ -31,7 +31,7 @@ const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
  * never get a stale ask at all. Mirrors the blocked detection the Today tab uses.
  */
 const BLOCKED_STATUS_FRAGMENTS = ['blocked', 'impeded', 'on hold'] as const
-/** How much of the last comment the prompt carries — enough to judge, not the whole thread. */
+/** Per-comment excerpt cap for the stale conversation — enough to judge, not the whole essay. */
 const LAST_COMMENT_EXCERPT_LENGTH = 300
 
 /**
@@ -74,11 +74,20 @@ export interface HygieneAiRunResult {
   unparsedCount: number
 }
 
-/** The last comment on a stale issue, fetched on demand so the model can judge a nudge's worth. */
+/** One comment in a stale issue's recent conversation. */
+export interface StaleIssueComment {
+  author: string | null
+  date: string | null
+  body: string
+}
+
+/**
+ * A stale issue's recent conversation (oldest first), fetched on demand so the model can judge a
+ * nudge's worth. Several comments, not just the last: a bare "Thank you" on top of "pushed to dev,
+ * ready for internal testing" explains the wait perfectly well — one comment alone does not.
+ */
 export interface StaleIssueContext {
-  lastCommentAuthor: string | null
-  lastCommentDate: string | null
-  lastCommentBody: string | null
+  recentComments: StaleIssueComment[]
 }
 
 // ── Prompt ──
@@ -109,13 +118,20 @@ export function hasAiFixableFlags(finding: HygieneFinding): boolean {
   return readAiFixableFlags(finding).length > 0
 }
 
-/** The stale ask's context lines: current status plus the last comment, so a nudge is a judgement. */
+/** The stale ask's context lines: current status plus the recent conversation, oldest first. */
 function buildStaleContextLines(finding: HygieneFinding, staleContext: StaleIssueContext | undefined): string[] {
   const statusName = finding.issue.fields.status?.name ?? '(unknown)'
-  const lastCommentLine = staleContext?.lastCommentBody
-    ? `    last comment (${staleContext.lastCommentAuthor ?? 'unknown'}, ${staleContext.lastCommentDate ?? 'undated'}): ${staleContext.lastCommentBody.slice(0, LAST_COMMENT_EXCERPT_LENGTH)}`
-    : '    last comment: (none)'
-  return [`    status: ${statusName}`, lastCommentLine]
+  const recentComments = staleContext?.recentComments ?? []
+  if (recentComments.length === 0) {
+    return [`    status: ${statusName}`, '    recent comments: (none)']
+  }
+  return [
+    `    status: ${statusName}`,
+    '    recent comments (oldest first):',
+    ...recentComments.map((comment) =>
+      `      - (${comment.author ?? 'unknown'}, ${comment.date ?? 'undated'}) ${comment.body.slice(0, LAST_COMMENT_EXCERPT_LENGTH)}`,
+    ),
+  ]
 }
 
 /** One issue's block: identity and signals on the header, the fixable flags as numbered asks. */
@@ -161,11 +177,13 @@ Rules:
   - Keep field values under ${MAX_AI_FIX_VALUE_LENGTH} characters; a stale-nudge comment under ${MAX_AI_COMMENT_LENGTH}.
   - Omit a fix entirely when the context is not enough to propose responsibly — a human has to
     catch every bad guess, so say nothing rather than guess.
-  - For "stale" fixes: read the issue's status and last comment first. If they already explain why
-    the ticket is waiting (blocked by other work, waiting on a dependency or another team,
-    deprioritized, scheduled for later), OMIT the stale fix for that issue — asking for an update
-    the ticket has already given is noise, not hygiene. Only propose a nudge when the ticket is
-    genuinely silent about why it has stalled.
+  - For "stale" fixes: read the issue's status and its recent comments — the WHOLE conversation,
+    not just the newest line (a bare "thanks" often sits on top of the comment that explains
+    everything). If the thread already explains why the ticket is waiting (blocked by other work,
+    waiting on a dependency or another team, queued or ready for testing, deprioritized, scheduled
+    for later), OMIT the stale fix for that issue — asking for an update the ticket has already
+    given is noise, not hygiene. Only propose a nudge when the thread is genuinely silent about
+    why it has stalled.
   - Give a one-line "rationale" per fix so the reviewer understands your reasoning.
 
 Issues (${fixableFindings.length}):

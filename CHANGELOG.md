@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Hygiene AI — stale asks now carry the recent CONVERSATION, not just the newest comment**: one comment is not
+  enough to judge a nudge — a bare "Thank you" often sits on top of the "pushed to dev, ready for internal
+  testing" that actually explains the wait. The prompt now includes each stale issue's last five comments (oldest
+  first, author + date + excerpt), and the standing rule tells the model to read the whole thread — including
+  queued/ready-for-testing bottlenecks — before proposing an update request.
+- **Hygiene AI / Fix buttons — story points write to a field the issue can actually accept**: accepting a
+  story-points fix could fail with Jira's "Field 'customfield_10016' cannot be set. It is not on the appropriate
+  screen" — the write blind-fired the configured field and then the legacy fallback, neither of which has to exist
+  on a given project's screen. The write now consults the issue's edit metadata first: it targets the first
+  standard candidate the screen actually carries, falls back to any editable field *named* like story points, and
+  otherwise fails with a readable message instead of a screen 400. This fixes the same failure in Feature Review
+  and the inline Hygiene Fix buttons, which share the write path.
 - **Hygiene AI — no more "any update?" nudges on tickets that already explain themselves**: the stale-nudge
   proposals ignored context, so the AI would draft an update request for an issue whose last comment already said
   "blocked till ESI Recon work is complete". Two layers now prevent that. Deterministically, an issue in a
