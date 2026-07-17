@@ -6,16 +6,20 @@
 
 import { describe, expect, it } from 'vitest';
 
-import type { JiraIssue } from '../../Hygiene/checks/hygieneChecks.ts';
+import type { HygieneFinding, JiraIssue } from '../../Hygiene/checks/hygieneChecks.ts';
 import {
   CATEGORY_CATALOG,
-  bucketTeamHygiene,
+  COMMITMENT_GAP_CHECK_IDS,
+  countFindingsMatchingChecks,
   isBlockedIssue,
   isDoneForToday,
   selectBlockers,
   selectDueOverdue,
+  selectFindingKeysMatchingChecks,
   selectMyStale,
   selectUntriaged,
+  TEAM_STALE_CHECK_IDS,
+  TEAM_UNASSIGNED_CHECK_IDS,
   type CategoryId,
 } from './todayCategories.ts';
 
@@ -90,37 +94,38 @@ describe('selectMyStale', () => {
   });
 });
 
-// ── bucketTeamHygiene ──
+// ── Team hygiene selectors over shared-scan findings ──
 
-describe('bucketTeamHygiene', () => {
-  it('routes an unassigned non-done issue into the unassigned bucket', () => {
-    const unassignedIssue = createIssue('TEAM-U', {
-      status: { name: 'To Do', statusCategory: { key: 'new' } },
-      issuetype: { name: 'Bug' },
-      assignee: null,
-    });
-    expect(bucketTeamHygiene([unassignedIssue]).unassigned.map((issue) => issue.key)).toEqual(['TEAM-U']);
+/** Builds a scan finding fixture: an issue plus the flags the shared scan raised for it. */
+function createFinding(key: string, checkIds: string[]): HygieneFinding {
+  return {
+    issue: createIssue(key),
+    flags: checkIds.map((checkId) => ({ checkId, label: checkId, severity: 'warn' })),
+    programIncrement: null,
+  } as unknown as HygieneFinding;
+}
+
+describe('countFindingsMatchingChecks', () => {
+  it('counts ISSUES, not flags — an issue raising both commitment-gap checks counts once', () => {
+    const findings = [
+      createFinding('TEAM-G', ['missing-sp', 'no-ac']),
+      createFinding('TEAM-S', ['stale']),
+    ];
+    expect(countFindingsMatchingChecks(findings, COMMITMENT_GAP_CHECK_IDS)).toBe(1);
+    expect(countFindingsMatchingChecks(findings, TEAM_STALE_CHECK_IDS)).toBe(1);
+    expect(countFindingsMatchingChecks(findings, TEAM_UNASSIGNED_CHECK_IDS)).toBe(0);
   });
 
-  it('routes a story missing story points or AC into the commitment-gaps bucket', () => {
-    const gapStory = createIssue('TEAM-G', {
-      status: { name: 'To Do', statusCategory: { key: 'new' } },
-      issuetype: { name: 'Story' },
-      assignee: { displayName: 'Pat Owner' },
-      // No story points fields and no acceptance criteria → missing-sp + no-ac.
-    });
-    expect(bucketTeamHygiene([gapStory]).commitmentGaps.map((issue) => issue.key)).toEqual(['TEAM-G']);
+  it('matches a finding when ANY of its flags is in the requested check set', () => {
+    const findings = [createFinding('TEAM-A', ['no-ac']), createFinding('TEAM-B', ['missing-sp'])];
+    expect(countFindingsMatchingChecks(findings, COMMITMENT_GAP_CHECK_IDS)).toBe(2);
   });
+});
 
-  it('routes a stale in-progress issue into the stale bucket', () => {
-    const staleIssue = createIssue('TEAM-S', {
-      status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } },
-      issuetype: { name: 'Task' },
-      assignee: { displayName: 'Pat Owner' },
-      updated: LONG_PAST_ISO,
-      customfield_10028: 5, // pointed, so it is not also a commitment gap
-    });
-    expect(bucketTeamHygiene([staleIssue]).stale.map((issue) => issue.key)).toEqual(['TEAM-S']);
+describe('selectFindingKeysMatchingChecks', () => {
+  it('returns the issue keys behind a count, for deduped my+team unions', () => {
+    const findings = [createFinding('TEAM-D', ['due-date-overdue']), createFinding('TEAM-E', ['stale'])];
+    expect(selectFindingKeysMatchingChecks(findings, ['due-date-overdue', 'target-end-overdue'])).toEqual(['TEAM-D']);
   });
 });
 
