@@ -119,6 +119,29 @@ describe('TodayDashboard', () => {
     );
   });
 
+  it('carries the check filter to the Sprint Dashboard hygiene tab, so team cards do not all land on one identical view (GH #177)', () => {
+    // Team stale / unassigned / commitment gaps all open the team Hygiene tab; without the filter
+    // param they were indistinguishable on arrival and none matched the number on the card.
+    mockUseTodayDashboard.mockReturnValue(buildDashboard({
+      categories: buildCategories({
+        'commitment-gaps': {
+          id: 'commitment-gaps',
+          status: 'ready',
+          count: 3,
+          destination: { kind: 'sprintTab', tab: 'hygiene', search: { hygieneFilter: 'missing-sp,no-ac' } },
+        },
+      }),
+    }));
+
+    renderDashboardWithLocationProbe();
+    const commitmentGapsCard = document.querySelector('[data-category="commitment-gaps"]');
+    fireEvent.click(commitmentGapsCard!.querySelector('button')!);
+
+    expect(screen.getByTestId('location-probe')).toHaveTextContent(
+      '/sprint-dashboard?hygieneFilter=missing-sp%2Cno-ac',
+    );
+  });
+
   it('renders a card per catalog category once data is ready', () => {
     renderDashboard();
 

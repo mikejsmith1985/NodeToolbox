@@ -79,12 +79,15 @@ const DESTINATIONS: Record<CategoryId, TodayDestination> = {
   // the same cross-project personal scope with the stale filter applied — landing on a single
   // persisted project key showed a different (often zero) answer than the card (GH #167).
   'my-stale': { kind: 'myIssuesTab', tab: 'hygiene', search: { hygieneScope: 'mine', hygieneFilter: 'stale' } },
-  'team-stale': { kind: 'sprintTab', tab: 'hygiene' },
+  'team-stale': { kind: 'sprintTab', tab: 'hygiene', search: { hygieneFilter: 'stale' } },
   // Unassigned and commitment-gap counts come from the TEAM's sprint issues, so they must land on
   // the team dashboard's Hygiene tab. The personal Hygiene tab filters to assignee = currentUser(),
   // where an unassigned issue can never appear — the old link was a guaranteed zero (GH #167).
-  unassigned: { kind: 'sprintTab', tab: 'hygiene' },
-  'commitment-gaps': { kind: 'sprintTab', tab: 'hygiene' },
+  // Each team card carries its own check filter; without it, three different cards landed on one
+  // identical unfiltered view whose number matched none of them (GH #177). Commitment gaps count
+  // two checks, so its filter carries both ids.
+  unassigned: { kind: 'sprintTab', tab: 'hygiene', search: { hygieneFilter: 'no-assignee' } },
+  'commitment-gaps': { kind: 'sprintTab', tab: 'hygiene', search: { hygieneFilter: 'missing-sp,no-ac' } },
   // Due/overdue is a my+team union; the personal cross-project scope shows at least the "my" half
   // honestly rather than whatever project key was last persisted.
   'due-overdue': { kind: 'myIssuesTab', tab: 'hygiene', search: { hygieneScope: 'mine' } },
@@ -323,7 +326,14 @@ export function useTodayDashboard(): TodayDashboardData {
     const teamIssuesForMixed = isTeamConfigured ? teamHygiene : [];
     const teamStatusForMixed: CategoryStatus = isTeamConfigured ? sprintStatus : 'ready';
     const teamErrorForMixed = isTeamConfigured ? sprintState.loadError : null;
-    const teamBuckets = bucketTeamHygiene(teamHygiene, { staleDaysThreshold });
+    // The evaluation context must carry the team's configured story-points field: without it the
+    // missing-sp check falls back to the built-in fields, which flags every Story pointed in a
+    // custom field as a phantom "commitment gap" (58 gaps beside a Hygiene tab showing 1 — GH #177).
+    const hygieneEvaluationContext = {
+      staleDaysThreshold,
+      customStoryPointsFieldId: dashboardConfig.customStoryPointsFieldId,
+    };
+    const teamBuckets = bucketTeamHygiene(teamHygiene, hygieneEvaluationContext);
 
     return {
       mentions: {
@@ -359,7 +369,7 @@ export function useTodayDashboard(): TodayDashboardData {
       ),
       'due-overdue': buildMixedCategory(
         'due-overdue',
-        selectDueOverdue(myHygiene, teamIssuesForMixed, { staleDaysThreshold }).length,
+        selectDueOverdue(myHygiene, teamIssuesForMixed, hygieneEvaluationContext).length,
         myIssuesStatus,
         teamStatusForMixed,
         myIssuesError,
@@ -391,6 +401,7 @@ export function useTodayDashboard(): TodayDashboardData {
     untriagedError,
     isUntriagedConfigured,
     staleDaysThreshold,
+    dashboardConfig.customStoryPointsFieldId,
   ]);
 
   return {
