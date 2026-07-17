@@ -18,6 +18,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   legacy `customfield_10016` — its second 400 in the same screenshot), Story Pointing, and Sprint Planning. The
   detail panel also now DISPLAYS the points from whichever field the project actually uses, unwrapping dropdown
   option objects instead of showing a blank.
+- **Release Radar shows the full assignee name**: expanded release issues rendered only the first
+  space-separated word of the assignee — on instances whose display names are "Lastname, Firstname (CTR)" that
+  cut people down to "Lastname," with the rest silently lost. The full name now renders (the column never
+  clips), and the issue summary carries a hover tooltip with its complete text for the cases where it
+  ellipsizes.
 - **Today's team cards now count THE SAME scan the team Hygiene tab runs — agreement by construction (GH
   #177)**: after the previous fix the commitment-gaps card still read 6 beside a tab showing 1, because the card
   was a second, parallel hygiene computation: it evaluated the sprint issue list (which includes Done issues —
