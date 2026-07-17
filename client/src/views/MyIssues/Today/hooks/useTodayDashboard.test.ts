@@ -2,20 +2,31 @@
 //
 // Every data source is mocked so we can prove each card resolves independently, a single
 // failing source does not blank its siblings, team cards report "not-configured" without a
-// board, and the counts come straight from the shared Today selectors.
+// project, and the team hygiene counts come from the SHARED hygiene scan — the same pipeline
+// the team Hygiene tab renders — never from a second evaluation over the sprint issue list.
 
 import { renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { mockJiraGet, mockUseMentionsState, mockUseSprintData, mockUseConnectionStore, mockUseSettingsStore, mockLoadDashboardConfig } =
-  vi.hoisted(() => ({
-    mockJiraGet: vi.fn(),
-    mockUseMentionsState: vi.fn(),
-    mockUseSprintData: vi.fn(),
-    mockUseConnectionStore: vi.fn(),
-    mockUseSettingsStore: vi.fn(),
-    mockLoadDashboardConfig: vi.fn(),
-  }));
+import type { HygieneFinding } from '../../../Hygiene/checks/hygieneChecks.ts';
+
+const {
+  mockJiraGet,
+  mockUseMentionsState,
+  mockUseSprintData,
+  mockUseConnectionStore,
+  mockUseSettingsStore,
+  mockLoadDashboardConfig,
+  mockRunHygieneScan,
+} = vi.hoisted(() => ({
+  mockJiraGet: vi.fn(),
+  mockUseMentionsState: vi.fn(),
+  mockUseSprintData: vi.fn(),
+  mockUseConnectionStore: vi.fn(),
+  mockUseSettingsStore: vi.fn(),
+  mockLoadDashboardConfig: vi.fn(),
+  mockRunHygieneScan: vi.fn(),
+}));
 
 vi.mock('../../../../services/jiraApi.ts', () => ({ jiraGet: mockJiraGet }));
 vi.mock('../../hooks/useMentionsState.ts', () => ({ useMentionsState: mockUseMentionsState }));
@@ -23,6 +34,7 @@ vi.mock('../../../SprintDashboard/hooks/useSprintData.ts', () => ({ useSprintDat
 vi.mock('../../../SprintDashboard/hooks/useDashboardConfig.ts', () => ({
   loadDashboardConfigFromStorage: mockLoadDashboardConfig,
 }));
+vi.mock('../../../Hygiene/hooks/hygieneScan.ts', () => ({ runHygieneScan: mockRunHygieneScan }));
 vi.mock('../../../../store/connectionStore.ts', () => ({ useConnectionStore: mockUseConnectionStore }));
 vi.mock('../../../../store/settingsStore.ts', () => ({ useSettingsStore: mockUseSettingsStore }));
 
@@ -38,11 +50,33 @@ function buildIssue(key: string, fields: Record<string, unknown>) {
   return { id: key, key, fields: { summary: `Summary ${key}`, ...fields } };
 }
 
+/** Builds a shared-scan finding: an issue plus the check flags the scan raised for it. */
+function buildFinding(key: string, checkIds: string[]): HygieneFinding {
+  return {
+    issue: buildIssue(key, { status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } } }),
+    flags: checkIds.map((checkId) => ({ checkId, label: checkId, severity: 'warn' })),
+    programIncrement: null,
+  } as unknown as HygieneFinding;
+}
+
+function buildScanOutcome(findings: HygieneFinding[]) {
+  return {
+    findings,
+    scannedIssueCount: findings.length,
+    fieldConfig: {},
+    enabledCheckDefinitions: [],
+  };
+}
+
 function buildSprintData(overrides: Record<string, unknown> = {}) {
   return {
     state: {
       boardId: 1,
       projectKey: 'PROJ',
+      scopeMode: 'sprint',
+      selectedSprintId: null,
+      selectedFixVersionName: '',
+      selectedPiValue: '',
       sprintIssues: [] as unknown[],
       isLoadingSprint: false,
       loadError: null as string | null,
@@ -65,7 +99,9 @@ function buildMentions(overrides: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  window.localStorage.clear();
   mockLoadDashboardConfig.mockReturnValue({ staleDaysThreshold: 5, customStoryPointsFieldId: '' });
+  mockRunHygieneScan.mockResolvedValue(buildScanOutcome([]));
   mockUseConnectionStore.mockImplementation((selector: (state: { isJiraReady: boolean }) => unknown) =>
     selector({ isJiraReady: true }),
   );
@@ -88,10 +124,10 @@ describe('useTodayDashboard', () => {
     const { result } = renderHook(() => useTodayDashboard());
 
     await waitFor(() => expect(result.current.categories['my-stale'].status).toBe('ready'));
+    await waitFor(() => expect(result.current.categories['team-stale'].status).toBe('ready'));
 
     expect(result.current.categories.mentions.status).toBe('ready');
     expect(result.current.categories.blockers.status).toBe('ready');
-    expect(result.current.categories['team-stale'].status).toBe('ready');
     expect(result.current.categories.untriaged.status).toBe('ready');
   });
 
@@ -106,14 +142,28 @@ describe('useTodayDashboard', () => {
     const { result } = renderHook(() => useTodayDashboard());
 
     await waitFor(() => expect(result.current.categories['my-stale'].status).toBe('error'));
+    await waitFor(() => expect(result.current.categories['team-stale'].status).toBe('ready'));
 
     expect(result.current.categories['my-stale'].errorMessage).toBe('my-issues boom');
     expect(result.current.categories.mentions.status).toBe('ready');
     expect(result.current.categories.untriaged.status).toBe('ready');
-    expect(result.current.categories['team-stale'].status).toBe('ready');
   });
 
-  it('marks team-scope cards not-configured when no board or project is selected', async () => {
+  it('sets only the team hygiene cards to error when the shared scan fails, leaving sprint cards ready', async () => {
+    mockRunHygieneScan.mockRejectedValue(new Error('scan boom'));
+
+    const { result } = renderHook(() => useTodayDashboard());
+
+    await waitFor(() => expect(result.current.categories['team-stale'].status).toBe('error'));
+
+    expect(result.current.categories['team-stale'].errorMessage).toBe('scan boom');
+    expect(result.current.categories.unassigned.status).toBe('error');
+    expect(result.current.categories['commitment-gaps'].status).toBe('error');
+    // Blockers reads the sprint issue list (its drill-through is the Blockers tab), not the scan.
+    await waitFor(() => expect(result.current.categories.blockers.status).toBe('ready'));
+  });
+
+  it('marks team-scope cards not-configured when no project key is available for the scan', async () => {
     mockUseSprintData.mockReturnValue(buildSprintData({ boardId: null, projectKey: '' }));
 
     const { result } = renderHook(() => useTodayDashboard());
@@ -123,22 +173,18 @@ describe('useTodayDashboard', () => {
     expect(result.current.categories['team-stale'].status).toBe('not-configured');
     expect(result.current.categories.unassigned.status).toBe('not-configured');
     expect(result.current.categories['commitment-gaps'].status).toBe('not-configured');
+    expect(mockRunHygieneScan).not.toHaveBeenCalled();
   });
 
-  it('computes counts from the shared selectors', async () => {
+  it('computes personal counts from the shared selectors and team counts from the scan findings', async () => {
     mockUseMentionsState.mockReturnValue(
       buildMentions({ visibleMentions: [{ mentionKey: 'TBX-1#1' }, { mentionKey: 'TBX-2#1' }] }),
     );
-    mockUseSprintData.mockReturnValue(
-      buildSprintData({
-        sprintIssues: [
-          buildIssue('TEAM-1', {
-            status: { name: 'To Do', statusCategory: { key: 'new' } },
-            assignee: null,
-            updated: recentIso(),
-          }),
-        ],
-      }),
+    mockRunHygieneScan.mockResolvedValue(
+      buildScanOutcome([
+        buildFinding('TEAM-1', ['no-assignee']),
+        buildFinding('TEAM-2', ['stale']),
+      ]),
     );
     mockJiraGet.mockImplementation((path: string) => {
       if (path.includes('currentUser')) {
@@ -161,45 +207,44 @@ describe('useTodayDashboard', () => {
     const { result } = renderHook(() => useTodayDashboard());
 
     await waitFor(() => expect(result.current.categories['my-stale'].status).toBe('ready'));
+    await waitFor(() => expect(result.current.categories.unassigned.status).toBe('ready'));
 
     expect(result.current.categories.mentions.count).toBe(2);
     expect(result.current.categories.blockers.count).toBe(1);
     expect(result.current.categories['my-stale'].count).toBe(1);
     expect(result.current.categories.unassigned.count).toBe(1);
+    expect(result.current.categories['team-stale'].count).toBe(1);
   });
 
-  it('evaluates commitment gaps with the team-configured story-points field, matching the Hygiene tab (GH #177)', async () => {
-    // The team stores points in a custom field. The Hygiene tab reads that field; the Today card
-    // used to fall back to the built-in fields (which this fetch does not even request) and flag
-    // every pointed Story as a commitment gap — 58 phantom gaps beside a Hygiene tab showing 1.
-    mockLoadDashboardConfig.mockReturnValue({ staleDaysThreshold: 5, customStoryPointsFieldId: 'customfield_10236' });
+  it('runs the SAME scan the team Hygiene tab runs — same project, same scope JQL, no assignee filter (GH #177)', async () => {
+    // The team dashboard is on the PI scope. The Hygiene tab scans
+    // `project=ENCUC AND statusCategory != Done AND cf[10301] = "PI 26.3"`; the Today cards must
+    // count that exact scan — counting the sprint issue list (which includes Done issues and can
+    // miss configured fields) produced 58 phantom commitment gaps beside a tab showing 1.
     mockUseSprintData.mockReturnValue(
-      buildSprintData({
-        sprintIssues: [
-          buildIssue('TEAM-POINTED', {
-            issuetype: { name: 'Story' },
-            status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } },
-            assignee: { displayName: 'Dev' },
-            updated: recentIso(),
-            description: 'Given/When/Then',
-            customfield_10236: 5,
-          }),
-          buildIssue('TEAM-UNPOINTED', {
-            issuetype: { name: 'Story' },
-            status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } },
-            assignee: { displayName: 'Dev' },
-            updated: recentIso(),
-            description: 'Given/When/Then',
-            customfield_10236: null,
-          }),
-        ],
-      }),
+      buildSprintData({ projectKey: 'ENCUC', scopeMode: 'pi', selectedPiValue: 'PI 26.3' }),
+    );
+    mockRunHygieneScan.mockResolvedValue(
+      buildScanOutcome([
+        buildFinding('ENCUC-1', ['missing-sp']),
+        buildFinding('ENCUC-2', ['no-ac', 'stale']),
+        buildFinding('ENCUC-3', ['stale']),
+      ]),
     );
 
     const { result } = renderHook(() => useTodayDashboard());
+
     await waitFor(() => expect(result.current.categories['commitment-gaps'].status).toBe('ready'));
 
-    expect(result.current.categories['commitment-gaps'].count).toBe(1);
+    expect(mockRunHygieneScan).toHaveBeenCalledWith({
+      projectKey: 'ENCUC',
+      extraJql: 'AND cf[10301] = "PI 26.3"',
+      assigneeClause: null,
+      activeTeamProfileId: '',
+    });
+    // Counts are per issue, straight off the shared findings: one missing-sp + one no-ac issue.
+    expect(result.current.categories['commitment-gaps'].count).toBe(2);
+    expect(result.current.categories['team-stale'].count).toBe(2);
   });
 
   it('points every card at a destination that answers the same question the card counted (GH #167)', async () => {

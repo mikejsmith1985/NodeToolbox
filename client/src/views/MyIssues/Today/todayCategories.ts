@@ -10,6 +10,7 @@ import {
   checkStaleIssue,
   evaluateHygieneIssue,
   type HygieneEvaluationContext,
+  type HygieneFinding,
   type JiraIssue,
 } from '../../Hygiene/checks/hygieneChecks.ts';
 
@@ -88,33 +89,35 @@ export function selectMyStale(myIssues: JiraIssue[], staleDaysThreshold?: number
   return myIssues.filter((issue) => checkStaleIssue(issue, staleDaysThreshold) !== null);
 }
 
-// ── Team hygiene buckets ──
+// ── Team hygiene selectors (over SHARED scan findings) ──
+//
+// The team cards count findings produced by the shared hygiene scan (hygieneScan.ts) — the same
+// scan the team Hygiene tab renders. Counting anything else (a separate fetch, a separate
+// evaluation) is exactly how the card and the tab came to disagree (GH #177). These selectors
+// only COUNT; they never re-evaluate.
 
-/** The team-scope hygiene work the Today tab surfaces, split into its three sub-buckets. */
-export interface TeamHygieneBuckets {
-  stale: JiraIssue[]; // flag 'stale'
-  unassigned: JiraIssue[]; // flag 'no-assignee'
-  commitmentGaps: JiraIssue[]; // flag 'missing-sp' OR 'no-ac'
+/** The check ids behind the "Team stale issues" card — must match its drill-through filter. */
+export const TEAM_STALE_CHECK_IDS: readonly string[] = ['stale'];
+/** The check ids behind the "Unassigned in-progress" card — must match its drill-through filter. */
+export const TEAM_UNASSIGNED_CHECK_IDS: readonly string[] = ['no-assignee'];
+/** The check ids behind the "Sprint commitment gaps" card — must match its drill-through filter. */
+export const COMMITMENT_GAP_CHECK_IDS: readonly string[] = ['missing-sp', 'no-ac'];
+/** The overdue check ids feeding the team half of the "Due / overdue today" card. */
+export const DUE_OVERDUE_CHECK_IDS: readonly string[] = ['due-date-overdue', 'target-end-overdue'];
+
+/** Counts the scan findings (issues) that raised at least one of the given checks. */
+export function countFindingsMatchingChecks(findings: readonly HygieneFinding[], checkIds: readonly string[]): number {
+  return selectFindingKeysMatchingChecks(findings, checkIds).length;
 }
 
-/**
- * Runs the full Hygiene evaluation once per team issue and sorts each issue into the
- * stale / unassigned / commitment-gap buckets based on which Hygiene flags it raised.
- * A single issue can appear in more than one bucket when it raises multiple flags.
- */
-export function bucketTeamHygiene(teamIssues: JiraIssue[], ctx?: HygieneEvaluationContext): TeamHygieneBuckets {
-  const staleIssues: JiraIssue[] = [];
-  const unassignedIssues: JiraIssue[] = [];
-  const commitmentGapIssues: JiraIssue[] = [];
-
-  teamIssues.forEach((issue) => {
-    const flagIds = evaluateHygieneIssue(issue, ctx).map((flag) => flag.checkId);
-    if (flagIds.includes('stale')) staleIssues.push(issue);
-    if (flagIds.includes('no-assignee')) unassignedIssues.push(issue);
-    if (flagIds.includes('missing-sp') || flagIds.includes('no-ac')) commitmentGapIssues.push(issue);
-  });
-
-  return { stale: staleIssues, unassigned: unassignedIssues, commitmentGaps: commitmentGapIssues };
+/** Returns the issue keys of scan findings that raised at least one of the given checks. */
+export function selectFindingKeysMatchingChecks(
+  findings: readonly HygieneFinding[],
+  checkIds: readonly string[],
+): string[] {
+  return findings
+    .filter((finding) => finding.flags.some((flag) => checkIds.includes(flag.checkId)))
+    .map((finding) => finding.issue.key);
 }
 
 // ── Untriaged ──

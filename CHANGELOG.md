@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Today's team cards now count THE SAME scan the team Hygiene tab runs — agreement by construction (GH
+  #177)**: after the previous fix the commitment-gaps card still read 6 beside a tab showing 1, because the card
+  was a second, parallel hygiene computation: it evaluated the sprint issue list (which includes Done issues —
+  the tab's JQL excludes them) with default field config and every check enabled, while the tab scans
+  `project + statusCategory != Done + PI/sprint scope` with instance-resolved fields and the enterprise-enabled
+  check set. Numbers produced by two different pipelines will always find a way to disagree, so the second
+  pipeline is gone: the tab's entire scan (scope JQL, field discovery, enabled checks, child-story rollup,
+  evaluation) is extracted into one shared engine, and the Team stale / Unassigned / Sprint commitment gaps
+  cards (plus the team half of Due/overdue) now count its findings directly. Same scan, same numbers — a
+  drill-through lands on a tab whose tiles match the card that was clicked.
 - **Today cards agree with the Hygiene tab and drill through to the issues they counted (GH #177)**: the
   "Sprint commitment gaps" card showed 58 beside a Hygiene tab showing 1 unpointed story. Two causes: the card's
   evaluation never received the team's configured story-points field (so every Story pointed in a custom field
