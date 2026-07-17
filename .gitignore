@@ -187,3 +187,6 @@ src/services/generated/
 test-results/
 client/test-results/
 playwright-report/
+
+# Forge hook caches (e.g. the pre-push typecheck skip stamp) — machine-local state, never source.
+.forge/cache/

@@ -51,18 +51,37 @@ fi
 # This repo's SPA lives in client/ (not frontend/). Run the SAME project build the
 # release uses — `tsc -b` — so a type error that `tsc --noEmit` or `vite build` tolerate
 # (e.g. a missing type import) is caught here, before it can reach main and break a release.
+#
+# Skip cache: a release pushes several times in a row (main, tag, branch cleanup) with an
+# identical working tree, and re-typechecking the same code adds minutes for zero safety.
+# The git tree hash of client/ identifies its exact committed content, so when the working
+# tree is clean and that same hash already passed a typecheck, this run is skipped.
 if [[ -f "client/package.json" ]]; then
-    echo -e "  \033[36m[Client] Typechecking (tsc -b)...\033[0m"
-    pushd client > /dev/null
-    typecheck_output=$(npx tsc -b 2>&1)
-    if [[ $? -ne 0 ]]; then
-        failures+=("CLIENT TYPECHECK: npx tsc -b failed")
-        echo -e "  \033[31m[Client] Typecheck FAILED\033[0m"
-        echo "$typecheck_output"
+    typecheck_cache_file=".forge/cache/pre-push-client-tree"
+    client_tree_hash=$(git rev-parse "HEAD:client" 2>/dev/null)
+    client_dirty_files=$(git status --porcelain -- client 2>/dev/null)
+    if [[ -n "$client_tree_hash" && -z "$client_dirty_files" && -f "$typecheck_cache_file" && "$(cat "$typecheck_cache_file")" == "$client_tree_hash" ]]; then
+        echo -e "  \033[32m[Client] Typecheck skipped — client/ tree already verified (${client_tree_hash:0:12})\033[0m"
     else
-        echo -e "  \033[32m[Client] Typecheck passed\033[0m"
+        echo -e "  \033[36m[Client] Typechecking (tsc -b)...\033[0m"
+        pushd client > /dev/null
+        typecheck_output=$(npx tsc -b 2>&1)
+        typecheck_exit=$?
+        popd > /dev/null
+        if [[ $typecheck_exit -ne 0 ]]; then
+            failures+=("CLIENT TYPECHECK: npx tsc -b failed")
+            echo -e "  \033[31m[Client] Typecheck FAILED\033[0m"
+            echo "$typecheck_output"
+        else
+            echo -e "  \033[32m[Client] Typecheck passed\033[0m"
+            # Only a clean tree can be trusted for future skips — uncommitted client/
+            # edits were typechecked here but are not represented by the tree hash.
+            if [[ -n "$client_tree_hash" && -z "$client_dirty_files" ]]; then
+                mkdir -p .forge/cache
+                echo "$client_tree_hash" > "$typecheck_cache_file"
+            fi
+        fi
     fi
-    popd > /dev/null
 fi
 
 # ── Report ──────────────────────────────────────────────────────────────

@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Release pipeline is markedly faster — same gates, run once instead of five times**: a release was re-running
+  the client typecheck on every one of its 4-5 git pushes and reinstalling all npm dependencies every time, so
+  releases got slower as the app grew. Three targeted cuts, none of which remove a safety check: (1) the pre-push
+  hook now remembers the exact `client/` content (git tree hash) that last passed `tsc -b` and skips the repeat
+  run when the working tree is clean and unchanged — any edit or uncommitted change still typechecks; (2)
+  `local-release.ps1` skips `npm install` (root and client) when the lockfile is byte-identical to what the
+  previous release installed, hashed *before* the version bump so the bump's own lockfile rewrite can't defeat
+  the cache — a fresh clone still installs; (3) main and the release tag go up in **one atomic push** instead of
+  two (and the doomed-to-be-deleted release branch is no longer pushed at all), which also means nothing reaches
+  the remote until the committed version has been verified.
+
 ### Added
 - **Monthly Delivery Report — scheduled runs can now DELIVER the prompt, not just cache it**: when the schedule
   fired (2nd Tuesday), the run built the AI-ready prompt and silently saved it to a file — nothing arrived

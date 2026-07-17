@@ -51,18 +51,39 @@ if (Test-Path "frontend/package.json") {
 # This repo's SPA lives in client/ (not frontend/). Run the SAME project build the
 # release uses — `tsc -b` — so a type error that `tsc --noEmit` or `vite build` tolerate
 # (e.g. a missing type import) is caught here, before it can reach main and break a release.
+#
+# Skip cache: a release pushes several times in a row (main, tag, branch cleanup) with an
+# identical working tree, and re-typechecking the same code adds minutes for zero safety.
+# The git tree hash of client/ identifies its exact committed content, so when the working
+# tree is clean and that same hash already passed a typecheck, this run is skipped.
 if (Test-Path "client/package.json") {
-    Write-Host "  [Client] Typechecking (tsc -b)..." -ForegroundColor Cyan
-    Push-Location client
-    $typecheckOutput = npx tsc -b 2>&1
-    if ($LASTEXITCODE -ne 0) {
-        $failures += "CLIENT TYPECHECK: npx tsc -b failed"
-        Write-Host "  [Client] Typecheck FAILED" -ForegroundColor Red
-        Write-Host $typecheckOutput -ForegroundColor Red
+    $typecheckCacheFile = ".forge/cache/pre-push-client-tree"
+    $clientTreeHash     = git rev-parse "HEAD:client" 2>$null
+    $clientDirtyFiles   = git status --porcelain -- client 2>$null
+    $hasVerifiedTree    = $clientTreeHash -and (-not $clientDirtyFiles) -and (Test-Path $typecheckCacheFile) -and ((Get-Content $typecheckCacheFile -Raw).Trim() -eq $clientTreeHash)
+
+    if ($hasVerifiedTree) {
+        Write-Host "  [Client] Typecheck skipped — client/ tree already verified ($($clientTreeHash.Substring(0, 12)))" -ForegroundColor Green
     } else {
-        Write-Host "  [Client] Typecheck passed" -ForegroundColor Green
+        Write-Host "  [Client] Typechecking (tsc -b)..." -ForegroundColor Cyan
+        Push-Location client
+        $typecheckOutput = npx tsc -b 2>&1
+        $typecheckExit = $LASTEXITCODE
+        Pop-Location
+        if ($typecheckExit -ne 0) {
+            $failures += "CLIENT TYPECHECK: npx tsc -b failed"
+            Write-Host "  [Client] Typecheck FAILED" -ForegroundColor Red
+            Write-Host $typecheckOutput -ForegroundColor Red
+        } else {
+            Write-Host "  [Client] Typecheck passed" -ForegroundColor Green
+            # Only a clean tree can be trusted for future skips — uncommitted client/
+            # edits were typechecked here but are not represented by the tree hash.
+            if ($clientTreeHash -and (-not $clientDirtyFiles)) {
+                New-Item -ItemType Directory -Path ".forge/cache" -Force | Out-Null
+                Set-Content -Path $typecheckCacheFile -Value $clientTreeHash -Encoding ASCII
+            }
+        }
     }
-    Pop-Location
 }
 
 # ── Report ──────────────────────────────────────────────────────────────
