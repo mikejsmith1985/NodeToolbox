@@ -2,7 +2,16 @@
 
 **Feature short name**: `agile-hub-home-ux`
 **Created**: 2026-07-17
-**Status**: Draft — awaiting clarification #1, then `/speckit-plan`
+**Status**: Draft — ready for `/speckit-plan`
+
+## Clarifications
+
+### Session 2026-07-17
+
+- Q: How deep should the Agile Hub consolidation go in this feature? → A: **Full merge now.** One Agile Hub tool
+  replaces the Team Dashboard, PO Tool, and ART View cards, with audience spaces (Team / Product / Train) inside
+  it; every retired route — including parameterized deep links like the Today cards' hygiene drill-throughs —
+  redirects into the corresponding space with its parameters intact.
 **Builds on**: the Home view card catalog and its drag-to-reorder grid, the Admin Hub unlock (session-scoped), the
 existing-but-unwired Admin Hub "Tool Visibility" toggles, and the shared-tab reuse already in place (Feature Review /
 PI Review / Hygiene are single components mounted by multiple tools).
@@ -49,25 +58,29 @@ for the three-doors-one-product problem (the "Agile Hub" direction).
 
 ### US2 (P2) — A job-shaped catalog
 
-1. The home page presents every visible tool in sections named for the job, not the org:
+1. With the US3 merge in effect, the home page presents every visible tool in **three** sections named for the job:
    - **🙋 My Work** — My Issues, Personal Toolbox
-   - **🏃 Team & Sprint** — Team Dashboard, Feature Canvas, Jira Intake, Jira Template Maker, Business Helper
-   - **🧭 Product & Train** — PO Tool, ART View
+   - **🏃 Agile Delivery** — **Agile Hub** (the merged workspace), Feature Canvas, Jira Intake, Jira Template
+     Maker, Business Helper
    - **📈 Insights & Admin** — Reports Hub, Admin Hub, SNow Hub (only while unlocked), Code Walkthrough, Text Tools
 2. No section ever renders with a single card by design; a section with zero visible cards (everything toggled off)
    renders nothing at all — no empty divider (the same omit-when-empty rule the rest of the app follows).
-3. Card drag-to-reorder and the Recently Used strip keep working exactly as today, within the new sections.
+3. Card drag-to-reorder and the Recently Used strip keep working exactly as today, within the new sections; recents
+   recorded against the retired tools resolve to the Agile Hub.
 
-### US3 (P3) — The Agile Hub consolidation path
+### US3 (P3) — The Agile Hub full merge (per clarification #1)
 
-1. The three-doors-one-product overlap (Team Dashboard / PO Tool / ART View sharing Feature Review and PI Review) is
-   consolidated so a user finds each job in exactly one place, and each shared tab renders from exactly one mount
-   with a scope choice — not three tools each remembering their own.
-2. [NEEDS CLARIFICATION: How deep should the US3 consolidation go in this feature? (a) full merge — one "Agile Hub"
-   tool replaces the Team Dashboard, PO Tool, and ART View cards, with audience spaces (Team / Product / Train)
-   inside it and existing routes redirecting in; (b) umbrella — a new Agile Hub card that hosts the shared tabs
-   once, while the three existing cards remain during a transition; (c) defer — ship US1+US2 now, and produce the
-   Agile Hub consolidation as its own follow-up spec informed by usage of the new home layout.]
+1. A single **Agile Hub** tool opens with three audience spaces — **Team**, **Product**, **Train** — visible as its
+   top-level navigation. Team carries everything Team Dashboard offers today; Product carries the PO Tool's tabs
+   (Feature Review, PI Review, Feature Splitter, Feature Composition); Train carries the ART View workspace.
+2. Capabilities shared across audiences (Feature Review, PI Review) appear once per space via the already-shared
+   components, each space keeping the scope selection it has today (the PO Tool's own team/PI selection, the team
+   dashboard's profile, the ART's train scope) — nothing a user configured is lost.
+3. Opening the Agile Hub lands on the last space the user was in; first-run lands on Team.
+4. A user following any old bookmark or in-app link (e.g. a Today card's "Open" into the team hygiene tab with its
+   filter, "Open Sprint Dashboard" from Sprint flow, an ART readout link) arrives at the equivalent place inside
+   the Agile Hub with every parameter honored — mid-flight, not at a lobby.
+5. The Team Dashboard, PO Tool, and ART View cards disappear from home; their recents map to the Agile Hub.
 
 ### Edge cases
 
@@ -103,12 +116,20 @@ for the three-doors-one-product problem (the "Agile Hub" direction).
 - **FR-008**: Existing personalization (drag order, Recently Used) MUST survive the reorganization unchanged,
   including saved orders created under the old sections.
 
-### Functional — consolidation (US3, shape depends on clarification #1)
+### Functional — consolidation (US3, full merge)
 
 - **FR-009**: After consolidation, each shared capability (Feature Review, PI Review, release visibility) MUST be
   reachable through exactly one primary navigation path, with scope (team / PI / train) chosen inside it.
-- **FR-010**: Every existing route MUST keep working — retired entry points redirect to where the job now lives
-  (the app's established retirement pattern).
+- **FR-010**: Every existing route MUST keep working — retired entry points redirect into the corresponding Agile
+  Hub space **with query parameters and tab selections preserved** (the Today cards' parameterized drill-throughs
+  are the acceptance case).
+- **FR-011**: The Agile Hub MUST provide capability parity: every tab and action reachable in Team Dashboard,
+  PO Tool, and ART View today is reachable inside its space — none dropped, none duplicated across spaces beyond
+  what the audiences genuinely share.
+- **FR-012**: Per-tool persisted selections (team profiles, PI/scope choices, PO Tool's independent selection)
+  MUST carry into their spaces unchanged — the merge never resets anyone's working context.
+- **FR-013**: The hub remembers the last-used space per user; audience spaces are always all visible (no gating
+  between Team / Product / Train — audiences are lenses, not permissions).
 
 ### Non-functional
 
@@ -133,17 +154,20 @@ for the three-doors-one-product problem (the "Agile Hub" direction).
 - **SC-004**: A user looking for Feature Review, PI Review, Hygiene, or releases can name the single place to go
   (post-consolidation), and reach it in at most two clicks from home.
 - **SC-005**: Every pre-existing bookmark/route still lands somewhere sensible (tool or its successor) — zero dead
-  routes after the change.
+  routes after the change, and parameterized deep links (tab, filter, scope) land mid-flight, not at a lobby.
+- **SC-006**: Capability-parity audit passes: a checklist of every tab/action in the three retired tools is
+  reachable in the Agile Hub, verified one-for-one before release.
 
 ## Assumptions
 
 - "Unlocked enabling the ability to connect to SNow" is read verbatim: the gate is the **session-scoped Admin Hub
   unlock**, not a persisted "SNow configured" flag — each new tab starts with SNow hidden until unlocked. If a
   persisted capability flag is preferred later, the gate kind is a per-card property and can change in one place.
-- The four-section taxonomy is fixed (not user-configurable); personal expression stays in drag order + visibility.
+- The three-section taxonomy is fixed (not user-configurable); personal expression stays in drag order + visibility.
 - Text Tools and Code Walkthrough are utilities, not products — they live under Insights & Admin rather than
   earning sections.
-- US1 and US2 ship regardless of the clarification outcome; only US3's depth is open.
+- The three stories ship as one feature (clarification #1: full merge), but remain independently testable
+  increments in that order — gating, catalog, merge.
 
 ## Out of Scope
 

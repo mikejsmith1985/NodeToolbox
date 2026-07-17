@@ -13,8 +13,8 @@
 
 ## Requirement Completeness
 
-- [ ] No [NEEDS CLARIFICATION] markers remain — **one open**: US3 consolidation depth (full merge / umbrella /
-      defer). Deliberately surfaced to the product owner; US1+US2 are fully specified regardless.
+- [x] No [NEEDS CLARIFICATION] markers remain — US3 depth resolved by the product owner: **full merge** (recorded
+      under Clarifications, Session 2026-07-17).
 - [x] Requirements are testable and unambiguous
 - [x] Success criteria are measurable
 - [x] Success criteria are technology-agnostic (no implementation details)
