@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Hygiene Fix Workspace — an issue view worth working in (spec 019, from the GH #177 UX review)**: three parts.
+  (1) **Meaning through color and shape**: status chips colored by category, priority badges with the familiar
+  direction arrows, issue-type icons (🐞 defect, 📗 story, ✅ task…), assignee initials-avatars with the FULL name,
+  and an age heat badge whose bands derive from the team's stale threshold — used in the hygiene finding rows and
+  the issue detail panel header, always with text beside the color. (2) **The whole picture in the panel**: linked
+  issues WITH their own status chips (the fact that usually explains a stale ticket), labels and fix-version chips,
+  PI / sprint / feature planning rows, a distinct acceptance-criteria block, and descriptions that render with
+  their structure (bold "Day one:" run-ins, lists) instead of a flattened wall — every block disappears entirely
+  when its data is absent, never an empty placeholder. (3) **A guided cleanup session Jira doesn't have**: "Review
+  these findings" walks the filtered list with a visible "N of M" cursor, ←/→ navigation, an explicit **Skip (S)**
+  action, Escape to finish — and an honest four-bucket summary (fixed / commented / skipped / untouched) that
+  never counts a finding you merely scrolled past as handled. Fixes applied mid-session keep your place; the
+  rescan runs when the session ends. Fix controls now say in plain language what is flagged and what fixing does,
+  with visible labels on every input.
+
 ### Changed
 - **The To-Do list now lives ON the Today dashboard**: instead of its own My Issues tab, the free-form checklist
   renders as a section of the Today tab (between the daily-duty cards and Sprint flow), so everything the day

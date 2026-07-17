@@ -22,7 +22,7 @@ independently shippable increment.
 
 **Purpose**: workspace ready; no new dependencies to install (plan: zero new deps).
 
-- [ ] T001 Confirm work happens on `feature/019-hygiene-fix-ux` (branch exists from planning) and the client gates
+- [X] T001 Confirm work happens on `feature/019-hygiene-fix-ux` (branch exists from planning) and the client gates
       run green pre-change: `cd client && npx vitest run && npx tsc -b`
 
 ---
@@ -45,23 +45,23 @@ independent).
 **Independent test**: the 5-second glance test (quickstart §Manual) passes on a hygiene finding header; every chip
 carries text + `data-tone`; A++/narrow layouts hold.
 
-- [ ] T002 [P] [US1] RED — write `client/src/components/IssueMeta/issueMetaVocabulary.test.ts`: status-category →
+- [X] T002 [P] [US1] RED — write `client/src/components/IssueMeta/issueMetaVocabulary.test.ts`: status-category →
       tone (new/indeterminate/done/unknown), priority name → tone+direction (highest…lowest, unknown), type name →
       icon+tone (bug/defect, story, task, spike, feature/epic, sub-task, unknown), age bands from threshold T
       (<T, T..2T, >2T), initials rules ("Katkar, Rahul (CTR)" → "KR"; single-token; null → unassigned)
-- [ ] T003 [US1] GREEN — implement `client/src/components/IssueMeta/issueMetaVocabulary.ts` (pure mappings per
+- [X] T003 [US1] GREEN — implement `client/src/components/IssueMeta/issueMetaVocabulary.ts` (pure mappings per
       data-model.md; unknown inputs degrade to neutral + label, never hidden)
-- [ ] T004 [P] [US1] RED — write `client/src/components/IssueMeta/IssueMeta.test.tsx`: each component renders its
+- [X] T004 [P] [US1] RED — write `client/src/components/IssueMeta/IssueMeta.test.tsx`: each component renders its
       text label, `data-tone` attribute, unassigned avatar treatment, AgeBadge day count + tone
-- [ ] T005 [US1] GREEN — implement `StatusChip.tsx`, `PriorityBadge.tsx`, `IssueTypeIcon.tsx`,
+- [X] T005 [US1] GREEN — implement `StatusChip.tsx`, `PriorityBadge.tsx`, `IssueTypeIcon.tsx`,
       `AssigneeAvatar.tsx`, `AgeBadge.tsx` and `IssueMeta.module.css` (tone classes with light + dark values;
       chips wrap, never clip — GH #160 rules) in `client/src/components/IssueMeta/`
-- [ ] T006 [US1] RED — extend `client/src/components/IssueDetailPanel/index.test.tsx`: header shows type icon,
+- [X] T006 [US1] RED — extend `client/src/components/IssueDetailPanel/index.test.tsx`: header shows type icon,
       status chip (data-tone), priority badge, avatar initials + FULL display name; existing capabilities
       (transitions, comments, story points) still assert green (FR-010 guard)
-- [ ] T007 [US1] GREEN — rework the `IssueDetailPanel` header in
+- [X] T007 [US1] GREEN — rework the `IssueDetailPanel` header in
       `client/src/components/IssueDetailPanel/index.tsx` to compose the IssueMeta chips (dates row unchanged)
-- [ ] T008 [US1] RED then GREEN — hygiene finding rows use the chips: extend the HygieneView tests
+- [X] T008 [US1] RED then GREEN — hygiene finding rows use the chips: extend the HygieneView tests
       (`client/src/views/Hygiene/HygieneView.test.tsx`) for chip-rendered meta cells incl. `AgeBadge` wired to the
       configured `staleDaysThreshold`, then implement in `client/src/views/Hygiene/HygieneView.tsx`
 
@@ -77,24 +77,24 @@ decision-relevant requires opening Jira (FR-006..010; contract `issue-context-pa
 **Independent test**: the reporter's ENCUC-2163 shape (defect + linked INC/PRB) seeded in tests shows the links
 block with the linked issue's status chip; empty issues show NO placeholder blocks; SC-005 retest.
 
-- [ ] T009 [P] [US2] RED — write `client/src/utils/richTextStructured.test.ts`: paragraphs, bold run-in headings
+- [X] T009 [P] [US2] RED — write `client/src/utils/richTextStructured.test.ts`: paragraphs, bold run-in headings
       (`*Steps:*`, bare "Day one:"), `-`/`*`/`#` list items, nested level 2, degradation (arbitrary text → one
       paragraph per line group, never empty)
-- [ ] T010 [US2] GREEN — implement `client/src/utils/richTextStructured.ts` (`parseStructuredText` →
+- [X] T010 [US2] GREEN — implement `client/src/utils/richTextStructured.ts` (`parseStructuredText` →
       `StructuredBlock[]`; normalizes via existing richTextPlainText machinery first; module-head Art VII drift
       justification comment)
-- [ ] T011 [P] [US2] RED — extend `client/src/views/Hygiene/hooks/hygieneScan.test.ts`: the issue search requests
+- [X] T011 [P] [US2] RED — extend `client/src/views/Hygiene/hooks/hygieneScan.test.ts`: the issue search requests
       `issuelinks` and `labels` in its field list
-- [ ] T012 [US2] GREEN — add `issuelinks` + `labels` to `BASE_HYGIENE_FIELDS` in
+- [X] T012 [US2] GREEN — add `issuelinks` + `labels` to `BASE_HYGIENE_FIELDS` in
       `client/src/views/Hygiene/hooks/hygieneScan.ts`
-- [ ] T013 [US2] RED — extend `client/src/components/IssueDetailPanel/index.test.tsx`: links block renders link
+- [X] T013 [US2] RED — extend `client/src/components/IssueDetailPanel/index.test.tsx`: links block renders link
       relation + key + summary + the OTHER issue's StatusChip from `fields.issuelinks`; labels + fixVersions chips;
       AC block when prop present; each block ABSENT (not empty) when data missing; description renders headings and
       list items via structured blocks with plain-text fallback
-- [ ] T014 [US2] GREEN — implement the context blocks and `StructuredText.tsx` in
+- [X] T014 [US2] GREEN — implement the context blocks and `StructuredText.tsx` in
       `client/src/components/IssueDetailPanel/` (index.tsx + StructuredText.tsx; omit-when-empty everywhere; no
       fetching inside the panel)
-- [ ] T015 [US2] RED then GREEN — hygiene wiring: HygieneView passes the finding's full issue (now carrying
+- [X] T015 [US2] RED then GREEN — hygiene wiring: HygieneView passes the finding's full issue (now carrying
       issuelinks/labels) and resolved AC text to the panel; extend `HygieneView.test.tsx` first, implement in
       `client/src/views/Hygiene/HygieneView.tsx`
 
@@ -110,20 +110,20 @@ block with the linked issue's status chip; empty issues show NO placeholder bloc
 **Independent test**: contract e2e gates — arrow/skip/comment through a seeded 3-finding list → summary
 "3 findings — 0 fixed, 1 commented, 1 skipped, 1 untouched"; typing "s" in the comment box does nothing.
 
-- [ ] T016 [P] [US3] RED — write `client/src/views/Hygiene/hooks/useHygieneSession.test.ts`: cursor clamping,
+- [X] T016 [P] [US3] RED — write `client/src/views/Hygiene/hooks/useHygieneSession.test.ts`: cursor clamping,
       outcome precedence (fixed > commented > skipped, never downgrade), skip advances, summary buckets sum to M,
       session reset on list change, keyboard guard (events from input/textarea/select/contenteditable ignored)
-- [ ] T017 [US3] GREEN — implement `client/src/views/Hygiene/hooks/useHygieneSession.ts` (per data-model.md state
+- [X] T017 [US3] GREEN — implement `client/src/views/Hygiene/hooks/useHygieneSession.ts` (per data-model.md state
       machine; ←/→/S/Escape; listener attached only while a session is active)
-- [ ] T018 [US3] RED — extend `client/src/views/Hygiene/HygieneView.test.tsx`: "Review these findings" entry on
+- [X] T018 [US3] RED — extend `client/src/views/Hygiene/HygieneView.test.tsx`: "Review these findings" entry on
       every surface variant (team/personal/standalone props), "N of M" indicator, Skip button, settled row marks,
       fix-applied keeps cursor (FR-014), four-bucket summary on end
-- [ ] T019 [US3] GREEN — implement session UI in `client/src/views/Hygiene/HygieneView.tsx` +
+- [X] T019 [US3] GREEN — implement session UI in `client/src/views/Hygiene/HygieneView.tsx` +
       `client/src/views/Hygiene/HygieneView.module.css` (session bar, settled/untouched row treatments)
-- [ ] T020 [US3] RED then GREEN — self-explanatory fix affordances: per-check human sentence above the fix
+- [X] T020 [US3] RED then GREEN — self-explanatory fix affordances: per-check human sentence above the fix
       controls and a visible label on every fix input (no bare "Choose…"); tests first in `HygieneView.test.tsx`,
       copy map + markup in `client/src/views/Hygiene/HygieneView.tsx` (FR-015)
-- [ ] T021 [US3] E2E — write and pass `test/e2e/hygiene-session.spec.js`: the three contract gates (session flow →
+- [X] T021 [US3] E2E — write and pass `test/e2e/hygiene-session.spec.js`: the three contract gates (session flow →
       honest summary; typing guard; A++ + narrow-width layout hold) against stubbed proxies on the port-5556
       harness
 
@@ -133,12 +133,12 @@ block with the linked issue's status chip; empty issues show NO placeholder bloc
 
 ## Phase 6: Polish & Cross-Cutting
 
-- [ ] T022 [P] Light-theme + dark-theme contrast pass over `IssueMeta.module.css` and the new panel/session styles
+- [X] T022 [P] Light-theme + dark-theme contrast pass over `IssueMeta.module.css` and the new panel/session styles
       (NFR-004) with Playwright screenshots as Art X evidence in the PR
-- [ ] T023 [P] CHANGELOG.md entry under [Unreleased] describing the workspace (user-visible behavior)
-- [ ] T024 Full gates: `cd client && npx vitest run && npx tsc -b && npx eslint src && npm run build`, then
+- [X] T023 [P] CHANGELOG.md entry under [Unreleased] describing the workspace (user-visible behavior)
+- [X] T024 Full gates: `cd client && npx vitest run && npx tsc -b && npx eslint src && npm run build`, then
       `npx playwright test` (full e2e suite) — all green before the PR
-- [ ] T025 Quickstart manual glance test (quickstart.md §Manual) on a real scan; attach findings to the PR
+- [X] T025 Quickstart manual glance test (quickstart.md §Manual) on a real scan; attach findings to the PR
       description; SC-005 retest against the reporter's ticket shape
 
 ---
