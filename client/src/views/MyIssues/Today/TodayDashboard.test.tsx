@@ -150,6 +150,13 @@ describe('TodayDashboard', () => {
     expect(screen.getByText('Sprint flow')).toBeInTheDocument();
   });
 
+  it('renders the personal To-Do list as a dashboard section, so the whole day is one screen', () => {
+    renderDashboard();
+
+    expect(screen.getByRole('heading', { name: 'To-Do', level: 3 })).toBeInTheDocument();
+    expect(screen.getByLabelText('New to-do item')).toBeInTheDocument();
+  });
+
   it('keeps sibling cards visible when one card is in an error state', () => {
     mockUseTodayDashboard.mockReturnValue(
       buildDashboard({

@@ -136,7 +136,7 @@ export default function App() {
     <ToastProvider>
       {/* App-wide hidden AI Assist unlock (Ctrl+Alt+Z) — works from every screen. */}
       <AiAssistUnlockGate />
-      {/* App-wide F1 to-do quick-add — captures an item from every screen (list: My Issues → To-Do). */}
+      {/* App-wide F1 to-do quick-add — captures an item from every screen (list: My Issues → Today). */}
       <TodoQuickAddGate />
       <div className={styles.appShell}>
         <header className={styles.topBar}>

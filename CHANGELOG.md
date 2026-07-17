@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **The To-Do list now lives ON the Today dashboard**: instead of its own My Issues tab, the free-form checklist
+  renders as a section of the Today tab (between the daily-duty cards and Sprint flow), so everything the day
+  needs is one screen. The F1 quick-add popup's "Open list" now lands there; old `?tab=todo` links fall back to
+  Today automatically. Items, behavior, and persistence are unchanged.
+
 ### Added
 - **Personal to-do list with an app-wide F1 quick-add**: a new **My Issues → To-Do** tab holds a free-form
   checklist — add, check off (kept visible with strikethrough), inline-edit, delete, and clear-completed, with
