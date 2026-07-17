@@ -112,6 +112,8 @@ function HygieneFixEditor({ issue, kind, fieldId, label, onFixed }: HygieneFixEd
 
   return (
     <div className={styles.fixControl}>
+      {/* Every fix input carries a VISIBLE label naming what it writes (spec 019 FR-015). */}
+      <span className={styles.fixLabel}>{label}:</span>
       <FixInput issue={issue} kind={kind} fieldId={fieldId} label={label} isSubmitting={isSubmitting} onSubmit={submitFix} />
       {successMessage && <span className={styles.fixSuccess}>{successMessage}</span>}
       {errorMessage && (
@@ -324,7 +326,7 @@ function OptionSelect({
       disabled={disabled}
       onChange={(changeEvent) => onChange(changeEvent.target.value)}
     >
-      <option value="">Choose…</option>
+      <option value="">{`Choose ${label.toLowerCase()}…`}</option>
       {options.map((option) => (
         <option key={option.value} value={option.value}>
           {option.label}

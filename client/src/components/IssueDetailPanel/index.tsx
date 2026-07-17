@@ -3,8 +3,14 @@
 import { useEffect, useState } from 'react';
 
 import { jiraGet, jiraPost } from '../../services/jiraApi.ts';
-import type { JiraIssue, JiraTransition } from '../../types/jira.ts';
-import { normalizeRichTextToPlainText } from '../../utils/richTextPlainText.ts';
+import type { JiraIssue, JiraIssueLink, JiraTransition } from '../../types/jira.ts';
+import { parseStructuredText } from '../../utils/richTextStructured.ts';
+import { StructuredText } from './StructuredText.tsx';
+import { AgeBadge } from '../IssueMeta/AgeBadge.tsx';
+import { AssigneeAvatar } from '../IssueMeta/AssigneeAvatar.tsx';
+import { IssueTypeIcon } from '../IssueMeta/IssueTypeIcon.tsx';
+import { PriorityBadge } from '../IssueMeta/PriorityBadge.tsx';
+import { StatusChip } from '../IssueMeta/StatusChip.tsx';
 import {
   readIssueStoryPointsDisplayValue,
   saveFeatureReviewStoryPoints,
@@ -15,8 +21,6 @@ import styles from './IssueDetailPanel.module.css';
 
 const DESCRIPTION_PREVIEW_LENGTH = 300;
 const SUCCESS_MESSAGE_TIMEOUT_MS = 3_000;
-const EMPTY_META_VALUE = '—';
-const UNASSIGNED_LABEL = 'Unassigned';
 const TRANSITION_PLACEHOLDER_LABEL = 'Transition to…';
 const NO_TRANSITIONS_LABEL = 'No transitions available';
 const COMMENT_SUCCESS_LABEL = '✓ Posted';
@@ -39,6 +43,16 @@ export interface IssueDetailPanelProps {
    * do not fetch the instance-specific AC field; when provided (and non-empty) an AC block is rendered.
    */
   acceptanceCriteria?: string | null;
+  /** Days since the issue last changed — shown as a graded AgeBadge when the host supplies BOTH age props. */
+  ageDays?: number;
+  /** The team's stale threshold the AgeBadge grades against (hygiene hosts pass their configured value). */
+  staleDaysThreshold?: number;
+  /** Resolved Program Increment value; rendered as a planning row only when supplied (host-resolved field). */
+  programIncrement?: string | null;
+  /** Resolved sprint name; rendered as a planning row only when supplied. */
+  sprintName?: string | null;
+  /** Resolved feature/epic link key; rendered as a planning row only when supplied. */
+  featureLinkKey?: string | null;
 }
 
 /**
@@ -50,6 +64,11 @@ export default function IssueDetailPanel({
   onCommentPosted,
   isEmbedded = false,
   acceptanceCriteria,
+  ageDays,
+  staleDaysThreshold,
+  programIncrement,
+  sprintName,
+  featureLinkKey,
 }: IssueDetailPanelProps) {
   // The seed reads whichever story-points field this project actually uses (configured, modern,
   // legacy — dropdown option objects included), so the input starts with the real current value.
@@ -63,6 +82,11 @@ export default function IssueDetailPanel({
       onIssueUpdated={onIssueUpdated}
       onCommentPosted={onCommentPosted}
       acceptanceCriteria={acceptanceCriteria}
+      ageDays={ageDays}
+      staleDaysThreshold={staleDaysThreshold}
+      programIncrement={programIncrement}
+      sprintName={sprintName}
+      featureLinkKey={featureLinkKey}
     />
   );
 }
@@ -77,6 +101,11 @@ function IssueDetailPanelContent({
   onCommentPosted,
   isEmbedded = false,
   acceptanceCriteria,
+  ageDays,
+  staleDaysThreshold,
+  programIncrement,
+  sprintName,
+  featureLinkKey,
 }: IssueDetailPanelProps) {
   const [isPanelOpen, setIsPanelOpen] = useState(true);
   const [isLoadingTransitions, setIsLoadingTransitions] = useState(true);
@@ -228,11 +257,13 @@ function IssueDetailPanelContent({
     }
   }
 
-  const normalizedDescription = normalizeRichTextToPlainText(issue.fields.description);
-  const descriptionPreview = normalizedDescription
-    ? normalizedDescription.slice(0, DESCRIPTION_PREVIEW_LENGTH)
-    : null;
-  const hasTruncatedDescription = normalizedDescription.length > DESCRIPTION_PREVIEW_LENGTH;
+  // Structure-preserving description (spec 019 FR-009): headings/lists render as such; a
+  // description with no recognizable structure degrades to plain paragraphs — never emptier.
+  const descriptionBlocks = parseStructuredText(issue.fields.description);
+  const issueLinks = issue.fields.issuelinks ?? [];
+  const issueLabels = issue.fields.labels ?? [];
+  const issueFixVersions = issue.fields.fixVersions ?? [];
+  const hasPlanningContext = Boolean(programIncrement || sprintName || featureLinkKey);
   // Acceptance Criteria is passed in already-resolved (the AC field id is instance-specific). Shown only
   // when the caller supplied non-empty text, so callers that don't fetch AC see no empty label.
   const normalizedAcceptanceCriteria = (acceptanceCriteria ?? '').trim();
@@ -264,19 +295,21 @@ function IssueDetailPanelContent({
         )}
       </div>
 
+      {/* Glanceable fact row: type, status, priority, and owner read from color + icon + text —
+          no label-hunting (spec 019 US1). Dates stay as quiet secondary text below. */}
+      <div className={styles.chipRow}>
+        {issue.fields.issuetype?.name && <IssueTypeIcon issueTypeName={issue.fields.issuetype.name} />}
+        <StatusChip
+          statusName={issue.fields.status.name}
+          statusCategoryKey={issue.fields.status.statusCategory?.key}
+        />
+        {issue.fields.priority?.name && <PriorityBadge priorityName={issue.fields.priority.name} />}
+        <AssigneeAvatar displayName={issue.fields.assignee?.displayName ?? null} />
+        {ageDays !== undefined && staleDaysThreshold !== undefined && (
+          <AgeBadge ageDays={ageDays} staleDaysThreshold={staleDaysThreshold} />
+        )}
+      </div>
       <div className={styles.issueMeta}>
-        <div className={styles.metaItem}>
-          <span className={styles.metaLabel}>Status</span>
-          <span className={styles.metaValue}>{issue.fields.status.name}</span>
-        </div>
-        <div className={styles.metaItem}>
-          <span className={styles.metaLabel}>Priority</span>
-          <span className={styles.metaValue}>{issue.fields.priority?.name ?? EMPTY_META_VALUE}</span>
-        </div>
-        <div className={styles.metaItem}>
-          <span className={styles.metaLabel}>Assignee</span>
-          <span className={styles.metaValue}>{issue.fields.assignee?.displayName ?? UNASSIGNED_LABEL}</span>
-        </div>
         <div className={styles.metaItem}>
           <span className={styles.metaLabel}>Created</span>
           <span className={styles.metaValue}>{issue.fields.created.slice(0, 10)}</span>
@@ -287,15 +320,70 @@ function IssueDetailPanelContent({
         </div>
       </div>
 
-      {descriptionPreview && (
+      {/* Planning context rows render only when the host resolved them — no empty placeholders. */}
+      {hasPlanningContext && (
+        <div className={styles.issueMeta}>
+          {programIncrement && (
+            <div className={styles.metaItem}>
+              <span className={styles.metaLabel}>PI</span>
+              <span className={styles.metaValue}>{programIncrement}</span>
+            </div>
+          )}
+          {sprintName && (
+            <div className={styles.metaItem}>
+              <span className={styles.metaLabel}>Sprint</span>
+              <span className={styles.metaValue}>{sprintName}</span>
+            </div>
+          )}
+          {featureLinkKey && (
+            <div className={styles.metaItem}>
+              <span className={styles.metaLabel}>Feature</span>
+              <span className={styles.metaValue}>{featureLinkKey}</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {(issueLabels.length > 0 || issueFixVersions.length > 0) && (
+        <div className={styles.chipRow}>
+          {issueLabels.length > 0 && (
+            <span className={styles.contextChipGroup}>
+              <span className={styles.metaLabel}>Labels</span>
+              {issueLabels.map((issueLabel) => (
+                <span className={styles.contextChip} key={issueLabel}>{issueLabel}</span>
+              ))}
+            </span>
+          )}
+          {issueFixVersions.length > 0 && (
+            <span className={styles.contextChipGroup}>
+              <span className={styles.metaLabel}>Fix Versions</span>
+              {issueFixVersions.map((fixVersion) => (
+                <span className={styles.contextChip} key={fixVersion.name}>{fixVersion.name}</span>
+              ))}
+            </span>
+          )}
+        </div>
+      )}
+
+      {descriptionBlocks.length > 0 && (
         <div className={styles.description}>
-          Description: {descriptionPreview}{hasTruncatedDescription ? '…' : ''}
+          <span className={styles.metaLabel}>Description</span>
+          <StructuredText blocks={descriptionBlocks} />
         </div>
       )}
 
       {acceptanceCriteriaPreview && (
         <div className={styles.description}>
           Acceptance Criteria: {acceptanceCriteriaPreview}{hasTruncatedAcceptanceCriteria ? '…' : ''}
+        </div>
+      )}
+
+      {/* Linked issues WITH their statuses — often the single fact that explains a stale ticket.
+          Read straight off the payload; hosts that did not fetch issuelinks simply see no block. */}
+      {issueLinks.length > 0 && (
+        <div className={styles.linksBlock}>
+          <span className={styles.metaLabel}>Linked Issues</span>
+          {issueLinks.map((issueLink, linkIndex) => renderIssueLinkRow(issueLink, linkIndex))}
         </div>
       )}
 
@@ -395,5 +483,30 @@ function IssueDetailPanelContent({
         {storyPointsSaveError && <span className={styles.errorMessage}>{storyPointsSaveError}</span>}
       </div>
     </section>
+  );
+}
+
+/**
+ * Renders one linked-issue row: the link relation in the direction it reads ("links to" vs
+ * "is blocked by"), the other issue's key and summary, and that issue's own status chip —
+ * often the single fact that explains why the current issue is waiting.
+ */
+function renderIssueLinkRow(issueLink: JiraIssueLink, linkRowIndex: number) {
+  const linkedIssue = issueLink.outwardIssue ?? issueLink.inwardIssue;
+  if (!linkedIssue) return null;
+  const relationLabel = issueLink.outwardIssue
+    ? (issueLink.type?.outward || issueLink.type?.name || 'links to')
+    : (issueLink.type?.inward || issueLink.type?.name || 'linked from');
+  const linkedStatus = linkedIssue.fields?.status;
+
+  return (
+    <div className={styles.linkRow} key={`${linkedIssue.key}-${linkRowIndex}`}>
+      <span className={styles.linkRelation}>{relationLabel}</span>
+      <span className={styles.linkKey}>{linkedIssue.key}</span>
+      {linkedStatus?.name && (
+        <StatusChip statusName={linkedStatus.name} statusCategoryKey={linkedStatus.statusCategory?.key} />
+      )}
+      {linkedIssue.fields?.summary && <span className={styles.linkSummary}>{linkedIssue.fields.summary}</span>}
+    </div>
   );
 }

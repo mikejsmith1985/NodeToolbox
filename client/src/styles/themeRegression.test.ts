@@ -41,8 +41,8 @@ const DISALLOWED_DARK_THEME_SNIPPETS = [
  * in both themes, so banning every white would be noise that teaches people to ignore this test.
  */
 const DISALLOWED_LIGHT_THEME_PATTERNS = [
-  /background(-color)?:\s*#fff(fff)?/i,
-  /background(-color)?:\s*white/i,
+  /background(-color)?:\s*#fff(fff)?\b/i,
+  /background(-color)?:\s*white\b/i,
   /border(-color)?:[^;]*#d0d7de/i,
   /background(-color)?:[^;]*#f6f8fa/i,
   /color-scheme:\s*light;/i,

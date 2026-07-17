@@ -11,10 +11,17 @@ import {
   type HygieneFlag,
 } from './checks/hygieneChecks.ts';
 import { useEffect, useRef, useState } from 'react';
+import { AgeBadge } from '../../components/IssueMeta/AgeBadge.tsx';
+import { AssigneeAvatar } from '../../components/IssueMeta/AssigneeAvatar.tsx';
+import { IssueTypeIcon } from '../../components/IssueMeta/IssueTypeIcon.tsx';
+import { StatusChip } from '../../components/IssueMeta/StatusChip.tsx';
+import { loadDashboardConfigFromStorage } from '../SprintDashboard/hooks/useDashboardConfig.ts';
+import { useSettingsStore } from '../../store/settingsStore.ts';
 import { useAiAssistStore } from '../../store/aiAssistStore.ts';
 import { HygieneFixControl } from './HygieneFixControl.tsx';
 import { HygieneAiPanel } from './ai/HygieneAiPanel.tsx';
 import { parseHygieneFilterCheckIds, useHygieneState } from './hooks/useHygieneState.ts';
+import { useHygieneSession, type HygieneSessionOutcome } from './hooks/useHygieneSession.ts';
 import { buildCheckIssueKeys, buildJiraIssueNavigatorUrl } from './utils/buildHygieneJqlUrl.ts';
 import IssueDetailPanel from '../../components/IssueDetailPanel/index.tsx';
 import { useConnectionStore } from '../../store/connectionStore.ts';
@@ -45,6 +52,22 @@ const FIELD_DEPENDENT_CHECKS: ReadonlyArray<{ checkId: string; fieldConfigKey: k
 ];
 const NOT_CONFIGURED_TILE_LABEL = 'not checked — no matching Jira field';
 const NO_VALUE_LABEL = '—';
+// Visible marks for findings settled during a cleanup session; untouched rows carry none.
+const SESSION_OUTCOME_MARKS: Record<HygieneSessionOutcome, string> = {
+  fixed: '✓ fixed',
+  commented: '💬 commented',
+  skipped: '⤼ skipped',
+};
+// Plain-language explanations rendered above each flag's fix controls (spec 019 FR-015).
+const CHECK_EXPLANATION_BY_ID: Record<string, string> = {
+  'missing-sp': 'Missing story points — set the estimate so planning can size this work.',
+  'no-ac': 'Missing acceptance criteria — capture how this work will be verified.',
+  'no-assignee': 'Nobody owns this issue — assign it so it can move.',
+  'missing-fix-version': 'No fix version — tag the release this work lands in.',
+  'missing-due-date': 'No due date — set when this is expected to finish.',
+  'missing-pi': 'No Program Increment — attach this to the PI it belongs to.',
+  'missing-feature-link': 'Not linked to a Feature — connect it to the initiative it supports.',
+};
 const JIRA_BROWSE_PREFIX = 'https://jira.healthspring-jira-prod.aws.zilverton.com/browse/';
 const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000;
 const MAX_HYGIENE_SCORE = 100;
@@ -86,6 +109,9 @@ export default function HygieneView({
   });
   const isAiAssistUnlocked = useAiAssistStore((storeState) => storeState.isAiAssistUnlocked);
   const jiraBaseUrl = useConnectionStore((state) => state.proxyStatus?.jira?.baseUrl ?? null);
+  // The same stale threshold the scan grades with — the AgeBadge heat derives from it (spec 019 FR-005).
+  const activeTeamProfileId = useSettingsStore((storeState) => storeState.sprintDashboardActiveTeamProfileId);
+  const staleDaysThreshold = loadDashboardConfigFromStorage(activeTeamProfileId).staleDaysThreshold;
   const hasAutoRunTriggeredRef = useRef(false);
   const isHygieneLoading = hygieneState.isLoading;
   const loadHygiene = hygieneState.loadHygiene;
@@ -112,6 +138,25 @@ export default function HygieneView({
     && hasScoreData;
   const [expandedIssueKey, setExpandedIssueKey] = useState<string | null>(null);
   const [copiedCheckId, setCopiedCheckId] = useState<string | null>(null);
+  // Guided cleanup session over the CURRENT filtered findings (spec 019 US3) — ephemeral by design.
+  const session = useHygieneSession();
+  const { syncWithKeys, endedSummary } = session;
+  const filteredFindingKeysJoined = hygieneState.filteredFindings
+    .map((finding) => finding.issue.key)
+    .join('|');
+
+  // A changed filter/list underneath an active session ends it (fresh list ⇒ fresh session).
+  useEffect(() => {
+    syncWithKeys(filteredFindingKeysJoined === '' ? [] : filteredFindingKeysJoined.split('|'));
+  }, [syncWithKeys, filteredFindingKeysJoined]);
+
+  // Fixes applied during a session defer the rescan (so the cursor never jumps — FR-014);
+  // the deferred reload runs once the session ends, if anything was actually fixed.
+  useEffect(() => {
+    if (endedSummary && endedSummary.fixedCount > 0) {
+      void loadHygiene();
+    }
+  }, [endedSummary, loadHygiene]);
   // Fall back to defaults so the inline fix controls still resolve system fields before the first
   // Jira-name-resolved config lands (and so tests that stub the hook without a config keep working).
   const fixFieldConfig = hygieneState.fieldConfig ?? resolveHygieneFieldConfig();
@@ -247,6 +292,43 @@ export default function HygieneView({
         </div>
       )}
       {shouldShowNoFlags && <div className={styles.emptyState}>{NO_FLAGS_MESSAGE}</div>}
+
+      {/* End-of-session report — informational only, all four buckets, never overstates progress. */}
+      {session.endedSummary && (
+        <div className={styles.sessionSummary} role="status">
+          <span>
+            {`${session.endedSummary.totalCount} findings — ${session.endedSummary.fixedCount} fixed, `
+              + `${session.endedSummary.commentedCount} commented, ${session.endedSummary.skippedCount} skipped, `
+              + `${session.endedSummary.untouchedCount} untouched`}
+          </span>
+          <button className={styles.sessionButton} type="button" onClick={session.dismissSummary}>
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {!hygieneState.isLoading && hasVisibleFindings && !session.isSessionActive && (
+        <button
+          className={styles.buttonPrimary}
+          type="button"
+          onClick={() => session.startSession(filteredFindingKeysJoined.split('|'))}
+        >
+          ▶ Review these findings
+        </button>
+      )}
+
+      {session.isSessionActive && (
+        <div className={styles.sessionBar} role="status" aria-label="Cleanup session">
+          <span className={styles.sessionPosition}>
+            {`Reviewing ${session.cursorIndex + 1} of ${session.orderedKeys.length}`}
+          </span>
+          <button className={styles.sessionButton} type="button" onClick={session.goPrevious}>◀ Previous</button>
+          <button className={styles.sessionButton} type="button" onClick={session.goNext}>Next ▶</button>
+          <button className={styles.sessionButton} type="button" onClick={session.skipCurrent}>Skip (S)</button>
+          <button className={styles.sessionButton} type="button" onClick={session.endSession}>End session (Esc)</button>
+        </div>
+      )}
+
       {!hygieneState.isLoading && hasVisibleFindings && (
         <div className={styles.findingsList} aria-label="Hygiene findings">
           {hygieneState.filteredFindings.map((finding) => (
@@ -254,10 +336,26 @@ export default function HygieneView({
               key={finding.issue.key}
               finding={finding}
               fieldConfig={fixFieldConfig}
-              isExpanded={expandedIssueKey === finding.issue.key}
+              staleDaysThreshold={staleDaysThreshold}
+              isExpanded={session.isSessionActive
+                ? session.currentKey === finding.issue.key
+                : expandedIssueKey === finding.issue.key}
+              isSessionCurrent={session.isSessionActive && session.currentKey === finding.issue.key}
+              sessionOutcome={session.outcomeByKey[finding.issue.key]}
               onToggleExpand={() => handleToggleIssueExpand(finding.issue.key)}
               onIssueUpdated={() => {
+                // In a session the rescan is deferred so the cursor holds its place (FR-014);
+                // the outcome is recorded instead and the reload runs at session end.
+                if (session.isSessionActive) {
+                  session.markFixed(finding.issue.key);
+                  return;
+                }
                 void hygieneState.loadHygiene();
+              }}
+              onCommentPosted={() => {
+                if (session.isSessionActive) {
+                  session.markCommented(finding.issue.key);
+                }
               }}
             />
           ))}
@@ -348,12 +446,35 @@ function renderSummaryTile(
 interface FindingRowProps {
   finding: HygieneFinding;
   fieldConfig: HygieneFieldConfig;
+  staleDaysThreshold: number;
   isExpanded: boolean;
+  /** True when a cleanup session's cursor is on this finding — highlighted, auto-expanded. */
+  isSessionCurrent?: boolean;
+  /** How the current session settled this finding, if it did; untouched rows carry none. */
+  sessionOutcome?: HygieneSessionOutcome;
   onToggleExpand: () => void;
   onIssueUpdated: () => void;
+  onCommentPosted?: () => void;
 }
 
-function FindingRow({ finding, fieldConfig, isExpanded, onToggleExpand, onIssueUpdated }: FindingRowProps) {
+function FindingRow({
+  finding,
+  fieldConfig,
+  staleDaysThreshold,
+  isExpanded,
+  isSessionCurrent = false,
+  sessionOutcome,
+  onToggleExpand,
+  onIssueUpdated,
+  onCommentPosted,
+}: FindingRowProps) {
+  const idleDayCount = calculateDaysSince(finding.issue.fields.updated ?? finding.issue.fields.created);
+  const rowClassName = [
+    styles.findingRow,
+    sessionOutcome ? styles.findingRowSettled : '',
+    isSessionCurrent ? styles.findingRowCurrent : '',
+  ].filter(Boolean).join(' ');
+
   function handleKeyDown(keyEvent: React.KeyboardEvent) {
     if (keyEvent.key === 'Enter' || keyEvent.key === ' ') {
       keyEvent.preventDefault();
@@ -364,7 +485,7 @@ function FindingRow({ finding, fieldConfig, isExpanded, onToggleExpand, onIssueU
   return (
     <div className={styles.findingRowWrapper}>
       <div
-        className={styles.findingRow}
+        className={rowClassName}
         onClick={onToggleExpand}
         onKeyDown={handleKeyDown}
         role="button"
@@ -382,6 +503,9 @@ function FindingRow({ finding, fieldConfig, isExpanded, onToggleExpand, onIssueU
             >
               {finding.issue.key}
             </a>
+            {sessionOutcome && (
+              <span className={styles.sessionOutcomeMark}>{SESSION_OUTCOME_MARKS[sessionOutcome]}</span>
+            )}
             <span className={styles.expandHint}>{isExpanded ? '▲ Less' : '▼ Details'}</span>
           </div>
           <h2 className={styles.issueSummary}>{readIssueSummary(finding)}</h2>
@@ -394,6 +518,8 @@ function FindingRow({ finding, fieldConfig, isExpanded, onToggleExpand, onIssueU
           {finding.flags.map((flag) => (
             <div key={flag.checkId} className={styles.flagFixRow}>
               {renderFlagChip(flag)}
+              {/* Say what is flagged and what fixing does — never a bare control (FR-015). */}
+              <span className={styles.flagExplanation}>{buildFlagExplanation(flag, idleDayCount)}</span>
               <HygieneFixControl issue={finding.issue} flag={flag} fieldConfig={fieldConfig} onFixed={onIssueUpdated} />
             </div>
           ))}
@@ -401,29 +527,70 @@ function FindingRow({ finding, fieldConfig, isExpanded, onToggleExpand, onIssueU
         <dl className={styles.issueMeta}>
           <div>
             <dt>Type</dt>
-            <dd>{finding.issue.fields.issuetype?.name || '—'}</dd>
+            <dd>
+              {finding.issue.fields.issuetype?.name
+                ? <IssueTypeIcon issueTypeName={finding.issue.fields.issuetype.name} />
+                : NO_VALUE_LABEL}
+            </dd>
+          </div>
+          <div>
+            <dt>Status</dt>
+            <dd>
+              {finding.issue.fields.status?.name
+                ? (
+                    <StatusChip
+                      statusName={finding.issue.fields.status.name}
+                      statusCategoryKey={finding.issue.fields.status.statusCategory?.key}
+                    />
+                  )
+                : NO_VALUE_LABEL}
+            </dd>
           </div>
           <div>
             <dt>PI</dt>
-            <dd>{finding.programIncrement || '—'}</dd>
+            <dd>{finding.programIncrement || NO_VALUE_LABEL}</dd>
           </div>
           <div>
             <dt>Assignee</dt>
-            <dd>{readAssigneeName(finding)}</dd>
+            <dd><AssigneeAvatar displayName={finding.issue.fields.assignee?.displayName ?? null} /></dd>
           </div>
           <div>
             <dt>Age</dt>
-            <dd>{formatIssueAge(finding.issue.fields.created)}</dd>
+            <dd>
+              {idleDayCount === null
+                ? NO_VALUE_LABEL
+                : <AgeBadge ageDays={idleDayCount} staleDaysThreshold={staleDaysThreshold} />}
+            </dd>
           </div>
         </dl>
       </div>
       {isExpanded && (
         <div className={styles.issueDetailCell}>
-          <IssueDetailPanel isEmbedded issue={finding.issue as unknown as RealJiraIssue} onIssueUpdated={onIssueUpdated} />
+          <IssueDetailPanel
+            isEmbedded
+            issue={finding.issue as unknown as RealJiraIssue}
+            onIssueUpdated={onIssueUpdated}
+            ageDays={idleDayCount ?? undefined}
+            staleDaysThreshold={staleDaysThreshold}
+            acceptanceCriteria={readAcceptanceCriteriaText(finding, fieldConfig)}
+            programIncrement={finding.programIncrement}
+            sprintName={parseSprintName(finding.issue.fields[SPRINT_FIELD_ID])}
+            featureLinkKey={readFeatureLinkKey(finding, fieldConfig)}
+            onCommentPosted={onCommentPosted}
+          />
         </div>
       )}
     </div>
   );
+}
+
+/** One plain-language sentence per flagged check; stale carries the actual idle-day count. */
+function buildFlagExplanation(flag: HygieneFlag, idleDayCount: number | null): string {
+  if (flag.checkId === 'stale') {
+    const idleDaysText = idleDayCount === null ? 'a while' : `${idleDayCount} days`;
+    return `No update in ${idleDaysText} — nudge with a comment, or Skip if the thread already explains the wait.`;
+  }
+  return CHECK_EXPLANATION_BY_ID[flag.checkId] ?? `${flag.label} — fix it inline here, or open the issue in Jira.`;
 }
 
 function renderFlagChip(flag: HygieneFlag) {
@@ -439,16 +606,58 @@ function readIssueSummary(finding: HygieneFinding): string {
   return finding.issue.fields.summary || 'Untitled Jira issue';
 }
 
-function readAssigneeName(finding: HygieneFinding): string {
-  return finding.issue.fields.assignee?.displayName || NO_VALUE_LABEL;
+// Jira's sprint custom field — raw strings like "...[id=42,state=ACTIVE,name=ENCUC Sprint 26.3.4,...]".
+const SPRINT_FIELD_ID = 'customfield_10020';
+const SPRINT_NAME_PATTERN = /name=([^,\]]+)/;
+
+/** Extracts the newest sprint's name from Jira's raw sprint-field payload, or null when absent. */
+function parseSprintName(rawSprintValue: unknown): string | null {
+  const sprintEntries = Array.isArray(rawSprintValue) ? rawSprintValue : [rawSprintValue];
+  const newestSprintEntry = sprintEntries[sprintEntries.length - 1];
+  if (typeof newestSprintEntry === 'string') {
+    return newestSprintEntry.match(SPRINT_NAME_PATTERN)?.[1] ?? null;
+  }
+  if (newestSprintEntry && typeof newestSprintEntry === 'object') {
+    const sprintName = (newestSprintEntry as { name?: string }).name;
+    return sprintName?.trim() || null;
+  }
+  return null;
 }
 
-function formatIssueAge(createdDateText: string | undefined): string {
-  if (!createdDateText) return NO_VALUE_LABEL;
-  const createdTimestamp = new Date(createdDateText).getTime();
-  if (!Number.isFinite(createdTimestamp)) return NO_VALUE_LABEL;
-  const dayCount = Math.max(0, Math.floor((Date.now() - createdTimestamp) / MILLISECONDS_PER_DAY));
-  return `${dayCount}d`;
+/** Reads the first non-empty acceptance-criteria field the instance config resolves. */
+function readAcceptanceCriteriaText(finding: HygieneFinding, fieldConfig: HygieneFieldConfig): string | null {
+  for (const acceptanceFieldId of fieldConfig.acceptanceCriteriaFieldIds) {
+    // The description doubles as the AC fallback field in the default config; the panel already
+    // renders the description itself, so repeating it as "Acceptance Criteria" would be noise.
+    if (acceptanceFieldId === 'description') continue;
+    const rawFieldValue = finding.issue.fields[acceptanceFieldId];
+    if (typeof rawFieldValue === 'string' && rawFieldValue.trim() !== '') {
+      return rawFieldValue.trim();
+    }
+  }
+  return null;
+}
+
+/** Reads the linked feature/epic key from the configured link fields or the native parent. */
+function readFeatureLinkKey(finding: HygieneFinding, fieldConfig: HygieneFieldConfig): string | null {
+  for (const featureFieldId of fieldConfig.featureLinkFieldIds) {
+    if (featureFieldId === 'parent') continue;
+    const rawFieldValue = finding.issue.fields[featureFieldId];
+    if (typeof rawFieldValue === 'string' && rawFieldValue.includes('-')) return rawFieldValue;
+    if (rawFieldValue && typeof rawFieldValue === 'object') {
+      const linkedKey = (rawFieldValue as { key?: string }).key;
+      if (linkedKey) return linkedKey;
+    }
+  }
+  return finding.issue.fields.parent?.key ?? null;
+}
+
+/** Days since the given timestamp, or null when the value is missing/unparseable. */
+function calculateDaysSince(isoDateText: string | undefined): number | null {
+  if (!isoDateText) return null;
+  const parsedTimestamp = new Date(isoDateText).getTime();
+  if (!Number.isFinite(parsedTimestamp)) return null;
+  return Math.max(0, Math.floor((Date.now() - parsedTimestamp) / MILLISECONDS_PER_DAY));
 }
 
 function buildJiraBrowseUrl(issueKey: string): string {

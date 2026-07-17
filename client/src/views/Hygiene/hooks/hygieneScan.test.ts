@@ -108,6 +108,23 @@ describe('runHygieneScan', () => {
     expect(jqlClause).toBe('project=ENCUC AND statusCategory != Done AND cf[10301] = "PI 26.3"');
   });
 
+  it('requests issuelinks and labels so findings carry their decision context (spec 019 US2)', async () => {
+    // The detail panel shows linked issues (with THEIR statuses) and label chips straight off the
+    // finding's payload — a field missing here silently omits that context everywhere downstream.
+    mockJiraGet.mockImplementation((path: string) => {
+      if (path.includes('/rest/api/2/field')) return Promise.resolve(FIELD_METADATA);
+      return Promise.resolve({ issues: [] });
+    });
+
+    await runHygieneScan({ projectKey: 'TBX', extraJql: '', assigneeClause: null, activeTeamProfileId: '' });
+
+    const requestedFieldList = mockJiraGet.mock.calls
+      .map(([path]) => decodeURIComponent(String(path)))
+      .find((path) => path.includes('/rest/api/2/search'))
+      ?.split('fields=')[1]?.split('&')[0] ?? '';
+    expect(requestedFieldList.split(',')).toEqual(expect.arrayContaining(['issuelinks', 'labels']));
+  });
+
   it('drops only the child-story check when the rollup query fails, instead of failing the run (GH #167)', async () => {
     const unpointedFeature = buildIssue('TBX-F', {
       status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } },

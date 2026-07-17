@@ -20,11 +20,17 @@ export interface JiraTransition {
   to: { name: string; statusCategory: { name: string } };
 }
 
-/** Jira issue link metadata used by standup, blocker, and release workflows. */
+/** Jira issue link metadata used by standup, blocker, release, and issue-context workflows. */
 export interface JiraIssueLink {
   type?: { name?: string; inward?: string; outward?: string };
-  inwardIssue?: { key: string; fields?: { summary?: string; status?: { name: string }; labels?: string[] } };
-  outwardIssue?: { key: string; fields?: { summary?: string; status?: { name: string }; labels?: string[] } };
+  inwardIssue?: {
+    key: string;
+    fields?: { summary?: string; status?: { name: string; statusCategory?: { key?: string } }; labels?: string[] };
+  };
+  outwardIssue?: {
+    key: string;
+    fields?: { summary?: string; status?: { name: string; statusCategory?: { key?: string } }; labels?: string[] };
+  };
 }
 
 /** Jira comment metadata used by planning and issue detail workflows. */
