@@ -95,12 +95,72 @@ function Resolve-NextVersion {
     }
 }
 
+# ── Dependency Install Skip ────────────────────────────────────────────────────
+
+<#
+.SYNOPSIS
+  Returns the SHA-256 hash of a directory's package-lock.json, or '' when absent.
+.DESCRIPTION
+  The lockfile hash is the identity of an npm install: same lockfile, same node_modules.
+  Used to decide whether the previous release's install is still current.
+#>
+function Get-LockFileHash {
+    param([Parameter(Mandatory = $true)][string]$DirectoryPath)
+    $lockFilePath = Join-Path $DirectoryPath 'package-lock.json'
+    if (-not (Test-Path $lockFilePath)) { return '' }
+    return (Get-FileHash $lockFilePath -Algorithm SHA256).Hash
+}
+
+<#
+.SYNOPSIS
+  Runs npm install only when the lockfile changed since the last release.
+.DESCRIPTION
+  The previous release stamps the lockfile hash inside node_modules after installing.
+  When the stamp matches this release's pre-bump hash, node_modules is already exactly
+  what npm install would produce, so the (slow) install is skipped. A fresh clone has
+  no stamp and always installs — the "works from a fresh clone" guarantee is preserved.
+#>
+function Install-DependenciesIfStale {
+    param(
+        [Parameter(Mandatory = $true)][string]$DirectoryPath,
+        [Parameter(Mandatory = $true)][string]$Label,
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$PreBumpLockHash
+    )
+    $stampFilePath = Join-Path $DirectoryPath 'node_modules\.forge-release-install-stamp'
+    $hasCurrentInstall = ($PreBumpLockHash -ne '') -and (Test-Path $stampFilePath) -and
+        ((Get-Content $stampFilePath -Raw).Trim() -eq $PreBumpLockHash)
+
+    if ($hasCurrentInstall) {
+        Write-Host "       ✅ $Label dependencies unchanged since last release - install skipped"
+    } else {
+        Push-Location $DirectoryPath
+        try {
+            npm install --silent --no-audit --no-fund
+            if ($LASTEXITCODE -ne 0) { throw "$Label npm install failed with exit code $LASTEXITCODE" }
+        } finally {
+            Pop-Location
+        }
+        Write-Host "       ✅ $Label dependencies installed"
+    }
+
+    # Stamp the lockfile as it stands NOW - after the version bump rewrote its version
+    # fields - so the NEXT release's pre-bump hash (taken from this exact file) matches.
+    Set-Content -Path $stampFilePath -Value (Get-LockFileHash -DirectoryPath $DirectoryPath) -Encoding ASCII
+}
+
 # Resolve the target version FIRST, from the current file, without writing. Everything downstream
 # (zip name, exe name, tag, dry-run plan) reads this — so a dry run describes the real release
 # exactly, while leaving the repo untouched.
 $CurrentVersion = (Get-Content $PackageJson -Raw | ConvertFrom-Json).version
 $AppVersion     = Resolve-NextVersion -CurrentVersion $CurrentVersion -BumpType $BumpType
 $GitTag         = "v$AppVersion"
+
+# Hash both lockfiles BEFORE any version bump. npm version rewrites package-lock.json's
+# version fields on every release, so a hash taken after the bump could never match the
+# previous release's stamp and dependencies would reinstall every time. The pre-bump file
+# is byte-identical to what the previous release stamped when no dependency changed.
+$RootLockHashBeforeBump   = Get-LockFileHash -DirectoryPath $RepoRoot
+$ClientLockHashBeforeBump = Get-LockFileHash -DirectoryPath (Join-Path $RepoRoot 'client')
 
 # A bump has to be committed, and the pre-commit hook refuses commits to main. Catch that here, in
 # seconds, rather than after a five-minute build - which is how a wrong tag got published once.
@@ -162,8 +222,8 @@ if ($DryRun) {
     Write-Host ""
     Write-Host "  [dry-run] local-release.ps1 would perform the following steps:"
     Write-Host ""
-    Write-Host "  1. npm install           - install root dependencies (incl. dev tools)"
-    Write-Host "  1c. cd client; npm install - install React client dependencies for fresh clones"
+    Write-Host "  1. npm install           - install root dependencies (skipped when the lockfile is unchanged since the last release)"
+    Write-Host "  1c. cd client; npm install - install React client dependencies (same lockfile skip)"
     if ($BumpType -ne '') {
         Write-Host "  1b. npm version $BumpType    - bump version in package.json + package-lock.json"
     }
@@ -211,23 +271,10 @@ Write-Host ""
 
 # Step 1: Install both root and client dependencies so the release works from a
 # fresh clone, not just from a developer machine that already built the client.
+# Unchanged lockfiles skip the install entirely (see Install-DependenciesIfStale).
 Write-Host "  [1/6] Installing root and client dependencies..."
-Push-Location $RepoRoot
-try {
-    npm install --silent
-    if ($LASTEXITCODE -ne 0) { throw "npm install failed with exit code $LASTEXITCODE" }
-
-    Push-Location (Join-Path $RepoRoot 'client')
-    try {
-        npm install --silent
-        if ($LASTEXITCODE -ne 0) { throw "client npm install failed with exit code $LASTEXITCODE" }
-    } finally {
-        Pop-Location
-    }
-} finally {
-    Pop-Location
-}
-Write-Host "       ✅ Dependencies installed"
+Install-DependenciesIfStale -DirectoryPath $RepoRoot -Label 'Root' -PreBumpLockHash $RootLockHashBeforeBump
+Install-DependenciesIfStale -DirectoryPath (Join-Path $RepoRoot 'client') -Label 'Client' -PreBumpLockHash $ClientLockHashBeforeBump
 
 # Step 2: Create dist/ output directory (clean slate — remove previous builds)
 Write-Host "  [2/6] Preparing dist/ directory..."
@@ -354,8 +401,13 @@ try {
             if ($LASTEXITCODE -ne 0) {
                 throw "The version bump commit failed (exit $LASTEXITCODE). Nothing has been tagged or published. If you are on '$originalBranch', note the pre-commit hook refuses commits to main - run this from a feature branch and the script will merge it to main for you."
             }
-            git push origin HEAD
-            if ($LASTEXITCODE -ne 0) { throw "git push of version bump failed with exit code $LASTEXITCODE" }
+            # The bump commit reaches the remote through the main push below, so pushing
+            # the feature branch separately would fire the pre-push hook an extra time for
+            # a branch that is deleted minutes later. Only push it when it is being kept.
+            if ($KeepBranch) {
+                git push origin HEAD
+                if ($LASTEXITCODE -ne 0) { throw "git push of version bump failed with exit code $LASTEXITCODE" }
+            }
         } else {
             Write-Host "       Version $AppVersion is already committed; nothing to bump."
         }
@@ -371,9 +423,10 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "git pull main failed" }
     git merge $originalBranch --no-edit
     if ($LASTEXITCODE -ne 0) { throw "git merge $originalBranch failed - resolve conflicts then re-run" }
-    git push origin main
-    if ($LASTEXITCODE -ne 0) { throw "git push main failed with exit code $LASTEXITCODE" }
-    Write-Host "       ✅ Merged and pushed to main"
+    # main is NOT pushed here - it goes up in one atomic push together with the release
+    # tag below, after the committed version has been verified. One push means one
+    # pre-push hook run, and nothing reaches the remote until the version check passed.
+    Write-Host "       ✅ Merged into main (pushed with the tag below)"
 
     # The invariant this whole step exists to protect: the commit about to be tagged must actually
     # contain the version being released. Checked against the committed tree, not the working tree,
@@ -408,10 +461,13 @@ try {
     # a NativeCommandError under $ErrorActionPreference = 'Stop'.
     try { git push origin ":refs/tags/$GitTag" 2>$null } catch { <# tag not present remotely, nothing to delete #> }
 
-    # Create the tag on main HEAD and push it
+    # Create the tag on main HEAD, then publish main and the tag in ONE atomic push:
+    # a single pre-push hook run instead of two, and either both refs land or neither
+    # does - so a failed push leaves the remote untouched and the script safe to re-run.
     git tag $GitTag
-    git push origin $GitTag
-    if ($LASTEXITCODE -ne 0) { throw "git push tag failed with exit code $LASTEXITCODE" }
+    git push --atomic origin main "refs/tags/$GitTag"
+    if ($LASTEXITCODE -ne 0) { throw "git push of main + $GitTag failed with exit code $LASTEXITCODE" }
+    Write-Host "       ✅ main and $GitTag pushed (one atomic push)"
 
     # Stay on main for the publish + branch-cleanup steps below. The workspace is
     # restored to a sensible branch afterward (either the original feature branch
