@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Personal to-do list with an app-wide F1 quick-add**: a new **My Issues → To-Do** tab holds a free-form
+  checklist — add, check off (kept visible with strikethrough), inline-edit, delete, and clear-completed, with
+  open/done counts. Press **F1 on any screen** to pop up a quick-add box without leaving what you're doing: Enter
+  adds and keeps the box open for the next thought, Escape closes, "Open list" jumps to the tab. The browser's
+  built-in F1 Help is suppressed while the app has focus. Items persist locally (they're personal notes, not Jira
+  data) and survive restarts.
+
 ### Fixed
 - **Story points save to dropdown-style fields — every writer, one code path (GH #177)**: projects that model
   story points as a Jira dropdown (a Select field with options "1", "2", "3", …) rejected the app's writes with
