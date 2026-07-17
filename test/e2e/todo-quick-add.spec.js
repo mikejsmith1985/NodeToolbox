@@ -1,6 +1,6 @@
 // todo-quick-add.spec.js — E2E proof that the F1 to-do quick-add works in a real browser:
 // the hotkey opens the popup from any screen (suppressing the browser Help default), a typed
-// item lands in the persistent list, and the My Issues → To-Do tab manages it.
+// item lands in the persistent list, and the My Issues → Today dashboard manages it.
 
 'use strict';
 
@@ -13,7 +13,7 @@ test.describe('F1 to-do quick-add', () => {
     await page.route('**/confluence-proxy/**', (route) => route.fulfill({ json: {} }));
   });
 
-  test('F1 opens the popup from the home screen and the item appears on the To-Do tab', async ({ page }) => {
+  test('F1 opens the popup from the home screen and the item appears on the Today dashboard', async ({ page }) => {
     await page.goto('/');
     // The F1 listener attaches after React mounts — wait for the rendered shell first.
     await expect(page.getByRole('heading', { name: 'Your personal utility belt' })).toBeVisible();
@@ -28,13 +28,13 @@ test.describe('F1 to-do quick-add', () => {
     await page.keyboard.press('Escape');
     await expect(quickAddDialog).not.toBeVisible();
 
-    await page.goto('/my-issues?tab=todo');
+    await page.goto('/my-issues?tab=today');
     await expect(page.getByRole('checkbox', { name: 'Book the PI planning room' })).toBeVisible();
     await expect(page.getByText('1 open · 0 done')).toBeVisible();
   });
 
   test('the list survives a reload (localStorage persistence)', async ({ page }) => {
-    await page.goto('/my-issues?tab=todo');
+    await page.goto('/my-issues?tab=today');
 
     await page.getByLabel('New to-do item').fill('Survives restarts');
     await page.getByRole('button', { name: 'Add', exact: true }).click();

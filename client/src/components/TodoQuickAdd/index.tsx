@@ -4,7 +4,7 @@
 // screen without leaving it. preventDefault() suppresses the browser's built-in F1 Help while
 // the app has focus. The popup stays open after each add — capture several thoughts in a row,
 // then Escape (or Close) returns to whatever was being done. The full list lives on the
-// My Issues → To-Do tab, one click away via the "Open list" link.
+// My Issues → Today dashboard, one click away via the "Open list" link.
 
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -16,7 +16,7 @@ import styles from './TodoQuickAdd.module.css';
 const QUICK_ADD_HOTKEY = 'F1';
 const DIALOG_LABEL = 'Add to-do item';
 const INPUT_LABEL = 'To-do item';
-const LIST_ROUTE = '/my-issues?tab=todo';
+const LIST_ROUTE = '/my-issues?tab=today';
 // The "Added ✓" confirmation lingers briefly so rapid entries still feel acknowledged.
 const CONFIRMATION_TIMEOUT_MS = 2_000;
 

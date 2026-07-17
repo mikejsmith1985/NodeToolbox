@@ -12,7 +12,6 @@ import { useSearchParams } from 'react-router-dom';
 
 import { PrimaryTabs } from '../../components/PrimaryTabs/PrimaryTabs.tsx';
 import TodayDashboard from './Today/TodayDashboard.tsx';
-import TodoTab from './Todo/TodoTab.tsx';
 import IssueDetailPanel from '../../components/IssueDetailPanel/index.tsx';
 import { useConnectionStore } from '../../store/connectionStore.ts';
 import { useSettingsStore } from '../../store/settingsStore.ts';
@@ -69,11 +68,10 @@ const AGING_WARN_DAYS = 5;
 const AGING_STALE_DAYS = 10;
 const MS_PER_DAY = 86_400_000;
 
-type MyIssuesTab = 'today' | 'todo' | 'report' | 'mentions' | 'hygiene' | 'time' | 'gitsync' | 'settings';
+type MyIssuesTab = 'today' | 'report' | 'mentions' | 'hygiene' | 'time' | 'gitsync' | 'settings';
 
 const MY_ISSUES_TABS: { key: MyIssuesTab; label: string }[] = [
   { key: 'today', label: 'Today' },
-  { key: 'todo', label: 'To-Do' },
   { key: 'report', label: 'Report' },
   { key: 'mentions', label: 'Mentions' },
   { key: 'hygiene', label: 'Hygiene' },
@@ -1021,13 +1019,6 @@ export default function MyIssuesView() {
             initialAllProjects={searchParams.get('hygieneScope') === 'mine'}
             initialFilter={searchParams.get('hygieneFilter') ?? undefined}
           />
-        </section>
-      )}
-
-      {/* ── To-Do tab (free-form personal checklist; fed from anywhere via the F1 quick-add) ── */}
-      {activeTab === 'todo' && (
-        <section id="my-issues-todo-panel" role="tabpanel" aria-labelledby="my-issues-todo-tab">
-          <TodoTab />
         </section>
       )}
 
