@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Today cards agree with the Hygiene tab and drill through to the issues they counted (GH #177)**: the
+  "Sprint commitment gaps" card showed 58 beside a Hygiene tab showing 1 unpointed story. Two causes: the card's
+  evaluation never received the team's configured story-points field (so every Story pointed in a custom field
+  looked unpointed), and the sprint issue fetch didn't even request the modern story-points, acceptance-criteria,
+  due-date, or target-date fields the reused Hygiene rules read — a rule whose field is missing from the payload
+  either false-flags everything or silently never fires. Both fixed: the evaluation context now carries the
+  configured field and the fetch requests every field the rules read. Separately, the three team cards (team
+  stale / unassigned / commitment gaps) all landed on one identical unfiltered Hygiene view; each now carries its
+  check filter in the URL, so the tab opens pre-filtered to exactly the issues that card counted — commitment
+  gaps arrives filtered to both of its checks (unpointed OR missing acceptance criteria), and both tiles show
+  selected.
+
 ### Added
 - **Monthly Delivery Report — scheduled runs can now DELIVER the prompt, not just cache it**: when the schedule
   fired (2nd Tuesday), the run built the AI-ready prompt and silently saved it to a file — nothing arrived

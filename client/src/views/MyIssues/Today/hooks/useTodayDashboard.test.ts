@@ -7,20 +7,21 @@
 import { renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { mockJiraGet, mockUseMentionsState, mockUseSprintData, mockUseConnectionStore, mockUseSettingsStore } =
+const { mockJiraGet, mockUseMentionsState, mockUseSprintData, mockUseConnectionStore, mockUseSettingsStore, mockLoadDashboardConfig } =
   vi.hoisted(() => ({
     mockJiraGet: vi.fn(),
     mockUseMentionsState: vi.fn(),
     mockUseSprintData: vi.fn(),
     mockUseConnectionStore: vi.fn(),
     mockUseSettingsStore: vi.fn(),
+    mockLoadDashboardConfig: vi.fn(),
   }));
 
 vi.mock('../../../../services/jiraApi.ts', () => ({ jiraGet: mockJiraGet }));
 vi.mock('../../hooks/useMentionsState.ts', () => ({ useMentionsState: mockUseMentionsState }));
 vi.mock('../../../SprintDashboard/hooks/useSprintData.ts', () => ({ useSprintData: mockUseSprintData }));
 vi.mock('../../../SprintDashboard/hooks/useDashboardConfig.ts', () => ({
-  loadDashboardConfigFromStorage: () => ({ staleDaysThreshold: 5, customStoryPointsFieldId: '' }),
+  loadDashboardConfigFromStorage: mockLoadDashboardConfig,
 }));
 vi.mock('../../../../store/connectionStore.ts', () => ({ useConnectionStore: mockUseConnectionStore }));
 vi.mock('../../../../store/settingsStore.ts', () => ({ useSettingsStore: mockUseSettingsStore }));
@@ -64,6 +65,7 @@ function buildMentions(overrides: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockLoadDashboardConfig.mockReturnValue({ staleDaysThreshold: 5, customStoryPointsFieldId: '' });
   mockUseConnectionStore.mockImplementation((selector: (state: { isJiraReady: boolean }) => unknown) =>
     selector({ isJiraReady: true }),
   );
@@ -166,6 +168,40 @@ describe('useTodayDashboard', () => {
     expect(result.current.categories.unassigned.count).toBe(1);
   });
 
+  it('evaluates commitment gaps with the team-configured story-points field, matching the Hygiene tab (GH #177)', async () => {
+    // The team stores points in a custom field. The Hygiene tab reads that field; the Today card
+    // used to fall back to the built-in fields (which this fetch does not even request) and flag
+    // every pointed Story as a commitment gap — 58 phantom gaps beside a Hygiene tab showing 1.
+    mockLoadDashboardConfig.mockReturnValue({ staleDaysThreshold: 5, customStoryPointsFieldId: 'customfield_10236' });
+    mockUseSprintData.mockReturnValue(
+      buildSprintData({
+        sprintIssues: [
+          buildIssue('TEAM-POINTED', {
+            issuetype: { name: 'Story' },
+            status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } },
+            assignee: { displayName: 'Dev' },
+            updated: recentIso(),
+            description: 'Given/When/Then',
+            customfield_10236: 5,
+          }),
+          buildIssue('TEAM-UNPOINTED', {
+            issuetype: { name: 'Story' },
+            status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } },
+            assignee: { displayName: 'Dev' },
+            updated: recentIso(),
+            description: 'Given/When/Then',
+            customfield_10236: null,
+          }),
+        ],
+      }),
+    );
+
+    const { result } = renderHook(() => useTodayDashboard());
+    await waitFor(() => expect(result.current.categories['commitment-gaps'].status).toBe('ready'));
+
+    expect(result.current.categories['commitment-gaps'].count).toBe(1);
+  });
+
   it('points every card at a destination that answers the same question the card counted (GH #167)', async () => {
     mockJiraGet.mockResolvedValue({ issues: [] });
 
@@ -181,9 +217,23 @@ describe('useTodayDashboard', () => {
     });
     // Unassigned and commitment-gap counts come from TEAM sprint issues → the team Hygiene tab.
     // The personal tab filters to assignee = currentUser(), where an unassigned issue can never
-    // appear — the old link was a guaranteed zero.
-    expect(categories.unassigned.destination).toEqual({ kind: 'sprintTab', tab: 'hygiene' });
-    expect(categories['commitment-gaps'].destination).toEqual({ kind: 'sprintTab', tab: 'hygiene' });
+    // appear — the old link was a guaranteed zero. Each team card also carries ITS check filter,
+    // so three different cards no longer land on one identical unfiltered view (GH #177).
+    expect(categories['team-stale'].destination).toEqual({
+      kind: 'sprintTab',
+      tab: 'hygiene',
+      search: { hygieneFilter: 'stale' },
+    });
+    expect(categories.unassigned.destination).toEqual({
+      kind: 'sprintTab',
+      tab: 'hygiene',
+      search: { hygieneFilter: 'no-assignee' },
+    });
+    expect(categories['commitment-gaps'].destination).toEqual({
+      kind: 'sprintTab',
+      tab: 'hygiene',
+      search: { hygieneFilter: 'missing-sp,no-ac' },
+    });
     // Due/overdue is a my+team union; the cross-project personal scope shows the "my" half honestly.
     expect(categories['due-overdue'].destination).toEqual({
       kind: 'myIssuesTab',

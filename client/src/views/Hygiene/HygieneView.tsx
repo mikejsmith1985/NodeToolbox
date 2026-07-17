@@ -14,7 +14,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useAiAssistStore } from '../../store/aiAssistStore.ts';
 import { HygieneFixControl } from './HygieneFixControl.tsx';
 import { HygieneAiPanel } from './ai/HygieneAiPanel.tsx';
-import { useHygieneState } from './hooks/useHygieneState.ts';
+import { parseHygieneFilterCheckIds, useHygieneState } from './hooks/useHygieneState.ts';
 import { buildCheckIssueKeys, buildJiraIssueNavigatorUrl } from './utils/buildHygieneJqlUrl.ts';
 import IssueDetailPanel from '../../components/IssueDetailPanel/index.tsx';
 import { useConnectionStore } from '../../store/connectionStore.ts';
@@ -286,7 +286,9 @@ function renderSummaryTile(
   copiedCheckId: string | null,
   onCopyJql: (checkId: string) => void,
 ) {
-  const isTileSelected = hygieneState.selectedFilter === checkId;
+  // A deep-linked filter can carry several comma-separated checks (e.g. 'missing-sp,no-ac' from
+  // the Today commitment-gaps card) — every check in the active filter shows as selected.
+  const isTileSelected = parseHygieneFilterCheckIds(hygieneState.selectedFilter).includes(checkId);
   const issueCount = hygieneState.summary.countByCheck[checkId] ?? 0;
   const checkLabel = hygieneState.checkLabelsById[checkId] ?? checkId;
   const hasCopyableIssues = issueCount > 0;

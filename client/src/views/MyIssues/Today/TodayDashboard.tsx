@@ -71,7 +71,10 @@ export default function TodayDashboard() {
     if (destination.kind === 'sprintTab') {
       // The Sprint Dashboard reopens to its last active tab, so set it before navigating.
       useSettingsStore.getState().setSprintDashboardActiveTab(destination.tab ?? DEFAULT_SPRINT_TAB);
-      navigate(SPRINT_DASHBOARD_PATH);
+      // Scope params (e.g. hygieneFilter) ride the URL so the landing tab opens showing exactly
+      // the issues this card counted, mirroring the myIssuesTab drill-throughs (GH #177).
+      const sprintQueryParams = new URLSearchParams(destination.search ?? {}).toString();
+      navigate(sprintQueryParams ? `${SPRINT_DASHBOARD_PATH}?${sprintQueryParams}` : SPRINT_DASHBOARD_PATH);
       return;
     }
 
