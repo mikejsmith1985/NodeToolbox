@@ -838,6 +838,43 @@ describe('SprintDashboardView', () => {
     expect(screen.getByText(/1 release/i)).toBeInTheDocument();
   });
 
+  it('shows the FULL assignee name on expanded release issues — never a cut-off first token (GH #177 follow-up)', async () => {
+    // "Lastname, Firstname (CTR)" names rendered as just "Lastname," when the row kept only the
+    // first space-separated word — information silently cut off, not a display preference.
+    mockState.activeTab = 'releases';
+    mockJiraGet.mockImplementation((path: string) => {
+      if (path === '/rest/api/2/project/TBX/versions') {
+        return Promise.resolve([
+          { id: 'rel-1', name: 'Release 24.1', releaseDate: '2099-01-15', released: false, archived: false },
+        ]);
+      }
+      if (decodeURIComponent(path).includes('fixVersion = "Release 24.1"')) {
+        return Promise.resolve({
+          issues: [
+            {
+              id: 'TBX-99',
+              key: 'TBX-99',
+              fields: {
+                summary: 'Prepare production deploy',
+                status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } },
+                assignee: { displayName: 'Katkar, Rahul (CTR)' },
+                issuetype: { name: 'Story', iconUrl: 'story.png' },
+                priority: { name: 'High', iconUrl: 'priority.png' },
+              },
+            },
+          ],
+        });
+      }
+
+      return Promise.resolve({ values: [] });
+    });
+    render(<SprintDashboardView />);
+
+    fireEvent.click(await screen.findByRole('button', { name: /show 1 issues/i }));
+
+    expect(screen.getByText('Katkar, Rahul (CTR)')).toBeInTheDocument();
+  });
+
   it('unlocks the hidden AI Assist release prompt flow and builds a structured prompt', async () => {
     mockState.activeTab = 'releases';
     mockJiraGet.mockImplementation((path: string) => {

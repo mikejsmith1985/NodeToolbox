@@ -5,7 +5,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   clampStoryPointsInput,
-  detectStoryPointsField,
   issueTypeToEmoji,
   priorityToColorHex,
   useSprintPlanningState,
@@ -15,11 +14,18 @@ vi.mock('../../../services/jiraApi.ts', () => ({
   jiraGet: vi.fn(),
   jiraPut: vi.fn(),
 }));
+// Story-points writes delegate to the shared editmeta-aware writer (dropdown-capable, GH #177);
+// its own behaviour is covered by featureReviewFixes.test.ts — here we assert the delegation.
+vi.mock('../../SprintDashboard/featureReviewFixes.ts', () => ({
+  saveFeatureReviewStoryPoints: vi.fn(),
+}));
 
 import { jiraGet, jiraPut } from '../../../services/jiraApi.ts';
+import { saveFeatureReviewStoryPoints } from '../../SprintDashboard/featureReviewFixes.ts';
 
 const mockJiraGet = vi.mocked(jiraGet);
 const mockJiraPut = vi.mocked(jiraPut);
+const mockSaveStoryPoints = vi.mocked(saveFeatureReviewStoryPoints);
 
 const SAMPLE_BACKLOG_RESPONSE = {
   issues: [
@@ -78,21 +84,6 @@ describe('helpers', () => {
     expect(clampStoryPointsInput('999')).toBe(100);
   });
 
-  it('detectStoryPointsField prefers the modern field when at least one issue uses it uniquely', () => {
-    const rawIssues = [
-      { key: 'TBX-A', fields: { customfield_10028: 5 } },
-      { key: 'TBX-B', fields: { customfield_10016: 3 } },
-    ] as never;
-    expect(detectStoryPointsField([], rawIssues)).toBe('customfield_10028');
-  });
-
-  it('detectStoryPointsField falls back to the legacy field when no issue uses the modern one alone', () => {
-    const rawIssues = [
-      { key: 'TBX-A', fields: { customfield_10016: 3 } },
-      { key: 'TBX-B', fields: { customfield_10016: 8 } },
-    ] as never;
-    expect(detectStoryPointsField([], rawIssues)).toBe('customfield_10016');
-  });
 });
 
 describe('useSprintPlanningState', () => {
@@ -151,9 +142,9 @@ describe('useSprintPlanningState', () => {
     expect(result.current.pendingChanges).toEqual({ 'TBX-1': 8, 'TBX-2': 0, 'TBX-3': 100 });
   });
 
-  it('saves changes via PUT and clears them on success', async () => {
+  it('saves changes via the shared story-points writer and clears them on success', async () => {
     mockJiraGet.mockResolvedValue(SAMPLE_BACKLOG_RESPONSE);
-    mockJiraPut.mockResolvedValue(undefined);
+    mockSaveStoryPoints.mockResolvedValue(undefined);
 
     const { result } = renderHook(() => useSprintPlanningState());
 
@@ -165,10 +156,7 @@ describe('useSprintPlanningState', () => {
       await result.current.saveChanges();
     });
 
-    expect(mockJiraPut).toHaveBeenCalledWith(
-      '/rest/api/2/issue/TBX-1',
-      expect.objectContaining({ fields: expect.any(Object) }),
-    );
+    expect(mockSaveStoryPoints).toHaveBeenCalledWith('TBX-1', '5');
     expect(result.current.pendingChanges).toEqual({});
     expect(result.current.saveStatusMessage).toBe('✅ All changes saved');
     const updatedIssue = result.current.backlog.find((row) => row.key === 'TBX-1');
@@ -177,7 +165,7 @@ describe('useSprintPlanningState', () => {
 
   it('reports failed keys when some saves error out', async () => {
     mockJiraGet.mockResolvedValue(SAMPLE_BACKLOG_RESPONSE);
-    mockJiraPut
+    mockSaveStoryPoints
       .mockResolvedValueOnce(undefined)
       .mockRejectedValueOnce(new Error('forbidden'));
 

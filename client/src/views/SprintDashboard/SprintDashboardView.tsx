@@ -6211,9 +6211,14 @@ function ReleasesTab({
                                   >
                                     {issue.key}
                                   </a>
-                                  <span className={styles.releaseIssueSummary}>{issue.fields.summary}</span>
+                                  {/* Full text rides the title attribute so an ellipsized summary is still readable on hover. */}
+                                  <span className={styles.releaseIssueSummary} title={issue.fields.summary}>
+                                    {issue.fields.summary}
+                                  </span>
+                                  {/* The FULL display name — "Lastname, Firstname (CTR)" instances turned a
+                                      first-word shortening into "Lastname," with the person cut off (GH #177). */}
                                   <span className={styles.releaseIssueAssignee}>
-                                    {issue.fields.assignee?.displayName?.split(' ')[0] ?? '—'}
+                                    {issue.fields.assignee?.displayName ?? '—'}
                                   </span>
                                 </div>
                               ))}
