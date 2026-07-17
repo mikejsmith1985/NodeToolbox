@@ -49,6 +49,17 @@ Explicit non-goal, in the reporter's words: **we can't and shouldn't rebuild Jir
 watchers/votes, no attachment management, no full field editor. Every fact shown comes from data Toolbox already
 fetches or can fetch read-only; every write goes through the existing propose/confirm fix controls.
 
+## Clarifications
+
+### Session 2026-07-17
+
+- Q: What counts as "skipped" in a cleanup session — an explicit action, or merely advancing past a finding? → A:
+  Explicit Skip action. Advancing without acting leaves a finding "untouched"; only fix / comment / deliberate Skip
+  settle it. The summary reports fixed / commented / skipped / untouched separately, so progress is never overstated.
+- Q: Where is the guided cleanup session available? → A: Everywhere the hygiene workspace renders — the Team
+  Dashboard hygiene tab, the My Issues personal hygiene tab, and the standalone Hygiene tool all offer the identical
+  session flow (one shared workspace, no per-surface behavior drift).
+
 ## User Scenarios & Testing
 
 ### Primary flow — reviewing one stale ticket
@@ -69,8 +80,10 @@ fetches or can fetch read-only; every write goes through the existing propose/co
 
 1. From the same filtered list, the user enters review mode on the first finding.
 2. "1 of 23" is visible; keyboard next/previous moves between findings without scrolling or re-expanding.
-3. Every finding the user acts on (fix applied, comment posted, or explicitly skipped) is visibly settled in the list.
-4. At the end: "Reviewed 23 — 9 fixed, 6 commented, 8 skipped." The session summary is ephemeral (informational only).
+3. Every finding the user acts on (fix applied, comment posted, or deliberately skipped via the Skip action) is
+   visibly settled in the list; findings merely advanced past remain visibly untouched.
+4. At the end: "23 findings — 9 fixed, 6 commented, 5 skipped, 3 untouched." The session summary is ephemeral
+   (informational only) and never counts an untouched finding as handled.
 
 ### Editing flow — fixing a field without fear
 
@@ -122,12 +135,14 @@ fetches or can fetch read-only; every write goes through the existing propose/co
 
 ### Functional — guided cleanup session
 
-- **FR-011**: From a filtered hygiene list, the user MUST be able to step through findings sequentially with visible
-  position ("N of M") using both on-screen controls and keyboard shortcuts.
-- **FR-012**: A finding the user has acted on in the session (fix applied, comment posted, or explicitly skipped) MUST
-  be visibly distinguished in the list from findings not yet handled.
-- **FR-013**: Completing or leaving a pass over the findings MUST show a summary of what was handled (counts by
-  outcome); the summary is informational and requires no persistence beyond the session.
+- **FR-011**: From a filtered hygiene list — on every surface the hygiene workspace renders (team tab, personal tab,
+  standalone tool) — the user MUST be able to step through findings sequentially with visible position ("N of M")
+  using both on-screen controls and keyboard shortcuts, with identical behavior across surfaces.
+- **FR-012**: Each finding in a session MUST offer an explicit Skip action alongside fix and comment; a finding is
+  settled ONLY by fix, comment, or Skip. Settled findings MUST be visibly distinguished in the list; findings merely
+  advanced past remain untouched and are never presented as handled.
+- **FR-013**: Completing or leaving a pass over the findings MUST show a summary with separate counts for fixed,
+  commented, skipped, and untouched; the summary is informational and requires no persistence beyond the session.
 - **FR-014**: Applying a fix or posting a comment MUST NOT discard the user's position in the session.
 - **FR-015**: The fix affordance MUST state, in words, what is flagged and what each action will do, and every fix
   input MUST be a labeled control (no bare "Choose…" placeholders).
