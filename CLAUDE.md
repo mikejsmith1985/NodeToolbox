@@ -9,6 +9,21 @@
 <!-- SPECKIT START -->
 ## Active Spec Kit Feature
 
+- **019-hygiene-fix-ux** — *(planned on `feature/019-hygiene-fix-ux` — ready for `/speckit-tasks`)* the **Hygiene
+  Fix Workspace**: close the "Jira is more inviting" gap (GH #177 closing comment) client-side with zero new
+  dependencies. Three parts: (1) a shared **semantic chip vocabulary** (`client/src/components/IssueMeta/` —
+  StatusChip / PriorityBadge / IssueTypeIcon / AssigneeAvatar / AgeBadge; pure `issueMetaVocabulary.ts` mappings,
+  text always beside color); (2) **full decision context in `IssueDetailPanel`** — linked issues WITH their statuses
+  read straight off `fields.issuelinks` (typed `JiraIssueLink`; NO extra fetch — hygiene scan base fields add
+  `issuelinks`+`labels`), labels/fixVersions/sprint chips, distinct AC block, and structure-preserving description
+  rendering via a new zero-dep `richTextStructured.ts` (Art VII drift justified: nothing in the tree renders Jira
+  wiki); (3) a **guided cleanup session** (`useHygieneSession` in the shared HygieneView — identical on team,
+  personal, and standalone surfaces): ←/→ navigate, S = explicit Skip, Escape ends; outcomes fixed > commented >
+  skipped, untouched = no outcome — the summary never overstates progress. All session state is ephemeral.
+  Plan: `specs/019-hygiene-fix-ux/plan.md`. Contracts: `issue-meta-chips.md`, `issue-context-panel.md`,
+  `cleanup-session.md`. **Gotchas**: no empty placeholder blocks ever (explicit spec rejection); keyboard guard —
+  keys originating in inputs never navigate; GH #160 zoom rules apply to all new layout.
+
 - **018-monthly-delivery-report** — *(implemented on `feature/monthly-delivery-report` — PR pending; live-Jira
   quickstart validation outstanding)* a server-side **Monthly Delivery Report**
   scheduler: on the **2nd Tuesday, 08:00** (configurable time), for every snapshotted Team Dashboard team, classify

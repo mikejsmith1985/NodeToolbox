@@ -11,6 +11,14 @@ vi.mock('./hooks/useHygieneState.ts', async () => {
   };
 });
 
+// Expanding a finding mounts the issue detail panel, which loads transitions and comments.
+vi.mock('../../services/jiraApi.ts', () => ({
+  jiraGet: vi.fn((path: string) =>
+    path.endsWith('/comment') ? Promise.resolve({ comments: [] }) : Promise.resolve({ transitions: [] })),
+  jiraPost: vi.fn().mockResolvedValue({}),
+  jiraPut: vi.fn().mockResolvedValue(undefined),
+}));
+
 import HygieneView from './HygieneView.tsx';
 import { useHygieneState } from './hooks/useHygieneState.ts';
 import { resolveHygieneFieldConfig, type HygieneFinding, type HygieneSummary } from './checks/hygieneChecks.ts';
@@ -458,5 +466,131 @@ describe('HygieneView', () => {
     fireEvent.click(screen.getByRole('button', { name: /copy jira link for missing sp/i }));
 
     expect(hookState.selectFilter).not.toHaveBeenCalled();
+  });
+
+  // ── Spec 019 US1: finding rows read at a glance through the semantic chip vocabulary ──
+
+  it('renders finding meta as semantic chips: type icon, status tone, avatar + full name, graded age', () => {
+    const staleFinding: HygieneFinding = {
+      issue: {
+        key: 'ENCUC-2163',
+        fields: {
+          summary: 'TCO Effective Date for Test Case 16',
+          status: { name: 'Ready to Accept', statusCategory: { key: 'indeterminate' } },
+          issuetype: { name: 'Defect' },
+          assignee: { displayName: 'Katkar, Rahul (CTR)' },
+          created: buildDateDaysAgo(20),
+          updated: buildDateDaysAgo(16),
+        },
+      },
+      flags: [{ checkId: 'stale', label: 'Stale', severity: 'warn' }],
+      programIncrement: 'PI 26.3',
+    } as unknown as HygieneFinding;
+    mockUseHygieneState.mockReturnValue(buildHookState({ projectKey: 'ENCUC', findings: [staleFinding] }));
+
+    render(<HygieneView />);
+
+    expect(screen.getByText('Ready to Accept')).toHaveAttribute('data-tone', 'progress');
+    expect(screen.getByText('🐞').parentElement?.textContent).toContain('Defect');
+    expect(screen.getByText('KR')).toBeInTheDocument();
+    expect(screen.getByText('Katkar, Rahul (CTR)')).toBeInTheDocument();
+    // 16 idle days against the default 5-day threshold grades as overdue (danger).
+    expect(screen.getByText('16d')).toHaveAttribute('data-tone', 'danger');
+  });
+
+  // ── Spec 019 US2: expanding a finding shows its full decision context in the panel ──
+
+  it('passes resolved AC, PI, sprint, and feature context to the expanded detail panel', async () => {
+    const contextFinding: HygieneFinding = {
+      issue: {
+        key: 'ENCUC-2163',
+        fields: {
+          summary: 'TCO Effective Date for Test Case 16',
+          status: { name: 'Ready to Accept', statusCategory: { key: 'indeterminate' } },
+          issuetype: { name: 'Defect' },
+          assignee: { displayName: 'Jordan, John' },
+          created: buildDateDaysAgo(20),
+          updated: buildDateDaysAgo(16),
+          customfield_10200: 'Text case 16: Resolve issue for issue found',
+          customfield_10020: ['com.atlassian.greenhopper[id=42,state=ACTIVE,name=ENCUC Sprint 26.3.4,goal=]'],
+          parent: { key: 'ENCUC-1500' },
+        },
+      },
+      flags: [{ checkId: 'stale', label: 'Stale', severity: 'warn' }],
+      programIncrement: 'PI 26.3 (05/21/26 - 07/29/26)',
+    } as unknown as HygieneFinding;
+    mockUseHygieneState.mockReturnValue(buildHookState({ projectKey: 'ENCUC', findings: [contextFinding] }));
+
+    render(<HygieneView />);
+    fireEvent.click(screen.getByRole('button', { name: /TCO Effective Date/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Text case 16: Resolve issue for issue found/)).toBeInTheDocument();
+    });
+    // The PI shows in the row meta AND the expanded panel's planning row.
+    expect(screen.getAllByText('PI 26.3 (05/21/26 - 07/29/26)').length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText('ENCUC Sprint 26.3.4')).toBeInTheDocument();
+    expect(screen.getByText('ENCUC-1500')).toBeInTheDocument();
+  });
+
+  // ── Spec 019 US3: guided cleanup session with explicit Skip and an honest summary ──
+
+  function buildSessionFindings(): HygieneFinding[] {
+    return ['ENCUC-1', 'ENCUC-2', 'ENCUC-3'].map((issueKey) => ({
+      issue: {
+        key: issueKey,
+        fields: {
+          summary: `Finding ${issueKey}`,
+          status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } },
+          issuetype: { name: 'Story' },
+          assignee: { displayName: 'Alex' },
+          created: buildDateDaysAgo(20),
+          updated: buildDateDaysAgo(16),
+        },
+      },
+      flags: [{ checkId: 'stale', label: 'Stale', severity: 'warn' }],
+      programIncrement: null,
+    })) as unknown as HygieneFinding[];
+  }
+
+  it('starts a review session with a visible cursor and auto-expands the current finding', () => {
+    mockUseHygieneState.mockReturnValue(buildHookState({ projectKey: 'ENCUC', findings: buildSessionFindings() }));
+
+    render(<HygieneView />);
+    fireEvent.click(screen.getByRole('button', { name: /review these findings/i }));
+
+    expect(screen.getByText(/Reviewing 1 of 3/)).toBeInTheDocument();
+  });
+
+  it('Skip settles the current finding visibly and advances the cursor', () => {
+    mockUseHygieneState.mockReturnValue(buildHookState({ projectKey: 'ENCUC', findings: buildSessionFindings() }));
+
+    render(<HygieneView />);
+    fireEvent.click(screen.getByRole('button', { name: /review these findings/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^skip/i }));
+
+    expect(screen.getByText(/Reviewing 2 of 3/)).toBeInTheDocument();
+    expect(screen.getByText('⤼ skipped')).toBeInTheDocument();
+  });
+
+  it('ending the session reports the honest four-bucket summary — untouched is never "handled"', () => {
+    mockUseHygieneState.mockReturnValue(buildHookState({ projectKey: 'ENCUC', findings: buildSessionFindings() }));
+
+    render(<HygieneView />);
+    fireEvent.click(screen.getByRole('button', { name: /review these findings/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^skip/i }));
+    fireEvent.click(screen.getByRole('button', { name: /end session/i }));
+
+    expect(screen.getByText(/3 findings — 0 fixed, 0 commented, 1 skipped, 2 untouched/)).toBeInTheDocument();
+  });
+
+  // ── Spec 019 FR-015: fix affordances say what is flagged and what fixing does ──
+
+  it('renders a plain-language explanation for each flagged check', () => {
+    mockUseHygieneState.mockReturnValue(buildHookState({ projectKey: 'ENCUC', findings: buildSessionFindings().slice(0, 1) }));
+
+    render(<HygieneView />);
+
+    expect(screen.getByText(/No update in 16 days/)).toBeInTheDocument();
   });
 });

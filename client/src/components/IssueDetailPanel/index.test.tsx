@@ -92,6 +92,126 @@ describe('IssueDetailPanel', () => {
     expect(screen.getByText('Add inline Jira actions')).toBeInTheDocument();
   });
 
+  it('renders the header facts as semantic chips readable at a glance (spec 019 US1)', () => {
+    renderIssueDetailPanel();
+
+    // Status chip toned by category, priority badge with direction, type icon, avatar + FULL name.
+    expect(screen.getByText('In Progress')).toHaveAttribute('data-tone', 'progress');
+    const priorityBadge = screen.getByText(/High/);
+    expect(priorityBadge).toHaveAttribute('data-tone', 'warning');
+    expect(priorityBadge.textContent).toContain('↑');
+    expect(screen.getByText('📗').parentElement?.textContent).toContain('Story');
+    expect(screen.getByText('TD')).toBeInTheDocument();
+    expect(screen.getByText('Taylor Dev')).toBeInTheDocument();
+  });
+
+  it('renders a distinct Unassigned identity when the issue has no assignee', () => {
+    const unassignedIssue = {
+      ...TEST_ISSUE,
+      fields: { ...TEST_ISSUE.fields, assignee: null },
+    } as unknown as JiraIssue;
+    render(<IssueDetailPanel isEmbedded issue={unassignedIssue} />);
+
+    expect(screen.getByText('Unassigned')).toBeInTheDocument();
+  });
+
+  // ── Spec 019 US2: the whole decision picture, straight off the issue payload ──
+
+  it('renders linked issues with their relation, key, summary, and the OTHER issue\'s status chip', () => {
+    const linkedIssue = {
+      ...TEST_ISSUE,
+      fields: {
+        ...TEST_ISSUE.fields,
+        issuelinks: [
+          {
+            type: { name: 'Relates', outward: 'links to', inward: 'is linked by' },
+            outwardIssue: {
+              key: 'ENCUC-2070',
+              fields: {
+                summary: 'Incorrect TCO Effective Dates Being Sent to ESI',
+                status: { name: 'Ready for Testing', statusCategory: { key: 'indeterminate' } },
+              },
+            },
+          },
+          {
+            type: { name: 'Blocks', outward: 'blocks', inward: 'is blocked by' },
+            inwardIssue: {
+              key: 'ENCUC-1999',
+              fields: { summary: 'Upstream blocker', status: { name: 'Done', statusCategory: { key: 'done' } } },
+            },
+          },
+        ],
+      },
+    } as unknown as JiraIssue;
+    render(<IssueDetailPanel isEmbedded issue={linkedIssue} />);
+
+    expect(screen.getByText('Linked Issues')).toBeInTheDocument();
+    expect(screen.getByText('links to')).toBeInTheDocument();
+    expect(screen.getByText('ENCUC-2070')).toBeInTheDocument();
+    expect(screen.getByText('Incorrect TCO Effective Dates Being Sent to ESI')).toBeInTheDocument();
+    expect(screen.getByText('Ready for Testing')).toHaveAttribute('data-tone', 'progress');
+    // Inward links use the inward wording.
+    expect(screen.getByText('is blocked by')).toBeInTheDocument();
+    expect(screen.getByText('Done')).toHaveAttribute('data-tone', 'success');
+  });
+
+  it('renders labels and fix versions as chips when present', () => {
+    const contextIssue = {
+      ...TEST_ISSUE,
+      fields: {
+        ...TEST_ISSUE.fields,
+        labels: ['Component', 'Component_Testing'],
+        fixVersions: [{ name: 'Release 24.1' }],
+      },
+    } as unknown as JiraIssue;
+    render(<IssueDetailPanel isEmbedded issue={contextIssue} />);
+
+    expect(screen.getByText('Component')).toBeInTheDocument();
+    expect(screen.getByText('Component_Testing')).toBeInTheDocument();
+    expect(screen.getByText('Release 24.1')).toBeInTheDocument();
+  });
+
+  it('omits every context block entirely when its data is absent — no empty placeholder boxes', () => {
+    renderIssueDetailPanel();
+
+    expect(screen.queryByText('Linked Issues')).not.toBeInTheDocument();
+    expect(screen.queryByText('Labels')).not.toBeInTheDocument();
+    expect(screen.queryByText('Fix Versions')).not.toBeInTheDocument();
+    expect(screen.queryByText('Sprint')).not.toBeInTheDocument();
+  });
+
+  it('renders planning context rows (PI, sprint, feature) only when the host supplies them', () => {
+    render(
+      <IssueDetailPanel
+        isEmbedded
+        issue={TEST_ISSUE}
+        programIncrement="PI 26.3 (05/21/26 - 07/29/26)"
+        sprintName="ENCUC Sprint 26.3.4"
+        featureLinkKey="ENCUC-1500"
+      />,
+    );
+
+    expect(screen.getByText('PI 26.3 (05/21/26 - 07/29/26)')).toBeInTheDocument();
+    expect(screen.getByText('ENCUC Sprint 26.3.4')).toBeInTheDocument();
+    expect(screen.getByText('ENCUC-1500')).toBeInTheDocument();
+  });
+
+  it('renders the description with its structure — run-in headings and lists, not a flat wall', () => {
+    const structuredIssue = {
+      ...TEST_ISSUE,
+      fields: {
+        ...TEST_ISSUE.fields,
+        description: 'Steps to Reproduce:\nUsing a NON migrated member\nDay one:\n- Export to Facets',
+      },
+    } as unknown as JiraIssue;
+    render(<IssueDetailPanel isEmbedded issue={structuredIssue} />);
+
+    expect(screen.getByText('Steps to Reproduce:').tagName).toBe('H4');
+    expect(screen.getByText('Day one:').tagName).toBe('H4');
+    expect(screen.getByText('Export to Facets').tagName).toBe('LI');
+    expect(screen.getByText('Using a NON migrated member')).toBeInTheDocument();
+  });
+
   it('loads transitions on mount', async () => {
     renderIssueDetailPanel();
 

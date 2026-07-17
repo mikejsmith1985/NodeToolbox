@@ -41,6 +41,10 @@ const BASE_HYGIENE_FIELDS = [
   'duedate',
   'fixVersions',
   'parent',
+  // Decision context the issue panel renders straight off the finding (spec 019 US2):
+  // linked issues WITH their statuses, and label chips. No secondary fetch exists.
+  'issuelinks',
+  'labels',
 ];
 const HYGIENE_MAX_RESULTS = 200;
 const MODERN_STORY_POINTS_FIELD = 'customfield_10028';
