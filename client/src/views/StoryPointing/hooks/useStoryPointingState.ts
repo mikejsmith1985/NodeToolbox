@@ -8,7 +8,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import { jiraGet, jiraPut } from '../../../services/jiraApi.ts';
+import { jiraGet } from '../../../services/jiraApi.ts';
+import { saveFeatureReviewStoryPoints } from '../../SprintDashboard/featureReviewFixes.ts';
 import { normalizeRichTextToPlainText } from '../../../utils/richTextPlainText.ts';
 
 // ── Named constants — legacy-compatible storage and Jira request details. ───────
@@ -339,9 +340,9 @@ export function useStoryPointingState(): StoryPointingState & StoryPointingActio
     if (typeof selectedNumericVote !== 'number') return;
     setIsSaving(true);
     try {
-      await jiraPut(`/rest/api/2/issue/${encodeURIComponent(currentIssue.key)}`, {
-        fields: { [STORY_POINTS_FIELD_ID]: selectedNumericVote },
-      });
+      // The shared editmeta-aware writer targets whichever points field the issue accepts and
+      // maps the vote to a dropdown option when the project models points as a Select field.
+      await saveFeatureReviewStoryPoints(currentIssue.key, String(selectedNumericVote));
       setSaveStatusMessage(`✅ Saved ${currentIssue.key} as ${selectedNumericVote} points`);
       setPersistedState((previousState) => updateStateAfterSave(previousState, currentIssue.key, selectedNumericVote));
     } catch (caughtError: unknown) {

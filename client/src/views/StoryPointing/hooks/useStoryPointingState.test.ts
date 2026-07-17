@@ -16,11 +16,18 @@ vi.mock('../../../services/jiraApi.ts', () => ({
   jiraGet: vi.fn(),
   jiraPut: vi.fn(),
 }));
+// Story-points writes delegate to the shared editmeta-aware writer (dropdown-capable, GH #177);
+// its own behaviour is covered by featureReviewFixes.test.ts — here we assert the delegation.
+vi.mock('../../SprintDashboard/featureReviewFixes.ts', () => ({
+  saveFeatureReviewStoryPoints: vi.fn(),
+}));
 
 import { jiraGet, jiraPut } from '../../../services/jiraApi.ts';
+import { saveFeatureReviewStoryPoints } from '../../SprintDashboard/featureReviewFixes.ts';
 
 const mockJiraGet = vi.mocked(jiraGet);
 const mockJiraPut = vi.mocked(jiraPut);
+const mockSaveStoryPoints = vi.mocked(saveFeatureReviewStoryPoints);
 
 const SAMPLE_SEARCH_RESPONSE = {
   issues: [
@@ -179,7 +186,7 @@ describe('useStoryPointingState', () => {
 
   it('saves a revealed numeric vote to Jira, updates local points, and advances the deck', async () => {
     mockJiraGet.mockResolvedValue(SAMPLE_SEARCH_RESPONSE);
-    mockJiraPut.mockResolvedValue(undefined);
+    mockSaveStoryPoints.mockResolvedValue(undefined);
     const { result } = renderHook(() => useStoryPointingState());
 
     await act(async () => {
@@ -191,9 +198,7 @@ describe('useStoryPointingState', () => {
       await result.current.saveRevealedVote();
     });
 
-    expect(mockJiraPut).toHaveBeenCalledWith('/rest/api/2/issue/TBX-101', {
-      fields: { customfield_10028: 5 },
-    });
+    expect(mockSaveStoryPoints).toHaveBeenCalledWith('TBX-101', '5');
     expect(result.current.deck[0].storyPoints).toBe(5);
     expect(result.current.currentIssue?.key).toBe('TBX-102');
     expect(result.current.session.pointedCount).toBe(1);
@@ -202,7 +207,7 @@ describe('useStoryPointingState', () => {
 
   it('keeps the current card active and reports a save error when Jira rejects the PUT', async () => {
     mockJiraGet.mockResolvedValue(SAMPLE_SEARCH_RESPONSE);
-    mockJiraPut.mockRejectedValue(new Error('forbidden'));
+    mockSaveStoryPoints.mockRejectedValue(new Error('forbidden'));
     const { result } = renderHook(() => useStoryPointingState());
 
     await act(async () => {

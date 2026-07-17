@@ -2,9 +2,13 @@
 
 import { useEffect, useState } from 'react';
 
-import { jiraGet, jiraPost, jiraPut } from '../../services/jiraApi.ts';
+import { jiraGet, jiraPost } from '../../services/jiraApi.ts';
 import type { JiraIssue, JiraTransition } from '../../types/jira.ts';
 import { normalizeRichTextToPlainText } from '../../utils/richTextPlainText.ts';
+import {
+  readIssueStoryPointsDisplayValue,
+  saveFeatureReviewStoryPoints,
+} from '../../views/SprintDashboard/featureReviewFixes.ts';
 import { useIssueComments } from '../../hooks/useIssueComments.ts';
 import CommentThread from '../CommentThread/CommentThread.tsx';
 import styles from './IssueDetailPanel.module.css';
@@ -47,7 +51,9 @@ export default function IssueDetailPanel({
   isEmbedded = false,
   acceptanceCriteria,
 }: IssueDetailPanelProps) {
-  const issuePanelStateKey = `${issue.key}:${issue.fields.customfield_10016 ?? ''}`;
+  // The seed reads whichever story-points field this project actually uses (configured, modern,
+  // legacy — dropdown option objects included), so the input starts with the real current value.
+  const issuePanelStateKey = `${issue.key}:${readIssueStoryPointsDisplayValue(issue)}`;
 
   return (
     <IssueDetailPanelContent
@@ -90,7 +96,7 @@ function IssueDetailPanelContent({
     loadError: commentsLoadError,
     refresh: refreshComments,
   } = useIssueComments(issue.key);
-  const [storyPointsInput, setStoryPointsInput] = useState(String(issue.fields.customfield_10016 ?? ''));
+  const [storyPointsInput, setStoryPointsInput] = useState(() => readIssueStoryPointsDisplayValue(issue));
   const [isSavingStoryPoints, setIsSavingStoryPoints] = useState(false);
   const [storyPointsSaveError, setStoryPointsSaveError] = useState<string | null>(null);
   const [storyPointsSaveSuccess, setStoryPointsSaveSuccess] = useState(false);
@@ -208,9 +214,10 @@ function IssueDetailPanelContent({
     setStoryPointsSaveError(null);
 
     try {
-      await jiraPut(`/rest/api/2/issue/${issue.key}`, {
-        fields: { customfield_10016: Number(storyPointsInput) },
-      });
+      // The shared editmeta-aware writer targets the field this issue can actually accept and
+      // maps the number to a dropdown option when the project models points as a Select field —
+      // a blind customfield_10016 write 400s on both counts (GH #167 / #177).
+      await saveFeatureReviewStoryPoints(issue.key, storyPointsInput);
       setStoryPointsSaveSuccess(true);
       onIssueUpdated?.();
     } catch (caughtError) {

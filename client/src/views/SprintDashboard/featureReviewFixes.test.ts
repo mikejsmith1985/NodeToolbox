@@ -152,4 +152,64 @@ describe('featureReviewFixes', () => {
     );
     expect(mockJiraPut).not.toHaveBeenCalled();
   });
+
+  // ── saveFeatureReviewStoryPoints: dropdown-style fields (GH #177) ──
+
+  it('writes a dropdown story-points field as the matching allowed OPTION, never a raw number', async () => {
+    // A Select-type points field rejects `3` with Jira's "Could not find valid 'id' or 'value'
+    // in the Parent Option object" 400 — the payload must be the option object.
+    mockJiraGet.mockResolvedValue({
+      fields: {
+        customfield_10028: {
+          name: 'Story Points',
+          allowedValues: [
+            { id: '9001', value: '1' },
+            { id: '9003', value: '3' },
+            { id: '9005', value: '5' },
+          ],
+        },
+      },
+    });
+    mockJiraPut.mockResolvedValue(undefined);
+
+    await saveFeatureReviewStoryPoints('ENCUC-2135', '3');
+
+    expect(mockJiraPut).toHaveBeenCalledWith('/rest/api/2/issue/ENCUC-2135', {
+      fields: { customfield_10028: { id: '9003' } },
+    });
+  });
+
+  it('matches a dropdown option numerically, so "3" finds an option labelled "3.0"', async () => {
+    mockJiraGet.mockResolvedValue({
+      fields: {
+        customfield_10028: {
+          name: 'Story Points',
+          allowedValues: [{ value: '3.0' }],
+        },
+      },
+    });
+    mockJiraPut.mockResolvedValue(undefined);
+
+    await saveFeatureReviewStoryPoints('ENCUC-2135', '3');
+
+    expect(mockJiraPut).toHaveBeenCalledWith('/rest/api/2/issue/ENCUC-2135', {
+      fields: { customfield_10028: { value: '3.0' } },
+    });
+  });
+
+  it('lists the dropdown options in a readable error when the number matches none of them', async () => {
+    mockJiraGet.mockResolvedValue({
+      fields: {
+        customfield_10028: {
+          name: 'Story Points',
+          allowedValues: [{ id: '9001', value: '1' }, { id: '9002', value: '2' }],
+        },
+      },
+    });
+
+    await expect(saveFeatureReviewStoryPoints('ENCUC-2135', '4')).rejects.toThrow(
+      /dropdown with no option matching "4".*1, 2/,
+    );
+    expect(mockJiraPut).not.toHaveBeenCalled();
+  });
 });
