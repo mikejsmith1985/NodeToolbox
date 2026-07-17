@@ -149,6 +149,51 @@ describe('runMonthlyDeliveryNow', () => {
 
   const RUN_DEPS = { today: '2026-07-14', nowIso: () => '2026-07-14T08:00:00.000Z', requestJira: async () => ({ status: 200, body: {} }) };
 
+  // ── Delivery: same webhook → Automation email channel as every other scheduled report ──
+
+  function buildDeliveryConfiguration(triggerUrl) {
+    const configuration = buildConfiguration([{ teamName: 'Transformers', projectKey: 'TRFM', boardId: '42' }]);
+    configuration.scheduler.monthlyDelivery.triggerUrl = triggerUrl;
+    return configuration;
+  }
+
+  it('delivers the prompt to the configured webhook and records the outcome on the run', async () => {
+    fetchTeamDeliveryData.mockResolvedValue({ issues: [], releasedVersionsInWindow: new Map() });
+    const deliverReport = jest.fn().mockResolvedValue({ ok: true, code: 'delivered' });
+    const configuration = buildDeliveryConfiguration('https://api-private.atlassian.com/automation/webhooks/x');
+
+    const outcome = await runMonthlyDeliveryNow(configuration, { ...RUN_DEPS, deliverReport });
+
+    expect(deliverReport).toHaveBeenCalledTimes(1);
+    const [, request] = deliverReport.mock.calls[0];
+    expect(request.surface).toBe('monthly-delivery');
+    expect(request.report.coveredMonth).toBe('2026-06');
+    expect(typeof request.report.promptText).toBe('string');
+    expect(outcome.result.delivery).toEqual({ attempted: true, ok: true, message: 'Delivered to the Automation webhook.' });
+  });
+
+  it('records a failed delivery with its reason instead of hiding it', async () => {
+    fetchTeamDeliveryData.mockResolvedValue({ issues: [], releasedVersionsInWindow: new Map() });
+    const deliverReport = jest.fn().mockResolvedValue({ ok: false, code: 'host-not-allowed', message: 'Host not allowed.' });
+    const configuration = buildDeliveryConfiguration('https://evil.example.com/webhook');
+
+    const outcome = await runMonthlyDeliveryNow(configuration, { ...RUN_DEPS, deliverReport });
+
+    expect(outcome.ok).toBe(true); // the run itself still succeeds — the prompt is cached
+    expect(outcome.result.delivery).toEqual({ attempted: true, ok: false, message: 'Host not allowed.' });
+  });
+
+  it('skips delivery entirely when no webhook is configured', async () => {
+    fetchTeamDeliveryData.mockResolvedValue({ issues: [], releasedVersionsInWindow: new Map() });
+    const deliverReport = jest.fn();
+    const configuration = buildConfiguration([{ teamName: 'Transformers', projectKey: 'TRFM', boardId: '42' }]);
+
+    const outcome = await runMonthlyDeliveryNow(configuration, { ...RUN_DEPS, deliverReport });
+
+    expect(deliverReport).not.toHaveBeenCalled();
+    expect(outcome.result.delivery).toEqual({ attempted: false });
+  });
+
   it('produces a persisted RunResult covering the prior month with per-team counts', async () => {
     fetchTeamDeliveryData.mockResolvedValue({
       issues: [buildDoneInJuneIssue('TRFM-1'), buildExternalTestInJuneIssue('TRFM-2')],

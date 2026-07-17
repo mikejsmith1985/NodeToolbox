@@ -6,8 +6,8 @@ const { getSurface, listSurfaces, SURFACE_IDS } = require('./reportSurfaceRegist
 
 describe('reportSurfaceRegistry', () => {
   test('exposes exactly the four report surfaces', () => {
-    expect(SURFACE_IDS.sort()).toEqual(['feature-change', 'hygiene-digest', 'scope-change', 'standup-briefing']);
-    expect(listSurfaces()).toHaveLength(4);
+    expect(SURFACE_IDS.sort()).toEqual(['feature-change', 'hygiene-digest', 'monthly-delivery', 'scope-change', 'standup-briefing']);
+    expect(listSurfaces()).toHaveLength(5);
   });
 
   test('getSurface returns null for an unknown id', () => {
@@ -109,6 +109,28 @@ describe('reportSurfaceRegistry', () => {
 
     test('returns null when the team name does not match', () => {
       expect(getSurface('hygiene-digest').resolveDestination(configuration, 'Unknown')).toBeNull();
+    });
+  });
+
+  describe('monthly-delivery resolver', () => {
+    test('resolves the single panel-configured webhook regardless of teamId', () => {
+      const configuration = {
+        scheduler: { monthlyDelivery: { triggerUrl: 'https://api-private.atlassian.com/automation/webhooks/x', triggerSecret: 's3cr3t' } },
+      };
+
+      const destination = getSurface('monthly-delivery').resolveDestination(configuration, 'anything');
+
+      expect(destination).toEqual({
+        triggerUrl: 'https://api-private.atlassian.com/automation/webhooks/x',
+        triggerSecret: 's3cr3t',
+        teamName: 'All teams',
+        projectKey: '',
+      });
+    });
+
+    test('returns null when no webhook is configured, so delivery is skipped not errored', () => {
+      expect(getSurface('monthly-delivery').resolveDestination({ scheduler: { monthlyDelivery: {} } }, 'x')).toBeNull();
+      expect(getSurface('monthly-delivery').resolveDestination({}, 'x')).toBeNull();
     });
   });
 });

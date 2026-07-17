@@ -43,6 +43,10 @@ function sanitiseMonthlyDeliveryConfig(rawBody) {
     scheduleTime: SCHEDULE_TIME_PATTERN.test(scheduleTime) ? scheduleTime : DEFAULT_SCHEDULE_TIME,
     featureLinkFieldId: toTrimmedString(rawBody && rawBody.featureLinkFieldId) || DEFAULT_FEATURE_LINK_FIELD_ID,
     teams: rawTeams.map(sanitiseTeamSnapshot).filter((team) => team.projectKey !== ''),
+    // The Automation webhook the run's prompt is delivered to — same channel as the other
+    // scheduled reports. Empty means "cache only; deliver nothing".
+    triggerUrl: toTrimmedString(rawBody && rawBody.triggerUrl),
+    triggerSecret: toTrimmedString(rawBody && rawBody.triggerSecret),
   };
 }
 
@@ -53,6 +57,8 @@ function buildDefaultConfigResponse() {
     scheduleTime: DEFAULT_SCHEDULE_TIME,
     featureLinkFieldId: DEFAULT_FEATURE_LINK_FIELD_ID,
     teams: [],
+    triggerUrl: '',
+    triggerSecret: '',
   };
 }
 

@@ -275,6 +275,54 @@
   color: var(--color-tone-success-fg);
 }
 
+/* ── Scheduler panel layout (Monthly Delivery, PI Review scheduler) ──
+   Both panels referenced these class names from day one, but the classes were never DEFINED —
+   CSS-module lookups silently returned undefined, so every card, action row, status line, and
+   input rendered unstyled and off-theme (GH report: buttons don't match the app, prompt box too
+   narrow). Defined once here, both panels pick them up. */
+
+.panelSection {
+  display: grid;
+  gap: var(--spacing-md);
+}
+
+.panelCard {
+  display: grid;
+  gap: var(--spacing-sm);
+  margin: 0;
+  min-width: 0;
+  padding: var(--spacing-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 8px);
+  background: var(--color-card-bg-subtle);
+}
+
+.panelActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+}
+
+.panelStatusLine {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+/* Full-width themed field — inputs match each other, and the generated-prompt textarea spans the
+   card instead of collapsing to the browser's intrinsic textarea width. */
+.inputField {
+  width: 100%;
+  box-sizing: border-box;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-field-bg);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+  resize: vertical;
+}
+
 /* Subtle "last automatic run" line shown under each report's Run Now button. */
 .deliveryStatusLine {
   display: block;

@@ -13,6 +13,7 @@ const os = require('os');
 const path = require('path');
 
 const { makeJiraApiRequest } = require('../utils/httpClient');
+const { deliverReport } = require('./reportWebhookDelivery');
 const { isScheduledTimeReached, loadFiredDates, recordFiredDate } = require('./schedulerFiredState');
 const reportLayer = require('./monthlyDeliveryReport');
 
@@ -247,6 +248,27 @@ async function runMonthlyDeliveryNow(configuration, deps = {}) {
 
     const promptText = reportLayer.buildMonthlyDeliveryPrompt({ coveredMonth, ranAtIso, trigger }, teamSections);
     const runResult = { hasRun: true, ranAtIso, coveredMonth, trigger, promptText, teams: teamOutcomes };
+
+    // Deliver through the same webhook → Atlassian Automation email channel every other scheduled
+    // report uses (never a new channel). Optional: no configured webhook simply skips delivery and
+    // the prompt stays available for manual copy. deliverReport never throws — its structured
+    // outcome is recorded on the run so the Admin Hub panel can show what happened.
+    if (monthlyConfig.triggerUrl) {
+      const deliver = deps.deliverReport || deliverReport;
+      const deliveryOutcome = await deliver(configuration, {
+        surface: 'monthly-delivery',
+        teamId: 'all-teams',
+        report: { coveredMonth, ranAtIso, trigger, promptText, teams: teamOutcomes },
+      });
+      runResult.delivery = {
+        attempted: true,
+        ok: !!deliveryOutcome.ok,
+        message: deliveryOutcome.ok ? 'Delivered to the Automation webhook.' : (deliveryOutcome.message || 'Delivery failed.'),
+      };
+    } else {
+      runResult.delivery = { attempted: false };
+    }
+
     writeLastRunResult(runResult);
     return { ok: true, result: runResult };
   } finally {

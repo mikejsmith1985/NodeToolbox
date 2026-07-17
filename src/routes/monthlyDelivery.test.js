@@ -60,11 +60,31 @@ describe('GET /api/monthly-delivery/config', () => {
       scheduleTime: '08:00',
       featureLinkFieldId: 'customfield_10108',
       teams: [],
+      triggerUrl: '',
+      triggerSecret: '',
     });
   });
 });
 
 describe('POST /api/monthly-delivery/config', () => {
+  it('persists the delivery webhook url and secret with the rest of the config', async () => {
+    const configuration = {};
+    const app = makeApp(configuration);
+
+    await request(app).post('/api/monthly-delivery/config').send({
+      isEnabled: true,
+      scheduleTime: '09:30',
+      teams: [{ teamName: 'T', projectKey: 'TT', boardId: '1' }],
+      triggerUrl: '  https://api-private.atlassian.com/automation/webhooks/x  ',
+      triggerSecret: ' s3cr3t ',
+    });
+
+    expect(configuration.scheduler.monthlyDelivery.triggerUrl).toBe('https://api-private.atlassian.com/automation/webhooks/x');
+    expect(configuration.scheduler.monthlyDelivery.triggerSecret).toBe('s3cr3t');
+
+    const echoed = await request(app).get('/api/monthly-delivery/config');
+    expect(echoed.body.triggerUrl).toBe('https://api-private.atlassian.com/automation/webhooks/x');
+  });
   it('sanitises, persists in place, and drops unexpected fields', async () => {
     const configuration = {};
     const response = await request(makeApp(configuration))

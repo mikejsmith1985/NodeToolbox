@@ -85,6 +85,26 @@ const SURFACES = {
     resolveDestination: (configuration, teamId) =>
       resolveFromTeamReports(schedulerSection(configuration, 'featureChange'), teamId),
   },
+  // Monthly Delivery report — ONE all-teams prompt per run, so the destination is a single
+  // webhook configured on the Admin Hub panel (scheduler.monthlyDelivery.triggerUrl), not a
+  // per-team teamReports entry. Same channel as every other scheduled report: the Automation
+  // rule composes the email from the POSTed payload.
+  'monthly-delivery': {
+    id: 'monthly-delivery',
+    label: 'Monthly Delivery report',
+    reportShape: 'Object: { coveredMonth, ranAtIso, trigger, promptText, teams: Outcome[] }.',
+    reportExample: '{ "coveredMonth": "2026-06", "promptText": "…", "teams": [] }',
+    resolveDestination: (configuration) => {
+      const monthlySection = schedulerSection(configuration, 'monthlyDelivery') || {};
+      if (!monthlySection.triggerUrl) return null;
+      return {
+        triggerUrl:    monthlySection.triggerUrl,
+        triggerSecret: monthlySection.triggerSecret || '',
+        teamName:      'All teams',
+        projectKey:    '',
+      };
+    },
+  },
   // Hygiene Monitor digest — emailed via an Atlassian Automation rule. Each team
   // stores its own digestTriggerUrl, digestTriggerSecret, and (optional) digestEmailTo
   // in hygieneMonitor.teams; NodeToolbox POSTs the digest to the Automation webhook,
