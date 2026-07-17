@@ -12,6 +12,10 @@
   replaces the Team Dashboard, PO Tool, and ART View cards, with audience spaces (Team / Product / Train) inside
   it; every retired route — including parameterized deep links like the Today cards' hygiene drill-throughs —
   redirects into the corresponding space with its parameters intact.
+- Q: Where do the shared tabs (Feature Review, PI Review) live inside the hub? → A: **Per-space rendering.** Each
+  space keeps its audience's tabs (shared components, separate scope memory exactly as today). The duplication
+  being eliminated is the three separate home-card destinations, not audience-appropriate context inside one hub;
+  the PO selection-isolation guarantee (feature 017) is preserved unchanged.
 **Builds on**: the Home view card catalog and its drag-to-reorder grid, the Admin Hub unlock (session-scoped), the
 existing-but-unwired Admin Hub "Tool Visibility" toggles, and the shared-tab reuse already in place (Feature Review /
 PI Review / Hygiene are single components mounted by multiple tools).
@@ -119,7 +123,9 @@ for the three-doors-one-product problem (the "Agile Hub" direction).
 ### Functional — consolidation (US3, full merge)
 
 - **FR-009**: After consolidation, each shared capability (Feature Review, PI Review, release visibility) MUST be
-  reachable through exactly one primary navigation path, with scope (team / PI / train) chosen inside it.
+  reachable through exactly one primary navigation path **per audience space** — one hub, one door per job per
+  audience, never a second home card. Spaces render shared capabilities with their own scope memory (clarification
+  #2); scope selections are never merged across audiences.
 - **FR-010**: Every existing route MUST keep working — retired entry points redirect into the corresponding Agile
   Hub space **with query parameters and tab selections preserved** (the Today cards' parameterized drill-throughs
   are the acceptance case).
