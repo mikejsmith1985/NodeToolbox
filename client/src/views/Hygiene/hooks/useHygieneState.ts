@@ -53,6 +53,19 @@ const LEGACY_STORY_POINTS_FIELD = 'customfield_10016';
 export const HYGIENE_PROJECT_KEY_STORAGE_KEY = 'tbxHygieneProjectKey';
 export const HYGIENE_FILTER_STORAGE_KEY = 'tbxHygieneFilter';
 
+/**
+ * Splits a check filter into its individual check ids. A filter is usually one check id, but a
+ * deep link may carry several comma-separated ids (the Today "commitment gaps" card counts
+ * 'missing-sp' OR 'no-ac', so its drill-through must show issues matching either check).
+ */
+export function parseHygieneFilterCheckIds(selectedFilter: string | null): string[] {
+  if (selectedFilter === null) return [];
+  return selectedFilter
+    .split(',')
+    .map((checkId) => checkId.trim())
+    .filter((checkId) => checkId !== '');
+}
+
 export interface JiraSearchResponse {
   issues?: JiraIssue[];
 }
@@ -350,8 +363,9 @@ function mapIssuesToFindings(issues: JiraIssue[], evaluationContext: HygieneEval
 }
 
 function filterFindingsByCheck(findings: HygieneFinding[], selectedFilter: string | null): HygieneFinding[] {
-  if (selectedFilter === null) return findings;
-  return findings.filter((finding) => finding.flags.some((flag) => flag.checkId === selectedFilter));
+  const filterCheckIds = parseHygieneFilterCheckIds(selectedFilter);
+  if (filterCheckIds.length === 0) return findings;
+  return findings.filter((finding) => finding.flags.some((flag) => filterCheckIds.includes(flag.checkId)));
 }
 
 function readStoredProjectKey(): string {

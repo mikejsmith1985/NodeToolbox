@@ -26,8 +26,12 @@ const BOARD_SCOPE_SPRINT_MAX_RESULTS = 50;
 const DASHBOARD_SCOPE_MODE_SPRINT = 'sprint';
 const DASHBOARD_SCOPE_MODE_FIX_VERSION = 'fixVersion';
 const DASHBOARD_SCOPE_MODE_PI = 'pi';
+// duedate, the modern story-points field (10028), the default acceptance-criteria field (10200)
+// and the target start/end fields (10101/10102) are fetched for the Today dashboard's reuse of
+// the Hygiene rules: a rule whose field is absent from the payload reads it as blank and either
+// false-flags every issue (missing-sp — GH #177's 58 phantom commitment gaps) or never fires.
 const SPRINT_ISSUE_BASE_FIELDS =
-  'summary,status,priority,issuetype,assignee,reporter,created,updated,description,customfield_10016,customfield_10021,customfield_10301,fixVersions,issuelinks';
+  'summary,status,priority,issuetype,assignee,reporter,created,updated,duedate,description,customfield_10016,customfield_10021,customfield_10028,customfield_10101,customfield_10102,customfield_10200,customfield_10301,fixVersions,issuelinks';
 
 /** Returns the full field list for sprint/board issue requests, appending the configured
  *  story-points field when it differs from the legacy customfield_10016 already in the base. */

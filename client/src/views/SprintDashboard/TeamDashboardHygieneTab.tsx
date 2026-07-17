@@ -1,6 +1,7 @@
 // TeamDashboardHygieneTab.tsx — Team-scoped adapter for embedding the shared Hygiene workspace in Team Dashboard.
 
 import { useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 
 import HygieneView from '../Hygiene/HygieneView.tsx';
 import { buildJqlFieldReference, readConfiguredPiFieldId } from '../Hygiene/checks/hygieneFieldConfig.ts';
@@ -52,6 +53,11 @@ export default function TeamDashboardHygieneTab({
   selectedSprintId,
 }: TeamDashboardHygieneTabProps) {
   const normalizedProjectKey = projectKey.trim().toUpperCase();
+  // A Today-card drill-through arrives with ?hygieneFilter=<checkIds> so the tab opens showing
+  // exactly the issues that card counted — three team cards used to land on one identical
+  // unfiltered view with a number matching none of them (GH #177).
+  const [searchParams] = useSearchParams();
+  const deepLinkedFilter = searchParams.get('hygieneFilter') ?? undefined;
 
   const initialExtraJql = useMemo(
     () => buildScopeJql(scopeMode, selectedPiValue, selectedFixVersionName, selectedSprintId),
@@ -62,9 +68,10 @@ export default function TeamDashboardHygieneTab({
   // re-scopes Hygiene to the new team. The keyed remount resets transient UI (filters, expanded rows).
   return (
     <HygieneView
-      key={`${normalizedProjectKey || 'team-hygiene-unscoped'}:${initialExtraJql}`}
+      key={`${normalizedProjectKey || 'team-hygiene-unscoped'}:${initialExtraJql}:${deepLinkedFilter ?? ''}`}
       projectKey={normalizedProjectKey}
       initialExtraJql={initialExtraJql}
+      initialFilter={deepLinkedFilter}
       isTeamMode
     />
   );
