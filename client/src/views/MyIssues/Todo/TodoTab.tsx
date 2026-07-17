@@ -1,4 +1,5 @@
-// TodoTab.tsx — The My Issues "To-Do" tab: a free-form personal checklist backed by todoStore.
+// TodoTab.tsx — The free-form personal checklist (backed by todoStore), rendered as a section
+// of the My Issues "Today" dashboard so the whole day lives on one screen.
 
 import { useState } from 'react';
 
@@ -48,7 +49,8 @@ export default function TodoTab() {
   return (
     <div className={styles.todoTab}>
       <header>
-        <h2 className={styles.heading}>{VIEW_HEADING}</h2>
+        {/* h3: this renders as a SECTION of the Today dashboard, under its h2 "Today" heading. */}
+        <h3 className={styles.heading}>{VIEW_HEADING}</h3>
         <p className={styles.subheading}>{VIEW_SUBHEADING}</p>
       </header>
 

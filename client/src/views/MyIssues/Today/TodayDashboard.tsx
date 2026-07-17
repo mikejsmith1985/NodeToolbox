@@ -13,6 +13,7 @@ import { useNavigate } from 'react-router-dom';
 import { useSettingsStore } from '../../../store/settingsStore.ts';
 import CategoryCard from './CategoryCard.tsx';
 import SprintFlowSnapshot from './SprintFlowSnapshot.tsx';
+import TodoTab from '../Todo/TodoTab.tsx';
 import { CATEGORY_CATALOG, type CategoryId } from './todayCategories.ts';
 import {
   useTodayDashboard,
@@ -122,6 +123,9 @@ export default function TodayDashboard() {
           />
         ))}
       </div>
+
+      {/* Personal free-form checklist lives ON the Today dashboard so the whole day is one screen. */}
+      <TodoTab />
 
       <SprintFlowSnapshot sprintIssues={dashboard.sprintIssues} sprintInfo={dashboard.sprintInfo} />
     </div>
