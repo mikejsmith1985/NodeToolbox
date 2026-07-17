@@ -363,9 +363,81 @@ export async function saveFeatureReviewStoryPoints(issueKey: string, storyPoints
 
   await jiraPut(`/rest/api/2/issue/${encodeURIComponent(issueKey)}`, {
     fields: {
-      [targetFieldId]: numericStoryPoints,
+      [targetFieldId]: buildStoryPointsPayload(editMetaFields[targetFieldId], storyPointsValue, numericStoryPoints),
     },
   });
+}
+
+/**
+ * Builds the write payload for the chosen story-points field.
+ *
+ * Most projects model story points as a plain number, but some use a DROPDOWN (a Jira Select
+ * field whose options are "1", "2", "3", …). A dropdown rejects a raw number with Jira's
+ * "Could not find valid 'id' or 'value' in the Parent Option object" 400 — it must be written
+ * as the matching allowed OPTION object instead. Edit metadata tells the two apart: a dropdown
+ * carries allowedValues; a numeric field does not.
+ */
+function buildStoryPointsPayload(
+  editMetaField: FeatureReviewEditMetaField | undefined,
+  storyPointsText: string,
+  numericStoryPoints: number,
+): number | { id: string } | { value: string } {
+  const allowedValues = editMetaField?.allowedValues ?? [];
+  if (allowedValues.length === 0) {
+    return numericStoryPoints;
+  }
+
+  // Match by exact option label first, then numerically so "3" finds an option labelled "3.0".
+  const trimmedStoryPointsText = storyPointsText.trim();
+  const matchedOption = allowedValues.find((allowedValue) => {
+    const optionLabel = (allowedValue.value ?? allowedValue.name ?? '').trim();
+    if (optionLabel === '') return false;
+    if (optionLabel === trimmedStoryPointsText) return true;
+    const numericOptionLabel = Number(optionLabel);
+    return Number.isFinite(numericOptionLabel) && numericOptionLabel === numericStoryPoints;
+  });
+
+  if (!matchedOption) {
+    const availableOptionLabels = allowedValues
+      .map((allowedValue) => allowedValue.value ?? allowedValue.name ?? allowedValue.id ?? '')
+      .filter((optionLabel) => optionLabel !== '')
+      .join(', ');
+    throw new Error(
+      `This project's story-points field is a dropdown with no option matching "${trimmedStoryPointsText}". `
+      + `Pick one of its options instead: ${availableOptionLabels}.`,
+    );
+  }
+
+  if (matchedOption.id) {
+    return { id: matchedOption.id };
+  }
+  return { value: (matchedOption.value ?? matchedOption.name ?? trimmedStoryPointsText).trim() };
+}
+
+/**
+ * Reads the story points an issue currently shows, checking the configured field first and then
+ * the standard fields. Dropdown-style fields store an option object — its label is returned, so
+ * a team whose points live in a Select field sees the value instead of a blank input.
+ */
+export function readIssueStoryPointsDisplayValue(issue: { fields: Record<string, unknown> }): string {
+  const candidateFieldIds = [
+    readStoredStoryPointsFieldId(),
+    DEFAULT_STORY_POINTS_FIELD_ID,
+    FALLBACK_STORY_POINTS_FIELD_ID,
+  ];
+  for (const fieldId of candidateFieldIds) {
+    const rawFieldValue = issue.fields[fieldId];
+    if (rawFieldValue === null || rawFieldValue === undefined || rawFieldValue === '') continue;
+    if (typeof rawFieldValue === 'number' || typeof rawFieldValue === 'string') {
+      return String(rawFieldValue);
+    }
+    if (typeof rawFieldValue === 'object' && !Array.isArray(rawFieldValue)) {
+      const optionRecord = rawFieldValue as { value?: string; name?: string };
+      const optionLabel = optionRecord.value ?? optionRecord.name;
+      if (optionLabel) return String(optionLabel);
+    }
+  }
+  return '';
 }
 
 /** Reads the Jira project key from an issue key such as DENP-1370. */

@@ -14,7 +14,8 @@
 
 import { useCallback, useMemo, useState } from 'react';
 
-import { jiraGet, jiraPut } from '../../../services/jiraApi.ts';
+import { jiraGet } from '../../../services/jiraApi.ts';
+import { saveFeatureReviewStoryPoints } from '../../SprintDashboard/featureReviewFixes.ts';
 
 // ── Named constants — avoid magic numbers / strings throughout the hook. ────────
 
@@ -94,20 +95,6 @@ interface JiraSearchResponse {
 }
 
 // ── Pure helpers (also re-exported so the view can render badges/colour tags). ──
-
-/**
- * Resolves the story-points custom-field ID for the loaded backlog. If at least one
- * issue has a value on the preferred field but a blank fallback, we trust the
- * preferred field; otherwise we fall back to the legacy `customfield_10016`.
- */
-export function detectStoryPointsField(_backlog: SprintPlanningIssue[], rawIssues: JiraSearchResponse['issues']): string {
-  const preferredHasUniqueValue = rawIssues.some((rawIssue) => {
-    const preferredValue = rawIssue.fields[STORY_POINTS_FIELD_PREFERRED];
-    const fallbackValue = rawIssue.fields[STORY_POINTS_FIELD_FALLBACK];
-    return typeof preferredValue === 'number' && typeof fallbackValue !== 'number';
-  });
-  return preferredHasUniqueValue ? STORY_POINTS_FIELD_PREFERRED : STORY_POINTS_FIELD_FALLBACK;
-}
 
 /** Maps a Jira priority name to a brand colour token so the view can render badges consistently. */
 export function priorityToColorHex(priorityName: string): string {
@@ -195,7 +182,6 @@ export function useSprintPlanningState(): SprintPlanningState & SprintPlanningAc
   const [projectKey, setProjectKeyInternal] = useState<string>('');
   const [searchText, setSearchText] = useState<string>('');
   const [backlog, setBacklog] = useState<SprintPlanningIssue[]>([]);
-  const [rawBacklogIssues, setRawBacklogIssues] = useState<JiraSearchResponse['issues']>([]);
   const [pendingChanges, setPendingChanges] = useState<Record<string, number>>({});
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isSaving, setIsSaving] = useState<boolean>(false);
@@ -209,7 +195,6 @@ export function useSprintPlanningState(): SprintPlanningState & SprintPlanningAc
     try {
       const response = await jiraGet<JiraSearchResponse>(buildSearchPath(projectKey));
       const incomingIssues = response.issues ?? [];
-      setRawBacklogIssues(incomingIssues);
       setBacklog(incomingIssues.map(mapJiraIssueToBacklogRow));
       // Loading a fresh backlog discards any outstanding edits — they're tied to old data.
       setPendingChanges({});
@@ -219,7 +204,6 @@ export function useSprintPlanningState(): SprintPlanningState & SprintPlanningAc
       const errorMessage = caughtError instanceof Error ? caughtError.message : 'Failed to load backlog';
       setLoadError(errorMessage);
       setBacklog([]);
-      setRawBacklogIssues([]);
     } finally {
       setIsLoading(false);
     }
@@ -241,17 +225,16 @@ export function useSprintPlanningState(): SprintPlanningState & SprintPlanningAc
     setIsSaving(true);
     setSaveStatusMessage(`Saving ${changedKeys.length} change${changedKeys.length === 1 ? '' : 's'}…`);
 
-    const storyPointsFieldId = detectStoryPointsField(backlog, rawBacklogIssues);
     const failedKeys: string[] = [];
 
-    // Run requests concurrently; using Promise.all keeps a small backlog snappy without
-    // overwhelming Jira (max ~100 issues = 100 PUTs in a worst case).
+    // Run requests concurrently; Promise.all keeps a small backlog snappy without overwhelming
+    // Jira. Each save goes through the shared editmeta-aware writer (one editmeta GET + one PUT
+    // per issue) so the write targets the field the issue accepts and maps dropdown-style
+    // points fields to their allowed option instead of 400ing on a raw number.
     await Promise.all(
       changedKeys.map(async (issueKey) => {
         try {
-          await jiraPut(`/rest/api/2/issue/${encodeURIComponent(issueKey)}`, {
-            fields: { [storyPointsFieldId]: pendingChanges[issueKey] },
-          });
+          await saveFeatureReviewStoryPoints(issueKey, String(pendingChanges[issueKey]));
         } catch {
           failedKeys.push(issueKey);
         }
@@ -284,7 +267,7 @@ export function useSprintPlanningState(): SprintPlanningState & SprintPlanningAc
       return remainingChanges;
     });
     setIsSaving(false);
-  }, [pendingChanges, backlog, rawBacklogIssues]);
+  }, [pendingChanges]);
 
   const resetPendingChanges = useCallback(() => {
     setPendingChanges({});

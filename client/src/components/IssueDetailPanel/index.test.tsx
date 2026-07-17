@@ -33,11 +33,18 @@ const TEST_COMMENTS: JiraComment[] = [
   },
 ];
 
-// Comments and transitions share the same jiraGet mock, so route by URL suffix.
-function mockJiraGetByPath(comments: JiraComment[] = TEST_COMMENTS) {
+// Comments, transitions, and edit metadata share the same jiraGet mock, so route by URL suffix.
+// The default editmeta carries a plain numeric legacy points field, the most common shape.
+function mockJiraGetByPath(
+  comments: JiraComment[] = TEST_COMMENTS,
+  editMetaFields: Record<string, unknown> = { customfield_10016: { name: 'Story Points' } },
+) {
   mockJiraGet.mockImplementation((path: string) => {
     if (path.endsWith('/comment')) {
       return Promise.resolve({ comments });
+    }
+    if (path.endsWith('/editmeta')) {
+      return Promise.resolve({ fields: editMetaFields });
     }
     return Promise.resolve({ transitions: TEST_TRANSITIONS });
   });
@@ -72,6 +79,7 @@ function renderIssueDetailPanel() {
 describe('IssueDetailPanel', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.localStorage.clear();
     mockJiraGetByPath();
     mockJiraPost.mockResolvedValue({});
     mockJiraPut.mockResolvedValue(undefined);
@@ -110,6 +118,58 @@ describe('IssueDetailPanel', () => {
     renderIssueDetailPanel();
 
     expect(screen.getByDisplayValue('8')).toBeInTheDocument();
+  });
+
+  it('shows the points from a dropdown-style field, unwrapping the option object to its label', () => {
+    // Teams whose points live in a Select field store an option object, not a number; the input
+    // must show its label instead of falling back to a blank (or the wrong legacy field).
+    const dropdownIssue = {
+      ...TEST_ISSUE,
+      fields: { ...TEST_ISSUE.fields, customfield_10028: { id: '9013', value: '13' } },
+    } as unknown as JiraIssue;
+    render(<IssueDetailPanel isEmbedded issue={dropdownIssue} />);
+
+    expect(screen.getByDisplayValue('13')).toBeInTheDocument();
+  });
+
+  it('saves story points through the editmeta-aware writer (numeric field)', async () => {
+    const user = userEvent.setup();
+    renderIssueDetailPanel();
+
+    const storyPointsField = screen.getByDisplayValue('8');
+    await user.clear(storyPointsField);
+    await user.type(storyPointsField, '5');
+    await user.click(screen.getByRole('button', { name: /^save$/i }));
+
+    await waitFor(() => {
+      expect(mockJiraPut).toHaveBeenCalledWith('/rest/api/2/issue/TBX-101', {
+        fields: { customfield_10016: 5 },
+      });
+    });
+  });
+
+  it('saves story points as the matching OPTION when the project models points as a dropdown (GH #177)', async () => {
+    // A raw number 400s on Select fields ("Could not find valid 'id' or 'value' in the Parent
+    // Option object") — the shared writer must map 5 to the field's allowed option.
+    mockJiraGetByPath(TEST_COMMENTS, {
+      customfield_10028: {
+        name: 'Story Points',
+        allowedValues: [{ id: '9005', value: '5' }],
+      },
+    });
+    const user = userEvent.setup();
+    renderIssueDetailPanel();
+
+    const storyPointsField = screen.getByDisplayValue('8');
+    await user.clear(storyPointsField);
+    await user.type(storyPointsField, '5');
+    await user.click(screen.getByRole('button', { name: /^save$/i }));
+
+    await waitFor(() => {
+      expect(mockJiraPut).toHaveBeenCalledWith('/rest/api/2/issue/TBX-101', {
+        fields: { customfield_10028: { id: '9005' } },
+      });
+    });
   });
 
   it('shows the posted success message after a successful comment', async () => {

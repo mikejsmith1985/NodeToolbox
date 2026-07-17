@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Story points save to dropdown-style fields — every writer, one code path (GH #177)**: projects that model
+  story points as a Jira dropdown (a Select field with options "1", "2", "3", …) rejected the app's writes with
+  `400 — Could not find valid 'id' or 'value' in the Parent Option object`, because a dropdown must be written
+  as its matching OPTION, not a raw number. The shared editmeta-aware writer now detects a dropdown from the
+  issue's edit metadata, maps the number to the allowed option (numerically too, so "3" finds "3.0"), and lists
+  the field's options in a readable error when nothing matches. Every story-points write now goes through that
+  one writer: the Hygiene fix control and AI-accept, the issue detail panel (which was still blind-writing the
+  legacy `customfield_10016` — its second 400 in the same screenshot), Story Pointing, and Sprint Planning. The
+  detail panel also now DISPLAYS the points from whichever field the project actually uses, unwrapping dropdown
+  option objects instead of showing a blank.
 - **Today's team cards now count THE SAME scan the team Hygiene tab runs — agreement by construction (GH
   #177)**: after the previous fix the commitment-gaps card still read 6 beside a tab showing 1, because the card
   was a second, parallel hygiene computation: it evaluated the sprint issue list (which includes Done issues —
