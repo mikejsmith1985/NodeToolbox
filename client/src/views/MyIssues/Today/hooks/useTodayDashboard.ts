@@ -14,16 +14,24 @@ import { useSettingsStore } from '../../../../store/settingsStore.ts';
 import type { JiraIssue, JiraSprint } from '../../../../types/jira.ts';
 import type { JiraIssue as HygieneJiraIssue } from '../../../Hygiene/checks/hygieneChecks.ts';
 import { formatLastBusinessDayEndChicago } from '../../../../utils/lastBusinessDayChicago.ts';
+import type { HygieneFinding } from '../../../Hygiene/checks/hygieneChecks.ts';
+import { runHygieneScan } from '../../../Hygiene/hooks/hygieneScan.ts';
 import { loadDashboardConfigFromStorage } from '../../../SprintDashboard/hooks/useDashboardConfig.ts';
 import { useSprintData } from '../../../SprintDashboard/hooks/useSprintData.ts';
+import { buildTeamHygieneScopeJql } from '../../../SprintDashboard/teamHygieneScope.ts';
 import { useMentionsState } from '../../hooks/useMentionsState.ts';
 import { MY_ISSUES_JQL } from '../../hooks/useMyIssuesState.ts';
 import {
-  bucketTeamHygiene,
+  COMMITMENT_GAP_CHECK_IDS,
+  countFindingsMatchingChecks,
+  DUE_OVERDUE_CHECK_IDS,
   selectBlockers,
   selectDueOverdue,
+  selectFindingKeysMatchingChecks,
   selectMyStale,
   selectUntriaged,
+  TEAM_STALE_CHECK_IDS,
+  TEAM_UNASSIGNED_CHECK_IDS,
   type CategoryId,
 } from '../todayCategories.ts';
 
@@ -118,6 +126,19 @@ const REQUEST_NONE = '';
 
 const EMPTY_SOURCE_RESULT: SourceResult = { requestKey: REQUEST_NONE, issues: [], errorMessage: null };
 
+/**
+ * The outcome of one team hygiene scan, stamped like SourceResult. The findings come from the
+ * SHARED scan pipeline (hygieneScan.ts) — the exact scan the team Hygiene tab renders — so the
+ * team cards and that tab can never disagree on scope, fields, or configuration (GH #177).
+ */
+interface TeamScanResult {
+  requestKey: string;
+  findings: HygieneFinding[];
+  errorMessage: string | null;
+}
+
+const EMPTY_TEAM_SCAN_RESULT: TeamScanResult = { requestKey: REQUEST_NONE, findings: [], errorMessage: null };
+
 // ── Pure helpers (module-level so the hook body stays small) ──
 
 /**
@@ -125,7 +146,10 @@ const EMPTY_SOURCE_RESULT: SourceResult = { requestKey: REQUEST_NONE, issues: []
  * call for. A null requestKey means the inputs cannot support a fetch yet (no connection), which the
  * cards show as loading rather than as a false "ready" with a zero count.
  */
-function deriveFetchStatus(requestKey: string | null, result: SourceResult): CategoryStatus {
+function deriveFetchStatus(
+  requestKey: string | null,
+  result: { requestKey: string; errorMessage: string | null },
+): CategoryStatus {
   if (requestKey === null) return 'loading';
   if (result.requestKey !== requestKey) return 'loading';
   if (result.errorMessage) return 'error';
@@ -233,12 +257,25 @@ export function useTodayDashboard(): TodayDashboardData {
 
   const [myIssuesResult, setMyIssuesResult] = useState<SourceResult>(EMPTY_SOURCE_RESULT);
   const [untriagedResult, setUntriagedResult] = useState<SourceResult>(EMPTY_SOURCE_RESULT);
-  // Bumping this token re-runs the my-issues and untriaged fetches on manual refresh.
+  const [teamScanResult, setTeamScanResult] = useState<TeamScanResult>(EMPTY_TEAM_SCAN_RESULT);
+  // Bumping this token re-runs the my-issues, untriaged, and team-scan fetches on manual refresh.
   const [reloadToken, setReloadToken] = useState<number>(0);
 
   const isTeamConfigured = sprintState.boardId !== null || Boolean(sprintState.projectKey.trim());
   const trimmedDsuProjectKey = dsuProjectKey.trim();
   const isUntriagedConfigured = Boolean(trimmedDsuProjectKey);
+
+  // The team hygiene cards count the SAME scan the team Hygiene tab runs, which needs the team's
+  // project key and its active PI/sprint/fix-version scope — both live in the sprint state. The
+  // scope clause is built by the same function the Hygiene tab uses, so the JQL is identical.
+  const teamProjectKey = sprintState.projectKey.trim();
+  const isTeamHygieneConfigured = Boolean(teamProjectKey);
+  const teamScopeJql = buildTeamHygieneScopeJql({
+    scopeMode: sprintState.scopeMode,
+    selectedPiValue: sprintState.selectedPiValue,
+    selectedFixVersionName: sprintState.selectedFixVersionName,
+    selectedSprintId: sprintState.selectedSprintId,
+  });
 
   // Each key names the exact fetch the current inputs call for, and null means "cannot fetch yet".
   // Everything the query depends on is in the key, so a changed project key or a refresh both mark
@@ -246,9 +283,16 @@ export function useTodayDashboard(): TodayDashboardData {
   const myIssuesRequestKey = isConnectionReady ? `my|${reloadToken}` : null;
   const untriagedRequestKey =
     isConnectionReady && isUntriagedConfigured ? `untriaged|${trimmedDsuProjectKey}|${reloadToken}` : null;
+  // The scope values are in the key, so when the sprint load resolves a different PI/sprint the
+  // scan automatically re-runs against the scope the Hygiene tab would now show.
+  const teamScanRequestKey =
+    isConnectionReady && isTeamHygieneConfigured
+      ? `team-scan|${teamProjectKey}|${teamScopeJql}|${reloadToken}`
+      : null;
 
   const myIssuesStatus = deriveFetchStatus(myIssuesRequestKey, myIssuesResult);
   const untriagedStatus = deriveFetchStatus(untriagedRequestKey, untriagedResult);
+  const teamScanStatus = deriveFetchStatus(teamScanRequestKey, teamScanResult);
   const myIssuesError = myIssuesResult.errorMessage;
   const untriagedError = untriagedResult.errorMessage;
 
@@ -296,6 +340,34 @@ export function useTodayDashboard(): TodayDashboardData {
     };
   }, [untriagedRequestKey, trimmedDsuProjectKey]);
 
+  // ── Team hygiene scan (independent source; THE same scan the team Hygiene tab runs) ──
+  useEffect(() => {
+    if (teamScanRequestKey === null) {
+      return;
+    }
+
+    let isMounted = true;
+    runHygieneScan({
+      projectKey: teamProjectKey,
+      extraJql: teamScopeJql,
+      // Team mode audits every in-scope issue regardless of assignee, exactly like the tab.
+      assigneeClause: null,
+      activeTeamProfileId: activeTeamProfileId,
+    })
+      .then((scanOutcome) => {
+        if (!isMounted) return;
+        setTeamScanResult({ requestKey: teamScanRequestKey, findings: scanOutcome.findings, errorMessage: null });
+      })
+      .catch((unknownError: unknown) => {
+        if (!isMounted) return;
+        setTeamScanResult({ requestKey: teamScanRequestKey, findings: [], errorMessage: extractErrorMessage(unknownError) });
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [teamScanRequestKey, teamProjectKey, teamScopeJql, activeTeamProfileId]);
+
   // ── Sprint load (independent source) ──
   // loadSprint gets a new identity on most renders, so calling it through an effect event keeps it
   // out of the dependency list below: the effect re-fires only when the team or connection actually
@@ -326,14 +398,19 @@ export function useTodayDashboard(): TodayDashboardData {
     const teamIssuesForMixed = isTeamConfigured ? teamHygiene : [];
     const teamStatusForMixed: CategoryStatus = isTeamConfigured ? sprintStatus : 'ready';
     const teamErrorForMixed = isTeamConfigured ? sprintState.loadError : null;
-    // The evaluation context must carry the team's configured story-points field: without it the
-    // missing-sp check falls back to the built-in fields, which flags every Story pointed in a
-    // custom field as a phantom "commitment gap" (58 gaps beside a Hygiene tab showing 1 — GH #177).
-    const hygieneEvaluationContext = {
-      staleDaysThreshold,
-      customStoryPointsFieldId: dashboardConfig.customStoryPointsFieldId,
-    };
-    const teamBuckets = bucketTeamHygiene(teamHygiene, hygieneEvaluationContext);
+    // The team cards count the shared scan's findings — never a second evaluation over a second
+    // issue pool. The sprint fetch includes Done issues and misses configured fields; counting
+    // hygiene from it produced 58 phantom commitment gaps beside a tab showing 1 (GH #177).
+    const teamFindings = teamScanResult.findings;
+    // Due/overdue is a my+team union deduped by key; the team half reads the scan findings so it
+    // honours the same scope and enabled checks as the team Hygiene tab.
+    const myDueOverdueKeys = selectDueOverdue(myHygiene, [], { staleDaysThreshold }).map((issue) => issue.key);
+    const teamDueOverdueKeys = isTeamHygieneConfigured
+      ? selectFindingKeysMatchingChecks(teamFindings, DUE_OVERDUE_CHECK_IDS)
+      : [];
+    const dueOverdueCount = new Set([...myDueOverdueKeys, ...teamDueOverdueKeys]).size;
+    const dueOverdueTeamStatus: CategoryStatus = isTeamHygieneConfigured ? teamScanStatus : 'ready';
+    const dueOverdueTeamError = isTeamHygieneConfigured ? teamScanResult.errorMessage : null;
 
     return {
       mentions: {
@@ -358,22 +435,34 @@ export function useTodayDashboard(): TodayDashboardData {
         errorMessage: myIssuesStatus === 'error' ? (myIssuesError ?? undefined) : undefined,
         destination: DESTINATIONS['my-stale'],
       },
-      'team-stale': buildTeamCategory('team-stale', teamBuckets.stale.length, isTeamConfigured, sprintStatus, sprintState.loadError),
-      unassigned: buildTeamCategory('unassigned', teamBuckets.unassigned.length, isTeamConfigured, sprintStatus, sprintState.loadError),
+      'team-stale': buildTeamCategory(
+        'team-stale',
+        countFindingsMatchingChecks(teamFindings, TEAM_STALE_CHECK_IDS),
+        isTeamHygieneConfigured,
+        teamScanStatus,
+        teamScanResult.errorMessage,
+      ),
+      unassigned: buildTeamCategory(
+        'unassigned',
+        countFindingsMatchingChecks(teamFindings, TEAM_UNASSIGNED_CHECK_IDS),
+        isTeamHygieneConfigured,
+        teamScanStatus,
+        teamScanResult.errorMessage,
+      ),
       'commitment-gaps': buildTeamCategory(
         'commitment-gaps',
-        teamBuckets.commitmentGaps.length,
-        isTeamConfigured,
-        sprintStatus,
-        sprintState.loadError,
+        countFindingsMatchingChecks(teamFindings, COMMITMENT_GAP_CHECK_IDS),
+        isTeamHygieneConfigured,
+        teamScanStatus,
+        teamScanResult.errorMessage,
       ),
       'due-overdue': buildMixedCategory(
         'due-overdue',
-        selectDueOverdue(myHygiene, teamIssuesForMixed, hygieneEvaluationContext).length,
+        dueOverdueCount,
         myIssuesStatus,
-        teamStatusForMixed,
+        dueOverdueTeamStatus,
         myIssuesError,
-        teamErrorForMixed,
+        dueOverdueTeamError,
       ),
       untriaged: isUntriagedConfigured
         ? {
@@ -401,7 +490,9 @@ export function useTodayDashboard(): TodayDashboardData {
     untriagedError,
     isUntriagedConfigured,
     staleDaysThreshold,
-    dashboardConfig.customStoryPointsFieldId,
+    isTeamHygieneConfigured,
+    teamScanResult,
+    teamScanStatus,
   ]);
 
   return {
