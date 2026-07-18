@@ -6,24 +6,41 @@ import { describe, expect, it } from 'vitest';
 import CodeWalkthroughView from './CodeWalkthroughView.tsx';
 
 describe('CodeWalkthroughView', () => {
-  it('renders the page title and subtitle', () => {
+  it('renders the page title', () => {
     render(<CodeWalkthroughView />);
     expect(screen.getByRole('heading', { name: /code walkthrough/i })).toBeInTheDocument();
   });
 
-  it('renders the workflow and technical sections in the sidebar', () => {
+  it('renders the current-application sections in the sidebar — no retired workspaces', () => {
     render(<CodeWalkthroughView />);
     expect(screen.getByRole('link', { name: /architecture/i })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /team dashboard features/i })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /art view features/i })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /operations features/i })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /home & navigation/i })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /agile hub/i })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /my issues & today/i })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /hygiene workspace/i })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /jira create/i })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /feature canvas/i })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /reports hub/i })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /snow hub/i })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /admin hub/i })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /ai assist model/i })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /schedulers & automation/i })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /security model/i })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /data flow/i })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /api usage/i })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /tool breakdown/i })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /relay deep dive/i })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /jira write operations/i })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /snow write operations/i })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /data flow & services/i })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /jira write paths/i })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /snow write paths/i })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /tech stack/i })).toBeInTheDocument();
+    // Retired workspaces must not resurface as sections.
+    expect(screen.queryByRole('link', { name: /team dashboard features/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /art view features/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /business helper/i })).not.toBeInTheDocument();
+  });
+
+  it('never mentions retired tools anywhere in the documentation body', () => {
+    render(<CodeWalkthroughView />);
+    expect(screen.queryByText(/business helper/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/stablization/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/dev workspace/i)).not.toBeInTheDocument();
   });
 
   it('renders all section headings in the main content', () => {
@@ -37,15 +54,23 @@ describe('CodeWalkthroughView', () => {
 
     expect(screen.getAllByRole('heading', { name: /workflow playbooks/i }).length).toBeGreaterThan(0);
     expect(screen.getAllByRole('heading', { name: /troubleshooting/i }).length).toBeGreaterThan(0);
-    expect(screen.getByText(/open team dashboard and confirm the correct board and scope are loaded/i)).toBeInTheDocument();
-    expect(screen.getByText(/if a pi review page does not appear, check that the team board is mapped in art settings/i)).toBeInTheDocument();
+    // The playbooks describe the CURRENT navigation: Agile Hub spaces, not standalone tools.
+    expect(screen.getByText(/open the agile hub and stay in the team space/i)).toBeInTheDocument();
+    expect(screen.getByText(/if a pi review page does not appear/i)).toBeInTheDocument();
+  });
+
+  it('documents the guided hygiene cleanup session and the F1 to-do quick add', () => {
+    render(<CodeWalkthroughView />);
+
+    expect(screen.getAllByText(/skip \(s\)/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/f1/i).length).toBeGreaterThan(0);
   });
 
   it('filters sections when a search query matches', () => {
     render(<CodeWalkthroughView />);
     const searchInput = screen.getByPlaceholderText(/search/i);
     fireEvent.change(searchInput, { target: { value: 'feature review' } });
-    expect(screen.getAllByRole('heading', { name: /team dashboard features/i }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole('heading', { name: /agile hub/i }).length).toBeGreaterThan(0);
   });
 
   it('shows no-results message when search query matches nothing', () => {
