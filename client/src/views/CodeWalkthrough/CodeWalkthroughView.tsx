@@ -26,14 +26,14 @@ const WALKTHROUGH_SECTIONS: WalkthroughSection[] = [
     title: 'Architecture',
     emoji: '🏗️',
     summary:
-      'NodeToolbox is a local-first React + TypeScript application served by a Node.js Express proxy. The client is organized into workspaces such as Team Dashboard, ART View, My Issues, Reports Hub, SNow Hub, Business Helper, Dev Workspace, Text Tools, Admin Hub, Personal Toolbox, and Code Walkthrough. Most workspaces follow the same pattern: a top-level view, focused tabs or panels, a dedicated state hook, and typed service helpers that talk to localhost proxy routes instead of calling enterprise systems directly from the browser.',
+      'NodeToolbox is a local-first React + TypeScript application served by a Node.js Express proxy. The client is organized into workspaces such as the Agile Hub (Team, Product, Train, and Search spaces), My Issues, Reports Hub, SNow Hub, Jira Create, Text Tools, Admin Hub, Personal Toolbox, and Code Walkthrough. Most workspaces follow the same pattern: a top-level view, focused tabs or panels, a dedicated state hook, and typed service helpers that talk to localhost proxy routes instead of calling enterprise systems directly from the browser.',
   },
   {
     id: 'workspace-guide',
     title: 'Workspace Guide',
     emoji: '🧭',
     summary:
-      'Team Dashboard owns team-level sprint execution, feature review, PI Review authoring, and release readiness. ART View owns the cross-team train picture, including dependencies, blueprint hierarchy, monthly reporting, and PI Review readouts. My Issues is the personal work queue with hygiene and linked ServiceNow context. Reports Hub serves leadership-ready reporting views. Business Helper provides simple Jira search and the Stablization funding workflow. Dev Workspace covers time tracking, Git sync, and repo monitoring. SNow Hub handles change, problem, release, and sync workflows. Text Tools provides transformation utilities, while Admin Hub covers setup, standards, diagnostics, backup, and visibility.',
+      'The Agile Hub is one door with four spaces: Team owns sprint execution, feature review, PI Review authoring, and release readiness; Product owns the PO workflow with feature authoring; Train owns the cross-team picture, including dependencies, blueprint hierarchy, monthly reporting, and PI Review readouts; Search offers business-friendly Jira keyword search without JQL. My Issues is the personal work queue with hygiene and linked ServiceNow context. Reports Hub serves leadership-ready reporting views. Jira Create builds issues from reusable templates or imported request submissions. SNow Hub handles change, problem, release, and sync workflows. Text Tools provides transformation utilities, while Admin Hub covers setup, standards, diagnostics, backup, and visibility.',
   },
   {
     id: 'team-dashboard-features',
@@ -220,19 +220,18 @@ const WALKTHROUGH_SECTIONS: WalkthroughSection[] = [
     title: 'Utility Features',
     emoji: '🛠️',
     summary:
-      'Business Helper and Text Tools focus on speed and accessibility. Business Helper wraps Jira in business-friendly search and the Stablization funding workflow, including mappings, dropdowns, custom columns, and local drafts. Text Tools provides quick formatting, conversion, encoding, decoding, and extraction helpers for day-to-day copy-paste work.',
+      'Simple Search and Text Tools focus on speed and accessibility. Simple Search (the Agile Hub Search space) wraps Jira in business-friendly keyword search with grouped results and issue relationships — no JQL required. Text Tools provides quick formatting, conversion, encoding, decoding, and extraction helpers for day-to-day copy-paste work.',
     featureHighlights: [
-      'Business Helper turns Jira search and funding-table work into a guided workflow for non-technical users.',
+      'Simple Search turns Jira search into a guided workflow for non-technical users, with grouped results and expandable relationships.',
       'Text Tools handles the short-lived formatting and extraction tasks that otherwise waste time in external tools.',
     ],
     workflowPlaybooks: [
       {
-        title: 'Business Helper search to funding table',
+        title: 'Simple Search without JQL',
         steps: [
-          'Open Business Helper and start in Simple Search with a plain-language keyword.',
-          'Expand the grouped results until you find the Jira item you want to move into the funding workflow.',
-          'Use Send to Stablization so the mapped values populate the funding table automatically.',
-          'Adjust formulas, custom columns, or dropdown-backed fields inside the Stablization tab before saving the draft locally.',
+          'Open the Agile Hub and switch to the Search space, then enter a plain-language keyword.',
+          'Expand the grouped results (Portfolio, ART, Team) until you find the Jira item you need.',
+          'Open child and linked records inline to understand the item’s relationships before acting on it.',
         ],
       },
       {
@@ -245,7 +244,6 @@ const WALKTHROUGH_SECTIONS: WalkthroughSection[] = [
       },
     ],
     troubleshootingTips: [
-      'If Business Helper values do not land in the right funding columns, review the field-mapping settings before editing rows manually.',
       'If a Text Tools output looks wrong, confirm you selected the correct transformation tab and mode before assuming the input is bad.',
       'If the ServiceNow extractor flow returns incomplete payloads, re-run the bookmarklet on the target page before copying the filtered result.',
     ],

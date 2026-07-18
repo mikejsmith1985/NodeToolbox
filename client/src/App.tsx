@@ -22,12 +22,10 @@ import type { RelaySystem } from './types/relay.ts';
 import { disableDemoModeForCurrentTab, isDemoModeEnabled } from './utils/demoModeStorage.ts';
 import AgileHubView from './views/AgileHub/AgileHubView.tsx';
 import AdminHubView from './views/AdminHub/AdminHubView.tsx';
-import BusinessHelperView from './views/BusinessHelper/BusinessHelperView.tsx';
 import CodeWalkthroughView from './views/CodeWalkthrough/CodeWalkthroughView.tsx';
 import DsuBoardView from './views/DsuBoard/DsuBoardView.tsx';
 import HomeView from './views/Home/HomeView.tsx';
-import JiraIntake from './views/JiraIntake/JiraIntake.tsx';
-import JiraTemplateMaker from './views/JiraTemplateMaker/JiraTemplateMaker.tsx';
+import JiraCreateView from './views/JiraCreate/JiraCreateView.tsx';
 import MyIssuesView from './views/MyIssues/MyIssuesView.tsx';
 import PersonalToolboxView from './views/PersonalToolbox/PersonalToolboxView.tsx';
 import ReportsHubView from './views/ReportsHub/ReportsHubView.tsx';
@@ -46,8 +44,7 @@ const APP_TITLE = 'NodeToolbox';
 const HOME_ROUTE = '/';
 const SETTINGS_ROUTE = '/settings';
 const SNOW_HUB_ROUTE = '/snow-hub';
-const JIRA_TEMPLATE_MAKER_ROUTE = '/jira-template-maker';
-const JIRA_INTAKE_ROUTE = '/jira-intake';
+const JIRA_CREATE_ROUTE = '/jira-create';
 const MY_ISSUES_ROUTE = '/my-issues';
 const PERSONAL_TOOLBOX_ROUTE = '/personal-toolbox';
 const AGILE_HUB_ROUTE = '/agile-hub';
@@ -59,7 +56,6 @@ const CODE_WALKTHROUGH_ROUTE = '/code-walkthrough';
 const TEXT_TOOLS_ROUTE = '/text-tools';
 const REPORTS_HUB_ROUTE = '/reports-hub';
 const ADMIN_HUB_ROUTE = '/admin-hub';
-const BUSINESS_HELPER_ROUTE = '/business-helper';
 const FEATURE_CANVAS_ROUTE = '/feature-canvas';
 const DEFAULT_ROUTE = HOME_ROUTE;
 const RELAY_SYSTEM: RelaySystem = 'snow';
@@ -101,6 +97,17 @@ function RedirectToAgileHub({ space }: { space: string }) {
   const forwardedParams = new URLSearchParams(location.search);
   forwardedParams.set('space', space);
   return <Navigate replace to={{ pathname: AGILE_HUB_ROUTE, search: `?${forwardedParams.toString()}` }} />;
+}
+
+/**
+ * Param-preserving redirect into a Jira Create tab: the retired standalone routes' query strings
+ * (e.g. a shared template link) ride along verbatim; only `tab` is set.
+ */
+function RedirectToJiraCreate({ tab }: { tab: string }) {
+  const location = useLocation();
+  const forwardedParams = new URLSearchParams(location.search);
+  forwardedParams.set('tab', tab);
+  return <Navigate replace to={{ pathname: JIRA_CREATE_ROUTE, search: `?${forwardedParams.toString()}` }} />;
 }
 
 interface ToolTextSizeButtonConfig {
@@ -242,8 +249,10 @@ export default function App() {
               </GatedToolRoute>
             )}
           />
-          <Route path={JIRA_TEMPLATE_MAKER_ROUTE} element={<GatedToolRoute cardId="jira-template-maker"><JiraTemplateMaker /></GatedToolRoute>} />
-          <Route path={JIRA_INTAKE_ROUTE} element={<GatedToolRoute cardId="jira-intake"><JiraIntake /></GatedToolRoute>} />
+          {/* Jira Create merges the Template Maker and Intake cards; old routes redirect below. */}
+          <Route path={JIRA_CREATE_ROUTE} element={<GatedToolRoute cardId="jira-create"><JiraCreateView /></GatedToolRoute>} />
+          <Route path="/jira-template-maker" element={<RedirectToJiraCreate tab="templates" />} />
+          <Route path="/jira-intake" element={<RedirectToJiraCreate tab="intake" />} />
           <Route path={MY_ISSUES_ROUTE} element={<GatedToolRoute cardId="my-issues"><MyIssuesView /></GatedToolRoute>} />
           <Route path={PERSONAL_TOOLBOX_ROUTE} element={<GatedToolRoute cardId="personal-toolbox"><PersonalToolboxView /></GatedToolRoute>} />
           {/* The Agile Hub replaces the Team Dashboard / PO Tool / ART View entry points (spec 020 US3). */}
@@ -263,7 +272,8 @@ export default function App() {
           )}
           />
           <Route path={ADMIN_HUB_ROUTE} element={<AdminHubView />} />
-          <Route path={BUSINESS_HELPER_ROUTE} element={<GatedToolRoute cardId="business-helper"><BusinessHelperView /></GatedToolRoute>} />
+          {/* The Business Helper is retired; its surviving Simple Search lives in the Agile Hub. */}
+          <Route path="/business-helper" element={<RedirectToAgileHub space="search" />} />
           <Route
             path={FEATURE_CANVAS_ROUTE}
             element={(

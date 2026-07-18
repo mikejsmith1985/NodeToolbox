@@ -4,7 +4,7 @@ import type { ComponentType } from 'react';
 
 import AdminHubView from '../AdminHub/AdminHubView.tsx';
 import ArtView from '../ArtView/ArtView.tsx';
-import BusinessHelperView from '../BusinessHelper/BusinessHelperView.tsx';
+import SimpleSearchTab from '../AgileHub/search/SimpleSearchTab.tsx';
 import CodeWalkthroughView from '../CodeWalkthrough/CodeWalkthroughView.tsx';
 
 import MyIssuesView from '../MyIssues/MyIssuesView.tsx';
@@ -41,10 +41,11 @@ export const PERSONAL_TOOLBOX_MODULES: readonly PersonalToolboxModuleDefinition[
     component: MyIssuesView,
   },
   {
-    id: 'business-helper',
-    title: 'Business Helper',
-    description: 'Business-friendly Jira search and the Stablization funding workflow with mappings and custom columns.',
-    component: BusinessHelperView,
+    // Replaces the retired Business Helper module: its surviving capability is Simple Search.
+    id: 'simple-search',
+    title: 'Simple Search',
+    description: 'Business-friendly Jira keyword search with grouped results and issue relationships — no JQL required.',
+    component: SimpleSearchTab,
   },
   {
     id: 'reports-hub',

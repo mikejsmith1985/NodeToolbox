@@ -1,4 +1,4 @@
-// AgileHubView.tsx — The Agile Hub thin shell: one door, three audience spaces (spec 020 US3).
+// AgileHubView.tsx — The Agile Hub thin shell: one door, three audience spaces plus Search (spec 020 US3).
 //
 // The shell owns NOTHING but the space choice. Each space mounts one of the pre-merge views —
 // SprintDashboardView, PoToolView, ArtView — completely unchanged, so capability parity and
@@ -12,13 +12,15 @@ import { useSettingsStore } from '../../store/settingsStore.ts';
 import ArtView from '../ArtView/ArtView.tsx';
 import PoToolView from '../PoTool/PoToolView.tsx';
 import SprintDashboardView from '../SprintDashboard/SprintDashboardView.tsx';
+import SimpleSearchTab from './search/SimpleSearchTab.tsx';
 import styles from './AgileHubView.module.css';
 
-/** The three audience spaces — always all visible (lenses, not permissions; FR-013). */
+/** The audience spaces plus the shared Search utility — always all visible (FR-013). */
 const AGILE_HUB_SPACES = [
   { key: 'team', label: '🏃 Team' },
   { key: 'product', label: '🧭 Product' },
   { key: 'train', label: '🚂 Train' },
+  { key: 'search', label: '🔍 Search' },
 ] as const;
 
 type AgileHubSpace = (typeof AGILE_HUB_SPACES)[number]['key'];
@@ -85,6 +87,8 @@ export default function AgileHubView() {
       {activeSpace === 'team' && <SprintDashboardView />}
       {activeSpace === 'product' && <PoToolView />}
       {activeSpace === 'train' && <ArtView />}
+      {/* The Business Helper's guided keyword search, rehomed as a shared hub utility. */}
+      {activeSpace === 'search' && <SimpleSearchTab />}
     </div>
   );
 }
