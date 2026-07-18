@@ -70,8 +70,16 @@ vi.mock('./views/PersonalToolbox/PersonalToolboxView.tsx', () => ({
   default: () => <h1>Personal Toolbox Mock</h1>,
 }));
 
-vi.mock('./views/BusinessHelper/BusinessHelperView.tsx', () => ({
-  default: () => <h1>Business Helper Mock</h1>,
+vi.mock('./views/AgileHub/search/SimpleSearchTab.tsx', () => ({
+  default: () => <h1>Simple Search Mock</h1>,
+}));
+
+vi.mock('./views/JiraTemplateMaker/JiraTemplateMaker.tsx', () => ({
+  default: () => <h1>Template Maker Mock</h1>,
+}));
+
+vi.mock('./views/JiraIntake/JiraIntake.tsx', () => ({
+  default: () => <h1>Jira Intake Mock</h1>,
 }));
 
 vi.mock('./views/ReportsHub/ReportsHubView.tsx', () => ({
@@ -280,12 +288,44 @@ describe('App shell', () => {
     });
   });
 
-  it('keeps the business helper route accessible', async () => {
+  // ── Card consolidation: Business Helper → Agile Hub Search; Templates + Intake → Jira Create ──
+
+  it('redirects /business-helper into the Agile Hub Search space (Simple Search survives)', async () => {
     renderApp('/business-helper');
 
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: 'Business Helper Mock' })).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Simple Search Mock' })).toBeInTheDocument();
     });
+    expect(screen.getByTestId('location-probe')).toHaveTextContent('/agile-hub?space=search');
+  });
+
+  it('serves the merged Jira Create tool with Templates as the default tab', async () => {
+    renderApp('/jira-create');
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Template Maker Mock' })).toBeInTheDocument();
+    });
+  });
+
+  it('redirects /jira-template-maker to Jira Create preserving the query string', async () => {
+    renderApp('/jira-template-maker?template=abc123');
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Template Maker Mock' })).toBeInTheDocument();
+    });
+    const landedLocation = screen.getByTestId('location-probe').textContent ?? '';
+    expect(landedLocation).toContain('/jira-create');
+    expect(landedLocation).toContain('tab=templates');
+    expect(landedLocation).toContain('template=abc123');
+  });
+
+  it('redirects /jira-intake to the Jira Create Intake tab', async () => {
+    renderApp('/jira-intake');
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Jira Intake Mock' })).toBeInTheDocument();
+    });
+    expect(screen.getByTestId('location-probe')).toHaveTextContent('/jira-create?tab=intake');
   });
 
   it('restores the pre-relay route after the bookmarklet reloads the window to root', async () => {
