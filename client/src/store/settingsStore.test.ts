@@ -52,6 +52,17 @@ describe('useSettingsStore', () => {
     );
   });
 
+  it('persists the last Agile Hub space and defaults it to team (spec 020 FR-013)', async () => {
+    const { useSettingsStore } = await loadSettingsStoreModule();
+
+    expect(useSettingsStore.getState().agileHubLastSpace).toBe('team');
+
+    useSettingsStore.getState().setAgileHubLastSpace('product');
+
+    expect(useSettingsStore.getState().agileHubLastSpace).toBe('product');
+    expect(window.localStorage.getItem('tbxAgileHubLastSpace')).toBe('product');
+  });
+
   it('toggles theme and persists the updated value', async () => {
     const { useSettingsStore } = await loadSettingsStoreModule();
 

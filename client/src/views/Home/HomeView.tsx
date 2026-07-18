@@ -15,7 +15,9 @@ import { Link } from 'react-router-dom';
 
 import { AppCard } from '@/components/AppCard/index.ts';
 import ViewFrame from '@/components/ViewFrame/ViewFrame.tsx';
+import { useAdminStore } from '@/store/adminStore.ts';
 import { useSettingsStore } from '@/store/settingsStore.ts';
+import { resolveToolIsVisible, useToolVisibilityStore } from '@/store/toolVisibilityStore.ts';
 import styles from './HomeView.module.css';
 import {
   APP_CARDS,
@@ -29,12 +31,30 @@ const HOME_SUBHEADING = 'Choose the tools that match your day and drag cards int
 const ACTIVE_OPACITY = 0.5;
 const DEFAULT_OPACITY = 1;
 const APP_CARD_BY_ID = new Map(APP_CARDS.map((cardDef) => [cardDef.id, cardDef]));
+// Retired tool ids resolve to the Agile Hub, where those jobs now live (spec 020 US3).
 const LEGACY_RECENT_VIEW_CARD_IDS: Record<string, string> = {
-  'dsu-board': 'sprint-dashboard',
+  'dsu-board': 'agile-hub',
+  'sprint-dashboard': 'agile-hub',
+  'po-tool': 'agile-hub',
+  art: 'agile-hub',
 };
 const LEGACY_RECENT_VIEW_ROUTES: Record<string, string> = {
-  'dsu-board': '/sprint-dashboard',
+  'dsu-board': '/agile-hub',
 };
+
+/**
+ * A card is presentable when the admin has not hidden it AND its session gate (if any) is
+ * satisfied. Gated capabilities are absent, never greyed (spec 020 NFR-003).
+ */
+function isCardPresentable(
+  cardDef: AppCardDef,
+  visibilityByCardId: Record<string, boolean>,
+  isAdminUnlocked: boolean,
+): boolean {
+  if (!resolveToolIsVisible(visibilityByCardId, cardDef.id)) return false;
+  if (cardDef.gateKind === 'admin-unlock' && !isAdminUnlocked) return false;
+  return true;
+}
 
 interface SortableCardProps {
   cardDef: AppCardDef;
@@ -50,6 +70,8 @@ interface RecentViewLinkDef {
 interface RecentViewSectionProps {
   recentViewIds: string[];
   handleCardSelection: (cardId: string) => void;
+  /** Gate/visibility predicate — chips for hidden or gated tools are suppressed (spec 020 FR-003). */
+  isCardIdPresentable: (cardId: string) => boolean;
 }
 
 interface SectionedHomeGridProps {
@@ -86,8 +108,8 @@ function SortableCard({ cardDef, handleCardSelection }: SortableCardProps) {
   );
 }
 
-function RecentViewSection({ recentViewIds, handleCardSelection }: RecentViewSectionProps) {
-  const recentViewLinks = getRecentViewLinks(recentViewIds);
+function RecentViewSection({ recentViewIds, handleCardSelection, isCardIdPresentable }: RecentViewSectionProps) {
+  const recentViewLinks = getRecentViewLinks(recentViewIds, isCardIdPresentable);
 
   if (recentViewLinks.length === 0) {
     return null;
@@ -151,12 +173,19 @@ function resolveRecentViewCard(recentViewId: string): AppCardDef | undefined {
   return APP_CARD_BY_ID.get(resolvedCardId);
 }
 
-function getRecentViewLinks(recentViewIds: readonly string[]): RecentViewLinkDef[] {
+function getRecentViewLinks(
+  recentViewIds: readonly string[],
+  isCardIdPresentable: (cardId: string) => boolean,
+): RecentViewLinkDef[] {
   return recentViewIds.flatMap((recentViewId) => {
     const appCard = resolveRecentViewCard(recentViewId);
     const recentViewLabel = RECENT_VIEW_LABELS[recentViewId];
 
     if (!recentViewLabel) {
+      return [];
+    }
+    // A recent that resolves to a hidden or gated card is suppressed while that state holds.
+    if (appCard && !isCardIdPresentable(appCard.id)) {
       return [];
     }
 
@@ -185,16 +214,26 @@ function applySavedCardOrder(cardDefs: AppCardDef[], savedCardIds: readonly stri
   return [...savedCards, ...missingCards];
 }
 
-/** Renders the Home view card grid with recents and drag-to-reorder. */
+/** Renders the Home view card grid with recents, drag-to-reorder, and honest gating (spec 020). */
 export default function HomeView() {
   const cardOrder = useSettingsStore((state) => state.cardOrder);
   const recentViews = useSettingsStore((state) => state.recentViews);
   const setCardOrder = useSettingsStore((state) => state.setCardOrder);
   const addRecentView = useSettingsStore((state) => state.addRecentView);
+  const visibilityByCardId = useToolVisibilityStore((state) => state.visibilityByCardId);
+  const isAdminUnlocked = useAdminStore((state) => state.isAdminUnlocked);
   const sortedCards = useMemo(
-    () => applySavedCardOrder([...APP_CARDS], cardOrder),
-    [cardOrder],
+    () =>
+      applySavedCardOrder(
+        APP_CARDS.filter((cardDef) => isCardPresentable(cardDef, visibilityByCardId, isAdminUnlocked)),
+        cardOrder,
+      ),
+    [cardOrder, visibilityByCardId, isAdminUnlocked],
   );
+  const isCardIdPresentable = (cardId: string): boolean => {
+    const cardDef = APP_CARD_BY_ID.get(cardId);
+    return cardDef ? isCardPresentable(cardDef, visibilityByCardId, isAdminUnlocked) : true;
+  };
 
   function handleDragEnd(dragEvent: DragEndEvent): void {
     const { active, over } = dragEvent;
@@ -216,7 +255,11 @@ export default function HomeView() {
 
   return (
     <ViewFrame headerAlign="center" title={HOME_HEADING} subtitle={HOME_SUBHEADING} width="wide">
-      <RecentViewSection recentViewIds={recentViews} handleCardSelection={addRecentView} />
+      <RecentViewSection
+        recentViewIds={recentViews}
+        handleCardSelection={addRecentView}
+        isCardIdPresentable={isCardIdPresentable}
+      />
       <DndContext collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
         <SortableContext items={sortedCards.map((cardDef) => cardDef.id)} strategy={rectSortingStrategy}>
           <SectionedHomeGrid sortedCards={sortedCards} handleCardSelection={addRecentView} />

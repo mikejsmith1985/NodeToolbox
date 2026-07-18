@@ -8,6 +8,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **The Agile Hub — one door for Team, Product, and Train (spec 020)**: the Team Dashboard, PO Tool, and ART View
+  home cards merge into a single **Agile Hub** with three always-visible audience spaces. Each space IS the tool it
+  replaces — mounted unchanged, keeping every tab and every saved selection (team profiles, the PO's independent
+  selection, ART scope) exactly as they were. Every old route and bookmark redirects into the right space with its
+  parameters intact — the Today cards' filtered hygiene drill-throughs land mid-flight, filter applied. The hub
+  reopens on your last-used space.
+
+### Changed
+- **A home page that describes the job, not the org (spec 020)**: three sections — 🙋 My Work, 🏃 Agile Delivery,
+  📈 Insights & Admin — replace the five old ones (one of which held 9 of 14 cards while three others held a single
+  card each). Drag order and Recently Used carry over; recents recorded against the retired tools resolve to the
+  Agile Hub.
+- **Honest gating (spec 020)**: the SNow Hub card and route now exist only while the Admin Hub is unlocked in the
+  current tab — absent, never greyed; direct navigation while locked lands home. The Admin Hub's Tool Visibility
+  toggles, which previously persisted but affected nothing, are now live: switching a tool off removes its card and
+  recents chip immediately, and its route lands home. The Admin Hub itself can never be hidden, and gates apply on
+  entry only — an open workspace is never yanked away mid-task.
+
+### Added
 - **Hygiene Fix Workspace — an issue view worth working in (spec 019, from the GH #177 UX review)**: three parts.
   (1) **Meaning through color and shape**: status chips colored by category, priority badges with the familiar
   direction arrows, issue-type icons (🐞 defect, 📗 story, ✅ task…), assignee initials-avatars with the FULL name,

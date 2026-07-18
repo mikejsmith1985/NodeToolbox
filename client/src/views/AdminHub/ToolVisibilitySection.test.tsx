@@ -1,88 +1,71 @@
-// ToolVisibilitySection.test.tsx — Tests for the Tool Visibility (feature flags) section.
+// ToolVisibilitySection.test.tsx — Tests for the Tool Visibility section (live store binding, spec 020).
 
 import { render, screen, fireEvent } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 
+import { useToolVisibilityStore } from '../../store/toolVisibilityStore.ts';
 import ToolVisibilitySection from './ToolVisibilitySection';
 
 describe('ToolVisibilitySection', () => {
   beforeEach(() => {
     localStorage.clear();
+    useToolVisibilityStore.setState({ visibilityByCardId: {} });
   });
 
-  afterEach(() => {
-    localStorage.clear();
-  });
-
-  it('renders the section heading', () => {
+  it('renders the section heading and bulk buttons', () => {
     render(<ToolVisibilitySection />);
     expect(screen.getByRole('heading', { name: /tool visibility/i })).toBeInTheDocument();
-  });
-
-  it('renders a Show All button', () => {
-    render(<ToolVisibilitySection />);
     expect(screen.getByRole('button', { name: /show all/i })).toBeInTheDocument();
-  });
-
-  it('renders a Hide All button', () => {
-    render(<ToolVisibilitySection />);
     expect(screen.getByRole('button', { name: /hide all/i })).toBeInTheDocument();
   });
 
-  it('renders a toggle for each APP_CARD (at least one card exists)', () => {
+  it('renders a toggle for hideable cards, defaulting to visible', () => {
     render(<ToolVisibilitySection />);
-    // Team Dashboard is always in APP_CARDS.
-    expect(
-      screen.getByLabelText(/toggle visibility of team dashboard/i),
-    ).toBeInTheDocument();
+    const textToolsToggle = screen.getByLabelText(/toggle visibility of text tools/i) as HTMLInputElement;
+    expect(textToolsToggle.checked).toBe(true);
   });
 
-  it('defaults all tools to visible (checked) when no localStorage data exists', () => {
+  it('offers NO toggle for the Admin Hub — the control that could lock you out does not exist', () => {
     render(<ToolVisibilitySection />);
-    const teamDashboard = screen.getByLabelText(
-      /toggle visibility of team dashboard/i,
-    ) as HTMLInputElement;
-    expect(teamDashboard.checked).toBe(true);
+    expect(screen.queryByLabelText(/toggle visibility of admin hub/i)).not.toBeInTheDocument();
   });
 
-  it('hides all tools when Hide All is clicked', () => {
+  it('offers no toggles for the retired tools (their card ids left the catalog)', () => {
     render(<ToolVisibilitySection />);
+    expect(screen.queryByLabelText(/toggle visibility of team dashboard/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/toggle visibility of po tool/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/toggle visibility of art view/i)).not.toBeInTheDocument();
+  });
+
+  it('writes toggles through the SHARED store so the home page reacts live (spec 020 FR-003)', () => {
+    render(<ToolVisibilitySection />);
+
+    fireEvent.click(screen.getByLabelText(/toggle visibility of text tools/i));
+
+    expect(useToolVisibilityStore.getState().visibilityByCardId['text-tools']).toBe(false);
+    const persistedMap = JSON.parse(localStorage.getItem('tbxToolVisibility') ?? '{}');
+    expect(persistedMap['text-tools']).toBe(false);
+  });
+
+  it('reflects an external store change without remounting (one store, one truth)', () => {
+    render(<ToolVisibilitySection />);
+    const textToolsToggle = screen.getByLabelText(/toggle visibility of text tools/i) as HTMLInputElement;
+    expect(textToolsToggle.checked).toBe(true);
+
     fireEvent.click(screen.getByRole('button', { name: /hide all/i }));
-    const teamDashboard = screen.getByLabelText(
-      /toggle visibility of team dashboard/i,
-    ) as HTMLInputElement;
-    expect(teamDashboard.checked).toBe(false);
-  });
+    expect(textToolsToggle.checked).toBe(false);
 
-  it('shows all tools when Show All is clicked after Hide All', () => {
-    render(<ToolVisibilitySection />);
-    fireEvent.click(screen.getByRole('button', { name: /hide all/i }));
     fireEvent.click(screen.getByRole('button', { name: /show all/i }));
-    const teamDashboard = screen.getByLabelText(
-      /toggle visibility of team dashboard/i,
-    ) as HTMLInputElement;
-    expect(teamDashboard.checked).toBe(true);
+    expect(textToolsToggle.checked).toBe(true);
   });
 
-  it('persists visibility state to localStorage when a toggle changes', () => {
-    render(<ToolVisibilitySection />);
-    const teamDashboard = screen.getByLabelText(/toggle visibility of team dashboard/i);
-    fireEvent.click(teamDashboard);
-    const stored = localStorage.getItem('tbxToolVisibility');
-    expect(stored).not.toBeNull();
-    const parsed = JSON.parse(stored!);
-    expect(parsed['sprint-dashboard']).toBe(false);
-  });
+  it('reads a map persisted by the previous implementation on mount (same key, same shape)', () => {
+    localStorage.setItem('tbxToolVisibility', JSON.stringify({ 'text-tools': false }));
+    useToolVisibilityStore.setState({ visibilityByCardId: { 'text-tools': false } });
 
-  it('reads persisted visibility from localStorage on mount', () => {
-    localStorage.setItem(
-      'tbxToolVisibility',
-      JSON.stringify({ 'sprint-dashboard': false }),
-    );
     render(<ToolVisibilitySection />);
-    const teamDashboard = screen.getByLabelText(
-      /toggle visibility of team dashboard/i,
-    ) as HTMLInputElement;
-    expect(teamDashboard.checked).toBe(false);
+
+    const textToolsToggle = screen.getByLabelText(/toggle visibility of text tools/i) as HTMLInputElement;
+    expect(textToolsToggle.checked).toBe(false);
   });
 });

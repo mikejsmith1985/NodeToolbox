@@ -9,6 +9,20 @@
 <!-- SPECKIT START -->
 ## Active Spec Kit Feature
 
+- **020-agile-hub-home-ux** — *(planned on `feature/020-agile-hub-home-ux` — ready for `/speckit-tasks`)* honest
+  gating + job-shaped home + the **Agile Hub full merge**. US1: bind the currently-inert Admin Hub Tool Visibility
+  map via a new `toolVisibilityStore` (SAME `tbxToolVisibility` key; `admin-hub` pinned visible) and gate the SNow
+  Hub card + `/snow-hub` route behind `useAdminStore.isAdminUnlocked` (entry-only — never unmount mid-task). US2:
+  `homeCardData` → three sections (My Work / Agile Delivery / Insights & Admin), `gateKind?: 'admin-unlock'` on
+  snow-hub only. US3: **thin shell** `views/AgileHub/AgileHubView.tsx` mounts the EXISTING `SprintDashboardView` /
+  `PoToolView` / `ArtView` unchanged behind a Team/Product/Train space strip; `?space=` param authoritative,
+  settings-store `agileHubLastSpace` fallback, default team. Old routes `/sprint-dashboard` `/po-tool` `/art` (+
+  ~8 legacy paths) become single-hop param-preserving redirects — the Today cards' `?hygieneFilter=…` deep links
+  are the acceptance case. **Hard rules**: NO internal refactors of the three merged views; PO selection isolation
+  (017) untouched; per-space shared-tab rendering (clarification #2 — scope selections never merge); recents map
+  retired ids → agile-hub. Plan: `specs/020-agile-hub-home-ux/plan.md`. Contracts: `home-gating.md`,
+  `agile-hub-shell.md`, `route-redirects.md`.
+
 - **019-hygiene-fix-ux** — *(planned on `feature/019-hygiene-fix-ux` — ready for `/speckit-tasks`)* the **Hygiene
   Fix Workspace**: close the "Jira is more inviting" gap (GH #177 closing comment) client-side with zero new
   dependencies. Three parts: (1) a shared **semantic chip vocabulary** (`client/src/components/IssueMeta/` —

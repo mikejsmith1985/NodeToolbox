@@ -1,0 +1,44 @@
+/* AgileHubView.module.css — Space switcher styles for the Agile Hub thin shell.
+   The strip wraps at narrow widths and every text size — never clips (GH #160 rules). */
+
+.agileHub {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm, 8px);
+  min-width: 0;
+}
+
+.spaceSwitcher {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-sm, 8px);
+  padding: 6px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 8px);
+  background: var(--color-card-bg-subtle, transparent);
+}
+
+.spaceButton,
+.spaceButtonActive {
+  padding: 6px 16px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-md, 1rem);
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.spaceButton:hover {
+  color: var(--color-text-primary);
+  border-color: var(--color-text-secondary);
+}
+
+.spaceButtonActive {
+  background: var(--color-accent, #3b82f6);
+  border-color: var(--color-accent, #3b82f6);
+  color: var(--color-text-on-accent, #fff);
+}
