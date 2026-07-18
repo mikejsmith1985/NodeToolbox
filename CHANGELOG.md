@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Readiness tab: view features by team**: a Team filter (built from the ART roster's Jira labels)
+  narrows the readiness listing to one team's Features — or to **Unlabeled** Features that carry no
+  team label at all. Deep-linkable via `?readinessTeam=`.
+
+### Fixed
+- **Readiness cards now expand on a click anywhere on the card**, not just the Details arrow. Clicking
+  the alert region, summary, or meta chips toggles the card; only genuine controls (the Jira link, the
+  ignore buttons, and the inline fix inputs) act on their own instead of expanding. Previously the
+  alert region swallowed clicks, so cards effectively only opened from the arrow.
+
+### Added
 - **Readiness tab: ignore features you don't own, and click a card to expand it**: the Readiness tab
   now lets you hide work that isn't yours. From any feature row, **Ignore** hides that one Feature, or
   **🚫 &lt;PROJECT&gt;** hides every Feature in its project — ignored work drops out of the lenses,

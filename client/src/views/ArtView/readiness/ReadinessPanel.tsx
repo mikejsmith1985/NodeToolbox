@@ -42,6 +42,9 @@ import styles from './ReadinessPanel.module.css';
 
 const LENS_QUERY_PARAM = 'readinessLens';
 const FILTER_QUERY_PARAM = 'readinessFilter';
+const TEAM_QUERY_PARAM = 'readinessTeam';
+const ALL_TEAMS_TOKEN = '';
+const UNLABELED_TEAM_TOKEN = '__unlabeled__';
 const DEFAULT_STALE_DAYS_THRESHOLD = 14;
 
 /** Human labels for each lens tab. */
@@ -61,6 +64,9 @@ const ALERT_LABELS: Record<ReadinessAlertId, string> = {
 };
 
 const NOT_CONFIGURED_LABEL = 'not checked — no matching field';
+
+// A click on any of these controls acts on the control, never toggles the card's details.
+const INTERACTIVE_SELECTOR = 'a, button, input, select, textarea, label';
 
 export interface ReadinessPanelProps {
   selectedPiName: string;
@@ -101,6 +107,20 @@ export default function ReadinessPanel({
   const requestedLens = searchParams.get(LENS_QUERY_PARAM);
   const activeLensId: ReadinessLens['id'] = isLensId(requestedLens) ? requestedLens : 'current';
   const activeFilter = searchParams.get(FILTER_QUERY_PARAM);
+  const activeTeam = searchParams.get(TEAM_QUERY_PARAM) ?? ALL_TEAMS_TOKEN;
+  const teamOptions = useMemo(() => buildTeamOptions(rosterTeams), [rosterTeams]);
+
+  function selectTeam(teamToken: string): void {
+    setSearchParams((previous) => {
+      const next = new URLSearchParams(previous);
+      if (teamToken === ALL_TEAMS_TOKEN) {
+        next.delete(TEAM_QUERY_PARAM);
+      } else {
+        next.set(TEAM_QUERY_PARAM, teamToken);
+      }
+      return next;
+    }, { replace: true });
+  }
 
   function selectLens(lensId: ReadinessLens['id']): void {
     setSearchParams((previous) => {
@@ -125,8 +145,8 @@ export default function ReadinessPanel({
 
   const activeLens = scanResult?.lenses[activeLensId] ?? null;
   const visibleFeatures = useMemo(
-    () => filterFeatures(activeLens?.features ?? [], activeFilter),
-    [activeLens, activeFilter],
+    () => filterFeaturesByTeam(filterFeatures(activeLens?.features ?? [], activeFilter), activeTeam, teamOptions),
+    [activeLens, activeFilter, activeTeam, teamOptions],
   );
 
   if (isLoading) {
@@ -188,6 +208,23 @@ export default function ReadinessPanel({
       {activeLens && !isEmptyScope && (
         <>
           {renderLensSummary(activeLens, activeFilter, toggleFilter)}
+          {teamOptions.length > 0 && (
+            <label className={styles.teamFilter}>
+              Team
+              <select
+                className={styles.teamSelect}
+                aria-label="Filter by team"
+                value={activeTeam}
+                onChange={(event) => selectTeam(event.target.value)}
+              >
+                <option value={ALL_TEAMS_TOKEN}>All teams</option>
+                {teamOptions.map((team) => (
+                  <option key={team.jiraLabel} value={team.jiraLabel}>{team.label}</option>
+                ))}
+                <option value={UNLABELED_TEAM_TOKEN}>Unlabeled</option>
+              </select>
+            </label>
+          )}
           {renderAlertLegend(scanResult.alertFamilyStates)}
           <div className={styles.findingsList} aria-label="Readiness features">
             {visibleFeatures.length === 0 ? (
@@ -212,6 +249,37 @@ export default function ReadinessPanel({
       )}
     </div>
   );
+}
+
+/** Reads a feature's Jira labels (lower-cased) for team matching. */
+function readFeatureLabels(feature: ReadinessFeature): string[] {
+  return (feature.issue.fields.labels ?? []).map((label) => label.toLowerCase());
+}
+
+/** True when the feature carries the given team's Jira label. */
+function featureMatchesTeam(feature: ReadinessFeature, jiraLabel: string): boolean {
+  return readFeatureLabels(feature).includes(jiraLabel.toLowerCase());
+}
+
+/** The team-filter options: every roster team that defines a Jira label, in roster order. */
+function buildTeamOptions(rosterTeams: readonly ReadinessRosterTeam[]): { label: string; jiraLabel: string }[] {
+  return rosterTeams
+    .filter((team): team is { name?: string; jiraLabel: string } => Boolean(team.jiraLabel?.trim()))
+    .map((team) => ({ label: team.name?.trim() || team.jiraLabel, jiraLabel: team.jiraLabel.trim() }));
+}
+
+/** Narrows features to the selected team token (all / a team's label / unlabeled), given the roster. */
+function filterFeaturesByTeam(
+  features: readonly ReadinessFeature[],
+  teamToken: string,
+  teamOptions: readonly { jiraLabel: string }[],
+): ReadinessFeature[] {
+  if (teamToken === ALL_TEAMS_TOKEN) return [...features];
+  if (teamToken === UNLABELED_TEAM_TOKEN) {
+    const allTeamLabels = teamOptions.map((option) => option.jiraLabel.toLowerCase());
+    return features.filter((feature) => !readFeatureLabels(feature).some((label) => allTeamLabels.includes(label)));
+  }
+  return features.filter((feature) => featureMatchesTeam(feature, teamToken));
 }
 
 /** Keeps features matching the active filter token (a status bucket, a status name, or an alert id). */
@@ -314,8 +382,16 @@ function ReadinessFeatureRow({
     setIsExpanded((current) => !current);
   }
 
-  // The whole card toggles details; interactive children stop propagation so they act on their own.
+  // Click ANYWHERE on the card to expand/collapse — except on a real control (the Jira link, the
+  // ignore buttons, or a fix input/select/button). Deciding this from the click target is far more
+  // robust than stopPropagation on whole regions, which used to swallow clicks on the alert area.
+  function handleRowClick(clickEvent: React.MouseEvent): void {
+    if ((clickEvent.target as HTMLElement).closest(INTERACTIVE_SELECTOR)) return;
+    toggleExpanded();
+  }
+
   function handleRowKeyDown(keyEvent: React.KeyboardEvent): void {
+    if (keyEvent.target !== keyEvent.currentTarget) return; // only the card itself, not a focused control
     if (keyEvent.key === 'Enter' || keyEvent.key === ' ') {
       keyEvent.preventDefault();
       toggleExpanded();
@@ -328,7 +404,7 @@ function ReadinessFeatureRow({
       role="button"
       tabIndex={0}
       aria-expanded={isExpanded}
-      onClick={toggleExpanded}
+      onClick={handleRowClick}
       onKeyDown={handleRowKeyDown}
     >
       <div className={styles.featureMain}>
@@ -337,7 +413,6 @@ function ReadinessFeatureRow({
           href={`/browse/${encodeURIComponent(feature.key)}`}
           target="_blank"
           rel="noreferrer"
-          onClick={(clickEvent) => clickEvent.stopPropagation()}
         >
           {feature.key}
         </a>
@@ -348,7 +423,7 @@ function ReadinessFeatureRow({
           className={styles.ignoreButton}
           aria-label={`Ignore ${feature.key}`}
           title="Hide this Feature from your Readiness view"
-          onClick={(clickEvent) => { clickEvent.stopPropagation(); onIgnoreFeature(feature.key); }}
+          onClick={() => onIgnoreFeature(feature.key)}
         >
           🚫 Ignore
         </button>
@@ -358,12 +433,12 @@ function ReadinessFeatureRow({
             className={styles.ignoreButton}
             aria-label={`Ignore project ${projectKey}`}
             title={`Hide every Feature in project ${projectKey}`}
-            onClick={(clickEvent) => { clickEvent.stopPropagation(); onIgnoreProject(projectKey); }}
+            onClick={() => onIgnoreProject(projectKey)}
           >
             🚫 {projectKey}
           </button>
         )}
-        {/* The card itself toggles details; this button stays as a visible affordance. */}
+        {/* The card itself toggles details; this stays as a visible affordance. */}
         <span className={styles.expandHint}>{isExpanded ? '▲ Less' : '▼ Details'}</span>
       </div>
       <dl className={styles.featureMeta}>
@@ -373,12 +448,7 @@ function ReadinessFeatureRow({
         <div><dt>Age</dt><dd>{feature.ageDays === null ? '—' : <AgeBadge ageDays={feature.ageDays} staleDaysThreshold={staleDaysThreshold} />}</dd></div>
       </dl>
       {feature.alerts.length > 0 && (
-        <div
-          className={styles.alertList}
-          role="presentation"
-          onClick={(clickEvent) => clickEvent.stopPropagation()}
-          onKeyDown={(keyEvent) => keyEvent.stopPropagation()}
-        >
+        <div className={styles.alertList}>
           {feature.alerts.map((alertId) => (
             <div key={alertId} className={styles.alertRow}>
               <span className={styles.alertFlag}>{ALERT_LABELS[alertId]}</span>

@@ -22,9 +22,9 @@ import type { ReadinessFeature, ReadinessScanResult } from './readinessScan.ts';
 
 const mockUseReadinessData = vi.mocked(useReadinessData);
 
-function buildFeature(key: string, overrides: Partial<ReadinessFeature> = {}): ReadinessFeature {
+function buildFeature(key: string, overrides: Partial<ReadinessFeature> = {}, labels: string[] = []): ReadinessFeature {
   return {
-    issue: { key, fields: { summary: `Feature ${key}`, status: { name: 'Analyzing', statusCategory: { key: 'new' } }, issuetype: { name: 'Feature' } } },
+    issue: { key, fields: { summary: `Feature ${key}`, status: { name: 'Analyzing', statusCategory: { key: 'new' } }, issuetype: { name: 'Feature' }, labels } },
     key,
     summary: `Feature ${key}`,
     statusName: 'Analyzing',
@@ -190,17 +190,40 @@ describe('ReadinessPanel', () => {
 
   // ── Clicking the card toggles its details ──
 
-  it('expands and collapses a feature card when the card itself is clicked', () => {
+  it('expands and collapses a feature card when the card body is clicked', () => {
     renderPanel();
 
     const card = screen.getByText('CUR-1').closest('[role="button"]') as HTMLElement;
     expect(card).toHaveAttribute('aria-expanded', 'false');
 
-    fireEvent.click(card);
+    // Click the summary text — a non-control part of the card body — not the arrow.
+    fireEvent.click(screen.getByText('Feature CUR-1'));
     expect(card).toHaveAttribute('aria-expanded', 'true');
 
-    fireEvent.click(card);
+    fireEvent.click(screen.getByText('Feature CUR-1'));
     expect(card).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('expands the card when the alert region (a non-control area) is clicked', () => {
+    mockUseReadinessData.mockReturnValue({
+      scanResult: buildScan({
+        lenses: {
+          current: { id: 'current', piNames: ['PI 26.3'], features: [buildFeature('CUR-1', { alerts: ['missing-ownership'] })], countsByBucket: { todo: 1, inProgress: 0, done: 0 }, refinedCount: 0, unrefinedCount: 0, isPiConfigured: true, isCoverageCapped: false },
+          upcoming: { id: 'upcoming', piNames: [], features: [], countsByBucket: { todo: 0, inProgress: 0, done: 0 }, refinedCount: 0, unrefinedCount: 0, isPiConfigured: false, isCoverageCapped: false },
+          carryover: { id: 'carryover', piNames: [], features: [], countsByBucket: { todo: 0, inProgress: 0, done: 0 }, refinedCount: 0, unrefinedCount: 0, isPiConfigured: true, isCoverageCapped: false },
+        },
+        scannedFeatureCount: 1,
+      }),
+      isLoading: false,
+      reload: vi.fn(),
+    });
+
+    renderPanel();
+    const card = screen.getByText('CUR-1').closest('[role="button"]') as HTMLElement;
+
+    // The alert flag label is a plain span in the card body — clicking it toggles the card.
+    fireEvent.click(screen.getByText('Missing Owner'));
+    expect(card).toHaveAttribute('aria-expanded', 'true');
   });
 
   it('does not toggle the card when its Jira key link is clicked', () => {
@@ -208,6 +231,14 @@ describe('ReadinessPanel', () => {
 
     const card = screen.getByText('CUR-1').closest('[role="button"]') as HTMLElement;
     fireEvent.click(screen.getByRole('link', { name: 'CUR-1' }));
+    expect(card).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('does not toggle the card when an ignore button is clicked', () => {
+    renderPanel();
+
+    const card = screen.getByText('CUR-1').closest('[role="button"]') as HTMLElement;
+    fireEvent.click(screen.getByRole('button', { name: 'Ignore CUR-1' }));
     expect(card).toHaveAttribute('aria-expanded', 'false');
   });
 
@@ -246,5 +277,79 @@ describe('ReadinessPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: /Ignored \(1\)/ }));
 
     expect(screen.getByRole('button', { name: 'Restore project OTHER' })).toBeInTheDocument();
+  });
+
+  // ── View features by team ──
+
+  function renderPanelWithTeams(initialPath = '/agile-hub?space=train&artTab=readiness') {
+    mockUseReadinessData.mockReturnValue({
+      scanResult: buildScan({
+        lenses: {
+          current: {
+            id: 'current', piNames: ['PI 26.3'], features: [
+              buildFeature('ALPHA-1', {}, ['team-alpha']),
+              buildFeature('BETA-1', {}, ['team-beta']),
+              buildFeature('LOOSE-1', {}, ['misc']),
+            ],
+            countsByBucket: { todo: 3, inProgress: 0, done: 0 }, refinedCount: 0, unrefinedCount: 0, isPiConfigured: true, isCoverageCapped: false,
+          },
+          upcoming: { id: 'upcoming', piNames: [], features: [], countsByBucket: { todo: 0, inProgress: 0, done: 0 }, refinedCount: 0, unrefinedCount: 0, isPiConfigured: false, isCoverageCapped: false },
+          carryover: { id: 'carryover', piNames: [], features: [], countsByBucket: { todo: 0, inProgress: 0, done: 0 }, refinedCount: 0, unrefinedCount: 0, isPiConfigured: true, isCoverageCapped: false },
+        },
+        scannedFeatureCount: 3,
+      }),
+      isLoading: false,
+      reload: vi.fn(),
+    });
+    render(
+      <MemoryRouter initialEntries={[initialPath]}>
+        <ReadinessPanel
+          selectedPiName="PI 26.3"
+          availablePiNames={['PI 26.4', 'PI 26.3']}
+          rosterTeams={[{ name: 'Alpha', jiraLabel: 'team-alpha' }, { name: 'Beta', jiraLabel: 'team-beta' }]}
+        />
+        <LocationProbe />
+      </MemoryRouter>,
+    );
+  }
+
+  it('offers a team filter built from the roster and narrows the listing to the chosen team', () => {
+    renderPanelWithTeams();
+
+    // All three features show under "All teams".
+    expect(screen.getByText('ALPHA-1')).toBeInTheDocument();
+    expect(screen.getByText('BETA-1')).toBeInTheDocument();
+    expect(screen.getByText('LOOSE-1')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('Filter by team'), { target: { value: 'team-alpha' } });
+
+    expect(screen.getByText('ALPHA-1')).toBeInTheDocument();
+    expect(screen.queryByText('BETA-1')).not.toBeInTheDocument();
+    expect(screen.queryByText('LOOSE-1')).not.toBeInTheDocument();
+    expect(screen.getByTestId('location-probe')).toHaveTextContent('readinessTeam=team-alpha');
+  });
+
+  it('shows only features carrying no team label under Unlabeled', () => {
+    renderPanelWithTeams();
+
+    fireEvent.change(screen.getByLabelText('Filter by team'), { target: { value: '__unlabeled__' } });
+
+    expect(screen.getByText('LOOSE-1')).toBeInTheDocument();
+    expect(screen.queryByText('ALPHA-1')).not.toBeInTheDocument();
+    expect(screen.queryByText('BETA-1')).not.toBeInTheDocument();
+  });
+
+  it('honors a deep-linked team on arrival', () => {
+    renderPanelWithTeams('/agile-hub?space=train&artTab=readiness&readinessTeam=team-beta');
+
+    expect(screen.getByText('BETA-1')).toBeInTheDocument();
+    expect(screen.queryByText('ALPHA-1')).not.toBeInTheDocument();
+  });
+
+  it('shows no team filter when the roster defines no labels', () => {
+    mockUseReadinessData.mockReturnValue({ scanResult: buildScan(), isLoading: false, reload: vi.fn() });
+    renderPanel(); // rosterTeams=[] in the default renderPanel
+
+    expect(screen.queryByLabelText('Filter by team')).not.toBeInTheDocument();
   });
 });
