@@ -23,7 +23,7 @@ interface AppCardDef {
 | Section | Cards (default catalog) |
 |---|---|
 | 🙋 My Work | my-issues, personal-toolbox |
-| 🏃 Agile Delivery | **agile-hub** (new), feature-canvas, jira-intake, jira-template-maker, business-helper |
+| 🏃 Agile Delivery | **agile-hub** (new; icon 🏃), feature-canvas, jira-intake, jira-template-maker, business-helper |
 | 📈 Insights & Admin | reports-hub, admin-hub, snow-hub (`gateKind: 'admin-unlock'`), code-walkthrough, text-tools |
 
 Retired card ids: `sprint-dashboard`, `po-tool`, `art` (mapped to `agile-hub` for recents; dropped from the

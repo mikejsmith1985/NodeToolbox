@@ -142,7 +142,7 @@ for the three-doors-one-product problem (the "Agile Hub" direction).
 - **NFR-001**: No new dependencies; the reorganization reuses the existing card grid, stores, and gating patterns.
 - **NFR-002**: The home page renders correctly at every text-size mode and narrow widths (standing responsive
   directive), with the new sections wrapping like the old ones.
-- **NFF-003**: Gating states are never communicated by empty space — a locked capability is absent, not greyed.
+- **NFR-003**: Gating states are never communicated by empty space — a locked capability is absent, not greyed.
 
 ## Key Entities
 

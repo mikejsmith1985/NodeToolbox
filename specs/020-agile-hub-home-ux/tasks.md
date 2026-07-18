@@ -60,7 +60,9 @@ admin toggle hides a card + its recents chip immediately; Admin Hub offers no se
 - [ ] T007 [US1] GREEN — rework `client/src/views/AdminHub/ToolVisibilitySection.tsx` to consume
       `toolVisibilityStore` (delete its private load/save/resolve helpers; the "persistence only" note dies)
 - [ ] T008 [US1] RED — extend `client/src/App.test.tsx`: `/snow-hub` while locked renders home; while
-      mocked-unlocked renders the SNow tool; a visibility-hidden tool's route renders home
+      mocked-unlocked renders the SNow tool; a visibility-hidden tool's route renders home; AND (FR-004 second
+      clause) a deep link from another tool INTO a hidden tool's non-card sub-path still renders — hiding curates
+      the home surface, never breaks cross-tool flows
 - [ ] T009 [US1] GREEN — add the entry-gate wrapper in `client/src/App.tsx` for `/snow-hub` (admin unlock) and
       hideable tools' routes (visibility store), `Navigate replace` to `/`; entry-only — no unmount of an open
       workspace on lapse
@@ -80,10 +82,11 @@ data-model.md; hiding every card of a section removes its divider; drag order + 
       with their cards per the data-model table; a section whose cards are all hidden renders no divider; a saved
       card order containing retired ids still renders cleanly
 - [ ] T011 [US2] GREEN — rewrite the catalog in `client/src/views/Home/homeCardData.ts`: `SectionKey` →
-      `'my-work' | 'agile' | 'insights-admin'`; three `APP_SECTIONS`; add the `agile-hub` card (🏉 route
+      `'my-work' | 'agile' | 'insights-admin'`; three `APP_SECTIONS`; add the `agile-hub` card (icon 🏃, route
       `/agile-hub`, section agile); remove the `sprint-dashboard`, `po-tool`, `art` cards; `gateKind:
-      'admin-unlock'` on `snow-hub`; extend `LEGACY_RECENT_VIEW_CARD_IDS` + `RECENT_VIEW_LABELS` so retired ids
-      resolve to the Agile Hub
+      'admin-unlock'` on `snow-hub`; extend `LEGACY_RECENT_VIEW_CARD_IDS` + `RECENT_VIEW_LABELS` so `sprint-dashboard`,
+      `po-tool`, `art`, AND the pre-existing `dsu-board` legacy id all resolve to the Agile Hub card/label
+      (dsu-board currently maps to the sprint-dashboard card being deleted)
 - [ ] T012 [US2] Reconcile dependent tests/fixtures that pin old sections or cards (`HomeView.test.tsx`,
       `client/src/App.test.tsx` snapshots/labels if any) — expectations updated to the new catalog, never loosened
 
@@ -127,9 +130,12 @@ filtered; spaces keep separate selections across a switch round-trip; all legacy
 ## Phase 6: Polish & Cross-Cutting
 
 - [ ] T019 E2E — write and pass `test/e2e/agile-hub-home.spec.js` per the contract gates: (1) locked home has no
-      SNow + direct `/snow-hub` lands home, unlock (stub the admin auth route) reveals + admits it; (2) toggling
-      a tool in Admin Hub hides its card live; (3) the FR-010 acceptance journey — `/sprint-dashboard?hygieneFilter=stale`
-      lands in the Team space with the hygiene tab filtered; (4) space strip holds at A++ in a 900px window
+      SNow + direct `/snow-hub` lands home; seed the unlock via `addInitScript` setting the `tbxAdminUnlocked`
+      sessionStorage flag (the suite's established seeding pattern — no auth-route stubbing) and verify the card
+      appears + admits; (2) toggling a tool in Admin Hub hides its card live; (3) the FR-010 acceptance journey —
+      `/sprint-dashboard?hygieneFilter=stale` lands in the Team space with the hygiene tab filtered; (4) space
+      strip holds at A++ in a 900px window; (5) FR-012 round-trip — set distinct scope selections in two spaces,
+      switch Team → Product → Team, assert each space kept its own selection
 - [ ] T020 [P] CHANGELOG.md entry under [Unreleased] (home reorganization, SNow gating, working visibility
       toggles, the Agile Hub merge + redirects)
 - [ ] T021 Capability-parity audit (SC-006): run the quickstart checklist against the built app with stubbed

@@ -29,4 +29,5 @@
 
 - Store unit tests: default-visible, admin-hub pin, persistence round-trip, corrupt storage.
 - HomeView tests: locked ⇒ no SNow card and no gap; unlocked ⇒ card appears; toggle ⇒ card + recents chip react.
-- e2e: lock/unlock flow in a real browser; direct `/snow-hub` while locked lands home.
+- e2e: lock/unlock flow in a real browser (seed the unlock via `addInitScript` on the `tbxAdminUnlocked`
+  sessionStorage key — no auth-route stubbing needed); direct `/snow-hub` while locked lands home.
