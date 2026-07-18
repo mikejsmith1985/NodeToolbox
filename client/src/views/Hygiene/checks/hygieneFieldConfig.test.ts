@@ -23,6 +23,8 @@ const INSTANCE_FIELDS = [
   { id: 'customfield_20004', name: 'Target Start' },
   { id: 'customfield_20005', name: 'Target End' },
   { id: 'customfield_20006', name: 'Unrelated Field' },
+  { id: 'customfield_20007', name: 'Estimate (NF)' },
+  { id: 'customfield_20008', name: 'Spark ID/PCode' },
 ];
 
 beforeEach(() => {
@@ -156,5 +158,23 @@ describe('loadHygieneFieldConfig', () => {
     const fieldConfig = await loadHygieneFieldConfig();
 
     expect(fieldConfig.programIncrementFieldIds).toContain('customfield_10301');
+  });
+
+  // ── 021 Readiness: Estimate (NF) and Spark ID/PCode discovered by name ──
+
+  it('discovers the Estimate (NF) and Spark ID/PCode fields by name', async () => {
+    const fieldConfig = await loadHygieneFieldConfig();
+
+    expect(fieldConfig.estimateFieldIds).toContain('customfield_20007');
+    expect(fieldConfig.pcodeFieldIds).toContain('customfield_20008');
+  });
+
+  it('leaves estimate and pcode empty when the instance has neither field (renders "not checked")', async () => {
+    mockJiraGet.mockResolvedValue([{ id: 'customfield_20006', name: 'Unrelated Field' }]);
+
+    const fieldConfig = await loadHygieneFieldConfig();
+
+    expect(fieldConfig.estimateFieldIds).toEqual([]);
+    expect(fieldConfig.pcodeFieldIds).toEqual([]);
   });
 });

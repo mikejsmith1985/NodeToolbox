@@ -1,0 +1,204 @@
+/* ReadinessPanel.module.css — Layout for the ART View Readiness tab (021). */
+
+.readinessPanel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md, 12px);
+  min-width: 0;
+}
+
+.lensStrip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-sm, 8px);
+}
+
+.lensButton,
+.lensButtonActive {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.lensButtonActive {
+  background: var(--color-accent, #3b82f6);
+  border-color: var(--color-accent, #3b82f6);
+  color: var(--color-text-on-accent, #fff);
+}
+
+.lensCount {
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--color-surface-3, rgba(127, 127, 127, 0.18));
+  font-variant-numeric: tabular-nums;
+}
+
+.scanScope {
+  margin-left: auto;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.summaryTiles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm, 8px);
+  align-items: center;
+}
+
+.summaryTile,
+.summaryTileActive {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 88px;
+  padding: 8px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 8px);
+  background: var(--color-card-bg-subtle, transparent);
+  color: var(--color-text-primary);
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+}
+
+.summaryTileActive {
+  border-color: var(--color-accent, #3b82f6);
+  box-shadow: inset 0 0 0 1px var(--color-accent, #3b82f6);
+}
+
+.tileNote,
+.legendNote {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.findingsList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm, 8px);
+}
+
+.featureRow {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 8px);
+  background: var(--color-card-bg, transparent);
+}
+
+.featureMain {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  min-width: 0;
+}
+
+.featureKey {
+  font-family: var(--font-mono, monospace);
+  font-weight: 700;
+  color: var(--color-accent, #3b82f6);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.featureSummary {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.expandButton {
+  margin-left: auto;
+  padding: 2px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm, 6px);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.detailCell {
+  padding-top: 8px;
+  border-top: 1px solid var(--color-border);
+}
+
+.featureMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin: 0;
+}
+
+.featureMeta div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.featureMeta dt {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs, 0.75rem);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.featureMeta dd {
+  margin: 0;
+}
+
+.alertList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.alertRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.alertFlag {
+  padding: 2px 8px;
+  border-radius: var(--radius-sm, 6px);
+  background: var(--color-warning-bg, rgba(245, 158, 11, 0.16));
+  color: var(--color-warning-text, #b45309);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.stateMessage {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.emptyScope {
+  padding: 10px 12px;
+  border: 1px solid var(--color-warning-border, rgba(245, 158, 11, 0.5));
+  border-radius: var(--radius-md, 8px);
+  background: var(--color-warning-bg, rgba(245, 158, 11, 0.12));
+  color: var(--color-warning-text, #b45309);
+  font-size: var(--font-size-sm);
+}
+
+.errorMessage {
+  margin: 0;
+  color: var(--color-danger, #ef4444);
+  font-size: var(--font-size-sm);
+}

@@ -63,6 +63,13 @@ export interface HygieneFieldConfig {
   programIncrementFieldIds: string[];
   targetEndFieldIds: string[];
   targetStartFieldIds: string[];
+  /**
+   * Feature "Estimate (NF)" size field — configured-only; backs the 021 Readiness estimate alert.
+   * Optional so pre-021 config literals stay valid; resolveHygieneFieldConfig always returns [].
+   */
+  estimateFieldIds?: string[];
+  /** Spark ID / PCode field — configured-only; backs the 021 Readiness PCode alert (see above). */
+  pcodeFieldIds?: string[];
 }
 
 export interface HygieneEvaluationContext {
@@ -144,6 +151,8 @@ const DEFAULT_HYGIENE_FIELD_CONFIG: HygieneFieldConfig = {
   programIncrementFieldIds: ['customfield_10301'],
   targetEndFieldIds: ['customfield_10102'],
   targetStartFieldIds: ['customfield_10101'],
+  estimateFieldIds: [],
+  pcodeFieldIds: [],
 };
 
 const BUILT_IN_HYGIENE_FLAGS: Record<BuiltInHygieneCheckId, HygieneFlag> = {
@@ -464,6 +473,10 @@ export function resolveHygieneFieldConfig(fieldConfig?: Partial<HygieneFieldConf
       fieldConfig?.targetStartFieldIds,
       DEFAULT_HYGIENE_FIELD_CONFIG.targetStartFieldIds,
     ),
+    // No built-in default: an instance without these resolves to [], so the Readiness alert renders
+    // "not checked — no matching field" rather than flagging every feature.
+    estimateFieldIds: buildUniqueFieldIds(fieldConfig?.estimateFieldIds ?? []),
+    pcodeFieldIds: buildUniqueFieldIds(fieldConfig?.pcodeFieldIds ?? []),
   };
 }
 

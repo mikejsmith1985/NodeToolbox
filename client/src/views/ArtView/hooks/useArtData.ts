@@ -271,7 +271,27 @@ export type ArtTab =
   | 'boardprep'
   | 'sos'
   | 'monthly'
+  | 'readiness'
   | 'settings';
+
+/** The valid tab keys, used to validate an inbound `?artTab=` deep-link seed. */
+const ART_TAB_KEYS: readonly ArtTab[] = [
+  'overview', 'impediments', 'predictability', 'releases', 'pireview', 'blueprint',
+  'dependencies', 'boardprep', 'sos', 'monthly', 'readiness', 'settings',
+];
+
+/**
+ * One-time initial tab from the `?artTab=` query param, so a deep link (e.g. the Today cards or a
+ * shared readiness link) opens straight on the right tab. Read once at mount; unknown values fall
+ * back to Overview and there is no persistence side effect.
+ */
+function readInitialArtTab(): ArtTab {
+  if (typeof window === 'undefined') return 'overview';
+  const requestedTab = new URLSearchParams(window.location.search).get('artTab');
+  return requestedTab && (ART_TAB_KEYS as readonly string[]).includes(requestedTab)
+    ? (requestedTab as ArtTab)
+    : 'overview';
+}
 
 /**
  * One Program Increment ↔ Confluence page association used by the PI Review tab.
@@ -511,7 +531,7 @@ function computePiProgressStats(teams: ArtTeam[]): PiProgressStats {
 
 /** Hook providing all state and actions for the ART multi-team PI planning view. */
 export function useArtData(): { state: ArtDataState; actions: ArtDataActions } {
-  const [activeTab, setActiveTabState] = useState<ArtTab>('overview');
+  const [activeTab, setActiveTabState] = useState<ArtTab>(readInitialArtTab);
   const [teams, setTeams] = useState<ArtTeam[]>(loadStoredTeams);
   // teamsRef keeps an always-current reference so loadTeam can read boardId without stale closures
   const teamsRef = useRef<ArtTeam[]>([]);

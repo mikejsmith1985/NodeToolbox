@@ -9,6 +9,24 @@
 <!-- SPECKIT START -->
 ## Active Spec Kit Feature
 
+- **021-feature-readiness** — *(planned on `feature/021-feature-readiness` — ready for `/speckit-tasks`)* our own,
+  **better** version of the org's read-only "Feature Status & Readiness Dashboard" (GH #189 last comment), placed as
+  a new **Readiness tab in ArtView** (Agile Hub Train space). Three PI lenses — Carryover / Current / Upcoming —
+  over ONE pure `readinessScan.ts` evaluation (agree-by-construction, FR-010); a feature listing with the org's five
+  hygiene-alert families (missing ownership [fires only when BOTH assignee AND configured PO field empty — clarify
+  Q2], estimate, PCode, target-end, due-date) rendered as flags **each with an inline fix** via the existing
+  `featureReviewFixes` writers + shared `TransitionRequiredFields` (new `ReadinessFixControl` — Art VII drift is
+  control-shape only, all WRITES delegate). PCode normalizes `P00012345`→`12345`. Upcoming "refined" is **state-based**
+  via `classifyStatusBucket` (clarify Q1 — hygiene never feeds refinement). Feature discovery follows the
+  **portfolio-project rule** (`piReviewPullFeatures` precedent: `issuetype=Feature AND cf[piField] <PI>`, scoped by
+  `featureProjectKeys`→roster `jiraLabel`s→none, NEVER team projectKey). Two additive `HygieneFieldConfig` keys
+  (`estimateFieldIds`, `pcodeFieldIds`) via the existing name-discovery. AI insights gated (`useAiAssistStore`,
+  Ctrl+Alt+Z), propose-only, `{kind:'featureReadiness',items[]}`, per-item accept; AI may write ONLY estimate/target/
+  due — NEVER ownership. Deep links `?artTab=readiness&readinessLens=…` (ArtView gains a one-time initial-tab seed).
+  Honest states (GH #167): empty scope ⇒ amber message, unconfigured family ⇒ "not checked". NO refactors of existing
+  ArtView tabs (FR-012). Plan: `specs/021-feature-readiness/plan.md`. Contracts: `readiness-scan.md`,
+  `inline-fixes.md`, `ai-insights.md`.
+
 - **020-agile-hub-home-ux** — *(planned on `feature/020-agile-hub-home-ux` — ready for `/speckit-tasks`)* honest
   gating + job-shaped home + the **Agile Hub full merge**. US1: bind the currently-inert Admin Hub Tool Visibility
   map via a new `toolVisibilityStore` (SAME `tbxToolVisibility` key; `admin-hub` pinned visible) and gate the SNow

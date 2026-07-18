@@ -80,7 +80,7 @@ export function resolveFixFieldId(descriptor: HygieneFixDescriptor, fieldConfig:
     return descriptor.systemFieldId;
   }
   if (descriptor.fieldConfigKey) {
-    return fieldConfig[descriptor.fieldConfigKey][0] ?? null;
+    return (fieldConfig[descriptor.fieldConfigKey] ?? [])[0] ?? null;
   }
   return null;
 }

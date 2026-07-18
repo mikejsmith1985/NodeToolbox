@@ -18,6 +18,7 @@ import JiraProjectPicker from '../../components/JiraProjectPicker/index.tsx';
 import BlueprintTab from './BlueprintTab.tsx';
 import DependenciesTab from './DependenciesTab.tsx';
 import PiReviewTab from './PiReviewTab.tsx';
+import ReadinessPanel from './readiness/ReadinessPanel.tsx';
 import { formatFeatureProjectKeysInput, parseFeatureProjectKeysInput } from './artFeatureScopeSettings.ts';
 import type { ArtTab, ArtTeam, ArtBoardPrepIssue, PiProgressStats } from './hooks/useArtData.ts';
 import { useArtData } from './hooks/useArtData.ts';
@@ -48,6 +49,7 @@ const ART_TAB_DEFINITIONS: { key: ArtTab; label: string }[] = [
   { key: 'boardprep', label: 'Board Prep' },
   { key: 'sos', label: 'SoS' },
   { key: 'monthly', label: 'Monthly Report' },
+  { key: 'readiness', label: 'Readiness' },
   { key: 'settings', label: 'Settings' },
 ];
 
@@ -172,6 +174,13 @@ export default function ArtView() {
         )}
         {state.activeTab === 'monthly' && (
           <MonthlyReportPanel teams={state.teams} />
+        )}
+        {state.activeTab === 'readiness' && (
+          <ReadinessPanel
+            selectedPiName={state.selectedPiName}
+            availablePiNames={state.availablePiNames}
+            rosterTeams={state.teams}
+          />
         )}
         {state.activeTab === 'settings' && (
           <SettingsPanel
