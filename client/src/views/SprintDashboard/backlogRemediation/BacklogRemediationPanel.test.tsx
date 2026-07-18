@@ -70,11 +70,24 @@ describe('BacklogRemediationPanel', () => {
     localStorage.clear();
   });
 
-  it('renders nothing while AI Assist is locked', () => {
+  it('renders the manual triage even while AI Assist is locked, hiding only the AI accelerator', () => {
     setAiAssistUnlocked(false);
     renderPanel();
-    expect(screen.queryByTestId('action-table')).toBeNull();
-    expect(screen.queryByRole('button', { name: /refresh backlog/i })).toBeNull();
+    // The triage workflow works without AI: scope, refresh, and the action table are all present.
+    expect(screen.getByRole('button', { name: /refresh backlog/i })).toBeInTheDocument();
+    expect(screen.getByTestId('action-table')).toBeInTheDocument();
+    expect(screen.getByLabelText(/scope override/i)).toBeInTheDocument();
+    // Only the AI copy/paste accelerator stays gated behind Ctrl+Alt+Z.
+    expect(screen.queryByLabelText(/triage prompt/i)).toBeNull();
+    expect(screen.queryByRole('button', { name: /ingest verdicts/i })).toBeNull();
+  });
+
+  it('reveals the AI accelerator once AI Assist is unlocked, alongside the always-present triage', () => {
+    setAiAssistUnlocked(true);
+    renderPanel();
+    expect(screen.getByRole('button', { name: /refresh backlog/i })).toBeInTheDocument();
+    expect(screen.getByLabelText(/triage prompt/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /ingest verdicts/i })).toBeInTheDocument();
   });
 
   it('fetches, builds the prompt, and ingests verdicts into the grouped table', async () => {

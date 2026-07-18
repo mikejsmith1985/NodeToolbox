@@ -183,13 +183,15 @@ export function BacklogRemediationPanel({ teamProfileId, projectKey, piName }: B
   };
 
   return (
-    <ReportAiPanel
-      title="Backlog remediation triage"
-      prompt={prompt}
-      ingestLabel="Ingest verdicts"
-      onIngest={handleIngest}
-      error={ingestError}
-    >
+    // The triage workflow (scope, refresh, manual decisions, action table) renders unconditionally —
+    // it does not need AI. Only the copy/paste verdict accelerator below self-gates on Ctrl+Alt+Z, so
+    // the tab is fully usable without unlocking AI (which previously blanked the whole panel).
+    <>
+      <h3 style={{ margin: '0 0 4px' }}>Backlog remediation</h3>
+      <p className={styles.captionText}>
+        Triage this team&apos;s aging backlog — Keep, Cancel, Dismiss, or Snooze stale items. Decisions
+        persist per team and resume when you return.
+      </p>
       <label className={styles.controlLabel}>
         Scope override (JQL)
         <input
@@ -238,6 +240,16 @@ export function BacklogRemediationPanel({ teamProfileId, projectKey, piName }: B
         acceptanceCriteriaFieldIds={acceptanceCriteriaFieldIds}
         onItemsCanceled={handleItemsCanceled}
       />
-    </ReportAiPanel>
+
+      {/* Optional AI accelerator: proposes verdicts to copy/paste. Self-gates on Ctrl+Alt+Z and
+          renders nothing while locked, so it never blocks the manual triage above. */}
+      <ReportAiPanel
+        title="Backlog remediation triage"
+        prompt={prompt}
+        ingestLabel="Ingest verdicts"
+        onIngest={handleIngest}
+        error={ingestError}
+      />
+    </>
   );
 }
