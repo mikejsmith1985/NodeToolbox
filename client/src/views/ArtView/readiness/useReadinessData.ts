@@ -18,8 +18,9 @@ import {
 import { runReadinessScan, type ReadinessScanResult } from './readinessScan.ts';
 import { applyReadinessFeatureIgnore, readReadinessIgnore } from './readinessIgnore.ts';
 
-/** The teams the ART roster holds; only the Jira label is needed for label-scoped fallback. */
+/** The teams the ART roster holds; the Jira label scopes the query and identifies a feature's team. */
 export interface ReadinessRosterTeam {
+  name?: string;
   jiraLabel?: string;
 }
 
