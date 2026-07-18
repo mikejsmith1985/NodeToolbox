@@ -2,8 +2,17 @@
 
 import { useEffect, useState } from 'react';
 
-import { jiraGet, jiraPost } from '../../services/jiraApi.ts';
-import type { JiraIssue, JiraIssueLink, JiraTransition } from '../../types/jira.ts';
+import { jiraPost } from '../../services/jiraApi.ts';
+import type { JiraIssue, JiraIssueLink } from '../../types/jira.ts';
+import {
+  areTransitionSelectionsComplete,
+  buildTransitionFieldsPayload,
+  fetchFeatureReviewTransitions,
+  saveFeatureReviewTransition,
+  type FeatureReviewTransition,
+  type TransitionFieldSelection,
+} from '../../views/SprintDashboard/featureReviewFixes.ts';
+import { TransitionRequiredFields } from '../TransitionRequiredFields/index.tsx';
 import { parseStructuredText } from '../../utils/richTextStructured.ts';
 import { StructuredText } from './StructuredText.tsx';
 import { AgeBadge } from '../IssueMeta/AgeBadge.tsx';
@@ -109,9 +118,11 @@ function IssueDetailPanelContent({
 }: IssueDetailPanelProps) {
   const [isPanelOpen, setIsPanelOpen] = useState(true);
   const [isLoadingTransitions, setIsLoadingTransitions] = useState(true);
-  const [availableTransitions, setAvailableTransitions] = useState<JiraTransition[]>([]);
+  const [availableTransitions, setAvailableTransitions] = useState<FeatureReviewTransition[]>([]);
   const [transitionError, setTransitionError] = useState<string | null>(null);
   const [selectedTransitionId, setSelectedTransitionId] = useState('');
+  // Answers for the fields the selected transition's workflow screen requires (GH #177 follow-up).
+  const [transitionFieldSelections, setTransitionFieldSelections] = useState<Record<string, TransitionFieldSelection>>({});
   const [isApplyingTransition, setIsApplyingTransition] = useState(false);
   const [commentText, setCommentText] = useState('');
   const [isPostingComment, setIsPostingComment] = useState(false);
@@ -135,11 +146,13 @@ function IssueDetailPanelContent({
 
     async function loadTransitions() {
       try {
-        const response = await jiraGet<{ transitions: JiraTransition[] }>(`/rest/api/2/issue/${issue.key}/transitions`);
+        // The shared fetch expands each transition's required screen fields, so the panel can
+        // collect them inline instead of 400ing on workflows that demand them.
+        const loadedTransitions = await fetchFeatureReviewTransitions(issue.key);
         if (!isMounted) {
           return;
         }
-        setAvailableTransitions(response.transitions);
+        setAvailableTransitions(loadedTransitions);
       } catch (caughtError) {
         if (!isMounted) {
           return;
@@ -198,9 +211,11 @@ function IssueDetailPanelContent({
     setTransitionError(null);
 
     try {
-      await jiraPost(`/rest/api/2/issue/${issue.key}/transitions`, {
-        transition: { id: selectedTransitionId },
-      });
+      await saveFeatureReviewTransition(
+        issue.key,
+        selectedTransitionId,
+        buildTransitionFieldsPayload(selectedTransitionRequiredFields, transitionFieldSelections),
+      );
       onIssueUpdated?.();
     } catch (caughtError) {
       const errorMessage = caughtError instanceof Error ? caughtError.message : TRANSITION_LOAD_ERROR_MESSAGE;
@@ -272,6 +287,10 @@ function IssueDetailPanelContent({
     : null;
   const hasTruncatedAcceptanceCriteria = normalizedAcceptanceCriteria.length > DESCRIPTION_PREVIEW_LENGTH;
   const hasTransitions = availableTransitions.length > 0;
+  const selectedTransitionRequiredFields = availableTransitions
+    .find((availableTransition) => availableTransition.id === selectedTransitionId)?.requiredFields ?? [];
+  const areTransitionAnswersComplete = selectedTransitionRequiredFields.length === 0
+    || areTransitionSelectionsComplete(selectedTransitionRequiredFields, transitionFieldSelections);
   const hasValidStoryPointsInput = storyPointsInput.trim() !== '' && !Number.isNaN(Number(storyPointsInput));
   const selectPlaceholder = isLoadingTransitions || hasTransitions
     ? TRANSITION_PLACEHOLDER_LABEL
@@ -397,7 +416,11 @@ function IssueDetailPanelContent({
           className={styles.select}
           disabled={isLoadingTransitions || isApplyingTransition || !hasTransitions}
           id={`transition-select-${issue.key}`}
-          onChange={(changeEvent) => setSelectedTransitionId(changeEvent.target.value)}
+          onChange={(changeEvent) => {
+            setSelectedTransitionId(changeEvent.target.value);
+            // A different transition has different required fields — stale answers never carry over.
+            setTransitionFieldSelections({});
+          }}
           value={selectedTransitionId}
         >
           <option value="">{isLoadingTransitions ? 'Loading transitions…' : selectPlaceholder}</option>
@@ -409,7 +432,7 @@ function IssueDetailPanelContent({
         </select>
         <button
           className={styles.actionButton}
-          disabled={!selectedTransitionId || isApplyingTransition}
+          disabled={!selectedTransitionId || isApplyingTransition || !areTransitionAnswersComplete}
           onClick={() => void applyTransition()}
           type="button"
         >
@@ -417,6 +440,16 @@ function IssueDetailPanelContent({
         </button>
         {transitionError && <span className={styles.errorMessage}>{transitionError}</span>}
       </div>
+
+      {/* Fields this transition's workflow screen requires — collected here so the transition
+          succeeds in one step instead of 400ing (GH #177 follow-up). */}
+      <TransitionRequiredFields
+        requiredFields={selectedTransitionRequiredFields}
+        selectionByFieldId={transitionFieldSelections}
+        isDisabled={isApplyingTransition}
+        onSelectionChange={(requiredFieldId, selection) =>
+          setTransitionFieldSelections((currentSelections) => ({ ...currentSelections, [requiredFieldId]: selection }))}
+      />
 
       <hr className={styles.divider} />
 

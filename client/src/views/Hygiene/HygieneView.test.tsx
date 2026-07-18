@@ -584,6 +584,86 @@ describe('HygieneView', () => {
     expect(screen.getByText(/3 findings — 0 fixed, 0 commented, 1 skipped, 2 untouched/)).toBeInTheDocument();
   });
 
+  // ── Findings sorting: status / assignee / issue type / age, optional and off by default ──
+
+  function buildSortableFindings(): HygieneFinding[] {
+    return [
+      {
+        issue: {
+          key: 'ENCUC-10',
+          fields: {
+            summary: 'Finding ENCUC-10',
+            status: { name: 'Ready to Accept', statusCategory: { key: 'indeterminate' } },
+            issuetype: { name: 'Story' },
+            assignee: { displayName: 'Katkar, Rahul (CTR)' },
+            created: buildDateDaysAgo(30),
+            updated: buildDateDaysAgo(2),
+          },
+        },
+        flags: [{ checkId: 'stale', label: 'Stale', severity: 'warn' }],
+        programIncrement: null,
+      },
+      {
+        issue: {
+          key: 'ENCUC-11',
+          fields: {
+            summary: 'Finding ENCUC-11',
+            status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } },
+            issuetype: { name: 'Defect' },
+            assignee: { displayName: 'Adams, Jo' },
+            created: buildDateDaysAgo(30),
+            updated: buildDateDaysAgo(20),
+          },
+        },
+        flags: [{ checkId: 'stale', label: 'Stale', severity: 'warn' }],
+        programIncrement: null,
+      },
+    ] as unknown as HygieneFinding[];
+  }
+
+  /** Reads the issue keys of the rendered finding rows in DOM order. */
+  function readRenderedFindingKeys(): string[] {
+    return screen.getAllByRole('link', { name: /ENCUC-\d+/ }).map((link) => link.textContent ?? '');
+  }
+
+  it('renders findings in scan order by default and reorders them when a sort is chosen', () => {
+    mockUseHygieneState.mockReturnValue(buildHookState({ projectKey: 'ENCUC', findings: buildSortableFindings() }));
+
+    render(<HygieneView />);
+
+    expect(readRenderedFindingKeys()).toEqual(['ENCUC-10', 'ENCUC-11']);
+
+    // Status sort: "In Progress" (ENCUC-11) alphabetically precedes "Ready to Accept".
+    fireEvent.change(screen.getByLabelText('Sort findings'), { target: { value: 'status' } });
+    expect(readRenderedFindingKeys()).toEqual(['ENCUC-11', 'ENCUC-10']);
+
+    // Age sort: ENCUC-11 has been idle longer (20 days vs 2), so it leads.
+    fireEvent.change(screen.getByLabelText('Sort findings'), { target: { value: 'age' } });
+    expect(readRenderedFindingKeys()).toEqual(['ENCUC-11', 'ENCUC-10']);
+  });
+
+  it('walks a review session in the SORTED order when a sort is active', () => {
+    mockUseHygieneState.mockReturnValue(buildHookState({ projectKey: 'ENCUC', findings: buildSortableFindings() }));
+
+    render(<HygieneView />);
+    fireEvent.change(screen.getByLabelText('Sort findings'), { target: { value: 'assignee' } });
+    fireEvent.click(screen.getByRole('button', { name: /review these findings/i }));
+
+    // "Adams, Jo" (ENCUC-11) sorts first, so the session cursor starts there.
+    expect(screen.getByText(/Reviewing 1 of 2/)).toBeInTheDocument();
+    const currentRow = screen.getByRole('link', { name: 'ENCUC-11' }).closest('[aria-expanded]');
+    expect(currentRow).toHaveAttribute('aria-expanded', 'true');
+  });
+
+  it('locks the sort control while a session is active so the reviewed order cannot shift underneath it', () => {
+    mockUseHygieneState.mockReturnValue(buildHookState({ projectKey: 'ENCUC', findings: buildSortableFindings() }));
+
+    render(<HygieneView />);
+    fireEvent.click(screen.getByRole('button', { name: /review these findings/i }));
+
+    expect(screen.getByLabelText('Sort findings')).toBeDisabled();
+  });
+
   // ── Spec 019 FR-015: fix affordances say what is flagged and what fixing does ──
 
   it('renders a plain-language explanation for each flagged check', () => {
