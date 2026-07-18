@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Feature Status & Readiness workspace (spec 021, from the GH #189 dashboard reminder)**: our own,
+  better version of the org's read-only "Feature Status & Readiness Dashboard" — a new **Readiness
+  tab in the ART View** (Agile Hub Train space). Three PI lenses — **Carryover / Current / Upcoming**
+  — over one shared evaluation, so a lens count and its drilled-in listing can never disagree. The
+  feature listing carries the dashboard's five data-hygiene alert families (missing owner, estimate,
+  Spark ID/PCode, target end date, due date) as flags — but unlike the org dashboard, **every alert
+  has an inline fix** right on the row (owner search writing either the assignee or Product Owner
+  field, estimate/date entry, PCode entry that normalizes `P00012345` → `12345`), plus row expansion
+  into the shared issue detail panel for comments and status transitions that collect any required
+  screen fields. Upcoming readiness is state-based (a feature is "refined" once past the early
+  funnel/analyzing states). **AI insights are gated and propose-only** exactly like everywhere else
+  (Ctrl+Alt+Z; per-item accept writing only estimate/target/due — never ownership). Honest states
+  throughout: an empty scope shows an amber message, and an alert whose Jira field does not exist on
+  this instance reads "not checked — no matching field" instead of a clean zero. Deep-linkable via
+  `?artTab=readiness&readinessLens=…`. Feature discovery follows the portfolio-project rule (scoped
+  by PI + configured project keys or roster labels, never a team board), and two new configurable
+  field families (Estimate NF, Spark ID/PCode) extend the existing hygiene field discovery.
+
 ### Changed
 - **Code Walkthrough rebuilt against the current application**: the in-app reference no longer describes the
   pre-consolidation app (standalone Team Dashboard / ART View / Business Helper / Dev Workspace are gone). The new

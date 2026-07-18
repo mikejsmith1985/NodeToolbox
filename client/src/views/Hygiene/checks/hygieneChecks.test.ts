@@ -377,6 +377,25 @@ describe('resolveHygieneFieldConfig — a configured field outranks the built-in
     expect(resolveHygieneFieldConfig().applicationFieldIds).toEqual([]);
   });
 
+  // ── 021 Readiness: two additive, configured-only field families (Estimate NF, Spark ID/PCode) ──
+
+  it('exposes estimate and pcode field families, defaulting to empty (configured-only)', () => {
+    // These back the Readiness tab's alerts; like productOwner/application they have no built-in
+    // default, so an instance that lacks them resolves to [] and the alert renders "not checked".
+    expect(resolveHygieneFieldConfig().estimateFieldIds).toEqual([]);
+    expect(resolveHygieneFieldConfig().pcodeFieldIds).toEqual([]);
+  });
+
+  it('passes configured estimate and pcode field ids straight through', () => {
+    const fieldConfig = resolveHygieneFieldConfig({
+      estimateFieldIds: ['customfield_20001'],
+      pcodeFieldIds: ['customfield_20002'],
+    });
+
+    expect(fieldConfig.estimateFieldIds).toEqual(['customfield_20001']);
+    expect(fieldConfig.pcodeFieldIds).toEqual(['customfield_20002']);
+  });
+
   it('does not change WHETHER an issue is flagged — checks read every field, not just the first', () => {
     const fieldConfig = resolveHygieneFieldConfig({ programIncrementFieldIds: ['customfield_99999'] });
     const issueWithPiInTheDefaultField = buildIssue({
