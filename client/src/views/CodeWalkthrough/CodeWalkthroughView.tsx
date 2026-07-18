@@ -26,276 +26,398 @@ const WALKTHROUGH_SECTIONS: WalkthroughSection[] = [
     title: 'Architecture',
     emoji: '🏗️',
     summary:
-      'NodeToolbox is a local-first React + TypeScript application served by a Node.js Express proxy. The client is organized into workspaces such as the Agile Hub (Team, Product, Train, and Search spaces), My Issues, Reports Hub, SNow Hub, Jira Create, Text Tools, Admin Hub, Personal Toolbox, and Code Walkthrough. Most workspaces follow the same pattern: a top-level view, focused tabs or panels, a dedicated state hook, and typed service helpers that talk to localhost proxy routes instead of calling enterprise systems directly from the browser.',
+      'NodeToolbox is a local-first React + TypeScript single-page app served by a Node.js Express proxy on localhost. '
+      + 'The home page opens ten tool cards in three job-shaped sections, and the biggest tools are hubs: the Agile Hub '
+      + '(Team, Product, Train, and Search spaces), My Issues, Reports Hub, SNow Hub, Jira Create, Admin Hub, Feature '
+      + 'Canvas, Personal Toolbox, Text Tools, and this Code Walkthrough. Every workspace follows the same pattern: a '
+      + 'top-level view, focused tabs or panels, a dedicated state hook, and typed service helpers that call localhost '
+      + 'proxy routes — the browser never talks to Jira, ServiceNow, Confluence, or GitHub directly. The server also '
+      + 'runs scheduled automations and hosts two browser-built engines (PI Review and Monthly Delivery) bundled with '
+      + 'esbuild so scheduled saves reuse the exact code the UI runs.',
   },
   {
-    id: 'workspace-guide',
-    title: 'Workspace Guide',
-    emoji: '🧭',
+    id: 'home-navigation',
+    title: 'Home & Navigation',
+    emoji: '🏠',
     summary:
-      'The Agile Hub is one door with four spaces: Team owns sprint execution, feature review, PI Review authoring, and release readiness; Product owns the PO workflow with feature authoring; Train owns the cross-team picture, including dependencies, blueprint hierarchy, monthly reporting, and PI Review readouts; Search offers business-friendly Jira keyword search without JQL. My Issues is the personal work queue with hygiene and linked ServiceNow context. Reports Hub serves leadership-ready reporting views. Jira Create builds issues from reusable templates or imported request submissions. SNow Hub handles change, problem, release, and sync workflows. Text Tools provides transformation utilities, while Admin Hub covers setup, standards, diagnostics, backup, and visibility.',
+      'The home page groups ten cards into three sections named for the job, not the org: 🙋 My Work (My Issues, '
+      + 'Personal Toolbox), 🏃 Agile Delivery (Agile Hub, Feature Canvas, Jira Create), and 📈 Insights & Admin '
+      + '(Reports Hub, Admin Hub, SNow Hub, Code Walkthrough, Text Tools). Cards can be reordered by drag, and a '
+      + 'recents strip remembers where you worked — including under retired tool names, which resolve to their '
+      + 'successors. Gating is honest: the SNow Hub card and route exist only while this tab holds the Admin Hub '
+      + 'unlock, and the Admin Hub Tool Visibility toggles remove a hidden tool’s card and route immediately. Gates '
+      + 'apply on entry only — an open workspace is never yanked away mid-task. Old bookmarks keep working: '
+      + '/sprint-dashboard, /po-tool, /art, /business-helper, /jira-template-maker, /jira-intake, and roughly a dozen '
+      + 'legacy paths all redirect to their new homes with query parameters preserved.',
   },
   {
-    id: 'team-dashboard-features',
-    title: 'Team Dashboard Features',
+    id: 'agile-hub',
+    title: 'Agile Hub',
     emoji: '🏃',
     summary:
-      'Team Dashboard is the team execution hub. It combines sprint overview, assignee grouping, blocker review, defect review, standup support, metrics, pipeline visibility, planning, pointing, Feature Review, PI Review, release readiness, and settings in one board-scoped workspace. It is also one of the main write-heavy surfaces because feature hygiene fixes, direct status transitions, PI Review authoring, and release-note workflows all happen there.',
+      'The Agile Hub is one door with four spaces, switched by a strip at the top and deep-linkable via ?space=. '
+      + 'Team is the sprint execution hub: Overview, By Assignee, Blockers, Defects, Standup, Hygiene, Metrics, '
+      + 'Planning, Pointing, Feature Review, PI Review, Remediation, Releases, and Settings for the active team '
+      + 'profile. Product is the PO workspace with its own team and PI selection: Feature Review, PI Review '
+      + '(authoring), Feature Splitter, and Feature Composition. Train is the release-train picture: Overview, '
+      + 'Impediments, Predictability, Releases, PI Review (readout), Blueprint, Dependencies, Board Prep, SoS, '
+      + 'Monthly Report, and ART Settings. Search is business-friendly Jira keyword search with grouped results — '
+      + 'no JQL required. Each space keeps its own selections; switching spaces never merges or resets them, and '
+      + 'the hub reopens on your last-used space.',
     featureHighlights: [
-      'Overview, blockers, defects, and metrics keep one team focused on the current sprint.',
-      'Feature Review combines hygiene flags, child rollups, direct fixes, and direct status transitions.',
-      'PI Review and Releases cover the board-scoped planning and release storytelling workflows.',
+      'Feature Review combines hygiene flags, child rollups, inline field fixes, and direct status transitions.',
+      'PI Review appears in three roles: team adapter (Team), authoring (Product), and multi-team readout (Train).',
+      'Simple Search groups results by Portfolio, ART, and Team, with expandable child and linked records.',
     ],
     workflowPlaybooks: [
       {
         title: 'Feature Review cleanup',
         steps: [
-          'Open Team Dashboard and confirm the correct board and scope are loaded.',
-          'Select Feature Review and sort or scan for the features that still show hygiene flags.',
-          'Open the direct-fix panel on a flagged feature and apply the needed field or status change.',
-          'Refresh the card state and confirm the hygiene badges clear before moving to the next feature.',
+          'Open the Agile Hub and stay in the Team space, confirming the correct team profile is active.',
+          'Select Feature Review and scan for the features that still show hygiene flags.',
+          'Apply the needed field or status fix inline — dropdown fields map values to their Jira options automatically.',
+          'Confirm the hygiene badges clear before moving to the next feature.',
         ],
       },
       {
-        title: 'PI Review authoring',
+        title: 'PI Review authoring and readout',
         steps: [
-          'Open the PI Review tab after confirming the dashboard is attached to the correct team board.',
-          'Update capacity first so the same snapshot feeds feature scope and confidence discussions.',
-          'Edit the PI rows, confidence values, or carryover content that changed during planning.',
-          'Save to the shared PI Review flow and confirm the team content is ready for the ART readout.',
-        ],
-      },
-      {
-        title: 'Release readiness and notes',
-        steps: [
-          'Open Releases and review the current fix-version readiness buckets for overdue or watch items.',
-          'Build the release-note prompt once the release contents look correct.',
-          'Paste the returned response back into the release workflow and verify the rendered table.',
-          'Export the final release view when the draft is ready to share.',
-        ],
-      },
-    ],
-    troubleshootingTips: [
-      'If Feature Review data looks incomplete, confirm the board, project key, and scope mode still point to the intended team.',
-      'If a PI Review page does not appear, check that the team board is mapped in ART Settings and that the PI Review page URL is configured.',
-      'If release buckets look stale, refresh the dashboard after confirming the active sprint or fix version still matches the work you expect to see.',
-    ],
-  },
-  {
-    id: 'art-view-features',
-    title: 'ART View Features',
-    emoji: '🚂',
-    summary:
-      'ART View owns the train-level picture. It brings together overview, impediments, predictability, releases, PI Review readout, blueprint hierarchy, dependencies, board prep, Scrum-of-Scrums support, monthly reporting, and ART settings. It is the best place to understand cross-team relationships and the current state of a PI without dropping into each individual team board.',
-    featureHighlights: [
-      'PI Review is the shared readout surface for multi-team Confluence-backed content.',
-      'Blueprint and Dependencies provide the best hierarchy and linkage visibility above one team board.',
-      'Settings keeps the ART roster, PI values, and page references aligned for every other ART workflow.',
-    ],
-    workflowPlaybooks: [
-      {
-        title: 'PI Review readout and export',
-        steps: [
-          'Open ART View and load the PI Review area for the teams you want to review.',
-          'Confirm each team page resolves and that the latest Jira-backed values have been reconciled.',
-          'Review feature rows, confidence history, and capacity snapshots with the train audience.',
-          'Export the team panel as PNG or CSV when a shareable readout is needed.',
+          'Author team content in the Product space PI Review tab, updating capacity first so one snapshot feeds scope and confidence.',
+          'Save to Confluence when the team rows are ready — the same engine the scheduler runs server-side.',
+          'Review the multi-team readout in the Train space and export PNG or CSV for the ART audience.',
         ],
       },
       {
         title: 'Dependency review',
         steps: [
-          'Open Dependencies and choose the lens that matches the conversation, such as team-to-team or by feature.',
+          'Open the Train space Dependencies tab and choose the lens that matches the conversation.',
           'Filter to the relationships that matter for the current PI or release discussion.',
-          'Use the dependency output to identify the teams that need follow-up before the next planning checkpoint.',
+          'Identify the teams that need follow-up before the next planning checkpoint.',
         ],
       },
-      {
-        title: 'Monthly reporting starter',
-        steps: [
-          'Open Monthly Report after refreshing the latest ART data.',
-          'Review the generated narrative starter against the most recent train accomplishments and risks.',
-          'Copy or refine the summary before moving it into the formal reporting channel.',
-        ],
-      },
-    ],
-    troubleshootingTips: [
-      'If a team PI Review panel is missing, confirm the team still exists in ART Settings and that the Confluence page reference is valid.',
-      'If dependency views feel empty, make sure the underlying teams and project filters still include the work you expect to compare.',
-      'If PI timing looks wrong, check the configured PI name and end date in ART Settings before reviewing urgency-based signals.',
-    ],
-  },
-  {
-    id: 'personal-work-features',
-    title: 'Personal Work Features',
-    emoji: '📋',
-    summary:
-      'My Issues, Reports Hub, and Personal Toolbox cover different kinds of personal or role-based visibility. My Issues is the individual work queue with hygiene, exports, bulk comments, and linked ServiceNow context. Reports Hub is the leadership reporting surface with dashboard, feature, defect, risk, flow, quality, sprint health, throughput, and individual views. Personal Toolbox lets a user compose their own workspace from the major modules instead of navigating across the full app every time.',
-    featureHighlights: [
-      'My Issues is the fastest place to work your own queue across multiple sourcing options.',
-      'Reports Hub turns ART-wide issue data into copy-friendly reporting views.',
-      'Personal Toolbox reduces navigation friction by letting one user build a custom tab bar.',
-    ],
-    workflowPlaybooks: [
-      {
-        title: 'Personal issue triage',
-        steps: [
-          'Open My Issues and choose the source that matches the current review, such as Mine, JQL, Saved Filter, or Board.',
-          'Switch to the layout that best fits the task, such as cards for scanning or table for detailed review.',
-          'Use status zones and sorting to narrow attention to the items that need action first.',
-          'Open issue details, post bulk comments, or move into the Hygiene tab when data quality needs attention.',
-        ],
-      },
-      {
-        title: 'Leadership report preparation',
-        steps: [
-          'Open Reports Hub and load the report that matches the meeting outcome you need, such as Feature, Flow, or Sprint Health.',
-          'Apply PI and team filters before discussing the numbers so the view reflects the right audience.',
-          'Use the built-in report explainer to confirm the meaning of the current tab.',
-          'Copy the report output once the view is narrowed to the exact slice you want to share.',
-        ],
-      },
-      {
-        title: 'Personal Toolbox setup',
-        steps: [
-          'Open Personal Toolbox and enter the builder panel.',
-          'Toggle on the modules you want in your personal tab bar and remove the ones you rarely use.',
-          'Reorder the active modules so your most common workflows appear first.',
-          'Return to the tab strip and use the customized workspace as your daily landing area.',
-        ],
-      },
-    ],
-    troubleshootingTips: [
-      'If My Issues returns less work than expected, verify the current source, board, or saved filter before assuming the queue is empty.',
-      'If a Reports Hub view looks stale, reload the report after checking that the ART team configuration still matches the intended scope.',
-      'If a Personal Toolbox tab disappears, confirm the module is still selected in the builder and was not removed from your saved order.',
-    ],
-  },
-  {
-    id: 'operations-features',
-    title: 'Operations Features',
-    emoji: '🛡️',
-    summary:
-      'SNow Hub, Dev Workspace, Admin Hub, Release Monitor, and the focused standup surfaces support operational execution. SNow Hub covers change, problem, release, and sync work. Dev Workspace covers timers, Git sync, hygiene, and monitor status. Admin Hub manages setup, standards, diagnostics, backup, demo mode, and visibility. Release Monitor gives a smaller fix-version-focused readiness view, and the standup boards keep daily review workflows lightweight when users do not need the whole Team Dashboard.',
-    featureHighlights: [
-      'SNow Hub is where Jira-backed change and problem workflows meet ServiceNow operations.',
-      'Dev Workspace owns timers, commit-to-Jira automation, and scheduler-backed monitoring.',
-      'Admin Hub centralizes platform setup, standards, diagnostics, backup, and visibility controls.',
-    ],
-    workflowPlaybooks: [
-      {
-        title: 'SNow change creation',
-        steps: [
-          'Open SNow Hub and start in CHG when you need to build a change request from Jira-backed release inputs.',
-          'Walk through the wizard in order so the review step has complete issue, planning, and environment information.',
-          'Confirm the generated fields before submission to avoid rework in ServiceNow after the change is created.',
-        ],
-      },
-      {
-        title: 'Dev Workspace Git sync review',
-        steps: [
-          'Open Dev Workspace and review the Settings tab so the repository, Jira project key, and polling rules are correct.',
-          'Use Git Sync to start or review the polling behavior that turns matching commits into Jira updates.',
-          'Check Repo Monitor for recent automation health and run history when you need to confirm the scheduler path is working.',
-        ],
-      },
-      {
-        title: 'Admin safety backup',
-        steps: [
-          'Open Admin Hub before a risky settings change or a demo reset.',
-          'Use Backup and Restore to export the current durable settings snapshot.',
-          'Apply the configuration change or launch demo mode only after the backup file is created.',
-          'Restore from the saved file if the environment needs to return to the previous state.',
-        ],
-      },
-    ],
-    troubleshootingTips: [
-      'If SNow workflows fail to load expected options, confirm the ServiceNow connection and credentials from Admin Hub or Settings.',
-      'If Git Sync does not post updates, check the repository identifier, authentication, and commit-key pattern before changing the scheduler.',
-      'If diagnostics show missing services, review Admin Hub connection settings before assuming the problem is in a feature workflow.',
-    ],
-  },
-  {
-    id: 'utility-features',
-    title: 'Utility Features',
-    emoji: '🛠️',
-    summary:
-      'Simple Search and Text Tools focus on speed and accessibility. Simple Search (the Agile Hub Search space) wraps Jira in business-friendly keyword search with grouped results and issue relationships — no JQL required. Text Tools provides quick formatting, conversion, encoding, decoding, and extraction helpers for day-to-day copy-paste work.',
-    featureHighlights: [
-      'Simple Search turns Jira search into a guided workflow for non-technical users, with grouped results and expandable relationships.',
-      'Text Tools handles the short-lived formatting and extraction tasks that otherwise waste time in external tools.',
-    ],
-    workflowPlaybooks: [
       {
         title: 'Simple Search without JQL',
         steps: [
-          'Open the Agile Hub and switch to the Search space, then enter a plain-language keyword.',
+          'Switch to the Search space and enter a plain-language keyword.',
           'Expand the grouped results (Portfolio, ART, Team) until you find the Jira item you need.',
           'Open child and linked records inline to understand the item’s relationships before acting on it.',
         ],
       },
+    ],
+    troubleshootingTips: [
+      'If Feature Review data looks incomplete, confirm the team profile, project key, and scope still point to the intended team.',
+      'If a PI Review page does not appear, check that the team is mapped in ART Settings and the Confluence page reference is valid.',
+      'If the Product space shows the wrong team, remember it keeps its OWN selection — it never follows the Team space.',
+    ],
+  },
+  {
+    id: 'my-issues-today',
+    title: 'My Issues & Today',
+    emoji: '📊',
+    summary:
+      'My Issues is the personal workspace, opening on the Today tab: a daily Jira-hygiene checklist of eight '
+      + 'cards — Respond to mentions, Unblock issues, My stale issues, Team stale issues, Unassigned in-progress, '
+      + 'Sprint commitment gaps, Due / overdue today, and Untriaged new issues — each with a live count, a daily '
+      + 'check-off, and a deep link that lands in the right tool with its filter already applied. The free-form '
+      + 'To-Do list lives on the same tab (press F1 anywhere in the app to quick-add an item without leaving your '
+      + 'screen), followed by a sprint flow snapshot. The Report tab is the flexible queue: sources (My Issues, '
+      + 'JQL, Saved Filter, Board), card/compact/table layouts, status zones, bulk comments, and CSV, Markdown, '
+      + 'TSV, or Excel export, with linked Jira-ServiceNow pairs shown together. Mentions, Hygiene (personal '
+      + 'scope), Time Tracking, Git Sync, and Settings complete the tab strip.',
+    featureHighlights: [
+      'Today card counts come from the same shared hygiene scan the Hygiene tab runs — the numbers always agree.',
+      'F1 opens the to-do quick-add from every screen; Enter adds and keeps the box open, Escape closes.',
+      'Team-scoped cards deep-link into hygiene with the matching filter preselected (e.g. stale, commitment gaps).',
+    ],
+    workflowPlaybooks: [
       {
-        title: 'Text Tools payload cleanup',
+        title: 'Daily sweep',
         steps: [
-          'Choose the Text Tools tab that matches the payload type, such as JSON, URL, Base64, or Smart Formatter.',
-          'Paste the source text into the input panel and confirm the transformed output looks correct.',
-          'Copy the cleaned output immediately so you can reuse it in Jira, ServiceNow, or reporting workflows.',
+          'Open My Issues — Today loads first — and work the cards left to right, checking each off as it clears.',
+          'Capture side thoughts with F1 into the To-Do list without losing your place.',
+          'Click a card with a nonzero count to land in the matching tool with the filter applied.',
+        ],
+      },
+      {
+        title: 'Personal issue triage',
+        steps: [
+          'Switch to the Report tab and choose the source that matches the review: My Issues, JQL, Saved Filter, or Board.',
+          'Pick the layout that fits — cards for scanning, table for detail — and narrow with status zones.',
+          'Open issue details inline, post bulk comments, or export the slice you need to share.',
         ],
       },
     ],
     troubleshootingTips: [
-      'If a Text Tools output looks wrong, confirm you selected the correct transformation tab and mode before assuming the input is bad.',
-      'If the ServiceNow extractor flow returns incomplete payloads, re-run the bookmarklet on the target page before copying the filtered result.',
+      'If a Today count looks wrong, open its deep link — the card and the landing view run the identical scan, so they cannot disagree.',
+      'If the Report tab returns less work than expected, verify the current source, board, or saved filter before assuming the queue is empty.',
     ],
+  },
+  {
+    id: 'hygiene-workspace',
+    title: 'Hygiene Workspace',
+    emoji: '🧼',
+    summary:
+      'Hygiene is one shared workspace rendered in three places — the Agile Hub Team space, My Issues (personal '
+      + 'scope, including an all-my-projects mode), and its own deep-linked views. One scan pipeline evaluates '
+      + 'every check (missing story points, acceptance criteria, assignee, fix version, due date, PI, feature '
+      + 'link, stale, overdue dates, unpointed child stories, and more), so every surface shows the same counts '
+      + 'by construction. Findings render with a semantic chip vocabulary: status chips toned by category, '
+      + 'priority badges, issue-type icons, assignee avatars with full names, and age heat badges graded against '
+      + 'the team’s stale threshold. Each flag carries a plain-language explanation and an inline fix control — '
+      + 'including status transitions that collect any workflow-required screen fields before submitting, so a '
+      + 'transition never fails for a missing field you could not see. The list can be sorted by status, '
+      + 'assignee, issue type, or age when a cleanup pass benefits from grouping.',
+    featureHighlights: [
+      'Guided cleanup session: "Review these findings" walks the list with a visible N-of-M cursor.',
+      'Keyboard flow: arrow keys navigate, Skip (S) explicitly settles a finding, Escape ends the session.',
+      'The end-of-session summary reports fixed / commented / skipped / untouched separately — progress is never overstated.',
+    ],
+    workflowPlaybooks: [
+      {
+        title: 'Guided cleanup session',
+        steps: [
+          'Filter the findings with the summary tiles, and sort them if grouping helps (sort locks during the session).',
+          'Start the session and settle each finding: fix it inline, nudge with a comment, or press Skip (S) deliberately.',
+          'Fixes made mid-session keep your place — the rescan is deferred until the session ends.',
+          'Read the honest four-bucket summary at the end; untouched findings are never counted as handled.',
+        ],
+      },
+      {
+        title: 'Fixing a flagged issue inline',
+        steps: [
+          'Expand the finding to see the full decision picture: linked issues with their statuses, labels, planning rows, and structured description.',
+          'Use the labelled fix control next to the flag — dropdown fields list the real Jira options, and story points map to the field’s allowed values.',
+          'For a status move, answer any required screen fields the transition demands; the button stays disabled until they are complete.',
+        ],
+      },
+    ],
+    troubleshootingTips: [
+      'An empty scope shows an amber warning, never a perfect score — check the project key, PI, and extra JQL.',
+      'A check whose Jira field does not exist on this instance shows "not checked", never a clean zero.',
+      'If a required transition field cannot be edited inline, the control says so plainly and links to Jira.',
+    ],
+  },
+  {
+    id: 'jira-create',
+    title: 'Jira Create',
+    emoji: '🧩',
+    summary:
+      'Jira Create is one card with two ways to create issues. The Templates tab builds reusable issue templates '
+      + 'with guided project, issue-type, and field pickers — including wiki-markup editing and shareable template '
+      + 'links — then creates real issues in one click. The Intake tab imports Teams request submissions from an '
+      + 'exported Excel/CSV (or a SharePoint pull), attributes reporters, deduplicates, and turns approved rows '
+      + 'into Jira issues through a review queue. Both tools are mounted unchanged inside a thin tab shell; the '
+      + 'old standalone routes redirect here with their parameters intact.',
+  },
+  {
+    id: 'feature-canvas',
+    title: 'Feature Canvas',
+    emoji: '🗺️',
+    summary:
+      'Feature Canvas is visual backlog triage: pull features onto a canvas from the blueprint hierarchy or a JQL '
+      + 'search, then drag them into sprint boxes, a parking lot, or provisional containers until the plan is '
+      + 'committed. A coaching panel guides the journey from chaos to a committed plan, with story planning, '
+      + 'capacity planning (configured override, then team velocity, then a fallback), a re-allocation planner, '
+      + 'undo/redo, and a Review & Commit step that writes the agreed plan back. AI-assisted panels are available '
+      + 'behind the propose-only gate. The canvas dependency loads lazily so users who never open it pay no '
+      + 'bundle cost.',
+  },
+  {
+    id: 'reports-hub',
+    title: 'Reports Hub',
+    emoji: '📈',
+    summary:
+      'Reports Hub is the leadership reporting surface with fifteen tabs: Defect Dashboard, Feature Report, '
+      + 'Defect Tracker, Risk Board, Flow, Impact, Individual, Quality, Sprint Health, Throughput, Scope Change, '
+      + 'Feature Change, Hygiene, Personal Flow, and Aging. A global PI and team filter bar scopes every tab; '
+      + 'each report carries an "About this report" explainer, a last-generated timestamp, and a one-click Copy '
+      + 'Report PNG for pasting into decks and chats. Some reports can also be sent to the server-side automation '
+      + 'channel for scheduled delivery.',
+    workflowPlaybooks: [
+      {
+        title: 'Leadership report preparation',
+        steps: [
+          'Load the report that matches the meeting outcome you need, such as Feature, Flow, or Sprint Health.',
+          'Apply PI and team filters before discussing the numbers so the view reflects the right audience.',
+          'Read the built-in explainer to confirm what the current tab measures.',
+          'Copy the report PNG once the view shows the exact slice you want to share.',
+        ],
+      },
+    ],
+    troubleshootingTips: [
+      'If a report looks stale, check the last-generated timestamp and reload after confirming the team configuration.',
+      'If a view seems empty, widen the PI or team filter before assuming there is no data.',
+    ],
+  },
+  {
+    id: 'snow-hub',
+    title: 'SNow Hub',
+    emoji: '❄️',
+    summary:
+      'SNow Hub is the ServiceNow workspace, available only while this tab holds the Admin Hub unlock. Its tabs: '
+      + 'CHG Generator builds change requests from Jira-backed release inputs through a stepwise wizard; PRB '
+      + 'Generator converts problems; Assignment Groups manages group lookups; Release Management coordinates '
+      + 'release records; Sync Monitor watches Jira-ServiceNow synchronization; and Configuration holds the '
+      + 'hub’s settings. Browser-side ServiceNow access uses a relay bookmarklet pattern for pages the proxy '
+      + 'cannot reach directly, and returns you to where you left off after the relay round-trip.',
+    workflowPlaybooks: [
+      {
+        title: 'SNow change creation',
+        steps: [
+          'Unlock the Admin Hub, open SNow Hub, and start in CHG Generator.',
+          'Walk the wizard in order so the review step has complete issue, planning, and environment information.',
+          'Confirm the generated fields before submission to avoid rework in ServiceNow afterward.',
+        ],
+      },
+    ],
+    troubleshootingTips: [
+      'If the SNow Hub card is missing from home, the Admin Hub unlock has not been entered in this tab.',
+      'If SNow workflows fail to load expected options, confirm the ServiceNow connection from Admin Hub or Settings.',
+    ],
+  },
+  {
+    id: 'admin-hub',
+    title: 'Admin Hub',
+    emoji: '🛡️',
+    summary:
+      'Admin Hub is the platform control room. The Config tab covers proxy and server setup (status, restart, '
+      + 'launcher downloads), ART settings (PI field IDs, PI name and dates), the admin access gate, service '
+      + 'connectivity (ServiceNow, GitHub, Confluence credentials stored server-side), enterprise standards, '
+      + 'Tool Visibility toggles that add or remove home cards live, backup/restore/reset, hygiene rules (stale '
+      + 'days, unpointed warning), update management with rollback, and diagnostics. Further tabs manage the '
+      + 'server automations: Repo Monitor, Reports Config (Scope Change, Feature Change, and Hygiene Monitor '
+      + 'digests), Standup briefing, PI Review Sync, Monthly Delivery, and Sprint Release. Two extra tabs appear '
+      + 'only when their unlocks are held: the Dev Panel (admin unlock) and AI Assist automation (AI unlock).',
+    workflowPlaybooks: [
+      {
+        title: 'Admin safety backup',
+        steps: [
+          'Open Admin Hub before a risky settings change.',
+          'Use Backup & Reset to download the current settings snapshot.',
+          'Apply the change only after the backup file exists, and restore from it if the environment must roll back.',
+        ],
+      },
+      {
+        title: 'Scheduling a server automation',
+        steps: [
+          'Open the matching panel — Standup, PI Review Sync, Monthly Delivery, Sprint Release, or a Reports Config digest.',
+          'Configure the scope (teams, pages, or filters) and the delivery time.',
+          'Use Run Now to verify the output once before trusting the schedule.',
+        ],
+      },
+    ],
+    troubleshootingTips: [
+      'If diagnostics show missing services, review connection settings before assuming a feature workflow is broken.',
+      'If a scheduler panel reports itself disabled, its bundled engine may be missing — rebuild via the standard npm scripts.',
+    ],
+  },
+  {
+    id: 'text-tools',
+    title: 'Text Tools',
+    emoji: '🛠',
+    summary:
+      'Text Tools is the utility belt for day-to-day copy-paste work: Smart Formatter (HTML to Markdown, plain, '
+      + 'or structured text), JSON (pretty-print or minify), Case (ten live case variants), URL encode/decode, '
+      + 'Base64 encode/decode, and the Extractor — a ServiceNow field-extractor bookmarklet with JSON validation '
+      + 'and field selection for pulling clean payloads off ServiceNow pages.',
+  },
+  {
+    id: 'ai-assist-model',
+    title: 'AI Assist Model',
+    emoji: '⚡',
+    summary:
+      'Every AI surface in NodeToolbox is propose-only and session-gated. Ctrl+Alt+Z unlocks AI Assist for the '
+      + 'current tab (press again to re-lock); until then no AI affordance is visible. The pattern is identical '
+      + 'everywhere: the tool builds one prompt covering the work in scope, the reply comes back as structured '
+      + 'JSON keyed by issue, and every proposed change is listed for individual accept or decline — nothing is '
+      + 'written to Jira without a per-item click, and accepted writes go through the same shared writers as '
+      + 'manual fixes. Surfaces include hygiene fixes, PI Review sizing, PO feature authoring, report '
+      + 'narratives, Feature Canvas suggestions and re-allocation, and the CHG wizard. Server schedulers are '
+      + 'report-only: they emit prompts or digests for a human to carry to the in-house agent — there is no '
+      + 'automated AI channel.',
+  },
+  {
+    id: 'schedulers-automation',
+    title: 'Schedulers & Automation',
+    emoji: '⏰',
+    summary:
+      'The Express server runs the recurring work so the browser does not have to stay open: Repo Monitor polls '
+      + 'commits into Jira updates; Scope Change and Feature Change build change digests; the Hygiene Monitor '
+      + 'runs scheduled scans; the Standup briefing delivers a daily roster summary; the Sprint Release '
+      + 'scheduler orchestrates release timing; the PI Review scheduler saves team pages to Confluence on '
+      + 'schedule; and the Monthly Delivery scheduler classifies last month’s delivered work into a plain-text '
+      + 'report prompt on the second Tuesday. PI Review and Monthly Delivery reuse the browser code itself: '
+      + 'esbuild bundles the client engines into the server, where a lightweight DOM host runs them — scheduled '
+      + 'output can never drift from what the UI produces. All schedulers are configured from Admin Hub panels '
+      + 'and deliver through the existing Confluence and webhook channels.',
   },
   {
     id: 'security-model',
     title: 'Security Model',
     emoji: '🔒',
     summary:
-      'The security model keeps Jira, ServiceNow, GitHub, and Confluence credentials out of browser code. The React app talks to localhost proxy routes, and the Express server injects credentials on the backend before forwarding requests upstream. That design keeps raw tokens and passwords out of the client bundle, centralizes write guards for sensitive operations, and makes it easier to audit which systems NodeToolbox is allowed to update.',
+      'The security model keeps Jira, ServiceNow, GitHub, and Confluence credentials out of browser code '
+      + 'entirely. The React app only ever calls localhost proxy routes; the Express server injects credentials '
+      + 'server-side before forwarding upstream, so raw tokens never enter the client bundle. Capability gates '
+      + 'are session-scoped and honest: the Admin Hub unlock (a username/password check against the server) '
+      + 'lives in this tab’s session and gates the SNow Hub plus admin-only panels; the AI Assist unlock '
+      + '(Ctrl+Alt+Z) gates every AI surface. Tool Visibility gates apply on route entry only — a mid-task '
+      + 'state change never unmounts an open workspace. Hidden or gated tools are absent, never greyed out, so '
+      + 'the UI never advertises capabilities it will refuse.',
   },
   {
     id: 'data-flow',
-    title: 'Data Flow',
+    title: 'Data Flow & Services',
     emoji: '🔄',
     summary:
-      'Data flow starts in a view or workspace hook. The hook calls a client service helper, the helper calls a localhost route, the proxy injects credentials and forwards the request, and the typed response comes back into the hook and then into the UI. This pattern is used across Jira issue loading, ServiceNow synchronization, Confluence-backed PI Review content, and GitHub-backed automation status so the frontend stays modular without taking ownership of authentication.',
+      'Data flow starts in a view or workspace hook. The hook calls a typed client service helper, the helper '
+      + 'calls a localhost route (/jira-proxy, /snow-proxy, /confluence-proxy, /github-proxy, or an /api '
+      + 'endpoint), the proxy injects credentials and forwards the request, and the typed response flows back '
+      + 'into the hook and then the UI. Jira helpers cover search, board data, transitions, comments, work logs, '
+      + 'and field metadata; ServiceNow helpers cover change, problem, release, and sync operations; Confluence '
+      + 'helpers back the PI Review save/load flows. For browser pages the proxy cannot reach, a relay '
+      + 'bookmarklet bridge carries ServiceNow and SharePoint round-trips and returns you to the route you left. '
+      + 'Live status (connection health, relay availability) flows through shared polling hooks and stores so '
+      + 'individual views never own transport details.',
   },
   {
-    id: 'api-usage',
-    title: 'API Usage',
-    emoji: '🔌',
-    summary:
-      'API usage is centralized in client service helpers and view-specific hooks. Jira helpers cover issue search, board data, transitions, work logs, feature metadata, and fix-version workflows. ServiceNow helpers cover problem, change, release, and sync operations. The same proxy-first pattern also supports GitHub scheduler endpoints and Confluence-backed PI Review save/load flows. Keeping those calls in helpers reduces copy-paste logic across the larger workspace views.',
-  },
-  {
-    id: 'tool-breakdown',
-    title: 'Tool Breakdown',
-    emoji: '🧰',
-    summary:
-      'The technology stack stays intentionally straightforward: React 18 for views, TypeScript for typed data contracts, Vite for frontend builds, Vitest and React Testing Library for client validation, Zustand for shared settings, React Router for workspace routing, and CSS Modules for scoped styling. The product side is similarly modular: large hub views own tab composition, smaller helper components own focused interactions, and hooks keep fetch-and-state logic out of the layout code where possible.',
-  },
-  {
-    id: 'relay-deep-dive',
-    title: 'Relay Deep Dive',
-    emoji: '🌉',
-    summary:
-      'Some NodeToolbox workflows need live operational updates without requiring every view to own its own polling behavior. The relay pattern isolates that concern into shared bridge logic so a workspace can subscribe to current status without re-implementing transport details. In practice, that keeps status displays, connectivity surfaces, and sync monitors simpler because they consume a prepared state model instead of low-level network events.',
-  },
-  {
-    id: 'jira-write-operations',
-    title: 'Jira Write Operations',
+    id: 'jira-write-paths',
+    title: 'Jira Write Paths',
     emoji: '✏️',
     summary:
-      'Jira write paths include issue field updates, direct status transitions, work-log posting, comment posting, PI Review date synchronization, and feature hygiene fixes. Those writes are intentionally routed through shared helpers so the app can reuse field IDs, preserve consistent payload shapes, and keep sensitive operations away from ad hoc browser-side fetch logic. Several workspaces depend on those writes, especially Team Dashboard, ART View PI Review, My Issues, and Dev Workspace.',
+      'Every Jira write funnels through shared, editmeta-aware helpers so behavior can never drift between '
+      + 'surfaces. Story points detect dropdown-style fields and write the matching allowed option instead of a '
+      + 'raw number. Status transitions fetch the fields each transition’s workflow screen requires, collect '
+      + 'them inline, and submit them with the transition so a move never fails blind. Field fixes, comment '
+      + 'posts, fix versions, user fields, and issue links all use the same writers — from the Agile Hub Feature '
+      + 'Review, the hygiene fix controls, the inline issue detail panel, and every accepted AI proposal alike. '
+      + 'Two surfaces showing or writing the same thing always share one code path: that is a project rule, not '
+      + 'a coincidence.',
   },
   {
-    id: 'snow-write-operations',
-    title: 'SNow Write Operations',
+    id: 'snow-write-paths',
+    title: 'SNow Write Paths',
     emoji: '❄️',
     summary:
-      'ServiceNow write paths support change-request generation, problem record handling, release coordination, assignment updates, and comment or sync-related updates. The SNow Hub uses those guarded write operations heavily, but related workflows also appear in My Issues and operational support flows. Keeping those writes behind the proxy lets NodeToolbox enforce approved table targets and keep credentials outside the browser while still giving users fast, workflow-specific tooling.',
+      'ServiceNow write paths support change-request generation, problem conversion, release coordination, '
+      + 'assignment updates, and sync-related updates — used chiefly by the SNow Hub wizards and the linked-pair '
+      + 'workflows in My Issues. Keeping those writes behind the proxy enforces approved table targets and keeps '
+      + 'credentials out of the browser, while the relay bookmarklet covers the session-bound pages the proxy '
+      + 'cannot reach directly.',
+  },
+  {
+    id: 'tech-stack',
+    title: 'Tech Stack',
+    emoji: '🧰',
+    summary:
+      'React 18 with TypeScript for views and typed contracts, Vite for the client build, Zustand stores for '
+      + 'shared state (settings, connection, admin/AI unlocks, tool visibility, to-dos), React Router for '
+      + 'workspace routing, and CSS Modules for scoped styling. Testing is layered: Vitest with React Testing '
+      + 'Library for the client, Jest for the server, and Playwright for browser-level regression. The server '
+      + 'is Node.js Express; esbuild bundles two client engines (PI Review, Monthly Delivery) into it, hosted '
+      + 'under a lightweight DOM so schedulers run the same code the browser does. Heavy dependencies like the '
+      + 'Feature Canvas board load lazily, and spreadsheet handling uses the already-shipped SheetJS via '
+      + 'dynamic import.',
   },
 ];
 
