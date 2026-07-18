@@ -28,6 +28,16 @@ import {
   useReadinessData,
   type ReadinessRosterTeam,
 } from './useReadinessData.ts';
+import {
+  clearReadinessIgnore,
+  ignoreReadinessFeature,
+  ignoreReadinessProject,
+  readProjectKeyFromFeatureKey,
+  readReadinessIgnore,
+  restoreReadinessFeature,
+  restoreReadinessProject,
+  type ReadinessIgnoreState,
+} from './readinessIgnore.ts';
 import styles from './ReadinessPanel.module.css';
 
 const LENS_QUERY_PARAM = 'readinessLens';
@@ -74,6 +84,19 @@ export default function ReadinessPanel({
 }: ReadinessPanelProps) {
   const { scanResult, isLoading, reload } = useReadinessData({ selectedPiName, availablePiNames, rosterTeams });
   const [searchParams, setSearchParams] = useSearchParams();
+  // Locally-mirrored ignore state so the manage list re-renders immediately; each change persists
+  // and triggers a rescan so ignored work drops out of the lenses and counts at once.
+  const [ignoreState, setIgnoreState] = useState<ReadinessIgnoreState>(readReadinessIgnore);
+
+  function applyIgnoreChange(nextState: ReadinessIgnoreState): void {
+    setIgnoreState(nextState);
+    reload();
+  }
+  const handleIgnoreFeature = (featureKey: string) => applyIgnoreChange(ignoreReadinessFeature(featureKey));
+  const handleIgnoreProject = (projectKey: string) => applyIgnoreChange(ignoreReadinessProject(projectKey));
+  const handleRestoreFeature = (featureKey: string) => applyIgnoreChange(restoreReadinessFeature(featureKey));
+  const handleRestoreProject = (projectKey: string) => applyIgnoreChange(restoreReadinessProject(projectKey));
+  const handleClearIgnore = () => applyIgnoreChange(clearReadinessIgnore());
 
   const requestedLens = searchParams.get(LENS_QUERY_PARAM);
   const activeLensId: ReadinessLens['id'] = isLensId(requestedLens) ? requestedLens : 'current';
@@ -148,6 +171,13 @@ export default function ReadinessPanel({
         <span className={styles.scanScope}>{scanResult.scannedFeatureCount} features scanned · {scanResult.scopeDescription}</span>
       </nav>
 
+      <IgnoredManager
+        ignoreState={ignoreState}
+        onRestoreFeature={handleRestoreFeature}
+        onRestoreProject={handleRestoreProject}
+        onClear={handleClearIgnore}
+      />
+
       {isEmptyScope && (
         <div className={styles.emptyScope} role="status">
           ⚠ This scope matched no Features — check the PI, feature project keys, and roster labels.
@@ -171,6 +201,8 @@ export default function ReadinessPanel({
                   writeFieldIds={scanResult.writeFieldIds}
                   staleDaysThreshold={staleDaysThreshold}
                   onFixed={reload}
+                  onIgnoreFeature={handleIgnoreFeature}
+                  onIgnoreProject={handleIgnoreProject}
                 />
               ))
             )}
@@ -257,44 +289,82 @@ function renderAlertLegend(alertFamilyStates: Record<ReadinessAlertId, Readiness
   );
 }
 
-/** One feature row: identity, chips, alert flags, and per-alert inline fixes. */
+/** One feature row: identity, chips, alert flags, per-alert inline fixes, and ignore actions. */
 function ReadinessFeatureRow({
   feature,
   alertFamilyStates,
   writeFieldIds,
   staleDaysThreshold,
   onFixed,
+  onIgnoreFeature,
+  onIgnoreProject,
 }: {
   feature: ReadinessFeature;
   alertFamilyStates: Record<ReadinessAlertId, ReadinessAlertFamilyState>;
   writeFieldIds: ReadinessWriteFieldIds;
   staleDaysThreshold: number;
   onFixed: () => void;
+  onIgnoreFeature: (featureKey: string) => void;
+  onIgnoreProject: (projectKey: string) => void;
 }) {
   const [isExpanded, setIsExpanded] = useState(false);
+  const projectKey = readProjectKeyFromFeatureKey(feature.key);
+
+  function toggleExpanded(): void {
+    setIsExpanded((current) => !current);
+  }
+
+  // The whole card toggles details; interactive children stop propagation so they act on their own.
+  function handleRowKeyDown(keyEvent: React.KeyboardEvent): void {
+    if (keyEvent.key === 'Enter' || keyEvent.key === ' ') {
+      keyEvent.preventDefault();
+      toggleExpanded();
+    }
+  }
+
   return (
-    <div className={styles.featureRow}>
+    <div
+      className={styles.featureRow}
+      role="button"
+      tabIndex={0}
+      aria-expanded={isExpanded}
+      onClick={toggleExpanded}
+      onKeyDown={handleRowKeyDown}
+    >
       <div className={styles.featureMain}>
         <a
           className={styles.featureKey}
           href={`/browse/${encodeURIComponent(feature.key)}`}
           target="_blank"
           rel="noreferrer"
+          onClick={(clickEvent) => clickEvent.stopPropagation()}
         >
           {feature.key}
         </a>
         <span className={styles.featureSummary}>{feature.summary}</span>
-        {/* Expand for full context — comments, description, and status transitions (which collect
-            any required screen fields via the shared IssueDetailPanel). */}
+        {/* Not my work: hide this one Feature, or every Feature in its project. */}
         <button
           type="button"
-          className={styles.expandButton}
-          aria-expanded={isExpanded}
-          aria-label={`Toggle details for ${feature.key}`}
-          onClick={() => setIsExpanded((current) => !current)}
+          className={styles.ignoreButton}
+          aria-label={`Ignore ${feature.key}`}
+          title="Hide this Feature from your Readiness view"
+          onClick={(clickEvent) => { clickEvent.stopPropagation(); onIgnoreFeature(feature.key); }}
         >
-          {isExpanded ? '▲ Less' : '▼ Details'}
+          🚫 Ignore
         </button>
+        {projectKey !== '' && (
+          <button
+            type="button"
+            className={styles.ignoreButton}
+            aria-label={`Ignore project ${projectKey}`}
+            title={`Hide every Feature in project ${projectKey}`}
+            onClick={(clickEvent) => { clickEvent.stopPropagation(); onIgnoreProject(projectKey); }}
+          >
+            🚫 {projectKey}
+          </button>
+        )}
+        {/* The card itself toggles details; this button stays as a visible affordance. */}
+        <span className={styles.expandHint}>{isExpanded ? '▲ Less' : '▼ Details'}</span>
       </div>
       <dl className={styles.featureMeta}>
         <div><dt>Type</dt><dd><IssueTypeIcon issueTypeName={feature.issue.fields.issuetype?.name ?? 'Feature'} /></dd></div>
@@ -303,7 +373,12 @@ function ReadinessFeatureRow({
         <div><dt>Age</dt><dd>{feature.ageDays === null ? '—' : <AgeBadge ageDays={feature.ageDays} staleDaysThreshold={staleDaysThreshold} />}</dd></div>
       </dl>
       {feature.alerts.length > 0 && (
-        <div className={styles.alertList}>
+        <div
+          className={styles.alertList}
+          role="presentation"
+          onClick={(clickEvent) => clickEvent.stopPropagation()}
+          onKeyDown={(keyEvent) => keyEvent.stopPropagation()}
+        >
           {feature.alerts.map((alertId) => (
             <div key={alertId} className={styles.alertRow}>
               <span className={styles.alertFlag}>{ALERT_LABELS[alertId]}</span>
@@ -319,7 +394,12 @@ function ReadinessFeatureRow({
         </div>
       )}
       {isExpanded && (
-        <div className={styles.detailCell}>
+        <div
+          className={styles.detailCell}
+          role="presentation"
+          onClick={(clickEvent) => clickEvent.stopPropagation()}
+          onKeyDown={(keyEvent) => keyEvent.stopPropagation()}
+        >
           <IssueDetailPanel
             isEmbedded
             issue={feature.issue as unknown as RealJiraIssue}
@@ -327,6 +407,75 @@ function ReadinessFeatureRow({
             ageDays={feature.ageDays ?? undefined}
             staleDaysThreshold={staleDaysThreshold}
           />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** A collapsible list of what the user has ignored, with per-item restore and a clear-all. */
+function IgnoredManager({
+  ignoreState,
+  onRestoreFeature,
+  onRestoreProject,
+  onClear,
+}: {
+  ignoreState: ReadinessIgnoreState;
+  onRestoreFeature: (featureKey: string) => void;
+  onRestoreProject: (projectKey: string) => void;
+  onClear: () => void;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const ignoredCount = ignoreState.ignoredProjectKeys.length + ignoreState.ignoredFeatureKeys.length;
+  if (ignoredCount === 0) return null;
+
+  return (
+    <div className={styles.ignoredManager}>
+      <button
+        type="button"
+        className={styles.ignoredToggle}
+        aria-expanded={isOpen}
+        onClick={() => setIsOpen((current) => !current)}
+      >
+        {isOpen ? '▲' : '▼'} Ignored ({ignoredCount})
+      </button>
+      {isOpen && (
+        <div className={styles.ignoredBody}>
+          {ignoreState.ignoredProjectKeys.length > 0 && (
+            <div className={styles.ignoredGroup}>
+              <span className={styles.ignoredGroupLabel}>Projects:</span>
+              {ignoreState.ignoredProjectKeys.map((projectKey) => (
+                <button
+                  key={projectKey}
+                  type="button"
+                  className={styles.ignoredChip}
+                  aria-label={`Restore project ${projectKey}`}
+                  onClick={() => onRestoreProject(projectKey)}
+                >
+                  {projectKey} ✕
+                </button>
+              ))}
+            </div>
+          )}
+          {ignoreState.ignoredFeatureKeys.length > 0 && (
+            <div className={styles.ignoredGroup}>
+              <span className={styles.ignoredGroupLabel}>Features:</span>
+              {ignoreState.ignoredFeatureKeys.map((featureKey) => (
+                <button
+                  key={featureKey}
+                  type="button"
+                  className={styles.ignoredChip}
+                  aria-label={`Restore ${featureKey}`}
+                  onClick={() => onRestoreFeature(featureKey)}
+                >
+                  {featureKey} ✕
+                </button>
+              ))}
+            </div>
+          )}
+          <button type="button" className={styles.ignoredClear} onClick={onClear}>
+            Clear all
+          </button>
         </div>
       )}
     </div>

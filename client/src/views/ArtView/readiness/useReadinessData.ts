@@ -16,6 +16,7 @@ import {
   resolveReadinessScopeClause,
 } from './readinessFeatureQuery.ts';
 import { runReadinessScan, type ReadinessScanResult } from './readinessScan.ts';
+import { applyReadinessFeatureIgnore, readReadinessIgnore } from './readinessIgnore.ts';
 
 /** The teams the ART roster holds; only the Jira label is needed for label-scoped fallback. */
 export interface ReadinessRosterTeam {
@@ -81,12 +82,15 @@ export function useReadinessData({
 
       const piContext = deriveReadinessPiContext(selectedPiName, availablePiNames);
       const scope = resolveReadinessScopeClause(scopeSettings.featureProjectKeys, rosterLabels);
+      // Features the user has chosen to ignore: whole projects are excluded in the query (so they
+      // never eat the result cap); individual features are filtered out after the fetch.
+      const ignore = readReadinessIgnore();
 
-      const currentJql = buildReadinessFeatureJql([piContext.currentPiName], scopeSettings.piFieldId, scope.clause);
+      const currentJql = buildReadinessFeatureJql([piContext.currentPiName], scopeSettings.piFieldId, scope.clause, ignore.ignoredProjectKeys);
       const upcomingJql = piContext.upcomingPiName
-        ? buildReadinessFeatureJql([piContext.upcomingPiName], scopeSettings.piFieldId, scope.clause)
+        ? buildReadinessFeatureJql([piContext.upcomingPiName], scopeSettings.piFieldId, scope.clause, ignore.ignoredProjectKeys)
         : '';
-      const carryoverJql = buildReadinessFeatureJql(piContext.carryoverPiNames, scopeSettings.piFieldId, scope.clause);
+      const carryoverJql = buildReadinessFeatureJql(piContext.carryoverPiNames, scopeSettings.piFieldId, scope.clause, ignore.ignoredProjectKeys);
 
       let loadError: string | null = null;
       let currentIssues = [] as Awaited<ReturnType<typeof fetchReadinessFeatures>>['issues'];
@@ -111,9 +115,9 @@ export function useReadinessData({
         currentPiName: piContext.currentPiName,
         upcomingPiName: piContext.upcomingPiName,
         carryoverPiNames: piContext.carryoverPiNames,
-        currentFeatures: currentIssues,
-        upcomingFeatures: upcomingIssues,
-        carryoverFeatures: carryoverIssues,
+        currentFeatures: applyReadinessFeatureIgnore(currentIssues, ignore.ignoredFeatureKeys),
+        upcomingFeatures: applyReadinessFeatureIgnore(upcomingIssues, ignore.ignoredFeatureKeys),
+        carryoverFeatures: applyReadinessFeatureIgnore(carryoverIssues, ignore.ignoredFeatureKeys),
         loadError,
         scopeDescription: scope.description,
         isCarryoverCapped: piContext.isCarryoverCapped,

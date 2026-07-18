@@ -59,6 +59,16 @@ describe('buildReadinessFeatureJql', () => {
   it('returns an empty string when there are no PI names to query', () => {
     expect(buildReadinessFeatureJql([], 'customfield_10301', 'project in (PORT)')).toBe('');
   });
+
+  it('appends a project-exclusion clause for ignored projects', () => {
+    const jql = buildReadinessFeatureJql(['PI 26.3'], 'customfield_10301', 'project in (PORT)', ['OTHER', 'MISC']);
+    expect(jql).toBe('issuetype = Feature AND cf[10301] = "PI 26.3" AND project in (PORT) AND project not in (OTHER, MISC)');
+  });
+
+  it('excludes projects even when there is no positive scope clause', () => {
+    const jql = buildReadinessFeatureJql(['PI 26.3'], 'customfield_10301', '', ['OTHER']);
+    expect(jql).toBe('issuetype = Feature AND cf[10301] = "PI 26.3" AND project not in (OTHER)');
+  });
 });
 
 describe('READINESS_FEATURE_MAX_RESULTS', () => {

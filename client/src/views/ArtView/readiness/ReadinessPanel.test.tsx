@@ -12,6 +12,9 @@ vi.mock('./ReadinessFixControl.tsx', () => ({
 vi.mock('./ai/ReadinessAiPanel.tsx', () => ({
   ReadinessAiPanel: () => <div data-testid="ai-panel" />,
 }));
+vi.mock('../../../components/IssueDetailPanel/index.tsx', () => ({
+  default: () => <div data-testid="issue-detail" />,
+}));
 
 import ReadinessPanel from './ReadinessPanel.tsx';
 import { useReadinessData } from './useReadinessData.ts';
@@ -72,6 +75,7 @@ function renderPanel(initialPath = '/agile-hub?space=train&artTab=readiness') {
 
 beforeEach(() => {
   mockUseReadinessData.mockReset();
+  window.localStorage.clear();
   mockUseReadinessData.mockReturnValue({ scanResult: buildScan(), isLoading: false, reload: vi.fn() });
 });
 
@@ -182,5 +186,65 @@ describe('ReadinessPanel', () => {
 
     expect(screen.getByTestId('fix-missing-ownership')).toBeInTheDocument();
     expect(screen.getByTestId('fix-missing-pcode')).toBeInTheDocument();
+  });
+
+  // ── Clicking the card toggles its details ──
+
+  it('expands and collapses a feature card when the card itself is clicked', () => {
+    renderPanel();
+
+    const card = screen.getByText('CUR-1').closest('[role="button"]') as HTMLElement;
+    expect(card).toHaveAttribute('aria-expanded', 'false');
+
+    fireEvent.click(card);
+    expect(card).toHaveAttribute('aria-expanded', 'true');
+
+    fireEvent.click(card);
+    expect(card).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('does not toggle the card when its Jira key link is clicked', () => {
+    renderPanel();
+
+    const card = screen.getByText('CUR-1').closest('[role="button"]') as HTMLElement;
+    fireEvent.click(screen.getByRole('link', { name: 'CUR-1' }));
+    expect(card).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  // ── Ignore projects and features ──
+
+  it('ignores a feature (persisting it) and triggers a rescan', () => {
+    window.localStorage.clear();
+    const reload = vi.fn();
+    mockUseReadinessData.mockReturnValue({ scanResult: buildScan(), isLoading: false, reload });
+
+    renderPanel();
+    fireEvent.click(screen.getByRole('button', { name: 'Ignore CUR-1' }));
+
+    const stored = JSON.parse(window.localStorage.getItem('tbxReadinessIgnored') ?? '{}');
+    expect(stored.ignoredFeatureKeys).toContain('CUR-1');
+    expect(reload).toHaveBeenCalled();
+  });
+
+  it('ignores a whole project from a row', () => {
+    window.localStorage.clear();
+    mockUseReadinessData.mockReturnValue({ scanResult: buildScan(), isLoading: false, reload: vi.fn() });
+
+    renderPanel();
+    // Both CUR features expose the project-ignore button; ignoring from either records the project once.
+    fireEvent.click(screen.getAllByRole('button', { name: 'Ignore project CUR' })[0]);
+
+    const stored = JSON.parse(window.localStorage.getItem('tbxReadinessIgnored') ?? '{}');
+    expect(stored.ignoredProjectKeys).toContain('CUR');
+  });
+
+  it('shows the ignored manager with a restore control once something is ignored', () => {
+    window.localStorage.setItem('tbxReadinessIgnored', JSON.stringify({ ignoredProjectKeys: ['OTHER'], ignoredFeatureKeys: [] }));
+    mockUseReadinessData.mockReturnValue({ scanResult: buildScan(), isLoading: false, reload: vi.fn() });
+
+    renderPanel();
+    fireEvent.click(screen.getByRole('button', { name: /Ignored \(1\)/ }));
+
+    expect(screen.getByRole('button', { name: 'Restore project OTHER' })).toBeInTheDocument();
   });
 });
