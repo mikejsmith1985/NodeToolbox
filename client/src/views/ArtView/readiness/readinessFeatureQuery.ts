@@ -66,6 +66,7 @@ export function buildReadinessFeatureJql(
   piNames: readonly string[],
   piFieldId: string,
   scopeClause: string,
+  excludedProjectKeys: readonly string[] = [],
 ): string {
   const cleanPiNames = piNames.map((name) => name.trim()).filter(Boolean);
   if (cleanPiNames.length === 0) return '';
@@ -75,7 +76,11 @@ export function buildReadinessFeatureJql(
     ? `cf[${piFieldNumber}] = ${quoteJqlValue(cleanPiNames[0])}`
     : `cf[${piFieldNumber}] in (${cleanPiNames.map(quoteJqlValue).join(', ')})`;
 
-  return ['issuetype = Feature', piClause, scopeClause].filter(Boolean).join(' AND ');
+  // Ignored projects are excluded in the query so they never consume the 200-result ceiling.
+  const cleanExcluded = excludedProjectKeys.map((key) => key.trim()).filter(Boolean);
+  const exclusionClause = cleanExcluded.length > 0 ? `project not in (${cleanExcluded.join(', ')})` : '';
+
+  return ['issuetype = Feature', piClause, scopeClause, exclusionClause].filter(Boolean).join(' AND ');
 }
 
 /** How deep the carryover history reaches — enough for realistic carryover without unbounded JQL. */
