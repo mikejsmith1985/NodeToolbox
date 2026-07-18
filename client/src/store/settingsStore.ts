@@ -30,6 +30,9 @@ const CHANGE_REQUEST_GENERATOR_SNOW_URL_STORAGE_KEY = 'tbxCRGenSnowUrl';
 const CONFLUENCE_URL_STORAGE_KEY = 'tbxConfUrl';
 const SNOW_HUB_TAB_STORAGE_KEY = 'tbxSnowHubTab';
 const TEXT_TOOLS_TAB_STORAGE_KEY = 'tbxTextToolsTab';
+// Last Agile Hub space (team | product | train) — the hub reopens where the user was (spec 020 FR-013).
+const AGILE_HUB_LAST_SPACE_STORAGE_KEY = 'tbxAgileHubLastSpace';
+const DEFAULT_AGILE_HUB_SPACE = 'team';
 const DSU_PROJECT_KEY_STORAGE_KEY = 'tbxDSUProjKey';
 const SPRINT_DASHBOARD_PROJECT_KEY_STORAGE_KEY = 'tbxSprintDashboardProjectKey';
 const SPRINT_DASHBOARD_BOARD_ID_STORAGE_KEY = 'tbxSprintDashboardBoardId';
@@ -98,6 +101,8 @@ interface SettingsState {
   confluenceUrl: string;
   snowHubTab: string;
   textToolsTab: string;
+  /** Last-used Agile Hub space; the hub falls back here when no ?space= param is present. */
+  agileHubLastSpace: string;
   dsuProjectKey: string;
   sprintDashboardProjectKey: string;
   sprintDashboardBoardId: string;
@@ -134,6 +139,7 @@ interface SettingsState {
   setConfluenceUrl: (url: string) => void;
   setSnowHubTab: (tab: string) => void;
   setTextToolsTab: (tab: string) => void;
+  setAgileHubLastSpace: (space: string) => void;
   setDsuProjectKey: (projectKey: string) => void;
   setSprintDashboardProjectKey: (projectKey: string) => void;
   setSprintDashboardBoardId: (boardId: string) => void;
@@ -527,6 +533,7 @@ export const useSettingsStore = create<SettingsState>((setState) => ({
   confluenceUrl: readStoredString(CONFLUENCE_URL_STORAGE_KEY, EMPTY_STRING),
   snowHubTab: readStoredString(SNOW_HUB_TAB_STORAGE_KEY, DEFAULT_SNOW_HUB_TAB),
   textToolsTab: readStoredString(TEXT_TOOLS_TAB_STORAGE_KEY, DEFAULT_TEXT_TOOLS_TAB),
+  agileHubLastSpace: readStoredString(AGILE_HUB_LAST_SPACE_STORAGE_KEY, DEFAULT_AGILE_HUB_SPACE),
   dsuProjectKey: readStoredString(DSU_PROJECT_KEY_STORAGE_KEY, EMPTY_STRING),
   sprintDashboardProjectKey:
     INITIAL_ACTIVE_SPRINT_DASHBOARD_TEAM_PROFILE?.projectKey ??
@@ -595,6 +602,10 @@ export const useSettingsStore = create<SettingsState>((setState) => ({
   setTextToolsTab: (tab) => {
     writeStoredString(TEXT_TOOLS_TAB_STORAGE_KEY, tab);
     setState({ textToolsTab: tab });
+  },
+  setAgileHubLastSpace: (space) => {
+    writeStoredString(AGILE_HUB_LAST_SPACE_STORAGE_KEY, space);
+    setState({ agileHubLastSpace: space });
   },
   setDsuProjectKey: (projectKey) => {
     writeStoredString(DSU_PROJECT_KEY_STORAGE_KEY, projectKey);
