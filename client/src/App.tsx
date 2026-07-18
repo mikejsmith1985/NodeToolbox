@@ -3,8 +3,9 @@
 // This component owns the global layout, mounts the shared polling hooks, and
 // routes placeholder views until later migration phases replace them.
 
+import type { ReactNode } from 'react';
 import { lazy, Suspense, useEffect, useState } from 'react';
-import { Link, Navigate, Route, Routes, useNavigate } from 'react-router-dom';
+import { Link, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 
 import { AiAssistUnlockGate } from './components/AiAssistUnlockGate/index.tsx';
 import { TodoQuickAddGate } from './components/TodoQuickAdd/index.tsx';
@@ -13,11 +14,13 @@ import { ToastProvider } from './components/Toast/ToastProvider.tsx';
 import { useProxyStatus } from './hooks/useProxyStatus.ts';
 import { useRelayBridge } from './hooks/useRelayBridge.ts';
 import { parseRelayReturnRoute, RELAY_RETURN_ROUTE_KEY } from './services/browserRelay.ts';
+import { useAdminStore } from './store/adminStore.ts';
 import { useSettingsStore } from './store/settingsStore.ts';
 import type { ToolTextSize } from './store/settingsStore.ts';
+import { resolveToolIsVisible, useToolVisibilityStore } from './store/toolVisibilityStore.ts';
 import type { RelaySystem } from './types/relay.ts';
 import { disableDemoModeForCurrentTab, isDemoModeEnabled } from './utils/demoModeStorage.ts';
-import ArtView from './views/ArtView/ArtView.tsx';
+import AgileHubView from './views/AgileHub/AgileHubView.tsx';
 import AdminHubView from './views/AdminHub/AdminHubView.tsx';
 import BusinessHelperView from './views/BusinessHelper/BusinessHelperView.tsx';
 import CodeWalkthroughView from './views/CodeWalkthrough/CodeWalkthroughView.tsx';
@@ -31,8 +34,6 @@ import ReportsHubView from './views/ReportsHub/ReportsHubView.tsx';
 import { ReportsHubRuntimeBoundary } from './views/ReportsHub/ReportsHubRuntimeBoundary.tsx';
 import SettingsView from './views/Settings/SettingsView.tsx';
 import SnowHubView from './views/SnowHub/SnowHubView.tsx';
-import PoToolView from './views/PoTool/PoToolView.tsx';
-import SprintDashboardView from './views/SprintDashboard/SprintDashboardView.tsx';
 import { migrateArtTeamPiReviewPagesToProfiles } from './views/SprintDashboard/sprintDashboardArtContext.ts';
 import TextToolsView from './views/TextTools/TextToolsView.tsx';
 import styles from './App.module.css';
@@ -49,6 +50,7 @@ const JIRA_TEMPLATE_MAKER_ROUTE = '/jira-template-maker';
 const JIRA_INTAKE_ROUTE = '/jira-intake';
 const MY_ISSUES_ROUTE = '/my-issues';
 const PERSONAL_TOOLBOX_ROUTE = '/personal-toolbox';
+const AGILE_HUB_ROUTE = '/agile-hub';
 const SPRINT_DASHBOARD_ROUTE = '/sprint-dashboard';
 const PO_TOOL_ROUTE = '/po-tool';
 const ART_ROUTE = '/art';
@@ -65,6 +67,41 @@ const SHAREPOINT_RELAY_SYSTEM: RelaySystem = 'sharepoint';
 const DEFAULT_TOOL_TEXT_SIZE: ToolTextSize = 'default';
 const LARGE_TOOL_TEXT_SIZE: ToolTextSize = 'large';
 const EXTRA_LARGE_TOOL_TEXT_SIZE: ToolTextSize = 'extra-large';
+
+interface GatedToolRouteProps {
+  /** The home-card id whose visibility/gate state guards this route (spec 020 FR-002/FR-005). */
+  cardId: string;
+  /** True for tools whose capability is admin-controlled (SNow Hub). */
+  requiresAdminUnlock?: boolean;
+  children: ReactNode;
+}
+
+/**
+ * Entry-only gate for a tool route: evaluated ONCE when the route mounts, so a mid-task state
+ * change (unlock lapse, visibility toggle) never unmounts an open workspace — the next
+ * navigation re-applies the gate (spec 020 edge case). A refused entry lands on the home page.
+ */
+function GatedToolRoute({ cardId, requiresAdminUnlock = false, children }: GatedToolRouteProps) {
+  const [wasAdmittedAtEntry] = useState(() => {
+    if (requiresAdminUnlock && !useAdminStore.getState().isAdminUnlocked) return false;
+    return resolveToolIsVisible(useToolVisibilityStore.getState().visibilityByCardId, cardId);
+  });
+  if (!wasAdmittedAtEntry) {
+    return <Navigate replace to={HOME_ROUTE} />;
+  }
+  return <>{children}</>;
+}
+
+/**
+ * Param-preserving redirect into an Agile Hub space: the retired routes' query strings (e.g. the
+ * Today cards' ?hygieneFilter=…) ride along verbatim; only `space` is set (spec 020 FR-010).
+ */
+function RedirectToAgileHub({ space }: { space: string }) {
+  const location = useLocation();
+  const forwardedParams = new URLSearchParams(location.search);
+  forwardedParams.set('space', space);
+  return <Navigate replace to={{ pathname: AGILE_HUB_ROUTE, search: `?${forwardedParams.toString()}` }} />;
+}
 
 interface ToolTextSizeButtonConfig {
   ariaLabel: string;
@@ -196,41 +233,56 @@ export default function App() {
             <Routes>
           <Route path={HOME_ROUTE} element={<HomeView />} />
           <Route path={SETTINGS_ROUTE} element={<SettingsView />} />
-          <Route path={SNOW_HUB_ROUTE} element={<SnowHubView />} />
-          <Route path={JIRA_TEMPLATE_MAKER_ROUTE} element={<JiraTemplateMaker />} />
-          <Route path={JIRA_INTAKE_ROUTE} element={<JiraIntake />} />
-          <Route path={MY_ISSUES_ROUTE} element={<MyIssuesView />} />
-          <Route path={PERSONAL_TOOLBOX_ROUTE} element={<PersonalToolboxView />} />
-          <Route path={SPRINT_DASHBOARD_ROUTE} element={<SprintDashboardView />} />
-          <Route path={PO_TOOL_ROUTE} element={<PoToolView />} />
-          <Route path={ART_ROUTE} element={<ArtView />} />
+          {/* SNow connectivity is admin-controlled: entry requires the session unlock (spec 020 FR-002). */}
+          <Route
+            path={SNOW_HUB_ROUTE}
+            element={(
+              <GatedToolRoute cardId="snow-hub" requiresAdminUnlock>
+                <SnowHubView />
+              </GatedToolRoute>
+            )}
+          />
+          <Route path={JIRA_TEMPLATE_MAKER_ROUTE} element={<GatedToolRoute cardId="jira-template-maker"><JiraTemplateMaker /></GatedToolRoute>} />
+          <Route path={JIRA_INTAKE_ROUTE} element={<GatedToolRoute cardId="jira-intake"><JiraIntake /></GatedToolRoute>} />
+          <Route path={MY_ISSUES_ROUTE} element={<GatedToolRoute cardId="my-issues"><MyIssuesView /></GatedToolRoute>} />
+          <Route path={PERSONAL_TOOLBOX_ROUTE} element={<GatedToolRoute cardId="personal-toolbox"><PersonalToolboxView /></GatedToolRoute>} />
+          {/* The Agile Hub replaces the Team Dashboard / PO Tool / ART View entry points (spec 020 US3). */}
+          <Route path={AGILE_HUB_ROUTE} element={<GatedToolRoute cardId="agile-hub"><AgileHubView /></GatedToolRoute>} />
+          <Route path={SPRINT_DASHBOARD_ROUTE} element={<RedirectToAgileHub space="team" />} />
+          <Route path={PO_TOOL_ROUTE} element={<RedirectToAgileHub space="product" />} />
+          <Route path={ART_ROUTE} element={<RedirectToAgileHub space="train" />} />
           <Route path={DSU_BOARD_ROUTE} element={<DsuBoardView />} />
-          <Route path={CODE_WALKTHROUGH_ROUTE} element={<CodeWalkthroughView />} />
-          <Route path={TEXT_TOOLS_ROUTE} element={<TextToolsView />} />
+          <Route path={CODE_WALKTHROUGH_ROUTE} element={<GatedToolRoute cardId="code-walkthrough"><CodeWalkthroughView /></GatedToolRoute>} />
+          <Route path={TEXT_TOOLS_ROUTE} element={<GatedToolRoute cardId="text-tools"><TextToolsView /></GatedToolRoute>} />
           <Route path={REPORTS_HUB_ROUTE} element={(
-            <ReportsHubRuntimeBoundary>
-              <ReportsHubView />
-            </ReportsHubRuntimeBoundary>
+            <GatedToolRoute cardId="reports-hub">
+              <ReportsHubRuntimeBoundary>
+                <ReportsHubView />
+              </ReportsHubRuntimeBoundary>
+            </GatedToolRoute>
           )}
           />
           <Route path={ADMIN_HUB_ROUTE} element={<AdminHubView />} />
-          <Route path={BUSINESS_HELPER_ROUTE} element={<BusinessHelperView />} />
+          <Route path={BUSINESS_HELPER_ROUTE} element={<GatedToolRoute cardId="business-helper"><BusinessHelperView /></GatedToolRoute>} />
           <Route
             path={FEATURE_CANVAS_ROUTE}
             element={(
-              <Suspense fallback={<div style={{ padding: 48, textAlign: 'center', opacity: 0.7 }}>Loading Feature Canvas…</div>}>
-                <FeatureCanvasView />
-              </Suspense>
+              <GatedToolRoute cardId="feature-canvas">
+                <Suspense fallback={<div style={{ padding: 48, textAlign: 'center', opacity: 0.7 }}>Loading Feature Canvas…</div>}>
+                  <FeatureCanvasView />
+                </Suspense>
+              </GatedToolRoute>
             )}
           />
-          <Route path="/sprint-planning" element={<Navigate to={SPRINT_DASHBOARD_ROUTE} replace />} />
-          <Route path="/pointing" element={<Navigate to={SPRINT_DASHBOARD_ROUTE} replace />} />
-          <Route path="/standup" element={<Navigate to={SPRINT_DASHBOARD_ROUTE} replace />} />
-          <Route path="/dsu-daily" element={<Navigate to={SPRINT_DASHBOARD_ROUTE} replace />} />
-          <Route path="/metrics" element={<Navigate to={SPRINT_DASHBOARD_ROUTE} replace />} />
-          <Route path="/pipeline" element={<Navigate to={SPRINT_DASHBOARD_ROUTE} replace />} />
-          <Route path="/defects" element={<Navigate to={SPRINT_DASHBOARD_ROUTE} replace />} />
-          <Route path="/release-monitor" element={<Navigate to={SPRINT_DASHBOARD_ROUTE} replace />} />
+          {/* Legacy team-workflow paths land in the hub's Team space in ONE hop (spec 020 FR-010). */}
+          <Route path="/sprint-planning" element={<RedirectToAgileHub space="team" />} />
+          <Route path="/pointing" element={<RedirectToAgileHub space="team" />} />
+          <Route path="/standup" element={<RedirectToAgileHub space="team" />} />
+          <Route path="/dsu-daily" element={<RedirectToAgileHub space="team" />} />
+          <Route path="/metrics" element={<RedirectToAgileHub space="team" />} />
+          <Route path="/pipeline" element={<RedirectToAgileHub space="team" />} />
+          <Route path="/defects" element={<RedirectToAgileHub space="team" />} />
+          <Route path="/release-monitor" element={<RedirectToAgileHub space="team" />} />
           <Route path="/work-log" element={<Navigate to={MY_ISSUES_ROUTE} replace />} />
           <Route path="/mermaid" element={<Navigate to={TEXT_TOOLS_ROUTE} replace />} />
           <Route path="/pitch-deck" element={<Navigate to={CODE_WALKTHROUGH_ROUTE} replace />} />

@@ -1,47 +1,23 @@
 // ToolVisibilitySection.tsx — Per-tool home card visibility controls for Admin Hub.
 //
-// Renders a toggle for every card defined in APP_CARDS. Visibility state is persisted
-// to localStorage under tbxToolVisibility as a JSON object keyed by card ID.
-// Does NOT wire into the HomeView — persistence only.
-
-import { useState } from 'react';
+// Renders a toggle for every hideable card in APP_CARDS, bound to the SHARED
+// toolVisibilityStore — the same store the Home view renders from, so a toggle here
+// changes the home page immediately (spec 020: the old version persisted to localStorage
+// but wired to nothing). The Admin Hub itself is never listed: the toggle that could lock
+// an admin out of these toggles must not exist (FR-004).
 
 import { APP_CARDS } from '../Home/homeCardData';
+import {
+  resolveToolIsVisible,
+  setToolVisibility,
+  useToolVisibilityStore,
+} from '../../store/toolVisibilityStore.ts';
 import styles from './AdminHubView.module.css';
 
 // ── Constants ──
 
-const TOOL_VISIBILITY_STORAGE_KEY = 'tbxToolVisibility';
-
-// ── Helpers ──
-
-/** Reads the per-tool visibility map from localStorage. */
-function loadToolVisibilityFromStorage(): Record<string, boolean> {
-  try {
-    const rawValue = localStorage.getItem(TOOL_VISIBILITY_STORAGE_KEY);
-    if (rawValue === null) return {};
-    return JSON.parse(rawValue) as Record<string, boolean>;
-  } catch {
-    return {};
-  }
-}
-
-/** Persists the visibility map to localStorage. */
-function saveToolVisibilityToStorage(visibilityMap: Record<string, boolean>): void {
-  try {
-    localStorage.setItem(TOOL_VISIBILITY_STORAGE_KEY, JSON.stringify(visibilityMap));
-  } catch {
-    // Non-fatal: in-memory state remains authoritative.
-  }
-}
-
-/** Returns true when a tool should be visible (default is visible when not explicitly set). */
-function resolveToolIsVisible(
-  visibilityMap: Record<string, boolean>,
-  cardId: string,
-): boolean {
-  return visibilityMap[cardId] !== false;
-}
+// Every card except the pinned Admin Hub is admin-hideable.
+const HIDEABLE_CARDS = APP_CARDS.filter((appCard) => appCard.id !== 'admin-hub');
 
 // ── Sub-components ──
 
@@ -71,66 +47,45 @@ function ToolToggleItem({ cardId, icon, title, isVisible, onToggle }: ToolToggle
 
 // ── Main component ──
 
-/** Tool Visibility section — controls which tool cards appear on the Home view. */
+/** Tool Visibility section — controls which tool cards appear on the Home view, live. */
 export default function ToolVisibilitySection() {
-  const [visibilityMap, setVisibilityMap] = useState<Record<string, boolean>>(
-    loadToolVisibilityFromStorage,
-  );
+  const visibilityByCardId = useToolVisibilityStore((storeState) => storeState.visibilityByCardId);
 
   function handleToggleTool(cardId: string) {
-    setVisibilityMap((currentMap) => {
-      const nextMap = {
-        ...currentMap,
-        [cardId]: !resolveToolIsVisible(currentMap, cardId),
-      };
-      saveToolVisibilityToStorage(nextMap);
-      return nextMap;
-    });
+    setToolVisibility(cardId, !resolveToolIsVisible(visibilityByCardId, cardId));
   }
 
-  function handleShowAll() {
-    const nextMap: Record<string, boolean> = {};
-    for (const card of APP_CARDS) {
-      nextMap[card.id] = true;
+  function handleSetAllTools(isVisible: boolean) {
+    for (const hideableCard of HIDEABLE_CARDS) {
+      setToolVisibility(hideableCard.id, isVisible);
     }
-    setVisibilityMap(nextMap);
-    saveToolVisibilityToStorage(nextMap);
-  }
-
-  function handleHideAll() {
-    const nextMap: Record<string, boolean> = {};
-    for (const card of APP_CARDS) {
-      nextMap[card.id] = false;
-    }
-    setVisibilityMap(nextMap);
-    saveToolVisibilityToStorage(nextMap);
   }
 
   return (
     <section className={styles.sectionCard}>
       <h2 className={styles.sectionTitle}>🎯 Tool Visibility</h2>
       <p className={styles.adminDescription}>
-        Controls which tool cards appear on the home screen. Changes persist to localStorage.
-        Admin Hub is always visible regardless of this setting.
+        Controls which tool cards appear on the home screen — changes apply immediately and persist.
+        Admin Hub is always visible and cannot be toggled.
       </p>
 
       <div className={styles.inputRow}>
-        <button className={styles.actionButton} onClick={handleShowAll}>
+        <button className={styles.actionButton} onClick={() => handleSetAllTools(true)}>
           Show All
         </button>
-        <button className={styles.actionButton} onClick={handleHideAll}>
+        <button className={styles.actionButton} onClick={() => handleSetAllTools(false)}>
           Hide All
         </button>
       </div>
 
       <div className={styles.toolVisibilityGrid}>
-        {APP_CARDS.map((card) => (
+        {HIDEABLE_CARDS.map((hideableCard) => (
           <ToolToggleItem
-            key={card.id}
-            cardId={card.id}
-            icon={card.icon}
-            title={card.title}
-            isVisible={resolveToolIsVisible(visibilityMap, card.id)}
+            key={hideableCard.id}
+            cardId={hideableCard.id}
+            icon={hideableCard.icon}
+            title={hideableCard.title}
+            isVisible={resolveToolIsVisible(visibilityByCardId, hideableCard.id)}
             onToggle={handleToggleTool}
           />
         ))}
