@@ -15,6 +15,8 @@ vi.mock('../../services/jiraApi.ts', () => ({
 }));
 
 import {
+  areTransitionSelectionsComplete,
+  buildTransitionFieldsPayload,
   fetchFeatureReviewTransitions,
   saveFeatureReviewTransition,
   saveFeatureReviewUserField,
@@ -86,19 +88,51 @@ describe('featureReviewFixes', () => {
     expect(mockJiraPut).not.toHaveBeenCalled();
   });
 
-  it('fetches available Jira transitions for Feature Review status changes', async () => {
+  it('fetches transitions WITH the fields each screen requires (expand=transitions.fields)', async () => {
     mockJiraGet.mockResolvedValue({
       transitions: [
         { id: '31', name: 'Start Progress', to: { name: 'In Progress', statusCategory: { name: 'In Progress' } } },
-        { id: '41', name: 'Done', to: { name: 'Done', statusCategory: { name: 'Done' } } },
+        {
+          id: '41',
+          name: 'Ready to Accept to Accepted',
+          to: { name: 'Accepted', statusCategory: { name: 'Done' } },
+          fields: {
+            customfield_20001: {
+              required: true,
+              name: 'Defect Root Cause',
+              schema: { type: 'option' },
+              allowedValues: [{ id: '900', value: 'Code' }, { id: '901', value: 'Config' }],
+            },
+            customfield_20002: {
+              required: true,
+              name: 'Application Component Selection',
+              schema: { type: 'option-with-child', custom: 'com.atlassian.jira.plugin.system.customfieldtypes:cascadingselect' },
+              allowedValues: [{ id: '800', value: 'Facets', children: [{ id: '810', value: 'Eligibility' }] }],
+            },
+            customfield_20003: { required: false, name: 'Optional Notes', schema: { type: 'string' } },
+          },
+        },
       ],
     });
 
-    await expect(fetchFeatureReviewTransitions('ART-5000')).resolves.toEqual([
-      { id: '31', name: 'Start Progress', to: { name: 'In Progress', statusCategory: { name: 'In Progress' } } },
-      { id: '41', name: 'Done', to: { name: 'Done', statusCategory: { name: 'Done' } } },
+    const loadedTransitions = await fetchFeatureReviewTransitions('ENCUC-2163');
+
+    expect(mockJiraGet).toHaveBeenCalledWith('/rest/api/2/issue/ENCUC-2163/transitions?expand=transitions.fields');
+    expect(loadedTransitions[0].requiredFields).toEqual([]);
+    expect(loadedTransitions[1].requiredFields).toEqual([
+      {
+        fieldId: 'customfield_20001',
+        name: 'Defect Root Cause',
+        schemaType: 'option',
+        allowedValues: [{ id: '900', value: 'Code' }, { id: '901', value: 'Config' }],
+      },
+      {
+        fieldId: 'customfield_20002',
+        name: 'Application Component Selection',
+        schemaType: 'option-with-child',
+        allowedValues: [{ id: '800', value: 'Facets', children: [{ id: '810', value: 'Eligibility' }] }],
+      },
     ]);
-    expect(mockJiraGet).toHaveBeenCalledWith('/rest/api/2/issue/ART-5000/transitions');
   });
 
   it('saves a Jira transition from Feature Review', async () => {
@@ -109,6 +143,58 @@ describe('featureReviewFixes', () => {
     expect(mockJiraPost).toHaveBeenCalledWith('/rest/api/2/issue/ART-5000/transitions', {
       transition: { id: '31' },
     });
+  });
+
+  it('saves a transition WITH its required screen fields when values are supplied (GH #177 follow-up)', async () => {
+    mockJiraPost.mockResolvedValue(undefined);
+
+    await saveFeatureReviewTransition('ENCUC-2163', '41', {
+      customfield_20001: { id: '900' },
+      customfield_20002: { id: '800', child: { id: '810' } },
+    });
+
+    expect(mockJiraPost).toHaveBeenCalledWith('/rest/api/2/issue/ENCUC-2163/transitions', {
+      transition: { id: '41' },
+      fields: {
+        customfield_20001: { id: '900' },
+        customfield_20002: { id: '800', child: { id: '810' } },
+      },
+    });
+  });
+
+  it('builds option, cascading, and text payloads and judges completeness honestly', () => {
+    const requiredFields = [
+      { fieldId: 'cfOption', name: 'Root Cause', schemaType: 'option', allowedValues: [{ id: '900', value: 'Code' }] },
+      {
+        fieldId: 'cfCascade',
+        name: 'Component',
+        schemaType: 'option-with-child',
+        allowedValues: [{ id: '800', value: 'Facets', children: [{ id: '810', value: 'Eligibility' }] }],
+      },
+      { fieldId: 'cfText', name: 'Reason', schemaType: 'string', allowedValues: [] },
+    ];
+
+    // Parent chosen but its child missing ⇒ incomplete; everything answered ⇒ complete.
+    expect(areTransitionSelectionsComplete(requiredFields, {
+      cfOption: { optionId: '900' }, cfCascade: { optionId: '800' }, cfText: { text: 'because' },
+    })).toBe(false);
+    const completeSelections = {
+      cfOption: { optionId: '900' },
+      cfCascade: { optionId: '800', childOptionId: '810' },
+      cfText: { text: 'because' },
+    };
+    expect(areTransitionSelectionsComplete(requiredFields, completeSelections)).toBe(true);
+
+    expect(buildTransitionFieldsPayload(requiredFields, completeSelections)).toEqual({
+      cfOption: { id: '900' },
+      cfCascade: { id: '800', child: { id: '810' } },
+      cfText: 'because',
+    });
+  });
+
+  it('never reports complete when a required field has an unsupported shape', () => {
+    const unsupportedField = [{ fieldId: 'cfUser', name: 'Approver', schemaType: 'user', allowedValues: [] }];
+    expect(areTransitionSelectionsComplete(unsupportedField, {})).toBe(false);
   });
 
   it('rejects empty Jira transition selections before sending a transition request', async () => {
