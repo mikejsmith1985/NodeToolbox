@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Readiness tab: ignore features you don't own, and click a card to expand it**: the Readiness tab
+  now lets you hide work that isn't yours. From any feature row, **Ignore** hides that one Feature, or
+  **🚫 &lt;PROJECT&gt;** hides every Feature in its project — ignored work drops out of the lenses,
+  counts, and alerts entirely (ignored projects are excluded in the Jira query, so they never eat the
+  result cap). An **Ignored (N)** panel lists what you've hidden with one-click restore and a clear-all;
+  the choices persist locally per user. Feature cards also now **expand on click anywhere** (not just
+  the Details affordance), while the Jira link, ignore buttons, and inline fixes still act on their own.
+
+### Added
 - **Feature Status & Readiness workspace (spec 021, from the GH #189 dashboard reminder)**: our own,
   better version of the org's read-only "Feature Status & Readiness Dashboard" — a new **Readiness
   tab in the ART View** (Agile Hub Train space). Three PI lenses — **Carryover / Current / Upcoming**
