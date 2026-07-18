@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Code Walkthrough rebuilt against the current application**: the in-app reference no longer describes the
+  pre-consolidation app (standalone Team Dashboard / ART View / Business Helper / Dev Workspace are gone). The new
+  seventeen sections document today's reality: the three-section home with honest gating and legacy-route
+  redirects; the four-space Agile Hub; My Issues with the Today checklist, F1 to-do quick-add, and shared-scan
+  card counts; the Hygiene workspace (chip vocabulary, guided cleanup session, inline fixes incl.
+  transition-required fields, sorting); Jira Create; Feature Canvas; the fifteen-tab Reports Hub; the
+  admin-gated SNow Hub; the Admin Hub control room and its schedulers; Text Tools; the propose-only AI Assist
+  model (Ctrl+Alt+Z); server schedulers with the esbuild-bundled browser engines; and the security, data-flow,
+  write-path, and tech-stack references.
 - **Home catalog consolidation — three cards become one-and-a-half**: the Jira Template Maker and
   Jira Intake cards merge into a single **🧩 Jira Create** card (a thin shell with Templates and
   Intake tabs mounting both tools unchanged; `?tab=` deep-linkable, old routes redirect with their
