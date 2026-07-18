@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Home catalog consolidation — three cards become one-and-a-half**: the Jira Template Maker and
+  Jira Intake cards merge into a single **🧩 Jira Create** card (a thin shell with Templates and
+  Intake tabs mounting both tools unchanged; `?tab=` deep-linkable, old routes redirect with their
+  query strings intact). The **Business Helper is retired**: its Simple Search — the only function
+  still needed — moves into the **Agile Hub as a 🔍 Search space**, and `/business-helper`
+  redirects there; saved searches survive. The Stablization funding workflow, its Settings tab,
+  and the "Send to Stablization" action are removed. Recents recorded against the retired ids
+  resolve to their successors, and the Personal Toolbox's Business Helper module becomes a
+  Simple Search module.
+
 ### Added
 - **Sort hygiene findings when needed**: a "Sort findings" control on the Hygiene list orders the
   visible findings by **Status**, **Assignee**, **Issue type**, or **Age (oldest first)** — scan

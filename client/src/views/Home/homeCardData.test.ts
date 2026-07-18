@@ -5,11 +5,16 @@ import { describe, expect, it } from 'vitest';
 import { APP_CARDS, APP_SECTIONS, RECENT_VIEW_LABELS } from './homeCardData.ts';
 
 describe('homeCardData', () => {
-  it('contains the spec-020 catalog: 12 cards, Agile Hub in, the three retired tools out', () => {
-    expect(APP_CARDS).toHaveLength(12);
+  it('contains the consolidated catalog: 10 cards, Jira Create in, the retired tools out', () => {
+    expect(APP_CARDS).toHaveLength(10);
     expect(APP_CARDS.some((appCard) => appCard.id === 'agile-hub')).toBe(true);
     expect(APP_CARDS.some((appCard) => appCard.id === 'reports-hub')).toBe(true);
-    expect(APP_CARDS.some((appCard) => appCard.id === 'business-helper')).toBe(true);
+    expect(APP_CARDS.some((appCard) => appCard.id === 'jira-create')).toBe(true);
+    // Jira Template Maker + Jira Intake merged into Jira Create; Business Helper folded into
+    // the Agile Hub's Search space (only Simple Search survives).
+    expect(APP_CARDS.some((appCard) => appCard.id === 'jira-template-maker')).toBe(false);
+    expect(APP_CARDS.some((appCard) => appCard.id === 'jira-intake')).toBe(false);
+    expect(APP_CARDS.some((appCard) => appCard.id === 'business-helper')).toBe(false);
     expect(APP_CARDS.some((appCard) => appCard.id === 'sprint-dashboard')).toBe(false);
     expect(APP_CARDS.some((appCard) => appCard.id === 'po-tool')).toBe(false);
     expect(APP_CARDS.some((appCard) => appCard.id === 'art')).toBe(false);
@@ -28,11 +33,14 @@ describe('homeCardData', () => {
     expect(gatedCardIds).toEqual(['snow-hub']);
   });
 
-  it('resolves every retired tool id to the Agile Hub in the recent-links strip', () => {
+  it('resolves every retired tool id to its successor in the recent-links strip', () => {
     expect(RECENT_VIEW_LABELS['sprint-dashboard']).toBe('🏃 Agile Hub');
     expect(RECENT_VIEW_LABELS['po-tool']).toBe('🏃 Agile Hub');
     expect(RECENT_VIEW_LABELS['art']).toBe('🏃 Agile Hub');
     expect(RECENT_VIEW_LABELS['dsu-board']).toBe('🏃 Agile Hub');
+    expect(RECENT_VIEW_LABELS['business-helper']).toBe('🏃 Agile Hub');
+    expect(RECENT_VIEW_LABELS['jira-template-maker']).toBe('🧩 Jira Create');
+    expect(RECENT_VIEW_LABELS['jira-intake']).toBe('🧩 Jira Create');
   });
 
   it('labels every card for the recent-links strip, so a recent link never shows a raw id', () => {

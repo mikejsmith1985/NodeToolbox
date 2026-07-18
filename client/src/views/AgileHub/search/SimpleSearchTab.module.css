@@ -1,4 +1,4 @@
-/* SimpleSearchTab.module.css — Styles for the Business Helper Simple Search business workflow. */
+/* SimpleSearchTab.module.css — Styles for the Agile Hub Simple Search space. */
 
 .simpleSearchTab { display: flex; flex-direction: column; gap: var(--spacing-lg); }
 .sectionHeader { display: flex; flex-direction: column; gap: var(--spacing-xs); }

@@ -14,6 +14,9 @@ vi.mock('../PoTool/PoToolView.tsx', () => ({
 vi.mock('../ArtView/ArtView.tsx', () => ({
   default: () => <h1>ART View Mock</h1>,
 }));
+vi.mock('./search/SimpleSearchTab.tsx', () => ({
+  default: () => <h1>Simple Search Mock</h1>,
+}));
 
 import { useSettingsStore } from '../../store/settingsStore.ts';
 import AgileHubView from './AgileHubView.tsx';
@@ -62,12 +65,21 @@ describe('AgileHubView', () => {
     expect(screen.getByRole('heading', { name: 'Sprint Dashboard Mock' })).toBeInTheDocument();
   });
 
-  it('always shows all three space controls — audiences are lenses, not permissions (FR-013)', () => {
+  it('always shows all four space controls — audiences are lenses, not permissions (FR-013)', () => {
     renderAgileHub('/agile-hub');
 
     expect(screen.getByRole('button', { name: /Team/ })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('button', { name: /Product/ })).toHaveAttribute('aria-pressed', 'false');
     expect(screen.getByRole('button', { name: /Train/ })).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByRole('button', { name: /Search/ })).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('mounts Simple Search in the Search space (the Business Helper search, rehomed)', () => {
+    renderAgileHub('/agile-hub?space=search');
+
+    expect(screen.getByRole('heading', { name: 'Simple Search Mock' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Sprint Dashboard Mock' })).not.toBeInTheDocument();
+    expect(useSettingsStore.getState().agileHubLastSpace).toBe('search');
   });
 
   it('switching spaces updates the URL param, persists the last space, and swaps the mounted view', () => {

@@ -1,4 +1,4 @@
-// useSimpleSearchState.ts — Hidden-query Jira search state for the Business Helper Simple Search tab.
+// useSimpleSearchState.ts — Hidden-query Jira search state for the Agile Hub Simple Search space.
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
@@ -6,6 +6,7 @@ import { jiraGet } from '../../../services/jiraApi.ts';
 import type { JiraIssue, JiraIssueLink } from '../../../types/jira.ts';
 import { normalizeRichTextToPlainText } from '../../../utils/richTextPlainText.ts';
 
+// Deliberately keeps the pre-consolidation key name so existing saved searches survive the move.
 const SIMPLE_SEARCH_STORAGE_KEY = 'tbxBusinessHelperSimpleSearch';
 const SIMPLE_SEARCH_MAX_RESULTS = 100;
 const SIMPLE_SEARCH_FIELDS = [
@@ -446,7 +447,7 @@ async function fetchChildIssues(
   return childIssues;
 }
 
-/** Owns the Business Helper Simple Search state, persistence, and hidden Jira query execution. */
+/** Owns the Simple Search state, persistence, and hidden Jira query execution. */
 export function useSimpleSearchState(): UseSimpleSearchStateResult {
   const [persistedState, setPersistedState] = useState<PersistedSimpleSearchState>(
     readPersistedSimpleSearchState,
@@ -499,7 +500,7 @@ export function useSimpleSearchState(): UseSimpleSearchStateResult {
       setRawResults([]);
       setRawResultCount(EMPTY_RESULT_COUNT);
       setHasSearched(false);
-      setErrorMessage(searchError instanceof Error ? searchError.message : 'Business Helper search failed');
+      setErrorMessage(searchError instanceof Error ? searchError.message : 'Simple Search failed');
     } finally {
       setIsLoading(false);
     }

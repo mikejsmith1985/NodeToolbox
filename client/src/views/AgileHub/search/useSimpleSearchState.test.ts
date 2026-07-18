@@ -1,4 +1,4 @@
-// useSimpleSearchState.test.ts — Unit tests for the Business Helper hidden Jira search state hook.
+// useSimpleSearchState.test.ts — Unit tests for the Simple Search hidden Jira query state hook.
 
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
