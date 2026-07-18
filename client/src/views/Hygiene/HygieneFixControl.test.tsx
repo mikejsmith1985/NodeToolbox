@@ -102,6 +102,7 @@ describe('HygieneFixControl', () => {
       {
         id: '41',
         name: 'Close Defect',
+        to: { name: 'Closed', statusCategory: { name: 'Done' } },
         requiredFields: [
           {
             fieldId: 'cfRootCause',
