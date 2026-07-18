@@ -422,7 +422,7 @@ function renderSummaryTile(
   // A check whose instance field does not exist never ran — its tile must not show a clean 0.
   const fieldDependency = FIELD_DEPENDENT_CHECKS.find((dependency) => dependency.checkId === checkId);
   const isCheckUnconfigured = fieldDependency !== undefined
-    && hygieneState.fieldConfig[fieldDependency.fieldConfigKey].length === 0;
+    && (hygieneState.fieldConfig[fieldDependency.fieldConfigKey] ?? []).length === 0;
 
   if (isCheckUnconfigured) {
     return (

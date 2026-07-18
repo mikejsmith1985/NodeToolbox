@@ -117,6 +117,10 @@ export async function loadHygieneFieldConfig(): Promise<HygieneFieldConfig> {
       artSettings.piReviewTargetEndFieldId || DEFAULT_TARGET_END_FIELD_ID,
       ...matchFieldIdsByName(availableFields, ['Target End']),
     ],
+    // 021 Readiness families — configured-only (no default), so an instance lacking them resolves
+    // to [] and the Readiness tab shows "not checked — no matching field" rather than false alerts.
+    estimateFieldIds: matchFieldIdsByName(availableFields, ['Estimate (NF)', 'Estimate']),
+    pcodeFieldIds: matchFieldIdsByName(availableFields, ['Spark ID/PCode', 'Spark ID', 'PCode']),
   });
 
   // Feature-link ids are the one list used to BUILD JQL (the child-story rollup), so it must hold

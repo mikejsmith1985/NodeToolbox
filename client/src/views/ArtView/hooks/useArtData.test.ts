@@ -63,6 +63,20 @@ describe('useArtData', () => {
     expect(result.current.state.activeTab).toBe('impediments');
   });
 
+  it('seeds the initial tab from a valid ?artTab= deep link (021)', () => {
+    window.history.replaceState({}, '', '/agile-hub?space=train&artTab=readiness');
+    const { result } = renderHook(() => useArtData());
+    expect(result.current.state.activeTab).toBe('readiness');
+    window.history.replaceState({}, '', '/');
+  });
+
+  it('ignores an unknown ?artTab= value and falls back to overview', () => {
+    window.history.replaceState({}, '', '/agile-hub?artTab=bogus');
+    const { result } = renderHook(() => useArtData());
+    expect(result.current.state.activeTab).toBe('overview');
+    window.history.replaceState({}, '', '/');
+  });
+
   it('loads stored teams from localStorage on initial render', async () => {
     localStorage.setItem(
       'nodetoolbox-art-teams',
