@@ -8,6 +8,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Sort hygiene findings when needed**: a "Sort findings" control on the Hygiene list orders the
+  visible findings by **Status**, **Assignee**, **Issue type**, or **Age (oldest first)** — scan
+  order stays the default. A guided review session walks the sorted order; while a session is
+  active the control locks so the reviewed list can never shift underneath the cursor.
+
+### Fixed
+- **Status changes no longer 400 on transitions that require screen fields (GH #177 follow-up)**:
+  moving an issue (e.g. closing a defect) failed with `400 — The following fields are required:
+  Application Component Selection, Defect Root Cause` because Jira workflows can demand screen
+  fields with the transition. Both transition surfaces — the Hygiene "Move status" fix control and
+  the issue detail panel's Change Status — now ask Jira which fields each transition requires,
+  collect them inline (dropdowns, cascading parent/detail pairs, and text), keep the button
+  disabled until every required answer is in, and submit them with the transition through one
+  shared component and writer. A required field the inline UI cannot honestly render says so
+  plainly and points to Jira instead of inviting a doomed submit.
+
+### Added
 - **The Agile Hub — one door for Team, Product, and Train (spec 020)**: the Team Dashboard, PO Tool, and ART View
   home cards merge into a single **Agile Hub** with three always-visible audience spaces. Each space IS the tool it
   replaces — mounted unchanged, keeping every tab and every saved selection (team profiles, the PO's independent

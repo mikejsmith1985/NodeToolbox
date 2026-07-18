@@ -830,3 +830,35 @@
   font-size: var(--font-size-sm);
   white-space: nowrap;
 }
+
+/* ─────────────────────── Findings list toolbar (session start + sort) ─────────────────────── */
+
+.listToolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-md);
+}
+
+.sortLabel {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.sortSelect {
+  min-height: 2.5rem;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 8px);
+  background: var(--color-surface, #fff);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+}
+
+.sortSelect:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}

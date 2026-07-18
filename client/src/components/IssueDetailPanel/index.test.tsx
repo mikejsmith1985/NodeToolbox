@@ -212,11 +212,90 @@ describe('IssueDetailPanel', () => {
     expect(screen.getByText('Using a NON migrated member')).toBeInTheDocument();
   });
 
-  it('loads transitions on mount', async () => {
+  it('loads transitions on mount, asking Jira for each transition\'s required screen fields', async () => {
     renderIssueDetailPanel();
 
     await waitFor(() => {
-      expect(mockJiraGet).toHaveBeenCalledWith('/rest/api/2/issue/TBX-101/transitions');
+      expect(mockJiraGet).toHaveBeenCalledWith('/rest/api/2/issue/TBX-101/transitions?expand=transitions.fields');
+    });
+  });
+
+  it('applies a transition with no required fields as a bare transition post', async () => {
+    const user = userEvent.setup();
+    renderIssueDetailPanel();
+
+    await waitFor(() => {
+      expect(screen.getByRole('option', { name: 'In Review' })).toBeInTheDocument();
+    });
+    await user.selectOptions(screen.getByLabelText(/change status/i), '31');
+    await user.click(screen.getByRole('button', { name: /^apply$/i }));
+
+    await waitFor(() => {
+      expect(mockJiraPost).toHaveBeenCalledWith('/rest/api/2/issue/TBX-101/transitions', {
+        transition: { id: '31' },
+      });
+    });
+  });
+
+  it('collects a transition\'s required screen fields inline and submits them with the transition (GH #177 follow-up)', async () => {
+    // Real-world 400: "The following fields are required: Application Component Selection,
+    // Defect Root Cause". The panel must gate Apply until both are answered, then post them.
+    mockJiraGet.mockImplementation((path: string) => {
+      if (path.endsWith('/comment')) return Promise.resolve({ comments: TEST_COMMENTS });
+      if (path.endsWith('/editmeta')) return Promise.resolve({ fields: { customfield_10016: { name: 'Story Points' } } });
+      return Promise.resolve({
+        transitions: [
+          {
+            id: '41',
+            name: 'Close Defect',
+            to: { name: 'Closed', statusCategory: { name: 'Done' } },
+            fields: {
+              cfRootCause: {
+                required: true,
+                name: 'Defect Root Cause',
+                schema: { type: 'option' },
+                allowedValues: [{ id: '900', value: 'Code' }, { id: '901', value: 'Config' }],
+              },
+              cfComponent: {
+                required: true,
+                name: 'Application Component Selection',
+                schema: { type: 'option', custom: 'com.atlassian.jira.plugin.system.customfieldtypes:cascadingselect' },
+                allowedValues: [{ id: '800', value: 'Facets', children: [{ id: '810', value: 'Eligibility' }] }],
+              },
+              cfOptional: { required: false, name: 'Ignored Optional Field', schema: { type: 'string' } },
+            },
+          },
+        ],
+      });
+    });
+    const user = userEvent.setup();
+    renderIssueDetailPanel();
+
+    await waitFor(() => {
+      expect(screen.getByRole('option', { name: 'Close Defect' })).toBeInTheDocument();
+    });
+    await user.selectOptions(screen.getByLabelText(/change status/i), '41');
+
+    // Apply stays disabled until every required field is answered — no more blind 400s.
+    const applyButton = screen.getByRole('button', { name: /^apply$/i });
+    expect(applyButton).toBeDisabled();
+
+    await user.selectOptions(screen.getByLabelText('Defect Root Cause'), '900');
+    expect(applyButton).toBeDisabled();
+    await user.selectOptions(screen.getByLabelText('Application Component Selection'), '800');
+    await user.selectOptions(screen.getByLabelText('Application Component Selection — detail'), '810');
+    expect(applyButton).toBeEnabled();
+
+    await user.click(applyButton);
+
+    await waitFor(() => {
+      expect(mockJiraPost).toHaveBeenCalledWith('/rest/api/2/issue/TBX-101/transitions', {
+        transition: { id: '41' },
+        fields: {
+          cfRootCause: { id: '900' },
+          cfComponent: { id: '800', child: { id: '810' } },
+        },
+      });
     });
   });
 

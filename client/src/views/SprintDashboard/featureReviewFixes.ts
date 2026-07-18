@@ -20,6 +20,8 @@ export interface FeatureReviewEditMetaAllowedValue {
   key?: string;
   name?: string;
   value?: string;
+  /** Cascading (parent/child) select options carry their child options here. */
+  children?: FeatureReviewEditMetaAllowedValue[];
 }
 
 export interface FeatureReviewEditMetaField {
@@ -238,12 +240,114 @@ export async function fetchFeatureReviewFixVersions(projectKey: string): Promise
     .filter((versionOption) => versionOption.value !== '');
 }
 
-/** Loads the workflow transitions Feature Review can offer for a Jira feature. */
-export async function fetchFeatureReviewTransitions(issueKey: string): Promise<JiraTransition[]> {
-  const transitionResponse = await jiraGet<{ transitions?: JiraTransition[] }>(
-    `/rest/api/2/issue/${encodeURIComponent(issueKey)}/transitions`,
+/** One field a workflow transition's screen REQUIRES before Jira accepts the transition. */
+export interface TransitionRequiredField {
+  fieldId: string;
+  name: string;
+  /** Normalized shape: 'option', 'option-with-child' (cascading), 'string', or Jira's raw type. */
+  schemaType: string;
+  allowedValues: FeatureReviewEditMetaAllowedValue[];
+}
+
+/** A workflow transition plus the fields its screen requires (empty for most transitions). */
+export interface FeatureReviewTransition extends JiraTransition {
+  requiredFields: TransitionRequiredField[];
+}
+
+/** The user's answer for one required transition field. */
+export interface TransitionFieldSelection {
+  optionId?: string;
+  childOptionId?: string;
+  text?: string;
+}
+
+interface RawTransitionField {
+  required?: boolean;
+  name?: string;
+  schema?: { type?: string; custom?: string };
+  allowedValues?: FeatureReviewEditMetaAllowedValue[];
+}
+
+const CASCADING_SELECT_SCHEMA_FRAGMENT = 'cascadingselect';
+
+/** Normalizes Jira's schema info: cascading selects become 'option-with-child'. */
+function readTransitionFieldSchemaType(rawField: RawTransitionField): string {
+  if (rawField.schema?.custom?.includes(CASCADING_SELECT_SCHEMA_FRAGMENT)) return 'option-with-child';
+  return rawField.schema?.type ?? 'unknown';
+}
+
+/**
+ * Loads the workflow transitions with the fields each one's screen REQUIRES. Posting a bare
+ * transition id 400s when the workflow demands screen fields ("The following fields are
+ * required: …" — GH #177 follow-up), so callers render inputs for these and submit them along.
+ */
+export async function fetchFeatureReviewTransitions(issueKey: string): Promise<FeatureReviewTransition[]> {
+  const transitionResponse = await jiraGet<{
+    transitions?: Array<JiraTransition & { fields?: Record<string, RawTransitionField | undefined> }>;
+  }>(
+    `/rest/api/2/issue/${encodeURIComponent(issueKey)}/transitions?expand=transitions.fields`,
   );
-  return transitionResponse.transitions ?? [];
+
+  return (transitionResponse.transitions ?? []).map((rawTransition) => ({
+    ...rawTransition,
+    requiredFields: Object.entries(rawTransition.fields ?? {})
+      .filter((fieldEntry): fieldEntry is [string, RawTransitionField] => fieldEntry[1]?.required === true)
+      .map(([fieldId, rawField]) => ({
+        fieldId,
+        name: rawField.name?.trim() || fieldId,
+        schemaType: readTransitionFieldSchemaType(rawField),
+        allowedValues: rawField.allowedValues ?? [],
+      })),
+  }));
+}
+
+/** True when the inline UI can honestly collect this required field (options or plain text). */
+export function isTransitionFieldSupported(requiredField: TransitionRequiredField): boolean {
+  if (requiredField.schemaType === 'string') return true;
+  return requiredField.allowedValues.length > 0
+    && (requiredField.schemaType === 'option' || requiredField.schemaType === 'option-with-child');
+}
+
+/** True when every supported required field has an answer (unsupported fields can never complete). */
+export function areTransitionSelectionsComplete(
+  requiredFields: readonly TransitionRequiredField[],
+  selectionByFieldId: Record<string, TransitionFieldSelection>,
+): boolean {
+  return requiredFields.every((requiredField) => {
+    if (!isTransitionFieldSupported(requiredField)) return false;
+    const fieldSelection = selectionByFieldId[requiredField.fieldId];
+    if (requiredField.schemaType === 'string') return Boolean(fieldSelection?.text?.trim());
+    if (!fieldSelection?.optionId) return false;
+    if (requiredField.schemaType === 'option-with-child') {
+      const chosenParent = requiredField.allowedValues.find((allowedValue) => allowedValue.id === fieldSelection.optionId);
+      const parentHasChildren = (chosenParent?.children?.length ?? 0) > 0;
+      return !parentHasChildren || Boolean(fieldSelection.childOptionId);
+    }
+    return true;
+  });
+}
+
+/** Builds the Jira `fields` payload for a transition from the collected selections. */
+export function buildTransitionFieldsPayload(
+  requiredFields: readonly TransitionRequiredField[],
+  selectionByFieldId: Record<string, TransitionFieldSelection>,
+): Record<string, unknown> {
+  const fieldsPayload: Record<string, unknown> = {};
+  for (const requiredField of requiredFields) {
+    const fieldSelection = selectionByFieldId[requiredField.fieldId];
+    if (!fieldSelection) continue;
+    if (requiredField.schemaType === 'string' && fieldSelection.text?.trim()) {
+      fieldsPayload[requiredField.fieldId] = fieldSelection.text.trim();
+    } else if (requiredField.schemaType === 'option-with-child' && fieldSelection.optionId) {
+      fieldsPayload[requiredField.fieldId] = {
+        id: fieldSelection.optionId,
+        ...(fieldSelection.childOptionId ? { child: { id: fieldSelection.childOptionId } } : {}),
+      };
+    } else if (fieldSelection.optionId) {
+      fieldsPayload[requiredField.fieldId] = { id: fieldSelection.optionId };
+    }
+  }
+  return fieldsPayload;
 }
 
 /** Saves a plain text or date Jira field from the Feature Review quick-fix panel. */
@@ -281,14 +385,20 @@ export async function saveFeatureReviewUserField(issueKey: string, fieldId: stri
   });
 }
 
-/** Saves a Jira workflow transition from the Feature Review quick-fix panel. */
-export async function saveFeatureReviewTransition(issueKey: string, transitionId: string): Promise<void> {
+/** Saves a Jira workflow transition, including any screen fields the transition requires. */
+export async function saveFeatureReviewTransition(
+  issueKey: string,
+  transitionId: string,
+  transitionFieldValues?: Record<string, unknown>,
+): Promise<void> {
   if (transitionId.trim() === '') {
     throw new Error('Select a Jira transition before saving.');
   }
 
+  const hasTransitionFieldValues = transitionFieldValues && Object.keys(transitionFieldValues).length > 0;
   await jiraPost<void>(`/rest/api/2/issue/${encodeURIComponent(issueKey)}/transitions`, {
     transition: { id: transitionId.trim() },
+    ...(hasTransitionFieldValues ? { fields: transitionFieldValues } : {}),
   });
 }
 

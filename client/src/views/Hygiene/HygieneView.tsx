@@ -22,6 +22,7 @@ import { HygieneFixControl } from './HygieneFixControl.tsx';
 import { HygieneAiPanel } from './ai/HygieneAiPanel.tsx';
 import { parseHygieneFilterCheckIds, useHygieneState } from './hooks/useHygieneState.ts';
 import { useHygieneSession, type HygieneSessionOutcome } from './hooks/useHygieneSession.ts';
+import { HYGIENE_SORT_OPTIONS, sortHygieneFindings, type HygieneSortKey } from './hygieneSort.ts';
 import { buildCheckIssueKeys, buildJiraIssueNavigatorUrl } from './utils/buildHygieneJqlUrl.ts';
 import IssueDetailPanel from '../../components/IssueDetailPanel/index.tsx';
 import { useConnectionStore } from '../../store/connectionStore.ts';
@@ -138,10 +139,14 @@ export default function HygieneView({
     && hasScoreData;
   const [expandedIssueKey, setExpandedIssueKey] = useState<string | null>(null);
   const [copiedCheckId, setCopiedCheckId] = useState<string | null>(null);
+  // Optional list ordering (status / assignee / issue type / age); scan order by default.
+  const [sortKey, setSortKey] = useState<HygieneSortKey>('scan');
   // Guided cleanup session over the CURRENT filtered findings (spec 019 US3) — ephemeral by design.
   const session = useHygieneSession();
   const { syncWithKeys, endedSummary } = session;
-  const filteredFindingKeysJoined = hygieneState.filteredFindings
+  // The list as displayed — filter first, then the chosen sort. The session walks THIS order.
+  const displayedFindings = sortHygieneFindings(hygieneState.filteredFindings, sortKey);
+  const filteredFindingKeysJoined = displayedFindings
     .map((finding) => finding.issue.key)
     .join('|');
 
@@ -307,14 +312,37 @@ export default function HygieneView({
         </div>
       )}
 
-      {!hygieneState.isLoading && hasVisibleFindings && !session.isSessionActive && (
-        <button
-          className={styles.buttonPrimary}
-          type="button"
-          onClick={() => session.startSession(filteredFindingKeysJoined.split('|'))}
-        >
-          ▶ Review these findings
-        </button>
+      {!hygieneState.isLoading && hasVisibleFindings && (
+        <div className={styles.listToolbar}>
+          {!session.isSessionActive && (
+            <button
+              className={styles.buttonPrimary}
+              type="button"
+              onClick={() => session.startSession(filteredFindingKeysJoined.split('|'))}
+            >
+              ▶ Review these findings
+            </button>
+          )}
+          <label className={styles.sortLabel}>
+            Sort findings
+            <select
+              className={styles.sortSelect}
+              aria-label="Sort findings"
+              value={sortKey}
+              // Locked during a session: the session snapshots its order at start, and a reorder
+              // underneath it would end the session mid-review.
+              disabled={session.isSessionActive}
+              title={session.isSessionActive ? 'Finish or end the session to change the sort.' : undefined}
+              onChange={(changeEvent) => setSortKey(changeEvent.target.value as HygieneSortKey)}
+            >
+              {HYGIENE_SORT_OPTIONS.map((sortOption) => (
+                <option key={sortOption.value} value={sortOption.value}>
+                  {sortOption.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
       )}
 
       {session.isSessionActive && (
@@ -331,7 +359,7 @@ export default function HygieneView({
 
       {!hygieneState.isLoading && hasVisibleFindings && (
         <div className={styles.findingsList} aria-label="Hygiene findings">
-          {hygieneState.filteredFindings.map((finding) => (
+          {displayedFindings.map((finding) => (
             <FindingRow
               key={finding.issue.key}
               finding={finding}

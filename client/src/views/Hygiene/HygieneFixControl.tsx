@@ -8,7 +8,10 @@
 import { useEffect, useState } from 'react';
 
 import { jiraGet } from '../../services/jiraApi.ts';
+import { TransitionRequiredFields } from '../../components/TransitionRequiredFields/index.tsx';
 import {
+  areTransitionSelectionsComplete,
+  buildTransitionFieldsPayload,
   fetchFeatureReviewEditMeta,
   fetchFeatureReviewFixVersions,
   fetchFeatureReviewTransitions,
@@ -24,6 +27,8 @@ import {
   searchFeatureReviewUsers,
   type FeatureReviewEditMetaField,
   type FeatureReviewSelectOption,
+  type TransitionFieldSelection,
+  type TransitionRequiredField,
 } from '../SprintDashboard/featureReviewFixes.ts';
 import type { HygieneFlag, HygieneFieldConfig, JiraIssue, BuiltInHygieneCheckId } from './checks/hygieneChecks.ts';
 import { HYGIENE_FIX_BY_CHECK, resolveFixFieldId, type HygieneFixKind } from './hygieneFix.ts';
@@ -277,6 +282,10 @@ function OptionFixInput({ issue, kind, fieldId, label, isSubmitting, onSubmit }:
   const [options, setOptions] = useState<FixChoiceOption[]>([]);
   const [editMetaField, setEditMetaField] = useState<FeatureReviewEditMetaField | undefined>(undefined);
   const [selected, setSelected] = useState('');
+  // Transitions only: the fields each transition's workflow screen requires, plus the user's
+  // answers — posting the bare id 400s when the workflow demands them (GH #177 follow-up).
+  const [requiredFieldsByTransitionId, setRequiredFieldsByTransitionId] = useState<Record<string, TransitionRequiredField[]>>({});
+  const [transitionFieldSelections, setTransitionFieldSelections] = useState<Record<string, TransitionFieldSelection>>({});
 
   useEffect(() => {
     let isActive = true;
@@ -285,21 +294,50 @@ function OptionFixInput({ issue, kind, fieldId, label, isSubmitting, onSubmit }:
         if (!isActive) return;
         setOptions(loaded.options);
         setEditMetaField(loaded.editMetaField);
+        setRequiredFieldsByTransitionId(loaded.requiredFieldsByTransitionId ?? {});
       })
       .catch(() => { if (isActive) setOptions([]); });
     return () => { isActive = false; };
   }, [kind, issue.key, fieldId]);
 
+  const selectedTransitionRequiredFields = kind === 'transition' ? (requiredFieldsByTransitionId[selected] ?? []) : [];
+  const areRequiredAnswersComplete = selectedTransitionRequiredFields.length === 0
+    || areTransitionSelectionsComplete(selectedTransitionRequiredFields, transitionFieldSelections);
+
+  function handleSelectOption(nextSelected: string): void {
+    setSelected(nextSelected);
+    // A different transition has different required fields — stale answers must not carry over.
+    setTransitionFieldSelections({});
+  }
+
   function writeOption(): Promise<void> {
     if (kind === 'fixVersion') return saveFeatureReviewFixVersion(issue.key, selected);
-    if (kind === 'transition') return saveFeatureReviewTransition(issue.key, selected);
+    if (kind === 'transition') {
+      return saveFeatureReviewTransition(
+        issue.key,
+        selected,
+        buildTransitionFieldsPayload(selectedTransitionRequiredFields, transitionFieldSelections),
+      );
+    }
     return saveFeatureReviewOptionField(issue.key, fieldId, selected, editMetaField);
   }
 
   return (
     <>
-      <OptionSelect label={label} options={options} value={selected} disabled={isSubmitting || options.length === 0} onChange={setSelected} />
-      <FixButton label={label} disabled={isSubmitting || selected === ''} isSubmitting={isSubmitting} onClick={() => void onSubmit(writeOption)} />
+      <OptionSelect label={label} options={options} value={selected} disabled={isSubmitting || options.length === 0} onChange={handleSelectOption} />
+      <TransitionRequiredFields
+        requiredFields={selectedTransitionRequiredFields}
+        selectionByFieldId={transitionFieldSelections}
+        isDisabled={isSubmitting}
+        onSelectionChange={(requiredFieldId, selection) =>
+          setTransitionFieldSelections((currentSelections) => ({ ...currentSelections, [requiredFieldId]: selection }))}
+      />
+      <FixButton
+        label={label}
+        disabled={isSubmitting || selected === '' || !areRequiredAnswersComplete}
+        isSubmitting={isSubmitting}
+        onClick={() => void onSubmit(writeOption)}
+      />
     </>
   );
 }
@@ -362,13 +400,22 @@ async function loadOptionsForKind(
   kind: HygieneFixKind,
   issueKey: string,
   fieldId: string,
-): Promise<{ options: FixChoiceOption[]; editMetaField?: FeatureReviewEditMetaField }> {
+): Promise<{
+  options: FixChoiceOption[];
+  editMetaField?: FeatureReviewEditMetaField;
+  requiredFieldsByTransitionId?: Record<string, TransitionRequiredField[]>;
+}> {
   if (kind === 'fixVersion') {
     return { options: await fetchFeatureReviewFixVersions(readProjectKeyFromIssueKey(issueKey)) };
   }
   if (kind === 'transition') {
     const transitions = await fetchFeatureReviewTransitions(issueKey);
-    return { options: transitions.map((transition) => ({ label: transition.name, value: transition.id })) };
+    return {
+      options: transitions.map((transition) => ({ label: transition.name, value: transition.id })),
+      requiredFieldsByTransitionId: Object.fromEntries(
+        transitions.map((transition) => [transition.id, transition.requiredFields]),
+      ),
+    };
   }
   const editMetaFields = await fetchFeatureReviewEditMeta(issueKey);
   const editMetaField = editMetaFields[fieldId];
