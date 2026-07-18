@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **The Remediation tab now works without unlocking AI**: the Team space's Backlog Remediation tab
+  was rendered entirely inside the AI-Assist gate, so the whole tab — scope, Refresh backlog, the
+  Keep/Cancel/Dismiss/Snooze decisions, and the action table — was blank unless you happened to press
+  Ctrl+Alt+Z. The manual triage now renders unconditionally; only the optional copy/paste verdict
+  accelerator stays gated behind AI Assist. No change to the (already-passing) triage logic — it was
+  simply hidden.
+
 ### Added
 - **Readiness tab: ignore features you don't own, and click a card to expand it**: the Readiness tab
   now lets you hide work that isn't yours. From any feature row, **Ignore** hides that one Feature, or
