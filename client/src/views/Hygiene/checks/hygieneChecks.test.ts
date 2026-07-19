@@ -82,50 +82,48 @@ describe('hygiene check predicates', () => {
     expect(hygieneFlag).toBeNull();
   });
 
-  it('flags in-progress issues that have not been updated for more than fourteen days', () => {
-    const hygieneFlag = checkStaleIssue(buildIssue({ status: ACTIVE_STATUS, updated: buildDateDaysAgo(15) }));
+  // Staleness is measured in BUSINESS days. With "now" pinned to Wed 2026-07-15, these fixed update dates give
+  // the exact business-day ages the assertions rely on: 2026-07-01 → 10, 2026-07-08 → 5, 2026-07-09 → 4,
+  // 2026-07-10 (a Friday) → 3, 2026-07-14 → 1. (Their raw calendar ages are 14, 7, 6, 5 and 1 respectively.)
+  it('flags in-progress issues left untouched beyond the threshold in business days', () => {
+    const hygieneFlag = checkStaleIssue(buildIssue({ status: ACTIVE_STATUS, updated: '2026-07-01T12:00:00.000Z' }));
 
-    expect(hygieneFlag?.checkId).toBe('stale');
+    expect(hygieneFlag?.checkId).toBe('stale'); // 10 business days ≥ the 5-business-day default
   });
 
   it('does not flag recently updated in-progress issues as stale', () => {
-    const hygieneFlag = checkStaleIssue(buildIssue({ status: ACTIVE_STATUS, updated: buildDateDaysAgo(3) }));
+    const hygieneFlag = checkStaleIssue(buildIssue({ status: ACTIVE_STATUS, updated: '2026-07-14T12:00:00.000Z' }));
 
-    expect(hygieneFlag).toBeNull();
+    expect(hygieneFlag).toBeNull(); // 1 business day
   });
 
-  it('flags an in-progress issue at the configured stale threshold using an inclusive comparison', () => {
-    // A team configured 5-day threshold (matching the Blockers tab) must flag a 5-day-old issue,
-    // so the Hygiene tab and the Blockers tab agree on what counts as stale.
-    const hygieneFlag = checkStaleIssue(buildIssue({ status: ACTIVE_STATUS, updated: buildDateDaysAgo(5) }), 5);
+  it('excludes the weekend: an issue updated Friday is not stale over the following weekend', () => {
+    // 2026-07-10 is a Friday; by Wed 2026-07-15 only 3 business days have elapsed even though 5 calendar days
+    // have. Under the old calendar rule a 4-day threshold would have flagged it; business days must not.
+    const flagBelowBusinessThreshold = checkStaleIssue(buildIssue({ status: ACTIVE_STATUS, updated: '2026-07-10T12:00:00.000Z' }), 4);
+    const flagAtBusinessThreshold = checkStaleIssue(buildIssue({ status: ACTIVE_STATUS, updated: '2026-07-10T12:00:00.000Z' }), 3);
 
-    expect(hygieneFlag?.checkId).toBe('stale');
+    expect(flagBelowBusinessThreshold).toBeNull(); // 3 business days < 4
+    expect(flagAtBusinessThreshold?.checkId).toBe('stale'); // inclusive (>=) at exactly 3 business days
   });
 
-  it('does not flag an in-progress issue younger than the configured stale threshold', () => {
-    const hygieneFlag = checkStaleIssue(buildIssue({ status: ACTIVE_STATUS, updated: buildDateDaysAgo(4) }), 5);
+  it('falls back to the same five-business-day default every live surface uses when no threshold is provided', () => {
+    // The fallback is aligned with the dashboard's DEFAULT_STALE_DAYS_THRESHOLD (5). 2026-07-08 is exactly 5
+    // business days before "now"; 2026-07-09 is 4 — proving the inclusive boundary at the default.
+    const flagAtThreshold = checkStaleIssue(buildIssue({ status: ACTIVE_STATUS, updated: '2026-07-08T12:00:00.000Z' }));
+    const noFlagBelowThreshold = checkStaleIssue(buildIssue({ status: ACTIVE_STATUS, updated: '2026-07-09T12:00:00.000Z' }));
 
-    expect(hygieneFlag).toBeNull();
-  });
-
-  it('falls back to the same five-day default every live surface uses when no threshold is provided', () => {
-    // The fallback is aligned with the dashboard's DEFAULT_STALE_DAYS_THRESHOLD (5) so a caller
-    // that forgets the argument cannot quietly apply a different staleness rule than every other
-    // surface — the old fourteen-day fallback was one of the GH #167 count mismatches.
-    const flagAtThreshold = checkStaleIssue(buildIssue({ status: ACTIVE_STATUS, updated: buildDateDaysAgo(5) }));
-    const noFlagBelowThreshold = checkStaleIssue(buildIssue({ status: ACTIVE_STATUS, updated: buildDateDaysAgo(4) }));
-
-    expect(flagAtThreshold?.checkId).toBe('stale'); // inclusive (>=) at exactly five days
+    expect(flagAtThreshold?.checkId).toBe('stale'); // inclusive (>=) at exactly five business days
     expect(noFlagBelowThreshold).toBeNull();
   });
 
   it('uses the context stale threshold when evaluating a full issue', () => {
     const flags = evaluateHygieneIssue(
-      buildIssue({ status: ACTIVE_STATUS, updated: buildDateDaysAgo(6) }),
+      buildIssue({ status: ACTIVE_STATUS, updated: '2026-07-08T12:00:00.000Z' }),
       { staleDaysThreshold: 5 },
     );
 
-    expect(flags.some((flag) => flag.checkId === 'stale')).toBe(true);
+    expect(flags.some((flag) => flag.checkId === 'stale')).toBe(true); // 5 business days ≥ 5
   });
 
   it('flags in-progress issues with no assignee', () => {

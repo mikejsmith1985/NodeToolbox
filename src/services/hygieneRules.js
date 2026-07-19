@@ -11,7 +11,12 @@
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const STALE_THRESHOLD_DAYS = 14;
+// Business days of no update before an in-progress issue is flagged stale. 5 = one work week, matching the
+// app-wide default every client surface already uses (hygieneChecks' STALE_THRESHOLD_DAYS fallback, the ART /
+// Sprint Dashboard stale-days default, the enterprise-rules copy). Keep in lockstep with that client default so
+// the server hygiene monitor and the UI never disagree on what "stale" means. GH #167 aligned the client from
+// 14 to 5; this brings the server monitor in line, now that both count business days rather than calendar days.
+const STALE_THRESHOLD_DAYS = 5;
 const OLD_IN_SPRINT_THRESHOLD_DAYS = 30;
 
 const MODERN_STORY_POINTS_FIELD = 'customfield_10028';
@@ -80,6 +85,30 @@ function calculateAgeInDays(dateText) {
   if (Number.isNaN(parsedDate.getTime())) return 0;
   const msPerDay = 24 * 60 * 60 * 1000;
   return Math.floor((Date.now() - parsedDate.getTime()) / msPerDay);
+}
+
+/**
+ * Counts whole BUSINESS days (Mon–Fri, UTC) elapsed since the given ISO date — the staleness measure, so an
+ * issue left over a weekend is not counted stale for those idle days. Mirrors `businessDaysElapsedSince` in
+ * client/src/utils/businessDays.ts; keep the two in lockstep.
+ *
+ * @param {string} dateText - ISO date/datetime string.
+ * @returns {number} Whole business days elapsed (0 for a missing/unparseable or future date).
+ */
+function businessDaysElapsedSince(dateText) {
+  const fromMs = new Date(dateText).getTime();
+  const nowMs = Date.now();
+  if (Number.isNaN(fromMs) || fromMs >= nowMs) return 0;
+  const msPerDay = 24 * 60 * 60 * 1000;
+  const wholeDaysElapsed = Math.floor((nowMs - fromMs) / msPerDay);
+  let businessDayCount = 0;
+  const cursor = new Date(fromMs);
+  for (let dayIndex = 0; dayIndex < wholeDaysElapsed; dayIndex += 1) {
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+    const dayOfWeek = cursor.getUTCDay();
+    if (dayOfWeek !== 0 && dayOfWeek !== 6) businessDayCount += 1;
+  }
+  return businessDayCount;
 }
 
 /**
@@ -292,8 +321,11 @@ function checkMissingStoryPoints(issue) {
 
 function checkStaleIssue(issue) {
   if (!isInProgressIssue(issue)) return null;
-  if (calculateAgeInDays(issue.fields.updated) < STALE_THRESHOLD_DAYS) return null;
-  return { checkId: 'stale-issue', label: 'Stale — no update in 14+ days', severity: 'warn' };
+  // Staleness is measured in BUSINESS days so a weekend never makes an issue stale; the threshold denotes
+  // business days. Kept in lockstep with the client checkStaleIssue default.
+  if (businessDaysElapsedSince(issue.fields.updated) < STALE_THRESHOLD_DAYS) return null;
+  // Label derives from the constant so the wording can never drift from the threshold it describes.
+  return { checkId: 'stale-issue', label: `Stale — no update in ${STALE_THRESHOLD_DAYS}+ business days`, severity: 'warn' };
 }
 
 function checkNoAssignee(issue) {
