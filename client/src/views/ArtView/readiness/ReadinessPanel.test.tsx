@@ -188,6 +188,33 @@ describe('ReadinessPanel', () => {
     expect(screen.getByTestId('fix-missing-pcode')).toBeInTheDocument();
   });
 
+  it('gives every alert family its own colour class so families are distinguishable (GH #197)', () => {
+    const allFamilies = ['missing-ownership', 'missing-estimate', 'missing-pcode', 'target-end-missing-or-past', 'due-date-missing-or-past'];
+    mockUseReadinessData.mockReturnValue({
+      scanResult: buildScan({
+        lenses: {
+          current: { id: 'current', piNames: ['PI 26.3'], features: [buildFeature('CUR-1', { alerts: allFamilies as ReadinessFeature['alerts'] })], countsByBucket: { todo: 1, inProgress: 0, done: 0 }, refinedCount: 0, unrefinedCount: 0, isPiConfigured: true, isCoverageCapped: false },
+          upcoming: { id: 'upcoming', piNames: [], features: [], countsByBucket: { todo: 0, inProgress: 0, done: 0 }, refinedCount: 0, unrefinedCount: 0, isPiConfigured: false, isCoverageCapped: false },
+          carryover: { id: 'carryover', piNames: [], features: [], countsByBucket: { todo: 0, inProgress: 0, done: 0 }, refinedCount: 0, unrefinedCount: 0, isPiConfigured: true, isCoverageCapped: false },
+        },
+        scannedFeatureCount: 1,
+      }),
+      isLoading: false,
+      reload: vi.fn(),
+    });
+
+    renderPanel();
+
+    // Each family carries its own data hook and its own colour modifier class; no two families share a class,
+    // which is exactly what "same colour for all alerts" (GH #197) violated.
+    const flagClasses = allFamilies.map((family) => {
+      const flag = document.querySelector(`[data-alert-family="${family}"]`) as HTMLElement;
+      expect(flag).not.toBeNull();
+      return flag.className;
+    });
+    expect(new Set(flagClasses).size).toBe(allFamilies.length);
+  });
+
   // ── Clicking the card toggles its details ──
 
   it('expands and collapses a feature card when the card body is clicked', () => {

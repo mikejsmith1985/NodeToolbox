@@ -12,7 +12,8 @@ const { mockFetchAgingBacklog } = vi.hoisted(() => ({ mockFetchAgingBacklog: vi.
 vi.mock('../../ReportsHub/agingBacklogFetch.ts', () => ({
   fetchAgingBacklog: mockFetchAgingBacklog,
   AGING_BACKLOG_MAX_ISSUES: 2000,
-  // resolveTeamScope (used by the panel) imports buildAgingJql from this module — provide the real wrap.
+  // The panel hands fetchAgingBacklog a RAW scope clause; the real fetch owns the single ORDER BY wrap. The stub
+  // keeps buildAgingJql exported for any transitive importer, but resolveTeamScope no longer wraps (GH #197).
   buildAgingJql: (scope: string) => `(${scope}) AND statusCategory != Done ORDER BY created ASC`,
 }));
 
@@ -98,6 +99,10 @@ describe('BacklogRemediationPanel', () => {
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: /refresh backlog/i }));
     });
+
+    // The fetch must receive the RAW scope clause (`project = ENCUC`) so it wraps exactly once — never the
+    // pre-wrapped string that produced the double-ORDER-BY 400 (GH #197).
+    expect(mockFetchAgingBacklog).toHaveBeenCalledWith(`project = ${PROJECT}`, expect.any(String));
 
     // The prompt now names the fetched issues.
     const promptBox = screen.getByLabelText(/triage prompt/i) as HTMLTextAreaElement;

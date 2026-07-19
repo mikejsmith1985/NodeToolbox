@@ -63,6 +63,17 @@ const ALERT_LABELS: Record<ReadinessAlertId, string> = {
   'due-date-missing-or-past': 'Due Date',
 };
 
+// One colour per alert family so a reviewer can tell the families apart at a glance, mirroring the original
+// Jira readiness report (GH #197) instead of painting every flag the same amber. Each id maps to its own
+// CSS-module modifier; the shared `.alertFlag` base still owns shape, spacing, and typography.
+const ALERT_FLAG_CLASSES: Record<ReadinessAlertId, string> = {
+  'missing-ownership': styles.alertMissingOwnership,
+  'missing-estimate': styles.alertMissingEstimate,
+  'missing-pcode': styles.alertMissingPcode,
+  'target-end-missing-or-past': styles.alertTargetEnd,
+  'due-date-missing-or-past': styles.alertDueDate,
+};
+
 const NOT_CONFIGURED_LABEL = 'not checked — no matching field';
 
 // A click on any of these controls acts on the control, never toggles the card's details.
@@ -451,7 +462,9 @@ function ReadinessFeatureRow({
         <div className={styles.alertList}>
           {feature.alerts.map((alertId) => (
             <div key={alertId} className={styles.alertRow}>
-              <span className={styles.alertFlag}>{ALERT_LABELS[alertId]}</span>
+              <span className={`${styles.alertFlag} ${ALERT_FLAG_CLASSES[alertId]}`} data-alert-family={alertId}>
+                {ALERT_LABELS[alertId]}
+              </span>
               <ReadinessFixControl
                 feature={feature}
                 alertId={alertId}
