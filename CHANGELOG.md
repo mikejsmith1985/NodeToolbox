@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Remediation tab no longer 400s on refresh (GH #197)**: the team scope was being wrapped by
+  `buildAgingJql` twice — once in `resolveTeamScope` and again inside the fetch — producing an invalid
+  `((project = X) AND statusCategory != Done ORDER BY created ASC) AND … ORDER BY created ASC` with an
+  `ORDER BY` nested in parentheses and duplicated, which Jira rejected. `resolveTeamScope` now returns the
+  raw scope clause and the fetch layer owns the single wrap. A regression test asserts the composed JQL has
+  exactly one `ORDER BY`, and the panel test asserts the fetch receives the raw scope.
+- **Readiness alerts now use one colour per family (GH #197)**: every hygiene-alert flag (Missing Owner,
+  Missing Estimate, Missing PCode, Target End, Due Date) previously rendered in the same amber, unlike the
+  original Jira report. Each family now has its own colour — PCode pink, Estimate cyan, Owner gold, plus
+  distinct hues for the two date families — with a stable `data-alert-family` hook for tests.
+
 - **The Remediation tab now works without unlocking AI**: the Team space's Backlog Remediation tab
   was rendered entirely inside the AI-Assist gate, so the whole tab — scope, Refresh backlog, the
   Keep/Cancel/Dismiss/Snooze decisions, and the action table — was blank unless you happened to press
