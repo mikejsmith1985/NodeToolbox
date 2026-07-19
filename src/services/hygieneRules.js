@@ -83,6 +83,30 @@ function calculateAgeInDays(dateText) {
 }
 
 /**
+ * Counts whole BUSINESS days (Mon–Fri, UTC) elapsed since the given ISO date — the staleness measure, so an
+ * issue left over a weekend is not counted stale for those idle days. Mirrors `businessDaysElapsedSince` in
+ * client/src/utils/businessDays.ts; keep the two in lockstep.
+ *
+ * @param {string} dateText - ISO date/datetime string.
+ * @returns {number} Whole business days elapsed (0 for a missing/unparseable or future date).
+ */
+function businessDaysElapsedSince(dateText) {
+  const fromMs = new Date(dateText).getTime();
+  const nowMs = Date.now();
+  if (Number.isNaN(fromMs) || fromMs >= nowMs) return 0;
+  const msPerDay = 24 * 60 * 60 * 1000;
+  const wholeDaysElapsed = Math.floor((nowMs - fromMs) / msPerDay);
+  let businessDayCount = 0;
+  const cursor = new Date(fromMs);
+  for (let dayIndex = 0; dayIndex < wholeDaysElapsed; dayIndex += 1) {
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+    const dayOfWeek = cursor.getUTCDay();
+    if (dayOfWeek !== 0 && dayOfWeek !== 6) businessDayCount += 1;
+  }
+  return businessDayCount;
+}
+
+/**
  * Returns true when the date string represents today or a date in the past.
  *
  * @param {string} fieldValue - ISO date or datetime string.
@@ -292,8 +316,10 @@ function checkMissingStoryPoints(issue) {
 
 function checkStaleIssue(issue) {
   if (!isInProgressIssue(issue)) return null;
-  if (calculateAgeInDays(issue.fields.updated) < STALE_THRESHOLD_DAYS) return null;
-  return { checkId: 'stale-issue', label: 'Stale — no update in 14+ days', severity: 'warn' };
+  // Staleness is measured in BUSINESS days so a weekend never makes an issue stale; the 14 threshold now
+  // denotes business days. Kept in lockstep with client checkStaleIssue.
+  if (businessDaysElapsedSince(issue.fields.updated) < STALE_THRESHOLD_DAYS) return null;
+  return { checkId: 'stale-issue', label: 'Stale — no update in 14+ business days', severity: 'warn' };
 }
 
 function checkNoAssignee(issue) {

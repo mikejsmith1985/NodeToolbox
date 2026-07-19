@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Staleness is now measured in business days, not calendar days**: an in-progress issue left untouched
+  over a weekend is no longer counted as stale for those idle Saturday/Sunday days. All three staleness
+  surfaces — the Hygiene `stale` check, the Sprint Dashboard Blockers/stale rule (`isStaleIssue`), and the
+  server-side hygiene monitor — now consume one shared `businessDaysElapsedSince` helper (mirrored in
+  `src/services/hygieneRules.js`), so they still agree by construction. **The configured stale-days
+  thresholds now denote business days**, which is intentionally more lenient (e.g. a 5-day dashboard
+  threshold ≈ one work week). Calendar-day *age* displays ("Nd ago") and the old-in-sprint check are
+  unchanged — only the update-idle staleness rule moved to business days.
+
 ### Fixed
 - **The Remediation tab now works without unlocking AI**: the Team space's Backlog Remediation tab
   was rendered entirely inside the AI-Assist gate, so the whole tab — scope, Refresh backlog, the

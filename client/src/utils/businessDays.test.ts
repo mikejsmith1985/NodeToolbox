@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { businessDaysAgo, mostRecentBusinessDayKey, toJqlDateString } from './businessDays.ts';
+import { businessDaysAgo, businessDaysElapsedSince, mostRecentBusinessDayKey, toJqlDateString } from './businessDays.ts';
 
 describe('businessDaysAgo', () => {
   it('counts back business days, skipping the weekend (Wednesday minus 3)', () => {
@@ -39,6 +39,33 @@ describe('toJqlDateString', () => {
   it('formats a date as YYYY-MM-DD using local calendar parts', () => {
     const date = new Date(2025, 2, 9, 14, 0, 0); // 9 March 2025, local time
     expect(toJqlDateString(date)).toBe('2025-03-09');
+  });
+});
+
+describe('businessDaysElapsedSince', () => {
+  // All fixtures pin "now" explicitly and use UTC noon timestamps so the weekday classification is unambiguous.
+  const MONDAY_13TH_NOON = Date.UTC(2026, 6, 13, 12); // Mon 2026-07-13
+
+  it('counts a full Monday-to-Monday week as five business days', () => {
+    expect(businessDaysElapsedSince('2026-07-06T12:00:00.000Z', MONDAY_13TH_NOON)).toBe(5);
+  });
+
+  it('does NOT count the weekend: Friday to Monday is one business day, not three', () => {
+    expect(businessDaysElapsedSince('2026-07-10T12:00:00.000Z', MONDAY_13TH_NOON)).toBe(1);
+  });
+
+  it('counts Thursday to Monday as two business days (Fri + Mon, weekend skipped)', () => {
+    expect(businessDaysElapsedSince('2026-07-09T12:00:00.000Z', MONDAY_13TH_NOON)).toBe(2);
+  });
+
+  it('returns 0 for a future timestamp and for a gap shorter than one whole day', () => {
+    expect(businessDaysElapsedSince('2026-07-20T12:00:00.000Z', MONDAY_13TH_NOON)).toBe(0);
+    expect(businessDaysElapsedSince('2026-07-13T01:00:00.000Z', Date.UTC(2026, 6, 13, 20))).toBe(0);
+  });
+
+  it('returns 0 for a missing or unparseable date rather than throwing', () => {
+    expect(businessDaysElapsedSince('not-a-date', MONDAY_13TH_NOON)).toBe(0);
+    expect(businessDaysElapsedSince('', MONDAY_13TH_NOON)).toBe(0);
   });
 });
 

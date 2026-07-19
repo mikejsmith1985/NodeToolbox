@@ -88,8 +88,11 @@ describe('evaluateHygieneRules — no-assignee', () => {
 // ── stale-issue check ─────────────────────────────────────────────────────────
 
 describe('evaluateHygieneRules — stale-issue', () => {
-  it('flags stale-issue when an In Progress issue has not been updated in 15+ days', () => {
-    const staleDateString = new Date(Date.now() - 15 * 24 * 60 * 60 * 1000).toISOString();
+  // Staleness now counts BUSINESS days against a 14-business-day threshold. The gaps below are chosen so the
+  // outcome is the same whatever weekday the test runs on: any 30-calendar-day span holds 20–22 business days
+  // (always ≥ 14), and any 5-calendar-day span holds at most 5 business days (always < 14).
+  it('flags stale-issue when an In Progress issue has 14+ business days of no update', () => {
+    const staleDateString = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
     const issue = buildStory({
       status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } },
       updated: staleDateString,
@@ -98,7 +101,7 @@ describe('evaluateHygieneRules — stale-issue', () => {
     expect(extractCheckIds(flags)).toContain('stale-issue');
   });
 
-  it('does not flag stale-issue when updated within 14 days', () => {
+  it('does not flag stale-issue when updated within the last 14 business days', () => {
     const recentDate = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString();
     const issue = buildStory({
       status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } },

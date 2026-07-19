@@ -1,12 +1,14 @@
-// businessDays.ts — Calendar helpers for "last N business days" report windows.
+// businessDays.ts — Calendar helpers for "last N business days" report windows and staleness measurement.
 //
-// "Business days" excludes Saturday and Sunday. The Mentions report uses these
-// helpers to turn a user-selected window (e.g. "last 3 business days") into both
-// a JQL date filter and an epoch cutoff for filtering individual comments.
+// "Business days" excludes Saturday and Sunday. The Mentions report uses these helpers to turn a user-selected
+// window (e.g. "last 3 business days") into both a JQL date filter and an epoch cutoff for filtering individual
+// comments. The staleness surfaces (Hygiene + Sprint Dashboard) use `businessDaysElapsedSince` so an issue left
+// untouched over a weekend is not counted as "stale" for those idle weekend days.
 
 const SATURDAY_DAY_INDEX = 6;
 const SUNDAY_DAY_INDEX = 0;
 const ISO_DATE_PAD_LENGTH = 2;
+const MILLISECONDS_PER_DAY = 86_400_000;
 
 /**
  * Returns the date that is `businessDayCount` business days before `fromDate`,
@@ -57,8 +59,44 @@ export function toJqlDateString(date: Date): string {
   return `${year}-${month}-${dayOfMonth}`;
 }
 
+/**
+ * Counts how many whole BUSINESS days (Monday–Friday) have elapsed between an issue's last-activity timestamp
+ * and now. This is the staleness measure: an issue last touched on Friday is "1 business day" idle by Monday,
+ * not "3", so a team is never told to chase work that only sat idle over a weekend.
+ *
+ * The count is done in UTC so the result is identical regardless of the machine's timezone (important for the
+ * server-side hygiene monitor and for deterministic tests). Each whole 24-hour day that has elapsed is examined;
+ * only the days that land on a weekday are counted. Returns 0 for a missing/unparseable date or a future date.
+ *
+ * @param fromDateString The ISO timestamp the issue was last updated (a missing value simply counts as 0).
+ * @param nowMs The current epoch milliseconds (injectable so callers/tests can pin "now").
+ */
+export function businessDaysElapsedSince(fromDateString: string | null | undefined, nowMs: number = Date.now()): number {
+  if (!fromDateString) return 0;
+  const fromMs = new Date(fromDateString).getTime();
+  if (!Number.isFinite(fromMs) || fromMs >= nowMs) return 0;
+
+  const wholeDaysElapsed = Math.floor((nowMs - fromMs) / MILLISECONDS_PER_DAY);
+  let businessDayCount = 0;
+  const cursor = new Date(fromMs);
+  // Walk one calendar day at a time across the elapsed span, tallying only the weekdays we land on.
+  for (let dayIndex = 0; dayIndex < wholeDaysElapsed; dayIndex += 1) {
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+    if (!isUtcWeekend(cursor)) {
+      businessDayCount += 1;
+    }
+  }
+  return businessDayCount;
+}
+
 /** Returns true when the given date falls on a Saturday or Sunday. */
 function isWeekend(date: Date): boolean {
   const dayOfWeek = date.getDay();
+  return dayOfWeek === SATURDAY_DAY_INDEX || dayOfWeek === SUNDAY_DAY_INDEX;
+}
+
+/** UTC-based weekend check — used by staleness math so the result never shifts with the local timezone. */
+function isUtcWeekend(date: Date): boolean {
+  const dayOfWeek = date.getUTCDay();
   return dayOfWeek === SATURDAY_DAY_INDEX || dayOfWeek === SUNDAY_DAY_INDEX;
 }
