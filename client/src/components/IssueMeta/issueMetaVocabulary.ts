@@ -8,8 +8,8 @@
 /** The semantic color families the chip components render (data-tone attribute values). */
 export type ChipTone = 'neutral' | 'progress' | 'success' | 'warning' | 'danger';
 
-/** Fallback stale threshold when a team has not configured one — matches the app-wide default. */
-const DEFAULT_STALE_THRESHOLD_DAYS = 14;
+/** Fallback stale threshold when a team has not configured one — matches the app-wide default of 5 days. */
+const DEFAULT_STALE_THRESHOLD_DAYS = 5;
 /** Multiplier for the "overdue" band: past twice the stale threshold, age reads as danger. */
 const OVERDUE_THRESHOLD_MULTIPLIER = 2;
 /** Placeholder initials when a display name is blank. */

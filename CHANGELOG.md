@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Staleness is now measured in business days, not calendar days**: an in-progress issue left untouched
+  over a weekend is no longer counted as stale for those idle Saturday/Sunday days. All three staleness
+  surfaces — the Hygiene `stale` check, the Sprint Dashboard Blockers/stale rule (`isStaleIssue`), and the
+  server-side hygiene monitor — now consume one shared `businessDaysElapsedSince` helper (mirrored in
+  `src/services/hygieneRules.js`), so they still agree by construction. **The configured stale-days
+  thresholds now denote business days**, which is intentionally more lenient (e.g. a 5-day dashboard
+  threshold ≈ one work week). Calendar-day *age* displays ("Nd ago") and the old-in-sprint check are
+  unchanged — only the update-idle staleness rule moved to business days.
+- **Reconciled the remaining stale-threshold defaults to the app-wide 5** (GH #167's "one stale
+  definition"): the server hygiene monitor's default dropped 14 → 5 business days, and the `AgeBadge` /
+  issue-meta age-heat fallback dropped 14 → 5 (its own comment already claimed to match the app-wide
+  default, but the value was a pre-#167 leftover). Both were the last places still defaulting to 14, so
+  every surface now treats "stale" identically. The server monitor's stale label is derived from the
+  threshold constant so the wording can no longer drift from the number.
+
 ### Fixed
 - **Remediation tab no longer 400s on refresh (GH #197)**: the team scope was being wrapped by
   `buildAgingJql` twice — once in `resolveTeamScope` and again inside the fetch — producing an invalid

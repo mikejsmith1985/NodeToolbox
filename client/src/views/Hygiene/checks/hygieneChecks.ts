@@ -4,12 +4,14 @@
 // rule predicates small and deterministic so the state hook can compose them and tests
 // can prove each default hygiene signal independently.
 
+import { businessDaysElapsedSince } from '../../../utils/businessDays.ts';
 import { normalizeRichTextToPlainText } from '../../../utils/richTextPlainText.ts';
 import type { EnterpriseRequiredFieldRule } from '../../AdminHub/enterpriseRules.ts';
 
 // Fallback only — every live surface passes the team's configured staleDaysThreshold (dashboard
-// default 5). Keeping this aligned with that default means a caller that forgets the argument
-// cannot quietly apply a different staleness rule than every other surface (GH #167).
+// default 5). The threshold now counts BUSINESS days (weekends never make an issue stale). Keeping
+// this aligned with that default means a caller that forgets the argument cannot quietly apply a
+// different staleness rule than every other surface (GH #167).
 const STALE_THRESHOLD_DAYS = 5;
 const OLD_IN_SPRINT_THRESHOLD_DAYS = 30;
 const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -376,14 +378,15 @@ export function checkMissingStoryPoints(issue: JiraIssue, customStoryPointsField
 }
 
 /**
- * Flags in-progress issues that have not been updated within the active-work threshold.
- * The threshold is configurable so this matches the Blockers tab's stale rule exactly; the
- * comparison is inclusive (>=) so an issue that hits the threshold on the dot is flagged,
- * mirroring sprintDashboardIssueUtils.isStaleIssue.
+ * Flags in-progress issues that have not been updated within the active-work threshold. Staleness is measured
+ * in BUSINESS days (Mon–Fri) so an issue left over a weekend is not counted as stale for those idle days; the
+ * threshold therefore denotes business days. The threshold is configurable so this matches the Blockers tab's
+ * stale rule exactly; the comparison is inclusive (>=) so an issue that hits the threshold on the dot is
+ * flagged, mirroring sprintDashboardIssueUtils.isStaleIssue.
  */
 export function checkStaleIssue(issue: JiraIssue, staleDaysThreshold: number = STALE_THRESHOLD_DAYS): HygieneFlag | null {
   if (!isInProgressIssue(issue)) return null;
-  return calculateAgeInDays(issue.fields.updated) >= staleDaysThreshold ? BUILT_IN_HYGIENE_FLAGS.stale : null;
+  return businessDaysElapsedSince(issue.fields.updated) >= staleDaysThreshold ? BUILT_IN_HYGIENE_FLAGS.stale : null;
 }
 
 /** Flags non-done issues that still have no accountable assignee. */

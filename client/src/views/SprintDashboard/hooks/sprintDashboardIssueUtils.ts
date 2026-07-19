@@ -1,5 +1,6 @@
 // sprintDashboardIssueUtils.ts — Shared Sprint Dashboard issue classification helpers for parity-sensitive tabs.
 
+import { businessDaysElapsedSince } from '../../../utils/businessDays.ts';
 import type { JiraIssue, JiraIssueLink } from '../../../types/jira.ts';
 
 const MS_PER_DAY = 86_400_000;
@@ -88,8 +89,13 @@ export function isDoneIssue(issue: JiraIssue): boolean {
     || DONE_STATUS_NAMES.includes(issue.fields.status.name.toLowerCase());
 }
 
-/** Returns true when an in-progress issue has been stale for at least the configured number of days. */
+/**
+ * Returns true when an in-progress issue has been stale for at least the configured number of BUSINESS days.
+ * Staleness excludes weekends (via `businessDaysElapsedSince`), so an issue left untouched over a weekend is not
+ * counted as stale for those idle days — the threshold denotes business days. `calculateIssueAgeDays` above is a
+ * separate calendar-day age used only for display ("Nd ago") and is intentionally left unchanged.
+ */
 export function isStaleIssue(issue: JiraIssue, staleDaysThreshold: number): boolean {
   return issue.fields.status.statusCategory.key === 'indeterminate'
-    && calculateIssueAgeDays(issue.fields.updated) >= staleDaysThreshold;
+    && businessDaysElapsedSince(issue.fields.updated) >= staleDaysThreshold;
 }

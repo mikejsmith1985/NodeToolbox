@@ -75,10 +75,15 @@ describe('sprintDashboardIssueUtils', () => {
     expect(isBlockedIssue(blockedByLinkIssue)).toBe(true);
   });
 
-  it('calculates issue age, done-state, and stale-state with legacy rules', () => {
+  it('calculates calendar-day age for display and business-day staleness for the rule', () => {
+    // "now" is Mon 2025-01-06; the issue was updated Fri 2025-01-03. That is 3 CALENDAR days (used for the
+    // "Nd ago" display) but only 1 BUSINESS day (used for staleness) because the weekend does not count.
     expect(calculateIssueAgeDays('2025-01-03T00:00:00.000Z')).toBe(3);
     expect(isDoneIssue(createIssue('Resolved', 'done'))).toBe(true);
-    expect(isStaleIssue(createIssue('In Progress', 'indeterminate'), 3)).toBe(true);
-    expect(isStaleIssue(createIssue('To Do', 'new'), 3)).toBe(false);
+    // 1 business day elapsed: stale at a 1-day threshold, but NOT at a 2-day threshold (weekend excluded).
+    expect(isStaleIssue(createIssue('In Progress', 'indeterminate'), 1)).toBe(true);
+    expect(isStaleIssue(createIssue('In Progress', 'indeterminate'), 2)).toBe(false);
+    // A non-in-progress issue is never stale regardless of age.
+    expect(isStaleIssue(createIssue('To Do', 'new'), 1)).toBe(false);
   });
 });

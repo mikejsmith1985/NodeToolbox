@@ -88,8 +88,11 @@ describe('evaluateHygieneRules — no-assignee', () => {
 // ── stale-issue check ─────────────────────────────────────────────────────────
 
 describe('evaluateHygieneRules — stale-issue', () => {
-  it('flags stale-issue when an In Progress issue has not been updated in 15+ days', () => {
-    const staleDateString = new Date(Date.now() - 15 * 24 * 60 * 60 * 1000).toISOString();
+  // Staleness counts BUSINESS days against the 5-business-day default (one work week), matching every client
+  // surface. The gaps below give the same outcome whatever weekday the test runs on: any 7-calendar-day span is
+  // exactly 5 business days (5 weekdays + 2 weekend days), and any 3-calendar-day span is at most 3 business days.
+  it('flags stale-issue once an In Progress issue has 5+ business days (one week) of no update', () => {
+    const staleDateString = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
     const issue = buildStory({
       status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } },
       updated: staleDateString,
@@ -98,8 +101,8 @@ describe('evaluateHygieneRules — stale-issue', () => {
     expect(extractCheckIds(flags)).toContain('stale-issue');
   });
 
-  it('does not flag stale-issue when updated within 14 days', () => {
-    const recentDate = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString();
+  it('does not flag stale-issue when updated within the last 5 business days', () => {
+    const recentDate = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
     const issue = buildStory({
       status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } },
       updated: recentDate,
