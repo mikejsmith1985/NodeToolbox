@@ -277,11 +277,42 @@
 .alertFlag {
   padding: 2px 8px;
   border-radius: var(--radius-sm, 6px);
+  /* Base owns shape/spacing/type only; the per-family modifiers below own the colour (GH #197). The amber here
+     is a safe fallback for any future alert id that has no explicit family colour yet. */
   background: var(--color-warning-bg, rgba(245, 158, 11, 0.16));
   color: var(--color-warning-text, #b45309);
   font-size: var(--font-size-sm);
   font-weight: 600;
   white-space: nowrap;
+}
+
+/* ── Per-family alert colours ──────────────────────────────────────────────────
+   One distinct hue per hygiene-alert family so families are separable at a glance, echoing the original Jira
+   readiness report: PCode = pink, Estimate = cyan, Owner = gold. Target End and Due Date get their own hues so
+   the two date families never blur together. Solid pastel fills with dark text stay legible on light and dark. */
+.alertMissingOwnership {
+  background: #f2c94c;
+  color: #3d2f00;
+}
+
+.alertMissingEstimate {
+  background: #58c4dc;
+  color: #04303a;
+}
+
+.alertMissingPcode {
+  background: #f2a7cb;
+  color: #4d1233;
+}
+
+.alertTargetEnd {
+  background: #b9a3ef;
+  color: #241546;
+}
+
+.alertDueDate {
+  background: #f2a07a;
+  color: #4a1c06;
 }
 
 .stateMessage {
