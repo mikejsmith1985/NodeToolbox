@@ -66,10 +66,10 @@ describe('resolveAgeTone', () => {
     expect(resolveAgeTone(11, 5)).toBe('danger');
   });
 
-  it('treats a missing or non-positive threshold as the default 14 days', () => {
-    expect(resolveAgeTone(13, 0)).toBe('neutral');
-    expect(resolveAgeTone(14, 0)).toBe('warning');
-    expect(resolveAgeTone(29, 0)).toBe('danger');
+  it('treats a missing or non-positive threshold as the app-wide default of 5 days', () => {
+    expect(resolveAgeTone(4, 0)).toBe('neutral'); // < 5
+    expect(resolveAgeTone(5, 0)).toBe('warning'); // 5..10
+    expect(resolveAgeTone(11, 0)).toBe('danger'); // > 2×5
   });
 });
 

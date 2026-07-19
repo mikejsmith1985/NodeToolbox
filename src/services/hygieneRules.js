@@ -11,7 +11,12 @@
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const STALE_THRESHOLD_DAYS = 14;
+// Business days of no update before an in-progress issue is flagged stale. 5 = one work week, matching the
+// app-wide default every client surface already uses (hygieneChecks' STALE_THRESHOLD_DAYS fallback, the ART /
+// Sprint Dashboard stale-days default, the enterprise-rules copy). Keep in lockstep with that client default so
+// the server hygiene monitor and the UI never disagree on what "stale" means. GH #167 aligned the client from
+// 14 to 5; this brings the server monitor in line, now that both count business days rather than calendar days.
+const STALE_THRESHOLD_DAYS = 5;
 const OLD_IN_SPRINT_THRESHOLD_DAYS = 30;
 
 const MODERN_STORY_POINTS_FIELD = 'customfield_10028';
@@ -316,10 +321,11 @@ function checkMissingStoryPoints(issue) {
 
 function checkStaleIssue(issue) {
   if (!isInProgressIssue(issue)) return null;
-  // Staleness is measured in BUSINESS days so a weekend never makes an issue stale; the 14 threshold now
-  // denotes business days. Kept in lockstep with client checkStaleIssue.
+  // Staleness is measured in BUSINESS days so a weekend never makes an issue stale; the threshold denotes
+  // business days. Kept in lockstep with the client checkStaleIssue default.
   if (businessDaysElapsedSince(issue.fields.updated) < STALE_THRESHOLD_DAYS) return null;
-  return { checkId: 'stale-issue', label: 'Stale — no update in 14+ business days', severity: 'warn' };
+  // Label derives from the constant so the wording can never drift from the threshold it describes.
+  return { checkId: 'stale-issue', label: `Stale — no update in ${STALE_THRESHOLD_DAYS}+ business days`, severity: 'warn' };
 }
 
 function checkNoAssignee(issue) {
