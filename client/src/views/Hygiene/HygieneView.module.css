@@ -136,6 +136,25 @@
   font-size: var(--font-size-sm);
 }
 
+.openInJiraLink {
+  position: absolute;
+  bottom: var(--spacing-xs, 4px);
+  left: var(--spacing-xs, 4px);
+  padding: 1px 5px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm, 4px);
+  color: var(--color-text-muted);
+  text-decoration: none;
+  font-size: 0.7rem;
+  line-height: 1.4;
+}
+
+.openInJiraLink:hover,
+.openInJiraLink:focus-visible {
+  border-color: var(--color-accent, #6366f1);
+  color: var(--color-accent, #6366f1);
+}
+
 .copyJqlButton,
 .copyJqlButtonCopied {
   position: absolute;

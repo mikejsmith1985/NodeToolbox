@@ -18,6 +18,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   leaving the current view or building a second viewer. New `quickLookupStore` gives the F2 lookup an imperative
   `open(seedKey?)` path (the gate previously opened only on the F2 keydown); the linked-issue key became a focusable
   control. Additive to the shipped panel/lookup — F2 behaves exactly as before.
+- **GH #200 — every hygiene tile can open its exact Jira search** (US2): each check tile gained an "open in Jira ↗"
+  link that opens the family's semantic JQL — the scan's scope **AND** the family's condition (e.g. `fixVersions is
+  EMPTY AND issuetype in (…)`), not just a list of already-found keys — so a user can validate Toolbox's count
+  against Jira (present even at 0, so a "0" is verifiable). The tile's existing in-app filter click and the copy-JQL
+  affordance are unchanged. The fix-version clause is built from the **same exported constant** the check uses, and the
+  scope from the same builder the scan uses, so the count and the link cannot disagree.
 
 ### Added
 - **F2 Quick Issue Lookup — find, view, and fix any issue from anywhere** (in progress): a global **F2**

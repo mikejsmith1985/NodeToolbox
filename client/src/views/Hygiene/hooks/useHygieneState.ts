@@ -18,7 +18,7 @@ import {
   type HygieneFinding,
   type HygieneSummary,
 } from '../checks/hygieneChecks.ts';
-import { DEFAULT_ASSIGNEE_CLAUSE, runHygieneScan } from './hygieneScan.ts';
+import { buildHygieneScopeJql, DEFAULT_ASSIGNEE_CLAUSE, runHygieneScan } from './hygieneScan.ts';
 
 // The scan pipeline moved to hygieneScan.ts so the Today dashboard can run the exact same scan;
 // these re-exports keep every existing import of this module working unchanged.
@@ -50,6 +50,8 @@ export function parseHygieneFilterCheckIds(selectedFilter: string | null): strin
 export interface HygieneState {
   projectKey: string;
   extraJql: string;
+  /** The exact scope JQL the scan runs within; reused by the per-check "open in Jira" links (US2). */
+  scopeJql: string;
   findings: HygieneFinding[];
   filteredFindings: HygieneFinding[];
   summary: HygieneSummary;
@@ -203,9 +205,18 @@ export function useHygieneState(options: useHygieneStateOptions = {}): HygieneSt
     }
   }, [activeDashboardTeamProfileId, extraJql, isAllProjectsScope, isTeamMode, projectKey]);
 
+  // The exact scope JQL the scan runs within — exposed so the per-check "open in Jira" links (GH #200 US2)
+  // reuse the SAME scope as the count (agree by construction).
+  const scopeJql = buildHygieneScopeJql(
+    isAllProjectsScope ? '' : projectKey.trim(),
+    extraJql,
+    isTeamMode ? null : DEFAULT_ASSIGNEE_CLAUSE,
+  );
+
   return {
     projectKey,
     extraJql,
+    scopeJql,
     findings,
     filteredFindings,
     summary,

@@ -29,6 +29,7 @@ const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000;
 interface OverrideHookState {
   projectKey?: string;
   extraJql?: string;
+  scopeJql?: string;
   findings?: HygieneFinding[];
   filteredFindings?: HygieneFinding[];
   summary?: HygieneSummary;
@@ -97,6 +98,7 @@ function buildHookState(overrides: OverrideHookState = {}): ReturnType<typeof us
   return {
     projectKey: overrides.projectKey ?? '',
     extraJql: overrides.extraJql ?? '',
+    scopeJql: overrides.scopeJql ?? 'statusCategory != Done',
     findings,
     filteredFindings: overrides.filteredFindings ?? findings,
     summary: overrides.summary ?? buildSummary(),
@@ -388,6 +390,22 @@ describe('HygieneView', () => {
     expect(screen.getAllByText('No assignee')).toHaveLength(2);
     expect(screen.getByText('Alex')).toBeInTheDocument();
     expect(screen.getByText('5d')).toBeInTheDocument();
+  });
+
+  it('gives each tile an "open in Jira" link carrying the family JQL clause (GH #200 US2)', () => {
+    const hookState = buildHookState({
+      projectKey: 'TBX',
+      scopeJql: 'project=TBX AND statusCategory != Done',
+    });
+    mockUseHygieneState.mockReturnValue(hookState);
+
+    render(<HygieneView />);
+
+    // The no-assignee tile links to a Jira search whose JQL includes the family condition (assignee EMPTY),
+    // not merely a list of already-found keys — so the user can validate the count against Jira.
+    const openLink = screen.getByRole('link', { name: /Open no-assignee in Jira/i });
+    expect(openLink.getAttribute('href')).toContain('assignee');
+    expect(openLink).toHaveAttribute('target', '_blank');
   });
 
   it('selects and clears a tile filter through the hook action', () => {
