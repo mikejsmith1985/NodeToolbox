@@ -47,6 +47,13 @@ vi.mock('../../components/Toast/ToastContext.ts', () => ({
   useToast: () => ({ showToast: mockShowToast }),
 }));
 
+// The team/PI picker now loads Program Increments from Jira on mount; stub that one call so this AI-less
+// sweep stays offline while every other useArtData export keeps its real behaviour.
+vi.mock('../ArtView/hooks/useArtData', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../ArtView/hooks/useArtData')>()),
+  loadAvailablePiNamesFromJira: vi.fn().mockResolvedValue([]),
+}));
+
 import { useAiAssistStore } from '../../store/aiAssistStore';
 import FeatureCompositionTab from './FeatureCompositionTab';
 import FeatureSplitterTab from './FeatureSplitterTab';
