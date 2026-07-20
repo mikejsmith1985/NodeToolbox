@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **GH #200 — hygiene "missing fix version" detected 0 of 72** (US1): the check was gated to Feature/Epic issue types,
+  so a PI's Stories/Tasks/Defects lacking a fix version were never counted. It now evaluates Story/Task/Defect/
+  Feature/Epic (Sub-tasks excluded — they inherit the parent release), reading the native `fixVersions` field. The
+  issue-type set is exported from `hygieneChecks.ts` and mirrored in the server hygiene monitor (`hygieneRules.js`),
+  so the view, the scheduled monitor, and (US2) the "open in Jira" link all agree by construction.
+
 ### Added
 - **F2 Quick Issue Lookup — find, view, and fix any issue from anywhere** (in progress): a global **F2**
   shortcut opens a modal popup where you type or paste an issue key (a pasted Jira `/browse/KEY` link works
