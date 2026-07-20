@@ -149,6 +149,65 @@ describe('useMyIssuesState', () => {
   });
 });
 
+// ── Persona subject tests (US6) ──
+
+describe('useMyIssuesState — report subject personas', () => {
+  afterEach(() => vi.clearAllMocks());
+
+  it('initialises with the viewer subject', () => {
+    const { result } = renderHook(() => useMyIssuesState());
+
+    expect(result.current.state.subject).toEqual({ kind: 'viewer' });
+    expect(result.current.state.subjectMemberIdentifiers).toEqual([]);
+  });
+
+  it('fetchMyIssues uses the currentUser() clause for the viewer subject', async () => {
+    mockJiraGet.mockResolvedValue({ issues: MOCK_ISSUES, total: 2 });
+    const { result } = renderHook(() => useMyIssuesState());
+
+    await act(async () => { await result.current.actions.fetchMyIssues(); });
+
+    const requestedPath = mockJiraGet.mock.calls[0][0] as string;
+    expect(decodeURIComponent(requestedPath)).toContain('assignee = currentUser()');
+  });
+
+  it('fetchMyIssues scopes to a simulated user accountId after setSubject', async () => {
+    mockJiraGet.mockResolvedValue({ issues: MOCK_ISSUES, total: 2 });
+    const { result } = renderHook(() => useMyIssuesState());
+
+    act(() => {
+      result.current.actions.setSubject({ kind: 'user', accountId: 'acc-9', displayName: 'Zoe' });
+    });
+    await act(async () => { await result.current.actions.fetchMyIssues(); });
+
+    const requestedPath = mockJiraGet.mock.calls[0][0] as string;
+    expect(decodeURIComponent(requestedPath)).toContain('assignee = "acc-9"');
+  });
+
+  it('fetchMyIssues lists team members for a team subject', async () => {
+    mockJiraGet.mockResolvedValue({ issues: MOCK_ISSUES, total: 2 });
+    const { result } = renderHook(() => useMyIssuesState());
+
+    act(() => {
+      result.current.actions.setSubject({ kind: 'team', teamName: 'Falcons' }, ['a@x.com', 'b@x.com']);
+    });
+    await act(async () => { await result.current.actions.fetchMyIssues(); });
+
+    const requestedPath = mockJiraGet.mock.calls[0][0] as string;
+    expect(decodeURIComponent(requestedPath)).toContain('assignee in ("a@x.com", "b@x.com")');
+  });
+
+  it('drops member identifiers when the subject is not a team', () => {
+    const { result } = renderHook(() => useMyIssuesState());
+
+    act(() => {
+      result.current.actions.setSubject({ kind: 'user', accountId: 'acc-1', displayName: 'A' }, ['stale']);
+    });
+
+    expect(result.current.state.subjectMemberIdentifiers).toEqual([]);
+  });
+});
+
 // ── Detail panel tests ──
 
 describe('useMyIssuesState — detail panel', () => {
