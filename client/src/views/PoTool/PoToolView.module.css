@@ -62,6 +62,31 @@
   font: inherit;
 }
 
+/* Honest hint shown when Jira PIs cannot be loaded and the picker falls back to manual entry. */
+.teamSelectorHint {
+  margin: 0;
+  font-size: 0.72rem;
+  opacity: 0.75;
+}
+
+/* Retry control for the Program Increment lookup — mirrors the ArtView PI selector's reload button. */
+.teamSelectorReload {
+  align-self: flex-start;
+  padding: 4px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-field-bg);
+  color: inherit;
+  font: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.teamSelectorReload:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
 /* Explains why this picker exists — a PO must know it will not move their Team Dashboard. */
 .teamSelectorNote {
   flex-basis: 100%;

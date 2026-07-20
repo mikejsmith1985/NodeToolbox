@@ -120,6 +120,7 @@ export default function PoToolView() {
       <PoTeamSelector
         selectedTeamProfileId={selectedTeamProfileId}
         selectedPiName={selectedPiName}
+        piReviewTeams={piReviewTeams}
         onTeamProfileChange={setSelectedTeamProfileId}
         onPiNameChange={setSelectedPiName}
       />
