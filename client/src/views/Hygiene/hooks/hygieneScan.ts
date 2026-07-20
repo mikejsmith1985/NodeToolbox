@@ -90,17 +90,30 @@ export interface HygieneScanOutcome {
  * dropped so the search matches the Today tab's cross-project personal count. That
  * scope is only ever used with the assignee clause, which keeps the query bounded.
  */
-export function buildHygieneSearchPath(
+/**
+ * Builds the scope JQL a hygiene scan runs within (project/personal + not-Done + any extra clause).
+ * Single-sourced so the "open in Jira" per-check link (US2, GH #200) reuses the EXACT scope the scan
+ * used — the count and the link cannot disagree on scope.
+ */
+export function buildHygieneScopeJql(
   projectKey: string,
   extraJql: string,
-  requestedFields: string[] = BASE_HYGIENE_FIELDS,
   assigneeClause: string | null = DEFAULT_ASSIGNEE_CLAUSE,
 ): string {
   const normalizedProjectKey = projectKey.trim().toUpperCase();
   const extraJqlClause = extraJql.trim();
   const assigneeFilter = assigneeClause && assigneeClause.trim() ? ` AND ${assigneeClause.trim()}` : '';
   const projectClause = normalizedProjectKey ? `project=${normalizedProjectKey} AND ` : '';
-  const jqlText = `${projectClause}statusCategory != Done${assigneeFilter}${extraJqlClause ? ` ${extraJqlClause}` : ''}`;
+  return `${projectClause}statusCategory != Done${assigneeFilter}${extraJqlClause ? ` ${extraJqlClause}` : ''}`;
+}
+
+export function buildHygieneSearchPath(
+  projectKey: string,
+  extraJql: string,
+  requestedFields: string[] = BASE_HYGIENE_FIELDS,
+  assigneeClause: string | null = DEFAULT_ASSIGNEE_CLAUSE,
+): string {
+  const jqlText = buildHygieneScopeJql(projectKey, extraJql, assigneeClause);
   return `/rest/api/2/search?jql=${encodeURIComponent(jqlText)}&fields=${encodeURIComponent(buildUniqueFieldIds(requestedFields).join(','))}&maxResults=${HYGIENE_MAX_RESULTS}`;
 }
 

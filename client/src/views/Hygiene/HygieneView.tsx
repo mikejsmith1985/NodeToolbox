@@ -23,7 +23,12 @@ import { HygieneAiPanel } from './ai/HygieneAiPanel.tsx';
 import { parseHygieneFilterCheckIds, useHygieneState } from './hooks/useHygieneState.ts';
 import { useHygieneSession, type HygieneSessionOutcome } from './hooks/useHygieneSession.ts';
 import { HYGIENE_SORT_OPTIONS, sortHygieneFindings, type HygieneSortKey } from './hygieneSort.ts';
-import { buildCheckIssueKeys, buildJiraIssueNavigatorUrl } from './utils/buildHygieneJqlUrl.ts';
+import {
+  buildCheckIssueKeys,
+  buildHygieneCheckJql,
+  buildJiraIssueNavigatorUrl,
+  buildJiraSearchUrl,
+} from './utils/buildHygieneJqlUrl.ts';
 import IssueDetailPanel from '../../components/IssueDetailPanel/index.tsx';
 import { useConnectionStore } from '../../store/connectionStore.ts';
 import type { JiraIssue as RealJiraIssue } from '../../types/jira.ts';
@@ -283,7 +288,7 @@ export default function HygieneView({
           </span>
         </button>
         {hygieneState.availableCheckIds.map((checkId) =>
-          renderSummaryTile(checkId, hygieneState, copiedCheckId, handleCopyCheckJql),
+          renderSummaryTile(checkId, hygieneState, copiedCheckId, handleCopyCheckJql, jiraBaseUrl),
         )}
       </div>
 
@@ -406,11 +411,25 @@ export default function HygieneView({
   );
 }
 
+/** Builds the "open in Jira" URL for a check: its semantic family JQL when expressible, else the found-key list. */
+function buildTileJiraUrl(
+  checkId: string,
+  hygieneState: ReturnType<typeof useHygieneState>,
+  jiraBaseUrl: string | null,
+): string {
+  const checkJql = buildHygieneCheckJql(checkId, hygieneState.scopeJql, hygieneState.fieldConfig);
+  if (checkJql) {
+    return buildJiraSearchUrl(checkJql, jiraBaseUrl);
+  }
+  return buildJiraIssueNavigatorUrl(buildCheckIssueKeys(checkId, hygieneState.findings), jiraBaseUrl);
+}
+
 function renderSummaryTile(
   checkId: string,
   hygieneState: ReturnType<typeof useHygieneState>,
   copiedCheckId: string | null,
   onCopyJql: (checkId: string) => void,
+  jiraBaseUrl: string | null,
 ) {
   // A deep-linked filter can carry several comma-separated checks (e.g. 'missing-sp,no-ac' from
   // the Today commitment-gaps card) — every check in the active filter shows as selected.
@@ -453,6 +472,19 @@ function renderSummaryTile(
     >
       <strong>{issueCount}</strong>
       <span>{checkLabel}</span>
+      {/* Open the exact Jira search behind this number (GH #200): the family's semantic JQL within the scan's
+          scope, so a user can validate Toolbox's count against Jira. Present even at 0, so "0" is verifiable. */}
+      <a
+        className={styles.openInJiraLink}
+        href={buildTileJiraUrl(checkId, hygieneState, jiraBaseUrl)}
+        target="_blank"
+        rel="noreferrer"
+        aria-label={`Open ${checkLabel} in Jira`}
+        title="Open this check's issues in Jira"
+        onClick={(clickEvent) => clickEvent.stopPropagation()}
+      >
+        ↗
+      </a>
       {hasCopyableIssues && (
         <button
           type="button"

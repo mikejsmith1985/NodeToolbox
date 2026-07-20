@@ -49,6 +49,9 @@ function buildJiraIssue(overrides: Partial<JiraIssue['fields']> = {}, issueKey =
       customfield_10028: 3,
       customfield_10016: null,
       customfield_10020: [],
+      // A healthy default issue carries a fix version — GH #200 broadened the fix-version check to Stories,
+      // so an omitted fixVersion would now add a missing-fix-version flag and change these baselines.
+      fixVersions: [{ name: 'R1' }],
       ...overrides,
     },
   };
