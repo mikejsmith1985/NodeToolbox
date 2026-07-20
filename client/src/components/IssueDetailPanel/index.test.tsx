@@ -6,16 +6,22 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { JiraComment, JiraIssue, JiraTransition } from '../../types/jira.ts';
 
-const { mockJiraGet, mockJiraPost, mockJiraPut } = vi.hoisted(() => ({
+const { mockJiraGet, mockJiraPost, mockJiraPut, openLookupMock } = vi.hoisted(() => ({
   mockJiraGet: vi.fn(),
   mockJiraPost: vi.fn(),
   mockJiraPut: vi.fn(),
+  openLookupMock: vi.fn(),
 }));
 
 vi.mock('../../services/jiraApi.ts', () => ({
   jiraGet: mockJiraGet,
   jiraPost: mockJiraPost,
   jiraPut: mockJiraPut,
+}));
+
+// The linked-issue key opens the F2 Quick Issue Lookup via the app-wide store; mock its open action.
+vi.mock('../QuickIssueLookup/quickLookupStore.ts', () => ({
+  useQuickLookupStore: { getState: () => ({ open: openLookupMock }) },
 }));
 
 import IssueDetailPanel from './index.tsx';
@@ -153,6 +159,31 @@ describe('IssueDetailPanel', () => {
     // Inward links use the inward wording.
     expect(screen.getByText('is blocked by')).toBeInTheDocument();
     expect(screen.getByText('Done')).toHaveAttribute('data-tone', 'success');
+  });
+
+  it('opens the linked issue in the F2 lookup when its key is activated (US3)', async () => {
+    const user = userEvent.setup();
+    const linkedIssue = {
+      ...TEST_ISSUE,
+      fields: {
+        ...TEST_ISSUE.fields,
+        issuelinks: [
+          {
+            type: { name: 'Relates', outward: 'links to', inward: 'is linked by' },
+            outwardIssue: {
+              key: 'ENCUC-2070',
+              fields: { summary: 'Downstream item', status: { name: 'Done', statusCategory: { key: 'done' } } },
+            },
+          },
+        ],
+      },
+    } as unknown as JiraIssue;
+    render(<IssueDetailPanel isEmbedded issue={linkedIssue} />);
+
+    // The linked key must be an actual control (a button), not inert text, so it is clickable/focusable.
+    await user.click(screen.getByRole('button', { name: 'ENCUC-2070' }));
+
+    expect(openLookupMock).toHaveBeenCalledWith('ENCUC-2070');
   });
 
   it('renders labels and fix versions as chips when present', () => {

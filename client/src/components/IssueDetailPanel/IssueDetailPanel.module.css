@@ -132,6 +132,32 @@
   flex-shrink: 0;
 }
 
+/* The linked-issue key rendered as an interactive control: looks like .linkKey but opens the F2
+   lookup on click/Enter/Space. Button chrome is reset so it reads as an inline link, not a chip. */
+.linkKeyButton {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--color-accent, #58a6ff);
+  font-family: var(--font-mono, monospace);
+  font-size: inherit;
+  font-weight: 600;
+  flex-shrink: 0;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.linkKeyButton:hover {
+  text-decoration: none;
+}
+
+.linkKeyButton:focus-visible {
+  outline: 2px solid var(--color-accent, #58a6ff);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
 .linkSummary {
   min-width: 0;
   overflow-wrap: anywhere;

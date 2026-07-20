@@ -25,6 +25,13 @@ const GENERIC_ERROR_LABEL = 'Something went wrong loading this issue.';
 export interface QuickIssueLookupProps {
   /** Ref for the search input so the gate can focus it on open / on F2-while-open. */
   inputRef?: React.Ref<HTMLInputElement>;
+  /**
+   * Optional issue key to load immediately (e.g. when opened by clicking a linked issue). When
+   * present the popup skips the idle/recents state and drives the lookup straight away; when absent
+   * the popup behaves exactly as before (idle → recents until the user searches). The popup remounts
+   * per open (keyed by the gate's nonce), so this is read once at mount — no need to react to changes.
+   */
+  seedKey?: string;
 }
 
 /** True for the states that render a single honest message line (as opposed to a spinner or panel). */
@@ -48,8 +55,10 @@ function describeLookupState(
 }
 
 /** Renders the popup body: the search bar plus whichever lookup state currently applies. */
-export function QuickIssueLookup({ inputRef }: QuickIssueLookupProps): React.JSX.Element {
-  const [lookupKey, setLookupKey] = useState<string | null>(null);
+export function QuickIssueLookup({ inputRef, seedKey }: QuickIssueLookupProps): React.JSX.Element {
+  // Seed the lookup at mount so a linked-issue click loads its target instantly; a plain F2 open
+  // passes no seed and starts null (idle → recents), preserving feature 022's behavior byte-for-byte.
+  const [lookupKey, setLookupKey] = useState<string | null>(seedKey ?? null);
   const { issue, status, errorMessage, refetch } = useIssueByKey(lookupKey);
   const jiraBaseUrl = useConnectionStore((state) => state.proxyStatus?.jira?.baseUrl ?? null);
 
@@ -82,7 +91,7 @@ export function QuickIssueLookup({ inputRef }: QuickIssueLookupProps): React.JSX
 
   return (
     <div className={styles.body}>
-      <IssueSearchBar inputRef={inputRef} onSearch={setLookupKey} />
+      <IssueSearchBar inputRef={inputRef} initialText={seedKey ?? ''} onSearch={setLookupKey} />
 
       {status === 'idle' ? <RecentIssuesList entries={recentEntries} onSelect={setLookupKey} /> : null}
 
