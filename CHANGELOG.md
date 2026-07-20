@@ -17,7 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   suppressed while typing in a field outside the popup. **US1 (find & view) landed**; in-place field editing
   (US2) and recents + persistent re-search (US3) follow. New: `useIssueByKey` + `issueLookup.ts` (the first
   fetch-one-full-issue-by-key path), `QuickIssueLookupGate`/`QuickIssueLookup` (root-mounted, cloning the
-  TodoQuickAdd pattern).
+  TodoQuickAdd pattern). **US2 (edit in place) landed**: summary, priority, and assignee become editable inside the
+  lookup view via new reusable `IssueFieldEditors` (text / single-select / assignee-search), each delegating its
+  write to the existing `featureReviewFixes` writer (no new write path). `IssueDetailPanel` gained an optional,
+  default-off `fieldEditing` capability, so hygiene/AgileHub and every other caller render exactly as before.
+  Description stays read-only (avoids flattening Jira wiki formatting) and labels stay read-only (no safe array
+  writer); the Jira key link covers anything not editable in place.
 
 ### Changed
 - **Staleness is now measured in business days, not calendar days**: an in-progress issue left untouched
