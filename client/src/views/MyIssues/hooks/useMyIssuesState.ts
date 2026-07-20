@@ -8,6 +8,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { jiraGet, jiraPost } from '../../../services/jiraApi.ts';
 import type { JiraBoard, JiraFilter, JiraIssue, JiraTransition } from '../../../types/jira.ts';
 import type { JiraBoardQuickFilter } from '../myIssuesExtendedTypes.ts';
+import { buildAssigneeJql, type ReportSubject } from '../myIssuesRoleLens.ts';
 
 // ── Source and display type unions ──
 
@@ -17,8 +18,20 @@ export type SortField = 'updated' | 'priority' | 'due' | 'created' | 'project';
 
 // ── Named API path constants ──
 
-export const MY_ISSUES_JQL =
-  'assignee = currentUser() AND statusCategory != Done ORDER BY updated DESC';
+// The report always excludes Done work and sorts by recency. The assignee clause in front of this
+// suffix is what a persona swaps out (viewer / simulated user / team) — see buildMyIssuesJql.
+const MY_ISSUES_JQL_SUFFIX = ' AND statusCategory != Done ORDER BY updated DESC';
+
+export const MY_ISSUES_JQL = `assignee = currentUser()${MY_ISSUES_JQL_SUFFIX}`;
+
+/**
+ * Builds the "My Issues" JQL for the active report subject. The viewer default resolves to the
+ * exact legacy string (`MY_ISSUES_JQL`), so an un-simulated report stays byte-identical. This is a
+ * READ-ONLY query builder — personas never introduce a write path (FR-023).
+ */
+function buildMyIssuesJql(subject: ReportSubject, memberIdentifiers: string[]): string {
+  return `${buildAssigneeJql(subject, memberIdentifiers)}${MY_ISSUES_JQL_SUFFIX}`;
+}
 const ISSUE_FIELDS =
   'summary,status,priority,issuetype,assignee,reporter,created,updated,description';
 const MAX_RESULTS = 100;
@@ -42,6 +55,13 @@ export interface MyIssuesState {
   source: IssueSource;
   viewMode: ViewMode;
   sortBy: SortField;
+  /**
+   * Whose issues the "My Issues" source shows. Defaults to `{ kind: 'viewer' }` (the signed-in
+   * user). Simulating a user or viewing a team only re-points this read-only query — no writes.
+   */
+  subject: ReportSubject;
+  /** Roster assignee identifiers resolved for a `team` subject; empty for viewer/user subjects. */
+  subjectMemberIdentifiers: string[];
   jqlQuery: string;
   /** Last MAX_JQL_HISTORY unique JQL queries, newest first. */
   jqlHistory: string[];
@@ -85,6 +105,11 @@ export interface MyIssuesState {
 
 export interface MyIssuesActions {
   setSource(source: IssueSource): void;
+  /**
+   * Re-points the "My Issues" report at a subject (viewer, a simulated user, or a team). For a team
+   * subject, pass the roster assignee identifiers so the read-only JQL can list them.
+   */
+  setSubject(subject: ReportSubject, memberIdentifiers?: string[]): void;
   setViewMode(viewMode: ViewMode): void;
   setSortBy(sortBy: SortField): void;
   setJqlQuery(query: string): void;
@@ -167,6 +192,9 @@ function createInitialMyIssuesState(): MyIssuesState {
     source: 'mine',
     viewMode: 'cards',
     sortBy: 'updated',
+    // The report always starts as the signed-in viewer so it opens byte-identical to pre-persona.
+    subject: { kind: 'viewer' },
+    subjectMemberIdentifiers: [],
     jqlQuery: '',
     jqlHistory: [],
     activeStatusZone: null,
@@ -345,6 +373,15 @@ export function useMyIssuesState(): { state: MyIssuesState; actions: MyIssuesAct
     setState((previousState) => ({ ...previousState, source }));
   }, []);
 
+  /** Re-points the report at a subject; team subjects carry their roster member identifiers. */
+  const setSubject = useCallback((subject: ReportSubject, memberIdentifiers: string[] = []) => {
+    setState((previousState) => ({
+      ...previousState,
+      subject,
+      subjectMemberIdentifiers: subject.kind === 'team' ? memberIdentifiers : [],
+    }));
+  }, []);
+
   const setViewMode = useCallback((viewMode: ViewMode) => {
     setState((previousState) => ({ ...previousState, viewMode }));
   }, []);
@@ -380,7 +417,8 @@ export function useMyIssuesState(): { state: MyIssuesState; actions: MyIssuesAct
     }));
 
     try {
-      const searchPath = buildSearchPath(MY_ISSUES_JQL);
+      // The assignee clause follows the active persona subject; the viewer default stays identical.
+      const searchPath = buildSearchPath(buildMyIssuesJql(state.subject, state.subjectMemberIdentifiers));
       const response = await jiraGet<JiraSearchResponse>(searchPath);
 
       setState((previousState) => ({
@@ -395,7 +433,7 @@ export function useMyIssuesState(): { state: MyIssuesState; actions: MyIssuesAct
         fetchError: extractErrorMessage(unknownError),
       }));
     }
-  }, []);
+  }, [state.subject, state.subjectMemberIdentifiers]);
 
   /** Runs the current jqlQuery and prepends it to jqlHistory on success. */
   const runJqlQuery = useCallback(async () => {
@@ -799,6 +837,7 @@ export function useMyIssuesState(): { state: MyIssuesState; actions: MyIssuesAct
   const actions = useMemo<MyIssuesActions>(
     () => ({
       setSource,
+      setSubject,
       setViewMode,
       setSortBy,
       setJqlQuery,
@@ -830,6 +869,7 @@ export function useMyIssuesState(): { state: MyIssuesState; actions: MyIssuesAct
     }),
     [
       setSource,
+      setSubject,
       setViewMode,
       setSortBy,
       setJqlQuery,
