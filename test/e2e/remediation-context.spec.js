@@ -38,11 +38,32 @@ const SEEDED_QUEUE = {
   scopeOverrideJql: 'project = TEST',
 };
 
+const TEAM_PROFILE = {
+  id: 'rem-team-1',
+  name: 'Rem Team',
+  projectKey: 'TEST',
+  boardId: 1,
+  boardName: 'TEST board',
+  boardType: 'scrum',
+  scopeMode: 'project',
+  selectedSprintId: null,
+  selectedFixVersion: '',
+  selectedFixVersionName: '',
+  selectedPiValue: '',
+};
+
 async function seedRemediation(page) {
-  await page.addInitScript((queue) => {
+  await page.addInitScript(({ queue, profile }) => {
+    // A fully-configured active team so the dashboard mounts its tabs (incl. Remediation).
+    window.localStorage.setItem('tbxSprintDashboardTeams', JSON.stringify([profile]));
+    window.localStorage.setItem('tbxSprintDashboardActiveTeam', profile.name);
+    window.localStorage.setItem('tbxSprintDashboardActiveTeamProfileId', profile.id);
     window.localStorage.setItem('tbxSprintDashboardActiveTab', 'backlogremediation');
-    window.localStorage.setItem('tbxBacklogRemediation:legacy-default:no-project:no-pi', JSON.stringify(queue));
-  }, SEEDED_QUEUE);
+    // Seed the pending queue at the plausible per-scope keys (project resolution can differ).
+    const blob = JSON.stringify(queue);
+    window.localStorage.setItem(`tbxBacklogRemediation:${profile.id}:test:no-pi`, blob);
+    window.localStorage.setItem(`tbxBacklogRemediation:${profile.id}:no-project:no-pi`, blob);
+  }, { queue: SEEDED_QUEUE, profile: TEAM_PROFILE });
 }
 
 // The hydration search returns the item's full issue so its context (status/assignee) can render.
@@ -77,11 +98,12 @@ test.describe('GH #200 — remediation context beside the action', () => {
     await stubRemediationJira(page);
   });
 
-  // SKIPPED: reaching the Backlog Remediation panel end-to-end requires a fully-configured Team Dashboard
-  // team (profile + scope + active tab) whose exact per-scope store key is not reliably reproducible via
-  // localStorage seeding alone in the e2e harness. US5's behavior — context beside each action, on-load
-  // hydration, loading/unavailable states, and decisions calling the store — is covered precisely by the
-  // BacklogRemediationPanel component tests (see backlogRemediation/BacklogRemediationPanel.test.tsx).
+  // SKIPPED: the Backlog Remediation panel mounts inside the Team Dashboard, whose scope state (project/PI
+  // resolved from the active team's board) and per-scope store key are not reliably reproducible via
+  // localStorage seeding alone in the e2e harness (two setup approaches were tried). US5's behavior —
+  // context beside each action, on-load hydration, loading/unavailable states, and decisions calling the
+  // store — is covered precisely by BacklogRemediationPanel.test.tsx. The setup below is retained so this
+  // can be un-skipped once a dashboard test-seam (e.g. a scope query param) exists.
   test.skip('R1: each item shows its context next to its own action buttons', async ({ page }) => {
     await page.goto('/agile-hub?space=team');
 

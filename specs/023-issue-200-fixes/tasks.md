@@ -191,7 +191,7 @@ M1, M2).
 
 ## Phase 9: Polish & Cross-Cutting Concerns
 
-- [ ] T036 e2e — scenario **X1**: run each new surface across light/dark, A/A+/A++, narrow width; assert
+- [X] T036 e2e — scenario **X1**: run each new surface across light/dark, A/A+/A++, narrow width; assert
       reflow-not-clip + text-beside-color (NFR-001) — across the per-story spec files
 - [X] T037 [P] Update `CHANGELOG.md` (Unreleased) with the six GH #200 fixes (grouped entry, per-story bullets)
 - [ ] T038 Run full gates + quickstart validation: `cd client && npx vitest run && npx tsc -b && npx eslint .`;
