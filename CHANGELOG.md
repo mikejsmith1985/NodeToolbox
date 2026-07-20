@@ -24,6 +24,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   against Jira (present even at 0, so a "0" is verifiable). The tile's existing in-app filter click and the copy-JQL
   affordance are unchanged. The fix-version clause is built from the **same exported constant** the check uses, and the
   scope from the same builder the scan uses, so the count and the link cannot disagree.
+- **GH #200 — PO Tool Program Increment is a dropdown** (US4): the PO area's PI selector is now a `<select>` populated
+  from the same `loadAvailablePiNamesFromJira` loader ArtView/PI Review use for the selected team (refreshes on team
+  change, persists as before). A non-existent PI can no longer be typed; on a load failure it degrades to an honest
+  manual-entry fallback rather than a blank locked control.
+- **GH #200 — Remediation shows context beside each action** (US5): each Backlog Remediation item now renders its
+  status, assignee, and acceptance criteria next to its own Keep/Dismiss/Snooze/Cancel buttons, and that context
+  hydrates on load (a resumed session no longer needs a manual Refresh). A pending item shows a compact loading note,
+  never a blank beside a live button. The decision engine, outcomes, and persistence are unchanged.
+- **GH #200 — My Issues personas** (US6): the report can be viewed as another Jira user (search + "Viewing as …"
+  banner + one-action Back to me), through a role lens (Dev/Tester/SM/PO — defaulting from the user's roster role,
+  manually overridable), and — for SM/PO — for a selected team (roster membership). All read-only under the viewer's
+  own Jira access; no action is ever performed as another user.
 
 ### Added
 - **F2 Quick Issue Lookup — find, view, and fix any issue from anywhere** (in progress): a global **F2**
