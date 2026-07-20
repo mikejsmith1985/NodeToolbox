@@ -2149,6 +2149,8 @@ function ResultsStep({ state, actions, ctaskTemplates, environmentValueByKey, is
   const selectedCtaskTemplate = ctaskTemplates.find((template) => template.id === selectedCtaskTemplateId) ?? null;
   const consolidatedResult = buildConsolidatedResult(state);
   const hasGeneratedContent = Boolean(state.generatedShortDescription || state.generatedDescription || state.generatedJustification || state.generatedRiskImpact);
+  // Environments are required: Create CHG stays disabled until at least one environment is enabled.
+  const hasEnabledEnvironment = state.relEnvironment.isEnabled || state.prdEnvironment.isEnabled || state.pfixEnvironment.isEnabled;
   const normalizedExistingChgNumber = existingChgNumber.trim().toUpperCase();
 
   async function handleRiskCheckClick() {
@@ -2270,10 +2272,16 @@ function ResultsStep({ state, actions, ctaskTemplates, environmentValueByKey, is
           value={existingChgNumber}
         />
       </label>
+      {hasGeneratedContent && !hasEnabledEnvironment ? (
+        <p className={styles.errorText} role="alert">
+          Enable at least one environment on the Environments step — a change request cannot be created until an
+          environment is set.
+        </p>
+      ) : null}
       <div className={styles.buttonRow}>
         <button
           className={styles.primaryButton}
-          disabled={state.isSubmitting || !hasGeneratedContent}
+          disabled={state.isSubmitting || !hasGeneratedContent || !hasEnabledEnvironment}
           onClick={() => void actions.createChg(environmentValueByKey)}
           type="button"
         >

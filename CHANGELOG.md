@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Release → CHG wizard created change requests even when no environment was enabled.** `createChg` silently fell
+  back to a single "no environment" CHG, so a user who never enabled an environment on the Environments step ended up
+  with unexpected CHGs. Environments are now required: **Create CHG** is disabled (with an inline note) until at least
+  one environment is enabled, and if creation is attempted with none enabled the wizard creates nothing and shows
+  "Enable at least one environment on the Environments step before creating a change request. No changes were created."
 - **Readiness data hook no longer sets state synchronously inside its effect** (lint `react-hooks/set-state-in-effect`):
   `useReadinessData` now tags the settled scan with its request key and derives `scanResult`/`isLoading` (the
   `useIssueByKey` pattern) instead of calling `setScanResult(null)`/`setIsLoading(true)` in the effect body. Behavior

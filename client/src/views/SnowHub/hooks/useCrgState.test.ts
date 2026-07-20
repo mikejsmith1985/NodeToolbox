@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { jiraGet } from '../../../services/jiraApi.ts';
 import { snowFetch } from '../../../services/snowApi.ts';
 import type { CrgTemplate, CtaskTemplate, CtaskTemplateData } from './useCrgState.ts';
-import { formatSnowDateTimeForApi, reconcileStagedChangeTasks, useCrgState } from './useCrgState.ts';
+import { formatSnowDateTimeForApi, NO_ENABLED_ENVIRONMENT_MESSAGE, reconcileStagedChangeTasks, useCrgState } from './useCrgState.ts';
 
 vi.mock('../../../services/jiraApi.ts', () => ({
   jiraGet: vi.fn(),
@@ -848,10 +848,35 @@ describe('useCrgState', () => {
 
       act(() => {
         hookResult.result.current.actions.generateDocs();
+        // Environments are required before a CHG can be created (GH fix). Enable REL by default so the
+        // createChg tests below exercise the create path; tests that need specific environments enable
+        // them explicitly (which overrides this).
+        hookResult.result.current.actions.updateEnvironment('rel', { isEnabled: true });
       });
 
       return hookResult;
     }
+
+    it('requires an enabled environment: creates no CHG and reports environments are required', async () => {
+      const { result } = await advanceToChangeDetailsStep();
+
+      // Disable the environment the helper enabled → now zero environments are enabled.
+      act(() => {
+        result.current.actions.updateEnvironment('rel', { isEnabled: false });
+      });
+
+      await act(async () => {
+        await result.current.actions.createChg();
+      });
+
+      // No change_request was POSTed, and the user is told environments are required.
+      expect(vi.mocked(snowFetch)).not.toHaveBeenCalledWith(
+        '/api/now/table/change_request',
+        expect.objectContaining({ method: 'POST' }),
+      );
+      expect(result.current.state.submitResult).toBe(NO_ENABLED_ENVIRONMENT_MESSAGE);
+      expect(result.current.state.isSubmitting).toBe(false);
+    });
 
     it('POSTs the generated fields to the SNow table endpoint and records the CHG number', async () => {
       vi.mocked(snowFetch)
@@ -1037,7 +1062,8 @@ describe('useCrgState', () => {
         (vi.mocked(snowFetch).mock.calls[3][1] as RequestInit).body as string,
       ) as Record<string, unknown>;
 
-      expect(implementationPatchBody.short_description).toBe('Enrollment - AWS - ENV');
+      // Environments are required now, so the helper enables REL; the auto-CTASK name carries that label.
+      expect(implementationPatchBody.short_description).toBe('Enrollment - AWS - REL');
       expect(technicalCheckoutPatchBody.short_description).toBe('Technical Checkout');
       expect(typeof technicalCheckoutPatchBody.description).toBe('string');
     });
@@ -1098,6 +1124,8 @@ describe('useCrgState', () => {
 
       act(() => {
         result.current.actions.setChgPlanningAssessment({ impactedPersonsAware: 'fallback-aware' });
+        // Only PRD enabled (the helper's REL is turned off) so the single CHG is PRD's.
+        result.current.actions.updateEnvironment('rel', { isEnabled: false });
         result.current.actions.updateEnvironment('prd', { isEnabled: true, impactedPersonsAware: 'env-aware' });
       });
 

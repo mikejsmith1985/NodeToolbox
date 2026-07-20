@@ -619,6 +619,8 @@ describe('CreateChgTab', () => {
     const user = userEvent.setup();
     mockState.currentStep = 6;
     mockState.generatedShortDescription = 'Deploy TOOL 1.0.0';
+    // Environments are required: Create CHG is disabled until one is enabled (GH fix).
+    mockState.relEnvironment.isEnabled = true;
 
     render(<CreateChgTab />);
 
