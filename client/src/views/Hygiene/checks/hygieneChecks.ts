@@ -20,6 +20,10 @@ const LEGACY_STORY_POINTS_FIELD = 'customfield_10016';
 const SPRINT_FIELD = 'customfield_10020';
 const IMPLEMENTING_STATUS_NAME = 'implementing';
 const FEATURE_ISSUE_TYPE_NAMES = new Set(['feature', 'epic']);
+// The delivery work items expected to carry a release fix version (GH #200). Exported so the Jira-link JQL clause
+// (US2) reuses the SAME list — the count and the "open in Jira" search can never disagree on scope. "Defect" is this
+// instance's defect type (not "Bug"); Sub-tasks are excluded because they inherit their parent's release.
+export const FIX_VERSION_ISSUE_TYPE_NAMES = new Set(['story', 'task', 'defect', 'feature', 'epic']);
 const FEATURE_LINK_REQUIRED_ISSUE_TYPE_NAMES = new Set(['story', 'task', 'bug', 'defect', 'spike']);
 // Issue types that do not have a story-points field on their Jira screen; the missing-sp check must skip them.
 const STORY_POINTS_UNSUPPORTED_ISSUE_TYPE_NAMES = new Set(['risk']);
@@ -289,9 +293,9 @@ export function checkMissingApplication(issue: JiraIssue, fieldConfig: HygieneFi
   return hasMeaningfulValueForAnyField(issue, fieldConfig.applicationFieldIds) ? null : BUILT_IN_HYGIENE_FLAGS['missing-application'];
 }
 
-/** Flags feature issues that are missing the release fix version. */
+/** Flags delivery issues (Story/Task/Defect/Feature/Epic) that are missing the release fix version (GH #200). */
 export function checkMissingFixVersion(issue: JiraIssue): HygieneFlag | null {
-  if (!isFeatureLikeIssue(issue)) {
+  if (!carriesFixVersion(issue)) {
     return null;
   }
 
@@ -424,6 +428,11 @@ export function checkOldInSprint(issue: JiraIssue): HygieneFlag | null {
 /** Identifies the feature-like Jira issue types that the enterprise rule set applies to. */
 export function isFeatureLikeIssue(issue: JiraIssue): boolean {
   return FEATURE_ISSUE_TYPE_NAMES.has(readIssueTypeName(issue));
+}
+
+/** True for the delivery issue types expected to carry a release fix version (see FIX_VERSION_ISSUE_TYPE_NAMES). */
+export function carriesFixVersion(issue: JiraIssue): boolean {
+  return FIX_VERSION_ISSUE_TYPE_NAMES.has(readIssueTypeName(issue));
 }
 
 /** Reads the configured field config with defaults applied so checks can stay deterministic. */

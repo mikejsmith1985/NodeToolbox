@@ -24,6 +24,10 @@ const LEGACY_STORY_POINTS_FIELD = 'customfield_10016';
 const SPRINT_FIELD = 'customfield_10020';
 
 const FEATURE_LIKE_ISSUE_TYPES = new Set(['feature', 'epic']);
+// Delivery work items expected to carry a release fix version (GH #200). MUST match the client's
+// FIX_VERSION_ISSUE_TYPE_NAMES so the server hygiene monitor and the Hygiene view agree. "Defect" is this
+// instance's defect type (not "Bug"); Sub-tasks inherit the parent release and are excluded.
+const FIX_VERSION_ISSUE_TYPES = new Set(['story', 'task', 'defect', 'feature', 'epic']);
 const STORY_LIKE_ISSUE_TYPES = new Set(['story', 'task', 'bug', 'defect', 'spike']);
 const STORY_POINTS_UNSUPPORTED_TYPES = new Set(['risk']);
 
@@ -267,8 +271,13 @@ function checkMissingApplication(issue, fieldConfig) {
   return { checkId: 'missing-application', label: 'Missing application', severity: 'warn' };
 }
 
+/** True for delivery issue types expected to carry a release fix version (mirrors the client). */
+function carriesFixVersion(issue) {
+  return FIX_VERSION_ISSUE_TYPES.has((issue.fields.issuetype?.name ?? '').toLowerCase());
+}
+
 function checkMissingFixVersion(issue) {
-  if (!isFeatureLikeIssue(issue)) return null;
+  if (!carriesFixVersion(issue)) return null;
   const fixVersions = issue.fields.fixVersions ?? [];
   if (fixVersions.length > 0) return null;
   return { checkId: 'missing-fix-version', label: 'Missing fix version', severity: 'warn' };

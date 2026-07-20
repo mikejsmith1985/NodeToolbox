@@ -9,6 +9,26 @@
 <!-- SPECKIT START -->
 ## Active Spec Kit Feature
 
+- **023-issue-200-fixes** — *(planned on `feature/023-issue-200-fixes` — ready for `/speckit-tasks`)* six independent
+  fixes from GH #200, ordered data-correctness-first and designed for **parallel worktree agents** (disjoint file
+  areas). **US1 (P1)** fix the hygiene "missing fix version" check detecting 0 of 72: `checkMissingFixVersion` is gated
+  to Feature/Epic via `isFeatureLikeIssue` — replace with a `carriesFixVersion` predicate over
+  **Story/Task/Defect/Feature/Epic** (Sub-tasks excluded; "Defect" not "Bug"; native `fixVersions`, no config key;
+  mirror `src/services/hygieneRules.js` if parity). **US2 (P1)** every hygiene tile gains a distinct "open in Jira ↗"
+  affordance opening the family's **semantic JQL** (scope AND a per-check clause **co-located with the predicate** so
+  count/link agree by construction, NFR-002) via extended `buildJiraIssueNavigatorUrl`; tile-click filter unchanged.
+  **US3 (P2)** linked-issue click opens the F2 lookup — new `quickLookupStore` (imperative `open(seedKey)`), gate
+  subscribes, `QuickIssueLookup` gains `seedKey`, `renderIssueLinkRow` key becomes a control (the 022-deferred
+  behavior; additive to shipped `IssueDetailPanel`). **US4 (P2)** PO Tool PI `<input>`→`<select>` from
+  `loadAvailablePiNamesFromJira(piReviewTeams)`. **US5 (P2)** Remediation: render each item's context (IssueMeta
+  chips + AC) beside its Keep/Dismiss/Snooze/Cancel buttons, hydrate `issuesByKey` on load (engine/persistence
+  unchanged). **US6 (P3, largest)** My Issues personas: "simulate as" via `searchFeatureReviewUsers`
+  (`assignee=currentUser()`→`assignee="<accountId>"`), role lens (pure `myIssuesRoleLens`, **defaults from roster
+  `roleCapabilities`, manually overridable**), SM/PO team views (roster membership). **Shared-file caveat**: US1+US2
+  both edit `hygieneChecks.ts` → one worktree/sequence; other four independent. Plan:
+  `specs/023-issue-200-fixes/plan.md`. Contracts: `hygiene-fix-version.md`, `hygiene-jira-links.md`,
+  `quick-lookup-open.md`, `po-pi-dropdown.md`, `remediation-context.md`, `myissues-personas.md`.
+
 - **022-quick-issue-lookup** — *(planned on `feature/022-quick-issue-lookup` — ready for `/speckit-tasks`)* a global
   **F2 quick issue lookup**: press F2 anywhere → modal popup (persistent search bar, Enter/Search parity, recents list
   of the last ~5 viewed keys) → resolve one key → render the **shipped** `IssueDetailPanel` (019 semantic chips,

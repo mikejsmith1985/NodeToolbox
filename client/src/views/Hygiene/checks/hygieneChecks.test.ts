@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   checkMissingFeatureLink,
+  checkMissingFixVersion,
   checkMissingProgramIncrement,
   checkTargetEndOverdue,
   checkTargetStartReady,
@@ -79,6 +80,26 @@ describe('hygiene check predicates', () => {
       buildIssue({ issuetype: { name: 'Risk' }, customfield_10028: null, customfield_10016: null }),
     );
 
+    expect(hygieneFlag).toBeNull();
+  });
+
+  // GH #200: the fix-version check reported 0 of 72 because it only evaluated Feature/Epic — the missing 72 were
+  // Stories/Tasks/Defects. It must flag every delivery type expected to carry a fix version.
+  it.each(['Story', 'Task', 'Defect', 'Feature', 'Epic'])(
+    'flags %s issues that have no fix version',
+    (issueTypeName) => {
+      const hygieneFlag = checkMissingFixVersion(buildIssue({ issuetype: { name: issueTypeName }, fixVersions: [] }));
+      expect(hygieneFlag?.checkId).toBe('missing-fix-version');
+    },
+  );
+
+  it('does not flag Sub-tasks for a missing fix version (they inherit the parent release)', () => {
+    const hygieneFlag = checkMissingFixVersion(buildIssue({ issuetype: { name: 'Sub-task' }, fixVersions: [] }));
+    expect(hygieneFlag).toBeNull();
+  });
+
+  it('does not flag an issue that already has a fix version', () => {
+    const hygieneFlag = checkMissingFixVersion(buildIssue({ issuetype: { name: 'Story' }, fixVersions: [{ name: 'R1' }] }));
     expect(hygieneFlag).toBeNull();
   });
 
@@ -299,7 +320,9 @@ describe('hygiene check predicates', () => {
   });
 
   it('aggregates summary counts across a mixed finding set', () => {
-    const missingStoryPointsIssue = buildIssue({ customfield_10028: null, customfield_10016: null });
+    // Give it a fix version so it carries ONLY the missing-sp flag (GH #200 broadened the fix-version check to
+    // Stories, which would otherwise add a second flag and change this aggregation count).
+    const missingStoryPointsIssue = buildIssue({ customfield_10028: null, customfield_10016: null, fixVersions: [{ name: 'R1' }] });
     const staleIssue = { ...buildIssue(), key: 'TBX-102' };
     const findings = [
       { issue: missingStoryPointsIssue, flags: evaluateHygieneIssue(missingStoryPointsIssue) },
