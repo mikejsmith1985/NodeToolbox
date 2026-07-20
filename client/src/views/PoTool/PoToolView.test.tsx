@@ -56,6 +56,13 @@ vi.mock('../SprintDashboard/hooks/useStandupRosterStore', () => ({
   },
 }));
 
+// The team/PI picker loads Program Increments from Jira on mount; stub that one call so these
+// mount-contract tests stay offline while every other useArtData export keeps its real behaviour.
+vi.mock('../ArtView/hooks/useArtData', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../ArtView/hooks/useArtData')>()),
+  loadAvailablePiNamesFromJira: vi.fn().mockResolvedValue([]),
+}));
+
 import { useSettingsStore } from '../../store/settingsStore';
 import PoToolView from './PoToolView';
 
