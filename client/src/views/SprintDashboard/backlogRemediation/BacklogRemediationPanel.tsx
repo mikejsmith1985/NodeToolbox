@@ -5,9 +5,12 @@
 // backlog fetch, the triage prompt/parse, and the grouped actionable table. What is new here is that verdicts and
 // decisions live in a per-team persisted store, so reopening the panel resumes the prior state with no re-run.
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import { AssigneeAvatar } from '../../../components/IssueMeta/AssigneeAvatar.tsx';
+import { StatusChip } from '../../../components/IssueMeta/StatusChip.tsx';
 import type { JiraIssue } from '../../../types/jira.ts';
+import { readAcceptanceCriteriaText } from '../../../utils/acceptanceCriteria.ts';
 import { fetchAgingBacklog } from '../../ReportsHub/agingBacklogFetch.ts';
 import { AgingTriageActionTable } from '../../ReportsHub/AgingTriageActionTable.tsx';
 import { ReportAiPanel } from '../../ReportsHub/ReportAiPanel.tsx';
@@ -57,6 +60,34 @@ function toSuggestion(item: RemediationItem): AgingTriageSuggestion | null {
 }
 
 /**
+ * Renders one item's decision context — status, owner, and acceptance criteria — beside its action buttons.
+ * The context is read from the item's freshly-fetched Jira issue; while that detail is still loading it shows a
+ * compact loading note, and if it never arrives an explicit "unavailable" note — so a live button is never left
+ * next to a silent blank (FR-015, FR-017).
+ */
+function RemediationDecisionContext({ issue, acceptanceCriteriaText, isHydrating }: {
+  issue: JiraIssue | undefined;
+  acceptanceCriteriaText: string | null;
+  isHydrating: boolean;
+}): React.JSX.Element {
+  if (issue !== undefined) {
+    return (
+      <span style={{ display: 'inline-flex', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}>
+        <StatusChip statusName={issue.fields.status?.name ?? ''} statusCategoryKey={issue.fields.status?.statusCategory?.key} />
+        <AssigneeAvatar displayName={issue.fields.assignee?.displayName ?? null} />
+        {acceptanceCriteriaText !== null && (
+          <span className={styles.captionText}><strong>AC:</strong> {acceptanceCriteriaText}</span>
+        )}
+      </span>
+    );
+  }
+  if (isHydrating) {
+    return <span role="status" className={styles.captionText}>Loading context…</span>;
+  }
+  return <span className={styles.captionText}>Context unavailable</span>;
+}
+
+/**
  * The Team Dashboard's Backlog Remediation panel. Renders nothing while AI Assist is locked (via ReportAiPanel).
  * On mount it points the store at this team's scope and loads any saved queue; a Refresh re-fetches the backlog
  * and reconciles it against saved decisions; ingesting a reply records verdicts on the pending items.
@@ -80,6 +111,12 @@ export function BacklogRemediationPanel({ teamProfileId, projectKey, piName }: B
   const [isLoading, setIsLoading] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [ingestError, setIngestError] = useState<string | null>(null);
+  // True while the on-load detail hydration is in flight — drives the per-item "Loading context…" note so no
+  // action button is ever shown next to a blank context region (FR-016, FR-017).
+  const [isHydratingDetails, setIsHydratingDetails] = useState(false);
+  // The scope whose detail we have already hydrated (or refreshed), so the auto-hydration fires at most once per
+  // scope and a manual Refresh is not immediately followed by a redundant fetch.
+  const hydratedScopeRef = useRef<string | null>(null);
 
   // Point the store at this team's scope, which loads its saved queue.
   //
@@ -107,6 +144,40 @@ export function BacklogRemediationPanel({ teamProfileId, projectKey, piName }: B
   const prompt = useMemo(() => buildAgingTriagePrompt(actionableSignals), [actionableSignals]);
   const triageActionModel = useMemo(() => buildTriageActionModel(suggestions, actionableSignals), [suggestions, actionableSignals]);
 
+  /**
+   * Fetches the enriched backlog only to populate each item's inline detail (full issue + AC field ids). Unlike a
+   * Refresh, it deliberately does NOT reconcile or touch the persisted queue — this is pure read-side hydration so
+   * a resumed session can show decision context. A failed fetch simply leaves the detail empty; each item then
+   * reports an honest "Context unavailable" note rather than a blank.
+   */
+  const hydrateDetails = useCallback(async (): Promise<void> => {
+    if (scopeJql === '') {
+      return;
+    }
+    setIsHydratingDetails(true);
+    try {
+      const backlog = await fetchAgingBacklog(scopeJql, todayIsoDate());
+      setIssuesByKey(backlog.issuesByKey);
+      setAcceptanceCriteriaFieldIds(backlog.acceptanceCriteriaFieldIds);
+    } catch {
+      // Detail is best-effort: the per-item note reports "Context unavailable" when hydration fails.
+    } finally {
+      setIsHydratingDetails(false);
+    }
+  }, [scopeJql]);
+
+  // Hydrate each actionable item's full Jira detail once per scope on LOAD — not only when the operator hits
+  // Refresh — so a resumed session shows status / owner / AC beside every action button (FR-016). A manual
+  // Refresh marks the scope hydrated, so it is never followed by a second, redundant fetch. Mirrors the
+  // ref-guarded auto-load pattern used by ArtView's BlueprintTab.
+  useEffect(() => {
+    if (scopeJql === '' || actionableItems.length === 0 || hydratedScopeRef.current === scopeJql) {
+      return;
+    }
+    hydratedScopeRef.current = scopeJql;
+    void hydrateDetails();
+  }, [scopeJql, actionableItems.length, hydrateDetails]);
+
   /** Re-fetches the backlog for the current scope and reconciles it against the saved decisions. */
   const handleRefresh = async (): Promise<void> => {
     if (scopeJql === '') {
@@ -127,6 +198,8 @@ export function BacklogRemediationPanel({ teamProfileId, projectKey, piName }: B
       applyReconcile(nextItems, todayIso);
       setIssuesByKey(backlog.issuesByKey);
       setAcceptanceCriteriaFieldIds(backlog.acceptanceCriteriaFieldIds);
+      // A manual Refresh has now supplied this scope's detail, so the on-load auto-hydration must not re-fetch it.
+      hydratedScopeRef.current = scopeJql;
     } catch (caughtError) {
       setFetchError(caughtError instanceof Error ? caughtError.message : 'Failed to fetch the backlog.');
     } finally {
@@ -221,17 +294,36 @@ export function BacklogRemediationPanel({ teamProfileId, projectKey, piName }: B
       {fetchError !== null && <p role="alert" className={styles.warningText}>{fetchError}</p>}
       {actionableItems.length > 0 && (
         <ul style={{ listStyle: 'none', margin: '8px 0', padding: 0 }} aria-label="Backlog remediation decisions">
-          {actionableItems.map((item) => (
-            <li key={item.issueKey} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '2px 0' }}>
-              <code style={{ flex: '0 0 auto' }}>{item.issueKey}</code>
-              {item.verdict !== null && <span className={styles.captionText}>{item.verdict}</span>}
-              <span style={{ flex: '1 1 auto', minWidth: 0 }} className={styles.captionText}>{item.signals.summary}</span>
-              <button type="button" className={styles.actionButton} aria-label={`Cancel ${item.issueKey}`} onClick={() => handleDecide(item, 'canceled')}>Cancel</button>
-              <button type="button" className={styles.actionButton} aria-label={`Keep ${item.issueKey}`} onClick={() => handleDecide(item, 'kept')}>Keep</button>
-              <button type="button" className={styles.actionButton} aria-label={`Dismiss ${item.issueKey}`} onClick={() => handleDecide(item, 'dismissed')}>Dismiss</button>
-              <button type="button" className={styles.actionButton} aria-label={`Snooze ${item.issueKey}`} onClick={() => handleSnooze(item)}>Snooze</button>
-            </li>
-          ))}
+          {actionableItems.map((item) => {
+            // Read this item's decision context from its freshly-fetched issue; both live beside its own buttons.
+            const fullIssue = issuesByKey.get(item.issueKey);
+            const acceptanceCriteriaText = fullIssue !== undefined
+              ? readAcceptanceCriteriaText(fullIssue, acceptanceCriteriaFieldIds)
+              : null;
+            return (
+              <li
+                key={item.issueKey}
+                style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '6px 0', borderTop: '1px solid rgba(127,127,127,0.2)' }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+                  <code style={{ flex: '0 0 auto' }}>{item.issueKey}</code>
+                  {item.verdict !== null && <span className={styles.captionText}>{item.verdict}</span>}
+                  <RemediationDecisionContext
+                    issue={fullIssue}
+                    acceptanceCriteriaText={acceptanceCriteriaText}
+                    isHydrating={isHydratingDetails}
+                  />
+                </div>
+                <span className={styles.captionText}>{item.signals.summary}</span>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  <button type="button" className={styles.actionButton} aria-label={`Cancel ${item.issueKey}`} onClick={() => handleDecide(item, 'canceled')}>Cancel</button>
+                  <button type="button" className={styles.actionButton} aria-label={`Keep ${item.issueKey}`} onClick={() => handleDecide(item, 'kept')}>Keep</button>
+                  <button type="button" className={styles.actionButton} aria-label={`Dismiss ${item.issueKey}`} onClick={() => handleDecide(item, 'dismissed')}>Dismiss</button>
+                  <button type="button" className={styles.actionButton} aria-label={`Snooze ${item.issueKey}`} onClick={() => handleSnooze(item)}>Snooze</button>
+                </div>
+              </li>
+            );
+          })}
         </ul>
       )}
       <AgingTriageActionTable
