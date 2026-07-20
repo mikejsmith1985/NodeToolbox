@@ -100,6 +100,9 @@ export interface InspectedSnowField {
 const EMPTY_VALUE = '';
 const EMPTY_FETCH_ERROR = null;
 const REQUIRED_FIELDS_MESSAGE = 'Project key and fix version are required.';
+/** Shown when Create CHG is attempted with no environment enabled; environments are required. */
+export const NO_ENABLED_ENVIRONMENT_MESSAGE =
+  'Error: Enable at least one environment on the Environments step before creating a change request. No changes were created.';
 const REQUIRED_JQL_MESSAGE = 'A JQL query is required.';
 const FETCH_FAILURE_MESSAGE = 'Failed to fetch issues';
 const DEFAULT_MAX_RESULTS = 100;
@@ -2020,6 +2023,19 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
    * payload to avoid SNow validation errors on non-required fields.
    */
   const createChg = useCallback(async (environmentValueByKey: EnvironmentValueByKey = {}) => {
+    // Environments are required: a release must target at least one enabled environment. Without this
+    // guard the wizard silently created a single "no environment" change request, so a user who never
+    // enabled an environment on the Environments step ended up with unexpected CHGs (GH report).
+    if (readEnabledEnvironmentKeys(state).length === 0) {
+      setState((previousState) => ({
+        ...previousState,
+        isSubmitting: false,
+        submitResult: NO_ENABLED_ENVIRONMENT_MESSAGE,
+        submissionDebug: null,
+      }));
+      return;
+    }
+
     setState((previousState) => ({
       ...previousState,
       isSubmitting: true,
