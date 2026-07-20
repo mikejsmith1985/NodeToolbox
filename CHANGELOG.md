@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **F2 Quick Issue Lookup — find, view, and fix any issue from anywhere** (in progress): a global **F2**
+  shortcut opens a modal popup where you type or paste an issue key (a pasted Jira `/browse/KEY` link works
+  too) and press Enter — the issue opens in the shared detail view (semantic chips, structure-preserving
+  description, links with statuses, comments). The issue key is a one-click deep-link into Jira for anyone
+  who prefers to work there. Unknown, malformed, and no-permission keys each show a distinct, honest message
+  instead of a blank panel. F2 is claimed alongside F1 (to-do quick-add) and Ctrl+Alt+Z (AI assist); it is
+  suppressed while typing in a field outside the popup. **US1 (find & view) landed**; in-place field editing
+  (US2) and recents + persistent re-search (US3) follow. New: `useIssueByKey` + `issueLookup.ts` (the first
+  fetch-one-full-issue-by-key path), `QuickIssueLookupGate`/`QuickIssueLookup` (root-mounted, cloning the
+  TodoQuickAdd pattern).
+
 ### Changed
 - **Staleness is now measured in business days, not calendar days**: an in-progress issue left untouched
   over a weekend is no longer counted as stale for those idle Saturday/Sunday days. All three staleness
