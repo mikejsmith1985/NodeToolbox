@@ -108,38 +108,51 @@ reflects it, no reload/close; description offers no editor; a panel rendered wit
 
 ### Tests for User Story 2 (write first, must FAIL)
 
-- [ ] T016 [P] [US2] RED — unit test `fieldEditorPayloads` in
+- [X] T016 [P] [US2] RED — unit test `fieldEditorPayloads` in
       `client/src/components/IssueFieldEditors/fieldEditorPayloads.test.ts`: value→payload per field (option-id match,
       user field, simple field, labels array set) mirroring the editmeta rules in `featureReviewFixes.ts`
-- [ ] T017 [P] [US2] RED — component tests in
+- [X] T017 [P] [US2] RED — component tests in
       `client/src/components/IssueFieldEditors/IssueFieldEditors.test.tsx`: each editor shows current value, activates
       an input, Save calls the delegated writer, error reverts; labels degrade to read-only when editmeta lacks a
       settable labels field
-- [ ] T018 [P] [US2] RED — extend `client/src/components/IssueDetailPanel/index.test.tsx`: **omitted** `fieldEditing`
+- [X] T018 [P] [US2] RED — extend `client/src/components/IssueDetailPanel/index.test.tsx`: **omitted** `fieldEditing`
       ⇒ render byte-identical to today (no editors); **provided** ⇒ editors render beside the gated fields (E11)
 
 ### Implementation for User Story 2
 
-- [ ] T019 [US2] GREEN — implement pure `fieldEditorPayloads.ts` in `client/src/components/IssueFieldEditors/`
+- [X] T019 [US2] GREEN — implement pure `fieldEditorPayloads.ts` in `client/src/components/IssueFieldEditors/`
       (value → Jira write payload per field)
-- [ ] T020 [US2] GREEN — implement `TextFieldEditor.tsx`, `SelectFieldEditor.tsx`, `AssigneeFieldEditor.tsx`,
+- [X] T020 [US2] GREEN — implement `TextFieldEditor.tsx`, `SelectFieldEditor.tsx`, `AssigneeFieldEditor.tsx`,
       `LabelsFieldEditor.tsx` + `IssueFieldEditors.module.css` in `client/src/components/IssueFieldEditors/`; each
       reads options from editmeta / `searchFeatureReviewUsers` / `fetchFeatureReviewFixVersions` and **delegates every
       write** to the matching `featureReviewFixes.ts` function (labels read-only fallback when editmeta lacks labels)
-- [ ] T021 [US2] GREEN — add the optional, default-off `fieldEditing?: { editMeta, onFieldSaved }` capability to
+- [X] T021 [US2] GREEN — add the optional, default-off `fieldEditing?: { editMeta, onFieldSaved }` capability to
       `client/src/components/IssueDetailPanel/index.tsx`: when provided, render the `IssueFieldEditors` beside the
       currently read-only fields (summary/assignee/priority/single-selects/fixVersions/links/labels), gated per-field
       by `editMeta`; status + story points reuse the panel's existing editors; description stays read-only;
       **omitted ⇒ unchanged** (additive)
-- [ ] T022 [US2] Wire `QuickIssueLookup.tsx` to fetch editmeta via `fetchFeatureReviewEditMeta(key)` and pass
+- [X] T022 [US2] Wire `QuickIssueLookup.tsx` to fetch editmeta via `fetchFeatureReviewEditMeta(key)` and pass
       `fieldEditing={{ editMeta, onFieldSaved: () => refetch() }}` to `IssueDetailPanel` (FR-010)
-- [ ] T023 [US2] Save UX in the editors / panel: Toast confirmation on success (reuse `ToastProvider`), inline
+- [X] T023 [US2] Save UX in the editors / panel: Toast confirmation on success (reuse `ToastProvider`), inline
       readable error + revert to prior value on failure, no reload and popup stays open (FR-010)
 - [ ] T024 [US2] e2e — add scenarios **E3, E9, E11** (edit fields + confirm, description read-only, panel-without-
       capability regression) to `test/e2e/quick-issue-lookup.spec.js`
 
 **Checkpoint**: US1 + US2 — find, view, and fix editable fields without leaving; all writes single-sourced through the
 existing writers; shipped callers of `IssueDetailPanel` unaffected.
+
+**US2 implementation notes (adaptations found during build):**
+- **`fieldEditorPayloads.ts` was not created** (T016/T019) — the existing writers (`saveFeatureReviewOptionField`
+  etc.) already own all payload construction, so re-deriving payloads would duplicate logic and violate the
+  single-write-path rule. It was replaced by `issueFieldEditing.ts` (pure `isFieldEditable` gating + the shared
+  `useFieldEditor` lifecycle), which is the genuinely-needed tested unit. Editors delegate straight to the writers.
+- **Editable set (T020) = summary, priority, assignee** — the fields with a safe writer that cover SC-003's
+  assignee+priority (status + story points reuse the panel's existing editors). **Fix versions and issue-link editing
+  are deferred** (need async option loading / link-type semantics); **labels stay read-only** (no array-set writer
+  exists — FR-008 editmeta-conditional / FR-009). All visible, none silently editable-then-failing.
+- **Save confirmation (T023)** uses a per-field inline "✓ Saved" flash + inline error/revert via `useFieldEditor`,
+  rather than a global Toast — per-field local confirmation is clearer for inline edits and keeps the popup self-
+  contained. Failure shows a readable inline error and never commits (FR-010).
 
 ---
 

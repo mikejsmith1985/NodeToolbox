@@ -24,6 +24,10 @@ vi.mock('../../store/connectionStore.ts', () => ({
     selector({ proxyStatus: { jira: { baseUrl: 'https://jira.example.com' } } }),
 }));
 
+vi.mock('../../views/SprintDashboard/featureReviewFixes.ts', () => ({
+  fetchFeatureReviewEditMeta: vi.fn().mockResolvedValue({}),
+}));
+
 function mockLookup(overrides: Record<string, unknown>): void {
   useIssueByKeyMock.mockReturnValue({
     issue: null,

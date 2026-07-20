@@ -5,12 +5,14 @@
 // prefers Jira can leave in one click; otherwise it shows a specific, honest state (loading / not
 // found / no access / error).
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import IssueDetailPanel from '../IssueDetailPanel/index.tsx';
 import { useConnectionStore } from '../../store/connectionStore.ts';
 import { useIssueByKey, type IssueLookupStatus } from '../../hooks/useIssueByKey.ts';
 import { buildJiraBrowseUrl } from '../../utils/jiraBrowseUrl.ts';
+import { fetchFeatureReviewEditMeta } from '../../views/SprintDashboard/featureReviewFixes.ts';
+import type { IssueEditMeta } from '../IssueFieldEditors/issueFieldEditing.ts';
 import { IssueSearchBar } from './IssueSearchBar.tsx';
 import styles from './QuickIssueLookup.module.css';
 
@@ -49,6 +51,23 @@ export function QuickIssueLookup({ inputRef }: QuickIssueLookupProps): React.JSX
   const { issue, status, errorMessage, refetch } = useIssueByKey(lookupKey);
   const jiraBaseUrl = useConnectionStore((state) => state.proxyStatus?.jira?.baseUrl ?? null);
 
+  // Load the issue's edit metadata once it is on screen; it tells the panel which fields are safely
+  // editable. Kept tagged with the issue key so a stale fetch never enables editing for another issue.
+  const [loadedEditMeta, setLoadedEditMeta] = useState<{ key: string; meta: IssueEditMeta } | null>(null);
+  useEffect(() => {
+    if (status !== 'loaded' || issue === null) {
+      return;
+    }
+    let isCancelled = false;
+    fetchFeatureReviewEditMeta(issue.key)
+      .then((meta) => { if (!isCancelled) setLoadedEditMeta({ key: issue.key, meta }); })
+      .catch(() => { if (!isCancelled) setLoadedEditMeta({ key: issue.key, meta: {} }); });
+    return () => { isCancelled = true; };
+  }, [status, issue]);
+
+  const activeEditMeta =
+    status === 'loaded' && issue !== null && loadedEditMeta?.key === issue.key ? loadedEditMeta.meta : null;
+
   return (
     <div className={styles.body}>
       <IssueSearchBar inputRef={inputRef} onSearch={setLookupKey} />
@@ -74,7 +93,12 @@ export function QuickIssueLookup({ inputRef }: QuickIssueLookupProps): React.JSX
           >
             {issue.key} ↗
           </a>
-          <IssueDetailPanel issue={issue} isEmbedded onIssueUpdated={refetch} />
+          <IssueDetailPanel
+            issue={issue}
+            isEmbedded
+            onIssueUpdated={refetch}
+            fieldEditing={activeEditMeta ? { editMeta: activeEditMeta, onFieldSaved: refetch } : undefined}
+          />
         </div>
       ) : null}
     </div>

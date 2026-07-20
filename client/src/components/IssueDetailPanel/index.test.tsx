@@ -455,3 +455,30 @@ describe('IssueDetailPanel', () => {
     });
   });
 });
+
+describe('IssueDetailPanel — optional field editing (additive, default-off)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    window.localStorage.clear();
+    mockJiraGetByPath();
+    mockJiraPost.mockResolvedValue({});
+    mockJiraPut.mockResolvedValue(undefined);
+  });
+
+  it('renders no editing section when fieldEditing is omitted (byte-identical to today)', () => {
+    render(<IssueDetailPanel isEmbedded issue={TEST_ISSUE} />);
+    expect(screen.queryByText('Edit fields')).not.toBeInTheDocument();
+  });
+
+  it('renders the editors editmeta allows when fieldEditing is provided', () => {
+    render(
+      <IssueDetailPanel
+        isEmbedded
+        issue={TEST_ISSUE}
+        fieldEditing={{ editMeta: { summary: { name: 'Summary' } }, onFieldSaved: vi.fn() }}
+      />,
+    );
+    expect(screen.getByText('Edit fields')).toBeInTheDocument();
+    expect(screen.getByText('Summary')).toBeInTheDocument();
+  });
+});

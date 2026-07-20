@@ -13,6 +13,7 @@ import {
   type TransitionFieldSelection,
 } from '../../views/SprintDashboard/featureReviewFixes.ts';
 import { TransitionRequiredFields } from '../TransitionRequiredFields/index.tsx';
+import { IssueFieldEditingSection, type IssueFieldEditingConfig } from '../IssueFieldEditors/IssueFieldEditingSection.tsx';
 import { parseStructuredText } from '../../utils/richTextStructured.ts';
 import { StructuredText } from './StructuredText.tsx';
 import { AgeBadge } from '../IssueMeta/AgeBadge.tsx';
@@ -62,6 +63,12 @@ export interface IssueDetailPanelProps {
   sprintName?: string | null;
   /** Resolved feature/epic link key; rendered as a planning row only when supplied. */
   featureLinkKey?: string | null;
+  /**
+   * Optional in-place field editing. When omitted (every current caller) the panel is unchanged and
+   * read-only for these fields; when supplied (Quick Issue Lookup) the fields the issue's editmeta
+   * allows become editable via the shared editors, each write delegated to featureReviewFixes.
+   */
+  fieldEditing?: IssueFieldEditingConfig;
 }
 
 /**
@@ -78,6 +85,7 @@ export default function IssueDetailPanel({
   programIncrement,
   sprintName,
   featureLinkKey,
+  fieldEditing,
 }: IssueDetailPanelProps) {
   // The seed reads whichever story-points field this project actually uses (configured, modern,
   // legacy — dropdown option objects included), so the input starts with the real current value.
@@ -96,6 +104,7 @@ export default function IssueDetailPanel({
       programIncrement={programIncrement}
       sprintName={sprintName}
       featureLinkKey={featureLinkKey}
+      fieldEditing={fieldEditing}
     />
   );
 }
@@ -115,6 +124,7 @@ function IssueDetailPanelContent({
   programIncrement,
   sprintName,
   featureLinkKey,
+  fieldEditing,
 }: IssueDetailPanelProps) {
   const [isPanelOpen, setIsPanelOpen] = useState(true);
   const [isLoadingTransitions, setIsLoadingTransitions] = useState(true);
@@ -407,6 +417,16 @@ function IssueDetailPanelContent({
       )}
 
       <hr className={styles.divider} />
+
+      {/* In-place field editing, only when a host opts in (Quick Issue Lookup). Omitted elsewhere,
+          so every existing caller renders exactly as before. */}
+      {fieldEditing && (
+        <IssueFieldEditingSection
+          issue={issue}
+          editMeta={fieldEditing.editMeta}
+          onFieldSaved={fieldEditing.onFieldSaved}
+        />
+      )}
 
       <div className={styles.actionSection}>
         <label className={styles.actionLabel} htmlFor={`transition-select-${issue.key}`}>
