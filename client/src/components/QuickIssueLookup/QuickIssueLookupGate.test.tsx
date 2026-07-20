@@ -4,9 +4,10 @@
 // the gate's own keyboard handling.
 
 import { act, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { QuickIssueLookupGate } from './QuickIssueLookupGate.tsx';
+import { useQuickLookupStore } from './quickLookupStore.ts';
 
 vi.mock('../../hooks/useIssueByKey.ts', () => ({
   useIssueByKey: () => ({ issue: null, status: 'idle', errorMessage: null, refetch: vi.fn() }),
@@ -22,6 +23,8 @@ vi.mock('../../store/connectionStore.ts', () => ({
 }));
 
 describe('QuickIssueLookupGate', () => {
+  // Open/close state now lives in the app-wide store, so reset it to the closed baseline per test.
+  beforeEach(() => useQuickLookupStore.setState({ isOpen: false, seedKey: null, openNonce: 0 }));
   afterEach(() => vi.clearAllMocks());
 
   it('renders nothing until F2 is pressed', () => {

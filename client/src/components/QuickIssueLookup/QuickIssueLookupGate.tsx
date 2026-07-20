@@ -5,9 +5,10 @@
 // input (via a remount) rather than stacking a second popup. Escape closes. The global handler
 // ignores F2 while the user is typing in a field OUTSIDE the popup (keyboard-guard).
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 
 import { QuickIssueLookup } from './QuickIssueLookup.tsx';
+import { useQuickLookupStore } from './quickLookupStore.ts';
 import styles from './QuickIssueLookup.module.css';
 
 const LOOKUP_HOTKEY = 'F2';
@@ -30,9 +31,14 @@ function isTypingOutsidePopup(eventTarget: EventTarget | null): boolean {
 
 /** Renders nothing until F2 opens the popup; owns the app-wide lookup shell. */
 export function QuickIssueLookupGate(): React.JSX.Element | null {
-  const [isOpen, setIsOpen] = useState(false);
-  // Bumped on every F2 press; used as the popup's React key so a repeat press remounts (clears) it.
-  const [openNonce, setOpenNonce] = useState(0);
+  // Open/close/seed state is app-wide (quickLookupStore) so a linked-issue click can open this same
+  // popup seeded with a key; the F2 keydown below is just one of the store's callers.
+  const isOpen = useQuickLookupStore((state) => state.isOpen);
+  const seedKey = useQuickLookupStore((state) => state.seedKey);
+  // Bumped on every open; used as the popup's React key so a repeat open remounts (clears) it.
+  const openNonce = useQuickLookupStore((state) => state.openNonce);
+  const openLookup = useQuickLookupStore((state) => state.open);
+  const closeLookup = useQuickLookupStore((state) => state.close);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const focusInput = useCallback(() => {
@@ -46,12 +52,12 @@ export function QuickIssueLookupGate(): React.JSX.Element | null {
         return;
       }
       keyboardEvent.preventDefault();
-      setIsOpen(true);
-      setOpenNonce((previousNonce) => previousNonce + 1);
+      // F2 opens idle (no seed); open() bumps the nonce so F2-while-open still remounts/clears it.
+      openLookup();
     }
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [openLookup]);
 
   useEffect(() => {
     if (isOpen) {
@@ -71,7 +77,7 @@ export function QuickIssueLookupGate(): React.JSX.Element | null {
       role="dialog"
       onKeyDown={(keyboardEvent) => {
         if (keyboardEvent.key === CLOSE_KEY) {
-          setIsOpen(false);
+          closeLookup();
         }
       }}
     >
@@ -82,12 +88,12 @@ export function QuickIssueLookupGate(): React.JSX.Element | null {
             aria-label={CLOSE_LABEL}
             className={styles.closeButton}
             type="button"
-            onClick={() => setIsOpen(false)}
+            onClick={() => closeLookup()}
           >
             ×
           </button>
         </div>
-        <QuickIssueLookup key={openNonce} inputRef={inputRef} />
+        <QuickIssueLookup key={openNonce} inputRef={inputRef} seedKey={seedKey ?? undefined} />
       </div>
     </div>
   );
