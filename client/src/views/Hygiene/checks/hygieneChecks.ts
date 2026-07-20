@@ -22,8 +22,10 @@ const IMPLEMENTING_STATUS_NAME = 'implementing';
 const FEATURE_ISSUE_TYPE_NAMES = new Set(['feature', 'epic']);
 // The delivery work items expected to carry a release fix version (GH #200). Exported so the Jira-link JQL clause
 // (US2) reuses the SAME list — the count and the "open in Jira" search can never disagree on scope. "Defect" is this
-// instance's defect type (not "Bug"); Sub-tasks are excluded because they inherit their parent's release.
-export const FIX_VERSION_ISSUE_TYPE_NAMES = new Set(['story', 'task', 'defect', 'feature', 'epic']);
+// instance's defect type (not "Bug"); Sub-tasks are excluded because they inherit their parent's release. "Epic" is
+// excluded because this instance's hierarchy tops out at Feature — including a non-existent issue type makes the
+// generated Jira JQL error out (GH #200 follow-up).
+export const FIX_VERSION_ISSUE_TYPE_NAMES = new Set(['story', 'task', 'defect', 'feature']);
 const FEATURE_LINK_REQUIRED_ISSUE_TYPE_NAMES = new Set(['story', 'task', 'bug', 'defect', 'spike']);
 // Issue types that do not have a story-points field on their Jira screen; the missing-sp check must skip them.
 const STORY_POINTS_UNSUPPORTED_ISSUE_TYPE_NAMES = new Set(['risk']);

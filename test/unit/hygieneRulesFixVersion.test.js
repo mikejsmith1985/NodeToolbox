@@ -27,7 +27,8 @@ function hasMissingFixVersion(issueTypeName, fixVersions) {
 }
 
 describe('server hygiene — missing fix version scope (GH #200)', () => {
-  for (const issueTypeName of ['Story', 'Task', 'Defect', 'Feature', 'Epic']) {
+  // "Epic" excluded — this instance's hierarchy tops out at Feature (GH #200 follow-up).
+  for (const issueTypeName of ['Story', 'Task', 'Defect', 'Feature']) {
     test(`flags ${issueTypeName} with no fix version`, () => {
       expect(hasMissingFixVersion(issueTypeName, [])).toBe(true);
     });

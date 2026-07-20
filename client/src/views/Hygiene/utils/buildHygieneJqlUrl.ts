@@ -31,10 +31,12 @@ const CONFIGURED_FIELD_EMPTY_CLAUSES: Record<string, keyof HygieneFieldConfig> =
 };
 
 /** The `issuetype in (...)` clause for the fix-version family, derived from the SAME exported constant the
- * predicate uses (GH #200 N1: count and link cannot disagree on which types must carry a fix version). */
+ * predicate uses (GH #200 N1: count and link cannot disagree on which types must carry a fix version).
+ * NOTE: the JQL field is the singular `fixVersion` (the plural `fixVersions` is the REST field id, which JQL
+ * rejects as "field does not exist"). */
 function buildFixVersionIssueTypeClause(): string {
   const typeNames = [...FIX_VERSION_ISSUE_TYPE_NAMES].map((name) => `"${name}"`).join(', ');
-  return `fixVersions is EMPTY AND issuetype in (${typeNames})`;
+  return `fixVersion is EMPTY AND issuetype in (${typeNames})`;
 }
 
 /**
