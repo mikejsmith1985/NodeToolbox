@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Readiness data hook no longer sets state synchronously inside its effect** (lint `react-hooks/set-state-in-effect`):
+  `useReadinessData` now tags the settled scan with its request key and derives `scanResult`/`isLoading` (the
+  `useIssueByKey` pattern) instead of calling `setScanResult(null)`/`setIsLoading(true)` in the effect body. Behavior
+  is unchanged (empty PI ⇒ no result; the last result stays visible during a reload/PI-switch); the full client lint
+  is now clean.
 - **GH #200 — hygiene "missing fix version" detected 0 of 72** (US1): the check was gated to Feature/Epic issue types,
   so a PI's Stories/Tasks/Defects lacking a fix version were never counted. It now evaluates Story/Task/Defect/
   Feature/Epic (Sub-tasks excluded — they inherit the parent release), reading the native `fixVersions` field. The
