@@ -27,6 +27,7 @@ import {
 } from '../../views/SprintDashboard/featureReviewFixes.ts';
 import { useIssueComments } from '../../hooks/useIssueComments.ts';
 import CommentThread from '../CommentThread/CommentThread.tsx';
+import { useQuickLookupStore } from '../QuickIssueLookup/quickLookupStore.ts';
 import styles from './IssueDetailPanel.module.css';
 
 const DESCRIPTION_PREVIEW_LENGTH = 300;
@@ -555,7 +556,15 @@ function renderIssueLinkRow(issueLink: JiraIssueLink, linkRowIndex: number) {
   return (
     <div className={styles.linkRow} key={`${linkedIssue.key}-${linkRowIndex}`}>
       <span className={styles.linkRelation}>{relationLabel}</span>
-      <span className={styles.linkKey}>{linkedIssue.key}</span>
+      {/* The key is a real control (US3): activating it opens the F2 Quick Issue Lookup on that
+          issue, so a user can follow a dependency chain without leaving the panel. */}
+      <button
+        className={styles.linkKeyButton}
+        type="button"
+        onClick={() => useQuickLookupStore.getState().open(linkedIssue.key)}
+      >
+        {linkedIssue.key}
+      </button>
       {linkedStatus?.name && (
         <StatusChip statusName={linkedStatus.name} statusCategoryKey={linkedStatus.statusCategory?.key} />
       )}
