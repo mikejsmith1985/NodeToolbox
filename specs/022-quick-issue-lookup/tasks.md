@@ -88,7 +88,7 @@ no-permission keys show distinct messages; clicking the key opens Jira. (quickst
       contenteditable **outside** the popup (NFR-005); `role="dialog" aria-modal="true"` + backdrop; focus the input
       on open (~100 ms target, NFR-001); **Escape** closes non-destructively (FR-001/004)
 - [X] T014 [US1] Mount `<QuickIssueLookupGate/>` in `client/src/App.tsx` beside `<TodoQuickAddGate/>`
-- [ ] T015 [US1] e2e — add scenarios **E1, E2, E4, E5, E6** plus an **all-populated-visible / omit-empty** assertion
+- [X] T015 [US1] e2e — add scenarios **E1, E2, E4, E5, E6** plus an **all-populated-visible / omit-empty** assertion
       (FR-006: a seeded multi-field issue shows every populated field and renders no empty placeholder block) to
       `test/e2e/quick-issue-lookup.spec.js`
 
@@ -135,7 +135,7 @@ reflects it, no reload/close; description offers no editor; a panel rendered wit
       `fieldEditing={{ editMeta, onFieldSaved: () => refetch() }}` to `IssueDetailPanel` (FR-010)
 - [X] T023 [US2] Save UX in the editors / panel: Toast confirmation on success (reuse `ToastProvider`), inline
       readable error + revert to prior value on failure, no reload and popup stays open (FR-010)
-- [ ] T024 [US2] e2e — add scenarios **E3, E9, E11** (edit fields + confirm, description read-only, panel-without-
+- [X] T024 [US2] e2e — add scenarios **E3, E9, E11** (edit fields + confirm, description read-only, panel-without-
       capability regression) to `test/e2e/quick-issue-lookup.spec.js`
 
 **Checkpoint**: US1 + US2 — find, view, and fix editable fields without leaving; all writes single-sourced through the
@@ -185,7 +185,7 @@ it; with an issue shown, a new key in the persistent bar swaps in place; F2 whil
 - [X] T030 [US3] Persistent search-bar swap-in-place: a new valid key while an issue is shown swaps the detail without
       closing/reloading (FR-007a); **F2 while open** re-focuses and clears the input, never stacking a second popup
       (FR-001) — in `QuickIssueLookupGate.tsx` / `QuickIssueLookup.tsx`
-- [ ] T031 [US3] e2e — add scenarios **E7, E8** (recents persist + reopen, swap-in-place + F2 re-focus) to
+- [X] T031 [US3] e2e — add scenarios **E7, E8** (recents persist + reopen, swap-in-place + F2 re-focus) to
       `test/e2e/quick-issue-lookup.spec.js`
 
 **Checkpoint**: all three stories independently functional; the feature is complete.
@@ -194,11 +194,11 @@ it; with an issue shown, a new key in the persistent bar swaps in place; F2 whil
 
 ## Phase 6: Polish & Cross-Cutting Concerns
 
-- [ ] T032 e2e — add scenario **E10**: run E1–E3 at text sizes A/A+/A++, in light + dark, and at narrow width; assert
+- [X] T032 e2e — add scenario **E10**: run E1–E3 at text sizes A/A+/A++, in light + dark, and at narrow width; assert
       reflow-not-clip and text-beside-color on every chip (NFR-003/004; Article X evidence) in
       `test/e2e/quick-issue-lookup.spec.js`
-- [ ] T033 [P] Update `CHANGELOG.md` (Unreleased) with the F2 Quick Issue Lookup feature (one-line summary + bullets)
-- [ ] T034 Run full gates and quickstart validation: `cd client && npx vitest run && npx tsc -b`; execute quickstart
+- [X] T033 [P] Update `CHANGELOG.md` (Unreleased) with the F2 Quick Issue Lookup feature (one-line summary + bullets)
+- [X] T034 Run full gates and quickstart validation: `cd client && npx vitest run && npx tsc -b`; execute quickstart
       E1–E11 in the e2e harness and capture evidence; confirm `IssueDetailPanel` callers without `fieldEditing` are
       visually unchanged
 

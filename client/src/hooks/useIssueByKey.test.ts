@@ -1,6 +1,6 @@
 // useIssueByKey.test.ts — Unit tests for the single-issue lookup hook's honest outcome states.
 
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { fetchIssueByKey } from '../services/issueLookup.ts';
@@ -54,5 +54,27 @@ describe('useIssueByKey', () => {
       expect(result.current.status).toBe('error');
       expect(result.current.errorMessage).toBe('network down');
     });
+  });
+
+  it('keeps the last issue visible during a refetch (no spinner flicker), then updates', async () => {
+    const firstIssue = { key: 'ENCUC-1234', fields: { summary: 'v1' } };
+    const secondIssue = { key: 'ENCUC-1234', fields: { summary: 'v2' } };
+    let resolveRefetch: (issue: unknown) => void = () => {};
+    vi.mocked(fetchIssueByKey)
+      .mockResolvedValueOnce(firstIssue as never)
+      .mockImplementationOnce(
+        () => new Promise((resolve) => { resolveRefetch = resolve as unknown as (issue: unknown) => void; }),
+      );
+
+    const { result } = renderHook(() => useIssueByKey('ENCUC-1234'));
+    await waitFor(() => expect(result.current.status).toBe('loaded'));
+
+    act(() => result.current.refetch());
+    // While the refetch is in flight the previous issue stays on screen — never back to 'loading'.
+    expect(result.current.status).toBe('loaded');
+    expect(result.current.issue).toEqual(firstIssue);
+
+    await act(async () => { resolveRefetch(secondIssue); });
+    await waitFor(() => expect(result.current.issue).toEqual(secondIssue));
   });
 });
