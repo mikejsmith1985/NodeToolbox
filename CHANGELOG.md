@@ -13,6 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Feature/Epic (Sub-tasks excluded — they inherit the parent release), reading the native `fixVersions` field. The
   issue-type set is exported from `hygieneChecks.ts` and mirrored in the server hygiene monitor (`hygieneRules.js`),
   so the view, the scheduled monitor, and (US2) the "open in Jira" link all agree by construction.
+- **GH #200 — a linked issue now opens in the F2 Quick Issue Lookup** (US3): clicking a linked-issue key in the issue
+  detail panel opens the F2 lookup seeded with that key — full detail, editable fields, Jira deep-link — without
+  leaving the current view or building a second viewer. New `quickLookupStore` gives the F2 lookup an imperative
+  `open(seedKey?)` path (the gate previously opened only on the F2 keydown); the linked-issue key became a focusable
+  control. Additive to the shipped panel/lookup — F2 behaves exactly as before.
 
 ### Added
 - **F2 Quick Issue Lookup — find, view, and fix any issue from anywhere** (in progress): a global **F2**

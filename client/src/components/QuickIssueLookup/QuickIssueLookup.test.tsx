@@ -105,6 +105,26 @@ describe('QuickIssueLookup (popup body)', () => {
     expect(screen.getByText('Jira unavailable')).toBeInTheDocument();
   });
 
+  it('drives the lookup immediately from a seedKey (linked-issue click) and prefills the input', () => {
+    mockLookup({ status: 'loaded', issue: { id: '1', key: 'ENCUC-2070', fields: { summary: 'x' } } });
+    render(<QuickIssueLookup seedKey="ENCUC-2070" />);
+
+    // The hook is driven with the seed at mount — no user typing required.
+    expect(useIssueByKeyMock).toHaveBeenCalledWith('ENCUC-2070');
+    // The search input reflects the seeded key so the user sees what loaded.
+    expect(screen.getByLabelText('Issue key')).toHaveValue('ENCUC-2070');
+  });
+
+  it('starts idle with recents when no seedKey is provided', () => {
+    mockLookup({ status: 'idle' });
+    render(<QuickIssueLookup />);
+
+    // Every hook call is the render-time idle call with a null key — nothing is auto-loaded.
+    for (const call of useIssueByKeyMock.mock.calls) {
+      expect(call[0]).toBeNull();
+    }
+  });
+
   it('renders the issue key as a Jira browse link opening in a new tab on success', () => {
     mockLookup({ status: 'loaded', issue: { id: '1', key: 'ENCUC-1234', fields: { summary: 'x' } } });
     render(<QuickIssueLookup />);
