@@ -26,10 +26,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   opens showing the last 5 issues you viewed (client-only `recentIssuesStore`, localStorage, never synced), each
   re-openable by click or arrow keys; the persistent search bar swaps the viewed issue in place without closing, and
   pressing F2 again while open re-focuses the search. All three stories are implemented and covered by a real-browser
-  Playwright suite (`test/e2e/quick-issue-lookup.spec.js`, 9 scenarios: open/view, deep-link, honest states,
-  normalization, in-place edit, description read-only, recents persistence, swap-in-place, narrow-width). A field save
-  now refreshes the issue in the background so the panel never flickers back to a spinner. Validation against a live
-  Jira instance is the remaining follow-up.
+  Playwright suite (`test/e2e/quick-issue-lookup.spec.js`, 12 scenarios: focused open + full context, empty-section
+  omission, deep-link, honest states, normalization, in-place priority & assignee edits verified by the outgoing
+  writes, a failed-write inline error, description read-only, recents persistence, swap-in-place + F2-while-open reset,
+  and layout across light/dark themes, all three text sizes, and a narrow width). A field save now refreshes the issue
+  in the background so the panel never flickers back to a spinner. Validation against a live Jira instance is the
+  remaining follow-up.
 
 ### Changed
 - **Staleness is now measured in business days, not calendar days**: an in-progress issue left untouched
