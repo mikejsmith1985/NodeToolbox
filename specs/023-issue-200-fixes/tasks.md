@@ -53,7 +53,7 @@ US3/US4/US5, then US6.
       (native `fixVersions`; no config key)
 - [X] T005 [US1] Server parity (only if T002 found a server check) — red-first Jest test then mirror the same type set
       in `src/services/hygieneRules.js`; keep `npm test` green
-- [ ] T006 [US1] e2e — add scenario **H1** (mixed-type PI → count N not 0) to `test/e2e/hygiene-jira-links.spec.js`
+- [X] T006 [US1] e2e — add scenario **H1** (mixed-type PI → count N not 0) to `test/e2e/hygiene-jira-links.spec.js`
 
 **Checkpoint**: US1 merges first — every downstream number reflects the corrected count.
 
@@ -83,7 +83,7 @@ tile-click filter unchanged (H3).
 - [X] T011 [US2] GREEN — in `client/src/views/Hygiene/HygieneView.tsx` render a distinct "open in Jira ↗" anchor
       (`target="_blank" rel="noreferrer"`) on each summary tile, keeping the existing tile `onClick` filter and the
       copy-JQL affordance; zero-finding tiles still link (FR-008)
-- [ ] T012 [US2] e2e — add **H2** (link opens JQL; stubbed Jira count agrees) and **H3** (tile filter unchanged) to
+- [X] T012 [US2] e2e — add **H2** (link opens JQL; stubbed Jira count agrees) and **H3** (tile filter unchanged) to
       `test/e2e/hygiene-jira-links.spec.js`
 
 **Checkpoint**: hygiene numbers are correct AND verifiable against Jira.
@@ -110,7 +110,7 @@ tile-click filter unchanged (H3).
 - [X] T018 [US3] GREEN — `QuickIssueLookup.tsx`: optional `seedKey` prop presets `lookupKey`; omitted ⇒ unchanged
 - [X] T019 [US3] GREEN — `IssueDetailPanel/index.tsx` `renderIssueLinkRow`: linked key → focusable button calling
       `useQuickLookupStore.getState().open(linkedIssue.key)`; additive — other callers unchanged
-- [ ] T020 [US3] e2e — add `test/e2e/linked-issue-lookup.spec.js`: **L1** (click linked key → lookup) + **L2** (F2 022
+- [X] T020 [US3] e2e — add `test/e2e/linked-issue-lookup.spec.js`: **L1** (click linked key → lookup) + **L2** (F2 022
       regression)
 
 **Checkpoint**: linked issues reachable in-app; shipped panel + F2 lookup unregressed.
@@ -127,7 +127,7 @@ populated `<select>`; pick updates tool; team switch refreshes; invalid PI impos
 - [X] T022 [US4] GREEN — `client/src/views/PoTool/PoTeamSelector.tsx`: PI `<input>` → `<select>` from
       `loadAvailablePiNamesFromJira(piReviewTeams)` (ArtView pattern: options, loading, reload); preselect via
       `findPiNameForDate`/profile `selectedPiValue`; team change refreshes; persist via `usePoToolState`; load-failure fallback
-- [ ] T023 [US4] e2e — add `test/e2e/po-pi-dropdown.spec.js`: **P1**
+- [X] T023 [US4] e2e — add `test/e2e/po-pi-dropdown.spec.js`: **P1**
 
 **Checkpoint**: POs pick a PI; a non-existent PI cannot be chosen.
 
@@ -182,7 +182,7 @@ M1, M2).
       overridable; emphasized sections follow `myIssuesRoleLens` (FR-021)
 - [X] T034 [US6] GREEN — `MyIssuesView.tsx`: for SM/PO lenses, a subject switch between own work and a selected team
       (roster membership → `assignee in (...)`) (FR-022)
-- [ ] T035 [US6] e2e — add `test/e2e/myissues-personas.spec.js`: **M1** (simulate + banner + back-to-me) + **M2** (role
+- [X] T035 [US6] e2e — add `test/e2e/myissues-personas.spec.js`: **M1** (simulate + banner + back-to-me) + **M2** (role
       lens change; SM/PO team view)
 
 **Checkpoint**: all six stories independently functional.
