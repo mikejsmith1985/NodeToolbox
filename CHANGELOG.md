@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Hygiene "open in Jira" link for missing fix version generated an invalid JQL** (GH #200 follow-up). Two problems
+  made the query error when opened in Jira (even though the in-app count was correct): it used the REST field id
+  `fixVersions` instead of the JQL field alias **`fixVersion`** ("field does not exist"), and it listed the `epic`
+  issue type, which does not exist in this instance ("value 'epic' does not exist"). The shared fix-version type set
+  is now `Story/Task/Defect/Feature` (Epic dropped — the hierarchy tops out at Feature) across the client predicate,
+  the server hygiene monitor, and the generated JQL, and the clause uses `fixVersion is EMPTY`. Count and link still
+  agree by construction.
 - **Release → CHG wizard created change requests even when no environment was enabled.** `createChg` silently fell
   back to a single "no environment" CHG, so a user who never enabled an environment on the Environments step ended up
   with unexpected CHGs. Environments are now required: **Create CHG** is disabled (with an inline note) until at least

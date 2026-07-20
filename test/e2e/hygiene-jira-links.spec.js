@@ -75,7 +75,9 @@ test.describe('GH #200 — hygiene fix-version fidelity + Jira links', () => {
     const openLink = tile.getByRole('link', { name: /Open Missing Fix Version in Jira/i });
     const href = await openLink.getAttribute('href');
     // The link is the semantic query — the family condition AND the scan's scope — not a key list.
-    expect(decodeURIComponent(href)).toContain('fixVersions is EMPTY');
+    // JQL uses the singular `fixVersion` field alias (GH #200 follow-up).
+    expect(decodeURIComponent(href)).toContain('fixVersion is EMPTY');
+    expect(decodeURIComponent(href)).not.toContain('fixVersions');
     expect(decodeURIComponent(href)).toContain('issuetype in');
     expect(decodeURIComponent(href)).toContain('project=ENCUC');
     expect(openLink).toHaveAttribute('target', '_blank');

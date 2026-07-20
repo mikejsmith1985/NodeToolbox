@@ -26,8 +26,9 @@ const SPRINT_FIELD = 'customfield_10020';
 const FEATURE_LIKE_ISSUE_TYPES = new Set(['feature', 'epic']);
 // Delivery work items expected to carry a release fix version (GH #200). MUST match the client's
 // FIX_VERSION_ISSUE_TYPE_NAMES so the server hygiene monitor and the Hygiene view agree. "Defect" is this
-// instance's defect type (not "Bug"); Sub-tasks inherit the parent release and are excluded.
-const FIX_VERSION_ISSUE_TYPES = new Set(['story', 'task', 'defect', 'feature', 'epic']);
+// instance's defect type (not "Bug"); Sub-tasks inherit the parent release and are excluded; "Epic" is excluded
+// because this instance's hierarchy tops out at Feature.
+const FIX_VERSION_ISSUE_TYPES = new Set(['story', 'task', 'defect', 'feature']);
 const STORY_LIKE_ISSUE_TYPES = new Set(['story', 'task', 'bug', 'defect', 'spike']);
 const STORY_POINTS_UNSUPPORTED_TYPES = new Set(['risk']);
 
