@@ -30,9 +30,9 @@ export type IssueLookupStatus =
 /** The terminal states a settled request can carry (idle/loading are derived, never settled). */
 type SettledStatus = Exclude<IssueLookupStatus, 'idle' | 'loading'>;
 
-/** A settled lookup outcome tagged with the request that produced it (so stale results are ignored). */
+/** A settled lookup outcome tagged with the issue key that produced it (so stale results are ignored). */
 interface SettledLookup {
-  requestKey: string;
+  issueKey: string;
   issue: JiraIssue | null;
   status: SettledStatus;
   errorMessage: string | null;
@@ -76,13 +76,13 @@ export function useIssueByKey(issueKey: string | null): UseIssueByKeyResult {
     fetchIssueByKey(issueKey)
       .then((loadedIssue) => {
         if (!isCancelled) {
-          setSettled({ requestKey, issue: loadedIssue, status: 'loaded', errorMessage: null });
+          setSettled({ issueKey, issue: loadedIssue, status: 'loaded', errorMessage: null });
         }
       })
       .catch((caughtError: unknown) => {
         if (isCancelled) return;
         const errorMessage = caughtError instanceof Error ? caughtError.message : DEFAULT_LOOKUP_ERROR;
-        setSettled({ requestKey, issue: null, status: mapErrorToStatus(caughtError), errorMessage });
+        setSettled({ issueKey, issue: null, status: mapErrorToStatus(caughtError), errorMessage });
       });
 
     return () => {
@@ -92,12 +92,14 @@ export function useIssueByKey(issueKey: string | null): UseIssueByKeyResult {
 
   const refetch = useCallback(() => setRefetchTrigger((previousTrigger) => previousTrigger + 1), []);
 
-  // Derive the outward state: idle when no key, loading until the CURRENT request settles.
-  const isSettledForCurrentRequest = settled !== null && settled.requestKey === requestKey;
+  // Derive the outward state. Loading shows only until the FIRST result for a key arrives; a refetch
+  // (same key) keeps the last result on screen while it refreshes in the background, so an in-place
+  // save never flickers the panel back to a spinner (FR-010 "reflect immediately, preserve place").
+  const settledMatchesKey = settled !== null && settled.issueKey === issueKey;
   if (issueKey === null) {
     return { issue: null, status: 'idle', errorMessage: null, refetch };
   }
-  if (!isSettledForCurrentRequest) {
+  if (!settledMatchesKey) {
     return { issue: null, status: 'loading', errorMessage: null, refetch };
   }
   return { issue: settled.issue, status: settled.status, errorMessage: settled.errorMessage, refetch };
