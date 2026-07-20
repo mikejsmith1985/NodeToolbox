@@ -8,14 +8,32 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { JiraIssue, JiraTransition } from '../../types/jira.ts';
 
 import type { IssueSource, SortField, ViewMode } from './hooks/useMyIssuesState.ts';
+import type { ReportSubject } from './myIssuesRoleLens.ts';
 
 // ── Hoisted mocks ──
 
-const { mockUseConnectionStore, mockSnowFetch, mockJiraPost, mockJiraPut } = vi.hoisted(() => ({
-  mockUseConnectionStore: vi.fn(),
-  mockSnowFetch: vi.fn(),
-  mockJiraPost: vi.fn(),
-  mockJiraPut: vi.fn(),
+const { mockUseConnectionStore, mockSnowFetch, mockJiraPost, mockJiraPut, mockSearchUsers, mockRosterMembers } =
+  vi.hoisted(() => ({
+    mockUseConnectionStore: vi.fn(),
+    mockSnowFetch: vi.fn(),
+    mockJiraPost: vi.fn(),
+    mockJiraPut: vi.fn(),
+    mockSearchUsers: vi.fn(),
+    // A mutable holder so individual tests can seed roster members before rendering.
+    mockRosterMembers: { current: [] as Array<Record<string, unknown>> },
+  }));
+
+// The persona controls reuse the Feature Review Jira user search and the shared roster store.
+vi.mock('../SprintDashboard/featureReviewFixes.ts', () => ({
+  searchFeatureReviewUsers: mockSearchUsers,
+}));
+
+vi.mock('../SprintDashboard/hooks/useStandupRosterStore.ts', () => ({
+  useStandupRosterStore: (selector: (state: { rosterMembers: unknown[] }) => unknown) =>
+    selector({ rosterMembers: mockRosterMembers.current }),
+  readAvailableRosterTeamNames: (members: Array<{ teamName?: string }>) => [
+    ...new Set(members.map((member) => member.teamName).filter((teamName): teamName is string => !!teamName)),
+  ],
 }));
 
 vi.mock('../../store/connectionStore.ts', () => ({
@@ -58,6 +76,8 @@ function createMockIssue(issueKey: string, summary: string): JiraIssue {
 const { mockState, mockActions } = vi.hoisted(() => ({
   mockState: {
     source: 'mine' as IssueSource,
+    subject: { kind: 'viewer' } as ReportSubject,
+    subjectMemberIdentifiers: [] as string[],
     viewMode: 'cards' as ViewMode,
     sortBy: 'updated' as SortField,
     jqlQuery: '',
@@ -92,6 +112,7 @@ const { mockState, mockActions } = vi.hoisted(() => ({
   },
   mockActions: {
     setSource: vi.fn(),
+    setSubject: vi.fn(),
     setViewMode: vi.fn(),
     setSortBy: vi.fn(),
     setJqlQuery: vi.fn(),
@@ -467,5 +488,80 @@ describe('MyIssuesView — export menu', () => {
     await user.click(screen.getByRole('button', { name: /copy as markdown table/i }));
 
     expect(mockActions.exportAsMarkdown).toHaveBeenCalled();
+  });
+});
+
+// ── US6: My Issues personas (simulate / role lens / team view) ──
+
+describe('MyIssuesView — personas', () => {
+  beforeEach(() => {
+    mockState.source = 'mine';
+    mockState.subject = { kind: 'viewer' };
+    mockState.subjectMemberIdentifiers = [];
+    mockRosterMembers.current = [];
+    mockUseConnectionStore.mockReturnValue({ isSnowReady: false });
+    vi.clearAllMocks();
+    mockUseConnectionStore.mockReturnValue({ isSnowReady: false });
+    mockSnowFetch.mockResolvedValue({ result: [] });
+    mockSearchUsers.mockResolvedValue([]);
+  });
+
+  it('shows a "Viewing as" banner and a Back to me control when simulating a user', async () => {
+    const user = userEvent.setup();
+    mockState.subject = { kind: 'user', accountId: 'acc-1', displayName: 'Bob Tester' };
+    renderMyIssues('report');
+
+    expect(screen.getByText(/viewing as/i)).toHaveTextContent('Bob Tester');
+
+    await user.click(screen.getByRole('button', { name: /back to me/i }));
+
+    expect(mockActions.setSubject).toHaveBeenCalledWith({ kind: 'viewer' });
+  });
+
+  it('searches Jira users and simulates the picked user as a subject', async () => {
+    const user = userEvent.setup();
+    mockSearchUsers.mockResolvedValue([
+      { userIdentifier: 'accountId:acc-7', displayName: 'Zoe QA' },
+    ]);
+    renderMyIssues('report');
+
+    await user.type(screen.getByRole('textbox', { name: /simulate as/i }), 'zoe');
+    await user.click(screen.getByRole('button', { name: /^simulate$/i }));
+
+    const pickButton = await screen.findByRole('button', { name: /zoe qa/i });
+    await user.click(pickButton);
+
+    expect(mockActions.setSubject).toHaveBeenCalledWith({
+      kind: 'user',
+      accountId: 'acc-7',
+      displayName: 'Zoe QA',
+    });
+  });
+
+  it('emphasises the Scrum Master sections when the role lens changes to SM', async () => {
+    const user = userEvent.setup();
+    renderMyIssues('report');
+
+    await user.selectOptions(screen.getByRole('combobox', { name: /role lens/i }), 'sm');
+
+    expect(screen.getByText('Team blockers')).toBeInTheDocument();
+    expect(screen.getByText('Flow (aging / WIP)')).toBeInTheDocument();
+  });
+
+  it('switches the subject to a roster team when an SM picks a team view', async () => {
+    const user = userEvent.setup();
+    mockRosterMembers.current = [
+      { id: 'm1', displayName: 'Ann', assigneeQueryValue: 'ann@x.com', teamName: 'Falcons' },
+      { id: 'm2', displayName: 'Ben', assigneeQueryValue: 'ben@x.com', teamName: 'Falcons' },
+    ];
+    renderMyIssues('report');
+
+    await user.selectOptions(screen.getByRole('combobox', { name: /role lens/i }), 'sm');
+    await user.selectOptions(screen.getByRole('combobox', { name: /team view/i }), 'Falcons');
+
+    expect(mockActions.setSubject).toHaveBeenCalledWith(
+      { kind: 'team', teamName: 'Falcons' },
+      ['ann@x.com', 'ben@x.com'],
+    );
   });
 });

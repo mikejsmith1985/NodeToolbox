@@ -26,6 +26,21 @@ import { StatusMappingEditor } from './StatusMappingEditor.tsx';
 import { useMyIssuesState } from './hooks/useMyIssuesState.ts';
 import { useSnowIssues } from './hooks/useSnowIssues.ts';
 import type { IssueSource, SortField, ViewMode } from './hooks/useMyIssuesState.ts';
+import {
+  searchFeatureReviewUsers,
+  type FeatureReviewUserCandidate,
+} from '../SprintDashboard/featureReviewFixes.ts';
+import {
+  readAvailableRosterTeamNames,
+  useStandupRosterStore,
+  type StandupRosterMember,
+} from '../SprintDashboard/hooks/useStandupRosterStore.ts';
+import {
+  defaultRoleFromCapabilities,
+  myIssuesRoleLens,
+  type ReportSubject,
+  type RoleLens,
+} from './myIssuesRoleLens.ts';
 import type { ExtendedJiraIssue } from './myIssuesExtendedTypes.ts';
 import SwimlaneCardView from './SwimlaneCardView.tsx';
 import BulkCommentPanel from './BulkCommentPanel.tsx';
@@ -567,6 +582,256 @@ function SourcePane({
   return null;
 }
 
+// ── Persona controls (US6) ──
+
+// The four role lenses offered in the persona bar, with human-readable labels for the dropdown.
+const ROLE_LENS_OPTIONS: { key: RoleLens; label: string }[] = [
+  { key: 'dev', label: 'Developer' },
+  { key: 'tester', label: 'Tester' },
+  { key: 'sm', label: 'Scrum Master' },
+  { key: 'po', label: 'Product Owner' },
+];
+
+// Team view is only meaningful for the coordinating lenses that reason across a whole team.
+const TEAM_VIEW_ROLE_LENSES: RoleLens[] = ['sm', 'po'];
+
+// The Jira user search returns identifiers prefixed by type (e.g. "accountId:5b10…"); JQL wants the
+// bare value. "My work" is the sentinel option value that restores the viewer subject.
+const OWN_WORK_TEAM_OPTION_VALUE = '';
+
+/** Strips the "accountId:" / "name:" / "key:" prefix from a Jira user-search identifier. */
+function stripUserIdentifierPrefix(userIdentifier: string): string {
+  const separatorIndex = userIdentifier.indexOf(':');
+  return separatorIndex >= 0 ? userIdentifier.slice(separatorIndex + 1) : userIdentifier;
+}
+
+/** Collects the roster assignee identifiers for every member of the named team. */
+function resolveTeamMemberIdentifiers(
+  rosterMembers: StandupRosterMember[],
+  teamName: string,
+): string[] {
+  return rosterMembers
+    .filter((rosterMember) => rosterMember.teamName === teamName)
+    .map((rosterMember) => rosterMember.assigneeQueryValue)
+    .filter((assigneeQueryValue) => assigneeQueryValue.trim() !== '');
+}
+
+/**
+ * Chooses the default role lens for the active subject. A simulated user inherits the role of the
+ * matching roster member (by account id or display name); everyone else defaults to Developer.
+ */
+function deriveSubjectDefaultRole(
+  subject: ReportSubject,
+  rosterMembers: StandupRosterMember[],
+): RoleLens {
+  if (subject.kind !== 'user') {
+    return 'dev';
+  }
+
+  const matchingMember = rosterMembers.find(
+    (rosterMember) =>
+      rosterMember.jiraAccountId === subject.accountId ||
+      rosterMember.displayName === subject.displayName,
+  );
+  return defaultRoleFromCapabilities(matchingMember?.roleCapabilities);
+}
+
+/** Returns the display name for the "Viewing as/team" banner, or null for the plain viewer. */
+function resolveSubjectBannerLabel(subject: ReportSubject): string | null {
+  if (subject.kind === 'user') {
+    return `Viewing as ${subject.displayName}`;
+  }
+  if (subject.kind === 'team') {
+    return `Viewing team ${subject.teamName}`;
+  }
+  return null;
+}
+
+/**
+ * Renders the persona controls for the "My Issues" source: a Jira user-search "simulate as" picker,
+ * a "Viewing as …" banner with a one-action Back to me, a role lens selector whose emphasised
+ * sections follow `myIssuesRoleLens`, and — for the SM/PO lenses — a team-view subject switch.
+ * Every control is READ-ONLY: it only re-points the report's query (FR-019..023).
+ */
+function PersonaBar({
+  subject,
+  rosterMembers,
+  onSetSubject,
+}: {
+  subject: ReportSubject;
+  rosterMembers: StandupRosterMember[];
+  onSetSubject: (subject: ReportSubject, memberIdentifiers?: string[]) => void;
+}) {
+  const [userSearchQuery, setUserSearchQuery] = useState('');
+  const [userSearchResults, setUserSearchResults] = useState<FeatureReviewUserCandidate[]>([]);
+  const [isSearchingUsers, setIsSearchingUsers] = useState(false);
+  // An explicit override wins over the subject's derived default; null means "follow the default".
+  const [roleLensOverride, setRoleLensOverride] = useState<RoleLens | null>(null);
+
+  const subjectDefaultRole = useMemo(
+    () => deriveSubjectDefaultRole(subject, rosterMembers),
+    [subject, rosterMembers],
+  );
+  const activeRoleLens = roleLensOverride ?? subjectDefaultRole;
+  const emphasizedCriteria = myIssuesRoleLens(activeRoleLens).emphasizedCriteria;
+
+  const availableTeamNames = useMemo(
+    () => readAvailableRosterTeamNames(rosterMembers),
+    [rosterMembers],
+  );
+  const bannerLabel = resolveSubjectBannerLabel(subject);
+  const shouldShowTeamView = TEAM_VIEW_ROLE_LENSES.includes(activeRoleLens);
+  const selectedTeamValue = subject.kind === 'team' ? subject.teamName : OWN_WORK_TEAM_OPTION_VALUE;
+
+  /** Runs the Jira user search for the typed query; failures clear the result list. */
+  async function handleSearchUsers() {
+    setIsSearchingUsers(true);
+    try {
+      const foundUsers = await searchFeatureReviewUsers(userSearchQuery);
+      setUserSearchResults(foundUsers);
+    } catch {
+      setUserSearchResults([]);
+    } finally {
+      setIsSearchingUsers(false);
+    }
+  }
+
+  /** Simulates the picked user and lets the role lens re-derive from that user's roster role. */
+  function handlePickUser(candidate: FeatureReviewUserCandidate) {
+    onSetSubject({
+      kind: 'user',
+      accountId: stripUserIdentifierPrefix(candidate.userIdentifier),
+      displayName: candidate.displayName,
+    });
+    setUserSearchResults([]);
+    setUserSearchQuery('');
+    setRoleLensOverride(null);
+  }
+
+  /** Restores the signed-in viewer and re-derives the default role lens. */
+  function handleBackToMe() {
+    onSetSubject({ kind: 'viewer' });
+    setRoleLensOverride(null);
+  }
+
+  /** Switches the report between own work (viewer) and a selected roster team. */
+  function handleTeamViewChange(teamName: string) {
+    if (teamName === OWN_WORK_TEAM_OPTION_VALUE) {
+      onSetSubject({ kind: 'viewer' });
+      return;
+    }
+    onSetSubject({ kind: 'team', teamName }, resolveTeamMemberIdentifiers(rosterMembers, teamName));
+  }
+
+  return (
+    <div className={styles.personaBar} style={{ marginTop: 'var(--spacing-sm)' }}>
+      {/* Simulate-as user search */}
+      <div className={styles.personaRow}>
+        <label className={styles.personaLabel} htmlFor="persona-simulate-input">
+          Simulate as
+        </label>
+        <input
+          aria-label="Simulate as user"
+          className={styles.personaInput}
+          id="persona-simulate-input"
+          onChange={(changeEvent) => setUserSearchQuery(changeEvent.target.value)}
+          placeholder="Search a Jira user…"
+          type="text"
+          value={userSearchQuery}
+        />
+        <button
+          className={styles.toolbarButton}
+          disabled={isSearchingUsers || userSearchQuery.trim() === ''}
+          onClick={() => { void handleSearchUsers(); }}
+          type="button"
+        >
+          {isSearchingUsers ? 'Searching…' : 'Simulate'}
+        </button>
+
+        {/* Role lens selector */}
+        <label className={styles.personaLabel} htmlFor="persona-role-lens">
+          Role lens
+        </label>
+        <select
+          aria-label="Role lens"
+          className={styles.toolbarSelect}
+          id="persona-role-lens"
+          onChange={(changeEvent) => setRoleLensOverride(changeEvent.target.value as RoleLens)}
+          value={activeRoleLens}
+        >
+          {ROLE_LENS_OPTIONS.map((roleOption) => (
+            <option key={roleOption.key} value={roleOption.key}>
+              {roleOption.label}
+            </option>
+          ))}
+        </select>
+
+        {/* Team-view subject switch — only for coordinating lenses */}
+        {shouldShowTeamView && (
+          <>
+            <label className={styles.personaLabel} htmlFor="persona-team-view">
+              Team view
+            </label>
+            <select
+              aria-label="Team view"
+              className={styles.toolbarSelect}
+              id="persona-team-view"
+              onChange={(changeEvent) => handleTeamViewChange(changeEvent.target.value)}
+              value={selectedTeamValue}
+            >
+              <option value={OWN_WORK_TEAM_OPTION_VALUE}>My work</option>
+              {availableTeamNames.map((teamName) => (
+                <option key={teamName} value={teamName}>
+                  {teamName}
+                </option>
+              ))}
+            </select>
+          </>
+        )}
+      </div>
+
+      {/* User-search results */}
+      {userSearchResults.length > 0 && (
+        <div className={styles.personaResults}>
+          {userSearchResults.map((candidate) => (
+            <button
+              className={styles.personaResultItem}
+              key={candidate.userIdentifier}
+              onClick={() => handlePickUser(candidate)}
+              type="button"
+            >
+              {candidate.displayName}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* "Viewing as / team" banner with a single Back to me action */}
+      {bannerLabel && (
+        <div className={styles.personaBanner} role="status">
+          <span>{bannerLabel}</span>
+          <button
+            className={styles.toolbarButton}
+            onClick={handleBackToMe}
+            type="button"
+          >
+            Back to me
+          </button>
+        </div>
+      )}
+
+      {/* Emphasised sections for the active role lens */}
+      <div className={styles.personaEmphasis} aria-label="Emphasised for this role">
+        {emphasizedCriteria.map((criterion) => (
+          <span className={styles.personaChip} key={criterion}>
+            {criterion}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ── Main component ──
 
 /**
@@ -579,6 +844,8 @@ function SourcePane({
 export default function MyIssuesView() {
   const { state, actions } = useMyIssuesState();
   const { isSnowReady } = useConnectionStore();
+  // The shared Team Dashboard roster powers the persona role default and team-view switch (US6).
+  const rosterMembers = useStandupRosterStore((store) => store.rosterMembers);
   // The active sub-tab is driven by the `?tab=` URL param so the Today dashboard's
   // deep links (and links from other views) can land directly on a specific sub-tab.
   const [searchParams, setSearchParams] = useSearchParams();
@@ -598,6 +865,9 @@ export default function MyIssuesView() {
   const [isSnowSectionCollapsed, setIsSnowSectionCollapsed] = useState(false);
   const hasAutoLoadedJiraIssuesRef = useRef(false);
   const hasAutoLoadedSnowIssuesRef = useRef(false);
+  // Guards the persona re-fetch effect so the initial mount (already covered by the auto-load
+  // effect below) does not trigger a duplicate fetch — only later subject changes re-query.
+  const hasSubjectSettledRef = useRef(false);
 
   // SNow issues hook — fetches all 4 record types assigned to the current user.
   const { snowIssues, isLoadingSnowIssues, snowFetchError, fetchSnowIssues } = useSnowIssues();
@@ -619,6 +889,17 @@ export default function MyIssuesView() {
     hasAutoLoadedSnowIssuesRef.current = true;
     void fetchSnowIssues();
   }, [fetchSnowIssues, isSnowReady]);
+
+  // Re-query the report whenever the persona subject changes (simulate a user, view a team, or
+  // return to the viewer). Skips the first run so it does not double-fetch on mount.
+  useEffect(() => {
+    if (!hasSubjectSettledRef.current) {
+      hasSubjectSettledRef.current = true;
+      return;
+    }
+
+    void actions.fetchMyIssues();
+  }, [state.subject, actions]);
 
   // Status mappings from the settings store — used for health calculation.
   const { statusMappings } = useSettingsStore();
@@ -751,6 +1032,15 @@ export default function MyIssuesView() {
               </button>
             ))}
           </div>
+
+          {/* Persona controls (simulate / role lens / team view) apply to the "My Issues" source */}
+          {state.source === 'mine' && (
+            <PersonaBar
+              onSetSubject={actions.setSubject}
+              rosterMembers={rosterMembers}
+              subject={state.subject}
+            />
+          )}
 
           {/* Source-specific pane */}
           {state.source !== 'mine' && (
