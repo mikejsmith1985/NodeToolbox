@@ -85,7 +85,9 @@ describe('hygiene check predicates', () => {
 
   // GH #200: the fix-version check reported 0 of 72 because it only evaluated Feature/Epic — the missing 72 were
   // Stories/Tasks/Defects. It must flag every delivery type expected to carry a fix version.
-  it.each(['Story', 'Task', 'Defect', 'Feature', 'Epic'])(
+  // "Epic" is intentionally excluded — this instance's hierarchy tops out at Feature (GH #200 follow-up), and
+  // including a non-existent type would make the generated Jira JQL error out.
+  it.each(['Story', 'Task', 'Defect', 'Feature'])(
     'flags %s issues that have no fix version',
     (issueTypeName) => {
       const hygieneFlag = checkMissingFixVersion(buildIssue({ issuetype: { name: issueTypeName }, fixVersions: [] }));

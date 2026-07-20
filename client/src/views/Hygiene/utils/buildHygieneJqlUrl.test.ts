@@ -96,7 +96,10 @@ describe('buildJiraIssueNavigatorUrl', () => {
 describe('buildHygieneCheckClause (US2 — semantic per-family JQL)', () => {
   it('builds the fix-version clause from the SAME exported type constant (agree by construction, N1)', () => {
     const clause = buildHygieneCheckClause('missing-fix-version', US2_FIELD_CONFIG);
-    expect(clause).toContain('fixVersions is EMPTY');
+    // JQL uses the singular field alias `fixVersion` (the plural `fixVersions` is the REST field id).
+    expect(clause).toContain('fixVersion is EMPTY');
+    expect(clause).not.toContain('fixVersions');
+    expect(clause).not.toContain('epic');
     for (const issueTypeName of FIX_VERSION_ISSUE_TYPE_NAMES) {
       expect(clause).toContain(issueTypeName);
     }
