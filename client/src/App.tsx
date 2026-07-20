@@ -9,6 +9,7 @@ import { Link, Navigate, Route, Routes, useLocation, useNavigate } from 'react-r
 
 import { AiAssistUnlockGate } from './components/AiAssistUnlockGate/index.tsx';
 import { TodoQuickAddGate } from './components/TodoQuickAdd/index.tsx';
+import { QuickIssueLookupGate } from './components/QuickIssueLookup/QuickIssueLookupGate.tsx';
 import { ConnectionBar } from './components/ConnectionBar/index.ts';
 import { ToastProvider } from './components/Toast/ToastProvider.tsx';
 import { useProxyStatus } from './hooks/useProxyStatus.ts';
@@ -182,6 +183,8 @@ export default function App() {
       <AiAssistUnlockGate />
       {/* App-wide F1 to-do quick-add — captures an item from every screen (list: My Issues → Today). */}
       <TodoQuickAddGate />
+      {/* App-wide F2 quick issue lookup — find, view, and fix any issue by key from every screen. */}
+      <QuickIssueLookupGate />
       <div className={styles.appShell}>
         <header className={styles.topBar}>
           {/* Left side: app title links back to home — single, standard UX pattern */}

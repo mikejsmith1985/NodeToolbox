@@ -9,6 +9,23 @@
 <!-- SPECKIT START -->
 ## Active Spec Kit Feature
 
+- **022-quick-issue-lookup** — *(planned on `feature/022-quick-issue-lookup` — ready for `/speckit-tasks`)* a global
+  **F2 quick issue lookup**: press F2 anywhere → modal popup (persistent search bar, Enter/Search parity, recents list
+  of the last ~5 viewed keys) → resolve one key → render the **shipped** `IssueDetailPanel` (019 semantic chips,
+  structure-preserving description, links-with-statuses, comments). The issue **key** is a `buildJiraBrowseUrl`
+  deep-link (the escape hatch); fields with a safe writer become editable in place, **description stays read-only**
+  (clarified — avoids flattening wiki). Design is reuse-first with **one net-new data path** (`useIssueByKey` +
+  `issueLookup.ts`, mirroring AgileHub's `buildIssueDetailPath` — no single-issue-by-key fetch exists today) and **one
+  recorded Art VII drift**: a new `IssueFieldEditors` control family (Text/Select/Assignee/Labels) whose **every WRITE
+  delegates to the existing `featureReviewFixes.ts` writers** (021 `ReadinessFixControl` precedent), because those
+  writers' editor UI is trapped in the non-importable `FeatureReviewQuickFixPanel` and `IssueDetailPanel` has no edit
+  hook. `IssueDetailPanel` gains an **optional, default-off `fieldEditing` capability** so editors render in place;
+  omitted ⇒ byte-identical for every current caller (017 optional-prop precedent — hygiene/AgileHub unaffected).
+  Recents = a tiny zustand store cloning `settingsStore.recentViews` (localStorage `tbxRecentIssueKeys`, cap 5,
+  dedupe). Gate mounts in `App.tsx` beside `<TodoQuickAddGate/>`; F2 is unbound (F1=quick-add, Ctrl+Alt+Z=AI). Labels
+  edit via editmeta set with a read-only fallback. Plan: `specs/022-quick-issue-lookup/plan.md`. Contracts:
+  `lookup-and-fetch.md`, `inline-field-editing.md`, `recents-store.md`.
+
 - **021-feature-readiness** — *(planned on `feature/021-feature-readiness` — ready for `/speckit-tasks`)* our own,
   **better** version of the org's read-only "Feature Status & Readiness Dashboard" (GH #189 last comment), placed as
   a new **Readiness tab in ArtView** (Agile Hub Train space). Three PI lenses — Carryover / Current / Upcoming —
