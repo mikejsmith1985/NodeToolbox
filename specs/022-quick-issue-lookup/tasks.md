@@ -167,22 +167,22 @@ it; with an issue shown, a new key in the persistent bar swaps in place; F2 whil
 
 ### Tests for User Story 3 (write first, must FAIL)
 
-- [ ] T025 [P] [US3] RED — unit test `buildRecentIssues` in `client/src/store/recentIssuesStore.test.ts`: empty-add,
+- [X] T025 [P] [US3] RED — unit test `buildRecentIssues` in `client/src/store/recentIssuesStore.test.ts`: empty-add,
       cap-at-5 (oldest dropped), re-add moves to top + refreshes summary, malformed/throwing storage tolerated
-- [ ] T026 [P] [US3] RED — component test in
+- [X] T026 [P] [US3] RED — component test in
       `client/src/components/QuickIssueLookup/RecentIssuesList.test.tsx`: renders up to 5 entries (key + summary),
       click and ↑/↓+Enter select an entry
 
 ### Implementation for User Story 3
 
-- [ ] T027 [US3] GREEN — implement `recentIssuesStore.ts` in `client/src/store/` — `useRecentIssuesStore` with pure
+- [X] T027 [US3] GREEN — implement `recentIssuesStore.ts` in `client/src/store/` — `useRecentIssuesStore` with pure
       `buildRecentIssues` (dedupe + `slice(0,5)`), seed from + mirror to `localStorage['tbxRecentIssueKeys']`
       (`try/catch`), cloning the `settingsStore` recents pattern
-- [ ] T028 [US3] GREEN — implement `RecentIssuesList.tsx` in `client/src/components/QuickIssueLookup/` (key + summary
+- [X] T028 [US3] GREEN — implement `RecentIssuesList.tsx` in `client/src/components/QuickIssueLookup/` (key + summary
       rows; click / arrow-key selection triggers a fetch for that key)
-- [ ] T029 [US3] Call `recordRecent({ key, summary })` from `useIssueByKey` on `loaded`; render `RecentIssuesList` in
+- [X] T029 [US3] Call `recordRecent({ key, summary })` from `useIssueByKey` on `loaded`; render `RecentIssuesList` in
       `QuickIssueLookup.tsx` when no key is entered (blank on first-ever use) (FR-002a)
-- [ ] T030 [US3] Persistent search-bar swap-in-place: a new valid key while an issue is shown swaps the detail without
+- [X] T030 [US3] Persistent search-bar swap-in-place: a new valid key while an issue is shown swaps the detail without
       closing/reloading (FR-007a); **F2 while open** re-focuses and clears the input, never stacking a second popup
       (FR-001) — in `QuickIssueLookupGate.tsx` / `QuickIssueLookup.tsx`
 - [ ] T031 [US3] e2e — add scenarios **E7, E8** (recents persist + reopen, swap-in-place + F2 re-focus) to

@@ -13,7 +13,9 @@ import { useIssueByKey, type IssueLookupStatus } from '../../hooks/useIssueByKey
 import { buildJiraBrowseUrl } from '../../utils/jiraBrowseUrl.ts';
 import { fetchFeatureReviewEditMeta } from '../../views/SprintDashboard/featureReviewFixes.ts';
 import type { IssueEditMeta } from '../IssueFieldEditors/issueFieldEditing.ts';
+import { useRecentIssuesStore } from '../../store/recentIssuesStore.ts';
 import { IssueSearchBar } from './IssueSearchBar.tsx';
+import { RecentIssuesList } from './RecentIssuesList.tsx';
 import styles from './QuickIssueLookup.module.css';
 
 const LOADING_LABEL = 'Loading issue…';
@@ -68,9 +70,21 @@ export function QuickIssueLookup({ inputRef }: QuickIssueLookupProps): React.JSX
   const activeEditMeta =
     status === 'loaded' && issue !== null && loadedEditMeta?.key === issue.key ? loadedEditMeta.meta : null;
 
+  // Record each viewed issue into the recents list (updating an external store from an effect is the
+  // intended use of effects). Recents surface before a key is entered, so re-opening is one click away.
+  const recentEntries = useRecentIssuesStore((state) => state.entries);
+  const recordRecent = useRecentIssuesStore((state) => state.recordRecent);
+  useEffect(() => {
+    if (status === 'loaded' && issue !== null) {
+      recordRecent({ key: issue.key, summary: issue.fields.summary });
+    }
+  }, [status, issue, recordRecent]);
+
   return (
     <div className={styles.body}>
       <IssueSearchBar inputRef={inputRef} onSearch={setLookupKey} />
+
+      {status === 'idle' ? <RecentIssuesList entries={recentEntries} onSelect={setLookupKey} /> : null}
 
       {status === 'loading' ? (
         <p className={styles.state} role="status">{LOADING_LABEL}</p>
