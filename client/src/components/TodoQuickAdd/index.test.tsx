@@ -5,8 +5,11 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { useTodoStore } from '../../store/todoStore.ts';
+import { DONE_RETENTION_DAYS, useTodoStore } from '../../store/todoStore.ts';
+import type { TodoItem } from '../../store/todoStore.ts';
 import { TodoQuickAddGate } from './index.tsx';
+
+const MILLISECONDS_PER_DAY = 86_400_000;
 
 function renderGate() {
   return render(
@@ -85,5 +88,22 @@ describe('TodoQuickAddGate', () => {
     pressF1();
 
     expect(screen.getAllByRole('dialog')).toHaveLength(1);
+  });
+
+  it('sweeps Done items completed over two weeks ago when it mounts on app launch', () => {
+    const staleIso = new Date(Date.now() - (DONE_RETENTION_DAYS + 1) * MILLISECONDS_PER_DAY).toISOString();
+    const staleDoneItem: TodoItem = {
+      id: 'stale-done',
+      text: 'finished a long time ago',
+      status: 'done',
+      isDone: true,
+      createdAtIso: staleIso,
+      completedAtIso: staleIso,
+    };
+    useTodoStore.setState({ todoItems: [staleDoneItem] });
+
+    renderGate();
+
+    expect(useTodoStore.getState().todoItems).toHaveLength(0);
   });
 });

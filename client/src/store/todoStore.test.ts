@@ -5,6 +5,9 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import {
   addTodoItem,
   clearCompletedTodoItems,
+  DONE_RETENTION_DAYS,
+  moveTodoItem,
+  purgeStaleDoneItems,
   reloadTodoItemsFromStorage,
   removeTodoItem,
   TODO_ITEMS_STORAGE_KEY,
@@ -12,6 +15,10 @@ import {
   updateTodoItemText,
   useTodoStore,
 } from './todoStore.ts';
+
+/** Fixed clock so age-based purge tests never depend on the wall clock. */
+const FIXED_NOW_MS = Date.parse('2026-07-21T12:00:00.000Z');
+const MILLISECONDS_PER_DAY = 86_400_000;
 
 beforeEach(() => {
   window.localStorage.clear();
@@ -34,6 +41,69 @@ describe('todoStore', () => {
   it('ignores blank input instead of creating an empty item', () => {
     expect(addTodoItem('   ')).toBeNull();
     expect(useTodoStore.getState().todoItems).toHaveLength(0);
+  });
+
+  it('adds new items into the To Do column by default', () => {
+    const addedItem = addTodoItem('Draft the release notes');
+
+    expect(addedItem?.status).toBe('todo');
+    expect(addedItem?.isDone).toBe(false);
+  });
+
+  it('moves an item across columns, stamping completion only when it reaches Done', () => {
+    const addedItem = addTodoItem('Wire up the webhook');
+
+    moveTodoItem(addedItem!.id, 'inProgress');
+    const inProgressItem = useTodoStore.getState().todoItems[0];
+    expect(inProgressItem.status).toBe('inProgress');
+    expect(inProgressItem.isDone).toBe(false);
+    expect(inProgressItem.completedAtIso).toBeNull();
+
+    moveTodoItem(addedItem!.id, 'done');
+    const doneItem = useTodoStore.getState().todoItems[0];
+    expect(doneItem.status).toBe('done');
+    expect(doneItem.isDone).toBe(true);
+    expect(doneItem.completedAtIso).not.toBeNull();
+
+    moveTodoItem(addedItem!.id, 'todo');
+    const reopenedItem = useTodoStore.getState().todoItems[0];
+    expect(reopenedItem.status).toBe('todo');
+    expect(reopenedItem.completedAtIso).toBeNull();
+  });
+
+  it('migrates legacy items without a status field from their isDone flag', () => {
+    window.localStorage.setItem(
+      TODO_ITEMS_STORAGE_KEY,
+      JSON.stringify([
+        { id: 'legacy-done', text: 'old done', isDone: true, createdAtIso: '2026-07-01T00:00:00.000Z', completedAtIso: '2026-07-02T00:00:00.000Z' },
+        { id: 'legacy-open', text: 'old open', isDone: false, createdAtIso: '2026-07-01T00:00:00.000Z', completedAtIso: null },
+      ]),
+    );
+
+    reloadTodoItemsFromStorage();
+
+    const [doneItem, openItem] = useTodoStore.getState().todoItems;
+    expect(doneItem.status).toBe('done');
+    expect(openItem.status).toBe('todo');
+  });
+
+  it('purges Done items completed more than two weeks ago, keeping recent done and open work', () => {
+    const staleCompletedIso = new Date(FIXED_NOW_MS - (DONE_RETENTION_DAYS + 1) * MILLISECONDS_PER_DAY).toISOString();
+    const recentCompletedIso = new Date(FIXED_NOW_MS - MILLISECONDS_PER_DAY).toISOString();
+    window.localStorage.setItem(
+      TODO_ITEMS_STORAGE_KEY,
+      JSON.stringify([
+        { id: 'stale', text: 'finished long ago', status: 'done', isDone: true, createdAtIso: staleCompletedIso, completedAtIso: staleCompletedIso },
+        { id: 'recent', text: 'just finished', status: 'done', isDone: true, createdAtIso: recentCompletedIso, completedAtIso: recentCompletedIso },
+        { id: 'open', text: 'still going', status: 'inProgress', isDone: false, createdAtIso: staleCompletedIso, completedAtIso: null },
+      ]),
+    );
+    reloadTodoItemsFromStorage();
+
+    purgeStaleDoneItems(FIXED_NOW_MS);
+
+    const remainingIds = useTodoStore.getState().todoItems.map((item) => item.id);
+    expect(remainingIds).toEqual(['recent', 'open']);
   });
 
   it('newest item is listed first so fresh thoughts are immediately visible', () => {

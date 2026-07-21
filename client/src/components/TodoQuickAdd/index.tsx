@@ -9,7 +9,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-import { addTodoItem } from '../../store/todoStore.ts';
+import { addTodoItem, purgeStaleDoneItems } from '../../store/todoStore.ts';
 import styles from './TodoQuickAdd.module.css';
 
 /** The hotkey that opens the quick-add popup from anywhere in the app. */
@@ -27,6 +27,12 @@ export function TodoQuickAddGate(): React.JSX.Element | null {
   const [itemText, setItemText] = useState('');
   const [hasJustAdded, setHasJustAdded] = useState(false);
   const confirmationTimeoutRef = useRef<number | null>(null);
+
+  // This gate mounts once for the whole session, so it is the natural place to sweep the Done
+  // column of items completed more than two weeks ago — running it on every app launch.
+  useEffect(() => {
+    purgeStaleDoneItems();
+  }, []);
 
   useEffect(() => {
     function handleKeyDown(keyboardEvent: KeyboardEvent): void {
