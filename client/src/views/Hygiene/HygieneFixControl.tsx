@@ -38,6 +38,9 @@ const RELATIVE_BROWSE_PREFIX = '/browse/';
 const REST_PATH_MARKER = '/rest/';
 const DERIVED_FLAG_NOTE = 'This flag is a derived condition — review and fix it in Jira.';
 const UNCONFIGURED_FIELD_NOTE = 'This field is not configured for inline editing — open the issue in Jira.';
+// Shown when a dropdown-style fix loads with no choices (Jira offers no allowed values for the field
+// on this instance): a greyed, empty dropdown is a dead end, so we link out to Jira instead.
+const OPTIONLESS_FIELD_NOTE = 'No selectable options for this field here — set it in Jira.';
 const FIX_SUCCESS_MESSAGE = 'Saved — Jira accepted the change.';
 const ISSUE_SEARCH_MAX_RESULTS = 15;
 // Kinds whose write targets a specific Jira field id; without a resolved id they must link out.
@@ -64,6 +67,14 @@ export interface HygieneFixControlProps {
 interface FixChoiceOption {
   label: string;
   value: string;
+}
+
+/** A settled option load tagged with the request (kind|issue|field) it answers, so stale loads are ignored. */
+interface LoadedOptionState {
+  requestKey: string;
+  options: FixChoiceOption[];
+  editMetaField?: FeatureReviewEditMetaField;
+  requiredFieldsByTransitionId: Record<string, TransitionRequiredField[]>;
 }
 
 /** Routes a flag to the right inline editor, or to an Open-in-Jira link when no inline fix applies. */
@@ -224,6 +235,7 @@ function UserFixInput({ issue, fieldId, label, isSubmitting, onSubmit }: FixInpu
         value={selectedIdentifier}
         disabled={isSubmitting || candidates.length === 0}
         onChange={setSelectedIdentifier}
+        placeholder={searchDrivenPlaceholder(query, candidates.length, 'name')}
       />
       <FixButton
         label={label}
@@ -266,7 +278,14 @@ function IssueLinkFixInput({ issue, kind, fieldId, label, isSubmitting, onSubmit
         disabled={isSubmitting}
         onChange={(changeEvent) => setQuery(changeEvent.target.value)}
       />
-      <OptionSelect label={label} options={matches} value={selectedKey} disabled={isSubmitting || matches.length === 0} onChange={setSelectedKey} />
+      <OptionSelect
+        label={label}
+        options={matches}
+        value={selectedKey}
+        disabled={isSubmitting || matches.length === 0}
+        onChange={setSelectedKey}
+        placeholder={searchDrivenPlaceholder(query, matches.length, 'search term')}
+      />
       <FixButton
         label={label}
         disabled={isSubmitting || selectedKey === ''}
@@ -279,26 +298,32 @@ function IssueLinkFixInput({ issue, kind, fieldId, label, isSubmitting, onSubmit
 
 /** Fix version, select/option custom fields, program increment, and status transition dropdowns. */
 function OptionFixInput({ issue, kind, fieldId, label, isSubmitting, onSubmit }: FixInputProps) {
-  const [options, setOptions] = useState<FixChoiceOption[]>([]);
-  const [editMetaField, setEditMetaField] = useState<FeatureReviewEditMetaField | undefined>(undefined);
   const [selected, setSelected] = useState('');
-  // Transitions only: the fields each transition's workflow screen requires, plus the user's
-  // answers — posting the bare id 400s when the workflow demands them (GH #177 follow-up).
-  const [requiredFieldsByTransitionId, setRequiredFieldsByTransitionId] = useState<Record<string, TransitionRequiredField[]>>({});
+  // The settled option load, TAGGED with the request it answers. Deriving "loaded"/"options" from
+  // this tag (rather than resetting state inside the effect) keeps the effect free of synchronous
+  // setState and prevents a stale load being shown against a newer request (the useReadinessData
+  // pattern, react-hooks/set-state-in-effect).
+  const [loadedOptions, setLoadedOptions] = useState<LoadedOptionState | null>(null);
+  // Transitions only: the user's answers for the fields each transition's workflow screen requires —
+  // posting the bare id 400s when the workflow demands them (GH #177 follow-up).
   const [transitionFieldSelections, setTransitionFieldSelections] = useState<Record<string, TransitionFieldSelection>>({});
 
+  const requestKey = `${kind}|${issue.key}|${fieldId}`;
   useEffect(() => {
     let isActive = true;
     loadOptionsForKind(kind, issue.key, fieldId)
       .then((loaded) => {
-        if (!isActive) return;
-        setOptions(loaded.options);
-        setEditMetaField(loaded.editMetaField);
-        setRequiredFieldsByTransitionId(loaded.requiredFieldsByTransitionId ?? {});
+        if (isActive) setLoadedOptions({ requestKey, options: loaded.options, editMetaField: loaded.editMetaField, requiredFieldsByTransitionId: loaded.requiredFieldsByTransitionId ?? {} });
       })
-      .catch(() => { if (isActive) setOptions([]); });
+      .catch(() => { if (isActive) setLoadedOptions({ requestKey, options: [], requiredFieldsByTransitionId: {} }); });
     return () => { isActive = false; };
-  }, [kind, issue.key, fieldId]);
+  }, [kind, issue.key, fieldId, requestKey]);
+
+  // Only trust a settled load that answers THIS request; a load for a previous request is stale.
+  const hasLoadedOptions = loadedOptions?.requestKey === requestKey;
+  const options = hasLoadedOptions ? loadedOptions.options : [];
+  const editMetaField = hasLoadedOptions ? loadedOptions.editMetaField : undefined;
+  const requiredFieldsByTransitionId = hasLoadedOptions ? loadedOptions.requiredFieldsByTransitionId : {};
 
   const selectedTransitionRequiredFields = kind === 'transition' ? (requiredFieldsByTransitionId[selected] ?? []) : [];
   const areRequiredAnswersComplete = selectedTransitionRequiredFields.length === 0
@@ -320,6 +345,12 @@ function OptionFixInput({ issue, kind, fieldId, label, isSubmitting, onSubmit }:
       );
     }
     return saveFeatureReviewOptionField(issue.key, fieldId, selected, editMetaField);
+  }
+
+  // A dropdown Jira gives no choices for is a dead end — offer the working Jira link instead of a
+  // permanently greyed, empty control (the "nothing shows / nothing happens" report).
+  if (hasLoadedOptions && options.length === 0) {
+    return <OpenInJiraLink issue={issue} note={OPTIONLESS_FIELD_NOTE} />;
   }
 
   return (
@@ -349,12 +380,15 @@ function OptionSelect({
   value,
   disabled,
   onChange,
+  placeholder,
 }: {
   label: string;
   options: FixChoiceOption[];
   value: string;
   disabled: boolean;
   onChange: (value: string) => void;
+  /** Overrides the leading option text — used to explain a disabled, search-driven dropdown. */
+  placeholder?: string;
 }) {
   return (
     <select
@@ -364,7 +398,7 @@ function OptionSelect({
       disabled={disabled}
       onChange={(changeEvent) => onChange(changeEvent.target.value)}
     >
-      <option value="">{`Choose ${label.toLowerCase()}…`}</option>
+      <option value="">{placeholder ?? `Choose ${label.toLowerCase()}…`}</option>
       {options.map((option) => (
         <option key={option.value} value={option.value}>
           {option.label}
@@ -372,6 +406,17 @@ function OptionSelect({
       ))}
     </select>
   );
+}
+
+/**
+ * Guidance text for a search-driven dropdown that stays empty (and disabled) until the user types a
+ * query. Without it the greyed control reads as broken ("nothing happens when clicked"); this tells
+ * the user to type in the adjacent search box first.
+ */
+function searchDrivenPlaceholder(query: string, resultCount: number, subject: string): string {
+  if (query.trim() === '') return `Type a ${subject} above to search`;
+  if (resultCount === 0) return 'No matches yet — keep typing';
+  return 'Choose from the results';
 }
 
 /** The shared "Fix" submit button used by every inline editor. */

@@ -161,6 +161,12 @@ describe('hygiene check predicates', () => {
     expect(hygieneFlag).toBeNull();
   });
 
+  it('does not flag To Do issues without an assignee — only active work needs an owner', () => {
+    const hygieneFlag = checkNoAssignee(buildIssue({ status: TODO_STATUS, assignee: null }));
+
+    expect(hygieneFlag).toBeNull();
+  });
+
   it('flags child delivery issues that are missing the feature link', () => {
     const fieldConfig = resolveHygieneFieldConfig();
     const hygieneFlag = checkMissingFeatureLink(buildIssue({ customfield_10108: null }), fieldConfig);

@@ -184,7 +184,8 @@ describe('useHygieneState', () => {
     // fails — e.g. a registry-only field rejected with a 400 — the run must survive: other flags
     // still surface, and the pointed-child check is skipped rather than flagging every Feature.
     const featureIssue = buildJiraIssue(
-      { issuetype: { name: 'Feature' }, assignee: null, customfield_10028: 3 },
+      // In Progress + unassigned so the representative "other check" (no-assignee) legitimately fires.
+      { issuetype: { name: 'Feature' }, assignee: null, customfield_10028: 3, status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } } },
       'TBX-201',
     );
     mockJiraGet
