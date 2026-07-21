@@ -18,6 +18,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   sweep runs once per app launch; a manual **Clear all** button on the Done column still empties it on demand.
 
 ### Fixed
+- **Hygiene "unassigned work" flagged To Do items, not just active work.** The `no-assignee` check flagged every
+  non-Done unassigned issue, so an un-started To Do card with no owner showed up as an unassigned-work problem. It
+  now flags **In Progress** issues only (an un-started backlog item having no owner yet is not a hygiene concern),
+  in both the client predicate and the server monitor, and the tile's "open in Jira" link gains
+  `AND statusCategory = "In Progress"` so its count and its JQL still agree by construction.
+- **Hygiene inline fix editors overlapped the meta cards, making failures impossible to fix.** The flags-and-fix
+  editors were crammed into a narrow side column beside the Type/Status/PI/Assignee/Age cards; a dropdown showing a
+  long value (a PI date range, a fix version) overflowed and painted over the cards. The finding row now places the
+  flags-and-fix band on its **own full-width row** beneath the summary and meta, so the editors can never collide
+  with the meta cards regardless of value length.
+- **Hygiene "Set application" / "Assign owner" dropdowns looked broken — greyed out with nothing to pick.** A
+  dropdown Jira returns no allowed values for (e.g. the Application field on this instance) now falls back to a
+  working **"Open in Jira"** link instead of a dead, empty control. The search-driven pickers (assignee, feature
+  link, parent link) now explain their greyed state ("Type a name above to search…") instead of appearing broken
+  before a search is run.
 - **Hygiene "open in Jira" link for missing fix version generated an invalid JQL** (GH #200 follow-up). Two problems
   made the query error when opened in Jira (even though the in-app count was correct): it used the REST field id
   `fixVersions` instead of the JQL field alias **`fixVersion`** ("field does not exist"), and it listed the `epic`
