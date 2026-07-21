@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **The personal To-Do list is now a three-column Kanban board** (My Issues → Today). Items live in **To Do**,
+  **In Progress**, or **Done**, and move between columns either by dragging (via `@dnd-kit`, the repo's sanctioned
+  drag primitive) or the per-card ◀/▶ move buttons, which keep the board fully keyboard-accessible. The F1 quick-add
+  popup still captures straight into the To Do column, and inline edit/delete are unchanged. Existing saved items
+  migrate automatically — a previously checked-off item lands in Done, everything else in To Do.
+- **The Done column auto-clears on a rolling two-week basis.** Each completed card is removed 14 days after *it* was
+  finished (measured from its completion time), so a freshly completed card is never swept away with older ones. The
+  sweep runs once per app launch; a manual **Clear all** button on the Done column still empties it on demand.
+
 ### Fixed
 - **Hygiene "open in Jira" link for missing fix version generated an invalid JQL** (GH #200 follow-up). Two problems
   made the query error when opened in Jira (even though the in-app count was correct): it used the REST field id

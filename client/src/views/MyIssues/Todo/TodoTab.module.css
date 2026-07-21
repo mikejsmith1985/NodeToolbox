@@ -1,9 +1,8 @@
-/* TodoTab.module.css — Styles for the My Issues free-form to-do list tab. */
+/* TodoTab.module.css — Styles for the My Issues personal to-do Kanban board. */
 
 .todoTab {
   display: grid;
   gap: var(--spacing-md);
-  max-width: 860px;
 }
 
 .heading {
@@ -21,6 +20,7 @@
 .addForm {
   display: flex;
   gap: var(--spacing-sm);
+  max-width: 860px;
 }
 
 .addInput {
@@ -50,52 +50,108 @@
   cursor: default;
 }
 
-.itemList {
-  margin: 0;
-  padding: 0;
-  list-style: none;
+/* Three equal columns on a wide screen; they stack on narrow ones so nothing overflows. */
+.board {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--spacing-md);
+  align-items: start;
+}
+
+@media (max-width: 720px) {
+  .board {
+    grid-template-columns: 1fr;
+  }
+}
+
+.column {
+  display: grid;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md, 8px);
   background: var(--color-card-bg-subtle, transparent);
+  min-height: 96px;
+  transition: border-color 0.12s ease, background 0.12s ease;
 }
 
-.itemRow {
+/* Highlight the drop target while a card hovers over it. */
+.columnOver {
+  border-color: var(--color-accent, #3b82f6);
+  background: var(--color-accent-subtle, rgba(59, 130, 246, 0.08));
+}
+
+.columnHeader {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: var(--spacing-sm);
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--color-border);
 }
 
-.itemRow:last-child {
-  border-bottom: none;
+.columnTitle {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--color-text-primary);
 }
 
-.itemCheckbox {
-  flex-shrink: 0;
-  width: 16px;
-  height: 16px;
-  accent-color: var(--color-accent, #3b82f6);
+.clearButton {
+  padding: 2px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm, 6px);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs, 12px);
   cursor: pointer;
 }
 
-.itemText,
-.itemTextDone {
-  flex: 1;
-  min-width: 0;
+.clearButton:hover {
+  color: var(--color-text-primary);
+  border-color: var(--color-text-secondary);
+}
+
+.cardList {
+  display: grid;
+  gap: var(--spacing-sm);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.card {
+  display: grid;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--color-card-bg, var(--color-field-bg));
+}
+
+/* The grip is the drag surface; a grab cursor signals the card can be picked up and dropped. */
+.cardGrip {
+  cursor: grab;
+  touch-action: none;
+}
+
+.cardGrip:active {
+  cursor: grabbing;
+}
+
+.cardText,
+.cardTextDone {
   color: var(--color-text-primary);
   font-size: var(--font-size-sm);
   overflow-wrap: anywhere;
 }
 
-.itemTextDone {
+.cardTextDone {
   color: var(--color-text-secondary);
   text-decoration: line-through;
 }
 
 .editInput {
-  flex: 1;
+  width: 100%;
   min-width: 0;
+  box-sizing: border-box;
   padding: 4px 8px;
   border: 1px solid var(--color-accent, #3b82f6);
   border-radius: var(--radius-sm, 6px);
@@ -104,13 +160,13 @@
   font-size: var(--font-size-sm);
 }
 
-.itemActions {
+.cardActions {
   display: flex;
-  flex-shrink: 0;
+  justify-content: flex-end;
   gap: 4px;
 }
 
-.itemActionButton {
+.cardActionButton {
   padding: 2px 6px;
   border: 1px solid transparent;
   border-radius: var(--radius-sm, 6px);
@@ -120,41 +176,29 @@
   cursor: pointer;
 }
 
-.itemActionButton:hover {
+.cardActionButton:hover {
   border-color: var(--color-border);
   color: var(--color-text-primary);
 }
 
-.listFooter {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--spacing-sm);
-}
-
-.countSummary {
+.columnEmpty {
+  margin: 0;
+  padding: var(--spacing-sm) 0;
   color: var(--color-text-secondary);
-  font-size: var(--font-size-sm);
+  font-size: var(--font-size-xs, 12px);
+  text-align: center;
+  opacity: 0.7;
 }
 
-.clearCompletedButton {
-  padding: 4px 10px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm, 6px);
-  background: transparent;
+.autoClearHint {
+  margin: 0;
   color: var(--color-text-secondary);
-  font-size: var(--font-size-sm);
-  cursor: pointer;
-}
-
-.clearCompletedButton:hover {
-  color: var(--color-text-primary);
-  border-color: var(--color-text-secondary);
+  font-size: var(--font-size-xs, 12px);
+  opacity: 0.8;
 }
 
 .emptyState {
   margin: 0;
-  padding: var(--spacing-lg) 0;
   color: var(--color-text-secondary);
   font-size: var(--font-size-sm);
 }
