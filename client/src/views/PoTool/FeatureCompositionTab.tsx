@@ -231,7 +231,18 @@ export default function FeatureCompositionTab({
       const scopeKey = deriveCompositionScopeKeyForIssue(issue.key);
       const existingDraft = loadCompositionDraft(dashboardTeamProfileId, scopeKey);
 
-      setExistingFieldValues(issue.fields);
+      // Store the description/acceptance criteria in the SAME normalized (tags-stripped) form the draft
+      // holds. Otherwise an untouched description — draft plain text vs the raw HTML Jira returned —
+      // always looks "changed" and gets rewritten as flattened text, which mangles Jira's formatting
+      // (GH #200: headings turned into "1. 1." lists on save). Comparing like-for-like means an
+      // unedited description is never written back, so Jira keeps its original rich formatting.
+      setExistingFieldValues({
+        ...issue.fields,
+        description: normalizeRichTextToPlainText(issue.fields.description),
+        ...(acceptanceCriteriaFieldId
+          ? { [acceptanceCriteriaFieldId]: normalizeRichTextToPlainText(issue.fields[acceptanceCriteriaFieldId]) }
+          : {}),
+      });
       updateDraft({
         ...existingDraft,
         profileId: dashboardTeamProfileId,
