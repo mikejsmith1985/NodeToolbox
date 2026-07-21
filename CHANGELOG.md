@@ -18,6 +18,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   sweep runs once per app launch; a manual **Clear all** button on the Done column still empties it on demand.
 
 ### Fixed
+- **PO Tool rewrote an untouched Feature description on save, mangling Jira's formatting** (GH #200 follow-up). Because
+  the description is loaded as stripped plain text but its "before" value was kept as the raw HTML Jira returned, the
+  two never matched — so the description was flagged as changed and rewritten as flattened text on every save, turning
+  headings into malformed `1. 1.` numbered lists in Jira. The load now stores the "before" description/acceptance
+  criteria in the same normalized form, so an **unedited** description is never written back and Jira keeps its
+  original formatting; only a description the PO actually edits is saved.
 - **PO Tool loaded a Feature's description as raw HTML.** When enriching or splitting an existing Feature, the
   description (and acceptance criteria) came back from Jira as rendered HTML (`<p data-renderer-start-pos=…>`,
   `&quot;`, `&amp;`) and was dumped verbatim into the editable field, so the PO was reading and editing markup

@@ -309,6 +309,38 @@ describe('FeatureCompositionTab — create vs update (Scenario H, SC-012)', () =
     expect((descriptionField as HTMLTextAreaElement).value).not.toContain('<');
   });
 
+  it('does not rewrite an untouched (HTML) description on save, so Jira keeps its formatting', async () => {
+    mockJiraGet.mockImplementation(async (path: string) => {
+      if (path.startsWith('/rest/api/2/field')) {
+        return [{ id: 'customfield_10200', name: 'Acceptance Criteria' }];
+      }
+      if (path.includes('/issue/ABC-7')) {
+        return {
+          key: 'ABC-7',
+          fields: {
+            summary: 'Stub from last week',
+            description: '<ol><li><b>Problem</b><p>Members enrolled in the H Contract need migration.</p></li></ol>',
+          },
+        };
+      }
+      throw new Error(`Unexpected read: ${path}`);
+    });
+    renderTab();
+
+    await userEvent.type(screen.getByLabelText(/enrich an existing feature/i), 'ABC-7');
+    await userEvent.click(screen.getByRole('button', { name: 'Load' }));
+    await waitFor(() => expect(screen.getByDisplayValue('Stub from last week')).toBeInTheDocument());
+
+    // Change ONLY the summary; the loaded description is left exactly as it came back.
+    await userEvent.clear(screen.getByLabelText('Summary'));
+    await userEvent.type(screen.getByLabelText('Summary'), 'Renamed feature');
+    await userEvent.click(screen.getByRole('button', { name: /save changes to ABC-7/i }));
+
+    await waitFor(() => expect(mockSaveSimpleField).toHaveBeenCalledWith('ABC-7', 'summary', 'Renamed feature'));
+    // The untouched description must NOT be written back — that write would flatten Jira's formatting.
+    expect(mockSaveSimpleField).not.toHaveBeenCalledWith('ABC-7', 'description', expect.anything());
+  });
+
   it('says plainly which Feature it is editing, so the PO is never surprised', async () => {
     renderTab();
 
