@@ -9,6 +9,7 @@
 // down, and must never be presented as "this Feature has no content".
 
 import { jiraGet } from '../../../services/jiraApi.ts';
+import { normalizeRichTextToPlainText } from '../../../utils/richTextPlainText.ts';
 import type { HygieneFieldConfig } from '../../Hygiene/checks/hygieneChecks';
 import type { SourceFeatureSnapshot } from '../drafts/draftModel';
 
@@ -54,7 +55,7 @@ function readTextField(value: unknown): string {
   return typeof value === 'string' ? value : '';
 }
 
-/** Reads acceptance criteria from whichever field this instance keeps them in. */
+/** Reads acceptance criteria from whichever field this instance keeps them in, as clean plain text. */
 function readAcceptanceCriteria(issue: LoadedJiraIssue, fieldConfig: HygieneFieldConfig): string {
   for (const candidateFieldId of fieldConfig.acceptanceCriteriaFieldIds) {
     // `description` is a legitimate fallback in the config, but it is not acceptance criteria —
@@ -62,7 +63,8 @@ function readAcceptanceCriteria(issue: LoadedJiraIssue, fieldConfig: HygieneFiel
     if (candidateFieldId === 'description') {
       continue;
     }
-    const candidateValue = readTextField(issue.fields[candidateFieldId]);
+    // Jira may return this field as rendered HTML — strip tags/entities so the PO reads clean prose.
+    const candidateValue = normalizeRichTextToPlainText(issue.fields[candidateFieldId]);
     if (candidateValue.trim() !== '') {
       return candidateValue;
     }
@@ -130,7 +132,9 @@ export async function loadSourceFeature(
     issueTypeId: loadedIssue.fields.issuetype.id,
     issueTypeName: loadedIssue.fields.issuetype.name ?? '',
     summary: readTextField(loadedIssue.fields.summary),
-    description: readTextField(loadedIssue.fields.description),
+    // Jira returns the description as rendered HTML on this instance; strip tags/entities so the
+    // Splitter shows and carries clean, human-readable prose (not raw <p data-renderer…> markup).
+    description: normalizeRichTextToPlainText(loadedIssue.fields.description),
     acceptanceCriteria: readAcceptanceCriteria(loadedIssue, fieldConfig),
     fields: loadedIssue.fields as Record<string, unknown>,
     loadedAtIso: nowIso,
