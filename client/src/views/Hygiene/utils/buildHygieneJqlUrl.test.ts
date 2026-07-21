@@ -108,7 +108,8 @@ describe('buildHygieneCheckClause (US2 — semantic per-family JQL)', () => {
 
   it('builds native-field EMPTY clauses', () => {
     expect(buildHygieneCheckClause('missing-summary', US2_FIELD_CONFIG)).toBe('summary is EMPTY');
-    expect(buildHygieneCheckClause('no-assignee', US2_FIELD_CONFIG)).toBe('assignee is EMPTY');
+    // no-assignee pins In Progress so the link matches the predicate (active work only, never To Do).
+    expect(buildHygieneCheckClause('no-assignee', US2_FIELD_CONFIG)).toBe('assignee is EMPTY AND statusCategory = "In Progress"');
     expect(buildHygieneCheckClause('missing-due-date', US2_FIELD_CONFIG)).toBe('duedate is EMPTY');
   });
 
@@ -125,7 +126,7 @@ describe('buildHygieneCheckClause (US2 — semantic per-family JQL)', () => {
 describe('buildHygieneCheckJql', () => {
   it('composes scope AND family clause', () => {
     const jql = buildHygieneCheckJql('no-assignee', 'project=ABC AND statusCategory != Done', US2_FIELD_CONFIG);
-    expect(jql).toBe('(project=ABC AND statusCategory != Done) AND (assignee is EMPTY)');
+    expect(jql).toBe('(project=ABC AND statusCategory != Done) AND (assignee is EMPTY AND statusCategory = "In Progress")');
   });
 
   it('returns null when the family has no clause', () => {

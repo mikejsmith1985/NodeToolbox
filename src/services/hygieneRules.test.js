@@ -83,6 +83,15 @@ describe('evaluateHygieneRules — no-assignee', () => {
     const flags = evaluateHygieneRules(issue, EMPTY_FIELD_CONFIG);
     expect(extractCheckIds(flags)).not.toContain('no-assignee');
   });
+
+  it('does not flag no-assignee when the issue is still in To Do — only active work needs an owner', () => {
+    const issue = buildStory({
+      assignee: null,
+      status: { name: 'To Do', statusCategory: { key: 'new' } },
+    });
+    const flags = evaluateHygieneRules(issue, EMPTY_FIELD_CONFIG);
+    expect(extractCheckIds(flags)).not.toContain('no-assignee');
+  });
 });
 
 // ── stale-issue check ─────────────────────────────────────────────────────────
@@ -224,6 +233,9 @@ describe('evaluateHygieneRules — result shape', () => {
       assignee: { displayName: 'Alice' },
       updated: new Date().toISOString(),
       customfield_10028: 3,
+      // A Story with no fix version now trips the missing-fix-version check, so a truly healthy
+      // fixture must carry one — otherwise this "no violations" case is never actually clean.
+      fixVersions: [{ name: '2026.7' }],
     });
     // Use an empty field config so no custom-field checks fire.
     const flags = evaluateHygieneRules(issue, EMPTY_FIELD_CONFIG);

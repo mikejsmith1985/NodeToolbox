@@ -11,9 +11,11 @@ import { buildJqlFieldReference } from '../checks/hygieneFieldConfig.ts';
 const JIRA_ISSUE_NAVIGATOR_PATH = '/issues/';
 
 // Hygiene families whose condition is a native Jira field being empty.
+// The no-assignee clause also pins statusCategory to In Progress so the link matches the predicate,
+// which only flags active (in-progress) unassigned work — never To Do (NFR-002: count and link agree).
 const NATIVE_FIELD_EMPTY_CLAUSES: Record<string, string> = {
   'missing-summary': 'summary is EMPTY',
-  'no-assignee': 'assignee is EMPTY',
+  'no-assignee': 'assignee is EMPTY AND statusCategory = "In Progress"',
   'missing-due-date': 'duedate is EMPTY',
 };
 

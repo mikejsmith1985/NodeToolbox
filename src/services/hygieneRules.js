@@ -338,8 +338,11 @@ function checkStaleIssue(issue) {
   return { checkId: 'stale-issue', label: `Stale — no update in ${STALE_THRESHOLD_DAYS}+ business days`, severity: 'warn' };
 }
 
+// Flags IN-PROGRESS issues with no assignee — active work nobody owns. To Do items are excluded
+// on purpose (an un-started backlog item without an owner is not a hygiene problem), mirroring the
+// client checkNoAssignee so both surfaces agree on what "unassigned" means.
 function checkNoAssignee(issue) {
-  if (isDoneIssue(issue)) return null;
+  if (!isInProgressIssue(issue)) return null;
   if (hasMeaningfulValue(issue.fields.assignee)) return null;
   return { checkId: 'no-assignee', label: 'No assignee', severity: 'warn' };
 }
