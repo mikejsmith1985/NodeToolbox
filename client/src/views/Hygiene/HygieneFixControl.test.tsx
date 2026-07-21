@@ -32,11 +32,16 @@ import {
 } from './checks/hygieneChecks.ts';
 import {
   fetchFeatureReviewTransitions,
+  readFeatureReviewSelectOptions,
+  saveFeatureReviewOptionField,
   saveFeatureReviewSimpleField,
   saveFeatureReviewTransition,
 } from '../SprintDashboard/featureReviewFixes.ts';
 
 const FIELD_CONFIG = resolveHygieneFieldConfig();
+// A config where the Application field id resolves, so the control takes the dropdown path
+// (not the "field not configured" link) — the state the user sees in the screenshot.
+const APPLICATION_FIELD_CONFIG = { ...FIELD_CONFIG, applicationFieldIds: ['customfield_50001'] };
 
 function buildIssue(key = 'TBX-1'): JiraIssue {
   return { key, fields: { summary: '' } };
@@ -151,6 +156,64 @@ describe('HygieneFixControl', () => {
       });
     });
     expect(onFixed).toHaveBeenCalledWith('TBX-1');
+  });
+
+  it('falls back to an Open in Jira link when a select field loads with no options (dead-dropdown fix)', async () => {
+    // The Application field resolves, but Jira returns no allowed values → an empty, greyed dropdown
+    // is useless. The control must offer the working Jira path instead.
+    render(
+      <HygieneFixControl
+        issue={buildIssue('ENFCT-1')}
+        flag={buildFlag('missing-application', 'Missing Application', 'error')}
+        fieldConfig={APPLICATION_FIELD_CONFIG}
+        onFixed={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => expect(screen.getByRole('link', { name: /open in jira/i })).toBeInTheDocument());
+    expect(screen.getByText(/no selectable options for this field/i)).toBeInTheDocument();
+    // No dead dropdown is left on screen.
+    expect(screen.queryByLabelText('Set application options')).not.toBeInTheDocument();
+  });
+
+  it('renders a working options dropdown for a select field that has choices, and saves the pick', async () => {
+    vi.mocked(readFeatureReviewSelectOptions).mockReturnValue([{ label: 'Facets', value: '10001' }]);
+    const onFixed = vi.fn();
+    render(
+      <HygieneFixControl
+        issue={buildIssue('ENFCT-2')}
+        flag={buildFlag('missing-application', 'Missing Application', 'error')}
+        fieldConfig={APPLICATION_FIELD_CONFIG}
+        onFixed={onFixed}
+      />,
+    );
+
+    const applicationSelect = await screen.findByLabelText('Set application options');
+    await waitFor(() => expect(screen.getByRole('option', { name: 'Facets' })).toBeInTheDocument());
+    fireEvent.change(applicationSelect, { target: { value: '10001' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Fix' }));
+
+    await waitFor(() => {
+      // The 4th arg is the editmeta field (undefined here — the mock returns no field metadata).
+      expect(saveFeatureReviewOptionField).toHaveBeenCalledWith('ENFCT-2', 'customfield_50001', '10001', undefined);
+    });
+    expect(onFixed).toHaveBeenCalledWith('ENFCT-2');
+  });
+
+  it('tells the user to search before an assignee dropdown can offer options', () => {
+    render(
+      <HygieneFixControl
+        issue={buildIssue()}
+        flag={buildFlag('no-assignee', 'Assign owner', 'error')}
+        fieldConfig={FIELD_CONFIG}
+        onFixed={vi.fn()}
+      />,
+    );
+
+    // The greyed, search-driven dropdown explains itself instead of looking broken.
+    const assigneeSelect = screen.getByLabelText('Assign owner options');
+    expect(assigneeSelect).toBeDisabled();
+    expect(screen.getByRole('option', { name: /type a name above to search/i })).toBeInTheDocument();
   });
 
   it('renders an Open in Jira link (no write control) for a derived openInJira flag', () => {

@@ -211,18 +211,20 @@
 .findingRow {
   display: grid;
   /*
-   * Each finding renders as its own grid, so the badge and meta columns MUST be
-   * sized deterministically — never by content. Using content-based tracks
-   * (auto / max-content) lets a row whose values are shorter (e.g. an issue with
-   * a brief Program Increment) compute narrower meta cards, which shifts its
-   * badge and cards out of line with every other row. A fixed badge column plus
-   * a capped meta column keeps every row's cards in the same vertical position.
+   * Two content columns on the top row — the issue (summary) and the meta cards —
+   * both sized deterministically so every row's cards line up vertically regardless
+   * of content length. The flags-and-fix band spans its OWN full-width row beneath
+   * them: the inline fix editors (a native <select> showing a long value like a PI
+   * date range, plus its label and Fix button) need the whole card width and, given
+   * only a narrow side column, overflowed and painted over the meta cards. A
+   * dedicated full-width row removes that collision by construction (was GH #167).
    */
-  /* The flags/fix column is 15rem: wide enough for the 14rem inline editors plus their padding.
-     At 12rem the editors (max-width 14rem) overflowed the track and painted over the Type card. */
-  grid-template-columns: minmax(18rem, 1fr) 15rem minmax(18rem, 48rem);
+  grid-template-columns: minmax(18rem, 1fr) minmax(18rem, 48rem);
+  grid-template-areas:
+    "main meta"
+    "flags flags";
   gap: var(--spacing-md);
-  align-items: center;
+  align-items: start;
   padding: var(--spacing-md);
   cursor: pointer;
   outline: none;
@@ -257,6 +259,7 @@
 }
 
 .issueMain {
+  grid-area: main;
   display: flex;
   flex-direction: column;
   gap: var(--spacing-xs);
@@ -282,10 +285,11 @@
 }
 
 .flagList {
+  grid-area: flags;
   display: flex;
-  flex-wrap: wrap;
-  gap: var(--spacing-xs);
-  /* Let the fixed grid track actually constrain the inline editors instead of being overpainted. */
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  /* Full-width band under the summary/meta: the inline fix editors have the whole card to work in. */
   min-width: 0;
 }
 
@@ -310,6 +314,7 @@
 }
 
 .issueMeta {
+  grid-area: meta;
   display: grid;
   /*
    * Floor each card at 0 (minmax(0, ...)) so a long value — most often the
@@ -346,6 +351,14 @@
   .controlsPanel,
   .findingRow {
     grid-template-columns: 1fr;
+  }
+
+  /* Stack summary, meta, then the fix band when there is no room for two columns. */
+  .findingRow {
+    grid-template-areas:
+      "main"
+      "meta"
+      "flags";
   }
 }
 

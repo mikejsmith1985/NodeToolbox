@@ -395,10 +395,14 @@ export function checkStaleIssue(issue: JiraIssue, staleDaysThreshold: number = S
   return businessDaysElapsedSince(issue.fields.updated) >= staleDaysThreshold ? BUILT_IN_HYGIENE_FLAGS.stale : null;
 }
 
-/** Flags non-done issues that still have no accountable assignee. */
+/**
+ * Flags IN-PROGRESS issues that still have no accountable assignee — active work nobody owns.
+ * To Do items are intentionally excluded: an un-started backlog item having no owner yet is not a
+ * hygiene problem, and flagging it produced noise (a To Do card appearing in the unassigned report).
+ */
 export function checkNoAssignee(issue: JiraIssue): HygieneFlag | null {
   const hasAssignee = issue.fields.assignee !== null && issue.fields.assignee !== undefined;
-  return !hasAssignee && !isDoneIssue(issue) ? BUILT_IN_HYGIENE_FLAGS['no-assignee'] : null;
+  return !hasAssignee && isInProgressIssue(issue) ? BUILT_IN_HYGIENE_FLAGS['no-assignee'] : null;
 }
 
 /** Flags stories and features whose acceptance criteria field is blank or only contains a placeholder. */
