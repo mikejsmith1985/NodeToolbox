@@ -72,6 +72,21 @@ describe('loadSourceFeature — one request, both facts', () => {
 
     expect(snapshot.loadedAtIso).toBe(NOW_ISO);
   });
+
+  it('strips rendered HTML and decodes entities so the description is clean plain text', async () => {
+    mockJiraGet.mockResolvedValue(
+      buildJiraIssue({
+        description: '<p data-renderer-start-pos="826"><b>Description</b> Migrate &quot;HPlan&quot; &amp; Facets.</p>',
+        customfield_10200: '<p>Given a submitted claim, the document is stored.</p>',
+      }),
+    );
+
+    const snapshot = await loadSourceFeature('ABC-1', FIELD_CONFIG, NOW_ISO);
+
+    expect(snapshot.description).toBe('Description Migrate "HPlan" & Facets.');
+    expect(snapshot.description).not.toContain('<');
+    expect(snapshot.acceptanceCriteria).toBe('Given a submitted claim, the document is stored.');
+  });
 });
 
 describe('loadSourceFeature — acceptance criteria', () => {

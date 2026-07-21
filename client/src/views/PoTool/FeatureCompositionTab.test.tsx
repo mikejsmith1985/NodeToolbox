@@ -283,6 +283,32 @@ describe('FeatureCompositionTab — create vs update (Scenario H, SC-012)', () =
     expect(mockCreateIssue).not.toHaveBeenCalled();
   });
 
+  it('strips rendered HTML from a loaded description so the PO edits clean prose, not markup', async () => {
+    mockJiraGet.mockImplementation(async (path: string) => {
+      if (path.startsWith('/rest/api/2/field')) {
+        return [{ id: 'customfield_10200', name: 'Acceptance Criteria' }];
+      }
+      if (path.includes('/issue/ABC-7')) {
+        return {
+          key: 'ABC-7',
+          fields: {
+            summary: 'Stub from last week',
+            description: '<p data-renderer-start-pos="826"><b>Description</b> Migrate &quot;HPlan&quot; &amp; Facets.</p>',
+          },
+        };
+      }
+      throw new Error(`Unexpected read: ${path}`);
+    });
+    renderTab();
+
+    await userEvent.type(screen.getByLabelText(/enrich an existing feature/i), 'ABC-7');
+    await userEvent.click(screen.getByRole('button', { name: 'Load' }));
+
+    const descriptionField = await screen.findByLabelText('Description');
+    await waitFor(() => expect(descriptionField).toHaveValue('Description Migrate "HPlan" & Facets.'));
+    expect((descriptionField as HTMLTextAreaElement).value).not.toContain('<');
+  });
+
   it('says plainly which Feature it is editing, so the PO is never surprised', async () => {
     renderTab();
 

@@ -12,6 +12,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { useToast } from '../../components/Toast/ToastContext.ts';
+import { normalizeRichTextToPlainText } from '../../utils/richTextPlainText.ts';
 import { getIssueTypeFields, getProjectIssueTypes, jiraGet } from '../../services/jiraApi.ts';
 import type { CreateMetaFieldEntry, CreateMetaIssueType } from '../../types/jira.ts';
 import { saveFeatureReviewSimpleField } from '../SprintDashboard/featureReviewFixes.ts';
@@ -237,9 +238,11 @@ export default function FeatureCompositionTab({
         scopeKey,
         existingIssueKey: issue.key,
         summary: existingDraft.summary || String(issue.fields.summary ?? ''),
-        description: existingDraft.description || String(issue.fields.description ?? ''),
+        // Jira returns the description as rendered HTML on this instance; strip the tags and decode
+        // entities so the PO edits clean, human-readable prose instead of raw <p data-renderer…> markup.
+        description: existingDraft.description || normalizeRichTextToPlainText(issue.fields.description),
         acceptanceCriteria: existingDraft.acceptanceCriteria
-          || (acceptanceCriteriaFieldId ? String(issue.fields[acceptanceCriteriaFieldId] ?? '') : ''),
+          || (acceptanceCriteriaFieldId ? normalizeRichTextToPlainText(issue.fields[acceptanceCriteriaFieldId]) : ''),
       });
       setLoadKeyInput('');
       setSourceError(null);

@@ -18,6 +18,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   sweep runs once per app launch; a manual **Clear all** button on the Done column still empties it on demand.
 
 ### Fixed
+- **PO Tool loaded a Feature's description as raw HTML.** When enriching or splitting an existing Feature, the
+  description (and acceptance criteria) came back from Jira as rendered HTML (`<p data-renderer-start-pos=…>`,
+  `&quot;`, `&amp;`) and was dumped verbatim into the editable field, so the PO was reading and editing markup
+  instead of prose. Both the Feature Composition and Feature Splitter load paths now run the text through the shared
+  `normalizeRichTextToPlainText` helper — stripping tags and decoding entities — so the field shows clean,
+  human-readable text.
 - **Hygiene "unassigned work" flagged To Do items, not just active work.** The `no-assignee` check flagged every
   non-Done unassigned issue, so an un-started To Do card with no owner showed up as an unassigned-work problem. It
   now flags **In Progress** issues only (an un-started backlog item having no owner yet is not a hygiene concern),
