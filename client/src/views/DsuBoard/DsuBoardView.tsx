@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { JiraIssue } from '../../types/jira.ts';
 import { normalizeRichTextToPlainText } from '../../utils/richTextPlainText.ts';
 import IssueComments from '../../components/CommentThread/IssueComments.tsx';
+import MentionComposer from '../../components/MentionPicker/MentionComposer.tsx';
 import styles from './DsuBoardView.module.css';
 import { useDsuBoardState } from './hooks/useDsuBoardState.ts';
 import type {
@@ -921,13 +922,15 @@ function IssueDetailOverlay({
 
         <div className={styles.overlaySection}>
           <label className={styles.overlayLabel} htmlFor="overlay-comment">Post Comment</label>
-          <textarea
-            id="overlay-comment"
-            className={styles.overlayTextarea}
+          <MentionComposer
+            onChange={setCommentBody}
+            textareaProps={{
+              id: 'overlay-comment',
+              className: styles.overlayTextarea,
+              placeholder: 'Write a comment…',
+              rows: 3,
+            }}
             value={commentBody}
-            onChange={(event) => setCommentBody(event.target.value)}
-            placeholder="Write a comment…"
-            rows={3}
           />
           <button
             className={styles.overlayActionBtn}

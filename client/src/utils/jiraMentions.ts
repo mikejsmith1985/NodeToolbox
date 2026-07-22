@@ -6,6 +6,7 @@
 // searchable string and look for any token that identifies the current user.
 
 import type { JiraComment, JiraIssue } from '../types/jira.ts';
+import { buildMentionToken } from './jiraMentionFormat.ts';
 import { normalizeRichTextToPlainText } from './richTextPlainText.ts';
 
 const EXCERPT_MAX_LENGTH = 280;
@@ -83,18 +84,29 @@ export function collectUserMentions(
 
 // ── Helpers ──
 
-/** Builds the lowercase tokens that uniquely identify the user inside a flattened body. */
+/**
+ * Builds the lowercase tokens that uniquely identify the user inside a flattened body.
+ *
+ * The wiki-markup forms come from the shared mention vocabulary (jiraMentionFormat) rather than
+ * being spelled out again here, so detection here and the mentions the app writes can never
+ * disagree about what a mention looks like (spec NFR-002). The two extra tokens below are
+ * detection-only heuristics with no write counterpart, so they stay local.
+ */
 function buildMentionTokens(identity: MentionIdentity): string[] {
-  const tokens: string[] = [];
-  if (identity.name) {
-    tokens.push(`[~${identity.name}]`.toLowerCase());
-  }
-  if (identity.key) {
-    tokens.push(`[~${identity.key}]`.toLowerCase());
-  }
+  const wikiTokens = [
+    identity.name ? buildMentionToken({ userIdentifier: `name:${identity.name}`, displayName: '' }) : null,
+    identity.key ? buildMentionToken({ userIdentifier: `key:${identity.key}`, displayName: '' }) : null,
+    identity.accountId
+      ? buildMentionToken({ userIdentifier: `accountId:${identity.accountId}`, displayName: '' })
+      : null,
+  ];
+
+  const tokens = wikiTokens
+    .filter((token) => token !== null)
+    .map((token) => token.raw.toLowerCase());
+
   if (identity.accountId) {
-    // Wiki form "[~accountid:ID]" plus the JSON-quoted id form found in ADF mention nodes.
-    tokens.push(`[~accountid:${identity.accountId}]`.toLowerCase());
+    // The JSON-quoted id form, as it appears when an ADF body is serialised for searching.
     tokens.push(`"${identity.accountId}"`.toLowerCase());
   }
   if (identity.displayName) {

@@ -6,6 +6,7 @@
 
 import { useState } from 'react';
 
+import MentionComposer from '../../components/MentionPicker/MentionComposer.tsx';
 import styles from './BulkCommentPanel.module.css';
 
 // ── Props ──
@@ -53,12 +54,16 @@ export default function BulkCommentPanel({
         )}
       </div>
 
-      <textarea
-        aria-label="Bulk comment text"
-        className={styles.textarea}
-        disabled={isBulkPostingComment}
-        onChange={(changeEvent) => setCommentText(changeEvent.target.value)}
-        placeholder="Type a comment to add to all selected issues…"
+      {/* The draft is written once and posted to every selected issue, so the mention token it
+          contains reaches all of them identically. */}
+      <MentionComposer
+        onChange={setCommentText}
+        textareaProps={{
+          'aria-label': 'Bulk comment text',
+          className: styles.textarea,
+          disabled: isBulkPostingComment,
+          placeholder: 'Type a comment to add to all selected issues…',
+        }}
         value={commentText}
       />
 

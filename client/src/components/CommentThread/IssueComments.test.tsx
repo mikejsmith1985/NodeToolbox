@@ -7,7 +7,11 @@ import type { JiraComment } from '../../types/jira.ts';
 
 const { mockJiraGet } = vi.hoisted(() => ({ mockJiraGet: vi.fn() }));
 
-vi.mock('../../services/jiraApi.ts', () => ({ jiraGet: mockJiraGet }));
+// getMyself backs the self-mention highlight; stub it so these tests stay about the thread itself.
+vi.mock('../../services/jiraApi.ts', () => ({
+  jiraGet: mockJiraGet,
+  getMyself: vi.fn().mockResolvedValue({ displayName: 'Reader', accountId: 'reader-1' }),
+}));
 
 import IssueComments from './IssueComments.tsx';
 

@@ -36,7 +36,12 @@ export interface JiraIssueLink {
 /** Jira comment metadata used by planning and issue detail workflows. */
 export interface JiraComment {
   id: string;
-  author?: { displayName?: string } | null;
+  /**
+   * The comment's author. The identifier fields are optional and instance-dependent (Cloud sends
+   * `accountId`, Data Center sends `name`/`key`); they let the app record this person's name for
+   * free, so a mention of them elsewhere in the thread needs no extra lookup.
+   */
+  author?: { displayName?: string; accountId?: string; name?: string; key?: string } | null;
   body?: unknown;
   created?: string;
 }

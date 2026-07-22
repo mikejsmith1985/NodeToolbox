@@ -4,8 +4,13 @@
 // ordering, and empty/loading/error states are identical wherever it is used. Comments arrive
 // already ordered newest-first (see useIssueComments); this component only renders them.
 
+import { useEffect } from 'react';
+
+import { useCurrentUserMentionKeys } from '../../hooks/useCurrentUserMentionKeys.ts';
+import { useMentionDirectoryStore } from '../../store/mentionDirectoryStore.ts';
 import type { JiraComment } from '../../types/jira.ts';
-import { normalizeRichTextToPlainText } from '../../utils/richTextPlainText.ts';
+import { parseCommentMentions, readMentionDirectoryKey } from '../../utils/jiraMentionFormat.ts';
+import CommentBody from './CommentBody.tsx';
 import styles from './CommentThread.module.css';
 
 const COMMENTS_LOADING_LABEL = 'Loading comments…';
@@ -23,9 +28,53 @@ export interface CommentThreadProps {
   emptyLabel?: string;
 }
 
+/** Reads the prefixed directory identifier for a comment author, or null when Jira sent none. */
+function readAuthorDirectoryKey(author: JiraComment['author']): string | null {
+  if (author?.accountId?.trim()) {
+    return `accountId:${author.accountId.trim()}`;
+  }
+  if (author?.name?.trim()) {
+    return `name:${author.name.trim()}`;
+  }
+  if (author?.key?.trim()) {
+    return `key:${author.key.trim()}`;
+  }
+  return null;
+}
+
 /**
- * Renders an issue's comments in a bounded, scrollable window — each with author, date, and
- * normalized plain-text body — plus shared loading, error, and empty states.
+ * Makes every person mentioned in the thread resolvable to a name.
+ *
+ * Comment authors come with their display names already attached, so recording them costs nothing —
+ * and because the people mentioned in a thread are usually also the people commenting in it, that
+ * alone covers most mentions. Only the remainder is actually looked up.
+ */
+function useResolveThreadMentions(comments: JiraComment[]): void {
+  const seedFromUsers = useMentionDirectoryStore((state) => state.seedFromUsers);
+  const resolveMissing = useMentionDirectoryStore((state) => state.resolveMissing);
+
+  useEffect(() => {
+    const seedableAuthors = comments
+      .map((comment) => ({
+        userIdentifier: readAuthorDirectoryKey(comment.author) ?? '',
+        displayName: comment.author?.displayName ?? '',
+      }))
+      .filter((author) => author.userIdentifier !== '' && author.displayName !== '');
+    seedFromUsers(seedableAuthors);
+
+    const mentionedKeys = comments.flatMap((comment) =>
+      parseCommentMentions(comment.body)
+        .filter((run) => run.kind === 'mention')
+        .map((run) => readMentionDirectoryKey(run.token)));
+    if (mentionedKeys.length > 0) {
+      void resolveMissing(mentionedKeys);
+    }
+  }, [comments, resolveMissing, seedFromUsers]);
+}
+
+/**
+ * Renders an issue's comments in a bounded, scrollable window — each with author, date, and body
+ * (with @-mentions shown as people's names) — plus shared loading, error, and empty states.
  */
 export default function CommentThread({
   comments,
@@ -33,6 +82,9 @@ export default function CommentThread({
   loadError,
   emptyLabel = NO_COMMENTS_LABEL,
 }: CommentThreadProps) {
+  useResolveThreadMentions(comments);
+  const currentUserDirectoryKeys = useCurrentUserMentionKeys();
+
   if (isLoading) {
     return <p className={styles.commentEmpty}>{COMMENTS_LOADING_LABEL}</p>;
   }
@@ -51,7 +103,7 @@ export default function CommentThread({
             <span className={styles.commentAuthor}>{comment.author?.displayName ?? UNKNOWN_AUTHOR_LABEL}</span>
             <span className={styles.commentDate}>{comment.created?.slice(0, ISO_DATE_LENGTH) ?? ''}</span>
           </div>
-          <p className={styles.commentBody}>{normalizeRichTextToPlainText(comment.body)}</p>
+          <CommentBody body={comment.body} currentUserDirectoryKeys={currentUserDirectoryKeys} />
         </li>
       ))}
     </ul>

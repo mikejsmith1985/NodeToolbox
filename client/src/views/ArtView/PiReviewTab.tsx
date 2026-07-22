@@ -1414,6 +1414,114 @@ function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverri
     }
   }
 
+  /**
+   * Renders the Jira status pill and its transition editor for one feature row.
+   *
+   * Shared by the view and edit renderings of the Feature cell. Editing is precisely when a PO needs
+   * this context — they are deciding what to write BECAUSE of where the feature currently stands —
+   * so hiding it behind edit mode forced them to leave the row to find out.
+   *
+   * `rowContextLabel` only distinguishes the accessible names when several rows are on screen.
+   */
+  function renderFeatureStatusActions(
+    featureKey: string | null,
+    jiraIssue: JiraIssue | undefined,
+    rowContextLabel: string,
+  ): React.JSX.Element | null {
+    if (!featureKey || !jiraIssue) {
+      return null;
+    }
+
+    const requiredFieldIds = requiredTransitionFieldIdsByFeatureKey[featureKey] ?? [];
+
+    return (
+      <div className={styles.featureStatusActions} data-export-exclude="true">
+        <button
+          className={styles.featureStatusPillButton}
+          disabled={isToolbarBusy || isSavingTransitionByFeatureKey[featureKey]}
+          onClick={() => handleToggleStatusPicker(featureKey)}
+          type="button"
+        >
+          Status: {jiraIssue.fields.status.name}
+        </button>
+        {isStatusPickerOpenByFeatureKey[featureKey] ? (
+          <div className={styles.featureStatusControlRow}>
+            <label className={styles.featureStatusLabel}>
+              <span>Change Status</span>
+              <select
+                aria-label={`Change Jira status for ${featureKey} in ${rowContextLabel}`}
+                className={styles.featureStatusSelect}
+                disabled={isToolbarBusy || isSavingTransitionByFeatureKey[featureKey] || isLoadingTransitionByFeatureKey[featureKey]}
+                onChange={(event) => void handleTransitionSelection(featureKey, event.target.value)}
+                onFocus={() => void loadPiReviewFeatureTransitions(featureKey)}
+                value=""
+              >
+                <option value="">{isLoadingTransitionByFeatureKey[featureKey] ? 'Loading transitions…' : 'Select transition…'}</option>
+                {(transitionOptionsByFeatureKey[featureKey] ?? []).map((jiraTransition) => (
+                  <option key={jiraTransition.id} value={jiraTransition.id}>
+                    {jiraTransition.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+        ) : null}
+        {requiredFieldIds.length > 0 ? (
+          <div className={styles.requiredTransitionFieldCard}>
+            <strong className={styles.requiredTransitionTitle}>Jira missing required fields</strong>
+            {requiredFieldIds.map((fieldId) => {
+              const transitionField = requiredTransitionFieldsByFeatureKey[featureKey]?.[fieldId];
+              const fieldLabel = transitionField?.name ?? fieldId;
+              const allowedValueOptions = (transitionField?.allowedValues ?? [])
+                .map((allowedValue) => readTransitionAllowedValueOption(allowedValue))
+                .filter((option): option is { label: string; value: string } => option !== null);
+              const currentValue = requiredTransitionFieldValuesByFeatureKey[featureKey]?.[fieldId] ?? '';
+              return (
+                <label className={styles.featureStatusLabel} key={fieldId}>
+                  <span>{fieldLabel}</span>
+                  {allowedValueOptions.length > 0 ? (
+                    <select
+                      aria-label={`${fieldLabel} for ${featureKey}`}
+                      className={styles.featureStatusSelect}
+                      disabled={isToolbarBusy || isRetryingTransitionByFeatureKey[featureKey]}
+                      onChange={(event) => handleRequiredTransitionFieldValueChange(featureKey, fieldId, event.target.value)}
+                      value={currentValue}
+                    >
+                      <option value="">Select {fieldLabel}…</option>
+                      {allowedValueOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      aria-label={`${fieldLabel} for ${featureKey}`}
+                      className={styles.featureStatusInput}
+                      disabled={isToolbarBusy || isRetryingTransitionByFeatureKey[featureKey]}
+                      onChange={(event) => handleRequiredTransitionFieldValueChange(featureKey, fieldId, event.target.value)}
+                      placeholder={fieldId === 'parent' ? 'Issue key (for example ART-1234)' : `Enter ${fieldLabel}`}
+                      type="text"
+                      value={currentValue}
+                    />
+                  )}
+                </label>
+              );
+            })}
+            <button
+              className={styles.rowToolButton}
+              disabled={isToolbarBusy || isRetryingTransitionByFeatureKey[featureKey]}
+              onClick={() => void handleApplyMissingTransitionFields(featureKey)}
+              type="button"
+            >
+              {isRetryingTransitionByFeatureKey[featureKey] ? 'Applying…' : 'Apply Fields & Retry'}
+            </button>
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
   function buildNextPiReviewStorageValue(
     baseStorageValue: string,
     nextPiReviewTableBinding: PiReviewTableBinding,
@@ -2115,6 +2223,7 @@ function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverri
                                   <span className={styles.syncedHelperText}>View mode will show: {jiraIssue.key} - {jiraIssue.fields.summary}</span>
                                 )}
                                 <PiReviewFeatureDatePills jiraIssue={jiraIssue} />
+                                {renderFeatureStatusActions(featureKey, jiraIssue, `${target.targetLabel} row ${rowIndex + 1}`)}
                               </div>
                             ) : canEditContent && isJiraSyncedColumn ? (
                               <div className={styles.syncedValueBox}>
@@ -2170,92 +2279,7 @@ function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverri
                                     )}
                                   </div>
                                   <PiReviewFeatureDatePills jiraIssue={jiraIssue} />
-                                  {featureKey && jiraIssue ? (
-                                    <div className={styles.featureStatusActions} data-export-exclude="true">
-                                      <button
-                                        className={styles.featureStatusPillButton}
-                                        disabled={isToolbarBusy || isSavingTransitionByFeatureKey[featureKey]}
-                                        onClick={() => handleToggleStatusPicker(featureKey)}
-                                        type="button"
-                                      >
-                                        Status: {jiraIssue.fields.status.name}
-                                      </button>
-                                      {isStatusPickerOpenByFeatureKey[featureKey] ? (
-                                        <div className={styles.featureStatusControlRow}>
-                                          <label className={styles.featureStatusLabel}>
-                                            <span>Change Status</span>
-                                            <select
-                                              aria-label={`Change Jira status for ${featureKey} in ${target.targetLabel} row ${rowIndex + 1}`}
-                                              className={styles.featureStatusSelect}
-                                              disabled={isToolbarBusy || isSavingTransitionByFeatureKey[featureKey] || isLoadingTransitionByFeatureKey[featureKey]}
-                                              onChange={(event) => void handleTransitionSelection(featureKey, event.target.value)}
-                                              onFocus={() => void loadPiReviewFeatureTransitions(featureKey)}
-                                              value=""
-                                            >
-                                              <option value="">{isLoadingTransitionByFeatureKey[featureKey] ? 'Loading transitions…' : 'Select transition…'}</option>
-                                              {(transitionOptionsByFeatureKey[featureKey] ?? []).map((jiraTransition) => (
-                                                <option key={jiraTransition.id} value={jiraTransition.id}>
-                                                  {jiraTransition.name}
-                                                </option>
-                                              ))}
-                                            </select>
-                                          </label>
-                                        </div>
-                                      ) : null}
-                                      {(requiredTransitionFieldIdsByFeatureKey[featureKey] ?? []).length > 0 ? (
-                                        <div className={styles.requiredTransitionFieldCard}>
-                                          <strong className={styles.requiredTransitionTitle}>Jira missing required fields</strong>
-                                          {(requiredTransitionFieldIdsByFeatureKey[featureKey] ?? []).map((fieldId) => {
-                                            const transitionField = requiredTransitionFieldsByFeatureKey[featureKey]?.[fieldId];
-                                            const fieldLabel = transitionField?.name ?? fieldId;
-                                            const allowedValueOptions = (transitionField?.allowedValues ?? [])
-                                              .map((allowedValue) => readTransitionAllowedValueOption(allowedValue))
-                                              .filter((option): option is { label: string; value: string } => option !== null);
-                                            const currentValue = requiredTransitionFieldValuesByFeatureKey[featureKey]?.[fieldId] ?? '';
-                                            return (
-                                              <label className={styles.featureStatusLabel} key={fieldId}>
-                                                <span>{fieldLabel}</span>
-                                                {allowedValueOptions.length > 0 ? (
-                                                  <select
-                                                    aria-label={`${fieldLabel} for ${featureKey}`}
-                                                    className={styles.featureStatusSelect}
-                                                    disabled={isToolbarBusy || isRetryingTransitionByFeatureKey[featureKey]}
-                                                    onChange={(event) => handleRequiredTransitionFieldValueChange(featureKey, fieldId, event.target.value)}
-                                                    value={currentValue}
-                                                  >
-                                                    <option value="">Select {fieldLabel}…</option>
-                                                    {allowedValueOptions.map((option) => (
-                                                      <option key={option.value} value={option.value}>
-                                                        {option.label}
-                                                      </option>
-                                                    ))}
-                                                  </select>
-                                                ) : (
-                                                  <input
-                                                    aria-label={`${fieldLabel} for ${featureKey}`}
-                                                    className={styles.featureStatusInput}
-                                                    disabled={isToolbarBusy || isRetryingTransitionByFeatureKey[featureKey]}
-                                                    onChange={(event) => handleRequiredTransitionFieldValueChange(featureKey, fieldId, event.target.value)}
-                                                    placeholder={fieldId === 'parent' ? 'Issue key (for example ART-1234)' : `Enter ${fieldLabel}`}
-                                                    type="text"
-                                                    value={currentValue}
-                                                  />
-                                                )}
-                                              </label>
-                                            );
-                                          })}
-                                          <button
-                                            className={styles.rowToolButton}
-                                            disabled={isToolbarBusy || isRetryingTransitionByFeatureKey[featureKey]}
-                                            onClick={() => void handleApplyMissingTransitionFields(featureKey)}
-                                            type="button"
-                                          >
-                                            {isRetryingTransitionByFeatureKey[featureKey] ? 'Applying…' : 'Apply Fields & Retry'}
-                                          </button>
-                                        </div>
-                                      ) : null}
-                                    </div>
-                                  ) : null}
+                                  {renderFeatureStatusActions(featureKey, jiraIssue, `${target.targetLabel} row ${rowIndex + 1}`)}
                                 </div>
                               ) : isCheckboxColumn ? (
                                 renderPiReviewCheckboxDisplay(columnKey, row[columnKey])

@@ -1,0 +1,91 @@
+/* MentionPicker.module.css — The "@" person type-ahead popover and the "Tagging:" draft summary. */
+
+/*
+ * The popover floats over the composer, anchored by the composer's own relatively-positioned
+ * wrapper. Sizes use rem/em so the A / A+ / A++ text-size settings scale it with everything else,
+ * and every colour comes from the shared tokens so light and dark themes follow automatically.
+ */
+.picker {
+  position: absolute;
+  z-index: 40;
+  left: 0;
+  top: 100%;
+  width: min(320px, 100%);
+  margin-top: 4px;
+  padding: var(--spacing-xs, 4px);
+  background: var(--color-surface, #161b22);
+  border: 1px solid var(--field-elevation-border, var(--color-border, #30363d));
+  border-radius: var(--radius-md, 8px);
+  box-shadow: var(--field-elevation-shadow, 0 4px 12px rgb(0 0 0 / 30%));
+}
+
+.pickerList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.pickerOption {
+  padding: 4px 6px;
+  border-radius: var(--radius-sm, 4px);
+  cursor: pointer;
+  font-size: var(--font-size-sm, 0.875rem);
+  color: var(--color-text-primary, #e6edf3);
+  /* A long name or email wraps inside the popover instead of forcing it wider. */
+  overflow-wrap: anywhere;
+}
+
+/*
+ * The active option is marked by a background AND a left bar, so which row Enter will pick stays
+ * obvious without relying on colour alone (spec NFR-001).
+ */
+.pickerOptionActive {
+  background: var(--color-surface-hover, #21262d);
+  box-shadow: inset 3px 0 0 0 currentColor;
+}
+
+.pickerName {
+  font-weight: 600;
+}
+
+.pickerEmail {
+  color: var(--color-text-muted, #656d76);
+  font-size: 0.9em;
+}
+
+.pickerMessage {
+  margin: 0;
+  padding: 4px 6px;
+  font-size: var(--font-size-sm, 0.875rem);
+  color: var(--color-text-muted, #656d76);
+}
+
+/* Wraps a composer so the popover can anchor to it without disturbing the existing layout. */
+.composerAnchor {
+  position: relative;
+}
+
+/*
+ * "Tagging: Jane Doe, Bob Smith" — shown beneath a composer whose draft contains mentions, so the
+ * author can read back who they tagged even though the box itself holds the raw mention token.
+ */
+.draftSummary {
+  margin: 4px 0 0;
+  font-size: var(--font-size-sm, 0.875rem);
+  color: var(--color-text-muted, #656d76);
+}
+
+.draftSummaryName {
+  color: var(--color-text-primary, #e6edf3);
+  font-weight: 600;
+}
+
+@media (prefers-contrast: more) {
+  .picker {
+    background: var(--color-field-bg, #161b22);
+    border-color: var(--color-border-strong, #30363d);
+    box-shadow: none;
+  }
+}

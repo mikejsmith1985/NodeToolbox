@@ -52,6 +52,10 @@ function mockJiraGetByPath(
     if (path.endsWith('/editmeta')) {
       return Promise.resolve({ fields: editMetaFields });
     }
+    // The comment box's @-mention picker searches people; return a Jira-shaped user list for it.
+    if (path.includes('/user/search')) {
+      return Promise.resolve([{ accountId: 'acc-jane', displayName: 'Jane Doe' }]);
+    }
     return Promise.resolve({ transitions: TEST_TRANSITIONS });
   });
 }
@@ -342,6 +346,26 @@ describe('IssueDetailPanel', () => {
         body: 'Looks good to me.',
       });
     });
+  });
+
+  it('offers the @-mention picker in its comment box, which is what gives the Mentions reply box one too', async () => {
+    // MentionsTab renders this panel rather than building its own composer, so wiring the picker
+    // here is what covers that surface as well — there is no second integration to maintain.
+    const user = userEvent.setup();
+    renderIssueDetailPanel();
+
+    await user.type(screen.getByLabelText(/add comment/i), 'thanks @ja');
+
+    expect(await screen.findByRole('listbox', { name: /people matching/i })).toBeInTheDocument();
+  });
+
+  it('does not open the mention picker for an email address typed into a comment', async () => {
+    const user = userEvent.setup();
+    renderIssueDetailPanel();
+
+    await user.type(screen.getByLabelText(/add comment/i), 'mail me at mike@example.com');
+
+    expect(screen.queryByRole('listbox', { name: /people matching/i })).not.toBeInTheDocument();
   });
 
   it('shows the story points input using the issue estimate', () => {
