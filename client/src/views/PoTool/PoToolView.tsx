@@ -84,6 +84,7 @@ export default function PoToolView() {
           projectKey={selectedTeamProfile.projectKey}
           selectedPiName={selectedPiName}
           dashboardTeamProfileId={selectedTeamProfileId}
+          shouldIncludeProductOwnerFeatures
         />
       );
     }
