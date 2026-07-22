@@ -21,6 +21,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   identifier — `[~accountid:557058:ab-12]` or `[~jsmith]` — so the only person you could recognise was yourself. Every
   comment surface now shows the display name instead. A mention of **you** is highlighted (by weight and outline, not
   colour alone) so the comments asking you for something stand out while scanning a thread.
+- **PO Tool Feature Review now lists Features assigned to the team's Product Owner, not just Features that already
+  have stories.** Discovery was bottom-up from the Blueprint, which only finds a Feature once child stories link to
+  it — so at the start of a new PI, when nothing has been broken down yet, the tab was empty exactly when a PO needed
+  it most. It now also runs the PI Review tab's proven query (`issuetype = Feature AND assignee in (<roster Product
+  Owners>) AND cf[PI] = <PI>`, deliberately unscoped by project since Features usually live in a portfolio project)
+  and **unions** the two lists, de-duplicated by key. Nothing that showed before can disappear: a Feature with team
+  stories but a different assignee is still listed. If no roster member is flagged as Product Owner, or the query
+  fails, the tab says so and still shows the Blueprint rollup rather than erroring. The **Team Dashboard's** Feature
+  Review is unchanged — the new discovery is opt-in and only the PO Tool enables it.
 
 ### Fixed
 - **PI Review hid a feature's Jira status the moment you started editing the row.** The status pill and its

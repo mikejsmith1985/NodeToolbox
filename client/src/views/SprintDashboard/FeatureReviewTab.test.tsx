@@ -11,6 +11,7 @@ const {
   mockFetchFeatureReviewFixVersions,
   mockFetchFeatureReviewTransitions,
   mockFetchFeatureReviewItems,
+  mockFetchFeatureReviewItemsWithProductOwnerFeatures,
   mockSaveFeatureReviewFixVersion,
   mockSaveFeatureReviewIssueLinkField,
   mockSaveFeatureReviewOptionField,
@@ -26,6 +27,7 @@ const {
   mockFetchFeatureReviewFixVersions: vi.fn(),
   mockFetchFeatureReviewTransitions: vi.fn(),
   mockFetchFeatureReviewItems: vi.fn(),
+  mockFetchFeatureReviewItemsWithProductOwnerFeatures: vi.fn(),
   mockSaveFeatureReviewFixVersion: vi.fn(),
   mockSaveFeatureReviewIssueLinkField: vi.fn(),
   mockSaveFeatureReviewOptionField: vi.fn(),
@@ -46,6 +48,10 @@ vi.mock('../../components/Toast/ToastContext.ts', () => ({
 vi.mock('./featureReview.ts', () => ({
   fetchFeatureReviewFieldConfig: mockFetchFeatureReviewFieldConfig,
   fetchFeatureReviewItems: mockFetchFeatureReviewItems,
+}));
+
+vi.mock('./productOwnerFeatureReview.ts', () => ({
+  fetchFeatureReviewItemsWithProductOwnerFeatures: mockFetchFeatureReviewItemsWithProductOwnerFeatures,
 }));
 
 vi.mock('./featureReviewFixes.ts', () => ({
@@ -77,6 +83,7 @@ vi.mock('./featureReviewFixes.ts', () => ({
 }));
 
 import { useSettingsStore } from '../../store/settingsStore.ts';
+import { useStandupRosterStore } from './hooks/useStandupRosterStore.ts';
 import FeatureReviewTab from './FeatureReviewTab.tsx';
 
 function createFeatureIssue(): JiraIssue {
@@ -603,5 +610,109 @@ describe('FeatureReviewTab — dashboardTeamProfileId scoping', () => {
 
     await waitFor(() => expect(mockFetchFeatureReviewItems).toHaveBeenCalled());
     expect(useSettingsStore.getState().sprintDashboardActiveTeamProfileId).toBe('profile-alpha');
+  });
+});
+
+// ── Product Owner feature discovery (PO Tool opt-in) ──
+//
+// A brand-new PI has no child stories, so blueprint bottom-up discovery finds nothing. The PO Tool opts
+// into the additional PI-Review-style query; the Team Dashboard must keep the blueprint-only rollup.
+
+describe('FeatureReviewTab — Product Owner feature discovery', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    localStorage.clear();
+    localStorage.setItem('nodetoolbox-art-teams', JSON.stringify([
+      {
+        id: 'team-1',
+        name: 'Alpha Team',
+        boardId: '42',
+        projectKey: 'TBX',
+        piReviewPageUrl: 'https://example.atlassian.net/wiki/pages/12345/Alpha',
+      },
+    ]));
+    mockFetchFeatureReviewFieldConfig.mockResolvedValue({
+      acceptanceCriteriaFieldIds: ['customfield_10200'],
+      applicationFieldIds: [],
+      featureLinkFieldIds: [],
+      initiativeTypeFieldIds: [],
+      parentLinkFieldIds: ['parent'],
+      productOwnerFieldIds: [],
+      programIncrementFieldIds: ['customfield_10301'],
+      targetEndFieldIds: ['customfield_10102'],
+      targetStartFieldIds: ['customfield_10101'],
+    });
+    mockFetchFeatureReviewItems.mockResolvedValue([createFeatureReviewItem()]);
+    mockFetchFeatureReviewItemsWithProductOwnerFeatures.mockResolvedValue({
+      items: [createFeatureReviewItem()],
+      productOwnerOnlyCount: 1,
+      productOwnerQueryWarning: null,
+    });
+    mockFetchFeatureReviewEditMeta.mockResolvedValue({});
+    mockFetchFeatureReviewFixVersions.mockResolvedValue([]);
+    mockFetchFeatureReviewTransitions.mockResolvedValue([]);
+    // Only the member flagged with the Product Owner capability may scope the Feature query.
+    useStandupRosterStore.setState({
+      rosterMembers: [
+        {
+          id: 'roster-member:smith, jane (ctr)',
+          displayName: 'Smith, Jane (CTR)',
+          assigneeQueryValue: 'Smith, Jane (CTR)',
+          roleCapabilities: { canProductOwner: true, canDevelop: false, canInternalTest: false, canExternalTest: false },
+        },
+        {
+          id: 'roster-member:doe, john (ctr)',
+          displayName: 'Doe, John (CTR)',
+          assigneeQueryValue: 'Doe, John (CTR)',
+          roleCapabilities: { canProductOwner: false, canDevelop: true, canInternalTest: false, canExternalTest: false },
+        },
+      ],
+    });
+  });
+
+  it('keeps the Team Dashboard on blueprint-only discovery when the opt-in prop is omitted', async () => {
+    render(
+      <FeatureReviewTab boardId={42} boardName="Alpha Board" projectKey="TBX" selectedPiName="PI 26.3" />,
+    );
+
+    await waitFor(() => expect(mockFetchFeatureReviewItems).toHaveBeenCalled());
+    expect(mockFetchFeatureReviewItemsWithProductOwnerFeatures).not.toHaveBeenCalled();
+  });
+
+  it('queries only the roster Product Owners when the PO Tool opts in', async () => {
+    render(
+      <FeatureReviewTab
+        boardId={42}
+        boardName="Alpha Board"
+        projectKey="TBX"
+        selectedPiName="PI 26.3"
+        shouldIncludeProductOwnerFeatures
+      />,
+    );
+
+    await waitFor(() => expect(mockFetchFeatureReviewItemsWithProductOwnerFeatures).toHaveBeenCalled());
+    expect(mockFetchFeatureReviewItemsWithProductOwnerFeatures.mock.calls[0][2]).toEqual(['Smith, Jane (CTR)']);
+    expect(mockFetchFeatureReviewItems).not.toHaveBeenCalled();
+    expect(await screen.findByText('Identity hardening')).toBeInTheDocument();
+  });
+
+  it('shows the Product Owner query warning instead of implying the rollup is complete', async () => {
+    mockFetchFeatureReviewItemsWithProductOwnerFeatures.mockResolvedValue({
+      items: [createFeatureReviewItem()],
+      productOwnerOnlyCount: 0,
+      productOwnerQueryWarning: 'No Product Owner is flagged in the team roster, so only Features that already have team stories are listed.',
+    });
+
+    render(
+      <FeatureReviewTab
+        boardId={42}
+        boardName="Alpha Board"
+        projectKey="TBX"
+        selectedPiName="PI 26.3"
+        shouldIncludeProductOwnerFeatures
+      />,
+    );
+
+    expect(await screen.findByText(/No Product Owner is flagged in the team roster/)).toBeInTheDocument();
   });
 });
