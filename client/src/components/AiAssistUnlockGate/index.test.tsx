@@ -7,7 +7,7 @@ import { setAiAssistUnlocked, useAiAssistStore } from '../../store/aiAssistStore
 import { AiAssistUnlockGate } from './index.tsx';
 
 // The real activation passphrase (its SHA-256 digest is what useAiAssist checks against).
-const CORRECT_PASSPHRASE = 'ainow';
+const CORRECT_PASSPHRASE = 'unlock';
 
 afterEach(() => {
   setAiAssistUnlocked(false);
