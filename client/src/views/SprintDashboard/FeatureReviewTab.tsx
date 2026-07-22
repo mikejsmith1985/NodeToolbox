@@ -1,4 +1,5 @@
 // FeatureReviewTab.tsx — Team Dashboard view that rolls up Blueprint-discovered features and lets teams fix hygiene flags in place.
+// The PO Tool opts in to additionally list Features assigned to the team's Product Owner (see `shouldIncludeProductOwnerFeatures`).
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
@@ -35,6 +36,8 @@ import {
   fetchFeatureReviewItems,
   type FeatureReviewItem,
 } from './featureReview.ts';
+import { useStandupRosterStore } from './hooks/useStandupRosterStore.ts';
+import { fetchFeatureReviewItemsWithProductOwnerFeatures } from './productOwnerFeatureReview.ts';
 import {
   findMatchingArtTeam,
   readFallbackSelectedPiName,
@@ -67,6 +70,13 @@ interface FeatureReviewTabProps {
    * own profile so the two tools can sit on different teams at once.
    */
   dashboardTeamProfileId?: string;
+  /**
+   * Opt in to also listing Features assigned to the team's roster Product Owner(s) for the selected PI,
+   * on top of the blueprint bottom-up rollup. The PO Tool needs this because a brand-new PI has no child
+   * stories yet, so bottom-up discovery finds nothing. Omitted (the Team Dashboard) keeps the original
+   * blueprint-only behaviour exactly as it was.
+   */
+  shouldIncludeProductOwnerFeatures?: boolean;
 }
 
 interface FeatureReviewQuickFixPanelProps {
@@ -703,6 +713,7 @@ export default function FeatureReviewTab({
   projectKey,
   selectedPiName,
   dashboardTeamProfileId,
+  shouldIncludeProductOwnerFeatures = false,
 }: FeatureReviewTabProps) {
   const { showToast } = useToast();
   const storedArtTeams = useMemo(() => readStoredArtTeams(), []);
@@ -727,12 +738,27 @@ export default function FeatureReviewTab({
   const [featureReviewFieldConfig, setFeatureReviewFieldConfig] = useState<HygieneFieldConfig | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  // Non-fatal note when Product Owner discovery was skipped or failed, so a partial list never reads as complete.
+  const [productOwnerQueryWarning, setProductOwnerQueryWarning] = useState<string | null>(null);
+
+  // The team's Product Owner(s) — the same roster capability the PI Review pull uses, so both surfaces
+  // scope Features to exactly the same people. Empty unless the caller opted into PO discovery.
+  const rosterMembers = useStandupRosterStore((storeState) => storeState.rosterMembers);
+  const productOwnerAssigneeQueryValues = useMemo(
+    () => (shouldIncludeProductOwnerFeatures
+      ? rosterMembers
+        .filter((rosterMember) => rosterMember.roleCapabilities?.canProductOwner === true)
+        .map((rosterMember) => rosterMember.assigneeQueryValue)
+      : []),
+    [rosterMembers, shouldIncludeProductOwnerFeatures],
+  );
 
   const loadFeatureReviewData = useCallback(async () => {
     if (!matchedArtTeam) {
       setFeatureReviewItems([]);
       setFeatureReviewFieldConfig(null);
       setLoadError(null);
+      setProductOwnerQueryWarning(null);
       return;
     }
 
@@ -740,29 +766,53 @@ export default function FeatureReviewTab({
     setLoadError(null);
     try {
       const resolvedFieldConfig = await fetchFeatureReviewFieldConfig();
-      const reviewItems = await fetchFeatureReviewItems(
-        {
-          ...matchedArtTeam,
-          sprintIssues: [],
-          isLoading: false,
-          loadError: null,
-        } satisfies ArtTeam,
-        effectiveSelectedPiName,
-        resolvedFieldConfig,
-        customStoryPointsFieldId,
-      );
+      const scopedArtTeam = {
+        ...matchedArtTeam,
+        sprintIssues: [],
+        isLoading: false,
+        loadError: null,
+      } satisfies ArtTeam;
+      // The PO Tool unions in the PI's Features assigned to the Product Owner so a brand-new PI (no
+      // child stories yet) is not an empty screen. The Team Dashboard keeps the blueprint-only rollup.
+      const discoveryResult = shouldIncludeProductOwnerFeatures
+        ? await fetchFeatureReviewItemsWithProductOwnerFeatures(
+          scopedArtTeam,
+          effectiveSelectedPiName,
+          productOwnerAssigneeQueryValues,
+          resolvedFieldConfig,
+          customStoryPointsFieldId,
+        )
+        : {
+          items: await fetchFeatureReviewItems(
+            scopedArtTeam,
+            effectiveSelectedPiName,
+            resolvedFieldConfig,
+            customStoryPointsFieldId,
+          ),
+          productOwnerOnlyCount: 0,
+          productOwnerQueryWarning: null,
+        };
       setFeatureReviewFieldConfig(resolvedFieldConfig);
-      setFeatureReviewItems(reviewItems);
+      setFeatureReviewItems(discoveryResult.items);
+      setProductOwnerQueryWarning(discoveryResult.productOwnerQueryWarning);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unable to load Team Dashboard feature review.';
       setFeatureReviewItems([]);
       setFeatureReviewFieldConfig(null);
       setLoadError(errorMessage);
+      setProductOwnerQueryWarning(null);
       showToast(errorMessage, 'error');
     } finally {
       setIsLoading(false);
     }
-  }, [customStoryPointsFieldId, effectiveSelectedPiName, matchedArtTeam, showToast]);
+  }, [
+    customStoryPointsFieldId,
+    effectiveSelectedPiName,
+    matchedArtTeam,
+    productOwnerAssigneeQueryValues,
+    shouldIncludeProductOwnerFeatures,
+    showToast,
+  ]);
 
   useEffect(() => {
     const loadTimeoutHandle = window.setTimeout(() => {
@@ -831,6 +881,9 @@ export default function FeatureReviewTab({
 
       {isLoading ? <p className={styles.piReviewAuthoringText}>Loading feature rollup and hygiene flags...</p> : null}
       {loadError ? <p className={styles.errorMessage}>{loadError}</p> : null}
+      {!isLoading && !loadError && productOwnerQueryWarning ? (
+        <p className={styles.piReviewAuthoringText}>{productOwnerQueryWarning}</p>
+      ) : null}
       {!isLoading && !loadError && featureReviewItems.length === 0 ? (
         <p className={styles.piReviewAuthoringText}>No features were found for the selected PI and team context.</p>
       ) : null}
