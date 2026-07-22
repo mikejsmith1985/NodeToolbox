@@ -41,6 +41,31 @@ describe('featureReviewFixes', () => {
     expect(mockJiraGet).toHaveBeenCalledWith('/rest/api/2/user/search?query=watkins&maxResults=8');
   });
 
+  it('carries a user email address through, so two colleagues with the same name can be told apart', async () => {
+    mockJiraGet.mockResolvedValue([
+      { accountId: 'abc-123', displayName: 'Jordan Watkins', emailAddress: 'jordan.watkins@example.com' },
+    ]);
+
+    await expect(searchFeatureReviewUsers('watkins')).resolves.toEqual([
+      {
+        userIdentifier: 'accountId:abc-123',
+        displayName: 'Jordan Watkins',
+        emailAddress: 'jordan.watkins@example.com',
+      },
+    ]);
+  });
+
+  it('still returns a user whose email address Jira withholds', async () => {
+    mockJiraGet.mockResolvedValue([
+      { accountId: 'abc-123', displayName: 'Jordan Watkins' },
+    ]);
+
+    const [candidate] = await searchFeatureReviewUsers('watkins');
+
+    expect(candidate.userIdentifier).toBe('accountId:abc-123');
+    expect(candidate.emailAddress).toBeUndefined();
+  });
+
   it('falls back to the legacy username parameter when Jira rejects the modern user-search query parameter', async () => {
     mockJiraGet
       .mockRejectedValueOnce(new Error('Jira GET /rest/api/2/user/search?query=watkins&maxResults=8 failed: 400 — The username query parameter was not provided.'))

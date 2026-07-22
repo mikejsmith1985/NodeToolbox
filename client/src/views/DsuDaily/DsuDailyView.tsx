@@ -1,5 +1,6 @@
 // DsuDailyView.tsx — Standalone DSU Daily React view for preparing and posting Jira standups.
 
+import MentionComposer from '../../components/MentionPicker/MentionComposer.tsx';
 import { useDsuDailyState } from './hooks/useDsuDailyState.ts';
 import styles from './DsuDailyView.module.css';
 
@@ -58,13 +59,17 @@ export default function DsuDailyView() {
           </label>
           <label className={styles.fieldLabel}>
             Blockers
-            <textarea
-              className={styles.textarea}
-              aria-label="Blockers"
-              rows={3}
-              placeholder="None"
+            {/* The standup note is posted to Jira as a comment, and a blocker is the most likely
+                place to need someone's attention — so this box supports @-tagging. */}
+            <MentionComposer
+              onChange={dsuDailyState.setBlockers}
+              textareaProps={{
+                className: styles.textarea,
+                'aria-label': 'Blockers',
+                rows: 3,
+                placeholder: 'None',
+              }}
               value={dsuDailyState.draft.blockers}
-              onChange={(changeEvent) => dsuDailyState.setBlockers(changeEvent.target.value)}
             />
           </label>
         </div>

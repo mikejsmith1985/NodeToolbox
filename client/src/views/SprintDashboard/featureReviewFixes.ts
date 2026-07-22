@@ -46,6 +46,11 @@ export interface FeatureReviewSelectOption {
 export interface FeatureReviewUserCandidate {
   userIdentifier: string;
   displayName: string;
+  /**
+   * The person's email, when Jira exposes it. Optional because many instances withhold it. Used to
+   * tell two colleagues with the same display name apart when picking one from a search result.
+   */
+  emailAddress?: string;
 }
 
 interface FeatureReviewVersionResponseItem {
@@ -58,6 +63,7 @@ interface FeatureReviewRawUserCandidate {
   displayName?: string;
   key?: string;
   name?: string;
+  emailAddress?: string;
 }
 
 function readStoredStoryPointsFieldId(): string {
@@ -97,14 +103,19 @@ function readFeatureReviewUserIdentifier(userCandidate: FeatureReviewRawUserCand
 
 function normalizeFeatureReviewUserCandidates(userCandidates: FeatureReviewRawUserCandidate[]): FeatureReviewUserCandidate[] {
   return userCandidates
-    .map((userCandidate) => ({
-      displayName: userCandidate.displayName?.trim()
-        || userCandidate.name?.trim()
-        || userCandidate.key?.trim()
-        || userCandidate.accountId?.trim()
-        || '',
-      userIdentifier: readFeatureReviewUserIdentifier(userCandidate),
-    }))
+    .map((userCandidate) => {
+      const emailAddress = userCandidate.emailAddress?.trim();
+      return {
+        displayName: userCandidate.displayName?.trim()
+          || userCandidate.name?.trim()
+          || userCandidate.key?.trim()
+          || userCandidate.accountId?.trim()
+          || '',
+        userIdentifier: readFeatureReviewUserIdentifier(userCandidate),
+        // Only present when Jira supplied one, so existing callers see an unchanged shape.
+        ...(emailAddress ? { emailAddress } : {}),
+      };
+    })
     .filter((userCandidate) => userCandidate.userIdentifier !== '' && userCandidate.displayName !== '');
 }
 

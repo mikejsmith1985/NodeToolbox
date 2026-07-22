@@ -54,6 +54,47 @@
   overflow-wrap: anywhere;
 }
 
+/*
+ * ── @-mentions inside a comment body ──
+ *
+ * A mention reads as a distinct chip so the eye can find the people in a sentence. Every state is
+ * distinguishable WITHOUT relying on colour (spec NFR-001): the pending state adds a dashed
+ * underline, the unresolvable state adds italics, and a mention of the reader adds weight plus an
+ * outline. Sizes use em/rem so the A / A+ / A++ text-size settings scale them with the body text.
+ */
+.mention {
+  color: var(--color-accent, #58a6ff);
+  font-weight: 500;
+  /* Keeps a long display name from breaking mid-word across a line. */
+  white-space: nowrap;
+}
+
+/* Still looking this person up. Deliberately NOT the same treatment as .mentionUnresolvable —
+   "slow" and "cannot be identified" are different facts and must not look alike (FR-005a). */
+.mentionPending {
+  color: var(--color-text-muted, #656d76);
+  text-decoration: underline dashed currentColor;
+  text-underline-offset: 0.2em;
+}
+
+/* This person genuinely could not be found (deactivated, or outside the viewer's visibility). */
+.mentionUnresolvable {
+  color: var(--color-text-muted, #656d76);
+  font-style: italic;
+  font-weight: 400;
+  text-decoration: none;
+}
+
+/* A mention of the reader: weight and an outline carry the meaning, so it survives greyscale. */
+.mentionSelf {
+  color: var(--color-accent, #58a6ff);
+  font-weight: 700;
+  outline: 1px solid currentColor;
+  outline-offset: 1px;
+  border-radius: var(--radius-sm, 4px);
+  padding: 0 0.15em;
+}
+
 .commentEmpty {
   margin: 0;
   font-size: var(--font-size-sm, 0.875rem);

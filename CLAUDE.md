@@ -9,6 +9,37 @@
 <!-- SPECKIT START -->
 ## Active Spec Kit Feature
 
+> ⚠️ **Status accuracy warning (recorded 2026-07-22 by feature 024's Phase 0 research).** The 019–023 entries below
+> describe work as *"planned — ready for `/speckit-tasks`"* that is in fact **already implemented and shipped**:
+> `client/src/components/QuickIssueLookup/` (022) exists complete with `quickLookupStore.ts` and tests;
+> `IssueDetailPanel` already imports `useQuickLookupStore`, `IssueFieldEditingSection`, and the `IssueMeta` chips;
+> `test/e2e/` holds `quick-issue-lookup.spec.js`, `linked-issue-lookup.spec.js`, `myissues-personas.spec.js`, and
+> `po-pi-dropdown.spec.js`. Feature 024's spec inherited a false "do not run concurrently with 022" constraint from
+> these stale entries before the code was checked. **Verify against the codebase before trusting a status below.**
+
+- **024-jira-comment-mentions** — *(planned on `feature/024-jira-comment-mentions` — ready for `/speckit-tasks`)*
+  Jira-native @-mentions in comments, both directions. **Read**: mentions currently render as raw
+  `[~accountid:557058:ab-12]` / `[~jsmith]`, or — for ADF bodies — **vanish entirely** (real data loss; root cause is
+  `richTextPlainText.ts:18`, whose `collectDocumentText` reads only `node.text` while an ADF mention carries its name
+  in `attrs.text`). **Write**: typing `@` at a word boundary opens a person type-ahead that inserts a genuinely
+  notifying mention. Plan: `specs/024-jira-comment-mentions/plan.md`. Contracts: `mention-format.md`,
+  `mention-directory.md`, `mention-picker.md`.
+  **Design linchpin**: `searchFeatureReviewUsers` (`featureReviewFixes.ts:207`) already returns a **flavour-encoded**
+  `userIdentifier` (`accountId:` / `name:` / `key:`, see `:82`), which maps 1:1 onto the mention forms in
+  `jiraMentions.ts:87` — so one pure module (`jiraMentionFormat.ts`) owns parse **and** build, making NFR-002
+  agree-by-construction a property of the shape rather than a rule to remember. Use this search, **not**
+  `jiraApi.searchUsers` (1 caller, no flavour encoding).
+  **Hard rules**: do **not** modify `richTextPlainText.ts` (feeds PO Tool drafts, Feature Canvas, SNow, story-point
+  extraction) and do **not** modify `SprintDashboardView.normalizeCommentBody` (`:487`) — that is release-window
+  **keyword matching**, not display. The single display swap point is `CommentThread.tsx:54`. Store is Zustand with
+  **no `persist`** (session-only by decision — FR-007a), and `DirectoryEntry` is **tri-state**
+  (`resolved`/`pending`/`unresolvable`) because a two-state `string | null` cannot distinguish "still loading" from
+  "cannot be identified".
+  **Open risk (P1)**: FR-013's readable, name-carrying mention form (`[Jane Doe|~jsmith]`) is **unverified** — it may
+  render as a link without notifying. `buildMentionToken` therefore defaults to the plain form that is known to
+  notify; see `quickstart.md` Test 0 for the deciding live test. FR-012 (they are actually notified) outranks FR-013
+  (it looks nice).
+
 - **023-issue-200-fixes** — *(planned on `feature/023-issue-200-fixes` — ready for `/speckit-tasks`)* six independent
   fixes from GH #200, ordered data-correctness-first and designed for **parallel worktree agents** (disjoint file
   areas). **US1 (P1)** fix the hygiene "missing fix version" check detecting 0 of 72: `checkMissingFixVersion` is gated

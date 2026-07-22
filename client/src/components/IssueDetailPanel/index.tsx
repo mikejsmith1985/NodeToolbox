@@ -27,6 +27,7 @@ import {
 } from '../../views/SprintDashboard/featureReviewFixes.ts';
 import { useIssueComments } from '../../hooks/useIssueComments.ts';
 import CommentThread from '../CommentThread/CommentThread.tsx';
+import MentionComposer from '../MentionPicker/MentionComposer.tsx';
 import { useQuickLookupStore } from '../QuickIssueLookup/quickLookupStore.ts';
 import styles from './IssueDetailPanel.module.css';
 
@@ -491,11 +492,13 @@ function IssueDetailPanelContent({
         <label className={styles.actionLabel} htmlFor={`comment-textarea-${issue.key}`}>
           Add Comment:
         </label>
-        <textarea
-          className={styles.textarea}
-          id={`comment-textarea-${issue.key}`}
-          onChange={(changeEvent) => setCommentText(changeEvent.target.value)}
-          rows={3}
+        <MentionComposer
+          onChange={setCommentText}
+          textareaProps={{
+            className: styles.textarea,
+            id: `comment-textarea-${issue.key}`,
+            rows: 3,
+          }}
           value={commentText}
         />
         <div className={styles.actionSection}>

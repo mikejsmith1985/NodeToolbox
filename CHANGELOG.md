@@ -8,6 +8,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **You can now tag people in Jira comments without leaving Toolbox.** Typing `@` at the start of a word in any
+  comment box opens a person search; picking someone inserts a real Jira mention, so they are genuinely notified —
+  previously the only way to tag a colleague was to open the issue in Jira, and typing a name into a Toolbox comment
+  posted plain text that notified nobody. The picker searches everyone you can see in Jira (not just your team),
+  shows email addresses so two colleagues with the same name can be told apart, and is fully keyboard-operable
+  (`↑`/`↓`/`Enter`/`Escape`). It deliberately does **not** open for an `@` inside a word, so typing an email address
+  never tags anyone by accident. A **"Tagging: …"** line under the box names everyone the draft will notify, because
+  the comment box itself holds the literal mention token Jira requires. Available in the issue detail panel (and
+  therefore the Mentions reply box), the DSU Board comment overlay, DSU Daily blockers, and the bulk-comment panel.
+- **Mentions in comments now read as people's names.** Where a comment tagged someone, Toolbox showed the raw
+  identifier — `[~accountid:557058:ab-12]` or `[~jsmith]` — so the only person you could recognise was yourself. Every
+  comment surface now shows the display name instead. A mention of **you** is highlighted (by weight and outline, not
+  colour alone) so the comments asking you for something stand out while scanning a thread.
+
+### Fixed
+- **PI Review hid a feature's Jira status the moment you started editing the row.** The status pill and its
+  transition picker rendered only in view mode, so a PO editing a row — exactly when they are deciding what to write
+  *because of* where the feature stands — had to leave edit mode to see or change it. Status now appears alongside the
+  Target Start / Target End / Due Date / Fix Version chips (which were already shown while editing), and can be
+  changed without leaving edit mode. Both modes now render one shared control, so they cannot drift apart again.
+- **Mentions written in Jira's rich editor were silently disappearing from comments.** When a comment body came back
+  in Atlassian Document Format, the shared plain-text conversion read only each node's `text` property — but an ADF
+  mention carries the person's name in `attrs.text` and has no `text` of its own, so the mention contributed nothing
+  and the sentence rendered with a person simply missing from it ("Handing over to  for sign-off"). This was data
+  loss, not just unreadability, and it is now fixed: such mentions render as the person's name.
 - **The personal To-Do list is now a three-column Kanban board** (My Issues → Today). Items live in **To Do**,
   **In Progress**, or **Done**, and move between columns either by dragging (via `@dnd-kit`, the repo's sanctioned
   drag primitive) or the per-card ◀/▶ move buttons, which keep the board fully keyboard-accessible. The F1 quick-add

@@ -617,6 +617,113 @@ describe('PiReviewTab', () => {
     expect(within(alphaSection).getByText(/unsaved changes/i)).toBeInTheDocument();
   });
 
+  it('keeps the Jira context chips — dates, fix version, and status — visible while editing a row', async () => {
+    // Editing is exactly when a PO needs the Jira facts in front of them: they are deciding what to
+    // type BECAUSE of the target dates, the fix version, and where the feature currently stands.
+    mockFetchConfluencePageByReference.mockResolvedValue(ALPHA_PAGE_WITH_FEATURE_KEY);
+    localStorage.setItem('tbxARTSettings', JSON.stringify({
+      piReviewTargetStartFieldId: 'customfield_12345',
+      piReviewTargetEndFieldId: 'customfield_12346',
+    }));
+    mockJiraGet.mockResolvedValue({
+      issues: [
+        {
+          id: '10001',
+          key: 'DENP-1352',
+          fields: {
+            summary: '26.3 Enrollment Support',
+            status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } },
+            priority: { name: 'Highest', iconUrl: '' },
+            assignee: null,
+            reporter: null,
+            issuetype: { name: 'Feature', iconUrl: '' },
+            created: '',
+            updated: '',
+            duedate: '2026-06-12',
+            description: null,
+            customfield_10111: 13,
+            customfield_12345: '2026-05-30',
+            customfield_12346: '2026-06-10',
+            fixVersions: [{ id: '301', name: '26.3' }],
+            issuelinks: [],
+          },
+        },
+      ],
+    });
+
+    renderPiReviewTab([DEFAULT_TEAMS[0]]);
+
+    const alphaSection = await screen.findByRole('region', { name: /alpha team pi review/i });
+    expect(await within(alphaSection).findByText(/Fix Version: 26\.3/i, undefined, { timeout: 4000 })).toBeInTheDocument();
+
+    enterEditMode(alphaSection);
+
+    // The date/fix-version pills already survived edit mode; the status control did not.
+    expect(within(alphaSection).getByText('Target Start: 2026-05-30')).toBeInTheDocument();
+    expect(within(alphaSection).getByText('Target End: 2026-06-10')).toBeInTheDocument();
+    expect(within(alphaSection).getByText('Due Date: 2026-06-12')).toBeInTheDocument();
+    expect(within(alphaSection).getByText('Fix Version: 26.3')).toBeInTheDocument();
+    expect(within(alphaSection).getByRole('button', { name: /status: in progress/i })).toBeInTheDocument();
+  });
+
+  it('lets a status be changed while the row is being edited, without leaving edit mode', async () => {
+    mockFetchConfluencePageByReference.mockResolvedValue(ALPHA_PAGE_WITH_FEATURE_KEY);
+    let searchCallCount = 0;
+    mockJiraGet.mockImplementation((requestPath: string) => {
+      if (requestPath.includes('/transitions')) {
+        return Promise.resolve({ transitions: [{ id: '41', name: 'Done' }] });
+      }
+      if (requestPath.includes('/search')) {
+        searchCallCount += 1;
+        return Promise.resolve({
+          issues: [
+            {
+              id: '10001',
+              key: 'DENP-1352',
+              fields: {
+                summary: '26.3 Enrollment Support',
+                status: {
+                  name: searchCallCount > 1 ? 'Done' : 'In Progress',
+                  statusCategory: { key: searchCallCount > 1 ? 'done' : 'indeterminate' },
+                },
+                priority: { name: 'Highest', iconUrl: '' },
+                assignee: null,
+                reporter: null,
+                issuetype: { name: 'Feature', iconUrl: '' },
+                created: '',
+                updated: '',
+                description: null,
+                issuelinks: [],
+              },
+            },
+          ],
+        });
+      }
+      return Promise.resolve({});
+    });
+
+    renderPiReviewTab([DEFAULT_TEAMS[0]]);
+
+    const alphaSection = await screen.findByRole('region', { name: /alpha team pi review/i });
+    expect(await within(alphaSection).findByText(/26\.3 Enrollment Support/i, undefined, { timeout: 4000 })).toBeInTheDocument();
+
+    enterEditMode(alphaSection);
+    fireEvent.click(within(alphaSection).getByRole('button', { name: /status: in progress/i }));
+    const statusSelect = await within(alphaSection).findByRole('combobox', {
+      name: /change jira status for DENP-1352/i,
+    });
+    fireEvent.change(statusSelect, { target: { value: '41' } });
+
+    await waitFor(() => {
+      expect(mockJiraPost).toHaveBeenCalledWith('/rest/api/2/issue/DENP-1352/transitions', {
+        transition: { id: '41' },
+      });
+    });
+    await waitFor(() => {
+      expect(within(alphaSection).getByText('Status: Done')).toBeInTheDocument();
+    });
+  });
+
   it('updates Jira feature status directly from the PI Review feature row in view mode', async () => {
     mockFetchConfluencePageByReference.mockResolvedValue(ALPHA_PAGE_WITH_FEATURE_KEY);
     let searchCallCount = 0;
