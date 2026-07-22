@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **The AI Assist unlock passphrase is now `unlock`** (previously `ainow`). The Ctrl+Alt+Z gate is otherwise
+  unchanged, and the passphrase is still stored only as a SHA-256 digest, never as plain text in source. Anyone
+  currently unlocked stays unlocked for that browser tab; the new passphrase applies the next time the gate is opened.
+
 ### Added
 - **You can now tag people in Jira comments without leaving Toolbox.** Typing `@` at the start of a word in any
   comment box opens a person search; picking someone inserts a real Jira mention, so they are genuinely notified —

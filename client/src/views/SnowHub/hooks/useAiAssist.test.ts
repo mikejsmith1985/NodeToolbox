@@ -68,11 +68,25 @@ describe('useAiAssist', () => {
 
     let isValid = false;
     await act(async () => {
-      isValid = await result.current.verifyPassphrase('ainow');
+      isValid = await result.current.verifyPassphrase('unlock');
     });
 
     expect(isValid).toBe(true);
     expect(result.current.isUnlocked).toBe(true);
+  });
+
+  it('no longer accepts the previous passphrase', async () => {
+    // Guards the passphrase change: if someone restores the old digest, this fails loudly rather
+    // than the old value quietly continuing to work alongside the new one.
+    const { result } = renderHook(() => useAiAssist());
+
+    let isValid = true;
+    await act(async () => {
+      isValid = await result.current.verifyPassphrase('ainow');
+    });
+
+    expect(isValid).toBe(false);
+    expect(result.current.isUnlocked).toBe(false);
   });
 
   it('stays locked and returns false when an incorrect passphrase is provided', async () => {

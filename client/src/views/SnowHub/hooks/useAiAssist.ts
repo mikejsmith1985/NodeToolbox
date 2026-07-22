@@ -8,10 +8,10 @@ import { setAiAssistUnlocked, useAiAssistStore } from '../../../store/aiAssistSt
 import type { JiraIssue } from '../../../types/jira.ts';
 import { normalizeRichTextToPlainText } from '../../../utils/richTextPlainText.ts';
 
-// SHA-256 hex digest of the activation passphrase ("ainow").
+// SHA-256 hex digest of the activation passphrase ("unlock").
 // The raw passphrase is never stored in source — only the digest is kept.
 // To reproduce: node -e "const c=require('crypto');console.log(c.createHash('sha256').update('<passphrase>').digest('hex'))"
-const ACTIVATION_DIGEST = 'a5a7a5d01c4a9058e72ef6fc1e4da51cd86a50b3bfc4b7b54b2824d70b74e983';
+const ACTIVATION_DIGEST = '787600ebe6d6c75b6bc0b2db0bfd6aeec78897b67d3192e2208bc8b714237841';
 
 /** The four CHG text fields that the generated prompt targets. */
 export interface AiAssistGeneratedFields {
