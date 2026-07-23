@@ -52,6 +52,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   document — a part-finished team report that reads as complete is exactly what this feature exists to prevent.
 
 ### Fixed
+- **The Reports Hub team dropdown now actually changes which roster is analysed.** Teams in NodeToolbox are saved
+  **Dashboard Team profiles**, and each profile keeps its own roster — a roster member carries no team name at all.
+  Both flow reports were scoping by that empty team-name field, so the filter matched nothing, silently fell back to
+  whichever profile Agile Hub had selected, and picking a team here did nothing. Selecting "Transformers" while
+  Agile Hub sat on "Cleanup Crew" ran Cleanup Crew's people — which is why the report could carry one team's name
+  over another team's figures. Both reports now resolve the chosen team to its profile and read that profile's
+  roster, so the dropdown works and the heading names the roster that actually ran. Reports Hub **reads** the other
+  profile without selecting it, so opening a report no longer re-points your Agile Hub. *(The previous release fixed
+  only the label; this fixes the scoping underneath it.)*
 - **⚠️ Sub-tasks are no longer counted as deliverables in their own right — so your figures will change.**
   Sub-tasks look like ordinary issues to a Jira search, and both flow reports were counting them alongside the
   stories they belong to. That credited one piece of work twice, and because sub-tasks are short-lived it pulled

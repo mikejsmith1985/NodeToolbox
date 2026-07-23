@@ -16,11 +16,9 @@ import { useSettingsStore } from '../../store/settingsStore.ts';
 import styles from './ReportsHubView.module.css';
 import {
   buildStandupRosterAssigneeWasClause,
-  readAvailableRosterTeamNames,
-  describeRosterScope,
-  resolveActiveRosterTeamName,
-  useStandupRosterStore,
+  readStoredStandupRosterMembers,
 } from '../SprintDashboard/hooks/useStandupRosterStore.ts';
+import { resolveReportRosterScope } from './rosterScope.ts';
 import {
   ISSUE_PAGE_SIZE,
   RUN_ISSUE_BUDGET,
@@ -103,14 +101,22 @@ function formatDays(value: number): string {
 
 /** The Reports Hub tab: choose a window, run for the scoped roster, read where the flow went. */
 export function IssueFlowTab({ teamFilter = '' }: { teamFilter?: string }): React.JSX.Element {
-  const rosterMembers = useStandupRosterStore((state) => state.rosterMembers);
-  const availableTeamNames = useMemo(() => readAvailableRosterTeamNames(rosterMembers), [rosterMembers]);
-  // The requested team may not exist in the roster; resolving it once means the heading and the data
-  // are derived from the SAME name, so the report can never be labelled with a team it did not analyse.
-  const effectiveTeamName = useMemo(
-    () => resolveActiveRosterTeamName(teamFilter, rosterMembers),
-    [teamFilter, rosterMembers],
+  // Teams are saved Dashboard Team PROFILES, each owning its own roster. Resolved through the SAME
+  // helper the Personal Workflow tab uses, so both tabs scope a given team identically — and neither
+  // selects the profile, which would re-point the user's Agile Hub as a side effect.
+  const teamProfiles = useSettingsStore((state) => state.sprintDashboardTeamProfiles);
+  const activeTeamProfileId = useSettingsStore((state) => state.sprintDashboardActiveTeamProfileId);
+  const rosterScope = useMemo(
+    () => resolveReportRosterScope({
+      requestedTeamName: teamFilter,
+      teamProfiles,
+      activeTeamProfileId,
+      readRosterForProfile: readStoredStandupRosterMembers,
+    }),
+    [teamFilter, teamProfiles, activeTeamProfileId],
   );
+  const rosterMembers = rosterScope.rosterMembers;
+  const effectiveTeamName = rosterScope.label;
 
   // The SAME setting the Personal Workflow tab reads — one source, so the two cannot disagree.
   const shouldCountSubTasks = useSettingsStore((state) => state.countSubTasksInFlowReports);
@@ -124,7 +130,8 @@ export function IssueFlowTab({ teamFilter = '' }: { teamFilter?: string }): Reac
   const cancelRef = useRef(false);
 
   const runAnalysis = useCallback(async () => {
-    const rosterClause = buildStandupRosterAssigneeWasClause(rosterMembers, effectiveTeamName);
+    // The roster is already scoped to the chosen team, so no further team filtering is applied here.
+    const rosterClause = buildStandupRosterAssigneeWasClause(rosterMembers, null);
     if (rosterClause === null) {
       setErrorMessage('No roster members for this team — import a roster in the Sprint Dashboard first.');
       return;
@@ -191,13 +198,13 @@ export function IssueFlowTab({ teamFilter = '' }: { teamFilter?: string }): Reac
   return (
     <div>
       <p className={styles.captionText} style={{ marginTop: 0 }}>
-        For every issue the <strong>{describeRosterScope(effectiveTeamName)}</strong> roster delivered in the
+        For every issue the <strong>{effectiveTeamName}</strong> roster delivered in the
         window, this shows where its time went and who was holding it — including time it spent in
         nobody’s hands. All durations are <strong>working days</strong> (Monday–Friday).
       </p>
-      {availableTeamNames.length > 0 && teamFilter !== '' && effectiveTeamName !== teamFilter && (
+      {!rosterScope.isRequestedTeamMatched && (
         <p className={styles.captionText}>
-          “{teamFilter}” is not in the imported roster — showing <strong>{effectiveTeamName}</strong> instead.
+          “{teamFilter}” is not one of your saved teams — showing <strong>{effectiveTeamName}</strong> instead.
         </p>
       )}
 
