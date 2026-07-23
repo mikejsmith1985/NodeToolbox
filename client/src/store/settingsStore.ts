@@ -42,6 +42,8 @@ const SPRINT_DASHBOARD_SELECTED_SPRINT_ID_STORAGE_KEY = 'tbxSprintDashboardSelec
 const SPRINT_DASHBOARD_SELECTED_FIX_VERSION_STORAGE_KEY = 'tbxSprintDashboardSelectedFixVersion';
 const SPRINT_DASHBOARD_SELECTED_PI_VALUE_STORAGE_KEY = 'tbxSprintDashboardSelectedPiValue';
 const SPRINT_DASHBOARD_ACTIVE_TEAM_STORAGE_KEY = 'tbxSprintDashboardActiveTeam';
+/** Whether flow/throughput reports count sub-tasks as deliverables in their own right. */
+const COUNT_SUB_TASKS_STORAGE_KEY = 'tbxCountSubTasksInFlowReports';
 const SPRINT_DASHBOARD_TEAM_PROFILES_STORAGE_KEY = 'tbxSprintDashboardTeams';
 const SPRINT_DASHBOARD_ACTIVE_TEAM_PROFILE_ID_STORAGE_KEY = 'tbxSprintDashboardActiveTeamProfileId';
 const MY_ISSUES_JQL_STORAGE_KEY = 'tbxMIJql';
@@ -112,6 +114,9 @@ interface SettingsState {
   sprintDashboardSelectedFixVersion: string;
   sprintDashboardSelectedPiValue: string;
   sprintDashboardActiveTeam: string;
+  // Shared by BOTH flow reports so they can never disagree about what counts as a deliverable.
+  // Defaults to false: sub-tasks inflate issue counts and, being short-lived, flatter cycle time.
+  countSubTasksInFlowReports: boolean;
   sprintDashboardTeamProfiles: SprintDashboardTeamProfile[];
   sprintDashboardActiveTeamProfileId: string;
   /**
@@ -149,6 +154,7 @@ interface SettingsState {
   setSprintDashboardSelectedFixVersion: (fixVersionName: string) => void;
   setSprintDashboardSelectedPiValue: (piValue: string) => void;
   setSprintDashboardActiveTeam: (teamName: string) => void;
+  setCountSubTasksInFlowReports: (shouldCount: boolean) => void;
   setSprintDashboardTeamProfiles: (teamProfiles: SprintDashboardTeamProfile[]) => void;
   setSprintDashboardActiveTeamProfileId: (teamProfileId: string) => void;
   updateActiveSprintDashboardTeamProfile: (
@@ -558,6 +564,7 @@ export const useSettingsStore = create<SettingsState>((setState) => ({
     INITIAL_ACTIVE_SPRINT_DASHBOARD_TEAM_PROFILE?.selectedPiValue ??
     readStoredString(SPRINT_DASHBOARD_SELECTED_PI_VALUE_STORAGE_KEY, EMPTY_STRING),
   sprintDashboardActiveTeam: readStoredString(SPRINT_DASHBOARD_ACTIVE_TEAM_STORAGE_KEY, EMPTY_STRING),
+  countSubTasksInFlowReports: readStoredString(COUNT_SUB_TASKS_STORAGE_KEY, EMPTY_STRING) === 'true',
   sprintDashboardTeamProfiles: INITIAL_SPRINT_DASHBOARD_TEAM_PROFILES,
   sprintDashboardActiveTeamProfileId: INITIAL_SPRINT_DASHBOARD_ACTIVE_TEAM_PROFILE_ID,
   sprintDashboardHydrationNonce: 0,
@@ -648,6 +655,10 @@ export const useSettingsStore = create<SettingsState>((setState) => ({
   setSprintDashboardActiveTeam: (teamName) => {
     writeStoredString(SPRINT_DASHBOARD_ACTIVE_TEAM_STORAGE_KEY, teamName);
     setState({ sprintDashboardActiveTeam: teamName });
+  },
+  setCountSubTasksInFlowReports: (shouldCount) => {
+    writeStoredString(COUNT_SUB_TASKS_STORAGE_KEY, shouldCount ? 'true' : 'false');
+    setState({ countSubTasksInFlowReports: shouldCount });
   },
   setSprintDashboardTeamProfiles: (teamProfiles) =>
     setState((currentState) => {

@@ -718,3 +718,100 @@ describe('computePersonalFlow — worked example evidence', () => {
     expect(computePersonalFlow(makeInput([unownedIssue])).workedExample).toBeNull();
   });
 });
+
+// ── Sub-task scope (feature 027) ─────────────────────────────────────────────
+//
+// Sub-tasks look like ordinary issues to a Jira search, so they were being counted as peers of the
+// story they belong to: one piece of work credited twice, and — because they are short-lived — cycle
+// times dragged DOWN, which flattered delivery. These pin the correction.
+//
+// The verdict is supplied by the caller (via classifyIssueScope) rather than derived here, so the
+// engine stays free of any Jira field-shape knowledge.
+
+describe('computePersonalFlow — sub-task scope', () => {
+  /** The credited fixture from the hands-on suite: held Wed→Fri, then handed on. */
+  function makeCreditedIssue(overrides: Partial<PersonalFlowIssue> = {}): PersonalFlowIssue {
+    return {
+      ...makeFlowIssue({
+        key: 'SCOPE-1',
+        storyPoints: 5,
+        createdIso: '2026-06-30T00:00:00.000Z',
+        initialStatusId: 'inProgress',
+        initiallyAssignedToTarget: false,
+        ownershipTransitions: [
+          { assignedToTarget: true, atIso: '2026-07-01T00:00:00.000Z' },
+          { assignedToTarget: false, atIso: '2026-07-03T00:00:00.000Z' },
+        ],
+      }),
+      ...overrides,
+    };
+  }
+
+  it('credits an issue with no scope verdict exactly as before', () => {
+    // The optional-field guard. Every existing fixture omits scopeVerdict, so if this ever changed,
+    // 35 shipped tests would be silently describing different behaviour from the one in production.
+    const result = computePersonalFlow(makeInput([makeCreditedIssue()]));
+
+    expect(result.issueCount).toBe(1);
+    expect(result.totalStoryPoints).toBe(5);
+  });
+
+  it('excludes a sub-task and says so, rather than dropping it silently', () => {
+    const result = computePersonalFlow(makeInput([makeCreditedIssue({ scopeVerdict: 'sub-task' })]));
+
+    expect(result.issueCount).toBe(0);
+    expect(result.totalStoryPoints).toBe(0);
+    expect(result.excludedIssues).toEqual([
+      { key: 'SCOPE-1', summary: 'Issue SCOPE-1', reason: 'sub-task' },
+    ]);
+  });
+
+  it('still credits an issue whose type could not be read', () => {
+    // Assuming sub-task would delete a real person's work on the strength of a missing field.
+    const result = computePersonalFlow(makeInput([makeCreditedIssue({ scopeVerdict: 'unknown-type' })]));
+
+    expect(result.issueCount).toBe(1);
+  });
+
+  it('keeps a retained issue\'s own cycle time byte-identical when a sub-task is removed beside it', () => {
+    // Contract G5: exclusion changes WHICH issues are counted, never HOW a counted issue is measured.
+    // That is what makes the moving averages explainable to anyone holding an older report.
+    const withoutSubTask = computePersonalFlow(makeInput([makeCreditedIssue()]));
+    const withSubTask = computePersonalFlow(makeInput([
+      makeCreditedIssue(),
+      makeCreditedIssue({ key: 'SCOPE-2', scopeVerdict: 'sub-task' }),
+    ]));
+
+    expect(withSubTask.perIssue).toEqual(withoutSubTask.perIssue);
+    expect(withSubTask.cycleTime).toEqual(withoutSubTask.cycleTime);
+  });
+
+  it('raises the cycle-time average once short sub-tasks stop counting', () => {
+    // The reason this matters: sub-tasks are short-lived, so including them made delivery look faster.
+    const shortSubTask = makeCreditedIssue({
+      key: 'SCOPE-3',
+      ownershipTransitions: [
+        { assignedToTarget: true, atIso: '2026-07-01T00:00:00.000Z' },
+        { assignedToTarget: false, atIso: '2026-07-02T00:00:00.000Z' }, // one day only
+      ],
+    });
+
+    const counted = computePersonalFlow(makeInput([makeCreditedIssue(), shortSubTask]));
+    const excluded = computePersonalFlow(makeInput([
+      makeCreditedIssue(),
+      { ...shortSubTask, scopeVerdict: 'sub-task' },
+    ]));
+
+    expect(excluded.cycleTime.averageDays!).toBeGreaterThan(counted.cycleTime.averageDays!);
+  });
+
+  it('excludes a sub-task the person never owned as not-owned, so the sub-task count means "yours"', () => {
+    // Ordering rule (R5): ownership is tested first. Otherwise the superset fetch would sweep other
+    // people's sub-tasks into this person's sub-task count and make the number meaningless.
+    const neverOwned = makeFlowIssue({ key: 'SCOPE-4', initiallyAssignedToTarget: false });
+
+    const result = computePersonalFlow(makeInput([{ ...neverOwned, scopeVerdict: 'sub-task' }]));
+
+    expect(result.excludedIssues[0].reason).toBe('not-owned');
+  });
+});

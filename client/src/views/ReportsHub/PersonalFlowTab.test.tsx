@@ -631,6 +631,79 @@ describe('PersonalFlowTab', () => {
     expect(personInput).toHaveValue('Jane Dev');
   });
 
+  // ── Sub-task exclusion (feature 027) ──────────────────────────────────────
+  //
+  // Sub-tasks look like ordinary issues to a Jira search, so they were counted as peers of the story
+  // they belong to — inflating issue counts and, being short-lived, dragging cycle times down.
+
+  it('requests the issue type, without which a sub-task cannot be told from a story', async () => {
+    seedRoster([buildRosterMember('Jane Dev', 'Team Rocket')], 'Team Rocket');
+    mockJiraGet.mockImplementation((path: string) => {
+      if (path.startsWith('/rest/api/2/status')) return Promise.resolve(STATUSES);
+      if (path.startsWith('/rest/api/2/user/search')) return Promise.resolve(userSearchResponseForPath(path));
+      if (path.startsWith('/rest/api/2/search')) return Promise.resolve(searchResponseForPath(path));
+      return Promise.reject(new Error(`unexpected path ${path}`));
+    });
+
+    render(<PersonalFlowTab teamFilter="" />);
+    fireEvent.click(screen.getByRole('button', { name: /run for team roster/i }));
+    await waitFor(() => expect(screen.getByText('Jane Dev')).toBeInTheDocument());
+
+    expect(decodedSearchPaths()[0]).toContain('issuetype');
+  });
+
+  it('excludes a sub-task from the figures and says so beside the person', async () => {
+    seedRoster([buildRosterMember('Jane Dev', 'Team Rocket')], 'Team Rocket');
+    mockJiraGet.mockImplementation((path: string) => {
+      if (path.startsWith('/rest/api/2/status')) return Promise.resolve(STATUSES);
+      if (path.startsWith('/rest/api/2/user/search')) return Promise.resolve(userSearchResponseForPath(path));
+      if (path.startsWith('/rest/api/2/search')) {
+        const response = searchResponseForPath(path);
+        // Mark the second of the two fixture issues as a sub-task.
+        return Promise.resolve({
+          issues: response.issues.map((issue, index) => (index === 1
+            ? { ...issue, fields: { ...issue.fields, issuetype: { subtask: true, name: 'Sub-task' } } }
+            : { ...issue, fields: { ...issue.fields, issuetype: { subtask: false, name: 'Story' } } })),
+        });
+      }
+      return Promise.reject(new Error(`unexpected path ${path}`));
+    });
+
+    render(<PersonalFlowTab teamFilter="" />);
+    fireEvent.click(screen.getByRole('button', { name: /run for team roster/i }));
+    await waitFor(() => expect(screen.getByText('Jane Dev')).toBeInTheDocument());
+
+    // One of the two issues is credited, not both.
+    expect(readTeamRowCells('Jane Dev')[2]).toBe('1');
+    expect(screen.getByText(/1 sub-task excluded/i)).toBeInTheDocument();
+  });
+
+  it('names a person whose only work was sub-tasks rather than showing them as idle', async () => {
+    // The guard against repeating the "real work scores nothing" failure fixed in feature 026.
+    seedRoster([buildRosterMember('Jane Dev', 'Team Rocket')], 'Team Rocket');
+    mockJiraGet.mockImplementation((path: string) => {
+      if (path.startsWith('/rest/api/2/status')) return Promise.resolve(STATUSES);
+      if (path.startsWith('/rest/api/2/user/search')) return Promise.resolve(userSearchResponseForPath(path));
+      if (path.startsWith('/rest/api/2/search')) {
+        const response = searchResponseForPath(path);
+        return Promise.resolve({
+          issues: response.issues.map((issue) => ({
+            ...issue,
+            fields: { ...issue.fields, issuetype: { subtask: true, name: 'Sub-task' } },
+          })),
+        });
+      }
+      return Promise.reject(new Error(`unexpected path ${path}`));
+    });
+
+    render(<PersonalFlowTab teamFilter="" />);
+    fireEvent.click(screen.getByRole('button', { name: /run for team roster/i }));
+    await waitFor(() => expect(screen.getByText('Jane Dev')).toBeInTheDocument());
+
+    expect(readTeamRowCells('Jane Dev')[2]).toBe('0');
+    expect(screen.getByText(/all 2 of their issues here were sub-tasks/i)).toBeInTheDocument();
+  });
+
   it('does not label the report with a team it never scoped to', async () => {
     // The reported bug. When the roster carries NO team metadata, the member filter returns the WHOLE
     // roster — and the heading used to fall back to whatever team the user had asked for. The result

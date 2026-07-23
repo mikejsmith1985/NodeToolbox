@@ -189,6 +189,64 @@ describe('IssueFlowTab — what it renders', () => {
   });
 });
 
+describe('IssueFlowTab — sub-tasks (feature 027)', () => {
+  /** The delivered story, plus a sub-task of it covering the same elapsed period. */
+  function issuesWithSubTask() {
+    const subTask = {
+      ...HANDED_OVER_ISSUE,
+      key: 'FLOW-1-SUB',
+      fields: { ...HANDED_OVER_ISSUE.fields, summary: 'A sub-task of it', issuetype: { subtask: true, name: 'Sub-task' } },
+    };
+    const parent = {
+      ...HANDED_OVER_ISSUE,
+      fields: { ...HANDED_OVER_ISSUE.fields, issuetype: { subtask: false, name: 'Story' } },
+    };
+    return [parent, subTask];
+  }
+
+  it('requests the issue type', async () => {
+    render(<IssueFlowTab teamFilter="Team Rocket" />);
+    fireEvent.click(screen.getByRole('button', { name: /run flow analysis/i }));
+
+    await waitFor(() => expect(decodedSearchJqls().length).toBeGreaterThan(0));
+
+    const searchPath = mockJiraGet.mock.calls.map((call) => String(call[0]))
+      .find((path) => path.startsWith('/rest/api/2/search')) ?? '';
+    expect(decodeURIComponent(searchPath)).toContain('issuetype');
+  });
+
+  it('counts a parent story once and does not double-count its sub-task\'s overlapping time', async () => {
+    mockJiraGet.mockImplementation((path: string) => {
+      if (path.startsWith('/rest/api/2/status')) return Promise.resolve(STATUSES);
+      if (path.startsWith('/rest/api/2/search')) return Promise.resolve({ issues: issuesWithSubTask() });
+      return Promise.reject(new Error(`unexpected path ${path}`));
+    });
+
+    render(<IssueFlowTab teamFilter="Team Rocket" />);
+    fireEvent.click(screen.getByRole('button', { name: /run flow analysis/i }));
+
+    await waitFor(() => expect(screen.getByText('Flow summary')).toBeInTheDocument());
+
+    const summaryTable = screen.getByText('Delivered issues').closest('table') as HTMLElement;
+    const values = Array.from(summaryTable.querySelectorAll('tbody td')).map((cell) => cell.textContent);
+    expect(values[0]).toBe('1');
+    expect(screen.queryByText('A sub-task of it')).not.toBeInTheDocument();
+  });
+
+  it('discloses how many sub-tasks it removed', async () => {
+    mockJiraGet.mockImplementation((path: string) => {
+      if (path.startsWith('/rest/api/2/status')) return Promise.resolve(STATUSES);
+      if (path.startsWith('/rest/api/2/search')) return Promise.resolve({ issues: issuesWithSubTask() });
+      return Promise.reject(new Error(`unexpected path ${path}`));
+    });
+
+    render(<IssueFlowTab teamFilter="Team Rocket" />);
+    fireEvent.click(screen.getByRole('button', { name: /run flow analysis/i }));
+
+    await waitFor(() => expect(screen.getByText(/1 sub-task was excluded/i)).toBeInTheDocument());
+  });
+});
+
 describe('IssueFlowTab — failure is reported, not swallowed', () => {
   it('surfaces a fetch failure instead of showing an empty analysis', async () => {
     mockJiraGet.mockImplementation(() => Promise.reject(new Error('Jira unreachable')));

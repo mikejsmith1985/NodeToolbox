@@ -75,6 +75,7 @@ function makeInput(overrides: Partial<FlowAuditInput> = {}): FlowAuditInput {
       windowEndIso: '2026-07-08T00:00:00.000Z',
       generatedAtIso: '2026-07-08T12:00:00.000Z',
       toolVersion: '0.90.1',
+      countsSubTasks: false,
       ceilingReached: null,
       jiraBaseUrl: BASE_URL,
     },
@@ -483,5 +484,32 @@ describe('flow analysis sections', () => {
     const document = buildFlowAuditDocument(makeFlowInput());
 
     expect(document).not.toMatch(/<\/?[a-z]+>/);
+  });
+});
+
+describe('counting basis (feature 027)', () => {
+  it('states that sub-tasks were excluded, since it changes every count on the page', () => {
+    expect(buildFlowAuditDocument(makeInput())).toContain('sub-tasks excluded');
+  });
+
+  it('states the opposite basis just as plainly when a team opts to count them', () => {
+    const document = buildFlowAuditDocument(makeInput({
+      envelope: { ...makeInput().envelope, countsSubTasks: true },
+    }));
+
+    expect(document).toContain('INCLUDING sub-tasks');
+  });
+
+  it('explains the sub-task exclusion reason where the reconciliation names it', () => {
+    const withSubTaskExclusion = makeInput({
+      rows: [makeRow('Jane Smith', {
+        figures: makeResult({
+          excludedIssues: [{ key: 'FLOW-40', summary: 'A sub-task', reason: 'sub-task' }],
+        }),
+      })],
+    });
+
+    const document = buildFlowAuditDocument(withSubTaskExclusion);
+    expect(document).toContain('credit one piece of work twice');
   });
 });

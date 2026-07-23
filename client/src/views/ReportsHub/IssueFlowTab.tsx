@@ -12,6 +12,7 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 
 import { jiraGet } from '../../services/jiraApi.ts';
+import { useSettingsStore } from '../../store/settingsStore.ts';
 import styles from './ReportsHubView.module.css';
 import {
   buildStandupRosterAssigneeWasClause,
@@ -32,6 +33,7 @@ import type { IssueFlow } from './issueFlow.ts';
 import { createStatusClassifier } from './issueFlowStatusClass.ts';
 import type { StatusFlowClass, StatusFlowOverrides } from './issueFlowStatusClass.ts';
 import { computeDeliveryTotals, summariseStageRollups } from './issueFlowRollup.ts';
+import { classifyIssueScope } from './issueScope.ts';
 import type { StageRollup } from './issueFlowRollup.ts';
 import { readConfiguredStoryPointsFieldId, readStoryPoints } from './storyPointsField.ts';
 
@@ -51,13 +53,18 @@ const FLOW_CLASS_LABELS: Record<StatusFlowClass, string> = {
 };
 
 interface RawStatus { id?: string; name?: string; statusCategory?: { key?: string } }
-interface RawIssue { key?: string; fields?: Record<string, unknown> }
+interface RawIssue {
+  key?: string;
+  fields?: Record<string, unknown> & { issuetype?: { subtask?: boolean; name?: string } | null };
+}
 
 /** What one completed run produced, including whether it is complete. */
 interface FlowRunOutcome {
   issueFlows: IssueFlow[];
   fetchedIssueCount: number;
   ceilingReached: FlowFetchCeiling | null;
+  /** How many fetched issues were sub-tasks, disclosed rather than quietly dropped. */
+  subTaskCount: number;
   statusNamesById: Record<string, string>;
   statusClassByStatusId: Record<string, StatusFlowClass>;
   jql: string;
@@ -70,7 +77,9 @@ function buildFlowSearchJql(rosterClause: string, windowDays: number): string {
 
 /** Wraps the JQL with the changelog expand and page cap — the changelog is what the analysis reads. */
 function buildFlowSearchPath(jql: string, storyPointsFieldId: string, startAt: number): string {
-  const fields = ['summary', 'created', 'assignee', 'status', 'resolutiondate', storyPointsFieldId].join(',');
+  // `issuetype` carries the `subtask` boolean the scope rule reads.
+  const fields = ['summary', 'created', 'assignee', 'status', 'resolutiondate', 'issuetype', storyPointsFieldId]
+    .join(',');
   return `/rest/api/2/search?jql=${encodeURIComponent(jql)}&expand=changelog&fields=${fields}`
     + `&startAt=${startAt}&maxResults=${ISSUE_PAGE_SIZE}`;
 }
@@ -103,6 +112,9 @@ export function IssueFlowTab({ teamFilter = '' }: { teamFilter?: string }): Reac
     [teamFilter, rosterMembers],
   );
 
+  // The SAME setting the Personal Workflow tab reads — one source, so the two cannot disagree.
+  const shouldCountSubTasks = useSettingsStore((state) => state.countSubTasksInFlowReports);
+  const setShouldCountSubTasks = useSettingsStore((state) => state.setCountSubTasksInFlowReports);
   const [windowDays, setWindowDays] = useState<number>(DEFAULT_WINDOW_DAYS);
   const [statusOverrides] = useState<StatusFlowOverrides>({});
   const [outcome, setOutcome] = useState<FlowRunOutcome | null>(null);
@@ -152,12 +164,17 @@ export function IssueFlowTab({ teamFilter = '' }: { teamFilter?: string }): Reac
       const issueFlows = fetchOutcome.issues
         .map((issue) => toIssueFlow(issue, {
           statusCategoryByStatusId, statusNamesById, statusClassifier, storyPointsFieldId,
+          shouldCountSubTasks,
         }))
         .filter((issueFlow): issueFlow is IssueFlow => issueFlow !== null);
 
       setOutcome({
         issueFlows,
         fetchedIssueCount: fetchOutcome.issues.length,
+        subTaskCount: shouldCountSubTasks
+          ? 0
+          : fetchOutcome.issues
+            .filter((issue) => classifyIssueScope(issue.fields?.issuetype) === 'sub-task').length,
         ceilingReached: fetchOutcome.ceilingReached,
         statusNamesById,
         statusClassByStatusId: readClassificationUsed(issueFlows),
@@ -169,7 +186,7 @@ export function IssueFlowTab({ teamFilter = '' }: { teamFilter?: string }): Reac
       setIsLoading(false);
       setProgressMessage(null);
     }
-  }, [rosterMembers, effectiveTeamName, windowDays, statusOverrides]);
+  }, [rosterMembers, effectiveTeamName, windowDays, statusOverrides, shouldCountSubTasks]);
 
   return (
     <div>
@@ -202,6 +219,15 @@ export function IssueFlowTab({ teamFilter = '' }: { teamFilter?: string }): Reac
         {progressMessage !== null && <span className={styles.captionText}>{progressMessage}</span>}
       </div>
 
+      <label style={{ display: 'block', marginTop: 8 }} className={styles.captionText}>
+        <input
+          type="checkbox"
+          checked={shouldCountSubTasks}
+          onChange={(event) => setShouldCountSubTasks(event.target.checked)}
+        />{' '}
+        Count sub-tasks as issues in their own right
+      </label>
+
       {errorMessage !== null && <p className={styles.captionText}>⚠️ {errorMessage}</p>}
 
       {outcome !== null && <FlowResultsView outcome={outcome} />}
@@ -217,9 +243,14 @@ function toIssueFlow(
     statusNamesById: Record<string, string>;
     statusClassifier: (statusId: string, statusName: string) => StatusFlowClass;
     storyPointsFieldId: string;
+    shouldCountSubTasks: boolean;
   },
 ): IssueFlow | null {
   const fields = issue.fields ?? {};
+  // Sub-tasks are dropped BEFORE any stages are built. A parent story's stages and its sub-tasks'
+  // stages cover the same elapsed time, so counting both would double-count the very delay this
+  // analysis exists to locate.
+  if (!options.shouldCountSubTasks && classifyIssueScope(fields.issuetype) === 'sub-task') return null;
   const holderHistory = readIssueHolderHistory(issue);
   const statusHistory = readIssueStatusHistory(issue);
   return buildIssueFlow({
@@ -275,6 +306,14 @@ function FlowResultsView({ outcome }: { outcome: FlowRunOutcome }): React.JSX.El
           ⚠️ These figures are <strong>incomplete</strong>: the analysis stopped at{' '}
           {outcome.ceilingReached === 'per-unit' ? 'the per-run issue ceiling' : 'the overall run budget'}{' '}
           after {outcome.fetchedIssueCount} issues. Narrow the window to see a complete picture.
+        </p>
+      )}
+
+      {outcome.subTaskCount > 0 && (
+        <p className={styles.captionText}>
+          {outcome.subTaskCount} sub-task{outcome.subTaskCount === 1 ? ' was' : 's were'} excluded. Sub-tasks
+          are part of a story’s delivery rather than deliverables of their own — counting them would credit
+          one piece of work twice and, as they are short-lived, make delivery look faster than it was.
         </p>
       )}
 

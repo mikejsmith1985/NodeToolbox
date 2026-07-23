@@ -42,6 +42,7 @@ import {
   type PersonalFlowStatusTransition,
 } from './personalFlow.ts';
 import { buildCreditedIssuesLink } from './flowAuditLinks.ts';
+import { classifyIssueScope } from './issueScope.ts';
 import { computeDeliveryTotals } from './issueFlowRollup.ts';
 import { buildFlowAuditDocument } from './flowAuditDocument.ts';
 import {
@@ -112,6 +113,7 @@ interface RawIssue {
     resolutiondate?: string | null;
     status?: { id?: string };
     assignee?: RawAssignee | null;
+    issuetype?: { subtask?: boolean; name?: string } | null;
   };
   changelog?: { histories?: RawHistory[] };
 }
@@ -253,7 +255,12 @@ function readInitialAssignment(
 }
 
 /** Maps a raw Jira issue to the compute core's issue shape, resolving ownership relative to `identity`. */
-function toPersonalFlowIssue(issue: RawIssue, identity: PersonIdentity, storyPointsFieldId: string): PersonalFlowIssue {
+function toPersonalFlowIssue(
+  issue: RawIssue,
+  identity: PersonIdentity,
+  storyPointsFieldId: string,
+  shouldCountSubTasks: boolean,
+): PersonalFlowIssue {
   const fields = issue.fields ?? {};
   const histories = readSortedHistories(issue);
   return {
@@ -261,6 +268,9 @@ function toPersonalFlowIssue(issue: RawIssue, identity: PersonIdentity, storyPoi
     summary: fields.summary ?? issue.key ?? '',
     storyPoints: readStoryPoints(fields, storyPointsFieldId),
     createdIso: fields.created ?? null,
+    // When a team genuinely delivers at sub-task level they can opt back in; the verdict is simply
+    // not supplied, so the engine counts the issue as it always did.
+    scopeVerdict: shouldCountSubTasks ? undefined : classifyIssueScope(fields.issuetype),
     ...readStatusHistory(histories, fields),
     ...readOwnershipHistory(histories, fields, identity),
   };
@@ -288,7 +298,10 @@ function buildSearchPath(
   startAt = 0,
 ): string {
   const jql = buildSearchJql(person, windowDays);
-  const fields = ['summary', 'created', 'assignee', 'status', 'resolutiondate', storyPointsFieldId].join(',');
+  // `issuetype` carries the `subtask` boolean the scope rule reads — without it the engine cannot tell
+  // a sub-task from a story at all.
+  const fields = ['summary', 'created', 'assignee', 'status', 'resolutiondate', 'issuetype', storyPointsFieldId]
+    .join(',');
   // Paged: one request per ISSUE_PAGE_SIZE issues. The report previously took a single page and
   // silently reported on whatever fitted, so a busy person's figures described a subset while a Jira
   // link beside them would have returned everything.
@@ -528,6 +541,7 @@ async function buildTeamFlowRow(
   storyPointsFieldId: string,
   remainingRunBudget: number,
   isCancelled: () => boolean,
+  shouldCountSubTasks: boolean,
 ): Promise<TeamFlowRow> {
   const roleCapabilities = rosterMember.roleCapabilities;
   try {
@@ -556,7 +570,8 @@ async function buildTeamFlowRow(
         fetchedIssueCount: 0, ceilingReached: null, wasCancelled: true,
       };
     }
-    const issues = fetchOutcome.issues.map((issue) => toPersonalFlowIssue(issue, identity, storyPointsFieldId));
+    const issues = fetchOutcome.issues
+      .map((issue) => toPersonalFlowIssue(issue, identity, storyPointsFieldId, shouldCountSubTasks));
     const result = computePersonalFlow({ issues, statusCategoryByStatusId, windowDays, todayIso });
     // Record the exact id + JQL that ran — buildSearchJql takes the SAME id + window buildSearchPath queried,
     // so the JQL the row shows is guaranteed to be the one that produced these numbers.
@@ -616,9 +631,15 @@ function StatCard({ label, value }: { label: string; value: string }): React.JSX
   );
 }
 
+/** How many of a person's fetched issues were dropped for being sub-tasks of another issue. */
+function countSubTaskExclusions(result: PersonalFlowResult): number {
+  return result.excludedIssues.filter((excluded) => excluded.reason === 'sub-task').length;
+}
+
 /** Human-friendly, non-technical label for each exclusion reason, shown in the issue-audit table. */
 const EXCLUSION_REASON_LABELS: Record<PersonalFlowExclusionReason, string> = {
   'not-owned': 'Not matched to this person',
+  'sub-task': 'Sub-task — counted under its parent issue',
   'wip-open': 'In progress, still assigned (WIP)',
   'completed-out-of-window': 'Completed before the window',
 };
@@ -947,6 +968,7 @@ function buildAuditDocumentFromRows(
   jiraBaseUrl: string | null,
   generatedAtIso: string,
   toolVersion: string,
+  countsSubTasks: boolean,
 ): string {
   const windowEndMs = Date.parse(generatedAtIso);
   const affectedPeople = teamRows.filter((row) => row.ceilingReached !== null).map((row) => row.personDisplayName);
@@ -958,6 +980,7 @@ function buildAuditDocumentFromRows(
       windowEndIso: new Date(windowEndMs).toISOString(),
       generatedAtIso,
       toolVersion,
+      countsSubTasks,
       ceilingReached: affectedPeople.length === 0
         ? null
         : { kind: teamRows.find((row) => row.ceilingReached)?.ceilingReached ?? 'per-unit', affectedPeople },
@@ -1034,9 +1057,23 @@ function TeamFlowComparisonRow({ row }: { row: TeamFlowRow }): React.JSX.Element
   }
 
   const { throughput, cycleTime } = row.result;
+  const subTaskCount = countSubTaskExclusions(row.result);
   return (
     <tr>
-      <td>{row.personDisplayName}</td>
+      <td>
+        {row.personDisplayName}
+        {/* Shown against the person, not buried in the audit document: someone reading the table must
+            be able to see that work was removed from their figures without copying the report. And a
+            person whose ONLY credited work was sub-tasks would otherwise read as idle — the same
+            "real work scores nothing" failure this report family already fixed once. */}
+        {subTaskCount > 0 && (
+          <span className={styles.captionText} style={{ display: 'block' }}>
+            {row.result.issueCount === 0
+              ? `all ${subTaskCount} of their issues here were sub-tasks — counted under their parents, not lost`
+              : `${subTaskCount} sub-task${subTaskCount === 1 ? '' : 's'} excluded`}
+          </span>
+        )}
+      </td>
       <td>{roleLabels}</td>
       <td>{String(row.result.issueCount)}</td>
       <td>{formatNumber(row.result.totalStoryPoints)}</td>
@@ -1683,6 +1720,9 @@ export function PersonalFlowTab({ teamFilter = '' }: PersonalFlowTabProps = {}) 
   // the same way RosterTab does: the persisted active team name filters the shared standup roster store.
   const rosterMembers = useStandupRosterStore((state) => state.rosterMembers);
   const storedActiveTeamName = useSettingsStore((state) => state.sprintDashboardActiveTeam);
+  // Shared with the Flow Analysis tab, so the two reports can never disagree about what counts.
+  const shouldCountSubTasks = useSettingsStore((state) => state.countSubTasksInFlowReports);
+  const setShouldCountSubTasks = useSettingsStore((state) => state.setCountSubTasksInFlowReports);
   // The Reports Hub filter wins when it names a real roster team, so the scope can be changed without
   // leaving this tab. A filter value that is NOT a roster team is surfaced rather than acted on:
   // resolveActiveRosterTeamName falls back to the first roster team on a mismatch, which would look
@@ -1806,7 +1846,8 @@ export function PersonalFlowTab({ teamFilter = '' }: PersonalFlowTabProps = {}) 
       );
       const rawIssues = fetchOutcome.issues;
       setSinglePersonCeiling(fetchOutcome.ceilingReached);
-      const issues = rawIssues.map((issue) => toPersonalFlowIssue(issue, identity, storyPointsFieldId));
+      const issues = rawIssues
+        .map((issue) => toPersonalFlowIssue(issue, identity, storyPointsFieldId, shouldCountSubTasks));
       // The clock read is fine here (the pure engine takes today as an argument, staying deterministic).
       const todayIso = new Date().toISOString().slice(0, 10);
       setResult(computePersonalFlow({ issues, statusCategoryByStatusId, windowDays, todayIso }));
@@ -1858,7 +1899,7 @@ export function PersonalFlowTab({ teamFilter = '' }: PersonalFlowTabProps = {}) 
         });
         const teamFlowRow = await buildTeamFlowRow(
           rosterMember, statusCategoryByStatusId, windowDays, todayIso, storyPointsFieldId,
-          remainingRunBudget, isCancelled,
+          remainingRunBudget, isCancelled, shouldCountSubTasks,
         );
         if (teamFlowRow.wasCancelled) break;
         remainingRunBudget -= teamFlowRow.fetchedIssueCount;
@@ -1892,6 +1933,7 @@ export function PersonalFlowTab({ teamFilter = '' }: PersonalFlowTabProps = {}) 
       teamJiraBaseUrl,
       new Date().toISOString(),
       toolVersion,
+      shouldCountSubTasks,
     );
     setAuditCopyState(await copyToClipboardWithResult(auditDocument) ? 'copied' : 'failed');
   };
@@ -1941,6 +1983,18 @@ export function PersonalFlowTab({ teamFilter = '' }: PersonalFlowTabProps = {}) 
           {isTeamLoading ? 'Running team…' : 'Run for team roster'}
         </button>
       </div>
+
+      {/* One setting, read by BOTH flow reports, so they can never disagree about what counts as a
+          deliverable. Off by default: sub-tasks credit one piece of work twice and, being short-lived,
+          pull the cycle-time average down. */}
+      <label style={{ display: 'block', marginTop: 8 }} className={styles.captionText}>
+        <input
+          type="checkbox"
+          checked={shouldCountSubTasks}
+          onChange={(event) => setShouldCountSubTasks(event.target.checked)}
+        />{' '}
+        Count sub-tasks as issues in their own right
+      </label>
 
       {error !== null && (
         <p role="alert" className={styles.warningText} style={{ marginTop: 10 }}>{error}</p>

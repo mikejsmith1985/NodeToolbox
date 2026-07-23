@@ -24,6 +24,7 @@ import {
   resolveTimelineOriginMs,
 } from './issueTimeline.ts';
 import type { StateSegment } from './issueTimeline.ts';
+import type { IssueScopeVerdict } from './issueScope.ts';
 
 /**
  * Re-exported so callers that measured Monday–Friday time through this module keep working
@@ -78,6 +79,10 @@ export interface PersonalFlowIssue {
   statusTransitions: PersonalFlowStatusTransition[]; // status changes, any order
   initiallyAssignedToTarget: boolean; // was the target the assignee at creation
   ownershipTransitions: PersonalFlowOwnershipTransition[]; // assignee changes relative to the target, any order
+  // Whether this issue counts as a deliverable in its own right, decided by the caller via
+  // `classifyIssueScope`. OPTIONAL and treated as countable when absent, so every fixture and caller
+  // written before sub-task exclusion existed still behaves exactly as it did.
+  scopeVerdict?: IssueScopeVerdict;
 }
 
 /** Everything the report needs to compute one person's flow, including the injected anchor day. */
@@ -121,6 +126,9 @@ export interface PersonalFlowIssueMetric {
 /**
  * Why a fetched issue was NOT credited, in the order the engine tests them:
  *   • 'not-owned'               — the target never appears in the issue's ownership timeline.
+ *   • 'sub-task'                — hers, but a sub-task: part of another issue's delivery, not a
+ *                                 deliverable of its own. Counting it would credit one piece of work
+ *                                 twice and, as sub-tasks are short-lived, flatter the cycle time.
  *   • 'wip-open'                — she still holds it and it never reached done (a WIP, still-open stint).
  *   • 'completed-out-of-window' — her stint completed, but before the reporting window began.
  *
@@ -129,6 +137,7 @@ export interface PersonalFlowIssueMetric {
  */
 export type PersonalFlowExclusionReason =
   | 'not-owned'
+  | 'sub-task'
   | 'wip-open'
   | 'completed-out-of-window';
 
@@ -362,6 +371,12 @@ function evaluateIssue(
   const statusIdSegments = buildStatusIdSegments(issue, originMs, todayMs);
   const ownershipIntervals = buildOwnershipIntervals(issue, originMs, todayMs);
   if (ownershipIntervals.length === 0) return { kind: 'excluded', reason: 'not-owned' };
+
+  // Tested AFTER ownership deliberately. The fetch JQL is a broad superset, so testing scope first
+  // would sweep other people's sub-tasks into this person's sub-task count. Here the number reads as
+  // "sub-tasks that were actually yours" — which is the figure needed to tell someone their only
+  // credited work in the window was sub-tasks.
+  if (issue.scopeVerdict === 'sub-task') return { kind: 'excluded', reason: 'sub-task' };
 
   const doneTimesMs = collectDoneTimesMs(issue, statusCategoryByStatusId);
   const contributions = collectCompletedContributions(
