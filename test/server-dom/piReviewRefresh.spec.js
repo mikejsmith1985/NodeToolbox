@@ -91,7 +91,7 @@ test('INV-1b: features present but Jira produced no changes → no-op, no PUT (n
   const { deps, calls } = makeMocks({
     storageValue: pageStorage(unchangedRow),
     features: [{ key: 'ALPHA-1', summary: 'Feature One' }],
-    issueMap: { 'ALPHA-1': { key: 'ALPHA-1', fields: { priority: { name: 'P1' }, customfield_10111: 8, issuelinks: [] } } },
+    issueMap: { 'ALPHA-1': { key: 'ALPHA-1', fields: { priority: { name: 'P1' }, customfield_10028: 8, issuelinks: [] } } },
   });
 
   const result = await refreshPiReviewPage({ page: PAGE, team: TEAM, deps, configuration: config() });
@@ -106,8 +106,8 @@ test('INV-2/INV-3: refreshes Jira-owned columns, preserves human-curated content
     storageValue: pageStorage(existingRow),
     features: [{ key: 'ALPHA-1', summary: 'Feature One' }, { key: 'ALPHA-2', summary: 'Feature Two' }],
     issueMap: {
-      'ALPHA-1': { key: 'ALPHA-1', fields: { summary: 'Feature One', priority: { name: 'P1' }, customfield_10111: 13, issuelinks: [] } },
-      'ALPHA-2': { key: 'ALPHA-2', fields: { summary: 'Feature Two', priority: { name: 'P2' }, customfield_10111: 5, issuelinks: [] } },
+      'ALPHA-1': { key: 'ALPHA-1', fields: { summary: 'Feature One', priority: { name: 'P1' }, customfield_10028: 13, issuelinks: [] } },
+      'ALPHA-2': { key: 'ALPHA-2', fields: { summary: 'Feature Two', priority: { name: 'P2' }, customfield_10028: 5, issuelinks: [] } },
     },
   });
 
@@ -135,8 +135,8 @@ test('INV-5: a feature no longer matching the query is NOT removed; new one is a
     storageValue: pageStorage(keptRow),
     features: [{ key: 'ALPHA-2', summary: 'Feature Two' }],
     issueMap: {
-      'ALPHA-9': { key: 'ALPHA-9', fields: { priority: { name: 'P3' }, customfield_10111: 3, issuelinks: [] } },
-      'ALPHA-2': { key: 'ALPHA-2', fields: { summary: 'Feature Two', priority: { name: 'P2' }, customfield_10111: 5, issuelinks: [] } },
+      'ALPHA-9': { key: 'ALPHA-9', fields: { priority: { name: 'P3' }, customfield_10028: 3, issuelinks: [] } },
+      'ALPHA-2': { key: 'ALPHA-2', fields: { summary: 'Feature Two', priority: { name: 'P2' }, customfield_10028: 5, issuelinks: [] } },
     },
   });
 
@@ -154,7 +154,7 @@ test('INV-4: a version conflict retries once then succeeds (never clobbers)', as
   const { deps, calls } = makeMocks({
     storageValue: pageStorage(dataRow(['', '', 'ALPHA-1 - One', '', '', '', '', ''])),
     features: [{ key: 'ALPHA-1', summary: 'One' }],
-    issueMap: { 'ALPHA-1': { key: 'ALPHA-1', fields: { priority: { name: 'P1' }, customfield_10111: 8, issuelinks: [] } } },
+    issueMap: { 'ALPHA-1': { key: 'ALPHA-1', fields: { priority: { name: 'P1' }, customfield_10028: 8, issuelinks: [] } } },
     putStatuses: [409, 200],
   });
 
@@ -169,7 +169,7 @@ test('INV-4: a persistent version conflict fails without clobbering', async () =
   const { deps, calls } = makeMocks({
     storageValue: pageStorage(dataRow(['', '', 'ALPHA-1 - One', '', '', '', '', ''])),
     features: [{ key: 'ALPHA-1', summary: 'One' }],
-    issueMap: { 'ALPHA-1': { key: 'ALPHA-1', fields: { priority: { name: 'P1' }, customfield_10111: 8, issuelinks: [] } } },
+    issueMap: { 'ALPHA-1': { key: 'ALPHA-1', fields: { priority: { name: 'P1' }, customfield_10028: 8, issuelinks: [] } } },
     putStatuses: [409, 409],
   });
 

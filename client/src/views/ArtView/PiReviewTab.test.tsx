@@ -55,6 +55,18 @@ vi.mock('./piReviewPdf.ts', () => ({
   downloadPiReviewPanelImage: mockDownloadPiReviewPanelImage,
 }));
 
+// The estimate backfill delegates to the app-wide story-points helper (its field discovery + payload
+// shaping are covered in featureReviewFixes.test.ts). Mock only that function; keep the real read and
+// candidate-field helpers so PI Review still reads the right field.
+const { mockSaveStoryPoints } = vi.hoisted(() => ({ mockSaveStoryPoints: vi.fn() }));
+
+vi.mock('../SprintDashboard/featureReviewFixes.ts', async () => {
+  const actual = await vi.importActual<typeof import('../SprintDashboard/featureReviewFixes.ts')>(
+    '../SprintDashboard/featureReviewFixes.ts',
+  );
+  return { ...actual, saveFeatureReviewStoryPoints: mockSaveStoryPoints };
+});
+
 import PiReviewTab from './PiReviewTab.tsx';
 
 const ALPHA_PAGE = {
@@ -1092,7 +1104,7 @@ describe('PiReviewTab', () => {
             created: '',
             updated: '',
             description: null,
-            customfield_10111: null,
+            customfield_10028: null,
             issuelinks: [],
           },
         },
@@ -1120,14 +1132,12 @@ describe('PiReviewTab', () => {
     fireEvent.click(within(alphaSection).getByRole('button', { name: /save to confluence/i }));
 
     await waitFor(() => {
-      expect(mockJiraPut).toHaveBeenCalledTimes(1);
+      expect(mockSaveStoryPoints).toHaveBeenCalledTimes(1);
       expect(mockUpdateConfluencePage).toHaveBeenCalledTimes(1);
     });
-    expect(mockJiraPut).toHaveBeenCalledWith('/rest/api/2/issue/DENP-1352', {
-      fields: {
-        customfield_10111: 5,
-      },
-    });
+    // Backfilled through the app-wide helper — which targets the Story Points (Selection) field and
+    // its dropdown shape — not a raw number written to the old hardcoded field.
+    expect(mockSaveStoryPoints).toHaveBeenCalledWith('DENP-1352', '5');
   });
 
   it('exports the read-only document snapshot even when the user starts in edit mode', async () => {

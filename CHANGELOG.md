@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **PI Review now writes the point estimate to the story-points field the rest of the app uses.** It was reading and
+  writing a different, plain-numeric field (`customfield_10111`), so an estimate typed in Toolbox left Jira's
+  **Story Points (Selection)** field — the dropdown the whole application reads — blank. PI Review now reads and
+  backfills that app-wide field through the same `saveFeatureReviewStoryPoints` helper every other surface uses, which
+  discovers the correct field for this instance and writes the right shape (a dropdown option, not a raw number). The
+  backfill still only fills an **empty** Jira field on Save to Confluence; it never overwrites a value already there.
+
 ### Added
 - **Project filter on the Flow Analysis tab.** The report queries by roster member, so it follows the team across
   every Jira project they touch (ENCUC, ENFCT, INTTEST, …) — which meant a report meant to describe one project

@@ -536,6 +536,22 @@ function buildStoryPointsPayload(
 }
 
 /**
+ * The story-points field ids a fetch should request, so a reader can find the value wherever this
+ * instance keeps it: the ART-configured field first, then the two standard fields. Deduped, since the
+ * configured field is often one of the standards.
+ *
+ * Shared so every surface that reads story points requests the SAME fields it later reads — a caller
+ * that fetched only one id would find the value blank on an instance that uses another.
+ */
+export function getStoryPointsCandidateFieldIds(): string[] {
+  return [...new Set([
+    readStoredStoryPointsFieldId(),
+    DEFAULT_STORY_POINTS_FIELD_ID,
+    FALLBACK_STORY_POINTS_FIELD_ID,
+  ])];
+}
+
+/**
  * Reads the story points an issue currently shows, checking the configured field first and then
  * the standard fields. Dropdown-style fields store an option object — its label is returned, so
  * a team whose points live in a Select field sees the value instead of a blank input.
