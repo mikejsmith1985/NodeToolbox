@@ -70,6 +70,17 @@ const EXCLUSION_EXPLANATIONS: Record<PersonalFlowExclusionReason, string> = {
  */
 const SECTION_RULE = '\n---\n';
 
+/**
+ * Makes a value safe to drop into a Markdown table cell.
+ *
+ * Jira summaries routinely contain "|" (for example "DEV | sf-preprocessor | Postgres Changes").
+ * Left alone it ends the cell early, so the row grows extra columns and the renderer widens the whole
+ * table with empty ones. Newlines break the row outright.
+ */
+function escapeTableCell(value: string): string {
+  return value.replace(/\|/g, '\\|').replace(/\r?\n/g, ' ');
+}
+
 function formatValue(value: number): string {
   return Number.isInteger(value) ? String(value) : value.toFixed(2);
 }
@@ -108,7 +119,7 @@ function renderHeader(envelope: RunEnvelope): string {
     '| \u{1F9EE} | **How these are calculated** — what each column means, and the formula behind it |',
     '| \u{1F50D} | **Worked example** — one issue shown in full, proving how cycle time is derived |',
     '| ⚖️ | **What was counted** — every fetched issue accounted for, and why |',
-    '| \u{1F4CB} | **Per-issue detail** — the underlying rows, collapsed by default |',
+    '| \u{1F4CB} | **Per-issue detail** — the underlying rows, one table per person, at the end |',
     '',
     'Every **Open** link goes to the exact issues behind the number beside it — click one and count '
       + 'them yourself. Metrics marked ⚠️ are reconstructed from issue history and cannot be '
@@ -142,13 +153,13 @@ function renderTeamFigures(input: FlowAuditInput): string {
 
   const bodyRows = input.rows.map((row) => {
     if (!row.figures) {
-      return `| ${row.personDisplayName} | ${row.roleLabels} | — | — | — | — | — | — | `
-        + `_Not reported: ${row.errorMessage ?? 'analysis failed'}_ |`;
+      return `| ${escapeTableCell(row.personDisplayName)} | ${escapeTableCell(row.roleLabels)} | — | — | — | — | — | — | `
+        + `_Not reported: ${escapeTableCell(row.errorMessage ?? 'analysis failed')}_ |`;
     }
     const creditedKeys = row.figures.perIssue.map((issue) => issue.key);
     const link = buildCreditedIssuesLink(creditedKeys, input.envelope.jiraBaseUrl);
     const incompleteMark = row.ceilingReached ? ' ⚠️' : '';
-    return `| ${row.personDisplayName}${incompleteMark} | ${row.roleLabels} `
+    return `| ${escapeTableCell(row.personDisplayName)}${incompleteMark} | ${escapeTableCell(row.roleLabels)} `
       + `| ${row.figures.issueCount} | ${formatValue(row.figures.totalStoryPoints)} `
       + `| ${formatValue(row.figures.throughput.issuesPerWeek)} `
       + `| ${formatValue(row.figures.throughput.pointsPerWeek)} `
@@ -265,16 +276,17 @@ function renderPerIssueDetail(input: FlowAuditInput): string {
     if (!row.figures || row.figures.perIssue.length === 0) {
       return;
     }
-    // Collapsed by default: across a roster this is by far the longest part of the document, and it
-    // exists to support the figures rather than to be read straight through.
-    lines.push('<details>',
-      `<summary><strong>${row.personDisplayName}</strong> — ${row.figures.perIssue.length} issues</summary>`,
-      '', '| Issue | Summary | Points | Cycle time (working days) |', '|---|---|---|---|');
+    // A plain heading, NOT a <details> block. Confluence does not support collapsible HTML: it prints
+    // the raw tags as text and the stray markup breaks the columns of the table beneath it. The issue
+    // count in the heading gives back what the collapsed summary used to show, and this section
+    // already sits last so a long table cannot bury the figures above it.
+    lines.push(`### ${row.personDisplayName} — ${row.figures.perIssue.length} issues`, '',
+      '| Issue | Summary | Points | Cycle time (working days) |', '|---|---|---|---|');
     row.figures.perIssue.forEach((issue) => {
-      lines.push(`| ${issue.key} | ${issue.summary} | ${issue.storyPoints ?? '—'} `
+      lines.push(`| ${issue.key} | ${escapeTableCell(issue.summary)} | ${issue.storyPoints ?? '—'} `
         + `| ${issue.cycleTimeDays === null ? 'not applicable — no measurable hands-on time' : formatValue(issue.cycleTimeDays)} |`);
     });
-    lines.push('', '</details>', '');
+    lines.push('');
   });
 
   return lines.join('\n');
