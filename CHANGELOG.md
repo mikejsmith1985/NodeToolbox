@@ -38,6 +38,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   so a roster-sized run no longer buries the figures under hundreds of rows.
 
 ### Fixed
+- **The audit report's per-issue tables rendered as raw HTML in Confluence.** The collapsible
+  `<details>`/`<summary>` blocks added moments earlier are a GitHub-flavoured extension Confluence does not support —
+  it printed the tags as literal text and the stray markup broke the columns of the table beneath. Each person's
+  per-issue table is now a plain Markdown heading carrying their name and issue count, which renders everywhere. The
+  section already sits last, so a long table still cannot bury the figures above it.
+- **An issue summary containing a pipe character broke the table it was in.** Jira summaries routinely contain `|`
+  (for example `DEV | sf-preprocessor | Postgres Changes`). Unescaped, it ended the cell early, so the row grew extra
+  columns and the renderer widened the whole table with empty ones. Person names, roles, and summaries are now escaped
+  before they reach a table cell.
 - **The Personal Workflow report named the wrong team.** A report could be headed "Transformers" while showing
   Cleanup Crew's people. When the selected team is not one of the teams on your roster, the underlying helper
   silently resolves to the **first roster team** — so the data moved and the label did not. The report is now labelled

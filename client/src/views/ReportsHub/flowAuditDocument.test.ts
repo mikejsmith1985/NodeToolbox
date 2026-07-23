@@ -275,10 +275,55 @@ describe('readability', () => {
     expect(document).toContain('Cannot be reproduced by a Jira search');
   });
 
-  it('puts the long per-issue tables behind collapsible sections', () => {
+  it('uses plain headings for the per-issue tables, never raw HTML', () => {
+    // Confluence does not support <details>/<summary>: it renders the tags as literal text and the
+    // stray markup breaks the table columns that follow. Markdown headings render everywhere.
     const document = buildFlowAuditDocument(makeInput());
 
-    expect(document).toContain('<details>');
-    expect(document).toContain('</details>');
+    expect(document).not.toContain('<details>');
+    expect(document).not.toContain('<summary>');
+    expect(document).not.toMatch(/<\/?[a-z]+>/);
+  });
+
+  it('still labels each per-issue table with the person and how many issues it holds', () => {
+    const document = buildFlowAuditDocument(makeInput());
+
+    expect(document).toContain('### Jane Smith — 2 issues');
+  });
+});
+
+/** Counts the pipes that actually end a table cell — escaped ones do not. */
+function countCellBoundaries(tableRow: string): number {
+  return (tableRow.match(/(^|[^\\])\|/g) ?? []).length;
+}
+
+describe('table cell safety', () => {
+  it('does not let a pipe in an issue summary add phantom columns', () => {
+    // Jira summaries routinely contain "|" (e.g. "DEV | Postgres changes"). Unescaped, it ends the
+    // cell early and the renderer widens the whole table with empty columns.
+    const rowWithPipe = makeRow('Jane Smith', {
+      figures: makeResult({
+        perIssue: [{
+          key: 'FLOW-1', summary: 'DEV | sf-preprocessor | Postgres', storyPoints: 3,
+          cycleTimeDays: 2, lastActiveIso: '2026-07-03T00:00:00.000Z',
+        }],
+      }),
+    });
+
+    const document = buildFlowAuditDocument(makeInput({ rows: [rowWithPipe] }));
+    const issueRow = document.split('\n').find((line) => line.startsWith('| FLOW-1 '));
+
+    // Count UNESCAPED pipes only — an escaped "\|" still contains the character but does not end a
+    // cell, so a raw count cannot tell a safe summary from one that broke out.
+    expect(countCellBoundaries(issueRow ?? '')).toBe(5);
+  });
+
+  it('does not let a pipe in a person name break the team table', () => {
+    const document = buildFlowAuditDocument(makeInput({
+      rows: [makeRow('Smith | Jane')],
+    }));
+    const teamRow = document.split('\n').find((line) => line.startsWith('| Smith '));
+
+    expect(countCellBoundaries(teamRow ?? '')).toBe(10);
   });
 });
