@@ -6,11 +6,16 @@
 // reassignment-aware, in Mon–Fri days — and throughput credits every issue she moved forward, not just
 // tickets she personally closed. It is read-only — it never writes to Jira.
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { jiraGet } from '../../services/jiraApi.ts';
 import { copyToClipboard } from '../FeatureCanvas/ai/clipboard.ts';
+// The audit report uses the RESULT-RETURNING copier: a silently failed copy of a long report means
+// the user pastes stale clipboard content into Confluence and never finds out. The short JQL copies
+// above keep the fire-and-forget helper.
+import { copyToClipboard as copyToClipboardWithResult } from '../JiraTemplateMaker/lib/copyToClipboard.ts';
 import { useSettingsStore } from '../../store/settingsStore.ts';
+import { useConnectionStore } from '../../store/connectionStore.ts';
 import { ReportAiPanel } from './ReportAiPanel.tsx';
 import {
   buildPersonalFlowCoachingPrompt,
@@ -33,6 +38,14 @@ import {
   type PersonalFlowResult,
   type PersonalFlowStatusTransition,
 } from './personalFlow.ts';
+import { buildCreditedIssuesLink } from './flowAuditLinks.ts';
+import { buildFlowAuditDocument } from './flowAuditDocument.ts';
+import {
+  ISSUE_PAGE_SIZE,
+  RUN_ISSUE_BUDGET,
+  fetchAllPersonIssues,
+  type FlowFetchCeiling,
+} from './flowAuditFetch.ts';
 import {
   rollUpThroughputByRole,
   TEAM_ROLE_DEFINITIONS,
@@ -256,7 +269,7 @@ function toPersonalFlowIssue(issue: RawIssue, identity: PersonIdentity, storyPoi
  * handed off; `updated >= -Nd` is a cheap superset — the engine does the exact windowing by each completed
  * stint's end, so an over-broad fetch is harmless.
  */
-function buildSearchJql(person: string, windowDays: number): string {
+export function buildSearchJql(person: string, windowDays: number): string {
   return `assignee WAS "${person}" AND updated >= -${windowDays}d ORDER BY updated DESC`;
 }
 
@@ -264,10 +277,19 @@ function buildSearchJql(person: string, windowDays: number): string {
  * Builds the search path for every issue the person was ever assigned to within the window, wrapping the
  * shared `buildSearchJql` clause with the changelog expand, the requested fields, and the page cap.
  */
-function buildSearchPath(person: string, windowDays: number, storyPointsFieldId: string): string {
+function buildSearchPath(
+  person: string,
+  windowDays: number,
+  storyPointsFieldId: string,
+  startAt = 0,
+): string {
   const jql = buildSearchJql(person, windowDays);
   const fields = ['summary', 'created', 'assignee', 'status', 'resolutiondate', storyPointsFieldId].join(',');
-  return `/rest/api/2/search?jql=${encodeURIComponent(jql)}&expand=changelog&fields=${fields}&maxResults=${MAX_ISSUES}`;
+  // Paged: one request per ISSUE_PAGE_SIZE issues. The report previously took a single page and
+  // silently reported on whatever fitted, so a busy person's figures described a subset while a Jira
+  // link beside them would have returned everything.
+  return `/rest/api/2/search?jql=${encodeURIComponent(jql)}&expand=changelog&fields=${fields}`
+    + `&startAt=${startAt}&maxResults=${ISSUE_PAGE_SIZE}`;
 }
 
 /** Formats a rate/number for display with up to two decimals (integers stay whole). */
@@ -319,6 +341,14 @@ interface TeamFlowRow {
   // The resolved machine id the JQL `assignee WAS "…"` clause used for this member, shown so a reviewer can
   // see WHO each row was queried as. Null when the member never resolved to a queryable id (unmatched/error).
   queryValue: string | null;
+  // How many issues were actually fetched for this person — the top line of the audit report's
+  // `fetched = credited + excluded` reconciliation.
+  fetchedIssueCount: number;
+  // Set when a ceiling stopped this person's analysis, so their figures describe a subset. Reported
+  // prominently rather than left to look complete.
+  ceilingReached: FlowFetchCeiling | null;
+  // True when the user cancelled during this person's fetch. A cancelled run produces no document.
+  wasCancelled: boolean;
   // The exact JQL this member's search ran, built from the SAME id + window as `buildSearchPath`, so a
   // reviewer can copy it and paste it straight into Jira to validate the team numbers. Null when unresolved.
   jql: string | null;
@@ -492,6 +522,8 @@ async function buildTeamFlowRow(
   windowDays: number,
   todayIso: string,
   storyPointsFieldId: string,
+  remainingRunBudget: number,
+  isCancelled: () => boolean,
 ): Promise<TeamFlowRow> {
   const roleCapabilities = rosterMember.roleCapabilities;
   try {
@@ -501,12 +533,26 @@ async function buildTeamFlowRow(
       return {
         personDisplayName: rosterMember.displayName, roleCapabilities,
         queryValue: null, jql: null, result: null, errorMessage: 'No matching Jira user',
+        fetchedIssueCount: 0, ceilingReached: null, wasCancelled: false,
       };
     }
-    const searchResponse = await jiraGet<{ issues?: RawIssue[] }>(
-      buildSearchPath(identity.queryValue, windowDays, storyPointsFieldId),
+    const fetchOutcome = await fetchAllPersonIssues<RawIssue>(
+      async (startAt) => {
+        const searchResponse = await jiraGet<{ issues?: RawIssue[] }>(
+          buildSearchPath(identity.queryValue, windowDays, storyPointsFieldId, startAt),
+        );
+        return searchResponse.issues ?? [];
+      },
+      { remainingRunBudget, isCancelled },
     );
-    const issues = (searchResponse.issues ?? []).map((issue) => toPersonalFlowIssue(issue, identity, storyPointsFieldId));
+    if (fetchOutcome.wasCancelled) {
+      return {
+        personDisplayName: rosterMember.displayName, roleCapabilities,
+        queryValue: null, jql: null, result: null, errorMessage: 'Cancelled',
+        fetchedIssueCount: 0, ceilingReached: null, wasCancelled: true,
+      };
+    }
+    const issues = fetchOutcome.issues.map((issue) => toPersonalFlowIssue(issue, identity, storyPointsFieldId));
     const result = computePersonalFlow({ issues, statusCategoryByStatusId, windowDays, todayIso });
     // Record the exact id + JQL that ran — buildSearchJql takes the SAME id + window buildSearchPath queried,
     // so the JQL the row shows is guaranteed to be the one that produced these numbers.
@@ -514,6 +560,9 @@ async function buildTeamFlowRow(
       personDisplayName: rosterMember.displayName, roleCapabilities,
       queryValue: identity.queryValue, jql: buildSearchJql(identity.queryValue, windowDays),
       result, errorMessage: null,
+      fetchedIssueCount: fetchOutcome.issues.length,
+      ceilingReached: fetchOutcome.ceilingReached,
+      wasCancelled: false,
     };
   } catch (caughtError) {
     return {
@@ -523,6 +572,7 @@ async function buildTeamFlowRow(
       jql: null,
       result: null,
       errorMessage: caughtError instanceof Error ? caughtError.message : 'Failed to build this person’s flow.',
+      fetchedIssueCount: 0, ceilingReached: null, wasCancelled: false,
     };
   }
 }
@@ -867,15 +917,88 @@ function PersonSuggestionsDropdown({
  * that copies THIS person's exact JQL — so a reviewer can paste one individual's query into Jira and confirm
  * the team numbers. Shows a muted dash and no button when the member never resolved to a queryable id.
  */
+/**
+ * Assembles the audit document from the rows already displayed.
+ *
+ * It renders the run that is on screen rather than recomputing anything, so the page a team reads and
+ * the table they are looking at can never disagree.
+ */
+/** Reads the running app version, so the published document says which build produced it. */
+async function readToolVersion(): Promise<string> {
+  try {
+    const response = await fetch('/api/version-check');
+    const payload = (await response.json()) as { currentVersion?: string; version?: string };
+    return payload.currentVersion ?? payload.version ?? 'unknown';
+  } catch {
+    // A missing version must not stop the report being produced; it is provenance, not content.
+    return 'unknown';
+  }
+}
+
+function buildAuditDocumentFromRows(
+  teamRows: TeamFlowRow[],
+  rosterLabel: string,
+  windowDays: number,
+  statusNameById: Readonly<Record<string, string>>,
+  jiraBaseUrl: string | null,
+  generatedAtIso: string,
+  toolVersion: string,
+): string {
+  const windowEndMs = Date.parse(generatedAtIso);
+  const affectedPeople = teamRows.filter((row) => row.ceilingReached !== null).map((row) => row.personDisplayName);
+  return buildFlowAuditDocument({
+    envelope: {
+      rosterLabel,
+      windowDays,
+      windowStartIso: new Date(windowEndMs - windowDays * 86_400_000).toISOString(),
+      windowEndIso: new Date(windowEndMs).toISOString(),
+      generatedAtIso,
+      toolVersion,
+      ceilingReached: affectedPeople.length === 0
+        ? null
+        : { kind: teamRows.find((row) => row.ceilingReached)?.ceilingReached ?? 'per-person', affectedPeople },
+      jiraBaseUrl,
+    },
+    rows: teamRows.map((row) => ({
+      personDisplayName: row.personDisplayName,
+      roleLabels: formatRoleLabels(row.roleCapabilities),
+      figures: row.result,
+      errorMessage: row.errorMessage,
+      fetchedIssueCount: row.fetchedIssueCount,
+      ceilingReached: row.ceilingReached,
+    })),
+    statusNamesById: statusNameById,
+  });
+}
+
 function TeamFlowQueryCell({ row }: { row: TeamFlowRow }): React.JSX.Element {
   // Both fields are set together in buildTeamFlowRow, so a null jql means there is nothing to copy.
   if (row.jql === null || row.queryValue === null) {
     return <td style={{ opacity: 0.6 }}>—</td>;
   }
   const jqlToCopy = row.jql;
+  const jiraBaseUrl = useConnectionStore((state) => state.proxyStatus?.jira?.baseUrl ?? null);
+  // The link opens the issues this person's figures were actually COMPUTED from, not the fetch query —
+  // the fetch is a deliberate superset, so linking it here would return more issues than the row claims.
+  const creditedLink = buildCreditedIssuesLink(
+    (row.result?.perIssue ?? []).map((issue) => issue.key),
+    jiraBaseUrl,
+  );
   return (
     <td style={{ whiteSpace: 'nowrap' }}>
       <span style={{ fontFamily: 'monospace', opacity: 0.6, userSelect: 'all' }}>{row.queryValue}</span>
+      {creditedLink.isClickable && (
+        <a
+          href={creditedLink.href}
+          target="_blank"
+          rel="noreferrer"
+          aria-label={`Open ${row.personDisplayName}'s counted issues in Jira`}
+          className={styles.actionButton}
+          style={{ marginLeft: 6 }}
+        >
+          Open ↗
+        </a>
+      )}
       <button
         type="button"
         aria-label={`Copy JQL for ${row.personDisplayName}`}
@@ -1491,7 +1614,22 @@ export function PersonalFlowTab(): React.JSX.Element {
   // were fetched, so the user can see resolution + fetch vs credited at a glance. Null hides the line.
   const [diagnostic, setDiagnostic] = useState<{ queryValue: string; rawIssueCount: number; jql: string } | null>(null);
   const [teamRows, setTeamRows] = useState<TeamFlowRow[]>([]);
+  // Set when a ceiling truncated the single-person run, so the view can say the figures are partial
+  // instead of presenting a subset as the whole window.
+  const [singlePersonCeiling, setSinglePersonCeiling] = useState<FlowFetchCeiling | null>(null);
   const [isTeamLoading, setIsTeamLoading] = useState(false);
+  // Copy feedback is explicit: a silently failed copy of a long report means the user pastes stale
+  // clipboard content into Confluence and never finds out.
+  const [auditCopyState, setAuditCopyState] = useState<'idle' | 'copied' | 'failed'>('idle');
+  const teamJiraBaseUrl = useConnectionStore((state) => state.proxyStatus?.jira?.baseUrl ?? null);
+  // How far through the roster the run is, so a long analysis is something the user can judge rather
+  // than a spinner they have to trust.
+  const [teamProgress, setTeamProgress] = useState<
+    { personDisplayName: string; completedCount: number; totalCount: number } | null
+  >(null);
+  // A ref, not state: the running loop reads it between people, and a state update would not be
+  // visible to the closure already in flight.
+  const teamCancelRef = useRef(false);
   const [teamError, setTeamError] = useState<string | null>(null);
 
   // The active-team roster drives both the suggestion list and the "Run for team roster" mode. It is read
@@ -1577,10 +1715,17 @@ export function PersonalFlowTab(): React.JSX.Element {
       setStatusNameById(buildStatusNameMap(safeStatuses));
       // Read the configured story-points field once per run so a settings change is picked up next run.
       const storyPointsFieldId = readConfiguredStoryPointsFieldId();
-      const searchResponse = await jiraGet<{ issues?: RawIssue[] }>(
-        buildSearchPath(identity.queryValue, windowDays, storyPointsFieldId),
+      const fetchOutcome = await fetchAllPersonIssues<RawIssue>(
+        async (startAt) => {
+          const searchResponse = await jiraGet<{ issues?: RawIssue[] }>(
+            buildSearchPath(identity.queryValue, windowDays, storyPointsFieldId, startAt),
+          );
+          return searchResponse.issues ?? [];
+        },
+        { remainingRunBudget: RUN_ISSUE_BUDGET },
       );
-      const rawIssues = searchResponse.issues ?? [];
+      const rawIssues = fetchOutcome.issues;
+      setSinglePersonCeiling(fetchOutcome.ceilingReached);
       const issues = rawIssues.map((issue) => toPersonalFlowIssue(issue, identity, storyPointsFieldId));
       // The clock read is fine here (the pure engine takes today as an argument, staying deterministic).
       const todayIso = new Date().toISOString().slice(0, 10);
@@ -1609,6 +1754,8 @@ export function PersonalFlowTab(): React.JSX.Element {
     setDiagnostic(null);
     setError(null);
     setTeamRows([]);
+    teamCancelRef.current = false;
+    setTeamProgress(null);
     try {
       const statuses = await jiraGet<RawStatus[]>('/rest/api/2/status');
       const statusCategoryByStatusId = buildStatusCategoryMap(Array.isArray(statuses) ? statuses : []);
@@ -1617,17 +1764,53 @@ export function PersonalFlowTab(): React.JSX.Element {
       const storyPointsFieldId = readConfiguredStoryPointsFieldId();
       const nextTeamRows: TeamFlowRow[] = [];
       // Sequential per-person fetches keep the load gentle on Jira; each is independent and self-contained.
-      for (const rosterMember of activeTeamRosterMembers) {
-        nextTeamRows.push(
-          await buildTeamFlowRow(rosterMember, statusCategoryByStatusId, windowDays, todayIso, storyPointsFieldId),
+      // The run budget is spent down as people are processed, so one very busy person cannot consume the
+      // whole roster's allowance without the rest being told their figures are partial.
+      let remainingRunBudget = RUN_ISSUE_BUDGET;
+      const isCancelled = () => teamCancelRef.current;
+      for (const [memberIndex, rosterMember] of activeTeamRosterMembers.entries()) {
+        if (isCancelled()) break;
+        // Naming the person and the position turns a long wait into something the user can judge.
+        setTeamProgress({
+          personDisplayName: rosterMember.displayName,
+          completedCount: memberIndex,
+          totalCount: activeTeamRosterMembers.length,
+        });
+        const teamFlowRow = await buildTeamFlowRow(
+          rosterMember, statusCategoryByStatusId, windowDays, todayIso, storyPointsFieldId,
+          remainingRunBudget, isCancelled,
         );
+        if (teamFlowRow.wasCancelled) break;
+        remainingRunBudget -= teamFlowRow.fetchedIssueCount;
+        nextTeamRows.push(teamFlowRow);
       }
-      setTeamRows(nextTeamRows);
+      // A cancelled run leaves the previous results on screen and produces nothing new — a
+      // part-finished team report that reads as complete is the failure this report exists to prevent.
+      if (!isCancelled()) {
+        setTeamRows(nextTeamRows);
+      }
     } catch (caughtError) {
       setTeamError(caughtError instanceof Error ? caughtError.message : 'Failed to build the team flow report.');
     } finally {
       setIsTeamLoading(false);
+      setTeamProgress(null);
     }
+  };
+
+  /** Builds the audit document from the run on screen and puts it on the clipboard. */
+  const handleCopyAuditReport = async (): Promise<void> => {
+    setAuditCopyState('idle');
+    const toolVersion = await readToolVersion();
+    const auditDocument = buildAuditDocumentFromRows(
+      teamRows,
+      storedActiveTeamName ?? 'Team',
+      windowDays,
+      statusNameById,
+      teamJiraBaseUrl,
+      new Date().toISOString(),
+      toolVersion,
+    );
+    setAuditCopyState(await copyToClipboardWithResult(auditDocument) ? 'copied' : 'failed');
   };
 
   const isSuggestionsVisible = areSuggestionsOpen && person.trim() !== '' && personSuggestions.length > 0;
@@ -1684,9 +1867,11 @@ export function PersonalFlowTab(): React.JSX.Element {
         <p role="alert" className={styles.warningText} style={{ marginTop: 10 }}>{teamError}</p>
       )}
 
-      {result !== null && result.issueCount === MAX_ISSUES && (
-        <p className={styles.captionText}>
-          Showing at most {MAX_ISSUES} issues — narrow the window for a complete picture.
+      {result !== null && singlePersonCeiling !== null && (
+        <p role="alert" className={styles.warningText}>
+          These figures are incomplete — the analysis stopped at the{' '}
+          {singlePersonCeiling === 'per-person' ? 'per-person issue ceiling' : 'overall run budget'}, so
+          they describe a subset of this window. Narrow the window for a complete picture.
         </p>
       )}
 
@@ -1707,6 +1892,40 @@ export function PersonalFlowTab(): React.JSX.Element {
           windowDays={windowDays}
           statusNameById={statusNameById}
         />
+      )}
+
+      {teamRows.length > 0 && !isTeamLoading && (
+        <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 10 }}>
+          <button
+            type="button"
+            className={styles.actionButton}
+            onClick={() => { void handleCopyAuditReport(); }}
+          >
+            Copy audit report
+          </button>
+          <span className={styles.captionText}>
+            {auditCopyState === 'copied' && 'Copied — paste into a Confluence page.'}
+            {auditCopyState === 'failed' && 'Copy failed — nothing was placed on the clipboard.'}
+            {auditCopyState === 'idle'
+              && 'A full write-up: every metric explained, with links to the exact Jira issues behind it.'}
+          </span>
+        </div>
+      )}
+
+      {isTeamLoading && teamProgress !== null && (
+        <div className={styles.captionText} style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span>
+            Analysing {teamProgress.personDisplayName} — {teamProgress.completedCount} of{' '}
+            {teamProgress.totalCount} people done
+          </span>
+          <button
+            type="button"
+            className={styles.actionButton}
+            onClick={() => { teamCancelRef.current = true; }}
+          >
+            Cancel
+          </button>
+        </div>
       )}
 
       {isTeamLoading && teamRows.length === 0 && (

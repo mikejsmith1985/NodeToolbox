@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **The Personal Workflow report can now produce an auditable write-up you can paste into Confluence.** After a team
+  roster run, **Copy audit report** puts a full Markdown document on the clipboard in which every number shows its
+  working: what each metric measures, the exact formula with this run's values substituted in, and a **one-click link
+  to the precise Jira issues behind it** so anyone who doubts a figure can go and count for themselves. It also
+  accounts for every issue the search returned — `fetched = credited + excluded` — with each exclusion reason named,
+  explained in plain English, and separately linked. Explanations appear **once per metric** and the links are **per
+  person**, so a whole team fits in one readable page.
+- **Cycle time now shows its derivation.** Hands-on cycle time is reconstructed from each issue's history, so no Jira
+  search can reproduce it — a query returns the issues, never the working. The report now publishes a **worked
+  example**: one issue shown in full, with the ownership stints, the qualifying in-progress spans and the Monday–Friday
+  days counted, so a reader can check it against that issue's Jira history and then apply the same method to any other
+  row. The report says plainly which figures are query-reproducible and which are not, rather than implying all of
+  them are.
+- **A per-person "Open ↗" link** in the team comparison table goes straight to that person's counted issues in Jira.
+  It deliberately links the issues the figures were **computed from**, not the search query — the search is an
+  intentionally broad superset, so linking it would return more issues than the row claims.
+- **Progress and cancellation for team runs.** A roster run now reports which person it is analysing and how far
+  through it is, and can be cancelled outright. A cancelled run leaves the previous results on screen and produces no
+  document — a part-finished team report that reads as complete is exactly what this feature exists to prevent.
+
+### Fixed
+- **The Personal Workflow report silently truncated at 100 issues, so busy people's figures were wrong.** It requested
+  a single page and reported on whatever fitted, with only a quiet caption hinting at it — so throughput and cycle time
+  described a subset while presenting themselves as the whole window, and a Jira link beside them would have returned
+  everything. The search is now paged and covers the full window. **Expect reported numbers to rise for anyone whose
+  window contained more than 100 issues: that is the correction, not a regression.** Two ceilings (per person, and an
+  overall run budget) stop a roster over "All history" running unbounded, and if either is reached the report says so
+  and names who is affected rather than letting partial figures look complete.
+
 ### Changed
 - **The AI Assist unlock passphrase is now `unlock`** (previously `ainow`). The Ctrl+Alt+Z gate is otherwise
   unchanged, and the passphrase is still stored only as a SHA-256 digest, never as plain text in source. Anyone

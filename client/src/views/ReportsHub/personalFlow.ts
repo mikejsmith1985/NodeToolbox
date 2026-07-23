@@ -123,6 +123,43 @@ export type PersonalFlowExclusionReason =
   | 'wip-open'
   | 'completed-out-of-window';
 
+/** One period the target person held an issue, as evaluated for cycle time. */
+export interface PersonalFlowOwnershipStint {
+  fromIso: string;
+  toIso: string;
+}
+
+/** One in-progress span inside a stint that actually counted toward hands-on time. */
+export interface PersonalFlowQualifyingSpan {
+  fromIso: string;
+  toIso: string;
+  /** The Jira status id the time was spent in. Status NAMES live outside this engine. */
+  statusId: string;
+  /** Mon–Fri days credited for this span. */
+  workingDays: number;
+}
+
+/**
+ * The working behind ONE credited issue's cycle time.
+ *
+ * Cycle time is reconstructed from an issue's history, so no Jira search can reproduce it — a query
+ * returns the issue set, never the derivation. Publishing one issue's full working lets a reader
+ * open that issue in Jira, confirm the method by hand, and then apply it to any other issue. It is
+ * deliberately ONE issue: doing this for every issue of every person would bury the figures it
+ * exists to support.
+ *
+ * Chosen here, while the spans are still in scope — selecting it afterwards would mean re-deriving,
+ * and a second derivation could disagree with the first.
+ */
+export interface PersonalFlowWorkedExample {
+  issueKey: string;
+  issueSummary: string;
+  ownershipStints: PersonalFlowOwnershipStint[];
+  qualifyingSpans: PersonalFlowQualifyingSpan[];
+  /** Sum of the spans; equals this issue's `cycleTimeDays` in `perIssue`. */
+  totalWorkingDays: number;
+}
+
 /** One fetched-but-not-credited issue, carrying the reason it was dropped for the audit breakdown. */
 export interface PersonalFlowExcludedIssue {
   key: string;
@@ -144,6 +181,10 @@ export interface PersonalFlowResult {
   // hands-on days land — e.g. how much sat in a queue-like "Ready to Work" status versus a real "Working" one.
   // It only partitions the existing total: the sum of its values equals the sum of the credited cycle-time days.
   handsOnDaysByStatusId: Record<string, number>;
+  // The working behind ONE credited issue's cycle time, so the derivation can be shown rather than
+  // asserted. Null when nothing was credited, or when no credited issue has measurable hands-on time
+  // (an issue that contributed nothing demonstrates nothing).
+  workedExample: PersonalFlowWorkedExample | null;
 }
 
 // ── Internal types ───────────────────────────────────────────────────────────
@@ -168,6 +209,9 @@ interface CompletedContribution {
   // The same hands-on time as `handsOnDays`, but kept in milliseconds and split by the in-progress status id
   // it was spent in — so the credited total can be partitioned by status without re-deriving it.
   handsOnMillisByStatusId: Record<string, number>;
+  // The individual in-progress spans this contribution was summed from, kept so one issue's
+  // derivation can be published as evidence.
+  qualifyingSpans: PersonalFlowQualifyingSpan[];
 }
 
 /**
@@ -182,6 +226,10 @@ type IssueEvaluation =
       // The credited hands-on time (milliseconds) split by in-progress status id, so the aggregate can
       // partition the grand total by status. Not surfaced on the per-issue row — it feeds the summary only.
       readonly handsOnMillisByStatusId: Record<string, number>;
+      // The stints and spans behind this issue's cycle time, so ONE issue can be published as the
+      // worked example. Carried for every credited issue because the choice is made afterwards, over
+      // the whole set — but only one is ever surfaced.
+      readonly evidence: { stints: PersonalFlowOwnershipStint[]; spans: PersonalFlowQualifyingSpan[] };
     }
   | { readonly kind: 'excluded'; readonly reason: PersonalFlowExclusionReason };
 
@@ -200,7 +248,7 @@ export function computePersonalFlow(input: PersonalFlowInput): PersonalFlowResul
   const todayMs = Date.parse(input.todayIso);
   const windowStartMs = todayMs - effectiveWindowDays * MILLISECONDS_PER_DAY;
 
-  const { perIssue, excludedIssues, handsOnDaysByStatusId } = buildIssueBreakdown(
+  const { perIssue, excludedIssues, handsOnDaysByStatusId, workedExample } = buildIssueBreakdown(
     input.issues,
     input.statusCategoryByStatusId,
     windowStartMs,
@@ -218,6 +266,7 @@ export function computePersonalFlow(input: PersonalFlowInput): PersonalFlowResul
     perIssue,
     excludedIssues,
     handsOnDaysByStatusId,
+    workedExample,
   };
 }
 
@@ -275,15 +324,18 @@ function buildIssueBreakdown(
   perIssue: PersonalFlowIssueMetric[];
   excludedIssues: PersonalFlowExcludedIssue[];
   handsOnDaysByStatusId: Record<string, number>;
+  workedExample: PersonalFlowWorkedExample | null;
 } {
   const perIssue: PersonalFlowIssueMetric[] = [];
   const excludedIssues: PersonalFlowExcludedIssue[] = [];
   const totalHandsOnMillisByStatusId: Record<string, number> = {};
+  let workedExample: PersonalFlowWorkedExample | null = null;
   for (const issue of issues) {
     const evaluation = evaluateIssue(issue, statusCategoryByStatusId, windowStartMs, todayMs);
     if (evaluation.kind === 'credited') {
       perIssue.push(evaluation.metric);
       addMillisByStatusId(totalHandsOnMillisByStatusId, evaluation.handsOnMillisByStatusId);
+      workedExample ??= buildWorkedExample(evaluation.metric, evaluation.evidence);
     } else {
       excludedIssues.push({ key: issue.key, summary: issue.summary, reason: evaluation.reason });
     }
@@ -293,6 +345,32 @@ function buildIssueBreakdown(
     perIssue,
     excludedIssues,
     handsOnDaysByStatusId: convertMillisByStatusIdToDays(totalHandsOnMillisByStatusId),
+    workedExample,
+  };
+}
+
+/**
+ * Builds the publishable working for one credited issue, or null when that issue demonstrates
+ * nothing.
+ *
+ * An issue with no measurable hands-on time is still credited — it advanced throughput — but showing
+ * it as the worked example would teach a reader nothing about how cycle time is derived, so it is
+ * skipped in favour of the first issue that actually has spans to show.
+ */
+function buildWorkedExample(
+  metric: PersonalFlowIssueMetric,
+  evidence: { stints: PersonalFlowOwnershipStint[]; spans: PersonalFlowQualifyingSpan[] },
+): PersonalFlowWorkedExample | null {
+  if (metric.cycleTimeDays === null || evidence.spans.length === 0) {
+    return null;
+  }
+  return {
+    issueKey: metric.key,
+    issueSummary: metric.summary,
+    ownershipStints: evidence.stints,
+    qualifyingSpans: evidence.spans,
+    // Summed from the spans themselves, so the example can never contradict its own arithmetic.
+    totalWorkingDays: evidence.spans.reduce((runningTotal, span) => runningTotal + span.workingDays, 0),
   };
 }
 
@@ -340,6 +418,13 @@ function evaluateIssue(
       lastActiveIso: new Date(lastActiveMs).toISOString(),
     },
     handsOnMillisByStatusId: sumContributionMillisByStatusId(inWindow),
+    evidence: {
+      stints: ownershipIntervals.map((interval) => ({
+        fromIso: new Date(interval.startMs).toISOString(),
+        toIso: new Date(interval.endMs).toISOString(),
+      })),
+      spans: inWindow.flatMap((contribution) => contribution.qualifyingSpans),
+    },
   };
 }
 
@@ -475,14 +560,14 @@ function evaluateInterval(
   const endMs = pickEarliestEnd(firstDoneMs, wasReassignedAway ? interval.endMs : null);
   // Split the Mon–Fri in-progress time over the ownership interval by status id; the total hands-on time
   // is just the sum of that split, so the credited cycle time and its per-status breakdown always agree.
-  const handsOnMillisByStatusId = inProgressBusinessMillisByStatusId(
+  const { millisByStatusId: handsOnMillisByStatusId, qualifyingSpans } = inProgressBusinessMillisByStatusId(
     statusIdSegments,
     interval.startMs,
     interval.endMs,
     statusCategoryByStatusId,
   );
   const handsOnMs = sumRecordValues(handsOnMillisByStatusId);
-  return { endMs, handsOnDays: handsOnMs / MILLISECONDS_PER_DAY, handsOnMillisByStatusId };
+  return { endMs, handsOnDays: handsOnMs / MILLISECONDS_PER_DAY, handsOnMillisByStatusId, qualifyingSpans };
 }
 
 /** Returns the earliest done timestamp that falls inside the interval, or null when none do. */
@@ -511,8 +596,12 @@ function inProgressBusinessMillisByStatusId(
   rangeStartMs: number,
   rangeEndMs: number,
   statusCategoryByStatusId: Readonly<Record<string, string>>,
-): Record<string, number> {
+): { millisByStatusId: Record<string, number>; qualifyingSpans: PersonalFlowQualifyingSpan[] } {
   const millisByStatusId: Record<string, number> = {};
+  // The individual spans are kept, not just their sum, so one issue's derivation can be SHOWN to a
+  // reader rather than asserted at them. Cycle time is reconstructed from history and no Jira search
+  // reproduces it, so the spans are the only evidence a sceptic can check by hand.
+  const qualifyingSpans: PersonalFlowQualifyingSpan[] = [];
   for (const segment of statusIdSegments) {
     const statusId = segment.value;
     // A null status id can never be 'indeterminate' (it maps to 'new'); skip it so the key is always real.
@@ -521,9 +610,20 @@ function inProgressBusinessMillisByStatusId(
     const overlapStartMs = Math.max(segment.startMs, rangeStartMs);
     const overlapEndMs = Math.min(segment.endMs, rangeEndMs);
     if (overlapEndMs <= overlapStartMs) continue;
-    millisByStatusId[statusId] = (millisByStatusId[statusId] ?? 0) + businessMillisBetween(overlapStartMs, overlapEndMs);
+    const spanMillis = businessMillisBetween(overlapStartMs, overlapEndMs);
+    millisByStatusId[statusId] = (millisByStatusId[statusId] ?? 0) + spanMillis;
+    // A span wholly inside a weekend credits zero days; recording it would pad the evidence with
+    // entries that contribute nothing and make the worked example harder to follow.
+    if (spanMillis > 0) {
+      qualifyingSpans.push({
+        fromIso: new Date(overlapStartMs).toISOString(),
+        toIso: new Date(overlapEndMs).toISOString(),
+        statusId,
+        workingDays: spanMillis / MILLISECONDS_PER_DAY,
+      });
+    }
   }
-  return millisByStatusId;
+  return { millisByStatusId, qualifyingSpans };
 }
 
 /** Merges each contribution's per-status hands-on milliseconds into one map for a single issue. */

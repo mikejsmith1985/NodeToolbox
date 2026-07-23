@@ -50,6 +50,8 @@ function buildResult(options: {
     perIssue,
     excludedIssues: [],
     handsOnDaysByStatusId: {},
+    // The role rollup only sums figures; it never renders the derivation evidence.
+    workedExample: null,
   };
 }
 
