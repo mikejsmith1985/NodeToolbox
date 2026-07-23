@@ -41,11 +41,12 @@ import {
   type PersonalFlowStatusTransition,
 } from './personalFlow.ts';
 import { buildCreditedIssuesLink } from './flowAuditLinks.ts';
+import { computeDeliveryTotals } from './issueFlowRollup.ts';
 import { buildFlowAuditDocument } from './flowAuditDocument.ts';
 import {
   ISSUE_PAGE_SIZE,
   RUN_ISSUE_BUDGET,
-  fetchAllPersonIssues,
+  fetchAllUnitIssues,
   type FlowFetchCeiling,
 } from './flowAuditFetch.ts';
 import {
@@ -538,7 +539,7 @@ async function buildTeamFlowRow(
         fetchedIssueCount: 0, ceilingReached: null, wasCancelled: false,
       };
     }
-    const fetchOutcome = await fetchAllPersonIssues<RawIssue>(
+    const fetchOutcome = await fetchAllUnitIssues<RawIssue>(
       async (startAt) => {
         const searchResponse = await jiraGet<{ issues?: RawIssue[] }>(
           buildSearchPath(identity.queryValue, windowDays, storyPointsFieldId, startAt),
@@ -958,7 +959,7 @@ function buildAuditDocumentFromRows(
       toolVersion,
       ceilingReached: affectedPeople.length === 0
         ? null
-        : { kind: teamRows.find((row) => row.ceilingReached)?.ceilingReached ?? 'per-person', affectedPeople },
+        : { kind: teamRows.find((row) => row.ceilingReached)?.ceilingReached ?? 'per-unit', affectedPeople },
       jiraBaseUrl,
     },
     rows: teamRows.map((row) => ({
@@ -1057,7 +1058,7 @@ function TeamFlowComparisonView({ rows }: { rows: readonly TeamFlowRow[] }): Rea
       <table className={styles.reportTable}>
         <thead>
           <tr>
-            <th>Person</th><th>Role(s)</th><th>Issues</th><th>Points</th><th>Issues/Wk</th>
+            <th>Person</th><th>Role(s)</th><th>Issues †</th><th>Points †</th><th>Issues/Wk</th>
             <th>Points/Wk</th><th>Avg Cycle (days)</th><th>Median Cycle (days)</th><th>Query</th>
           </tr>
         </thead>
@@ -1065,7 +1066,36 @@ function TeamFlowComparisonView({ rows }: { rows: readonly TeamFlowRow[] }): Rea
           {rows.map((row) => <TeamFlowComparisonRow key={row.personDisplayName} row={row} />)}
         </tbody>
       </table>
+      <TeamDeliveryTotalsNote rows={rows} />
     </div>
+  );
+}
+
+/**
+ * States the team's real delivery beside the per-person columns, and why the columns cannot be added up.
+ *
+ * The Issues and Points columns credit a whole issue, and its full points, to EVERY person who
+ * advanced it — correct for measuring a person, wrong for measuring a team. A warning label alone
+ * does not survive being copied into a document and totalled there, so the number the reader was
+ * reaching for is supplied here instead, counted once per issue.
+ */
+function TeamDeliveryTotalsNote({ rows }: { rows: readonly TeamFlowRow[] }): React.JSX.Element | null {
+  const creditedIssues = rows.flatMap((row) => (row.result?.perIssue ?? []).map((issue) => ({
+    issueKey: issue.key,
+    storyPoints: issue.storyPoints,
+  })));
+  if (creditedIssues.length === 0) {
+    return null;
+  }
+
+  const totals = computeDeliveryTotals(creditedIssues);
+  return (
+    <p style={{ marginTop: 8, fontSize: '0.9em' }}>
+      † <strong>Issues and Points cannot be summed down this table.</strong> The same issue is credited
+      to everyone who advanced it, so a total would count hand-offs rather than issues. Counting each
+      issue once, this team delivered <strong>{totals.deliveredIssueCount}</strong> issues
+      and <strong>{formatNumber(totals.deliveredStoryPoints)}</strong> story points.
+    </p>
   );
 }
 
@@ -1761,7 +1791,7 @@ export function PersonalFlowTab({ teamFilter = '' }: PersonalFlowTabProps = {}) 
       setStatusNameById(buildStatusNameMap(safeStatuses));
       // Read the configured story-points field once per run so a settings change is picked up next run.
       const storyPointsFieldId = readConfiguredStoryPointsFieldId();
-      const fetchOutcome = await fetchAllPersonIssues<RawIssue>(
+      const fetchOutcome = await fetchAllUnitIssues<RawIssue>(
         async (startAt) => {
           const searchResponse = await jiraGet<{ issues?: RawIssue[] }>(
             buildSearchPath(identity.queryValue, windowDays, storyPointsFieldId, startAt),
@@ -1916,7 +1946,7 @@ export function PersonalFlowTab({ teamFilter = '' }: PersonalFlowTabProps = {}) 
       {result !== null && singlePersonCeiling !== null && (
         <p role="alert" className={styles.warningText}>
           These figures are incomplete — the analysis stopped at the{' '}
-          {singlePersonCeiling === 'per-person' ? 'per-person issue ceiling' : 'overall run budget'}, so
+          {singlePersonCeiling === 'per-unit' ? 'per-person issue ceiling' : 'overall run budget'}, so
           they describe a subset of this window. Narrow the window for a complete picture.
         </p>
       )}

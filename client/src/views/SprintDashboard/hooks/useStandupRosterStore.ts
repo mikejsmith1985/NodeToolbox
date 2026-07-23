@@ -314,6 +314,33 @@ export function buildStandupRosterAssigneeClause(
   rosterMembers = useStandupRosterStore.getState().rosterMembers,
   activeTeamName: string | null = null,
 ): string | null {
+  return buildRosterAssigneeClause('assignee in', rosterMembers, activeTeamName);
+}
+
+/**
+ * Builds a Jira `assignee WAS in (...)` clause — issues the roster held at ANY point, not only those
+ * they hold now.
+ *
+ * Flow analysis needs this because an issue a developer built and then handed to a product owner
+ * outside the roster disappears from a present-tense `assignee in (...)` search. That hand-off is
+ * usually where the delay is, so a query that hides it would hide the finding.
+ */
+export function buildStandupRosterAssigneeWasClause(
+  rosterMembers = useStandupRosterStore.getState().rosterMembers,
+  activeTeamName: string | null = null,
+): string | null {
+  return buildRosterAssigneeClause('assignee WAS in', rosterMembers, activeTeamName);
+}
+
+/**
+ * Shared body of both clause builders, so the team scoping and the quote escaping can never differ
+ * between the present-tense and historical forms.
+ */
+function buildRosterAssigneeClause(
+  clauseOperator: 'assignee in' | 'assignee WAS in',
+  rosterMembers: StandupRosterMember[],
+  activeTeamName: string | null,
+): string | null {
   const scopedRosterMembers = activeTeamName === null
     ? rosterMembers
     : filterRosterMembersByActiveTeam(rosterMembers, activeTeamName);
@@ -327,7 +354,7 @@ export function buildStandupRosterAssigneeClause(
   const escapedQueryValues = assigneeQueryValues.map(
     (assigneeQueryValue) => `"${assigneeQueryValue.replace(/"/g, '\\"')}"`,
   );
-  return `assignee in (${escapedQueryValues.join(', ')})`;
+  return `${clauseOperator} (${escapedQueryValues.join(', ')})`;
 }
 
 /** Returns the distinct imported team names in alphabetical order. */
