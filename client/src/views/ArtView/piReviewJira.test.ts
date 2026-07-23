@@ -15,6 +15,18 @@ vi.mock('../../services/jiraApi.ts', () => ({
   jiraPut: mockJiraPut,
 }));
 
+// The estimate write delegates to the app-wide story-points helper, which owns field discovery and
+// the dropdown-vs-number payload (covered by featureReviewFixes.test.ts). Mock just that one function
+// so this file can assert the delegation; keep the real read + candidate-field helpers.
+const { mockSaveStoryPoints } = vi.hoisted(() => ({ mockSaveStoryPoints: vi.fn() }));
+
+vi.mock('../SprintDashboard/featureReviewFixes.ts', async () => {
+  const actual = await vi.importActual<typeof import('../SprintDashboard/featureReviewFixes.ts')>(
+    '../SprintDashboard/featureReviewFixes.ts',
+  );
+  return { ...actual, saveFeatureReviewStoryPoints: mockSaveStoryPoints };
+});
+
 import {
   extractPiReviewFeatureKey,
   fetchPiReviewFeatureIssues,
@@ -160,6 +172,45 @@ describe('piReviewJira', () => {
     ]);
   });
 
+  it('reads the point estimate from the Story Points (Selection) dropdown, not the old numeric field', () => {
+    // The reported bug: an estimate typed in Toolbox left Jira blank because PI Review read/wrote a
+    // different field than the rest of the app. The estimate must come from the app-wide story-points
+    // field, and a dropdown stores its value as an option object.
+    const piReviewRow = { ...createEmptyPiReviewRow(), feature: 'DENP-1352', pointEstimate: '' };
+
+    const reconciliationResult = reconcilePiReviewRowsWithJira([piReviewRow], {
+      'DENP-1352': {
+        id: '10001',
+        key: 'DENP-1352',
+        fields: {
+          summary: '26.3 Enrollment Support',
+          status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } },
+          priority: null,
+          assignee: null,
+          reporter: null,
+          issuetype: { name: 'Feature', iconUrl: '' },
+          created: '',
+          updated: '',
+          description: null,
+          customfield_10028: { value: '5' } as unknown as number, // dropdown option object, not a raw number
+        },
+      },
+    });
+
+    expect(reconciliationResult.rows[0].pointEstimate).toBe('5');
+  });
+
+  it('requests the story-points candidate fields when fetching features', async () => {
+    mockJiraGet.mockResolvedValue({ issues: [] });
+
+    await fetchPiReviewFeatureIssues([{ ...createEmptyPiReviewRow(), feature: 'DENP-1352' }]);
+
+    // Without requesting the story-points field, the estimate would read back blank on this instance.
+    expect(mockJiraGet.mock.calls[0][0]).toContain('customfield_10028');
+    // And the old hardcoded numeric field is no longer requested.
+    expect(mockJiraGet.mock.calls[0][0]).not.toContain('customfield_10111');
+  });
+
   it('rejects pasted date rows with unsupported date formats', () => {
     expect(() => parsePiReviewFeatureDateUpdates(`
 | Jira Key | Target Start | Target End | Due Date |
@@ -196,7 +247,7 @@ describe('piReviewJira', () => {
           created: '',
           updated: '',
           description: null,
-          customfield_10111: 13,
+          customfield_10028: 13,
           issuelinks: [
             {
               type: { outward: 'depends on' },
@@ -247,7 +298,7 @@ describe('piReviewJira', () => {
           created: '',
           updated: '',
           description: null,
-          customfield_10111: null,
+          customfield_10028: null,
         },
       },
     }, {
@@ -255,7 +306,7 @@ describe('piReviewJira', () => {
     });
 
     expect(reconciliationResult.pendingEstimateUpdates).toEqual([
-      { featureKey: 'DENP-1352', estimate: 8 },
+      { featureKey: 'DENP-1352', estimate: '8' },
     ]);
   });
 
@@ -292,20 +343,18 @@ describe('piReviewJira', () => {
     expect(issueMap['DENP-1352'].fields.summary).toBe('26.3 Enrollment Support');
   });
 
-  it('writes queued PI Review feature estimates back to Jira', async () => {
-    mockJiraPut.mockResolvedValue(undefined);
+  it('writes queued estimates through the app-wide story-points helper, deduped per feature', async () => {
+    mockSaveStoryPoints.mockResolvedValue(undefined);
 
     await savePiReviewFeatureEstimates([
-      { featureKey: 'DENP-1352', estimate: 8 },
-      { featureKey: 'DENP-1352', estimate: 8 },
+      { featureKey: 'DENP-1352', estimate: '8' },
+      { featureKey: 'DENP-1352', estimate: '8' },
     ]);
 
-    expect(mockJiraPut).toHaveBeenCalledTimes(1);
-    expect(mockJiraPut).toHaveBeenCalledWith('/rest/api/2/issue/DENP-1352', {
-      fields: {
-        customfield_10111: 8,
-      },
-    });
+    // One call for the one feature — the helper owns the correct field id and the dropdown-vs-number
+    // payload, so PI Review no longer writes a raw number to a hardcoded field.
+    expect(mockSaveStoryPoints).toHaveBeenCalledTimes(1);
+    expect(mockSaveStoryPoints).toHaveBeenCalledWith('DENP-1352', '8');
   });
 
   it('fetches available Jira transitions for PI Review status changes', async () => {

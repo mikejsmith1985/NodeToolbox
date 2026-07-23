@@ -59,6 +59,7 @@ import {
   savePiReviewFeatureTransition,
   savePiReviewTransitionRequiredFields,
 } from './piReviewJira.ts';
+import { getStoryPointsCandidateFieldIds } from '../SprintDashboard/featureReviewFixes.ts';
 import { useStandupRosterStore } from '../SprintDashboard/hooks/useStandupRosterStore.ts';
 import { pullPiReviewFeatures } from './piReviewPullFeatures.ts';
 import styles from './PiReviewTab.module.css';
@@ -1577,11 +1578,14 @@ function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverri
           continue;
         }
 
+        // Reflect the just-written estimate into the primary story-points field so the final
+        // reconcile sees Jira as now populated — the SAME field the reader checks, not the old
+        // numeric one it no longer reads.
         finalJiraIssueMap[estimateUpdate.featureKey] = {
           ...currentIssue,
           fields: {
             ...currentIssue.fields,
-            customfield_10111: estimateUpdate.estimate,
+            [getStoryPointsCandidateFieldIds()[0]]: estimateUpdate.estimate,
           },
         };
       }

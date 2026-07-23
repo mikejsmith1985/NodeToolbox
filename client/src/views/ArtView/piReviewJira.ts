@@ -3,6 +3,11 @@
 import { jiraGet, jiraPost, jiraPut } from '../../services/jiraApi.ts';
 import type { JiraIssue, JiraIssueLink, JiraTransition } from '../../types/jira.ts';
 import type { PiReviewRow } from './piReviewTable.ts';
+import {
+  getStoryPointsCandidateFieldIds,
+  readIssueStoryPointsDisplayValue,
+  saveFeatureReviewStoryPoints,
+} from '../SprintDashboard/featureReviewFixes.ts';
 
 const ART_SETTINGS_STORAGE_KEY = 'tbxARTSettings';
 const DEFAULT_DEPENDENCY_LINK_TYPES = ['blocks', 'is blocked by', 'depends on', 'is depended on by', 'relates to'];
@@ -20,7 +25,6 @@ const DEFAULT_LINK_FIELDS = [
   'status',
   'labels',
   'issuelinks',
-  'customfield_10111',
   'duedate',
   'fixVersions',
 ];
@@ -37,7 +41,8 @@ interface ArtAdvancedSettings {
 
 export interface PiReviewEstimateUpdate {
   featureKey: string;
-  estimate: number;
+  /** The estimate as text — a dropdown story-points field needs the option label ("5"), not a number. */
+  estimate: string;
 }
 
 export interface PiReviewFeatureDateUpdate {
@@ -191,8 +196,15 @@ function readPiReviewDateFieldIds(): { targetStartFieldId: string | null; target
 
 function createFeatureQueryFields(): string {
   const { targetStartFieldId, targetEndFieldId } = readPiReviewDateFieldIds();
+  // The point estimate is the app-wide Story Points (Selection) field, wherever this instance keeps
+  // it — requested here so the same field the estimate is written to is the field it is read back from.
   return Array.from(
-    new Set([...DEFAULT_LINK_FIELDS, targetStartFieldId, targetEndFieldId].filter((fieldName): fieldName is string => Boolean(fieldName))),
+    new Set([
+      ...DEFAULT_LINK_FIELDS,
+      ...getStoryPointsCandidateFieldIds(),
+      targetStartFieldId,
+      targetEndFieldId,
+    ].filter((fieldName): fieldName is string => Boolean(fieldName))),
   ).join(',');
 }
 
@@ -208,10 +220,6 @@ function normalizeLinkTypeNames(issueLink: JiraIssueLink): string[] {
 
 function readLinkedIssue(issueLink: JiraIssueLink): JiraIssueLink['inwardIssue'] | JiraIssueLink['outwardIssue'] | null {
   return issueLink.outwardIssue ?? issueLink.inwardIssue ?? null;
-}
-
-function formatEstimateValue(estimateValue: number): string {
-  return Number.isInteger(estimateValue) ? String(estimateValue) : String(Number(estimateValue.toFixed(2)));
 }
 
 function normalizeJiraDateValue(rawDateValue: unknown): string | null {
@@ -414,16 +422,20 @@ function reconcileSinglePiReviewRow(
     ? nextNotesAfterDependencyMigration
     : appendUniqueNoteLine(nextNotesAfterDependencyMigration, 'Risk note', row.risks);
 
-  const jiraEstimate = jiraIssue.fields.customfield_10111;
-  const nextPointEstimate = jiraEstimate === null || jiraEstimate === undefined
-    ? row.pointEstimate
-    : formatEstimateValue(jiraEstimate);
+  // Read the point estimate from the app-wide Story Points (Selection) field — the SAME field the
+  // whole app reads and writes — not the raw numeric field the PI Review used to target. That
+  // mismatch was why an estimate typed in Toolbox left Jira's story-points field blank.
+  const jiraStoryPoints = readIssueStoryPointsDisplayValue(jiraIssue);
+  const jiraHasStoryPoints = jiraStoryPoints.trim() !== '';
+  const nextPointEstimate = jiraHasStoryPoints ? jiraStoryPoints : row.pointEstimate;
   const parsedRowEstimate = Number(row.pointEstimate);
+  // Backfill is one-way and only when Jira is blank: correct an empty Jira field from Toolbox, never
+  // the reverse. The value must parse to a finite number so it can match a dropdown option like "5".
   const pendingEstimateUpdate = shouldQueueEstimateUpdates
-    && (jiraEstimate === null || jiraEstimate === undefined)
+    && !jiraHasStoryPoints
     && row.pointEstimate.trim() !== ''
     && Number.isFinite(parsedRowEstimate)
-    ? { featureKey: jiraIssue.key, estimate: parsedRowEstimate }
+    ? { featureKey: jiraIssue.key, estimate: row.pointEstimate.trim() }
     : null;
 
   const nextRow: PiReviewRow = {
@@ -610,7 +622,15 @@ export function reconcilePiReviewRowsWithJira(
   };
 }
 
-/** Saves any backfilled PI Review estimates into Jira so future PI Review loads can trust Jira as the source of truth. */
+/**
+ * Saves any backfilled PI Review estimates into Jira so future PI Review loads can trust Jira as the
+ * source of truth.
+ *
+ * Delegates to `saveFeatureReviewStoryPoints` — the one app-wide helper that discovers the right
+ * story-points field for this instance AND writes the correct shape (a dropdown option object where
+ * the field is a Select, a raw number where it is numeric). Writing a bare number to the wrong field,
+ * as this used to, left Jira's story-points field untouched.
+ */
 export async function savePiReviewFeatureEstimates(estimateUpdates: PiReviewEstimateUpdate[]): Promise<void> {
   const uniqueEstimateUpdates = new Map<string, PiReviewEstimateUpdate>();
   for (const estimateUpdate of estimateUpdates) {
@@ -618,11 +638,7 @@ export async function savePiReviewFeatureEstimates(estimateUpdates: PiReviewEsti
   }
 
   for (const estimateUpdate of uniqueEstimateUpdates.values()) {
-    await jiraPut(`/rest/api/2/issue/${encodeURIComponent(estimateUpdate.featureKey)}`, {
-      fields: {
-        customfield_10111: estimateUpdate.estimate,
-      },
-    });
+    await saveFeatureReviewStoryPoints(estimateUpdate.featureKey, estimateUpdate.estimate);
   }
 }
 
