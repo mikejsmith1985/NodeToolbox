@@ -333,6 +333,24 @@ export function buildStandupRosterAssigneeWasClause(
 }
 
 /**
+ * Builds an `assignee WAS in (…)` clause from already-resolved machine ids (usernames / accountIds).
+ *
+ * The clause builders above read a member's `assigneeQueryValue`, which for most rosters is a DISPLAY
+ * NAME — and Jira rejects a display name in the assignee field ("The value 'Sokol, Mark (CTR)' does
+ * not exist for the field 'assignee'"). A report that queries the whole roster as one clause must
+ * therefore resolve every name to a machine id first (see `resolveRosterMachineIds`) and pass the
+ * resolved ids here. Escaping is shared with the builders above so the two forms cannot diverge.
+ */
+export function buildAssigneeWasClauseFromValues(queryValues: readonly string[]): string | null {
+  const usableValues = queryValues.map(normalizeWhitespace).filter(Boolean);
+  if (usableValues.length === 0) {
+    return null;
+  }
+  const escapedQueryValues = usableValues.map((queryValue) => `"${queryValue.replace(/"/g, '\\"')}"`);
+  return `assignee WAS in (${escapedQueryValues.join(', ')})`;
+}
+
+/**
  * Shared body of both clause builders, so the team scoping and the quote escaping can never differ
  * between the present-tense and historical forms.
  */
