@@ -11,11 +11,16 @@
 //   • a cancelled run produces no results at all.
 
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { mockJiraGet } = vi.hoisted(() => ({ mockJiraGet: vi.fn() }));
+const { mockCopyWithResult } = vi.hoisted(() => ({ mockCopyWithResult: vi.fn() }));
 
 vi.mock('../../services/jiraApi.ts', () => ({ jiraGet: mockJiraGet }));
+vi.mock('../JiraTemplateMaker/lib/copyToClipboard.ts', () => ({ copyToClipboard: mockCopyWithResult }));
+// Version provenance is fetched over HTTP; stub it for THIS suite only so the copy handler does not
+// hit the network, and unstub afterwards so it never leaks into another test file.
+afterAll(() => { vi.unstubAllGlobals(); });
 
 import { useStandupRosterStore, type StandupRosterMember } from '../SprintDashboard/hooks/useStandupRosterStore.ts';
 import { buildTeamScopedStorageKey } from '../SprintDashboard/hooks/teamScopedStorage.ts';
@@ -97,6 +102,7 @@ function decodedSearchJqls(): string[] {
 
 beforeEach(() => {
   window.localStorage.clear();
+  vi.stubGlobal('fetch', vi.fn(async () => ({ json: async () => ({ currentVersion: '0.94.0' }) })));
   mockJiraGet.mockReset();
   seedRoster();
   mockJiraGet.mockImplementation((path: string) => {
@@ -375,5 +381,54 @@ describe('IssueFlowTab — who did the internal testing', () => {
     fireEvent.click(screen.getByRole('button', { name: /run flow analysis/i }));
 
     await waitFor(() => expect(screen.getByText(/Elapsed working days is not effort/i)).toBeInTheDocument());
+  });
+});
+
+
+describe('IssueFlowTab — the copyable report', () => {
+  const TESTED_OFF_ROSTER = {
+    key: 'FLOW-1',
+    fields: {
+      summary: 'Handed over mid-flight',
+      created: '2026-07-01T00:00:00.000Z',
+      status: { id: '5' },
+      assignee: { name: 'outsider', displayName: 'Outsider, Pat' },
+      issuetype: { subtask: false, name: 'Story' },
+    },
+    changelog: {
+      histories: [
+        { created: '2026-07-01T00:00:00.000Z', items: [{ field: 'status', from: '1', to: '4' }] },
+        {
+          created: '2026-07-06T00:00:00.000Z',
+          items: [{ field: 'assignee', from: 'jane.dev', to: 'outsider', toString: 'Outsider, Pat' }],
+        },
+        { created: '2026-07-09T00:00:00.000Z', items: [{ field: 'status', from: '4', to: '5' }] },
+      ],
+    },
+  };
+
+  it('copies a document that includes the internal-testing section', async () => {
+    mockCopyWithResult.mockReset();
+    mockCopyWithResult.mockResolvedValue(true);
+    window.localStorage.setItem('tbxPersonalFlowBottleneck', JSON.stringify({ scopeJql: '', statusNames: ['Ready for QA'] }));
+    mockJiraGet.mockImplementation((path: string) => {
+      if (path.startsWith('/rest/api/2/status')) return Promise.resolve(STATUSES);
+      if (path.startsWith('/rest/api/2/search')) return Promise.resolve({ issues: [TESTED_OFF_ROSTER] });
+      return Promise.reject(new Error(`unexpected path ${path}`));
+    });
+
+    render(<IssueFlowTab teamFilter="Team Rocket" />);
+    fireEvent.click(screen.getByRole('button', { name: /run flow analysis/i }));
+    await waitFor(() => expect(screen.getByText('Flow summary')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /copy flow analysis report/i }));
+
+    await waitFor(() => expect(mockCopyWithResult).toHaveBeenCalled());
+    const document = String(mockCopyWithResult.mock.calls[0][0]);
+    // The section this whole change exists to add.
+    expect(document).toContain('Who did the internal testing');
+    expect(document).toContain('Outsider, Pat');
+    expect(document).toContain('Elapsed working days is not effort');
+    // And it names the scoped roster, not something else.
+    expect(document).toContain('# Flow Analysis — Team Rocket');
   });
 });

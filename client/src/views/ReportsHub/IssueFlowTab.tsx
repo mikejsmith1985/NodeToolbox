@@ -34,6 +34,9 @@ import { computeDeliveryTotals, summariseStageRollups } from './issueFlowRollup.
 import { classifyIssueScope } from './issueScope.ts';
 import { readBottleneckSettings } from './internalTestingStatuses.ts';
 import { summariseInternalTestingCoverage } from './internalTestingCoverage.ts';
+import { buildFlowAnalysisDocument } from './flowAnalysisDocument.ts';
+import { readToolVersion } from './readToolVersion.ts';
+import { copyToClipboard as copyToClipboardWithResult } from '../JiraTemplateMaker/lib/copyToClipboard.ts';
 import type { InternalTestingCoverage } from './internalTestingCoverage.ts';
 import type { StageRollup } from './issueFlowRollup.ts';
 import { readConfiguredStoryPointsFieldId, readStoryPoints } from './storyPointsField.ts';
@@ -71,6 +74,10 @@ interface FlowRunOutcome {
   statusNamesById: Record<string, string>;
   statusClassByStatusId: Record<string, StatusFlowClass>;
   jql: string;
+  /** Run facts the copyable document needs so it stands alone once pasted out of the tool. */
+  rosterLabel: string;
+  windowDays: number;
+  countsSubTasks: boolean;
 }
 
 /** Builds the JQL for issues the roster held AT ANY POINT — see `buildStandupRosterAssigneeWasClause`. */
@@ -198,6 +205,9 @@ export function IssueFlowTab({ teamFilter = '' }: { teamFilter?: string }): Reac
         statusNamesById,
         statusClassByStatusId: readClassificationUsed(issueFlows),
         jql,
+        rosterLabel: effectiveTeamName,
+        windowDays,
+        countsSubTasks: shouldCountSubTasks,
       });
     } catch (caughtError) {
       setErrorMessage(caughtError instanceof Error ? caughtError.message : 'The flow analysis could not run.');
@@ -305,9 +315,33 @@ function readClassificationUsed(issueFlows: readonly IssueFlow[]): Record<string
 }
 
 /** Renders everything a completed run produced. */
+type AuditCopyState = 'idle' | 'copied' | 'failed';
+
 function FlowResultsView({ outcome }: { outcome: FlowRunOutcome }): React.JSX.Element {
   const rollups = useMemo(() => summariseStageRollups(outcome.issueFlows), [outcome.issueFlows]);
   const deliveryTotals = useMemo(() => computeDeliveryTotals(outcome.issueFlows), [outcome.issueFlows]);
+  const [copyState, setCopyState] = useState<AuditCopyState>('idle');
+
+  /** Builds the copyable Flow Analysis document from the run on screen and puts it on the clipboard. */
+  const handleCopy = async (): Promise<void> => {
+    setCopyState('idle');
+    const toolVersion = await readToolVersion();
+    const document = buildFlowAnalysisDocument({
+      envelope: {
+        rosterLabel: outcome.rosterLabel,
+        windowDays: outcome.windowDays,
+        generatedAtIso: new Date().toISOString(),
+        toolVersion,
+        countsSubTasks: outcome.countsSubTasks,
+      },
+      issueFlows: outcome.issueFlows,
+      rollups,
+      deliveryTotals,
+      statusClassByStatusName: outcome.statusClassByStatusId,
+      internalTestingCoverage: outcome.internalTestingCoverage,
+    });
+    setCopyState(await copyToClipboardWithResult(document) ? 'copied' : 'failed');
+  };
 
   if (outcome.issueFlows.length === 0) {
     return (
@@ -335,6 +369,18 @@ function FlowResultsView({ outcome }: { outcome: FlowRunOutcome }): React.JSX.El
           one piece of work twice and, as they are short-lived, make delivery look faster than it was.
         </p>
       )}
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <button type="button" className={styles.actionButton} onClick={() => { void handleCopy(); }}>
+          Copy Flow Analysis report
+        </button>
+        <span className={styles.captionText}>
+          {copyState === 'copied' && 'Copied — paste into a Confluence page.'}
+          {copyState === 'failed' && 'Copy failed — nothing was placed on the clipboard.'}
+          {copyState === 'idle'
+            && 'A shareable write-up: the flow figures, who did the internal testing, and the per-issue detail.'}
+        </span>
+      </div>
 
       <FlowSummarySection issueFlows={outcome.issueFlows} deliveryTotals={deliveryTotals} />
       <StageRollupSection rollups={rollups} />
