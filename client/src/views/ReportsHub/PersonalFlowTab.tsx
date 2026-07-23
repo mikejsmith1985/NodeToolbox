@@ -25,14 +25,11 @@ import {
 } from './personalFlowCoaching.ts';
 import styles from './ReportsHubView.module.css';
 import {
-  filterRosterMembersByActiveTeam,
-  readAvailableRosterTeamNames,
-  describeRosterScope,
-  resolveActiveRosterTeamName,
+  readStoredStandupRosterMembers,
   type RosterRoleCapabilities,
   type StandupRosterMember,
-  useStandupRosterStore,
 } from '../SprintDashboard/hooks/useStandupRosterStore.ts';
+import { resolveReportRosterScope } from './rosterScope.ts';
 import {
   computePersonalFlow,
   type PersonalFlowExclusionReason,
@@ -1716,50 +1713,32 @@ export function PersonalFlowTab({ teamFilter = '' }: PersonalFlowTabProps = {}) 
   const teamCancelRef = useRef(false);
   const [teamError, setTeamError] = useState<string | null>(null);
 
-  // The active-team roster drives both the suggestion list and the "Run for team roster" mode. It is read
-  // the same way RosterTab does: the persisted active team name filters the shared standup roster store.
-  const rosterMembers = useStandupRosterStore((state) => state.rosterMembers);
-  const storedActiveTeamName = useSettingsStore((state) => state.sprintDashboardActiveTeam);
+  // Teams here are saved Dashboard Team PROFILES, and each profile owns its own roster under a
+  // profile-scoped storage key. A roster member carries no team name, which is why every earlier
+  // attempt to scope this report by `teamName` matched nothing and silently ran whichever profile
+  // Agile Hub had selected — the Reports Hub dropdown appeared to do nothing at all.
+  const teamProfiles = useSettingsStore((state) => state.sprintDashboardTeamProfiles);
+  const activeTeamProfileId = useSettingsStore((state) => state.sprintDashboardActiveTeamProfileId);
   // Shared with the Flow Analysis tab, so the two reports can never disagree about what counts.
   const shouldCountSubTasks = useSettingsStore((state) => state.countSubTasksInFlowReports);
   const setShouldCountSubTasks = useSettingsStore((state) => state.setCountSubTasksInFlowReports);
-  // The Reports Hub filter wins when it names a real roster team, so the scope can be changed without
-  // leaving this tab. A filter value that is NOT a roster team is surfaced rather than acted on:
-  // resolveActiveRosterTeamName falls back to the first roster team on a mismatch, which would look
-  // like the change took effect while quietly reporting on the wrong people.
-  const availableRosterTeamNames = useMemo(
-    () => readAvailableRosterTeamNames(rosterMembers),
-    [rosterMembers],
+  const uiRequestedTeamName = teamFilter.trim();
+  // Reads another profile's roster WITHOUT selecting it: switching the active profile from here would
+  // silently re-point the user's Agile Hub just because they opened a report (017 isolation rule).
+  const rosterScope = useMemo(
+    () => resolveReportRosterScope({
+      requestedTeamName: uiRequestedTeamName,
+      teamProfiles,
+      activeTeamProfileId,
+      readRosterForProfile: readStoredStandupRosterMembers,
+    }),
+    [uiRequestedTeamName, teamProfiles, activeTeamProfileId],
   );
-  const trimmedTeamFilter = teamFilter.trim();
-  const isTeamFilterARosterTeam = trimmedTeamFilter !== ''
-    && availableRosterTeamNames.includes(trimmedTeamFilter);
-  // What the user asked for — which is not necessarily what the roster can provide.
-  const requestedTeamName = isTeamFilterARosterTeam ? trimmedTeamFilter : storedActiveTeamName;
-  // What the roster ACTUALLY scoped to. filterRosterMembersByActiveTeam resolves an unknown team name
-  // to the first roster team rather than failing, so asking for a team that is not on the roster
-  // silently reports on someone else's people. Resolving it here — with the same function the filter
-  // uses — means the label and the rows can never disagree again.
-  const effectiveTeamName = useMemo(
-    () => resolveActiveRosterTeamName(requestedTeamName, rosterMembers),
-    [requestedTeamName, rosterMembers],
-  );
-  // What the user actually chose, at the level they chose it: the in-tab filter if they set one,
-  // otherwise the team stored in Agile Hub. This is the name to compare against and to quote back,
-  // because it is the one they will recognise.
-  const uiRequestedTeamName = (trimmedTeamFilter || storedActiveTeamName).trim();
-  // True whenever the report is showing a different team from the one asked for — covering both a
-  // Reports Hub filter that is not a roster team, and a stored Agile Hub team that is not either.
-  // Note the ABSENCE of an `effectiveTeamName !== ''` guard. An empty resolved team is not the safe
-  // case, it is the worst one: the member filter falls back to the ENTIRE roster, so a requested team
-  // was silently ignored and every person is in the figures. Suppressing the warning there is what let
-  // one team's name sit over everyone's numbers unchallenged.
-  const hasTeamNameMismatch = uiRequestedTeamName !== ''
-    && effectiveTeamName !== uiRequestedTeamName;
-  const activeTeamRosterMembers = useMemo(
-    () => filterRosterMembersByActiveTeam(rosterMembers, effectiveTeamName, { includeTeamlessMembers: true }),
-    [rosterMembers, effectiveTeamName],
-  );
+  const effectiveTeamName = rosterScope.label;
+  // True when a team was named that matches no saved dashboard team — the Team filter lists Jira/ART
+  // teams, which need not match. Surfaced rather than acted on, so the change never LOOKS applied.
+  const hasTeamNameMismatch = !rosterScope.isRequestedTeamMatched;
+  const activeTeamRosterMembers = rosterScope.rosterMembers;
 
   // Too short a query offers no Jira users at all, which is worked out here rather than by clearing the
   // fetched list from the effect below — the last fetch's users simply stop being offered.
@@ -1927,7 +1906,7 @@ export function PersonalFlowTab({ teamFilter = '' }: PersonalFlowTabProps = {}) 
       // NEVER falls back to the REQUESTED team: when the roster has no team metadata the member
       // filter returns everyone, and quoting the requested name back would label the whole roster's
       // figures as one team's.
-      describeRosterScope(effectiveTeamName),
+      effectiveTeamName,
       windowDays,
       statusNameById,
       teamJiraBaseUrl,
@@ -2034,7 +2013,7 @@ export function PersonalFlowTab({ teamFilter = '' }: PersonalFlowTabProps = {}) 
       {hasTeamNameMismatch && (
         <p role="alert" className={styles.warningText} style={{ marginTop: 10 }}>
           “{uiRequestedTeamName}” is not a team on your roster, so this report is showing{' '}
-          <strong>{describeRosterScope(effectiveTeamName)}</strong> instead. The Team filter lists Jira/ART
+          <strong>{effectiveTeamName}</strong> instead. The Team filter lists Jira/ART
           teams, which do not always match the names on your roster — pick a roster team here, or change the
           team in Agile Hub.
         </p>

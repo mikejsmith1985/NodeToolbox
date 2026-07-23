@@ -18,6 +18,8 @@ const { mockJiraGet } = vi.hoisted(() => ({ mockJiraGet: vi.fn() }));
 vi.mock('../../services/jiraApi.ts', () => ({ jiraGet: mockJiraGet }));
 
 import { useStandupRosterStore, type StandupRosterMember } from '../SprintDashboard/hooks/useStandupRosterStore.ts';
+import { buildTeamScopedStorageKey } from '../SprintDashboard/hooks/teamScopedStorage.ts';
+import { useSettingsStore } from '../../store/settingsStore.ts';
 import { IssueFlowTab } from './IssueFlowTab.tsx';
 
 const STATUSES = [
@@ -62,12 +64,27 @@ const HANDED_OVER_ISSUE: { key: string; fields: Record<string, unknown>; changel
   },
 };
 
+/**
+ * Seeds a saved Dashboard Team PROFILE with its own roster.
+ *
+ * Teams here are profiles, each owning a roster under a profile-scoped storage key — a roster member
+ * carries no team name. Seeding the store's `rosterMembers` alone would exercise a path this tab no
+ * longer reads.
+ */
 function seedRoster(): void {
   const rosterMembers: StandupRosterMember[] = [
-    { id: 'roster-member:jane dev', displayName: 'Jane Dev', assigneeQueryValue: 'jane.dev', teamName: 'Team Rocket' },
-    { id: 'roster-member:mark po', displayName: 'Mark PO', assigneeQueryValue: 'mark.po', teamName: 'Team Rocket' },
+    { id: 'roster-member:jane dev', displayName: 'Jane Dev', assigneeQueryValue: 'jane.dev' },
+    { id: 'roster-member:mark po', displayName: 'Mark PO', assigneeQueryValue: 'mark.po' },
   ];
-  useStandupRosterStore.setState({ rosterMembers });
+  window.localStorage.setItem(
+    buildTeamScopedStorageKey('tbxSprintDashboardRoster', 'profile-rocket'),
+    JSON.stringify({ rosterMembers }),
+  );
+  useStandupRosterStore.setState({ rosterMembers, dashboardTeamProfileId: 'profile-rocket' });
+  useSettingsStore.setState({
+    sprintDashboardActiveTeamProfileId: 'profile-rocket',
+    sprintDashboardTeamProfiles: [{ id: 'profile-rocket', name: 'Team Rocket' }] as never,
+  });
 }
 
 /** Returns the decoded JQL from every issue search the tab issued. */
@@ -79,6 +96,7 @@ function decodedSearchJqls(): string[] {
 }
 
 beforeEach(() => {
+  window.localStorage.clear();
   mockJiraGet.mockReset();
   seedRoster();
   mockJiraGet.mockImplementation((path: string) => {
@@ -109,8 +127,39 @@ describe('IssueFlowTab — the query', () => {
     expect(decodedSearchJqls()[0]).toContain('jane.dev');
   });
 
+  it('runs the team picked in Reports Hub, not the one active in Agile Hub', async () => {
+    // The complaint that started this: picking a team here used to change nothing, because scoping
+    // went through a `teamName` field that roster members do not carry.
+    window.localStorage.setItem(
+      buildTeamScopedStorageKey('tbxSprintDashboardRoster', 'profile-falcon'),
+      JSON.stringify({ rosterMembers: [{ id: 'roster-member:sam', displayName: 'Sam QA', assigneeQueryValue: 'sam.qa' }] }),
+    );
+    useSettingsStore.setState({
+      sprintDashboardActiveTeamProfileId: 'profile-rocket',
+      sprintDashboardTeamProfiles: [
+        { id: 'profile-rocket', name: 'Team Rocket' },
+        { id: 'profile-falcon', name: 'Team Falcon' },
+      ] as never,
+    });
+
+    render(<IssueFlowTab teamFilter="Team Falcon" />);
+    fireEvent.click(screen.getByRole('button', { name: /run flow analysis/i }));
+
+    await waitFor(() => expect(decodedSearchJqls().length).toBeGreaterThan(0));
+
+    expect(decodedSearchJqls()[0]).toContain('sam.qa');
+    expect(decodedSearchJqls()[0]).not.toContain('jane.dev');
+    // And Agile Hub's own selection is untouched — Reports Hub reads, it does not select.
+    expect(useSettingsStore.getState().sprintDashboardActiveTeamProfileId).toBe('profile-rocket');
+  });
+
   it('explains rather than fails when the roster holds nobody for the team', async () => {
+    window.localStorage.clear();
     useStandupRosterStore.setState({ rosterMembers: [] });
+    useSettingsStore.setState({
+      sprintDashboardActiveTeamProfileId: '',
+      sprintDashboardTeamProfiles: [],
+    });
 
     render(<IssueFlowTab teamFilter="Team Rocket" />);
     fireEvent.click(screen.getByRole('button', { name: /run flow analysis/i }));

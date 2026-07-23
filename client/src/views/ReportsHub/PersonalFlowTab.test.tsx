@@ -43,6 +43,7 @@ import {
   type RosterRoleCapabilities,
   type StandupRosterMember,
 } from '../SprintDashboard/hooks/useStandupRosterStore.ts';
+import { buildTeamScopedStorageKey } from '../SprintDashboard/hooks/teamScopedStorage.ts';
 import { PersonalFlowTab } from './PersonalFlowTab.tsx';
 
 // Status ids mapped to their Jira category so the changelog transitions read declaratively.
@@ -178,9 +179,27 @@ function buildRosterMemberWithRoles(
 }
 
 /** Seeds the roster store with the given members and marks the given team active. */
+/**
+ * Seeds a saved Dashboard Team PROFILE and puts the roster in that profile's own storage slot.
+ *
+ * This mirrors how the app really stores rosters: the profile is the team, and a roster member
+ * carries no team name. Seeding via `rosterMembers` alone (as these tests used to) exercised a path
+ * the report no longer reads — and was how the "team dropdown does nothing" bug stayed hidden.
+ */
 function seedRoster(members: StandupRosterMember[], activeTeamName: string): void {
-  useStandupRosterStore.setState({ rosterMembers: members });
-  useSettingsStore.setState({ sprintDashboardActiveTeam: activeTeamName });
+  const teamProfileId = `profile-${activeTeamName.toLowerCase().replace(/\s+/g, '-')}`;
+  window.localStorage.setItem(
+    buildTeamScopedStorageKey('tbxSprintDashboardRoster', teamProfileId),
+    JSON.stringify({ rosterMembers: members }),
+  );
+  useStandupRosterStore.setState({ rosterMembers: members, dashboardTeamProfileId: teamProfileId });
+  useSettingsStore.setState({
+    sprintDashboardActiveTeam: activeTeamName,
+    sprintDashboardActiveTeamProfileId: teamProfileId,
+    sprintDashboardTeamProfiles: [
+      { id: teamProfileId, name: activeTeamName } as never,
+    ],
+  });
 }
 
 /** Returns every `/rest/api/2/search` path the mock was called with, URL-decoded for substring assertions. */
@@ -209,7 +228,17 @@ describe('PersonalFlowTab', () => {
     // Reset the shared roster + settings stores so each test starts from an empty roster
     // and no active team, keeping the single-person tests independent of roster state.
     useStandupRosterStore.setState({ rosterMembers: [] });
-    useSettingsStore.setState({ sprintDashboardActiveTeam: '' });
+    // Team profiles AND their profile-scoped rosters must both be cleared: the report reads a team's
+    // roster straight out of storage, so a profile left behind by an earlier test would silently give
+    // the next one a roster it never seeded.
+    useSettingsStore.setState({
+      sprintDashboardActiveTeam: '',
+      sprintDashboardActiveTeamProfileId: '',
+      sprintDashboardTeamProfiles: [],
+    });
+    Object.keys(localStorage)
+      .filter((storageKey) => storageKey.startsWith('tbxSprintDashboardRoster'))
+      .forEach((storageKey) => localStorage.removeItem(storageKey));
     // Clear any configured story-points field so tests default to customfield_10236 unless one opts in.
     localStorage.removeItem('tbxARTSettings');
     // Clear the bottleneck panel's persisted inputs so each test starts from empty scope + status fields.
@@ -705,15 +734,19 @@ describe('PersonalFlowTab', () => {
   });
 
   it('does not label the report with a team it never scoped to', async () => {
-    // The reported bug. When the roster carries NO team metadata, the member filter returns the WHOLE
-    // roster — and the heading used to fall back to whatever team the user had asked for. The result
-    // was one team's name over everyone's figures, with nothing on the page to reveal the swap.
+    // The reported bug. A team is requested that matches no saved dashboard team, so the report runs
+    // whatever roster it can — and must never print the requested name over those figures.
     mockCopyWithResult.mockReset();
     mockCopyWithResult.mockResolvedValue(true);
-    const teamlessMember: StandupRosterMember = {
-      id: 'roster-member:jane dev', displayName: 'Jane Dev', assigneeQueryValue: 'jane.dev',
-    };
-    seedRoster([teamlessMember], 'Transformers');
+    const teamProfileId = 'profile-cleanup';
+    window.localStorage.setItem(
+      buildTeamScopedStorageKey('tbxSprintDashboardRoster', teamProfileId),
+      JSON.stringify({ rosterMembers: [buildRosterMember('Jane Dev', '')] }),
+    );
+    useSettingsStore.setState({
+      sprintDashboardActiveTeamProfileId: teamProfileId,
+      sprintDashboardTeamProfiles: [{ id: teamProfileId, name: 'Cleanup Crew' }] as never,
+    });
     mockJiraGet.mockImplementation((path: string) => {
       if (path.startsWith('/rest/api/2/status')) return Promise.resolve(STATUSES);
       if (path.startsWith('/rest/api/2/user/search')) return Promise.resolve(userSearchResponseForPath(path));
@@ -729,7 +762,7 @@ describe('PersonalFlowTab', () => {
     await waitFor(() => expect(mockCopyWithResult).toHaveBeenCalled());
     const copiedDocument = String(mockCopyWithResult.mock.calls[0][0]);
     expect(copiedDocument).not.toContain('Transformers');
-    expect(copiedDocument).toContain('All roster members (no team assigned)');
+    expect(copiedDocument).toContain('Cleanup Crew');
   });
 
   it('builds the audit report fetch query from the machine id, not the display name', async () => {
@@ -1290,23 +1323,43 @@ describe('PersonalFlowTab', () => {
 
 describe('PersonalFlowTab — in-tab team scope', () => {
   beforeEach(() => {
+    window.localStorage.clear();
     useStandupRosterStore.setState({ rosterMembers: [] });
-    useSettingsStore.setState({ sprintDashboardActiveTeam: '' });
+    useSettingsStore.setState({
+      sprintDashboardActiveTeam: '',
+      sprintDashboardActiveTeamProfileId: '',
+      sprintDashboardTeamProfiles: [],
+    });
     mockJiraGet.mockReset();
     // Reset the clipboard spy too: without this, mock.calls[0] would be an earlier test's copy and
     // this suite would assert against a document it never produced.
     mockCopyWithResult.mockReset();
   });
 
-  /** Two teams in one roster, so a scope change is observable in who gets a row. */
-  function seedTwoTeamRoster(): void {
-    useStandupRosterStore.setState({
-      rosterMembers: [
-        buildRosterMember('Jane Dev', 'Team Rocket'),
-        buildRosterMember('John QA', 'Team Falcon'),
-      ],
+  /**
+   * Seeds TWO saved Dashboard Team profiles, each owning its own roster.
+   *
+   * This is how teams really work here: the profile is the team, and each profile's roster lives
+   * under its own storage key. Roster members carry no team name — which is exactly why scoping this
+   * report by `teamName` matched nothing and the Reports Hub dropdown appeared inert.
+   */
+  function seedTwoTeamProfiles(activeTeamName = 'Team Rocket'): void {
+    const profiles = [
+      { id: 'profile-rocket', name: 'Team Rocket', members: [buildRosterMember('Jane Dev', '')] },
+      { id: 'profile-falcon', name: 'Team Falcon', members: [buildRosterMember('John QA', '')] },
+    ];
+    profiles.forEach((profile) => {
+      window.localStorage.setItem(
+        buildTeamScopedStorageKey('tbxSprintDashboardRoster', profile.id),
+        JSON.stringify({ rosterMembers: profile.members }),
+      );
     });
-    useSettingsStore.setState({ sprintDashboardActiveTeam: 'Team Rocket' });
+    const activeProfile = profiles.find((profile) => profile.name === activeTeamName);
+    useSettingsStore.setState({
+      sprintDashboardActiveTeam: activeTeamName,
+      sprintDashboardActiveTeamProfileId: activeProfile?.id ?? '',
+      sprintDashboardTeamProfiles: profiles.map(({ id, name }) => ({ id, name })) as never,
+    });
     mockJiraGet.mockImplementation((path: string) => {
       if (path.startsWith('/rest/api/2/status')) return Promise.resolve(STATUSES);
       if (path.startsWith('/rest/api/2/user/search')) return Promise.resolve(userSearchResponseForPath(path));
@@ -1315,19 +1368,31 @@ describe('PersonalFlowTab — in-tab team scope', () => {
     });
   }
 
-  it('runs the team chosen in the Reports Hub filter, not the one stored in Agile Hub', async () => {
-    seedTwoTeamRoster();
+  it('runs the team chosen in the Reports Hub filter, not the one active in Agile Hub', async () => {
+    // THE reported bug. Team Rocket is the active profile; the dropdown says Team Falcon. Before this
+    // fix the dropdown changed nothing at all, because scoping went through an empty `teamName`.
+    seedTwoTeamProfiles('Team Rocket');
 
     render(<PersonalFlowTab teamFilter="Team Falcon" />);
     fireEvent.click(screen.getByRole('button', { name: /run for team roster/i }));
 
-    // The stored active team is Team Rocket; the in-tab filter must win.
     await waitFor(() => expect(screen.getByText('John QA')).toBeInTheDocument());
     expect(screen.queryByText('Jane Dev')).not.toBeInTheDocument();
   });
 
-  it('falls back to the Agile Hub team when no filter is chosen', async () => {
-    seedTwoTeamRoster();
+  it('reads the other team without re-pointing the Agile Hub selection', async () => {
+    // Reports Hub is a reader. Selecting a profile here would silently change what Agile Hub shows.
+    seedTwoTeamProfiles('Team Rocket');
+
+    render(<PersonalFlowTab teamFilter="Team Falcon" />);
+    fireEvent.click(screen.getByRole('button', { name: /run for team roster/i }));
+    await waitFor(() => expect(screen.getByText('John QA')).toBeInTheDocument());
+
+    expect(useSettingsStore.getState().sprintDashboardActiveTeamProfileId).toBe('profile-rocket');
+  });
+
+  it('falls back to the active Agile Hub team when no filter is chosen', async () => {
+    seedTwoTeamProfiles('Team Rocket');
 
     render(<PersonalFlowTab teamFilter="" />);
     fireEvent.click(screen.getByRole('button', { name: /run for team roster/i }));
@@ -1335,18 +1400,18 @@ describe('PersonalFlowTab — in-tab team scope', () => {
     await waitFor(() => expect(screen.getByText('Jane Dev')).toBeInTheDocument());
   });
 
-  it('says so when the chosen filter is not a roster team, rather than silently running another', async () => {
-    // The Reports Hub filter is populated from Jira/ART team names, which need not match the roster's.
-    // Silently falling back to the first roster team would look like it worked while being wrong.
-    seedTwoTeamRoster();
+  it('says so when the chosen filter is not a saved team, rather than silently running another', () => {
+    // The Reports Hub filter is populated from Jira/ART team names, which need not match the saved
+    // dashboard teams. Falling back silently would look like it worked while being wrong.
+    seedTwoTeamProfiles('Team Rocket');
 
     render(<PersonalFlowTab teamFilter="Some ART Team" />);
 
     expect(screen.getByText(/not a team on your roster/i)).toBeInTheDocument();
   });
 
-  it('still runs the Agile Hub team when the filter does not match', async () => {
-    seedTwoTeamRoster();
+  it('still runs the active team when the filter does not match', async () => {
+    seedTwoTeamProfiles('Team Rocket');
 
     render(<PersonalFlowTab teamFilter="Some ART Team" />);
     fireEvent.click(screen.getByRole('button', { name: /run for team roster/i }));
@@ -1357,48 +1422,23 @@ describe('PersonalFlowTab — in-tab team scope', () => {
 
   it('labels the report with the team whose data it actually ran, not the one requested', async () => {
     // The reported symptom: the header said "Transformers" while the rows were Cleanup Crew's people.
-    // filterRosterMembersByActiveTeam falls back to the FIRST roster team when the requested name is
-    // not a roster team, so the data moved and the label did not.
     mockCopyWithResult.mockResolvedValue(true);
-    useStandupRosterStore.setState({
-      rosterMembers: [
-        buildRosterMember('Jane Dev', 'Cleanup Crew'),
-        buildRosterMember('John QA', 'Zebra Squad'),
-      ],
-    });
-    useSettingsStore.setState({ sprintDashboardActiveTeam: 'Transformers' });
-    mockJiraGet.mockImplementation((path: string) => {
-      if (path.startsWith('/rest/api/2/status')) return Promise.resolve(STATUSES);
-      if (path.startsWith('/rest/api/2/user/search')) return Promise.resolve(userSearchResponseForPath(path));
-      if (path.startsWith('/rest/api/2/search')) return Promise.resolve(searchResponseForPath(path));
-      return Promise.reject(new Error(`unexpected path ${path}`));
-    });
+    seedTwoTeamProfiles('Team Rocket');
 
-    render(<PersonalFlowTab teamFilter="" />);
+    render(<PersonalFlowTab teamFilter="Some ART Team" />);
     fireEvent.click(screen.getByRole('button', { name: /run for team roster/i }));
     await waitFor(() => expect(screen.getByText('Jane Dev')).toBeInTheDocument());
     fireEvent.click(screen.getByRole('button', { name: /copy audit report/i }));
 
     await waitFor(() => expect(mockCopyWithResult).toHaveBeenCalled());
     const copiedDocument = String(mockCopyWithResult.mock.calls[0][0]);
-    expect(copiedDocument).toContain('Cleanup Crew');
-    expect(copiedDocument).not.toContain('Transformers');
-  });
-
-  it('warns on screen when the requested team is not on the roster at all', async () => {
-    useStandupRosterStore.setState({
-      rosterMembers: [buildRosterMember('Jane Dev', 'Cleanup Crew')],
-    });
-    useSettingsStore.setState({ sprintDashboardActiveTeam: 'Transformers' });
-
-    render(<PersonalFlowTab teamFilter="" />);
-
-    expect(screen.getByText(/Cleanup Crew/)).toBeInTheDocument();
+    expect(copiedDocument).toContain('Team Rocket');
+    expect(copiedDocument).not.toContain('Some ART Team');
   });
 
   it('names the scoped team in the audit report it copies', async () => {
     mockCopyWithResult.mockResolvedValue(true);
-    seedTwoTeamRoster();
+    seedTwoTeamProfiles('Team Rocket');
 
     render(<PersonalFlowTab teamFilter="Team Falcon" />);
     fireEvent.click(screen.getByRole('button', { name: /run for team roster/i }));
