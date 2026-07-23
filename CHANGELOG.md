@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **The Flow Analysis tab now has a "Copy Flow Analysis report" button.** It produces a shareable Markdown write-up —
+  the flow totals, where the time goes, how each status was classified, the per-issue breakdown, and the "who did the
+  internal testing" figures — that pastes into a Confluence page. Previously those sections existed only on screen and,
+  because of a wiring gap, in a form that never actually reached a real report; the internal-testing evidence in
+  particular could not be shared with whoever approves headcount, which is the whole reason it exists.
 - **New "Who did the internal testing" section on the Flow Analysis tab.** For every delivered issue that passed
   through an internal-testing status, it shows whether the testing was done by this roster's own internal tester or
   by somebody outside the team — with the headline as a **share of issues** ("31 of 88 internally tested issues (35%)

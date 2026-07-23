@@ -41,6 +41,7 @@ import {
 import { buildCreditedIssuesLink } from './flowAuditLinks.ts';
 import { classifyIssueScope } from './issueScope.ts';
 import { readBottleneckSettings, writeBottleneckSettings } from './internalTestingStatuses.ts';
+import { readToolVersion } from './readToolVersion.ts';
 import { computeDeliveryTotals } from './issueFlowRollup.ts';
 import { buildFlowAuditDocument } from './flowAuditDocument.ts';
 import {
@@ -944,17 +945,6 @@ function PersonSuggestionsDropdown({
  * the table they are looking at can never disagree.
  */
 /** Reads the running app version, so the published document says which build produced it. */
-async function readToolVersion(): Promise<string> {
-  try {
-    const response = await fetch('/api/version-check');
-    const payload = (await response.json()) as { currentVersion?: string; version?: string };
-    return payload.currentVersion ?? payload.version ?? 'unknown';
-  } catch {
-    // A missing version must not stop the report being produced; it is provenance, not content.
-    return 'unknown';
-  }
-}
-
 function buildAuditDocumentFromRows(
   teamRows: TeamFlowRow[],
   rosterLabel: string,
