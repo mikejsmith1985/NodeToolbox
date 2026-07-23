@@ -61,6 +61,7 @@ function makeInput(overrides: Partial<FlowAnalysisDocumentInput> = {}): FlowAnal
       generatedAtIso: '2026-07-08T12:00:00.000Z',
       toolVersion: '0.94.0',
       countsSubTasks: false,
+      projectScope: null,
     },
     issueFlows,
     rollups: summariseStageRollups(issueFlows),
@@ -154,5 +155,19 @@ describe('buildFlowAnalysisDocument — reconciliation and purity', () => {
 
   it('is pure — identical input gives an identical document', () => {
     expect(buildFlowAnalysisDocument(makeInput())).toEqual(buildFlowAnalysisDocument(makeInput()));
+  });
+});
+
+describe('buildFlowAnalysisDocument — project scope', () => {
+  it('states when the figures cover all projects', () => {
+    expect(buildFlowAnalysisDocument(makeInput())).toContain('All projects the roster worked in');
+  });
+
+  it('names the single project when the run was narrowed to one', () => {
+    const document = buildFlowAnalysisDocument(makeInput({
+      envelope: { ...makeInput().envelope, projectScope: 'ENCUC' },
+    }));
+
+    expect(document).toContain('ENCUC only');
   });
 });

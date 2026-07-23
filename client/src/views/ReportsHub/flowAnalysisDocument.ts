@@ -40,6 +40,8 @@ export interface FlowAnalysisEnvelope {
   generatedAtIso: string;
   toolVersion: string;
   countsSubTasks: boolean;
+  /** The single project the figures were narrowed to, or null when every project is included. */
+  projectScope: string | null;
 }
 
 /** Everything the Flow Analysis document renders. */
@@ -81,6 +83,9 @@ function renderHeader(envelope: FlowAnalysisEnvelope): string {
     `| Counted issues | ${envelope.countsSubTasks
       ? 'All issue types, INCLUDING sub-tasks'
       : 'Stories, Tasks and Defects — sub-tasks excluded'} |`,
+    `| Project scope | ${envelope.projectScope === null
+      ? 'All projects the roster worked in'
+      : `${envelope.projectScope} only`} |`,
     '',
     '> **What this is.** For every issue this roster delivered in the window, where its time went and '
       + 'who was holding it at each point — including time it spent in nobody\'s hands. Every duration '

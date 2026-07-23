@@ -17,6 +17,7 @@ import styles from './ReportsHubView.module.css';
 import {
   buildAssigneeWasClauseFromValues,
   readStoredStandupRosterMembers,
+  type StandupRosterMember,
 } from '../SprintDashboard/hooks/useStandupRosterStore.ts';
 import { resolveRosterMachineIds } from './rosterIdentity.ts';
 import { resolveReportRosterScope } from './rosterScope.ts';
@@ -35,6 +36,7 @@ import { computeDeliveryTotals, summariseStageRollups } from './issueFlowRollup.
 import { classifyIssueScope } from './issueScope.ts';
 import { readBottleneckSettings } from './internalTestingStatuses.ts';
 import { summariseInternalTestingCoverage } from './internalTestingCoverage.ts';
+import { ALL_PROJECTS, collectProjectKeys, filterByProject } from './projectScope.ts';
 import { buildFlowAnalysisDocument } from './flowAnalysisDocument.ts';
 import { readToolVersion } from './readToolVersion.ts';
 import { copyToClipboard as copyToClipboardWithResult } from '../JiraTemplateMaker/lib/copyToClipboard.ts';
@@ -70,8 +72,9 @@ interface FlowRunOutcome {
   ceilingReached: FlowFetchCeiling | null;
   /** How many fetched issues were sub-tasks, disclosed rather than quietly dropped. */
   subTaskCount: number;
-  /** Who actually performed internal testing — the roster, or people outside it. */
-  internalTestingCoverage: InternalTestingCoverage;
+  /** The roster and testing statuses, kept so coverage can be recomputed when a project filter narrows the flows. */
+  rosterMembers: StandupRosterMember[];
+  internalTestingStatusNames: string[];
   statusNamesById: Record<string, string>;
   statusClassByStatusId: Record<string, StatusFlowClass>;
   jql: string;
@@ -211,13 +214,11 @@ export function IssueFlowTab({ teamFilter = '' }: { teamFilter?: string }): Reac
           ? 0
           : fetchOutcome.issues
             .filter((issue) => classifyIssueScope(issue.fields?.issuetype) === 'sub-task').length,
-        // Uses the SAME internal-testing statuses the Bottleneck panel was configured with, so the
-        // two figures on this page cannot disagree about which statuses count as internal testing.
-        internalTestingCoverage: summariseInternalTestingCoverage({
-          issueFlows,
-          rosterMembers,
-          internalTestingStatusNames: readBottleneckSettings().statusNames,
-        }),
+        // The roster and the Bottleneck panel's configured statuses are kept so the internal-testing
+        // coverage can be recomputed if a project filter narrows the flows — the two figures on this
+        // page then still agree about which statuses count as internal testing.
+        rosterMembers,
+        internalTestingStatusNames: readBottleneckSettings().statusNames,
         ceilingReached: fetchOutcome.ceilingReached,
         statusNamesById,
         statusClassByStatusId: readClassificationUsed(issueFlows),
@@ -335,11 +336,36 @@ function readClassificationUsed(issueFlows: readonly IssueFlow[]): Record<string
 type AuditCopyState = 'idle' | 'copied' | 'failed';
 
 function FlowResultsView({ outcome }: { outcome: FlowRunOutcome }): React.JSX.Element {
-  const rollups = useMemo(() => summariseStageRollups(outcome.issueFlows), [outcome.issueFlows]);
-  const deliveryTotals = useMemo(() => computeDeliveryTotals(outcome.issueFlows), [outcome.issueFlows]);
+  // The report queries by person, not by project, so it returns work from every project the roster
+  // touches. The dropdown is built from the projects that actually appear in the results, and the
+  // filter narrows the already-fetched flows — no second Jira query — so everything below recomputes
+  // for the chosen project alone.
+  const [selectedProject, setSelectedProject] = useState<string>(ALL_PROJECTS);
+  const availableProjects = useMemo(
+    () => collectProjectKeys(outcome.issueFlows.map((issueFlow) => issueFlow.issueKey)),
+    [outcome.issueFlows],
+  );
+  const visibleIssueFlows = useMemo(
+    () => filterByProject(outcome.issueFlows, selectedProject),
+    [outcome.issueFlows, selectedProject],
+  );
+
+  const rollups = useMemo(() => summariseStageRollups(visibleIssueFlows), [visibleIssueFlows]);
+  const deliveryTotals = useMemo(() => computeDeliveryTotals(visibleIssueFlows), [visibleIssueFlows]);
+  // Recomputed from the VISIBLE flows so the internal-testing figures describe the chosen project too —
+  // a testing project's tickets must not skew a delivery project's coverage number.
+  const internalTestingCoverage = useMemo(
+    () => summariseInternalTestingCoverage({
+      issueFlows: visibleIssueFlows,
+      rosterMembers: outcome.rosterMembers,
+      internalTestingStatusNames: outcome.internalTestingStatusNames,
+    }),
+    [visibleIssueFlows, outcome.rosterMembers, outcome.internalTestingStatusNames],
+  );
+  const statusClassByStatusName = useMemo(() => readClassificationUsed(visibleIssueFlows), [visibleIssueFlows]);
   const [copyState, setCopyState] = useState<AuditCopyState>('idle');
 
-  /** Builds the copyable Flow Analysis document from the run on screen and puts it on the clipboard. */
+  /** Builds the copyable Flow Analysis document from the (project-filtered) run on screen. */
   const handleCopy = async (): Promise<void> => {
     setCopyState('idle');
     const toolVersion = await readToolVersion();
@@ -350,12 +376,13 @@ function FlowResultsView({ outcome }: { outcome: FlowRunOutcome }): React.JSX.El
         generatedAtIso: new Date().toISOString(),
         toolVersion,
         countsSubTasks: outcome.countsSubTasks,
+        projectScope: selectedProject === ALL_PROJECTS ? null : selectedProject,
       },
-      issueFlows: outcome.issueFlows,
+      issueFlows: visibleIssueFlows,
       rollups,
       deliveryTotals,
-      statusClassByStatusName: outcome.statusClassByStatusId,
-      internalTestingCoverage: outcome.internalTestingCoverage,
+      statusClassByStatusName,
+      internalTestingCoverage,
     });
     setCopyState(await copyToClipboardWithResult(document) ? 'copied' : 'failed');
   };
@@ -387,23 +414,47 @@ function FlowResultsView({ outcome }: { outcome: FlowRunOutcome }): React.JSX.El
         </p>
       )}
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <button type="button" className={styles.actionButton} onClick={() => { void handleCopy(); }}>
-          Copy Flow Analysis report
-        </button>
-        <span className={styles.captionText}>
-          {copyState === 'copied' && 'Copied — paste into a Confluence page.'}
-          {copyState === 'failed' && 'Copy failed — nothing was placed on the clipboard.'}
-          {copyState === 'idle'
-            && 'A shareable write-up: the flow figures, who did the internal testing, and the per-issue detail.'}
-        </span>
-      </div>
+      {availableProjects.length > 1 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+          <label>
+            Project{' '}
+            <select value={selectedProject} onChange={(event) => setSelectedProject(event.target.value)}>
+              <option value={ALL_PROJECTS}>All projects ({outcome.issueFlows.length})</option>
+              {availableProjects.map((projectKey) => (
+                <option key={projectKey} value={projectKey}>{projectKey}</option>
+              ))}
+            </select>
+          </label>
+          <span className={styles.captionText}>
+            The report follows the roster across every project they work in. Narrow to one to see just that
+            project’s flow.
+          </span>
+        </div>
+      )}
 
-      <FlowSummarySection issueFlows={outcome.issueFlows} deliveryTotals={deliveryTotals} />
-      <StageRollupSection rollups={rollups} />
-      <InternalTestingCoverageSection coverage={outcome.internalTestingCoverage} />
-      <ClassificationSection statusClassByStatusId={outcome.statusClassByStatusId} />
-      <PerIssueSection issueFlows={outcome.issueFlows} />
+      {visibleIssueFlows.length === 0 ? (
+        <p className={styles.captionText}>No delivered issues in {selectedProject} for this run.</p>
+      ) : (
+        <>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <button type="button" className={styles.actionButton} onClick={() => { void handleCopy(); }}>
+              Copy Flow Analysis report
+            </button>
+            <span className={styles.captionText}>
+              {copyState === 'copied' && 'Copied — paste into a Confluence page.'}
+              {copyState === 'failed' && 'Copy failed — nothing was placed on the clipboard.'}
+              {copyState === 'idle'
+                && 'A shareable write-up: the flow figures, who did the internal testing, and the per-issue detail.'}
+            </span>
+          </div>
+
+          <FlowSummarySection issueFlows={visibleIssueFlows} deliveryTotals={deliveryTotals} />
+          <StageRollupSection rollups={rollups} />
+          <InternalTestingCoverageSection coverage={internalTestingCoverage} />
+          <ClassificationSection statusClassByStatusId={statusClassByStatusName} />
+          <PerIssueSection issueFlows={visibleIssueFlows} />
+        </>
+      )}
     </div>
   );
 }

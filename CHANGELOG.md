@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Project filter on the Flow Analysis tab.** The report queries by roster member, so it follows the team across
+  every Jira project they touch (ENCUC, ENFCT, INTTEST, …) — which meant a report meant to describe one project
+  arrived full of issues from others, distorting the roll-ups and skewing the internal-testing figures with tickets
+  from a separate testing project. A **Project** dropdown, built from the projects that actually appear in the run,
+  narrows every figure — flow totals, where-the-time-goes, internal-testing coverage and the per-issue list — to a
+  single project. It filters the already-fetched data, so switching projects needs no second Jira query, and the
+  copied report states which project it covers. Defaults to all projects, unchanged from before.
 - **The Flow Analysis tab now has a "Copy Flow Analysis report" button.** It produces a shareable Markdown write-up —
   the flow totals, where the time goes, how each status was classified, the per-issue breakdown, and the "who did the
   internal testing" figures — that pastes into a Confluence page. Previously those sections existed only on screen and,
