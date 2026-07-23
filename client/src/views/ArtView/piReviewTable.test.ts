@@ -3,6 +3,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  buildCarryOverRows,
   createInitialPiReviewPageStorage,
   createEmptyConfidenceVoteRow,
   createEmptyPiReviewRow,
@@ -1037,5 +1038,61 @@ describe('setPiReviewDomParser (DOM host seam)', () => {
 
     expect(parsed).not.toBeNull();
     expect(parsed?.rows.length).toBeGreaterThan(0);
+  });
+});
+
+describe('buildCarryOverRows', () => {
+  /** A row with only the fields these tests care about set. */
+  function row(overrides: Partial<ReturnType<typeof createEmptyPiReviewRow>>) {
+    return { ...createEmptyPiReviewRow(), ...overrides };
+  }
+
+  it('carries only the rows marked Carry-Over', () => {
+    const source = [
+      row({ feature: 'ALPHA-1 - Keep', carryOver: 'Yes', notes: 'context' }),
+      row({ feature: 'ALPHA-2 - Drop', carryOver: '' }),
+    ];
+
+    const carried = buildCarryOverRows(source, []);
+
+    expect(carried).toHaveLength(1);
+    expect(carried[0].feature).toBe('ALPHA-1 - Keep');
+    expect(carried[0].notes).toBe('context'); // planning context is kept
+  });
+
+  it('resets the Carry-Over box on the brought-forward row', () => {
+    // Arriving from the prior PI is not itself a decision to carry on again.
+    const carried = buildCarryOverRows([row({ feature: 'ALPHA-1', carryOver: 'Yes' })], []);
+
+    expect(carried[0].carryOver).toBe('');
+  });
+
+  it('gives each carried row a fresh rowId, not the source row id', () => {
+    const source = [row({ feature: 'ALPHA-1', carryOver: 'Yes' })];
+
+    const carried = buildCarryOverRows(source, []);
+
+    expect(carried[0].rowId).not.toBe(source[0].rowId);
+    expect(carried[0].rowId).not.toBe('');
+  });
+
+  it('skips a feature already present on the current page, so carrying over twice cannot duplicate', () => {
+    const source = [row({ feature: 'ALPHA-1 - Feature', carryOver: 'Yes' })];
+    const existing = [row({ feature: 'alpha-1 - feature' })]; // same feature, different case
+
+    expect(buildCarryOverRows(source, existing)).toHaveLength(0);
+  });
+
+  it('ignores a marked row with an empty feature cell', () => {
+    expect(buildCarryOverRows([row({ feature: '   ', carryOver: 'Yes' })], [])).toHaveLength(0);
+  });
+
+  it('does not mutate the source rows', () => {
+    const source = [row({ feature: 'ALPHA-1', carryOver: 'Yes' })];
+    const snapshot = JSON.stringify(source);
+
+    buildCarryOverRows(source, []);
+
+    expect(JSON.stringify(source)).toBe(snapshot);
   });
 });

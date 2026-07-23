@@ -519,6 +519,94 @@ describe('PiReviewTab', () => {
     expect(await screen.findByText(/added 1 feature for pi 26\.3/i)).toBeInTheDocument();
   });
 
+  it('pulls Features for the WHOLE roster when “Include full roster” is ticked', async () => {
+    // The reported gap: Features assigned to roster members who are not the PO were dropped.
+    mockFetchConfluencePageByReference.mockResolvedValue(ALPHA_PAGE);
+    useStandupRosterStore.getState().replaceRosterMembers([
+      {
+        displayName: 'Pat Owner', assigneeQueryValue: 'C73130',
+        roleCapabilities: { canDevelop: false, canInternalTest: false, canExternalTest: false, canProductOwner: true },
+      },
+      {
+        displayName: 'Dana Dev', assigneeQueryValue: 'DEV99',
+        roleCapabilities: { canDevelop: true, canInternalTest: false, canExternalTest: false, canProductOwner: false },
+      },
+    ]);
+    mockPullPiReviewFeatures.mockResolvedValue({ rows: [], discoveredCount: 0, addedCount: 0 });
+
+    renderPiReviewTab([{
+      id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: 'ALPHA',
+      piReviewPages: [{ piName: 'PI 26.3', pageUrl: 'https://example.atlassian.net/wiki/pages/12345/Alpha' }],
+      sprintIssues: [], isLoading: false, loadError: null,
+    }]);
+
+    const alphaSection = await screen.findByRole('region', { name: /pi 26\.3 pi review/i });
+    enterEditMode(alphaSection);
+    const fullRosterToggle = within(alphaSection).getByRole('checkbox', { name: /include full roster/i });
+    fireEvent.click(fullRosterToggle);
+    // Confirm the toggle reached render before pulling.
+    expect(await within(alphaSection).findByText(/any of the\s*2\s*roster members/i)).toBeInTheDocument();
+    fireEvent.click(within(alphaSection).getByRole('button', { name: /pull features from jira/i }));
+
+    await waitFor(() => {
+      // Both the PO and the non-PO developer are queried — not just the PO.
+      // The non-PO developer (DEV99) is now included alongside the PO — order follows the roster sort.
+      expect(mockPullPiReviewFeatures).toHaveBeenCalledWith(
+        'PI 26.3', expect.arrayContaining(['C73130', 'DEV99']), expect.any(Array),
+      );
+    });
+  });
+
+  it('adds a blank Feature row on demand', async () => {
+    mockFetchConfluencePageByReference.mockResolvedValue(ALPHA_PAGE);
+
+    renderPiReviewTab([DEFAULT_TEAMS[0]]);
+    const alphaSection = await screen.findByRole('region', { name: /alpha team pi review/i });
+    enterEditMode(alphaSection);
+
+    // ALPHA_PAGE has one row; there is no row 2 yet.
+    expect(within(alphaSection).getByLabelText(/feature for alpha team row 1/i)).toBeInTheDocument();
+    expect(within(alphaSection).queryByLabelText(/feature for alpha team row 2/i)).not.toBeInTheDocument();
+
+    fireEvent.click(within(alphaSection).getByRole('button', { name: /^add row$/i }));
+
+    expect(within(alphaSection).getByLabelText(/feature for alpha team row 2/i)).toBeInTheDocument();
+  });
+
+  it('carries the Carry-Over-marked Features over from a previously-configured PI page', async () => {
+    // The current PI page starts without Feature A; the prior PI page has it marked Carry-Over.
+    const emptyCurrentPage = {
+      ...ALPHA_PAGE,
+      body: { storage: { value: ALPHA_PAGE.body.storage.value.replace(/<tr>\s*<td>Yes<\/td>[\s\S]*?<\/tr>/, ''), representation: 'storage' } },
+    };
+    mockFetchConfluencePageByReference.mockImplementation((reference: string) =>
+      Promise.resolve(reference.includes('Alpha262') ? ALPHA_PAGE : emptyCurrentPage));
+
+    renderPiReviewTab([{
+      id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: 'ALPHA',
+      piReviewPages: [
+        { piName: 'PI 26.3', pageUrl: 'https://example.atlassian.net/wiki/pages/12345/Alpha263' },
+        { piName: 'PI 26.2', pageUrl: 'https://example.atlassian.net/wiki/pages/67890/Alpha262' },
+      ],
+      sprintIssues: [], isLoading: false, loadError: null,
+    }]);
+
+    const currentSection = await screen.findByRole('region', { name: /pi 26\.3 pi review/i });
+    enterEditMode(currentSection);
+
+    // Feature A is not on the current page yet.
+    expect(within(currentSection).queryByDisplayValue('Feature A')).not.toBeInTheDocument();
+
+    fireEvent.change(within(currentSection).getByLabelText(/carry over features from a previous pi/i), {
+      target: { value: within(currentSection).getByRole('option', { name: 'PI 26.2' }).getAttribute('value') ?? '' },
+    });
+    fireEvent.click(within(currentSection).getByRole('button', { name: /^carry over$/i }));
+
+    // Feature A, marked Carry-Over on 26.2, arrives on 26.3.
+    expect(await within(currentSection).findByDisplayValue('Feature A')).toBeInTheDocument();
+    expect(await screen.findByText(/carried over 1 feature from pi 26\.2/i)).toBeInTheDocument();
+  });
+
   it('defaults to a read-only view mode and only shows structural controls in edit mode', async () => {
     mockFetchConfluencePageByReference.mockResolvedValue(ALPHA_PAGE);
 

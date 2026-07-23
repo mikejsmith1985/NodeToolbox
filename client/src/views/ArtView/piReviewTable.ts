@@ -272,6 +272,38 @@ export function createEmptyPiReviewRow(): PiReviewRow {
   };
 }
 
+/** The checkbox value a marked cell carries. */
+const CHECKBOX_MARKED_VALUE = 'Yes';
+
+/**
+ * Selects the rows a prior PI marked to carry over, and clones them as fresh rows for the next PI.
+ *
+ * "Carry-Over" is the checkbox a team ticks on a Feature they expect to continue into the next PI.
+ * This pulls exactly those from a source page and prepares them for the current page:
+ *   • a fresh rowId, so it is a new row here rather than a reference to the old page's row;
+ *   • the Carry-Over box RESET, because arriving from the prior PI is not itself a decision to carry
+ *     on again — the team re-marks it only if it will;
+ *   • features already present on the current page are skipped, so carrying over twice cannot
+ *     duplicate a row.
+ *
+ * Everything else (points, notes, dependencies, risks, committed) is kept, since that is the planning
+ * context worth bringing forward.
+ */
+export function buildCarryOverRows(
+  sourceRows: readonly PiReviewRow[],
+  existingRows: readonly PiReviewRow[],
+): PiReviewRow[] {
+  const existingFeatureKeys = new Set(
+    existingRows.map((row) => row.feature.trim().toLowerCase()).filter((feature) => feature !== ''),
+  );
+
+  return sourceRows
+    .filter((row) => row.carryOver === CHECKBOX_MARKED_VALUE
+      && row.feature.trim() !== ''
+      && !existingFeatureKeys.has(row.feature.trim().toLowerCase()))
+    .map((row) => ({ ...row, rowId: createRowId(), carryOver: '' }));
+}
+
 /** Creates a blank confidence row ready for week-over-week fist-of-five tracking. */
 export function createEmptyConfidenceVoteRow(): ConfidenceVoteRow {
   return {
