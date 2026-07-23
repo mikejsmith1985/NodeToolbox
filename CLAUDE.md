@@ -17,6 +17,25 @@
 > `po-pi-dropdown.spec.js`. Feature 024's spec inherited a false "do not run concurrently with 022" constraint from
 > these stale entries before the code was checked. **Verify against the codebase before trusting a status below.**
 
+- **025-personal-flow-audit** — *(planned on `feature/025-personal-flow-audit` — ready for `/speckit-tasks`)* a
+  second output from the Personal Workflow run: a **team-wide auditable Markdown document** where every metric carries
+  its meaning, its formula, a worked example, and one-click Jira links, so a sceptic can validate the numbers without
+  the person who generated them. Plan: `specs/025-personal-flow-audit/plan.md`. Contracts: `audit-document.md`,
+  `evidence-links.md`, `publish-routes.md`.
+  **The trap**: `buildSearchJql` (`PersonalFlowTab.tsx:258`) is a **deliberate superset** — `assignee WAS … AND
+  updated >= -Nd`, with the engine doing exact windowing afterwards. Linking it beside a *credited* count returns more
+  issues than the number claims. Three link kinds are required, one per row of `fetched = credited + excluded`:
+  fetch JQL for fetched, `buildJiraIssueNavigatorUrl(keys)` for credited and for each exclusion reason.
+  **Engine change**: `computePersonalFlow` **discards** the stints/spans behind its cycle-time total —
+  `PersonalFlowIssueMetric` keeps only the summed `cycleTimeDays`. It must retain them for **one** nominated issue
+  (chosen inside the engine, while the spans are still in scope) for the worked example.
+  **Readability rule** (the user's own): explanations **once per column**, links **per row**. A 10-person roster gets
+  one explanation block, not ten. Per-issue detail goes last, in its own section.
+  **Sequencing**: clipboard (P1) has no conversion dependency and ships first; direct Confluence publish (P2) needs a
+  markdown→storage renderer that **does not exist** (`confluenceStorageText.ts` only reads storage→text). Publishing
+  replaces the **whole page**, so the named, abandonable warning is load-bearing. Generator is pure — clock injected,
+  no I/O — so the document itself is unit-testable.
+
 - **024-jira-comment-mentions** — *(planned on `feature/024-jira-comment-mentions` — ready for `/speckit-tasks`)*
   Jira-native @-mentions in comments, both directions. **Read**: mentions currently render as raw
   `[~accountid:557058:ab-12]` / `[~jsmith]`, or — for ADF bodies — **vanish entirely** (real data loss; root cause is

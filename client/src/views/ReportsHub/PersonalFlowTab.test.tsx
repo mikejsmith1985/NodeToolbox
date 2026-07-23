@@ -29,6 +29,14 @@ vi.mock('../FeatureCanvas/ai/clipboard.ts', () => ({
   copyToClipboard: mockCopyToClipboard,
 }));
 
+// The audit report uses the RESULT-RETURNING copier, so a failed copy can be surfaced rather than
+// swallowed. Mocked separately from the fire-and-forget one above.
+const { mockCopyWithResult } = vi.hoisted(() => ({ mockCopyWithResult: vi.fn() }));
+
+vi.mock('../JiraTemplateMaker/lib/copyToClipboard.ts', () => ({
+  copyToClipboard: mockCopyWithResult,
+}));
+
 import { useSettingsStore } from '../../store/settingsStore.ts';
 import {
   useStandupRosterStore,
@@ -621,6 +629,79 @@ describe('PersonalFlowTab', () => {
 
     // Clicking the suggestion writes that person's friendly display name into the field.
     expect(personInput).toHaveValue('Jane Dev');
+  });
+
+  it('offers an audit report once a team run has produced rows', async () => {
+    seedRoster([buildRosterMember('Jane Dev', 'Team Rocket')], 'Team Rocket');
+    mockJiraGet.mockImplementation((path: string) => {
+      if (path.startsWith('/rest/api/2/status')) return Promise.resolve(STATUSES);
+      if (path.startsWith('/rest/api/2/user/search')) return Promise.resolve(userSearchResponseForPath(path));
+      if (path.startsWith('/rest/api/2/search')) return Promise.resolve(searchResponseForPath(path));
+      return Promise.reject(new Error(`unexpected path ${path}`));
+    });
+
+    render(<PersonalFlowTab />);
+    fireEvent.click(screen.getByRole('button', { name: /run for team roster/i }));
+    await waitFor(() => expect(screen.getByText('Jane Dev')).toBeInTheDocument());
+
+    expect(screen.getByRole('button', { name: /copy audit report/i })).toBeInTheDocument();
+  });
+
+  it('copies a document that explains the numbers and names the people', async () => {
+    mockCopyWithResult.mockResolvedValue(true);
+    seedRoster([buildRosterMember('Jane Dev', 'Team Rocket')], 'Team Rocket');
+    mockJiraGet.mockImplementation((path: string) => {
+      if (path.startsWith('/rest/api/2/status')) return Promise.resolve(STATUSES);
+      if (path.startsWith('/rest/api/2/user/search')) return Promise.resolve(userSearchResponseForPath(path));
+      if (path.startsWith('/rest/api/2/search')) return Promise.resolve(searchResponseForPath(path));
+      return Promise.reject(new Error(`unexpected path ${path}`));
+    });
+
+    render(<PersonalFlowTab />);
+    fireEvent.click(screen.getByRole('button', { name: /run for team roster/i }));
+    await waitFor(() => expect(screen.getByText('Jane Dev')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /copy audit report/i }));
+
+    await waitFor(() => expect(mockCopyWithResult).toHaveBeenCalled());
+    const copiedDocument = String(mockCopyWithResult.mock.calls[0][0]);
+    expect(copiedDocument).toContain('Jane Dev');
+    expect(copiedDocument).toContain('How these numbers are calculated');
+    expect(copiedDocument).toContain('What was counted and what was not');
+  });
+
+  it('says so when the copy fails, rather than letting the user paste stale content', async () => {
+    mockCopyWithResult.mockResolvedValue(false);
+    seedRoster([buildRosterMember('Jane Dev', 'Team Rocket')], 'Team Rocket');
+    mockJiraGet.mockImplementation((path: string) => {
+      if (path.startsWith('/rest/api/2/status')) return Promise.resolve(STATUSES);
+      if (path.startsWith('/rest/api/2/user/search')) return Promise.resolve(userSearchResponseForPath(path));
+      if (path.startsWith('/rest/api/2/search')) return Promise.resolve(searchResponseForPath(path));
+      return Promise.reject(new Error(`unexpected path ${path}`));
+    });
+
+    render(<PersonalFlowTab />);
+    fireEvent.click(screen.getByRole('button', { name: /run for team roster/i }));
+    await waitFor(() => expect(screen.getByText('Jane Dev')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /copy audit report/i }));
+
+    expect(await screen.findByText(/copy failed/i)).toBeInTheDocument();
+  });
+
+  it('pages the issue search rather than taking a single capped page', async () => {
+    seedRoster([buildRosterMember('Jane Dev', 'Team Rocket')], 'Team Rocket');
+    mockJiraGet.mockImplementation((path: string) => {
+      if (path.startsWith('/rest/api/2/status')) return Promise.resolve(STATUSES);
+      if (path.startsWith('/rest/api/2/user/search')) return Promise.resolve(userSearchResponseForPath(path));
+      if (path.startsWith('/rest/api/2/search')) return Promise.resolve(searchResponseForPath(path));
+      return Promise.reject(new Error(`unexpected path ${path}`));
+    });
+
+    render(<PersonalFlowTab />);
+    fireEvent.click(screen.getByRole('button', { name: /run for team roster/i }));
+    await waitFor(() => expect(screen.getByText('Jane Dev')).toBeInTheDocument());
+
+    // The old single-page fetch had no offset at all; paging requires one.
+    expect(decodedSearchPaths().some((path) => path.includes('startAt='))).toBe(true);
   });
 
   it('runs for the team roster and renders a comparison row per member', async () => {

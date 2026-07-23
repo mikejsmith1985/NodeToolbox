@@ -625,3 +625,96 @@ describe('computePersonalFlow — determinism and edges', () => {
     expect(result.windowDays).toBe(1);
   });
 });
+
+// ── Worked example: the evidence behind one credited issue's cycle time ───────
+//
+// Cycle time is reconstructed from issue history, so no Jira search reproduces it. The engine
+// therefore has to hand back the working for ONE credited issue — enough that a reader can open
+// that issue in Jira and confirm the method by hand.
+
+describe('computePersonalFlow — worked example evidence', () => {
+  /** An issue held Wed 1 Jul → Fri 3 Jul while in progress, then done. 2 working days. */
+  function makeEvidenceIssue(key: string): PersonalFlowIssue {
+    return makeFlowIssue({
+      key,
+      createdIso: '2026-07-01T00:00:00.000Z',
+      initialStatusId: 'inProgress',
+      initiallyAssignedToTarget: true,
+      statusTransitions: [{ toStatusId: 'done', atIso: '2026-07-03T00:00:00.000Z' }],
+    });
+  }
+
+  it('returns a worked example naming a credited issue', () => {
+    const result = computePersonalFlow(makeInput([makeEvidenceIssue('FLOW-1')]));
+
+    expect(result.workedExample).not.toBeNull();
+    expect(result.workedExample?.issueKey).toBe('FLOW-1');
+  });
+
+  it('lists the ownership stints that were evaluated', () => {
+    const result = computePersonalFlow(makeInput([makeEvidenceIssue('FLOW-1')]));
+
+    expect(result.workedExample?.ownershipStints.length).toBeGreaterThan(0);
+    expect(result.workedExample?.ownershipStints[0].fromIso).toBe('2026-07-01T00:00:00.000Z');
+  });
+
+  it('lists the qualifying in-progress spans with their working days', () => {
+    const result = computePersonalFlow(makeInput([makeEvidenceIssue('FLOW-1')]));
+    const spans = result.workedExample?.qualifyingSpans ?? [];
+
+    expect(spans.length).toBeGreaterThan(0);
+    expect(spans[0].statusId).toBe('inProgress');
+    expect(spans[0].workingDays).toBeGreaterThan(0);
+  });
+
+  it('has spans that sum to its stated total', () => {
+    const workedExample = computePersonalFlow(makeInput([makeEvidenceIssue('FLOW-1')])).workedExample;
+    const summedSpanDays = (workedExample?.qualifyingSpans ?? [])
+      .reduce((runningTotal, span) => runningTotal + span.workingDays, 0);
+
+    expect(summedSpanDays).toBeCloseTo(workedExample?.totalWorkingDays ?? -1, 10);
+  });
+
+  it('states a total equal to that issue\'s reported cycle time — the example cannot contradict the table', () => {
+    const result = computePersonalFlow(makeInput([makeEvidenceIssue('FLOW-1')]));
+    const reportedRow = result.perIssue.find((row) => row.key === result.workedExample?.issueKey);
+
+    expect(result.workedExample?.totalWorkingDays).toBeCloseTo(reportedRow?.cycleTimeDays ?? -1, 10);
+  });
+
+  it('never picks an issue with no measurable hands-on time, which would demonstrate nothing', () => {
+    // Completed under her, but straight from To-Do to Done — credited, yet zero hands-on time.
+    const noHandsOnIssue = makeFlowIssue({
+      key: 'FLOW-EMPTY',
+      createdIso: '2026-07-01T00:00:00.000Z',
+      initialStatusId: 'todo',
+      initiallyAssignedToTarget: true,
+      statusTransitions: [{ toStatusId: 'done', atIso: '2026-07-03T00:00:00.000Z' }],
+    });
+
+    const result = computePersonalFlow(makeInput([noHandsOnIssue]));
+
+    expect(result.perIssue.some((row) => row.key === 'FLOW-EMPTY')).toBe(true);
+    expect(result.workedExample).toBeNull();
+  });
+
+  it('prefers a demonstrable issue when the set mixes measurable and unmeasurable work', () => {
+    const noHandsOnIssue = makeFlowIssue({
+      key: 'FLOW-EMPTY',
+      createdIso: '2026-07-01T00:00:00.000Z',
+      initialStatusId: 'todo',
+      initiallyAssignedToTarget: true,
+      statusTransitions: [{ toStatusId: 'done', atIso: '2026-07-02T00:00:00.000Z' }],
+    });
+
+    const result = computePersonalFlow(makeInput([noHandsOnIssue, makeEvidenceIssue('FLOW-2')]));
+
+    expect(result.workedExample?.issueKey).toBe('FLOW-2');
+  });
+
+  it('returns no worked example when nothing was credited at all', () => {
+    const unownedIssue = makeFlowIssue({ key: 'FLOW-NONE', initiallyAssignedToTarget: false });
+
+    expect(computePersonalFlow(makeInput([unownedIssue])).workedExample).toBeNull();
+  });
+});
