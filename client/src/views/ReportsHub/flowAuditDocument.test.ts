@@ -12,6 +12,12 @@ import type { PersonalFlowResult } from './personalFlow.ts';
 
 const BASE_URL = 'https://jira.example.com';
 
+/** The horizontal rule the generator puts between sections. */
+const SECTION_RULE = '\n---\n';
+
+/** One icon per major section, so a reader can find a section at a glance. */
+const SECTION_ICONS = ['\u{1F4CA}', '\u{1F9EE}', '\u{1F50D}', '⚖️', '\u{1F4CB}'];
+
 /** A credited result with 12 issues, of which 2 carry measurable cycle time. */
 function makeResult(overrides: Partial<PersonalFlowResult> = {}): PersonalFlowResult {
   return {
@@ -78,13 +84,15 @@ function makeInput(overrides: Partial<FlowAuditInput> = {}): FlowAuditInput {
 describe('document structure', () => {
   it('renders every section, in order', () => {
     const document = buildFlowAuditDocument(makeInput());
+    // Matched on HEADINGS, not bare names: the "How to read this" guide mentions every section by
+    // name, so a plain substring search would find the guide rather than the section itself.
     const sectionOrder = [
-      'Personal Workflow',            // 1 header
-      'Team figures',                 // 3
-      'How these numbers are calculated', // 4
-      'Worked example',               // 5
-      'What was counted and what was not', // 6
-      'Per-issue detail',             // 7
+      '# Personal Workflow',
+      'Team figures\n',
+      'How these numbers are calculated\n',
+      'Worked example\n',
+      'What was counted and what was not\n',
+      'Per-issue detail\n',
     ];
 
     const positions = sectionOrder.map((heading) => document.indexOf(heading));
@@ -106,8 +114,8 @@ describe('document structure', () => {
   it('puts the per-issue detail last, so it never buries the figures', () => {
     const document = buildFlowAuditDocument(makeInput());
 
-    expect(document.indexOf('Per-issue detail'))
-      .toBeGreaterThan(document.indexOf('What was counted and what was not'));
+    expect(document.indexOf('Per-issue detail\n'))
+      .toBeGreaterThan(document.indexOf('What was counted and what was not\n'));
   });
 
   it('states the roster, window boundaries, generation time and tool version', () => {
@@ -197,7 +205,7 @@ describe('honest states', () => {
 
     const noticePosition = document.toLowerCase().indexOf('incomplete');
     expect(noticePosition).toBeGreaterThan(-1);
-    expect(noticePosition).toBeLessThan(document.indexOf('Team figures'));
+    expect(noticePosition).toBeLessThan(document.indexOf('Team figures\n'));
     expect(document).toContain('Jane Smith');
   });
 
@@ -231,5 +239,46 @@ describe('purity', () => {
 
     expect(document).toContain('2026-07-08T12:00:00.000Z');
     expect(document).not.toContain(new Date().getFullYear() === 2026 ? 'IMPOSSIBLE_SENTINEL' : String(new Date().getFullYear()));
+  });
+});
+
+describe('readability', () => {
+  it('marks each section with an icon so they are findable at a glance', () => {
+    const document = buildFlowAuditDocument(makeInput());
+
+    SECTION_ICONS.forEach((icon) => expect(document).toContain(icon));
+  });
+
+  it('separates sections with rules so they do not bleed into one another', () => {
+    const document = buildFlowAuditDocument(makeInput());
+
+    expect(document.split(SECTION_RULE).length).toBeGreaterThanOrEqual(5);
+  });
+
+  it('sets a worked value apart from its prose, rather than running them together', () => {
+    const document = buildFlowAuditDocument(makeInput());
+
+    expect(document).toContain('> **Worked example:**');
+  });
+
+  it('tells the reader how to use the document before the numbers start', () => {
+    const document = buildFlowAuditDocument(makeInput());
+    const howToRead = document.indexOf('How to read this');
+
+    expect(howToRead).toBeGreaterThan(-1);
+    expect(howToRead).toBeLessThan(document.indexOf('Team figures\n'));
+  });
+
+  it('flags a history-derived metric so it stands out from the queryable ones', () => {
+    const document = buildFlowAuditDocument(makeInput());
+
+    expect(document).toContain('Cannot be reproduced by a Jira search');
+  });
+
+  it('puts the long per-issue tables behind collapsible sections', () => {
+    const document = buildFlowAuditDocument(makeInput());
+
+    expect(document).toContain('<details>');
+    expect(document).toContain('</details>');
   });
 });

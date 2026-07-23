@@ -64,6 +64,12 @@ const EXCLUSION_EXPLANATIONS: Record<PersonalFlowExclusionReason, string> = {
   'completed-out-of-window': 'They finished it, but before this reporting window began.',
 };
 
+/**
+ * A horizontal rule between sections. Without it the sections run together into one wall of text and
+ * a reader cannot tell where the figures stop and the explanations start.
+ */
+const SECTION_RULE = '\n---\n';
+
 function formatValue(value: number): string {
   return Number.isInteger(value) ? String(value) : value.toFixed(2);
 }
@@ -93,6 +99,20 @@ function renderHeader(envelope: RunEnvelope): string {
     '> **What this is.** Delivery figures for **named individuals**, with the working shown for each '
       + 'number and links to the exact Jira issues behind it. Anyone who can read this page can read '
       + 'these figures and the issue summaries they quote.',
+    '',
+    '### How to read this',
+    '',
+    '| | |',
+    '|---|---|',
+    '| \u{1F4CA} | **Team figures** — the numbers themselves, one row per person |',
+    '| \u{1F9EE} | **How these are calculated** — what each column means, and the formula behind it |',
+    '| \u{1F50D} | **Worked example** — one issue shown in full, proving how cycle time is derived |',
+    '| ⚖️ | **What was counted** — every fetched issue accounted for, and why |',
+    '| \u{1F4CB} | **Per-issue detail** — the underlying rows, collapsed by default |',
+    '',
+    'Every **Open** link goes to the exact issues behind the number beside it — click one and count '
+      + 'them yourself. Metrics marked ⚠️ are reconstructed from issue history and cannot be '
+      + 'reproduced by a Jira search; the worked example is how you check those.',
   ].join('\n');
 }
 
@@ -114,7 +134,7 @@ function renderCompletenessNotice(envelope: RunEnvelope): string {
 
 function renderTeamFigures(input: FlowAuditInput): string {
   const headerRows = [
-    '## Team figures',
+    '## \u{1F4CA} Team figures',
     '',
     '| Person | Role(s) | Issues | Points | Issues/Wk | Points/Wk | Avg Cycle | Median Cycle | Their issues in Jira |',
     '|---|---|---|---|---|---|---|---|---|',
@@ -143,12 +163,21 @@ function renderTeamFigures(input: FlowAuditInput): string {
 /** Explains every metric once, with a worked value drawn from the first person who has figures. */
 function renderMetricExplanations(input: FlowAuditInput): string {
   const exampleRow = input.rows.find((row) => row.figures !== null);
-  const lines = ['## How these numbers are calculated', ''];
+  const lines = ['## \u{1F9EE} How these numbers are calculated', ''];
 
   FLOW_AUDIT_METRICS.forEach((metric) => {
-    lines.push(`### ${metric.label}`, '', metric.meaning, '', `**Formula:** \`${metric.formula}\``, '');
+    // A history-derived metric is flagged in its own heading, so a reader scanning the document can
+    // see at a glance which numbers a Jira search can check and which it cannot.
+    lines.push(`### ${metric.label}${metric.isHistoryDerived ? ' ⚠️' : ''}`, '', metric.meaning, '');
+    if (metric.isHistoryDerived) {
+      lines.push('> ⚠️ **Cannot be reproduced by a Jira search.** Use the worked example below to '
+        + 'check this one instead.', '');
+    }
+    lines.push(`**Formula:** \`${metric.formula}\``, '');
     if (exampleRow?.figures) {
-      lines.push(renderMetricExplanation(metric, {
+      // Quoted, so the arithmetic sits apart from the prose explaining it — the two are doing
+      // different jobs and running them together is what makes the report hard to scan.
+      lines.push(`> **Worked example:** ${renderMetricExplanation(metric, {
         personDisplayName: exampleRow.personDisplayName,
         windowDays: input.envelope.windowDays,
         values: {
@@ -157,7 +186,7 @@ function renderMetricExplanations(input: FlowAuditInput): string {
           averageCycleDays: exampleRow.figures.cycleTime.averageDays,
           medianCycleDays: exampleRow.figures.cycleTime.medianDays,
         },
-      }), '');
+      })}`, '');
     }
   });
 
@@ -167,12 +196,12 @@ function renderMetricExplanations(input: FlowAuditInput): string {
 function renderWorkedExampleSection(input: FlowAuditInput): string {
   const rowWithExample = input.rows.find((row) => row.figures?.workedExample);
   if (!rowWithExample?.figures?.workedExample) {
-    return ['## Worked example', '',
+    return ['## \u{1F50D} Worked example', '',
       '_No credited issue in this run had measurable hands-on time, so there is nothing to demonstrate._',
     ].join('\n');
   }
 
-  return ['## Worked example', '',
+  return ['## \u{1F50D} Worked example', '',
     'Cycle time is reconstructed from issue history, so no Jira search reproduces it. Here is one '
       + 'issue in full, so you can open it in Jira and confirm the method — then apply the same '
       + 'method to any other issue in the per-issue table.',
@@ -187,7 +216,7 @@ function renderWorkedExampleSection(input: FlowAuditInput): string {
 
 /** The `fetched = credited + excluded` accounting, per person, each row separately checkable. */
 function renderReconciliation(input: FlowAuditInput): string {
-  const lines = ['## What was counted and what was not', ''];
+  const lines = ['## ⚖️ What was counted and what was not', ''];
 
   input.rows.forEach((row) => {
     if (!row.figures) {
@@ -228,7 +257,7 @@ function renderReconciliation(input: FlowAuditInput): string {
 
 /** Every credited issue with its total and link — last, so it supports rather than buries. */
 function renderPerIssueDetail(input: FlowAuditInput): string {
-  const lines = ['## Per-issue detail', '',
+  const lines = ['## \u{1F4CB} Per-issue detail', '',
     'Every credited issue and the hands-on time it contributed. Apply the worked example\'s method to '
       + 'any row here to check it yourself.', ''];
 
@@ -236,13 +265,16 @@ function renderPerIssueDetail(input: FlowAuditInput): string {
     if (!row.figures || row.figures.perIssue.length === 0) {
       return;
     }
-    lines.push(`### ${row.personDisplayName}`, '', '| Issue | Summary | Points | Cycle time (working days) |',
-      '|---|---|---|---|');
+    // Collapsed by default: across a roster this is by far the longest part of the document, and it
+    // exists to support the figures rather than to be read straight through.
+    lines.push('<details>',
+      `<summary><strong>${row.personDisplayName}</strong> — ${row.figures.perIssue.length} issues</summary>`,
+      '', '| Issue | Summary | Points | Cycle time (working days) |', '|---|---|---|---|');
     row.figures.perIssue.forEach((issue) => {
       lines.push(`| ${issue.key} | ${issue.summary} | ${issue.storyPoints ?? '—'} `
         + `| ${issue.cycleTimeDays === null ? 'not applicable — no measurable hands-on time' : formatValue(issue.cycleTimeDays)} |`);
     });
-    lines.push('');
+    lines.push('', '</details>', '');
   });
 
   return lines.join('\n');
@@ -258,15 +290,15 @@ export function buildFlowAuditDocument(input: FlowAuditInput): string {
   return [
     renderHeader(input.envelope),
     renderCompletenessNotice(input.envelope),
-    '',
+    SECTION_RULE,
     renderTeamFigures(input),
-    '',
+    SECTION_RULE,
     renderMetricExplanations(input),
-    '',
+    SECTION_RULE,
     renderWorkedExampleSection(input),
-    '',
+    SECTION_RULE,
     renderReconciliation(input),
-    '',
+    SECTION_RULE,
     renderPerIssueDetail(input),
   ].join('\n');
 }

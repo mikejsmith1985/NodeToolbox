@@ -2608,7 +2608,7 @@ export default function ReportsHubView() {
       case 'hygiene':
         return <HygieneReportTab teamName={state.teamFilter} />
       case 'personalFlow':
-        return <PersonalFlowTab />
+        return <PersonalFlowTab teamFilter={state.teamFilter} />
       case 'issueAging':
         return <IssueAgingTab />
       default:
