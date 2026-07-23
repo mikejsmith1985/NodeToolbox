@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **A "Count sub-tasks as issues in their own right" toggle**, off by default, on both flow reports. Teams that
+  genuinely deliver at sub-task level can opt back in; the audit report always states which basis produced its
+  figures. One shared setting drives both reports, so they cannot disagree about what counts.
 - **New Reports Hub tab: Flow Analysis.** The Personal Workflow report answers "how much of this person's time went
   where". This one answers the question it structurally could not: for every issue the team **delivered**, where did
   that issue's time go, and **who was holding it** at each point. It reconstructs each issue as a series of stages —
@@ -49,6 +52,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   document — a part-finished team report that reads as complete is exactly what this feature exists to prevent.
 
 ### Fixed
+- **⚠️ Sub-tasks are no longer counted as deliverables in their own right — so your figures will change.**
+  Sub-tasks look like ordinary issues to a Jira search, and both flow reports were counting them alongside the
+  stories they belong to. That credited one piece of work twice, and because sub-tasks are short-lived it pulled
+  cycle-time averages **down** — the reports have been making delivery look faster than it was. **Issue counts will
+  fall and cycle times will rise:** this is a correction, not a regression, and anyone holding a report generated
+  before this version has different numbers. Story points are largely unaffected, since points normally sit on the
+  parent. Detection uses Jira's own `subtask` flag rather than the type name, so renamed and custom sub-task types
+  are caught too. *(Caught in review by a delivery colleague, who noted Jira's own control chart needs the same quick
+  filter for the same reason.)*
+- **Nothing is removed silently.** Excluded sub-tasks are counted and named against the person they belonged to, both
+  on screen and in the audit report, with their own Jira link in the `fetched = credited + excluded` reconciliation.
+  Anyone whose credited work in a window was **entirely** sub-tasks is called out explicitly rather than appearing
+  idle — the same "real work scores nothing" trap the previous release fixed. An issue whose type cannot be read is
+  still counted, because assuming sub-task would delete someone's real work on the strength of a missing field.
 - **Reports no longer label themselves with a team they did not actually use.** When the imported roster carries no
   team names, the member filter falls back to the **entire roster** — but the heading still quoted back whichever team
   you had asked for, so one team's name sat over everyone's figures with nothing on the page to reveal the swap. The

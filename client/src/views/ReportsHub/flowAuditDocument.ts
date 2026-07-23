@@ -39,6 +39,8 @@ export interface RunEnvelope {
   /** Passed in, never read from the clock — this is what keeps the generator deterministic. */
   generatedAtIso: string;
   toolVersion: string;
+  /** Whether sub-tasks were counted. Stated because it changes every count on the page. */
+  countsSubTasks: boolean;
   ceilingReached: { kind: FlowFetchCeiling; affectedPeople: string[] } | null;
   /** Null when unconfigured; links then degrade to query text rather than breaking. */
   jiraBaseUrl: string | null;
@@ -91,6 +93,10 @@ export interface FlowAuditInput {
 /** Plain-English explanations for why fetched issues were not credited. */
 const EXCLUSION_EXPLANATIONS: Record<PersonalFlowExclusionReason, string> = {
   'not-owned': 'Never assigned to this person at any point, so none of their time is in it.',
+  'sub-task': 'A sub-task of another issue. Sub-tasks are part of a story\'s delivery rather than '
+    + 'deliverables of their own, so counting them would credit one piece of work twice — and, because '
+    + 'they are short-lived, would pull the cycle-time average down and make delivery look faster than '
+    + 'it was.',
   'wip-open': 'Still open and still assigned to them — work in progress, not yet completed.',
   'completed-out-of-window': 'They finished it, but before this reporting window began.',
 };
@@ -137,6 +143,9 @@ function renderHeader(envelope: RunEnvelope): string {
     `| Window | ${envelope.windowDays} days (${envelope.windowStartIso.slice(0, 10)} → ${envelope.windowEndIso.slice(0, 10)}) |`,
     `| Generated | ${envelope.generatedAtIso} |`,
     `| Tool version | ${envelope.toolVersion} |`,
+    `| Counted issues | ${envelope.countsSubTasks
+      ? 'All issue types, INCLUDING sub-tasks'
+      : 'Stories, Tasks and Defects — sub-tasks excluded'} |`,
     '',
     '> **What this is.** Delivery figures for **named individuals**, with the working shown for each '
       + 'number and links to the exact Jira issues behind it. Anyone who can read this page can read '
