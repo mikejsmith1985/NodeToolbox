@@ -382,6 +382,25 @@ export function resolveActiveRosterTeamName(
   return availableRosterTeamNames[0] ?? '';
 }
 
+/** What a report should call the roster it actually analysed, when no team could be applied. */
+const UNSCOPED_ROSTER_LABEL = 'All roster members (no team assigned)';
+
+/**
+ * Describes the scope a report ACTUALLY ran against, for its heading.
+ *
+ * Takes the resolved team name — the one `filterRosterMembersByActiveTeam` used — and never the one
+ * the user asked for. Those differ whenever the roster carries no team metadata: the member filter
+ * then returns the WHOLE roster, and a heading that fell back to the requested name would present
+ * everyone's figures under one team's name, with nothing to reveal the substitution.
+ *
+ * A report that names a team it did not scope to is worse than one that names no team, because the
+ * reader cannot tell.
+ */
+export function describeRosterScope(resolvedTeamName: string): string {
+  const normalizedTeamName = normalizeRosterTeamName(resolvedTeamName);
+  return normalizedTeamName === '' ? UNSCOPED_ROSTER_LABEL : normalizedTeamName;
+}
+
 /** Filters the roster down to the currently active team when team metadata exists. */
 export function filterRosterMembersByActiveTeam(
   rosterMembers = useStandupRosterStore.getState().rosterMembers,

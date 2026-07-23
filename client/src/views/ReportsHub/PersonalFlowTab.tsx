@@ -27,6 +27,7 @@ import styles from './ReportsHubView.module.css';
 import {
   filterRosterMembersByActiveTeam,
   readAvailableRosterTeamNames,
+  describeRosterScope,
   resolveActiveRosterTeamName,
   type RosterRoleCapabilities,
   type StandupRosterMember,
@@ -1709,8 +1710,11 @@ export function PersonalFlowTab({ teamFilter = '' }: PersonalFlowTabProps = {}) 
   const uiRequestedTeamName = (trimmedTeamFilter || storedActiveTeamName).trim();
   // True whenever the report is showing a different team from the one asked for — covering both a
   // Reports Hub filter that is not a roster team, and a stored Agile Hub team that is not either.
+  // Note the ABSENCE of an `effectiveTeamName !== ''` guard. An empty resolved team is not the safe
+  // case, it is the worst one: the member filter falls back to the ENTIRE roster, so a requested team
+  // was silently ignored and every person is in the figures. Suppressing the warning there is what let
+  // one team's name sit over everyone's numbers unchallenged.
   const hasTeamNameMismatch = uiRequestedTeamName !== ''
-    && effectiveTeamName !== ''
     && effectiveTeamName !== uiRequestedTeamName;
   const activeTeamRosterMembers = useMemo(
     () => filterRosterMembersByActiveTeam(rosterMembers, effectiveTeamName, { includeTeamlessMembers: true }),
@@ -1879,7 +1883,10 @@ export function PersonalFlowTab({ teamFilter = '' }: PersonalFlowTabProps = {}) 
     const toolVersion = await readToolVersion();
     const auditDocument = buildAuditDocumentFromRows(
       teamRows,
-      effectiveTeamName || requestedTeamName || 'Team',
+      // NEVER falls back to the REQUESTED team: when the roster has no team metadata the member
+      // filter returns everyone, and quoting the requested name back would label the whole roster's
+      // figures as one team's.
+      describeRosterScope(effectiveTeamName),
       windowDays,
       statusNameById,
       teamJiraBaseUrl,
@@ -1973,8 +1980,9 @@ export function PersonalFlowTab({ teamFilter = '' }: PersonalFlowTabProps = {}) 
       {hasTeamNameMismatch && (
         <p role="alert" className={styles.warningText} style={{ marginTop: 10 }}>
           “{uiRequestedTeamName}” is not a team on your roster, so this report is showing{' '}
-          <strong>{effectiveTeamName}</strong> instead. The Team filter lists Jira/ART teams, which do not
-          always match the names on your roster — pick a roster team here, or change the team in Agile Hub.
+          <strong>{describeRosterScope(effectiveTeamName)}</strong> instead. The Team filter lists Jira/ART
+          teams, which do not always match the names on your roster — pick a roster team here, or change the
+          team in Agile Hub.
         </p>
       )}
 
