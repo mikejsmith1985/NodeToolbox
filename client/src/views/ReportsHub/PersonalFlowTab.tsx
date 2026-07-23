@@ -963,6 +963,9 @@ function buildAuditDocumentFromRows(
     },
     rows: teamRows.map((row) => ({
       personDisplayName: row.personDisplayName,
+      // The machine id the search ran as — Jira rejects a display name in the assignee field, so the
+      // document must build its fetch link from this and not from the person's name.
+      personQueryValue: row.queryValue,
       roleLabels: formatRoleLabels(row.roleCapabilities),
       figures: row.result,
       errorMessage: row.errorMessage,

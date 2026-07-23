@@ -631,6 +631,28 @@ describe('PersonalFlowTab', () => {
     expect(personInput).toHaveValue('Jane Dev');
   });
 
+  it('builds the audit report fetch query from the machine id, not the display name', async () => {
+    // Jira rejects a display name in the assignee field, so a link built from one errors on click.
+    mockCopyWithResult.mockResolvedValue(true);
+    seedRoster([buildRosterMember('Jane Dev', 'Team Rocket')], 'Team Rocket');
+    mockJiraGet.mockImplementation((path: string) => {
+      if (path.startsWith('/rest/api/2/status')) return Promise.resolve(STATUSES);
+      if (path.startsWith('/rest/api/2/user/search')) return Promise.resolve(userSearchResponseForPath(path));
+      if (path.startsWith('/rest/api/2/search')) return Promise.resolve(searchResponseForPath(path));
+      return Promise.reject(new Error(`unexpected path ${path}`));
+    });
+
+    render(<PersonalFlowTab teamFilter="" />);
+    fireEvent.click(screen.getByRole('button', { name: /run for team roster/i }));
+    await waitFor(() => expect(screen.getByText('Jane Dev')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /copy audit report/i }));
+
+    await waitFor(() => expect(mockCopyWithResult).toHaveBeenCalled());
+    const copiedDocument = String(mockCopyWithResult.mock.calls[0][0]);
+    expect(copiedDocument).toContain('assignee WAS "jane.dev"');
+    expect(copiedDocument).not.toContain('assignee WAS "Jane Dev"');
+  });
+
   it('offers an audit report once a team run has produced rows', async () => {
     seedRoster([buildRosterMember('Jane Dev', 'Team Rocket')], 'Team Rocket');
     mockJiraGet.mockImplementation((path: string) => {

@@ -41,6 +41,15 @@ export interface RunEnvelope {
 /** One person's row: their figures, or an honest reason there are none. */
 export interface PersonAuditRow {
   personDisplayName: string;
+  /**
+   * The machine id the search actually queried by — an account id, username or user key.
+   *
+   * Jira rejects a display name in the `assignee` field ("The value 'Sokol, Mark (CTR)' does not
+   * exist for the field 'assignee'"), so the fetched-issues link must be built from this, never from
+   * the display name. Null when the person never resolved to a queryable id, in which case no link
+   * is offered at all — a link that is known to error looks checkable and is not.
+   */
+  personQueryValue: string | null;
   roleLabels: string;
   figures: PersonalFlowResult | null;
   errorMessage: string | null;
@@ -236,12 +245,15 @@ function renderReconciliation(input: FlowAuditInput): string {
     lines.push(`### ${row.personDisplayName}`, '');
 
     const creditedKeys = row.figures.perIssue.map((issue) => issue.key);
-    const fetchedLink = buildFetchedIssuesLink(
-      row.personDisplayName, input.envelope.windowDays, input.envelope.jiraBaseUrl,
-    );
     lines.push('| What | Count | Why | In Jira |', '|---|---|---|---|');
+    // Built from the machine id, because Jira will not accept a display name in the assignee field.
+    const fetchedCell = row.personQueryValue === null
+      ? '_No queryable Jira id for this person_'
+      : renderLink('Open', buildFetchedIssuesLink(
+        row.personQueryValue, input.envelope.windowDays, input.envelope.jiraBaseUrl,
+      ));
     lines.push(`| Fetched | ${row.fetchedIssueCount} | Everything the search returned before windowing `
-      + `| ${renderLink('Open', fetchedLink)} |`);
+      + `| ${fetchedCell} |`);
     lines.push(`| Credited | ${row.figures.issueCount} | Completed under them, inside the window `
       + `| ${renderLink('Open', buildCreditedIssuesLink(creditedKeys, input.envelope.jiraBaseUrl))} |`);
 
@@ -255,6 +267,14 @@ function renderReconciliation(input: FlowAuditInput): string {
     });
 
     lines.push('');
+    // The query itself, not just a link to it: a reader must be able to inspect, adapt or re-run it
+    // without reverse-engineering a URL — and to see that it queries by machine id, not by name.
+    if (row.personQueryValue !== null) {
+      lines.push(`**Fetch query:** \`${buildFetchedIssuesLink(
+        row.personQueryValue, input.envelope.windowDays, input.envelope.jiraBaseUrl,
+      ).queryText}\``, '');
+    }
+
     const accountedFor = row.figures.issueCount + excludedTotal;
     lines.push(accountedFor === row.fetchedIssueCount
       ? `${row.figures.issueCount} credited + ${excludedTotal} excluded = ${row.fetchedIssueCount} fetched. ✅`

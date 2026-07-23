@@ -38,6 +38,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   so a roster-sized run no longer buries the figures under hundreds of rows.
 
 ### Fixed
+- **The audit report's "Fetched" link errored in Jira.** It built the query from the person's *display name*
+  (`assignee WAS "Sokol, Mark (CTR)"`), which Jira rejects — *"The value 'Sokol, Mark (CTR)' does not exist for the
+  field 'assignee'"*. The report already resolves each person to the machine id it actually queried by; the link now
+  uses that. Where someone never resolved to a queryable id, no link is offered at all rather than one known to fail.
+  The **fetch query itself is now printed** beneath each person's accounting too, so it can be inspected, adapted or
+  re-run without picking it out of a URL. The per-person **Open** links in the team table were unaffected — those
+  list issue keys directly.
 - **The audit report's per-issue tables rendered as raw HTML in Confluence.** The collapsible
   `<details>`/`<summary>` blocks added moments earlier are a GitHub-flavoured extension Confluence does not support —
   it printed the tags as literal text and the stray markup broke the columns of the table beneath. Each person's
