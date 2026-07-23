@@ -69,6 +69,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   document — a part-finished team report that reads as complete is exactly what this feature exists to prevent.
 
 ### Fixed
+- **The Flow Analysis tab no longer fails with a Jira 400 for every roster member.** It was querying by each member's
+  display name ("Sokol, Mark (CTR)"), which Jira rejects in the assignee field — it needs a username or account id.
+  It now resolves every roster name to a Jira machine id first, exactly as the Personal Workflow report already did;
+  that resolution is now shared code so the two reports cannot diverge again. Anyone Jira cannot match is named in a
+  clear message rather than silently breaking the whole query.
 - **The Reports Hub team dropdown now actually changes which roster is analysed.** Teams in NodeToolbox are saved
   **Dashboard Team profiles**, and each profile keeps its own roster — a roster member carries no team name at all.
   Both flow reports were scoping by that empty team-name field, so the filter matched nothing, silently fell back to

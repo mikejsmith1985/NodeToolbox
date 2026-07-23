@@ -159,6 +159,67 @@ describe('IssueFlowTab — the query', () => {
     expect(useSettingsStore.getState().sprintDashboardActiveTeamProfileId).toBe('profile-rocket');
   });
 
+  it('resolves roster DISPLAY NAMES to Jira machine ids before querying', async () => {
+    // The reported 400: a real roster stores display names ("Sokol, Mark (CTR)") with no accountId, and
+    // Jira rejects a display name in the assignee field. The query must carry the resolved machine id.
+    window.localStorage.setItem(
+      buildTeamScopedStorageKey('tbxSprintDashboardRoster', 'profile-rocket'),
+      JSON.stringify({
+        rosterMembers: [
+          { id: 'roster-member:mark', displayName: 'Sokol, Mark (CTR)', assigneeQueryValue: 'Sokol, Mark (CTR)' },
+        ],
+      }),
+    );
+    useStandupRosterStore.setState({ rosterMembers: [
+      { id: 'roster-member:mark', displayName: 'Sokol, Mark (CTR)', assigneeQueryValue: 'Sokol, Mark (CTR)' },
+    ] });
+    mockJiraGet.mockImplementation((path: string) => {
+      if (path.startsWith('/rest/api/2/status')) return Promise.resolve(STATUSES);
+      if (path.startsWith('/rest/api/2/user/search')) {
+        // Jira resolves the display name to a Server username.
+        return Promise.resolve([{ name: 'msokol', displayName: 'Sokol, Mark (CTR)' }]);
+      }
+      if (path.startsWith('/rest/api/2/search')) return Promise.resolve({ issues: [] });
+      return Promise.reject(new Error(`unexpected path ${path}`));
+    });
+
+    render(<IssueFlowTab teamFilter="Team Rocket" />);
+    fireEvent.click(screen.getByRole('button', { name: /run flow analysis/i }));
+
+    await waitFor(() => expect(decodedSearchJqls().length).toBeGreaterThan(0));
+
+    // The resolved username is queried, NOT the display name Jira would reject.
+    expect(decodedSearchJqls()[0]).toContain('assignee WAS in ("msokol")');
+    expect(decodedSearchJqls()[0]).not.toContain('Sokol, Mark (CTR)');
+  });
+
+  it('reports the members it could not match instead of firing a query Jira will reject', async () => {
+    window.localStorage.setItem(
+      buildTeamScopedStorageKey('tbxSprintDashboardRoster', 'profile-rocket'),
+      JSON.stringify({
+        rosterMembers: [{ id: 'roster-member:ghost', displayName: 'Nobody, Real', assigneeQueryValue: '' }],
+      }),
+    );
+    useStandupRosterStore.setState({ rosterMembers: [
+      { id: 'roster-member:ghost', displayName: 'Nobody, Real', assigneeQueryValue: '' },
+    ] });
+    mockJiraGet.mockImplementation((path: string) => {
+      if (path.startsWith('/rest/api/2/status')) return Promise.resolve(STATUSES);
+      if (path.startsWith('/rest/api/2/user/search')) return Promise.resolve([]); // no match
+      if (path.startsWith('/rest/api/2/search')) return Promise.resolve({ issues: [] });
+      return Promise.reject(new Error(`unexpected path ${path}`));
+    });
+
+    render(<IssueFlowTab teamFilter="Team Rocket" />);
+    fireEvent.click(screen.getByRole('button', { name: /run flow analysis/i }));
+
+    await waitFor(() => expect(document.body.textContent).toContain('could be matched to a Jira user'));
+    // The unmatched member is named, so the reader can fix the roster rather than guess.
+    expect(document.body.textContent).toContain('Nobody, Real');
+    // No issue search should have fired, since there was nothing valid to query.
+    expect(decodedSearchJqls()).toHaveLength(0);
+  });
+
   it('explains rather than fails when the roster holds nobody for the team', async () => {
     window.localStorage.clear();
     useStandupRosterStore.setState({ rosterMembers: [] });

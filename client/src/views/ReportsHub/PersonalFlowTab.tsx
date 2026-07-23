@@ -42,6 +42,16 @@ import { buildCreditedIssuesLink } from './flowAuditLinks.ts';
 import { classifyIssueScope } from './issueScope.ts';
 import { readBottleneckSettings, writeBottleneckSettings } from './internalTestingStatuses.ts';
 import { readToolVersion } from './readToolVersion.ts';
+import {
+  buildIdentityFromJiraUser,
+  buildRosterIdentity,
+  normalizeForComparison,
+  resolvePersonIdentity,
+  resolveRosterIdentity,
+  searchJiraUsers,
+  type PersonIdentity,
+  type RawJiraUser,
+} from './rosterIdentity.ts';
 import { computeDeliveryTotals } from './issueFlowRollup.ts';
 import { buildFlowAuditDocument } from './flowAuditDocument.ts';
 import {
@@ -82,7 +92,6 @@ const NO_JIRA_USERS: RawJiraUser[] = [];
 // How long to wait after the last keystroke before firing the Jira user search, so typing is not blocked.
 const USER_SEARCH_DEBOUNCE_MS = 300;
 // Cap on Jira user-search suggestions requested per keystroke; the roster matches are shown alongside these.
-const MAX_USER_SEARCH_RESULTS = 20;
 
 /** The lookback windows offered in the picker; label shown to the user, value used in the JQL. */
 const WINDOW_OPTIONS: readonly { value: number; label: string }[] = [
@@ -146,11 +155,6 @@ function buildStatusNameMap(statuses: readonly RawStatus[]): Record<string, stri
  * `to`/`from` is a user KEY (e.g. JIRAUSER10100) while `toString`/`fromString` is the DISPLAY NAME, so
  * the username alone matches neither side and the person would be wrongly judged to never own the issue.
  */
-interface PersonIdentity {
-  queryValue: string; // the machine id (username or accountId) the JQL `assignee WAS "…"` clause uses
-  identifiers: Set<string>; // normalized username, user key, display name, accountId — any may appear in a changelog
-}
-
 /**
  * Reports whether a changelog/assignee value pair matches the target identity. The machine side
  * (`to`/`from`, or an assignee's name/key/accountId) and the human side (`toString`/`fromString`, or an
@@ -166,13 +170,6 @@ function matchesIdentity(identity: PersonIdentity, candidate: unknown): boolean 
   if (typeof candidate !== 'string') return false;
   const normalized = normalizeForComparison(candidate);
   return normalized !== '' && identity.identifiers.has(normalized);
-}
-
-/** Adds a normalized, non-empty identifier to the set; ignores non-strings and blanks so the set stays clean. */
-function addIdentifier(identifiers: Set<string>, rawIdentifier: unknown): void {
-  if (typeof rawIdentifier !== 'string') return;
-  const normalized = normalizeForComparison(rawIdentifier);
-  if (normalized !== '') identifiers.add(normalized);
 }
 
 /** Reads a possibly-absent string property (e.g. `toString`) from a changelog item without hitting the prototype. */
@@ -331,7 +328,6 @@ function formatRoleLabels(roleCapabilities: RosterRoleCapabilities | undefined):
 // ── Person search (roster + Jira) ────────────────────────────────────────────
 
 /** The minimal Jira user fields the assignee search returns and this tab reads (Server includes `key`). */
-interface RawJiraUser { displayName?: string; name?: string; key?: string; accountId?: string }
 
 /** A single person the picker can offer, carrying the full identity to use when chosen. */
 interface PersonSuggestion {
@@ -367,100 +363,6 @@ interface TeamFlowRow {
   jql: string | null;
   result: PersonalFlowResult | null;
   errorMessage: string | null;
-}
-
-/**
- * Searches Jira for users matching the typed text. Jira Server expects `username=` while Jira Cloud
- * expects `query=`, so this mirrors the roster search: try `username=` first and fall back to `query=`
- * when it yields nothing. The search is a convenience, so any error is swallowed to an empty list and
- * never blocks typing.
- */
-async function searchJiraUsers(query: string): Promise<RawJiraUser[]> {
-  const byUsername = await jiraGet<RawJiraUser[] | null>(
-    `/rest/api/2/user/search?username=${encodeURIComponent(query)}&maxResults=${MAX_USER_SEARCH_RESULTS}`,
-  ).catch(() => null);
-  const usernameUsers = Array.isArray(byUsername) ? byUsername : [];
-  if (usernameUsers.length > 0) {
-    return usernameUsers;
-  }
-
-  const byQuery = await jiraGet<RawJiraUser[] | null>(
-    `/rest/api/2/user/search?query=${encodeURIComponent(query)}&maxResults=${MAX_USER_SEARCH_RESULTS}`,
-  ).catch(() => null);
-  return Array.isArray(byQuery) ? byQuery : [];
-}
-
-/** Collapses internal whitespace runs to a single space and lowercases, for tolerant name comparison. */
-function normalizeForComparison(text: string): string {
-  return text.trim().replace(/\s+/g, ' ').toLowerCase();
-}
-
-/**
- * Builds a full identity from a Jira user object. The JQL query value prefers the Server username, then
- * the Cloud accountId, then the display name as a last resort; the identifier set collects every non-empty
- * form (username, user key, display name, accountId) so ownership matching succeeds whichever one a
- * changelog stored.
- */
-function buildIdentityFromJiraUser(user: RawJiraUser): PersonIdentity {
-  const queryValue = user.name ?? user.accountId ?? user.displayName ?? '';
-  const identifiers = new Set<string>();
-  addIdentifier(identifiers, user.name);
-  addIdentifier(identifiers, user.key);
-  addIdentifier(identifiers, user.displayName);
-  addIdentifier(identifiers, user.accountId);
-  return { queryValue, identifiers };
-}
-
-/**
- * Builds an identity straight from a roster member, without touching Jira. The query value prefers the
- * stored Jira accountId (a real machine id) and falls back to the roster's assignee query value; the
- * identifier set collects the accountId, the assignee query value, and the display name.
- */
-function buildRosterIdentity(member: StandupRosterMember): PersonIdentity {
-  const queryValue = member.jiraAccountId ?? member.assigneeQueryValue;
-  const identifiers = new Set<string>();
-  addIdentifier(identifiers, member.jiraAccountId);
-  addIdentifier(identifiers, member.assigneeQueryValue);
-  addIdentifier(identifiers, member.displayName);
-  return { queryValue, identifiers };
-}
-
-/**
- * Resolves a person's DISPLAY NAME (or username) to a full Jira identity the assignee field can match.
- *
- * Jira rejects a display name in an `assignee WAS "…"` clause (it wants a Server username or a Cloud
- * accountId), so a free-typed or roster display string must be translated before it is queried. It
- * searches Jira for the person, prefers the candidate whose username or display name matches exactly
- * (whitespace-collapsed, case-insensitive), and otherwise takes the first result. Returns null when no
- * user matches at all so the caller can show a friendly message without firing a search.
- */
-async function resolvePersonIdentity(person: string): Promise<PersonIdentity | null> {
-  const candidates = await searchJiraUsers(person);
-  if (candidates.length === 0) {
-    return null;
-  }
-  const needle = normalizeForComparison(person);
-  const exactMatch = candidates.find(
-    (candidate) =>
-      normalizeForComparison(candidate.name ?? '') === needle
-      || normalizeForComparison(candidate.displayName ?? '') === needle,
-  );
-  return buildIdentityFromJiraUser(exactMatch ?? candidates[0]);
-}
-
-/**
- * Resolves the identity to query a roster member by. When the member carries a real Jira accountId that
- * machine id is trusted directly; otherwise the member's assignee value is resolved against Jira so the
- * JQL gets a real machine id, falling back to the roster identity only when Jira finds no match.
- */
-async function resolveRosterIdentity(member: StandupRosterMember): Promise<PersonIdentity | null> {
-  if (member.jiraAccountId !== undefined && member.jiraAccountId.trim() !== '') {
-    return buildRosterIdentity(member);
-  }
-  const resolved = await resolvePersonIdentity(member.assigneeQueryValue);
-  const identity = resolved ?? buildRosterIdentity(member);
-  // A member with no accountId, no Jira match, and a blank assignee value has nothing to query by.
-  return identity.queryValue.trim() === '' ? null : identity;
 }
 
 /** Builds roster suggestions whose display name or assignee value contains the typed text (case-insensitive). */

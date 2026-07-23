@@ -15,9 +15,10 @@ import { jiraGet } from '../../services/jiraApi.ts';
 import { useSettingsStore } from '../../store/settingsStore.ts';
 import styles from './ReportsHubView.module.css';
 import {
-  buildStandupRosterAssigneeWasClause,
+  buildAssigneeWasClauseFromValues,
   readStoredStandupRosterMembers,
 } from '../SprintDashboard/hooks/useStandupRosterStore.ts';
+import { resolveRosterMachineIds } from './rosterIdentity.ts';
 import { resolveReportRosterScope } from './rosterScope.ts';
 import {
   ISSUE_PAGE_SIZE,
@@ -142,9 +143,7 @@ export function IssueFlowTab({ teamFilter = '' }: { teamFilter?: string }): Reac
   const cancelRef = useRef(false);
 
   const runAnalysis = useCallback(async () => {
-    // The roster is already scoped to the chosen team, so no further team filtering is applied here.
-    const rosterClause = buildStandupRosterAssigneeWasClause(rosterMembers, null);
-    if (rosterClause === null) {
+    if (rosterMembers.length === 0) {
       setErrorMessage('No roster members for this team — import a roster in the Sprint Dashboard first.');
       return;
     }
@@ -152,9 +151,27 @@ export function IssueFlowTab({ teamFilter = '' }: { teamFilter?: string }): Reac
     cancelRef.current = false;
     setIsLoading(true);
     setErrorMessage(null);
-    setProgressMessage('Reading the instance’s statuses…');
 
     try {
+      // Resolve every roster DISPLAY NAME to a Jira machine id before building the clause. Jira rejects
+      // a display name in the assignee field, so querying the roster names directly returns a 400 —
+      // this is the same resolution the Personal Workflow report does, now shared so both agree.
+      setProgressMessage('Resolving roster members in Jira…');
+      const resolvedMembers = await resolveRosterMachineIds(rosterMembers);
+      const queryValues = resolvedMembers
+        .map((resolved) => resolved.queryValue)
+        .filter((queryValue): queryValue is string => queryValue !== null);
+      const unresolvedNames = resolvedMembers
+        .filter((resolved) => resolved.queryValue === null)
+        .map((resolved) => resolved.member.displayName);
+      const rosterClause = buildAssigneeWasClauseFromValues(queryValues);
+      if (rosterClause === null) {
+        setErrorMessage('None of this team’s roster members could be matched to a Jira user, so no query '
+          + `could be built. Unmatched: ${unresolvedNames.join(', ') || 'all members'}.`);
+        return;
+      }
+
+      setProgressMessage('Reading the instance’s statuses…');
       const statuses = await jiraGet<RawStatus[]>('/rest/api/2/status');
       const { statusCategoryByStatusId, statusNamesById } = readStatusMaps(statuses ?? []);
       const storyPointsFieldId = readConfiguredStoryPointsFieldId();
