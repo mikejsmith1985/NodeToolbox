@@ -49,6 +49,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   document — a part-finished team report that reads as complete is exactly what this feature exists to prevent.
 
 ### Fixed
+- **Reports no longer label themselves with a team they did not actually use.** When the imported roster carries no
+  team names, the member filter falls back to the **entire roster** — but the heading still quoted back whichever team
+  you had asked for, so one team's name sat over everyone's figures with nothing on the page to reveal the swap. The
+  heading now names only the scope that was genuinely applied ("All roster members (no team assigned)" when no team
+  could be), and the mismatch warning now fires in that case instead of being suppressed by it. This is the same
+  symptom reported against v0.91.1; that fix aligned the label and the data for a *mismatched* team name but left this
+  second path, where no team name resolves at all, still able to diverge.
 - **The Personal Workflow report no longer describes itself inaccurately.** "Issues" said it counted issues a person
   *moved to done*. It does not, and never did: it counts issues they **advanced** — completed themselves *or handed
   on to someone else* — which is the right behaviour, because where a product owner accepts the work the person who

@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import {
   buildStandupRosterAssigneeClause,
   buildStandupRosterAssigneeWasClause,
+  describeRosterScope,
   filterRosterMembersByActiveTeam,
   resolveActiveRosterTeamName,
   readStoredStandupRosterMembers,
@@ -52,6 +53,24 @@ describe('useStandupRosterStore', () => {
     });
 
     expect(buildStandupRosterAssigneeClause()).toBe('assignee in ("Alice Adams", "Bob Brown")');
+  });
+
+  // A report that names a team it did not actually scope to is worse than one that names no team:
+  // the reader has no way to tell. These pin the case where the roster carries no team metadata at
+  // all — the filter silently returns EVERYONE, so no team name may be claimed.
+  it('describes the scope as the team when one was genuinely applied', () => {
+    expect(describeRosterScope('Cleanup Crew')).toBe('Cleanup Crew');
+  });
+
+  it('refuses to name a team when the roster has no team metadata to filter on', () => {
+    // This is the bug: the member filter returns the WHOLE roster when there is no team to filter by,
+    // while the heading fell back to whatever the user had asked for. The data was everyone's and the
+    // label said "Transformers".
+    expect(describeRosterScope('')).toBe('All roster members (no team assigned)');
+  });
+
+  it('never quotes back a requested team that was not applied', () => {
+    expect(describeRosterScope('')).not.toContain('Transformers');
   });
 
   // The flow analysis needs issues the team HELD AT SOME POINT, not the ones they hold now. An issue

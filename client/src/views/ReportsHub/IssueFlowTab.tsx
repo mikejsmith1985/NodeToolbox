@@ -16,6 +16,7 @@ import styles from './ReportsHubView.module.css';
 import {
   buildStandupRosterAssigneeWasClause,
   readAvailableRosterTeamNames,
+  describeRosterScope,
   resolveActiveRosterTeamName,
   useStandupRosterStore,
 } from '../SprintDashboard/hooks/useStandupRosterStore.ts';
@@ -173,7 +174,7 @@ export function IssueFlowTab({ teamFilter = '' }: { teamFilter?: string }): Reac
   return (
     <div>
       <p className={styles.captionText} style={{ marginTop: 0 }}>
-        For every issue the <strong>{effectiveTeamName || 'selected'}</strong> roster delivered in the
+        For every issue the <strong>{describeRosterScope(effectiveTeamName)}</strong> roster delivered in the
         window, this shows where its time went and who was holding it — including time it spent in
         nobody’s hands. All durations are <strong>working days</strong> (Monday–Friday).
       </p>
