@@ -1132,3 +1132,125 @@ describe('PersonalFlowTab', () => {
     expect(runButton).toBeEnabled();
   });
 });
+
+describe('PersonalFlowTab — in-tab team scope', () => {
+  beforeEach(() => {
+    useStandupRosterStore.setState({ rosterMembers: [] });
+    useSettingsStore.setState({ sprintDashboardActiveTeam: '' });
+    mockJiraGet.mockReset();
+    // Reset the clipboard spy too: without this, mock.calls[0] would be an earlier test's copy and
+    // this suite would assert against a document it never produced.
+    mockCopyWithResult.mockReset();
+  });
+
+  /** Two teams in one roster, so a scope change is observable in who gets a row. */
+  function seedTwoTeamRoster(): void {
+    useStandupRosterStore.setState({
+      rosterMembers: [
+        buildRosterMember('Jane Dev', 'Team Rocket'),
+        buildRosterMember('John QA', 'Team Falcon'),
+      ],
+    });
+    useSettingsStore.setState({ sprintDashboardActiveTeam: 'Team Rocket' });
+    mockJiraGet.mockImplementation((path: string) => {
+      if (path.startsWith('/rest/api/2/status')) return Promise.resolve(STATUSES);
+      if (path.startsWith('/rest/api/2/user/search')) return Promise.resolve(userSearchResponseForPath(path));
+      if (path.startsWith('/rest/api/2/search')) return Promise.resolve(searchResponseForPath(path));
+      return Promise.reject(new Error(`unexpected path ${path}`));
+    });
+  }
+
+  it('runs the team chosen in the Reports Hub filter, not the one stored in Agile Hub', async () => {
+    seedTwoTeamRoster();
+
+    render(<PersonalFlowTab teamFilter="Team Falcon" />);
+    fireEvent.click(screen.getByRole('button', { name: /run for team roster/i }));
+
+    // The stored active team is Team Rocket; the in-tab filter must win.
+    await waitFor(() => expect(screen.getByText('John QA')).toBeInTheDocument());
+    expect(screen.queryByText('Jane Dev')).not.toBeInTheDocument();
+  });
+
+  it('falls back to the Agile Hub team when no filter is chosen', async () => {
+    seedTwoTeamRoster();
+
+    render(<PersonalFlowTab teamFilter="" />);
+    fireEvent.click(screen.getByRole('button', { name: /run for team roster/i }));
+
+    await waitFor(() => expect(screen.getByText('Jane Dev')).toBeInTheDocument());
+  });
+
+  it('says so when the chosen filter is not a roster team, rather than silently running another', async () => {
+    // The Reports Hub filter is populated from Jira/ART team names, which need not match the roster's.
+    // Silently falling back to the first roster team would look like it worked while being wrong.
+    seedTwoTeamRoster();
+
+    render(<PersonalFlowTab teamFilter="Some ART Team" />);
+
+    expect(screen.getByText(/not a team on your roster/i)).toBeInTheDocument();
+  });
+
+  it('still runs the Agile Hub team when the filter does not match', async () => {
+    seedTwoTeamRoster();
+
+    render(<PersonalFlowTab teamFilter="Some ART Team" />);
+    fireEvent.click(screen.getByRole('button', { name: /run for team roster/i }));
+
+    await waitFor(() => expect(screen.getByText('Jane Dev')).toBeInTheDocument());
+    expect(screen.queryByText('John QA')).not.toBeInTheDocument();
+  });
+
+  it('labels the report with the team whose data it actually ran, not the one requested', async () => {
+    // The reported symptom: the header said "Transformers" while the rows were Cleanup Crew's people.
+    // filterRosterMembersByActiveTeam falls back to the FIRST roster team when the requested name is
+    // not a roster team, so the data moved and the label did not.
+    mockCopyWithResult.mockResolvedValue(true);
+    useStandupRosterStore.setState({
+      rosterMembers: [
+        buildRosterMember('Jane Dev', 'Cleanup Crew'),
+        buildRosterMember('John QA', 'Zebra Squad'),
+      ],
+    });
+    useSettingsStore.setState({ sprintDashboardActiveTeam: 'Transformers' });
+    mockJiraGet.mockImplementation((path: string) => {
+      if (path.startsWith('/rest/api/2/status')) return Promise.resolve(STATUSES);
+      if (path.startsWith('/rest/api/2/user/search')) return Promise.resolve(userSearchResponseForPath(path));
+      if (path.startsWith('/rest/api/2/search')) return Promise.resolve(searchResponseForPath(path));
+      return Promise.reject(new Error(`unexpected path ${path}`));
+    });
+
+    render(<PersonalFlowTab teamFilter="" />);
+    fireEvent.click(screen.getByRole('button', { name: /run for team roster/i }));
+    await waitFor(() => expect(screen.getByText('Jane Dev')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /copy audit report/i }));
+
+    await waitFor(() => expect(mockCopyWithResult).toHaveBeenCalled());
+    const copiedDocument = String(mockCopyWithResult.mock.calls[0][0]);
+    expect(copiedDocument).toContain('Cleanup Crew');
+    expect(copiedDocument).not.toContain('Transformers');
+  });
+
+  it('warns on screen when the requested team is not on the roster at all', async () => {
+    useStandupRosterStore.setState({
+      rosterMembers: [buildRosterMember('Jane Dev', 'Cleanup Crew')],
+    });
+    useSettingsStore.setState({ sprintDashboardActiveTeam: 'Transformers' });
+
+    render(<PersonalFlowTab teamFilter="" />);
+
+    expect(screen.getByText(/Cleanup Crew/)).toBeInTheDocument();
+  });
+
+  it('names the scoped team in the audit report it copies', async () => {
+    mockCopyWithResult.mockResolvedValue(true);
+    seedTwoTeamRoster();
+
+    render(<PersonalFlowTab teamFilter="Team Falcon" />);
+    fireEvent.click(screen.getByRole('button', { name: /run for team roster/i }));
+    await waitFor(() => expect(screen.getByText('John QA')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /copy audit report/i }));
+
+    await waitFor(() => expect(mockCopyWithResult).toHaveBeenCalled());
+    expect(String(mockCopyWithResult.mock.calls[0][0])).toContain('Team Falcon');
+  });
+});

@@ -26,6 +26,8 @@ import {
 import styles from './ReportsHubView.module.css';
 import {
   filterRosterMembersByActiveTeam,
+  readAvailableRosterTeamNames,
+  resolveActiveRosterTeamName,
   type RosterRoleCapabilities,
   type StandupRosterMember,
   useStandupRosterStore,
@@ -1596,7 +1598,18 @@ function InternalTestingBottleneckPanel(): React.JSX.Element {
 }
 
 /** The Personal Flow report tab: pick a person + window, run, and read their throughput + hands-on cycle time. */
-export function PersonalFlowTab(): React.JSX.Element {
+export interface PersonalFlowTabProps {
+  /**
+   * The team chosen in the Reports Hub filter bar, scoping the roster this tab runs for.
+   *
+   * Empty means "All Teams", which falls back to the team selected in Agile Hub. The filter is
+   * populated from Jira/ART team names, which need not match the roster's own team names — so a
+   * value that is not a roster team is reported rather than silently resolved to a different one.
+   */
+  teamFilter?: string;
+}
+
+export function PersonalFlowTab({ teamFilter = '' }: PersonalFlowTabProps = {}) {
   const [person, setPerson] = useState('');
   const [windowDays, setWindowDays] = useState(DEFAULT_WINDOW_DAYS);
   const [isLoading, setIsLoading] = useState(false);
@@ -1636,9 +1649,39 @@ export function PersonalFlowTab(): React.JSX.Element {
   // the same way RosterTab does: the persisted active team name filters the shared standup roster store.
   const rosterMembers = useStandupRosterStore((state) => state.rosterMembers);
   const storedActiveTeamName = useSettingsStore((state) => state.sprintDashboardActiveTeam);
+  // The Reports Hub filter wins when it names a real roster team, so the scope can be changed without
+  // leaving this tab. A filter value that is NOT a roster team is surfaced rather than acted on:
+  // resolveActiveRosterTeamName falls back to the first roster team on a mismatch, which would look
+  // like the change took effect while quietly reporting on the wrong people.
+  const availableRosterTeamNames = useMemo(
+    () => readAvailableRosterTeamNames(rosterMembers),
+    [rosterMembers],
+  );
+  const trimmedTeamFilter = teamFilter.trim();
+  const isTeamFilterARosterTeam = trimmedTeamFilter !== ''
+    && availableRosterTeamNames.includes(trimmedTeamFilter);
+  // What the user asked for — which is not necessarily what the roster can provide.
+  const requestedTeamName = isTeamFilterARosterTeam ? trimmedTeamFilter : storedActiveTeamName;
+  // What the roster ACTUALLY scoped to. filterRosterMembersByActiveTeam resolves an unknown team name
+  // to the first roster team rather than failing, so asking for a team that is not on the roster
+  // silently reports on someone else's people. Resolving it here — with the same function the filter
+  // uses — means the label and the rows can never disagree again.
+  const effectiveTeamName = useMemo(
+    () => resolveActiveRosterTeamName(requestedTeamName, rosterMembers),
+    [requestedTeamName, rosterMembers],
+  );
+  // What the user actually chose, at the level they chose it: the in-tab filter if they set one,
+  // otherwise the team stored in Agile Hub. This is the name to compare against and to quote back,
+  // because it is the one they will recognise.
+  const uiRequestedTeamName = (trimmedTeamFilter || storedActiveTeamName).trim();
+  // True whenever the report is showing a different team from the one asked for — covering both a
+  // Reports Hub filter that is not a roster team, and a stored Agile Hub team that is not either.
+  const hasTeamNameMismatch = uiRequestedTeamName !== ''
+    && effectiveTeamName !== ''
+    && effectiveTeamName !== uiRequestedTeamName;
   const activeTeamRosterMembers = useMemo(
-    () => filterRosterMembersByActiveTeam(rosterMembers, storedActiveTeamName, { includeTeamlessMembers: true }),
-    [rosterMembers, storedActiveTeamName],
+    () => filterRosterMembersByActiveTeam(rosterMembers, effectiveTeamName, { includeTeamlessMembers: true }),
+    [rosterMembers, effectiveTeamName],
   );
 
   // Too short a query offers no Jira users at all, which is worked out here rather than by clearing the
@@ -1803,7 +1846,7 @@ export function PersonalFlowTab(): React.JSX.Element {
     const toolVersion = await readToolVersion();
     const auditDocument = buildAuditDocumentFromRows(
       teamRows,
-      storedActiveTeamName ?? 'Team',
+      effectiveTeamName || requestedTeamName || 'Team',
       windowDays,
       statusNameById,
       teamJiraBaseUrl,
@@ -1892,6 +1935,14 @@ export function PersonalFlowTab(): React.JSX.Element {
           windowDays={windowDays}
           statusNameById={statusNameById}
         />
+      )}
+
+      {hasTeamNameMismatch && (
+        <p role="alert" className={styles.warningText} style={{ marginTop: 10 }}>
+          “{uiRequestedTeamName}” is not a team on your roster, so this report is showing{' '}
+          <strong>{effectiveTeamName}</strong> instead. The Team filter lists Jira/ART teams, which do not
+          always match the names on your roster — pick a roster team here, or change the team in Agile Hub.
+        </p>
       )}
 
       {teamRows.length > 0 && !isTeamLoading && (

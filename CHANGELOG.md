@@ -28,7 +28,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   through it is, and can be cancelled outright. A cancelled run leaves the previous results on screen and produces no
   document — a part-finished team report that reads as complete is exactly what this feature exists to prevent.
 
+### Changed
+- **The Personal Workflow audit report is much easier to read.** It was a single wall of text in which the sections
+  bled into one another. Each section now carries an icon (📊 figures, 🧮 how they are calculated, 🔍 worked example,
+  ⚖️ what was counted, 📋 per-issue detail), the sections are separated by rules, and a short **How to read this**
+  guide up front says what each one is for. A metric's worked arithmetic is now a quoted callout so it stands apart
+  from the prose explaining it; metrics that **cannot** be reproduced by a Jira search are flagged ⚠️ in their own
+  heading rather than only in the body text; and the long per-issue tables are collapsed behind expandable sections,
+  so a roster-sized run no longer buries the figures under hundreds of rows.
+
 ### Fixed
+- **The Personal Workflow report named the wrong team.** A report could be headed "Transformers" while showing
+  Cleanup Crew's people. When the selected team is not one of the teams on your roster, the underlying helper
+  silently resolves to the **first roster team** — so the data moved and the label did not. The report is now labelled
+  with the team it **actually ran**, and both the on-screen view and the copied document say plainly when the team you
+  asked for is not on the roster, naming the one being shown instead.
+- **The Reports Hub Team filter had no effect on the Personal Workflow report.** The report read the team selected
+  over in Agile Hub, so changing the Team dropdown in Reports Hub did nothing and the only way to switch roster was to
+  leave the tab entirely. The filter now scopes the report, so the team can be changed in place. Because that dropdown
+  is populated from Jira/ART team names — which do not always match the names on your roster — a value that is **not**
+  a roster team is now called out explicitly, naming the team the report is actually using. Previously the underlying
+  helper would have silently fallen back to the first roster team, which would have looked like the change took effect
+  while quietly reporting on the wrong people.
 - **The Personal Workflow report silently truncated at 100 issues, so busy people's figures were wrong.** It requested
   a single page and reported on whatever fitted, with only a quiet caption hinting at it — so throughput and cycle time
   described a subset while presenting themselves as the whole window, and a Jira link beside them would have returned
