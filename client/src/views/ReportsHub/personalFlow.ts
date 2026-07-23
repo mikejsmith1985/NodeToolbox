@@ -13,6 +13,24 @@
 // The module takes no clock — the caller injects `todayIso` — so identical input
 // always yields identical output and the engine is trivially unit-testable.
 
+// The history reconstruction itself lives in `issueTimeline.ts`, shared with the
+// issue-centric Flow Analysis so both reports describe the same issue identically.
+
+import {
+  MILLISECONDS_PER_DAY,
+  businessMillisBetween,
+  buildStateSegments,
+  parseIsoOrNull,
+  resolveTimelineOriginMs,
+} from './issueTimeline.ts';
+import type { StateSegment } from './issueTimeline.ts';
+
+/**
+ * Re-exported so callers that measured Monday–Friday time through this module keep working
+ * after the reconstruction moved out. It is the same function, not a copy.
+ */
+export { businessMillisBetween };
+
 // ── Domain constants ─────────────────────────────────────────────────────────
 
 /** Days in one week, used to scale a per-day throughput rate up to a per-week rate. */
@@ -20,9 +38,6 @@ const DAYS_PER_WEEK = 7;
 
 /** Days in a two-week sprint, used to scale a per-day rate up to a per-fortnight rate. */
 const DAYS_PER_TWO_WEEKS = 14;
-
-/** Milliseconds in one calendar day, used to convert epoch differences into day counts. */
-const MILLISECONDS_PER_DAY = 86_400_000;
 
 /** Jira status category key for work that has not started. */
 const STATUS_CATEGORY_NEW = 'new';
@@ -35,12 +50,6 @@ const STATUS_CATEGORY_DONE = 'done';
 
 /** Smallest allowed window, so a zero or negative windowDays cannot divide throughput by zero. */
 const MINIMUM_WINDOW_DAYS = 1;
-
-/** getUTCDay() index for Monday — the first working day counted toward hands-on time. */
-const FIRST_WORKDAY_INDEX = 1;
-
-/** getUTCDay() index for Friday — the last working day counted toward hands-on time. */
-const LAST_WORKDAY_INDEX = 5;
 
 // ── Public types ─────────────────────────────────────────────────────────────
 
@@ -189,13 +198,6 @@ export interface PersonalFlowResult {
 
 // ── Internal types ───────────────────────────────────────────────────────────
 
-/** A contiguous span over which a reconstructed timeline holds one constant value. */
-interface StateSegment<TValue> {
-  startMs: number;
-  endMs: number;
-  value: TValue;
-}
-
 /** A maximal span during which the issue was assigned to the target person. */
 interface OwnershipInterval {
   startMs: number;
@@ -276,37 +278,6 @@ function clampWindowDays(windowDays: number): number {
 }
 
 // ── Business-time helper ─────────────────────────────────────────────────────
-
-/**
- * Returns the milliseconds between two epoch instants that fall on a Monday–Friday.
- *
- * Weekends (Saturday and Sunday) contribute nothing; partial days are counted
- * proportionally. The day-of-week test uses UTC (`getUTCDay`) consistently so the
- * result is stable regardless of the machine's local timezone. Returns 0 when the
- * end is not strictly after the start.
- */
-export function businessMillisBetween(startMs: number, endMs: number): number {
-  if (endMs <= startMs) return 0;
-
-  let businessMillis = 0;
-  let cursorMs = startMs;
-  while (cursorMs < endMs) {
-    const nextUtcMidnightMs = Math.floor(cursorMs / MILLISECONDS_PER_DAY) * MILLISECONDS_PER_DAY
-      + MILLISECONDS_PER_DAY;
-    const segmentEndMs = Math.min(nextUtcMidnightMs, endMs);
-    if (isWorkday(cursorMs)) {
-      businessMillis += segmentEndMs - cursorMs;
-    }
-    cursorMs = segmentEndMs;
-  }
-  return businessMillis;
-}
-
-/** Reports whether the UTC calendar day containing the given instant is Monday–Friday. */
-function isWorkday(instantMs: number): boolean {
-  const dayOfWeek = new Date(instantMs).getUTCDay();
-  return dayOfWeek >= FIRST_WORKDAY_INDEX && dayOfWeek <= LAST_WORKDAY_INDEX;
-}
 
 // ── Per-issue evaluation ─────────────────────────────────────────────────────
 
@@ -433,16 +404,14 @@ function evaluateIssue(
  * falling back to the earliest transition timestamp, or today when nothing dates it.
  */
 function resolveOriginMs(issue: PersonalFlowIssue, todayMs: number): number {
-  const createdMs = parseIsoOrNull(issue.createdIso);
-  if (createdMs !== null) return createdMs;
-
-  const transitionTimes = [
-    ...issue.statusTransitions.map((transition) => transition.atIso),
-    ...issue.ownershipTransitions.map((transition) => transition.atIso),
-  ]
-    .map(parseIsoOrNull)
-    .filter((atMs): atMs is number => atMs !== null);
-  return transitionTimes.length > 0 ? Math.min(...transitionTimes) : todayMs;
+  return resolveTimelineOriginMs(
+    issue.createdIso,
+    [
+      ...issue.statusTransitions.map((transition) => transition.atIso),
+      ...issue.ownershipTransitions.map((transition) => transition.atIso),
+    ],
+    todayMs,
+  );
 }
 
 // ── Timeline reconstruction ──────────────────────────────────────────────────
@@ -490,34 +459,6 @@ function buildOwnershipIntervals(
     }
   }
   return intervals;
-}
-
-/**
- * Converts an initial value plus timestamped change points into contiguous, non-empty
- * segments spanning [originMs, todayMs]. Change points are clamped to the origin and
- * sorted ascending; when several share a timestamp the last one wins that instant.
- */
-function buildStateSegments<TValue>(
-  originMs: number,
-  initialValue: TValue,
-  changePoints: { atMs: number; value: TValue }[],
-  todayMs: number,
-): StateSegment<TValue>[] {
-  const points = [
-    { atMs: originMs, value: initialValue },
-    ...changePoints.map((point) => ({ atMs: Math.max(point.atMs, originMs), value: point.value })),
-  ].sort((first, second) => first.atMs - second.atMs);
-
-  const segments: StateSegment<TValue>[] = [];
-  for (let index = 0; index < points.length; index += 1) {
-    const startMs = points[index].atMs;
-    const rawEndMs = index + 1 < points.length ? points[index + 1].atMs : todayMs;
-    const endMs = Math.min(rawEndMs, todayMs);
-    if (endMs > startMs) {
-      segments.push({ startMs, endMs, value: points[index].value });
-    }
-  }
-  return segments;
 }
 
 // ── Completion & hands-on accounting ─────────────────────────────────────────
@@ -749,11 +690,3 @@ function computeMedianOfSorted(sortedValues: readonly number[]): number {
   return (sortedValues[middleIndex - 1] + sortedValues[middleIndex]) / 2;
 }
 
-// ── Parsing helpers ──────────────────────────────────────────────────────────
-
-/** Parses an ISO date string to epoch milliseconds, returning null for null or unparseable input. */
-function parseIsoOrNull(isoString: string | null): number | null {
-  if (isoString === null) return null;
-  const parsedMs = Date.parse(isoString);
-  return Number.isNaN(parsedMs) ? null : parsedMs;
-}

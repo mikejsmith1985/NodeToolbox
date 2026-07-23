@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 import {
   buildStandupRosterAssigneeClause,
+  buildStandupRosterAssigneeWasClause,
   filterRosterMembersByActiveTeam,
   resolveActiveRosterTeamName,
   readStoredStandupRosterMembers,
@@ -51,6 +52,49 @@ describe('useStandupRosterStore', () => {
     });
 
     expect(buildStandupRosterAssigneeClause()).toBe('assignee in ("Alice Adams", "Bob Brown")');
+  });
+
+  // The flow analysis needs issues the team HELD AT SOME POINT, not the ones they hold now. An issue
+  // a developer built and handed to a PO outside the roster is invisible under `assignee in (…)` —
+  // and that hand-off is exactly the delay the analysis exists to find.
+  it('builds a historical assignee clause for issues the roster held at any point', () => {
+    useStandupRosterStore.setState({
+      rosterMembers: [
+        { id: 'roster-member:alice adams', displayName: 'Alice Adams', assigneeQueryValue: 'Alice Adams' },
+        { id: 'roster-member:bob brown', displayName: 'Bob Brown', assigneeQueryValue: 'Bob Brown' },
+      ],
+    });
+
+    expect(buildStandupRosterAssigneeWasClause())
+      .toBe('assignee WAS in ("Alice Adams", "Bob Brown")');
+  });
+
+  it('applies the same team scoping and escaping to the historical clause', () => {
+    useStandupRosterStore.setState({
+      rosterMembers: [
+        {
+          id: 'roster-member:alice adams',
+          displayName: 'Alice Adams',
+          assigneeQueryValue: 'Alice "Ace" Adams',
+          teamName: 'Transformers',
+        },
+        {
+          id: 'roster-member:bob brown',
+          displayName: 'Bob Brown',
+          assigneeQueryValue: 'Bob Brown',
+          teamName: 'Clean Up Crew',
+        },
+      ],
+    });
+
+    expect(buildStandupRosterAssigneeWasClause(undefined, 'Transformers'))
+      .toBe('assignee WAS in ("Alice \\"Ace\\" Adams")');
+  });
+
+  it('returns null from the historical clause when the roster is empty, exactly as the current-holder clause does', () => {
+    useStandupRosterStore.setState({ rosterMembers: [] });
+
+    expect(buildStandupRosterAssigneeWasClause()).toBeNull();
   });
 
   it('filters the Jira assignee clause down to the active team roster members', () => {

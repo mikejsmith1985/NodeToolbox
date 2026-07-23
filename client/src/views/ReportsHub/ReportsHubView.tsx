@@ -16,6 +16,7 @@ import { copyElementImageToClipboard } from '../../utils/downloadElementImage.ts
 import { buildFeatureChangeSendPayload, buildScopeChangeSendPayload, surfaceForTab } from './buildSendPayload.ts'
 import { PersonalFlowTab } from './PersonalFlowTab.tsx'
 import { IssueAgingTab } from './IssueAgingTab.tsx'
+import { IssueFlowTab } from './IssueFlowTab.tsx'
 import { findPiNameForDate } from '../ArtView/hooks/artHelpers.ts'
 import type {
   ArtTeamFeatureChangeResult,
@@ -55,6 +56,7 @@ const TAB_OPTIONS: { key: ReportsHubTab; label: string }[] = [
   { key: 'featureChange', label: '🎯 Feature Change' },
   { key: 'hygiene', label: '🧹 Hygiene' },
   { key: 'personalFlow', label: '⏱️ Personal Flow' },
+  { key: 'issueFlow', label: '🔁 Flow Analysis' },
   { key: 'issueAging', label: '⏳ Aging' },
 ]
 
@@ -171,6 +173,12 @@ const TAB_DESCRIPTIONS: Record<ReportsHubTab, string[]> = {
     'Per-person delivery report: pick a Jira assignee and a lookback window to see their throughput — issues AND story points completed per day, per week, and per two weeks.',
     'Cycle time is measured from each issue\'s first move into an In-Progress status category to when it reaches Done, read from the issue changelog; the report shows the average and median.',
     'Use for: capacity/velocity input, 1:1 coaching, and spotting where work sits in progress too long.',
+  ],
+  issueFlow: [
+    'Issue-centric flow analysis: for every issue the selected roster DELIVERED in the window, it reconstructs where the time went and who was holding it at each point.',
+    'Lead time, cycle time and the pre-work wait are always shown together, in working days; stage durations sum exactly to the totals, so the figures can be checked by hand against Jira history.',
+    'Time an issue spent unassigned appears as its own Unassigned stage and is never charged to whoever picked it up next.',
+    'Use for: finding where delivery actually stalls, separating queue time from hands-on work, and validating the per-person Personal Flow figures.',
   ],
   issueAging: [
     'Open-item aging report: for a scope JQL, ages every NOT-Done issue by the calendar days since it was created, grouped by issue type.',
@@ -2609,6 +2617,8 @@ export default function ReportsHubView() {
         return <HygieneReportTab teamName={state.teamFilter} />
       case 'personalFlow':
         return <PersonalFlowTab teamFilter={state.teamFilter} />
+      case 'issueFlow':
+        return <IssueFlowTab teamFilter={state.teamFilter} />
       case 'issueAging':
         return <IssueAgingTab />
       default:

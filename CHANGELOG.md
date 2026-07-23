@@ -8,6 +8,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **New Reports Hub tab: Flow Analysis.** The Personal Workflow report answers "how much of this person's time went
+  where". This one answers the question it structurally could not: for every issue the team **delivered**, where did
+  that issue's time go, and **who was holding it** at each point. It reconstructs each issue as a series of stages —
+  a stage ends when the status changes *or* when the issue changes hands — so an issue that sat in one status while
+  passing between three people is shown as three stages, with the time attributed to the right person in each.
+- **Lead time, cycle time and the pre-work wait, always together.** Cycle time alone hides a backlog that sat for
+  weeks; lead time alone lets backlog age mask a slow delivery system. All three are reported side by side, in
+  **working days** (Monday–Friday), and every total is **summed from the stages** rather than computed separately —
+  so the stage durations on screen always add up to the totals beside them, and you can check that by hand.
+- **Time an issue spent unassigned is its own stage.** Queue time is frequently the single largest delay on an issue,
+  and it is never charged to whoever picked the issue up next. Billing a named person for a queue they did not
+  control would be worse than reporting no owner at all.
+- **"Where the time goes" roll-ups**, largest contributor first, showing the median *and* the p85 for each status
+  rather than a mean — one issue stuck for months would otherwise describe a healthy stage as broken. Waiting time is
+  reported separately from active work and never merged into one figure.
+- **The status classification is published, not assumed.** Jira files every in-flight status under one category, so
+  deciding which statuses are "work" and which are "a queue" is a judgement. That judgement is printed so it can be
+  argued with, and anything genuinely ambiguous is left **unclassified** with its time still counted — guessing would
+  move real work into the queue bucket and blame a delay that never happened.
+
 - **The Personal Workflow report can now produce an auditable write-up you can paste into Confluence.** After a team
   roster run, **Copy audit report** puts a full Markdown document on the clipboard in which every number shows its
   working: what each metric measures, the exact formula with this run's values substituted in, and a **one-click link
@@ -27,6 +47,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Progress and cancellation for team runs.** A roster run now reports which person it is analysing and how far
   through it is, and can be cancelled outright. A cancelled run leaves the previous results on screen and produces no
   document — a part-finished team report that reads as complete is exactly what this feature exists to prevent.
+
+### Fixed
+- **The Personal Workflow report no longer describes itself inaccurately.** "Issues" said it counted issues a person
+  *moved to done*. It does not, and never did: it counts issues they **advanced** — completed themselves *or handed
+  on to someone else* — which is the right behaviour, because where a product owner accepts the work the person who
+  built it would otherwise score nothing. The description now says so, and adds that work handed on and never
+  finished is still counted. "Points" is now framed as the **issue's size**, credited in full to *each* person who
+  advanced it, rather than as that person's personal output. **No figure changed** — only the wording that described
+  them.
+- **⚠️ The per-person Issues and Points columns were never summable, and now say so.** The same issue is credited to
+  everyone who advanced it, so adding those columns down a team counts hand-offs rather than issues — an 8-point
+  story touched by four people reads as 32 points of output. **If you have previously totalled those columns into a
+  report, that figure is wrong.** The columns are now marked, and the correct team total — each issue counted once —
+  is shown directly beside them, computed from the issue set rather than by adding the columns up. Hands-on time was
+  never affected; it partitions correctly across holders.
 
 ### Changed
 - **The Personal Workflow audit report is much easier to read.** It was a single wall of text in which the sections

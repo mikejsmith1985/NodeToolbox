@@ -17,6 +17,29 @@
 > `po-pi-dropdown.spec.js`. Feature 024's spec inherited a false "do not run concurrently with 022" constraint from
 > these stale entries before the code was checked. **Verify against the codebase before trusting a status below.**
 
+- **026-issue-flow-analysis** — *(planned on `feature/026-issue-flow-analysis` — ready for `/speckit-tasks`)* an
+  **issue-centric** flow analysis: for each delivered issue, where its time went and **who held it** at each stage,
+  separating active work from waiting. Plan: `specs/026-issue-flow-analysis/plan.md`. Contracts: `issue-timeline.md`,
+  `flow-stages.md`, `flow-reporting.md`.
+  **Why it is a second computation**: `personalFlow.ts` flattens the assignee timeline to a **boolean**
+  (`assignedToTarget`) in `readOwnershipHistory` (`PersonalFlowTab.tsx:214`) — it can answer "was this mine?" but
+  never "whose was it?". **But the cost is far lower than that implies**: `buildStateSegments<TValue>`
+  (`personalFlow.ts:415`) is already **generic**, so the same reconstruction serves both with a different value type.
+  Extract it to `issueTimeline.ts`; **`personalFlow.test.ts`'s 35 tests must pass UNMODIFIED** — if one needs editing,
+  the extraction changed behaviour and must be reverted, not the test adjusted.
+  **Verified defects it fixes** (each proved against the running engine, not assumed): one issue through a dev and a
+  PO credits **1 issue + full points to each**, so per-person columns count stints, not issues — but **hands-on time
+  partitions correctly and does not double-count**, so the fix is scoped to counts and points only. An issue handed
+  on that **never reaches done** is still credited. And the "Issues" description says "moved to done" when the metric
+  is work **advanced** — the hand-off behaviour itself is correct and deliberately kept.
+  **Key decisions**: report **both** lead and cycle time plus the gap (the user needs both problems visible);
+  unassigned time gets an explicit **"Unassigned" holder** (never charged to whoever picked it up next); "completed"
+  means the **last** entry into a done-category status; **working days throughout** (NFR-001 forces this — mixing
+  units would make the two reports disagree by every weekend); status waiting-vs-active is a **name-based default the
+  report states and the user overrides**, with genuine uncertainty reported as `unclassified` rather than guessed.
+  **Design rule**: totals are **summed from stages, never computed in parallel** — that is the only way the
+  reconciliation can fail, so the possibility is designed out.
+
 - **025-personal-flow-audit** — *(planned on `feature/025-personal-flow-audit` — ready for `/speckit-tasks`)* a
   second output from the Personal Workflow run: a **team-wide auditable Markdown document** where every metric carries
   its meaning, its formula, a worked example, and one-click Jira links, so a sceptic can validate the numbers without

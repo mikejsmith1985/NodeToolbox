@@ -119,3 +119,46 @@ describe('renderWorkedExample', () => {
     expect(rendered).toContain('11');
   });
 });
+
+describe('descriptions match what the metrics actually compute', () => {
+  const issuesMetric = FLOW_AUDIT_METRICS.find((metric) => metric.label === 'Issues')!;
+  const pointsMetric = FLOW_AUDIT_METRICS.find((metric) => metric.label === 'Points')!;
+
+  it('describes Issues as work ADVANCED, not work moved to done', () => {
+    // A stint completes when the person hands the issue ON or it reaches done while they hold it.
+    // "Moved to done" is false, and unfair to anyone whose work is always accepted by someone else.
+    expect(issuesMetric.meaning.toLowerCase()).toContain('advanced');
+    expect(issuesMetric.meaning.toLowerCase()).not.toContain('moved to done');
+  });
+
+  it('states that work handed on and never finished is still counted', () => {
+    expect(issuesMetric.meaning.toLowerCase()).toMatch(/never (finished|completed)|handed on/);
+  });
+
+  it('describes Points as the issue size credited to each person, not personal output', () => {
+    // An 8-point story touched by four people credits 8 points to each of them.
+    expect(pointsMetric.meaning.toLowerCase()).toContain('size');
+    expect(pointsMetric.meaning.toLowerCase()).toMatch(/each person|everyone who/);
+  });
+
+  it('warns that both columns cannot be summed across the team', () => {
+    [issuesMetric, pointsMetric].forEach((metric) => {
+      expect(metric.meaning.toLowerCase()).toMatch(/cannot be summed|not summable|do not sum/);
+    });
+  });
+
+  it('changes no computed figure — the corrections are wording only', () => {
+    // FR-019. If a description edit moves a number, something other than wording changed.
+    const context = {
+      personDisplayName: 'Jane Smith',
+      windowDays: 90,
+      values: { issueCount: 12, storyPoints: 24, averageCycleDays: 2.5, medianCycleDays: 2 },
+    };
+
+    expect(renderMetricExplanation(issuesMetric, context)).toContain('12');
+    expect(renderMetricExplanation(pointsMetric, context)).toContain('24');
+    expect(renderMetricExplanation(
+      FLOW_AUDIT_METRICS.find((metric) => metric.label === 'Issues / Week')!, context,
+    )).toContain('12 ÷ (90 ÷ 7)');
+  });
+});

@@ -949,6 +949,38 @@ describe('PersonalFlowTab', () => {
     expect(decodedSearch).not.toContain('customfield_10236');
   });
 
+  it('labels the non-summable columns and shows the honest team total beside them', async () => {
+    // Both people advanced the SAME two issues, so summing the Issues column reports 4. The team
+    // delivered 2. The label alone would not survive a copy into a document, so the number the reader
+    // was reaching for is supplied.
+    const developerCapabilities: RosterRoleCapabilities = {
+      canDevelop: true, canInternalTest: false, canExternalTest: false,
+    };
+    seedRoster(
+      [
+        buildRosterMemberWithRoles('Jane Dev', 'Team Rocket', developerCapabilities),
+        buildRosterMemberWithRoles('John QA', 'Team Rocket', developerCapabilities),
+      ],
+      'Team Rocket',
+    );
+    mockJiraGet.mockImplementation((path: string) => {
+      if (path.startsWith('/rest/api/2/status')) return Promise.resolve(STATUSES);
+      if (path.startsWith('/rest/api/2/user/search')) return Promise.resolve(userSearchResponseForPath(path));
+      if (path.startsWith('/rest/api/2/search')) return Promise.resolve(searchResponseForPath(path));
+      return Promise.reject(new Error(`unexpected path ${path}`));
+    });
+
+    render(<PersonalFlowTab />);
+    fireEvent.click(screen.getByRole('button', { name: /run for team roster/i }));
+
+    await waitFor(() => expect(screen.getByText('Jane Dev')).toBeInTheDocument());
+
+    expect(screen.getByText(/cannot be summed down this table/i)).toBeInTheDocument();
+    // Two people each credited with the same two issues; counted once, the team delivered two.
+    const totalsNote = screen.getByText(/cannot be summed down this table/i).closest('p') as HTMLElement;
+    expect(totalsNote.textContent).toMatch(/delivered\s*2\s*issues/i);
+  });
+
   it('renders the Role(s) column and the "Throughput by role" rollup for a team run', async () => {
     // Jane can Develop, John can Internal Test. Each advances the two issues the search response carries,
     // so the Developer role and the Internal Tester role each roll up to 2 issues — the contrast the

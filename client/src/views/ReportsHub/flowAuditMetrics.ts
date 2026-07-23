@@ -44,18 +44,35 @@ const HISTORY_DERIVED_NOTE =
 
 const DAYS_PER_WEEK = 7;
 
+/**
+ * Attached to every per-person column that credits the same issue to more than one person.
+ *
+ * One issue passing through a developer and then a PO is credited as one issue — and its full story
+ * points — to EACH of them. Adding such a column down the team therefore counts hand-offs, not
+ * issues: an 8-point story touched by four people reads as 32 points of team output. Hands-on time
+ * is unaffected; it partitions correctly across holders.
+ */
+const NOT_SUMMABLE_NOTE = 'This column **cannot be summed** across the team — the same issue is '
+  + 'credited to everyone who advanced it, so a total would count hand-offs rather than issues. Use '
+  + 'the team delivered totals, which count each issue once.';
+
 /** Every column the team comparison table renders, in the order it renders them. */
 export const FLOW_AUDIT_METRICS: readonly MetricDefinition[] = [
   {
     label: 'Issues',
-    meaning: 'How many issues this person moved to done within the reporting window.',
+    meaning: 'How many issues this person **advanced** within the window — work they completed themselves OR '
+      + 'handed on to someone else. It is deliberately not limited to issues they personally closed: where a PO '
+      + 'accepts the work, the person who built it would otherwise score nothing. Note that an issue handed on and '
+      + `never finished is still counted, so this measures work advanced rather than work delivered. ${NOT_SUMMABLE_NOTE}`,
     formula: 'count of credited issues',
     linkKind: 'credited',
     isHistoryDerived: false,
   },
   {
     label: 'Points',
-    meaning: 'The story points on those credited issues. Issues with no points count as zero.',
+    meaning: 'The **issue\'s size** in story points, credited in full to **each person** who advanced it — not a '
+      + 'measure of that person\'s personal output. An 8-point story worked by four people credits 8 points to every '
+      + `one of them. Issues with no points count as zero. ${NOT_SUMMABLE_NOTE}`,
     formula: 'sum of story points across credited issues',
     linkKind: 'credited',
     isHistoryDerived: false,
@@ -88,6 +105,53 @@ export const FLOW_AUDIT_METRICS: readonly MetricDefinition[] = [
     meaning: `The middle hands-on duration, which is less distorted by one unusually long issue than `
       + `the average is. ${HISTORY_DERIVED_NOTE}`,
     formula: 'middle value of the hands-on working days, sorted',
+    linkKind: 'credited',
+    isHistoryDerived: true,
+  },
+];
+
+/**
+ * The notice that must accompany any figure naming individuals against WAITING time.
+ *
+ * Feature 025's redistribution notice covers throughput, and reusing it here would leave the more
+ * sensitive figures less well explained than the less sensitive ones. Waiting time is nearly always a
+ * property of the system — a review queue, an approval gate, a handover that nobody owns — rather than
+ * of whoever happened to be holding the issue. Named beside a person without that said plainly, it
+ * reads as an accusation.
+ */
+export const WAITING_TIME_NOTICE =
+  '⚖️ **Reading the waiting figures.** Waiting time is a property of the **system**, not of the person '
+  + 'holding the issue: a queue forms because of how work is routed, reviewed and approved. Nobody named '
+  + 'against a waiting figure chose to wait. Reallocating people will not shorten a queue that exists '
+  + 'because of a gate — changing the gate will. Treat these figures as a map of where the process '
+  + 'stalls, never as a measure of individual effort.';
+
+/** The columns the issue-centric flow analysis reports, explained once for the whole document. */
+export const FLOW_ANALYSIS_METRICS: readonly MetricDefinition[] = [
+  {
+    label: 'Lead time',
+    meaning: 'The whole life of the issue in **working days** — from creation to the moment it last '
+      + 'reached a done status. It includes the time it sat in the backlog before anyone started, which '
+      + 'is why it is always shown beside cycle time rather than instead of it.',
+    formula: 'sum of every stage\'s working days',
+    linkKind: 'credited',
+    isHistoryDerived: true,
+  },
+  {
+    label: 'Cycle time',
+    meaning: 'How long the work took **once it started**, in working days — the stages from the first '
+      + 'started stage to completion. Shown alongside lead time deliberately: cycle time alone hides a '
+      + 'backlog that sat for weeks, and lead time alone lets backlog age mask a slow delivery system.',
+    formula: 'sum of the stages from the first started stage onward',
+    linkKind: 'credited',
+    isHistoryDerived: true,
+  },
+  {
+    label: 'Pre-work wait',
+    meaning: 'How long the issue waited before anyone began, in working days. Reported as its own '
+      + 'figure rather than left for the reader to subtract, because it is frequently the largest single '
+      + 'component and the easiest one to act on.',
+    formula: 'lead time − cycle time',
     linkKind: 'credited',
     isHistoryDerived: true,
   },

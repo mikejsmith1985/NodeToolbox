@@ -18,10 +18,16 @@ import {
   buildFetchedIssuesLink,
 } from './flowAuditLinks.ts';
 import {
+  FLOW_ANALYSIS_METRICS,
   FLOW_AUDIT_METRICS,
+  WAITING_TIME_NOTICE,
   renderMetricExplanation,
   renderWorkedExample,
 } from './flowAuditMetrics.ts';
+import type { IssueFlow } from './issueFlow.ts';
+import type { DeliveryTotals, StageRollup } from './issueFlowRollup.ts';
+import type { StatusFlowClass } from './issueFlowStatusClass.ts';
+import type { FlowFetchCeiling } from './flowAuditFetch.ts';
 import type { PersonalFlowExclusionReason, PersonalFlowResult } from './personalFlow.ts';
 
 /** The facts about the run itself, which let the document stand alone. */
@@ -33,7 +39,7 @@ export interface RunEnvelope {
   /** Passed in, never read from the clock — this is what keeps the generator deterministic. */
   generatedAtIso: string;
   toolVersion: string;
-  ceilingReached: { kind: 'per-person' | 'run-budget'; affectedPeople: string[] } | null;
+  ceilingReached: { kind: FlowFetchCeiling; affectedPeople: string[] } | null;
   /** Null when unconfigured; links then degrade to query text rather than breaking. */
   jiraBaseUrl: string | null;
 }
@@ -55,11 +61,27 @@ export interface PersonAuditRow {
   errorMessage: string | null;
   /** How many issues were fetched before the engine's windowing — the reconciliation's top line. */
   fetchedIssueCount: number;
-  ceilingReached: 'per-person' | 'run-budget' | null;
+  ceilingReached: FlowFetchCeiling | null;
+}
+
+/**
+ * The issue-centric flow analysis, when one was run.
+ *
+ * Optional so a Personal Workflow document is byte-identical to what it was before this feature: an
+ * analysis that did not run must leave no trace, not an empty heading implying something is missing.
+ */
+export interface FlowAnalysisSection {
+  issueFlows: IssueFlow[];
+  rollups: StageRollup[];
+  deliveryTotals: DeliveryTotals;
+  /** The classification each status actually received during the run, keyed by status NAME. */
+  statusClassByStatusName: Readonly<Record<string, StatusFlowClass>>;
 }
 
 export interface FlowAuditInput {
   envelope: RunEnvelope;
+  /** Present only when the issue-centric flow analysis ran. */
+  flowAnalysis?: FlowAnalysisSection;
   /** Every person in the roster, INCLUDING those whose analysis failed. */
   rows: PersonAuditRow[];
   /** Status id → display name, so the worked example reads in Jira's own vocabulary. */
@@ -141,7 +163,9 @@ function renderCompletenessNotice(envelope: RunEnvelope): string {
   if (!envelope.ceilingReached) {
     return '';
   }
-  const ceilingLabel = envelope.ceilingReached.kind === 'per-person'
+  // The fetcher's ceiling is named neutrally because two reports share it; in THIS document the unit
+  // of analysis is always a person, so it is named for the reader as the per-person ceiling.
+  const ceilingLabel = envelope.ceilingReached.kind === 'per-unit'
     ? 'the per-person issue ceiling'
     : 'the overall run budget';
   return [
@@ -313,6 +337,122 @@ function renderPerIssueDetail(input: FlowAuditInput): string {
 }
 
 /**
+ * Renders the issue-centric flow sections: the three totals, where the time goes, and how each
+ * status was read.
+ *
+ * Returns nothing at all when no flow analysis was run, so the Personal Workflow report's document is
+ * byte-identical to what it was before this feature — an unrun analysis must not leave empty headings
+ * behind implying something is missing.
+ */
+function renderFlowSections(input: FlowAuditInput): string {
+  const flowAnalysis = input.flowAnalysis;
+  if (!flowAnalysis || flowAnalysis.issueFlows.length === 0) {
+    return '';
+  }
+
+  const averageOf = (read: (issueFlow: IssueFlow) => number) =>
+    flowAnalysis.issueFlows.reduce((total, issueFlow) => total + read(issueFlow), 0)
+      / flowAnalysis.issueFlows.length;
+
+  return [
+    SECTION_RULE,
+    renderFlowSummary(flowAnalysis, averageOf),
+    SECTION_RULE,
+    renderStageRollups(flowAnalysis),
+    SECTION_RULE,
+    renderClassification(flowAnalysis),
+    SECTION_RULE,
+    renderPerIssueFlow(flowAnalysis),
+  ].join('\n');
+}
+
+/** The three totals, always together, each labelled as working days. */
+function renderFlowSummary(
+  flowAnalysis: FlowAnalysisSection,
+  averageOf: (read: (issueFlow: IssueFlow) => number) => number,
+): string {
+  const explanationLines = FLOW_ANALYSIS_METRICS.flatMap((metric) => [
+    `**${metric.label}** — ${metric.meaning}`,
+    '',
+    `*Formula:* ${metric.formula}`,
+    '',
+  ]);
+
+  return ['## 🔁 Flow summary — where each delivered issue\'s time went', '',
+    `Over ${flowAnalysis.issueFlows.length} delivered issues. Every figure below is in **working days** `
+      + '(Monday–Friday); weekends are never counted.', '',
+    '| Delivered issues | Story points | Avg lead time | Avg cycle time | Avg pre-work wait |',
+    '|---|---|---|---|---|',
+    `| ${flowAnalysis.deliveryTotals.deliveredIssueCount} `
+      + `| ${formatValue(flowAnalysis.deliveryTotals.deliveredStoryPoints)} `
+      + `| ${formatValue(averageOf((issueFlow) => issueFlow.leadTimeWorkingDays))} `
+      + `| ${formatValue(averageOf((issueFlow) => issueFlow.cycleTimeWorkingDays))} `
+      + `| ${formatValue(averageOf((issueFlow) => issueFlow.preWorkWaitWorkingDays))} |`,
+    '',
+    ...explanationLines,
+  ].join('\n');
+}
+
+/** Where the time accumulated, largest first, waiting kept separate from active work. */
+function renderStageRollups(flowAnalysis: FlowAnalysisSection): string {
+  const rows = flowAnalysis.rollups.map((rollup) =>
+    `| ${escapeTableCell(rollup.statusName)} | ${rollup.flowClass} | ${formatValue(rollup.totalWorkingDays)} `
+    + `| ${formatValue(rollup.medianWorkingDays)} | ${formatValue(rollup.p85WorkingDays)} | ${rollup.issueCount} |`);
+
+  const largest = flowAnalysis.rollups[0];
+  return ['## ⏳ Where the time goes', '',
+    'Largest contributor first, in **working days**. The median is the typical case; p85 is the tail — '
+      + '85% of issues cleared the status in that time or less. A mean is deliberately not shown: one '
+      + 'issue stuck for months would describe a healthy stage as broken.', '',
+    largest === undefined
+      ? ''
+      : `**Largest single contributor: ${escapeTableCell(largest.statusName)}** (${largest.flowClass}) — `
+        + `${formatValue(largest.totalWorkingDays)} working days across ${largest.issueCount} issues.`,
+    '',
+    '| Status | Class | Total (working days) | Median | p85 | Issues |',
+    '|---|---|---|---|---|---|',
+    ...rows,
+    '',
+    WAITING_TIME_NOTICE,
+  ].join('\n');
+}
+
+/** The classification actually used, so a wrong guess is visible rather than buried. */
+function renderClassification(flowAnalysis: FlowAnalysisSection): string {
+  const rows = Object.entries(flowAnalysis.statusClassByStatusName)
+    .map(([statusName, flowClass]) => `| ${escapeTableCell(statusName)} | ${flowClass} |`);
+
+  return ['## 🔍 How statuses were classified', '',
+    'Jira files every in-flight status under one category, so separating work from waiting is a '
+      + 'judgement rather than a fact read from the data. It is printed here so it can be argued with. '
+      + 'Anything genuinely ambiguous is left **unclassified** and its time still counts toward every '
+      + 'total — guessing would move real work into the queue bucket and blame a delay that never '
+      + 'happened. Reclassifying a status changes which bucket its time appears in and never the '
+      + 'duration itself.', '',
+    '| Status | Classified as |',
+    '|---|---|',
+    ...rows,
+  ].join('\n');
+}
+
+/** One row per delivered issue with its three totals, so any of them can be checked in Jira. */
+function renderPerIssueFlow(flowAnalysis: FlowAnalysisSection): string {
+  const rows = flowAnalysis.issueFlows.map((issueFlow) =>
+    `| ${issueFlow.issueKey} | ${escapeTableCell(issueFlow.issueSummary)} `
+    + `| ${formatValue(issueFlow.leadTimeWorkingDays)} | ${formatValue(issueFlow.cycleTimeWorkingDays)} `
+    + `| ${formatValue(issueFlow.preWorkWaitWorkingDays)} | ${issueFlow.stages.length} |`);
+
+  return ['## 📋 Per-issue flow', '',
+    'Each delivered issue with its three totals in **working days**. Open any issue\'s history in Jira '
+      + 'and its stage durations will add up to the lead time shown here — the totals are summed from '
+      + 'the stages, never computed separately.', '',
+    '| Issue | Summary | Lead time | Cycle time | Pre-work wait | Stages |',
+    '|---|---|---|---|---|---|',
+    ...rows,
+  ].join('\n');
+}
+
+/**
  * Renders the whole audit document.
  *
  * Pure: the same input always produces the same string, the input is never mutated, and the clock is
@@ -332,5 +472,6 @@ export function buildFlowAuditDocument(input: FlowAuditInput): string {
     renderReconciliation(input),
     SECTION_RULE,
     renderPerIssueDetail(input),
+    renderFlowSections(input),
   ].join('\n');
 }

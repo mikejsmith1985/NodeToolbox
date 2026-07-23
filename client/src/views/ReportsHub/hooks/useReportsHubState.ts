@@ -53,6 +53,7 @@ export type ReportsHubTab =
   | 'featureChange'
   | 'hygiene'
   | 'personalFlow'
+  | 'issueFlow'
   | 'issueAging'
 
 /** A single ART team configuration loaded from localStorage. */
