@@ -307,3 +307,73 @@ describe('IssueFlowTab — failure is reported, not swallowed', () => {
     expect(screen.queryByText('Flow summary')).not.toBeInTheDocument();
   });
 });
+
+
+describe('IssueFlowTab — who did the internal testing', () => {
+  /** The delivered issue, tested by somebody who is not on the roster. */
+  const TESTED_OFF_ROSTER: { key: string; fields: Record<string, unknown>; changelog: { histories: FakeHistory[] } } = {
+    ...HANDED_OVER_ISSUE,
+    fields: { ...HANDED_OVER_ISSUE.fields, issuetype: { subtask: false, name: 'Story' } },
+    changelog: {
+      histories: [
+        { created: '2026-07-01T00:00:00.000Z', items: [{ field: 'status', from: '1', to: '3' }] },
+        {
+          created: '2026-07-06T00:00:00.000Z',
+          items: [
+            { field: 'assignee', from: 'jane.dev', fromString: 'Dev, Jane (CTR)', to: 'outsider', toString: 'Outsider, Pat' },
+            { field: 'status', from: '3', to: '4' },
+          ],
+        },
+        { created: '2026-07-09T00:00:00.000Z', items: [{ field: 'status', from: '4', to: '5' }] },
+      ],
+    },
+  };
+
+  function configureInternalTestingStatuses(statusNames: string[]): void {
+    window.localStorage.setItem(
+      'tbxPersonalFlowBottleneck',
+      JSON.stringify({ scopeJql: '', statusNames }),
+    );
+  }
+
+  it('asks for the statuses rather than guessing which ones mean internal testing', async () => {
+    // A guess here becomes a staffing claim that is not true.
+    render(<IssueFlowTab teamFilter="Team Rocket" />);
+    fireEvent.click(screen.getByRole('button', { name: /run flow analysis/i }));
+
+    await waitFor(() => expect(screen.getByText('Who did the internal testing')).toBeInTheDocument());
+    expect(screen.getByText(/no internal-testing statuses have been chosen/i)).toBeInTheDocument();
+  });
+
+  it('counts an issue whose internal testing was done off-roster, and names the person', async () => {
+    configureInternalTestingStatuses(['Ready for QA']);
+    mockJiraGet.mockImplementation((path: string) => {
+      if (path.startsWith('/rest/api/2/status')) return Promise.resolve(STATUSES);
+      if (path.startsWith('/rest/api/2/search')) return Promise.resolve({ issues: [TESTED_OFF_ROSTER] });
+      return Promise.reject(new Error(`unexpected path ${path}`));
+    });
+
+    render(<IssueFlowTab teamFilter="Team Rocket" />);
+    fireEvent.click(screen.getByRole('button', { name: /run flow analysis/i }));
+
+    await waitFor(() => expect(screen.getByText('Who did the internal testing')).toBeInTheDocument());
+
+    expect(screen.getByText(/had internal testing done by someone outside this roster/i)).toBeInTheDocument();
+    // Named, so a reader can spot somebody who is really on the team but missing from the roster.
+    expect(screen.getByText('Outsider, Pat')).toBeInTheDocument();
+  });
+
+  it('warns that elapsed days are not effort, so the figure is not read as headcount', async () => {
+    configureInternalTestingStatuses(['Ready for QA']);
+    mockJiraGet.mockImplementation((path: string) => {
+      if (path.startsWith('/rest/api/2/status')) return Promise.resolve(STATUSES);
+      if (path.startsWith('/rest/api/2/search')) return Promise.resolve({ issues: [TESTED_OFF_ROSTER] });
+      return Promise.reject(new Error(`unexpected path ${path}`));
+    });
+
+    render(<IssueFlowTab teamFilter="Team Rocket" />);
+    fireEvent.click(screen.getByRole('button', { name: /run flow analysis/i }));
+
+    await waitFor(() => expect(screen.getByText(/Elapsed working days is not effort/i)).toBeInTheDocument());
+  });
+});

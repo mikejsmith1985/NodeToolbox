@@ -32,6 +32,9 @@ import { createStatusClassifier } from './issueFlowStatusClass.ts';
 import type { StatusFlowClass, StatusFlowOverrides } from './issueFlowStatusClass.ts';
 import { computeDeliveryTotals, summariseStageRollups } from './issueFlowRollup.ts';
 import { classifyIssueScope } from './issueScope.ts';
+import { readBottleneckSettings } from './internalTestingStatuses.ts';
+import { summariseInternalTestingCoverage } from './internalTestingCoverage.ts';
+import type { InternalTestingCoverage } from './internalTestingCoverage.ts';
 import type { StageRollup } from './issueFlowRollup.ts';
 import { readConfiguredStoryPointsFieldId, readStoryPoints } from './storyPointsField.ts';
 
@@ -63,6 +66,8 @@ interface FlowRunOutcome {
   ceilingReached: FlowFetchCeiling | null;
   /** How many fetched issues were sub-tasks, disclosed rather than quietly dropped. */
   subTaskCount: number;
+  /** Who actually performed internal testing — the roster, or people outside it. */
+  internalTestingCoverage: InternalTestingCoverage;
   statusNamesById: Record<string, string>;
   statusClassByStatusId: Record<string, StatusFlowClass>;
   jql: string;
@@ -182,6 +187,13 @@ export function IssueFlowTab({ teamFilter = '' }: { teamFilter?: string }): Reac
           ? 0
           : fetchOutcome.issues
             .filter((issue) => classifyIssueScope(issue.fields?.issuetype) === 'sub-task').length,
+        // Uses the SAME internal-testing statuses the Bottleneck panel was configured with, so the
+        // two figures on this page cannot disagree about which statuses count as internal testing.
+        internalTestingCoverage: summariseInternalTestingCoverage({
+          issueFlows,
+          rosterMembers,
+          internalTestingStatusNames: readBottleneckSettings().statusNames,
+        }),
         ceilingReached: fetchOutcome.ceilingReached,
         statusNamesById,
         statusClassByStatusId: readClassificationUsed(issueFlows),
@@ -326,6 +338,7 @@ function FlowResultsView({ outcome }: { outcome: FlowRunOutcome }): React.JSX.El
 
       <FlowSummarySection issueFlows={outcome.issueFlows} deliveryTotals={deliveryTotals} />
       <StageRollupSection rollups={rollups} />
+      <InternalTestingCoverageSection coverage={outcome.internalTestingCoverage} />
       <ClassificationSection statusClassByStatusId={outcome.statusClassByStatusId} />
       <PerIssueSection issueFlows={outcome.issueFlows} />
     </div>
@@ -470,6 +483,126 @@ function PerIssueSection({ issueFlows }: { issueFlows: readonly IssueFlow[] }): 
           </tbody>
         </table>
       </div>
+    </section>
+  );
+}
+
+/**
+ * Who performed this team's internal testing — the evidence for whether the team can sustain its own
+ * testing, or is relying on people it does not have.
+ *
+ * The headline is a COUNT OF ISSUES and a share, not a total of days. Elapsed holding time is not
+ * effort (one tester holding fifteen issues accrues elapsed days on all fifteen at once), so days
+ * appear only as elapsed time and are never converted into anything resembling a headcount. A figure
+ * that collapses under scrutiny would discredit the rest of the page beside it.
+ */
+function InternalTestingCoverageSection({
+  coverage,
+}: {
+  coverage: InternalTestingCoverage;
+}): React.JSX.Element {
+  if (!coverage.isConfigured) {
+    return (
+      <section style={{ marginTop: 16 }}>
+        <h4 className={styles.tabSectionHeading}>Who did the internal testing</h4>
+        <p className={styles.captionText} style={{ marginTop: 0 }}>
+          Not calculated: no internal-testing statuses have been chosen yet. Pick them in the
+          <strong> Internal Testing Bottleneck</strong> panel on the Personal Flow tab and re-run.
+          They are not guessed — a wrong guess here would turn into a staffing claim that is not true.
+        </p>
+      </section>
+    );
+  }
+
+  if (coverage.issuesWithInternalTestingCount === 0) {
+    return (
+      <section style={{ marginTop: 16 }}>
+        <h4 className={styles.tabSectionHeading}>Who did the internal testing</h4>
+        <p className={styles.captionText} style={{ marginTop: 0 }}>
+          None of the delivered issues in this window passed through a configured internal-testing
+          status.
+        </p>
+      </section>
+    );
+  }
+
+  return (
+    <section style={{ marginTop: 16 }}>
+      <h4 className={styles.tabSectionHeading}>Who did the internal testing</h4>
+      <p className={styles.captionText} style={{ marginTop: 0 }}>
+        <strong>
+          {coverage.issuesTestedOffRosterCount} of {coverage.issuesWithInternalTestingCount} internally
+          tested issues ({formatDays(coverage.offRosterSharePercent ?? 0)}%) had internal testing done
+          by someone outside this roster
+        </strong>
+        , across {coverage.offRosterTesters.length}{' '}
+        {coverage.offRosterTesters.length === 1 ? 'person' : 'people'}. Of those,{' '}
+        {coverage.issuesHandedOffRosterCount} started with this team’s own tester and were then handed
+        to someone off-roster to finish.
+      </p>
+      <div className={styles.tableWrapper}>
+        <table className={styles.reportTable}>
+          <thead>
+            <tr><th>Measure</th><th>Issues</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Internally tested in this window</td>
+              <td>{coverage.issuesWithInternalTestingCount}</td>
+            </tr>
+            <tr>
+              <td>Tested by this roster’s internal tester(s)</td>
+              <td>{coverage.issuesTestedByRosterTesterCount}</td>
+            </tr>
+            <tr>
+              <td>Tested by someone off-roster</td>
+              <td>{coverage.issuesTestedOffRosterCount}</td>
+            </tr>
+            <tr>
+              <td>Started by our tester, finished off-roster</td>
+              <td>{coverage.issuesHandedOffRosterCount}</td>
+            </tr>
+            <tr>
+              <td>Sat unassigned while in an internal-testing status</td>
+              <td>{coverage.issuesUnassignedInTestingCount}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      {coverage.offRosterTesters.length > 0 && (
+        <>
+          <p className={styles.captionText}>
+            Everyone outside the roster who did internal testing, by name. <strong>Check this list.</strong>{' '}
+            If somebody here is actually on your team, they are missing from the roster — fix that
+            before quoting the figures above, rather than publishing a roster gap as a finding.
+          </p>
+          <div className={styles.tableWrapper}>
+            <table className={styles.reportTable}>
+              <thead>
+                <tr><th>Person</th><th>Issues</th><th>Elapsed working days held</th><th>Issue keys</th></tr>
+              </thead>
+              <tbody>
+                {coverage.offRosterTesters.map((tester) => (
+                  <tr key={tester.holderName}>
+                    <td>{tester.holderName}</td>
+                    <td>{tester.issueCount}</td>
+                    <td>{formatDays(tester.elapsedWorkingDays)}</td>
+                    <td>{tester.issueKeys.join(', ')}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+
+      <p className={styles.captionText}>
+        ⚠️ <strong>Elapsed working days is not effort.</strong> It is how long each person held an issue
+        in an internal-testing status; someone holding several issues at once accrues elapsed days on
+        all of them simultaneously. Do not read it as person-days or convert it to a headcount — the
+        issue counts above are the figures that support that argument.
+      </p>
     </section>
   );
 }

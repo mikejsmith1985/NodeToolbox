@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **New "Who did the internal testing" section on the Flow Analysis tab.** For every delivered issue that passed
+  through an internal-testing status, it shows whether the testing was done by this roster's own internal tester or
+  by somebody outside the team — with the headline as a **share of issues** ("31 of 88 internally tested issues (35%)
+  were tested by someone outside this roster"), the number that started with your tester and were then handed
+  off-roster to finish, and every outside person named with their issue counts and keys. Built for the case that a
+  team cannot sustain its own internal testing without permanent resource.
+  Three deliberate constraints keep the figure defensible: it uses the **same internal-testing statuses** already
+  configured in the Internal Testing Bottleneck panel rather than guessing (with nothing configured it says so and
+  computes nothing); elapsed working days are labelled **elapsed holding time and never converted to effort or
+  headcount**, because one tester holding several issues accrues elapsed days on all of them at once; and every
+  off-roster person is **named**, so somebody who is really on the team but missing from the roster is spotted and
+  fixed rather than published as a finding.
 - **A "Count sub-tasks as issues in their own right" toggle**, off by default, on both flow reports. Teams that
   genuinely deliver at sub-task level can opt back in; the audit report always states which basis produced its
   figures. One shared setting drives both reports, so they cannot disagree about what counts.

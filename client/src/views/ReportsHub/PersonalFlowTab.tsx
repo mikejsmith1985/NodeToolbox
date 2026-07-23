@@ -40,6 +40,7 @@ import {
 } from './personalFlow.ts';
 import { buildCreditedIssuesLink } from './flowAuditLinks.ts';
 import { classifyIssueScope } from './issueScope.ts';
+import { readBottleneckSettings, writeBottleneckSettings } from './internalTestingStatuses.ts';
 import { computeDeliveryTotals } from './issueFlowRollup.ts';
 import { buildFlowAuditDocument } from './flowAuditDocument.ts';
 import {
@@ -66,9 +67,6 @@ import {
 
 // One page of up to this many issues — plenty for a personal report; flagged when it caps out.
 const MAX_ISSUES = 100;
-// localStorage key the Internal Testing Bottleneck panel persists its scope JQL + status names under, so a
-// user's inputs survive a reload. Read at RUN time so an edit is picked up on the next run without a reload.
-const BOTTLENECK_SETTINGS_STORAGE_KEY = 'tbxPersonalFlowBottleneck';
 // Most rows the bottleneck "oldest issues" table renders before truncating, so a huge backlog stays readable.
 const MAX_BOTTLENECK_ROWS = 25;
 const DEFAULT_WINDOW_DAYS = 90;
@@ -1196,61 +1194,10 @@ const STATUS_LOAD_FAILED_NOTE = 'Could not load statuses — click Reload status
 const STATUS_LOAD_EMPTY_NOTE = 'Statuses not loaded — click Reload statuses.';
 
 /** The scope JQL + the chosen internal-testing status names the bottleneck panel persists between runs. */
-interface BottleneckSettings {
-  scopeJql: string;
-  statusNames: string[];
-}
-
 /** One offerable status in the multi-select picker: its exact Jira name plus its category key (shown as a tag). */
 interface StatusPickerOption {
   name: string;
   categoryKey: string;
-}
-
-/**
- * Reads the persisted status names, tolerating three shapes: the current `statusNames` array, an older
- * `statusNamesText` comma string (migrated so a pre-multi-select user keeps their picks), or neither. Any
- * non-string array entry is dropped so a corrupted store can never seed a bogus status.
- */
-function readPersistedStatusNames(stored: { statusNames?: unknown; statusNamesText?: unknown }): string[] {
-  if (Array.isArray(stored.statusNames)) {
-    return stored.statusNames.filter((name): name is string => typeof name === 'string');
-  }
-  if (typeof stored.statusNamesText === 'string') {
-    return parseStatusNames(stored.statusNamesText); // migrate the older comma-separated text form
-  }
-  return [];
-}
-
-/**
- * Reads the bottleneck panel's persisted inputs, falling back to blanks when nothing is stored or the
- * stored JSON cannot be parsed. Migrates a pre-multi-select `statusNamesText` value into `statusNames`.
- */
-function readBottleneckSettings(): BottleneckSettings {
-  try {
-    const stored = JSON.parse(localStorage.getItem(BOTTLENECK_SETTINGS_STORAGE_KEY) || '{}') as {
-      scopeJql?: string;
-      statusNames?: unknown;
-      statusNamesText?: unknown;
-    };
-    return { scopeJql: stored.scopeJql ?? '', statusNames: readPersistedStatusNames(stored) };
-  } catch {
-    return { scopeJql: '', statusNames: [] };
-  }
-}
-
-/** Persists the bottleneck panel's inputs so they survive a reload; failures are swallowed (storage is a convenience). */
-function writeBottleneckSettings(settings: BottleneckSettings): void {
-  try {
-    localStorage.setItem(BOTTLENECK_SETTINGS_STORAGE_KEY, JSON.stringify(settings));
-  } catch {
-    // Ignore storage errors (private mode, quota) — the panel still works without persistence.
-  }
-}
-
-/** Splits a comma-separated status-names string into trimmed, non-empty status names (used to migrate old data). */
-function parseStatusNames(statusNamesText: string): string[] {
-  return statusNamesText.split(',').map((name) => name.trim()).filter((name) => name !== '');
 }
 
 /**
