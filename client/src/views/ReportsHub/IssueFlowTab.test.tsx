@@ -493,3 +493,78 @@ describe('IssueFlowTab — the copyable report', () => {
     expect(document).toContain('# Flow Analysis — Team Rocket');
   });
 });
+
+describe('IssueFlowTab — project scope (feature: #218)', () => {
+  /** Two delivered issues in different projects, both held by the roster. */
+  const ENCUC_ISSUE = {
+    key: 'ENCUC-2019',
+    fields: {
+      summary: 'ENCUC delivery work',
+      created: '2026-07-01T00:00:00.000Z',
+      status: { id: '5' },
+      assignee: { name: 'jane.dev', displayName: 'Dev, Jane (CTR)' },
+      issuetype: { subtask: false, name: 'Story' },
+    },
+    changelog: {
+      histories: [
+        { created: '2026-07-01T00:00:00.000Z', items: [{ field: 'status', from: '1', to: '3' }] },
+        { created: '2026-07-09T00:00:00.000Z', items: [{ field: 'status', from: '3', to: '5' }] },
+      ],
+    },
+  };
+  const INTTEST_ISSUE = {
+    ...ENCUC_ISSUE,
+    key: 'INTTEST-4006',
+    fields: { ...ENCUC_ISSUE.fields, summary: 'A testing-project ticket' },
+  };
+
+  beforeEach(() => {
+    mockJiraGet.mockImplementation((path: string) => {
+      if (path.startsWith('/rest/api/2/status')) return Promise.resolve(STATUSES);
+      if (path.startsWith('/rest/api/2/search')) return Promise.resolve({ issues: [ENCUC_ISSUE, INTTEST_ISSUE] });
+      return Promise.reject(new Error(`unexpected path ${path}`));
+    });
+  });
+
+  it('shows work from every project by default, and offers each as a filter', async () => {
+    render(<IssueFlowTab teamFilter="Team Rocket" />);
+    fireEvent.click(screen.getByRole('button', { name: /run flow analysis/i }));
+
+    await waitFor(() => expect(screen.getByText('ENCUC delivery work')).toBeInTheDocument());
+    expect(screen.getByText('A testing-project ticket')).toBeInTheDocument();
+    // Both projects are offered in the dropdown.
+    expect(screen.getByRole('option', { name: 'ENCUC' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'INTTEST' })).toBeInTheDocument();
+  });
+
+  it('narrows to one project without a second Jira query', async () => {
+    render(<IssueFlowTab teamFilter="Team Rocket" />);
+    fireEvent.click(screen.getByRole('button', { name: /run flow analysis/i }));
+    await waitFor(() => expect(screen.getByText('A testing-project ticket')).toBeInTheDocument());
+
+    const searchCallsBefore = mockJiraGet.mock.calls.filter((call) => String(call[0]).includes('/rest/api/2/search')).length;
+    fireEvent.change(screen.getByRole('combobox', { name: /project/i }), { target: { value: 'ENCUC' } });
+
+    // The INTTEST issue is gone; ENCUC remains — and no extra search fired.
+    await waitFor(() => expect(screen.queryByText('A testing-project ticket')).not.toBeInTheDocument());
+    expect(screen.getByText('ENCUC delivery work')).toBeInTheDocument();
+    const searchCallsAfter = mockJiraGet.mock.calls.filter((call) => String(call[0]).includes('/rest/api/2/search')).length;
+    expect(searchCallsAfter).toBe(searchCallsBefore);
+  });
+
+  it('scopes the delivery total to the chosen project', async () => {
+    render(<IssueFlowTab teamFilter="Team Rocket" />);
+    fireEvent.click(screen.getByRole('button', { name: /run flow analysis/i }));
+    await waitFor(() => expect(screen.getByText('Flow summary')).toBeInTheDocument());
+
+    // All projects: 2 delivered.
+    let summaryValues = () => Array.from(
+      (screen.getByText('Delivered issues').closest('table') as HTMLElement).querySelectorAll('tbody td'),
+    ).map((cell) => cell.textContent);
+    expect(summaryValues()[0]).toBe('2');
+
+    fireEvent.change(screen.getByRole('combobox', { name: /project/i }), { target: { value: 'ENCUC' } });
+
+    await waitFor(() => expect(summaryValues()[0]).toBe('1'));
+  });
+});
