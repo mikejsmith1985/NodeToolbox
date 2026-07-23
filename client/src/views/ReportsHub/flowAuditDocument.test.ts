@@ -54,6 +54,7 @@ function makeResult(overrides: Partial<PersonalFlowResult> = {}): PersonalFlowRe
 function makeRow(personDisplayName: string, overrides: Partial<PersonAuditRow> = {}): PersonAuditRow {
   return {
     personDisplayName,
+    personQueryValue: 'jane.smith',
     roleLabels: 'Dev',
     figures: makeResult(),
     errorMessage: null,
@@ -325,5 +326,28 @@ describe('table cell safety', () => {
     const teamRow = document.split('\n').find((line) => line.startsWith('| Smith '));
 
     expect(countCellBoundaries(teamRow ?? '')).toBe(10);
+  });
+});
+
+describe('the fetched-issues link', () => {
+  it('queries by the machine id Jira accepts, not the display name', () => {
+    // Jira rejects a display name in the assignee field: "The value 'Sokol, Mark (CTR)' does not
+    // exist for the field 'assignee'." The report already resolved the queryable id — use it.
+    const document = buildFlowAuditDocument(makeInput({
+      rows: [makeRow('Sokol, Mark (CTR)', { personQueryValue: 'mark.sokol' })],
+    }));
+
+    expect(document).toContain('assignee WAS "mark.sokol"');
+    expect(document).not.toContain('assignee WAS "Sokol, Mark (CTR)"');
+  });
+
+  it('omits the fetched link when the person never resolved to a queryable id', () => {
+    // A link that is known to error is worse than no link: it looks checkable and is not.
+    const document = buildFlowAuditDocument(makeInput({
+      rows: [makeRow('Unresolved Person', { personQueryValue: null })],
+    }));
+
+    expect(document).not.toContain('assignee WAS "Unresolved Person"');
+    expect(document.toLowerCase()).toContain('no queryable jira id');
   });
 });
