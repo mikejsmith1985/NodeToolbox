@@ -26,6 +26,7 @@ import {
   PI_REVIEW_COLUMN_LABELS,
   createInitialPiReviewPageStorage,
   createEmptyConfidenceVoteRow,
+  buildCarryOverRows,
   createEmptyPiReviewRow,
   exportPiReviewRowsToCsv,
   parsePiReviewCapacitySummary,
@@ -136,6 +137,8 @@ interface PiReviewPagePanelProps {
   selectedPiName: string;
   mode: PiReviewMode;
   capacitySummaryOverride: CapacitySummary | null;
+  /** The OTHER configured PI pages for this team, offered as sources to carry Features over from. */
+  carryOverSourceTargets: PiReviewLoadTarget[];
 }
 
 /**
@@ -703,7 +706,13 @@ function PiReviewFeatureDatePills({ jiraIssue }: { jiraIssue: JiraIssue | undefi
   );
 }
 
-function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverride }: PiReviewPagePanelProps) {
+function PiReviewPagePanel({
+  target,
+  selectedPiName,
+  mode,
+  capacitySummaryOverride,
+  carryOverSourceTargets,
+}: PiReviewPagePanelProps) {
   // Each page belongs to its own PI; fall back to the ambient selection only for legacy unnamed pages.
   const effectivePiName = target.piName.trim() || selectedPiName;
   const { showToast } = useToast();
@@ -731,6 +740,12 @@ function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverri
   // A pull is scoped by the page's PI plus the team's Product Owner(s), read from the imported roster.
   const rosterMembers = useStandupRosterStore((storeState) => storeState.rosterMembers);
   const [isPullingFeatures, setIsPullingFeatures] = useState(false);
+  // When on, a pull includes Features assigned to ANY roster member, not just the Product Owner(s) —
+  // for teams where Features sit with the person doing the work rather than the PO.
+  const [includeFullRoster, setIncludeFullRoster] = useState(false);
+  // ── "Carry over from a previous PI" controls ──
+  const [carryOverSourceKey, setCarryOverSourceKey] = useState('');
+  const [isCarryingOver, setIsCarryingOver] = useState(false);
   const [transitionOptionsByFeatureKey, setTransitionOptionsByFeatureKey] = useState<Record<string, JiraTransition[]>>({});
   const [isStatusPickerOpenByFeatureKey, setIsStatusPickerOpenByFeatureKey] = useState<Record<string, boolean>>({});
   const [isLoadingTransitionByFeatureKey, setIsLoadingTransitionByFeatureKey] = useState<Record<string, boolean>>({});
@@ -1004,9 +1019,19 @@ function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverri
     if (!tableBinding) {
       return;
     }
-    const productOwnerAssigneeQueryValues = productOwners.map((productOwner) => productOwner.assigneeQueryValue);
-    if (productOwnerAssigneeQueryValues.length === 0) {
-      showToast('Flag a Product Owner in the team roster before pulling Features.', 'error');
+    // Full-roster mode widens the pull to every roster member, catching Features assigned to whoever
+    // is doing the work rather than only the nominated Product Owner(s).
+    const pullSourceMembers = includeFullRoster ? rosterMembers : productOwners;
+    const pullAssigneeQueryValues = pullSourceMembers
+      .map((rosterMember) => rosterMember.assigneeQueryValue.trim())
+      .filter((assigneeQueryValue) => assigneeQueryValue !== '');
+    if (pullAssigneeQueryValues.length === 0) {
+      showToast(
+        includeFullRoster
+          ? 'The team roster is empty — import a roster before pulling Features.'
+          : 'Flag a Product Owner in the team roster, or turn on “Include full roster”, before pulling Features.',
+        'error',
+      );
       return;
     }
     if (effectivePiName.trim() === '') {
@@ -1015,7 +1040,7 @@ function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverri
     }
     setIsPullingFeatures(true);
     try {
-      const pullResult = await pullPiReviewFeatures(effectivePiName, productOwnerAssigneeQueryValues, rows);
+      const pullResult = await pullPiReviewFeatures(effectivePiName, pullAssigneeQueryValues, rows);
       if (pullResult.addedCount === 0) {
         showToast(
           pullResult.discoveredCount === 0
@@ -1145,6 +1170,49 @@ function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverri
     nextRow.weekOf = createTodayDateValue();
     setConfidenceRows((currentRows) => [...currentRows, nextRow]);
     setHasUnsavedChanges(true);
+  }
+
+  /** Appends a blank Feature row for the user to fill in by hand — for items not pulled from Jira. */
+  function handleAddRow() {
+    setRows((currentRows) => [...currentRows, createEmptyPiReviewRow()]);
+    setHasUnsavedChanges(true);
+  }
+
+  /**
+   * Brings the Carry-Over-marked Features from a previously-configured PI page onto this one.
+   *
+   * The prior PI's Confluence page is loaded and parsed with the same reader used everywhere else,
+   * so nothing new is invented; only the rows the team ticked as carrying over are appended, each as
+   * a fresh row with its Carry-Over box reset. Features already on this page are skipped.
+   */
+  async function handleCarryOverFromPreviousPi() {
+    const sourceTarget = carryOverSourceTargets.find((candidate) => candidate.targetKey === carryOverSourceKey);
+    if (!sourceTarget) {
+      showToast('Pick which PI to carry Features over from.', 'error');
+      return;
+    }
+    setIsCarryingOver(true);
+    try {
+      const sourcePage = await fetchConfluencePageByReference(sourceTarget.pageReference);
+      const parsedSourceTable = parsePiReviewTable(sourcePage.body.storage.value);
+      const carriedRows = buildCarryOverRows(parsedSourceTable?.rows ?? [], rows);
+      if (carriedRows.length === 0) {
+        showToast(`No Carry-Over items on ${sourceTarget.targetLabel} that aren’t already here.`, 'info');
+        return;
+      }
+      setRows((currentRows) => [...currentRows, ...carriedRows]);
+      setHasUnsavedChanges(true);
+      showToast(
+        `Carried over ${carriedRows.length} Feature${carriedRows.length === 1 ? '' : 's'} from `
+          + `${sourceTarget.targetLabel}. Save to Confluence when ready.`,
+        'success',
+      );
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to load the previous PI page.';
+      showToast(errorMessage, 'error');
+    } finally {
+      setIsCarryingOver(false);
+    }
   }
 
   function handleRemoveConfidenceRow(rowId: string) {
@@ -1696,7 +1764,8 @@ function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverri
   }
 
   const isExportingPanel = isExportingImage;
-  const isToolbarBusy = isLoading || isSaving || isExportingPanel || isUpdatingJiraDates || isPullingFeatures;
+  const isToolbarBusy = isLoading || isSaving || isExportingPanel || isUpdatingJiraDates
+    || isPullingFeatures || isCarryingOver;
   const hasPendingConfluenceRewrite = useMemo(() => {
     if (!tableBinding || pageVersionNumber === null || resolvedPageId === '') {
       return false;
@@ -1914,11 +1983,29 @@ function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverri
           <>
             <button
               className={joinClassNames(styles.actionButton, styles.actionButtonSecondary)}
-              disabled={isToolbarBusy || !tableBinding || productOwners.length === 0}
+              disabled={isToolbarBusy || !tableBinding
+                || (includeFullRoster ? rosterMembers.length === 0 : productOwners.length === 0)}
               onClick={() => void handlePullFeatures()}
               type="button"
             >
               {isPullingFeatures ? 'Pulling…' : 'Pull Features from Jira'}
+            </button>
+            <label className={styles.pullFeaturesHint} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              <input
+                type="checkbox"
+                checked={includeFullRoster}
+                disabled={isToolbarBusy}
+                onChange={(changeEvent) => setIncludeFullRoster(changeEvent.target.checked)}
+              />
+              Include full roster
+            </label>
+            <button
+              className={joinClassNames(styles.actionButton, styles.actionButtonSecondary)}
+              disabled={isToolbarBusy || !tableBinding}
+              onClick={handleAddRow}
+              type="button"
+            >
+              Add row
             </button>
             <button
               className={joinClassNames(styles.actionButton, styles.actionButtonSecondary)}
@@ -1936,20 +2023,58 @@ function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverri
             >
               Add Confidence Week
             </button>
+            {carryOverSourceTargets.length > 0 && (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                <select
+                  aria-label="Carry over Features from a previous PI"
+                  value={carryOverSourceKey}
+                  disabled={isToolbarBusy}
+                  onChange={(changeEvent) => setCarryOverSourceKey(changeEvent.target.value)}
+                >
+                  <option value="">Carry over from…</option>
+                  {carryOverSourceTargets.map((sourceTarget) => (
+                    <option key={sourceTarget.targetKey} value={sourceTarget.targetKey}>
+                      {sourceTarget.targetLabel}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  className={joinClassNames(styles.actionButton, styles.actionButtonSecondary)}
+                  disabled={isToolbarBusy || !tableBinding || carryOverSourceKey === ''}
+                  onClick={() => void handleCarryOverFromPreviousPi()}
+                  type="button"
+                >
+                  {isCarryingOver ? 'Carrying over…' : 'Carry over'}
+                </button>
+              </span>
+            )}
           </>
         )}
       </div>
       {canEditContent && (
         <p className={styles.pullFeaturesHint} data-export-exclude="true">
-          {productOwners.length > 0 ? (
+          {includeFullRoster ? (
+            rosterMembers.length > 0 ? (
+              <>
+                <strong>Pull Features from Jira</strong> adds every Feature in{' '}
+                <strong>{effectivePiName.trim() || 'the selected PI'}</strong> assigned to <strong>any of the
+                {' '}{rosterMembers.length} roster members</strong> — including Features held by whoever is doing the
+                work, not just the Product Owner. Safe to re-run: new Features are appended and your Carry-Over,
+                Committed and Notes entries are never touched.
+              </>
+            ) : (
+              'The team roster is empty. Import a roster to enable Pull Features from Jira.'
+            )
+          ) : productOwners.length > 0 ? (
             <>
               <strong>Pull Features from Jira</strong> adds every Feature in{' '}
               <strong>{effectivePiName.trim() || 'the selected PI'}</strong> assigned to{' '}
-              <strong>{productOwners.map((productOwner) => productOwner.displayName).join(', ')}</strong>. Safe to
-              re-run: new Features are appended and your Carry-Over, Committed and Notes entries are never touched.
+              <strong>{productOwners.map((productOwner) => productOwner.displayName).join(', ')}</strong>. Missing
+              Features assigned to others? Tick <strong>Include full roster</strong>. Safe to re-run: new Features
+              are appended and your Carry-Over, Committed and Notes entries are never touched.
             </>
           ) : (
-            'No Product Owner is flagged in the team roster. Mark a roster member as Product Owner to enable Pull Features from Jira.'
+            'No Product Owner is flagged in the team roster. Mark a roster member as Product Owner, or tick “Include full roster”, to enable Pull Features from Jira.'
           )}
         </p>
       )}
@@ -2609,6 +2734,9 @@ export default function PiReviewTab({
             {/* Keep each team panel mounted so loaded pages and unsaved edits survive tab switches. */}
             <PiReviewPagePanel
               capacitySummaryOverride={teamCapacitySummaries[target.teamId] ?? null}
+              carryOverSourceTargets={allConfiguredTargets.filter(
+                (candidate) => candidate.teamId === target.teamId && candidate.targetKey !== target.targetKey,
+              )}
               mode={mode}
               selectedPiName={selectedPiName}
               target={target}

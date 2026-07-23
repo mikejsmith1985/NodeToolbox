@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **PI Review: "Include full roster" when pulling Features.** Pull Features from Jira only found Features assigned to
+  the flagged Product Owner(s), so Features sitting with whoever is doing the work were missed. Tick **Include full
+  roster** and the pull covers every roster member, not just the POs.
+- **PI Review: "Add row" button.** You can now add a blank Feature row by hand — for items that are not pulled from
+  Jira — instead of only getting rows from a Confluence load or a Jira pull.
+- **PI Review: "Carry over from…" a previous PI.** Mark Features with the Carry-Over checkbox on one PI's page, then
+  on the next PI's page pick the prior PI from the dropdown and click **Carry over** — the marked Features are brought
+  forward as fresh rows (Carry-Over reset, anything already present skipped). Their points, notes, dependencies and
+  risks come with them.
+
 ### Fixed
 - **PI Review now writes the point estimate to the story-points field the rest of the app uses.** It was reading and
   writing a different, plain-numeric field (`customfield_10111`), so an estimate typed in Toolbox left Jira's
