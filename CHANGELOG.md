@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **PI Review "Add row" is now where you'd expect it.** The button sat in the top toolbar, far above the table, and
+  appended the new row to the very bottom — out of sight. It is replaced by a **+ Add row** button directly beneath
+  the table (which also works when the table is empty) and an **Add row below** button on each row that inserts a new
+  row right under it, so a manually-added row appears exactly where you are looking.
+
 ### Added
 - **PI Review: "Include full roster" when pulling Features.** Pull Features from Jira only found Features assigned to
   the flagged Product Owner(s), so Features sitting with whoever is doing the work were missed. Tick **Include full

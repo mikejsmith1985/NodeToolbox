@@ -486,6 +486,13 @@
   color: var(--color-primary);
 }
 
+/* Sits directly under the feature table so a manually-added row appears right where the eye is. */
+.addRowFooter {
+  display: flex;
+  justify-content: flex-start;
+  margin-top: 8px;
+}
+
 .rowToolButton:disabled {
   opacity: 0.6;
   cursor: default;

@@ -1172,9 +1172,20 @@ function PiReviewPagePanel({
     setHasUnsavedChanges(true);
   }
 
-  /** Appends a blank Feature row for the user to fill in by hand — for items not pulled from Jira. */
-  function handleAddRow() {
-    setRows((currentRows) => [...currentRows, createEmptyPiReviewRow()]);
+  /**
+   * Inserts a blank Feature row for the user to fill in by hand — for items not pulled from Jira.
+   *
+   * `afterRowIndex` places the new row directly BELOW an existing one, so a row added from a per-row
+   * control appears where the user is looking. Omitted (or -1), it appends to the end — used by the
+   * footer control beneath the table, where the end is exactly where the eye already is.
+   */
+  function handleAddRow(afterRowIndex = -1) {
+    setRows((currentRows) => {
+      const insertionIndex = afterRowIndex < 0 ? currentRows.length : afterRowIndex + 1;
+      const nextRows = [...currentRows];
+      nextRows.splice(insertionIndex, 0, createEmptyPiReviewRow());
+      return nextRows;
+    });
     setHasUnsavedChanges(true);
   }
 
@@ -2002,14 +2013,6 @@ function PiReviewPagePanel({
             <button
               className={joinClassNames(styles.actionButton, styles.actionButtonSecondary)}
               disabled={isToolbarBusy || !tableBinding}
-              onClick={handleAddRow}
-              type="button"
-            >
-              Add row
-            </button>
-            <button
-              className={joinClassNames(styles.actionButton, styles.actionButtonSecondary)}
-              disabled={isToolbarBusy || !tableBinding}
               onClick={handleToggleJiraDatePasteCard}
               type="button"
             >
@@ -2462,6 +2465,14 @@ function PiReviewPagePanel({
                                 {customGroupingLineBelowRow ? 'Remove custom line below' : 'Add custom line below'}
                               </button>
                             )}
+                            <button
+                              className={styles.rowToolButton}
+                              disabled={isSaving}
+                              onClick={() => handleAddRow(rowIndex)}
+                              type="button"
+                            >
+                              Add row below
+                            </button>
                             <button className={styles.removeButton} disabled={isSaving} onClick={() => handleRemoveRow(row.rowId)} type="button">
                               Remove
                             </button>
@@ -2544,6 +2555,18 @@ function PiReviewPagePanel({
               })}
             </tbody>
           </table>
+          {canEditContent && (
+            <div className={styles.addRowFooter} data-export-exclude="true">
+              <button
+                className={joinClassNames(styles.actionButton, styles.actionButtonSecondary)}
+                disabled={isSaving}
+                onClick={() => handleAddRow()}
+                type="button"
+              >
+                + Add row
+              </button>
+            </div>
+          )}
         </div>
       )}
 

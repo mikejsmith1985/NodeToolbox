@@ -557,7 +557,7 @@ describe('PiReviewTab', () => {
     });
   });
 
-  it('adds a blank Feature row on demand', async () => {
+  it('appends a blank Feature row from the footer control beneath the table', async () => {
     mockFetchConfluencePageByReference.mockResolvedValue(ALPHA_PAGE);
 
     renderPiReviewTab([DEFAULT_TEAMS[0]]);
@@ -568,9 +568,33 @@ describe('PiReviewTab', () => {
     expect(within(alphaSection).getByLabelText(/feature for alpha team row 1/i)).toBeInTheDocument();
     expect(within(alphaSection).queryByLabelText(/feature for alpha team row 2/i)).not.toBeInTheDocument();
 
-    fireEvent.click(within(alphaSection).getByRole('button', { name: /^add row$/i }));
+    fireEvent.click(within(alphaSection).getByRole('button', { name: /\+ add row/i }));
 
-    expect(within(alphaSection).getByLabelText(/feature for alpha team row 2/i)).toBeInTheDocument();
+    const newRow = within(alphaSection).getByLabelText(/feature for alpha team row 2/i);
+    expect(newRow).toBeInTheDocument();
+    expect(newRow).toHaveValue(''); // a blank row to fill in
+  });
+
+  it('inserts a blank row directly BELOW the chosen row, not at the bottom', async () => {
+    // The reported UX bug: the add control was far from the table and the row landed at the bottom.
+    // A per-row "Add row below" must insert right where the user is.
+    mockFetchConfluencePageByReference.mockResolvedValue(ALPHA_PAGE);
+
+    renderPiReviewTab([DEFAULT_TEAMS[0]]);
+    const alphaSection = await screen.findByRole('region', { name: /alpha team pi review/i });
+    enterEditMode(alphaSection);
+
+    // Build a second row (Feature Z) so there is a genuine "middle" to insert into.
+    fireEvent.click(within(alphaSection).getByRole('button', { name: /\+ add row/i }));
+    fireEvent.change(within(alphaSection).getByLabelText(/feature for alpha team row 2/i), {
+      target: { value: 'Feature Z' },
+    });
+
+    // Add below row 1: the new blank row becomes row 2 and Feature Z shifts down to row 3.
+    fireEvent.click(within(alphaSection).getAllByRole('button', { name: /^add row below$/i })[0]);
+
+    expect(within(alphaSection).getByLabelText(/feature for alpha team row 2/i)).toHaveValue('');
+    expect(within(alphaSection).getByLabelText(/feature for alpha team row 3/i)).toHaveValue('Feature Z');
   });
 
   it('carries the Carry-Over-marked Features over from a previously-configured PI page', async () => {
