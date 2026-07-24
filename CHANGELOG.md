@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **The Team Capacity section written to Confluence is now easy to scan.** The old wall of bold sentences is
+  replaced by emoji-labelled lists — 📋 Plan, 📅 Date Range, 🗓️ Work Days, 💯 100% and 🎯 80% capacity — with the
+  planned-load lines carrying a 🟢/🔴 status against the target and roles grouped under a 👥 heading. It stays a
+  list (not a table) on purpose so the PI Review and Confidence tables keep their positions, and reads back
+  correctly even when Confluence strips the private markers.
+
 ### Added
 - **The Planned load vs 80% capacity figures are now written into Confluence.** The Team Capacity section
   saved to the PI Review page now carries the committed-points and all-Features totals with their over/under

@@ -1521,7 +1521,7 @@ describe('PiReviewTab', () => {
       expect(mockUpdateConfluencePage).toHaveBeenCalledTimes(1);
     });
     expect(mockUpdateConfluencePage.mock.calls[0][0].storageValue).toContain('Alpha Team Capacity');
-    expect(mockUpdateConfluencePage.mock.calls[0][0].storageValue).toContain('<strong>Developer:</strong> 10 pts');
+    expect(mockUpdateConfluencePage.mock.calls[0][0].storageValue).toContain('<li>Developer: 10 pts</li>');
   });
 
   it('pastes Jira date tables and updates the matching Jira issue dates immediately', async () => {

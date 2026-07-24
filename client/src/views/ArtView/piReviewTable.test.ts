@@ -437,10 +437,36 @@ describe('writePiReviewCapacitySummary', () => {
     const nextStorageValue = writePiReviewCapacitySummary(MOCK_STORAGE_VALUE, capacitySummary, loadComparison);
 
     expect(nextStorageValue).toContain('Planned load vs 80% capacity');
-    expect(nextStorageValue).toContain('Committed points:</strong> 13 (3 over)');
-    expect(nextStorageValue).toContain('All Feature points:</strong> 20 (10 over)');
+    // Committed 13 (3 over the 10-pt target); total 20 (10 over). Status carried by emoji, not CSS.
+    expect(nextStorageValue).toContain('✅ <strong>Committed:</strong> 13 pts — 🔴 3 over');
+    expect(nextStorageValue).toContain('📦 <strong>All Features:</strong> 20 pts — 🔴 10 over');
     // The capacity payload still round-trips — the extra block does not disturb parsing.
     expect(parsePiReviewCapacitySummary(nextStorageValue)?.summaryLabel).toBe('Alpha Team Capacity');
+  });
+
+  it('round-trips the new emoji/table capacity layout even when Confluence strips the section markers', () => {
+    const capacitySummary = {
+      summaryLabel: 'Alpha Team Capacity',
+      startDate: '2026-05-18',
+      endDate: '2026-05-22',
+      workDayCount: 5,
+      totalCapacityPoints: 12.5,
+      recommendedCapacityPoints: 10,
+      roleCapacities: { Developer: 10, 'Dev Lead': 0, 'Internal Tester': 0, 'External Tester': 2.5, 'Systems Analyst': 0 },
+    };
+    const written = writePiReviewCapacitySummary(MOCK_STORAGE_VALUE, capacitySummary);
+    // Simulate Confluence keeping the <section> but stripping the private data attributes.
+    const stripped = written
+      .replace(/\sdata-node-toolbox-pi-review-capacity="summary"/g, '')
+      .replace(/\sdata-node-toolbox-pi-review-capacity-payload="[^"]*"/g, '');
+
+    // The payload is gone, so this exercises the emoji/table fallback parser end to end. Only the
+    // visible (non-zero) roles are recoverable — zero-capacity roles were never rendered, exactly as
+    // the previous paragraph/list layout behaved.
+    expect(parsePiReviewCapacitySummary(stripped)).toEqual({
+      ...capacitySummary,
+      roleCapacities: { Developer: 10, 'External Tester': 2.5 },
+    });
   });
 
   it('replaces a rendered Team Capacity block when Confluence strips the section data attributes', () => {
