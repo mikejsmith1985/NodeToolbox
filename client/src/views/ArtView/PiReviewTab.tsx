@@ -1,6 +1,6 @@
 // PiReviewTab.tsx — Editable ART PI Review workspace that syncs one Confluence-backed section per team.
 
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent } from 'react';
 import { flushSync } from 'react-dom';
 
 import { PrimaryTabs } from '../../components/PrimaryTabs/PrimaryTabs.tsx';
@@ -746,6 +746,9 @@ function PiReviewPagePanel({
   const [jiraDatePasteValue, setJiraDatePasteValue] = useState('');
   const [isUpdatingJiraDates, setIsUpdatingJiraDates] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  // Drag-to-reorder state: which row is being dragged, and which row it is currently hovering over.
+  const [draggingRowId, setDraggingRowId] = useState<string | null>(null);
+  const [dragOverRowId, setDragOverRowId] = useState<string | null>(null);
   const [isEditMode, setIsEditMode] = useState(false);
   // ── "Pull Features from Jira" controls ──
   // A pull is scoped by the page's PI plus the team's Product Owner(s), read from the imported roster.
@@ -999,10 +1002,17 @@ function PiReviewPagePanel({
     }
   }
 
-  function handleMoveRow(rowId: string, directionOffset: -1 | 1) {
+  /** Moves a row to a new absolute index, keeping the Stretch-Goals line and custom lines with their rows. */
+  function reorderRowToIndex(rowId: string, computeNextIndex: (currentRowIndex: number, rowCount: number) => number) {
     setRows((currentRows) => {
       const currentRowIndex = currentRows.findIndex((row) => row.rowId === rowId);
-      const nextRowIndex = currentRowIndex + directionOffset;
+      if (currentRowIndex === -1) {
+        return currentRows;
+      }
+      const nextRowIndex = computeNextIndex(currentRowIndex, currentRows.length);
+      if (nextRowIndex === currentRowIndex || nextRowIndex < 0 || nextRowIndex >= currentRows.length) {
+        return currentRows;
+      }
       setCommitmentBoundaryIndex((currentCommitmentBoundaryIndex) =>
         adjustCommitmentBoundaryAfterRowMove(currentCommitmentBoundaryIndex, currentRowIndex, nextRowIndex),
       );
@@ -1015,6 +1025,53 @@ function PiReviewPagePanel({
       return moveItemInList(currentRows, currentRowIndex, nextRowIndex);
     });
     setHasUnsavedChanges(true);
+  }
+
+  /** Nudges a row one place up or down — the keyboard path on the drag handle (arrow keys). */
+  function handleMoveRow(rowId: string, directionOffset: -1 | 1) {
+    reorderRowToIndex(rowId, (currentRowIndex) => currentRowIndex + directionOffset);
+  }
+
+  /** Drops the dragged row onto the target row's position — the mouse path (drag and drop). */
+  function handleReorderRowToTarget(sourceRowId: string, targetRowId: string) {
+    if (sourceRowId === '' || sourceRowId === targetRowId) {
+      return;
+    }
+    reorderRowToIndex(sourceRowId, (_currentRowIndex, rowCount) => {
+      const targetRowIndex = rows.findIndex((row) => row.rowId === targetRowId);
+      return targetRowIndex === -1 ? rowCount : targetRowIndex;
+    });
+  }
+
+  function handleRowDragStart(rowId: string, dragEvent: ReactDragEvent<HTMLElement>) {
+    setDraggingRowId(rowId);
+    dragEvent.dataTransfer.effectAllowed = 'move';
+    // Firefox will not start a drag unless some data is set on the transfer.
+    dragEvent.dataTransfer.setData('text/plain', rowId);
+  }
+
+  function handleRowDragOver(rowId: string, dragEvent: ReactDragEvent<HTMLElement>) {
+    if (draggingRowId === null) {
+      return;
+    }
+    dragEvent.preventDefault(); // allow the drop
+    dragEvent.dataTransfer.dropEffect = 'move';
+    if (dragOverRowId !== rowId) {
+      setDragOverRowId(rowId);
+    }
+  }
+
+  function handleRowDrop(targetRowId: string, dragEvent: ReactDragEvent<HTMLElement>) {
+    dragEvent.preventDefault();
+    const sourceRowId = draggingRowId ?? dragEvent.dataTransfer.getData('text/plain');
+    handleReorderRowToTarget(sourceRowId, targetRowId);
+    setDraggingRowId(null);
+    setDragOverRowId(null);
+  }
+
+  function handleRowDragEnd() {
+    setDraggingRowId(null);
+    setDragOverRowId(null);
   }
 
   function handleToggleOptionalColumn(columnKey: OptionalPiReviewColumnKey) {
@@ -2535,9 +2592,20 @@ function PiReviewPagePanel({
                 const featureKey = extractPiReviewFeatureKey(row.feature);
                 const jiraIssue = featureKey ? jiraIssueMap[featureKey] : undefined;
 
+                const isRowDragging = draggingRowId === row.rowId;
+                const isRowDragTarget = dragOverRowId === row.rowId && draggingRowId !== null && !isRowDragging;
+                const rowClassName = [
+                  isRowDragging ? styles.rowDragging : '',
+                  isRowDragTarget ? styles.rowDragTarget : '',
+                ].filter(Boolean).join(' ');
+
                 return (
                   <Fragment key={row.rowId}>
-                    <tr>
+                    <tr
+                      className={rowClassName || undefined}
+                      onDragOver={canEditContent ? (dragEvent) => handleRowDragOver(row.rowId, dragEvent) : undefined}
+                      onDrop={canEditContent ? (dragEvent) => handleRowDrop(row.rowId, dragEvent) : undefined}
+                    >
                       {visiblePiReviewColumnKeys.map((columnKey) => {
                         const isLongTextColumn = LONG_TEXT_COLUMNS.has(columnKey);
                         const isCheckboxColumn = CHECKBOX_COLUMNS.has(columnKey);
@@ -2649,20 +2717,25 @@ function PiReviewPagePanel({
                         <td className={styles.rowActionCell}>
                           <div className={styles.rowActionGroup}>
                             <button
-                              className={styles.rowToolButton}
-                              disabled={isSaving || !canMoveRowUp}
-                              onClick={() => handleMoveRow(row.rowId, -1)}
+                              aria-label={`Reorder ${target.targetLabel} row ${rowIndex + 1} — drag to move, or use the arrow keys`}
+                              className={styles.dragHandle}
+                              disabled={isSaving}
+                              draggable={!isSaving}
+                              onDragStart={(dragEvent) => handleRowDragStart(row.rowId, dragEvent)}
+                              onDragEnd={handleRowDragEnd}
+                              onKeyDown={(keyboardEvent) => {
+                                if (keyboardEvent.key === 'ArrowUp' && canMoveRowUp) {
+                                  keyboardEvent.preventDefault();
+                                  handleMoveRow(row.rowId, -1);
+                                } else if (keyboardEvent.key === 'ArrowDown' && canMoveRowDown) {
+                                  keyboardEvent.preventDefault();
+                                  handleMoveRow(row.rowId, 1);
+                                }
+                              }}
+                              title="Drag to reorder, or focus and press ↑ / ↓"
                               type="button"
                             >
-                              Move up
-                            </button>
-                            <button
-                              className={styles.rowToolButton}
-                              disabled={isSaving || !canMoveRowDown}
-                              onClick={() => handleMoveRow(row.rowId, 1)}
-                              type="button"
-                            >
-                              Move down
+                              <span aria-hidden="true">⠿</span> Drag
                             </button>
                             {canSetBoundaryBelowRow && (
                               <button

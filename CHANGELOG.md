@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Reorder PI Review rows by dragging.** The Move up / Move down buttons are replaced by a **⠿ Drag** handle:
+  grab it and drop a row where you want it. Keyboard users are covered too — focus the handle and press ↑ / ↓
+  to nudge a row one place. The Stretch-Goals line and any custom grouping lines still travel with their rows.
+
 ### Added
 - **Carryover load breakdown.** The PI Review capacity readout now shows how much of the plan is work carried
   over from the prior PI — a **Carryover (pts)** figure and its share of the 80% target, a striped carryover
