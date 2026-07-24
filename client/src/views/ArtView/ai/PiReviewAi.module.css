@@ -38,6 +38,21 @@
   background: var(--color-surface-2);
 }
 
+/* A carryover row's estimate is remaining effort — mark it so the user does not resize it by reflex. */
+.suggestionRowCarryOver {
+  border-left: 4px solid var(--color-warning, #d98a00);
+}
+
+.suggestionCarryOverBadge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  color: var(--color-warning, #d98a00);
+  border: 1px solid var(--color-warning, #d98a00);
+  white-space: nowrap;
+}
+
 .suggestionHeader {
   display: flex;
   align-items: center;

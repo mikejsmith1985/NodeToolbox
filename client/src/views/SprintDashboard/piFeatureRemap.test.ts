@@ -4,9 +4,8 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { JiraIssue } from '../../types/jira.ts';
 
-const { mockJiraGet, mockFetchScopedTeamFeatures } = vi.hoisted(() => ({
+const { mockJiraGet } = vi.hoisted(() => ({
   mockJiraGet: vi.fn(),
-  mockFetchScopedTeamFeatures: vi.fn(),
 }));
 
 vi.mock('../../services/jiraApi.ts', () => ({
@@ -14,14 +13,12 @@ vi.mock('../../services/jiraApi.ts', () => ({
   jiraPut: vi.fn(),
 }));
 
-vi.mock('./scopedTeamFeatures.ts', () => ({
-  fetchScopedTeamFeatures: mockFetchScopedTeamFeatures,
-}));
-
 import {
   buildFeatureRemapSearchPath,
+  buildPiFeatureOptionsJql,
   extractFeatureKeyFromIssue,
   fetchFeatureRemapPiOptions,
+  fetchFeaturesForPi,
   readProgramIncrementValueFromIssue,
   resolvePiFieldUpdateValue,
 } from './piFeatureRemap.ts';
@@ -55,7 +52,6 @@ describe('piFeatureRemap helpers', () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2026-07-24T12:00:00.000Z')); // inside PI 26.3
     mockJiraGet.mockReset();
-    mockFetchScopedTeamFeatures.mockReset();
     mockJiraGet.mockImplementation((path: string) => {
       if (decodeURIComponent(path).includes('cf[10301] is not EMPTY')) {
         return Promise.resolve({
@@ -81,9 +77,39 @@ describe('piFeatureRemap helpers', () => {
     expect(piOptions.defaultSourcePiName).toBe('PI 26.3 (05/21/26 - 07/29/26)');
     expect(piOptions.defaultTargetPiName).toBe('PI 26.4 (07/30/26 - 09/30/26)');
     // Features are loaded per selected PI, not pre-fetched here.
-    expect(mockFetchScopedTeamFeatures).not.toHaveBeenCalled();
+    expect(decodeURIComponent(mockJiraGet.mock.calls[0][0] as string)).not.toContain('issuetype = Feature');
 
     vi.useRealTimers();
+  });
+
+  it('lists a PI’s Features by PI alone, unscoped by project, so empty target Features still appear', async () => {
+    // The direct query the PI Review page uses: issuetype = Feature AND the PI clause, no project filter.
+    expect(buildPiFeatureOptionsJql('PI 26.4 (07/30/26 - 09/30/26)', 'customfield_10301')).toBe(
+      'issuetype = Feature AND cf[10301] = "PI 26.4 (07/30/26 - 09/30/26)" ORDER BY key ASC',
+    );
+    // A blank PI would broaden the query to every Feature in Jira, so it is refused.
+    expect(buildPiFeatureOptionsJql('  ', 'customfield_10301')).toBeNull();
+  });
+
+  it('maps every Feature the direct PI query returns — including one with no child issues', async () => {
+    mockJiraGet.mockReset();
+    mockJiraGet.mockImplementation((path: string) => {
+      if (decodeURIComponent(path).includes('issuetype = Feature')) {
+        return Promise.resolve({
+          issues: [
+            // A brand-new target Feature with no children — the case the old bottom-up discovery missed.
+            buildJiraIssue({ key: 'PORT-900', fields: { summary: 'New target bucket', customfield_10301: 'PI 26.4' } }),
+            buildJiraIssue({ key: 'PORT-901', fields: { summary: 'Already worked', customfield_10301: 'PI 26.4' } }),
+          ],
+        });
+      }
+      return Promise.resolve({ issues: [] });
+    });
+
+    const featureOptions = await fetchFeaturesForPi('TBX', 'PI 26.4');
+
+    expect(featureOptions.map((option) => option.key)).toEqual(['PORT-900', 'PORT-901']);
+    expect(featureOptions[0]).toMatchObject({ key: 'PORT-900', summary: 'New target bucket', piValue: 'PI 26.4' });
   });
 
 

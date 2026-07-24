@@ -65,6 +65,24 @@ function readCurrentEstimatesByKey(rows: readonly PiReviewRow[]): Record<string,
   return estimatesByKey
 }
 
+/**
+ * Flags which Features are carryover rows, so the review can protect their remaining-effort estimate.
+ *
+ * A carryover row's Point Estimate is deliberately its REMAINING effort, not a fresh size — so the AI
+ * must not silently overwrite it. The suggestion table uses this to mark those rows and default their
+ * point-estimate checkbox off; notes, risks and dependencies still apply, since those legitimately change.
+ */
+function readCarryOverByKey(rows: readonly PiReviewRow[]): Record<string, boolean> {
+  const carryOverByKey: Record<string, boolean> = {}
+  for (const row of rows) {
+    const issueKey = extractPiReviewFeatureKey(row.feature)
+    if (issueKey !== null) {
+      carryOverByKey[issueKey] = row.carryOver === 'Yes'
+    }
+  }
+  return carryOverByKey
+}
+
 /** Renders the AI Assistance panel, or nothing when AI Assist is locked. */
 export function PiReviewAiPanel({ rows, columnAvailability, onApplySuggestion }: PiReviewAiPanelProps): React.JSX.Element | null {
   const isUnlocked = useAiAssistStore((state) => state.isAiAssistUnlocked)
@@ -82,6 +100,7 @@ export function PiReviewAiPanel({ rows, columnAvailability, onApplySuggestion }:
     [rows],
   )
   const currentEstimatesByKey = useMemo(() => readCurrentEstimatesByKey(rows), [rows])
+  const carryOverByKey = useMemo(() => readCarryOverByKey(rows), [rows])
 
   // Gather the prompt's inputs once the panel is visible and there is something to size. This is the
   // AI panel's OWN fetch — a page load never pays for the description/AC it needs.
@@ -199,6 +218,7 @@ export function PiReviewAiPanel({ rows, columnAvailability, onApplySuggestion }:
       )}
 
       <PiReviewSuggestionTable
+        carryOverByKey={carryOverByKey}
         currentEstimatesByKey={currentEstimatesByKey}
         onAccept={handleAccept}
         onReject={dropSuggestion}
