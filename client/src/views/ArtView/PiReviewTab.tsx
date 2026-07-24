@@ -39,6 +39,7 @@ import {
   type PiReviewTableBinding,
   type ConfidenceVoteRow,
   type ConfidenceVoteTableBinding,
+  stripToolboxPiReviewTitleSection,
   writeConfidenceVoteTable,
   writePiReviewCapacitySummary,
   writePiReviewTable,
@@ -793,6 +794,16 @@ function PiReviewPagePanel({
   const totalLoadDelta = loadComparison.totalVsTarget === null
     ? null
     : describePiReviewLoadDelta(loadComparison.totalVsTarget);
+  // Geometry for the capacity utilisation meter: committed and total points as a share of 100%
+  // capacity, plus where the 80% target sits, so the bar reads at a glance. Null with no capacity plan.
+  const capacityMeter = displayedCapacitySummary !== null && displayedCapacitySummary.totalCapacityPoints > 0
+    ? {
+        committedFillPercent: Math.min(100, (loadComparison.committedPoints / displayedCapacitySummary.totalCapacityPoints) * 100),
+        totalFillPercent: Math.min(100, (loadComparison.totalFeaturePoints / displayedCapacitySummary.totalCapacityPoints) * 100),
+        targetMarkerPercent: Math.min(100, (displayedCapacitySummary.recommendedCapacityPoints / displayedCapacitySummary.totalCapacityPoints) * 100),
+        isCommittedOverTarget: loadComparison.committedPoints > displayedCapacitySummary.recommendedCapacityPoints,
+      }
+    : null;
 
   // A capacity change arrives through the capacitySummaryOverride prop (the Team Dashboard capacity
   // planner), not through a row edit, so nothing marks the page unsaved by itself. Derive it: the live
@@ -1711,7 +1722,13 @@ function PiReviewPagePanel({
     commitmentBoundaryIndexForSave: number | null,
     customGroupingLinesForSave: PiReviewCustomGroupingLine[],
   ): string {
-    let nextStorageValue = writePiReviewCapacitySummary(baseStorageValue, capacitySummaryForSave);
+    // The Confluence capacity section carries the planned-load comparison, derived from the rows being
+    // saved against the 80% target, so the saved page shows the same load-vs-capacity readout as Toolbox.
+    const loadComparisonForSave = computePiReviewLoadComparison(
+      rowsForSave,
+      capacitySummaryForSave?.recommendedCapacityPoints ?? null,
+    );
+    let nextStorageValue = writePiReviewCapacitySummary(baseStorageValue, capacitySummaryForSave, loadComparisonForSave);
     nextStorageValue = writePiReviewTable(
       nextStorageValue,
       nextPiReviewTableBinding,
@@ -1722,6 +1739,8 @@ function PiReviewPagePanel({
     if (confidenceRowsForSave.length > 0 || nextConfidenceTableBinding !== null) {
       nextStorageValue = writeConfidenceVoteTable(nextStorageValue, nextConfidenceTableBinding, confidenceRowsForSave);
     }
+    // Drop the legacy "NodeToolbox PI Review" banner from any page that still carries it.
+    nextStorageValue = stripToolboxPiReviewTitleSection(nextStorageValue);
     return nextStorageValue;
   }
 
@@ -2307,9 +2326,10 @@ function PiReviewPagePanel({
       )}
 
       <section className={styles.capacityPanel}>
+        <div className={styles.capacityPanelAccent} aria-hidden="true" />
         <div className={styles.sectionHeader}>
           <div>
-            <h4 className={styles.capacityTitle}>Team Capacity</h4>
+            <h4 className={styles.capacityTitle}><span className={styles.capacityTitleIcon} aria-hidden="true">📊</span> Team Capacity</h4>
             <p className={styles.summaryValue}>
               This snapshot comes from the PI Review planning workspace and is saved into Confluence above the PI Review table.
             </p>
@@ -2317,6 +2337,38 @@ function PiReviewPagePanel({
         </div>
         {displayedCapacitySummary ? (
           <>
+            {capacityMeter ? (
+              <div className={styles.capacityMeter}>
+                <div className={styles.capacityMeterTrack}>
+                  <div
+                    className={styles.capacityMeterTotalFill}
+                    style={{ width: `${capacityMeter.totalFillPercent}%` }}
+                    aria-hidden="true"
+                  />
+                  <div
+                    className={`${styles.capacityMeterCommittedFill} ${capacityMeter.isCommittedOverTarget ? styles.capacityMeterOver : styles.capacityMeterUnder}`}
+                    style={{ width: `${capacityMeter.committedFillPercent}%` }}
+                    aria-hidden="true"
+                  />
+                  <div
+                    className={styles.capacityMeterTargetMarker}
+                    style={{ left: `${capacityMeter.targetMarkerPercent}%` }}
+                    aria-hidden="true"
+                  />
+                </div>
+                <div className={styles.capacityMeterLegend}>
+                  <span className={styles.capacityMeterKeyCommitted}>
+                    Committed {formatCapacityValue(loadComparison.committedPoints)} pts
+                  </span>
+                  <span className={styles.capacityMeterKeyTotal}>
+                    All Features {formatCapacityValue(loadComparison.totalFeaturePoints)} pts
+                  </span>
+                  <span className={styles.capacityMeterKeyTarget}>
+                    80% target {formatCapacityValue(displayedCapacitySummary.recommendedCapacityPoints)} pts
+                  </span>
+                </div>
+              </div>
+            ) : null}
             <div className={styles.capacitySummaryGrid}>
               <div className={styles.capacitySummaryCard}>
                 <span className={styles.summaryLabel}>Plan</span>

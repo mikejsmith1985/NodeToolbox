@@ -1,6 +1,7 @@
 // piReviewTable.ts — Parsing and storage helpers for the Confluence-backed PI Review and confidence tracking tables.
 
 import type { CapacitySummary } from '../SprintDashboard/capacityModel.ts';
+import type { PiReviewLoadComparison } from './piReviewLoad.ts';
 
 // ── DOM host abstraction ──
 // This parse/serialize engine runs in two homes: the browser (real DOM) and a Node scheduler
@@ -217,7 +218,42 @@ function decodeCapacitySummary(encodedCapacitySummary: string | null): CapacityS
   }
 }
 
-function createPiReviewCapacitySectionHtml(capacitySummary: CapacitySummary | null): string {
+/** Phrases a planned-points gap against the 80% target in plain words for the Confluence write. */
+function describeCapacityDeltaText(deltaPoints: number): string {
+  if (deltaPoints > 0) {
+    return `${formatCapacityValue(deltaPoints)} over`;
+  }
+  if (deltaPoints < 0) {
+    return `${formatCapacityValue(Math.abs(deltaPoints))} under`;
+  }
+  return 'on target';
+}
+
+/**
+ * Renders the "Planned load vs 80% capacity" block written into Confluence: how the committed and
+ * total Feature points sit against the recommended target. Returns '' when there is nothing to show
+ * (no comparison supplied), so callers can always concatenate it unconditionally.
+ */
+function createPlannedLoadHtml(loadComparison: PiReviewLoadComparison | null): string {
+  if (!loadComparison) {
+    return '';
+  }
+  const hasTarget = loadComparison.capacityTargetPoints !== null && loadComparison.capacityTargetPoints > 0;
+  const committedSuffix = hasTarget ? ` (${describeCapacityDeltaText(loadComparison.committedVsTarget as number)})` : '';
+  const totalSuffix = hasTarget ? ` (${describeCapacityDeltaText(loadComparison.totalVsTarget as number)})` : '';
+  return [
+    `<p><strong>Planned load vs 80% capacity</strong></p>`,
+    '<ul>',
+    `<li><strong>Committed points:</strong> ${formatCapacityValue(loadComparison.committedPoints)}${committedSuffix}</li>`,
+    `<li><strong>All Feature points:</strong> ${formatCapacityValue(loadComparison.totalFeaturePoints)}${totalSuffix}</li>`,
+    '</ul>',
+  ].join('');
+}
+
+function createPiReviewCapacitySectionHtml(
+  capacitySummary: CapacitySummary | null,
+  loadComparison: PiReviewLoadComparison | null = null,
+): string {
   if (!capacitySummary) {
     return [
       `<section ${PI_REVIEW_CAPACITY_SECTION_ATTRIBUTE}="${PI_REVIEW_CAPACITY_SECTION_VALUE}">`,
@@ -242,15 +278,17 @@ function createPiReviewCapacitySectionHtml(capacitySummary: CapacitySummary | nu
     `<p><strong>100% Capacity (pts):</strong> ${formatCapacityValue(capacitySummary.totalCapacityPoints)}</p>`,
     `<p><strong>80% Capacity (pts):</strong> ${formatCapacityValue(capacitySummary.recommendedCapacityPoints)}</p>`,
     visibleRoleSummaries ? `<ul>${visibleRoleSummaries}</ul>` : '<p>No capacity role rows are planned yet.</p>',
+    createPlannedLoadHtml(loadComparison),
     '</section>',
   ].join('');
 }
 
 /** Creates the canonical Confluence storage body used when Toolbox initializes a PI Review page. */
 export function createInitialPiReviewPageStorage(capacitySummary: CapacitySummary | null = null): string {
+  // The old "NodeToolbox PI Review" banner is deliberately omitted — the page owners did not want a
+  // tool attribution heading on their review page. stripToolboxPiReviewTitleSection removes it from
+  // any older page on the next save.
   return [
-    `<h1>${TOOLBOX_PI_REVIEW_TITLE}</h1>`,
-    `<p>${TOOLBOX_PI_REVIEW_DESCRIPTION}</p>`,
     createPiReviewCapacitySectionHtml(capacitySummary),
     createEmptyTableHtml(CORE_PI_REVIEW_COLUMN_KEYS, PI_REVIEW_COLUMN_LABELS),
     `<h2>${CONFIDENCE_VOTE_SECTION_TITLE}</h2>`,
@@ -466,11 +504,15 @@ export function parsePiReviewCapacitySummary(storageValue: string): CapacitySumm
 }
 
 /** Writes the Team Capacity snapshot into the Confluence PI Review page above the PI Review table. */
-export function writePiReviewCapacitySummary(storageValue: string, capacitySummary: CapacitySummary | null): string {
+export function writePiReviewCapacitySummary(
+  storageValue: string,
+  capacitySummary: CapacitySummary | null,
+  loadComparison: PiReviewLoadComparison | null = null,
+): string {
   const documentNode = buildStorageDocument(storageValue);
   const storageWrapperElement = readStorageWrapperElement(documentNode);
   const capacitySectionElement = readStorageWrapperElement(
-    buildStorageDocument(createPiReviewCapacitySectionHtml(capacitySummary)),
+    buildStorageDocument(createPiReviewCapacitySectionHtml(capacitySummary, loadComparison)),
   ).firstElementChild;
   if (!isElementNode(capacitySectionElement)) {
     throw new Error('The PI Review capacity section could not be created');
@@ -498,6 +540,33 @@ export function writePiReviewCapacitySummary(storageValue: string, capacitySumma
     storageWrapperElement.appendChild(capacitySectionElement);
   }
 
+  return storageWrapperElement.innerHTML;
+}
+
+/**
+ * Removes the legacy "NodeToolbox PI Review" heading and its managed-by note from a page.
+ *
+ * That banner was only ever an attribution; the page's owners asked for it gone. This strips the
+ * `<h1>` (and the descriptive `<p>` that follows it) wherever they appear, and is safe to run on every
+ * save — a page that never had the banner is returned unchanged.
+ */
+export function stripToolboxPiReviewTitleSection(storageValue: string): string {
+  const documentNode = buildStorageDocument(storageValue);
+  const storageWrapperElement = readStorageWrapperElement(documentNode);
+  for (const headingElement of Array.from(storageWrapperElement.querySelectorAll('h1'))) {
+    if (headingElement.textContent?.trim().toLowerCase() !== TOOLBOX_PI_REVIEW_TITLE.toLowerCase()) {
+      continue;
+    }
+    const followingElement = headingElement.nextElementSibling;
+    if (
+      isElementNode(followingElement)
+      && followingElement.tagName.toLowerCase() === 'p'
+      && followingElement.textContent?.trim() === TOOLBOX_PI_REVIEW_DESCRIPTION
+    ) {
+      followingElement.remove();
+    }
+    headingElement.remove();
+  }
   return storageWrapperElement.innerHTML;
 }
 

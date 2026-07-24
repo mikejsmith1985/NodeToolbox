@@ -12,6 +12,7 @@ export {
   writePiReviewTable,
   parsePiReviewCapacitySummary,
   writePiReviewCapacitySummary,
+  stripToolboxPiReviewTitleSection,
   parseConfidenceVoteTable,
   writeConfidenceVoteTable,
   createEmptyPiReviewRow,
@@ -23,3 +24,4 @@ export {
 } from './piReviewJira.ts';
 
 export { buildDirectFeatureJql } from './piReviewPullFeatures.ts';
+export { computePiReviewLoadComparison } from './piReviewLoad.ts';

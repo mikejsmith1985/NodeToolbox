@@ -1796,7 +1796,8 @@ describe('PiReviewTab', () => {
         expect.objectContaining({
           pageId: '12345',
           nextVersionNumber: 8,
-          storageValue: expect.stringContaining('NodeToolbox PI Review'),
+          // The Toolbox-owned template is written without the retired "NodeToolbox PI Review" banner.
+          storageValue: expect.stringContaining('Team Capacity'),
         }),
       ),
     );
