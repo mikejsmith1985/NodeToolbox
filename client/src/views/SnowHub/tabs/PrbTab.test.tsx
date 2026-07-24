@@ -23,6 +23,8 @@ const { mockState, mockActions } = vi.hoisted(() => ({
       isPrimaryIssueDefect: true,
       primaryIssueSummaryTemplate: '',
       slStorySummaryTemplate: '',
+      createSlAsSubtask: false,
+      slSubtaskIssueTypeName: 'Sub-task',
       isCreatingIssues: false,
       createError: null as string | null,
       createdIssueKeys: [] as string[],
@@ -34,6 +36,8 @@ const { mockState, mockActions } = vi.hoisted(() => ({
       setIsPrimaryIssueDefect: vi.fn(),
       setPrimaryIssueSummary: vi.fn(),
       setSlStorySummary: vi.fn(),
+      setCreateSlAsSubtask: vi.fn(),
+      setSlSubtaskIssueTypeName: vi.fn(),
       createJiraIssues: vi.fn().mockResolvedValue(undefined),
       reset: vi.fn(),
     },
@@ -56,6 +60,8 @@ function resetMockState(): void {
     isPrimaryIssueDefect: true,
     primaryIssueSummaryTemplate: '',
     slStorySummaryTemplate: '',
+    createSlAsSubtask: false,
+    slSubtaskIssueTypeName: 'Sub-task',
     isCreatingIssues: false,
     createError: null,
     createdIssueKeys: [],
@@ -116,8 +122,29 @@ describe('PrbTab', () => {
     expect(screen.getByLabelText('Jira Project Key')).toBeInTheDocument();
     expect(screen.getByLabelText('Issue Summary')).toBeInTheDocument();
     expect(screen.getByLabelText('Create primary issue as Defect')).toBeInTheDocument();
-    expect(screen.getByLabelText('SL Story Summary')).toBeInTheDocument();
+    expect(screen.getByLabelText('SL Issue Summary')).toBeInTheDocument();
+    expect(screen.getByLabelText('Create SL issue as a sub-task of the primary')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Create Jira Issues' })).toBeInTheDocument();
+  });
+
+  it('shows the SL sub-task issue-type field and preview when the sub-task option is on', () => {
+    mockState.prbData = {
+      sysId: 'problem-1',
+      number: 'PRB0001234',
+      incidentNumber: 'INC0012345',
+      shortDescription: 'Orders fail during deployment',
+      description: 'Deployment issues impact order creation',
+      state: 'Open',
+      severity: '2 - High',
+      assignedTo: null,
+    };
+    mockState.createSlAsSubtask = true;
+    mockState.slSubtaskIssueTypeName = 'Sub-task';
+
+    render(<PrbTab />);
+
+    expect(screen.getByLabelText('SL sub-task issue type')).toBeInTheDocument();
+    expect(screen.getByText('Issue 2 — SL sub-task (child of the primary)')).toBeInTheDocument();
   });
 
   it('shows the created issue keys after success', () => {

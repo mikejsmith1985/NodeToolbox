@@ -111,6 +111,16 @@ function IssueCreationForm({ state, actions }: IssueFormProps) {
     actions.setSlStorySummary(event.target.value);
   }
 
+  function handleCreateSlAsSubtaskChange(event: ChangeEvent<HTMLInputElement>): void {
+    actions.setCreateSlAsSubtask(event.target.checked);
+  }
+
+  function handleSlSubtaskIssueTypeNameChange(event: ChangeEvent<HTMLInputElement>): void {
+    actions.setSlSubtaskIssueTypeName(event.target.value);
+  }
+
+  const slIssueTypeLabel = state.createSlAsSubtask ? state.slSubtaskIssueTypeName : 'Story';
+
   return (
     <>
       <section className={styles.section}>
@@ -126,9 +136,23 @@ function IssueCreationForm({ state, actions }: IssueFormProps) {
             <span>Create primary issue as Defect</span>
           </label>
           <label className={styles.fieldGroup}>
-            <span className={styles.fieldLabel}>SL Story Summary</span>
+            <span className={styles.fieldLabel}>SL Issue Summary</span>
             <input className={styles.input} onChange={handleSlStorySummaryChange} value={state.slStorySummaryTemplate} />
           </label>
+          <label className={styles.checkboxLabel}>
+            <input checked={state.createSlAsSubtask} onChange={handleCreateSlAsSubtaskChange} type="checkbox" />
+            <span>Create SL issue as a sub-task of the primary</span>
+          </label>
+          {state.createSlAsSubtask ? (
+            <label className={styles.fieldGroup}>
+              <span className={styles.fieldLabel}>SL sub-task issue type</span>
+              <input
+                className={styles.input}
+                onChange={handleSlSubtaskIssueTypeNameChange}
+                value={state.slSubtaskIssueTypeName}
+              />
+            </label>
+          ) : null}
           <div className={styles.buttonRow}>
             <button className={styles.primaryButton} onClick={() => void actions.createJiraIssues()} type="button">Create Jira Issues</button>
             <button className={styles.secondaryButton} onClick={() => actions.reset()} type="button">Start Over</button>
@@ -154,8 +178,8 @@ function IssueCreationForm({ state, actions }: IssueFormProps) {
           />
           <IssuePreviewCard
             description={`${state.prbData.number}\n\n${state.prbData.description}`}
-            issueTypeName="Story"
-            label="Issue 2 — SL Story"
+            issueTypeName={slIssueTypeLabel}
+            label={state.createSlAsSubtask ? 'Issue 2 — SL sub-task (child of the primary)' : 'Issue 2 — SL Story'}
             summary={state.slStorySummaryTemplate}
           />
         </div>

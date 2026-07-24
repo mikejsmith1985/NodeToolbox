@@ -92,13 +92,31 @@ function renderStepBody(currentStep: number, props: PrbWizardProps): React.React
     return (
       <div className={styles.sectionBody}>
         <label className={styles.fieldGroup}>
-          <span className={styles.fieldLabel}>SL Story Summary</span>
+          <span className={styles.fieldLabel}>SL Issue Summary</span>
           <input
             className={styles.input}
             onChange={(event: ChangeEvent<HTMLInputElement>) => actions.setSlStorySummary(event.target.value)}
             value={state.slStorySummaryTemplate}
           />
         </label>
+        <label className={styles.checkboxLabel}>
+          <input
+            checked={state.createSlAsSubtask}
+            onChange={(event: ChangeEvent<HTMLInputElement>) => actions.setCreateSlAsSubtask(event.target.checked)}
+            type="checkbox"
+          />
+          <span>Create SL issue as a sub-task of the primary</span>
+        </label>
+        {state.createSlAsSubtask ? (
+          <label className={styles.fieldGroup}>
+            <span className={styles.fieldLabel}>SL sub-task issue type</span>
+            <input
+              className={styles.input}
+              onChange={(event: ChangeEvent<HTMLInputElement>) => actions.setSlSubtaskIssueTypeName(event.target.value)}
+              value={state.slSubtaskIssueTypeName}
+            />
+          </label>
+        ) : null}
       </div>
     );
   }
@@ -128,12 +146,18 @@ function renderStepBody(currentStep: number, props: PrbWizardProps): React.React
         ) : null}
       </div>
       <div className={styles.detailCard}>
-        <p className={styles.detailLabel}>Issue 2 — SL Story</p>
+        <p className={styles.detailLabel}>{state.createSlAsSubtask ? 'Issue 2 — SL sub-task' : 'Issue 2 — SL Story'}</p>
         <div className={styles.detailGrid}>
           <div>
             <span className={styles.detailLabel}>Issue Type</span>
-            <p className={styles.detailValue}>Story</p>
+            <p className={styles.detailValue}>{state.createSlAsSubtask ? state.slSubtaskIssueTypeName : 'Story'}</p>
           </div>
+          {state.createSlAsSubtask ? (
+            <div>
+              <span className={styles.detailLabel}>Parent</span>
+              <p className={styles.detailValue}>The primary issue above</p>
+            </div>
+          ) : null}
           <div>
             <span className={styles.detailLabel}>Summary</span>
             <p className={styles.detailValue}>{state.slStorySummaryTemplate}</p>

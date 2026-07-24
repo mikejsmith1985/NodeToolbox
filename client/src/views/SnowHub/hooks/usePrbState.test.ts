@@ -51,6 +51,8 @@ const MOCK_SERVICE_NOW_INCIDENT_RESPONSE = {
 describe('usePrbState', () => {
   afterEach(() => {
     vi.clearAllMocks();
+    // The SL sub-task preferences persist to localStorage; clear them so tests stay isolated.
+    localStorage.clear();
   });
 
   it('starts with an empty PRB number and no loaded PRB data', () => {
@@ -189,7 +191,7 @@ describe('usePrbState', () => {
     });
   });
 
-  it('creates a Defect plus SL Story by default', async () => {
+  it('creates a Defect plus an SL sub-task parented to it by default', async () => {
     vi.mocked(snowFetch)
       .mockResolvedValueOnce(MOCK_SERVICE_NOW_PROBLEM_RESPONSE)
       .mockResolvedValueOnce(MOCK_SERVICE_NOW_INCIDENT_RESPONSE);
@@ -213,6 +215,7 @@ describe('usePrbState', () => {
       await result.current.actions.createJiraIssues();
     });
 
+    // Primary Defect is created first so its key can parent the SL sub-task.
     expect(vi.mocked(jiraPost).mock.calls[0][1]).toMatchObject({
       fields: {
         summary: 'INC0012345: PRB0001234: "Checkout flow fails under load"',
@@ -220,12 +223,72 @@ describe('usePrbState', () => {
         priority: { name: 'High' },
       },
     });
+    // The SL issue is a Sub-task whose parent is the primary issue just created.
     expect(vi.mocked(jiraPost).mock.calls[1][1]).toMatchObject({
       fields: {
         summary: '[SL] INC0012345: PRB0001234: "Checkout flow fails under load"',
-        issuetype: { name: 'Story' },
+        issuetype: { name: 'Sub-task' },
+        parent: { key: 'ABC-101' },
         priority: { name: 'High' },
       },
+    });
+    expect(result.current.state.createdIssueKeys).toEqual(['ABC-101', 'ABC-102']);
+  });
+
+  it('creates a standalone SL Story (no parent) when the sub-task option is turned off', async () => {
+    vi.mocked(snowFetch)
+      .mockResolvedValueOnce(MOCK_SERVICE_NOW_PROBLEM_RESPONSE)
+      .mockResolvedValueOnce(MOCK_SERVICE_NOW_INCIDENT_RESPONSE);
+    vi.mocked(jiraPost)
+      .mockResolvedValueOnce({ key: 'ABC-101' })
+      .mockResolvedValueOnce({ key: 'ABC-102' });
+    const { result } = renderHook(() => usePrbState());
+
+    act(() => {
+      result.current.actions.setPrbNumber('PRB0001234');
+      result.current.actions.setJiraProjectKey('abc');
+      result.current.actions.setCreateSlAsSubtask(false);
+    });
+
+    await act(async () => {
+      await result.current.actions.fetchPrb();
+    });
+    await waitFor(() => expect(result.current.state.prbData).not.toBeNull());
+    await act(async () => {
+      await result.current.actions.createJiraIssues();
+    });
+
+    // The SL issue is a Story with no parent — the legacy behaviour.
+    const slPayload = vi.mocked(jiraPost).mock.calls[1][1] as { fields: Record<string, unknown> };
+    expect(slPayload.fields.issuetype).toEqual({ name: 'Story' });
+    expect(slPayload.fields.parent).toBeUndefined();
+  });
+
+  it('honours a configured SL sub-task issue type name', async () => {
+    vi.mocked(snowFetch)
+      .mockResolvedValueOnce(MOCK_SERVICE_NOW_PROBLEM_RESPONSE)
+      .mockResolvedValueOnce(MOCK_SERVICE_NOW_INCIDENT_RESPONSE);
+    vi.mocked(jiraPost)
+      .mockResolvedValueOnce({ key: 'ABC-101' })
+      .mockResolvedValueOnce({ key: 'ABC-102' });
+    const { result } = renderHook(() => usePrbState());
+
+    act(() => {
+      result.current.actions.setPrbNumber('PRB0001234');
+      result.current.actions.setJiraProjectKey('abc');
+      result.current.actions.setSlSubtaskIssueTypeName('SL Task');
+    });
+
+    await act(async () => {
+      await result.current.actions.fetchPrb();
+    });
+    await waitFor(() => expect(result.current.state.prbData).not.toBeNull());
+    await act(async () => {
+      await result.current.actions.createJiraIssues();
+    });
+
+    expect(vi.mocked(jiraPost).mock.calls[1][1]).toMatchObject({
+      fields: { issuetype: { name: 'SL Task' }, parent: { key: 'ABC-101' } },
     });
   });
 
@@ -254,23 +317,18 @@ describe('usePrbState', () => {
       await result.current.actions.createJiraIssues();
     });
 
-    expect(vi.mocked(jiraPost).mock.calls[0][1]).toMatchObject({
-      fields: {
-        issuetype: { name: 'Story' },
-      },
-    });
+    // Primary is a Story; the SL sub-task still parents to it.
+    expect(vi.mocked(jiraPost).mock.calls[0][1]).toMatchObject({ fields: { issuetype: { name: 'Story' } } });
     expect(vi.mocked(jiraPost).mock.calls[1][1]).toMatchObject({
-      fields: {
-        issuetype: { name: 'Story' },
-      },
+      fields: { issuetype: { name: 'Sub-task' }, parent: { key: 'ABC-101' } },
     });
   });
 
-  it('preserves the successfully created issue key when one of the two Jira requests fails', async () => {
+  it('preserves the created primary key and reports the failure when the SL sub-task fails', async () => {
     vi.mocked(snowFetch)
       .mockResolvedValueOnce(MOCK_SERVICE_NOW_PROBLEM_RESPONSE)
       .mockResolvedValueOnce(MOCK_SERVICE_NOW_INCIDENT_RESPONSE);
-    // Primary succeeds, SL Story fails.
+    // Primary succeeds, SL sub-task fails.
     vi.mocked(jiraPost)
       .mockResolvedValueOnce({ key: 'ABC-101' })
       .mockRejectedValueOnce(new Error('400 — Issue Type is required.'));
@@ -291,10 +349,38 @@ describe('usePrbState', () => {
     await waitFor(() => {
       // The successfully created primary issue key must be preserved.
       expect(result.current.state.createdIssueKeys).toEqual(['ABC-101']);
-      // An error message for the failed SL Story must also be surfaced.
-      expect(result.current.state.createError).toContain('SL Story');
+      // An error message for the failed SL sub-task must also be surfaced.
+      expect(result.current.state.createError).toContain('SL sub-task');
       expect(result.current.state.createError).toContain('400 — Issue Type is required.');
       expect(result.current.state.isCreatingIssues).toBe(false);
+    });
+  });
+
+  it('skips the SL sub-task and says so when the primary issue cannot be created', async () => {
+    vi.mocked(snowFetch)
+      .mockResolvedValueOnce(MOCK_SERVICE_NOW_PROBLEM_RESPONSE)
+      .mockResolvedValueOnce(MOCK_SERVICE_NOW_INCIDENT_RESPONSE);
+    vi.mocked(jiraPost).mockRejectedValueOnce(new Error('403 — no create permission'));
+    const { result } = renderHook(() => usePrbState());
+
+    act(() => {
+      result.current.actions.setPrbNumber('PRB0001234');
+      result.current.actions.setJiraProjectKey('ABC');
+    });
+    await act(async () => {
+      await result.current.actions.fetchPrb();
+    });
+    await waitFor(() => expect(result.current.state.prbData).not.toBeNull());
+    await act(async () => {
+      await result.current.actions.createJiraIssues();
+    });
+
+    await waitFor(() => {
+      // Only the primary was attempted — no orphan sub-task creation without a parent.
+      expect(vi.mocked(jiraPost)).toHaveBeenCalledTimes(1);
+      expect(result.current.state.createdIssueKeys).toEqual([]);
+      expect(result.current.state.createError).toContain('Primary issue');
+      expect(result.current.state.createError).toContain('skipped because the primary issue was not created');
     });
   });
 

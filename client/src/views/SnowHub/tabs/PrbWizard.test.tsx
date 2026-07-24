@@ -12,6 +12,8 @@ interface PrbStateOverrides {
   isPrimaryIssueDefect?: boolean;
   primaryIssueSummaryTemplate?: string;
   slStorySummaryTemplate?: string;
+  createSlAsSubtask?: boolean;
+  slSubtaskIssueTypeName?: string;
   createdIssueKeys?: string[];
   fetchError?: string | null;
   fetchWarning?: string | null;
@@ -31,6 +33,8 @@ function buildFakePrbHook(overrides: PrbStateOverrides = {}) {
     isPrimaryIssueDefect: overrides.isPrimaryIssueDefect ?? true,
     primaryIssueSummaryTemplate: overrides.primaryIssueSummaryTemplate ?? '',
     slStorySummaryTemplate: overrides.slStorySummaryTemplate ?? '',
+    createSlAsSubtask: overrides.createSlAsSubtask ?? false,
+    slSubtaskIssueTypeName: overrides.slSubtaskIssueTypeName ?? 'Sub-task',
     isCreatingIssues: overrides.isCreatingIssues ?? false,
     createError: overrides.createError ?? null,
     createdIssueKeys: overrides.createdIssueKeys ?? [],
@@ -42,6 +46,8 @@ function buildFakePrbHook(overrides: PrbStateOverrides = {}) {
     setIsPrimaryIssueDefect: vi.fn(),
     setPrimaryIssueSummary: vi.fn(),
     setSlStorySummary: vi.fn(),
+    setCreateSlAsSubtask: vi.fn(),
+    setSlSubtaskIssueTypeName: vi.fn(),
     createJiraIssues: vi.fn().mockResolvedValue(undefined),
     reset: vi.fn(),
   };

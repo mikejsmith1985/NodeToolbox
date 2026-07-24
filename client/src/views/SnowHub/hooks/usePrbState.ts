@@ -43,6 +43,10 @@ interface PrbState {
   isPrimaryIssueDefect: boolean;
   primaryIssueSummaryTemplate: string;
   slStorySummaryTemplate: string;
+  /** When true, the SL issue is created as a sub-task of the primary issue rather than a standalone Story. */
+  createSlAsSubtask: boolean;
+  /** The Jira issue-type name used for the SL sub-task; configurable because instances name it differently. */
+  slSubtaskIssueTypeName: string;
   isCreatingIssues: boolean;
   createError: string | null;
   createdIssueKeys: string[];
@@ -55,6 +59,8 @@ interface PrbActions {
   setIsPrimaryIssueDefect: (isPrimaryIssueDefect: boolean) => void;
   setPrimaryIssueSummary: (summary: string) => void;
   setSlStorySummary: (summary: string) => void;
+  setCreateSlAsSubtask: (createSlAsSubtask: boolean) => void;
+  setSlSubtaskIssueTypeName: (slSubtaskIssueTypeName: string) => void;
   createJiraIssues: () => Promise<void>;
   reset: () => void;
 }
@@ -79,6 +85,39 @@ const MEDIUM_PRIORITY_NAME = 'Medium';
 const LOW_PRIORITY_NAME = 'Low';
 const LOWEST_PRIORITY_NAME = 'Lowest';
 
+// The SL sub-task preferences persist so a team's chosen behaviour sticks across sessions.
+const CREATE_SL_AS_SUBTASK_STORAGE_KEY = 'tbxPrbCreateSlAsSubtask';
+const SL_SUBTASK_ISSUE_TYPE_STORAGE_KEY = 'tbxPrbSlSubtaskIssueTypeName';
+const DEFAULT_SL_SUBTASK_ISSUE_TYPE_NAME = 'Sub-task';
+
+/** Reads a persisted boolean preference, falling back when it is absent or storage is unavailable. */
+function readBooleanPreference(storageKey: string, fallbackValue: boolean): boolean {
+  try {
+    const storedValue = localStorage.getItem(storageKey);
+    return storedValue === null ? fallbackValue : storedValue === 'true';
+  } catch {
+    return fallbackValue;
+  }
+}
+
+/** Reads a persisted non-empty string preference, falling back when it is absent or storage is unavailable. */
+function readStringPreference(storageKey: string, fallbackValue: string): string {
+  try {
+    return localStorage.getItem(storageKey)?.trim() || fallbackValue;
+  } catch {
+    return fallbackValue;
+  }
+}
+
+/** Persists a preference; a storage failure must never break issue creation, so it is swallowed. */
+function writePreference(storageKey: string, value: string): void {
+  try {
+    localStorage.setItem(storageKey, value);
+  } catch {
+    // Ignore storage failures (private mode, quota) — the in-memory state still applies for this session.
+  }
+}
+
 function createInitialPrbState(): PrbState {
   return {
     prbNumber: EMPTY_VALUE,
@@ -90,6 +129,9 @@ function createInitialPrbState(): PrbState {
     isPrimaryIssueDefect: true,
     primaryIssueSummaryTemplate: EMPTY_VALUE,
     slStorySummaryTemplate: EMPTY_VALUE,
+    // Default to a sub-task of the primary — the behaviour teams asked for — but keep it configurable.
+    createSlAsSubtask: readBooleanPreference(CREATE_SL_AS_SUBTASK_STORAGE_KEY, true),
+    slSubtaskIssueTypeName: readStringPreference(SL_SUBTASK_ISSUE_TYPE_STORAGE_KEY, DEFAULT_SL_SUBTASK_ISSUE_TYPE_NAME),
     isCreatingIssues: false,
     createError: null,
     createdIssueKeys: [],
@@ -123,22 +165,36 @@ function createSlStorySummary(problemRecord: SnowPrbRecord): string {
 const PARTIAL_CREATE_SEPARATOR = ' | ';
 const PRIMARY_ISSUE_LABEL = 'Primary issue';
 const SL_STORY_LABEL = 'SL Story';
+const SL_SUBTASK_LABEL = 'SL sub-task';
+const SL_SUBTASK_SKIPPED_MESSAGE = 'skipped because the primary issue was not created';
 
+/**
+ * Builds a Jira create payload. When `parentIssueKey` is supplied the issue is created as a child of
+ * that issue (a sub-task), which is what links the SL sub-task to its primary Story or Defect.
+ */
 function buildIssuePayload(
   jiraProjectKey: string,
   summary: string,
-  issueTypeName: 'Defect' | 'Story',
+  issueTypeName: string,
   problemRecord: SnowPrbRecord,
+  parentIssueKey?: string,
 ) {
-  return {
-    fields: {
-      project: { key: jiraProjectKey },
-      summary,
-      issuetype: { name: issueTypeName },
-      description: `${problemRecord.number}\n\n${problemRecord.description}`,
-      priority: { name: mapServiceNowSeverityToJiraPriorityName(problemRecord.severity) },
-    },
+  const fields: Record<string, unknown> = {
+    project: { key: jiraProjectKey },
+    summary,
+    issuetype: { name: issueTypeName },
+    description: `${problemRecord.number}\n\n${problemRecord.description}`,
+    priority: { name: mapServiceNowSeverityToJiraPriorityName(problemRecord.severity) },
   };
+  if (parentIssueKey) {
+    fields.parent = { key: parentIssueKey };
+  }
+  return { fields };
+}
+
+/** Reads a rejection reason as a human message, falling back to the generic create-failure text. */
+function readCreateFailureMessage(rejectionReason: unknown): string {
+  return rejectionReason instanceof Error ? rejectionReason.message : ISSUE_CREATE_FAILURE_MESSAGE;
 }
 
 /**
@@ -337,46 +393,68 @@ export function usePrbState(): { state: PrbState; actions: PrbActions } {
     }));
 
     const primaryIssueTypeName: 'Defect' | 'Story' = state.isPrimaryIssueDefect ? 'Defect' : 'Story';
-    const [primaryResult, storyResult] = await Promise.allSettled([
-      jiraPost<{ key: string }>(
-        JIRA_ISSUE_CREATE_PATH,
-        buildIssuePayload(
-          state.jiraProjectKey,
-          state.primaryIssueSummaryTemplate,
-          primaryIssueTypeName,
-          state.prbData,
-        ),
-      ),
-      jiraPost<{ key: string }>(
-        JIRA_ISSUE_CREATE_PATH,
-        buildIssuePayload(
-          state.jiraProjectKey,
-          state.slStorySummaryTemplate,
-          'Story',
-          state.prbData,
-        ),
-      ),
-    ]);
-
-    // Collect successful keys and per-issue error messages separately so a
-    // partial success (one issue created, one failed) surfaces both outcomes.
     const successfulKeys: string[] = [];
     const failureMessages: string[] = [];
 
-    if (primaryResult.status === 'fulfilled') {
-      successfulKeys.push(primaryResult.value.key);
-    } else {
-      const errorMessage =
-        primaryResult.reason instanceof Error ? primaryResult.reason.message : ISSUE_CREATE_FAILURE_MESSAGE;
-      failureMessages.push(`${PRIMARY_ISSUE_LABEL}: ${errorMessage}`);
-    }
+    if (state.createSlAsSubtask) {
+      // A Jira sub-task must reference an existing parent, so the primary is created FIRST and its key
+      // becomes the SL sub-task's parent. If the primary fails there is nothing to parent to, so the
+      // sub-task is reported as skipped rather than attempted and failed for a confusing reason.
+      let primaryIssueKey: string | null = null;
+      try {
+        const primaryIssue = await jiraPost<{ key: string }>(
+          JIRA_ISSUE_CREATE_PATH,
+          buildIssuePayload(state.jiraProjectKey, state.primaryIssueSummaryTemplate, primaryIssueTypeName, state.prbData),
+        );
+        primaryIssueKey = primaryIssue.key;
+        successfulKeys.push(primaryIssue.key);
+      } catch (primaryError) {
+        failureMessages.push(`${PRIMARY_ISSUE_LABEL}: ${readCreateFailureMessage(primaryError)}`);
+      }
 
-    if (storyResult.status === 'fulfilled') {
-      successfulKeys.push(storyResult.value.key);
+      if (primaryIssueKey !== null) {
+        try {
+          const slSubtask = await jiraPost<{ key: string }>(
+            JIRA_ISSUE_CREATE_PATH,
+            buildIssuePayload(
+              state.jiraProjectKey,
+              state.slStorySummaryTemplate,
+              state.slSubtaskIssueTypeName,
+              state.prbData,
+              primaryIssueKey,
+            ),
+          );
+          successfulKeys.push(slSubtask.key);
+        } catch (subtaskError) {
+          failureMessages.push(`${SL_SUBTASK_LABEL}: ${readCreateFailureMessage(subtaskError)}`);
+        }
+      } else {
+        failureMessages.push(`${SL_SUBTASK_LABEL}: ${SL_SUBTASK_SKIPPED_MESSAGE}`);
+      }
     } else {
-      const errorMessage =
-        storyResult.reason instanceof Error ? storyResult.reason.message : ISSUE_CREATE_FAILURE_MESSAGE;
-      failureMessages.push(`${SL_STORY_LABEL}: ${errorMessage}`);
+      // Legacy behaviour: the SL issue is a standalone Story with no parent, so both can be created at
+      // once (a partial success still surfaces both outcomes).
+      const [primaryResult, storyResult] = await Promise.allSettled([
+        jiraPost<{ key: string }>(
+          JIRA_ISSUE_CREATE_PATH,
+          buildIssuePayload(state.jiraProjectKey, state.primaryIssueSummaryTemplate, primaryIssueTypeName, state.prbData),
+        ),
+        jiraPost<{ key: string }>(
+          JIRA_ISSUE_CREATE_PATH,
+          buildIssuePayload(state.jiraProjectKey, state.slStorySummaryTemplate, 'Story', state.prbData),
+        ),
+      ]);
+
+      if (primaryResult.status === 'fulfilled') {
+        successfulKeys.push(primaryResult.value.key);
+      } else {
+        failureMessages.push(`${PRIMARY_ISSUE_LABEL}: ${readCreateFailureMessage(primaryResult.reason)}`);
+      }
+      if (storyResult.status === 'fulfilled') {
+        successfulKeys.push(storyResult.value.key);
+      } else {
+        failureMessages.push(`${SL_STORY_LABEL}: ${readCreateFailureMessage(storyResult.reason)}`);
+      }
     }
 
     setState((previousState) => ({
@@ -386,12 +464,25 @@ export function usePrbState(): { state: PrbState; actions: PrbActions } {
       createdIssueKeys: successfulKeys,
     }));
   }, [
+    state.createSlAsSubtask,
     state.isPrimaryIssueDefect,
     state.jiraProjectKey,
     state.prbData,
     state.primaryIssueSummaryTemplate,
     state.slStorySummaryTemplate,
+    state.slSubtaskIssueTypeName,
   ]);
+
+  const setCreateSlAsSubtask = useCallback((createSlAsSubtask: boolean) => {
+    writePreference(CREATE_SL_AS_SUBTASK_STORAGE_KEY, String(createSlAsSubtask));
+    setState((previousState) => ({ ...previousState, createSlAsSubtask }));
+  }, []);
+
+  const setSlSubtaskIssueTypeName = useCallback((slSubtaskIssueTypeName: string) => {
+    // Persist the trimmed value, but keep exactly what the user typed in the field for editing.
+    writePreference(SL_SUBTASK_ISSUE_TYPE_STORAGE_KEY, slSubtaskIssueTypeName.trim() || DEFAULT_SL_SUBTASK_ISSUE_TYPE_NAME);
+    setState((previousState) => ({ ...previousState, slSubtaskIssueTypeName }));
+  }, []);
 
   const reset = useCallback(() => {
     setState(createInitialPrbState());
@@ -405,6 +496,8 @@ export function usePrbState(): { state: PrbState; actions: PrbActions } {
       setIsPrimaryIssueDefect,
       setPrimaryIssueSummary,
       setSlStorySummary,
+      setCreateSlAsSubtask,
+      setSlSubtaskIssueTypeName,
       createJiraIssues,
       reset,
     };
@@ -412,11 +505,13 @@ export function usePrbState(): { state: PrbState; actions: PrbActions } {
     createJiraIssues,
     fetchPrb,
     reset,
+    setCreateSlAsSubtask,
     setIsPrimaryIssueDefect,
     setJiraProjectKey,
     setPrbNumber,
     setPrimaryIssueSummary,
     setSlStorySummary,
+    setSlSubtaskIssueTypeName,
   ]);
 
   return { state, actions };

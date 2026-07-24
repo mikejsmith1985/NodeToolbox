@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **PRB Generator: the SL issue is now a sub-task of the primary.** The secondary "[SL]" issue is created as a
+  **sub-task of the primary Story or Defect** instead of a standalone Story, so the two are linked from the start.
+  The primary is created first (a sub-task needs its parent), and if the primary fails the sub-task is reported as
+  skipped rather than orphaned. It is **configurable**: a checkbox turns the sub-task behaviour off (back to a
+  standalone Story), and the sub-task's Jira issue-type name is editable (default "Sub-task") for instances that
+  name it differently. Both preferences are remembered.
+
+### Changed
 - **Reorder PI Review rows by dragging.** The Move up / Move down buttons are replaced by a **⠿ Drag** handle:
   grab it and drop a row where you want it. Keyboard users are covered too — focus the handle and press ↑ / ↓
   to nudge a row one place. The Stretch-Goals line and any custom grouping lines still travel with their rows.
