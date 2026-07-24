@@ -428,10 +428,10 @@ describe('writePiReviewCapacitySummary', () => {
       recommendedCapacityPoints: 10,
       roleCapacities: { Developer: 10, 'Dev Lead': 0, 'Internal Tester': 0, 'External Tester': 2.5, 'Systems Analyst': 0 },
     };
-    // Committed 13 (3 over 10), total 20 (10 over 10).
+    // Committed 13 (3 over 10), total 20 (10 over 10); carryover 7 (row 1 is a Carry-Over) = 70% of 10.
     const rows = [createEmptyPiReviewRow(), createEmptyPiReviewRow()];
     rows[0] = { ...rows[0], pointEstimate: '13', committed: 'Yes' };
-    rows[1] = { ...rows[1], pointEstimate: '7', committed: '' };
+    rows[1] = { ...rows[1], pointEstimate: '7', committed: '', carryOver: 'Yes' };
     const loadComparison = computePiReviewLoadComparison(rows, capacitySummary.recommendedCapacityPoints);
 
     const nextStorageValue = writePiReviewCapacitySummary(MOCK_STORAGE_VALUE, capacitySummary, loadComparison);
@@ -439,6 +439,8 @@ describe('writePiReviewCapacitySummary', () => {
     expect(nextStorageValue).toContain('Planned load vs 80% capacity');
     // Committed 13 (3 over the 10-pt target); total 20 (10 over). Status carried by emoji, not CSS.
     expect(nextStorageValue).toContain('✅ <strong>Committed:</strong> 13 pts — 🔴 3 over');
+    // Carryover from the prior PI is shown as a share of the 80% target (7 of 10 = 70%).
+    expect(nextStorageValue).toContain('🔄 <strong>Carryover (from prior PI):</strong> 7 pts — 70% of 80% capacity');
     expect(nextStorageValue).toContain('📦 <strong>All Features:</strong> 20 pts — 🔴 10 over');
     // The capacity payload still round-trips — the extra block does not disturb parsing.
     expect(parsePiReviewCapacitySummary(nextStorageValue)?.summaryLabel).toBe('Alpha Team Capacity');

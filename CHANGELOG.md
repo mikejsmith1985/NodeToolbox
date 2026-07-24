@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Carryover load breakdown.** The PI Review capacity readout now shows how much of the plan is work carried
+  over from the prior PI — a **Carryover (pts)** figure and its share of the 80% target, a striped carryover
+  band on the utilisation meter, a running badge above the table, and a 🔄 line in the Confluence Team Capacity
+  section. So you can see how much capacity is already spoken for before planning new work.
+
 ### Changed
 - **The Team Capacity section written to Confluence is now easy to scan.** The old wall of bold sentences is
   replaced by emoji-labelled lists — 📋 Plan, 📅 Date Range, 🗓️ Work Days, 💯 100% and 🎯 80% capacity — with the
