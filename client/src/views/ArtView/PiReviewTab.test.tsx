@@ -1479,6 +1479,8 @@ describe('PiReviewTab', () => {
     expect(within(alphaSection).getByText('12.5')).toBeInTheDocument();
     expect(within(alphaSection).getByText('Developer: 10 pts')).toBeInTheDocument();
     expect(within(alphaSection).getByText('External Tester: 2.5 pts')).toBeInTheDocument();
+    // The load breakdown surfaces how much capacity is committed and how much is prior-PI carryover.
+    expect(within(alphaSection).getByText('Carryover (pts)')).toBeInTheDocument();
   });
 
   it('falls back to the saved Confluence capacity snapshot when no live capacity override is provided', async () => {

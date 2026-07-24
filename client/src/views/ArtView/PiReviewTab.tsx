@@ -800,6 +800,11 @@ function PiReviewPagePanel({
     ? {
         committedFillPercent: Math.min(100, (loadComparison.committedPoints / displayedCapacitySummary.totalCapacityPoints) * 100),
         totalFillPercent: Math.min(100, (loadComparison.totalFeaturePoints / displayedCapacitySummary.totalCapacityPoints) * 100),
+        // Carryover as a slice of the whole board, so the meter shows how much of the plan is prior-PI work.
+        carryOverFillPercent: loadComparison.totalFeaturePoints > 0
+          ? Math.min(100, (loadComparison.carryOverPoints / displayedCapacitySummary.totalCapacityPoints) * 100)
+          : 0,
+        hasCarryOver: loadComparison.carryOverPoints > 0,
         targetMarkerPercent: Math.min(100, (displayedCapacitySummary.recommendedCapacityPoints / displayedCapacitySummary.totalCapacityPoints) * 100),
         isCommittedOverTarget: loadComparison.committedPoints > displayedCapacitySummary.recommendedCapacityPoints,
       }
@@ -2301,6 +2306,7 @@ function PiReviewPagePanel({
         <span className={styles.statBadge}>Custom lines: {customGroupingLines.length}</span>
         <span className={styles.statBadge}>Total Feature points: {formatCapacityValue(loadComparison.totalFeaturePoints)}</span>
         <span className={styles.statBadge}>Committed points: {formatCapacityValue(committedPointTotal)}</span>
+        <span className={styles.statBadge}>Carryover points: {formatCapacityValue(loadComparison.carryOverPoints)}</span>
       </div>
 
       {tableBinding && canEditContent && (
@@ -2350,6 +2356,13 @@ function PiReviewPagePanel({
                     style={{ width: `${capacityMeter.committedFillPercent}%` }}
                     aria-hidden="true"
                   />
+                  {capacityMeter.hasCarryOver ? (
+                    <div
+                      className={styles.capacityMeterCarryoverFill}
+                      style={{ width: `${capacityMeter.carryOverFillPercent}%` }}
+                      aria-hidden="true"
+                    />
+                  ) : null}
                   <div
                     className={styles.capacityMeterTargetMarker}
                     style={{ left: `${capacityMeter.targetMarkerPercent}%` }}
@@ -2363,6 +2376,11 @@ function PiReviewPagePanel({
                   <span className={styles.capacityMeterKeyTotal}>
                     All Features {formatCapacityValue(loadComparison.totalFeaturePoints)} pts
                   </span>
+                  {capacityMeter.hasCarryOver ? (
+                    <span className={styles.capacityMeterKeyCarryover}>
+                      Carryover {formatCapacityValue(loadComparison.carryOverPoints)} pts
+                    </span>
+                  ) : null}
                   <span className={styles.capacityMeterKeyTarget}>
                     80% target {formatCapacityValue(displayedCapacitySummary.recommendedCapacityPoints)} pts
                   </span>
@@ -2409,6 +2427,15 @@ function PiReviewPagePanel({
                   {totalLoadDelta ? (
                     <span className={totalLoadDelta.isOver ? styles.loadOver : styles.loadUnder}>
                       {totalLoadDelta.text}
+                    </span>
+                  ) : null}
+                </div>
+                <div className={styles.capacitySummaryCard}>
+                  <span className={styles.summaryLabel}>Carryover (pts)</span>
+                  <strong>{formatCapacityValue(loadComparison.carryOverPoints)}</strong>
+                  {loadComparison.carryOverPercentOfTarget !== null ? (
+                    <span className={styles.summaryValue}>
+                      {formatCapacityValue(loadComparison.carryOverPercentOfTarget)}% of 80%
                     </span>
                   ) : null}
                 </div>

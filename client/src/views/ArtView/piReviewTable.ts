@@ -248,11 +248,16 @@ function createPlannedLoadHtml(loadComparison: PiReviewLoadComparison | null): s
   const hasTarget = loadComparison.capacityTargetPoints !== null && loadComparison.capacityTargetPoints > 0;
   const committedVs = hasTarget ? ` — ${describeCapacityDeltaText(loadComparison.committedVsTarget as number)}` : '';
   const totalVs = hasTarget ? ` — ${describeCapacityDeltaText(loadComparison.totalVsTarget as number)}` : '';
+  // Carryover is capacity already spoken for by prior-PI work; show it as a share of the 80% target.
+  const carryOverShare = hasTarget && loadComparison.carryOverPercentOfTarget !== null
+    ? ` — ${formatCapacityValue(loadComparison.carryOverPercentOfTarget)}% of 80% capacity`
+    : '';
   return [
     `<p><strong>⚖️ Planned load vs 80% capacity</strong></p>`,
     '<ul>',
     `<li>✅ <strong>Committed:</strong> ${formatCapacityValue(loadComparison.committedPoints)} pts${committedVs}</li>`,
     `<li>📦 <strong>All Features:</strong> ${formatCapacityValue(loadComparison.totalFeaturePoints)} pts${totalVs}</li>`,
+    `<li>🔄 <strong>Carryover (from prior PI):</strong> ${formatCapacityValue(loadComparison.carryOverPoints)} pts${carryOverShare}</li>`,
     '</ul>',
   ].join('');
 }

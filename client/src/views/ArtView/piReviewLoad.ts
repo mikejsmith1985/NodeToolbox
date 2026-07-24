@@ -18,12 +18,24 @@ export function parsePiReviewPointEstimate(pointEstimate: string): number {
   return Number.isFinite(parsedPointEstimate) ? parsedPointEstimate : 0;
 }
 
+/** Whether a row is work carried over from the prior PI (its Carry-Over cell reads "Yes"). */
+export function isPiReviewRowCarryOver(row: PiReviewRow): boolean {
+  return row.carryOver.trim().toLowerCase() === 'yes';
+}
+
 /** How the board's planned points compare to the team's recommended (80%) capacity. */
 export interface PiReviewLoadComparison {
   /** Points across EVERY Feature on the board — committed and stretch alike. */
   totalFeaturePoints: number;
   /** Points across only the committed Features. */
   committedPoints: number;
+  /**
+   * Points carried over from the prior PI — the remaining-effort estimates on Carry-Over rows. This is
+   * capacity already spoken for before any new work is planned.
+   */
+  carryOverPoints: number;
+  /** Carryover points as a percentage of the 80% target (100 = the whole target). Null without a target. */
+  carryOverPercentOfTarget: number | null;
   /**
    * The team's recommended capacity in points — the 80% planning target. Null when no capacity plan
    * has been saved, in which case there is nothing to compare against.
@@ -52,11 +64,15 @@ export function computePiReviewLoadComparison(
 ): PiReviewLoadComparison {
   let totalFeaturePoints = 0;
   let committedPoints = 0;
+  let carryOverPoints = 0;
   for (const row of rows) {
     const rowPoints = parsePiReviewPointEstimate(row.pointEstimate);
     totalFeaturePoints += rowPoints;
     if (isPiReviewRowCommitted(row)) {
       committedPoints += rowPoints;
+    }
+    if (isPiReviewRowCarryOver(row)) {
+      carryOverPoints += rowPoints;
     }
   }
 
@@ -66,6 +82,8 @@ export function computePiReviewLoadComparison(
     return {
       totalFeaturePoints,
       committedPoints,
+      carryOverPoints,
+      carryOverPercentOfTarget: null,
       capacityTargetPoints: null,
       committedVsTarget: null,
       totalVsTarget: null,
@@ -74,13 +92,16 @@ export function computePiReviewLoadComparison(
   }
 
   const target = capacityTargetPoints as number;
+  // A zero target cannot yield a meaningful percentage, so report null rather than dividing by zero.
+  const asPercentOfTarget = (points: number): number | null => (target === 0 ? null : (points / target) * 100);
   return {
     totalFeaturePoints,
     committedPoints,
+    carryOverPoints,
+    carryOverPercentOfTarget: asPercentOfTarget(carryOverPoints),
     capacityTargetPoints: target,
     committedVsTarget: committedPoints - target,
     totalVsTarget: totalFeaturePoints - target,
-    // A zero target cannot yield a meaningful percentage, so report null rather than dividing by zero.
-    committedPercentOfTarget: target === 0 ? null : (committedPoints / target) * 100,
+    committedPercentOfTarget: asPercentOfTarget(committedPoints),
   };
 }

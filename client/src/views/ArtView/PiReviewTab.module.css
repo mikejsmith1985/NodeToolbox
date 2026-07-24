@@ -746,6 +746,17 @@
   background: linear-gradient(90deg, #22c55e, #4ade80);
 }
 
+/* Carryover from the prior PI, drawn as a slim band along the bottom of the track so it reads as a
+   slice of the plan already spoken for without hiding the committed colour above it. */
+.capacityMeterCarryoverFill {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 6px;
+  border-radius: 999px;
+  background: repeating-linear-gradient(45deg, #6366f1, #6366f1 5px, #818cf8 5px, #818cf8 10px);
+}
+
 .capacityMeterOver {
   background: linear-gradient(90deg, #d98a00, #f59e0b);
 }
@@ -769,6 +780,7 @@
 
 .capacityMeterKeyCommitted,
 .capacityMeterKeyTotal,
+.capacityMeterKeyCarryover,
 .capacityMeterKeyTarget {
   display: inline-flex;
   align-items: center;
@@ -778,6 +790,7 @@
 
 .capacityMeterKeyCommitted::before,
 .capacityMeterKeyTotal::before,
+.capacityMeterKeyCarryover::before,
 .capacityMeterKeyTarget::before {
   content: '';
   width: 10px;
@@ -791,6 +804,10 @@
 
 .capacityMeterKeyTotal::before {
   background: color-mix(in srgb, #38bdf8 45%, transparent);
+}
+
+.capacityMeterKeyCarryover::before {
+  background: repeating-linear-gradient(45deg, #6366f1, #6366f1 3px, #818cf8 3px, #818cf8 6px);
 }
 
 .capacityMeterKeyTarget::before {
