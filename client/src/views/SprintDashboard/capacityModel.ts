@@ -122,6 +122,35 @@ export function calculateRecommendedCapacity(totalCapacityPoints: number): numbe
 }
 
 /**
+ * Value-equality for two capacity snapshots, so a screen can tell a genuine capacity change from a
+ * harmless re-render of an equivalent snapshot. Used by PI Review to mark the page unsaved only when
+ * the live capacity actually differs from what is already saved to Confluence.
+ */
+export function areCapacitySummariesEqual(
+  leftSummary: CapacitySummary | null,
+  rightSummary: CapacitySummary | null,
+): boolean {
+  if (leftSummary === rightSummary) {
+    return true;
+  }
+  if (leftSummary === null || rightSummary === null) {
+    return false;
+  }
+  const haveSameScalars = leftSummary.summaryLabel === rightSummary.summaryLabel
+    && leftSummary.startDate === rightSummary.startDate
+    && leftSummary.endDate === rightSummary.endDate
+    && leftSummary.workDayCount === rightSummary.workDayCount
+    && leftSummary.totalCapacityPoints === rightSummary.totalCapacityPoints
+    && leftSummary.recommendedCapacityPoints === rightSummary.recommendedCapacityPoints;
+  if (!haveSameScalars) {
+    return false;
+  }
+  return ALL_TEAM_ROLES.every(
+    (teamRole) => (leftSummary.roleCapacities[teamRole] ?? 0) === (rightSummary.roleCapacities[teamRole] ?? 0),
+  );
+}
+
+/**
  * Builds a complete capacity snapshot for one team or summary group.
  * This keeps every ART surface aligned on the same capacity math and labels.
  */

@@ -701,6 +701,33 @@
   background: var(--color-surface-1);
 }
 
+/* Planned-load-vs-capacity comparison: totals the board's points against the 80% target. */
+.capacityComparison {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.capacityComparisonTitle {
+  margin: 0;
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+/* A committed/total figure that exceeds the 80% target — a warning the PO should weigh. */
+.loadOver {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-warning, #d98a00);
+}
+
+/* A figure at or under the 80% target — comfortably within recommended capacity. */
+.loadUnder {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-success, #2e9e5b);
+}
+
 .capacityRoleList {
   display: flex;
   flex-wrap: wrap;
