@@ -180,6 +180,17 @@ describe('parsePiReviewAiReply', () => {
     })
   })
 
+  it('yields ONE suggestion for a Feature the page carries on more than one row (no repeated cards)', () => {
+    // A key typed by hand onto a row a pull already added leaves the same Feature on two rows. That
+    // must not surface as two identical AI cards.
+    const result = parsePiReviewAiReply(
+      reply([{ issueKey: 'ALPHA-1', size: 'M', rationale: 'Once is enough.' }]),
+      ['ALPHA-1', 'ALPHA-1', 'ALPHA-2'],
+    )
+
+    expect(result.suggestions.filter((suggestion) => suggestion.issueKey === 'ALPHA-1')).toHaveLength(1)
+  })
+
   it('derives points from the scale and ignores any the model volunteers', () => {
     // A model claiming M=45 is contradicting the rubric. The scale wins; 45 never reaches a cell.
     const result = parsePiReviewAiReply(reply([{ issueKey: 'ALPHA-1', size: 'M', points: 45 }]), KNOWN_KEYS)

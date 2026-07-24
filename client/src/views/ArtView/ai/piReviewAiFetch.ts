@@ -93,9 +93,20 @@ async function fetchIssueBatch(
  * a failed lookup degrades to the common default rather than failing the run.
  */
 export async function fetchPiReviewAiContexts(rows: readonly PiReviewRow[]): Promise<PiReviewAiFeatureContext[]> {
+  // One context PER FEATURE, not per row: a Feature can legitimately appear on more than one row (for
+  // example a key typed by hand onto a row that a pull already added). De-duplicating here — keeping
+  // the first row for each key, in page-row order — is what stops the AI review from showing the same
+  // Feature as an identical card once per duplicate row.
+  const seenIssueKeys = new Set<string>()
   const rowsWithKeys = rows
     .map((row) => ({ row, issueKey: extractPiReviewFeatureKey(row.feature) }))
-    .filter((entry): entry is { row: PiReviewRow; issueKey: string } => entry.issueKey !== null)
+    .filter((entry): entry is { row: PiReviewRow; issueKey: string } => {
+      if (entry.issueKey === null || seenIssueKeys.has(entry.issueKey)) {
+        return false
+      }
+      seenIssueKeys.add(entry.issueKey)
+      return true
+    })
   if (rowsWithKeys.length === 0) {
     return []
   }

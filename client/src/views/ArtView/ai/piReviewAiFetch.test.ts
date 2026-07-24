@@ -165,6 +165,24 @@ describe('fetchPiReviewAiContexts', () => {
     expect(contexts).toEqual([])
   })
 
+  it('builds ONE context per Feature when the page carries the same key on more than one row', async () => {
+    // A key typed by hand onto a row a pull already added leaves the same Feature on two rows. Only one
+    // context (from the first such row) must result, so the AI review shows it once — not once per row.
+    mockJiraGet.mockImplementation((path: string) => {
+      if (path === '/rest/api/2/field') return Promise.resolve(FIELD_LIST)
+      return Promise.resolve({ issues: [issue('ALPHA-1', { priority: { name: 'Highest' } })] })
+    })
+
+    const contexts = await fetchPiReviewAiContexts([
+      row({ rowId: 'row-1', feature: 'ALPHA-1 - Enrollment support', pointEstimate: '8' }),
+      row({ rowId: 'row-2', feature: 'ALPHA-1', pointEstimate: '' }), // hand-typed bare key, same Feature
+    ])
+
+    expect(contexts).toHaveLength(1)
+    // The first row wins, so its context data is the one kept.
+    expect(contexts[0]).toMatchObject({ issueKey: 'ALPHA-1', currentPointEstimate: '8' })
+  })
+
   it('returns no contexts and contacts no search endpoint when there are no rows', async () => {
     const contexts = await fetchPiReviewAiContexts([])
 
