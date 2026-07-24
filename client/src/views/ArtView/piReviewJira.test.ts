@@ -310,6 +310,55 @@ describe('piReviewJira', () => {
     ]);
   });
 
+  it('never writes a CARRYOVER row’s estimate back to Jira (it holds remaining effort, not the full points)', () => {
+    const carryoverRow = {
+      ...createEmptyPiReviewRow(),
+      feature: 'DENP-1352',
+      pointEstimate: '5', // remaining effort
+      carryOver: 'Yes',
+    };
+
+    const reconciliationResult = reconcilePiReviewRowsWithJira([carryoverRow], {
+      'DENP-1352': {
+        id: '10001', key: 'DENP-1352',
+        fields: {
+          summary: 'Carried Feature',
+          status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } },
+          priority: null, assignee: null, reporter: null,
+          issuetype: { name: 'Feature', iconUrl: '' }, created: '', updated: '', description: null,
+          customfield_10028: null, // Jira is blank — a normal row WOULD backfill here
+        },
+      },
+    }, { shouldQueueEstimateUpdates: true });
+
+    expect(reconciliationResult.pendingEstimateUpdates).toEqual([]);
+  });
+
+  it('does NOT overwrite a carryover row’s remaining estimate from Jira on reload', () => {
+    // Jira has the full points (13); the carryover row holds the remaining (5). Reload must keep 5.
+    const carryoverRow = {
+      ...createEmptyPiReviewRow(),
+      feature: 'DENP-1352',
+      pointEstimate: '5',
+      carryOver: 'Yes',
+    };
+
+    const reconciliationResult = reconcilePiReviewRowsWithJira([carryoverRow], {
+      'DENP-1352': {
+        id: '10001', key: 'DENP-1352',
+        fields: {
+          summary: 'Carried Feature',
+          status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } },
+          priority: null, assignee: null, reporter: null,
+          issuetype: { name: 'Feature', iconUrl: '' }, created: '', updated: '', description: null,
+          customfield_10028: 13, // the true full points in Jira
+        },
+      },
+    });
+
+    expect(reconciliationResult.rows[0].pointEstimate).toBe('5'); // remaining, not overwritten by Jira's 13
+  });
+
   it('fetches feature issues in Jira search batches and indexes them by key', async () => {
     mockJiraGet.mockResolvedValue({
       issues: [

@@ -101,7 +101,9 @@ test('INV-1b: features present but Jira produced no changes → no-op, no PUT (n
 });
 
 test('INV-2/INV-3: refreshes Jira-owned columns, preserves human-curated content + capacity', async () => {
-  const existingRow = dataRow(['Yes', 'OLD-PRI', 'ALPHA-1 - Feature One', '8', 'ManualDep', 'ManualRisk', 'Committed', 'ManualNote']);
+  // Carry-Over is empty here: this checks the normal Jira refresh of the estimate. A carryover row's
+  // estimate holds remaining effort and is deliberately decoupled from Jira (see the carryover test).
+  const existingRow = dataRow(['', 'OLD-PRI', 'ALPHA-1 - Feature One', '8', 'ManualDep', 'ManualRisk', 'Committed', 'ManualNote']);
   const { deps, calls } = makeMocks({
     storageValue: pageStorage(existingRow),
     features: [{ key: 'ALPHA-1', summary: 'Feature One' }, { key: 'ALPHA-2', summary: 'Feature Two' }],
@@ -127,6 +129,28 @@ test('INV-2/INV-3: refreshes Jira-owned columns, preserves human-curated content
   assert.match(written, />13</, 'estimate refreshed from Jira');
   assert.match(written, /ALPHA-2 - Feature Two/, 'new feature appended');
   assert.doesNotMatch(written, /OLD-PRI/, 'stale priority replaced');
+});
+
+test('carryover: a Carry-Over row keeps its remaining estimate; Jira never overwrites it on refresh', async () => {
+  // The row is a carryover (first cell 'Yes') with a remaining estimate of 5. Jira has the full 40.
+  // A stale priority forces a real write; the estimate must still be left at 5 — Jira is the source of
+  // truth for full points, not remaining.
+  const carryoverRow = dataRow(['Yes', 'OLD-PRI', 'ALPHA-1 - Carried', '5', '', '', '', '']);
+  const { deps, calls } = makeMocks({
+    storageValue: pageStorage(carryoverRow),
+    features: [{ key: 'ALPHA-1', summary: 'Carried' }],
+    issueMap: {
+      'ALPHA-1': { key: 'ALPHA-1', fields: { summary: 'Carried', priority: { name: 'P1' }, customfield_10028: 40, issuelinks: [] } },
+    },
+  });
+
+  const result = await refreshPiReviewPage({ page: PAGE, team: TEAM, deps, configuration: config() });
+  const written = calls.putPayloads[0].body.storage.value;
+
+  assert.equal(result.status, 'success');
+  assert.match(written, />P1</, 'priority still refreshed from Jira');
+  assert.match(written, />5</, 'remaining estimate preserved');
+  assert.doesNotMatch(written, />40</, 'Jira full points did NOT overwrite the remaining estimate');
 });
 
 test('INV-5: a feature no longer matching the query is NOT removed; new one is appended once', async () => {

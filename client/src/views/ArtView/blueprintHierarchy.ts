@@ -2,6 +2,7 @@
 
 import { jiraGet } from '../../services/jiraApi.ts';
 import { isDeliveredWorkflowStatusName } from '../../utils/workflowDelivery.ts';
+import { computeCompletionPercent } from './featureCompletion.ts';
 // The feature-link resolution (candidate field order, value-shape handling) is shared with the reports so
 // a child is linked to its feature identically everywhere. Aliased to the long-standing local names.
 import {
@@ -146,9 +147,6 @@ const SEARCH_BATCH_MAX_RESULTS = 200;
 const PROGRAM_EPIC_EMPTY_BUCKET_KEY = '_none_';
 const DONE_STATUS_KEYWORDS = ['done', 'closed', 'resolved', 'complete'];
 const BLOCKED_STATUS_KEYWORDS = ['blocked', 'impediment'];
-const WORKING_STATUS_KEYWORDS = ['work', 'working', 'in progress', 'implementing'];
-const TESTING_STATUS_KEYWORDS = ['test', 'testing'];
-const DEFAULT_UNPOINTED_STORY_WEIGHT = 1;
 
 function loadArtSettings(): ArtAdvancedSettings {
   try {
@@ -221,53 +219,6 @@ function computeBlueprintHealth(storyNodes: BlueprintStoryNode[]): BlueprintHeal
   }
 
   return 'blue';
-}
-
-function readStoryCompletionWeight(storyNode: BlueprintStoryNode): number {
-  const normalizedStatusName = storyNode.status.toLowerCase();
-  const normalizedStatusCategoryKey = storyNode.statusCategoryKey?.toLowerCase() ?? '';
-
-  if (normalizedStatusCategoryKey === 'done') {
-    return 1;
-  }
-
-  // Delivered rule: External Testing ("Ready for QA") and beyond satisfies the team's Definition
-  // of Done, so those stories carry full completion weight even while statusCategory is In Progress.
-  if (isDeliveredWorkflowStatusName(normalizedStatusName)) {
-    return 1;
-  }
-
-  if (TESTING_STATUS_KEYWORDS.some((statusKeyword) => normalizedStatusName.includes(statusKeyword))) {
-    return 0.5;
-  }
-
-  if (WORKING_STATUS_KEYWORDS.some((statusKeyword) => normalizedStatusName.includes(statusKeyword))) {
-    return 0.2;
-  }
-
-  return 0;
-}
-
-function computeCompletionPercent(storyNodes: BlueprintStoryNode[]): number {
-  if (storyNodes.length === 0) {
-    return 0;
-  }
-
-  const completionWeightTotal = storyNodes.reduce(
-    (runningTotal, storyNode) => runningTotal + (readStoryCompletionWeight(storyNode) * readStoryPointWeight(storyNode)),
-    0,
-  );
-  const storyPointWeightTotal = storyNodes.reduce(
-    (runningTotal, storyNode) => runningTotal + readStoryPointWeight(storyNode),
-    0,
-  );
-  return storyPointWeightTotal > 0 ? Math.round((completionWeightTotal / storyPointWeightTotal) * 100) : 0;
-}
-
-function readStoryPointWeight(storyNode: BlueprintStoryNode): number {
-  return typeof storyNode.storyPoints === 'number' && storyNode.storyPoints > 0
-    ? storyNode.storyPoints
-    : DEFAULT_UNPOINTED_STORY_WEIGHT;
 }
 
 function detectOffTrainReasons(

@@ -187,6 +187,9 @@ const ALPHA_PAGE_WITH_FEATURE_KEY = {
     storage: {
       value: ALPHA_PAGE.body.storage.value
         .replace('Feature A', 'DENP-1352')
+        // Clear the Carry-Over cell: this fixture exercises the NORMAL estimate backfill, and a
+        // carryover row deliberately never writes its (remaining) estimate to Jira.
+        .replace('<td>Yes</td>\n              <td>P1</td>', '<td></td>\n              <td>P1</td>')
         .replace('<td>P1</td>', '<td>Manual priority</td>')
         .replace('<td>8</td>', '<td>5</td>')
         .replace('<td>Platform</td>', '<td>Legacy dependency note</td>')
@@ -649,6 +652,60 @@ describe('PiReviewTab', () => {
     expect(await within(currentSection).findByDisplayValue('Feature A')).toBeInTheDocument();
     expect(within(currentSection).queryByDisplayValue('Feature Done')).not.toBeInTheDocument();
     expect(await screen.findByText(/carried over 1 feature from pi 26\.2/i)).toBeInTheDocument();
+  });
+
+  it('estimates remaining points for a carryover Feature (dev 70% / test 30%) without touching Jira', async () => {
+    // A carryover row for DENP-1352; Jira has its full points (40). Dev child done, QA child open ⇒ 30% ⇒ 12.
+    const carryoverPage = {
+      ...ALPHA_PAGE,
+      body: { storage: { value: `
+        <table><tbody>
+          <tr>
+            <th>Carry-Over</th><th>Priority</th><th>Feature</th><th>Point Estimate</th>
+            <th>Dependency</th><th>Risks</th><th>Committed to PI?</th><th>Notes</th>
+          </tr>
+          <tr>
+            <td>Yes</td><td>P1</td><td>DENP-1352 - Carried Feature</td><td></td>
+            <td></td><td></td><td>Yes</td><td></td>
+          </tr>
+        </tbody></table>
+      `, representation: 'storage' } },
+    };
+    mockFetchConfluencePageByReference.mockResolvedValue(carryoverPage);
+    mockJiraGet.mockImplementation((path: string) => {
+      const decoded = decodeURIComponent(path);
+      if (decoded.includes('/rest/api/2/status')) return Promise.resolve([]);
+      // The carryover child fetch — dev done, QA open.
+      if (decoded.includes('cf[10108]')) {
+        return Promise.resolve({ issues: [
+          { key: 'DEV-1', fields: { summary: 'DEV: build', status: { name: 'Done', statusCategory: { key: 'done' } }, assignee: null, customfield_10108: 'DENP-1352' } },
+          { key: 'QA-1', fields: { summary: 'QA: test', status: { name: 'To Do', statusCategory: { key: 'new' } }, assignee: null, customfield_10108: 'DENP-1352' } },
+        ] });
+      }
+      // The page-load feature reconcile — Jira holds the FULL 40 points.
+      if (decoded.includes('/rest/api/2/search')) {
+        return Promise.resolve({ issues: [{ id: '1', key: 'DENP-1352', fields: {
+          summary: 'Carried Feature', status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } },
+          priority: null, assignee: null, reporter: null, issuetype: { name: 'Feature', iconUrl: '' },
+          created: '', updated: '', description: null, customfield_10028: 40, issuelinks: [],
+        } }] });
+      }
+      return Promise.reject(new Error(`unexpected path ${path}`));
+    });
+
+    renderPiReviewTab([DEFAULT_TEAMS[0]]);
+    const alphaSection = await screen.findByRole('region', { name: /alpha team pi review/i });
+    enterEditMode(alphaSection);
+
+    // The carryover row's estimate is not overwritten by Jira's 40 on load.
+    const estimateInput = within(alphaSection).getByLabelText(/point estimate for alpha team row 1/i);
+    expect(estimateInput).toHaveValue('');
+
+    fireEvent.click(within(alphaSection).getByRole('button', { name: /estimate carryover points/i }));
+
+    // Dev done (70% weight satisfied), internal testing untouched ⇒ 30% of 40 = 12 remaining.
+    await waitFor(() => expect(estimateInput).toHaveValue('12'));
+    await waitFor(() => expect(document.body.textContent).toMatch(/estimated remaining points for 1 carryover feature/i));
   });
 
   it('defaults to a read-only view mode and only shows structural controls in edit mode', async () => {
