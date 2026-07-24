@@ -10,6 +10,8 @@ import {
 } from '../SprintDashboard/featureReviewFixes.ts';
 
 const ART_SETTINGS_STORAGE_KEY = 'tbxARTSettings';
+/** The checkbox value a ticked Carry-Over cell carries — a carryover row's estimate is decoupled from Jira. */
+const PI_REVIEW_CARRY_OVER_MARKED_VALUE = 'Yes';
 const DEFAULT_DEPENDENCY_LINK_TYPES = ['blocks', 'is blocked by', 'depends on', 'is depended on by', 'relates to'];
 const FEATURE_QUERY_BATCH_SIZE = 50;
 const FEATURE_KEY_PATTERN = /\b[A-Z][A-Z0-9]+-\d+\b/i;
@@ -427,11 +429,22 @@ function reconcileSinglePiReviewRow(
   // mismatch was why an estimate typed in Toolbox left Jira's story-points field blank.
   const jiraStoryPoints = readIssueStoryPointsDisplayValue(jiraIssue);
   const jiraHasStoryPoints = jiraStoryPoints.trim() !== '';
-  const nextPointEstimate = jiraHasStoryPoints ? jiraStoryPoints : row.pointEstimate;
+
+  // A carried-over Feature's estimate is its REMAINING effort, which is deliberately NOT the Feature's
+  // full point value in Jira. So for a carryover row the estimate is decoupled from Jira BOTH ways:
+  // Jira never overwrites the remaining figure on reload (below), and it is never written back to Jira
+  // (the pending-update gate). Jira stays the source of truth for the true full points; Confluence and
+  // Toolbox hold the remaining effort.
+  const isCarryoverRow = row.carryOver === PI_REVIEW_CARRY_OVER_MARKED_VALUE;
+  const nextPointEstimate = isCarryoverRow
+    ? row.pointEstimate
+    : (jiraHasStoryPoints ? jiraStoryPoints : row.pointEstimate);
   const parsedRowEstimate = Number(row.pointEstimate);
   // Backfill is one-way and only when Jira is blank: correct an empty Jira field from Toolbox, never
   // the reverse. The value must parse to a finite number so it can match a dropdown option like "5".
-  const pendingEstimateUpdate = shouldQueueEstimateUpdates
+  // Carryover rows are excluded entirely — their remaining estimate must not reach Jira.
+  const pendingEstimateUpdate = !isCarryoverRow
+    && shouldQueueEstimateUpdates
     && !jiraHasStoryPoints
     && row.pointEstimate.trim() !== ''
     && Number.isFinite(parsedRowEstimate)

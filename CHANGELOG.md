@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **PI Review: estimate the remaining points on carryover Features.** For rows flagged **Carry-Over**, an **Estimate
+  carryover points** button computes how much work is left — fully deterministic, no AI. A Feature is pointed to its
+  Definition of Done (Code in Integrated Test), so its value covers development (70%) and internal testing (30%); the
+  estimate fetches the Feature's child issues, splits them Dev vs SL/QA (by summary keyword, falling back to the
+  assignee's roster role), and weights each side's completion accordingly. A Feature whose dev is done but QA is
+  untouched carries exactly 30% forward. It reuses the same completion maths the Blueprint tab shows, so the figure
+  can't contradict the progress elsewhere.
+- **Carryover estimates stay out of Jira, both ways.** A carryover row's Point Estimate holds *remaining* effort, not
+  the Feature's true point value. So for carryover rows the estimate is now decoupled from Jira in both directions:
+  it is never written back to Jira, and a page reload never overwrites it with Jira's full points. Jira stays the
+  source of truth for the full value; Confluence and Toolbox reflect what's left.
+
+### Added
 - **PI Review: a distinct "Carry to Next PI" column.** The existing **Carry-Over** column is retrospective — it means
   "this Feature arrived from a prior PI". The new v0.96.0 carry-over pull wrongly reused it to mean the opposite
   ("carry this forward"). There is now a separate optional **Carry to Next PI** column for that prospective mark, so

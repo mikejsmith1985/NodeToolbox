@@ -60,13 +60,17 @@ import {
   savePiReviewFeatureTransition,
   savePiReviewTransitionRequiredFields,
 } from './piReviewJira.ts';
-import { getStoryPointsCandidateFieldIds } from '../SprintDashboard/featureReviewFixes.ts';
+import { getStoryPointsCandidateFieldIds, readIssueStoryPointsDisplayValue } from '../SprintDashboard/featureReviewFixes.ts';
+import { estimateCarryoverRemainingPoints } from './carryoverEstimate.ts';
+import { fetchCarryoverChildrenByFeature } from './carryoverEstimateFetch.ts';
 import { useStandupRosterStore } from '../SprintDashboard/hooks/useStandupRosterStore.ts';
 import { pullPiReviewFeatures } from './piReviewPullFeatures.ts';
 import styles from './PiReviewTab.module.css';
 
 const LONG_TEXT_COLUMNS = new Set<PiReviewColumnKey>(['dependency', 'risks', 'notes']);
 const CHECKBOX_COLUMNS = new Set<PiReviewColumnKey>(['carryOver', 'committed', 'devWork', 'testSupport', 'carryToNext']);
+/** The value a ticked PI Review checkbox cell carries. */
+const PI_REVIEW_CHECKBOX_MARKED_VALUE = 'Yes';
 const FEATURE_COLUMN_KEY = 'feature';
 const FIST_OF_FIVE_VALUES = ['1', '2', '3', '4', '5'] as const;
 const CONFIDENCE_VOTE_MIN = 0;
@@ -746,6 +750,7 @@ function PiReviewPagePanel({
   // ── "Carry over from a previous PI" controls ──
   const [carryOverSourceKey, setCarryOverSourceKey] = useState('');
   const [isCarryingOver, setIsCarryingOver] = useState(false);
+  const [isEstimatingCarryover, setIsEstimatingCarryover] = useState(false);
   const [transitionOptionsByFeatureKey, setTransitionOptionsByFeatureKey] = useState<Record<string, JiraTransition[]>>({});
   const [isStatusPickerOpenByFeatureKey, setIsStatusPickerOpenByFeatureKey] = useState<Record<string, boolean>>({});
   const [isLoadingTransitionByFeatureKey, setIsLoadingTransitionByFeatureKey] = useState<Record<string, boolean>>({});
@@ -1223,6 +1228,63 @@ function PiReviewPagePanel({
       showToast(errorMessage, 'error');
     } finally {
       setIsCarryingOver(false);
+    }
+  }
+
+  /**
+   * Fills each carryover row's Point Estimate with its deterministic REMAINING points.
+   *
+   * A carried Feature is pointed to Definition of Done (dev + internal test); this fetches its
+   * children, weights development 70% and internal testing 30%, and writes the remaining effort into
+   * the row. Because the row is a carryover, that estimate stays in Confluence/Toolbox and is never
+   * pushed to (or overwritten by) Jira — Jira keeps the true full points.
+   */
+  async function handleEstimateCarryoverPoints() {
+    const carryoverRows = rows.filter((row) => row.carryOver === PI_REVIEW_CHECKBOX_MARKED_VALUE);
+    const featureKeyByRowId = new Map<string, string>();
+    carryoverRows.forEach((row) => {
+      const featureKey = extractPiReviewFeatureKey(row.feature);
+      if (featureKey !== null) featureKeyByRowId.set(row.rowId, featureKey);
+    });
+    if (featureKeyByRowId.size === 0) {
+      showToast('No carryover rows with a resolvable Jira Feature to estimate.', 'info');
+      return;
+    }
+
+    setIsEstimatingCarryover(true);
+    try {
+      const childrenByFeature = await fetchCarryoverChildrenByFeature([...featureKeyByRowId.values()], rosterMembers);
+      // Compute the remaining estimate for each carryover row's feature UP FRONT, so the count is known
+      // before the state update — reading it after setRows would see the pre-update value.
+      const remainingPointsByRowId = new Map<string, string>();
+      featureKeyByRowId.forEach((featureKey, rowId) => {
+        const featurePoints = readIssueStoryPointsDisplayValue(jiraIssueMap[featureKey] ?? { fields: {} });
+        const estimate = estimateCarryoverRemainingPoints(
+          featurePoints.trim() === '' ? null : Number(featurePoints),
+          childrenByFeature.get(featureKey) ?? [],
+        );
+        if (estimate !== null) remainingPointsByRowId.set(rowId, String(estimate.remainingPoints));
+      });
+      if (remainingPointsByRowId.size === 0) {
+        showToast('Could not estimate: the carried Features have no point value in Jira to work from.', 'info');
+        return;
+      }
+      setRows((currentRows) => currentRows.map((row) => {
+        const remaining = remainingPointsByRowId.get(row.rowId);
+        return remaining === undefined ? row : { ...row, pointEstimate: remaining };
+      }));
+      const estimatedCount = remainingPointsByRowId.size;
+      setHasUnsavedChanges(true);
+      showToast(
+        `Estimated remaining points for ${estimatedCount} carryover Feature${estimatedCount === 1 ? '' : 's'}. `
+          + 'These stay in Confluence/Toolbox — Jira keeps the full points. Save when ready.',
+        'success',
+      );
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to estimate carryover points.';
+      showToast(errorMessage, 'error');
+    } finally {
+      setIsEstimatingCarryover(false);
     }
   }
 
@@ -1776,7 +1838,7 @@ function PiReviewPagePanel({
 
   const isExportingPanel = isExportingImage;
   const isToolbarBusy = isLoading || isSaving || isExportingPanel || isUpdatingJiraDates
-    || isPullingFeatures || isCarryingOver;
+    || isPullingFeatures || isCarryingOver || isEstimatingCarryover;
   const hasPendingConfluenceRewrite = useMemo(() => {
     if (!tableBinding || pageVersionNumber === null || resolvedPageId === '') {
       return false;
@@ -2055,6 +2117,15 @@ function PiReviewPagePanel({
                 </span>
               </span>
             )}
+            <button
+              className={joinClassNames(styles.actionButton, styles.actionButtonSecondary)}
+              disabled={isToolbarBusy || !tableBinding}
+              onClick={() => void handleEstimateCarryoverPoints()}
+              type="button"
+              title="Estimate the remaining points for carryover rows (dev 70% / internal test 30%). Stays in Confluence/Toolbox — never written to Jira."
+            >
+              {isEstimatingCarryover ? 'Estimating…' : 'Estimate carryover points'}
+            </button>
           </>
         )}
       </div>
