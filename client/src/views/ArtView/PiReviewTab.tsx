@@ -1242,9 +1242,16 @@ function PiReviewPagePanel({
   async function handleEstimateCarryoverPoints() {
     const carryoverRows = rows.filter((row) => row.carryOver === PI_REVIEW_CHECKBOX_MARKED_VALUE);
     const featureKeyByRowId = new Map<string, string>();
+    // The Feature's full points, taken FIRST from the value carried over from the prior PI Review page —
+    // that is why the estimate does not need Jira for the points. Only where a row arrived without a
+    // value do we fall back to reading Jira's Story Points (Selection) field for that Feature.
+    const carriedPointsByRowId = new Map<string, string>();
     carryoverRows.forEach((row) => {
       const featureKey = extractPiReviewFeatureKey(row.feature);
-      if (featureKey !== null) featureKeyByRowId.set(row.rowId, featureKey);
+      if (featureKey !== null) {
+        featureKeyByRowId.set(row.rowId, featureKey);
+        carriedPointsByRowId.set(row.rowId, row.pointEstimate.trim());
+      }
     });
     if (featureKeyByRowId.size === 0) {
       showToast('No carryover rows with a resolvable Jira Feature to estimate.', 'info');
@@ -1258,15 +1265,20 @@ function PiReviewPagePanel({
       // before the state update — reading it after setRows would see the pre-update value.
       const remainingPointsByRowId = new Map<string, string>();
       featureKeyByRowId.forEach((featureKey, rowId) => {
-        const featurePoints = readIssueStoryPointsDisplayValue(jiraIssueMap[featureKey] ?? { fields: {} });
+        // Prefer the carried-over value; only read Jira when the row arrived without one.
+        const carriedPoints = carriedPointsByRowId.get(rowId) ?? '';
+        const featurePointsText = carriedPoints !== ''
+          ? carriedPoints
+          : readIssueStoryPointsDisplayValue(jiraIssueMap[featureKey] ?? { fields: {} });
+        const featurePointsNumber = Number(featurePointsText);
         const estimate = estimateCarryoverRemainingPoints(
-          featurePoints.trim() === '' ? null : Number(featurePoints),
+          featurePointsText.trim() === '' || !Number.isFinite(featurePointsNumber) ? null : featurePointsNumber,
           childrenByFeature.get(featureKey) ?? [],
         );
         if (estimate !== null) remainingPointsByRowId.set(rowId, String(estimate.remainingPoints));
       });
       if (remainingPointsByRowId.size === 0) {
-        showToast('Could not estimate: the carried Features have no point value in Jira to work from.', 'info');
+        showToast('Could not estimate: no point value was carried over or found in Jira for these Features.', 'info');
         return;
       }
       setRows((currentRows) => currentRows.map((row) => {

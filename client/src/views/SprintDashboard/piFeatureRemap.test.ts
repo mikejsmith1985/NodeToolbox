@@ -3,7 +3,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import type { JiraIssue } from '../../types/jira.ts';
-import type { BlueprintFeatureNode } from '../ArtView/blueprintHierarchy.ts';
 
 const { mockJiraGet, mockFetchScopedTeamFeatures } = vi.hoisted(() => ({
   mockJiraGet: vi.fn(),
@@ -50,144 +49,43 @@ function buildJiraIssue(overrides: {
   };
 }
 
-function buildFeatureNode(key: string, summary: string): BlueprintFeatureNode {
-  return {
-    type: 'feature',
-    key,
-    summary,
-    status: 'In Progress',
-    health: 'green',
-    completionPercent: 50,
-    children: [{ key: 'TBX-1' }] as BlueprintFeatureNode['children'],
-    offTrain: [],
-    isExternal: true,
-  };
-}
 
 describe('piFeatureRemap helpers', () => {
-  it('discovers prior and current PI features from linked team issues instead of project-scoped feature queries', async () => {
+  it('lists every project PI newest-first and defaults source to the current PI, target to the next PI', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-07-24T12:00:00.000Z')); // inside PI 26.3
     mockJiraGet.mockReset();
     mockFetchScopedTeamFeatures.mockReset();
     mockJiraGet.mockImplementation((path: string) => {
-      const decodedPath = decodeURIComponent(path);
-      if (decodedPath.includes('project = "TBX" AND cf[10301] is not EMPTY')) {
+      if (decodeURIComponent(path).includes('cf[10301] is not EMPTY')) {
         return Promise.resolve({
           issues: [
-            buildJiraIssue({ fields: { customfield_10301: 'PI 26.3 (05/01/26 - 06/30/26)' } }),
-            buildJiraIssue({ key: 'TBX-102', fields: { customfield_10301: 'PI 26.2 (02/01/26 - 04/30/26)' } }),
+            buildJiraIssue({ key: 'A-1', fields: { customfield_10301: 'PI 26.4 (07/30/26 - 09/30/26)' } }),
+            buildJiraIssue({ key: 'A-2', fields: { customfield_10301: 'PI 26.3 (05/21/26 - 07/29/26)' } }),
+            buildJiraIssue({ key: 'A-3', fields: { customfield_10301: 'PI 26.2 (03/12/26 - 05/20/26)' } }),
           ],
         });
       }
-
-      if (decodedPath.includes('project = "TBX" AND cf[10301] = "PI 26.2 (02/01/26 - 04/30/26)"')) {
-        return Promise.resolve({
-          issues: [
-            buildJiraIssue({
-              key: 'TBX-201',
-              fields: {
-                summary: 'Prior PI carryover story',
-                customfield_10108: 'ART-5000',
-              },
-            }),
-          ],
-        });
-      }
-
-      if (decodedPath.includes('project = "TBX" AND cf[10301] = "PI 26.3 (05/01/26 - 06/30/26)"')) {
-        return Promise.resolve({
-          issues: [
-            buildJiraIssue({
-              key: 'TBX-301',
-              fields: {
-                summary: 'Current PI carryover story',
-                customfield_10108: 'ART-6000',
-              },
-            }),
-          ],
-        });
-      }
-
-      if (decodedPath.includes('key in (ART-5000)')) {
-        return Promise.resolve({
-          issues: [
-            buildJiraIssue({
-              key: 'ART-5000',
-              fields: {
-                summary: 'Prior PI external feature',
-                issuetype: { name: 'Feature', iconUrl: '' },
-              },
-            }),
-          ],
-        });
-      }
-
-      if (decodedPath.includes('key in (ART-6000)')) {
-        return Promise.resolve({
-          issues: [
-            buildJiraIssue({
-              key: 'ART-6000',
-              fields: {
-                summary: 'Current PI external feature',
-                issuetype: { name: 'Feature', iconUrl: '' },
-              },
-            }),
-          ],
-        });
-      }
-
-      if (decodedPath.includes('"Epic Link" in (ART-5000)') || decodedPath.includes('"Epic Link" in (ART-6000)')) {
-        return Promise.resolve({ issues: [] });
-      }
-
-      if (decodedPath.includes('parent in (TBX-201)') || decodedPath.includes('parent in (TBX-301)')) {
-        return Promise.resolve({ issues: [] });
-      }
-
       return Promise.resolve({ issues: [] });
     });
-    mockFetchScopedTeamFeatures
-      .mockResolvedValueOnce([
-        {
-          feature: buildFeatureNode('ART-5000', 'Prior PI external feature'),
-          featureIssue: buildJiraIssue({
-            key: 'ART-5000',
-            fields: {
-              summary: 'Prior PI external feature',
-              issuetype: { name: 'Feature', iconUrl: '' },
-              customfield_10301: 'PI 26.2 (02/01/26 - 04/30/26)',
-            },
-          }),
-        },
-      ])
-      .mockResolvedValueOnce([
-        {
-          feature: buildFeatureNode('ART-6000', 'Current PI external feature'),
-          featureIssue: buildJiraIssue({
-            key: 'ART-6000',
-            fields: {
-              summary: 'Current PI external feature',
-              issuetype: { name: 'Feature', iconUrl: '' },
-              customfield_10301: 'PI 26.3 (05/01/26 - 06/30/26)',
-            },
-          }),
-        },
-      ]);
 
-    const piOptions = await fetchFeatureRemapPiOptions('TBX', 'PI 26.3 (05/01/26 - 06/30/26)');
+    const piOptions = await fetchFeatureRemapPiOptions('TBX', 'PI 26.3 (05/21/26 - 07/29/26)');
 
-    expect(piOptions.priorPiFeatures).toEqual([
-      { key: 'ART-5000', summary: 'Prior PI external feature', piValue: 'PI 26.2 (02/01/26 - 04/30/26)' },
+    // Newest-first, and every PI offered so either selector can pick any of them.
+    expect(piOptions.allPiNames).toEqual([
+      'PI 26.4 (07/30/26 - 09/30/26)',
+      'PI 26.3 (05/21/26 - 07/29/26)',
+      'PI 26.2 (03/12/26 - 05/20/26)',
     ]);
-    expect(piOptions.currentPiFeatures).toEqual([
-      { key: 'ART-6000', summary: 'Current PI external feature', piValue: 'PI 26.3 (05/01/26 - 06/30/26)' },
-    ]);
-    expect(
-      mockJiraGet.mock.calls.some(([path]) =>
-        decodeURIComponent(String(path)).includes('issuetype in ("Feature", "Epic")'),
-      ),
-    ).toBe(false);
-    expect(mockFetchScopedTeamFeatures).toHaveBeenCalledTimes(2);
+    // Today is in 26.3; closeout moves its leftovers INTO 26.4 — so the user sees they are on the next PI.
+    expect(piOptions.defaultSourcePiName).toBe('PI 26.3 (05/21/26 - 07/29/26)');
+    expect(piOptions.defaultTargetPiName).toBe('PI 26.4 (07/30/26 - 09/30/26)');
+    // Features are loaded per selected PI, not pre-fetched here.
+    expect(mockFetchScopedTeamFeatures).not.toHaveBeenCalled();
+
+    vi.useRealTimers();
   });
+
 
   it('builds a Jira search path that targets open child issues under the old feature', () => {
     expect(buildFeatureRemapSearchPath('tbx', 'tbx-123', 'customfield_10108', 'customfield_10301')).toContain(
