@@ -597,14 +597,33 @@ describe('PiReviewTab', () => {
     expect(within(alphaSection).getByLabelText(/feature for alpha team row 3/i)).toHaveValue('Feature Z');
   });
 
-  it('carries the Carry-Over-marked Features over from a previously-configured PI page', async () => {
-    // The current PI page starts without Feature A; the prior PI page has it marked Carry-Over.
+  it('carries Features marked “Carry to Next PI” forward from a previously-configured PI page', async () => {
+    // The prior PI page marks Feature A with the new "Carry to Next PI" column; the current page is empty.
+    const priorPiPage = {
+      ...ALPHA_PAGE,
+      body: { storage: { value: `
+        <table><tbody>
+          <tr>
+            <th>Carry-Over</th><th>Priority</th><th>Feature</th><th>Point Estimate</th>
+            <th>Dependency</th><th>Risks</th><th>Committed to PI?</th><th>Notes</th><th>Carry to Next PI?</th>
+          </tr>
+          <tr>
+            <td></td><td>P1</td><td>Feature A</td><td>8</td>
+            <td></td><td></td><td>Yes</td><td>keep going</td><td>Yes</td>
+          </tr>
+          <tr>
+            <td></td><td>P2</td><td>Feature Done</td><td>3</td>
+            <td></td><td></td><td>Yes</td><td></td><td></td>
+          </tr>
+        </tbody></table>
+      `, representation: 'storage' } },
+    };
     const emptyCurrentPage = {
       ...ALPHA_PAGE,
       body: { storage: { value: ALPHA_PAGE.body.storage.value.replace(/<tr>\s*<td>Yes<\/td>[\s\S]*?<\/tr>/, ''), representation: 'storage' } },
     };
     mockFetchConfluencePageByReference.mockImplementation((reference: string) =>
-      Promise.resolve(reference.includes('Alpha262') ? ALPHA_PAGE : emptyCurrentPage));
+      Promise.resolve(reference.includes('Alpha262') ? priorPiPage : emptyCurrentPage));
 
     renderPiReviewTab([{
       id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: 'ALPHA',
@@ -626,8 +645,9 @@ describe('PiReviewTab', () => {
     });
     fireEvent.click(within(currentSection).getByRole('button', { name: /^carry over$/i }));
 
-    // Feature A, marked Carry-Over on 26.2, arrives on 26.3.
+    // Only Feature A (marked "Carry to Next PI" on 26.2) arrives — "Feature Done", unmarked, does not.
     expect(await within(currentSection).findByDisplayValue('Feature A')).toBeInTheDocument();
+    expect(within(currentSection).queryByDisplayValue('Feature Done')).not.toBeInTheDocument();
     expect(await screen.findByText(/carried over 1 feature from pi 26\.2/i)).toBeInTheDocument();
   });
 
