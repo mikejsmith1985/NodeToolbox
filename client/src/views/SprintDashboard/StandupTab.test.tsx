@@ -1,7 +1,7 @@
 // StandupTab.test.tsx — Rendering tests for the Team Dashboard standup board-walk and live DSU-style person-walk modes.
 
 import { fireEvent, render, screen } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { JiraIssue } from '../../types/jira.ts';
 
@@ -33,10 +33,15 @@ vi.mock('../DsuBoard/DsuBoardView.tsx', () => ({
 
 import StandupTab from './StandupTab.tsx';
 
+/**
+ * Yesterday as a full ISO timestamp, computed the SAME way the component derives "yesterday" (see
+ * StandupTab's readYesterdayIsoDate): from the injected clock, in UTC. The follow-through compares an
+ * issue's `updated` date against that yesterday, so the two must agree — using local hours here made
+ * the test drift by a day near midnight / in some timezones, which is why it was intermittently red.
+ */
 function readYesterdayIsoTimestamp(): string {
   const yesterdayDate = new Date();
-  yesterdayDate.setDate(yesterdayDate.getDate() - 1);
-  yesterdayDate.setHours(12, 0, 0, 0);
+  yesterdayDate.setUTCDate(yesterdayDate.getUTCDate() - 1);
   return yesterdayDate.toISOString();
 }
 
@@ -76,6 +81,10 @@ function buildIssue(
 
 describe('StandupTab', () => {
   beforeEach(() => {
+    // Pin only the Date clock (promises/timers stay real) so "yesterday" is deterministic. Noon UTC is
+    // deliberately far from any midnight boundary, and both the fixture and the component read it.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-07-15T12:00:00.000Z'));
     vi.clearAllMocks();
     mockUseSprintStandupState.mockReturnValue({
       state: {
@@ -117,6 +126,10 @@ describe('StandupTab', () => {
         postPersonWalkComment: vi.fn().mockResolvedValue(undefined),
       },
     });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it('renders the legacy board-walk controls and blocker panel', () => {
