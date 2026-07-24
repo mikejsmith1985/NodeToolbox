@@ -771,7 +771,7 @@ describe('PiReviewTab', () => {
     expect(within(alphaSection).getByText('Feature A')).toBeInTheDocument();
     expect(within(alphaSection).getByRole('button', { name: /edit pi review/i })).toHaveAttribute('aria-pressed', 'false');
     expect(within(alphaSection).queryByLabelText(/feature for alpha team row 1/i)).not.toBeInTheDocument();
-    expect(within(alphaSection).queryByRole('button', { name: /move up/i })).not.toBeInTheDocument();
+    expect(within(alphaSection).queryByRole('button', { name: /reorder/i })).not.toBeInTheDocument();
     expect(within(alphaSection).getByRole('button', { name: /save to confluence/i })).toBeDisabled();
 
     enterEditMode(alphaSection);
@@ -1916,7 +1916,8 @@ describe('PiReviewTab', () => {
     fireEvent.change(within(alphaSection).getByLabelText(/feature for alpha team row 2/i), {
       target: { value: 'Committed feature' },
     });
-    fireEvent.click(within(alphaSection).getAllByRole('button', { name: /move up/i })[1]);
+    // Reorder via the drag handle's keyboard path (Arrow Up) — the accessible equivalent of dragging.
+    fireEvent.keyDown(within(alphaSection).getAllByRole('button', { name: /reorder/i })[1], { key: 'ArrowUp' });
     fireEvent.click(within(alphaSection).getAllByRole('button', { name: /set stretch goals line below/i })[0]);
     fireEvent.click(within(alphaSection).getByRole('button', { name: /save to confluence/i }));
 
@@ -1972,7 +1973,7 @@ describe('PiReviewTab', () => {
 
     const alphaSection = await screen.findByRole('region', { name: /alpha team pi review/i });
     enterEditMode(alphaSection);
-    fireEvent.click(within(alphaSection).getAllByRole('button', { name: /move up/i })[2]);
+    fireEvent.keyDown(within(alphaSection).getAllByRole('button', { name: /reorder/i })[2], { key: 'ArrowUp' });
     fireEvent.click(within(alphaSection).getByRole('button', { name: /save to confluence/i }));
 
     await waitFor(() => {
@@ -1982,6 +1983,48 @@ describe('PiReviewTab', () => {
     const savedStorageValue = mockUpdateConfluencePage.mock.calls[0][0].storageValue;
     expect(savedStorageValue.indexOf('Feature A')).toBeLessThan(savedStorageValue.indexOf('Stretch Feature'));
     expect(savedStorageValue.indexOf('Committed Feature')).toBeLessThan(savedStorageValue.indexOf('Hard commits above / Stretch goals below'));
+  });
+
+  it('reorders rows by dragging one onto another', async () => {
+    // ALPHA_PAGE has a single PI Review row; add a second so there is something to reorder.
+    const alphaPageWithTwoRows = createAlphaPageWithExtraPiReviewRows(`
+            <tr>
+              <td>No</td>
+              <td>P2</td>
+              <td>Second Feature</td>
+              <td>5</td>
+              <td>None</td>
+              <td>Low</td>
+              <td></td>
+              <td>Second note</td>
+            </tr>`);
+    mockFetchConfluencePageByReference.mockResolvedValue(alphaPageWithTwoRows);
+    mockUpdateConfluencePage.mockImplementation((savePayload: { storageValue: string }) =>
+      Promise.resolve({
+        ...alphaPageWithTwoRows,
+        version: { number: 8 },
+        body: { storage: { value: savePayload.storageValue, representation: 'storage' } },
+      }));
+
+    renderPiReviewTab([DEFAULT_TEAMS[0]]);
+
+    const alphaSection = await screen.findByRole('region', { name: /alpha team pi review/i });
+    enterEditMode(alphaSection);
+
+    // Drag row 2's handle onto row 1 — the second feature should end up first.
+    const reorderHandles = within(alphaSection).getAllByRole('button', { name: /reorder/i });
+    fireEvent.dragStart(reorderHandles[1]);
+    const firstRow = within(alphaSection).getByLabelText(/feature for alpha team row 1/i).closest('tr') as HTMLElement;
+    fireEvent.dragOver(firstRow);
+    fireEvent.drop(firstRow);
+
+    fireEvent.click(within(alphaSection).getByRole('button', { name: /save to confluence/i }));
+
+    await waitFor(() => {
+      expect(mockUpdateConfluencePage).toHaveBeenCalledTimes(1);
+    });
+    const savedStorageValue = mockUpdateConfluencePage.mock.calls[0][0].storageValue;
+    expect(savedStorageValue.indexOf('Second Feature')).toBeLessThan(savedStorageValue.indexOf('Feature A'));
   });
 
   it('retries the save with the latest Confluence version after a version conflict', async () => {
