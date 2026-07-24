@@ -1047,28 +1047,28 @@ describe('buildCarryOverRows', () => {
     return { ...createEmptyPiReviewRow(), ...overrides };
   }
 
-  it('carries only the rows marked Carry-Over', () => {
+  it('carries only the rows marked “Carry to Next PI”, not the retrospective Carry-Over column', () => {
     const source = [
-      row({ feature: 'ALPHA-1 - Keep', carryOver: 'Yes', notes: 'context' }),
-      row({ feature: 'ALPHA-2 - Drop', carryOver: '' }),
+      row({ feature: 'ALPHA-1 - Keep', carryToNext: 'Yes', notes: 'context' }),
+      row({ feature: 'ALPHA-2 - FromPrior', carryOver: 'Yes' }), // arrived from a prior PI, not marked to continue
+      row({ feature: 'ALPHA-3 - Drop' }),
     ];
 
     const carried = buildCarryOverRows(source, []);
 
-    expect(carried).toHaveLength(1);
-    expect(carried[0].feature).toBe('ALPHA-1 - Keep');
+    expect(carried.map((carriedRow) => carriedRow.feature)).toEqual(['ALPHA-1 - Keep']);
     expect(carried[0].notes).toBe('context'); // planning context is kept
   });
 
-  it('resets the Carry-Over box on the brought-forward row', () => {
-    // Arriving from the prior PI is not itself a decision to carry on again.
-    const carried = buildCarryOverRows([row({ feature: 'ALPHA-1', carryOver: 'Yes' })], []);
+  it('marks the brought-forward row as Carry-Over (it IS from the prior PI) and resets Carry to Next PI', () => {
+    const carried = buildCarryOverRows([row({ feature: 'ALPHA-1', carryToNext: 'Yes' })], []);
 
-    expect(carried[0].carryOver).toBe('');
+    expect(carried[0].carryOver).toBe('Yes'); // it genuinely arrived from the prior PI
+    expect(carried[0].carryToNext).toBe(''); // whether it continues again is re-decided here
   });
 
   it('gives each carried row a fresh rowId, not the source row id', () => {
-    const source = [row({ feature: 'ALPHA-1', carryOver: 'Yes' })];
+    const source = [row({ feature: 'ALPHA-1', carryToNext: 'Yes' })];
 
     const carried = buildCarryOverRows(source, []);
 
@@ -1077,22 +1077,61 @@ describe('buildCarryOverRows', () => {
   });
 
   it('skips a feature already present on the current page, so carrying over twice cannot duplicate', () => {
-    const source = [row({ feature: 'ALPHA-1 - Feature', carryOver: 'Yes' })];
+    const source = [row({ feature: 'ALPHA-1 - Feature', carryToNext: 'Yes' })];
     const existing = [row({ feature: 'alpha-1 - feature' })]; // same feature, different case
 
     expect(buildCarryOverRows(source, existing)).toHaveLength(0);
   });
 
   it('ignores a marked row with an empty feature cell', () => {
-    expect(buildCarryOverRows([row({ feature: '   ', carryOver: 'Yes' })], [])).toHaveLength(0);
+    expect(buildCarryOverRows([row({ feature: '   ', carryToNext: 'Yes' })], [])).toHaveLength(0);
   });
 
   it('does not mutate the source rows', () => {
-    const source = [row({ feature: 'ALPHA-1', carryOver: 'Yes' })];
+    const source = [row({ feature: 'ALPHA-1', carryToNext: 'Yes' })];
     const snapshot = JSON.stringify(source);
 
     buildCarryOverRows(source, []);
 
     expect(JSON.stringify(source)).toBe(snapshot);
+  });
+});
+
+describe('readPiReviewColumnKeyFromHeader — Carry to Next PI vs Carry-Over', () => {
+  it('maps a "Carry to Next PI" header to its own column, not carryOver', () => {
+    const parsed = parsePiReviewTable(`
+      <table><tbody>
+        <tr>
+          <th>Carry-Over</th><th>Priority</th><th>Feature</th><th>Point Estimate</th>
+          <th>Dependency</th><th>Risks</th><th>Committed to PI?</th><th>Notes</th><th>Carry to Next PI?</th>
+        </tr>
+        <tr>
+          <td></td><td>P1</td><td>ALPHA-1</td><td>5</td>
+          <td></td><td></td><td>Yes</td><td></td><td>Yes</td>
+        </tr>
+      </tbody></table>
+    `);
+
+    // The prospective mark lands in carryToNext; the retrospective Carry-Over stays empty.
+    expect(parsed?.rows[0].carryToNext).toBe('Yes');
+    expect(parsed?.rows[0].carryOver).toBe('');
+  });
+
+  it('still maps the retrospective "Carry-Over from a Commit" header to carryOver', () => {
+    const parsed = parsePiReviewTable(`
+      <table><tbody>
+        <tr>
+          <th>YES - If this is a Carry-Over from a 26.2 Commit?</th><th>Priority</th><th>Feature</th>
+          <th>Point Estimate</th><th>Dependency</th><th>Risks</th><th>Committed to PI?</th><th>Notes</th>
+        </tr>
+        <tr>
+          <td>Yes</td><td>P1</td><td>ALPHA-1</td><td>5</td>
+          <td></td><td></td><td>Yes</td><td></td>
+        </tr>
+      </tbody></table>
+    `);
+
+    expect(parsed?.rows[0].carryOver).toBe('Yes');
+    expect(parsed?.rows[0].carryToNext).toBe('');
   });
 });

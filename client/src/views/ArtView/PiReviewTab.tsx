@@ -66,7 +66,7 @@ import { pullPiReviewFeatures } from './piReviewPullFeatures.ts';
 import styles from './PiReviewTab.module.css';
 
 const LONG_TEXT_COLUMNS = new Set<PiReviewColumnKey>(['dependency', 'risks', 'notes']);
-const CHECKBOX_COLUMNS = new Set<PiReviewColumnKey>(['carryOver', 'committed', 'devWork', 'testSupport']);
+const CHECKBOX_COLUMNS = new Set<PiReviewColumnKey>(['carryOver', 'committed', 'devWork', 'testSupport', 'carryToNext']);
 const FEATURE_COLUMN_KEY = 'feature';
 const FIST_OF_FIVE_VALUES = ['1', '2', '3', '4', '5'] as const;
 const CONFIDENCE_VOTE_MIN = 0;
@@ -2049,6 +2049,10 @@ function PiReviewPagePanel({
                 >
                   {isCarryingOver ? 'Carrying over…' : 'Carry over'}
                 </button>
+                <span className={styles.pullFeaturesHint}>
+                  Brings forward the Features that PI marked <strong>Carry to Next PI</strong> (an optional column —
+                  enable it there to mark items). They arrive here flagged <strong>Carry-Over</strong>.
+                </span>
               </span>
             )}
           </>

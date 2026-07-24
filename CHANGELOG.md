@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **PI Review: a distinct "Carry to Next PI" column.** The existing **Carry-Over** column is retrospective — it means
+  "this Feature arrived from a prior PI". The new v0.96.0 carry-over pull wrongly reused it to mean the opposite
+  ("carry this forward"). There is now a separate optional **Carry to Next PI** column for that prospective mark, so
+  the two directions never share a checkbox. Enable it (optional columns) on the PI you are planning FROM, tick the
+  Features that will continue, then on the next PI's page use **Carry over from…** — those Features are brought
+  forward and, correctly, arrive flagged **Carry-Over** (they genuinely came from the prior PI). Off by default, so
+  existing pages are unchanged until you enable it.
+
 ### Fixed
 - **PI Review "Add row" is now where you'd expect it.** The button sat in the top toolbar, far above the table, and
   appended the new row to the very bottom — out of sight. It is replaced by a **+ Add row** button directly beneath

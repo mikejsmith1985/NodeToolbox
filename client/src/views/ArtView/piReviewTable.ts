@@ -76,9 +76,10 @@ export type PiReviewColumnKey =
   | 'committed'
   | 'notes'
   | 'devWork'
-  | 'testSupport';
+  | 'testSupport'
+  | 'carryToNext';
 
-export type OptionalPiReviewColumnKey = 'devWork' | 'testSupport';
+export type OptionalPiReviewColumnKey = 'devWork' | 'testSupport' | 'carryToNext';
 
 export interface PiReviewRow {
   rowId: string;
@@ -92,6 +93,10 @@ export interface PiReviewRow {
   notes: string;
   devWork: string;
   testSupport: string;
+  // "Carry to Next PI" — a PROSPECTIVE mark meaning "continue this into the next PI". Distinct from
+  // `carryOver`, which is RETROSPECTIVE ("this arrived from a prior PI"). The carry-over pull reads
+  // this column, not carryOver, so the two directions never share one checkbox.
+  carryToNext: string;
 }
 
 export interface PiReviewTableBinding {
@@ -144,6 +149,7 @@ export const PI_REVIEW_COLUMN_LABELS: Record<PiReviewColumnKey, string> = {
   notes: 'Implementation Notes',
   devWork: 'Dev Work',
   testSupport: 'Test Support',
+  carryToNext: 'Carry to Next PI',
 };
 
 export const CONFIDENCE_VOTE_COLUMN_LABELS: Record<ConfidenceVoteColumnKey, string> = {
@@ -166,6 +172,7 @@ export const CORE_PI_REVIEW_COLUMN_KEYS: PiReviewColumnKey[] = [
 export const OPTIONAL_PI_REVIEW_COLUMN_KEYS: OptionalPiReviewColumnKey[] = [
   'devWork',
   'testSupport',
+  'carryToNext',
 ];
 
 const CONFIDENCE_VOTE_COLUMN_KEYS: ConfidenceVoteColumnKey[] = [
@@ -269,6 +276,7 @@ export function createEmptyPiReviewRow(): PiReviewRow {
     notes: '',
     devWork: '',
     testSupport: '',
+    carryToNext: '',
   };
 }
 
@@ -276,18 +284,18 @@ export function createEmptyPiReviewRow(): PiReviewRow {
 const CHECKBOX_MARKED_VALUE = 'Yes';
 
 /**
- * Selects the rows a prior PI marked to carry over, and clones them as fresh rows for the next PI.
+ * Selects the Features a prior PI marked to carry FORWARD, and clones them as fresh rows for the next PI.
  *
- * "Carry-Over" is the checkbox a team ticks on a Feature they expect to continue into the next PI.
- * This pulls exactly those from a source page and prepares them for the current page:
- *   • a fresh rowId, so it is a new row here rather than a reference to the old page's row;
- *   • the Carry-Over box RESET, because arriving from the prior PI is not itself a decision to carry
- *     on again — the team re-marks it only if it will;
- *   • features already present on the current page are skipped, so carrying over twice cannot
- *     duplicate a row.
+ * The two directions are deliberately separate columns, which is what keeps this unambiguous:
+ *   • it reads **"Carry to Next PI"** (`carryToNext`) — the prospective mark a team ticks on the
+ *     source page for work they intend to continue;
+ *   • each brought-forward row lands with **"Carry-Over" set to Yes**, because it genuinely IS now a
+ *     carryover FROM the prior PI — the retrospective column's true meaning;
+ *   • and its **"Carry to Next PI" reset**, because whether it continues again is not yet decided.
  *
- * Everything else (points, notes, dependencies, risks, committed) is kept, since that is the planning
- * context worth bringing forward.
+ * Also: a fresh rowId (a new row here, not a reference to the old page's), and features already on the
+ * current page are skipped so carrying over twice cannot duplicate. Everything else (points, notes,
+ * dependencies, risks, committed) is kept as the planning context worth bringing forward.
  */
 export function buildCarryOverRows(
   sourceRows: readonly PiReviewRow[],
@@ -298,10 +306,15 @@ export function buildCarryOverRows(
   );
 
   return sourceRows
-    .filter((row) => row.carryOver === CHECKBOX_MARKED_VALUE
+    .filter((row) => row.carryToNext === CHECKBOX_MARKED_VALUE
       && row.feature.trim() !== ''
       && !existingFeatureKeys.has(row.feature.trim().toLowerCase()))
-    .map((row) => ({ ...row, rowId: createRowId(), carryOver: '' }));
+    .map((row) => ({
+      ...row,
+      rowId: createRowId(),
+      carryOver: CHECKBOX_MARKED_VALUE, // it arrived from the prior PI
+      carryToNext: '', // intent to carry on again is re-decided here
+    }));
 }
 
 /** Creates a blank confidence row ready for week-over-week fist-of-five tracking. */
@@ -494,6 +507,11 @@ function normalizeHeaderText(headerText: string): string {
 
 function readPiReviewColumnKeyFromHeader(headerText: string): PiReviewColumnKey | null {
   const normalizedHeaderText = normalizeHeaderText(headerText);
+  // "Carry to Next PI" must be tested BEFORE the carry-over rule, since both contain "carry"; its
+  // "next" marker is what tells the prospective column apart from the retrospective carry-over one.
+  if (normalizedHeaderText.includes('carrytonext') || normalizedHeaderText.includes('nextpi')) {
+    return 'carryToNext';
+  }
   if ((normalizedHeaderText.startsWith('yes') && normalizedHeaderText.includes('carry')) || normalizedHeaderText.includes('carryover')) {
     return 'carryOver';
   }
