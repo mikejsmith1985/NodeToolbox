@@ -453,6 +453,7 @@ function reconcileSinglePiReviewRow(
 
   const nextRow: PiReviewRow = {
     ...row,
+    feature: expandBareFeatureKeyWithSummary(row.feature, jiraIssue),
     priority: jiraIssue.fields.priority?.name?.trim() ?? '',
     pointEstimate: nextPointEstimate,
     dependency: derivedDependencies,
@@ -465,6 +466,9 @@ function reconcileSinglePiReviewRow(
 
   // Collect field-level changes so the UI can show users what Jira updated on load.
   const fieldChanges: PiReviewJiraFieldChange[] = [];
+  // Note: `feature` is intentionally NOT listed here. Expanding a bare key to "KEY - Summary" still
+  // marks the row changed (so it persists), but it is a silent normalisation — not worth a line in the
+  // "Jira updated N fields on load" notice, which is reserved for Jira-owned column values.
   const fieldLabelsByKey: Record<string, string> = {
     priority: 'Priority',
     pointEstimate: 'Points',
@@ -487,6 +491,27 @@ function reconcileSinglePiReviewRow(
 export function extractPiReviewFeatureKey(featureCellValue: string): string | null {
   const matchedFeatureKey = featureCellValue.trim().match(FEATURE_KEY_PATTERN);
   return matchedFeatureKey ? matchedFeatureKey[0].toUpperCase() : null;
+}
+
+/**
+ * Expands a hand-typed BARE feature key ("DENP-1414") into the "KEY - Summary" form that the Pull
+ * Features button produces, using Jira's summary. Only a cell that is *just* the key is expanded —
+ * a cell that already carries a summary or a custom label is left exactly as the user wrote it, and a
+ * key with no Jira summary stays as the key. This makes reconciliation idempotent: once expanded, the
+ * cell is no longer bare, so a later reload does not touch it again.
+ */
+export function expandBareFeatureKeyWithSummary(featureCellValue: string, jiraIssue: JiraIssue | undefined): string {
+  const featureKey = extractPiReviewFeatureKey(featureCellValue);
+  if (!featureKey) {
+    return featureCellValue;
+  }
+  const jiraSummary = jiraIssue?.fields.summary?.trim();
+  if (!jiraSummary) {
+    return featureCellValue;
+  }
+  // "Bare" means the whole cell is only the key (case-insensitive) — nothing after it to preserve.
+  const isBareKey = featureCellValue.trim().toUpperCase() === featureKey;
+  return isBareKey ? `${featureKey} - ${jiraSummary}` : featureCellValue;
 }
 
 /** Formats the read-only PI Review feature cell so users see the Jira key and current summary together. */

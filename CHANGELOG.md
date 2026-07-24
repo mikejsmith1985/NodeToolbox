@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **A hand-typed feature key fills in its summary.** Type just a key (e.g. `DENP-1414`) into a PI Review row and,
+  once Jira details are pulled in, the cell is rewritten to `DENP-1414 - <summary>` — the same `KEY - Summary`
+  form the Pull Features button produces. Only a bare key is expanded; a cell you gave a custom label keeps it. The
+  expansion marks the page unsaved so a Save writes it back to Confluence, and the scheduled refresh does it too.
+
+### Changed
 - **PRB Generator: the SL issue is now a sub-task of the primary.** The secondary "[SL]" issue is created as a
   **sub-task of the primary Story or Defect** instead of a standalone Story, so the two are linked from the start.
   The primary is created first (a sub-task needs its parent), and if the primary fails the sub-task is reported as

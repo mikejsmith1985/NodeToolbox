@@ -200,6 +200,35 @@ describe('piReviewJira', () => {
     expect(reconciliationResult.rows[0].pointEstimate).toBe('5');
   });
 
+  it('expands a hand-typed bare feature key to "KEY - Summary", but leaves an already-labelled cell alone', () => {
+    const jiraIssueMap = {
+      'DENP-1352': {
+        id: '10001',
+        key: 'DENP-1352',
+        fields: {
+          summary: '26.3 Enrollment Support',
+          status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } },
+          priority: null,
+          assignee: null,
+          reporter: null,
+          issuetype: { name: 'Feature', iconUrl: '' },
+          created: '',
+          updated: '',
+          description: null,
+        },
+      },
+    };
+    // A bare key typed by hand (lower-case) is expanded, uppercased, exactly like a pulled Feature.
+    const bareKeyRow = { ...createEmptyPiReviewRow(), feature: 'denp-1352' };
+    // A cell that already carries a summary/custom label is left untouched.
+    const labelledRow = { ...createEmptyPiReviewRow(), feature: 'DENP-1352 - My own label' };
+
+    const reconciliationResult = reconcilePiReviewRowsWithJira([bareKeyRow, labelledRow], jiraIssueMap);
+
+    expect(reconciliationResult.rows[0].feature).toBe('DENP-1352 - 26.3 Enrollment Support');
+    expect(reconciliationResult.rows[1].feature).toBe('DENP-1352 - My own label');
+  });
+
   it('requests the story-points candidate fields when fetching features', async () => {
     mockJiraGet.mockResolvedValue({ issues: [] });
 
