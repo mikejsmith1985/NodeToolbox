@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
   ALL_TEAM_ROLES,
+  areCapacitySummariesEqual,
   buildCapacitySummary,
   calculateRecommendedCapacity,
   calculateRowCapacity,
@@ -12,6 +13,7 @@ import {
   countWorkDays,
   generateCapacityRowId,
   type CapacityRow,
+  type CapacitySummary,
 } from './capacityModel.ts';
 
 function buildCapacityRow(overrides: Partial<CapacityRow> = {}): CapacityRow {
@@ -72,6 +74,30 @@ describe('capacityModel', () => {
     expect(capacitySummary.recommendedCapacityPoints).toBe(10);
     expect(capacitySummary.roleCapacities.Developer).toBe(10);
     expect(capacitySummary.roleCapacities['External Tester']).toBe(2.5);
+  });
+
+  it('treats two value-equal capacity snapshots as equal, and any real difference as not', () => {
+    const baseSummary: CapacitySummary = {
+      summaryLabel: 'Alpha Team Capacity',
+      startDate: '2026-05-18',
+      endDate: '2026-05-22',
+      workDayCount: 5,
+      totalCapacityPoints: 12.5,
+      recommendedCapacityPoints: 10,
+      roleCapacities: { Developer: 10, 'Dev Lead': 0, 'Internal Tester': 0, 'External Tester': 2.5, 'Systems Analyst': 0 },
+    };
+    // A distinct object with identical values is equal — a re-render must not read as a change.
+    expect(areCapacitySummariesEqual(baseSummary, { ...baseSummary, roleCapacities: { ...baseSummary.roleCapacities } })).toBe(true);
+    // A scalar change is a change.
+    expect(areCapacitySummariesEqual(baseSummary, { ...baseSummary, recommendedCapacityPoints: 11 })).toBe(false);
+    // A per-role change is a change.
+    expect(areCapacitySummariesEqual(baseSummary, {
+      ...baseSummary,
+      roleCapacities: { ...baseSummary.roleCapacities, Developer: 12 },
+    })).toBe(false);
+    // Null handling: two nulls equal, one null not.
+    expect(areCapacitySummariesEqual(null, null)).toBe(true);
+    expect(areCapacitySummariesEqual(baseSummary, null)).toBe(false);
   });
 
   it('exposes exactly the five roster-matched delivery roles', () => {

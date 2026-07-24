@@ -11,7 +11,7 @@ import {
   resolveConfluencePageIdFromReference,
   updateConfluencePage,
 } from '../../services/confluenceApi.ts';
-import type { CapacitySummary } from '../SprintDashboard/capacityModel.ts';
+import { areCapacitySummariesEqual, type CapacitySummary } from '../SprintDashboard/capacityModel.ts';
 import type { JiraIssue, JiraTransition } from '../../types/jira.ts';
 import type { ArtTeam } from './hooks/useArtData.ts';
 import { downloadPiReviewPanelImage } from './piReviewPdf.ts';
@@ -65,6 +65,7 @@ import { estimateCarryoverRemainingPoints } from './carryoverEstimate.ts';
 import { fetchCarryoverChildrenByFeature } from './carryoverEstimateFetch.ts';
 import { useStandupRosterStore } from '../SprintDashboard/hooks/useStandupRosterStore.ts';
 import { pullPiReviewFeatures } from './piReviewPullFeatures.ts';
+import { computePiReviewLoadComparison } from './piReviewLoad.ts';
 import styles from './PiReviewTab.module.css';
 
 const LONG_TEXT_COLUMNS = new Set<PiReviewColumnKey>(['dependency', 'risks', 'notes']);
@@ -359,6 +360,20 @@ function formatCapacityValue(capacityValue: number): string {
   return Number.isInteger(capacityValue) ? String(capacityValue) : String(Number(capacityValue.toFixed(1)));
 }
 
+/**
+ * Describes a planned-points figure against the 80% capacity target: the signed gap in plain words and
+ * whether it is over the target, so the panel can phrase and colour the comparison consistently.
+ */
+function describePiReviewLoadDelta(deltaPoints: number): { text: string; isOver: boolean } {
+  if (deltaPoints > 0) {
+    return { text: `${formatCapacityValue(deltaPoints)} over 80%`, isOver: true };
+  }
+  if (deltaPoints < 0) {
+    return { text: `${formatCapacityValue(Math.abs(deltaPoints))} under 80%`, isOver: false };
+  }
+  return { text: 'exactly at 80%', isOver: false };
+}
+
 function formatPiReviewCellValue(columnKey: PiReviewColumnKey, cellValue: string): string {
   if (CHECKBOX_COLUMNS.has(columnKey)) {
     return cellValue === 'Yes' ? 'Yes' : 'No';
@@ -452,15 +467,6 @@ function adjustGroupingLineAfterRowMove(
   nextRowIndex: number,
 ): number {
   return adjustCommitmentBoundaryAfterRowMove(afterRowIndex, currentRowIndex, nextRowIndex) ?? afterRowIndex;
-}
-
-function isPiReviewRowCommitted(row: PiReviewRow): boolean {
-  return row.committed.trim().toLowerCase() === 'yes';
-}
-
-function parsePiReviewPointEstimate(pointEstimate: string): number {
-  const parsedPointEstimate = Number(pointEstimate);
-  return Number.isFinite(parsedPointEstimate) ? parsedPointEstimate : 0;
 }
 
 function isConfluenceVersionConflictError(error: unknown): boolean {
@@ -774,12 +780,31 @@ function PiReviewPagePanel({
   const pagePanelRef = useRef<HTMLElement>(null);
   const liveCapacitySummary = capacitySummaryOverride;
   const displayedCapacitySummary = liveCapacitySummary ?? savedCapacitySummary;
-  const committedPointTotal = useMemo(
-    () => rows.reduce(
-      (runningTotal, row) => runningTotal + (isPiReviewRowCommitted(row) ? parsePiReviewPointEstimate(row.pointEstimate) : 0),
-      0,
-    ),
-    [rows],
+  // Board load vs the team's recommended (80%) capacity: the total of every Feature's points and the
+  // committed subset, each compared to the 80% target so the PO can see the plan's fit at a glance.
+  const loadComparison = useMemo(
+    () => computePiReviewLoadComparison(rows, displayedCapacitySummary?.recommendedCapacityPoints ?? null),
+    [rows, displayedCapacitySummary],
+  );
+  const committedPointTotal = loadComparison.committedPoints;
+  const committedLoadDelta = loadComparison.committedVsTarget === null
+    ? null
+    : describePiReviewLoadDelta(loadComparison.committedVsTarget);
+  const totalLoadDelta = loadComparison.totalVsTarget === null
+    ? null
+    : describePiReviewLoadDelta(loadComparison.totalVsTarget);
+
+  // A capacity change arrives through the capacitySummaryOverride prop (the Team Dashboard capacity
+  // planner), not through a row edit, so nothing marks the page unsaved by itself. Derive it: the live
+  // capacity is unsaved whenever it differs from what is saved on Confluence. Without this, editing
+  // capacity leaves Save to Confluence disabled even though the saved page carries the capacity
+  // snapshot. Derived (not stored) so it always tracks the current capacity without a setState effect.
+  const isLiveCapacityUnsaved = useMemo(
+    () => mode !== 'readout'
+      && hasLoadedSnapshot
+      && capacitySummaryOverride !== null
+      && !areCapacitySummariesEqual(capacitySummaryOverride, savedCapacitySummary),
+    [mode, hasLoadedSnapshot, capacitySummaryOverride, savedCapacitySummary],
   );
   // The team's Product Owner(s) — roster members flagged with the Product Owner capability. Their
   // Jira assignee query values scope a Feature pull to just this team's work.
@@ -1883,7 +1908,7 @@ function PiReviewPagePanel({
     storageValue,
     tableBinding,
   ]);
-  const canSaveToConfluence = hasUnsavedChanges || (isEditMode && hasPendingConfluenceRewrite);
+  const canSaveToConfluence = hasUnsavedChanges || isLiveCapacityUnsaved || (isEditMode && hasPendingConfluenceRewrite);
   const isSaveToConfluenceDisabled =
     isToolbarBusy
     || !canSaveToConfluence
@@ -1947,7 +1972,7 @@ function PiReviewPagePanel({
           </p>
         </div>
         <div className={styles.panelStatusActions} data-export-exclude="true">
-          {canShowAuthoringToolbar && hasUnsavedChanges && <span className={styles.dirtyBadge}>Unsaved changes</span>}
+          {canShowAuthoringToolbar && (hasUnsavedChanges || isLiveCapacityUnsaved) && <span className={styles.dirtyBadge}>Unsaved changes</span>}
           {canShowAuthoringToolbar ? (
             <button
               aria-pressed={isEditMode}
@@ -2255,6 +2280,7 @@ function PiReviewPagePanel({
           Stretch Goals line: {commitmentBoundaryIndex === null ? 'Not set' : `after row ${commitmentBoundaryIndex}`}
         </span>
         <span className={styles.statBadge}>Custom lines: {customGroupingLines.length}</span>
+        <span className={styles.statBadge}>Total Feature points: {formatCapacityValue(loadComparison.totalFeaturePoints)}</span>
         <span className={styles.statBadge}>Committed points: {formatCapacityValue(committedPointTotal)}</span>
       </div>
 
@@ -2311,6 +2337,35 @@ function PiReviewPagePanel({
               <div className={styles.capacitySummaryCard}>
                 <span className={styles.summaryLabel}>80% Capacity (pts)</span>
                 <strong>{formatCapacityValue(displayedCapacitySummary.recommendedCapacityPoints)}</strong>
+              </div>
+            </div>
+            <div className={styles.capacityComparison}>
+              <h5 className={styles.capacityComparisonTitle}>Planned load vs 80% capacity</h5>
+              <div className={styles.capacitySummaryGrid}>
+                <div className={styles.capacitySummaryCard}>
+                  <span className={styles.summaryLabel}>Committed (pts)</span>
+                  <strong>{formatCapacityValue(loadComparison.committedPoints)}</strong>
+                  {committedLoadDelta ? (
+                    <span className={committedLoadDelta.isOver ? styles.loadOver : styles.loadUnder}>
+                      {committedLoadDelta.text}
+                    </span>
+                  ) : null}
+                </div>
+                <div className={styles.capacitySummaryCard}>
+                  <span className={styles.summaryLabel}>All Features (pts)</span>
+                  <strong>{formatCapacityValue(loadComparison.totalFeaturePoints)}</strong>
+                  {totalLoadDelta ? (
+                    <span className={totalLoadDelta.isOver ? styles.loadOver : styles.loadUnder}>
+                      {totalLoadDelta.text}
+                    </span>
+                  ) : null}
+                </div>
+                {loadComparison.committedPercentOfTarget !== null ? (
+                  <div className={styles.capacitySummaryCard}>
+                    <span className={styles.summaryLabel}>Committed vs 80%</span>
+                    <strong>{formatCapacityValue(loadComparison.committedPercentOfTarget)}%</strong>
+                  </div>
+                ) : null}
               </div>
             </div>
             <div className={styles.capacityRoleList}>

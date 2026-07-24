@@ -789,6 +789,20 @@ describe('PiReviewTab', () => {
     expect(within(alphaSection).getByRole('button', { name: /save to confluence/i })).toBeEnabled();
   });
 
+  it('enables Save to Confluence when the live capacity differs from the saved page, without entering edit mode', async () => {
+    // The saved page carries no capacity; the Team Dashboard planner passes a live snapshot. That is a
+    // real, unsaved change, so Save must light up on its own — a capacity edit should be publishable.
+    mockFetchConfluencePageByReference.mockResolvedValue(ALPHA_PAGE);
+
+    renderPiReviewTab([DEFAULT_TEAMS[0]], 'authoring', { 'team-1': createTeamCapacitySummary() });
+
+    const alphaSection = await screen.findByRole('region', { name: /alpha team pi review/i });
+    await waitFor(() =>
+      expect(within(alphaSection).getByRole('button', { name: /save to confluence/i })).toBeEnabled(),
+    );
+    expect(within(alphaSection).getByText(/unsaved changes/i)).toBeInTheDocument();
+  });
+
   it('uses Team Dashboard as the authoring handoff in readout mode', async () => {
     mockFetchConfluencePageByReference.mockResolvedValue(ALPHA_PAGE);
 

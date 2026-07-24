@@ -7,7 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **PI Review: planned load vs 80% capacity.** The capacity panel now totals the points of **all** Features
+  on the board and, separately, the **committed** Features, and compares each to the team's recommended
+  (80%) capacity — showing how far over or under target the plan sits (green when within, amber when over).
+  Two badges above the table also show the running **Total Feature points** and **Committed points**.
+
 ### Fixed
+- **Changing capacity now enables Save to Confluence.** A capacity edit made in the Team Dashboard planner
+  left the PI Review page's **Save to Confluence** button disabled, even though the saved page stores the
+  capacity snapshot. The page now recognises a live capacity that differs from what is saved as an unsaved
+  change (with the "Unsaved changes" badge), so a capacity-only edit can be published.
 - **AI Assist no longer repeats a Feature as a duplicate card.** When the same Feature sat on more than
   one PI Review row — e.g. a key typed by hand onto a row a Pull had already added — the AI review built
   one suggestion card per row, so the Feature appeared over and over as identical cards. The AI panel now
