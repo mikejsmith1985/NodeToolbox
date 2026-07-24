@@ -282,7 +282,9 @@ export function parsePiReviewAiReply(
     )
   }
 
-  const knownKeysUpper = knownIssueKeys.map((issueKey) => issueKey.toUpperCase())
+  // Unique known keys, first-seen order: a page can carry the same Feature on more than one row, and
+  // one Feature must yield at most one suggestion — never one identical card per duplicate row.
+  const knownKeysUpper = [...new Set(knownIssueKeys.map((issueKey) => issueKey.toUpperCase()))]
   const rawItems = Array.isArray(parsedEnvelope.items) ? parsedEnvelope.items : []
 
   const suggestionsByKey = new Map<string, PiReviewAiSuggestion>()

@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **AI Assist no longer repeats a Feature as a duplicate card.** When the same Feature sat on more than
+  one PI Review row — e.g. a key typed by hand onto a row a Pull had already added — the AI review built
+  one suggestion card per row, so the Feature appeared over and over as identical cards. The AI panel now
+  de-duplicates by issue key: one card per Feature (keeping the first row's context), and the parser
+  collapses duplicate keys defensively too. Typing just a key on a new row and letting AI Assist / Jira
+  sync fill the rest stays fully supported.
+
+### Fixed
 - **Unplanned Work Mapping now lists the team's PI Review Features, not just one.** The Feature dropdowns discovered
   Features bottom-up (only Features that already had team child issues), so a brand-new **target** PI — whose Features
   have no children yet — showed just the one Feature that happened to have work on it. The dropdowns now use the **same
