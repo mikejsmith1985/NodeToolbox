@@ -30,6 +30,7 @@ vi.mock('./piFeatureRemap.ts', () => ({
 }));
 
 import PiFeatureRemapPanel from './PiFeatureRemapPanel.tsx';
+import { useStandupRosterStore } from './hooks/useStandupRosterStore.ts';
 
 const PI_263 = 'PI 26.3 (05/21/26 - 07/29/26)';
 const PI_264 = 'PI 26.4 (07/30/26 - 09/30/26)';
@@ -38,13 +39,22 @@ describe('PiFeatureRemapPanel', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     localStorage.clear();
+    // The Feature dropdowns are scoped to the team's Product Owner, so a roster with a flagged PO must
+    // be present for Features to load — exactly as the PI Review pull requires.
+    useStandupRosterStore.getState().replaceRosterMembers([
+      {
+        displayName: 'Pat Owner',
+        assigneeQueryValue: 'powner',
+        roleCapabilities: { canDevelop: false, canInternalTest: false, canExternalTest: false, canProductOwner: true },
+      },
+    ]);
     mockFetchFeatureRemapPiOptions.mockResolvedValue({
       allPiNames: [PI_264, PI_263, 'PI 26.2 (03/12/26 - 05/20/26)'],
       defaultSourcePiName: PI_263,
       defaultTargetPiName: PI_264,
     });
     // Features differ per PI, so we can prove the right PI's Features load into each selector.
-    mockFetchFeaturesForPi.mockImplementation((_projectKey: string, piName: string) =>
+    mockFetchFeaturesForPi.mockImplementation((piName: string) =>
       Promise.resolve(piName === PI_263
         ? [{ key: 'ENCUC-100', summary: '26.3 unplanned bucket', piValue: PI_263 }]
         : [{ key: 'ENCUC-200', summary: '26.4 unplanned bucket', piValue: PI_264 }]));
@@ -89,6 +99,38 @@ describe('PiFeatureRemapPanel', () => {
     await user.selectOptions(screen.getByLabelText(/source pi/i), PI_264);
 
     await waitFor(() => expect((screen.getByLabelText(/source feature/i) as HTMLSelectElement).value).toBe('ENCUC-200'));
+  });
+
+  it('filters the target Feature dropdown by typed text', async () => {
+    // Two Features on the target PI so the filter has something to narrow.
+    mockFetchFeaturesForPi.mockImplementation((piName: string) =>
+      Promise.resolve(piName === PI_264
+        ? [
+            { key: 'ENCUC-200', summary: 'Payments migration', piValue: PI_264 },
+            { key: 'ENCUC-201', summary: 'Search revamp', piValue: PI_264 },
+          ]
+        : [{ key: 'ENCUC-100', summary: '26.3 unplanned bucket', piValue: PI_263 }]));
+
+    render(<PiFeatureRemapPanel projectKey="ENCUC" selectedPiName="" />);
+    const user = userEvent.setup();
+
+    const targetFeatureSelect = await screen.findByLabelText('Target Feature');
+    await waitFor(() => expect(targetFeatureSelect).toHaveTextContent('Payments migration'));
+    expect(targetFeatureSelect).toHaveTextContent('Search revamp');
+
+    // Typing narrows the options to the matching Feature only.
+    await user.type(screen.getByLabelText('Filter target options'), 'search');
+    await waitFor(() => expect(targetFeatureSelect).not.toHaveTextContent('Payments migration'));
+    expect(targetFeatureSelect).toHaveTextContent('Search revamp');
+  });
+
+  it('prompts to import the roster when the team has no Product Owner to scope Features', async () => {
+    useStandupRosterStore.getState().replaceRosterMembers([]);
+    render(<PiFeatureRemapPanel projectKey="ENCUC" selectedPiName="" />);
+
+    expect(await screen.findByText(/import this team.*roster/i)).toBeInTheDocument();
+    // With no team scope, the Feature query is never run.
+    expect(mockFetchFeaturesForPi).not.toHaveBeenCalled();
   });
 
   it('warns when no Feature is selected, in unplanned-work terms', async () => {

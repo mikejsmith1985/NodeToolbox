@@ -4,6 +4,7 @@ import { jiraGet, jiraPut } from '../../services/jiraApi.ts';
 import type { JiraIssue } from '../../types/jira.ts';
 import { readArtFeatureScopeSettings } from '../ArtView/artFeatureScopeSettings.ts';
 import { findPiNameForDate, parsePiDateRange } from '../ArtView/hooks/artHelpers.ts';
+import { buildDirectFeatureJql } from '../ArtView/piReviewPullFeatures.ts';
 
 const ART_SETTINGS_STORAGE_KEY = 'tbxARTSettings';
 const DEFAULT_FEATURE_LINK_FIELD = 'customfield_10108';
@@ -163,26 +164,6 @@ function buildPiFieldReference(piFieldId: string): string {
   return piFieldId.includes(' ') ? `"${piFieldId}"` : piFieldId;
 }
 
-/** Wraps a JQL value in double quotes, escaping any embedded quotes so the clause stays valid. */
-function quoteJqlValue(value: string): string {
-  return `"${value.replace(/"/g, '\\"')}"`;
-}
-
-/**
- * Builds the JQL that lists every Feature in a PI — the same discovery the PI Review page uses.
- *
- * Deliberately unscoped by project: a team's Features usually live in a portfolio/program project, not
- * the delivery board, so a `project =` clause would silently hide them. The PI value alone scopes the
- * list. Returns null for a blank PI, since that would broaden the query to every Feature in Jira.
- */
-export function buildPiFeatureOptionsJql(piName: string, piFieldId: string): string | null {
-  const trimmedPiName = piName.trim();
-  if (trimmedPiName === '') {
-    return null;
-  }
-  const piFieldReference = buildPiFieldReference(piFieldId);
-  return `issuetype = Feature AND ${piFieldReference} = ${quoteJqlValue(trimmedPiName)} ORDER BY key ASC`;
-}
 
 async function fetchProjectPiNames(projectKey: string, piFieldId: string): Promise<string[]> {
   const piFieldReference = buildPiFieldReference(piFieldId);
@@ -199,16 +180,21 @@ async function fetchProjectPiNames(projectKey: string, piFieldId: string): Promi
 }
 
 /**
- * Lists every Feature in a PI as a remap option, via one direct Jira query. This mirrors the PI Review
- * page's own discovery, so the dropdown offers exactly the Features that page shows for the same PI —
- * including brand-new target Features that have no child issues yet (the bottom-up discovery this
- * replaces missed those, so a fresh target PI showed only the one Feature that already had children).
+ * Lists a team's Features for a PI as remap options, via the SAME direct query the PI Review page uses
+ * to pull Features: `issuetype = Feature` scoped by the PI and the team's Product Owner(s), unscoped by
+ * project (a team's Features usually live in a portfolio project). Reusing `buildDirectFeatureJql`
+ * means this dropdown and the PI Review table agree by construction — the options are exactly the
+ * Features that page shows for the same PI and team, including brand-new target Features with no child
+ * issues yet (the bottom-up discovery this replaced missed those, so a fresh target PI showed only the
+ * one Feature that already had work on it). Returns [] when the query cannot be scoped — no PI, or no
+ * Product Owner / roster to identify the team — rather than falling back to every Feature in the PI.
  */
 async function fetchPiFeatureOptions(
   piName: string | null,
+  poAssigneeQueryValues: readonly string[],
   featureRemapSettings: FeatureRemapSettings,
 ): Promise<FeatureRemapFeatureOption[]> {
-  const featureOptionsJql = buildPiFeatureOptionsJql(piName ?? '', featureRemapSettings.piFieldId);
+  const featureOptionsJql = buildDirectFeatureJql(piName ?? '', poAssigneeQueryValues, featureRemapSettings.piFieldId);
   if (featureOptionsJql === null) {
     return [];
   }
@@ -223,11 +209,13 @@ async function fetchPiFeatureOptions(
     + `&maxResults=${PI_FEATURE_OPTION_MAX_RESULTS}`;
   const searchResponse = await jiraGet<JiraSearchResponse>(searchPath);
 
-  return (searchResponse.issues ?? []).map((issue) => ({
-    key: issue.key,
-    summary: typeof issue.fields?.summary === 'string' ? issue.fields.summary : '',
-    piValue: readProgramIncrementValueFromIssue(issue, featureRemapSettings.piFieldId) || (piName ?? ''),
-  }));
+  return (searchResponse.issues ?? [])
+    .map((issue) => ({
+      key: issue.key,
+      summary: typeof issue.fields?.summary === 'string' ? issue.fields.summary : '',
+      piValue: readProgramIncrementValueFromIssue(issue, featureRemapSettings.piFieldId) || (piName ?? ''),
+    }))
+    .sort((leftOption, rightOption) => leftOption.key.localeCompare(rightOption.key));
 }
 
 /** Reads the configured Jira field IDs and optional feature-project filter for Team Dashboard remapping. */
@@ -347,17 +335,14 @@ export async function fetchFeatureRemapPiOptions(
 }
 
 /**
- * Loads the Features of any chosen PI, so either selector can offer a manually-picked PI's Features.
- *
- * `_projectKey` is kept for call-site symmetry with the other remap helpers but is intentionally
- * unused: Features are discovered by PI alone (see fetchPiFeatureOptions — they often live outside the
- * team's project, so scoping by project key would hide them).
+ * Loads a team's Features for any chosen PI, so either selector can offer a manually-picked PI's
+ * Features. Scoped by the same PI + Product Owner(s) as the PI Review pull, so the two lists match.
  */
 export async function fetchFeaturesForPi(
-  _projectKey: string,
   piName: string,
+  poAssigneeQueryValues: readonly string[],
 ): Promise<FeatureRemapFeatureOption[]> {
-  return fetchPiFeatureOptions(piName, readFeatureRemapSettings());
+  return fetchPiFeatureOptions(piName, poAssigneeQueryValues, readFeatureRemapSettings());
 }
 
 /** Updates every matched issue so both the feature link and Program Increment move together. */

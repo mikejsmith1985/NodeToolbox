@@ -15,7 +15,6 @@ vi.mock('../../services/jiraApi.ts', () => ({
 
 import {
   buildFeatureRemapSearchPath,
-  buildPiFeatureOptionsJql,
   extractFeatureKeyFromIssue,
   fetchFeatureRemapPiOptions,
   fetchFeaturesForPi,
@@ -82,34 +81,38 @@ describe('piFeatureRemap helpers', () => {
     vi.useRealTimers();
   });
 
-  it('lists a PI’s Features by PI alone, unscoped by project, so empty target Features still appear', async () => {
-    // The direct query the PI Review page uses: issuetype = Feature AND the PI clause, no project filter.
-    expect(buildPiFeatureOptionsJql('PI 26.4 (07/30/26 - 09/30/26)', 'customfield_10301')).toBe(
-      'issuetype = Feature AND cf[10301] = "PI 26.4 (07/30/26 - 09/30/26)" ORDER BY key ASC',
-    );
-    // A blank PI would broaden the query to every Feature in Jira, so it is refused.
-    expect(buildPiFeatureOptionsJql('  ', 'customfield_10301')).toBeNull();
-  });
-
-  it('maps every Feature the direct PI query returns — including one with no child issues', async () => {
+  it('scopes the Feature dropdown to the team’s PO + PI — the same query PI Review pulls — and refuses an unscoped list', async () => {
+    let capturedJql = '';
     mockJiraGet.mockReset();
     mockJiraGet.mockImplementation((path: string) => {
-      if (decodeURIComponent(path).includes('issuetype = Feature')) {
+      const decodedPath = decodeURIComponent(path);
+      if (decodedPath.includes('issuetype = Feature')) {
+        capturedJql = decodedPath;
         return Promise.resolve({
           issues: [
-            // A brand-new target Feature with no children — the case the old bottom-up discovery missed.
-            buildJiraIssue({ key: 'PORT-900', fields: { summary: 'New target bucket', customfield_10301: 'PI 26.4' } }),
+            // Brand-new target Feature with no children — the case the old bottom-up discovery missed.
             buildJiraIssue({ key: 'PORT-901', fields: { summary: 'Already worked', customfield_10301: 'PI 26.4' } }),
+            buildJiraIssue({ key: 'PORT-900', fields: { summary: 'New target bucket', customfield_10301: 'PI 26.4' } }),
           ],
         });
       }
       return Promise.resolve({ issues: [] });
     });
 
-    const featureOptions = await fetchFeaturesForPi('TBX', 'PI 26.4');
+    const featureOptions = await fetchFeaturesForPi('PI 26.4', ['jsmith']);
 
+    // The query is scoped by the Product Owner assignee AND the PI — never every Feature in the PI.
+    expect(capturedJql).toContain('issuetype = Feature');
+    expect(capturedJql).toContain('assignee = "jsmith"');
+    expect(capturedJql).toContain('cf[10301] = "PI 26.4"');
+    // Options are returned sorted by key, and a childless Feature is included.
     expect(featureOptions.map((option) => option.key)).toEqual(['PORT-900', 'PORT-901']);
     expect(featureOptions[0]).toMatchObject({ key: 'PORT-900', summary: 'New target bucket', piValue: 'PI 26.4' });
+
+    // With no Product Owner / roster to identify the team, it refuses to query rather than list everything.
+    mockJiraGet.mockClear();
+    expect(await fetchFeaturesForPi('PI 26.4', [])).toEqual([]);
+    expect(mockJiraGet).not.toHaveBeenCalled();
   });
 
 

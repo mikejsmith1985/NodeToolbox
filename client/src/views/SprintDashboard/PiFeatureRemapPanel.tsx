@@ -5,9 +5,10 @@
 // bucket Feature. At closeout, whatever is still open on that Feature rolls forward into the next PI's
 // bucket. Both PIs are selectable, so any PI's bucket can be re-pointed to any other.
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { useToast } from '../../components/Toast/ToastContext.ts';
+import { useStandupRosterStore } from './hooks/useStandupRosterStore.ts';
 import styles from './SprintDashboardView.module.css';
 import {
   executeFeatureRemap,
@@ -24,6 +25,20 @@ interface PiFeatureRemapPanelProps {
   selectedPiName: string;
 }
 
+/** Case-insensitive substring filter over a Feature option's key and summary, for the type-to-filter box. */
+function filterFeatureOptions(
+  featureOptions: readonly FeatureRemapFeatureOption[],
+  filterText: string,
+): FeatureRemapFeatureOption[] {
+  const normalizedFilter = filterText.trim().toLowerCase();
+  if (normalizedFilter === '') {
+    return [...featureOptions];
+  }
+  return featureOptions.filter((featureOption) =>
+    `${featureOption.key} ${featureOption.summary}`.toLowerCase().includes(normalizedFilter),
+  );
+}
+
 interface FeatureRemapResultState {
   matchedIssues: FeatureRemapCandidateIssue[];
   movedIssueKeys: string[];
@@ -38,6 +53,25 @@ export default function PiFeatureRemapPanel({
   selectedPiName,
 }: PiFeatureRemapPanelProps) {
   const { showToast } = useToast();
+  // Scope the Feature dropdowns to THIS team the same way the PI Review pull does: by the team's
+  // Product Owner(s) from the imported roster. This panel sits directly beneath that pull, so the
+  // roster is already loaded for the selected team.
+  const rosterMembers = useStandupRosterStore((storeState) => storeState.rosterMembers);
+  const poAssigneeQueryValues = useMemo(() => {
+    const productOwnerValues = rosterMembers
+      .filter((rosterMember) => rosterMember.roleCapabilities?.canProductOwner === true)
+      .map((rosterMember) => rosterMember.assigneeQueryValue.trim())
+      .filter((assigneeQueryValue) => assigneeQueryValue !== '');
+    if (productOwnerValues.length > 0) {
+      return productOwnerValues;
+    }
+    // No Product Owner flagged: fall back to the whole roster so the panel still works, mirroring the
+    // PI Review pull's "Include full roster" escape hatch.
+    return rosterMembers
+      .map((rosterMember) => rosterMember.assigneeQueryValue.trim())
+      .filter((assigneeQueryValue) => assigneeQueryValue !== '');
+  }, [rosterMembers]);
+
   const [piOptions, setPiOptions] = useState<FeatureRemapPiOptions | null>(null);
   const [sourcePiName, setSourcePiName] = useState('');
   const [targetPiName, setTargetPiName] = useState('');
@@ -45,6 +79,8 @@ export default function PiFeatureRemapPanel({
   const [targetFeatures, setTargetFeatures] = useState<FeatureRemapFeatureOption[]>([]);
   const [sourceFeatureKey, setSourceFeatureKey] = useState('');
   const [targetFeatureKey, setTargetFeatureKey] = useState('');
+  const [sourceFeatureFilter, setSourceFeatureFilter] = useState('');
+  const [targetFeatureFilter, setTargetFeatureFilter] = useState('');
   const [previewIssues, setPreviewIssues] = useState<FeatureRemapCandidateIssue[] | null>(null);
   const [isLoadingPiOptions, setIsLoadingPiOptions] = useState(false);
   const [isLoadingSourceFeatures, setIsLoadingSourceFeatures] = useState(false);
@@ -92,14 +128,14 @@ export default function PiFeatureRemapPanel({
     let isCancelled = false;
 
     async function loadSourceFeatures(): Promise<void> {
-      if (normalizedProjectKey === '' || sourcePiName === '') {
+      if (sourcePiName === '' || poAssigneeQueryValues.length === 0) {
         setSourceFeatures([]);
         setSourceFeatureKey('');
         return;
       }
       setIsLoadingSourceFeatures(true);
       try {
-        const features = await fetchFeaturesForPi(normalizedProjectKey, sourcePiName);
+        const features = await fetchFeaturesForPi(sourcePiName, poAssigneeQueryValues);
         if (isCancelled) return;
         setSourceFeatures(features);
         setSourceFeatureKey((current) => (features.some((option) => option.key === current) ? current : features[0]?.key ?? ''));
@@ -115,21 +151,21 @@ export default function PiFeatureRemapPanel({
 
     void loadSourceFeatures();
     return () => { isCancelled = true; };
-  }, [normalizedProjectKey, sourcePiName, showToast]);
+  }, [sourcePiName, poAssigneeQueryValues, showToast]);
 
   // ── Load the chosen target PI's Features ──
   useEffect(() => {
     let isCancelled = false;
 
     async function loadTargetFeatures(): Promise<void> {
-      if (normalizedProjectKey === '' || targetPiName === '') {
+      if (targetPiName === '' || poAssigneeQueryValues.length === 0) {
         setTargetFeatures([]);
         setTargetFeatureKey('');
         return;
       }
       setIsLoadingTargetFeatures(true);
       try {
-        const features = await fetchFeaturesForPi(normalizedProjectKey, targetPiName);
+        const features = await fetchFeaturesForPi(targetPiName, poAssigneeQueryValues);
         if (isCancelled) return;
         setTargetFeatures(features);
         setTargetFeatureKey((current) => (features.some((option) => option.key === current) ? current : features[0]?.key ?? ''));
@@ -145,7 +181,7 @@ export default function PiFeatureRemapPanel({
 
     void loadTargetFeatures();
     return () => { isCancelled = true; };
-  }, [normalizedProjectKey, targetPiName, showToast]);
+  }, [targetPiName, poAssigneeQueryValues, showToast]);
 
   // ── Preview the open child issues on the chosen source Feature ──
   useEffect(() => {
@@ -230,6 +266,15 @@ export default function PiFeatureRemapPanel({
   }
 
   const allPiNames = piOptions?.allPiNames ?? [];
+  // Type-to-filter: narrow each Feature dropdown by a substring of the key or summary.
+  const filteredSourceFeatures = useMemo(
+    () => filterFeatureOptions(sourceFeatures, sourceFeatureFilter),
+    [sourceFeatures, sourceFeatureFilter],
+  );
+  const filteredTargetFeatures = useMemo(
+    () => filterFeatureOptions(targetFeatures, targetFeatureFilter),
+    [targetFeatures, targetFeatureFilter],
+  );
 
   return (
     <section className={styles.piCloseoutRemapSection}>
@@ -290,41 +335,71 @@ export default function PiFeatureRemapPanel({
         </label>
       </div>
 
+      {poAssigneeQueryValues.length === 0 ? (
+        <p className={styles.piCloseoutRemapSummary}>
+          Import this team&apos;s roster (and flag a Product Owner) to list its PI Review Features here — the dropdowns
+          are scoped to the team the same way the PI Review pull is.
+        </p>
+      ) : null}
+
       <div className={styles.piCloseoutRemapGrid}>
-        <label className={styles.scopeSelectorField}>
-          Source Feature ({sourcePiName || 'source PI'})
-          <select
+        <div className={styles.scopeSelectorField}>
+          {/* Filter box sits OUTSIDE the label so it does not share the Feature select's accessible name. */}
+          <input
             className={styles.piCloseoutRemapInput}
-            aria-label="Source Feature"
+            aria-label="Filter source options"
             disabled={isLoadingSourceFeatures || sourceFeatures.length === 0}
-            onChange={(event) => setSourceFeatureKey(event.target.value)}
-            value={sourceFeatureKey}
-          >
-            <option value="">Select source Feature</option>
-            {sourceFeatures.map((featureOption) => (
-              <option key={featureOption.key} value={featureOption.key}>
-                {featureOption.key} - {featureOption.summary}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className={styles.scopeSelectorField}>
-          Target Feature ({targetPiName || 'target PI'})
-          <select
+            onChange={(event) => setSourceFeatureFilter(event.target.value)}
+            placeholder="Type to filter Features…"
+            type="text"
+            value={sourceFeatureFilter}
+          />
+          <label className={styles.scopeSelectorField}>
+            Source Feature ({sourcePiName || 'source PI'})
+            <select
+              className={styles.piCloseoutRemapInput}
+              aria-label="Source Feature"
+              disabled={isLoadingSourceFeatures || sourceFeatures.length === 0}
+              onChange={(event) => setSourceFeatureKey(event.target.value)}
+              value={sourceFeatureKey}
+            >
+              <option value="">Select source Feature</option>
+              {filteredSourceFeatures.map((featureOption) => (
+                <option key={featureOption.key} value={featureOption.key}>
+                  {featureOption.key} - {featureOption.summary}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <div className={styles.scopeSelectorField}>
+          <input
             className={styles.piCloseoutRemapInput}
-            aria-label="Target Feature"
+            aria-label="Filter target options"
             disabled={isLoadingTargetFeatures || targetFeatures.length === 0}
-            onChange={(event) => setTargetFeatureKey(event.target.value)}
-            value={targetFeatureKey}
-          >
-            <option value="">Select target Feature</option>
-            {targetFeatures.map((featureOption) => (
-              <option key={featureOption.key} value={featureOption.key}>
-                {featureOption.key} - {featureOption.summary}
-              </option>
-            ))}
-          </select>
-        </label>
+            onChange={(event) => setTargetFeatureFilter(event.target.value)}
+            placeholder="Type to filter Features…"
+            type="text"
+            value={targetFeatureFilter}
+          />
+          <label className={styles.scopeSelectorField}>
+            Target Feature ({targetPiName || 'target PI'})
+            <select
+              className={styles.piCloseoutRemapInput}
+              aria-label="Target Feature"
+              disabled={isLoadingTargetFeatures || targetFeatures.length === 0}
+              onChange={(event) => setTargetFeatureKey(event.target.value)}
+              value={targetFeatureKey}
+            >
+              <option value="">Select target Feature</option>
+              {filteredTargetFeatures.map((featureOption) => (
+                <option key={featureOption.key} value={featureOption.key}>
+                  {featureOption.key} - {featureOption.summary}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
       </div>
 
       <div className={styles.piCloseoutRemapResults}>
