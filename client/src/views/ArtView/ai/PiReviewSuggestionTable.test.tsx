@@ -27,12 +27,14 @@ function suggestion(overrides: Partial<PiReviewAiSuggestion> = {}): PiReviewAiSu
 function renderTable(
   suggestions: PiReviewAiSuggestion[] = [suggestion()],
   handlers: Partial<{ onAccept: () => void; onReject: () => void; onSupplyPoints: () => void }> = {},
+  carryOverByKey: Record<string, boolean> = {},
 ) {
   const onAccept = handlers.onAccept ?? vi.fn()
   const onReject = handlers.onReject ?? vi.fn()
   const onSupplyPoints = handlers.onSupplyPoints ?? vi.fn()
   render(
     <PiReviewSuggestionTable
+      carryOverByKey={carryOverByKey}
       currentEstimatesByKey={{ 'ALPHA-1': '' }}
       onAccept={onAccept}
       onReject={onReject}
@@ -56,6 +58,22 @@ describe('PiReviewSuggestionTable', () => {
     renderTable()
 
     expect(screen.getByText(/two integrations and a migration/i)).toBeInTheDocument()
+  })
+
+  it('leaves a carryover row’s point estimate UNTICKED and marks it, so its remaining effort is not overwritten', () => {
+    renderTable([suggestion()], {}, { 'ALPHA-1': true })
+
+    // The point-estimate checkbox starts off for a carryover row.
+    expect(screen.getByLabelText(/apply point estimate for alpha-1/i)).not.toBeChecked()
+    // And the row is visibly marked as carryover.
+    expect(screen.getByText(/carryover — points left unticked/i)).toBeInTheDocument()
+  })
+
+  it('keeps the point estimate ticked by default for a NON-carryover row', () => {
+    renderTable([suggestion()], {}, { 'ALPHA-1': false })
+
+    expect(screen.getByLabelText(/apply point estimate for alpha-1/i)).toBeChecked()
+    expect(screen.queryByText(/carryover — points left unticked/i)).not.toBeInTheDocument()
   })
 
   it('shows what Accept will write — the note text, labelled as it will appear', () => {
@@ -133,6 +151,7 @@ describe('PiReviewSuggestionTable', () => {
   it('surfaces a conflict when the row already has a human estimate, and does not hide it (FR-023)', () => {
     render(
       <PiReviewSuggestionTable
+        carryOverByKey={{}}
         currentEstimatesByKey={{ 'ALPHA-1': '8' }}
         onAccept={vi.fn()}
         onReject={vi.fn()}
@@ -215,6 +234,7 @@ describe('PiReviewSuggestionTable', () => {
   it('renders nothing when there are no suggestions to review', () => {
     const { container } = render(
       <PiReviewSuggestionTable
+        carryOverByKey={{}}
         currentEstimatesByKey={{}}
         onAccept={vi.fn()}
         onReject={vi.fn()}

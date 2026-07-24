@@ -25,6 +25,11 @@ export interface PiReviewSuggestionTableProps {
   suggestions: readonly PiReviewAiSuggestion[]
   /** Each Feature's current Point Estimate, so a conflict with a human value is visible not silent. */
   currentEstimatesByKey: Record<string, string>
+  /**
+   * Which Features are carryover rows. Their Point Estimate is remaining effort, not a fresh size, so
+   * their point-estimate checkbox starts OFF and the row is marked — the AI must not silently resize them.
+   */
+  carryOverByKey: Record<string, boolean>
   /** Apply this one suggestion to its row, limited to the fields the user left ticked. */
   onAccept: (suggestion: PiReviewAiSuggestion, selection: PiReviewSuggestionFieldSelection) => void
   /** Discard this one suggestion; its row is untouched. */
@@ -110,12 +115,14 @@ function canAcceptSelection(
 function SuggestionRow({
   suggestion,
   currentEstimate,
+  isCarryOver,
   onAccept,
   onReject,
   onSupplyPoints,
 }: {
   suggestion: PiReviewAiSuggestion
   currentEstimate: string
+  isCarryOver: boolean
   onAccept: (suggestion: PiReviewAiSuggestion, selection: PiReviewSuggestionFieldSelection) => void
   onReject: (suggestion: PiReviewAiSuggestion) => void
   onSupplyPoints: (suggestion: PiReviewAiSuggestion, points: number) => void
@@ -127,9 +134,12 @@ function SuggestionRow({
   const hasEstimateConflict = currentEstimate.trim() !== '' && proposedEstimate !== null
   const isXxlAwaitingNumber = suggestion.state === 'needsPoints'
 
-  // Every offered field starts ticked, so a plain Accept applies the whole suggestion as before.
+  // Every offered field starts ticked, so a plain Accept applies the whole suggestion as before —
+  // EXCEPT the point estimate on a carryover row, which starts OFF. That row's estimate is remaining
+  // effort carried from the prior PI, and a fresh AI size would silently destroy it; the user can still
+  // tick it deliberately. Notes/risks/dependencies stay on, since those do legitimately change.
   const [selection, setSelection] = useState<PiReviewSuggestionFieldSelection>(() => ({
-    pointEstimate: present.pointEstimate,
+    pointEstimate: present.pointEstimate && !isCarryOver,
     notes: present.notes,
     devWork: present.devWork,
     testSupport: present.testSupport,
@@ -148,9 +158,14 @@ function SuggestionRow({
   }
 
   return (
-    <li className={styles.suggestionRow}>
+    <li className={isCarryOver ? `${styles.suggestionRow} ${styles.suggestionRowCarryOver}` : styles.suggestionRow}>
       <div className={styles.suggestionHeader}>
         <strong className={styles.suggestionKey}>{suggestion.issueKey}</strong>
+        {isCarryOver && (
+          <span className={styles.suggestionCarryOverBadge} title="Carried over from the prior PI — its Point Estimate is remaining effort, so it is left unticked by default.">
+            Carryover — points left unticked
+          </span>
+        )}
         {suggestion.size === null ? (
           <span className={styles.suggestionWarning}>size not recognised — estimate left alone</span>
         ) : (
@@ -268,6 +283,7 @@ function SuggestionRow({
 export function PiReviewSuggestionTable({
   suggestions,
   currentEstimatesByKey,
+  carryOverByKey,
   onAccept,
   onReject,
   onSupplyPoints,
@@ -281,6 +297,7 @@ export function PiReviewSuggestionTable({
       {suggestions.map((suggestion) => (
         <SuggestionRow
           currentEstimate={currentEstimatesByKey[suggestion.issueKey] ?? ''}
+          isCarryOver={carryOverByKey[suggestion.issueKey] ?? false}
           key={suggestion.issueKey}
           onAccept={onAccept}
           onReject={onReject}

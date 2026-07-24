@@ -31,7 +31,9 @@ import type { PiReviewRow } from '../piReviewTable.ts'
 function row(overrides: Partial<PiReviewRow> = {}): PiReviewRow {
   return {
     rowId: 'row-1',
-    carryOver: 'Yes',
+    // Default to a NON-carryover row so the shared fixture exercises the normal accept flow; a
+    // dedicated test overrides carryOver to 'Yes' to check the point-estimate-off behaviour.
+    carryOver: '',
     priority: 'High',
     feature: 'ALPHA-1 - Enrollment support',
     pointEstimate: '',
