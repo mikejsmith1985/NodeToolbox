@@ -218,34 +218,41 @@ function decodeCapacitySummary(encodedCapacitySummary: string | null): CapacityS
   }
 }
 
-/** Phrases a planned-points gap against the 80% target in plain words for the Confluence write. */
+/**
+ * Phrases a planned-points gap against the 80% target with a status emoji, for the Confluence write.
+ * Emoji (not CSS colour) carry the green/amber signal because they round-trip through Confluence's
+ * storage sanitizer unchanged — an inline style would be stripped and make the page look perpetually
+ * unsaved. A green circle means comfortably within the target; a red circle means over it.
+ */
 function describeCapacityDeltaText(deltaPoints: number): string {
   if (deltaPoints > 0) {
-    return `${formatCapacityValue(deltaPoints)} over`;
+    return `🔴 ${formatCapacityValue(deltaPoints)} over`;
   }
   if (deltaPoints < 0) {
-    return `${formatCapacityValue(Math.abs(deltaPoints))} under`;
+    return `🟢 ${formatCapacityValue(Math.abs(deltaPoints))} under`;
   }
-  return 'on target';
+  return '🟢 on target';
 }
 
 /**
- * Renders the "Planned load vs 80% capacity" block written into Confluence: how the committed and
- * total Feature points sit against the recommended target. Returns '' when there is nothing to show
- * (no comparison supplied), so callers can always concatenate it unconditionally.
+ * Renders the "Planned load vs 80% capacity" list written into Confluence: how the committed and total
+ * Feature points sit against the recommended target. A list (not a table) is used deliberately — the
+ * PI Review and Confidence tables are located by their position among the page's <table> elements, so
+ * adding a table here would shift that count and break the binding. Returns '' when no comparison is
+ * supplied, so callers can concatenate it unconditionally.
  */
 function createPlannedLoadHtml(loadComparison: PiReviewLoadComparison | null): string {
   if (!loadComparison) {
     return '';
   }
   const hasTarget = loadComparison.capacityTargetPoints !== null && loadComparison.capacityTargetPoints > 0;
-  const committedSuffix = hasTarget ? ` (${describeCapacityDeltaText(loadComparison.committedVsTarget as number)})` : '';
-  const totalSuffix = hasTarget ? ` (${describeCapacityDeltaText(loadComparison.totalVsTarget as number)})` : '';
+  const committedVs = hasTarget ? ` — ${describeCapacityDeltaText(loadComparison.committedVsTarget as number)}` : '';
+  const totalVs = hasTarget ? ` — ${describeCapacityDeltaText(loadComparison.totalVsTarget as number)}` : '';
   return [
-    `<p><strong>Planned load vs 80% capacity</strong></p>`,
+    `<p><strong>⚖️ Planned load vs 80% capacity</strong></p>`,
     '<ul>',
-    `<li><strong>Committed points:</strong> ${formatCapacityValue(loadComparison.committedPoints)}${committedSuffix}</li>`,
-    `<li><strong>All Feature points:</strong> ${formatCapacityValue(loadComparison.totalFeaturePoints)}${totalSuffix}</li>`,
+    `<li>✅ <strong>Committed:</strong> ${formatCapacityValue(loadComparison.committedPoints)} pts${committedVs}</li>`,
+    `<li>📦 <strong>All Features:</strong> ${formatCapacityValue(loadComparison.totalFeaturePoints)} pts${totalVs}</li>`,
     '</ul>',
   ].join('');
 }
@@ -263,22 +270,29 @@ function createPiReviewCapacitySectionHtml(
     ].join('');
   }
 
-  const visibleRoleSummaries = Object.entries(capacitySummary.roleCapacities)
+  const visibleRoleItems = Object.entries(capacitySummary.roleCapacities)
     .filter(([, capacityValue]) => capacityValue > 0)
-    .map(([teamRole, capacityValue]) => `<li><strong>${teamRole}:</strong> ${formatCapacityValue(capacityValue)} pts</li>`)
+    .map(([teamRole, capacityValue]) => `<li>${teamRole}: ${formatCapacityValue(capacityValue)} pts</li>`)
     .join('');
 
   return [
     `<section ${PI_REVIEW_CAPACITY_SECTION_ATTRIBUTE}="${PI_REVIEW_CAPACITY_SECTION_VALUE}" ${PI_REVIEW_CAPACITY_PAYLOAD_ATTRIBUTE}="${encodeCapacitySummary(capacitySummary)}">`,
     `<h2>${TEAM_CAPACITY_SECTION_TITLE}</h2>`,
-    `<p>${TEAM_CAPACITY_SECTION_DESCRIPTION}</p>`,
-    `<p><strong>Plan:</strong> ${capacitySummary.summaryLabel}</p>`,
-    `<p><strong>Date Range:</strong> ${capacitySummary.startDate || 'Not set'} to ${capacitySummary.endDate || 'Not set'}</p>`,
-    `<p><strong>Work Days:</strong> ${capacitySummary.workDayCount}</p>`,
-    `<p><strong>100% Capacity (pts):</strong> ${formatCapacityValue(capacitySummary.totalCapacityPoints)}</p>`,
-    `<p><strong>80% Capacity (pts):</strong> ${formatCapacityValue(capacitySummary.recommendedCapacityPoints)}</p>`,
-    visibleRoleSummaries ? `<ul>${visibleRoleSummaries}</ul>` : '<p>No capacity role rows are planned yet.</p>',
+    `<p>📊 ${TEAM_CAPACITY_SECTION_DESCRIPTION}</p>`,
+    // Emoji-labelled list rows read far faster than a stack of bold sentences and round-trip through
+    // Confluence cleanly. Deliberately a list, not a table (see createPlannedLoadHtml). The labels stay
+    // parseable — parseFallbackCapacitySummary strips the leading emoji before matching.
+    '<ul>',
+    `<li>📋 <strong>Plan:</strong> ${capacitySummary.summaryLabel}</li>`,
+    `<li>📅 <strong>Date Range:</strong> ${capacitySummary.startDate || 'Not set'} to ${capacitySummary.endDate || 'Not set'}</li>`,
+    `<li>🗓️ <strong>Work Days:</strong> ${capacitySummary.workDayCount}</li>`,
+    `<li>💯 <strong>100% Capacity (pts):</strong> ${formatCapacityValue(capacitySummary.totalCapacityPoints)}</li>`,
+    `<li>🎯 <strong>80% Capacity (pts):</strong> ${formatCapacityValue(capacitySummary.recommendedCapacityPoints)}</li>`,
+    '</ul>',
     createPlannedLoadHtml(loadComparison),
+    visibleRoleItems
+      ? `<p><strong>👥 Capacity by role</strong></p><ul>${visibleRoleItems}</ul>`
+      : '<p>No capacity role rows are planned yet.</p>',
     '</section>',
   ].join('');
 }
@@ -420,8 +434,19 @@ function collectCapacityBlocks(documentNode: Document): HTMLElement[][] {
       continue;
     }
 
-    // A loose block starts at a bare "Team Capacity" heading and runs through its siblings — within
-    // whatever parent it actually landed in — until the next heading, table, or canonical section.
+    // Confluence keeps our <section> wrapper but can strip its data attributes, so a canonical block
+    // that lost its markers still has the heading inside a real <section>. Claim the whole section —
+    // its tables and lists included — rather than walking loose siblings (which would stop at the
+    // first inner table and lose the metrics).
+    const ancestorSection = element.closest('section');
+    if (isElementNode(ancestorSection) && !claimedElements.has(ancestorSection)) {
+      claimSubtree(ancestorSection);
+      capacityBlocks.push([ancestorSection as HTMLElement]);
+      continue;
+    }
+
+    // A truly loose (pre-section) block starts at a bare "Team Capacity" heading and runs through its
+    // siblings — within whatever parent it landed in — until the next heading, table, or section.
     const looseBlockElements: HTMLElement[] = [element as HTMLElement];
     let followingElement = element.nextElementSibling;
     while (followingElement !== null) {
@@ -445,47 +470,87 @@ function parseCapacityNumber(paragraphText: string): number {
   return matchedNumber ? Number(matchedNumber[1]) : 0;
 }
 
+/** Drops a leading emoji/whitespace/bullet so an emoji-labelled line matches on its real label text. */
+function stripLeadingLabelDecoration(lineText: string): string {
+  return lineText.replace(/^[^A-Za-z0-9]+/, '').trim();
+}
+
+/**
+ * Flattens a capacity block's text into "label: value" lines the metric matchers can read, whether the
+ * block is the current table layout, an emoji-labelled row, or a legacy stack of bold paragraphs.
+ * Paragraphs and list items contribute their own text; each table row becomes its cells joined by ": ".
+ */
+function collectCapacityLines(capacityElements: HTMLElement[]): string[] {
+  const capacityLines: string[] = [];
+  const seenElements = new Set<Element>();
+
+  function pushTextLine(element: Element): void {
+    if (seenElements.has(element)) {
+      return;
+    }
+    seenElements.add(element);
+    capacityLines.push(element.textContent?.trim() ?? '');
+  }
+
+  for (const capacityElement of capacityElements) {
+    const elementTagName = capacityElement.tagName.toLowerCase();
+    if (elementTagName === 'p' || elementTagName === 'li') {
+      pushTextLine(capacityElement);
+    }
+    for (const paragraphOrItem of Array.from(capacityElement.querySelectorAll('p, li'))) {
+      pushTextLine(paragraphOrItem);
+    }
+    for (const tableRow of Array.from(capacityElement.querySelectorAll('tr'))) {
+      if (seenElements.has(tableRow)) {
+        continue;
+      }
+      seenElements.add(tableRow);
+      const cellTexts = Array.from(tableRow.querySelectorAll('th, td'))
+        .map((cell) => cell.textContent?.trim() ?? '')
+        .filter((cellText) => cellText !== '');
+      capacityLines.push(cellTexts.join(': '));
+    }
+  }
+
+  return capacityLines;
+}
+
 function parseFallbackCapacitySummary(fallbackCapacityElements: HTMLElement[]): CapacitySummary | null {
   if (fallbackCapacityElements.length === 0) {
     return null;
   }
 
-  const paragraphTexts = fallbackCapacityElements
-    .filter((element) => element.tagName.toLowerCase() === 'p')
-    .map((element) => element.textContent?.trim() ?? '');
-  if (paragraphTexts.some((paragraphText) => paragraphText === TEAM_CAPACITY_EMPTY_MESSAGE)) {
+  const capacityLines = collectCapacityLines(fallbackCapacityElements).map(stripLeadingLabelDecoration);
+  if (capacityLines.some((line) => line === TEAM_CAPACITY_EMPTY_MESSAGE)) {
     return null;
   }
 
-  const planParagraph = paragraphTexts.find((paragraphText) => paragraphText.startsWith('Plan:'));
-  const dateRangeParagraph = paragraphTexts.find((paragraphText) => paragraphText.startsWith('Date Range:'));
-  const workDaysParagraph = paragraphTexts.find((paragraphText) => paragraphText.startsWith('Work Days:'));
-  const fullCapacityParagraph = paragraphTexts.find((paragraphText) => paragraphText.startsWith('100% Capacity'));
-  const recommendedCapacityParagraph = paragraphTexts.find((paragraphText) => paragraphText.startsWith('80% Capacity'));
-  if (!planParagraph || !dateRangeParagraph || !workDaysParagraph || !fullCapacityParagraph || !recommendedCapacityParagraph) {
+  const planLine = capacityLines.find((line) => line.startsWith('Plan:'));
+  const dateRangeLine = capacityLines.find((line) => line.startsWith('Date Range:'));
+  const workDaysLine = capacityLines.find((line) => line.startsWith('Work Days:'));
+  const fullCapacityLine = capacityLines.find((line) => line.startsWith('100% Capacity'));
+  const recommendedCapacityLine = capacityLines.find((line) => line.startsWith('80% Capacity'));
+  if (!planLine || !dateRangeLine || !workDaysLine || !fullCapacityLine || !recommendedCapacityLine) {
     return null;
   }
 
-  const matchedDateRange = dateRangeParagraph.match(/Date Range:\s*(.+?)\s+to\s+(.+)$/i);
+  const matchedDateRange = dateRangeLine.match(/Date Range:\s*(.+?)\s+to\s+(.+)$/i);
   const roleCapacities: Record<string, number> = {};
-  const roleListElement = fallbackCapacityElements.find((element) => element.tagName.toLowerCase() === 'ul');
-  for (const roleElement of Array.from(roleListElement?.querySelectorAll('li') ?? [])) {
-    const roleText = roleElement.textContent?.trim() ?? '';
-    const matchedRole = roleText.match(/^(.+?):\s*(-?\d+(\.\d+)?)\s*pts$/i);
-    if (!matchedRole) {
-      continue;
+  for (const line of capacityLines) {
+    // Role rows are the only "name: N pts" lines; the metric lines above never end in "pts".
+    const matchedRole = line.match(/^(.+?):\s*(-?\d+(\.\d+)?)\s*pts$/i);
+    if (matchedRole) {
+      roleCapacities[matchedRole[1].trim()] = Number(matchedRole[2]);
     }
-
-    roleCapacities[matchedRole[1].trim()] = Number(matchedRole[2]);
   }
 
   return {
-    summaryLabel: planParagraph.replace(/^Plan:\s*/i, '').trim(),
+    summaryLabel: planLine.replace(/^Plan:\s*/i, '').trim(),
     startDate: matchedDateRange?.[1]?.trim() ?? '',
     endDate: matchedDateRange?.[2]?.trim() ?? '',
-    workDayCount: parseCapacityNumber(workDaysParagraph),
-    totalCapacityPoints: parseCapacityNumber(fullCapacityParagraph),
-    recommendedCapacityPoints: parseCapacityNumber(recommendedCapacityParagraph),
+    workDayCount: parseCapacityNumber(workDaysLine),
+    totalCapacityPoints: parseCapacityNumber(fullCapacityLine),
+    recommendedCapacityPoints: parseCapacityNumber(recommendedCapacityLine),
     roleCapacities,
   };
 }
