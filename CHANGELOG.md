@@ -8,6 +8,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Manual PI selection in Unplanned Work Mapping (formerly "PI carryover remap").** The tool now offers a **From PI**
+  and **To PI** dropdown listing every PI in the project, so any PI's bucket Feature can be re-pointed to any other's —
+  not just the auto-picked pair. The closeout-aware defaults do the common case for you: the source defaults to the PI
+  you are in today and the target to the **next** PI, so at closeout you intelligently see you are moving into the new
+  PI. Renamed from "carryover" because this handles **unplanned work** bucketed per PI, which is a different thing from
+  the PI Review carryover.
+
+### Fixed
+- **The carryover remaining-points estimate now works.** It could not find a Feature's points because it looked only in
+  Jira, and on the wrong field. It now takes the Feature's value **from the row carried over from the prior PI Review
+  page first** — so it needs no Jira lookup at all in the normal flow — and where it does read Jira (child issues, or a
+  row with no carried value) it uses the app-wide **Story Points (Selection)** field the rest of the tool uses, not a
+  hardcoded field.
+
+### Added
 - **PI Review: estimate the remaining points on carryover Features.** For rows flagged **Carry-Over**, an **Estimate
   carryover points** button computes how much work is left — fully deterministic, no AI. A Feature is pointed to its
   Definition of Done (Code in Integrated Test), so its value covers development (70%) and internal testing (30%); the

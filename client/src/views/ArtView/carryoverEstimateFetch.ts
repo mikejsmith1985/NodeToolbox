@@ -11,14 +11,13 @@
 
 import { jiraGet } from '../../services/jiraApi.ts';
 import { loadConfiguredFeatureLinkFieldId, extractFeatureKeyFromIssueFields } from '../../utils/featureLink.ts';
+import { getStoryPointsCandidateFieldIds } from '../SprintDashboard/featureReviewFixes.ts';
 import type { StandupRosterMember } from '../SprintDashboard/hooks/useStandupRosterStore.ts';
 import type { CarryoverChildIssue, CarryoverChildKind } from './carryoverEstimate.ts';
 
 /** Jira caps `in (...)` list length; batch the Feature keys to stay within it. */
 const FEATURE_KEY_BATCH_SIZE = 40;
 
-/** Story-points fields to read a child's points from, best-first (dropdown or numeric). */
-const STORY_POINTS_FIELD_IDS = ['customfield_10028', 'customfield_10016'] as const;
 
 interface RawAssignee {
   displayName?: string;
@@ -41,9 +40,9 @@ function quoteJqlValue(value: string): string {
 }
 
 /** Reads a child's story points from whichever field this instance uses, unwrapping a dropdown option. */
-function readChildStoryPoints(fields: RawChildIssue['fields']): number | null {
+function readChildStoryPoints(fields: RawChildIssue['fields'], storyPointsFieldIds: readonly string[]): number | null {
   if (!fields) return null;
-  for (const fieldId of STORY_POINTS_FIELD_IDS) {
+  for (const fieldId of storyPointsFieldIds) {
     const rawValue = fields[fieldId];
     if (typeof rawValue === 'number') return rawValue;
     if (typeof rawValue === 'object' && rawValue !== null) {
@@ -116,7 +115,10 @@ export async function fetchCarryoverChildrenByFeature(
   const featureLinkFieldId = loadConfiguredFeatureLinkFieldId();
   const featureLinkFieldNumber = featureLinkFieldId.replace('customfield_', '');
   const resolveAssigneeRole = buildAssigneeRoleResolver(rosterMembers);
-  const fields = ['summary', 'status', 'assignee', featureLinkFieldId, ...STORY_POINTS_FIELD_IDS].join(',');
+  // The app-wide story-points candidates (configured field first), read at call time so a runtime
+  // configuration change is honoured rather than frozen at module load.
+  const storyPointsFieldIds = getStoryPointsCandidateFieldIds();
+  const fields = ['summary', 'status', 'assignee', featureLinkFieldId, ...storyPointsFieldIds].join(',');
 
   for (const batch of batchFeatureKeys(uniqueKeys)) {
     const jql = `cf[${featureLinkFieldNumber}] in (${batch.map(quoteJqlValue).join(', ')})`;
@@ -132,7 +134,7 @@ export async function fetchCarryoverChildrenByFeature(
         summary: rawChild.fields?.summary ?? '',
         status: rawChild.fields?.status?.name ?? '',
         statusCategoryKey: rawChild.fields?.status?.statusCategory?.key ?? null,
-        storyPoints: readChildStoryPoints(rawChild.fields),
+        storyPoints: readChildStoryPoints(rawChild.fields, storyPointsFieldIds),
         assigneeRoleKind: resolveAssigneeRole(rawChild.fields?.assignee ?? null),
       };
 

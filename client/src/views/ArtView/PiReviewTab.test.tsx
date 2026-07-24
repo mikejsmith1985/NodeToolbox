@@ -708,6 +708,59 @@ describe('PiReviewTab', () => {
     await waitFor(() => expect(document.body.textContent).toMatch(/estimated remaining points for 1 carryover feature/i));
   });
 
+  it('estimates from the value carried over from the prior page — no Jira feature points needed', async () => {
+    // The row already carries the Feature's full points (40) from the prior PI Review page, and Jira
+    // returns NO story points for the Feature. The estimate must still work from the carried value.
+    const carriedPage = {
+      ...ALPHA_PAGE,
+      body: { storage: { value: `
+        <table><tbody>
+          <tr>
+            <th>Carry-Over</th><th>Priority</th><th>Feature</th><th>Point Estimate</th>
+            <th>Dependency</th><th>Risks</th><th>Committed to PI?</th><th>Notes</th>
+          </tr>
+          <tr>
+            <td>Yes</td><td>P1</td><td>DENP-1352 - Carried Feature</td><td>40</td>
+            <td></td><td></td><td>Yes</td><td></td>
+          </tr>
+        </tbody></table>
+      `, representation: 'storage' } },
+    };
+    mockFetchConfluencePageByReference.mockResolvedValue(carriedPage);
+    mockJiraGet.mockImplementation((path: string) => {
+      const decoded = decodeURIComponent(path);
+      if (decoded.includes('/rest/api/2/status')) return Promise.resolve([]);
+      if (decoded.includes('cf[10108]')) {
+        return Promise.resolve({ issues: [
+          { key: 'DEV-1', fields: { summary: 'DEV: build', status: { name: 'Done', statusCategory: { key: 'done' } }, assignee: null, customfield_10108: 'DENP-1352' } },
+          { key: 'QA-1', fields: { summary: 'QA: test', status: { name: 'To Do', statusCategory: { key: 'new' } }, assignee: null, customfield_10108: 'DENP-1352' } },
+        ] });
+      }
+      // Jira reconcile returns the Feature but with NO story points — the carried value must carry the estimate.
+      if (decoded.includes('/rest/api/2/search')) {
+        return Promise.resolve({ issues: [{ id: '1', key: 'DENP-1352', fields: {
+          summary: 'Carried Feature', status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } },
+          priority: null, assignee: null, reporter: null, issuetype: { name: 'Feature', iconUrl: '' },
+          created: '', updated: '', description: null, issuelinks: [],
+        } }] });
+      }
+      return Promise.reject(new Error(`unexpected path ${path}`));
+    });
+
+    renderPiReviewTab([DEFAULT_TEAMS[0]]);
+    const alphaSection = await screen.findByRole('region', { name: /alpha team pi review/i });
+    enterEditMode(alphaSection);
+
+    const estimateInput = within(alphaSection).getByLabelText(/point estimate for alpha team row 1/i);
+    // The carried 40 is not overwritten by Jira's blank on load.
+    await waitFor(() => expect(estimateInput).toHaveValue('40'));
+
+    fireEvent.click(within(alphaSection).getByRole('button', { name: /estimate carryover points/i }));
+
+    // 30% of the carried 40 = 12, computed with no Jira points for the Feature.
+    await waitFor(() => expect(estimateInput).toHaveValue('12'));
+  });
+
   it('defaults to a read-only view mode and only shows structural controls in edit mode', async () => {
     mockFetchConfluencePageByReference.mockResolvedValue(ALPHA_PAGE);
 

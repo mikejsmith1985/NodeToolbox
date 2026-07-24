@@ -58,10 +58,18 @@ export interface FeatureRemapFeatureOption {
 }
 
 export interface FeatureRemapPiOptions {
-  currentPiName: string;
-  priorPiName: string | null;
-  currentPiFeatures: FeatureRemapFeatureOption[];
-  priorPiFeatures: FeatureRemapFeatureOption[];
+  /** Every PI in the project that has Features, newest first — the full list both selectors offer. */
+  allPiNames: string[];
+  /**
+   * The PI to move unplanned work FROM by default: the PI containing today. On closeout that is the
+   * PI ending, whose leftover unplanned work rolls forward.
+   */
+  defaultSourcePiName: string;
+  /**
+   * The PI to move unplanned work INTO by default: the one AFTER today's PI. Closing out a PI means
+   * bucketing its leftovers into the NEXT PI, so this is what makes "I'm on the next PI" the default.
+   */
+  defaultTargetPiName: string;
 }
 
 function readStoredArtSettings(): StoredArtSettings {
@@ -166,15 +174,6 @@ async function fetchProjectPiNames(projectKey: string, piFieldId: string): Promi
       .map((issue) => readProgramIncrementValueFromIssue(issue, piFieldId))
       .filter((piValue) => piValue.trim() !== ''),
   );
-}
-
-function readPriorPiName(sortedPiNames: string[], currentPiName: string): string | null {
-  const currentPiIndex = sortedPiNames.findIndex((piName) => piName === currentPiName);
-  if (currentPiIndex === -1 || currentPiIndex === sortedPiNames.length - 1) {
-    return null;
-  }
-
-  return sortedPiNames[currentPiIndex + 1] ?? null;
 }
 
 async function fetchPiFeatureOptions(
@@ -328,19 +327,27 @@ export async function fetchFeatureRemapPiOptions(
 ): Promise<FeatureRemapPiOptions> {
   const featureRemapSettings = readFeatureRemapSettings();
   const sortedPiNames = await fetchProjectPiNames(projectKey, featureRemapSettings.piFieldId);
-  const currentPiName = findPiNameForDate(sortedPiNames) ?? (selectedPiName.trim() || sortedPiNames[0] || '');
-  const priorPiName = readPriorPiName(sortedPiNames, currentPiName);
-  const [priorPiFeatures, currentPiFeatures] = await Promise.all([
-    fetchPiFeatureOptions(projectKey, priorPiName, featureRemapSettings),
-    fetchPiFeatureOptions(projectKey, currentPiName, featureRemapSettings),
-  ]);
+  // The PI containing today — the one closing out, whose leftover unplanned work rolls forward.
+  const currentByDatePiName = findPiNameForDate(sortedPiNames) ?? (selectedPiName.trim() || sortedPiNames[0] || '');
+  // Closeout buckets that PI's leftovers into the NEXT PI. sortedPiNames is newest-first, so the PI
+  // after today's is the one immediately BEFORE it in the list; falling back to today's PI when there
+  // is no later one (nothing newer has been planned yet).
+  const currentByDateIndex = sortedPiNames.indexOf(currentByDatePiName);
+  const defaultTargetPiName = (currentByDateIndex > 0 ? sortedPiNames[currentByDateIndex - 1] : currentByDatePiName) ?? '';
 
   return {
-    currentPiName,
-    priorPiName,
-    currentPiFeatures,
-    priorPiFeatures,
+    allPiNames: sortedPiNames,
+    defaultSourcePiName: currentByDatePiName,
+    defaultTargetPiName,
   };
+}
+
+/** Loads the Features of any chosen PI, so either selector can offer a manually-picked PI's Features. */
+export async function fetchFeaturesForPi(
+  projectKey: string,
+  piName: string,
+): Promise<FeatureRemapFeatureOption[]> {
+  return fetchPiFeatureOptions(projectKey, piName, readFeatureRemapSettings());
 }
 
 /** Updates every matched issue so both the feature link and Program Increment move together. */
