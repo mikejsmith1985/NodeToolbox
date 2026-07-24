@@ -8,11 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
-- **Unplanned Work Mapping now lists every Feature in the target PI, not just one.** The Feature dropdowns discovered
+- **Unplanned Work Mapping now lists the team's PI Review Features, not just one.** The Feature dropdowns discovered
   Features bottom-up (only Features that already had team child issues), so a brand-new **target** PI — whose Features
-  have no children yet — showed just the one Feature that happened to have work on it. The dropdowns now use the same
-  direct query the PI Review page uses (`issuetype = Feature` scoped by the PI, **unscoped by project** because
-  Features usually live in a portfolio project), so both selectors offer exactly the Features that PI Review shows.
+  have no children yet — showed just the one Feature that happened to have work on it. The dropdowns now use the **same
+  discovery the PI Review pull uses** — `issuetype = Feature` scoped by the PI and the **team's Product Owner(s)** from
+  the imported roster (unscoped by project, since Features usually live in a portfolio project) — so both selectors
+  offer exactly the Features that PI Review shows for that team and PI, including brand-new target Features. If the
+  team's roster (with a flagged Product Owner) isn't imported yet, the panel says so rather than listing every
+  Feature in the PI.
+
+### Added
+- **Type-to-filter on the Unplanned Work Mapping Feature pickers.** Each Feature dropdown now has a filter box above it
+  — type any part of a key or summary to narrow a long PI's Feature list to the one you want.
 - **AI Assist protects carryover point estimates.** When carryover Features are pulled onto the PI Review tab and the
   AI assistant runs, those rows are now **visibly marked as carryover** in the suggestion list and their **point
   estimate is left unticked by default** — so an accepted suggestion updates the risks, dependencies, and notes that
