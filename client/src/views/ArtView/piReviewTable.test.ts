@@ -12,10 +12,12 @@ import {
   parseConfidenceVoteTable,
   parsePiReviewTable,
   setPiReviewDomParser,
+  stripToolboxPiReviewTitleSection,
   writeConfidenceVoteTable,
   writePiReviewCapacitySummary,
   writePiReviewTable,
 } from './piReviewTable.ts';
+import { computePiReviewLoadComparison } from './piReviewLoad.ts';
 
 const MOCK_STORAGE_VALUE = `
   <h1>PI Review</h1>
@@ -328,7 +330,8 @@ describe('createInitialPiReviewPageStorage', () => {
     const parsedConfidenceVoteTable = parseConfidenceVoteTable(storageValue);
     const parsedCapacitySummary = parsePiReviewCapacitySummary(storageValue);
 
-    expect(storageValue).toContain('NodeToolbox PI Review');
+    // The legacy "NodeToolbox PI Review" attribution banner is no longer written onto the page.
+    expect(storageValue).not.toContain('NodeToolbox PI Review');
     expect(storageValue).toContain('Team Capacity');
     expect(storageValue).toContain('style="width: 100%; table-layout: fixed;"');
     expect(parsedPiReviewTable.tableBinding.columnOrder).toEqual([
@@ -413,6 +416,31 @@ describe('writePiReviewCapacitySummary', () => {
         'Systems Analyst': 0,
       },
     });
+  });
+
+  it('writes the planned-load vs 80% capacity block, over/under, when a comparison is supplied', () => {
+    const capacitySummary = {
+      summaryLabel: 'Alpha Team Capacity',
+      startDate: '2026-05-18',
+      endDate: '2026-05-22',
+      workDayCount: 5,
+      totalCapacityPoints: 12.5,
+      recommendedCapacityPoints: 10,
+      roleCapacities: { Developer: 10, 'Dev Lead': 0, 'Internal Tester': 0, 'External Tester': 2.5, 'Systems Analyst': 0 },
+    };
+    // Committed 13 (3 over 10), total 20 (10 over 10).
+    const rows = [createEmptyPiReviewRow(), createEmptyPiReviewRow()];
+    rows[0] = { ...rows[0], pointEstimate: '13', committed: 'Yes' };
+    rows[1] = { ...rows[1], pointEstimate: '7', committed: '' };
+    const loadComparison = computePiReviewLoadComparison(rows, capacitySummary.recommendedCapacityPoints);
+
+    const nextStorageValue = writePiReviewCapacitySummary(MOCK_STORAGE_VALUE, capacitySummary, loadComparison);
+
+    expect(nextStorageValue).toContain('Planned load vs 80% capacity');
+    expect(nextStorageValue).toContain('Committed points:</strong> 13 (3 over)');
+    expect(nextStorageValue).toContain('All Feature points:</strong> 20 (10 over)');
+    // The capacity payload still round-trips — the extra block does not disturb parsing.
+    expect(parsePiReviewCapacitySummary(nextStorageValue)?.summaryLabel).toBe('Alpha Team Capacity');
   });
 
   it('replaces a rendered Team Capacity block when Confluence strips the section data attributes', () => {
@@ -1133,5 +1161,31 @@ describe('readPiReviewColumnKeyFromHeader — Carry to Next PI vs Carry-Over', (
 
     expect(parsed?.rows[0].carryOver).toBe('Yes');
     expect(parsed?.rows[0].carryToNext).toBe('');
+  });
+});
+
+describe('stripToolboxPiReviewTitleSection', () => {
+  it('removes the NodeToolbox PI Review banner and its managed-by note, leaving the rest intact', () => {
+    const storageValue = `
+      <h1>NodeToolbox PI Review</h1>
+      <p>This page section is managed by NodeToolbox so PI Review data can sync reliably.</p>
+      <h2>Team Capacity</h2>
+      <p><strong>Plan:</strong> Keep me</p>
+    `;
+
+    const stripped = stripToolboxPiReviewTitleSection(storageValue);
+
+    expect(stripped).not.toContain('NodeToolbox PI Review');
+    expect(stripped).not.toContain('managed by NodeToolbox');
+    // Everything else is untouched.
+    expect(stripped).toContain('Team Capacity');
+    expect(stripped).toContain('Keep me');
+  });
+
+  it('leaves a page that never carried the banner unchanged', () => {
+    const storageValue = '<h2>Team Capacity</h2><p>No banner here</p>';
+
+    expect(stripToolboxPiReviewTitleSection(storageValue)).toContain('Team Capacity');
+    expect(stripToolboxPiReviewTitleSection(storageValue)).toContain('No banner here');
   });
 });

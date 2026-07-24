@@ -155,10 +155,18 @@ async function applyRefresh(engine, deps, jiraConfig, storageValue, features, sh
   );
   // Preserve the existing capacity snapshot verbatim; the write also collapses any duplicate blocks
   // (FR-012). If the page has no real capacity snapshot, leave it untouched (never add a placeholder).
+  // The planned-load block is derived from the reconciled rows, so a scheduled refresh keeps it in
+  // step with Jira just as a manual save from Toolbox does.
   const existingCapacity = engine.parsePiReviewCapacitySummary(storageValue);
   if (existingCapacity) {
-    nextStorage = engine.writePiReviewCapacitySummary(nextStorage, existingCapacity);
+    const loadComparison = engine.computePiReviewLoadComparison(
+      reconciliation.rows,
+      existingCapacity.recommendedCapacityPoints,
+    );
+    nextStorage = engine.writePiReviewCapacitySummary(nextStorage, existingCapacity, loadComparison);
   }
+  // Remove the legacy "NodeToolbox PI Review" attribution banner if an older page still carries it.
+  nextStorage = engine.stripToolboxPiReviewTitleSection(nextStorage);
 
   // hasChanges drives the "skip the write" decision: true only when a Feature was appended or the
   // reconcile actually changed a Jira-owned cell. Without this a run would PUT (and bump the page

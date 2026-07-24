@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **The Planned load vs 80% capacity figures are now written into Confluence.** The Team Capacity section
+  saved to the PI Review page now carries the committed-points and all-Features totals with their over/under
+  gap against the 80% target — so the published page shows the same load-vs-capacity picture as Toolbox. A
+  scheduled refresh keeps it in step with Jira just like a manual save.
+- **Sprucier Team Capacity panel.** The in-app capacity section gains a **utilisation meter** — a single bar
+  showing committed work (green within the 80% target, amber over) layered against all planned Features, with
+  a dashed line marking the 80% target — plus an accent spine and a clearer layout.
+
+### Changed
+- **The "NodeToolbox PI Review" banner is gone from the review page.** New pages no longer get the tool
+  attribution heading, and it is stripped from any existing page the next time it is saved or refreshed.
+
+### Added
 - **PI Review: planned load vs 80% capacity.** The capacity panel now totals the points of **all** Features
   on the board and, separately, the **committed** Features, and compares each to the team's recommended
   (80%) capacity — showing how far over or under target the plan sits (green when within, amber when over).
