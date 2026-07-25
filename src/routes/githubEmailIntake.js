@@ -7,6 +7,7 @@
 
 const express = require('express');
 const fs = require('fs');
+const { makeJiraApiRequest } = require('../utils/httpClient');
 const { saveConfigToDisk } = require('../config/loader');
 const {
   runGithubEmailIntakeNow,
@@ -89,6 +90,42 @@ function buildDefaultConfigResponse() {
     transitions: { branchCreated: '', commitPushed: '', prOpened: '', prMerged: '' },
     customRules: [],
   };
+}
+
+/**
+ * Fetches the distinct Jira status NAMES the operator can map events to, for the transition dropdowns.
+ * When project keys are configured it unions the statuses across those projects' issue types (the most
+ * relevant set); otherwise it falls back to the instance-wide status list. Never throws — an unreachable
+ * Jira yields an empty list so the UI can fall back to free-text entry.
+ */
+async function fetchAvailableStatuses(configuration) {
+  const cfg = ((configuration.scheduler || {}).githubEmailIntake) || {};
+  const jiraConfig = configuration.jira || {};
+  const isTlsVerified = configuration.sslVerify !== false;
+  const projectKeys = Array.isArray(cfg.jiraProjectKeys) ? cfg.jiraProjectKeys.filter(Boolean) : [];
+  const statusNames = new Set();
+
+  try {
+    if (projectKeys.length > 0) {
+      for (const projectKey of projectKeys) {
+        const response = await makeJiraApiRequest(
+          'GET', '/rest/api/2/project/' + encodeURIComponent(projectKey) + '/statuses', null, jiraConfig, isTlsVerified);
+        if (response.status === 200 && Array.isArray(response.body)) {
+          response.body.forEach((issueType) => (issueType.statuses || []).forEach((status) => {
+            if (status && status.name) statusNames.add(status.name);
+          }));
+        }
+      }
+    } else {
+      const response = await makeJiraApiRequest('GET', '/rest/api/2/status', null, jiraConfig, isTlsVerified);
+      if (response.status === 200 && Array.isArray(response.body)) {
+        response.body.forEach((status) => { if (status && status.name) statusNames.add(status.name); });
+      }
+    }
+  } catch (fetchError) {
+    return { statuses: [], error: fetchError instanceof Error ? fetchError.message : String(fetchError) };
+  }
+  return { statuses: Array.from(statusNames).sort() };
 }
 
 /** Reports whether a path is an existing directory (best-effort; used only for a UI warning). */
@@ -185,6 +222,16 @@ function createGithubEmailIntakeRouter(configuration) {
 
   router.get('/api/github-email-intake/status', (req, res) => {
     return res.json(readLastRunResult());
+  });
+
+  // Jira status names for the transition dropdowns (so an operator selects a real status instead of typing).
+  router.get('/api/github-email-intake/jira-statuses', async (req, res) => {
+    try {
+      return res.json(await fetchAvailableStatuses(configuration));
+    } catch (statusError) {
+      const errorMessage = statusError instanceof Error ? statusError.message : String(statusError);
+      return res.status(500).json({ statuses: [], error: errorMessage });
+    }
   });
 
   return router;

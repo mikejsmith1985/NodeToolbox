@@ -8,6 +8,7 @@ const express = require('express');
 const request = require('supertest');
 
 jest.mock('../../src/config/loader', () => ({ saveConfigToDisk: jest.fn() }));
+jest.mock('../../src/utils/httpClient', () => ({ makeJiraApiRequest: jest.fn() }));
 jest.mock('../../src/services/githubEmailIntakeScheduler', () => ({
   runGithubEmailIntakeNow: jest.fn(),
   isGithubEmailIntakeRunInProgress: jest.fn(() => false),
@@ -15,6 +16,7 @@ jest.mock('../../src/services/githubEmailIntakeScheduler', () => ({
 }));
 
 const { saveConfigToDisk } = require('../../src/config/loader');
+const { makeJiraApiRequest } = require('../../src/utils/httpClient');
 const scheduler = require('../../src/services/githubEmailIntakeScheduler');
 const createRouter = require('../../src/routes/githubEmailIntake');
 
@@ -108,6 +110,42 @@ describe('GET /api/github-email-intake/status', () => {
     const response = await request(buildApp(freshConfig())).get('/api/github-email-intake/status');
     expect(response.status).toBe(200);
     expect(response.body).toEqual({ hasRun: true, postedCount: 2 });
+  });
+});
+
+describe('GET /api/github-email-intake/jira-statuses', () => {
+  it('unions and de-dupes statuses across configured project keys', async () => {
+    makeJiraApiRequest.mockResolvedValue({
+      status: 200,
+      body: [
+        { name: 'Story', statuses: [{ name: 'To Do' }, { name: 'In Progress' }] },
+        { name: 'Task', statuses: [{ name: 'In Progress' }, { name: 'Done' }] },
+      ],
+    });
+    const configuration = { jira: { baseUrl: 'https://j' }, scheduler: { githubEmailIntake: { jiraProjectKeys: ['ENFCT'] } } };
+
+    const response = await request(buildApp(configuration)).get('/api/github-email-intake/jira-statuses');
+
+    expect(response.status).toBe(200);
+    expect(response.body.statuses).toEqual(['Done', 'In Progress', 'To Do']);
+    expect(makeJiraApiRequest).toHaveBeenCalledWith('GET', '/rest/api/2/project/ENFCT/statuses', null, { baseUrl: 'https://j' }, true);
+  });
+
+  it('falls back to the instance-wide status list when no project keys are configured', async () => {
+    makeJiraApiRequest.mockResolvedValue({ status: 200, body: [{ name: 'Backlog' }, { name: 'Done' }] });
+    const configuration = { jira: { baseUrl: 'https://j' }, scheduler: { githubEmailIntake: { jiraProjectKeys: [] } } };
+
+    const response = await request(buildApp(configuration)).get('/api/github-email-intake/jira-statuses');
+
+    expect(response.body.statuses).toEqual(['Backlog', 'Done']);
+    expect(makeJiraApiRequest).toHaveBeenCalledWith('GET', '/rest/api/2/status', null, { baseUrl: 'https://j' }, true);
+  });
+
+  it('returns an empty list (never throws) when Jira is unreachable', async () => {
+    makeJiraApiRequest.mockRejectedValue(new Error('ECONNREFUSED'));
+    const response = await request(buildApp({ jira: {}, scheduler: { githubEmailIntake: {} } })).get('/api/github-email-intake/jira-statuses');
+    expect(response.status).toBe(200);
+    expect(response.body.statuses).toEqual([]);
   });
 });
 

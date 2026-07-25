@@ -87,6 +87,18 @@ async function fetchStatus(): Promise<IntakeRunResult> {
   return await response.json() as IntakeRunResult
 }
 
+/** Fetches the Jira status names for the transition dropdowns. Returns [] on any failure. */
+async function fetchJiraStatuses(): Promise<string[]> {
+  try {
+    const response = await fetch('/api/github-email-intake/jira-statuses')
+    if (!response.ok) return []
+    const body = await response.json() as { statuses?: string[] }
+    return Array.isArray(body.statuses) ? body.statuses : []
+  } catch {
+    return []
+  }
+}
+
 async function postAction(pathSuffix: 'run-now' | 'preview'): Promise<{ ok: boolean; message?: string; result?: IntakeRunResult }> {
   const response = await fetch('/api/github-email-intake/' + pathSuffix, { method: 'POST' })
   return await response.json() as { ok: boolean; message?: string; result?: IntakeRunResult }
@@ -108,6 +120,7 @@ export function GithubEmailIntakePanel() {
   const [isBusy, setIsBusy] = useState(false)
   const [statusMessage, setStatusMessage] = useState('')
   const [isDirty, setIsDirty] = useState(false)
+  const [jiraStatuses, setJiraStatuses] = useState<string[]>([])
   // Rule Assist (AI): the generated prompt, the pasted JSON reply, and a validation message.
   const isAiUnlocked = useAiAssistStore((state) => state.isAiAssistUnlocked)
   const [rulePrompt, setRulePrompt] = useState('')
@@ -116,7 +129,8 @@ export function GithubEmailIntakePanel() {
 
   const loadEverything = useCallback(async () => {
     try {
-      const [loadedConfig, loadedStatus] = await Promise.all([fetchConfig(), fetchStatus()])
+      const [loadedConfig, loadedStatus, loadedStatuses] = await Promise.all([fetchConfig(), fetchStatus(), fetchJiraStatuses()])
+      setJiraStatuses(loadedStatuses)
       // Normalize newer fields so an older server or a partial payload can't crash the render.
       setConfig({ ...loadedConfig, customRules: loadedConfig.customRules ?? [] })
       setLastRun(loadedStatus)
@@ -253,7 +267,7 @@ export function GithubEmailIntakePanel() {
 
       <div className={styles.panelSection}>
         <label className={styles.fieldLabel}>Rollout mode</label>
-        <select className={styles.inputField} value={config.mode} onChange={(event) => updateConfig({ mode: event.target.value as IntakeMode })}>
+        <select aria-label="Rollout mode" className={styles.inputField} value={config.mode} onChange={(event) => updateConfig({ mode: event.target.value as IntakeMode })}>
           {(Object.keys(MODE_LABELS) as IntakeMode[]).map((mode) => (
             <option key={mode} value={mode}>{MODE_LABELS[mode]}</option>
           ))}
@@ -280,11 +294,44 @@ export function GithubEmailIntakePanel() {
       </div>
 
       <div className={styles.panelSection}>
-        <label className={styles.fieldLabel}>Status transitions (leave blank to only comment). Match the Jira status name.</label>
-        <input className={styles.inputField} value={config.transitions.branchCreated} placeholder="Branch created → status (e.g. In Progress)" onChange={(event) => updateTransition({ branchCreated: event.target.value })} />
-        <input className={styles.inputField} value={config.transitions.commitPushed} placeholder="Commit pushed → status" onChange={(event) => updateTransition({ commitPushed: event.target.value })} />
-        <input className={styles.inputField} value={config.transitions.prOpened} placeholder="PR opened → status (e.g. In Progress)" onChange={(event) => updateTransition({ prOpened: event.target.value })} />
-        <input className={styles.inputField} value={config.transitions.prMerged} placeholder="PR merged → status (e.g. Ready for QA)" onChange={(event) => updateTransition({ prMerged: event.target.value })} />
+        <label className={styles.fieldLabel}>
+          Status transitions (leave blank to only comment).{' '}
+          {jiraStatuses.length === 0
+            ? 'Status list unavailable — type the exact Jira status name.'
+            : 'Pick the target Jira status from the dropdown.'}
+        </label>
+        {([
+          ['branchCreated', 'Branch created → status'],
+          ['commitPushed', 'Commit pushed → status'],
+          ['prOpened', 'PR opened → status'],
+          ['prMerged', 'PR merged → status'],
+        ] as [keyof IntakeTransitions, string][]).map(([transitionKey, label]) => (
+          jiraStatuses.length === 0 ? (
+            <input
+              key={transitionKey}
+              className={styles.inputField}
+              value={config.transitions[transitionKey]}
+              placeholder={label}
+              onChange={(event) => updateTransition({ [transitionKey]: event.target.value } as Partial<IntakeTransitions>)}
+            />
+          ) : (
+            <select
+              key={transitionKey}
+              aria-label={label}
+              className={styles.inputField}
+              value={config.transitions[transitionKey]}
+              onChange={(event) => updateTransition({ [transitionKey]: event.target.value } as Partial<IntakeTransitions>)}
+            >
+              <option value="">{label} — comment only</option>
+              {(jiraStatuses.includes(config.transitions[transitionKey]) || config.transitions[transitionKey] === ''
+                ? jiraStatuses
+                : [config.transitions[transitionKey], ...jiraStatuses]
+              ).map((status) => (
+                <option key={status} value={status}>{status}</option>
+              ))}
+            </select>
+          )
+        ))}
       </div>
 
       <div className={styles.panelSection}>

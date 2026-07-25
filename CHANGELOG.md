@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **GitHub Email Intake — status transitions are now dropdowns.** Instead of typing an exact Jira status
+  name (and hoping it matches), the four event→status fields are **dropdowns populated from your Jira's real
+  statuses** — scoped to your configured project keys when set, otherwise the whole instance. Pick "Ready
+  for QA", "In Progress", etc. from the list; blank still means comment-only. If Jira can't be reached the
+  fields fall back to free-text so you're never blocked. Backed by `GET /api/github-email-intake/jira-statuses`.
+
 ### Fixed
 - **Outlook export now reports the real failure reason.** When the PowerShell exporter fails, the panel
   showed a generic "Command failed: powershell.exe …" that hid the cause. It now surfaces PowerShell's

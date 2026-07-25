@@ -1,7 +1,7 @@
 // GithubEmailIntakePanel.test.tsx — Render + interaction smoke tests for the intake Admin Hub panel.
 // fetch is stubbed so the panel loads its config and status without a server.
 
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { useAiAssistStore } from '../../store/aiAssistStore.ts';
@@ -26,6 +26,9 @@ function stubFetch(overrides: Record<string, unknown> = {}) {
     const url = String(input);
     if (url.endsWith('/config') && (!init || init.method !== 'POST')) {
       return { ok: true, json: async () => DEFAULT_CONFIG } as Response;
+    }
+    if (url.endsWith('/jira-statuses')) {
+      return { ok: true, json: async () => ({ statuses: ['In Progress', 'Ready for QA'] }) } as Response;
     }
     if (url.endsWith('/status')) {
       return { ok: true, json: async () => ({ hasRun: false }) } as Response;
@@ -52,7 +55,7 @@ describe('GithubEmailIntakePanel', () => {
     expect(await screen.findByText('📧 GitHub Email Intake')).toBeInTheDocument();
     expect(screen.getByDisplayValue('C:\\gh')).toBeInTheDocument();
     // The rollout mode selector defaults to dry run.
-    const modeSelect = screen.getByRole('combobox') as HTMLSelectElement;
+    const modeSelect = screen.getByRole('combobox', { name: /rollout mode/i }) as HTMLSelectElement;
     expect(modeSelect.value).toBe('dryRun');
   });
 
@@ -65,6 +68,17 @@ describe('GithubEmailIntakePanel', () => {
 
     await waitFor(() => expect(screen.getByText(/Preview complete/i)).toBeInTheDocument());
     expect(screen.getByText(/a\.eml/)).toBeInTheDocument();
+  });
+
+  it('renders the transition fields as dropdowns populated from Jira statuses', async () => {
+    stubFetch();
+    render(<GithubEmailIntakePanel />);
+    await screen.findByText('📧 GitHub Email Intake');
+
+    // The "PR merged → status" field is a dropdown carrying the fetched Jira statuses.
+    const prMergedSelect = await screen.findByRole('combobox', { name: /PR merged/i });
+    expect(within(prMergedSelect).getByRole('option', { name: 'Ready for QA' })).toBeInTheDocument();
+    expect(within(prMergedSelect).getByRole('option', { name: 'In Progress' })).toBeInTheDocument();
   });
 
   it('Rule Assist is gated behind the AI unlock', async () => {
