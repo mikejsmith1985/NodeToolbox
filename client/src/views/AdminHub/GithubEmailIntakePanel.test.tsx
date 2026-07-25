@@ -18,7 +18,6 @@ const DEFAULT_CONFIG = {
   fileExtensions: ['.eml', '.txt'],
   jiraProjectKeys: [],
   transitions: { branchCreated: '', commitPushed: '', prOpened: '', prMerged: '' },
-  outlookExport: { isEnabled: false, sourceFolder: 'Inbox\\GitHub Intake', processedFolder: 'Inbox\\GitHub Processed', lookbackDays: 0 },
   customRules: [],
 };
 
@@ -36,9 +35,6 @@ function stubFetch(overrides: Record<string, unknown> = {}) {
     }
     if (url.endsWith('/preview') || url.endsWith('/run-now')) {
       return { ok: true, json: async () => ({ ok: true, result: { hasRun: true, mode: 'dryRun', postedCount: 0, skippedCount: 1, errorCount: 0, events: [{ fileName: 'a.eml', outcome: 'dry-run', eventType: 'pr_merged', jiraKey: 'DENP-1' }] } }) } as Response;
-    }
-    if (url.endsWith('/export-test')) {
-      return { ok: true, json: async () => ({ ok: true, result: { ok: true, exportedCount: 3, total: 4 } }) } as Response;
     }
     return { ok: true, json: async () => ({}) } as Response;
   }));
@@ -69,19 +65,6 @@ describe('GithubEmailIntakePanel', () => {
 
     await waitFor(() => expect(screen.getByText(/Preview complete/i)).toBeInTheDocument());
     expect(screen.getByText(/a\.eml/)).toBeInTheDocument();
-  });
-
-  it('runs the Outlook export test and shows the exported count', async () => {
-    stubFetch();
-    render(<GithubEmailIntakePanel />);
-    await screen.findByText('📧 GitHub Email Intake');
-
-    // The "Pull emails from Outlook" section and its source-folder default are rendered.
-    expect(screen.getByDisplayValue('Inbox\\GitHub Intake')).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: /Test Outlook export/i }));
-
-    await waitFor(() => expect(screen.getByText(/Exported 3 of 4 Outlook message/i)).toBeInTheDocument());
   });
 
   it('Rule Assist is gated behind the AI unlock', async () => {

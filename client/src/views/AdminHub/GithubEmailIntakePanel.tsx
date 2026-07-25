@@ -22,13 +22,6 @@ interface IntakeTransitions {
   prMerged: string
 }
 
-interface OutlookExportConfig {
-  isEnabled: boolean
-  sourceFolder: string
-  processedFolder: string
-  lookbackDays: number
-}
-
 interface IntakeConfig {
   isEnabled: boolean
   mode: IntakeMode
@@ -40,16 +33,7 @@ interface IntakeConfig {
   fileExtensions: string[]
   jiraProjectKeys: string[]
   transitions: IntakeTransitions
-  outlookExport: OutlookExportConfig
   customRules: SerializedEmailRule[]
-}
-
-interface OutlookExportResult {
-  ok: boolean
-  skipped?: boolean
-  exportedCount?: number
-  total?: number
-  message?: string
 }
 
 interface IntakeEvent {
@@ -108,11 +92,6 @@ async function postAction(pathSuffix: 'run-now' | 'preview'): Promise<{ ok: bool
   return await response.json() as { ok: boolean; message?: string; result?: IntakeRunResult }
 }
 
-async function postExportTest(): Promise<{ ok: boolean; message?: string; result?: OutlookExportResult }> {
-  const response = await fetch('/api/github-email-intake/export-test', { method: 'POST' })
-  return await response.json() as { ok: boolean; message?: string; result?: OutlookExportResult }
-}
-
 /** Renders a comma-separated list into a trimmed string array, dropping blanks. */
 function splitList(value: string): string[] {
   return value.split(',').map((part) => part.trim()).filter((part) => part !== '')
@@ -129,8 +108,6 @@ export function GithubEmailIntakePanel() {
   const [isBusy, setIsBusy] = useState(false)
   const [statusMessage, setStatusMessage] = useState('')
   const [isDirty, setIsDirty] = useState(false)
-  const [isExporting, setIsExporting] = useState(false)
-  const [exportMessage, setExportMessage] = useState('')
   // Rule Assist (AI): the generated prompt, the pasted JSON reply, and a validation message.
   const isAiUnlocked = useAiAssistStore((state) => state.isAiAssistUnlocked)
   const [rulePrompt, setRulePrompt] = useState('')
@@ -165,31 +142,6 @@ export function GithubEmailIntakePanel() {
   function updateTransition(patch: Partial<IntakeTransitions>) {
     setConfig((current) => (current === null ? current : { ...current, transitions: { ...current.transitions, ...patch } }))
     setIsDirty(true)
-  }
-
-  function updateOutlookExport(patch: Partial<OutlookExportConfig>) {
-    setConfig((current) => (current === null ? current : { ...current, outlookExport: { ...current.outlookExport, ...patch } }))
-    setIsDirty(true)
-  }
-
-  // Runs just the Outlook export (pull emails → drop folder), so the operator can verify the Outlook side
-  // before enabling it in the scheduled run. Save first, since it acts on the saved config.
-  async function handleTestExport() {
-    setIsExporting(true)
-    setExportMessage('')
-    try {
-      const outcome = await postExportTest()
-      const result = outcome.result
-      if (outcome.ok && result) {
-        setExportMessage(`Exported ${result.exportedCount ?? 0} of ${result.total ?? 0} Outlook message(s).`)
-      } else {
-        setExportMessage(result?.message || outcome.message || 'Outlook export failed.')
-      }
-    } catch (exportError) {
-      setExportMessage(exportError instanceof Error ? exportError.message : 'Outlook export failed.')
-    } finally {
-      setIsExporting(false)
-    }
   }
 
   async function persist(nextConfig: IntakeConfig, successMessage: string) {
@@ -311,28 +263,6 @@ export function GithubEmailIntakePanel() {
       <div className={styles.panelSection}>
         <label className={styles.fieldLabel}>Drop folder (absolute path where GitHub emails are saved)</label>
         <input className={styles.inputField} value={config.dropFolder} placeholder="C:\Users\you\GitHubEmails" onChange={(event) => updateConfig({ dropFolder: event.target.value })} />
-      </div>
-
-      <div className={styles.panelSection}>
-        <label className={styles.fieldLabel}>
-          <input type="checkbox" checked={config.outlookExport.isEnabled} onChange={(event) => updateOutlookExport({ isEnabled: event.target.checked })} />
-          {' '}Pull emails from Outlook automatically (this machine)
-        </label>
-        <p className={styles.panelStatusLine}>
-          Before each run, Toolbox exports GitHub emails from an Outlook folder into the drop folder above —
-          no separate script or Task Scheduler. Requires Outlook running on this machine. Set up an Outlook
-          rule to file GitHub notifications into the source folder below.
-        </p>
-        <label className={styles.fieldLabel}>Outlook source folder (a rule files GitHub emails here)</label>
-        <input className={styles.inputField} value={config.outlookExport.sourceFolder} placeholder="Inbox\GitHub Intake" onChange={(event) => updateOutlookExport({ sourceFolder: event.target.value })} />
-        <label className={styles.fieldLabel}>Outlook processed folder (exported mail is moved here)</label>
-        <input className={styles.inputField} value={config.outlookExport.processedFolder} placeholder="Inbox\GitHub Processed" onChange={(event) => updateOutlookExport({ processedFolder: event.target.value })} />
-        <label className={styles.fieldLabel}>Only export mail from the last N days (0 = all). Set this to <strong>1</strong> to skip a months-deep backlog.</label>
-        <input className={styles.inputField} type="number" min={0} value={config.outlookExport.lookbackDays} onChange={(event) => updateOutlookExport({ lookbackDays: Number(event.target.value) || 0 })} />
-        <button className={styles.actionButton} disabled={isExporting || isDirty} title={isDirty ? 'Save first — the test uses the saved folders.' : ''} onClick={() => void handleTestExport()} type="button">
-          {isExporting ? 'Exporting…' : 'Test Outlook export'}
-        </button>
-        {exportMessage ? <p className={styles.panelStatusLine}>{exportMessage}</p> : null}
       </div>
 
       <div className={styles.panelSection}>

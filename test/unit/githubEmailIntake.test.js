@@ -13,14 +13,9 @@ jest.mock('../../src/services/githubEmailIntakeScheduler', () => ({
   isGithubEmailIntakeRunInProgress: jest.fn(() => false),
   readLastRunResult: jest.fn(() => ({ hasRun: true, postedCount: 2 })),
 }));
-// Mock the Outlook exporter so the export-test endpoint never spawns PowerShell/Outlook on the test host.
-jest.mock('../../src/services/outlookEmailExport', () => ({
-  runOutlookExport: jest.fn(() => Promise.resolve({ ok: true, exportedCount: 3, total: 4 })),
-}));
 
 const { saveConfigToDisk } = require('../../src/config/loader');
 const scheduler = require('../../src/services/githubEmailIntakeScheduler');
-const { runOutlookExport } = require('../../src/services/outlookEmailExport');
 const createRouter = require('../../src/routes/githubEmailIntake');
 
 function buildApp(configuration) {
@@ -116,24 +111,6 @@ describe('GET /api/github-email-intake/status', () => {
   });
 });
 
-describe('POST /api/github-email-intake/export-test', () => {
-  it('runs the Outlook export with the configured folders and returns the result', async () => {
-    const configuration = {
-      scheduler: { githubEmailIntake: {
-        dropFolder: 'C:\\gh',
-        outlookExport: { sourceFolder: 'Inbox\\GH In', processedFolder: 'Inbox\\GH Done' },
-      } },
-    };
-    const response = await request(buildApp(configuration)).post('/api/github-email-intake/export-test').send({});
-
-    expect(response.status).toBe(200);
-    expect(response.body).toEqual({ ok: true, result: { ok: true, exportedCount: 3, total: 4 } });
-    expect(runOutlookExport).toHaveBeenCalledWith({
-      sourceFolder: 'Inbox\\GH In', processedFolder: 'Inbox\\GH Done', dropFolder: 'C:\\gh',
-    });
-  });
-});
-
 describe('customRules sanitisation', () => {
   it('keeps well-formed rules and drops malformed ones on save', async () => {
     const configuration = freshConfig();
@@ -150,19 +127,5 @@ describe('customRules sanitisation', () => {
 
     const saved = configuration.scheduler.githubEmailIntake.customRules;
     expect(saved).toEqual([{ id: 'good', eventType: 'pr_opened', bodyPattern: 'wants to merge', requiresPrNumber: true }]);
-  });
-});
-
-describe('outlookExport config round-trip', () => {
-  it('sanitises and persists the outlookExport block, defaulting blank folders', async () => {
-    const configuration = freshConfig();
-    await request(buildApp(configuration))
-      .post('/api/github-email-intake/config')
-      .send({ dropFolder: 'C:\\gh', outlookExport: { isEnabled: true, sourceFolder: '  ', processedFolder: 'Inbox\\Done' } });
-
-    const saved = configuration.scheduler.githubEmailIntake.outlookExport;
-    expect(saved.isEnabled).toBe(true);
-    expect(saved.sourceFolder).toBe('Inbox\\GitHub Intake'); // blank → default
-    expect(saved.processedFolder).toBe('Inbox\\Done');
   });
 });

@@ -74,28 +74,6 @@ describe('scheduler.githubEmailIntake config', () => {
     expect(persisted.scheduler.githubEmailIntake.mode).toBe('dryRun');
     expect(persisted.scheduler.githubEmailIntake.scheduleTime).toBe('07:00');
     expect(persisted.scheduler.githubEmailIntake.fileExtensions).toEqual(['.eml', '.txt', '.msg']);
-    expect(persisted.scheduler.githubEmailIntake.outlookExport).toEqual({
-      isEnabled: false, sourceFolder: 'Inbox\\GitHub Intake', processedFolder: 'Inbox\\GitHub Processed', lookbackDays: 0,
-    });
-  });
-
-  it('round-trips the outlookExport block through load and save (whitelist guard)', () => {
-    fsMock.existsSync.mockReturnValue(true);
-    fsMock.readFileSync.mockReturnValue(JSON.stringify({
-      scheduler: { githubEmailIntake: { outlookExport: { isEnabled: true, sourceFolder: 'Inbox\\GH', processedFolder: 'Inbox\\Done' } } },
-    }));
-
-    const configuration = loadConfig();
-    expect(configuration.scheduler.githubEmailIntake.outlookExport).toEqual({
-      isEnabled: true, sourceFolder: 'Inbox\\GH', processedFolder: 'Inbox\\Done',
-    });
-
-    let writtenJson = '';
-    fsMock.writeFileSync.mockImplementation((_filePath, contents) => { writtenJson = contents; });
-    fsMock.mkdirSync.mockImplementation(() => {});
-    saveConfigToDisk(configuration);
-
-    expect(JSON.parse(writtenJson).scheduler.githubEmailIntake.outlookExport.isEnabled).toBe(true);
   });
 
   it('round-trips config-driven customRules through load and save', () => {

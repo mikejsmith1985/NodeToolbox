@@ -227,20 +227,6 @@ describe('runGithubEmailIntakeNow (orchestration)', () => {
     expect(posts[0]).toEqual({ jiraKey: 'TEST-123', eventType: 'review_requested' });
   });
 
-  it('runs the Outlook export before sweeping when outlookExport is enabled', async () => {
-    const files = { 'a.eml': mergeEmail('<a@github.com>', 123, 'DENP-1414') };
-    const exportCalls = [];
-    const { deps } = buildDeps(files, {
-      runExport: (exportConfig) => { exportCalls.push(exportConfig); return Promise.resolve({ ok: true, exportedCount: 2, total: 2 }); },
-    });
-
-    const config = baseConfig({ outlookExport: { isEnabled: true, sourceFolder: 'Inbox\\GH In', processedFolder: 'Inbox\\GH Done' } });
-    const outcome = await scheduler.runGithubEmailIntakeNow(config, deps);
-
-    expect(exportCalls).toEqual([{ sourceFolder: 'Inbox\\GH In', processedFolder: 'Inbox\\GH Done', dropFolder: DROP_FOLDER }]);
-    expect(outcome.result.outlookExport).toEqual({ ok: true, exportedCount: 2, total: 2 });
-  });
-
   it('applies a config-driven custom rule the built-in table would miss', async () => {
     // Built-ins call this 'unknown'; a custom rule reclassifies it as pr_opened so it drives Jira.
     const openedEmail = [
@@ -262,15 +248,5 @@ describe('runGithubEmailIntakeNow (orchestration)', () => {
     await scheduler.runGithubEmailIntakeNow(config, deps);
 
     expect(state.posts[0]).toEqual(expect.objectContaining({ jiraKey: 'DENP-1414', eventType: 'pr_opened' }));
-  });
-
-  it('does not run the Outlook export when it is disabled', async () => {
-    const files = { 'a.eml': mergeEmail('<a@github.com>', 123, 'DENP-1414') };
-    let wasExportCalled = false;
-    const { deps } = buildDeps(files, { runExport: () => { wasExportCalled = true; return Promise.resolve(null); } });
-
-    await scheduler.runGithubEmailIntakeNow(baseConfig(), deps);
-
-    expect(wasExportCalled).toBe(false);
   });
 });

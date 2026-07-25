@@ -67,6 +67,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Outlook** (that would move real mail); Windows-only, with a friendly skip elsewhere.
 
 ### Removed
+- **Removed the in-app "Pull emails from Outlook" export.** The PowerShell/COM exporter that pulled GitHub
+  emails from Outlook into the drop folder is gone — enterprise machines block it (execution policy /
+  Constrained Language Mode), and the export is handled outside Toolbox (an Outlook VBA macro or Power
+  Automate). Deleted the `outlookEmailExport` service, the `POST /api/github-email-intake/export-test`
+  route, the `outlookExport` config block, and the panel section (checkbox, source/processed folders,
+  lookback, Test button). The intake still reads `.msg` files from the drop folder exactly as before.
+
 - **Deleted the GitHub-API repo monitor entirely.** With the GitHub API unavailable in this environment,
   the polling-based repo monitor is dead code and is gone: the `repoMonitor` service and `scheduler` route
   (`/api/scheduler/*`), the Admin Hub **Repo Monitor** config panel and client `schedulerApi`, the "Check
