@@ -1,0 +1,35 @@
+// githubEmailEngine.spec.js — Proves the shared GitHub email engine runs server-side from its bundled
+// CommonJS build (no browser globals). Runs on Node's native test runner. Run: `npm run test:dom`
+// (after `npm run build:github-email-engine`).
+
+'use strict';
+
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const engine = require('../../src/services/generated/githubEmailEngine.cjs');
+
+const MERGE_EMAIL = [
+  'List-ID: myorg/toolbox <toolbox.myorg.github.com>',
+  'Subject: [myorg/toolbox] Add enrollment support (#123)',
+  'Message-ID: <merge-1@github.com>',
+  'Date: Thu, 24 Jul 2026 12:00:00 +0000',
+  'X-GitHub-Sender: jsmith',
+  'Content-Type: text/plain; charset=UTF-8',
+  '',
+  'Merged #123 into main from feature/DENP-1414.',
+].join('\r\n');
+
+test('the bundled engine classifies a merge email server-side', () => {
+  const event = engine.parseGithubEmail(MERGE_EMAIL);
+  assert.equal(event.eventType, 'pr_merged');
+  assert.equal(event.jiraKey, 'DENP-1414');
+  assert.equal(event.repo, 'myorg/toolbox');
+  assert.equal(event.prNumber, 123);
+  assert.equal(event.sourceMessageId, '<merge-1@github.com>');
+});
+
+test('the bundled engine exposes the ledger helpers', () => {
+  const ledger = engine.appendProcessed([], { key: '<a@x>', processedAtIso: '', eventType: 'pr_merged', jiraKey: 'DENP-1', outcome: 'posted' });
+  assert.equal(engine.isProcessed(ledger, '<a@x>'), true);
+  assert.equal(engine.isProcessed(ledger, '<b@x>'), false);
+});

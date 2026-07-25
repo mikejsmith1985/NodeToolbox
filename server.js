@@ -157,6 +157,15 @@ try {
   console.error('  ⚠ Monthly Delivery routes unavailable: ' + monthlyDeliveryRouteError.message);
 }
 
+// GitHub Email Intake: /api/github-email-intake/* — parses GitHub notification emails from a local
+// drop folder and drives Jira. Lazy + guarded because a run depends on the generated
+// githubEmailEngine bundle; a missing bundle disables the routes rather than crashing startup.
+try {
+  app.use(require('./src/routes/githubEmailIntake')(configuration));
+} catch (githubEmailIntakeRouteError) {
+  console.error('  ⚠ GitHub Email Intake routes unavailable: ' + githubEmailIntakeRouteError.message);
+}
+
 // Report webhook delivery: POST /api/reports/deliver — server-mediated send of an
 // on-screen report to the team's Atlassian Automation webhook.
 app.use(createReportDeliveryRouter(configuration));
@@ -691,6 +700,15 @@ async function launchServer() {
     require('./src/services/monthlyDeliveryScheduler').startMonthlyDeliveryScheduler(configuration);
   } catch (monthlyDeliverySchedulerError) {
     console.error('  ⚠ Monthly Delivery scheduler unavailable: ' + monthlyDeliverySchedulerError.message);
+  }
+
+  // GitHub Email Intake scheduler — parses GitHub notification emails from a local drop folder and
+  // drives Jira on a schedule. Lazy + guarded: it depends on the generated githubEmailEngine bundle,
+  // so a missing build disables it with a warning instead of crashing startup.
+  try {
+    require('./src/services/githubEmailIntakeScheduler').startGithubEmailIntakeScheduler(configuration);
+  } catch (githubEmailIntakeSchedulerError) {
+    console.error('  ⚠ GitHub Email Intake scheduler unavailable: ' + githubEmailIntakeSchedulerError.message);
   }
 
   // Open the dashboard automatically when:

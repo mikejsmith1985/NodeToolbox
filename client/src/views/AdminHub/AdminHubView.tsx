@@ -17,6 +17,7 @@ import { useAiAssist } from '../SnowHub/hooks/useAiAssist.ts'
 import DevPanelView from '../DevPanel/DevPanelView.tsx'
 import { HygieneMonitorPanel } from './HygieneMonitorPanel.tsx'
 import { RepoMonitorPanel } from './RepoMonitorPanel.tsx'
+import { GithubEmailIntakePanel } from './GithubEmailIntakePanel.tsx'
 import { AiAssistAutomationPanel } from './AiAssistAutomationPanel.tsx'
 import { SprintReleasePanel } from './SprintReleasePanel.tsx'
 import { StandupBriefingPanel } from './StandupBriefingPanel.tsx'
@@ -2884,6 +2885,8 @@ export default function AdminHubView() {
       {activeAdminTab === 'repo-monitor' && (
         <section id="admin-hub-repo-monitor-panel" role="tabpanel" aria-labelledby="admin-hub-repo-monitor-tab">
           <RepoMonitorPanel />
+          {/* Email-driven alternative for environments where the GitHub API is blocked. */}
+          <GithubEmailIntakePanel />
         </section>
       )}
 

@@ -6,8 +6,11 @@
 
 'use strict';
 
-const { makeGithubApiRequest, makeJiraApiRequest } = require('../utils/httpClient');
+const { makeGithubApiRequest } = require('../utils/httpClient');
 const { resolveEffectiveGitHubToken, hasAnyGitHubAuth } = require('./githubAppAuth');
+// The Jira-output half (comment + optional transition + key extraction) is shared with the GitHub
+// Email Intake engine, so both surfaces post identical comments and fire identical transitions.
+const { postJiraCommentForEvent, extractJiraIssueKey } = require('./jiraEventOutput');
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -387,7 +390,8 @@ function processBranches(
           'branch_created',
           repoFullPath,
           jiraTransitions,
-          configuration
+          configuration,
+          { recordResult: appendResultEvent }
         )
       );
     } else if (hasNewCommit) {
@@ -399,7 +403,8 @@ function processBranches(
           'commit_pushed',
           repoFullPath,
           jiraTransitions,
-          configuration
+          configuration,
+          { recordResult: appendResultEvent }
         )
       );
     }
@@ -441,7 +446,8 @@ function processPullRequests(
           'pr_opened',
           repoFullPath,
           jiraTransitions,
-          configuration
+          configuration,
+          { recordResult: appendResultEvent }
         )
       );
     } else if (previousPrState === 'open' && isPrMerged) {
@@ -454,7 +460,8 @@ function processPullRequests(
           'pr_merged',
           repoFullPath,
           jiraTransitions,
-          configuration
+          configuration,
+          { recordResult: appendResultEvent }
         )
       );
     } else if (!previousPrState && isPrMerged) {
@@ -465,125 +472,6 @@ function processPullRequests(
 
   workingSeenPrs[repoFullPath] = repoPrs;
   return eventChain;
-}
-
-/**
- * Posts a Jira comment for a repo event and optionally fires a Jira transition.
- * Records the result in the in-memory ring buffer regardless of success or failure.
- *
- * @param {string} jiraIssueKey     - Jira issue key (e.g. PROJ-1234)
- * @param {string} commentText      - Comment body to post
- * @param {string} eventTypeName    - One of: branch_created, commit_pushed, pr_opened, pr_merged
- * @param {string} repoFullPath     - "owner/repo" GitHub path (for logging)
- * @param {object} jiraTransitions  - Map of event type key → Jira status transition name
- * @param {object} configuration    - Live config for credentials
- */
-function postJiraCommentForEvent(jiraIssueKey, commentText, eventTypeName, repoFullPath, jiraTransitions, configuration) {
-  const shortRepoName      = repoFullPath.split('/').pop() || repoFullPath;
-  const isTlsVerified      = configuration.sslVerify !== false;
-
-  return makeJiraApiRequest(
-    'POST',
-    '/rest/api/2/issue/' + encodeURIComponent(jiraIssueKey) + '/comment',
-    { body: commentText },
-    configuration.jira,
-    isTlsVerified
-  )
-    .then((jiraResponse) => {
-      const isCommentPosted = jiraResponse.status === 200 || jiraResponse.status === 201;
-      const eventLabel      = eventTypeName.replace(/_/g, ' ');
-
-      appendResultEvent({
-        repo:      repoFullPath,
-        eventType: eventTypeName,
-        jiraKey:   jiraIssueKey,
-        message:   eventLabel + ' — comment ' + (isCommentPosted ? 'posted' : 'failed') + ' (' + shortRepoName + ')',
-        isSuccess: isCommentPosted,
-      });
-
-      console.log('  [Scheduler] ' + jiraIssueKey + ' — ' + eventTypeName + ': ' + (isCommentPosted ? '✅' : '❌'));
-
-      if (isCommentPosted) {
-        const transitionKeyMap    = { branch_created: 'branchCreated', commit_pushed: 'commitPushed', pr_opened: 'prOpened', pr_merged: 'prMerged' };
-        const requestedTransition = jiraTransitions[transitionKeyMap[eventTypeName] || ''] || '';
-        if (requestedTransition) {
-          return fireJiraTransition(jiraIssueKey, requestedTransition, configuration);
-        }
-      }
-    })
-    .catch((commentError) => {
-      appendResultEvent({
-        repo:      repoFullPath,
-        eventType: eventTypeName,
-        jiraKey:   jiraIssueKey,
-        message:   eventTypeName.replace(/_/g, ' ') + ' — comment failed (' + shortRepoName + '): ' + commentError.message.slice(0, 80),
-        isSuccess: false,
-      });
-    });
-}
-
-/**
- * Finds and fires the Jira transition that matches the requested status name.
- * Matches by exact status name first, then by status category name (case-insensitive).
- *
- * @param {string} jiraIssueKey        - Jira issue key (e.g. PROJ-1234)
- * @param {string} requestedStatusName - Target status name (e.g. "In Progress")
- * @param {object} configuration       - Live config for credentials
- */
-function fireJiraTransition(jiraIssueKey, requestedStatusName, configuration) {
-  const isTlsVerified = configuration.sslVerify !== false;
-
-  return makeJiraApiRequest(
-    'GET',
-    '/rest/api/2/issue/' + encodeURIComponent(jiraIssueKey) + '/transitions',
-    null,
-    configuration.jira,
-    isTlsVerified
-  )
-    .then((transitionsResponse) => {
-      const availableTransitions = (transitionsResponse.body && transitionsResponse.body.transitions) || [];
-
-      // Try exact status name match first, then status category name match
-      const matchingTransition =
-        availableTransitions.find((transition) =>
-          transition.to && transition.to.name &&
-          transition.to.name.toLowerCase() === requestedStatusName.toLowerCase()
-        ) ||
-        availableTransitions.find((transition) =>
-          transition.to && transition.to.statusCategory &&
-          transition.to.statusCategory.name &&
-          transition.to.statusCategory.name.toLowerCase() === requestedStatusName.toLowerCase()
-        );
-
-      if (matchingTransition) {
-        return makeJiraApiRequest(
-          'POST',
-          '/rest/api/2/issue/' + encodeURIComponent(jiraIssueKey) + '/transitions',
-          { transition: { id: matchingTransition.id } },
-          configuration.jira,
-          isTlsVerified
-        ).then(() => {
-          console.log('  [Scheduler] ' + jiraIssueKey + ' → ' + matchingTransition.to.name);
-        });
-      } else {
-        console.log('  [Scheduler] ' + jiraIssueKey + ': no transition matches \'' + requestedStatusName + '\'');
-      }
-    })
-    .catch((transitionError) => {
-      console.log('  [Scheduler] transition failed for ' + jiraIssueKey + ': ' + transitionError.message);
-    });
-}
-
-/**
- * Extracts the first Jira issue key (e.g. PROJ-1234) from a string.
- * Used to find the Jira ticket linked to a GitHub branch name.
- *
- * @param {string} text - String to search (typically a branch name)
- * @returns {string|null} Jira issue key or null if none found
- */
-function extractJiraIssueKey(text) {
-  const match = (text || '').match(/([A-Z]+-\d+)/);
-  return match ? match[1] : null;
 }
 
 /**

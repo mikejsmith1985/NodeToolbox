@@ -75,6 +75,8 @@ describe('scheduler.monthlyDelivery config', () => {
       scheduleTime: '08:00',
       featureLinkFieldId: 'customfield_10108',
       teams: [],
+      triggerUrl: '',
+      triggerSecret: '',
     });
   });
 });

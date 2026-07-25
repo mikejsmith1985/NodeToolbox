@@ -191,6 +191,23 @@ function saveConfigToDisk(configuration) {
         triggerUrl:         (configuration.scheduler.monthlyDelivery || {}).triggerUrl         || '',
         triggerSecret:      (configuration.scheduler.monthlyDelivery || {}).triggerSecret      || '',
       },
+      // GitHub Email Intake — a deterministic (non-AI) engine that parses GitHub notification emails
+      // saved to a local drop folder and drives Jira comments/transitions, replacing the GitHub-API
+      // repo monitor where API access is blocked. No credential fields (Jira auth reuses
+      // configuration.jira), so nothing to obfuscate; seen* dedup state persists like the repo monitor.
+      githubEmailIntake: {
+        isEnabled:              !!(configuration.scheduler.githubEmailIntake || {}).isEnabled,
+        mode:                   (configuration.scheduler.githubEmailIntake || {}).mode                   || 'dryRun',
+        scheduleTime:           (configuration.scheduler.githubEmailIntake || {}).scheduleTime           || '07:00',
+        intervalMin:            (configuration.scheduler.githubEmailIntake || {}).intervalMin            || 0,
+        dropFolder:             (configuration.scheduler.githubEmailIntake || {}).dropFolder             || '',
+        processedArchiveFolder: (configuration.scheduler.githubEmailIntake || {}).processedArchiveFolder || '',
+        errorFolder:            (configuration.scheduler.githubEmailIntake || {}).errorFolder            || '',
+        fileExtensions:         (configuration.scheduler.githubEmailIntake || {}).fileExtensions         || ['.eml', '.txt'],
+        jiraProjectKeys:        (configuration.scheduler.githubEmailIntake || {}).jiraProjectKeys        || [],
+        transitions:            (configuration.scheduler.githubEmailIntake || {}).transitions            || { branchCreated: '', commitPushed: '', prOpened: '', prMerged: '' },
+        seenPrs:                (configuration.scheduler.githubEmailIntake || {}).seenPrs                || {},
+      },
     },
     // Hygiene monitor — deep-clone the teams array and the bounded history slice.
     // The per-team digestTriggerSecret is obfuscated below before writing.

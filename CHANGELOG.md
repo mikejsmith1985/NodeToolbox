@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **GitHub Email Intake — GitHub→Jira automation without GitHub API access.** For locked-down
+  environments where the API-based repo monitor can't reach GitHub, a new deterministic (no-AI) engine
+  parses **GitHub notification emails** saved to a local folder and drives the same Jira updates: a
+  comment per event (branch created / commit pushed / PR opened / PR merged / review requested) and an
+  optional status transition. Firing the right transition at the right time makes the Jira changelog
+  accurate, which is what lets the Personal Flow report stop guessing at time-in-status. Configured in
+  Admin Hub (beside the Repo Monitor): drop folder, event→status transition map, and Jira project
+  filter. **Safe-by-default rollout** via a mode switch — **Dry run** (parse & log only, never touch
+  Jira) → **Comment only** → **Full** — with a **Preview** that shows exactly how your emails classify
+  before anything posts. De-duplicated by email Message-ID and per-PR-event, so the same notification
+  never posts twice; processed emails archive to `_processed`, unparseable ones to `_errors`. The
+  parser reuses the repo monitor's Jira-output half (extracted to a shared module) so both surfaces
+  behave identically.
+
 ### Changed
 - **A hand-typed feature key fills in its summary.** Type just a key (e.g. `DENP-1414`) into a PI Review row and,
   once Jira details are pulled in, the cell is rewritten to `DENP-1414 - <summary>` — the same `KEY - Summary`
