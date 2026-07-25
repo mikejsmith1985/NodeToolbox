@@ -235,7 +235,15 @@ async function runOutlookExport(exportConfig, deps = {}) {
     if (combinedOutput.includes(RESULT_MARKER)) {
       return parseExportResult(combinedOutput);
     }
-    return { ok: false, exportedCount: 0, total: 0, message: 'Outlook export failed: ' + (execError.message || String(execError)) };
+    // Surface the ACTUAL PowerShell error (stderr) — otherwise all we get is "Command failed", which hides
+    // the reason (e.g. an execution-policy or Constrained-Language-Mode block on locked-down machines).
+    const stderrDetail = String(execError.stderr || '').replace(/\s+/g, ' ').trim().slice(0, 600);
+    return {
+      ok: false,
+      exportedCount: 0,
+      total: 0,
+      message: 'Outlook export failed: ' + (stderrDetail || execError.message || String(execError)),
+    };
   } finally {
     if (scriptPath) {
       removeScript(scriptPath);

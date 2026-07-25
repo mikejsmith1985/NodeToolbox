@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Outlook export now reports the real failure reason.** When the PowerShell exporter fails, the panel
+  showed a generic "Command failed: powershell.exe …" that hid the cause. It now surfaces PowerShell's
+  actual stderr (e.g. "running scripts is disabled on this system" — a GPO execution-policy or
+  Constrained-Language-Mode block common on locked-down machines), so it's clear whether the built-in
+  export can work or an Outlook-side export (VBA / Power Automate) is needed.
+
 ### Added
 - **GitHub Email Intake — Outlook export lookback window.** A new **"Only export mail from the last N days"**
   setting on the Outlook export bounds how far back it reaches, so a months-deep folder isn't exported all

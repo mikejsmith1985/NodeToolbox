@@ -83,6 +83,19 @@ describe('runOutlookExport', () => {
     expect(result.message).toMatch(/Outlook folder not found/);
   });
 
+  it('surfaces the PowerShell stderr (the real reason) instead of the generic "Command failed"', async () => {
+    const { deps } = buildDeps({
+      runPowerShell: () => Promise.reject(Object.assign(new Error('Command failed: powershell.exe -File x.ps1'), {
+        stdout: '',
+        stderr: 'x.ps1 cannot be loaded because running scripts is disabled on this system.',
+      })),
+    });
+    const result = await runOutlookExport({ dropFolder: 'C:\\drop' }, deps);
+    expect(result.ok).toBe(false);
+    expect(result.message).toMatch(/running scripts is disabled/);
+    expect(result.message).not.toMatch(/Command failed: powershell/);
+  });
+
   it('reports a friendly error when PowerShell itself fails with no marker', async () => {
     const { deps, state } = buildDeps({
       runPowerShell: () => Promise.reject(Object.assign(new Error("'powershell.exe' not found"), { stdout: '', stderr: '' })),
