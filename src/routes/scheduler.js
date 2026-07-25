@@ -8,7 +8,6 @@
 
 const express     = require('express');
 const repoMonitor = require('../services/repoMonitor');
-const { runGitHubApiProbe } = require('../services/githubApiProbe');
 const { saveConfigToDisk } = require('../config/loader');
 const { hasAnyGitHubAuth, hasGitHubAppCredentials, resolveEffectiveGitHubToken } = require('../services/githubAppAuth');
 
@@ -169,30 +168,6 @@ function createSchedulerRouter(configuration) {
             authHeaderFormat: isGitHubAppMode ? 'token <installation-token>' : 'token <PAT>',
           },
         });
-      });
-  });
-
-  // ── POST /api/scheduler/github-api-probe ──────────────────────────────────
-  // Runs the multi-check GitHub API reachability probe (auth → repo → PRs → commits → events, plus an
-  // optional user-events check) so an operator can see, before any build work, whether a GitHub API
-  // poller is viable for this locked-down org or whether the email-intake path is required. Read-only:
-  // no Jira write, no GitHub write. The target repo and optional GitHub user id come from the request.
-  router.post('/api/scheduler/github-api-probe', (req, res) => {
-    const requestBody = req.body || {};
-    const repoFullPath = typeof requestBody.repoFullPath === 'string' ? requestBody.repoFullPath.trim() : '';
-    const githubUserId = typeof requestBody.githubUserId === 'string' ? requestBody.githubUserId.trim() : '';
-
-    // A repo is optional (auth-only probe is allowed), but when given it must be "owner/repo".
-    if (repoFullPath !== '' && !/^[^/\s]+\/[^/\s]+$/.test(repoFullPath)) {
-      return res.status(400).json({ error: 'Invalid repository', message: 'Repository must be in "owner/repo" form.' });
-    }
-
-    runGitHubApiProbe(configuration, { repoFullPath, githubUserId })
-      .then((probeResult) => {
-        res.json(probeResult);
-      })
-      .catch((probeError) => {
-        res.status(500).json({ error: 'GitHub API probe failed', message: probeError.message });
       });
   });
 

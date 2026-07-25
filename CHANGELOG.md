@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+- **Decommissioned the GitHub-API diagnostics.** With the GitHub API confirmed unavailable in this
+  environment (the integration now runs entirely through the email-intake path), the Dev Panel's
+  GitHub-API surfaces are gone: the **GitHub API Probe** tab (and its `POST /api/scheduler/github-api-probe`
+  endpoint), the **GitHub Debug** tab, and the **Repo Monitor Validation** tab. The Dev Panel now shows just
+  **Jira API** telemetry and **Server Logs**. GitHub Email Intake is unaffected — it stays in the Admin Hub.
+
 ### Added
 - **GitHub Email Intake now reads Outlook `.msg` files.** Outlook saves notification emails as `.msg`
   (a binary compound-file format), not `.eml` — which the intake could not read at all. A new zero-dependency
@@ -15,14 +22,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   straight from a saved `.msg`. `.msg` is now a default watched extension alongside `.eml`/`.txt`, and an
   unreadable `.msg` is routed to the error folder for a fixed re-export. Verified end-to-end against a real
   captured GitHub notification `.msg`.
-
-- **GitHub API Probe — decide the integration path before building it.** A read-only diagnostic
-  (Dev Panel → **GitHub API Probe**) that, with the GitHub credentials NodeToolbox already holds, tries to
-  authenticate and then read a target repository, its pull requests, commits, and events — plus, optionally,
-  one roster member's user events. It reports each call's HTTP status separately, so a **partial** block
-  (auth works, repo access denied — common under Enterprise Managed Users) is visible rather than hidden,
-  and gives a plain verdict: **a poller is viable** or **the email-intake path is required**. Nothing is
-  written to GitHub or Jira. Backed by `POST /api/scheduler/github-api-probe`.
 
 - **Link GitHub IDs to roster members.** The Team Dashboard roster now stores a person's **GitHub account
   id** (e.g. `C13471_Zilver`, the value GitHub notification emails carry in `X-GitHub-Sender`) alongside

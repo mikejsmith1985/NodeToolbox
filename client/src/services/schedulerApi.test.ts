@@ -8,7 +8,6 @@ import {
   fetchSchedulerResults,
   fetchSchedulerStatus,
   fetchSchedulerValidation,
-  runGitHubApiProbe,
   runSchedulerNow,
   updateSchedulerConfig,
 } from './schedulerApi.ts';
@@ -255,28 +254,5 @@ describe('fetchGitHubDebugInfo', () => {
     vi.mocked(fetch).mockResolvedValue({ ok: false, status: 503 } as Response);
 
     await expect(fetchGitHubDebugInfo()).rejects.toThrow('github debug fetch failed: 503');
-  });
-
-  it('runGitHubApiProbe POSTs the repo and user id and returns the probe result', async () => {
-    const probeResponse = {
-      isConfigured: true,
-      authType: 'pat',
-      authenticatedAs: 'C8Q6T3_Zilver',
-      repoFullPath: 'zilvertonz/usmg-facets-enroll',
-      overallSuccess: true,
-      verdict: 'Reachable. A GitHub API poller is viable — the email-intake path can be retired.',
-      checks: [{ name: 'Authenticate (/user)', endpoint: '/user', method: 'GET', statusCode: 200, statusText: 'OK', responseTime: 42, success: true, detail: 'Authenticated as C8Q6T3_Zilver' }],
-    };
-    vi.mocked(fetch).mockResolvedValue({
-      ok: true,
-      json: vi.fn().mockResolvedValue(probeResponse),
-    } as unknown as Response);
-
-    await expect(runGitHubApiProbe('zilvertonz/usmg-facets-enroll', 'C13471_Zilver')).resolves.toEqual(probeResponse);
-    expect(fetch).toHaveBeenCalledWith('/api/scheduler/github-api-probe', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ repoFullPath: 'zilvertonz/usmg-facets-enroll', githubUserId: 'C13471_Zilver' }),
-    });
   });
 });

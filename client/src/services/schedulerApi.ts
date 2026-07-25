@@ -6,7 +6,6 @@ const SCHEDULER_RUN_NOW_ENDPOINT = '/api/scheduler/run-now';
 const SCHEDULER_RESULTS_ENDPOINT = '/api/scheduler/results';
 const SCHEDULER_VALIDATE_ENDPOINT = '/api/scheduler/validate';
 const SCHEDULER_GITHUB_DEBUG_ENDPOINT = '/api/scheduler/github-debug';
-const SCHEDULER_GITHUB_API_PROBE_ENDPOINT = '/api/scheduler/github-api-probe';
 const JSON_CONTENT_TYPE = 'application/json';
 
 export interface RepoMonitorTransitions {
@@ -185,46 +184,4 @@ export async function fetchGitHubDebugInfo(): Promise<GitHubDebugResponse> {
   const response = await fetch(SCHEDULER_GITHUB_DEBUG_ENDPOINT);
   assertSuccessfulResponse(response, 'github debug fetch failed');
   return parseJsonResponse<GitHubDebugResponse>(response);
-}
-
-/** One read-only call the API probe attempted, with its HTTP outcome and a one-line human detail. */
-export interface GitHubApiProbeCheck {
-  name: string;
-  endpoint: string;
-  method: string;
-  statusCode: number;
-  statusText: string;
-  responseTime: number;
-  success: boolean;
-  detail: string | null;
-  errorMessage?: string;
-}
-
-/** The full result of the multi-check GitHub API reachability probe. */
-export interface GitHubApiProbeResponse {
-  isConfigured: boolean;
-  authType: string;
-  authenticatedAs: string | null;
-  repoFullPath: string;
-  overallSuccess: boolean;
-  verdict: string;
-  checks: GitHubApiProbeCheck[];
-}
-
-/**
- * Runs the multi-check GitHub API reachability probe against a target repo (and optional roster GitHub
- * id). Read-only — it proves whether a poller can read PR/commit/event data, or whether the API is blocked
- * and the email-intake path is required.
- */
-export async function runGitHubApiProbe(
-  repoFullPath: string,
-  githubUserId = '',
-): Promise<GitHubApiProbeResponse> {
-  const response = await fetch(SCHEDULER_GITHUB_API_PROBE_ENDPOINT, {
-    method: 'POST',
-    headers: { 'Content-Type': JSON_CONTENT_TYPE },
-    body: JSON.stringify({ repoFullPath, githubUserId }),
-  });
-  assertSuccessfulResponse(response, 'github api probe failed');
-  return parseJsonResponse<GitHubApiProbeResponse>(response);
 }
