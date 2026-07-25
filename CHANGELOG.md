@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **GitHub API Probe — decide the integration path before building it.** A read-only diagnostic
+  (Dev Panel → **GitHub API Probe**) that, with the GitHub credentials NodeToolbox already holds, tries to
+  authenticate and then read a target repository, its pull requests, commits, and events — plus, optionally,
+  one roster member's user events. It reports each call's HTTP status separately, so a **partial** block
+  (auth works, repo access denied — common under Enterprise Managed Users) is visible rather than hidden,
+  and gives a plain verdict: **a poller is viable** or **the email-intake path is required**. Nothing is
+  written to GitHub or Jira. Backed by `POST /api/scheduler/github-api-probe`.
+
 - **Link GitHub IDs to roster members.** The Team Dashboard roster now stores a person's **GitHub account
   id** (e.g. `C13471_Zilver`, the value GitHub notification emails carry in `X-GitHub-Sender`) alongside
   the Jira identity it already holds — making each member the bridge that resolves a GitHub event's actor

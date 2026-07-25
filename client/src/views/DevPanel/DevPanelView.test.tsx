@@ -548,3 +548,40 @@ describe('DevPanelView — GitHub Debug tab', () => {
     expect(screen.getByText('github-app[bot]')).toBeInTheDocument();
   });
 });
+
+describe('DevPanelView — GitHub API Probe tab', () => {
+  it('runs the probe for a typed repo and renders the verdict and per-check rows', async () => {
+    const probeResponse = {
+      isConfigured: true,
+      authType: 'pat',
+      authenticatedAs: 'C8Q6T3_Zilver',
+      repoFullPath: 'zilvertonz/usmg-facets-enroll',
+      overallSuccess: true,
+      verdict: 'Reachable. A GitHub API poller is viable — the email-intake path can be retired.',
+      checks: [
+        { name: 'Authenticate (/user)', endpoint: '/user', method: 'GET', statusCode: 200, statusText: 'OK', responseTime: 40, success: true, detail: 'Authenticated as C8Q6T3_Zilver' },
+        { name: 'Pull requests', endpoint: '/repos/…/pulls', method: 'GET', statusCode: 200, statusText: 'OK', responseTime: 55, success: true, detail: '1 PR · newest #577' },
+      ],
+    };
+
+    vi.spyOn(global, 'fetch').mockImplementation(async (input: RequestInfo | URL) => {
+      const endpointUrl = String(input);
+      if (endpointUrl.includes('/api/scheduler/github-api-probe')) {
+        return { ok: true, json: async () => probeResponse } as Response;
+      }
+      return { ok: true, json: async () => (endpointUrl.includes('/api/scheduler') ? {} : []) } as Response;
+    });
+
+    const user = userEvent.setup();
+    renderDevPanelView();
+
+    await user.click(screen.getByRole('tab', { name: 'GitHub API Probe' }));
+    await user.type(screen.getByLabelText('Repository (owner/repo)'), 'zilvertonz/usmg-facets-enroll');
+    await user.click(screen.getByRole('button', { name: 'Run API probe' }));
+
+    expect(await screen.findByText(/A GitHub API poller is viable/)).toBeInTheDocument();
+    const probeTable = screen.getByRole('table', { name: /GitHub API probe checks/i });
+    expect(within(probeTable).getByText(/Pull requests/)).toBeInTheDocument();
+    expect(within(probeTable).getByText(/newest #577/)).toBeInTheDocument();
+  });
+});

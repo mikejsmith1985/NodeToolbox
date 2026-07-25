@@ -8,12 +8,14 @@ import {
   fetchSchedulerStatus,
   fetchSchedulerValidation,
   fetchGitHubDebugInfo,
+  runGitHubApiProbe,
   runSchedulerNow,
   type RepoMonitorSchedulerConfig,
   type SchedulerResultsResponse,
   type SchedulerStatusResponse,
   type SchedulerValidationResponse,
   type GitHubDebugResponse,
+  type GitHubApiProbeResponse,
 } from '../../services/schedulerApi.ts'
 import { buildCsv } from './utils/csvExport.ts';
 import { type DevPanelEntry, useDevPanelLog } from './hooks/useDevPanelLog.ts';
@@ -32,9 +34,15 @@ const DEV_PANEL_TAB_OPTIONS: { key: ActiveTab; label: string }[] = [
   { key: 'server-logs', label: 'Server Logs' },
   { key: 'repo-monitor-validation', label: 'Repo Monitor Validation' },
   { key: 'github-debug', label: 'GitHub Debug' },
+  { key: 'github-api-probe', label: 'GitHub API Probe' },
 ];
 
-type ActiveTab = 'jira-api' | 'server-logs' | 'repo-monitor-validation' | 'github-debug'
+type ActiveTab =
+  | 'jira-api'
+  | 'server-logs'
+  | 'repo-monitor-validation'
+  | 'github-debug'
+  | 'github-api-probe'
 
 /** Renders a Dev Panel with Jira API telemetry, server logs, and repo monitor validation. */
 export default function DevPanelView() {
@@ -50,6 +58,12 @@ export default function DevPanelView() {
   const [githubDebugInfo, setGitHubDebugInfo] = useState<GitHubDebugResponse | null>(null)
   const [isGitHubDebugLoading, setIsGitHubDebugLoading] = useState(false)
   const [githubDebugErrorMessage, setGitHubDebugErrorMessage] = useState<string | null>(null)
+  // GitHub API Probe tab: the target repo and optional roster GitHub id to probe, plus the result.
+  const [githubApiProbeRepo, setGitHubApiProbeRepo] = useState('')
+  const [githubApiProbeUserId, setGitHubApiProbeUserId] = useState('')
+  const [githubApiProbeResult, setGitHubApiProbeResult] = useState<GitHubApiProbeResponse | null>(null)
+  const [isGitHubApiProbeLoading, setIsGitHubApiProbeLoading] = useState(false)
+  const [githubApiProbeErrorMessage, setGitHubApiProbeErrorMessage] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<ActiveTab>('jira-api')
 
   const refreshRepoMonitorValidation = useCallback(async () => {
@@ -87,6 +101,20 @@ export default function DevPanelView() {
       setIsGitHubDebugLoading(false)
     }
   }, [])
+
+  const handleRunGitHubApiProbe = useCallback(async () => {
+    setIsGitHubApiProbeLoading(true)
+    try {
+      const probeResponse = await runGitHubApiProbe(githubApiProbeRepo.trim(), githubApiProbeUserId.trim())
+      setGitHubApiProbeResult(probeResponse)
+      setGitHubApiProbeErrorMessage(null)
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unable to run the GitHub API probe'
+      setGitHubApiProbeErrorMessage(errorMessage)
+    } finally {
+      setIsGitHubApiProbeLoading(false)
+    }
+  }, [githubApiProbeRepo, githubApiProbeUserId])
 
   useEffect(() => {
     const deferredFetchHandle = window.setTimeout(() => {
@@ -229,7 +257,79 @@ export default function DevPanelView() {
           {githubDebugInfo && renderGitHubDebugInfo(githubDebugInfo)}
         </div>
       )}
+
+      {activeTab === 'github-api-probe' && (
+        <div role="tabpanel" aria-label="GitHub API Probe">
+          <div className={styles.emptyState} style={{ marginBottom: '0.75rem' }}>
+            <strong>Read-only reachability test:</strong> authenticate, then read the repository, its pull requests,
+            commits, and events — plus, optionally, one roster member&apos;s user events. It proves whether a GitHub
+            API poller can get the data flow analysis needs, or whether the email-intake path is required. Nothing is
+            written.
+          </div>
+          <div className={styles.actionBar} style={{ marginBottom: '0.75rem', gap: '0.5rem', flexWrap: 'wrap' }}>
+            <input
+              aria-label="Repository (owner/repo)"
+              onChange={(changeEvent) => setGitHubApiProbeRepo(changeEvent.target.value)}
+              placeholder="owner/repo (e.g. zilvertonz/usmg-facets-enroll)"
+              style={{ flex: '1 1 20rem', padding: '0.4rem 0.6rem' }}
+              value={githubApiProbeRepo}
+            />
+            <input
+              aria-label="GitHub user id (optional)"
+              onChange={(changeEvent) => setGitHubApiProbeUserId(changeEvent.target.value)}
+              placeholder="GitHub id (optional, e.g. C13471_Zilver)"
+              style={{ flex: '1 1 14rem', padding: '0.4rem 0.6rem' }}
+              value={githubApiProbeUserId}
+            />
+            <button
+              className={styles.buttonPrimary}
+              disabled={isGitHubApiProbeLoading}
+              onClick={() => void handleRunGitHubApiProbe()}
+              type="button"
+            >
+              {isGitHubApiProbeLoading ? 'Probing GitHub API…' : 'Run API probe'}
+            </button>
+          </div>
+          {githubApiProbeErrorMessage !== null && (
+            <div className={styles.pauseBanner}>⚠ {githubApiProbeErrorMessage}</div>
+          )}
+          {githubApiProbeResult && renderGitHubApiProbeResult(githubApiProbeResult)}
+        </div>
+      )}
     </section>
+  );
+}
+
+/** Renders the GitHub API probe verdict banner and the per-check results table. */
+function renderGitHubApiProbeResult(probeResult: GitHubApiProbeResponse) {
+  return (
+    <div>
+      <div className={probeResult.overallSuccess ? styles.statsBar : styles.pauseBanner} style={{ marginBottom: '0.75rem' }}>
+        <strong>{probeResult.overallSuccess ? '✓ ' : '⚠ '}</strong>{probeResult.verdict}
+      </div>
+      {probeResult.checks.length > 0 && (
+        <table className={styles.activityTable} aria-label="GitHub API probe checks">
+          <thead>
+            <tr>
+              <th>Check</th>
+              <th>Status</th>
+              <th>ms</th>
+              <th>Detail</th>
+            </tr>
+          </thead>
+          <tbody>
+            {probeResult.checks.map((probeCheck) => (
+              <tr key={probeCheck.name}>
+                <td>{probeCheck.success ? '✓' : '✗'} {probeCheck.name}</td>
+                <td>{probeCheck.statusCode || '—'} {probeCheck.statusText}</td>
+                <td>{probeCheck.responseTime}</td>
+                <td>{probeCheck.success ? probeCheck.detail : probeCheck.errorMessage}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
   );
 }
 
