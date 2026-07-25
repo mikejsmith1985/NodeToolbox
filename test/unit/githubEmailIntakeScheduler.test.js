@@ -212,7 +212,7 @@ describe('runGithubEmailIntakeNow (orchestration)', () => {
     const config = baseConfig({ mode: 'dryRun', dropFolder: fixturesDir, fileExtensions: ['.msg'] });
 
     const outcome = await scheduler.runGithubEmailIntakeNow(config, {
-      listFiles: () => ['gh-review-requested.msg'],
+      listFiles: () => ['synthetic-review-requested.msg'],
       moveFile: () => {}, // no-op: never move the committed fixture
       readLedger: () => [],
       writeLedger: () => {},
@@ -223,8 +223,8 @@ describe('runGithubEmailIntakeNow (orchestration)', () => {
     expect(outcome.ok).toBe(true);
     const parsedEvent = outcome.result.events[0];
     expect(parsedEvent.eventType).toBe('review_requested');
-    expect(parsedEvent.jiraKey).toBe('ENFCT-1774');
-    expect(posts[0]).toEqual({ jiraKey: 'ENFCT-1774', eventType: 'review_requested' });
+    expect(parsedEvent.jiraKey).toBe('TEST-123');
+    expect(posts[0]).toEqual({ jiraKey: 'TEST-123', eventType: 'review_requested' });
   });
 
   it('runs the Outlook export before sweeping when outlookExport is enabled', async () => {

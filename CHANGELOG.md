@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Internal:** the GitHub-email `.msg` test fixtures are now **synthetic** (generated from placeholder data
+  by a small compound-file writer), so no real notification-email content lives in the repository. No
+  user-facing behavior change.
+
 ### Fixed
 - **GitHub Email Intake never attaches an event to the wrong Jira ticket.** The Jira key is now read from
   the PR **title (subject)** first, then the **branch** — never from free body prose — so a key mentioned in

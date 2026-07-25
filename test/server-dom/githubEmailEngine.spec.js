@@ -30,17 +30,17 @@ test('the bundled engine classifies a merge email server-side', () => {
   assert.equal(event.sourceMessageId, '<merge-1@github.com>');
 });
 
-test('the bundled engine reads a real Outlook .msg and classifies it server-side', () => {
-  const msgBytes = fs.readFileSync(path.join(__dirname, '..', 'fixtures', 'github-emails', 'gh-review-requested.msg'));
+test('the bundled engine reads an Outlook .msg and classifies it server-side', () => {
+  const msgBytes = fs.readFileSync(path.join(__dirname, '..', 'fixtures', 'github-emails', 'synthetic-review-requested.msg'));
   const emailSource = engine.msgBytesToEmailSource(msgBytes);
   assert.ok(emailSource, 'expected a reconstructed email source from the .msg');
 
   const event = engine.parseGithubEmail(emailSource);
   assert.equal(event.eventType, 'review_requested');
-  assert.equal(event.actor, 'C13471_Zilver');
-  assert.equal(event.repo, 'zilvertonz/usmg-facets-enroll');
-  assert.equal(event.jiraKey, 'ENFCT-1774');
-  assert.equal(event.prNumber, 577);
+  assert.equal(event.actor, 'OCTOCAT_TEST');
+  assert.equal(event.repo, 'testorg/testrepo');
+  assert.equal(event.jiraKey, 'TEST-123');
+  assert.equal(event.prNumber, 7);
 });
 
 test('the bundled engine exposes the ledger helpers', () => {
