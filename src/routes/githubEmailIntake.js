@@ -13,6 +13,7 @@ const {
   isGithubEmailIntakeRunInProgress,
   readLastRunResult,
 } = require('../services/githubEmailIntakeScheduler');
+const { runOutlookExport } = require('../services/outlookEmailExport');
 
 const DEFAULT_SCHEDULE_TIME = '07:00';
 const SCHEDULE_TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -29,6 +30,7 @@ function sanitiseConfig(rawBody, previousSeenPrs) {
   const rawExtensions = Array.isArray(rawBody && rawBody.fileExtensions) ? rawBody.fileExtensions : ['.eml', '.txt'];
   const rawProjectKeys = Array.isArray(rawBody && rawBody.jiraProjectKeys) ? rawBody.jiraProjectKeys : [];
   const rawTransitions = (rawBody && rawBody.transitions) || {};
+  const rawOutlookExport = (rawBody && rawBody.outlookExport) || {};
   return {
     isEnabled: !!(rawBody && rawBody.isEnabled),
     mode,
@@ -44,6 +46,11 @@ function sanitiseConfig(rawBody, previousSeenPrs) {
       commitPushed:  toTrimmedString(rawTransitions.commitPushed),
       prOpened:      toTrimmedString(rawTransitions.prOpened),
       prMerged:      toTrimmedString(rawTransitions.prMerged),
+    },
+    outlookExport: {
+      isEnabled: !!rawOutlookExport.isEnabled,
+      sourceFolder: toTrimmedString(rawOutlookExport.sourceFolder) || 'Inbox\\GitHub Intake',
+      processedFolder: toTrimmedString(rawOutlookExport.processedFolder) || 'Inbox\\GitHub Processed',
     },
     // Preserve the dedup state across saves — a config edit must never lose it.
     seenPrs: previousSeenPrs || {},
@@ -62,6 +69,7 @@ function buildDefaultConfigResponse() {
     fileExtensions: ['.eml', '.txt'],
     jiraProjectKeys: [],
     transitions: { branchCreated: '', commitPushed: '', prOpened: '', prMerged: '' },
+    outlookExport: { isEnabled: false, sourceFolder: 'Inbox\\GitHub Intake', processedFolder: 'Inbox\\GitHub Processed' },
   };
 }
 
@@ -148,10 +156,29 @@ function createGithubEmailIntakeRouter(configuration) {
         moveFile: () => {},          // never move files during a preview
         writeLedger: () => {},       // never persist ledger during a preview
         writeLastRun: false,
+        runExport: () => Promise.resolve(null), // never pull from Outlook during a preview (that moves real mail)
       });
       return res.json(outcome);
     } catch (previewError) {
       const errorMessage = previewError instanceof Error ? previewError.message : String(previewError);
+      return res.status(500).json({ ok: false, message: errorMessage });
+    }
+  });
+
+  // Test the Outlook export in isolation: pulls emails from Outlook into the drop folder and reports the
+  // count, without running the intake/parse. Lets an operator verify the Outlook side before enabling it.
+  router.post('/api/github-email-intake/export-test', async (req, res) => {
+    const cfg = ((configuration.scheduler || {}).githubEmailIntake) || {};
+    const outlookExport = cfg.outlookExport || {};
+    try {
+      const result = await runOutlookExport({
+        sourceFolder: outlookExport.sourceFolder,
+        processedFolder: outlookExport.processedFolder,
+        dropFolder: cfg.dropFolder,
+      });
+      return res.json({ ok: result.ok, result });
+    } catch (exportError) {
+      const errorMessage = exportError instanceof Error ? exportError.message : String(exportError);
       return res.status(500).json({ ok: false, message: errorMessage });
     }
   });

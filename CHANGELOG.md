@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **GitHub Email Intake can pull emails from Outlook itself — no separate script or Task Scheduler.**
+  Because Toolbox runs on the same machine as Outlook, it now drives the export directly: before each
+  intake run (scheduled or **Run Now**), it exports GitHub notification emails from an Outlook folder into
+  the drop folder as `.msg`, then processes them — one action, end to end. Configured in the Admin Hub
+  (**Pull emails from Outlook automatically**): enable it, set the Outlook **source** and **processed**
+  folder names, and use **Test Outlook export** to verify the Outlook side in isolation. It runs a bundled,
+  zero-dependency PowerShell/COM exporter (shipped inside the exe, so it arrives with every update); it
+  touches only non-sensitive mail properties so Outlook's programmatic-access guard never prompts, and it
+  moves exported mail to the processed folder so nothing is exported twice. **Preview never pulls from
+  Outlook** (that would move real mail); Windows-only, with a friendly skip elsewhere.
+
 ### Removed
 - **Decommissioned the GitHub-API diagnostics.** With the GitHub API confirmed unavailable in this
   environment (the integration now runs entirely through the email-intake path), the Dev Panel's

@@ -207,6 +207,11 @@ function saveConfigToDisk(configuration) {
         jiraProjectKeys:        (configuration.scheduler.githubEmailIntake || {}).jiraProjectKeys        || [],
         transitions:            (configuration.scheduler.githubEmailIntake || {}).transitions            || { branchCreated: '', commitPushed: '', prOpened: '', prMerged: '' },
         seenPrs:                (configuration.scheduler.githubEmailIntake || {}).seenPrs                || {},
+        outlookExport: {
+          isEnabled:       !!(((configuration.scheduler.githubEmailIntake || {}).outlookExport) || {}).isEnabled,
+          sourceFolder:    (((configuration.scheduler.githubEmailIntake || {}).outlookExport) || {}).sourceFolder    || 'Inbox\\GitHub Intake',
+          processedFolder: (((configuration.scheduler.githubEmailIntake || {}).outlookExport) || {}).processedFolder || 'Inbox\\GitHub Processed',
+        },
       },
     },
     // Hygiene monitor — deep-clone the teams array and the bounded history slice.

@@ -206,6 +206,22 @@ async function processDropFolder(configuration, deps) {
 
   const runResult = { hasRun: true, ranAtIso: nowIso, trigger: deps.trigger || 'manual', mode, dropFolder, events: [], postedCount: 0, skippedCount: 0, errorCount: 0 };
 
+  // Managed Outlook export: pull fresh GitHub emails from Outlook into the drop folder FIRST, so this same
+  // run then processes them. Gated on config; a failure is reported on the run but never aborts the sweep of
+  // files already present. Preview injects a no-op runExport so a dry-run never moves real Outlook mail.
+  if (cfg.outlookExport && cfg.outlookExport.isEnabled) {
+    const runExport = deps.runExport || ((exportConfig) => require('./outlookEmailExport').runOutlookExport(exportConfig));
+    try {
+      runResult.outlookExport = await runExport({
+        sourceFolder: cfg.outlookExport.sourceFolder,
+        processedFolder: cfg.outlookExport.processedFolder,
+        dropFolder,
+      });
+    } catch (exportError) {
+      runResult.outlookExport = { ok: false, message: 'Outlook export threw: ' + (exportError && exportError.message ? exportError.message : String(exportError)) };
+    }
+  }
+
   let fileNames;
   try {
     fileNames = deps.listFiles(dropFolder, fileExtensions);
@@ -357,6 +373,8 @@ async function runGithubEmailIntakeNow(configuration, deps = {}) {
       engine:     deps.engine     || getEngine(),
       nowIso:     deps.nowIso     || (() => new Date().toISOString()),
       trigger:    deps.trigger    || 'manual',
+      // Injectable so preview can pass a no-op (never touch Outlook) and tests can spy on the export.
+      runExport:  deps.runExport  || ((exportConfig) => require('./outlookEmailExport').runOutlookExport(exportConfig)),
     };
     const runResult = await processDropFolder(configuration, resolvedDeps);
     if (deps.writeLastRun !== false) {
