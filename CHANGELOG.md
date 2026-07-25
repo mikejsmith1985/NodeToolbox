@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **GitHub Email Intake now reads Outlook `.msg` files.** Outlook saves notification emails as `.msg`
+  (a binary compound-file format), not `.eml` — which the intake could not read at all. A new zero-dependency
+  `.msg` reader extracts the message's transport headers and body and hands them to the existing classifier
+  unchanged, so the full `X-GitHub-Sender` / `X-GitHub-Reason` / `List-ID` / Subject signal set is read
+  straight from a saved `.msg`. `.msg` is now a default watched extension alongside `.eml`/`.txt`, and an
+  unreadable `.msg` is routed to the error folder for a fixed re-export. Verified end-to-end against a real
+  captured GitHub notification `.msg`.
+
 - **GitHub API Probe — decide the integration path before building it.** A read-only diagnostic
   (Dev Panel → **GitHub API Probe**) that, with the GitHub credentials NodeToolbox already holds, tries to
   authenticate and then read a target repository, its pull requests, commits, and events — plus, optionally,

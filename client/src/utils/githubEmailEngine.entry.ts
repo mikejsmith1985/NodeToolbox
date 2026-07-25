@@ -5,6 +5,7 @@
 // piReviewEngine.entry.ts / monthlyDeliveryEngine.entry.ts pattern.
 
 export { parseMime, getHeader, type MimeMessage } from '../views/GithubEmail/lib/parseMime.ts';
+export { parseMsg, msgBytesToEmailSource, type ParsedMsg } from '../views/GithubEmail/lib/parseMsg.ts';
 export {
   classifyGithubEmail,
   parseGithubEmail,

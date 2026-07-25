@@ -107,7 +107,21 @@ function defaultListFiles(dropFolder, fileExtensions) {
     .filter((name) => lowerExtensions.some((extension) => name.toLowerCase().endsWith(extension)));
 }
 
+/**
+ * Reads one drop-folder file into the RFC-822 email source string the engine parses. Text formats
+ * (.eml/.txt) are read as UTF-8 directly; Outlook .msg files are binary (Compound File Binary Format), so
+ * they are read as bytes and converted to an email source via the engine's .msg reader. An unreadable
+ * .msg throws, which routes the file to the error folder for a later, fixed re-export.
+ */
 function defaultReadFile(fullPath) {
+  if (/\.msg$/i.test(fullPath)) {
+    const msgBytes = fs.readFileSync(fullPath); // Buffer — a Uint8Array the engine reads directly.
+    const emailSource = getEngine().msgBytesToEmailSource(msgBytes);
+    if (emailSource === null) {
+      throw new Error('unreadable Outlook .msg (no transport headers found)');
+    }
+    return emailSource;
+  }
   return fs.readFileSync(fullPath, 'utf8');
 }
 
@@ -188,7 +202,7 @@ async function processDropFolder(configuration, deps) {
   const postOptions = optionsForMode(mode);
   const processedDir = cfg.processedArchiveFolder || path.join(dropFolder, PROCESSED_SUBFOLDER);
   const errorDir = cfg.errorFolder || path.join(dropFolder, ERROR_SUBFOLDER);
-  const fileExtensions = cfg.fileExtensions || ['.eml', '.txt'];
+  const fileExtensions = cfg.fileExtensions || ['.eml', '.txt', '.msg'];
 
   const runResult = { hasRun: true, ranAtIso: nowIso, trigger: deps.trigger || 'manual', mode, dropFolder, events: [], postedCount: 0, skippedCount: 0, errorCount: 0 };
 

@@ -203,7 +203,7 @@ function saveConfigToDisk(configuration) {
         dropFolder:             (configuration.scheduler.githubEmailIntake || {}).dropFolder             || '',
         processedArchiveFolder: (configuration.scheduler.githubEmailIntake || {}).processedArchiveFolder || '',
         errorFolder:            (configuration.scheduler.githubEmailIntake || {}).errorFolder            || '',
-        fileExtensions:         (configuration.scheduler.githubEmailIntake || {}).fileExtensions         || ['.eml', '.txt'],
+        fileExtensions:         (configuration.scheduler.githubEmailIntake || {}).fileExtensions         || ['.eml', '.txt', '.msg'],
         jiraProjectKeys:        (configuration.scheduler.githubEmailIntake || {}).jiraProjectKeys        || [],
         transitions:            (configuration.scheduler.githubEmailIntake || {}).transitions            || { branchCreated: '', commitPushed: '', prOpened: '', prMerged: '' },
         seenPrs:                (configuration.scheduler.githubEmailIntake || {}).seenPrs                || {},

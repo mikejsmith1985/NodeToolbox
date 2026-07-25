@@ -73,6 +73,6 @@ describe('scheduler.githubEmailIntake config', () => {
     expect(persisted.scheduler.githubEmailIntake.isEnabled).toBe(false);
     expect(persisted.scheduler.githubEmailIntake.mode).toBe('dryRun');
     expect(persisted.scheduler.githubEmailIntake.scheduleTime).toBe('07:00');
-    expect(persisted.scheduler.githubEmailIntake.fileExtensions).toEqual(['.eml', '.txt']);
+    expect(persisted.scheduler.githubEmailIntake.fileExtensions).toEqual(['.eml', '.txt', '.msg']);
   });
 });

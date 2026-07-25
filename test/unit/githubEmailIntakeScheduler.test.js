@@ -202,4 +202,28 @@ describe('runGithubEmailIntakeNow (orchestration)', () => {
     expect(outcome.ok).toBe(false);
     expect(outcome.message).toMatch(/drop folder/i);
   });
+
+  // Proves the DEFAULT read path handles a binary Outlook .msg: dropFolder points at the fixtures dir,
+  // listFiles/moveFile are injected (so the real fixture is never moved), but readFile is left to the
+  // default so it must detect the .msg, read bytes, and reconstruct the email via the bundled engine.
+  it('reads a real Outlook .msg from disk through the default read path', async () => {
+    const fixturesDir = path.join(__dirname, '..', 'fixtures', 'github-emails');
+    const posts = [];
+    const config = baseConfig({ mode: 'dryRun', dropFolder: fixturesDir, fileExtensions: ['.msg'] });
+
+    const outcome = await scheduler.runGithubEmailIntakeNow(config, {
+      listFiles: () => ['gh-review-requested.msg'],
+      moveFile: () => {}, // no-op: never move the committed fixture
+      readLedger: () => [],
+      writeLedger: () => {},
+      writeLastRun: false,
+      postEvent: (args) => { posts.push({ jiraKey: args.jiraKey, eventType: args.eventType }); },
+    });
+
+    expect(outcome.ok).toBe(true);
+    const parsedEvent = outcome.result.events[0];
+    expect(parsedEvent.eventType).toBe('review_requested');
+    expect(parsedEvent.jiraKey).toBe('ENFCT-1774');
+    expect(posts[0]).toEqual({ jiraKey: 'ENFCT-1774', eventType: 'review_requested' });
+  });
 });
