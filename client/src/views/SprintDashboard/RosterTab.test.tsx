@@ -422,4 +422,33 @@ describe('RosterTab', () => {
     expect(await screen.findByText('INC0012345')).toBeInTheDocument();
     expect(screen.getByText('Investigate login failures')).toBeInTheDocument();
   });
+
+  it('links a pasted GitHub id onto the matched roster member while preserving the Jira id', () => {
+    useStandupRosterStore.getState().replaceRosterMembers([
+      {
+        displayName: 'Sandhu, Param (CTR)',
+        assigneeQueryValue: 'Sandhu, Param (CTR)',
+        jiraAccountId: 'jira-param-777',
+        teamName: 'Transformers',
+      },
+    ]);
+
+    render(<RosterTab issues={[]} projectKey="TBX" />);
+
+    fireEvent.change(screen.getByLabelText('Paste Member | ID | Team'), {
+      target: { value: 'Member | ID | Team\nParam | C13471_Zilver | Transformers' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Match to roster' }));
+
+    // The row auto-matches "Param" to "Sandhu, Param (CTR)"; the select is pre-set to that member.
+    const linkSelect = screen.getByLabelText('Link to roster member') as HTMLSelectElement;
+    expect(linkSelect.value).toBe('roster-member:sandhu, param (ctr)');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Apply links' }));
+
+    const [member] = useStandupRosterStore.getState().rosterMembers;
+    expect(member.githubAccountId).toBe('C13471_Zilver');
+    expect(member.jiraAccountId).toBe('jira-param-777');
+    expect(screen.getByText('Linked 1 GitHub id to roster members.')).toBeInTheDocument();
+  });
 });

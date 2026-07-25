@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Link GitHub IDs to roster members.** The Team Dashboard roster now stores a person's **GitHub account
+  id** (e.g. `C13471_Zilver`, the value GitHub notification emails carry in `X-GitHub-Sender`) alongside
+  the Jira identity it already holds — making each member the bridge that resolves a GitHub event's actor
+  back to the right person. A new **Link GitHub IDs** section on the Roster tab takes a pasted
+  `Member | ID | Team` list, matches each row to a roster member **by name**, and shows the matches for
+  confirmation (with a per-row override) before writing anything. A later Jira re-import no longer wipes a
+  linked GitHub id (the upsert now preserves it, the same way it already preserves roles).
+
 - **GitHub Email Intake — GitHub→Jira automation without GitHub API access.** For locked-down
   environments where the API-based repo monitor can't reach GitHub, a new deterministic (no-AI) engine
   parses **GitHub notification emails** saved to a local folder and drives the same Jira updates: a

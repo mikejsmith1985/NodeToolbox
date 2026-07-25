@@ -44,6 +44,41 @@ describe('useStandupRosterStore', () => {
     ]);
   });
 
+  it('persists a GitHub account id alongside the Jira identity and reads it back', () => {
+    useStandupRosterStore.getState().addRosterMember({
+      displayName: 'Sandhu, Param (CTR)',
+      assigneeQueryValue: 'Sandhu, Param (CTR)',
+      jiraAccountId: 'jira-param-777',
+      githubAccountId: 'C13471_Zilver',
+    });
+
+    const [storedMember] = readStoredStandupRosterMembers();
+    expect(storedMember.githubAccountId).toBe('C13471_Zilver');
+    expect(storedMember.jiraAccountId).toBe('jira-param-777');
+  });
+
+  it('preserves an existing GitHub id when a role-less draft re-imports the same member', () => {
+    useStandupRosterStore.setState({
+      rosterMembers: [
+        {
+          id: 'roster-member:sandhu, param (ctr)',
+          displayName: 'Sandhu, Param (CTR)',
+          assigneeQueryValue: 'Sandhu, Param (CTR)',
+          githubAccountId: 'C13471_Zilver',
+        },
+      ],
+    });
+
+    // A Jira re-import carries no GitHub id; upsert must not wipe the one already linked.
+    useStandupRosterStore.getState().upsertRosterMembers([
+      { displayName: 'Sandhu, Param (CTR)', assigneeQueryValue: 'Sandhu, Param (CTR)', jiraAccountId: 'jira-param-777' },
+    ]);
+
+    const [member] = useStandupRosterStore.getState().rosterMembers;
+    expect(member.githubAccountId).toBe('C13471_Zilver');
+    expect(member.jiraAccountId).toBe('jira-param-777');
+  });
+
   it('builds a Jira assignee clause from the stored roster members', () => {
     useStandupRosterStore.setState({
       rosterMembers: [

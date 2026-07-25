@@ -10,6 +10,12 @@ import type { JiraIssue, JiraUser } from '../../types/jira.ts';
 import type { SnowIssueType, SnowMyIssue, SnowTableResponse } from '../../types/snow.ts';
 import { SnowLookupField } from '../SnowHub/components/SnowLookupField.tsx';
 import {
+  buildGithubIdLinkedDraft,
+  matchGithubIdRowsToMembers,
+  parseGithubIdRoster,
+  type GithubIdMatchProposal,
+} from './githubIdRosterImport.ts';
+import {
   filterRosterMembersByActiveTeam,
   readAvailableRosterTeamNames,
   resolveActiveRosterTeamName,
@@ -86,6 +92,7 @@ interface RosterCardProps {
     | 'assigneeQueryValue'
     | 'displayName'
     | 'jiraAccountId'
+    | 'githubAccountId'
     | 'snowUserDisplayName'
     | 'snowUserSysId'
     | 'emailAddress'
@@ -447,6 +454,7 @@ function RosterCard({
   const jiraMetaLine = buildRosterCardMetaLine(
     `Jira: ${rosterMember.assigneeQueryValue}`,
     rosterMember.jiraAccountId ? `Account: ${rosterMember.jiraAccountId}` : undefined,
+    rosterMember.githubAccountId ? `GitHub: ${rosterMember.githubAccountId}` : undefined,
   );
   const snowMetaLine = buildRosterCardMetaLine(
     rosterMember.snowUserDisplayName ? `SNow: ${rosterMember.snowUserDisplayName}` : undefined,
@@ -627,6 +635,13 @@ export default function RosterTab({ issues, projectKey }: RosterTabProps) {
   const [snowWorkErrorMessage, setSnowWorkErrorMessage] = useState<string | null>(null);
   const [snowWorkStatusMessage, setSnowWorkStatusMessage] = useState<string | null>(null);
   const [isLoadingSnowWork, setIsLoadingSnowWork] = useState(false);
+  // "Link GitHub IDs" paste workflow: the pasted text, the matched proposals awaiting confirmation, the
+  // per-row chosen roster member (keyed by GitHub id; '' means skip), and status/error messages.
+  const [githubIdPasteText, setGithubIdPasteText] = useState('');
+  const [githubIdProposals, setGithubIdProposals] = useState<GithubIdMatchProposal[] | null>(null);
+  const [githubIdSelectionByGithubId, setGithubIdSelectionByGithubId] = useState<Record<string, string>>({});
+  const [githubIdStatusMessage, setGithubIdStatusMessage] = useState<string | null>(null);
+  const [githubIdErrorMessage, setGithubIdErrorMessage] = useState<string | null>(null);
 
   const rosterAssigneeValues = useMemo(
     () => new Set(rosterMembers.map((rosterMember) => rosterMember.assigneeQueryValue.trim().toLowerCase())),
@@ -867,6 +882,67 @@ export default function RosterTab({ issues, projectKey }: RosterTabProps) {
     resetProjectUserSelection([]);
   }
 
+  /** Parses the pasted GitHub-id list and matches each row to a roster member, ready for confirmation. */
+  function handleMatchGithubIds() {
+    const parsedRows = parseGithubIdRoster(githubIdPasteText);
+    if (parsedRows.length === 0) {
+      setGithubIdProposals(null);
+      setGithubIdStatusMessage(null);
+      setGithubIdErrorMessage('No "Member | ID | Team" rows were found in the pasted text.');
+      return;
+    }
+
+    const proposals = matchGithubIdRowsToMembers(parsedRows, rosterMembers);
+    const nextSelectionByGithubId: Record<string, string> = {};
+    for (const proposal of proposals) {
+      nextSelectionByGithubId[proposal.row.githubAccountId] = proposal.suggestedMemberId ?? '';
+    }
+
+    setGithubIdProposals(proposals);
+    setGithubIdSelectionByGithubId(nextSelectionByGithubId);
+    setGithubIdErrorMessage(null);
+    const autoMatchedCount = proposals.filter((proposal) => proposal.suggestedMemberId !== null).length;
+    setGithubIdStatusMessage(
+      `Matched ${autoMatchedCount} of ${proposals.length} pasted rows automatically. Review each below, then apply.`,
+    );
+  }
+
+  function handleSelectGithubIdMember(githubAccountId: string, rosterMemberId: string) {
+    setGithubIdSelectionByGithubId((currentSelection) => ({ ...currentSelection, [githubAccountId]: rosterMemberId }));
+  }
+
+  /** Writes the confirmed GitHub id onto each chosen roster member, preserving their other fields. */
+  function handleApplyGithubIdLinks() {
+    if (githubIdProposals === null) {
+      return;
+    }
+
+    const rosterMembersById = new Map(rosterMembers.map((rosterMember) => [rosterMember.id, rosterMember]));
+    const linkedDrafts = githubIdProposals
+      .map((proposal) => {
+        const selectedMemberId = githubIdSelectionByGithubId[proposal.row.githubAccountId] ?? '';
+        const selectedMember = rosterMembersById.get(selectedMemberId);
+        return selectedMember === undefined
+          ? null
+          : buildGithubIdLinkedDraft(selectedMember, proposal.row.githubAccountId, proposal.row.teamName);
+      })
+      .filter((linkedDraft): linkedDraft is StandupRosterMemberDraft => linkedDraft !== null);
+
+    if (linkedDrafts.length === 0) {
+      setGithubIdErrorMessage('Choose a roster member for at least one row before applying links.');
+      return;
+    }
+
+    upsertRosterMembers(linkedDrafts);
+    setGithubIdProposals(null);
+    setGithubIdPasteText('');
+    setGithubIdSelectionByGithubId({});
+    setGithubIdErrorMessage(null);
+    setGithubIdStatusMessage(
+      `Linked ${linkedDrafts.length} GitHub ${linkedDrafts.length === 1 ? 'id' : 'ids'} to roster members.`,
+    );
+  }
+
   function handleSnowUserChange(rosterMember: StandupRosterMember, nextReference: RosterSnowReference) {
     setSnowWorkByRosterMemberId((currentSnowWorkByRosterMemberId) => {
       const nextSnowWorkByRosterMemberId = { ...currentSnowWorkByRosterMemberId };
@@ -1090,6 +1166,75 @@ export default function RosterTab({ issues, projectKey }: RosterTabProps) {
           <p className={styles.personWalkMeta}>
             New manual entries and quick adds are assigned to <strong>{activeRosterTeamName}</strong>.
           </p>
+        ) : null}
+      </section>
+
+      <section className={styles.rosterSection}>
+        <div className={styles.personWalkSectionHeader}>
+          <h3 className={styles.personWalkSectionTitle}>Link GitHub IDs</h3>
+        </div>
+        <p className={styles.personWalkMeta}>
+          Paste a <strong>Member | ID | Team</strong> list (GitHub account ids such as <code>C13471_Zilver</code>).
+          Each row is matched to a roster member by name so the GitHub id rides alongside the Jira identity already
+          on file — the bridge that ties a GitHub event back to the person. Nothing is written until you apply.
+        </p>
+        <label className={styles.rosterFieldLabel}>
+          <span>Paste Member | ID | Team</span>
+          <textarea
+            className={styles.personWalkPostInput}
+            onChange={(event) => setGithubIdPasteText(event.target.value)}
+            placeholder={'Member | ID | Team\nParam | C13471_Zilver | Transformers'}
+            rows={6}
+            value={githubIdPasteText}
+          />
+        </label>
+        <div className={styles.rosterImportActionRow}>
+          <button
+            className={styles.secondaryButton}
+            disabled={!githubIdPasteText.trim()}
+            onClick={handleMatchGithubIds}
+            type="button"
+          >
+            Match to roster
+          </button>
+          {githubIdProposals !== null ? (
+            <button className={styles.secondaryButton} onClick={handleApplyGithubIdLinks} type="button">
+              Apply links
+            </button>
+          ) : null}
+        </div>
+        {githubIdStatusMessage ? <p className={styles.personWalkMeta}>{githubIdStatusMessage}</p> : null}
+        {githubIdErrorMessage ? <p className={styles.errorMessage}>{githubIdErrorMessage}</p> : null}
+        {githubIdProposals !== null ? (
+          <div className={styles.rosterMemberList}>
+            {githubIdProposals.map((proposal) => (
+              <div className={styles.rosterMemberCard} key={proposal.row.githubAccountId}>
+                <p className={styles.rosterMemberPrimaryMeta}>
+                  <strong>{proposal.row.memberName}</strong> · {proposal.row.githubAccountId}
+                  {proposal.row.teamName ? ` · ${proposal.row.teamName}` : ''}
+                </p>
+                <label className={styles.rosterFieldLabel}>
+                  <span>Link to roster member</span>
+                  <select
+                    className={styles.settingsInput}
+                    onChange={(changeEvent) =>
+                      handleSelectGithubIdMember(proposal.row.githubAccountId, changeEvent.target.value)}
+                    value={githubIdSelectionByGithubId[proposal.row.githubAccountId] ?? ''}
+                  >
+                    <option value="">— Skip —</option>
+                    {rosterMembers.map((rosterMember) => (
+                      <option key={rosterMember.id} value={rosterMember.id}>
+                        {rosterMember.displayName}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {proposal.suggestedMemberId === null ? (
+                  <p className={styles.personWalkMeta}>No confident name match — choose the right person or skip this row.</p>
+                ) : null}
+              </div>
+            ))}
+          </div>
         ) : null}
       </section>
 

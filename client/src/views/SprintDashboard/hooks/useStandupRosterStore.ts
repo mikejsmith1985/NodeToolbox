@@ -36,6 +36,10 @@ export interface StandupRosterMember {
   displayName: string;
   assigneeQueryValue: string;
   jiraAccountId?: string;
+  // The person's GitHub account id (e.g. "C13471_Zilver", the value GitHub notification emails carry in
+  // X-GitHub-Sender). Distinct from jiraAccountId — it makes the member the bridge that resolves a
+  // GitHub event's actor back to the Jira identity already on file.
+  githubAccountId?: string;
   snowUserDisplayName?: string;
   snowUserSysId?: string;
   teamName?: string;
@@ -52,6 +56,7 @@ export interface StandupRosterMemberDraft {
   displayName: string;
   assigneeQueryValue: string;
   jiraAccountId?: string;
+  githubAccountId?: string;
   snowUserDisplayName?: string;
   snowUserSysId?: string;
   teamName?: string;
@@ -147,6 +152,7 @@ function isStandupRosterMember(value: unknown): value is StandupRosterMember {
     typeof candidate.displayName === 'string' &&
     typeof candidate.assigneeQueryValue === 'string' &&
     (candidate.jiraAccountId === undefined || typeof candidate.jiraAccountId === 'string') &&
+    (candidate.githubAccountId === undefined || typeof candidate.githubAccountId === 'string') &&
     (candidate.snowUserDisplayName === undefined || typeof candidate.snowUserDisplayName === 'string') &&
     (candidate.snowUserSysId === undefined || typeof candidate.snowUserSysId === 'string') &&
     (candidate.teamName === undefined || typeof candidate.teamName === 'string') &&
@@ -221,6 +227,7 @@ function createRosterMember(memberDraft: StandupRosterMemberDraft): StandupRoste
     displayName,
     assigneeQueryValue,
     jiraAccountId: buildOptionalRosterField(memberDraft.jiraAccountId),
+    githubAccountId: buildOptionalRosterField(memberDraft.githubAccountId),
     snowUserDisplayName: buildOptionalRosterField(memberDraft.snowUserDisplayName),
     snowUserSysId: buildOptionalRosterField(memberDraft.snowUserSysId),
     emailAddress: buildOptionalRosterField(memberDraft.emailAddress),
@@ -272,6 +279,27 @@ function sortRosterMembers(rosterMembers: StandupRosterMember[]): StandupRosterM
   );
 }
 
+/**
+ * Merges into an incoming draft the fields an existing member already has but the draft omits, so a
+ * partial re-import never erases data. Only role capabilities and the GitHub id are preserved this way:
+ * both are set through dedicated flows (roster role toggles, the GitHub-id importer) and are absent from
+ * the Jira-sourced drafts that would otherwise overwrite them with nothing.
+ */
+function mergePreservedRosterFields(
+  incomingDraft: StandupRosterMemberDraft,
+  existingMember: StandupRosterMember | undefined,
+): StandupRosterMemberDraft {
+  if (existingMember === undefined) {
+    return incomingDraft;
+  }
+
+  return {
+    ...incomingDraft,
+    roleCapabilities: incomingDraft.roleCapabilities ?? existingMember.roleCapabilities,
+    githubAccountId: incomingDraft.githubAccountId ?? existingMember.githubAccountId,
+  };
+}
+
 function upsertRosterMembersInList(
   currentRosterMembers: StandupRosterMember[],
   memberDrafts: StandupRosterMemberDraft[],
@@ -284,14 +312,12 @@ function upsertRosterMembersInList(
   );
 
   for (const memberDraft of memberDrafts) {
-    // Preserve an existing member's role capabilities when the incoming draft carries none. Re-imports
-    // from Jira (project users, recent assignees, quick-add) build role-less drafts, so without this a
-    // bulk re-import would silently wipe roles a user already set on people already on the roster.
+    // Preserve fields the incoming draft does not carry, from the member already on the roster. Re-imports
+    // from Jira (project users, recent assignees, quick-add) build drafts with no roles and no GitHub id,
+    // so without this a bulk re-import would silently wipe a person's roles and their linked GitHub id.
     const existingMember = rosterMembersByLookupKey.get(createRosterMemberLookupKey(memberDraft.assigneeQueryValue));
-    const draftWithPreservedRoles = memberDraft.roleCapabilities === undefined && existingMember?.roleCapabilities !== undefined
-      ? { ...memberDraft, roleCapabilities: existingMember.roleCapabilities }
-      : memberDraft;
-    const nextRosterMember = createRosterMember(draftWithPreservedRoles);
+    const draftWithPreservedFields = mergePreservedRosterFields(memberDraft, existingMember);
+    const nextRosterMember = createRosterMember(draftWithPreservedFields);
     if (nextRosterMember === null) {
       continue;
     }
