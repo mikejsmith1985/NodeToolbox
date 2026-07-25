@@ -207,6 +207,7 @@ function saveConfigToDisk(configuration) {
         jiraProjectKeys:        (configuration.scheduler.githubEmailIntake || {}).jiraProjectKeys        || [],
         transitions:            (configuration.scheduler.githubEmailIntake || {}).transitions            || { branchCreated: '', commitPushed: '', prOpened: '', prMerged: '' },
         seenPrs:                (configuration.scheduler.githubEmailIntake || {}).seenPrs                || {},
+        customRules:            (configuration.scheduler.githubEmailIntake || {}).customRules            || [],
         outlookExport: {
           isEnabled:       !!(((configuration.scheduler.githubEmailIntake || {}).outlookExport) || {}).isEnabled,
           sourceFolder:    (((configuration.scheduler.githubEmailIntake || {}).outlookExport) || {}).sourceFolder    || 'Inbox\\GitHub Intake',

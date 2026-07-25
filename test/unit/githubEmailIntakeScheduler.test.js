@@ -241,6 +241,29 @@ describe('runGithubEmailIntakeNow (orchestration)', () => {
     expect(outcome.result.outlookExport).toEqual({ ok: true, exportedCount: 2, total: 2 });
   });
 
+  it('applies a config-driven custom rule the built-in table would miss', async () => {
+    // Built-ins call this 'unknown'; a custom rule reclassifies it as pr_opened so it drives Jira.
+    const openedEmail = [
+      'List-ID: org/repo <repo.org.github.com>',
+      'Subject: [org/repo] [DENP-1414] New work (#42)',
+      'X-GitHub-Reason: subscribed',
+      'Message-ID: <opened-1@github.com>',
+      'Date: Thu, 24 Jul 2026 12:00:00 +0000',
+      'X-GitHub-Sender: jsmith',
+      'Content-Type: text/plain; charset=UTF-8',
+      '',
+      'jsmith wants to merge 3 commits',
+    ].join('\r\n');
+    const { deps, state } = buildDeps({ 'a.eml': openedEmail });
+
+    const config = baseConfig({
+      customRules: [{ id: 'org-pr-opened', eventType: 'pr_opened', bodyPattern: 'wants to merge', requiresPrNumber: true }],
+    });
+    await scheduler.runGithubEmailIntakeNow(config, deps);
+
+    expect(state.posts[0]).toEqual(expect.objectContaining({ jiraKey: 'DENP-1414', eventType: 'pr_opened' }));
+  });
+
   it('does not run the Outlook export when it is disabled', async () => {
     const files = { 'a.eml': mergeEmail('<a@github.com>', 123, 'DENP-1414') };
     let wasExportCalled = false;

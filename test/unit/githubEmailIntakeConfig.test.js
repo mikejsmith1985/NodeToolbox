@@ -97,4 +97,20 @@ describe('scheduler.githubEmailIntake config', () => {
 
     expect(JSON.parse(writtenJson).scheduler.githubEmailIntake.outlookExport.isEnabled).toBe(true);
   });
+
+  it('round-trips config-driven customRules through load and save', () => {
+    const customRules = [{ id: 'org-pr-opened', eventType: 'pr_opened', bodyPattern: 'wants to merge', requiresPrNumber: true }];
+    fsMock.existsSync.mockReturnValue(true);
+    fsMock.readFileSync.mockReturnValue(JSON.stringify({ scheduler: { githubEmailIntake: { customRules } } }));
+
+    const configuration = loadConfig();
+    expect(configuration.scheduler.githubEmailIntake.customRules).toEqual(customRules);
+
+    let writtenJson = '';
+    fsMock.writeFileSync.mockImplementation((_filePath, contents) => { writtenJson = contents; });
+    fsMock.mkdirSync.mockImplementation(() => {});
+    saveConfigToDisk(configuration);
+
+    expect(JSON.parse(writtenJson).scheduler.githubEmailIntake.customRules).toEqual(customRules);
+  });
 });

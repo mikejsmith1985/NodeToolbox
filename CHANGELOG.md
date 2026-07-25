@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **GitHub Email Intake — AI-assist rule generator (teach the parser without sharing emails).** A new
+  **Rule Assist (AI)** section on the intake panel (behind the AI unlock) generates a prompt you paste,
+  together with a real notification email, into your **own** AI; you paste the JSON rule it returns back,
+  it's validated, and it's stored as a **custom rule**. Custom rules are applied **before** the built-in
+  classifiers, so you can teach the engine new event types (PR opened / merged / branch created) yourself —
+  no code change, and no email ever leaves your machine. Rules are config-driven: Subject/body patterns are
+  stored as regex source strings and compiled safely (an invalid or matcher-less rule is rejected, never
+  able to break a run). Follows the project's propose-only pattern (prompt out → JSON in → accept), with a
+  `kind` guard so a reply from another AI surface can't be misread.
+
 ### Changed
 - **Internal:** the GitHub-email `.msg` test fixtures are now **synthetic** (generated from placeholder data
   by a small compound-file writer), so no real notification-email content lives in the repository. No

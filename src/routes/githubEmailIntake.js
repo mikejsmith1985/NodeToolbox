@@ -23,6 +23,30 @@ function toTrimmedString(value) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+/**
+ * Light shape-sanitise for AI-authored custom rules. Keeps only well-formed objects and coerces field
+ * types; the engine does full validation (regex compilability, at-least-one-matcher) at classification
+ * time, so a bad rule is simply ignored rather than able to break the run.
+ */
+function sanitiseCustomRules(rawRules) {
+  if (!Array.isArray(rawRules)) {
+    return [];
+  }
+  return rawRules
+    .filter((rule) => rule && typeof rule === 'object')
+    .map((rule) => {
+      const cleaned = { id: toTrimmedString(rule.id), eventType: toTrimmedString(rule.eventType) };
+      if (Array.isArray(rule.reasonHeaderIn)) {
+        cleaned.reasonHeaderIn = rule.reasonHeaderIn.map(toTrimmedString).filter((value) => value !== '');
+      }
+      if (typeof rule.subjectPattern === 'string' && rule.subjectPattern !== '') cleaned.subjectPattern = rule.subjectPattern;
+      if (typeof rule.bodyPattern === 'string' && rule.bodyPattern !== '') cleaned.bodyPattern = rule.bodyPattern;
+      if (rule.requiresPrNumber === true) cleaned.requiresPrNumber = true;
+      return cleaned;
+    })
+    .filter((rule) => rule.id !== '' && rule.eventType !== '');
+}
+
 /** Sanitises the posted config block, coercing every field to a safe shape. Never accepts credentials. */
 function sanitiseConfig(rawBody, previousSeenPrs) {
   const scheduleTime = toTrimmedString(rawBody && rawBody.scheduleTime);
@@ -52,6 +76,7 @@ function sanitiseConfig(rawBody, previousSeenPrs) {
       sourceFolder: toTrimmedString(rawOutlookExport.sourceFolder) || 'Inbox\\GitHub Intake',
       processedFolder: toTrimmedString(rawOutlookExport.processedFolder) || 'Inbox\\GitHub Processed',
     },
+    customRules: sanitiseCustomRules(rawBody && rawBody.customRules),
     // Preserve the dedup state across saves — a config edit must never lose it.
     seenPrs: previousSeenPrs || {},
   };
@@ -70,6 +95,7 @@ function buildDefaultConfigResponse() {
     jiraProjectKeys: [],
     transitions: { branchCreated: '', commitPushed: '', prOpened: '', prMerged: '' },
     outlookExport: { isEnabled: false, sourceFolder: 'Inbox\\GitHub Intake', processedFolder: 'Inbox\\GitHub Processed' },
+    customRules: [],
   };
 }
 

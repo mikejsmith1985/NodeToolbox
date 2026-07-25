@@ -245,7 +245,8 @@ async function processDropFolder(configuration, deps) {
 
     let event;
     try {
-      event = engine.parseGithubEmail(rawSource);
+      // Config-driven custom rules (AI-authored) are applied ahead of the built-in classification table.
+      event = engine.parseGithubEmail(rawSource, cfg.customRules || []);
     } catch (parseError) {
       // Route unparseable files to the error folder WITHOUT ledgering, so a fixed export can be retried.
       runResult.errorCount += 1;

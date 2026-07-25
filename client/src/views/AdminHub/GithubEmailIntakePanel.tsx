@@ -6,6 +6,9 @@
 
 import { useCallback, useEffect, useState } from 'react'
 
+import { useAiAssistStore } from '../../store/aiAssistStore.ts'
+import { buildRulePrompt, parseRuleReply } from '../GithubEmail/lib/githubRulePrompt.ts'
+import type { SerializedEmailRule } from '../GithubEmail/lib/githubEmailRules.ts'
 import styles from './AdminHubView.module.css'
 
 // ── Types (mirror src/routes/githubEmailIntake.js) ──
@@ -37,6 +40,7 @@ interface IntakeConfig {
   jiraProjectKeys: string[]
   transitions: IntakeTransitions
   outlookExport: OutlookExportConfig
+  customRules: SerializedEmailRule[]
 }
 
 interface OutlookExportResult {
@@ -126,11 +130,17 @@ export function GithubEmailIntakePanel() {
   const [isDirty, setIsDirty] = useState(false)
   const [isExporting, setIsExporting] = useState(false)
   const [exportMessage, setExportMessage] = useState('')
+  // Rule Assist (AI): the generated prompt, the pasted JSON reply, and a validation message.
+  const isAiUnlocked = useAiAssistStore((state) => state.isAiAssistUnlocked)
+  const [rulePrompt, setRulePrompt] = useState('')
+  const [ruleReply, setRuleReply] = useState('')
+  const [ruleMessage, setRuleMessage] = useState('')
 
   const loadEverything = useCallback(async () => {
     try {
       const [loadedConfig, loadedStatus] = await Promise.all([fetchConfig(), fetchStatus()])
-      setConfig(loadedConfig)
+      // Normalize newer fields so an older server or a partial payload can't crash the render.
+      setConfig({ ...loadedConfig, customRules: loadedConfig.customRules ?? [] })
       setLastRun(loadedStatus)
       setIsDirty(false)
       setStatusMessage('')
@@ -230,6 +240,36 @@ export function GithubEmailIntakePanel() {
     }
   }
 
+  function handleGenerateRulePrompt() {
+    setRulePrompt(buildRulePrompt())
+    setRuleMessage('Prompt generated — copy it, paste it plus a real email into your AI, then paste the JSON reply below.')
+  }
+
+  // Validates a pasted AI reply and, on success, adds it to the custom rules and saves.
+  async function handleAddRuleFromReply() {
+    if (config === null) return
+    const outcome = parseRuleReply(ruleReply)
+    if (!outcome.ok || !outcome.rule) {
+      setRuleMessage(outcome.error || 'Could not read a rule from the reply.')
+      return
+    }
+    const acceptedRule = outcome.rule
+    // Replace a rule with the same id, otherwise append — so re-pasting a refined rule updates in place.
+    const withoutDuplicate = config.customRules.filter((rule) => rule.id !== acceptedRule.id)
+    const nextConfig = { ...config, customRules: [...withoutDuplicate, acceptedRule] }
+    setConfig(nextConfig)
+    setRuleReply('')
+    setRuleMessage(`Added rule "${acceptedRule.id}" (${acceptedRule.eventType}).`)
+    await persist(nextConfig, `Saved rule "${acceptedRule.id}".`)
+  }
+
+  async function handleRemoveRule(ruleId: string) {
+    if (config === null) return
+    const nextConfig = { ...config, customRules: config.customRules.filter((rule) => rule.id !== ruleId) }
+    setConfig(nextConfig)
+    await persist(nextConfig, `Removed rule "${ruleId}".`)
+  }
+
   if (isLoading) {
     return <div className={styles.panelCard}><p className={styles.panelStatusLine}>Loading GitHub Email Intake…</p></div>
   }
@@ -312,6 +352,46 @@ export function GithubEmailIntakePanel() {
         <input className={styles.inputField} value={config.transitions.commitPushed} placeholder="Commit pushed → status" onChange={(event) => updateTransition({ commitPushed: event.target.value })} />
         <input className={styles.inputField} value={config.transitions.prOpened} placeholder="PR opened → status (e.g. In Progress)" onChange={(event) => updateTransition({ prOpened: event.target.value })} />
         <input className={styles.inputField} value={config.transitions.prMerged} placeholder="PR merged → status (e.g. Ready for QA)" onChange={(event) => updateTransition({ prMerged: event.target.value })} />
+      </div>
+
+      <div className={styles.panelSection}>
+        <label className={styles.fieldLabel}>Rule Assist (AI) — teach the parser a new event type, without sharing emails</label>
+        {!isAiUnlocked ? (
+          <p className={styles.panelStatusLine}>Unlock AI Assist (Ctrl+Alt+Z) to generate classification rules from an email.</p>
+        ) : (
+          <>
+            <p className={styles.panelStatusLine}>
+              Generate a prompt, paste it plus a real notification email into your own AI, then paste the JSON
+              rule it returns. Custom rules are applied <strong>before</strong> the built-in classifiers.
+            </p>
+            <button className={styles.actionButton} onClick={handleGenerateRulePrompt} type="button">Generate rule prompt</button>
+            {rulePrompt ? (
+              <textarea className={styles.inputField} readOnly rows={6} value={rulePrompt} onFocus={(event) => event.currentTarget.select()} />
+            ) : null}
+            <label className={styles.fieldLabel}>Paste the AI&apos;s JSON rule reply</label>
+            <textarea
+              className={styles.inputField}
+              rows={4}
+              value={ruleReply}
+              placeholder={'{"kind":"githubEmailRule","rule":{ ... }}'}
+              onChange={(event) => setRuleReply(event.target.value)}
+            />
+            <button className={styles.actionButton} disabled={!ruleReply.trim()} onClick={() => void handleAddRuleFromReply()} type="button">
+              Validate &amp; add rule
+            </button>
+            {ruleMessage ? <p className={styles.panelStatusLine}>{ruleMessage}</p> : null}
+            {config.customRules.length > 0 ? (
+              <ul>
+                {config.customRules.map((rule) => (
+                  <li key={rule.id}>
+                    <strong>{rule.id}</strong> → {rule.eventType}{' '}
+                    <button className={styles.actionButton} onClick={() => void handleRemoveRule(rule.id)} type="button">Remove</button>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </>
+        )}
       </div>
 
       <div className={styles.panelActions}>

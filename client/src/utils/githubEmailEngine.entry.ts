@@ -13,8 +13,13 @@ export {
 } from '../views/GithubEmail/lib/classifyGithubEmail.ts';
 export {
   GITHUB_EMAIL_RULES,
+  CLASSIFIABLE_EVENT_TYPES,
+  validateSerializedRule,
+  compileCustomRule,
+  compileCustomRules,
   type EmailClassificationRule,
   type GithubEmailEventType,
+  type SerializedEmailRule,
 } from '../views/GithubEmail/lib/githubEmailRules.ts';
 export {
   isProcessed,

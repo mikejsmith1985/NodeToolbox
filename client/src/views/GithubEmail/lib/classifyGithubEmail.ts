@@ -7,7 +7,13 @@
 
 import { normalizeRichTextToPlainText } from '../../../utils/richTextPlainText.ts';
 import { getHeader, parseMime, type MimeMessage } from './parseMime.ts';
-import { GITHUB_EMAIL_RULES, type GithubEmailEventType } from './githubEmailRules.ts';
+import {
+  compileCustomRules,
+  GITHUB_EMAIL_RULES,
+  type EmailClassificationRule,
+  type GithubEmailEventType,
+  type SerializedEmailRule,
+} from './githubEmailRules.ts';
 
 /** The robust Jira key pattern, copied from piReviewJira.ts to keep this lib browser-free. */
 const JIRA_KEY_PATTERN = /\b[A-Z][A-Z0-9]+-\d+\b/i;
@@ -129,9 +135,10 @@ function classifyEventType(
   subject: string,
   bodyText: string,
   prNumber: number | null,
+  rules: readonly EmailClassificationRule[],
 ): { eventType: GithubEmailEventType; matchedRuleId: string | null } {
   const normalizedReason = (reason || '').trim().toLowerCase();
-  for (const rule of GITHUB_EMAIL_RULES) {
+  for (const rule of rules) {
     if (rule.requiresPrNumber && prNumber === null) {
       continue;
     }
@@ -153,8 +160,15 @@ function classifyEventType(
   return { eventType: 'unknown', matchedRuleId: null };
 }
 
-/** Classifies a parsed GitHub notification email into a normalized, deterministic event. */
-export function classifyGithubEmail(message: MimeMessage): GitHubEmailEvent {
+/**
+ * Classifies a parsed GitHub notification email into a normalized, deterministic event. Any config-driven
+ * custom rules are evaluated BEFORE the built-in table, so a user-authored rule can override or extend the
+ * seed without a code change.
+ */
+export function classifyGithubEmail(
+  message: MimeMessage,
+  customRules: readonly SerializedEmailRule[] = [],
+): GitHubEmailEvent {
   const subject = getHeader(message, 'subject') || '';
   // Prefer the plain-text body; fall back to flattening the HTML alternative with the shared helper.
   const bodyText = message.textPlain !== null
@@ -166,7 +180,9 @@ export function classifyGithubEmail(message: MimeMessage): GitHubEmailEvent {
   const prNumber = readPrNumber(subject, bodyText);
   const branch = readBranch(bodyText);
   const reason = getHeader(message, 'x-github-reason');
-  const { eventType, matchedRuleId } = classifyEventType(reason, subject, bodyText, prNumber);
+  // Custom rules first (user overrides win), then the built-in seed table.
+  const rules = [...compileCustomRules(customRules), ...GITHUB_EMAIL_RULES];
+  const { eventType, matchedRuleId } = classifyEventType(reason, subject, bodyText, prNumber, rules);
 
   return {
     eventType,
@@ -186,7 +202,10 @@ export function classifyGithubEmail(message: MimeMessage): GitHubEmailEvent {
   };
 }
 
-/** Convenience: parse a raw email source and classify it in one call. */
-export function parseGithubEmail(rawSource: string): GitHubEmailEvent {
-  return classifyGithubEmail(parseMime(rawSource));
+/** Convenience: parse a raw email source and classify it in one call, with optional custom rules. */
+export function parseGithubEmail(
+  rawSource: string,
+  customRules: readonly SerializedEmailRule[] = [],
+): GitHubEmailEvent {
+  return classifyGithubEmail(parseMime(rawSource), customRules);
 }

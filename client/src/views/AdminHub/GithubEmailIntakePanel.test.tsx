@@ -4,6 +4,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { useAiAssistStore } from '../../store/aiAssistStore.ts';
 import { GithubEmailIntakePanel } from './GithubEmailIntakePanel.tsx';
 
 const DEFAULT_CONFIG = {
@@ -18,6 +19,7 @@ const DEFAULT_CONFIG = {
   jiraProjectKeys: [],
   transitions: { branchCreated: '', commitPushed: '', prOpened: '', prMerged: '' },
   outlookExport: { isEnabled: false, sourceFolder: 'Inbox\\GitHub Intake', processedFolder: 'Inbox\\GitHub Processed' },
+  customRules: [],
 };
 
 function stubFetch(overrides: Record<string, unknown> = {}) {
@@ -80,5 +82,33 @@ describe('GithubEmailIntakePanel', () => {
     fireEvent.click(screen.getByRole('button', { name: /Test Outlook export/i }));
 
     await waitFor(() => expect(screen.getByText(/Exported 3 of 4 Outlook message/i)).toBeInTheDocument());
+  });
+
+  it('Rule Assist is gated behind the AI unlock', async () => {
+    useAiAssistStore.setState({ isAiAssistUnlocked: false });
+    stubFetch();
+    render(<GithubEmailIntakePanel />);
+    await screen.findByText('📧 GitHub Email Intake');
+
+    expect(screen.getByText(/Unlock AI Assist/i)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Generate rule prompt/i })).not.toBeInTheDocument();
+  });
+
+  it('generates a prompt and adds a validated custom rule when AI is unlocked', async () => {
+    useAiAssistStore.setState({ isAiAssistUnlocked: true });
+    stubFetch();
+    render(<GithubEmailIntakePanel />);
+    await screen.findByText('📧 GitHub Email Intake');
+
+    fireEvent.click(screen.getByRole('button', { name: /Generate rule prompt/i }));
+    expect(screen.getByDisplayValue(/PASTE THE FULL RAW GITHUB NOTIFICATION EMAIL/)).toBeInTheDocument();
+
+    fireEvent.change(screen.getByPlaceholderText(/"kind":"githubEmailRule"/), {
+      target: { value: '{"kind":"githubEmailRule","rule":{"id":"org-pr-opened","eventType":"pr_opened","bodyPattern":"wants to merge","requiresPrNumber":true}}' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Validate & add rule/i }));
+
+    await waitFor(() => expect(screen.getByText('org-pr-opened')).toBeInTheDocument());
+    expect(screen.getByText(/Added rule "org-pr-opened"/)).toBeInTheDocument();
   });
 });

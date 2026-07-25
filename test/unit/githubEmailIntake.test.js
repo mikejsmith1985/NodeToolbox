@@ -134,6 +134,25 @@ describe('POST /api/github-email-intake/export-test', () => {
   });
 });
 
+describe('customRules sanitisation', () => {
+  it('keeps well-formed rules and drops malformed ones on save', async () => {
+    const configuration = freshConfig();
+    await request(buildApp(configuration))
+      .post('/api/github-email-intake/config')
+      .send({
+        dropFolder: 'C:\\gh',
+        customRules: [
+          { id: 'good', eventType: 'pr_opened', bodyPattern: 'wants to merge', requiresPrNumber: true },
+          { id: '', eventType: 'pr_merged', bodyPattern: 'x' }, // no id → dropped
+          'not an object',                                       // dropped
+        ],
+      });
+
+    const saved = configuration.scheduler.githubEmailIntake.customRules;
+    expect(saved).toEqual([{ id: 'good', eventType: 'pr_opened', bodyPattern: 'wants to merge', requiresPrNumber: true }]);
+  });
+});
+
 describe('outlookExport config round-trip', () => {
   it('sanitises and persists the outlookExport block, defaulting blank folders', async () => {
     const configuration = freshConfig();

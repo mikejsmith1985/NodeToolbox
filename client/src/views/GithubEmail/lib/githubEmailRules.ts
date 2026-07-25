@@ -80,3 +80,104 @@ export const GITHUB_EMAIL_RULES: EmailClassificationRule[] = [
     bodyMarker: /created (?:a |the )?branch/i,
   },
 ];
+
+// ── Custom rules (config-driven, AI-authored) ────────────────────────────────────────────────────────
+//
+// The built-in table above is the seed. A user can add their OWN rules — authored with the AI-assist rule
+// generator and stored in config — WITHOUT a code change. Because config is JSON, a custom rule stores its
+// Subject/body patterns as regex SOURCE STRINGS (not RegExp objects), compiled here. Custom rules are
+// evaluated BEFORE the built-ins (see classifyGithubEmail), so a user rule can override or extend the seed.
+
+/** The event vocabulary a custom rule may target — everything except the catch-all 'unknown'. */
+export const CLASSIFIABLE_EVENT_TYPES: Exclude<GithubEmailEventType, 'unknown'>[] = [
+  'branch_created', 'commit_pushed', 'pr_opened', 'pr_merged', 'review_requested',
+];
+
+/** A JSON-safe custom rule as stored in config and produced by the AI-assist generator. */
+export interface SerializedEmailRule {
+  id: string;
+  eventType: GithubEmailEventType;
+  reasonHeaderIn?: string[];
+  /** Regex SOURCE for the Subject (compiled case-insensitively). */
+  subjectPattern?: string;
+  /** Regex SOURCE for the body (compiled case-insensitively). */
+  bodyPattern?: string;
+  requiresPrNumber?: boolean;
+}
+
+/** True when a string is a valid regular expression (so an AI-authored pattern can't crash the engine). */
+function isCompilableRegex(pattern: string): boolean {
+  try {
+    RegExp(pattern);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Validates and normalizes an untrusted object into a SerializedEmailRule, or returns null. A rule must
+ * name a known event type, carry at least one predicate, and have only compilable patterns — so a
+ * malformed AI reply or a hand-edited config entry is rejected cleanly rather than misclassifying mail.
+ */
+export function validateSerializedRule(candidate: unknown): SerializedEmailRule | null {
+  if (typeof candidate !== 'object' || candidate === null) {
+    return null;
+  }
+  const raw = candidate as Record<string, unknown>;
+  const id = typeof raw.id === 'string' ? raw.id.trim() : '';
+  if (id === '' || !CLASSIFIABLE_EVENT_TYPES.includes(raw.eventType as never)) {
+    return null;
+  }
+
+  const rule: SerializedEmailRule = { id, eventType: raw.eventType as GithubEmailEventType };
+  if (Array.isArray(raw.reasonHeaderIn)) {
+    const reasons = raw.reasonHeaderIn.filter((value): value is string => typeof value === 'string' && value.trim() !== '');
+    if (reasons.length > 0) {
+      rule.reasonHeaderIn = reasons;
+    }
+  }
+  if (typeof raw.subjectPattern === 'string' && raw.subjectPattern !== '' && isCompilableRegex(raw.subjectPattern)) {
+    rule.subjectPattern = raw.subjectPattern;
+  }
+  if (typeof raw.bodyPattern === 'string' && raw.bodyPattern !== '' && isCompilableRegex(raw.bodyPattern)) {
+    rule.bodyPattern = raw.bodyPattern;
+  }
+  if (raw.requiresPrNumber === true) {
+    rule.requiresPrNumber = true;
+  }
+
+  // A rule with no predicates would match every email — reject it.
+  if (rule.reasonHeaderIn === undefined && rule.subjectPattern === undefined && rule.bodyPattern === undefined) {
+    return null;
+  }
+  return rule;
+}
+
+/** Compiles one serialized rule to a runnable EmailClassificationRule, or null when it is invalid. */
+export function compileCustomRule(candidate: unknown): EmailClassificationRule | null {
+  const serialized = validateSerializedRule(candidate);
+  if (serialized === null) {
+    return null;
+  }
+  const rule: EmailClassificationRule = { id: serialized.id, eventType: serialized.eventType };
+  if (serialized.reasonHeaderIn) {
+    rule.reasonHeaderIn = serialized.reasonHeaderIn;
+  }
+  if (serialized.subjectPattern) {
+    rule.subjectMarker = new RegExp(serialized.subjectPattern, 'i');
+  }
+  if (serialized.bodyPattern) {
+    rule.bodyMarker = new RegExp(serialized.bodyPattern, 'i');
+  }
+  if (serialized.requiresPrNumber) {
+    rule.requiresPrNumber = true;
+  }
+  return rule;
+}
+
+/** Compiles a list of serialized custom rules, dropping any that are invalid. */
+export function compileCustomRules(candidates: unknown): EmailClassificationRule[] {
+  const list = Array.isArray(candidates) ? candidates : [];
+  return list.map(compileCustomRule).filter((rule): rule is EmailClassificationRule => rule !== null);
+}
