@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Outlook export now works in the packaged exe.** The PowerShell exporter was shipped as a loose `.ps1`
+  asset that `pkg` did not reliably bundle, so **Pull emails from Outlook** failed in a released build with
+  "exporter script is missing from this build". The script is now **embedded directly** in the server code
+  (written to a temp file per run), so it is always present — no asset bundling involved. Verified the
+  embedded script parses as valid PowerShell.
+
 ### Added
 - **GitHub Email Intake — AI-assist rule generator (teach the parser without sharing emails).** A new
   **Rule Assist (AI)** section on the intake panel (behind the AI unlock) generates a prompt you paste,

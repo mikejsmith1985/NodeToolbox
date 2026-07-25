@@ -94,10 +94,10 @@ describe('runOutlookExport', () => {
   });
 });
 
-describe('runOutlookExport — bundled script asset', () => {
-  // Uses the REAL defaultWriteScript so it reads the actual bundled exportGithubEmails.ps1 — a guard that
-  // the asset is present and shaped right (so it will be there after a packaged-exe update).
-  it('reads the bundled exporter script, writes it to a temp file, and cleans it up', async () => {
+describe('runOutlookExport — embedded script', () => {
+  // Uses the REAL defaultWriteScript so it writes the EMBEDDED exporter script to a temp file — a guard
+  // that the embedded content is present and shaped right (it ships inside the exe, no external asset).
+  it('writes the embedded exporter script to a temp file, and cleans it up', async () => {
     const fs = require('fs');
     let writtenScriptPath = null;
 

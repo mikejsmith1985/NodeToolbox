@@ -57,8 +57,7 @@
   },
   "pkg": {
     "assets": [
-      "client/dist/**/*",
-      "src/services/scripts/**/*.ps1"
+      "client/dist/**/*"
     ]
   },
   "jest": {
