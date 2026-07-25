@@ -18,7 +18,7 @@ const DEFAULT_CONFIG = {
   fileExtensions: ['.eml', '.txt'],
   jiraProjectKeys: [],
   transitions: { branchCreated: '', commitPushed: '', prOpened: '', prMerged: '' },
-  outlookExport: { isEnabled: false, sourceFolder: 'Inbox\\GitHub Intake', processedFolder: 'Inbox\\GitHub Processed' },
+  outlookExport: { isEnabled: false, sourceFolder: 'Inbox\\GitHub Intake', processedFolder: 'Inbox\\GitHub Processed', lookbackDays: 0 },
   customRules: [],
 };
 

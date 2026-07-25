@@ -216,6 +216,7 @@ async function processDropFolder(configuration, deps) {
         sourceFolder: cfg.outlookExport.sourceFolder,
         processedFolder: cfg.outlookExport.processedFolder,
         dropFolder,
+        lookbackDays: cfg.outlookExport.lookbackDays,
       });
     } catch (exportError) {
       runResult.outlookExport = { ok: false, message: 'Outlook export threw: ' + (exportError && exportError.message ? exportError.message : String(exportError)) };

@@ -75,7 +75,7 @@ describe('scheduler.githubEmailIntake config', () => {
     expect(persisted.scheduler.githubEmailIntake.scheduleTime).toBe('07:00');
     expect(persisted.scheduler.githubEmailIntake.fileExtensions).toEqual(['.eml', '.txt', '.msg']);
     expect(persisted.scheduler.githubEmailIntake.outlookExport).toEqual({
-      isEnabled: false, sourceFolder: 'Inbox\\GitHub Intake', processedFolder: 'Inbox\\GitHub Processed',
+      isEnabled: false, sourceFolder: 'Inbox\\GitHub Intake', processedFolder: 'Inbox\\GitHub Processed', lookbackDays: 0,
     });
   });
 

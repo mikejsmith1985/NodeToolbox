@@ -26,6 +26,7 @@ interface OutlookExportConfig {
   isEnabled: boolean
   sourceFolder: string
   processedFolder: string
+  lookbackDays: number
 }
 
 interface IntakeConfig {
@@ -326,6 +327,8 @@ export function GithubEmailIntakePanel() {
         <input className={styles.inputField} value={config.outlookExport.sourceFolder} placeholder="Inbox\GitHub Intake" onChange={(event) => updateOutlookExport({ sourceFolder: event.target.value })} />
         <label className={styles.fieldLabel}>Outlook processed folder (exported mail is moved here)</label>
         <input className={styles.inputField} value={config.outlookExport.processedFolder} placeholder="Inbox\GitHub Processed" onChange={(event) => updateOutlookExport({ processedFolder: event.target.value })} />
+        <label className={styles.fieldLabel}>Only export mail from the last N days (0 = all). Set this to <strong>1</strong> to skip a months-deep backlog.</label>
+        <input className={styles.inputField} type="number" min={0} value={config.outlookExport.lookbackDays} onChange={(event) => updateOutlookExport({ lookbackDays: Number(event.target.value) || 0 })} />
         <button className={styles.actionButton} disabled={isExporting || isDirty} title={isDirty ? 'Save first — the test uses the saved folders.' : ''} onClick={() => void handleTestExport()} type="button">
           {isExporting ? 'Exporting…' : 'Test Outlook export'}
         </button>

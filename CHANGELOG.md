@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **GitHub Email Intake — Outlook export lookback window.** A new **"Only export mail from the last N days"**
+  setting on the Outlook export bounds how far back it reaches, so a months-deep folder isn't exported all
+  at once. `0` = no limit (default); set it to `1` to start from today/yesterday only. The exporter filters
+  by each mail's received time, so old backlog is left untouched in the Outlook folder.
+
 ### Fixed
 - **Outlook export now works in the packaged exe.** The PowerShell exporter was shipped as a loose `.ps1`
   asset that `pkg` did not reliably bundle, so **Pull emails from Outlook** failed in a released build with

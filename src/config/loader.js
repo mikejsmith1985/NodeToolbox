@@ -200,6 +200,7 @@ function saveConfigToDisk(configuration) {
           isEnabled:       !!(((configuration.scheduler.githubEmailIntake || {}).outlookExport) || {}).isEnabled,
           sourceFolder:    (((configuration.scheduler.githubEmailIntake || {}).outlookExport) || {}).sourceFolder    || 'Inbox\\GitHub Intake',
           processedFolder: (((configuration.scheduler.githubEmailIntake || {}).outlookExport) || {}).processedFolder || 'Inbox\\GitHub Processed',
+          lookbackDays:    Number((((configuration.scheduler.githubEmailIntake || {}).outlookExport) || {}).lookbackDays) || 0,
         },
       },
     },

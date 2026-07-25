@@ -75,6 +75,7 @@ function sanitiseConfig(rawBody, previousSeenPrs) {
       isEnabled: !!rawOutlookExport.isEnabled,
       sourceFolder: toTrimmedString(rawOutlookExport.sourceFolder) || 'Inbox\\GitHub Intake',
       processedFolder: toTrimmedString(rawOutlookExport.processedFolder) || 'Inbox\\GitHub Processed',
+      lookbackDays: Math.max(0, Math.floor(Number(rawOutlookExport.lookbackDays)) || 0),
     },
     customRules: sanitiseCustomRules(rawBody && rawBody.customRules),
     // Preserve the dedup state across saves — a config edit must never lose it.
@@ -94,7 +95,7 @@ function buildDefaultConfigResponse() {
     fileExtensions: ['.eml', '.txt'],
     jiraProjectKeys: [],
     transitions: { branchCreated: '', commitPushed: '', prOpened: '', prMerged: '' },
-    outlookExport: { isEnabled: false, sourceFolder: 'Inbox\\GitHub Intake', processedFolder: 'Inbox\\GitHub Processed' },
+    outlookExport: { isEnabled: false, sourceFolder: 'Inbox\\GitHub Intake', processedFolder: 'Inbox\\GitHub Processed', lookbackDays: 0 },
     customRules: [],
   };
 }
@@ -201,6 +202,7 @@ function createGithubEmailIntakeRouter(configuration) {
         sourceFolder: outlookExport.sourceFolder,
         processedFolder: outlookExport.processedFolder,
         dropFolder: cfg.dropFolder,
+        lookbackDays: outlookExport.lookbackDays,
       });
       return res.json({ ok: result.ok, result });
     } catch (exportError) {

@@ -34,7 +34,9 @@ const EXPORT_SCRIPT_CONTENT = String.raw`# exportGithubEmails.ps1 — Save GitHu
 param(
     [string]$SourceFolderPath    = 'Inbox\GitHub Intake',
     [string]$ProcessedFolderPath = 'Inbox\GitHub Processed',
-    [string]$DropFolder          = (Join-Path $env:USERPROFILE 'Documents\gh_emails')
+    [string]$DropFolder          = (Join-Path $env:USERPROFILE 'Documents\gh_emails'),
+    # Only export mail received within the last N days. 0 = no limit (export everything in the folder).
+    [int]$LookbackDays           = 0
 )
 
 # olMSGUnicode: preserves the Unicode transport headers (X-GitHub-Sender, List-ID, etc.) the engine reads.
@@ -98,6 +100,11 @@ try {
 
     # Snapshot to a fixed array first — moving items while iterating a live .Items collection skips messages.
     $items = @($sourceFolder.Items)
+    # Lookback window: skip anything older than N days so a months-deep backlog is not exported all at once.
+    if ($LookbackDays -gt 0) {
+        $cutoff = (Get-Date).AddDays(-$LookbackDays)
+        $items = @($items | Where-Object { $_.ReceivedTime -and $_.ReceivedTime -ge $cutoff })
+    }
     $exportedCount = 0
     foreach ($item in $items) {
         if ($item.MessageClass -notlike 'IPM.Note*') { continue }
@@ -203,6 +210,8 @@ async function runOutlookExport(exportConfig, deps = {}) {
   }
   const sourceFolder = String((exportConfig && exportConfig.sourceFolder) || 'Inbox\\GitHub Intake').trim();
   const processedFolder = String((exportConfig && exportConfig.processedFolder) || 'Inbox\\GitHub Processed').trim();
+  // Lookback window in days (0 = no limit); coerced to a safe non-negative integer.
+  const lookbackDays = Math.max(0, Math.floor(Number((exportConfig && exportConfig.lookbackDays) || 0)) || 0);
 
   const writeScript = deps.writeScript || defaultWriteScript;
   const removeScript = deps.removeScript || defaultRemoveScript;
@@ -216,6 +225,7 @@ async function runOutlookExport(exportConfig, deps = {}) {
       '-SourceFolderPath', sourceFolder,
       '-ProcessedFolderPath', processedFolder,
       '-DropFolder', dropFolder,
+      '-LookbackDays', String(lookbackDays),
     ];
     const { stdout } = await runPowerShell(args);
     return parseExportResult(stdout);

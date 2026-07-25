@@ -53,6 +53,18 @@ describe('runOutlookExport', () => {
     expect(state.args[state.args.indexOf('-DropFolder') + 1]).toBe('C:\\drop');
   });
 
+  it('passes the lookback window as -LookbackDays (coerced to a non-negative integer)', async () => {
+    const { deps, state } = buildDeps();
+    await runOutlookExport({ dropFolder: 'C:\\drop', lookbackDays: '1.9' }, deps);
+    expect(state.args[state.args.indexOf('-LookbackDays') + 1]).toBe('1');
+  });
+
+  it('defaults the lookback window to 0 (no limit) when unset', async () => {
+    const { deps, state } = buildDeps();
+    await runOutlookExport({ dropFolder: 'C:\\drop' }, deps);
+    expect(state.args[state.args.indexOf('-LookbackDays') + 1]).toBe('0');
+  });
+
   it('parses the export result marker into a success result and always cleans up the temp script', async () => {
     const { deps, state } = buildDeps();
     const result = await runOutlookExport({ dropFolder: 'C:\\drop' }, deps);
