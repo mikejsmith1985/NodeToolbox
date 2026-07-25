@@ -87,8 +87,32 @@ describe('classifyGithubEmail', () => {
 
     expect(event.eventType).toBe('unknown');
     expect(event.matchedRuleId).toBeNull();
-    // Even for unknown events the key is still surfaced for auditing.
-    expect(event.jiraKey).toBe('DENP-1414');
+    // A key mentioned only in body prose is NOT trusted — it would risk attaching to the wrong ticket.
+    expect(event.jiraKey).toBeNull();
+  });
+
+  it('prefers the key in the PR title over a different key referenced in the body', () => {
+    // The PR is FIX-100; a commit message references FIX-999. The event must attach to the PR's own ticket.
+    const event = parseGithubEmail(email(
+      { ...BASE_HEADERS, 'Subject': '[myorg/toolbox] [FIX-100] Repair login (#42)', 'X-GitHub-Reason': 'push' },
+      'jsmith pushed 1 commit. abc1234 revert change from FIX-999',
+    ));
+
+    expect(event.eventType).toBe('commit_pushed');
+    expect(event.jiraKey).toBe('FIX-100');
+  });
+
+  it('does not invent a junk branch from footer/commit prose', () => {
+    // A greedy "from <word>" match used to turn "unsubscribe from an email" into branch "an" and could turn
+    // "from PROJ-9" into a wrong key. Neither may happen now.
+    const event = parseGithubEmail(email(
+      { ...BASE_HEADERS, 'Subject': '[myorg/toolbox] 07242026 clcl (#2535)', 'X-GitHub-Reason': 'push' },
+      'jsmith pushed 1 commit. View it on GitHub or unsubscribe from an email. Reverted change from PROJ-9.',
+    ));
+
+    expect(event.eventType).toBe('commit_pushed');
+    expect(event.branch).toBeNull();
+    expect(event.jiraKey).toBeNull(); // no key in subject/branch, and the body ref must not be trusted as the branch
   });
 
   it('falls back to the [owner/repo] subject when List-ID is absent, and flattens an HTML body', () => {

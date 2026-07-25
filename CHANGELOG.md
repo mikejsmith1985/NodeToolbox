@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **GitHub Email Intake never attaches an event to the wrong Jira ticket.** The Jira key is now read from
+  the PR **title (subject)** first, then the **branch** — never from free body prose — so a key mentioned in
+  a commit message or footer (e.g. `revert change from PROJ-9`) can't outrank the PR's own key or attach a
+  keyless PR to an unrelated ticket (it safely classifies as no-jira-key instead). Branch detection was
+  tightened to real GitHub phrasings (`owner:branch`, `into <base> from <head>`, `feature/…`) so footer prose
+  no longer yields a junk branch. `pr_merged` now requires GitHub's "merged … into" shape rather than a bare
+  "merged", so a push whose commit message mentions "merged" isn't misread as a merge. Verified against real
+  `.msg` samples (GH #219). Remaining event types (PR opened / merged / branch created) await real samples to
+  finalize.
+
 ### Added
 - **GitHub Email Intake can pull emails from Outlook itself — no separate script or Task Scheduler.**
   Because Toolbox runs on the same machine as Outlook, it now drives the export directly: before each

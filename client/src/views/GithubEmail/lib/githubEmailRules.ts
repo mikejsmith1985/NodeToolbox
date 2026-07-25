@@ -42,7 +42,10 @@ export const GITHUB_EMAIL_RULES: EmailClassificationRule[] = [
   {
     id: 'pr-merged',
     eventType: 'pr_merged',
-    bodyMarker: /\bmerged\b/i,
+    // GitHub's merge notification body is "Merged #N into <base>." Require the "merged … into" shape rather
+    // than a bare "merged", so a PUSH email whose commit message merely mentions "merged" is not misread as
+    // a merge. (Refine against a real merged sample during rollout.)
+    bodyMarker: /\bmerged\b[^\n]*\binto\b/i,
     requiresPrNumber: true,
   },
   {

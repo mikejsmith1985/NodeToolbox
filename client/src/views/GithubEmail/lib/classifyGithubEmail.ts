@@ -65,14 +65,26 @@ function readPrNumber(subject: string, bodyText: string): number | null {
   return bodyMatch ? Number(bodyMatch[1]) : null;
 }
 
-/** Finds a branch reference in the body ("from owner:branch", "into main from branch", "feature/KEY-1"). */
+/**
+ * Finds a branch reference in the body — only from HIGH-CONFIDENCE phrases. A GitHub notification body is
+ * full of footer and commit-message prose, so a loose "from <word>" match grabs junk (e.g. "from an email"
+ * → "an") and, worse, could turn "revert change from PROJ-1" into a branch that then yields a wrong Jira
+ * key. This matches only the real branch phrasings GitHub uses.
+ */
 function readBranch(bodyText: string): string | null {
   // Trailing sentence punctuation must not become part of the branch name.
   const stripTrailingPunctuation = (value: string): string => value.replace(/[.,;:]+$/, '');
-  const fromMatch = bodyText.match(/\bfrom\s+(?:[\w.-]+:)?([\w./-]+)/i);
-  if (fromMatch) {
-    return stripTrailingPunctuation(fromMatch[1]);
+  // Cross-fork PRs name the head as "owner:branch" — require that colon form so ordinary prose cannot match.
+  const forkMatch = bodyText.match(/\bfrom\s+([\w.-]+:[\w./-]+)/i);
+  if (forkMatch) {
+    return stripTrailingPunctuation(forkMatch[1]);
   }
+  // Same-repo PRs: the "into <base> from <head>" phrase, anchored by "into … from".
+  const intoFromMatch = bodyText.match(/\binto\s+[\w./-]+\s+from\s+([\w./-]+)/i);
+  if (intoFromMatch) {
+    return stripTrailingPunctuation(intoFromMatch[1]);
+  }
+  // A feature-style branch reference anywhere.
   const featureMatch = bodyText.match(/\b(feature\/[\w./-]+)/i);
   return featureMatch ? stripTrailingPunctuation(featureMatch[1]) : null;
 }
@@ -158,7 +170,11 @@ export function classifyGithubEmail(message: MimeMessage): GitHubEmailEvent {
 
   return {
     eventType,
-    jiraKey: readJiraKey([branch, subject, bodyText]),
+    // The key is read from the SUBJECT (the PR title, where this team puts it, and the most reliable source)
+    // then the extracted BRANCH — never the free-text body. A key referenced in a commit message or footer
+    // ("revert change from PROJ-9") must not attach the event to the wrong ticket; a PR with no key in its
+    // title or branch safely classifies as no-jira-key and is skipped rather than mis-attributed.
+    jiraKey: readJiraKey([subject, branch]),
     repo,
     prNumber,
     branch,

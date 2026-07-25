@@ -15,6 +15,9 @@ import { msgBytesToEmailSource, parseMsg } from './parseMsg.ts';
 const FIXTURE_PATH = resolve(process.cwd(), '../test/fixtures/github-emails/gh-review-requested.msg');
 const fixtureBytes = new Uint8Array(readFileSync(FIXTURE_PATH));
 
+const KEYLESS_FIXTURE_PATH = resolve(process.cwd(), '../test/fixtures/github-emails/gh-commit-pushed-keyless.msg');
+const keylessFixtureBytes = new Uint8Array(readFileSync(KEYLESS_FIXTURE_PATH));
+
 describe('parseMsg', () => {
   it('extracts the transport headers from a real Outlook .msg', () => {
     const parsed = parseMsg(fixtureBytes);
@@ -48,5 +51,17 @@ describe('parseMsg → classifier end to end', () => {
     expect(event.jiraKey).toBe('ENFCT-1774');
     expect(event.prNumber).toBe(577);
     expect(event.eventType).toBe('review_requested');
+  });
+
+  it('classifies a real keyless push email as commit_pushed with no key and no junk branch', () => {
+    // A real notification (GH #219) whose PR title carries no Jira key. It must classify by event but NOT
+    // invent a key or a junk branch from the footer/commit prose — it should skip downstream as no-jira-key.
+    const event = parseGithubEmail(msgBytesToEmailSource(keylessFixtureBytes) as string);
+
+    expect(event.eventType).toBe('commit_pushed');
+    expect(event.repo).toBe('zilvertonz/usmg-db-facets');
+    expect(event.prNumber).toBe(2535);
+    expect(event.jiraKey).toBeNull();
+    expect(event.branch).toBeNull();
   });
 });
