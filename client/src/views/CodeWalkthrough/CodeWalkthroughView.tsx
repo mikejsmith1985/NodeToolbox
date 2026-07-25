@@ -285,7 +285,7 @@ const WALKTHROUGH_SECTIONS: WalkthroughSection[] = [
       + 'connectivity (ServiceNow, GitHub, Confluence credentials stored server-side), enterprise standards, '
       + 'Tool Visibility toggles that add or remove home cards live, backup/restore/reset, hygiene rules (stale '
       + 'days, unpointed warning), update management with rollback, and diagnostics. Further tabs manage the '
-      + 'server automations: Repo Monitor, Reports Config (Scope Change, Feature Change, and Hygiene Monitor '
+      + 'server automations: GitHub Email Intake, Reports Config (Scope Change, Feature Change, and Hygiene Monitor '
       + 'digests), Standup briefing, PI Review Sync, Monthly Delivery, and Sprint Release. Two extra tabs appear '
       + 'only when their unlocks are held: the Dev Panel (admin unlock) and AI Assist automation (AI unlock).',
     workflowPlaybooks: [
@@ -341,8 +341,8 @@ const WALKTHROUGH_SECTIONS: WalkthroughSection[] = [
     title: 'Schedulers & Automation',
     emoji: '⏰',
     summary:
-      'The Express server runs the recurring work so the browser does not have to stay open: Repo Monitor polls '
-      + 'commits into Jira updates; Scope Change and Feature Change build change digests; the Hygiene Monitor '
+      'The Express server runs the recurring work so the browser does not have to stay open: GitHub Email Intake '
+      + 'turns notification emails into Jira updates; Scope Change and Feature Change build change digests; the Hygiene Monitor '
       + 'runs scheduled scans; the Standup briefing delivers a daily roster summary; the Sprint Release '
       + 'scheduler orchestrates release timing; the PI Review scheduler saves team pages to Confluence on '
       + 'schedule; and the Monthly Delivery scheduler classifies last month’s delivered work into a plain-text '

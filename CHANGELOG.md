@@ -47,6 +47,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Outlook** (that would move real mail); Windows-only, with a friendly skip elsewhere.
 
 ### Removed
+- **Deleted the GitHub-API repo monitor entirely.** With the GitHub API unavailable in this environment,
+  the polling-based repo monitor is dead code and is gone: the `repoMonitor` service and `scheduler` route
+  (`/api/scheduler/*`), the Admin Hub **Repo Monitor** config panel and client `schedulerApi`, the "Check
+  Repo Access" probe, and the `scheduler.repoMonitor` config block. The former **Repo Monitor** tab is now
+  **📧 GitHub Email Intake** (email-only). The shared `jiraEventOutput.js` (used by the email intake) and
+  `githubAppAuth.js` (used by the GitHub proxy) are kept.
+
 - **Decommissioned the GitHub-API diagnostics.** With the GitHub API confirmed unavailable in this
   environment (the integration now runs entirely through the email-intake path), the Dev Panel's
   GitHub-API surfaces are gone: the **GitHub API Probe** tab (and its `POST /api/scheduler/github-api-probe`

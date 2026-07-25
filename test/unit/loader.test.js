@@ -130,14 +130,12 @@ describe('loadConfig()', () => {
     expect(configuration.port).toBe(5555);
   });
 
-  it('initializes scheduler repoMonitor defaults when not configured', () => {
+  it('initializes the scheduler container when not configured', () => {
     fsMock.existsSync.mockReturnValue(false);
 
     const configuration = loadConfig();
 
-    expect(configuration.scheduler.repoMonitor.enabled).toBe(false);
-    expect(Array.isArray(configuration.scheduler.repoMonitor.repos)).toBe(true);
-    expect(configuration.scheduler.repoMonitor.intervalMin).toBe(15);
+    expect(typeof configuration.scheduler).toBe('object');
   });
 
   it('uses TBX_PORT environment variable for port', () => {
@@ -272,7 +270,7 @@ describe('saveConfigToDisk() — obfuscation', () => {
       jira:   { baseUrl: 'https://jira.example.com', username: 'alice', apiToken: 'my-api-token', pat: 'my-jira-pat' },
       snow:   { baseUrl: 'https://snow.example.com', username: 'bob',   password: 'secret-pass' },
       github: { baseUrl: 'https://api.github.com',   pat: 'ghp-token' },
-      scheduler: { repoMonitor: { enabled: false, repos: [], branchPattern: '', intervalMin: 15, transitions: {}, seenBranches: {}, seenCommits: {}, seenPrs: {} } },
+      scheduler: {},
     });
 
     const savedData = JSON.parse(writtenContent);
@@ -419,7 +417,7 @@ describe('aiAssistAutomation persistence', () => {
       confluence: { baseUrl: '', username: '', apiToken: '' },
       admin:  { credentialHash: 'hash' },
       aiAssistAutomation,
-      scheduler: { repoMonitor: { enabled: false, repos: [], branchPattern: '', intervalMin: 15, transitions: {}, seenBranches: {}, seenCommits: {}, seenPrs: {} } },
+      scheduler: {},
     };
   }
 

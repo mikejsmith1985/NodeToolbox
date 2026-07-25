@@ -1,9 +1,8 @@
 // src/services/jiraEventOutput.js — Shared "GitHub-style event → Jira comment + transition" output.
 //
-// This is the Jira-writing half of the repo monitor, factored out so more than one INPUT can drive it.
-// The original GitHub-API repo monitor (repoMonitor.js) calls it, and so does the GitHub Email Intake
-// engine (which produces the same event shapes from parsed notification emails instead of the API).
-// Keeping one output path means both surfaces post identical comments and fire identical transitions.
+// This is the Jira-writing half of the GitHub integration, factored out so the INPUT can vary. The GitHub
+// Email Intake scheduler calls it to turn a parsed notification email into a Jira comment and an optional
+// status transition. Keeping one shared output path means that behaviour is defined in exactly one place.
 
 'use strict';
 

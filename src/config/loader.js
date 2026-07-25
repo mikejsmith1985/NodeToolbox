@@ -111,8 +111,6 @@ function loadConfig() {
  * @param {ProxyConfig} configuration - The current in-memory config object to save
  */
 function saveConfigToDisk(configuration) {
-  const schedulerMonitor = configuration.scheduler.repoMonitor;
-
   const diskConfig = {
     port:      configuration.port,
     sslVerify: configuration.sslVerify !== false,
@@ -153,16 +151,6 @@ function saveConfigToDisk(configuration) {
       isEnabled:       !!(configuration.aiAssistAutomation || {}).isEnabled,
     },
     scheduler: {
-      repoMonitor: {
-        enabled:       !!schedulerMonitor.enabled,
-        repos:         schedulerMonitor.repos         || [],
-        branchPattern: schedulerMonitor.branchPattern || 'feature\\/[A-Z]+-\\d+',
-        intervalMin:   schedulerMonitor.intervalMin   || 15,
-        transitions:   schedulerMonitor.transitions   || {},
-        seenBranches:  schedulerMonitor.seenBranches  || {},
-        seenCommits:   schedulerMonitor.seenCommits   || {},
-        seenPrs:       schedulerMonitor.seenPrs       || {},
-      },
       scopeChange: {
         teamReports: ((configuration.scheduler.scopeChange || {}).teamReports || []),
         artRollup:   ((configuration.scheduler.scopeChange || {}).artRollup   || {
@@ -294,18 +282,7 @@ function createConfigTemplate() {
     admin: {
       credentialHash: DEFAULT_ADMIN_CREDENTIAL_HASH,
     },
-    scheduler: {
-      repoMonitor: {
-        enabled:       false,
-        repos:         [],
-        branchPattern: 'feature\\/[A-Z]+-\\d+',
-        intervalMin:   15,
-        transitions:   { branchCreated: '', commitPushed: '', prOpened: '', prMerged: '' },
-        seenBranches:  {},
-        seenCommits:   {},
-        seenPrs:       {},
-      },
-    },
+    scheduler: {},
   };
 
   try {
@@ -659,29 +636,13 @@ function applyEnvironmentConfig(configuration) {
 }
 
 /**
- * Ensures the scheduler.repoMonitor object has all required fields with safe defaults.
- * Runs after file + env loading so partial configs are safely filled in.
+ * Ensures the scheduler container object exists so the per-scheduler blocks can be filled in later.
+ * Runs after file + env loading.
  *
  * @param {ProxyConfig} configuration - Mutated in place
  */
 function normalizeSchedulerDefaults(configuration) {
-  configuration.scheduler            = configuration.scheduler            || {};
-  configuration.scheduler.repoMonitor = configuration.scheduler.repoMonitor || {};
-
-  const repoMonitor = configuration.scheduler.repoMonitor;
-  repoMonitor.enabled       = repoMonitor.enabled       !== undefined ? repoMonitor.enabled : false;
-  repoMonitor.repos         = Array.isArray(repoMonitor.repos)         ? repoMonitor.repos  : [];
-  repoMonitor.branchPattern = repoMonitor.branchPattern || 'feature\\/[A-Z]+-\\d+';
-  repoMonitor.intervalMin   = repoMonitor.intervalMin   || 15;
-  repoMonitor.transitions   = repoMonitor.transitions   || {
-    branchCreated: '',
-    commitPushed:  '',
-    prOpened:      '',
-    prMerged:      '',
-  };
-  repoMonitor.seenBranches  = repoMonitor.seenBranches  || {};
-  repoMonitor.seenCommits   = repoMonitor.seenCommits   || {};
-  repoMonitor.seenPrs       = repoMonitor.seenPrs       || {};
+  configuration.scheduler = configuration.scheduler || {};
 }
 
 /**

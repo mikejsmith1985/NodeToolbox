@@ -11,12 +11,10 @@ import { PrimaryTabs } from '../../components/PrimaryTabs/PrimaryTabs.tsx'
 import ViewFrame from '../../components/ViewFrame/ViewFrame.tsx'
 import { SNOW_RELAY_BOOKMARKLET_CODE } from '../../services/browserRelay.ts'
 import { listGitHubAppInstallations, type GitHubAppInstallation } from '../../services/connectivityConfigApi.ts'
-import { fetchSchedulerValidation, type SchedulerValidationRepoResult } from '../../services/schedulerApi.ts'
 import { useConnectionStore } from '../../store/connectionStore'
 import { useAiAssist } from '../SnowHub/hooks/useAiAssist.ts'
 import DevPanelView from '../DevPanel/DevPanelView.tsx'
 import { HygieneMonitorPanel } from './HygieneMonitorPanel.tsx'
-import { RepoMonitorPanel } from './RepoMonitorPanel.tsx'
 import { GithubEmailIntakePanel } from './GithubEmailIntakePanel.tsx'
 import { AiAssistAutomationPanel } from './AiAssistAutomationPanel.tsx'
 import { SprintReleasePanel } from './SprintReleasePanel.tsx'
@@ -75,7 +73,7 @@ type AdminHubTab = 'main' | 'repo-monitor' | 'reports-config' | 'standup-briefin
 
 const ADMIN_HUB_TAB_OPTIONS: { key: AdminHubTab; label: string }[] = [
   { key: 'main', label: '⚙️ Config' },
-  { key: 'repo-monitor', label: '🔁 Repo Monitor' },
+  { key: 'repo-monitor', label: '📧 GitHub Email Intake' },
   { key: 'reports-config', label: '📊 Reports Config' },
   { key: 'standup-briefing', label: '📋 Standup' },
   { key: 'pi-review-scheduler', label: '🗓️ PI Review Sync' },
@@ -1096,29 +1094,6 @@ interface ServiceConnectivitySectionProps {
 }
 
 /**
- * Translates a per-repo probe HTTP status and GitHub error message into a human-readable
- * diagnosis. Distinguishes IP allow list blocks (common in SAML orgs) from scope errors,
- * auth failures, and path errors so the operator knows exactly what to fix.
- */
-function interpretRepoProbeFailure(httpStatus: number | null, githubMessage: string | null): string {
-  if (httpStatus === null) return 'Network error — GitHub unreachable'
-  if (httpStatus >= 200 && httpStatus < 300) return '✅ Connected'
-  const lowerMessage = (githubMessage ?? '').toLowerCase()
-  if (httpStatus === 403) {
-    if (lowerMessage.includes('ip') || lowerMessage.includes('allow')) {
-      return '❌ IP not on org allow list — contact your GitHub org admin to add your IP, or get the GitHub App installation approved'
-    }
-    if (lowerMessage.includes('saml')) {
-      return '❌ SAML SSO not authorized — go to github.com/settings/tokens → Configure SSO → Authorize your org'
-    }
-    return '❌ 403 Access denied — org may have IP allow list or SAML enforcement; check PAT has repo scope'
-  }
-  if (httpStatus === 401) return '❌ 401 — PAT invalid or expired'
-  if (httpStatus === 404) return '❌ 404 — Repo not found; verify path uses org/repo format (e.g. zilvertonz/my-repo)'
-  return `❌ HTTP ${httpStatus}${githubMessage ? ` — ${githubMessage}` : ''}`
-}
-
-/**
  * Service Connectivity section — edits the server-side Snow and GitHub config
  * stored in toolbox-proxy.json. Requires admin unlock to prevent accidental changes.
  * Password and PAT fields show a masked placeholder when credentials are already stored;
@@ -1218,10 +1193,6 @@ function ServiceConnectivitySectionContent({
   const [isInstallationsLoading, setIsInstallationsLoading] = useState(false)
   const [foundInstallations, setFoundInstallations] = useState<GitHubAppInstallation[] | null>(null)
   const [installationsError, setInstallationsError] = useState<string | null>(null)
-  // Repo-level access probe — validates each configured scheduler repo, not just /user auth.
-  const [isValidatingRepoAccess, setIsValidatingRepoAccess] = useState(false)
-  const [repoAccessResults, setRepoAccessResults] = useState<SchedulerValidationRepoResult[] | null>(null)
-  const [repoAccessError, setRepoAccessError] = useState<string | null>(null)
   const [confluenceBaseUrl, setConfluenceBaseUrl] = useState(connectivityConfig?.confluence.baseUrl ?? '')
   const [confluenceUsername, setConfluenceUsername] = useState('')
   const [confluenceApiToken, setConfluenceApiToken] = useState('')
@@ -1308,29 +1279,6 @@ function ServiceConnectivitySectionContent({
       setInstallationsError(listError instanceof Error ? listError.message : 'Unknown error')
     } finally {
       setIsInstallationsLoading(false)
-    }
-  }
-
-  /**
-   * Runs the per-repo connectivity probe (branches + PRs endpoints) and surfaces results
-   * with human-readable diagnoses. Separate from Test Connection which only probes /user.
-   */
-  async function handleValidateRepoAccess() {
-    setIsValidatingRepoAccess(true)
-    setRepoAccessResults(null)
-    setRepoAccessError(null)
-    try {
-      const validation = await fetchSchedulerValidation()
-      const repos = validation.repoMonitor.repos
-      if (repos.length === 0) {
-        setRepoAccessError('No repos configured in the Scheduler section. Add at least one repo there first.')
-      } else {
-        setRepoAccessResults(repos)
-      }
-    } catch (validationError) {
-      setRepoAccessError(validationError instanceof Error ? validationError.message : 'Repo access check failed')
-    } finally {
-      setIsValidatingRepoAccess(false)
     }
   }
 
@@ -1481,43 +1429,6 @@ function ServiceConnectivitySectionContent({
             <p className={githubTestResult.isOk ? styles.confirmationText : styles.sectionErrorText}>
               {githubTestResult.isOk ? `✅ ${githubTestResult.message}` : `❌ ${githubTestResult.message} (HTTP ${githubTestResult.statusCode})`}
             </p>
-          )}
-
-          {/* Repo-level access probe — tests actual repo endpoints, not just /user auth.
-              Surfaces IP allow list blocks, SAML enforcement, and scope errors per repo. */}
-          <div className={styles.inputRow}>
-            <button
-              className={styles.actionButton}
-              onClick={handleValidateRepoAccess}
-              disabled={isValidatingRepoAccess}
-            >
-              {isValidatingRepoAccess ? '⏳ Checking…' : '📋 Check Repo Access'}
-            </button>
-          </div>
-          {repoAccessError !== null && (
-            <p className={styles.sectionErrorText}>{repoAccessError}</p>
-          )}
-          {repoAccessResults !== null && repoAccessResults.length > 0 && (
-            <table className={styles.installationsTable} aria-label="Repo access probe results">
-              <thead>
-                <tr>
-                  <th>Repo</th>
-                  <th>Branches</th>
-                  <th>PRs</th>
-                  <th>Diagnosis</th>
-                </tr>
-              </thead>
-              <tbody>
-                {repoAccessResults.map((repoResult) => (
-                  <tr key={`repo-access-${repoResult.repo}`}>
-                    <td>{repoResult.repo}</td>
-                    <td>{repoResult.branchesHttpStatus ?? '—'}</td>
-                    <td>{repoResult.pullsHttpStatus ?? '—'}</td>
-                    <td>{interpretRepoProbeFailure(repoResult.branchesHttpStatus, repoResult.probeErrorMessage)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
           )}
 
           {/* ── GitHub App (enterprise SAML bypass) ── */}
@@ -2835,11 +2746,6 @@ export default function AdminHubView() {
           <section className={styles.sectionCard}>
             <h2 className={styles.sectionTitle}>🧭 Diagnostics Toolkit Guide</h2>
             <p className={styles.adminDescription}>
-              <strong>Repo Monitor Validation</strong> reads scheduler config, status, and result
-              events directly from server APIs so you can confirm monitoring is actually connected
-              and processing repo activity.
-            </p>
-            <p className={styles.adminDescription}>
               <strong>CRG Submission Debug</strong> captures the exact request/response JSON from
               the last CRG submission and compares fields so mapping problems are visible immediately.
             </p>
@@ -2884,8 +2790,7 @@ export default function AdminHubView() {
 
       {activeAdminTab === 'repo-monitor' && (
         <section id="admin-hub-repo-monitor-panel" role="tabpanel" aria-labelledby="admin-hub-repo-monitor-tab">
-          <RepoMonitorPanel />
-          {/* Email-driven alternative for environments where the GitHub API is blocked. */}
+          {/* GitHub integration for environments where the GitHub API is blocked: parse notification emails. */}
           <GithubEmailIntakePanel />
         </section>
       )}

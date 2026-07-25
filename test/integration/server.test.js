@@ -32,12 +32,6 @@ describe('Server integration smoke tests', () => {
     expect(typeof response.body.hasSession).toBe('boolean');
   });
 
-  it('responds to GET /api/scheduler/status', async () => {
-    const response = await request(app).get('/api/scheduler/status');
-    expect(response.status).toBe(200);
-    expect(response.body.repoMonitor).toBeDefined();
-  });
-
   it('sets CORS headers on every response', async () => {
     const response = await request(app).get('/api/proxy-status');
     expect(response.headers['access-control-allow-origin']).toBe('*');

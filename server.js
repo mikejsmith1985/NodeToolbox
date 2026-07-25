@@ -16,7 +16,6 @@ const { loadConfig, createConfigTemplate, isServiceConfigured } = require('./src
 const { applyCorsHeaders }                  = require('./src/middleware/cors');
 const createProxyRouter                     = require('./src/routes/proxy');
 const createApiRouter                       = require('./src/routes/api');
-const createSchedulerRouter                 = require('./src/routes/scheduler');
 const createSetupRouter                     = require('./src/routes/setup');
 const relayBridgeRouter                     = require('./src/routes/relayBridge');
 const createNotificationsRouter             = require('./src/routes/notifications');
@@ -28,7 +27,6 @@ const createSprintReleaseRouter             = require('./src/routes/sprintReleas
 const createMentionStateRouter              = require('./src/routes/mentionState');
 const createChecklistStateRouter            = require('./src/routes/checklistState');
 
-const { startSchedulerLoop }                = require('./src/services/repoMonitor');
 const { startScopeChangeScheduler }         = require('./src/services/scopeChangeScheduler');
 const { startFeatureChangeScheduler }       = require('./src/services/featureChangeScheduler');
 const { startStandupBriefingScheduler }     = require('./src/services/standupBriefingScheduler');
@@ -130,9 +128,6 @@ app.use(createApiRouter(configuration, {
 
 // Relay bridge: /api/relay-bridge/* — HTTP-based relay for Chrome (bypasses COOP)
 app.use('/api/relay-bridge', relayBridgeRouter);
-
-// Scheduler APIs: /api/scheduler/*
-app.use(createSchedulerRouter(configuration));
 
 // Notification delivery: /api/notifications/*
 app.use(createNotificationsRouter(configuration));
@@ -679,7 +674,6 @@ async function launchServer() {
   server.on('error', handleServerStartupError);
 
   printStartupBanner(listenPort);
-  startSchedulerLoop(configuration);
   startScopeChangeScheduler(configuration);
   startFeatureChangeScheduler(configuration);
   startStandupBriefingScheduler(configuration);
