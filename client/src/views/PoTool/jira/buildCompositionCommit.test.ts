@@ -258,3 +258,22 @@ describe('buildCompositionCommit — purity', () => {
     expect(draft).toEqual(draftBefore);
   });
 });
+
+describe('buildCompositionCommit — risk links (spec 029, US3)', () => {
+  it('collects the Jira keys from the description’s Risks section into riskLinkKeys', () => {
+    const draft = buildDraft({
+      summary: 'A Feature',
+      description: 'Description: About ABC-100.\nRisks: Blocked by ABC-123 and ABC-123 again, plus GHI-9.',
+    });
+    const diff = buildCompositionCommit({ draft, requiredFieldDescriptors: SELF_SUPPLIED_DESCRIPTORS });
+    expect(diff.riskLinkKeys).toEqual(['ABC-123', 'GHI-9']); // Risks-section only, de-duped
+  });
+
+  it('is empty when the Risks section references no keys', () => {
+    const diff = buildCompositionCommit({
+      draft: buildDraft({ summary: 'A', description: 'Risks: No known blockers.' }),
+      requiredFieldDescriptors: SELF_SUPPLIED_DESCRIPTORS,
+    });
+    expect(diff.riskLinkKeys).toEqual([]);
+  });
+});

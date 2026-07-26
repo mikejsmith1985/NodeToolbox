@@ -7,6 +7,7 @@
 // Pure, like the split diff: the review step must be able to promise exactly what will happen.
 
 import type { CreateMetaFieldEntry } from '../../../types/jira.ts';
+import { extractRiskLinkKeys } from '../ai/featureDocSections.ts';
 import type { CompositionDraft } from '../drafts/draftModel';
 import type { CommitBlocker } from './buildSplitCommit';
 
@@ -35,6 +36,8 @@ export interface PlannedFeatureUpdate {
 export interface CompositionCommitDiff {
   create: PlannedFeatureCreate | null;
   update: PlannedFeatureUpdate | null;
+  /** Existing Jira keys referenced for risks in the description — linked "relates to" on commit (spec 029). */
+  riskLinkKeys: string[];
   /** Non-empty means commit is disabled — no partial issue is ever produced (FR-034). */
   blockers: CommitBlocker[];
 }
@@ -121,6 +124,8 @@ function buildChangedFields(
 export function buildCompositionCommit(input: BuildCompositionCommitInput): CompositionCommitDiff {
   const { draft, requiredFieldDescriptors, acceptanceCriteriaFieldId = null, existingFieldValues = {} } = input;
   const blockers: CommitBlocker[] = [];
+  // Keys the description's Risks section references — linked "relates to" after the Feature exists (FR-030).
+  const riskLinkKeys = extractRiskLinkKeys(draft.description);
 
   if (draft.summary.trim() === '') {
     blockers.push({ scope: 'draft', reason: 'Give the Feature a summary.' });
@@ -141,6 +146,7 @@ export function buildCompositionCommit(input: BuildCompositionCommitInput): Comp
       update: blockers.length > 0
         ? null
         : { issueKey: draft.existingIssueKey!.trim().toUpperCase(), changedFields },
+      riskLinkKeys,
       blockers,
     };
   }
@@ -172,6 +178,7 @@ export function buildCompositionCommit(input: BuildCompositionCommitInput): Comp
         fields: draftFields,
       },
     update: null,
+    riskLinkKeys,
     blockers,
   };
 }

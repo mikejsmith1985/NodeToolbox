@@ -217,6 +217,7 @@ describe('runCompositionCommit — creating (FR-035)', () => {
   const CREATE_DIFF: CompositionCommitDiff = {
     create: { projectKey: 'ABC', issueTypeId: '10001', fields: { summary: 'New Feature' } },
     update: null,
+    riskLinkKeys: [],
     blockers: [],
   };
 
@@ -267,6 +268,7 @@ describe('runCompositionCommit — updating (FR-036)', () => {
         { fieldId: 'description', label: 'Description', before: '', after: 'Fuller text' },
       ],
     },
+    riskLinkKeys: [],
     blockers: [],
   };
 
@@ -318,12 +320,55 @@ describe('runCompositionCommit — nothing to do', () => {
     const dependencies = buildCompositionDependencies();
 
     const outcome = await runCompositionCommit(
-      { create: null, update: null, blockers: [] },
+      { create: null, update: null, riskLinkKeys: [], blockers: [] },
       dependencies,
     );
 
     expect(dependencies.createIssue).not.toHaveBeenCalled();
     expect(dependencies.saveField).not.toHaveBeenCalled();
     expect(outcome.isFullySuccessful).toBe(false);
+  });
+});
+
+describe('runCompositionCommit — risk links (spec 029, US3)', () => {
+  const CREATE_WITH_RISKS: CompositionCommitDiff = {
+    create: { projectKey: 'ABC', issueTypeId: '10001', fields: { summary: 'New Feature' } },
+    update: null,
+    riskLinkKeys: ['ABC-123', 'GHI-9'],
+    blockers: [],
+  };
+
+  it('creates one "Relates" link per risk key from the Feature to the risk', async () => {
+    const createIssueLink = vi.fn().mockResolvedValue(undefined);
+    const outcome = await runCompositionCommit(CREATE_WITH_RISKS, buildCompositionDependencies({ createIssueLink }));
+
+    expect(createIssueLink).toHaveBeenCalledWith({ type: { name: 'Relates' }, inwardIssue: { key: 'ABC-9' }, outwardIssue: { key: 'ABC-123' } });
+    expect(createIssueLink).toHaveBeenCalledWith({ type: { name: 'Relates' }, inwardIssue: { key: 'ABC-9' }, outwardIssue: { key: 'GHI-9' } });
+    expect(outcome.items.filter((item) => item.status === 'linked')).toHaveLength(2);
+  });
+
+  it('never attempts a link when no createIssueLink dependency is provided', async () => {
+    const outcome = await runCompositionCommit(CREATE_WITH_RISKS, buildCompositionDependencies());
+    expect(outcome.items.some((item) => item.scope.startsWith('risk-link:'))).toBe(false);
+  });
+
+  it('a failed risk link is reported but does NOT fail the commit (FR-032)', async () => {
+    const createIssueLink = vi.fn().mockRejectedValue(new Error('No such issue.'));
+    const outcome = await runCompositionCommit(CREATE_WITH_RISKS, buildCompositionDependencies({ createIssueLink }));
+
+    // The Feature was created; the failed links must not flip isFullySuccessful (else a retry duplicates it).
+    expect(outcome.createdKeysByLocalId.feature).toBe('ABC-9');
+    expect(outcome.isFullySuccessful).toBe(true);
+    expect(outcome.items.filter((item) => item.status === 'failed' && item.scope.startsWith('risk-link:'))).toHaveLength(2);
+  });
+
+  it('skips risk links entirely when the Feature create failed', async () => {
+    const createIssueLink = vi.fn();
+    const dependencies = buildCompositionDependencies({
+      createIssue: vi.fn().mockRejectedValue(new Error('boom')),
+      createIssueLink,
+    });
+    await runCompositionCommit(CREATE_WITH_RISKS, dependencies);
+    expect(createIssueLink).not.toHaveBeenCalled();
   });
 });
