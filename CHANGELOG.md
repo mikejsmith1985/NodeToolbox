@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Jira Component Manager now matches the Admin Hub styling.** The panel had shipped as unstyled HTML; it
+  now uses the shared `AdminHubView.module.css` vocabulary (`panelCard` / `sectionTitle` / `panelSection` /
+  `fieldLabel` / `inputField` / `actionButton` / `dangerButton`) like every other Admin Hub panel. Also
+  added a **UI Styling** standard to the project instructions so new panels/views reuse the app's styling
+  system instead of raw markup.
+
 ### Added
 - **Feature Composition now auto-fills the structured Jira fields it can determine.** When you compose a
   Feature with AI, the tool deterministically pre-fills — **only where the field is still empty**, and always
