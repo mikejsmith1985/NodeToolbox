@@ -8,6 +8,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **PI Planning Automation (in progress) — AI-assisted PI planner on the PI Review surface.** From your
+  roster, per-sprint capacity, Feature sizes, PI dates and the fixVersion release schedule, the planner
+  proposes a Feature→Story breakdown, the standard sub-task scaffold (internal test + deploy INT/REL/PROD),
+  a capacity-mapped sprint schedule, and populated **Target Start / Target End / Due** dates — following
+  fixed rules (70/30 dev/test split; INT ≤24h after internal test; REL = INT + 5 **working** days; PROD on a
+  fixVersion; DoD = code-in-INT, so production may deploy after the PI end). It is **propose-only**: nothing
+  is written to Jira without a per-item accept, and it is gated behind AI Assist (Ctrl+Alt+Z). Built
+  framework-first — the scheduling/assignment/capacity engine and every Jira write primitive are reused; the
+  new pieces are a working-day/deploy-cadence date engine, a release-schedule reader, and the `{kind:'piPlan'}`
+  AI envelope. Now includes the engine + MVP UI (breakdown, dated proposal, capacity map), date
+  explainability, sprint reuse/creation, deterministic monthly release suggestions, and idempotent
+  re-planning (existing Stories/sub-tasks are recognised, never duplicated). It is now live as a **"Planner"
+  tab in the PO Tool**, assembling its inputs from the same roster, capacity, Feature-pull and fixVersion
+  sources PI Review uses. Suggested monthly releases are now surfaced in the proposal (the engine dates a
+  second time so a Story with no covering fixVersion still gets a Due date from a deterministic monthly
+  suggestion). The client rules-and-UI layer is feature-complete (all 45 spec-028 tasks) and type-checks
+  clean under the strict `tsc -b` project build; live end-to-end validation against a real Jira/VPN is the
+  remaining manual step before release.
 - **GitHub Email Intake — status transitions are now dropdowns.** Instead of typing an exact Jira status
   name (and hoping it matches), the four event→status fields are **dropdowns populated from your Jira's real
   statuses** — scoped to your configured project keys when set, otherwise the whole instance. Pick "Ready
