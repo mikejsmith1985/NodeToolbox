@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Feature Composition readiness checklist no longer false-flags fields that are set (GH #220).** When
+  enriching an existing Feature, the checklist graded only the summary/description/acceptance-criteria it
+  loaded — never the issue's other real field values — so a Feature that already had a **Program Increment**
+  or **Product Owner** (or any governed field) was still shown as "Missing PI" / "Missing Product Owner".
+  The tool now loads **every field the checklist evaluates** and grades the loaded values (with your draft
+  edits on top, resolved through the app's configured field ids), so a field set in Jira is no longer
+  flagged missing — while genuinely-absent fields are still flagged.
 - **Jira Component Manager now matches the Admin Hub styling.** The panel had shipped as unstyled HTML; it
   now uses the shared `AdminHubView.module.css` vocabulary (`panelCard` / `sectionTitle` / `panelSection` /
   `fieldLabel` / `inputField` / `actionButton` / `dangerButton`) like every other Admin Hub panel. Also

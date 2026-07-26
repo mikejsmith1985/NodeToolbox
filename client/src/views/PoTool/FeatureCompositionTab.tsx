@@ -18,7 +18,6 @@ import type { CreateMetaFieldEntry, CreateMetaIssueType } from '../../types/jira
 import { useSettingsStore } from '../../store/settingsStore.ts';
 import { saveFeatureReviewSimpleField } from '../SprintDashboard/featureReviewFixes.ts';
 import { useStandupRosterStore } from '../SprintDashboard/hooks/useStandupRosterStore.ts';
-import type { JiraIssue as HygieneIssue } from '../Hygiene/checks/hygieneChecks';
 import PoAiPanel from './ai/PoAiPanel';
 import { buildCompositionPrompt, parseCompositionIngest } from './ai/compositionAiAssist';
 import { buildCompositionPrefill } from './ai/compositionFieldPrefill';
@@ -37,6 +36,7 @@ import {
 import { canPersistDrafts } from './drafts/splitDraftStorage';
 import { usePoHygieneContext } from './hooks/usePoHygieneContext';
 import { buildCompositionCommit, canCommitComposition } from './jira/buildCompositionCommit';
+import { buildDraftHygieneIssue, buildReadinessFieldList } from './jira/compositionReadiness';
 import { runCompositionCommit } from './jira/runCommit';
 import type { CommitOutcome } from './jira/runCommit';
 import { ConfluenceSourceError, readConfluenceSource } from './sources/confluenceSource';
@@ -227,7 +227,9 @@ export default function FeatureCompositionTab({
       return;
     }
     try {
-      const requestedFields = ['summary', 'description', ...(acceptanceCriteriaFieldId ? [acceptanceCriteriaFieldId] : [])];
+      // Load every field the readiness checklist grades — not just summary/description/AC — so a governed
+      // field that is already set in Jira (PI, Product Owner, …) is not falsely flagged "Missing" (GH #220).
+      const requestedFields = buildReadinessFieldList(fieldConfig, acceptanceCriteriaFieldId);
       const issue = await jiraGet<{ key: string; fields: Record<string, unknown> }>(
         `/rest/api/2/issue/${encodeURIComponent(issueKey)}?fields=${encodeURIComponent(requestedFields.join(','))}`,
       );
@@ -280,19 +282,21 @@ export default function FeatureCompositionTab({
     if (draft.summary.trim() === '' && draft.description.trim() === '') {
       return [];
     }
-    const draftAsIssue: HygieneIssue = {
-      key: draft.existingIssueKey ?? 'DRAFT',
-      fields: {
+    // Grade the loaded issue's REAL field values (base) with the PO's draft edits on top, so a field set
+    // in Jira is never flagged missing and an edit shows immediately (GH #220).
+    const draftAsIssue = buildDraftHygieneIssue(
+      {
+        existingIssueKey: draft.existingIssueKey,
         summary: draft.summary,
         description: draft.description,
-        issuetype: { name: 'Feature' },
-        status: { name: 'To Do', statusCategory: { key: 'new' } },
-        ...(acceptanceCriteriaFieldId ? { [acceptanceCriteriaFieldId]: draft.acceptanceCriteria } : {}),
-        ...draft.fields,
+        acceptanceCriteria: draft.acceptanceCriteria,
+        fields: draft.fields,
       },
-    } as HygieneIssue;
+      existingFieldValues,
+      acceptanceCriteriaFieldId,
+    );
     return evaluateDraft(draftAsIssue);
-  }, [draft, acceptanceCriteriaFieldId, evaluateDraft]);
+  }, [draft, existingFieldValues, acceptanceCriteriaFieldId, evaluateDraft]);
 
   /** The fields an assistant may set — exactly what this project's issue type offers, never more. */
   const writableFieldNamesById = useMemo(() => {
