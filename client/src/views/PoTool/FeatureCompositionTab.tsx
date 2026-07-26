@@ -15,10 +15,13 @@ import { useToast } from '../../components/Toast/ToastContext.ts';
 import { normalizeRichTextToPlainText } from '../../utils/richTextPlainText.ts';
 import { getIssueTypeFields, getProjectIssueTypes, jiraGet } from '../../services/jiraApi.ts';
 import type { CreateMetaFieldEntry, CreateMetaIssueType } from '../../types/jira.ts';
+import { useSettingsStore } from '../../store/settingsStore.ts';
 import { saveFeatureReviewSimpleField } from '../SprintDashboard/featureReviewFixes.ts';
+import { useStandupRosterStore } from '../SprintDashboard/hooks/useStandupRosterStore.ts';
 import type { JiraIssue as HygieneIssue } from '../Hygiene/checks/hygieneChecks';
 import PoAiPanel from './ai/PoAiPanel';
 import { buildCompositionPrompt, parseCompositionIngest } from './ai/compositionAiAssist';
+import { buildCompositionPrefill } from './ai/compositionFieldPrefill';
 import { DEFINITION_OF_READY, FEATURE_WRITING_TIPS } from './coaching/definitionOfReady';
 import {
   createEmptyCompositionDraft,
@@ -302,19 +305,60 @@ export default function FeatureCompositionTab({
     return namesById;
   }, [requiredFieldDescriptors]);
 
+  /** The select fields' allowed option labels, so the prompt hands the AI real Initiative-Type choices. */
+  const allowedValuesByFieldId = useMemo(() => {
+    const optionsById: Record<string, string[]> = {};
+    requiredFieldDescriptors.forEach((descriptor) => {
+      const options = (descriptor.allowedValues ?? [])
+        .map((allowed) => allowed.value ?? allowed.name ?? '')
+        .filter((label) => label !== '');
+      if (options.length > 0) {
+        optionsById[descriptor.fieldId] = options;
+      }
+    });
+    return optionsById;
+  }, [requiredFieldDescriptors]);
+
+  // The team's PI (from its profile) and Product Owner (from the roster) feed the deterministic prefill.
+  const teamProfile = useSettingsStore((state) => state.sprintDashboardTeamProfiles)
+    .find((profile) => profile.id === dashboardTeamProfileId) ?? null;
+  const rosterMembers = useStandupRosterStore((state) => state.rosterMembers);
+  const piValue = teamProfile?.selectedPiValue?.trim() || null;
+  const poAccountId = useMemo(
+    () => rosterMembers.find((member) => member.roleCapabilities?.canProductOwner && member.jiraAccountId)?.jiraAccountId ?? null,
+    [rosterMembers],
+  );
+  /** Fields the prefill left blank because it could not resolve them — the PO must set these by hand. */
+  const [prefillFlags, setPrefillFlags] = useState<string[]>([]);
+
   /** Applies an AI proposal to the local draft. Nothing here touches Jira (FR-032, INV-J1). */
   function handleIngestCompositionProposal(responseText: string): { acceptedCount: number; errors: string[] } {
     const { items, errors } = parseCompositionIngest(responseText, Object.keys(writableFieldNamesById));
     const proposal = items[0];
     if (proposal) {
+      // Merge the AI's fields, then deterministically prefill PI / PO / Application — only where still empty,
+      // resolved through the app's field-config ids — and record anything that could not be resolved.
+      const mergedFields = { ...draft.fields, ...proposal.fields };
+      const prefill = buildCompositionPrefill({
+        fieldConfig: {
+          programIncrementFieldIds: fieldConfig.programIncrementFieldIds,
+          productOwnerFieldIds: fieldConfig.productOwnerFieldIds,
+          applicationFieldIds: fieldConfig.applicationFieldIds,
+        },
+        descriptors: requiredFieldDescriptors,
+        currentFields: mergedFields,
+        piValue,
+        poAccountId,
+      });
       // Straight into the same boxes the PO types in, so every word stays editable (FR-032).
       updateDraft({
         ...draft,
         summary: proposal.summary,
         description: proposal.description,
         acceptanceCriteria: proposal.acceptanceCriteria,
-        fields: { ...draft.fields, ...proposal.fields },
+        fields: { ...mergedFields, ...prefill.fields },
       });
+      setPrefillFlags(prefill.flags);
     }
     return { acceptedCount: items.length, errors };
   }
@@ -684,9 +728,18 @@ export default function FeatureCompositionTab({
       <PoAiPanel
         title="Draft this Feature"
         helpText="Builds a prompt from your own description plus everything you have gathered. Paste the reply back and it fills the boxes above — every word stays yours to edit, and nothing reaches Jira until you save."
-        buildPrompt={() => buildCompositionPrompt(draft, DEFINITION_OF_READY, writableFieldNamesById)}
+        buildPrompt={() => buildCompositionPrompt(draft, DEFINITION_OF_READY, writableFieldNamesById, allowedValuesByFieldId)}
         onIngest={handleIngestCompositionProposal}
       />
+
+      {prefillFlags.length > 0 ? (
+        <div className={styles.warningBanner}>
+          <strong>Set these fields manually — the tool could not fill them:</strong>
+          <ul className={styles.hygieneList}>
+            {prefillFlags.map((flag) => <li key={flag} className={styles.hygieneFlagWarn}>{flag}</li>)}
+          </ul>
+        </div>
+      ) : null}
 
       <section className={styles.panel}>
         <h3 className={styles.panelTitle}>What &quot;ready&quot; looks like</h3>
