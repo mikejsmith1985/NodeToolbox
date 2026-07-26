@@ -21,6 +21,7 @@ import { SprintReleasePanel } from './SprintReleasePanel.tsx'
 import { StandupBriefingPanel } from './StandupBriefingPanel.tsx'
 import { PiReviewSchedulerPanel } from './PiReviewSchedulerPanel.tsx'
 import { MonthlyDeliveryPanel } from './MonthlyDeliveryPanel.tsx'
+import { ComponentManagerPanel } from './ComponentManagerPanel.tsx'
 import { useAdminHubState } from './hooks/useAdminHubState.ts'
 import type {
   AdminHubActions,
@@ -69,7 +70,7 @@ const VIEW_SUBTITLE = 'Proxy configuration, PI field mappings, feature flags, an
 
 const TERMINAL_COMMAND = 'python "%USERPROFILE%\\Downloads\\toolbox-server.py"'
 
-type AdminHubTab = 'main' | 'repo-monitor' | 'reports-config' | 'standup-briefing' | 'pi-review-scheduler' | 'monthly-delivery' | 'dev-panel' | 'sprint-release' | 'ai-assist'
+type AdminHubTab = 'main' | 'repo-monitor' | 'reports-config' | 'standup-briefing' | 'pi-review-scheduler' | 'monthly-delivery' | 'component-manager' | 'dev-panel' | 'sprint-release' | 'ai-assist'
 
 const ADMIN_HUB_TAB_OPTIONS: { key: AdminHubTab; label: string }[] = [
   { key: 'main', label: '⚙️ Config' },
@@ -79,6 +80,7 @@ const ADMIN_HUB_TAB_OPTIONS: { key: AdminHubTab; label: string }[] = [
   { key: 'pi-review-scheduler', label: '🗓️ PI Review Sync' },
   { key: 'monthly-delivery', label: '📅 Monthly Delivery' },
   { key: 'sprint-release', label: '🚀 Sprint Release' },
+  { key: 'component-manager', label: '🧩 Components' },
 ]
 
 // The Dev Panel is admin-gated: its tab is offered only when Admin Access is unlocked, matching the
@@ -2810,6 +2812,13 @@ export default function AdminHubView() {
       {activeAdminTab === 'monthly-delivery' && (
         <section id="admin-hub-monthly-delivery-panel" role="tabpanel" aria-labelledby="admin-hub-monthly-delivery-tab">
           <MonthlyDeliveryPanel />
+        </section>
+      )}
+
+      {activeAdminTab === 'component-manager' && (
+        <section id="admin-hub-component-manager-panel" role="tabpanel" aria-labelledby="admin-hub-component-manager-tab">
+          {/* Bulk import/export/remove of Jira project components (e.g. repo names as component values). */}
+          <ComponentManagerPanel />
         </section>
       )}
 

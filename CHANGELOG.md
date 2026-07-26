@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Jira Component Manager (Admin Hub → 🧩 Components).** A new admin tool to bulk-manage Jira project
+  components — handy for seeding component dropdowns (e.g. a list of repo names) across projects. Three
+  actions, all via the server Jira proxy: **Export** a project's components as a copy/downloadable list;
+  **Import** a pasted list of names into **one or more projects at once**, idempotently (names that already
+  exist are skipped, never duplicated); and **Bulk remove** named components with a safe two-step flow —
+  it first previews exactly which names matched (and which weren't found), then deletes only on an explicit
+  confirm of the count. Deleting a component also removes it from any issues that reference it, so the
+  preview-then-confirm step is deliberate. Adds a `jiraDelete` proxy verb.
 - **PI Planning Automation (in progress) — AI-assisted PI planner on the PI Review surface.** From your
   roster, per-sprint capacity, Feature sizes, PI dates and the fixVersion release schedule, the planner
   proposes a Feature→Story breakdown, the standard sub-task scaffold (internal test + deploy INT/REL/PROD),
