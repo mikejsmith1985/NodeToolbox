@@ -22,7 +22,7 @@ const TOOLBOX_API_EVENT = 'toolbox:api';
 
 /** Shape of `event.detail` for every `toolbox:api` CustomEvent dispatched on window. */
 export interface JiraApiEventDetail {
-  method: 'GET' | 'POST' | 'PUT';
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE';
   url: string;
   status: number | null;
   durationMs: number;
@@ -166,6 +166,20 @@ export async function jiraPut(path: string, body: unknown): Promise<void> {
       body: JSON.stringify(body),
     });
     await assertSuccessfulResponse(response, `Jira PUT ${path} failed`);
+    return { value: undefined, status: response.status };
+  });
+}
+
+/**
+ * Makes an authenticated DELETE request to the Jira REST API via proxy.
+ *
+ * Jira's DELETE endpoints (e.g. deleting a component) respond with 204 No Content,
+ * so this helper asserts success and resolves to `void` without parsing a body.
+ */
+export async function jiraDelete(path: string): Promise<void> {
+  await trackApiCall('DELETE', path, async () => {
+    const response = await fetch(`${JIRA_PROXY_BASE}${path}`, { method: 'DELETE' });
+    await assertSuccessfulResponse(response, `Jira DELETE ${path} failed`);
     return { value: undefined, status: response.status };
   });
 }
