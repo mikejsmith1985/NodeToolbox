@@ -73,7 +73,7 @@
 - [x] T021 [US1] Implement `client/src/views/ArtView/piPlan/piPlanJira.ts` — `applyPlanItem(item, ctx)`: create Story (`createIssue`), set points/dates/fixVersion/assignee, assign to an **existing** sprint (`assignIssueToSprint`); create sub-tasks with `parent`; `dryRun` path; delegate every write to a reused primitive. Make T015 green. (sprint *creation* is US4)
 - [x] T022 [US1] Implement `client/src/views/ArtView/piPlan/PlanProposalTable.tsx` — per-item accept/dismiss/override render of `PlanItemProposal[]` (Story + sub-tasks + assignee + sprint + dates + warnings); nothing writes on render.
 - [x] T023 [US1] Implement `client/src/views/ArtView/piPlan/PiPlanPanel.tsx` — gated by `useAiAssistStore`; hosts `ReportAiPanel` (copy-prompt / paste-reply / optional ⚡ auto via `useAiAssistExchange`), runs the engine on ingest, renders `PlanProposalTable`, and wires per-item accept → `applyPlanItem`.
-- [ ] T024 [US1] Mount `PiPlanPanel` additively on the PI Review surface (a new "Planner" tab/panel in `PoToolView`/`ArtView` beside PI Review) — default-off, no refactor of the host or the existing PI Review tabs; deep-link param optional.
+- [x] T024 [US1] Mount `PiPlanPanel` additively on the PI Review surface (a new "Planner" tab/panel in `PoToolView`/`ArtView` beside PI Review) — default-off, no refactor of the host or the existing PI Review tabs; deep-link param optional.
 - [x] T025 [US1] Add validation + honest empty states to the panel: empty scope ("nothing to plan"), unsized Feature, malformed reply remainder surfaced (never partial/garbage writes).
 
 **Checkpoint**: US1 fully functional — generate → review dated proposal → accept → Jira issues created. MVP demoable with existing sprints.

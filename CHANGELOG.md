@@ -19,8 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   new pieces are a working-day/deploy-cadence date engine, a release-schedule reader, and the `{kind:'piPlan'}`
   AI envelope. Now includes the engine + MVP UI (breakdown, dated proposal, capacity map), date
   explainability, sprint reuse/creation, deterministic monthly release suggestions, and idempotent
-  re-planning (existing Stories/sub-tasks are recognised, never duplicated). Still to come: the live
-  screen mount and release-suggestion surfacing in the panel.
+  re-planning (existing Stories/sub-tasks are recognised, never duplicated). It is now live as a **"Planner"
+  tab in the PO Tool**, assembling its inputs from the same roster, capacity, Feature-pull and fixVersion
+  sources PI Review uses. Still to come: surfacing suggested releases in the panel and final polish.
 - **GitHub Email Intake — status transitions are now dropdowns.** Instead of typing an exact Jira status
   name (and hoping it matches), the four event→status fields are **dropdowns populated from your Jira's real
   statuses** — scoped to your configured project keys when set, otherwise the whole instance. Pick "Ready

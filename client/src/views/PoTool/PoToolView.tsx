@@ -15,6 +15,7 @@ import { useEffect, useMemo } from 'react';
 
 import { PrimaryTabs, type PrimaryTabOption } from '../../components/PrimaryTabs/PrimaryTabs';
 import PiReviewTab from '../ArtView/PiReviewTab.tsx';
+import { PlannerTab } from '../ArtView/piPlan/PlannerTab.tsx';
 import FeatureCompositionTab from './FeatureCompositionTab';
 import FeatureSplitterTab from './FeatureSplitterTab';
 import FeatureReviewTab from '../SprintDashboard/FeatureReviewTab.tsx';
@@ -27,6 +28,7 @@ import styles from './PoToolView.module.css';
 const PO_TOOL_TAB_DEFINITIONS: PrimaryTabOption<PoToolTab>[] = [
   { key: 'featurereview', label: 'Feature Review' },
   { key: 'pireview', label: 'PI Review' },
+  { key: 'planner', label: 'Planner' },
   { key: 'splitter', label: 'Feature Splitter' },
   { key: 'composition', label: 'Feature Composition' },
 ];
@@ -93,6 +95,20 @@ export default function PoToolView() {
       // mode="authoring" is what a PO wants here: the page for the selected PI, editable. It also keeps the
       // "Edit in Team Dashboard" handoff (the tab's only write to the app-wide team) off the screen entirely.
       return <PiReviewTab mode="authoring" selectedPiName={selectedPiName} teams={piReviewTeams} />;
+    }
+
+    if (activeTab === 'planner') {
+      // The AI-assisted PI planner (spec 028): breakdown, capacity map, dated proposal — propose-only.
+      // Keyed by team so switching team reloads the planner's inputs cleanly.
+      return (
+        <PlannerTab
+          key={selectedTeamProfileId}
+          boardId={readBoardIdAsNumber(selectedTeamProfile.boardId)}
+          projectKey={selectedTeamProfile.projectKey}
+          selectedPiName={selectedPiName}
+          teamProfileId={selectedTeamProfileId}
+        />
+      );
     }
 
     if (activeTab === 'splitter') {
