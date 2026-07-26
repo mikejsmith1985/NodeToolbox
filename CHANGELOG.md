@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **PI Planning Automation (in progress) — AI-assisted PI planner on the PI Review surface.** From your
+  roster, per-sprint capacity, Feature sizes, PI dates and the fixVersion release schedule, the planner
+  proposes a Feature→Story breakdown, the standard sub-task scaffold (internal test + deploy INT/REL/PROD),
+  a capacity-mapped sprint schedule, and populated **Target Start / Target End / Due** dates — following
+  fixed rules (70/30 dev/test split; INT ≤24h after internal test; REL = INT + 5 **working** days; PROD on a
+  fixVersion; DoD = code-in-INT, so production may deploy after the PI end). It is **propose-only**: nothing
+  is written to Jira without a per-item accept, and it is gated behind AI Assist (Ctrl+Alt+Z). Built
+  framework-first — the scheduling/assignment/capacity engine and every Jira write primitive are reused; the
+  new pieces are a working-day/deploy-cadence date engine, a release-schedule reader, and the `{kind:'piPlan'}`
+  AI envelope. This entry covers the engine + MVP UI (breakdown, dated proposal, capacity map); the live
+  screen mount and later increments (sprint creation, release suggestions, idempotent re-planning) follow.
 - **GitHub Email Intake — status transitions are now dropdowns.** Instead of typing an exact Jira status
   name (and hoping it matches), the four event→status fields are **dropdowns populated from your Jira's real
   statuses** — scoped to your configured project keys when set, otherwise the whole instance. Pick "Ready

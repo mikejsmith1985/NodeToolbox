@@ -17,6 +17,30 @@
 > `po-pi-dropdown.spec.js`. Feature 024's spec inherited a false "do not run concurrently with 022" constraint from
 > these stale entries before the code was checked. **Verify against the codebase before trusting a status below.**
 
+- **028-pi-planning-automation** — *(planned on `feature/028-pi-planning-automation` — ready for `/speckit-tasks`)* an
+  AI-assisted **PI planner** on the PI Review surface: from roster + per-sprint capacity + Feature sizes + PI dates +
+  the fixVersion release schedule, it proposes a Feature→Story breakdown, the standard sub-task scaffold (internal
+  test + deploy INT/REL/PROD), a capacity-mapped sprint schedule, and populated **Target Start / Target End / Due**
+  dates — propose-only, per-item accepted, written to Jira only on accept. Plan: `specs/028-pi-planning-automation/plan.md`.
+  Contracts: `planning-engine.md`, `date-cadence.md`, `ai-assist-json.md`, `jira-writes.md`.
+  **Framework-First is the story**: recon proved the heavy machinery already exists — **`FeatureCanvas/planner`**
+  (`buildCapacityPlan`, `capacityTypes.ts`) already delivers velocity-based per-sprint scheduling, capability-aware
+  assignment, the per-person `SprintPersonLoad` capacity map, bottleneck/completion honesty, and org sprint naming;
+  and **every Jira write primitive exists** (`createIssue`, `createSprint`, `getBoardSprints`, `assignIssueToSprint`,
+  `savePiReviewFeatureDates` for Target Start/End+`duedate`, `saveFeatureReviewFixVersion`, name→id field discovery
+  via `loadHygieneFieldConfig`). So the capacity map (US2), effort→duration (velocity, Q1), assignment
+  (capability-filtered least-loaded, Q2), and sprint calendar collapse into **reuse**. **New work is narrow**: a pure
+  **working-day + deploy-cadence date engine** (`piPlanDates.ts` — Target End = code-in-INT = PI DoD; INT ≤24h; REL =
+  INT + **5 working days**; PROD on a fixVersion; Due may exceed PI end); a **release schedule** read + monthly-cadence
+  suggestion (`piPlanReleaseSchedule.ts`); **Story/Sub-task creation flows** with `parent` (`piPlanJira.ts`, delegating
+  every write to the existing primitives); a **child-read for idempotency** (`featureChildren.ts` — no current fetch
+  requests `subtasks`); and the **`{kind:'piPlan'}` AI module** (`ArtView/ai/piPlan*`, mirroring the shipped
+  `piReviewAiAssist.ts`, gated by `useAiAssistStore`, rendered via `ReportAiPanel`). **Clarified**: velocity effort
+  basis; capability-filtered least-loaded assignment (PO-overridable); existing-board-sprints-first calendar
+  (derive-to-fill only); 13-pt Story cap; 5 **working**-day INT→REL. **Design rule**: the capacity map and the
+  schedule are the **same `PlanResult`** (agree-by-construction); dates are **recomputed from rules**, never trusted
+  from the AI reply.
+
 - **026-issue-flow-analysis** — *(planned on `feature/026-issue-flow-analysis` — ready for `/speckit-tasks`)* an
   **issue-centric** flow analysis: for each delivered issue, where its time went and **who held it** at each stage,
   separating active work from waiting. Plan: `specs/026-issue-flow-analysis/plan.md`. Contracts: `issue-timeline.md`,
