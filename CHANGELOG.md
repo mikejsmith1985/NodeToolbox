@@ -21,7 +21,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   explainability, sprint reuse/creation, deterministic monthly release suggestions, and idempotent
   re-planning (existing Stories/sub-tasks are recognised, never duplicated). It is now live as a **"Planner"
   tab in the PO Tool**, assembling its inputs from the same roster, capacity, Feature-pull and fixVersion
-  sources PI Review uses. Still to come: surfacing suggested releases in the panel and final polish.
+  sources PI Review uses. Suggested monthly releases are now surfaced in the proposal (the engine dates a
+  second time so a Story with no covering fixVersion still gets a Due date from a deterministic monthly
+  suggestion). The client rules-and-UI layer is feature-complete (all 45 spec-028 tasks) and type-checks
+  clean under the strict `tsc -b` project build; live end-to-end validation against a real Jira/VPN is the
+  remaining manual step before release.
 - **GitHub Email Intake — status transitions are now dropdowns.** Instead of typing an exact Jira status
   name (and hoping it matches), the four event→status fields are **dropdowns populated from your Jira's real
   statuses** — scoped to your configured project keys when set, otherwise the whole instance. Pick "Ready

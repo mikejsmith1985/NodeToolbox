@@ -127,7 +127,7 @@ export async function applyStoryPlan(
 }
 
 /** The production release a Story delivers into — used only to stamp the Story's fixVersion. */
-function fixVersionForStory(story: ScheduledStory, _dates: DatedItem, _context: WriteContext): string | null {
+function fixVersionForStory(_story: ScheduledStory, _dates: DatedItem, _context: WriteContext): string | null {
   return null; // fixVersion selection is refined in US5; Story create omits it until then.
 }
 

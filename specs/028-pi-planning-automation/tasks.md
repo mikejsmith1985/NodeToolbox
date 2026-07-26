@@ -150,7 +150,7 @@
 ### Implementation for User Story 5
 
 - [x] T036 [US5] Implement the SUGGESTION half of `client/src/views/ArtView/piPlan/piPlanReleaseSchedule.ts` — deterministic monthly-cadence `isSuggested` entries per the **research R4 rule** (≥ REL and ≥ 28 days after the previous release, rolled to a working day; named `"<PI> Suggested Release <n>"`). Make T035 green. (extends T008)
-- [ ] T037 [US5] Surface `releaseSuggest` proposals + the empty-schedule honest state in `PiPlanPanel`, with per-item accept for a suggested release. (The version *fetch* now lives in Foundational T008 — this task consumes it.)
+- [x] T037 [US5] Surface `releaseSuggest` proposals + the empty-schedule honest state in `PiPlanPanel`, with per-item accept for a suggested release. (The version *fetch* now lives in Foundational T008 — this task consumes it.)
 
 **Checkpoint**: Release awareness + monthly suggestions live.
 
@@ -177,11 +177,11 @@
 
 ## Phase 9: Polish & Cross-Cutting Concerns
 
-- [ ] T041 [P] Update `CHANGELOG.md` with the PI Planning Automation entry (behavior change).
-- [ ] T042 [P] Run the full client suite + type/lint: `cd client && npx vitest run` (new suites green), `npx tsc --noEmit`, `npx eslint`.
-- [ ] T043 Regression gate: `cd client && npx vitest run src/views/FeatureCanvas/planner` and the PI Review host suites — all must remain green (no reused-surface regression).
-- [ ] T044 Record the Framework-First drift justifications as one-line comments at each new module head (`piPlanDates.ts`, `piPlanReleaseSchedule.ts`, `piPlanJira.ts` create-flow, `featureChildren.ts`, `ai/piPlanAiAssist.ts`).
-- [ ] T045 Execute `quickstart.md` — unit + integration (mocked proxy) + the live-Jira steps 2–8; capture created keys + populated dates as Article X evidence.
+- [x] T041 [P] Update `CHANGELOG.md` with the PI Planning Automation entry (behavior change).
+- [x] T042 [P] Run the full client suite + type/lint: `cd client && npx vitest run` (new suites green), `npx tsc --noEmit`, `npx eslint`.
+- [x] T043 Regression gate: `cd client && npx vitest run src/views/FeatureCanvas/planner` and the PI Review host suites — all must remain green (no reused-surface regression).
+- [x] T044 Record the Framework-First drift justifications as one-line comments at each new module head (`piPlanDates.ts`, `piPlanReleaseSchedule.ts`, `piPlanJira.ts` create-flow, `featureChildren.ts`, `ai/piPlanAiAssist.ts`).
+- [x] T045 Execute `quickstart.md` — unit + integration (mocked proxy) + the live-Jira steps 2–8; capture created keys + populated dates as Article X evidence.
 
 ---
 

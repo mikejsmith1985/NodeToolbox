@@ -5,7 +5,7 @@
 
 import React from 'react';
 
-import type { DatedItem, PlanItemProposal, ScheduledStory } from './piPlanTypes.ts';
+import type { DatedItem, PlanItemProposal, ReleaseEntry, ScheduledStory } from './piPlanTypes.ts';
 
 interface PlanProposalTableProps {
   items: PlanItemProposal[];
@@ -26,6 +26,10 @@ const KIND_LABEL: Record<string, string> = {
 
 /** The date a sub-task row displays, chosen by its kind; the Story row shows Target Start→End / Due. */
 function rowDates(item: PlanItemProposal): string {
+  if (item.kind === 'releaseSuggest') {
+    const release = item.payload as ReleaseEntry;
+    return `${release.name} @ ${release.releaseDateIso}`;
+  }
   const dates = item.dates as DatedItem | undefined;
   if (!dates) {
     return '';

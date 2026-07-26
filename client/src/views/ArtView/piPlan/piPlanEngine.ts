@@ -8,6 +8,7 @@ import type { PersonCapacity, PlanItem, PlanResult, ProjectedSprint } from '../.
 import { expandBreakdown, MAX_STORY_POINTS } from './piPlanBreakdown.ts';
 import { computeItemDates } from './piPlanDates.ts';
 import type { DateContext } from './piPlanDates.ts';
+import { suggestMonthlyReleases } from './piPlanReleaseSchedule.ts';
 import type {
   DatedItem,
   FeatureInput,
@@ -181,38 +182,65 @@ export function buildPiPlanProposal(input: PiPlanEngineInput, todayIso: string):
   );
   const scheduledIndex = indexScheduledItems(planResult.sprints);
 
-  const items: PlanItemProposal[] = [];
+  // Build the placed, dated-ready entries once; a Story that could not be scheduled is skipped here and
+  // surfaced through honestStates instead of becoming a garbage proposal.
+  interface DateReadyEntry { scheduled: ScheduledStory; rate: number; baseWarnings: string[] }
+  const entries: DateReadyEntry[] = [];
   let anyTestable = false;
   planItems.forEach((item) => {
     const facts = factsByKey.get(item.key)!;
     anyTestable = anyTestable || facts.hasTestableOutput;
     const placed = scheduledIndex.get(item.key);
     if (!placed) {
-      return; // unschedulable — surfaced via honestStates, never a garbage proposal
+      return;
     }
-    const scheduled = toScheduledStory(item, facts, placed);
-    const dateContext: DateContext = {
-      calendar: input.workingCalendar,
-      piStartIso: input.piStartIso,
-      piEndIso: input.piEndIso,
-      releaseSchedule: input.releaseSchedule,
-      pointsPerWorkingDay: rateForAssignee(placed.assignee, input.people, sprintLengthDays),
-      todayIso,
-    };
-    const dates = computeItemDates(scheduled, dateContext);
-    const warnings = [...(warningsByKey.get(item.key) ?? [])];
-    if (dates.targetEndIso > input.piEndIso) {
-      warnings.push('Code-in-INT (Target End) falls after the PI end — split or de-scope this Story');
-    }
-    const scheduledWithMatch = Object.assign(scheduled, { matchExistingKey: facts.matchExistingKey });
-    items.push(...buildStoryProposals(scheduledWithMatch, dates, warnings));
+    const scheduled = Object.assign(toScheduledStory(item, facts, placed), { matchExistingKey: facts.matchExistingKey });
+    entries.push({
+      scheduled,
+      rate: rateForAssignee(placed.assignee, input.people, sprintLengthDays),
+      baseWarnings: [...(warningsByKey.get(item.key) ?? [])],
+    });
   });
+
+  // Dates every entry against a given release schedule; the second pass re-dates once suggestions exist.
+  function buildItemsForSchedule(schedule: ReleaseSchedule): PlanItemProposal[] {
+    const built: PlanItemProposal[] = [];
+    entries.forEach((entry) => {
+      const dateContext: DateContext = {
+        calendar: input.workingCalendar, piStartIso: input.piStartIso, piEndIso: input.piEndIso,
+        releaseSchedule: schedule, pointsPerWorkingDay: entry.rate, todayIso,
+      };
+      const dates = computeItemDates(entry.scheduled, dateContext);
+      const warnings = [...entry.baseWarnings];
+      if (dates.targetEndIso > input.piEndIso) {
+        warnings.push('Code-in-INT (Target End) falls after the PI end — split or de-scope this Story');
+      }
+      built.push(...buildStoryProposals(entry.scheduled, dates, warnings));
+    });
+    return built;
+  }
+
+  const firstPass = buildItemsForSchedule(input.releaseSchedule);
+  // Stories whose PROD date has no covering release drive a deterministic monthly suggestion (FR-037).
+  const neededReleaseDates = firstPass
+    .filter((proposal) => proposal.kind === 'story' && proposal.dates != null && proposal.dates.dueIso == null)
+    .map((proposal) => (proposal.dates as DatedItem).deployRelIso);
+
+  let items = firstPass;
+  let finalSchedule = input.releaseSchedule;
+  if (neededReleaseDates.length > 0) {
+    finalSchedule = suggestMonthlyReleases(input.releaseSchedule, neededReleaseDates, input.piStartIso, input.workingCalendar);
+    items = buildItemsForSchedule(finalSchedule);
+    finalSchedule.entries.filter((entry) => entry.isSuggested).forEach((entry) => {
+      items.push({ id: `suggest:${entry.releaseDateIso}`, kind: 'releaseSuggest', status: 'new', parentKey: null, payload: entry, warnings: [] });
+    });
+  }
 
   return {
     piName: input.piName,
     planResult,
     items,
-    releaseSchedule: input.releaseSchedule,
+    releaseSchedule: finalSchedule,
     honestStates: collectHonestStates(input, planResult, anyTestable),
   };
 }

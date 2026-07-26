@@ -6,11 +6,12 @@ import { extractPiReviewFeatureKey } from '../piReviewJira.ts';
 import type { PiReviewRow } from '../piReviewTable.ts';
 import type { FeatureInput } from './piPlanTypes.ts';
 
-/** The minimal Jira issue shape the mapper reads (structural — the real JiraIssue satisfies it). */
+/** The minimal Jira issue shape the mapper reads (structural — the real JiraIssue satisfies it).
+ *  Both fields are nullable because Jira returns `null` (not just absent) for an unset priority/version. */
 export interface FeatureIssueLike {
   fields?: {
-    fixVersions?: Array<{ name?: string }>;
-    priority?: { name?: string };
+    fixVersions?: Array<{ name?: string }> | null;
+    priority?: { name?: string } | null;
   };
 }
 

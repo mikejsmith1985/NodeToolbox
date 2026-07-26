@@ -68,8 +68,8 @@ export function PlannerTab({ boardId, projectKey, selectedPiName, teamProfileId 
   const capacityStartDate = useCapacityStore((state) => state.startDate);
   const capacityEndDate = useCapacityStore((state) => state.endDate);
 
-  const [loaded, setLoaded] = useState<LoadedInputs | null>(null);
-  const [status, setStatus] = useState<string>('Loading planner inputs…');
+  const [loaded, setLoaded] = useState<(LoadedInputs & { piStartIso: string }) | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // Scope the capacity store to this team (the roster store is already scoped by PoToolView).
   useEffect(() => {
@@ -86,15 +86,13 @@ export function PlannerTab({ boardId, projectKey, selectedPiName, teamProfileId 
     [rosterMembers],
   );
 
-  // Load the Jira-backed inputs whenever the PI, team, or project changes.
+  // Load the Jira-backed inputs whenever the PI, team, or project changes. State is only set from the
+  // async resolution (never synchronously in the effect body) so there are no cascading renders.
   useEffect(() => {
-    let isActive = true;
     if (!piWindow) {
-      setStatus(`The selected PI ("${selectedPiName}") has no start/end dates in its name — the planner needs a dated PI.`);
-      setLoaded(null);
-      return () => { isActive = false; };
+      return;
     }
-    setStatus('Loading planner inputs…');
+    let isActive = true;
     (async () => {
       try {
         const pulled = await pullPiReviewFeatures(selectedPiName, poAssigneeQueryValues, []);
@@ -106,13 +104,12 @@ export function PlannerTab({ boardId, projectKey, selectedPiName, teamProfileId 
         const fieldIds = await resolvePiPlanFieldIds();
         const issueTypeIds = await resolveIssueTypeIds(projectKey);
         if (isActive) {
-          setLoaded({ features, releaseSchedule, fieldIds, issueTypeIds });
-          setStatus(features.length === 0 ? 'No Features found for this PI and Product Owner — nothing to plan yet.' : '');
+          setLoaded({ features, releaseSchedule, fieldIds, issueTypeIds, piStartIso: piWindow.startIso });
+          setLoadError(null);
         }
-      } catch (loadError) {
+      } catch (caught) {
         if (isActive) {
-          setStatus(`Could not load planner inputs: ${loadError instanceof Error ? loadError.message : String(loadError)} (check VPN / Jira connectivity).`);
-          setLoaded(null);
+          setLoadError(`Could not load planner inputs: ${caught instanceof Error ? caught.message : String(caught)} (check VPN / Jira connectivity).`);
         }
       }
     })();
@@ -151,8 +148,22 @@ export function PlannerTab({ boardId, projectKey, selectedPiName, teamProfileId 
     await applyStoryPlan(item, writeContext);
   }
 
-  if (!piWindow || !loaded || loaded.features.length === 0) {
-    return <div className="pi-plan-status" role="status">{status}</div>;
+  if (!piWindow) {
+    return (
+      <div className="pi-plan-status" role="status">
+        The selected PI (&quot;{selectedPiName}&quot;) has no start/end dates in its name — the planner needs a dated PI.
+      </div>
+    );
+  }
+  const isReady = loaded != null && loaded.piStartIso === piWindow.startIso;
+  if (loadError && !isReady) {
+    return <div className="pi-plan-status" role="status">{loadError}</div>;
+  }
+  if (!isReady) {
+    return <div className="pi-plan-status" role="status">Loading planner inputs…</div>;
+  }
+  if (loaded!.features.length === 0) {
+    return <div className="pi-plan-status" role="status">No Features found for this PI and Product Owner — nothing to plan yet.</div>;
   }
 
   const promptContext = assemblePromptContext({
@@ -162,16 +173,16 @@ export function PlannerTab({ boardId, projectKey, selectedPiName, teamProfileId 
     sprints: deriveSprints(piWindow.startIso, piWindow.endIso, DEFAULT_SPRINT_LENGTH_DAYS),
     workingCalendar: DEFAULT_WORKING_CALENDAR,
     people,
-    features: loaded.features,
-    releaseSchedule: loaded.releaseSchedule,
+    features: loaded!.features,
+    releaseSchedule: loaded!.releaseSchedule,
   });
 
   return (
     <PiPlanPanel
       promptContext={promptContext}
-      features={loaded.features}
+      features={loaded!.features}
       people={people}
-      releaseSchedule={loaded.releaseSchedule}
+      releaseSchedule={loaded!.releaseSchedule}
       workingCalendar={DEFAULT_WORKING_CALENDAR}
       piName={selectedPiName}
       piStartIso={piWindow.startIso}

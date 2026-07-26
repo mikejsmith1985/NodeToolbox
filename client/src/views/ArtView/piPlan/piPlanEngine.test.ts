@@ -90,6 +90,15 @@ describe('buildPiPlanProposal', () => {
     expect(a).toEqual(b);
   });
 
+  it('suggests a monthly release and fills the Due date when no release covers a Story (US5)', () => {
+    const proposal = buildPiPlanProposal(input({ releaseSchedule: { entries: [] } }), TODAY);
+    const suggestItems = proposal.items.filter((item) => item.kind === 'releaseSuggest');
+    expect(suggestItems.length).toBeGreaterThan(0);
+    expect(proposal.releaseSchedule.entries.some((entry) => entry.isSuggested)).toBe(true);
+    const storyItem = proposal.items.find((item) => item.kind === 'story');
+    expect(storyItem?.dates?.dueIso).not.toBeNull(); // the suggestion filled PROD/Due
+  });
+
   it('marks a Story that matched an existing child as existing (idempotency, US6)', () => {
     const proposal = buildPiPlanProposal(
       input({ acceptedByFeature: { 'ABC-1': [story({ matchExistingKey: 'ABC-9' })] } }),

@@ -90,7 +90,7 @@ describe('parsePiPlanAiReply', () => {
       kind: 'piPlan',
       items: [{ featureKey: 'ABC-1', stories: [{ summary: 'S', sizePoints: 3, targetStartIso: '2026-01-01', dueIso: '2026-02-02' }] }],
     });
-    const story = parsePiPlanAiReply(reply, known).suggestions[0].stories[0] as Record<string, unknown>;
+    const story = parsePiPlanAiReply(reply, known).suggestions[0].stories[0] as unknown as Record<string, unknown>;
     expect(story.targetStartIso).toBeUndefined();
     expect(story.dueIso).toBeUndefined();
   });
