@@ -333,8 +333,10 @@ export default function FeatureCompositionTab({
   async function handleCommit(): Promise<void> {
     setIsCommitting(true);
     try {
+      const jiraApi = await import('../../services/jiraApi.ts');
       const outcome = await runCompositionCommit(commitDiff, {
-        createIssue: (await import('../../services/jiraApi.ts')).createIssue,
+        createIssue: jiraApi.createIssue,
+        createIssueLink: jiraApi.createIssueLink,
         saveField: (issueKey, fieldId, value) =>
           saveFeatureReviewSimpleField(issueKey, fieldId, String(value ?? '')),
       });

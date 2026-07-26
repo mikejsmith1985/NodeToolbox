@@ -17,6 +17,26 @@
 > `po-pi-dropdown.spec.js`. Feature 024's spec inherited a false "do not run concurrently with 022" constraint from
 > these stale entries before the code was checked. **Verify against the codebase before trusting a status below.**
 
+- **029-composition-doc-sections** — *(planned on `feature/029-composition-doc-sections` — ready for `/speckit-tasks`)*
+  make the **Feature Composition** AI compose the Jira **description** as a fixed **nine-section** document
+  (Description, Benefit Hypothesis, Acceptance Criteria, Assumptions, Dependencies, In Scope, Out of Scope,
+  Risks, NFR), always all present + in order. Under-supported sections are proposed but flagged
+  `⚠ REQUIRES BUSINESS / TECHNICAL / BUSINESS & TECHNICAL VALIDATION`; the output **never** attributes itself
+  to AI. AC is written to the dedicated AC field **and** kept in the description's AC section; risks that
+  reference an existing Jira key are linked **"relates to"** on commit. Propose-only; Feature Composition
+  (create + update) **only** — Splitter/PI Review untouched. Plan: `specs/029-composition-doc-sections/plan.md`.
+  Contracts: `document-structure.md`, `ai-prompt-ingest.md`, `commit-writes.md`.
+  **Framework-First**: reuse `compositionAiAssist.ts` (`buildCompositionPrompt`/`parseCompositionIngest` →
+  `CompositionProposal`), the composition commit path (`buildCompositionCommit`/`runCompositionCommit`, which
+  already writes the AC field via the discovered `acceptanceCriteriaFieldId`), and `createIssueLink`
+  (non-fatal by contract, "Relates" type). **New work is one pure module** `ai/featureDocSections.ts`:
+  `normalizeFeatureDescription` (all nine sections, ordered, flagged placeholders for missing —
+  **idempotent**), `stripAiAttribution` (removes AI-authorship phrasing, keeps `⚠` markers),
+  `extractRiskLinkKeys` (keys from the **Risks section only**, de-duped). Risk keys are extracted from the
+  final (PO-edited) description at commit, not from the raw reply, so PO edits are respected.
+  **Clarified**: full AC in both places; link only from explicit keys in the material via "relates to";
+  the ⚠ marker format; scope = composition create + update only.
+
 - **028-pi-planning-automation** — *(planned on `feature/028-pi-planning-automation` — ready for `/speckit-tasks`)* an
   AI-assisted **PI planner** on the PI Review surface: from roster + per-sprint capacity + Feature sizes + PI dates +
   the fixVersion release schedule, it proposes a Feature→Story breakdown, the standard sub-task scaffold (internal

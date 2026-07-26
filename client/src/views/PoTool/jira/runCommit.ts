@@ -145,11 +145,16 @@ export async function runSplitCommit(
 
 // ── Composition ──
 
+/** The Jira link type used to relate a Feature to a risk ticket (spec 029). */
+const RELATES_LINK_TYPE_NAME = 'Relates';
+
 /** The write helpers a composition commit needs, injected so it can be proven without a real Jira. */
 export interface RunCompositionCommitDependencies {
   createIssue: typeof createIssue;
   /** Writes one field, resolving the payload shape against the instance's own metadata. */
   saveField: (issueKey: string, fieldId: string, value: unknown) => Promise<void>;
+  /** Links the Feature to a referenced risk ticket. Optional; when absent, no risk links are attempted. */
+  createIssueLink?: typeof createIssueLink;
 }
 
 /**
@@ -200,9 +205,43 @@ export async function runCompositionCommit(
     }
   }
 
+  // Link referenced risk tickets — best effort, once the Feature exists (created key, or the updated key).
+  const featureKey = createdKeysByLocalId.feature ?? (diff.update ? diff.update.issueKey : null);
+  if (featureKey !== null && dependencies.createIssueLink) {
+    for (const riskKey of diff.riskLinkKeys) {
+      items.push(await linkRiskTicket(featureKey, riskKey, dependencies.createIssueLink));
+    }
+  }
+
+  // A best-effort risk link never governs the discard-vs-retain decision — otherwise a failed link would
+  // retain a draft whose Feature already exists and a re-commit would create a duplicate (FR-032).
+  const coreItems = items.filter((item) => !item.scope.startsWith('risk-link:'));
   return {
     items,
     createdKeysByLocalId,
-    isFullySuccessful: items.length > 0 && items.every((item) => item.status !== 'failed'),
+    isFullySuccessful: coreItems.length > 0 && coreItems.every((item) => item.status !== 'failed'),
   };
+}
+
+/** Creates one "relates to" link from the Feature to a risk ticket — never throws (FR-032). */
+async function linkRiskTicket(
+  featureKey: string,
+  riskKey: string,
+  createLink: typeof createIssueLink,
+): Promise<CommitOutcomeItem> {
+  try {
+    await createLink({
+      type: { name: RELATES_LINK_TYPE_NAME },
+      inwardIssue: { key: featureKey },
+      outwardIssue: { key: riskKey },
+    });
+    return { scope: `risk-link:${riskKey}`, status: 'linked', jiraKey: riskKey };
+  } catch (linkError) {
+    return {
+      scope: `risk-link:${riskKey}`,
+      status: 'failed',
+      jiraKey: riskKey,
+      failureReason: `${featureKey} was saved, but linking risk ${riskKey} failed: ${readFailureReason(linkError)}`,
+    };
+  }
 }

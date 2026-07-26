@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Feature Composition AI now writes a structured nine-section Feature.** When you enhance or document a
+  Feature with AI on the Feature Composition page, the description is composed as a fixed set of labeled
+  sections — Description, Benefit Hypothesis, Acceptance Criteria, Assumptions, Dependencies, In Scope,
+  Out of Scope, Risks, and Non-Functional Requirements (NFR) — always all present, in order. Where the
+  provided material isn't enough to substantiate a section, the AI still proposes content but flags it
+  `⚠ REQUIRES BUSINESS VALIDATION` / `TECHNICAL` / `BUSINESS & TECHNICAL`, so a reviewer can tell at a glance
+  what still needs confirming — and the output never claims it was written by AI. Acceptance criteria are
+  written to the dedicated Acceptance Criteria field **and** kept in the description's AC section, and any
+  existing Jira ticket the material references for a risk is linked "relates to" on commit (a failed link
+  never blocks the commit). Propose-only and gated as before; scoped to Feature Composition only.
 - **Jira Component Manager (Admin Hub → 🧩 Components).** A new admin tool to bulk-manage Jira project
   components — handy for seeding component dropdowns (e.g. a list of repo names) across projects. Three
   actions, all via the server Jira proxy: **Export** a project's components as a copy/downloadable list;

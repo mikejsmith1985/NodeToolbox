@@ -14,6 +14,7 @@ import { extractJsonPayload } from '../../../utils/extractJsonPayload.ts';
 import type { ReadinessCriterion } from '../coaching/definitionOfReady';
 import type { CompositionDraft } from '../drafts/draftModel';
 import { describeSourceOrigin, describeSourceTitle, readSourceText } from '../sources/sourceModel';
+import { normalizeFeatureDescription, stripAiAttribution, VALIDATION_MARKER } from './featureDocSections.ts';
 import type { AiIngestResult } from './splitAiAssist';
 
 /** The fixed discriminator the assistant must echo. */
@@ -82,6 +83,17 @@ export function buildCompositionPrompt(
     '',
     'Write the Feature so it meets that bar. Lead the description with the problem and who has it, not the',
     'solution. Make every acceptance criterion something a tester could check without asking a question.',
+    '',
+    'Structure the description as these nine sections, in this exact order, each on its own line as a "Label:" heading:',
+    '  Description, Benefit Hypothesis, Acceptance Criteria, Assumptions, Dependencies, In Scope, Out of Scope, Risks,',
+    '  Non-Functional Requirements (NFR).',
+    'Populate every section from the material. Where the material does not give you enough to be sure, still propose',
+    'content but BEGIN that section with one of these exact markers, chosen by the section\'s nature:',
+    `  ${VALIDATION_MARKER.business}  |  ${VALIDATION_MARKER.technical}  |  ${VALIDATION_MARKER.both}`,
+    'Put the FULL acceptance criteria BOTH in the description\'s "Acceptance Criteria" section AND in the acceptanceCriteria field.',
+    'In the Risks section, include any existing Jira issue key the material references for a risk — do not invent keys.',
+    'Never state or imply that any of this was written, generated, or drafted by AI. A validation marker means the',
+    'information is missing — it is never a disclaimer about AI authorship.',
     '',
     'You may set ONLY these Jira fields, using the exact ids given. Do not invent field ids:',
     fieldLines,
@@ -163,10 +175,14 @@ export function parseCompositionIngest(
     });
   }
 
+  // Guarantee the description is the complete nine-section document (missing sections flagged for
+  // validation) and carries no AI self-attribution, whatever the model actually returned (FR-003, FR-004).
+  const description = stripAiAttribution(normalizeFeatureDescription(readTrimmedString(candidate.description)));
+
   return {
     items: [{
       summary,
-      description: readTrimmedString(candidate.description),
+      description,
       acceptanceCriteria: readTrimmedString(candidate.acceptanceCriteria),
       fields,
       rationale: readTrimmedString(candidate.rationale),
