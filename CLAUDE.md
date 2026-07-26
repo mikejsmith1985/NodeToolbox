@@ -17,6 +17,26 @@
 > `po-pi-dropdown.spec.js`. Feature 024's spec inherited a false "do not run concurrently with 022" constraint from
 > these stale entries before the code was checked. **Verify against the codebase before trusting a status below.**
 
+- **030-bulk-feature-rewrite** — *(planned on `feature/030-bulk-feature-rewrite` — ready for `/speckit-tasks`)* a
+  persisted, resumable **batch re-write** workspace as a new **PO Tool "Bulk Re-write" tab**: paste Jira keys →
+  capture each issue's current summary/description/AC → generate ONE propose-only AI prompt for the whole set →
+  paste reply → per-issue **nine-section** re-writes → before/after review + edit + per-item state → export a
+  self-contained before/after doc for a reviewing PO → record approval → submit approved (edited) re-writes to
+  Jira with **changed-since-capture** protection. Plan: `specs/030-bulk-feature-rewrite/plan.md`. Contracts:
+  `bulk-ai-assist.md`, `batch-store.md`, `before-after-export.md`, `submit-drift.md`.
+  **Load-bearing constraint**: it must not bend the AI rules — **no automated/background AI**; the multi-day gap
+  is a persisted human approval loop, the AI step is manual copy-prompt/paste-reply, gated by `useAiAssistStore`,
+  nine-section + validation-flagged + never AI-attributed. **Framework-First**: reuse `ai/featureDocSections.ts`
+  (the format), `ai/compositionAiAssist.ts` (prompt/ingest pattern), `jira/buildCompositionCommit`+`runCompositionCommit`
+  (per-item write, field-id-correct), `drafts/*` (`buildTeamScopedStorageKey`/`canPersistDrafts` for the local
+  batch store), `richTextPlainText` (capture normalize, like-for-like drift compare — GH #200), the AI gate + `PoAiPanel`.
+  **New work** = the batch layer: `ai/bulkRewriteAiAssist.ts` (`{kind:'featureRewriteBatch'}` keyed by Jira key +
+  prompt **chunking** for large sets), `rewriteBatchModel/Store` (localStorage + JSON **export/import** for
+  cross-machine portability), `captureOriginals`, `rewriteBatchExport` (Markdown + self-contained HTML), and
+  `rewriteSubmit` (per-item submit + a **live re-read** drift check; changed items held for re-capture/submit-anyway/skip).
+  **Clarified**: local storage + export/import; tool is source of truth for approval/edits; export = copy-MD + download-HTML;
+  drift flagged/held with a per-item choice. Additive PO Tool tab (mirrors Planner) — no composition/splitter/planner regression.
+
 - **029-composition-doc-sections** — *(planned on `feature/029-composition-doc-sections` — ready for `/speckit-tasks`)*
   make the **Feature Composition** AI compose the Jira **description** as a fixed **nine-section** document
   (Description, Benefit Hypothesis, Acceptance Criteria, Assumptions, Dependencies, In Scope, Out of Scope,
