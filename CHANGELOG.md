@@ -15,6 +15,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   system instead of raw markup.
 
 ### Added
+- **Feature Composition now auto-fills the structured Jira fields it can determine.** When you compose a
+  Feature with AI, the tool deterministically pre-fills — **only where the field is still empty**, and always
+  resolved through the app's configured field ids (never a hardcoded field name) — the **Program Increment**
+  (from the team's selected PI), the **Product Owner** (from the team roster), and **Application** (always
+  "Initial"). **Initiative Type** is left to the AI, but the prompt now hands it the field's real allowed
+  options so it can only pick a valid one. Anything the tool can't resolve (no PI on the team, no PO on the
+  roster, a missing option) is **left blank and clearly flagged** as needing manual attention — it is never
+  guessed or silently skipped. Still propose-only; nothing reaches Jira until you commit.
 - **Feature Composition AI now writes a structured nine-section Feature.** When you enhance or document a
   Feature with AI on the Feature Composition page, the description is composed as a fixed set of labeled
   sections — Description, Benefit Hypothesis, Acceptance Criteria, Assumptions, Dependencies, In Scope,

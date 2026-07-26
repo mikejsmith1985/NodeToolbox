@@ -51,6 +51,8 @@ export function buildCompositionPrompt(
   draft: CompositionDraft,
   readinessCriteria: readonly ReadinessCriterion[],
   writableFieldNamesById: Readonly<Record<string, string>>,
+  /** For select fields (e.g. Initiative Type), the allowed option labels so the AI picks a real one. */
+  allowedValuesByFieldId: Readonly<Record<string, string[]>> = {},
 ): string {
   const sourceBlocks = draft.sources.map((source) => [
     `--- ${describeSourceTitle(source)} (${describeSourceOrigin(source)}) ---`,
@@ -63,7 +65,12 @@ export function buildCompositionPrompt(
 
   const writableFieldEntries = Object.entries(writableFieldNamesById);
   const fieldLines = writableFieldEntries.length > 0
-    ? writableFieldEntries.map(([fieldId, fieldName]) => `  - "${fieldId}" (${fieldName})`).join('\n')
+    ? writableFieldEntries.map(([fieldId, fieldName]) => {
+      const options = allowedValuesByFieldId[fieldId];
+      // For a select field, hand the AI the real option labels so it never invents an invalid value.
+      const optionsHint = options && options.length > 0 ? ` — choose exactly one of: ${options.join(', ')}` : '';
+      return `  - "${fieldId}" (${fieldName})${optionsHint}`;
+    }).join('\n')
     : '  (none — do not include a "fields" object)';
 
   return [
