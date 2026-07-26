@@ -11,7 +11,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { useSettingsStore, type SprintDashboardTeamProfile } from '../../../store/settingsStore';
 
 /** The PO Tool's tabs. Two are reused as-is from the Team Dashboard; the rest are authoring surfaces. */
-export type PoToolTab = 'featurereview' | 'pireview' | 'planner' | 'splitter' | 'composition';
+export type PoToolTab = 'featurereview' | 'pireview' | 'planner' | 'splitter' | 'composition' | 'rewrite';
 
 /** Where the PO Tool persists its own selection — deliberately separate from any Team Dashboard key. */
 export const PO_TOOL_SELECTION_STORAGE_KEY = 'tbxPoToolSelection';

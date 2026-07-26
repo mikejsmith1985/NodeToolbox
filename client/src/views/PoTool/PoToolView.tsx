@@ -18,6 +18,7 @@ import PiReviewTab from '../ArtView/PiReviewTab.tsx';
 import { PlannerTab } from '../ArtView/piPlan/PlannerTab.tsx';
 import FeatureCompositionTab from './FeatureCompositionTab';
 import FeatureSplitterTab from './FeatureSplitterTab';
+import BulkRewriteTab from './rewrite/BulkRewriteTab.tsx';
 import FeatureReviewTab from '../SprintDashboard/FeatureReviewTab.tsx';
 import { useStandupRosterStore } from '../SprintDashboard/hooks/useStandupRosterStore';
 import { buildArtTeamFromProfile } from './poToolArtTeam';
@@ -31,6 +32,7 @@ const PO_TOOL_TAB_DEFINITIONS: PrimaryTabOption<PoToolTab>[] = [
   { key: 'planner', label: 'Planner' },
   { key: 'splitter', label: 'Feature Splitter' },
   { key: 'composition', label: 'Feature Composition' },
+  { key: 'rewrite', label: 'Bulk Re-write' },
 ];
 
 /** Matches the ids PrimaryTabs generates, so each panel is announced with its tab. */
@@ -114,6 +116,12 @@ export default function PoToolView() {
     if (activeTab === 'splitter') {
       // Keyed by team: a draft belongs to one team, so switching team starts a clean workspace.
       return <FeatureSplitterTab key={selectedTeamProfileId} dashboardTeamProfileId={selectedTeamProfileId} />;
+    }
+
+    if (activeTab === 'rewrite') {
+      // Bulk re-write (spec 030): capture → gated AI re-write → review/export → approve → submit.
+      // Keyed by team so switching team scopes the saved batches and configured field ids cleanly.
+      return <BulkRewriteTab key={selectedTeamProfileId} dashboardTeamProfileId={selectedTeamProfileId} />;
     }
 
     return (

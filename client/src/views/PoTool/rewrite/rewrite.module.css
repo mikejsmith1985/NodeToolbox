@@ -1,0 +1,319 @@
+/* rewrite.module.css — Layout for the Bulk Re-write tab: intake at the top, a batch list, then a
+   before/after review grid. Reuses the PO Tool CSS-module vocabulary (see FeatureCompositionTab) so
+   this surface looks native and honours the project's UI Styling standard. */
+
+.rewriteTab {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* ── Shared field/button/message vocabulary (same tokens as the composition tab) ── */
+
+.loadBar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.loadField {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.loadFieldWide {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1 1 260px;
+}
+
+.fieldLabel {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  opacity: 0.7;
+}
+
+.textInput,
+.selectInput {
+  padding: 6px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-field-bg);
+  color: inherit;
+  font: inherit;
+}
+
+.textArea {
+  min-height: 60px;
+  padding: 6px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-field-bg);
+  color: inherit;
+  font: inherit;
+  resize: vertical;
+}
+
+.textAreaTall {
+  min-height: 140px;
+  padding: 6px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-field-bg);
+  color: inherit;
+  font: inherit;
+  resize: vertical;
+}
+
+.primaryButton,
+.secondaryButton,
+.dangerButton {
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--color-border);
+  font: inherit;
+  cursor: pointer;
+}
+
+.primaryButton {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: var(--color-text-on-accent);
+  font-weight: 600;
+}
+
+.primaryButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.secondaryButton {
+  background: var(--color-card-bg);
+}
+
+.dangerButton {
+  background: transparent;
+  border-color: var(--color-tone-danger-fg);
+  color: var(--color-tone-danger-fg);
+}
+
+.errorBanner,
+.warningBanner,
+.infoBanner {
+  padding: 8px 12px;
+  border-radius: 6px;
+  border-left: 4px solid;
+  font-size: 0.85rem;
+}
+
+.errorBanner {
+  border-color: var(--color-tone-danger-fg);
+  background: var(--color-tone-danger-bg);
+}
+
+.warningBanner {
+  border-color: var(--color-tone-warning-fg);
+  background: var(--color-tone-warning-bg);
+}
+
+.infoBanner {
+  border-color: var(--color-accent);
+  background: var(--color-tone-info-bg);
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-card-bg);
+}
+
+.panelTitle {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.panelSubtitle {
+  margin: 8px 0 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  opacity: 0.8;
+}
+
+.helpText {
+  margin: 0;
+  font-size: 0.8rem;
+  opacity: 0.8;
+}
+
+/* ── Batch summary strip ── */
+
+.summaryStrip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.stateChip {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  border: 1px solid var(--color-border);
+  background: var(--color-field-bg-muted);
+}
+
+/* ── Batch list (resume) ── */
+
+.batchList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.batchRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+}
+
+.batchRowMeta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.8rem;
+}
+
+.batchRowActions {
+  display: flex;
+  gap: 6px;
+}
+
+/* ── Before/after review grid ── */
+
+.reviewGrid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-card-bg);
+}
+
+.rowHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.rowKey {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.rowStateControls {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .cols {
+    grid-template-columns: 1fr;
+  }
+}
+
+.colLabel {
+  margin: 0 0 4px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  opacity: 0.6;
+}
+
+/* The captured "before" is read-only, shown as pre-wrapped prose so it reads like the ticket did. */
+.beforeText {
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-field-bg-muted);
+  font-size: 0.8rem;
+  white-space: pre-wrap;
+  user-select: text;
+}
+
+.editedTag {
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--color-tone-info-bg);
+  color: var(--color-accent);
+  font-size: 0.68rem;
+  font-weight: 600;
+}
+
+/* ── Notices (honest states) ── */
+
+.noticeList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 0.8rem;
+}
+
+.noticeList li {
+  padding: 2px 0;
+}
+
+.outcomeCreated {
+  color: var(--color-tone-success-fg);
+}
+
+.outcomeFailed {
+  color: var(--color-tone-danger-fg);
+}
+
+.buttonRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}

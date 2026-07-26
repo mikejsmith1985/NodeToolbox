@@ -22,6 +22,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   system instead of raw markup.
 
 ### Added
+- **Bulk Feature Re-write (PO Tool → "Bulk Re-write" tab).** Paste a list of Jira keys and the tool captures
+  each issue's current summary/description/acceptance-criteria as an immutable "before". A **gated, manual**
+  AI round-trip (the same copy-prompt / paste-reply panel used elsewhere — nothing is sent to any AI service,
+  nothing is auto-submitted, nothing is AI-attributed) proposes a re-write of every issue in the batch in the
+  nine-section format. The batch **persists for days**, so you can review and edit each proposed re-write,
+  mark items approved/rejected, and send the reviewing PO a self-contained **before/after export** (copy as
+  Markdown or download a standalone HTML file). When you're ready, **only approved items** are submitted to
+  Jira — one issue at a time, through the same single-issue write path Feature Composition uses, writing only
+  the description and acceptance criteria via the app's configured field ids. Submitting is **idempotent** and
+  **drift-safe**: before each write the tool re-reads the live issue and, if it changed in Jira since capture,
+  **holds it back** (with an explicit per-issue "submit anyway") rather than silently overwriting; a proposal
+  that already matches Jira is a no-op success, and a single field failure never blocks the rest. Batches can
+  be **exported to a file and imported on another machine** so the multi-day review can move with you. Every
+  gap is surfaced honestly — unreachable keys, issues not yet re-written, unknown keys in a reply, prompt
+  splits for large batches, and per-issue submit failures are all shown, never hidden.
 - **Feature Composition now auto-fills the structured Jira fields it can determine.** When you compose a
   Feature with AI, the tool deterministically pre-fills — **only where the field is still empty**, and always
   resolved through the app's configured field ids (never a hardcoded field name) — the **Program Increment**

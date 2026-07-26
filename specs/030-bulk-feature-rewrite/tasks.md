@@ -25,9 +25,9 @@
 
 ## Phase 1: Setup
 
-- [ ] T001 Create `client/src/views/PoTool/rewrite/` and a `rewrite.module.css` skeleton reusing the PO Tool styling vocabulary (mirror a sibling PO Tool module's classes).
-- [ ] T002 [P] Baseline green before any change (must stay green throughout): `cd client && npx vitest run src/views/PoTool/ai src/views/PoTool/jira`.
-- [ ] T003 [P] Verify the reuse points resolve: `featureDocSections.ts`, `compositionAiAssist.ts`, `jira/buildCompositionCommit.ts` + `jira/runCommit.ts`, `drafts/compositionDraftStorage.ts` (`buildTeamScopedStorageKey`, `canPersistDrafts`), `services/jiraApi.ts` (`jiraGet`), `utils/richTextPlainText.ts`, `store/aiAssistStore.ts`, `ai/PoAiPanel`, `hooks/usePoHygieneContext` (field ids).
+- [X] T001 Create `client/src/views/PoTool/rewrite/` and a `rewrite.module.css` skeleton reusing the PO Tool styling vocabulary (mirror a sibling PO Tool module's classes).
+- [X] T002 [P] Baseline green before any change (must stay green throughout): `cd client && npx vitest run src/views/PoTool/ai src/views/PoTool/jira`.
+- [X] T003 [P] Verify the reuse points resolve: `featureDocSections.ts`, `compositionAiAssist.ts`, `jira/buildCompositionCommit.ts` + `jira/runCommit.ts`, `drafts/compositionDraftStorage.ts` (`buildTeamScopedStorageKey`, `canPersistDrafts`), `services/jiraApi.ts` (`jiraGet`), `utils/richTextPlainText.ts`, `store/aiAssistStore.ts`, `ai/PoAiPanel`, `hooks/usePoHygieneContext` (field ids).
 
 ---
 
@@ -35,9 +35,9 @@
 
 **Purpose**: The batch model + local store every story builds on. **BLOCKS all user stories.**
 
-- [ ] T004 [P] Define `client/src/views/PoTool/rewrite/rewriteBatchModel.ts` per data-model.md — `ItemState`, `CapturedOriginal`, `ProposedRewrite`, `RewriteItem`, `RewriteBatch`, `RewriteBatchSummary`, `BatchReplyParseResult`, `BatchExportInput`. Types only.
-- [ ] T005 [P] Write failing tests `client/src/views/PoTool/rewrite/rewriteBatchStore.test.ts` (localStorage mocked): save→load round-trip; `listBatches` returns summaries with per-state counts; `deleteBatch` removes only that batch; team-scoped keys isolate teams; `canPersistDrafts()` false ⇒ save returns false / load null, no throw.
-- [ ] T006 Implement `client/src/views/PoTool/rewrite/rewriteBatchStore.ts` — `saveBatch`/`loadBatch`/`listBatches`/`deleteBatch` reusing `buildTeamScopedStorageKey` + `canPersistDrafts` (base key `tbxPoRewriteBatch`). Make T005 green. (export/import is US5)
+- [X] T004 [P] Define `client/src/views/PoTool/rewrite/rewriteBatchModel.ts` per data-model.md — `ItemState`, `CapturedOriginal`, `ProposedRewrite`, `RewriteItem`, `RewriteBatch`, `RewriteBatchSummary`, `BatchReplyParseResult`, `BatchExportInput`. Types only.
+- [X] T005 [P] Write failing tests `client/src/views/PoTool/rewrite/rewriteBatchStore.test.ts` (localStorage mocked): save→load round-trip; `listBatches` returns summaries with per-state counts; `deleteBatch` removes only that batch; team-scoped keys isolate teams; `canPersistDrafts()` false ⇒ save returns false / load null, no throw.
+- [X] T006 Implement `client/src/views/PoTool/rewrite/rewriteBatchStore.ts` — `saveBatch`/`loadBatch`/`listBatches`/`deleteBatch` reusing `buildTeamScopedStorageKey` + `canPersistDrafts` (base key `tbxPoRewriteBatch`). Make T005 green. (export/import is US5)
 
 **Checkpoint**: A batch persists and lists; the stories can capture, propose, review, and submit against it.
 
@@ -51,15 +51,15 @@
 
 ### Tests for User Story 1 (write first, must FAIL)
 
-- [ ] T007 [P] [US1] Failing tests `client/src/views/PoTool/rewrite/captureOriginals.test.ts` (mocked `jiraGet`): fetches summary/description/AC per key, normalized via `normalizeRichTextToPlainText`; a de-duped key list; an unreachable key becomes an item with `captureError` and the rest still capture (FR-001/002).
-- [ ] T008 [P] [US1] Failing tests `client/src/views/PoTool/rewrite/ai/bulkRewriteAiAssist.test.ts`: one prompt for a small batch and ordered "part N of M" prompts once the batch exceeds the **16000-char prompt cap** (per-source capped at 4000, both named constants — split is deterministic; every key present, none split, an oversized single issue gets its own prompt); prompt carries the nine-section rules, markers, no-AI rule, and the `{kind:'featureRewriteBatch'}` template; parse maps keys, rejects an unknown key, counts a missing description, throws on wrong kind/empty, normalizes+strips each description, and merges multi-part replies by key.
+- [X] T007 [P] [US1] Failing tests `client/src/views/PoTool/rewrite/captureOriginals.test.ts` (mocked `jiraGet`): fetches summary/description/AC per key, normalized via `normalizeRichTextToPlainText`; a de-duped key list; an unreachable key becomes an item with `captureError` and the rest still capture (FR-001/002).
+- [X] T008 [P] [US1] Failing tests `client/src/views/PoTool/rewrite/ai/bulkRewriteAiAssist.test.ts`: one prompt for a small batch and ordered "part N of M" prompts once the batch exceeds the **16000-char prompt cap** (per-source capped at 4000, both named constants — split is deterministic; every key present, none split, an oversized single issue gets its own prompt); prompt carries the nine-section rules, markers, no-AI rule, and the `{kind:'featureRewriteBatch'}` template; parse maps keys, rejects an unknown key, counts a missing description, throws on wrong kind/empty, normalizes+strips each description, and merges multi-part replies by key.
 
 ### Implementation for User Story 1
 
-- [ ] T009 [US1] Implement `client/src/views/PoTool/rewrite/captureOriginals.ts` (uses `jiraGet` + `normalizeRichTextToPlainText` + the configured AC field id). Make T007 green.
-- [ ] T010 [US1] Implement `client/src/views/PoTool/rewrite/ai/bulkRewriteAiAssist.ts` — `buildBulkRewritePrompts` + `parseBulkRewriteReply`, reusing `featureDocSections` (`normalizeFeatureDescription` + `stripAiAttribution`) and `extractJsonPayload`. Make T008 green.
-- [ ] T011 [US1] Implement `client/src/views/PoTool/rewrite/BulkRewriteTab.tsx` intake + generation: paste keys → create batch → capture originals → persist; a gated `PoAiPanel` that offers the prompt(s) and ingests the reply → sets proposals + persists. (depends T006, T009, T010)
-- [ ] T012 [US1] Mount the tab additively: add `'rewrite'` to `PoToolTab` (`hooks/usePoToolState.ts`), a `{ key:'rewrite', label:'Bulk Re-write' }` definition and a render branch in `PoToolView.tsx` (mirror the Planner tab).
+- [X] T009 [US1] Implement `client/src/views/PoTool/rewrite/captureOriginals.ts` (uses `jiraGet` + `normalizeRichTextToPlainText` + the configured AC field id). Make T007 green.
+- [X] T010 [US1] Implement `client/src/views/PoTool/rewrite/ai/bulkRewriteAiAssist.ts` — `buildBulkRewritePrompts` + `parseBulkRewriteReply`, reusing `featureDocSections` (`normalizeFeatureDescription` + `stripAiAttribution`) and `extractJsonPayload`. Make T008 green.
+- [X] T011 [US1] Implement `client/src/views/PoTool/rewrite/BulkRewriteTab.tsx` intake + generation: paste keys → create batch → capture originals → persist; a gated `PoAiPanel` that offers the prompt(s) and ingests the reply → sets proposals + persists. (depends T006, T009, T010)
+- [X] T012 [US1] Mount the tab additively: add `'rewrite'` to `PoToolTab` (`hooks/usePoToolState.ts`), a `{ key:'rewrite', label:'Bulk Re-write' }` definition and a render branch in `PoToolView.tsx` (mirror the Planner tab).
 
 **Checkpoint**: A list of keys becomes a persisted batch of nine-section proposals in one generate-and-paste pass.
 
@@ -73,12 +73,12 @@
 
 ### Tests for User Story 2 (write first, must FAIL)
 
-- [ ] T013 [P] [US2] Failing tests `client/src/views/PoTool/rewrite/BeforeAfterRow.test.tsx`: renders original vs proposed; an edit updates the proposal and sets `isEdited`; the per-item state control sets state; editing an **approved** item returns it to `reviewing` (FR-020/021/023).
+- [X] T013 [P] [US2] Failing tests `client/src/views/PoTool/rewrite/BeforeAfterRow.test.tsx`: renders original vs proposed; an edit updates the proposal and sets `isEdited`; the per-item state control sets state; editing an **approved** item returns it to `reviewing` (FR-020/021/023).
 
 ### Implementation for User Story 2
 
-- [ ] T014 [US2] Implement `client/src/views/PoTool/rewrite/BeforeAfterRow.tsx` (before/after view + edit + per-item state), styled via `rewrite.module.css`. Make T013 green.
-- [ ] T015 [US2] Wire the review grid into `BulkRewriteTab.tsx`: render a row per item, persist every edit/state change, show a batch-level state summary, and enforce edit-approved→reviewing. (depends T014, T011)
+- [X] T014 [US2] Implement `client/src/views/PoTool/rewrite/BeforeAfterRow.tsx` (before/after view + edit + per-item state), styled via `rewrite.module.css`. Make T013 green.
+- [X] T015 [US2] Wire the review grid into `BulkRewriteTab.tsx`: render a row per item, persist every edit/state change, show a batch-level state summary, and enforce edit-approved→reviewing. (depends T014, T011)
 
 **Checkpoint**: The batch is fully reviewable/editable and every change is saved for a multi-day review.
 
@@ -92,12 +92,12 @@
 
 ### Tests for User Story 3 (write first, must FAIL)
 
-- [ ] T016 [P] [US3] Failing tests `client/src/views/PoTool/rewrite/rewriteBatchExport.test.ts`: `buildMarkdownExport` + `buildHtmlExport` include each issue's key + Before + After; the HTML is self-contained (no external `src=`/`href=`); a caller-filtered fixture omits excluded items; neither output contains AI-authorship phrasing; empty input yields a valid empty doc.
+- [X] T016 [P] [US3] Failing tests `client/src/views/PoTool/rewrite/rewriteBatchExport.test.ts`: `buildMarkdownExport` + `buildHtmlExport` include each issue's key + Before + After; the HTML is self-contained (no external `src=`/`href=`); a caller-filtered fixture omits excluded items; neither output contains AI-authorship phrasing; empty input yields a valid empty doc.
 
 ### Implementation for User Story 3
 
-- [ ] T017 [US3] Implement `client/src/views/PoTool/rewrite/rewriteBatchExport.ts` — pure `buildMarkdownExport` + `buildHtmlExport`; the After column is labeled "proposed description + acceptance criteria" so the unchanged summary is never misread as removed. Make T016 green.
-- [ ] T018 [US3] Add export UI to `BulkRewriteTab.tsx`: copy-Markdown-to-clipboard + download-HTML, over the non-rejected (operator-chosen) subset. (depends T017, T015)
+- [X] T017 [US3] Implement `client/src/views/PoTool/rewrite/rewriteBatchExport.ts` — pure `buildMarkdownExport` + `buildHtmlExport`; the After column is labeled "proposed description + acceptance criteria" so the unchanged summary is never misread as removed. Make T016 green.
+- [X] T018 [US3] Add export UI to `BulkRewriteTab.tsx`: copy-Markdown-to-clipboard + download-HTML, over the non-rejected (operator-chosen) subset. (depends T017, T015)
 
 **Checkpoint**: MVP complete — capture → re-write → review/edit → shareable before/after export.
 
@@ -111,12 +111,12 @@
 
 ### Tests for User Story 4 (write first, must FAIL)
 
-- [ ] T019 [P] [US4] Failing tests `client/src/views/PoTool/rewrite/rewriteSubmit.test.ts` (mocked deps): an approved item with matching-key live content is written via `saveField` and set `submitted`; an approved item whose **proposal already equals the live content is a no-op success** (`submitted`, nothing written, not `failed`) (FR-045); `rejected`/`reviewing`/`captured` are never written; an already-`submitted` item is skipped (no duplicate); one item's `saveField` failure sets it `failed` with `fieldErrors` while the others still submit.
+- [X] T019 [P] [US4] Failing tests `client/src/views/PoTool/rewrite/rewriteSubmit.test.ts` (mocked deps): an approved item with matching-key live content is written via `saveField` and set `submitted`; an approved item whose **proposal already equals the live content is a no-op success** (`submitted`, nothing written, not `failed`) (FR-045); `rejected`/`reviewing`/`captured` are never written; an already-`submitted` item is skipped (no duplicate); one item's `saveField` failure sets it `failed` with `fieldErrors` while the others still submit.
 
 ### Implementation for User Story 4
 
-- [ ] T020 [US4] Implement `client/src/views/PoTool/rewrite/rewriteSubmit.ts` — `submitApprovedItems` building a composition-style update per approved item and calling the reused `buildCompositionCommit` + `runCompositionCommit` with an injected `saveField`; a proposal equal to the live content is a **no-op success** (never the reused "nothing changed" blocker surfacing as `failed`, FR-045); records per-item state + `submitResult`. Make T019 green. (drift is US5)
-- [ ] T021 [US4] Add submit UI to `BulkRewriteTab.tsx`: submit approved, per-item progress/outcome, idempotent re-run; persist outcomes. (depends T020, T018)
+- [X] T020 [US4] Implement `client/src/views/PoTool/rewrite/rewriteSubmit.ts` — `submitApprovedItems` building a composition-style update per approved item and calling the reused `buildCompositionCommit` + `runCompositionCommit` with an injected `saveField`; a proposal equal to the live content is a **no-op success** (never the reused "nothing changed" blocker surfacing as `failed`, FR-045); records per-item state + `submitResult`. Make T019 green. (drift is US5)
+- [X] T021 [US4] Add submit UI to `BulkRewriteTab.tsx`: submit approved, per-item progress/outcome, idempotent re-run; persist outcomes. (depends T020, T018)
 
 **Checkpoint**: Approved re-writes reach Jira safely, one issue at a time, without duplicates.
 
@@ -130,13 +130,13 @@
 
 ### Tests for User Story 5 (write first, must FAIL)
 
-- [ ] T022 [P] [US5] Failing tests: in `rewriteSubmit.test.ts` — an approved item whose live content differs from the capture is set `changed` and **not** written; with its key in `submitAnywayKeys` it **is** written. In `rewriteBatchStore.test.ts` — `exportBatchFile`→`importBatchFile` round-trips deep-equal; `importBatchFile` throws on malformed JSON.
+- [X] T022 [P] [US5] Failing tests: in `rewriteSubmit.test.ts` — an approved item whose live content differs from the capture is set `changed` and **not** written; with its key in `submitAnywayKeys` it **is** written. In `rewriteBatchStore.test.ts` — `exportBatchFile`→`importBatchFile` round-trips deep-equal; `importBatchFile` throws on malformed JSON.
 
 ### Implementation for User Story 5
 
-- [ ] T023 [US5] Add the live drift re-read to `client/src/views/PoTool/rewrite/rewriteSubmit.ts`: `fetchLive(key)` compared (normalized) to `item.original`; a mismatch sets `changed` and holds the item unless its key is in `submitAnywayKeys`. The re-read runs **at submit and via an explicit on-demand check only — never automatically on batch open** (FR-053 timing). Make the drift tests green. (extends T020)
-- [ ] T024 [US5] Add `exportBatchFile` + `importBatchFile` (validated) to `client/src/views/PoTool/rewrite/rewriteBatchStore.ts`. Make the store round-trip tests green. (extends T006)
-- [ ] T025 [US5] Add resume UI to `BulkRewriteTab.tsx`: a batch list (reopen/delete via `listBatches`), export/import file buttons, an explicit **"check for changes"** action (runs the drift re-read on demand — the only non-submit trigger), and per-item **re-capture / submit-anyway / skip** actions on a `changed` item. (depends T023, T024, T021)
+- [X] T023 [US5] Add the live drift re-read to `client/src/views/PoTool/rewrite/rewriteSubmit.ts`: `fetchLive(key)` compared (normalized) to `item.original`; a mismatch sets `changed` and holds the item unless its key is in `submitAnywayKeys`. The re-read runs **at submit and via an explicit on-demand check only — never automatically on batch open** (FR-053 timing). Make the drift tests green. (extends T020)
+- [X] T024 [US5] Add `exportBatchFile` + `importBatchFile` (validated) to `client/src/views/PoTool/rewrite/rewriteBatchStore.ts`. Make the store round-trip tests green. (extends T006)
+- [X] T025 [US5] Add resume UI to `BulkRewriteTab.tsx`: a batch list (reopen/delete via `listBatches`), export/import file buttons, an explicit **"check for changes"** action (runs the drift re-read on demand — the only non-submit trigger), and per-item **re-capture / submit-anyway / skip** actions on a `changed` item. (depends T023, T024, T021)
 
 **Checkpoint**: The multi-day lifecycle works — resume, move between machines, and submit safely against drift.
 
@@ -150,11 +150,11 @@
 
 ### Tests for User Story 6 (write first, must FAIL)
 
-- [ ] T026 [P] [US6] Failing tests `client/src/views/PoTool/rewrite/BulkRewriteTab.honest.test.tsx`: intake capture errors are listed per key; ingest surfaces rejected/unknown keys and an "N not yet re-written" count; a chunk split shows a "part N of M" notice; a partial submit failure lists the failed issues; AI panel is hidden while locked.
+- [X] T026 [P] [US6] Failing tests `client/src/views/PoTool/rewrite/BulkRewriteTab.test.tsx`: intake capture errors are listed per key; ingest surfaces rejected/unknown keys and an "N not yet re-written" count; a chunk split shows a "part N of M" notice; a partial submit failure lists the failed issues; AI panel is hidden while locked.
 
 ### Implementation for User Story 6
 
-- [ ] T027 [US6] Wire honest-state surfacing into `BulkRewriteTab.tsx` (intake errors, ingest rejected/unparsed summary, chunk-split notice, submit failures) with styled notices. Make T026 green.
+- [X] T027 [US6] Wire honest-state surfacing into `BulkRewriteTab.tsx` (intake errors, ingest rejected/unparsed summary, chunk-split notice, submit failures) with styled notices. Make T026 green.
 
 **Checkpoint**: Nothing fails silently; the operator always knows where the batch stands.
 
@@ -162,10 +162,10 @@
 
 ## Phase 9: Polish & Cross-Cutting Concerns
 
-- [ ] T028 [P] Update `CHANGELOG.md` with the Bulk Feature Re-write entry.
-- [ ] T029 Full verification: `cd client && npx vitest run src/views/PoTool/rewrite`, `npx tsc -b`, `npx eslint src/views/PoTool/rewrite`.
-- [ ] T030 Regression gate: `cd client && npx vitest run src/views/PoTool` — composition, splitter, planner, PI Review suites all green (additive-mount only, no host regression).
-- [ ] T031 Record the Framework-First drift one-liners at each new module head; confirm by search that no reused module (`featureDocSections`, `compositionAiAssist`, commit path) was edited.
+- [X] T028 [P] Update `CHANGELOG.md` with the Bulk Feature Re-write entry.
+- [X] T029 Full verification: `cd client && npx vitest run src/views/PoTool/rewrite`, `npx tsc -b`, `npx eslint src/views/PoTool/rewrite`.
+- [X] T030 Regression gate: `cd client && npx vitest run src/views/PoTool` — composition, splitter, planner, PI Review suites all green (additive-mount only, no host regression).
+- [X] T031 Record the Framework-First drift one-liners at each new module head; confirm by search that no reused module (`featureDocSections`, `compositionAiAssist`, commit path) was edited.
 - [ ] T032 Execute `quickstart.md` — unit + the live-Jira steps (capture → export → submit → drift → export/import), capturing evidence.
 
 ---
