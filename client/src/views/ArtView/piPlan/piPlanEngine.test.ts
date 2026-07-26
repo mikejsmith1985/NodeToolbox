@@ -77,10 +77,26 @@ describe('buildPiPlanProposal', () => {
     expect(proposal.honestStates.some((state) => /internal-test capability/i.test(state))).toBe(true);
   });
 
+  it('warns when a Story’s code-in-INT (Target End) falls after the PI end (FR-036 boundary)', () => {
+    // Force an early PI end so the computed Target End necessarily lands beyond it.
+    const proposal = buildPiPlanProposal(input({ piEndIso: '2026-05-20' }), TODAY);
+    const storyItem = proposal.items.find((item) => item.kind === 'story');
+    expect(storyItem?.warnings.some((warning) => /after the PI end/i.test(warning))).toBe(true);
+  });
+
   it('is deterministic — identical input and clock produce an identical proposal', () => {
     const a = buildPiPlanProposal(input({}), TODAY);
     const b = buildPiPlanProposal(input({}), TODAY);
     expect(a).toEqual(b);
+  });
+
+  it('marks a Story that matched an existing child as existing (idempotency, US6)', () => {
+    const proposal = buildPiPlanProposal(
+      input({ acceptedByFeature: { 'ABC-1': [story({ matchExistingKey: 'ABC-9' })] } }),
+      TODAY,
+    );
+    const storyItem = proposal.items.find((item) => item.kind === 'story');
+    expect(storyItem?.status).toBe('existing');
   });
 
   it('shares one PlanResult so the capacity map and schedule agree by construction', () => {

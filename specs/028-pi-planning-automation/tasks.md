@@ -107,12 +107,12 @@
 
 ### Tests for User Story 3 (write first, must FAIL)
 
-- [ ] T029 [P] [US3] Failing tests `client/src/views/ArtView/piPlan/piPlanDates.explain.test.ts`: every `DatedItem.derivations[date]` names the rule + inputs; a Story whose INT would fall after PI end produces a warning while keeping `targetEndIso ≤ piEndIso` semantics; internal-test end is null (no gate) when `hasTestableOutput=false`.
+- [x] T029 [P] [US3] Failing tests `client/src/views/ArtView/piPlan/piPlanDates.explain.test.ts`: every `DatedItem.derivations[date]` names the rule + inputs; a Story whose INT would fall after PI end produces a warning while keeping `targetEndIso ≤ piEndIso` semantics; internal-test end is null (no gate) when `hasTestableOutput=false`.
 
 ### Implementation for User Story 3
 
-- [ ] T030 [US3] Add the per-date derivation display to `PlanProposalTable.tsx` (hover/expand showing `derivations`), and the external-test-start signal (internal-test end) per Story. Make T029 green. (extends T006/T022)
-- [ ] T031 [US3] Add the "code-in-INT after PI end" warning surfacing to the proposal + `honestStates`, keeping Target End within the PI (FR-036 boundary).
+- [x] T030 [US3] Add the per-date derivation display to `PlanProposalTable.tsx` (hover/expand showing `derivations`), and the external-test-start signal (internal-test end) per Story. Make T029 green. (extends T006/T022)
+- [x] T031 [US3] Add the "code-in-INT after PI end" warning surfacing to the proposal + `honestStates`, keeping Target End within the PI (FR-036 boundary).
 
 **Checkpoint**: Dates are explainable and provably rules-conformant (SC-005).
 
@@ -126,12 +126,12 @@
 
 ### Tests for User Story 4 (write first, must FAIL)
 
-- [ ] T032 [P] [US4] Failing tests `client/src/views/ArtView/piPlan/piPlanSprints.test.ts` (mocked proxy): existing sprint (from `getBoardSprints`) is reused — no `createSprint`; a missing (derived-to-fill) sprint is created exactly once; a Story is assigned via `assignIssueToSprint`; re-run does not re-create an existing sprint.
+- [x] T032 [P] [US4] Failing tests `client/src/views/ArtView/piPlan/piPlanSprints.test.ts` (mocked proxy): existing sprint (from `getBoardSprints`) is reused — no `createSprint`; a missing (derived-to-fill) sprint is created exactly once; a Story is assigned via `assignIssueToSprint`; re-run does not re-create an existing sprint.
 
 ### Implementation for User Story 4
 
-- [ ] T033 [US4] Implement `client/src/views/ArtView/piPlan/piPlanSprints.ts` — `ensureSprints(plan, ctx)`: read existing via `getBoardSprints`, match by name, `createSprint` only for gaps (derive-to-fill from PI start + configured length), return name→id map. Make T032 green.
-- [ ] T034 [US4] Wire `ensureSprints` into `piPlanJira.applyPlanItem` so accepted Stories place into the correct (existing or newly-created) sprint; emit `sprintCreate` proposals in the engine for derived sprints.
+- [x] T033 [US4] Implement `client/src/views/ArtView/piPlan/piPlanSprints.ts` — `ensureSprints(plan, ctx)`: read existing via `getBoardSprints`, match by name, `createSprint` only for gaps (derive-to-fill from PI start + configured length), return name→id map. Make T032 green.
+- [x] T034 [US4] Wire `ensureSprints` into `piPlanJira.applyPlanItem` so accepted Stories place into the correct (existing or newly-created) sprint; emit `sprintCreate` proposals in the engine for derived sprints.
 
 **Checkpoint**: Full sprint lifecycle handled without duplicates.
 
@@ -145,11 +145,11 @@
 
 ### Tests for User Story 5 (write first, must FAIL)
 
-- [ ] T035 [P] [US5] Failing tests extending `piPlanReleaseSchedule.test.ts`: a PROD date with no release on/after it yields an `isSuggested` release at **`rollToWorkingDay(max(REL, previousReleaseDate + 28 days))` per research R4**; releases never closer than ~4 weeks; empty window → honest empty + first suggestion anchored at the PI start; determinism.
+- [x] T035 [P] [US5] Failing tests extending `piPlanReleaseSchedule.test.ts`: a PROD date with no release on/after it yields an `isSuggested` release at **`rollToWorkingDay(max(REL, previousReleaseDate + 28 days))` per research R4**; releases never closer than ~4 weeks; empty window → honest empty + first suggestion anchored at the PI start; determinism.
 
 ### Implementation for User Story 5
 
-- [ ] T036 [US5] Implement the SUGGESTION half of `client/src/views/ArtView/piPlan/piPlanReleaseSchedule.ts` — deterministic monthly-cadence `isSuggested` entries per the **research R4 rule** (≥ REL and ≥ 28 days after the previous release, rolled to a working day; named `"<PI> Suggested Release <n>"`). Make T035 green. (extends T008)
+- [x] T036 [US5] Implement the SUGGESTION half of `client/src/views/ArtView/piPlan/piPlanReleaseSchedule.ts` — deterministic monthly-cadence `isSuggested` entries per the **research R4 rule** (≥ REL and ≥ 28 days after the previous release, rolled to a working day; named `"<PI> Suggested Release <n>"`). Make T035 green. (extends T008)
 - [ ] T037 [US5] Surface `releaseSuggest` proposals + the empty-schedule honest state in `PiPlanPanel`, with per-item accept for a suggested release. (The version *fetch* now lives in Foundational T008 — this task consumes it.)
 
 **Checkpoint**: Release awareness + monthly suggestions live.
@@ -164,12 +164,12 @@
 
 ### Tests for User Story 6 (write first, must FAIL)
 
-- [ ] T038 [P] [US6] Failing tests `client/src/views/ArtView/piPlan/featureChildren.test.ts`: classifies children by issuetype + naming into `ExistingChild.kind`; an existing Story/sub-task ⇒ matched suggestion `status='existing'`; `applyPlanItem` on an `existing` item issues zero `createIssue` calls.
+- [x] T038 [P] [US6] Failing tests `client/src/views/ArtView/piPlan/featureChildren.test.ts`: classifies children by issuetype + naming into `ExistingChild.kind`; an existing Story/sub-task ⇒ matched suggestion `status='existing'`; `applyPlanItem` on an `existing` item issues zero `createIssue` calls.
 
 ### Implementation for User Story 6
 
-- [ ] T039 [US6] Implement `client/src/views/ArtView/piPlan/featureChildren.ts` — `fetchFeatureChildren(featureKey)` reading child Stories + each Story's `subtasks`, classified into `ExistingChild[]`. Make the classification tests green.
-- [ ] T040 [US6] Wire idempotency matching into `piPlanAiApply`/`piPlanEngine` (populate `matchExistingKey`, set `PlanItemProposal.status='existing'`) and guard `applyPlanItem` to skip `existing` items. Make the no-duplicate tests green.
+- [x] T039 [US6] Implement `client/src/views/ArtView/piPlan/featureChildren.ts` — `fetchFeatureChildren(featureKey)` reading child Stories + each Story's `subtasks`, classified into `ExistingChild[]`. Make the classification tests green.
+- [x] T040 [US6] Wire idempotency matching into `piPlanAiApply`/`piPlanEngine` (populate `matchExistingKey`, set `PlanItemProposal.status='existing'`) and guard `applyPlanItem` to skip `existing` items. Make the no-duplicate tests green.
 
 **Checkpoint**: Safe to re-run; no duplicates (SC-006).
 

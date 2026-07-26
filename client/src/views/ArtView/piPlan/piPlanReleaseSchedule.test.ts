@@ -3,11 +3,13 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { buildReleaseSchedule } from './piPlanReleaseSchedule.ts';
+import { buildReleaseSchedule, suggestMonthlyReleases } from './piPlanReleaseSchedule.ts';
 import type { RawJiraVersion } from './piPlanReleaseSchedule.ts';
+import type { ReleaseSchedule, WorkingCalendar } from './piPlanTypes.ts';
 
 const PI_START = '2026-05-21';
 const PI_END = '2026-07-29';
+const CAL: WorkingCalendar = { weekendDays: [0, 6], holidayIsoDates: [] };
 
 describe('buildReleaseSchedule', () => {
   it('keeps in-window releases, drops out-of-window and archived, and sorts by date', () => {
@@ -32,5 +34,28 @@ describe('buildReleaseSchedule', () => {
   it('returns an empty calendar honestly when no versions fall in the window', () => {
     const schedule = buildReleaseSchedule([{ name: 'Old', releaseDate: '2025-01-01' }], PI_START, PI_END);
     expect(schedule.entries).toEqual([]);
+  });
+});
+
+describe('suggestMonthlyReleases', () => {
+  it('uses an existing release that already covers the needed date (no suggestion)', () => {
+    const schedule: ReleaseSchedule = { entries: [{ name: 'R1', releaseDateIso: '2026-06-15', isSuggested: false }] };
+    const result = suggestMonthlyReleases(schedule, ['2026-06-04'], PI_START, CAL);
+    expect(result.entries.filter((entry) => entry.isSuggested)).toHaveLength(0);
+  });
+
+  it('adds a suggested release ≥ the needed date and ≥ 28 days after the previous one', () => {
+    const schedule: ReleaseSchedule = { entries: [{ name: 'R1', releaseDateIso: '2026-06-15', isSuggested: false }] };
+    const result = suggestMonthlyReleases(schedule, ['2026-08-10'], PI_START, CAL);
+    const suggested = result.entries.find((entry) => entry.isSuggested)!;
+    expect(suggested.releaseDateIso >= '2026-08-10').toBe(true);
+    expect(suggested.releaseDateIso >= '2026-07-13').toBe(true); // ≥ 28 days after 2026-06-15
+  });
+
+  it('anchors the first suggestion to the PI start when there are no existing releases, on a working day', () => {
+    const result = suggestMonthlyReleases({ entries: [] }, ['2026-05-25'], PI_START, CAL);
+    const suggested = result.entries.find((entry) => entry.isSuggested)!;
+    expect(suggested.releaseDateIso >= '2026-05-25').toBe(true);
+    expect([0, 6]).not.toContain(new Date(`${suggested.releaseDateIso}T00:00:00Z`).getUTCDay()); // working day
   });
 });

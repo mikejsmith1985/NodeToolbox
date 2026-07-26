@@ -40,6 +40,17 @@ function rowDates(item: PlanItemProposal): string {
   }
 }
 
+/** The derivation key to explain for a given row kind (so each row's tooltip matches its own date). */
+function derivationKeyFor(kind: PlanItemProposal['kind']): string {
+  switch (kind) {
+    case 'story': return 'targetEndIso';
+    case 'internalTest': return 'internalTestEndIso';
+    case 'deployRel': return 'deployRelIso';
+    case 'deployProd': return 'deployProdIso';
+    default: return 'targetEndIso';
+  }
+}
+
 /** Renders one row: label, summary/assignee/sprint (for a Story), dates, warnings, and the controls. */
 function ProposalRow({ item, onAccept, onDismiss }: { item: PlanItemProposal } & Pick<PlanProposalTableProps, 'onAccept' | 'onDismiss'>): React.ReactElement {
   const story = item.kind === 'story' ? (item.payload as ScheduledStory) : null;
@@ -51,7 +62,7 @@ function ProposalRow({ item, onAccept, onDismiss }: { item: PlanItemProposal } &
         {story ? story.summary : ''}
         {story ? <span className="pi-plan-assignment"> — {story.assignee ?? 'Unassigned'} · {story.sprintName}</span> : null}
       </td>
-      <td title={(item.dates as DatedItem | undefined)?.derivations?.[item.kind === 'story' ? 'targetEndIso' : 'deployRelIso']}>{rowDates(item)}</td>
+      <td title={(item.dates as DatedItem | undefined)?.derivations?.[derivationKeyFor(item.kind)]}>{rowDates(item)}</td>
       <td className="pi-plan-warnings">{item.warnings.join('; ')}</td>
       <td>
         {isExisting ? (

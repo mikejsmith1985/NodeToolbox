@@ -17,8 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is written to Jira without a per-item accept, and it is gated behind AI Assist (Ctrl+Alt+Z). Built
   framework-first — the scheduling/assignment/capacity engine and every Jira write primitive are reused; the
   new pieces are a working-day/deploy-cadence date engine, a release-schedule reader, and the `{kind:'piPlan'}`
-  AI envelope. This entry covers the engine + MVP UI (breakdown, dated proposal, capacity map); the live
-  screen mount and later increments (sprint creation, release suggestions, idempotent re-planning) follow.
+  AI envelope. Now includes the engine + MVP UI (breakdown, dated proposal, capacity map), date
+  explainability, sprint reuse/creation, deterministic monthly release suggestions, and idempotent
+  re-planning (existing Stories/sub-tasks are recognised, never duplicated). Still to come: the live
+  screen mount and release-suggestion surfacing in the panel.
 - **GitHub Email Intake — status transitions are now dropdowns.** Instead of typing an exact Jira status
   name (and hoping it matches), the four event→status fields are **dropdowns populated from your Jira's real
   statuses** — scoped to your configured project keys when set, otherwise the whole instance. Pick "Ready

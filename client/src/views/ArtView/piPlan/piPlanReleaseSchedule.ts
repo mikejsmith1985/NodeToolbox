@@ -5,10 +5,13 @@
 // suggesting a cadence is new.
 
 import { jiraGet } from '../../../services/jiraApi.ts';
-import type { ReleaseSchedule } from './piPlanTypes.ts';
+import { rollToWorkingDay } from './piPlanDates.ts';
+import type { ReleaseSchedule, WorkingCalendar } from './piPlanTypes.ts';
 
 /** Releases may fall shortly after the PI end (production can follow the PI DoD), so the window trails. */
 const RELEASE_WINDOW_TRAILING_DAYS = 60;
+/** Production releases are kept roughly monthly — a suggested release is never closer than this (R4). */
+const MIN_RELEASE_GAP_DAYS = 28;
 const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000;
 
 /** The minimal shape of a Jira version we consume; extra fields on the payload are ignored. */
@@ -43,6 +46,39 @@ export function buildReleaseSchedule(
     .map((version) => ({ name: version.name, releaseDateIso: version.releaseDate!.slice(0, 10), isSuggested: false }))
     .filter((entry) => entry.releaseDateIso >= windowStartIso && entry.releaseDateIso <= upperBoundIso)
     .sort((left, right) => left.releaseDateIso.localeCompare(right.releaseDateIso));
+  return { entries };
+}
+
+/**
+ * Ensures every needed production date has a release on/after it, adding deterministic monthly `isSuggested`
+ * releases where the existing calendar has a gap (research R4). A suggested release lands on the first
+ * working day that is both ≥ the needed date and ≥ 28 days after the previous release; the first anchor is
+ * the last existing release, or the PI start when there are none. Suggested releases require acceptance.
+ */
+export function suggestMonthlyReleases(
+  schedule: ReleaseSchedule,
+  neededReleaseDates: string[],
+  piStartIso: string,
+  calendar: WorkingCalendar,
+): ReleaseSchedule {
+  const entries = [...schedule.entries].sort((left, right) => left.releaseDateIso.localeCompare(right.releaseDateIso));
+  const existingCount = entries.length;
+  let previousReleaseIso = existingCount > 0 ? entries[existingCount - 1].releaseDateIso : piStartIso;
+  let suggestionIndex = 0;
+
+  [...neededReleaseDates].sort().forEach((neededIso) => {
+    const hasCoveringRelease = entries.some((entry) => entry.releaseDateIso >= neededIso);
+    if (hasCoveringRelease) {
+      return;
+    }
+    const earliestByCadence = addCalendarDays(previousReleaseIso, MIN_RELEASE_GAP_DAYS);
+    const suggestedIso = rollToWorkingDay(neededIso > earliestByCadence ? neededIso : earliestByCadence, calendar);
+    suggestionIndex += 1;
+    entries.push({ name: `Suggested Release ${suggestionIndex}`, releaseDateIso: suggestedIso, isSuggested: true });
+    entries.sort((left, right) => left.releaseDateIso.localeCompare(right.releaseDateIso));
+    previousReleaseIso = suggestedIso;
+  });
+
   return { entries };
 }
 
