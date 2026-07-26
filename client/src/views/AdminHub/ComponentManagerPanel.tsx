@@ -16,6 +16,7 @@ import {
   parseComponentNames,
 } from './lib/componentManager.ts';
 import type { JiraComponent, ProjectImportResult, RemoveResult } from './lib/componentManager.ts';
+import styles from './AdminHubView.module.css';
 
 /** Copies text to the clipboard, ignoring the rare permission failure (the textarea is still selectable). */
 function copyToClipboard(text: string): void {
@@ -149,34 +150,44 @@ export function ComponentManagerPanel(): React.ReactElement {
   const exportText = exportedComponents ? formatComponentsForExport(exportedComponents) : '';
 
   return (
-    <div className="component-manager-panel">
-      <h2>🧩 Jira Component Manager</h2>
-      <p>Bulk import, export, and remove project components (e.g. a list of repos as component values).</p>
+    <div className={styles.panelCard}>
+      <h3 className={styles.sectionTitle}>🧩 Jira Component Manager</h3>
+      <p className={styles.panelStatusLine}>
+        Bulk import, export, and remove project components (e.g. a list of repos as component values).
+      </p>
 
-      <section aria-label="Export components">
-        <h3>Export</h3>
+      <section className={styles.panelSection} aria-label="Export components">
+        <h3 className={styles.sectionTitle}>Export</h3>
         <JiraProjectPicker id="component-export-project" label="Project" value={exportProjectKey} onChange={setExportProjectKey} />
-        <button type="button" onClick={handleExport}>Fetch components</button>
-        <p role="status">{exportStatus}</p>
+        <div className={styles.panelActions}>
+          <button type="button" className={styles.actionButton} onClick={handleExport}>Fetch components</button>
+        </div>
+        <p className={styles.panelStatusLine} role="status">{exportStatus}</p>
         {exportedComponents ? (
-          <div>
-            <textarea aria-label="Exported component names" readOnly rows={8} value={exportText} />
-            <button type="button" onClick={() => copyToClipboard(exportText)}>Copy</button>
-            <button type="button" onClick={() => downloadText(`${exportProjectKey}-components.txt`, exportText)}>Download</button>
-          </div>
+          <>
+            <textarea aria-label="Exported component names" className={styles.inputField} readOnly rows={8} value={exportText} />
+            <div className={styles.panelActions}>
+              <button type="button" className={styles.actionButton} onClick={() => copyToClipboard(exportText)}>Copy</button>
+              <button type="button" className={styles.actionButton} onClick={() => downloadText(`${exportProjectKey}-components.txt`, exportText)}>Download</button>
+            </div>
+          </>
         ) : null}
       </section>
 
-      <section aria-label="Import components">
-        <h3>Import</h3>
-        <label htmlFor="component-import-names">Component names (one per line)</label>
-        <textarea id="component-import-names" rows={8} value={importNamesText} onChange={(event) => setImportNamesText(event.target.value)} placeholder="repo-one&#10;repo-two&#10;…" />
+      <section className={styles.panelSection} aria-label="Import components">
+        <h3 className={styles.sectionTitle}>Import</h3>
+        <label className={styles.fieldLabel} htmlFor="component-import-names">Component names (one per line)</label>
+        <textarea id="component-import-names" className={styles.inputField} rows={8} value={importNamesText} onChange={(event) => setImportNamesText(event.target.value)} placeholder="repo-one&#10;repo-two&#10;…" />
         <JiraProjectPicker id="component-import-picker" label="Add a target project" value={importPickerKey} onChange={setImportPickerKey} />
-        <button type="button" onClick={addImportTarget}>Add project</button>
-        <label htmlFor="component-import-targets">Target project keys</label>
-        <textarea id="component-import-targets" rows={3} value={importTargetsText} onChange={(event) => setImportTargetsText(event.target.value)} placeholder="ABC&#10;DEF" />
-        <button type="button" onClick={handleImport} disabled={isImporting}>Import into {importTargetKeys.length} project(s)</button>
-        <p role="status">{importStatus}</p>
+        <div className={styles.panelActions}>
+          <button type="button" className={styles.actionButton} onClick={addImportTarget}>Add project</button>
+        </div>
+        <label className={styles.fieldLabel} htmlFor="component-import-targets">Target project keys</label>
+        <textarea id="component-import-targets" className={styles.inputField} rows={3} value={importTargetsText} onChange={(event) => setImportTargetsText(event.target.value)} placeholder="ABC&#10;DEF" />
+        <div className={styles.panelActions}>
+          <button type="button" className={styles.actionButton} onClick={handleImport} disabled={isImporting}>Import into {importTargetKeys.length} project(s)</button>
+        </div>
+        <p className={styles.panelStatusLine} role="status">{importStatus}</p>
         {importResults ? (
           <ul>
             {importResults.map((result) => (
@@ -189,25 +200,29 @@ export function ComponentManagerPanel(): React.ReactElement {
         ) : null}
       </section>
 
-      <section aria-label="Bulk remove components">
-        <h3>Bulk remove</h3>
-        <p>⚠️ Deleting a component also removes it from any issues that reference it. This cannot be undone.</p>
+      <section className={styles.panelSection} aria-label="Bulk remove components">
+        <h3 className={styles.sectionTitle}>Bulk remove</h3>
+        <p className={styles.panelStatusLine}>⚠️ Deleting a component also removes it from any issues that reference it. This cannot be undone.</p>
         <JiraProjectPicker id="component-remove-project" label="Project" value={removeProjectKey} onChange={setRemoveProjectKey} />
-        <label htmlFor="component-remove-names">Component names to remove (one per line)</label>
-        <textarea id="component-remove-names" rows={6} value={removeNamesText} onChange={(event) => setRemoveNamesText(event.target.value)} />
-        <button type="button" onClick={handleFindRemovals}>Find matches</button>
-        <p role="status">{removeStatus}</p>
+        <label className={styles.fieldLabel} htmlFor="component-remove-names">Component names to remove (one per line)</label>
+        <textarea id="component-remove-names" className={styles.inputField} rows={6} value={removeNamesText} onChange={(event) => setRemoveNamesText(event.target.value)} />
+        <div className={styles.panelActions}>
+          <button type="button" className={styles.actionButton} onClick={handleFindRemovals}>Find matches</button>
+        </div>
+        <p className={styles.panelStatusLine} role="status">{removeStatus}</p>
         {removePreview && removePreview.matched.length > 0 ? (
-          <div>
-            <p>Will delete {removePreview.matched.length} component(s): {removePreview.matched.map((component) => component.name).join(', ')}</p>
-            {removePreview.unmatched.length > 0 ? <p>Not found (skipped): {removePreview.unmatched.join(', ')}</p> : null}
-            <button type="button" onClick={handleConfirmRemoval} disabled={isRemoving}>
-              Delete {removePreview.matched.length} component(s)
-            </button>
+          <div className={styles.panelSection}>
+            <p className={styles.panelStatusLine}>Will delete {removePreview.matched.length} component(s): {removePreview.matched.map((component) => component.name).join(', ')}</p>
+            {removePreview.unmatched.length > 0 ? <p className={styles.panelStatusLine}>Not found (skipped): {removePreview.unmatched.join(', ')}</p> : null}
+            <div className={styles.panelActions}>
+              <button type="button" className={styles.dangerButton} onClick={handleConfirmRemoval} disabled={isRemoving}>
+                Delete {removePreview.matched.length} component(s)
+              </button>
+            </div>
           </div>
         ) : null}
         {removeResult ? (
-          <p>Deleted {removeResult.deleted.length} component(s){removeResult.failed.length > 0 ? `; ${removeResult.failed.length} failed` : ''}.</p>
+          <p className={styles.panelStatusLine}>Deleted {removeResult.deleted.length} component(s){removeResult.failed.length > 0 ? `; ${removeResult.failed.length} failed` : ''}.</p>
         ) : null}
       </section>
     </div>

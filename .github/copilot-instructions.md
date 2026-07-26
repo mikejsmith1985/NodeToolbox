@@ -44,6 +44,21 @@ Code comments MUST be readable by someone who is not a developer. Write for a te
 4. **Logical grouping** — Group related functions with section comments (`// ── Section ──`)
 5. **Import ordering** — Standard library → internal packages → external dependencies
 
+## UI Styling (MANDATORY)
+
+Every new panel, view, or component MUST reuse the app's existing styling system — never ship plain,
+unstyled HTML. Functional-but-unstyled UI is a **defect**, not a shortcut.
+
+1. **Reuse the sibling surface's CSS module.** Before writing UI, open a sibling component on the same
+   surface, `import styles from './<Surface>.module.css'`, and match its class vocabulary. Example:
+   Admin Hub panels use `AdminHubView.module.css` with `panelCard`, `sectionTitle`, `panelSection`,
+   `fieldLabel`, `inputField`, `panelStatusLine`, `actionButton`, `dangerButton`.
+2. **Never trade styling to save a file.** Do not skip a `.module.css` import or inline raw markup to
+   reduce file count. If a surface genuinely lacks a module, create one matching the app's naming
+   (kebab-case, component-prefixed classes).
+3. **Match, don't invent.** New classes are a last resort — prefer the existing shared classes so every
+   surface reads as one product. This is the "code that reads like the surrounding code" rule applied to CSS.
+
 ## Branching Strategy
 
 This project uses **GitHub Flow**:
