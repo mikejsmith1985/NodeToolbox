@@ -46,6 +46,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Jira) are unchanged.
 
 ### Fixed
+- **My Issues persona: the "simulate as" flow is now unmistakable (you were probably still viewing
+  yourself).** The button was labelled **Simulate** but only ran a user *search* — the actual simulate
+  happens when you click a result, which wasn't obvious, so it was easy to type a name, click "Simulate,"
+  and still be looking at your own (already-cleared) data — making every "user" look done. Now: the button
+  says **Search** (Enter works too), each result reads **"👤 View as {name}"** under a "Click a user to view
+  the tool as them" prompt, and a **"Viewing as …" banner is always shown** ("Viewing as yourself" by
+  default) so it is always clear whose view you are on.
 - **My Issues no longer re-fetches in a loop (the "Refreshing…" badge and issue list flashing continuously).**
   The persona re-query effect depended on the whole `actions` object, which the state hook rebuilds after
   every fetch (its CSV/Markdown/XLSX/TSV exporters close over `state.issues`). So each fetch changed

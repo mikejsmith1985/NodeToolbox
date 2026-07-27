@@ -526,9 +526,9 @@ describe('MyIssuesView — personas', () => {
     renderMyIssues('report');
 
     await user.type(screen.getByRole('textbox', { name: /simulate as/i }), 'zoe');
-    await user.click(screen.getByRole('button', { name: /^simulate$/i }));
+    await user.click(screen.getByRole('button', { name: /^search$/i }));
 
-    const pickButton = await screen.findByRole('button', { name: /zoe qa/i });
+    const pickButton = await screen.findByRole('button', { name: /view as zoe qa/i });
     await user.click(pickButton);
 
     expect(mockActions.setSubject).toHaveBeenCalledWith({
