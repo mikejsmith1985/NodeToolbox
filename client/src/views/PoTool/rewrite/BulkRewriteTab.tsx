@@ -1,9 +1,10 @@
-// BulkRewriteTab.tsx — Bulk "re-write" workspace (spec 030). A PO pastes a list of Jira keys; the tool
-// captures each issue's current summary/description/AC as an immutable "before", then a gated, manual AI
-// round-trip proposes nine-section re-writes. The batch persists for days so a reviewing PO can be sent a
-// before/after export and send back edits. Approved items — and only approved items — are submitted to
-// Jira one at a time through the reused single-issue write path, with a live drift guard so nothing that
-// changed in Jira since capture is silently overwritten.
+// BulkRewriteTab.tsx — Bulk "re-write" workspace (spec 030). A PO pastes a list of Jira keys (or imports
+// them from the PI Review page); the tool captures each issue's current summary/description/AC as an
+// immutable "before", then a gated, manual AI round-trip proposes nine-section re-writes. The before/after
+// is PUBLISHED to a Confluence page, where the reviewing PO edits the proposals and ticks an Approve
+// checkbox; "Write approved to Jira" reads that page back and submits only the ticked rows, one issue at a
+// time through the reused single-issue write path, with a live drift guard so nothing that changed in Jira
+// since capture is silently overwritten. The Confluence page is the shared, editable, durable review record.
 //
 // AI rules (load-bearing): the AI step is PoAiPanel — a copy-prompt / paste-reply round trip that renders
 // nothing when AI Assist is locked. Toolbox never calls an AI service, never writes AI output to Jira
@@ -12,8 +13,10 @@
 import { useCallback, useMemo, useState } from 'react';
 
 import { useToast } from '../../../components/Toast/ToastContext.ts';
+import { fetchConfluencePageByReference, updateConfluencePage } from '../../../services/confluenceApi.ts';
 import { saveFeatureReviewSimpleField } from '../../SprintDashboard/featureReviewFixes.ts';
 import type { ArtTeam } from '../../ArtView/hooks/useArtData.ts';
+import { normalizeFeatureDescription, stripAiAttribution } from '../ai/featureDocSections.ts';
 import { importPiReviewFeatureKeys } from './importPiReviewFeatures.ts';
 import PoAiPanel from '../ai/PoAiPanel';
 import { buildBulkRewritePrompts, parseBulkRewriteReply } from './ai/bulkRewriteAiAssist';
@@ -27,17 +30,10 @@ import type {
   RewriteBatchSummary,
   RewriteItem,
 } from './rewriteBatchModel';
-import { buildHtmlExport, buildMarkdownExport } from './rewriteBatchExport';
-import {
-  deleteBatch,
-  exportBatchFile,
-  importBatchFile,
-  listBatches,
-  loadBatch,
-  saveBatch,
-} from './rewriteBatchStore';
+import { buildReviewPageStorage, parseReviewPageStorage } from './rewriteReviewDoc.ts';
+import { deleteBatch, listBatches, loadBatch, saveBatch } from './rewriteBatchStore';
 import { canPersistDrafts } from '../drafts/splitDraftStorage';
-import { checkForDrift, submitApprovedItems } from './rewriteSubmit';
+import { submitApprovedItems } from './rewriteSubmit';
 import styles from './rewrite.module.css';
 
 interface BulkRewriteTabProps {
@@ -73,13 +69,15 @@ export default function BulkRewriteTab({ dashboardTeamProfileId, selectedPiName 
   const [canPersist] = useState(canPersistDrafts);
   const [keysInput, setKeysInput] = useState('');
   const [batch, setBatch] = useState<RewriteBatch | null>(null);
+  // The Confluence page this batch is reviewed on — mirrored locally for the input, persisted on the batch.
+  const [reviewPageUrl, setReviewPageUrl] = useState('');
   // Seeded once on mount (the tab is keyed by team, so the id is stable here) and refreshed imperatively
   // after every mutation — no effect needed.
   const [savedBatches, setSavedBatches] = useState<RewriteBatchSummary[]>(() => listBatches(dashboardTeamProfileId));
   const [isCapturing, setIsCapturing] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isCheckingDrift, setIsCheckingDrift] = useState(false);
+  const [isPublishing, setIsPublishing] = useState(false);
+  const [isWritingApproved, setIsWritingApproved] = useState(false);
   // Ephemeral per-session override: a PO who accepts a drift warning can force a single submit.
   const [submitAnywayKeys, setSubmitAnywayKeys] = useState<string[]>([]);
   const [ingestNotice, setIngestNotice] = useState<{ accepted: number; rejected: { key: string; reason: string }[]; unparsedCount: number } | null>(null);
@@ -116,6 +114,7 @@ export default function BulkRewriteTab({ dashboardTeamProfileId, selectedPiName 
         updatedAtIso: nowIso,
         items,
       });
+      setReviewPageUrl('');
       setIngestNotice(null);
       setSubmitAnywayKeys([]);
     } finally {
@@ -229,37 +228,50 @@ export default function BulkRewriteTab({ dashboardTeamProfileId, selectedPiName 
     return counts;
   }, [batch]);
 
-  // ── Export (US3) ────────────────────────────────────────────────────────────
+  // ── Confluence review page (US3) ────────────────────────────────────────────
 
-  // Everything with a proposal that has not been rejected — the shareable before/after set.
-  const exportItems = useMemo<BatchExportInput[]>(
+  // Everything with a proposal that has not been rejected — the before/after set published for review.
+  const reviewItems = useMemo<BatchExportInput[]>(
     () => (batch?.items ?? [])
       .filter((item) => item.proposed && item.state !== 'rejected')
       .map((item) => ({ jiraKey: item.jiraKey, original: item.original, proposed: item.proposed! })),
     [batch],
   );
 
-  async function handleCopyMarkdown(): Promise<void> {
-    try {
-      await navigator.clipboard.writeText(buildMarkdownExport(exportItems));
-      showToast('Before/after Markdown copied.', 'success');
-    } catch {
-      showToast('Could not access the clipboard.', 'error');
+  /** Persists the review page URL onto the batch so it survives reload. */
+  function commitReviewPageUrl(): void {
+    if (batch && (batch.reviewPageUrl ?? '') !== reviewPageUrl.trim()) {
+      persistBatch({ ...batch, reviewPageUrl: reviewPageUrl.trim() });
     }
   }
 
-  function handleDownloadHtml(): void {
-    const html = buildHtmlExport(exportItems);
-    const blob = new Blob([html], { type: 'text/html' });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = `${batch?.name ?? 'feature-rewrite'}.html`;
-    anchor.click();
-    URL.revokeObjectURL(url);
+  /** Writes the before/after table to the configured Confluence page for the reviewing PO to edit + approve. */
+  async function handlePublishToConfluence(): Promise<void> {
+    if (!batch || reviewPageUrl.trim() === '' || reviewItems.length === 0) {
+      return;
+    }
+    setIsPublishing(true);
+    try {
+      persistBatch({ ...batch, reviewPageUrl: reviewPageUrl.trim() });
+      const page = await fetchConfluencePageByReference(reviewPageUrl.trim());
+      await updateConfluencePage({
+        pageId: page.id,
+        pageTitle: page.title,
+        storageValue: buildReviewPageStorage(reviewItems),
+        nextVersionNumber: page.version.number + 1,
+      });
+      showToast(
+        `Published ${reviewItems.length} before/after row(s) to Confluence. The reviewing PO can edit the Proposed columns and tick Approve on the page.`,
+        'success',
+      );
+    } catch (error) {
+      showToast(error instanceof Error ? `Could not publish to Confluence: ${error.message}` : 'Could not publish to Confluence.', 'error');
+    } finally {
+      setIsPublishing(false);
+    }
   }
 
-  // ── Submit + drift (US4/US5) ─────────────────────────────────────────────────
+  // ── Read approvals back + submit (US4/US5) ───────────────────────────────────
 
   const submitDeps = useMemo(
     () => ({
@@ -271,14 +283,52 @@ export default function BulkRewriteTab({ dashboardTeamProfileId, selectedPiName 
     [acceptanceCriteriaFieldId],
   );
 
-  async function handleSubmit(): Promise<void> {
-    if (!batch) {
+  /**
+   * Reads the Confluence review page back, applies the PO's edits + Approve ticks to the batch, then submits
+   * only the ticked (approved) rows to Jira with the live drift guard. The page is authoritative for both
+   * the final wording and the approval decision.
+   */
+  async function handleWriteApprovedToJira(): Promise<void> {
+    if (!batch || reviewPageUrl.trim() === '') {
       return;
     }
-    setIsSubmitting(true);
+    setIsWritingApproved(true);
     try {
+      const page = await fetchConfluencePageByReference(reviewPageUrl.trim());
+      const pageRows = parseReviewPageStorage(page.body.storage.value);
+      if (pageRows.length === 0) {
+        showToast('No review table was found on that Confluence page — publish the before/after first.', 'error');
+        return;
+      }
+      const rowsByKey = new Map(pageRows.map((row) => [row.jiraKey, row]));
+      // Apply each page row to its item: a ticked row → approved with the PO's (re-normalized) wording; an
+      // un-ticked row → reviewing. Descriptions are re-normalized to the nine sections (idempotent, 029).
+      const nextItems = batch.items.map((item) => {
+        const pageRow = rowsByKey.get(item.jiraKey);
+        if (!pageRow || !item.proposed) {
+          return item;
+        }
+        const description = stripAiAttribution(normalizeFeatureDescription(pageRow.description));
+        const hasEdit = description !== item.proposed.description || pageRow.acceptanceCriteria !== item.proposed.acceptanceCriteria;
+        return {
+          ...item,
+          proposed: {
+            description,
+            acceptanceCriteria: pageRow.acceptanceCriteria,
+            isEdited: item.proposed.isEdited || hasEdit,
+          },
+          state: (pageRow.isApproved ? 'approved' : 'reviewing') as ItemState,
+        };
+      });
+      const withPageState: RewriteBatch = { ...batch, items: nextItems, reviewPageUrl: reviewPageUrl.trim() };
+      persistBatch(withPageState);
+
+      if (nextItems.filter((item) => item.state === 'approved').length === 0) {
+        showToast('No rows are ticked Approve on the Confluence page yet.', 'error');
+        return;
+      }
       const result = await submitApprovedItems(
-        batch,
+        withPageState,
         { acceptanceCriteriaFieldId, fieldDescriptors: [] },
         submitDeps,
         { submitAnywayKeys },
@@ -288,41 +338,29 @@ export default function BulkRewriteTab({ dashboardTeamProfileId, selectedPiName 
       const failed = result.items.filter((item) => item.state === 'failed').length;
       const held = result.items.filter((item) => item.state === 'changed').length;
       showToast(
-        `Submitted ${submitted}. ${failed} failed, ${held} held (changed in Jira).`,
+        `Wrote ${submitted} approved to Jira. ${failed} failed, ${held} held (changed in Jira).`,
         failed > 0 ? 'error' : 'success',
       );
+    } catch (error) {
+      showToast(error instanceof Error ? `Could not read the Confluence page: ${error.message}` : 'Could not read the Confluence page.', 'error');
     } finally {
-      setIsSubmitting(false);
+      setIsWritingApproved(false);
     }
   }
 
-  async function handleCheckForChanges(): Promise<void> {
-    if (!batch) {
-      return;
-    }
-    setIsCheckingDrift(true);
-    try {
-      const result = await checkForDrift(batch, submitDeps);
-      persistBatch(result);
-      const changed = result.items.filter((item) => item.state === 'changed').length;
-      showToast(changed === 0 ? 'No approved issue has changed in Jira since capture.' : `${changed} issue(s) changed in Jira since capture.`, changed === 0 ? 'success' : 'error');
-    } finally {
-      setIsCheckingDrift(false);
-    }
-  }
-
-  /** Force-submits a single held item on the next submit run, per FR-053's operator override. */
+  /** Force-submits a single held item on the next write run, per FR-053's operator override. */
   function handleSubmitAnyway(jiraKey: string): void {
     setSubmitAnywayKeys((keys) => (keys.includes(jiraKey) ? keys : [...keys, jiraKey]));
-    showToast(`${jiraKey} will be submitted on the next run despite the change.`, 'success');
+    showToast(`${jiraKey} will be written on the next run despite the change.`, 'success');
   }
 
-  // ── Resume / portability (US5) ────────────────────────────────────────────────
+  // ── Resume (US5) ──────────────────────────────────────────────────────────────
 
   function handleOpenBatch(batchId: string): void {
     const loaded = loadBatch(dashboardTeamProfileId, batchId);
     if (loaded) {
       setBatch(loaded);
+      setReviewPageUrl(loaded.reviewPageUrl ?? '');
       setIngestNotice(null);
       setSubmitAnywayKeys([]);
     }
@@ -336,44 +374,19 @@ export default function BulkRewriteTab({ dashboardTeamProfileId, selectedPiName 
     refreshBatchList();
   }
 
-  function handleExportFile(): void {
-    if (!batch) {
-      return;
-    }
-    const { fileName, json } = exportBatchFile(batch);
-    const blob = new Blob([json], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = fileName;
-    anchor.click();
-    URL.revokeObjectURL(url);
-  }
-
-  async function handleImportFile(file: File): Promise<void> {
-    try {
-      const imported = importBatchFile(await file.text());
-      persistBatch({ ...imported, teamProfileId: dashboardTeamProfileId });
-      showToast(`Imported batch "${imported.name}".`, 'success');
-    } catch (error) {
-      showToast(error instanceof Error ? error.message : 'That file could not be imported.', 'error');
-    }
-  }
-
   // ── Honest states (US6) ───────────────────────────────────────────────────────
 
   const captureErrors = (batch?.items ?? []).filter((item) => item.captureError);
   const notYetRewritten = (batch?.items ?? []).filter((item) => !item.proposed && !item.captureError);
   const failedItems = (batch?.items ?? []).filter((item) => item.state === 'failed');
   const changedItems = (batch?.items ?? []).filter((item) => item.state === 'changed');
-  const approvedCount = countsByState.approved ?? 0;
 
   return (
     <div className={styles.rewriteTab}>
       {!canPersist ? (
         <p className={styles.warningBanner}>
           This browser is not letting NodeToolbox save batches, so a re-write batch will be lost on reload.
-          Export it to a file if you need to keep it.
+          Publish the before/after to Confluence to keep a durable copy.
         </p>
       ) : null}
       {fieldConfigError ? <p className={styles.warningBanner}>{fieldConfigError}</p> : null}
@@ -426,24 +439,6 @@ export default function BulkRewriteTab({ dashboardTeamProfileId, selectedPiName 
               </li>
             ))}
           </ul>
-          <div className={styles.buttonRow}>
-            <label className={styles.secondaryButton}>
-              Import batch file
-              <input
-                type="file"
-                accept="application/json,.json"
-                style={{ display: 'none' }}
-                aria-label="Import batch file"
-                onChange={(changeEvent) => {
-                  const file = changeEvent.target.files?.[0];
-                  if (file) {
-                    void handleImportFile(file);
-                  }
-                  changeEvent.target.value = '';
-                }}
-              />
-            </label>
-          </div>
         </section>
       ) : null}
 
@@ -451,12 +446,7 @@ export default function BulkRewriteTab({ dashboardTeamProfileId, selectedPiName 
         <>
           {/* ── Batch header + honest states ── */}
           <section className={styles.panel}>
-            <div className={styles.rowHeader}>
-              <h3 className={styles.panelTitle}>{batch.name}</h3>
-              <div className={styles.buttonRow}>
-                <button className={styles.secondaryButton} type="button" onClick={handleExportFile}>Export batch file</button>
-              </div>
-            </div>
+            <h3 className={styles.panelTitle}>{batch.name}</h3>
             <div className={styles.summaryStrip}>
               {STATE_ORDER.filter((state) => countsByState[state]).map((state) => (
                 <span className={styles.stateChip} key={state}>{state}: {countsByState[state]}</span>
@@ -521,21 +511,41 @@ export default function BulkRewriteTab({ dashboardTeamProfileId, selectedPiName 
             </div>
           </section>
 
-          {/* ── Export + submit ── */}
+          {/* ── Confluence review + submit ── */}
           <section className={styles.panel}>
-            <h3 className={styles.panelTitle}>Share &amp; submit</h3>
+            <h3 className={styles.panelTitle}>Review on Confluence &amp; submit</h3>
             <p className={styles.helpText}>
-              Export a before/after for the reviewing PO, then submit only the issues you have approved.
-              Rejected issues are never exported or submitted.
+              Publish the before/after to a Confluence page. The reviewing PO edits the Proposed columns and
+              ticks Approve on the page; then Write approved to Jira reads the page back and writes only the
+              ticked rows (with a live drift check). The page is the shared, editable record — nothing reaches
+              Jira until you click Write approved.
             </p>
+            <label className={styles.fieldLabel} htmlFor="rewrite-review-url">Confluence review page URL</label>
+            <input
+              id="rewrite-review-url"
+              className={styles.textInput}
+              type="url"
+              placeholder="https://…/wiki/spaces/…/pages/123456/Review"
+              value={reviewPageUrl}
+              onChange={(changeEvent) => setReviewPageUrl(changeEvent.target.value)}
+              onBlur={commitReviewPageUrl}
+            />
             <div className={styles.buttonRow}>
-              <button className={styles.secondaryButton} type="button" disabled={exportItems.length === 0} onClick={handleCopyMarkdown}>Copy before/after (Markdown)</button>
-              <button className={styles.secondaryButton} type="button" disabled={exportItems.length === 0} onClick={handleDownloadHtml}>Download before/after (HTML)</button>
-              <button className={styles.secondaryButton} type="button" disabled={isCheckingDrift || approvedCount === 0} onClick={handleCheckForChanges}>
-                {isCheckingDrift ? 'Checking…' : 'Check for changes in Jira'}
+              <button
+                className={styles.secondaryButton}
+                type="button"
+                disabled={isPublishing || reviewItems.length === 0 || reviewPageUrl.trim() === ''}
+                onClick={handlePublishToConfluence}
+              >
+                {isPublishing ? 'Publishing…' : 'Publish before/after to Confluence'}
               </button>
-              <button className={styles.primaryButton} type="button" disabled={isSubmitting || approvedCount === 0} onClick={handleSubmit}>
-                {isSubmitting ? 'Submitting…' : `Submit ${approvedCount} approved`}
+              <button
+                className={styles.primaryButton}
+                type="button"
+                disabled={isWritingApproved || reviewPageUrl.trim() === ''}
+                onClick={handleWriteApprovedToJira}
+              >
+                {isWritingApproved ? 'Writing…' : 'Write approved to Jira'}
               </button>
             </div>
 
@@ -547,7 +557,7 @@ export default function BulkRewriteTab({ dashboardTeamProfileId, selectedPiName 
                     <li key={item.jiraKey}>
                       {item.jiraKey}
                       {' '}
-                      <button className={styles.secondaryButton} type="button" onClick={() => handleSubmitAnyway(item.jiraKey)}>Submit anyway</button>
+                      <button className={styles.secondaryButton} type="button" onClick={() => handleSubmitAnyway(item.jiraKey)}>Write anyway</button>
                     </li>
                   ))}
                 </ul>

@@ -36,6 +36,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   system instead of raw markup.
 
 ### Added
+- **Bulk Re-write review now happens on a Confluence page (round-trippable).** The old before/after
+  Copy-Markdown, Download-HTML, and JSON Export/Import buttons are **removed** — Markdown didn't render
+  side-by-side in Confluence, HTML wasn't editable, and JSON couldn't carry a human's edits back, so the
+  approval loop was one-way. Instead you paste a **Confluence review page URL** on the batch and click
+  **Publish before/after to Confluence**: the tool writes an editable side-by-side table (Feature · Before ·
+  Proposed Description · Proposed Acceptance Criteria · an **Approve** checkbox). The reviewing PO edits the
+  Proposed columns and ticks Approve **right on the page**. Then **Write approved to Jira** reads the page
+  back, re-normalizes each edited description to the nine-section format, and writes **only the ticked rows**
+  to Jira — one issue at a time, with the same live drift guard (a row changed in Jira since capture is held
+  with a per-issue "Write anyway"). The page is the shared, durable, human-editable record; nothing reaches
+  Jira until you click Write approved.
 - **Bulk Re-write: "Import from PI Review".** Instead of typing Feature keys by hand, a PO can click
   **Import from PI Review** in the intake to fill the keys box with every Feature on the team's PI Review
   page for the selected Program Increment. It reads that Confluence-backed page directly — the same curated
