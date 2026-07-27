@@ -13,7 +13,7 @@ import { useCallback, useMemo, useState } from 'react';
 
 import { useToast } from '../../../components/Toast/ToastContext.ts';
 import { saveFeatureReviewSimpleField } from '../../SprintDashboard/featureReviewFixes.ts';
-import { useStandupRosterStore } from '../../SprintDashboard/hooks/useStandupRosterStore.ts';
+import type { ArtTeam } from '../../ArtView/hooks/useArtData.ts';
 import { importPiReviewFeatureKeys } from './importPiReviewFeatures.ts';
 import PoAiPanel from '../ai/PoAiPanel';
 import { buildBulkRewritePrompts, parseBulkRewriteReply } from './ai/bulkRewriteAiAssist';
@@ -46,6 +46,9 @@ interface BulkRewriteTabProps {
   /** The PO Tool's selected Program Increment, used to seed the intake from PI Review. Optional so the
    *  tab renders identically for any caller that does not pass one (the import control just stays honest). */
   selectedPiName?: string;
+  /** The selected team as an ArtTeam — carries the PI Review page URLs the import reads. Optional for the
+   *  same reason: without it the import control is present but reports it has no PI Review page to read. */
+  piReviewTeam?: ArtTeam;
 }
 
 /** Human order for the state summary chips. */
@@ -58,12 +61,9 @@ function mintBatchId(): string {
   return Math.random().toString(36).slice(2, 10);
 }
 
-export default function BulkRewriteTab({ dashboardTeamProfileId, selectedPiName = '' }: BulkRewriteTabProps) {
+export default function BulkRewriteTab({ dashboardTeamProfileId, selectedPiName = '', piReviewTeam }: BulkRewriteTabProps) {
   const { showToast } = useToast();
   const { fieldConfig, fieldConfigError } = usePoHygieneContext(dashboardTeamProfileId);
-  // The roster is already scoped to this tool's team by PoToolView, so its Product Owner(s) are the same
-  // ones PI Review pulls Features for — no separate team wiring needed here.
-  const rosterMembers = useStandupRosterStore((storeState) => storeState.rosterMembers);
 
   const acceptanceCriteriaFieldId = useMemo(
     () => fieldConfig.acceptanceCriteriaFieldIds.find((fieldId) => fieldId !== 'description') ?? null,
@@ -124,24 +124,29 @@ export default function BulkRewriteTab({ dashboardTeamProfileId, selectedPiName 
   }
 
   /**
-   * Seeds the keys box with every Feature for the tool's selected PI + team, by reusing PI Review's pull.
-   * Fill-then-capture: the PO eyeballs the list and clicks Capture — nothing is fetched-and-captured behind
-   * their back. Merges with anything already typed, de-duplicated, so an import never discards manual keys.
+   * Seeds the keys box with every Feature on the team's PI Review page for the selected PI — read straight
+   * off the Confluence-backed table, so cross-project and hand-added Features come through (a fresh Jira
+   * query would drop them). Fill-then-capture: the PO reviews the list and clicks Capture; nothing is
+   * fetched-and-captured behind their back. Merges with anything already typed, de-duplicated.
    */
   async function handleImportFromPiReview(): Promise<void> {
+    if (!piReviewTeam) {
+      showToast('Select a team at the top of the PO Tool first.', 'error');
+      return;
+    }
     setIsImporting(true);
     try {
-      const result = await importPiReviewFeatureKeys(selectedPiName, rosterMembers);
+      const result = await importPiReviewFeatureKeys(piReviewTeam, selectedPiName);
       if (result.blockedReason === 'no-pi') {
         showToast('Select a Program Increment at the top of the PO Tool first.', 'error');
         return;
       }
-      if (result.blockedReason === 'no-product-owner') {
-        showToast('Flag a Product Owner in the team roster before importing from PI Review.', 'error');
+      if (result.blockedReason === 'no-page') {
+        showToast(`No PI Review page is configured for ${selectedPiName} on this team (Settings → team → PI Review pages).`, 'error');
         return;
       }
       if (result.keys.length === 0) {
-        showToast(`No Features found for ${selectedPiName}.`, 'error');
+        showToast(`The PI Review page for ${selectedPiName} has no Features on it yet.`, 'error');
         return;
       }
       // Union the imported keys with whatever is already typed, preserving order and dropping dupes.
@@ -149,7 +154,7 @@ export default function BulkRewriteTab({ dashboardTeamProfileId, selectedPiName 
       const mergedKeys = [...new Set([...existingKeys, ...result.keys])];
       setKeysInput(mergedKeys.join('\n'));
       const addedCount = mergedKeys.length - existingKeys.length;
-      showToast(`Imported ${addedCount} Feature${addedCount === 1 ? '' : 's'} from ${selectedPiName}. Review the list, then capture.`, 'success');
+      showToast(`Imported ${addedCount} Feature${addedCount === 1 ? '' : 's'} from the ${selectedPiName} PI Review page. Review the list, then capture.`, 'success');
     } finally {
       setIsImporting(false);
     }
@@ -397,9 +402,9 @@ export default function BulkRewriteTab({ dashboardTeamProfileId, selectedPiName 
           </button>
         </div>
         <p className={styles.helpText}>
-          &ldquo;Import from PI Review&rdquo; fills the keys above with every Feature for the PO Tool&apos;s
-          selected Program Increment{selectedPiName ? ` (${selectedPiName})` : ''} and team — no typing needed.
-          Review the list, then capture.
+          &ldquo;Import from PI Review&rdquo; fills the keys above with every Feature on this team&apos;s PI
+          Review page{selectedPiName ? ` for ${selectedPiName}` : ''} — exactly what&apos;s on the page, across
+          all projects. No typing needed; review the list, then capture.
         </p>
       </section>
 

@@ -113,19 +113,21 @@ describe('BulkRewriteTab honest states', () => {
     expect(screen.getByText(/Ignored ZZZ-9/)).toBeInTheDocument();
   });
 
-  // GH #220: "Import from PI Review" fills the keys box with the pulled Feature keys (fill-then-capture).
-  it('populates the keys box when importing Features from PI Review', async () => {
+  // GH #220: "Import from PI Review" fills the keys box with the page's Feature keys (fill-then-capture).
+  it('populates the keys box when importing Features from the PI Review page', async () => {
     const user = userEvent.setup();
-    mockImportKeys.mockResolvedValue({ keys: ['DENP-1', 'DENP-2'], discoveredCount: 2, blockedReason: null });
+    mockImportKeys.mockResolvedValue({ keys: ['DENP-1', 'DASP-2'], discoveredCount: 2, blockedReason: null });
+    const piReviewTeam = { id: 't1', name: 'Team One', piReviewPages: [] };
 
-    render(<BulkRewriteTab dashboardTeamProfileId="team-1" selectedPiName="PI 2026.3" />);
+    render(<BulkRewriteTab dashboardTeamProfileId="team-1" selectedPiName="PI 2026.3" piReviewTeam={piReviewTeam as never} />);
     await user.click(screen.getByRole('button', { name: /import from pi review/i }));
 
     await waitFor(() => {
       expect((screen.getByLabelText('Jira keys') as HTMLTextAreaElement).value).toContain('DENP-1');
     });
-    expect((screen.getByLabelText('Jira keys') as HTMLTextAreaElement).value).toContain('DENP-2');
-    expect(mockImportKeys).toHaveBeenCalledWith('PI 2026.3', expect.any(Array));
+    // Both projects come through — the page is the source, not a project-scoped query.
+    expect((screen.getByLabelText('Jira keys') as HTMLTextAreaElement).value).toContain('DASP-2');
+    expect(mockImportKeys).toHaveBeenCalledWith(piReviewTeam, 'PI 2026.3');
   });
 
   // GH #220: a reply the parser cannot read must show a clear reason, not silently do nothing.

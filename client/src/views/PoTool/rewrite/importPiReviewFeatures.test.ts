@@ -1,63 +1,74 @@
 // importPiReviewFeatures.test.ts — The Bulk Re-write "Import from PI Review" resolver (spec 030, GH #220).
-// Proves it reuses PI Review's pull, applies the Product-Owner roster rule, and blocks honestly when it
-// cannot be scoped. pullPiReviewFeatures is mocked so no Jira is contacted.
+// Proves it reads the team's PI Review Confluence page (not a re-query), resolves the right page per PI,
+// and blocks honestly when it cannot be scoped. Confluence fetch + table parse are mocked (no network).
 
 import { describe, expect, it, vi } from 'vitest';
 
-const { mockPull } = vi.hoisted(() => ({ mockPull: vi.fn() }));
-
-vi.mock('../../ArtView/piReviewPullFeatures.ts', () => ({ pullPiReviewFeatures: mockPull }));
-// The real key extractor is fine to use, but pin it so the test does not depend on its wider module graph.
-vi.mock('../../ArtView/piReviewJira.ts', () => ({
-  extractPiReviewFeatureKey: (feature: string) => feature.split(' - ')[0]?.trim() || null,
+const { mockFetchPage, mockParseTable } = vi.hoisted(() => ({
+  mockFetchPage: vi.fn(),
+  mockParseTable: vi.fn(),
 }));
 
-import { importPiReviewFeatureKeys, readProductOwnerAssigneeValues } from './importPiReviewFeatures.ts';
-import type { StandupRosterMember } from '../../SprintDashboard/hooks/useStandupRosterStore.ts';
+vi.mock('../../../services/confluenceApi.ts', () => ({ fetchConfluencePageByReference: mockFetchPage }));
+vi.mock('../../ArtView/piReviewTable.ts', () => ({ parsePiReviewTable: mockParseTable }));
+// The real key extractor is fine, but pin it so the test does not depend on its wider module graph.
+vi.mock('../../ArtView/piReviewJira.ts', () => ({
+  // Mirror the real extractor: a leading Jira key, else null (grouping lines have no key).
+  extractPiReviewFeatureKey: (feature: string) => /^([A-Z][A-Z0-9]+-\d+)/.exec(feature.trim())?.[1] ?? null,
+}));
 
-function member(over: Partial<StandupRosterMember> = {}): StandupRosterMember {
-  return {
-    id: 'm', displayName: 'Someone', assigneeQueryValue: 'Someone', ...over,
-  } as StandupRosterMember;
+import { importPiReviewFeatureKeys, selectPiReviewPageUrl } from './importPiReviewFeatures.ts';
+import type { ArtTeam } from '../../ArtView/hooks/useArtData.ts';
+
+function team(piReviewPages: { piName: string; pageUrl: string }[]): ArtTeam {
+  return { id: 't1', name: 'Team One', piReviewPages } as ArtTeam;
 }
 
-const productOwner = member({
-  displayName: 'Doe, Jane (CTR)', assigneeQueryValue: 'Doe, Jane (CTR)',
-  roleCapabilities: { canProductOwner: true } as StandupRosterMember['roleCapabilities'],
-});
-const developer = member({
-  displayName: 'Roe, Rick (CTR)', assigneeQueryValue: 'Roe, Rick (CTR)',
-  roleCapabilities: { canProductOwner: false } as StandupRosterMember['roleCapabilities'],
-});
+describe('selectPiReviewPageUrl', () => {
+  it('prefers the page whose PI matches exactly', () => {
+    const artTeam = team([
+      { piName: 'PI 2026.2', pageUrl: 'https://c/old' },
+      { piName: 'PI 2026.3', pageUrl: 'https://c/current' },
+    ]);
+    expect(selectPiReviewPageUrl(artTeam, 'PI 2026.3')).toBe('https://c/current');
+  });
 
-describe('readProductOwnerAssigneeValues', () => {
-  it('keeps only members flagged as Product Owner, trimmed and non-empty', () => {
-    const emptyPo = member({ assigneeQueryValue: '   ', roleCapabilities: { canProductOwner: true } as StandupRosterMember['roleCapabilities'] });
-    expect(readProductOwnerAssigneeValues([productOwner, developer, emptyPo])).toEqual(['Doe, Jane (CTR)']);
+  it('falls back to a legacy (unnamed) page when no PI matches exactly', () => {
+    const artTeam = team([{ piName: '', pageUrl: 'https://c/legacy' }]);
+    expect(selectPiReviewPageUrl(artTeam, 'PI 2026.3')).toBe('https://c/legacy');
+  });
+
+  it('returns null when the team has no usable PI Review page', () => {
+    expect(selectPiReviewPageUrl(team([{ piName: 'PI 2026.3', pageUrl: '   ' }]), 'PI 2026.3')).toBeNull();
   });
 });
 
 describe('importPiReviewFeatureKeys', () => {
-  it('blocks with no-pi when no Program Increment is selected (no Jira call)', async () => {
-    const result = await importPiReviewFeatureKeys('   ', [productOwner]);
+  it('blocks with no-pi when no Program Increment is selected (no fetch)', async () => {
+    const result = await importPiReviewFeatureKeys(team([{ piName: 'PI 2026.3', pageUrl: 'https://c/p' }]), '  ');
     expect(result).toEqual({ keys: [], discoveredCount: 0, blockedReason: 'no-pi' });
-    expect(mockPull).not.toHaveBeenCalled();
+    expect(mockFetchPage).not.toHaveBeenCalled();
   });
 
-  it('blocks with no-product-owner when the roster has no PO (no Jira call)', async () => {
-    const result = await importPiReviewFeatureKeys('PI 2026.3', [developer]);
-    expect(result).toEqual({ keys: [], discoveredCount: 0, blockedReason: 'no-product-owner' });
-    expect(mockPull).not.toHaveBeenCalled();
+  it('blocks with no-page when the team has no page for the PI (no fetch)', async () => {
+    const result = await importPiReviewFeatureKeys(team([{ piName: 'PI 2026.2', pageUrl: 'https://c/p' }]), 'PI 2026.3');
+    expect(result).toEqual({ keys: [], discoveredCount: 0, blockedReason: 'no-page' });
+    expect(mockFetchPage).not.toHaveBeenCalled();
   });
 
-  it('delegates to the reused pull and returns the extracted Feature keys', async () => {
-    mockPull.mockResolvedValue({
-      rows: [{ feature: 'ABC-1 - First feature' }, { feature: 'ABC-2 - Second feature' }],
-      discoveredCount: 2,
-      addedCount: 2,
+  it('reads the page and returns its Feature keys, de-duplicated, across projects', async () => {
+    mockFetchPage.mockResolvedValue({ body: { storage: { value: '<table/>' } } });
+    // The page mixes two projects plus a grouping line (no key) and a duplicate — all handled.
+    mockParseTable.mockReturnValue({
+      rows: [
+        { feature: 'DENP-1 - Feature one' },
+        { feature: 'DASP-7 - Cross-project feature' },
+        { feature: 'Committed' }, // grouping line → no key → dropped
+        { feature: 'DENP-1 - Feature one (dupe)' },
+      ],
     });
-    const result = await importPiReviewFeatureKeys('PI 2026.3', [productOwner]);
-    expect(mockPull).toHaveBeenCalledWith('PI 2026.3', ['Doe, Jane (CTR)'], []);
-    expect(result).toEqual({ keys: ['ABC-1', 'ABC-2'], discoveredCount: 2, blockedReason: null });
+    const result = await importPiReviewFeatureKeys(team([{ piName: 'PI 2026.3', pageUrl: 'https://c/p' }]), 'PI 2026.3');
+    expect(mockFetchPage).toHaveBeenCalledWith('https://c/p');
+    expect(result).toEqual({ keys: ['DENP-1', 'DASP-7'], discoveredCount: 2, blockedReason: null });
   });
 });
