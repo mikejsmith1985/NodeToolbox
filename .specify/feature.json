@@ -1,1 +1,3 @@
-{ "feature_directory": "specs/030-bulk-feature-rewrite" }
+{
+  "feature_directory": "specs/031-component-repo-mapping"
+}

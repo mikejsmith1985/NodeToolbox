@@ -2,9 +2,9 @@
 // failures are told apart, and that enriching an existing Feature never creates a duplicate
 // (quickstart Scenarios F, G, H — SC-012, SC-017, SC-018).
 
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as xlsx from 'xlsx';
 
 const {
@@ -57,6 +57,8 @@ vi.mock('../../components/Toast/ToastContext.ts', () => ({
 
 import { ConfluenceRequestError } from '../../services/confluenceApi.ts';
 import FeatureCompositionTab from './FeatureCompositionTab';
+import { setAiAssistUnlocked } from '../../store/aiAssistStore';
+import { classifyComponent, useComponentClassificationStore } from '../AdminHub/lib/componentClassificationStore.ts';
 
 /** Every call that would WRITE to Jira. */
 function countJiraWrites(): number {
@@ -473,5 +475,40 @@ describe('FeatureCompositionTab — a very large artifact (spec edge case)', () 
     const sources = await screen.findByLabelText('Referenced sources');
     // Says what it left out rather than truncating silently.
     expect(within(sources).getByText(/and 450 more rows/)).toBeInTheDocument();
+  });
+});
+
+describe('FeatureCompositionTab — repo component mapping (spec 031)', () => {
+  afterEach(() => {
+    setAiAssistUnlocked(false);
+    useComponentClassificationStore.setState({ classifications: {} });
+  });
+
+  it('hides the mapping panel while AI is locked', () => {
+    useComponentClassificationStore.setState({ classifications: {} });
+    setAiAssistUnlocked(false);
+    renderTab();
+    expect(screen.queryByLabelText('Map the repositories this Feature touches')).not.toBeInTheDocument();
+  });
+
+  it('proposes allowlist repos and rejects a non-allowlist value', async () => {
+    const user = userEvent.setup();
+    useComponentClassificationStore.setState({ classifications: {} });
+    classifyComponent('payments-api', 'repo');
+    setAiAssistUnlocked(true);
+    renderTab();
+
+    const panel = screen.getByLabelText('Map the repositories this Feature touches');
+    await user.click(within(panel).getByRole('button', { name: /build the prompt/i }));
+
+    const replyBox = within(panel).getByLabelText(/paste the assistant/i);
+    fireEvent.change(replyBox, {
+      target: { value: JSON.stringify({ kind: 'componentMapping', featureKey: 'X', components: ['payments-api', 'Enrollment'] }) },
+    });
+    await user.click(within(panel).getByRole('button', { name: /read the reply/i }));
+
+    // The non-allowlist value is rejected with a reason; the allowlist repo is applied.
+    await waitFor(() => expect(within(panel).getByText(/Enrollment.*ignored/)).toBeInTheDocument());
+    expect(within(panel).getByText(/proposal\(s\) added/)).toBeInTheDocument();
   });
 });

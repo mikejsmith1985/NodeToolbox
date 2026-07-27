@@ -16,6 +16,7 @@ import {
   parseComponentNames,
 } from './lib/componentManager.ts';
 import type { JiraComponent, ProjectImportResult, RemoveResult } from './lib/componentManager.ts';
+import { classifyComponent, useComponentClassificationStore } from './lib/componentClassificationStore.ts';
 import styles from './AdminHubView.module.css';
 
 /** Copies text to the clipboard, ignoring the rare permission failure (the textarea is still selectable). */
@@ -53,6 +54,13 @@ export function ComponentManagerPanel(): React.ReactElement {
   const [importResults, setImportResults] = useState<ProjectImportResult[] | null>(null);
   const [importStatus, setImportStatus] = useState('');
   const [isImporting, setIsImporting] = useState(false);
+
+  // ── Classify (repo / domain) — feature 031 ──
+  const [classifyProjectKey, setClassifyProjectKey] = useState('');
+  const [classifyComponents, setClassifyComponents] = useState<JiraComponent[] | null>(null);
+  const [classifyStatus, setClassifyStatus] = useState('');
+  // Subscribe so the rows re-render the moment a component's kind changes.
+  const classifications = useComponentClassificationStore((state) => state.classifications);
 
   // ── Bulk remove ──
   const [removeProjectKey, setRemoveProjectKey] = useState('');
@@ -147,6 +155,27 @@ export function ComponentManagerPanel(): React.ReactElement {
     }
   }
 
+  async function handleFetchForClassify(): Promise<void> {
+    if (classifyProjectKey === '') {
+      setClassifyStatus('Pick a project to classify.');
+      return;
+    }
+    setClassifyStatus('Loading components…');
+    setClassifyComponents(null);
+    try {
+      const components = await listProjectComponents(classifyProjectKey);
+      setClassifyComponents(components);
+      setClassifyStatus(`${components.length} component(s) in ${classifyProjectKey} — tag each as repo or domain.`);
+    } catch (error) {
+      setClassifyStatus(`Could not load components: ${toMessage(error)} (check VPN / Jira connectivity).`);
+    }
+  }
+
+  /** The saved kind of a component by name, or null when it has not been classified yet. */
+  function readKind(componentName: string): 'repo' | 'domain' | null {
+    return classifications[componentName.trim().toLowerCase()]?.kind ?? null;
+  }
+
   const exportText = exportedComponents ? formatComponentsForExport(exportedComponents) : '';
 
   return (
@@ -171,6 +200,51 @@ export function ComponentManagerPanel(): React.ReactElement {
               <button type="button" className={styles.actionButton} onClick={() => downloadText(`${exportProjectKey}-components.txt`, exportText)}>Download</button>
             </div>
           </>
+        ) : null}
+      </section>
+
+      <section className={styles.panelSection} aria-label="Classify components">
+        <h3 className={styles.sectionTitle}>Classify (repo / domain)</h3>
+        <p className={styles.panelStatusLine}>
+          Tag each component as a <strong>repo</strong> (drives one story per repo) or a <strong>domain</strong>
+          tag (organisational label — never generates a story). Unclassified components do neither until tagged.
+        </p>
+        <JiraProjectPicker id="component-classify-project" label="Project" value={classifyProjectKey} onChange={setClassifyProjectKey} />
+        <div className={styles.panelActions}>
+          <button type="button" className={styles.actionButton} onClick={handleFetchForClassify}>Fetch to classify</button>
+        </div>
+        <p className={styles.panelStatusLine} role="status">{classifyStatus}</p>
+        {classifyComponents ? (
+          <ul aria-label="Component classifications">
+            {classifyComponents.map((component) => {
+              const kind = readKind(component.name);
+              return (
+                <li key={component.id} className={styles.panelSection}>
+                  <span><strong>{component.name}</strong> — {kind ? kind : 'not yet classified'}</span>
+                  <div className={styles.panelActions}>
+                    <button
+                      type="button"
+                      className={styles.actionButton}
+                      aria-label={`Classify ${component.name} as repo`}
+                      disabled={kind === 'repo'}
+                      onClick={() => classifyComponent(component.name, 'repo')}
+                    >
+                      Repo
+                    </button>
+                    <button
+                      type="button"
+                      className={styles.actionButton}
+                      aria-label={`Classify ${component.name} as domain`}
+                      disabled={kind === 'domain'}
+                      onClick={() => classifyComponent(component.name, 'domain')}
+                    >
+                      Domain
+                    </button>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
         ) : null}
       </section>
 

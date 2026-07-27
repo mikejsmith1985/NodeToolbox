@@ -17,6 +17,26 @@
 > `po-pi-dropdown.spec.js`. Feature 024's spec inherited a false "do not run concurrently with 022" constraint from
 > these stale entries before the code was checked. **Verify against the codebase before trusting a status below.**
 
+- **031-component-repo-mapping** — *(planned on `feature/031-component-repo-mapping` — ready for `/speckit-tasks`)*
+  classify each Jira component **repo vs domain** at import (Toolbox-held state — Jira has no such marker), then drive
+  three behaviours off that allowlist: a **gated, propose-only, allowlist-constrained AI mapping** of the **repo**
+  components a Feature touches (both Feature Composition and PI Planner surfaces); a **deterministic per-team rule**
+  applying **domain** components (e.g. Enrollment, never AI); and **repo-only story generation** — one Story per repo
+  component (title `{summary} ({repo})`, that repo set on the Story's own component field), which **replaces** the 028
+  AI breakdown as the story set for repo-driven Features and **never** generates a story for a domain/unclassified
+  component. Plan: `specs/031-component-repo-mapping/plan.md`. Contracts: `component-classification.md`,
+  `ai-component-mapping.md`, `repo-story-generation.md`, `team-domain-rule.md`.
+  **Framework-First**: reuse `ai/compositionAiAssist.ts` (allowlist prompt + reject-non-allowlist-on-ingest pattern),
+  `PoAiPanel`+`useAiAssistStore` (gate), `AdminHub/lib/componentManager.ts` (`listProjectComponents`, import flow),
+  the composition commit path + `createIssue` (component writes via the system `components` field as `[{id}]`), and the
+  **028 scheduling/dating/sub-task/write pipeline** (`piPlan*`) unchanged — repo-story generation only changes story
+  *origin*. **New work**: `componentClassificationStore` (localStorage `tbxComponentClassification`, name-keyed),
+  `componentMappingAiAssist.ts` (`{kind:'componentMapping'}`), `componentResolve.ts` (name→id per project),
+  `repoStoryBreakdown.ts` (one-per-repo, dedup/idempotent, empty→"map repos first"), `teamDomainRuleStore`
+  (`tbxTeamDomainRules`, keyed by Dashboard Team profile id). **Clarified**: deterministic one-per-repo replaces the
+  028 breakdown; no repos → zero stories (no fallback); title `{summary} ({repo})` per GH #220 **and** repo on each
+  Story's component field; domain rule keyed to the saved Dashboard Team profile.
+
 - **030-bulk-feature-rewrite** — *(planned on `feature/030-bulk-feature-rewrite` — ready for `/speckit-tasks`)* a
   persisted, resumable **batch re-write** workspace as a new **PO Tool "Bulk Re-write" tab**: paste Jira keys →
   capture each issue's current summary/description/AC → generate ONE propose-only AI prompt for the whole set →

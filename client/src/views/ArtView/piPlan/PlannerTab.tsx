@@ -7,6 +7,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 
 import { jiraGet } from '../../../services/jiraApi.ts';
+import { resolveComponentIdsByName } from '../../../services/componentResolve.ts';
+import { getComponentKind } from '../../AdminHub/lib/componentClassificationStore.ts';
 import { buildCapacitySummary } from '../../SprintDashboard/capacityModel.ts';
 import { useCapacityStore } from '../../SprintDashboard/hooks/useCapacityStore.ts';
 import { useStandupRosterStore } from '../../SprintDashboard/hooks/useStandupRosterStore.ts';
@@ -22,8 +24,12 @@ import type { WriteContext } from './piPlanJira.ts';
 import { buildReleaseSchedule, fetchPiWindowFixVersions } from './piPlanReleaseSchedule.ts';
 import { ensureSprints } from './piPlanSprints.ts';
 import { PiPlanPanel } from './PiPlanPanel.tsx';
-import { buildFeatureInputs, deriveSprints, toIsoDate } from './plannerInputs.ts';
-import type { FeatureInput, PlanItemProposal, ReleaseSchedule, ScheduledStory, WorkingCalendar } from './piPlanTypes.ts';
+import { PlanProposalTable } from './PlanProposalTable.tsx';
+import { buildPiPlanProposal } from './piPlanEngine.ts';
+import { buildRepoStoryAcceptedByFeature } from './repoStoryBreakdown.ts';
+import { buildFeatureInputs, deriveSprints, readRepoComponentNames, toIsoDate } from './plannerInputs.ts';
+import type { FeatureIssueLike } from './plannerInputs.ts';
+import type { FeatureInput, PlanItemProposal, PlanProposal, ReleaseSchedule, ScheduledStory, WorkingCalendar } from './piPlanTypes.ts';
 
 /** Weekends only by default; an org holiday calendar can be layered in later. */
 const DEFAULT_WORKING_CALENDAR: WorkingCalendar = { weekendDays: [0, 6], holidayIsoDates: [] };
@@ -70,6 +76,11 @@ export function PlannerTab({ boardId, projectKey, selectedPiName, teamProfileId 
 
   const [loaded, setLoaded] = useState<(LoadedInputs & { piStartIso: string }) | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  // Repo-only story generation (spec 031) — deterministic, NOT AI-gated. Its own proposal state, rendered
+  // alongside (not inside) the AI planner panel.
+  const [repoProposal, setRepoProposal] = useState<PlanProposal | null>(null);
+  const [repoAcceptedIds, setRepoAcceptedIds] = useState<Set<string>>(new Set());
+  const [repoDismissedIds, setRepoDismissedIds] = useState<Set<string>>(new Set());
 
   // Scope the capacity store to this team (the roster store is already scoped by PoToolView).
   useEffect(() => {
@@ -98,7 +109,15 @@ export function PlannerTab({ boardId, projectKey, selectedPiName, teamProfileId 
         const pulled = await pullPiReviewFeatures(selectedPiName, poAssigneeQueryValues, []);
         const jiraIssueMap = await fetchPiReviewFeatureIssues(pulled.rows);
         const reconciled = reconcilePiReviewRowsWithJira(pulled.rows, jiraIssueMap);
-        const features = buildFeatureInputs(reconciled.rows, jiraIssueMap);
+        // Enrich each Feature with the repo components it carries (filtered to the current allowlist), so
+        // repo-only story generation has its input (spec 031). Domain/unclassified components are dropped.
+        const features = buildFeatureInputs(reconciled.rows, jiraIssueMap).map((feature) => ({
+          ...feature,
+          repoComponentNames: readRepoComponentNames(
+            jiraIssueMap[feature.key.toUpperCase()] as FeatureIssueLike | undefined,
+            getComponentKind,
+          ),
+        }));
         const versions = await fetchPiWindowFixVersions(projectKey);
         const releaseSchedule = buildReleaseSchedule(versions, piWindow.startIso, piWindow.endIso);
         const fieldIds = await resolvePiPlanFieldIds();
@@ -131,7 +150,18 @@ export function PlannerTab({ boardId, projectKey, selectedPiName, teamProfileId 
     if (!loaded || boardId == null) {
       return;
     }
-    const story = item.payload as ScheduledStory;
+    let story = item.payload as ScheduledStory;
+    // A repo-driven Story's title ends with "(repo)"; resolve that repo to a component id so the created
+    // Story carries its component (spec 031). Ordinary 028 stories have no such suffix and are unaffected.
+    const repoMatch = /\(([^)]+)\)\s*$/.exec(story.summary);
+    const repoName = repoMatch ? repoMatch[1].trim() : '';
+    if (repoName !== '' && getComponentKind(repoName) === 'repo') {
+      const { ids } = await resolveComponentIdsByName(projectKey, [repoName]);
+      if (ids[0]) {
+        story = { ...story, repoComponentId: ids[0].id };
+      }
+    }
+    const itemToWrite: PlanItemProposal = { ...item, payload: story };
     const { idByName } = await ensureSprints(
       [{ name: story.sprintName, startIso: story.sprintStartIso, endIso: story.sprintEndIso }],
       boardId,
@@ -145,7 +175,41 @@ export function PlannerTab({ boardId, projectKey, selectedPiName, teamProfileId 
       existingSprintIdByName: idByName,
       accountIdByDisplayName,
     };
-    await applyStoryPlan(item, writeContext);
+    await applyStoryPlan(itemToWrite, writeContext);
+  }
+
+  /** Builds the deterministic one-Story-per-repo proposal (no AI), reusing the 028 schedule/date pipeline. */
+  function handleGenerateRepoStories(): void {
+    if (loaded == null || piWindow == null) {
+      return;
+    }
+    const acceptedByFeature = buildRepoStoryAcceptedByFeature(loaded.features, getComponentKind);
+    const nextProposal = buildPiPlanProposal({
+      piName: selectedPiName,
+      piStartIso: piWindow.startIso,
+      piEndIso: piWindow.endIso,
+      features: loaded.features,
+      acceptedByFeature,
+      people,
+      releaseSchedule: loaded.releaseSchedule,
+      workingCalendar: DEFAULT_WORKING_CALENDAR,
+      sprintLengthDays: DEFAULT_SPRINT_LENGTH_DAYS,
+    }, toIsoDate(new Date()));
+    setRepoProposal(nextProposal);
+    setRepoAcceptedIds(new Set());
+    setRepoDismissedIds(new Set());
+  }
+
+  async function handleAcceptRepoStory(id: string): Promise<void> {
+    const item = repoProposal?.items.find((candidate) => candidate.id === id && candidate.kind === 'story');
+    if (item) {
+      await handleApplyStory(item);
+    }
+    setRepoAcceptedIds((previous) => new Set(previous).add(id));
+  }
+
+  function handleDismissRepoStory(id: string): void {
+    setRepoDismissedIds((previous) => new Set(previous).add(id));
   }
 
   if (!piWindow) {
@@ -177,19 +241,47 @@ export function PlannerTab({ boardId, projectKey, selectedPiName, teamProfileId 
     releaseSchedule: loaded!.releaseSchedule,
   });
 
+  const decoratedRepoItems = (repoProposal?.items ?? []).map((item) => ({
+    ...item,
+    status: repoAcceptedIds.has(item.id) ? 'accepted' : repoDismissedIds.has(item.id) ? 'dismissed' : item.status,
+  } as PlanItemProposal));
+
   return (
-    <PiPlanPanel
-      promptContext={promptContext}
-      features={loaded!.features}
-      people={people}
-      releaseSchedule={loaded!.releaseSchedule}
-      workingCalendar={DEFAULT_WORKING_CALENDAR}
-      piName={selectedPiName}
-      piStartIso={piWindow.startIso}
-      piEndIso={piWindow.endIso}
-      sprintLengthDays={DEFAULT_SPRINT_LENGTH_DAYS}
-      todayIso={toIsoDate(new Date())}
-      onApplyStory={handleApplyStory}
-    />
+    <>
+      {/* Repo-only story generation (spec 031) — deterministic, one Story per repo component, not AI. */}
+      <section className="pi-plan-repo-stories" aria-label="Repo story generation">
+        <p className="pi-plan-status">
+          Generate one Story per repo component on each Feature. Repos come from the Feature&apos;s components
+          (map them in Feature Composition first); domain and unclassified components never become a story.
+        </p>
+        <button type="button" className="pi-plan-generate-repo-stories" onClick={handleGenerateRepoStories}>
+          Generate repo stories
+        </button>
+        {repoProposal ? (
+          <div className="pi-plan-results">
+            {repoProposal.honestStates.length > 0 ? (
+              <ul className="pi-plan-honest-states">
+                {repoProposal.honestStates.map((state) => <li key={state}>{state}</li>)}
+              </ul>
+            ) : null}
+            <PlanProposalTable items={decoratedRepoItems} onAccept={handleAcceptRepoStory} onDismiss={handleDismissRepoStory} />
+          </div>
+        ) : null}
+      </section>
+
+      <PiPlanPanel
+        promptContext={promptContext}
+        features={loaded!.features}
+        people={people}
+        releaseSchedule={loaded!.releaseSchedule}
+        workingCalendar={DEFAULT_WORKING_CALENDAR}
+        piName={selectedPiName}
+        piStartIso={piWindow.startIso}
+        piEndIso={piWindow.endIso}
+        sprintLengthDays={DEFAULT_SPRINT_LENGTH_DAYS}
+        todayIso={toIsoDate(new Date())}
+        onApplyStory={handleApplyStory}
+      />
+    </>
   );
 }

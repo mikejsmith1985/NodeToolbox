@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Component (repo) mapping & repo-only story generation (feature 031, in progress).** Groundwork landed: a
+  repo/domain **classification** store (each Jira component tagged repo or domain — Jira has no such marker;
+  unclassified is never guessed), a propose-only **AI component-mapping** module constrained to the repo
+  allowlist (a domain tag or unknown value is rejected on ingest, never proposed), a shared component
+  **name→id resolver**, and a deterministic **one-Story-per-repo** breakdown (titled `{summary} ({repo})`,
+  idempotent, empty→"map repos first") that sets each Story's own component field to its repo. Domain and
+  unclassified components never generate a story. The **Component Manager** now has a **repo/domain
+  classification** section (tag each component; unclassified surfaced), and **Feature Composition** now has a
+  gated "Map the repositories this Feature touches" panel — proposes repo components from the allowlist
+  (non-allowlist values rejected), staged into the Feature's components on accept, written only on save. The
+  **PI Planner** now has a deterministic (non-AI) **"Generate repo stories"** action — one Story per repo
+  component on each Feature (titled `{summary} ({repo})`, each Story created carrying that repo on its own
+  component field), reusing the existing schedule/date/sub-task/accept pipeline; domain and unclassified
+  components never become a story, and a Feature with no repos surfaces "map repos first". This is the MVP
+  (classify → map → repo-only stories). The per-team domain rule and Planner-side mapping follow. Spec:
+  `specs/031-component-repo-mapping/`.
+
 ### Fixed
 - **Bulk Re-write: "Read the reply" no longer fails silently on an unreadable reply (GH #220).** If the
   pasted assistant reply contained no JSON, was malformed (often a truncated or partially-pasted reply), or
