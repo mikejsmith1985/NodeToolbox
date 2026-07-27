@@ -121,7 +121,13 @@ export default function PoToolView() {
     if (activeTab === 'rewrite') {
       // Bulk re-write (spec 030): capture → gated AI re-write → review/export → approve → submit.
       // Keyed by team so switching team scopes the saved batches and configured field ids cleanly.
-      return <BulkRewriteTab key={selectedTeamProfileId} dashboardTeamProfileId={selectedTeamProfileId} />;
+      return (
+        <BulkRewriteTab
+          key={selectedTeamProfileId}
+          dashboardTeamProfileId={selectedTeamProfileId}
+          selectedPiName={selectedPiName}
+        />
+      );
     }
 
     return (

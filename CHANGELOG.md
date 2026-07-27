@@ -36,6 +36,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   system instead of raw markup.
 
 ### Added
+- **Bulk Re-write: "Import from PI Review".** Instead of typing Feature keys by hand, a PO can click
+  **Import from PI Review** in the intake to fill the keys box with every Feature for the PO Tool's selected
+  Program Increment and team. It reuses PI Review's own Feature pull and the same Product-Owner roster rule,
+  so the two surfaces return the same Features by construction — there is no second, drifting query. It is
+  fill-then-capture (the imported keys are merged with anything already typed, de-duplicated, for you to
+  review before capturing), and it stays honest: it explains when no PI is selected, when the roster has no
+  Product Owner to scope by, or when the PI has no Features.
 - **Bulk Feature Re-write (PO Tool → "Bulk Re-write" tab).** Paste a list of Jira keys and the tool captures
   each issue's current summary/description/acceptance-criteria as an immutable "before". A **gated, manual**
   AI round-trip (the same copy-prompt / paste-reply panel used elsewhere — nothing is sent to any AI service,
