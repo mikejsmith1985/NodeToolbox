@@ -5,7 +5,7 @@
 // services (shared) and calls the project-components endpoint directly, so the PO Tool and the ArtView
 // planner can both use it without a cross-view import.
 
-import { jiraGet } from './jiraApi.ts';
+import { jiraGet, jiraPut } from './jiraApi.ts';
 
 interface ProjectComponent {
   id: string;
@@ -39,4 +39,26 @@ export async function resolveComponentIdsByName(projectKey: string, names: reado
     }
   }
   return { ids, unresolved };
+}
+
+/**
+ * Adds component names to an issue by NAME, unioned with its current components so nothing is blanked
+ * (spec 031, US5 — the Planner writes a Feature's mapped repos directly). Reads the issue's current
+ * components first, then writes the merged set. Jira accepts `[{name}]` for the components field.
+ */
+export async function addIssueComponentsByName(issueKey: string, namesToAdd: readonly string[]): Promise<void> {
+  const cleaned = [...new Set(namesToAdd.map((name) => name.trim()).filter((name) => name !== ''))];
+  if (cleaned.length === 0) {
+    return;
+  }
+  const issue = await jiraGet<{ fields?: { components?: Array<{ name?: string }> } }>(
+    `/rest/api/2/issue/${encodeURIComponent(issueKey)}?fields=components`,
+  );
+  const existingNames = (issue.fields?.components ?? [])
+    .map((component) => (typeof component?.name === 'string' ? component.name : ''))
+    .filter((name) => name !== '');
+  const mergedNames = [...new Set([...existingNames, ...cleaned])];
+  await jiraPut(`/rest/api/2/issue/${encodeURIComponent(issueKey)}`, {
+    fields: { components: mergedNames.map((name) => ({ name })) },
+  });
 }

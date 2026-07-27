@@ -7,8 +7,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 
 import { jiraGet } from '../../../services/jiraApi.ts';
-import { resolveComponentIdsByName } from '../../../services/componentResolve.ts';
-import { getComponentKind } from '../../AdminHub/lib/componentClassificationStore.ts';
+import { addIssueComponentsByName, resolveComponentIdsByName } from '../../../services/componentResolve.ts';
+import { getComponentKind, repoAllowlist } from '../../AdminHub/lib/componentClassificationStore.ts';
+import { ReportAiPanel } from '../../ReportsHub/ReportAiPanel.tsx';
+import { buildComponentMappingPrompt, parseComponentMappingIngest } from '../../PoTool/ai/componentMappingAiAssist.ts';
 import { buildCapacitySummary } from '../../SprintDashboard/capacityModel.ts';
 import { useCapacityStore } from '../../SprintDashboard/hooks/useCapacityStore.ts';
 import { useStandupRosterStore } from '../../SprintDashboard/hooks/useStandupRosterStore.ts';
@@ -81,6 +83,11 @@ export function PlannerTab({ boardId, projectKey, selectedPiName, teamProfileId 
   const [repoProposal, setRepoProposal] = useState<PlanProposal | null>(null);
   const [repoAcceptedIds, setRepoAcceptedIds] = useState<Set<string>>(new Set());
   const [repoDismissedIds, setRepoDismissedIds] = useState<Set<string>>(new Set());
+  // US5 — mapping a Feature's repo components from the Planner (same allowlist-constrained, gated flow).
+  const [mappingFeatureKey, setMappingFeatureKey] = useState('');
+  const [mappingNames, setMappingNames] = useState<string[]>([]);
+  const [mappingNote, setMappingNote] = useState<string | null>(null);
+  const [isWritingMapping, setIsWritingMapping] = useState(false);
 
   // Scope the capacity store to this team (the roster store is already scoped by PoToolView).
   useEffect(() => {
@@ -212,6 +219,42 @@ export function PlannerTab({ boardId, projectKey, selectedPiName, teamProfileId 
     setRepoDismissedIds((previous) => new Set(previous).add(id));
   }
 
+  /** Ingests a component-mapping reply for the selected Feature (US5). Writes nothing yet — stages names. */
+  function handleMappingIngest(responseText: string): void {
+    const key = mappingFeatureKey || loaded?.features[0]?.key || '';
+    const feature = loaded?.features.find((candidate) => candidate.key === key);
+    if (!feature) {
+      return;
+    }
+    const { items, errors } = parseComponentMappingIngest(responseText, repoAllowlist());
+    setMappingNames(items.map((item) => item.componentName));
+    setMappingNote(
+      errors.length > 0
+        ? errors.join(' ')
+        : items.length > 0
+          ? `${items.length} repo(s) proposed for ${feature.key} — review, then write.`
+          : 'No repo components proposed.',
+    );
+  }
+
+  /** Writes the staged repo components to the selected Feature (unioned with existing), on explicit click. */
+  async function handleWriteMapping(): Promise<void> {
+    const key = mappingFeatureKey || loaded?.features[0]?.key || '';
+    if (key === '' || mappingNames.length === 0) {
+      return;
+    }
+    setIsWritingMapping(true);
+    try {
+      await addIssueComponentsByName(key, mappingNames);
+      setMappingNote(`Wrote ${mappingNames.length} repo component(s) to ${key}.`);
+      setMappingNames([]);
+    } catch (caught) {
+      setMappingNote(`Could not write components: ${caught instanceof Error ? caught.message : String(caught)}`);
+    } finally {
+      setIsWritingMapping(false);
+    }
+  }
+
   if (!piWindow) {
     return (
       <div className="pi-plan-status" role="status">
@@ -246,8 +289,45 @@ export function PlannerTab({ boardId, projectKey, selectedPiName, teamProfileId 
     status: repoAcceptedIds.has(item.id) ? 'accepted' : repoDismissedIds.has(item.id) ? 'dismissed' : item.status,
   } as PlanItemProposal));
 
+  const effectiveMappingKey = mappingFeatureKey || loaded!.features[0]?.key || '';
+  const mappingFeature = loaded!.features.find((feature) => feature.key === effectiveMappingKey);
+  const mappingPrompt = mappingFeature
+    ? buildComponentMappingPrompt({ key: mappingFeature.key, summary: mappingFeature.summary, description: '' }, repoAllowlist())
+    : '';
+
   return (
     <>
+      {/* US5 — map a Feature's repo components from the Planner (gated ReportAiPanel, same allowlist rules). */}
+      <section className="pi-plan-repo-mapping" aria-label="Map repo components">
+        <label htmlFor="planner-map-feature">Feature to map</label>
+        <select
+          id="planner-map-feature"
+          value={effectiveMappingKey}
+          onChange={(changeEvent) => { setMappingFeatureKey(changeEvent.target.value); setMappingNames([]); setMappingNote(null); }}
+        >
+          {loaded!.features.map((feature) => (
+            <option key={feature.key} value={feature.key}>{feature.key} — {feature.summary}</option>
+          ))}
+        </select>
+        <ReportAiPanel
+          title="🧩 Map repo components"
+          prompt={mappingPrompt}
+          ingestLabel="Read the reply"
+          onIngest={handleMappingIngest}
+          error={mappingNote}
+          hint="Proposes repo components for this Feature from your classified repo list. Accepted repos are written to the Feature (unioned with existing, never AI-attributed)."
+        >
+          {mappingNames.length > 0 ? (
+            <div className="pi-plan-results">
+              <p>Proposed: {mappingNames.join(', ')}</p>
+              <button type="button" disabled={isWritingMapping} onClick={handleWriteMapping}>
+                {isWritingMapping ? 'Writing…' : `Write ${mappingNames.length} to ${effectiveMappingKey}`}
+              </button>
+            </div>
+          ) : null}
+        </ReportAiPanel>
+      </section>
+
       {/* Repo-only story generation (spec 031) — deterministic, one Story per repo component, not AI. */}
       <section className="pi-plan-repo-stories" aria-label="Repo story generation">
         <p className="pi-plan-status">

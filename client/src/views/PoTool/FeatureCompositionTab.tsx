@@ -22,6 +22,7 @@ import PoAiPanel from './ai/PoAiPanel';
 import { buildCompositionPrompt, parseCompositionIngest } from './ai/compositionAiAssist';
 import { buildComponentMappingPrompt, parseComponentMappingIngest } from './ai/componentMappingAiAssist';
 import { repoAllowlist } from '../AdminHub/lib/componentClassificationStore.ts';
+import { TeamDomainRulePanel } from './domain/TeamDomainRulePanel.tsx';
 import { buildCompositionPrefill } from './ai/compositionFieldPrefill';
 import { DEFINITION_OF_READY, FEATURE_WRITING_TIPS } from './coaching/definitionOfReady';
 import {
@@ -374,20 +375,28 @@ export default function FeatureCompositionTab({
   const isComponentsWritable = 'components' in writableFieldNamesById;
 
   /**
-   * Applies an accepted repo-component mapping to the draft (spec 031, US2). Components are staged by NAME
-   * (Jira accepts `[{name}]`), unioned with anything already set so an existing value is never blanked.
-   * Nothing here touches Jira — the existing Commit writes it.
+   * Unions the given component names into the draft's components field (by NAME — Jira accepts `[{name}]`),
+   * never blanking an existing value. Shared by the AI repo mapping (US2) and the team domain rule (US4).
+   */
+  function applyComponentNamesToDraft(names: readonly string[]): void {
+    if (names.length === 0) {
+      return;
+    }
+    const existing = Array.isArray(draft.fields.components) ? draft.fields.components : [];
+    const existingNames = existing
+      .map((entry) => (entry && typeof entry === 'object' && 'name' in entry ? String((entry as { name: unknown }).name) : ''))
+      .filter((name) => name !== '');
+    const mergedNames = [...new Set([...existingNames, ...names])];
+    updateDraft({ ...draft, fields: { ...draft.fields, components: mergedNames.map((name) => ({ name })) } });
+  }
+
+  /**
+   * Applies an accepted repo-component mapping to the draft (spec 031, US2). Nothing here touches Jira —
+   * the existing Commit writes it.
    */
   function handleIngestComponentMapping(responseText: string): { acceptedCount: number; errors: string[] } {
     const { items, errors } = parseComponentMappingIngest(responseText, repoAllowlist());
-    if (items.length > 0) {
-      const existing = Array.isArray(draft.fields.components) ? draft.fields.components : [];
-      const existingNames = existing
-        .map((entry) => (entry && typeof entry === 'object' && 'name' in entry ? String((entry as { name: unknown }).name) : ''))
-        .filter((name) => name !== '');
-      const mergedNames = [...new Set([...existingNames, ...items.map((item) => item.componentName)])];
-      updateDraft({ ...draft, fields: { ...draft.fields, components: mergedNames.map((name) => ({ name })) } });
-    }
+    applyComponentNamesToDraft(items.map((item) => item.componentName));
     return { acceptedCount: items.length, errors };
   }
 
@@ -775,6 +784,8 @@ export default function FeatureCompositionTab({
           add the Components field to the Feature screen in Jira, or set components there.
         </p>
       ) : null}
+
+      <TeamDomainRulePanel teamProfileId={dashboardTeamProfileId} onApplyToFeature={applyComponentNamesToDraft} />
 
       {prefillFlags.length > 0 ? (
         <div className={styles.warningBanner}>

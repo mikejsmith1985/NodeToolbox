@@ -2,13 +2,14 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { mockJiraGet } = vi.hoisted(() => ({ mockJiraGet: vi.fn() }));
-vi.mock('./jiraApi.ts', () => ({ jiraGet: mockJiraGet }));
+const { mockJiraGet, mockJiraPut } = vi.hoisted(() => ({ mockJiraGet: vi.fn(), mockJiraPut: vi.fn() }));
+vi.mock('./jiraApi.ts', () => ({ jiraGet: mockJiraGet, jiraPut: mockJiraPut }));
 
-import { resolveComponentIdsByName } from './componentResolve.ts';
+import { addIssueComponentsByName, resolveComponentIdsByName } from './componentResolve.ts';
 
 beforeEach(() => {
   mockJiraGet.mockReset();
+  mockJiraPut.mockReset();
 });
 
 describe('resolveComponentIdsByName', () => {
@@ -33,5 +34,22 @@ describe('resolveComponentIdsByName', () => {
     const result = await resolveComponentIdsByName('DENP', ['payments-api']);
     expect(result.ids).toEqual([]);
     expect(result.unresolved).toEqual(['payments-api']);
+  });
+});
+
+describe('addIssueComponentsByName', () => {
+  it('unions new component names with the issue\'s existing ones (never blanks)', async () => {
+    mockJiraGet.mockResolvedValue({ fields: { components: [{ name: 'Enrollment' }] } });
+    await addIssueComponentsByName('DENP-1', ['payments-api', 'Enrollment']);
+    expect(mockJiraGet).toHaveBeenCalledWith('/rest/api/2/issue/DENP-1?fields=components');
+    expect(mockJiraPut).toHaveBeenCalledWith('/rest/api/2/issue/DENP-1', {
+      fields: { components: [{ name: 'Enrollment' }, { name: 'payments-api' }] },
+    });
+  });
+
+  it('does nothing (no write) when there are no names to add', async () => {
+    await addIssueComponentsByName('DENP-1', []);
+    expect(mockJiraGet).not.toHaveBeenCalled();
+    expect(mockJiraPut).not.toHaveBeenCalled();
   });
 });
