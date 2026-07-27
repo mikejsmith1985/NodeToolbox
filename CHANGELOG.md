@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Bulk Re-write: a large batch's later prompt parts no longer disappear mid-review, and the before/after
+  columns render side by side (GH #220).** When a batch was big enough to split the AI prompt into several
+  parts, ingesting an earlier part's reply re-packed the *remaining* issues and could collapse the split —
+  making a later part's panel vanish while you were still working through it. The prompt is now partitioned
+  over the **whole captured set**, so the split is stable: parts stay put as replies arrive, and the AI
+  round-trip only disappears once every issue has a proposal. Separately, the review grid's "After" column
+  laid its label + text fields out horizontally, collapsing the proposed description/acceptance-criteria into
+  an unreadable jumble; each column now stacks vertically and the fields fill their column, so **Before and
+  After read cleanly side by side**.
 - **Feature Composition readiness checklist no longer false-flags fields that are set (GH #220).** When
   enriching an existing Feature, the checklist graded only the summary/description/acceptance-criteria it
   loaded — never the issue's other real field values — so a Feature that already had a **Program Increment**

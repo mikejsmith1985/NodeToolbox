@@ -73,7 +73,7 @@ export default function BeforeAfterRow({ item, onChange }: BeforeAfterRowProps) 
       ) : null}
 
       <div className={styles.cols}>
-        <div>
+        <div className={styles.colBody}>
           <p className={styles.colLabel}>Before (captured)</p>
           <div className={styles.beforeText}>
             <strong>{item.original.summary}</strong>
@@ -86,7 +86,7 @@ export default function BeforeAfterRow({ item, onChange }: BeforeAfterRowProps) 
           </div>
         </div>
 
-        <div>
+        <div className={styles.colBody}>
           <p className={styles.colLabel}>After (proposed description + acceptance criteria)</p>
           {item.proposed ? (
             <>

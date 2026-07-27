@@ -50,6 +50,8 @@
 
 .textArea {
   min-height: 60px;
+  width: 100%;
+  box-sizing: border-box;
   padding: 6px 8px;
   border: 1px solid var(--color-border);
   border-radius: 6px;
@@ -61,6 +63,8 @@
 
 .textAreaTall {
   min-height: 140px;
+  width: 100%;
+  box-sizing: border-box;
   padding: 6px 8px;
   border: 1px solid var(--color-border);
   border-radius: 6px;
@@ -249,6 +253,16 @@
   grid-template-columns: 1fr 1fr;
   gap: 12px;
   align-items: start;
+}
+
+/* Each column stacks its label + field(s) vertically. Without this the After column's <label> (inline)
+   and <textarea> (inline-block) elements flow horizontally and collapse into an unreadable jumble
+   (GH #220). min-width: 0 lets a grid child shrink instead of overflowing the row. */
+.colBody {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
 }
 
 @media (max-width: 900px) {
