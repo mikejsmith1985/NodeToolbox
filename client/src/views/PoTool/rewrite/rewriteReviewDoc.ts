@@ -3,11 +3,15 @@
 // The reviewing PO does not edit JSON or a read-only HTML file. Instead the tool WRITES a before/after
 // table to a Confluence page (Confluence storage format), the PO edits the "Proposed" cells and ticks an
 // Approve checkbox right on the page, and the tool READS the page back to pick up those edits + approvals.
-// The page is the single, durable, human-editable round-trip surface — replacing the old copy/download/JSON
-// buttons. This module owns ONLY the storage build + parse; the network read/write lives in confluenceApi.
+// The page is the single, durable, human-editable round-trip surface.
 //
-// Round-trip rule: the table is located on read-back by its header labels (Confluence's storage sanitizer
-// strips inline styles and unknown attributes, so a data- marker is not reliable — header text is). The
+// Layout: a two-column comparison — for each issue a full-width header row (Jira key + summary + Approve
+// task), then a "Description" row and an "Acceptance Criteria" row, each with the read-only BEFORE and the
+// editable PROPOSED side by side (a narrow section-label gutter keeps the Proposed cells pure content so the
+// read-back is clean). Proposed lines still carrying a ⚠ validation marker are highlighted.
+//
+// Round-trip rules: the table is located on read-back by its header labels (Confluence's sanitizer strips
+// inline styles and unknown attributes, so a data- marker is unreliable — header text is stable). The
 // Approve state is a Confluence task checkbox: <ac:task-status>complete</ac:task-status> means approved.
 
 import type { BatchExportInput } from './rewriteBatchModel';
@@ -20,9 +24,11 @@ export interface ReviewPageRow {
   isApproved: boolean;
 }
 
-/** The header labels that both identify the table on read-back and order the columns on write. */
-const COLUMN_HEADERS = ['Feature', 'Before', 'Proposed Description', 'Proposed Acceptance Criteria', 'Approve'] as const;
+/** The three column headers — the middle two are the side-by-side comparison; the first is the row label. */
+const COLUMN_HEADERS = ['Section', 'Before', 'Proposed — edit here'] as const;
 const KEY_PATTERN = /[A-Z][A-Z0-9]+-\d+/;
+/** Confluence highlight applied to a proposed line that carries a ⚠ validation marker (the review hot-spots). */
+const VALIDATION_HIGHLIGHT_STYLE = 'background-color: #fff3b0;';
 
 /** Escapes the five XML entities so arbitrary issue text is safe inside Confluence storage markup. */
 function escapeXml(text: string): string {
@@ -34,50 +40,62 @@ function escapeXml(text: string): string {
     .replace(/'/g, '&apos;');
 }
 
-/** Renders multi-line text as one <p> per line so it stays readable AND editable in Confluence. */
-function toParagraphs(text: string): string {
-  const lines = text.split('\n');
-  return lines.map((line) => `<p>${line.trim() === '' ? '&nbsp;' : escapeXml(line)}</p>`).join('');
+/**
+ * Renders multi-line text as one <p> per line so it stays readable AND editable in Confluence. When
+ * `highlightValidation` is on, a line carrying a ⚠ validation marker is highlighted so the reviewer's eye
+ * goes straight to the sections that need business/technical sign-off.
+ */
+function toParagraphs(text: string, highlightValidation = false): string {
+  return text.split('\n').map((line) => {
+    if (line.trim() === '') {
+      return '<p>&nbsp;</p>';
+    }
+    const escaped = escapeXml(line);
+    if (highlightValidation && line.includes('⚠')) {
+      return `<p><span style="${VALIDATION_HIGHLIGHT_STYLE}">${escaped}</span></p>`;
+    }
+    return `<p>${escaped}</p>`;
+  }).join('');
 }
 
-/** The read-only "before" cell: summary in bold, then description, then the acceptance criteria. */
-function buildBeforeCell(original: BatchExportInput['original']): string {
-  return [
-    `<p><strong>${escapeXml(original.summary)}</strong></p>`,
-    toParagraphs(original.description),
-    '<p><strong>Acceptance Criteria</strong></p>',
-    toParagraphs(original.acceptanceCriteria),
-  ].join('');
-}
-
-/** An unchecked Confluence task — the PO ticks it in the page to approve the row. */
-function buildApproveCell(jiraKey: string, taskId: number): string {
+/** An unchecked Confluence task — the PO ticks it in the page to approve the issue. */
+function buildApproveTask(jiraKey: string, taskId: number): string {
   return `<ac:task-list><ac:task><ac:task-id>${taskId}</ac:task-id>`
     + `<ac:task-status>incomplete</ac:task-status>`
     + `<ac:task-body>Approve ${escapeXml(jiraKey)}</ac:task-body></ac:task></ac:task-list>`;
 }
 
+/** The full-width row that opens each issue: its key + summary and the Approve checkbox. */
+function buildIssueHeaderRow(item: BatchExportInput, taskId: number): string {
+  return `<tr><td colspan="3"><p><strong>${escapeXml(item.jiraKey)} — ${escapeXml(item.original.summary)}</strong></p>`
+    + `${buildApproveTask(item.jiraKey, taskId)}</td></tr>`;
+}
+
+/** One comparison row: a section label, the read-only before, and the editable proposed (highlighted). */
+function buildComparisonRow(label: string, beforeText: string, proposedText: string): string {
+  return `<tr><td><p><strong>${label}</strong></p></td>`
+    + `<td>${toParagraphs(beforeText)}</td>`
+    + `<td>${toParagraphs(proposedText, true)}</td></tr>`;
+}
+
 /**
- * Builds the full Confluence storage body for a batch's review page: an intro line telling the PO what to
- * do, then one table row per issue with the before, the editable proposed re-write, and an Approve task.
+ * Builds the full Confluence storage body for a batch's review page: an intro line, then per issue a header
+ * row and the Description + Acceptance Criteria comparison rows (before | proposed side by side).
  */
 export function buildReviewPageStorage(items: BatchExportInput[]): string {
-  const headerRow = COLUMN_HEADERS.map((label) => `<th>${label}</th>`).join('');
-  const bodyRows = items.map((item, index) => {
-    const cells = [
-      `<td><p><strong>${escapeXml(item.jiraKey)}</strong></p></td>`,
-      `<td>${buildBeforeCell(item.original)}</td>`,
-      `<td>${toParagraphs(item.proposed.description)}</td>`,
-      `<td>${toParagraphs(item.proposed.acceptanceCriteria)}</td>`,
-      `<td>${buildApproveCell(item.jiraKey, index + 1)}</td>`,
-    ].join('');
-    return `<tr>${cells}</tr>`;
-  }).join('');
+  const headerRow = `<tr>${COLUMN_HEADERS.map((label) => `<th>${label}</th>`).join('')}</tr>`;
+  const bodyRows = items.map((item, index) => [
+    buildIssueHeaderRow(item, index + 1),
+    buildComparisonRow('Description', item.original.description, item.proposed.description),
+    buildComparisonRow('Acceptance Criteria', item.original.acceptanceCriteria, item.proposed.acceptanceCriteria),
+  ].join('')).join('');
 
   return [
-    '<p>Bulk re-write review. Edit the <strong>Proposed</strong> columns as needed, tick <strong>Approve</strong>',
-    ' on the rows to publish, then click <strong>Write approved to Jira</strong> back in NodeToolbox.</p>',
-    `<table><thead><tr>${headerRow}</tr></thead><tbody>${bodyRows}</tbody></table>`,
+    '<p>Bulk re-write review — <strong>Before</strong> and <strong>Proposed</strong> sit side by side for each',
+    ' issue. Edit the <strong>Proposed</strong> column as needed, tick <strong>Approve</strong> in each issue&apos;s',
+    ' header, then click <strong>Write approved to Jira</strong> back in NodeToolbox. Highlighted lines still need',
+    ' business/technical validation.</p>',
+    `<table><thead>${headerRow}</thead><tbody>${bodyRows}</tbody></table>`,
   ].join('');
 }
 
@@ -93,9 +111,9 @@ function readCellText(cell: Element): string {
 }
 
 /**
- * True when the row's Approve cell holds a COMPLETED Confluence task. Matched on the serialized markup
- * rather than by DOM traversal because the `<ac:task-status>` namespaced tag serializes inconsistently
- * across parsers — the storage string form (`<ac:task-status>complete</ac:task-status>`) is stable.
+ * True when the cell holds a COMPLETED Confluence task. Matched on the serialized markup rather than by DOM
+ * traversal because the `<ac:task-status>` namespaced tag serializes inconsistently across parsers — the
+ * storage string form (`<ac:task-status>complete</ac:task-status>`) is stable.
  */
 function readIsApproved(cell: Element): boolean {
   return /<ac:task-status>\s*complete\s*<\/ac:task-status>/i.test(cell.innerHTML);
@@ -106,14 +124,14 @@ function findReviewTable(documentNode: Document): HTMLTableElement | null {
   const tables = Array.from(documentNode.getElementsByTagName('table'));
   return tables.find((table) => {
     const headerText = Array.from(table.querySelectorAll('th')).map((th) => (th.textContent ?? '').trim());
-    return headerText.includes('Proposed Description') && headerText.includes('Approve');
+    return headerText.includes('Before') && headerText.some((text) => text.startsWith('Proposed'));
   }) ?? null;
 }
 
 /**
- * Parses a review page's storage back into rows. Matches by column position within the located table;
- * rows without a recognizable Jira key (e.g. a stray edit) are skipped rather than guessed. Returns an
- * empty array when the page has no review table (the caller reports that honestly).
+ * Parses a review page's storage back into rows. Walks the table: a full-width (single-cell) row opens an
+ * issue (key + Approve); the "Description" / "Acceptance Criteria" rows carry the edited proposal in their
+ * third cell. Rows without a recognizable issue are ignored rather than guessed. Empty when no review table.
  */
 export function parseReviewPageStorage(storageValue: string): ReviewPageRow[] {
   const documentNode = new DOMParser().parseFromString(`<div>${storageValue}</div>`, 'text/html');
@@ -123,21 +141,35 @@ export function parseReviewPageStorage(storageValue: string): ReviewPageRow[] {
   }
 
   const rows: ReviewPageRow[] = [];
+  let current: ReviewPageRow | null = null;
+
   for (const rowElement of Array.from(reviewTable.querySelectorAll('tbody > tr'))) {
     const cells = Array.from(rowElement.children);
-    if (cells.length < COLUMN_HEADERS.length) {
-      continue; // a malformed / spacer row — skip, do not guess
-    }
-    const keyMatch = KEY_PATTERN.exec(cells[0].textContent ?? '');
-    if (keyMatch === null) {
+
+    // A single-cell (full-width) row opens a new issue.
+    if (cells.length === 1) {
+      if (current) {
+        rows.push(current);
+      }
+      const keyMatch = KEY_PATTERN.exec(cells[0].textContent ?? '');
+      current = keyMatch
+        ? { jiraKey: keyMatch[0], description: '', acceptanceCriteria: '', isApproved: readIsApproved(cells[0]) }
+        : null;
       continue;
     }
-    rows.push({
-      jiraKey: keyMatch[0],
-      description: readCellText(cells[2]),
-      acceptanceCriteria: readCellText(cells[3]),
-      isApproved: readIsApproved(cells[4]),
-    });
+
+    // A comparison row: the section label is in the first cell, the edited proposal in the third.
+    if (cells.length >= 3 && current) {
+      const label = (cells[0].textContent ?? '').trim().toLowerCase();
+      if (label.startsWith('description')) {
+        current.description = readCellText(cells[2]);
+      } else if (label.startsWith('acceptance')) {
+        current.acceptanceCriteria = readCellText(cells[2]);
+      }
+    }
+  }
+  if (current) {
+    rows.push(current);
   }
   return rows;
 }

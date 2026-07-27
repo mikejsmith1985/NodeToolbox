@@ -28,6 +28,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   **repo-component mapping is now also available on the PI Planner** (same gated, allowlist-constrained flow),
   writing a selected Feature's repos directly (unioned with existing). Spec: `specs/031-component-repo-mapping/`.
 
+### Changed
+- **Bulk Re-write: the Confluence review page is now a two-column before/after layout, with validation
+  highlights (GH #220).** The published review table was reworked into a clean **Before | Proposed**
+  comparison: for each issue a header row (key + summary + Approve checkbox), then a **Description** row and
+  an **Acceptance Criteria** row, each showing the read-only Before beside the editable Proposed — so a
+  reviewer reads old and new side by side in wide columns instead of scrolling between them. Proposed lines
+  that still carry a **⚠ validation marker** are highlighted so the reviewer's eye goes straight to the
+  sections needing business/technical sign-off. The Approve checkbox and the read-back (edits + approvals →
+  Jira) are unchanged.
+
 ### Fixed
 - **Bulk Re-write: the AI re-write panel stays available after every issue has a proposal (GH #220).** The
   panel was hidden once nothing needed a re-write, so — especially now that replies parse successfully — a
