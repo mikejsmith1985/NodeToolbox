@@ -30,13 +30,13 @@ const PROCESSED_SUBFOLDER = '_processed';
 const ERROR_SUBFOLDER = '_errors';
 const MS_PER_MINUTE = 60 * 1000;
 
-/** The comment each event type posts (mirrors the repo monitor's wording, tagged "via email"). */
+/** The comment each event type posts (mirrors the repo monitor's wording). */
 const EVENT_COMMENT_TEMPLATES = {
-  branch_created:   '🔀 GitHub (via email): branch created and work has started.',
-  commit_pushed:    '✅ GitHub (via email): new commit pushed to feature branch.',
-  pr_opened:        '📬 GitHub (via email): pull request opened for review.',
-  pr_merged:        '🎉 GitHub (via email): pull request has been merged.',
-  review_requested: '👀 GitHub (via email): a review was requested.',
+  branch_created:   '🔀 GitHub: branch created and work has started.',
+  commit_pushed:    '✅ GitHub: new commit pushed to feature branch.',
+  pr_opened:        '📬 GitHub: pull request opened for review.',
+  pr_merged:        '🎉 GitHub: pull request has been merged.',
+  review_requested: '👀 GitHub: a review was requested.',
 };
 
 // ── Lazy engine load (like piReviewRefresh) so `node server.js` without the build degrades gracefully ──
@@ -153,7 +153,7 @@ function isProjectAllowed(jiraKey, jiraProjectKeys) {
 
 /** Composes the Jira comment for an event, adding the PR number and actor when present. */
 function buildCommentText(event) {
-  const base = EVENT_COMMENT_TEMPLATES[event.eventType] || ('GitHub (via email): ' + event.eventType.replace(/_/g, ' '));
+  const base = EVENT_COMMENT_TEMPLATES[event.eventType] || ('GitHub: ' + event.eventType.replace(/_/g, ' '));
   const details = [];
   if (event.prNumber !== null) {
     details.push('PR #' + event.prNumber);
