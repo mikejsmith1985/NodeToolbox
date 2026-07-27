@@ -736,7 +736,8 @@ function PersonaBar({
           className={styles.personaInput}
           id="persona-simulate-input"
           onChange={(changeEvent) => setUserSearchQuery(changeEvent.target.value)}
-          placeholder="Search a Jira user…"
+          onKeyDown={(keyboardEvent) => { if (keyboardEvent.key === 'Enter') { void handleSearchUsers(); } }}
+          placeholder="Type a name, then Search…"
           type="text"
           value={userSearchQuery}
         />
@@ -746,7 +747,7 @@ function PersonaBar({
           onClick={() => { void handleSearchUsers(); }}
           type="button"
         >
-          {isSearchingUsers ? 'Searching…' : 'Simulate'}
+          {isSearchingUsers ? 'Searching…' : 'Search'}
         </button>
 
         {/* Role lens selector */}
@@ -791,9 +792,10 @@ function PersonaBar({
         )}
       </div>
 
-      {/* User-search results */}
+      {/* User-search results — clicking a result is what actually simulates that person. */}
       {userSearchResults.length > 0 && (
-        <div className={styles.personaResults}>
+        <div className={styles.personaResults} role="listbox" aria-label="Search results — pick a user to view as them">
+          <span className={styles.personaLabel}>Click a user to view the tool as them:</span>
           {userSearchResults.map((candidate) => (
             <button
               className={styles.personaResultItem}
@@ -801,16 +803,16 @@ function PersonaBar({
               onClick={() => handlePickUser(candidate)}
               type="button"
             >
-              {candidate.displayName}
+              👤 View as {candidate.displayName}
             </button>
           ))}
         </div>
       )}
 
-      {/* "Viewing as / team" banner with a single Back to me action */}
-      {bannerLabel && (
-        <div className={styles.personaBanner} role="status">
-          <span>{bannerLabel}</span>
+      {/* "Viewing as" banner — ALWAYS shown so it is unmistakable who the tool is currently viewing as. */}
+      <div className={styles.personaBanner} role="status">
+        <span>{bannerLabel ?? 'Viewing as yourself'}</span>
+        {subject.kind !== 'viewer' && (
           <button
             className={styles.toolbarButton}
             onClick={handleBackToMe}
@@ -818,8 +820,8 @@ function PersonaBar({
           >
             Back to me
           </button>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Emphasised sections for the active role lens */}
       <div className={styles.personaEmphasis} aria-label="Emphasised for this role">
