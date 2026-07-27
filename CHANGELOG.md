@@ -37,12 +37,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **Bulk Re-write: "Import from PI Review".** Instead of typing Feature keys by hand, a PO can click
-  **Import from PI Review** in the intake to fill the keys box with every Feature for the PO Tool's selected
-  Program Increment and team. It reuses PI Review's own Feature pull and the same Product-Owner roster rule,
-  so the two surfaces return the same Features by construction — there is no second, drifting query. It is
-  fill-then-capture (the imported keys are merged with anything already typed, de-duplicated, for you to
-  review before capturing), and it stays honest: it explains when no PI is selected, when the roster has no
-  Product Owner to scope by, or when the PI has no Features.
+  **Import from PI Review** in the intake to fill the keys box with every Feature on the team's PI Review
+  page for the selected Program Increment. It reads that Confluence-backed page directly — the same curated
+  list the PI Review tab shows — so it returns **exactly what is on the page, across all projects**,
+  including Features added by hand or carried over from a prior PI. (It deliberately does not re-run a Jira
+  Feature query, which would re-apply PI Review's Product-Owner + PI-field scoping and silently drop
+  cross-project Features that are sitting right there on the page.) It is fill-then-capture (imported keys
+  merge with anything already typed, de-duplicated, for you to review before capturing), and it stays
+  honest: it explains when no PI is selected, when the team has no PI Review page configured for that PI, or
+  when the page has no Features on it.
 - **Bulk Feature Re-write (PO Tool → "Bulk Re-write" tab).** Paste a list of Jira keys and the tool captures
   each issue's current summary/description/acceptance-criteria as an immutable "before". A **gated, manual**
   AI round-trip (the same copy-prompt / paste-reply panel used elsewhere — nothing is sent to any AI service,

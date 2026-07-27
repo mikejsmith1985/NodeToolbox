@@ -126,6 +126,7 @@ export default function PoToolView() {
           key={selectedTeamProfileId}
           dashboardTeamProfileId={selectedTeamProfileId}
           selectedPiName={selectedPiName}
+          piReviewTeam={piReviewTeams[0]}
         />
       );
     }

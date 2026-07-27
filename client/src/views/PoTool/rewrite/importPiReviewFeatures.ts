@@ -1,59 +1,70 @@
-// importPiReviewFeatures.ts — Seeds the Bulk Re-write intake from PI Review (spec 030, GH #220).
+// importPiReviewFeatures.ts — Seeds the Bulk Re-write intake from the PI Review PAGE (spec 030, GH #220).
 //
-// Instead of typing Feature keys by hand, a PO can pull every Feature for the tool's selected PI + team.
-// This delegates to PI Review's OWN direct Feature pull (pullPiReviewFeatures) and reads the same roster
-// rule (Product Owner assignees), so the two surfaces return the same Features by construction — there is
-// no second, drifting query. It contacts Jira only through that reused pull; it never writes anything.
+// The PI Review page is a Confluence-backed table that IS the curated list of a team's Features for a PI:
+// it holds Features that were pulled, plus any added by hand or carried over from a prior PI, across ANY
+// project (PI Review is deliberately not project-scoped). So "Import from PI Review" reads that page's rows
+// directly rather than re-running a Jira Feature query — a re-query would re-introduce the pull's
+// PO-assignee + PI-field scoping and silently drop Features that are sitting right there on the page (for
+// example Features in a second project). This only READS the page; it never writes anything.
 
-import { pullPiReviewFeatures } from '../../ArtView/piReviewPullFeatures.ts';
+import { fetchConfluencePageByReference } from '../../../services/confluenceApi.ts';
+import { parsePiReviewTable } from '../../ArtView/piReviewTable.ts';
 import { extractPiReviewFeatureKey } from '../../ArtView/piReviewJira.ts';
-import type { StandupRosterMember } from '../../SprintDashboard/hooks/useStandupRosterStore.ts';
+import type { ArtTeam } from '../../ArtView/hooks/useArtData.ts';
 
 /** Why an import produced no keys — lets the caller show the honest reason instead of a blank result. */
-export type ImportPiFeaturesBlockedReason = 'no-pi' | 'no-product-owner';
+export type ImportPiFeaturesBlockedReason = 'no-pi' | 'no-page';
 
 export interface ImportPiFeaturesResult {
-  /** The discovered Feature keys, de-duplicated and ordered by the reused pull. */
+  /** The Feature keys read off the PI Review page, de-duplicated and in page order. */
   keys: string[];
-  /** How many Features the pull found before extracting keys (for an honest "found N" message). */
+  /** How many keys the page yielded (for an honest "found N" message). */
   discoveredCount: number;
-  /** Set when the import could not be scoped; null when the pull actually ran. */
+  /** Set when the import could not be scoped; null when the page was actually read. */
   blockedReason: ImportPiFeaturesBlockedReason | null;
 }
 
 /**
- * The team's Product Owner assignee values — the exact rule PI Review uses to scope a Feature pull
- * (roster members flagged with the Product Owner capability). Kept pure so it is trivially testable.
+ * Finds the team's configured PI Review Confluence page for a Program Increment. An exact PI match wins;
+ * failing that a legacy page with no PI of its own adopts the selected PI (the same rule PI Review uses).
  */
-export function readProductOwnerAssigneeValues(rosterMembers: readonly StandupRosterMember[]): string[] {
-  return rosterMembers
-    .filter((rosterMember) => rosterMember.roleCapabilities?.canProductOwner === true)
-    .map((rosterMember) => rosterMember.assigneeQueryValue.trim())
-    .filter((assigneeQueryValue) => assigneeQueryValue !== '');
+export function selectPiReviewPageUrl(team: ArtTeam, selectedPiName: string): string | null {
+  const trimmedPiName = selectedPiName.trim();
+  const configuredPages = (team.piReviewPages ?? []).filter((page) => page.pageUrl.trim() !== '');
+  const exactMatch = configuredPages.find((page) => page.piName.trim() === trimmedPiName);
+  if (exactMatch) {
+    return exactMatch.pageUrl.trim();
+  }
+  const legacyPage = configuredPages.find((page) => page.piName.trim() === '');
+  return legacyPage ? legacyPage.pageUrl.trim() : null;
 }
 
 /**
- * Pulls every Feature key for the given PI and the team's Product Owner(s) by delegating to PI Review's
- * pull, then returns the keys ready to seed the intake. Resolves to a blocked result (no Jira call) when
- * there is no PI selected or the roster has no Product Owner to scope by.
+ * Reads every Feature key off the team's PI Review page for the selected PI. Resolves to a blocked result
+ * (no network call) when there is no PI selected or the team has no PI Review page configured for it.
  */
 export async function importPiReviewFeatureKeys(
-  piName: string,
-  rosterMembers: readonly StandupRosterMember[],
+  team: ArtTeam,
+  selectedPiName: string,
 ): Promise<ImportPiFeaturesResult> {
-  if (piName.trim() === '') {
+  if (selectedPiName.trim() === '') {
     return { keys: [], discoveredCount: 0, blockedReason: 'no-pi' };
   }
-  const productOwnerAssigneeValues = readProductOwnerAssigneeValues(rosterMembers);
-  if (productOwnerAssigneeValues.length === 0) {
-    return { keys: [], discoveredCount: 0, blockedReason: 'no-product-owner' };
+  const pageReference = selectPiReviewPageUrl(team, selectedPiName);
+  if (pageReference === null) {
+    return { keys: [], discoveredCount: 0, blockedReason: 'no-page' };
   }
 
-  // Delegate to the same pull PI Review runs (existingRows = [] — we want every Feature, not a top-up).
-  const pullResult = await pullPiReviewFeatures(piName, productOwnerAssigneeValues, []);
-  const keys = pullResult.rows
-    .map((featureRow) => extractPiReviewFeatureKey(featureRow.feature))
-    .filter((featureKey): featureKey is string => featureKey !== null);
-
-  return { keys, discoveredCount: pullResult.discoveredCount, blockedReason: null };
+  // Read and parse the same Confluence page the PI Review tab loads, then take the Feature key from each
+  // row. Rows without a key (grouping lines) yield null and drop out; duplicates are collapsed.
+  const confluencePage = await fetchConfluencePageByReference(pageReference);
+  const parsedTable = parsePiReviewTable(confluencePage.body.storage.value);
+  const keys = [
+    ...new Set(
+      parsedTable.rows
+        .map((featureRow) => extractPiReviewFeatureKey(featureRow.feature))
+        .filter((featureKey): featureKey is string => featureKey !== null),
+    ),
+  ];
+  return { keys, discoveredCount: keys.length, blockedReason: null };
 }
