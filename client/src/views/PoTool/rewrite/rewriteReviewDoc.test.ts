@@ -51,6 +51,23 @@ describe('rewriteReviewDoc round-trip', () => {
     expect(parseReviewPageStorage('<p>Just some other Confluence content.</p>')).toEqual([]);
   });
 
+  it('lays out Before and Proposed as side-by-side columns, with a row per section', () => {
+    const storage = buildReviewPageStorage([item('DENP-1', 'Description:\nx', 'AC one')]);
+    // Before column header sits left of the Proposed column header.
+    expect(storage.indexOf('<th>Before</th>')).toBeLessThan(storage.indexOf('<th>Proposed — edit here</th>'));
+    // Each issue has a Description row and an Acceptance Criteria row.
+    expect(storage).toContain('<strong>Description</strong>');
+    expect(storage).toContain('<strong>Acceptance Criteria</strong>');
+  });
+
+  it('highlights a validation-marked proposed line and still reads it back clean', () => {
+    const items = [item('DENP-1', 'Description:\nok\n\nAssumptions:\n⚠ REQUIRES BUSINESS VALIDATION the details', 'AC')];
+    const storage = buildReviewPageStorage(items);
+    expect(storage).toContain('background-color'); // the ⚠ line is visually highlighted
+    // The highlight is markup only — the parsed text is clean.
+    expect(parseReviewPageStorage(storage)[0].description).toContain('⚠ REQUIRES BUSINESS VALIDATION the details');
+  });
+
   it('ignores a stray row with no Jira key', () => {
     const storage = buildReviewPageStorage([item('DENP-1', 'Description:\nx', 'AC')]);
     // A reviewer pastes an extra note row into the table body — it has no key, so it is skipped.
