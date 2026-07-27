@@ -22,8 +22,13 @@ vi.mock('./lib/componentManager.ts', async (importActual) => {
 });
 
 import { ComponentManagerPanel } from './ComponentManagerPanel.tsx';
+import { getComponentKind, useComponentClassificationStore } from './lib/componentClassificationStore.ts';
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  window.localStorage.clear();
+  useComponentClassificationStore.setState({ classifications: {} });
+});
 
 describe('ComponentManagerPanel', () => {
   it('renders the three sections', () => {
@@ -51,6 +56,21 @@ describe('ComponentManagerPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: /Import into/ }));
     await waitFor(() => expect(screen.getByText(/Done — created 1, skipped 0/)).toBeInTheDocument());
     expect(mocks.importComponentsToProjects).toHaveBeenCalledWith(['repo-x'], ['ABC']);
+  });
+
+  it('classifies a fetched component as repo and reflects it (spec 031)', async () => {
+    mocks.listProjectComponents.mockResolvedValue([{ id: '5', name: 'payments-api' }]);
+    render(<ComponentManagerPanel />);
+    fireEvent.change(screen.getByLabelText('component-classify-project'), { target: { value: 'DENP' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Fetch to classify' }));
+
+    // Starts unclassified.
+    await waitFor(() => expect(screen.getByText(/not yet classified/)).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Classify payments-api as repo' }));
+
+    // The store persists the classification and the row reflects it.
+    await waitFor(() => expect(getComponentKind('payments-api')).toBe('repo'));
   });
 
   it('previews then deletes matched components on the two-step remove', async () => {

@@ -35,10 +35,10 @@ unclassified one is flagged; `repoAllowlist()` returns only repos.
 - [x] T005 [US1] Implement `componentClassificationStore.ts` — zustand + localStorage (`tbxComponentClassification`),
   `classify` / `clearClassification` / `getKind` / `isRepo` / `isDomain` / `repoAllowlist`, name-keyed
   (case-insensitive) — in `client/src/views/AdminHub/lib/componentClassificationStore.ts`.
-- [ ] T006 [US1] Extend the Component Manager UI: per-component **Repo / Domain** control + "not yet classified"
+- [x] T006 [US1] Extend the Component Manager UI: per-component **Repo / Domain** control + "not yet classified"
   marker, wired to the store, reusing `AdminHubView.module.css` classes — in
   `client/src/views/AdminHub/ComponentManagerPanel.tsx`.
-- [ ] T007 [US1] Add/extend `ComponentManagerPanel.test.tsx` — classifying a listed component persists and reflects;
+- [x] T007 [US1] Add/extend `ComponentManagerPanel.test.tsx` — classifying a listed component persists and reflects;
   an unclassified component renders its marker — in `client/src/views/AdminHub/ComponentManagerPanel.test.tsx`.
 
 **Checkpoint**: the allowlist is real and durable — US2/US3 can consume it.
