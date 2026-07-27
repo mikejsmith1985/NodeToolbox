@@ -29,6 +29,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   writing a selected Feature's repos directly (unioned with existing). Spec: `specs/031-component-repo-mapping/`.
 
 ### Fixed
+- **AI replies now auto-repair the common "almost-valid JSON" the assistant emits (GH #220).** Every gated
+  AI round-trip (bulk re-write, feature composition, component mapping, PI review/plan, canvas, and the rest)
+  shares one JSON extractor; it now best-effort **repairs** a reply that a strict parser would reject for the
+  three predictable LLM mistakes: an **unescaped `"` inside a string** (e.g. a description containing a
+  quoted term — the exact "Expected ',' or ']' … at position 10827" failure), **raw newlines/tabs inside a
+  string**, and a **trailing comma** before a `}`/`]`. The repair is string-aware and a **strict no-op on
+  already-valid JSON**, so it can never corrupt a good reply — it just makes a slightly-malformed one parse
+  instead of erroring out.
 - **Bulk Re-write: "Read the reply" no longer fails silently on an unreadable reply (GH #220).** If the
   pasted assistant reply contained no JSON, was malformed (often a truncated or partially-pasted reply), or
   had the wrong envelope, the parser threw and the click appeared to do nothing. The ingest now catches that
