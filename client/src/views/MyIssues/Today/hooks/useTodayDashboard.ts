@@ -20,7 +20,9 @@ import { loadDashboardConfigFromStorage } from '../../../SprintDashboard/hooks/u
 import { useSprintData } from '../../../SprintDashboard/hooks/useSprintData.ts';
 import { buildTeamHygieneScopeJql } from '../../../SprintDashboard/teamHygieneScope.ts';
 import { useMentionsState } from '../../hooks/useMentionsState.ts';
-import { MY_ISSUES_JQL } from '../../hooks/useMyIssuesState.ts';
+import { MY_ISSUES_JQL_SUFFIX } from '../../hooks/useMyIssuesState.ts';
+import { buildAssigneeJql } from '../../myIssuesRoleLens.ts';
+import { useMyIssuesPersonaStore } from '../../hooks/useMyIssuesPersonaStore.ts';
 import {
   COMMITMENT_GAP_CHECK_IDS,
   countFindingsMatchingChecks,
@@ -180,9 +182,11 @@ function extractErrorMessage(unknownError: unknown): string {
   return unknownError instanceof Error ? unknownError.message : 'Failed to load';
 }
 
-/** Builds the my-issues search path with every field the reused Hygiene rules read. */
-function buildMyIssuesSearchPath(): string {
-  return `${SEARCH_PATH}?jql=${encodeURIComponent(MY_ISSUES_JQL)}&fields=${MY_ISSUES_FIELDS}&maxResults=${MYSELF_MAX_RESULTS}`;
+/** Builds the my-issues search path with every field the reused Hygiene rules read. The assignee clause is
+ *  passed in so the Today checklist follows the tool-wide persona (view as the viewer or a simulated user). */
+function buildMyIssuesSearchPath(assigneeClause: string): string {
+  const jql = `${assigneeClause}${MY_ISSUES_JQL_SUFFIX}`;
+  return `${SEARCH_PATH}?jql=${encodeURIComponent(jql)}&fields=${MY_ISSUES_FIELDS}&maxResults=${MYSELF_MAX_RESULTS}`;
 }
 
 /** Builds the DSU "new" search path for the untriaged card (reuses useDsuBoardState's cutoff + JQL). */
@@ -277,10 +281,16 @@ export function useTodayDashboard(): TodayDashboardData {
     selectedSprintId: sprintState.selectedSprintId,
   });
 
+  // The tool-wide persona subject drives the "my" half of the Today checklist, so simulating another user
+  // shows THEIR daily hygiene. The team-scope cards below are unaffected (they audit the whole team).
+  const personaSubject = useMyIssuesPersonaStore((store) => store.subject);
+  const personaMemberIdentifiers = useMyIssuesPersonaStore((store) => store.memberIdentifiers);
+  const myIssuesAssigneeClause = buildAssigneeJql(personaSubject, personaMemberIdentifiers);
+
   // Each key names the exact fetch the current inputs call for, and null means "cannot fetch yet".
-  // Everything the query depends on is in the key, so a changed project key or a refresh both mark
-  // the data on hand as stale automatically — that is what drives the loading state below.
-  const myIssuesRequestKey = isConnectionReady ? `my|${reloadToken}` : null;
+  // Everything the query depends on — including the persona clause — is in the key, so a changed subject
+  // or a refresh both mark the data on hand as stale automatically (that drives the loading state below).
+  const myIssuesRequestKey = isConnectionReady ? `my|${myIssuesAssigneeClause}|${reloadToken}` : null;
   const untriagedRequestKey =
     isConnectionReady && isUntriagedConfigured ? `untriaged|${trimmedDsuProjectKey}|${reloadToken}` : null;
   // The scope values are in the key, so when the sprint load resolves a different PI/sprint the
@@ -303,7 +313,7 @@ export function useTodayDashboard(): TodayDashboardData {
     }
 
     let isMounted = true;
-    jiraGet<JiraSearchResponse>(buildMyIssuesSearchPath())
+    jiraGet<JiraSearchResponse>(buildMyIssuesSearchPath(myIssuesAssigneeClause))
       .then((response) => {
         if (!isMounted) return;
         setMyIssuesResult({ requestKey: myIssuesRequestKey, issues: response.issues ?? [], errorMessage: null });
@@ -316,7 +326,7 @@ export function useTodayDashboard(): TodayDashboardData {
     return () => {
       isMounted = false;
     };
-  }, [myIssuesRequestKey]);
+  }, [myIssuesRequestKey, myIssuesAssigneeClause]);
 
   // ── Untriaged fetch (independent source; own DSU "new" query) ──
   useEffect(() => {
