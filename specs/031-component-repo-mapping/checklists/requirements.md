@@ -31,7 +31,9 @@
 
 ## Notes
 
-- The two pivotal product decisions — **one story per repo (deterministic)** and the **per-team domain-component
-  rule** — follow the recommendations the PO approved when directing this spec, and are recorded in the
-  Clarifications and Assumptions sections. They can be revisited in `/speckit-clarify` if desired.
-- Items marked incomplete require spec updates before `/speckit-clarify` or `/speckit-plan`.
+- `/speckit-clarify` (Session 2026-07-27) resolved the four load-bearing decisions: (1) deterministic
+  one-story-per-repo **replaces** the 028 AI breakdown as the story set for repo-driven Features; (2) a Feature with
+  no repo components yields zero stories + "map repos first" (no fallback); (3) story title = `{summary} ({Repo})`
+  per the GH #220 convention **and** each Story's `components` field is set to its repo; (4) the domain rule keys to
+  the saved Dashboard Team profile. All recorded in Clarifications, Requirements, and Assumptions.
+- Items marked incomplete require spec updates before `/speckit-plan`.

@@ -49,6 +49,16 @@ rule is **deterministic** — never AI.
   mapped repo set), each reviewable/editable before creation; domain components never produce a story.
 - Q: How do domain/team components get onto a Feature? → A: By a **deterministic per-team rule** ("these teams always
   get these domain components") — applied automatically, never by AI, and never story-generating.
+- Q: How does repo-story generation relate to the PI Planner's existing AI Feature→Story breakdown (feature 028)? →
+  A: The deterministic **one-story-per-repo IS the story set** for repo-driven Features; the 028 AI breakdown is not
+  used to decide story count or identity for them (it remains available for other uses, unremoved).
+- Q: When a Feature has no repo components mapped, what does story generation produce? → A: **Zero stories**, with an
+  honest "map repos first" prompt — no fallback to the AI breakdown, no guessing.
+- Q: How is a generated repo-story named, and how is its repo recorded? → A: Title = **`{Feature summary} ({Repo})`**
+  (repo in parentheses, per the org convention in GH #220), **PO-editable** before creation; **and** each Story's own
+  `components` field is set to its single repo (so it is filterable/sortable by component).
+- Q: Which "team" does the deterministic domain-component rule attach to? → A: The **saved Dashboard Team profile**
+  the PO Tool / PI Planner already select (no new team concept).
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -137,6 +147,10 @@ are proposed for the domain tag; create them and confirm the same.
    creation, and only accepted stories are created.
 4. **Given** a Feature with a component that is **not yet classified**, **When** story generation runs, **Then**
    that component is **not** turned into a story and is surfaced as needing classification (never guessed as a repo).
+5. **Given** a repo-story is proposed, **When** the PO reviews it, **Then** its title is `{Feature summary} ({Repo})`
+   (editable) and its own `components` field is set to that single repo, so it can be filtered/sorted by component.
+6. **Given** a Feature with **no** repo components, **When** story generation runs, **Then** zero stories are proposed
+   and the PO is prompted to map repos first (no fallback to the AI breakdown).
 
 ---
 
@@ -245,7 +259,15 @@ and gating behaviour as Composition.
 ### Functional Requirements — Repo-only story generation
 
 - **FR-020**: Story generation MUST create **one story per `repo` component** on a Feature and MUST create **no**
-  story for any `domain` component or any **unclassified** component.
+  story for any `domain` component or any **unclassified** component. This deterministic per-repo generation **is the
+  story set** for repo-driven Features — the 028 AI Feature→Story breakdown MUST NOT determine story count or identity
+  for them (it remains available for other uses and is not removed).
+- **FR-025**: Each generated repo-story MUST be titled **`{Feature summary} ({Repo})`** (the repo component name in
+  parentheses, per the GH #220 convention) and MUST be **editable before creation**.
+- **FR-026**: Each generated repo-story MUST have its own **`components` field set to the single repo** it represents
+  (so stories are filterable/sortable by component), written via the app's resolved field id (never a hardcoded name).
+- **FR-027**: When a Feature has **no** repo components, story generation MUST produce **zero** stories and surface a
+  "map repos first" prompt — it MUST NOT fall back to another breakdown and MUST NOT guess.
 - **FR-021**: A domain (or unclassified) component MUST NOT count toward the Feature's story total in any planning
   count or capacity calculation.
 - **FR-022**: Repo-driven stories MUST be **proposed for review** — editable and removable — before any is created;
@@ -257,8 +279,9 @@ and gating behaviour as Composition.
 
 ### Functional Requirements — Deterministic team → domain-component rule
 
-- **FR-030**: The tool MUST let the PO configure, per team, a set of **domain** components that are always applied to
-  that team's Features, and MUST apply them **deterministically — never via AI**.
+- **FR-030**: The tool MUST let the PO configure, **per saved Dashboard Team profile** (the team identity the PO Tool
+  and PI Planner already select — no new team concept), a set of **domain** components that are always applied to that
+  team's Features, and MUST apply them **deterministically — never via AI**.
 - **FR-031**: Auto-applied domain components MUST never generate a story (by FR-020) and MUST NOT be duplicated when
   already present.
 - **FR-032**: A team→domain rule that references a component that is **classified `repo`**, unclassified, or
@@ -301,11 +324,14 @@ and gating behaviour as Composition.
 - **Component identity**: components are identified by **name** (the stable identity a repo carries across projects);
   the per-project component id is resolved at write time from the name.
 - **Story-generation model** (resolved in Clarifications): stories are driven **deterministically, one per repo
-  component** — the AI's role is the component *mapping*, not deciding how many stories a repo gets. (An
-  AI-proposes-the-breakdown alternative was considered and set aside in favour of the literal "one story per repo
-  touched".) Each proposed story remains editable before creation.
-- **Domain rule is deterministic** (resolved in Clarifications): a per-team configuration applies domain components
-  with no AI involved; the repo-only story rule keeps them story-free.
+  component**, and this **replaces** the 028 AI Feature→Story breakdown as the story set for repo-driven Features (028
+  is not removed; it stays available for other uses). The AI's role is the component *mapping*, not deciding how many
+  stories a repo gets. Each proposed story is **editable before creation**, is titled `{Feature summary} ({Repo})` per
+  the GH #220 convention, and carries its **single repo in its own `components` field** (the filter/sort mechanism). A
+  Feature with no repo components yields **zero** stories and a "map repos first" prompt (no fallback, no guess).
+- **Domain rule is deterministic** (resolved in Clarifications): a rule **keyed to the saved Dashboard Team profile**
+  (the identity the PO Tool already selects — no new team concept) applies domain components with no AI involved; the
+  repo-only story rule keeps them story-free.
 - **Both surfaces reuse one mapping** (resolved in Clarifications): the Composition and PI Planner mapping consume the
   same repo allowlist and the same gated, propose-only, allowlist-constrained ingest, so they cannot diverge.
 - **AI rules**: mapping is propose-only, gated, per-item accept, nine-section rules do not apply here (this maps a
