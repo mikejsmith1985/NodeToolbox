@@ -5,10 +5,14 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { mockJiraGet, mockShowToast } = vi.hoisted(() => ({
+const { mockJiraGet, mockShowToast, mockImportKeys } = vi.hoisted(() => ({
   mockJiraGet: vi.fn(),
   mockShowToast: vi.fn(),
+  mockImportKeys: vi.fn(),
 }));
+
+// The PI Review import resolver is exercised in its own unit test; here we only prove the wiring.
+vi.mock('./importPiReviewFeatures.ts', () => ({ importPiReviewFeatureKeys: mockImportKeys }));
 
 // runCommit reads createIssue/createIssueLink at module load for its default deps, so both must exist.
 vi.mock('../../../services/jiraApi.ts', () => ({
@@ -41,6 +45,7 @@ import BulkRewriteTab from './BulkRewriteTab.tsx';
 beforeEach(() => {
   mockJiraGet.mockReset();
   mockShowToast.mockReset();
+  mockImportKeys.mockReset();
   setAiAssistUnlocked(false);
   window.localStorage.clear();
 });
@@ -106,6 +111,21 @@ describe('BulkRewriteTab honest states', () => {
       expect(screen.getByText(/Applied 1 re-write/)).toBeInTheDocument();
     });
     expect(screen.getByText(/Ignored ZZZ-9/)).toBeInTheDocument();
+  });
+
+  // GH #220: "Import from PI Review" fills the keys box with the pulled Feature keys (fill-then-capture).
+  it('populates the keys box when importing Features from PI Review', async () => {
+    const user = userEvent.setup();
+    mockImportKeys.mockResolvedValue({ keys: ['DENP-1', 'DENP-2'], discoveredCount: 2, blockedReason: null });
+
+    render(<BulkRewriteTab dashboardTeamProfileId="team-1" selectedPiName="PI 2026.3" />);
+    await user.click(screen.getByRole('button', { name: /import from pi review/i }));
+
+    await waitFor(() => {
+      expect((screen.getByLabelText('Jira keys') as HTMLTextAreaElement).value).toContain('DENP-1');
+    });
+    expect((screen.getByLabelText('Jira keys') as HTMLTextAreaElement).value).toContain('DENP-2');
+    expect(mockImportKeys).toHaveBeenCalledWith('PI 2026.3', expect.any(Array));
   });
 
   // GH #220: a reply the parser cannot read must show a clear reason, not silently do nothing.
