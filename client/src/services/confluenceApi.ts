@@ -217,7 +217,10 @@ export function resolveConfluencePageIdFromReference(pageReference: string): str
     return pageIdFromQuery;
   }
 
-  const pagePathMatch = parsedUrl.pathname.match(/\/pages\/(\d+)(?:\/|$)/i);
+  // Match the page id in the path, allowing one optional segment after /pages/ so edit/draft links like
+  // /pages/edit-v2/910360840 (and the standard /pages/910360840/Title) both resolve. The query string
+  // (e.g. ?draftShareId=…) is already dropped by URL parsing.
+  const pagePathMatch = parsedUrl.pathname.match(/\/pages\/(?:[^/]+\/)?(\d+)(?:\/|$)/i);
   if (pagePathMatch) {
     return pagePathMatch[1];
   }

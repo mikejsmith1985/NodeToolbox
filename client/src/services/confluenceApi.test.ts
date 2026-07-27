@@ -106,6 +106,12 @@ describe('resolveConfluencePageIdFromReference', () => {
     ).toBe('67890');
   });
 
+  it('extracts the page ID from an edit/draft URL (edit-v2 + draftShareId query) — GH #220', () => {
+    expect(
+      resolveConfluencePageIdFromReference('https://zilverton.atlassian.net/wiki/spaces/SAS/pages/edit-v2/910360840?draftShareId=18b9b12a-da6f-4744-b757-447cc1367b32'),
+    ).toBe('910360840');
+  });
+
   it('returns null when the reference does not contain a supported page ID', () => {
     expect(resolveConfluencePageIdFromReference('https://example.atlassian.net/wiki/spaces/ART')).toBeNull();
   });
