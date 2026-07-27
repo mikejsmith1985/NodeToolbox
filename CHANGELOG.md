@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Component (repo) mapping & repo-only story generation (feature 031, in progress).** Groundwork landed: a
+  repo/domain **classification** store (each Jira component tagged repo or domain — Jira has no such marker;
+  unclassified is never guessed), a propose-only **AI component-mapping** module constrained to the repo
+  allowlist (a domain tag or unknown value is rejected on ingest, never proposed), a shared component
+  **name→id resolver**, and a deterministic **one-Story-per-repo** breakdown (titled `{summary} ({repo})`,
+  idempotent, empty→"map repos first") that sets each Story's own component field to its repo. Domain and
+  unclassified components never generate a story. UI wiring (Component Manager, Feature Composition, PI
+  Planner) and the per-team domain rule follow. Spec: `specs/031-component-repo-mapping/`.
+
 ### Fixed
 - **Bulk Re-write: "Read the reply" no longer fails silently on an unreadable reply (GH #220).** If the
   pasted assistant reply contained no JSON, was malformed (often a truncated or partially-pasted reply), or

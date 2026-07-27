@@ -57,6 +57,11 @@ export function buildStoryCreateRequest(story: ScheduledStory, dates: DatedItem,
   if (accountId) {
     fields.assignee = { accountId };
   }
+  // Repo-driven Story (spec 031): carry its single repo in the components field so it is filterable/sortable
+  // by component. Guarded — ordinary 028 stories carry no repo and are unaffected.
+  if (story.repoComponentId) {
+    fields.components = [{ id: story.repoComponentId }];
+  }
   return { fields };
 }
 

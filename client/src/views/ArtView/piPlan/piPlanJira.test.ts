@@ -55,6 +55,13 @@ describe('payload builders', () => {
     expect(request.fields.customfield_10108).toBe('ABC-1'); // feature link
     expect(request.fields.customfield_10101).toBe('2026-05-21'); // target start
     expect(request.fields.duedate).toBe('2026-06-15');
+    // An ordinary 028 story carries no repo → no components field (spec 031 guard).
+    expect(request.fields.components).toBeUndefined();
+  });
+
+  it('sets the components field to the repo when a Story is repo-driven (spec 031)', () => {
+    const request = buildStoryCreateRequest({ ...STORY, repoComponentId: '10500' }, DATES, CTX);
+    expect(request.fields.components).toEqual([{ id: '10500' }]);
   });
 
   it('builds a Sub-task create with parent.key and the Sub-task type', () => {

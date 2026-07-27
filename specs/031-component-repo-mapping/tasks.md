@@ -15,9 +15,9 @@ TDD throughout (Constitution V + the pre-commit test-per-source hook): the `.tes
 
 ## Phase 2: Foundational (blocking prerequisites for US2/US3/US4)
 
-- [ ] T002 [P] Write `componentResolve.test.ts` — name→id resolution for a project (mocks `jiraGet`); unmatched names
+- [x] T002 [P] Write `componentResolve.test.ts` — name→id resolution for a project (mocks `jiraGet`); unmatched names
   reported, case-insensitive match — in `client/src/services/componentResolve.test.ts` (shared location — M3).
-- [ ] T003 Implement `componentResolve.ts` — `resolveComponentIdsByName(projectKey, names) → { ids: {name,id}[];
+- [x] T003 Implement `componentResolve.ts` — `resolveComponentIdsByName(projectKey, names) → { ids: {name,id}[];
   unresolved: string[] }` calling `jiraGet('/rest/api/2/project/{key}/components')` directly (no PoTool/AdminHub
   import) — in `client/src/services/componentResolve.ts` (M3).
 
@@ -29,10 +29,10 @@ TDD throughout (Constitution V + the pre-commit test-per-source hook): the `.tes
 **Independent Test**: Classify some components repo, some domain, leave one unclassified; reload → persisted; the
 unclassified one is flagged; `repoAllowlist()` returns only repos.
 
-- [ ] T004 [P] [US1] Write `componentClassificationStore.test.ts` — classify/getKind/clear round-trip, re-classify
+- [x] T004 [P] [US1] Write `componentClassificationStore.test.ts` — classify/getKind/clear round-trip, re-classify
   overwrites, `repoAllowlist` returns only repos, unclassified→`getKind` null, case-insensitive key, persistence key
   `tbxComponentClassification` — in `client/src/views/AdminHub/lib/componentClassificationStore.test.ts`.
-- [ ] T005 [US1] Implement `componentClassificationStore.ts` — zustand + localStorage (`tbxComponentClassification`),
+- [x] T005 [US1] Implement `componentClassificationStore.ts` — zustand + localStorage (`tbxComponentClassification`),
   `classify` / `clearClassification` / `getKind` / `isRepo` / `isDomain` / `repoAllowlist`, name-keyed
   (case-insensitive) — in `client/src/views/AdminHub/lib/componentClassificationStore.ts`.
 - [ ] T006 [US1] Extend the Component Manager UI: per-component **Repo / Domain** control + "not yet classified"
@@ -51,11 +51,11 @@ unclassified one is flagged; `repoAllowlist()` returns only repos.
 **Independent Test**: Reply naming allowlist repos + a domain tag + a bogus name → repos proposed, the other two
 rejected with reasons; accept writes the repo components to the Feature.
 
-- [ ] T008 [P] [US2] Write `componentMappingAiAssist.test.ts` — prompt contains Feature text + every allowlist name;
+- [x] T008 [P] [US2] Write `componentMappingAiAssist.test.ts` — prompt contains Feature text + every allowlist name;
   allowlist names accepted; non-allowlist value rejected with reason (not returned); wrong `kind` → errors, no items;
   empty components → no throw; de-dupe; case-insensitive — in
   `client/src/views/PoTool/ai/componentMappingAiAssist.test.ts`.
-- [ ] T009 [US2] Implement `componentMappingAiAssist.ts` — `COMPONENT_MAPPING_KIND='componentMapping'`,
+- [x] T009 [US2] Implement `componentMappingAiAssist.ts` — `COMPONENT_MAPPING_KIND='componentMapping'`,
   `buildComponentMappingPrompt(feature, repoAllowlist)`, `parseComponentMappingIngest(text, repoAllowlist):
   AiIngestResult<{componentName}>` (reuse `extractJsonPayload`, mirror `parseCompositionIngest` reject-on-ingest) — in
   `client/src/views/PoTool/ai/componentMappingAiAssist.ts`.
@@ -78,14 +78,14 @@ rejected with reasons; accept writes the repo components to the Feature.
 **Independent Test**: Feature with several repos + a domain tag → exactly one Story per repo, titled `{summary}
 ({repo})`, each with its repo on its component field; zero stories for the domain tag; empty repo set → zero + prompt.
 
-- [ ] T012 [P] [US3] Write `repoStoryBreakdown.test.ts` — N repos→N proposals with `{summary} ({repo})` titles; domain
+- [x] T012 [P] [US3] Write `repoStoryBreakdown.test.ts` — N repos→N proposals with `{summary} ({repo})` titles; domain
   + unclassified → 0; empty→[]+honestState; existing matching child → skipped (idempotent); re-classify repo→domain
   stops generation; each proposal carries its single repo — in
   `client/src/views/ArtView/piPlan/repoStoryBreakdown.test.ts`.
-- [ ] T013 [US3] Implement `repoStoryBreakdown.ts` — `buildRepoStoryProposals(feature, repoComponents,
+- [x] T013 [US3] Implement `repoStoryBreakdown.ts` — `buildRepoStoryProposals(feature, repoComponents,
   existingChildren, getKind)` → one `RepoStoryProposal` per repo (allowlist-filtered), dedup vs existing children,
   empty→honestState — in `client/src/views/ArtView/piPlan/repoStoryBreakdown.ts`.
-- [ ] T014 [US3] Edit `buildStoryCreateRequest` to set `fields.components = [{id}]` when the ScheduledStory carries a
+- [x] T014 [US3] Edit `buildStoryCreateRequest` to set `fields.components = [{id}]` when the ScheduledStory carries a
   repo (guarded so 028 non-repo stories are unaffected) — in `client/src/views/ArtView/piPlan/piPlanJira.ts`; update
   `client/src/views/ArtView/piPlan/piPlanJira.test.ts`.
 - [ ] T015 [US3] Assemble the Feature's repo components for the planner input: fetch the Feature's `components`, filter

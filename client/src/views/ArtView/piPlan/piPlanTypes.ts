@@ -91,6 +91,9 @@ export interface ScheduledStory {
   sprintName: string;
   sprintStartIso: string;
   sprintEndIso: string;
+  /** For a repo-driven Story (spec 031): the resolved component id of the single repo this Story represents.
+   *  Set → the create payload carries `components: [{id}]`. Absent/null for ordinary 028 stories (unaffected). */
+  repoComponentId?: string | null;
 }
 
 /** The five scheduled dates for a Story and its sub-tasks, each with a plain-language derivation. */
