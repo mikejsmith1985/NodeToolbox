@@ -486,8 +486,10 @@ export default function BulkRewriteTab({ dashboardTeamProfileId, selectedPiName 
             ) : null}
           </section>
 
-          {/* ── Gated AI round-trip: one stable panel per prompt part; hidden once nothing remains ── */}
-          {notYetRewritten.length > 0 ? prompts.map((promptText, partIndex) => (
+          {/* ── Gated AI round-trip: one stable panel per prompt part. Shown whenever the batch has
+              capturable issues (and AI is unlocked) — NOT hidden once every issue has a proposal — so
+              unlocking AI always reveals it and the PO can re-run / re-generate a re-write (GH #220). ── */}
+          {prompts.length > 0 ? prompts.map((promptText, partIndex) => (
             <PoAiPanel
               key={`prompt-part-${partIndex}`}
               title={prompts.length > 1 ? `Re-write prompt — part ${partIndex + 1} of ${prompts.length}` : 'Re-write these issues'}

@@ -190,4 +190,25 @@ describe('BulkRewriteTab honest states', () => {
     });
     expect(screen.getByText(/part 2 of 2/i)).toBeInTheDocument();
   });
+
+  // GH #220: the AI panel must stay available after every issue has a proposal, so a PO can re-run/regenerate
+  // (previously it auto-hid once nothing needed a re-write, so unlocking AI showed nothing).
+  it('keeps the re-write AI panel available after every issue has a proposal', async () => {
+    const user = userEvent.setup();
+    mockJiraGet.mockResolvedValue({ fields: { summary: 'S', description: 'd', customfield_10200: 'ac' } });
+    setAiAssistUnlocked(true);
+
+    render(<BulkRewriteTab dashboardTeamProfileId="team-1" />);
+    await user.type(screen.getByLabelText('Jira keys'), 'ABC-1');
+    await user.click(screen.getByRole('button', { name: /capture originals/i }));
+    await user.click(await screen.findByRole('button', { name: /build the prompt/i }));
+
+    const reply = JSON.stringify({ kind: 'featureRewriteBatch', items: [{ key: 'ABC-1', description: 'Description:\nx', acceptanceCriteria: 'ac' }] });
+    fireEvent.change(await screen.findByLabelText(/paste the assistant/i), { target: { value: reply } });
+    await user.click(screen.getByRole('button', { name: /read the reply/i }));
+
+    await waitFor(() => expect(screen.getByText(/Applied 1 re-write/)).toBeInTheDocument());
+    // ABC-1 now has a proposal, but the AI panel is still there so the PO can re-generate.
+    expect(screen.getByRole('button', { name: /build the prompt/i })).toBeInTheDocument();
+  });
 });

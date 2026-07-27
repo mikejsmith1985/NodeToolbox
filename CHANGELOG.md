@@ -29,6 +29,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   writing a selected Feature's repos directly (unioned with existing). Spec: `specs/031-component-repo-mapping/`.
 
 ### Fixed
+- **Bulk Re-write: the AI re-write panel stays available after every issue has a proposal (GH #220).** The
+  panel was hidden once nothing needed a re-write, so — especially now that replies parse successfully — a
+  PO who unlocked AI on a fully-proposed batch saw no AI UI at all and could not re-run/regenerate. It now
+  stays visible whenever the batch has issues and AI is unlocked (the prompt partition is stable, so this
+  does not reintroduce the earlier vanishing-part bug).
 - **Bulk Re-write: the Confluence review page accepts an edit/draft page URL (GH #220).** Pasting a page's
   **edit** link — `…/wiki/spaces/SAS/pages/edit-v2/910360840?draftShareId=…` — failed with "Confluence page
   URL or ID is invalid" because the resolver only recognised the *pretty* `…/pages/910360840/Title` shape.
