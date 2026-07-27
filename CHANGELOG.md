@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **GitHub email-intake Jira comments no longer carry the "(via email)" tag.** The comment each event posts now
+  reads e.g. `👀 GitHub: a review was requested. (PR #553 by @C13478_Zilver)` — the same PR-review wording and
+  PR details, minus the "(via email)" source tag that was cluttering the issue timeline.
+
 ### Added
 - **Component (repo) mapping & repo-only story generation (feature 031, in progress).** Groundwork landed: a
   repo/domain **classification** store (each Jira component tagged repo or domain — Jira has no such marker;

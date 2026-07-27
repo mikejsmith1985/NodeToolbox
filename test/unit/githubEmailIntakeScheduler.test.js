@@ -250,3 +250,20 @@ describe('runGithubEmailIntakeNow (orchestration)', () => {
     expect(state.posts[0]).toEqual(expect.objectContaining({ jiraKey: 'DENP-1414', eventType: 'pr_opened' }));
   });
 });
+
+describe('buildCommentText wording', () => {
+  it('states the PR-review request with PR details and no "(via email)" tag', () => {
+    const commentText = scheduler.buildCommentText({ eventType: 'review_requested', prNumber: 553, actor: 'C13478_Zilver' });
+    expect(commentText).toBe('👀 GitHub: a review was requested. (PR #553 by @C13478_Zilver)');
+    expect(commentText).not.toContain('via email');
+  });
+
+  it('drops the "(via email)" tag from every event template', () => {
+    const eventTypes = ['branch_created', 'commit_pushed', 'pr_opened', 'pr_merged', 'review_requested'];
+    for (const eventType of eventTypes) {
+      const commentText = scheduler.buildCommentText({ eventType, prNumber: null, actor: null });
+      expect(commentText).not.toContain('via email');
+      expect(commentText).toContain('GitHub:');
+    }
+  });
+});
