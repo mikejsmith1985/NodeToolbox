@@ -12,6 +12,7 @@ export interface FeatureIssueLike {
   fields?: {
     fixVersions?: Array<{ name?: string }> | null;
     priority?: { name?: string } | null;
+    components?: Array<{ name?: string }> | null;
   };
 }
 
@@ -56,6 +57,30 @@ export function buildFeatureInputs(rows: PiReviewRow[], jiraIssueMap: Record<str
       existingChildren: [],
     };
   });
+}
+
+/**
+ * Reads a Feature issue's component names filtered to those currently classified `repo` (spec 031, US3).
+ * Domain and unclassified components are dropped here — only repo components drive story generation. The
+ * classification is passed in (getKind) so this stays pure and is evaluated at the moment of generation.
+ */
+export function readRepoComponentNames(
+  featureIssue: FeatureIssueLike | undefined,
+  getKind: (name: string) => 'repo' | 'domain' | null,
+): string[] {
+  const components = featureIssue?.fields?.components ?? [];
+  const seen = new Set<string>();
+  const repoNames: string[] = [];
+  for (const component of components) {
+    const name = typeof component?.name === 'string' ? component.name.trim() : '';
+    const key = name.toLowerCase();
+    if (name === '' || seen.has(key) || getKind(name) !== 'repo') {
+      continue;
+    }
+    seen.add(key);
+    repoNames.push(name);
+  }
+  return repoNames;
 }
 
 /** Splits a PI window into sequential sprints of the given length, for the prompt's sprint calendar. */

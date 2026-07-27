@@ -88,7 +88,7 @@ rejected with reasons; accept writes the repo components to the Feature.
 - [x] T014 [US3] Edit `buildStoryCreateRequest` to set `fields.components = [{id}]` when the ScheduledStory carries a
   repo (guarded so 028 non-repo stories are unaffected) — in `client/src/views/ArtView/piPlan/piPlanJira.ts`; update
   `client/src/views/ArtView/piPlan/piPlanJira.test.ts`.
-- [ ] T015 [US3] Assemble the Feature's repo components for the planner input: fetch the Feature's `components`, filter
+- [x] T015 [US3] Assemble the Feature's repo components for the planner input: fetch the Feature's `components`, filter
   by `repoAllowlist()`, pass into `repoStoryBreakdown` — in `client/src/views/ArtView/piPlan/plannerInputs.ts` (pure,
   testable — L1), with a test.
 - [ ] T016 [US3] Wire the repo-story generation path in `PlannerTab.tsx`: for repo-driven Features use

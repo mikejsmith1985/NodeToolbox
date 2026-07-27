@@ -17,8 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unclassified components never generate a story. The **Component Manager** now has a **repo/domain
   classification** section (tag each component; unclassified surfaced), and **Feature Composition** now has a
   gated "Map the repositories this Feature touches" panel — proposes repo components from the allowlist
-  (non-allowlist values rejected), staged into the Feature's components on accept, written only on save. PI
-  Planner wiring and the per-team domain rule follow. Spec: `specs/031-component-repo-mapping/`.
+  (non-allowlist values rejected), staged into the Feature's components on accept, written only on save. The
+  PI Planner input now reads each Feature's repo components (allowlist-filtered) ready for repo-only story
+  generation. The Planner story-generation UI and the per-team domain rule follow. Spec:
+  `specs/031-component-repo-mapping/`.
 
 ### Fixed
 - **Bulk Re-write: "Read the reply" no longer fails silently on an unreadable reply (GH #220).** If the

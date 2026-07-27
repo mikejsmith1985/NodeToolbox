@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { buildFeatureInputs, deriveSprints, parseDependencyKeys, parsePoints, toIsoDate } from './plannerInputs.ts';
+import { buildFeatureInputs, deriveSprints, parseDependencyKeys, parsePoints, readRepoComponentNames, toIsoDate } from './plannerInputs.ts';
 import type { FeatureIssueLike } from './plannerInputs.ts';
 import type { PiReviewRow } from '../piReviewTable.ts';
 
@@ -49,6 +49,23 @@ describe('buildFeatureInputs', () => {
     expect(feature.priorityName).toBe('Low');
     expect(feature.sizePoints).toBeNull();
     expect(feature.targetFixVersion).toBeNull();
+  });
+});
+
+describe('readRepoComponentNames', () => {
+  const getKind = (name: string): 'repo' | 'domain' | null =>
+    (name === 'payments-api' || name === 'ui-web' ? 'repo' : name === 'Enrollment' ? 'domain' : null);
+
+  it('keeps only repo-classified components, de-duplicated', () => {
+    const issue: FeatureIssueLike = {
+      fields: { components: [{ name: 'payments-api' }, { name: 'Enrollment' }, { name: 'ui-web' }, { name: 'payments-api' }, { name: 'mystery' }] },
+    };
+    expect(readRepoComponentNames(issue, getKind)).toEqual(['payments-api', 'ui-web']);
+  });
+
+  it('returns [] when the issue has no components or is undefined', () => {
+    expect(readRepoComponentNames(undefined, getKind)).toEqual([]);
+    expect(readRepoComponentNames({ fields: { components: null } }, getKind)).toEqual([]);
   });
 });
 
