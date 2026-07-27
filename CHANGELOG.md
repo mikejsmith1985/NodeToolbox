@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Bulk rule generation for GitHub Email Intake.** The Admin Hub "Rule Assist (AI)" section (behind the AI
+  passcode) can now bundle every distinct email shape sitting in the drop folder into **one** prompt, so an
+  operator generates a whole rule set with a single paste into their own AI — no more one-email-at-a-time. A
+  new read-only `POST /rule-samples` endpoint reads the drop folder server-side (nothing leaves the machine)
+  and returns the raw emails with their current classification; by default it targets only the **unclassified**
+  emails (the ones that actually need a rule), with an **"include already-classified"** toggle. The prompt
+  sends one representative per distinct email shape (grouped by `X-GitHub-Reason`/subject skeleton, capped to
+  stay pasteable) and asks for an array of rules; the reply parser now accepts a single rule **or** a whole
+  `{kind:"githubEmailRuleSet", rules:[…]}` set, validating and de-duplicating each before saving.
+
 ### Changed
 - **GitHub email-intake Jira comments no longer carry the "(via email)" tag.** The comment each event posts now
   reads e.g. `👀 GitHub: a review was requested. (PR #553 by @C13478_Zilver)` — the same PR-review wording and

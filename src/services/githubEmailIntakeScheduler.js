@@ -369,6 +369,73 @@ async function runGithubEmailIntakeNow(configuration, deps = {}) {
   }
 }
 
+// ── Rule-sample collection (read-only: for the bulk AI rule generator) ──
+
+// Cap the number of emails returned so a huge drop folder can't build an unusable payload/prompt.
+const MAX_RULE_SAMPLES = 60;
+
+/**
+ * Reads the drop folder and returns the raw source of each email with its current classification, so the
+ * Admin panel can bundle them into ONE bulk AI prompt. Purely read-only: it never posts, moves, or ledgers.
+ * By default it returns only the emails the engine currently classifies as 'unknown' (the ones that actually
+ * need a rule); pass options.includeAll to return every eligible email. All I/O is injected for tests.
+ *
+ * @param {object} configuration - live server config
+ * @param {object} deps - { includeAll?, listFiles?, readFile?, engine? }
+ * @returns {{ ok: boolean, message?: string, samples: object[], totalCount: number, unknownCount: number, truncated: boolean }}
+ */
+function collectRuleSamples(configuration, deps = {}) {
+  const cfg = ((configuration.scheduler || {}).githubEmailIntake) || {};
+  const dropFolder = cfg.dropFolder || '';
+  if (dropFolder === '') {
+    return { ok: false, message: 'No drop folder configured — set it and save first.', samples: [], totalCount: 0, unknownCount: 0, truncated: false };
+  }
+
+  const includeAll = deps.includeAll === true;
+  const listFiles = deps.listFiles || defaultListFiles;
+  const readFile = deps.readFile || defaultReadFile;
+  const engine = deps.engine || getEngine();
+  const fileExtensions = cfg.fileExtensions || ['.eml', '.txt', '.msg'];
+
+  let fileNames;
+  try {
+    fileNames = listFiles(dropFolder, fileExtensions);
+  } catch (listError) {
+    return { ok: false, message: 'Could not read drop folder: ' + listError.message, samples: [], totalCount: 0, unknownCount: 0, truncated: false };
+  }
+
+  const samples = [];
+  let totalCount = 0;
+  let unknownCount = 0;
+  for (const fileName of fileNames) {
+    const fullPath = path.join(dropFolder, fileName);
+    let rawSource;
+    try {
+      rawSource = readFile(fullPath);
+    } catch (_readError) {
+      continue; // An unreadable file is simply skipped for sample-collection.
+    }
+    let event;
+    try {
+      event = engine.parseGithubEmail(rawSource, cfg.customRules || []);
+    } catch (_parseError) {
+      // A file we cannot parse is itself a candidate needing a rule — treat it as 'unknown'.
+      event = { eventType: 'unknown', jiraKey: null };
+    }
+    totalCount += 1;
+    const isUnknown = event.eventType === 'unknown';
+    if (isUnknown) {
+      unknownCount += 1;
+    }
+    if (includeAll || isUnknown) {
+      samples.push({ fileName, eventType: event.eventType, jiraKey: event.jiraKey || null, rawSource });
+    }
+  }
+
+  const truncated = samples.length > MAX_RULE_SAMPLES;
+  return { ok: true, samples: samples.slice(0, MAX_RULE_SAMPLES), totalCount, unknownCount, truncated };
+}
+
 // ── Scheduled tick ──
 
 function getTodayDateString() {
@@ -467,6 +534,7 @@ module.exports = {
   optionsForMode,
   processDropFolder,
   runGithubEmailIntakeNow,
+  collectRuleSamples,
   isGithubEmailIntakeRunInProgress,
   readLastRunResult,
   checkAndFireGithubEmailIntake,
