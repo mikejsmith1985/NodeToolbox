@@ -20,6 +20,8 @@ import { saveFeatureReviewSimpleField } from '../SprintDashboard/featureReviewFi
 import { useStandupRosterStore } from '../SprintDashboard/hooks/useStandupRosterStore.ts';
 import PoAiPanel from './ai/PoAiPanel';
 import { buildCompositionPrompt, parseCompositionIngest } from './ai/compositionAiAssist';
+import { buildComponentMappingPrompt, parseComponentMappingIngest } from './ai/componentMappingAiAssist';
+import { repoAllowlist } from '../AdminHub/lib/componentClassificationStore.ts';
 import { buildCompositionPrefill } from './ai/compositionFieldPrefill';
 import { DEFINITION_OF_READY, FEATURE_WRITING_TIPS } from './coaching/definitionOfReady';
 import {
@@ -363,6 +365,28 @@ export default function FeatureCompositionTab({
         fields: { ...mergedFields, ...prefill.fields },
       });
       setPrefillFlags(prefill.flags);
+    }
+    return { acceptedCount: items.length, errors };
+  }
+
+  // Whether the components field is offered by this issue's create/edit screen (M2). When it is not, the
+  // mapping still stages into the draft, but we warn that a commit may not persist it.
+  const isComponentsWritable = 'components' in writableFieldNamesById;
+
+  /**
+   * Applies an accepted repo-component mapping to the draft (spec 031, US2). Components are staged by NAME
+   * (Jira accepts `[{name}]`), unioned with anything already set so an existing value is never blanked.
+   * Nothing here touches Jira — the existing Commit writes it.
+   */
+  function handleIngestComponentMapping(responseText: string): { acceptedCount: number; errors: string[] } {
+    const { items, errors } = parseComponentMappingIngest(responseText, repoAllowlist());
+    if (items.length > 0) {
+      const existing = Array.isArray(draft.fields.components) ? draft.fields.components : [];
+      const existingNames = existing
+        .map((entry) => (entry && typeof entry === 'object' && 'name' in entry ? String((entry as { name: unknown }).name) : ''))
+        .filter((name) => name !== '');
+      const mergedNames = [...new Set([...existingNames, ...items.map((item) => item.componentName)])];
+      updateDraft({ ...draft, fields: { ...draft.fields, components: mergedNames.map((name) => ({ name })) } });
     }
     return { acceptedCount: items.length, errors };
   }
@@ -735,6 +759,22 @@ export default function FeatureCompositionTab({
         buildPrompt={() => buildCompositionPrompt(draft, DEFINITION_OF_READY, writableFieldNamesById, allowedValuesByFieldId)}
         onIngest={handleIngestCompositionProposal}
       />
+
+      <PoAiPanel
+        title="Map the repositories this Feature touches"
+        helpText="Proposes the repo components this Feature touches, chosen only from your classified repo list. Accepted repos are staged into the Feature's components — reviewed, never AI-attributed, and written only when you save. Domain tags are set by rule, not here."
+        buildPrompt={() => buildComponentMappingPrompt(
+          { key: draft.existingIssueKey ?? draft.summary, summary: draft.summary, description: draft.description },
+          repoAllowlist(),
+        )}
+        onIngest={handleIngestComponentMapping}
+      />
+      {!isComponentsWritable ? (
+        <p className={styles.warningBanner}>
+          The components field is not on this issue&apos;s edit screen, so a mapped repo may not save on commit —
+          add the Components field to the Feature screen in Jira, or set components there.
+        </p>
+      ) : null}
 
       {prefillFlags.length > 0 ? (
         <div className={styles.warningBanner}>

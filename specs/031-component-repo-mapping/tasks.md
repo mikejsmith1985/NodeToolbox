@@ -59,12 +59,12 @@ rejected with reasons; accept writes the repo components to the Feature.
   `buildComponentMappingPrompt(feature, repoAllowlist)`, `parseComponentMappingIngest(text, repoAllowlist):
   AiIngestResult<{componentName}>` (reuse `extractJsonPayload`, mirror `parseCompositionIngest` reject-on-ingest) — in
   `client/src/views/PoTool/ai/componentMappingAiAssist.ts`.
-- [ ] T010 [US2] Mount the mapping in Feature Composition: gated `PoAiPanel` (build prompt from the Feature +
+- [x] T010 [US2] Mount the mapping in Feature Composition: gated `PoAiPanel` (build prompt from the Feature +
   `repoAllowlist()`; ingest via `parseComponentMappingIngest`); on accept `componentResolve` names→ids and set
   `draft.fields.components = [{id}]`; surface unresolved names; never blank an existing value. **Verify `components`
   is a writable field in the Feature editmeta (M2)** — if not on the edit screen, write via a direct edit call rather
   than dropping it — in `client/src/views/PoTool/FeatureCompositionTab.tsx`.
-- [ ] T011 [US2] Extend `FeatureCompositionTab.test.tsx` — locked AI hides the mapping panel; an ingest surfaces
+- [x] T011 [US2] Extend `FeatureCompositionTab.test.tsx` — locked AI hides the mapping panel; an ingest surfaces
   rejected non-allowlist values; accept sets `draft.fields.components` — in
   `client/src/views/PoTool/FeatureCompositionTab.test.tsx`.
 
