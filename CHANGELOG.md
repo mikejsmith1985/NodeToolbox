@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Bulk Re-write: "Read the reply" no longer fails silently on an unreadable reply (GH #220).** If the
+  pasted assistant reply contained no JSON, was malformed (often a truncated or partially-pasted reply), or
+  had the wrong envelope, the parser threw and the click appeared to do nothing. The ingest now catches that
+  and shows a plain message explaining the reason and what a valid reply looks like, instead of silently
+  no-op'ing.
 - **Bulk Re-write: a large batch's later prompt parts no longer disappear mid-review, and the before/after
   columns render side by side (GH #220).** When a batch was big enough to split the AI prompt into several
   parts, ingesting an earlier part's reply re-packed the *remaining* issues and could collapse the split —

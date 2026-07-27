@@ -108,6 +108,25 @@ describe('BulkRewriteTab honest states', () => {
     expect(screen.getByText(/Ignored ZZZ-9/)).toBeInTheDocument();
   });
 
+  // GH #220: a reply the parser cannot read must show a clear reason, not silently do nothing.
+  it('surfaces a clear error when the pasted reply is not readable JSON', async () => {
+    const user = userEvent.setup();
+    mockJiraGet.mockResolvedValue({ fields: { summary: 'S', description: 'd', customfield_10200: 'ac' } });
+    setAiAssistUnlocked(true);
+
+    render(<BulkRewriteTab dashboardTeamProfileId="team-1" />);
+    await user.type(screen.getByLabelText('Jira keys'), 'ABC-1');
+    await user.click(screen.getByRole('button', { name: /capture originals/i }));
+
+    await user.click(await screen.findByRole('button', { name: /build the prompt/i }));
+    fireEvent.change(await screen.findByLabelText(/paste the assistant/i), { target: { value: 'sorry, I could not do that' } });
+    await user.click(screen.getByRole('button', { name: /read the reply/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Could not read the reply/)).toBeInTheDocument();
+    });
+  });
+
   // GH #220: when a large batch splits into multiple prompt parts, ingesting an earlier part's reply must
   // NOT re-pack the remaining issues and make a later part's panel disappear mid-review.
   it('keeps every prompt part visible after an earlier part is ingested', async () => {
