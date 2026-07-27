@@ -9,6 +9,7 @@ import { jiraGet, jiraPost } from '../../../services/jiraApi.ts';
 import type { JiraBoard, JiraFilter, JiraIssue, JiraTransition } from '../../../types/jira.ts';
 import type { JiraBoardQuickFilter } from '../myIssuesExtendedTypes.ts';
 import { buildAssigneeJql, type ReportSubject } from '../myIssuesRoleLens.ts';
+import { setMyIssuesPersonaSubject } from './useMyIssuesPersonaStore.ts';
 
 // ── Source and display type unions ──
 
@@ -20,7 +21,7 @@ export type SortField = 'updated' | 'priority' | 'due' | 'created' | 'project';
 
 // The report always excludes Done work and sorts by recency. The assignee clause in front of this
 // suffix is what a persona swaps out (viewer / simulated user / team) — see buildMyIssuesJql.
-const MY_ISSUES_JQL_SUFFIX = ' AND statusCategory != Done ORDER BY updated DESC';
+export const MY_ISSUES_JQL_SUFFIX = ' AND statusCategory != Done ORDER BY updated DESC';
 
 export const MY_ISSUES_JQL = `assignee = currentUser()${MY_ISSUES_JQL_SUFFIX}`;
 
@@ -373,13 +374,15 @@ export function useMyIssuesState(): { state: MyIssuesState; actions: MyIssuesAct
     setState((previousState) => ({ ...previousState, source }));
   }, []);
 
-  /** Re-points the report at a subject; team subjects carry their roster member identifiers. */
+  /** Re-points the report at a subject; team subjects carry their roster member identifiers. Also mirrors
+   *  the subject into the tool-wide persona store so the other tabs (Today, Mentions, Hygiene) follow it. */
   const setSubject = useCallback((subject: ReportSubject, memberIdentifiers: string[] = []) => {
     setState((previousState) => ({
       ...previousState,
       subject,
       subjectMemberIdentifiers: subject.kind === 'team' ? memberIdentifiers : [],
     }));
+    setMyIssuesPersonaSubject(subject, memberIdentifiers);
   }, []);
 
   const setViewMode = useCallback((viewMode: ViewMode) => {

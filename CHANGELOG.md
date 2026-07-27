@@ -29,6 +29,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   writing a selected Feature's repos directly (unioned with existing). Spec: `specs/031-component-repo-mapping/`.
 
 ### Changed
+- **My Issues: "simulate as another user" now applies across the whole tool, not just the Report tab.** The
+  persona ("Viewing as {person}") moved above the tabs and is shared, so **Today, Report, Mentions, and
+  Hygiene** all show what that person sees — their daily checklist, their issues, their @-mentions, and their
+  hygiene flags — from a single "Simulate as" control. It stays **read-only**: it only re-points what each
+  tab queries (via the existing assignee clause / account id); nothing is written on the simulated person's
+  behalf (the Mentions "addressed" state stays bound to the real signed-in viewer). Time Tracking (local
+  timers, no per-user query) and Git Sync (your machine's repos) are unaffected by design.
 - **Bulk Re-write: the Confluence review page is now a two-column before/after layout, with validation
   highlights (GH #220).** The published review table was reworked into a clean **Before | Proposed**
   comparison: for each issue a header row (key + summary + Approve checkbox), then a **Description** row and

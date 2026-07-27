@@ -72,6 +72,15 @@ export function buildAssigneeJql(subject: ReportSubject, memberIdentifiers: stri
   return `assignee in (${quotedIdentifiers})`;
 }
 
+/**
+ * Resolves the account id to query as for identity-based tabs (e.g. Mentions, which searches by a person
+ * rather than by JQL `currentUser()`). A simulated `user` subject yields that person's account id; every
+ * other subject falls back to the signed-in viewer's account id, so the default behaviour is unchanged.
+ */
+export function resolveSubjectAccountId(subject: ReportSubject, viewerAccountId: string): string {
+  return subject.kind === 'user' ? subject.accountId : viewerAccountId;
+}
+
 // ── Role lens emphasis ──
 
 /** Returns the pinned emphasis (section labels) for a role lens. */

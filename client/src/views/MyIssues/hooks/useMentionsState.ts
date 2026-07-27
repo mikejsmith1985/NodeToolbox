@@ -18,6 +18,7 @@ import { fetchJiraBaseUrl } from '../../../services/proxyApi.ts';
 import type { JiraIssue } from '../../../types/jira.ts';
 import { businessDaysAgo, toJqlDateString } from '../../../utils/businessDays.ts';
 import { collectUserMentions, type JiraMention, type MentionIdentity } from '../../../utils/jiraMentions.ts';
+import { useMyIssuesPersonaStore } from './useMyIssuesPersonaStore.ts';
 
 const DEFAULT_WINDOW_BUSINESS_DAYS = 3;
 const MENTIONS_MAX_RESULTS = 100;
@@ -74,6 +75,8 @@ export function useMentionsState(): MentionsState & MentionsActions {
   const [jiraBaseUrl, setJiraBaseUrl] = useState<string>('');
   // Bumping this token forces the load effect to run again (manual refresh).
   const [reloadToken, setReloadToken] = useState<number>(0);
+  // The tool-wide persona: when simulating a user, show THEIR mentions (the persistence stays the viewer's).
+  const personaSubject = useMyIssuesPersonaStore((store) => store.subject);
 
   // Load whenever the window changes or a manual reload is requested. The effect
   // body itself performs no synchronous setState — it delegates to an inline
@@ -84,18 +87,23 @@ export function useMentionsState(): MentionsState & MentionsActions {
 
     async function loadMentions() {
       try {
-        const resolvedIdentity = await loadIdentity();
+        // Persistence (the "addressed" store) always follows the REAL viewer — a read-only persona must
+        // never write to the simulated person's data. The search + per-comment match follow the persona.
+        const viewerIdentity = await loadIdentity();
+        const queryIdentity: MentionIdentity = personaSubject.kind === 'user'
+          ? { accountId: personaSubject.accountId, name: null, key: null, displayName: personaSubject.displayName }
+          : viewerIdentity;
         const windowStart = businessDaysAgo(windowBusinessDays);
-        const searchResponse = await jiraGet<JiraSearchResponse>(buildMentionSearchPath(resolvedIdentity, windowStart));
+        const searchResponse = await jiraGet<JiraSearchResponse>(buildMentionSearchPath(queryIdentity, windowStart));
         const loadedIssues = searchResponse.issues ?? [];
-        const detectedMentions = collectUserMentions(loadedIssues, resolvedIdentity, windowStart.getTime());
-        const addressed = await fetchAddressedMentions(resolveUserKey(resolvedIdentity));
+        const detectedMentions = collectUserMentions(loadedIssues, queryIdentity, windowStart.getTime());
+        const addressed = await fetchAddressedMentions(resolveUserKey(viewerIdentity));
         const resolvedJiraBaseUrl = await loadJiraBaseUrl();
 
         if (!isMounted) {
           return;
         }
-        setIdentity(resolvedIdentity);
+        setIdentity(viewerIdentity);
         setScannedIssueCount(loadedIssues.length);
         setAllMentions(detectedMentions);
         setAddressedMap(addressed);
@@ -119,7 +127,7 @@ export function useMentionsState(): MentionsState & MentionsActions {
     return () => {
       isMounted = false;
     };
-  }, [windowBusinessDays, reloadToken]);
+  }, [windowBusinessDays, reloadToken, personaSubject]);
 
   const visibleMentions = useMemo(
     () => (showAddressed ? allMentions : allMentions.filter((mention) => !addressedMap[mention.mentionKey])),
@@ -219,7 +227,9 @@ async function loadIdentity(): Promise<MentionIdentity> {
  * happens client-side via collectUserMentions.
  */
 function buildMentionSearchPath(identity: MentionIdentity, windowStart: Date): string {
-  const searchToken = identity.name || identity.accountId || identity.displayName;
+  // Prefer the display name over a raw accountId as the text-search token: a simulated user has no `name`,
+  // and comment text carries the person's name, not their account id (the viewer still matches on `name`).
+  const searchToken = identity.name || identity.displayName || identity.accountId || '';
   const escapedToken = searchToken.replace(/(["\\])/g, '\\$1');
   const jql =
     `text ~ "${escapedToken}" AND updated >= "${toJqlDateString(windowStart)}" ORDER BY updated DESC`;

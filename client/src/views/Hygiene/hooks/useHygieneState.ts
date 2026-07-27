@@ -98,6 +98,12 @@ export interface useHygieneStateOptions {
   initialAllProjects?: boolean;
   /** Preselect one check filter on arrival (e.g. 'stale' from the "My stale issues" card). */
   initialSelectedFilter?: string;
+  /**
+   * The assignee JQL clause for standalone (non-team) scope. Defaults to `assignee = currentUser()`; the
+   * My Issues surface passes a persona clause here so the Hygiene tab follows the tool-wide "simulate as"
+   * subject. Ignored in team mode (which drops the assignee filter to audit the whole team).
+   */
+  assigneeClause?: string;
 }
 
 /** Owns Hygiene view state and actions so the render layer can stay declarative. */
@@ -108,6 +114,7 @@ export function useHygieneState(options: useHygieneStateOptions = {}): HygieneSt
     projectKey: controlledProjectKey,
     initialAllProjects = false,
     initialSelectedFilter,
+    assigneeClause: personalAssigneeClause = DEFAULT_ASSIGNEE_CLAUSE,
   } = options;
   // When the team dashboard supplies a project key, that prop is authoritative; the standalone
   // view falls back to the user's persisted key. This flag drives both seeding and persistence.
@@ -186,7 +193,7 @@ export function useHygieneState(options: useHygieneStateOptions = {}): HygieneSt
       const scanOutcome = await runHygieneScan({
         projectKey: normalizedProjectKey,
         extraJql,
-        assigneeClause: isTeamMode ? null : DEFAULT_ASSIGNEE_CLAUSE,
+        assigneeClause: isTeamMode ? null : personalAssigneeClause,
         activeTeamProfileId: activeDashboardTeamProfileId,
       });
 
@@ -203,14 +210,14 @@ export function useHygieneState(options: useHygieneStateOptions = {}): HygieneSt
     } finally {
       setIsLoading(false);
     }
-  }, [activeDashboardTeamProfileId, extraJql, isAllProjectsScope, isTeamMode, projectKey]);
+  }, [activeDashboardTeamProfileId, extraJql, isAllProjectsScope, isTeamMode, projectKey, personalAssigneeClause]);
 
   // The exact scope JQL the scan runs within — exposed so the per-check "open in Jira" links (GH #200 US2)
   // reuse the SAME scope as the count (agree by construction).
   const scopeJql = buildHygieneScopeJql(
     isAllProjectsScope ? '' : projectKey.trim(),
     extraJql,
-    isTeamMode ? null : DEFAULT_ASSIGNEE_CLAUSE,
+    isTeamMode ? null : personalAssigneeClause,
   );
 
   return {

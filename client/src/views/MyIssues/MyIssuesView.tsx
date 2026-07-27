@@ -36,6 +36,7 @@ import {
   type StandupRosterMember,
 } from '../SprintDashboard/hooks/useStandupRosterStore.ts';
 import {
+  buildAssigneeJql,
   defaultRoleFromCapabilities,
   myIssuesRoleLens,
   type ReportSubject,
@@ -1004,6 +1005,13 @@ export default function MyIssuesView() {
         </div>
       </header>
 
+      {/* Tool-wide persona: "simulate as" applies to Today, Report, Mentions and Hygiene alike. */}
+      <PersonaBar
+        onSetSubject={actions.setSubject}
+        rosterMembers={rosterMembers}
+        subject={state.subject}
+      />
+
       {/* Top-level Report / Settings tabs */}
       <PrimaryTabs
         ariaLabel="My Issues tabs"
@@ -1037,14 +1045,7 @@ export default function MyIssuesView() {
             ))}
           </div>
 
-          {/* Persona controls (simulate / role lens / team view) apply to the "My Issues" source */}
-          {state.source === 'mine' && (
-            <PersonaBar
-              onSetSubject={actions.setSubject}
-              rosterMembers={rosterMembers}
-              subject={state.subject}
-            />
-          )}
+          {/* The persona controls now live above the tabs (tool-wide); nothing to render here. */}
 
           {/* Source-specific pane */}
           {state.source !== 'mine' && (
@@ -1312,6 +1313,7 @@ export default function MyIssuesView() {
             key={`${searchParams.get('hygieneScope') ?? ''}:${searchParams.get('hygieneFilter') ?? ''}`}
             initialAllProjects={searchParams.get('hygieneScope') === 'mine'}
             initialFilter={searchParams.get('hygieneFilter') ?? undefined}
+            assigneeClause={buildAssigneeJql(state.subject, state.subjectMemberIdentifiers)}
           />
         </section>
       )}

@@ -96,6 +96,8 @@ interface HygieneViewProps {
   initialAllProjects?: boolean;
   /** Preselect one check filter on arrival (e.g. 'stale' when deep-linked from the Today card). */
   initialFilter?: string;
+  /** Standalone assignee clause — My Issues passes the tool-wide persona clause so Hygiene follows "simulate as". */
+  assigneeClause?: string;
 }
 
 /** Renders the standalone Hygiene checker and delegates stateful Jira work to `useHygieneState`. */
@@ -105,6 +107,7 @@ export default function HygieneView({
   projectKey,
   initialAllProjects = false,
   initialFilter,
+  assigneeClause,
 }: HygieneViewProps = {}) {
   const hygieneState = useHygieneState({
     isTeamMode,
@@ -112,6 +115,7 @@ export default function HygieneView({
     projectKey,
     initialAllProjects,
     initialSelectedFilter: initialFilter,
+    assigneeClause,
   });
   const isAiAssistUnlocked = useAiAssistStore((storeState) => storeState.isAiAssistUnlocked);
   const jiraBaseUrl = useConnectionStore((state) => state.proxyStatus?.jira?.baseUrl ?? null);
