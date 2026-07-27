@@ -114,15 +114,17 @@ export default function BulkRewriteTab({ dashboardTeamProfileId }: BulkRewriteTa
     }
   }
 
-  // Items still needing a re-write drive the prompt(s); once every issue has a proposal there is nothing
-  // left to generate. buildBulkRewritePrompts splits deterministically once the batch exceeds the char cap.
-  const itemsNeedingRewrite = useMemo(
-    () => (batch ? batch.items.filter((item) => !item.captureError && !item.proposed) : []),
+  // The prompt is partitioned over EVERY capturable issue — not just the ones still lacking a proposal —
+  // so the split into parts is STABLE: ingesting part 1's reply must not re-pack the remaining issues and
+  // make part 2's panel disappear out from under an in-flight review (GH #220). The honest "not yet
+  // re-written" count (below) still narrows to the outstanding issues; the partition does not.
+  const capturableItems = useMemo(
+    () => (batch ? batch.items.filter((item) => !item.captureError) : []),
     [batch],
   );
   const prompts = useMemo(
-    () => buildBulkRewritePrompts(itemsNeedingRewrite.map((item) => ({ jiraKey: item.jiraKey, original: item.original }))),
-    [itemsNeedingRewrite],
+    () => buildBulkRewritePrompts(capturableItems.map((item) => ({ jiraKey: item.jiraKey, original: item.original }))),
+    [capturableItems],
   );
 
   /** Ingests one (possibly partial) reply, merging proposals into the batch by key. No Jira write here. */
@@ -427,16 +429,16 @@ export default function BulkRewriteTab({ dashboardTeamProfileId }: BulkRewriteTa
             ) : null}
           </section>
 
-          {/* ── Gated AI round-trip: one panel per prompt part ── */}
-          {prompts.map((promptText, partIndex) => (
+          {/* ── Gated AI round-trip: one stable panel per prompt part; hidden once nothing remains ── */}
+          {notYetRewritten.length > 0 ? prompts.map((promptText, partIndex) => (
             <PoAiPanel
-              key={partIndex}
+              key={`prompt-part-${partIndex}`}
               title={prompts.length > 1 ? `Re-write prompt — part ${partIndex + 1} of ${prompts.length}` : 'Re-write these issues'}
               helpText="Builds a prompt that asks for a re-write of every issue in this batch, in the nine-section format. Paste the reply back and it fills the After column below — every word stays editable, and nothing reaches Jira until you approve and submit."
               buildPrompt={() => promptText}
               onIngest={handleIngest}
             />
-          ))}
+          )) : null}
 
           {/* ── Before/after review grid ── */}
           <section className={styles.panel}>

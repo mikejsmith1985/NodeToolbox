@@ -107,4 +107,46 @@ describe('BulkRewriteTab honest states', () => {
     });
     expect(screen.getByText(/Ignored ZZZ-9/)).toBeInTheDocument();
   });
+
+  // GH #220: when a large batch splits into multiple prompt parts, ingesting an earlier part's reply must
+  // NOT re-pack the remaining issues and make a later part's panel disappear mid-review.
+  it('keeps every prompt part visible after an earlier part is ingested', async () => {
+    const user = userEvent.setup();
+    // Descriptions long enough (each capped at 4000 chars in the prompt) that five issues force a 2-part split.
+    const bigDescription = 'A'.repeat(4100);
+    mockJiraGet.mockResolvedValue({ fields: { summary: 'S', description: bigDescription, customfield_10200: 'ac' } });
+    setAiAssistUnlocked(true);
+
+    render(<BulkRewriteTab dashboardTeamProfileId="team-1" />);
+    await user.type(screen.getByLabelText('Jira keys'), 'ABC-1 ABC-2 ABC-3 ABC-4 ABC-5');
+    await user.click(screen.getByRole('button', { name: /capture originals/i }));
+
+    // The batch splits into two parts up front.
+    await waitFor(() => {
+      expect(screen.getByText(/part 1 of 2/i)).toBeInTheDocument();
+    });
+    expect(screen.getByText(/part 2 of 2/i)).toBeInTheDocument();
+
+    // Build + ingest part 1 only (propose the first three issues, leaving the rest outstanding).
+    await user.click(screen.getAllByRole('button', { name: /build the prompt/i })[0]);
+    await waitFor(() => {
+      expect(screen.getByLabelText(/paste the assistant/i)).toBeInTheDocument();
+    });
+    const partOneReply = JSON.stringify({
+      kind: 'featureRewriteBatch',
+      items: [
+        { key: 'ABC-1', description: 'Description:\none', acceptanceCriteria: 'ac1' },
+        { key: 'ABC-2', description: 'Description:\ntwo', acceptanceCriteria: 'ac2' },
+        { key: 'ABC-3', description: 'Description:\nthree', acceptanceCriteria: 'ac3' },
+      ],
+    });
+    fireEvent.change(screen.getByLabelText(/paste the assistant/i), { target: { value: partOneReply } });
+    await user.click(screen.getByRole('button', { name: /read the reply/i }));
+
+    // Part 2 must still be on screen — the outstanding issues did not collapse the partition.
+    await waitFor(() => {
+      expect(screen.getByText(/Applied 3 re-write/)).toBeInTheDocument();
+    });
+    expect(screen.getByText(/part 2 of 2/i)).toBeInTheDocument();
+  });
 });
