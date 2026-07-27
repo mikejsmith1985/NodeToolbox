@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useState } from 'react'
 
 import { useAiAssistStore } from '../../store/aiAssistStore.ts'
-import { buildRulePrompt, parseRuleReply } from '../GithubEmail/lib/githubRulePrompt.ts'
+import { buildRulePrompt, buildBulkRulePrompt, parseRuleReplyToList, type EmailSample } from '../GithubEmail/lib/githubRulePrompt.ts'
 import type { SerializedEmailRule } from '../GithubEmail/lib/githubEmailRules.ts'
 import styles from './AdminHubView.module.css'
 
@@ -104,6 +104,25 @@ async function postAction(pathSuffix: 'run-now' | 'preview'): Promise<{ ok: bool
   return await response.json() as { ok: boolean; message?: string; result?: IntakeRunResult }
 }
 
+interface RuleSamplesResponse {
+  ok: boolean
+  message?: string
+  samples: EmailSample[]
+  totalCount: number
+  unknownCount: number
+  truncated: boolean
+}
+
+/** Reads the drop folder (server-side, read-only) and returns raw emails + their current classification. */
+async function fetchRuleSamples(includeAll: boolean): Promise<RuleSamplesResponse> {
+  const response = await fetch('/api/github-email-intake/rule-samples', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ includeAll }),
+  })
+  return await response.json() as RuleSamplesResponse
+}
+
 /** Renders a comma-separated list into a trimmed string array, dropping blanks. */
 function splitList(value: string): string[] {
   return value.split(',').map((part) => part.trim()).filter((part) => part !== '')
@@ -126,6 +145,9 @@ export function GithubEmailIntakePanel() {
   const [rulePrompt, setRulePrompt] = useState('')
   const [ruleReply, setRuleReply] = useState('')
   const [ruleMessage, setRuleMessage] = useState('')
+  // Bulk rule generation: whether to bundle every email or only the currently-unclassified ones.
+  const [includeAllSamples, setIncludeAllSamples] = useState(false)
+  const [isCollectingSamples, setIsCollectingSamples] = useState(false)
 
   const loadEverything = useCallback(async () => {
     try {
@@ -212,22 +234,59 @@ export function GithubEmailIntakePanel() {
     setRuleMessage('Prompt generated — copy it, paste it plus a real email into your AI, then paste the JSON reply below.')
   }
 
-  // Validates a pasted AI reply and, on success, adds it to the custom rules and saves.
-  async function handleAddRuleFromReply() {
+  // Reads the drop folder (server-side) and builds ONE prompt covering every distinct email shape, so the
+  // operator can generate a whole rule set with a single paste into their own AI. Nothing leaves the machine.
+  async function handleGenerateBulkPrompt() {
+    setIsCollectingSamples(true)
+    setRuleMessage('')
+    try {
+      const response = await fetchRuleSamples(includeAllSamples)
+      if (!response.ok) {
+        setRuleMessage(response.message || 'Could not read the drop folder.')
+        return
+      }
+      if (response.samples.length === 0) {
+        const scope = includeAllSamples ? 'emails' : 'unclassified emails'
+        setRuleMessage(`No ${scope} found in the drop folder (${response.totalCount} total, ${response.unknownCount} unclassified).`)
+        setRulePrompt('')
+        return
+      }
+      const built = buildBulkRulePrompt(response.samples)
+      setRulePrompt(built.prompt)
+      const scope = includeAllSamples ? 'all emails' : 'unclassified emails'
+      const omittedNote = built.omittedCount > 0 ? ` (${built.omittedCount} extra shape(s) omitted to keep the prompt pasteable)` : ''
+      const truncatedNote = response.truncated ? ' The drop folder is large — only the first batch was read.' : ''
+      setRuleMessage(
+        `Bundled ${built.representativeCount} distinct email shape(s) from ${response.samples.length} ${scope}${omittedNote}.`
+        + ` Copy the prompt into your AI, then paste the JSON rule set below.${truncatedNote}`,
+      )
+    } catch (sampleError) {
+      setRuleMessage(sampleError instanceof Error ? sampleError.message : 'Could not read the drop folder.')
+    } finally {
+      setIsCollectingSamples(false)
+    }
+  }
+
+  // Validates a pasted AI reply (single rule OR a bulk rule set) and, on success, adds every valid rule and saves.
+  async function handleAddRulesFromReply() {
     if (config === null) return
-    const outcome = parseRuleReply(ruleReply)
-    if (!outcome.ok || !outcome.rule) {
+    const outcome = parseRuleReplyToList(ruleReply)
+    if (!outcome.ok || outcome.rules.length === 0) {
       setRuleMessage(outcome.error || 'Could not read a rule from the reply.')
       return
     }
-    const acceptedRule = outcome.rule
-    // Replace a rule with the same id, otherwise append — so re-pasting a refined rule updates in place.
-    const withoutDuplicate = config.customRules.filter((rule) => rule.id !== acceptedRule.id)
-    const nextConfig = { ...config, customRules: [...withoutDuplicate, acceptedRule] }
+    // Replace any rule with a matching id, then append the accepted set — so re-pasting refined rules updates in place.
+    const acceptedIds = new Set(outcome.rules.map((rule) => rule.id))
+    const withoutDuplicates = config.customRules.filter((rule) => !acceptedIds.has(rule.id))
+    const nextConfig = { ...config, customRules: [...withoutDuplicates, ...outcome.rules] }
     setConfig(nextConfig)
     setRuleReply('')
-    setRuleMessage(`Added rule "${acceptedRule.id}" (${acceptedRule.eventType}).`)
-    await persist(nextConfig, `Saved rule "${acceptedRule.id}".`)
+    const rejectedNote = outcome.rejectedCount > 0 ? ` (${outcome.rejectedCount} rejected as invalid)` : ''
+    const summary = outcome.rules.length === 1
+      ? `rule "${outcome.rules[0].id}" (${outcome.rules[0].eventType})`
+      : `${outcome.rules.length} rules`
+    setRuleMessage(`Added ${summary}${rejectedNote}.`)
+    await persist(nextConfig, `Saved ${summary}.`)
   }
 
   async function handleRemoveRule(ruleId: string) {
@@ -342,22 +401,36 @@ export function GithubEmailIntakePanel() {
           <>
             <p className={styles.panelStatusLine}>
               Generate a prompt, paste it plus a real notification email into your own AI, then paste the JSON
-              rule it returns. Custom rules are applied <strong>before</strong> the built-in classifiers.
+              rule it returns. Custom rules are applied <strong>before</strong> the built-in classifiers. The
+              emails never leave this machine — only you and your own AI ever see them.
             </p>
-            <button className={styles.actionButton} onClick={handleGenerateRulePrompt} type="button">Generate rule prompt</button>
+            <label className={styles.fieldLabel}>
+              <input
+                type="checkbox"
+                checked={includeAllSamples}
+                onChange={(event) => setIncludeAllSamples(event.target.checked)}
+              />
+              {' '}Include already-classified emails (default: only unclassified)
+            </label>
+            <div className={styles.panelActions}>
+              <button className={styles.actionButton} disabled={isCollectingSamples} onClick={() => void handleGenerateBulkPrompt()} type="button">
+                {isCollectingSamples ? 'Reading drop folder…' : 'Generate rule prompt from drop folder'}
+              </button>
+              <button className={styles.actionButton} onClick={handleGenerateRulePrompt} type="button">Generate prompt for one email</button>
+            </div>
             {rulePrompt ? (
               <textarea className={styles.inputField} readOnly rows={6} value={rulePrompt} onFocus={(event) => event.currentTarget.select()} />
             ) : null}
-            <label className={styles.fieldLabel}>Paste the AI&apos;s JSON rule reply</label>
+            <label className={styles.fieldLabel}>Paste the AI&apos;s JSON rule reply (one rule or a whole rule set)</label>
             <textarea
               className={styles.inputField}
               rows={4}
               value={ruleReply}
-              placeholder={'{"kind":"githubEmailRule","rule":{ ... }}'}
+              placeholder={'{"kind":"githubEmailRuleSet","rules":[ ... ]}'}
               onChange={(event) => setRuleReply(event.target.value)}
             />
-            <button className={styles.actionButton} disabled={!ruleReply.trim()} onClick={() => void handleAddRuleFromReply()} type="button">
-              Validate &amp; add rule
+            <button className={styles.actionButton} disabled={!ruleReply.trim()} onClick={() => void handleAddRulesFromReply()} type="button">
+              Validate &amp; add rule(s)
             </button>
             {ruleMessage ? <p className={styles.panelStatusLine}>{ruleMessage}</p> : null}
             {config.customRules.length > 0 ? (

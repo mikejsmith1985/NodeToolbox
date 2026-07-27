@@ -11,6 +11,7 @@ jest.mock('../../src/config/loader', () => ({ saveConfigToDisk: jest.fn() }));
 jest.mock('../../src/utils/httpClient', () => ({ makeJiraApiRequest: jest.fn() }));
 jest.mock('../../src/services/githubEmailIntakeScheduler', () => ({
   runGithubEmailIntakeNow: jest.fn(),
+  collectRuleSamples: jest.fn(),
   isGithubEmailIntakeRunInProgress: jest.fn(() => false),
   readLastRunResult: jest.fn(() => ({ hasRun: true, postedCount: 2 })),
 }));
@@ -102,6 +103,32 @@ describe('POST /api/github-email-intake/preview', () => {
     const [, deps] = scheduler.runGithubEmailIntakeNow.mock.calls[0];
     expect(typeof deps.moveFile).toBe('function');
     expect(deps.writeLastRun).toBe(false);
+  });
+});
+
+describe('POST /api/github-email-intake/rule-samples', () => {
+  it('forwards includeAll and returns the collected samples', async () => {
+    scheduler.collectRuleSamples.mockReturnValueOnce({
+      ok: true, samples: [{ fileName: 'a.eml', eventType: 'unknown', rawSource: 'raw' }], totalCount: 3, unknownCount: 1, truncated: false,
+    });
+    const response = await request(buildApp(freshConfig()))
+      .post('/api/github-email-intake/rule-samples')
+      .send({ includeAll: true });
+
+    expect(response.status).toBe(200);
+    expect(response.body.samples).toHaveLength(1);
+    const [, deps] = scheduler.collectRuleSamples.mock.calls[0];
+    expect(deps.includeAll).toBe(true);
+  });
+
+  it('returns 400 when the collector reports no drop folder', async () => {
+    scheduler.collectRuleSamples.mockReturnValueOnce({ ok: false, message: 'No drop folder configured — set it and save first.', samples: [] });
+    const response = await request(buildApp(freshConfig()))
+      .post('/api/github-email-intake/rule-samples')
+      .send({});
+
+    expect(response.status).toBe(400);
+    expect(response.body.ok).toBe(false);
   });
 });
 

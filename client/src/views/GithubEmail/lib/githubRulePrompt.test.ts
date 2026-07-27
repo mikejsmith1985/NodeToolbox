@@ -4,7 +4,14 @@ import { describe, expect, it } from 'vitest';
 
 import { parseGithubEmail } from './classifyGithubEmail.ts';
 import { compileCustomRules, validateSerializedRule, type SerializedEmailRule } from './githubEmailRules.ts';
-import { buildRulePrompt, parseRuleReply } from './githubRulePrompt.ts';
+import {
+  buildRulePrompt,
+  parseRuleReply,
+  buildBulkRulePrompt,
+  emailSampleSignature,
+  parseRuleReplyToList,
+  type EmailSample,
+} from './githubRulePrompt.ts';
 
 function email(headers: Record<string, string>, body: string): string {
   const headerLines = Object.entries(headers).map(([name, value]) => `${name}: ${value}`);
@@ -96,5 +103,91 @@ describe('custom rules applied end to end (win over the built-ins)', () => {
     expect(event.eventType).toBe('pr_opened');
     expect(event.matchedRuleId).toBe('org-pr-opened');
     expect(event.jiraKey).toBe('KEY-9');
+  });
+});
+
+// ── Bulk rule generation ──
+
+function sample(fileName: string, headers: Record<string, string>, body: string): EmailSample {
+  return { fileName, eventType: 'unknown', rawSource: email(headers, body) };
+}
+
+describe('emailSampleSignature', () => {
+  it('groups emails by the X-GitHub-Reason header when present', () => {
+    const first = email({ Subject: '[org/a] Thing (#12)', 'X-GitHub-Reason': 'review_requested' }, 'please review');
+    const second = email({ Subject: '[org/b] Other (#99)', 'X-GitHub-Reason': 'review_requested' }, 'please review this one');
+    expect(emailSampleSignature(first)).toBe(emailSampleSignature(second));
+  });
+
+  it('collapses different PR numbers to one subject signature when no reason header is present', () => {
+    const first = email({ Subject: '[org/repo] Add thing (#41)' }, 'body one');
+    const second = email({ Subject: '[org/repo] Fix bug (#87)' }, 'body two');
+    // Same skeleton shape but different words still differ; identical wording with different numbers matches.
+    const a = email({ Subject: '[org/repo] Deploy (#41)' }, 'x');
+    const b = email({ Subject: '[org/repo] Deploy (#87)' }, 'y');
+    expect(emailSampleSignature(a)).toBe(emailSampleSignature(b));
+    expect(emailSampleSignature(first)).not.toBe(emailSampleSignature(second));
+  });
+});
+
+describe('buildBulkRulePrompt', () => {
+  it('returns an empty prompt for no samples', () => {
+    const result = buildBulkRulePrompt([]);
+    expect(result.prompt).toBe('');
+    expect(result.representativeCount).toBe(0);
+  });
+
+  it('embeds one representative per distinct shape and asks for a rule SET', () => {
+    const samples: EmailSample[] = [
+      sample('a.eml', { Subject: '[org/r] A (#1)', 'X-GitHub-Reason': 'review_requested' }, 'please review'),
+      sample('b.eml', { Subject: '[org/r] B (#2)', 'X-GitHub-Reason': 'review_requested' }, 'please review too'),
+      sample('c.eml', { Subject: '[org/r] C (#3)', 'X-GitHub-Reason': 'push' }, 'pushed 2 commits'),
+    ];
+    const result = buildBulkRulePrompt(samples);
+    // Two distinct reasons → two representatives, even though three emails were supplied.
+    expect(result.representativeCount).toBe(2);
+    expect(result.groupCount).toBe(2);
+    expect(result.prompt).toContain('"kind": "githubEmailRuleSet"');
+    expect(result.prompt).toContain('--- EMAIL 1 ---');
+    expect(result.prompt).toContain('--- EMAIL 2 ---');
+    expect(result.prompt).not.toContain('--- EMAIL 3 ---');
+  });
+});
+
+describe('parseRuleReplyToList', () => {
+  it('reads a bulk rule set of several rules', () => {
+    const reply = JSON.stringify({
+      kind: 'githubEmailRuleSet',
+      rules: [
+        { id: 'r-review', eventType: 'review_requested', reasonHeaderIn: ['review_requested'] },
+        { id: 'r-push', eventType: 'commit_pushed', reasonHeaderIn: ['push'] },
+      ],
+    });
+    const result = parseRuleReplyToList(reply);
+    expect(result.ok).toBe(true);
+    expect(result.rules).toHaveLength(2);
+    expect(result.rules.map((rule) => rule.id).sort()).toEqual(['r-push', 'r-review']);
+  });
+
+  it('still accepts a single enveloped rule, and counts invalid rules as rejected', () => {
+    const reply = JSON.stringify({
+      kind: 'githubEmailRuleSet',
+      rules: [
+        { id: 'good', eventType: 'pr_merged', bodyPattern: 'merged into' },
+        { id: '', eventType: 'pr_merged' },            // no id → rejected
+        { id: 'no-matcher', eventType: 'pr_opened' },  // no matcher → rejected
+      ],
+    });
+    const result = parseRuleReplyToList(reply);
+    expect(result.ok).toBe(true);
+    expect(result.rules).toHaveLength(1);
+    expect(result.rejectedCount).toBe(2);
+  });
+
+  it('rejects a reply whose kind is for a different surface', () => {
+    const reply = JSON.stringify({ kind: 'piReview', items: [] });
+    const result = parseRuleReplyToList(reply);
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain('piReview');
   });
 });

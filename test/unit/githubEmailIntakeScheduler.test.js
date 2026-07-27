@@ -251,6 +251,59 @@ describe('runGithubEmailIntakeNow (orchestration)', () => {
   });
 });
 
+describe('collectRuleSamples (bulk rule generator source)', () => {
+  // An email the built-in table cannot classify (no actionable body/reason) → eventType 'unknown'.
+  const unknownEmail = [
+    'List-ID: org/repo <repo.org.github.com>',
+    'Subject: [org/repo] [DENP-7] Chatter',
+    'Message-ID: <u1@github.com>',
+    'Content-Type: text/plain; charset=UTF-8',
+    '',
+    'just a comment, no action here',
+  ].join('\r\n');
+
+  function sampleDeps(filesByName, includeAll) {
+    return {
+      includeAll,
+      listFiles: () => Object.keys(filesByName),
+      readFile: (fullPath) => filesByName[require('path').basename(fullPath)],
+    };
+  }
+
+  it('returns only unclassified emails by default, with counts', () => {
+    const files = {
+      'known.eml': mergeEmail('<k@github.com>', 5, 'DENP-5'), // classifies as pr_merged
+      'mystery.eml': unknownEmail,
+    };
+    const outcome = scheduler.collectRuleSamples(baseConfig(), sampleDeps(files, false));
+
+    expect(outcome.ok).toBe(true);
+    expect(outcome.totalCount).toBe(2);
+    expect(outcome.unknownCount).toBe(1);
+    expect(outcome.samples).toHaveLength(1);
+    expect(outcome.samples[0].fileName).toBe('mystery.eml');
+    expect(outcome.samples[0].eventType).toBe('unknown');
+    expect(outcome.samples[0].rawSource).toContain('just a comment');
+  });
+
+  it('returns every email when includeAll is set', () => {
+    const files = {
+      'known.eml': mergeEmail('<k@github.com>', 5, 'DENP-5'),
+      'mystery.eml': unknownEmail,
+    };
+    const outcome = scheduler.collectRuleSamples(baseConfig(), sampleDeps(files, true));
+
+    expect(outcome.samples).toHaveLength(2);
+    expect(outcome.samples.map((row) => row.eventType).sort()).toEqual(['pr_merged', 'unknown']);
+  });
+
+  it('fails cleanly when no drop folder is configured', () => {
+    const outcome = scheduler.collectRuleSamples(baseConfig({ dropFolder: '' }), sampleDeps({}, false));
+    expect(outcome.ok).toBe(false);
+    expect(outcome.samples).toEqual([]);
+  });
+});
+
 describe('buildCommentText wording', () => {
   it('states the PR-review request with PR details and no "(via email)" tag', () => {
     const commentText = scheduler.buildCommentText({ eventType: 'review_requested', prNumber: 553, actor: 'C13478_Zilver' });
