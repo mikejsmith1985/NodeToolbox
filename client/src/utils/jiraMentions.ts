@@ -41,6 +41,30 @@ export interface JiraMention {
 }
 
 /**
+ * Builds a MentionIdentity from a flavour-encoded user identifier (`accountId:…` / `name:…` / `key:…`, as
+ * returned by the Jira user search), populating the CORRECT field so mention search + matching use the same
+ * flavour Jira actually stores. Used when simulating another user, whose flavour must be preserved (a
+ * stripped id placed in the wrong field would build a `[~…]` token that never matches). An unprefixed value
+ * is treated as an account id (the Cloud default).
+ */
+export function mentionIdentityFromUserIdentifier(userIdentifier: string, displayName: string): MentionIdentity {
+  const separatorIndex = userIdentifier.indexOf(':');
+  const flavour = separatorIndex === -1 ? '' : userIdentifier.slice(0, separatorIndex);
+  const value = separatorIndex === -1 ? userIdentifier : userIdentifier.slice(separatorIndex + 1);
+  const base: MentionIdentity = { accountId: null, name: null, key: null, displayName };
+  if (value !== '' && flavour === 'name') {
+    return { ...base, name: value };
+  }
+  if (value !== '' && flavour === 'key') {
+    return { ...base, key: value };
+  }
+  if (value !== '' && flavour === 'accountId') {
+    return { ...base, accountId: value };
+  }
+  return { ...base, accountId: userIdentifier };
+}
+
+/**
  * Returns true when a comment body @-mentions the user described by `identity`.
  * Matches Jira Server wiki markup, ADF mention nodes (by accountId), and a
  * final "@Display Name" fallback for bodies that only carry the rendered text.

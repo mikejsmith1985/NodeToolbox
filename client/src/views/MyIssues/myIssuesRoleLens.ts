@@ -18,7 +18,10 @@ import type { RosterRoleCapabilities } from '../SprintDashboard/hooks/useStandup
  */
 export type ReportSubject =
   | { kind: 'viewer' }
-  | { kind: 'user'; accountId: string; displayName: string }
+  // `accountId` is the STRIPPED identifier used by `assignee = "…"`. `userIdentifier` is the original
+  // flavour-encoded form (`accountId:` / `name:` / `key:`) that mention matching needs to build the right
+  // `[~…]` token — optional so older callers/tests still type-check.
+  | { kind: 'user'; accountId: string; displayName: string; userIdentifier?: string }
   | { kind: 'team'; teamName: string };
 
 /** The four role lenses a persona can view the report through. */

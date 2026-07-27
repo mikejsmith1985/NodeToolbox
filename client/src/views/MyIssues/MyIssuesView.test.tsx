@@ -535,6 +535,7 @@ describe('MyIssuesView — personas', () => {
       kind: 'user',
       accountId: 'acc-7',
       displayName: 'Zoe QA',
+      userIdentifier: 'accountId:acc-7',
     });
   });
 

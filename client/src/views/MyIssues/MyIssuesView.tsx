@@ -703,6 +703,8 @@ function PersonaBar({
       kind: 'user',
       accountId: stripUserIdentifierPrefix(candidate.userIdentifier),
       displayName: candidate.displayName,
+      // Keep the flavour-encoded form so Mentions can build the correct [~…] search/match token.
+      userIdentifier: candidate.userIdentifier,
     });
     setUserSearchResults([]);
     setUserSearchQuery('');
