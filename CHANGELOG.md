@@ -21,9 +21,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   **PI Planner** now has a deterministic (non-AI) **"Generate repo stories"** action — one Story per repo
   component on each Feature (titled `{summary} ({repo})`, each Story created carrying that repo on its own
   component field), reusing the existing schedule/date/sub-task/accept pipeline; domain and unclassified
-  components never become a story, and a Feature with no repos surfaces "map repos first". This is the MVP
-  (classify → map → repo-only stories). The per-team domain rule and Planner-side mapping follow. Spec:
-  `specs/031-component-repo-mapping/`.
+  components never become a story, and a Feature with no repos surfaces "map repos first". A **per-team
+  domain-component rule** (keyed to the Dashboard Team profile) applies domain components deterministically
+  (e.g. Enrollment) with one click in Feature Composition — a name that is a repo or unclassified is flagged,
+  never applied, so a repo can never be set as a domain tag; domain components never generate a story. The
+  **repo-component mapping is now also available on the PI Planner** (same gated, allowlist-constrained flow),
+  writing a selected Feature's repos directly (unioned with existing). Spec: `specs/031-component-repo-mapping/`.
 
 ### Fixed
 - **Bulk Re-write: "Read the reply" no longer fails silently on an unreadable reply (GH #220).** If the

@@ -105,16 +105,16 @@ rejected with reasons; accept writes the repo components to the Feature.
 **Independent Test**: Configure Enrollment for a team; author/plan a Feature for it → Enrollment present, not
 duplicated, no story; point the rule at a repo name → flagged, not applied.
 
-- [ ] T017 [P] [US4] Write `teamDomainRuleStore.test.ts` — set/get round-trip; `validateRule` flags repo-classified,
+- [x] T017 [P] [US4] Write `teamDomainRuleStore.test.ts` — set/get round-trip; `validateRule` flags repo-classified,
   unclassified, and nonexistent names; a valid domain name passes — in
   `client/src/views/PoTool/domain/teamDomainRuleStore.test.ts`.
-- [ ] T018 [US4] Implement `teamDomainRuleStore.ts` — zustand + localStorage (`tbxTeamDomainRules`), keyed by Dashboard
+- [x] T018 [US4] Implement `teamDomainRuleStore.ts` — zustand + localStorage (`tbxTeamDomainRules`), keyed by Dashboard
   Team profile id; `setTeamDomainComponents` / `getTeamDomainComponents` / `validateRule(teamProfileId, getKind)` — in
   `client/src/views/PoTool/domain/teamDomainRuleStore.ts`.
-- [ ] T019 [US4] Add the rule config UI (per selected Dashboard Team profile) with validation flags surfaced, reusing
+- [x] T019 [US4] Add the rule config UI (per selected Dashboard Team profile) with validation flags surfaced, reusing
   the sibling surface's CSS module — in the PO Tool (`client/src/views/PoTool/domain/TeamDomainRulePanel.tsx`) + its
   `.test.tsx`.
-- [ ] T020 [US4] Apply the rule deterministically on the Composition and Planner surfaces: union the Feature's
+- [x] T020 [US4] Apply the rule deterministically on the Composition and Planner surfaces: union the Feature's
   components with the team's **valid** domain components (dedup, resolve name→id, never AI), flagged entries not
   applied — in `client/src/views/PoTool/FeatureCompositionTab.tsx` and `client/src/views/ArtView/piPlan/PlannerTab.tsx`.
 
@@ -124,15 +124,15 @@ duplicated, no story; point the rule at a repo name → flagged, not applied.
 **Independent Test**: In the Planner, map a Feature with no repo components, accept, confirm they're set and feed story
 generation; same allowlist rejection + gating as Composition.
 
-- [ ] T021 [US5] Mount the gated `PoAiPanel` component-mapping in `PlannerTab.tsx` (reuse `componentMappingAiAssist`
+- [x] T021 [US5] Mount the gated `PoAiPanel` component-mapping in `PlannerTab.tsx` (reuse `componentMappingAiAssist`
   from US2); on accept resolve names→ids and write the Feature's `components` via `createIssue`/edit — in
   `client/src/views/ArtView/piPlan/PlannerTab.tsx`, with a test asserting locked-hidden + allowlist rejection.
 
 ## Phase 8: Polish & Cross-Cutting
 
-- [ ] T022 [P] Finalize the `CHANGELOG.md` entry describing the feature (classification, mapping, repo-only stories,
+- [x] T022 [P] Finalize the `CHANGELOG.md` entry describing the feature (classification, mapping, repo-only stories,
   domain rule).
-- [ ] T023 Regression: `cd client && npx vitest run src/views/ArtView/piPlan src/views/PoTool/ai` — confirm the 028
+- [x] T023 Regression: `cd client && npx vitest run src/views/ArtView/piPlan src/views/PoTool/ai` — confirm the 028
   pipeline and composition AI ingest are unchanged; then `npx tsc -b` and `npx eslint` on all new/edited files.
 - [ ] T024 Execute `quickstart.md` live steps 1–9 against real Jira (classify → map → one-per-repo → domain excluded →
   empty-state → idempotent → re-classify → both surfaces → AI-locked), capturing evidence.
