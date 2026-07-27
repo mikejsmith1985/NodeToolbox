@@ -133,7 +133,20 @@ export default function BulkRewriteTab({ dashboardTeamProfileId }: BulkRewriteTa
       return { acceptedCount: 0, errors: ['Start a batch first.'] };
     }
     const knownKeys = batch.items.map((item) => item.jiraKey);
-    const result = parseBulkRewriteReply(replyText, knownKeys);
+    // A reply the parser cannot read (no JSON, malformed JSON, or the wrong "kind") throws — surface that
+    // as a plain message rather than letting it bubble up and make "Read the reply" look like it did
+    // nothing (GH #220). The most common cause is a truncated or partially-pasted reply.
+    let result: ReturnType<typeof parseBulkRewriteReply>;
+    try {
+      result = parseBulkRewriteReply(replyText, knownKeys);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : 'the reply could not be read';
+      setIngestNotice(null);
+      return {
+        acceptedCount: 0,
+        errors: [`Could not read the reply: ${reason} Paste the assistant's full reply (it must be the JSON that starts with {"kind":"featureRewriteBatch"}).`],
+      };
+    }
     const items = batch.items.map((item) => {
       const proposed = result.rewritesByKey[item.jiraKey];
       if (!proposed) {
