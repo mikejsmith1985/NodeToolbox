@@ -843,6 +843,10 @@ function PersonaBar({
  */
 export default function MyIssuesView() {
   const { state, actions } = useMyIssuesState();
+  // Stable reference: fetchMyIssues only changes when the persona subject changes (never on issue-list
+  // updates), so effects must depend on THIS, not the whole `actions` object — the object is rebuilt after
+  // every fetch (its exporters close over state.issues), which would otherwise re-trigger the fetch and loop.
+  const { fetchMyIssues } = actions;
   const { isSnowReady } = useConnectionStore();
   // The shared Team Dashboard roster powers the persona role default and team-view switch (US6).
   const rosterMembers = useStandupRosterStore((store) => store.rosterMembers);
@@ -878,8 +882,8 @@ export default function MyIssuesView() {
     }
 
     hasAutoLoadedJiraIssuesRef.current = true;
-    void actions.fetchMyIssues();
-  }, [actions]);
+    void fetchMyIssues();
+  }, [fetchMyIssues]);
 
   useEffect(() => {
     if (!isSnowReady || hasAutoLoadedSnowIssuesRef.current) {
@@ -898,8 +902,8 @@ export default function MyIssuesView() {
       return;
     }
 
-    void actions.fetchMyIssues();
-  }, [state.subject, actions]);
+    void fetchMyIssues();
+  }, [state.subject, fetchMyIssues]);
 
   // Status mappings from the settings store — used for health calculation.
   const { statusMappings } = useSettingsStore();

@@ -39,6 +39,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Jira) are unchanged.
 
 ### Fixed
+- **My Issues no longer re-fetches in a loop (the "Refreshing…" badge and issue list flashing continuously).**
+  The persona re-query effect depended on the whole `actions` object, which the state hook rebuilds after
+  every fetch (its CSV/Markdown/XLSX/TSV exporters close over `state.issues`). So each fetch changed
+  `actions` → re-fired the effect → fetched again → an endless loop that flashed the data and hammered Jira.
+  The effect now depends on the **stable `fetchMyIssues`** reference (which changes only when the simulated
+  subject changes), so the list loads once and re-queries only when you actually switch the simulated user.
 - **Bulk Re-write: the AI re-write panel stays available after every issue has a proposal (GH #220).** The
   panel was hidden once nothing needed a re-write, so — especially now that replies parse successfully — a
   PO who unlocked AI on a fully-proposed batch saw no AI UI at all and could not re-run/regenerate. It now
