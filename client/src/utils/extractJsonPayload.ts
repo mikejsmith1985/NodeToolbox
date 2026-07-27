@@ -12,6 +12,9 @@
 /** JSON tokens that legitimately follow a closing string quote (after optional whitespace). */
 const STRUCTURAL_AFTER_STRING = new Set([',', '}', ']', ':']);
 
+/** The only characters a backslash may legitimately escape inside a JSON string. */
+const VALID_ESCAPE_CHARACTERS = new Set(['"', '\\', '/', 'b', 'f', 'n', 'r', 't', 'u']);
+
 /**
  * Repairs the three most common LLM JSON defects, string-aware:
  *  1. an **unescaped double-quote inside a string** — detected by looking past the quote: if the next
@@ -30,6 +33,11 @@ export function repairJsonPayload(jsonText: string): string {
     const character = jsonText[index];
 
     if (!isInString) {
+      // A backslash is never valid outside a string in JSON — assistants (or a markdown paste) sometimes
+      // escape structural brackets as `\[` / `\]`. Drop the stray backslash so the token parses.
+      if (character === '\\') {
+        continue;
+      }
       if (character === '"') {
         isInString = true;
         repaired += character;
@@ -56,8 +64,13 @@ export function repairJsonPayload(jsonText: string): string {
       continue;
     }
     if (character === '\\') {
-      repaired += character;
-      isEscaped = true;
+      // A backslash inside a string is valid only before " \ / b f n r t u. Before anything else it is an
+      // invalid escape a strict parser rejects (e.g. `\[`); drop the stray backslash and keep the character.
+      const nextCharacter = jsonText[index + 1];
+      if (nextCharacter !== undefined && VALID_ESCAPE_CHARACTERS.has(nextCharacter)) {
+        repaired += character;
+        isEscaped = true;
+      }
       continue;
     }
     if (character === '"') {

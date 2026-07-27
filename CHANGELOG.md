@@ -29,14 +29,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   writing a selected Feature's repos directly (unioned with existing). Spec: `specs/031-component-repo-mapping/`.
 
 ### Fixed
+- **Bulk Re-write: the Confluence review page accepts an edit/draft page URL (GH #220).** Pasting a page's
+  **edit** link — `…/wiki/spaces/SAS/pages/edit-v2/910360840?draftShareId=…` — failed with "Confluence page
+  URL or ID is invalid" because the resolver only recognised the *pretty* `…/pages/910360840/Title` shape.
+  It now extracts the numeric page id from the `edit-v2/{id}` form too (query string ignored), so Publish /
+  Write-approved work from the URL Confluence shows while you're editing the page.
 - **AI replies now auto-repair the common "almost-valid JSON" the assistant emits (GH #220).** Every gated
   AI round-trip (bulk re-write, feature composition, component mapping, PI review/plan, canvas, and the rest)
   shares one JSON extractor; it now best-effort **repairs** a reply that a strict parser would reject for the
-  three predictable LLM mistakes: an **unescaped `"` inside a string** (e.g. a description containing a
-  quoted term — the exact "Expected ',' or ']' … at position 10827" failure), **raw newlines/tabs inside a
-  string**, and a **trailing comma** before a `}`/`]`. The repair is string-aware and a **strict no-op on
-  already-valid JSON**, so it can never corrupt a good reply — it just makes a slightly-malformed one parse
-  instead of erroring out.
+  predictable LLM mistakes: an **unescaped `"` inside a string** (e.g. a description containing a quoted term
+  — the "Expected ',' or ']' … at position 10827" failure), **raw newlines/tabs inside a string**, a
+  **trailing comma** before a `}`/`]`, and **invalid backslash escapes** such as escaped structural brackets
+  `\[` / `\]` (the "Unexpected token '\\'" failure). The repair is string-aware and a **strict no-op on
+  already-valid JSON**, so it can never corrupt a good reply — it just makes a slightly-malformed one parse.
 - **Bulk Re-write: "Read the reply" no longer fails silently on an unreadable reply (GH #220).** If the
   pasted assistant reply contained no JSON, was malformed (often a truncated or partially-pasted reply), or
   had the wrong envelope, the parser threw and the click appeared to do nothing. The ingest now catches that

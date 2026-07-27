@@ -38,6 +38,19 @@ describe('extractJsonPayload', () => {
   it('auto-repairs a trailing comma before a closing brace/bracket', () => {
     expect(JSON.parse(extractJsonPayload('{"items":[1,2,],}'))).toEqual({ items: [1, 2] });
   });
+
+  it('auto-repairs backslash-escaped structural brackets (the second GH #220 failure)', () => {
+    // The reply escaped the array brackets: "items":\[ … \] — invalid JSON ("Unexpected token '\\'").
+    const reply = '{"kind":"featureRewriteBatch","items":\\[{"key":"DASP-920","description":"do it"}\\]}';
+    const parsed = JSON.parse(extractJsonPayload(reply));
+    expect(parsed.items[0].key).toBe('DASP-920');
+    expect(parsed.items[0].description).toBe('do it');
+  });
+
+  it('auto-repairs an invalid backslash escape inside a string', () => {
+    // \[ inside a string is an invalid escape; the stray backslash is dropped.
+    expect(JSON.parse(extractJsonPayload('{"d":"see item \\[3\\]"}')).d).toBe('see item [3]');
+  });
 });
 
 describe('repairJsonPayload', () => {
