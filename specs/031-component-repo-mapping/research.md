@@ -47,13 +47,18 @@ apply here — this maps a structured field, not description prose.
   (`draft.fields.components = [{id}]`) and are written by the existing `runCompositionCommit` at Commit — no new writer.
 - **Planner / Story surface**: `buildStoryCreateRequest` (piPlanJira) gains the Story's own `components` set to its one
   repo, written by the existing `createIssue`.
-- **Name→id resolution**: new tiny `componentResolve.ts` maps allowlist names → this project's component ids via
-  `listProjectComponents(projectKey)` (already used by the Component Manager). Names with no matching project component
-  are surfaced (honest state), never silently dropped.
+- **Name→id resolution**: new tiny `componentResolve.ts` maps allowlist names → this project's component ids. It calls
+  `jiraGet('/rest/api/2/project/{key}/components')` **directly** (the same endpoint `listProjectComponents` uses) and
+  lives in a **shared location** — `client/src/services/componentResolve.ts` (M3) — so the ArtView planner does not
+  import from the PoTool tree. Names with no matching project component are surfaced (honest state), never silently
+  dropped.
+- **`components` must be writable (M2)**: on the Composition surface the field-bag write only lands if `components` is
+  in the Feature type's editmeta (the commit's field allowlist drops unknown ids). The mapping step MUST confirm
+  `components` is a writable field for the target issue and, if it is not on the edit screen, write via a direct edit
+  call rather than silently dropping it. The quickstart adds a pre-check for this.
 
 **Rationale**: No new write primitive — everything flows through the existing composition commit and `createIssue`
-create payloads. Field id is the system name `components`, not a discovered customfield, so no createmeta discovery is
-needed beyond confirming the field is on the screen (handled by the existing commit's field allowlist).
+create payloads. Field id is the system name `components`; editability is verified rather than assumed (M2).
 
 ## R4 — Repo-only story generation vs the 028 AI breakdown
 

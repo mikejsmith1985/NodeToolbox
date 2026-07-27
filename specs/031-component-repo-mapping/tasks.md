@@ -15,10 +15,11 @@ TDD throughout (Constitution V + the pre-commit test-per-source hook): the `.tes
 
 ## Phase 2: Foundational (blocking prerequisites for US2/US3/US4)
 
-- [ ] T002 [P] Write `componentResolve.test.ts` — name→id resolution for a project (mocks `listProjectComponents`);
-  unmatched names reported, case-insensitive match — in `client/src/views/PoTool/jira/componentResolve.test.ts`.
+- [ ] T002 [P] Write `componentResolve.test.ts` — name→id resolution for a project (mocks `jiraGet`); unmatched names
+  reported, case-insensitive match — in `client/src/services/componentResolve.test.ts` (shared location — M3).
 - [ ] T003 Implement `componentResolve.ts` — `resolveComponentIdsByName(projectKey, names) → { ids: {name,id}[];
-  unresolved: string[] }` via `listProjectComponents` — in `client/src/views/PoTool/jira/componentResolve.ts`.
+  unresolved: string[] }` calling `jiraGet('/rest/api/2/project/{key}/components')` directly (no PoTool/AdminHub
+  import) — in `client/src/services/componentResolve.ts` (M3).
 
 ---
 
@@ -60,8 +61,9 @@ rejected with reasons; accept writes the repo components to the Feature.
   `client/src/views/PoTool/ai/componentMappingAiAssist.ts`.
 - [ ] T010 [US2] Mount the mapping in Feature Composition: gated `PoAiPanel` (build prompt from the Feature +
   `repoAllowlist()`; ingest via `parseComponentMappingIngest`); on accept `componentResolve` names→ids and set
-  `draft.fields.components = [{id}]`; surface unresolved names; never blank an existing value — in
-  `client/src/views/PoTool/FeatureCompositionTab.tsx`.
+  `draft.fields.components = [{id}]`; surface unresolved names; never blank an existing value. **Verify `components`
+  is a writable field in the Feature editmeta (M2)** — if not on the edit screen, write via a direct edit call rather
+  than dropping it — in `client/src/views/PoTool/FeatureCompositionTab.tsx`.
 - [ ] T011 [US2] Extend `FeatureCompositionTab.test.tsx` — locked AI hides the mapping panel; an ingest surfaces
   rejected non-allowlist values; accept sets `draft.fields.components` — in
   `client/src/views/PoTool/FeatureCompositionTab.test.tsx`.
@@ -87,8 +89,8 @@ rejected with reasons; accept writes the repo components to the Feature.
   repo (guarded so 028 non-repo stories are unaffected) — in `client/src/views/ArtView/piPlan/piPlanJira.ts`; update
   `client/src/views/ArtView/piPlan/piPlanJira.test.ts`.
 - [ ] T015 [US3] Assemble the Feature's repo components for the planner input: fetch the Feature's `components`, filter
-  by `repoAllowlist()`, pass into `repoStoryBreakdown` — in the planner input assembly
-  (`client/src/views/ArtView/piPlan/plannerInputs.ts` or `PlannerTab.tsx`), with a test.
+  by `repoAllowlist()`, pass into `repoStoryBreakdown` — in `client/src/views/ArtView/piPlan/plannerInputs.ts` (pure,
+  testable — L1), with a test.
 - [ ] T016 [US3] Wire the repo-story generation path in `PlannerTab.tsx`: for repo-driven Features use
   `repoStoryBreakdown` as the story set (replacing the 028 AI breakdown path), render the proposals for
   edit/remove/accept, and show the empty "map repos first" state — in `client/src/views/ArtView/piPlan/PlannerTab.tsx`.

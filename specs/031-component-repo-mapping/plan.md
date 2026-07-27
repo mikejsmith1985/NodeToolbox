@@ -54,12 +54,15 @@ client/src/views/PoTool/ai/
   componentMappingAiAssist.test.ts           NEW
   PoAiPanel.tsx                               REUSE (gated panel — unchanged)
 
+client/src/services/
+  componentResolve.ts                         NEW  resolve component names→ids for a project (jiraGet, shared — M3)
+  componentResolve.test.ts                    NEW
+
 client/src/views/PoTool/
-  FeatureCompositionTab.tsx                   EDIT mount the mapping panel; accept → draft.fields[componentsFieldId]=[{id}]
+  FeatureCompositionTab.tsx                   EDIT mount the mapping panel; accept → draft.fields.components=[{id}]
+                                                   (verify `components` is writable in editmeta, else direct edit — M2)
   domain/teamDomainRuleStore.ts              NEW  zustand+localStorage: teamProfileId→domain component names
   domain/teamDomainRuleStore.test.ts         NEW
-  jira/componentResolve.ts                   NEW  resolve component names→ids for a project (listProjectComponents)
-  jira/componentResolve.test.ts              NEW
 
 client/src/views/ArtView/piPlan/
   repoStoryBreakdown.ts                      NEW  deterministic one-Story-per-repo (title, dedup, empty-state)

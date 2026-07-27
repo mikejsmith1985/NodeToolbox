@@ -250,7 +250,10 @@ and gating behaviour as Composition.
   proposed as a repo (agree-by-construction with FR-003).
 - **FR-013**: Proposed repo components MUST be **reviewable and adjustable** by the PO, and MUST be written to the
   Feature's component field **only on an explicit accept**, using the standard field mapping resolved by the app's
-  field ids (never a hardcoded field name). Nothing MUST be written to Jira without that accept.
+  field ids (never a hardcoded field name). Nothing MUST be written to Jira without that accept. The accept resolves
+  per surface (M1): on **Feature Composition**, accept stages the components into the composition draft and the
+  **existing Commit** the PO already uses writes them to Jira; on the **PI Planner**, accept writes the components
+  directly to the Feature. Either way, no Jira write occurs without the explicit human accept.
 - **FR-014**: The mapping MUST **never attribute** the components or the Feature content to AI, and MUST NOT blank an
   existing component field when it has nothing to propose.
 - **FR-015**: The mapping MUST be available on **both** the Feature Composition and PI Planner surfaces with identical
