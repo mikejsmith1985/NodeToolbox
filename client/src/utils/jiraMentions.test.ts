@@ -3,7 +3,18 @@
 import { describe, expect, it } from 'vitest';
 
 import type { JiraIssue } from '../types/jira.ts';
-import { bodyContainsUserMention, collectUserMentions, type MentionIdentity } from './jiraMentions.ts';
+import { bodyContainsUserMention, collectUserMentions, mentionIdentityFromUserIdentifier, type MentionIdentity } from './jiraMentions.ts';
+
+describe('mentionIdentityFromUserIdentifier', () => {
+  it('populates the field matching the flavour so the right [~…] token is built', () => {
+    expect(mentionIdentityFromUserIdentifier('name:jsmith', 'John Smith')).toEqual({ accountId: null, name: 'jsmith', key: null, displayName: 'John Smith' });
+    expect(mentionIdentityFromUserIdentifier('key:JIRAUSER123', 'John Smith')).toEqual({ accountId: null, name: null, key: 'JIRAUSER123', displayName: 'John Smith' });
+    // Account ids can themselves contain a colon — only the first prefix is stripped.
+    expect(mentionIdentityFromUserIdentifier('accountId:557058:ab-12', 'Jane')).toEqual({ accountId: '557058:ab-12', name: null, key: null, displayName: 'Jane' });
+    // No prefix → treated as an account id (Cloud default).
+    expect(mentionIdentityFromUserIdentifier('5b10bare', 'Jane')).toEqual({ accountId: '5b10bare', name: null, key: null, displayName: 'Jane' });
+  });
+});
 
 const IDENTITY: MentionIdentity = {
   accountId: '5b10ac8d82e05b22cc7d4ef5',

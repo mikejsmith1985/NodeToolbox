@@ -17,7 +17,7 @@ import {
 import { fetchJiraBaseUrl } from '../../../services/proxyApi.ts';
 import type { JiraIssue } from '../../../types/jira.ts';
 import { businessDaysAgo, toJqlDateString } from '../../../utils/businessDays.ts';
-import { collectUserMentions, type JiraMention, type MentionIdentity } from '../../../utils/jiraMentions.ts';
+import { collectUserMentions, mentionIdentityFromUserIdentifier, type JiraMention, type MentionIdentity } from '../../../utils/jiraMentions.ts';
 import { useMyIssuesPersonaStore } from './useMyIssuesPersonaStore.ts';
 
 const DEFAULT_WINDOW_BUSINESS_DAYS = 3;
@@ -91,7 +91,11 @@ export function useMentionsState(): MentionsState & MentionsActions {
         // never write to the simulated person's data. The search + per-comment match follow the persona.
         const viewerIdentity = await loadIdentity();
         const queryIdentity: MentionIdentity = personaSubject.kind === 'user'
-          ? { accountId: personaSubject.accountId, name: null, key: null, displayName: personaSubject.displayName }
+          // Preserve the simulated user's flavour (name / accountId / key) so search + match use the same
+          // form Jira stores; fall back to a bare account id only if no encoded identifier was captured.
+          ? (personaSubject.userIdentifier
+            ? mentionIdentityFromUserIdentifier(personaSubject.userIdentifier, personaSubject.displayName)
+            : { accountId: personaSubject.accountId, name: null, key: null, displayName: personaSubject.displayName })
           : viewerIdentity;
         const windowStart = businessDaysAgo(windowBusinessDays);
         const searchResponse = await jiraGet<JiraSearchResponse>(buildMentionSearchPath(queryIdentity, windowStart));
@@ -227,9 +231,9 @@ async function loadIdentity(): Promise<MentionIdentity> {
  * happens client-side via collectUserMentions.
  */
 function buildMentionSearchPath(identity: MentionIdentity, windowStart: Date): string {
-  // Prefer the display name over a raw accountId as the text-search token: a simulated user has no `name`,
-  // and comment text carries the person's name, not their account id (the viewer still matches on `name`).
-  const searchToken = identity.name || identity.displayName || identity.accountId || '';
+  // The token follows the instance's flavour: username (Server) or account id, matching how the viewer's
+  // own search works; display name is the last resort. A simulated user carries the right flavour field.
+  const searchToken = identity.name || identity.accountId || identity.key || identity.displayName || '';
   const escapedToken = searchToken.replace(/(["\\])/g, '\\$1');
   const jql =
     `text ~ "${escapedToken}" AND updated >= "${toJqlDateString(windowStart)}" ORDER BY updated DESC`;

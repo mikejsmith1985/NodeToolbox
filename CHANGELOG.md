@@ -46,6 +46,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Jira) are unchanged.
 
 ### Fixed
+- **My Issues persona: Mentions now works when simulating another user (flavour was being lost).** Jira
+  mentions are matched by a flavour-specific token (`[~username]` on Server, `[~accountId:…]` on Cloud), but
+  the persona only kept the *stripped* id in the account-id slot — so on a username-based instance it built
+  `[~accountId:username]`, which never matches the real `[~username]`, and a simulated user's mentions came
+  back empty. The persona now carries the **flavour-encoded identifier** (`name:` / `accountId:` / `key:`)
+  and Mentions rebuilds the correct token for both the search and the per-comment match. (Assignee-based
+  tabs were unaffected — `assignee = "id"` resolves either way.)
 - **My Issues persona: the "simulate as" flow is now unmistakable (you were probably still viewing
   yourself).** The button was labelled **Simulate** but only ran a user *search* — the actual simulate
   happens when you click a result, which wasn't obvious, so it was easy to type a name, click "Simulate,"
