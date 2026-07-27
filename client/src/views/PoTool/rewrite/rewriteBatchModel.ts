@@ -48,6 +48,8 @@ export interface RewriteBatch {
   createdAtIso: string;
   updatedAtIso: string;
   items: RewriteItem[];
+  /** The Confluence page this batch's before/after review is published to and read back from (US3). */
+  reviewPageUrl?: string;
 }
 
 /** A lightweight batch listing entry (for the resume/batch-list UI), with per-state counts. */
