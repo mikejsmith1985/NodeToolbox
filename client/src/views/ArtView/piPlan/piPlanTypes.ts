@@ -48,6 +48,9 @@ export interface FeatureInput {
   dependencyKeys: string[];
   targetFixVersion: string | null;
   existingChildren: ExistingChild[];
+  /** The Feature's components already filtered to those classified `repo` (spec 031). Drives repo-only story
+   *  generation — one Story per name. Absent/empty for ordinary 028 planning (unaffected). */
+  repoComponentNames?: string[];
 }
 
 /** One proposed Story within a Feature breakdown (AI output). */

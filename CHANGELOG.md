@@ -18,8 +18,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   classification** section (tag each component; unclassified surfaced), and **Feature Composition** now has a
   gated "Map the repositories this Feature touches" panel — proposes repo components from the allowlist
   (non-allowlist values rejected), staged into the Feature's components on accept, written only on save. The
-  PI Planner input now reads each Feature's repo components (allowlist-filtered) ready for repo-only story
-  generation. The Planner story-generation UI and the per-team domain rule follow. Spec:
+  **PI Planner** now has a deterministic (non-AI) **"Generate repo stories"** action — one Story per repo
+  component on each Feature (titled `{summary} ({repo})`, each Story created carrying that repo on its own
+  component field), reusing the existing schedule/date/sub-task/accept pipeline; domain and unclassified
+  components never become a story, and a Feature with no repos surfaces "map repos first". This is the MVP
+  (classify → map → repo-only stories). The per-team domain rule and Planner-side mapping follow. Spec:
   `specs/031-component-repo-mapping/`.
 
 ### Fixed

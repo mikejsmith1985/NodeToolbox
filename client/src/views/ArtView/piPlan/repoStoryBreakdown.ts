@@ -7,7 +7,7 @@
 // Feature with no repo components yields zero stories and an honest "map repos first" state. Pure — no I/O.
 
 import type { ComponentKind } from '../../AdminHub/lib/componentClassificationStore.ts';
-import type { ExistingChild } from './piPlanTypes.ts';
+import type { ExistingChild, FeatureInput, StorySuggestion } from './piPlanTypes.ts';
 
 /** The Feature a repo breakdown is built for. */
 export interface FeatureForRepoStories {
@@ -87,4 +87,45 @@ export function buildRepoStoryProposals(
     ? ['No repo components mapped — map repos first.']
     : [];
   return { proposals, honestStates };
+}
+
+/** Splits a Feature's size across its repo stories, at least 1 point each (the PO edits before creating). */
+function pointsPerRepoStory(featureSizePoints: number | null, repoCount: number): number {
+  if (repoCount === 0) {
+    return 0;
+  }
+  const base = featureSizePoints && featureSizePoints > 0 ? featureSizePoints : repoCount;
+  return Math.max(1, Math.round(base / repoCount));
+}
+
+/**
+ * Turns each Feature's repo components into the 028 `StorySuggestion` shape (one per repo), so repo-only
+ * story generation can reuse the whole 028 schedule/date/sub-task/accept pipeline via `buildPiPlanProposal`.
+ * Deterministic — no AI. Features with no repo components contribute nothing. `matchExistingKey` carries the
+ * idempotency link so an already-storied repo is not re-created.
+ */
+export function buildRepoStoryAcceptedByFeature(
+  features: readonly FeatureInput[],
+  getKind: (name: string) => ComponentKind | null,
+): Record<string, StorySuggestion[]> {
+  const acceptedByFeature: Record<string, StorySuggestion[]> = {};
+  for (const feature of features) {
+    const { proposals } = buildRepoStoryProposals(
+      { key: feature.key, summary: feature.summary },
+      feature.repoComponentNames ?? [],
+      feature.existingChildren,
+      getKind,
+    );
+    if (proposals.length === 0) {
+      continue;
+    }
+    const points = pointsPerRepoStory(feature.sizePoints, proposals.length);
+    acceptedByFeature[feature.key] = proposals.map((proposal) => ({
+      summary: proposal.title,
+      sizePoints: points,
+      hasTestableOutput: true,
+      matchExistingKey: proposal.matchExistingKey,
+    }));
+  }
+  return acceptedByFeature;
 }

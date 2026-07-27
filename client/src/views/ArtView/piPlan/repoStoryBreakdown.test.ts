@@ -2,9 +2,9 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { buildRepoStoryProposals } from './repoStoryBreakdown.ts';
+import { buildRepoStoryAcceptedByFeature, buildRepoStoryProposals } from './repoStoryBreakdown.ts';
 import type { ComponentKind } from '../../AdminHub/lib/componentClassificationStore.ts';
-import type { ExistingChild } from './piPlanTypes.ts';
+import type { ExistingChild, FeatureInput } from './piPlanTypes.ts';
 
 const FEATURE = { key: 'DENP-1', summary: 'Member Enrollment Enhancement' };
 
@@ -62,5 +62,45 @@ describe('buildRepoStoryProposals', () => {
   it('de-duplicates repeated components in the input', () => {
     const result = buildRepoStoryProposals(FEATURE, ['payments-api', 'PAYMENTS-API'], [], kindLookup(['payments-api']));
     expect(result.proposals).toHaveLength(1);
+  });
+});
+
+describe('buildRepoStoryAcceptedByFeature', () => {
+  function feature(over: Partial<FeatureInput>): FeatureInput {
+    return {
+      key: 'DENP-1', summary: 'Member Enrollment Enhancement', sizePoints: 8, priorityRank: 1,
+      priorityName: null, isCommitted: false, dependencyKeys: [], targetFixVersion: null, existingChildren: [],
+      repoComponentNames: [], ...over,
+    };
+  }
+
+  it('produces one StorySuggestion per repo, splitting the size, keyed by Feature', () => {
+    const getKind = kindLookup(['payments-api', 'ui-web']);
+    const accepted = buildRepoStoryAcceptedByFeature(
+      [feature({ repoComponentNames: ['payments-api', 'ui-web'], sizePoints: 8 })],
+      getKind,
+    );
+    expect(accepted['DENP-1'].map((s) => s.summary)).toEqual([
+      'Member Enrollment Enhancement (payments-api)',
+      'Member Enrollment Enhancement (ui-web)',
+    ]);
+    expect(accepted['DENP-1'][0].sizePoints).toBe(4); // 8 split across 2 repos
+    expect(accepted['DENP-1'][0].hasTestableOutput).toBe(true);
+  });
+
+  it('omits a Feature with no repo components', () => {
+    const accepted = buildRepoStoryAcceptedByFeature([feature({ repoComponentNames: [] })], kindLookup([]));
+    expect(accepted['DENP-1']).toBeUndefined();
+  });
+
+  it('carries the idempotency match from an existing child Story', () => {
+    const accepted = buildRepoStoryAcceptedByFeature(
+      [feature({
+        repoComponentNames: ['payments-api'],
+        existingChildren: [{ key: 'DENP-9', kind: 'story', parentKey: 'DENP-1', summary: 'Member Enrollment Enhancement (payments-api)' }],
+      })],
+      kindLookup(['payments-api']),
+    );
+    expect(accepted['DENP-1'][0].matchExistingKey).toBe('DENP-9');
   });
 });

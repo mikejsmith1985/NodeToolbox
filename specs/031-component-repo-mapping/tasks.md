@@ -10,7 +10,7 @@ TDD throughout (Constitution V + the pre-commit test-per-source hook): the `.tes
 
 ## Phase 1: Setup
 
-- [ ] T001 Add a `## [Unreleased]` CHANGELOG.md entry stub for feature 031 (so subsequent commits satisfy the
+- [x] T001 Add a `## [Unreleased]` CHANGELOG.md entry stub for feature 031 (so subsequent commits satisfy the
   CHANGELOG-in-commit hook) in `CHANGELOG.md`.
 
 ## Phase 2: Foundational (blocking prerequisites for US2/US3/US4)
@@ -91,7 +91,7 @@ rejected with reasons; accept writes the repo components to the Feature.
 - [x] T015 [US3] Assemble the Feature's repo components for the planner input: fetch the Feature's `components`, filter
   by `repoAllowlist()`, pass into `repoStoryBreakdown` — in `client/src/views/ArtView/piPlan/plannerInputs.ts` (pure,
   testable — L1), with a test.
-- [ ] T016 [US3] Wire the repo-story generation path in `PlannerTab.tsx`: for repo-driven Features use
+- [x] T016 [US3] Wire the repo-story generation path in `PlannerTab.tsx`: for repo-driven Features use
   `repoStoryBreakdown` as the story set (replacing the 028 AI breakdown path), render the proposals for
   edit/remove/accept, and show the empty "map repos first" state — in `client/src/views/ArtView/piPlan/PlannerTab.tsx`.
 

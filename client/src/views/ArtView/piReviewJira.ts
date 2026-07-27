@@ -206,6 +206,9 @@ function createFeatureQueryFields(): string {
       ...getStoryPointsCandidateFieldIds(),
       targetStartFieldId,
       targetEndFieldId,
+      // Components carry the repo mapping the PI Planner turns into one Story per repo (spec 031); an extra
+      // field on the read is harmless to every other consumer.
+      'components',
     ].filter((fieldName): fieldName is string => Boolean(fieldName))),
   ).join(',');
 }
