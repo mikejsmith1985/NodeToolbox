@@ -168,6 +168,17 @@
   font-size: var(--font-size-sm);
 }
 
+/* Prominent box for capacity-honesty flags (e.g. a Defect bucket whose children exceed its budget). */
+.warningBox {
+  margin-top: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--color-danger);
+  border-radius: var(--radius-sm);
+  background: var(--color-card-bg-subtle);
+  color: var(--color-warning-text);
+  font-size: var(--font-size-sm);
+}
+
 .bottleneck {
   border-left: 3px solid var(--color-danger);
   padding: 0.25rem 0.6rem;

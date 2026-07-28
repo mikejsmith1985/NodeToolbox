@@ -80,6 +80,23 @@ describe('detectBottlenecks', () => {
     const flags = detectBottlenecks(planResult(null), factSheet(), stories, '2026-10-07');
     expect(flags.some((f) => f.kind === 'prodCarry')).toBe(true);
   });
+
+  it('flags a Story larger than the selected per-sprint capacity (oversize)', () => {
+    const big = { ...story('DENP-1', '26.4.1', null), sizePoints: 20 };
+    const flags = detectBottlenecks(planResult(null), factSheet(), [big], '2026-10-07', 10);
+    const oversize = flags.find((f) => f.kind === 'storyOversize');
+    expect(oversize?.figures).toEqual({ sizePoints: 20, maxStorySize: 10 });
+  });
+
+  it('does not flag oversize when a Story fits the cap or no cap is given', () => {
+    const fits = { ...story('DENP-1', '26.4.1', null), sizePoints: 8 };
+    expect(detectBottlenecks(planResult(null), factSheet(), [fits], '2026-10-07', 10)
+      .some((f) => f.kind === 'storyOversize')).toBe(false);
+    // maxStorySize defaults to 0 (disabled) → even a huge Story is not flagged.
+    const huge = { ...story('DENP-1', '26.4.1', null), sizePoints: 99 };
+    expect(detectBottlenecks(planResult(null), factSheet(), [huge], '2026-10-07')
+      .some((f) => f.kind === 'storyOversize')).toBe(false);
+  });
 });
 
 describe('attachMitigations', () => {

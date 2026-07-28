@@ -240,7 +240,7 @@ export interface PiPlanningFactSheet {
 }
 
 /** One engine-detected bottleneck; the AI may attach a mitigation only to a matching id. */
-export type BottleneckKind = 'slTestThroughput' | 'keyPerson' | 'dependencyOrder' | 'prodCarry';
+export type BottleneckKind = 'slTestThroughput' | 'keyPerson' | 'dependencyOrder' | 'prodCarry' | 'storyOversize';
 export interface Bottleneck {
   id: string;
   kind: BottleneckKind;

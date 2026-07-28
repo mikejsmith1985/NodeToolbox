@@ -12,6 +12,9 @@ export const DELIVERY_PLAN_REPLY_KIND = 'piDeliveryPlan';
 /** How many Features to embed per prompt chunk before splitting (keeps a single reply pasteable). */
 const FEATURES_PER_CHUNK = 12;
 
+/** Default max Story size when the caller does not pass the selected per-person-per-sprint capacity. */
+const DEFAULT_MAX_STORY_SIZE = 10;
+
 /** Renders each Feature as a brief block — key, size, repos, and (when present) a description snippet — so the
  *  AI decomposes and writes acceptance-criteria hints from real content rather than the title alone. */
 function renderFeatureBriefs(factSheet: PiPlanningFactSheet): string {
@@ -44,7 +47,7 @@ function renderBottleneckList(bottlenecks: Bottleneck[]): string {
 }
 
 /** Builds the prompt for a single chunk of Features. */
-function buildChunkPrompt(factSheet: PiPlanningFactSheet, bottlenecks: Bottleneck[], chunkIndex: number, chunkCount: number): string {
+function buildChunkPrompt(factSheet: PiPlanningFactSheet, bottlenecks: Bottleneck[], chunkIndex: number, chunkCount: number, maxStorySize: number): string {
   const chunkNote = chunkCount > 1 ? ` (chunk ${chunkIndex + 1} of ${chunkCount})` : '';
   return [
     `You are helping plan Program Increment ${factSheet.piName}${chunkNote}. Work ONLY from the facts below.`,
@@ -52,8 +55,13 @@ function buildChunkPrompt(factSheet: PiPlanningFactSheet, bottlenecks: Bottlenec
     'Return ONE JSON object with two arrays: a Story decomposition and bottleneck mitigations. For each Feature,',
     'group the repositories it touches into one or more Stories (a Story may bridge several repos under one owner);',
     'give each Story a clear, specific summary and 2–4 concrete acceptance-criteria hints DERIVED FROM the Detail',
-    'text below — not generic restatements of the title. Prefer several focused Stories over one catch-all Story',
-    'when the Detail describes distinct slices of work. Use ONLY the repo names and Feature keys shown.',
+    'text below — not generic restatements of the title. Use ONLY the repo names and Feature keys shown.',
+    '',
+    `SIZE RULE: every Story must be independently deliverable within ONE sprint — no larger than ${maxStorySize} points.`,
+    `A Feature is split evenly across the Stories you return, so return about ceil(size / ${maxStorySize}) Stories per`,
+    'Feature, each a DISTINCT slice of scope with its own clear deliverable. Do NOT return one catch-all Story for a',
+    'large Feature — that Story will be flagged as too big to finish in a sprint.',
+    '',
     'Do NOT return dates, sprints, assignments, or point estimates — those are computed for you and any you return',
     'will be ignored.',
     '',
@@ -93,7 +101,11 @@ export interface DeliveryPromptResult {
  * the Feature set is large so each reply stays pasteable (FR-021). The AI is constrained to decomposition +
  * mitigations only; everything checkable is embedded as fact.
  */
-export function buildDeliveryPlanPrompt(factSheet: PiPlanningFactSheet, bottlenecks: Bottleneck[] = []): DeliveryPromptResult {
+export function buildDeliveryPlanPrompt(
+  factSheet: PiPlanningFactSheet,
+  bottlenecks: Bottleneck[] = [],
+  maxStorySize: number = DEFAULT_MAX_STORY_SIZE,
+): DeliveryPromptResult {
   // Only NEW Features are decomposed by the AI; carryover Features already have Stories in flight and are
   // reconciled deterministically (never sent to the AI, so it can't propose duplicates).
   const newFeatures = factSheet.features.filter((feature) => !feature.isCarryover);
@@ -101,7 +113,7 @@ export function buildDeliveryPlanPrompt(factSheet: PiPlanningFactSheet, bottlene
   const prompts: string[] = [];
   for (let chunkIndex = 0; chunkIndex < chunkCount; chunkIndex += 1) {
     const chunkFeatures = newFeatures.slice(chunkIndex * FEATURES_PER_CHUNK, (chunkIndex + 1) * FEATURES_PER_CHUNK);
-    prompts.push(buildChunkPrompt({ ...factSheet, features: chunkFeatures }, bottlenecks, chunkIndex, chunkCount));
+    prompts.push(buildChunkPrompt({ ...factSheet, features: chunkFeatures }, bottlenecks, chunkIndex, chunkCount, maxStorySize));
   }
   return { prompts, featureCount: newFeatures.length, chunkCount };
 }

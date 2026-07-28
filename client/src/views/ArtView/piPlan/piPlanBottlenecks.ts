@@ -90,6 +90,28 @@ function dependencyOrderBottlenecks(factSheet: PiPlanningFactSheet, stories: Pla
   return flags;
 }
 
+/**
+ * Flags any Story larger than one person can deliver in a sprint (the selected per-person-per-sprint capacity).
+ * A Story over the cap was not decomposed into enough distinct, sprint-fittable slices — it must be split so it
+ * can actually land on time. Deterministic: the size comes from the engine's even split, never from the AI.
+ */
+function storyOversizeBottlenecks(stories: PlannedStory[], maxStorySize: number): Bottleneck[] {
+  if (maxStorySize <= 0) {
+    return [];
+  }
+  return stories
+    .filter((story) => story.sizePoints > maxStorySize)
+    .map((story) => ({
+      id: `story-oversize-${story.tempId}`,
+      kind: 'storyOversize' as const,
+      sprintName: story.sprintName,
+      subjectKey: story.tempId,
+      figures: { sizePoints: story.sizePoints, maxStorySize },
+      statement: `Story "${story.summary}" (${story.featureKey}) is ${story.sizePoints} pts — over the ${maxStorySize}-pt per-sprint capacity. Split it into smaller Stories with distinct deliverables.`,
+      mitigation: null,
+    }));
+}
+
 /** Flags Stories whose production delivery (Due) falls after the PI end — carry vs in-PI. */
 function prodCarryBottlenecks(stories: PlannedStory[], piEndIso: string): Bottleneck[] {
   return stories
@@ -114,12 +136,14 @@ export function detectBottlenecks(
   factSheet: PiPlanningFactSheet,
   stories: PlannedStory[],
   piEndIso: string,
+  maxStorySize = 0,
 ): Bottleneck[] {
   return [
     ...slThroughputBottleneck(planResult),
     ...keyPersonBottlenecks(factSheet),
     ...dependencyOrderBottlenecks(factSheet, stories),
     ...prodCarryBottlenecks(stories, piEndIso),
+    ...storyOversizeBottlenecks(stories, maxStorySize),
   ];
 }
 

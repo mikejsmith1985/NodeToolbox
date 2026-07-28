@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Delivery Planner: selectable capacity per person per sprint (8 / 10 / 13 pts), with two new deliverability
+  guards (GH #245).** A "Capacity / person / sprint" selector lets you plan the whole PI at 8 (conservative),
+  10 (standard) or 13 (stretch) points per person per sprint — it sets every person's sprint capacity **and**
+  becomes the maximum deliverable Story size. Two rule-derived flags now surface work that can't land on time:
+  - **Oversized Story** — any planned Story larger than the selected capacity is flagged (`storyOversize`
+    bottleneck) as "too big to finish in a sprint — split into smaller Stories with distinct deliverables."
+    The prompt now also tells the AI the size cap and to return ~`ceil(size / cap)` distinct Stories per Feature,
+    so a 40-pt Feature no longer collapses into one 40-pt Story.
+  - **Undersized Defect bucket** — a Feature whose summary contains "Defect"/"Defects" is treated as a fixed
+    capacity budget; when the summed points of its child issues exceed its own size, it is flagged over-budget
+    (e.g. "sized 40, but child issues total 52 — over by 12") so it gets re-pointed or split. Both checks are
+    deterministic — computed from the numbers, never trusted from the AI.
+
 ### Changed
 - **Delivery Planner prompt now decomposes from real Feature content, not just the title (GH #245).** The generated
   plan prompt was fed only each Feature's summary, size and repo list — so the AI returned generic, boilerplate

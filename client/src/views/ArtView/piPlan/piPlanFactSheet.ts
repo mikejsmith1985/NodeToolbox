@@ -60,6 +60,10 @@ export interface FactSheetInputs {
   classifyComponent: (componentName: string) => ComponentClass;
   /** Fraction of raw velocity to plan; defaults to 0.80. */
   loadFactor?: number;
+  /** When set, plan at this flat per-person-per-sprint capacity (8/10/13) for EVERY person, overriding
+   *  measured velocity × load factor. This is the already-loaded planning number the operator selects, and
+   *  it also caps the deliverable Story size (a Story must fit one person's sprint). */
+  capacityPerSprintOverride?: number;
 }
 
 /** Returns the ISO date `days` calendar days after `iso`. */
@@ -136,11 +140,13 @@ export function assembleFactSheet(inputs: FactSheetInputs): PiPlanningFactSheet 
     };
   });
 
+  // A selected flat capacity (8/10/13) overrides measured velocity for every person, giving the operator three
+  // comparable planning scenarios; otherwise plan at measured velocity × load factor (the default behaviour).
   const people: FactSheetPerson[] = inputs.people.map((person) => ({
     displayName: person.displayName,
     accountId: person.accountId,
     roles: [...person.roles],
-    pointsPerSprint: person.velocity * loadFactor,
+    pointsPerSprint: inputs.capacityPerSprintOverride ?? person.velocity * loadFactor,
   }));
   const velocityByPerson: Record<string, number> = {};
   inputs.people.forEach((person) => { velocityByPerson[person.displayName] = person.velocity; });

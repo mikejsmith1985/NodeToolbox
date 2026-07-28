@@ -48,6 +48,12 @@ describe('buildDeliveryPlanPrompt', () => {
     expect(prompt).not.toContain('Detail:');
   });
 
+  it('states the selected per-sprint size cap so the AI splits large Features', () => {
+    const prompt = buildDeliveryPlanPrompt(factSheet(1), [], 13).prompts[0];
+    expect(prompt).toContain('no larger than 13 points');
+    expect(prompt).toMatch(/ceil\(size \/ 13\)/);
+  });
+
   it('chunks when the Feature set is large', () => {
     const { chunkCount, prompts } = buildDeliveryPlanPrompt(factSheet(25), []);
     expect(chunkCount).toBeGreaterThan(1);

@@ -24,6 +24,7 @@ import { detectBottlenecks, attachMitigations } from './piPlan/piPlanBottlenecks
 import { applyDeliveryStory, applyCarryoverGaps, type DeliveryWriteContext } from './piPlan/piDeliveryJira.ts';
 import { toFactSheetFeatureInputs, toFactSheetPersonInputs, deriveSprints, versionsToReleaseSchedule, type JiraProjectVersion } from './piPlan/piDeliveryTabData.ts';
 import { classifyChildKind, reconcileCarryoverFeature, type CarryoverStory, type CarryoverStoryReconcile } from './piPlan/piPlanCarryover.ts';
+import { detectDefectUndersize, type DefectUndersizeFlag } from './piPlan/piPlanCapacityFlags.ts';
 import { buildStorySubtaskScaffold } from './piPlan/piPlanRepoSubtasks.ts';
 import PiDeliveryMonitor from './PiDeliveryMonitor.tsx';
 import type { Bottleneck, ExistingChild, PiPlanningFactSheet } from './piPlan/piPlanTypes.ts';
@@ -92,6 +93,10 @@ export default function PiDeliveryPlanTab({ piName, teams = [] }: PiDeliveryPlan
   const [carryoverWip, setCarryoverWip] = useState<CarryoverWipItem[]>([]);
   // Phase C — on-demand defect sub-task generation (defects are unplanned; append repos as you build them).
   const [defectKey, setDefectKey] = useState('');
+  // The planning capacity per person per sprint (8/10/13) — sets everyone's sprint capacity AND the max Story size.
+  const [capacityPerSprint, setCapacityPerSprint] = useState(10);
+  // Defect-bucket Features whose child issues have outgrown their point budget (computed at load).
+  const [defectFlags, setDefectFlags] = useState<DefectUndersizeFlag[]>([]);
   // Field id → human display name, so the config inputs show what each field id actually is.
   const [fieldNameById, setFieldNameById] = useState<Record<string, string>>({});
   const [assigneeOverrides, setAssigneeOverrides] = useState<Record<string, string>>({});
@@ -220,6 +225,8 @@ export default function PiDeliveryPlanTab({ piName, teams = [] }: PiDeliveryPlan
       // carryover cannot be detected and re-planning would risk duplicates, so we say so.
       const existingChildrenByFeature: Record<string, ExistingChild[]> = {};
       const carryoverReconciles: { featureKey: string; reconcile: CarryoverStoryReconcile }[] = [];
+      // Summed points of every child issue per Feature (done + not-done) — the defect-bucket budget check.
+      const childPointsByFeature: Record<string, number> = {};
       let wipItems: CarryoverWipItem[] = [];
       const featureLinkFieldId = writeConfig.featureLink.trim();
       let carryoverNote = '';
@@ -260,6 +267,9 @@ export default function PiDeliveryPlanTab({ piName, teams = [] }: PiDeliveryPlan
         stories.forEach((story) => {
           const parentFeatureKey = readFeatureLinkValue(story, featureLinkFieldId);
           if (!parentFeatureKey) return;
+          const rawStorySize = (story.fields as unknown as Record<string, unknown>)[sizeFieldId];
+          const storyPoints = typeof rawStorySize === 'number' ? rawStorySize : Number(rawStorySize) || 0;
+          childPointsByFeature[parentFeatureKey] = (childPointsByFeature[parentFeatureKey] ?? 0) + storyPoints;
           const storyComponents = (story.fields as unknown as { components?: { id?: string; name?: string }[] }).components ?? [];
           storyComponents.forEach((component) => { if (component.name && component.id) idByName[component.name] = component.id; });
           const repoNames = storyComponents.map((component) => component.name ?? '').filter((name) => name !== '' && getComponentKind(name) === 'repo');
@@ -302,13 +312,18 @@ export default function PiDeliveryPlanTab({ piName, teams = [] }: PiDeliveryPlan
         releaseSchedule,
         fieldConfig: { inIntStatusNames: [], slDoneStatusNames: [], doneCategoryNames: [] },
         classifyComponent: (name) => getComponentKind(name) ?? 'unclassified',
+        capacityPerSprintOverride: capacityPerSprint, // plan at the selected 8/10/13 pts per person per sprint
       });
       setFactSheet(sheet);
       setPlan(null);
       setBottlenecks([]);
       setPrompts([]);
+      // Flag any Defect-bucket Feature whose child issues have outgrown its point budget (undersized).
+      const undersized = detectDefectUndersize(sheet.features, childPointsByFeature);
+      setDefectFlags(undersized);
       const carryoverFeatureCount = sheet.features.filter((feature) => feature.isCarryover).length;
-      setStatusMessage(`Loaded ${issues.length} Feature(s) — ${carryoverFeatureCount} carryover (reconciled), ${issues.length - carryoverFeatureCount} new. ${sheet.repoAllowlist.length} repo(s).${carryoverNote}`);
+      const undersizedNote = undersized.length > 0 ? ` ⚠ ${undersized.length} defect Feature(s) over budget.` : '';
+      setStatusMessage(`Loaded ${issues.length} Feature(s) — ${carryoverFeatureCount} carryover (reconciled), ${issues.length - carryoverFeatureCount} new. ${sheet.repoAllowlist.length} repo(s).${carryoverNote}${undersizedNote}`);
     } catch (loadError) {
       setStatusMessage(loadError instanceof Error ? loadError.message : 'Failed to load Features.');
     } finally {
@@ -318,7 +333,7 @@ export default function PiDeliveryPlanTab({ piName, teams = [] }: PiDeliveryPlan
 
   function handleGeneratePrompt() {
     if (factSheet === null) return;
-    const built = buildDeliveryPlanPrompt(factSheet, bottlenecks);
+    const built = buildDeliveryPlanPrompt(factSheet, bottlenecks, capacityPerSprint);
     setPrompts(built.prompts);
     setHasCopiedPrompt(false);
     setStatusMessage(`Prompt generated (${built.featureCount} Features${built.chunkCount > 1 ? `, ${built.chunkCount} chunks` : ''}). Copy it into your AI, then paste the reply below.`);
@@ -360,7 +375,7 @@ export default function PiDeliveryPlanTab({ piName, teams = [] }: PiDeliveryPlan
       carryoverWip, // Phase B — in-flight work pre-consumes capacity so new work isn't over-scheduled on top of WIP.
     });
     const detected = attachMitigations(
-      detectBottlenecks(builtPlan.planResult, factSheet, builtPlan.stories, piEndIso.trim() || factSheet.deliveryDeadlineIso),
+      detectBottlenecks(builtPlan.planResult, factSheet, builtPlan.stories, piEndIso.trim() || factSheet.deliveryDeadlineIso, capacityPerSprint),
       parsed.mitigationsById,
     );
     setPlan(builtPlan);
@@ -505,6 +520,13 @@ export default function PiDeliveryPlanTab({ piName, teams = [] }: PiDeliveryPlan
           <label className={styles.field}>Release project (fixVersions)
             <input className={styles.fieldInput} value={releaseProjectKey} onChange={(event) => setReleaseProjectKey(event.target.value)} placeholder="defaults to write project" />
           </label>
+          <label className={styles.field}>Capacity / person / sprint
+            <select className={styles.fieldInput} value={capacityPerSprint} onChange={(event) => setCapacityPerSprint(Number(event.target.value))}>
+              <option value={8}>8 pts — conservative</option>
+              <option value={10}>10 pts — standard</option>
+              <option value={13}>13 pts — stretch</option>
+            </select>
+          </label>
           <button className={`${styles.actionButton} ${styles.primaryButton}`} disabled={isBusy} onClick={() => void handleLoadFeatures()} type="button">
             {isBusy ? 'Loading…' : 'Load Features'}
           </button>
@@ -514,6 +536,18 @@ export default function PiDeliveryPlanTab({ piName, teams = [] }: PiDeliveryPlan
           <>
             <p className={styles.statusLine}>{factSheet.features.length} Feature(s) · {factSheet.people.length} roster member(s) · {factSheet.repoAllowlist.length} repo(s) · delivery deadline {factSheet.deliveryDeadlineIso}</p>
             {factSheet.notes.length > 0 && <ul className={styles.notes}>{factSheet.notes.map((note, index) => <li key={index}>{note}</li>)}</ul>}
+            {defectFlags.length > 0 && (
+              <div className={styles.warningBox}>
+                <strong>⚠ Defect Features over budget</strong>
+                <ul className={styles.notes}>
+                  {defectFlags.map((flag) => (
+                    <li key={flag.featureKey}>
+                      {flag.featureKey} sized {flag.featureSize} pts, but child issues total {flag.childTotal} pts — over by {flag.overBy}. Re-point or split the bucket.
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </>
         )}
       </section>
