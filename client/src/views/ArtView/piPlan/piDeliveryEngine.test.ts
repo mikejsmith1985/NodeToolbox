@@ -83,3 +83,26 @@ describe('buildDeliveryPlan', () => {
     expect(plan.honestStates.some((s) => /map repos first/i.test(s))).toBe(true);
   });
 });
+
+describe('buildDeliveryPlan — carryover WIP consumes capacity (Phase B)', () => {
+  it('loads in-flight WIP first, pushes new work no earlier, and never emits WIP as a Story', () => {
+    const withoutWip = buildDeliveryPlan(baseInput());
+    const input = baseInput();
+    input.carryoverWip = [{ summary: 'In flight A', sizePoints: 16 }, { summary: 'In flight B', sizePoints: 16 }];
+    const withWip = buildDeliveryPlan(input);
+
+    // WIP is capacity-only — only the one real new Story is proposed.
+    expect(withWip.stories).toHaveLength(1);
+    // The honest state calls out the WIP capacity consumption.
+    expect(withWip.honestStates.some((state) => /WIP/i.test(state))).toBe(true);
+    // With WIP eating early capacity, the new Story finishes no earlier than without it.
+    expect(withWip.stories[0].dates.targetEndIso >= withoutWip.stories[0].dates.targetEndIso).toBe(true);
+  });
+
+  it('ignores done WIP (it consumes no capacity)', () => {
+    const input = baseInput();
+    input.carryoverWip = [{ summary: 'Finished', sizePoints: 20, isDone: true }];
+    const plan = buildDeliveryPlan(input);
+    expect(plan.honestStates.some((state) => /WIP/i.test(state))).toBe(false);
+  });
+});

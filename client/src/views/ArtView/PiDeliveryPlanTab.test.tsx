@@ -21,6 +21,12 @@ describe('PiDeliveryPlanTab', () => {
     expect(screen.getByText('26.4')).toBeTruthy();
   });
 
+  it('renders the on-demand Defect sub-task card (unplanned defect flow)', () => {
+    render(<PiDeliveryPlanTab piName="26.4" />);
+    expect(screen.getByText(/Defect sub-tasks \(on demand\)/i)).toBeTruthy();
+    expect(screen.getByPlaceholderText('DENP-1234')).toBeTruthy();
+  });
+
   it('hides the prompt generator behind the AI-assist gate until unlocked', () => {
     render(<PiDeliveryPlanTab piName="26.4" />);
     expect(screen.getByText(/Unlock AI Assist/i)).toBeTruthy();

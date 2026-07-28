@@ -34,6 +34,14 @@ export interface AcceptedStory {
   existingChildren?: ExistingChild[];
 }
 
+/** One in-flight carryover Story whose remaining effort consumes capacity (Phase B) but is never re-created. */
+export interface CarryoverWipItem {
+  summary: string;
+  sizePoints: number;
+  /** A done Story consumes no more capacity; only not-done WIP is loaded. */
+  isDone?: boolean;
+}
+
 export interface DeliveryEngineInput {
   factSheet: PiPlanningFactSheet;
   stories: AcceptedStory[];
@@ -42,6 +50,8 @@ export interface DeliveryEngineInput {
   piEndIso: string;
   todayIso: string;
   sprintLengthDays?: number;
+  /** In-flight carryover work that pre-consumes sprint capacity before new work is scheduled (Phase B). */
+  carryoverWip?: CarryoverWipItem[];
 }
 
 /** One fully-planned Story: its parallel coding sub-tasks (with assignees), SL owner, sprint, and dates. */
@@ -158,6 +168,26 @@ export function buildDeliveryPlan(input: DeliveryEngineInput): DeliveryPlan {
     }
     preps.push({ tempId, story, codingSubtasks, devPoints, slPoints: internalTestPoints, hasTestableOutput, bucket, rank, warnings });
   });
+
+  // Phase B — in-flight carryover work pre-consumes capacity: add each not-done WIP Story as a Must-bucket
+  // capacity item ranked ahead of new work (rank -1), so buildCapacityPlan schedules WIP first and new work
+  // fills what remains (over-commitment then surfaces honestly). WIP items are capacity-only — never emitted
+  // as proposals (they are not added to `preps`).
+  const activeWip = (input.carryoverWip ?? []).filter((wip) => !wip.isDone && wip.sizePoints > 0);
+  activeWip.forEach((wip, wipIndex) => {
+    const { devPoints: wipDev, internalTestPoints: wipTest } = splitEffort(wip.sizePoints);
+    if (wipDev > 0) {
+      planItems.push({ key: `wip-dev-${wipIndex}`, summary: `WIP: ${wip.summary}`, bucket: 'Must', rankInBucket: -1,
+        devPoints: wipDev, internalTestPoints: 0, externalTestPoints: 0, isTestEstimated: false, assignee: null });
+    }
+    if (wipTest > 0) {
+      planItems.push({ key: `wip-sl-${wipIndex}`, summary: `WIP SL: ${wip.summary}`, bucket: 'Must', rankInBucket: -1,
+        devPoints: 0, internalTestPoints: wipTest, externalTestPoints: 0, isTestEstimated: false, assignee: null });
+    }
+  });
+  if (activeWip.length > 0) {
+    honestStates.push(`${activeWip.length} in-flight carryover Story(ies) consume capacity as WIP before new work is scheduled.`);
+  }
 
   const planResult = buildCapacityPlan(
     { items: planItems, people, piName: input.factSheet.piName, sprintLengthDays,
