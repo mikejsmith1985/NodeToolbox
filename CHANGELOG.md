@@ -8,6 +8,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **PI Delivery Framework — deterministic engine layer (feature 032, in progress).** The new team delivery model
+  where a **repository maps 1:1 to a coding Sub-task** (a Story bridges FE+BE under a primary owner; each repo is an
+  independently-assignable coding sub-task so devs work one Story in parallel), plus one **SL-test** sub-task and
+  per-story **INT/REL/PROD** deploys. Landed as a fully-tested, additive engine layer (the 028 planner and its tests
+  stay byte-identical): `piPlanRepoSubtasks` (repo→sub-task scaffold, replaces 031's story-per-repo), `piPlanFactSheet`
+  (the deterministic PI Planning Fact Sheet — the anti-hallucination spine: fixed query set → one immutable bundle that
+  feeds the engine and is embedded verbatim in the prompt, 80% load factor, Sprint-5 Week-1 delivery deadline),
+  `piDeliveryEngine` (capacity unit = coding sub-task, reusing `buildCapacityPlan` for parallel per-repo assignment and
+  the SL-test-as-own-constraint bottleneck, dates recomputed from rules), `ai/deliveryPlanPrompt`+`deliveryPlanIngest`
+  (the propose-only `{kind:'piDeliveryPlan'}` prompt/ingest — any repo/Feature/bottleneck not in the fact sheet is
+  rejected on ingest; AI-supplied dates/assignments ignored), `piPlanBottlenecks` (deterministic SL-throughput /
+  key-person / dependency-order / PROD-carry detection; AI mitigations attach only to flagged ids), `piPlanMonitor`
+  (burn-up, sub-task aging, SL-queue depth, GitHub-intake freshness, commit-vs-complete signals + `storySlipped` /
+  `slQueueOverTwoSprints` replan triggers), and `piDeliveryJira` (the Story + per-repo coding sub-task + SL + deploy
+  write-payload builders — repo on each coding sub-task's component field). 50 new unit tests. The `SubTaskKind` union
+  is widened **additively** (`coding`/`slTest` added) so the 028 write path stays byte-identical. The Admin/PO **UI tab**
+  that drives this engine is the next increment.
 - **Bulk rule generation for GitHub Email Intake.** The Admin Hub "Rule Assist (AI)" section (behind the AI
   passcode) can now bundle every distinct email shape sitting in the drop folder into **one** prompt, so an
   operator generates a whole rule set with a single paste into their own AI — no more one-email-at-a-time. A
