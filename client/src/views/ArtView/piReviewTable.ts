@@ -756,6 +756,44 @@ function readRowCellValue(rowElement: HTMLTableRowElement, cellIndex: number): s
   return cellElement.textContent?.trim() ?? '';
 }
 
+/** The columns rendered as a checkbox — read as ticked/blank rather than raw text (see readCheckboxCellChecked). */
+const CHECKBOX_COLUMN_KEYS = new Set<PiReviewColumnKey>(['carryOver', 'committed', 'devWork', 'testSupport', 'carryToNext']);
+/** Checkbox cell text that means NOT ticked. */
+const CHECKBOX_NEGATIVE_TEXT = new Set(['no', 'n', 'false', '0', '✗', '✘', '☐', '-', '–', '—', 'unchecked']);
+
+/**
+ * True when a checkbox cell is ticked. The tool writes a ticked box as the text "Yes", but a page edited by
+ * hand in Confluence often marks it with a tick EMOTICON or an image (whose textContent is empty) — so a cell
+ * with affirmative text, OR one that is text-empty but carries a visual mark (emoticon/image/emoji), counts as
+ * ticked. A truly empty cell (or one holding only empty <p> wrappers) is blank.
+ */
+function readCheckboxCellChecked(rowElement: HTMLTableRowElement, cellIndex: number): boolean {
+  const cellElement = rowElement.children.item(cellIndex);
+  if (!isTableCellElement(cellElement)) {
+    return false;
+  }
+  const cellText = cellElement.textContent?.trim().toLowerCase() ?? '';
+  if (cellText !== '') {
+    return !CHECKBOX_NEGATIVE_TEXT.has(cellText);
+  }
+  return Array.from(cellElement.querySelectorAll('*')).some((descendant) => {
+    const tagName = descendant.tagName?.toLowerCase() ?? '';
+    return tagName === 'img'
+      || tagName.includes('emoticon')
+      || descendant.hasAttribute?.('ac:name')
+      || descendant.hasAttribute?.('data-emoji-id')
+      || descendant.hasAttribute?.('data-emoji-short-name');
+  });
+}
+
+/** Reads a cell as a normalized checkbox value ("Yes"/"") for checkbox columns, else the raw trimmed text. */
+function readPiReviewColumnValue(rowElement: HTMLTableRowElement, columnKey: PiReviewColumnKey, cellIndex: number): string {
+  if (CHECKBOX_COLUMN_KEYS.has(columnKey)) {
+    return readCheckboxCellChecked(rowElement, cellIndex) ? CHECKBOX_MARKED_VALUE : '';
+  }
+  return readRowCellValue(rowElement, cellIndex);
+}
+
 function readBodyRowsAfterHeader(
   tableElement: HTMLTableElement,
   headerRowIndex: number,
@@ -1127,7 +1165,7 @@ export function parsePiReviewTable(storageValue: string): PiReviewTableParseResu
     const row = createEmptyPiReviewRow();
     row.rowId = `row-${rows.length + 1}`;
     tableBinding.columnOrder.forEach((columnKey, columnOrderIndex) => {
-      row[columnKey] = readRowCellValue(rowElement, tableBinding.columnIndexes[columnOrderIndex] ?? columnOrderIndex);
+      row[columnKey] = readPiReviewColumnValue(rowElement, columnKey, tableBinding.columnIndexes[columnOrderIndex] ?? columnOrderIndex);
     });
     if (tableBinding.columnOrder.some((columnKey) => row[columnKey].trim() !== '')) {
       rows.push(row);

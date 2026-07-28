@@ -889,8 +889,37 @@ describe('writePiReviewTable', () => {
       },
     ]);
 
-    expect(nextStorageValue).toContain('<td></td><td>No</td>');
+    // Checkbox columns normalize to Yes/blank on parse, so a literal "No" becomes an (unchecked) blank cell;
+    // the committed "Yes" and the extra formatting column round-trip intact.
+    expect(nextStorageValue).toContain('<td>Yes</td><td>Formatting column still preserved</td>');
     expect(nextStorageValue).toContain('Formatting column still preserved');
+  });
+
+  it('reads a hand-authored checkbox (tick emoticon or ✓ symbol) as committed "Yes"', () => {
+    const storageValueWithMarks = `
+      <table>
+        <tbody>
+          <tr>
+            <th>Carry-Over</th><th>Priority</th><th>Feature</th><th>Point Estimate</th>
+            <th>Dependency</th><th>Risks</th><th>Committed to PI?</th><th>Notes</th>
+          </tr>
+          <tr>
+            <td></td><td>High</td><td>DENP-1 Emoticon check</td><td>5</td>
+            <td></td><td></td><td><ac:emoticon ac:name="tick"/></td><td></td>
+          </tr>
+          <tr>
+            <td></td><td>High</td><td>DENP-2 Symbol check</td><td>3</td>
+            <td></td><td></td><td>✓</td><td></td>
+          </tr>
+          <tr>
+            <td></td><td>Low</td><td>DENP-3 Not committed</td><td>2</td>
+            <td></td><td></td><td></td><td></td>
+          </tr>
+        </tbody>
+      </table>
+    `;
+    const parsed = parsePiReviewTable(storageValueWithMarks);
+    expect(parsed.rows.map((row) => row.committed)).toEqual(['Yes', 'Yes', '']);
   });
 
   it('skips the hard-commit boundary marker row while parsing PI Review data', () => {

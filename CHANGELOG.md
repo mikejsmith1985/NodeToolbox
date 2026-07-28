@@ -14,13 +14,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   page (`afterRowIndex 0` is now a valid, persisted position).
 
 ### Fixed
-- **Delivery Planner committed-set detection now matches the PI Review checkbox exactly (GH #245).** Commitment on a
-  PI Review page is the **"Committed to PI?" checkbox** — stored as the literal value `"Yes"` (the tab's own
-  definition). `isCommittedRow` now mirrors that exactly, and `committedFeatureKeys` returns those rows only (falling
-  back to the whole page only when no row is checked). The interim boundary-based heuristic was wrong for pages that
-  commit via the checkbox scattered through the list (it counted every row above the "Stretch Goals" line, over-
-  counting) — the boundary is now ignored for this. The load status also reports the committed-key count and flags any
-  keys Jira didn't return, so a residual gap is diagnosable at a glance.
+- **PI Review now reads hand-authored checkbox marks (tick emoticons / ✓ symbols), fixing the Delivery Planner
+  committed count (GH #245).** A page edited by hand in Confluence marks the "Committed to PI?" (and other checkbox)
+  columns with a **tick emoticon** (whose text is empty) or a **✓ symbol** rather than the tool's literal `"Yes"`, so
+  the parser — which only read the cell's text — saw those cells as blank (or a stray symbol) and the committed set
+  came out as 9 or, after the interim boundary heuristic, the whole page (15). The table parser now recognises a
+  checkbox cell as ticked when it holds affirmative text **or** a visual mark (emoticon/image/emoji), normalising every
+  checkbox column to `Yes`/blank. So the Delivery Planner's committed set matches exactly what the PI Review page shows,
+  and the PI Review tab itself now renders hand-authored checkmarks correctly. The load status still reports the
+  committed-key count (and flags any keys Jira didn't return) so any residual gap is visible.
 
 ### Changed
 - **Delivery Planner sources committed Features from the PI Review page, not a PO+PI Jira query (GH #245).** The
