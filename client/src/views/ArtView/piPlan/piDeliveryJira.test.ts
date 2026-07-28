@@ -83,3 +83,12 @@ describe('buildGapSubtaskRequest (carryover gap-fill)', () => {
     expect(fields.summary).toBe('[REL] Deploy — Enrollment');
   });
 });
+
+describe('buildDeliveryStoryRequest — fixVersion', () => {
+  it('stamps the determined fixVersion on the Story create', async () => {
+    const { buildDeliveryStoryRequest } = await import('./piDeliveryJira.ts');
+    const story = { ...plannedStory(), fixVersionName: 'Aug' };
+    const request = buildDeliveryStoryRequest(story, context);
+    expect((request.fields as Record<string, unknown>).fixVersions).toEqual([{ name: 'Aug' }]);
+  });
+});

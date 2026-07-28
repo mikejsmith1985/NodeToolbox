@@ -64,6 +64,14 @@ export default function ArtView() {
   const lastOverviewAutoLoadKeyRef = useRef('');
   const { loadAllTeams } = actions;
 
+  // The Delivery Planner is only usable with AI Assist, so its tab is hidden (not just disabled) unless the
+  // AI gate is unlocked — nothing on the page reveals it otherwise.
+  const isAiAssistUnlocked = useAiAssistStore((storeState) => storeState.isAiAssistUnlocked);
+  const visibleTabDefinitions = useMemo(
+    () => ART_TAB_DEFINITIONS.filter((tab) => tab.key !== 'delivery' || isAiAssistUnlocked),
+    [isAiAssistUnlocked],
+  );
+
   // PI Review pages now live on the Team Dashboard team profile (single source of truth). For the
   // ART readout, map each ART team to its matching profile and display that profile's pages.
   const dashboardTeamProfiles = useSettingsStore((storeState) => storeState.sprintDashboardTeamProfiles);
@@ -114,7 +122,7 @@ export default function ArtView() {
       <PrimaryTabs
         ariaLabel="ART View tabs"
         idPrefix="art-view"
-        tabs={ART_TAB_DEFINITIONS}
+        tabs={visibleTabDefinitions}
         activeTab={state.activeTab}
         onChange={actions.setActiveTab}
       />
@@ -184,7 +192,7 @@ export default function ArtView() {
             rosterTeams={state.teams}
           />
         )}
-        {state.activeTab === 'delivery' && (
+        {state.activeTab === 'delivery' && isAiAssistUnlocked && (
           <PiDeliveryPlanTab piName={state.selectedPiName} teams={state.teams} />
         )}
         {state.activeTab === 'settings' && (

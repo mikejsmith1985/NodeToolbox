@@ -5,7 +5,7 @@
 import type { JiraIssue } from '../../../types/jira.ts';
 import type { StandupRosterMember } from '../../SprintDashboard/hooks/useStandupRosterStore.ts';
 import type { FactSheetFeatureInput, FactSheetPersonInput } from './piPlanFactSheet.ts';
-import type { ExistingChild } from './piPlanTypes.ts';
+import type { ExistingChild, ReleaseSchedule } from './piPlanTypes.ts';
 
 /** A person's default per-sprint velocity when no measured value is available (a plain 2-week pool). */
 const DEFAULT_VELOCITY_POINTS = 8;
@@ -102,6 +102,28 @@ export function toFactSheetPersonInputs(
       roles: entry.roles,
       velocity: velocityByName[entry.member.displayName] ?? DEFAULT_VELOCITY_POINTS,
     }));
+}
+
+/** One Jira project version (fixVersion) as returned by /rest/api/2/project/{key}/versions. */
+export interface JiraProjectVersion {
+  name?: string;
+  releaseDate?: string;
+  archived?: boolean;
+}
+
+/**
+ * Builds the production release schedule from a project's fixVersions: every non-archived version that has a
+ * release date, as a dated, sorted entry. This is how the delivery process **determines the correct
+ * fixVersion** — the date engine lands each Story's PROD/Due on the first release on/after it, rather than
+ * trusting a Feature's fixVersion that may be unset at load time. Pure.
+ */
+export function versionsToReleaseSchedule(versions: JiraProjectVersion[]): ReleaseSchedule {
+  const entries = versions
+    .filter((version) => !version.archived && typeof version.releaseDate === 'string' && version.releaseDate !== '')
+    .map((version) => ({ name: (version.name ?? '').trim(), releaseDateIso: (version.releaseDate as string).slice(0, 10), isSuggested: false }))
+    .filter((entry) => entry.name !== '')
+    .sort((left, right) => left.releaseDateIso.localeCompare(right.releaseDateIso));
+  return { entries };
 }
 
 /** Derives `count` evenly-spaced sprint windows across the PI, when the board does not already supply them. */

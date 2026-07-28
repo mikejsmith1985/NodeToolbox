@@ -71,3 +71,18 @@ describe('deriveSprints', () => {
     }
   });
 });
+
+describe('versionsToReleaseSchedule', () => {
+  it('keeps dated non-archived versions, sorted by date, ignoring archived/undated', () => {
+    const { versionsToReleaseSchedule } = require('./piDeliveryTabData.ts');
+    const schedule = versionsToReleaseSchedule([
+      { name: 'Sept', releaseDate: '2026-09-30' },
+      { name: 'Archived', releaseDate: '2026-08-01', archived: true },
+      { name: 'No date' },
+      { name: 'Aug', releaseDate: '2026-08-31' },
+    ]);
+    expect(schedule.entries.map((e: { name: string }) => e.name)).toEqual(['Aug', 'Sept']);
+    expect(schedule.entries[0].releaseDateIso).toBe('2026-08-31');
+    expect(schedule.entries[0].isSuggested).toBe(false);
+  });
+});

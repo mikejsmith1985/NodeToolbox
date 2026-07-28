@@ -64,6 +64,9 @@ export interface PlannedStory {
   slAssignee: string | null;
   sprintName: string;
   dates: DatedItem;
+  /** The fixVersion the process DETERMINED for this Story (the release covering its PROD/Due date), or null.
+   *  Optional so pre-existing PlannedStory fixtures still type-check. */
+  fixVersionName?: string | null;
   warnings: string[];
 }
 
@@ -228,10 +231,14 @@ export function buildDeliveryPlan(input: DeliveryEngineInput): DeliveryPlan {
     if (dates.targetEndIso > input.factSheet.deliveryDeadlineIso) {
       warnings.push(`Target End (${dates.targetEndIso}) falls after the Sprint-5 Week-1 delivery deadline (${input.factSheet.deliveryDeadlineIso}) — de-scope or split.`);
     }
+    // Determine the fixVersion: the release whose date the Story's PROD/Due lands on (from the schedule).
+    const fixVersionName = dates.dueIso
+      ? (input.factSheet.releaseSchedule.entries.find((entry) => entry.releaseDateIso === dates.dueIso)?.name ?? null)
+      : null;
     return {
       tempId: prep.tempId, featureKey: prep.story.featureKey, summary: prep.story.summary,
       sizePoints: prep.story.sizePoints, codingSubtasks: assignedCoding,
-      slAssignee: slPlacement?.assignee ?? null, sprintName, dates, warnings,
+      slAssignee: slPlacement?.assignee ?? null, sprintName, dates, fixVersionName, warnings,
     };
   });
 

@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Delivery Planner determines the fixVersion in-process.** The planner no longer relies on a Feature's fixVersion
+  (which may be unset at load): it reads the project's fixVersions and builds the release schedule
+  (`versionsToReleaseSchedule`), so each Story's PROD/Due lands on the first release on/after it and the determined
+  **fixVersion is stamped on the created Story** (surfaced in the plan review). New pure helper with tests.
+- **Config inputs show the field's display name** next to each field id (size field + the Feature-link / Target
+  Start / Target End write-settings ids), resolved from `/rest/api/2/field`, so an operator can see what each
+  `customfield_…` actually is.
+
+### Changed
+- **The Delivery Planner tab is now gated behind AI Assist.** Because it's only usable with AI, its ArtView tab is
+  **hidden** (not merely disabled) unless the AI gate is unlocked (Ctrl+Alt+Z), and the in-tab "generate" section no
+  longer shows any "unlock AI Assist" instruction — nothing on the page reveals the hidden feature.
+
 ### Fixed
 - **Delivery Planner tab now respects the app theme (GH #245).** The tab's stylesheet used non-existent CSS variable
   names with light fallbacks, so in **Dark mode** its cards rendered white with near-invisible titles. Rewrote
