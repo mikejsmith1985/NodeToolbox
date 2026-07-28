@@ -15,6 +15,10 @@ const SUBTASK_SPEC: Record<SubTaskKind, { label: string; dateOf: (dates: DatedIt
   deployInt: { label: '[INT] Deploy to INT', dateOf: (dates) => dates.deployIntIso },
   deployRel: { label: '[REL] Deploy to REL', dateOf: (dates) => dates.deployRelIso },
   deployProd: { label: '[PROD] Deploy to PROD', dateOf: (dates) => dates.dueIso },
+  // 032 kinds — never emitted by this 028 write path (subtaskKindsFor returns only the four above); present
+  // solely to satisfy the exhaustive Record now that SubTaskKind carries the delivery-framework vocabulary.
+  coding: { label: '[Code]', dateOf: (dates) => dates.targetStartIso },
+  slTest: { label: '[SL] SL Test', dateOf: (dates) => dates.internalTestEndIso },
 };
 
 /** Everything the write flow needs about the target project, board, fields, and issue types. */

@@ -22,7 +22,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   key-person / dependency-order / PROD-carry detection; AI mitigations attach only to flagged ids), `piPlanMonitor`
   (burn-up, sub-task aging, SL-queue depth, GitHub-intake freshness, commit-vs-complete signals + `storySlipped` /
   `slQueueOverTwoSprints` replan triggers), and `piDeliveryJira` (the Story + per-repo coding sub-task + SL + deploy
-  write-payload builders — repo on each coding sub-task's component field). 50 new unit tests. The Admin/PO **UI tab**
+  write-payload builders — repo on each coding sub-task's component field). 50 new unit tests. The `SubTaskKind` union
+  is widened **additively** (`coding`/`slTest` added) so the 028 write path stays byte-identical. The Admin/PO **UI tab**
   that drives this engine is the next increment.
 - **Bulk rule generation for GitHub Email Intake.** The Admin Hub "Rule Assist (AI)" section (behind the AI
   passcode) can now bundle every distinct email shape sitting in the drop folder into **one** prompt, so an
