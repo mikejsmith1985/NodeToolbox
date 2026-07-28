@@ -19,6 +19,7 @@ import { buildDeliveryPlan, type AcceptedStory, type DeliveryPlan, type PlannedS
 import { detectBottlenecks, attachMitigations } from './piPlan/piPlanBottlenecks.ts';
 import { applyDeliveryStory, type DeliveryWriteContext } from './piPlan/piDeliveryJira.ts';
 import { toFactSheetFeatureInputs, toFactSheetPersonInputs, deriveSprints } from './piPlan/piDeliveryTabData.ts';
+import PiDeliveryMonitor from './PiDeliveryMonitor.tsx';
 import type { Bottleneck, PiPlanningFactSheet } from './piPlan/piPlanTypes.ts';
 import styles from './PiDeliveryPlanTab.module.css';
 
@@ -306,6 +307,11 @@ export default function PiDeliveryPlanTab({ piName }: PiDeliveryPlanTabProps) {
             ))}
           </div>
         </section>
+      )}
+
+      {/* ── Monitor ── */}
+      {plan && factSheet && (
+        <PiDeliveryMonitor plan={plan} factSheet={factSheet} featureLinkFieldId={writeConfig.featureLink} />
       )}
     </div>
   );
