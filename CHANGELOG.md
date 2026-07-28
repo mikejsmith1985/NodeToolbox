@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Delivery Planner sources committed Features from the PI Review page, not a PO+PI Jira query (GH #245).** The
+  authoritative "committed" set lives on the team's PI Review page, and PI Review is deliberately not PO-scoped — so a
+  Feature committed to the PI but **assigned to someone other than the PO** was missed by the old query (found 10 of
+  11). The tab now reads the **committed** Feature keys off the selected team's PI Review page
+  (`importCommittedPiReviewFeatureKeys`) and fetches exactly those from Jira; a team selector picks the source page,
+  and the PO+PI Jira query remains as an automatic **fallback** when a team has no PI Review page. New `isCommittedRow`
+  reader with tests.
+
 ### Fixed
 - **Delivery Planner returned 0 Features when the Product Owner name contained a comma (GH #245).** The PO field
   was split on commas to support multiple POs, but a display name like "Phatate, Smita" then became two bogus

@@ -15,6 +15,7 @@ import { loadHygieneFieldConfig } from '../Hygiene/checks/hygieneFieldConfig.ts'
 import type { JiraIssue } from '../../types/jira.ts';
 import type { ArtTeam } from './hooks/useArtData.ts';
 import { buildDirectFeatureJql, readPiReviewPullSettings } from './piReviewPullFeatures.ts';
+import { importCommittedPiReviewFeatureKeys } from '../PoTool/rewrite/importPiReviewFeatures.ts';
 import { resolvePiPlanFieldIds, resolveDeliveryIssueTypeIds } from './piPlan/piPlanFields.ts';
 import { assembleFactSheet } from './piPlan/piPlanFactSheet.ts';
 import { buildDeliveryPlanPrompt } from './piPlan/ai/deliveryPlanPrompt.ts';
@@ -73,6 +74,9 @@ export default function PiDeliveryPlanTab({ piName, teams = [] }: PiDeliveryPlan
   // The project whose fixVersions define the release schedule — often the write project, but a team's
   // releases can live in a separate (portfolio/program) project, so it is independently overridable.
   const [releaseProjectKey, setReleaseProjectKey] = useState('');
+  // The team whose PI Review page supplies the committed Feature set (the authoritative source).
+  const [selectedTeamId, setSelectedTeamId] = useState('');
+  const teamsWithPages = useMemo(() => teams.filter((team) => (team.piReviewPages ?? []).length > 0), [teams]);
 
   // ── Pipeline state ──
   const [factSheet, setFactSheet] = useState<PiPlanningFactSheet | null>(null);
@@ -104,6 +108,13 @@ export default function PiDeliveryPlanTab({ piName, teams = [] }: PiDeliveryPlan
 
   // ── Auto-wire the config from the PI name, the roster, the teams, and the connected instance ──
   // Every setter is only-if-empty so an operator override is never clobbered.
+
+  // Default the source team to the first one with a PI Review page.
+  useEffect(() => {
+    if (selectedTeamId === '' && teamsWithPages.length > 0) {
+      setSelectedTeamId(teamsWithPages[0].id);
+    }
+  }, [teamsWithPages, selectedTeamId]);
 
   // PI start/end derive from the PI name when it encodes dates — refreshed whenever the PI changes (the PI
   // name is authoritative for its dates, so a stale prior-PI range is never left behind).
@@ -170,25 +181,50 @@ export default function PiDeliveryPlanTab({ piName, teams = [] }: PiDeliveryPlan
   }, []);
 
   async function handleLoadFeatures() {
-    if (piName.trim() === '' || poAssignee.trim() === '') {
-      setStatusMessage('Enter the Product Owner assignee (and select a PI) before loading Features.');
+    if (piName.trim() === '') {
+      setStatusMessage('Select a PI before loading Features.');
       return;
     }
     setIsBusy(true);
     setStatusMessage('');
     try {
-      // Split on semicolons only — a PO display name like "Phatate, Smita" contains a comma, so splitting on
-      // commas would corrupt it into two bogus assignees and the query would return nothing.
-      const poValues = poAssignee.split(';').map((value) => value.trim()).filter((value) => value !== '');
-      const jql = buildDirectFeatureJql(piName, poValues, readPiReviewPullSettings().piFieldId);
-      if (jql === null) {
-        setStatusMessage('Could not build a Feature query — check the PI and Product Owner.');
-        return;
-      }
       const fields = [...FEATURE_FIELDS, sizeFieldId].join(',');
-      const path = `/rest/api/2/search?jql=${encodeURIComponent(jql)}&fields=${encodeURIComponent(fields)}&maxResults=200`;
-      const response = await jiraGet<{ issues?: JiraIssue[] }>(path);
-      const issues = response.issues ?? [];
+      let issues: JiraIssue[] = [];
+      let sourceNote = '';
+
+      // Prefer the PI Review page's COMMITTED Features — the authoritative set. Because PI Review is not
+      // PO-scoped, this catches Features committed to the PI but assigned to someone OTHER than the PO, which
+      // the fallback Jira PO+PI query would silently miss.
+      const sourceTeam = teams.find((team) => team.id === selectedTeamId)
+        ?? teams.find((team) => (team.piReviewPages ?? []).length > 0);
+      if (sourceTeam) {
+        const committed = await importCommittedPiReviewFeatureKeys(sourceTeam, piName);
+        if (committed.keys.length > 0) {
+          const keyJql = `issuekey in (${committed.keys.join(', ')})`;
+          const keyPath = `/rest/api/2/search?jql=${encodeURIComponent(keyJql)}&fields=${encodeURIComponent(fields)}&maxResults=300`;
+          issues = (await jiraGet<{ issues?: JiraIssue[] }>(keyPath)).issues ?? [];
+          sourceNote = ` (committed set from ${sourceTeam.name}'s PI Review page)`;
+        }
+      }
+
+      // Fallback: no PI Review page for this team/PI (or no committed rows) → the Jira PO + PI query.
+      if (issues.length === 0) {
+        if (poAssignee.trim() === '') {
+          setStatusMessage('No committed Features found on a PI Review page for this team — enter the Product Owner to fall back to a Jira query, or check the page.');
+          return;
+        }
+        // Split on semicolons only — a PO display name like "Phatate, Smita" contains a comma, so splitting on
+        // commas would corrupt it into two bogus assignees and the query would return nothing.
+        const poValues = poAssignee.split(';').map((value) => value.trim()).filter((value) => value !== '');
+        const jql = buildDirectFeatureJql(piName, poValues, readPiReviewPullSettings().piFieldId);
+        if (jql === null) {
+          setStatusMessage('Could not build a Feature query — check the PI and Product Owner.');
+          return;
+        }
+        const path = `/rest/api/2/search?jql=${encodeURIComponent(jql)}&fields=${encodeURIComponent(fields)}&maxResults=200`;
+        issues = (await jiraGet<{ issues?: JiraIssue[] }>(path)).issues ?? [];
+        sourceNote = ' (from a Jira PO + PI query)';
+      }
       // Capture component name→id from the fetched Features so coding sub-tasks can carry a real component id.
       const idByName: Record<string, string> = {};
       issues.forEach((issue) => {
@@ -291,7 +327,7 @@ export default function PiDeliveryPlanTab({ piName, teams = [] }: PiDeliveryPlan
       setBottlenecks([]);
       setPrompts([]);
       const carryoverFeatureCount = sheet.features.filter((feature) => feature.isCarryover).length;
-      setStatusMessage(`Loaded ${issues.length} Feature(s) — ${carryoverFeatureCount} carryover (reconciled), ${issues.length - carryoverFeatureCount} new. ${sheet.repoAllowlist.length} repo(s).${carryoverNote}`);
+      setStatusMessage(`Loaded ${issues.length} Feature(s)${sourceNote} — ${carryoverFeatureCount} carryover (reconciled), ${issues.length - carryoverFeatureCount} new. ${sheet.repoAllowlist.length} repo(s).${carryoverNote}`);
     } catch (loadError) {
       setStatusMessage(loadError instanceof Error ? loadError.message : 'Failed to load Features.');
     } finally {
@@ -454,7 +490,14 @@ export default function PiDeliveryPlanTab({ piName, teams = [] }: PiDeliveryPlan
         <h3 className={styles.sectionTitle}>1 · Load committed Features & build the fact sheet</h3>
         <p className={styles.statusLine}>PI: <strong>{piName || '(none selected)'}</strong>. Fields below auto-fill from the roster, the PI name, and the connected instance — override any of them. The fact sheet is the anti-hallucination spine.</p>
         <div className={styles.controlRow}>
-          <label className={styles.field}>Product Owner (name/accountId — separate multiple with ;)
+          {teamsWithPages.length > 0 && (
+            <label className={styles.field}>Team (PI Review page = committed source)
+              <select className={styles.fieldInput} value={selectedTeamId} onChange={(event) => setSelectedTeamId(event.target.value)}>
+                {teamsWithPages.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}
+              </select>
+            </label>
+          )}
+          <label className={styles.field}>Product Owner — fallback only (name/accountId; separate multiple with ;)
             <input className={styles.fieldInput} value={poAssignee} onChange={(event) => setPoAssignee(event.target.value)} placeholder="e.g. Phatate, Smita" />
           </label>
           <label className={styles.field}>Size field id
