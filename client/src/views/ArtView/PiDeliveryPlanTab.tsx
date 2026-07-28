@@ -14,7 +14,6 @@ import { parsePiDateRange } from '../FeatureCanvas/logic/piSchedule.ts';
 import { loadHygieneFieldConfig } from '../Hygiene/checks/hygieneFieldConfig.ts';
 import type { JiraIssue } from '../../types/jira.ts';
 import type { ArtTeam } from './hooks/useArtData.ts';
-import { buildDirectFeatureJql, readPiReviewPullSettings } from './piReviewPullFeatures.ts';
 import { importCommittedPiReviewFeatureKeys } from '../PoTool/rewrite/importPiReviewFeatures.ts';
 import { resolvePiPlanFieldIds, resolveDeliveryIssueTypeIds } from './piPlan/piPlanFields.ts';
 import { assembleFactSheet } from './piPlan/piPlanFactSheet.ts';
@@ -67,7 +66,6 @@ export default function PiDeliveryPlanTab({ piName, teams = [] }: PiDeliveryPlan
   const rosterMembers = useStandupRosterStore((store) => store.rosterMembers);
 
   // ── Config the operator confirms before a pull (prefilled with safe defaults) ──
-  const [poAssignee, setPoAssignee] = useState('');
   const [sizeFieldId, setSizeFieldId] = useState(DEFAULT_SIZE_FIELD_ID);
   const [piStartIso, setPiStartIso] = useState('');
   const [piEndIso, setPiEndIso] = useState('');
@@ -77,6 +75,8 @@ export default function PiDeliveryPlanTab({ piName, teams = [] }: PiDeliveryPlan
   // The team whose PI Review page supplies the committed Feature set (the authoritative source).
   const [selectedTeamId, setSelectedTeamId] = useState('');
   const teamsWithPages = useMemo(() => teams.filter((team) => (team.piReviewPages ?? []).length > 0), [teams]);
+  // A prominent line stating exactly where the loaded Features came from (which page, how many committed).
+  const [loadSource, setLoadSource] = useState('');
 
   // ── Pipeline state ──
   const [factSheet, setFactSheet] = useState<PiPlanningFactSheet | null>(null);
@@ -126,17 +126,8 @@ export default function PiDeliveryPlanTab({ piName, teams = [] }: PiDeliveryPlan
     }
   }, [piName]);
 
-  // Product Owner assignee(s) from the roster; write project key from the first team that has one.
+  // Write project key from the first team that has one.
   useEffect(() => {
-    const poValues = rosterMembers
-      .filter((member) => member.roleCapabilities?.canProductOwner)
-      .map((member) => member.assigneeQueryValue.trim())
-      .filter((value) => value !== '');
-    if (poValues.length > 0) {
-      // Join with a semicolon — a Product Owner display name is often "Lastname, Firstname", so a comma
-      // separator would split one name into two and break the assignee query.
-      setPoAssignee((previous) => previous || poValues.join('; '));
-    }
     const teamProjectKey = teams.find((team) => (team.projectKey ?? '').trim() !== '')?.projectKey?.trim();
     if (teamProjectKey) {
       setWriteConfig((previous) => (previous.projectKey ? previous : { ...previous, projectKey: teamProjectKey }));
@@ -144,7 +135,7 @@ export default function PiDeliveryPlanTab({ piName, teams = [] }: PiDeliveryPlan
       // live in a separate portfolio/program project.
       setReleaseProjectKey((previous) => previous || teamProjectKey);
     }
-  }, [rosterMembers, teams]);
+  }, [teams]);
 
   // Discover the size field, the write field ids, and the Story/Sub-task issue-type ids from the instance (once).
   useEffect(() => {
@@ -190,43 +181,30 @@ export default function PiDeliveryPlanTab({ piName, teams = [] }: PiDeliveryPlan
     try {
       const fields = [...FEATURE_FIELDS, sizeFieldId].join(',');
       let issues: JiraIssue[] = [];
-      let sourceNote = '';
 
-      // Prefer the PI Review page's COMMITTED Features — the authoritative set. Because PI Review is not
-      // PO-scoped, this catches Features committed to the PI but assigned to someone OTHER than the PO, which
-      // the fallback Jira PO+PI query would silently miss.
+      // The committed Feature set comes ONLY from the selected team's PI Review page — the single authoritative
+      // source. No Jira PO+PI fallback: if the page can't be read, we say so rather than quietly returning a
+      // different (PO-scoped) set.
       const sourceTeam = teams.find((team) => team.id === selectedTeamId)
         ?? teams.find((team) => (team.piReviewPages ?? []).length > 0);
-      if (sourceTeam) {
-        const committed = await importCommittedPiReviewFeatureKeys(sourceTeam, piName);
-        if (committed.keys.length > 0) {
-          const keyJql = `issuekey in (${committed.keys.join(', ')})`;
-          const keyPath = `/rest/api/2/search?jql=${encodeURIComponent(keyJql)}&fields=${encodeURIComponent(fields)}&maxResults=300`;
-          issues = (await jiraGet<{ issues?: JiraIssue[] }>(keyPath)).issues ?? [];
-          // Report the committed key count so a mismatch (page keys vs Jira-returned) is diagnosable.
-          const missingNote = issues.length !== committed.keys.length ? ` ⚠ ${committed.keys.length - issues.length} not returned by Jira` : '';
-          sourceNote = ` (${committed.keys.length} committed on ${sourceTeam.name}'s PI Review page${missingNote})`;
-        }
+      if (!sourceTeam) {
+        setLoadSource('');
+        setStatusMessage('No team has a PI Review page configured. Set the team\'s PI Review page (in Team Dashboard) for this PI, then reload.');
+        return;
       }
-
-      // Fallback: no PI Review page for this team/PI (or no committed rows) → the Jira PO + PI query.
-      if (issues.length === 0) {
-        if (poAssignee.trim() === '') {
-          setStatusMessage('No committed Features found on a PI Review page for this team — enter the Product Owner to fall back to a Jira query, or check the page.');
-          return;
-        }
-        // Split on semicolons only — a PO display name like "Phatate, Smita" contains a comma, so splitting on
-        // commas would corrupt it into two bogus assignees and the query would return nothing.
-        const poValues = poAssignee.split(';').map((value) => value.trim()).filter((value) => value !== '');
-        const jql = buildDirectFeatureJql(piName, poValues, readPiReviewPullSettings().piFieldId);
-        if (jql === null) {
-          setStatusMessage('Could not build a Feature query — check the PI and Product Owner.');
-          return;
-        }
-        const path = `/rest/api/2/search?jql=${encodeURIComponent(jql)}&fields=${encodeURIComponent(fields)}&maxResults=200`;
-        issues = (await jiraGet<{ issues?: JiraIssue[] }>(path)).issues ?? [];
-        sourceNote = ' (from a Jira PO + PI query)';
+      const committed = await importCommittedPiReviewFeatureKeys(sourceTeam, piName);
+      if (committed.blockedReason !== null) {
+        setLoadSource('');
+        setStatusMessage(`${sourceTeam.name} has no PI Review page configured for "${piName}". Add it in Team Dashboard, then reload.`);
+        return;
       }
+      if (committed.keys.length > 0) {
+        const keyJql = `issuekey in (${committed.keys.join(', ')})`;
+        const keyPath = `/rest/api/2/search?jql=${encodeURIComponent(keyJql)}&fields=${encodeURIComponent(fields)}&maxResults=300`;
+        issues = (await jiraGet<{ issues?: JiraIssue[] }>(keyPath)).issues ?? [];
+      }
+      const missingFromJira = committed.keys.length - issues.length;
+      setLoadSource(`Source: ${sourceTeam.name}'s PI Review page — ${committed.keys.length} committed Feature(s)${missingFromJira > 0 ? `, ⚠ ${missingFromJira} not found in Jira` : ''}.`);
       // Capture component name→id from the fetched Features so coding sub-tasks can carry a real component id.
       const idByName: Record<string, string> = {};
       issues.forEach((issue) => {
@@ -329,7 +307,7 @@ export default function PiDeliveryPlanTab({ piName, teams = [] }: PiDeliveryPlan
       setBottlenecks([]);
       setPrompts([]);
       const carryoverFeatureCount = sheet.features.filter((feature) => feature.isCarryover).length;
-      setStatusMessage(`Loaded ${issues.length} Feature(s)${sourceNote} — ${carryoverFeatureCount} carryover (reconciled), ${issues.length - carryoverFeatureCount} new. ${sheet.repoAllowlist.length} repo(s).${carryoverNote}`);
+      setStatusMessage(`Loaded ${issues.length} Feature(s) — ${carryoverFeatureCount} carryover (reconciled), ${issues.length - carryoverFeatureCount} new. ${sheet.repoAllowlist.length} repo(s).${carryoverNote}`);
     } catch (loadError) {
       setStatusMessage(loadError instanceof Error ? loadError.message : 'Failed to load Features.');
     } finally {
@@ -499,9 +477,6 @@ export default function PiDeliveryPlanTab({ piName, teams = [] }: PiDeliveryPlan
               </select>
             </label>
           )}
-          <label className={styles.field}>Product Owner — fallback only (name/accountId; separate multiple with ;)
-            <input className={styles.fieldInput} value={poAssignee} onChange={(event) => setPoAssignee(event.target.value)} placeholder="e.g. Phatate, Smita" />
-          </label>
           <label className={styles.field}>Size field id
             <input className={styles.fieldInput} value={sizeFieldId} onChange={(event) => setSizeFieldId(event.target.value)} />
             {fieldNameById[sizeFieldId] && <span className={styles.statusLine}>{fieldNameById[sizeFieldId]}</span>}
@@ -519,6 +494,7 @@ export default function PiDeliveryPlanTab({ piName, teams = [] }: PiDeliveryPlan
             {isBusy ? 'Loading…' : 'Load Features'}
           </button>
         </div>
+        {loadSource && <p className={styles.statusLine}><strong>{loadSource}</strong></p>}
         {factSheet && (
           <>
             <p className={styles.statusLine}>{factSheet.features.length} Feature(s) · {factSheet.people.length} roster member(s) · {factSheet.repoAllowlist.length} repo(s) · delivery deadline {factSheet.deliveryDeadlineIso}</p>

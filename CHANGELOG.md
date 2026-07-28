@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Delivery Planner loads committed Features ONLY from the PI Review page — no Jira PO+PI fallback (GH #245).** The
+  earlier fallback silently returned a PO-scoped Jira set (assignee = PO AND PI) when the page path came up empty,
+  which masked page/team problems and produced a different, wrong Feature set. The tab now sources exclusively from the
+  selected team's PI Review page's committed rows; if no page is configured for the team/PI it says so instead of
+  querying Jira by PO. A prominent **"Source: <team>'s PI Review page — N committed Feature(s)"** line now shows exactly
+  where the set came from (and flags any keys Jira didn't return), and the now-unused Product Owner field was removed.
+
 ### Added
 - **PI Review: a heading line ABOVE the first row.** You can now add a custom, labelled, coloured grouping line at
   the very top of the table (e.g. "MUST DO") — previously grouping lines could only sit *below* a row. A dedicated
