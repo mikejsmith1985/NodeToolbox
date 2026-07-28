@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Delivery Planner tab now respects the app theme (GH #245).** The tab's stylesheet used non-existent CSS variable
+  names with light fallbacks, so in **Dark mode** its cards rendered white with near-invisible titles. Rewrote
+  `PiDeliveryPlanTab.module.css` against the app's real design tokens (`--color-card-bg`, `--color-text-primary`,
+  `--color-field-bg`, `--color-border`, `--color-accent`, tone/warning/danger tokens, radius/font-size scales), so the
+  Delivery Planner and its Monitor panel now match the surrounding surfaces and flip correctly between Dark and Light.
+
 ### Added
 - **WIP-aware planning + on-demand defect sub-tasks (feature 032, Phases B & C).**
   **Phase B** — in-flight carryover work now **consumes sprint capacity** before new work is scheduled: each not-done
