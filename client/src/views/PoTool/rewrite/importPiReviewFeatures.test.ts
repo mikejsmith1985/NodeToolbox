@@ -72,3 +72,16 @@ describe('importPiReviewFeatureKeys', () => {
     expect(result).toEqual({ keys: ['DENP-1', 'DASP-7'], discoveredCount: 2, blockedReason: null });
   });
 });
+
+describe('isCommittedRow', () => {
+  const { isCommittedRow } = require('./importPiReviewFeatures.ts');
+  const row = (committed: string) => ({ rowId: '1', carryOver: '', priority: '', feature: 'DENP-1 x', pointEstimate: '', dependency: '', risks: '', committed, notes: '', devWork: '', testSupport: '', carryToNext: '' });
+
+  it('treats blank and explicit negatives as NOT committed', () => {
+    ['', ' ', 'No', 'n', 'false', '☐', '✗'].forEach((value) => expect(isCommittedRow(row(value))).toBe(false));
+  });
+
+  it('treats positive markers as committed', () => {
+    ['Yes', 'y', '✅', '✔', 'x', 'Committed', 'true'].forEach((value) => expect(isCommittedRow(row(value))).toBe(true));
+  });
+});

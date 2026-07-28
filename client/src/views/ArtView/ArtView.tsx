@@ -193,7 +193,7 @@ export default function ArtView() {
           />
         )}
         {state.activeTab === 'delivery' && isAiAssistUnlocked && (
-          <PiDeliveryPlanTab piName={state.selectedPiName} teams={state.teams} />
+          <PiDeliveryPlanTab piName={state.selectedPiName} teams={piReviewReadoutTeams} />
         )}
         {state.activeTab === 'settings' && (
           <SettingsPanel
