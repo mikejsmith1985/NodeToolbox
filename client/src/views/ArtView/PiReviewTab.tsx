@@ -1222,6 +1222,83 @@ function PiReviewPagePanel({
     setHasUnsavedChanges(true);
   }
 
+  /** Toggles a heading line ABOVE the first row (afterRowIndex 0) — e.g. a "MUST DO" header over the top items. */
+  function handleToggleTopGroupingLine() {
+    const existingTopLine = findCustomGroupingLineAtRow(customGroupingLines, 0);
+    if (existingTopLine) {
+      setCustomGroupingLines((currentGroupingLines) =>
+        currentGroupingLines.filter((groupingLine) => groupingLine.lineId !== existingTopLine.lineId));
+      setFocusedCustomGroupingLineId(null);
+      setExpandedCustomGroupingLineId((currentLineId) => (currentLineId === existingTopLine.lineId ? null : currentLineId));
+      setHasUnsavedChanges(true);
+      return;
+    }
+    const nextTopLine = createCustomGroupingLine(0, customGroupingLines.length + 1);
+    setCustomGroupingLines((currentGroupingLines) => [...currentGroupingLines, nextTopLine]);
+    setFocusedCustomGroupingLineId(nextTopLine.lineId);
+    setExpandedCustomGroupingLineId(nextTopLine.lineId);
+    setHasUnsavedChanges(true);
+  }
+
+  /** Renders one custom grouping line as a full-width coloured table row (shared by the top line and per-row lines). */
+  function renderCustomGroupingLineRow(groupingLine: PiReviewCustomGroupingLine, ariaPosition: string) {
+    return (
+      <tr className={styles.customGroupingLineRow} key={groupingLine.lineId}>
+        <td
+          colSpan={visiblePiReviewColumnKeys.length + (canEditContent ? 1 : 0)}
+          style={{
+            borderTopColor: groupingLine.color,
+            borderBottomColor: groupingLine.color,
+            backgroundColor: convertHexColorToRgba(groupingLine.color, 0.18),
+            color: groupingLine.color,
+          }}
+        >
+          {canEditContent ? (
+            <div className={styles.inlineGroupingLineEditor}>
+              <input
+                aria-label={`Custom line text for ${target.targetLabel} ${ariaPosition}`}
+                autoFocus={focusedCustomGroupingLineId === groupingLine.lineId}
+                className={styles.inlineGroupingLineInput}
+                onChange={(event) => handleUpdateCustomGroupingLine(groupingLine.lineId, { label: event.target.value })}
+                type="text"
+                value={groupingLine.label}
+              />
+              <div className={styles.inlineGroupingLineMenu}>
+                <button
+                  aria-expanded={expandedCustomGroupingLineId === groupingLine.lineId}
+                  className={styles.inlineGroupingLineMenuButton}
+                  onClick={() => handleToggleCustomGroupingLineMenu(groupingLine.lineId)}
+                  type="button"
+                >
+                  <span className={styles.inlineGroupingLineSwatch} style={{ backgroundColor: groupingLine.color }} />
+                  Color
+                  <span aria-hidden="true">▾</span>
+                </button>
+                {expandedCustomGroupingLineId === groupingLine.lineId && (
+                  <div className={styles.inlineGroupingLinePalette}>
+                    {CUSTOM_GROUPING_LINE_COLOR_OPTIONS.map((colorOption) => (
+                      <button
+                        className={`${styles.inlineGroupingLineColorOption} ${groupingLine.color === colorOption.value ? styles.inlineGroupingLineColorOptionActive : ''}`.trim()}
+                        key={colorOption.value}
+                        onClick={() => handleUpdateCustomGroupingLine(groupingLine.lineId, { color: colorOption.value })}
+                        type="button"
+                      >
+                        <span className={styles.inlineGroupingLineSwatch} style={{ backgroundColor: colorOption.value }} />
+                        {colorOption.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <strong>{groupingLine.label}</strong>
+          )}
+        </td>
+      </tr>
+    );
+  }
+
   function handleUpdateCustomGroupingLine(
     lineId: string,
     patch: Partial<Omit<PiReviewCustomGroupingLine, 'lineId'>>,
@@ -2583,6 +2660,25 @@ function PiReviewPagePanel({
               </tr>
             </thead>
             <tbody>
+              {/* A heading line ABOVE the first row (e.g. "MUST DO") — its own toggle, since there is no row
+                  toolbar above the first row. */}
+              {canEditContent && (
+                <tr className={styles.customGroupingLineToolRow}>
+                  <td colSpan={visiblePiReviewColumnKeys.length + 1}>
+                    <button
+                      aria-pressed={findCustomGroupingLineAtRow(customGroupingLines, 0) !== null}
+                      className={`${styles.rowToolButton} ${findCustomGroupingLineAtRow(customGroupingLines, 0) ? styles.rowToolButtonActive : ''}`.trim()}
+                      disabled={isSaving}
+                      onClick={handleToggleTopGroupingLine}
+                      type="button"
+                    >
+                      {findCustomGroupingLineAtRow(customGroupingLines, 0) ? 'Remove heading line above' : 'Add heading line above first row'}
+                    </button>
+                  </td>
+                </tr>
+              )}
+              {findCustomGroupingLineAtRow(customGroupingLines, 0)
+                && renderCustomGroupingLineRow(findCustomGroupingLineAtRow(customGroupingLines, 0) as PiReviewCustomGroupingLine, 'top')}
               {rows.map((row, rowIndex) => {
                 const isBoundaryBelowRow = commitmentBoundaryIndex === rowIndex + 1;
                 const customGroupingLineBelowRow = findCustomGroupingLineAtRow(customGroupingLines, rowIndex + 1);
@@ -2774,68 +2870,7 @@ function PiReviewPagePanel({
                         </td>
                       )}
                     </tr>
-                    {customGroupingLineBelowRow && (
-                      <tr className={styles.customGroupingLineRow} key={customGroupingLineBelowRow.lineId}>
-                        <td
-                          colSpan={visiblePiReviewColumnKeys.length + (canEditContent ? 1 : 0)}
-                          style={{
-                            borderTopColor: customGroupingLineBelowRow.color,
-                            borderBottomColor: customGroupingLineBelowRow.color,
-                            backgroundColor: convertHexColorToRgba(customGroupingLineBelowRow.color, 0.18),
-                            color: customGroupingLineBelowRow.color,
-                          }}
-                        >
-                          {canEditContent ? (
-                            <div className={styles.inlineGroupingLineEditor}>
-                              <input
-                                aria-label={`Custom line text for ${target.targetLabel} row ${rowIndex + 1}`}
-                                autoFocus={focusedCustomGroupingLineId === customGroupingLineBelowRow.lineId}
-                                className={styles.inlineGroupingLineInput}
-                                onChange={(event) =>
-                                  handleUpdateCustomGroupingLine(customGroupingLineBelowRow.lineId, { label: event.target.value })}
-                                type="text"
-                                value={customGroupingLineBelowRow.label}
-                              />
-                              <div className={styles.inlineGroupingLineMenu}>
-                                <button
-                                  aria-expanded={expandedCustomGroupingLineId === customGroupingLineBelowRow.lineId}
-                                  className={styles.inlineGroupingLineMenuButton}
-                                  onClick={() => handleToggleCustomGroupingLineMenu(customGroupingLineBelowRow.lineId)}
-                                  type="button"
-                                >
-                                  <span
-                                    className={styles.inlineGroupingLineSwatch}
-                                    style={{ backgroundColor: customGroupingLineBelowRow.color }}
-                                  />
-                                  Color
-                                  <span aria-hidden="true">▾</span>
-                                </button>
-                                {expandedCustomGroupingLineId === customGroupingLineBelowRow.lineId && (
-                                  <div className={styles.inlineGroupingLinePalette}>
-                                    {CUSTOM_GROUPING_LINE_COLOR_OPTIONS.map((colorOption) => (
-                                      <button
-                                        className={`${styles.inlineGroupingLineColorOption} ${customGroupingLineBelowRow.color === colorOption.value ? styles.inlineGroupingLineColorOptionActive : ''}`.trim()}
-                                        key={colorOption.value}
-                                        onClick={() => handleUpdateCustomGroupingLine(customGroupingLineBelowRow.lineId, { color: colorOption.value })}
-                                        type="button"
-                                      >
-                                        <span
-                                          className={styles.inlineGroupingLineSwatch}
-                                          style={{ backgroundColor: colorOption.value }}
-                                        />
-                                        {colorOption.label}
-                                      </button>
-                                    ))}
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          ) : (
-                            <strong>{customGroupingLineBelowRow.label}</strong>
-                          )}
-                        </td>
-                      </tr>
-                    )}
+                    {customGroupingLineBelowRow && renderCustomGroupingLineRow(customGroupingLineBelowRow, `row ${rowIndex + 1}`)}
                     {isBoundaryBelowRow && (
                       <tr className={styles.commitmentBoundaryRow}>
                         <td colSpan={visiblePiReviewColumnKeys.length + (canEditContent ? 1 : 0)}>

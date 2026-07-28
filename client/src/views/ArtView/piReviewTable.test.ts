@@ -377,6 +377,23 @@ describe('writePiReviewTable grouping lines', () => {
     expect(rewrittenStorageValue).toContain('Architecture Work');
     expect(rewrittenStorageValue).toContain('#0ea5e9');
   });
+
+  it('round-trips a heading line ABOVE the first row (afterRowIndex 0)', () => {
+    const parsedPiReviewTable = parsePiReviewTable(MOCK_STORAGE_VALUE);
+    const rewrittenStorageValue = writePiReviewTable(
+      MOCK_STORAGE_VALUE,
+      parsedPiReviewTable.tableBinding,
+      parsedPiReviewTable.rows,
+      null,
+      [{ lineId: 'top-1', afterRowIndex: 0, label: 'MUST DO', color: '#d1242f' }],
+    );
+    expect(rewrittenStorageValue).toContain('MUST DO');
+    // Parsing it back must keep the line at position 0 (above the first row), not drop or shift it.
+    const reparsed = parsePiReviewTable(rewrittenStorageValue);
+    expect(reparsed.customGroupingLines).toEqual([
+      { lineId: expect.any(String), afterRowIndex: 0, label: 'MUST DO', color: '#d1242f' },
+    ]);
+  });
 });
 
 describe('writePiReviewCapacitySummary', () => {

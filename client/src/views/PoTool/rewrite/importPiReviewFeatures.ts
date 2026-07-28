@@ -8,7 +8,7 @@
 // example Features in a second project). This only READS the page; it never writes anything.
 
 import { fetchConfluencePageByReference } from '../../../services/confluenceApi.ts';
-import { parsePiReviewTable, type PiReviewRow } from '../../ArtView/piReviewTable.ts';
+import { parsePiReviewTable, type PiReviewRow, type PiReviewTableParseResult } from '../../ArtView/piReviewTable.ts';
 import { extractPiReviewFeatureKey } from '../../ArtView/piReviewJira.ts';
 import type { ArtTeam } from '../../ArtView/hooks/useArtData.ts';
 
@@ -18,11 +18,39 @@ const NOT_COMMITTED_MARKERS = new Set([
 ]);
 
 /**
- * True when a PI Review row is marked committed. The column is blank for uncommitted Features and carries a
- * positive marker (e.g. "Yes", "✅", "x") for committed ones, so any non-blank, non-negative value counts.
+ * True when a PI Review row's "Committed to PI?" column is marked committed (a positive, non-blank value).
  */
 export function isCommittedRow(row: PiReviewRow): boolean {
   return !NOT_COMMITTED_MARKERS.has(row.committed.trim().toLowerCase());
+}
+
+/**
+ * The Feature keys of the COMMITTED rows on a parsed PI Review table. Commitment is signalled two ways on PI
+ * Review pages, so this checks them in order of authority:
+ *   1. the **commitment boundary** ("Hard commits above / Stretch Goals below") — every row above it is
+ *      committed; this is the PI Review UI's own explicit line, so it wins when present;
+ *   2. failing a boundary, the **"Committed to PI?" column** (rows with a positive value);
+ *   3. failing both signals, the **whole page** — a PI Review page IS the curated committed list.
+ * This is why filtering on the column alone under-counted (a page that commits via the boundary leaves the
+ * column blank), so the boundary is preferred.
+ */
+export function committedFeatureKeys(parsedTable: PiReviewTableParseResult): string[] {
+  const { rows, commitmentBoundaryIndex } = parsedTable;
+  let committedRows: PiReviewRow[];
+  if (commitmentBoundaryIndex !== null && commitmentBoundaryIndex > 0) {
+    committedRows = rows.filter((_row, index) => index < commitmentBoundaryIndex);
+  } else if (rows.some(isCommittedRow)) {
+    committedRows = rows.filter(isCommittedRow);
+  } else {
+    committedRows = rows;
+  }
+  return [
+    ...new Set(
+      committedRows
+        .map((row) => extractPiReviewFeatureKey(row.feature))
+        .filter((featureKey): featureKey is string => featureKey !== null),
+    ),
+  ];
 }
 
 /** Why an import produced no keys — lets the caller show the honest reason instead of a blank result. */
@@ -57,10 +85,10 @@ export function selectPiReviewPageUrl(team: ArtTeam, selectedPiName: string): st
  * filter accepts. Resolves to a blocked result (no network call) when there is no PI selected or the team
  * has no PI Review page configured for it. Only READS the page.
  */
-async function importFeatureKeysWithFilter(
+async function importFeatureKeysFrom(
   team: ArtTeam,
   selectedPiName: string,
-  rowFilter: (row: PiReviewRow) => boolean,
+  selectKeys: (parsedTable: PiReviewTableParseResult) => string[],
 ): Promise<ImportPiFeaturesResult> {
   if (selectedPiName.trim() === '') {
     return { keys: [], discoveredCount: 0, blockedReason: 'no-pi' };
@@ -70,27 +98,25 @@ async function importFeatureKeysWithFilter(
     return { keys: [], discoveredCount: 0, blockedReason: 'no-page' };
   }
 
-  // Read and parse the same Confluence page the PI Review tab loads, then take the Feature key from each
-  // accepted row. Rows without a key (grouping lines) yield null and drop out; duplicates are collapsed.
+  // Read and parse the same Confluence page the PI Review tab loads, then select the Feature keys.
   const confluencePage = await fetchConfluencePageByReference(pageReference);
   const parsedTable = parsePiReviewTable(confluencePage.body.storage.value);
-  const keys = [
-    ...new Set(
-      parsedTable.rows
-        .filter(rowFilter)
-        .map((featureRow) => extractPiReviewFeatureKey(featureRow.feature))
-        .filter((featureKey): featureKey is string => featureKey !== null),
-    ),
-  ];
+  const keys = selectKeys(parsedTable);
   return { keys, discoveredCount: keys.length, blockedReason: null };
 }
 
 /** Reads EVERY Feature key off the team's PI Review page for the selected PI (committed or not). */
 export function importPiReviewFeatureKeys(team: ArtTeam, selectedPiName: string): Promise<ImportPiFeaturesResult> {
-  return importFeatureKeysWithFilter(team, selectedPiName, () => true);
+  return importFeatureKeysFrom(team, selectedPiName, (parsedTable) => [
+    ...new Set(
+      parsedTable.rows
+        .map((featureRow) => extractPiReviewFeatureKey(featureRow.feature))
+        .filter((featureKey): featureKey is string => featureKey !== null),
+    ),
+  ]);
 }
 
 /** Reads only the COMMITTED Feature keys off the team's PI Review page — the authoritative delivery set. */
 export function importCommittedPiReviewFeatureKeys(team: ArtTeam, selectedPiName: string): Promise<ImportPiFeaturesResult> {
-  return importFeatureKeysWithFilter(team, selectedPiName, isCommittedRow);
+  return importFeatureKeysFrom(team, selectedPiName, committedFeatureKeys);
 }
