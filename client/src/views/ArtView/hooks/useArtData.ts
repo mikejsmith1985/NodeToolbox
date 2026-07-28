@@ -272,12 +272,13 @@ export type ArtTab =
   | 'sos'
   | 'monthly'
   | 'readiness'
+  | 'delivery'
   | 'settings';
 
 /** The valid tab keys, used to validate an inbound `?artTab=` deep-link seed. */
 const ART_TAB_KEYS: readonly ArtTab[] = [
   'overview', 'impediments', 'predictability', 'releases', 'pireview', 'blueprint',
-  'dependencies', 'boardprep', 'sos', 'monthly', 'readiness', 'settings',
+  'dependencies', 'boardprep', 'sos', 'monthly', 'readiness', 'delivery', 'settings',
 ];
 
 /**
