@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Delivery Planner config now auto-wires from the team profile & instance (feature 032).** The tab's inputs are no
+  longer hand-entered: **PI start/end** derive from the PI name (`parsePiDateRange`), the **Product Owner assignee(s)**
+  from the roster's `canProductOwner` members, the **write project key** from the ART team, the **size field** from the
+  hygiene estimate-field discovery, and the **Feature-link / Target Start / Target End field ids** plus the **Story /
+  Sub-task issue-type ids** from the connected instance (`resolvePiPlanFieldIds` + a new `resolveDeliveryIssueTypeIds`).
+  Every field stays editable (auto-fill is only-if-empty, so an override is never clobbered). New pure
+  `pickDeliveryIssueTypeIds` picker (3 tests). Multiple POs are now supported in the Feature pull.
+
 ### Added
 - **PI Delivery Framework — deterministic engine layer (feature 032, in progress).** The new team delivery model
   where a **repository maps 1:1 to a coding Sub-task** (a Story bridges FE+BE under a primary owner; each repo is an

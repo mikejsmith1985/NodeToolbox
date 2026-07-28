@@ -185,7 +185,7 @@ export default function ArtView() {
           />
         )}
         {state.activeTab === 'delivery' && (
-          <PiDeliveryPlanTab piName={state.selectedPiName} />
+          <PiDeliveryPlanTab piName={state.selectedPiName} teams={state.teams} />
         )}
         {state.activeTab === 'settings' && (
           <SettingsPanel
