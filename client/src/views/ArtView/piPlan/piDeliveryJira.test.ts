@@ -60,3 +60,26 @@ describe('buildDeliveryWriteRequests', () => {
     expect((storyRequest.fields as Record<string, unknown>).assignee).toEqual({ accountId: 'acc-1' });
   });
 });
+
+describe('buildGapSubtaskRequest (carryover gap-fill)', () => {
+  it('builds a coding gap under the existing Story with its repo component', async () => {
+    const { buildGapSubtaskRequest } = await import('./piDeliveryJira.ts');
+    const request = buildGapSubtaskRequest(
+      { kind: 'coding', summary: '[ui] Enrollment', repo: { repoName: 'ui', repoComponentId: 'c-ui', devPoints: 1, assignee: null } },
+      'DENP-500', context,
+    );
+    const fields = request.fields as Record<string, unknown>;
+    expect(fields.parent).toEqual({ key: 'DENP-500' });
+    expect(fields.components).toEqual([{ id: 'c-ui' }]);
+    expect(fields.summary).toBe('[ui] Enrollment');
+  });
+
+  it('builds a checkpoint gap with no components and no dates', async () => {
+    const { buildGapSubtaskRequest } = await import('./piDeliveryJira.ts');
+    const request = buildGapSubtaskRequest({ kind: 'deployRel', summary: '[REL] Deploy — Enrollment' }, 'DENP-500', context);
+    const fields = request.fields as Record<string, unknown>;
+    expect(fields.components).toBeUndefined();
+    expect(fields.duedate).toBeUndefined();
+    expect(fields.summary).toBe('[REL] Deploy — Enrollment');
+  });
+});

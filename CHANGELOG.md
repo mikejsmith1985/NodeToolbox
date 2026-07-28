@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Carryover-aware PI planning — the Delivery Planner no longer duplicates in-flight work (feature 032, Phase A).**
+  Previously the planner fed empty `existingChildren`, so re-planning a PI that already had Stories in flight would
+  propose brand-new duplicates. It now fetches each Feature's existing Stories (and their sub-tasks) and classifies
+  each Feature **new** vs **carryover** (has Stories in flight): carryover Features are **excluded from the AI prompt**
+  and **rejected on ingest** (never decomposed into duplicates), and are instead **reconciled** — a new **Carryover**
+  section proposes only each in-flight Story's **missing** sub-tasks (gap-fill) via the shared scaffold builder, whose
+  new **checkpoint idempotency** skips any SL/deploy sub-task that already exists. New pure `piPlanCarryover` module
+  (`classifyChildKind`, `isCarryoverFeature`, `reconcileCarryoverStory`) with 8 tests, plus a `buildGapSubtaskRequest`/
+  `applyCarryoverGaps` write path. (WIP-as-consumed-capacity is the planned Phase B.)
+
 ### Changed
 - **Delivery monitor now reads sub-tasks and the sprint field precisely (feature 032).** The Monitor panel's live
   refresh no longer approximates: it fetches each Story's actual sub-tasks (`parent in (…)`) to measure **sub-task

@@ -41,3 +41,18 @@ describe('buildDeliveryPlanPrompt', () => {
     expect(prompts).toHaveLength(chunkCount);
   });
 });
+
+describe('buildDeliveryPlanPrompt — carryover exclusion', () => {
+  it('excludes carryover Features from the prompt (only new Features are decomposed)', () => {
+    const sheet = factSheet(1);
+    sheet.features.push({
+      key: 'DENP-999', summary: 'In flight', sizePoints: 5, priorityRank: 2, priorityName: 'High',
+      isCommitted: true, repoComponentNames: ['api'], domainComponentNames: [], dependencyKeys: [],
+      targetFixVersion: null, existingChildren: [], isCarryover: true,
+    });
+    const { prompts, featureCount } = buildDeliveryPlanPrompt(sheet, []);
+    expect(featureCount).toBe(1);                 // only the new Feature counts
+    expect(prompts[0]).toContain('DENP-100');
+    expect(prompts[0]).not.toContain('DENP-999'); // carryover excluded
+  });
+});

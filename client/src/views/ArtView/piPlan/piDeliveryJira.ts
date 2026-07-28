@@ -8,6 +8,7 @@ import { createIssue, jiraPost } from '../../../services/jiraApi.ts';
 import { saveFeatureReviewStoryPoints } from '../../SprintDashboard/featureReviewFixes.ts';
 import type { CreateIssueRequest } from '../../../types/jira.ts';
 import type { PlannedStory } from './piDeliveryEngine.ts';
+import type { ScaffoldSubtask } from './piPlanRepoSubtasks.ts';
 import type { DatedItem, SubTaskKind } from './piPlanTypes.ts';
 
 /** The per-story deploy checkpoints and the date each one carries (SL test uses the internal-test end). */
@@ -123,6 +124,36 @@ export function buildDeliveryWriteRequests(story: PlannedStory, context: Deliver
   const codingRequests = story.codingSubtasks.map((_coding, index) => buildCodingSubtaskRequest(story, index, parentKey, context));
   const checkpointRequests = CHECKPOINT_SPEC.map((spec) => buildCheckpointRequest(story, spec, parentKey, context));
   return { storyRequest, subtaskRequests: [...codingRequests, ...checkpointRequests] };
+}
+
+/**
+ * Builds the create payload for one gap-fill sub-task under an EXISTING carryover Story (no dates — carryover
+ * work is not re-scheduled). A coding gap carries its repo on the components field; a checkpoint gap is a
+ * bare sub-task with its conventional summary.
+ */
+export function buildGapSubtaskRequest(gap: ScaffoldSubtask, parentStoryKey: string, context: DeliveryWriteContext): CreateIssueRequest {
+  const fields: Record<string, unknown> = {
+    project: { key: context.projectKey },
+    issuetype: { id: context.subTaskIssueTypeId },
+    parent: { key: parentStoryKey },
+    summary: gap.summary,
+  };
+  if (gap.kind === 'coding' && gap.repo?.repoComponentId) {
+    fields.components = [{ id: gap.repo.repoComponentId }];
+  }
+  return { fields };
+}
+
+/** Creates the missing sub-tasks under an existing carryover Story, delegating each write to createIssue. */
+export async function applyCarryoverGaps(
+  parentStoryKey: string,
+  gapSubtasks: ScaffoldSubtask[],
+  context: DeliveryWriteContext,
+): Promise<{ createdCount: number }> {
+  for (const gap of gapSubtasks) {
+    await createIssue(buildGapSubtaskRequest(gap, parentStoryKey, context));
+  }
+  return { createdCount: gapSubtasks.length };
 }
 
 /**

@@ -54,6 +54,9 @@ export function parseDeliveryPlanReply(
   }
 
   const featureKeys = new Set(factSheet.features.map((feature) => feature.key));
+  // Carryover Features are reconciled, not decomposed — an AI Story targeting one is rejected (it must not
+  // create a duplicate of work already in flight).
+  const carryoverKeys = new Set(factSheet.features.filter((feature) => feature.isCarryover).map((feature) => feature.key));
   const repoAllowlist = new Set(factSheet.repoAllowlist.map((repo) => repo.toLowerCase()));
   const bottleneckIds = new Set(bottlenecks.map((bottleneck) => bottleneck.id));
 
@@ -67,6 +70,10 @@ export function parseDeliveryPlanReply(
     const repos = Array.isArray(story.repos) ? story.repos.filter((repo): repo is string => typeof repo === 'string') : [];
     if (!featureKeys.has(featureKey)) {
       rejected.push({ item: `story[${index}] "${summary || featureKey}"`, reason: `unknown Feature key "${featureKey}"` });
+      return;
+    }
+    if (carryoverKeys.has(featureKey)) {
+      rejected.push({ item: `story "${summary}"`, reason: `Feature ${featureKey} is carryover — reconciled, not decomposed` });
       return;
     }
     const unknownRepo = repos.find((repo) => !repoAllowlist.has(repo.toLowerCase()));
