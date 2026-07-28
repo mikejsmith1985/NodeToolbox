@@ -23,8 +23,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (burn-up, sub-task aging, SL-queue depth, GitHub-intake freshness, commit-vs-complete signals + `storySlipped` /
   `slQueueOverTwoSprints` replan triggers), and `piDeliveryJira` (the Story + per-repo coding sub-task + SL + deploy
   write-payload builders — repo on each coding sub-task's component field). 50 new unit tests. The `SubTaskKind` union
-  is widened **additively** (`coding`/`slTest` added) so the 028 write path stays byte-identical. The Admin/PO **UI tab**
-  that drives this engine is the next increment.
+  is widened **additively** (`coding`/`slTest` added) so the 028 write path stays byte-identical.
+- **PI Delivery Planner tab (feature 032, UI).** A new **Delivery Planner** tab in ArtView that drives the whole
+  pipeline end-to-end: load committed Features (live Jira, scoped by PI + Product Owner) → assemble the deterministic
+  fact sheet (roster from the store, repo/domain classification from 031, sprints derived across the PI) → **generate
+  one AI prompt** (gated behind AI Assist / Ctrl+Alt+Z) → paste the reply → **ingest** (unknown repos/keys rejected) →
+  review the plan with each Story's per-repo coding sub-tasks (assignee **PO-overridable** via a dropdown), SL-test,
+  INT/REL/PROD dates, warnings, and the deterministic **bottlenecks** with any AI mitigations → **per-item accept →
+  write** to Jira (Story + coding sub-tasks carrying the repo component + SL + deploys). New pure `piDeliveryTabData`
+  adapter (Jira Feature issues + roster → fact-sheet inputs) with 5 tests. The monitoring surface (live burn-up /
+  SL-queue / freshness against a written plan) is the remaining follow-up.
 - **Bulk rule generation for GitHub Email Intake.** The Admin Hub "Rule Assist (AI)" section (behind the AI
   passcode) can now bundle every distinct email shape sitting in the drop folder into **one** prompt, so an
   operator generates a whole rule set with a single paste into their own AI — no more one-email-at-a-time. A
