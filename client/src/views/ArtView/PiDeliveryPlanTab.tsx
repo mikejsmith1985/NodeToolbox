@@ -22,7 +22,7 @@ import { parseDeliveryPlanReply } from './piPlan/ai/deliveryPlanIngest.ts';
 import { buildDeliveryPlan, type AcceptedStory, type CarryoverWipItem, type DeliveryPlan, type PlannedStory } from './piPlan/piDeliveryEngine.ts';
 import { detectBottlenecks, attachMitigations } from './piPlan/piPlanBottlenecks.ts';
 import { applyDeliveryStory, applyCarryoverGaps, type DeliveryWriteContext } from './piPlan/piDeliveryJira.ts';
-import { toFactSheetFeatureInputs, toFactSheetPersonInputs, deriveSprints } from './piPlan/piDeliveryTabData.ts';
+import { toFactSheetFeatureInputs, toFactSheetPersonInputs, deriveSprints, versionsToReleaseSchedule, type JiraProjectVersion } from './piPlan/piDeliveryTabData.ts';
 import { classifyChildKind, reconcileCarryoverFeature, type CarryoverStory, type CarryoverStoryReconcile } from './piPlan/piPlanCarryover.ts';
 import { buildStorySubtaskScaffold } from './piPlan/piPlanRepoSubtasks.ts';
 import PiDeliveryMonitor from './PiDeliveryMonitor.tsx';
@@ -84,6 +84,8 @@ export default function PiDeliveryPlanTab({ piName, teams = [] }: PiDeliveryPlan
   const [carryoverWip, setCarryoverWip] = useState<CarryoverWipItem[]>([]);
   // Phase C — on-demand defect sub-task generation (defects are unplanned; append repos as you build them).
   const [defectKey, setDefectKey] = useState('');
+  // Field id → human display name, so the config inputs show what each field id actually is.
+  const [fieldNameById, setFieldNameById] = useState<Record<string, string>>({});
   const [assigneeOverrides, setAssigneeOverrides] = useState<Record<string, string>>({});
   const [statusMessage, setStatusMessage] = useState('');
   const [isBusy, setIsBusy] = useState(false);
@@ -145,6 +147,12 @@ export default function PiDeliveryPlanTab({ piName, teams = [] }: PiDeliveryPlan
           storyIssueTypeId: previous.storyIssueTypeId || issueTypeIds.storyIssueTypeId,
           subTaskIssueTypeId: previous.subTaskIssueTypeId || issueTypeIds.subTaskIssueTypeId,
         }));
+        // Field id → display name, so the config inputs can show what each field actually is.
+        const allFields = await jiraGet<{ id: string; name: string }[]>('/rest/api/2/field');
+        if (!isActive) return;
+        const nameById: Record<string, string> = {};
+        (Array.isArray(allFields) ? allFields : []).forEach((field) => { if (field.id && field.name) nameById[field.id] = field.name; });
+        setFieldNameById(nameById);
       } catch {
         // Leave defaults in place — the operator can fill any missing field manually.
       }
@@ -242,6 +250,19 @@ export default function PiDeliveryPlanTab({ piName, teams = [] }: PiDeliveryPlan
       setCarryover(carryoverReconciles);
       setCarryoverWip(wipItems);
 
+      // Determine the release schedule from the project's fixVersions, so the process sets the correct
+      // fixVersion per Story (its PROD/Due lands on the first release on/after it) rather than trusting a
+      // Feature's fixVersion that may be unset at load. Empty → the engine falls back to a monthly suggestion.
+      let releaseSchedule = { entries: [] as ReturnType<typeof versionsToReleaseSchedule>['entries'] };
+      if (writeConfig.projectKey.trim() !== '') {
+        try {
+          const versions = await jiraGet<JiraProjectVersion[]>(`/rest/api/2/project/${encodeURIComponent(writeConfig.projectKey.trim())}/versions`);
+          releaseSchedule = versionsToReleaseSchedule(Array.isArray(versions) ? versions : []);
+        } catch {
+          // Leave the schedule empty — the date engine still proposes a monthly cadence.
+        }
+      }
+
       const start = piStartIso.trim() || todayIso();
       const end = piEndIso.trim() || start;
       const sprints = deriveSprints(start, end, PI_SPRINT_COUNT, piName);
@@ -249,7 +270,7 @@ export default function PiDeliveryPlanTab({ piName, teams = [] }: PiDeliveryPlan
         piName, piStartIso: start, sprints,
         features: toFactSheetFeatureInputs(issues, sizeFieldId, {}, existingChildrenByFeature),
         people: toFactSheetPersonInputs(rosterMembers),
-        releaseSchedule: { entries: [] },
+        releaseSchedule,
         fieldConfig: { inIntStatusNames: [], slDoneStatusNames: [], doneCategoryNames: [] },
         classifyComponent: (name) => getComponentKind(name) ?? 'unclassified',
       });
@@ -426,6 +447,7 @@ export default function PiDeliveryPlanTab({ piName, teams = [] }: PiDeliveryPlan
           </label>
           <label className={styles.field}>Size field id
             <input className={styles.fieldInput} value={sizeFieldId} onChange={(event) => setSizeFieldId(event.target.value)} />
+            {fieldNameById[sizeFieldId] && <span className={styles.statusLine}>{fieldNameById[sizeFieldId]}</span>}
           </label>
           <label className={styles.field}>PI start (YYYY-MM-DD)
             <input className={styles.fieldInput} value={piStartIso} onChange={(event) => setPiStartIso(event.target.value)} placeholder="2026-07-30" />
@@ -446,11 +468,9 @@ export default function PiDeliveryPlanTab({ piName, teams = [] }: PiDeliveryPlan
       </section>
 
       {/* ── Generate & ingest (AI-gated) ── */}
-      <section className={styles.card}>
-        <h3 className={styles.sectionTitle}>2 · Generate the plan prompt & paste the reply</h3>
-        {!isAiUnlocked ? (
-          <p className={styles.statusLine}>Unlock AI Assist (Ctrl+Alt+Z) to generate the delivery-plan prompt.</p>
-        ) : (
+      {isAiUnlocked && (
+        <section className={styles.card}>
+          <h3 className={styles.sectionTitle}>2 · Generate the plan prompt &amp; paste the reply</h3>
           <>
             <button className={styles.actionButton} disabled={factSheet === null} onClick={handleGeneratePrompt} type="button">Generate delivery-plan prompt</button>
             {prompts.length > 0 && <textarea className={styles.promptArea} readOnly value={prompts.join('\n\n=== NEXT CHUNK ===\n\n')} onFocus={(event) => event.currentTarget.select()} />}
@@ -459,8 +479,8 @@ export default function PiDeliveryPlanTab({ piName, teams = [] }: PiDeliveryPlan
             </label>
             <button className={`${styles.actionButton} ${styles.primaryButton}`} disabled={factSheet === null || replyText.trim() === ''} onClick={handleIngest} type="button">Ingest & build plan</button>
           </>
-        )}
-      </section>
+        </section>
+      )}
 
       {statusMessage && <p className={styles.statusLine}>{statusMessage}</p>}
 
@@ -512,7 +532,7 @@ export default function PiDeliveryPlanTab({ piName, teams = [] }: PiDeliveryPlan
             <div key={story.tempId} className={styles.storyRow}>
               <div className={styles.storyHead}>
                 <span className={styles.storyTitle}>{story.summary}</span>
-                <span className={styles.statusLine}>{story.featureKey} · {story.sprintName} · Target End {story.dates.targetEndIso} · Due {story.dates.dueIso ?? '—'}</span>
+                <span className={styles.statusLine}>{story.featureKey} · {story.sprintName} · Target End {story.dates.targetEndIso} · Due {story.dates.dueIso ?? '—'} · fixVersion {story.fixVersionName ?? '—'}</span>
                 <button className={styles.actionButton} disabled={isBusy || !isWriteConfigured} onClick={() => void handleAccept(story)} type="button">Accept &amp; write</button>
               </div>
               <ul className={styles.subtaskList}>
@@ -546,6 +566,7 @@ export default function PiDeliveryPlanTab({ piName, teams = [] }: PiDeliveryPlan
             ] as [keyof typeof writeConfig, string][]).map(([key, label]) => (
               <label key={key} className={styles.field}>{label}
                 <input className={styles.fieldInput} value={writeConfig[key]} onChange={(event) => setWriteConfig((previous) => ({ ...previous, [key]: event.target.value }))} />
+                {fieldNameById[writeConfig[key]] && <span className={styles.statusLine}>{fieldNameById[writeConfig[key]]}</span>}
               </label>
             ))}
           </div>

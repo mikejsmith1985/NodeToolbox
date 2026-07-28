@@ -106,3 +106,19 @@ describe('buildDeliveryPlan — carryover WIP consumes capacity (Phase B)', () =
     expect(plan.honestStates.some((state) => /WIP/i.test(state))).toBe(false);
   });
 });
+
+describe('buildDeliveryPlan — fixVersion determination', () => {
+  it('sets fixVersionName to the release covering the Story PROD/Due date', () => {
+    const plan = buildDeliveryPlan(baseInput());
+    const story = plan.stories[0];
+    // The base fact sheet has an 'Aug' release on 2026-08-28; the Story's Due lands there.
+    expect(story.dates.dueIso).toBe('2026-08-28');
+    expect(story.fixVersionName).toBe('Aug');
+  });
+
+  it('leaves fixVersionName null when no release covers the Due date', () => {
+    const sheet = factSheet({ releaseSchedule: { entries: [] } });
+    const plan = buildDeliveryPlan(baseInput(sheet));
+    expect(plan.stories[0].fixVersionName).toBeNull();
+  });
+});

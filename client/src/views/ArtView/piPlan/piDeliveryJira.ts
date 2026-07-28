@@ -57,6 +57,10 @@ export function buildDeliveryStoryRequest(story: PlannedStory, context: Delivery
   if (story.dates.dueIso) {
     fields.duedate = story.dates.dueIso;
   }
+  // Stamp the fixVersion the process determined (the release covering the Story's PROD/Due date).
+  if (story.fixVersionName) {
+    fields.fixVersions = [{ name: story.fixVersionName }];
+  }
   // The Story's primary owner defaults to the first coding sub-task's assignee.
   const primaryOwner = assigneeField(story.codingSubtasks[0]?.assignee ?? null, context);
   if (primaryOwner) {

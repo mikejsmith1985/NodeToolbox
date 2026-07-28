@@ -13,10 +13,9 @@ afterEach(() => {
 });
 
 describe('PiDeliveryPlanTab', () => {
-  it('renders the load + generate sections with the selected PI', () => {
+  it('renders the load section with the selected PI', () => {
     render(<PiDeliveryPlanTab piName="26.4" />);
     expect(screen.getByText(/Load committed Features/i)).toBeTruthy();
-    expect(screen.getByText(/Generate the plan prompt/i)).toBeTruthy();
     // The PI name is surfaced in the load section.
     expect(screen.getByText('26.4')).toBeTruthy();
   });
@@ -27,10 +26,12 @@ describe('PiDeliveryPlanTab', () => {
     expect(screen.getByPlaceholderText('DENP-1234')).toBeTruthy();
   });
 
-  it('hides the prompt generator behind the AI-assist gate until unlocked', () => {
+  it('hides the whole generate section — and never reveals the AI gate — until unlocked', () => {
     render(<PiDeliveryPlanTab piName="26.4" />);
-    expect(screen.getByText(/Unlock AI Assist/i)).toBeTruthy();
+    // The generator is absent AND nothing instructs the user to unlock AI Assist (the gate stays hidden).
     expect(screen.queryByText(/Generate delivery-plan prompt/i)).toBeNull();
+    expect(screen.queryByText(/2 · Generate the plan prompt/i)).toBeNull();
+    expect(screen.queryByText(/Unlock AI Assist/i)).toBeNull();
   });
 
   it('shows the prompt generator once AI Assist is unlocked', () => {
