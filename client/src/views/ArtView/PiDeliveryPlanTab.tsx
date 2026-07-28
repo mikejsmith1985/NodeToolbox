@@ -19,11 +19,12 @@ import { resolvePiPlanFieldIds, resolveDeliveryIssueTypeIds } from './piPlan/piP
 import { assembleFactSheet } from './piPlan/piPlanFactSheet.ts';
 import { buildDeliveryPlanPrompt } from './piPlan/ai/deliveryPlanPrompt.ts';
 import { parseDeliveryPlanReply } from './piPlan/ai/deliveryPlanIngest.ts';
-import { buildDeliveryPlan, type AcceptedStory, type DeliveryPlan, type PlannedStory } from './piPlan/piDeliveryEngine.ts';
+import { buildDeliveryPlan, type AcceptedStory, type CarryoverWipItem, type DeliveryPlan, type PlannedStory } from './piPlan/piDeliveryEngine.ts';
 import { detectBottlenecks, attachMitigations } from './piPlan/piPlanBottlenecks.ts';
 import { applyDeliveryStory, applyCarryoverGaps, type DeliveryWriteContext } from './piPlan/piDeliveryJira.ts';
 import { toFactSheetFeatureInputs, toFactSheetPersonInputs, deriveSprints } from './piPlan/piDeliveryTabData.ts';
 import { classifyChildKind, reconcileCarryoverFeature, type CarryoverStory, type CarryoverStoryReconcile } from './piPlan/piPlanCarryover.ts';
+import { buildStorySubtaskScaffold } from './piPlan/piPlanRepoSubtasks.ts';
 import PiDeliveryMonitor from './PiDeliveryMonitor.tsx';
 import type { Bottleneck, ExistingChild, PiPlanningFactSheet } from './piPlan/piPlanTypes.ts';
 import styles from './PiDeliveryPlanTab.module.css';
@@ -79,6 +80,10 @@ export default function PiDeliveryPlanTab({ piName, teams = [] }: PiDeliveryPlan
   const [bottlenecks, setBottlenecks] = useState<Bottleneck[]>([]);
   // Carryover reconciliation: in-flight Stories and the sub-tasks they are missing (gap-fill, never duplicated).
   const [carryover, setCarryover] = useState<{ featureKey: string; reconcile: CarryoverStoryReconcile }[]>([]);
+  // In-flight carryover work that pre-consumes sprint capacity (Phase B), fed to the engine at ingest.
+  const [carryoverWip, setCarryoverWip] = useState<CarryoverWipItem[]>([]);
+  // Phase C — on-demand defect sub-task generation (defects are unplanned; append repos as you build them).
+  const [defectKey, setDefectKey] = useState('');
   const [assigneeOverrides, setAssigneeOverrides] = useState<Record<string, string>>({});
   const [statusMessage, setStatusMessage] = useState('');
   const [isBusy, setIsBusy] = useState(false);
@@ -179,6 +184,7 @@ export default function PiDeliveryPlanTab({ piName, teams = [] }: PiDeliveryPlan
       // carryover cannot be detected and re-planning would risk duplicates, so we say so.
       const existingChildrenByFeature: Record<string, ExistingChild[]> = {};
       const carryoverReconciles: { featureKey: string; reconcile: CarryoverStoryReconcile }[] = [];
+      let wipItems: CarryoverWipItem[] = [];
       const featureLinkFieldId = writeConfig.featureLink.trim();
       let carryoverNote = '';
       if (featureLinkFieldId === '') {
@@ -186,8 +192,19 @@ export default function PiDeliveryPlanTab({ piName, teams = [] }: PiDeliveryPlan
       } else if (issues.length > 0) {
         const fieldNumber = featureLinkFieldId.replace('customfield_', '');
         const storyJql = `cf[${fieldNumber}] in (${issues.map((issue) => issue.key).join(', ')}) AND issuetype in (Story, Defect)`;
-        const storyPath = `/rest/api/2/search?jql=${encodeURIComponent(storyJql)}&fields=${encodeURIComponent(`summary,components,${featureLinkFieldId}`)}&maxResults=300`;
+        const storyFields = `summary,components,status,${sizeFieldId},${featureLinkFieldId}`;
+        const storyPath = `/rest/api/2/search?jql=${encodeURIComponent(storyJql)}&fields=${encodeURIComponent(storyFields)}&maxResults=300`;
         const stories = (await jiraGet<{ issues?: JiraIssue[] }>(storyPath)).issues ?? [];
+        // Each in-flight (not-done) Story's remaining effort consumes capacity (Phase B).
+        wipItems = stories.map((story) => {
+          const rawSize = (story.fields as unknown as Record<string, unknown>)[sizeFieldId];
+          const sizePoints = typeof rawSize === 'number' ? rawSize : Number(rawSize) || 0;
+          return {
+            summary: typeof story.fields?.summary === 'string' ? story.fields.summary : story.key,
+            sizePoints,
+            isDone: story.fields?.status?.statusCategory?.key === 'done',
+          };
+        }).filter((wip) => !wip.isDone && wip.sizePoints > 0);
 
         // The Stories' existing sub-tasks tell gap-fill what already exists.
         const subtasksByStory: Record<string, ExistingChild[]> = {};
@@ -223,6 +240,7 @@ export default function PiDeliveryPlanTab({ piName, teams = [] }: PiDeliveryPlan
       }
       setComponentIdByName(idByName);
       setCarryover(carryoverReconciles);
+      setCarryoverWip(wipItems);
 
       const start = piStartIso.trim() || todayIso();
       const end = piEndIso.trim() || start;
@@ -275,6 +293,7 @@ export default function PiDeliveryPlanTab({ piName, teams = [] }: PiDeliveryPlan
       factSheet, stories: acceptedStories,
       resolveComponentId: (repoName) => componentIdByName[repoName] ?? null,
       workingCalendar: WORKING_CALENDAR, piEndIso: piEndIso.trim() || factSheet.deliveryDeadlineIso, todayIso: todayIso(),
+      carryoverWip, // Phase B — in-flight work pre-consumes capacity so new work isn't over-scheduled on top of WIP.
     });
     const detected = attachMitigations(
       detectBottlenecks(builtPlan.planResult, factSheet, builtPlan.stories, piEndIso.trim() || factSheet.deliveryDeadlineIso),
@@ -336,6 +355,60 @@ export default function PiDeliveryPlanTab({ piName, teams = [] }: PiDeliveryPlan
       setCarryover((previous) => previous.filter((entry) => entry !== item));
     } catch (writeError) {
       setStatusMessage(writeError instanceof Error ? writeError.message : 'Gap-fill write failed.');
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  /**
+   * Phase C — generates the repo→sub-task scaffold for a single unplanned Defect on demand: reads the
+   * Defect's impacted repo components and existing sub-tasks, then writes only the MISSING coding sub-tasks
+   * (one per repo) + SL + deploys. Idempotent, so re-running never duplicates.
+   */
+  async function handleGenerateDefectSubtasks() {
+    if (!isWriteConfigured) {
+      setStatusMessage('Set the project key and Story/Sub-task issue-type ids in Write settings first.');
+      return;
+    }
+    const key = defectKey.trim();
+    if (key === '') {
+      setStatusMessage('Enter a Defect key.');
+      return;
+    }
+    setIsBusy(true);
+    try {
+      const defect = await jiraGet<JiraIssue>(`/rest/api/2/issue/${encodeURIComponent(key)}?fields=summary,components`);
+      const rawComponents = (defect.fields as unknown as { components?: { id?: string; name?: string }[] }).components ?? [];
+      const idByName: Record<string, string> = { ...componentIdByName };
+      rawComponents.forEach((component) => { if (component.name && component.id) idByName[component.name] = component.id; });
+      const repoNames = rawComponents.map((component) => component.name ?? '').filter((name) => name !== '' && getComponentKind(name) === 'repo');
+      if (repoNames.length === 0) {
+        setStatusMessage(`${key} has no repo components — tag the impacted repos on the Defect first, then generate.`);
+        return;
+      }
+      // Read existing sub-tasks so gap-fill only writes what is missing (idempotent).
+      const existingSubtasks = (await jiraGet<{ issues?: JiraIssue[] }>(
+        `/rest/api/2/search?jql=${encodeURIComponent(`parent = ${key}`)}&fields=${encodeURIComponent('summary')}&maxResults=200`,
+      )).issues ?? [];
+      const existingChildren: ExistingChild[] = existingSubtasks.map((subtask) => {
+        const summary = typeof subtask.fields?.summary === 'string' ? subtask.fields.summary : '';
+        return { key: subtask.key, kind: classifyChildKind(summary), parentKey: key, summary };
+      });
+      const defectSummary = typeof defect.fields?.summary === 'string' ? defect.fields.summary : key;
+      const gaps = buildStorySubtaskScaffold({ summary: defectSummary, devPoints: repoNames.length }, repoNames, (repoName) => idByName[repoName] ?? null, existingChildren);
+      if (gaps.length === 0) {
+        setStatusMessage(`${key} is already fully scaffolded — nothing to add.`);
+        return;
+      }
+      const context: DeliveryWriteContext = {
+        projectKey: writeConfig.projectKey, storyIssueTypeId: writeConfig.storyIssueTypeId,
+        subTaskIssueTypeId: writeConfig.subTaskIssueTypeId,
+        fieldIds: { featureLink: writeConfig.featureLink, targetStart: writeConfig.targetStart, targetEnd: writeConfig.targetEnd },
+      };
+      await applyCarryoverGaps(key, gaps, context);
+      setStatusMessage(`Generated ${gaps.length} sub-task(s) on ${key} for ${repoNames.length} repo(s).`);
+    } catch (defectError) {
+      setStatusMessage(defectError instanceof Error ? defectError.message : 'Defect sub-task generation failed.');
     } finally {
       setIsBusy(false);
     }
@@ -478,6 +551,25 @@ export default function PiDeliveryPlanTab({ piName, teams = [] }: PiDeliveryPlan
           </div>
         </section>
       )}
+
+      {/* ── Defect sub-tasks (on demand — defects are unplanned) ── */}
+      <section className={styles.card}>
+        <h3 className={styles.sectionTitle}>Defect sub-tasks (on demand)</h3>
+        <p className={styles.statusLine}>
+          Defects are unplanned — generate their repo→sub-task scaffold when you build them. Enter a Defect key; its
+          impacted <strong>repo components</strong> drive one coding sub-task each (+ SL + deploys), idempotent so
+          re-running never duplicates.
+        </p>
+        <div className={styles.controlRow}>
+          <label className={styles.field}>Defect key
+            <input className={styles.fieldInput} value={defectKey} onChange={(event) => setDefectKey(event.target.value)} placeholder="DENP-1234" />
+          </label>
+          <button className={styles.actionButton} disabled={isBusy || !isWriteConfigured || defectKey.trim() === ''} onClick={() => void handleGenerateDefectSubtasks()} type="button">
+            Generate sub-tasks
+          </button>
+        </div>
+        {!isWriteConfigured && <p className={styles.statusLine}>Write settings not yet configured — they auto-fill; load Features once to review them.</p>}
+      </section>
 
       {/* ── Monitor ── */}
       {plan && factSheet && (

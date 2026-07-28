@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **WIP-aware planning + on-demand defect sub-tasks (feature 032, Phases B & C).**
+  **Phase B** — in-flight carryover work now **consumes sprint capacity** before new work is scheduled: each not-done
+  carryover Story's remaining effort is fed to the capacity planner as a Must-bucket item ranked ahead of new work
+  (capacity-only — never emitted as a proposal), so new commitments fill what's left and over-commitment surfaces
+  honestly instead of the plan silently over-scheduling on top of WIP. The Delivery Planner reads each carryover
+  Story's size + status to build the WIP load. **Phase C** — a new **"Defect sub-tasks (on demand)"** card: because
+  defects are unplanned (and correctly excluded from the whole-PI generation), you enter a Defect key and its impacted
+  **repo components** drive one coding sub-task each (+ SL + deploys) via the shared idempotent scaffold builder, so
+  you append repos as you build the defect and re-running never duplicates. 2 new engine tests.
+
 ### Fixed
 - **Carryover-aware PI planning — the Delivery Planner no longer duplicates in-flight work (feature 032, Phase A).**
   Previously the planner fed empty `existingChildren`, so re-planning a PI that already had Stories in flight would
