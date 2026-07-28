@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **PI Review: a heading line ABOVE the first row.** You can now add a custom, labelled, coloured grouping line at
+  the very top of the table (e.g. "MUST DO") — previously grouping lines could only sit *below* a row. A dedicated
+  "Add heading line above first row" toggle sits at the top of the table; the line round-trips through the Confluence
+  page (`afterRowIndex 0` is now a valid, persisted position).
+
+### Fixed
+- **Delivery Planner found only 1 Feature from the PI Review page — commitment is detected by the boundary now
+  (GH #245).** The committed-set reader keyed off the "Committed to PI?" column, but pages commit via the "Hard commits
+  above / Stretch Goals below" **boundary line** (column blank), so it under-counted to 1. It now checks, in order:
+  the commitment **boundary** (rows above it are committed — the PI Review UI's own signal), then the committed
+  **column**, then the **whole page** as a last resort. New `committedFeatureKeys` with tests.
+
 ### Changed
 - **Delivery Planner sources committed Features from the PI Review page, not a PO+PI Jira query (GH #245).** The
   authoritative "committed" set lives on the team's PI Review page, and PI Review is deliberately not PO-scoped — so a

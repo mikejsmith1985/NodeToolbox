@@ -1050,8 +1050,10 @@ function normalizePiReviewCustomGroupingLines(
   customGroupingLines: PiReviewCustomGroupingLine[],
   rowCount: number,
 ): PiReviewCustomGroupingLine[] {
+  // afterRowIndex 0 is a valid position — a heading line ABOVE the first row (e.g. "MUST DO"); 1..rowCount
+  // place the line after that row.
   return customGroupingLines
-    .filter((groupingLine) => groupingLine.afterRowIndex > 0 && groupingLine.afterRowIndex <= rowCount && groupingLine.label.trim() !== '')
+    .filter((groupingLine) => groupingLine.afterRowIndex >= 0 && groupingLine.afterRowIndex <= rowCount && groupingLine.label.trim() !== '')
     .map((groupingLine, groupingLineIndex) => ({
       lineId: groupingLine.lineId.trim() || `grouping-line-${groupingLineIndex + 1}`,
       afterRowIndex: groupingLine.afterRowIndex,
@@ -1183,6 +1185,14 @@ function replaceRowsAfterHeader<RowType extends Record<string, string>>(
   const normalizedCustomGroupingLines = normalizePiReviewCustomGroupingLines(customGroupingLines, rows.length);
 
   let insertAfterNode: ChildNode = headerRowElement;
+
+  // Heading lines at afterRowIndex 0 render ABOVE the first row — inserted right after the header.
+  for (const groupingLine of normalizedCustomGroupingLines.filter((line) => line.afterRowIndex === 0)) {
+    const groupingRowElement = createPiReviewCustomGroupingRow(documentNode, totalColumnCount, groupingLine);
+    headerParentElement.insertBefore(groupingRowElement, insertAfterNode.nextSibling);
+    insertAfterNode = groupingRowElement;
+  }
+
   for (const [rowIndex, row] of rows.entries()) {
     const rowElement = documentNode.createElement('tr');
     for (let cellIndex = 0; cellIndex < totalColumnCount; cellIndex += 1) {
