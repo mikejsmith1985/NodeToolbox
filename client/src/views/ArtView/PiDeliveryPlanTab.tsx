@@ -105,12 +105,13 @@ export default function PiDeliveryPlanTab({ piName, teams = [] }: PiDeliveryPlan
   // ── Auto-wire the config from the PI name, the roster, the teams, and the connected instance ──
   // Every setter is only-if-empty so an operator override is never clobbered.
 
-  // PI start/end derive from the PI name when it encodes dates.
+  // PI start/end derive from the PI name when it encodes dates — refreshed whenever the PI changes (the PI
+  // name is authoritative for its dates, so a stale prior-PI range is never left behind).
   useEffect(() => {
     const range = parsePiDateRange(piName);
     if (range) {
-      setPiStartIso((previous) => previous || range.startIso);
-      setPiEndIso((previous) => previous || range.endIso);
+      setPiStartIso(range.startIso);
+      setPiEndIso(range.endIso);
     }
   }, [piName]);
 
@@ -121,7 +122,9 @@ export default function PiDeliveryPlanTab({ piName, teams = [] }: PiDeliveryPlan
       .map((member) => member.assigneeQueryValue.trim())
       .filter((value) => value !== '');
     if (poValues.length > 0) {
-      setPoAssignee((previous) => previous || poValues.join(', '));
+      // Join with a semicolon — a Product Owner display name is often "Lastname, Firstname", so a comma
+      // separator would split one name into two and break the assignee query.
+      setPoAssignee((previous) => previous || poValues.join('; '));
     }
     const teamProjectKey = teams.find((team) => (team.projectKey ?? '').trim() !== '')?.projectKey?.trim();
     if (teamProjectKey) {
@@ -174,7 +177,9 @@ export default function PiDeliveryPlanTab({ piName, teams = [] }: PiDeliveryPlan
     setIsBusy(true);
     setStatusMessage('');
     try {
-      const poValues = poAssignee.split(',').map((value) => value.trim()).filter((value) => value !== '');
+      // Split on semicolons only — a PO display name like "Phatate, Smita" contains a comma, so splitting on
+      // commas would corrupt it into two bogus assignees and the query would return nothing.
+      const poValues = poAssignee.split(';').map((value) => value.trim()).filter((value) => value !== '');
       const jql = buildDirectFeatureJql(piName, poValues, readPiReviewPullSettings().piFieldId);
       if (jql === null) {
         setStatusMessage('Could not build a Feature query — check the PI and Product Owner.');
@@ -449,8 +454,8 @@ export default function PiDeliveryPlanTab({ piName, teams = [] }: PiDeliveryPlan
         <h3 className={styles.sectionTitle}>1 · Load committed Features & build the fact sheet</h3>
         <p className={styles.statusLine}>PI: <strong>{piName || '(none selected)'}</strong>. Fields below auto-fill from the roster, the PI name, and the connected instance — override any of them. The fact sheet is the anti-hallucination spine.</p>
         <div className={styles.controlRow}>
-          <label className={styles.field}>Product Owner assignee (accountId or username)
-            <input className={styles.fieldInput} value={poAssignee} onChange={(event) => setPoAssignee(event.target.value)} placeholder="e.g. jsmith" />
+          <label className={styles.field}>Product Owner (name/accountId — separate multiple with ;)
+            <input className={styles.fieldInput} value={poAssignee} onChange={(event) => setPoAssignee(event.target.value)} placeholder="e.g. Phatate, Smita" />
           </label>
           <label className={styles.field}>Size field id
             <input className={styles.fieldInput} value={sizeFieldId} onChange={(event) => setSizeFieldId(event.target.value)} />

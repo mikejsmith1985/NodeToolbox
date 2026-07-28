@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Delivery Planner returned 0 Features when the Product Owner name contained a comma (GH #245).** The PO field
+  was split on commas to support multiple POs, but a display name like "Phatate, Smita" then became two bogus
+  assignees (`assignee in ("Phatate", "Smita")`) so the query matched nothing. Multiple POs are now separated with a
+  **semicolon** (`;`) instead — names contain commas, not semicolons — and the field label/placeholder say so. Also
+  fixed the PI start/end auto-fill leaving a **stale prior-PI date range** when the selected PI changed (it now
+  refreshes from the PI name each time, so sprint derivation + the delivery deadline are correct).
+
 ### Added
 - **Delivery Planner determines the fixVersion in-process.** The planner no longer relies on a Feature's fixVersion
   (which may be unset at load): it reads the project's fixVersions and builds the release schedule
