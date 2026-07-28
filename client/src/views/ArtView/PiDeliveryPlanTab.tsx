@@ -4,14 +4,18 @@
 // with parallel per-repo assignment and rule-derived dates) → flag bottlenecks → per-item accept writes.
 // All dates/capacity/assignment/bottlenecks are engine-computed; nothing is trusted from the AI reply.
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { jiraGet } from '../../services/jiraApi.ts';
 import { useAiAssistStore } from '../../store/aiAssistStore.ts';
 import { getComponentKind } from '../AdminHub/lib/componentClassificationStore.ts';
 import { useStandupRosterStore } from '../SprintDashboard/hooks/useStandupRosterStore.ts';
+import { parsePiDateRange } from '../FeatureCanvas/logic/piSchedule.ts';
+import { loadHygieneFieldConfig } from '../Hygiene/checks/hygieneFieldConfig.ts';
 import type { JiraIssue } from '../../types/jira.ts';
+import type { ArtTeam } from './hooks/useArtData.ts';
 import { buildDirectFeatureJql, readPiReviewPullSettings } from './piReviewPullFeatures.ts';
+import { resolvePiPlanFieldIds, resolveDeliveryIssueTypeIds } from './piPlan/piPlanFields.ts';
 import { assembleFactSheet } from './piPlan/piPlanFactSheet.ts';
 import { buildDeliveryPlanPrompt } from './piPlan/ai/deliveryPlanPrompt.ts';
 import { parseDeliveryPlanReply } from './piPlan/ai/deliveryPlanIngest.ts';
@@ -31,6 +35,8 @@ const FEATURE_FIELDS = ['summary', 'priority', 'components', 'fixVersions', 'iss
 interface PiDeliveryPlanTabProps {
   /** The PI selected in the ART header (source of the Feature query + sprint window). */
   piName: string;
+  /** The ART teams — the first with a project key seeds the write project (auto-wire). */
+  teams?: ArtTeam[];
 }
 
 /** Today as YYYY-MM-DD, for the injected planning clock (browser context — Date is available here). */
@@ -45,7 +51,7 @@ function sizePerStory(featureSize: number | null, storyCount: number): number {
 }
 
 /** The PI Delivery Planner: one place to generate, review, and commit a whole-PI delivery plan. */
-export default function PiDeliveryPlanTab({ piName }: PiDeliveryPlanTabProps) {
+export default function PiDeliveryPlanTab({ piName, teams = [] }: PiDeliveryPlanTabProps) {
   const isAiUnlocked = useAiAssistStore((store) => store.isAiAssistUnlocked);
   const rosterMembers = useStandupRosterStore((store) => store.rosterMembers);
 
@@ -75,6 +81,61 @@ export default function PiDeliveryPlanTab({ piName }: PiDeliveryPlanTabProps) {
     [rosterMembers],
   );
 
+  // ── Auto-wire the config from the PI name, the roster, the teams, and the connected instance ──
+  // Every setter is only-if-empty so an operator override is never clobbered.
+
+  // PI start/end derive from the PI name when it encodes dates.
+  useEffect(() => {
+    const range = parsePiDateRange(piName);
+    if (range) {
+      setPiStartIso((previous) => previous || range.startIso);
+      setPiEndIso((previous) => previous || range.endIso);
+    }
+  }, [piName]);
+
+  // Product Owner assignee(s) from the roster; write project key from the first team that has one.
+  useEffect(() => {
+    const poValues = rosterMembers
+      .filter((member) => member.roleCapabilities?.canProductOwner)
+      .map((member) => member.assigneeQueryValue.trim())
+      .filter((value) => value !== '');
+    if (poValues.length > 0) {
+      setPoAssignee((previous) => previous || poValues.join(', '));
+    }
+    const teamProjectKey = teams.find((team) => (team.projectKey ?? '').trim() !== '')?.projectKey?.trim();
+    if (teamProjectKey) {
+      setWriteConfig((previous) => (previous.projectKey ? previous : { ...previous, projectKey: teamProjectKey }));
+    }
+  }, [rosterMembers, teams]);
+
+  // Discover the size field, the write field ids, and the Story/Sub-task issue-type ids from the instance (once).
+  useEffect(() => {
+    let isActive = true;
+    void (async () => {
+      try {
+        const [hygiene, fieldIds, issueTypeIds] = await Promise.all([
+          loadHygieneFieldConfig(), resolvePiPlanFieldIds(), resolveDeliveryIssueTypeIds(),
+        ]);
+        if (!isActive) return;
+        const estimateFieldId = hygiene.estimateFieldIds?.[0];
+        if (estimateFieldId) {
+          setSizeFieldId((previous) => (previous === DEFAULT_SIZE_FIELD_ID ? estimateFieldId : previous));
+        }
+        setWriteConfig((previous) => ({
+          ...previous,
+          featureLink: previous.featureLink || fieldIds.featureLink,
+          targetStart: previous.targetStart || fieldIds.targetStart,
+          targetEnd: previous.targetEnd || fieldIds.targetEnd,
+          storyIssueTypeId: previous.storyIssueTypeId || issueTypeIds.storyIssueTypeId,
+          subTaskIssueTypeId: previous.subTaskIssueTypeId || issueTypeIds.subTaskIssueTypeId,
+        }));
+      } catch {
+        // Leave defaults in place — the operator can fill any missing field manually.
+      }
+    })();
+    return () => { isActive = false; };
+  }, []);
+
   async function handleLoadFeatures() {
     if (piName.trim() === '' || poAssignee.trim() === '') {
       setStatusMessage('Enter the Product Owner assignee (and select a PI) before loading Features.');
@@ -83,7 +144,8 @@ export default function PiDeliveryPlanTab({ piName }: PiDeliveryPlanTabProps) {
     setIsBusy(true);
     setStatusMessage('');
     try {
-      const jql = buildDirectFeatureJql(piName, [poAssignee], readPiReviewPullSettings().piFieldId);
+      const poValues = poAssignee.split(',').map((value) => value.trim()).filter((value) => value !== '');
+      const jql = buildDirectFeatureJql(piName, poValues, readPiReviewPullSettings().piFieldId);
       if (jql === null) {
         setStatusMessage('Could not build a Feature query — check the PI and Product Owner.');
         return;
@@ -201,7 +263,7 @@ export default function PiDeliveryPlanTab({ piName }: PiDeliveryPlanTabProps) {
       {/* ── Load ── */}
       <section className={styles.card}>
         <h3 className={styles.sectionTitle}>1 · Load committed Features & build the fact sheet</h3>
-        <p className={styles.statusLine}>PI: <strong>{piName || '(none selected)'}</strong>. The fact sheet is the anti-hallucination spine — everything the AI sees comes from it.</p>
+        <p className={styles.statusLine}>PI: <strong>{piName || '(none selected)'}</strong>. Fields below auto-fill from the roster, the PI name, and the connected instance — override any of them. The fact sheet is the anti-hallucination spine.</p>
         <div className={styles.controlRow}>
           <label className={styles.field}>Product Owner assignee (accountId or username)
             <input className={styles.fieldInput} value={poAssignee} onChange={(event) => setPoAssignee(event.target.value)} placeholder="e.g. jsmith" />
