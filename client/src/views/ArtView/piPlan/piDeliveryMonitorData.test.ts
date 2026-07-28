@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { planToWrittenSnapshot, summarizeLiveRows, type LiveStoryRow } from './piDeliveryMonitorData.ts';
+import { planToWrittenSnapshot, summarizeLiveRows, deriveSubtaskSignals, parseSprintName, type LiveStoryRow } from './piDeliveryMonitorData.ts';
 import { computeMonitor } from './piPlanMonitor.ts';
 import type { DeliveryPlan, PlannedStory } from './piDeliveryEngine.ts';
 import type { PiPlanningFactSheet } from './piPlanTypes.ts';
@@ -80,5 +80,42 @@ describe('summarizeLiveRows', () => {
     const slipRows = rows().map((row) => (row.storyKey === 'Gamma' ? { ...row, sprintName: 'S2' } : row));
     const live = summarizeLiveRows(slipRows, written);
     expect(live.actualSprintByStory['Gamma']).toBe('S2');
+  });
+});
+
+describe('deriveSubtaskSignals', () => {
+  it('ages by the oldest IN-PROGRESS sub-task and flags a not-done SL sub-task as queued', () => {
+    const signals = deriveSubtaskSignals([
+      { summary: '[api] Story', statusCategoryKey: 'indeterminate', updatedIso: '2026-08-13' },
+      { summary: '[SL] SL Test — Story', statusCategoryKey: 'new', updatedIso: '2026-08-19' },
+      { summary: '[INT] Deploy — Story', statusCategoryKey: 'new', updatedIso: '2026-08-19' },
+    ], '2026-08-20');
+    expect(signals.agingDays).toBe(7);     // api coding sub-task in progress since 08-13
+    expect(signals.isSlQueued).toBe(true); // SL sub-task exists and is not done
+  });
+
+  it('is not queued when the SL sub-task is done, and ages 0 with nothing in progress', () => {
+    const signals = deriveSubtaskSignals([
+      { summary: '[api] Story', statusCategoryKey: 'done', updatedIso: '2026-08-10' },
+      { summary: '[SL] SL Test — Story', statusCategoryKey: 'done', updatedIso: '2026-08-12' },
+    ], '2026-08-20');
+    expect(signals.agingDays).toBe(0);
+    expect(signals.isSlQueued).toBe(false);
+  });
+
+  it('is not queued when there is no SL sub-task at all', () => {
+    expect(deriveSubtaskSignals([{ summary: '[api] Story', statusCategoryKey: 'indeterminate', updatedIso: '2026-08-19' }], '2026-08-20').isSlQueued).toBe(false);
+  });
+});
+
+describe('parseSprintName', () => {
+  it('reads the newest sprint name from the legacy greenhopper string', () => {
+    expect(parseSprintName(['com.atlassian.greenhopper[id=42,state=CLOSED,name=26.4.1,goal=]', 'com.atlassian.greenhopper[id=43,state=ACTIVE,name=26.4.2,goal=]'])).toBe('26.4.2');
+  });
+
+  it('reads a modern object array and returns null when absent', () => {
+    expect(parseSprintName([{ name: '26.4.3' }])).toBe('26.4.3');
+    expect(parseSprintName(null)).toBeNull();
+    expect(parseSprintName([])).toBeNull();
   });
 });

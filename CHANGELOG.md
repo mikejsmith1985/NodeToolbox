@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Delivery monitor now reads sub-tasks and the sprint field precisely (feature 032).** The Monitor panel's live
+  refresh no longer approximates: it fetches each Story's actual sub-tasks (`parent in (…)`) to measure **sub-task
+  aging** from the oldest in-progress child and **SL-queue depth** from the real `[SL]` sub-task's status, and reads
+  each Story's **actual sprint** from the Jira sprint field (`customfield_10020`, parsed like the Hygiene view) so
+  **slip detection** compares the real sprint against the plan. New pure `deriveSubtaskSignals` + `parseSprintName`
+  helpers (6 tests). This retires the last approximation — every monitor signal is now read live.
 - **Delivery Planner config now auto-wires from the team profile & instance (feature 032).** The tab's inputs are no
   longer hand-entered: **PI start/end** derive from the PI name (`parsePiDateRange`), the **Product Owner assignee(s)**
   from the roster's `canProductOwner` members, the **write project key** from the ART team, the **size field** from the
