@@ -203,7 +203,9 @@ export default function PiDeliveryPlanTab({ piName, teams = [] }: PiDeliveryPlan
           const keyJql = `issuekey in (${committed.keys.join(', ')})`;
           const keyPath = `/rest/api/2/search?jql=${encodeURIComponent(keyJql)}&fields=${encodeURIComponent(fields)}&maxResults=300`;
           issues = (await jiraGet<{ issues?: JiraIssue[] }>(keyPath)).issues ?? [];
-          sourceNote = ` (committed set from ${sourceTeam.name}'s PI Review page)`;
+          // Report the committed key count so a mismatch (page keys vs Jira-returned) is diagnosable.
+          const missingNote = issues.length !== committed.keys.length ? ` ⚠ ${committed.keys.length - issues.length} not returned by Jira` : '';
+          sourceNote = ` (${committed.keys.length} committed on ${sourceTeam.name}'s PI Review page${missingNote})`;
         }
       }
 

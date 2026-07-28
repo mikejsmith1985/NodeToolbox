@@ -14,11 +14,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   page (`afterRowIndex 0` is now a valid, persisted position).
 
 ### Fixed
-- **Delivery Planner found only 1 Feature from the PI Review page — commitment is detected by the boundary now
-  (GH #245).** The committed-set reader keyed off the "Committed to PI?" column, but pages commit via the "Hard commits
-  above / Stretch Goals below" **boundary line** (column blank), so it under-counted to 1. It now checks, in order:
-  the commitment **boundary** (rows above it are committed — the PI Review UI's own signal), then the committed
-  **column**, then the **whole page** as a last resort. New `committedFeatureKeys` with tests.
+- **Delivery Planner committed-set detection now matches the PI Review checkbox exactly (GH #245).** Commitment on a
+  PI Review page is the **"Committed to PI?" checkbox** — stored as the literal value `"Yes"` (the tab's own
+  definition). `isCommittedRow` now mirrors that exactly, and `committedFeatureKeys` returns those rows only (falling
+  back to the whole page only when no row is checked). The interim boundary-based heuristic was wrong for pages that
+  commit via the checkbox scattered through the list (it counted every row above the "Stretch Goals" line, over-
+  counting) — the boundary is now ignored for this. The load status also reports the committed-key count and flags any
+  keys Jira didn't return, so a residual gap is diagnosable at a glance.
 
 ### Changed
 - **Delivery Planner sources committed Features from the PI Review page, not a PO+PI Jira query (GH #245).** The

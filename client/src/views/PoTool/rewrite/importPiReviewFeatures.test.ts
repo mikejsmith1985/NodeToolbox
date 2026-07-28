@@ -77,12 +77,9 @@ describe('isCommittedRow', () => {
   const { isCommittedRow } = require('./importPiReviewFeatures.ts');
   const row = (committed: string) => ({ rowId: '1', carryOver: '', priority: '', feature: 'DENP-1 x', pointEstimate: '', dependency: '', risks: '', committed, notes: '', devWork: '', testSupport: '', carryToNext: '' });
 
-  it('treats blank and explicit negatives as NOT committed', () => {
-    ['', ' ', 'No', 'n', 'false', '☐', '✗'].forEach((value) => expect(isCommittedRow(row(value))).toBe(false));
-  });
-
-  it('treats positive markers as committed', () => {
-    ['Yes', 'y', '✅', '✔', 'x', 'Committed', 'true'].forEach((value) => expect(isCommittedRow(row(value))).toBe(true));
+  it('is committed only when the checkbox value is "Yes" (case-insensitive), matching the PI Review tab', () => {
+    ['Yes', 'yes', ' YES '].forEach((value) => expect(isCommittedRow(row(value))).toBe(true));
+    ['', 'No', 'y', '✓', 'x', 'true', 'Committed'].forEach((value) => expect(isCommittedRow(row(value))).toBe(false));
   });
 });
 
@@ -90,23 +87,15 @@ describe('committedFeatureKeys', () => {
   const { committedFeatureKeys } = require('./importPiReviewFeatures.ts');
   const row = (feature: string, committed = '') => ({ rowId: feature, carryOver: '', priority: '', feature, pointEstimate: '', dependency: '', risks: '', committed, notes: '', devWork: '', testSupport: '', carryToNext: '' });
 
-  it('uses the commitment boundary first (rows above it are committed, blank column and all)', () => {
+  it('returns the keys of rows whose Committed checkbox is "Yes" — ignoring the commitment boundary', () => {
     const parsed = {
-      rows: [row('DENP-1 a'), row('DENP-2 b'), row('DENP-3 stretch'), row('DENP-4 stretch')],
+      rows: [row('DENP-1 a', 'Yes'), row('DENP-2 b', ''), row('DENP-3 c', 'Yes'), row('DENP-4 d', '')],
       commitmentBoundaryIndex: 2, tableBinding: {} as never, customGroupingLines: [],
-    };
-    expect(committedFeatureKeys(parsed)).toEqual(['DENP-1', 'DENP-2']); // above boundary, column blank
-  });
-
-  it('falls back to the committed column when there is no boundary', () => {
-    const parsed = {
-      rows: [row('DENP-1 a', 'Yes'), row('DENP-2 b', ''), row('DENP-3 c', '✅')],
-      commitmentBoundaryIndex: null, tableBinding: {} as never, customGroupingLines: [],
     };
     expect(committedFeatureKeys(parsed).sort()).toEqual(['DENP-1', 'DENP-3']);
   });
 
-  it('falls back to the whole page when neither signal is present', () => {
+  it('falls back to the whole page when no row is marked committed', () => {
     const parsed = {
       rows: [row('DENP-1 a'), row('DENP-2 b')],
       commitmentBoundaryIndex: null, tableBinding: {} as never, customGroupingLines: [],
