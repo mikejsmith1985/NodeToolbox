@@ -70,6 +70,9 @@ export default function PiDeliveryPlanTab({ piName, teams = [] }: PiDeliveryPlan
   const [sizeFieldId, setSizeFieldId] = useState(DEFAULT_SIZE_FIELD_ID);
   const [piStartIso, setPiStartIso] = useState('');
   const [piEndIso, setPiEndIso] = useState('');
+  // The project whose fixVersions define the release schedule — often the write project, but a team's
+  // releases can live in a separate (portfolio/program) project, so it is independently overridable.
+  const [releaseProjectKey, setReleaseProjectKey] = useState('');
 
   // ── Pipeline state ──
   const [factSheet, setFactSheet] = useState<PiPlanningFactSheet | null>(null);
@@ -123,6 +126,9 @@ export default function PiDeliveryPlanTab({ piName, teams = [] }: PiDeliveryPlan
     const teamProjectKey = teams.find((team) => (team.projectKey ?? '').trim() !== '')?.projectKey?.trim();
     if (teamProjectKey) {
       setWriteConfig((previous) => (previous.projectKey ? previous : { ...previous, projectKey: teamProjectKey }));
+      // Default the release-schedule project to the team project; the operator overrides it when releases
+      // live in a separate portfolio/program project.
+      setReleaseProjectKey((previous) => previous || teamProjectKey);
     }
   }, [rosterMembers, teams]);
 
@@ -254,9 +260,10 @@ export default function PiDeliveryPlanTab({ piName, teams = [] }: PiDeliveryPlan
       // fixVersion per Story (its PROD/Due lands on the first release on/after it) rather than trusting a
       // Feature's fixVersion that may be unset at load. Empty → the engine falls back to a monthly suggestion.
       let releaseSchedule = { entries: [] as ReturnType<typeof versionsToReleaseSchedule>['entries'] };
-      if (writeConfig.projectKey.trim() !== '') {
+      const versionProjectKey = releaseProjectKey.trim() || writeConfig.projectKey.trim();
+      if (versionProjectKey !== '') {
         try {
-          const versions = await jiraGet<JiraProjectVersion[]>(`/rest/api/2/project/${encodeURIComponent(writeConfig.projectKey.trim())}/versions`);
+          const versions = await jiraGet<JiraProjectVersion[]>(`/rest/api/2/project/${encodeURIComponent(versionProjectKey)}/versions`);
           releaseSchedule = versionsToReleaseSchedule(Array.isArray(versions) ? versions : []);
         } catch {
           // Leave the schedule empty — the date engine still proposes a monthly cadence.
@@ -454,6 +461,9 @@ export default function PiDeliveryPlanTab({ piName, teams = [] }: PiDeliveryPlan
           </label>
           <label className={styles.field}>PI end (YYYY-MM-DD)
             <input className={styles.fieldInput} value={piEndIso} onChange={(event) => setPiEndIso(event.target.value)} placeholder="2026-10-07" />
+          </label>
+          <label className={styles.field}>Release project (fixVersions)
+            <input className={styles.fieldInput} value={releaseProjectKey} onChange={(event) => setReleaseProjectKey(event.target.value)} placeholder="defaults to write project" />
           </label>
           <button className={`${styles.actionButton} ${styles.primaryButton}`} disabled={isBusy} onClick={() => void handleLoadFeatures()} type="button">
             {isBusy ? 'Loading…' : 'Load Features'}

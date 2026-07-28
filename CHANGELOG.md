@@ -15,6 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Config inputs show the field's display name** next to each field id (size field + the Feature-link / Target
   Start / Target End write-settings ids), resolved from `/rest/api/2/field`, so an operator can see what each
   `customfield_…` actually is.
+- **The fixVersion release-schedule project is configurable.** A new "Release project (fixVersions)" input lets the
+  planner read releases from a **different project** than where Stories are written (e.g. a portfolio/program project
+  that owns the release train). It defaults to the write project and is overridable per run.
 
 ### Changed
 - **The Delivery Planner tab is now gated behind AI Assist.** Because it's only usable with AI, its ArtView tab is
