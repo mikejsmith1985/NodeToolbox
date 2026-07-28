@@ -2,8 +2,9 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { buildDeliveryWriteRequests, type DeliveryWriteContext } from './piDeliveryJira.ts';
+import { buildDeliveryWriteRequests, pickExistingStoryKey, selectUncreatedSubtasks, type DeliveryWriteContext } from './piDeliveryJira.ts';
 import type { PlannedStory } from './piDeliveryEngine.ts';
+import type { CreateIssueRequest } from '../../../types/jira.ts';
 
 const context: DeliveryWriteContext = {
   projectKey: 'DENP', storyIssueTypeId: '10001', subTaskIssueTypeId: '10002',
@@ -81,6 +82,39 @@ describe('buildGapSubtaskRequest (carryover gap-fill)', () => {
     expect(fields.components).toBeUndefined();
     expect(fields.duedate).toBeUndefined();
     expect(fields.summary).toBe('[REL] Deploy — Enrollment');
+  });
+});
+
+describe('pickExistingStoryKey (retry idempotency)', () => {
+  const issues = [
+    { key: 'DENP-500', fields: { summary: 'Enrollment' } },
+    { key: 'DENP-501', fields: { summary: '  Other work  ' } },
+  ];
+
+  it('returns the key of a Story whose summary matches (trimmed)', () => {
+    expect(pickExistingStoryKey(issues, 'Enrollment')).toBe('DENP-500');
+    expect(pickExistingStoryKey(issues, 'Other work')).toBe('DENP-501'); // matches despite stored whitespace
+  });
+
+  it('returns null when no Story summary matches', () => {
+    expect(pickExistingStoryKey(issues, 'Something new')).toBeNull();
+    expect(pickExistingStoryKey([], 'Enrollment')).toBeNull();
+  });
+});
+
+describe('selectUncreatedSubtasks (retry idempotency)', () => {
+  const request = (summary: string): CreateIssueRequest => ({ fields: { summary } });
+
+  it('drops sub-tasks whose summary already exists under the Story, keeps the rest', () => {
+    const requests = [request('[api] Enrollment'), request('[SL] SL Test — Enrollment'), request('[INT] Deploy — Enrollment')];
+    const existing = new Set(['[api] Enrollment', '[SL] SL Test — Enrollment']);
+    const remaining = selectUncreatedSubtasks(requests, existing);
+    expect(remaining.map((r) => (r.fields as Record<string, unknown>).summary)).toEqual(['[INT] Deploy — Enrollment']);
+  });
+
+  it('keeps everything when the Story has no children yet', () => {
+    const requests = [request('[api] Enrollment'), request('[ui] Enrollment')];
+    expect(selectUncreatedSubtasks(requests, new Set())).toHaveLength(2);
   });
 });
 

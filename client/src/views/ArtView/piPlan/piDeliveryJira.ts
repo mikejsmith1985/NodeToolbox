@@ -4,7 +4,7 @@
 // The payload builders are PURE (no I/O) so they are fully unit-testable; the apply function delegates every
 // actual write to the existing createIssue primitive. Called only for accepted items.
 
-import { createIssue, jiraPost } from '../../../services/jiraApi.ts';
+import { createIssue, jiraGet, jiraPost } from '../../../services/jiraApi.ts';
 import { saveFeatureReviewStoryPoints } from '../../SprintDashboard/featureReviewFixes.ts';
 import type { CreateIssueRequest } from '../../../types/jira.ts';
 import type { PlannedStory } from './piDeliveryEngine.ts';
@@ -148,6 +148,45 @@ export function buildGapSubtaskRequest(gap: ScaffoldSubtask, parentStoryKey: str
   return { fields };
 }
 
+/** A minimal Jira issue as returned by a summary-only search — used by the idempotency look-ups below. */
+interface SummaryIssue { key: string; fields?: { summary?: string } }
+
+/**
+ * Picks the key of an already-created Story whose summary exactly matches the one we are about to write, so a
+ * retried commit reuses it instead of creating a duplicate. Pure (search results in → key out) and trimmed-match
+ * to tolerate incidental whitespace. Returns null when no existing Story matches.
+ */
+export function pickExistingStoryKey(issues: readonly SummaryIssue[], targetSummary: string): string | null {
+  const wanted = targetSummary.trim();
+  const match = issues.find((issue) => (issue.fields?.summary ?? '').trim() === wanted);
+  return match ? match.key : null;
+}
+
+/** Keeps only the sub-task create requests whose summary is NOT already present among a Story's children. */
+export function selectUncreatedSubtasks(
+  requests: readonly CreateIssueRequest[],
+  existingChildSummaries: ReadonlySet<string>,
+): CreateIssueRequest[] {
+  return requests.filter((request) => !existingChildSummaries.has(String((request.fields as Record<string, unknown>).summary ?? '').trim()));
+}
+
+/** Reads the summaries of an issue's existing sub-task children (for dedupe), as a trimmed set. */
+async function fetchChildSummaries(parentKey: string): Promise<Set<string>> {
+  const jql = `parent = ${parentKey}`;
+  const path = `/rest/api/2/search?jql=${encodeURIComponent(jql)}&fields=summary&maxResults=200`;
+  const issues = (await jiraGet<{ issues?: SummaryIssue[] }>(path)).issues ?? [];
+  return new Set(issues.map((issue) => (issue.fields?.summary ?? '').trim()));
+}
+
+/** Finds an already-created Story under the same Feature with the same summary (retry idempotency), or null. */
+async function findExistingStoryKey(story: PlannedStory, context: DeliveryWriteContext): Promise<string | null> {
+  const fieldNumber = context.fieldIds.featureLink.replace('customfield_', '');
+  const jql = `cf[${fieldNumber}] = "${story.featureKey}" AND issuetype = ${context.storyIssueTypeId}`;
+  const path = `/rest/api/2/search?jql=${encodeURIComponent(jql)}&fields=summary&maxResults=100`;
+  const issues = (await jiraGet<{ issues?: SummaryIssue[] }>(path)).issues ?? [];
+  return pickExistingStoryKey(issues, story.summary);
+}
+
 /** Creates the missing sub-tasks under an existing carryover Story, delegating each write to createIssue. */
 export async function applyCarryoverGaps(
   parentStoryKey: string,
@@ -161,20 +200,38 @@ export async function applyCarryoverGaps(
 }
 
 /**
- * Applies one accepted Story: creates the Story, sets its points, assigns its sprint, then creates each
- * sub-task under the real Story key. Delegates every write to an existing primitive.
+ * Applies one accepted Story, IDEMPOTENTLY so a retried commit never duplicates. First it looks for a Story
+ * already created under this Feature with the same summary: if found it reuses that key (skipping the create,
+ * points, and sprint assignment); otherwise it creates the Story, sets its points, and assigns its sprint.
+ * Either way it then creates only the sub-tasks that do not already exist under the Story (matched by summary),
+ * so a commit that partially failed can be safely re-run to fill in what is missing. Delegates every write to
+ * an existing primitive.
  */
-export async function applyDeliveryStory(story: PlannedStory, context: DeliveryWriteContext): Promise<{ storyKey: string }> {
-  const { storyRequest } = buildDeliveryWriteRequests(story, context);
-  const created = await createIssue(storyRequest);
-  await saveFeatureReviewStoryPoints(created.key, String(story.sizePoints));
-  const sprintId = context.existingSprintIdByName?.[story.sprintName];
-  if (sprintId != null) {
-    await jiraPost(`/rest/agile/1.0/sprint/${sprintId}/issue`, { issues: [created.key] });
+export async function applyDeliveryStory(
+  story: PlannedStory,
+  context: DeliveryWriteContext,
+): Promise<{ storyKey: string; reused: boolean; createdSubtaskCount: number }> {
+  const existingKey = await findExistingStoryKey(story, context);
+  let storyKey: string;
+  const reused = existingKey !== null;
+  if (existingKey !== null) {
+    storyKey = existingKey;
+  } else {
+    const { storyRequest } = buildDeliveryWriteRequests(story, context);
+    const created = await createIssue(storyRequest);
+    storyKey = created.key;
+    await saveFeatureReviewStoryPoints(storyKey, String(story.sizePoints));
+    const sprintId = context.existingSprintIdByName?.[story.sprintName];
+    if (sprintId != null) {
+      await jiraPost(`/rest/agile/1.0/sprint/${sprintId}/issue`, { issues: [storyKey] });
+    }
   }
-  const { subtaskRequests } = buildDeliveryWriteRequests(story, context, created.key);
-  for (const request of subtaskRequests) {
+  // Create only the sub-tasks the Story is missing, so a re-run tops up rather than duplicates.
+  const existingChildSummaries = await fetchChildSummaries(storyKey);
+  const { subtaskRequests } = buildDeliveryWriteRequests(story, context, storyKey);
+  const toCreate = selectUncreatedSubtasks(subtaskRequests, existingChildSummaries);
+  for (const request of toCreate) {
     await createIssue(request);
   }
-  return { storyKey: created.key };
+  return { storyKey, reused, createdSubtaskCount: toCreate.length };
 }

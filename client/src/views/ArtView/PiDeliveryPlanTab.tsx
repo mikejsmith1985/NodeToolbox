@@ -443,7 +443,7 @@ export default function PiDeliveryPlanTab({ piName, teams = [] }: PiDeliveryPlan
       for (const story of includedStories) {
         try {
           const written = await applyDeliveryStory(withOverrides(story), context);
-          results.push({ id: story.tempId, label: story.summary, status: 'success', message: `Story ${written.storyKey} + ${story.codingSubtasks.length} coding + SL + deploys` });
+          results.push({ id: story.tempId, label: story.summary, status: 'success', message: `Story ${written.storyKey}${written.reused ? ' (reused)' : ''} + ${written.createdSubtaskCount} new sub-task(s)` });
         } catch (writeError) {
           results.push({ id: story.tempId, label: story.summary, status: 'failed', message: writeError instanceof Error ? writeError.message : 'write failed' });
         }

@@ -17,8 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   stay for retry, and a per-item result list shows exactly what was created. The on-demand Defect action now **adds to
   the commit set** ("Add to plan") instead of writing immediately. This is the Option-B staging surface that replaces
   the mistaken direct-to-Jira flow; the Feature Canvas overlay was the wrong tool because it only *arranges existing*
-  issues and its commit path cannot create Stories or sub-tasks. (Known limitation, unchanged: if a Story is created
-  but one of its sub-tasks fails, retrying re-creates the Story — the writer is not yet idempotent for new Stories.)
+  issues and its commit path cannot create Stories or sub-tasks.
+- **Delivery Planner commit is now idempotent — a retried commit never duplicates.** `applyDeliveryStory` first looks
+  for a Story already created under the same Feature with the same summary and **reuses it** (skipping the create,
+  points, and sprint assignment) rather than making a second one, then creates **only the sub-tasks that don't already
+  exist** (matched by summary). So a commit that partially failed can be safely re-run to top up exactly what's
+  missing; the result line now reports "(reused)" and the count of new sub-tasks created.
 
 ### Fixed
 - **Delivery Planner: the 80% load factor now applies beneath the selected capacity.** The 8/10/13 selection is the
