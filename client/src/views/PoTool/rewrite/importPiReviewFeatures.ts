@@ -12,38 +12,23 @@ import { parsePiReviewTable, type PiReviewRow, type PiReviewTableParseResult } f
 import { extractPiReviewFeatureKey } from '../../ArtView/piReviewJira.ts';
 import type { ArtTeam } from '../../ArtView/hooks/useArtData.ts';
 
-/** Cell values in the "Committed to PI?" column that mean NOT committed (blank or an explicit negative). */
-const NOT_COMMITTED_MARKERS = new Set([
-  '', 'no', 'n', 'false', '0', 'not committed', '-', '–', '—', '☐', '[ ]', '[]', 'unchecked', '✗', '✘',
-]);
-
 /**
- * True when a PI Review row's "Committed to PI?" column is marked committed (a positive, non-blank value).
+ * True when a PI Review row's "Committed to PI?" checkbox is checked. The PI Review tab stores a checked box
+ * as exactly the string "Yes" (and unchecked as blank), so this mirrors that definition precisely — it is the
+ * single authoritative commitment signal on the page (the commitment-boundary line is a separate concern).
  */
 export function isCommittedRow(row: PiReviewRow): boolean {
-  return !NOT_COMMITTED_MARKERS.has(row.committed.trim().toLowerCase());
+  return row.committed.trim().toLowerCase() === 'yes';
 }
 
 /**
- * The Feature keys of the COMMITTED rows on a parsed PI Review table. Commitment is signalled two ways on PI
- * Review pages, so this checks them in order of authority:
- *   1. the **commitment boundary** ("Hard commits above / Stretch Goals below") — every row above it is
- *      committed; this is the PI Review UI's own explicit line, so it wins when present;
- *   2. failing a boundary, the **"Committed to PI?" column** (rows with a positive value);
- *   3. failing both signals, the **whole page** — a PI Review page IS the curated committed list.
- * This is why filtering on the column alone under-counted (a page that commits via the boundary leaves the
- * column blank), so the boundary is preferred.
+ * The Feature keys of the COMMITTED rows on a parsed PI Review table — the rows whose "Committed to PI?"
+ * checkbox is ticked. If NO row is marked committed (a page that doesn't use the column at all), the whole
+ * page is treated as the committed list, since a PI Review page IS the curated Feature set.
  */
 export function committedFeatureKeys(parsedTable: PiReviewTableParseResult): string[] {
-  const { rows, commitmentBoundaryIndex } = parsedTable;
-  let committedRows: PiReviewRow[];
-  if (commitmentBoundaryIndex !== null && commitmentBoundaryIndex > 0) {
-    committedRows = rows.filter((_row, index) => index < commitmentBoundaryIndex);
-  } else if (rows.some(isCommittedRow)) {
-    committedRows = rows.filter(isCommittedRow);
-  } else {
-    committedRows = rows;
-  }
+  const { rows } = parsedTable;
+  const committedRows = rows.some(isCommittedRow) ? rows.filter(isCommittedRow) : rows;
   return [
     ...new Set(
       committedRows
