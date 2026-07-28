@@ -17,6 +17,28 @@
 > `po-pi-dropdown.spec.js`. Feature 024's spec inherited a false "do not run concurrently with 022" constraint from
 > these stale entries before the code was checked. **Verify against the codebase before trusting a status below.**
 
+- **032-pi-delivery-framework** — *(planned on `feature/032-pi-delivery-framework` — ready for `/speckit-tasks`)* the
+  team's new delivery framework: **repo maps 1:1 to a coding Sub-task, not a Story** (a Story bridges FE+BE under a
+  primary owner; each repo = an independently-assignable coding sub-task so devs work one Story in parallel), plus a
+  single **SL-test** sub-task and per-story **INT/REL/PROD** deploys. **DoD = SL test complete AND delivered to INT**
+  (production tracked but not required; INT/REL testing = QE/BT on other boards, issue-linked, out of scope). The whole
+  PI (5 sprints) is generated from **one** propose-only AI prompt whose input is a deterministic **PI Planning Fact
+  Sheet** (fixed query set) that both feeds the engine and is embedded verbatim — any repo/person/sprint/key the AI
+  invents is **rejected on ingest**. All dates/capacity/assignment/**bottlenecks are rule-derived**; the AI supplies
+  only story decomposition + a mitigation narrative. **80% load factor**; delivery completes by **Sprint-5 Week-1**
+  (Week-2 = innovation, no commitments). A **monitoring** surface (burn-up, sub-task aging, SL-queue depth, GH-intake
+  freshness, commit-vs-complete) + **replan triggers** replaces active planning. **Supersedes 031's repo-story
+  generation** (`repoStoryBreakdown` removed; 031 classification store + domain rule kept). Plan:
+  `specs/032-pi-delivery-framework/plan.md`. Contracts: `fact-sheet.md`, `repo-subtask-generation.md`,
+  `bottleneck-detection.md`, `ai-delivery-plan.md`, `monitoring-signals.md`.
+  **Framework-First (the story)**: `buildCapacityPlan` already load-balances by role **and already emits a
+  `BottleneckReport`** naming the limiting role (dev vs `internalTest`=SL) — so parallel per-repo assignment + the
+  SL-test bottleneck are **reuse**; the 028 `piPlan*` engine already dates INT/REL/PROD on working days, suggests
+  monthly releases, and writes Stories+sub-tasks under a parent. **New work**: capacity unit Story→coding-sub-task,
+  `piPlanRepoSubtasks` (replaces `repoStoryBreakdown`), `piPlanFactSheet` (query assembler), `piPlanBottlenecks`
+  (key-person/dependency/PROD-carry), `piPlanMonitor`, and the `{kind:'piDeliveryPlan'}` AI module. **Assignment** =
+  load-balanced now; repo→contributor affinity learned later from the GH email-intake (repo+actor already captured).
+
 - **031-component-repo-mapping** — *(planned on `feature/031-component-repo-mapping` — ready for `/speckit-tasks`)*
   classify each Jira component **repo vs domain** at import (Toolbox-held state — Jira has no such marker), then drive
   three behaviours off that allowlist: a **gated, propose-only, allowlist-constrained AI mapping** of the **repo**

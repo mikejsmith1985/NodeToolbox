@@ -16,8 +16,11 @@ export interface WorkingCalendar {
   holidayIsoDates: string[];
 }
 
-/** One classified sub-task kind beneath a Story. */
-export type SubTaskKind = 'internalTest' | 'deployInt' | 'deployRel' | 'deployProd';
+/** One classified sub-task kind beneath a Story.
+ *  028 kinds: 'internalTest' + the three deploys. 032 (PI Delivery Framework) ADDS 'coding' (one per repo,
+ *  repeatable) and 'slTest' (the renamed-for-clarity SL test checkpoint). Both vocabularies coexist so the
+ *  028 engine and its tests stay byte-identical while the 032 delivery path uses 'coding'/'slTest'. */
+export type SubTaskKind = 'coding' | 'slTest' | 'internalTest' | 'deployInt' | 'deployRel' | 'deployProd';
 
 /** A reviewable plan item's kind — a Story, one of its sub-tasks, a sprint creation, or a release suggestion. */
 export type PlanItemKind = 'story' | SubTaskKind | 'sprintCreate' | 'releaseSuggest';
@@ -157,4 +160,113 @@ export interface PlanProposal {
   releaseSchedule: ReleaseSchedule;
   /** Empty scope, unsized Features, capability gaps, empty releases, PI over-commitment (FR-056). */
   honestStates: string[];
+}
+
+// ── PI Delivery Framework (spec 032) — additive types ────────────────────────────────────────────────
+
+/** One coding sub-task — one per repository a Story touches (the 032 repo→sub-task 1:1 rule). */
+export interface RepoCodingSubtask {
+  /** The repository this coding sub-task covers. */
+  repoName: string;
+  /** Resolved Jira component id for the repo → set on the sub-task's `components` field. Null when unresolved. */
+  repoComponentId: string | null;
+  /** This repo's share of the Story's dev (70%) points, at least 1; PO-editable before acceptance. */
+  devPoints: number;
+  /** Roster display name of the load-balanced assignee (PO-overridable); null when unassigned. */
+  assignee: string | null;
+}
+
+/** One classified component on a Feature, as the fact sheet records it (repo vs domain). */
+export type ComponentClass = 'repo' | 'domain' | 'unclassified';
+
+/** One in-scope Feature as recorded on the PI Planning Fact Sheet. */
+export interface FactSheetFeature {
+  key: string;
+  summary: string;
+  sizePoints: number | null;
+  priorityRank: number;
+  priorityName: string | null;
+  isCommitted: boolean;
+  /** Component names classified `repo` (drive coding sub-tasks). */
+  repoComponentNames: string[];
+  /** Component names classified `domain` (never generate a sub-task). */
+  domainComponentNames: string[];
+  dependencyKeys: string[];
+  targetFixVersion: string | null;
+  existingChildren: ExistingChild[];
+}
+
+/** One roster person on the fact sheet, capacity already load-factored. */
+export interface FactSheetPerson {
+  displayName: string;
+  accountId: string | null;
+  /** 'dev' | 'internalTest' (=SL test) | 'externalTest'. */
+  roles: string[];
+  /** Points available per sprint — already scaled by the load factor. */
+  pointsPerSprint: number;
+}
+
+/** One sprint on the fact sheet; the final sprint's second week may be the innovation week. */
+export interface FactSheetSprint {
+  name: string;
+  startIso: string;
+  endIso: string;
+  /** True for the Sprint-5 Week-2 innovation window (no delivery capacity). */
+  isInnovationWeek?: boolean;
+}
+
+/** The deterministic bundle that both feeds the engine and is embedded verbatim in the AI prompt. */
+export interface PiPlanningFactSheet {
+  piName: string;
+  piStartIso: string;
+  /** End of Sprint-5 Week-1 — the delivery deadline (Target Ends must fall on/before this). */
+  deliveryDeadlineIso: string;
+  features: FactSheetFeature[];
+  people: FactSheetPerson[];
+  sprints: FactSheetSprint[];
+  releaseSchedule: ReleaseSchedule;
+  /** The authoritative set of nameable repos — the ingest allowlist. */
+  repoAllowlist: string[];
+  fieldConfig: { inIntStatusNames: string[]; slDoneStatusNames: string[]; doneCategoryNames: string[] };
+  velocityByPerson: Record<string, number>;
+  /** Honest states surfaced during assembly (unsized Features, no repos, empty roster/release, etc.). */
+  notes: string[];
+}
+
+/** One engine-detected bottleneck; the AI may attach a mitigation only to a matching id. */
+export type BottleneckKind = 'slTestThroughput' | 'keyPerson' | 'dependencyOrder' | 'prodCarry';
+export interface Bottleneck {
+  id: string;
+  kind: BottleneckKind;
+  sprintName: string | null;
+  subjectKey: string | null;
+  /** The underlying numbers (e.g. { devPoints, slCapacity, additionalTesters }). */
+  figures: Record<string, number>;
+  statement: string;
+  /** Filled from the AI narrative on ingest when its bottleneckId matches this id; null otherwise. */
+  mitigation: string | null;
+}
+
+/** One monitoring signal computed against the written plan. */
+export type MonitorSignalKind = 'burnUp' | 'subtaskAging' | 'slQueueDepth' | 'freshness' | 'commitVsComplete';
+export interface MonitorSignal {
+  kind: MonitorSignalKind;
+  sprintName: string | null;
+  value: number;
+  target: number;
+  isOnTrack: boolean;
+  detail: string;
+}
+
+/** An explicit escalation from monitoring to a re-plan. */
+export type ReplanTriggerKind = 'storySlipped' | 'slQueueOverTwoSprints';
+export interface ReplanTrigger {
+  kind: ReplanTriggerKind;
+  subjectKey: string | null;
+  statement: string;
+}
+
+export interface MonitorResult {
+  signals: MonitorSignal[];
+  triggers: ReplanTrigger[];
 }
