@@ -32,7 +32,7 @@ import styles from './PiDeliveryPlanTab.module.css';
 const DEFAULT_SIZE_FIELD_ID = 'customfield_10002';
 const PI_SPRINT_COUNT = 5;
 const WORKING_CALENDAR = { weekendDays: [0, 6], holidayIsoDates: [] as string[] };
-const FEATURE_FIELDS = ['summary', 'priority', 'components', 'fixVersions', 'issuelinks'];
+const FEATURE_FIELDS = ['summary', 'description', 'priority', 'components', 'fixVersions', 'issuelinks'];
 
 interface PiDeliveryPlanTabProps {
   /** The PI selected in the ART header (source of the Feature query + sprint window). */
@@ -82,6 +82,7 @@ export default function PiDeliveryPlanTab({ piName, teams = [] }: PiDeliveryPlan
   const [factSheet, setFactSheet] = useState<PiPlanningFactSheet | null>(null);
   const [componentIdByName, setComponentIdByName] = useState<Record<string, string>>({});
   const [prompts, setPrompts] = useState<string[]>([]);
+  const [hasCopiedPrompt, setHasCopiedPrompt] = useState(false);
   const [replyText, setReplyText] = useState('');
   const [plan, setPlan] = useState<DeliveryPlan | null>(null);
   const [bottlenecks, setBottlenecks] = useState<Bottleneck[]>([]);
@@ -319,7 +320,21 @@ export default function PiDeliveryPlanTab({ piName, teams = [] }: PiDeliveryPlan
     if (factSheet === null) return;
     const built = buildDeliveryPlanPrompt(factSheet, bottlenecks);
     setPrompts(built.prompts);
+    setHasCopiedPrompt(false);
     setStatusMessage(`Prompt generated (${built.featureCount} Features${built.chunkCount > 1 ? `, ${built.chunkCount} chunks` : ''}). Copy it into your AI, then paste the reply below.`);
+  }
+
+  // Copies the full generated prompt (all chunks) to the clipboard, matching the app's
+  // "📋 Copy prompt" affordance used on the other AI-assist panels.
+  async function handleCopyPrompt(): Promise<void> {
+    if (prompts.length === 0) return;
+    try {
+      await navigator.clipboard.writeText(prompts.join('\n\n=== NEXT CHUNK ===\n\n'));
+      setHasCopiedPrompt(true);
+    } catch {
+      setHasCopiedPrompt(false);
+      setStatusMessage('Could not copy to clipboard — select the text and copy manually.');
+    }
   }
 
   function handleIngest() {
@@ -509,6 +524,11 @@ export default function PiDeliveryPlanTab({ piName, teams = [] }: PiDeliveryPlan
           <h3 className={styles.sectionTitle}>2 · Generate the plan prompt &amp; paste the reply</h3>
           <>
             <button className={styles.actionButton} disabled={factSheet === null} onClick={handleGeneratePrompt} type="button">Generate delivery-plan prompt</button>
+            {prompts.length > 0 && (
+              <button className={styles.secondaryButton} onClick={() => void handleCopyPrompt()} type="button">
+                {hasCopiedPrompt ? '✓ Copied' : '📋 Copy prompt'}
+              </button>
+            )}
             {prompts.length > 0 && <textarea className={styles.promptArea} readOnly value={prompts.join('\n\n=== NEXT CHUNK ===\n\n')} onFocus={(event) => event.currentTarget.select()} />}
             <label className={styles.field} style={{ marginTop: '0.5rem' }}>Paste the AI&apos;s JSON reply
               <textarea className={styles.replyArea} value={replyText} onChange={(event) => setReplyText(event.target.value)} placeholder='{"kind":"piDeliveryPlan","stories":[ ... ]}' />

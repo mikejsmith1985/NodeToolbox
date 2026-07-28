@@ -26,6 +26,9 @@ const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000;
 export interface FactSheetFeatureInput {
   key: string;
   summary: string;
+  /** Plain-text Feature description (nine-section doc incl. AC in this org), truncated by the adapter.
+   *  Gives the AI real content to decompose from instead of a bare title. Optional for older callers/tests. */
+  description?: string;
   sizePoints: number | null;
   priorityRank: number;
   priorityName: string | null;
@@ -119,6 +122,7 @@ export function assembleFactSheet(inputs: FactSheetInputs): PiPlanningFactSheet 
     return {
       key: feature.key,
       summary: feature.summary,
+      description: feature.description,
       sizePoints: feature.sizePoints,
       priorityRank: feature.priorityRank,
       priorityName: feature.priorityName,

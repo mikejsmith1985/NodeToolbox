@@ -3,6 +3,7 @@
 // pure and separate from the React tab so the mapping is unit-testable and the tab stays declarative.
 
 import type { JiraIssue } from '../../../types/jira.ts';
+import { normalizeRichTextToPlainText } from '../../../utils/richTextPlainText.ts';
 import type { StandupRosterMember } from '../../SprintDashboard/hooks/useStandupRosterStore.ts';
 import type { FactSheetFeatureInput, FactSheetPersonInput } from './piPlanFactSheet.ts';
 import type { ExistingChild, ReleaseSchedule } from './piPlanTypes.ts';
@@ -10,6 +11,17 @@ import type { ExistingChild, ReleaseSchedule } from './piPlanTypes.ts';
 /** A person's default per-sprint velocity when no measured value is available (a plain 2-week pool). */
 const DEFAULT_VELOCITY_POINTS = 8;
 const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000;
+/** Cap the description embedded per Feature so the whole prompt stays pasteable across ~12 Features. */
+const MAX_DESCRIPTION_CHARS = 700;
+
+/** Normalizes a Jira description (ADF/wiki/plain) to a single-spaced plain-text snippet, truncated so the
+ *  fact-sheet prompt stays compact. Gives the AI real content to decompose from without bloating the prompt. */
+function readDescriptionSnippet(issue: JiraIssue): string | undefined {
+  const rawDescription = (issue.fields as unknown as { description?: unknown }).description;
+  const plainText = normalizeRichTextToPlainText(rawDescription).replace(/\s+/g, ' ').trim();
+  if (plainText === '') return undefined;
+  return plainText.length > MAX_DESCRIPTION_CHARS ? `${plainText.slice(0, MAX_DESCRIPTION_CHARS)}…` : plainText;
+}
 
 /** Reads a numeric size from a Jira issue's configured size field, or null when absent/non-numeric. */
 function readSizePoints(issue: JiraIssue, sizeFieldId: string): number | null {
@@ -63,6 +75,7 @@ export function toFactSheetFeatureInputs(
     return {
       key: issue.key,
       summary: typeof issue.fields?.summary === 'string' ? issue.fields.summary : issue.key,
+      description: readDescriptionSnippet(issue),
       sizePoints: readSizePoints(issue, sizeFieldId),
       priorityRank: priorityRankByKey[issue.key] ?? index,
       priorityName,

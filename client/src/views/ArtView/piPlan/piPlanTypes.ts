@@ -183,6 +183,9 @@ export type ComponentClass = 'repo' | 'domain' | 'unclassified';
 export interface FactSheetFeature {
   key: string;
   summary: string;
+  /** Plain-text Feature description (truncated), embedded in the prompt so the AI decomposes from real
+   *  content — not just the title. Optional so existing FactSheetFeature literals still type-check. */
+  description?: string;
   sizePoints: number | null;
   priorityRank: number;
   priorityName: string | null;

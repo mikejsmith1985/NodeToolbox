@@ -8,6 +8,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Delivery Planner prompt now decomposes from real Feature content, not just the title (GH #245).** The generated
+  plan prompt was fed only each Feature's summary, size and repo list — so the AI returned generic, boilerplate
+  acceptance-criteria hints ("Identify impacted repositories…", "Validate outcomes against business scenarios") and
+  thin Stories. The load path now also fetches each Feature's **description** (normalized to plain text and truncated
+  to keep the prompt pasteable), embeds it as a per-Feature *Detail* block, and instructs the AI to derive 2–4
+  concrete AC hints **from that detail** and to prefer several focused Stories over one catch-all. Note: a Feature
+  still yields **zero coding sub-tasks until its components are classified as repos** — that is a data-setup step, not
+  a prompt problem, and the load summary already flags "map repos first" for such Features.
+
+### Added
+- **Delivery Planner: a "📋 Copy prompt" button in section 2.** After generating the delivery-plan prompt you can now
+  copy the full prompt (all chunks) to the clipboard with one click — matching the copy-prompt affordance on the other
+  AI-assist panels — instead of manually selecting the textarea. The button shows "✓ Copied" on success.
+
+### Changed (earlier this release)
 - **Delivery Planner loads committed Features ONLY from the PI Review page — no Jira PO+PI fallback (GH #245).** The
   earlier fallback silently returned a PO-scoped Jira set (assignee = PO AND PI) when the page path came up empty,
   which masked page/team problems and produced a different, wrong Feature set. The tab now sources exclusively from the

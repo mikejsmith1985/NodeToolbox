@@ -35,6 +35,19 @@ describe('buildDeliveryPlanPrompt', () => {
     expect(prompt).toMatch(/do not return dates/i);
   });
 
+  it('embeds each Feature description so the AI decomposes from real content, not the title', () => {
+    const sheet = factSheet(1);
+    sheet.features[0].description = 'Members with duplicate enrollments must be merged under a golden record.';
+    const prompt = buildDeliveryPlanPrompt(sheet, []).prompts[0];
+    expect(prompt).toContain('Detail: Members with duplicate enrollments');
+    expect(prompt).toMatch(/derived from the detail/i);
+  });
+
+  it('omits the Detail line when a Feature has no description', () => {
+    const prompt = buildDeliveryPlanPrompt(factSheet(1), []).prompts[0];
+    expect(prompt).not.toContain('Detail:');
+  });
+
   it('chunks when the Feature set is large', () => {
     const { chunkCount, prompts } = buildDeliveryPlanPrompt(factSheet(25), []);
     expect(chunkCount).toBeGreaterThan(1);

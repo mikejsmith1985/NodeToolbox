@@ -12,11 +12,21 @@ export const DELIVERY_PLAN_REPLY_KIND = 'piDeliveryPlan';
 /** How many Features to embed per prompt chunk before splitting (keeps a single reply pasteable). */
 const FEATURES_PER_CHUNK = 12;
 
-/** Renders the Features + their repo components as a compact table the AI reasons over. */
-function renderFeatureTable(factSheet: PiPlanningFactSheet): string {
-  const rows = factSheet.features.map((feature) =>
-    `| ${feature.key} | ${feature.summary} | ${feature.sizePoints ?? '?'} | ${feature.repoComponentNames.join(', ') || '(none — map repos first)'} |`);
-  return ['| Feature | Summary | Size | Repo components |', '|---|---|---|---|', ...rows].join('\n');
+/** Renders each Feature as a brief block — key, size, repos, and (when present) a description snippet — so the
+ *  AI decomposes and writes acceptance-criteria hints from real content rather than the title alone. */
+function renderFeatureBriefs(factSheet: PiPlanningFactSheet): string {
+  return factSheet.features.map((feature) => {
+    const repos = feature.repoComponentNames.join(', ') || '(none — map repos first)';
+    const lines = [
+      `### ${feature.key} — ${feature.summary}`,
+      `- Size: ${feature.sizePoints ?? '?'} pts`,
+      `- Repo components: ${repos}`,
+    ];
+    if (feature.description && feature.description.trim() !== '') {
+      lines.push(`- Detail: ${feature.description}`);
+    }
+    return lines.join('\n');
+  }).join('\n\n');
 }
 
 /** Renders the roster + roles so the AI knows who exists (it never assigns — the engine does). */
@@ -41,12 +51,14 @@ function buildChunkPrompt(factSheet: PiPlanningFactSheet, bottlenecks: Bottlenec
     '',
     'Return ONE JSON object with two arrays: a Story decomposition and bottleneck mitigations. For each Feature,',
     'group the repositories it touches into one or more Stories (a Story may bridge several repos under one owner);',
-    'give each Story a clear summary and optional acceptance-criteria hints. Use ONLY the repo names and Feature keys',
-    'shown. Do NOT return dates, sprints, assignments, or point estimates — those are computed for you and any you',
-    'return will be ignored.',
+    'give each Story a clear, specific summary and 2–4 concrete acceptance-criteria hints DERIVED FROM the Detail',
+    'text below — not generic restatements of the title. Prefer several focused Stories over one catch-all Story',
+    'when the Detail describes distinct slices of work. Use ONLY the repo names and Feature keys shown.',
+    'Do NOT return dates, sprints, assignments, or point estimates — those are computed for you and any you return',
+    'will be ignored.',
     '',
-    '## Features (with their repo components)',
-    renderFeatureTable(factSheet),
+    '## Features (decompose each into Stories over its repo components)',
+    renderFeatureBriefs(factSheet),
     '',
     '## Roster (for context only — you do NOT assign people)',
     renderRosterTable(factSheet),

@@ -34,6 +34,18 @@ describe('toFactSheetFeatureInputs', () => {
     const [missing] = toFactSheetFeatureInputs([issue('A-2', { summary: 'y' })], SIZE_FIELD);
     expect(missing.sizePoints).toBeNull();
   });
+
+  it('normalizes and truncates the description into a compact snippet, and drops empty ones', () => {
+    const [withDescription] = toFactSheetFeatureInputs(
+      [issue('A-3', { summary: 'z', description: '  Merge   duplicate\n\nmembers.  ' })], SIZE_FIELD);
+    expect(withDescription.description).toBe('Merge duplicate members.');
+    const [longDescription] = toFactSheetFeatureInputs(
+      [issue('A-4', { summary: 'z', description: 'x'.repeat(900) })], SIZE_FIELD);
+    expect(longDescription.description?.endsWith('…')).toBe(true);
+    expect(longDescription.description?.length).toBe(701); // 700 chars + ellipsis
+    const [noDescription] = toFactSheetFeatureInputs([issue('A-5', { summary: 'z' })], SIZE_FIELD);
+    expect(noDescription.description).toBeUndefined();
+  });
 });
 
 describe('rosterRolesFor / toFactSheetPersonInputs', () => {
