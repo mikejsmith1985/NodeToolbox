@@ -124,9 +124,13 @@ export function buildStorySubtaskScaffold(
     summary: buildCodingSubtaskTitle(repo.repoName, story.summary),
     repo,
   }));
-  const checkpoints: ScaffoldSubtask[] = STORY_CHECKPOINTS.map((checkpoint) => ({
-    kind: checkpoint.kind,
-    summary: `${checkpoint.label} — ${story.summary.trim()}`,
-  }));
+  // Checkpoint idempotency: emit an SL-test/deploy sub-task only when the Story does not already have one
+  // (so reconciling a carryover Story gap-fills the missing checkpoints without duplicating existing ones).
+  const checkpoints: ScaffoldSubtask[] = STORY_CHECKPOINTS
+    .filter((checkpoint) => !existingChildren.some((child) => child.kind === checkpoint.kind))
+    .map((checkpoint) => ({
+      kind: checkpoint.kind,
+      summary: `${checkpoint.label} — ${story.summary.trim()}`,
+    }));
   return [...coding, ...checkpoints];
 }

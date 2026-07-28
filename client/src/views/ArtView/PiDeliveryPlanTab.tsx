@@ -21,10 +21,11 @@ import { buildDeliveryPlanPrompt } from './piPlan/ai/deliveryPlanPrompt.ts';
 import { parseDeliveryPlanReply } from './piPlan/ai/deliveryPlanIngest.ts';
 import { buildDeliveryPlan, type AcceptedStory, type DeliveryPlan, type PlannedStory } from './piPlan/piDeliveryEngine.ts';
 import { detectBottlenecks, attachMitigations } from './piPlan/piPlanBottlenecks.ts';
-import { applyDeliveryStory, type DeliveryWriteContext } from './piPlan/piDeliveryJira.ts';
+import { applyDeliveryStory, applyCarryoverGaps, type DeliveryWriteContext } from './piPlan/piDeliveryJira.ts';
 import { toFactSheetFeatureInputs, toFactSheetPersonInputs, deriveSprints } from './piPlan/piDeliveryTabData.ts';
+import { classifyChildKind, reconcileCarryoverFeature, type CarryoverStory, type CarryoverStoryReconcile } from './piPlan/piPlanCarryover.ts';
 import PiDeliveryMonitor from './PiDeliveryMonitor.tsx';
-import type { Bottleneck, PiPlanningFactSheet } from './piPlan/piPlanTypes.ts';
+import type { Bottleneck, ExistingChild, PiPlanningFactSheet } from './piPlan/piPlanTypes.ts';
 import styles from './PiDeliveryPlanTab.module.css';
 
 const DEFAULT_SIZE_FIELD_ID = 'customfield_10002';
@@ -50,6 +51,14 @@ function sizePerStory(featureSize: number | null, storyCount: number): number {
   return Math.max(1, Math.round(base / Math.max(1, storyCount)));
 }
 
+/** Reads a Story's parent-Feature key from its Feature-link field (string key or `{ key }` object). */
+function readFeatureLinkValue(issue: JiraIssue, featureLinkFieldId: string): string | null {
+  const raw = (issue.fields as unknown as Record<string, unknown>)[featureLinkFieldId];
+  if (typeof raw === 'string' && raw.includes('-')) return raw;
+  if (raw && typeof raw === 'object') return (raw as { key?: string }).key ?? null;
+  return null;
+}
+
 /** The PI Delivery Planner: one place to generate, review, and commit a whole-PI delivery plan. */
 export default function PiDeliveryPlanTab({ piName, teams = [] }: PiDeliveryPlanTabProps) {
   const isAiUnlocked = useAiAssistStore((store) => store.isAiAssistUnlocked);
@@ -68,6 +77,8 @@ export default function PiDeliveryPlanTab({ piName, teams = [] }: PiDeliveryPlan
   const [replyText, setReplyText] = useState('');
   const [plan, setPlan] = useState<DeliveryPlan | null>(null);
   const [bottlenecks, setBottlenecks] = useState<Bottleneck[]>([]);
+  // Carryover reconciliation: in-flight Stories and the sub-tasks they are missing (gap-fill, never duplicated).
+  const [carryover, setCarryover] = useState<{ featureKey: string; reconcile: CarryoverStoryReconcile }[]>([]);
   const [assigneeOverrides, setAssigneeOverrides] = useState<Record<string, string>>({});
   const [statusMessage, setStatusMessage] = useState('');
   const [isBusy, setIsBusy] = useState(false);
@@ -163,14 +174,62 @@ export default function PiDeliveryPlanTab({ piName, teams = [] }: PiDeliveryPlan
           if (named.name && named.id) idByName[named.name] = named.id;
         });
       });
+      // ── Carryover detection: fetch each Feature's existing Stories (+ their sub-tasks) so in-flight work is
+      // RECONCILED, not regenerated. Needs the Feature-link field id (auto-wired in Write settings); without it
+      // carryover cannot be detected and re-planning would risk duplicates, so we say so.
+      const existingChildrenByFeature: Record<string, ExistingChild[]> = {};
+      const carryoverReconciles: { featureKey: string; reconcile: CarryoverStoryReconcile }[] = [];
+      const featureLinkFieldId = writeConfig.featureLink.trim();
+      let carryoverNote = '';
+      if (featureLinkFieldId === '') {
+        carryoverNote = ' ⚠ No Feature-link field id set — carryover cannot be detected; set it in Write settings before accepting.';
+      } else if (issues.length > 0) {
+        const fieldNumber = featureLinkFieldId.replace('customfield_', '');
+        const storyJql = `cf[${fieldNumber}] in (${issues.map((issue) => issue.key).join(', ')}) AND issuetype in (Story, Defect)`;
+        const storyPath = `/rest/api/2/search?jql=${encodeURIComponent(storyJql)}&fields=${encodeURIComponent(`summary,components,${featureLinkFieldId}`)}&maxResults=300`;
+        const stories = (await jiraGet<{ issues?: JiraIssue[] }>(storyPath)).issues ?? [];
+
+        // The Stories' existing sub-tasks tell gap-fill what already exists.
+        const subtasksByStory: Record<string, ExistingChild[]> = {};
+        if (stories.length > 0) {
+          const subJql = `parent in (${stories.map((story) => story.key).join(', ')})`;
+          const subPath = `/rest/api/2/search?jql=${encodeURIComponent(subJql)}&fields=${encodeURIComponent('summary,parent')}&maxResults=800`;
+          (await jiraGet<{ issues?: JiraIssue[] }>(subPath)).issues?.forEach((subtask) => {
+            const parentKey = (subtask.fields as unknown as { parent?: { key?: string } }).parent?.key;
+            const summary = typeof subtask.fields?.summary === 'string' ? subtask.fields.summary : '';
+            if (!parentKey) return;
+            (subtasksByStory[parentKey] ??= []).push({ key: subtask.key, kind: classifyChildKind(summary), parentKey, summary });
+          });
+        }
+
+        // Group Stories under their parent Feature; capture repos + component ids off the Stories too.
+        const carryoverStoriesByFeature: Record<string, CarryoverStory[]> = {};
+        stories.forEach((story) => {
+          const parentFeatureKey = readFeatureLinkValue(story, featureLinkFieldId);
+          if (!parentFeatureKey) return;
+          const storyComponents = (story.fields as unknown as { components?: { id?: string; name?: string }[] }).components ?? [];
+          storyComponents.forEach((component) => { if (component.name && component.id) idByName[component.name] = component.id; });
+          const repoNames = storyComponents.map((component) => component.name ?? '').filter((name) => name !== '' && getComponentKind(name) === 'repo');
+          const summary = typeof story.fields?.summary === 'string' ? story.fields.summary : story.key;
+          (existingChildrenByFeature[parentFeatureKey] ??= []).push({ key: story.key, kind: 'story', parentKey: parentFeatureKey, summary });
+          (carryoverStoriesByFeature[parentFeatureKey] ??= []).push({ key: story.key, summary, repoNames, existingChildren: subtasksByStory[story.key] ?? [] });
+        });
+
+        // Reconcile each carryover Feature into gap-fill proposals (missing sub-tasks only).
+        Object.entries(carryoverStoriesByFeature).forEach(([featureKey, featureStories]: [string, CarryoverStory[]]) => {
+          reconcileCarryoverFeature(featureStories, (repoName) => idByName[repoName] ?? null)
+            .forEach((reconcile) => carryoverReconciles.push({ featureKey, reconcile }));
+        });
+      }
       setComponentIdByName(idByName);
+      setCarryover(carryoverReconciles);
 
       const start = piStartIso.trim() || todayIso();
       const end = piEndIso.trim() || start;
       const sprints = deriveSprints(start, end, PI_SPRINT_COUNT, piName);
       const sheet = assembleFactSheet({
         piName, piStartIso: start, sprints,
-        features: toFactSheetFeatureInputs(issues, sizeFieldId),
+        features: toFactSheetFeatureInputs(issues, sizeFieldId, {}, existingChildrenByFeature),
         people: toFactSheetPersonInputs(rosterMembers),
         releaseSchedule: { entries: [] },
         fieldConfig: { inIntStatusNames: [], slDoneStatusNames: [], doneCategoryNames: [] },
@@ -180,7 +239,8 @@ export default function PiDeliveryPlanTab({ piName, teams = [] }: PiDeliveryPlan
       setPlan(null);
       setBottlenecks([]);
       setPrompts([]);
-      setStatusMessage(`Loaded ${issues.length} Feature(s); fact sheet assembled with ${sheet.repoAllowlist.length} repo(s).`);
+      const carryoverFeatureCount = sheet.features.filter((feature) => feature.isCarryover).length;
+      setStatusMessage(`Loaded ${issues.length} Feature(s) — ${carryoverFeatureCount} carryover (reconciled), ${issues.length - carryoverFeatureCount} new. ${sheet.repoAllowlist.length} repo(s).${carryoverNote}`);
     } catch (loadError) {
       setStatusMessage(loadError instanceof Error ? loadError.message : 'Failed to load Features.');
     } finally {
@@ -258,6 +318,29 @@ export default function PiDeliveryPlanTab({ piName, teams = [] }: PiDeliveryPlan
     }
   }
 
+  /** Writes the missing sub-tasks of one carryover Story (gap-fill) under the existing Story — no duplicates. */
+  async function handleAcceptCarryover(item: { featureKey: string; reconcile: CarryoverStoryReconcile }) {
+    if (!isWriteConfigured) {
+      setStatusMessage('Set the project key and Story/Sub-task issue-type ids in Write settings before accepting.');
+      return;
+    }
+    setIsBusy(true);
+    try {
+      const context: DeliveryWriteContext = {
+        projectKey: writeConfig.projectKey, storyIssueTypeId: writeConfig.storyIssueTypeId,
+        subTaskIssueTypeId: writeConfig.subTaskIssueTypeId,
+        fieldIds: { featureLink: writeConfig.featureLink, targetStart: writeConfig.targetStart, targetEnd: writeConfig.targetEnd },
+      };
+      const result = await applyCarryoverGaps(item.reconcile.storyKey, item.reconcile.gapSubtasks, context);
+      setStatusMessage(`Filled ${result.createdCount} missing sub-task(s) on ${item.reconcile.storyKey}.`);
+      setCarryover((previous) => previous.filter((entry) => entry !== item));
+    } catch (writeError) {
+      setStatusMessage(writeError instanceof Error ? writeError.message : 'Gap-fill write failed.');
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
   return (
     <div className={styles.deliveryTab}>
       {/* ── Load ── */}
@@ -307,6 +390,31 @@ export default function PiDeliveryPlanTab({ piName, teams = [] }: PiDeliveryPlan
       </section>
 
       {statusMessage && <p className={styles.statusLine}>{statusMessage}</p>}
+
+      {/* ── Carryover: continue in-flight work (reconcile, never regenerate) ── */}
+      {carryover.length > 0 && (
+        <section className={styles.card}>
+          <h3 className={styles.sectionTitle}>Carryover — continue in-flight Stories ({carryover.length})</h3>
+          <p className={styles.statusLine}>These Stories already exist in Jira; only their <strong>missing</strong> sub-tasks are proposed — nothing is duplicated.</p>
+          {carryover.map((item) => (
+            <div key={item.reconcile.storyKey} className={styles.storyRow}>
+              <div className={styles.storyHead}>
+                <span className={styles.storyTitle}>{item.reconcile.storySummary}</span>
+                <span className={styles.statusLine}>{item.reconcile.storyKey} · {item.featureKey} · {item.reconcile.gapSubtasks.length} missing sub-task(s)</span>
+                <button className={styles.actionButton} disabled={isBusy || !isWriteConfigured} onClick={() => void handleAcceptCarryover(item)} type="button">Fill gaps</button>
+              </div>
+              <ul className={styles.subtaskList}>
+                {item.reconcile.gapSubtasks.map((gap, index) => (
+                  <li key={index} className={styles.subtaskItem}>
+                    <span className={styles.repoTag}>{gap.kind === 'coding' ? gap.repo?.repoName : gap.kind}</span>
+                    <span>{gap.summary}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </section>
+      )}
 
       {/* ── Bottlenecks ── */}
       {bottlenecks.length > 0 && (

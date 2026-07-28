@@ -5,6 +5,7 @@
 import type { JiraIssue } from '../../../types/jira.ts';
 import type { StandupRosterMember } from '../../SprintDashboard/hooks/useStandupRosterStore.ts';
 import type { FactSheetFeatureInput, FactSheetPersonInput } from './piPlanFactSheet.ts';
+import type { ExistingChild } from './piPlanTypes.ts';
 
 /** A person's default per-sprint velocity when no measured value is available (a plain 2-week pool). */
 const DEFAULT_VELOCITY_POINTS = 8;
@@ -49,6 +50,7 @@ export function toFactSheetFeatureInputs(
   issues: JiraIssue[],
   sizeFieldId: string,
   priorityRankByKey: Record<string, number> = {},
+  existingChildrenByFeatureKey: Record<string, ExistingChild[]> = {},
 ): FactSheetFeatureInput[] {
   return issues.map((issue, index) => {
     const rawComponents = (issue.fields as unknown as { components?: unknown }).components;
@@ -68,7 +70,7 @@ export function toFactSheetFeatureInputs(
       componentNames,
       dependencyKeys: readDependencyKeys(issue),
       targetFixVersion,
-      existingChildren: [],
+      existingChildren: existingChildrenByFeatureKey[issue.key] ?? [],
     };
   });
 }

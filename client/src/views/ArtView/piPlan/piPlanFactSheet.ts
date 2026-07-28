@@ -5,6 +5,7 @@
 // wrong. Pure — the caller performs the queries (via existing fetchers) and passes the results in; this
 // module validates, normalizes, applies the load factor once, and computes the delivery deadline.
 
+import { isCarryoverFeature } from './piPlanCarryover.ts';
 import type {
   ComponentClass,
   ExistingChild,
@@ -111,6 +112,10 @@ export function assembleFactSheet(inputs: FactSheetInputs): PiPlanningFactSheet 
     if (repoComponentNames.length === 0) {
       notes.push(`Feature ${feature.key} has no repo components — map repos first (no coding sub-tasks will be generated).`);
     }
+    const carryover = isCarryoverFeature(feature.existingChildren);
+    if (carryover) {
+      notes.push(`Feature ${feature.key} is carryover (already has Stories in flight) — it will be reconciled, not regenerated.`);
+    }
     return {
       key: feature.key,
       summary: feature.summary,
@@ -123,6 +128,7 @@ export function assembleFactSheet(inputs: FactSheetInputs): PiPlanningFactSheet 
       dependencyKeys: [...feature.dependencyKeys],
       targetFixVersion: feature.targetFixVersion,
       existingChildren: feature.existingChildren.map((child) => ({ ...child })),
+      isCarryover: carryover,
     };
   });
 

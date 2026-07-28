@@ -95,3 +95,18 @@ describe('buildStorySubtaskScaffold', () => {
     expect(scaffold.filter((i) => i.kind === 'coding')).toHaveLength(0);
   });
 });
+
+describe('buildStorySubtaskScaffold — checkpoint idempotency', () => {
+  it('omits an SL/deploy checkpoint that already exists as a child', () => {
+    const existing = [
+      { key: 'K1', kind: 'slTest' as const, parentKey: 'S1', summary: '[SL] SL Test — Member enrollment enhancement' },
+      { key: 'K2', kind: 'deployInt' as const, parentKey: 'S1', summary: '[INT] Deploy — Member enrollment enhancement' },
+    ];
+    const scaffold = buildStorySubtaskScaffold(story(9), ['enrollment-api'], resolveId, existing);
+    const kinds = scaffold.map((item) => item.kind);
+    expect(kinds).not.toContain('slTest');   // already present → skipped
+    expect(kinds).not.toContain('deployInt');
+    expect(kinds).toContain('deployRel');    // still missing → emitted
+    expect(kinds).toContain('deployProd');
+  });
+});

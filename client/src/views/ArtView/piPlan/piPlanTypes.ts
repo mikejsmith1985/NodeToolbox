@@ -194,6 +194,9 @@ export interface FactSheetFeature {
   dependencyKeys: string[];
   targetFixVersion: string | null;
   existingChildren: ExistingChild[];
+  /** True when the Feature already has child Stories in flight (carryover) — reconcile, never regenerate.
+   *  Optional so pre-existing callers/tests that build a FactSheetFeature literal still type-check. */
+  isCarryover?: boolean;
 }
 
 /** One roster person on the fact sheet, capacity already load-factored. */

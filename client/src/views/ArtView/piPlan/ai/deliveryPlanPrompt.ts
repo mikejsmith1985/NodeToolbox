@@ -82,11 +82,14 @@ export interface DeliveryPromptResult {
  * mitigations only; everything checkable is embedded as fact.
  */
 export function buildDeliveryPlanPrompt(factSheet: PiPlanningFactSheet, bottlenecks: Bottleneck[] = []): DeliveryPromptResult {
-  const chunkCount = Math.max(1, Math.ceil(factSheet.features.length / FEATURES_PER_CHUNK));
+  // Only NEW Features are decomposed by the AI; carryover Features already have Stories in flight and are
+  // reconciled deterministically (never sent to the AI, so it can't propose duplicates).
+  const newFeatures = factSheet.features.filter((feature) => !feature.isCarryover);
+  const chunkCount = Math.max(1, Math.ceil(newFeatures.length / FEATURES_PER_CHUNK));
   const prompts: string[] = [];
   for (let chunkIndex = 0; chunkIndex < chunkCount; chunkIndex += 1) {
-    const chunkFeatures = factSheet.features.slice(chunkIndex * FEATURES_PER_CHUNK, (chunkIndex + 1) * FEATURES_PER_CHUNK);
+    const chunkFeatures = newFeatures.slice(chunkIndex * FEATURES_PER_CHUNK, (chunkIndex + 1) * FEATURES_PER_CHUNK);
     prompts.push(buildChunkPrompt({ ...factSheet, features: chunkFeatures }, bottlenecks, chunkIndex, chunkCount));
   }
-  return { prompts, featureCount: factSheet.features.length, chunkCount };
+  return { prompts, featureCount: newFeatures.length, chunkCount };
 }

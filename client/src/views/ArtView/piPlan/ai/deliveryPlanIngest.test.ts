@@ -86,3 +86,18 @@ describe('parseDeliveryPlanReply', () => {
     expect(result.error).toMatch(/piReview/);
   });
 });
+
+describe('parseDeliveryPlanReply — carryover rejection', () => {
+  it('rejects an AI Story that targets a carryover Feature', () => {
+    const sheet = factSheet();
+    sheet.features.push({
+      key: 'DENP-200', summary: 'Carryover', sizePoints: 5, priorityRank: 2, priorityName: 'High',
+      isCommitted: true, repoComponentNames: ['api'], domainComponentNames: [], dependencyKeys: [],
+      targetFixVersion: null, existingChildren: [], isCarryover: true,
+    });
+    const reply = JSON.stringify({ kind: 'piDeliveryPlan', stories: [{ featureKey: 'DENP-200', summary: 'Dup', repos: ['api'] }] });
+    const result = parseDeliveryPlanReply(reply, sheet, []);
+    expect(result.stories).toHaveLength(0);
+    expect(result.rejected[0].reason).toMatch(/carryover/);
+  });
+});
