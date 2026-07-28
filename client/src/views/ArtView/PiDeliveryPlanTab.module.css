@@ -175,6 +175,14 @@
   color: var(--color-text-muted);
 }
 
+/* Checkbox + title for a staged review item (ticked = included in the commit set). */
+.includeToggle {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  cursor: pointer;
+}
+
 /* Prominent box for capacity-honesty flags (e.g. a Defect bucket whose children exceed its budget). */
 .warningBox {
   margin-top: 0.5rem;

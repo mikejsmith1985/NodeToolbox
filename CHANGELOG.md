@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Delivery Planner: a non-destructive preview with a single "Commit all to Jira" gate — no more per-item live writes
+  (GH #245).** Previously each Story's "Accept & write" and each carryover "Fill gaps" wrote to Jira the instant you
+  clicked, so there was no point at which you could see the whole plan staged with nothing yet created. Now the entire
+  plan — new Stories with their coding/SL/deploy sub-tasks, carryover gap-fills, and on-demand defect scaffolds — is
+  staged for review with a tick box per item, and **the one "Commit all to Jira (N items)" button is the only thing
+  that writes.** Successfully-written items drop out of the review so a second click can't duplicate them; failures
+  stay for retry, and a per-item result list shows exactly what was created. The on-demand Defect action now **adds to
+  the commit set** ("Add to plan") instead of writing immediately. This is the Option-B staging surface that replaces
+  the mistaken direct-to-Jira flow; the Feature Canvas overlay was the wrong tool because it only *arranges existing*
+  issues and its commit path cannot create Stories or sub-tasks. (Known limitation, unchanged: if a Story is created
+  but one of its sub-tasks fails, retrying re-creates the Story — the writer is not yet idempotent for new Stories.)
+
 ### Fixed
 - **Delivery Planner: the 80% load factor now applies beneath the selected capacity.** The 8/10/13 selection is the
   *raw* per-person-per-sprint figure; scheduling plans at `value × 0.80` (so a selected 10 schedules 8 effective

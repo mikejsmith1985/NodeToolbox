@@ -61,6 +61,19 @@ function readFeatureLinkValue(issue: JiraIssue, featureLinkFieldId: string): str
   return null;
 }
 
+/** The outcome of committing one staged review item (a new Story, or a gap-fill on an existing Story). */
+interface CommitResult {
+  id: string;
+  label: string;
+  status: 'success' | 'failed';
+  message: string;
+}
+
+/** Stable review-item id for a carryover / on-demand gap-fill (distinct from a new Story's tempId). */
+function carryoverItemId(storyKey: string): string {
+  return `carryover:${storyKey}`;
+}
+
 /** The PI Delivery Planner: one place to generate, review, and commit a whole-PI delivery plan. */
 export default function PiDeliveryPlanTab({ piName, teams = [] }: PiDeliveryPlanTabProps) {
   const isAiUnlocked = useAiAssistStore((store) => store.isAiAssistUnlocked);
@@ -97,6 +110,10 @@ export default function PiDeliveryPlanTab({ piName, teams = [] }: PiDeliveryPlan
   const [capacityPerSprint, setCapacityPerSprint] = useState(10);
   // Defect-bucket Features whose child issues have outgrown their point budget (computed at load).
   const [defectFlags, setDefectFlags] = useState<DefectUndersizeFlag[]>([]);
+  // ── Staging (Option B) — nothing writes to Jira until the single "Commit all" gate. `excludedItemIds` are the
+  // review items the operator has UNticked; `commitResults` holds the outcome of the last commit for display.
+  const [excludedItemIds, setExcludedItemIds] = useState<Set<string>>(new Set());
+  const [commitResults, setCommitResults] = useState<CommitResult[] | null>(null);
   // Field id → human display name, so the config inputs show what each field id actually is.
   const [fieldNameById, setFieldNameById] = useState<Record<string, string>>({});
   const [assigneeOverrides, setAssigneeOverrides] = useState<Record<string, string>>({});
@@ -380,8 +397,77 @@ export default function PiDeliveryPlanTab({ piName, teams = [] }: PiDeliveryPlan
     );
     setPlan(builtPlan);
     setBottlenecks(detected);
+    setExcludedItemIds(new Set()); // fresh plan → everything staged (included) by default
+    setCommitResults(null);
     const rejectedNote = parsed.rejected.length > 0 ? ` (${parsed.rejected.length} item(s) rejected)` : '';
-    setStatusMessage(`Ingested ${builtPlan.stories.length} Story(ies); ${detected.length} bottleneck(s) flagged${rejectedNote}.`);
+    setStatusMessage(`Ingested ${builtPlan.stories.length} Story(ies); ${detected.length} bottleneck(s) flagged${rejectedNote}. Review below, then Commit all to Jira.`);
+  }
+
+  /** Toggles whether a review item is included in the commit set (unticked = held back, never written). */
+  function toggleItemIncluded(itemId: string) {
+    setExcludedItemIds((previous) => {
+      const next = new Set(previous);
+      if (next.has(itemId)) next.delete(itemId); else next.add(itemId);
+      return next;
+    });
+  }
+
+  /** The write context shared by every commit (project + issue-type + field ids from Write settings). */
+  function buildWriteContext(): DeliveryWriteContext {
+    return {
+      projectKey: writeConfig.projectKey, storyIssueTypeId: writeConfig.storyIssueTypeId,
+      subTaskIssueTypeId: writeConfig.subTaskIssueTypeId,
+      fieldIds: { featureLink: writeConfig.featureLink, targetStart: writeConfig.targetStart, targetEnd: writeConfig.targetEnd },
+    };
+  }
+
+  // The staged items that are currently ticked for commit (new Stories + carryover/defect gap-fills).
+  const includedStories = (plan?.stories ?? []).filter((story) => !excludedItemIds.has(story.tempId));
+  const includedCarryover = carryover.filter((item) => !excludedItemIds.has(carryoverItemId(item.reconcile.storyKey)));
+  const commitItemCount = includedStories.length + includedCarryover.length;
+
+  /**
+   * The single write gate (Option B): creates every ticked new Story (parent-first, with its sub-tasks) and
+   * fills every ticked carryover/defect gap — NOTHING is written to Jira before this runs. Successful items are
+   * removed from the review so a second click cannot duplicate them; failures stay for retry.
+   */
+  async function handleCommitAll() {
+    if (!isWriteConfigured) {
+      setStatusMessage('Set the project key and Story/Sub-task issue-type ids in Write settings before committing.');
+      return;
+    }
+    setIsBusy(true);
+    const context = buildWriteContext();
+    const results: CommitResult[] = [];
+    try {
+      for (const story of includedStories) {
+        try {
+          const written = await applyDeliveryStory(withOverrides(story), context);
+          results.push({ id: story.tempId, label: story.summary, status: 'success', message: `Story ${written.storyKey} + ${story.codingSubtasks.length} coding + SL + deploys` });
+        } catch (writeError) {
+          results.push({ id: story.tempId, label: story.summary, status: 'failed', message: writeError instanceof Error ? writeError.message : 'write failed' });
+        }
+      }
+      for (const item of includedCarryover) {
+        const itemId = carryoverItemId(item.reconcile.storyKey);
+        try {
+          const filled = await applyCarryoverGaps(item.reconcile.storyKey, item.reconcile.gapSubtasks, context);
+          results.push({ id: itemId, label: item.reconcile.storySummary, status: 'success', message: `${filled.createdCount} sub-task(s) on ${item.reconcile.storyKey}` });
+        } catch (writeError) {
+          results.push({ id: itemId, label: item.reconcile.storySummary, status: 'failed', message: writeError instanceof Error ? writeError.message : 'gap-fill failed' });
+        }
+      }
+      // Drop successfully-written items so the review can't re-commit (create is NOT idempotent for new Stories).
+      const succeeded = new Set(results.filter((result) => result.status === 'success').map((result) => result.id));
+      setPlan((previous) => (previous ? { ...previous, stories: previous.stories.filter((story) => !succeeded.has(story.tempId)) } : previous));
+      setCarryover((previous) => previous.filter((item) => !succeeded.has(carryoverItemId(item.reconcile.storyKey))));
+      setCommitResults(results);
+      const okCount = results.filter((result) => result.status === 'success').length;
+      const failCount = results.length - okCount;
+      setStatusMessage(`Committed ${okCount} item(s) to Jira${failCount > 0 ? `, ${failCount} failed (kept for retry)` : ''}.`);
+    } finally {
+      setIsBusy(false);
+    }
   }
 
   /** Applies the operator's assignee override to a coding sub-task before writing. */
@@ -395,54 +481,10 @@ export default function PiDeliveryPlanTab({ piName, teams = [] }: PiDeliveryPlan
     };
   }
 
-  async function handleAccept(story: PlannedStory) {
-    if (!isWriteConfigured) {
-      setStatusMessage('Set the project key and Story/Sub-task issue-type ids in Write settings before accepting.');
-      return;
-    }
-    setIsBusy(true);
-    try {
-      const context: DeliveryWriteContext = {
-        projectKey: writeConfig.projectKey, storyIssueTypeId: writeConfig.storyIssueTypeId,
-        subTaskIssueTypeId: writeConfig.subTaskIssueTypeId,
-        fieldIds: { featureLink: writeConfig.featureLink, targetStart: writeConfig.targetStart, targetEnd: writeConfig.targetEnd },
-      };
-      const result = await applyDeliveryStory(withOverrides(story), context);
-      setStatusMessage(`Wrote Story ${result.storyKey} with ${story.codingSubtasks.length} coding sub-task(s) + SL + deploys.`);
-    } catch (writeError) {
-      setStatusMessage(writeError instanceof Error ? writeError.message : 'Write failed.');
-    } finally {
-      setIsBusy(false);
-    }
-  }
-
-  /** Writes the missing sub-tasks of one carryover Story (gap-fill) under the existing Story — no duplicates. */
-  async function handleAcceptCarryover(item: { featureKey: string; reconcile: CarryoverStoryReconcile }) {
-    if (!isWriteConfigured) {
-      setStatusMessage('Set the project key and Story/Sub-task issue-type ids in Write settings before accepting.');
-      return;
-    }
-    setIsBusy(true);
-    try {
-      const context: DeliveryWriteContext = {
-        projectKey: writeConfig.projectKey, storyIssueTypeId: writeConfig.storyIssueTypeId,
-        subTaskIssueTypeId: writeConfig.subTaskIssueTypeId,
-        fieldIds: { featureLink: writeConfig.featureLink, targetStart: writeConfig.targetStart, targetEnd: writeConfig.targetEnd },
-      };
-      const result = await applyCarryoverGaps(item.reconcile.storyKey, item.reconcile.gapSubtasks, context);
-      setStatusMessage(`Filled ${result.createdCount} missing sub-task(s) on ${item.reconcile.storyKey}.`);
-      setCarryover((previous) => previous.filter((entry) => entry !== item));
-    } catch (writeError) {
-      setStatusMessage(writeError instanceof Error ? writeError.message : 'Gap-fill write failed.');
-    } finally {
-      setIsBusy(false);
-    }
-  }
-
   /**
-   * Phase C — generates the repo→sub-task scaffold for a single unplanned Defect on demand: reads the
-   * Defect's impacted repo components and existing sub-tasks, then writes only the MISSING coding sub-tasks
-   * (one per repo) + SL + deploys. Idempotent, so re-running never duplicates.
+   * Phase C — stages the repo→sub-task scaffold for a single unplanned Defect: reads the Defect's impacted repo
+   * components and existing sub-tasks, computes only the MISSING coding sub-tasks (one per repo) + SL + deploys,
+   * and ADDS them to the commit set as a gap-fill item. Nothing is written until "Commit all to Jira".
    */
   async function handleGenerateDefectSubtasks() {
     if (!isWriteConfigured) {
@@ -479,15 +521,16 @@ export default function PiDeliveryPlanTab({ piName, teams = [] }: PiDeliveryPlan
         setStatusMessage(`${key} is already fully scaffolded — nothing to add.`);
         return;
       }
-      const context: DeliveryWriteContext = {
-        projectKey: writeConfig.projectKey, storyIssueTypeId: writeConfig.storyIssueTypeId,
-        subTaskIssueTypeId: writeConfig.subTaskIssueTypeId,
-        fieldIds: { featureLink: writeConfig.featureLink, targetStart: writeConfig.targetStart, targetEnd: writeConfig.targetEnd },
-      };
-      await applyCarryoverGaps(key, gaps, context);
-      setStatusMessage(`Generated ${gaps.length} sub-task(s) on ${key} for ${repoNames.length} repo(s).`);
+      // Stage the defect's gaps as a commit item (deduped by key) — written only at "Commit all to Jira".
+      setComponentIdByName(idByName);
+      setCarryover((previous) => [
+        ...previous.filter((item) => item.reconcile.storyKey !== key),
+        { featureKey: key, reconcile: { storyKey: key, storySummary: defectSummary, gapSubtasks: gaps } },
+      ]);
+      setDefectKey('');
+      setStatusMessage(`Staged ${gaps.length} sub-task(s) for ${key} (${repoNames.length} repo(s)) — commit below to write.`);
     } catch (defectError) {
-      setStatusMessage(defectError instanceof Error ? defectError.message : 'Defect sub-task generation failed.');
+      setStatusMessage(defectError instanceof Error ? defectError.message : 'Defect sub-task staging failed.');
     } finally {
       setIsBusy(false);
     }
@@ -583,9 +626,11 @@ export default function PiDeliveryPlanTab({ piName, teams = [] }: PiDeliveryPlan
           {carryover.map((item) => (
             <div key={item.reconcile.storyKey} className={styles.storyRow}>
               <div className={styles.storyHead}>
-                <span className={styles.storyTitle}>{item.reconcile.storySummary}</span>
+                <label className={styles.includeToggle}>
+                  <input type="checkbox" checked={!excludedItemIds.has(carryoverItemId(item.reconcile.storyKey))} onChange={() => toggleItemIncluded(carryoverItemId(item.reconcile.storyKey))} />
+                  <span className={styles.storyTitle}>{item.reconcile.storySummary}</span>
+                </label>
                 <span className={styles.statusLine}>{item.reconcile.storyKey} · {item.featureKey} · {item.reconcile.gapSubtasks.length} missing sub-task(s)</span>
-                <button className={styles.actionButton} disabled={isBusy || !isWriteConfigured} onClick={() => void handleAcceptCarryover(item)} type="button">Fill gaps</button>
               </div>
               <ul className={styles.subtaskList}>
                 {item.reconcile.gapSubtasks.map((gap, index) => (
@@ -616,15 +661,17 @@ export default function PiDeliveryPlanTab({ piName, teams = [] }: PiDeliveryPlan
       {/* ── Plan review + per-item accept ── */}
       {plan && (
         <section className={styles.card}>
-          <h3 className={styles.sectionTitle}>3 · Review & commit the plan ({plan.stories.length} Stories)</h3>
+          <h3 className={styles.sectionTitle}>3 · Review the plan ({plan.stories.length} Stories) — nothing is written yet</h3>
           {plan.honestStates.length > 0 && <ul className={styles.notes}>{plan.honestStates.map((state, index) => <li key={index}>{state}</li>)}</ul>}
-          {!isWriteConfigured && <p className={styles.statusLine}>Set Write settings below to enable “Accept & write”.</p>}
+          <p className={styles.statusLine}>Untick anything you don&apos;t want, then use <strong>Commit all to Jira</strong> below. No Story or sub-task is created until you commit.</p>
           {plan.stories.map((story) => (
             <div key={story.tempId} className={styles.storyRow}>
               <div className={styles.storyHead}>
-                <span className={styles.storyTitle}>{story.summary}</span>
+                <label className={styles.includeToggle}>
+                  <input type="checkbox" checked={!excludedItemIds.has(story.tempId)} onChange={() => toggleItemIncluded(story.tempId)} />
+                  <span className={styles.storyTitle}>{story.summary}</span>
+                </label>
                 <span className={styles.statusLine}>{story.featureKey} · {story.sprintName} · Target End {story.dates.targetEndIso} · Due {story.dates.dueIso ?? '—'} · fixVersion {story.fixVersionName ?? '—'}</span>
-                <button className={styles.actionButton} disabled={isBusy || !isWriteConfigured} onClick={() => void handleAccept(story)} type="button">Accept &amp; write</button>
               </div>
               <ul className={styles.subtaskList}>
                 {story.codingSubtasks.map((coding) => (
@@ -647,9 +694,9 @@ export default function PiDeliveryPlanTab({ piName, teams = [] }: PiDeliveryPlan
       )}
 
       {/* ── Write settings ── */}
-      {plan && (
+      {(plan || carryover.length > 0) && (
         <section className={styles.card}>
-          <h3 className={styles.sectionTitle}>Write settings (required before accept)</h3>
+          <h3 className={styles.sectionTitle}>Write settings (required before commit)</h3>
           <div className={styles.controlRow}>
             {([
               ['projectKey', 'Project key'], ['storyIssueTypeId', 'Story issue-type id'], ['subTaskIssueTypeId', 'Sub-task issue-type id'],
@@ -664,20 +711,49 @@ export default function PiDeliveryPlanTab({ piName, teams = [] }: PiDeliveryPlan
         </section>
       )}
 
+      {/* ── The single commit gate (Option B): the ONLY thing that writes to Jira ── */}
+      {(plan || carryover.length > 0) && (
+        <section className={styles.card}>
+          <h3 className={styles.sectionTitle}>Commit to Jira</h3>
+          <p className={styles.statusLine}>
+            {commitItemCount} item(s) staged — {includedStories.length} new Story(ies) (with sub-tasks) + {includedCarryover.length} gap-fill(s) on existing Stories.
+            Nothing has been written yet.
+          </p>
+          {!isWriteConfigured && <p className={styles.warning}>⚠ Complete Write settings above before committing.</p>}
+          <button
+            className={`${styles.actionButton} ${styles.primaryButton}`}
+            disabled={isBusy || !isWriteConfigured || commitItemCount === 0}
+            onClick={() => void handleCommitAll()}
+            type="button"
+          >
+            {isBusy ? 'Committing…' : `Commit all to Jira (${commitItemCount} item${commitItemCount === 1 ? '' : 's'})`}
+          </button>
+          {commitResults && (
+            <ul className={styles.notes}>
+              {commitResults.map((result) => (
+                <li key={result.id} className={result.status === 'success' ? styles.signalOnTrack : styles.signalOffTrack}>
+                  {result.status === 'success' ? '✓' : '✗'} {result.label} — {result.message}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
+
       {/* ── Defect sub-tasks (on demand — defects are unplanned) ── */}
       <section className={styles.card}>
         <h3 className={styles.sectionTitle}>Defect sub-tasks (on demand)</h3>
         <p className={styles.statusLine}>
-          Defects are unplanned — generate their repo→sub-task scaffold when you build them. Enter a Defect key; its
-          impacted <strong>repo components</strong> drive one coding sub-task each (+ SL + deploys), idempotent so
-          re-running never duplicates.
+          Defects are unplanned — stage their repo→sub-task scaffold when you build them. Enter a Defect key; its
+          impacted <strong>repo components</strong> drive one coding sub-task each (+ SL + deploys). It is <strong>added
+          to the commit set above</strong> (idempotent — only missing sub-tasks) and written when you Commit all.
         </p>
         <div className={styles.controlRow}>
           <label className={styles.field}>Defect key
             <input className={styles.fieldInput} value={defectKey} onChange={(event) => setDefectKey(event.target.value)} placeholder="DENP-1234" />
           </label>
           <button className={styles.actionButton} disabled={isBusy || !isWriteConfigured || defectKey.trim() === ''} onClick={() => void handleGenerateDefectSubtasks()} type="button">
-            Generate sub-tasks
+            Add to plan
           </button>
         </div>
         {!isWriteConfigured && <p className={styles.statusLine}>Write settings not yet configured — they auto-fill; load Features once to review them.</p>}
