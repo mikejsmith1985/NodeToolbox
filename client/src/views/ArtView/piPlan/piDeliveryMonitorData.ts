@@ -7,6 +7,14 @@ import type { DeliveryPlan } from './piDeliveryEngine.ts';
 import type { LiveJiraSnapshot, WrittenPlanSnapshot } from './piPlanMonitor.ts';
 import type { PiPlanningFactSheet } from './piPlanTypes.ts';
 
+const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000;
+/** Jira status-category key for an in-progress issue (blue=new, yellow=indeterminate, green=done). */
+const IN_PROGRESS_CATEGORY = 'indeterminate';
+const DONE_CATEGORY = 'done';
+/** The SL-test sub-task's title prefix, so the monitor can find it among a Story's children. */
+const SL_SUBTASK_PREFIX = '[sl]';
+const SPRINT_NAME_PATTERN = /name=([^,\]]+)/;
+
 /** One live Jira row per Story the monitor observed (already normalized from the Jira read by the panel). */
 export interface LiveStoryRow {
   /** The Story summary — the key we match against the written plan. */
@@ -84,4 +92,56 @@ export function summarizeLiveRows(rows: LiveStoryRow[], written: WrittenPlanSnap
   });
 
   return { sprints, maxSubtaskAgingDays, lastActivityByStory, actualSprintByStory };
+}
+
+// ── Precise sub-task + sprint-field reads (replace the earlier Story-state approximations) ─────────────
+
+/** Whole days between an ISO timestamp and `nowIso`, floored at zero. */
+function daysBetween(fromIso: string, nowIso: string): number {
+  const from = Date.parse(fromIso.slice(0, 10) + 'T00:00:00Z');
+  const now = Date.parse(nowIso.slice(0, 10) + 'T00:00:00Z');
+  return Number.isNaN(from) || Number.isNaN(now) ? 0 : Math.max(0, Math.floor((now - from) / MILLISECONDS_PER_DAY));
+}
+
+/** One of a Story's sub-tasks, normalized from Jira for the monitor. */
+export interface SubtaskSignalInput {
+  summary: string;
+  /** The sub-task's status-category key ('new' | 'indeterminate' | 'done'). */
+  statusCategoryKey: string;
+  /** When the sub-task last changed (a proxy for time-in-status). */
+  updatedIso: string;
+}
+
+/**
+ * Derives a Story's precise monitor signals from its sub-tasks: the greatest age of any IN-PROGRESS sub-task
+ * (days since it last changed), and whether the SL-test sub-task is still queued (present and not done). A
+ * Story with no in-progress sub-tasks ages 0; one with no SL sub-task, or a done SL sub-task, is not queued.
+ */
+export function deriveSubtaskSignals(
+  subtasks: SubtaskSignalInput[],
+  nowIso: string,
+): { agingDays: number; isSlQueued: boolean } {
+  const agingDays = subtasks
+    .filter((subtask) => subtask.statusCategoryKey === IN_PROGRESS_CATEGORY)
+    .reduce((max, subtask) => Math.max(max, daysBetween(subtask.updatedIso, nowIso)), 0);
+  const slSubtask = subtasks.find((subtask) => subtask.summary.trim().toLowerCase().startsWith(SL_SUBTASK_PREFIX));
+  const isSlQueued = slSubtask !== undefined && slSubtask.statusCategoryKey !== DONE_CATEGORY;
+  return { agingDays, isSlQueued };
+}
+
+/**
+ * Extracts the newest sprint's name from Jira's raw sprint custom-field value — either the legacy greenhopper
+ * string (`...[state=ACTIVE,name=26.4.2,...]`) or a modern `{ name }` object — mirroring the Hygiene view's
+ * proven parser. Returns null when no sprint is present (the caller falls back to the planned sprint).
+ */
+export function parseSprintName(rawSprintValue: unknown): string | null {
+  const sprintEntries = Array.isArray(rawSprintValue) ? rawSprintValue : [rawSprintValue];
+  const newestEntry = sprintEntries[sprintEntries.length - 1];
+  if (typeof newestEntry === 'string') {
+    return newestEntry.match(SPRINT_NAME_PATTERN)?.[1]?.trim() ?? null;
+  }
+  if (newestEntry && typeof newestEntry === 'object') {
+    return (newestEntry as { name?: string }).name?.trim() || null;
+  }
+  return null;
 }

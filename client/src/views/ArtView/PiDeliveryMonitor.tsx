@@ -11,11 +11,12 @@ import type { JiraIssue } from '../../types/jira.ts';
 import type { DeliveryPlan } from './piPlan/piDeliveryEngine.ts';
 import { computeMonitor } from './piPlan/piPlanMonitor.ts';
 import type { MonitorResult } from './piPlan/piPlanTypes.ts';
-import { planToWrittenSnapshot, summarizeLiveRows, type LiveStoryRow } from './piPlan/piDeliveryMonitorData.ts';
+import { planToWrittenSnapshot, summarizeLiveRows, deriveSubtaskSignals, parseSprintName, type LiveStoryRow, type SubtaskSignalInput } from './piPlan/piDeliveryMonitorData.ts';
 import type { PiPlanningFactSheet } from './piPlan/piPlanTypes.ts';
 import styles from './PiDeliveryPlanTab.module.css';
 
-const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000;
+/** Jira's sprint custom field — raw greenhopper strings carrying the active sprint name (see Hygiene view). */
+const SPRINT_FIELD_ID = 'customfield_10020';
 
 interface PiDeliveryMonitorProps {
   plan: DeliveryPlan;
@@ -29,18 +30,20 @@ function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-/** Whole days between an ISO timestamp and now. */
-function daysSince(iso: string): number {
-  const then = new Date(iso).getTime();
-  const now = Date.now();
-  return Number.isNaN(then) ? 0 : Math.max(0, Math.floor((now - then) / MILLISECONDS_PER_DAY));
-}
-
 /** Reads the latest comment timestamp from an issue, falling back to its updated time. */
 function lastActivityOf(issue: JiraIssue): string {
   const comments = (issue.fields as unknown as { comment?: { comments?: { created?: string }[] } }).comment?.comments ?? [];
   const latest = comments.map((comment) => comment.created ?? '').filter(Boolean).sort().at(-1);
   return latest ?? (issue.fields as unknown as { updated?: string }).updated ?? todayIso();
+}
+
+/** Normalizes one fetched sub-task issue into the pure signal input the monitor adapter consumes. */
+function toSubtaskSignal(subtask: JiraIssue): SubtaskSignalInput {
+  return {
+    summary: typeof subtask.fields?.summary === 'string' ? subtask.fields.summary : '',
+    statusCategoryKey: subtask.fields?.status?.statusCategory?.key ?? 'new',
+    updatedIso: (subtask.fields as unknown as { updated?: string }).updated ?? '',
+  };
 }
 
 /** The monitoring panel: baseline from the plan, live signals + triggers on refresh. */
@@ -70,30 +73,49 @@ export default function PiDeliveryMonitor({ plan, factSheet, featureLinkFieldId 
       const featureKeys = factSheet.features.map((feature) => feature.key);
       const fieldNumber = featureLinkFieldId.replace('customfield_', '');
       const jql = `cf[${fieldNumber}] in (${featureKeys.join(', ')}) AND issuetype in (Story, Defect)`;
-      const path = `/rest/api/2/search?jql=${encodeURIComponent(jql)}&fields=${encodeURIComponent('summary,status,updated,comment')}&maxResults=200`;
+      // Read the Story with its actual sprint (customfield_10020) alongside status + comments.
+      const storyFields = `summary,status,comment,${SPRINT_FIELD_ID}`;
+      const path = `/rest/api/2/search?jql=${encodeURIComponent(jql)}&fields=${encodeURIComponent(storyFields)}&maxResults=200`;
       const response = await jiraGet<{ issues?: JiraIssue[] }>(path);
       const issues = response.issues ?? [];
 
-      // Normalize each fetched Story into a live row, matching the plan by summary. isDone is precise (status
-      // category); freshness is precise (last comment). Aging/SL-queue are approximated from the story's own
-      // state until the sub-task fields are wired — see the caveat rendered below.
+      // Precise sub-task read: fetch every child of the plan's Stories, grouped by parent, so aging and the
+      // SL-queue are measured from the real sub-tasks rather than approximated from the Story's own state.
+      const subtasksByParent = new Map<string, SubtaskSignalInput[]>();
+      if (issues.length > 0) {
+        const parentJql = `parent in (${issues.map((issue) => issue.key).join(', ')})`;
+        const subtaskPath = `/rest/api/2/search?jql=${encodeURIComponent(parentJql)}&fields=${encodeURIComponent('summary,status,updated,parent')}&maxResults=500`;
+        const subtaskResponse = await jiraGet<{ issues?: JiraIssue[] }>(subtaskPath);
+        (subtaskResponse.issues ?? []).forEach((subtask) => {
+          const parentKey = (subtask.fields as unknown as { parent?: { key?: string } }).parent?.key;
+          if (!parentKey) return;
+          const bucket = subtasksByParent.get(parentKey) ?? [];
+          bucket.push(toSubtaskSignal(subtask));
+          subtasksByParent.set(parentKey, bucket);
+        });
+      }
+
+      const nowIso = todayIso();
       const rows: LiveStoryRow[] = issues.map((issue) => {
         const summary = typeof issue.fields?.summary === 'string' ? issue.fields.summary : issue.key;
         const isDone = issue.fields?.status?.statusCategory?.key === 'done';
-        const lastActivityIso = lastActivityOf(issue);
+        // Actual sprint from the Story's sprint field; fall back to the planned sprint when unset.
+        const actualSprint = parseSprintName((issue.fields as unknown as Record<string, unknown>)[SPRINT_FIELD_ID])
+          ?? plannedSprintBySummary.get(summary) ?? (written.sprints[0]?.name ?? '');
+        const { agingDays, isSlQueued } = deriveSubtaskSignals(subtasksByParent.get(issue.key) ?? [], nowIso);
         return {
           storyKey: summary,
-          sprintName: plannedSprintBySummary.get(summary) ?? (written.sprints[0]?.name ?? ''),
+          sprintName: actualSprint,
           points: pointsBySummary.get(summary) ?? 0,
           isDone,
-          isSlQueued: !isDone,                    // approximation: precise SL state needs the SL sub-task read
-          subtaskAgingDays: isDone ? 0 : daysSince(lastActivityIso),
-          lastActivityIso,
+          isSlQueued,
+          subtaskAgingDays: agingDays,
+          lastActivityIso: lastActivityOf(issue),
         };
       });
 
-      setMonitor(computeMonitor(written, summarizeLiveRows(rows, written), todayIso()));
-      setStatusMessage(`Live status refreshed from ${issues.length} Story(ies).`);
+      setMonitor(computeMonitor(written, summarizeLiveRows(rows, written), nowIso));
+      setStatusMessage(`Live status refreshed from ${issues.length} Story(ies) and their sub-tasks.`);
     } catch (refreshError) {
       setStatusMessage(refreshError instanceof Error ? refreshError.message : 'Failed to refresh live status.');
     } finally {
@@ -139,8 +161,9 @@ export default function PiDeliveryMonitor({ plan, factSheet, featureLinkFieldId 
             </>
           ) : <p className={styles.statusLine}>No replan triggers — monitoring only.</p>}
           <p className={styles.statusLine}>
-            Note: burn-up, commit-vs-complete, and freshness are read live; sub-task aging and SL-queue depth are
-            approximated from Story state until the sub-task fields are wired.
+            All signals are read live: burn-up and commit-vs-complete from Story status, freshness from the last
+            GitHub-intake comment, and sub-task aging + SL-queue depth from the Stories&apos; actual sub-tasks; slip is
+            detected against each Story&apos;s real sprint field.
           </p>
         </>
       )}
