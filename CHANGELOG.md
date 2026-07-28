@@ -31,8 +31,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   review the plan with each Story's per-repo coding sub-tasks (assignee **PO-overridable** via a dropdown), SL-test,
   INT/REL/PROD dates, warnings, and the deterministic **bottlenecks** with any AI mitigations → **per-item accept →
   write** to Jira (Story + coding sub-tasks carrying the repo component + SL + deploys). New pure `piDeliveryTabData`
-  adapter (Jira Feature issues + roster → fact-sheet inputs) with 5 tests. The monitoring surface (live burn-up /
-  SL-queue / freshness against a written plan) is the remaining follow-up.
+  adapter (Jira Feature issues + roster → fact-sheet inputs) with 5 tests.
+- **PI Delivery monitoring panel (feature 032, US5).** The Delivery Planner tab now has a **Monitor** section: a
+  deterministic planned **baseline** (per-sprint planned points + SL capacity) shown immediately from the written plan,
+  plus a **live-status refresh** that fetches the plan's Stories from Jira and computes the on-track signals (burn-up,
+  commit-vs-complete, freshness) and explicit **replan triggers** (`storySlipped`, `slQueueOverTwoSprints`) via the
+  tested `piPlanMonitor` engine. New pure `piDeliveryMonitorData` adapter (plan → written snapshot; live rows → live
+  snapshot) with 4 tests, plus a panel smoke test. Burn-up / commit-vs-complete / freshness are read live; sub-task
+  aging and SL-queue depth are approximated from Story state until the sub-task fields are wired (labelled in the UI).
+  This completes the 032 feature: engine → planner tab → monitoring.
 - **Bulk rule generation for GitHub Email Intake.** The Admin Hub "Rule Assist (AI)" section (behind the AI
   passcode) can now bundle every distinct email shape sitting in the drop folder into **one** prompt, so an
   operator generates a whole rule set with a single paste into their own AI — no more one-email-at-a-time. A
