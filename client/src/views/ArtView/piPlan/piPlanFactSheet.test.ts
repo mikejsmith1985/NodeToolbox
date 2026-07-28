@@ -41,6 +41,14 @@ describe('assembleFactSheet', () => {
     expect(sheet.velocityByPerson['Dev One']).toBe(10); // raw velocity preserved for reference
   });
 
+  it('uses a selected capacity as the raw figure but still applies the load factor beneath it', () => {
+    const sheet = assembleFactSheet({ ...baseInputs(), capacityPerSprintOverride: 10 });
+    // Every person plans at 10 × 0.8 = 8 effective points, regardless of their measured velocity.
+    expect(sheet.people.find((p) => p.displayName === 'Dev One')?.pointsPerSprint).toBeCloseTo(8);
+    expect(sheet.people.find((p) => p.displayName === 'SL Tester')?.pointsPerSprint).toBeCloseTo(8);
+    expect(sheet.velocityByPerson['Dev One']).toBe(10); // raw measured velocity still preserved for reference
+  });
+
   it('splits components into repo vs domain and excludes unclassified', () => {
     const feature = assembleFactSheet(baseInputs()).features[0];
     expect(feature.repoComponentNames).toEqual(['enrollment-api', 'enrollment-ui']);

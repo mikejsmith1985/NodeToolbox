@@ -526,6 +526,7 @@ export default function PiDeliveryPlanTab({ piName, teams = [] }: PiDeliveryPlan
               <option value={10}>10 pts — standard</option>
               <option value={13}>13 pts — stretch</option>
             </select>
+            <span className={styles.fieldHint}>80% load factor is applied to scheduling; the raw value caps Story size.</span>
           </label>
           <button className={`${styles.actionButton} ${styles.primaryButton}`} disabled={isBusy} onClick={() => void handleLoadFeatures()} type="button">
             {isBusy ? 'Loading…' : 'Load Features'}

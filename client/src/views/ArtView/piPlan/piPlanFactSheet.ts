@@ -60,9 +60,9 @@ export interface FactSheetInputs {
   classifyComponent: (componentName: string) => ComponentClass;
   /** Fraction of raw velocity to plan; defaults to 0.80. */
   loadFactor?: number;
-  /** When set, plan at this flat per-person-per-sprint capacity (8/10/13) for EVERY person, overriding
-   *  measured velocity × load factor. This is the already-loaded planning number the operator selects, and
-   *  it also caps the deliverable Story size (a Story must fit one person's sprint). */
+  /** When set, plan at this flat per-person-per-sprint capacity (8/10/13) for EVERY person, replacing measured
+   *  velocity as the raw capacity. The load factor still applies beneath it (pointsPerSprint = value × loadFactor),
+   *  so a selected 10 schedules 8 effective points; the raw selected value caps the deliverable Story size. */
   capacityPerSprintOverride?: number;
 }
 
@@ -140,13 +140,15 @@ export function assembleFactSheet(inputs: FactSheetInputs): PiPlanningFactSheet 
     };
   });
 
-  // A selected flat capacity (8/10/13) overrides measured velocity for every person, giving the operator three
-  // comparable planning scenarios; otherwise plan at measured velocity × load factor (the default behaviour).
+  // A selected flat capacity (8/10/13) replaces measured velocity as the raw per-person figure, giving the
+  // operator three comparable planning scenarios; the load factor is then applied beneath it exactly as it is
+  // for measured velocity (value × loadFactor), so an 80% factor turns a selected 10 into 8 effective points.
+  const rawCapacityByPerson = (person: FactSheetPersonInput): number => inputs.capacityPerSprintOverride ?? person.velocity;
   const people: FactSheetPerson[] = inputs.people.map((person) => ({
     displayName: person.displayName,
     accountId: person.accountId,
     roles: [...person.roles],
-    pointsPerSprint: inputs.capacityPerSprintOverride ?? person.velocity * loadFactor,
+    pointsPerSprint: rawCapacityByPerson(person) * loadFactor,
   }));
   const velocityByPerson: Record<string, number> = {};
   inputs.people.forEach((person) => { velocityByPerson[person.displayName] = person.velocity; });

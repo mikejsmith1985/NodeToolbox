@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Delivery Planner: the 80% load factor now applies beneath the selected capacity.** The 8/10/13 selection is the
+  *raw* per-person-per-sprint figure; scheduling plans at `value × 0.80` (so a selected 10 schedules 8 effective
+  points), consistent with how measured velocity is loaded. The raw selected value still caps the deliverable Story
+  size. A caption on the selector spells this out.
+
 ### Added
 - **Delivery Planner: selectable capacity per person per sprint (8 / 10 / 13 pts), with two new deliverability
   guards (GH #245).** A "Capacity / person / sprint" selector lets you plan the whole PI at 8 (conservative),

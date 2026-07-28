@@ -168,6 +168,13 @@
   font-size: var(--font-size-sm);
 }
 
+/* Small explanatory caption beneath a config field. */
+.fieldHint {
+  margin-top: 0.2rem;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+
 /* Prominent box for capacity-honesty flags (e.g. a Defect bucket whose children exceed its budget). */
 .warningBox {
   margin-top: 0.5rem;
