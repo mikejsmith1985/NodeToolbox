@@ -1,5 +1,6 @@
-/* PiDeliveryPlanTab.module.css — Styling for the PI Delivery Planner tab (spec 032). Mirrors the ART
-   surface's card/section vocabulary so the tab reads as one product with its siblings. */
+/* PiDeliveryPlanTab.module.css — Styling for the PI Delivery Planner tab (spec 032). Uses the app's design
+   tokens (src/styles/tokens.css) so the tab reads as one product with its siblings and flips correctly
+   between the Dark and Light themes — never hard-coded colors. */
 
 .deliveryTab {
   display: flex;
@@ -8,22 +9,24 @@
 }
 
 .card {
-  border: 1px solid var(--border-color, #d0d7de);
-  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
   padding: 1rem 1.25rem;
-  background: var(--surface-color, #fff);
+  background: var(--color-card-bg);
+  color: var(--color-text-primary);
 }
 
 .sectionTitle {
   margin: 0 0 0.5rem;
-  font-size: 1rem;
+  font-size: var(--font-size-md);
   font-weight: 600;
+  color: var(--color-text-primary);
 }
 
 .statusLine {
   margin: 0.25rem 0;
-  font-size: 0.85rem;
-  color: var(--muted-color, #57606a);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
 }
 
 .controlRow {
@@ -37,23 +40,31 @@
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
-  font-size: 0.8rem;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
 }
 
 .fieldInput {
   padding: 0.35rem 0.5rem;
-  border: 1px solid var(--border-color, #d0d7de);
-  border-radius: 6px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-field-bg);
+  color: var(--color-text-primary);
   font: inherit;
 }
 
 .actionButton {
   padding: 0.4rem 0.9rem;
-  border: 1px solid var(--border-color, #d0d7de);
-  border-radius: 6px;
-  background: var(--accent-soft, #f6f8fa);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+  color: var(--color-text-primary);
   cursor: pointer;
   font: inherit;
+}
+
+.actionButton:hover:not(:disabled) {
+  background: var(--color-surface-hover);
 }
 
 .actionButton:disabled {
@@ -62,27 +73,30 @@
 }
 
 .primaryButton {
-  border-color: #1f6feb;
-  background: #1f6feb;
-  color: #fff;
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+  color: var(--color-text-on-accent);
 }
 
 .promptArea,
 .replyArea {
   width: 100%;
   min-height: 8rem;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.78rem;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: var(--font-size-xs);
   padding: 0.5rem;
-  border: 1px solid var(--border-color, #d0d7de);
-  border-radius: 6px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-field-bg);
+  color: var(--color-text-primary);
 }
 
 .storyRow {
-  border: 1px solid var(--border-color, #e1e4e8);
-  border-radius: 6px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
   padding: 0.6rem 0.8rem;
   margin-bottom: 0.5rem;
+  background: var(--color-card-bg-subtle);
 }
 
 .storyHead {
@@ -95,6 +109,7 @@
 
 .storyTitle {
   font-weight: 600;
+  color: var(--color-text-primary);
 }
 
 .subtaskList {
@@ -110,44 +125,51 @@
   display: flex;
   gap: 0.5rem;
   align-items: center;
-  font-size: 0.82rem;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
 }
 
 .repoTag {
-  font-family: ui-monospace, monospace;
-  background: #eaeef2;
-  border-radius: 4px;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  background: var(--color-bg-subtle);
+  color: var(--color-text-primary);
+  border-radius: var(--radius-sm);
   padding: 0 0.35rem;
 }
 
 .assigneeSelect {
   font: inherit;
-  font-size: 0.78rem;
+  font-size: var(--font-size-xs);
   padding: 0.1rem 0.25rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-field-bg);
+  color: var(--color-text-primary);
 }
 
 .warning {
-  color: #9a6700;
-  font-size: 0.8rem;
+  color: var(--color-warning-text);
+  font-size: var(--font-size-sm);
 }
 
 .bottleneck {
-  border-left: 3px solid #d1242f;
+  border-left: 3px solid var(--color-danger);
   padding: 0.25rem 0.6rem;
   margin-bottom: 0.4rem;
-  font-size: 0.82rem;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
 }
 
 .bottleneckMitigation {
-  color: #1a7f37;
+  color: var(--color-tone-success-fg);
 }
 
 .notes {
   margin: 0.25rem 0 0;
   padding-left: 1.1rem;
-  font-size: 0.8rem;
-  color: #57606a;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
 }
 
-.signalOnTrack { color: #1a7f37; }
-.signalOffTrack { color: #d1242f; }
+.signalOnTrack { color: var(--color-tone-success-fg); }
+.signalOffTrack { color: var(--color-danger); }
