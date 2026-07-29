@@ -12,6 +12,7 @@ import { StatusChip } from '../../../components/IssueMeta/StatusChip.tsx';
 import type { JiraIssue } from '../../../types/jira.ts';
 import { readAcceptanceCriteriaText } from '../../../utils/acceptanceCriteria.ts';
 import { fetchAgingBacklog } from '../../ReportsHub/agingBacklogFetch.ts';
+import { AgingBulkClosePanel } from '../../ReportsHub/AgingBulkClosePanel.tsx';
 import { AgingTriageActionTable } from '../../ReportsHub/AgingTriageActionTable.tsx';
 import { ReportAiPanel } from '../../ReportsHub/ReportAiPanel.tsx';
 import {
@@ -20,7 +21,7 @@ import {
   type AgingTriageIssue,
   type AgingTriageSuggestion,
 } from '../../ReportsHub/agingTriage.ts';
-import { buildTriageActionModel } from '../../ReportsHub/agingTriageActionModel.ts';
+import { buildTriageActionModel, type TriageFeatureGroup } from '../../ReportsHub/agingTriageActionModel.ts';
 import styles from '../../ReportsHub/ReportsHubView.module.css';
 import { useStandupRosterStore } from '../hooks/useStandupRosterStore.ts';
 import { loadDashboardConfigFromStorage } from '../hooks/useDashboardConfig.ts';
@@ -157,6 +158,29 @@ export function BacklogRemediationPanel({ teamProfileId, projectKey, piName }: B
     ),
     [actionableItems, issuesByKey, staleDaysThreshold],
   );
+
+  // Whether the ghost-done bulk-cancel preview is open, and the feature-less group that seeds it. The
+  // "already done, not closed" items are the safe-to-close set, so bulk-cancelling them reuses the same
+  // preview→commit transition panel the AI triage table uses (with no parent feature to close alongside).
+  const [isGhostDoneBulkOpen, setIsGhostDoneBulkOpen] = useState(false);
+  const ghostDoneItems = useMemo(
+    () => groomingGroups.find((group) => group.bucket === 'ghost-done')?.entries ?? [],
+    [groomingGroups],
+  );
+  const ghostDoneBulkGroup = useMemo<TriageFeatureGroup>(() => ({
+    featureKey: null,
+    featureSummary: null,
+    featureStatus: null,
+    issues: ghostDoneItems.map((item) => ({
+      issueKey: item.issueKey,
+      verdict: 'cancel-safe' as const, // the bulk panel does not read the verdict; ghost-done is the cancel set
+      rationale: '',
+      summary: item.signals.summary,
+      status: item.signals.status,
+      priority: item.signals.priority,
+      ageDays: item.signals.ageDays,
+    })),
+  }), [ghostDoneItems]);
 
   /**
    * Fetches the enriched backlog only to populate each item's inline detail (full issue + AC field ids). Unlike a
@@ -341,18 +365,38 @@ export function BacklogRemediationPanel({ teamProfileId, projectKey, piName }: B
       {fetchError !== null && <p role="alert" className={styles.warningText}>{fetchError}</p>}
       {actionableItems.length > 0 && (
         <div aria-label="Backlog grooming buckets">
-          {groomingGroups.map((group) => (
-            <section key={group.bucket} style={{ marginTop: 10 }}>
-              <h4 style={{ margin: '0 0 2px', display: 'flex', alignItems: 'baseline', gap: 6 }}>
-                {group.meta.label}
-                <span className={styles.captionText}>({group.entries.length})</span>
-              </h4>
-              <p className={styles.captionText} style={{ margin: '0 0 4px' }}>{group.meta.blurb}</p>
-              <ul style={{ listStyle: 'none', margin: 0, padding: 0 }} aria-label={`${group.meta.label} items`}>
-                {group.entries.map(renderQueueItem)}
-              </ul>
-            </section>
-          ))}
+          {groomingGroups.map((group) => {
+            const isGhostDone = group.bucket === 'ghost-done';
+            return (
+              <section key={group.bucket} style={{ marginTop: 10 }}>
+                <h4 style={{ margin: '0 0 2px', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  {group.meta.label}
+                  <span className={styles.captionText}>({group.entries.length})</span>
+                  {isGhostDone && group.entries.length > 0 && (
+                    <button
+                      type="button"
+                      className={`${styles.actionButton} ${styles.primaryButton}`}
+                      style={{ marginLeft: 'auto' }}
+                      onClick={() => setIsGhostDoneBulkOpen((isOpen) => !isOpen)}
+                    >
+                      {isGhostDoneBulkOpen ? 'Hide bulk cancel' : `Bulk cancel (${group.entries.length})`}
+                    </button>
+                  )}
+                </h4>
+                <p className={styles.captionText} style={{ margin: '0 0 4px' }}>{group.meta.blurb}</p>
+                {isGhostDone && isGhostDoneBulkOpen && (
+                  <AgingBulkClosePanel
+                    featureGroup={ghostDoneBulkGroup}
+                    onClose={() => setIsGhostDoneBulkOpen(false)}
+                    onItemsClosed={handleItemsCanceled}
+                  />
+                )}
+                <ul style={{ listStyle: 'none', margin: 0, padding: 0 }} aria-label={`${group.meta.label} items`}>
+                  {group.entries.map(renderQueueItem)}
+                </ul>
+              </section>
+            );
+          })}
         </div>
       )}
       <AgingTriageActionTable

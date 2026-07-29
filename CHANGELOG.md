@@ -19,6 +19,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   vocabulary), refined by each item's freshly-fetched issue when available and sound from the saved signals otherwise —
   it sits **alongside** the AI verdict and every existing per-item decision, and writes nothing. Reuses the existing
   aging fetch/scope/persistence; the shared backlog fetch now also requests the `resolution` field.
+- **Bulk cancel for the "Already done, not closed" bucket.** That grooming bucket now carries a **Bulk cancel (N)**
+  button that opens the same preview→commit transition panel the AI triage table uses — seeded with exactly the
+  ghost-done items (no parent feature). You pick the closing status, opt out any item, and Commit; nothing writes to
+  Jira until then, each item transitions individually, and the ones that succeed are recorded as canceled in the
+  team's queue (so they leave the list). Reuses the existing bulk-transition machinery; no new write path.
 - **PI Review AI Assist now suggests a rule-based Target Start per Feature, and writes it to Jira on accept.** Using
   each Feature's **rank** (its position on the page — top is highest priority) and its **point estimate**, the panel
   proposes when work should start within the PI: assuming **1 point = 1 working day for one person**, Features are
