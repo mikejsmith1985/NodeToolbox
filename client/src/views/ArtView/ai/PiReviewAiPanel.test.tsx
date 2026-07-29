@@ -71,7 +71,15 @@ function replyFor(items: unknown[]) {
 const BOTH_COLUMNS = { hasDevWorkColumn: true, hasTestSupportColumn: true }
 
 function renderPanel(rows: PiReviewRow[] = [row()], onApply = vi.fn()) {
-  render(<PiReviewAiPanel columnAvailability={BOTH_COLUMNS} rows={rows} onApplySuggestion={onApply} />)
+  render(
+    <PiReviewAiPanel
+      columnAvailability={BOTH_COLUMNS}
+      rows={rows}
+      onApplySuggestion={onApply}
+      piWindow={null}
+      onApplyStartDate={vi.fn()}
+    />,
+  )
   return onApply
 }
 
@@ -106,7 +114,15 @@ beforeEach(() => {
 
 describe('PiReviewAiPanel — gating', () => {
   it('renders nothing while AI Assist is locked', () => {
-    const { container } = render(<PiReviewAiPanel columnAvailability={BOTH_COLUMNS} rows={[row()]} onApplySuggestion={vi.fn()} />)
+    const { container } = render(
+      <PiReviewAiPanel
+        columnAvailability={BOTH_COLUMNS}
+        rows={[row()]}
+        onApplySuggestion={vi.fn()}
+        piWindow={null}
+        onApplyStartDate={vi.fn()}
+      />,
+    )
 
     expect(container).toBeEmptyDOMElement()
     expect(mockFetchContexts).not.toHaveBeenCalled()
@@ -310,5 +326,39 @@ describe('PiReviewAiPanel — accepting', () => {
 
     expect(onApply).not.toHaveBeenCalled()
     expect(screen.queryByRole('button', { name: /^accept$/i })).not.toBeInTheDocument()
+  })
+})
+
+// ── Rule-based Target Start suggestions (rank + points → start date, written to Jira on accept) ──
+
+describe('PiReviewAiPanel — rule-based start dates', () => {
+  it('suggests a Target Start per pointed Feature and writes it to Jira on accept', async () => {
+    act(() => setAiAssistUnlocked(true))
+    const onApplyStartDate = vi.fn().mockResolvedValue(undefined)
+    render(
+      <PiReviewAiPanel
+        columnAvailability={BOTH_COLUMNS}
+        rows={[row({ pointEstimate: '3' }), row({ rowId: 'row-2', feature: 'ALPHA-2 - Second', pointEstimate: '2' })]}
+        onApplySuggestion={vi.fn()}
+        piWindow={{ startIso: '2026-01-05', endIso: '2026-01-30' }}
+        onApplyStartDate={onApplyStartDate}
+      />,
+    )
+
+    // The top-priority Feature starts on the PI's first working day (Monday 2026-01-05).
+    expect(await screen.findByText('2026-01-05')).toBeInTheDocument()
+    const acceptButtons = await screen.findAllByRole('button', { name: /accept start date/i })
+    expect(acceptButtons).toHaveLength(2)
+
+    fireEvent.click(acceptButtons[0])
+    await waitFor(() => expect(onApplyStartDate).toHaveBeenCalledWith('ALPHA-1', '2026-01-05'))
+  })
+
+  it('explains how to enable start dates when the PI label carries no dates', async () => {
+    act(() => setAiAssistUnlocked(true))
+    renderPanel() // renderPanel passes piWindow={null}
+
+    expect(await screen.findByText(/add the pi dates to the pi name/i)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /accept start date/i })).not.toBeInTheDocument()
   })
 })

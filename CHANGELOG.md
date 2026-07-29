@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **PI Review AI Assist now suggests a rule-based Target Start per Feature, and writes it to Jira on accept.** Using
+  each Feature's **rank** (its position on the page — top is highest priority) and its **point estimate**, the panel
+  proposes when work should start within the PI: assuming **1 point = 1 working day for one person**, Features are
+  scheduled in priority order from the PI's first working day, each starting when the one above it finishes. A Feature
+  whose span would spill past the PI end is flagged (⚠ *finishes after the PI ends*) rather than shown as fitting. The
+  dates are **derived by rule, not by the language model** (date arithmetic is exactly what models get wrong, and it
+  keeps the schedule internally consistent) — the model still handles sizing and notes. Accepting a suggestion writes
+  **Target Start** straight to Jira for that Feature (via the configured PI Review date field) and refreshes its date
+  chip. The PI's working window is read from the PI label's date range; a label without dates shows a one-line how-to
+  instead of suggestions.
+
 ### Changed
 - **Delivery Planner: a non-destructive preview with a single "Commit all to Jira" gate — no more per-item live writes
   (GH #245).** Previously each Story's "Accept & write" and each carryover "Fill gaps" wrote to Jira the instant you

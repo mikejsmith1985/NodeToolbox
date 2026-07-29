@@ -184,6 +184,29 @@
   color: #f87171;
 }
 
+/* ── Rule-based Target Start suggestions ── */
+
+.startDateHint {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.startDateMeta {
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+.startDateValue {
+  font-weight: 600;
+  color: inherit;
+}
+
+.startDateApplied {
+  color: #22c55e;
+  font-size: 13px;
+}
+
 /* ── The sizing guide (visible whether or not AI Assist is unlocked) ── */
 
 .sizingCard {

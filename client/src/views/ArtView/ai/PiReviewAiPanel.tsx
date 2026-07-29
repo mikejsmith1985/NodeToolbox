@@ -24,6 +24,13 @@ import {
 } from './piReviewAiAssist.ts'
 import type { PiReviewSuggestionFieldSelection } from './piReviewAiApply.ts'
 import { fetchPiReviewAiContexts, type PiReviewAiFeatureContext } from './piReviewAiFetch.ts'
+import {
+  readPointEstimate,
+  suggestPiReviewStartDates,
+  type PiWorkingWindow,
+  type RankedFeature,
+  type SuggestedStart,
+} from './piReviewStartDates.ts'
 import { PiReviewSuggestionTable } from './PiReviewSuggestionTable.tsx'
 import styles from './PiReviewAi.module.css'
 
@@ -51,6 +58,16 @@ export interface PiReviewAiPanelProps {
    * applies just those to the row and marks the page dirty.
    */
   onApplySuggestion: (suggestion: PiReviewAiSuggestion, selection: PiReviewSuggestionFieldSelection) => void
+  /**
+   * The PI's working window (from the PI label's date range), or null when the label carries no
+   * dates. Drives the rule-based Target Start suggestions; null hides them behind a how-to hint.
+   */
+  piWindow: PiWorkingWindow | null
+  /**
+   * Called when the user accepts a suggested Target Start — the tab writes it straight to Jira for
+   * that Feature (option (a)). Returns a promise so the row can show a "writing…" state.
+   */
+  onApplyStartDate: (issueKey: string, startIso: string) => void | Promise<void>
 }
 
 /** Reads each Feature's current estimate so the review can show a conflict rather than hide it. */
@@ -83,8 +100,116 @@ function readCarryOverByKey(rows: readonly PiReviewRow[]): Record<string, boolea
   return carryOverByKey
 }
 
+/**
+ * Reads the page's Features in rank order (top row = highest priority) with their point estimates,
+ * de-duplicated by key. This is the input to the rule-based Target Start scheduler — the order here IS
+ * the priority order the schedule assumes.
+ */
+function readRankedFeatures(rows: readonly PiReviewRow[]): RankedFeature[] {
+  const seenKeys = new Set<string>()
+  const rankedFeatures: RankedFeature[] = []
+  for (const row of rows) {
+    const issueKey = extractPiReviewFeatureKey(row.feature)
+    if (issueKey === null || seenKeys.has(issueKey)) {
+      continue
+    }
+    seenKeys.add(issueKey)
+    rankedFeatures.push({ issueKey, points: readPointEstimate(row.pointEstimate) })
+  }
+  return rankedFeatures
+}
+
+/**
+ * The rule-based Target Start section: each schedulable Feature with its suggested start, its finish
+ * day, an over-commitment warning when it would spill past the PI, and an Accept that writes the
+ * Target Start to Jira. Shown only inside the (unlocked) AI Assist panel; a null PI window swaps the
+ * list for a one-line how-to.
+ */
+function StartDateSuggestions({ piWindow, suggestions, onApply }: {
+  piWindow: PiWorkingWindow | null
+  suggestions: readonly SuggestedStart[]
+  onApply: (issueKey: string, startIso: string) => void | Promise<void>
+}): React.JSX.Element | null {
+  const [appliedKeys, setAppliedKeys] = useState<Set<string>>(new Set())
+  const [busyKey, setBusyKey] = useState<string | null>(null)
+
+  if (piWindow === null) {
+    return (
+      <details className={styles.sizingCard}>
+        <summary className={styles.sizingSummary}>Suggested start dates</summary>
+        <p className={styles.startDateHint}>
+          Add the PI dates to the PI name (e.g. “PI 26.3 (05/21/26 - 07/29/26)”) to get rule-based Target Start suggestions.
+        </p>
+      </details>
+    )
+  }
+
+  // Only Features that carry an estimate can be scheduled — the rest need a Point Estimate first.
+  const schedulableSuggestions = suggestions.filter((suggestion) => suggestion.startIso !== null)
+  if (schedulableSuggestions.length === 0) {
+    return null
+  }
+
+  const handleApply = async (suggestion: SuggestedStart): Promise<void> => {
+    if (suggestion.startIso === null) {
+      return
+    }
+    setBusyKey(suggestion.issueKey)
+    try {
+      await onApply(suggestion.issueKey, suggestion.startIso)
+      setAppliedKeys((previous) => new Set(previous).add(suggestion.issueKey))
+    } catch {
+      // The tab surfaces the failure via a toast; leave the row un-applied so it can be retried.
+    } finally {
+      setBusyKey(null)
+    }
+  }
+
+  return (
+    <details className={styles.sizingCard} open>
+      <summary className={styles.sizingSummary}>Suggested start dates (rule-based · 1 point = 1 working day)</summary>
+      <p className={styles.startDateHint}>
+        Ranked top-to-bottom by priority and scheduled one after another from the PI’s first working day. Accept to write the Target Start to Jira.
+      </p>
+      <ul className={styles.suggestionList}>
+        {schedulableSuggestions.map((suggestion) => {
+          const isApplied = appliedKeys.has(suggestion.issueKey)
+          const isBusy = busyKey === suggestion.issueKey
+          return (
+            <li className={styles.suggestionRow} key={suggestion.issueKey}>
+              <div className={styles.suggestionHeader}>
+                <span className={styles.suggestionKey}>{suggestion.issueKey}</span>
+                <span className={styles.startDateMeta}>
+                  {suggestion.points} pt · start <span className={styles.startDateValue}>{suggestion.startIso}</span> · finishes {suggestion.endIso}
+                </span>
+                {!suggestion.fitsInPi && (
+                  <span className={styles.suggestionWarning}>⚠ finishes after the PI ends</span>
+                )}
+              </div>
+              <div className={styles.suggestionActions}>
+                {isApplied ? (
+                  <span className={styles.startDateApplied}>✓ Target Start written to Jira</span>
+                ) : (
+                  <button
+                    className={styles.suggestionAccept}
+                    disabled={isBusy}
+                    onClick={() => void handleApply(suggestion)}
+                    type="button"
+                  >
+                    {isBusy ? 'Writing…' : 'Accept start date'}
+                  </button>
+                )}
+              </div>
+            </li>
+          )
+        })}
+      </ul>
+    </details>
+  )
+}
+
 /** Renders the AI Assistance panel, or nothing when AI Assist is locked. */
-export function PiReviewAiPanel({ rows, columnAvailability, onApplySuggestion }: PiReviewAiPanelProps): React.JSX.Element | null {
+export function PiReviewAiPanel({ rows, columnAvailability, onApplySuggestion, piWindow, onApplyStartDate }: PiReviewAiPanelProps): React.JSX.Element | null {
   const isUnlocked = useAiAssistStore((state) => state.isAiAssistUnlocked)
   const { isRunning, runAiAssistExchange } = useAiAssistExchange()
 
@@ -101,6 +226,14 @@ export function PiReviewAiPanel({ rows, columnAvailability, onApplySuggestion }:
   )
   const currentEstimatesByKey = useMemo(() => readCurrentEstimatesByKey(rows), [rows])
   const carryOverByKey = useMemo(() => readCarryOverByKey(rows), [rows])
+
+  // Rule-based Target Start suggestions: derived purely from rank (row order) + point estimate +
+  // the PI window, independent of the AI reply — so they are available as soon as the panel opens.
+  const rankedFeatures = useMemo(() => readRankedFeatures(rows), [rows])
+  const startDateSuggestions = useMemo(
+    () => (piWindow === null ? [] : suggestPiReviewStartDates(rankedFeatures, piWindow)),
+    [piWindow, rankedFeatures],
+  )
 
   // Gather the prompt's inputs once the panel is visible and there is something to size. This is the
   // AI panel's OWN fetch — a page load never pays for the description/AC it needs.
@@ -204,6 +337,8 @@ export function PiReviewAiPanel({ rows, columnAvailability, onApplySuggestion }:
       title="AI Assistance"
     >
       {statusMessage !== null && <p className={styles.aiStatus}>{statusMessage}</p>}
+
+      <StartDateSuggestions piWindow={piWindow} suggestions={startDateSuggestions} onApply={onApplyStartDate} />
 
       {unknownKeys.length > 0 && (
         <p className={styles.aiWarning}>

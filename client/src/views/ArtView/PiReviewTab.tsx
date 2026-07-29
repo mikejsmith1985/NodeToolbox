@@ -14,6 +14,7 @@ import {
 import { areCapacitySummariesEqual, type CapacitySummary } from '../SprintDashboard/capacityModel.ts';
 import type { JiraIssue, JiraTransition } from '../../types/jira.ts';
 import type { ArtTeam } from './hooks/useArtData.ts';
+import { parsePiDateRange } from './hooks/artHelpers.ts';
 import { downloadPiReviewPanelImage } from './piReviewPdf.ts';
 import { PiReviewAiPanel } from './ai/PiReviewAiPanel.tsx';
 import { PiReviewSizingCard } from './ai/PiReviewSizingCard.tsx';
@@ -387,6 +388,14 @@ function joinClassNames(...classNames: Array<string | false | null | undefined>)
   return classNames.filter(Boolean).join(' ');
 }
 
+/** Formats a local Date (as produced by parsePiDateRange) to an ISO 'YYYY-MM-DD' string. */
+function formatLocalIsoDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 function readFeatureDatePillToneClassName(featureDateLabel: string): string {
   if (featureDateLabel === 'Target Start') {
     return styles.featureDatePillStart;
@@ -726,6 +735,15 @@ function PiReviewPagePanel({
 }: PiReviewPagePanelProps) {
   // Each page belongs to its own PI; fall back to the ambient selection only for legacy unnamed pages.
   const effectivePiName = target.piName.trim() || selectedPiName;
+  // The PI's working window, parsed from the PI label's embedded date range (null when it has none).
+  // Feeds the AI Assist's rule-based Target Start suggestions; the panel hides them when this is null.
+  const aiStartDateWindow = useMemo(() => {
+    const parsedRange = parsePiDateRange(effectivePiName);
+    if (parsedRange === null) {
+      return null;
+    }
+    return { startIso: formatLocalIsoDate(parsedRange.startDate), endIso: formatLocalIsoDate(parsedRange.endDate) };
+  }, [effectivePiName]);
   const { showToast } = useToast();
   const confluenceBaseUrl = useSettingsStore((storeState) => storeState.confluenceUrl);
   const [rows, setRows] = useState<PiReviewRow[]>([]);
@@ -2009,6 +2027,23 @@ function PiReviewPagePanel({
     }
   }
 
+  /**
+   * Writes an AI-suggested Target Start straight to Jira for one Feature (option (a)), then refreshes
+   * the visible Jira data so the Feature's date chip reflects the new value immediately. Only Target
+   * Start is written — Target End / Due are left as they are.
+   */
+  async function handleApplyAiStartDate(issueKey: string, startIso: string) {
+    try {
+      await savePiReviewFeatureDates([{ featureKey: issueKey, targetStart: startIso, targetEnd: null, dueDate: null }]);
+      await refreshVisibleJiraIssueMap();
+      showToast(`Set Target Start ${startIso} on ${issueKey}.`, 'success');
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to set Target Start.';
+      showToast(errorMessage, 'error');
+      throw error; // let the panel clear its "writing…" state without marking the row applied
+    }
+  }
+
   async function handleApplyPastedJiraDates() {
     if (jiraDatePasteValue.trim() === '') {
       showToast('Paste a Jira date table before applying updates.', 'error');
@@ -2362,6 +2397,8 @@ function PiReviewPagePanel({
               hasTestSupportColumn: visibleOptionalColumns.has('testSupport'),
             }}
             onApplySuggestion={handleApplyAiSuggestion}
+            onApplyStartDate={handleApplyAiStartDate}
+            piWindow={aiStartDateWindow}
             rows={rows}
           />
         </div>
