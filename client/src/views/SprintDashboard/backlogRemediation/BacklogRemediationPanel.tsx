@@ -23,6 +23,8 @@ import {
 import { buildTriageActionModel } from '../../ReportsHub/agingTriageActionModel.ts';
 import styles from '../../ReportsHub/ReportsHubView.module.css';
 import { useStandupRosterStore } from '../hooks/useStandupRosterStore.ts';
+import { loadDashboardConfigFromStorage } from '../hooks/useDashboardConfig.ts';
+import { classifyGroomingBucket, groupByGroomingBucket } from './backlogGrooming.ts';
 import { buildItemFingerprint, buildTeamAssigneeIds } from './remediationFingerprint.ts';
 import { reconcile } from './remediationReconcile.ts';
 import { resolveTeamScope } from './remediationScope.ts';
@@ -144,6 +146,18 @@ export function BacklogRemediationPanel({ teamProfileId, projectKey, piName }: B
   const prompt = useMemo(() => buildAgingTriagePrompt(actionableSignals), [actionableSignals]);
   const triageActionModel = useMemo(() => buildTriageActionModel(suggestions, actionableSignals), [suggestions, actionableSignals]);
 
+  // The team's configured stale threshold (app default when unset) — the grooming classifier's idle cutoff.
+  const staleDaysThreshold = useMemo(() => loadDashboardConfigFromStorage(teamProfileId).staleDaysThreshold, [teamProfileId]);
+  // Deterministic grooming buckets over the actionable queue: rule-based (rank/points/idle/definition), refined
+  // by each item's freshly-fetched issue when hydrated. Sits alongside the AI verdict; nothing is written.
+  const groomingGroups = useMemo(
+    () => groupByGroomingBucket(
+      actionableItems,
+      (item) => classifyGroomingBucket(item.signals, issuesByKey.get(item.issueKey), staleDaysThreshold),
+    ),
+    [actionableItems, issuesByKey, staleDaysThreshold],
+  );
+
   /**
    * Fetches the enriched backlog only to populate each item's inline detail (full issue + AC field ids). Unlike a
    * Refresh, it deliberately does NOT reconcile or touch the persisted queue — this is pure read-side hydration so
@@ -255,6 +269,38 @@ export function BacklogRemediationPanel({ teamProfileId, projectKey, piName }: B
     }
   };
 
+  /** Renders one actionable queue item — its key, verdict, decision context, summary, and action buttons. */
+  function renderQueueItem(item: RemediationItem): React.JSX.Element {
+    // Read this item's decision context from its freshly-fetched issue; both live beside its own buttons.
+    const fullIssue = issuesByKey.get(item.issueKey);
+    const acceptanceCriteriaText = fullIssue !== undefined
+      ? readAcceptanceCriteriaText(fullIssue, acceptanceCriteriaFieldIds)
+      : null;
+    return (
+      <li
+        key={item.issueKey}
+        style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '6px 0', borderTop: '1px solid rgba(127,127,127,0.2)' }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+          <code style={{ flex: '0 0 auto' }}>{item.issueKey}</code>
+          {item.verdict !== null && <span className={styles.captionText}>{item.verdict}</span>}
+          <RemediationDecisionContext
+            issue={fullIssue}
+            acceptanceCriteriaText={acceptanceCriteriaText}
+            isHydrating={isHydratingDetails}
+          />
+        </div>
+        <span className={styles.captionText}>{item.signals.summary}</span>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          <button type="button" className={styles.actionButton} aria-label={`Cancel ${item.issueKey}`} onClick={() => handleDecide(item, 'canceled')}>Cancel</button>
+          <button type="button" className={styles.actionButton} aria-label={`Keep ${item.issueKey}`} onClick={() => handleDecide(item, 'kept')}>Keep</button>
+          <button type="button" className={styles.actionButton} aria-label={`Dismiss ${item.issueKey}`} onClick={() => handleDecide(item, 'dismissed')}>Dismiss</button>
+          <button type="button" className={styles.actionButton} aria-label={`Snooze ${item.issueKey}`} onClick={() => handleSnooze(item)}>Snooze</button>
+        </div>
+      </li>
+    );
+  }
+
   return (
     // The triage workflow (scope, refresh, manual decisions, action table) renders unconditionally —
     // it does not need AI. Only the copy/paste verdict accelerator below self-gates on Ctrl+Alt+Z, so
@@ -262,7 +308,8 @@ export function BacklogRemediationPanel({ teamProfileId, projectKey, piName }: B
     <>
       <h3 style={{ margin: '0 0 4px' }}>Backlog remediation</h3>
       <p className={styles.captionText}>
-        Triage this team&apos;s aging backlog — Keep, Cancel, Dismiss, or Snooze stale items. Decisions
+        Triage this team&apos;s NOT-Done backlog, grouped into rule-based grooming buckets — already done but not
+        closed, likely cancel, never started, or just stale. Keep, Cancel, Dismiss, or Snooze each item; decisions
         persist per team and resume when you return.
       </p>
       <label className={styles.controlLabel}>
@@ -293,38 +340,20 @@ export function BacklogRemediationPanel({ teamProfileId, projectKey, piName }: B
       </div>
       {fetchError !== null && <p role="alert" className={styles.warningText}>{fetchError}</p>}
       {actionableItems.length > 0 && (
-        <ul style={{ listStyle: 'none', margin: '8px 0', padding: 0 }} aria-label="Backlog remediation decisions">
-          {actionableItems.map((item) => {
-            // Read this item's decision context from its freshly-fetched issue; both live beside its own buttons.
-            const fullIssue = issuesByKey.get(item.issueKey);
-            const acceptanceCriteriaText = fullIssue !== undefined
-              ? readAcceptanceCriteriaText(fullIssue, acceptanceCriteriaFieldIds)
-              : null;
-            return (
-              <li
-                key={item.issueKey}
-                style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '6px 0', borderTop: '1px solid rgba(127,127,127,0.2)' }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
-                  <code style={{ flex: '0 0 auto' }}>{item.issueKey}</code>
-                  {item.verdict !== null && <span className={styles.captionText}>{item.verdict}</span>}
-                  <RemediationDecisionContext
-                    issue={fullIssue}
-                    acceptanceCriteriaText={acceptanceCriteriaText}
-                    isHydrating={isHydratingDetails}
-                  />
-                </div>
-                <span className={styles.captionText}>{item.signals.summary}</span>
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                  <button type="button" className={styles.actionButton} aria-label={`Cancel ${item.issueKey}`} onClick={() => handleDecide(item, 'canceled')}>Cancel</button>
-                  <button type="button" className={styles.actionButton} aria-label={`Keep ${item.issueKey}`} onClick={() => handleDecide(item, 'kept')}>Keep</button>
-                  <button type="button" className={styles.actionButton} aria-label={`Dismiss ${item.issueKey}`} onClick={() => handleDecide(item, 'dismissed')}>Dismiss</button>
-                  <button type="button" className={styles.actionButton} aria-label={`Snooze ${item.issueKey}`} onClick={() => handleSnooze(item)}>Snooze</button>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
+        <div aria-label="Backlog grooming buckets">
+          {groomingGroups.map((group) => (
+            <section key={group.bucket} style={{ marginTop: 10 }}>
+              <h4 style={{ margin: '0 0 2px', display: 'flex', alignItems: 'baseline', gap: 6 }}>
+                {group.meta.label}
+                <span className={styles.captionText}>({group.entries.length})</span>
+              </h4>
+              <p className={styles.captionText} style={{ margin: '0 0 4px' }}>{group.meta.blurb}</p>
+              <ul style={{ listStyle: 'none', margin: 0, padding: 0 }} aria-label={`${group.meta.label} items`}>
+                {group.entries.map(renderQueueItem)}
+              </ul>
+            </section>
+          ))}
+        </div>
       )}
       <AgingTriageActionTable
         model={triageActionModel}

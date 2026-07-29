@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Backlog Remediation now groups the queue into rule-based grooming buckets.** The Team Dashboard's **Remediation**
+  tab already pulls a team's NOT-Done backlog (PI- and parent-agnostic) and offers Cancel/Keep/Dismiss/Snooze plus an
+  optional AI verdict; it now also **classifies every open item deterministically** and groups the queue under headed
+  buckets so a groomer can see at a glance what to act on: **Already done, not closed** (a done-named status or a set
+  resolution while the category isn't Done — "finished but never transitioned closed"), **Likely cancel** (long-idle
+  with no sign of value — unowned, undefined, low priority, or a Done parent feature), **Never started** (an old To-Do
+  item that never moved), **Just stale** (idle but with an owner/priority/active parent — worth a look), and **Active**.
+  Classification is a pure, rule-based function (reusing the team's configured stale threshold and the shared done-name
+  vocabulary), refined by each item's freshly-fetched issue when available and sound from the saved signals otherwise —
+  it sits **alongside** the AI verdict and every existing per-item decision, and writes nothing. Reuses the existing
+  aging fetch/scope/persistence; the shared backlog fetch now also requests the `resolution` field.
 - **PI Review AI Assist now suggests a rule-based Target Start per Feature, and writes it to Jira on accept.** Using
   each Feature's **rank** (its position on the page — top is highest priority) and its **point estimate**, the panel
   proposes when work should start within the PI: assuming **1 point = 1 working day for one person**, Features are

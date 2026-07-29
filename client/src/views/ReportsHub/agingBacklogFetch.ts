@@ -251,7 +251,9 @@ export async function fetchAgingBacklog(scopeJql: string, todayIso: string): Pro
   const storyPointsFieldId = readConfiguredStoryPointsFieldId();
   const fields = Array.from(new Set([
     'issuetype', 'created', 'status', 'statuscategorychangedate', 'updated', 'summary', 'priority', 'parent',
-    'assignee', 'description', storyPointsFieldId,
+    // `resolution` powers the grooming "already done, not closed" bucket: a resolution set while the status
+    // category is not Done is a strong signal the work finished but was never transitioned closed.
+    'assignee', 'description', 'resolution', storyPointsFieldId,
     ...acceptanceCriteriaFieldIds, ...featureLinkCandidateFieldIds(featureLinkField),
   ])).join(',');
 
