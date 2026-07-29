@@ -75,6 +75,24 @@ describe('nodeMapping', () => {
     ]);
   });
 
+  it('shows the Feature\'s own points (customfield_10111) in place of the child roll-up', () => {
+    const overlay = createEmptyOverlay('team-a', 'denp:pi-1');
+    const item = buildFeatureItem();
+    // Feature estimated at 40 on its dedicated field; children sum to 5 — the Feature's own value wins.
+    (item.featureIssue.fields as Record<string, unknown>).customfield_10111 = 40;
+    const [node] = mapFeaturesToNodes([item], overlay);
+    expect(node.storyPoints).toBe(40);
+    expect(node.effectivePoints).toBe(40);
+  });
+
+  it('falls back to the child roll-up when the Feature carries no points of its own', () => {
+    const overlay = createEmptyOverlay('team-a', 'denp:pi-1');
+    // No customfield_10111 on the fixture → roll-up of the two pointed children (3 + 2).
+    const [node] = mapFeaturesToNodes([buildFeatureItem()], overlay);
+    expect(node.storyPoints).toBe(5);
+    expect(node.effectivePoints).toBe(5);
+  });
+
   it('reads Business Value from a numeric string or a Select {value} object, else null', () => {
     const overlay = createEmptyOverlay('team-a', 'denp:pi-1');
     const asString = buildFeatureItem();

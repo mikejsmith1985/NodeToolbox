@@ -6,7 +6,7 @@
 // This module is pure: given the same inputs it always produces the same nodes.
 
 import type { FeatureReviewItem } from '../../SprintDashboard/featureReview.ts';
-import { BUSINESS_VALUE_FIELD_ID } from '../../SprintDashboard/featureReview.ts';
+import { BUSINESS_VALUE_FIELD_ID, FEATURE_STORY_POINTS_FIELD_ID } from '../../SprintDashboard/featureReview.ts';
 import type { JiraAttachment } from '../../../types/jira.ts';
 import type { CanvasOverlay, CanvasNodeState } from '../overlay/overlayModel.ts';
 import { createNodeState } from '../overlay/overlayModel.ts';
@@ -36,6 +36,28 @@ function rollUpStoryPoints(item: FeatureReviewItem): number | null {
     return null;
   }
   return pointedChildren.reduce((runningTotal, points) => runningTotal + points, 0);
+}
+
+/**
+ * Reads the Feature's OWN story points from its dedicated field. In this instance a Feature is
+ * estimated on FEATURE_STORY_POINTS_FIELD_ID (not the standard dropdown its child Stories/Defects/
+ * Sub-tasks use), so this is the authoritative points source for the Feature itself. Jira may return
+ * the value as a number, a numeric string, or a Select-type {value} object; anything else is null.
+ */
+function readFeatureOwnStoryPoints(item: FeatureReviewItem): number | null {
+  const rawValue = (item.featureIssue.fields as Record<string, unknown>)[FEATURE_STORY_POINTS_FIELD_ID];
+  if (typeof rawValue === 'number') {
+    return Number.isFinite(rawValue) ? rawValue : null;
+  }
+  if (typeof rawValue === 'string') {
+    const parsed = Number(rawValue);
+    return Number.isFinite(parsed) && rawValue.trim() !== '' ? parsed : null;
+  }
+  if (rawValue !== null && typeof rawValue === 'object') {
+    const parsed = Number((rawValue as { value?: unknown }).value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
 }
 
 /** Maps a feature's blueprint child stories into the lighter canvas child-story shape. */
@@ -143,7 +165,9 @@ export function mapFeaturesToNodes(items: readonly FeatureReviewItem[], overlay:
     const nodeState = overlay.nodes[item.feature.key];
     const position = nodeState?.position ?? computeDefaultPosition(featureIndex);
     const size = nodeState?.size ?? null;
-    const rolledStoryPoints = rollUpStoryPoints(item);
+    // A Feature's own estimate (its dedicated field) is authoritative; fall back to the child roll-up
+    // only when the Feature itself carries no points, so a Feature-level estimate is never lost.
+    const displayStoryPoints = readFeatureOwnStoryPoints(item) ?? rollUpStoryPoints(item);
     return {
       issueKey: item.feature.key,
       position,
@@ -160,7 +184,7 @@ export function mapFeaturesToNodes(items: readonly FeatureReviewItem[], overlay:
       status: item.feature.status,
       statusCategoryKey: readStatusCategoryKey(item),
       assignee: item.featureIssue.fields.assignee?.displayName ?? null,
-      storyPoints: rolledStoryPoints,
+      storyPoints: displayStoryPoints,
       businessValue: readBusinessValue(item),
       description: item.featureIssue.fields.description ?? null,
       acceptanceCriteria: item.acceptanceCriteria ?? null,
@@ -170,7 +194,7 @@ export function mapFeaturesToNodes(items: readonly FeatureReviewItem[], overlay:
       childStories: mapChildStories(item),
       dependencies: mapDependencies(item),
       attachments: mapAttachments(item),
-      effectivePoints: resolveEffectivePoints(size, rolledStoryPoints, overlay.sizeMapping),
+      effectivePoints: resolveEffectivePoints(size, displayStoryPoints, overlay.sizeMapping),
     };
   });
 }

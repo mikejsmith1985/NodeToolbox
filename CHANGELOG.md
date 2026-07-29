@@ -25,6 +25,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   missing; the result line now reports "(reused)" and the count of new sub-tasks created.
 
 ### Fixed
+- **Feature Canvas: t-shirt sizing was resolving to stale point values (e.g. M = 3 instead of 40).** The t-shirt →
+  points scale was rescaled long ago (M went from 3 to 40), but a canvas overlay saved under the *old* scale kept a
+  persisted copy of the former mapping, and the load path merged that stale copy **over** the current default — so an
+  "M" node silently read 3 points. Because the mapping is not user-editable, the persisted copy served no purpose and
+  was pure liability; the overlay now always resolves the size mapping from the current default on load, which
+  self-heals every existing overlay (no need to clear browser storage). A regression test locks M = 40.
+- **Feature Canvas: a Feature's story points now read from its dedicated field (`customfield_10111`), not the standard
+  dropdown.** In this instance a *Feature* is estimated on `customfield_10111`, while Stories, Defects, and Sub-tasks
+  use the standard story-points dropdown Toolbox reads everywhere else. Two canvas reads were wrong: (1) the JQL pull
+  never requested the Feature field and the node showed only a **child roll-up**, so a Feature estimated at the Feature
+  level with unpointed children showed as blank; and (2) the capacity planner read a **single** field for every issue
+  type, so a Feature pulled in read the dropdown (null) instead of its own points. Now a Feature's own value is
+  authoritative (falling back to the child roll-up / configured field only when the Feature itself is unpointed), and
+  non-Features are unchanged — they still read only the standard dropdown. Field id pinned as the single
+  `FEATURE_STORY_POINTS_FIELD_ID` source.
 - **Delivery Planner: the 80% load factor now applies beneath the selected capacity.** The 8/10/13 selection is the
   *raw* per-person-per-sprint figure; scheduling plans at `value × 0.80` (so a selected 10 schedules 8 effective
   points), consistent with how measured velocity is loaded. The raw selected value still caps the deliverable Story

@@ -18,6 +18,15 @@ const DEFAULT_EXTERNAL_TEST_PROJECT_KEY = 'DIP';
 const CUSTOM_FIELD_PREFIX = 'customfield_';
 /** Legacy story-points fields queried as a fallback, mirroring the Blueprint hierarchy's resolution order. */
 const LEGACY_STORY_POINTS_FIELD_IDS = ['customfield_10016', 'customfield_10028'] as const;
+/**
+ * Feature-level story-points field. A *Feature* is estimated on this dedicated field, while Stories,
+ * Defects, and Sub-tasks use the configured story-points dropdown. Must match the canonical
+ * FEATURE_STORY_POINTS_FIELD_ID in SprintDashboard/featureReview.ts (kept local here so this leaf
+ * fetch module stays free of that module's heavier dependency tree).
+ */
+const FEATURE_STORY_POINTS_FIELD_ID = 'customfield_10111';
+/** Issue-type name (case-insensitive) that reads its points from the Feature-level field. */
+const FEATURE_ISSUE_TYPE_NAME = 'feature';
 /** Jira caps a single /search page; every query requests this many rows, matching the Feature Review fetch. */
 const SEARCH_MAX_RESULTS = 200;
 /** Team primary issues are fetched in key chunks of this size to stay within JQL query-length limits. */
@@ -103,12 +112,25 @@ function readNumericFieldValue(fieldValue: unknown): number | null {
   return null;
 }
 
+/** True when the issue is a Feature, which is estimated on the dedicated Feature-level points field. */
+function isFeatureIssueType(issueTypeName: string | undefined): boolean {
+  return (issueTypeName ?? '').trim().toLowerCase() === FEATURE_ISSUE_TYPE_NAME;
+}
+
 /**
- * Resolves an issue's story points using the configured field first, then the legacy fields. A team that
- * points on a custom field reads that; a team on the default symbolic name still resolves via the legacy
- * fields, so nothing looks unpointed just because the configured id is not a real Jira custom field.
+ * Resolves an issue's story points, honouring this instance's split: a *Feature* carries its estimate on
+ * the dedicated Feature-level field, while every other type — Story, Defect, Sub-task — uses the configured
+ * story-points dropdown (with legacy fields as a fallback). A Feature reads its dedicated field first, then
+ * falls back to the configured/legacy fields so an oddly-pointed Feature is not lost; a non-Feature never
+ * reads the Feature field, so its points come only from the standard dropdown as the rest of the app expects.
  */
-function readStoryPoints(fields: PlannerRawIssueFields, storyPointsFieldId: string): number | null {
+function readStoryPoints(fields: PlannerRawIssueFields, storyPointsFieldId: string, issueTypeName: string | undefined): number | null {
+  if (isFeatureIssueType(issueTypeName)) {
+    const featurePoints = readNumericFieldValue(fields[FEATURE_STORY_POINTS_FIELD_ID]);
+    if (featurePoints !== null) {
+      return featurePoints;
+    }
+  }
   if (storyPointsFieldId.startsWith(CUSTOM_FIELD_PREFIX)) {
     const configuredPoints = readNumericFieldValue(fields[storyPointsFieldId]);
     if (configuredPoints !== null) {
@@ -155,7 +177,7 @@ export function toPlannerSourceIssue(
     issueType: fields.issuetype?.name ?? UNKNOWN_ISSUE_TYPE,
     isSubtask,
     projectKey: options.projectKeyOverride ?? fields.project?.key ?? readProjectKeyFromIssueKey(rawJiraIssue.key),
-    storyPoints: readStoryPoints(fields, options.storyPointsFieldId),
+    storyPoints: readStoryPoints(fields, options.storyPointsFieldId, fields.issuetype?.name),
     assignee: fields.assignee?.displayName ?? null,
     parentKey,
   };
@@ -165,7 +187,7 @@ export function toPlannerSourceIssue(
 
 /** Builds the comma-separated field list every planner query requests (SP fields resolved per team). */
 function buildPlannerIssueFields(storyPointsFieldId: string): string {
-  const fieldIds = ['summary', 'issuetype', 'assignee', 'project', 'parent', 'issuelinks', ...LEGACY_STORY_POINTS_FIELD_IDS];
+  const fieldIds = ['summary', 'issuetype', 'assignee', 'project', 'parent', 'issuelinks', FEATURE_STORY_POINTS_FIELD_ID, ...LEGACY_STORY_POINTS_FIELD_IDS];
   if (storyPointsFieldId.startsWith(CUSTOM_FIELD_PREFIX)) {
     fieldIds.push(storyPointsFieldId);
   }

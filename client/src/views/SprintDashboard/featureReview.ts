@@ -29,6 +29,12 @@ export const BUSINESS_VALUE_FIELD_ID = 'customfield_10274';
 // here so it is always fetched and read even when the field's name does not match the lookup.
 export const ACCEPTANCE_CRITERIA_FIELD_ID = 'customfield_10200';
 
+// Feature-level story-points field. In this instance a *Feature* carries its estimate on this
+// dedicated numeric field, NOT the standard story-points dropdown that Stories, Defects, and
+// Sub-tasks use. Pinned here as the single source both the fetch field list and the canvas node
+// mapping read from, so a Feature's own points populate correctly rather than looking unpointed.
+export const FEATURE_STORY_POINTS_FIELD_ID = 'customfield_10111';
+
 const DONE_STATUS_KEYWORDS = ['done', 'closed', 'resolved', 'complete'];
 const BLOCKED_STATUS_KEYWORDS = ['blocked', 'impediment'];
 // The blueprint hierarchy hardcodes only legacy SP fields; the configured custom field must be
@@ -324,7 +330,7 @@ export async function fetchFeatureReviewItemsByJql(
   const enabledCustomRules = readEnabledRequiredFieldRules(enterpriseRules);
 
   const requestedFieldIds = buildUniqueFieldIds([
-    'summary', 'status', 'assignee', 'description', 'duedate', 'fixVersions', 'parent', 'issuelinks', 'labels', 'issuetype', 'attachment', BUSINESS_VALUE_FIELD_ID, ACCEPTANCE_CRITERIA_FIELD_ID,
+    'summary', 'status', 'assignee', 'description', 'duedate', 'fixVersions', 'parent', 'issuelinks', 'labels', 'issuetype', 'attachment', BUSINESS_VALUE_FIELD_ID, ACCEPTANCE_CRITERIA_FIELD_ID, FEATURE_STORY_POINTS_FIELD_ID,
     ...enabledCustomRules.map((customRule) => customRule.fieldId),
     ...fieldConfig.acceptanceCriteriaFieldIds,
     ...fieldConfig.applicationFieldIds,

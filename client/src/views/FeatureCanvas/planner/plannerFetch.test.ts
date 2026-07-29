@@ -84,6 +84,25 @@ describe('toPlannerSourceIssue (pure transform)', () => {
     expect(result.storyPoints).toBeNull();
   });
 
+  it('reads a Feature\'s points from the dedicated Feature-level field, not the standard dropdown', () => {
+    const raw = makeRawIssue('DENP-40', { issuetype: { name: 'Feature' }, customfield_10111: 40 });
+    const result = toPlannerSourceIssue(raw, { storyPointsFieldId: CONFIGURED_STORY_POINTS_FIELD_ID });
+    expect(result.storyPoints).toBe(40);
+  });
+
+  it('lets a Feature fall back to the configured dropdown when its dedicated field is empty', () => {
+    const raw = makeRawIssue('DENP-41', { issuetype: { name: 'Feature' }, [CONFIGURED_STORY_POINTS_FIELD_ID]: 13 });
+    const result = toPlannerSourceIssue(raw, { storyPointsFieldId: CONFIGURED_STORY_POINTS_FIELD_ID });
+    expect(result.storyPoints).toBe(13);
+  });
+
+  it('never reads the Feature-level field for a non-Feature (Story/Defect/Sub-task use the dropdown only)', () => {
+    // A Story that carries a stray value on the Feature-level field must still read as unpointed.
+    const raw = makeRawIssue('DENP-42', { issuetype: { name: 'Story' }, customfield_10111: 40 });
+    const result = toPlannerSourceIssue(raw, { storyPointsFieldId: CONFIGURED_STORY_POINTS_FIELD_ID });
+    expect(result.storyPoints).toBeNull();
+  });
+
   it('resolves the project key from the fields.project.key when present', () => {
     const raw = makeRawIssue('DENP-10', { project: { key: 'DENP' } });
     const result = toPlannerSourceIssue(raw, { storyPointsFieldId: CONFIGURED_STORY_POINTS_FIELD_ID });

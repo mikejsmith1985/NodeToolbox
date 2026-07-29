@@ -61,6 +61,17 @@ describe('overlayStorage', () => {
     expect(loaded.sizeMapping).toEqual({ XS: 10, S: 20, M: 40, L: 60, XL: 80, XXL: 100 });
   });
 
+  it('ignores a persisted stale size mapping and restores the current default (M is 40, not the old 3)', () => {
+    // An overlay saved under the former mapping (M:3) must not override the current default on load.
+    window.localStorage.setItem(
+      buildOverlayStorageKey('team-a', 'denp:pi-1'),
+      JSON.stringify({ schemaVersion: 1, nodes: {}, containers: [], sizeMapping: { S: 1, M: 3, L: 5, XL: 8 } }),
+    );
+    const loaded = loadOverlay('team-a', 'denp:pi-1');
+    expect(loaded.sizeMapping).toEqual({ XS: 10, S: 20, M: 40, L: 60, XL: 80, XXL: 100 });
+    expect(loaded.sizeMapping.M).toBe(40);
+  });
+
   it('degrades corrupt JSON to a valid empty overlay', () => {
     window.localStorage.setItem(buildOverlayStorageKey('team-a', 'denp:pi-1'), '{not json');
     expect(() => loadOverlay('team-a', 'denp:pi-1')).not.toThrow();

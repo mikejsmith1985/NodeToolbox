@@ -100,7 +100,12 @@ function normalizeOverlay(rawOverlay: unknown, profileId: string, scopeKey: stri
     containers,
     wipLimit: typeof candidate.wipLimit === 'number' ? candidate.wipLimit : null,
     stageState: normalizeStageState(candidate.stageState),
-    sizeMapping: { ...DEFAULT_SIZE_MAPPING, ...(candidate.sizeMapping ?? {}) },
+    // The t-shirt → points mapping is NOT user-editable today, so it is always resolved from the
+    // CURRENT default rather than a persisted copy. Older overlays saved a former default (M:3 before
+    // the rescale to M:40); merging that stale copy over the new default silently corrupted sizing —
+    // an "M" node read 3 points instead of 40. A persisted mapping is therefore ignored on load, which
+    // self-heals every existing overlay. Reintroduce a merge behind a schema-version bump if an editor lands.
+    sizeMapping: { ...DEFAULT_SIZE_MAPPING },
     updatedAtIso: typeof candidate.updatedAtIso === 'string' ? candidate.updatedAtIso : '',
   };
 }
