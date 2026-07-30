@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **GitHub Email Intake — the AI can now coin NEW event-type buckets, not just the built-in five.** A pasted rule
+  may name an event type outside the built-in set (`branch_created`, `commit_pushed`, `pr_opened`, `pr_merged`,
+  `review_requested`) — for example `pr_approved` or `pr_closed` — as long as it is a safe snake/kebab slug and not
+  the reserved `unknown`. Both prompts now tell the AI it may do this when none of the known types fit. A custom
+  bucket is **comment-only by design**: it posts a plain Jira comment (a generic "GitHub: pr approved" message) and
+  **never triggers a status transition on its own** — transitions stay operator-configured for the named types, so
+  the AI still never decides a Jira write. Classification, dedup, project-filtering, and archiving all work for a
+  custom bucket exactly as for a built-in one.
+
 ### Fixed
 - **GitHub Email Intake rule prompt — the body is no longer truncated by enterprise mail noise (GH #262, 2nd
   report).** The email is distilled to Subject / reason / body, but in a corporate inbox the body is dominated by

@@ -9,14 +9,20 @@
 // format. They MUST be validated (and likely refined) against the team's real emails during the
 // dry-run rollout. Order matters: more specific events come first (a merge email also mentions the PR).
 
-/** The internal event vocabulary, aligned 1:1 with the repo monitor's Jira-output event types. */
+/**
+ * The internal event vocabulary. The named types align 1:1 with the repo monitor's Jira-output event types;
+ * the open `(string & {})` arm lets an operator add a NEW bucket via an AI-authored rule (e.g. `pr_approved`,
+ * `pr_closed`) without a code change. A custom bucket is comment-only — it posts a plain Jira comment and never
+ * triggers a status transition, which only the named types with a configured transition do.
+ */
 export type GithubEmailEventType =
   | 'branch_created'
   | 'commit_pushed'
   | 'pr_opened'
   | 'pr_merged'
   | 'review_requested'
-  | 'unknown';
+  | 'unknown'
+  | (string & {});
 
 /** One classification rule. A predicate that is omitted is simply not tested. */
 export interface EmailClassificationRule {
@@ -88,10 +94,31 @@ export const GITHUB_EMAIL_RULES: EmailClassificationRule[] = [
 // Subject/body patterns as regex SOURCE STRINGS (not RegExp objects), compiled here. Custom rules are
 // evaluated BEFORE the built-ins (see classifyGithubEmail), so a user rule can override or extend the seed.
 
-/** The event vocabulary a custom rule may target — everything except the catch-all 'unknown'. */
-export const CLASSIFIABLE_EVENT_TYPES: Exclude<GithubEmailEventType, 'unknown'>[] = [
+/** The known event types offered in the AI prompt. A custom rule MAY also coin its OWN new slug (below). */
+export const CLASSIFIABLE_EVENT_TYPES: string[] = [
   'branch_created', 'commit_pushed', 'pr_opened', 'pr_merged', 'review_requested',
 ];
+
+/** Longest a custom event-type slug may be, so a bucket id stays a short readable label. */
+const MAX_EVENT_TYPE_LENGTH = 40;
+/** A safe event-type slug: letter-led, then letters/digits in snake or kebab groups — no spaces or symbols. */
+const EVENT_TYPE_SLUG = /^[a-z][a-z0-9]*(?:[_-][a-z0-9]+)*$/i;
+/** 'unknown' is the reserved catch-all a rule must never classify TO. */
+const RESERVED_EVENT_TYPES = ['unknown'];
+
+/**
+ * True when a value is a usable event type: any known type, OR a NEW safe custom slug. This is what lets the
+ * AI intake form new buckets — a rule may name an event type outside the built-in set as long as it is a tidy
+ * snake/kebab slug and not the reserved 'unknown'. Rejecting odd characters keeps a custom bucket safe to
+ * render and to use as a dedup-key fragment.
+ */
+export function isClassifiableEventType(value: unknown): boolean {
+  return typeof value === 'string'
+    && value.length > 0
+    && value.length <= MAX_EVENT_TYPE_LENGTH
+    && EVENT_TYPE_SLUG.test(value)
+    && !RESERVED_EVENT_TYPES.includes(value.toLowerCase());
+}
 
 /** A JSON-safe custom rule as stored in config and produced by the AI-assist generator. */
 export interface SerializedEmailRule {
@@ -126,11 +153,13 @@ export function validateSerializedRule(candidate: unknown): SerializedEmailRule 
   }
   const raw = candidate as Record<string, unknown>;
   const id = typeof raw.id === 'string' ? raw.id.trim() : '';
-  if (id === '' || !CLASSIFIABLE_EVENT_TYPES.includes(raw.eventType as never)) {
+  const eventType = typeof raw.eventType === 'string' ? raw.eventType.trim() : '';
+  // A known type OR a new custom slug is accepted; only an empty id or an unusable event type is rejected.
+  if (id === '' || !isClassifiableEventType(eventType)) {
     return null;
   }
 
-  const rule: SerializedEmailRule = { id, eventType: raw.eventType as GithubEmailEventType };
+  const rule: SerializedEmailRule = { id, eventType };
   if (Array.isArray(raw.reasonHeaderIn)) {
     const reasons = raw.reasonHeaderIn.filter((value): value is string => typeof value === 'string' && value.trim() !== '');
     if (reasons.length > 0) {

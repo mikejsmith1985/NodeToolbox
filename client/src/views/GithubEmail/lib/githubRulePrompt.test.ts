@@ -49,9 +49,10 @@ describe('parseRuleReply', () => {
     expect(result.error).toMatch(/not a GitHub email rule/);
   });
 
-  it('rejects an unknown event type', () => {
-    const result = parseRuleReply('{"id":"x","eventType":"nonsense","bodyPattern":"a"}');
-    expect(result.ok).toBe(false);
+  it('rejects the reserved "unknown" event type but accepts a new custom slug', () => {
+    // A new snake_case bucket is now allowed (the AI may coin one); only the reserved catch-all is refused.
+    expect(parseRuleReply('{"id":"x","eventType":"unknown","bodyPattern":"a"}').ok).toBe(false);
+    expect(parseRuleReply('{"id":"x","eventType":"pr_approved","bodyPattern":"a"}').ok).toBe(true);
   });
 
   it('rejects an invalid regex pattern', () => {
@@ -73,8 +74,9 @@ describe('validateSerializedRule + compileCustomRules', () => {
   it('drops invalid rules and keeps valid ones', () => {
     const compiled = compileCustomRules([
       { id: 'good', eventType: 'pr_opened', reasonHeaderIn: ['subscribed'] },
-      { id: '', eventType: 'pr_opened', reasonHeaderIn: ['x'] }, // no id
-      { id: 'bad', eventType: 'nope', bodyPattern: 'x' },        // bad event
+      { id: '', eventType: 'pr_opened', reasonHeaderIn: ['x'] },   // no id
+      { id: 'bad', eventType: 'unknown', bodyPattern: 'x' },       // reserved event type
+      { id: 'sym', eventType: 'drop; tables', bodyPattern: 'x' },  // unsafe slug
       'not an object',
     ]);
     expect(compiled).toHaveLength(1);
@@ -102,6 +104,32 @@ describe('custom rules applied end to end (win over the built-ins)', () => {
     const event = parseGithubEmail(raw, customRules);
     expect(event.eventType).toBe('pr_opened');
     expect(event.matchedRuleId).toBe('org-pr-opened');
+    expect(event.jiraKey).toBe('KEY-9');
+  });
+});
+
+describe('custom event-type buckets (new buckets from the AI intake)', () => {
+  it('accepts a NEW snake_case bucket the built-in set does not list', () => {
+    const rule = validateSerializedRule({ id: 'pr-approved', eventType: 'pr_approved', bodyPattern: 'approved this pull request' });
+    expect(rule).not.toBeNull();
+    expect(rule?.eventType).toBe('pr_approved');
+  });
+
+  it('still rejects the reserved "unknown" and unsafe event-type slugs', () => {
+    expect(validateSerializedRule({ id: 'x', eventType: 'unknown', bodyPattern: 'a' })).toBeNull();
+    expect(validateSerializedRule({ id: 'x', eventType: 'pr approved', bodyPattern: 'a' })).toBeNull();  // space
+    expect(validateSerializedRule({ id: 'x', eventType: 'drop; tables', bodyPattern: 'a' })).toBeNull(); // symbols
+  });
+
+  it('classifies an email into a custom bucket via an AI-authored rule', () => {
+    const raw = email(
+      { 'List-ID': 'org/repo <repo.org.github.com>', 'Subject': '[org/repo] [KEY-9] Thing (#42)', 'X-GitHub-Reason': 'subscribed', 'Message-ID': '<c@github.com>' },
+      'octocat approved this pull request.',
+    );
+    const customRules: SerializedEmailRule[] = [{ id: 'pr-approved', eventType: 'pr_approved', bodyPattern: 'approved this pull request', requiresPrNumber: true }];
+    const event = parseGithubEmail(raw, customRules);
+    expect(event.eventType).toBe('pr_approved');
+    expect(event.matchedRuleId).toBe('pr-approved');
     expect(event.jiraKey).toBe('KEY-9');
   });
 });

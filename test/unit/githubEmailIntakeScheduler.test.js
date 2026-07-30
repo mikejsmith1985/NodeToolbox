@@ -268,6 +268,29 @@ describe('runGithubEmailIntakeNow (orchestration)', () => {
 
     expect(state.posts[0]).toEqual(expect.objectContaining({ jiraKey: 'DENP-1414', eventType: 'pr_opened' }));
   });
+
+  it('drives a comment for a NEW custom bucket the AI can coin (e.g. pr_approved)', async () => {
+    // An approval email fits none of the built-in types; a custom-bucket rule classifies it and it drives Jira.
+    const approvedEmail = [
+      'List-ID: org/repo <repo.org.github.com>',
+      'Subject: [org/repo] [DENP-1500] Add thing (#77)',
+      'X-GitHub-Reason: subscribed',
+      'Message-ID: <approved-1@github.com>',
+      'Date: Thu, 24 Jul 2026 12:00:00 +0000',
+      'Content-Type: text/plain; charset=UTF-8',
+      '',
+      'octocat approved this pull request.',
+    ].join('\r\n');
+    const { deps, state } = buildDeps({ 'a.eml': approvedEmail });
+
+    const config = baseConfig({
+      customRules: [{ id: 'pr-approved', eventType: 'pr_approved', bodyPattern: 'approved this pull request', requiresPrNumber: true }],
+    });
+    await scheduler.runGithubEmailIntakeNow(config, deps);
+
+    // The custom bucket is actionable and posts a comment (its generic template); no transition is configured for it.
+    expect(state.posts[0]).toEqual(expect.objectContaining({ jiraKey: 'DENP-1500', eventType: 'pr_approved' }));
+  });
 });
 
 describe('collectRuleSamples (bulk rule generator source)', () => {
