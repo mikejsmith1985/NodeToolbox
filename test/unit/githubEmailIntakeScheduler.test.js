@@ -316,6 +316,32 @@ describe('collectRuleSamples (bulk rule generator source)', () => {
     expect(outcome.samples.map((row) => row.eventType).sort()).toEqual(['pr_merged', 'unknown']);
   });
 
+  it('also reads the _processed archive, since a run moves emails out of the root (GH #262)', () => {
+    // The root is empty (a prior dry run swept everything into _processed); the email needing a rule lives there.
+    const processedDir = require('path').join(DROP_FOLDER, '_processed');
+    const filesByFolder = {
+      [DROP_FOLDER]: {},
+      [processedDir]: { 'mystery.eml': unknownEmail },
+    };
+    const deps = {
+      includeAll: false,
+      listFiles: (folder) => Object.keys(filesByFolder[folder] || {}),
+      readFile: (fullPath) => {
+        const parts = require('path');
+        return (filesByFolder[parts.dirname(fullPath)] || {})[parts.basename(fullPath)];
+      },
+    };
+
+    const outcome = scheduler.collectRuleSamples(baseConfig(), deps);
+
+    expect(outcome.ok).toBe(true);
+    expect(outcome.totalCount).toBe(1);
+    expect(outcome.unknownCount).toBe(1);
+    expect(outcome.samples).toHaveLength(1);
+    expect(outcome.samples[0].fileName).toBe('mystery.eml');
+    expect(outcome.samples[0].rawSource).toContain('just a comment');
+  });
+
   it('fails cleanly when no drop folder is configured', () => {
     const outcome = scheduler.collectRuleSamples(baseConfig({ dropFolder: '' }), sampleDeps({}, false));
     expect(outcome.ok).toBe(false);

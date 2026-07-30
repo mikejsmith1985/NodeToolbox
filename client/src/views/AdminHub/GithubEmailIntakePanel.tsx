@@ -247,7 +247,10 @@ export function GithubEmailIntakePanel() {
       }
       if (response.samples.length === 0) {
         const scope = includeAllSamples ? 'emails' : 'unclassified emails'
-        setRuleMessage(`No ${scope} found in the drop folder (${response.totalCount} total, ${response.unknownCount} unclassified).`)
+        const hint = response.totalCount === 0
+          ? ' The drop folder and its _processed / _errors archives are empty — save a real GitHub email there first.'
+          : ' Tick "Include already-classified emails" to bundle them anyway.'
+        setRuleMessage(`No ${scope} found (${response.totalCount} email(s) scanned, ${response.unknownCount} unclassified).${hint}`)
         setRulePrompt('')
         return
       }
@@ -398,11 +401,11 @@ export function GithubEmailIntakePanel() {
       </div>
 
       <div className={styles.panelSection}>
-        <label className={styles.fieldLabel}>Rule Assist (AI) — teach the parser a new event type, without sharing emails</label>
         {!isAiUnlocked ? (
           <p className={styles.panelStatusLine}>Unlock AI Assist (Ctrl+Alt+Z) to generate classification rules from an email.</p>
         ) : (
           <>
+            <label className={styles.fieldLabel}>Rule Assist (AI) — teach the parser a new event type, without sharing emails</label>
             <p className={styles.panelStatusLine}>
               Generate a prompt, paste it plus a real notification email into your own AI, then paste the JSON
               rule it returns. Custom rules are applied <strong>before</strong> the built-in classifiers. The

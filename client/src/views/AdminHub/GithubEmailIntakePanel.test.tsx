@@ -89,6 +89,8 @@ describe('GithubEmailIntakePanel', () => {
 
     expect(screen.getByText(/Unlock AI Assist/i)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Generate rule prompt/i })).not.toBeInTheDocument();
+    // The "Rule Assist (AI)" title must NOT show while locked — only the unlock hint does.
+    expect(screen.queryByText(/Rule Assist \(AI\)/i)).not.toBeInTheDocument();
   });
 
   it('generates a prompt and adds a validated custom rule when AI is unlocked', async () => {

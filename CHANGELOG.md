@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **GitHub Email Intake rule assist now finds the emails, and the "Rule Assist (AI)" title is hidden while
+  locked.** "Generate rule prompt from drop folder" produced nothing because it read only the drop-folder root —
+  but after any run (including the default dry run) every email is moved into the `_processed` / `_errors`
+  archive, leaving the root empty. It now scans the root **and** those archives, so the emails you need to teach a
+  rule for are found (the "one email" button, by contrast, only ever emitted a paste *template* — it pulls no real
+  email, which is why it always "worked"). The empty-state message now says whether anything was scanned at all.
+  Separately, the "Rule Assist (AI) — teach the parser a new event type" heading was shown even when AI Assist was
+  locked; it is now gated so only the unlock hint appears until you unlock.
 - **GitHub Email Intake — the scheduled interval now runs on the clock (:00/:30), and the AI rule prompt no
   longer truncates the emails (GH #262).** The interval fire model was elapsed-based — it ran `intervalMin`
   after the *previous* run, so a server that started at 7:07 fired at 7:37, 8:07, … drifting off the hour. It

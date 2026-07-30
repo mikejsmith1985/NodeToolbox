@@ -396,18 +396,47 @@ function collectRuleSamples(configuration, deps = {}) {
   const engine = deps.engine || getEngine();
   const fileExtensions = cfg.fileExtensions || ['.eml', '.txt', '.msg'];
 
-  let fileNames;
+  // Scan the drop folder AND its processed/error archives. After ANY run — including the default dry run —
+  // every email is moved out of the root into _processed (or _errors), so the emails a user needs to teach a
+  // rule for almost always live there, not in the root. Reading the root alone found nothing once a run had
+  // swept the folder (GH #262 follow-up). The root is required; a missing/unreadable archive is simply skipped.
+  const processedDir = cfg.processedArchiveFolder || path.join(dropFolder, PROCESSED_SUBFOLDER);
+  const errorDir = cfg.errorFolder || path.join(dropFolder, ERROR_SUBFOLDER);
+
+  let rootFileNames;
   try {
-    fileNames = listFiles(dropFolder, fileExtensions);
+    rootFileNames = listFiles(dropFolder, fileExtensions);
   } catch (listError) {
     return { ok: false, message: 'Could not read drop folder: ' + listError.message, samples: [], totalCount: 0, unknownCount: 0, truncated: false };
+  }
+
+  // Gather (folder, fileName) pairs from the root first, then the archives; dedup by file name so a moved
+  // email (which keeps its name and lives in exactly one folder) is never counted twice.
+  const seenFileNames = new Set();
+  const candidates = [];
+  const addFolderFiles = (folder, fileNames) => {
+    for (const fileName of fileNames) {
+      if (seenFileNames.has(fileName)) {
+        continue;
+      }
+      seenFileNames.add(fileName);
+      candidates.push({ folder, fileName });
+    }
+  };
+  addFolderFiles(dropFolder, rootFileNames);
+  for (const archiveDir of [processedDir, errorDir]) {
+    try {
+      addFolderFiles(archiveDir, listFiles(archiveDir, fileExtensions));
+    } catch (_archiveError) {
+      // An archive folder that does not exist yet (no run has swept anything) is simply skipped.
+    }
   }
 
   const samples = [];
   let totalCount = 0;
   let unknownCount = 0;
-  for (const fileName of fileNames) {
-    const fullPath = path.join(dropFolder, fileName);
+  for (const candidate of candidates) {
+    const fullPath = path.join(candidate.folder, candidate.fileName);
     let rawSource;
     try {
       rawSource = readFile(fullPath);
@@ -427,7 +456,7 @@ function collectRuleSamples(configuration, deps = {}) {
       unknownCount += 1;
     }
     if (includeAll || isUnknown) {
-      samples.push({ fileName, eventType: event.eventType, jiraKey: event.jiraKey || null, rawSource });
+      samples.push({ fileName: candidate.fileName, eventType: event.eventType, jiraKey: event.jiraKey || null, rawSource });
     }
   }
 
