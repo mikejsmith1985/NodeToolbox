@@ -167,6 +167,30 @@ describe('HygieneView', () => {
     expect(hookState.loadHygiene).toHaveBeenCalledTimes(1);
   });
 
+  it('does NOT auto-run in team mode: the team dropdown seeds the scope, the button runs it', () => {
+    // The team dropdown is the primary driver — it seeds the Project Key / Extra JQL — but the scan is
+    // manual, so opening the team Hygiene card scans nothing until the user clicks Run Hygiene.
+    const hookState = buildHookState({ projectKey: 'ENCUC' });
+    mockUseHygieneState.mockReturnValue(hookState);
+
+    render(<HygieneView isTeamMode projectKey="ENCUC" />);
+    expect(hookState.loadHygiene).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Run Hygiene' }));
+    expect(hookState.loadHygiene).toHaveBeenCalledTimes(1);
+  });
+
+  it('still auto-runs a team-mode Today-card drill-through (arrives with a deep-linked filter)', () => {
+    // A deep-linked filter means the user clicked a specific count on a Today card and expects those
+    // exact issues immediately — that arrival keeps auto-running even though plain team mode does not.
+    const hookState = buildHookState({ projectKey: 'ENCUC' });
+    mockUseHygieneState.mockReturnValue(hookState);
+
+    render(<HygieneView isTeamMode projectKey="ENCUC" initialFilter="stale" />);
+
+    expect(hookState.loadHygiene).toHaveBeenCalledTimes(1);
+  });
+
   // ── GH #167: an empty scope must never masquerade as a clean bill of health ──
 
   it('shows an amber warning instead of a perfect score when the scope matched no issues', () => {

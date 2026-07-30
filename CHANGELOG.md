@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Team Hygiene is now manual: the team dropdown drives it, and nothing scans until you click Run Hygiene.**
+  Opening the Team Dashboard Hygiene tab no longer auto-runs a scan. Selecting a team seeds the Project Key and
+  Extra JQL for the card (the team dropdown is the primary driver), and edits to those fields take effect only
+  when you press **Run Hygiene** — so you can set up the scope deliberately before spending a Jira query. The one
+  exception is a Today-card drill-through (arriving with a deep-linked filter): it still loads immediately, because
+  you clicked a specific count and expect those exact issues. Standalone Hygiene keeps auto-running on its
+  persisted project.
+
 ### Fixed
 - **Team Hygiene no longer shows another project's issues, and its Project Key field is editable again.** Two
   bugs made a selected team (e.g. "Transformers") audit the wrong project: (1) when a team had no project key

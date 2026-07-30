@@ -192,12 +192,20 @@ export default function HygieneView({
   }
 
   useEffect(() => {
-    if (hasAutoRunTriggeredRef.current || !hasRunnableScope || isHygieneLoading) {
+    // In team mode the team dropdown is the primary driver: selecting a team seeds the Project Key and
+    // Extra JQL, but the scan is MANUAL — nothing runs until the user clicks "Run Hygiene". The one
+    // exception is a Today-card drill-through, which arrives with a deep-linked filter because the user
+    // clicked a specific count and expects those exact issues immediately. Standalone Hygiene keeps its
+    // auto-run on its persisted project. (Editing Project Key / Extra JQL never scans on its own — only
+    // the button does — so this effect is the only place that could auto-execute.)
+    const isDeepLinkedArrival = (initialFilter ?? '') !== '';
+    const shouldAutoRun = isDeepLinkedArrival || !isTeamMode;
+    if (hasAutoRunTriggeredRef.current || !shouldAutoRun || !hasRunnableScope || isHygieneLoading) {
       return;
     }
     hasAutoRunTriggeredRef.current = true;
     void loadHygiene();
-  }, [hasRunnableScope, isHygieneLoading, loadHygiene]);
+  }, [initialFilter, isTeamMode, hasRunnableScope, isHygieneLoading, loadHygiene]);
 
   return (
     <section className={styles.hygieneView} aria-label={VIEW_TITLE}>
