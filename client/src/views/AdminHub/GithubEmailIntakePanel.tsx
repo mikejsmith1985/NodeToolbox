@@ -8,7 +8,7 @@ import { useCallback, useEffect, useState } from 'react'
 
 import { useAiAssistStore } from '../../store/aiAssistStore.ts'
 import { buildRulePrompt, buildBulkRulePrompt, parseRuleReplyToList, type EmailSample } from '../GithubEmail/lib/githubRulePrompt.ts'
-import { getDefaultSerializedRules, type SerializedEmailRule } from '../GithubEmail/lib/githubEmailRules.ts'
+import { getDefaultSerializedRules, ruleSignature, type SerializedEmailRule } from '../GithubEmail/lib/githubEmailRules.ts'
 import styles from './AdminHubView.module.css'
 
 // ── Types (mirror src/routes/githubEmailIntake.js) ──
@@ -303,17 +303,39 @@ export function GithubEmailIntakePanel() {
       setRuleMessage(outcome.error || 'Could not read a rule from the reply.')
       return
     }
-    // Replace any rule with a matching id, then append the accepted set — so re-pasting refined rules updates in place.
-    const acceptedIds = new Set(outcome.rules.map((rule) => rule.id))
+    // Two-layer dedup. By SIGNATURE first: an incoming rule whose matcher already exists under a DIFFERENT id
+    // is a content-duplicate — skip it (the existing rule already covers those emails) rather than clutter the
+    // list. By ID second: an incoming rule that reuses an existing id REPLACES it, so re-pasting a refined rule
+    // updates in place. Signatures accumulate as we accept, so duplicates WITHIN one reply are caught too.
+    const signatureToId = new Map(config.customRules.map((rule) => [ruleSignature(rule), rule.id]))
+    const accepted: SerializedEmailRule[] = []
+    const skipped: string[] = []
+    for (const incoming of outcome.rules) {
+      const existingId = signatureToId.get(ruleSignature(incoming))
+      if (existingId !== undefined && existingId !== incoming.id) {
+        skipped.push(`"${incoming.id}" (same match as "${existingId}")`)
+        continue
+      }
+      accepted.push(incoming)
+      signatureToId.set(ruleSignature(incoming), incoming.id)
+    }
+
+    if (accepted.length === 0) {
+      setRuleMessage(`No rules added — ${skipped.length === 1 ? 'it is a' : 'they are'} duplicate of an existing rule: ${skipped.join(', ')}.`)
+      return
+    }
+
+    const acceptedIds = new Set(accepted.map((rule) => rule.id))
     const withoutDuplicates = config.customRules.filter((rule) => !acceptedIds.has(rule.id))
-    const nextConfig = { ...config, customRules: [...withoutDuplicates, ...outcome.rules] }
+    const nextConfig = { ...config, customRules: [...withoutDuplicates, ...accepted] }
     setConfig(nextConfig)
     setRuleReply('')
     const rejectedNote = outcome.rejectedCount > 0 ? ` (${outcome.rejectedCount} rejected as invalid)` : ''
-    const summary = outcome.rules.length === 1
-      ? `rule "${outcome.rules[0].id}" (${outcome.rules[0].eventType})`
-      : `${outcome.rules.length} rules`
-    setRuleMessage(`Added ${summary}${rejectedNote}.`)
+    const skippedNote = skipped.length > 0 ? ` (${skipped.length} skipped as duplicate)` : ''
+    const summary = accepted.length === 1
+      ? `rule "${accepted[0].id}" (${accepted[0].eventType})`
+      : `${accepted.length} rules`
+    setRuleMessage(`Added ${summary}${rejectedNote}${skippedNote}.`)
     await persist(nextConfig, `Saved ${summary}.`)
   }
 

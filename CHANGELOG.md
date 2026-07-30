@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **GitHub Email Intake — adding a rule no longer creates a silent duplicate.** Rules were de-duplicated only by
+  id (a pasted rule reusing an id replaces it; Customize won't re-seed an existing id), but two rules with
+  **different ids and the same matcher** (same event type + reason/subject/body/PR-number) could both be added and
+  clutter the list. Adding rules from an AI reply now also de-duplicates by **content**: an incoming rule whose
+  matcher already exists under a different id is skipped, and the result message says how many were skipped as
+  duplicates (duplicates within a single reply are caught too). The comparison ignores the operator action fields
+  (comment / transition / on-off), so re-pasting the same rule to refine it still updates in place by id.
+
 ### Added
 - **GitHub Email Intake — the built-in default rules are now shown and can be customized.** The Rules section
   previously listed only your own rules; it now also lists the seven **built-in default rules** (PR merged / opened,

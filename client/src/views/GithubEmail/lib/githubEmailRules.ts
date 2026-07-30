@@ -227,6 +227,23 @@ export function compileCustomRule(candidate: unknown): EmailClassificationRule |
   return rule;
 }
 
+/**
+ * A stable signature of what a rule MATCHES — its event type plus its predicates — ignoring the id and the
+ * operator action fields (comment / transition / on-off). Two rules with the same signature are duplicates:
+ * they classify the same emails the same way, so keeping both only clutters the list. Used to reject a rule
+ * whose matcher already exists under a different id.
+ */
+export function ruleSignature(rule: SerializedEmailRule): string {
+  const reasons = (rule.reasonHeaderIn ?? []).map((value) => value.trim().toLowerCase()).sort().join('|');
+  return [
+    'type:' + String(rule.eventType).trim().toLowerCase(),
+    'reason:' + reasons,
+    'subject:' + (rule.subjectPattern ?? ''),
+    'body:' + (rule.bodyPattern ?? ''),
+    'pr:' + (rule.requiresPrNumber ? '1' : '0'),
+  ].join('§');
+}
+
 /** Compiles a list of serialized custom rules, dropping any that are invalid. */
 export function compileCustomRules(candidates: unknown): EmailClassificationRule[] {
   const list = Array.isArray(candidates) ? candidates : [];

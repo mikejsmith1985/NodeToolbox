@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { parseGithubEmail } from './classifyGithubEmail.ts';
-import { compileCustomRules, getDefaultSerializedRules, validateSerializedRule, type SerializedEmailRule } from './githubEmailRules.ts';
+import { compileCustomRules, getDefaultSerializedRules, ruleSignature, validateSerializedRule, type SerializedEmailRule } from './githubEmailRules.ts';
 import {
   buildRulePrompt,
   parseRuleReply,
@@ -183,6 +183,26 @@ describe('built-in default rules (managing the defaults)', () => {
     const custom: SerializedEmailRule[] = [{ id: 'pr-merged', eventType: 'pr_merged', bodyPattern: 'merged', requiresPrNumber: true, isEnabled: false }];
     // The disabled copy is skipped AND the built-in it supersedes is dropped → nothing classifies this email.
     expect(parseGithubEmail(raw, custom).eventType).toBe('unknown');
+  });
+});
+
+describe('ruleSignature (content de-dup)', () => {
+  it('is equal for two rules that match identically but carry different ids', () => {
+    const first: SerializedEmailRule = { id: 'pr-approved', eventType: 'pr_approved', bodyPattern: 'approved this pull request', requiresPrNumber: true };
+    const second: SerializedEmailRule = { id: 'approved-pr', eventType: 'pr_approved', bodyPattern: 'approved this pull request', requiresPrNumber: true };
+    expect(ruleSignature(first)).toBe(ruleSignature(second));
+  });
+
+  it('ignores the operator action fields (comment / transition / on-off) when comparing', () => {
+    const bare: SerializedEmailRule = { id: 'a', eventType: 'pr_opened', bodyPattern: 'opened' };
+    const tuned: SerializedEmailRule = { id: 'a', eventType: 'pr_opened', bodyPattern: 'opened', comment: 'Hi', transitionStatus: 'In Review', isEnabled: false };
+    expect(ruleSignature(bare)).toBe(ruleSignature(tuned));
+  });
+
+  it('differs when the event type or a matcher differs', () => {
+    const base: SerializedEmailRule = { id: 'x', eventType: 'pr_approved', bodyPattern: 'approved' };
+    expect(ruleSignature(base)).not.toBe(ruleSignature({ ...base, eventType: 'pr_closed' }));
+    expect(ruleSignature(base)).not.toBe(ruleSignature({ ...base, bodyPattern: 'merged' }));
   });
 });
 

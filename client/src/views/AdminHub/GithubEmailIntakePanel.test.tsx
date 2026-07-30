@@ -100,6 +100,23 @@ describe('GithubEmailIntakePanel', () => {
     await waitFor(() => expect(screen.getByRole('checkbox', { name: /Enable rule/i })).toBeInTheDocument())
   })
 
+  it('skips a content-duplicate rule (same matcher, different id) when adding from a reply', async () => {
+    useAiAssistStore.setState({ isAiAssistUnlocked: true })
+    const existing = { id: 'pr-approved', eventType: 'pr_approved', bodyPattern: 'approved this pull request', requiresPrNumber: true }
+    stubFetch({}, { ...DEFAULT_CONFIG, customRules: [existing] })
+    render(<GithubEmailIntakePanel />)
+    await screen.findByText('📧 GitHub Email Intake')
+
+    // Paste a reply with a NEW id but the SAME matcher as the existing rule.
+    fireEvent.change(screen.getByPlaceholderText(/githubEmailRuleSet/), {
+      target: { value: JSON.stringify({ kind: 'githubEmailRuleSet', rules: [{ id: 'approved-pr', eventType: 'pr_approved', bodyPattern: 'approved this pull request', requiresPrNumber: true }] }) },
+    })
+    fireEvent.click(screen.getByRole('button', { name: /Validate & add rule/i }))
+
+    await waitFor(() => expect(screen.getByText(/duplicate of an existing rule/i)).toBeInTheDocument())
+    expect(screen.queryByText('approved-pr')).not.toBeInTheDocument()
+  })
+
   it('shows the preview results after clicking Preview', async () => {
     stubFetch();
     render(<GithubEmailIntakePanel />);
