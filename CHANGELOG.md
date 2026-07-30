@@ -11,11 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The fix-version dropdown now offers only versions compatible with the issue's project.** Wherever a fix
   version is *adjusted* — the Team Dashboard **Feature Review** fix panel and the **Hygiene** fix control — the
   dropdown is keyed to the project key of the issue being changed (the only project whose versions Jira will
-  accept) and now filters that project's versions to the **compatible** ones: **archived** versions (which Jira
-  rejects as a fix version) are dropped, and still-open **unreleased** versions are listed **first** — the live
-  release targets — with released-but-not-archived versions after for the occasional backfill. Both surfaces call
-  one shared loader, so the change lands in both at once; the write path and the per-issue project scoping are
-  unchanged.
+  accept) and now shows only that project's **open** versions: both **archived** versions (which Jira rejects as a
+  fix version) and already-**released** versions (shipped work, not a target to plan against) are dropped, leaving
+  just the live release targets in the project's natural order. Both surfaces call one shared loader, so the change
+  lands in both at once; the write path and the per-issue project scoping are unchanged.
 - **Backlog Remediation redesign — the grooming queue now reads like the rest of Agile Hub.** The bucket list was
   functional but plain (bare divider rows, undifferentiated headers, look-alike buttons); it is now built from the
   app's own visual vocabulary. Each bucket is a **tone-coloured card** — *Already done* green, *Likely cancel* red,

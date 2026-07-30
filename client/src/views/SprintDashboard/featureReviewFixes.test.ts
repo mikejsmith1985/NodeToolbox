@@ -335,7 +335,7 @@ describe('featureReviewFixes', () => {
       expect(mockJiraGet).toHaveBeenCalledWith('/rest/api/2/project/ENCUC/versions');
     });
 
-    it('drops archived versions Jira would reject and lists unreleased before released', async () => {
+    it('shows only open versions — dropping released and archived — in the project\'s natural order', async () => {
       mockJiraGet.mockResolvedValue([
         { id: '1', name: 'Release 23.4', released: true, archived: false },
         { id: '2', name: 'Release 24.1', released: false, archived: false },
@@ -345,11 +345,10 @@ describe('featureReviewFixes', () => {
 
       const options = await fetchFeatureReviewFixVersions('ENCUC');
 
-      // Archived is gone (incompatible); unreleased come first in their original order, then released.
+      // Released (shipped) and archived (rejected by Jira) are both gone; only the open targets remain, in order.
       expect(options).toEqual([
         { label: 'Release 24.1', value: 'Release 24.1' },
         { label: 'Release 24.2', value: 'Release 24.2' },
-        { label: 'Release 23.4', value: 'Release 23.4' },
       ]);
     });
 
