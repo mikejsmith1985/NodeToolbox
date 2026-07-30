@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **GitHub Email Intake — a Rules section that shows and controls what each rule does.** The intake panel now
+  lists every rule in an always-visible **Rules** section (managing rules is operator config, so it is not behind
+  the AI gate) that spells out, in plain English, exactly what Toolbox will do when an email matches — e.g. *"On a
+  matching email → comments 'PR is up for review' and moves the issue to 'In Review'."* Per rule you can now:
+  **turn it on/off** (a disabled rule stays saved but never fires), **reword the comment** it posts (blank uses
+  the built-in default, shown as the placeholder), and **force a status transition** via a dropdown of your Jira
+  statuses (blank = comment only). The transition is **operator-set, never AI-chosen** — a custom bucket can only
+  transition because you picked a status here — and transitions still fire only in Full mode. Rule fields persist
+  through save (the config sanitiser and the classification engine were extended to carry `isEnabled` / `comment`
+  / `transitionStatus`).
 - **GitHub Email Intake — the AI can now coin NEW event-type buckets, not just the built-in five.** A pasted rule
   may name an event type outside the built-in set (`branch_created`, `commit_pushed`, `pr_opened`, `pr_merged`,
   `review_requested`) — for example `pr_approved` or `pr_closed` — as long as it is a safe snake/kebab slug and not

@@ -47,7 +47,9 @@ function extractJiraIssueKey(text) {
  * @param {string} repoFullPath     - "owner/repo", used for the result label
  * @param {object} jiraTransitions  - { branchCreated, commitPushed, prOpened, prMerged } status names
  * @param {object} configuration    - live config (credentials + sslVerify)
- * @param {{ recordResult?: function, dryRun?: boolean, suppressTransition?: boolean }} [options]
+ * @param {{ recordResult?: function, dryRun?: boolean, suppressTransition?: boolean, forcedTransitionStatus?: string }} [options]
+ *   forcedTransitionStatus — an operator-set per-rule status that OVERRIDES the event-type map (and is the
+ *   only way a custom bucket, which has no map entry, transitions at all).
  * @returns {Promise<void>}
  */
 function postJiraCommentForEvent(jiraIssueKey, commentText, eventTypeName, repoFullPath, jiraTransitions, configuration, options) {
@@ -90,7 +92,10 @@ function postJiraCommentForEvent(jiraIssueKey, commentText, eventTypeName, repoF
       console.log('  [JiraEventOutput] ' + jiraIssueKey + ' — ' + eventTypeName + ': ' + (isCommentPosted ? '✅' : '❌'));
 
       if (isCommentPosted && !resolvedOptions.suppressTransition) {
-        const requestedTransition = jiraTransitions[TRANSITION_KEY_MAP[eventTypeName] || ''] || '';
+        // An operator-set per-rule transition wins over the event-type default map, and is the only
+        // transition a custom bucket (no map entry) can have. Blank on both → comment only.
+        const forcedTransition = (resolvedOptions.forcedTransitionStatus || '').trim();
+        const requestedTransition = forcedTransition || jiraTransitions[TRANSITION_KEY_MAP[eventTypeName] || ''] || '';
         if (requestedTransition) {
           return fireJiraTransition(jiraIssueKey, requestedTransition, configuration);
         }

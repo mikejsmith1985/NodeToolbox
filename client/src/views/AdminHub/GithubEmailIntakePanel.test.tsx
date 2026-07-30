@@ -21,11 +21,11 @@ const DEFAULT_CONFIG = {
   customRules: [],
 };
 
-function stubFetch(overrides: Record<string, unknown> = {}) {
+function stubFetch(overrides: Record<string, unknown> = {}, configOverride: Record<string, unknown> | null = null) {
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     if (url.endsWith('/config') && (!init || init.method !== 'POST')) {
-      return { ok: true, json: async () => DEFAULT_CONFIG } as Response;
+      return { ok: true, json: async () => (configOverride ?? DEFAULT_CONFIG) } as Response;
     }
     if (url.endsWith('/jira-statuses')) {
       return { ok: true, json: async () => ({ statuses: ['In Progress', 'Ready for QA'] }) } as Response;
@@ -57,6 +57,30 @@ describe('GithubEmailIntakePanel', () => {
     // The rollout mode selector defaults to dry run.
     const modeSelect = screen.getByRole('combobox', { name: /rollout mode/i }) as HTMLSelectElement;
     expect(modeSelect.value).toBe('dryRun');
+  });
+
+  it('shows the Rules section (visible while locked) with enable, comment, transition, and a plain-English summary', async () => {
+    const ruleConfig = {
+      ...DEFAULT_CONFIG,
+      customRules: [{ id: 'pr-approved', eventType: 'pr_approved', bodyPattern: 'approved this pull request', requiresPrNumber: true }],
+    };
+    useAiAssistStore.setState({ isAiAssistUnlocked: false }); // rule management is operator config, not gated
+    stubFetch({}, ruleConfig);
+    render(<GithubEmailIntakePanel />);
+    await screen.findByText('📧 GitHub Email Intake');
+
+    expect(screen.getByText('pr-approved')).toBeInTheDocument();
+    const enableToggle = screen.getByRole('checkbox', { name: /Enable rule pr-approved/i });
+    expect(enableToggle).toBeChecked();
+    expect(screen.getByLabelText(/Comment for rule pr-approved/i)).toBeInTheDocument();
+    const transition = screen.getByRole('combobox', { name: /Transition status for rule pr-approved/i }) as HTMLSelectElement;
+    expect(transition.value).toBe(''); // defaults to comment-only
+    // The summary spells out exactly what Toolbox will do.
+    expect(screen.getByText(/comments .*GitHub: pr approved.* \(no status change\)/)).toBeInTheDocument();
+
+    // Toggling the rule off updates it in place (no crash, reflects immediately).
+    fireEvent.click(enableToggle);
+    expect(enableToggle).not.toBeChecked();
   });
 
   it('shows the preview results after clicking Preview', async () => {

@@ -134,6 +134,29 @@ describe('custom event-type buckets (new buckets from the AI intake)', () => {
   });
 });
 
+describe('operator rule fields (enable/disable, comment, transition)', () => {
+  it('validateSerializedRule preserves isEnabled=false, comment, and transitionStatus', () => {
+    const rule = validateSerializedRule({
+      id: 'r', eventType: 'pr_approved', bodyPattern: 'approved',
+      isEnabled: false, comment: 'Approved by a reviewer.', transitionStatus: 'In Review',
+    });
+    expect(rule).toMatchObject({ isEnabled: false, comment: 'Approved by a reviewer.', transitionStatus: 'In Review' });
+  });
+
+  it('validateSerializedRule leaves an enabled rule clean (no isEnabled flag) and drops blank action fields', () => {
+    const rule = validateSerializedRule({ id: 'r', eventType: 'pr_opened', bodyPattern: 'opened', isEnabled: true, comment: '  ', transitionStatus: '' });
+    expect(rule).toEqual({ id: 'r', eventType: 'pr_opened', bodyPattern: 'opened' });
+  });
+
+  it('compileCustomRules skips a disabled rule so it never classifies', () => {
+    const compiled = compileCustomRules([
+      { id: 'on', eventType: 'pr_opened', bodyPattern: 'opened' },
+      { id: 'off', eventType: 'pr_merged', bodyPattern: 'merged into', isEnabled: false },
+    ]);
+    expect(compiled.map((rule) => rule.id)).toEqual(['on']);
+  });
+});
+
 // ── Bulk rule generation ──
 
 function sample(fileName: string, headers: Record<string, string>, body: string): EmailSample {

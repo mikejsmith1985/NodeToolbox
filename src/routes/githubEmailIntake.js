@@ -43,6 +43,11 @@ function sanitiseCustomRules(rawRules) {
       if (typeof rule.subjectPattern === 'string' && rule.subjectPattern !== '') cleaned.subjectPattern = rule.subjectPattern;
       if (typeof rule.bodyPattern === 'string' && rule.bodyPattern !== '') cleaned.bodyPattern = rule.bodyPattern;
       if (rule.requiresPrNumber === true) cleaned.requiresPrNumber = true;
+      // Operator action fields (set in the Rules panel): the on/off switch, a custom comment, and a per-rule
+      // status transition. Only a meaningful "off" is stored so an enabled rule stays clean.
+      if (rule.isEnabled === false) cleaned.isEnabled = false;
+      if (typeof rule.comment === 'string' && rule.comment.trim() !== '') cleaned.comment = rule.comment;
+      if (typeof rule.transitionStatus === 'string' && rule.transitionStatus.trim() !== '') cleaned.transitionStatus = rule.transitionStatus;
       return cleaned;
     })
     .filter((rule) => rule.id !== '' && rule.eventType !== '');

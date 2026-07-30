@@ -64,6 +64,31 @@ const MODE_LABELS: Record<IntakeMode, string> = {
   full: 'Full — post comments AND fire status transitions',
 }
 
+/** The built-in comment a known event type posts, mirrored from the server's EVENT_COMMENT_TEMPLATES so the
+ *  Rules panel can show (as a placeholder) exactly what Toolbox will say when a rule has no custom comment. */
+const DEFAULT_EVENT_COMMENTS: Record<string, string> = {
+  branch_created: '🔀 GitHub: branch created and work has started.',
+  commit_pushed: '✅ GitHub: new commit pushed to feature branch.',
+  pr_opened: '📬 GitHub: pull request opened for review.',
+  pr_merged: '🎉 GitHub: pull request has been merged.',
+  review_requested: '👀 GitHub: a review was requested.',
+}
+
+/** The default comment Toolbox posts for an event type — the template, or a generic line for a custom bucket. */
+function defaultCommentFor(eventType: string): string {
+  return DEFAULT_EVENT_COMMENTS[eventType] ?? ('GitHub: ' + eventType.replace(/_/g, ' '))
+}
+
+/** A short plain-English summary of what an email must look like for a rule to match, for the Rules panel. */
+function describeMatcher(rule: SerializedEmailRule): string {
+  const parts: string[] = []
+  if (rule.reasonHeaderIn && rule.reasonHeaderIn.length > 0) parts.push('reason is ' + rule.reasonHeaderIn.join(' / '))
+  if (rule.subjectPattern) parts.push('subject matches /' + rule.subjectPattern + '/')
+  if (rule.bodyPattern) parts.push('body matches /' + rule.bodyPattern + '/')
+  if (rule.requiresPrNumber) parts.push('and it has a PR number')
+  return parts.length > 0 ? parts.join(', ') : 'any email'
+}
+
 // ── API helpers ──
 
 async function fetchConfig(): Promise<IntakeConfig> {
@@ -299,6 +324,12 @@ export function GithubEmailIntakePanel() {
     await persist(nextConfig, `Removed rule "${ruleId}".`)
   }
 
+  /** Patches one rule (enable/disable, comment, transition) and marks the config dirty for the main Save. */
+  function updateRule(ruleId: string, patch: Partial<SerializedEmailRule>) {
+    if (config === null) return
+    updateConfig({ customRules: config.customRules.map((rule) => (rule.id === ruleId ? { ...rule, ...patch } : rule)) })
+  }
+
   if (isLoading) {
     return <div className={styles.panelCard}><p className={styles.panelStatusLine}>Loading GitHub Email Intake…</p></div>
   }
@@ -445,18 +476,84 @@ export function GithubEmailIntakePanel() {
               Validate &amp; add rule(s)
             </button>
             {ruleMessage ? <p className={styles.panelStatusLine}>{ruleMessage}</p> : null}
-            {config.customRules.length > 0 ? (
-              <ul>
-                {config.customRules.map((rule) => (
-                  <li key={rule.id}>
-                    <strong>{rule.id}</strong> → {rule.eventType}{' '}
-                    <button className={styles.actionButton} onClick={() => void handleRemoveRule(rule.id)} type="button">Remove</button>
-                  </li>
-                ))}
-              </ul>
-            ) : null}
         </div>
       ) : null}
+
+      {/* Rules — always visible (managing existing rules is operator config, not an AI action). Shows exactly
+          what Toolbox does per rule, and lets the operator turn it on/off, reword the comment, and force a
+          status transition. Edits mark the config dirty; the main Save below persists them. */}
+      <div className={styles.panelSection}>
+        <label className={styles.fieldLabel}>Rules — what Toolbox does when an email matches</label>
+        {config.customRules.length === 0 ? (
+          <p className={styles.panelStatusLine}>No rules configured yet.</p>
+        ) : (
+          <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 'var(--spacing-sm)' }}>
+            {config.customRules.map((rule) => {
+              const isRuleEnabled = rule.isEnabled !== false
+              const defaultComment = defaultCommentFor(rule.eventType)
+              const effectiveComment = (rule.comment && rule.comment.trim() !== '') ? rule.comment : defaultComment
+              const statusOptions = jiraStatuses.includes(rule.transitionStatus ?? '') || (rule.transitionStatus ?? '') === ''
+                ? jiraStatuses
+                : [rule.transitionStatus as string, ...jiraStatuses]
+              return (
+                <li key={rule.id} style={{ border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', padding: 'var(--spacing-sm)', opacity: isRuleEnabled ? 1 : 0.6 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <label className={styles.fieldLabel} style={{ margin: 0 }}>
+                      <input type="checkbox" aria-label={`Enable rule ${rule.id}`} checked={isRuleEnabled} onChange={(event) => updateRule(rule.id, { isEnabled: event.target.checked })} />
+                      {' '}Enabled
+                    </label>
+                    <strong>{rule.id}</strong> → <code>{rule.eventType}</code>
+                    <button className={styles.dangerButton} style={{ marginLeft: 'auto' }} onClick={() => void handleRemoveRule(rule.id)} type="button">Remove</button>
+                  </div>
+                  <p className={styles.panelStatusLine}>Matches: {describeMatcher(rule)}</p>
+
+                  <label className={styles.fieldLabel}>Comment to post (blank = the default below)</label>
+                  <input
+                    className={styles.inputField}
+                    aria-label={`Comment for rule ${rule.id}`}
+                    value={rule.comment ?? ''}
+                    placeholder={defaultComment}
+                    onChange={(event) => updateRule(rule.id, { comment: event.target.value })}
+                  />
+
+                  <label className={styles.fieldLabel}>Force status transition (blank = comment only)</label>
+                  {jiraStatuses.length === 0 ? (
+                    <input
+                      className={styles.inputField}
+                      aria-label={`Transition status for rule ${rule.id}`}
+                      value={rule.transitionStatus ?? ''}
+                      placeholder="e.g. In Progress"
+                      onChange={(event) => updateRule(rule.id, { transitionStatus: event.target.value })}
+                    />
+                  ) : (
+                    <select
+                      className={styles.inputField}
+                      aria-label={`Transition status for rule ${rule.id}`}
+                      value={rule.transitionStatus ?? ''}
+                      onChange={(event) => updateRule(rule.id, { transitionStatus: event.target.value })}
+                    >
+                      <option value="">No transition — comment only</option>
+                      {statusOptions.map((status) => (
+                        <option key={status} value={status}>{status}</option>
+                      ))}
+                    </select>
+                  )}
+
+                  <p className={styles.panelStatusLine}>
+                    On a matching email → comments “{effectiveComment}”
+                    {rule.transitionStatus && rule.transitionStatus.trim() !== '' ? ` and moves the issue to “${rule.transitionStatus}”.` : ' (no status change).'}
+                    {!isRuleEnabled ? ' — currently DISABLED.' : ''}
+                  </p>
+                </li>
+              )
+            })}
+          </ul>
+        )}
+        <p className={styles.panelStatusLine}>
+          Transitions only fire in <strong>Full</strong> mode; in Comment-only mode every rule posts its comment
+          but no status changes. Edits here are saved with the <strong>Save</strong> button below.
+        </p>
+      </div>
 
       <div className={styles.panelActions}>
         <button className={styles.saveButton} disabled={isSaving} onClick={() => void handleSave()} type="button">

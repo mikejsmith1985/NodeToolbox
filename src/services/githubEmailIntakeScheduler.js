@@ -271,16 +271,31 @@ async function processDropFolder(configuration, deps) {
       continue;
     }
 
+    // An operator-tuned custom rule (from the Rules panel) may override the comment and set a per-rule
+    // transition. Look it up by the rule that classified this email; built-in classifications have no override.
+    const matchedRule = (cfg.customRules || []).find((customRule) => customRule.id === event.matchedRuleId);
+    const commentText = matchedRule && typeof matchedRule.comment === 'string' && matchedRule.comment.trim() !== ''
+      ? matchedRule.comment
+      : buildCommentText(event);
+    const forcedTransitionStatus = matchedRule && typeof matchedRule.transitionStatus === 'string'
+      ? matchedRule.transitionStatus
+      : '';
+
+    // Only attach a forced transition when the rule actually sets one, so a plain run's options stay clean.
+    const postOptionsForFile = forcedTransitionStatus
+      ? Object.assign({}, postOptions, { forcedTransitionStatus })
+      : postOptions;
+
     // Drive Jira (or a dry run). The result records land on the run via the recordResult sink.
     const resultRecords = [];
     await deps.postEvent({
       jiraKey: event.jiraKey,
-      commentText: buildCommentText(event),
+      commentText,
       eventType: event.eventType,
       repo: event.repo || 'unknown/unknown',
       transitions: cfg.transitions || {},
       configuration,
-      options: postOptions,
+      options: postOptionsForFile,
       recordResult: (record) => resultRecords.push(record),
     });
 

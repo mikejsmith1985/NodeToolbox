@@ -269,6 +269,60 @@ describe('runGithubEmailIntakeNow (orchestration)', () => {
     expect(state.posts[0]).toEqual(expect.objectContaining({ jiraKey: 'DENP-1414', eventType: 'pr_opened' }));
   });
 
+  it('uses a rule\'s custom comment and forces its per-rule status transition', async () => {
+    const openedEmail = [
+      'List-ID: org/repo <repo.org.github.com>',
+      'Subject: [org/repo] [DENP-1600] New work (#88)',
+      'X-GitHub-Reason: subscribed',
+      'Message-ID: <opened-2@github.com>',
+      'Date: Thu, 24 Jul 2026 12:00:00 +0000',
+      'Content-Type: text/plain; charset=UTF-8',
+      '',
+      'jsmith wants to merge 3 commits',
+    ].join('\r\n');
+    const captured = [];
+    const { deps } = buildDeps({ 'a.eml': openedEmail }, {
+      postEvent: (args) => {
+        captured.push({ commentText: args.commentText, options: args.options });
+        args.recordResult({ jiraKey: args.jiraKey, isSuccess: true, message: 'ok' });
+        return Promise.resolve();
+      },
+    });
+
+    const config = baseConfig({
+      mode: 'full',
+      customRules: [{
+        id: 'org-pr-opened', eventType: 'pr_opened', bodyPattern: 'wants to merge', requiresPrNumber: true,
+        comment: 'Custom: the PR is up for review.', transitionStatus: 'In Review',
+      }],
+    });
+    await scheduler.runGithubEmailIntakeNow(config, deps);
+
+    expect(captured[0].commentText).toBe('Custom: the PR is up for review.');
+    expect(captured[0].options.forcedTransitionStatus).toBe('In Review');
+  });
+
+  it('skips a DISABLED rule so its email classifies as unknown (no comment)', async () => {
+    const openedEmail = [
+      'List-ID: org/repo <repo.org.github.com>',
+      'Subject: [org/repo] [DENP-1601] New work (#89)',
+      'X-GitHub-Reason: subscribed',
+      'Message-ID: <opened-3@github.com>',
+      'Content-Type: text/plain; charset=UTF-8',
+      '',
+      'jsmith wants to merge 3 commits',
+    ].join('\r\n');
+    const { deps, state } = buildDeps({ 'a.eml': openedEmail });
+
+    const config = baseConfig({
+      customRules: [{ id: 'org-pr-opened', eventType: 'pr_opened', bodyPattern: 'wants to merge', requiresPrNumber: true, isEnabled: false }],
+    });
+    await scheduler.runGithubEmailIntakeNow(config, deps);
+
+    // The disabled rule does not fire; nothing built-in matches "wants to merge", so no comment is posted.
+    expect(state.posts).toHaveLength(0);
+  });
+
   it('drives a comment for a NEW custom bucket the AI can coin (e.g. pr_approved)', async () => {
     // An approval email fits none of the built-in types; a custom-bucket rule classifies it and it drives Jira.
     const approvedEmail = [

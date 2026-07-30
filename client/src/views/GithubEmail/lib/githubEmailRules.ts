@@ -130,6 +130,13 @@ export interface SerializedEmailRule {
   /** Regex SOURCE for the body (compiled case-insensitively). */
   bodyPattern?: string;
   requiresPrNumber?: boolean;
+  // ── Operator-controlled action fields (set in the Rules panel, NOT asked of the AI) ──
+  /** When false the rule is kept but SKIPPED during classification (an operator on/off switch). */
+  isEnabled?: boolean;
+  /** Operator's Jira comment text for this rule; overrides the built-in template for the event type. */
+  comment?: string;
+  /** Operator's Jira status to transition to when this rule fires; blank/absent = comment only. */
+  transitionStatus?: string;
 }
 
 /** True when a string is a valid regular expression (so an AI-authored pattern can't crash the engine). */
@@ -175,6 +182,17 @@ export function validateSerializedRule(candidate: unknown): SerializedEmailRule 
   if (raw.requiresPrNumber === true) {
     rule.requiresPrNumber = true;
   }
+  // Operator action fields survive a round-trip through validation (the AI never sets these; the Rules panel
+  // does). Only a meaningful "off" is stored for isEnabled so the common enabled case stays absent/clean.
+  if (raw.isEnabled === false) {
+    rule.isEnabled = false;
+  }
+  if (typeof raw.comment === 'string' && raw.comment.trim() !== '') {
+    rule.comment = raw.comment;
+  }
+  if (typeof raw.transitionStatus === 'string' && raw.transitionStatus.trim() !== '') {
+    rule.transitionStatus = raw.transitionStatus;
+  }
 
   // A rule with no predicates would match every email — reject it.
   if (rule.reasonHeaderIn === undefined && rule.subjectPattern === undefined && rule.bodyPattern === undefined) {
@@ -183,10 +201,14 @@ export function validateSerializedRule(candidate: unknown): SerializedEmailRule 
   return rule;
 }
 
-/** Compiles one serialized rule to a runnable EmailClassificationRule, or null when it is invalid. */
+/** Compiles one serialized rule to a runnable EmailClassificationRule, or null when it is invalid or disabled. */
 export function compileCustomRule(candidate: unknown): EmailClassificationRule | null {
   const serialized = validateSerializedRule(candidate);
   if (serialized === null) {
+    return null;
+  }
+  // A disabled rule stays in config but is never applied — as if it were not there.
+  if (serialized.isEnabled === false) {
     return null;
   }
   const rule: EmailClassificationRule = { id: serialized.id, eventType: serialized.eventType };
