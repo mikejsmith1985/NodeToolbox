@@ -7,8 +7,13 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import { AgeBadge } from '../../../components/IssueMeta/AgeBadge.tsx';
 import { AssigneeAvatar } from '../../../components/IssueMeta/AssigneeAvatar.tsx';
+import { IssueTypeIcon } from '../../../components/IssueMeta/IssueTypeIcon.tsx';
+import { PriorityBadge } from '../../../components/IssueMeta/PriorityBadge.tsx';
 import { StatusChip } from '../../../components/IssueMeta/StatusChip.tsx';
+import type { ChipTone } from '../../../components/IssueMeta/issueMetaVocabulary.ts';
+import { useQuickLookupStore } from '../../../components/QuickIssueLookup/quickLookupStore.ts';
 import type { JiraIssue } from '../../../types/jira.ts';
 import { readAcceptanceCriteriaText } from '../../../utils/acceptanceCriteria.ts';
 import { fetchAgingBacklog } from '../../ReportsHub/agingBacklogFetch.ts';
@@ -25,15 +30,47 @@ import { buildTriageActionModel, type TriageFeatureGroup } from '../../ReportsHu
 import styles from '../../ReportsHub/ReportsHubView.module.css';
 import { useStandupRosterStore } from '../hooks/useStandupRosterStore.ts';
 import { loadDashboardConfigFromStorage } from '../hooks/useDashboardConfig.ts';
-import { classifyGroomingBucket, groupByGroomingBucket } from './backlogGrooming.ts';
+import { classifyGroomingBucket, groupByGroomingBucket, type GroomingBucket } from './backlogGrooming.ts';
 import { buildItemFingerprint, buildTeamAssigneeIds } from './remediationFingerprint.ts';
 import { reconcile } from './remediationReconcile.ts';
 import { resolveTeamScope } from './remediationScope.ts';
 import type { ItemFingerprint, RemediationItem, RemediationStatus } from './remediationTypes.ts';
 import { useBacklogRemediationStore } from './useBacklogRemediationStore.ts';
+import groom from './BacklogRemediationPanel.module.css';
 
 // How many days ahead a "Snooze" hides an item before it returns to the actionable queue.
 const SNOOZE_DAYS = 14;
+
+/**
+ * The visual treatment for each grooming bucket — an icon and a semantic tone that colors the bucket
+ * card's spine, its count pill, and the summary strip. The tones read the same as the IssueMeta chips
+ * (spec 019 vocabulary): a "likely cancel" bucket is danger-red, "already done" is success-green, and so
+ * on, so a groomer sees at a glance which buckets are safe to clear and which need a human's judgement.
+ */
+const BUCKET_PRESENTATION: Record<GroomingBucket, { tone: ChipTone; icon: string }> = {
+  'ghost-done': { tone: 'success', icon: '✅' },
+  'likely-cancel': { tone: 'danger', icon: '🗑️' },
+  'never-started': { tone: 'warning', icon: '🌱' },
+  'just-stale': { tone: 'neutral', icon: '🕰️' },
+  'active': { tone: 'progress', icon: '⚡' },
+};
+
+/** Maps a chip tone to its CSS-module tone class, so a card can be tinted from the bucket's tone alone. */
+const TONE_CLASS: Record<ChipTone, string> = {
+  neutral: groom.toneNeutral,
+  progress: groom.toneProgress,
+  success: groom.toneSuccess,
+  warning: groom.toneWarning,
+  danger: groom.toneDanger,
+};
+
+/**
+ * The most telling "how idle is it" measure for the age heat chip: days since any update, then time in
+ * status, then age since creation — matching the grooming classifier's own staleness signal.
+ */
+function idleDaysOf(signals: AgingTriageIssue): number {
+  return signals.daysSinceUpdate ?? signals.daysInStatus ?? signals.ageDays;
+}
 
 /** Returns today's date as YYYY-MM-DD; a small seam so the component reads the clock in exactly one place. */
 function todayIsoDate(): string {
@@ -63,31 +100,30 @@ function toSuggestion(item: RemediationItem): AgingTriageSuggestion | null {
 }
 
 /**
- * Renders one item's decision context — status, owner, and acceptance criteria — beside its action buttons.
- * The context is read from the item's freshly-fetched Jira issue; while that detail is still loading it shows a
- * compact loading note, and if it never arrives an explicit "unavailable" note — so a live button is never left
- * next to a silent blank (FR-015, FR-017).
+ * Renders one item's semantic chip row — type, priority, idle-age heat, status, and owner. Every chip is
+ * driven from the item's own triage signals so it is NEVER blank, and it is sharpened by the freshly-fetched
+ * Jira issue when present (the true status category key and the current assignee display name). This replaces
+ * the earlier "Context unavailable" placeholder: the facts a groomer weighs are always on screen (spec 019).
  */
-function RemediationDecisionContext({ issue, acceptanceCriteriaText, isHydrating }: {
+function RemediationMetaRow({ signals, issue, staleDaysThreshold }: {
+  signals: AgingTriageIssue;
   issue: JiraIssue | undefined;
-  acceptanceCriteriaText: string | null;
-  isHydrating: boolean;
+  staleDaysThreshold: number;
 }): React.JSX.Element {
-  if (issue !== undefined) {
-    return (
-      <span style={{ display: 'inline-flex', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}>
-        <StatusChip statusName={issue.fields.status?.name ?? ''} statusCategoryKey={issue.fields.status?.statusCategory?.key} />
-        <AssigneeAvatar displayName={issue.fields.assignee?.displayName ?? null} />
-        {acceptanceCriteriaText !== null && (
-          <span className={styles.captionText}><strong>AC:</strong> {acceptanceCriteriaText}</span>
-        )}
-      </span>
-    );
-  }
-  if (isHydrating) {
-    return <span role="status" className={styles.captionText}>Loading context…</span>;
-  }
-  return <span className={styles.captionText}>Context unavailable</span>;
+  // Prefer the fetched issue's live status + assignee (fresher than the captured signals); fall back to signals
+  // so the chips are still shown before hydration or if the fetch never lands.
+  const statusName = issue?.fields.status?.name ?? signals.status;
+  const statusCategoryKey = issue?.fields.status?.statusCategory?.key;
+  const assigneeName = issue?.fields.assignee?.displayName ?? signals.assignee;
+  return (
+    <span style={{ display: 'inline-flex', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}>
+      <IssueTypeIcon issueTypeName={signals.issueType} showLabel={false} />
+      {signals.priority !== null && <PriorityBadge priorityName={signals.priority} />}
+      <AgeBadge ageDays={idleDaysOf(signals)} staleDaysThreshold={staleDaysThreshold} />
+      <StatusChip statusName={statusName} statusCategoryKey={statusCategoryKey} />
+      <AssigneeAvatar displayName={assigneeName} />
+    </span>
+  );
 }
 
 /**
@@ -106,6 +142,8 @@ export function BacklogRemediationPanel({ teamProfileId, projectKey, piName }: B
   const snooze = useBacklogRemediationStore((state) => state.snooze);
   const rosterMembers = useStandupRosterStore((state) => state.rosterMembers);
   const teamAssigneeIds = useMemo(() => buildTeamAssigneeIds(rosterMembers), [rosterMembers]);
+  // Opening the app-wide F2 quick-lookup lets a groomer drill into any queued key without leaving the tab.
+  const openQuickLookup = useQuickLookupStore((state) => state.open);
 
   // The full issue objects + AC field ids from the last fetch, for the table's inline detail. Empty on a pure
   // resume (no fetch yet) — the verdicts still render from the persisted queue.
@@ -293,33 +331,39 @@ export function BacklogRemediationPanel({ teamProfileId, projectKey, piName }: B
     }
   };
 
-  /** Renders one actionable queue item — its key, verdict, decision context, summary, and action buttons. */
+  /** Renders one actionable queue item as a card — key (drill-in), meta chips, summary, AC, and actions. */
   function renderQueueItem(item: RemediationItem): React.JSX.Element {
-    // Read this item's decision context from its freshly-fetched issue; both live beside its own buttons.
+    // Read this item's acceptance criteria from its freshly-fetched issue, when hydrated, for the AC line.
     const fullIssue = issuesByKey.get(item.issueKey);
     const acceptanceCriteriaText = fullIssue !== undefined
       ? readAcceptanceCriteriaText(fullIssue, acceptanceCriteriaFieldIds)
       : null;
     return (
-      <li
-        key={item.issueKey}
-        style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '6px 0', borderTop: '1px solid rgba(127,127,127,0.2)' }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
-          <code style={{ flex: '0 0 auto' }}>{item.issueKey}</code>
-          {item.verdict !== null && <span className={styles.captionText}>{item.verdict}</span>}
-          <RemediationDecisionContext
-            issue={fullIssue}
-            acceptanceCriteriaText={acceptanceCriteriaText}
-            isHydrating={isHydratingDetails}
-          />
+      <li key={item.issueKey} className={groom.itemCard}>
+        <div className={groom.itemTopRow}>
+          <button
+            type="button"
+            className={groom.itemKeyButton}
+            aria-label={`Open ${item.issueKey}`}
+            onClick={() => openQuickLookup(item.issueKey)}
+          >
+            {item.issueKey}
+          </button>
+          {item.verdict !== null && <span className={groom.verdictTag}>{item.verdict}</span>}
+          <RemediationMetaRow signals={item.signals} issue={fullIssue} staleDaysThreshold={staleDaysThreshold} />
         </div>
-        <span className={styles.captionText}>{item.signals.summary}</span>
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          <button type="button" className={styles.actionButton} aria-label={`Cancel ${item.issueKey}`} onClick={() => handleDecide(item, 'canceled')}>Cancel</button>
-          <button type="button" className={styles.actionButton} aria-label={`Keep ${item.issueKey}`} onClick={() => handleDecide(item, 'kept')}>Keep</button>
-          <button type="button" className={styles.actionButton} aria-label={`Dismiss ${item.issueKey}`} onClick={() => handleDecide(item, 'dismissed')}>Dismiss</button>
-          <button type="button" className={styles.actionButton} aria-label={`Snooze ${item.issueKey}`} onClick={() => handleSnooze(item)}>Snooze</button>
+        <span className={groom.itemSummary}>{item.signals.summary}</span>
+        {acceptanceCriteriaText !== null && (
+          <span className={groom.itemAc}><strong>AC:</strong> {acceptanceCriteriaText}</span>
+        )}
+        {acceptanceCriteriaText === null && fullIssue === undefined && isHydratingDetails && (
+          <span role="status" className={groom.itemContextNote}>Loading context…</span>
+        )}
+        <div className={groom.itemActions}>
+          <button type="button" className={`${groom.actionBtn} ${groom.btnDanger}`} aria-label={`Cancel ${item.issueKey}`} onClick={() => handleDecide(item, 'canceled')}>Cancel</button>
+          <button type="button" className={`${groom.actionBtn} ${groom.btnSuccess}`} aria-label={`Keep ${item.issueKey}`} onClick={() => handleDecide(item, 'kept')}>Keep</button>
+          <button type="button" className={groom.actionBtn} aria-label={`Dismiss ${item.issueKey}`} onClick={() => handleDecide(item, 'dismissed')}>Dismiss</button>
+          <button type="button" className={groom.actionBtn} aria-label={`Snooze ${item.issueKey}`} onClick={() => handleSnooze(item)}>Snooze</button>
         </div>
       </li>
     );
@@ -330,12 +374,26 @@ export function BacklogRemediationPanel({ teamProfileId, projectKey, piName }: B
     // it does not need AI. Only the copy/paste verdict accelerator below self-gates on Ctrl+Alt+Z, so
     // the tab is fully usable without unlocking AI (which previously blanked the whole panel).
     <>
-      <h3 style={{ margin: '0 0 4px' }}>Backlog remediation</h3>
+      <h3 className={groom.panelHeader}>Backlog remediation</h3>
       <p className={styles.captionText}>
         Triage this team&apos;s NOT-Done backlog, grouped into rule-based grooming buckets — already done but not
         closed, likely cancel, never started, or just stale. Keep, Cancel, Dismiss, or Snooze each item; decisions
         persist per team and resume when you return.
       </p>
+      {actionableItems.length > 0 && (
+        <div className={groom.summaryStrip} aria-label="Grooming bucket summary">
+          {groomingGroups.map((group) => {
+            const presentation = BUCKET_PRESENTATION[group.bucket];
+            return (
+              <span key={group.bucket} className={`${groom.summaryPill} ${TONE_CLASS[presentation.tone]}`}>
+                <span aria-hidden="true">{presentation.icon}</span>
+                {group.meta.label}
+                <span className={groom.summaryPillCount}>{group.entries.length}</span>
+              </span>
+            );
+          })}
+        </div>
+      )}
       <label className={styles.controlLabel}>
         Scope override (JQL)
         <input
@@ -367,23 +425,25 @@ export function BacklogRemediationPanel({ teamProfileId, projectKey, piName }: B
         <div aria-label="Backlog grooming buckets">
           {groomingGroups.map((group) => {
             const isGhostDone = group.bucket === 'ghost-done';
+            const presentation = BUCKET_PRESENTATION[group.bucket];
             return (
-              <section key={group.bucket} style={{ marginTop: 10 }}>
-                <h4 style={{ margin: '0 0 2px', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                  {group.meta.label}
-                  <span className={styles.captionText}>({group.entries.length})</span>
+              <section key={group.bucket} className={`${groom.bucketSection} ${TONE_CLASS[presentation.tone]}`}>
+                <div className={groom.bucketHeader}>
+                  <span className={groom.bucketIcon} aria-hidden="true">{presentation.icon}</span>
+                  <h4 className={groom.bucketTitle}>{group.meta.label}</h4>
+                  <span className={groom.bucketCount}>{group.entries.length}</span>
+                  <span className={groom.bucketSpacer} />
                   {isGhostDone && group.entries.length > 0 && (
                     <button
                       type="button"
-                      className={`${styles.actionButton} ${styles.primaryButton}`}
-                      style={{ marginLeft: 'auto' }}
+                      className={groom.bulkButton}
                       onClick={() => setIsGhostDoneBulkOpen((isOpen) => !isOpen)}
                     >
                       {isGhostDoneBulkOpen ? 'Hide bulk cancel' : `Bulk cancel (${group.entries.length})`}
                     </button>
                   )}
-                </h4>
-                <p className={styles.captionText} style={{ margin: '0 0 4px' }}>{group.meta.blurb}</p>
+                </div>
+                <p className={groom.bucketBlurb}>{group.meta.blurb}</p>
                 {isGhostDone && isGhostDoneBulkOpen && (
                   <AgingBulkClosePanel
                     featureGroup={ghostDoneBulkGroup}
@@ -391,7 +451,7 @@ export function BacklogRemediationPanel({ teamProfileId, projectKey, piName }: B
                     onItemsClosed={handleItemsCanceled}
                   />
                 )}
-                <ul style={{ listStyle: 'none', margin: 0, padding: 0 }} aria-label={`${group.meta.label} items`}>
+                <ul className={groom.itemList} aria-label={`${group.meta.label} items`}>
                   {group.entries.map(renderQueueItem)}
                 </ul>
               </section>

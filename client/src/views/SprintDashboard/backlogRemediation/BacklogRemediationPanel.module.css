@@ -1,0 +1,242 @@
+/* BacklogRemediationPanel.module.css — The grooming-queue visual vocabulary for Backlog Remediation.
+   Reuses the app's design tokens and the shared IssueMeta chip tones (data-tone) so a groomer scans
+   buckets and items the way they read the rest of Agile Hub: toned by meaning, carded, never a bare row. */
+
+/* ── Header + intro ── */
+
+.panelHeader {
+  margin: 0 0 var(--spacing-xs);
+  font-size: var(--font-size-md);
+  color: var(--color-text-primary);
+}
+
+/* ── Summary strip: one toned count pill per non-empty bucket ── */
+
+.summaryStrip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+  margin: var(--spacing-sm) 0;
+}
+
+.summaryPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-primary);
+  cursor: default;
+}
+
+.summaryPillCount {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Bucket section: a card with a tone-colored left spine ── */
+
+.bucketSection {
+  border: 1px solid var(--color-border);
+  border-left: 3px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  margin-top: var(--spacing-md);
+  overflow: hidden;
+}
+
+.bucketHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  flex-wrap: wrap;
+  padding: var(--spacing-sm) var(--spacing-md);
+}
+
+.bucketIcon {
+  font-size: var(--font-size-lg);
+  line-height: 1;
+}
+
+.bucketTitle {
+  margin: 0;
+  font-size: var(--font-size-md);
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.bucketCount {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-primary);
+}
+
+.bucketSpacer {
+  flex: 1 1 auto;
+}
+
+.bucketBlurb {
+  margin: 0;
+  padding: 0 var(--spacing-md) var(--spacing-sm);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  line-height: 1.5;
+}
+
+/* ── Tone families (shared with IssueMeta): spine + tinted count/pill fills ── */
+
+.toneNeutral { border-left-color: rgba(148, 163, 184, 0.55); }
+.toneNeutral .bucketCount,
+.summaryPill.toneNeutral { background: rgba(148, 163, 184, 0.16); border-color: rgba(148, 163, 184, 0.35); }
+
+.toneProgress { border-left-color: rgba(59, 130, 246, 0.6); }
+.toneProgress .bucketCount,
+.summaryPill.toneProgress { background: rgba(59, 130, 246, 0.16); border-color: rgba(59, 130, 246, 0.45); }
+
+.toneSuccess { border-left-color: rgba(34, 197, 94, 0.6); }
+.toneSuccess .bucketCount,
+.summaryPill.toneSuccess { background: rgba(34, 197, 94, 0.16); border-color: rgba(34, 197, 94, 0.45); }
+
+.toneWarning { border-left-color: rgba(245, 158, 11, 0.65); }
+.toneWarning .bucketCount,
+.summaryPill.toneWarning { background: rgba(245, 158, 11, 0.16); border-color: rgba(245, 158, 11, 0.5); }
+
+.toneDanger { border-left-color: rgba(225, 29, 72, 0.65); }
+.toneDanger .bucketCount,
+.summaryPill.toneDanger { background: rgba(225, 29, 72, 0.14); border-color: rgba(225, 29, 72, 0.5); }
+
+/* ── Item list + cards ── */
+
+.itemList {
+  list-style: none;
+  margin: 0;
+  padding: 0 var(--spacing-sm) var(--spacing-sm);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.itemCard {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.itemCard:hover {
+  border-color: var(--color-accent);
+}
+
+.itemTopRow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* The issue key doubles as the drill-in control (opens the F2 quick-lookup panel). */
+.itemKeyButton {
+  font-family: monospace;
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+  color: var(--color-accent);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.itemKeyButton:hover {
+  text-decoration: underline;
+}
+
+.itemSummary {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-primary);
+  line-height: 1.45;
+}
+
+.itemAc {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  line-height: 1.45;
+}
+
+.itemContextNote {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
+.verdictTag {
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--color-text-muted);
+}
+
+/* ── Action buttons: destructive vs affirmative vs ghost read distinctly ── */
+
+.itemActions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.actionBtn {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.actionBtn:hover { background: var(--color-border); }
+
+.btnDanger {
+  border-color: rgba(225, 29, 72, 0.5);
+  background: rgba(225, 29, 72, 0.12);
+  color: #f87171;
+}
+.btnDanger:hover { background: rgba(225, 29, 72, 0.22); }
+
+.btnSuccess {
+  border-color: rgba(34, 197, 94, 0.5);
+  background: rgba(34, 197, 94, 0.12);
+  color: #34d399;
+}
+.btnSuccess:hover { background: rgba(34, 197, 94, 0.22); }
+
+/* ── Bulk-cancel affordance on the ghost-done bucket header ── */
+
+.bulkButton {
+  padding: var(--spacing-xs) var(--spacing-md);
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(225, 29, 72, 0.5);
+  background: rgba(225, 29, 72, 0.14);
+  color: #f87171;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.bulkButton:hover { background: rgba(225, 29, 72, 0.24); }

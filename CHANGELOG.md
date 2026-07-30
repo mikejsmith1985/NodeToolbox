@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Backlog Remediation redesign — the grooming queue now reads like the rest of Agile Hub.** The bucket list was
+  functional but plain (bare divider rows, undifferentiated headers, look-alike buttons); it is now built from the
+  app's own visual vocabulary. Each bucket is a **tone-coloured card** — *Already done* green, *Likely cancel* red,
+  *Never started* amber, *Just stale* neutral, *Active* blue — with an icon, a count pill, and its explanation, and a
+  matching **summary strip** of count pills sits above the queue. Every item is now a **card carrying the full
+  semantic chip row** (type · priority · idle-age heat · status · owner) from the shared `IssueMeta` vocabulary, so the
+  facts a groomer weighs are always on screen (no more "context unavailable" blank). The **issue key is a drill-in** —
+  clicking it opens the app-wide F2 quick-lookup for that issue — and the actions now read distinctly: **Cancel** is
+  danger-red, **Keep** is success-green, Dismiss/Snooze stay neutral. No engine, persistence, decision, AI-accelerator,
+  or bulk-cancel behaviour changed — this is presentation only, and the fetched issue's live status/owner is preferred
+  over the captured signals when hydrated.
+
 ### Added
 - **Backlog Remediation now groups the queue into rule-based grooming buckets.** The Team Dashboard's **Remediation**
   tab already pulls a team's NOT-Done backlog (PI- and parent-agnostic) and offers Cancel/Keep/Dismiss/Snooze plus an
