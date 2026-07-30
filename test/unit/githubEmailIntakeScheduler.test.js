@@ -91,14 +91,33 @@ describe('checkAndFireGithubEmailIntake (DI-tick)', () => {
     expect(runIntake).not.toHaveBeenCalled();
   });
 
-  it('interval mode fires only after intervalMin has elapsed', () => {
+  it('interval mode fires on clock boundaries (:00/:30) at or after the daily start time', () => {
     const runIntake = jest.fn().mockResolvedValue({ ok: true });
-    const config = baseConfig({ intervalMin: 30 });
-    const nowMs = 1000 * 60 * 60; // 1h
-    // Last fire 10 minutes ago → not due.
-    expect(scheduler.checkAndFireGithubEmailIntake(config, { nowMs, lastIntervalFireMs: nowMs - 10 * 60000, runIntake, isRunBusy: () => false })).toBe(false);
-    // Last fire 40 minutes ago → due.
-    expect(scheduler.checkAndFireGithubEmailIntake(config, { nowMs, lastIntervalFireMs: nowMs - 40 * 60000, runIntake, isRunBusy: () => false })).toBe(true);
+    const config = baseConfig({ intervalMin: 30, scheduleTime: '07:00' });
+    const base = { today: '2026-07-25', firedDates: new Map(), recordFired: () => {}, runIntake, isRunBusy: () => false, lastAlignedSlot: '' };
+
+    // 07:00 — top of the hour, at the start time → fires.
+    expect(scheduler.checkAndFireGithubEmailIntake(config, { ...base, currentTime: '07:00' })).toBe(true);
+    // 07:30 — middle of the hour → fires.
+    expect(scheduler.checkAndFireGithubEmailIntake(config, { ...base, currentTime: '07:30' })).toBe(true);
+    // 07:07 — off a boundary → does not fire.
+    expect(scheduler.checkAndFireGithubEmailIntake(config, { ...base, currentTime: '07:07' })).toBe(false);
+    // 06:30 — a boundary but BEFORE the 07:00 start → does not fire.
+    expect(scheduler.checkAndFireGithubEmailIntake(config, { ...base, currentTime: '06:30' })).toBe(false);
+  });
+
+  it('interval mode fires a given clock slot only once (the 60s tick cannot double-fire it)', () => {
+    const runIntake = jest.fn().mockResolvedValue({ ok: true });
+    const config = baseConfig({ intervalMin: 30, scheduleTime: '07:00' });
+    const firstTick = scheduler.checkAndFireGithubEmailIntake(config, {
+      today: '2026-07-25', currentTime: '08:00', lastAlignedSlot: '', runIntake, isRunBusy: () => false,
+    });
+    // The same slot on a second tick within the minute must not fire again.
+    const secondTick = scheduler.checkAndFireGithubEmailIntake(config, {
+      today: '2026-07-25', currentTime: '08:00', lastAlignedSlot: '2026-07-25 08:00', runIntake, isRunBusy: () => false,
+    });
+    expect(firstTick).toBe(true);
+    expect(secondTick).toBe(false);
   });
 });
 

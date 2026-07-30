@@ -187,7 +187,7 @@ function saveConfigToDisk(configuration) {
         isEnabled:              !!(configuration.scheduler.githubEmailIntake || {}).isEnabled,
         mode:                   (configuration.scheduler.githubEmailIntake || {}).mode                   || 'dryRun',
         scheduleTime:           (configuration.scheduler.githubEmailIntake || {}).scheduleTime           || '07:00',
-        intervalMin:            (configuration.scheduler.githubEmailIntake || {}).intervalMin            || 0,
+        intervalMin:            ((configuration.scheduler.githubEmailIntake || {}).intervalMin ?? 30),
         dropFolder:             (configuration.scheduler.githubEmailIntake || {}).dropFolder             || '',
         processedArchiveFolder: (configuration.scheduler.githubEmailIntake || {}).processedArchiveFolder || '',
         errorFolder:            (configuration.scheduler.githubEmailIntake || {}).errorFolder            || '',

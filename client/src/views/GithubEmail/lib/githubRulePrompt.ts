@@ -8,7 +8,8 @@
 // reply is rejected cleanly rather than silently misclassifying mail.
 
 import { extractJsonPayload } from '../../../utils/extractJsonPayload.ts';
-import { getHeader, parseMime } from './parseMime.ts';
+import { normalizeRichTextToPlainText } from '../../../utils/richTextPlainText.ts';
+import { getHeader, parseMime, type MimeMessage } from './parseMime.ts';
 import {
   CLASSIFIABLE_EVENT_TYPES,
   validateSerializedRule,
@@ -24,8 +25,8 @@ const RULE_SET_REPLY_KIND = 'githubEmailRuleSet';
 /** How many distinct email "shapes" to embed in one bulk prompt before we stop, to keep it pasteable. */
 const MAX_REPRESENTATIVES = 15;
 
-/** How many characters of each representative email to embed — enough to carry headers + body signal. */
-const MAX_SAMPLE_CHARS = 3000;
+/** How many characters of each email's plain-text BODY to embed — the classification clue is near the top. */
+const MAX_BODY_CHARS = 1500;
 
 /** Where the user pastes their real email inside the generated prompt. */
 const EMAIL_PLACEHOLDER = '<<< PASTE THE FULL RAW GITHUB NOTIFICATION EMAIL HERE >>>';
@@ -152,6 +153,39 @@ export function emailSampleSignature(rawSource: string): string {
   return 'subject:' + skeleton;
 }
 
+/**
+ * Reduces one raw email to the exact fields the classifier matches on, so those signals ALWAYS appear in the
+ * prompt. GitHub notifications lead with very large DKIM/ARC/Received header blocks; a blind slice of the raw
+ * source could spend its whole budget on that noise and cut off the Subject, X-GitHub-Reason header, and body
+ * (GH #262). Distilling with the same parseMime the engine uses guarantees the AI sees — and writes regexes
+ * against — the same Subject and plain-text body the engine will later match. Only the body is capped.
+ */
+function distillEmailForPrompt(rawSource: string): string {
+  const message: MimeMessage = parseMime(rawSource);
+  const subject = (getHeader(message, 'subject') || '').trim();
+  const reason = (getHeader(message, 'x-github-reason') || '').trim();
+  const listId = (getHeader(message, 'list-id') || '').trim();
+  const sender = (getHeader(message, 'x-github-sender') || '').trim();
+  // Match the engine's body choice: prefer text/plain, else flatten the HTML alternative with the shared helper.
+  const bodyText = message.textPlain !== null
+    ? message.textPlain
+    : (message.textHtml !== null ? normalizeRichTextToPlainText(message.textHtml) : '');
+  const cappedBody = bodyText.length > MAX_BODY_CHARS
+    ? bodyText.slice(0, MAX_BODY_CHARS) + '\n… (body truncated)'
+    : bodyText;
+
+  const lines = [
+    'Subject: ' + (subject || '(none)'),
+    'X-GitHub-Reason: ' + (reason || '(none)'),
+    'List-ID: ' + (listId || '(none)'),
+  ];
+  if (sender !== '') {
+    lines.push('X-GitHub-Sender: ' + sender);
+  }
+  lines.push('', 'Body:', cappedBody.trim());
+  return lines.join('\n');
+}
+
 /** Keeps the first sample of each distinct signature, preserving input order. */
 function pickRepresentatives(samples: EmailSample[]): { representatives: EmailSample[]; groupCount: number } {
   const seenSignatures = new Set<string>();
@@ -182,10 +216,7 @@ export function buildBulkRulePrompt(samples: EmailSample[]): BulkRulePromptResul
   const eventList = CLASSIFIABLE_EVENT_TYPES.map((eventType) => '  - ' + eventType).join('\n');
 
   const emailBlocks = embedded.map((sample, index) => {
-    const trimmedSource = sample.rawSource.length > MAX_SAMPLE_CHARS
-      ? sample.rawSource.slice(0, MAX_SAMPLE_CHARS) + '\n… (truncated)'
-      : sample.rawSource;
-    return ['--- EMAIL ' + (index + 1) + ' ---', trimmedSource].join('\n');
+    return ['--- EMAIL ' + (index + 1) + ' ---', distillEmailForPrompt(sample.rawSource)].join('\n');
   }).join('\n\n');
 
   const prompt = [
@@ -217,6 +248,9 @@ export function buildBulkRulePrompt(samples: EmailSample[]): BulkRulePromptResul
     '}',
     '',
     'Do not include backreferences, code, or explanation — only the JSON object.',
+    '',
+    'Each email below is shown distilled to exactly the fields the classifier matches — its Subject line, its',
+    'X-GitHub-Reason header, and its plain-text body — so write subjectPattern / bodyPattern against this text.',
     '',
     'EMAILS:',
     emailBlocks,

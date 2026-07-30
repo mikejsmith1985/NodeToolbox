@@ -28,7 +28,6 @@ const FIRED_STATE_CONFIG_KEY = 'githubEmailIntake';
 const DEFAULT_SCHEDULE_TIME = '07:00';
 const PROCESSED_SUBFOLDER = '_processed';
 const ERROR_SUBFOLDER = '_errors';
-const MS_PER_MINUTE = 60 * 1000;
 
 /** The comment each event type posts (mirrors the repo monitor's wording). */
 const EVENT_COMMENT_TEMPLATES = {
@@ -449,13 +448,24 @@ function getCurrentTimeHHMM() {
 }
 
 let moduleFiredDates = new Map();
-let moduleLastIntervalFireMs = 0;
+let moduleLastAlignedSlot = '';
 let schedulerIntervalHandle = null;
+
+/** Parses an "HH:MM" clock string into minutes since midnight (a bad value yields 0). */
+function minutesSinceMidnight(hhmm) {
+  const [hoursPart, minutesPart] = String(hhmm || '').split(':').map((part) => Number(part));
+  if (Number.isNaN(hoursPart) || Number.isNaN(minutesPart)) {
+    return 0;
+  }
+  return hoursPart * 60 + minutesPart;
+}
 
 /**
  * One scheduler tick. Two fire models, chosen by config:
- *   • intervalMin > 0 → fire when at least intervalMin have elapsed since the last interval fire
- *     (in-memory; a restart re-fires once, which the ledger makes harmless).
+ *   • intervalMin > 0 → CLOCK-ALIGNED interval: fire on wall-clock boundaries of intervalMin (e.g. :00 and
+ *     :30 for 30), at or after scheduleTime as the daily earliest run. This runs at the top and middle of
+ *     each hour starting at (say) 07:00 — rather than intervalMin after the previous run, which drifted from
+ *     whenever the server happened to start. A per-slot guard means the 60s tick fires each boundary once.
  *   • otherwise → a once-daily sweep at scheduleTime, with same-day catch-up (reached-or-passed),
  *     guarded by the persisted fired-state so a same-day restart never re-fires.
  * Every input is injectable for tests. Returns true when it fired.
@@ -473,12 +483,19 @@ function checkAndFireGithubEmailIntake(configuration, options = {}) {
 
   const intervalMin = Number(cfg.intervalMin) || 0;
   if (intervalMin > 0) {
-    const nowMs = options.nowMs || Date.now();
-    const lastFireMs = options.lastIntervalFireMs !== undefined ? options.lastIntervalFireMs : moduleLastIntervalFireMs;
-    if (lastFireMs !== 0 && nowMs - lastFireMs < intervalMin * MS_PER_MINUTE) {
+    const today = options.today || getTodayDateString();
+    const currentTime = options.currentTime || getCurrentTimeHHMM();
+    const scheduleTime = cfg.scheduleTime || DEFAULT_SCHEDULE_TIME;
+    // Fire only on a clock boundary (minutes since midnight divisible by the interval) and only once the
+    // daily start time has been reached — so a 30-minute interval starting 07:00 runs 07:00, 07:30, 08:00…
+    const isOnBoundary = minutesSinceMidnight(currentTime) % intervalMin === 0;
+    const isAtOrAfterStart = isScheduledTimeReached(scheduleTime, currentTime);
+    const currentSlot = today + ' ' + currentTime;
+    const lastSlot = options.lastAlignedSlot !== undefined ? options.lastAlignedSlot : moduleLastAlignedSlot;
+    if (!isOnBoundary || !isAtOrAfterStart || currentSlot === lastSlot) {
       return false;
     }
-    moduleLastIntervalFireMs = nowMs;
+    moduleLastAlignedSlot = currentSlot;
     fireAndForget(runIntake, configuration);
     return true;
   }

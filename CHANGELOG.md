@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **GitHub Email Intake — the scheduled interval now runs on the clock (:00/:30), and the AI rule prompt no
+  longer truncates the emails (GH #262).** The interval fire model was elapsed-based — it ran `intervalMin`
+  after the *previous* run, so a server that started at 7:07 fired at 7:37, 8:07, … drifting off the hour. It
+  now fires on **wall-clock boundaries** at or after the daily start time: a 30-minute interval from a 07:00
+  start runs **07:00, 07:30, 08:00 …** (top and middle of every hour). Fresh installs default to a 30-minute
+  interval. Separately, the "Generate rule prompt from drop folder" AI assist embedded a **raw slice** of each
+  email; GitHub notifications lead with very large DKIM/ARC/Received header blocks, so that slice could be spent
+  entirely on header noise and cut off the Subject, `X-GitHub-Reason` header, and body — leaving the AI nothing to
+  write rules from. Each email is now **distilled to exactly those fields** (the same ones the classifier matches),
+  so the signals always survive, and only the body is capped.
+
 ### Changed
 - **Team Hygiene is now manual: the team dropdown drives it, and nothing scans until you click Run Hygiene.**
   Opening the Team Dashboard Hygiene tab no longer auto-runs a scan. Selecting a team seeds the Project Key and

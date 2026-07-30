@@ -97,10 +97,10 @@ describe('GithubEmailIntakePanel', () => {
     render(<GithubEmailIntakePanel />);
     await screen.findByText('📧 GitHub Email Intake');
 
-    fireEvent.click(screen.getByRole('button', { name: /Generate rule prompt/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Generate prompt for one email/i }));
     expect(screen.getByDisplayValue(/PASTE THE FULL RAW GITHUB NOTIFICATION EMAIL/)).toBeInTheDocument();
 
-    fireEvent.change(screen.getByPlaceholderText(/"kind":"githubEmailRule"/), {
+    fireEvent.change(screen.getByPlaceholderText(/githubEmailRuleSet/), {
       target: { value: '{"kind":"githubEmailRule","rule":{"id":"org-pr-opened","eventType":"pr_opened","bodyPattern":"wants to merge","requiresPrNumber":true}}' },
     });
     fireEvent.click(screen.getByRole('button', { name: /Validate & add rule/i }));

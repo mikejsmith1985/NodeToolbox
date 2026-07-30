@@ -152,6 +152,40 @@ describe('buildBulkRulePrompt', () => {
     expect(result.prompt).toContain('--- EMAIL 2 ---');
     expect(result.prompt).not.toContain('--- EMAIL 3 ---');
   });
+
+  it('distills each email so the Subject, reason, and body survive huge leading headers (GH #262)', () => {
+    // Simulate the real-world case: an enormous DKIM/ARC header block precedes the signal-bearing headers.
+    // A blind raw slice would spend its whole budget here and cut off Subject / X-GitHub-Reason / body.
+    const noiseHeader = 'DKIM-Signature: ' + 'a'.repeat(6000);
+    const raw = [
+      noiseHeader,
+      'List-ID: r org <r.org.github.com>',
+      'Subject: [org/r] Fix the thing (#7)',
+      'X-GitHub-Reason: review_requested',
+      'Content-Type: text/plain; charset=UTF-8',
+      '',
+      'octocat requested your review on this pull request.',
+    ].join('\r\n');
+
+    const result = buildBulkRulePrompt([{ fileName: 'big.eml', eventType: 'unknown', rawSource: raw }]);
+
+    // The classification signals are present despite the 6 KB of leading header noise…
+    expect(result.prompt).toContain('Subject: [org/r] Fix the thing (#7)');
+    expect(result.prompt).toContain('X-GitHub-Reason: review_requested');
+    expect(result.prompt).toContain('requested your review');
+    // …and the raw DKIM noise is NOT dumped into the prompt.
+    expect(result.prompt).not.toContain('DKIM-Signature');
+  });
+
+  it('caps only the body, keeping the header signals intact for a very long email', () => {
+    const longBody = 'requested your review. ' + 'z'.repeat(5000);
+    const raw = email({ Subject: '[org/r] Long (#3)', 'X-GitHub-Reason': 'review_requested' }, longBody);
+
+    const result = buildBulkRulePrompt([{ fileName: 'long.eml', eventType: 'unknown', rawSource: raw }]);
+
+    expect(result.prompt).toContain('X-GitHub-Reason: review_requested');
+    expect(result.prompt).toContain('(body truncated)');
+  });
 });
 
 describe('parseRuleReplyToList', () => {

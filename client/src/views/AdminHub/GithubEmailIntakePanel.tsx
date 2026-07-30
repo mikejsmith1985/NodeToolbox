@@ -339,10 +339,14 @@ export function GithubEmailIntakePanel() {
       </div>
 
       <div className={styles.panelSection}>
-        <label className={styles.fieldLabel}>Schedule time (HH:MM, daily) — or set an interval below</label>
+        <label className={styles.fieldLabel}>Start time (HH:MM) — the earliest run each day; also the exact time when interval is 0</label>
         <input className={styles.inputField} value={config.scheduleTime} placeholder="07:00" onChange={(event) => updateConfig({ scheduleTime: event.target.value })} />
-        <label className={styles.fieldLabel}>Interval minutes (0 = use the daily schedule time)</label>
+        <label className={styles.fieldLabel}>Interval minutes (30 = run on the clock at :00 and :30; 0 = once daily at the start time)</label>
         <input className={styles.inputField} type="number" min={0} value={config.intervalMin} onChange={(event) => updateConfig({ intervalMin: Number(event.target.value) || 0 })} />
+        <p className={styles.panelStatusLine}>
+          With an interval set, runs land on wall-clock boundaries at or after the start time — e.g. 30 minutes
+          from a 07:00 start runs 07:00, 07:30, 08:00…
+        </p>
       </div>
 
       <div className={styles.panelSection}>
