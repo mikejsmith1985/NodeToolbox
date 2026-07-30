@@ -232,3 +232,28 @@ export function compileCustomRules(candidates: unknown): EmailClassificationRule
   const list = Array.isArray(candidates) ? candidates : [];
   return list.map(compileCustomRule).filter((rule): rule is EmailClassificationRule => rule !== null);
 }
+
+/**
+ * Returns the built-in seed rules in JSON-safe serialized form, so the Rules panel can SHOW the defaults and,
+ * on "Customize", seed an editable copy. Because a custom rule that reuses a built-in's id supersedes that
+ * built-in (see classifyGithubEmail), a seeded copy keeps the same id and fully takes over — its comment,
+ * transition, and on/off switch then apply exactly as for any custom rule.
+ */
+export function getDefaultSerializedRules(): SerializedEmailRule[] {
+  return GITHUB_EMAIL_RULES.map((rule) => {
+    const serialized: SerializedEmailRule = { id: rule.id, eventType: rule.eventType };
+    if (rule.reasonHeaderIn) {
+      serialized.reasonHeaderIn = [...rule.reasonHeaderIn];
+    }
+    if (rule.subjectMarker) {
+      serialized.subjectPattern = rule.subjectMarker.source;
+    }
+    if (rule.bodyMarker) {
+      serialized.bodyPattern = rule.bodyMarker.source;
+    }
+    if (rule.requiresPrNumber) {
+      serialized.requiresPrNumber = true;
+    }
+    return serialized;
+  });
+}

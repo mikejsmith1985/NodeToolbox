@@ -83,6 +83,23 @@ describe('GithubEmailIntakePanel', () => {
     expect(enableToggle).not.toBeChecked();
   });
 
+  it('lists the built-in default rules and customizing one makes it editable', async () => {
+    useAiAssistStore.setState({ isAiAssistUnlocked: false })
+    stubFetch({}, { ...DEFAULT_CONFIG, customRules: [] })
+    render(<GithubEmailIntakePanel />)
+    await screen.findByText('📧 GitHub Email Intake')
+
+    // The defaults are surfaced with a Customize action.
+    expect(screen.getByText('Built-in default rules')).toBeInTheDocument()
+    expect(screen.getByText('pr-merged')).toBeInTheDocument()
+
+    const customizeButtons = screen.getAllByRole('button', { name: /^Customize$/i })
+    fireEvent.click(customizeButtons[0])
+
+    // The customized default becomes an editable rule (an Enable toggle appears for it).
+    await waitFor(() => expect(screen.getByRole('checkbox', { name: /Enable rule/i })).toBeInTheDocument())
+  })
+
   it('shows the preview results after clicking Preview', async () => {
     stubFetch();
     render(<GithubEmailIntakePanel />);

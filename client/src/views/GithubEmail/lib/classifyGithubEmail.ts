@@ -180,8 +180,12 @@ export function classifyGithubEmail(
   const prNumber = readPrNumber(subject, bodyText);
   const branch = readBranch(bodyText);
   const reason = getHeader(message, 'x-github-reason');
-  // Custom rules first (user overrides win), then the built-in seed table.
-  const rules = [...compileCustomRules(customRules), ...GITHUB_EMAIL_RULES];
+  // Custom rules first (user overrides win), then the built-in seed table. A custom rule that reuses a built-in's
+  // id SUPERSEDES that built-in entirely — this is how "customizing a default" works: an editable copy (with the
+  // same id) fully replaces the code default, so disabling that copy truly disables the classification.
+  const supersededBuiltinIds = new Set((customRules || []).map((customRule) => customRule.id));
+  const activeBuiltinRules = GITHUB_EMAIL_RULES.filter((builtinRule) => !supersededBuiltinIds.has(builtinRule.id));
+  const rules = [...compileCustomRules(customRules), ...activeBuiltinRules];
   const { eventType, matchedRuleId } = classifyEventType(reason, subject, bodyText, prNumber, rules);
 
   return {

@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **GitHub Email Intake — the built-in default rules are now shown and can be customized.** The Rules section
+  previously listed only your own rules; it now also lists the seven **built-in default rules** (PR merged / opened,
+  review requested, commit pushed, branch created) with what each matches and the comment it posts. Each has a
+  **Customize** button that seeds an editable copy — which then behaves exactly like a custom rule (turn off,
+  reword the comment, force a status transition). A customized copy keeps the built-in's id and **supersedes** the
+  code default entirely, so turning a customized default off genuinely disables that classification (it no longer
+  quietly falls back to the built-in). Uncustomized defaults keep running as before.
 - **GitHub Email Intake — a Rules section that shows and controls what each rule does.** The intake panel now
   lists every rule in an always-visible **Rules** section (managing rules is operator config, so it is not behind
   the AI gate) that spells out, in plain English, exactly what Toolbox will do when an email matches — e.g. *"On a

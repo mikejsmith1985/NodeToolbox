@@ -8,7 +8,7 @@ import { useCallback, useEffect, useState } from 'react'
 
 import { useAiAssistStore } from '../../store/aiAssistStore.ts'
 import { buildRulePrompt, buildBulkRulePrompt, parseRuleReplyToList, type EmailSample } from '../GithubEmail/lib/githubRulePrompt.ts'
-import type { SerializedEmailRule } from '../GithubEmail/lib/githubEmailRules.ts'
+import { getDefaultSerializedRules, type SerializedEmailRule } from '../GithubEmail/lib/githubEmailRules.ts'
 import styles from './AdminHubView.module.css'
 
 // ── Types (mirror src/routes/githubEmailIntake.js) ──
@@ -330,6 +330,13 @@ export function GithubEmailIntakePanel() {
     updateConfig({ customRules: config.customRules.map((rule) => (rule.id === ruleId ? { ...rule, ...patch } : rule)) })
   }
 
+  /** Seeds an editable copy of a built-in default rule (same id) so it can be tuned like any custom rule. */
+  function handleCustomizeDefault(defaultRule: SerializedEmailRule) {
+    if (config === null) return
+    if (config.customRules.some((rule) => rule.id === defaultRule.id)) return
+    updateConfig({ customRules: [...config.customRules, { ...defaultRule }] })
+  }
+
   if (isLoading) {
     return <div className={styles.panelCard}><p className={styles.panelStatusLine}>Loading GitHub Email Intake…</p></div>
   }
@@ -341,6 +348,11 @@ export function GithubEmailIntakePanel() {
       </div>
     )
   }
+
+  // Built-in default rules the operator has not yet customized — shown read-only with a "Customize" action
+  // that seeds an editable copy (same id, which supersedes the code default).
+  const customizedRuleIds = new Set(config.customRules.map((rule) => rule.id))
+  const uncustomizedDefaults = getDefaultSerializedRules().filter((rule) => !customizedRuleIds.has(rule.id))
 
   return (
     <div className={styles.panelCard}>
@@ -549,6 +561,31 @@ export function GithubEmailIntakePanel() {
             })}
           </ul>
         )}
+        {uncustomizedDefaults.length > 0 ? (
+          <>
+            <label className={styles.fieldLabel} style={{ marginTop: 'var(--spacing-sm)' }}>Built-in default rules</label>
+            <p className={styles.panelStatusLine}>
+              These ship with Toolbox and run automatically. Click <strong>Customize</strong> to make an editable
+              copy you can turn off, reword, or give a status transition.
+            </p>
+            <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 'var(--spacing-xs)' }}>
+              {uncustomizedDefaults.map((rule) => (
+                <li key={rule.id} style={{ border: '1px dashed var(--color-border)', borderRadius: 'var(--radius-sm)', padding: 'var(--spacing-sm)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <strong>{rule.id}</strong> → <code>{rule.eventType}</code>
+                    <button className={styles.actionButton} style={{ marginLeft: 'auto' }} onClick={() => handleCustomizeDefault(rule)} type="button">Customize</button>
+                  </div>
+                  <p className={styles.panelStatusLine}>
+                    Matches: {describeMatcher(rule)} → comments “{defaultCommentFor(rule.eventType)}”
+                    {rule.eventType === 'pr_opened' || rule.eventType === 'pr_merged' || rule.eventType === 'branch_created' || rule.eventType === 'commit_pushed'
+                      ? ' (transition set in the Status transitions section above).'
+                      : ' (comment only).'}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          </>
+        ) : null}
         <p className={styles.panelStatusLine}>
           Transitions only fire in <strong>Full</strong> mode; in Comment-only mode every rule posts its comment
           but no status changes. Edits here are saved with the <strong>Save</strong> button below.

@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { parseGithubEmail } from './classifyGithubEmail.ts';
-import { compileCustomRules, validateSerializedRule, type SerializedEmailRule } from './githubEmailRules.ts';
+import { compileCustomRules, getDefaultSerializedRules, validateSerializedRule, type SerializedEmailRule } from './githubEmailRules.ts';
 import {
   buildRulePrompt,
   parseRuleReply,
@@ -154,6 +154,35 @@ describe('operator rule fields (enable/disable, comment, transition)', () => {
       { id: 'off', eventType: 'pr_merged', bodyPattern: 'merged into', isEnabled: false },
     ]);
     expect(compiled.map((rule) => rule.id)).toEqual(['on']);
+  });
+});
+
+describe('built-in default rules (managing the defaults)', () => {
+  it('exposes the built-in rules serialized, and every one survives validation for seeding', () => {
+    const defaults = getDefaultSerializedRules();
+    const prMerged = defaults.find((rule) => rule.id === 'pr-merged');
+    expect(prMerged).toMatchObject({ id: 'pr-merged', eventType: 'pr_merged', requiresPrNumber: true });
+    expect(typeof prMerged?.bodyPattern).toBe('string');
+    for (const rule of defaults) {
+      expect(validateSerializedRule(rule)).not.toBeNull();
+    }
+  });
+
+  it('a custom rule reusing a built-in id supersedes that built-in', () => {
+    const raw = email({ 'List-ID': 'org/repo <repo.org.github.com>', Subject: '[org/repo] [KEY-1] x (#1)', 'Message-ID': '<m1@github.com>' }, 'Merged #1 into main.');
+    expect(parseGithubEmail(raw).eventType).toBe('pr_merged'); // built-in classifies it
+
+    const custom: SerializedEmailRule[] = [{ id: 'pr-merged', eventType: 'pr_closed', bodyPattern: 'merged', requiresPrNumber: true }];
+    const event = parseGithubEmail(raw, custom);
+    expect(event.eventType).toBe('pr_closed');       // the seeded copy wins…
+    expect(event.matchedRuleId).toBe('pr-merged');   // …under the same id
+  });
+
+  it('disabling a seeded default (same id) truly disables that classification', () => {
+    const raw = email({ 'List-ID': 'org/repo <repo.org.github.com>', Subject: '[org/repo] [KEY-1] x (#1)', 'Message-ID': '<m2@github.com>' }, 'Merged #1 into main.');
+    const custom: SerializedEmailRule[] = [{ id: 'pr-merged', eventType: 'pr_merged', bodyPattern: 'merged', requiresPrNumber: true, isEnabled: false }];
+    // The disabled copy is skipped AND the built-in it supersedes is dropped → nothing classifies this email.
+    expect(parseGithubEmail(raw, custom).eventType).toBe('unknown');
   });
 });
 
