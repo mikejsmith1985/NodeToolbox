@@ -17,6 +17,7 @@ vi.mock('../../services/jiraApi.ts', () => ({
 import {
   areTransitionSelectionsComplete,
   buildTransitionFieldsPayload,
+  fetchFeatureReviewFixVersions,
   fetchFeatureReviewTransitions,
   saveFeatureReviewTransition,
   saveFeatureReviewUserField,
@@ -322,5 +323,40 @@ describe('featureReviewFixes', () => {
       /dropdown with no option matching "4".*1, 2/,
     );
     expect(mockJiraPut).not.toHaveBeenCalled();
+  });
+
+  describe('fetchFeatureReviewFixVersions — compatible options for the project key', () => {
+    it('reads versions from the given project key so only that project\'s (compatible) versions are offered', async () => {
+      mockJiraGet.mockResolvedValue([{ id: '1', name: 'Release 24.1', released: false, archived: false }]);
+
+      await fetchFeatureReviewFixVersions('encuc');
+
+      // Keyed to the project the issue belongs to (uppercased), the only project whose versions are settable.
+      expect(mockJiraGet).toHaveBeenCalledWith('/rest/api/2/project/ENCUC/versions');
+    });
+
+    it('drops archived versions Jira would reject and lists unreleased before released', async () => {
+      mockJiraGet.mockResolvedValue([
+        { id: '1', name: 'Release 23.4', released: true, archived: false },
+        { id: '2', name: 'Release 24.1', released: false, archived: false },
+        { id: '3', name: 'Ancient 19.0', released: true, archived: true },
+        { id: '4', name: 'Release 24.2', released: false, archived: false },
+      ]);
+
+      const options = await fetchFeatureReviewFixVersions('ENCUC');
+
+      // Archived is gone (incompatible); unreleased come first in their original order, then released.
+      expect(options).toEqual([
+        { label: 'Release 24.1', value: 'Release 24.1' },
+        { label: 'Release 24.2', value: 'Release 24.2' },
+        { label: 'Release 23.4', value: 'Release 23.4' },
+      ]);
+    });
+
+    it('tolerates an empty version list and skips versions with no name', async () => {
+      mockJiraGet.mockResolvedValue([{ id: '1', name: '  ', released: false, archived: false }]);
+
+      await expect(fetchFeatureReviewFixVersions('ENCUC')).resolves.toEqual([]);
+    });
   });
 });

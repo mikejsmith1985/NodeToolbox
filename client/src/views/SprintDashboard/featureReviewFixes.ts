@@ -56,6 +56,10 @@ export interface FeatureReviewUserCandidate {
 interface FeatureReviewVersionResponseItem {
   id?: string;
   name?: string;
+  /** Jira marks a version released once shipped; released versions are still settable as a fix version. */
+  released?: boolean;
+  /** Jira REJECTS an archived version as a fix version, so an archived option would never be compatible. */
+  archived?: boolean;
 }
 
 interface FeatureReviewRawUserCandidate {
@@ -238,17 +242,39 @@ export async function searchFeatureReviewUsers(queryText: string): Promise<Featu
   }
 }
 
-/** Loads the available fix versions for the Jira project that owns the feature. */
+/**
+ * Loads the fix versions that are COMPATIBLE with (settable on) an issue in the given project.
+ *
+ * A fix version is only valid if it belongs to the issue's own project — so the dropdown is keyed to that
+ * project key — and Jira rejects any ARCHIVED version outright, so archived versions are dropped here rather
+ * than offered as a choice the save would fail on. Still-open (unreleased) versions are listed first because
+ * they are the live release targets; already-released — but not archived — versions remain selectable after,
+ * for the occasional backfill. Jira's own returned order is preserved within each group.
+ */
 export async function fetchFeatureReviewFixVersions(projectKey: string): Promise<FeatureReviewSelectOption[]> {
   const versionResults = await jiraGet<FeatureReviewVersionResponseItem[]>(
     `/rest/api/2/project/${encodeURIComponent(projectKey.trim().toUpperCase())}/versions`,
   );
-  return (versionResults ?? [])
+  const compatibleVersions = (versionResults ?? [])
+    // Archived versions cannot be set as a fix version, so they are never compatible options.
+    .filter((versionResult) => versionResult.archived !== true)
     .map((versionResult) => ({
       label: versionResult.name?.trim() ?? '',
       value: versionResult.name?.trim() ?? '',
+      isReleased: versionResult.released === true,
     }))
     .filter((versionOption) => versionOption.value !== '');
+
+  // Unreleased-first, otherwise stable (Jira's order within each group). A stable sort keeps the project's
+  // natural version ordering intact while surfacing the current release targets at the top of the list.
+  const unreleasedFirst = compatibleVersions
+    .map((versionOption, sourceIndex) => ({ versionOption, sourceIndex }))
+    .sort((first, second) => {
+      const releasedDelta = Number(first.versionOption.isReleased) - Number(second.versionOption.isReleased);
+      return releasedDelta !== 0 ? releasedDelta : first.sourceIndex - second.sourceIndex;
+    });
+
+  return unreleasedFirst.map(({ versionOption }) => ({ label: versionOption.label, value: versionOption.value }));
 }
 
 /** One field a workflow transition's screen REQUIRES before Jira accepts the transition. */
