@@ -177,6 +177,30 @@ describe('buildBulkRulePrompt', () => {
     expect(result.prompt).not.toContain('DKIM-Signature');
   });
 
+  it('strips the External-Sender banner and urldefense links so the body signal is not truncated away (GH #262)', () => {
+    // A real enterprise body: the "approved" signal, then a Proofpoint banner and huge urldefense links that
+    // used to consume the whole body budget and push the signal past the cap.
+    const noisyBody = [
+      '@octocat approved this pull request.',
+      'ZjQcmQRYFpfptBannerStart',
+      'This Message Is From an External Sender',
+      'CAUTION: Do not click on links ' + '<https://us-phishalarm-ewt.proofpoint.com/EWT/v1/' + 'A'.repeat(2000) + '>',
+      'Report Suspicious',
+      'ZjQcmQRYFpfptBannerEnd',
+      'Reply to this email directly, view it on GitHub <https://urldefense.com/v3/__' + 'B'.repeat(2000) + '>, or unsubscribe.',
+    ].join('\n');
+    const raw = email({ Subject: '[org/r] Thing (#5)', 'X-GitHub-Reason': 'subscribed' }, noisyBody);
+
+    const result = buildBulkRulePrompt([{ fileName: 'noisy.eml', eventType: 'unknown', rawSource: raw }]);
+
+    // The signal survives and the banner + giant links are gone — so the body is NOT truncated.
+    expect(result.prompt).toContain('approved this pull request');
+    expect(result.prompt).not.toContain('ZjQcmQRYFpfptBanner');
+    expect(result.prompt).not.toContain('proofpoint.com');
+    expect(result.prompt).not.toContain('urldefense.com');
+    expect(result.prompt).not.toContain('(body truncated)');
+  });
+
   it('caps only the body, keeping the header signals intact for a very long email', () => {
     const longBody = 'requested your review. ' + 'z'.repeat(5000);
     const raw = email({ Subject: '[org/r] Long (#3)', 'X-GitHub-Reason': 'review_requested' }, longBody);

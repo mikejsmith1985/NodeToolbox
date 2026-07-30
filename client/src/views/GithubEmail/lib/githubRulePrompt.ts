@@ -154,11 +154,33 @@ export function emailSampleSignature(rawSource: string): string {
 }
 
 /**
+ * Strips the NOISE an enterprise mail gateway and GitHub inject into a notification body, so the small
+ * classification signal ("approved this pull request", "pushed 1 commit", "opened a pull request") is not
+ * shoved past the body cap by junk. In corporate inboxes the body is dominated by a Proofpoint "External
+ * Sender" security banner and by every link rewritten as an enormous urldefense.com wrapper — those alone
+ * blew past the cap and truncated the real content (GH #262, second report). Removing them leaves the signal
+ * comfortably inside the budget. Only affects the prompt text; the AI's regexes still target the phrasing,
+ * which is preserved.
+ */
+function cleanBodyNoise(bodyText: string): string {
+  return bodyText
+    // The Proofpoint "External Sender" banner block the mail gateway wraps around the message.
+    .replace(/ZjQcmQRYFpfptBannerStart[\s\S]*?ZjQcmQRYFpfptBannerEnd/g, ' ')
+    // Angle-bracket links and bare URLs — urldefense-wrapped links can each be hundreds of characters.
+    .replace(/<https?:\/\/[^>]*>/gi, ' ')
+    .replace(/https?:\/\/\S+/gi, ' ')
+    // Collapse the whitespace the removals leave behind so the remaining text reads cleanly.
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+/**
  * Reduces one raw email to the exact fields the classifier matches on, so those signals ALWAYS appear in the
  * prompt. GitHub notifications lead with very large DKIM/ARC/Received header blocks; a blind slice of the raw
  * source could spend its whole budget on that noise and cut off the Subject, X-GitHub-Reason header, and body
  * (GH #262). Distilling with the same parseMime the engine uses guarantees the AI sees — and writes regexes
- * against — the same Subject and plain-text body the engine will later match. Only the body is capped.
+ * against — the same Subject and plain-text body the engine will later match. The body is denoised, then capped.
  */
 function distillEmailForPrompt(rawSource: string): string {
   const message: MimeMessage = parseMime(rawSource);
@@ -167,9 +189,10 @@ function distillEmailForPrompt(rawSource: string): string {
   const listId = (getHeader(message, 'list-id') || '').trim();
   const sender = (getHeader(message, 'x-github-sender') || '').trim();
   // Match the engine's body choice: prefer text/plain, else flatten the HTML alternative with the shared helper.
-  const bodyText = message.textPlain !== null
+  const rawBodyText = message.textPlain !== null
     ? message.textPlain
     : (message.textHtml !== null ? normalizeRichTextToPlainText(message.textHtml) : '');
+  const bodyText = cleanBodyNoise(rawBodyText);
   const cappedBody = bodyText.length > MAX_BODY_CHARS
     ? bodyText.slice(0, MAX_BODY_CHARS) + '\n… (body truncated)'
     : bodyText;

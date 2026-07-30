@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **GitHub Email Intake rule prompt — the body is no longer truncated by enterprise mail noise (GH #262, 2nd
+  report).** The email is distilled to Subject / reason / body, but in a corporate inbox the body is dominated by
+  a Proofpoint "External Sender" security banner and by every link rewritten as a giant `urldefense.com` wrapper —
+  which alone consumed the whole body budget and pushed the real signal ("approved this pull request", "pushed 1
+  commit") into `(body truncated)`. The body is now denoised — the banner block and URLs are stripped and
+  whitespace collapsed — before the length cap, so the classification signal survives. (Only the prompt text is
+  cleaned; the phrasing the AI writes regexes against is preserved.)
+
 ### Security
 - **GitHub Email Intake no longer advertises how to unlock the gated AI feature.** When AI Assist was locked, the
   Rule Assist section rendered a hint naming the unlock shortcut — defeating the point of gating it. The entire
