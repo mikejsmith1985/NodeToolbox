@@ -250,6 +250,44 @@ export function compileCustomRules(candidates: unknown): EmailClassificationRule
   return list.map(compileCustomRule).filter((rule): rule is EmailClassificationRule => rule !== null);
 }
 
+/** One event type that more than one running rule produces — surfaced as a soft, non-blocking warning. */
+export interface EventTypeOverlap {
+  eventType: string;
+  ruleCount: number;
+}
+
+/**
+ * Finds event types that more than one RUNNING rule produces, so the panel can softly warn about overlap
+ * (first match wins, so a later rule only applies when the earlier one misses — usually fine, occasionally a
+ * mistake). "Running" = enabled custom rules plus built-ins not superseded by a custom id. Only overlaps that
+ * a CUSTOM rule takes part in are reported: the shipped built-in pairs (two ways to spot review_requested /
+ * commit_pushed) are intentional and would otherwise warn on a fresh install for no reason.
+ */
+export function findEventTypeOverlaps(
+  customRules: readonly SerializedEmailRule[],
+  defaultRules: readonly SerializedEmailRule[],
+): EventTypeOverlap[] {
+  const customIds = new Set(customRules.map((rule) => rule.id));
+  const runningCustom = customRules.filter((rule) => rule.isEnabled !== false);
+  const runningBuiltins = defaultRules.filter((rule) => !customIds.has(rule.id));
+
+  const countByEventType = new Map<string, number>();
+  for (const rule of [...runningCustom, ...runningBuiltins]) {
+    const eventType = String(rule.eventType);
+    countByEventType.set(eventType, (countByEventType.get(eventType) ?? 0) + 1);
+  }
+  // Only event types a custom rule contributes to are worth flagging.
+  const customEventTypes = new Set(runningCustom.map((rule) => String(rule.eventType)));
+
+  const overlaps: EventTypeOverlap[] = [];
+  for (const [eventType, ruleCount] of countByEventType) {
+    if (ruleCount >= 2 && customEventTypes.has(eventType)) {
+      overlaps.push({ eventType, ruleCount });
+    }
+  }
+  return overlaps.sort((first, second) => first.eventType.localeCompare(second.eventType));
+}
+
 /**
  * Returns the built-in seed rules in JSON-safe serialized form, so the Rules panel can SHOW the defaults and,
  * on "Customize", seed an editable copy. Because a custom rule that reuses a built-in's id supersedes that

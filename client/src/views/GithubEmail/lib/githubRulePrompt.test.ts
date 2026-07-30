@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { parseGithubEmail } from './classifyGithubEmail.ts';
-import { compileCustomRules, getDefaultSerializedRules, ruleSignature, validateSerializedRule, type SerializedEmailRule } from './githubEmailRules.ts';
+import { compileCustomRules, findEventTypeOverlaps, getDefaultSerializedRules, ruleSignature, validateSerializedRule, type SerializedEmailRule } from './githubEmailRules.ts';
 import {
   buildRulePrompt,
   parseRuleReply,
@@ -203,6 +203,41 @@ describe('ruleSignature (content de-dup)', () => {
     const base: SerializedEmailRule = { id: 'x', eventType: 'pr_approved', bodyPattern: 'approved' };
     expect(ruleSignature(base)).not.toBe(ruleSignature({ ...base, eventType: 'pr_closed' }));
     expect(ruleSignature(base)).not.toBe(ruleSignature({ ...base, bodyPattern: 'merged' }));
+  });
+});
+
+describe('findEventTypeOverlaps (soft same-event warning)', () => {
+  const defaults = getDefaultSerializedRules();
+
+  it('flags two custom rules that target the same event type', () => {
+    const custom: SerializedEmailRule[] = [
+      { id: 'a', eventType: 'pr_approved', bodyPattern: 'approved' },
+      { id: 'b', eventType: 'pr_approved', subjectPattern: 'approved' },
+    ];
+    expect(findEventTypeOverlaps(custom, defaults)).toEqual([{ eventType: 'pr_approved', ruleCount: 2 }]);
+  });
+
+  it('flags a custom rule that overlaps an active built-in event type', () => {
+    const custom: SerializedEmailRule[] = [{ id: 'my-open', eventType: 'pr_opened', subjectPattern: 'please review', requiresPrNumber: true }];
+    // The built-in pr-opened still runs → pr_opened now has two running rules.
+    expect(findEventTypeOverlaps(custom, defaults)).toEqual([{ eventType: 'pr_opened', ruleCount: 2 }]);
+  });
+
+  it('does NOT flag the shipped built-in pairs when there are no custom rules', () => {
+    expect(findEventTypeOverlaps([], defaults)).toEqual([]);
+  });
+
+  it('does not count a superseded built-in (a customized default is a single running rule)', () => {
+    const custom: SerializedEmailRule[] = [{ id: 'pr-opened', eventType: 'pr_opened', bodyPattern: 'opened this pull request', requiresPrNumber: true }];
+    expect(findEventTypeOverlaps(custom, defaults)).toEqual([]);
+  });
+
+  it('excludes a disabled custom rule from the overlap', () => {
+    const custom: SerializedEmailRule[] = [
+      { id: 'a', eventType: 'pr_approved', bodyPattern: 'approved' },
+      { id: 'b', eventType: 'pr_approved', subjectPattern: 'approved', isEnabled: false },
+    ];
+    expect(findEventTypeOverlaps(custom, defaults)).toEqual([]);
   });
 });
 

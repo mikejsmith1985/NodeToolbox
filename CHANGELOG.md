@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **GitHub Email Intake — a soft warning when your rules overlap on an event type.** The Rules section now shows
+  a non-blocking heads-up when more than one running rule produces the same event type (e.g. a custom `pr_opened`
+  rule alongside the built-in one) — *"⚠ Heads up: 2 rules target pr_opened. The first that matches wins…"*. It is
+  advisory only (nothing is blocked or removed) and deliberately ignores the shipped built-in pairs (the two ways
+  to spot review_requested / commit_pushed) and superseded/disabled rules, so it fires only when one of **your**
+  rules is actually involved.
+
 ### Fixed
 - **GitHub Email Intake — adding a rule no longer creates a silent duplicate.** Rules were de-duplicated only by
   id (a pasted rule reusing an id replaces it; Customize won't re-seed an existing id), but two rules with

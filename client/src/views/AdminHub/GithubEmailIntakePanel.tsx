@@ -8,7 +8,7 @@ import { useCallback, useEffect, useState } from 'react'
 
 import { useAiAssistStore } from '../../store/aiAssistStore.ts'
 import { buildRulePrompt, buildBulkRulePrompt, parseRuleReplyToList, type EmailSample } from '../GithubEmail/lib/githubRulePrompt.ts'
-import { getDefaultSerializedRules, ruleSignature, type SerializedEmailRule } from '../GithubEmail/lib/githubEmailRules.ts'
+import { findEventTypeOverlaps, getDefaultSerializedRules, ruleSignature, type SerializedEmailRule } from '../GithubEmail/lib/githubEmailRules.ts'
 import styles from './AdminHubView.module.css'
 
 // ── Types (mirror src/routes/githubEmailIntake.js) ──
@@ -375,6 +375,8 @@ export function GithubEmailIntakePanel() {
   // that seeds an editable copy (same id, which supersedes the code default).
   const customizedRuleIds = new Set(config.customRules.map((rule) => rule.id))
   const uncustomizedDefaults = getDefaultSerializedRules().filter((rule) => !customizedRuleIds.has(rule.id))
+  // Soft, advisory overlaps: event types more than one running rule produces (first match wins).
+  const eventTypeOverlaps = findEventTypeOverlaps(config.customRules, getDefaultSerializedRules())
 
   return (
     <div className={styles.panelCard}>
@@ -518,6 +520,13 @@ export function GithubEmailIntakePanel() {
           status transition. Edits mark the config dirty; the main Save below persists them. */}
       <div className={styles.panelSection}>
         <label className={styles.fieldLabel}>Rules — what Toolbox does when an email matches</label>
+        {eventTypeOverlaps.length > 0 ? (
+          <p className={styles.panelStatusLine}>
+            ⚠ Heads up: {eventTypeOverlaps.map((overlap) => `${overlap.ruleCount} rules target ${overlap.eventType}`).join('; ')}.
+            {' '}The first that matches wins; the others only apply when it doesn&apos;t. That is fine if intended
+            (e.g. two ways to spot the same event) — just worth a look.
+          </p>
+        ) : null}
         {config.customRules.length === 0 ? (
           <p className={styles.panelStatusLine}>No rules configured yet.</p>
         ) : (

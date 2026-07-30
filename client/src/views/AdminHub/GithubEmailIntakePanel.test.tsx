@@ -117,6 +117,17 @@ describe('GithubEmailIntakePanel', () => {
     expect(screen.queryByText('approved-pr')).not.toBeInTheDocument()
   })
 
+  it('softly warns when a custom rule overlaps a built-in event type', async () => {
+    const custom = { id: 'my-open', eventType: 'pr_opened', subjectPattern: 'please review', requiresPrNumber: true }
+    stubFetch({}, { ...DEFAULT_CONFIG, customRules: [custom] })
+    render(<GithubEmailIntakePanel />)
+    await screen.findByText('📧 GitHub Email Intake')
+
+    // Advisory, non-blocking: the rule is still shown; a heads-up note names the overlapping event type.
+    expect(screen.getByText(/Heads up:.*rules target pr_opened/i)).toBeInTheDocument()
+    expect(screen.getByText('my-open')).toBeInTheDocument()
+  })
+
   it('shows the preview results after clicking Preview', async () => {
     stubFetch();
     render(<GithubEmailIntakePanel />);
