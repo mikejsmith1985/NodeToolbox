@@ -123,11 +123,19 @@ export function useHygieneState(options: useHygieneStateOptions = {}): HygieneSt
   const activeDashboardTeamProfileId = useSettingsStore(
     (storeState) => storeState.sprintDashboardActiveTeamProfileId,
   );
-  // The standalone view owns an editable, persisted project key. In team mode the supplied prop
-  // is the single source of truth (derived below) and follows the active team, so switching teams
-  // immediately re-scopes Hygiene rather than replaying a previous team from localStorage.
+  // The standalone view owns an editable, persisted project key.
   const [standaloneProjectKey, setStandaloneProjectKey] = useState<string>(() => readStoredProjectKey());
-  const projectKey = isProjectKeyControlled ? controlledProjectKey : standaloneProjectKey;
+  // In team mode the supplied prop seeds the field and follows the active team, but the user can still
+  // type a different key to audit another project ad-hoc. That edit lives in a local override (null means
+  // "use the team's key"); the override is cleared whenever the team-supplied key changes, so switching
+  // teams re-scopes to the new team rather than replaying the previous team's manual override.
+  const [teamProjectKeyOverride, setTeamProjectKeyOverride] = useState<string | null>(null);
+  useEffect(() => {
+    setTeamProjectKeyOverride(null);
+  }, [controlledProjectKey]);
+  const projectKey = isProjectKeyControlled
+    ? (teamProjectKeyOverride ?? controlledProjectKey)
+    : standaloneProjectKey;
   const [extraJql, setExtraJql] = useState<string>(initialExtraJql);
   const [findings, setFindings] = useState<HygieneFinding[]>([]);
   // "All my projects" is a standalone-only scope: team mode audits one team's project, and an
@@ -235,7 +243,9 @@ export function useHygieneState(options: useHygieneStateOptions = {}): HygieneSt
     loadError,
     scannedIssueCount,
     isAllProjectsScope,
-    setProjectKey: setStandaloneProjectKey,
+    setProjectKey: isProjectKeyControlled
+      ? (nextProjectKey: string) => setTeamProjectKeyOverride(nextProjectKey)
+      : setStandaloneProjectKey,
     setExtraJql,
     selectFilter,
     setAllProjectsScope,

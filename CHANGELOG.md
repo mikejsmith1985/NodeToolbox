@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Team Hygiene no longer shows another project's issues, and its Project Key field is editable again.** Two
+  bugs made a selected team (e.g. "Transformers") audit the wrong project: (1) when a team had no project key
+  configured, the dashboard silently **fell back to the DSU tool's saved key** — so an unconfigured team inherited
+  a stale key (ENCUC) from a different tool; the team profile's own key is now authoritative when a team is
+  selected (the DSU fallback stays only for legacy no-team mode). (2) In team mode the **Project Key input was a
+  read-only trap** — typing went to unused standalone state and the field never changed. The team-supplied key now
+  seeds an editable field: it follows the active team on a switch, but you can type a different key to audit another
+  project ad-hoc. To make a team auto-scope permanently, set its Project Key in the team profile.
+
 ### Changed
 - **The fix-version dropdown now offers only versions compatible with the issue's project.** Wherever a fix
   version is *adjusted* — the Team Dashboard **Feature Review** fix panel and the **Hygiene** fix control — the

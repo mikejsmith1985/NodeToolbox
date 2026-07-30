@@ -204,6 +204,13 @@ function persistBoardId(boardId: number | null): void {
 /** Restores the saved project key, falling back to the DSU project when Sprint Dashboard is still blank. */
 function readPersistedProjectKey(): string {
   const settingsState = useSettingsStore.getState();
+  // When a team is selected, its own project key is authoritative — never fall back to the DSU tool's key.
+  // Otherwise a team with no project configured would silently inherit a stale key from another tool, which
+  // read as the selected team showing a different team's issues ("Transformers" selected → only ENCUC).
+  if (settingsState.sprintDashboardActiveTeamProfileId.trim() !== '') {
+    return settingsState.sprintDashboardProjectKey;
+  }
+  // Legacy, no-team mode keeps the convenience fallback: share the project key the DSU tool already knows.
   return settingsState.sprintDashboardProjectKey || settingsState.dsuProjectKey;
 }
 

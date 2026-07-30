@@ -234,6 +234,17 @@ describe('useSprintData', () => {
     expect(result.current.state.projectKey).toBe('TBX');
   });
 
+  it('does NOT inherit the DSU key when a team is selected but has no project configured', () => {
+    // A selected team owns its scope: an unconfigured team must show nothing, not a stale key from
+    // another tool (the bug: "Transformers" selected but only ENCUC — the DSU key — appearing).
+    useSettingsStore.setState({ sprintDashboardActiveTeamProfileId: 'team-transformers', sprintDashboardProjectKey: '' });
+    useSettingsStore.getState().setDsuProjectKey('ENCUC');
+
+    const { result } = renderHook(() => useSprintData());
+
+    expect(result.current.state.projectKey).toBe('');
+  });
+
   it('supports the embedded story pointing tab', () => {
     const { result } = renderHook(() => useSprintData());
 

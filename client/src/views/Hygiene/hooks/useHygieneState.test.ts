@@ -314,6 +314,22 @@ describe('useHygieneState', () => {
     expect(result.current.projectKey).toBe('BETA');
   });
 
+  it('lets the user override the team project key ad-hoc, then re-follows the team on a switch', () => {
+    const { result, rerender } = renderHook(
+      ({ projectKey }) => useHygieneState({ isTeamMode: true, projectKey }),
+      { initialProps: { projectKey: 'ALPHA' } },
+    );
+
+    // The team-supplied key seeds the field, but the user can type a different one (previously a
+    // read-only trap: the edit went to unused standalone state and the field never changed).
+    act(() => result.current.setProjectKey('OTHER'));
+    expect(result.current.projectKey).toBe('OTHER');
+
+    // Switching teams (the prop changes) clears the override so Hygiene follows the newly selected team.
+    rerender({ projectKey: 'BETA' });
+    expect(result.current.projectKey).toBe('BETA');
+  });
+
   it('omits the assignee filter in team mode so Hygiene audits every in-scope issue', async () => {
     mockJiraGet.mockResolvedValueOnce(EMPTY_FIELD_METADATA).mockResolvedValueOnce({ issues: [] });
     const { result } = renderHook(() => useHygieneState({ isTeamMode: true, projectKey: 'TBX' }));
