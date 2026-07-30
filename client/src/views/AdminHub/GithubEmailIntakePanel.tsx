@@ -357,6 +357,11 @@ export function GithubEmailIntakePanel() {
         <input className={styles.inputField} value={config.fileExtensions.join(', ')} placeholder=".eml, .txt" onChange={(event) => updateConfig({ fileExtensions: splitList(event.target.value) })} />
         <label className={styles.fieldLabel}>Jira project keys to act on (comma-separated; blank = all)</label>
         <input className={styles.inputField} value={config.jiraProjectKeys.join(', ')} placeholder="DENP, ENFCT" onChange={(event) => updateConfig({ jiraProjectKeys: splitList(event.target.value) })} />
+        <p className={styles.panelStatusLine}>
+          {config.jiraProjectKeys.length === 0
+            ? '⚠ Blank means EVERY project — other teams working in the same repos will also get comments/transitions. Set your team\'s project keys to scope this to your work.'
+            : `Only issues in ${config.jiraProjectKeys.map((key) => key.toUpperCase()).join(', ')} are acted on; keys from any other project (e.g. another team sharing the repo) are skipped as "project-filtered".`}
+        </p>
       </div>
 
       <div className={styles.panelSection}>
@@ -400,13 +405,13 @@ export function GithubEmailIntakePanel() {
         ))}
       </div>
 
-      <div className={styles.panelSection}>
-        {!isAiUnlocked ? (
-          <p className={styles.panelStatusLine}>Unlock AI Assist (Ctrl+Alt+Z) to generate classification rules from an email.</p>
-        ) : (
-          <>
-            <label className={styles.fieldLabel}>Rule Assist (AI) — teach the parser a new event type, without sharing emails</label>
+      {isAiUnlocked ? (
+        <div className={styles.panelSection}>
+            <label className={styles.fieldLabel}>Rule Assist (AI) — classify a new kind of email into an event type</label>
             <p className={styles.panelStatusLine}>
+              A rule only decides <strong>which event</strong> a new kind of email is (branch created, PR opened,
+              PR merged, …) — its bucket. What then happens for that event — the Jira comment and the status
+              transition — is set deterministically in <strong>Transitions</strong> above, never by the AI.
               Generate a prompt, paste it plus a real notification email into your own AI, then paste the JSON
               rule it returns. Custom rules are applied <strong>before</strong> the built-in classifiers. The
               emails never leave this machine — only you and your own AI ever see them.
@@ -450,9 +455,8 @@ export function GithubEmailIntakePanel() {
                 ))}
               </ul>
             ) : null}
-          </>
-        )}
-      </div>
+        </div>
+      ) : null}
 
       <div className={styles.panelActions}>
         <button className={styles.saveButton} disabled={isSaving} onClick={() => void handleSave()} type="button">

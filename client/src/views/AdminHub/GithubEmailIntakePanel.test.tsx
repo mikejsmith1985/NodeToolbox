@@ -87,10 +87,12 @@ describe('GithubEmailIntakePanel', () => {
     render(<GithubEmailIntakePanel />);
     await screen.findByText('📧 GitHub Email Intake');
 
-    expect(screen.getByText(/Unlock AI Assist/i)).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Generate rule prompt/i })).not.toBeInTheDocument();
-    // The "Rule Assist (AI)" title must NOT show while locked — only the unlock hint does.
+    // Nothing about Rule Assist may show while locked — not the title, the buttons, and CRUCIALLY not any
+    // hint that advertises how to unlock the gated feature (no "Ctrl+Alt+Z" leak to a locked user).
     expect(screen.queryByText(/Rule Assist \(AI\)/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Generate rule prompt/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Ctrl\+Alt\+Z/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Unlock AI Assist/i)).not.toBeInTheDocument();
   });
 
   it('generates a prompt and adds a validated custom rule when AI is unlocked', async () => {

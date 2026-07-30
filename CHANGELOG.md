@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- **GitHub Email Intake no longer advertises how to unlock the gated AI feature.** When AI Assist was locked, the
+  Rule Assist section rendered a hint naming the unlock shortcut — defeating the point of gating it. The entire
+  Rule Assist section is now hidden while locked (matching every other AI Assist surface, which render nothing
+  when locked); no unlock hint or shortcut is shown to a locked user.
+
+### Changed
+- **GitHub Email Intake — the Rule Assist panel now states what a rule does, and the project scope is spelled
+  out.** A classification rule only decides **which event** a new kind of email is (its bucket: branch created /
+  PR opened / PR merged / …); what then happens for that event — the Jira comment and status transition — is set
+  deterministically in **Transitions**, never by the AI. The panel now says this so the two layers aren't
+  confused. The **Jira project keys** field also spells out the consequence: blank means **every** project (other
+  teams sharing your repos would get comments/transitions too), and when set, only your team's projects are acted
+  on — everything else is skipped as `project-filtered`. (The filter itself already existed; this surfaces it.)
+
 ### Fixed
 - **GitHub Email Intake rule assist now finds the emails, and the "Rule Assist (AI)" title is hidden while
   locked.** "Generate rule prompt from drop folder" produced nothing because it read only the drop-folder root —
