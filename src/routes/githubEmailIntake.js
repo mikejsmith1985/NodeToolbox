@@ -148,38 +148,113 @@ async function fetchAvailableStatuses(configuration) {
   return { statuses: Array.from(statusNames).sort() };
 }
 
+/** GETs a Jira path and returns the JSON body, or null on any failure — a strategy probe, never fatal. */
+async function readJiraJson(configuration, requestPath) {
+  try {
+    const response = await makeJiraApiRequest('GET', requestPath, null, configuration.jira || {}, configuration.sslVerify !== false);
+    return response.status === 200 ? response.body : null;
+  } catch (_requestError) {
+    return null;
+  }
+}
+
+/** Adds a field's allowedValues option labels ({ value } for selects, { name } fallback) into the set. */
+function collectAllowedValueLabels(fieldMeta, optionValues) {
+  const allowedValues = (fieldMeta && fieldMeta.allowedValues) || [];
+  allowedValues.forEach((allowedValue) => {
+    const optionValue = allowedValue && (allowedValue.value || allowedValue.name);
+    if (optionValue) optionValues.add(optionValue);
+  });
+}
+
+/** Strategy 1 (Jira ≤ 8.3): the legacy full createmeta with expanded fields, per configured project. */
+async function readOptionsViaLegacyCreateMeta(configuration, projectKeys, fieldId) {
+  const optionValues = new Set();
+  for (const projectKey of projectKeys) {
+    const body = await readJiraJson(configuration, '/rest/api/2/issue/createmeta?projectKeys='
+      + encodeURIComponent(projectKey) + '&expand=projects.issuetypes.fields');
+    ((body && body.projects) || []).forEach((project) => (project.issuetypes || []).forEach((issueType) => {
+      collectAllowedValueLabels((issueType.fields || {})[fieldId], optionValues);
+    }));
+  }
+  return optionValues;
+}
+
+/** Strategy 2 (Jira 8.4+/DC 9, which removed the legacy endpoint): per-project, per-issue-type createmeta. */
+async function readOptionsViaProjectIssueTypes(configuration, projectKeys, fieldId) {
+  const optionValues = new Set();
+  for (const projectKey of projectKeys) {
+    const issueTypesBody = await readJiraJson(configuration,
+      '/rest/api/2/issue/createmeta/' + encodeURIComponent(projectKey) + '/issuetypes?maxResults=100');
+    for (const issueType of (issueTypesBody && issueTypesBody.values) || []) {
+      const fieldsBody = await readJiraJson(configuration,
+        '/rest/api/2/issue/createmeta/' + encodeURIComponent(projectKey) + '/issuetypes/'
+        + encodeURIComponent(issueType.id) + '?maxResults=200');
+      for (const fieldMeta of (fieldsBody && fieldsBody.values) || []) {
+        if (fieldMeta && fieldMeta.fieldId === fieldId) {
+          collectAllowedValueLabels(fieldMeta, optionValues);
+        }
+      }
+    }
+  }
+  return optionValues;
+}
+
+/** Turns a JQL suggestion into a plain option label: unquote the JQL literal, else strip the highlight HTML. */
+function readSuggestionOptionLabel(suggestion) {
+  const quotedValue = String((suggestion && suggestion.value) || '').replace(/&quot;/g, '"');
+  const unquotedValue = quotedValue.replace(/^"|"$/g, '').trim();
+  if (unquotedValue !== '') {
+    return unquotedValue;
+  }
+  return String((suggestion && suggestion.displayName) || '').replace(/<[^>]*>/g, '').trim();
+}
+
 /**
- * Fetches the valid options of the parent Sub-status dropdown, unioned across the configured
- * projects' issue types via createmeta (the only DC endpoint that exposes a select field's allowed
- * values without an issue in hand). Never throws — an unreachable Jira yields an empty list so the
- * panel falls back to free-text entry.
+ * Strategy 3 (project-independent): resolve the field's NAME from /field, then read its option values
+ * from the JQL autocomplete suggestions endpoint — works on every Server/DC version and needs no
+ * project keys, at the cost of the endpoint's suggestion cap (fine for a small Sub-status list).
+ */
+async function readOptionsViaJqlSuggestions(configuration, fieldId) {
+  const optionValues = new Set();
+  const allFields = await readJiraJson(configuration, '/rest/api/2/field');
+  const matchedField = Array.isArray(allFields) ? allFields.find((field) => field && field.id === fieldId) : null;
+  if (!matchedField || !matchedField.name) {
+    return optionValues;
+  }
+  const suggestionsBody = await readJiraJson(configuration,
+    '/rest/api/2/jql/autocompletedata/suggestions?fieldName=' + encodeURIComponent(matchedField.name) + '&fieldValue=');
+  for (const suggestion of (suggestionsBody && suggestionsBody.results) || []) {
+    const optionLabel = readSuggestionOptionLabel(suggestion);
+    if (optionLabel) optionValues.add(optionLabel);
+  }
+  return optionValues;
+}
+
+/**
+ * Fetches the valid options of the parent Sub-status dropdown, trying every strategy the various
+ * Jira Server/DC versions support: legacy createmeta → per-issue-type createmeta (DC 9 removed the
+ * legacy one) → field-name + JQL suggestions (needs no project keys at all). The first strategy that
+ * yields options wins. Never throws — an unreachable Jira yields an empty list so the panel falls
+ * back to free-text entry.
  */
 async function fetchSubStatusOptions(configuration) {
   const cfg = ((configuration.scheduler || {}).githubEmailIntake) || {};
-  const jiraConfig = configuration.jira || {};
-  const isTlsVerified = configuration.sslVerify !== false;
   const fieldId = toTrimmedString(cfg.subStatusFieldId) || DEFAULT_SUB_STATUS_FIELD_ID;
   const projectKeys = Array.isArray(cfg.jiraProjectKeys) ? cfg.jiraProjectKeys.filter(Boolean) : [];
-  const optionValues = new Set();
 
-  try {
-    for (const projectKey of projectKeys) {
-      const createMetaPath = '/rest/api/2/issue/createmeta?projectKeys=' + encodeURIComponent(projectKey)
-        + '&expand=projects.issuetypes.fields';
-      const response = await makeJiraApiRequest('GET', createMetaPath, null, jiraConfig, isTlsVerified);
-      const projects = (response.status === 200 && response.body && response.body.projects) || [];
-      projects.forEach((project) => (project.issuetypes || []).forEach((issueType) => {
-        const fieldMeta = (issueType.fields || {})[fieldId];
-        (fieldMeta && fieldMeta.allowedValues ? fieldMeta.allowedValues : []).forEach((allowedValue) => {
-          const optionValue = allowedValue && (allowedValue.value || allowedValue.name);
-          if (optionValue) optionValues.add(optionValue);
-        });
-      }));
+  const optionStrategies = [
+    () => (projectKeys.length > 0 ? readOptionsViaLegacyCreateMeta(configuration, projectKeys, fieldId) : new Set()),
+    () => (projectKeys.length > 0 ? readOptionsViaProjectIssueTypes(configuration, projectKeys, fieldId) : new Set()),
+    () => readOptionsViaJqlSuggestions(configuration, fieldId),
+  ];
+  for (const runStrategy of optionStrategies) {
+    const optionValues = await runStrategy();
+    if (optionValues.size > 0) {
+      return { options: Array.from(optionValues).sort() };
     }
-  } catch (fetchError) {
-    return { options: [], error: fetchError instanceof Error ? fetchError.message : String(fetchError) };
   }
-  return { options: Array.from(optionValues).sort() };
+  return { options: [] };
 }
 
 /** Reports whether a path is an existing directory (best-effort; used only for a UI warning). */

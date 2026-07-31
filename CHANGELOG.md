@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **GitHub Email Intake — the Sub-status dropdown now actually populates on Jira DC 9.** The options fetch
+  used only the legacy full-createmeta endpoint, which newer Jira Data Center versions removed — so the panel
+  silently fell back to free-text entry ("typed value must match Jira exactly"). The server now tries every
+  supported strategy in order: legacy createmeta → per-project/per-issue-type createmeta (the DC 9
+  replacement) → field-name + JQL autocomplete suggestions, which needs **no project keys at all**. The first
+  strategy that yields options wins, so the Sub-status picker shows the real dropdown values.
+
+### Fixed
 - **GitHub Email Intake — the parent Sub-status control was effectively invisible.** The Sub-status dropdown
   (and the all-coding-sub-tasks-done guard) only appeared AFTER a parent story status was picked, and parent
   controls only exist on customized rules — so on a fresh panel there was nothing to find. All three parent
