@@ -342,6 +342,34 @@ describe('runGithubEmailIntakeNow (orchestration)', () => {
     });
   });
 
+  it('gives a custom bucket (AI-authored event type) an emoji-led default comment like the built-ins', async () => {
+    const approvedEmail = [
+      'List-ID: org/repo <repo.org.github.com>',
+      'Subject: [org/repo] [DENP-1604] Review done (#92)',
+      'X-GitHub-Reason: subscribed',
+      'Message-ID: <approved-1@github.com>',
+      'Content-Type: text/plain; charset=UTF-8',
+      '',
+      'jsmith approved this pull request',
+    ].join('\r\n');
+    const captured = [];
+    const { deps } = buildDeps({ 'a.eml': approvedEmail }, {
+      postEvent: (args) => {
+        captured.push({ commentText: args.commentText });
+        args.recordResult({ jiraKey: args.jiraKey, isSuccess: true, message: 'ok' });
+        return Promise.resolve();
+      },
+    });
+
+    const config = baseConfig({
+      mode: 'full',
+      customRules: [{ id: 'org-pr-approved', eventType: 'pr_approved', bodyPattern: 'approved this pull request' }],
+    });
+    await scheduler.runGithubEmailIntakeNow(config, deps);
+
+    expect(captured[0].commentText).toMatch(/^🔔 GitHub: pr approved\./);
+  });
+
   it('omits parentActions entirely when the rule sets no parent fields', async () => {
     const openedEmail = [
       'List-ID: org/repo <repo.org.github.com>',

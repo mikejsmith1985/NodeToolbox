@@ -76,9 +76,10 @@ const DEFAULT_EVENT_COMMENTS: Record<string, string> = {
   review_requested: '👀 GitHub: a review was requested.',
 }
 
-/** The default comment Toolbox posts for an event type — the template, or a generic line for a custom bucket. */
+/** The default comment Toolbox posts for an event type — the template, or an emoji-led generic line
+ *  for a custom bucket (mirrors the server's buildCommentText so the placeholder shows the truth). */
 function defaultCommentFor(eventType: string): string {
-  return DEFAULT_EVENT_COMMENTS[eventType] ?? ('GitHub: ' + eventType.replace(/_/g, ' '))
+  return DEFAULT_EVENT_COMMENTS[eventType] ?? ('🔔 GitHub: ' + eventType.replace(/_/g, ' ') + '.')
 }
 
 /** A short plain-English summary of what an email must look like for a rule to match, for the Rules panel. */
@@ -460,6 +461,10 @@ export function GithubEmailIntakePanel() {
             ? 'Status list unavailable — type the exact Jira status name.'
             : 'Pick the target Jira status from the dropdown.'}
         </label>
+        <p className={styles.panelStatusLine}>
+          The comment is ALWAYS posted for a matched event — selecting a status here adds a transition on
+          top of it (fired only after the comment succeeds); it never replaces the comment.
+        </p>
         {([
           ['branchCreated', 'Branch created → status'],
           ['commitPushed', 'Commit pushed → status'],

@@ -152,7 +152,9 @@ function isProjectAllowed(jiraKey, jiraProjectKeys) {
 
 /** Composes the Jira comment for an event, adding the PR number and actor when present. */
 function buildCommentText(event) {
-  const base = EVENT_COMMENT_TEMPLATES[event.eventType] || ('GitHub: ' + event.eventType.replace(/_/g, ' '));
+  // A custom bucket (an AI-authored rule's own event type) has no template — give it the same
+  // emoji-led style as the built-ins so agent-created rules read consistently in Jira.
+  const base = EVENT_COMMENT_TEMPLATES[event.eventType] || ('🔔 GitHub: ' + event.eventType.replace(/_/g, ' ') + '.');
   const details = [];
   if (event.prNumber !== null) {
     details.push('PR #' + event.prNumber);

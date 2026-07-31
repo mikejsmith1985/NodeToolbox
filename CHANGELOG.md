@@ -17,7 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   valid options offered as a real dropdown in the Rules panel (fetched from Jira via createmeta; free-text
   fallback when unreachable). Every parent outcome — moved, held with the waiting sub-task keys, skipped
   (not a sub-task), or failed — is reported in the run log, and dry-run/comment-only modes gate the new
-  writes exactly like the existing transition.
+  writes exactly like the existing transition. Also clarified in the panel that a status transition never
+  replaces the comment (the comment always posts; the transition fires after it), and custom event buckets
+  from agent-authored rules now get an emoji-led default comment (🔔) matching the built-in templates.
 - **PI Review Sync — pick configured pages and poll on an interval.** The Admin Hub PI Review Sync panel now
   opens with a **"From your configured teams"** picker: every PI Review page already configured on a Team
   Dashboard profile is listed with a checkbox — tick the ones to sync and add the team to the schedule, with
