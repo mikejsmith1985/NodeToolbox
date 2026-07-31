@@ -143,6 +143,60 @@ describe('GET /api/github-email-intake/sub-status-options', () => {
     expect(response.status).toBe(200);
     expect(response.body.options).toEqual([]);
   });
+
+  it('falls back to the per-project createmeta endpoints when the legacy one is gone (Jira DC 9)', async () => {
+    makeJiraApiRequest.mockImplementation(async (_method, path) => {
+      const decodedPath = decodeURIComponent(path);
+      // Jira DC 9 removed the legacy full createmeta.
+      if (decodedPath.includes('/issue/createmeta?')) {
+        return { status: 410, body: {} };
+      }
+      if (/\/issue\/createmeta\/DENP\/issuetypes\?/.test(decodedPath)) {
+        return { status: 200, body: { values: [{ id: '10001', name: 'Story' }, { id: '10004', name: 'Defect' }] } };
+      }
+      if (/\/issue\/createmeta\/DENP\/issuetypes\/10001/.test(decodedPath)) {
+        return { status: 200, body: { values: [
+          { fieldId: 'summary' },
+          { fieldId: 'customfield_10201', allowedValues: [{ value: 'Dev Complete' }, { value: 'In QA' }] },
+        ] } };
+      }
+      if (/\/issue\/createmeta\/DENP\/issuetypes\/10004/.test(decodedPath)) {
+        return { status: 200, body: { values: [{ fieldId: 'customfield_10201', allowedValues: [{ value: 'Blocked' }] }] } };
+      }
+      return { status: 404, body: {} };
+    });
+    const configuration = { scheduler: { githubEmailIntake: { dropFolder: 'C:\\gh', jiraProjectKeys: ['DENP'], subStatusFieldId: 'customfield_10201' } } };
+
+    const response = await request(buildApp(configuration)).get('/api/github-email-intake/sub-status-options');
+
+    expect(response.status).toBe(200);
+    expect(response.body.options).toEqual(['Blocked', 'Dev Complete', 'In QA']);
+  });
+
+  it('resolves options via the JQL suggestions endpoint when no project keys are configured', async () => {
+    makeJiraApiRequest.mockImplementation(async (_method, path) => {
+      const decodedPath = decodeURIComponent(path);
+      if (decodedPath.endsWith('/rest/api/2/field')) {
+        return { status: 200, body: [
+          { id: 'customfield_10999', name: 'Something Else' },
+          { id: 'customfield_10201', name: 'Sub-status' },
+        ] };
+      }
+      if (decodedPath.includes('/jql/autocompletedata/suggestions') && decodedPath.includes('fieldName=Sub-status')) {
+        return { status: 200, body: { results: [
+          { value: '"Dev Complete"', displayName: 'Dev Complete' },
+          { value: '"In QA"', displayName: 'In QA' },
+        ] } };
+      }
+      return { status: 404, body: {} };
+    });
+    const configuration = { scheduler: { githubEmailIntake: { dropFolder: 'C:\\gh', jiraProjectKeys: [], subStatusFieldId: 'customfield_10201' } } };
+
+    const response = await request(buildApp(configuration)).get('/api/github-email-intake/sub-status-options');
+
+    expect(response.status).toBe(200);
+    expect(response.body.options).toEqual(['Dev Complete', 'In QA']);
+  });
 });
 
 describe('POST /api/github-email-intake/run-now', () => {
