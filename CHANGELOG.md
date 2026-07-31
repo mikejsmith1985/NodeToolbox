@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Team Dashboard — the PI scope selector no longer stays on a finished PI.** The v0.124.3 fix covered the
+  Agile Hub PI picker and Reports Hub, but the Team Dashboard's "View Work By: PI" selector resolves through
+  its own persisted scope and had **no date logic at all** — a stored PI still present in the option list
+  always won, and the option list deliberately keeps the last-ended PI (for carryover reference), so PI 26.3
+  stayed selected after it ended. The scope now honors a persisted PI only while it is **alive** (current,
+  future, or date-less); an ended one yields to the covering or next-starting PI (26.4). When every listed PI
+  has ended, the previous choice remains as the honest fallback.
+
+### Fixed
 - **The default PI no longer sticks on a finished PI in the gap between increments.** The active-PI finder
   only matched a PI whose date range contains today — so after PI 26.3 ended (07/29) and before PI 26.4
   starts, it found nothing and the stale prior selection silently survived. The default now advances
