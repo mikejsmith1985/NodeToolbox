@@ -152,20 +152,20 @@ vi.mock('../../store/connectionStore', () => ({
   ) => selector({ proxyStatus: mockProxyStatus, relayBridgeStatus: null }),
 }));
 
-vi.mock('../../store/settingsStore', () => ({
-  useSettingsStore: (selector: (storeState: {
-    changeRequestGeneratorJiraUrl: string;
-    changeRequestGeneratorSnowUrl: string;
-    theme: string;
-    sprintDashboardTeamProfiles: unknown[];
-  }) => unknown) =>
-    selector({
-      changeRequestGeneratorJiraUrl: '',
-      changeRequestGeneratorSnowUrl: '',
-      theme: 'dark',
-      sprintDashboardTeamProfiles: [],
-    }),
-}));
+vi.mock('../../store/settingsStore', () => {
+  // The mocked hook also needs zustand's static getState — the standup roster store (imported via
+  // the PI Review sync panel's configured-teams picker) reads it at module initialisation.
+  const mockSettingsState = {
+    changeRequestGeneratorJiraUrl: '',
+    changeRequestGeneratorSnowUrl: '',
+    theme: 'dark',
+    sprintDashboardTeamProfiles: [] as unknown[],
+    sprintDashboardActiveTeamProfileId: '',
+  };
+  const useSettingsStore = (selector: (storeState: typeof mockSettingsState) => unknown) => selector(mockSettingsState);
+  useSettingsStore.getState = () => mockSettingsState;
+  return { useSettingsStore };
+});
 
 vi.mock('../DevPanel/DevPanelView.tsx', () => ({
   default: () => <div>Mock Dev Panel</div>,

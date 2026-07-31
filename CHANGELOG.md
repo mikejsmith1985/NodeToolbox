@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **PI Review Sync — pick configured pages and poll on an interval.** The Admin Hub PI Review Sync panel now
+  opens with a **"From your configured teams"** picker: every PI Review page already configured on a Team
+  Dashboard profile is listed with a checkbox — tick the ones to sync and add the team to the schedule, with
+  the Product Owner prefilled from the team's roster (no more hand-typing page URLs; manual entry remains as a
+  fallback, and imported teams arrive disabled until you enable them). Each scheduled team also gains a **Run
+  frequency**: once daily at a set time (unchanged default), or clock-aligned polling every 15/30/60 minutes —
+  the same boundary-aligned model as the GitHub email intake sync (a 30-minute interval starting 07:00 runs
+  07:00, 07:30, 08:00…), with the existing overlap guard so a slow run is never doubled.
 - **GitHub Email Intake — a soft warning when your rules overlap on an event type.** The Rules section now shows
   a non-blocking heads-up when more than one running rule produces the same event type (e.g. a custom `pr_opened`
   rule alongside the built-in one) — *"⚠ Heads up: 2 rules target pr_opened. The first that matches wins…"*. It is
