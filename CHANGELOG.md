@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Default PI: two remaining ways the stale PI could survive.** (1) The PI label date parser only accepted
+  an ASCII hyphen between the dates — labels typed with an en-dash/em-dash ("05/21/26 – 07/29/26", the kind
+  Word/Confluence auto-convert to) parsed as *date-less*, which disabled the stale-PI detection entirely and
+  let a finished PI keep winning; the parser now accepts `-`, `–`, and `—`. (2) The Team Dashboard PI option
+  list came only from tagged issues + the field's suggestion endpoint — if the new PI wasn't on either yet,
+  there was nothing to advance to; the team's configured **PI Review page names** now feed the list too, so a
+  PI the team is planning is always offered.
+
 ### Changed
 - **PI Review loads noticeably faster.** The delivery-milestone evidence (status catalog, child stories,
   [SL]/[INT] sub-tasks) was fetched one request after another, AFTER the feature fetch — four-plus serial

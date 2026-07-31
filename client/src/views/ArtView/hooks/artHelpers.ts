@@ -9,7 +9,10 @@ import { isDeliveredWorkflowStatusName } from '../../../utils/workflowDelivery.t
 
 const STATUS_CATEGORY_DONE = 'done';
 const STATUS_CATEGORY_IN_PROGRESS = 'indeterminate';
-const PI_DATE_RANGE_PATTERN = /(\d{1,2})\/(\d{1,2})\/(\d{2,4})\s*-\s*(\d{1,2})\/(\d{1,2})\/(\d{2,4})/;
+// The separator accepts hyphen, en-dash, and em-dash — Jira admins type PI labels by hand (or paste
+// from Word/Confluence, which auto-converts "-" to "–"), and a dash mismatch silently made a label
+// unparseable: the stale-PI detection then judged it "date-less" and honored a finished PI forever.
+const PI_DATE_RANGE_PATTERN = /(\d{1,2})\/(\d{1,2})\/(\d{2,4})\s*[-–—]\s*(\d{1,2})\/(\d{1,2})\/(\d{2,4})/;
 const TWO_DIGIT_YEAR_BASE = 2000;
 
 // ── Status helpers ──

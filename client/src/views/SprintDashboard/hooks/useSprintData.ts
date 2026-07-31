@@ -527,12 +527,15 @@ export function useSprintData(
       fetchPiNameSuggestions(readConfiguredPiFieldId()).catch(() => []),
     ]);
 
-    // Combine PIs actually used on issues with the field's valid values, then narrow to the planning
-    // window (current PI + all future PIs + one most-recent prior PI) so the selector is not cluttered
-    // with years-old increments and always offers the upcoming PIs the user needs for planning.
+    // Combine PIs actually used on issues with the field's valid values AND the team's configured PI
+    // Review page names (a PI the team is planning is offered even before any issue is tagged with it
+    // and even when the suggestions endpoint yields nothing), then narrow to the planning window
+    // (current PI + all future PIs + one most-recent prior PI) so the selector is not cluttered with
+    // years-old increments and always offers the upcoming PIs the user needs for planning.
     const combinedPiValues = [
       ...(piResponse.issues ?? []).map(readIssuePiValue).filter(Boolean),
       ...piSuggestions,
+      ...readPersistedPiReviewPages().map((piReviewPage) => piReviewPage.piName.trim()).filter(Boolean),
     ];
 
     return {
