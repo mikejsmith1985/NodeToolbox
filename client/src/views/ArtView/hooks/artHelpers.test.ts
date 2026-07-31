@@ -15,6 +15,7 @@ import {
   findDefaultPiNameForDate,
   findMostRecentlyEndedPiName,
   findPiNameForDate,
+  resolvePiScopeSelection,
   generateMonthlyAccomplishedText,
   generateMonthlyRisksText,
   isImpediment,
@@ -486,6 +487,56 @@ describe('findDefaultPiNameForDate', () => {
 
   it('skips labels with no parseable date range', () => {
     expect(findDefaultPiNameForDate(['Backlog', 'PI 26.4 (08/13/26 - 10/28/26)'], new Date(2026, 6, 31)))
+      .toBe('PI 26.4 (08/13/26 - 10/28/26)');
+  });
+});
+
+describe('resolvePiScopeSelection', () => {
+  const PI_VALUES = [
+    'PI 26.2 (02/26/26 - 04/29/26)',
+    'PI 26.3 (05/21/26 - 07/29/26)',
+    'PI 26.4 (08/13/26 - 10/28/26)',
+  ];
+
+  it('keeps a persisted PI that is still current', () => {
+    expect(resolvePiScopeSelection(PI_VALUES, 'PI 26.3 (05/21/26 - 07/29/26)', new Date(2026, 5, 15)))
+      .toBe('PI 26.3 (05/21/26 - 07/29/26)');
+  });
+
+  it('replaces a persisted PI that has ENDED with the date-derived default', () => {
+    // The reported bug: the persisted 26.3 stayed selected after it ended because it was still in
+    // the option list — an ended persisted PI must yield to the active/next PI.
+    expect(resolvePiScopeSelection(PI_VALUES, 'PI 26.3 (05/21/26 - 07/29/26)', new Date(2026, 6, 31)))
+      .toBe('PI 26.4 (08/13/26 - 10/28/26)');
+  });
+
+  it('keeps a persisted FUTURE PI — a deliberate forward selection is never overridden', () => {
+    expect(resolvePiScopeSelection(PI_VALUES, 'PI 26.4 (08/13/26 - 10/28/26)', new Date(2026, 5, 15)))
+      .toBe('PI 26.4 (08/13/26 - 10/28/26)');
+  });
+
+  it('derives the default when nothing is persisted', () => {
+    expect(resolvePiScopeSelection(PI_VALUES, '', new Date(2026, 6, 31)))
+      .toBe('PI 26.4 (08/13/26 - 10/28/26)');
+  });
+
+  it('keeps an ended persisted PI when no current or future PI exists to advance to', () => {
+    const onlyPastPis = ['PI 26.2 (02/26/26 - 04/29/26)', 'PI 26.3 (05/21/26 - 07/29/26)'];
+    expect(resolvePiScopeSelection(onlyPastPis, 'PI 26.3 (05/21/26 - 07/29/26)', new Date(2026, 10, 1)))
+      .toBe('PI 26.3 (05/21/26 - 07/29/26)');
+  });
+
+  it('keeps a persisted label with no parseable dates (its recency cannot be judged)', () => {
+    expect(resolvePiScopeSelection(['Backlog', ...PI_VALUES], 'Backlog', new Date(2026, 6, 31)))
+      .toBe('Backlog');
+  });
+
+  it('falls back to the first option when nothing is persisted and no PI parses', () => {
+    expect(resolvePiScopeSelection(['Backlog', 'Icebox'], '', new Date(2026, 6, 31))).toBe('Backlog');
+  });
+
+  it('ignores a persisted value that is no longer in the option list', () => {
+    expect(resolvePiScopeSelection(PI_VALUES, 'PI 25.9 (01/01/25 - 03/01/25)', new Date(2026, 6, 31)))
       .toBe('PI 26.4 (08/13/26 - 10/28/26)');
   });
 });

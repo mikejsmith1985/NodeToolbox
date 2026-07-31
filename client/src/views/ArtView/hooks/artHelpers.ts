@@ -329,6 +329,38 @@ export function findMostRecentlyEndedPiName(
 }
 
 /**
+ * Resolves which PI a scope selector should show, honoring a persisted choice only while it is
+ * still alive: a persisted PI that is current, future, or date-less is kept (a deliberate choice is
+ * never overridden), but one whose range has ENDED yields to the date-derived default (covering PI,
+ * else the next-starting one) — so a finished PI never lingers as the selection. When every PI has
+ * ended, the persisted choice (or the first option) remains as the honest fallback.
+ */
+export function resolvePiScopeSelection(
+  availablePiValues: string[],
+  persistedPiValue: string,
+  todayDate: Date = new Date(),
+): string {
+  const persistedListedValue = availablePiValues.find((piValue) => piValue === persistedPiValue) ?? '';
+  const persistedDateRange = persistedListedValue !== '' ? parsePiDateRange(persistedListedValue) : null;
+  const normalizedTodayTime = createLocalDateAtMidnight(
+    todayDate.getMonth() + 1,
+    todayDate.getDate(),
+    todayDate.getFullYear(),
+  ).getTime();
+  const hasPersistedPiEnded = persistedDateRange !== null
+    && persistedDateRange.endDate.getTime() < normalizedTodayTime;
+
+  if (persistedListedValue !== '' && !hasPersistedPiEnded) {
+    return persistedListedValue;
+  }
+  const dateDerivedDefault = findDefaultPiNameForDate(availablePiValues, todayDate);
+  if (dateDerivedDefault !== null) {
+    return dateDerivedDefault;
+  }
+  return persistedListedValue !== '' ? persistedListedValue : (availablePiValues[0] ?? '');
+}
+
+/**
  * Narrows PI labels to the planning window a person actually needs when scoping work: the current
  * PI, every future PI, and the single most-recently-ended prior PI (handy for carry-over reference).
  * PIs that finished before that prior one are dropped so the selector is not cluttered with

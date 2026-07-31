@@ -13,7 +13,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { jiraGet } from '../../../services/jiraApi.ts';
 import { buildJqlFieldReference, readConfiguredPiFieldId } from '../../Hygiene/checks/hygieneFieldConfig.ts';
 import { fetchPiNameSuggestions } from '../../../services/piNameSuggestions.ts';
-import { filterPiNamesToPlanningWindow } from '../../ArtView/hooks/artHelpers.ts';
+import { filterPiNamesToPlanningWindow, resolvePiScopeSelection } from '../../ArtView/hooks/artHelpers.ts';
 import { useConnectionStore } from '../../../store/connectionStore.ts';
 import { useSettingsStore, type SprintDashboardPiReviewPage } from '../../../store/settingsStore.ts';
 import type { JiraBoard, JiraIssue, JiraSprint, JiraVersion } from '../../../types/jira.ts';
@@ -575,10 +575,9 @@ export function useSprintData(
       )?.name
       ?? availableFixVersions[0]?.name
       ?? '';
-    const resolvedPiValue =
-      availablePiValues.find((availablePiValue) => availablePiValue === persistedPiValue)
-      ?? availablePiValues[0]
-      ?? '';
+    // A persisted PI is honored only while it is still alive — one whose date range has ended
+    // yields to the active (or next-starting) PI, so a finished PI never lingers as the scope.
+    const resolvedPiValue = resolvePiScopeSelection(availablePiValues, persistedPiValue);
 
     if (resolvedSprint) {
       persistSelectedSprintId(resolvedSprint.id);
