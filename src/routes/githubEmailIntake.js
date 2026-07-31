@@ -180,16 +180,18 @@ async function readOptionsViaLegacyCreateMeta(configuration, projectKeys, fieldI
   return optionValues;
 }
 
-/** Strategy 2 (Jira 8.4+/DC 9, which removed the legacy endpoint): per-project, per-issue-type createmeta. */
+/** Strategy 2 (Jira 8.4+/DC 9, which removed the legacy endpoint): per-project, per-issue-type createmeta.
+ *  The per-issue-type reads run CONCURRENTLY — serially they were a dozen round trips on panel load. */
 async function readOptionsViaProjectIssueTypes(configuration, projectKeys, fieldId) {
   const optionValues = new Set();
   for (const projectKey of projectKeys) {
     const issueTypesBody = await readJiraJson(configuration,
       '/rest/api/2/issue/createmeta/' + encodeURIComponent(projectKey) + '/issuetypes?maxResults=100');
-    for (const issueType of (issueTypesBody && issueTypesBody.values) || []) {
-      const fieldsBody = await readJiraJson(configuration,
-        '/rest/api/2/issue/createmeta/' + encodeURIComponent(projectKey) + '/issuetypes/'
-        + encodeURIComponent(issueType.id) + '?maxResults=200');
+    const issueTypes = (issueTypesBody && issueTypesBody.values) || [];
+    const fieldsBodies = await Promise.all(issueTypes.map((issueType) => readJiraJson(configuration,
+      '/rest/api/2/issue/createmeta/' + encodeURIComponent(projectKey) + '/issuetypes/'
+      + encodeURIComponent(issueType.id) + '?maxResults=200')));
+    for (const fieldsBody of fieldsBodies) {
       for (const fieldMeta of (fieldsBody && fieldsBody.values) || []) {
         if (fieldMeta && fieldMeta.fieldId === fieldId) {
           collectAllowedValueLabels(fieldMeta, optionValues);

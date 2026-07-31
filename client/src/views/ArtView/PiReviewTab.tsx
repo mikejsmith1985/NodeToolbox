@@ -49,7 +49,9 @@ import {
   extractPiReviewFeatureKey,
   fetchPiReviewFeatureTransitions,
   fetchPiReviewTransitionFields,
-  fetchPiReviewDeliveryDates,
+  buildPiReviewDeliveryDates,
+  collectPiReviewFeatureKeys,
+  fetchPiReviewDeliveryEvidence,
   fetchPiReviewFeatureIssues,
   formatPiReviewFeatureDisplayValue,
   parsePiReviewFeatureDateUpdates,
@@ -910,10 +912,14 @@ function PiReviewPagePanel({
       const parsedPiReviewTable = parsePiReviewTable(confluencePage.body.storage.value);
       const parsedConfidenceTable = parseConfidenceVoteTable(confluencePage.body.storage.value);
       const parsedCapacitySummary = parsePiReviewCapacitySummary(confluencePage.body.storage.value);
-      const nextJiraIssueMap = await fetchPiReviewFeatureIssues(parsedPiReviewTable.rows);
-      const nextDeliveryDates = await fetchPiReviewDeliveryDates(nextJiraIssueMap);
+      // The delivery-evidence fetch needs only KEYS, so it runs in parallel with the feature fetch
+      // instead of after it — the two together were the page-load long pole.
+      const [nextJiraIssueMap, deliveryEvidence] = await Promise.all([
+        fetchPiReviewFeatureIssues(parsedPiReviewTable.rows),
+        fetchPiReviewDeliveryEvidence(collectPiReviewFeatureKeys(parsedPiReviewTable.rows)),
+      ]);
       const jiraReconciliationResult = reconcilePiReviewRowsWithJira(parsedPiReviewTable.rows, nextJiraIssueMap, {
-        deliveryDatesByFeatureKey: nextDeliveryDates,
+        deliveryDatesByFeatureKey: buildPiReviewDeliveryDates(nextJiraIssueMap, deliveryEvidence),
       });
       const nextVisibleOptionalColumns = readOptionalColumnsFromBinding(parsedPiReviewTable.tableBinding);
       const nextLoadedSnapshot: PiReviewLoadedSnapshot = {
@@ -1183,10 +1189,12 @@ function PiReviewPagePanel({
       }
 
       const nextRows = [...rows, ...pullResult.rows];
-      const nextJiraIssueMap = await fetchPiReviewFeatureIssues(nextRows);
-      const nextDeliveryDates = await fetchPiReviewDeliveryDates(nextJiraIssueMap);
+      const [nextJiraIssueMap, deliveryEvidence] = await Promise.all([
+        fetchPiReviewFeatureIssues(nextRows),
+        fetchPiReviewDeliveryEvidence(collectPiReviewFeatureKeys(nextRows)),
+      ]);
       const reconciliationResult = reconcilePiReviewRowsWithJira(nextRows, nextJiraIssueMap, {
-        deliveryDatesByFeatureKey: nextDeliveryDates,
+        deliveryDatesByFeatureKey: buildPiReviewDeliveryDates(nextJiraIssueMap, deliveryEvidence),
       });
       setRows(reconciliationResult.rows);
       setJiraIssueMap(nextJiraIssueMap);
@@ -1930,8 +1938,11 @@ function PiReviewPagePanel({
     setIsSaving(true);
     setLoadError(null);
     try {
-      const latestJiraIssueMap = await fetchPiReviewFeatureIssues(rows);
-      const latestDeliveryDates = await fetchPiReviewDeliveryDates(latestJiraIssueMap);
+      const [latestJiraIssueMap, latestDeliveryEvidence] = await Promise.all([
+        fetchPiReviewFeatureIssues(rows),
+        fetchPiReviewDeliveryEvidence(collectPiReviewFeatureKeys(rows)),
+      ]);
+      const latestDeliveryDates = buildPiReviewDeliveryDates(latestJiraIssueMap, latestDeliveryEvidence);
       const saveReconciliationResult = reconcilePiReviewRowsWithJira(rows, latestJiraIssueMap, {
         shouldQueueEstimateUpdates: true,
         deliveryDatesByFeatureKey: latestDeliveryDates,

@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **PI Review loads noticeably faster.** The delivery-milestone evidence (status catalog, child stories,
+  [SL]/[INT] sub-tasks) was fetched one request after another, AFTER the feature fetch — four-plus serial
+  Jira round trips on every load, pull, and save. The evidence now fetches with all independent requests in
+  parallel AND concurrently with the feature-issue fetch itself (it only needs the keys), roughly halving the
+  Jira wall-time on the PI Review tab. The Admin Hub intake panel's Sub-status option lookup likewise runs
+  its per-issue-type reads concurrently instead of serially. Same data, same derivation — only the waiting
+  is gone.
+
 ### Fixed
 - **Team Dashboard — the PI scope selector no longer stays on a finished PI.** The v0.124.3 fix covered the
   Agile Hub PI picker and Reports Hub, but the Team Dashboard's "View Work By: PI" selector resolves through

@@ -646,65 +646,111 @@ async function searchDeliveryIssues(jql: string, fields: string, shouldExpandCha
   return searchResponse.issues ?? [];
 }
 
+/** Splits keys into search-sized batches. */
+function splitIntoQueryBatches(allKeys: string[]): string[][] {
+  const keyBatches: string[][] = [];
+  for (let batchStart = 0; batchStart < allKeys.length; batchStart += FEATURE_QUERY_BATCH_SIZE) {
+    keyBatches.push(allKeys.slice(batchStart, batchStart + FEATURE_QUERY_BATCH_SIZE));
+  }
+  return keyBatches;
+}
+
+/** The raw Jira evidence the delivery-milestone derivation consumes (fetched; never partial). */
+export interface PiReviewDeliveryEvidence {
+  statusCategoryByName: ReturnType<typeof buildStatusCategoryMap>;
+  storyIssues: RawDeliveryIssue[];
+  subtaskIssues: RawDeliveryIssue[];
+  featureLinkFieldId: string;
+}
+
 /**
- * Fetches everything the delivery-milestone columns need beyond the feature issues themselves —
- * the status catalog (name → category), the features' child stories, and their [SL]/[INT] sub-tasks
- * with changelogs — and derives the per-feature milestone map (GH #262).
+ * Fetches the delivery-milestone evidence for the given feature keys — the status catalog, the
+ * features' child stories, and their [SL]/[INT] sub-tasks with changelogs. Independent requests run
+ * CONCURRENTLY (the catalog alongside every story batch, then all sub-task batches together), and
+ * because it needs only KEYS the caller can run it in parallel with the feature-issue fetch itself —
+ * that is the load-time win.
  *
- * Failure returns an EMPTY map rather than throwing: reconcile treats "no entry" as "leave the cells
- * exactly as they are", so a Jira hiccup can never blank milestone dates already on the page.
+ * Failure returns NULL rather than throwing: reconcile treats missing evidence as "leave the
+ * milestone cells exactly as they are", so a Jira hiccup can never blank dates already on the page.
+ */
+export async function fetchPiReviewDeliveryEvidence(featureKeys: string[]): Promise<PiReviewDeliveryEvidence | null> {
+  if (featureKeys.length === 0) {
+    return null;
+  }
+
+  try {
+    const featureLinkFieldId = loadConfiguredFeatureLinkFieldId();
+    const storyFields = createDeliveryStoryFields(featureLinkFieldId);
+    const [rawStatuses, storyBatchResults] = await Promise.all([
+      jiraGet<RawStatusCatalogEntry[]>('/rest/api/2/status'),
+      Promise.all(splitIntoQueryBatches(featureKeys).map((batchKeys) => {
+        const childStoryJql = buildPiReviewChildStoryJql(batchKeys, featureLinkFieldId);
+        return childStoryJql === ''
+          ? Promise.resolve<RawDeliveryIssue[]>([])
+          : searchDeliveryIssues(childStoryJql, storyFields, false);
+      })),
+    ]);
+    const storyIssues = storyBatchResults.flat();
+
+    const subtaskKeys = collectDeliverySubtaskKeys(storyIssues);
+    const subtaskBatchResults = await Promise.all(splitIntoQueryBatches(subtaskKeys).map((batchKeys) =>
+      searchDeliveryIssues(`key in (${batchKeys.join(',')})`, DELIVERY_SUBTASK_FIELDS, true)));
+
+    return {
+      statusCategoryByName: buildStatusCategoryMap(rawStatuses ?? []),
+      storyIssues,
+      subtaskIssues: subtaskBatchResults.flat(),
+      featureLinkFieldId,
+    };
+  } catch (deliveryFetchError) {
+    // eslint-disable-next-line no-console -- surfacing the degradation beats silently missing dates
+    console.warn('PI Review delivery-milestone fetch failed; milestone cells left unchanged.', deliveryFetchError);
+    return null;
+  }
+}
+
+/** Derives the per-feature milestone map from fetched evidence; null evidence yields an empty map. */
+export function buildPiReviewDeliveryDates(
+  jiraIssueMap: Record<string, JiraIssue>,
+  deliveryEvidence: PiReviewDeliveryEvidence | null,
+): Record<string, PiReviewDeliveryDates> {
+  if (!deliveryEvidence) {
+    return {};
+  }
+  return derivePiReviewDeliveryDatesByFeature({
+    featureIssuesByKey: jiraIssueMap as unknown as Record<string, RawDeliveryIssue>,
+    storyIssues: deliveryEvidence.storyIssues,
+    subtaskIssues: deliveryEvidence.subtaskIssues,
+    featureLinkFieldId: deliveryEvidence.featureLinkFieldId,
+    statusCategoryByName: deliveryEvidence.statusCategoryByName,
+    devStartStatusName: readPiReviewDevStartStatusName(),
+  });
+}
+
+/**
+ * Fetches evidence and derives the milestone map in one call (GH #262). Prefer the split
+ * fetchPiReviewDeliveryEvidence + buildPiReviewDeliveryDates when the feature-issue fetch can run in
+ * parallel; this convenience form remains for callers that already hold the issue map.
  */
 export async function fetchPiReviewDeliveryDates(
   jiraIssueMap: Record<string, JiraIssue>,
 ): Promise<Record<string, PiReviewDeliveryDates>> {
-  const featureKeys = Object.keys(jiraIssueMap);
-  if (featureKeys.length === 0) {
-    return {};
-  }
-
-  try {
-    const rawStatuses = await jiraGet<RawStatusCatalogEntry[]>('/rest/api/2/status');
-    const statusCategoryByName = buildStatusCategoryMap(rawStatuses ?? []);
-    const featureLinkFieldId = loadConfiguredFeatureLinkFieldId();
-
-    const storyIssues: RawDeliveryIssue[] = [];
-    for (let batchStart = 0; batchStart < featureKeys.length; batchStart += FEATURE_QUERY_BATCH_SIZE) {
-      const batchKeys = featureKeys.slice(batchStart, batchStart + FEATURE_QUERY_BATCH_SIZE);
-      const childStoryJql = buildPiReviewChildStoryJql(batchKeys, featureLinkFieldId);
-      if (childStoryJql !== '') {
-        storyIssues.push(...await searchDeliveryIssues(childStoryJql, createDeliveryStoryFields(featureLinkFieldId), false));
-      }
-    }
-
-    const subtaskKeys = collectDeliverySubtaskKeys(storyIssues);
-    const subtaskIssues: RawDeliveryIssue[] = [];
-    for (let batchStart = 0; batchStart < subtaskKeys.length; batchStart += FEATURE_QUERY_BATCH_SIZE) {
-      const batchKeys = subtaskKeys.slice(batchStart, batchStart + FEATURE_QUERY_BATCH_SIZE);
-      subtaskIssues.push(...await searchDeliveryIssues(`key in (${batchKeys.join(',')})`, DELIVERY_SUBTASK_FIELDS, true));
-    }
-
-    return derivePiReviewDeliveryDatesByFeature({
-      featureIssuesByKey: jiraIssueMap as unknown as Record<string, RawDeliveryIssue>,
-      storyIssues,
-      subtaskIssues,
-      featureLinkFieldId,
-      statusCategoryByName,
-      devStartStatusName: readPiReviewDevStartStatusName(),
-    });
-  } catch (deliveryFetchError) {
-    // eslint-disable-next-line no-console -- surfacing the degradation beats silently missing dates
-    console.warn('PI Review delivery-milestone fetch failed; milestone cells left unchanged.', deliveryFetchError);
-    return {};
-  }
+  const deliveryEvidence = await fetchPiReviewDeliveryEvidence(Object.keys(jiraIssueMap));
+  return buildPiReviewDeliveryDates(jiraIssueMap, deliveryEvidence);
 }
 
-/** Fetches the Jira feature issues referenced by the current PI Review rows in small search batches. */
-export async function fetchPiReviewFeatureIssues(rows: PiReviewRow[]): Promise<Record<string, JiraIssue>> {
-  const featureKeys = Array.from(new Set(
+/** Collects the distinct Jira feature keys referenced by the given PI Review rows. */
+export function collectPiReviewFeatureKeys(rows: PiReviewRow[]): string[] {
+  return Array.from(new Set(
     rows
       .map((row) => extractPiReviewFeatureKey(row.feature))
       .filter((featureKey): featureKey is string => featureKey !== null),
   ));
+}
+
+/** Fetches the Jira feature issues referenced by the current PI Review rows in small search batches. */
+export async function fetchPiReviewFeatureIssues(rows: PiReviewRow[]): Promise<Record<string, JiraIssue>> {
+  const featureKeys = collectPiReviewFeatureKeys(rows);
   if (featureKeys.length === 0) {
     return {};
   }
