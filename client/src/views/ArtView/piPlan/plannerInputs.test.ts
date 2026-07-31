@@ -9,7 +9,8 @@ import type { PiReviewRow } from '../piReviewTable.ts';
 function row(overrides: Partial<PiReviewRow>): PiReviewRow {
   return {
     rowId: 'r1', carryOver: '', priority: '', feature: 'ABC-1 Login form', pointEstimate: '8',
-    dependency: '', risks: '', committed: '', notes: '', devWork: '', testSupport: '', carryToNext: '', ...overrides,
+    dependency: '', risks: '', committed: '', notes: '', devWork: '', testSupport: '', carryToNext: '',
+    devStart: '', devTest: '', intPvs: '', prodDeploy: '', ...overrides,
   } as PiReviewRow;
 }
 

@@ -75,7 +75,7 @@ describe('importPiReviewFeatureKeys', () => {
 
 describe('isCommittedRow', () => {
   const { isCommittedRow } = require('./importPiReviewFeatures.ts');
-  const row = (committed: string) => ({ rowId: '1', carryOver: '', priority: '', feature: 'DENP-1 x', pointEstimate: '', dependency: '', risks: '', committed, notes: '', devWork: '', testSupport: '', carryToNext: '' });
+  const row = (committed: string) => ({ rowId: '1', carryOver: '', priority: '', feature: 'DENP-1 x', pointEstimate: '', dependency: '', risks: '', committed, notes: '', devWork: '', testSupport: '', carryToNext: '', devStart: '', devTest: '', intPvs: '', prodDeploy: '' });
 
   it('is committed only when the checkbox value is "Yes" (case-insensitive), matching the PI Review tab', () => {
     ['Yes', 'yes', ' YES '].forEach((value) => expect(isCommittedRow(row(value))).toBe(true));
@@ -85,7 +85,7 @@ describe('isCommittedRow', () => {
 
 describe('committedFeatureKeys', () => {
   const { committedFeatureKeys } = require('./importPiReviewFeatures.ts');
-  const row = (feature: string, committed = '') => ({ rowId: feature, carryOver: '', priority: '', feature, pointEstimate: '', dependency: '', risks: '', committed, notes: '', devWork: '', testSupport: '', carryToNext: '' });
+  const row = (feature: string, committed = '') => ({ rowId: feature, carryOver: '', priority: '', feature, pointEstimate: '', dependency: '', risks: '', committed, notes: '', devWork: '', testSupport: '', carryToNext: '', devStart: '', devTest: '', intPvs: '', prodDeploy: '' });
 
   it('returns the keys of rows whose Committed checkbox is "Yes" — ignoring the commitment boundary', () => {
     const parsed = {

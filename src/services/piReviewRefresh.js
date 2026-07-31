@@ -98,8 +98,10 @@ async function fetchIssueMap(deps, jiraConfig, featureKeys, shouldVerifyTls) {
   for (let batchStart = 0; batchStart < featureKeys.length; batchStart += FEATURE_KEY_BATCH_SIZE) {
     const batchKeys = featureKeys.slice(batchStart, batchStart + FEATURE_KEY_BATCH_SIZE);
     const batchJql = `key in (${batchKeys.join(',')})`;
+    // expand=changelog rides along so Dev Start (first entry into Implementing) derives from this
+    // same fetch — mirroring the client's createIssueSearchPath.
     const searchPath = `/rest/api/2/search?jql=${encodeURIComponent(batchJql)}`
-      + `&fields=${encodeURIComponent(RECONCILE_FIELDS)}&maxResults=${Math.max(200, batchKeys.length)}`;
+      + `&fields=${encodeURIComponent(RECONCILE_FIELDS)}&expand=changelog&maxResults=${Math.max(200, batchKeys.length)}`;
     const response = await deps.makeJiraApiRequest('GET', searchPath, null, jiraConfig, shouldVerifyTls);
     if (response && isSuccessStatus(response.status)) {
       for (const issue of (response.body && response.body.issues) || []) {
@@ -108,6 +110,74 @@ async function fetchIssueMap(deps, jiraConfig, featureKeys, shouldVerifyTls) {
     }
   }
   return issueMap;
+}
+
+// Fields fetched on the [SL]/[INT] sub-tasks so their status history can be walked for milestones.
+const DELIVERY_SUBTASK_FIELDS = 'summary,status,parent,resolutiondate';
+
+/** Runs one Jira search for the delivery fetch; throws on any non-2xx so a partial read never counts as evidence. */
+async function searchDeliveryIssues(deps, jiraConfig, jql, fields, shouldExpandChangelog, shouldVerifyTls) {
+  const expandSegment = shouldExpandChangelog ? '&expand=changelog' : '';
+  const searchPath = `/rest/api/2/search?jql=${encodeURIComponent(jql)}`
+    + `&fields=${encodeURIComponent(fields)}${expandSegment}&maxResults=200`;
+  const response = await deps.makeJiraApiRequest('GET', searchPath, null, jiraConfig, shouldVerifyTls);
+  if (!response || !isSuccessStatus(response.status)) {
+    throw new Error(`Jira delivery search returned HTTP ${response && response.status}`);
+  }
+  return (response.body && response.body.issues) || [];
+}
+
+/**
+ * Fetches the delivery-milestone evidence (status catalog, child stories, [SL]/[INT] sub-tasks with
+ * changelogs) and derives the per-feature milestone map (GH #262). Returns NULL on any failure —
+ * reconcile then leaves the milestone cells exactly as they are, so a Jira hiccup can never blank
+ * dates already on the page.
+ */
+async function fetchDeliveryDates(engine, deps, jiraConfig, issueMap, deliveryOptions, shouldVerifyTls) {
+  const featureKeys = Object.keys(issueMap);
+  if (featureKeys.length === 0) {
+    return null;
+  }
+
+  try {
+    const statusResponse = await deps.makeJiraApiRequest('GET', '/rest/api/2/status', null, jiraConfig, shouldVerifyTls);
+    if (!statusResponse || !isSuccessStatus(statusResponse.status)) {
+      throw new Error(`Jira status catalog returned HTTP ${statusResponse && statusResponse.status}`);
+    }
+    const statusCategoryByName = engine.buildStatusCategoryMap(statusResponse.body || []);
+    const storyFields = ['summary', 'subtasks']
+      .concat(engine.featureLinkCandidateFieldIds(deliveryOptions.featureLinkFieldId))
+      .join(',');
+
+    const storyIssues = [];
+    for (let batchStart = 0; batchStart < featureKeys.length; batchStart += FEATURE_KEY_BATCH_SIZE) {
+      const batchKeys = featureKeys.slice(batchStart, batchStart + FEATURE_KEY_BATCH_SIZE);
+      const childStoryJql = engine.buildPiReviewChildStoryJql(batchKeys, deliveryOptions.featureLinkFieldId);
+      if (childStoryJql !== '') {
+        storyIssues.push(...await searchDeliveryIssues(deps, jiraConfig, childStoryJql, storyFields, false, shouldVerifyTls));
+      }
+    }
+
+    const subtaskKeys = engine.collectDeliverySubtaskKeys(storyIssues);
+    const subtaskIssues = [];
+    for (let batchStart = 0; batchStart < subtaskKeys.length; batchStart += FEATURE_KEY_BATCH_SIZE) {
+      const batchKeys = subtaskKeys.slice(batchStart, batchStart + FEATURE_KEY_BATCH_SIZE);
+      subtaskIssues.push(...await searchDeliveryIssues(
+        deps, jiraConfig, `key in (${batchKeys.join(',')})`, DELIVERY_SUBTASK_FIELDS, true, shouldVerifyTls,
+      ));
+    }
+
+    return engine.derivePiReviewDeliveryDatesByFeature({
+      featureIssuesByKey: issueMap,
+      storyIssues,
+      subtaskIssues,
+      featureLinkFieldId: deliveryOptions.featureLinkFieldId,
+      statusCategoryByName,
+      devStartStatusName: deliveryOptions.devStartStatusName,
+    });
+  } catch (_deliveryError) {
+    return null;
+  }
 }
 
 /** Turns a discovered Feature into an appended row whose feature cell carries "KEY - summary". */
@@ -123,7 +193,7 @@ function buildAppendedRow(engine, feature) {
  * Jira-owned columns for all rows, and rewrite the table + capacity — preserving everything else.
  * Returns the next storage HTML plus counts. Throws if the page has no recognizable PI Review table.
  */
-async function applyRefresh(engine, deps, jiraConfig, storageValue, features, shouldVerifyTls) {
+async function applyRefresh(engine, deps, jiraConfig, storageValue, features, deliveryOptions, shouldVerifyTls) {
   const parsed = engine.parsePiReviewTable(storageValue);
   if (!parsed || !parsed.tableBinding) {
     throw new Error('No PI Review table found on the page.');
@@ -144,7 +214,12 @@ async function applyRefresh(engine, deps, jiraConfig, storageValue, features, sh
     .map((row) => engine.extractPiReviewFeatureKey(row.feature))
     .filter(Boolean);
   const issueMap = await fetchIssueMap(deps, jiraConfig, allKeys, shouldVerifyTls);
-  const reconciliation = engine.reconcilePiReviewRowsWithJira(allRows, issueMap);
+  const deliveryDatesByFeatureKey = await fetchDeliveryDates(engine, deps, jiraConfig, issueMap, deliveryOptions, shouldVerifyTls);
+  const reconciliation = engine.reconcilePiReviewRowsWithJira(
+    allRows,
+    issueMap,
+    deliveryDatesByFeatureKey ? { deliveryDatesByFeatureKey } : undefined,
+  );
 
   let nextStorage = engine.writePiReviewTable(
     storageValue,
@@ -205,6 +280,12 @@ async function refreshPiReviewPage({ page, team, deps, configuration }) {
   const pageReference = String((page && page.pageUrlOrId) || '').trim();
   const piName = String((page && page.piName) || '').trim();
   const piFieldId = String((team && team.piFieldId) || '').trim() || DEFAULT_PI_FIELD_ID;
+  // Delivery-milestone options (GH #262): the feature-link field that finds a Feature's child
+  // stories, and the status name that marks Dev Start — team-overridable, engine defaults otherwise.
+  const deliveryOptions = {
+    featureLinkFieldId: String((team && team.featureLinkFieldId) || '').trim() || engine.FEATURE_LINK_DEFAULT_FIELD,
+    devStartStatusName: String((team && team.devStartStatusName) || '').trim() || engine.DEFAULT_DEV_START_STATUS_NAME,
+  };
   const shouldVerifyTls = !(configuration && configuration.sslVerify === false);
   const confluenceConfig = (configuration && configuration.confluence) || {};
   const jiraConfig = (configuration && configuration.jira) || {};
@@ -244,7 +325,7 @@ async function refreshPiReviewPage({ page, team, deps, configuration }) {
     let applied;
     try {
       currentPage = await fetchConfluencePage(deps, confluenceConfig, pageId, shouldVerifyTls);
-      applied = await applyRefresh(engine, deps, jiraConfig, currentPage.storageValue, features, shouldVerifyTls);
+      applied = await applyRefresh(engine, deps, jiraConfig, currentPage.storageValue, features, deliveryOptions, shouldVerifyTls);
     } catch (refreshError) {
       return makeResult('failed', pageReference, now(), refreshError.message);
     }
