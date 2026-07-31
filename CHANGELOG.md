@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Every page can be exported as a PNG.** A **📸 Export PNG** button now sits in the top bar on every
+  Toolbox screen and downloads the current page's content as a high-resolution image
+  (`toolbox-<page>[-<space/tab>]-<date>.png`), so any view — a dashboard, a report, a review table — can be
+  shared in email or chat with one click. Capture reuses the existing panel-image engine (3× resolution,
+  theme-correct colors, `data-export-exclude`/`data-export-expand` attributes honored), so views that already
+  tuned their export layout render the same way here.
 - **PI Review Sync — pick configured pages and poll on an interval.** The Admin Hub PI Review Sync panel now
   opens with a **"From your configured teams"** picker: every PI Review page already configured on a Team
   Dashboard profile is listed with a checkbox — tick the ones to sync and add the team to the schedule, with
