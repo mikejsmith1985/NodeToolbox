@@ -19,6 +19,8 @@ const {
 const DEFAULT_SCHEDULE_TIME = '07:00';
 const SCHEDULE_TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
 const VALID_MODES = ['dryRun', 'commentOnly', 'full'];
+/** Where the parent Sub-status dropdown lives on this Jira instance unless the operator overrides it. */
+const DEFAULT_SUB_STATUS_FIELD_ID = 'customfield_10201';
 
 function toTrimmedString(value) {
   return typeof value === 'string' ? value.trim() : '';
@@ -48,6 +50,15 @@ function sanitiseCustomRules(rawRules) {
       if (rule.isEnabled === false) cleaned.isEnabled = false;
       if (typeof rule.comment === 'string' && rule.comment.trim() !== '') cleaned.comment = rule.comment;
       if (typeof rule.transitionStatus === 'string' && rule.transitionStatus.trim() !== '') cleaned.transitionStatus = rule.transitionStatus;
+      // Parent-story actions: move the matched sub-task's PARENT and/or set its Sub-status dropdown.
+      // The all-coding-sub-tasks-done guard defaults ON, so only a meaningful "off" is stored.
+      if (typeof rule.parentTransitionStatus === 'string' && rule.parentTransitionStatus.trim() !== '') {
+        cleaned.parentTransitionStatus = rule.parentTransitionStatus.trim();
+      }
+      if (typeof rule.parentSubStatusValue === 'string' && rule.parentSubStatusValue.trim() !== '') {
+        cleaned.parentSubStatusValue = rule.parentSubStatusValue.trim();
+      }
+      if (rule.parentRequiresAllDevDone === false) cleaned.parentRequiresAllDevDone = false;
       return cleaned;
     })
     .filter((rule) => rule.id !== '' && rule.eventType !== '');
@@ -77,6 +88,8 @@ function sanitiseConfig(rawBody, previousSeenPrs) {
       prMerged:      toTrimmedString(rawTransitions.prMerged),
     },
     customRules: sanitiseCustomRules(rawBody && rawBody.customRules),
+    // The custom field the parent Sub-status dropdown lives in (a select field; writes as { value }).
+    subStatusFieldId: toTrimmedString(rawBody && rawBody.subStatusFieldId) || DEFAULT_SUB_STATUS_FIELD_ID,
     // Preserve the dedup state across saves — a config edit must never lose it.
     seenPrs: previousSeenPrs || {},
   };
@@ -95,6 +108,7 @@ function buildDefaultConfigResponse() {
     jiraProjectKeys: [],
     transitions: { branchCreated: '', commitPushed: '', prOpened: '', prMerged: '' },
     customRules: [],
+    subStatusFieldId: DEFAULT_SUB_STATUS_FIELD_ID,
   };
 }
 
@@ -132,6 +146,40 @@ async function fetchAvailableStatuses(configuration) {
     return { statuses: [], error: fetchError instanceof Error ? fetchError.message : String(fetchError) };
   }
   return { statuses: Array.from(statusNames).sort() };
+}
+
+/**
+ * Fetches the valid options of the parent Sub-status dropdown, unioned across the configured
+ * projects' issue types via createmeta (the only DC endpoint that exposes a select field's allowed
+ * values without an issue in hand). Never throws — an unreachable Jira yields an empty list so the
+ * panel falls back to free-text entry.
+ */
+async function fetchSubStatusOptions(configuration) {
+  const cfg = ((configuration.scheduler || {}).githubEmailIntake) || {};
+  const jiraConfig = configuration.jira || {};
+  const isTlsVerified = configuration.sslVerify !== false;
+  const fieldId = toTrimmedString(cfg.subStatusFieldId) || DEFAULT_SUB_STATUS_FIELD_ID;
+  const projectKeys = Array.isArray(cfg.jiraProjectKeys) ? cfg.jiraProjectKeys.filter(Boolean) : [];
+  const optionValues = new Set();
+
+  try {
+    for (const projectKey of projectKeys) {
+      const createMetaPath = '/rest/api/2/issue/createmeta?projectKeys=' + encodeURIComponent(projectKey)
+        + '&expand=projects.issuetypes.fields';
+      const response = await makeJiraApiRequest('GET', createMetaPath, null, jiraConfig, isTlsVerified);
+      const projects = (response.status === 200 && response.body && response.body.projects) || [];
+      projects.forEach((project) => (project.issuetypes || []).forEach((issueType) => {
+        const fieldMeta = (issueType.fields || {})[fieldId];
+        (fieldMeta && fieldMeta.allowedValues ? fieldMeta.allowedValues : []).forEach((allowedValue) => {
+          const optionValue = allowedValue && (allowedValue.value || allowedValue.name);
+          if (optionValue) optionValues.add(optionValue);
+        });
+      }));
+    }
+  } catch (fetchError) {
+    return { options: [], error: fetchError instanceof Error ? fetchError.message : String(fetchError) };
+  }
+  return { options: Array.from(optionValues).sort() };
 }
 
 /** Reports whether a path is an existing directory (best-effort; used only for a UI warning). */
@@ -245,6 +293,16 @@ function createGithubEmailIntakeRouter(configuration) {
 
   router.get('/api/github-email-intake/status', (req, res) => {
     return res.json(readLastRunResult());
+  });
+
+  // Valid options of the parent Sub-status dropdown, so the Rules panel offers a real select.
+  router.get('/api/github-email-intake/sub-status-options', async (req, res) => {
+    try {
+      return res.json(await fetchSubStatusOptions(configuration));
+    } catch (optionsError) {
+      const errorMessage = optionsError instanceof Error ? optionsError.message : String(optionsError);
+      return res.status(500).json({ options: [], error: errorMessage });
+    }
   });
 
   // Jira status names for the transition dropdowns (so an operator selects a real status instead of typing).

@@ -137,6 +137,13 @@ export interface SerializedEmailRule {
   comment?: string;
   /** Operator's Jira status to transition to when this rule fires; blank/absent = comment only. */
   transitionStatus?: string;
+  // ── Parent-story actions (the merged branch names the dev SUB-TASK; the story is what the team tracks) ──
+  /** Status to move the matched issue's PARENT story to (e.g. "Ready for Testing"); absent = no parent move. */
+  parentTransitionStatus?: string;
+  /** Option to set on the parent's Sub-status dropdown; absent = no Sub-status write. */
+  parentSubStatusValue?: string;
+  /** When false, the parent moves on the FIRST merge instead of waiting for every coding sub-task to be Done. */
+  parentRequiresAllDevDone?: boolean;
 }
 
 /** True when a string is a valid regular expression (so an AI-authored pattern can't crash the engine). */
@@ -192,6 +199,17 @@ export function validateSerializedRule(candidate: unknown): SerializedEmailRule 
   }
   if (typeof raw.transitionStatus === 'string' && raw.transitionStatus.trim() !== '') {
     rule.transitionStatus = raw.transitionStatus;
+  }
+  // Parent-story action fields round-trip like the other operator fields; the guard defaults ON, so
+  // only a meaningful "off" is stored.
+  if (typeof raw.parentTransitionStatus === 'string' && raw.parentTransitionStatus.trim() !== '') {
+    rule.parentTransitionStatus = raw.parentTransitionStatus.trim();
+  }
+  if (typeof raw.parentSubStatusValue === 'string' && raw.parentSubStatusValue.trim() !== '') {
+    rule.parentSubStatusValue = raw.parentSubStatusValue.trim();
+  }
+  if (raw.parentRequiresAllDevDone === false) {
+    rule.parentRequiresAllDevDone = false;
   }
 
   // A rule with no predicates would match every email — reject it.

@@ -34,6 +34,8 @@ interface IntakeConfig {
   jiraProjectKeys: string[]
   transitions: IntakeTransitions
   customRules: SerializedEmailRule[]
+  /** Custom field id of the parent Sub-status dropdown a rule's parent action writes to. */
+  subStatusFieldId: string
 }
 
 interface IntakeEvent {
@@ -124,6 +126,18 @@ async function fetchJiraStatuses(): Promise<string[]> {
   }
 }
 
+/** Fetches the valid parent Sub-status dropdown options. Returns [] on any failure (free-text fallback). */
+async function fetchSubStatusOptions(): Promise<string[]> {
+  try {
+    const response = await fetch('/api/github-email-intake/sub-status-options')
+    if (!response.ok) return []
+    const body = await response.json() as { options?: string[] }
+    return Array.isArray(body.options) ? body.options : []
+  } catch {
+    return []
+  }
+}
+
 async function postAction(pathSuffix: 'run-now' | 'preview'): Promise<{ ok: boolean; message?: string; result?: IntakeRunResult }> {
   const response = await fetch('/api/github-email-intake/' + pathSuffix, { method: 'POST' })
   return await response.json() as { ok: boolean; message?: string; result?: IntakeRunResult }
@@ -165,6 +179,7 @@ export function GithubEmailIntakePanel() {
   const [statusMessage, setStatusMessage] = useState('')
   const [isDirty, setIsDirty] = useState(false)
   const [jiraStatuses, setJiraStatuses] = useState<string[]>([])
+  const [subStatusOptions, setSubStatusOptions] = useState<string[]>([])
   // Rule Assist (AI): the generated prompt, the pasted JSON reply, and a validation message.
   const isAiUnlocked = useAiAssistStore((state) => state.isAiAssistUnlocked)
   const [rulePrompt, setRulePrompt] = useState('')
@@ -176,10 +191,17 @@ export function GithubEmailIntakePanel() {
 
   const loadEverything = useCallback(async () => {
     try {
-      const [loadedConfig, loadedStatus, loadedStatuses] = await Promise.all([fetchConfig(), fetchStatus(), fetchJiraStatuses()])
+      const [loadedConfig, loadedStatus, loadedStatuses, loadedSubStatusOptions] = await Promise.all([
+        fetchConfig(), fetchStatus(), fetchJiraStatuses(), fetchSubStatusOptions(),
+      ])
       setJiraStatuses(loadedStatuses)
+      setSubStatusOptions(loadedSubStatusOptions)
       // Normalize newer fields so an older server or a partial payload can't crash the render.
-      setConfig({ ...loadedConfig, customRules: loadedConfig.customRules ?? [] })
+      setConfig({
+        ...loadedConfig,
+        customRules: loadedConfig.customRules ?? [],
+        subStatusFieldId: loadedConfig.subStatusFieldId ?? 'customfield_10201',
+      })
       setLastRun(loadedStatus)
       setIsDirty(false)
       setStatusMessage('')
@@ -582,9 +604,77 @@ export function GithubEmailIntakePanel() {
                     </select>
                   )}
 
+                  <label className={styles.fieldLabel}>Also move the PARENT story to (blank = leave the parent alone)</label>
+                  {jiraStatuses.length === 0 ? (
+                    <input
+                      className={styles.inputField}
+                      aria-label={`Parent story status for rule ${rule.id}`}
+                      value={rule.parentTransitionStatus ?? ''}
+                      placeholder="e.g. Ready for Testing"
+                      onChange={(event) => updateRule(rule.id, { parentTransitionStatus: event.target.value })}
+                    />
+                  ) : (
+                    <select
+                      className={styles.inputField}
+                      aria-label={`Parent story status for rule ${rule.id}`}
+                      value={rule.parentTransitionStatus ?? ''}
+                      onChange={(event) => updateRule(rule.id, { parentTransitionStatus: event.target.value })}
+                    >
+                      <option value="">Leave the parent story alone</option>
+                      {(jiraStatuses.includes(rule.parentTransitionStatus ?? '') || (rule.parentTransitionStatus ?? '') === ''
+                        ? jiraStatuses
+                        : [rule.parentTransitionStatus as string, ...jiraStatuses]
+                      ).map((status) => (
+                        <option key={status} value={status}>{status}</option>
+                      ))}
+                    </select>
+                  )}
+                  {(rule.parentTransitionStatus ?? '').trim() !== '' || (rule.parentSubStatusValue ?? '').trim() !== '' ? (
+                    <>
+                      <label className={styles.fieldLabel}>
+                        <input
+                          type="checkbox"
+                          aria-label={`Require all coding sub-tasks done for rule ${rule.id}`}
+                          checked={rule.parentRequiresAllDevDone !== false}
+                          onChange={(event) => updateRule(rule.id, { parentRequiresAllDevDone: event.target.checked ? undefined : false })}
+                        />
+                        {' '}Only when EVERY coding sub-task is Done (the [SL]/[INT]/[REL]/[PROD] scaffold never holds it)
+                      </label>
+                      <label className={styles.fieldLabel}>Set the parent&apos;s Sub-status to (blank = don&apos;t touch it)</label>
+                      {subStatusOptions.length === 0 ? (
+                        <input
+                          className={styles.inputField}
+                          aria-label={`Parent Sub-status for rule ${rule.id}`}
+                          value={rule.parentSubStatusValue ?? ''}
+                          placeholder="e.g. Dev Complete (options unavailable — typed value must match Jira exactly)"
+                          onChange={(event) => updateRule(rule.id, { parentSubStatusValue: event.target.value })}
+                        />
+                      ) : (
+                        <select
+                          className={styles.inputField}
+                          aria-label={`Parent Sub-status for rule ${rule.id}`}
+                          value={rule.parentSubStatusValue ?? ''}
+                          onChange={(event) => updateRule(rule.id, { parentSubStatusValue: event.target.value })}
+                        >
+                          <option value="">Don&apos;t change Sub-status</option>
+                          {(subStatusOptions.includes(rule.parentSubStatusValue ?? '') || (rule.parentSubStatusValue ?? '') === ''
+                            ? subStatusOptions
+                            : [rule.parentSubStatusValue as string, ...subStatusOptions]
+                          ).map((optionValue) => (
+                            <option key={optionValue} value={optionValue}>{optionValue}</option>
+                          ))}
+                        </select>
+                      )}
+                    </>
+                  ) : null}
+
                   <p className={styles.panelStatusLine}>
                     On a matching email → comments “{effectiveComment}”
                     {rule.transitionStatus && rule.transitionStatus.trim() !== '' ? ` and moves the issue to “${rule.transitionStatus}”.` : ' (no status change).'}
+                    {(rule.parentTransitionStatus ?? '').trim() !== ''
+                      ? ` Parent story → “${rule.parentTransitionStatus}”${rule.parentRequiresAllDevDone !== false ? ' once every coding sub-task is Done' : ' immediately'}.`
+                      : ''}
+                    {(rule.parentSubStatusValue ?? '').trim() !== '' ? ` Parent Sub-status → “${rule.parentSubStatusValue}”.` : ''}
                     {!isRuleEnabled ? ' — currently DISABLED.' : ''}
                   </p>
                 </li>

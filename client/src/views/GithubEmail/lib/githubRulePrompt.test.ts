@@ -155,6 +155,29 @@ describe('operator rule fields (enable/disable, comment, transition)', () => {
     ]);
     expect(compiled.map((rule) => rule.id)).toEqual(['on']);
   });
+
+  it('validateSerializedRule preserves the parent-story action fields', () => {
+    const rule = validateSerializedRule({
+      id: 'merged', eventType: 'pr_merged', bodyPattern: 'merged .* into (main|develop)',
+      transitionStatus: 'Done',
+      parentTransitionStatus: 'Ready for Testing',
+      parentSubStatusValue: 'Dev Complete',
+      parentRequiresAllDevDone: false,
+    });
+    expect(rule).toMatchObject({
+      parentTransitionStatus: 'Ready for Testing',
+      parentSubStatusValue: 'Dev Complete',
+      parentRequiresAllDevDone: false,
+    });
+  });
+
+  it('validateSerializedRule drops blank parent fields and the default (on) guard', () => {
+    const rule = validateSerializedRule({
+      id: 'merged', eventType: 'pr_merged', bodyPattern: 'merged into',
+      parentTransitionStatus: '  ', parentSubStatusValue: '', parentRequiresAllDevDone: true,
+    });
+    expect(rule).toEqual({ id: 'merged', eventType: 'pr_merged', bodyPattern: 'merged into' });
+  });
 });
 
 describe('built-in default rules (managing the defaults)', () => {

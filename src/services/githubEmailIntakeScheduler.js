@@ -280,10 +280,35 @@ async function processDropFolder(configuration, deps) {
     const forcedTransitionStatus = matchedRule && typeof matchedRule.transitionStatus === 'string'
       ? matchedRule.transitionStatus
       : '';
+    // Parent-story actions (merged branch names reference the dev sub-task; the story is what the
+    // team tracks): a rule may move the matched issue's PARENT and/or set its Sub-status dropdown.
+    // The all-coding-sub-tasks-done guard is ON unless the rule explicitly turns it off.
+    const parentTransitionStatus = matchedRule && typeof matchedRule.parentTransitionStatus === 'string'
+      ? matchedRule.parentTransitionStatus.trim()
+      : '';
+    const parentSubStatusValue = matchedRule && typeof matchedRule.parentSubStatusValue === 'string'
+      ? matchedRule.parentSubStatusValue.trim()
+      : '';
+    const parentActions = (parentTransitionStatus || parentSubStatusValue)
+      ? {
+        transitionStatus: parentTransitionStatus,
+        requireAllDevDone: !(matchedRule && matchedRule.parentRequiresAllDevDone === false),
+        subStatusValue: parentSubStatusValue,
+        subStatusFieldId: (typeof cfg.subStatusFieldId === 'string' && cfg.subStatusFieldId.trim() !== '')
+          ? cfg.subStatusFieldId.trim()
+          : 'customfield_10201',
+      }
+      : null;
 
-    // Only attach a forced transition when the rule actually sets one, so a plain run's options stay clean.
-    const postOptionsForFile = forcedTransitionStatus
-      ? Object.assign({}, postOptions, { forcedTransitionStatus })
+    // Only attach a forced transition / parent actions when the rule actually sets them, so a plain
+    // run's options stay clean.
+    const postOptionsForFile = (forcedTransitionStatus || parentActions)
+      ? Object.assign(
+        {},
+        postOptions,
+        forcedTransitionStatus ? { forcedTransitionStatus } : {},
+        parentActions ? { parentActions } : {},
+      )
       : postOptions;
 
     // Drive Jira (or a dry run). The result records land on the run via the recordResult sink.
