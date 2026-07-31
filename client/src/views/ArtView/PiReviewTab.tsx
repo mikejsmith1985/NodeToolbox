@@ -49,6 +49,7 @@ import {
   extractPiReviewFeatureKey,
   fetchPiReviewFeatureTransitions,
   fetchPiReviewTransitionFields,
+  fetchPiReviewDeliveryDates,
   fetchPiReviewFeatureIssues,
   formatPiReviewFeatureDisplayValue,
   parsePiReviewFeatureDateUpdates,
@@ -72,6 +73,12 @@ import styles from './PiReviewTab.module.css';
 
 const LONG_TEXT_COLUMNS = new Set<PiReviewColumnKey>(['dependency', 'risks', 'notes']);
 const CHECKBOX_COLUMNS = new Set<PiReviewColumnKey>(['carryOver', 'committed', 'devWork', 'testSupport', 'carryToNext']);
+/** Columns whose values come straight from Jira and are read-only in edit mode. */
+const JIRA_SYNCED_COLUMNS = new Set<PiReviewColumnKey>([
+  'priority', 'dependency', 'risks', 'devStart', 'devTest', 'intPvs', 'prodDeploy',
+]);
+/** The delivery-milestone columns share a Jira-synced helper caption distinct from links/priority. */
+const DELIVERY_MILESTONE_COLUMNS = new Set<PiReviewColumnKey>(['devStart', 'devTest', 'intPvs', 'prodDeploy']);
 /** The value a ticked PI Review checkbox cell carries. */
 const PI_REVIEW_CHECKBOX_MARKED_VALUE = 'Yes';
 const FEATURE_COLUMN_KEY = 'feature';
@@ -904,7 +911,10 @@ function PiReviewPagePanel({
       const parsedConfidenceTable = parseConfidenceVoteTable(confluencePage.body.storage.value);
       const parsedCapacitySummary = parsePiReviewCapacitySummary(confluencePage.body.storage.value);
       const nextJiraIssueMap = await fetchPiReviewFeatureIssues(parsedPiReviewTable.rows);
-      const jiraReconciliationResult = reconcilePiReviewRowsWithJira(parsedPiReviewTable.rows, nextJiraIssueMap);
+      const nextDeliveryDates = await fetchPiReviewDeliveryDates(nextJiraIssueMap);
+      const jiraReconciliationResult = reconcilePiReviewRowsWithJira(parsedPiReviewTable.rows, nextJiraIssueMap, {
+        deliveryDatesByFeatureKey: nextDeliveryDates,
+      });
       const nextVisibleOptionalColumns = readOptionalColumnsFromBinding(parsedPiReviewTable.tableBinding);
       const nextLoadedSnapshot: PiReviewLoadedSnapshot = {
         rows: jiraReconciliationResult.rows,
@@ -1174,7 +1184,10 @@ function PiReviewPagePanel({
 
       const nextRows = [...rows, ...pullResult.rows];
       const nextJiraIssueMap = await fetchPiReviewFeatureIssues(nextRows);
-      const reconciliationResult = reconcilePiReviewRowsWithJira(nextRows, nextJiraIssueMap);
+      const nextDeliveryDates = await fetchPiReviewDeliveryDates(nextJiraIssueMap);
+      const reconciliationResult = reconcilePiReviewRowsWithJira(nextRows, nextJiraIssueMap, {
+        deliveryDatesByFeatureKey: nextDeliveryDates,
+      });
       setRows(reconciliationResult.rows);
       setJiraIssueMap(nextJiraIssueMap);
       setHasUnsavedChanges(true);
@@ -1918,8 +1931,10 @@ function PiReviewPagePanel({
     setLoadError(null);
     try {
       const latestJiraIssueMap = await fetchPiReviewFeatureIssues(rows);
+      const latestDeliveryDates = await fetchPiReviewDeliveryDates(latestJiraIssueMap);
       const saveReconciliationResult = reconcilePiReviewRowsWithJira(rows, latestJiraIssueMap, {
         shouldQueueEstimateUpdates: true,
+        deliveryDatesByFeatureKey: latestDeliveryDates,
       });
       if (saveReconciliationResult.pendingEstimateUpdates.length > 0) {
         await savePiReviewFeatureEstimates(saveReconciliationResult.pendingEstimateUpdates);
@@ -1946,6 +1961,7 @@ function PiReviewPagePanel({
       const finalReconciliationResult = reconcilePiReviewRowsWithJira(
         saveReconciliationResult.rows,
         finalJiraIssueMap,
+        { deliveryDatesByFeatureKey: latestDeliveryDates },
       );
       const rowsForSave = finalReconciliationResult.rows;
 
@@ -1995,7 +2011,9 @@ function PiReviewPagePanel({
       const parsedConfidenceTable = parseConfidenceVoteTable(updatedPage.body.storage.value);
       const parsedCapacitySummary = parsePiReviewCapacitySummary(updatedPage.body.storage.value);
       const refreshedJiraIssueMap = await fetchPiReviewFeatureIssues(parsedPiReviewTable.rows);
-      const refreshedReconciliationResult = reconcilePiReviewRowsWithJira(parsedPiReviewTable.rows, refreshedJiraIssueMap);
+      const refreshedReconciliationResult = reconcilePiReviewRowsWithJira(parsedPiReviewTable.rows, refreshedJiraIssueMap, {
+        deliveryDatesByFeatureKey: latestDeliveryDates,
+      });
       const refreshedSnapshot: PiReviewLoadedSnapshot = {
         rows: refreshedReconciliationResult.rows,
         confidenceRows: parsedConfidenceTable.rows,
@@ -2483,7 +2501,7 @@ function PiReviewPagePanel({
       {tableBinding && canEditContent && (
         <fieldset className={styles.tableTools} data-export-exclude="true">
           <legend>Table tools</legend>
-          <span className={styles.summaryValue}>Optional checkbox columns:</span>
+          <span className={styles.summaryValue}>Optional columns:</span>
           {OPTIONAL_PI_REVIEW_COLUMN_KEYS.map((columnKey) => {
             const hasColumnVisible = visibleOptionalColumns.has(columnKey);
             return (
@@ -2742,7 +2760,7 @@ function PiReviewPagePanel({
                       {visiblePiReviewColumnKeys.map((columnKey) => {
                         const isLongTextColumn = LONG_TEXT_COLUMNS.has(columnKey);
                         const isCheckboxColumn = CHECKBOX_COLUMNS.has(columnKey);
-                        const isJiraSyncedColumn = columnKey === 'priority' || columnKey === 'dependency' || columnKey === 'risks';
+                        const isJiraSyncedColumn = JIRA_SYNCED_COLUMNS.has(columnKey);
                         // Dependency/Risks are long columns but read-only in edit mode — give them a compact
                         // width there so the editable columns and Actions keep the table inside the window.
                         const isSyncedReadOnlyLongColumn = canEditContent && isJiraSyncedColumn && isLongTextColumn;
@@ -2784,7 +2802,11 @@ function PiReviewPagePanel({
                                 <div className={isLongTextColumn ? styles.readOnlyMultilineValue : styles.readOnlyValue}>
                                   {formatPiReviewCellValue(columnKey, row[columnKey])}
                                 </div>
-                                <span className={styles.syncedHelperText}>Synced from Jira issue links and priority.</span>
+                                <span className={styles.syncedHelperText}>
+                                  {DELIVERY_MILESTONE_COLUMNS.has(columnKey)
+                                    ? 'Synced from Jira delivery milestones.'
+                                    : 'Synced from Jira issue links and priority.'}
+                                </span>
                               </div>
                             ) : canEditContent && isLongTextColumn ? (
                               <textarea

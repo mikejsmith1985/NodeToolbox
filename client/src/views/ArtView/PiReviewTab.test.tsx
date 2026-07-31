@@ -489,6 +489,7 @@ describe('PiReviewTab', () => {
       rows: [{
         rowId: 'pulled-1', carryOver: '', priority: '', feature: 'ALPHA-9 - Pulled Feature',
         pointEstimate: '', dependency: '', risks: '', committed: '', notes: '', devWork: '', testSupport: '',
+        carryToNext: '', devStart: '', devTest: '', intPvs: '', prodDeploy: '',
       }],
       discoveredCount: 1,
       addedCount: 1,
@@ -1528,8 +1529,16 @@ describe('PiReviewTab', () => {
 
   it('pastes Jira date tables and updates the matching Jira issue dates immediately', async () => {
     mockFetchConfluencePageByReference.mockResolvedValue(ALPHA_PAGE_WITH_FEATURE_KEY);
-    mockJiraGet
-      .mockResolvedValueOnce({
+    // Path-aware mock: the delivery-milestone fetch adds status-catalog and child-story searches
+    // between the two feature fetches, so an ordered mockResolvedValueOnce chain would misfire.
+    let featureFetchCount = 0;
+    mockJiraGet.mockImplementation((requestPath: string) => {
+      const decodedPath = decodeURIComponent(requestPath);
+      if (decodedPath.includes('/rest/api/2/status')) return Promise.resolve([]);
+      if (decodedPath.includes('cf[')) return Promise.resolve({ issues: [] });
+      featureFetchCount += 1;
+      const isRefreshedFetch = featureFetchCount > 1;
+      return Promise.resolve({
         issues: [
           {
             id: '10001',
@@ -1545,33 +1554,16 @@ describe('PiReviewTab', () => {
               updated: '',
               description: null,
               issuelinks: [],
-            },
-          },
-        ],
-      })
-      .mockResolvedValueOnce({
-        issues: [
-          {
-            id: '10001',
-            key: 'DENP-1352',
-            fields: {
-              summary: '26.3 Enrollment Support',
-              status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } },
-              priority: { name: 'Highest', iconUrl: '' },
-              assignee: null,
-              reporter: null,
-              issuetype: { name: 'Feature', iconUrl: '' },
-              created: '',
-              updated: '',
-              duedate: '2026-06-25',
-              description: null,
-              customfield_10101: '2026-05-21',
-              customfield_10102: '2026-06-03',
-              issuelinks: [],
+              ...(isRefreshedFetch ? {
+                duedate: '2026-06-25',
+                customfield_10101: '2026-05-21',
+                customfield_10102: '2026-06-03',
+              } : {}),
             },
           },
         ],
       });
+    });
 
     renderPiReviewTab([DEFAULT_TEAMS[0]]);
 

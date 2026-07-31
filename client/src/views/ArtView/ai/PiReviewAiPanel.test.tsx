@@ -44,6 +44,10 @@ function row(overrides: Partial<PiReviewRow> = {}): PiReviewRow {
     devWork: '',
     testSupport: '',
     carryToNext: '',
+    devStart: '',
+    devTest: '',
+    intPvs: '',
+    prodDeploy: '',
     ...overrides,
   }
 }

@@ -225,3 +225,146 @@ test('fail: invalid page reference → failed', async () => {
   assert.equal(result.status, 'failed');
   assert.match(result.message, /page URL is invalid/i);
 });
+
+// Build a PI Review page whose table carries the delivery-milestone columns (GH #262).
+function milestonePageStorage(dataRowsHtml) {
+  return `
+    <table><tbody>
+      <tr><th>Carry-Over</th><th>Priority</th><th>Feature</th><th>Point Estimate</th><th>Dependency</th>
+      <th>Risks</th><th>Committed to PI?</th><th>Implementation Notes</th>
+      <th>Dev Start</th><th>Dev Test</th><th>INT/PVS</th><th>Prod Deploy</th></tr>
+      ${dataRowsHtml}
+    </tbody></table>`;
+}
+
+test('GH #262: derives and writes the delivery-milestone columns from feature + sub-task history', async () => {
+  const existingRow = `<tr>${['', 'OLD-PRI', 'ALPHA-1 - Feature One', '8', '', '', 'Yes', '', '', '', '', '']
+    .map((cell) => `<td>${cell}</td>`).join('')}</tr>`;
+  const calls = { putPayloads: [] };
+  const deps = {
+    domParser,
+    nowIso: () => NOW,
+    makeConfluenceApiRequest: async (method, _path, body) => {
+      if (method === 'GET') {
+        return { status: 200, body: { title: 'PI Page', version: { number: 5 }, body: { storage: { value: milestonePageStorage(existingRow) } } } };
+      }
+      calls.putPayloads.push(body);
+      return { status: 200, body: {} };
+    },
+    makeJiraApiRequest: async (_method, path) => {
+      const decodedPath = decodeURIComponent(path);
+      if (decodedPath.includes('/rest/api/2/status')) {
+        return {
+          status: 200,
+          body: [
+            { name: 'Working', statusCategory: { key: 'indeterminate' } },
+            { name: 'Done', statusCategory: { key: 'done' } },
+          ],
+        };
+      }
+      if (decodedPath.includes('cf[10108]')) {
+        return {
+          status: 200,
+          body: {
+            issues: [{
+              key: 'ST-1',
+              fields: {
+                summary: 'Story one',
+                customfield_10108: 'ALPHA-1',
+                subtasks: [
+                  { key: 'SUB-1', fields: { summary: '[SL] SL Test: story one' } },
+                  { key: 'SUB-2', fields: { summary: '[INT] Deploy: story one' } },
+                ],
+              },
+            }],
+          },
+        };
+      }
+      if (decodedPath.includes('key in (SUB-1,SUB-2)')) {
+        return {
+          status: 200,
+          body: {
+            issues: [
+              {
+                key: 'SUB-1',
+                fields: { summary: '[SL] SL Test: story one', status: { name: 'Working' }, parent: { key: 'ST-1' }, resolutiondate: null },
+                changelog: { histories: [{ created: '2026-02-12T09:00:00.000-0500', items: [{ field: 'status', toString: 'Working' }] }] },
+              },
+              {
+                key: 'SUB-2',
+                fields: { summary: '[INT] Deploy: story one', status: { name: 'Done' }, parent: { key: 'ST-1' }, resolutiondate: null },
+                changelog: { histories: [{ created: '2026-02-27T09:00:00.000-0500', items: [{ field: 'status', toString: 'Done' }] }] },
+              },
+            ],
+          },
+        };
+      }
+      if (decodedPath.includes('key in (ALPHA-1')) {
+        return {
+          status: 200,
+          body: {
+            issues: [{
+              key: 'ALPHA-1',
+              fields: {
+                summary: 'Feature One',
+                priority: { name: 'P1' },
+                customfield_10028: 8,
+                issuelinks: [],
+                fixVersions: [{ name: '26.3', releaseDate: '2026-03-20' }],
+              },
+              changelog: { histories: [{ created: '2026-02-03T10:00:00.000-0500', items: [{ field: 'status', toString: 'Implementing' }] }] },
+            }],
+          },
+        };
+      }
+      // The feature pull.
+      return { status: 200, body: { issues: [{ key: 'ALPHA-1', fields: { summary: 'Feature One' } }] } };
+    },
+  };
+
+  const result = await refreshPiReviewPage({ page: PAGE, team: TEAM, deps, configuration: config() });
+  const written = calls.putPayloads[0].body.storage.value;
+
+  assert.equal(result.status, 'success');
+  assert.match(written, />2026-02-03</, 'Dev Start from the Implementing transition');
+  assert.match(written, />2026-02-12</, 'Dev Test from the earliest [SL] sub-task start');
+  assert.match(written, />2026-02-27</, 'INT/PVS from the [INT] sub-task completion');
+  assert.match(written, />2026-03-20</, 'Prod Deploy from the fixVersion release date');
+});
+
+test('GH #262: a failed delivery fetch preserves milestone cells already on the page (no blanking)', async () => {
+  // The page already carries a Dev Start date; the child-story search fails. Nothing else changes, so
+  // the run must be a no-op — the milestone cells must never be blanked by a Jira hiccup.
+  const existingRow = `<tr>${['', 'P1', 'ALPHA-1 - Feature One', '8', '', '', 'Yes', '', '2026-02-03', '', '', '']
+    .map((cell) => `<td>${cell}</td>`).join('')}</tr>`;
+  let putCount = 0;
+  const deps = {
+    domParser,
+    nowIso: () => NOW,
+    makeConfluenceApiRequest: async (method) => {
+      if (method === 'GET') {
+        return { status: 200, body: { title: 'PI Page', version: { number: 5 }, body: { storage: { value: milestonePageStorage(existingRow) } } } };
+      }
+      putCount += 1;
+      return { status: 200, body: {} };
+    },
+    makeJiraApiRequest: async (_method, path) => {
+      const decodedPath = decodeURIComponent(path);
+      if (decodedPath.includes('/rest/api/2/status')) {
+        return { status: 200, body: [{ name: 'Working', statusCategory: { key: 'indeterminate' } }] };
+      }
+      if (decodedPath.includes('cf[10108]')) {
+        return { status: 500, body: {} };
+      }
+      if (decodedPath.includes('key in (ALPHA-1')) {
+        return { status: 200, body: { issues: [{ key: 'ALPHA-1', fields: { summary: 'Feature One', priority: { name: 'P1' }, customfield_10028: 8, issuelinks: [] } }] } };
+      }
+      return { status: 200, body: { issues: [{ key: 'ALPHA-1', fields: { summary: 'Feature One' } }] } };
+    },
+  };
+
+  const result = await refreshPiReviewPage({ page: PAGE, team: TEAM, deps, configuration: config() });
+
+  assert.equal(result.status, 'no-op', 'nothing changed — the failed delivery fetch must not force a write');
+  assert.equal(putCount, 0, 'must not PUT (which would have blanked the milestone cells)');
+});

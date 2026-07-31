@@ -29,6 +29,7 @@ vi.mock('../SprintDashboard/featureReviewFixes.ts', async () => {
 
 import {
   extractPiReviewFeatureKey,
+  fetchPiReviewDeliveryDates,
   fetchPiReviewFeatureIssues,
   fetchPiReviewFeatureTransitions,
   fetchPiReviewTransitionFields,
@@ -539,4 +540,170 @@ describe('piReviewJira', () => {
       },
     });
   });
+
+  it('requests the feature changelog so Dev Start can be derived from status history', async () => {
+    mockJiraGet.mockResolvedValue({ issues: [] });
+
+    await fetchPiReviewFeatureIssues([{ ...createEmptyPiReviewRow(), feature: 'DENP-1352' }]);
+
+    expect(mockJiraGet.mock.calls[0][0]).toContain('expand=changelog');
+  });
+
+  it('reconciles the delivery-milestone cells from the derived dates map', () => {
+    const piReviewRow = {
+      ...createEmptyPiReviewRow(),
+      feature: 'DENP-1352',
+      devStart: '',
+      devTest: '',
+      intPvs: '',
+      prodDeploy: '',
+    };
+
+    const reconciliationResult = reconcilePiReviewRowsWithJira(
+      [piReviewRow],
+      { 'DENP-1352': makeMinimalFeatureIssue('DENP-1352') },
+      {
+        deliveryDatesByFeatureKey: {
+          'DENP-1352': { devStart: '2026-02-03', devTest: 'EXEMPT', intPvs: '2026-02-27', prodDeploy: '2026-03-20' },
+        },
+      },
+    );
+
+    expect(reconciliationResult.rows[0].devStart).toBe('2026-02-03');
+    expect(reconciliationResult.rows[0].devTest).toBe('EXEMPT');
+    expect(reconciliationResult.rows[0].intPvs).toBe('2026-02-27');
+    expect(reconciliationResult.rows[0].prodDeploy).toBe('2026-03-20');
+    expect(reconciliationResult.hasChanges).toBe(true);
+    expect(reconciliationResult.fieldChanges).toEqual(expect.arrayContaining([
+      expect.objectContaining({ fieldLabel: 'Dev Start', newValue: '2026-02-03' }),
+      expect.objectContaining({ fieldLabel: 'Dev Test', newValue: 'EXEMPT' }),
+    ]));
+  });
+
+  it('leaves existing delivery-milestone cells untouched when no dates map is supplied', () => {
+    const piReviewRow = {
+      ...createEmptyPiReviewRow(),
+      feature: 'DENP-1352',
+      devStart: '2026-02-03',
+      devTest: '2026-02-12',
+    };
+
+    const reconciliationResult = reconcilePiReviewRowsWithJira(
+      [piReviewRow],
+      { 'DENP-1352': makeMinimalFeatureIssue('DENP-1352') },
+    );
+
+    // A failed or skipped delivery fetch must never blank previously-written milestone cells.
+    expect(reconciliationResult.rows[0].devStart).toBe('2026-02-03');
+    expect(reconciliationResult.rows[0].devTest).toBe('2026-02-12');
+  });
+
+  it('clears stale milestone cells when the map carries an all-null entry for the feature', () => {
+    const piReviewRow = { ...createEmptyPiReviewRow(), feature: 'DENP-1352', devStart: '2026-02-03' };
+
+    const reconciliationResult = reconcilePiReviewRowsWithJira(
+      [piReviewRow],
+      { 'DENP-1352': makeMinimalFeatureIssue('DENP-1352') },
+      {
+        deliveryDatesByFeatureKey: {
+          'DENP-1352': { devStart: null, devTest: null, intPvs: null, prodDeploy: null },
+        },
+      },
+    );
+
+    expect(reconciliationResult.rows[0].devStart).toBe('');
+  });
+
+  it('fetches child stories and delivery sub-tasks, then derives the milestone map', async () => {
+    const featureIssue = {
+      ...makeMinimalFeatureIssue('DENP-1352'),
+      changelog: {
+        histories: [
+          { created: '2026-02-03T10:00:00.000-0500', items: [{ field: 'status', toString: 'Implementing' }] },
+        ],
+      },
+    } as unknown as JiraIssue;
+
+    mockJiraGet.mockImplementation(async (requestPath: string) => {
+      if (requestPath.startsWith('/rest/api/2/status')) {
+        return [
+          { name: 'Working', statusCategory: { key: 'indeterminate' } },
+          { name: 'Done', statusCategory: { key: 'done' } },
+        ];
+      }
+      if (requestPath.includes(encodeURIComponent('cf[10108]'))) {
+        return {
+          issues: [{
+            key: 'ST-1',
+            fields: {
+              summary: 'Story one',
+              customfield_10108: 'DENP-1352',
+              subtasks: [
+                { key: 'SUB-1', fields: { summary: '[SL] SL Test: story one' } },
+                { key: 'SUB-9', fields: { summary: 'Plain sub-task' } },
+              ],
+            },
+          }],
+        };
+      }
+      if (requestPath.includes(encodeURIComponent('key in (SUB-1)'))) {
+        return {
+          issues: [{
+            key: 'SUB-1',
+            fields: {
+              summary: '[SL] SL Test: story one',
+              status: { name: 'Working' },
+              parent: { key: 'ST-1' },
+              resolutiondate: null,
+            },
+            changelog: {
+              histories: [
+                { created: '2026-02-12T09:00:00.000-0500', items: [{ field: 'status', toString: 'Working' }] },
+              ],
+            },
+          }],
+        };
+      }
+      throw new Error(`Unexpected Jira request: ${requestPath}`);
+    });
+
+    const deliveryDates = await fetchPiReviewDeliveryDates({ 'DENP-1352': featureIssue });
+
+    expect(deliveryDates['DENP-1352']).toEqual({
+      devStart: '2026-02-03',
+      devTest: '2026-02-12',
+      intPvs: null,
+      prodDeploy: null,
+    });
+  });
+
+  it('returns an empty milestone map instead of throwing when the delivery fetch fails', async () => {
+    mockJiraGet.mockRejectedValue(new Error('network down'));
+
+    const deliveryDates = await fetchPiReviewDeliveryDates({
+      'DENP-1352': makeMinimalFeatureIssue('DENP-1352'),
+    });
+
+    // Empty means "no evidence — leave cells alone", which reconcile honors above.
+    expect(deliveryDates).toEqual({});
+  });
 });
+
+/** Builds the smallest JiraIssue-shaped object the reconcile helpers accept. */
+function makeMinimalFeatureIssue(issueKey: string): JiraIssue {
+  return {
+    id: '10001',
+    key: issueKey,
+    fields: {
+      summary: 'Feature summary',
+      status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } },
+      priority: null,
+      assignee: null,
+      reporter: null,
+      issuetype: { name: 'Feature', iconUrl: '' },
+      created: '',
+      updated: '',
+      description: null,
+    },
+  } as unknown as JiraIssue;
+}

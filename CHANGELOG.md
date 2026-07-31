@@ -8,7 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **GitHub Email Intake — a soft warning when your rules overlap on an event type.** The Rules section now shows
+- **PI Review — four delivery-milestone columns on the Confluence table (GH #262).** The PI Review table (Toolbox
+  tab, Confluence save, and the scheduled refresh alike) can now carry **Dev Start**, **Dev Test**, **INT/PVS**,
+  and **Prod Deploy** as optional columns, derived from Jira and never hand-edited: Dev Start is the day the
+  Feature first entered **Implementing** (status name overridable via ART settings / scheduler team config);
+  Dev Test is the earliest **[SL]** sub-task under the Feature's child stories entering an In Progress-category
+  status — or **EXEMPT** when every [SL] sub-task was cancelled without starting; INT/PVS is the earliest
+  **[INT] Deploy** sub-task reaching a Done-category status (a *cancelled* deploy never counts, even though Jira
+  files Cancelled under done); Prod Deploy is the Feature's earliest dated **fixVersion** release date. The legacy
+  org headers ("Dev", "DevTest") are recognised on existing pages. One pure derivation module is shared by the
+  browser and the server scheduler engine, so the two can never disagree; a failed Jira read leaves existing
+  milestone cells untouched rather than blanking them. The Rules section now shows
   a non-blocking heads-up when more than one running rule produces the same event type (e.g. a custom `pr_opened`
   rule alongside the built-in one) — *"⚠ Heads up: 2 rules target pr_opened. The first that matches wins…"*. It is
   advisory only (nothing is blocked or removed) and deliberately ignores the shipped built-in pairs (the two ways

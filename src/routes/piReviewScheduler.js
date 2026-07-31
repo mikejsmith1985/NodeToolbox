@@ -34,6 +34,10 @@ function sanitiseTeam(rawTeam) {
     scheduleTime: SCHEDULE_TIME_PATTERN.test(scheduleTime) ? scheduleTime : DEFAULT_SCHEDULE_TIME,
     productOwnerAssignee: toTrimmedString(rawTeam && rawTeam.productOwnerAssignee),
     piFieldId: toTrimmedString(rawTeam && rawTeam.piFieldId) || DEFAULT_PI_FIELD_ID,
+    // Delivery-milestone options (GH #262) — optional; blank falls back to the engine defaults
+    // (Feature Link customfield_10108, dev-start status "Implementing") inside piReviewRefresh.
+    featureLinkFieldId: toTrimmedString(rawTeam && rawTeam.featureLinkFieldId),
+    devStartStatusName: toTrimmedString(rawTeam && rawTeam.devStartStatusName),
     dependencyLinkTypes: Array.isArray(rawTeam && rawTeam.dependencyLinkTypes)
       ? rawTeam.dependencyLinkTypes.filter((name) => typeof name === 'string' && name.trim()).map((name) => name.trim())
       : [],
