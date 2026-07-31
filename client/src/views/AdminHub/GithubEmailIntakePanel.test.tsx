@@ -97,16 +97,16 @@ describe('GithubEmailIntakePanel', () => {
     render(<GithubEmailIntakePanel />);
     await screen.findByText('📧 GitHub Email Intake');
 
-    // Pick a parent status — the guard + Sub-status controls appear, guard defaulting ON.
+    // All three parent controls are visible up front — the Sub-status dropdown must be
+    // discoverable WITHOUT first picking a parent status (it is usable on its own).
     const parentSelect = screen.getByRole('combobox', { name: /Parent story status for rule branch-merged/i }) as HTMLSelectElement;
     expect(parentSelect.value).toBe('');
-    fireEvent.change(parentSelect, { target: { value: 'Ready for QA' } });
-
-    const guardToggle = await screen.findByRole('checkbox', { name: /Require all coding sub-tasks done for rule branch-merged/i });
+    const guardToggle = screen.getByRole('checkbox', { name: /Require all coding sub-tasks done for rule branch-merged/i });
     expect(guardToggle).toBeChecked();
-
-    // The Sub-status dropdown carries the options served by the new endpoint.
     const subStatusSelect = screen.getByRole('combobox', { name: /Parent Sub-status for rule branch-merged/i }) as HTMLSelectElement;
+
+    fireEvent.change(parentSelect, { target: { value: 'Ready for QA' } });
+    // The Sub-status dropdown carries the options served by the new endpoint.
     fireEvent.change(subStatusSelect, { target: { value: 'Dev Complete' } });
 
     // The plain-English summary spells out the parent behaviour.
@@ -120,9 +120,10 @@ describe('GithubEmailIntakePanel', () => {
     render(<GithubEmailIntakePanel />)
     await screen.findByText('📧 GitHub Email Intake')
 
-    // The defaults are surfaced with a Customize action.
+    // The defaults are surfaced with a Customize action. (The section blurb also names pr-merged as
+    // its example, so assert on the rule entries rather than a unique text match.)
     expect(screen.getByText('Built-in default rules')).toBeInTheDocument()
-    expect(screen.getByText('pr-merged')).toBeInTheDocument()
+    expect(screen.getAllByText('pr-merged').length).toBeGreaterThan(0)
 
     const customizeButtons = screen.getAllByRole('button', { name: /^Customize$/i })
     fireEvent.click(customizeButtons[0])
