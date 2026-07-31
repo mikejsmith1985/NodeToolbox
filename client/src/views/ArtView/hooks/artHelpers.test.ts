@@ -491,6 +491,22 @@ describe('findDefaultPiNameForDate', () => {
   });
 });
 
+describe('parsePiDateRange — dash tolerance', () => {
+  it('parses en-dash and em-dash separators, not just the ASCII hyphen', () => {
+    // Word/Confluence auto-convert "-" into "–"; an unparseable label silently disabled the
+    // stale-PI detection, which is exactly how a finished PI kept winning the default.
+    expect(parsePiDateRange('PI 26.3 (05/21/26 – 07/29/26)')).not.toBeNull();
+    expect(parsePiDateRange('PI 26.3 (05/21/26 — 07/29/26)')).not.toBeNull();
+    expect(parsePiDateRange('PI 26.3 (05/21/26-07/29/26)')).not.toBeNull();
+  });
+
+  it('advances past an ended en-dash PI to the next en-dash PI', () => {
+    const enDashPiValues = ['PI 26.3 (05/21/26 – 07/29/26)', 'PI 26.4 (08/13/26 – 10/28/26)'];
+    expect(resolvePiScopeSelection(enDashPiValues, 'PI 26.3 (05/21/26 – 07/29/26)', new Date(2026, 6, 31)))
+      .toBe('PI 26.4 (08/13/26 – 10/28/26)');
+  });
+});
+
 describe('resolvePiScopeSelection', () => {
   const PI_VALUES = [
     'PI 26.2 (02/26/26 - 04/29/26)',
