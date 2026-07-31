@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Team Dashboard — no more "PI 26.3 flashes, then flips to 26.4", and a faster load.** When staleness
+  advances the PI, the saved **team profile is now healed too** — previously the profile restamped its stored
+  (finished) PI on every activation, so each app open briefly showed and loaded under the old PI before
+  resolving forward. And the PI-option enumeration query was fetching up to 200 issues × ~20 fields just to
+  read PI names; it now requests **only the PI field**, cutting a large share of the dashboard's Jira payload.
+  The PI value reader also now honors the configured PI field id (it was hardcoded to `customfield_10301`,
+  blanking PI names for teams on a different field).
+
+### Fixed
 - **Default PI: two remaining ways the stale PI could survive.** (1) The PI label date parser only accepted
   an ASCII hyphen between the dates — labels typed with an en-dash/em-dash ("05/21/26 – 07/29/26", the kind
   Word/Confluence auto-convert to) parsed as *date-less*, which disabled the stale-PI detection entirely and

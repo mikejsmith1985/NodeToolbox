@@ -368,11 +368,14 @@ function createAlphabeticalValues(values: Iterable<string>): string[] {
 }
 
 function readIssuePiValue(issue: JiraIssue): string {
-  if (typeof issue.fields.customfield_10301 === 'string') {
-    return issue.fields.customfield_10301;
+  // Read the SAME configured PI field the enumeration query requests (GH #167's rule) — the reader
+  // was hardcoded to customfield_10301, silently blanking PI values for teams on a different field.
+  const piFieldValue = (issue.fields as Record<string, unknown>)[readConfiguredPiFieldId()];
+  if (typeof piFieldValue === 'string') {
+    return piFieldValue;
   }
-
-  return issue.fields.customfield_10301?.value ?? issue.fields.customfield_10301?.name ?? '';
+  const piOptionValue = piFieldValue as { value?: string; name?: string } | null | undefined;
+  return piOptionValue?.value ?? piOptionValue?.name ?? '';
 }
 
 function sortScopeSprints(scopeSprints: JiraSprint[]): JiraSprint[] {
@@ -520,7 +523,10 @@ export function useSprintData(
           // PI field derived from ART settings (default cf[10301]) — a hardcode here left teams
           // with a different PI field showing an empty, silently "perfect" dashboard (GH #167).
           `project = "${escapeJqlValue(projectKey)}" AND ${buildJqlFieldReference(readConfiguredPiFieldId())} is not EMPTY ORDER BY updated DESC`,
-          sprintFieldListRef.current,
+          // ONLY the PI field: this query exists to enumerate PI names — requesting the full sprint
+          // field list here shipped ~20 fields × 200 issues of payload nobody read, and was a large
+          // share of the dashboard's load time.
+          readConfiguredPiFieldId(),
         ),
       ).catch(() => ({ issues: [] })),
       // The field's valid values include future PIs no issue references yet — the issue query can't see those.
@@ -581,6 +587,12 @@ export function useSprintData(
     // A persisted PI is honored only while it is still alive — one whose date range has ended
     // yields to the active (or next-starting) PI, so a finished PI never lingers as the scope.
     const resolvedPiValue = resolvePiScopeSelection(availablePiValues, persistedPiValue);
+    // When staleness advanced the PI, heal the saved TEAM PROFILE too: the profile restamps its
+    // stored PI into the working selection on every activation, so without this the next app open
+    // flashes (and briefly loads under) the finished PI before resolving forward again.
+    if (scopeMode === DASHBOARD_SCOPE_MODE_PI && resolvedPiValue !== '' && resolvedPiValue !== persistedPiValue) {
+      useSettingsStore.getState().updateActiveSprintDashboardTeamProfile({ selectedPiValue: resolvedPiValue });
+    }
 
     if (resolvedSprint) {
       persistSelectedSprintId(resolvedSprint.id);
