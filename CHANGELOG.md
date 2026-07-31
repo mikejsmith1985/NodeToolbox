@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **GitHub Email Intake — the parent Sub-status control was effectively invisible.** The Sub-status dropdown
+  (and the all-coding-sub-tasks-done guard) only appeared AFTER a parent story status was picked, and parent
+  controls only exist on customized rules — so on a fresh panel there was nothing to find. All three parent
+  controls now show on every rule card up front (Sub-status works on its own, without a parent transition),
+  and the Built-in default rules blurb now says explicitly that Customize is how a built-in like
+  **pr-merged** gains parent-story actions.
+
 ### Added
 - **Every page can be exported as a PNG.** A **📸 Export PNG** button now sits in the top bar on every
   Toolbox screen and downloads the current page's content as a high-resolution image

@@ -634,44 +634,42 @@ export function GithubEmailIntakePanel() {
                       ))}
                     </select>
                   )}
-                  {(rule.parentTransitionStatus ?? '').trim() !== '' || (rule.parentSubStatusValue ?? '').trim() !== '' ? (
-                    <>
-                      <label className={styles.fieldLabel}>
-                        <input
-                          type="checkbox"
-                          aria-label={`Require all coding sub-tasks done for rule ${rule.id}`}
-                          checked={rule.parentRequiresAllDevDone !== false}
-                          onChange={(event) => updateRule(rule.id, { parentRequiresAllDevDone: event.target.checked ? undefined : false })}
-                        />
-                        {' '}Only when EVERY coding sub-task is Done (the [SL]/[INT]/[REL]/[PROD] scaffold never holds it)
-                      </label>
-                      <label className={styles.fieldLabel}>Set the parent&apos;s Sub-status to (blank = don&apos;t touch it)</label>
-                      {subStatusOptions.length === 0 ? (
-                        <input
-                          className={styles.inputField}
-                          aria-label={`Parent Sub-status for rule ${rule.id}`}
-                          value={rule.parentSubStatusValue ?? ''}
-                          placeholder="e.g. Dev Complete (options unavailable — typed value must match Jira exactly)"
-                          onChange={(event) => updateRule(rule.id, { parentSubStatusValue: event.target.value })}
-                        />
-                      ) : (
-                        <select
-                          className={styles.inputField}
-                          aria-label={`Parent Sub-status for rule ${rule.id}`}
-                          value={rule.parentSubStatusValue ?? ''}
-                          onChange={(event) => updateRule(rule.id, { parentSubStatusValue: event.target.value })}
-                        >
-                          <option value="">Don&apos;t change Sub-status</option>
-                          {(subStatusOptions.includes(rule.parentSubStatusValue ?? '') || (rule.parentSubStatusValue ?? '') === ''
-                            ? subStatusOptions
-                            : [rule.parentSubStatusValue as string, ...subStatusOptions]
-                          ).map((optionValue) => (
-                            <option key={optionValue} value={optionValue}>{optionValue}</option>
-                          ))}
-                        </select>
-                      )}
-                    </>
-                  ) : null}
+                  {/* Always visible (not gated behind a parent-status pick) — hiding these made the
+                      Sub-status control undiscoverable, and Sub-status is usable on its own. */}
+                  <label className={styles.fieldLabel}>Set the parent&apos;s Sub-status to (blank = don&apos;t touch it)</label>
+                  {subStatusOptions.length === 0 ? (
+                    <input
+                      className={styles.inputField}
+                      aria-label={`Parent Sub-status for rule ${rule.id}`}
+                      value={rule.parentSubStatusValue ?? ''}
+                      placeholder="e.g. Dev Complete (options unavailable — typed value must match Jira exactly)"
+                      onChange={(event) => updateRule(rule.id, { parentSubStatusValue: event.target.value })}
+                    />
+                  ) : (
+                    <select
+                      className={styles.inputField}
+                      aria-label={`Parent Sub-status for rule ${rule.id}`}
+                      value={rule.parentSubStatusValue ?? ''}
+                      onChange={(event) => updateRule(rule.id, { parentSubStatusValue: event.target.value })}
+                    >
+                      <option value="">Don&apos;t change Sub-status</option>
+                      {(subStatusOptions.includes(rule.parentSubStatusValue ?? '') || (rule.parentSubStatusValue ?? '') === ''
+                        ? subStatusOptions
+                        : [rule.parentSubStatusValue as string, ...subStatusOptions]
+                      ).map((optionValue) => (
+                        <option key={optionValue} value={optionValue}>{optionValue}</option>
+                      ))}
+                    </select>
+                  )}
+                  <label className={styles.fieldLabel}>
+                    <input
+                      type="checkbox"
+                      aria-label={`Require all coding sub-tasks done for rule ${rule.id}`}
+                      checked={rule.parentRequiresAllDevDone !== false}
+                      onChange={(event) => updateRule(rule.id, { parentRequiresAllDevDone: event.target.checked ? undefined : false })}
+                    />
+                    {' '}Parent actions only when EVERY coding sub-task is Done (the [SL]/[INT]/[REL]/[PROD] scaffold never holds it)
+                  </label>
 
                   <p className={styles.panelStatusLine}>
                     On a matching email → comments “{effectiveComment}”
@@ -692,7 +690,9 @@ export function GithubEmailIntakePanel() {
             <label className={styles.fieldLabel} style={{ marginTop: 'var(--spacing-sm)' }}>Built-in default rules</label>
             <p className={styles.panelStatusLine}>
               These ship with Toolbox and run automatically. Click <strong>Customize</strong> to make an editable
-              copy you can turn off, reword, or give a status transition.
+              copy you can turn off, reword, give a status transition, or give <strong>parent-story actions</strong>
+              (move the parent / set its Sub-status) — e.g. Customize <strong>pr-merged</strong> to move a story to
+              Ready for Testing when its branches merge.
             </p>
             <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 'var(--spacing-xs)' }}>
               {uncustomizedDefaults.map((rule) => (
