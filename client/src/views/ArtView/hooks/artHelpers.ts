@@ -256,6 +256,79 @@ export function findPiNameForDate(
 }
 
 /**
+ * Finds the PI label with the nearest START date strictly after the provided day — the next PI
+ * coming up. Labels with no parseable range are skipped.
+ */
+export function findUpcomingPiNameAfterDate(
+  piNames: string[],
+  todayDate: Date = new Date(),
+): string | null {
+  const normalizedTodayTime = createLocalDateAtMidnight(
+    todayDate.getMonth() + 1,
+    todayDate.getDate(),
+    todayDate.getFullYear(),
+  ).getTime();
+
+  let nearestUpcomingPiName: string | null = null;
+  let nearestUpcomingStartTime = Number.POSITIVE_INFINITY;
+  for (const piName of piNames) {
+    const parsedDateRange = parsePiDateRange(piName);
+    if (!parsedDateRange) {
+      continue;
+    }
+    const startTime = parsedDateRange.startDate.getTime();
+    if (startTime > normalizedTodayTime && startTime < nearestUpcomingStartTime) {
+      nearestUpcomingStartTime = startTime;
+      nearestUpcomingPiName = piName;
+    }
+  }
+  return nearestUpcomingPiName;
+}
+
+/**
+ * The DEFAULT PI for a given day: the PI whose range covers it — or, in the gap BETWEEN PIs (the
+ * prior one ended, the next not yet started), the next-starting PI. Selection surfaces use this so
+ * a finished PI never lingers as the default; null only when no current or future PI exists.
+ */
+export function findDefaultPiNameForDate(
+  piNames: string[],
+  todayDate: Date = new Date(),
+): string | null {
+  return findPiNameForDate(piNames, todayDate) ?? findUpcomingPiNameAfterDate(piNames, todayDate);
+}
+
+/**
+ * Finds the PI label with the latest END date strictly before the provided day — during the gap
+ * between PIs this is "the one closing out", which the closeout/remap tooling needs (defaulting
+ * FORWARD there would point closeout at a PI that never ran).
+ */
+export function findMostRecentlyEndedPiName(
+  piNames: string[],
+  todayDate: Date = new Date(),
+): string | null {
+  const normalizedTodayTime = createLocalDateAtMidnight(
+    todayDate.getMonth() + 1,
+    todayDate.getDate(),
+    todayDate.getFullYear(),
+  ).getTime();
+
+  let latestEndedPiName: string | null = null;
+  let latestEndedEndTime = Number.NEGATIVE_INFINITY;
+  for (const piName of piNames) {
+    const parsedDateRange = parsePiDateRange(piName);
+    if (!parsedDateRange) {
+      continue;
+    }
+    const endTime = parsedDateRange.endDate.getTime();
+    if (endTime < normalizedTodayTime && endTime > latestEndedEndTime) {
+      latestEndedEndTime = endTime;
+      latestEndedPiName = piName;
+    }
+  }
+  return latestEndedPiName;
+}
+
+/**
  * Narrows PI labels to the planning window a person actually needs when scoping work: the current
  * PI, every future PI, and the single most-recently-ended prior PI (handy for carry-over reference).
  * PIs that finished before that prior one are dropped so the selector is not cluttered with

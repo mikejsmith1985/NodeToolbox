@@ -12,6 +12,8 @@ import {
   computeVelocityPoints,
   detectImpedimentReasons,
   filterPiNamesToPlanningWindow,
+  findDefaultPiNameForDate,
+  findMostRecentlyEndedPiName,
   findPiNameForDate,
   generateMonthlyAccomplishedText,
   generateMonthlyRisksText,
@@ -450,6 +452,54 @@ describe('findPiNameForDate', () => {
     );
 
     expect(matchedPiName).toBeNull();
+  });
+});
+
+describe('findDefaultPiNameForDate', () => {
+  const PI_NAMES = [
+    'PI 26.4 (08/13/26 - 10/28/26)',
+    'PI 26.3 (05/21/26 - 07/29/26)',
+    'PI 26.2 (02/26/26 - 04/29/26)',
+  ];
+
+  it('returns the covering PI while one is in flight', () => {
+    expect(findDefaultPiNameForDate(PI_NAMES, new Date(2026, 5, 15))).toBe('PI 26.3 (05/21/26 - 07/29/26)');
+  });
+
+  it('defaults FORWARD to the next-starting PI during the gap between PIs', () => {
+    // The reported bug: PI 26.3 ended 07/29, today is 07/31, 26.4 starts 08/13 — the default must
+    // advance to 26.4 instead of leaving a stale prior selection in place.
+    expect(findDefaultPiNameForDate(PI_NAMES, new Date(2026, 6, 31))).toBe('PI 26.4 (08/13/26 - 10/28/26)');
+  });
+
+  it('picks the NEAREST upcoming PI when several future PIs exist', () => {
+    const withTwoFuture = ['PI 27.1 (11/05/26 - 01/27/27)', ...PI_NAMES];
+    expect(findDefaultPiNameForDate(withTwoFuture, new Date(2026, 6, 31))).toBe('PI 26.4 (08/13/26 - 10/28/26)');
+  });
+
+  it('returns null when every parseable PI has already ended', () => {
+    expect(findDefaultPiNameForDate(
+      ['PI 26.2 (02/26/26 - 04/29/26)', 'PI 26.3 (05/21/26 - 07/29/26)'],
+      new Date(2026, 10, 1),
+    )).toBeNull();
+  });
+
+  it('skips labels with no parseable date range', () => {
+    expect(findDefaultPiNameForDate(['Backlog', 'PI 26.4 (08/13/26 - 10/28/26)'], new Date(2026, 6, 31)))
+      .toBe('PI 26.4 (08/13/26 - 10/28/26)');
+  });
+});
+
+describe('findMostRecentlyEndedPiName', () => {
+  it('returns the PI that ended closest before the supplied day (the one closing out)', () => {
+    expect(findMostRecentlyEndedPiName(
+      ['PI 26.4 (08/13/26 - 10/28/26)', 'PI 26.3 (05/21/26 - 07/29/26)', 'PI 26.2 (02/26/26 - 04/29/26)'],
+      new Date(2026, 6, 31),
+    )).toBe('PI 26.3 (05/21/26 - 07/29/26)');
+  });
+
+  it('returns null when no parseable PI has ended yet', () => {
+    expect(findMostRecentlyEndedPiName(['PI 26.4 (08/13/26 - 10/28/26)'], new Date(2026, 6, 31))).toBeNull();
   });
 
   it('skips PI labels that do not contain a parseable date range', () => {

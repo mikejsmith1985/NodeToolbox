@@ -3,7 +3,7 @@
 import { jiraGet, jiraPut } from '../../services/jiraApi.ts';
 import type { JiraIssue } from '../../types/jira.ts';
 import { readArtFeatureScopeSettings } from '../ArtView/artFeatureScopeSettings.ts';
-import { findPiNameForDate, parsePiDateRange } from '../ArtView/hooks/artHelpers.ts';
+import { findMostRecentlyEndedPiName, findPiNameForDate, parsePiDateRange } from '../ArtView/hooks/artHelpers.ts';
 import { buildDirectFeatureJql } from '../ArtView/piReviewPullFeatures.ts';
 
 const ART_SETTINGS_STORAGE_KEY = 'tbxARTSettings';
@@ -319,8 +319,12 @@ export async function fetchFeatureRemapPiOptions(
 ): Promise<FeatureRemapPiOptions> {
   const featureRemapSettings = readFeatureRemapSettings();
   const sortedPiNames = await fetchProjectPiNames(projectKey, featureRemapSettings.piFieldId);
-  // The PI containing today — the one closing out, whose leftover unplanned work rolls forward.
-  const currentByDatePiName = findPiNameForDate(sortedPiNames) ?? (selectedPiName.trim() || sortedPiNames[0] || '');
+  // The PI closing out, whose leftover unplanned work rolls forward: the one containing today, or —
+  // in the gap between PIs — the most recently ENDED one (defaulting forward here would aim closeout
+  // at a PI that has not run yet). The team's selection is only a last-resort fallback.
+  const currentByDatePiName = findPiNameForDate(sortedPiNames)
+    ?? findMostRecentlyEndedPiName(sortedPiNames)
+    ?? (selectedPiName.trim() || sortedPiNames[0] || '');
   // Closeout buckets that PI's leftovers into the NEXT PI. sortedPiNames is newest-first, so the PI
   // after today's is the one immediately BEFORE it in the list; falling back to today's PI when there
   // is no later one (nothing newer has been planned yet).

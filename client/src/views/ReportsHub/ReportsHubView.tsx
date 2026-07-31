@@ -17,7 +17,7 @@ import { buildFeatureChangeSendPayload, buildScopeChangeSendPayload, surfaceForT
 import { PersonalFlowTab } from './PersonalFlowTab.tsx'
 import { IssueAgingTab } from './IssueAgingTab.tsx'
 import { IssueFlowTab } from './IssueFlowTab.tsx'
-import { findPiNameForDate } from '../ArtView/hooks/artHelpers.ts'
+import { findDefaultPiNameForDate } from '../ArtView/hooks/artHelpers.ts'
 import type {
   ArtTeamFeatureChangeResult,
   ArtTeamScopeResult,
@@ -2497,7 +2497,8 @@ export default function ReportsHubView() {
       return
     }
 
-    const currentPiName = findPiNameForDate(piFilterOptions)
+    // Covering PI, or the next-starting one during the gap between PIs — never a stale ended PI.
+    const currentPiName = findDefaultPiNameForDate(piFilterOptions)
     if (currentPiName === null) {
       return
     }

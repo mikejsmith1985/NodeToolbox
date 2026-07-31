@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **The default PI no longer sticks on a finished PI in the gap between increments.** The active-PI finder
+  only matched a PI whose date range contains today — so after PI 26.3 ended (07/29) and before PI 26.4
+  starts, it found nothing and the stale prior selection silently survived. The default now advances
+  **forward** to the next-starting PI during that gap (Agile Hub PI selector and the Reports Hub PI filter
+  alike). The PI **closeout remap** deliberately does the opposite there: its "PI closing out" is now the most
+  recently **ended** PI, so gap-week closeouts still roll 26.3's leftovers into 26.4 instead of aiming at a PI
+  that never ran.
+
+### Fixed
 - **GitHub Email Intake — the Sub-status dropdown now actually populates on Jira DC 9.** The options fetch
   used only the legacy full-createmeta endpoint, which newer Jira Data Center versions removed — so the panel
   silently fell back to free-text entry ("typed value must match Jira exactly"). The server now tries every
