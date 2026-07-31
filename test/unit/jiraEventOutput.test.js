@@ -97,3 +97,154 @@ describe('postJiraCommentForEvent', () => {
     expect(results[0]).toMatchObject({ jiraKey: 'PROJ-1', isSuccess: false });
   });
 });
+
+// ── Parent-story actions (merge → sub-task Done, parent → Ready for Testing + Sub-status) ──
+
+/** parentActions used across the suite: transition + sub-status, with the all-dev-done guard on. */
+function buildParentActions(overrides) {
+  return {
+    transitionStatus: 'Ready for Testing',
+    requireAllDevDone: true,
+    subStatusValue: 'Dev Complete',
+    subStatusFieldId: 'customfield_10201',
+    ...(overrides || {}),
+  };
+}
+
+/** Mocks the matched issue as a sub-task of STORY-9. */
+function mockSubtaskLookup() {
+  return nock(JIRA_BASE)
+    .get('/rest/api/2/issue/SUB-1')
+    .query({ fields: 'parent,issuetype' })
+    .reply(200, { fields: { issuetype: { subtask: true }, parent: { key: 'STORY-9' } } });
+}
+
+/** Mocks the parent's sub-task stubs. */
+function mockParentSubtasks(subtaskStubs) {
+  return nock(JIRA_BASE)
+    .get('/rest/api/2/issue/STORY-9')
+    .query({ fields: 'subtasks' })
+    .reply(200, { fields: { subtasks: subtaskStubs } });
+}
+
+function doneStub(key, summary) {
+  return { key, fields: { summary, status: { name: 'Done', statusCategory: { key: 'done' } } } };
+}
+
+function workingStub(key, summary) {
+  return { key, fields: { summary, status: { name: 'Working', statusCategory: { key: 'indeterminate' } } } };
+}
+
+describe('postJiraCommentForEvent — parent-story actions', () => {
+  it('moves the parent and sets Sub-status when every coding sub-task is Done', async () => {
+    nock(JIRA_BASE).post('/rest/api/2/issue/SUB-1/comment').reply(201, {});
+    mockSubtaskLookup();
+    mockParentSubtasks([
+      doneStub('SUB-1', 'Repo A dev execute'),
+      doneStub('SUB-2', 'Repo B dev execute'),
+      workingStub('SUB-3', '[SL] SL Test: story'), // scaffold sub-task — must NOT hold the parent
+    ]);
+    const parentTransitionsGet = nock(JIRA_BASE)
+      .get('/rest/api/2/issue/STORY-9/transitions')
+      .reply(200, { transitions: [{ id: '41', to: { name: 'Ready for Testing', statusCategory: { name: 'In Progress' } } }] });
+    const parentTransitionPost = nock(JIRA_BASE)
+      .post('/rest/api/2/issue/STORY-9/transitions', { transition: { id: '41' } })
+      .reply(204);
+    const subStatusPut = nock(JIRA_BASE)
+      .put('/rest/api/2/issue/STORY-9', { fields: { customfield_10201: { value: 'Dev Complete' } } })
+      .reply(204);
+
+    const results = [];
+    await postJiraCommentForEvent('SUB-1', 'merged', 'pr_merged', 'owner/repo', {}, buildConfig(), {
+      parentActions: buildParentActions(),
+      recordResult: (record) => results.push(record),
+    });
+
+    expect(parentTransitionsGet.isDone()).toBe(true);
+    expect(parentTransitionPost.isDone()).toBe(true);
+    expect(subStatusPut.isDone()).toBe(true);
+    expect(results.some((record) => record.jiraKey === 'STORY-9' && record.isSuccess)).toBe(true);
+  });
+
+  it('holds the parent while a coding sub-task is not Done (and skips the Sub-status write)', async () => {
+    nock(JIRA_BASE).post('/rest/api/2/issue/SUB-1/comment').reply(201, {});
+    mockSubtaskLookup();
+    mockParentSubtasks([
+      doneStub('SUB-1', 'Repo A dev execute'),
+      workingStub('SUB-2', 'Repo B dev execute'), // still coding — parent must not move
+    ]);
+    // No parent transitions/PUT interceptors: an attempt would fail the test as an unmatched request.
+
+    const results = [];
+    await postJiraCommentForEvent('SUB-1', 'merged', 'pr_merged', 'owner/repo', {}, buildConfig(), {
+      parentActions: buildParentActions(),
+      recordResult: (record) => results.push(record),
+    });
+
+    expect(nock.pendingMocks()).toEqual([]);
+    const holdRecord = results.find((record) => record.jiraKey === 'STORY-9');
+    expect(holdRecord).toBeDefined();
+    expect(holdRecord.message).toMatch(/not .*done|held/i);
+  });
+
+  it('skips parent actions when the matched issue is not a sub-task', async () => {
+    nock(JIRA_BASE).post('/rest/api/2/issue/SUB-1/comment').reply(201, {});
+    nock(JIRA_BASE)
+      .get('/rest/api/2/issue/SUB-1')
+      .query({ fields: 'parent,issuetype' })
+      .reply(200, { fields: { issuetype: { subtask: false }, parent: null } });
+
+    const results = [];
+    await postJiraCommentForEvent('SUB-1', 'merged', 'pr_merged', 'owner/repo', {}, buildConfig(), {
+      parentActions: buildParentActions(),
+      recordResult: (record) => results.push(record),
+    });
+
+    expect(nock.pendingMocks()).toEqual([]);
+    expect(results.some((record) => /not a sub-task/i.test(record.message || ''))).toBe(true);
+  });
+
+  it('moves the parent immediately when the all-dev-done guard is off', async () => {
+    nock(JIRA_BASE).post('/rest/api/2/issue/SUB-1/comment').reply(201, {});
+    mockSubtaskLookup();
+    // Guard off → the sibling read never happens; only the transition fires (no sub-status configured).
+    const parentTransitionsGet = nock(JIRA_BASE)
+      .get('/rest/api/2/issue/STORY-9/transitions')
+      .reply(200, { transitions: [{ id: '41', to: { name: 'Ready for Testing', statusCategory: { name: 'In Progress' } } }] });
+    const parentTransitionPost = nock(JIRA_BASE)
+      .post('/rest/api/2/issue/STORY-9/transitions', { transition: { id: '41' } })
+      .reply(204);
+
+    await postJiraCommentForEvent('SUB-1', 'merged', 'pr_merged', 'owner/repo', {}, buildConfig(), {
+      parentActions: buildParentActions({ requireAllDevDone: false, subStatusValue: '' }),
+      recordResult: () => {},
+    });
+
+    expect(parentTransitionsGet.isDone()).toBe(true);
+    expect(parentTransitionPost.isDone()).toBe(true);
+    expect(nock.pendingMocks()).toEqual([]);
+  });
+
+  it('dry run with parent actions records the plan and makes NO Jira calls', async () => {
+    const results = [];
+    await postJiraCommentForEvent('SUB-1', 'merged', 'pr_merged', 'owner/repo', {}, buildConfig(), {
+      dryRun: true,
+      parentActions: buildParentActions(),
+      recordResult: (record) => results.push(record),
+    });
+
+    expect(results.some((record) => /parent/i.test(record.message || ''))).toBe(true);
+  });
+
+  it('comment-only mode never touches the parent', async () => {
+    nock(JIRA_BASE).post('/rest/api/2/issue/SUB-1/comment').reply(201, {});
+
+    await postJiraCommentForEvent('SUB-1', 'merged', 'pr_merged', 'owner/repo', {}, buildConfig(), {
+      suppressTransition: true,
+      parentActions: buildParentActions(),
+      recordResult: () => {},
+    });
+
+    expect(nock.pendingMocks()).toEqual([]);
+  });
+});

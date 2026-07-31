@@ -14,6 +14,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   shared in email or chat with one click. Capture reuses the existing panel-image engine (3× resolution,
   theme-correct colors, `data-export-exclude`/`data-export-expand` attributes honored), so views that already
   tuned their export layout render the same way here.
+- **GitHub Email Intake — a merged branch can now advance the PARENT story, not just the sub-task.** A merged
+  branch names the dev-execution sub-task, but the team tracks the story — so a rule (e.g. `pr_merged`
+  restricted to `main`/`develop`) can now also: move the **parent story** to a chosen status (e.g. *Ready for
+  Testing*), guarded by default so the parent only moves once **every coding sub-task is Done** (the
+  `[SL]`/`[IT]`/`[INT]`/`[REL]`/`[PROD]` scaffold sub-tasks never hold it; the guard can be switched off per
+  rule); and set the parent's **Sub-status** dropdown (`customfield_10201` by default, configurable), with the
+  valid options offered as a real dropdown in the Rules panel (fetched from Jira via createmeta; free-text
+  fallback when unreachable). Every parent outcome — moved, held with the waiting sub-task keys, skipped
+  (not a sub-task), or failed — is reported in the run log, and dry-run/comment-only modes gate the new
+  writes exactly like the existing transition. Also clarified in the panel that a status transition never
+  replaces the comment (the comment always posts; the transition fires after it), and custom event buckets
+  from agent-authored rules now get an emoji-led default comment (🔔) matching the built-in templates.
 - **PI Review Sync — pick configured pages and poll on an interval.** The Admin Hub PI Review Sync panel now
   opens with a **"From your configured teams"** picker: every PI Review page already configured on a Team
   Dashboard profile is listed with a checkbox — tick the ones to sync and add the team to the schedule, with

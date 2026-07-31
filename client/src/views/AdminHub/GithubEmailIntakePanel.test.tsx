@@ -30,6 +30,9 @@ function stubFetch(overrides: Record<string, unknown> = {}, configOverride: Reco
     if (url.endsWith('/jira-statuses')) {
       return { ok: true, json: async () => ({ statuses: ['In Progress', 'Ready for QA'] }) } as Response;
     }
+    if (url.endsWith('/sub-status-options')) {
+      return { ok: true, json: async () => ({ options: ['Dev Complete', 'In QA'] }) } as Response;
+    }
     if (url.endsWith('/status')) {
       return { ok: true, json: async () => ({ hasRun: false }) } as Response;
     }
@@ -81,6 +84,34 @@ describe('GithubEmailIntakePanel', () => {
     // Toggling the rule off updates it in place (no crash, reflects immediately).
     fireEvent.click(enableToggle);
     expect(enableToggle).not.toBeChecked();
+  });
+
+  it('offers parent-story actions per rule: parent status, the all-dev-done guard, and Sub-status options', async () => {
+    const ruleConfig = {
+      ...DEFAULT_CONFIG,
+      subStatusFieldId: 'customfield_10201',
+      customRules: [{ id: 'branch-merged', eventType: 'pr_merged', bodyPattern: 'merged .* into (main|develop)', transitionStatus: 'Done' }],
+    };
+    useAiAssistStore.setState({ isAiAssistUnlocked: false });
+    stubFetch({}, ruleConfig);
+    render(<GithubEmailIntakePanel />);
+    await screen.findByText('📧 GitHub Email Intake');
+
+    // Pick a parent status — the guard + Sub-status controls appear, guard defaulting ON.
+    const parentSelect = screen.getByRole('combobox', { name: /Parent story status for rule branch-merged/i }) as HTMLSelectElement;
+    expect(parentSelect.value).toBe('');
+    fireEvent.change(parentSelect, { target: { value: 'Ready for QA' } });
+
+    const guardToggle = await screen.findByRole('checkbox', { name: /Require all coding sub-tasks done for rule branch-merged/i });
+    expect(guardToggle).toBeChecked();
+
+    // The Sub-status dropdown carries the options served by the new endpoint.
+    const subStatusSelect = screen.getByRole('combobox', { name: /Parent Sub-status for rule branch-merged/i }) as HTMLSelectElement;
+    fireEvent.change(subStatusSelect, { target: { value: 'Dev Complete' } });
+
+    // The plain-English summary spells out the parent behaviour.
+    expect(screen.getByText(/Parent story → .*Ready for QA.* once every coding sub-task is Done/)).toBeInTheDocument();
+    expect(screen.getByText(/Parent Sub-status → .*Dev Complete/)).toBeInTheDocument();
   });
 
   it('lists the built-in default rules and customizing one makes it editable', async () => {
