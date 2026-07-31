@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Every page can be exported as a PNG.** A **📸 Export PNG** button now sits in the top bar on every
+  Toolbox screen and downloads the current page's content as a high-resolution image
+  (`toolbox-<page>[-<space/tab>]-<date>.png`), so any view — a dashboard, a report, a review table — can be
+  shared in email or chat with one click. Capture reuses the existing panel-image engine (3× resolution,
+  theme-correct colors, `data-export-exclude`/`data-export-expand` attributes honored), so views that already
+  tuned their export layout render the same way here.
 - **GitHub Email Intake — a merged branch can now advance the PARENT story, not just the sub-task.** A merged
   branch names the dev-execution sub-task, but the team tracks the story — so a rule (e.g. `pr_merged`
   restricted to `main`/`develop`) can now also: move the **parent story** to a chosen status (e.g. *Ready for

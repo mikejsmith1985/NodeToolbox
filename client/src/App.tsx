@@ -10,6 +10,7 @@ import { Link, Navigate, Route, Routes, useLocation, useNavigate } from 'react-r
 import { AiAssistUnlockGate } from './components/AiAssistUnlockGate/index.tsx';
 import { TodoQuickAddGate } from './components/TodoQuickAdd/index.tsx';
 import { QuickIssueLookupGate } from './components/QuickIssueLookup/QuickIssueLookupGate.tsx';
+import { PAGE_EXPORT_ROOT_ATTRIBUTE, PageImageExportButton } from './components/PageImageExport/PageImageExportButton.tsx';
 import { ConnectionBar } from './components/ConnectionBar/index.ts';
 import { ToastProvider } from './components/Toast/ToastProvider.tsx';
 import { useProxyStatus } from './hooks/useProxyStatus.ts';
@@ -202,6 +203,8 @@ export default function App() {
                 </button>
               </div>
             )}
+            {/* Downloads the current page's content as a shareable PNG — works on every route. */}
+            <PageImageExportButton />
             <div aria-label="Theme selection" className={styles.themeToggleGroup} role="group">
               <button
                 aria-pressed={theme === 'dark'}
@@ -239,7 +242,8 @@ export default function App() {
         </header>
 
         <main className={styles.mainContent}>
-          <div className={styles.toolContent}>
+          {/* The routed content the top bar's Export PNG button captures — every view lives inside it. */}
+          <div className={styles.toolContent} {...{ [PAGE_EXPORT_ROOT_ATTRIBUTE]: 'true' }}>
             <Routes>
           <Route path={HOME_ROUTE} element={<HomeView />} />
           <Route path={SETTINGS_ROUTE} element={<SettingsView />} />
