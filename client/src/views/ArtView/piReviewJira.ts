@@ -8,6 +8,15 @@ import {
   readIssueStoryPointsDisplayValue,
   saveFeatureReviewStoryPoints,
 } from '../SprintDashboard/featureReviewFixes.ts';
+import {
+  DEFAULT_DEV_START_STATUS_NAME,
+  buildPiReviewChildStoryJql,
+  buildStatusCategoryMap,
+  collectDeliverySubtaskKeys,
+  derivePiReviewDeliveryDatesByFeature,
+} from './piReviewDeliveryDates.ts';
+import type { PiReviewDeliveryDates, RawDeliveryIssue, RawStatusCatalogEntry } from './piReviewDeliveryDates.ts';
+import { featureLinkCandidateFieldIds, loadConfiguredFeatureLinkFieldId } from '../../utils/featureLink.ts';
 
 const ART_SETTINGS_STORAGE_KEY = 'tbxARTSettings';
 /** The checkbox value a ticked Carry-Over cell carries — a carryover row's estimate is decoupled from Jira. */
@@ -39,6 +48,8 @@ interface ArtAdvancedSettings {
   depLinkTypes?: string[];
   piReviewTargetStartFieldId?: string;
   piReviewTargetEndFieldId?: string;
+  /** Status whose first entry marks Dev Start on the delivery-milestone columns (default "Implementing"). */
+  piReviewDevStartStatusName?: string;
 }
 
 export interface PiReviewEstimateUpdate {
@@ -214,7 +225,9 @@ function createFeatureQueryFields(): string {
 }
 
 function createIssueSearchPath(issueKeys: string[]): string {
-  return `/rest/api/2/search?jql=${encodeURIComponent(`key in (${issueKeys.join(',')})`)}&fields=${encodeURIComponent(createFeatureQueryFields())}&maxResults=${Math.max(200, issueKeys.length)}`;
+  // The changelog rides along so Dev Start (first entry into the dev-start status) derives from the
+  // same fetch every reconcile already performs — no second per-feature round trip.
+  return `/rest/api/2/search?jql=${encodeURIComponent(`key in (${issueKeys.join(',')})`)}&fields=${encodeURIComponent(createFeatureQueryFields())}&expand=changelog&maxResults=${Math.max(200, issueKeys.length)}`;
 }
 
 function normalizeLinkTypeNames(issueLink: JiraIssueLink): string[] {
@@ -407,6 +420,7 @@ function reconcileSinglePiReviewRow(
   jiraIssue: JiraIssue | undefined,
   dependencyLinkTypes: Set<string>,
   shouldQueueEstimateUpdates: boolean,
+  deliveryDates: PiReviewDeliveryDates | undefined,
 ): { row: PiReviewRow; changed: boolean; pendingEstimateUpdate: PiReviewEstimateUpdate | null; fieldChanges: PiReviewJiraFieldChange[] } {
   if (!jiraIssue) {
     return { row, changed: false, pendingEstimateUpdate: null, fieldChanges: [] };
@@ -462,6 +476,15 @@ function reconcileSinglePiReviewRow(
     dependency: derivedDependencies,
     risks: derivedRisks,
     notes: nextNotes,
+    // Delivery-milestone cells are Jira-derived: an entry in the map (even all-null) is evidence and
+    // overwrites the cells; no entry means the delivery fetch was skipped or failed, so the existing
+    // cell values are kept rather than blanked.
+    ...(deliveryDates ? {
+      devStart: deliveryDates.devStart ?? '',
+      devTest: deliveryDates.devTest ?? '',
+      intPvs: deliveryDates.intPvs ?? '',
+      prodDeploy: deliveryDates.prodDeploy ?? '',
+    } : {}),
   };
 
   const changed = Object.keys(nextRow).some((fieldName) =>
@@ -478,6 +501,10 @@ function reconcileSinglePiReviewRow(
     dependency: 'Dependencies',
     risks: 'Risks',
     notes: 'Notes',
+    devStart: 'Dev Start',
+    devTest: 'Dev Test',
+    intPvs: 'INT/PVS',
+    prodDeploy: 'Prod Deploy',
   };
   for (const fieldKey of Object.keys(fieldLabelsByKey)) {
     const oldValue = row[fieldKey as keyof PiReviewRow] as string;
@@ -599,6 +626,78 @@ export function parsePiReviewFeatureDateUpdates(pastedText: string): PiReviewFea
   return Array.from(uniqueDateUpdates.values());
 }
 
+/** Reads the configured Dev Start status name from the ART settings, defaulting to "Implementing". */
+function readPiReviewDevStartStatusName(): string {
+  return readArtSettings().piReviewDevStartStatusName?.trim() || DEFAULT_DEV_START_STATUS_NAME;
+}
+
+/** Fields fetched on child stories: the sub-task stubs plus every feature-link candidate for grouping. */
+function createDeliveryStoryFields(featureLinkFieldId: string): string {
+  return Array.from(new Set(['summary', 'subtasks', ...featureLinkCandidateFieldIds(featureLinkFieldId)])).join(',');
+}
+
+const DELIVERY_SUBTASK_FIELDS = 'summary,status,parent,resolutiondate';
+
+/** Runs one batched Jira search and returns the raw issues; a failed batch throws to the caller. */
+async function searchDeliveryIssues(jql: string, fields: string, shouldExpandChangelog: boolean): Promise<RawDeliveryIssue[]> {
+  const expandSegment = shouldExpandChangelog ? '&expand=changelog' : '';
+  const searchPath = `/rest/api/2/search?jql=${encodeURIComponent(jql)}&fields=${encodeURIComponent(fields)}${expandSegment}&maxResults=200`;
+  const searchResponse = await jiraGet<{ issues?: RawDeliveryIssue[] }>(searchPath);
+  return searchResponse.issues ?? [];
+}
+
+/**
+ * Fetches everything the delivery-milestone columns need beyond the feature issues themselves —
+ * the status catalog (name → category), the features' child stories, and their [SL]/[INT] sub-tasks
+ * with changelogs — and derives the per-feature milestone map (GH #262).
+ *
+ * Failure returns an EMPTY map rather than throwing: reconcile treats "no entry" as "leave the cells
+ * exactly as they are", so a Jira hiccup can never blank milestone dates already on the page.
+ */
+export async function fetchPiReviewDeliveryDates(
+  jiraIssueMap: Record<string, JiraIssue>,
+): Promise<Record<string, PiReviewDeliveryDates>> {
+  const featureKeys = Object.keys(jiraIssueMap);
+  if (featureKeys.length === 0) {
+    return {};
+  }
+
+  try {
+    const rawStatuses = await jiraGet<RawStatusCatalogEntry[]>('/rest/api/2/status');
+    const statusCategoryByName = buildStatusCategoryMap(rawStatuses ?? []);
+    const featureLinkFieldId = loadConfiguredFeatureLinkFieldId();
+
+    const storyIssues: RawDeliveryIssue[] = [];
+    for (let batchStart = 0; batchStart < featureKeys.length; batchStart += FEATURE_QUERY_BATCH_SIZE) {
+      const batchKeys = featureKeys.slice(batchStart, batchStart + FEATURE_QUERY_BATCH_SIZE);
+      const childStoryJql = buildPiReviewChildStoryJql(batchKeys, featureLinkFieldId);
+      if (childStoryJql !== '') {
+        storyIssues.push(...await searchDeliveryIssues(childStoryJql, createDeliveryStoryFields(featureLinkFieldId), false));
+      }
+    }
+
+    const subtaskKeys = collectDeliverySubtaskKeys(storyIssues);
+    const subtaskIssues: RawDeliveryIssue[] = [];
+    for (let batchStart = 0; batchStart < subtaskKeys.length; batchStart += FEATURE_QUERY_BATCH_SIZE) {
+      const batchKeys = subtaskKeys.slice(batchStart, batchStart + FEATURE_QUERY_BATCH_SIZE);
+      subtaskIssues.push(...await searchDeliveryIssues(`key in (${batchKeys.join(',')})`, DELIVERY_SUBTASK_FIELDS, true));
+    }
+
+    return derivePiReviewDeliveryDatesByFeature({
+      featureIssuesByKey: jiraIssueMap as unknown as Record<string, RawDeliveryIssue>,
+      storyIssues,
+      subtaskIssues,
+      featureLinkFieldId,
+      statusCategoryByName,
+      devStartStatusName: readPiReviewDevStartStatusName(),
+    });
+  } catch (deliveryFetchError) {
+    // eslint-disable-next-line no-console -- surfacing the degradation beats silently missing dates
+    console.warn('PI Review delivery-milestone fetch failed; milestone cells left unchanged.', deliveryFetchError);
+    return {};
+  }
+}
+
 /** Fetches the Jira feature issues referenced by the current PI Review rows in small search batches. */
 export async function fetchPiReviewFeatureIssues(rows: PiReviewRow[]): Promise<Record<string, JiraIssue>> {
   const featureKeys = Array.from(new Set(
@@ -626,7 +725,11 @@ export async function fetchPiReviewFeatureIssues(rows: PiReviewRow[]): Promise<R
 export function reconcilePiReviewRowsWithJira(
   rows: PiReviewRow[],
   jiraIssueMap: Record<string, JiraIssue>,
-  options?: { shouldQueueEstimateUpdates?: boolean },
+  options?: {
+    shouldQueueEstimateUpdates?: boolean;
+    /** Derived delivery milestones per feature key; absent (or missing a key) = leave those cells alone. */
+    deliveryDatesByFeatureKey?: Record<string, PiReviewDeliveryDates>;
+  },
 ): PiReviewJiraReconciliationResult {
   const dependencyLinkTypes = readConfiguredDependencyLinkTypes();
   const shouldQueueEstimateUpdates = options?.shouldQueueEstimateUpdates ?? false;
@@ -642,6 +745,7 @@ export function reconcilePiReviewRowsWithJira(
       jiraIssue,
       dependencyLinkTypes,
       shouldQueueEstimateUpdates,
+      featureKey ? options?.deliveryDatesByFeatureKey?.[featureKey] : undefined,
     );
     if (reconciliationResult.changed) {
       hasChanges = true;

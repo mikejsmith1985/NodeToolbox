@@ -194,6 +194,117 @@ describe('parsePiReviewTable', () => {
     expect(result.rows[0].testSupport).toBe('Yes');
   });
 
+  it('parses the optional delivery-milestone columns as plain text values', () => {
+    const result = parsePiReviewTable(`
+      <table>
+        <tbody>
+          <tr>
+            <th>Carry-Over</th>
+            <th>Priority</th>
+            <th>Feature</th>
+            <th>Point Estimate</th>
+            <th>Dependency</th>
+            <th>Risks</th>
+            <th>Committed to PI?</th>
+            <th>Implementation Notes</th>
+            <th>Dev Start</th>
+            <th>Dev Test</th>
+            <th>INT/PVS</th>
+            <th>Prod Deploy</th>
+          </tr>
+          <tr>
+            <td>No</td>
+            <td>High</td>
+            <td>Feature with milestones</td>
+            <td>8</td>
+            <td>None</td>
+            <td>Low</td>
+            <td>Yes</td>
+            <td>Notes</td>
+            <td>2026-02-03</td>
+            <td>EXEMPT</td>
+            <td>2026-02-27</td>
+            <td>2026-03-20</td>
+          </tr>
+        </tbody>
+      </table>
+    `);
+
+    expect(result.tableBinding.columnOrder).toEqual(
+      expect.arrayContaining(['devStart', 'devTest', 'intPvs', 'prodDeploy']),
+    );
+    expect(result.rows[0].devStart).toBe('2026-02-03');
+    // EXEMPT must survive as text — these are NOT checkbox columns.
+    expect(result.rows[0].devTest).toBe('EXEMPT');
+    expect(result.rows[0].intPvs).toBe('2026-02-27');
+    expect(result.rows[0].prodDeploy).toBe('2026-03-20');
+  });
+
+  it('recognises the legacy GH #262 delivery headers (Dev / DevTest / INT/PVS / Prod Deploy)', () => {
+    const result = parsePiReviewTable(`
+      <table>
+        <tbody>
+          <tr>
+            <th>Carry-Over</th>
+            <th>Priority</th>
+            <th>Feature</th>
+            <th>Point Estimate</th>
+            <th>Dependency</th>
+            <th>Risks</th>
+            <th>Committed to PI?</th>
+            <th>Implementation Notes</th>
+            <th>Dev</th>
+            <th>DevTest</th>
+            <th>INT/PVS</th>
+            <th>Prod Deploy</th>
+          </tr>
+          <tr>
+            <td></td>
+            <td>High</td>
+            <td>Legacy header feature</td>
+            <td>5</td>
+            <td></td>
+            <td></td>
+            <td>Yes</td>
+            <td></td>
+            <td>2026-02-03</td>
+            <td>2026-02-12</td>
+            <td>2026-02-27</td>
+            <td>2026-03-20</td>
+          </tr>
+        </tbody>
+      </table>
+    `);
+
+    expect(result.tableBinding.columnOrder).toEqual(
+      expect.arrayContaining(['devStart', 'devTest', 'intPvs', 'prodDeploy']),
+    );
+    expect(result.rows[0].devStart).toBe('2026-02-03');
+    expect(result.rows[0].devTest).toBe('2026-02-12');
+  });
+
+  it('round-trips delivery-milestone values through a table write', () => {
+    const storageValue = '<table><tr><th>Carry-Over</th><th>Priority</th><th>Feature</th><th>Point Estimate</th><th>Dependency</th><th>Risks</th><th>Committed to PI?</th><th>Implementation Notes</th><th>Dev Start</th><th>Dev Test</th><th>INT/PVS</th><th>Prod Deploy</th></tr></table>';
+    const parsedTable = parsePiReviewTable(storageValue);
+    const nextRow = createEmptyPiReviewRow();
+    nextRow.feature = 'DENP-1 - Milestones';
+    nextRow.devStart = '2026-02-03';
+    nextRow.devTest = 'EXEMPT';
+    nextRow.intPvs = '2026-02-27';
+    nextRow.prodDeploy = '2026-03-20';
+
+    const nextStorageValue = writePiReviewTable(storageValue, parsedTable.tableBinding, [nextRow]);
+
+    expect(nextStorageValue).toContain('<th>Dev Start</th>');
+    expect(nextStorageValue).toContain('<th>Prod Deploy</th>');
+    expect(nextStorageValue).toContain('<td>2026-02-03</td>');
+    expect(nextStorageValue).toContain('<td>EXEMPT</td>');
+
+    const reparsedTable = parsePiReviewTable(nextStorageValue);
+    expect(reparsedTable.rows[0].devTest).toBe('EXEMPT');
+    expect(reparsedTable.rows[0].prodDeploy).toBe('2026-03-20');
+  });
+
   it('matches the PI Review header row even when Confluence injects an extra blank formatting column', () => {
     const result = parsePiReviewTable(`
       <table>

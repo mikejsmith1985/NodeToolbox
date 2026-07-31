@@ -25,3 +25,14 @@ export {
 
 export { buildDirectFeatureJql } from './piReviewPullFeatures.ts';
 export { computePiReviewLoadComparison } from './piReviewLoad.ts';
+
+// Delivery-milestone derivation (GH #262) — pure, shared with the browser so the scheduled refresh
+// and the manual save derive Dev Start / Dev Test / INT/PVS / Prod Deploy identically.
+export {
+  DEFAULT_DEV_START_STATUS_NAME,
+  buildPiReviewChildStoryJql,
+  buildStatusCategoryMap,
+  collectDeliverySubtaskKeys,
+  derivePiReviewDeliveryDatesByFeature,
+} from './piReviewDeliveryDates.ts';
+export { FEATURE_LINK_DEFAULT_FIELD, featureLinkCandidateFieldIds } from '../../utils/featureLink.ts';

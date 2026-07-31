@@ -78,9 +78,20 @@ export type PiReviewColumnKey =
   | 'notes'
   | 'devWork'
   | 'testSupport'
-  | 'carryToNext';
+  | 'carryToNext'
+  | 'devStart'
+  | 'devTest'
+  | 'intPvs'
+  | 'prodDeploy';
 
-export type OptionalPiReviewColumnKey = 'devWork' | 'testSupport' | 'carryToNext';
+export type OptionalPiReviewColumnKey =
+  | 'devWork'
+  | 'testSupport'
+  | 'carryToNext'
+  | 'devStart'
+  | 'devTest'
+  | 'intPvs'
+  | 'prodDeploy';
 
 export interface PiReviewRow {
   rowId: string;
@@ -98,6 +109,13 @@ export interface PiReviewRow {
   // `carryOver`, which is RETROSPECTIVE ("this arrived from a prior PI"). The carry-over pull reads
   // this column, not carryOver, so the two directions never share one checkbox.
   carryToNext: string;
+  // Delivery-milestone columns (GH #262) — Jira-derived text, never hand-edited: the day dev started
+  // (Feature entered Implementing), shift-left testing started (or EXEMPT when every [SL] sub-task was
+  // cancelled), the first [INT] deploy completed, and the fixVersion production release date.
+  devStart: string;
+  devTest: string;
+  intPvs: string;
+  prodDeploy: string;
 }
 
 export interface PiReviewTableBinding {
@@ -151,6 +169,10 @@ export const PI_REVIEW_COLUMN_LABELS: Record<PiReviewColumnKey, string> = {
   devWork: 'Dev Work',
   testSupport: 'Test Support',
   carryToNext: 'Carry to Next PI',
+  devStart: 'Dev Start',
+  devTest: 'Dev Test',
+  intPvs: 'INT/PVS',
+  prodDeploy: 'Prod Deploy',
 };
 
 export const CONFIDENCE_VOTE_COLUMN_LABELS: Record<ConfidenceVoteColumnKey, string> = {
@@ -174,6 +196,10 @@ export const OPTIONAL_PI_REVIEW_COLUMN_KEYS: OptionalPiReviewColumnKey[] = [
   'devWork',
   'testSupport',
   'carryToNext',
+  'devStart',
+  'devTest',
+  'intPvs',
+  'prodDeploy',
 ];
 
 const CONFIDENCE_VOTE_COLUMN_KEYS: ConfidenceVoteColumnKey[] = [
@@ -334,6 +360,10 @@ export function createEmptyPiReviewRow(): PiReviewRow {
     devWork: '',
     testSupport: '',
     carryToNext: '',
+    devStart: '',
+    devTest: '',
+    intPvs: '',
+    prodDeploy: '',
   };
 }
 
@@ -667,6 +697,21 @@ function readPiReviewColumnKeyFromHeader(headerText: string): PiReviewColumnKey 
       || normalizedHeaderText === 'points'
   ) {
     return 'pointEstimate';
+  }
+  // Delivery-milestone columns (GH #262). Tested BEFORE the Dev Work rule so "Dev Start"/"Dev Test"
+  // can never be swallowed by a looser dev matcher; the bare "Dev"/"DevTest" forms are the legacy
+  // headers from the org's original Confluence table.
+  if (normalizedHeaderText === 'devstart' || normalizedHeaderText === 'dev') {
+    return 'devStart';
+  }
+  if (normalizedHeaderText === 'devtest') {
+    return 'devTest';
+  }
+  if (normalizedHeaderText === 'intpvs' || normalizedHeaderText === 'int') {
+    return 'intPvs';
+  }
+  if (normalizedHeaderText === 'proddeploy' || normalizedHeaderText === 'prod') {
+    return 'prodDeploy';
   }
   if (
     normalizedHeaderText === 'devwork'
