@@ -75,6 +75,21 @@ describe('POST /api/pi-review-scheduler/config', () => {
     expect(response.body.teams[0].scheduleTime).toBe('06:00');
     expect(response.body.teams[0].pages).toEqual([]);
   });
+
+  it('keeps a valid polling interval and zeroes an invalid one (daily mode)', async () => {
+    const response = await request(makeApp({}))
+      .post('/api/pi-review-scheduler/config')
+      .send({
+        teams: [
+          { teamName: 'Polls', intervalMin: 30 },
+          { teamName: 'BadInterval', intervalMin: -7 },
+          { teamName: 'NoInterval' },
+        ],
+      });
+    expect(response.body.teams[0].intervalMin).toBe(30);
+    expect(response.body.teams[1].intervalMin).toBe(0);
+    expect(response.body.teams[2].intervalMin).toBe(0);
+  });
 });
 
 describe('POST /api/pi-review-scheduler/run-now', () => {

@@ -31,6 +31,8 @@ const DEFAULT_SCHEDULE_TIME = '06:00';
 let lastFiredDates = new Map();
 let schedulerIntervalHandle = null;
 const runningTeamKeys = new Set(); // overlap guard: team configKeys currently mid-run
+// Interval mode's per-team slot guard ("YYYY-MM-DD HH:MM") so the 60s tick fires each boundary once.
+const lastAlignedSlotByTeamKey = new Map();
 let cachedDomParser = null;
 
 // ── Time helpers ──
@@ -45,6 +47,21 @@ function getCurrentTimeHHMM() {
 function getTodayDateString() {
   const now = new Date();
   return now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
+}
+
+/** Parses an "HH:MM" clock string into minutes since midnight (a bad value yields 0). */
+function minutesSinceMidnight(hhmm) {
+  const [hoursPart, minutesPart] = String(hhmm || '').split(':').map((part) => Number(part));
+  if (Number.isNaN(hoursPart) || Number.isNaN(minutesPart)) {
+    return 0;
+  }
+  return hoursPart * 60 + minutesPart;
+}
+
+/** A team's polling interval in whole minutes; 0 means the classic once-daily mode. */
+function resolveTeamIntervalMinutes(team) {
+  const parsedInterval = Math.floor(Number(team && team.intervalMin));
+  return Number.isFinite(parsedInterval) && parsedInterval > 0 ? parsedInterval : 0;
 }
 
 // ── Persisted last-run results (FR-019) ──
@@ -149,17 +166,54 @@ async function runPiReviewTeamNow(configuration, teamReference, deps = {}) {
 // ── The tick ──
 
 /**
- * Fires every enabled team whose scheduleTime has been reached today and that has not already fired
- * or is not already running. Injectable hooks (currentTime/today/runTeam/firedDates/runningTeams)
- * make it unit-testable without a clock or timers. Returns the configKeys fired this tick.
+ * Decides whether a team is due this tick. Two fire models, per team (mirroring the GitHub email
+ * intake scheduler):
+ *   • intervalMin > 0 → CLOCK-ALIGNED polling: fire on wall-clock boundaries of intervalMin (e.g.
+ *     :00/:30 for 30) at or after scheduleTime as the daily earliest run, one fire per slot.
+ *   • otherwise → the classic once-daily run at scheduleTime with same-day catch-up, guarded by the
+ *     persisted fired-state so a restart never re-fires.
+ */
+function isTeamDueThisTick(team, configKey, timing) {
+  const scheduledTime = team.scheduleTime || DEFAULT_SCHEDULE_TIME;
+  const intervalMin = resolveTeamIntervalMinutes(team);
+
+  if (intervalMin > 0) {
+    const isOnBoundary = minutesSinceMidnight(timing.currentTime) % intervalMin === 0;
+    const isAtOrAfterStart = isScheduledTimeReached(scheduledTime, timing.currentTime);
+    const currentSlot = timing.today + ' ' + timing.currentTime;
+    if (!isOnBoundary || !isAtOrAfterStart || timing.alignedSlots.get(configKey) === currentSlot) {
+      return false;
+    }
+    timing.alignedSlots.set(configKey, currentSlot);
+    return true;
+  }
+
+  if (!isScheduledTimeReached(scheduledTime, timing.currentTime)) {
+    return false;
+  }
+  if (hasAlreadyFiredToday(configKey, timing.firedDates, timing.today)) {
+    return false;
+  }
+  markFiredToday(configKey, timing.firedDates, timing.today, timing.recordFired);
+  return true;
+}
+
+/**
+ * Fires every enabled team that is due this tick — once daily at its scheduleTime, or on every
+ * clock-aligned intervalMin boundary when the team polls. Injectable hooks (currentTime/today/
+ * runTeam/firedDates/runningTeams/alignedSlots) make it unit-testable without a clock or timers.
+ * Returns the configKeys fired this tick.
  */
 function checkAndFireScheduledPiReviews(configuration, options = {}) {
-  const currentTime = options.currentTime || getCurrentTimeHHMM();
-  const today = options.today || getTodayDateString();
-  const firedDates = options.firedDates || lastFiredDates;
+  const timing = {
+    currentTime: options.currentTime || getCurrentTimeHHMM(),
+    today: options.today || getTodayDateString(),
+    firedDates: options.firedDates || lastFiredDates,
+    alignedSlots: options.alignedSlots || lastAlignedSlotByTeamKey,
+    recordFired: options.recordFired
+      || ((configKey, date) => recordFiredDate(FIRED_STATE_SCHEDULER_NAME, configKey, date)),
+  };
   const runningKeys = options.runningTeams || runningTeamKeys;
-  const recordFired = options.recordFired
-    || ((configKey, date) => recordFiredDate(FIRED_STATE_SCHEDULER_NAME, configKey, date));
   const runTeam = options.runTeam || ((cfg, _team, teamIndex) => runPiReviewTeamNow(cfg, teamIndex));
 
   const teams = ((configuration.scheduler || {}).piReview || {}).teams || [];
@@ -169,14 +223,10 @@ function checkAndFireScheduledPiReviews(configuration, options = {}) {
     const team = teams[teamIndex];
     if (!team || !team.isEnabled) continue;
 
-    const scheduledTime = team.scheduleTime || DEFAULT_SCHEDULE_TIME;
-    if (!isScheduledTimeReached(scheduledTime, currentTime)) continue;
-
     const configKey = buildTeamConfigKey(team, teamIndex);
-    if (hasAlreadyFiredToday(configKey, firedDates, today)) continue;
     if (runningKeys.has(configKey)) continue; // don't start a second concurrent run for this team
+    if (!isTeamDueThisTick(team, configKey, timing)) continue;
 
-    markFiredToday(configKey, firedDates, today, recordFired);
     runningKeys.add(configKey);
     firedThisTick.push(configKey);
     console.log('  📤 PI Review scheduler: refreshing team ' + (team.teamName || teamIndex));

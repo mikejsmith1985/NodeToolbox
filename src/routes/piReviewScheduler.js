@@ -17,6 +17,18 @@ function toTrimmedString(value) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+/** Longest accepted polling interval — anything above a half-day is almost certainly a typo. */
+const MAX_INTERVAL_MINUTES = 720;
+
+/** Sanitises a polling interval to whole minutes in [0, 720]; 0 means the classic once-daily mode. */
+function sanitiseIntervalMinutes(value) {
+  const parsedInterval = Math.floor(Number(value));
+  if (!Number.isFinite(parsedInterval) || parsedInterval <= 0) {
+    return 0;
+  }
+  return Math.min(parsedInterval, MAX_INTERVAL_MINUTES);
+}
+
 /** Sanitises one configured PI Review page ({ pageUrlOrId, piName }). */
 function sanitisePage(rawPage) {
   return {
@@ -32,6 +44,9 @@ function sanitiseTeam(rawTeam) {
     teamName: toTrimmedString(rawTeam && rawTeam.teamName),
     isEnabled: !!(rawTeam && rawTeam.isEnabled),
     scheduleTime: SCHEDULE_TIME_PATTERN.test(scheduleTime) ? scheduleTime : DEFAULT_SCHEDULE_TIME,
+    // Clock-aligned polling (mirrors the GitHub email intake): 0 = once daily at scheduleTime; a
+    // positive value fires on every wall-clock boundary of that many minutes from scheduleTime on.
+    intervalMin: sanitiseIntervalMinutes(rawTeam && rawTeam.intervalMin),
     productOwnerAssignee: toTrimmedString(rawTeam && rawTeam.productOwnerAssignee),
     piFieldId: toTrimmedString(rawTeam && rawTeam.piFieldId) || DEFAULT_PI_FIELD_ID,
     // Delivery-milestone options (GH #262) — optional; blank falls back to the engine defaults

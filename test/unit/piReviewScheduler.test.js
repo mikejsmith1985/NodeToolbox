@@ -78,6 +78,77 @@ describe('checkAndFireScheduledPiReviews (tick)', () => {
   });
 });
 
+describe('checkAndFireScheduledPiReviews (clock-aligned interval mode)', () => {
+  function intervalTickOptions(overrides) {
+    return {
+      currentTime: '07:30',
+      today: '2026-07-14',
+      firedDates: new Map(),
+      runningTeams: new Set(),
+      alignedSlots: new Map(),
+      recordFired: jest.fn(),
+      runTeam: jest.fn().mockResolvedValue({ ok: true }),
+      ...overrides,
+    };
+  }
+
+  it('fires on a wall-clock boundary at or after the daily start time', () => {
+    const options = intervalTickOptions();
+    const fired = checkAndFireScheduledPiReviews(configWithTeam({ intervalMin: 30, scheduleTime: '06:00' }), options);
+    expect(fired).toHaveLength(1);
+    expect(options.runTeam).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not fire off a clock boundary', () => {
+    const fired = checkAndFireScheduledPiReviews(
+      configWithTeam({ intervalMin: 30, scheduleTime: '06:00' }),
+      intervalTickOptions({ currentTime: '07:17' }),
+    );
+    expect(fired).toHaveLength(0);
+  });
+
+  it('does not fire before the daily start time even on a boundary', () => {
+    const fired = checkAndFireScheduledPiReviews(
+      configWithTeam({ intervalMin: 30, scheduleTime: '08:00' }),
+      intervalTickOptions({ currentTime: '07:30' }),
+    );
+    expect(fired).toHaveLength(0);
+  });
+
+  it('fires a boundary slot only once (60s tick may land twice in a minute)', () => {
+    const alignedSlots = new Map([['piReview-team-0-T', '2026-07-14 07:30']]);
+    const fired = checkAndFireScheduledPiReviews(
+      configWithTeam({ intervalMin: 30, scheduleTime: '06:00' }),
+      intervalTickOptions({ alignedSlots }),
+    );
+    expect(fired).toHaveLength(0);
+  });
+
+  it('fires again on the NEXT boundary of the same day (unlike daily mode)', () => {
+    const alignedSlots = new Map([['piReview-team-0-T', '2026-07-14 07:00']]);
+    const fired = checkAndFireScheduledPiReviews(
+      configWithTeam({ intervalMin: 30, scheduleTime: '06:00' }),
+      intervalTickOptions({ alignedSlots }),
+    );
+    expect(fired).toHaveLength(1);
+  });
+
+  it('interval mode never consults or writes the daily fired-state', () => {
+    const options = intervalTickOptions({ firedDates: new Map([['piReview-team-0-T', '2026-07-14']]) });
+    const fired = checkAndFireScheduledPiReviews(configWithTeam({ intervalMin: 30, scheduleTime: '06:00' }), options);
+    expect(fired).toHaveLength(1);
+    expect(options.recordFired).not.toHaveBeenCalled();
+  });
+
+  it('still honors the overlap guard in interval mode', () => {
+    const fired = checkAndFireScheduledPiReviews(
+      configWithTeam({ intervalMin: 30, scheduleTime: '06:00' }),
+      intervalTickOptions({ runningTeams: new Set(['piReview-team-0-T']) }),
+    );
+    expect(fired).toHaveLength(0);
+  });
+});
+
 describe('runPiReviewTeamNow', () => {
   beforeEach(() => {
     refreshPiReviewPage.mockReset();

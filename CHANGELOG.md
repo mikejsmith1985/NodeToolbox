@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **PI Review Sync — pick configured pages and poll on an interval.** The Admin Hub PI Review Sync panel now
+  opens with a **"From your configured teams"** picker: every PI Review page already configured on a Team
+  Dashboard profile is listed with a checkbox — tick the ones to sync and add the team to the schedule, with
+  the Product Owner prefilled from the team's roster (no more hand-typing page URLs; manual entry remains as a
+  fallback, and imported teams arrive disabled until you enable them). Each scheduled team also gains a **Run
+  frequency**: once daily at a set time (unchanged default), or clock-aligned polling every 15/30/60 minutes —
+  the same boundary-aligned model as the GitHub email intake sync (a 30-minute interval starting 07:00 runs
+  07:00, 07:30, 08:00…), with the existing overlap guard so a slow run is never doubled.
 - **PI Review — four delivery-milestone columns on the Confluence table (GH #262).** The PI Review table (Toolbox
   tab, Confluence save, and the scheduled refresh alike) can now carry **Dev Start**, **Dev Test**, **INT/PVS**,
   and **Prod Deploy** as optional columns, derived from Jira and never hand-edited: Dev Start is the day the
@@ -18,7 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   files Cancelled under done); Prod Deploy is the Feature's earliest dated **fixVersion** release date. The legacy
   org headers ("Dev", "DevTest") are recognised on existing pages. One pure derivation module is shared by the
   browser and the server scheduler engine, so the two can never disagree; a failed Jira read leaves existing
-  milestone cells untouched rather than blanking them. The Rules section now shows
+  milestone cells untouched rather than blanking them.
+- **GitHub Email Intake — a soft warning when your rules overlap on an event type.** The Rules section now shows
   a non-blocking heads-up when more than one running rule produces the same event type (e.g. a custom `pr_opened`
   rule alongside the built-in one) — *"⚠ Heads up: 2 rules target pr_opened. The first that matches wins…"*. It is
   advisory only (nothing is blocked or removed) and deliberately ignores the shipped built-in pairs (the two ways
