@@ -5,7 +5,7 @@ import { jiraGet } from '../../../services/jiraApi.ts';
 import { fetchPiNameSuggestions } from '../../../services/piNameSuggestions.ts';
 import type { JiraIssue } from '../../../types/jira.ts';
 import {
-  findPiNameForDate,
+  findDefaultPiNameForDate,
   isIssueDone,
   isIssueInProgress,
   resolveIssueStoryPoints,
@@ -612,7 +612,9 @@ export function useArtData(): { state: ArtDataState; actions: ArtDataActions } {
       const loadedPiNames = await loadAvailablePiNamesFromJira(teamsRef.current);
       setAvailablePiNames(loadedPiNames);
       if (shouldAutoSelectCurrentPi) {
-        const activePiName = findPiNameForDate(loadedPiNames);
+        // Default PI = the one covering today, or — in the gap between PIs — the next one starting,
+        // so a finished PI never lingers as the selection (e.g. 26.3 ended, 26.4 not yet started).
+        const activePiName = findDefaultPiNameForDate(loadedPiNames);
         if (activePiName !== null) {
           setSelectedPiNameState(activePiName);
           selectedPiNameRef.current = activePiName;
