@@ -70,6 +70,79 @@ describe('POST /api/github-email-intake/config', () => {
     expect(response.status).toBe(500);
     expect(response.body.message).toMatch(/disk full/);
   });
+
+  it('keeps a rule\'s parent-story action fields and the Sub-status field id through sanitisation', async () => {
+    const configuration = freshConfig();
+    await request(buildApp(configuration))
+      .post('/api/github-email-intake/config')
+      .send({
+        dropFolder: 'C:\\gh',
+        subStatusFieldId: ' customfield_10201 ',
+        customRules: [{
+          id: 'org-branch-merged', eventType: 'pr_merged', bodyPattern: 'merged .* into (main|develop)',
+          transitionStatus: 'Done',
+          parentTransitionStatus: '  Ready for Testing  ',
+          parentSubStatusValue: 'Dev Complete',
+          parentRequiresAllDevDone: false,
+        }],
+      });
+
+    const saved = configuration.scheduler.githubEmailIntake;
+    expect(saved.subStatusFieldId).toBe('customfield_10201');
+    expect(saved.customRules[0].parentTransitionStatus).toBe('Ready for Testing');
+    expect(saved.customRules[0].parentSubStatusValue).toBe('Dev Complete');
+    expect(saved.customRules[0].parentRequiresAllDevDone).toBe(false);
+  });
+
+  it('stores the guard only when explicitly turned OFF and defaults the Sub-status field id', async () => {
+    const configuration = freshConfig();
+    await request(buildApp(configuration))
+      .post('/api/github-email-intake/config')
+      .send({
+        dropFolder: 'C:\\gh',
+        customRules: [{
+          id: 'org-branch-merged', eventType: 'pr_merged', bodyPattern: 'merged',
+          parentTransitionStatus: 'Ready for Testing',
+          parentRequiresAllDevDone: true,
+        }],
+      });
+
+    const saved = configuration.scheduler.githubEmailIntake;
+    expect(saved.subStatusFieldId).toBe('customfield_10201');
+    expect(saved.customRules[0].parentRequiresAllDevDone).toBeUndefined(); // default (on) stays clean
+  });
+});
+
+describe('GET /api/github-email-intake/sub-status-options', () => {
+  it('unions the Sub-status dropdown options across the configured projects via createmeta', async () => {
+    makeJiraApiRequest.mockResolvedValue({
+      status: 200,
+      body: {
+        projects: [{
+          issuetypes: [
+            { fields: { customfield_10201: { allowedValues: [{ value: 'Dev Complete' }, { value: 'In QA' }] } } },
+            { fields: { customfield_10201: { allowedValues: [{ value: 'Dev Complete' }, { value: 'Blocked' }] } } },
+          ],
+        }],
+      },
+    });
+    const configuration = { scheduler: { githubEmailIntake: { dropFolder: 'C:\\gh', jiraProjectKeys: ['DENP'], subStatusFieldId: 'customfield_10201' } } };
+
+    const response = await request(buildApp(configuration)).get('/api/github-email-intake/sub-status-options');
+
+    expect(response.status).toBe(200);
+    expect(response.body.options).toEqual(['Blocked', 'Dev Complete', 'In QA']);
+  });
+
+  it('returns an empty list (never throws) when Jira is unreachable', async () => {
+    makeJiraApiRequest.mockRejectedValue(new Error('down'));
+    const configuration = { scheduler: { githubEmailIntake: { dropFolder: 'C:\\gh', jiraProjectKeys: ['DENP'] } } };
+
+    const response = await request(buildApp(configuration)).get('/api/github-email-intake/sub-status-options');
+
+    expect(response.status).toBe(200);
+    expect(response.body.options).toEqual([]);
+  });
 });
 
 describe('POST /api/github-email-intake/run-now', () => {

@@ -302,6 +302,102 @@ describe('runGithubEmailIntakeNow (orchestration)', () => {
     expect(captured[0].options.forcedTransitionStatus).toBe('In Review');
   });
 
+  it('passes a rule\'s parent-story actions (with the configured Sub-status field id) to the post', async () => {
+    const mergedEmail = [
+      'List-ID: org/repo <repo.org.github.com>',
+      'Subject: [org/repo] [DENP-1602] Deliver work (#90)',
+      'X-GitHub-Reason: subscribed',
+      'Message-ID: <merged-1@github.com>',
+      'Content-Type: text/plain; charset=UTF-8',
+      '',
+      'jsmith merged 3 commits into develop',
+    ].join('\r\n');
+    const captured = [];
+    const { deps } = buildDeps({ 'a.eml': mergedEmail }, {
+      postEvent: (args) => {
+        captured.push({ options: args.options });
+        args.recordResult({ jiraKey: args.jiraKey, isSuccess: true, message: 'ok' });
+        return Promise.resolve();
+      },
+    });
+
+    const config = baseConfig({
+      mode: 'full',
+      subStatusFieldId: 'customfield_10201',
+      customRules: [{
+        id: 'org-branch-merged', eventType: 'pr_merged', bodyPattern: 'merged .* into (main|develop)', requiresPrNumber: true,
+        transitionStatus: 'Done',
+        parentTransitionStatus: 'Ready for Testing',
+        parentSubStatusValue: 'Dev Complete',
+      }],
+    });
+    await scheduler.runGithubEmailIntakeNow(config, deps);
+
+    expect(captured[0].options.forcedTransitionStatus).toBe('Done');
+    expect(captured[0].options.parentActions).toEqual({
+      transitionStatus: 'Ready for Testing',
+      requireAllDevDone: true,
+      subStatusValue: 'Dev Complete',
+      subStatusFieldId: 'customfield_10201',
+    });
+  });
+
+  it('gives a custom bucket (AI-authored event type) an emoji-led default comment like the built-ins', async () => {
+    const approvedEmail = [
+      'List-ID: org/repo <repo.org.github.com>',
+      'Subject: [org/repo] [DENP-1604] Review done (#92)',
+      'X-GitHub-Reason: subscribed',
+      'Message-ID: <approved-1@github.com>',
+      'Content-Type: text/plain; charset=UTF-8',
+      '',
+      'jsmith approved this pull request',
+    ].join('\r\n');
+    const captured = [];
+    const { deps } = buildDeps({ 'a.eml': approvedEmail }, {
+      postEvent: (args) => {
+        captured.push({ commentText: args.commentText });
+        args.recordResult({ jiraKey: args.jiraKey, isSuccess: true, message: 'ok' });
+        return Promise.resolve();
+      },
+    });
+
+    const config = baseConfig({
+      mode: 'full',
+      customRules: [{ id: 'org-pr-approved', eventType: 'pr_approved', bodyPattern: 'approved this pull request' }],
+    });
+    await scheduler.runGithubEmailIntakeNow(config, deps);
+
+    expect(captured[0].commentText).toMatch(/^🔔 GitHub: pr approved\./);
+  });
+
+  it('omits parentActions entirely when the rule sets no parent fields', async () => {
+    const openedEmail = [
+      'List-ID: org/repo <repo.org.github.com>',
+      'Subject: [org/repo] [DENP-1603] New work (#91)',
+      'X-GitHub-Reason: subscribed',
+      'Message-ID: <opened-9@github.com>',
+      'Content-Type: text/plain; charset=UTF-8',
+      '',
+      'jsmith wants to merge 3 commits',
+    ].join('\r\n');
+    const captured = [];
+    const { deps } = buildDeps({ 'a.eml': openedEmail }, {
+      postEvent: (args) => {
+        captured.push({ options: args.options });
+        args.recordResult({ jiraKey: args.jiraKey, isSuccess: true, message: 'ok' });
+        return Promise.resolve();
+      },
+    });
+
+    const config = baseConfig({
+      mode: 'full',
+      customRules: [{ id: 'org-pr-opened', eventType: 'pr_opened', bodyPattern: 'wants to merge', requiresPrNumber: true }],
+    });
+    await scheduler.runGithubEmailIntakeNow(config, deps);
+
+    expect(captured[0].options.parentActions).toBeUndefined();
+  });
+
   it('skips a DISABLED rule so its email classifies as unknown (no comment)', async () => {
     const openedEmail = [
       'List-ID: org/repo <repo.org.github.com>',
