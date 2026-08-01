@@ -49,6 +49,9 @@ vi.mock('../../services/jiraApi.ts', () => ({
 
 vi.mock('./piReviewPullFeatures.ts', () => ({
   pullPiReviewFeatures: mockPullPiReviewFeatures,
+  // The tab reads the pull settings to pass them through explicitly; the real reader just wraps
+  // localStorage, so a fixed default keeps these tests deterministic.
+  readPiReviewPullSettings: () => ({ piFieldId: 'customfield_10301' }),
 }));
 
 vi.mock('./piReviewPdf.ts', () => ({
@@ -304,7 +307,7 @@ describe('PiReviewTab', () => {
     mockJiraPost.mockResolvedValue(undefined);
     mockJiraPut.mockResolvedValue(undefined);
     mockFetchJiraLabelSuggestions.mockResolvedValue([]);
-    mockPullPiReviewFeatures.mockResolvedValue({ rows: [], discoveredCount: 0, addedCount: 0 });
+    mockPullPiReviewFeatures.mockResolvedValue({ rows: [], discoveredCount: 0, addedCount: 0, ignoredCount: 0 });
     mockResolveConfluencePageIdFromReference.mockImplementation((pageReference: string) => {
       if (pageReference.includes('12345')) {
         return '12345';
@@ -493,6 +496,7 @@ describe('PiReviewTab', () => {
       }],
       discoveredCount: 1,
       addedCount: 1,
+      ignoredCount: 0,
     });
 
     renderPiReviewTab([{
@@ -518,6 +522,8 @@ describe('PiReviewTab', () => {
         'PI 26.3',
         ['C73130'],
         expect.any(Array),
+        expect.any(Object),
+        expect.any(Set),
       );
     });
     expect(await screen.findByText(/added 1 feature for pi 26\.3/i)).toBeInTheDocument();
@@ -536,7 +542,7 @@ describe('PiReviewTab', () => {
         roleCapabilities: { canDevelop: true, canInternalTest: false, canExternalTest: false, canProductOwner: false },
       },
     ]);
-    mockPullPiReviewFeatures.mockResolvedValue({ rows: [], discoveredCount: 0, addedCount: 0 });
+    mockPullPiReviewFeatures.mockResolvedValue({ rows: [], discoveredCount: 0, addedCount: 0, ignoredCount: 0 });
 
     renderPiReviewTab([{
       id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: 'ALPHA',
@@ -557,7 +563,91 @@ describe('PiReviewTab', () => {
       // The non-PO developer (DEV99) is now included alongside the PO — order follows the roster sort.
       expect(mockPullPiReviewFeatures).toHaveBeenCalledWith(
         'PI 26.3', expect.arrayContaining(['C73130', 'DEV99']), expect.any(Array),
+        expect.any(Object), expect.any(Set),
       );
+    });
+  });
+
+  it('Refresh from Jira updates existing rows without discovering new Features', async () => {
+    // The reported gap: the only manual Jira fetch was Pull Features, which drags in Features the
+    // PO does not own. Refresh must re-read the rows already on the page and nothing else.
+    function createEnrollmentIssue(priorityName: string) {
+      return {
+        id: '10001',
+        key: 'DENP-1352',
+        fields: {
+          summary: '26.3 Enrollment Support',
+          status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } },
+          priority: { name: priorityName, iconUrl: '' },
+          assignee: null,
+          reporter: null,
+          issuetype: { name: 'Feature', iconUrl: '' },
+          created: '',
+          updated: '',
+          duedate: null,
+          description: null,
+          fixVersions: [],
+          issuelinks: [],
+        },
+      };
+    }
+    mockFetchConfluencePageByReference.mockResolvedValue(ALPHA_PAGE_WITH_FEATURE_KEY);
+    mockJiraGet.mockResolvedValue({ issues: [createEnrollmentIssue('High')] });
+
+    renderPiReviewTab([DEFAULT_TEAMS[0]]);
+
+    const alphaSection = await screen.findByRole('region', { name: /alpha team pi review/i });
+    expect(await within(alphaSection).findByText(/26\.3 Enrollment Support/i, undefined, { timeout: 4000 })).toBeInTheDocument();
+
+    // Jira has moved on since the page loaded; the refresh must bring the change in WITHOUT a pull.
+    mockJiraGet.mockResolvedValue({ issues: [createEnrollmentIssue('Highest')] });
+
+    enterEditMode(alphaSection);
+    fireEvent.click(within(alphaSection).getByRole('button', { name: /refresh from jira/i }));
+
+    expect((await within(alphaSection).findAllByText('Highest')).length).toBeGreaterThanOrEqual(1);
+    expect(mockPullPiReviewFeatures).not.toHaveBeenCalled();
+  });
+
+  it('Ignore removes the row, persists the key, feeds the pull filter, and Restore undoes it', async () => {
+    mockFetchConfluencePageByReference.mockResolvedValue(ALPHA_PAGE_WITH_FEATURE_KEY);
+    useStandupRosterStore.getState().replaceRosterMembers([
+      {
+        displayName: 'Pat Owner', assigneeQueryValue: 'C73130',
+        roleCapabilities: { canDevelop: false, canInternalTest: false, canExternalTest: false, canProductOwner: true },
+      },
+    ]);
+
+    renderPiReviewTab([{
+      id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: 'ALPHA',
+      piReviewPages: [{ piName: 'PI 26.3', pageUrl: 'https://example.atlassian.net/wiki/pages/12345/Alpha' }],
+      sprintIssues: [], isLoading: false, loadError: null,
+    }]);
+
+    const alphaSection = await screen.findByRole('region', { name: /pi 26\.3 pi review/i });
+    expect(await within(alphaSection).findByRole('link', { name: 'DENP-1352' }, { timeout: 4000 })).toBeInTheDocument();
+    enterEditMode(alphaSection);
+
+    fireEvent.click(within(alphaSection).getByRole('button', { name: 'Ignore DENP-1352' }));
+
+    // The row is gone and the decision is persisted for future sessions.
+    await waitFor(() => {
+      expect(within(alphaSection).queryByRole('link', { name: 'DENP-1352' })).not.toBeInTheDocument();
+    });
+    expect(JSON.parse(localStorage.getItem('tbxPiReviewIgnoredFeatureKeys') ?? '[]')).toEqual(['DENP-1352']);
+
+    // A pull now carries the ignore list so the Feature cannot come back.
+    fireEvent.click(within(alphaSection).getByRole('button', { name: /pull features from jira/i }));
+    await waitFor(() => {
+      expect(mockPullPiReviewFeatures).toHaveBeenCalled();
+    });
+    const ignoredKeysArgument = mockPullPiReviewFeatures.mock.calls[0][4] as Set<string>;
+    expect(ignoredKeysArgument.has('DENP-1352')).toBe(true);
+
+    // Restore takes it off the list so the next pull can bring it back.
+    fireEvent.click(within(alphaSection).getByRole('button', { name: 'Restore DENP-1352' }));
+    await waitFor(() => {
+      expect(JSON.parse(localStorage.getItem('tbxPiReviewIgnoredFeatureKeys') ?? '[]')).toEqual([]);
     });
   });
 

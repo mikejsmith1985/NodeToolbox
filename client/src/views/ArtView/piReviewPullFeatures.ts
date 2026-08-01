@@ -33,6 +33,8 @@ export interface PullPiReviewFeaturesResult {
   discoveredCount: number;
   /** How many of the discovered Features were genuinely new and became rows. */
   addedCount: number;
+  /** How many new Features were skipped because the user marked them ignored. */
+  ignoredCount: number;
 }
 
 interface DiscoveredFeature {
@@ -131,14 +133,18 @@ function createFeatureRow(feature: DiscoveredFeature): PiReviewRow {
 
 /**
  * Pulls a team's Features for the given PI + Product Owner(s) via a single direct Jira query,
- * returning the rows that are not already in the table. When the query cannot be scoped (no PO or
- * no PI) it resolves to an empty result without contacting Jira.
+ * returning the rows that are not already in the table. Features on the caller-supplied ignore list
+ * are skipped (and counted) so a Feature the user does not own stays out of the table on every
+ * re-pull. When the query cannot be scoped (no PO or no PI) it resolves to an empty result without
+ * contacting Jira. The ignore list is a plain parameter (not read from storage here) so the module
+ * stays free of extra browser dependencies — it is also bundled into the server-side PI Review engine.
  */
 export async function pullPiReviewFeatures(
   piName: string,
   poAssigneeQueryValues: readonly string[],
   existingRows: readonly PiReviewRow[],
   settings: PiReviewPullSettings = readPiReviewPullSettings(),
+  ignoredFeatureKeys: ReadonlySet<string> = new Set<string>(),
 ): Promise<PullPiReviewFeaturesResult> {
   const discoveredFeatures = await fetchDirectFeatures(piName, poAssigneeQueryValues, settings.piFieldId);
 
@@ -154,8 +160,14 @@ export async function pullPiReviewFeatures(
       .filter((featureKey): featureKey is string => featureKey !== null),
   );
 
-  const newRows = [...discoveredFeaturesByKey.values()]
-    .filter((feature) => !existingFeatureKeys.has(feature.key.toUpperCase()))
+  // A Feature already in the table is a dedupe, never an "ignored skip" — so the existing-rows
+  // filter runs first and only genuinely new candidates are tested against the ignore list.
+  const newCandidateFeatures = [...discoveredFeaturesByKey.values()]
+    .filter((feature) => !existingFeatureKeys.has(feature.key.toUpperCase()));
+  const keptFeatures = newCandidateFeatures
+    .filter((feature) => !ignoredFeatureKeys.has(feature.key.toUpperCase()));
+
+  const newRows = keptFeatures
     .sort((leftFeature, rightFeature) => leftFeature.key.localeCompare(rightFeature.key))
     .map(createFeatureRow);
 
@@ -163,5 +175,6 @@ export async function pullPiReviewFeatures(
     rows: newRows,
     discoveredCount: discoveredFeaturesByKey.size,
     addedCount: newRows.length,
+    ignoredCount: newCandidateFeatures.length - keptFeatures.length,
   };
 }

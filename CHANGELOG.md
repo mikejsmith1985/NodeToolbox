@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **PI Review — "Refresh from Jira" and an Ignore list for the Feature pull.** The date columns
+  (Dev Start / Dev Test / INT-PVS / Prod Deploy) and every other Jira-owned cell previously refreshed only on
+  page load, save, or a full **Pull Features from Jira** — and the pull always dragged in every Feature
+  matching the PI + assignee query, including Features the PO does not actually own. Two additions close both
+  gaps: **Refresh from Jira** re-reads Jira for the rows already in the table (priority, points, links, date
+  pills, and the delivery-milestone date columns) without discovering or appending anything new; and each row
+  now has an **Ignore** action that removes it AND persists its key, so every future pull skips it (the pull
+  toast reports how many were skipped). Ignored keys are listed under the pull controls with a per-key
+  **Restore** button to bring one back.
+
 ### Fixed
 - **Team Dashboard — no more "PI 26.3 flashes, then flips to 26.4", and a faster load.** When staleness
   advances the PI, the saved **team profile is now healed too** — previously the profile restamped its stored

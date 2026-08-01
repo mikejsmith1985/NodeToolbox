@@ -113,4 +113,76 @@ describe('pullPiReviewFeatures', () => {
       pullPiReviewFeatures('PI 26.4', ['C73130'], [], PULL_SETTINGS),
     ).rejects.toThrow('Jira 500');
   });
+
+  it('skips Features on the ignore list and reports how many were skipped', async () => {
+    mockJiraGet.mockResolvedValue({
+      issues: [
+        { key: 'ALPHA-1', fields: { summary: 'Feature One' } },
+        { key: 'ALPHA-2', fields: { summary: 'Not my Feature' } },
+        { key: 'ALPHA-3', fields: { summary: 'Feature Three' } },
+      ],
+    });
+
+    const result = await pullPiReviewFeatures(
+      'PI 26.4',
+      ['C73130'],
+      [],
+      PULL_SETTINGS,
+      new Set(['ALPHA-2']),
+    );
+
+    expect(result.discoveredCount).toBe(3);
+    expect(result.ignoredCount).toBe(1);
+    expect(result.addedCount).toBe(2);
+    expect(result.rows.map((row) => row.feature)).toEqual([
+      'ALPHA-1 - Feature One',
+      'ALPHA-3 - Feature Three',
+    ]);
+  });
+
+  it('matches ignore-list keys case-insensitively', async () => {
+    mockJiraGet.mockResolvedValue({
+      issues: [{ key: 'Alpha-2', fields: { summary: 'Not my Feature' } }],
+    });
+
+    const result = await pullPiReviewFeatures(
+      'PI 26.4',
+      ['C73130'],
+      [],
+      PULL_SETTINGS,
+      new Set(['ALPHA-2']),
+    );
+
+    expect(result.ignoredCount).toBe(1);
+    expect(result.addedCount).toBe(0);
+    expect(result.rows).toEqual([]);
+  });
+
+  it('a Feature already in the table does not also count as ignored', async () => {
+    mockJiraGet.mockResolvedValue({
+      issues: [{ key: 'ALPHA-1', fields: { summary: 'Feature One' } }],
+    });
+
+    const result = await pullPiReviewFeatures(
+      'PI 26.4',
+      ['C73130'],
+      [createRowForFeature('ALPHA-1 - already in the table')],
+      PULL_SETTINGS,
+      new Set(['ALPHA-1']),
+    );
+
+    expect(result.ignoredCount).toBe(0);
+    expect(result.addedCount).toBe(0);
+  });
+
+  it('reports zero ignored when no ignore list is supplied', async () => {
+    mockJiraGet.mockResolvedValue({
+      issues: [{ key: 'ALPHA-1', fields: { summary: 'Feature One' } }],
+    });
+
+    const result = await pullPiReviewFeatures('PI 26.4', ['C73130'], [], PULL_SETTINGS);
+
+    expect(result.ignoredCount).toBe(0);
+    expect(result.addedCount).toBe(1);
+  });
 });

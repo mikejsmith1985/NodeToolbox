@@ -69,7 +69,12 @@ import { getStoryPointsCandidateFieldIds, readIssueStoryPointsDisplayValue } fro
 import { estimateCarryoverRemainingPoints } from './carryoverEstimate.ts';
 import { fetchCarryoverChildrenByFeature } from './carryoverEstimateFetch.ts';
 import { useStandupRosterStore } from '../SprintDashboard/hooks/useStandupRosterStore.ts';
-import { pullPiReviewFeatures } from './piReviewPullFeatures.ts';
+import { pullPiReviewFeatures, readPiReviewPullSettings } from './piReviewPullFeatures.ts';
+import {
+  addIgnoredPiReviewFeatureKey,
+  readIgnoredPiReviewFeatureKeys,
+  removeIgnoredPiReviewFeatureKey,
+} from './piReviewIgnoredFeatures.ts';
 import { computePiReviewLoadComparison } from './piReviewLoad.ts';
 import styles from './PiReviewTab.module.css';
 
@@ -784,6 +789,10 @@ function PiReviewPagePanel({
   // When on, a pull includes Features assigned to ANY roster member, not just the Product Owner(s) —
   // for teams where Features sit with the person doing the work rather than the PO.
   const [includeFullRoster, setIncludeFullRoster] = useState(false);
+  // "Refresh from Jira" re-reads the rows already on the page without discovering new Features.
+  const [isRefreshingFromJira, setIsRefreshingFromJira] = useState(false);
+  // Feature keys the user marked Ignore — persisted, and handed to every pull so the pull skips them.
+  const [ignoredFeatureKeys, setIgnoredFeatureKeys] = useState<Set<string>>(() => readIgnoredPiReviewFeatureKeys());
   // ── "Carry over from a previous PI" controls ──
   const [carryOverSourceKey, setCarryOverSourceKey] = useState('');
   const [isCarryingOver, setIsCarryingOver] = useState(false);
@@ -1177,12 +1186,20 @@ function PiReviewPagePanel({
     }
     setIsPullingFeatures(true);
     try {
-      const pullResult = await pullPiReviewFeatures(effectivePiName, pullAssigneeQueryValues, rows);
+      const pullResult = await pullPiReviewFeatures(
+        effectivePiName,
+        pullAssigneeQueryValues,
+        rows,
+        readPiReviewPullSettings(),
+        ignoredFeatureKeys,
+      );
       if (pullResult.addedCount === 0) {
         showToast(
           pullResult.discoveredCount === 0
             ? 'No Features found for this team and PI.'
-            : 'All matching Features are already in the table.',
+            : pullResult.ignoredCount > 0
+              ? `All matching Features are already in the table or ignored (${pullResult.ignoredCount} ignored).`
+              : 'All matching Features are already in the table.',
           'info',
         );
         return;
@@ -1200,7 +1217,8 @@ function PiReviewPagePanel({
       setJiraIssueMap(nextJiraIssueMap);
       setHasUnsavedChanges(true);
       showToast(
-        `Added ${pullResult.addedCount} Feature${pullResult.addedCount === 1 ? '' : 's'} for ${effectivePiName || 'this PI'}. Save to Confluence when ready.`,
+        `Added ${pullResult.addedCount} Feature${pullResult.addedCount === 1 ? '' : 's'} for ${effectivePiName || 'this PI'}`
+          + `${pullResult.ignoredCount > 0 ? ` (skipped ${pullResult.ignoredCount} ignored)` : ''}. Save to Confluence when ready.`,
         'success',
       );
     } catch (error) {
@@ -1209,6 +1227,71 @@ function PiReviewPagePanel({
     } finally {
       setIsPullingFeatures(false);
     }
+  }
+
+  /**
+   * Re-reads Jira for the Features ALREADY in the table — priority, points, links, date pills, and
+   * the delivery-milestone date columns — without discovering or appending any new Features. This is
+   * the "update what I have" counterpart to Pull Features from Jira, for POs whose PI/assignee query
+   * also matches Features they do not own.
+   */
+  async function handleRefreshFromJira() {
+    if (rows.length === 0) {
+      return;
+    }
+    setIsRefreshingFromJira(true);
+    try {
+      // Same two fetches + reconcile the page load performs, so the refresh and the load can never
+      // disagree about what "up to date with Jira" means.
+      const [nextJiraIssueMap, deliveryEvidence] = await Promise.all([
+        fetchPiReviewFeatureIssues(rows),
+        fetchPiReviewDeliveryEvidence(collectPiReviewFeatureKeys(rows)),
+      ]);
+      const reconciliationResult = reconcilePiReviewRowsWithJira(rows, nextJiraIssueMap, {
+        deliveryDatesByFeatureKey: buildPiReviewDeliveryDates(nextJiraIssueMap, deliveryEvidence),
+      });
+      setJiraIssueMap(nextJiraIssueMap);
+      if (!reconciliationResult.hasChanges) {
+        showToast('Everything is already in sync with Jira.', 'info');
+        return;
+      }
+      setRows(reconciliationResult.rows);
+      setJiraLoadDeltaDetails(reconciliationResult.fieldChanges);
+      setHasUnsavedChanges(true);
+      showToast(
+        reconciliationResult.fieldChanges.length > 0
+          ? `Jira refresh updated ${reconciliationResult.fieldChanges.length} field${reconciliationResult.fieldChanges.length === 1 ? '' : 's'}. Save to Confluence when ready.`
+          : 'Jira refresh applied updates. Save to Confluence when ready.',
+        'success',
+      );
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to refresh from Jira.';
+      showToast(errorMessage, 'error');
+    } finally {
+      setIsRefreshingFromJira(false);
+    }
+  }
+
+  /**
+   * Removes the row AND remembers its Feature key so every future pull skips it — for Features that
+   * match the pull query but are not actually this team's to deliver. Undone via Restore in the
+   * Ignored Features list.
+   */
+  function handleIgnoreFeatureRow(rowId: string) {
+    const targetRow = rows.find((row) => row.rowId === rowId);
+    const featureKey = targetRow ? extractPiReviewFeatureKey(targetRow.feature) : null;
+    if (!featureKey) {
+      return;
+    }
+    setIgnoredFeatureKeys(addIgnoredPiReviewFeatureKey(featureKey));
+    handleRemoveRow(rowId);
+    showToast(`${featureKey} is now ignored — future pulls will skip it. Undo via the Ignored Features list.`, 'success');
+  }
+
+  /** Takes a Feature key off the persisted ignore list so the next pull can bring it back. */
+  function handleRestoreIgnoredFeature(featureKey: string) {
+    setIgnoredFeatureKeys(removeIgnoredPiReviewFeatureKey(featureKey));
+    showToast(`${featureKey} will be included in future pulls again.`, 'success');
   }
 
   function handleRemoveRow(rowId: string) {
@@ -2097,7 +2180,7 @@ function PiReviewPagePanel({
 
   const isExportingPanel = isExportingImage;
   const isToolbarBusy = isLoading || isSaving || isExportingPanel || isUpdatingJiraDates
-    || isPullingFeatures || isCarryingOver || isEstimatingCarryover;
+    || isPullingFeatures || isRefreshingFromJira || isCarryingOver || isEstimatingCarryover;
   const hasPendingConfluenceRewrite = useMemo(() => {
     if (!tableBinding || pageVersionNumber === null || resolvedPageId === '') {
       return false;
@@ -2315,6 +2398,15 @@ function PiReviewPagePanel({
           <>
             <button
               className={joinClassNames(styles.actionButton, styles.actionButtonSecondary)}
+              disabled={isToolbarBusy || !tableBinding || rows.length === 0}
+              onClick={() => void handleRefreshFromJira()}
+              title="Re-read Jira for the Features already in the table — updates priority, points, links and the date columns without adding any new Features"
+              type="button"
+            >
+              {isRefreshingFromJira ? 'Refreshing…' : 'Refresh from Jira'}
+            </button>
+            <button
+              className={joinClassNames(styles.actionButton, styles.actionButtonSecondary)}
               disabled={isToolbarBusy || !tableBinding
                 || (includeFullRoster ? rosterMembers.length === 0 : productOwners.length === 0)}
               onClick={() => void handlePullFeatures()}
@@ -2413,6 +2505,26 @@ function PiReviewPagePanel({
           ) : (
             'No Product Owner is flagged in the team roster. Mark a roster member as Product Owner, or tick “Include full roster”, to enable Pull Features from Jira.'
           )}
+        </p>
+      )}
+      {canEditContent && ignoredFeatureKeys.size > 0 && (
+        <p className={styles.pullFeaturesHint} data-export-exclude="true">
+          <strong>Ignored Features</strong> — every pull skips these:{' '}
+          {Array.from(ignoredFeatureKeys).sort().map((ignoredFeatureKey) => (
+            <span key={ignoredFeatureKey} style={{ marginRight: 10, whiteSpace: 'nowrap' }}>
+              {ignoredFeatureKey}{' '}
+              <button
+                aria-label={`Restore ${ignoredFeatureKey}`}
+                className={styles.rowToolButton}
+                disabled={isToolbarBusy}
+                onClick={() => handleRestoreIgnoredFeature(ignoredFeatureKey)}
+                title={`Let Pull Features from Jira bring ${ignoredFeatureKey} back in`}
+                type="button"
+              >
+                Restore
+              </button>
+            </span>
+          ))}
         </p>
       )}
       {canShowAuthoringToolbar && <PiReviewSizingCard />}
@@ -2936,6 +3048,18 @@ function PiReviewPagePanel({
                             <button className={styles.removeButton} disabled={isSaving} onClick={() => handleRemoveRow(row.rowId)} type="button">
                               Remove
                             </button>
+                            {extractPiReviewFeatureKey(row.feature) !== null && (
+                              <button
+                                aria-label={`Ignore ${extractPiReviewFeatureKey(row.feature)}`}
+                                className={styles.removeButton}
+                                disabled={isSaving}
+                                onClick={() => handleIgnoreFeatureRow(row.rowId)}
+                                title="Remove this row AND skip this Feature in every future Pull Features from Jira"
+                                type="button"
+                              >
+                                Ignore
+                              </button>
+                            )}
                           </div>
                         </td>
                       )}
