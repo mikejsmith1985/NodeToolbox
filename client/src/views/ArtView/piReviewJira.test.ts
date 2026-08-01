@@ -614,6 +614,82 @@ describe('piReviewJira', () => {
     expect(reconciliationResult.rows[0].devStart).toBe('');
   });
 
+  it('falls back to "(plan)"-marked Target Start / Target End / Due dates when a milestone has no actual', () => {
+    // During planning nothing has happened yet, so the derived actuals are all null — but the
+    // feature's PLANNED dates exist in Jira and map onto the org cadence:
+    // Target Start → Dev Start, Target End → INT/PVS, Due Date → Prod Deploy.
+    localStorage.setItem('tbxARTSettings', JSON.stringify({
+      piReviewTargetStartFieldId: 'customfield_10101',
+      piReviewTargetEndFieldId: 'customfield_10102',
+    }));
+    const plannedIssue = makeMinimalFeatureIssue('DENP-1352');
+    (plannedIssue.fields as Record<string, unknown>).customfield_10101 = '2026-05-30';
+    (plannedIssue.fields as Record<string, unknown>).customfield_10102 = '2026-06-10';
+    (plannedIssue.fields as Record<string, unknown>).duedate = '2026-06-12';
+    const piReviewRow = { ...createEmptyPiReviewRow(), feature: 'DENP-1352' };
+
+    const reconciliationResult = reconcilePiReviewRowsWithJira(
+      [piReviewRow],
+      { 'DENP-1352': plannedIssue },
+      {
+        deliveryDatesByFeatureKey: {
+          'DENP-1352': { devStart: null, devTest: null, intPvs: null, prodDeploy: null },
+        },
+      },
+    );
+
+    expect(reconciliationResult.rows[0].devStart).toBe('2026-05-30 (plan)');
+    expect(reconciliationResult.rows[0].devTest).toBe('');
+    expect(reconciliationResult.rows[0].intPvs).toBe('2026-06-10 (plan)');
+    expect(reconciliationResult.rows[0].prodDeploy).toBe('2026-06-12 (plan)');
+  });
+
+  it('a derived actual always beats the planned fallback for its own cell', () => {
+    localStorage.setItem('tbxARTSettings', JSON.stringify({
+      piReviewTargetStartFieldId: 'customfield_10101',
+      piReviewTargetEndFieldId: 'customfield_10102',
+    }));
+    const plannedIssue = makeMinimalFeatureIssue('DENP-1352');
+    (plannedIssue.fields as Record<string, unknown>).customfield_10101 = '2026-05-30';
+    (plannedIssue.fields as Record<string, unknown>).customfield_10102 = '2026-06-10';
+    const piReviewRow = { ...createEmptyPiReviewRow(), feature: 'DENP-1352' };
+
+    const reconciliationResult = reconcilePiReviewRowsWithJira(
+      [piReviewRow],
+      { 'DENP-1352': plannedIssue },
+      {
+        deliveryDatesByFeatureKey: {
+          'DENP-1352': { devStart: '2026-06-02', devTest: null, intPvs: null, prodDeploy: null },
+        },
+      },
+    );
+
+    // Dev actually started — the actual replaces the plan; INT/PVS still shows the plan.
+    expect(reconciliationResult.rows[0].devStart).toBe('2026-06-02');
+    expect(reconciliationResult.rows[0].intPvs).toBe('2026-06-10 (plan)');
+  });
+
+  it('fills EMPTY milestone cells from planned dates when the delivery fetch failed, without touching non-empty cells', () => {
+    localStorage.setItem('tbxARTSettings', JSON.stringify({
+      piReviewTargetStartFieldId: 'customfield_10101',
+      piReviewTargetEndFieldId: 'customfield_10102',
+    }));
+    const plannedIssue = makeMinimalFeatureIssue('DENP-1352');
+    (plannedIssue.fields as Record<string, unknown>).customfield_10101 = '2026-05-30';
+    (plannedIssue.fields as Record<string, unknown>).customfield_10102 = '2026-06-10';
+    const piReviewRow = { ...createEmptyPiReviewRow(), feature: 'DENP-1352', devStart: '2026-02-03' };
+
+    // No deliveryDatesByFeatureKey at all — the evidence fetch was skipped or failed.
+    const reconciliationResult = reconcilePiReviewRowsWithJira(
+      [piReviewRow],
+      { 'DENP-1352': plannedIssue },
+    );
+
+    // The written actual survives; only the still-empty cell takes the plan.
+    expect(reconciliationResult.rows[0].devStart).toBe('2026-02-03');
+    expect(reconciliationResult.rows[0].intPvs).toBe('2026-06-10 (plan)');
+  });
+
   it('fetches child stories and delivery sub-tasks, then derives the milestone map', async () => {
     const featureIssue = {
       ...makeMinimalFeatureIssue('DENP-1352'),

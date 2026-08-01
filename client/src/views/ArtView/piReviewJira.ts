@@ -39,6 +39,8 @@ const DEFAULT_LINK_FIELDS = [
   'duedate',
   'fixVersions',
 ];
+/** Marks a milestone cell that shows a PLANNED Jira date because no derived actual exists yet. */
+const PLANNED_MILESTONE_SUFFIX = ' (plan)';
 const TARGET_START_LABEL = 'Target Start';
 const TARGET_END_LABEL = 'Target End';
 const DUE_DATE_LABEL = 'Due Date';
@@ -415,6 +417,24 @@ function dedupeAndFormatLinkedIssues(issueLinks: JiraIssueLink[], matcher: (issu
   return Array.from(formattedLinks).join('\n');
 }
 
+/**
+ * Builds the "(plan)"-marked planned-date fallbacks for the delivery-milestone columns from the
+ * feature's own Jira fields. While a milestone has no derived ACTUAL yet — the normal state during
+ * planning — its cell shows the planned date instead of sitting empty. The mapping is the org's
+ * delivery cadence: Target Start → Dev Start, Target End (= code-in-INT) → INT/PVS, Due Date →
+ * Prod Deploy. Dev Test has no planned counterpart and stays actual-only.
+ */
+function buildPlannedMilestoneFallbacks(jiraIssue: JiraIssue): { devStart: string; intPvs: string; prodDeploy: string } {
+  const { targetStartFieldId, targetEndFieldId } = readPiReviewDateFieldIds();
+  const markAsPlanned = (plannedDateValue: string | null): string =>
+    (plannedDateValue ? `${plannedDateValue}${PLANNED_MILESTONE_SUFFIX}` : '');
+  return {
+    devStart: markAsPlanned(readConfiguredDateFieldValue(jiraIssue, targetStartFieldId)),
+    intPvs: markAsPlanned(readConfiguredDateFieldValue(jiraIssue, targetEndFieldId)),
+    prodDeploy: markAsPlanned(normalizeJiraDateValue(jiraIssue.fields.duedate)),
+  };
+}
+
 function reconcileSinglePiReviewRow(
   row: PiReviewRow,
   jiraIssue: JiraIssue | undefined,
@@ -468,6 +488,7 @@ function reconcileSinglePiReviewRow(
     ? { featureKey: jiraIssue.key, estimate: row.pointEstimate.trim() }
     : null;
 
+  const plannedMilestones = buildPlannedMilestoneFallbacks(jiraIssue);
   const nextRow: PiReviewRow = {
     ...row,
     feature: expandBareFeatureKeyWithSummary(row.feature, jiraIssue),
@@ -477,14 +498,22 @@ function reconcileSinglePiReviewRow(
     risks: derivedRisks,
     notes: nextNotes,
     // Delivery-milestone cells are Jira-derived: an entry in the map (even all-null) is evidence and
-    // overwrites the cells; no entry means the delivery fetch was skipped or failed, so the existing
-    // cell values are kept rather than blanked.
+    // overwrites the cells; a milestone with no actual falls back to the feature's "(plan)"-marked
+    // planned date (Target Start / Target End / Due), so planning-phase rows are not blank. No entry
+    // means the delivery fetch was skipped or failed — non-empty cells are kept rather than blanked,
+    // and only still-empty cells take the planned fallback (plans come from the feature issue itself,
+    // which this reconcile already holds).
     ...(deliveryDates ? {
-      devStart: deliveryDates.devStart ?? '',
+      devStart: deliveryDates.devStart ?? plannedMilestones.devStart,
       devTest: deliveryDates.devTest ?? '',
-      intPvs: deliveryDates.intPvs ?? '',
-      prodDeploy: deliveryDates.prodDeploy ?? '',
-    } : {}),
+      intPvs: deliveryDates.intPvs ?? plannedMilestones.intPvs,
+      prodDeploy: deliveryDates.prodDeploy ?? plannedMilestones.prodDeploy,
+    } : {
+      devStart: row.devStart !== '' ? row.devStart : plannedMilestones.devStart,
+      devTest: row.devTest,
+      intPvs: row.intPvs !== '' ? row.intPvs : plannedMilestones.intPvs,
+      prodDeploy: row.prodDeploy !== '' ? row.prodDeploy : plannedMilestones.prodDeploy,
+    }),
   };
 
   const changed = Object.keys(nextRow).some((fieldName) =>

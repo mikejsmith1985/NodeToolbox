@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **PI Review — date columns now show the PLANNED dates until the actuals happen.** The Dev Start /
+  INT-PVS / Prod Deploy columns are derived from delivery evidence (first "Implementing" transition, first
+  completed `[INT]` sub-task, released fixVersion), so for features still in planning every refresh wrote
+  blanks — while the planned dates sat right there in the feature's chips. Reconcile now falls back to the
+  feature's own Jira fields, marked `(plan)` so plan and actual can never be confused: **Target Start →
+  Dev Start, Target End → INT/PVS, Due Date → Prod Deploy** (the org's delivery cadence; Dev Test has no
+  planned counterpart). A derived actual always replaces its plan, and a failed delivery fetch still never
+  blanks non-empty cells — it only fills empty ones from the plan.
+
 ### Added
 - **PI Review — "Refresh from Jira" and an Ignore list for the Feature pull.** The date columns
   (Dev Start / Dev Test / INT-PVS / Prod Deploy) and every other Jira-owned cell previously refreshed only on
