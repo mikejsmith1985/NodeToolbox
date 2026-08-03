@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { jiraGet } from '../../../services/jiraApi.ts';
 import { snowFetch } from '../../../services/snowApi.ts';
+import { inferEnvironmentKeyFromValue } from './environmentKeyInference.ts';
 import type { JiraIssue } from '../../../types/jira.ts';
 import { useCrgSubmissionDebugStore } from '../../../hooks/useCrgSubmissionDebugStore.ts';
 
@@ -1386,26 +1387,6 @@ function getEnvironmentStateKey(environmentKey: EnvironmentKey) {
   return environmentStateKeyMap[environmentKey];
 }
 
-function inferEnvironmentKeyFromValue(environmentValue: string): EnvironmentKey | null {
-  const normalizedEnvironmentValue = environmentValue.trim().toLowerCase();
-  if (!normalizedEnvironmentValue) {
-    return null;
-  }
-
-  if (normalizedEnvironmentValue.includes('pfix') || normalizedEnvironmentValue.includes('fix')) {
-    return 'pfix';
-  }
-
-  if (normalizedEnvironmentValue.includes('prd') || normalizedEnvironmentValue.includes('prod')) {
-    return 'prd';
-  }
-
-  if (normalizedEnvironmentValue.includes('rel') || normalizedEnvironmentValue.includes('release')) {
-    return 'rel';
-  }
-
-  return null;
-}
 
 function readEnabledEnvironmentKeys(state: CrgState): EnvironmentKey[] {
   return ENVIRONMENT_SUBMISSION_ORDER.filter((environmentKey) => state[getEnvironmentStateKey(environmentKey)].isEnabled);

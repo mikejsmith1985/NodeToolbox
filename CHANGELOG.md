@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **SNow Hub — loading a REL change no longer flips its environment to PROD.** Both the CHG clone
+  path and the Modify CHG tab inferred the environment card by checking for "prod" before "rel",
+  so a REL change whose environment label mentions production (e.g. "Pre-Production Release",
+  "Pre-Prod") enabled the PRD card instead of REL. The two private copies of that inference are now
+  one shared function checking fix → release → pre/non-production → production, so the clone and
+  modify flows can never disagree, and pre-/non-prod labels map to REL even without the word
+  "release" in them.
 - **My Issues "Today" now audits ALL your saved teams, not just the active one (GH #282).** A Scrum
   Master with several Dashboard Team profiles saw team cards (Team stale, Unassigned in-progress,
   Sprint commitment gaps, and the team half of Due/overdue) counting only whichever team was last

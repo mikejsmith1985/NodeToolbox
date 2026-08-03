@@ -629,6 +629,33 @@ describe('useCrgState', () => {
   });
 
   describe('cloneFromChg', () => {
+    it('maps a REL change to the REL environment even when its label mentions production', async () => {
+      // Real REL environments are routinely labeled "Pre-Production Release" / "Pre-Prod" —
+      // the old inference saw "prod" first and wrongly enabled the PRD card (user report).
+      vi.mocked(snowFetch).mockResolvedValueOnce({
+        result: [
+          {
+            short_description: { value: 'Deploy v2', display_value: 'Deploy v2' },
+            u_environment:     { value: 'preprod_release', display_value: 'Pre-Production Release' },
+            start_date:        { value: '2026-08-10 10:00:00', display_value: '2026-08-10 10:00:00' },
+            end_date:          { value: '2026-08-10 12:00:00', display_value: '2026-08-10 12:00:00' },
+          },
+        ],
+      } as never);
+      const { result } = renderHook(() => useCrgState());
+
+      act(() => {
+        result.current.actions.setCloneChgNumber('CHG0009999');
+      });
+      await act(async () => {
+        await result.current.actions.cloneFromChg();
+      });
+
+      expect(result.current.state.relEnvironment.isEnabled).toBe(true);
+      expect(result.current.state.prdEnvironment.isEnabled).toBe(false);
+      expect(result.current.state.pfixEnvironment.isEnabled).toBe(false);
+    });
+
     it('pre-populates all fields from a SNow CHG record', async () => {
       // SNow returns fields as { value, display_value } objects when sysparm_display_value=all is set.
       vi.mocked(snowFetch).mockResolvedValueOnce({

@@ -15,6 +15,7 @@ import type {
   CtaskTemplate,
   SnowReference,
 } from '../hooks/useCrgState.ts';
+import { inferEnvironmentKeyFromValue } from '../hooks/environmentKeyInference.ts';
 import { useCtaskTemplates } from '../hooks/useCtaskTemplates.ts';
 import type { SnowChoiceOptionMap } from '../hooks/useSnowChoiceOptions.ts';
 import { useSnowChoiceOptions } from '../hooks/useSnowChoiceOptions.ts';
@@ -263,24 +264,6 @@ function normalizeSnowDateTimeForInput(fieldValue: ServiceNowFieldValue | undefi
   return dateTimeMatch ? `${dateTimeMatch[1]}T${dateTimeMatch[2]}` : snowDateTime;
 }
 
-function inferEnvironmentKeyFromValue(environmentValue: string): EnvironmentKey | null {
-  const normalizedEnvironmentValue = environmentValue.trim().toLowerCase();
-  if (!normalizedEnvironmentValue) {
-    return null;
-  }
-
-  if (normalizedEnvironmentValue.includes('pfix') || normalizedEnvironmentValue.includes('fix')) {
-    return 'pfix';
-  }
-  if (normalizedEnvironmentValue.includes('prd') || normalizedEnvironmentValue.includes('prod')) {
-    return 'prd';
-  }
-  if (normalizedEnvironmentValue.includes('rel') || normalizedEnvironmentValue.includes('release')) {
-    return 'rel';
-  }
-
-  return null;
-}
 
 function getEnvironmentStateKey(environmentKey: EnvironmentKey): keyof Pick<EditableChange, 'relEnvironment' | 'prdEnvironment' | 'pfixEnvironment'> {
   return environmentKey === 'rel'
