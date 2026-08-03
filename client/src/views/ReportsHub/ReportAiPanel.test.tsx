@@ -33,6 +33,15 @@ describe('ReportAiPanel', () => {
     expect(mockCopyToClipboard).toHaveBeenCalledWith('THE PROMPT TEXT');
   });
 
+  it('confirms a prompt copy by flipping the button label to ✓ Copied!', () => {
+    act(() => setAiAssistUnlocked(true));
+    render(<ReportAiPanel title="AI triage" prompt="P" ingestLabel="Ingest" onIngest={vi.fn()} error={null} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /copy prompt/i }));
+
+    expect(screen.getByRole('button', { name: '✓ Copied!' })).toBeInTheDocument();
+  });
+
   it('disables ingest until a reply is pasted, then calls onIngest with the pasted text', () => {
     act(() => setAiAssistUnlocked(true));
     const onIngest = vi.fn();

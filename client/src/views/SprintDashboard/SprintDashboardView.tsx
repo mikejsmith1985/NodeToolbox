@@ -39,6 +39,7 @@ import {
   BURN_REMAINING_KEY,
 } from './buildBurnDownData.ts';
 import { copyElementReportToClipboard } from '../../utils/downloadElementImage.ts';
+import { useCopyFeedback } from '../../hooks/useCopyFeedback.ts';
 import { normalizeRichTextToPlainText } from '../../utils/richTextPlainText.ts';
 import { useAiAssist } from '../SnowHub/hooks/useAiAssist.ts';
 import {
@@ -5639,6 +5640,9 @@ function ReleasesTab({
   );
   const [devSkipRiskPromptModalState, setDevSkipRiskPromptModalState] = useState<ReleasePromptModalState | null>(null);
   const [devSkipRiskReplyText, setDevSkipRiskReplyText] = useState<string>('');
+  // "✓ Copied!" confirmations — one per modal so each copy button reports its own click.
+  const { hasCopied: hasCopiedReleasePrompt, confirmCopy: confirmReleasePromptCopy } = useCopyFeedback();
+  const { hasCopied: hasCopiedDevSkipPrompt, confirmCopy: confirmDevSkipPromptCopy } = useCopyFeedback();
   const releaseNotesSectionRefs = useRef<Record<string, HTMLElement | null>>({});
 
   useEffect(() => {
@@ -6290,10 +6294,10 @@ function ReleasesTab({
             <div className={styles.releasePromptActions}>
               <button
                 className={styles.secondaryButton}
-                onClick={() => void navigator.clipboard.writeText(releasePromptModalState.promptText)}
+                onClick={() => confirmReleasePromptCopy(releasePromptModalState.promptText)}
                 type="button"
               >
-                {COPY_RELEASE_PROMPT_BUTTON_LABEL}
+                {hasCopiedReleasePrompt ? '✓ Copied!' : COPY_RELEASE_PROMPT_BUTTON_LABEL}
               </button>
               <button
                 className={styles.textActionButton}
@@ -6330,10 +6334,10 @@ function ReleasesTab({
             <div className={styles.releasePromptActions}>
               <button
                 className={styles.secondaryButton}
-                onClick={() => void navigator.clipboard.writeText(devSkipRiskPromptModalState.promptText)}
+                onClick={() => confirmDevSkipPromptCopy(devSkipRiskPromptModalState.promptText)}
                 type="button"
               >
-                {COPY_RELEASE_PROMPT_BUTTON_LABEL}
+                {hasCopiedDevSkipPrompt ? '✓ Copied!' : COPY_RELEASE_PROMPT_BUTTON_LABEL}
               </button>
               <button
                 className={styles.textActionButton}

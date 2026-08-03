@@ -32,6 +32,28 @@ body {
   min-height: 100vh;
 }
 
+/* Universal click feedback — every enabled button visibly "presses" while active, so a
+ * click always reads as registered even when the button's own handler gives no feedback.
+ * Element-level selector keeps module classes free to add their own richer transitions. */
+button:not(:disabled):active {
+  transform: scale(0.96);
+  filter: brightness(0.9);
+}
+
+button {
+  transition: transform 100ms ease, filter 100ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  button:not(:disabled):active {
+    transform: none;
+  }
+
+  button {
+    transition: none;
+  }
+}
+
 #root {
   min-height: 100vh;
 }

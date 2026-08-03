@@ -20,6 +20,7 @@ import { useCtaskTemplates } from '../hooks/useCtaskTemplates.ts';
 import { useCrgTemplates } from '../hooks/useCrgTemplates.ts';
 import type { AiAssistGeneratedFields } from '../hooks/useAiAssist.ts';
 import { parseAiAssistChgResponse, useAiAssist } from '../hooks/useAiAssist.ts';
+import { useCopyFeedback } from '../../../hooks/useCopyFeedback.ts';
 import type { SnowChoiceOptionMap } from '../hooks/useSnowChoiceOptions.ts';
 import { useSnowChoiceOptions } from '../hooks/useSnowChoiceOptions.ts';
 import { CtaskEditForm } from '../components/CtaskEditForm.tsx';
@@ -2409,6 +2410,8 @@ export default function CrgTab({ mode = 'wizard' }: CrgTabProps) {
   // outcome message shown after the reply is consumed.
   const [aiAssistReplyText, setAiAssistReplyText] = useState<string>('');
   const [aiAssistApplyStatus, setAiAssistApplyStatus] = useState<string | null>(null);
+  // "✓ Copied!" confirmation for the prompt modal's copy button.
+  const { hasCopied: hasCopiedPrompt, confirmCopy: confirmPromptCopy } = useCopyFeedback();
   // The pasted pre-submission risk review, displayed on the Results step.
   const [riskCheckReviewText, setRiskCheckReviewText] = useState<string | null>(null);
 
@@ -2723,10 +2726,10 @@ export default function CrgTab({ mode = 'wizard' }: CrgTabProps) {
             <div className={styles.promptActions}>
               <button
                 className={styles.aiAssistButton}
-                onClick={() => void navigator.clipboard.writeText(aiAssistPromptSession.promptText)}
+                onClick={() => confirmPromptCopy(aiAssistPromptSession.promptText)}
                 type="button"
               >
-                📋 Copy to Clipboard
+                {hasCopiedPrompt ? '✓ Copied!' : '📋 Copy to Clipboard'}
               </button>
               <button
                 className={styles.linkButton}
