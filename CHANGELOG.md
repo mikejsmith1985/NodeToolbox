@@ -15,6 +15,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   one shared function checking fix → release → pre/non-production → production, so the clone and
   modify flows can never disagree, and pre-/non-prod labels map to REL even without the word
   "release" in them.
+- **My Issues "Today" now audits ALL your saved teams, not just the active one (GH #282).** A Scrum
+  Master with several Dashboard Team profiles saw team cards (Team stale, Unassigned in-progress,
+  Sprint commitment gaps, and the team half of Due/overdue) counting only whichever team was last
+  active in Team Dashboard — every other team's findings were silently invisible. One hygiene scan
+  now runs per saved profile (each under its own project, PI/sprint scope, and config — identical to
+  that team's own Hygiene tab), counts are the issue-key-deduped union, and each card shows a
+  per-team chip ("Cleanup Crew 2 · Transformers 6") that jumps straight to that team's filtered
+  Hygiene view. If one team's scan fails, the others still count and the failed team's chip shows ⚠
+  instead of a false zero. Profile-less legacy setups keep the old single-team behavior.
 
 ### Fixed
 - **CHG generator — end-before-start dates are caught before ServiceNow sees them (GH #282).**

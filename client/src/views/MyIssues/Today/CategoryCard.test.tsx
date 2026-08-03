@@ -27,6 +27,7 @@ function renderCard(props: Partial<React.ComponentProps<typeof CategoryCard>> = 
   const onToggleComplete = vi.fn();
   const onNavigate = vi.fn();
   const onRetry = vi.fn();
+  const onOpenTeam = vi.fn();
   render(
     <CategoryCard
       entry={ENTRY}
@@ -35,10 +36,11 @@ function renderCard(props: Partial<React.ComponentProps<typeof CategoryCard>> = 
       onToggleComplete={onToggleComplete}
       onNavigate={onNavigate}
       onRetry={onRetry}
+      onOpenTeam={onOpenTeam}
       {...props}
     />,
   );
-  return { onToggleComplete, onNavigate, onRetry };
+  return { onToggleComplete, onNavigate, onRetry, onOpenTeam };
 }
 
 describe('CategoryCard', () => {
@@ -60,6 +62,61 @@ describe('CategoryCard', () => {
     await user.click(screen.getByRole('button', { name: 'Open' }));
 
     expect(onNavigate).toHaveBeenCalledWith({ kind: 'sprintTab', tab: 'blockers' });
+  });
+
+  // ── Per-team breakdown (GH #282 follow-up: an SM sees ALL their saved teams) ──
+
+  it('renders a per-team breakdown chip for each team when more than one team was scanned', () => {
+    renderCard({
+      result: buildResult({
+        teamBreakdown: [
+          { teamProfileId: 'alpha-id', teamName: 'Alpha', count: 2, hasError: false },
+          { teamProfileId: 'beta-id', teamName: 'Beta', count: 6, hasError: false },
+        ],
+      }),
+    });
+
+    expect(screen.getByRole('button', { name: /Alpha.*2/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Beta.*6/ })).toBeInTheDocument();
+  });
+
+  it('opens a specific team when its breakdown chip is clicked', async () => {
+    const user = userEvent.setup();
+    const { onOpenTeam } = renderCard({
+      result: buildResult({
+        teamBreakdown: [
+          { teamProfileId: 'alpha-id', teamName: 'Alpha', count: 2, hasError: false },
+          { teamProfileId: 'beta-id', teamName: 'Beta', count: 6, hasError: false },
+        ],
+      }),
+    });
+
+    await user.click(screen.getByRole('button', { name: /Beta.*6/ }));
+
+    expect(onOpenTeam).toHaveBeenCalledWith('beta-id', { kind: 'sprintTab', tab: 'blockers' });
+  });
+
+  it('marks a team whose scan failed instead of showing a false zero', () => {
+    renderCard({
+      result: buildResult({
+        teamBreakdown: [
+          { teamProfileId: 'alpha-id', teamName: 'Alpha', count: 0, hasError: true },
+          { teamProfileId: 'beta-id', teamName: 'Beta', count: 6, hasError: false },
+        ],
+      }),
+    });
+
+    expect(screen.getByRole('button', { name: /Alpha.*⚠/ })).toBeInTheDocument();
+  });
+
+  it('shows no breakdown when only one team was scanned', () => {
+    renderCard({
+      result: buildResult({
+        teamBreakdown: [{ teamProfileId: 'alpha-id', teamName: 'Alpha', count: 2, hasError: false }],
+      }),
+    });
+
+    expect(screen.queryByRole('button', { name: /Alpha/ })).not.toBeInTheDocument();
   });
 
   it('calls onToggleComplete when the checkbox is toggled', async () => {

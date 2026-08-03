@@ -8,19 +8,23 @@ import { describe, expect, it } from 'vitest';
 
 import type { HygieneFinding, JiraIssue } from '../../Hygiene/checks/hygieneChecks.ts';
 import {
+  buildTeamCountBreakdown,
   CATEGORY_CATALOG,
   COMMITMENT_GAP_CHECK_IDS,
   countFindingsMatchingChecks,
+  countUniqueFindingKeysAcrossTeams,
   isBlockedIssue,
   isDoneForToday,
   selectBlockers,
   selectDueOverdue,
+  selectFindingKeysAcrossTeams,
   selectFindingKeysMatchingChecks,
   selectMyStale,
   selectUntriaged,
   TEAM_STALE_CHECK_IDS,
   TEAM_UNASSIGNED_CHECK_IDS,
   type CategoryId,
+  type TeamScanEntry,
 } from './todayCategories.ts';
 
 // A date far enough in the past to clear any stale / overdue threshold.
@@ -169,5 +173,82 @@ describe('isDoneForToday', () => {
 
     const oneOutstanding = { ...allComplete, mentions: false };
     expect(isDoneForToday(oneOutstanding)).toBe(false);
+  });
+});
+
+// ── Multi-team counting (GH #282 follow-up: an SM sees ALL their saved teams) ──
+
+/** Builds a shared-scan finding for the multi-team helpers. */
+function buildTeamFinding(issueKey: string, checkIds: string[]): HygieneFinding {
+  return {
+    issue: createIssue(issueKey),
+    flags: checkIds.map((checkId) => ({ checkId, label: checkId, severity: 'warn' })),
+    programIncrement: null,
+  } as unknown as HygieneFinding;
+}
+
+function buildTeamScan(
+  teamProfileId: string,
+  teamName: string,
+  findings: HygieneFinding[],
+  errorMessage: string | null = null,
+): TeamScanEntry {
+  return { teamProfileId, teamName, findings, errorMessage };
+}
+
+describe('countUniqueFindingKeysAcrossTeams', () => {
+  it('sums matching findings across teams', () => {
+    const teamScans = [
+      buildTeamScan('alpha-id', 'Alpha', [buildTeamFinding('A-1', ['stale']), buildTeamFinding('A-2', ['no-assignee'])]),
+      buildTeamScan('beta-id', 'Beta', [buildTeamFinding('B-1', ['stale'])]),
+    ];
+
+    expect(countUniqueFindingKeysAcrossTeams(teamScans, ['stale'])).toBe(2);
+  });
+
+  it('never counts the same issue key twice when it appears in two teams', () => {
+    const teamScans = [
+      buildTeamScan('alpha-id', 'Alpha', [buildTeamFinding('SHARED-1', ['stale'])]),
+      buildTeamScan('beta-id', 'Beta', [buildTeamFinding('SHARED-1', ['stale']), buildTeamFinding('B-2', ['stale'])]),
+    ];
+
+    expect(countUniqueFindingKeysAcrossTeams(teamScans, ['stale'])).toBe(2);
+  });
+});
+
+describe('selectFindingKeysAcrossTeams', () => {
+  it('returns the deduped union of matching keys across teams', () => {
+    const teamScans = [
+      buildTeamScan('alpha-id', 'Alpha', [buildTeamFinding('SHARED-1', ['due-date-overdue'])]),
+      buildTeamScan('beta-id', 'Beta', [buildTeamFinding('SHARED-1', ['due-date-overdue']), buildTeamFinding('B-9', ['target-end-overdue'])]),
+    ];
+
+    expect(selectFindingKeysAcrossTeams(teamScans, ['due-date-overdue', 'target-end-overdue'])).toEqual(['SHARED-1', 'B-9']);
+  });
+});
+
+describe('buildTeamCountBreakdown', () => {
+  it('reports one entry per team with its own count', () => {
+    const teamScans = [
+      buildTeamScan('alpha-id', 'Alpha', [buildTeamFinding('A-1', ['stale']), buildTeamFinding('A-2', ['stale'])]),
+      buildTeamScan('beta-id', 'Beta', [buildTeamFinding('B-1', ['stale']), buildTeamFinding('B-2', ['no-assignee'])]),
+    ];
+
+    expect(buildTeamCountBreakdown(teamScans, ['stale'])).toEqual([
+      { teamProfileId: 'alpha-id', teamName: 'Alpha', count: 2, hasError: false },
+      { teamProfileId: 'beta-id', teamName: 'Beta', count: 1, hasError: false },
+    ]);
+  });
+
+  it('marks a failed team scan instead of showing a false zero', () => {
+    const teamScans = [
+      buildTeamScan('alpha-id', 'Alpha', [], 'scan boom'),
+      buildTeamScan('beta-id', 'Beta', [buildTeamFinding('B-1', ['stale'])]),
+    ];
+
+    expect(buildTeamCountBreakdown(teamScans, ['stale'])).toEqual([
+      { teamProfileId: 'alpha-id', teamName: 'Alpha', count: 0, hasError: true },
+      { teamProfileId: 'beta-id', teamName: 'Beta', count: 1, hasError: false },
+    ]);
   });
 });

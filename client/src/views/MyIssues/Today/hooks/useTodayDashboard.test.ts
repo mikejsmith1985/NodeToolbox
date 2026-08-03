@@ -97,6 +97,38 @@ function buildMentions(overrides: Record<string, unknown> = {}) {
   };
 }
 
+/** Builds a saved Dashboard Team profile with the fields the multi-team scan reads. */
+function buildTeamProfile(id: string, name: string, projectKey: string) {
+  return {
+    id,
+    name,
+    projectKey,
+    boardId: '1',
+    boardName: `${name} board`,
+    boardType: 'scrum',
+    scopeMode: 'pi',
+    selectedSprintId: '',
+    selectedFixVersion: '',
+    selectedPiValue: 'PI 26.4 (07/30/26 - 10/07/26)',
+  };
+}
+
+/** Points the mocked settings store at the given saved team profiles. */
+function installSettingsStore(teamProfiles: ReturnType<typeof buildTeamProfile>[]) {
+  mockUseSettingsStore.mockImplementation(
+    (selector: (state: {
+      sprintDashboardActiveTeamProfileId: string;
+      dsuProjectKey: string;
+      sprintDashboardTeamProfiles: ReturnType<typeof buildTeamProfile>[];
+    }) => unknown) =>
+      selector({
+        sprintDashboardActiveTeamProfileId: teamProfiles[0]?.id ?? '',
+        dsuProjectKey: 'PROJ',
+        sprintDashboardTeamProfiles: teamProfiles,
+      }),
+  );
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   window.localStorage.clear();
@@ -105,10 +137,7 @@ beforeEach(() => {
   mockUseConnectionStore.mockImplementation((selector: (state: { isJiraReady: boolean }) => unknown) =>
     selector({ isJiraReady: true }),
   );
-  mockUseSettingsStore.mockImplementation(
-    (selector: (state: { sprintDashboardActiveTeamProfileId: string; dsuProjectKey: string }) => unknown) =>
-      selector({ sprintDashboardActiveTeamProfileId: '', dsuProjectKey: 'PROJ' }),
-  );
+  installSettingsStore([]);
   mockUseMentionsState.mockReturnValue(buildMentions());
   mockUseSprintData.mockReturnValue(buildSprintData());
   mockJiraGet.mockImplementation((path: string) => {
@@ -161,6 +190,72 @@ describe('useTodayDashboard', () => {
     expect(result.current.categories['commitment-gaps'].status).toBe('error');
     // Blockers reads the sprint issue list (its drill-through is the Blockers tab), not the scan.
     await waitFor(() => expect(result.current.categories.blockers.status).toBe('ready'));
+  });
+
+  // ── Multi-team scans (GH #282 follow-up: an SM sees ALL their saved teams) ──
+
+  it('runs one scan per saved team profile and counts the deduped union across teams', async () => {
+    installSettingsStore([
+      buildTeamProfile('alpha-id', 'Alpha', 'ALPHA'),
+      buildTeamProfile('beta-id', 'Beta', 'BETA'),
+    ]);
+    mockRunHygieneScan.mockImplementation(({ projectKey }: { projectKey: string }) => {
+      if (projectKey === 'ALPHA') {
+        return Promise.resolve(buildScanOutcome([buildFinding('SHARED-1', ['stale']), buildFinding('A-2', ['stale'])]));
+      }
+      return Promise.resolve(buildScanOutcome([buildFinding('SHARED-1', ['stale']), buildFinding('B-3', ['stale'])]));
+    });
+
+    const { result } = renderHook(() => useTodayDashboard());
+
+    await waitFor(() => expect(result.current.categories['team-stale'].status).toBe('ready'));
+
+    // One scan per profile, each under ITS OWN profile id so per-team config applies.
+    expect(mockRunHygieneScan).toHaveBeenCalledWith(expect.objectContaining({ projectKey: 'ALPHA', activeTeamProfileId: 'alpha-id' }));
+    expect(mockRunHygieneScan).toHaveBeenCalledWith(expect.objectContaining({ projectKey: 'BETA', activeTeamProfileId: 'beta-id' }));
+
+    // SHARED-1 appears in both teams but counts once: {SHARED-1, A-2, B-3} = 3.
+    expect(result.current.categories['team-stale'].count).toBe(3);
+    expect(result.current.categories['team-stale'].teamBreakdown).toEqual([
+      { teamProfileId: 'alpha-id', teamName: 'Alpha', count: 2, hasError: false },
+      { teamProfileId: 'beta-id', teamName: 'Beta', count: 2, hasError: false },
+    ]);
+  });
+
+  it('stays ready with the surviving teams when one team scan fails, marking that team in the breakdown', async () => {
+    installSettingsStore([
+      buildTeamProfile('alpha-id', 'Alpha', 'ALPHA'),
+      buildTeamProfile('beta-id', 'Beta', 'BETA'),
+    ]);
+    mockRunHygieneScan.mockImplementation(({ projectKey }: { projectKey: string }) => {
+      if (projectKey === 'ALPHA') {
+        return Promise.reject(new Error('alpha scan boom'));
+      }
+      return Promise.resolve(buildScanOutcome([buildFinding('B-1', ['stale'])]));
+    });
+
+    const { result } = renderHook(() => useTodayDashboard());
+
+    await waitFor(() => expect(result.current.categories['team-stale'].status).toBe('ready'));
+
+    expect(result.current.categories['team-stale'].count).toBe(1);
+    expect(result.current.categories['team-stale'].teamBreakdown).toEqual([
+      { teamProfileId: 'alpha-id', teamName: 'Alpha', count: 0, hasError: true },
+      { teamProfileId: 'beta-id', teamName: 'Beta', count: 1, hasError: false },
+    ]);
+  });
+
+  it('reports error only when EVERY team scan fails', async () => {
+    installSettingsStore([
+      buildTeamProfile('alpha-id', 'Alpha', 'ALPHA'),
+      buildTeamProfile('beta-id', 'Beta', 'BETA'),
+    ]);
+    mockRunHygieneScan.mockRejectedValue(new Error('all scans boom'));
+
+    const { result } = renderHook(() => useTodayDashboard());
+
+    await waitFor(() => expect(result.current.categories['team-stale'].status).toBe('error'));
+    expect(result.current.categories['team-stale'].errorMessage).toBe('all scans boom');
   });
 
   it('marks team-scope cards not-configured when no project key is available for the scan', async () => {

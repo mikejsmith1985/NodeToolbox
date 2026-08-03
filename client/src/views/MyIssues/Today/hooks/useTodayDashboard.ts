@@ -14,7 +14,6 @@ import { useSettingsStore } from '../../../../store/settingsStore.ts';
 import type { JiraIssue, JiraSprint } from '../../../../types/jira.ts';
 import type { JiraIssue as HygieneJiraIssue } from '../../../Hygiene/checks/hygieneChecks.ts';
 import { formatLastBusinessDayEndChicago } from '../../../../utils/lastBusinessDayChicago.ts';
-import type { HygieneFinding } from '../../../Hygiene/checks/hygieneChecks.ts';
 import { runHygieneScan } from '../../../Hygiene/hooks/hygieneScan.ts';
 import { loadDashboardConfigFromStorage } from '../../../SprintDashboard/hooks/useDashboardConfig.ts';
 import { useSprintData } from '../../../SprintDashboard/hooks/useSprintData.ts';
@@ -24,17 +23,20 @@ import { MY_ISSUES_JQL_SUFFIX } from '../../hooks/useMyIssuesState.ts';
 import { buildAssigneeJql } from '../../myIssuesRoleLens.ts';
 import { useMyIssuesPersonaStore } from '../../hooks/useMyIssuesPersonaStore.ts';
 import {
+  buildTeamCountBreakdown,
   COMMITMENT_GAP_CHECK_IDS,
-  countFindingsMatchingChecks,
+  countUniqueFindingKeysAcrossTeams,
   DUE_OVERDUE_CHECK_IDS,
   selectBlockers,
   selectDueOverdue,
-  selectFindingKeysMatchingChecks,
+  selectFindingKeysAcrossTeams,
   selectMyStale,
   selectUntriaged,
   TEAM_STALE_CHECK_IDS,
   TEAM_UNASSIGNED_CHECK_IDS,
   type CategoryId,
+  type TeamCountBreakdownEntry,
+  type TeamScanEntry,
 } from '../todayCategories.ts';
 
 // ── Public types ──
@@ -57,6 +59,8 @@ export interface CategoryResult {
   count: number;
   errorMessage?: string;
   destination: TodayDestination;
+  /** Per-team share of the count, present on team cards when more than one team was scanned. */
+  teamBreakdown?: TeamCountBreakdownEntry[];
 }
 
 /** Everything the Today dashboard component needs to render in one stable object. */
@@ -129,17 +133,25 @@ const REQUEST_NONE = '';
 const EMPTY_SOURCE_RESULT: SourceResult = { requestKey: REQUEST_NONE, issues: [], errorMessage: null };
 
 /**
- * The outcome of one team hygiene scan, stamped like SourceResult. The findings come from the
- * SHARED scan pipeline (hygieneScan.ts) — the exact scan the team Hygiene tab renders — so the
+ * The outcome of the team hygiene scans, stamped like SourceResult. Every saved Dashboard Team
+ * profile is scanned (GH #282 — an SM's other teams were silently invisible), and each scan uses
+ * the SHARED pipeline (hygieneScan.ts) — the exact scan the team Hygiene tab renders — so the
  * team cards and that tab can never disagree on scope, fields, or configuration (GH #177).
  */
 interface TeamScanResult {
   requestKey: string;
-  findings: HygieneFinding[];
-  errorMessage: string | null;
+  teamScans: TeamScanEntry[];
 }
 
-const EMPTY_TEAM_SCAN_RESULT: TeamScanResult = { requestKey: REQUEST_NONE, findings: [], errorMessage: null };
+const EMPTY_TEAM_SCAN_RESULT: TeamScanResult = { requestKey: REQUEST_NONE, teamScans: [] };
+
+/** One team the hygiene scan will audit: its identity plus the scope clause its profile persists. */
+interface TeamScanTarget {
+  teamProfileId: string;
+  teamName: string;
+  projectKey: string;
+  scopeJql: string;
+}
 
 // ── Pure helpers (module-level so the hook body stays small) ──
 
@@ -221,6 +233,7 @@ function buildTeamCategory(
   isTeamConfigured: boolean,
   sprintStatus: CategoryStatus,
   sprintError: string | null,
+  teamBreakdown?: TeamCountBreakdownEntry[],
 ): CategoryResult {
   if (!isTeamConfigured) {
     return { id, status: 'not-configured', count: 0, destination: DESTINATIONS[id] };
@@ -231,7 +244,21 @@ function buildTeamCategory(
     count,
     errorMessage: sprintStatus === 'error' ? (sprintError ?? undefined) : undefined,
     destination: DESTINATIONS[id],
+    teamBreakdown,
   };
+}
+
+/**
+ * Works out the combined team-scan status. Partial failures stay 'ready' — the surviving teams'
+ * counts are real and the failed team is marked on its own breakdown chip; only when EVERY team
+ * scan failed is there nothing honest to show (GH #167 — no false zeros, no all-or-nothing).
+ */
+function deriveTeamScanStatus(requestKey: string | null, result: TeamScanResult): CategoryStatus {
+  if (requestKey === null) return 'loading';
+  if (result.requestKey !== requestKey) return 'loading';
+  const hasEveryTeamFailed =
+    result.teamScans.length > 0 && result.teamScans.every((teamScan) => teamScan.errorMessage !== null);
+  return hasEveryTeamFailed ? 'error' : 'ready';
 }
 
 // ── Hook ──
@@ -244,6 +271,7 @@ export function useTodayDashboard(): TodayDashboardData {
   const isConnectionReady = useConnectionStore((connectionState) => connectionState.isJiraReady);
   const activeTeamProfileId = useSettingsStore((settings) => settings.sprintDashboardActiveTeamProfileId);
   const dsuProjectKey = useSettingsStore((settings) => settings.dsuProjectKey);
+  const teamProfiles = useSettingsStore((settings) => settings.sprintDashboardTeamProfiles);
 
   // The stale threshold and story-points field both come from the team's saved dashboard config,
   // so the Today counts agree with the Hygiene and Blockers tabs rather than re-deriving them.
@@ -269,17 +297,53 @@ export function useTodayDashboard(): TodayDashboardData {
   const trimmedDsuProjectKey = dsuProjectKey.trim();
   const isUntriagedConfigured = Boolean(trimmedDsuProjectKey);
 
-  // The team hygiene cards count the SAME scan the team Hygiene tab runs, which needs the team's
-  // project key and its active PI/sprint/fix-version scope — both live in the sprint state. The
-  // scope clause is built by the same function the Hygiene tab uses, so the JQL is identical.
-  const teamProjectKey = sprintState.projectKey.trim();
-  const isTeamHygieneConfigured = Boolean(teamProjectKey);
-  const teamScopeJql = buildTeamHygieneScopeJql({
-    scopeMode: sprintState.scopeMode,
-    selectedPiValue: sprintState.selectedPiValue,
-    selectedFixVersionName: sprintState.selectedFixVersionName,
-    selectedSprintId: sprintState.selectedSprintId,
-  });
+  // The team hygiene cards count the SAME scan the team Hygiene tab runs. EVERY saved Dashboard
+  // Team profile is a scan target — an SM with several teams previously saw only the active one
+  // (GH #282 follow-up). Each target's scope clause comes from its profile's persisted selection,
+  // built by the same function the Hygiene tab uses, so the JQL per team is identical to its tab.
+  const teamScanTargets = useMemo<TeamScanTarget[]>(() => {
+    const profileTargets = teamProfiles
+      .filter((teamProfile) => teamProfile.projectKey.trim() !== '')
+      .map((teamProfile) => ({
+        teamProfileId: teamProfile.id,
+        teamName: teamProfile.name,
+        projectKey: teamProfile.projectKey.trim(),
+        scopeJql: buildTeamHygieneScopeJql({
+          scopeMode: teamProfile.scopeMode,
+          selectedPiValue: teamProfile.selectedPiValue,
+          selectedFixVersionName: teamProfile.selectedFixVersion,
+          selectedSprintId: teamProfile.selectedSprintId ? Number(teamProfile.selectedSprintId) : null,
+        }),
+      }));
+    if (profileTargets.length > 0) {
+      return profileTargets;
+    }
+    // Legacy profile-less setup: fall back to the live dashboard selection (the old behavior).
+    const legacyProjectKey = sprintState.projectKey.trim();
+    if (!legacyProjectKey) {
+      return [];
+    }
+    return [{
+      teamProfileId: activeTeamProfileId,
+      teamName: 'Team',
+      projectKey: legacyProjectKey,
+      scopeJql: buildTeamHygieneScopeJql({
+        scopeMode: sprintState.scopeMode,
+        selectedPiValue: sprintState.selectedPiValue,
+        selectedFixVersionName: sprintState.selectedFixVersionName,
+        selectedSprintId: sprintState.selectedSprintId,
+      }),
+    }];
+  }, [
+    teamProfiles,
+    activeTeamProfileId,
+    sprintState.projectKey,
+    sprintState.scopeMode,
+    sprintState.selectedPiValue,
+    sprintState.selectedFixVersionName,
+    sprintState.selectedSprintId,
+  ]);
+  const isTeamHygieneConfigured = teamScanTargets.length > 0;
 
   // The tool-wide persona subject drives the "my" half of the Today checklist, so simulating another user
   // shows THEIR daily hygiene. The team-scope cards below are unaffected (they audit the whole team).
@@ -293,16 +357,19 @@ export function useTodayDashboard(): TodayDashboardData {
   const myIssuesRequestKey = isConnectionReady ? `my|${myIssuesAssigneeClause}|${reloadToken}` : null;
   const untriagedRequestKey =
     isConnectionReady && isUntriagedConfigured ? `untriaged|${trimmedDsuProjectKey}|${reloadToken}` : null;
-  // The scope values are in the key, so when the sprint load resolves a different PI/sprint the
-  // scan automatically re-runs against the scope the Hygiene tab would now show.
+  // Every target's identity + scope is in the key, so adding a team profile or a changed
+  // PI/sprint selection automatically re-runs the scans against the new inputs.
   const teamScanRequestKey =
     isConnectionReady && isTeamHygieneConfigured
-      ? `team-scan|${teamProjectKey}|${teamScopeJql}|${reloadToken}`
+      ? `team-scan|${teamScanTargets.map((target) => `${target.teamProfileId}:${target.projectKey}:${target.scopeJql}`).join(';')}|${reloadToken}`
       : null;
 
   const myIssuesStatus = deriveFetchStatus(myIssuesRequestKey, myIssuesResult);
   const untriagedStatus = deriveFetchStatus(untriagedRequestKey, untriagedResult);
-  const teamScanStatus = deriveFetchStatus(teamScanRequestKey, teamScanResult);
+  const teamScanStatus = deriveTeamScanStatus(teamScanRequestKey, teamScanResult);
+  // Only an all-teams failure surfaces as the card error; partial failures are per-chip.
+  const teamScanErrorMessage =
+    teamScanStatus === 'error' ? (teamScanResult.teamScans[0]?.errorMessage ?? 'Failed to load') : null;
   const myIssuesError = myIssuesResult.errorMessage;
   const untriagedError = untriagedResult.errorMessage;
 
@@ -350,33 +417,46 @@ export function useTodayDashboard(): TodayDashboardData {
     };
   }, [untriagedRequestKey, trimmedDsuProjectKey]);
 
-  // ── Team hygiene scan (independent source; THE same scan the team Hygiene tab runs) ──
+  // ── Team hygiene scans (independent source; THE same scan each team's Hygiene tab runs) ──
+  // One scan per saved team profile, in parallel. A failed team resolves to an errored entry
+  // rather than rejecting the batch, so one broken team never hides the others' findings.
   useEffect(() => {
     if (teamScanRequestKey === null) {
       return;
     }
 
     let isMounted = true;
-    runHygieneScan({
-      projectKey: teamProjectKey,
-      extraJql: teamScopeJql,
-      // Team mode audits every in-scope issue regardless of assignee, exactly like the tab.
-      assigneeClause: null,
-      activeTeamProfileId: activeTeamProfileId,
-    })
-      .then((scanOutcome) => {
-        if (!isMounted) return;
-        setTeamScanResult({ requestKey: teamScanRequestKey, findings: scanOutcome.findings, errorMessage: null });
-      })
-      .catch((unknownError: unknown) => {
-        if (!isMounted) return;
-        setTeamScanResult({ requestKey: teamScanRequestKey, findings: [], errorMessage: extractErrorMessage(unknownError) });
-      });
+    void Promise.all(
+      teamScanTargets.map((target) =>
+        runHygieneScan({
+          projectKey: target.projectKey,
+          extraJql: target.scopeJql,
+          // Team mode audits every in-scope issue regardless of assignee, exactly like the tab.
+          assigneeClause: null,
+          activeTeamProfileId: target.teamProfileId,
+        })
+          .then((scanOutcome): TeamScanEntry => ({
+            teamProfileId: target.teamProfileId,
+            teamName: target.teamName,
+            findings: scanOutcome.findings,
+            errorMessage: null,
+          }))
+          .catch((unknownError: unknown): TeamScanEntry => ({
+            teamProfileId: target.teamProfileId,
+            teamName: target.teamName,
+            findings: [],
+            errorMessage: extractErrorMessage(unknownError),
+          })),
+      ),
+    ).then((teamScans) => {
+      if (!isMounted) return;
+      setTeamScanResult({ requestKey: teamScanRequestKey, teamScans });
+    });
 
     return () => {
       isMounted = false;
     };
-  }, [teamScanRequestKey, teamProjectKey, teamScopeJql, activeTeamProfileId]);
+  }, [teamScanRequestKey, teamScanTargets]);
 
   // ── Sprint load (independent source) ──
   // loadSprint gets a new identity on most renders, so calling it through an effect event keeps it
@@ -408,19 +488,23 @@ export function useTodayDashboard(): TodayDashboardData {
     const teamIssuesForMixed = isTeamConfigured ? teamHygiene : [];
     const teamStatusForMixed: CategoryStatus = isTeamConfigured ? sprintStatus : 'ready';
     const teamErrorForMixed = isTeamConfigured ? sprintState.loadError : null;
-    // The team cards count the shared scan's findings — never a second evaluation over a second
+    // The team cards count the shared scans' findings — never a second evaluation over a second
     // issue pool. The sprint fetch includes Done issues and misses configured fields; counting
     // hygiene from it produced 58 phantom commitment gaps beside a tab showing 1 (GH #177).
-    const teamFindings = teamScanResult.findings;
+    // Counts are the deduped union across every scanned team (GH #282); the per-team share is
+    // attached as a breakdown only when there is genuinely more than one team to break down.
+    const teamScans = teamScanResult.teamScans;
+    const breakdownFor = (checkIds: readonly string[]): TeamCountBreakdownEntry[] | undefined =>
+      teamScans.length > 1 ? buildTeamCountBreakdown(teamScans, checkIds) : undefined;
     // Due/overdue is a my+team union deduped by key; the team half reads the scan findings so it
-    // honours the same scope and enabled checks as the team Hygiene tab.
+    // honours the same scope and enabled checks as each team's Hygiene tab.
     const myDueOverdueKeys = selectDueOverdue(myHygiene, [], { staleDaysThreshold }).map((issue) => issue.key);
     const teamDueOverdueKeys = isTeamHygieneConfigured
-      ? selectFindingKeysMatchingChecks(teamFindings, DUE_OVERDUE_CHECK_IDS)
+      ? selectFindingKeysAcrossTeams(teamScans, DUE_OVERDUE_CHECK_IDS)
       : [];
     const dueOverdueCount = new Set([...myDueOverdueKeys, ...teamDueOverdueKeys]).size;
     const dueOverdueTeamStatus: CategoryStatus = isTeamHygieneConfigured ? teamScanStatus : 'ready';
-    const dueOverdueTeamError = isTeamHygieneConfigured ? teamScanResult.errorMessage : null;
+    const dueOverdueTeamError = isTeamHygieneConfigured ? teamScanErrorMessage : null;
 
     return {
       mentions: {
@@ -447,24 +531,27 @@ export function useTodayDashboard(): TodayDashboardData {
       },
       'team-stale': buildTeamCategory(
         'team-stale',
-        countFindingsMatchingChecks(teamFindings, TEAM_STALE_CHECK_IDS),
+        countUniqueFindingKeysAcrossTeams(teamScans, TEAM_STALE_CHECK_IDS),
         isTeamHygieneConfigured,
         teamScanStatus,
-        teamScanResult.errorMessage,
+        teamScanErrorMessage,
+        breakdownFor(TEAM_STALE_CHECK_IDS),
       ),
       unassigned: buildTeamCategory(
         'unassigned',
-        countFindingsMatchingChecks(teamFindings, TEAM_UNASSIGNED_CHECK_IDS),
+        countUniqueFindingKeysAcrossTeams(teamScans, TEAM_UNASSIGNED_CHECK_IDS),
         isTeamHygieneConfigured,
         teamScanStatus,
-        teamScanResult.errorMessage,
+        teamScanErrorMessage,
+        breakdownFor(TEAM_UNASSIGNED_CHECK_IDS),
       ),
       'commitment-gaps': buildTeamCategory(
         'commitment-gaps',
-        countFindingsMatchingChecks(teamFindings, COMMITMENT_GAP_CHECK_IDS),
+        countUniqueFindingKeysAcrossTeams(teamScans, COMMITMENT_GAP_CHECK_IDS),
         isTeamHygieneConfigured,
         teamScanStatus,
-        teamScanResult.errorMessage,
+        teamScanErrorMessage,
+        breakdownFor(COMMITMENT_GAP_CHECK_IDS),
       ),
       'due-overdue': buildMixedCategory(
         'due-overdue',
@@ -503,6 +590,7 @@ export function useTodayDashboard(): TodayDashboardData {
     isTeamHygieneConfigured,
     teamScanResult,
     teamScanStatus,
+    teamScanErrorMessage,
   ]);
 
   return {

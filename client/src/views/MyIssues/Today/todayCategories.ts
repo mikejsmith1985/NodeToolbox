@@ -120,6 +120,62 @@ export function selectFindingKeysMatchingChecks(
     .map((finding) => finding.issue.key);
 }
 
+// ── Multi-team counting (GH #282 follow-up) ──
+//
+// A Scrum Master with several saved Dashboard Team profiles is audited across ALL of them —
+// the Today cards previously mirrored only the currently-active team, silently hiding every
+// other team's findings. One scan runs per team; these helpers combine the results.
+
+/** The outcome of one team's hygiene scan, tagged with the team it audited. */
+export interface TeamScanEntry {
+  teamProfileId: string;
+  teamName: string;
+  findings: HygieneFinding[];
+  /** Non-null when this team's scan failed — its count is unknown, not zero. */
+  errorMessage: string | null;
+}
+
+/** One team's share of a card count, rendered as a drill-through chip on the card. */
+export interface TeamCountBreakdownEntry {
+  teamProfileId: string;
+  teamName: string;
+  count: number;
+  hasError: boolean;
+}
+
+/** Returns the deduped union of matching issue keys across every team's findings. */
+export function selectFindingKeysAcrossTeams(
+  teamScans: readonly TeamScanEntry[],
+  checkIds: readonly string[],
+): string[] {
+  const uniqueKeys = new Set<string>();
+  teamScans.forEach((teamScan) => {
+    selectFindingKeysMatchingChecks(teamScan.findings, checkIds).forEach((issueKey) => uniqueKeys.add(issueKey));
+  });
+  return [...uniqueKeys];
+}
+
+/** Counts matching findings across teams, never counting an issue key twice. */
+export function countUniqueFindingKeysAcrossTeams(
+  teamScans: readonly TeamScanEntry[],
+  checkIds: readonly string[],
+): number {
+  return selectFindingKeysAcrossTeams(teamScans, checkIds).length;
+}
+
+/** Builds the per-team chip data for a card: each team's own count, or its error marker. */
+export function buildTeamCountBreakdown(
+  teamScans: readonly TeamScanEntry[],
+  checkIds: readonly string[],
+): TeamCountBreakdownEntry[] {
+  return teamScans.map((teamScan) => ({
+    teamProfileId: teamScan.teamProfileId,
+    teamName: teamScan.teamName,
+    count: countFindingsMatchingChecks(teamScan.findings, checkIds),
+    hasError: teamScan.errorMessage !== null,
+  }));
+}
+
 // ── Untriaged ──
 
 /**
