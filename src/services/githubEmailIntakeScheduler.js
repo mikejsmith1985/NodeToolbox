@@ -95,6 +95,41 @@ function readLastRunResult() {
   }
 }
 
+// ── Run log (persistent activity history) ──
+//
+// The last-run file above is overwritten on every run, so an operator could never tell whether
+// scheduled runs were happening at all (user report: 90+ emails untouched, zero visibility).
+// The run log keeps EVERY completed run — including empty sweeps — newest first, capped.
+
+/** Maximum number of runs kept in the activity log (~3 days at a 30-minute interval). */
+const MAX_RUN_LOG_ENTRIES = 100;
+
+function getRunLogFilePath() {
+  return process.env.TBX_GITHUB_EMAIL_RUN_LOG_PATH
+    || path.join(process.env.APPDATA || os.homedir(), 'NodeToolbox', 'github-email-run-log.json');
+}
+
+/** Reads the persisted run history (newest first). A missing or corrupt file reads as empty. */
+function readRunLog() {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(getRunLogFilePath(), 'utf8'));
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (_readError) {
+    return [];
+  }
+}
+
+/** Prepends one completed run to the history and trims it to the cap. Never throws. */
+function appendRunLogEntry(runResult) {
+  try {
+    const trimmedLog = [runResult, ...readRunLog()].slice(0, MAX_RUN_LOG_ENTRIES);
+    fs.mkdirSync(path.dirname(getRunLogFilePath()), { recursive: true });
+    fs.writeFileSync(getRunLogFilePath(), JSON.stringify(trimmedLog, null, 2) + '\n', 'utf8');
+  } catch (writeError) {
+    console.error('  ⚠ Could not persist GitHub email intake run log: ' + writeError.message);
+  }
+}
+
 // ── Default filesystem deps (all injectable for tests) ──
 
 function defaultListFiles(dropFolder, fileExtensions) {
@@ -403,6 +438,9 @@ async function runGithubEmailIntakeNow(configuration, deps = {}) {
     const runResult = await processDropFolder(configuration, resolvedDeps);
     if (deps.writeLastRun !== false) {
       writeLastRunResult(runResult);
+      // Every completed run — scheduled or manual, even an empty sweep — lands in the activity
+      // log, so the operator can verify the schedule is actually firing and what each run did.
+      appendRunLogEntry(runResult);
     }
     return { ok: true, result: runResult };
   } finally {
@@ -625,6 +663,8 @@ module.exports = {
   collectRuleSamples,
   isGithubEmailIntakeRunInProgress,
   readLastRunResult,
+  readRunLog,
+  appendRunLogEntry,
   checkAndFireGithubEmailIntake,
   startGithubEmailIntakeScheduler,
 };

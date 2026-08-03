@@ -21,7 +21,11 @@ const DEFAULT_CONFIG = {
   customRules: [],
 };
 
-function stubFetch(overrides: Record<string, unknown> = {}, configOverride: Record<string, unknown> | null = null) {
+// Per-test run-log payload for the Activity Log section; reset in stubFetch.
+let runLogOverride: unknown[] = [];
+
+function stubFetch(overrides: Record<string, unknown> = {}, configOverride: Record<string, unknown> | null = null, runLog: unknown[] = []) {
+  runLogOverride = runLog;
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     if (url.endsWith('/config') && (!init || init.method !== 'POST')) {
@@ -35,6 +39,9 @@ function stubFetch(overrides: Record<string, unknown> = {}, configOverride: Reco
     }
     if (url.endsWith('/status')) {
       return { ok: true, json: async () => ({ hasRun: false }) } as Response;
+    }
+    if (url.endsWith('/run-log')) {
+      return { ok: true, json: async () => ({ ok: true, runs: runLogOverride }) } as Response;
     }
     if (url.endsWith('/config')) {
       return { ok: true, json: async () => ({ ok: true, folderWarning: null, ...overrides }) } as Response;
@@ -51,6 +58,45 @@ afterEach(() => {
 });
 
 describe('GithubEmailIntakePanel', () => {
+  // ── Activity Log (user report: 90+ emails untouched, no way to see whether runs happen) ──
+
+  it('renders the Activity Log with one row per recorded run and its outcome counts', async () => {
+    stubFetch({}, null, [
+      { ranAtIso: '2026-08-03T07:00:00.000Z', trigger: 'scheduled', mode: 'full', postedCount: 3, skippedCount: 2, errorCount: 1, events: [{ fileName: 'a.eml', outcome: 'posted', jiraKey: 'DENP-1', eventType: 'pr_merged' }] },
+      { ranAtIso: '2026-08-02T07:00:00.000Z', trigger: 'manual', mode: 'dryRun', postedCount: 0, skippedCount: 5, errorCount: 0, events: [] },
+    ]);
+    render(<GithubEmailIntakePanel />);
+
+    expect(await screen.findByText('Activity Log')).toBeInTheDocument();
+    expect(screen.getAllByText(/scheduled/).length).toBeGreaterThan(0);
+    expect(screen.getByText(/3 posted · 2 skipped · 1 error/)).toBeInTheDocument();
+    expect(screen.getByText(/0 posted · 5 skipped · 0 errors/)).toBeInTheDocument();
+  });
+
+  it('expands a run row to show what was done to each email', async () => {
+    stubFetch({}, null, [
+      { ranAtIso: '2026-08-03T07:00:00.000Z', trigger: 'scheduled', mode: 'full', postedCount: 1, skippedCount: 0, errorCount: 0, events: [{ fileName: 'merge.eml', outcome: 'posted', jiraKey: 'DENP-1414', eventType: 'pr_merged' }] },
+    ]);
+    render(<GithubEmailIntakePanel />);
+    await screen.findByText('Activity Log');
+
+    fireEvent.click(screen.getByRole('button', { name: /details/i }));
+
+    // Scoped to the expanded event row — "pr_merged" also appears in the default rules list.
+    const eventRow = screen.getByText(/merge\.eml/).closest('li');
+    expect(eventRow).toHaveTextContent('DENP-1414');
+    expect(eventRow).toHaveTextContent('pr_merged');
+    expect(eventRow).toHaveTextContent('posted');
+  });
+
+  it('states honestly when no run has ever been recorded', async () => {
+    stubFetch({}, null, []);
+    render(<GithubEmailIntakePanel />);
+
+    expect(await screen.findByText('Activity Log')).toBeInTheDocument();
+    expect(screen.getByText(/No runs recorded yet/i)).toBeInTheDocument();
+  });
+
   it('loads and renders the config form with the mode selector and drop folder', async () => {
     stubFetch();
     render(<GithubEmailIntakePanel />);

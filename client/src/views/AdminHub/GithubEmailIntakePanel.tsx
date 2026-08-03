@@ -115,6 +115,25 @@ async function fetchStatus(): Promise<IntakeRunResult> {
   return await response.json() as IntakeRunResult
 }
 
+/** Fetches the persistent run history (newest first). Returns [] on any failure. */
+async function fetchRunLog(): Promise<IntakeRunResult[]> {
+  try {
+    const response = await fetch('/api/github-email-intake/run-log')
+    if (!response.ok) return []
+    const body = await response.json() as { runs?: IntakeRunResult[] }
+    return Array.isArray(body.runs) ? body.runs : []
+  } catch {
+    return []
+  }
+}
+
+/** Formats a run's ISO timestamp for the Activity Log; an unparseable value renders as-is. */
+function formatRunTimestamp(ranAtIso: string | undefined): string {
+  if (!ranAtIso) return 'unknown time'
+  const parsedDate = new Date(ranAtIso)
+  return Number.isNaN(parsedDate.getTime()) ? ranAtIso : parsedDate.toLocaleString()
+}
+
 /** Fetches the Jira status names for the transition dropdowns. Returns [] on any failure. */
 async function fetchJiraStatuses(): Promise<string[]> {
   try {
@@ -174,6 +193,9 @@ function splitList(value: string): string[] {
 export function GithubEmailIntakePanel() {
   const [config, setConfig] = useState<IntakeConfig | null>(null)
   const [lastRun, setLastRun] = useState<IntakeRunResult>({ hasRun: false })
+  // Persistent run history (newest first) + which row is expanded to its per-email details.
+  const [runLog, setRunLog] = useState<IntakeRunResult[]>([])
+  const [expandedRunIndex, setExpandedRunIndex] = useState<number | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
   const [isBusy, setIsBusy] = useState(false)
@@ -192,9 +214,10 @@ export function GithubEmailIntakePanel() {
 
   const loadEverything = useCallback(async () => {
     try {
-      const [loadedConfig, loadedStatus, loadedStatuses, loadedSubStatusOptions] = await Promise.all([
-        fetchConfig(), fetchStatus(), fetchJiraStatuses(), fetchSubStatusOptions(),
+      const [loadedConfig, loadedStatus, loadedStatuses, loadedSubStatusOptions, loadedRunLog] = await Promise.all([
+        fetchConfig(), fetchStatus(), fetchJiraStatuses(), fetchSubStatusOptions(), fetchRunLog(),
       ])
+      setRunLog(loadedRunLog)
       setJiraStatuses(loadedStatuses)
       setSubStatusOptions(loadedSubStatusOptions)
       // Normalize newer fields so an older server or a partial payload can't crash the render.
@@ -267,6 +290,10 @@ export function GithubEmailIntakePanel() {
       if (outcome.ok && outcome.result) {
         setLastRun(outcome.result)
         setStatusMessage(pathSuffix === 'preview' ? 'Preview complete (nothing was posted or moved).' : 'Run complete.')
+        // A real run lands in the persistent log — refresh it so the Activity Log shows it at once.
+        if (pathSuffix === 'run-now') {
+          setRunLog(await fetchRunLog())
+        }
       } else {
         setStatusMessage(outcome.message || 'Action failed.')
       }
@@ -751,6 +778,54 @@ export function GithubEmailIntakePanel() {
           </ul>
         </div>
       ) : null}
+
+      {/* Persistent run history — proves whether scheduled runs actually fire (user report:
+          90+ emails sat untouched with no way to tell) and records what each run did. */}
+      <div className={styles.panelSection}>
+        <h3 className={styles.sectionTitle}>Activity Log</h3>
+        <p className={styles.panelStatusLine}>
+          Every intake run recorded on this machine — scheduled or manual, including empty sweeps — newest first.
+        </p>
+        {runLog.length === 0 ? (
+          <p className={styles.panelStatusLine}>
+            No runs recorded yet. If the schedule should be firing, check that the intake is <strong>enabled</strong> above
+            and that the Toolbox server has been running past the scheduled time.
+          </p>
+        ) : (
+          <ul>
+            {runLog.map((loggedRun, runIndex) => (
+              <li key={(loggedRun.ranAtIso ?? 'run') + '-' + runIndex}>
+                <strong>{formatRunTimestamp(loggedRun.ranAtIso)}</strong>
+                {' · '}{loggedRun.trigger ?? 'unknown'} · {loggedRun.mode ?? 'unknown'} —{' '}
+                {(loggedRun.postedCount ?? 0)} posted · {(loggedRun.skippedCount ?? 0)} skipped · {(loggedRun.errorCount ?? 0)} {(loggedRun.errorCount ?? 0) === 1 ? 'error' : 'errors'}
+                {loggedRun.folderError ? ' · ⚠ ' + loggedRun.folderError : ''}
+                {(loggedRun.events ?? []).length > 0 ? (
+                  <button
+                    className={styles.actionButton}
+                    onClick={() => setExpandedRunIndex(expandedRunIndex === runIndex ? null : runIndex)}
+                    type="button"
+                  >
+                    {expandedRunIndex === runIndex ? 'Hide details' : 'Details'}
+                  </button>
+                ) : null}
+                {expandedRunIndex === runIndex ? (
+                  <ul>
+                    {(loggedRun.events ?? []).map((event, eventIndex) => (
+                      <li key={event.fileName + '-' + eventIndex}>
+                        <strong>{event.fileName}</strong> — {event.outcome}
+                        {event.eventType ? ' · ' + event.eventType : ''}
+                        {event.jiraKey ? ' · ' + event.jiraKey : ''}
+                        {event.reason ? ' · ' + event.reason : ''}
+                        {event.message ? ' · ' + event.message : ''}
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </div>
   )
 }

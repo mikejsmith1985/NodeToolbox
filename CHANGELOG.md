@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **GitHub Email Intake — a persistent Activity Log proves whether scheduled runs happen and what
+  they did.** Previously only the LAST run was persisted (overwritten every run), so an idle
+  scheduler was indistinguishable from one that never fired — a user found 90+ emails untouched
+  with zero visibility. Every completed run — scheduled or manual, including empty sweeps — is now
+  appended to `github-email-run-log.json` in AppData (newest first, capped at 100 runs) and shown
+  in a new **Activity Log** section of the Admin Hub intake panel: one row per run with time,
+  trigger, mode, and posted/skipped/error counts, expandable to the per-email outcomes (file,
+  action, Jira key, reason). An empty log states honestly that no run has ever been recorded and
+  points at the enable toggle and server uptime as the first things to check.
+
 ### Changed
 - **SNow Hub — adding CTASKs to an existing CHG is now discoverable.** Three tweaks from a user
   report that the capability looked unsupported: the CHG Generator's mode toggle now reads

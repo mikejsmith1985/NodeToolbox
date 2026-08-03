@@ -14,6 +14,7 @@ const {
   collectRuleSamples,
   isGithubEmailIntakeRunInProgress,
   readLastRunResult,
+  readRunLog,
 } = require('../services/githubEmailIntakeScheduler');
 
 const DEFAULT_SCHEDULE_TIME = '07:00';
@@ -370,6 +371,12 @@ function createGithubEmailIntakeRouter(configuration) {
 
   router.get('/api/github-email-intake/status', (req, res) => {
     return res.json(readLastRunResult());
+  });
+
+  // Persistent run history (newest first) — proves whether scheduled runs are actually firing
+  // and records what each run did to every email.
+  router.get('/api/github-email-intake/run-log', (req, res) => {
+    return res.json({ ok: true, runs: readRunLog() });
   });
 
   // Valid options of the parent Sub-status dropdown, so the Rules panel offers a real select.
