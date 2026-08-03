@@ -40,9 +40,11 @@ export function TeamDomainRulePanel({ teamProfileId, onApplyToFeature }: TeamDom
   return (
     <section className={styles.panel} aria-label="Team domain components">
       <h3 className={styles.panelTitle}>Team domain components</h3>
+      {/* Wording constraint: poToolWithoutAi.test.tsx scans the locked PO journey for any AI
+          affordance, including the words "AI" and "assistant" — this copy must stay clear of them. */}
       <p className={styles.panelSubtitle}>
-        Components always applied to this team&apos;s Features (e.g. Enrollment). Applied by rule (not the
-        assistant), and never turned into a story.
+        Components always applied to this team&apos;s Features (e.g. Enrollment). Applied
+        deterministically by rule — never suggested, and never turned into a story.
       </p>
       <label className={styles.fieldLabel} htmlFor="team-domain-names">Domain component names (one per line)</label>
       <textarea

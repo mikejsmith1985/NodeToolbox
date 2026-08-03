@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **PO Tool — the "works without AI" guard tests run green again.** Feature 031's Team domain
+  components panel described itself as "applied by rule (not the assistant)" — and the word
+  "assistant" tripped `poToolWithoutAi.test.tsx`, the journey test proving a locked PO sees no AI
+  affordance anywhere (FR-022/SC-005). The subtitle now reads "applied deterministically by rule —
+  never suggested", with a comment at the copy warning future edits about the scan. Wording only; no
+  behavior change.
+
+### Fixed
 - **PI Review — date columns now show the PLANNED dates until the actuals happen.** The Dev Start /
   INT-PVS / Prod Deploy columns are derived from delivery evidence (first "Implementing" transition, first
   completed `[INT]` sub-task, released fixVersion), so for features still in planning every refresh wrote
