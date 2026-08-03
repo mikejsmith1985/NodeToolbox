@@ -1132,9 +1132,22 @@ function FetchIssuesStep({ state, actions }: CrgStepProps) {
         <button className={styles.primaryButton} onClick={() => void actions.fetchIssues()} type="button">
           Fetch Issues
         </button>
+        {/* Additive path — pull in the odd story that doesn't share the release's fixVersion
+            (switch mode/criteria first, e.g. custom JQL) without losing what's already loaded. */}
+        {state.fetchedIssues.length > 0 ? (
+          <button
+            className={styles.secondaryButton}
+            onClick={() => void actions.addIssues()}
+            title="Run the current search and add its results to the issues already loaded, instead of replacing them"
+            type="button"
+          >
+            + Add to Loaded Issues
+          </button>
+        ) : null}
       </div>
       {state.isFetchingIssues ? <p className={styles.loadingText}>Loading issues...</p> : null}
       {state.fetchError ? <p className={styles.errorText} role="alert">{state.fetchError}</p> : null}
+      {state.fetchNotice ? <p className={styles.panelHint} role="status">{state.fetchNotice}</p> : null}
 
       {/* Clone path — reproduce an existing change instead of building one from issues. The clone
           copies the source CHG's fields and CTASKs and jumps straight to Review & Create. */}
@@ -1178,6 +1191,8 @@ function ReviewIssuesStep({ state, actions }: CrgStepProps) {
   return (
     <section className={styles.section}>
       <StepHeading currentStep={state.currentStep} />
+      {/* Lands here after an additive fetch — say what changed so the extra rows aren't a surprise. */}
+      {state.fetchNotice ? <p className={styles.panelHint} role="status">{state.fetchNotice}</p> : null}
       <label className={styles.inlineCheckbox}>
         <input checked={isAllIssuesSelected} onChange={handleSelectAllChange} type="checkbox" />
         <span>Select All</span>

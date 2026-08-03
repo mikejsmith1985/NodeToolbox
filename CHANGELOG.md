@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **SNow Hub — CHG generator can now ADD issues to a loaded release instead of replacing it.**
+  Sometimes a release needs a story or two that don't share the main release's fixVersion. Once a
+  first fetch has loaded issues, Step 1 gains a **+ Add to Loaded Issues** button: switch the fetch
+  criteria (e.g. custom JQL for the stray story), and the new results are appended — deduplicated by
+  issue key, newly added issues pre-selected, existing issues and their selection untouched. A status
+  line reports what happened ("Added 2 issue(s)…", "No new issues — all 3 result(s) were already
+  loaded."), shown on both the fetch step and the review list. Plain **Fetch Issues** still replaces
+  the whole set, exactly as before.
+
 ### Changed
 - **The "⚡ Run via AI Assist (auto)" button is retired everywhere — every AI surface is now the
   copy-prompt / paste-reply round trip.** The automation channel can no longer be used, so the auto

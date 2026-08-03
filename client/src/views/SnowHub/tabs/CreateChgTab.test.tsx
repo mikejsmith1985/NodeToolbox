@@ -148,6 +148,7 @@ const {
     setFixVersion: vi.fn(),
     setCustomJql: vi.fn(),
     fetchIssues: vi.fn().mockResolvedValue(undefined),
+    addIssues: vi.fn().mockResolvedValue(undefined),
     toggleIssueSelection: vi.fn(),
     selectAllIssues: vi.fn(),
     generateDocs: vi.fn(),
@@ -343,6 +344,7 @@ describe('CreateChgTab', () => {
     resetMockState();
     Object.values(mockActions).forEach((mockAction) => mockAction.mockReset());
     mockActions.fetchIssues.mockResolvedValue(undefined);
+    mockActions.addIssues.mockResolvedValue(undefined);
     mockActions.cloneFromChg.mockResolvedValue(undefined);
     mockActions.createChg.mockResolvedValue(undefined);
     mockActions.updateExistingChg.mockResolvedValue(undefined);
@@ -424,6 +426,24 @@ describe('CreateChgTab', () => {
 
     expect(screen.getByRole('alert')).toHaveTextContent('Project key and fix version are required.');
     mockState.fetchError = null;
+  });
+
+  it('hides + Add to Loaded Issues until a first fetch has loaded something', () => {
+    render(<CreateChgTab />);
+
+    expect(screen.getByRole('button', { name: 'Fetch Issues' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '+ Add to Loaded Issues' })).not.toBeInTheDocument();
+  });
+
+  it('offers + Add to Loaded Issues once issues are loaded and calls the additive fetch', async () => {
+    const user = userEvent.setup();
+    mockState.fetchedIssues = MOCK_ISSUES;
+    render(<CreateChgTab />);
+
+    await user.click(screen.getByRole('button', { name: '+ Add to Loaded Issues' }));
+
+    expect(mockActions.addIssues).toHaveBeenCalledTimes(1);
+    expect(mockActions.fetchIssues).not.toHaveBeenCalled();
   });
 
   it('shows the step 2 issue list after fetchIssues resolves', async () => {
