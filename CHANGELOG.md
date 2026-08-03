@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **The "⚡ Run via AI Assist (auto)" button is retired everywhere — every AI surface is now the
+  copy-prompt / paste-reply round trip.** The automation channel can no longer be used, so the auto
+  button is gone from: Sprint Dashboard **Story Pointing** and **Risk Management** (both already had a
+  paste box — Step 2 is now the only path), the **release-notes** prompt modal (paste via the existing
+  "↩ Paste AI Assist Response" flow), and the shared **ReportAiPanel** shell used by PI Review AI
+  Assistance and Hygiene AI fixes (the `onRunAuto` prop is removed, so no surface can offer an auto
+  path again). The **Dev-Skip Test Risk** modal — which previously had no manual path at all — gains a
+  paste box and a **✔ Use this report** button, so the pasted Markdown report renders under the release
+  exactly where the automated one used to.
 - **SNow Hub — CHG "Enhance with prompt" is now a copy-out / paste-back round trip.** The automated
   **⚡ Run via AI Assist (auto)** button is gone from the prompt modal (the automation channel is no longer
   usable). In its place the modal gains a **"Paste the assistant's reply here"** box and a **✔ Apply reply
@@ -22,15 +31,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Description (extra markers in the reply are ignored — a prompt can only fill the fields it asked
   for), and Step 6's pasted review is shown inline on the Results step exactly where the automated
   review used to appear. Submission is still never blocked by the review.
-- **The "⚡ Run via AI Assist (auto)" button is retired everywhere — every AI surface is now the
-  copy-prompt / paste-reply round trip.** The automation channel can no longer be used, so the auto
-  button is gone from: Sprint Dashboard **Story Pointing** and **Risk Management** (both already had a
-  paste box — Step 2 is now the only path), the **release-notes** prompt modal (paste via the existing
-  "↩ Paste AI Assist Response" flow), and the shared **ReportAiPanel** shell used by PI Review AI
-  Assistance and Hygiene AI fixes (the `onRunAuto` prop is removed, so no surface can offer an auto
-  path again). The **Dev-Skip Test Risk** modal — which previously had no manual path at all — gains a
-  paste box and a **✔ Use this report** button, so the pasted Markdown report renders under the release
-  exactly where the automated one used to.
 
 ### Removed
 - **The entire AI Assist automation channel is deleted, not just its buttons.** Gone: the client
@@ -41,6 +41,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   silent AI "enrichment" paragraphs in the scope-change, feature-change, and standup-briefing
   schedulers — which always timed out with the channel dead, so reports now publish ~6s faster with
   identical content. Every AI surface remains available via its copy-prompt / paste-reply round trip.
+
+### Fixed
+- **PO Tool — the "works without AI" guard tests run green again.** Feature 031's Team domain
+  components panel described itself as "applied by rule (not the assistant)" — and the word
+  "assistant" tripped `poToolWithoutAi.test.tsx`, the journey test proving a locked PO sees no AI
+  affordance anywhere (FR-022/SC-005). The subtitle now reads "applied deterministically by rule —
+  never suggested", with a comment at the copy warning future edits about the scan. Wording only; no
+  behavior change.
 
 ### Fixed
 - **PI Review — date columns now show the PLANNED dates until the actuals happen.** The Dev Start /
