@@ -18,8 +18,14 @@ vi.mock('./ModifyChgTab.tsx', () => ({
 describe('ChgTab', () => {
   it('renders the Create CHG button and Modify CHG button', () => {
     render(<ChgTab />);
-    expect(screen.getByRole('button', { name: /Create CHG/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Modify CHG/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Create.*CHG/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Modify.*CHG/i })).toBeInTheDocument();
+  });
+
+  it('labels the modes with explicit new/existing wording so Modify is discoverable', () => {
+    render(<ChgTab />);
+    expect(screen.getByRole('button', { name: '➕ Create New CHG' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '✏️ Modify Existing CHG' })).toBeInTheDocument();
   });
 
   it('displays the Create tab by default', () => {
@@ -32,7 +38,7 @@ describe('ChgTab', () => {
     const user = userEvent.setup();
     render(<ChgTab />);
 
-    const modifyButton = screen.getByRole('button', { name: /Modify CHG/i });
+    const modifyButton = screen.getByRole('button', { name: /Modify.*CHG/i });
     await user.click(modifyButton);
 
     expect(screen.getByTestId('modify-chg-tab')).toBeInTheDocument();
@@ -43,10 +49,10 @@ describe('ChgTab', () => {
     const user = userEvent.setup();
     render(<ChgTab />);
 
-    const modifyButton = screen.getByRole('button', { name: /Modify CHG/i });
+    const modifyButton = screen.getByRole('button', { name: /Modify.*CHG/i });
     await user.click(modifyButton);
 
-    const createButton = screen.getByRole('button', { name: /Create CHG/i });
+    const createButton = screen.getByRole('button', { name: /Create.*CHG/i });
     await user.click(createButton);
 
     expect(screen.getByTestId('create-chg-tab')).toBeInTheDocument();
@@ -57,8 +63,8 @@ describe('ChgTab', () => {
     const user = userEvent.setup();
     render(<ChgTab />);
 
-    const createButton = screen.getByRole('button', { name: /Create CHG/i });
-    const modifyButton = screen.getByRole('button', { name: /Modify CHG/i });
+    const createButton = screen.getByRole('button', { name: /Create.*CHG/i });
+    const modifyButton = screen.getByRole('button', { name: /Modify.*CHG/i });
 
     // Create mode is active initially
     expect(createButton).toHaveAttribute('aria-pressed', 'true');
