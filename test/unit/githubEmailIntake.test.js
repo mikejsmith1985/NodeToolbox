@@ -14,6 +14,9 @@ jest.mock('../../src/services/githubEmailIntakeScheduler', () => ({
   collectRuleSamples: jest.fn(),
   isGithubEmailIntakeRunInProgress: jest.fn(() => false),
   readLastRunResult: jest.fn(() => ({ hasRun: true, postedCount: 2 })),
+  readRunLog: jest.fn(() => [
+    { ranAtIso: '2026-08-03T07:00:00.000Z', trigger: 'scheduled', mode: 'full', postedCount: 1, skippedCount: 2, errorCount: 0, events: [] },
+  ]),
 }));
 
 const { saveConfigToDisk } = require('../../src/config/loader');
@@ -264,6 +267,16 @@ describe('GET /api/github-email-intake/status', () => {
     const response = await request(buildApp(freshConfig())).get('/api/github-email-intake/status');
     expect(response.status).toBe(200);
     expect(response.body).toEqual({ hasRun: true, postedCount: 2 });
+  });
+});
+
+describe('GET /api/github-email-intake/run-log', () => {
+  it('returns the persisted run history so operators can verify scheduled activity', async () => {
+    const response = await request(buildApp(freshConfig())).get('/api/github-email-intake/run-log');
+    expect(response.status).toBe(200);
+    expect(response.body.ok).toBe(true);
+    expect(response.body.runs).toHaveLength(1);
+    expect(response.body.runs[0]).toMatchObject({ trigger: 'scheduled', postedCount: 1 });
   });
 });
 

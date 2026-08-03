@@ -538,3 +538,53 @@ describe('buildCommentText wording', () => {
     }
   });
 });
+
+// ── Run log (persistent activity history — user report: no way to prove scheduled runs happen) ──
+
+describe('run log persistence', () => {
+  const fs = require('fs');
+  const os = require('os');
+  let temporaryDirectory;
+
+  beforeEach(() => {
+    temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'tbx-gh-runlog-'));
+    process.env.TBX_GITHUB_EMAIL_RUN_LOG_PATH = path.join(temporaryDirectory, 'run-log.json');
+    process.env.TBX_GITHUB_EMAIL_RESULTS_PATH = path.join(temporaryDirectory, 'last-run.json');
+  });
+
+  afterEach(() => {
+    delete process.env.TBX_GITHUB_EMAIL_RUN_LOG_PATH;
+    delete process.env.TBX_GITHUB_EMAIL_RESULTS_PATH;
+    fs.rmSync(temporaryDirectory, { recursive: true, force: true });
+  });
+
+  it('returns an empty list when no run log exists yet', () => {
+    expect(scheduler.readRunLog()).toEqual([]);
+  });
+
+  it('appends entries newest-first and caps the stored history', () => {
+    for (let runIndex = 0; runIndex < 105; runIndex += 1) {
+      scheduler.appendRunLogEntry({ ranAtIso: 'run-' + runIndex, trigger: 'scheduled', postedCount: runIndex });
+    }
+
+    const runs = scheduler.readRunLog();
+    expect(runs).toHaveLength(100);
+    expect(runs[0].ranAtIso).toBe('run-104');
+    expect(runs[99].ranAtIso).toBe('run-5');
+  });
+
+  it('records every completed run in the log — including an empty sweep', async () => {
+    const { deps } = buildDeps({});
+
+    const outcome = await scheduler.runGithubEmailIntakeNow(
+      baseConfig(),
+      Object.assign({}, deps, { writeLastRun: true }),
+    );
+
+    expect(outcome.ok).toBe(true);
+    const runs = scheduler.readRunLog();
+    expect(runs).toHaveLength(1);
+    expect(runs[0]).toMatchObject({ trigger: 'manual', postedCount: 0, skippedCount: 0, errorCount: 0 });
+    expect(typeof runs[0].ranAtIso).toBe('string');
+  });
+});
