@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **CHG generator — end-before-start dates are caught before ServiceNow sees them (GH #282).**
+  A planned end date on or before its start date used to sail through to ServiceNow, which rejects
+  it with a bare 403 that read like a permissions problem. Now the Environments step shows an
+  inline alert naming the offending environment ("REL: the planned end date is on or before the
+  planned start date — it must be after."), the Review & Create step repeats it and disables
+  **Create CHG**, and `createChg` itself refuses to submit as a final backstop. Environments that
+  are disabled or missing a date are not flagged.
+- **SNow relay errors now surface ServiceNow's own reason.** The relay always carries the failed
+  response body; the error message now includes it ("— ServiceNow says: Operation Failed · Data
+  Policy Exception: …"), and the 401/403 hint no longer claims it's purely an authorization
+  problem — it can equally be a data-policy rejection.
+
 ### Added
 - **Every button now visibly "presses" when clicked, and copy buttons confirm with ✓ Copied!.**
   A global press animation (subtle scale + dim while active, disabled for reduced-motion users)

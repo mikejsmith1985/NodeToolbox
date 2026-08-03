@@ -110,7 +110,27 @@ describe('snowApi — relay routing (relay active)', () => {
     });
 
     await expect(snowFetch(SNOW_PATH)).rejects.toThrow(
-      'SNow relay fetch /api/now/table/change_request failed: 403 — Forbidden (ServiceNow rejected the relayed browser request; the relay is connected but the API call is not authorized from the current page/context.)',
+      'SNow relay fetch /api/now/table/change_request failed: 403 — Forbidden (ServiceNow rejected the relayed request — this can be a session/permission problem or a data-policy rejection; check the ServiceNow message if shown, otherwise refresh the SNow tab and re-click the bookmarklet.)',
+    );
+  });
+
+  it("surfaces ServiceNow's own error message and detail from a failed response body (GH #282)", async () => {
+    vi.mocked(postRelayRequest).mockResolvedValue(undefined);
+    vi.mocked(waitForRelayResult).mockResolvedValue({
+      id: 'test-uuid-relay-002',
+      ok: false,
+      status: 403,
+      // The bookmarklet always posts the response body text, even for failed requests —
+      // ServiceNow puts the human-readable reason there (e.g. a data-policy rejection).
+      data: JSON.stringify({
+        error: { message: 'Operation Failed', detail: 'Data Policy Exception: End date must be after start date' },
+        status: 'failure',
+      }),
+      error: null,
+    });
+
+    await expect(snowFetch(SNOW_PATH)).rejects.toThrow(
+      /ServiceNow says: Operation Failed · Data Policy Exception: End date must be after start date/,
     );
   });
 

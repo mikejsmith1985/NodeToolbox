@@ -227,7 +227,9 @@ const {
   };
 });
 
-vi.mock('../hooks/useCrgState.ts', () => ({
+// Keep the module's pure exports (e.g. listEnvironmentDateOrderErrors) real — only the hook is mocked.
+vi.mock('../hooks/useCrgState.ts', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
   useCrgState: () => ({ state: mockState, actions: mockActions }),
 }));
 
@@ -894,6 +896,36 @@ describe('CreateChgTab', () => {
 
     expect(mockActions.updateGeneratedField).not.toHaveBeenCalled();
     expect(screen.getByRole('status')).toHaveTextContent(/No recognisable fields/);
+  });
+
+  // ── Environment date-order guard (GH #282) ──
+
+  it('warns on the Environments step when an enabled environment ends before it starts', () => {
+    mockState.currentStep = 5;
+    mockState.relEnvironment = {
+      ...mockState.relEnvironment,
+      isEnabled: true,
+      plannedStartDate: '2026-08-10T10:00',
+      plannedEndDate: '2026-08-09T10:00',
+    };
+    render(<CreateChgTab />);
+
+    expect(screen.getByRole('alert')).toHaveTextContent(/REL.*end date.*before/i);
+  });
+
+  it('disables Create CHG and explains why when an environment ends before it starts', () => {
+    mockState.currentStep = 6;
+    mockState.generatedShortDescription = 'Deploy release';
+    mockState.relEnvironment = {
+      ...mockState.relEnvironment,
+      isEnabled: true,
+      plannedStartDate: '2026-08-10T10:00',
+      plannedEndDate: '2026-08-09T10:00',
+    };
+    render(<CreateChgTab />);
+
+    expect(screen.getByRole('button', { name: /Create CHG/i })).toBeDisabled();
+    expect(screen.getByRole('alert')).toHaveTextContent(/end date.*before/i);
   });
 
   // ── Step 3: Change Details ──

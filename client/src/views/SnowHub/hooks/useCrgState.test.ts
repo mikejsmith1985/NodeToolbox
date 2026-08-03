@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { jiraGet } from '../../../services/jiraApi.ts';
 import { snowFetch } from '../../../services/snowApi.ts';
 import type { CrgTemplate, CtaskTemplate, CtaskTemplateData } from './useCrgState.ts';
-import { formatSnowDateTimeForApi, NO_ENABLED_ENVIRONMENT_MESSAGE, reconcileStagedChangeTasks, useCrgState } from './useCrgState.ts';
+import { formatSnowDateTimeForApi, listEnvironmentDateOrderErrors, NO_ENABLED_ENVIRONMENT_MESSAGE, reconcileStagedChangeTasks, useCrgState } from './useCrgState.ts';
 
 vi.mock('../../../services/jiraApi.ts', () => ({
   jiraGet: vi.fn(),
@@ -54,6 +54,70 @@ function createMockCtaskTemplate(overrides: Partial<CtaskTemplate> = {}): CtaskT
     ...overrides,
   };
 }
+
+// ── listEnvironmentDateOrderErrors — end-before-start guard (GH #282) ──
+//
+// ServiceNow rejects a change whose planned end precedes its start with an unhelpful 403,
+// so the wizard must catch the ordering problem before anything is submitted.
+
+describe('listEnvironmentDateOrderErrors', () => {
+  const cleanEnvironment = {
+    isEnabled: false,
+    plannedStartDate: '',
+    plannedEndDate: '',
+    configItem: { sysId: '', displayName: '' },
+    impactedPersonsAware: '',
+    snowEnvironmentValue: '',
+  };
+
+  function buildEnvironmentSet(overrides: Record<string, object> = {}) {
+    return {
+      relEnvironment: { ...cleanEnvironment },
+      prdEnvironment: { ...cleanEnvironment },
+      pfixEnvironment: { ...cleanEnvironment },
+      ...overrides,
+    };
+  }
+
+  it('flags an enabled environment whose planned end is before its start', () => {
+    const errors = listEnvironmentDateOrderErrors(buildEnvironmentSet({
+      relEnvironment: { ...cleanEnvironment, isEnabled: true, plannedStartDate: '2026-08-10T10:00', plannedEndDate: '2026-08-09T10:00' },
+    }));
+
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain('REL');
+    expect(errors[0]).toMatch(/end date.*before/i);
+  });
+
+  it('flags an end date equal to the start date', () => {
+    const errors = listEnvironmentDateOrderErrors(buildEnvironmentSet({
+      prdEnvironment: { ...cleanEnvironment, isEnabled: true, plannedStartDate: '2026-08-10T10:00', plannedEndDate: '2026-08-10T10:00' },
+    }));
+
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain('PRD');
+  });
+
+  it('ignores disabled environments and environments with a blank date', () => {
+    const errors = listEnvironmentDateOrderErrors(buildEnvironmentSet({
+      // Disabled with inverted dates — not submitted, so not flagged.
+      relEnvironment: { ...cleanEnvironment, isEnabled: false, plannedStartDate: '2026-08-10T10:00', plannedEndDate: '2026-08-09T10:00' },
+      // Enabled but end date not yet entered — date presence is ServiceNow's own concern.
+      prdEnvironment: { ...cleanEnvironment, isEnabled: true, plannedStartDate: '2026-08-10T10:00', plannedEndDate: '' },
+    }));
+
+    expect(errors).toEqual([]);
+  });
+
+  it('lists every offending environment', () => {
+    const errors = listEnvironmentDateOrderErrors(buildEnvironmentSet({
+      relEnvironment: { ...cleanEnvironment, isEnabled: true, plannedStartDate: '2026-08-10T10:00', plannedEndDate: '2026-08-09T10:00' },
+      pfixEnvironment: { ...cleanEnvironment, isEnabled: true, plannedStartDate: '2026-08-12T10:00', plannedEndDate: '2026-08-11T10:00' },
+    }));
+
+    expect(errors).toHaveLength(2);
+  });
+});
 
 describe('useCrgState', () => {
   afterEach(() => {
@@ -979,6 +1043,27 @@ describe('useCrgState', () => {
       );
 
       expect(result.current.state.submitResult).toBe('CHG0001234 created');
+      expect(result.current.state.isSubmitting).toBe(false);
+    });
+
+    it('blocks CHG creation when an enabled environment ends before it starts (GH #282)', async () => {
+      const { result } = await advanceToChangeDetailsStep();
+
+      act(() => {
+        result.current.actions.updateEnvironment('rel', {
+          isEnabled: true,
+          plannedStartDate: '2026-08-10T10:00',
+          plannedEndDate: '2026-08-09T10:00',
+        });
+      });
+
+      await act(async () => {
+        await result.current.actions.createChg();
+      });
+
+      // Nothing must reach ServiceNow — it would answer with an unhelpful 403.
+      expect(vi.mocked(snowFetch)).not.toHaveBeenCalled();
+      expect(result.current.state.submitResult).toMatch(/end date.*before/i);
       expect(result.current.state.isSubmitting).toBe(false);
     });
 

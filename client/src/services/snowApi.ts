@@ -33,6 +33,24 @@ function removeRelayOnlyOptions(options: SnowFetchOptions): RequestInit {
   return fetchOptions;
 }
 
+/**
+ * Pulls ServiceNow's own error message/detail out of a failed response body, or '' when absent.
+ * The bookmarklet posts the response text even for failed requests, and ServiceNow puts the
+ * human-readable rejection reason (ACL, data policy, business rule) in `error.message/detail` —
+ * surfacing it turns a bare "403" into an actionable message (GH #282).
+ */
+function extractSnowErrorDetail(responseData: unknown): string {
+  try {
+    const parsedBody = typeof responseData === 'string' ? JSON.parse(responseData) : responseData;
+    const errorBlock = (parsedBody as { error?: { message?: string; detail?: string } } | null)?.error;
+    const messageParts = [errorBlock?.message, errorBlock?.detail]
+      .filter((messagePart): messagePart is string => typeof messagePart === 'string' && messagePart.trim() !== '');
+    return messageParts.length > 0 ? ` — ServiceNow says: ${messageParts.join(' · ')}` : '';
+  } catch {
+    return '';
+  }
+}
+
 function getAuthorizationHeader(headers: HeadersInit | undefined): string | null {
   if (headers === undefined) {
     return null;
@@ -123,11 +141,14 @@ async function snowRelayFetch<ResponseBody>(
   const result = await waitForRelayResult(requestId, SNOW_RELAY_SYSTEM);
 
   if (!result.ok) {
-    const errorDetail = result.error !== null ? ` — ${result.error}` : '';
+    const relayErrorDetail = result.error !== null ? ` — ${result.error}` : '';
+    const snowErrorDetail = extractSnowErrorDetail(result.data);
+    // 401/403 is ambiguous from a relayed page: it can be a session/permission problem OR a
+    // data-policy/business-rule rejection (GH #282) — say so instead of assuming authorization.
     const sessionHint = result.status === 401 || result.status === 403
-      ? ' (ServiceNow rejected the relayed browser request; the relay is connected but the API call is not authorized from the current page/context.)'
+      ? ' (ServiceNow rejected the relayed request — this can be a session/permission problem or a data-policy rejection; check the ServiceNow message if shown, otherwise refresh the SNow tab and re-click the bookmarklet.)'
       : '';
-    throw new Error(`SNow relay fetch ${path} failed: ${result.status}${errorDetail}${sessionHint}`);
+    throw new Error(`SNow relay fetch ${path} failed: ${result.status}${relayErrorDetail}${snowErrorDetail}${sessionHint}`);
   }
 
   // The bookmarklet collects the response via a.text(), so result.data is a JSON string.
