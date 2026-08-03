@@ -9,18 +9,14 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockFetchContexts, mockRunAiAssistExchange, mockCopyToClipboard } = vi.hoisted(() => ({
+const { mockFetchContexts, mockCopyToClipboard } = vi.hoisted(() => ({
   mockFetchContexts: vi.fn(),
-  mockRunAiAssistExchange: vi.fn(),
   mockCopyToClipboard: vi.fn(),
 }))
 
 vi.mock('./piReviewAiFetch.ts', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   fetchPiReviewAiContexts: mockFetchContexts,
-}))
-vi.mock('../../SnowHub/hooks/useAiAssistExchange.ts', () => ({
-  useAiAssistExchange: () => ({ isRunning: false, runAiAssistExchange: mockRunAiAssistExchange }),
 }))
 vi.mock('../../FeatureCanvas/ai/clipboard.ts', () => ({ copyToClipboard: mockCopyToClipboard }))
 
@@ -152,10 +148,17 @@ describe('PiReviewAiPanel — before anything is sent', () => {
     const promptBox = await screen.findByLabelText(/prompt/i)
     await waitFor(() => expect((promptBox as HTMLTextAreaElement).value).toContain('ALPHA-1'))
     expect((promptBox as HTMLTextAreaElement).value).toContain('T-shirt sizing scale')
-    expect(mockRunAiAssistExchange).not.toHaveBeenCalled()
 
     fireEvent.click(screen.getByRole('button', { name: /copy prompt/i }))
     expect(mockCopyToClipboard).toHaveBeenCalledWith(expect.stringContaining('ALPHA-1'))
+  })
+
+  it('offers no automated exchange button — copy/paste is the only path', async () => {
+    act(() => setAiAssistUnlocked(true))
+    renderPanel()
+    await waitForPrompt()
+
+    expect(screen.queryByRole('button', { name: /run via ai assist/i })).not.toBeInTheDocument()
   })
 
   it('discloses that an accepted estimate can update Jira BEFORE any Accept exists (FR-030)', async () => {
@@ -189,38 +192,6 @@ describe('PiReviewAiPanel — the two paths', () => {
     const suggestionList = await findSuggestionList()
     expect(suggestionList.getByText(/two integrations/i)).toBeInTheDocument()
     expect(suggestionList.getByText('40')).toBeInTheDocument()
-  })
-
-  it('runs the automatic path into the same review UI as the manual one', async () => {
-    act(() => setAiAssistUnlocked(true))
-    mockRunAiAssistExchange.mockResolvedValue({
-      ok: true,
-      response: replyFor([{ issueKey: 'ALPHA-1', size: 'L', rationale: 'Auto path.' }]),
-      message: '',
-    })
-    renderPanel()
-    await waitForPrompt()
-
-    fireEvent.click(screen.getByRole('button', { name: /run via ai assist/i }))
-
-    const suggestionList = await findSuggestionList()
-    expect(suggestionList.getByText(/auto path/i)).toBeInTheDocument()
-    expect(suggestionList.getByText('60')).toBeInTheDocument()
-  })
-
-  it('shows a clear message when the automation fails, and leaves the manual path working (FR-012)', async () => {
-    act(() => setAiAssistUnlocked(true))
-    // runAiAssistExchange never throws — every failure is a returned {ok:false, message}.
-    mockRunAiAssistExchange.mockResolvedValue({ ok: false, message: 'Timed out waiting for AI Assist to respond.' })
-    renderPanel()
-    await waitForPrompt()
-
-    fireEvent.click(screen.getByRole('button', { name: /run via ai assist/i }))
-    expect(await screen.findByText(/timed out waiting for ai assist/i)).toBeInTheDocument()
-
-    // The manual path must still work after an automation failure.
-    await ingestReply(replyFor([{ issueKey: 'ALPHA-1', size: 'S', rationale: 'Manual still works.' }]))
-    expect((await findSuggestionList()).getByText(/manual still works/i)).toBeInTheDocument()
   })
 
   it('surfaces a malformed reply as an error without corrupting anything', async () => {

@@ -9,7 +9,6 @@ import { useEffect, useState } from 'react';
 import type { JiraIssue } from '../../types/jira.ts';
 import { jiraGet, jiraPut } from '../../services/jiraApi.ts';
 import { useAiAssist } from '../SnowHub/hooks/useAiAssist.ts';
-import { useAiAssistExchange } from '../SnowHub/hooks/useAiAssistExchange.ts';
 import styles from './SprintDashboardView.module.css';
 
 // ── Constants ──
@@ -242,10 +241,6 @@ export default function RiskManagementSection({
   const [aiAssistResponseInput, setAiAssistResponseInput] = useState('');
   const [aiAssistResponseParseError, setAiAssistResponseParseError] = useState<string | null>(null);
 
-  // Automated exchange — removes the copy-paste by dispatching the prompt and
-  // applying AI Assist's response directly.
-  const { isRunning: isAiAssistRunning, runAiAssistExchange } = useAiAssistExchange();
-  const [aiAssistAutoStatus, setAiAssistAutoStatus] = useState<string | null>(null);
   const [isCopied, setIsCopied] = useState(false);
 
   // ── Data loading ──
@@ -319,19 +314,6 @@ export default function RiskManagementSection({
     await navigator.clipboard.writeText(generatedAiAssistPromptText);
     setIsCopied(true);
     setTimeout(() => setIsCopied(false), 2000);
-  }
-
-  // Automated path: dispatch the prompt to AI Assist, then apply the returned JSON
-  // directly — no manual paste.
-  async function handleRunAiAssistAuto() {
-    setAiAssistAutoStatus('Sending to AI Assist…');
-    const exchange = await runAiAssistExchange(generatedAiAssistPromptText);
-    if (!exchange.ok) {
-      setAiAssistAutoStatus(exchange.message);
-      return;
-    }
-    setAiAssistAutoStatus(null);
-    await applyAiAssistResponse(exchange.response ?? '');
   }
 
   /** Parses AI Assist's JSON, writes all refined risk fields back to Jira, and tracks per-row save state. */
@@ -495,23 +477,12 @@ export default function RiskManagementSection({
               <div className={styles.releasePromptActions}>
                 <button
                   className={styles.secondaryButton}
-                  disabled={isAiAssistRunning}
-                  onClick={() => void handleRunAiAssistAuto()}
-                  type="button"
-                >
-                  {isAiAssistRunning ? '⏳ Running via AI Assist…' : '⚡ Run via AI Assist (auto)'}
-                </button>
-                <button
-                  className={styles.secondaryButton}
                   onClick={() => void handleCopyAiAssistPrompt()}
                   type="button"
                 >
                   {isCopied ? '✓ Copied!' : '📋 Copy Prompt'}
                 </button>
               </div>
-              {aiAssistAutoStatus !== null ? (
-                <p className={styles.releasePromptInstructions} role="status">{aiAssistAutoStatus}</p>
-              ) : null}
             </section>
 
             <hr className={styles.ptAiAssistDivider} />
