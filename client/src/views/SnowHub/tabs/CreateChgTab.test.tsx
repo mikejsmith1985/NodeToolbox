@@ -810,6 +810,72 @@ describe('CreateChgTab', () => {
     expect(screen.queryByText(/Copy this prompt and paste it into AI Assist/)).not.toBeInTheDocument();
   });
 
+  // ── Prompt modal paste-back (replaces the retired "Run via AI Assist (auto)" path) ──
+
+  /** Unlocks the gate and opens the Enhance-with-prompt modal at Planning step 4. */
+  async function openEnhancePromptModal(user: ReturnType<typeof userEvent.setup>): Promise<void> {
+    mockState.currentStep = 4;
+    render(<CreateChgTab />);
+    act(() => setAiAssistUnlocked(true));
+    await user.click(await screen.findByRole('button', { name: '✦ Enhance with prompt' }));
+  }
+
+  it('no longer offers the retired Run via AI Assist (auto) button in the prompt modal', async () => {
+    const user = userEvent.setup();
+    await openEnhancePromptModal(user);
+
+    expect(screen.queryByRole('button', { name: /Run via AI Assist \(auto\)/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '✔ Apply reply to fields' })).toBeInTheDocument();
+  });
+
+  it('disables Apply reply to fields until a reply is pasted', async () => {
+    const user = userEvent.setup();
+    await openEnhancePromptModal(user);
+
+    expect(screen.getByRole('button', { name: '✔ Apply reply to fields' })).toBeDisabled();
+
+    fireEvent.change(screen.getByRole('textbox', { name: "Paste the assistant's reply here" }), {
+      target: { value: 'SHORT_DESCRIPTION: Deploy fix' },
+    });
+
+    expect(screen.getByRole('button', { name: '✔ Apply reply to fields' })).toBeEnabled();
+  });
+
+  it('applies all four CHG fields from a pasted AI Assist reply', async () => {
+    const user = userEvent.setup();
+    await openEnhancePromptModal(user);
+
+    const pastedReply = [
+      'SHORT_DESCRIPTION: Deploy ABC-1 fix',
+      'DESCRIPTION: Applies the release blocker patch.',
+      'JUSTIFICATION: Restores the release schedule.',
+      'RISK_AND_IMPACT: Low risk; rollback available.',
+    ].join('\n');
+    fireEvent.change(screen.getByRole('textbox', { name: "Paste the assistant's reply here" }), {
+      target: { value: pastedReply },
+    });
+    await user.click(screen.getByRole('button', { name: '✔ Apply reply to fields' }));
+
+    expect(mockActions.updateGeneratedField).toHaveBeenCalledWith('shortDescription', 'Deploy ABC-1 fix');
+    expect(mockActions.updateGeneratedField).toHaveBeenCalledWith('description', 'Applies the release blocker patch.');
+    expect(mockActions.updateGeneratedField).toHaveBeenCalledWith('justification', 'Restores the release schedule.');
+    expect(mockActions.updateGeneratedField).toHaveBeenCalledWith('riskImpact', 'Low risk; rollback available.');
+    expect(screen.getByRole('status')).toHaveTextContent('Applied 4 field(s) from the pasted reply.');
+  });
+
+  it('reports when a pasted reply contains no recognisable fields', async () => {
+    const user = userEvent.setup();
+    await openEnhancePromptModal(user);
+
+    fireEvent.change(screen.getByRole('textbox', { name: "Paste the assistant's reply here" }), {
+      target: { value: 'Sure! Here is some prose without any markers.' },
+    });
+    await user.click(screen.getByRole('button', { name: '✔ Apply reply to fields' }));
+
+    expect(mockActions.updateGeneratedField).not.toHaveBeenCalled();
+    expect(screen.getByRole('status')).toHaveTextContent(/No recognisable fields/);
+  });
+
   // ── Step 3: Change Details ──
 
   it('renders the clone-from-CHG input and Clone CHG button on the Fetch Issues step', () => {

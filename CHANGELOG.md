@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **SNow Hub — CHG "Enhance with prompt" is now a copy-out / paste-back round trip.** The automated
+  **⚡ Run via AI Assist (auto)** button is gone from the prompt modal (the automation channel is no longer
+  usable). In its place the modal gains a **"Paste the assistant's reply here"** box and a **✔ Apply reply
+  to fields** button: copy the prompt, run it in your assistant, paste the reply back, and the four CHG
+  fields (Short Description, Description, Justification, Risk & Impact) are filled automatically from the
+  reply's `SHORT_DESCRIPTION:` / `DESCRIPTION:` / `JUSTIFICATION:` / `RISK_AND_IMPACT:` markers — the same
+  propose-only pattern every other Toolbox AI surface uses. A reply with no recognisable markers changes
+  nothing and says so.
+
 ### Fixed
 - **PI Review — date columns now show the PLANNED dates until the actuals happen.** The Dev Start /
   INT-PVS / Prod Deploy columns are derived from delivery evidence (first "Implementing" transition, first

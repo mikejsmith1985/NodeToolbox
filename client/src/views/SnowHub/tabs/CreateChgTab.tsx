@@ -2374,11 +2374,14 @@ export default function CrgTab({ mode = 'wizard' }: CrgTabProps) {
 
   // Prompt modal state — holds the generated prompt text the user pastes into AI Assist.
   const [aiAssistPrompt, setAiAssistPrompt] = useState<string | null>(null);
+  // Paste-back state — the assistant's reply the user pastes into the modal, plus the
+  // outcome message shown after the reply is parsed and applied to the CHG fields.
+  const [aiAssistReplyText, setAiAssistReplyText] = useState<string>('');
+  const [aiAssistApplyStatus, setAiAssistApplyStatus] = useState<string | null>(null);
 
-  // Automated AI Assist exchange — dispatches the prompt and polls for the result,
-  // removing the manual copy-paste step. Status is shown inside the prompt modal.
-  const { isRunning: isAiAssistRunning, runAiAssistExchange } = useAiAssistExchange();
-  const [aiAssistAutoStatus, setAiAssistAutoStatus] = useState<string | null>(null);
+  // AI Assist exchange used by the Step 3 draft and Step 6 risk-check accelerators.
+  // The prompt modal itself is a manual copy-out / paste-back round trip only.
+  const { runAiAssistExchange } = useAiAssistExchange();
   // True while the Step 3 "Draft with AI Assist" exchange is in flight.
   const [isDraftingWithAiAssist, setIsDraftingWithAiAssist] = useState(false);
 
@@ -2478,20 +2481,11 @@ export default function CrgTab({ mode = 'wizard' }: CrgTabProps) {
     setAiAssistPrompt(promptText);
   }, [state, buildPrompt]);
 
-  // Automated path: send the shown prompt to AI Assist, poll for the deterministic
-  // response, parse it, and apply each returned value to its CHG field — the
-  // same fields the manual paste-back would populate.
-  const handleRunAiAssistAuto = useCallback(async () => {
-    if (!aiAssistPrompt) return;
-
-    setAiAssistAutoStatus('Sending to AI Assist…');
-    const exchange = await runAiAssistExchange(aiAssistPrompt);
-    if (!exchange.ok) {
-      setAiAssistAutoStatus(exchange.message);
-      return;
-    }
-
-    const parsedFields = parseAiAssistChgResponse(exchange.response ?? '');
+  // Paste-back path: parse the reply the user pasted from their assistant and apply
+  // every recognised value to its CHG field — the same fields the retired
+  // "Run via AI Assist (auto)" exchange used to populate.
+  const handleApplyAiAssistReply = useCallback(() => {
+    const parsedFields = parseAiAssistChgResponse(aiAssistReplyText);
     const parsedFieldKeys = Object.keys(parsedFields) as Array<keyof typeof parsedFields>;
     parsedFieldKeys.forEach((fieldKey) => {
       const fieldValue = parsedFields[fieldKey];
@@ -2500,12 +2494,16 @@ export default function CrgTab({ mode = 'wizard' }: CrgTabProps) {
       }
     });
 
-    setAiAssistAutoStatus(
+    setAiAssistApplyStatus(
       parsedFieldKeys.length > 0
-        ? `Applied ${parsedFieldKeys.length} field(s) from AI Assist.`
-        : 'AI Assist returned no recognisable fields.',
+        ? `Applied ${parsedFieldKeys.length} field(s) from the pasted reply.`
+        : 'No recognisable fields found — the reply must use the SHORT_DESCRIPTION / DESCRIPTION / JUSTIFICATION / RISK_AND_IMPACT markers.',
     );
-  }, [aiAssistPrompt, runAiAssistExchange, actions]);
+    // Clear a successfully-applied reply so a second paste starts clean.
+    if (parsedFieldKeys.length > 0) {
+      setAiAssistReplyText('');
+    }
+  }, [aiAssistReplyText, actions]);
 
   // Step 3: dispatch a targeted prompt to populate Short Description and Description from
   // the selected Jira issues. Only the two relevant fields are updated — the full four-field
@@ -2663,12 +2661,14 @@ export default function CrgTab({ mode = 'wizard' }: CrgTabProps) {
         renderCurrentStepPanel(state, actions, planningExtras, changeDetailsExtras, environmentExtras, resultsExtras)
       )}
 
-      {/* Prompt modal — shows the generated AI Assist prompt for copy/paste */}
+      {/* Prompt modal — copy-out / paste-back round trip: copy the prompt into the
+          user's assistant, then paste the reply back to populate the four CHG fields. */}
       {aiAssistPrompt !== null ? (
         <div className={styles.passphraseOverlay}>
           <div className={styles.promptModal}>
             <p className={styles.promptInstructions}>
-              Copy this prompt and paste it into AI Assist to generate the four CHG field values.
+              Copy this prompt and paste it into AI Assist to generate the four CHG field values,
+              then paste the reply below to fill the fields automatically.
             </p>
             <textarea
               className={styles.promptTextArea}
@@ -2678,14 +2678,6 @@ export default function CrgTab({ mode = 'wizard' }: CrgTabProps) {
             <div className={styles.promptActions}>
               <button
                 className={styles.aiAssistButton}
-                disabled={isAiAssistRunning}
-                onClick={() => void handleRunAiAssistAuto()}
-                type="button"
-              >
-                {isAiAssistRunning ? '⏳ Running via AI Assist…' : '⚡ Run via AI Assist (auto)'}
-              </button>
-              <button
-                className={styles.aiAssistButton}
                 onClick={() => void navigator.clipboard.writeText(aiAssistPrompt)}
                 type="button"
               >
@@ -2693,14 +2685,37 @@ export default function CrgTab({ mode = 'wizard' }: CrgTabProps) {
               </button>
               <button
                 className={styles.linkButton}
-                onClick={() => { setAiAssistPrompt(null); setAiAssistAutoStatus(null); }}
+                onClick={() => {
+                  setAiAssistPrompt(null);
+                  setAiAssistReplyText('');
+                  setAiAssistApplyStatus(null);
+                }}
                 type="button"
               >
                 Close
               </button>
             </div>
-            {aiAssistAutoStatus !== null ? (
-              <p className={styles.promptInstructions} role="status">{aiAssistAutoStatus}</p>
+            <label className={styles.promptInstructions} htmlFor="crg-ai-assist-reply">
+              Paste the assistant&apos;s reply here
+            </label>
+            <textarea
+              className={styles.promptTextArea}
+              id="crg-ai-assist-reply"
+              onChange={(changeEvent) => setAiAssistReplyText(changeEvent.target.value)}
+              value={aiAssistReplyText}
+            />
+            <div className={styles.promptActions}>
+              <button
+                className={styles.aiAssistButton}
+                disabled={aiAssistReplyText.trim() === ''}
+                onClick={handleApplyAiAssistReply}
+                type="button"
+              >
+                ✔ Apply reply to fields
+              </button>
+            </div>
+            {aiAssistApplyStatus !== null ? (
+              <p className={styles.promptInstructions} role="status">{aiAssistApplyStatus}</p>
             ) : null}
           </div>
         </div>
