@@ -351,7 +351,7 @@ export interface ChgSubmissionDebug {
  */
 type PersistedCrgState = Omit<
   CrgState,
-  'availableFixVersions' | 'isFetchingIssues' | 'fetchError' |
+  'availableFixVersions' | 'isFetchingIssues' | 'fetchError' | 'fetchNotice' |
   'isCloning' | 'cloneError' | 'isSubmitting' | 'submitResult' | 'submissionDebug' | 'selectedIssueKeys'
 > & {
   selectedIssueKeys: string[];
@@ -369,6 +369,8 @@ interface CrgState {
   selectedIssueKeys: Set<string>;
   isFetchingIssues: boolean;
   fetchError: string | null;
+  /** Outcome of the last additive fetch (e.g. "Added 2 issue(s)…"); null when not applicable. */
+  fetchNotice: string | null;
   /** CHG number the user wants to pre-fill from (e.g. "CHG0001234"). */
   cloneChgNumber: string;
   isCloning: boolean;
@@ -410,6 +412,8 @@ interface CrgActions {
   setFixVersion: (fixVersion: string) => void;
   setCustomJql: (customJql: string) => void;
   fetchIssues: () => Promise<void>;
+  /** Runs the active fetch mode's search and APPENDS the results, never discarding loaded issues. */
+  addIssues: () => Promise<void>;
   toggleIssueSelection: (issueKey: string) => void;
   selectAllIssues: (shouldSelectAllIssues: boolean) => void;
   generateDocs: () => void;
@@ -481,6 +485,7 @@ function createDefaultCrgState(): CrgState {
     selectedIssueKeys: new Set<string>(),
     isFetchingIssues: false,
     fetchError: EMPTY_FETCH_ERROR,
+    fetchNotice: null,
     cloneChgNumber: EMPTY_VALUE,
     isCloning: false,
     cloneError: null,
@@ -1581,37 +1586,78 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
     };
   }, [state.projectKey]);
 
-  const fetchIssues = useCallback(async () => {
-    // Validate required inputs based on which fetch mode is active.
+  // Runs the active fetch mode's Jira search — shared by the replacing fetch and the
+  // additive fetch so validation, loading state, and error handling stay identical.
+  // Returns the found issues, or null when validation failed or the search errored
+  // (the error/loading state has already been written in that case).
+  const runIssueSearch = useCallback(async (): Promise<JiraIssue[] | null> => {
     if (state.fetchMode === 'project' && (!state.projectKey || !state.fixVersion)) {
       setState((previousState) => ({ ...previousState, fetchError: REQUIRED_FIELDS_MESSAGE }));
-      return;
+      return null;
     }
     if (state.fetchMode === 'jql' && !state.customJql.trim()) {
       setState((previousState) => ({ ...previousState, fetchError: REQUIRED_JQL_MESSAGE }));
-      return;
+      return null;
     }
 
-    setState((previousState) => ({ ...previousState, isFetchingIssues: true, fetchError: EMPTY_FETCH_ERROR }));
+    setState((previousState) => ({ ...previousState, isFetchingIssues: true, fetchError: EMPTY_FETCH_ERROR, fetchNotice: null }));
 
     try {
       const searchPath = state.fetchMode === 'jql'
         ? buildJqlSearchPath(state.customJql)
         : buildProjectSearchPath(state.projectKey, state.fixVersion);
       const searchResponse = await jiraGet<{ issues: JiraIssue[] }>(searchPath);
-      const selectedIssueKeys = new Set(searchResponse.issues.map((jiraIssue) => jiraIssue.key));
-      setState((previousState) => ({
-        ...previousState,
-        fetchedIssues: searchResponse.issues,
-        selectedIssueKeys,
-        isFetchingIssues: false,
-        currentStep: 2,
-      }));
+      return searchResponse.issues;
     } catch (unknownError) {
       const fetchError = unknownError instanceof Error ? unknownError.message : FETCH_FAILURE_MESSAGE;
       setState((previousState) => ({ ...previousState, isFetchingIssues: false, fetchError }));
+      return null;
     }
   }, [state.customJql, state.fetchMode, state.fixVersion, state.projectKey]);
+
+  const fetchIssues = useCallback(async () => {
+    const foundIssues = await runIssueSearch();
+    if (foundIssues === null) return;
+
+    setState((previousState) => ({
+      ...previousState,
+      fetchedIssues: foundIssues,
+      selectedIssueKeys: new Set(foundIssues.map((jiraIssue) => jiraIssue.key)),
+      isFetchingIssues: false,
+      currentStep: 2,
+    }));
+  }, [runIssueSearch]);
+
+  // Additive fetch: appends results to what is already loaded (deduplicated by issue key)
+  // and selects only the newly added issues — existing issues keep their selection state.
+  // Lets a release pull in the odd story that does not share the main release's fixVersion.
+  const addIssues = useCallback(async () => {
+    const foundIssues = await runIssueSearch();
+    if (foundIssues === null) return;
+
+    setState((previousState) => {
+      const loadedIssueKeys = new Set(previousState.fetchedIssues.map((jiraIssue) => jiraIssue.key));
+      const newIssues = foundIssues.filter((jiraIssue) => !loadedIssueKeys.has(jiraIssue.key));
+      const nextSelectedIssueKeys = new Set(previousState.selectedIssueKeys);
+      newIssues.forEach((jiraIssue) => nextSelectedIssueKeys.add(jiraIssue.key));
+
+      const fetchNotice = foundIssues.length === 0
+        ? 'The search returned no issues — nothing was added.'
+        : newIssues.length > 0
+          ? `Added ${newIssues.length} issue(s) to the ${previousState.fetchedIssues.length} already loaded.`
+          : `No new issues — all ${foundIssues.length} result(s) were already loaded.`;
+
+      return {
+        ...previousState,
+        fetchedIssues: [...previousState.fetchedIssues, ...newIssues],
+        selectedIssueKeys: nextSelectedIssueKeys,
+        isFetchingIssues: false,
+        // Only jump to the review step when something actually changed.
+        currentStep: newIssues.length > 0 ? 2 : previousState.currentStep,
+        fetchNotice,
+      };
+    });
+  }, [runIssueSearch]);
 
   const toggleIssueSelection = useCallback((issueKey: string) => {
     setState((previousState) => {
@@ -2152,6 +2198,7 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
       setFixVersion,
       setCustomJql,
       fetchIssues,
+      addIssues,
       toggleIssueSelection,
       selectAllIssues,
       generateDocs,
@@ -2178,7 +2225,7 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
       createChg,
     };
   }, [
-    setFetchMode, setProjectKey, setFixVersion, setCustomJql, fetchIssues,
+    setFetchMode, setProjectKey, setFixVersion, setCustomJql, fetchIssues, addIssues,
     toggleIssueSelection, selectAllIssues, generateDocs, updateGeneratedField,
     setShortDescriptionConfig,
     setChgBasicInfo, setChgPlanningAssessment, setChgPlanningContent,

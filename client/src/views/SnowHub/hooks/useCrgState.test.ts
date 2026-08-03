@@ -150,6 +150,90 @@ describe('useCrgState', () => {
     expect(result.current.state.selectedIssueKeys.has('ABC-102')).toBe(true);
   });
 
+  // ── addIssues — additive fetch that never discards what's already loaded ──
+
+  it('addIssues appends new results, selects them, and keeps existing issues and selections intact', async () => {
+    vi.mocked(jiraGet)
+      .mockResolvedValueOnce([] as never)
+      .mockResolvedValueOnce({ issues: MOCK_JIRA_ISSUES } as never)
+      .mockResolvedValueOnce({ issues: [createMockJiraIssue('XYZ-201', 'Story outside the release fixVersion')] } as never);
+    const { result } = renderHook(() => useCrgState());
+
+    act(() => {
+      result.current.actions.setProjectKey('abc');
+      result.current.actions.setFixVersion('1.2.3');
+    });
+    await act(async () => {
+      await result.current.actions.fetchIssues();
+    });
+
+    // Deselect one loaded issue to prove the add does not disturb existing selection state.
+    act(() => {
+      result.current.actions.toggleIssueSelection('ABC-102');
+      result.current.actions.setFetchMode('jql');
+      result.current.actions.setCustomJql('key = XYZ-201');
+    });
+    await act(async () => {
+      await result.current.actions.addIssues();
+    });
+
+    expect(result.current.state.fetchedIssues.map((issue) => issue.key)).toEqual(['ABC-101', 'ABC-102', 'XYZ-201']);
+    expect(result.current.state.selectedIssueKeys.has('XYZ-201')).toBe(true);
+    expect(result.current.state.selectedIssueKeys.has('ABC-101')).toBe(true);
+    expect(result.current.state.selectedIssueKeys.has('ABC-102')).toBe(false);
+    expect(result.current.state.currentStep).toBe(2);
+    expect(result.current.state.fetchNotice).toContain('Added 1 issue(s)');
+  });
+
+  it('addIssues never duplicates an already-loaded issue and says so when nothing is new', async () => {
+    vi.mocked(jiraGet)
+      .mockResolvedValueOnce([] as never)
+      .mockResolvedValueOnce({ issues: MOCK_JIRA_ISSUES } as never)
+      .mockResolvedValueOnce({ issues: MOCK_JIRA_ISSUES } as never);
+    const { result } = renderHook(() => useCrgState());
+
+    act(() => {
+      result.current.actions.setProjectKey('abc');
+      result.current.actions.setFixVersion('1.2.3');
+    });
+    await act(async () => {
+      await result.current.actions.fetchIssues();
+    });
+    await act(async () => {
+      await result.current.actions.addIssues();
+    });
+
+    expect(result.current.state.fetchedIssues.map((issue) => issue.key)).toEqual(['ABC-101', 'ABC-102']);
+    expect(result.current.state.fetchNotice).toContain('No new issues');
+  });
+
+  it('fetchIssues still replaces the loaded set and clears the add notice', async () => {
+    vi.mocked(jiraGet)
+      .mockResolvedValueOnce([] as never)
+      .mockResolvedValueOnce({ issues: MOCK_JIRA_ISSUES } as never)
+      .mockResolvedValueOnce({ issues: MOCK_JIRA_ISSUES } as never)
+      .mockResolvedValueOnce({ issues: [createMockJiraIssue('XYZ-201', 'A fresh replace')] } as never);
+    const { result } = renderHook(() => useCrgState());
+
+    act(() => {
+      result.current.actions.setProjectKey('abc');
+      result.current.actions.setFixVersion('1.2.3');
+    });
+    await act(async () => {
+      await result.current.actions.fetchIssues();
+    });
+    await act(async () => {
+      await result.current.actions.addIssues(); // leaves a "No new issues" notice behind
+    });
+    await act(async () => {
+      await result.current.actions.fetchIssues(); // plain fetch = full replace, notice gone
+    });
+
+    expect(result.current.state.fetchedIssues.map((issue) => issue.key)).toEqual(['XYZ-201']);
+    expect(result.current.state.selectedIssueKeys.has('ABC-101')).toBe(false);
+    expect(result.current.state.fetchNotice).toBeNull();
+  });
+
   it('clears every selected issue when selectAllIssues(false) is used', async () => {
     vi.mocked(jiraGet)
       .mockResolvedValueOnce([] as never)
