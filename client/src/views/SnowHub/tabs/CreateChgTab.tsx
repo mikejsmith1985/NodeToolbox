@@ -2065,7 +2065,7 @@ function CtaskTemplatePanel({ state, actions, templates, saveTemplate, updateTem
   return (
     <div className={styles.clonePanel}>
       <h4 className={styles.panelSectionTitle}>CTASK Templates</h4>
-      <p className={styles.panelHint}>Add reusable Change Tasks to this CHG, or append the selected CTASKs to an existing CHG.</p>
+      <p className={styles.panelHint}>Stage reusable Change Tasks for the CHG you&apos;re building — or add them straight onto a CHG that already exists in ServiceNow using the control below.</p>
       <div className={styles.cloneInputRow}>
         <label className={styles.fieldGroup}>
           <span className={styles.fieldLabel}>Existing CTASK for template clone</span>
@@ -2149,13 +2149,14 @@ function CtaskTemplatePanel({ state, actions, templates, saveTemplate, updateTem
         ))}
       </div>
 
+      {/* Task-first wording: the control is "add CTASKs to my CHG", not template plumbing. */}
       <div className={styles.cloneInputRow}>
         <label className={styles.fieldGroup}>
-          <span className={styles.fieldLabel}>Existing CHG for CTASK append</span>
-          <input aria-label="Existing CHG for CTASK append" className={styles.input} onChange={(event) => setAppendChgNumber(event.target.value.toUpperCase())} placeholder="CHG0001234" value={appendChgNumber} />
+          <span className={styles.fieldLabel}>Existing CHG to receive the CTASKs</span>
+          <input aria-label="Existing CHG to receive the CTASKs" className={styles.input} onChange={(event) => setAppendChgNumber(event.target.value.toUpperCase())} placeholder="CHG0001234" value={appendChgNumber} />
         </label>
         <button className={styles.secondaryButton} disabled={state.changeTasks.length === 0 || state.isSubmitting} onClick={handleAppendTasks} type="button">
-          Append CTASKs to Existing CHG
+          Add CTASKs to Existing CHG
         </button>
       </div>
     </div>
@@ -2313,6 +2314,17 @@ function ResultsStep({ state, actions, ctaskTemplates, environmentValueByKey, is
           type="button"
         >
           {state.isSubmitting ? 'Updating CHG…' : 'Update Existing CHG'}
+        </button>
+        {/* Same append the Configuration tab offers, surfaced where users look for it (user report):
+            queue CTASKs above, enter the CHG number, and add them without creating anything. */}
+        <button
+          className={styles.secondaryButton}
+          disabled={state.isSubmitting || state.changeTasks.length === 0 || !normalizedExistingChgNumber}
+          onClick={() => void actions.appendTasksToExistingChg(normalizedExistingChgNumber)}
+          title="Add the queued Change Tasks to the CHG number above, without creating or updating anything else"
+          type="button"
+        >
+          Add CTASKs to Existing CHG
         </button>
         <button className={styles.secondaryButton} onClick={() => actions.reset()} type="button">
           Start Over

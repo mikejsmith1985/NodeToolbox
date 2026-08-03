@@ -15,21 +15,24 @@ function ModeToggle({ mode, onModeChange }: {
 }) {
   return (
     <div className={styles.modeToggleContainer}>
+      {/* Explicit new/existing wording: users did not discover that modifying an existing
+          CHG (including adding CTASKs to it) lives behind this toggle (user report). */}
       <button
         aria-pressed={mode === 'create'}
         className={mode === 'create' ? `${styles.modeToggleButton} ${styles.active}` : styles.modeToggleButton}
         onClick={() => onModeChange('create')}
         type="button"
       >
-        Create CHG
+        ➕ Create New CHG
       </button>
       <button
         aria-pressed={mode === 'modify'}
         className={mode === 'modify' ? `${styles.modeToggleButton} ${styles.active}` : styles.modeToggleButton}
         onClick={() => onModeChange('modify')}
+        title="Load a change that already exists in ServiceNow — edit its fields or add CTASKs to it"
         type="button"
       >
-        Modify CHG
+        ✏️ Modify Existing CHG
       </button>
     </div>
   );

@@ -723,16 +723,40 @@ describe('CreateChgTab', () => {
     expect(mockActions.removeChangeTask).toHaveBeenCalledWith('ctask-template-001');
   });
 
-  it('appends selected CTASKs to an existing CHG from configuration mode', async () => {
+  it('adds staged CTASKs to an existing CHG from configuration mode, with task-first labels', async () => {
     const user = userEvent.setup();
     mockState.changeTasks = [DEFAULT_CTASK_TEMPLATE];
 
     render(<CreateChgTab mode="configuration" />);
 
-    await user.type(screen.getByRole('textbox', { name: 'Existing CHG for CTASK append' }), 'chg0001234');
-    await user.click(screen.getByRole('button', { name: 'Append CTASKs to Existing CHG' }));
+    await user.type(screen.getByRole('textbox', { name: 'Existing CHG to receive the CTASKs' }), 'chg0001234');
+    await user.click(screen.getByRole('button', { name: 'Add CTASKs to Existing CHG' }));
 
     expect(mockActions.appendTasksToExistingChg).toHaveBeenCalledWith('CHG0001234');
+  });
+
+  // ── Review & Create step: add CTASKs to an existing CHG without leaving the wizard ──
+
+  it('adds queued CTASKs to an existing CHG straight from the Review & Create step', async () => {
+    const user = userEvent.setup();
+    mockState.currentStep = 6;
+    mockState.changeTasks = [DEFAULT_CTASK_TEMPLATE];
+    render(<CreateChgTab />);
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'Existing CHG number' }), {
+      target: { value: 'CHG0007777' },
+    });
+    await user.click(screen.getByRole('button', { name: 'Add CTASKs to Existing CHG' }));
+
+    expect(mockActions.appendTasksToExistingChg).toHaveBeenCalledWith('CHG0007777');
+  });
+
+  it('disables the Review-step CTASK append until CTASKs are queued and a CHG number is entered', () => {
+    mockState.currentStep = 6;
+    mockState.changeTasks = [];
+    render(<CreateChgTab />);
+
+    expect(screen.getByRole('button', { name: 'Add CTASKs to Existing CHG' })).toBeDisabled();
   });
 
   it('creates a CTASK template draft by cloning an existing CTASK in configuration mode', async () => {

@@ -336,10 +336,10 @@ describe('SnowHubView', () => {
   it('shows the CRG tab content by default', () => {
     render(<SnowHubView />);
 
-    expect(screen.getByRole('button', { name: 'Create CHG' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '➕ Create New CHG' })).toBeInTheDocument();
   });
 
-  it('switches to the Modify mode when Modify CHG button is clicked', async () => {
+  it('switches to the Modify mode when Modify Existing CHG button is clicked', async () => {
     const user = userEvent.setup();
     render(<SnowHubView />);
 
@@ -347,8 +347,8 @@ describe('SnowHubView', () => {
     const chgTab = screen.getByRole('tab', { name: 'CHG Generator' });
     expect(chgTab).toBeInTheDocument();
 
-    // Click on Modify CHG button to switch modes
-    const modifyButton = screen.getByRole('button', { name: 'Modify CHG' });
+    // Click on Modify Existing CHG button to switch modes
+    const modifyButton = screen.getByRole('button', { name: '✏️ Modify Existing CHG' });
     await user.click(modifyButton);
 
     expect(screen.getByRole('button', { name: 'Fetch Change' })).toBeInTheDocument();

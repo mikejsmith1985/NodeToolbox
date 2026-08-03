@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **SNow Hub — adding CTASKs to an existing CHG is now discoverable.** Three tweaks from a user
+  report that the capability looked unsupported: the CHG Generator's mode toggle now reads
+  **➕ Create New CHG / ✏️ Modify Existing CHG** (with a tooltip naming the add-CTASKs use case)
+  instead of the easy-to-miss "Create CHG / Modify CHG"; the **Review & Create step gains an
+  "Add CTASKs to Existing CHG" button** beside "Update Existing CHG" — queue CTASKs, enter the CHG
+  number, and add them without creating or updating anything else; and the Configuration tab's
+  append control is retitled task-first ("Existing CHG to receive the CTASKs" / "Add CTASKs to
+  Existing CHG"). All three routes call the same existing append action.
+
 ### Fixed
 - **SNow Hub — loading a REL change no longer flips its environment to PROD.** Both the CHG clone
   path and the Modify CHG tab inferred the environment card by checking for "prod" before "rel",
