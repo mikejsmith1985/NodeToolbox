@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Outlook GitHub-email export macro v2, now versioned in the repo** (`scripts/outlook-github-export/`).
+  The v1 macro (shared only in chat) had two defects that stranded a 90+ email backlog: a
+  `LOOKBACK_DAYS = 1` window silently skipped anything older than a day, and its auto-start block
+  only works from `ThisOutlookSession` — pasted into a regular module it never re-armed after an
+  Outlook restart. v2 sweeps the ENTIRE source folder every run (the folder itself is the
+  since-last-run state: exports move out on success), runs a full catch-up sweep on every Outlook
+  start plus a full sweep per new arrival, and appends one line per sweep to `_export-log.txt` in
+  the drop folder — so the whole pipeline is now observable end to end: exporter log → drop folder
+  → intake Activity Log → Jira. Install steps are comments at the top of both files.
+
+### Added
 - **GitHub Email Intake — a persistent Activity Log proves whether scheduled runs happen and what
   they did.** Previously only the LAST run was persisted (overwritten every run), so an idle
   scheduler was indistinguishable from one that never fired — a user found 90+ emails untouched
