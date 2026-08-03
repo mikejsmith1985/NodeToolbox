@@ -11,7 +11,6 @@
 'use strict';
 
 const { makeJiraApiRequest, makeConfluenceApiRequest, triggerWebhook, resolveWebhookTriggeredBy } = require('../utils/httpClient');
-const { requestAiAssistText, isAiAssistEnabled } = require('./aiAssistEnrichment');
 const { loadFiredDates, recordFiredDate, isScheduledTimeReached } = require('./schedulerFiredState');
 const { recordDeliveryOutcome } = require('./reportDeliveryStatus');
 const { resolveCoverageCutoff, getCoverageWatermark, setCoverageWatermark } = require('./reportCoverage');
@@ -328,65 +327,6 @@ function escapeXml(text) {
     .replace(/</g,  '&lt;')
     .replace(/>/g,  '&gt;')
     .replace(/"/g,  '&quot;');
-}
-
-/**
- * Builds the prompt asking AI Assist for a one-paragraph trend commentary on the
- * release (fix version) changes, identifying the release most at risk.
- *
- * @param {Array} releaseEntries - Change entries (issueKey, issueSummary, fromValue, toValue).
- * @param {string} projectKey
- * @returns {string}
- */
-function buildScopeAiAssistPrompt(releaseEntries, projectKey) {
-  const lines = (releaseEntries || [])
-    .map((entry) => `- ${entry.issueKey} ${entry.issueSummary}: ${entry.fromValue} → ${entry.toValue}`)
-    .join('\n');
-  return [
-    `You are a release train assistant. Below are the fix-version (release scope) changes for "${projectKey}" since the last business day.`,
-    'Write ONE short paragraph (2-3 sentences, plain prose, no preamble or heading) identifying the release',
-    'most at risk from these scope movements and why.',
-    '',
-    lines || '(none)',
-  ].join('\n');
-}
-
-/**
- * Builds the prompt asking AI Assist for a one-paragraph cross-team trend commentary on
- * the ART rollup, identifying the team/release most at risk across all teams.
- *
- * @param {Array} teamResults - [{ teamName, projectKey, releaseEntries }]
- * @returns {string}
- */
-function buildScopeRollupAiAssistPrompt(teamResults) {
-  const lines = (teamResults || [])
-    .map((result) => `- ${result.teamName} (${result.projectKey}): ${(result.releaseEntries || []).length} release change(s)`)
-    .join('\n');
-  return [
-    'You are a release train assistant. Below is a cross-team ART rollup of fix-version (release scope)',
-    'changes since the last business day. Write ONE short paragraph (2-3 sentences, plain prose, no',
-    'preamble or heading) identifying which team or release is most at risk across the ART and why.',
-    '',
-    lines || '(none)',
-  ].join('\n');
-}
-
-/**
- * Wraps AI Assist's trend commentary in a Confluence "info" panel for prepending above
- * the change table. Text is XML-escaped; blank-line groups become paragraphs.
- *
- * @param {string} commentaryText - Plain-text commentary returned by AI Assist.
- * @returns {string} Confluence storage-format markup.
- */
-function buildAiAssistTrendPanel(commentaryText) {
-  const paragraphs = String(commentaryText)
-    .trim()
-    .split(/\n{2,}/)
-    .map((paragraph) => '<p>' + escapeXml(paragraph).replace(/\n/g, '<br/>') + '</p>')
-    .join('');
-  return '<ac:structured-macro ac:name="info"><ac:rich-text-body>'
-    + '<p><strong>🤖 AI Assist trend</strong></p>' + paragraphs
-    + '</ac:rich-text-body></ac:structured-macro>';
 }
 
 /**
@@ -708,21 +648,7 @@ async function runTeamReportDelivery(teamReport, jiraConfig, confluenceConfig, s
   // updated. On an ongoing (updated) page Confluence renames it to the latest date; on a
   // fresh post the date keeps each new post uniquely named.
   const postTitle    = 'Scope Change Report — ' + teamLabel + ' — ' + dateLabel;
-  let bodyHtml     = buildConfluenceBlogBody(releaseEntries, sprintEntries, projectKey, generatedAt, sinceLabel);
-
-  // Optional, non-blocking AI Assist enrichment: prepend a trend paragraph above the
-  // change table. Skipped silently when AI Assist is disabled/unavailable so the report
-  // always publishes (FR-002, SC-002, SC-008).
-  if (isAiAssistEnabled(configuration)) {
-    const aiAssistCommentary = await requestAiAssistText(
-      configuration,
-      buildScopeAiAssistPrompt(releaseEntries, projectKey),
-      { label: 'scope-change' },
-    );
-    if (aiAssistCommentary) {
-      bodyHtml = buildAiAssistTrendPanel(aiAssistCommentary) + bodyHtml;
-    }
-  }
+  const bodyHtml     = buildConfluenceBlogBody(releaseEntries, sprintEntries, projectKey, generatedAt, sinceLabel);
   console.log('  🔗 Scope Change [' + projectKey + ']: targetBlogUrl = ' + (targetBlogUrl || '(not set)') + ' → pageId = ' + (targetPageId || 'none'));
   let postUrl;
   if (targetPageId) {
@@ -826,20 +752,7 @@ async function runArtRollupDelivery(artRollup, jiraConfig, confluenceConfig, ssl
   // Always stamp the run date into the title so the page name reflects its latest update.
   const postTitle      = 'ART Scope Change Rollup — ' + dateLabel;
   const projectKeyList = projectKeys.join(', ');
-  let   bodyHtml       = buildArtRollupBlogBody(teamResults, projectKeyList, generatedAt, sinceLabel);
-
-  // Optional, non-blocking AI Assist enrichment: prepend a cross-team trend paragraph
-  // above the rollup table. Skipped silently when AI Assist is disabled/unavailable.
-  if (isAiAssistEnabled(configuration)) {
-    const aiAssistCommentary = await requestAiAssistText(
-      configuration,
-      buildScopeRollupAiAssistPrompt(teamResults),
-      { label: 'scope-rollup' },
-    );
-    if (aiAssistCommentary) {
-      bodyHtml = buildAiAssistTrendPanel(aiAssistCommentary) + bodyHtml;
-    }
-  }
+  const bodyHtml       = buildArtRollupBlogBody(teamResults, projectKeyList, generatedAt, sinceLabel);
   let postUrl;
   if (targetPageId) {
     console.log('  📝 Scope Change ART Rollup: updating page ' + targetPageId + '…');
@@ -941,7 +854,4 @@ module.exports = {
   extractPageIdFromUrl,
   buildConfluenceBlogBody,
   buildArtRollupBlogBody,
-  buildScopeAiAssistPrompt,
-  buildScopeRollupAiAssistPrompt,
-  buildAiAssistTrendPanel,
 };

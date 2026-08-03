@@ -11,7 +11,6 @@
 'use strict';
 
 const { makeJiraApiRequest, makeConfluenceApiRequest, triggerWebhook, resolveWebhookTriggeredBy } = require('../utils/httpClient');
-const { requestAiAssistText, isAiAssistEnabled } = require('./aiAssistEnrichment');
 const { loadFiredDates, recordFiredDate, isScheduledTimeReached } = require('./schedulerFiredState');
 const { recordDeliveryOutcome } = require('./reportDeliveryStatus');
 const { resolveCoverageCutoff, getCoverageWatermark, setCoverageWatermark } = require('./reportCoverage');
@@ -441,87 +440,6 @@ function escapeXml(text) {
 }
 
 /**
- * Summarises change entries into compact prompt lines (issue, summary, from → to).
- * @param {Array} entries
- * @returns {string}
- */
-function summariseChangeEntries(entries) {
-  return (entries || [])
-    .map((entry) => `- ${entry.issueKey} ${entry.issueSummary}: ${entry.fromValue} → ${entry.toValue}`)
-    .join('\n');
-}
-
-/**
- * Builds the prompt asking AI Assist for a one-paragraph trend commentary on the
- * feature changes, identifying the release/area most at risk.
- *
- * @param {Array} fixVersionEntries
- * @param {Array} statusEntries
- * @param {Array} scheduleEntries
- * @param {string} label
- * @returns {string}
- */
-function buildFeatureAiAssistPrompt(fixVersionEntries, statusEntries, scheduleEntries, label) {
-  return [
-    `You are a release train assistant. Below are the feature changes detected for "${label}" since the last business day.`,
-    'Write ONE short paragraph (2-3 sentences, plain prose, no preamble or heading) identifying the release or area',
-    'most at risk and why.',
-    '',
-    'Fix version changes:',
-    summariseChangeEntries(fixVersionEntries) || '(none)',
-    '',
-    'Status changes:',
-    summariseChangeEntries(statusEntries) || '(none)',
-    '',
-    'Schedule changes:',
-    summariseChangeEntries(scheduleEntries) || '(none)',
-  ].join('\n');
-}
-
-/**
- * Builds the prompt asking AI Assist for a one-paragraph cross-team trend commentary on
- * the feature-change ART rollup, identifying the team most at risk across the ART.
- *
- * @param {Array} teamResults - [{ teamName, fixVersionEntries, statusEntries, scheduleEntries }]
- * @returns {string}
- */
-function buildFeatureRollupAiAssistPrompt(teamResults) {
-  const lines = (teamResults || [])
-    .map((result) => {
-      const total = (result.fixVersionEntries || []).length
-        + (result.statusEntries || []).length
-        + (result.scheduleEntries || []).length;
-      return `- ${result.teamName}: ${total} feature change(s)`;
-    })
-    .join('\n');
-  return [
-    'You are a release train assistant. Below is a cross-team ART rollup of Feature changes since',
-    'the last business day. Write ONE short paragraph (2-3 sentences, plain prose, no preamble or',
-    'heading) identifying which team is most at risk across the ART and why.',
-    '',
-    lines || '(none)',
-  ].join('\n');
-}
-
-/**
- * Wraps AI Assist's trend commentary in a Confluence "info" panel for prepending above
- * the change tables. Text is XML-escaped; blank-line groups become paragraphs.
- *
- * @param {string} commentaryText - Plain-text commentary returned by AI Assist.
- * @returns {string} Confluence storage-format markup.
- */
-function buildAiAssistTrendPanel(commentaryText) {
-  const paragraphs = String(commentaryText)
-    .trim()
-    .split(/\n{2,}/)
-    .map((paragraph) => '<p>' + escapeXml(paragraph).replace(/\n/g, '<br/>') + '</p>')
-    .join('');
-  return '<ac:structured-macro ac:name="info"><ac:rich-text-body>'
-    + '<p><strong>🤖 AI Assist trend</strong></p>' + paragraphs
-    + '</ac:rich-text-body></ac:structured-macro>';
-}
-
-/**
  * Renders a Fix Version or Status entry list as a Confluence storage-format table.
  * Columns: Feature, Summary, From, To, Changed By, Changed At.
  *
@@ -808,19 +726,6 @@ async function runFeatureReportDelivery(report, jiraConfig, confluenceConfig, ss
   const postTitle    = 'Feature Change Report — ' + teamLabel + ' — ' + dateLabel;
   let bodyHtml  = buildFeatureChangeBlogBody(fixVersionEntries, statusEntries, scheduleEntries, effectiveLabel, generatedAt, sinceLabel);
 
-  // Optional, non-blocking AI Assist enrichment: prepend a trend paragraph above the
-  // change tables. Skipped silently when AI Assist is disabled/unavailable so the report
-  // always publishes (FR-002, SC-002, SC-008).
-  if (isAiAssistEnabled(configuration)) {
-    const aiAssistCommentary = await requestAiAssistText(
-      configuration,
-      buildFeatureAiAssistPrompt(fixVersionEntries, statusEntries, scheduleEntries, effectiveLabel),
-      { label: 'feature-change' },
-    );
-    if (aiAssistCommentary) {
-      bodyHtml = buildAiAssistTrendPanel(aiAssistCommentary) + bodyHtml;
-    }
-  }
   console.log(
     '  🔗 Feature Change [' + effectiveLabel + ']: targetBlogUrl = ' +
     (targetBlogUrl || '(not set)') + ' → pageId = ' + (targetPageId || 'none')
@@ -965,19 +870,6 @@ async function runFeatureChangeArtRollupDelivery(artRollup, teamReports, jiraCon
   const postTitle    = 'ART Feature Change Rollup — ' + dateLabel;
   let   bodyHtml     = buildFeatureChangeArtRollupBody(teamResults, generatedAt, sinceLabel);
 
-  // Optional, non-blocking AI Assist enrichment: prepend a cross-team trend paragraph
-  // above the rollup tables. Skipped silently when AI Assist is disabled/unavailable.
-  if (isAiAssistEnabled(configuration)) {
-    const aiAssistCommentary = await requestAiAssistText(
-      configuration,
-      buildFeatureRollupAiAssistPrompt(teamResults),
-      { label: 'feature-rollup' },
-    );
-    if (aiAssistCommentary) {
-      bodyHtml = buildAiAssistTrendPanel(aiAssistCommentary) + bodyHtml;
-    }
-  }
-
   let postUrl;
   if (targetPageId) {
     console.log('  📝 Feature Change ART Rollup: updating page ' + targetPageId + '…');
@@ -1120,7 +1012,4 @@ module.exports = {
   extractFeatureChangeEntries,
   escapeXml,
   extractPageIdFromUrl,
-  buildFeatureAiAssistPrompt,
-  buildFeatureRollupAiAssistPrompt,
-  buildAiAssistTrendPanel,
 };

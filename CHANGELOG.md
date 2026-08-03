@@ -32,6 +32,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   paste box and a **✔ Use this report** button, so the pasted Markdown report renders under the release
   exactly where the automated one used to.
 
+### Removed
+- **The entire AI Assist automation channel is deleted, not just its buttons.** Gone: the client
+  dispatch-and-poll hook (`useAiAssistExchange`), the Admin Hub **⚡ AI Assist** config tab and panel
+  (webhook + Confluence parking space), the server endpoints (`/api/ai-assist/config`, `/dispatch`,
+  `/result`) and their exchange/enrichment services, the `aiAssistAutomation` config block (a block
+  left in an existing `toolbox-proxy.json` is ignored on load and no longer written back), and the
+  silent AI "enrichment" paragraphs in the scope-change, feature-change, and standup-briefing
+  schedulers — which always timed out with the channel dead, so reports now publish ~6s faster with
+  identical content. Every AI surface remains available via its copy-prompt / paste-reply round trip.
+
 ### Fixed
 - **PI Review — date columns now show the PLANNED dates until the actuals happen.** The Dev Start /
   INT-PVS / Prod Deploy columns are derived from delivery evidence (first "Implementing" transition, first

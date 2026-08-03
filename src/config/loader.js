@@ -72,7 +72,6 @@ const OBFUSCATED_CREDENTIAL_FIELDS = {
   snow:               ['username', 'password'],
   github:             ['pat', 'appPrivateKey'],
   confluence:         ['username', 'apiToken'],
-  aiAssistAutomation: ['webhookSecret'],
 };
 
 // Maximum number of hygiene scan results kept in history (30 = ~one month of daily scans).
@@ -140,15 +139,6 @@ function saveConfigToDisk(configuration) {
     admin: {
       // Persist the credential hash — allows users to change it via the config file
       credentialHash: (configuration.admin || {}).credentialHash || DEFAULT_ADMIN_CREDENTIAL_HASH,
-    },
-    // AI Assist automation config — the hidden "Run via AI Assist (auto)" webhook +
-    // parking space. Persisted so it survives restarts and version upgrades.
-    aiAssistAutomation: {
-      webhookUrl:      (configuration.aiAssistAutomation || {}).webhookUrl      || '',
-      webhookSecret:   (configuration.aiAssistAutomation || {}).webhookSecret   || '',
-      parkingSpaceKey: (configuration.aiAssistAutomation || {}).parkingSpaceKey || '',
-      parkingPageId:   (configuration.aiAssistAutomation || {}).parkingPageId   || '',
-      isEnabled:       !!(configuration.aiAssistAutomation || {}).isEnabled,
     },
     scheduler: {
       scopeChange: {
@@ -410,13 +400,6 @@ function buildDefaultConfig() {
     admin: {
       credentialHash: DEFAULT_ADMIN_CREDENTIAL_HASH,
     },
-    aiAssistAutomation: {
-      webhookUrl:      '',
-      webhookSecret:   '',
-      parkingSpaceKey: '',
-      parkingPageId:   '',
-      isEnabled:       false,
-    },
     // Proactive hygiene monitor — per-team schedules, AI Assist classifications, and digest delivery.
     // Digest trigger secrets are base64-obfuscated on disk (like other credentials).
     hygieneMonitor: {
@@ -472,15 +455,6 @@ function applyFileConfig(configuration) {
     return;
   }
 
-  // Legacy rename migration: older installs stored the AI Assist automation block
-  // under `rovoAutomation`. Alias it to the new key BEFORE decoding so the
-  // obfuscated webhookSecret is base64-decoded under the field name the decoder
-  // now expects. Existing setups keep working after the AI Assist rename.
-  if (fileConfig.rovoAutomation && !fileConfig.aiAssistAutomation) {
-    fileConfig.aiAssistAutomation = fileConfig.rovoAutomation;
-    delete fileConfig.rovoAutomation;
-  }
-
   // Decode credentials before merging — obfuscation is transparent to callers
   if (fileConfig._obfuscated) {
     decodeCredentialsFromDisk(fileConfig);
@@ -522,16 +496,6 @@ function applyFileConfig(configuration) {
 
   if (fileConfig.admin && fileConfig.admin.credentialHash) {
     configuration.admin.credentialHash = fileConfig.admin.credentialHash;
-  }
-
-  if (fileConfig.aiAssistAutomation) {
-    configuration.aiAssistAutomation = {
-      webhookUrl:      fileConfig.aiAssistAutomation.webhookUrl      || '',
-      webhookSecret:   fileConfig.aiAssistAutomation.webhookSecret   || '',
-      parkingSpaceKey: fileConfig.aiAssistAutomation.parkingSpaceKey || '',
-      parkingPageId:   fileConfig.aiAssistAutomation.parkingPageId   || '',
-      isEnabled:       !!fileConfig.aiAssistAutomation.isEnabled,
-    };
   }
 
   if (fileConfig.hygieneMonitor) {

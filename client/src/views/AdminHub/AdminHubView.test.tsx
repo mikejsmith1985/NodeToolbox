@@ -1,6 +1,6 @@
 // AdminHubView.test.tsx — Unit tests for the Admin Hub view component.
 
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -238,31 +238,19 @@ describe('AdminHubView', () => {
     expect(screen.queryByText(/hidden prompt tools/i)).not.toBeInTheDocument();
   });
 
-  // Unlocking itself now lives in the app-wide <AiAssistUnlockGate> (covered by its own test);
-  // Admin Hub only reflects the shared unlock state by offering the ⚡ AI Assist tab + config.
+  // The automated AI Assist exchange is fully removed — Admin Hub no longer offers an
+  // ⚡ AI Assist config tab, unlocked or not. Every AI surface is copy-prompt / paste-reply.
   describe('hidden AI Assist capability', () => {
-    it('does not show the ⚡ AI Assist tab while locked', () => {
+    it('does not show an ⚡ AI Assist tab while locked', () => {
       renderAdminHubView();
       expect(screen.queryByRole('tab', { name: /AI Assist/i })).not.toBeInTheDocument();
     });
 
-    it('reveals the ⚡ AI Assist tab + config when the shared unlock is set', async () => {
-      const user = userEvent.setup();
+    it('never offers an ⚡ AI Assist tab, even when the shared unlock is set', () => {
       renderAdminHubView();
       act(() => setAiAssistUnlocked(true));
 
-      const aiAssistTab = await screen.findByRole('tab', { name: '⚡ AI Assist' });
-      await user.click(aiAssistTab);
-      expect(await screen.findByText('⚡ AI Assist Automation')).toBeInTheDocument();
-    });
-
-    it('hides the ⚡ AI Assist tab when the shared unlock is cleared', async () => {
-      renderAdminHubView();
-      act(() => setAiAssistUnlocked(true));
-      expect(await screen.findByRole('tab', { name: '⚡ AI Assist' })).toBeInTheDocument();
-
-      act(() => setAiAssistUnlocked(false));
-      await waitFor(() => expect(screen.queryByRole('tab', { name: '⚡ AI Assist' })).not.toBeInTheDocument());
+      expect(screen.queryByRole('tab', { name: /AI Assist/i })).not.toBeInTheDocument();
     });
   });
 
