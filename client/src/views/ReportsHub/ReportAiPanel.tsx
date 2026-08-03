@@ -6,11 +6,9 @@
 // nothing when AI Assist is locked. Each caller supplies the prompt, an ingest handler, and its own
 // results UI as children. Nothing here calls an AI service or writes to Jira.
 //
-// A caller may additionally supply onRunAuto to offer the automatic dispatch path beside the manual
-// copy/paste one — auto is a shortcut past the paste box, never a second pipeline, so both paths hand
-// the same text to the same handler. Callers whose results CAN reach Jira (the PI Review panel, whose
-// accepted estimates arm the existing write-back) must override `hint`: the default advisory wording
-// would otherwise state the opposite.
+// Callers whose results CAN reach Jira (the PI Review panel, whose accepted estimates arm the
+// existing write-back) must override `hint`: the default advisory wording would otherwise state
+// the opposite.
 
 import { useState } from 'react';
 
@@ -36,13 +34,6 @@ export interface ReportAiPanelProps {
    * by a caller for which it is untrue.
    */
   hint?: string;
-  /**
-   * Runs the prompt through the AI Assist automation instead of copy/paste. Omit to keep the shell
-   * manual-only, as the Aging triage and Personal Flow consumers do.
-   */
-  onRunAuto?: () => void;
-  /** True while an automatic run is in flight; disables the auto button. */
-  isRunning?: boolean;
   /** The caller's results UI (verdict rows, coaching narrative), rendered under the ingest controls. */
   children?: React.ReactNode;
 }
@@ -58,8 +49,6 @@ export function ReportAiPanel({
   onIngest,
   error,
   hint = DEFAULT_ADVISORY_HINT,
-  onRunAuto,
-  isRunning = false,
   children,
 }: ReportAiPanelProps): React.JSX.Element | null {
   const isUnlocked = useAiAssistStore((state) => state.isAiAssistUnlocked);
@@ -79,11 +68,6 @@ export function ReportAiPanel({
       <textarea readOnly value={prompt} rows={5} className={styles.aiTextarea} aria-label={`${title} prompt`} />
       <div className={styles.aiPanelActions}>
         <button type="button" className={styles.actionButton} onClick={() => copyToClipboard(prompt)}>📋 Copy prompt</button>
-        {onRunAuto !== undefined && (
-          <button type="button" className={styles.actionButton} onClick={onRunAuto} disabled={isRunning}>
-            {isRunning ? 'Running…' : '⚡ Run via AI Assist (auto)'}
-          </button>
-        )}
       </div>
       <textarea
         value={responseText}

@@ -196,4 +196,32 @@ describe('RiskManagementSection — AI Assist unlock', () => {
 
     expect(window.sessionStorage.getItem('tbxAiAssistUnlocked')).toBe('1');
   });
+
+  it('Enhance with AI modal offers copy + paste-back only — no automated exchange button', async () => {
+    setAiAssistUnlocked(true);
+    mockJiraGet.mockResolvedValue({
+      issues: [
+        {
+          id: '1',
+          key: 'TBX-501',
+          fields: {
+            summary: 'Vendor delivery may slip',
+            status: { name: 'Open' },
+            priority: { name: 'High' },
+            assignee: null,
+            duedate: null,
+            description: 'There is a risk that the vendor slips.',
+          },
+        },
+      ],
+    });
+    renderRiskManagementSection();
+
+    fireEvent.click(await screen.findByRole('button', { name: '✦ Enhance with AI' }));
+
+    expect(await screen.findByLabelText('AI Assist risk refinement prompt')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Run via AI Assist \(auto\)/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Copy Prompt/i })).toBeInTheDocument();
+    expect(screen.getByLabelText('AI Assist risk refinement response')).toBeInTheDocument();
+  });
 });

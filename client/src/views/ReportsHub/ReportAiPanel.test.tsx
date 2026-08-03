@@ -59,48 +59,18 @@ describe('ReportAiPanel', () => {
     expect(screen.getByText('results-slot')).toBeInTheDocument();
   });
 
-  // ── Feature 016: the automatic path, added additively for the PI Review panel ──
+  // ── The automated exchange is retired: the shell is copy-out / paste-back only ──
   //
-  // The shell was manual-paste-only. Rather than fork it (which would make a third copy of a shell
-  // that already exists twice — the same duplication that produced four unlock gates), it gains two
-  // optional props. Its existing consumers pass neither and are unaffected.
+  // Feature 016 added an optional onRunAuto prop for the PI Review panel. The automation channel
+  // can no longer be used, so the prop is gone and no caller can offer an auto path.
 
-  it('has no auto button when onRunAuto is omitted — existing consumers are unchanged', () => {
+  it('never renders an automated exchange button — the shell is copy/paste only', () => {
     act(() => setAiAssistUnlocked(true));
     render(<ReportAiPanel title="AI triage" prompt="P" ingestLabel="Ingest" onIngest={vi.fn()} error={null} />);
 
     expect(screen.queryByRole('button', { name: /run via ai assist/i })).not.toBeInTheDocument();
-  });
-
-  it('offers an auto path beside the manual one when onRunAuto is supplied', () => {
-    act(() => setAiAssistUnlocked(true));
-    const onRunAuto = vi.fn();
-    render(
-      <ReportAiPanel title="AI triage" prompt="P" ingestLabel="Ingest" onIngest={vi.fn()} error={null} onRunAuto={onRunAuto} />,
-    );
-
-    // Auto is a shortcut past the paste box, not a replacement for it: both paths stay available.
-    fireEvent.click(screen.getByRole('button', { name: /run via ai assist/i }));
-    expect(onRunAuto).toHaveBeenCalledTimes(1);
     expect(screen.getByRole('button', { name: /copy prompt/i })).toBeInTheDocument();
     expect(screen.getByPlaceholderText(/paste the assistant's json reply/i)).toBeInTheDocument();
-  });
-
-  it('disables the auto button while a run is in flight', () => {
-    act(() => setAiAssistUnlocked(true));
-    render(
-      <ReportAiPanel
-        error={null}
-        ingestLabel="Ingest"
-        isRunning
-        onIngest={vi.fn()}
-        onRunAuto={vi.fn()}
-        prompt="P"
-        title="AI triage"
-      />,
-    );
-
-    expect(screen.getByRole('button', { name: /running/i })).toBeDisabled();
   });
 
   it('shows the advisory hint by default', () => {

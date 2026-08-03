@@ -6,15 +6,11 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockApplyProposal, mockRunExchange } = vi.hoisted(() => ({
+const { mockApplyProposal } = vi.hoisted(() => ({
   mockApplyProposal: vi.fn(),
-  mockRunExchange: vi.fn(),
 }))
 
 vi.mock('./hygieneAiApply.ts', () => ({ applyHygieneAiProposal: mockApplyProposal }))
-vi.mock('../../SnowHub/hooks/useAiAssistExchange.ts', () => ({
-  useAiAssistExchange: () => ({ isRunning: false, runAiAssistExchange: mockRunExchange }),
-}))
 
 import { act } from '@testing-library/react'
 
@@ -73,6 +69,12 @@ describe('HygieneAiPanel', () => {
     renderPanel()
 
     expect(screen.getByText(/accepting writes that one field \(or comment\) to Jira immediately/i)).toBeInTheDocument()
+  })
+
+  it('offers no automated exchange button — copy/paste is the only path', () => {
+    renderPanel()
+
+    expect(screen.queryByRole('button', { name: /run via ai assist/i })).not.toBeInTheDocument()
   })
 
   it('lists ingested proposals with value and rationale, writing nothing yet', () => {

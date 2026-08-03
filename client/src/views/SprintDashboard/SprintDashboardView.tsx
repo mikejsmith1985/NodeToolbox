@@ -95,7 +95,6 @@ import {
   type ReleaseDevSkipRiskPromptInput,
 } from './hooks/releaseDevSkipRisk.ts';
 import { renderMarkdownReport } from '../../utils/markdownReport.tsx';
-import { useAiAssistExchange } from '../SnowHub/hooks/useAiAssistExchange.ts';
 import { useSprintData } from './hooks/useSprintData.ts';
 import type { DashboardScopeMode, DashboardTab } from './hooks/useSprintData.ts';
 import styles from './SprintDashboardView.module.css';
@@ -4027,10 +4026,6 @@ function PointingTab({
   const [aiAssistResponseInput, setAiAssistResponseInput] = useState('');
   const [aiAssistResponseParseError, setAiAssistResponseParseError] = useState<string | null>(null);
   const [isCopied, setIsCopied] = useState(false);
-  // Automated AI Assist exchange for pointing — dispatch the prompt and apply the
-  // returned estimates without the manual copy-paste.
-  const { isRunning: isPointingAiAssistRunning, runAiAssistExchange: runPointingAiAssistExchange } = useAiAssistExchange();
-  const [pointingAiAssistAutoStatus, setPointingAiAssistAutoStatus] = useState<string | null>(null);
 
   function rebuildPointingSession({
     nextPipelineRoleFilter = pipelineRoleFilter,
@@ -4321,19 +4316,6 @@ function PointingTab({
     setAiAssistResponseParseError(null);
   }
 
-  // Automated path: dispatch the pointing prompt to AI Assist, then apply the returned
-  // estimates directly — no manual paste.
-  async function handleRunPointingAiAssistAuto() {
-    setPointingAiAssistAutoStatus('Sending to AI Assist…');
-    const exchange = await runPointingAiAssistExchange(generatedAiAssistPromptText);
-    if (!exchange.ok) {
-      setPointingAiAssistAutoStatus(exchange.message);
-      return;
-    }
-    setPointingAiAssistAutoStatus(null);
-    applyAiAssistResponse(exchange.response ?? '');
-  }
-
   if (issues.length === 0) {
     return <DashboardEmptyState message="Load a board first from Settings to start pointing." />;
   }
@@ -4575,23 +4557,12 @@ function PointingTab({
               <div className={styles.releasePromptActions}>
                 <button
                   className={styles.secondaryButton}
-                  disabled={isPointingAiAssistRunning}
-                  onClick={() => void handleRunPointingAiAssistAuto()}
-                  type="button"
-                >
-                  {isPointingAiAssistRunning ? '⏳ Running via AI Assist…' : '⚡ Run via AI Assist (auto)'}
-                </button>
-                <button
-                  className={styles.secondaryButton}
                   onClick={() => void handleCopyAiAssistPrompt()}
                   type="button"
                 >
                   {isCopied ? '✓ Copied!' : POINTING_AI_ASSIST_COPY_BUTTON_LABEL}
                 </button>
               </div>
-              {pointingAiAssistAutoStatus !== null ? (
-                <p className={styles.releasePromptInstructions} role="status">{pointingAiAssistAutoStatus}</p>
-              ) : null}
             </section>
 
             <hr className={styles.ptAiAssistDivider} />
@@ -5661,17 +5632,13 @@ function ReleasesTab({
   const [releaseImportModalState, setReleaseImportModalState] = useState<ReleaseImportModalState | null>(null);
   const [releaseExportErrorByVersionId, setReleaseExportErrorByVersionId] = useState<Record<string, string>>({});
   const [releaseCopyConfirmationByVersionId, setReleaseCopyConfirmationByVersionId] = useState<Record<string, string>>({});
-  // Automated AI Assist exchange for release notes — dispatches the prompt and renders
-  // the parsed table without the manual copy-paste.
-  const { isRunning: isReleaseAiAssistRunning, runAiAssistExchange: runReleaseAiAssistExchange } = useAiAssistExchange();
-  const [releaseAiAssistAutoStatus, setReleaseAiAssistAutoStatus] = useState<string | null>(null);
   // Dev-skip test-risk assessment: raw Markdown reports keyed by fix-version id, plus its own
-  // prompt modal and status line. It reuses the shared AI Assist exchange above.
+  // prompt modal and the pasted report awaiting confirmation (copy-out / paste-back round trip).
   const [devSkipRiskByVersionId, setDevSkipRiskByVersionId] = useState<Record<string, string>>(
     () => readStoredDevSkipRisk(projectKey),
   );
   const [devSkipRiskPromptModalState, setDevSkipRiskPromptModalState] = useState<ReleasePromptModalState | null>(null);
-  const [devSkipRiskAutoStatus, setDevSkipRiskAutoStatus] = useState<string | null>(null);
+  const [devSkipRiskReplyText, setDevSkipRiskReplyText] = useState<string>('');
   const releaseNotesSectionRefs = useRef<Record<string, HTMLElement | null>>({});
 
   useEffect(() => {
@@ -5682,7 +5649,7 @@ function ReleasesTab({
     setReleasePromptModalState(null);
     setReleaseImportModalState(null);
     setDevSkipRiskPromptModalState(null);
-    setDevSkipRiskAutoStatus(null);
+    setDevSkipRiskReplyText('');
   }, [projectKey]);
 
   useEffect(() => {
@@ -5867,39 +5834,13 @@ function ReleasesTab({
     });
   }, [projectKey]);
 
-  // Automated path: dispatch the shown release prompt to AI Assist, parse the returned
-  // table, and render it — no manual paste step.
-  const handleRunReleaseAiAssistAuto = useCallback(async () => {
-    if (!releasePromptModalState) return;
-    const { versionId, promptText } = releasePromptModalState;
-
-    setReleaseAiAssistAutoStatus('Sending to AI Assist…');
-    const exchange = await runReleaseAiAssistExchange(promptText);
-    if (!exchange.ok) {
-      setReleaseAiAssistAutoStatus(exchange.message);
-      return;
-    }
-
-    try {
-      const parsedReleaseNotes = parseReleaseAiAssistResponse(exchange.response ?? '');
-      setReleaseNotesByVersionId((previousReleaseNotesByVersionId) => ({
-        ...previousReleaseNotesByVersionId,
-        [versionId]: parsedReleaseNotes,
-      }));
-      setReleaseAiAssistAutoStatus(null);
-      setReleasePromptModalState(null);
-    } catch (caughtError) {
-      setReleaseAiAssistAutoStatus(caughtError instanceof Error ? caughtError.message : 'Unable to parse the AI Assist response.');
-    }
-  }, [releasePromptModalState, runReleaseAiAssistExchange]);
-
   // Builds the dev-skip test-risk prompt for one release and opens its prompt modal.
   const handleBuildDevSkipRiskPrompt = useCallback((releaseEntry: ReleaseRadarEntry) => {
     const normalizedProjectKey = projectKey.trim().toUpperCase();
     const promptInput = buildDevSkipRiskPromptInput(normalizedProjectKey, releaseEntry);
     const promptText = buildDevSkipRiskAssistPrompt(promptInput);
 
-    setDevSkipRiskAutoStatus(null);
+    setDevSkipRiskReplyText('');
     setDevSkipRiskPromptModalState({
       versionId: releaseEntry.version.id,
       versionName: releaseEntry.version.name,
@@ -5907,32 +5848,20 @@ function ReleasesTab({
     });
   }, [projectKey]);
 
-  // Automated path: dispatch the risk prompt to AI Assist and store the returned Markdown report
-  // as-is (no strict parsing — the assessment is rendered read-only from Markdown).
-  const handleRunDevSkipRiskAuto = useCallback(async () => {
+  // Paste-back path: store the Markdown report the user pasted from their assistant as-is
+  // (no strict parsing — the assessment is rendered read-only from Markdown below the release).
+  const handleUseDevSkipRiskReport = useCallback(() => {
     if (!devSkipRiskPromptModalState) return;
-    const { versionId, promptText } = devSkipRiskPromptModalState;
-
-    setDevSkipRiskAutoStatus('Sending to AI Assist…');
-    const exchange = await runReleaseAiAssistExchange(promptText);
-    if (!exchange.ok) {
-      setDevSkipRiskAutoStatus(exchange.message);
-      return;
-    }
-
-    const reportMarkdown = (exchange.response ?? '').trim();
-    if (!reportMarkdown) {
-      setDevSkipRiskAutoStatus('AI Assist returned an empty response.');
-      return;
-    }
+    const reportMarkdown = devSkipRiskReplyText.trim();
+    if (!reportMarkdown) return;
 
     setDevSkipRiskByVersionId((previousReports) => ({
       ...previousReports,
-      [versionId]: reportMarkdown,
+      [devSkipRiskPromptModalState.versionId]: reportMarkdown,
     }));
-    setDevSkipRiskAutoStatus(null);
+    setDevSkipRiskReplyText('');
     setDevSkipRiskPromptModalState(null);
-  }, [devSkipRiskPromptModalState, runReleaseAiAssistExchange]);
+  }, [devSkipRiskPromptModalState, devSkipRiskReplyText]);
 
   const handleOpenReleaseImportModal = useCallback((releaseEntry: ReleaseRadarEntry) => {
     setReleaseImportModalState({
@@ -6361,14 +6290,6 @@ function ReleasesTab({
             <div className={styles.releasePromptActions}>
               <button
                 className={styles.secondaryButton}
-                disabled={isReleaseAiAssistRunning}
-                onClick={() => void handleRunReleaseAiAssistAuto()}
-                type="button"
-              >
-                {isReleaseAiAssistRunning ? '⏳ Running via AI Assist…' : '⚡ Run via AI Assist (auto)'}
-              </button>
-              <button
-                className={styles.secondaryButton}
                 onClick={() => void navigator.clipboard.writeText(releasePromptModalState.promptText)}
                 type="button"
               >
@@ -6382,9 +6303,6 @@ function ReleasesTab({
                 Close
               </button>
             </div>
-            {releaseAiAssistAutoStatus !== null ? (
-              <p className={styles.releasePromptInstructions} role="status">{releaseAiAssistAutoStatus}</p>
-            ) : null}
           </div>
         </div>
       ) : null}
@@ -6401,7 +6319,7 @@ function ReleasesTab({
             </h3>
             <p className={styles.releasePromptInstructions}>
               Assesses the risk of skipping Dev-environment testing and promoting straight to Integration.
-              Run it via AI Assist, or copy the prompt to run it manually — the Markdown report renders below the release.
+              Copy the prompt into AI Assist, then paste the Markdown report below — it renders under the release.
             </p>
             <textarea
               aria-label="Dev-skip test risk prompt"
@@ -6412,14 +6330,6 @@ function ReleasesTab({
             <div className={styles.releasePromptActions}>
               <button
                 className={styles.secondaryButton}
-                disabled={isReleaseAiAssistRunning}
-                onClick={() => void handleRunDevSkipRiskAuto()}
-                type="button"
-              >
-                {isReleaseAiAssistRunning ? '⏳ Running via AI Assist…' : '⚡ Run via AI Assist (auto)'}
-              </button>
-              <button
-                className={styles.secondaryButton}
                 onClick={() => void navigator.clipboard.writeText(devSkipRiskPromptModalState.promptText)}
                 type="button"
               >
@@ -6427,15 +6337,35 @@ function ReleasesTab({
               </button>
               <button
                 className={styles.textActionButton}
-                onClick={() => setDevSkipRiskPromptModalState(null)}
+                onClick={() => {
+                  setDevSkipRiskPromptModalState(null);
+                  setDevSkipRiskReplyText('');
+                }}
                 type="button"
               >
                 Close
               </button>
             </div>
-            {devSkipRiskAutoStatus !== null ? (
-              <p className={styles.releasePromptInstructions} role="status">{devSkipRiskAutoStatus}</p>
-            ) : null}
+            <label className={styles.releasePromptInstructions} htmlFor="dev-skip-risk-report-reply">
+              Paste the assistant&apos;s Markdown report here
+            </label>
+            <textarea
+              aria-label="Dev-skip test risk report reply"
+              className={styles.releasePromptTextArea}
+              id="dev-skip-risk-report-reply"
+              onChange={(changeEvent) => setDevSkipRiskReplyText(changeEvent.target.value)}
+              value={devSkipRiskReplyText}
+            />
+            <div className={styles.releasePromptActions}>
+              <button
+                className={styles.secondaryButton}
+                disabled={devSkipRiskReplyText.trim() === ''}
+                onClick={handleUseDevSkipRiskReport}
+                type="button"
+              >
+                ✔ Use this report
+              </button>
+            </div>
           </div>
         </div>
       ) : null}
