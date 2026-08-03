@@ -82,6 +82,12 @@ export default function TodayDashboard() {
     navigate(DSU_BOARD_PATH);
   }
 
+  /** Opens a card's destination scoped to ONE team by activating that team profile first (GH #282). */
+  function handleOpenTeam(teamProfileId: string, destination: TodayDestination) {
+    useSettingsStore.getState().setSprintDashboardActiveTeamProfileId(teamProfileId);
+    handleNavigate(destination);
+  }
+
   if (!dashboard.isConnectionReady) {
     return (
       <div className={styles.todayDashboard} data-testid="today-dashboard">
@@ -120,6 +126,7 @@ export default function TodayDashboard() {
             onToggleComplete={() => { void completion.toggle(catalogEntry.id); }}
             onNavigate={handleNavigate}
             onRetry={dashboard.refresh}
+            onOpenTeam={handleOpenTeam}
           />
         ))}
       </div>

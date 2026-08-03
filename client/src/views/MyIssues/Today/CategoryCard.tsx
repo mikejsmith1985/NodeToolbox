@@ -22,6 +22,8 @@ export interface CategoryCardProps {
   onNavigate: (destination: TodayDestination) => void;
   /** Optional per-card retry, wired to the dashboard refresh so an errored card can recover. */
   onRetry?: () => void;
+  /** Opens the card's destination scoped to ONE team (multi-team breakdown chips, GH #282). */
+  onOpenTeam?: (teamProfileId: string, destination: TodayDestination) => void;
 }
 
 /** Formats a count for display, collapsing very large numbers to "99+". */
@@ -47,6 +49,7 @@ export default function CategoryCard({
   onToggleComplete,
   onNavigate,
   onRetry,
+  onOpenTeam,
 }: CategoryCardProps) {
   if (result.status === 'loading') {
     return (
@@ -90,6 +93,8 @@ export default function CategoryCard({
   // ── ready state ──
   const isCleared = isComplete && result.count === 0;
   const cardClassName = `${styles.card} ${isComplete ? styles.completeCard : ''}`.trim();
+  // A breakdown is only informative when there is more than one team to break down.
+  const teamBreakdown = (result.teamBreakdown?.length ?? 0) > 1 ? result.teamBreakdown : undefined;
 
   return (
     <div className={cardClassName} data-category={entry.id} data-complete={isComplete}>
@@ -97,6 +102,23 @@ export default function CategoryCard({
       <span className={styles.count} aria-label={`${result.count} items need attention`}>
         {isCleared ? '✓' : formatCount(result.count)}
       </span>
+      {teamBreakdown ? (
+        <div className={styles.teamBreakdown}>
+          {teamBreakdown.map((teamShare) => (
+            <button
+              className={styles.teamChip}
+              key={teamShare.teamProfileId}
+              onClick={() => onOpenTeam?.(teamShare.teamProfileId, result.destination)}
+              title={teamShare.hasError
+                ? `${teamShare.teamName}: scan failed — count unknown`
+                : `Open ${teamShare.teamName}'s view`}
+              type="button"
+            >
+              {teamShare.teamName} {teamShare.hasError ? '⚠' : formatCount(teamShare.count)}
+            </button>
+          ))}
+        </div>
+      ) : null}
       <div className={styles.footer}>
         <button
           className={styles.actionButton}
