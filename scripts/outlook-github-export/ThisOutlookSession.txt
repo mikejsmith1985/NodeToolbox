@@ -1,0 +1,54 @@
+' ThisOutlookSession.txt — HALF TWO of the NodeToolbox Outlook export macro (v2).
+'
+' PASTE THIS INTO "ThisOutlookSession" (Alt+F11 -> left tree -> Microsoft Outlook Objects ->
+' ThisOutlookSession). It will NOT work from a regular module: Outlook only runs
+' Application_Startup and WithEvents handlers from ThisOutlookSession — v1 died because this
+' block most likely ended up in the module with everything else.
+'
+' What it does:
+'   • On every Outlook start (= every sign-in when Outlook is in shell:startup): re-arms the
+'     new-mail trigger AND runs a full sweep, draining everything that arrived since the last
+'     run — Outlook closed, laptop off, macro disabled for a week: the startup sweep catches up.
+'   • On every new mail landing in "GitHub Intake": runs a full silent sweep (not just the one
+'     item), so even bulk arrivals that Outlook's ItemAdd event under-reports get exported.
+'
+' After pasting BOTH halves: press Ctrl+S (saves VbaProject.OTM), then Alt+F8 ->
+' run InitGithubAutoExport once to activate without restarting Outlook.
+
+Option Explicit
+
+Private WithEvents githubIntakeItems As Outlook.Items
+
+' Runs automatically every time Outlook starts (requires macros enabled — see the .bas header).
+Private Sub Application_Startup()
+    HookGithubIntake
+    ' Drain the FULL backlog that accumulated since the last run, every sign-in.
+    GithubEmailExport.ExportGithubEmailsSilent "startup-sweep"
+End Sub
+
+' Run this ONCE after installing (Alt+F8) to activate without restarting Outlook.
+Public Sub InitGithubAutoExport()
+    HookGithubIntake
+    If githubIntakeItems Is Nothing Then
+        MsgBox "Could not find the 'GitHub Intake' folder under Inbox. Create it, then run this again.", vbExclamation
+    Else
+        GithubEmailExport.ExportGithubEmailsSilent "activation-sweep"
+        MsgBox "GitHub auto-export is active: backlog swept now, new mail exports on arrival, " & _
+               "and every Outlook start re-sweeps. Check _export-log.txt in the drop folder.", vbInformation
+    End If
+End Sub
+
+Private Sub HookGithubIntake()
+    Dim mapiNamespace As Outlook.NameSpace
+    Set mapiNamespace = Application.GetNamespace("MAPI")
+    On Error Resume Next
+    Set githubIntakeItems = mapiNamespace.GetDefaultFolder(olFolderInbox).Folders("GitHub Intake").Items
+    On Error GoTo 0
+End Sub
+
+' Fires when an email lands in "GitHub Intake" — full silent sweep, never a popup.
+Private Sub githubIntakeItems_ItemAdd(ByVal Item As Object)
+    On Error Resume Next
+    GithubEmailExport.ExportGithubEmailsSilent "new-mail"
+    On Error GoTo 0
+End Sub
