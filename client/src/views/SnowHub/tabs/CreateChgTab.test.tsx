@@ -77,7 +77,6 @@ const {
   mockFieldPinActions,
   mockCtaskTemplates,
   mockCtaskTemplateActions,
-  mockAiAssistExchange,
 } = vi.hoisted(() => {
   const mockPinnedFields = [] as Array<{ id: string; key: string; label: string; section: string; value: unknown }>;
   const emptySnowReference = { sysId: '', displayName: '' };
@@ -224,10 +223,6 @@ const {
       updateTemplate: vi.fn(),
       deleteTemplate: vi.fn(),
     },
-    // Controllable stand-in for useAiAssistExchange so T012/T013 tests never hit the network.
-    mockAiAssistExchange: {
-      runAiAssistExchange: vi.fn().mockResolvedValue({ ok: false, message: 'Mock AI Assist: not configured in this test.' }),
-    },
   };
 });
 
@@ -294,14 +289,6 @@ vi.mock('../hooks/useSnowChoiceOptions.ts', () => ({
     hasExtractorChoices: mockSnowChoiceConfig.hasExtractorChoices,
     applyExtractorChoiceJson: mockExtractorChoiceActions.applyExtractorChoiceJson,
     clearExtractorChoices: mockExtractorChoiceActions.clearExtractorChoices,
-  }),
-}));
-
-// Mock the AI Assist exchange hook so tests that click AI Assist buttons never make real fetch calls.
-vi.mock('../hooks/useAiAssistExchange.ts', () => ({
-  useAiAssistExchange: () => ({
-    isRunning: false,
-    runAiAssistExchange: mockAiAssistExchange.runAiAssistExchange,
   }),
 }));
 
@@ -400,7 +387,6 @@ describe('CreateChgTab', () => {
       isSuccess: true,
       message: 'Loaded extractor choices for 2 field(s).',
     });
-    mockAiAssistExchange.runAiAssistExchange.mockResolvedValue({ ok: false, message: 'Mock AI Assist: not configured in this test.' });
   });
 
   it('renders step 1 with the project key input and fetch button', () => {
@@ -1325,16 +1311,11 @@ describe('CreateChgTab', () => {
     expect(await screen.findByRole('button', { name: /Draft with AI Assist/i })).toBeInTheDocument();
   });
 
-  it('Draft with AI Assist populates short description and description from Jira issues', async () => {
+  it('Draft with AI Assist opens the prompt modal and applies only the two draft fields from the pasted reply', async () => {
     const user = userEvent.setup();
     mockState.currentStep = 3;
     mockState.fetchedIssues = [{ id: '10001', key: 'ABC-1', fields: { summary: 'Fix release blocker', status: { name: 'In Progress' } } }];
     mockState.selectedIssueKeys = new Set(['ABC-1']);
-    mockAiAssistExchange.runAiAssistExchange.mockResolvedValueOnce({
-      ok: true,
-      response: 'SHORT_DESCRIPTION: Deploy ABC-1 fix\nDESCRIPTION: Applies the release blocker patch.',
-      message: 'AI Assist result received.',
-    });
     render(<CreateChgTab />);
 
     // The app-level AiAssistUnlockGate owns the shortcut and the prompt; this tab only reads the
@@ -1343,10 +1324,22 @@ describe('CreateChgTab', () => {
 
     await user.click(await screen.findByRole('button', { name: /Draft with AI Assist/i }));
 
-    await waitFor(() => {
-      expect(mockActions.updateGeneratedField).toHaveBeenCalledWith('shortDescription', 'Deploy ABC-1 fix');
-      expect(mockActions.updateGeneratedField).toHaveBeenCalledWith('description', 'Applies the release blocker patch.');
+    // The draft prompt round trip uses the same paste-back modal as Enhance with prompt.
+    expect(await screen.findByText(/Copy this prompt and paste it into AI Assist/)).toBeInTheDocument();
+
+    const pastedReply = [
+      'SHORT_DESCRIPTION: Deploy ABC-1 fix',
+      'DESCRIPTION: Applies the release blocker patch.',
+      'JUSTIFICATION: Should be ignored — the draft prompt only asks for two fields.',
+    ].join('\n');
+    fireEvent.change(screen.getByRole('textbox', { name: "Paste the assistant's reply here" }), {
+      target: { value: pastedReply },
     });
+    await user.click(screen.getByRole('button', { name: '✔ Apply reply to fields' }));
+
+    expect(mockActions.updateGeneratedField).toHaveBeenCalledWith('shortDescription', 'Deploy ABC-1 fix');
+    expect(mockActions.updateGeneratedField).toHaveBeenCalledWith('description', 'Applies the release blocker patch.');
+    expect(mockActions.updateGeneratedField).not.toHaveBeenCalledWith('justification', expect.anything());
   });
 
   it('wizard proceeds from step 3 to step 4 without requiring Draft with AI Assist', () => {
@@ -1377,14 +1370,9 @@ describe('CreateChgTab', () => {
     expect(await screen.findByRole('button', { name: /Risk check with AI Assist/i })).toBeInTheDocument();
   });
 
-  it('Risk check with AI Assist renders identified gaps inline before submission', async () => {
+  it('Risk check with AI Assist renders the pasted review inline before submission', async () => {
     const user = userEvent.setup();
     mockState.currentStep = 6;
-    mockAiAssistExchange.runAiAssistExchange.mockResolvedValueOnce({
-      ok: true,
-      response: 'GAP: Missing test plan\nGAP: No backout procedure documented',
-      message: 'AI Assist result received.',
-    });
     render(<CreateChgTab />);
 
     // The app-level AiAssistUnlockGate owns the shortcut and the prompt; this tab only reads the
@@ -1392,6 +1380,15 @@ describe('CreateChgTab', () => {
     act(() => setAiAssistUnlocked(true));
 
     await user.click(await screen.findByRole('button', { name: /Risk check with AI Assist/i }));
+
+    // The risk check round trip uses the same paste-back modal as Enhance with prompt.
+    expect(await screen.findByText(/Copy this prompt and paste it into AI Assist/)).toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole('textbox', { name: "Paste the assistant's reply here" }), {
+      target: { value: 'GAP: Missing test plan\nGAP: No backout procedure documented' },
+    });
+    await user.click(screen.getByRole('button', { name: '✔ Use this review' }));
+    await user.click(screen.getByRole('button', { name: 'Close' }));
 
     expect(await screen.findByText(/Missing test plan/)).toBeInTheDocument();
     expect(screen.getByText(/No backout procedure documented/)).toBeInTheDocument();
@@ -1400,11 +1397,6 @@ describe('CreateChgTab', () => {
   it('Create CHG button remains available at step 6 after Risk check with AI Assist', async () => {
     const user = userEvent.setup();
     mockState.currentStep = 6;
-    mockAiAssistExchange.runAiAssistExchange.mockResolvedValueOnce({
-      ok: true,
-      response: 'GAP: Missing test plan',
-      message: 'AI Assist result received.',
-    });
     render(<CreateChgTab />);
 
     // The app-level AiAssistUnlockGate owns the shortcut and the prompt; this tab only reads the
@@ -1412,6 +1404,11 @@ describe('CreateChgTab', () => {
     act(() => setAiAssistUnlocked(true));
 
     await user.click(await screen.findByRole('button', { name: /Risk check with AI Assist/i }));
+    fireEvent.change(screen.getByRole('textbox', { name: "Paste the assistant's reply here" }), {
+      target: { value: 'GAP: Missing test plan' },
+    });
+    await user.click(screen.getByRole('button', { name: '✔ Use this review' }));
+    await user.click(screen.getByRole('button', { name: 'Close' }));
 
     await screen.findByText(/Missing test plan/);
     expect(screen.getByRole('button', { name: /Create CHG/i })).toBeInTheDocument();

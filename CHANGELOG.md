@@ -16,6 +16,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reply's `SHORT_DESCRIPTION:` / `DESCRIPTION:` / `JUSTIFICATION:` / `RISK_AND_IMPACT:` markers — the same
   propose-only pattern every other Toolbox AI surface uses. A reply with no recognisable markers changes
   nothing and says so.
+- **SNow Hub — CHG Step 3 "Draft with AI Assist" and Step 6 "Risk check" converted to the same
+  paste-back round trip.** Both buttons silently depended on the retired automated exchange and would
+  have failed. They now open the same prompt modal: Step 3's reply fills only Short Description and
+  Description (extra markers in the reply are ignored — a prompt can only fill the fields it asked
+  for), and Step 6's pasted review is shown inline on the Results step exactly where the automated
+  review used to appear. Submission is still never blocked by the review.
 
 ### Fixed
 - **PI Review — date columns now show the PLANNED dates until the actuals happen.** The Dev Start /
