@@ -18,8 +18,8 @@ import { useCrgFieldPins } from '../hooks/useCrgFieldPins.ts';
 import { useCrgState } from '../hooks/useCrgState.ts';
 import { useCtaskTemplates } from '../hooks/useCtaskTemplates.ts';
 import { useCrgTemplates } from '../hooks/useCrgTemplates.ts';
+import type { AiAssistGeneratedFields } from '../hooks/useAiAssist.ts';
 import { parseAiAssistChgResponse, useAiAssist } from '../hooks/useAiAssist.ts';
-import { useAiAssistExchange } from '../hooks/useAiAssistExchange.ts';
 import type { SnowChoiceOptionMap } from '../hooks/useSnowChoiceOptions.ts';
 import { useSnowChoiceOptions } from '../hooks/useSnowChoiceOptions.ts';
 import { CtaskEditForm } from '../components/CtaskEditForm.tsx';
@@ -618,10 +618,8 @@ interface ChangeDetailsExtras {
   findPinnedField: (fieldKey: string, fieldValue: CrgPinnedField['value']) => CrgPinnedField | undefined;
   /** True when the Ctrl+Alt+Z passphrase gate is unlocked — shows AI Assist draft action. */
   isAiAssistUnlocked: boolean;
-  /** Dispatches an AI Assist exchange to populate Short Description + Description from selected issues. */
-  onDraftWithAiAssist: () => Promise<void>;
-  /** True while the AI Assist draft exchange is in flight. */
-  isDraftingWithAiAssist: boolean;
+  /** Opens the paste-back prompt modal to draft Short Description + Description from selected issues. */
+  onDraftWithAiAssist: () => void;
 }
 
 interface CtaskTemplateExtras {
@@ -636,8 +634,10 @@ interface ResultsStepExtras {
   environmentValueByKey: Partial<Record<EnvironmentKey, string>>;
   /** True when the Ctrl+Alt+Z passphrase gate is unlocked — shows AI Assist risk check. */
   isAiAssistUnlocked: boolean;
-  /** Runs an AI Assist exchange to review the CHG payload; resolves to gap text or null. */
-  onRiskCheckWithAiAssist: () => Promise<string | null>;
+  /** Opens the paste-back prompt modal with the pre-submission risk-review prompt. */
+  onOpenRiskCheckPrompt: () => void;
+  /** The pasted risk review to display, or null when no review has been captured yet. */
+  riskCheckReviewText: string | null;
 }
 
 interface StepRenderOptions {
@@ -1241,7 +1241,6 @@ function ChangeDetailsStep({
   findPinnedField,
   isAiAssistUnlocked,
   onDraftWithAiAssist,
-  isDraftingWithAiAssist,
   headingStep,
   shouldShowNavigation = true,
   shouldShowSaveButtons = false,
@@ -1369,17 +1368,17 @@ function ChangeDetailsStep({
     <section className={styles.section}>
       <StepHeading currentStep={headingStep ?? state.currentStep} />
 
-      {/* Draft with AI Assist — optional accelerator, gated by Ctrl+Alt+Z passphrase (SC-007). */}
+      {/* Draft with AI Assist — optional accelerator, gated by Ctrl+Alt+Z passphrase (SC-007).
+          Opens the shared paste-back prompt modal; no automated exchange is dispatched. */}
       {isAiAssistUnlocked ? (
         <div className={styles.aiAssistRow}>
           <button
             className={styles.aiAssistButton}
-            disabled={isDraftingWithAiAssist}
             onClick={onDraftWithAiAssist}
             title="Draft Short Description and Description from your selected Jira issues using AI Assist"
             type="button"
           >
-            {isDraftingWithAiAssist ? '✦ Drafting…' : '✦ Draft with AI Assist'}
+            ✦ Draft with AI Assist
           </button>
         </div>
       ) : null}
@@ -2141,24 +2140,15 @@ function CtaskTemplatePanel({ state, actions, templates, saveTemplate, updateTem
   );
 }
 
-function ResultsStep({ state, actions, ctaskTemplates, environmentValueByKey, isAiAssistUnlocked, onRiskCheckWithAiAssist }: CrgStepProps & ResultsStepExtras) {
+function ResultsStep({ state, actions, ctaskTemplates, environmentValueByKey, isAiAssistUnlocked, onOpenRiskCheckPrompt, riskCheckReviewText }: CrgStepProps & ResultsStepExtras) {
   const [selectedCtaskTemplateId, setSelectedCtaskTemplateId] = useState('');
   const [existingChgNumber, setExistingChgNumber] = useState('');
-  const [riskCheckResult, setRiskCheckResult] = useState<string | null>(null);
-  const [isRiskCheckRunning, setIsRiskCheckRunning] = useState(false);
   const selectedCtaskTemplate = ctaskTemplates.find((template) => template.id === selectedCtaskTemplateId) ?? null;
   const consolidatedResult = buildConsolidatedResult(state);
   const hasGeneratedContent = Boolean(state.generatedShortDescription || state.generatedDescription || state.generatedJustification || state.generatedRiskImpact);
   // Environments are required: Create CHG stays disabled until at least one environment is enabled.
   const hasEnabledEnvironment = state.relEnvironment.isEnabled || state.prdEnvironment.isEnabled || state.pfixEnvironment.isEnabled;
   const normalizedExistingChgNumber = existingChgNumber.trim().toUpperCase();
-
-  async function handleRiskCheckClick() {
-    setIsRiskCheckRunning(true);
-    const result = await onRiskCheckWithAiAssist();
-    setRiskCheckResult(result);
-    setIsRiskCheckRunning(false);
-  }
 
   return (
     <section className={styles.section}>
@@ -2240,22 +2230,22 @@ function ResultsStep({ state, actions, ctaskTemplates, environmentValueByKey, is
         <span className={styles.fieldLabel}>{CONSOLIDATED_RESULT_LABEL}</span>
         <textarea className={styles.textArea} readOnly value={hasGeneratedContent ? consolidatedResult : DEFAULT_RESULT_MESSAGE} />
       </label>
-      {/* Risk check with AI Assist — optional pre-submission review, gated by Ctrl+Alt+Z (SC-007). */}
+      {/* Risk check with AI Assist — optional pre-submission review, gated by Ctrl+Alt+Z (SC-007).
+          Opens the shared paste-back prompt modal; the pasted review is displayed here. */}
       {isAiAssistUnlocked ? (
         <div className={styles.aiAssistRow}>
           <button
             className={styles.aiAssistButton}
-            disabled={isRiskCheckRunning}
-            onClick={() => void handleRiskCheckClick()}
+            onClick={onOpenRiskCheckPrompt}
             title="Have AI Assist review the CHG payload and flag gaps before submission"
             type="button"
           >
-            {isRiskCheckRunning ? '✦ Checking…' : '✦ Risk check with AI Assist'}
+            ✦ Risk check with AI Assist
           </button>
-          {riskCheckResult !== null ? (
+          {riskCheckReviewText !== null ? (
             <div className={styles.riskCheckResult}>
               <p className={styles.riskCheckHeading}>AI Assist risk review:</p>
-              <pre className={styles.riskCheckText}>{riskCheckResult}</pre>
+              <pre className={styles.riskCheckText}>{riskCheckReviewText}</pre>
             </div>
           ) : null}
         </div>
@@ -2339,6 +2329,32 @@ export interface CrgTabProps {
 }
 
 /**
+ * A copy-out / paste-back round trip shown in the shared prompt modal. Each AI Assist
+ * affordance (Enhance, Draft, Risk check) opens a session carrying its own instructions,
+ * prompt text, and reply handling, so one modal serves all three without any automated exchange.
+ */
+interface AiAssistPromptSession {
+  /** Sentence shown above the prompt telling the user what this round trip produces. */
+  instructions: string;
+  /** The prompt text the user copies into their assistant. */
+  promptText: string;
+  /** Label for the button that consumes the pasted reply. */
+  applyButtonLabel: string;
+  /** Consumes the pasted reply. Returns the status to show and whether the reply was used. */
+  applyReply: (replyText: string) => { statusMessage: string; wasApplied: boolean };
+}
+
+// The CHG fields each prompt round trip is allowed to fill: the Planning "Enhance" prompt
+// asks for all four, while the Step 3 draft prompt asks only for the first two — a reply
+// carrying extra markers must not overwrite fields its prompt never requested.
+const ENHANCE_PROMPT_FIELD_KEYS: ReadonlyArray<keyof AiAssistGeneratedFields> = ['shortDescription', 'description', 'justification', 'riskImpact'];
+const DRAFT_PROMPT_FIELD_KEYS: ReadonlyArray<keyof AiAssistGeneratedFields> = ['shortDescription', 'description'];
+
+const APPLY_FIELDS_BUTTON_LABEL = '✔ Apply reply to fields';
+const NO_RECOGNISABLE_FIELDS_MESSAGE =
+  'No recognisable fields found — the reply must use the SHORT_DESCRIPTION / DESCRIPTION / JUSTIFICATION / RISK_AND_IMPACT markers.';
+
+/**
  * Renders the Change Request Generator so release managers can turn Jira release scope into a
  * comprehensive six-step ServiceNow Change Request with all required fields.
  * A hidden prompt assist mode is available via keyboard shortcut for enhanced content generation.
@@ -2372,15 +2388,14 @@ export default function CrgTab({ mode = 'wizard' }: CrgTabProps) {
 
   // Modal visibility and passphrase input state for the hidden activation flow.
 
-  // Prompt modal state — holds the generated prompt text the user pastes into AI Assist.
-  const [aiAssistPrompt, setAiAssistPrompt] = useState<string | null>(null);
-
-  // Automated AI Assist exchange — dispatches the prompt and polls for the result,
-  // removing the manual copy-paste step. Status is shown inside the prompt modal.
-  const { isRunning: isAiAssistRunning, runAiAssistExchange } = useAiAssistExchange();
-  const [aiAssistAutoStatus, setAiAssistAutoStatus] = useState<string | null>(null);
-  // True while the Step 3 "Draft with AI Assist" exchange is in flight.
-  const [isDraftingWithAiAssist, setIsDraftingWithAiAssist] = useState(false);
+  // Prompt modal state — the active copy-out / paste-back session, or null when closed.
+  const [aiAssistPromptSession, setAiAssistPromptSession] = useState<AiAssistPromptSession | null>(null);
+  // Paste-back state — the assistant's reply the user pastes into the modal, plus the
+  // outcome message shown after the reply is consumed.
+  const [aiAssistReplyText, setAiAssistReplyText] = useState<string>('');
+  const [aiAssistApplyStatus, setAiAssistApplyStatus] = useState<string | null>(null);
+  // The pasted pre-submission risk review, displayed on the Results step.
+  const [riskCheckReviewText, setRiskCheckReviewText] = useState<string | null>(null);
 
   const issueCountSummary = useMemo(() => {
     if (mode === 'configuration') {
@@ -2462,6 +2477,27 @@ export default function CrgTab({ mode = 'wizard' }: CrgTabProps) {
     state.pfixEnvironment.impactedPersonsAware,
   ]);
 
+  // Parses a pasted reply and applies every recognised marker value to its CHG field,
+  // restricted to the fields the originating prompt actually asked for.
+  const applyParsedChgFields = useCallback((
+    replyText: string,
+    allowedFieldKeys: ReadonlyArray<keyof AiAssistGeneratedFields>,
+  ): { statusMessage: string; wasApplied: boolean } => {
+    const parsedFields = parseAiAssistChgResponse(replyText);
+    const appliedFieldKeys = allowedFieldKeys.filter((fieldKey) => Boolean(parsedFields[fieldKey]));
+    appliedFieldKeys.forEach((fieldKey) => {
+      actions.updateGeneratedField(fieldKey, parsedFields[fieldKey] as string);
+    });
+
+    return {
+      wasApplied: appliedFieldKeys.length > 0,
+      statusMessage: appliedFieldKeys.length > 0
+        ? `Applied ${appliedFieldKeys.length} field(s) from the pasted reply.`
+        : NO_RECOGNISABLE_FIELDS_MESSAGE,
+    };
+  }, [actions]);
+
+  // Step 4 Planning: the full four-field prompt, seeded with any existing content to refine.
   const handleEnhanceWithAiAssist = useCallback(() => {
     const selectedIssues = state.fetchedIssues.filter((issue) =>
       state.selectedIssueKeys.has(issue.key),
@@ -2474,43 +2510,18 @@ export default function CrgTab({ mode = 'wizard' }: CrgTabProps) {
       riskImpact:       state.generatedRiskImpact,
     };
 
-    const promptText = buildPrompt(selectedIssues, currentFields);
-    setAiAssistPrompt(promptText);
-  }, [state, buildPrompt]);
-
-  // Automated path: send the shown prompt to AI Assist, poll for the deterministic
-  // response, parse it, and apply each returned value to its CHG field — the
-  // same fields the manual paste-back would populate.
-  const handleRunAiAssistAuto = useCallback(async () => {
-    if (!aiAssistPrompt) return;
-
-    setAiAssistAutoStatus('Sending to AI Assist…');
-    const exchange = await runAiAssistExchange(aiAssistPrompt);
-    if (!exchange.ok) {
-      setAiAssistAutoStatus(exchange.message);
-      return;
-    }
-
-    const parsedFields = parseAiAssistChgResponse(exchange.response ?? '');
-    const parsedFieldKeys = Object.keys(parsedFields) as Array<keyof typeof parsedFields>;
-    parsedFieldKeys.forEach((fieldKey) => {
-      const fieldValue = parsedFields[fieldKey];
-      if (fieldValue) {
-        actions.updateGeneratedField(fieldKey, fieldValue);
-      }
+    setAiAssistPromptSession({
+      instructions:
+        'Copy this prompt and paste it into AI Assist to generate the four CHG field values, then paste the reply below to fill the fields automatically.',
+      promptText: buildPrompt(selectedIssues, currentFields),
+      applyButtonLabel: APPLY_FIELDS_BUTTON_LABEL,
+      applyReply: (replyText) => applyParsedChgFields(replyText, ENHANCE_PROMPT_FIELD_KEYS),
     });
+  }, [state, buildPrompt, applyParsedChgFields]);
 
-    setAiAssistAutoStatus(
-      parsedFieldKeys.length > 0
-        ? `Applied ${parsedFieldKeys.length} field(s) from AI Assist.`
-        : 'AI Assist returned no recognisable fields.',
-    );
-  }, [aiAssistPrompt, runAiAssistExchange, actions]);
-
-  // Step 3: dispatch a targeted prompt to populate Short Description and Description from
-  // the selected Jira issues. Only the two relevant fields are updated — the full four-field
-  // prompt (Step 4) is left to the Planning step so each step stays focused.
-  const handleDraftWithAiAssist = useCallback(async () => {
+  // Step 3: a targeted prompt for Short Description and Description only — the full
+  // four-field prompt (Step 4) is left to the Planning step so each step stays focused.
+  const handleDraftWithAiAssist = useCallback(() => {
     const selectedIssues = state.fetchedIssues.filter((issue) =>
       state.selectedIssueKeys.has(issue.key),
     );
@@ -2528,20 +2539,18 @@ export default function CrgTab({ mode = 'wizard' }: CrgTabProps) {
       issueLines,
     ].join('\n');
 
-    setIsDraftingWithAiAssist(true);
-    const exchange = await runAiAssistExchange(draftPrompt);
-    setIsDraftingWithAiAssist(false);
+    setAiAssistPromptSession({
+      instructions:
+        'Copy this prompt and paste it into AI Assist to draft the Short Description and Description, then paste the reply below to fill the two fields automatically.',
+      promptText: draftPrompt,
+      applyButtonLabel: APPLY_FIELDS_BUTTON_LABEL,
+      applyReply: (replyText) => applyParsedChgFields(replyText, DRAFT_PROMPT_FIELD_KEYS),
+    });
+  }, [state.fetchedIssues, state.selectedIssueKeys, applyParsedChgFields]);
 
-    if (!exchange.ok || !exchange.response) return;
-    const parsedFields = parseAiAssistChgResponse(exchange.response);
-    if (parsedFields.shortDescription) actions.updateGeneratedField('shortDescription', parsedFields.shortDescription);
-    if (parsedFields.description) actions.updateGeneratedField('description', parsedFields.description);
-  }, [state.fetchedIssues, state.selectedIssueKeys, runAiAssistExchange, actions]);
-
-  // Step 6: dispatch the current CHG payload to AI Assist for a pre-submission risk review.
-  // The raw response text is returned so ResultsStep can display it inline — the user
-  // may still submit regardless of what AI Assist flags (FR-005: submission not blocked).
-  const handleRiskCheckWithAiAssist = useCallback(async (): Promise<string | null> => {
+  // Step 6: the pre-submission risk-review prompt. The pasted review is displayed on the
+  // Results step as-is — the user may still submit regardless of what it flags (FR-005).
+  const handleOpenRiskCheckPrompt = useCallback(() => {
     const riskPrompt = [
       'You are reviewing a ServiceNow Change Request before submission.',
       'Identify gaps, risks, or missing fields that need attention.',
@@ -2553,10 +2562,32 @@ export default function CrgTab({ mode = 'wizard' }: CrgTabProps) {
       `Risk & Impact: ${state.generatedRiskImpact || '(not set)'}`,
     ].join('\n');
 
-    const exchange = await runAiAssistExchange(riskPrompt);
-    if (!exchange.ok || !exchange.response) return null;
-    return exchange.response;
-  }, [state.generatedShortDescription, state.generatedDescription, state.generatedJustification, state.generatedRiskImpact, runAiAssistExchange]);
+    setAiAssistPromptSession({
+      instructions:
+        'Copy this prompt and paste it into AI Assist to review the CHG for gaps, then paste the reply below — the review is shown on the Results step.',
+      promptText: riskPrompt,
+      applyButtonLabel: '✔ Use this review',
+      applyReply: (replyText) => {
+        const trimmedReview = replyText.trim();
+        if (!trimmedReview) {
+          return { statusMessage: 'The pasted review is empty.', wasApplied: false };
+        }
+        setRiskCheckReviewText(trimmedReview);
+        return { statusMessage: 'Risk review captured — it is shown on the Results step.', wasApplied: true };
+      },
+    });
+  }, [state.generatedShortDescription, state.generatedDescription, state.generatedJustification, state.generatedRiskImpact]);
+
+  // Consumes the pasted reply through the active session and reports the outcome.
+  const handleApplyAiAssistReply = useCallback(() => {
+    if (!aiAssistPromptSession) return;
+    const applyOutcome = aiAssistPromptSession.applyReply(aiAssistReplyText);
+    setAiAssistApplyStatus(applyOutcome.statusMessage);
+    // Clear a successfully-consumed reply so a second paste starts clean.
+    if (applyOutcome.wasApplied) {
+      setAiAssistReplyText('');
+    }
+  }, [aiAssistPromptSession, aiAssistReplyText]);
 
   const planningExtras: PlanningStepExtras = {
     isAiAssistUnlocked:    isUnlocked,
@@ -2605,7 +2636,6 @@ export default function CrgTab({ mode = 'wizard' }: CrgTabProps) {
     findPinnedField,
     isAiAssistUnlocked: isUnlocked,
     onDraftWithAiAssist: handleDraftWithAiAssist,
-    isDraftingWithAiAssist,
   };
 
   const workspaceExtras: CrgWorkspaceExtras = {
@@ -2634,7 +2664,8 @@ export default function CrgTab({ mode = 'wizard' }: CrgTabProps) {
       pfix: resolveEnvironmentOptionValue(choiceOptions['u_environment'] ?? [], 'pfix'),
     },
     isAiAssistUnlocked: isUnlocked,
-    onRiskCheckWithAiAssist: handleRiskCheckWithAiAssist,
+    onOpenRiskCheckPrompt: handleOpenRiskCheckPrompt,
+    riskCheckReviewText,
   };
 
   const tabTitle = mode === 'configuration' ? CONFIGURATION_TAB_TITLE : TAB_TITLE;
@@ -2663,44 +2694,58 @@ export default function CrgTab({ mode = 'wizard' }: CrgTabProps) {
         renderCurrentStepPanel(state, actions, planningExtras, changeDetailsExtras, environmentExtras, resultsExtras)
       )}
 
-      {/* Prompt modal — shows the generated AI Assist prompt for copy/paste */}
-      {aiAssistPrompt !== null ? (
+      {/* Prompt modal — copy-out / paste-back round trip: copy the active session's prompt
+          into the user's assistant, then paste the reply back to be consumed by the session. */}
+      {aiAssistPromptSession !== null ? (
         <div className={styles.passphraseOverlay}>
           <div className={styles.promptModal}>
-            <p className={styles.promptInstructions}>
-              Copy this prompt and paste it into AI Assist to generate the four CHG field values.
-            </p>
+            <p className={styles.promptInstructions}>{aiAssistPromptSession.instructions}</p>
             <textarea
               className={styles.promptTextArea}
               readOnly
-              value={aiAssistPrompt}
+              value={aiAssistPromptSession.promptText}
             />
             <div className={styles.promptActions}>
               <button
                 className={styles.aiAssistButton}
-                disabled={isAiAssistRunning}
-                onClick={() => void handleRunAiAssistAuto()}
-                type="button"
-              >
-                {isAiAssistRunning ? '⏳ Running via AI Assist…' : '⚡ Run via AI Assist (auto)'}
-              </button>
-              <button
-                className={styles.aiAssistButton}
-                onClick={() => void navigator.clipboard.writeText(aiAssistPrompt)}
+                onClick={() => void navigator.clipboard.writeText(aiAssistPromptSession.promptText)}
                 type="button"
               >
                 📋 Copy to Clipboard
               </button>
               <button
                 className={styles.linkButton}
-                onClick={() => { setAiAssistPrompt(null); setAiAssistAutoStatus(null); }}
+                onClick={() => {
+                  setAiAssistPromptSession(null);
+                  setAiAssistReplyText('');
+                  setAiAssistApplyStatus(null);
+                }}
                 type="button"
               >
                 Close
               </button>
             </div>
-            {aiAssistAutoStatus !== null ? (
-              <p className={styles.promptInstructions} role="status">{aiAssistAutoStatus}</p>
+            <label className={styles.promptInstructions} htmlFor="crg-ai-assist-reply">
+              Paste the assistant&apos;s reply here
+            </label>
+            <textarea
+              className={styles.promptTextArea}
+              id="crg-ai-assist-reply"
+              onChange={(changeEvent) => setAiAssistReplyText(changeEvent.target.value)}
+              value={aiAssistReplyText}
+            />
+            <div className={styles.promptActions}>
+              <button
+                className={styles.aiAssistButton}
+                disabled={aiAssistReplyText.trim() === ''}
+                onClick={handleApplyAiAssistReply}
+                type="button"
+              >
+                {aiAssistPromptSession.applyButtonLabel}
+              </button>
+            </div>
+            {aiAssistApplyStatus !== null ? (
+              <p className={styles.promptInstructions} role="status">{aiAssistApplyStatus}</p>
             ) : null}
           </div>
         </div>

@@ -17,6 +17,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   path again). The **Dev-Skip Test Risk** modal — which previously had no manual path at all — gains a
   paste box and a **✔ Use this report** button, so the pasted Markdown report renders under the release
   exactly where the automated one used to.
+- **SNow Hub — CHG "Enhance with prompt" is now a copy-out / paste-back round trip.** The automated
+  **⚡ Run via AI Assist (auto)** button is gone from the prompt modal (the automation channel is no longer
+  usable). In its place the modal gains a **"Paste the assistant's reply here"** box and a **✔ Apply reply
+  to fields** button: copy the prompt, run it in your assistant, paste the reply back, and the four CHG
+  fields (Short Description, Description, Justification, Risk & Impact) are filled automatically from the
+  reply's `SHORT_DESCRIPTION:` / `DESCRIPTION:` / `JUSTIFICATION:` / `RISK_AND_IMPACT:` markers — the same
+  propose-only pattern every other Toolbox AI surface uses. A reply with no recognisable markers changes
+  nothing and says so.
+- **SNow Hub — CHG Step 3 "Draft with AI Assist" and Step 6 "Risk check" converted to the same
+  paste-back round trip.** Both buttons silently depended on the retired automated exchange and would
+  have failed. They now open the same prompt modal: Step 3's reply fills only Short Description and
+  Description (extra markers in the reply are ignored — a prompt can only fill the fields it asked
+  for), and Step 6's pasted review is shown inline on the Results step exactly where the automated
+  review used to appear. Submission is still never blocked by the review.
+
+### Fixed
+- **PO Tool — the "works without AI" guard tests run green again.** Feature 031's Team domain
+  components panel described itself as "applied by rule (not the assistant)" — and the word
+  "assistant" tripped `poToolWithoutAi.test.tsx`, the journey test proving a locked PO sees no AI
+  affordance anywhere (FR-022/SC-005). The subtitle now reads "applied deterministically by rule —
+  never suggested", with a comment at the copy warning future edits about the scan. Wording only; no
+  behavior change.
 
 ### Fixed
 - **PI Review — date columns now show the PLANNED dates until the actuals happen.** The Dev Start /
