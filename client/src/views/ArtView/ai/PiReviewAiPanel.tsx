@@ -1,18 +1,16 @@
 // PiReviewAiPanel.tsx — The PI Review tab's AI Assistance panel.
 //
-// Builds one prompt covering every Feature on the page, offers both the manual (copy/paste) and
-// automatic (dispatch + poll) paths, and presents the reply as per-Feature suggestions the user
-// accepts row by row. It applies nothing itself: Accept hands the suggestion up to the tab, which
-// owns the row edit and the unsaved-changes flag. Saving to Confluence stays a deliberate act.
+// Builds one prompt covering every Feature on the page, runs the manual copy-out / paste-back
+// round trip, and presents the reply as per-Feature suggestions the user accepts row by row.
+// It applies nothing itself: Accept hands the suggestion up to the tab, which owns the row edit
+// and the unsaved-changes flag. Saving to Confluence stays a deliberate act.
 //
-// Reuse (Article VII): ReportAiPanel is the copy/paste shell (extended additively with the auto
-// path rather than forked), useAiAssistExchange is the dispatch/poll, aiAssistStore is the gate.
+// Reuse (Article VII): ReportAiPanel is the copy/paste shell, aiAssistStore is the gate.
 // Only the review table below it is new — see PiReviewSuggestionTable's justification.
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { useAiAssistStore } from '../../../store/aiAssistStore.ts'
-import { useAiAssistExchange } from '../../SnowHub/hooks/useAiAssistExchange.ts'
 import { ReportAiPanel } from '../../ReportsHub/ReportAiPanel.tsx'
 import type { PiReviewRow } from '../piReviewTable.ts'
 import { extractPiReviewFeatureKey } from '../piReviewJira.ts'
@@ -211,7 +209,6 @@ function StartDateSuggestions({ piWindow, suggestions, onApply }: {
 /** Renders the AI Assistance panel, or nothing when AI Assist is locked. */
 export function PiReviewAiPanel({ rows, columnAvailability, onApplySuggestion, piWindow, onApplyStartDate }: PiReviewAiPanelProps): React.JSX.Element | null {
   const isUnlocked = useAiAssistStore((state) => state.isAiAssistUnlocked)
-  const { isRunning, runAiAssistExchange } = useAiAssistExchange()
 
   const [featureContexts, setFeatureContexts] = useState<PiReviewAiFeatureContext[]>([])
   const [suggestions, setSuggestions] = useState<PiReviewAiSuggestion[]>([])
@@ -279,21 +276,6 @@ export function PiReviewAiPanel({ rows, columnAvailability, onApplySuggestion, p
     }
   }, [featureContexts])
 
-  const handleRunAuto = useCallback(() => {
-    void (async () => {
-      setStatusMessage('Sending to AI Assist…')
-      // runAiAssistExchange never throws — every failure is a returned {ok:false, message}.
-      const exchange = await runAiAssistExchange(promptText)
-      if (!exchange.ok) {
-        setStatusMessage(null)
-        setErrorMessage(exchange.message)
-        return
-      }
-      setStatusMessage(null)
-      applyResponse(exchange.response ?? '')
-    })()
-  }, [applyResponse, promptText, runAiAssistExchange])
-
   /** Removes a suggestion from the review list once it has been decided either way. */
   const dropSuggestion = useCallback((decided: PiReviewAiSuggestion) => {
     setSuggestions((current) => current.filter((suggestion) => suggestion.issueKey !== decided.issueKey))
@@ -331,8 +313,6 @@ export function PiReviewAiPanel({ rows, columnAvailability, onApplySuggestion, p
       hint={JIRA_WRITE_DISCLOSURE}
       ingestLabel="Review suggestions"
       onIngest={applyResponse}
-      onRunAuto={handleRunAuto}
-      isRunning={isRunning}
       prompt={promptText}
       title="AI Assistance"
     >

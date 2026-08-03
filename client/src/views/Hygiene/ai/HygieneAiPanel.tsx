@@ -1,18 +1,17 @@
 // HygieneAiPanel.tsx — The Hygiene page's AI Assist panel (behind the Ctrl+Alt+Z gate).
 //
 // Follows the house AI-assist pattern end to end: build ONE prompt covering the page's AI-fixable
-// flags, hand it to an agent (copy/paste or the automatic exchange), ingest the structured reply,
+// flags, hand it to an agent (manual copy-out / paste-back), ingest the structured reply,
 // and list each proposed fix for an individual Accept / Decline. Accepting writes that one fix to
 // Jira through the same helpers the inline Fix controls use, then asks the page to rescan so the
 // cleared flag visibly disappears. Nothing is ever written without a per-item click.
 //
-// Reuse (Article VII): ReportAiPanel is the copy/paste shell, useAiAssistExchange is the
-// dispatch/poll, extractJsonPayload/{kind,items[]} is the shared envelope (via hygieneAiAssist),
-// and featureReviewFixes are the writes (via hygieneAiApply). Only the review list here is new.
+// Reuse (Article VII): ReportAiPanel is the copy/paste shell, extractJsonPayload/{kind,items[]}
+// is the shared envelope (via hygieneAiAssist), and featureReviewFixes are the writes (via
+// hygieneAiApply). Only the review list here is new.
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
-import { useAiAssistExchange } from '../../SnowHub/hooks/useAiAssistExchange.ts'
 import { ReportAiPanel } from '../../ReportsHub/ReportAiPanel.tsx'
 import type { HygieneFieldConfig, HygieneFinding } from '../checks/hygieneChecks.ts'
 import {
@@ -53,7 +52,6 @@ export interface HygieneAiPanelProps {
 
 /** Renders the AI Assist workflow for the Hygiene page. The parent gates it behind Ctrl+Alt+Z. */
 export function HygieneAiPanel({ findings, fieldConfig, onIssueFixed }: HygieneAiPanelProps) {
-  const { isRunning, runAiAssistExchange } = useAiAssistExchange()
   const [proposals, setProposals] = useState<HygieneAiProposal[]>([])
   const [statusByProposal, setStatusByProposal] = useState<Record<string, ProposalStatus>>({})
   const [unknownKeys, setUnknownKeys] = useState<string[]>([])
@@ -100,21 +98,6 @@ export function HygieneAiPanel({ findings, fieldConfig, onIssueFixed }: HygieneA
     }
   }, [fixableFindings])
 
-  const handleRunAuto = useCallback(() => {
-    void (async () => {
-      setStatusMessage('Sending to AI Assist…')
-      // runAiAssistExchange never throws — every failure is a returned {ok:false, message}.
-      const exchange = await runAiAssistExchange(promptText)
-      if (!exchange.ok) {
-        setStatusMessage(null)
-        setErrorMessage(exchange.message)
-        return
-      }
-      setStatusMessage(null)
-      applyResponse(exchange.response ?? '')
-    })()
-  }, [applyResponse, promptText, runAiAssistExchange])
-
   function proposalKey(proposal: HygieneAiProposal): string {
     return `${proposal.issueKey}:${proposal.checkId}`
   }
@@ -153,8 +136,6 @@ export function HygieneAiPanel({ findings, fieldConfig, onIssueFixed }: HygieneA
       hint={JIRA_WRITE_DISCLOSURE}
       ingestLabel="Review proposals"
       onIngest={applyResponse}
-      onRunAuto={handleRunAuto}
-      isRunning={isRunning}
       prompt={promptText}
       title="AI Assist hygiene fixes"
     >

@@ -1,6 +1,6 @@
 // SprintDashboardView.test.tsx — Unit tests for the Sprint Dashboard tabbed view component.
 
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import React from 'react';
 
@@ -206,19 +206,11 @@ import styles from './SprintDashboardView.module.css';
 import { useSettingsStore } from '../../store/settingsStore.ts';
 import { setAiAssistUnlocked } from '../../store/aiAssistStore.ts';
 
-// Mock the AI Assist exchange (dispatch+poll is unit-tested separately) so the
-// auto-path integration test gets a canned deterministic response immediately.
-const { mockRunAiAssistExchange } = vi.hoisted(() => ({ mockRunAiAssistExchange: vi.fn() }));
-vi.mock('../SnowHub/hooks/useAiAssistExchange.ts', () => ({
-  useAiAssistExchange: () => ({ isRunning: false, runAiAssistExchange: mockRunAiAssistExchange }),
-}));
-
 describe('SprintDashboardView', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     window.sessionStorage.clear();
     setAiAssistUnlocked(false); // reset the shared AI Assist unlock singleton between tests
-    mockRunAiAssistExchange.mockReset();
     useSettingsStore.setState({
       sprintDashboardTeamProfiles: [],
       sprintDashboardActiveTeamProfileId: '',
@@ -1062,8 +1054,10 @@ describe('SprintDashboardView', () => {
     expect(screen.getByText('Delivers the hidden AI Assist workflow for release notes.')).toBeInTheDocument();
   });
 
-  it('renders a release-notes table from the automated AI Assist exchange (Run via AI Assist)', async () => {
-    mockState.activeTab = 'releases';
+  // ── The automated AI Assist exchange is retired: every prompt modal is copy-out / paste-back only ──
+
+  /** Installs the single-release Jira fixtures shared by the release-modal paste-back tests. */
+  function installSingleReleaseFixtures(): void {
     mockJiraGet.mockImplementation((path: string) => {
       if (path === '/rest/api/2/project/TBX/versions') {
         return Promise.resolve([
@@ -1079,16 +1073,11 @@ describe('SprintDashboardView', () => {
       }
       return Promise.resolve({ values: [] });
     });
+  }
 
-    // The automated exchange returns AI Assist's deterministic JSON directly.
-    mockRunAiAssistExchange.mockResolvedValue({
-      ok: true,
-      response: JSON.stringify({
-        releaseName: 'Release 24.1',
-        releaseSummary: 'Auto-delivered release notes via AI Assist.',
-        items: [{ issueKey: 'TBX-99', title: 'Automated release note', releaseNote: 'Generated without copy-paste.', customerImpact: 'Faster drafting.', technicalDetails: 'Dispatch + poll + parse.', risks: 'None.', validation: 'Covered by tests.' }],
-      }),
-    });
+  it('release prompt modal offers copy + paste-back only — no automated exchange button', async () => {
+    mockState.activeTab = 'releases';
+    installSingleReleaseFixtures();
 
     render(<SprintDashboardView />);
     expect(await screen.findByText('Release 24.1')).toBeInTheDocument();
@@ -1097,14 +1086,61 @@ describe('SprintDashboardView', () => {
     // shared store, so unlock it directly rather than driving a prompt this view no longer renders.
     act(() => setAiAssistUnlocked(true));
 
-    // Open the prompt modal, then run the automated exchange instead of copy-paste.
     fireEvent.click(await screen.findByRole('button', { name: /Build AI Assist Prompt/i }));
-    fireEvent.click(await screen.findByRole('button', { name: /Run via AI Assist \(auto\)/i }));
 
-    await waitFor(() => expect(mockRunAiAssistExchange).toHaveBeenCalled());
-    expect(await screen.findByRole('heading', { name: 'Release 24.1 Release Notes' })).toBeInTheDocument();
-    expect(screen.getByText('Auto-delivered release notes via AI Assist.')).toBeInTheDocument();
-    expect(screen.getByText('Automated release note')).toBeInTheDocument();
+    expect(await screen.findByLabelText('AI Assist release prompt')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Run via AI Assist \(auto\)/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Copy Prompt/i })).toBeInTheDocument();
+  });
+
+  it('pointing AI modal offers copy + paste-back only — no automated exchange button', async () => {
+    mockState.activeTab = 'pointing';
+    // Setting an anchor fetches the anchor issue's details; serve a minimal detail payload.
+    mockJiraGet.mockImplementation((path: string) => {
+      if (path.startsWith('/rest/api/2/issue/')) {
+        return Promise.resolve({ fields: { description: 'Detail', customfield_10200: 'AC', comment: { comments: [] } } });
+      }
+      return Promise.resolve({ values: [] });
+    });
+    render(<SprintDashboardView />);
+
+    // The app-level AiAssistUnlockGate owns the shortcut and the prompt; this view only reads the
+    // shared store, so unlock it directly rather than driving a prompt this view no longer renders.
+    act(() => setAiAssistUnlocked(true));
+
+    // The Enhance button lives in the anchor banner, so pick an anchor from the first row first.
+    fireEvent.click(screen.getAllByText('⚓ Set anchor')[0]);
+    fireEvent.click(screen.getAllByRole('button', { name: '5' })[0]);
+
+    fireEvent.click(await screen.findByRole('button', { name: /Enhance with AI/i }));
+
+    expect(await screen.findByLabelText('AI Assist pointing prompt')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Run via AI Assist \(auto\)/i })).not.toBeInTheDocument();
+    expect(screen.getByLabelText('AI Assist pointing response')).toBeInTheDocument();
+  });
+
+  it('renders the dev-skip risk report from a pasted AI Assist reply', async () => {
+    mockState.activeTab = 'releases';
+    installSingleReleaseFixtures();
+
+    render(<SprintDashboardView />);
+    expect(await screen.findByText('Release 24.1')).toBeInTheDocument();
+
+    // The app-level AiAssistUnlockGate owns the shortcut and the prompt; this view only reads the
+    // shared store, so unlock it directly rather than driving a prompt this view no longer renders.
+    act(() => setAiAssistUnlocked(true));
+
+    fireEvent.click(await screen.findByRole('button', { name: /Assess Dev-Skip Risk/i }));
+
+    expect(await screen.findByLabelText('Dev-skip test risk prompt')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Run via AI Assist \(auto\)/i })).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('Dev-skip test risk report reply'), {
+      target: { value: '## Dev-Skip Risk: LOW\n\nAll changes are covered by integration tests.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '✔ Use this report' }));
+
+    expect(await screen.findByText(/All changes are covered by integration tests/)).toBeInTheDocument();
   });
 
   it('copies rendered release notes to the clipboard as an image', async () => {
