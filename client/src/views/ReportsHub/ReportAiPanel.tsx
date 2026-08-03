@@ -13,7 +13,7 @@
 import { useState } from 'react';
 
 import { useAiAssistStore } from '../../store/aiAssistStore.ts';
-import { copyToClipboard } from '../FeatureCanvas/ai/clipboard.ts';
+import { useCopyFeedback } from '../../hooks/useCopyFeedback.ts';
 import styles from './ReportsHubView.module.css';
 
 /** Props for the gated report AI panel: the prompt to copy, how to ingest a reply, and the results slot. */
@@ -53,6 +53,7 @@ export function ReportAiPanel({
 }: ReportAiPanelProps): React.JSX.Element | null {
   const isUnlocked = useAiAssistStore((state) => state.isAiAssistUnlocked);
   const [responseText, setResponseText] = useState('');
+  const { hasCopied: hasCopiedPrompt, confirmCopy: confirmPromptCopy } = useCopyFeedback();
 
   // Invisible and inert unless the operator has unlocked AI Assist with Ctrl+Alt+Z.
   if (!isUnlocked) {
@@ -67,7 +68,9 @@ export function ReportAiPanel({
       </div>
       <textarea readOnly value={prompt} rows={5} className={styles.aiTextarea} aria-label={`${title} prompt`} />
       <div className={styles.aiPanelActions}>
-        <button type="button" className={styles.actionButton} onClick={() => copyToClipboard(prompt)}>📋 Copy prompt</button>
+        <button type="button" className={styles.actionButton} onClick={() => confirmPromptCopy(prompt)}>
+          {hasCopiedPrompt ? '✓ Copied!' : '📋 Copy prompt'}
+        </button>
       </div>
       <textarea
         value={responseText}

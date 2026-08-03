@@ -826,6 +826,20 @@ describe('CreateChgTab', () => {
     await user.click(await screen.findByRole('button', { name: '✦ Enhance with prompt' }));
   }
 
+  it('confirms a prompt copy by flipping the button label to ✓ Copied!', async () => {
+    const user = userEvent.setup();
+    // jsdom has no navigator.clipboard — stub it so the copy path resolves instead of falling back.
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: vi.fn().mockResolvedValue(undefined) },
+    });
+    await openEnhancePromptModal(user);
+
+    await user.click(screen.getByRole('button', { name: '📋 Copy to Clipboard' }));
+
+    expect(await screen.findByRole('button', { name: '✓ Copied!' })).toBeInTheDocument();
+  });
+
   it('no longer offers the retired Run via AI Assist (auto) button in the prompt modal', async () => {
     const user = userEvent.setup();
     await openEnhancePromptModal(user);

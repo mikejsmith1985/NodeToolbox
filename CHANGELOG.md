@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Every button now visibly "presses" when clicked, and copy buttons confirm with ✓ Copied!.**
+  A global press animation (subtle scale + dim while active, disabled for reduced-motion users)
+  makes any click read as registered app-wide. On top of that, the copy buttons that previously
+  gave no feedback now flip to **✓ Copied!** for two seconds: the CHG generator's prompt-modal
+  **Copy to Clipboard**, the release-notes and Dev-Skip Risk prompt modals' **Copy Prompt**, and
+  the shared report AI panel's **Copy prompt** (PI Review AI Assistance + Hygiene AI fixes). The
+  confirmation lives in one shared `useCopyFeedback` hook, so future copy buttons get it for free.
+
+### Added
 - **SNow Hub — CHG generator can now ADD issues to a loaded release instead of replacing it.**
   Sometimes a release needs a story or two that don't share the main release's fixVersion. Once a
   first fetch has loaded issues, Step 1 gains a **+ Add to Loaded Issues** button: switch the fetch

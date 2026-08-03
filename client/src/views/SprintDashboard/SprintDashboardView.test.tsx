@@ -1119,6 +1119,32 @@ describe('SprintDashboardView', () => {
     expect(screen.getByLabelText('AI Assist pointing response')).toBeInTheDocument();
   });
 
+  it('release and dev-skip prompt modals confirm a copy with ✓ Copied!', async () => {
+    mockState.activeTab = 'releases';
+    installSingleReleaseFixtures();
+    // jsdom has no navigator.clipboard — stub it so the copy path resolves instead of falling back.
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: vi.fn().mockResolvedValue(undefined) },
+    });
+
+    render(<SprintDashboardView />);
+    expect(await screen.findByText('Release 24.1')).toBeInTheDocument();
+
+    // The app-level AiAssistUnlockGate owns the shortcut and the prompt; this view only reads the
+    // shared store, so unlock it directly rather than driving a prompt this view no longer renders.
+    act(() => setAiAssistUnlocked(true));
+
+    fireEvent.click(await screen.findByRole('button', { name: /Build AI Assist Prompt/i }));
+    fireEvent.click(screen.getByRole('button', { name: '📋 Copy Prompt' }));
+    expect(await screen.findByRole('button', { name: '✓ Copied!' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+
+    fireEvent.click(await screen.findByRole('button', { name: /Assess Dev-Skip Risk/i }));
+    fireEvent.click(screen.getByRole('button', { name: '📋 Copy Prompt' }));
+    expect(await screen.findByRole('button', { name: '✓ Copied!' })).toBeInTheDocument();
+  });
+
   it('renders the dev-skip risk report from a pasted AI Assist reply', async () => {
     mockState.activeTab = 'releases';
     installSingleReleaseFixtures();
