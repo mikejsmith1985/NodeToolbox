@@ -211,7 +211,9 @@ const { mockUserAssignmentGroupsState, mockUserAssignmentGroupsActions } = vi.ho
   },
 }));
 
-vi.mock('./hooks/useCrgState.ts', () => ({
+// Keep the module's pure exports (e.g. listEnvironmentDateOrderErrors) real — only the hook is mocked.
+vi.mock('./hooks/useCrgState.ts', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
   useCrgState: () => ({ state: mockCrgState, actions: mockCrgActions }),
 }));
 

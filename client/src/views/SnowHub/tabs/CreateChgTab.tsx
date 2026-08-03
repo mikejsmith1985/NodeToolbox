@@ -15,7 +15,7 @@ import type {
 } from '../hooks/useCrgState.ts';
 import type { CrgPinnedField, CrgPinnedFieldInput } from '../hooks/useCrgFieldPins.ts';
 import { useCrgFieldPins } from '../hooks/useCrgFieldPins.ts';
-import { useCrgState } from '../hooks/useCrgState.ts';
+import { listEnvironmentDateOrderErrors, useCrgState } from '../hooks/useCrgState.ts';
 import { useCtaskTemplates } from '../hooks/useCtaskTemplates.ts';
 import { useCrgTemplates } from '../hooks/useCrgTemplates.ts';
 import type { AiAssistGeneratedFields } from '../hooks/useAiAssist.ts';
@@ -1789,9 +1789,15 @@ function EnvironmentStep({
     actions.updateEnvironment(environmentKey, { impactedPersonsAware });
   }
 
+  const environmentDateOrderErrors = listEnvironmentDateOrderErrors(state);
+
   return (
     <section className={styles.section}>
       <StepHeading currentStep={headingStep ?? state.currentStep} />
+      {/* End-before-start would reach ServiceNow as an unhelpful 403 (GH #282) — flag it here. */}
+      {environmentDateOrderErrors.length > 0 ? (
+        <p className={styles.errorText} role="alert">{environmentDateOrderErrors.join(' ')}</p>
+      ) : null}
       <div className={styles.environmentCardGrid}>
         {ENVIRONMENT_ROW_DEFINITIONS.map((environmentRow) => {
           const environmentState = state[environmentRow.stateKey];
@@ -2163,6 +2169,8 @@ function ResultsStep({ state, actions, ctaskTemplates, environmentValueByKey, is
   const hasGeneratedContent = Boolean(state.generatedShortDescription || state.generatedDescription || state.generatedJustification || state.generatedRiskImpact);
   // Environments are required: Create CHG stays disabled until at least one environment is enabled.
   const hasEnabledEnvironment = state.relEnvironment.isEnabled || state.prdEnvironment.isEnabled || state.pfixEnvironment.isEnabled;
+  // End-before-start would reach ServiceNow as an unhelpful 403 (GH #282) — block create instead.
+  const environmentDateOrderErrors = listEnvironmentDateOrderErrors(state);
   const normalizedExistingChgNumber = existingChgNumber.trim().toUpperCase();
 
   return (
@@ -2283,10 +2291,15 @@ function ResultsStep({ state, actions, ctaskTemplates, environmentValueByKey, is
           environment is set.
         </p>
       ) : null}
+      {environmentDateOrderErrors.length > 0 ? (
+        <p className={styles.errorText} role="alert">
+          {environmentDateOrderErrors.join(' ')} Fix the planned dates on the Environments step.
+        </p>
+      ) : null}
       <div className={styles.buttonRow}>
         <button
           className={styles.primaryButton}
-          disabled={state.isSubmitting || !hasGeneratedContent || !hasEnabledEnvironment}
+          disabled={state.isSubmitting || !hasGeneratedContent || !hasEnabledEnvironment || environmentDateOrderErrors.length > 0}
           onClick={() => void actions.createChg(environmentValueByKey)}
           type="button"
         >

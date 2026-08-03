@@ -101,6 +101,38 @@ const EMPTY_VALUE = '';
 const EMPTY_FETCH_ERROR = null;
 const REQUIRED_FIELDS_MESSAGE = 'Project key and fix version are required.';
 /** Shown when Create CHG is attempted with no environment enabled; environments are required. */
+/** Human-readable labels for the three environment cards, used in validation messages. */
+const ENVIRONMENT_LABEL_BY_KEY: Record<EnvironmentKey, string> = { rel: 'REL', prd: 'PRD', pfix: 'PFIX' };
+
+/**
+ * Lists every ENABLED environment whose planned end date is not after its planned start date.
+ * ServiceNow rejects such a change with an unhelpful 403 (GH #282), so the wizard flags the
+ * ordering before anything is submitted. Environments with either date blank are skipped —
+ * requiring the dates at all remains ServiceNow's own concern.
+ */
+export function listEnvironmentDateOrderErrors(
+  environments: Pick<CrgState, 'relEnvironment' | 'prdEnvironment' | 'pfixEnvironment'>,
+): string[] {
+  const environmentEntries: Array<[EnvironmentKey, EnvironmentConfig]> = [
+    ['rel', environments.relEnvironment],
+    ['prd', environments.prdEnvironment],
+    ['pfix', environments.pfixEnvironment],
+  ];
+
+  const orderErrors: string[] = [];
+  for (const [environmentKey, environmentConfig] of environmentEntries) {
+    if (!environmentConfig.isEnabled) continue;
+    if (!environmentConfig.plannedStartDate || !environmentConfig.plannedEndDate) continue;
+    // datetime-local strings (YYYY-MM-DDTHH:mm) compare correctly as plain strings.
+    if (environmentConfig.plannedEndDate <= environmentConfig.plannedStartDate) {
+      orderErrors.push(
+        `${ENVIRONMENT_LABEL_BY_KEY[environmentKey]}: the planned end date is on or before the planned start date — it must be after.`,
+      );
+    }
+  }
+  return orderErrors;
+}
+
 export const NO_ENABLED_ENVIRONMENT_MESSAGE =
   'Error: Enable at least one environment on the Environments step before creating a change request. No changes were created.';
 const REQUIRED_JQL_MESSAGE = 'A JQL query is required.';
@@ -2077,6 +2109,18 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
         ...previousState,
         isSubmitting: false,
         submitResult: NO_ENABLED_ENVIRONMENT_MESSAGE,
+        submissionDebug: null,
+      }));
+      return;
+    }
+
+    // End-before-start reaches ServiceNow as an unhelpful 403 (GH #282) — catch it here instead.
+    const environmentDateErrors = listEnvironmentDateOrderErrors(state);
+    if (environmentDateErrors.length > 0) {
+      setState((previousState) => ({
+        ...previousState,
+        isSubmitting: false,
+        submitResult: environmentDateErrors.join(' '),
         submissionDebug: null,
       }));
       return;
