@@ -21,7 +21,6 @@ const relayBridgeRouter                     = require('./src/routes/relayBridge'
 const createNotificationsRouter             = require('./src/routes/notifications');
 const createStandupBriefingRouter           = require('./src/routes/standupBriefing');
 const createReportDeliveryRouter            = require('./src/routes/reportDelivery');
-const createAiAssistExchangeRouter          = require('./src/routes/aiAssistExchange');
 const createHygieneMonitorRouter            = require('./src/routes/hygieneMonitor');
 const createSprintReleaseRouter             = require('./src/routes/sprintRelease');
 const createMentionStateRouter              = require('./src/routes/mentionState');
@@ -164,10 +163,6 @@ try {
 // Report webhook delivery: POST /api/reports/deliver — server-mediated send of an
 // on-screen report to the team's Atlassian Automation webhook.
 app.use(createReportDeliveryRouter(configuration));
-
-// AI Assist prompt exchange: /api/ai-assist/dispatch + /api/ai-assist/result —
-// automates the hidden copy-paste workflow (send prompt out, poll the result).
-app.use(createAiAssistExchangeRouter(configuration));
 
 // Hygiene monitor: /api/hygiene-monitor/config, /scan, /status
 app.use(createHygieneMonitorRouter(configuration));

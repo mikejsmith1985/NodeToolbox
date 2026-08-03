@@ -32,6 +32,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   for), and Step 6's pasted review is shown inline on the Results step exactly where the automated
   review used to appear. Submission is still never blocked by the review.
 
+### Removed
+- **The entire AI Assist automation channel is deleted, not just its buttons.** Gone: the client
+  dispatch-and-poll hook (`useAiAssistExchange`), the Admin Hub **⚡ AI Assist** config tab and panel
+  (webhook + Confluence parking space), the server endpoints (`/api/ai-assist/config`, `/dispatch`,
+  `/result`) and their exchange/enrichment services, the `aiAssistAutomation` config block (a block
+  left in an existing `toolbox-proxy.json` is ignored on load and no longer written back), and the
+  silent AI "enrichment" paragraphs in the scope-change, feature-change, and standup-briefing
+  schedulers — which always timed out with the channel dead, so reports now publish ~6s faster with
+  identical content. Every AI surface remains available via its copy-prompt / paste-reply round trip.
+
 ### Fixed
 - **PO Tool — the "works without AI" guard tests run green again.** Feature 031's Team domain
   components panel described itself as "applied by rule (not the assistant)" — and the word

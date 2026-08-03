@@ -11,48 +11,7 @@ const {
   extractFeatureChangeEntries,
   escapeXml,
   extractPageIdFromUrl,
-  buildFeatureAiAssistPrompt,
-  buildFeatureRollupAiAssistPrompt,
-  buildAiAssistTrendPanel,
 } = require('./featureChangeScheduler');
-
-describe('buildFeatureAiAssistPrompt (US1)', () => {
-  it('includes the label and all three change categories', () => {
-    const prompt = buildFeatureAiAssistPrompt(
-      [{ issueKey: 'F-1', issueSummary: 'Payments', fromValue: '2.0', toValue: '2.1' }],
-      [{ issueKey: 'F-2', issueSummary: 'Search', fromValue: 'In Progress', toValue: 'Done' }],
-      [],
-      'PI-2026.2',
-    );
-    expect(prompt).toContain('PI-2026.2');
-    expect(prompt).toContain('F-1 Payments: 2.0 → 2.1');
-    expect(prompt).toContain('F-2 Search: In Progress → Done');
-    expect(prompt).toContain('Schedule changes:');
-    expect(prompt).toContain('(none)'); // empty schedule list
-  });
-});
-
-describe('buildAiAssistTrendPanel (US1)', () => {
-  it('wraps text in an info macro and escapes XML', () => {
-    const html = buildAiAssistTrendPanel('PI-2026.2 slipping & risky');
-    expect(html).toContain('<ac:structured-macro ac:name="info">');
-    expect(html).toContain('🤖 AI Assist trend');
-    expect(html).toContain('slipping &amp; risky');
-  });
-});
-
-describe('buildFeatureRollupAiAssistPrompt (US1 ART rollup)', () => {
-  it('summarises each team with its total feature-change count', () => {
-    const prompt = buildFeatureRollupAiAssistPrompt([
-      { teamName: 'Alpha', fixVersionEntries: [{}], statusEntries: [{}], scheduleEntries: [] },
-      { teamName: 'Beta', fixVersionEntries: [], statusEntries: [], scheduleEntries: [] },
-    ]);
-    expect(prompt).toContain('cross-team ART rollup');
-    expect(prompt).toContain('Alpha: 2 feature change(s)');
-    expect(prompt).toContain('Beta: 0 feature change(s)');
-    expect(prompt).toContain('most at risk');
-  });
-});
 
 describe('time helpers', () => {
   it('getCurrentTimeHHMM returns HH:MM', () => {

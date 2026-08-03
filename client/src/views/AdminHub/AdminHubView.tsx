@@ -12,11 +12,9 @@ import ViewFrame from '../../components/ViewFrame/ViewFrame.tsx'
 import { SNOW_RELAY_BOOKMARKLET_CODE } from '../../services/browserRelay.ts'
 import { listGitHubAppInstallations, type GitHubAppInstallation } from '../../services/connectivityConfigApi.ts'
 import { useConnectionStore } from '../../store/connectionStore'
-import { useAiAssist } from '../SnowHub/hooks/useAiAssist.ts'
 import DevPanelView from '../DevPanel/DevPanelView.tsx'
 import { HygieneMonitorPanel } from './HygieneMonitorPanel.tsx'
 import { GithubEmailIntakePanel } from './GithubEmailIntakePanel.tsx'
-import { AiAssistAutomationPanel } from './AiAssistAutomationPanel.tsx'
 import { SprintReleasePanel } from './SprintReleasePanel.tsx'
 import { StandupBriefingPanel } from './StandupBriefingPanel.tsx'
 import { PiReviewSchedulerPanel } from './PiReviewSchedulerPanel.tsx'
@@ -70,7 +68,7 @@ const VIEW_SUBTITLE = 'Proxy configuration, PI field mappings, feature flags, an
 
 const TERMINAL_COMMAND = 'python "%USERPROFILE%\\Downloads\\toolbox-server.py"'
 
-type AdminHubTab = 'main' | 'repo-monitor' | 'reports-config' | 'standup-briefing' | 'pi-review-scheduler' | 'monthly-delivery' | 'component-manager' | 'dev-panel' | 'sprint-release' | 'ai-assist'
+type AdminHubTab = 'main' | 'repo-monitor' | 'reports-config' | 'standup-briefing' | 'pi-review-scheduler' | 'monthly-delivery' | 'component-manager' | 'dev-panel' | 'sprint-release'
 
 const ADMIN_HUB_TAB_OPTIONS: { key: AdminHubTab; label: string }[] = [
   { key: 'main', label: '⚙️ Config' },
@@ -86,8 +84,6 @@ const ADMIN_HUB_TAB_OPTIONS: { key: AdminHubTab; label: string }[] = [
 // The Dev Panel is admin-gated: its tab is offered only when Admin Access is unlocked, matching the
 // intended admin scope (admin unlocks SNow access + the Dev Panel).
 const DEV_PANEL_ADMIN_TAB: { key: AdminHubTab; label: string } = { key: 'dev-panel', label: '🛰️ Dev Panel' }
-// Hidden "⚡ AI Assist" tab, appended only while the AI Assist capability is unlocked.
-const AI_ASSIST_ADMIN_TAB: { key: AdminHubTab; label: string } = { key: 'ai-assist', label: '⚡ AI Assist' }
 
 type ReportsConfigSubTab = 'scope-change' | 'feature-change' | 'hygiene-monitor'
 
@@ -2668,25 +2664,16 @@ export default function AdminHubView() {
   const [activeAdminTab, setActiveAdminTab] = useState<AdminHubTab>('main')
   const adminHubRootRef = useRef<HTMLDivElement | null>(null)
 
-  // The hidden AI Assist capability is unlocked app-wide by <AiAssistUnlockGate> (Ctrl+Alt+Z from
-  // any screen). Admin Hub only reads the shared unlock state to decide whether to offer its
-  // ⚡ AI Assist config tab — it no longer owns the shortcut or the passphrase prompt.
-  const { isUnlocked: isAiAssistUnlocked } = useAiAssist()
-
-  // The 🛰️ Dev Panel tab is offered only while Admin Access is unlocked; the ⚡ AI Assist tab only
-  // while the passphrase capability is unlocked.
+  // The 🛰️ Dev Panel tab is offered only while Admin Access is unlocked.
   const adminHubTabs = [
     ...ADMIN_HUB_TAB_OPTIONS,
     ...(state.isAdminUnlocked ? [DEV_PANEL_ADMIN_TAB] : []),
-    ...(isAiAssistUnlocked ? [AI_ASSIST_ADMIN_TAB] : []),
   ]
 
   // If a gated tab is active but its capability locks, fall back to Config. Done during render
   // (React's endorsed "adjust state when state changes" pattern) rather than in an effect, so it
   // does not trip react-hooks/set-state-in-effect and applies immediately.
   if (!state.isAdminUnlocked && activeAdminTab === 'dev-panel') {
-    setActiveAdminTab('main')
-  } else if (!isAiAssistUnlocked && activeAdminTab === 'ai-assist') {
     setActiveAdminTab('main')
   }
 
@@ -2825,12 +2812,6 @@ export default function AdminHubView() {
       {activeAdminTab === 'sprint-release' && (
         <section id="admin-hub-sprint-release-panel" role="tabpanel" aria-labelledby="admin-hub-sprint-release-tab">
           <SprintReleasePanel />
-        </section>
-      )}
-
-      {activeAdminTab === 'ai-assist' && isAiAssistUnlocked && (
-        <section id="admin-hub-ai-assist-panel" role="tabpanel" aria-labelledby="admin-hub-ai-assist-tab">
-          <AiAssistAutomationPanel />
         </section>
       )}
     </ViewFrame>

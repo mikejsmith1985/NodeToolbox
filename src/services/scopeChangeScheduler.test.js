@@ -14,47 +14,7 @@ const {
   extractPageIdFromUrl,
   buildConfluenceBlogBody,
   buildArtRollupBlogBody,
-  buildScopeAiAssistPrompt,
-  buildScopeRollupAiAssistPrompt,
-  buildAiAssistTrendPanel,
 } = require('./scopeChangeScheduler');
-
-describe('buildScopeAiAssistPrompt (US1)', () => {
-  it('includes the project key and the change entries', () => {
-    const prompt = buildScopeAiAssistPrompt(
-      [{ issueKey: 'ABC-1', issueSummary: 'Login', fromValue: '1.0', toValue: '1.1' }],
-      'ABC',
-    );
-    expect(prompt).toContain('ABC');
-    expect(prompt).toContain('ABC-1 Login: 1.0 → 1.1');
-    expect(prompt).toContain('most at risk');
-  });
-  it('handles an empty entry list without throwing', () => {
-    expect(buildScopeAiAssistPrompt([], 'ABC')).toContain('(none)');
-  });
-});
-
-describe('buildAiAssistTrendPanel (US1)', () => {
-  it('wraps text in an info macro and escapes XML', () => {
-    const html = buildAiAssistTrendPanel('Release 1.1 is at risk <see>');
-    expect(html).toContain('<ac:structured-macro ac:name="info">');
-    expect(html).toContain('🤖 AI Assist trend');
-    expect(html).toContain('at risk &lt;see&gt;');
-  });
-});
-
-describe('buildScopeRollupAiAssistPrompt (US1 ART rollup)', () => {
-  it('summarises each team with its release-change count', () => {
-    const prompt = buildScopeRollupAiAssistPrompt([
-      { teamName: 'Alpha', projectKey: 'ALP', releaseEntries: [{}, {}] },
-      { teamName: 'Beta', projectKey: 'BET', releaseEntries: [] },
-    ]);
-    expect(prompt).toContain('cross-team ART rollup');
-    expect(prompt).toContain('Alpha (ALP): 2 release change(s)');
-    expect(prompt).toContain('Beta (BET): 0 release change(s)');
-    expect(prompt).toContain('most at risk');
-  });
-});
 
 describe('getCurrentTimeHHMM', () => {
   it('returns a zero-padded HH:MM string', () => {
