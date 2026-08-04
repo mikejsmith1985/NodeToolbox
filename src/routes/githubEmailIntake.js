@@ -318,9 +318,14 @@ function createGithubEmailIntakeRouter(configuration) {
   });
 
   router.post('/api/github-email-intake/run-now', async (req, res) => {
-    const dropFolder = (((configuration.scheduler || {}).githubEmailIntake) || {}).dropFolder || '';
+    const runCfg = (((configuration.scheduler || {}).githubEmailIntake) || {});
+    const dropFolder = runCfg.dropFolder || '';
     if (dropFolder === '') {
-      return res.status(400).json({ ok: false, message: 'No drop folder configured — set it and save first.' });
+      // A SharePoint-only setup has no local folder to sweep — point at the pull that IS its run.
+      const message = toTrimmedString(runCfg.sharePointFolderUrl) !== ''
+        ? 'This setup uses the SharePoint source — use "Pull from SharePoint now" (server-side runs only sweep a local drop folder).'
+        : 'No drop folder configured — set it and save first.';
+      return res.status(400).json({ ok: false, message });
     }
     if (isGithubEmailIntakeRunInProgress()) {
       return res.status(409).json({ ok: false, message: 'A GitHub email intake run is already in progress.' });

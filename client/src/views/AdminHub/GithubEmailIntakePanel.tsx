@@ -290,6 +290,19 @@ export function GithubEmailIntakePanel() {
   }
 
   async function handleAction(pathSuffix: 'run-now' | 'preview') {
+    // SharePoint-only setup (no local drop folder): Run Now IS the SharePoint pull, and Preview's
+    // job is served by Dry run mode — never a dead-end "no drop folder configured" error.
+    const isSharePointOnly = config !== null
+      && config.dropFolder.trim() === ''
+      && config.sharePointFolderUrl.trim() !== ''
+    if (isSharePointOnly) {
+      if (pathSuffix === 'preview') {
+        setStatusMessage('Preview reads the local drop folder. For the SharePoint source, set Rollout mode to Dry run and use Pull from SharePoint now — same safety, real files.')
+        return
+      }
+      await handleSharePointPull()
+      return
+    }
     setIsBusy(true)
     setStatusMessage('')
     try {
@@ -513,7 +526,9 @@ export function GithubEmailIntakePanel() {
           The macro-less pipeline: a Power Automate flow saves each GitHub email (.eml/.txt) into this
           library folder, and a pull reads it through the <strong>SharePoint relay</strong> (open the site,
           click the relay bookmarklet). Files are never moved or deleted in SharePoint — already-ingested
-          files are skipped, so have the flow clean up old files.
+          files are skipped, so have the flow clean up old files. Note: <strong>scheduled</strong> intake
+          sweeps only a local drop folder — SharePoint pulls are always started from this button, since
+          the relay needs your browser session.
         </p>
         <button
           type="button"

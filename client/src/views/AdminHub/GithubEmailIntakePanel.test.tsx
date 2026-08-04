@@ -148,6 +148,35 @@ describe('GithubEmailIntakePanel', () => {
     expect(screen.getByDisplayValue('/sites/Transformers-Playground/Shared Documents/gh_emails')).toBeInTheDocument();
   });
 
+  it('routes Run Now to the SharePoint pull when no local drop folder is configured (SP-only setup)', async () => {
+    stubFetch({}, { ...DEFAULT_CONFIG, dropFolder: '', sharePointFolderUrl: '/sites/Team/GitHubEmails' });
+    mockPullSharePointEmails.mockReset();
+    mockPullSharePointEmails.mockResolvedValue({
+      listedCount: 1, newCount: 1, postedCount: 1, skippedCount: 0, errorCount: 0, batchCount: 1,
+    });
+    render(<GithubEmailIntakePanel />);
+    await screen.findByText('📧 GitHub Email Intake');
+
+    fireEvent.click(screen.getByRole('button', { name: /run now/i }));
+
+    // No dead-end "No drop folder configured" — the SharePoint source IS the configured source.
+    await waitFor(() => expect(mockPullSharePointEmails).toHaveBeenCalled());
+    expect(mockPullSharePointEmails.mock.calls[0][0]).toBe('/sites/Team/GitHubEmails');
+  });
+
+  it('explains Preview in an SP-only setup instead of failing with a drop-folder error', async () => {
+    stubFetch({}, { ...DEFAULT_CONFIG, dropFolder: '', sharePointFolderUrl: '/sites/Team/GitHubEmails' });
+    mockPullSharePointEmails.mockReset();
+    render(<GithubEmailIntakePanel />);
+    await screen.findByText('📧 GitHub Email Intake');
+
+    fireEvent.click(screen.getByRole('button', { name: /preview/i }));
+
+    // The guidance names the equivalent safe path for SharePoint (Dry run mode + pull).
+    expect(await screen.findByText(/dry run.*pull from sharepoint/i)).toBeInTheDocument();
+    expect(mockPullSharePointEmails).not.toHaveBeenCalled();
+  });
+
   it('disables the SharePoint pull until a folder URL is set, and surfaces a pull failure honestly', async () => {
     stubFetch(); // DEFAULT_CONFIG has no sharePointFolderUrl
     render(<GithubEmailIntakePanel />);

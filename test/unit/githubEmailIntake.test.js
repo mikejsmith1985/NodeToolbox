@@ -359,6 +359,14 @@ describe('SharePoint source routes', () => {
     expect(response.body.folderWarning).toMatch(/SharePoint/);
   });
 
+  it('run-now without a drop folder points at the SharePoint pull when that source is configured', async () => {
+    const configuration = { scheduler: { githubEmailIntake: { dropFolder: '', sharePointFolderUrl: '/sites/Team/GitHubEmails' } } };
+    const response = await request(buildApp(configuration)).post('/api/github-email-intake/run-now');
+
+    expect(response.status).toBe(400);
+    expect(response.body.message).toMatch(/Pull from SharePoint/i);
+  });
+
   it('POST /sharepoint/filter-new returns only the names the seen-ledger has not recorded', async () => {
     scheduler.filterNewSharePointFileNames.mockReturnValueOnce(['fresh.eml']);
     const response = await request(buildApp(freshConfig()))

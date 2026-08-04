@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **GitHub Email Intake — a SharePoint-only setup no longer dead-ends on "No drop folder configured."**
+  With no local drop folder and a SharePoint folder configured, **Run Now** now runs the SharePoint
+  pull (it IS the configured source), **Preview** explains the SharePoint-safe equivalent (Dry run
+  rollout mode + pull), the server's run-now error names the right action, and the panel states that
+  scheduled intake only sweeps a local folder (the relay needs a live browser session).
 - **GitHub Email Intake — a pasted SharePoint share link now "just works" as the SharePoint folder.**
   Production paste of a `/:f:/r/...?d=…&web=1` share link broke the pull (and, pasted into the local
   Drop folder field, produced an ENOENT scandir on the URL). The SharePoint folder input now accepts
