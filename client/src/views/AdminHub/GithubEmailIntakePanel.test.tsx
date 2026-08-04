@@ -5,6 +5,13 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { useAiAssistStore } from '../../store/aiAssistStore.ts';
+
+// Mock the SharePoint pull service — the panel's wiring (button → service → summary) is what we test.
+const { mockPullSharePointEmails } = vi.hoisted(() => ({ mockPullSharePointEmails: vi.fn() }));
+vi.mock('../../services/githubEmailSharePointPull.ts', () => ({
+  pullSharePointEmails: mockPullSharePointEmails,
+}));
+
 import { GithubEmailIntakePanel } from './GithubEmailIntakePanel.tsx';
 
 const DEFAULT_CONFIG = {
@@ -95,6 +102,43 @@ describe('GithubEmailIntakePanel', () => {
 
     expect(await screen.findByText('Activity Log')).toBeInTheDocument();
     expect(screen.getByText(/No runs recorded yet/i)).toBeInTheDocument();
+  });
+
+  // ── SharePoint source (macro-less pipeline: Power Automate → library → relay pull) ──
+
+  it('renders the SharePoint folder URL from config and pulls through the relay service', async () => {
+    stubFetch({}, { ...DEFAULT_CONFIG, sharePointFolderUrl: '/sites/Team/Shared Documents/GitHubEmails' });
+    mockPullSharePointEmails.mockResolvedValue({
+      listedCount: 3, newCount: 2, postedCount: 1, skippedCount: 1, errorCount: 0, batchCount: 1,
+    });
+    render(<GithubEmailIntakePanel />);
+    await screen.findByText('📧 GitHub Email Intake');
+
+    expect(screen.getByDisplayValue('/sites/Team/Shared Documents/GitHubEmails')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /pull from sharepoint/i }));
+
+    await waitFor(() => expect(mockPullSharePointEmails).toHaveBeenCalled());
+    expect(mockPullSharePointEmails.mock.calls[0][0]).toBe('/sites/Team/Shared Documents/GitHubEmails');
+    // The summary reports what the pull actually did.
+    expect(await screen.findByText(/2 new email/i)).toBeInTheDocument();
+    expect(screen.getByText(/1 posted/i)).toBeInTheDocument();
+  });
+
+  it('disables the SharePoint pull until a folder URL is set, and surfaces a pull failure honestly', async () => {
+    stubFetch(); // DEFAULT_CONFIG has no sharePointFolderUrl
+    render(<GithubEmailIntakePanel />);
+    await screen.findByText('📧 GitHub Email Intake');
+
+    const pullButton = screen.getByRole('button', { name: /pull from sharepoint/i });
+    expect(pullButton).toBeDisabled();
+
+    // Set a folder URL, then a failing pull (e.g. relay not connected) shows the error message.
+    fireEvent.change(screen.getByLabelText(/sharepoint folder/i), { target: { value: '/sites/Team/GitHubEmails' } });
+    mockPullSharePointEmails.mockRejectedValue(new Error('Connect the SharePoint relay first — open the SharePoint site and click the relay bookmarklet.'));
+    fireEvent.click(pullButton);
+
+    expect(await screen.findByText(/connect the sharepoint relay/i)).toBeInTheDocument();
   });
 
   it('loads and renders the config form with the mode selector and drop folder', async () => {

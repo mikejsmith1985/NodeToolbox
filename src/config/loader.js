@@ -181,11 +181,16 @@ function saveConfigToDisk(configuration) {
         dropFolder:             (configuration.scheduler.githubEmailIntake || {}).dropFolder             || '',
         processedArchiveFolder: (configuration.scheduler.githubEmailIntake || {}).processedArchiveFolder || '',
         errorFolder:            (configuration.scheduler.githubEmailIntake || {}).errorFolder            || '',
+        // SharePoint library folder the macro-less pipeline pulls from (Power Automate drops emails there).
+        sharePointFolderUrl:    (configuration.scheduler.githubEmailIntake || {}).sharePointFolderUrl    || '',
         fileExtensions:         (configuration.scheduler.githubEmailIntake || {}).fileExtensions         || ['.eml', '.txt', '.msg'],
         jiraProjectKeys:        (configuration.scheduler.githubEmailIntake || {}).jiraProjectKeys        || [],
         transitions:            (configuration.scheduler.githubEmailIntake || {}).transitions            || { branchCreated: '', commitPushed: '', prOpened: '', prMerged: '' },
         seenPrs:                (configuration.scheduler.githubEmailIntake || {}).seenPrs                || {},
         customRules:            (configuration.scheduler.githubEmailIntake || {}).customRules            || [],
+        // Whitelist regression fix: the route saved this field into the live config, but it was
+        // missing here, so it silently reverted to its default on every server restart.
+        subStatusFieldId:       (configuration.scheduler.githubEmailIntake || {}).subStatusFieldId       || 'customfield_10201',
       },
     },
     // Hygiene monitor — deep-clone the teams array and the bounded history slice.

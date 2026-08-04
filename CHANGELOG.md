@@ -8,6 +8,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **GitHub Email Intake — SharePoint source replaces the blocked Outlook macro.** Outlook VBA macros
+  are now blocked by policy, so the export-to-local-folder pipeline lost its feeder. New macro-less
+  path: a Power Automate flow saves each GitHub notification email into a SharePoint library folder,
+  and a new **"Pull from SharePoint now"** action on the Admin Hub intake panel reads that folder
+  through the existing SharePoint **browser relay** (the user's own session — no credentials, no app
+  registration), downloads only files the server has not ingested, and runs them through the SAME
+  pipeline (parse, dedup ledger, Jira comments/transitions, Activity Log — runs show trigger
+  `sharepoint` and the library folder as the source). Read-only against SharePoint: a seen-file-names
+  ledger replaces the archive move (the relay cannot send the request digest SharePoint writes need),
+  so the Power Automate flow owns library cleanup. Config gains a persisted SharePoint folder URL.
+
+### Fixed
+- **GitHub Email Intake — the Sub-status field id now survives a server restart.** `subStatusFieldId`
+  was saved by the route but missing from the config save whitelist, so it silently reverted to its
+  default (`customfield_10201`) on every restart.
+
+### Added
 - **Backlog Remediation — each grooming-bucket header now opens its keys in Jira.** Clicking a bucket's
   header title (Already done not closed / Likely cancel / Never started / Just stale / Active) opens the
   Jira issue navigator in a new tab, scoped to exactly that bucket's issue keys (`issueKey in (…)`), so a

@@ -6,6 +6,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 
+import { pullSharePointEmails } from '../../services/githubEmailSharePointPull.ts'
 import { useAiAssistStore } from '../../store/aiAssistStore.ts'
 import { buildRulePrompt, buildBulkRulePrompt, parseRuleReplyToList, type EmailSample } from '../GithubEmail/lib/githubRulePrompt.ts'
 import { findEventTypeOverlaps, getDefaultSerializedRules, ruleSignature, type SerializedEmailRule } from '../GithubEmail/lib/githubEmailRules.ts'
@@ -30,6 +31,8 @@ interface IntakeConfig {
   dropFolder: string
   processedArchiveFolder: string
   errorFolder: string
+  /** Server-relative URL of the SharePoint library folder the Power Automate flow drops emails into. */
+  sharePointFolderUrl: string
   fileExtensions: string[]
   jiraProjectKeys: string[]
   transitions: IntakeTransitions
@@ -211,6 +214,9 @@ export function GithubEmailIntakePanel() {
   // Bulk rule generation: whether to bundle every email or only the currently-unclassified ones.
   const [includeAllSamples, setIncludeAllSamples] = useState(false)
   const [isCollectingSamples, setIsCollectingSamples] = useState(false)
+  // SharePoint source pull (macro-less pipeline): progress/summary message + in-flight flag.
+  const [isPullingSharePoint, setIsPullingSharePoint] = useState(false)
+  const [sharePointMessage, setSharePointMessage] = useState('')
 
   const loadEverything = useCallback(async () => {
     try {
@@ -225,6 +231,7 @@ export function GithubEmailIntakePanel() {
         ...loadedConfig,
         customRules: loadedConfig.customRules ?? [],
         subStatusFieldId: loadedConfig.subStatusFieldId ?? 'customfield_10201',
+        sharePointFolderUrl: loadedConfig.sharePointFolderUrl ?? '',
       })
       setLastRun(loadedStatus)
       setIsDirty(false)
@@ -301,6 +308,35 @@ export function GithubEmailIntakePanel() {
       setStatusMessage(actionError instanceof Error ? actionError.message : 'Action failed.')
     } finally {
       setIsBusy(false)
+    }
+  }
+
+  /**
+   * Pulls new GitHub emails from the SharePoint library through the relay and ingests them via the
+   * server pipeline. Saves the config first when dirty (the server labels the run with the SAVED
+   * folder URL), then refreshes the last-run + Activity Log so the pull's runs appear immediately.
+   */
+  async function handleSharePointPull() {
+    if (config === null) return
+    const folderUrl = config.sharePointFolderUrl.trim()
+    if (folderUrl === '') return
+    setIsPullingSharePoint(true)
+    setSharePointMessage('')
+    try {
+      if (isDirty) {
+        await persist(config, 'Saved.')
+      }
+      const summary = await pullSharePointEmails(folderUrl, (progressMessage) => setSharePointMessage(progressMessage))
+      setSharePointMessage(summary.newCount === 0
+        ? `All caught up — ${summary.listedCount} email file(s) in the folder, none new.`
+        : `Pulled ${summary.newCount} new email(s) of ${summary.listedCount} in the folder — `
+          + `${summary.postedCount} posted, ${summary.skippedCount} skipped, ${summary.errorCount} error(s).`)
+      setLastRun(await fetchStatus())
+      setRunLog(await fetchRunLog())
+    } catch (pullError) {
+      setSharePointMessage(pullError instanceof Error ? pullError.message : 'SharePoint pull failed.')
+    } finally {
+      setIsPullingSharePoint(false)
     }
   }
 
@@ -456,6 +492,34 @@ export function GithubEmailIntakePanel() {
       <div className={styles.panelSection}>
         <label className={styles.fieldLabel}>Drop folder (absolute path where GitHub emails are saved)</label>
         <input className={styles.inputField} value={config.dropFolder} placeholder="C:\Users\you\GitHubEmails" onChange={(event) => updateConfig({ dropFolder: event.target.value })} />
+      </div>
+
+      <div className={styles.panelSection}>
+        <label className={styles.fieldLabel} htmlFor="github-email-sharepoint-folder">
+          SharePoint folder (server-relative URL of the library folder your Power Automate flow saves emails to)
+        </label>
+        <input
+          id="github-email-sharepoint-folder"
+          className={styles.inputField}
+          value={config.sharePointFolderUrl}
+          placeholder="/sites/YourTeam/Shared Documents/GitHubEmails"
+          onChange={(event) => updateConfig({ sharePointFolderUrl: event.target.value })}
+        />
+        <p className={styles.panelStatusLine}>
+          The macro-less pipeline: a Power Automate flow saves each GitHub email (.eml/.txt) into this
+          library folder, and a pull reads it through the <strong>SharePoint relay</strong> (open the site,
+          click the relay bookmarklet). Files are never moved or deleted in SharePoint — already-ingested
+          files are skipped, so have the flow clean up old files.
+        </p>
+        <button
+          type="button"
+          className={styles.actionButton}
+          disabled={isPullingSharePoint || config.sharePointFolderUrl.trim() === ''}
+          onClick={() => void handleSharePointPull()}
+        >
+          {isPullingSharePoint ? 'Pulling…' : '📥 Pull from SharePoint now'}
+        </button>
+        {sharePointMessage !== '' && <p role="status" className={styles.panelStatusLine}>{sharePointMessage}</p>}
       </div>
 
       <div className={styles.panelSection}>
