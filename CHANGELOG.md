@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **GitHub Email Intake — a pasted SharePoint share link now "just works" as the SharePoint folder.**
+  Production paste of a `/:f:/r/...?d=…&web=1` share link broke the pull (and, pasted into the local
+  Drop folder field, produced an ENOENT scandir on the URL). The SharePoint folder input now accepts
+  a share link, a full URL, or a bare server-relative path — it is normalized (share-link prefix
+  stripped, decoded, query dropped) before the pull and the clean path is shown and saved. Saving a
+  `http(s)://` value as the LOCAL drop folder now warns that SharePoint links belong in the
+  SharePoint folder field.
+
 ### Added
 - **GitHub Email Intake — SharePoint source replaces the blocked Outlook macro.** Outlook VBA macros
   are now blocked by policy, so the export-to-local-folder pipeline lost its feeder. New macro-less

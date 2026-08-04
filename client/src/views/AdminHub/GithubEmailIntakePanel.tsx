@@ -6,7 +6,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 
-import { pullSharePointEmails } from '../../services/githubEmailSharePointPull.ts'
+import { normalizeSharePointFolderInput, pullSharePointEmails } from '../../services/githubEmailSharePointPull.ts'
 import { useAiAssistStore } from '../../store/aiAssistStore.ts'
 import { buildRulePrompt, buildBulkRulePrompt, parseRuleReplyToList, type EmailSample } from '../GithubEmail/lib/githubRulePrompt.ts'
 import { findEventTypeOverlaps, getDefaultSerializedRules, ruleSignature, type SerializedEmailRule } from '../GithubEmail/lib/githubEmailRules.ts'
@@ -318,13 +318,17 @@ export function GithubEmailIntakePanel() {
    */
   async function handleSharePointPull() {
     if (config === null) return
-    const folderUrl = config.sharePointFolderUrl.trim()
+    // Accept a pasted share link or full URL: normalize it, show the clean path in the field, and
+    // persist that — so the stored config (and the run's Activity Log label) is the real folder.
+    const folderUrl = normalizeSharePointFolderInput(config.sharePointFolderUrl)
     if (folderUrl === '') return
     setIsPullingSharePoint(true)
     setSharePointMessage('')
     try {
-      if (isDirty) {
-        await persist(config, 'Saved.')
+      const nextConfig = { ...config, sharePointFolderUrl: folderUrl }
+      if (isDirty || folderUrl !== config.sharePointFolderUrl) {
+        setConfig(nextConfig)
+        await persist(nextConfig, 'Saved.')
       }
       const summary = await pullSharePointEmails(folderUrl, (progressMessage) => setSharePointMessage(progressMessage))
       setSharePointMessage(summary.newCount === 0

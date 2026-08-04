@@ -40,6 +40,40 @@ export interface SharePointEmailPullSummary {
   batchCount: number;
 }
 
+/**
+ * Normalizes whatever the user pastes for the library folder — a bare server-relative path, a full
+ * URL, or a SharePoint SHARE link (`/:f:/r/...` with encoding and query noise) — to the clean
+ * server-relative folder the REST calls need. "Paste the address bar and it just works" (the spec
+ * 007 List-URL precedent); a production paste of a share link previously broke the pull outright.
+ */
+export function normalizeSharePointFolderInput(input: string): string {
+  const trimmed = input.trim();
+  if (trimmed === '') {
+    return '';
+  }
+  let folderPath = trimmed;
+  if (/:\/\//.test(trimmed)) {
+    try {
+      folderPath = new URL(trimmed).pathname;
+    } catch {
+      // Not URL-parseable — treat it as a path below.
+    }
+  }
+  // Drop query/fragment noise BEFORE decoding, so an encoded path never resurrects a '?' or '#'.
+  folderPath = folderPath.split('?')[0].split('#')[0];
+  try {
+    folderPath = decodeURIComponent(folderPath);
+  } catch {
+    // Leave the path as-is if it isn't validly encoded.
+  }
+  // Share links prefix the real path with a type marker (/:f:/r for folders, /:w:/r for docs…).
+  folderPath = folderPath.replace(/^\/:[a-z]:\/[a-z]\//i, '/');
+  if (!folderPath.startsWith('/')) {
+    folderPath = `/${folderPath}`;
+  }
+  return folderPath.replace(/\/+$/, '');
+}
+
 let relayRequestCounter = 0;
 
 /** A unique-enough id to match a relay request with its result. */
@@ -183,13 +217,15 @@ export async function pullSharePointEmails(
   folderServerRelativeUrl: string,
   onProgress?: (message: string) => void,
 ): Promise<SharePointEmailPullSummary> {
+  // Accept anything the user pasted — share link, full URL, or bare path — and work on the clean path.
+  const normalizedFolderUrl = normalizeSharePointFolderInput(folderServerRelativeUrl);
   const relayStatus = await fetchRelayStatus(RELAY_SYSTEM);
   if (!relayStatus.isConnected) {
     throw new Error(NOT_CONNECTED_MESSAGE);
   }
 
   onProgress?.('Listing the SharePoint folder…');
-  const listedFileNames = await listFolderEmailFiles(folderServerRelativeUrl);
+  const listedFileNames = await listFolderEmailFiles(normalizedFolderUrl);
   const newFileNames = listedFileNames.length > 0 ? await fetchNewFileNames(listedFileNames) : [];
 
   const summary: SharePointEmailPullSummary = {
@@ -207,7 +243,7 @@ export async function pullSharePointEmails(
   const downloadedSources: SharePointEmailSource[] = [];
   for (const [index, fileName] of newFileNames.entries()) {
     onProgress?.(`Downloading ${index + 1}/${newFileNames.length}: ${fileName}`);
-    downloadedSources.push({ fileName, content: await downloadFileText(folderServerRelativeUrl, fileName) });
+    downloadedSources.push({ fileName, content: await downloadFileText(normalizedFolderUrl, fileName) });
   }
 
   const batches = batchEmailSources(downloadedSources);

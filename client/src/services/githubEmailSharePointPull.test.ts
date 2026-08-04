@@ -21,6 +21,7 @@ vi.mock('./relayBridgeApi.ts', () => ({
 
 import {
   batchEmailSources,
+  normalizeSharePointFolderInput,
   pullSharePointEmails,
   type SharePointEmailSource,
 } from './githubEmailSharePointPull.ts';
@@ -122,6 +123,42 @@ describe('pullSharePointEmails', () => {
     expect(summary).toMatchObject({ listedCount: 1, newCount: 0, postedCount: 0, errorCount: 0 });
     // No file download requests were issued — only the single folder listing.
     expect([...relayRequestsById.values()].filter((request) => request.path.includes('/$value'))).toHaveLength(0);
+  });
+});
+
+describe('normalizeSharePointFolderInput', () => {
+  it('reduces a full SharePoint SHARE link (the :f:/r form with encoding and query) to the server-relative folder', () => {
+    // The exact shape a user copies from "Copy link" in SharePoint — this is what got pasted in production.
+    const shareLink = 'https://myfyi.sharepoint.com/:f:/r/sites/Transformers-Playground/Shared%20Documents/gh_emails?d=w887bc2fb1973464baa4b7666c752fe59&csf=1&web=1&e=8KbtNn';
+    expect(normalizeSharePointFolderInput(shareLink)).toBe('/sites/Transformers-Playground/Shared Documents/gh_emails');
+  });
+
+  it('reduces a plain full URL to its decoded path and keeps a bare server-relative path as-is', () => {
+    expect(normalizeSharePointFolderInput('https://tenant.sharepoint.com/sites/Team/Shared%20Documents/GitHubEmails'))
+      .toBe('/sites/Team/Shared Documents/GitHubEmails');
+    expect(normalizeSharePointFolderInput('/sites/Team/Shared Documents/GitHubEmails'))
+      .toBe('/sites/Team/Shared Documents/GitHubEmails');
+  });
+
+  it('trims whitespace and trailing slashes, and passes blank through unchanged', () => {
+    expect(normalizeSharePointFolderInput('  /sites/Team/Lib/  ')).toBe('/sites/Team/Lib');
+    expect(normalizeSharePointFolderInput('')).toBe('');
+  });
+});
+
+describe('pullSharePointEmails input forgiveness', () => {
+  it('accepts a pasted share link and lists the NORMALIZED folder through the relay', async () => {
+    wireRelay([{ pathIncludes: '/Files', data: { value: [] } }]);
+    wireServer([]);
+
+    await pullSharePointEmails('https://myfyi.sharepoint.com/:f:/r/sites/Transformers-Playground/Shared%20Documents/gh_emails?d=w887&csf=1&web=1');
+
+    const listingRequest = [...relayRequestsById.values()].find((request) => request.path.includes('/Files'));
+    expect(listingRequest?.path).toContain(
+      encodeURIComponent('/sites/Transformers-Playground/Shared Documents/gh_emails'),
+    );
+    // The _api base is the managed-path site root, not the share-link prefix.
+    expect(listingRequest?.path.startsWith('/sites/Transformers-Playground/_api/')).toBe(true);
   });
 });
 

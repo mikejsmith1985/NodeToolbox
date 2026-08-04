@@ -8,7 +8,9 @@ import { useAiAssistStore } from '../../store/aiAssistStore.ts';
 
 // Mock the SharePoint pull service — the panel's wiring (button → service → summary) is what we test.
 const { mockPullSharePointEmails } = vi.hoisted(() => ({ mockPullSharePointEmails: vi.fn() }));
-vi.mock('../../services/githubEmailSharePointPull.ts', () => ({
+vi.mock('../../services/githubEmailSharePointPull.ts', async (importOriginal) => ({
+  // Keep the real pure helpers (the panel normalizes pasted URLs with them); mock only the pull I/O.
+  ...(await importOriginal<typeof import('../../services/githubEmailSharePointPull.ts')>()),
   pullSharePointEmails: mockPullSharePointEmails,
 }));
 
@@ -123,6 +125,27 @@ describe('GithubEmailIntakePanel', () => {
     // The summary reports what the pull actually did.
     expect(await screen.findByText(/2 new email/i)).toBeInTheDocument();
     expect(screen.getByText(/1 posted/i)).toBeInTheDocument();
+  });
+
+  it('normalizes a pasted SharePoint share link to the server-relative folder on pull', async () => {
+    stubFetch({}, {
+      ...DEFAULT_CONFIG,
+      sharePointFolderUrl: 'https://myfyi.sharepoint.com/:f:/r/sites/Transformers-Playground/Shared%20Documents/gh_emails?d=w887&csf=1&web=1',
+    });
+    mockPullSharePointEmails.mockReset();
+    mockPullSharePointEmails.mockResolvedValue({
+      listedCount: 0, newCount: 0, postedCount: 0, skippedCount: 0, errorCount: 0, batchCount: 0,
+    });
+    render(<GithubEmailIntakePanel />);
+    await screen.findByText('📧 GitHub Email Intake');
+
+    fireEvent.click(screen.getByRole('button', { name: /pull from sharepoint/i }));
+
+    await waitFor(() => expect(mockPullSharePointEmails).toHaveBeenCalled());
+    // The service receives the clean server-relative folder, and the input now SHOWS it, so the
+    // stored config is self-explanatory next time the panel opens.
+    expect(mockPullSharePointEmails.mock.calls[0][0]).toBe('/sites/Transformers-Playground/Shared Documents/gh_emails');
+    expect(screen.getByDisplayValue('/sites/Transformers-Playground/Shared Documents/gh_emails')).toBeInTheDocument();
   });
 
   it('disables the SharePoint pull until a folder URL is set, and surfaces a pull failure honestly', async () => {
