@@ -180,11 +180,11 @@ async function fetchNewFileNames(fileNames: string[]): Promise<string[]> {
 }
 
 /** Posts one batch of sources for ingest (an empty batch records an all-caught-up sweep); returns the run's counts. */
-async function runSourcesBatch(sources: SharePointEmailSource[], listedCount = 0): Promise<{ postedCount: number; skippedCount: number; errorCount: number }> {
+async function runSourcesBatch(sources: SharePointEmailSource[], listedCount: number, pullId: string): Promise<{ postedCount: number; skippedCount: number; errorCount: number }> {
   const response = await fetch('/api/github-email-intake/sharepoint/run', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ sources, listedCount }),
+    body: JSON.stringify({ sources, listedCount, pullId }),
   });
   const body = await response.json() as {
     ok: boolean;
@@ -255,38 +255,65 @@ async function collectNewSharePointSources(
  * download each through the relay, and ingest them batch by batch. Progress messages are surfaced via
  * the optional callback so the panel can narrate a long first pull.
  */
+/** One pull/preview at a time, app-wide: the auto-pull tick must never overlap a manual click. */
+let isPullOperationInFlight = false;
+
+/** Runs an exclusive pull/preview operation, releasing the in-flight guard however it ends. */
+async function runExclusively<ResultType>(operation: () => Promise<ResultType>): Promise<ResultType> {
+  if (isPullOperationInFlight) {
+    throw new Error('A SharePoint pull is already running — wait for it to finish.');
+  }
+  isPullOperationInFlight = true;
+  try {
+    return await operation();
+  } finally {
+    isPullOperationInFlight = false;
+  }
+}
+
+let pullCounter = 0;
+
+/** A unique id shared by all of one pull's batches, so the server merges them into one log entry. */
+function nextPullId(): string {
+  pullCounter += 1;
+  return `pull-${Date.now()}-${pullCounter}`;
+}
+
 export async function pullSharePointEmails(
   folderServerRelativeUrl: string,
   onProgress?: (message: string) => void,
 ): Promise<SharePointEmailPullSummary> {
-  const { listedCount, unsupportedCount, sources } = await collectNewSharePointSources(folderServerRelativeUrl, onProgress);
+  return runExclusively(async () => {
+    const { listedCount, unsupportedCount, sources } = await collectNewSharePointSources(folderServerRelativeUrl, onProgress);
+    const pullId = nextPullId();
 
-  const summary: SharePointEmailPullSummary = {
-    listedCount,
-    newCount: sources.length,
-    postedCount: 0,
-    skippedCount: 0,
-    errorCount: 0,
-    batchCount: 0,
-    unsupportedCount,
-  };
-  if (sources.length === 0) {
-    // Still record the sweep server-side: "nothing new" must show up in the Activity Log (GH #282).
-    onProgress?.('Nothing new — recording the empty sweep…');
-    await runSourcesBatch([], listedCount);
+    const summary: SharePointEmailPullSummary = {
+      listedCount,
+      newCount: sources.length,
+      postedCount: 0,
+      skippedCount: 0,
+      errorCount: 0,
+      batchCount: 0,
+      unsupportedCount,
+    };
+    if (sources.length === 0) {
+      // Still record the sweep server-side: "nothing new" must show up in the Activity Log (GH #282).
+      onProgress?.('Nothing new — recording the empty sweep…');
+      await runSourcesBatch([], listedCount, pullId);
+      return summary;
+    }
+
+    const batches = batchEmailSources(sources);
+    for (const [index, batch] of batches.entries()) {
+      onProgress?.(`Ingesting batch ${index + 1}/${batches.length} (${batch.length} email(s))…`);
+      const runCounts = await runSourcesBatch(batch, listedCount, pullId);
+      summary.postedCount += runCounts.postedCount;
+      summary.skippedCount += runCounts.skippedCount;
+      summary.errorCount += runCounts.errorCount;
+      summary.batchCount += 1;
+    }
     return summary;
-  }
-
-  const batches = batchEmailSources(sources);
-  for (const [index, batch] of batches.entries()) {
-    onProgress?.(`Ingesting batch ${index + 1}/${batches.length} (${batch.length} email(s))…`);
-    const runCounts = await runSourcesBatch(batch);
-    summary.postedCount += runCounts.postedCount;
-    summary.skippedCount += runCounts.skippedCount;
-    summary.errorCount += runCounts.errorCount;
-    summary.batchCount += 1;
-  }
-  return summary;
+  });
 }
 
 /** One preview event as the server's dry run reports it (mirrors the intake run event shape). */
@@ -347,27 +374,29 @@ export async function previewSharePointEmails(
   folderServerRelativeUrl: string,
   onProgress?: (message: string) => void,
 ): Promise<SharePointEmailPreviewOutcome> {
-  const { listedCount, unsupportedCount, sources } = await collectNewSharePointSources(folderServerRelativeUrl, onProgress);
-  if (sources.length === 0) {
-    return { listedCount, newCount: 0, unsupportedCount, result: null };
-  }
+  return runExclusively(async () => {
+    const { listedCount, unsupportedCount, sources } = await collectNewSharePointSources(folderServerRelativeUrl, onProgress);
+    if (sources.length === 0) {
+      return { listedCount, newCount: 0, unsupportedCount, result: null };
+    }
 
-  const mergedResult = {
-    hasRun: true,
-    mode: 'dryRun',
-    trigger: 'sharepoint-preview',
-    postedCount: 0,
-    skippedCount: 0,
-    errorCount: 0,
-    events: [] as SharePointPreviewEvent[],
-  };
-  const batches = batchEmailSources(sources);
-  for (const [index, batch] of batches.entries()) {
-    onProgress?.(`Previewing batch ${index + 1}/${batches.length} (${batch.length} email(s))…`);
-    const batchResult = await previewSourcesBatch(batch);
-    mergedResult.skippedCount += batchResult.skippedCount;
-    mergedResult.errorCount += batchResult.errorCount;
-    mergedResult.events.push(...batchResult.events);
-  }
-  return { listedCount, newCount: sources.length, unsupportedCount, result: mergedResult };
+    const mergedResult = {
+      hasRun: true,
+      mode: 'dryRun',
+      trigger: 'sharepoint-preview',
+      postedCount: 0,
+      skippedCount: 0,
+      errorCount: 0,
+      events: [] as SharePointPreviewEvent[],
+    };
+    const batches = batchEmailSources(sources);
+    for (const [index, batch] of batches.entries()) {
+      onProgress?.(`Previewing batch ${index + 1}/${batches.length} (${batch.length} email(s))…`);
+      const batchResult = await previewSourcesBatch(batch);
+      mergedResult.skippedCount += batchResult.skippedCount;
+      mergedResult.errorCount += batchResult.errorCount;
+      mergedResult.events.push(...batchResult.events);
+    }
+    return { listedCount, newCount: sources.length, unsupportedCount, result: mergedResult };
+  });
 }
