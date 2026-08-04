@@ -528,22 +528,37 @@ function filterNewSharePointFileNames(fileNames, deps = {}) {
  * @returns {Promise<{ ok: boolean, result?: object, message?: string }>}
  */
 async function runGithubEmailSourcesNow(configuration, pullInput, deps = {}) {
-  const rawSources = Array.isArray(pullInput && pullInput.sources) ? pullInput.sources : [];
+  const rawSources = pullInput && pullInput.sources;
+  if (!Array.isArray(rawSources)) {
+    return { ok: false, message: 'Expected a sources array — nothing to ingest.' };
+  }
   const validSources = rawSources.filter((source) => source
     && typeof source.fileName === 'string' && source.fileName.trim() !== ''
     && typeof source.content === 'string');
-  if (validSources.length === 0) {
-    return { ok: false, message: 'No email sources supplied — nothing to ingest.' };
-  }
 
   const folderLabel = (pullInput && typeof pullInput.folderLabel === 'string' && pullInput.folderLabel.trim() !== '')
     ? pullInput.folderLabel.trim()
     : 'sharepoint';
-  const sourceContentByName = new Map(validSources.map((source) => [source.fileName, source.content]));
-
-  // Present the SharePoint folder as the run's drop folder: it satisfies the pipeline's
-  // folder-configured guard AND lands in the run result / Activity Log as the true source.
   const cfg = ((configuration.scheduler || {}).githubEmailIntake) || {};
+
+  // An all-caught-up pull still records an EMPTY sweep: the Activity Log exists precisely because
+  // "nothing new" was once indistinguishable from "never ran" (90+ emails sat invisible). GH #282.
+  if (validSources.length === 0) {
+    const listedCount = Number(pullInput && pullInput.listedCount) || 0;
+    const nowIso = (deps.nowIso || (() => new Date().toISOString()))();
+    const emptySweepResult = {
+      hasRun: true, ranAtIso: nowIso, trigger: 'sharepoint', mode: cfg.mode || 'dryRun', dropFolder: folderLabel,
+      events: [], postedCount: 0, skippedCount: 0, errorCount: 0,
+      note: 'No new files — ' + listedCount + ' file(s) in the folder were already ingested.',
+    };
+    if (deps.writeLastRun !== false) {
+      writeLastRunResult(emptySweepResult);
+      appendRunLogEntry(emptySweepResult);
+    }
+    return { ok: true, result: emptySweepResult };
+  }
+
+  const sourceContentByName = new Map(validSources.map((source) => [source.fileName, source.content]));
   const virtualConfiguration = {
     ...configuration,
     scheduler: { ...(configuration.scheduler || {}), githubEmailIntake: { ...cfg, dropFolder: folderLabel } },

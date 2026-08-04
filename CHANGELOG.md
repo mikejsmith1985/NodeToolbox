@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **GitHub Email Intake — Run Now no longer looks like it "does nothing" (GH #282).** Two causes:
+  a SharePoint pull that found no new files never contacted the server, so the Activity Log recorded
+  nothing — an all-caught-up pull now records an honest **empty sweep** entry (trigger `sharepoint`,
+  0/0/0), because "nothing new" must be distinguishable from "never ran"; and the pull's outcome and
+  errors only rendered in the SharePoint section mid-page — they now ALSO show in the status line at
+  the Run Now/Preview buttons, which display "Working…" while a SharePoint pull or preview runs.
 - **GitHub Email Intake — Preview now actually previews the SharePoint source, and the stale ENOENT
   banner is gone.** In a SharePoint-only setup, Preview previously showed advice instead of working;
   it now downloads the new library files and dry-run parses them through a persist-nothing endpoint

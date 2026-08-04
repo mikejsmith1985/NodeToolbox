@@ -344,14 +344,20 @@ export function GithubEmailIntakePanel() {
         await persist(nextConfig, 'Saved.')
       }
       const summary = await pullSharePointEmails(folderUrl, (progressMessage) => setSharePointMessage(progressMessage))
-      setSharePointMessage(summary.newCount === 0
-        ? `All caught up — ${summary.listedCount} email file(s) in the folder, none new.`
+      const outcomeMessage = summary.newCount === 0
+        ? `All caught up — ${summary.listedCount} email file(s) in the folder, none new. (Sweep recorded in the Activity Log.)`
         : `Pulled ${summary.newCount} new email(s) of ${summary.listedCount} in the folder — `
-          + `${summary.postedCount} posted, ${summary.skippedCount} skipped, ${summary.errorCount} error(s).`)
+          + `${summary.postedCount} posted, ${summary.skippedCount} skipped, ${summary.errorCount} error(s).`
+      // The outcome must be visible at the action buttons too (GH #282: "Run Now doesn't seem to
+      // do anything" — the message only rendered in the SharePoint section mid-page).
+      setSharePointMessage(outcomeMessage)
+      setStatusMessage(outcomeMessage)
       setLastRun(await fetchStatus())
       setRunLog(await fetchRunLog())
     } catch (pullError) {
-      setSharePointMessage(pullError instanceof Error ? pullError.message : 'SharePoint pull failed.')
+      const errorMessage = pullError instanceof Error ? pullError.message : 'SharePoint pull failed.'
+      setSharePointMessage(errorMessage)
+      setStatusMessage(errorMessage)
     } finally {
       setIsPullingSharePoint(false)
     }
@@ -861,11 +867,11 @@ export function GithubEmailIntakePanel() {
         <button className={styles.saveButton} disabled={isSaving} onClick={() => void handleSave()} type="button">
           {isSaving ? 'Saving…' : 'Save'}
         </button>
-        <button className={styles.actionButton} disabled={isBusy} onClick={() => void handleAction('preview')} type="button">
-          {isBusy ? 'Working…' : 'Preview (dry-run parse)'}
+        <button className={styles.actionButton} disabled={isBusy || isPullingSharePoint} onClick={() => void handleAction('preview')} type="button">
+          {isBusy || isPullingSharePoint ? 'Working…' : 'Preview (dry-run parse)'}
         </button>
-        <button className={styles.actionButton} disabled={isBusy || isDirty} title={isDirty ? 'Save first — Run Now acts on the saved config.' : ''} onClick={() => void handleAction('run-now')} type="button">
-          {isBusy ? 'Working…' : 'Run Now'}
+        <button className={styles.actionButton} disabled={isBusy || isPullingSharePoint || isDirty} title={isDirty ? 'Save first — Run Now acts on the saved config.' : ''} onClick={() => void handleAction('run-now')} type="button">
+          {isBusy || isPullingSharePoint ? 'Working…' : 'Run Now'}
         </button>
       </div>
 

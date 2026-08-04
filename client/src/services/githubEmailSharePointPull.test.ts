@@ -133,15 +133,18 @@ describe('pullSharePointEmails', () => {
     expect(mockPostRelayRequest).not.toHaveBeenCalled();
   });
 
-  it('reports an all-caught-up pull without downloading anything', async () => {
+  it('an all-caught-up pull downloads nothing but STILL records an empty sweep with the server', async () => {
     wireRelay([{ pathIncludes: '/Files', data: { value: [{ Name: 'old.eml', TimeCreated: '2026-08-01T00:00:00Z' }] } }]);
-    wireServer([]);
+    const { runBodies } = wireServer([]);
 
     const summary = await pullSharePointEmails(FOLDER_URL);
 
     expect(summary).toMatchObject({ listedCount: 1, newCount: 0, postedCount: 0, errorCount: 0 });
     // No file download requests were issued — only the single folder listing.
     expect([...relayRequestsById.values()].filter((request) => request.path.includes('/$value'))).toHaveLength(0);
+    // "Nothing new" must be distinguishable from "never ran": one empty-sources run call records the sweep.
+    expect(runBodies).toHaveLength(1);
+    expect(runBodies[0].sources).toEqual([]);
   });
 });
 
