@@ -344,10 +344,16 @@ export function GithubEmailIntakePanel() {
         await persist(nextConfig, 'Saved.')
       }
       const summary = await pullSharePointEmails(folderUrl, (progressMessage) => setSharePointMessage(progressMessage))
-      const outcomeMessage = summary.newCount === 0
+      // Skipped binaries are named, never hidden — a folder full of .msg exports must not read as
+      // "all caught up" (GH #282): the fix is the flow's "Export email" action saving .eml files.
+      const unsupportedNote = summary.unsupportedCount > 0
+        ? ` ⚠ ${summary.unsupportedCount} file(s) skipped — unsupported binary type (e.g. .msg): set the Power Automate flow to use "Export email" and save the output as .eml.`
+        : ''
+      const outcomeMessage = (summary.newCount === 0
         ? `All caught up — ${summary.listedCount} email file(s) in the folder, none new. (Sweep recorded in the Activity Log.)`
         : `Pulled ${summary.newCount} new email(s) of ${summary.listedCount} in the folder — `
-          + `${summary.postedCount} posted, ${summary.skippedCount} skipped, ${summary.errorCount} error(s).`
+          + `${summary.postedCount} posted, ${summary.skippedCount} skipped, ${summary.errorCount} error(s).`)
+        + unsupportedNote
       // The outcome must be visible at the action buttons too (GH #282: "Run Now doesn't seem to
       // do anything" — the message only rendered in the SharePoint section mid-page).
       setSharePointMessage(outcomeMessage)
@@ -377,14 +383,17 @@ export function GithubEmailIntakePanel() {
     setStatusMessage('')
     try {
       const preview = await previewSharePointEmails(folderUrl, (progressMessage) => setSharePointMessage(progressMessage))
+      const previewUnsupportedNote = preview.unsupportedCount > 0
+        ? ` ⚠ ${preview.unsupportedCount} file(s) skipped — unsupported binary type (e.g. .msg): set the Power Automate flow to use "Export email" and save the output as .eml.`
+        : ''
       if (preview.result === null) {
         setSharePointMessage('')
-        setStatusMessage(`Nothing new to preview — all ${preview.listedCount} email file(s) in the folder are already ingested.`)
+        setStatusMessage(`Nothing new to preview — all ${preview.listedCount} email file(s) in the folder are already ingested.${previewUnsupportedNote}`)
         return
       }
       setLastRun(preview.result)
       setSharePointMessage('')
-      setStatusMessage(`Preview complete — parsed ${preview.newCount} new email(s); nothing was posted and the files still ingest on the next pull.`)
+      setStatusMessage(`Preview complete — parsed ${preview.newCount} new email(s); nothing was posted and the files still ingest on the next pull.${previewUnsupportedNote}`)
     } catch (previewError) {
       setSharePointMessage(previewError instanceof Error ? previewError.message : 'SharePoint preview failed.')
     } finally {
@@ -558,12 +567,14 @@ export function GithubEmailIntakePanel() {
           onChange={(event) => updateConfig({ sharePointFolderUrl: event.target.value })}
         />
         <p className={styles.panelStatusLine}>
-          The macro-less pipeline: a Power Automate flow saves each GitHub email (.eml/.txt) into this
-          library folder, and a pull reads it through the <strong>SharePoint relay</strong> (open the site,
-          click the relay bookmarklet). Files are never moved or deleted in SharePoint — already-ingested
-          files are skipped, so have the flow clean up old files. Note: <strong>scheduled</strong> intake
-          sweeps only a local drop folder — SharePoint pulls are always started from this button, since
-          the relay needs your browser session.
+          The macro-less pipeline: a Power Automate flow saves each GitHub email into this library folder
+          (use the flow&apos;s <strong>&quot;Export email&quot;</strong> action and save as <strong>.eml</strong> —
+          .msg and other binaries cannot be read), and a pull reads it through the
+          <strong> SharePoint relay</strong> (open the site, click the relay bookmarklet). Every non-binary
+          file is read regardless of extension, so subject-named files work. Files are never moved or
+          deleted in SharePoint — already-ingested files are skipped, so have the flow clean up old files.
+          Note: <strong>scheduled</strong> intake sweeps only a local drop folder — SharePoint pulls are
+          always started from this button, since the relay needs your browser session.
         </p>
         <button
           type="button"

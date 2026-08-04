@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **GitHub Email Intake — subject-named (extensionless) SharePoint files are now read (GH #282).**
+  Power Automate names library files by the email SUBJECT with no extension (sometimes with dots
+  mid-name, e.g. "Update template.yaml (PR #3800)"), so the pull's .eml/.txt allow-list found ZERO
+  of the user's emails and reported "all caught up". The pull now treats every non-binary file in
+  the dedicated folder as an email candidate (only known binaries — .msg, images, pdf, zip — are
+  skipped, and their count is reported with the fix: use the flow's "Export email" action and save
+  as .eml). The server ingests exactly the curated sources — the drop-folder extension filter no
+  longer silently discards them — and the panel's guidance text now documents the .eml requirement.
 - **GitHub Email Intake — Run Now no longer looks like it "does nothing" (GH #282).** Two causes:
   a SharePoint pull that found no new files never contacted the server, so the Activity Log recorded
   nothing — an all-caught-up pull now records an honest **empty sweep** entry (trigger `sharepoint`,

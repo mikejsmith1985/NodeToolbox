@@ -148,6 +148,40 @@ describe('pullSharePointEmails', () => {
   });
 });
 
+describe('extensionless library files (GH #282 — Power Automate names files by SUBJECT, no extension)', () => {
+  it('treats every non-binary file as an email candidate, even subject names containing dots', async () => {
+    wireRelay([
+      {
+        pathIncludes: '/Files',
+        data: { value: [
+          // The real production shapes: extensionless subjects, one with a dot mid-name.
+          { Name: '[zilvertonz_aws-alarm-funnel] corrected webexId (PR #379)', TimeCreated: '2026-08-04T12:00:00Z' },
+          { Name: '[zilvertonz_RJ] Update template.yaml (PR #3800)', TimeCreated: '2026-08-04T12:01:00Z' },
+          { Name: 'exported.msg', TimeCreated: '2026-08-04T12:02:00Z' },  // binary — cannot be read as text
+          { Name: 'diagram.png', TimeCreated: '2026-08-04T12:03:00Z' },   // binary — not an email
+        ] },
+      },
+      { pathIncludes: '/$value', data: 'RAW EMAIL SOURCE' },
+    ]);
+    const { runBodies } = wireServer([
+      '[zilvertonz_aws-alarm-funnel] corrected webexId (PR #379)',
+      '[zilvertonz_RJ] Update template.yaml (PR #3800)',
+    ]);
+
+    const summary = await pullSharePointEmails(FOLDER_URL);
+
+    expect(summary.listedCount).toBe(2);
+    expect(summary.newCount).toBe(2);
+    // The binaries are counted and reported, never silently dropped as "all caught up".
+    expect(summary.unsupportedCount).toBe(2);
+    expect(runBodies).toHaveLength(1);
+    expect(runBodies[0].sources.map((source) => source.fileName)).toEqual([
+      '[zilvertonz_aws-alarm-funnel] corrected webexId (PR #379)',
+      '[zilvertonz_RJ] Update template.yaml (PR #3800)',
+    ]);
+  });
+});
+
 describe('previewSharePointEmails', () => {
   it('downloads the new files and dry-runs them via the preview endpoint — never the run endpoint', async () => {
     wireRelay([

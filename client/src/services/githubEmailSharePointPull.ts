@@ -9,8 +9,14 @@ import { fetchRelayStatus, postRelayRequest, waitForRelayResult } from './relayB
 import type { RelayResult } from '../types/relay.ts';
 
 const RELAY_SYSTEM = 'sharepoint' as const;
-/** File types the intake engine can parse from a text download ( .msg is binary and unsupported here). */
-const EMAIL_FILE_EXTENSIONS = ['.eml', '.txt'];
+/**
+ * File types that can NEVER be read as email text through the relay (binary formats). Everything
+ * else in the dedicated library folder is treated as an email candidate, because Power Automate
+ * commonly names files by the email SUBJECT — extensionless, sometimes with dots mid-name
+ * (GH #282: "Update template.yaml (PR #3800)") — so extension allow-listing can never work.
+ * The server's parser is the real judge; an unparseable candidate lands as one honest log entry.
+ */
+const UNSUPPORTED_BINARY_EXTENSIONS = ['.msg', '.png', '.jpg', '.jpeg', '.gif', '.pdf', '.zip'];
 /** Upper bound on one folder listing — far above any sane library backlog. */
 const LISTING_PAGE_SIZE = 2000;
 /** Max files per run POST — mirrors the server's per-batch cap. */
@@ -29,7 +35,7 @@ export interface SharePointEmailSource {
 
 /** What a completed pull did, for the panel's summary line. */
 export interface SharePointEmailPullSummary {
-  /** Email-typed files found in the library folder. */
+  /** Email candidates found in the library folder. */
   listedCount: number;
   /** Files the server had not ingested before this pull. */
   newCount: number;
@@ -38,6 +44,8 @@ export interface SharePointEmailPullSummary {
   errorCount: number;
   /** Run batches sent to the server (each is one Activity Log entry). */
   batchCount: number;
+  /** Known-binary files (.msg, images…) the relay cannot read as email text — reported, never hidden. */
+  unsupportedCount: number;
 }
 
 /**
@@ -119,23 +127,28 @@ async function executeRelayRequest(path: string): Promise<RelayResult> {
   return result;
 }
 
-/** True when the file name carries one of the email extensions the intake can parse. */
-function isEmailFileName(fileName: string): boolean {
+/** True when the file name is a known binary type the relay cannot read as email text. */
+function isUnsupportedBinaryFileName(fileName: string): boolean {
   const lowerName = fileName.toLowerCase();
-  return EMAIL_FILE_EXTENSIONS.some((extension) => lowerName.endsWith(extension));
+  return UNSUPPORTED_BINARY_EXTENSIONS.some((extension) => lowerName.endsWith(extension));
 }
 
-/** Lists the email-typed files in the library folder (oldest first, so ingest follows arrival order). */
-async function listFolderEmailFiles(folderServerRelativeUrl: string): Promise<string[]> {
+/**
+ * Lists the email candidates in the library folder (oldest first, so ingest follows arrival order),
+ * plus how many known-binary files were skipped — reported, never silently dropped.
+ */
+async function listFolderEmailFiles(folderServerRelativeUrl: string): Promise<{ emailFileNames: string[]; unsupportedCount: number }> {
   const siteRoot = siteRootOfFolder(folderServerRelativeUrl);
   const listingPath = `${siteRoot}/_api/web/GetFolderByServerRelativeUrl('${encodeRestPathParameter(folderServerRelativeUrl)}')`
     + `/Files?$select=Name,TimeCreated&$top=${LISTING_PAGE_SIZE}`;
   const result = await executeRelayRequest(listingPath);
   const body = parseRelayJson<{ value?: Array<{ Name?: string; TimeCreated?: string }> }>(result);
-  return (body.value ?? [])
-    .filter((file) => typeof file.Name === 'string' && isEmailFileName(file.Name))
+  const namedFiles = (body.value ?? []).filter((file) => typeof file.Name === 'string');
+  const emailFileNames = namedFiles
+    .filter((file) => !isUnsupportedBinaryFileName(file.Name as string))
     .sort((first, second) => String(first.TimeCreated ?? '').localeCompare(String(second.TimeCreated ?? '')))
     .map((file) => file.Name as string);
+  return { emailFileNames, unsupportedCount: namedFiles.length - emailFileNames.length };
 }
 
 /** Downloads one file's raw text through the relay. */
@@ -212,7 +225,7 @@ export function batchEmailSources(sources: SharePointEmailSource[]): SharePointE
 async function collectNewSharePointSources(
   folderServerRelativeUrl: string,
   onProgress?: (message: string) => void,
-): Promise<{ listedCount: number; sources: SharePointEmailSource[] }> {
+): Promise<{ listedCount: number; unsupportedCount: number; sources: SharePointEmailSource[] }> {
   // Accept anything the user pasted — share link, full URL, or bare path — and work on the clean path.
   const normalizedFolderUrl = normalizeSharePointFolderInput(folderServerRelativeUrl);
   const relayStatus = await fetchRelayStatus(RELAY_SYSTEM);
@@ -221,15 +234,15 @@ async function collectNewSharePointSources(
   }
 
   onProgress?.('Listing the SharePoint folder…');
-  const listedFileNames = await listFolderEmailFiles(normalizedFolderUrl);
-  const newFileNames = listedFileNames.length > 0 ? await fetchNewFileNames(listedFileNames) : [];
+  const { emailFileNames, unsupportedCount } = await listFolderEmailFiles(normalizedFolderUrl);
+  const newFileNames = emailFileNames.length > 0 ? await fetchNewFileNames(emailFileNames) : [];
 
   const sources: SharePointEmailSource[] = [];
   for (const [index, fileName] of newFileNames.entries()) {
     onProgress?.(`Downloading ${index + 1}/${newFileNames.length}: ${fileName}`);
     sources.push({ fileName, content: await downloadFileText(normalizedFolderUrl, fileName) });
   }
-  return { listedCount: listedFileNames.length, sources };
+  return { listedCount: emailFileNames.length, unsupportedCount, sources };
 }
 
 /**
@@ -241,7 +254,7 @@ export async function pullSharePointEmails(
   folderServerRelativeUrl: string,
   onProgress?: (message: string) => void,
 ): Promise<SharePointEmailPullSummary> {
-  const { listedCount, sources } = await collectNewSharePointSources(folderServerRelativeUrl, onProgress);
+  const { listedCount, unsupportedCount, sources } = await collectNewSharePointSources(folderServerRelativeUrl, onProgress);
 
   const summary: SharePointEmailPullSummary = {
     listedCount,
@@ -250,6 +263,7 @@ export async function pullSharePointEmails(
     skippedCount: 0,
     errorCount: 0,
     batchCount: 0,
+    unsupportedCount,
   };
   if (sources.length === 0) {
     // Still record the sweep server-side: "nothing new" must show up in the Activity Log (GH #282).
@@ -284,6 +298,8 @@ export interface SharePointPreviewEvent {
 export interface SharePointEmailPreviewOutcome {
   listedCount: number;
   newCount: number;
+  /** Known-binary files (.msg, images…) skipped at the listing stage. */
+  unsupportedCount: number;
   result: {
     hasRun: boolean;
     mode: string;
@@ -326,9 +342,9 @@ export async function previewSharePointEmails(
   folderServerRelativeUrl: string,
   onProgress?: (message: string) => void,
 ): Promise<SharePointEmailPreviewOutcome> {
-  const { listedCount, sources } = await collectNewSharePointSources(folderServerRelativeUrl, onProgress);
+  const { listedCount, unsupportedCount, sources } = await collectNewSharePointSources(folderServerRelativeUrl, onProgress);
   if (sources.length === 0) {
-    return { listedCount, newCount: 0, result: null };
+    return { listedCount, newCount: 0, unsupportedCount, result: null };
   }
 
   const mergedResult = {
@@ -348,5 +364,5 @@ export async function previewSharePointEmails(
     mergedResult.errorCount += batchResult.errorCount;
     mergedResult.events.push(...batchResult.events);
   }
-  return { listedCount, newCount: sources.length, result: mergedResult };
+  return { listedCount, newCount: sources.length, unsupportedCount, result: mergedResult };
 }

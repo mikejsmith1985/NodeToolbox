@@ -566,13 +566,10 @@ async function runGithubEmailSourcesNow(configuration, pullInput, deps = {}) {
 
   const outcome = await runGithubEmailIntakeNow(virtualConfiguration, {
     ...deps,
-    listFiles: (folder, fileExtensions) => {
-      const lowerExtensions = (fileExtensions || []).map((extension) => extension.toLowerCase());
-      return validSources
-        .map((source) => source.fileName)
-        .filter((name) => lowerExtensions.length === 0
-          || lowerExtensions.some((extension) => name.toLowerCase().endsWith(extension)));
-    },
+    // Ingest exactly what the client curated. The drop-folder extension filter must NOT apply here:
+    // Power Automate names library files by the email SUBJECT — often extensionless (GH #282) — so
+    // filtering by extension silently discarded every real email.
+    listFiles: () => validSources.map((source) => source.fileName),
     readFile: (fullPath) => {
       const fileName = path.basename(fullPath);
       if (!sourceContentByName.has(fileName)) {
