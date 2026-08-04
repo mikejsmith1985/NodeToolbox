@@ -579,25 +579,28 @@ describe('runGithubEmailSourcesNow (SharePoint sources)', () => {
     expect(state.seenNames).toEqual(['a.eml']);
   });
 
-  it('filters sources by the configured file extensions and dedups by the content ledger', async () => {
-    const config = baseConfig({ dropFolder: '' }); // fileExtensions: ['.eml']
+  it('ingests every supplied source regardless of extension (the client curates) and dedups by the content ledger', async () => {
+    const config = baseConfig({ dropFolder: '' }); // fileExtensions: ['.eml'] must NOT filter sources
     const emailSource = mergeEmail('<b@github.com>', 200, 'DENP-2');
+    // Power Automate names files by SUBJECT — often extensionless (GH #282). The client already
+    // curated the candidate set, so the server must ingest exactly what it is handed.
+    const extensionlessSource = mergeEmail('<c@github.com>', 300, 'DENP-3');
     const sources = [
       { fileName: 'keep.eml', content: emailSource },
-      { fileName: 'ignore.msg', content: 'binary-ish' },
+      { fileName: '[org_repo] corrected webexId (PR #379)', content: extensionlessSource },
     ];
     const { deps, state } = buildSourcesDeps();
 
     const firstOutcome = await scheduler.runGithubEmailSourcesNow(config, { folderLabel: 'sp', sources }, deps);
-    expect(firstOutcome.result.postedCount).toBe(1);
-    expect(state.seenNames).toEqual(['keep.eml']); // .msg filtered out, never ingested
+    expect(firstOutcome.result.postedCount).toBe(2);
+    expect(state.seenNames).toEqual(['keep.eml', '[org_repo] corrected webexId (PR #379)']);
 
     // The same email arriving under a NEW name is caught by the Message-ID ledger, not reposted.
     const secondOutcome = await scheduler.runGithubEmailSourcesNow(
       config, { folderLabel: 'sp', sources: [{ fileName: 'copy.eml', content: emailSource }] }, deps);
     expect(secondOutcome.result.postedCount).toBe(0);
     expect(secondOutcome.result.skippedCount).toBe(1);
-    expect(state.posts).toHaveLength(1);
+    expect(state.posts).toHaveLength(2);
   });
 
   it('records an EMPTY sweep when there are no new sources — "nothing new" must be distinguishable from "never ran"', async () => {

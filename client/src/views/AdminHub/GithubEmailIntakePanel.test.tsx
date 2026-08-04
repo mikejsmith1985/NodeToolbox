@@ -191,6 +191,22 @@ describe('GithubEmailIntakePanel', () => {
     expect((await screen.findAllByText(/all caught up/i)).length).toBe(2);
   });
 
+  it('names the unsupported binaries and the Export-email fix when the pull skips files', async () => {
+    stubFetch({}, { ...DEFAULT_CONFIG, dropFolder: '', sharePointFolderUrl: '/sites/Team/GitHubEmails' });
+    mockPullSharePointEmails.mockReset();
+    mockPullSharePointEmails.mockResolvedValue({
+      listedCount: 0, newCount: 0, postedCount: 0, skippedCount: 0, errorCount: 0, batchCount: 1, unsupportedCount: 38,
+    });
+    render(<GithubEmailIntakePanel />);
+    await screen.findByText('📧 GitHub Email Intake');
+
+    fireEvent.click(screen.getByRole('button', { name: /run now/i }));
+
+    // Never a bare "all caught up" while 38 files sit unread — say what was skipped and how to fix it.
+    expect((await screen.findAllByText(/38 file\(s\) skipped/i)).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/export email/i).length).toBeGreaterThan(0);
+  });
+
   it('Preview in an SP-only setup ACTUALLY previews: dry-run parse of the new SharePoint files', async () => {
     stubFetch({}, { ...DEFAULT_CONFIG, dropFolder: '', sharePointFolderUrl: '/sites/Team/GitHubEmails' });
     mockPullSharePointEmails.mockReset();
