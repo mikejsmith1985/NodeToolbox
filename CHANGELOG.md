@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **GitHub Email Intake — one SharePoint pull now writes ONE Activity Log entry, and pulls can no
+  longer overlap.** A 200-file pull posts in ~20-file batches, and each batch logged its own row —
+  a dozen-plus "executions" for a single run. The batches now share a pull id and merge into one
+  cumulative row (counts summed, per-email events concatenated, timed from the first batch). And a
+  long manual pull could collide with the new scheduled auto-pull firing mid-run — pull and preview
+  are now exclusive app-wide: a second attempt reports "already running" and the scheduled slot
+  simply skips while a pull is in flight.
+
 ### Added
 - **GitHub Email Intake — the SharePoint pull now runs on the configured schedule while Toolbox is
   open (GH #282).** The server's scheduler can only sweep a local drop folder — it has no browser

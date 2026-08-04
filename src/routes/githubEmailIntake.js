@@ -423,8 +423,10 @@ function createGithubEmailIntakeRouter(configuration) {
     const cfg = ((configuration.scheduler || {}).githubEmailIntake) || {};
     const folderLabel = toTrimmedString(cfg.sharePointFolderUrl) || 'sharepoint';
     const listedCount = Number(req.body && req.body.listedCount) || 0;
+    // The client's pull id — shared by all of one pull's batches so they merge into one log entry.
+    const pullId = toTrimmedString(req.body && req.body.pullId);
     try {
-      const outcome = await runGithubEmailSourcesNow(configuration, { folderLabel, sources, listedCount });
+      const outcome = await runGithubEmailSourcesNow(configuration, { folderLabel, sources, listedCount, pullId });
       if (!outcome.ok) {
         return res.status(outcome.isAlreadyRunning ? 409 : 400).json({ ok: false, message: outcome.message });
       }

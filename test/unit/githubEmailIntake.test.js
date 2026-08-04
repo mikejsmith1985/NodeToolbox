@@ -405,7 +405,19 @@ describe('SharePoint source routes', () => {
     expect(response.body.result.postedCount).toBe(1);
     expect(scheduler.runGithubEmailSourcesNow).toHaveBeenCalledWith(
       configuration,
-      { folderLabel: '/sites/Team/GitHubEmails', sources: [{ fileName: 'a.eml', content: 'raw' }], listedCount: 0 },
+      { folderLabel: '/sites/Team/GitHubEmails', sources: [{ fileName: 'a.eml', content: 'raw' }], listedCount: 0, pullId: '' },
+    );
+  });
+
+  it('POST /sharepoint/run forwards the client pullId so batches merge into one log entry', async () => {
+    scheduler.runGithubEmailSourcesNow.mockResolvedValueOnce({ ok: true, result: { postedCount: 0, events: [] } });
+    await request(buildApp(freshConfig()))
+      .post('/api/github-email-intake/sharepoint/run')
+      .send({ sources: [{ fileName: 'a.eml', content: 'raw' }], pullId: 'pull-abc' });
+
+    expect(scheduler.runGithubEmailSourcesNow).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ pullId: 'pull-abc' }),
     );
   });
 

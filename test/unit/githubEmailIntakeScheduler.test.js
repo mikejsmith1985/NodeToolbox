@@ -628,6 +628,57 @@ describe('runGithubEmailSourcesNow (SharePoint sources)', () => {
   });
 });
 
+describe('one Activity Log entry per pull (batches merge by pullId)', () => {
+  it('mergePullRunResults sums counts and concatenates events, keeping the first batch start time', () => {
+    const firstBatch = { hasRun: true, ranAtIso: '2026-08-04T16:20:00.000Z', trigger: 'sharepoint', mode: 'full', pullId: 'pull-1', postedCount: 3, skippedCount: 17, errorCount: 0, events: [{ fileName: 'a.eml', outcome: 'posted' }] };
+    const secondBatch = { hasRun: true, ranAtIso: '2026-08-04T16:21:00.000Z', trigger: 'sharepoint', mode: 'full', pullId: 'pull-1', postedCount: 1, skippedCount: 19, errorCount: 2, events: [{ fileName: 'b.eml', outcome: 'skipped' }] };
+
+    const merged = scheduler.mergePullRunResults(firstBatch, secondBatch);
+
+    expect(merged.postedCount).toBe(4);
+    expect(merged.skippedCount).toBe(36);
+    expect(merged.errorCount).toBe(2);
+    expect(merged.events.map((event) => event.fileName)).toEqual(['a.eml', 'b.eml']);
+    expect(merged.ranAtIso).toBe('2026-08-04T16:20:00.000Z');
+    expect(merged.pullId).toBe('pull-1');
+  });
+
+  it('appendRunLogEntry REPLACES the newest entry when the pullId matches, instead of stacking batches', () => {
+    const runLogPath = require('path').join(require('os').tmpdir(), 'tbx-test-run-log-' + process.pid + '.json');
+    process.env.TBX_GITHUB_EMAIL_RUN_LOG_PATH = runLogPath;
+    try {
+      require('fs').rmSync(runLogPath, { force: true });
+      scheduler.appendRunLogEntry({ ranAtIso: '1', trigger: 'sharepoint', pullId: 'pull-1', postedCount: 3, events: [] });
+      // The second write is the CUMULATIVE merged result — it replaces the first, never stacks.
+      scheduler.appendRunLogEntry({ ranAtIso: '1', trigger: 'sharepoint', pullId: 'pull-1', postedCount: 4, events: [] });
+      scheduler.appendRunLogEntry({ ranAtIso: '2', trigger: 'sharepoint', pullId: 'pull-2', postedCount: 1, events: [] });
+
+      const runLog = scheduler.readRunLog();
+      expect(runLog).toHaveLength(2);
+      expect(runLog[0].pullId).toBe('pull-2');
+      expect(runLog[1].pullId).toBe('pull-1');
+      expect(runLog[1].postedCount).toBe(4);
+    } finally {
+      delete process.env.TBX_GITHUB_EMAIL_RUN_LOG_PATH;
+      require('fs').rmSync(runLogPath, { force: true });
+    }
+  });
+
+  it('runGithubEmailSourcesNow stamps the pullId on the run result (batches and empty sweeps alike)', async () => {
+    const { deps } = buildSourcesDeps();
+    const batchOutcome = await scheduler.runGithubEmailSourcesNow(
+      baseConfig({ dropFolder: '' }),
+      { folderLabel: 'sp', sources: [{ fileName: 'a.eml', content: mergeEmail('<p@github.com>', 9, 'DENP-9') }], pullId: 'pull-9' },
+      deps,
+    );
+    expect(batchOutcome.result.pullId).toBe('pull-9');
+
+    const sweepOutcome = await scheduler.runGithubEmailSourcesNow(
+      baseConfig({ dropFolder: '' }), { folderLabel: 'sp', sources: [], listedCount: 0, pullId: 'pull-9' }, deps);
+    expect(sweepOutcome.result.pullId).toBe('pull-9');
+  });
+});
+
 describe('sanitizeLastRunResult', () => {
   it('suppresses a last run whose only content is the healed URL-drop-folder misconfiguration', () => {
     // That run's ENOENT banner kept showing AFTER the config was healed, reading as a live failure.

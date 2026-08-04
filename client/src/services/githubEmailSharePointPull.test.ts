@@ -148,6 +148,41 @@ describe('pullSharePointEmails', () => {
   });
 });
 
+describe('one pull = one pullId + no overlapping pulls', () => {
+  it('sends the SAME pullId with every batch (and the empty sweep) so the server merges log entries', async () => {
+    const manyFiles = Array.from({ length: 25 }, (_unused, index) => ({ Name: `f${index}.eml`, TimeCreated: `2026-08-04T12:${String(index).padStart(2, '0')}:00Z` }));
+    wireRelay([
+      { pathIncludes: '/Files', data: { value: manyFiles } },
+      { pathIncludes: '/$value', data: 'RAW EMAIL SOURCE' },
+    ]);
+    const { runBodies } = wireServer(manyFiles.map((file) => file.Name));
+
+    await pullSharePointEmails(FOLDER_URL);
+
+    // 25 files → 2 batches, both stamped with one shared pull id.
+    expect(runBodies).toHaveLength(2);
+    const pullIds = runBodies.map((body) => (body as { pullId?: string }).pullId);
+    expect(pullIds[0]).toBeTruthy();
+    expect(pullIds[1]).toBe(pullIds[0]);
+  });
+
+  it('refuses to start a second pull while one is in flight (manual vs auto-pull collision)', async () => {
+    wireRelay([
+      { pathIncludes: '/Files', data: { value: [{ Name: 'a.eml', TimeCreated: '2026-08-04T12:00:00Z' }] } },
+      { pathIncludes: '/$value', data: 'RAW EMAIL SOURCE' },
+    ]);
+    wireServer(['a.eml']);
+
+    const firstPull = pullSharePointEmails(FOLDER_URL);
+    await expect(pullSharePointEmails(FOLDER_URL)).rejects.toThrow(/already running/i);
+    await firstPull; // the first pull completes normally
+
+    // And after completion a new pull may start again.
+    wireRelay([{ pathIncludes: '/Files', data: { value: [] } }]);
+    await expect(pullSharePointEmails(FOLDER_URL)).resolves.toMatchObject({ listedCount: 0 });
+  });
+});
+
 describe('file names containing # (every PR email subject has one — GH #282)', () => {
   it('downloads via GetFileByServerRelativePath, the API form that supports # and % in names', async () => {
     // GetFileByServerRelativeUrl 404s on any name containing '#' even when percent-encoded —

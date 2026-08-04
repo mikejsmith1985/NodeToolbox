@@ -133,15 +133,40 @@ function readRunLog() {
   }
 }
 
-/** Prepends one completed run to the history and trims it to the cap. Never throws. */
+/**
+ * Prepends one completed run to the history and trims it to the cap. A SharePoint pull posts its
+ * batches as separate runs sharing one pullId — the entry passed here is the CUMULATIVE merged
+ * result, so a matching newest entry is REPLACED rather than stacked (one pull = one log row;
+ * a 200-file pull previously left a dozen rows). Never throws.
+ */
 function appendRunLogEntry(runResult) {
   try {
-    const trimmedLog = [runResult, ...readRunLog()].slice(0, MAX_RUN_LOG_ENTRIES);
+    const existingLog = readRunLog();
+    const isSamePullAsNewest = existingLog.length > 0
+      && runResult && runResult.pullId
+      && existingLog[0].pullId === runResult.pullId;
+    const remainingLog = isSamePullAsNewest ? existingLog.slice(1) : existingLog;
+    const trimmedLog = [runResult, ...remainingLog].slice(0, MAX_RUN_LOG_ENTRIES);
     fs.mkdirSync(path.dirname(getRunLogFilePath()), { recursive: true });
     fs.writeFileSync(getRunLogFilePath(), JSON.stringify(trimmedLog, null, 2) + '\n', 'utf8');
   } catch (writeError) {
     console.error('  ⚠ Could not persist GitHub email intake run log: ' + writeError.message);
   }
+}
+
+/**
+ * Merges a later batch of the SAME pull into the cumulative run result: counts sum, events
+ * concatenate, and the pull keeps its first batch's start time. Pure — exported for tests.
+ */
+function mergePullRunResults(previousResult, nextResult) {
+  return {
+    ...nextResult,
+    ranAtIso: previousResult.ranAtIso || nextResult.ranAtIso,
+    postedCount: (previousResult.postedCount || 0) + (nextResult.postedCount || 0),
+    skippedCount: (previousResult.skippedCount || 0) + (nextResult.skippedCount || 0),
+    errorCount: (previousResult.errorCount || 0) + (nextResult.errorCount || 0),
+    events: [...(previousResult.events || []), ...(nextResult.events || [])],
+  };
 }
 
 // ── Default filesystem deps (all injectable for tests) ──
@@ -450,12 +475,27 @@ async function runGithubEmailIntakeNow(configuration, deps = {}) {
       trigger:    deps.trigger    || 'manual',
     };
     const runResult = await processDropFolder(configuration, resolvedDeps);
+    // Extras (e.g. the SharePoint pull's pullId) ride on the result so persistence can merge batches.
+    if (deps.runResultExtras) {
+      Object.assign(runResult, deps.runResultExtras);
+    }
     if (deps.writeLastRun !== false) {
-      writeLastRunResult(runResult);
+      // Batches of one pull (same pullId) persist as ONE cumulative run: merge with the stored
+      // last run, then appendRunLogEntry replaces the matching newest log row instead of stacking.
+      let resultToPersist = runResult;
+      if (runResult.pullId) {
+        const previousRun = readLastRunResult();
+        if (previousRun && previousRun.pullId === runResult.pullId) {
+          resultToPersist = mergePullRunResults(previousRun, runResult);
+        }
+      }
+      writeLastRunResult(resultToPersist);
       // Every completed run — scheduled or manual, even an empty sweep — lands in the activity
       // log, so the operator can verify the schedule is actually firing and what each run did.
-      appendRunLogEntry(runResult);
+      appendRunLogEntry(resultToPersist);
     }
+    // Callers (the pull's batch loop) get THIS batch's counts, not the cumulative, so client-side
+    // summaries that sum batch results stay correct.
     return { ok: true, result: runResult };
   } finally {
     isRunInProgress = false;
@@ -539,6 +579,8 @@ async function runGithubEmailSourcesNow(configuration, pullInput, deps = {}) {
   const folderLabel = (pullInput && typeof pullInput.folderLabel === 'string' && pullInput.folderLabel.trim() !== '')
     ? pullInput.folderLabel.trim()
     : 'sharepoint';
+  // One client pull spans several batch calls; its pullId lets persistence merge them into one row.
+  const pullId = (pullInput && typeof pullInput.pullId === 'string') ? pullInput.pullId.trim() : '';
   const cfg = ((configuration.scheduler || {}).githubEmailIntake) || {};
 
   // An all-caught-up pull still records an EMPTY sweep: the Activity Log exists precisely because
@@ -550,6 +592,7 @@ async function runGithubEmailSourcesNow(configuration, pullInput, deps = {}) {
       hasRun: true, ranAtIso: nowIso, trigger: 'sharepoint', mode: cfg.mode || 'dryRun', dropFolder: folderLabel,
       events: [], postedCount: 0, skippedCount: 0, errorCount: 0,
       note: 'No new files — ' + listedCount + ' file(s) in the folder were already ingested.',
+      ...(pullId !== '' ? { pullId } : {}),
     };
     if (deps.writeLastRun !== false) {
       writeLastRunResult(emptySweepResult);
@@ -579,6 +622,7 @@ async function runGithubEmailSourcesNow(configuration, pullInput, deps = {}) {
     },
     moveFile: () => {}, // files live in SharePoint; the seen-ledger replaces the archive move
     trigger: 'sharepoint',
+    ...(pullId !== '' ? { runResultExtras: { pullId } } : {}),
   });
 
   // Record every ingested file as seen so the next pull skips it at the listing stage.
@@ -812,6 +856,7 @@ module.exports = {
   sanitizeLastRunResult,
   readRunLog,
   appendRunLogEntry,
+  mergePullRunResults,
   checkAndFireGithubEmailIntake,
   startGithubEmailIntakeScheduler,
 };
