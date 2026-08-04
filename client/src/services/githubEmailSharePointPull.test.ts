@@ -22,6 +22,7 @@ vi.mock('./relayBridgeApi.ts', () => ({
 import {
   batchEmailSources,
   normalizeSharePointFolderInput,
+  previewSharePointEmails,
   pullSharePointEmails,
   type SharePointEmailSource,
 } from './githubEmailSharePointPull.ts';
@@ -46,13 +47,31 @@ function wireRelay(pathAnswers: Array<{ pathIncludes: string; data: unknown }>):
   });
 }
 
-/** Stubs global fetch to answer the two intake endpoints; returns the recorded run-call bodies. */
-function wireServer(newFileNames: string[]): { runBodies: Array<{ sources: SharePointEmailSource[] }> } {
+/** Stubs global fetch to answer the intake endpoints; returns the recorded run/preview call bodies. */
+function wireServer(newFileNames: string[]): {
+  runBodies: Array<{ sources: SharePointEmailSource[] }>;
+  previewBodies: Array<{ sources: SharePointEmailSource[] }>;
+} {
   const runBodies: Array<{ sources: SharePointEmailSource[] }> = [];
+  const previewBodies: Array<{ sources: SharePointEmailSource[] }> = [];
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     if (url.includes('/sharepoint/filter-new')) {
       return new Response(JSON.stringify({ ok: true, newFileNames }), { status: 200 });
+    }
+    if (url.includes('/sharepoint/preview')) {
+      const body = JSON.parse(String(init?.body)) as { sources: SharePointEmailSource[] };
+      previewBodies.push(body);
+      return new Response(JSON.stringify({
+        ok: true,
+        result: {
+          mode: 'dryRun',
+          postedCount: 0,
+          skippedCount: 0,
+          errorCount: 0,
+          events: body.sources.map((source) => ({ fileName: source.fileName, outcome: 'dry-run', eventType: 'pr_merged', jiraKey: 'DENP-1' })),
+        },
+      }), { status: 200 });
     }
     if (url.includes('/sharepoint/run')) {
       const body = JSON.parse(String(init?.body)) as { sources: SharePointEmailSource[] };
@@ -64,7 +83,7 @@ function wireServer(newFileNames: string[]): { runBodies: Array<{ sources: Share
     }
     throw new Error(`Unexpected fetch: ${url}`);
   }));
-  return { runBodies };
+  return { runBodies, previewBodies };
 }
 
 beforeEach(() => {
@@ -123,6 +142,36 @@ describe('pullSharePointEmails', () => {
     expect(summary).toMatchObject({ listedCount: 1, newCount: 0, postedCount: 0, errorCount: 0 });
     // No file download requests were issued — only the single folder listing.
     expect([...relayRequestsById.values()].filter((request) => request.path.includes('/$value'))).toHaveLength(0);
+  });
+});
+
+describe('previewSharePointEmails', () => {
+  it('downloads the new files and dry-runs them via the preview endpoint — never the run endpoint', async () => {
+    wireRelay([
+      { pathIncludes: '/Files', data: { value: [{ Name: 'fresh.eml', TimeCreated: '2026-08-02T00:00:00Z' }] } },
+      { pathIncludes: '/$value', data: 'RAW EMAIL SOURCE' },
+    ]);
+    const { runBodies, previewBodies } = wireServer(['fresh.eml']);
+
+    const preview = await previewSharePointEmails(FOLDER_URL);
+
+    expect(runBodies).toHaveLength(0);
+    expect(previewBodies).toHaveLength(1);
+    expect(previewBodies[0].sources).toEqual([{ fileName: 'fresh.eml', content: 'RAW EMAIL SOURCE' }]);
+    expect(preview.newCount).toBe(1);
+    expect(preview.result?.events).toEqual([
+      { fileName: 'fresh.eml', outcome: 'dry-run', eventType: 'pr_merged', jiraKey: 'DENP-1' },
+    ]);
+  });
+
+  it('reports an all-caught-up preview without downloading or posting anything', async () => {
+    wireRelay([{ pathIncludes: '/Files', data: { value: [{ Name: 'old.eml', TimeCreated: '2026-08-01T00:00:00Z' }] } }]);
+    const { previewBodies } = wireServer([]);
+
+    const preview = await previewSharePointEmails(FOLDER_URL);
+
+    expect(preview).toMatchObject({ listedCount: 1, newCount: 0, result: null });
+    expect(previewBodies).toHaveLength(0);
   });
 });
 

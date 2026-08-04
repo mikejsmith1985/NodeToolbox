@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **GitHub Email Intake — Preview now actually previews the SharePoint source, and the stale ENOENT
+  banner is gone.** In a SharePoint-only setup, Preview previously showed advice instead of working;
+  it now downloads the new library files and dry-run parses them through a persist-nothing endpoint
+  (no Jira writes, no dedup ledger, no seen-file recording, no Activity Log entry — the same files
+  still ingest on the next real pull), rendering the parsed events like the drop-folder Preview.
+  Separately, the persisted "Last run" from the poisoned-config era (the `ENOENT scandir 'https:\…'`
+  error) kept displaying as if it were a live failure — a last run whose only content is the healed
+  URL-in-drop-folder misconfiguration is now suppressed (a folder error on a real local path is kept).
 - **GitHub Email Intake — a SharePoint link stuck in the drop-folder config now self-heals.** A
   share link saved as the LOCAL drop folder before validation existed kept breaking every run
   (`ENOENT scandir 'https:\...'`) until hand-edited. The server now heals it automatically — on

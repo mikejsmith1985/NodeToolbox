@@ -7,11 +7,15 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { useAiAssistStore } from '../../store/aiAssistStore.ts';
 
 // Mock the SharePoint pull service — the panel's wiring (button → service → summary) is what we test.
-const { mockPullSharePointEmails } = vi.hoisted(() => ({ mockPullSharePointEmails: vi.fn() }));
+const { mockPullSharePointEmails, mockPreviewSharePointEmails } = vi.hoisted(() => ({
+  mockPullSharePointEmails: vi.fn(),
+  mockPreviewSharePointEmails: vi.fn(),
+}));
 vi.mock('../../services/githubEmailSharePointPull.ts', async (importOriginal) => ({
-  // Keep the real pure helpers (the panel normalizes pasted URLs with them); mock only the pull I/O.
+  // Keep the real pure helpers (the panel normalizes pasted URLs with them); mock only the relay I/O.
   ...(await importOriginal<typeof import('../../services/githubEmailSharePointPull.ts')>()),
   pullSharePointEmails: mockPullSharePointEmails,
+  previewSharePointEmails: mockPreviewSharePointEmails,
 }));
 
 import { GithubEmailIntakePanel } from './GithubEmailIntakePanel.tsx';
@@ -164,16 +168,28 @@ describe('GithubEmailIntakePanel', () => {
     expect(mockPullSharePointEmails.mock.calls[0][0]).toBe('/sites/Team/GitHubEmails');
   });
 
-  it('explains Preview in an SP-only setup instead of failing with a drop-folder error', async () => {
+  it('Preview in an SP-only setup ACTUALLY previews: dry-run parse of the new SharePoint files', async () => {
     stubFetch({}, { ...DEFAULT_CONFIG, dropFolder: '', sharePointFolderUrl: '/sites/Team/GitHubEmails' });
     mockPullSharePointEmails.mockReset();
+    mockPreviewSharePointEmails.mockReset();
+    mockPreviewSharePointEmails.mockResolvedValue({
+      listedCount: 2,
+      newCount: 1,
+      result: {
+        hasRun: true, mode: 'dryRun', trigger: 'sharepoint-preview', postedCount: 0, skippedCount: 0, errorCount: 0,
+        events: [{ fileName: 'fresh.eml', outcome: 'dry-run', eventType: 'pr_merged', jiraKey: 'DENP-9' }],
+      },
+    });
     render(<GithubEmailIntakePanel />);
     await screen.findByText('📧 GitHub Email Intake');
 
     fireEvent.click(screen.getByRole('button', { name: /preview/i }));
 
-    // The guidance names the equivalent safe path for SharePoint (Dry run mode + pull).
-    expect(await screen.findByText(/dry run.*pull from sharepoint/i)).toBeInTheDocument();
+    await waitFor(() => expect(mockPreviewSharePointEmails).toHaveBeenCalled());
+    expect(mockPreviewSharePointEmails.mock.calls[0][0]).toBe('/sites/Team/GitHubEmails');
+    // Nothing was posted or ingested — and the parsed events render like a folder preview's.
+    expect(await screen.findByText(/preview complete/i)).toBeInTheDocument();
+    expect(screen.getByText(/fresh\.eml/)).toBeInTheDocument();
     expect(mockPullSharePointEmails).not.toHaveBeenCalled();
   });
 

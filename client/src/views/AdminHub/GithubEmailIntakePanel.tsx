@@ -6,7 +6,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 
-import { normalizeSharePointFolderInput, pullSharePointEmails } from '../../services/githubEmailSharePointPull.ts'
+import { normalizeSharePointFolderInput, previewSharePointEmails, pullSharePointEmails } from '../../services/githubEmailSharePointPull.ts'
 import { useAiAssistStore } from '../../store/aiAssistStore.ts'
 import { buildRulePrompt, buildBulkRulePrompt, parseRuleReplyToList, type EmailSample } from '../GithubEmail/lib/githubRulePrompt.ts'
 import { findEventTypeOverlaps, getDefaultSerializedRules, ruleSignature, type SerializedEmailRule } from '../GithubEmail/lib/githubEmailRules.ts'
@@ -297,7 +297,7 @@ export function GithubEmailIntakePanel() {
       && config.sharePointFolderUrl.trim() !== ''
     if (isSharePointOnly) {
       if (pathSuffix === 'preview') {
-        setStatusMessage('Preview reads the local drop folder. For the SharePoint source, set Rollout mode to Dry run and use Pull from SharePoint now — same safety, real files.')
+        await handleSharePointPreview()
         return
       }
       await handleSharePointPull()
@@ -352,6 +352,35 @@ export function GithubEmailIntakePanel() {
       setRunLog(await fetchRunLog())
     } catch (pullError) {
       setSharePointMessage(pullError instanceof Error ? pullError.message : 'SharePoint pull failed.')
+    } finally {
+      setIsPullingSharePoint(false)
+    }
+  }
+
+  /**
+   * Previews the SharePoint source: downloads the new files like a pull, but dry-run parses them
+   * through the persist-nothing endpoint — no Jira writes, no ledgers, no Activity Log — and shows
+   * the parsed events in the Last run section, exactly like the drop-folder Preview.
+   */
+  async function handleSharePointPreview() {
+    if (config === null) return
+    const folderUrl = normalizeSharePointFolderInput(config.sharePointFolderUrl)
+    if (folderUrl === '') return
+    setIsPullingSharePoint(true)
+    setSharePointMessage('')
+    setStatusMessage('')
+    try {
+      const preview = await previewSharePointEmails(folderUrl, (progressMessage) => setSharePointMessage(progressMessage))
+      if (preview.result === null) {
+        setSharePointMessage('')
+        setStatusMessage(`Nothing new to preview — all ${preview.listedCount} email file(s) in the folder are already ingested.`)
+        return
+      }
+      setLastRun(preview.result)
+      setSharePointMessage('')
+      setStatusMessage(`Preview complete — parsed ${preview.newCount} new email(s); nothing was posted and the files still ingest on the next pull.`)
+    } catch (previewError) {
+      setSharePointMessage(previewError instanceof Error ? previewError.message : 'SharePoint preview failed.')
     } finally {
       setIsPullingSharePoint(false)
     }
