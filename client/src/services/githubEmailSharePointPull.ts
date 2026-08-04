@@ -139,8 +139,11 @@ function isUnsupportedBinaryFileName(fileName: string): boolean {
  */
 async function listFolderEmailFiles(folderServerRelativeUrl: string): Promise<{ emailFileNames: string[]; unsupportedCount: number }> {
   const siteRoot = siteRootOfFolder(folderServerRelativeUrl);
-  const listingPath = `${siteRoot}/_api/web/GetFolderByServerRelativeUrl('${encodeRestPathParameter(folderServerRelativeUrl)}')`
-    + `/Files?$select=Name,TimeCreated&$top=${LISTING_PAGE_SIZE}`;
+  // The ...ByServerRelativePath(decodedUrl=@alias) form is REQUIRED: the older ...ByServerRelativeUrl('...')
+  // 404s on any path containing '#' or '%' even when percent-encoded — and every GitHub PR email
+  // subject contains '#' (the exact production failure on "… (PR #2636)").
+  const listingPath = `${siteRoot}/_api/web/GetFolderByServerRelativePath(decodedUrl=@folderPath)/Files`
+    + `?$select=Name,TimeCreated&$top=${LISTING_PAGE_SIZE}&@folderPath='${encodeRestPathParameter(folderServerRelativeUrl)}'`;
   const result = await executeRelayRequest(listingPath);
   const body = parseRelayJson<{ value?: Array<{ Name?: string; TimeCreated?: string }> }>(result);
   const namedFiles = (body.value ?? []).filter((file) => typeof file.Name === 'string');
@@ -155,7 +158,9 @@ async function listFolderEmailFiles(folderServerRelativeUrl: string): Promise<{ 
 async function downloadFileText(folderServerRelativeUrl: string, fileName: string): Promise<string> {
   const siteRoot = siteRootOfFolder(folderServerRelativeUrl);
   const filePath = `${folderServerRelativeUrl}/${fileName}`;
-  const downloadPath = `${siteRoot}/_api/web/GetFileByServerRelativeUrl('${encodeRestPathParameter(filePath)}')/$value`;
+  // decodedUrl=@alias form — see listFolderEmailFiles: the quoted-URL form 404s on '#' in names.
+  const downloadPath = `${siteRoot}/_api/web/GetFileByServerRelativePath(decodedUrl=@filePath)/$value`
+    + `?@filePath='${encodeRestPathParameter(filePath)}'`;
   const result = await executeRelayRequest(downloadPath);
   return typeof result.data === 'string' ? result.data : '';
 }

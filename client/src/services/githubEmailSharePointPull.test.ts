@@ -148,6 +148,32 @@ describe('pullSharePointEmails', () => {
   });
 });
 
+describe('file names containing # (every PR email subject has one — GH #282)', () => {
+  it('downloads via GetFileByServerRelativePath, the API form that supports # and % in names', async () => {
+    // GetFileByServerRelativeUrl 404s on any name containing '#' even when percent-encoded —
+    // the exact production failure: "Re_ [zilvertonz_usmg-db-facets] Rel changes (PR #2636)".
+    const hashName = 'Re_ [zilvertonz_usmg-db-facets] Rel changes (PR #2636)';
+    wireRelay([
+      { pathIncludes: '/Files', data: { value: [{ Name: hashName, TimeCreated: '2026-08-04T12:00:00Z' }] } },
+      { pathIncludes: '/$value', data: 'RAW EMAIL SOURCE' },
+    ]);
+    const { runBodies } = wireServer([hashName]);
+
+    const summary = await pullSharePointEmails(FOLDER_URL);
+
+    expect(summary.postedCount).toBe(1);
+    expect(runBodies[0].sources).toEqual([{ fileName: hashName, content: 'RAW EMAIL SOURCE' }]);
+    const downloadRequest = [...relayRequestsById.values()].find((request) => request.path.includes('/$value'));
+    expect(downloadRequest?.path).toContain('GetFileByServerRelativePath(decodedUrl=@filePath)');
+    // The # is percent-encoded inside the @filePath value, never a raw URL fragment.
+    expect(downloadRequest?.path).toContain('%232636');
+    expect(downloadRequest?.path).not.toContain('#');
+    // The listing uses the same modern API form, so a folder with special characters works too.
+    const listingRequest = [...relayRequestsById.values()].find((request) => request.path.includes('/Files'));
+    expect(listingRequest?.path).toContain('GetFolderByServerRelativePath(decodedUrl=@folderPath)');
+  });
+});
+
 describe('extensionless library files (GH #282 — Power Automate names files by SUBJECT, no extension)', () => {
   it('treats every non-binary file as an email candidate, even subject names containing dots', async () => {
     wireRelay([
