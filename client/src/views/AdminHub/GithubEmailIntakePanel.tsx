@@ -573,8 +573,10 @@ export function GithubEmailIntakePanel() {
           <strong> SharePoint relay</strong> (open the site, click the relay bookmarklet). Every non-binary
           file is read regardless of extension, so subject-named files work. Files are never moved or
           deleted in SharePoint — already-ingested files are skipped, so have the flow clean up old files.
-          Note: <strong>scheduled</strong> intake sweeps only a local drop folder — SharePoint pulls are
-          always started from this button, since the relay needs your browser session.
+          Note: with no local drop folder, the configured schedule (start time + interval below) runs the
+          SharePoint pull <strong>while Toolbox is open in your browser</strong> and the relay is connected —
+          the server alone cannot reach SharePoint. A closed Toolbox tab or disconnected relay simply skips
+          that slot; every run that does happen (including empty sweeps) lands in the Activity Log.
         </p>
         <button
           type="button"

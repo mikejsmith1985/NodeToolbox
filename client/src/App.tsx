@@ -8,6 +8,7 @@ import { lazy, Suspense, useEffect, useState } from 'react';
 import { Link, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 
 import { AiAssistUnlockGate } from './components/AiAssistUnlockGate/index.tsx';
+import { SharePointAutoPullGate } from './hooks/useSharePointAutoPull.ts';
 import { TodoQuickAddGate } from './components/TodoQuickAdd/index.tsx';
 import { QuickIssueLookupGate } from './components/QuickIssueLookup/QuickIssueLookupGate.tsx';
 import { PAGE_EXPORT_ROOT_ATTRIBUTE, PageImageExportButton } from './components/PageImageExport/PageImageExportButton.tsx';
@@ -186,6 +187,9 @@ export default function App() {
       <TodoQuickAddGate />
       {/* App-wide F2 quick issue lookup — find, view, and fix any issue by key from every screen. */}
       <QuickIssueLookupGate />
+      {/* SharePoint GitHub-email schedule: the server cannot reach SharePoint (the relay rides the
+          browser session), so the client honors the configured start-time/interval while open. */}
+      <SharePointAutoPullGate />
       <div className={styles.appShell}>
         <header className={styles.topBar}>
           {/* Left side: app title links back to home — single, standard UX pattern */}
