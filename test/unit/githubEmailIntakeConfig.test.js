@@ -110,6 +110,39 @@ describe('scheduler.githubEmailIntake config', () => {
     expect(JSON.parse(writtenJson).scheduler.githubEmailIntake.subStatusFieldId).toBe('customfield_99999');
   });
 
+  it('self-heals a SharePoint link stored as the drop folder on LOAD (production poisoning)', () => {
+    // A share link saved as dropFolder before validation existed keeps breaking every run until
+    // healed — the server must fix it on startup, not wait for the user to find the field.
+    fsMock.existsSync.mockReturnValue(true);
+    fsMock.readFileSync.mockReturnValue(JSON.stringify({
+      scheduler: { githubEmailIntake: {
+        dropFolder: 'https://myfyi.sharepoint.com/:f:/r/sites/Transformers-Playground/Shared%20Documents/gh_emails?d=w887&csf=1&web=1',
+        sharePointFolderUrl: '',
+      } },
+    }));
+
+    const configuration = loadConfig();
+
+    expect(configuration.scheduler.githubEmailIntake.dropFolder).toBe('');
+    expect(configuration.scheduler.githubEmailIntake.sharePointFolderUrl)
+      .toBe('/sites/Transformers-Playground/Shared Documents/gh_emails');
+  });
+
+  it('clears a URL drop folder on load WITHOUT overwriting an already-set SharePoint folder', () => {
+    fsMock.existsSync.mockReturnValue(true);
+    fsMock.readFileSync.mockReturnValue(JSON.stringify({
+      scheduler: { githubEmailIntake: {
+        dropFolder: 'https://tenant.sharepoint.com/sites/Other/Lib',
+        sharePointFolderUrl: '/sites/Team/GitHubEmails',
+      } },
+    }));
+
+    const configuration = loadConfig();
+
+    expect(configuration.scheduler.githubEmailIntake.dropFolder).toBe('');
+    expect(configuration.scheduler.githubEmailIntake.sharePointFolderUrl).toBe('/sites/Team/GitHubEmails');
+  });
+
   it('round-trips config-driven customRules through load and save', () => {
     const customRules = [{ id: 'org-pr-opened', eventType: 'pr_opened', bodyPattern: 'wants to merge', requiresPrNumber: true }];
     fsMock.existsSync.mockReturnValue(true);

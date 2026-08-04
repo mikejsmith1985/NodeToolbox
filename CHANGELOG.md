@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **GitHub Email Intake — a SharePoint link stuck in the drop-folder config now self-heals.** A
+  share link saved as the LOCAL drop folder before validation existed kept breaking every run
+  (`ENOENT scandir 'https:\...'`) until hand-edited. The server now heals it automatically — on
+  config **load** (so just restarting with this version fixes a poisoned config) and on **save**:
+  the link moves to the SharePoint folder field (normalized, unless one is already set) and the
+  drop folder is blanked, which also activates the SharePoint-only Run Now behaviour.
 - **GitHub Email Intake — a SharePoint-only setup no longer dead-ends on "No drop folder configured."**
   With no local drop folder and a SharePoint folder configured, **Run Now** now runs the SharePoint
   pull (it IS the configured source), **Preview** explains the SharePoint-safe equivalent (Dry run

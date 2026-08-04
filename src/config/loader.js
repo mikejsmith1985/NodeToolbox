@@ -98,8 +98,28 @@ function loadConfig() {
   applyEnvironmentConfig(configuration);
   normalizeSchedulerDefaults(configuration);
   normalizeBaseUrls(configuration);
+  healGithubEmailIntakeSource(configuration);
 
   return configuration;
+}
+
+/**
+ * Self-heals a GitHub Email Intake config where a SharePoint link was saved as the LOCAL drop
+ * folder (a production misconfiguration that made every run fail with ENOENT until hand-edited).
+ * The link moves to the SharePoint folder field — normalized — unless one is already set; the drop
+ * folder is blanked either way, which also activates the panel's SharePoint-only Run Now behaviour.
+ */
+function healGithubEmailIntakeSource(configuration) {
+  const { isHttpUrl, normalizeSharePointFolderUrl } = require('../utils/sharePointFolderUrl');
+  const intakeConfig = (configuration.scheduler || {}).githubEmailIntake;
+  if (!intakeConfig || !isHttpUrl(intakeConfig.dropFolder)) {
+    return;
+  }
+  const currentSharePointFolder = typeof intakeConfig.sharePointFolderUrl === 'string' ? intakeConfig.sharePointFolderUrl.trim() : '';
+  if (currentSharePointFolder === '') {
+    intakeConfig.sharePointFolderUrl = normalizeSharePointFolderUrl(intakeConfig.dropFolder);
+  }
+  intakeConfig.dropFolder = '';
 }
 
 /**
