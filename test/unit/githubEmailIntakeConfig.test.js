@@ -76,6 +76,40 @@ describe('scheduler.githubEmailIntake config', () => {
     expect(persisted.scheduler.githubEmailIntake.fileExtensions).toEqual(['.eml', '.txt', '.msg']);
   });
 
+  it('round-trips the SharePoint source folder URL through load and save', () => {
+    fsMock.existsSync.mockReturnValue(true);
+    fsMock.readFileSync.mockReturnValue(JSON.stringify({
+      scheduler: { githubEmailIntake: { sharePointFolderUrl: '/sites/Team/Shared Documents/GitHubEmails' } },
+    }));
+
+    const configuration = loadConfig();
+    expect(configuration.scheduler.githubEmailIntake.sharePointFolderUrl).toBe('/sites/Team/Shared Documents/GitHubEmails');
+
+    let writtenJson = '';
+    fsMock.writeFileSync.mockImplementation((_filePath, contents) => { writtenJson = contents; });
+    fsMock.mkdirSync.mockImplementation(() => {});
+    saveConfigToDisk(configuration);
+
+    expect(JSON.parse(writtenJson).scheduler.githubEmailIntake.sharePointFolderUrl)
+      .toBe('/sites/Team/Shared Documents/GitHubEmails');
+  });
+
+  it('round-trips subStatusFieldId through save (whitelist regression: it was silently dropped)', () => {
+    fsMock.existsSync.mockReturnValue(true);
+    fsMock.readFileSync.mockReturnValue(JSON.stringify({
+      scheduler: { githubEmailIntake: { subStatusFieldId: 'customfield_99999' } },
+    }));
+
+    const configuration = loadConfig();
+
+    let writtenJson = '';
+    fsMock.writeFileSync.mockImplementation((_filePath, contents) => { writtenJson = contents; });
+    fsMock.mkdirSync.mockImplementation(() => {});
+    saveConfigToDisk(configuration);
+
+    expect(JSON.parse(writtenJson).scheduler.githubEmailIntake.subStatusFieldId).toBe('customfield_99999');
+  });
+
   it('round-trips config-driven customRules through load and save', () => {
     const customRules = [{ id: 'org-pr-opened', eventType: 'pr_opened', bodyPattern: 'wants to merge', requiresPrNumber: true }];
     fsMock.existsSync.mockReturnValue(true);

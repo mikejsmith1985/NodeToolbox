@@ -448,6 +448,124 @@ async function runGithubEmailIntakeNow(configuration, deps = {}) {
   }
 }
 
+// ── SharePoint source (v1: read-only pull) ──
+//
+// Macros are blocked, so emails now land in a SharePoint document library (via a Power Automate
+// flow) instead of a local drop folder. The client downloads new files through the SharePoint relay
+// (the user's own browser session) and posts them here as in-memory sources; the SAME pipeline —
+// parse, dedup ledger, Jira post, Activity Log — runs over them via the injectable deps seam.
+// Files are never moved or deleted in SharePoint (the relay bookmarklet cannot send the
+// X-RequestDigest header SharePoint writes require); instead a seen-file-names ledger prevents
+// re-downloading, and the Power Automate flow owns library cleanup.
+
+/** Maximum file names kept in the SharePoint seen-ledger (newest kept; well above any real backlog). */
+const MAX_SEEN_SHAREPOINT_NAMES = 5000;
+
+function getSharePointSeenFilePath() {
+  return process.env.TBX_GITHUB_EMAIL_SP_SEEN_PATH
+    || path.join(process.env.APPDATA || os.homedir(), 'NodeToolbox', 'github-email-sharepoint-seen.json');
+}
+
+/** Reads the SharePoint seen-file-names ledger (an array of names). Missing/corrupt reads as empty. */
+function readSeenSharePointNamesFromDisk() {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(getSharePointSeenFilePath(), 'utf8'));
+    return Array.isArray(parsed) ? parsed.filter((name) => typeof name === 'string') : [];
+  } catch (_readError) {
+    return [];
+  }
+}
+
+/** Appends newly-ingested file names to the seen-ledger, deduped and capped (newest kept). Never throws. */
+function appendSeenSharePointNamesToDisk(fileNames) {
+  try {
+    const merged = Array.from(new Set([...readSeenSharePointNamesFromDisk(), ...fileNames]));
+    const capped = merged.slice(Math.max(0, merged.length - MAX_SEEN_SHAREPOINT_NAMES));
+    fs.mkdirSync(path.dirname(getSharePointSeenFilePath()), { recursive: true });
+    fs.writeFileSync(getSharePointSeenFilePath(), JSON.stringify(capped, null, 2) + '\n', 'utf8');
+  } catch (writeError) {
+    console.error('  ⚠ Could not persist SharePoint seen-file ledger: ' + writeError.message);
+  }
+}
+
+/**
+ * Returns the file names NOT yet in the seen-ledger, in their original order, so the client only
+ * downloads genuinely new files through the (slow, per-file) relay. Blank/non-string names dropped.
+ * @param {string[]} fileNames - names listed from the SharePoint library
+ * @param {object} deps - { readSeenNames? } injectable for tests
+ */
+function filterNewSharePointFileNames(fileNames, deps = {}) {
+  const readSeenNames = deps.readSeenNames || readSeenSharePointNamesFromDisk;
+  const seenNames = new Set(readSeenNames());
+  return (Array.isArray(fileNames) ? fileNames : [])
+    .filter((name) => typeof name === 'string' && name.trim() !== '')
+    .filter((name) => !seenNames.has(name));
+}
+
+/**
+ * Runs the intake pipeline over in-memory email sources pulled from SharePoint. Reuses
+ * runGithubEmailIntakeNow wholesale by (1) presenting the sources as the file listing/reader deps and
+ * (2) labelling the run's "drop folder" with the SharePoint folder so the Activity Log stays honest.
+ * Local file moves are a no-op — the files stay in SharePoint and the seen-ledger stops re-downloads.
+ *
+ * @param {object} configuration - live server config
+ * @param {{ folderLabel?: string, sources: Array<{fileName: string, content: string}> }} pullInput
+ * @param {object} deps - same injectable deps as runGithubEmailIntakeNow, plus recordSeenNames?
+ * @returns {Promise<{ ok: boolean, result?: object, message?: string }>}
+ */
+async function runGithubEmailSourcesNow(configuration, pullInput, deps = {}) {
+  const rawSources = Array.isArray(pullInput && pullInput.sources) ? pullInput.sources : [];
+  const validSources = rawSources.filter((source) => source
+    && typeof source.fileName === 'string' && source.fileName.trim() !== ''
+    && typeof source.content === 'string');
+  if (validSources.length === 0) {
+    return { ok: false, message: 'No email sources supplied — nothing to ingest.' };
+  }
+
+  const folderLabel = (pullInput && typeof pullInput.folderLabel === 'string' && pullInput.folderLabel.trim() !== '')
+    ? pullInput.folderLabel.trim()
+    : 'sharepoint';
+  const sourceContentByName = new Map(validSources.map((source) => [source.fileName, source.content]));
+
+  // Present the SharePoint folder as the run's drop folder: it satisfies the pipeline's
+  // folder-configured guard AND lands in the run result / Activity Log as the true source.
+  const cfg = ((configuration.scheduler || {}).githubEmailIntake) || {};
+  const virtualConfiguration = {
+    ...configuration,
+    scheduler: { ...(configuration.scheduler || {}), githubEmailIntake: { ...cfg, dropFolder: folderLabel } },
+  };
+
+  const outcome = await runGithubEmailIntakeNow(virtualConfiguration, {
+    ...deps,
+    listFiles: (folder, fileExtensions) => {
+      const lowerExtensions = (fileExtensions || []).map((extension) => extension.toLowerCase());
+      return validSources
+        .map((source) => source.fileName)
+        .filter((name) => lowerExtensions.length === 0
+          || lowerExtensions.some((extension) => name.toLowerCase().endsWith(extension)));
+    },
+    readFile: (fullPath) => {
+      const fileName = path.basename(fullPath);
+      if (!sourceContentByName.has(fileName)) {
+        throw new Error('source not supplied: ' + fileName);
+      }
+      return sourceContentByName.get(fileName);
+    },
+    moveFile: () => {}, // files live in SharePoint; the seen-ledger replaces the archive move
+    trigger: 'sharepoint',
+  });
+
+  // Record every ingested file as seen so the next pull skips it at the listing stage.
+  if (outcome.ok && outcome.result && Array.isArray(outcome.result.events)) {
+    const recordSeenNames = deps.recordSeenNames || appendSeenSharePointNamesToDisk;
+    const ingestedNames = Array.from(new Set(outcome.result.events.map((event) => event.fileName).filter(Boolean)));
+    if (ingestedNames.length > 0) {
+      recordSeenNames(ingestedNames);
+    }
+  }
+  return outcome;
+}
+
 // ── Rule-sample collection (read-only: for the bulk AI rule generator) ──
 
 // Cap the number of emails returned so a huge drop folder can't build an unusable payload/prompt.
@@ -660,6 +778,8 @@ module.exports = {
   optionsForMode,
   processDropFolder,
   runGithubEmailIntakeNow,
+  runGithubEmailSourcesNow,
+  filterNewSharePointFileNames,
   collectRuleSamples,
   isGithubEmailIntakeRunInProgress,
   readLastRunResult,

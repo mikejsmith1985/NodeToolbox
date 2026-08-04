@@ -539,6 +539,89 @@ describe('buildCommentText wording', () => {
   });
 });
 
+// ── SharePoint source (v1: read-only pull — the relay downloads files, the server ingests them) ──
+
+/** Builds the non-filesystem deps for a sources run: Jira post capture, in-memory ledger, seen-name sink. */
+function buildSourcesDeps() {
+  const state = { ledger: [], posts: [], seenNames: [] };
+  const deps = {
+    readLedger: () => state.ledger,
+    writeLedger: (ledger) => { state.ledger = ledger; },
+    postEvent: (args) => {
+      state.posts.push({ jiraKey: args.jiraKey, eventType: args.eventType });
+      args.recordResult({ jiraKey: args.jiraKey, isSuccess: true, message: 'ok' });
+      return Promise.resolve();
+    },
+    recordSeenNames: (names) => state.seenNames.push(...names),
+    nowIso: () => '2026-08-04T00:00:00.000Z',
+    writeLastRun: false,
+  };
+  return { deps, state };
+}
+
+describe('runGithubEmailSourcesNow (SharePoint sources)', () => {
+  it('runs the full pipeline over in-memory sources without requiring a local drop folder', async () => {
+    // No local drop folder configured — the SharePoint source must not depend on one.
+    const config = baseConfig({ dropFolder: '' });
+    const sources = [{ fileName: 'a.eml', content: mergeEmail('<a@github.com>', 123, 'DENP-1414') }];
+    const { deps, state } = buildSourcesDeps();
+
+    const outcome = await scheduler.runGithubEmailSourcesNow(
+      config, { folderLabel: '/sites/Team/GitHubEmails', sources }, deps);
+
+    expect(outcome.ok).toBe(true);
+    expect(outcome.result.trigger).toBe('sharepoint');
+    // The run result names the SharePoint folder (not a local path) so the Activity Log stays honest.
+    expect(outcome.result.dropFolder).toBe('/sites/Team/GitHubEmails');
+    expect(outcome.result.postedCount).toBe(1);
+    expect(state.posts).toEqual([{ jiraKey: 'DENP-1414', eventType: 'pr_merged' }]);
+    // Every ingested file is recorded as seen so the next pull never re-downloads it.
+    expect(state.seenNames).toEqual(['a.eml']);
+  });
+
+  it('filters sources by the configured file extensions and dedups by the content ledger', async () => {
+    const config = baseConfig({ dropFolder: '' }); // fileExtensions: ['.eml']
+    const emailSource = mergeEmail('<b@github.com>', 200, 'DENP-2');
+    const sources = [
+      { fileName: 'keep.eml', content: emailSource },
+      { fileName: 'ignore.msg', content: 'binary-ish' },
+    ];
+    const { deps, state } = buildSourcesDeps();
+
+    const firstOutcome = await scheduler.runGithubEmailSourcesNow(config, { folderLabel: 'sp', sources }, deps);
+    expect(firstOutcome.result.postedCount).toBe(1);
+    expect(state.seenNames).toEqual(['keep.eml']); // .msg filtered out, never ingested
+
+    // The same email arriving under a NEW name is caught by the Message-ID ledger, not reposted.
+    const secondOutcome = await scheduler.runGithubEmailSourcesNow(
+      config, { folderLabel: 'sp', sources: [{ fileName: 'copy.eml', content: emailSource }] }, deps);
+    expect(secondOutcome.result.postedCount).toBe(0);
+    expect(secondOutcome.result.skippedCount).toBe(1);
+    expect(state.posts).toHaveLength(1);
+  });
+
+  it('rejects a run with no valid sources', async () => {
+    const { deps } = buildSourcesDeps();
+    const outcome = await scheduler.runGithubEmailSourcesNow(baseConfig(), { folderLabel: 'sp', sources: [] }, deps);
+    expect(outcome.ok).toBe(false);
+    expect(outcome.message).toMatch(/no.*source/i);
+  });
+});
+
+describe('filterNewSharePointFileNames', () => {
+  it('returns only the names the seen-ledger has not recorded, preserving order', () => {
+    const readSeenNames = () => ['old-1.eml', 'old-2.eml'];
+    const newNames = scheduler.filterNewSharePointFileNames(
+      ['old-1.eml', 'fresh-1.eml', 'old-2.eml', 'fresh-2.eml'], { readSeenNames });
+    expect(newNames).toEqual(['fresh-1.eml', 'fresh-2.eml']);
+  });
+
+  it('drops blank and non-string entries', () => {
+    const newNames = scheduler.filterNewSharePointFileNames(['a.eml', '', null, 42], { readSeenNames: () => [] });
+    expect(newNames).toEqual(['a.eml']);
+  });
+});
+
 // ── Run log (persistent activity history — user report: no way to prove scheduled runs happen) ──
 
 describe('run log persistence', () => {

@@ -11,6 +11,8 @@ jest.mock('../../src/config/loader', () => ({ saveConfigToDisk: jest.fn() }));
 jest.mock('../../src/utils/httpClient', () => ({ makeJiraApiRequest: jest.fn() }));
 jest.mock('../../src/services/githubEmailIntakeScheduler', () => ({
   runGithubEmailIntakeNow: jest.fn(),
+  runGithubEmailSourcesNow: jest.fn(),
+  filterNewSharePointFileNames: jest.fn((names) => names),
   collectRuleSamples: jest.fn(),
   isGithubEmailIntakeRunInProgress: jest.fn(() => false),
   readLastRunResult: jest.fn(() => ({ hasRun: true, postedCount: 2 })),
@@ -332,5 +334,78 @@ describe('customRules sanitisation', () => {
 
     const saved = configuration.scheduler.githubEmailIntake.customRules;
     expect(saved).toEqual([{ id: 'good', eventType: 'pr_opened', bodyPattern: 'wants to merge', requiresPrNumber: true }]);
+  });
+});
+
+describe('SharePoint source routes', () => {
+  it('saves the SharePoint folder URL with the config and returns it on GET', async () => {
+    const configuration = freshConfig();
+    await request(buildApp(configuration))
+      .post('/api/github-email-intake/config')
+      .send({ dropFolder: 'C:\\gh', sharePointFolderUrl: '  /sites/Team/Shared Documents/GitHubEmails  ' });
+    expect(configuration.scheduler.githubEmailIntake.sharePointFolderUrl).toBe('/sites/Team/Shared Documents/GitHubEmails');
+
+    const response = await request(buildApp(configuration)).get('/api/github-email-intake/config');
+    expect(response.body.sharePointFolderUrl).toBe('/sites/Team/Shared Documents/GitHubEmails');
+  });
+
+  it('POST /sharepoint/filter-new returns only the names the seen-ledger has not recorded', async () => {
+    scheduler.filterNewSharePointFileNames.mockReturnValueOnce(['fresh.eml']);
+    const response = await request(buildApp(freshConfig()))
+      .post('/api/github-email-intake/sharepoint/filter-new')
+      .send({ fileNames: ['seen.eml', 'fresh.eml'] });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ ok: true, newFileNames: ['fresh.eml'] });
+    expect(scheduler.filterNewSharePointFileNames).toHaveBeenCalledWith(['seen.eml', 'fresh.eml']);
+  });
+
+  it('POST /sharepoint/filter-new rejects a body without a fileNames array', async () => {
+    const response = await request(buildApp(freshConfig()))
+      .post('/api/github-email-intake/sharepoint/filter-new')
+      .send({});
+    expect(response.status).toBe(400);
+    expect(response.body.ok).toBe(false);
+  });
+
+  it('POST /sharepoint/run ingests the posted sources with the configured folder as the label', async () => {
+    scheduler.runGithubEmailSourcesNow.mockResolvedValueOnce({ ok: true, result: { postedCount: 1, events: [] } });
+    const configuration = freshConfig();
+    configuration.scheduler.githubEmailIntake.sharePointFolderUrl = '/sites/Team/GitHubEmails';
+
+    const response = await request(buildApp(configuration))
+      .post('/api/github-email-intake/sharepoint/run')
+      .send({ sources: [{ fileName: 'a.eml', content: 'raw' }] });
+
+    expect(response.status).toBe(200);
+    expect(response.body.ok).toBe(true);
+    expect(response.body.result.postedCount).toBe(1);
+    expect(scheduler.runGithubEmailSourcesNow).toHaveBeenCalledWith(
+      configuration,
+      { folderLabel: '/sites/Team/GitHubEmails', sources: [{ fileName: 'a.eml', content: 'raw' }] },
+    );
+  });
+
+  it('POST /sharepoint/run rejects a missing sources array and an over-cap batch', async () => {
+    const missingResponse = await request(buildApp(freshConfig()))
+      .post('/api/github-email-intake/sharepoint/run')
+      .send({});
+    expect(missingResponse.status).toBe(400);
+
+    const overCap = Array.from({ length: 101 }, (_unused, index) => ({ fileName: `f${index}.eml`, content: 'x' }));
+    const overCapResponse = await request(buildApp(freshConfig()))
+      .post('/api/github-email-intake/sharepoint/run')
+      .send({ sources: overCap });
+    expect(overCapResponse.status).toBe(400);
+    expect(overCapResponse.body.message).toMatch(/batch/i);
+    expect(scheduler.runGithubEmailSourcesNow).not.toHaveBeenCalled();
+  });
+
+  it('POST /sharepoint/run returns 409 while another intake run is in progress', async () => {
+    scheduler.isGithubEmailIntakeRunInProgress.mockReturnValueOnce(true);
+    const response = await request(buildApp(freshConfig()))
+      .post('/api/github-email-intake/sharepoint/run')
+      .send({ sources: [{ fileName: 'a.eml', content: 'raw' }] });
+    expect(response.status).toBe(409);
   });
 });

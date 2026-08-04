@@ -11,6 +11,8 @@ const { makeJiraApiRequest } = require('../utils/httpClient');
 const { saveConfigToDisk } = require('../config/loader');
 const {
   runGithubEmailIntakeNow,
+  runGithubEmailSourcesNow,
+  filterNewSharePointFileNames,
   collectRuleSamples,
   isGithubEmailIntakeRunInProgress,
   readLastRunResult,
@@ -20,6 +22,8 @@ const {
 const DEFAULT_SCHEDULE_TIME = '07:00';
 const SCHEDULE_TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
 const VALID_MODES = ['dryRun', 'commentOnly', 'full'];
+/** Max email sources one /sharepoint/run call may carry — the client batches larger pulls. */
+const MAX_SOURCES_PER_RUN = 100;
 /** Where the parent Sub-status dropdown lives on this Jira instance unless the operator overrides it. */
 const DEFAULT_SUB_STATUS_FIELD_ID = 'customfield_10201';
 
@@ -80,6 +84,8 @@ function sanitiseConfig(rawBody, previousSeenPrs) {
     dropFolder: toTrimmedString(rawBody && rawBody.dropFolder),
     processedArchiveFolder: toTrimmedString(rawBody && rawBody.processedArchiveFolder),
     errorFolder: toTrimmedString(rawBody && rawBody.errorFolder),
+    // Server-relative URL of the SharePoint library folder the Power Automate flow drops emails into.
+    sharePointFolderUrl: toTrimmedString(rawBody && rawBody.sharePointFolderUrl),
     fileExtensions: rawExtensions.map(toTrimmedString).filter((extension) => extension !== ''),
     jiraProjectKeys: rawProjectKeys.map((key) => toTrimmedString(key).toUpperCase()).filter((key) => key !== ''),
     transitions: {
@@ -105,6 +111,7 @@ function buildDefaultConfigResponse() {
     dropFolder: '',
     processedArchiveFolder: '',
     errorFolder: '',
+    sharePointFolderUrl: '',
     fileExtensions: ['.eml', '.txt'],
     jiraProjectKeys: [],
     transitions: { branchCreated: '', commitPushed: '', prOpened: '', prMerged: '' },
@@ -366,6 +373,45 @@ function createGithubEmailIntakeRouter(configuration) {
     } catch (sampleError) {
       const errorMessage = sampleError instanceof Error ? sampleError.message : String(sampleError);
       return res.status(500).json({ ok: false, message: errorMessage, samples: [] });
+    }
+  });
+
+  // SharePoint source, step 1: given the library's file listing, return only the names the server has
+  // not yet ingested — so the client downloads new files only through the (slow, per-file) relay.
+  router.post('/api/github-email-intake/sharepoint/filter-new', (req, res) => {
+    const fileNames = req.body && req.body.fileNames;
+    if (!Array.isArray(fileNames)) {
+      return res.status(400).json({ ok: false, message: 'Expected a fileNames array.' });
+    }
+    return res.json({ ok: true, newFileNames: filterNewSharePointFileNames(fileNames) });
+  });
+
+  // SharePoint source, step 2: ingest the downloaded email sources through the same pipeline as the
+  // drop folder (parse, dedup ledger, Jira post, Activity Log). Files stay in SharePoint — the
+  // seen-ledger recorded by the run replaces the local archive move.
+  router.post('/api/github-email-intake/sharepoint/run', async (req, res) => {
+    const sources = req.body && req.body.sources;
+    if (!Array.isArray(sources) || sources.length === 0) {
+      return res.status(400).json({ ok: false, message: 'Expected a non-empty sources array.' });
+    }
+    if (sources.length > MAX_SOURCES_PER_RUN) {
+      return res.status(400).json({ ok: false, message: 'Too many sources in one batch (max ' + MAX_SOURCES_PER_RUN + ') — split the pull into smaller batches.' });
+    }
+    if (isGithubEmailIntakeRunInProgress()) {
+      return res.status(409).json({ ok: false, message: 'A GitHub email intake run is already in progress.' });
+    }
+    const cfg = ((configuration.scheduler || {}).githubEmailIntake) || {};
+    const folderLabel = toTrimmedString(cfg.sharePointFolderUrl) || 'sharepoint';
+    try {
+      const outcome = await runGithubEmailSourcesNow(configuration, { folderLabel, sources });
+      if (!outcome.ok) {
+        return res.status(outcome.isAlreadyRunning ? 409 : 400).json({ ok: false, message: outcome.message });
+      }
+      return res.json({ ok: true, result: outcome.result });
+    } catch (runError) {
+      const errorMessage = runError instanceof Error ? runError.message : String(runError);
+      console.error('  ⚠ GitHub email intake SharePoint run error:', errorMessage);
+      return res.status(500).json({ ok: false, message: errorMessage });
     }
   });
 
