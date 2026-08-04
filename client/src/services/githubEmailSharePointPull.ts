@@ -208,15 +208,11 @@ export function batchEmailSources(sources: SharePointEmailSource[]): SharePointE
   return batches;
 }
 
-/**
- * The whole macro-less pull: verify the relay, list the folder, filter to server-confirmed-new files,
- * download each through the relay, and ingest them batch by batch. Progress messages are surfaced via
- * the optional callback so the panel can narrate a long first pull.
- */
-export async function pullSharePointEmails(
+/** The listing+download stage shared by pull and preview: only server-confirmed-new email files. */
+async function collectNewSharePointSources(
   folderServerRelativeUrl: string,
   onProgress?: (message: string) => void,
-): Promise<SharePointEmailPullSummary> {
+): Promise<{ listedCount: number; sources: SharePointEmailSource[] }> {
   // Accept anything the user pasted — share link, full URL, or bare path — and work on the clean path.
   const normalizedFolderUrl = normalizeSharePointFolderInput(folderServerRelativeUrl);
   const relayStatus = await fetchRelayStatus(RELAY_SYSTEM);
@@ -228,25 +224,38 @@ export async function pullSharePointEmails(
   const listedFileNames = await listFolderEmailFiles(normalizedFolderUrl);
   const newFileNames = listedFileNames.length > 0 ? await fetchNewFileNames(listedFileNames) : [];
 
+  const sources: SharePointEmailSource[] = [];
+  for (const [index, fileName] of newFileNames.entries()) {
+    onProgress?.(`Downloading ${index + 1}/${newFileNames.length}: ${fileName}`);
+    sources.push({ fileName, content: await downloadFileText(normalizedFolderUrl, fileName) });
+  }
+  return { listedCount: listedFileNames.length, sources };
+}
+
+/**
+ * The whole macro-less pull: verify the relay, list the folder, filter to server-confirmed-new files,
+ * download each through the relay, and ingest them batch by batch. Progress messages are surfaced via
+ * the optional callback so the panel can narrate a long first pull.
+ */
+export async function pullSharePointEmails(
+  folderServerRelativeUrl: string,
+  onProgress?: (message: string) => void,
+): Promise<SharePointEmailPullSummary> {
+  const { listedCount, sources } = await collectNewSharePointSources(folderServerRelativeUrl, onProgress);
+
   const summary: SharePointEmailPullSummary = {
-    listedCount: listedFileNames.length,
-    newCount: newFileNames.length,
+    listedCount,
+    newCount: sources.length,
     postedCount: 0,
     skippedCount: 0,
     errorCount: 0,
     batchCount: 0,
   };
-  if (newFileNames.length === 0) {
+  if (sources.length === 0) {
     return summary;
   }
 
-  const downloadedSources: SharePointEmailSource[] = [];
-  for (const [index, fileName] of newFileNames.entries()) {
-    onProgress?.(`Downloading ${index + 1}/${newFileNames.length}: ${fileName}`);
-    downloadedSources.push({ fileName, content: await downloadFileText(normalizedFolderUrl, fileName) });
-  }
-
-  const batches = batchEmailSources(downloadedSources);
+  const batches = batchEmailSources(sources);
   for (const [index, batch] of batches.entries()) {
     onProgress?.(`Ingesting batch ${index + 1}/${batches.length} (${batch.length} email(s))…`);
     const runCounts = await runSourcesBatch(batch);
@@ -256,4 +265,85 @@ export async function pullSharePointEmails(
     summary.batchCount += 1;
   }
   return summary;
+}
+
+/** One preview event as the server's dry run reports it (mirrors the intake run event shape). */
+export interface SharePointPreviewEvent {
+  fileName: string;
+  outcome: string;
+  eventType?: string;
+  jiraKey?: string | null;
+  reason?: string;
+  message?: string;
+}
+
+/** What a completed preview found: folder totals plus the merged dry-run result (null = nothing new). */
+export interface SharePointEmailPreviewOutcome {
+  listedCount: number;
+  newCount: number;
+  result: {
+    hasRun: boolean;
+    mode: string;
+    trigger: string;
+    postedCount: number;
+    skippedCount: number;
+    errorCount: number;
+    events: SharePointPreviewEvent[];
+  } | null;
+}
+
+/** Posts one batch to the persist-nothing preview endpoint and returns its dry-run result. */
+async function previewSourcesBatch(sources: SharePointEmailSource[]): Promise<{ skippedCount: number; errorCount: number; events: SharePointPreviewEvent[] }> {
+  const response = await fetch('/api/github-email-intake/sharepoint/preview', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sources }),
+  });
+  const body = await response.json() as {
+    ok: boolean;
+    message?: string;
+    result?: { skippedCount?: number; errorCount?: number; events?: SharePointPreviewEvent[] };
+  };
+  if (!response.ok || !body.ok) {
+    throw new Error(body.message ?? 'The server could not preview the downloaded emails.');
+  }
+  return {
+    skippedCount: body.result?.skippedCount ?? 0,
+    errorCount: body.result?.errorCount ?? 0,
+    events: body.result?.events ?? [],
+  };
+}
+
+/**
+ * Previews the SharePoint source: downloads the new files exactly like a pull, but dry-run parses
+ * them through a persist-nothing endpoint — no Jira writes, no dedup ledger, no seen-file recording,
+ * no Activity Log entry — so the same files still ingest on the next real pull.
+ */
+export async function previewSharePointEmails(
+  folderServerRelativeUrl: string,
+  onProgress?: (message: string) => void,
+): Promise<SharePointEmailPreviewOutcome> {
+  const { listedCount, sources } = await collectNewSharePointSources(folderServerRelativeUrl, onProgress);
+  if (sources.length === 0) {
+    return { listedCount, newCount: 0, result: null };
+  }
+
+  const mergedResult = {
+    hasRun: true,
+    mode: 'dryRun',
+    trigger: 'sharepoint-preview',
+    postedCount: 0,
+    skippedCount: 0,
+    errorCount: 0,
+    events: [] as SharePointPreviewEvent[],
+  };
+  const batches = batchEmailSources(sources);
+  for (const [index, batch] of batches.entries()) {
+    onProgress?.(`Previewing batch ${index + 1}/${batches.length} (${batch.length} email(s))…`);
+    const batchResult = await previewSourcesBatch(batch);
+    mergedResult.skippedCount += batchResult.skippedCount;
+    mergedResult.errorCount += batchResult.errorCount;
+    mergedResult.events.push(...batchResult.events);
+  }
+  return { listedCount, newCount: sources.length, result: mergedResult };
 }

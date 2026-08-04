@@ -608,6 +608,27 @@ describe('runGithubEmailSourcesNow (SharePoint sources)', () => {
   });
 });
 
+describe('sanitizeLastRunResult', () => {
+  it('suppresses a last run whose only content is the healed URL-drop-folder misconfiguration', () => {
+    // That run's ENOENT banner kept showing AFTER the config was healed, reading as a live failure.
+    const poisonedRun = {
+      hasRun: true,
+      ranAtIso: '2026-08-04T13:00:00.000Z',
+      dropFolder: 'https://myfyi.sharepoint.com/:f:/r/sites/Team/Shared%20Documents/gh_emails?web=1',
+      folderError: "Could not read drop folder: ENOENT: no such file or directory, scandir '...'",
+      events: [], postedCount: 0, skippedCount: 0, errorCount: 0,
+    };
+    expect(scheduler.sanitizeLastRunResult(poisonedRun)).toEqual({ hasRun: false });
+  });
+
+  it('passes an ordinary run through unchanged — including a real local-folder error', () => {
+    const localErrorRun = { hasRun: true, dropFolder: 'C:\\gh', folderError: 'Could not read drop folder: EACCES', events: [] };
+    expect(scheduler.sanitizeLastRunResult(localErrorRun)).toBe(localErrorRun);
+    const healthyRun = { hasRun: true, dropFolder: '/sites/Team/GitHubEmails', postedCount: 2, events: [] };
+    expect(scheduler.sanitizeLastRunResult(healthyRun)).toBe(healthyRun);
+  });
+});
+
 describe('filterNewSharePointFileNames', () => {
   it('returns only the names the seen-ledger has not recorded, preserving order', () => {
     const readSeenNames = () => ['old-1.eml', 'old-2.eml'];

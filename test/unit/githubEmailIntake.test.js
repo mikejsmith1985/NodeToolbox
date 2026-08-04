@@ -424,6 +424,28 @@ describe('SharePoint source routes', () => {
     expect(scheduler.runGithubEmailSourcesNow).not.toHaveBeenCalled();
   });
 
+  it('POST /sharepoint/preview dry-runs the sources without ledgering, seen-recording, or run logging', async () => {
+    scheduler.runGithubEmailSourcesNow.mockResolvedValueOnce({ ok: true, result: { mode: 'dryRun', events: [] } });
+    const configuration = freshConfig();
+    configuration.scheduler.githubEmailIntake.mode = 'full';
+    configuration.scheduler.githubEmailIntake.sharePointFolderUrl = '/sites/Team/GitHubEmails';
+
+    const response = await request(buildApp(configuration))
+      .post('/api/github-email-intake/sharepoint/preview')
+      .send({ sources: [{ fileName: 'a.eml', content: 'raw' }] });
+
+    expect(response.status).toBe(200);
+    expect(response.body.ok).toBe(true);
+    const [previewConfiguration, pullInput, previewDeps] = scheduler.runGithubEmailSourcesNow.mock.calls[0];
+    // Mode is FORCED to dryRun regardless of the configured rollout mode…
+    expect(previewConfiguration.scheduler.githubEmailIntake.mode).toBe('dryRun');
+    expect(pullInput).toEqual({ folderLabel: '/sites/Team/GitHubEmails', sources: [{ fileName: 'a.eml', content: 'raw' }] });
+    // …and nothing persists: no ledger write, no seen-file recording, no last-run/Activity-Log entry.
+    expect(previewDeps.writeLastRun).toBe(false);
+    expect(typeof previewDeps.writeLedger).toBe('function');
+    expect(typeof previewDeps.recordSeenNames).toBe('function');
+  });
+
   it('POST /sharepoint/run returns 409 while another intake run is in progress', async () => {
     scheduler.isGithubEmailIntakeRunInProgress.mockReturnValueOnce(true);
     const response = await request(buildApp(freshConfig()))

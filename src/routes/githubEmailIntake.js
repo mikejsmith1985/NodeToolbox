@@ -434,6 +434,42 @@ function createGithubEmailIntakeRouter(configuration) {
     }
   });
 
+  // SharePoint source preview: a FORCED dry run over the downloaded sources that persists nothing —
+  // no ledger write, no seen-file recording, no last-run/Activity-Log entry — so an operator can
+  // verify parsing before a real pull, exactly like the drop-folder Preview.
+  router.post('/api/github-email-intake/sharepoint/preview', async (req, res) => {
+    const sources = req.body && req.body.sources;
+    if (!Array.isArray(sources) || sources.length === 0) {
+      return res.status(400).json({ ok: false, message: 'Expected a non-empty sources array.' });
+    }
+    if (sources.length > MAX_SOURCES_PER_RUN) {
+      return res.status(400).json({ ok: false, message: 'Too many sources in one batch (max ' + MAX_SOURCES_PER_RUN + ') — split the pull into smaller batches.' });
+    }
+    if (isGithubEmailIntakeRunInProgress()) {
+      return res.status(409).json({ ok: false, message: 'A GitHub email intake run is already in progress.' });
+    }
+    const cfg = ((configuration.scheduler || {}).githubEmailIntake) || {};
+    const folderLabel = toTrimmedString(cfg.sharePointFolderUrl) || 'sharepoint';
+    const previewConfiguration = {
+      ...configuration,
+      scheduler: { ...configuration.scheduler, githubEmailIntake: { ...cfg, mode: 'dryRun' } },
+    };
+    try {
+      const outcome = await runGithubEmailSourcesNow(previewConfiguration, { folderLabel, sources }, {
+        writeLedger: () => {},       // never persist dedup state during a preview
+        recordSeenNames: () => {},   // never mark files seen — a real pull must still ingest them
+        writeLastRun: false,         // no last-run overwrite, no Activity Log entry
+      });
+      if (!outcome.ok) {
+        return res.status(outcome.isAlreadyRunning ? 409 : 400).json({ ok: false, message: outcome.message });
+      }
+      return res.json({ ok: true, result: outcome.result });
+    } catch (previewError) {
+      const errorMessage = previewError instanceof Error ? previewError.message : String(previewError);
+      return res.status(500).json({ ok: false, message: errorMessage });
+    }
+  });
+
   router.get('/api/github-email-intake/status', (req, res) => {
     return res.json(readLastRunResult());
   });

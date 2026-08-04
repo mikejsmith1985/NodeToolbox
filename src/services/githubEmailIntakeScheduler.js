@@ -19,6 +19,7 @@ const crypto = require('crypto');
 
 const { isScheduledTimeReached, loadFiredDates, recordFiredDate } = require('./schedulerFiredState');
 const { postJiraCommentForEvent } = require('./jiraEventOutput');
+const { isHttpUrl } = require('../utils/sharePointFolderUrl');
 
 // ── Constants ──
 
@@ -89,10 +90,23 @@ function writeLastRunResult(runResult) {
 
 function readLastRunResult() {
   try {
-    return JSON.parse(fs.readFileSync(getResultsFilePath(), 'utf8'));
+    return sanitizeLastRunResult(JSON.parse(fs.readFileSync(getResultsFilePath(), 'utf8')));
   } catch (_readError) {
     return { hasRun: false };
   }
+}
+
+/**
+ * Suppresses a persisted last run whose only content is the (now self-healing) URL-in-drop-folder
+ * misconfiguration. After the config heals, that run's ENOENT banner kept rendering as if it were a
+ * live failure — it carries no information beyond a mistake that no longer exists. A folder error on
+ * a real LOCAL path is kept: that is a genuine, still-actionable condition.
+ */
+function sanitizeLastRunResult(runResult) {
+  if (runResult && runResult.folderError && isHttpUrl(runResult.dropFolder)) {
+    return { hasRun: false };
+  }
+  return runResult;
 }
 
 // ── Run log (persistent activity history) ──
@@ -783,6 +797,7 @@ module.exports = {
   collectRuleSamples,
   isGithubEmailIntakeRunInProgress,
   readLastRunResult,
+  sanitizeLastRunResult,
   readRunLog,
   appendRunLogEntry,
   checkAndFireGithubEmailIntake,
