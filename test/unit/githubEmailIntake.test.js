@@ -405,11 +405,25 @@ describe('SharePoint source routes', () => {
     expect(response.body.result.postedCount).toBe(1);
     expect(scheduler.runGithubEmailSourcesNow).toHaveBeenCalledWith(
       configuration,
-      { folderLabel: '/sites/Team/GitHubEmails', sources: [{ fileName: 'a.eml', content: 'raw' }] },
+      { folderLabel: '/sites/Team/GitHubEmails', sources: [{ fileName: 'a.eml', content: 'raw' }], listedCount: 0 },
     );
   });
 
-  it('POST /sharepoint/run rejects a missing sources array and an over-cap batch', async () => {
+  it('POST /sharepoint/run accepts EMPTY sources so an all-caught-up pull still logs a sweep', async () => {
+    scheduler.runGithubEmailSourcesNow.mockResolvedValueOnce({ ok: true, result: { postedCount: 0, events: [] } });
+    const response = await request(buildApp(freshConfig()))
+      .post('/api/github-email-intake/sharepoint/run')
+      .send({ sources: [], listedCount: 7 });
+
+    expect(response.status).toBe(200);
+    expect(response.body.ok).toBe(true);
+    expect(scheduler.runGithubEmailSourcesNow).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ sources: [], listedCount: 7 }),
+    );
+  });
+
+  it('POST /sharepoint/run rejects a non-array sources value and an over-cap batch', async () => {
     const missingResponse = await request(buildApp(freshConfig()))
       .post('/api/github-email-intake/sharepoint/run')
       .send({});

@@ -161,12 +161,12 @@ async function fetchNewFileNames(fileNames: string[]): Promise<string[]> {
   return body.newFileNames ?? [];
 }
 
-/** Posts one batch of sources for ingest; returns the run's counts. */
-async function runSourcesBatch(sources: SharePointEmailSource[]): Promise<{ postedCount: number; skippedCount: number; errorCount: number }> {
+/** Posts one batch of sources for ingest (an empty batch records an all-caught-up sweep); returns the run's counts. */
+async function runSourcesBatch(sources: SharePointEmailSource[], listedCount = 0): Promise<{ postedCount: number; skippedCount: number; errorCount: number }> {
   const response = await fetch('/api/github-email-intake/sharepoint/run', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ sources }),
+    body: JSON.stringify({ sources, listedCount }),
   });
   const body = await response.json() as {
     ok: boolean;
@@ -252,6 +252,9 @@ export async function pullSharePointEmails(
     batchCount: 0,
   };
   if (sources.length === 0) {
+    // Still record the sweep server-side: "nothing new" must show up in the Activity Log (GH #282).
+    onProgress?.('Nothing new — recording the empty sweep…');
+    await runSourcesBatch([], listedCount);
     return summary;
   }
 

@@ -1,7 +1,7 @@
 // GithubEmailIntakePanel.test.tsx — Render + interaction smoke tests for the intake Admin Hub panel.
 // fetch is stubbed so the panel loads its config and status without a server.
 
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { useAiAssistStore } from '../../store/aiAssistStore.ts';
@@ -126,9 +126,9 @@ describe('GithubEmailIntakePanel', () => {
 
     await waitFor(() => expect(mockPullSharePointEmails).toHaveBeenCalled());
     expect(mockPullSharePointEmails.mock.calls[0][0]).toBe('/sites/Team/Shared Documents/GitHubEmails');
-    // The summary reports what the pull actually did.
-    expect(await screen.findByText(/2 new email/i)).toBeInTheDocument();
-    expect(screen.getByText(/1 posted/i)).toBeInTheDocument();
+    // The summary reports what the pull actually did — in the SharePoint section AND at the buttons.
+    expect((await screen.findAllByText(/2 new email/i)).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/1 posted/i).length).toBeGreaterThan(0);
   });
 
   it('normalizes a pasted SharePoint share link to the server-relative folder on pull', async () => {
@@ -166,6 +166,29 @@ describe('GithubEmailIntakePanel', () => {
     // No dead-end "No drop folder configured" — the SharePoint source IS the configured source.
     await waitFor(() => expect(mockPullSharePointEmails).toHaveBeenCalled());
     expect(mockPullSharePointEmails.mock.calls[0][0]).toBe('/sites/Team/GitHubEmails');
+  });
+
+  it('shows the pull outcome AND a busy state at the action buttons in an SP-only setup', async () => {
+    // GH #282 last comment: "run now doesn't seem to do anything" — the outcome only rendered in
+    // the SharePoint section mid-page, and the bottom buttons never showed a busy state.
+    stubFetch({}, { ...DEFAULT_CONFIG, dropFolder: '', sharePointFolderUrl: '/sites/Team/GitHubEmails' });
+    mockPullSharePointEmails.mockReset();
+    let resolvePull: (value: unknown) => void = () => {};
+    mockPullSharePointEmails.mockReturnValue(new Promise((resolve) => { resolvePull = resolve; }));
+    render(<GithubEmailIntakePanel />);
+    await screen.findByText('📧 GitHub Email Intake');
+
+    fireEvent.click(screen.getByRole('button', { name: /run now/i }));
+
+    // While the pull runs, the bottom action buttons show they are working.
+    expect(await screen.findAllByRole('button', { name: /working…/i })).not.toHaveLength(0);
+
+    await act(async () => {
+      resolvePull({ listedCount: 3, newCount: 0, postedCount: 0, skippedCount: 0, errorCount: 0, batchCount: 1 });
+    });
+
+    // The outcome lands in the status line by the buttons AND the SharePoint section.
+    expect((await screen.findAllByText(/all caught up/i)).length).toBe(2);
   });
 
   it('Preview in an SP-only setup ACTUALLY previews: dry-run parse of the new SharePoint files', async () => {
@@ -206,7 +229,7 @@ describe('GithubEmailIntakePanel', () => {
     mockPullSharePointEmails.mockRejectedValue(new Error('Connect the SharePoint relay first — open the SharePoint site and click the relay bookmarklet.'));
     fireEvent.click(pullButton);
 
-    expect(await screen.findByText(/connect the sharepoint relay/i)).toBeInTheDocument();
+    expect((await screen.findAllByText(/connect the sharepoint relay/i)).length).toBeGreaterThan(0);
   });
 
   it('loads and renders the config form with the mode selector and drop folder', async () => {

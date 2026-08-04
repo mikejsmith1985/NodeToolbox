@@ -600,11 +600,28 @@ describe('runGithubEmailSourcesNow (SharePoint sources)', () => {
     expect(state.posts).toHaveLength(1);
   });
 
-  it('rejects a run with no valid sources', async () => {
+  it('records an EMPTY sweep when there are no new sources — "nothing new" must be distinguishable from "never ran"', async () => {
+    // The Activity Log exists because an idle pipeline was indistinguishable from a dead one
+    // (90+ emails sat invisible). A pull that finds nothing new must still leave a record.
     const { deps } = buildSourcesDeps();
-    const outcome = await scheduler.runGithubEmailSourcesNow(baseConfig(), { folderLabel: 'sp', sources: [] }, deps);
+    const outcome = await scheduler.runGithubEmailSourcesNow(
+      baseConfig(),
+      { folderLabel: '/sites/Team/GitHubEmails', sources: [], listedCount: 7 },
+      deps, // writeLastRun: false — the RESULT shape is asserted; persistence shares the normal path
+    );
+
+    expect(outcome.ok).toBe(true);
+    expect(outcome.result.trigger).toBe('sharepoint');
+    expect(outcome.result.dropFolder).toBe('/sites/Team/GitHubEmails');
+    expect(outcome.result.postedCount).toBe(0);
+    expect(outcome.result.events).toEqual([]);
+  });
+
+  it('still rejects a run whose sources are not an array', async () => {
+    const { deps } = buildSourcesDeps();
+    const outcome = await scheduler.runGithubEmailSourcesNow(baseConfig(), { folderLabel: 'sp', sources: 'nope' }, deps);
     expect(outcome.ok).toBe(false);
-    expect(outcome.message).toMatch(/no.*source/i);
+    expect(outcome.message).toMatch(/source/i);
   });
 });
 

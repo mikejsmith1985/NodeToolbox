@@ -410,8 +410,9 @@ function createGithubEmailIntakeRouter(configuration) {
   // seen-ledger recorded by the run replaces the local archive move.
   router.post('/api/github-email-intake/sharepoint/run', async (req, res) => {
     const sources = req.body && req.body.sources;
-    if (!Array.isArray(sources) || sources.length === 0) {
-      return res.status(400).json({ ok: false, message: 'Expected a non-empty sources array.' });
+    // An EMPTY array is valid: an all-caught-up pull still records an Activity Log sweep (GH #282).
+    if (!Array.isArray(sources)) {
+      return res.status(400).json({ ok: false, message: 'Expected a sources array.' });
     }
     if (sources.length > MAX_SOURCES_PER_RUN) {
       return res.status(400).json({ ok: false, message: 'Too many sources in one batch (max ' + MAX_SOURCES_PER_RUN + ') — split the pull into smaller batches.' });
@@ -421,8 +422,9 @@ function createGithubEmailIntakeRouter(configuration) {
     }
     const cfg = ((configuration.scheduler || {}).githubEmailIntake) || {};
     const folderLabel = toTrimmedString(cfg.sharePointFolderUrl) || 'sharepoint';
+    const listedCount = Number(req.body && req.body.listedCount) || 0;
     try {
-      const outcome = await runGithubEmailSourcesNow(configuration, { folderLabel, sources });
+      const outcome = await runGithubEmailSourcesNow(configuration, { folderLabel, sources, listedCount });
       if (!outcome.ok) {
         return res.status(outcome.isAlreadyRunning ? 409 : 400).json({ ok: false, message: outcome.message });
       }
