@@ -8,6 +8,7 @@
 const express = require('express');
 const fs = require('fs');
 const { makeJiraApiRequest } = require('../utils/httpClient');
+const { isHttpUrl, normalizeSharePointFolderUrl } = require('../utils/sharePointFolderUrl');
 const { saveConfigToDisk } = require('../config/loader');
 const {
   runGithubEmailIntakeNow,
@@ -298,21 +299,29 @@ function createGithubEmailIntakeRouter(configuration) {
     }
     const previousSeenPrs = (((configuration.scheduler || {}).githubEmailIntake) || {}).seenPrs;
     const sanitisedConfig = sanitiseConfig(req.body || {}, previousSeenPrs);
+
+    // A URL in the drop folder is the production misconfiguration that broke runs (a SharePoint
+    // share link pasted into the wrong field). Self-heal BEFORE persisting rather than just warn:
+    // move the link to the SharePoint folder field (normalized, unless one is already set) and
+    // blank the drop folder, so the SAVED config is immediately usable. A non-existent LOCAL
+    // folder is only a warning: the user may set it before the folder exists.
+    let folderWarning = null;
+    if (isHttpUrl(sanitisedConfig.dropFolder)) {
+      if (sanitisedConfig.sharePointFolderUrl === '') {
+        sanitisedConfig.sharePointFolderUrl = normalizeSharePointFolderUrl(sanitisedConfig.dropFolder);
+      }
+      sanitisedConfig.dropFolder = '';
+      folderWarning = 'Moved the SharePoint link to the SharePoint folder field — the drop folder must be a LOCAL path (e.g. C:\\Users\\you\\GitHubEmails).';
+    } else if (sanitisedConfig.dropFolder !== '' && !isExistingDirectory(sanitisedConfig.dropFolder)) {
+      folderWarning = 'Drop folder does not exist yet: ' + sanitisedConfig.dropFolder;
+    }
+
     configuration.scheduler.githubEmailIntake = sanitisedConfig;
     try {
       saveConfigToDisk(configuration);
     } catch (saveError) {
       const errorMessage = saveError instanceof Error ? saveError.message : String(saveError);
       return res.status(500).json({ ok: false, message: 'Config save failed: ' + errorMessage });
-    }
-    // A URL in the drop folder is the production misconfiguration that broke runs (a SharePoint
-    // share link pasted into the wrong field) — name the right field. A non-existent LOCAL folder
-    // is only a warning: the user may set it before the folder exists.
-    let folderWarning = null;
-    if (/^https?:/i.test(sanitisedConfig.dropFolder)) {
-      folderWarning = 'The drop folder must be a LOCAL path (e.g. C:\\Users\\you\\GitHubEmails) — SharePoint links belong in the SharePoint folder field.';
-    } else if (sanitisedConfig.dropFolder !== '' && !isExistingDirectory(sanitisedConfig.dropFolder)) {
-      folderWarning = 'Drop folder does not exist yet: ' + sanitisedConfig.dropFolder;
     }
     return res.json({ ok: true, mode: sanitisedConfig.mode, folderWarning });
   });
