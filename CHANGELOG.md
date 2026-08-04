@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **GitHub Email Intake — the SharePoint pull now runs on the configured schedule while Toolbox is
+  open (GH #282).** The server's scheduler can only sweep a local drop folder — it has no browser
+  session, so it can never run the relay-based SharePoint pull, and in a SharePoint-only setup the
+  30-minute schedule silently did nothing between manual clicks. The Toolbox client now honors the
+  configured start time + interval itself: a 60-second tick fires the pull on each clock-aligned
+  boundary (same cadence rules as the server scheduler) while the app is open and the relay is
+  connected; a closed tab or disconnected relay simply skips that slot. Every run — including empty
+  sweeps — still lands in the Activity Log, so the schedule's heartbeat stays visible.
+
 ### Fixed
 - **GitHub Email Intake — SharePoint files with `#` in the name now download (GH #282).** Every
   GitHub PR email subject contains `#` (e.g. "… (PR #2636)"), and SharePoint's older
