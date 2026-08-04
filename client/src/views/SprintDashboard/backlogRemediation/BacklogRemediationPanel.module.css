@@ -67,6 +67,26 @@
   color: var(--color-text-primary);
 }
 
+/* The title doubles as a Jira deep link: reads as the plain header until hovered, then signals a link. */
+.bucketTitleLink {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  color: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.bucketTitleLink:hover {
+  color: var(--color-accent);
+  text-decoration: underline;
+}
+
+.bucketTitleLinkGlyph {
+  font-size: var(--font-size-xs);
+  opacity: 0.7;
+}
+
 .bucketCount {
   display: inline-flex;
   align-items: center;

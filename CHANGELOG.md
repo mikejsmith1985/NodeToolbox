@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Backlog Remediation — each grooming-bucket header now opens its keys in Jira.** Clicking a bucket's
+  header title (Already done not closed / Likely cancel / Never started / Just stale / Active) opens the
+  Jira issue navigator in a new tab, scoped to exactly that bucket's issue keys (`issueKey in (…)`), so a
+  groomer can validate or work a whole section directly in Jira. When no Jira base URL is known the link
+  carries the raw JQL instead — pasteable straight into Jira's search bar (the Hygiene tile precedent).
+
+### Added
 - **Outlook GitHub-email export macro v2, now versioned in the repo** (`scripts/outlook-github-export/`).
   The v1 macro (shared only in chat) had two defects that stranded a 90+ email backlog: a
   `LOOKBACK_DAYS = 1` window silently skipped anything older than a day, and its auto-start block
