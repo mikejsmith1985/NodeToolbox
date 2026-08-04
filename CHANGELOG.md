@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **GitHub Email Intake — SharePoint files with `#` in the name now download (GH #282).** Every
+  GitHub PR email subject contains `#` (e.g. "… (PR #2636)"), and SharePoint's older
+  `GetFileByServerRelativeUrl('…')` API 404s on any path containing `#` or `%` even when
+  percent-encoded — so nearly every export failed to download. The pull now uses the modern
+  `GetFileByServerRelativePath(decodedUrl=@alias)` / `GetFolderByServerRelativePath` forms, which
+  exist precisely for such names.
 - **GitHub Email Intake — subject-named (extensionless) SharePoint files are now read (GH #282).**
   Power Automate names library files by the email SUBJECT with no extension (sometimes with dots
   mid-name, e.g. "Update template.yaml (PR #3800)"), so the pull's .eml/.txt allow-list found ZERO
