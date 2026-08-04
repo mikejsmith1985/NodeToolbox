@@ -5,6 +5,8 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { setAiAssistUnlocked } from '../../../store/aiAssistStore.ts';
+import { useConnectionStore } from '../../../store/connectionStore.ts';
+import type { ProxyStatusResponse } from '../../../types/config.ts';
 import type { JiraIssue } from '../../../types/jira.ts';
 import type { AgingTriageIssue } from '../../ReportsHub/agingTriage.ts';
 import type { RemediationItem } from './remediationTypes.ts';
@@ -96,6 +98,29 @@ function pendingItem(issueKey: string): RemediationItem {
   };
 }
 
+/** An owned, mildly-idle pending item — classifies as "Just stale" (a different bucket than pendingItem's). */
+function ownedStaleItem(issueKey: string): RemediationItem {
+  const base = pendingItem(issueKey);
+  return {
+    ...base,
+    signals: { ...base.signals, assignee: 'Smith, Jane (CTR)', ageDays: 40, daysInStatus: 30, daysSinceUpdate: 30 },
+  };
+}
+
+/** The Jira base URL the connection store's live proxy status would carry. */
+const JIRA_BASE_URL = 'https://jira.example.com';
+
+/** Points the connection store at a known Jira base URL, as the proxy status probe would on startup. */
+function seedJiraBaseUrl(): void {
+  act(() => {
+    useConnectionStore.setState({
+      proxyStatus: {
+        jira: { configured: true, hasCredentials: true, ready: true, baseUrl: JIRA_BASE_URL },
+      } as unknown as ProxyStatusResponse,
+    });
+  });
+}
+
 /** Persists one actionable item under team A's scope key, so a subsequent mount resumes it without a refresh. */
 function seedResumedItem(item: RemediationItem): void {
   act(() => {
@@ -116,6 +141,8 @@ describe('BacklogRemediationPanel', () => {
     mockFetchAgingBacklog.mockReset();
     // Reset the singleton store to an unscoped, empty state between tests.
     useBacklogRemediationStore.setState({ storageKey: null, items: [], lastRefreshedIso: null, scopeOverrideJql: null });
+    // No Jira base URL unless a test seeds one — the header links then fall back to raw JQL.
+    useConnectionStore.setState({ proxyStatus: null });
   });
   afterEach(() => {
     setAiAssistUnlocked(false);
@@ -240,6 +267,50 @@ describe('BacklogRemediationPanel', () => {
     await act(async () => {
       resolveFetch(fetchResultWithIssues([]));
     });
+  });
+
+  it('links each bucket header to a Jira issue-navigator search over exactly that bucket\'s keys', async () => {
+    seedJiraBaseUrl();
+    mockFetchAgingBacklog.mockResolvedValue(fetchResultWithIssues([]));
+    // Two unowned long-idle items (Likely cancel) and one owned mildly-idle item (Just stale).
+    act(() => {
+      const store = useBacklogRemediationStore.getState();
+      store.setScope(TEAM, PROJECT, PI);
+      store.applyReconcile([pendingItem('ENCUC-1'), pendingItem('ENCUC-2'), ownedStaleItem('ENCUC-3')], '2026-07-20');
+    });
+
+    await act(async () => {
+      renderPanel();
+    });
+
+    // Clicking a bucket's header title opens the Jira issue navigator, in a new tab, scoped to ONLY that
+    // bucket's keys — so a groomer can validate or work each section directly in Jira.
+    const cancelLink = screen.getByRole('link', { name: 'Open Likely cancel in Jira' });
+    expect(cancelLink).toHaveAttribute('target', '_blank');
+    expect(cancelLink).toHaveAttribute(
+      'href',
+      `${JIRA_BASE_URL}/issues/?jql=${encodeURIComponent('issueKey in (ENCUC-1, ENCUC-2)')}`,
+    );
+
+    const staleLink = screen.getByRole('link', { name: 'Open Just stale in Jira' });
+    expect(staleLink).toHaveAttribute(
+      'href',
+      `${JIRA_BASE_URL}/issues/?jql=${encodeURIComponent('issueKey in (ENCUC-3)')}`,
+    );
+  });
+
+  it('falls back to a pasteable raw-JQL href when no Jira base URL is known', async () => {
+    mockFetchAgingBacklog.mockResolvedValue(fetchResultWithIssues([]));
+    seedResumedItem(pendingItem('ENCUC-1'));
+
+    await act(async () => {
+      renderPanel();
+    });
+
+    // Without a base URL the link still carries the exact JQL (the Hygiene tile precedent), so the
+    // user can paste it straight into Jira's search bar.
+    const link = screen.getByRole('link', { name: 'Open Likely cancel in Jira' });
+    expect(link).toHaveAttribute('href', 'issueKey in (ENCUC-1)');
   });
 
   it('still calls the store decide action when a hydrated item is decided', async () => {

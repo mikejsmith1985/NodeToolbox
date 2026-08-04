@@ -14,8 +14,10 @@ import { PriorityBadge } from '../../../components/IssueMeta/PriorityBadge.tsx';
 import { StatusChip } from '../../../components/IssueMeta/StatusChip.tsx';
 import type { ChipTone } from '../../../components/IssueMeta/issueMetaVocabulary.ts';
 import { useQuickLookupStore } from '../../../components/QuickIssueLookup/quickLookupStore.ts';
+import { useConnectionStore } from '../../../store/connectionStore.ts';
 import type { JiraIssue } from '../../../types/jira.ts';
 import { readAcceptanceCriteriaText } from '../../../utils/acceptanceCriteria.ts';
+import { buildJiraIssueNavigatorUrl } from '../../Hygiene/utils/buildHygieneJqlUrl.ts';
 import { fetchAgingBacklog } from '../../ReportsHub/agingBacklogFetch.ts';
 import { AgingBulkClosePanel } from '../../ReportsHub/AgingBulkClosePanel.tsx';
 import { AgingTriageActionTable } from '../../ReportsHub/AgingTriageActionTable.tsx';
@@ -144,6 +146,8 @@ export function BacklogRemediationPanel({ teamProfileId, projectKey, piName }: B
   const teamAssigneeIds = useMemo(() => buildTeamAssigneeIds(rosterMembers), [rosterMembers]);
   // Opening the app-wide F2 quick-lookup lets a groomer drill into any queued key without leaving the tab.
   const openQuickLookup = useQuickLookupStore((state) => state.open);
+  // The Jira base URL from the live proxy status, for the per-bucket "open these keys in Jira" header links.
+  const jiraBaseUrl = useConnectionStore((state) => state.proxyStatus?.jira?.baseUrl ?? null);
 
   // The full issue objects + AC field ids from the last fetch, for the table's inline detail. Empty on a pure
   // resume (no fetch yet) — the verdicts still render from the persisted queue.
@@ -430,7 +434,22 @@ export function BacklogRemediationPanel({ teamProfileId, projectKey, piName }: B
               <section key={group.bucket} className={`${groom.bucketSection} ${TONE_CLASS[presentation.tone]}`}>
                 <div className={groom.bucketHeader}>
                   <span className={groom.bucketIcon} aria-hidden="true">{presentation.icon}</span>
-                  <h4 className={groom.bucketTitle}>{group.meta.label}</h4>
+                  <h4 className={groom.bucketTitle}>
+                    {/* The header title doubles as a deep link: it opens the Jira issue navigator in a new
+                        tab scoped to exactly this bucket's keys, so each section is workable in Jira itself.
+                        With no base URL the href is the raw JQL — pasteable into Jira's search bar. */}
+                    <a
+                      className={groom.bucketTitleLink}
+                      href={buildJiraIssueNavigatorUrl(group.entries.map((entry) => entry.issueKey), jiraBaseUrl)}
+                      target="_blank"
+                      rel="noreferrer"
+                      aria-label={`Open ${group.meta.label} in Jira`}
+                      title="Open this bucket's issues in Jira (new tab)"
+                    >
+                      {group.meta.label}
+                      <span className={groom.bucketTitleLinkGlyph} aria-hidden="true">↗</span>
+                    </a>
+                  </h4>
                   <span className={groom.bucketCount}>{group.entries.length}</span>
                   <span className={groom.bucketSpacer} />
                   {isGhostDone && group.entries.length > 0 && (
