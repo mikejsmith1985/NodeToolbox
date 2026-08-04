@@ -305,10 +305,15 @@ function createGithubEmailIntakeRouter(configuration) {
       const errorMessage = saveError instanceof Error ? saveError.message : String(saveError);
       return res.status(500).json({ ok: false, message: 'Config save failed: ' + errorMessage });
     }
-    // A non-existent drop folder is a warning, not a failure — the user may set it before the folder exists.
-    const folderWarning = sanitisedConfig.dropFolder !== '' && !isExistingDirectory(sanitisedConfig.dropFolder)
-      ? 'Drop folder does not exist yet: ' + sanitisedConfig.dropFolder
-      : null;
+    // A URL in the drop folder is the production misconfiguration that broke runs (a SharePoint
+    // share link pasted into the wrong field) — name the right field. A non-existent LOCAL folder
+    // is only a warning: the user may set it before the folder exists.
+    let folderWarning = null;
+    if (/^https?:/i.test(sanitisedConfig.dropFolder)) {
+      folderWarning = 'The drop folder must be a LOCAL path (e.g. C:\\Users\\you\\GitHubEmails) — SharePoint links belong in the SharePoint folder field.';
+    } else if (sanitisedConfig.dropFolder !== '' && !isExistingDirectory(sanitisedConfig.dropFolder)) {
+      folderWarning = 'Drop folder does not exist yet: ' + sanitisedConfig.dropFolder;
+    }
     return res.json({ ok: true, mode: sanitisedConfig.mode, folderWarning });
   });
 

@@ -349,6 +349,16 @@ describe('SharePoint source routes', () => {
     expect(response.body.sharePointFolderUrl).toBe('/sites/Team/Shared Documents/GitHubEmails');
   });
 
+  it('warns when a URL is pasted into the LOCAL drop folder field (production misconfiguration)', async () => {
+    const response = await request(buildApp(freshConfig()))
+      .post('/api/github-email-intake/config')
+      .send({ dropFolder: 'https://myfyi.sharepoint.com/:f:/r/sites/Team/Shared%20Documents/gh_emails?web=1' });
+
+    expect(response.status).toBe(200);
+    expect(response.body.folderWarning).toMatch(/local path/i);
+    expect(response.body.folderWarning).toMatch(/SharePoint/);
+  });
+
   it('POST /sharepoint/filter-new returns only the names the seen-ledger has not recorded', async () => {
     scheduler.filterNewSharePointFileNames.mockReturnValueOnce(['fresh.eml']);
     const response = await request(buildApp(freshConfig()))
