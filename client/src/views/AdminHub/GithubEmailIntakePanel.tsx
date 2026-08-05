@@ -6,8 +6,11 @@
 
 import { useCallback, useEffect, useState } from 'react'
 
+import { fetchGithubAutomationComments, type AutomationCommentRow } from '../../services/githubCommentAudit.ts'
 import { normalizeSharePointFolderInput, previewSharePointEmails, pullSharePointEmails } from '../../services/githubEmailSharePointPull.ts'
+import { fetchJiraBaseUrl } from '../../services/proxyApi.ts'
 import { useAiAssistStore } from '../../store/aiAssistStore.ts'
+import { buildJiraBrowseUrl } from '../../utils/jiraBrowseUrl.ts'
 import { buildRulePrompt, buildBulkRulePrompt, parseRuleReplyToList, type EmailSample } from '../GithubEmail/lib/githubRulePrompt.ts'
 import { findEventTypeOverlaps, getDefaultSerializedRules, ruleSignature, type SerializedEmailRule } from '../GithubEmail/lib/githubEmailRules.ts'
 import styles from './AdminHubView.module.css'
@@ -217,6 +220,12 @@ export function GithubEmailIntakePanel() {
   // SharePoint source pull (macro-less pipeline): progress/summary message + in-flight flag.
   const [isPullingSharePoint, setIsPullingSharePoint] = useState(false)
   const [sharePointMessage, setSharePointMessage] = useState('')
+  // Posted-comment audit: everything the automation has commented in Jira, for quality checking.
+  const [isAuditing, setIsAuditing] = useState(false)
+  const [auditLookbackDays, setAuditLookbackDays] = useState('30')
+  const [auditRows, setAuditRows] = useState<AutomationCommentRow[]>([])
+  const [auditSummary, setAuditSummary] = useState('')
+  const [auditJiraBaseUrl, setAuditJiraBaseUrl] = useState('')
 
   const loadEverything = useCallback(async () => {
     try {
@@ -251,6 +260,33 @@ export function GithubEmailIntakePanel() {
   function updateConfig(patch: Partial<IntakeConfig>) {
     setConfig((current) => (current === null ? current : { ...current, ...patch }))
     setIsDirty(true)
+  }
+
+  /**
+   * Sweeps Jira for every comment carrying the automation's "GitHub: " signature so mistaken
+   * posts can be spotted. Scoped to the configured project keys (blank = whole instance).
+   */
+  async function handleCommentAudit() {
+    const parsedLookbackDays = Number.parseInt(auditLookbackDays, 10)
+    const lookbackDays = Number.isFinite(parsedLookbackDays) && parsedLookbackDays > 0 ? parsedLookbackDays : 30
+    setIsAuditing(true)
+    setAuditSummary('')
+    try {
+      // The browse-link base URL is cosmetic — a failure must not block the audit itself.
+      const loadedBaseUrl = await fetchJiraBaseUrl().catch(() => '')
+      setAuditJiraBaseUrl(loadedBaseUrl)
+      const auditResult = await fetchGithubAutomationComments(config?.jiraProjectKeys ?? [], lookbackDays)
+      setAuditRows(auditResult.rows)
+      setAuditSummary(
+        `${auditResult.rows.length} automation comment${auditResult.rows.length === 1 ? '' : 's'} ` +
+        `across ${auditResult.scannedIssueCount} candidate issue(s) in the last ${lookbackDays} days.`,
+      )
+    } catch (auditError) {
+      setAuditRows([])
+      setAuditSummary(auditError instanceof Error ? auditError.message : 'Comment audit failed.')
+    } finally {
+      setIsAuditing(false)
+    }
   }
 
   function updateTransition(patch: Partial<IntakeTransitions>) {
@@ -956,6 +992,48 @@ export function GithubEmailIntakePanel() {
             ))}
           </ul>
         )}
+      </div>
+
+      {/* Posted-comment audit — finds every Jira comment carrying the automation's signature so
+          mistaken posts can be quality-checked (user report: a comment landed on the wrong issue). */}
+      <div className={styles.panelSection}>
+        <h3 className={styles.sectionTitle}>Posted-comment audit</h3>
+        <p className={styles.panelStatusLine}>
+          Sweeps Jira for comments the automation posted (its <strong>emoji + "GitHub:"</strong> signature),
+          scoped to the configured project keys, so you can quality-check where it commented.
+        </p>
+        <label className={styles.fieldLabel} htmlFor="github-comment-audit-lookback">Lookback (days)</label>
+        <input
+          className={styles.inputField}
+          id="github-comment-audit-lookback"
+          inputMode="numeric"
+          value={auditLookbackDays}
+          onChange={(changeEvent) => setAuditLookbackDays(changeEvent.target.value)}
+        />
+        <button
+          className={styles.actionButton}
+          disabled={isAuditing}
+          type="button"
+          onClick={() => { void handleCommentAudit() }}
+        >
+          {isAuditing ? 'Scanning…' : '🔎 Scan Jira for automation comments'}
+        </button>
+        {auditSummary ? <p className={styles.panelStatusLine}>{auditSummary}</p> : null}
+        {auditRows.length > 0 ? (
+          <ul>
+            {auditRows.map((auditRow, rowIndex) => (
+              <li key={auditRow.issueKey + '-' + auditRow.createdIso + '-' + rowIndex}>
+                <a href={buildJiraBrowseUrl(auditRow.issueKey, auditJiraBaseUrl)} rel="noreferrer" target="_blank">
+                  {auditRow.issueKey}
+                </a>
+                {' · '}{formatRunTimestamp(auditRow.createdIso)}
+                {auditRow.authorDisplayName ? ' · ' + auditRow.authorDisplayName : ''}
+                {' — '}{auditRow.commentBody}
+                {auditRow.issueSummary ? <em>{' (' + auditRow.issueSummary + ')'}</em> : null}
+              </li>
+            ))}
+          </ul>
+        ) : null}
       </div>
     </div>
   )

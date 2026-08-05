@@ -18,6 +18,15 @@ vi.mock('../../services/githubEmailSharePointPull.ts', async (importOriginal) =>
   previewSharePointEmails: mockPreviewSharePointEmails,
 }));
 
+// Mock the comment-audit sweep — the panel's wiring (button → sweep → rows) is what we test.
+const { mockFetchGithubAutomationComments } = vi.hoisted(() => ({
+  mockFetchGithubAutomationComments: vi.fn(),
+}));
+vi.mock('../../services/githubCommentAudit.ts', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../services/githubCommentAudit.ts')>()),
+  fetchGithubAutomationComments: mockFetchGithubAutomationComments,
+}));
+
 import { GithubEmailIntakePanel } from './GithubEmailIntakePanel.tsx';
 
 const DEFAULT_CONFIG = {
@@ -71,6 +80,35 @@ afterEach(() => {
 });
 
 describe('GithubEmailIntakePanel', () => {
+  // ── Posted-comment audit (user report: automation commented on an issue it should not have) ──
+
+  it('sweeps Jira for automation comments and lists them with issue links', async () => {
+    mockFetchGithubAutomationComments.mockReset();
+    mockFetchGithubAutomationComments.mockResolvedValue({
+      scannedIssueCount: 3,
+      rows: [
+        {
+          issueKey: 'DENP-9',
+          issueSummary: 'Wrongly touched story',
+          commentBody: '🎉 GitHub: pull request has been merged. (PR #2681)',
+          authorDisplayName: 'Svc Account',
+          createdIso: '2026-08-04T15:00:00.000Z',
+        },
+      ],
+    });
+    stubFetch({}, { ...DEFAULT_CONFIG, jiraProjectKeys: ['DENP'] });
+    render(<GithubEmailIntakePanel />);
+    await screen.findByText('Posted-comment audit');
+
+    fireEvent.click(screen.getByRole('button', { name: /scan jira for automation comments/i }));
+
+    expect(await screen.findByText(/pull request has been merged\. \(PR #2681\)/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'DENP-9' })).toBeInTheDocument();
+    expect(screen.getByText(/1 automation comment/)).toBeInTheDocument();
+    // The sweep honors the configured project scope and the default 30-day lookback.
+    expect(mockFetchGithubAutomationComments).toHaveBeenCalledWith(['DENP'], 30);
+  });
+
   // ── Activity Log (user report: 90+ emails untouched, no way to see whether runs happen) ──
 
   it('renders the Activity Log with one row per recorded run and its outcome counts', async () => {

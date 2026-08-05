@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **GitHub Email Intake — Posted-comment audit.** A new Admin Hub section sweeps Jira for every
+  comment carrying the automation's emoji + "GitHub:" signature (scoped to the configured project
+  keys, adjustable lookback) and lists them newest-first with issue links, so mistaken posts can
+  be quality-checked. Note for manual JQL: Jira text search cannot start with a wildcard —
+  `comment ~ "*GitHub*"` silently returns nothing; use `comment ~ "GitHub"`.
+
 ### Fixed
 - **GitHub Email Intake — one SharePoint pull now writes ONE Activity Log entry, and pulls can no
   longer overlap.** A 200-file pull posts in ~20-file batches, and each batch logged its own row —
