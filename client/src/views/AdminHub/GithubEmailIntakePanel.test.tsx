@@ -71,6 +71,42 @@ afterEach(() => {
 });
 
 describe('GithubEmailIntakePanel', () => {
+  // ── Project-keys input (user report: commas were eaten while typing, so the scope could never
+  //     be set and the automation posted into every project matching an issue key) ──
+
+  it('keeps a trailing comma while typing project keys and saves the parsed list', async () => {
+    stubFetch();
+    render(<GithubEmailIntakePanel />);
+    await screen.findByText('📧 GitHub Email Intake');
+    const projectKeysInput = screen.getByLabelText(/jira project keys/i) as HTMLInputElement;
+
+    // Mid-typing state: the comma (and trailing space) must survive the re-render.
+    fireEvent.change(projectKeysInput, { target: { value: 'DENP,' } });
+    expect(projectKeysInput.value).toBe('DENP,');
+    fireEvent.change(projectKeysInput, { target: { value: 'DENP, ENFCT' } });
+    expect(projectKeysInput.value).toBe('DENP, ENFCT');
+
+    fireEvent.click(screen.getByRole('button', { name: /save/i }));
+
+    await waitFor(() => {
+      const fetchMock = vi.mocked(fetch);
+      const savePost = fetchMock.mock.calls.find(([url, init]) => String(url).endsWith('/config') && init?.method === 'POST');
+      expect(savePost).toBeDefined();
+      const savedBody = JSON.parse(String(savePost?.[1]?.body)) as { jiraProjectKeys: string[] };
+      expect(savedBody.jiraProjectKeys).toEqual(['DENP', 'ENFCT']);
+    });
+  });
+
+  it('keeps a trailing comma while typing file extensions', async () => {
+    stubFetch();
+    render(<GithubEmailIntakePanel />);
+    await screen.findByText('📧 GitHub Email Intake');
+    const extensionsInput = screen.getByLabelText(/file extensions/i) as HTMLInputElement;
+
+    fireEvent.change(extensionsInput, { target: { value: '.eml,' } });
+    expect(extensionsInput.value).toBe('.eml,');
+  });
+
   // ── Activity Log (user report: 90+ emails untouched, no way to see whether runs happen) ──
 
   it('renders the Activity Log with one row per recorded run and its outcome counts', async () => {

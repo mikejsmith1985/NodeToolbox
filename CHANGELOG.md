@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **GitHub Email Intake — the "Jira project keys" field ate commas, so the project scope could
+  never actually be set.** The input re-rendered the parsed list on every keystroke, deleting the
+  comma the user just typed — only one key could ever be entered, the field stayed blank, and
+  blank means EVERY project (which is how one PR's comment landed on three projects' issues).
+  The field (and File extensions) now keeps the raw text while typing and parses on save, and the
+  placeholder says explicitly that "DENP, ENFCT" is only an example, not an active scope.
 - **GitHub Email Intake — one SharePoint pull now writes ONE Activity Log entry, and pulls can no
   longer overlap.** A 200-file pull posts in ~20-file batches, and each batch logged its own row —
   a dozen-plus "executions" for a single run. The batches now share a pull id and merge into one
