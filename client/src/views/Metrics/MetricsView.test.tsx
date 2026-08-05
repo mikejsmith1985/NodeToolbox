@@ -26,6 +26,7 @@ interface MetricsStateOverrides {
   predictability?: UseMetricsState['predictability'];
   averageCompletionPct?: number;
   throughput?: UseMetricsState['throughput'];
+  kanbanThroughput?: UseMetricsState['kanbanThroughput'];
   cycleTime?: UseMetricsState['cycleTime'];
 }
 
@@ -44,6 +45,7 @@ function buildMetricsState(overrides: MetricsStateOverrides = {}): UseMetricsSta
     predictability,
     averageCompletionPct: overrides.averageCompletionPct ?? 0,
     throughput: overrides.throughput ?? [],
+    kanbanThroughput: overrides.kanbanThroughput ?? [],
     cycleTime: overrides.cycleTime ?? null,
     reload: vi.fn(),
   };
@@ -115,12 +117,51 @@ describe('MetricsView', () => {
     expect(screen.getByLabelText('Sprint 1 completion 80%')).toBeInTheDocument();
   });
 
-  it('shows the Kanban predictability message', () => {
+  it('asks for a project key on Kanban boards when none is set', () => {
     mockUseMetricsState.mockReturnValue(buildMetricsState({ boardId: '42', boardType: 'kanban' }));
 
     render(<MetricsView />);
 
-    expect(screen.getByText('Predictability requires sprint commitment data — not applicable for Kanban boards.')).toBeInTheDocument();
+    expect(screen.getByText(/kanban flow metrics need a project key/i)).toBeInTheDocument();
+  });
+
+  it('renders weekly kanban throughput rows instead of sprint rows', () => {
+    mockUseMetricsState.mockReturnValue(
+      buildMetricsState({
+        boardId: '42',
+        projectKey: 'TBX',
+        boardType: 'kanban',
+        kanbanThroughput: [
+          { weekStartIso: '2026-07-23', completedIssues: 5 },
+          { weekStartIso: '2026-07-30', completedIssues: 8 },
+        ],
+      }),
+    );
+
+    render(<MetricsView />);
+
+    expect(screen.getByText('Week of 2026-07-23')).toBeInTheDocument();
+    expect(screen.getByText('5 issues')).toBeInTheDocument();
+    expect(screen.getByText('8 issues')).toBeInTheDocument();
+    expect(screen.getByText('Completed issues per rolling week.')).toBeInTheDocument();
+  });
+
+  it('renders flow predictability from cycle time on Kanban boards', () => {
+    mockUseMetricsState.mockReturnValue(
+      buildMetricsState({
+        boardId: '42',
+        projectKey: 'TBX',
+        boardType: 'kanban',
+        cycleTime: { sampleCount: 20, medianDays: 3, p90Days: 5, meanDays: 3.4 },
+      }),
+    );
+
+    render(<MetricsView />);
+
+    expect(screen.getByText('Flow predictability')).toBeInTheDocument();
+    expect(screen.getByText('Steady')).toBeInTheDocument();
+    // p90 ÷ median = 5/3 ≈ 1.7 rendered with one decimal.
+    expect(screen.getByText(/1\.7× median/)).toBeInTheDocument();
   });
 
   it('renders throughput rows for closed sprints', () => {

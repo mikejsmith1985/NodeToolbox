@@ -13,8 +13,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   keys, adjustable lookback) and lists them newest-first with issue links, so mistaken posts can
   be quality-checked. Note for manual JQL: Jira text search cannot start with a wildcard —
   `comment ~ "*GitHub*"` silently returns nothing; use `comment ~ "GitHub"`.
+- **Metrics — Kanban boards now get real metrics instead of two empty cards.** Predictability and
+  Throughput came from Jira's per-sprint report API, which has nothing to say about a sprintless
+  board, so Kanban teams saw blanks. On a Kanban board the Throughput card now shows resolved
+  issues per rolling week (the Sprint window field counts weeks), and the Predictability card
+  becomes **Flow predictability** — how far the slowest-decile cycle time sits above the median
+  (Steady / Variable / Erratic) — with a banner prompting for the Project key that drives both.
+  Scrum boards are untouched.
 
 ### Fixed
+- **Reports Hub — Hygiene Report no longer answers "Team not found" for every team.** The tab
+  offered the ART team names from the global filter, but the scan endpoint only knows the teams
+  configured in Admin Hub → Hygiene Monitor — two unrelated lists, so every scan 404'd. The tab
+  now loads the hygiene monitor config and offers exactly those teams in its own picker (the
+  global filter still preselects a matching name), and explains where to add teams when none are
+  configured yet.
 - **GitHub Email Intake — one SharePoint pull now writes ONE Activity Log entry, and pulls can no
   longer overlap.** A 200-file pull posts in ~20-file batches, and each batch logged its own row —
   a dozen-plus "executions" for a single run. The batches now share a pull id and merge into one
