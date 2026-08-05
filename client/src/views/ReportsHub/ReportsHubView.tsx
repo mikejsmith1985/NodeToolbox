@@ -14,6 +14,7 @@ import SendToAutomationButton from '../../components/SendToAutomationButton.tsx'
 import type { ReportSurface } from '../../api/reportDelivery.ts'
 import { copyElementImageToClipboard } from '../../utils/downloadElementImage.ts'
 import { buildFeatureChangeSendPayload, buildScopeChangeSendPayload, surfaceForTab } from './buildSendPayload.ts'
+import { HygieneReportTab } from './HygieneReportTab.tsx'
 import { PersonalFlowTab } from './PersonalFlowTab.tsx'
 import { IssueAgingTab } from './IssueAgingTab.tsx'
 import { IssueFlowTab } from './IssueFlowTab.tsx'
@@ -2796,101 +2797,5 @@ export default function ReportsHubView() {
 }
 
 // ── Hygiene Report Tab ────────────────────────────────────────────────────────
-
-interface HygieneScanResult {
-  teamName:        string
-  issuesScanned:   number
-  violationsFound: number
-  fixesApplied:    number
-  actionsRequired: number
-  failures:        { issueKey: string; reason: string }[]
-}
-
-interface HygieneReportTabProps {
-  /** The currently selected team name from the Reports Hub global filter, or '' for All Teams. */
-  teamName: string
-}
-
-/** Renders the Hygiene tab in Reports Hub — on-demand scan runner with inline results. */
-function HygieneReportTab({ teamName }: HygieneReportTabProps) {
-  const [isScanning, setIsScanning] = useState(false)
-  const [result, setResult] = useState<HygieneScanResult | null>(null)
-  const [errorMessage, setErrorMessage] = useState<string | null>(null)
-
-  const handleRunScan = useCallback(async () => {
-    if (!teamName) return
-    setIsScanning(true)
-    setResult(null)
-    setErrorMessage(null)
-    try {
-      const response = await fetch('/api/hygiene-monitor/scan', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ teamName }),
-      })
-      if (!response.ok) {
-        const errorBody = await response.json().catch(() => ({ error: 'Scan failed' })) as { error?: string }
-        throw new Error(errorBody.error ?? `HTTP ${response.status}`)
-      }
-      setResult(await response.json() as HygieneScanResult)
-    } catch (scanError) {
-      setErrorMessage((scanError as Error).message)
-    } finally {
-      setIsScanning(false)
-    }
-  }, [teamName])
-
-  if (!teamName) {
-    return (
-      <div className={styles.emptyState}>
-        Select a team from the filter above to run a hygiene scan.
-      </div>
-    )
-  }
-
-  return (
-    <div className={styles.scopeChangeTab}>
-      <div className={styles.scopeChangeSection}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
-          <strong>{teamName}</strong>
-          <button
-            className={`${styles.actionButton} ${styles.primaryButton}`}
-            disabled={isScanning}
-            onClick={() => { void handleRunScan() }}
-          >
-            {isScanning ? '⏳ Scanning…' : '▶ Run Hygiene Scan'}
-          </button>
-        </div>
-
-        {errorMessage && (
-          <p style={{ color: 'var(--color-tone-error-fg)', marginTop: '0.75rem' }}>⚠ {errorMessage}</p>
-        )}
-
-        {result && (
-          <div style={{ marginTop: '1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-            <div style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap' }}>
-              <span><strong>{result.issuesScanned}</strong> issues scanned</span>
-              <span><strong>{result.violationsFound}</strong> violations</span>
-              <span><strong>{result.fixesApplied}</strong> auto-fixed</span>
-              <span><strong>{result.actionsRequired}</strong> actions required</span>
-            </div>
-            {result.failures.length > 0 && (
-              <details style={{ marginTop: '0.5rem' }}>
-                <summary style={{ cursor: 'pointer', color: 'var(--color-text-secondary)' }}>
-                  {result.failures.length} failures — click to expand
-                </summary>
-                <ul style={{ marginTop: '0.5rem', paddingLeft: '1.25rem' }}>
-                  {result.failures.map((failure) => (
-                    <li key={failure.issueKey}>
-                      <strong>{failure.issueKey}</strong>: {failure.reason}
-                    </li>
-                  ))}
-                </ul>
-              </details>
-            )}
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
+// Extracted to HygieneReportTab.tsx — the tab now offers the Admin Hub hygiene monitor's
+// configured teams (the only ones the scan endpoint knows), not the ART filter names.

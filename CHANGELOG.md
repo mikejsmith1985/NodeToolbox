@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Reports Hub — Hygiene Report no longer answers "Team not found" for every team.** The tab
+  offered the ART team names from the global filter, but the scan endpoint only knows the teams
+  configured in Admin Hub → Hygiene Monitor — two unrelated lists, so every scan 404'd. The tab
+  now loads the hygiene monitor config and offers exactly those teams in its own picker (the
+  global filter still preselects a matching name), and explains where to add teams when none are
+  configured yet.
 - **GitHub Email Intake — one SharePoint pull now writes ONE Activity Log entry, and pulls can no
   longer overlap.** A 200-file pull posts in ~20-file batches, and each batch logged its own row —
   a dozen-plus "executions" for a single run. The batches now share a pull id and merge into one
