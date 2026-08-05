@@ -17,6 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   simply skips while a pull is in flight.
 
 ### Added
+- **My Issues To-Do board — one-click copy on every card.** Each card gains a 📋 button that copies
+  the item's text to the clipboard (with a ✓ confirmation), so a to-do can be pasted straight into
+  an IM without selecting text or opening the editor.
 - **GitHub Email Intake — the SharePoint pull now runs on the configured schedule while Toolbox is
   open (GH #282).** The server's scheduler can only sweep a local drop folder — it has no browser
   session, so it can never run the relay-based SharePoint pull, and in a SharePoint-only setup the
