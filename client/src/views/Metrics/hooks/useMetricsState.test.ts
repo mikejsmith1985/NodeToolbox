@@ -119,13 +119,50 @@ describe('useMetricsState Jira loading', () => {
     expect(hookRender.result.current.boardType).toBe('kanban');
     expect(hookRender.result.current.predictability).toEqual([]);
     expect(hookRender.result.current.throughput).toEqual([]);
+    expect(hookRender.result.current.kanbanThroughput).toEqual([]);
     expect(mockJiraGet).toHaveBeenCalledTimes(1);
   });
 
+  it('loads weekly kanban throughput when a project key is set', async () => {
+    const oneDayAgoIso = new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString();
+    const tenDaysAgoIso = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString();
+    mockJiraGet.mockImplementation(async (requestPath: string) => {
+      if (requestPath === '/rest/agile/1.0/board/42') return BOARD_RESPONSE_KANBAN;
+      if (decodeURIComponent(requestPath).includes('resolutiondate >= -42d')) {
+        return {
+          issues: [
+            { fields: { resolutiondate: oneDayAgoIso } },
+            { fields: { resolutiondate: tenDaysAgoIso } },
+            { fields: { resolutiondate: null } },
+          ],
+        };
+      }
+      return CYCLE_TIME_RESPONSE;
+    });
+    const hookRender = renderHook(() => useMetricsState());
+
+    act(() => hookRender.result.current.setBoardId('42'));
+    act(() => hookRender.result.current.setProjectKey('tbx'));
+    await act(async () => {
+      await hookRender.result.current.reload();
+    });
+
+    const requestedPaths = mockJiraGet.mock.calls.map((callArgs) => decodeURIComponent(String(callArgs[0])));
+    expect(requestedPaths.some((path) => path.includes('project=TBX AND statusCategory=Done AND resolutiondate >= -42d'))).toBe(true);
+    // Six sprint-window weeks → six rolling buckets; the two dated resolutions land in them.
+    expect(hookRender.result.current.kanbanThroughput).toHaveLength(6);
+    const totalCompleted = hookRender.result.current.kanbanThroughput
+      .reduce((sum, point) => sum + point.completedIssues, 0);
+    expect(totalCompleted).toBe(2);
+  });
+
   it('loads simplified cycle time when project key is set', async () => {
-    mockJiraGet
-      .mockResolvedValueOnce(BOARD_RESPONSE_KANBAN)
-      .mockResolvedValueOnce(CYCLE_TIME_RESPONSE);
+    // Kanban boards also fetch weekly throughput in parallel, so route responses by path.
+    mockJiraGet.mockImplementation(async (requestPath: string) => {
+      if (requestPath === '/rest/agile/1.0/board/42') return BOARD_RESPONSE_KANBAN;
+      if (decodeURIComponent(requestPath).includes('resolutiondate >=')) return { issues: [] };
+      return CYCLE_TIME_RESPONSE;
+    });
     const hookRender = renderHook(() => useMetricsState());
 
     act(() => hookRender.result.current.setBoardId('42'));

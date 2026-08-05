@@ -4,13 +4,14 @@
 // without depending on legacy globals or application shell state.
 
 import { useMetricsState, type ThroughputPoint, type UseMetricsState } from './hooks/useMetricsState.ts';
+import { describeFlowPredictability, type KanbanThroughputPoint } from './utils/kanbanFlow.ts';
 import type { PredictabilityPoint } from './utils/predictability.ts';
 import styles from './MetricsView.module.css';
 
 const VIEW_TITLE = 'Metrics';
 const VIEW_SUBTITLE = 'Inspect sprint predictability, throughput, and simplified cycle time from Jira.';
 const EMPTY_STATE_MESSAGE = 'Enter a numeric board ID, then load Metrics to analyze recent delivery.';
-const KANBAN_PREDICTABILITY_MESSAGE = 'Predictability requires sprint commitment data — not applicable for Kanban boards.';
+const KANBAN_NEEDS_PROJECT_KEY_MESSAGE = 'Kanban flow metrics need a Project key — enter one above and reload.';
 const CYCLE_TIME_DEFERRAL_MESSAGE = 'Cycle time uses created-to-resolution dates; full changelog parsing is deferred.';
 const TARGET_COMPLETION_PERCENT = 80;
 const DEFAULT_BAR_WIDTH_PERCENT = 0;
@@ -22,7 +23,8 @@ export default function MetricsView() {
   const metricsState = useMetricsState();
   const hasBoardId = metricsState.boardId.trim().length > 0;
   const shouldShowEmptyState = !metricsState.isLoading && !hasBoardId;
-  const shouldShowKanbanMessage = metricsState.boardType === 'kanban';
+  const isKanbanBoard = metricsState.boardType === 'kanban';
+  const shouldAskForProjectKey = isKanbanBoard && metricsState.projectKey.trim().length === 0;
 
   return (
     <section className={styles.metricsView} aria-label={VIEW_TITLE}>
@@ -39,11 +41,15 @@ export default function MetricsView() {
       )}
       {shouldShowEmptyState && <div className={styles.emptyState}>{EMPTY_STATE_MESSAGE}</div>}
       {metricsState.isLoading && <div className={styles.emptyState}>Loading Metrics results…</div>}
-      {shouldShowKanbanMessage && <div className={styles.infoMessage}>{KANBAN_PREDICTABILITY_MESSAGE}</div>}
+      {shouldAskForProjectKey && <div className={styles.infoMessage}>{KANBAN_NEEDS_PROJECT_KEY_MESSAGE}</div>}
 
       <div className={styles.metricsGrid} aria-label="Metrics result cards">
-        {renderPredictabilityCard(metricsState.predictability, metricsState.averageCompletionPct)}
-        {renderThroughputCard(metricsState.throughput)}
+        {isKanbanBoard
+          ? renderFlowPredictabilityCard(metricsState.cycleTime)
+          : renderPredictabilityCard(metricsState.predictability, metricsState.averageCompletionPct)}
+        {isKanbanBoard
+          ? renderKanbanThroughputCard(metricsState.kanbanThroughput)
+          : renderThroughputCard(metricsState.throughput)}
         {renderCycleTimeCard(metricsState)}
       </div>
     </section>
@@ -135,6 +141,65 @@ function renderPredictabilityBar(predictabilityPoint: PredictabilityPoint) {
         {predictabilityPoint.committedItems} items
       </small>
     </div>
+  );
+}
+
+/** Kanban stand-in for the Predictability card: cycle-time consistency read as flow predictability. */
+function renderFlowPredictabilityCard(cycleTime: UseMetricsState['cycleTime']) {
+  const flowReading = cycleTime ? describeFlowPredictability(cycleTime) : null;
+  return (
+    <article className={styles.metricCard} aria-label="Flow predictability">
+      <header className={styles.cardHeader}>
+        <div>
+          <h2>Flow predictability</h2>
+          <p>How consistently items finish — the Kanban counterpart to sprint predictability.</p>
+        </div>
+      </header>
+      {flowReading ? (
+        <dl className={styles.statsGrid}>
+          <div>
+            <dt>Rating</dt>
+            <dd>{flowReading.ratingLabel}</dd>
+          </div>
+          <div>
+            <dt>P90 spread</dt>
+            <dd>{flowReading.p90OverMedianRatio.toFixed(ONE_DECIMAL_PLACE)}× median</dd>
+          </div>
+          <div>
+            <dt>Read</dt>
+            <dd>{flowReading.description}</dd>
+          </div>
+        </dl>
+      ) : (
+        <p className={styles.cardEmpty}>Enter a project key to load flow predictability.</p>
+      )}
+    </article>
+  );
+}
+
+/** Kanban stand-in for the Throughput card: resolved issues per rolling 7-day week. */
+function renderKanbanThroughputCard(kanbanThroughput: KanbanThroughputPoint[]) {
+  return (
+    <article className={styles.metricCard} aria-label="Throughput">
+      <header className={styles.cardHeader}>
+        <div>
+          <h2>Throughput</h2>
+          <p>Completed issues per rolling week.</p>
+        </div>
+      </header>
+      {kanbanThroughput.length === 0 ? (
+        <p className={styles.cardEmpty}>No throughput data loaded.</p>
+      ) : (
+        <ul className={styles.throughputList}>
+          {kanbanThroughput.map((weeklyPoint) => (
+            <li key={weeklyPoint.weekStartIso} className={styles.throughputItem}>
+              <span>{`Week of ${weeklyPoint.weekStartIso}`}</span>
+              <strong>{weeklyPoint.completedIssues} issues</strong>
+            </li>
+          ))}
+        </ul>
+      )}
+    </article>
   );
 }
 
