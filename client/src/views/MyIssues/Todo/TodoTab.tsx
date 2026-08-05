@@ -9,6 +9,7 @@ import type { CSSProperties, HTMLAttributes } from 'react';
 import { DndContext, PointerSensor, useDraggable, useDroppable, useSensor, useSensors } from '@dnd-kit/core';
 import type { DragEndEvent } from '@dnd-kit/core';
 
+import { useCopyFeedback } from '../../../hooks/useCopyFeedback.ts';
 import {
   addTodoItem,
   clearCompletedTodoItems,
@@ -77,6 +78,8 @@ function TodoCard({
   onCancelEdit,
 }: TodoCardProps) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: todoItem.id });
+  // Per-card copy confirmation so sharing an item over IM is a single click with visible feedback.
+  const { hasCopied, confirmCopy } = useCopyFeedback();
   const cardStyle: CSSProperties = {
     transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
     opacity: isDragging ? 0.5 : 1,
@@ -130,6 +133,15 @@ function TodoCard({
             ▶
           </button>
         )}
+        <button
+          aria-label={`Copy "${todoItem.text}"`}
+          className={styles.cardActionButton}
+          title="Copy text to share"
+          type="button"
+          onClick={() => confirmCopy(todoItem.text)}
+        >
+          {hasCopied ? '✓' : '📋'}
+        </button>
         <button
           aria-label={`Edit "${todoItem.text}"`}
           className={styles.cardActionButton}

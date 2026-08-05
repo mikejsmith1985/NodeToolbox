@@ -83,6 +83,19 @@ describe('TodoTab', () => {
     expect(screen.queryByText('Disposable note')).not.toBeInTheDocument();
   });
 
+  it('copies a card text to the clipboard so it can be shared over IM', async () => {
+    addTodoItem('Chase the ENFCT release sign-off');
+    const user = userEvent.setup();
+    render(<TodoTab />);
+
+    await user.click(screen.getByRole('button', { name: /copy "chase the enfct release sign-off"/i }));
+
+    // userEvent installs a working clipboard stub, so the copied text can be read straight back.
+    expect(await window.navigator.clipboard.readText()).toBe('Chase the ENFCT release sign-off');
+    // The button confirms the copy so the user knows the click landed.
+    expect(screen.getByRole('button', { name: /copy "chase the enfct release sign-off"/i })).toHaveTextContent('✓');
+  });
+
   it('counts items per column and clears the whole Done column in one action', async () => {
     const openItem = addTodoItem('still open');
     const doneItem = addTodoItem('already handled');
