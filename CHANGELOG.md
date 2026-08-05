@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Metrics — Kanban boards now get real metrics instead of two empty cards.** Predictability and
+  Throughput came from Jira's per-sprint report API, which has nothing to say about a sprintless
+  board, so Kanban teams saw blanks. On a Kanban board the Throughput card now shows resolved
+  issues per rolling week (the Sprint window field counts weeks), and the Predictability card
+  becomes **Flow predictability** — how far the slowest-decile cycle time sits above the median
+  (Steady / Variable / Erratic) — with a banner prompting for the Project key that drives both.
+  Scrum boards are untouched.
+
 ### Fixed
 - **GitHub Email Intake — one SharePoint pull now writes ONE Activity Log entry, and pulls can no
   longer overlap.** A 200-file pull posts in ~20-file batches, and each batch logged its own row —

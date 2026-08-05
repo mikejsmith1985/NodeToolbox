@@ -7,6 +7,7 @@ import { useCallback, useEffect, useState } from 'react';
 
 import { jiraGet } from '../../../services/jiraApi.ts';
 import { computeStats, daysBetween, type CycleTimeStats } from '../utils/cycleTime.ts';
+import { computeWeeklyThroughput, type KanbanThroughputPoint } from '../utils/kanbanFlow.ts';
 import {
   averagePct,
   parseSprintReport,
@@ -19,6 +20,7 @@ const DEFAULT_SPRINT_WINDOW = 6;
 const MINIMUM_SPRINT_WINDOW = 1;
 const MAXIMUM_CLOSED_SPRINTS = 100;
 const CYCLE_TIME_MAX_RESULTS = 100;
+const KANBAN_THROUGHPUT_MAX_RESULTS = 500;
 const CYCLE_TIME_LOOKBACK_DAYS = 90;
 const ZERO_TOTAL = 0;
 const METRICS_CONFIG_STORAGE_KEY = 'tbxMetricsConfig';
@@ -51,6 +53,8 @@ export interface UseMetricsState {
   predictability: PredictabilityPoint[];
   averageCompletionPct: number;
   throughput: ThroughputPoint[];
+  /** Weekly resolved-issue counts for Kanban boards, oldest week first; empty for Scrum. */
+  kanbanThroughput: KanbanThroughputPoint[];
   cycleTime: CycleTimeStats | null;
   reload: () => Promise<void>;
 }
@@ -98,6 +102,7 @@ export function useMetricsState(): UseMetricsState {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [predictability, setPredictability] = useState<PredictabilityPoint[]>([]);
   const [throughput, setThroughput] = useState<ThroughputPoint[]>([]);
+  const [kanbanThroughput, setKanbanThroughput] = useState<KanbanThroughputPoint[]>([]);
   const [cycleTime, setCycleTime] = useState<CycleTimeStats | null>(null);
 
   useEffect(() => {
@@ -111,7 +116,7 @@ export function useMetricsState(): UseMetricsState {
   const reload = useCallback(async () => {
     const normalizedBoardId = boardId.trim();
     if (!isValidBoardId(normalizedBoardId)) {
-      clearMetricResults(setBoardType, setPredictability, setThroughput, setCycleTime);
+      clearMetricResults(setBoardType, setPredictability, setThroughput, setKanbanThroughput, setCycleTime);
       setErrorMessage(normalizedBoardId ? 'Board ID must be numeric.' : null);
       return;
     }
@@ -123,6 +128,7 @@ export function useMetricsState(): UseMetricsState {
       setIsLoading,
       setPredictability,
       setThroughput,
+      setKanbanThroughput,
     });
   }, [boardId, projectKey, sprintWindow]);
 
@@ -139,6 +145,7 @@ export function useMetricsState(): UseMetricsState {
     predictability,
     averageCompletionPct: averagePct(predictability),
     throughput,
+    kanbanThroughput,
     cycleTime,
     reload,
   };
@@ -151,6 +158,7 @@ interface MetricsSetters {
   setIsLoading: (isLoading: boolean) => void;
   setPredictability: (predictability: PredictabilityPoint[]) => void;
   setThroughput: (throughput: ThroughputPoint[]) => void;
+  setKanbanThroughput: (kanbanThroughput: KanbanThroughputPoint[]) => void;
 }
 
 async function loadMetrics(
@@ -181,9 +189,15 @@ async function loadBoardMetrics(
   metricsSetters: MetricsSetters,
 ): Promise<void> {
   if (detectedBoardType === 'kanban') {
+    // Kanban has no sprints, so sprint-report metrics stay empty; flow metrics take their place.
     metricsSetters.setPredictability([]);
     metricsSetters.setThroughput([]);
-    metricsSetters.setCycleTime(await loadCycleTime(projectKey));
+    const [cycleTime, weeklyThroughput] = await Promise.all([
+      loadCycleTime(projectKey),
+      loadKanbanWeeklyThroughput(projectKey, sprintWindow),
+    ]);
+    metricsSetters.setCycleTime(cycleTime);
+    metricsSetters.setKanbanThroughput(weeklyThroughput);
     return;
   }
 
@@ -191,6 +205,7 @@ async function loadBoardMetrics(
   const sprintMetrics = await loadSprintReportMetrics(normalizedBoardId, closedSprints);
   metricsSetters.setPredictability(sprintMetrics.predictability);
   metricsSetters.setThroughput(sprintMetrics.throughput);
+  metricsSetters.setKanbanThroughput([]);
   metricsSetters.setCycleTime(await loadCycleTime(projectKey));
 }
 
@@ -221,6 +236,24 @@ async function loadSprintReport(
   return { closedSprint, sprintReport };
 }
 
+/**
+ * Loads resolved issues over the sprint-window weeks and buckets them into weekly throughput.
+ * Needs a project key (same requirement as cycle time); returns an empty series without one.
+ */
+async function loadKanbanWeeklyThroughput(projectKey: string, sprintWindow: number): Promise<KanbanThroughputPoint[]> {
+  const normalizedProjectKey = projectKey.trim().toUpperCase();
+  if (!normalizedProjectKey) return [];
+
+  const weekCount = normalizeSprintWindow(sprintWindow);
+  const jiraSearchResponse = await jiraGet<JiraSearchResponse>(
+    buildKanbanThroughputPath(normalizedProjectKey, weekCount),
+  );
+  const resolutionDates = (jiraSearchResponse.issues ?? [])
+    .map((resolvedIssue) => resolvedIssue.fields?.resolutiondate)
+    .filter((resolutionDate): resolutionDate is string => typeof resolutionDate === 'string');
+  return computeWeeklyThroughput(resolutionDates, weekCount, new Date().toISOString());
+}
+
 async function loadCycleTime(projectKey: string): Promise<CycleTimeStats | null> {
   const normalizedProjectKey = projectKey.trim().toUpperCase();
   if (!normalizedProjectKey) return null;
@@ -231,7 +264,7 @@ async function loadCycleTime(projectKey: string): Promise<CycleTimeStats | null>
 }
 
 function handleLoadFailure(caughtError: unknown, metricsSetters: MetricsSetters): void {
-  clearMetricResults(metricsSetters.setBoardType, metricsSetters.setPredictability, metricsSetters.setThroughput, metricsSetters.setCycleTime);
+  clearMetricResults(metricsSetters.setBoardType, metricsSetters.setPredictability, metricsSetters.setThroughput, metricsSetters.setKanbanThroughput, metricsSetters.setCycleTime);
   if (isGreenhopperAccessError(caughtError)) {
     metricsSetters.setErrorMessage(GREENHOPPER_UNAVAILABLE_MESSAGE);
     return;
@@ -243,11 +276,13 @@ function clearMetricResults(
   setBoardType: (boardType: BoardType | null) => void,
   setPredictability: (predictability: PredictabilityPoint[]) => void,
   setThroughput: (throughput: ThroughputPoint[]) => void,
+  setKanbanThroughput: (kanbanThroughput: KanbanThroughputPoint[]) => void,
   setCycleTime: (cycleTime: CycleTimeStats | null) => void,
 ): void {
   setBoardType(null);
   setPredictability([]);
   setThroughput([]);
+  setKanbanThroughput([]);
   setCycleTime(null);
 }
 
@@ -317,6 +352,12 @@ function buildClosedSprintsPath(normalizedBoardId: string, sprintWindow: number)
 
 function buildSprintReportPath(normalizedBoardId: string, sprintId: number): string {
   return `/rest/greenhopper/1.0/rapid/charts/sprintreport?rapidViewId=${encodeURIComponent(normalizedBoardId)}&sprintId=${sprintId}`;
+}
+
+function buildKanbanThroughputPath(normalizedProjectKey: string, weekCount: number): string {
+  const lookbackDays = weekCount * 7;
+  const throughputJql = `project=${normalizedProjectKey} AND statusCategory=Done AND resolutiondate >= -${lookbackDays}d`;
+  return `/rest/api/2/search?jql=${encodeURIComponent(throughputJql)}&maxResults=${KANBAN_THROUGHPUT_MAX_RESULTS}&fields=resolutiondate`;
 }
 
 function buildCycleTimePath(normalizedProjectKey: string): string {
