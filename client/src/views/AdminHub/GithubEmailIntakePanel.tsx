@@ -198,6 +198,12 @@ function splitList(value: string): string[] {
 /** Admin Hub panel that configures, previews, and triggers the GitHub email intake engine. */
 export function GithubEmailIntakePanel() {
   const [config, setConfig] = useState<IntakeConfig | null>(null)
+  // Raw text drafts for the comma-separated inputs. Rendering the parsed array back into the
+  // input on every keystroke ate the comma the user just typed (splitList drops empty segments),
+  // making it impossible to enter a second value — the draft string is the input's truth while
+  // typing; the parsed list lives in config for save/preview.
+  const [projectKeysText, setProjectKeysText] = useState('')
+  const [fileExtensionsText, setFileExtensionsText] = useState('')
   const [lastRun, setLastRun] = useState<IntakeRunResult>({ hasRun: false })
   // Persistent run history (newest first) + which row is expanded to its per-email details.
   const [runLog, setRunLog] = useState<IntakeRunResult[]>([])
@@ -242,6 +248,8 @@ export function GithubEmailIntakePanel() {
         subStatusFieldId: loadedConfig.subStatusFieldId ?? 'customfield_10201',
         sharePointFolderUrl: loadedConfig.sharePointFolderUrl ?? '',
       })
+      setProjectKeysText((loadedConfig.jiraProjectKeys ?? []).join(', '))
+      setFileExtensionsText((loadedConfig.fileExtensions ?? []).join(', '))
       setLastRun(loadedStatus)
       setIsDirty(false)
       setStatusMessage('')
@@ -637,10 +645,28 @@ export function GithubEmailIntakePanel() {
       </div>
 
       <div className={styles.panelSection}>
-        <label className={styles.fieldLabel}>File extensions (comma-separated)</label>
-        <input className={styles.inputField} value={config.fileExtensions.join(', ')} placeholder=".eml, .txt" onChange={(event) => updateConfig({ fileExtensions: splitList(event.target.value) })} />
-        <label className={styles.fieldLabel}>Jira project keys to act on (comma-separated; blank = all)</label>
-        <input className={styles.inputField} value={config.jiraProjectKeys.join(', ')} placeholder="DENP, ENFCT" onChange={(event) => updateConfig({ jiraProjectKeys: splitList(event.target.value) })} />
+        <label className={styles.fieldLabel} htmlFor="github-email-file-extensions">File extensions (comma-separated)</label>
+        <input
+          className={styles.inputField}
+          id="github-email-file-extensions"
+          placeholder="e.g. .eml, .txt"
+          value={fileExtensionsText}
+          onChange={(event) => {
+            setFileExtensionsText(event.target.value)
+            updateConfig({ fileExtensions: splitList(event.target.value) })
+          }}
+        />
+        <label className={styles.fieldLabel} htmlFor="github-email-project-keys">Jira project keys to act on (comma-separated; blank = all)</label>
+        <input
+          className={styles.inputField}
+          id="github-email-project-keys"
+          placeholder="e.g. DENP, ENFCT — this is only an example, blank acts on EVERY project"
+          value={projectKeysText}
+          onChange={(event) => {
+            setProjectKeysText(event.target.value)
+            updateConfig({ jiraProjectKeys: splitList(event.target.value) })
+          }}
+        />
         <p className={styles.panelStatusLine}>
           {config.jiraProjectKeys.length === 0
             ? '⚠ Blank means EVERY project — other teams working in the same repos will also get comments/transitions. Set your team\'s project keys to scope this to your work.'

@@ -22,6 +22,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Scrum boards are untouched.
 
 ### Fixed
+- **GitHub Email Intake — the "Jira project keys" field ate commas, so the project scope could
+  never actually be set.** The input re-rendered the parsed list on every keystroke, deleting the
+  comma the user just typed — only one key could ever be entered, the field stayed blank, and
+  blank means EVERY project (which is how one PR's comment landed on three projects' issues).
+  The field (and File extensions) now keeps the raw text while typing and parses on save, and the
+  placeholder says explicitly that "DENP, ENFCT" is only an example, not an active scope.
 - **Reports Hub — Hygiene Report no longer answers "Team not found" for every team.** The tab
   offered the ART team names from the global filter, but the scan endpoint only knows the teams
   configured in Admin Hub → Hygiene Monitor — two unrelated lists, so every scan 404'd. The tab
