@@ -2093,6 +2093,45 @@ describe('useCrgState', () => {
       expect(result.current.state.isSubmitting).toBe(false);
     });
 
+    // A previously ticked environment used to survive every reload, so the last environment a
+    // user happened to enable looked like a permanent default they could not clear. Which
+    // environments a change targets is a per-change decision — it must always start unticked.
+    it('starts every environment unticked even when a previous session left one enabled', () => {
+      mockVersionFetch();
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({
+        currentStep: 5,
+        projectKey: 'SEED',
+        fixVersion: '2.0.0',
+        fetchMode: 'project',
+        customJql: '',
+        fetchedIssues: [],
+        selectedIssueKeys: [],
+        cloneChgNumber: '',
+        chgBasicInfo: { category: '', changeType: '', environment: '',
+          requestedBy: { sysId: '', displayName: '' }, configItem: { sysId: '', displayName: '' },
+          assignmentGroup: { sysId: '', displayName: '' }, assignedTo: { sysId: '', displayName: '' },
+          changeManager: { sysId: '', displayName: '' }, tester: { sysId: '', displayName: '' },
+          serviceManager: { sysId: '', displayName: '' }, isExpedited: false },
+        generatedShortDescription: '', generatedDescription: '', generatedJustification: '', generatedRiskImpact: '',
+        chgPlanningAssessment: { impact: '', systemAvailabilityImplication: '', hasBeenTested: '',
+          impactedPersonsAware: '', hasBeenPerformedPreviously: '', successProbability: '', canBeBackedOut: '' },
+        chgPlanningContent: { implementationPlan: '', backoutPlan: '', testPlan: '' },
+        relEnvironment:  { isEnabled: true, plannedStartDate: '', plannedEndDate: '' },
+        prdEnvironment:  { isEnabled: true, plannedStartDate: '', plannedEndDate: '' },
+        pfixEnvironment: { isEnabled: true, plannedStartDate: '2026-01-03T10:00', plannedEndDate: '2026-01-03T11:00' },
+      }));
+
+      const { result } = renderHook(() => useCrgState());
+
+      expect(result.current.state.relEnvironment.isEnabled).toBe(false);
+      expect(result.current.state.prdEnvironment.isEnabled).toBe(false);
+      expect(result.current.state.pfixEnvironment.isEnabled).toBe(false);
+      // Everything else the user typed is still restored — only the tick is cleared.
+      expect(result.current.state.pfixEnvironment.plannedStartDate).toBe('2026-01-03T10:00');
+      expect(result.current.state.pfixEnvironment.plannedEndDate).toBe('2026-01-03T11:00');
+      expect(result.current.state.currentStep).toBe(5);
+    });
+
     it('converts selectedIssueKeys from stored array back to a Set', () => {
       localStorage.setItem(STORAGE_KEY, JSON.stringify({
         currentStep: 2,

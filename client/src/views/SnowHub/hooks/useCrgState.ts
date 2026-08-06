@@ -595,6 +595,24 @@ function mergeEnvironmentConfig(
 }
 
 /**
+ * Restores a saved environment card without re-ticking its Enabled checkbox.
+ *
+ * Which environments a change targets is a decision that belongs to the change being written,
+ * not to the browser. Carrying the tick across a reload made whichever environment was last
+ * enabled look like a permanent default nobody could clear (user report: PFIX, the least-used
+ * environment, arrived pre-selected every time). Everything the user typed — dates, config
+ * item, SNow environment value — is still restored; only the tick starts clean.
+ */
+function restorePersistedEnvironmentConfig(
+  environmentConfig: Partial<EnvironmentConfig> | undefined,
+): EnvironmentConfig {
+  return {
+    ...mergeEnvironmentConfig(environmentConfig),
+    isEnabled: false,
+  };
+}
+
+/**
  * Reads persisted CRG progress from localStorage and converts stored arrays back to Sets.
  * Returns an empty object when nothing is stored or if the stored data is invalid.
  */
@@ -629,9 +647,10 @@ function createInitialCrgState(): CrgState {
       persistedShortDescriptionConfig,
       persisted.shortDescriptionConfig,
     ),
-    relEnvironment: mergeEnvironmentConfig(persisted.relEnvironment),
-    prdEnvironment: mergeEnvironmentConfig(persisted.prdEnvironment),
-    pfixEnvironment: mergeEnvironmentConfig(persisted.pfixEnvironment),
+    // Environment ticks never survive a reload — see restorePersistedEnvironmentConfig.
+    relEnvironment: restorePersistedEnvironmentConfig(persisted.relEnvironment),
+    prdEnvironment: restorePersistedEnvironmentConfig(persisted.prdEnvironment),
+    pfixEnvironment: restorePersistedEnvironmentConfig(persisted.pfixEnvironment),
     // Always reset transient flags — these should not survive a page reload.
     availableFixVersions: [],
     isFetchingIssues: false,
