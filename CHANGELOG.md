@@ -22,6 +22,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Scrum boards are untouched.
 
 ### Fixed
+- **SNow Hub (Create CHG) — PFIX looked like a permanent default on the Environments step.** No
+  environment was ever hard-coded as the default; the wizard persists its progress to localStorage
+  and was restoring each card's **Enabled** tick along with it. So whichever environment a user
+  last enabled came back ticked on every reload, indefinitely — and for this user that was PFIX,
+  the least-used environment. Which environments a change targets is a per-change decision, so the
+  ticks now always start clear on a fresh load. Everything else you typed (planned dates, config
+  item, SNow environment value) is still restored, and loading a saved CRG template or cloning an
+  existing CHG still enables the environment it names.
 - **GitHub Email Intake — the "Jira project keys" field ate commas, so the project scope could
   never actually be set.** The input re-rendered the parsed list on every keystroke, deleting the
   comma the user just typed — only one key could ever be entered, the field stayed blank, and
