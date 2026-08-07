@@ -33,6 +33,9 @@ export interface ColumnVocabularyEditorProps {
   allItems: readonly RollupBoardItem[];
   /** Absent when this team has no shared ART workspace, which makes sharing impossible but not the board. */
   canShare: boolean;
+  /** Other teams whose column setup could be reused here. */
+  copyableTeams?: readonly { id: string; name: string }[];
+  onCopyFromTeam?: (sourceTeamProfileId: string) => void;
   pullPreview?: VocabularyPullPreview | null;
   onVocabularyChange: (vocabulary: BoardVocabulary) => void;
   onPublish?: () => void;
@@ -66,6 +69,8 @@ export function ColumnVocabularyEditor({
   optionSources,
   allItems,
   canShare,
+  copyableTeams = [],
+  onCopyFromTeam,
   pullPreview = null,
   onVocabularyChange,
   onPublish,
@@ -119,20 +124,6 @@ export function ColumnVocabularyEditor({
     setPendingColumnName('');
   }
 
-  /** Moves a column one place left or right, renumbering so the order stays contiguous. */
-  function handleMoveColumn(columnId: string, offset: number): void {
-    const sortedColumns = [...vocabulary.columns].sort((left, right) => left.order - right.order);
-    const currentIndex = sortedColumns.findIndex((column) => column.id === columnId);
-    const targetIndex = currentIndex + offset;
-    if (currentIndex < 0 || targetIndex < 0 || targetIndex >= sortedColumns.length) return;
-
-    const [movedColumn] = sortedColumns.splice(currentIndex, 1);
-    sortedColumns.splice(targetIndex, 0, movedColumn);
-    onVocabularyChange({
-      ...vocabulary,
-      columns: sortedColumns.map((column, columnIndex) => ({ ...column, order: columnIndex })),
-    });
-  }
 
   /** Adds one Jira state to a column's claim, ignoring a state it already holds. */
   function handleAddStateToColumn(columnId: string, state: ObservedBoardState): void {
@@ -177,6 +168,31 @@ export function ColumnVocabularyEditor({
         Name each column the way your team talks about the work, then say which Jira state it stands for.
         These columns belong to the whole team — last shared: {vocabulary.lastSyncedAt ?? NEVER_SYNCED_LABEL}.
       </p>
+
+      {/* Building the same columns twice is wasted effort — take another team's and adjust. */}
+      {copyableTeams.length > 0 && (
+        <div className={styles.editorRow}>
+          <label className={styles.fieldLabel}>
+            Copy columns from
+            <select
+              aria-label="Copy columns from another team"
+              className={styles.inputField}
+              onChange={(changeEvent) => {
+                if (changeEvent.target.value) onCopyFromTeam?.(changeEvent.target.value);
+              }}
+              value=""
+            >
+              <option value="">Choose a team…</option>
+              {copyableTeams.map((team) => (
+                <option key={team.id} value={team.id}>{team.name}</option>
+              ))}
+            </select>
+          </label>
+          <span className={styles.fieldLabel}>
+            Replaces the columns below with that team&apos;s, for you to adjust. Their board is not affected.
+          </span>
+        </div>
+      )}
 
       {/* Far easier than guessing which state combinations exist: start from the ones that do. */}
       <div className={styles.editorRow}>
@@ -242,11 +258,7 @@ export function ColumnVocabularyEditor({
             {column.mappings.length === 0
               ? 'no statuses — holds nothing'
               : `${countIssuesMatchingMappings(allItems, column.mappings, hasSubStatusField)} issues here now`}
-          </span>
-
-          <button aria-label={`Move ${column.name} left`} className={styles.actionButton} onClick={() => handleMoveColumn(column.id, -1)} type="button">←</button>
-          <button aria-label={`Move ${column.name} right`} className={styles.actionButton} onClick={() => handleMoveColumn(column.id, 1)} type="button">→</button>
-          <button
+          </span>          <button
             className={styles.actionButton}
             onClick={() => onVocabularyChange({
               ...vocabulary,
@@ -299,9 +311,11 @@ export function ColumnVocabularyEditor({
 
       {canShare && (
         <p className={styles.fieldLabel}>
-          <strong>Share</strong> sends the columns above to everyone on this team — the next person to open the board
-          is shown what would change and can accept or keep their own. <strong>Get</strong> pulls whatever the team is
-          currently using, and shows you the differences before anything changes on your board.
+          These two are for keeping <strong>one team&apos;s</strong> columns the same across everybody&apos;s machine,
+          through the team&apos;s shared Confluence workspace. <strong>Share my columns with the team</strong> publishes
+          what you see above; <strong>Get the team&apos;s columns</strong> fetches whatever was last published and shows
+          you the differences before anything changes. Neither touches another team — to reuse a setup on a different
+          team, use <strong>Copy columns from</strong> above.
         </p>
       )}
 

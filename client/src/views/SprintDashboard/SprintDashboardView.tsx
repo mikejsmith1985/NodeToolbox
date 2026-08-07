@@ -6791,6 +6791,8 @@ export default function SprintDashboardView() {
           key={`${activeDashboardTeamProfileId}:${state.boardId ?? 'none'}`}
           // The dashboard's already-scoped set, so this tab mirrors the Sprint / Fix Version / PI
           // selector above rather than re-querying the whole board filter.
+          // Other teams on this machine, so a finished column setup can be reused rather than rebuilt.
+          copyableTeams={dashboardTeamProfiles.map((teamProfile) => ({ id: teamProfile.id, name: teamProfile.name }))}
           scopeDescription={DASHBOARD_SCOPE_OPTION_LABELS[state.scopeMode]}
           scopedIssues={state.sprintIssues}
           teamProfileId={activeDashboardTeamProfileId}

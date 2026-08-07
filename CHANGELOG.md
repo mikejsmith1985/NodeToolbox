@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Roll-Up Board — copy a column setup from another team.** Board setup now offers every other team
+  on this machine: pick one and its columns become yours to adjust, so a setup built once does not
+  have to be built again. The other team's board is untouched.
+- **Roll-Up Board — column headers stay put while you scroll**, and are reordered by dragging them
+  rather than by arrow buttons. The Unmapped column stays fixed at the end, since it is not the
+  team's column to move.
+
+### Fixed
+- **Roll-Up Board — the project chips could not be used to widen the scope.** They were built from
+  the board AFTER filtering, so the moment a project was excluded its chip vanished and there was no
+  way left to find or re-add it — and typing a second project with a comma appeared to do nothing,
+  because the new project had no Features left on the filtered board to prove it had worked. The
+  chips now come from every project the board touches, whatever the current scope, and clicking one
+  adds or removes it. The text box also stays in step with the scope, so typing and clicking can no
+  longer disagree.
+- **Roll-Up Board — the two sharing buttons now say what they are for.** They keep ONE team's
+  columns the same across everybody's machine via the shared Confluence workspace, which is a
+  different job from reusing a setup on another team — that is what the new copy control does.
+
 ### Fixed
 - **Roll-Up Board opened as a blank page for anyone who had already set up columns.** Columns gained
   the ability to claim several Jira statuses, but the saved field was renamed without upgrading data

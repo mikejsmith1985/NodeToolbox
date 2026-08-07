@@ -123,17 +123,12 @@ describe('ColumnVocabularyEditor — the mapping controls', () => {
       c.mappings.every((mapping) => mapping.subStatusValue === null))).toBe(true);
   });
 
-  it('reorders a column and renumbers so the order stays contiguous', () => {
-    const onVocabularyChange = vi.fn();
+  it('no longer offers arrow buttons — columns are reordered by dragging their headers', () => {
     render(
-      <ColumnVocabularyEditor allItems={BOARD_ITEMS} canShare optionSources={OPTION_SOURCES} onVocabularyChange={onVocabularyChange} vocabulary={buildVocabulary()} />,
+      <ColumnVocabularyEditor allItems={BOARD_ITEMS} canShare optionSources={OPTION_SOURCES} onVocabularyChange={vi.fn()} vocabulary={buildVocabulary()} />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Move Waiting on SL test left' }));
-
-    const [nextVocabulary] = onVocabularyChange.mock.calls[0];
-    expect(nextVocabulary.columns.map((column: { name: string; order: number }) => [column.name, column.order]))
-      .toEqual([['Waiting on SL test', 0], ['Being coded', 1]]);
+    expect(screen.queryByRole('button', { name: /^Move / })).toBeNull();
   });
 });
 
@@ -159,6 +154,52 @@ describe('ColumnVocabularyEditor — refusing an ambiguous vocabulary', () => {
     );
 
     expect(screen.getByRole('alert').textContent).toContain('both called');
+  });
+});
+
+describe("ColumnVocabularyEditor — reusing another team's setup", () => {
+  const OTHER_TEAMS = [{ id: 'team-b', name: 'Cleanup Crew' }];
+
+  it('offers other teams to copy from, so the same columns are not built twice', () => {
+    render(
+      <ColumnVocabularyEditor
+        allItems={BOARD_ITEMS}
+        canShare
+        copyableTeams={OTHER_TEAMS}
+        onVocabularyChange={vi.fn()}
+        optionSources={OPTION_SOURCES}
+        vocabulary={buildVocabulary()}
+      />,
+    );
+
+    expect(screen.getByRole('option', { name: 'Cleanup Crew' })).toBeTruthy();
+  });
+
+  it("copies that team's columns on choosing them", () => {
+    const onCopyFromTeam = vi.fn();
+    render(
+      <ColumnVocabularyEditor
+        allItems={BOARD_ITEMS}
+        canShare
+        copyableTeams={OTHER_TEAMS}
+        onCopyFromTeam={onCopyFromTeam}
+        onVocabularyChange={vi.fn()}
+        optionSources={OPTION_SOURCES}
+        vocabulary={buildVocabulary()}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText('Copy columns from another team'), { target: { value: 'team-b' } });
+
+    expect(onCopyFromTeam).toHaveBeenCalledWith('team-b');
+  });
+
+  it('hides the copy control when there is no other team to copy from', () => {
+    render(
+      <ColumnVocabularyEditor allItems={BOARD_ITEMS} canShare optionSources={OPTION_SOURCES} onVocabularyChange={vi.fn()} vocabulary={buildVocabulary()} />,
+    );
+
+    expect(screen.queryByLabelText('Copy columns from another team')).toBeNull();
   });
 });
 
@@ -334,7 +375,7 @@ describe('ColumnVocabularyEditor — sharing says what it does', () => {
       <ColumnVocabularyEditor allItems={BOARD_ITEMS} canShare optionSources={OPTION_SOURCES} onVocabularyChange={vi.fn()} vocabulary={buildVocabulary()} />,
     );
 
-    expect(screen.getByText(/sends the columns above to everyone on this team/)).toBeTruthy();
-    expect(screen.getByText(/shows you the differences before anything changes/)).toBeTruthy();
+    expect(screen.getByText(/through the team's shared Confluence workspace/)).toBeTruthy();
+    expect(screen.getByText(/Neither touches another team/)).toBeTruthy();
   });
 });

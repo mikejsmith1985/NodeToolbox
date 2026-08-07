@@ -4,7 +4,7 @@
 // Features nobody on the team owns are noise. This is per team on purpose: one team tracks a single
 // project, another tracks two.
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import {
   formatFeatureProjectKeysInput,
@@ -17,8 +17,13 @@ export interface FeatureScopePanelProps {
   scope: FeatureScopeSettings;
   /** False while this team is still inheriting the ART-wide setting rather than its own. */
   hasOwnScope: boolean;
-  /** Feature keys currently on the board, so the panel can offer the projects actually in play. */
-  visibleFeatureKeys: readonly string[];
+  /**
+   * Every Feature key the board touches BEFORE scoping.
+   *
+   * Deriving the chips from the filtered board made them useless: once a project was excluded its
+   * chip vanished, so there was no way to discover or re-add it.
+   */
+  allFeatureKeys: readonly string[];
   /** How many issues the current scope is holding back. */
   hiddenIssueCount: number;
   /** Out-of-project Features reached by the Feature Link field — named whether shown or hidden. */
@@ -42,7 +47,7 @@ function collectProjectKeysInPlay(featureKeys: readonly string[]): string[] {
 export function FeatureScopePanel({
   scope,
   hasOwnScope,
-  visibleFeatureKeys,
+  allFeatureKeys,
   hiddenIssueCount,
   featureLinkedOutOfProjectKeys,
   issueLinkedOutOfProjectKeys,
@@ -52,18 +57,26 @@ export function FeatureScopePanel({
   const [projectKeysInput, setProjectKeysInput] = useState(
     formatFeatureProjectKeysInput(scope.featureProjectKeys),
   );
-  const projectKeysInPlay = collectProjectKeysInPlay(visibleFeatureKeys);
+  const projectKeysInPlay = collectProjectKeysInPlay(allFeatureKeys);
+
+  // Keep the box showing what is actually in force, so typing and chip-clicking cannot disagree.
+  useEffect(() => {
+    setProjectKeysInput(formatFeatureProjectKeysInput(scope.featureProjectKeys));
+  }, [scope.featureProjectKeys]);
 
   /** Applies the typed list. Empty means "show every Feature", which is a real choice, not a blank. */
   function handleApply(): void {
     onScopeChange({ ...scope, featureProjectKeys: parseFeatureProjectKeysInput(projectKeysInput) });
   }
 
-  /** One click to add a project the board is already showing, so nobody has to retype a key. */
-  function handleAddProjectKey(projectKey: string): void {
-    const nextKeys = parseFeatureProjectKeysInput(`${projectKeysInput},${projectKey}`);
+  /** One click to include or exclude a project, so nobody has to retype a key. */
+  function handleToggleProjectKey(projectKey: string): void {
+    const isTracked = scope.featureProjectKeys.includes(projectKey);
+    const nextKeys = isTracked
+      ? scope.featureProjectKeys.filter((trackedKey) => trackedKey !== projectKey)
+      : parseFeatureProjectKeysInput(`${projectKeysInput},${projectKey}`);
     setProjectKeysInput(formatFeatureProjectKeysInput(nextKeys));
-    onScopeChange({ ...scope, featureProjectKeys: nextKeys });
+    onScopeChange({ ...scope, featureProjectKeys: [...nextKeys] });
   }
 
   return (
@@ -96,12 +109,13 @@ export function FeatureScopePanel({
 
       {projectKeysInPlay.length > 0 && (
         <div className={styles.editorRow}>
-          <span className={styles.fieldLabel}>On this board now:</span>
+          <span className={styles.fieldLabel}>Projects this board touches — click to include or exclude:</span>
           {projectKeysInPlay.map((projectKey) => (
             <button
+              aria-pressed={scope.featureProjectKeys.includes(projectKey)}
               className={scope.featureProjectKeys.includes(projectKey) ? styles.filterChipActive : styles.filterChip}
               key={projectKey}
-              onClick={() => handleAddProjectKey(projectKey)}
+              onClick={() => handleToggleProjectKey(projectKey)}
               type="button"
             >
               {projectKey}

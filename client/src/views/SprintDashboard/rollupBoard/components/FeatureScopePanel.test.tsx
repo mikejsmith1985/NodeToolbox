@@ -13,7 +13,8 @@ const TRANSFORMERS_SCOPE: FeatureScopeSettings = {
   shouldIncludeIssueLinkedFeatures: false,
 };
 
-const VISIBLE_FEATURE_KEYS = ['ENCUC-1', 'ENCUC-2', 'DENP-9', '__no_feature__'];
+/** Every Feature the board touches, INCLUDING projects the current scope excludes. */
+const ALL_FEATURE_KEYS = ['ENCUC-1', 'ENCUC-2', 'DENP-9', 'QEINT-4', '__no_feature__'];
 
 describe('FeatureScopePanel — configuring the projects', () => {
   it('shows the team\'s current project list', () => {
@@ -26,7 +27,7 @@ describe('FeatureScopePanel — configuring the projects', () => {
         onResetScope={vi.fn()}
         onScopeChange={vi.fn()}
         scope={TRANSFORMERS_SCOPE}
-        visibleFeatureKeys={VISIBLE_FEATURE_KEYS}
+        allFeatureKeys={ALL_FEATURE_KEYS}
       />,
     );
 
@@ -44,7 +45,7 @@ describe('FeatureScopePanel — configuring the projects', () => {
         onResetScope={vi.fn()}
         onScopeChange={onScopeChange}
         scope={TRANSFORMERS_SCOPE}
-        visibleFeatureKeys={VISIBLE_FEATURE_KEYS}
+        allFeatureKeys={ALL_FEATURE_KEYS}
       />,
     );
 
@@ -54,7 +55,47 @@ describe('FeatureScopePanel — configuring the projects', () => {
     expect(onScopeChange.mock.calls[0][0].featureProjectKeys).toEqual(['ENCUC', 'DENP']);
   });
 
-  it('offers the projects already on the board, so nobody has to retype a key', () => {
+  it('offers every project the board touches, including ones the scope currently excludes', () => {
+    // Deriving these from the FILTERED board made them useless: an excluded project's chip vanished,
+    // so there was no way left to discover or re-add it.
+    render(
+      <FeatureScopePanel
+        allFeatureKeys={ALL_FEATURE_KEYS}
+        featureLinkedOutOfProjectKeys={[]}
+        hasOwnScope
+        hiddenIssueCount={0}
+        issueLinkedOutOfProjectKeys={[]}
+        onResetScope={vi.fn()}
+        onScopeChange={vi.fn()}
+        scope={TRANSFORMERS_SCOPE}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: 'QEINT' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'DENP' })).toBeTruthy();
+  });
+
+  it('takes a project back out when its chip is clicked again', () => {
+    const onScopeChange = vi.fn();
+    render(
+      <FeatureScopePanel
+        allFeatureKeys={ALL_FEATURE_KEYS}
+        featureLinkedOutOfProjectKeys={[]}
+        hasOwnScope
+        hiddenIssueCount={0}
+        issueLinkedOutOfProjectKeys={[]}
+        onResetScope={vi.fn()}
+        onScopeChange={onScopeChange}
+        scope={TRANSFORMERS_SCOPE}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'ENCUC' }));
+
+    expect(onScopeChange.mock.calls[0][0].featureProjectKeys).toEqual([]);
+  });
+
+  it('adds a project the board touches, so nobody has to retype a key', () => {
     const onScopeChange = vi.fn();
     render(
       <FeatureScopePanel
@@ -65,7 +106,7 @@ describe('FeatureScopePanel — configuring the projects', () => {
         onResetScope={vi.fn()}
         onScopeChange={onScopeChange}
         scope={TRANSFORMERS_SCOPE}
-        visibleFeatureKeys={VISIBLE_FEATURE_KEYS}
+        allFeatureKeys={ALL_FEATURE_KEYS}
       />,
     );
 
@@ -84,7 +125,7 @@ describe('FeatureScopePanel — configuring the projects', () => {
         onResetScope={vi.fn()}
         onScopeChange={vi.fn()}
         scope={TRANSFORMERS_SCOPE}
-        visibleFeatureKeys={VISIBLE_FEATURE_KEYS}
+        allFeatureKeys={ALL_FEATURE_KEYS}
       />,
     );
 
@@ -101,7 +142,7 @@ describe('FeatureScopePanel — configuring the projects', () => {
         onResetScope={vi.fn()}
         onScopeChange={vi.fn()}
         scope={TRANSFORMERS_SCOPE}
-        visibleFeatureKeys={VISIBLE_FEATURE_KEYS}
+        allFeatureKeys={ALL_FEATURE_KEYS}
       />,
     );
 
@@ -121,7 +162,7 @@ describe('FeatureScopePanel — configuring the projects', () => {
         onResetScope={onResetScope}
         onScopeChange={vi.fn()}
         scope={TRANSFORMERS_SCOPE}
-        visibleFeatureKeys={VISIBLE_FEATURE_KEYS}
+        allFeatureKeys={ALL_FEATURE_KEYS}
       />,
     );
 
@@ -142,7 +183,7 @@ describe('FeatureScopePanel — being honest about what is hidden', () => {
         onResetScope={vi.fn()}
         onScopeChange={vi.fn()}
         scope={TRANSFORMERS_SCOPE}
-        visibleFeatureKeys={VISIBLE_FEATURE_KEYS}
+        allFeatureKeys={ALL_FEATURE_KEYS}
       />,
     );
 
@@ -160,7 +201,7 @@ describe('FeatureScopePanel — being honest about what is hidden', () => {
         onResetScope={vi.fn()}
         onScopeChange={vi.fn()}
         scope={TRANSFORMERS_SCOPE}
-        visibleFeatureKeys={VISIBLE_FEATURE_KEYS}
+        allFeatureKeys={ALL_FEATURE_KEYS}
       />,
     );
 
@@ -178,7 +219,7 @@ describe('FeatureScopePanel — being honest about what is hidden', () => {
         onResetScope={vi.fn()}
         onScopeChange={vi.fn()}
         scope={TRANSFORMERS_SCOPE}
-        visibleFeatureKeys={VISIBLE_FEATURE_KEYS}
+        allFeatureKeys={ALL_FEATURE_KEYS}
       />,
     );
 
@@ -198,7 +239,7 @@ describe('FeatureScopePanel — being honest about what is hidden', () => {
         onResetScope={vi.fn()}
         onScopeChange={onScopeChange}
         scope={TRANSFORMERS_SCOPE}
-        visibleFeatureKeys={VISIBLE_FEATURE_KEYS}
+        allFeatureKeys={ALL_FEATURE_KEYS}
       />,
     );
 
@@ -220,7 +261,7 @@ describe('FeatureScopePanel — being honest about what is hidden', () => {
         onResetScope={vi.fn()}
         onScopeChange={onScopeChange}
         scope={TRANSFORMERS_SCOPE}
-        visibleFeatureKeys={VISIBLE_FEATURE_KEYS}
+        allFeatureKeys={ALL_FEATURE_KEYS}
       />,
     );
 
@@ -241,7 +282,7 @@ describe('FeatureScopePanel — being honest about what is hidden', () => {
         onResetScope={vi.fn()}
         onScopeChange={vi.fn()}
         scope={TRANSFORMERS_SCOPE}
-        visibleFeatureKeys={VISIBLE_FEATURE_KEYS}
+        allFeatureKeys={ALL_FEATURE_KEYS}
       />,
     );
 
