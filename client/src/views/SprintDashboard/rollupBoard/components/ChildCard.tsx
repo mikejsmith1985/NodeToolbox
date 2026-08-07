@@ -8,11 +8,12 @@
 // Click and drag are told apart by the drag sensor's activation distance: a press that never moves
 // is a click and opens the issue; a press that travels is a drag.
 
-import { useDraggable } from '@dnd-kit/core';
+import { useDraggable, useDroppable } from '@dnd-kit/core';
 
 import { AssigneeAvatar } from '../../../../components/IssueMeta/AssigneeAvatar.tsx';
 import { IssueTypeIcon } from '../../../../components/IssueMeta/IssueTypeIcon.tsx';
 import { PriorityBadge } from '../../../../components/IssueMeta/PriorityBadge.tsx';
+import { buildCardTargetId } from '../cardDropRouting.ts';
 import styles from '../RollupBoardTab.module.css';
 import type { IssueTypeBucket, RollUpRoute, RollupBoardItem } from '../rollupBoardTypes.ts';
 
@@ -65,6 +66,14 @@ export function ChildCard({
   onSelectFamily,
 }: ChildCardProps) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: item.key });
+  // Also a drop target, so one card can be dropped onto another to sequence the work in a column.
+  const { isOver, setNodeRef: setDropRef } = useDroppable({ id: buildCardTargetId(item.key) });
+
+  /** One element is both the drag source and the drop target. */
+  function attachBothRefs(element: HTMLDivElement | null): void {
+    setNodeRef(element);
+    setDropRef(element);
+  }
 
   const cardClassNames = [
     styles.card,
@@ -72,6 +81,7 @@ export function ChildCard({
     isHighlighted ? styles.cardHighlighted : '',
     isPending ? styles.cardPending : '',
     isDragging ? styles.cardDragging : '',
+    isOver && !isDragging ? styles.cardDropBefore : '',
   ].filter(Boolean).join(' ');
 
   /** Opens the issue. Never fires mid-drag, since a travelling press is not a click. */
@@ -94,7 +104,7 @@ export function ChildCard({
           handleOpen();
         }
       }}
-      ref={setNodeRef}
+      ref={attachBothRefs}
       {...listeners}
       {...attributes}
       role="button"

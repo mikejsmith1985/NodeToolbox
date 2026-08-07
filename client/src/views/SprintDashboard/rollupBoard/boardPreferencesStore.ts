@@ -15,7 +15,45 @@ function buildPreferencesKey(teamProfileId: string, boardId: number): string {
 
 /** A viewer who has never touched this board: no order of their own, every lane collapsed. */
 export function buildDefaultPreferences(teamProfileId: string, boardId: number): BoardPreferences {
-  return { teamProfileId, boardId, laneOrder: [], collapsedByFeatureKey: {} };
+  return { teamProfileId, boardId, laneOrder: [], collapsedByFeatureKey: {}, cardOrderByCell: {} };
+}
+
+/** The storage key for one lane's column — where a hand-ordered sequence of cards is remembered. */
+export function buildCardCellKey(featureKey: string, columnId: string): string {
+  return `${featureKey}::${columnId}`;
+}
+
+/**
+ * Moves one card to sit where another currently is, within the same lane and column.
+ *
+ * The order is seeded from what is on screen the first time someone drags, so a single move
+ * reorders one card rather than appearing to shuffle the whole column.
+ */
+export function moveCardBefore(
+  preferences: BoardPreferences,
+  featureKey: string,
+  columnId: string,
+  movedIssueKey: string,
+  targetIssueKey: string,
+  displayedIssueKeys: readonly string[],
+): BoardPreferences {
+  const cellKey = buildCardCellKey(featureKey, columnId);
+  const storedOrder = preferences.cardOrderByCell?.[cellKey] ?? [];
+  const seededOrder = storedOrder.length > 0
+    ? storedOrder.filter((issueKey) => displayedIssueKeys.includes(issueKey))
+    : [...displayedIssueKeys];
+
+  if (movedIssueKey === targetIssueKey) {
+    return { ...preferences, cardOrderByCell: { ...preferences.cardOrderByCell, [cellKey]: seededOrder } };
+  }
+
+  const withoutMoved = seededOrder.filter((issueKey) => issueKey !== movedIssueKey);
+  const targetIndex = withoutMoved.indexOf(targetIssueKey);
+  const nextOrder = targetIndex < 0
+    ? [...withoutMoved, movedIssueKey]
+    : [...withoutMoved.slice(0, targetIndex), movedIssueKey, ...withoutMoved.slice(targetIndex)];
+
+  return { ...preferences, cardOrderByCell: { ...preferences.cardOrderByCell, [cellKey]: nextOrder } };
 }
 
 /** Reads every stored preference set; unreadable storage is treated as "nothing stored yet". */

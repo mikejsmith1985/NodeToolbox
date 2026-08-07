@@ -6,7 +6,13 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { buildDropTargetId, parseDropTargetId, resolveCardDrop } from './cardDropRouting.ts';
+import {
+  buildCardTargetId,
+  buildDropTargetId,
+  parseCardTargetId,
+  parseDropTargetId,
+  resolveCardDrop,
+} from './cardDropRouting.ts';
 import { UNMAPPED_COLUMN_ID, type RenderedColumn, type RollupBoardItem } from './rollupBoardTypes.ts';
 import type { JiraIssue } from '../../../types/jira.ts';
 
@@ -150,5 +156,60 @@ describe('resolveCardDrop — a real move', () => {
     });
 
     expect(decision.kind).toBe('move');
+  });
+});
+
+describe('resolveCardDrop — dropping a card onto another card', () => {
+  const SAME_COLUMN_ITEMS = new Map([
+    ['DEV-1', buildItem('DEV-1', 'FEAT-1', 'col-todo')],
+    ['DEV-2', buildItem('DEV-2', 'FEAT-1', 'col-todo')],
+    ['DEV-9', buildItem('DEV-9', 'FEAT-1', 'col-dev')],
+  ]);
+
+  it('sequences the work when both cards are in the same column', () => {
+    const decision = resolveCardDrop({
+      draggedItemKey: 'DEV-2',
+      dropTargetId: buildCardTargetId('DEV-1'),
+      itemsByKey: SAME_COLUMN_ITEMS,
+      columnsById: COLUMNS,
+    });
+
+    expect(decision.kind).toBe('reorder');
+    expect(decision.kind === 'reorder' && decision.targetIssueKey).toBe('DEV-1');
+  });
+
+  it('treats a drop onto a card in ANOTHER column as a state change, not a reorder', () => {
+    const decision = resolveCardDrop({
+      draggedItemKey: 'DEV-1',
+      dropTargetId: buildCardTargetId('DEV-9'),
+      itemsByKey: SAME_COLUMN_ITEMS,
+      columnsById: COLUMNS,
+    });
+
+    expect(decision.kind).toBe('move');
+    expect(decision.kind === 'move' && decision.targetColumn.id).toBe('col-dev');
+  });
+
+  it('ignores a card dropped on itself', () => {
+    expect(resolveCardDrop({
+      draggedItemKey: 'DEV-1',
+      dropTargetId: buildCardTargetId('DEV-1'),
+      itemsByKey: SAME_COLUMN_ITEMS,
+      columnsById: COLUMNS,
+    })).toEqual({ kind: 'ignore' });
+  });
+
+  it('ignores a drop onto a card that is no longer on the board', () => {
+    expect(resolveCardDrop({
+      draggedItemKey: 'DEV-1',
+      dropTargetId: buildCardTargetId('GONE-1'),
+      itemsByKey: SAME_COLUMN_ITEMS,
+      columnsById: COLUMNS,
+    })).toEqual({ kind: 'ignore' });
+  });
+
+  it('round-trips a card target id', () => {
+    expect(parseCardTargetId(buildCardTargetId('DEV-1'))).toBe('DEV-1');
+    expect(parseCardTargetId('FEAT-1::col-todo')).toBeNull();
   });
 });
