@@ -44,8 +44,16 @@ import { executeStatusMove } from './statusMoveWriter.ts';
 import { resolveBoardItems } from './featureRollup.ts';
 import { buildMasterCards } from './masterCards.ts';
 import { fetchRollupBoardIssues } from './rollupBoardFetch.ts';
+import {
+  clearTeamFeatureScope,
+  hasTeamOwnFeatureScope,
+  loadTeamFeatureScope,
+  saveTeamFeatureScope,
+} from './boardScopeStore.ts';
+import { applyFeatureScope, type FeatureScopeSettings } from './featureScope.ts';
 import { BoardColumnHeaderRow } from './components/BoardColumnHeaderRow.tsx';
 import { ColumnVocabularyEditor } from './components/ColumnVocabularyEditor.tsx';
+import { FeatureScopePanel } from './components/FeatureScopePanel.tsx';
 import { MasterCardLane } from './components/MasterCardLane.tsx';
 import { QuickFilterBar } from './components/QuickFilterBar.tsx';
 import styles from './RollupBoardTab.module.css';
@@ -114,6 +122,10 @@ interface RollupBoardLoadState {
   incompleteReasons: string[];
   isOversized: boolean;
   hasSubStatusField: boolean;
+  /** Issues held back because their Feature is in another project and only loosely linked. */
+  hiddenIssueCount: number;
+  /** Features shown despite sitting outside the team's projects — flagged, not hidden. */
+  outOfScopeFeatureKeys: string[];
 }
 
 const EMPTY_LOAD_STATE: RollupBoardLoadState = {
@@ -124,6 +136,8 @@ const EMPTY_LOAD_STATE: RollupBoardLoadState = {
   incompleteReasons: [],
   isOversized: false,
   hasSubStatusField: true,
+  hiddenIssueCount: 0,
+  outOfScopeFeatureKeys: [],
 };
 
 /** Renders the roll-up board for the team's currently selected Jira board. */
@@ -146,6 +160,8 @@ export default function RollupBoardTab({
   const [subStatusFieldId, setSubStatusFieldId] = useState('');
   const [blockedMove, setBlockedMove] = useState<BlockedMove | null>(null);
   const [transitionSelections, setTransitionSelections] = useState<Record<string, TransitionFieldSelection>>({});
+  const [featureScope, setFeatureScope] = useState<FeatureScopeSettings>(() => loadTeamFeatureScope(teamProfileId));
+  const [hasOwnScope, setHasOwnScope] = useState(() => hasTeamOwnFeatureScope(teamProfileId));
   const [openIssueKey, setOpenIssueKey] = useState<string | null>(null);
   const [openIssueEditMeta, setOpenIssueEditMeta] = useState<Awaited<ReturnType<typeof fetchFeatureReviewEditMeta>> | null>(null);
 
@@ -174,25 +190,31 @@ export default function RollupBoardTab({
           resolveColumnIdForItem(statusName, subStatusValue, vocabulary, discoveredSubStatusFieldId !== ''),
       });
 
+      // Narrow to the Features this team tracks BEFORE building lanes, so a Feature nobody here owns
+      // never becomes a lane in the first place.
+      const scopedResult = applyFeatureScope(boardItems, featureScope);
+
       setSubStatusFieldId(discoveredSubStatusFieldId);
       setLoadState({
         isLoading: false,
         loadError: null,
-        masterCards: buildMasterCards(boardItems, issueSet.featureIssues, storyPointsFieldIds),
-        allItems: boardItems,
+        masterCards: buildMasterCards(scopedResult.items, issueSet.featureIssues, storyPointsFieldIds),
+        allItems: scopedResult.items,
         incompleteReasons: issueSet.load.failures.map((failure) => failure.detail),
         isOversized: issueSet.load.isOversized,
         hasSubStatusField: discoveredSubStatusFieldId !== '',
+        hiddenIssueCount: scopedResult.hiddenIssueCount,
+        outOfScopeFeatureKeys: scopedResult.outOfScopeFeatureKeys,
       });
 
       // Loaded after the board so the editor offers real Jira values rather than free text; a
       // failure here costs the mapping pickers, not the board.
-      setOptionSources(await loadColumnOptionSources(boardItems, discoveredSubStatusFieldId)
+      setOptionSources(await loadColumnOptionSources(scopedResult.items, discoveredSubStatusFieldId)
         .catch(() => EMPTY_OPTION_SOURCES));
     } catch (error: unknown) {
       setLoadState({ ...EMPTY_LOAD_STATE, loadError: String(error) });
     }
-  }, [boardId, teamProfileId, vocabulary]);
+  }, [boardId, teamProfileId, vocabulary, featureScope]);
 
   useEffect(() => {
     void loadBoard();
@@ -364,7 +386,7 @@ export default function RollupBoardTab({
           Collapse all
         </button>
         <button className={styles.actionButton} onClick={() => setIsEditingColumns(!isEditingColumns)} type="button">
-          {isEditingColumns ? 'Hide columns' : 'Edit columns'}
+          {isEditingColumns ? 'Hide board setup' : 'Board setup'}
         </button>
         <span className={styles.boardStatusLine}>
           {loadState.isLoading
@@ -391,6 +413,25 @@ export default function RollupBoardTab({
         </p>
       )}
 
+      {/* Anything the scope holds back is stated with the way to see it — the board never just
+          looks smaller than the team's Jira board. */}
+      {loadState.hiddenIssueCount > 0 && (
+        <p className={styles.boardWarning}>
+          {loadState.hiddenIssueCount} {loadState.hiddenIssueCount === 1 ? 'issue is' : 'issues are'} hidden: their
+          Feature is in another project and they are only reached by an issue link. Open <strong>Board setup</strong>
+          {' '}to include them or widen the projects.
+        </p>
+      )}
+
+      {loadState.outOfScopeFeatureKeys.length > 0 && (
+        <p className={styles.boardWarning}>
+          {loadState.outOfScopeFeatureKeys.length}{' '}
+          {loadState.outOfScopeFeatureKeys.length === 1 ? 'Feature is' : 'Features are'} outside this team&apos;s
+          projects but linked by the Feature Link field, so {loadState.outOfScopeFeatureKeys.length === 1 ? 'it is' : 'they are'}{' '}
+          shown anyway: {loadState.outOfScopeFeatureKeys.join(', ')}. That is usually worth correcting in Jira.
+        </p>
+      )}
+
       {!loadState.hasSubStatusField && (
         <p className={styles.boardWarning}>
           This Jira instance has no sub-status field, so columns can only match on status. The board is less precise
@@ -399,7 +440,27 @@ export default function RollupBoardTab({
       )}
 
       {isEditingColumns && (
+        <FeatureScopePanel
+          hasOwnScope={hasOwnScope}
+          hiddenIssueCount={loadState.hiddenIssueCount}
+          onResetScope={() => {
+            clearTeamFeatureScope(teamProfileId);
+            setHasOwnScope(false);
+            setFeatureScope(loadTeamFeatureScope(teamProfileId));
+          }}
+          onScopeChange={(nextScope) => {
+            saveTeamFeatureScope(teamProfileId, nextScope);
+            setHasOwnScope(true);
+            setFeatureScope(nextScope);
+          }}
+          scope={featureScope}
+          visibleFeatureKeys={loadState.masterCards.map((masterCard) => masterCard.featureKey)}
+        />
+      )}
+
+      {isEditingColumns && (
         <ColumnVocabularyEditor
+          allItems={loadState.allItems}
           canShare={Boolean(sharedWorkspaceDatabaseId)}
           onAcceptPull={(remoteVocabulary) => {
             setVocabulary(markVocabularySynced(

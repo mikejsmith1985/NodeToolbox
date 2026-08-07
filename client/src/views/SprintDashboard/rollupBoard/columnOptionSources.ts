@@ -32,6 +32,65 @@ export interface ColumnOptionSources {
   isSubStatusUnavailable: boolean;
 }
 
+/** One state combination the board's issues are actually sitting in, and how many are in it. */
+export interface ObservedBoardState {
+  jiraStatusName: string;
+  subStatusValue: string | null;
+  issueCount: number;
+  /** A starting name the viewer is expected to replace with the team's own wording. */
+  suggestedColumnName: string;
+}
+
+/**
+ * Lists the state combinations the board's issues are genuinely in, commonest first.
+ *
+ * Authoring columns from a blank page means guessing which combinations exist; this turns that into
+ * a renaming exercise over states that are demonstrably real. Anything offered here is guaranteed to
+ * catch at least one issue, so a column can never be built that matches nothing.
+ */
+export function collectObservedBoardStates(items: readonly RollupBoardItem[]): ObservedBoardState[] {
+  const statesByKey = new Map<string, ObservedBoardState>();
+
+  for (const item of items) {
+    const statusName = item.statusName.trim();
+    if (statusName === '') continue;
+
+    const stateKey = `${statusName.toLowerCase()}||${(item.subStatusValue ?? '').trim().toLowerCase()}`;
+    const existingState = statesByKey.get(stateKey);
+    if (existingState) {
+      existingState.issueCount += 1;
+      continue;
+    }
+    statesByKey.set(stateKey, {
+      jiraStatusName: statusName,
+      subStatusValue: item.subStatusValue,
+      issueCount: 1,
+      suggestedColumnName: item.subStatusValue ? `${statusName} — ${item.subStatusValue}` : statusName,
+    });
+  }
+
+  // Commonest first: the states holding the most work are the ones worth naming first.
+  return [...statesByKey.values()].sort((leftState, rightState) => {
+    if (rightState.issueCount !== leftState.issueCount) return rightState.issueCount - leftState.issueCount;
+    return leftState.suggestedColumnName.localeCompare(rightState.suggestedColumnName);
+  });
+}
+
+/** Counts how many of these issues a column's mapping would catch, for live feedback while mapping. */
+export function countIssuesMatchingMapping(
+  items: readonly RollupBoardItem[],
+  mapping: { jiraStatusName: string; subStatusValue: string | null } | null,
+  hasSubStatusField: boolean,
+): number {
+  if (mapping === null) return 0;
+
+  return items.filter((item) => {
+    if (item.statusName.trim().toLowerCase() !== mapping.jiraStatusName.trim().toLowerCase()) return false;
+    if (!hasSubStatusField) return true;
+    return (item.subStatusValue ?? '').trim().toLowerCase() === (mapping.subStatusValue ?? '').trim().toLowerCase();
+  }).length;
+}
+
 /** Sorted, de-duplicated, blank-free. */
 function toSortedDistinct(values: readonly string[]): string[] {
   return [...new Set(values.map((value) => value.trim()).filter(Boolean))].sort();

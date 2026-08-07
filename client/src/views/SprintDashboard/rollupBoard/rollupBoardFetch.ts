@@ -174,17 +174,54 @@ async function fetchFeaturesByKeys(
   );
 }
 
-/** Collects the distinct Feature keys the loaded issues point at, in either sweep. */
-function collectReferencedFeatureKeys(issues: readonly JiraIssue[], featureLinkFieldId: string): string[] {
-  const featureKeys = new Set<string>();
+/** Issue type names this instance uses for defects — the only type whose roll-up walks issue links. */
+const DEFECT_ISSUE_TYPE_NAMES = new Set(['defect', 'bug']);
+
+/** The keys a defect points at through its issue links. */
+function readLinkedIssueKeys(issue: JiraIssue): string[] {
+  const issueLinks = (issue.fields as { issuelinks?: unknown[] }).issuelinks ?? [];
+  return issueLinks
+    .map((rawLink) => {
+      const issueLink = rawLink as { inwardIssue?: { key?: string }; outwardIssue?: { key?: string } };
+      return issueLink.outwardIssue?.key ?? issueLink.inwardIssue?.key ?? '';
+    })
+    .filter(Boolean);
+}
+
+/**
+ * Collects the keys that must be read for roll-up to work.
+ *
+ * Two sources, not one. The Feature Link field is the obvious source. The second is a defect's issue
+ * links: a defect can be wired straight to a Feature by "relates to", and a Feature is never itself
+ * on a team board — so unless those targets are fetched too, that whole route resolves to nothing
+ * and the defect looks unattributed. Only DEFECT links are followed, because they are the only type
+ * whose roll-up walks links at all, which keeps the extra reads small.
+ */
+function collectReferencedFeatureKeys(
+  issues: readonly JiraIssue[],
+  featureLinkFieldId: string,
+  boardIssueKeys: ReadonlySet<string>,
+): string[] {
+  const referencedKeys = new Set<string>();
+
   for (const issue of issues) {
     const featureKey = extractFeatureKeyFromIssueFields(
       issue.fields as unknown as Record<string, unknown>,
       featureLinkFieldId,
     );
-    if (featureKey) featureKeys.add(featureKey);
+    if (featureKey) referencedKeys.add(featureKey);
+
+    const issueTypeName = ((issue.fields as { issuetype?: { name?: string } }).issuetype?.name ?? '')
+      .trim().toLowerCase();
+    if (!DEFECT_ISSUE_TYPE_NAMES.has(issueTypeName)) continue;
+
+    for (const linkedKey of readLinkedIssueKeys(issue)) {
+      // Anything already on the board is readable without another request.
+      if (!boardIssueKeys.has(linkedKey)) referencedKeys.add(linkedKey);
+    }
   }
-  return [...featureKeys];
+
+  return [...referencedKeys];
 }
 
 /**
@@ -201,9 +238,11 @@ export async function fetchRollupBoardIssues(scope: RollupBoardScope): Promise<R
   const boardIssueKeys = boardIssues.map((boardIssue) => boardIssue.key);
   const subtaskIssues = await fetchSubtasksForParents(boardIssueKeys, scope, failures);
 
+  const allLoadedIssues = [...boardIssues, ...subtaskIssues];
   const referencedFeatureKeys = collectReferencedFeatureKeys(
-    [...boardIssues, ...subtaskIssues],
+    allLoadedIssues,
     scope.featureLinkFieldId,
+    new Set(allLoadedIssues.map((issue) => issue.key)),
   );
   const featureIssues = await fetchFeaturesByKeys(referencedFeatureKeys, scope, failures);
 

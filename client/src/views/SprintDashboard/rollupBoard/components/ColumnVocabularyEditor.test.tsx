@@ -6,6 +6,8 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { ColumnVocabularyEditor } from './ColumnVocabularyEditor.tsx';
 import type { ColumnOptionSources } from '../columnOptionSources.ts';
+import type { RollupBoardItem } from '../rollupBoardTypes.ts';
+import type { JiraIssue } from '../../../../types/jira.ts';
 import type { BoardVocabulary } from '../rollupBoardTypes.ts';
 
 const OPTION_SOURCES: ColumnOptionSources = {
@@ -13,6 +15,35 @@ const OPTION_SOURCES: ColumnOptionSources = {
   subStatusValues: ['Dev In Progress', 'Dev Complete'],
   isSubStatusUnavailable: false,
 };
+
+/** A board sitting in three real state combinations, so suggestions and counts have something to read. */
+const BOARD_ITEMS = [
+  buildBoardItem('DEV-1', 'In Progress', 'Dev In Progress'),
+  buildBoardItem('DEV-2', 'In Progress', 'Dev Complete'),
+  buildBoardItem('DEV-3', 'In Progress', 'Dev Complete'),
+  buildBoardItem('DEV-4', 'To Do', null),
+];
+
+function buildBoardItem(key: string, statusName: string, subStatusValue: string | null): RollupBoardItem {
+  return {
+    issue: { id: key, key, fields: { summary: key } } as unknown as JiraIssue,
+    key,
+    summary: key,
+    typeBucket: 'story',
+    typeName: 'Story',
+    parentKey: null,
+    route: { steps: [], featureKey: 'FEAT-1', precedenceRank: null, unchosenCandidates: [], notes: [] },
+    featureKey: 'FEAT-1',
+    columnId: '__unmapped__',
+    statusName,
+    subStatusValue,
+    assigneeAccountId: null,
+    assigneeDisplayName: null,
+    fixVersionNames: [],
+    storyPoints: null,
+    checklistCompletion: null,
+  };
+}
 
 function buildVocabulary(overrides: Partial<BoardVocabulary> = {}): BoardVocabulary {
   return {
@@ -30,7 +61,7 @@ function buildVocabulary(overrides: Partial<BoardVocabulary> = {}): BoardVocabul
 describe('ColumnVocabularyEditor — the mapping controls', () => {
   it('only offers statuses Jira reported, never a free-text box', () => {
     render(
-      <ColumnVocabularyEditor canShare optionSources={OPTION_SOURCES} onVocabularyChange={vi.fn()} vocabulary={buildVocabulary()} />,
+      <ColumnVocabularyEditor allItems={BOARD_ITEMS} canShare optionSources={OPTION_SOURCES} onVocabularyChange={vi.fn()} vocabulary={buildVocabulary()} />,
     );
 
     const statusSelect = screen.getByLabelText('Jira status for Being coded');
@@ -41,7 +72,7 @@ describe('ColumnVocabularyEditor — the mapping controls', () => {
   it('lets a column be defined before it is mapped', () => {
     const onVocabularyChange = vi.fn();
     render(
-      <ColumnVocabularyEditor canShare optionSources={OPTION_SOURCES} onVocabularyChange={onVocabularyChange} vocabulary={buildVocabulary()} />,
+      <ColumnVocabularyEditor allItems={BOARD_ITEMS} canShare optionSources={OPTION_SOURCES} onVocabularyChange={onVocabularyChange} vocabulary={buildVocabulary()} />,
     );
 
     fireEvent.change(screen.getByLabelText('New column name'), { target: { value: 'Ready for release' } });
@@ -54,6 +85,7 @@ describe('ColumnVocabularyEditor — the mapping controls', () => {
   it('disables the sub-status picker when this board exposes none, instead of offering free text', () => {
     render(
       <ColumnVocabularyEditor
+        allItems={BOARD_ITEMS}
         canShare
         optionSources={{ statusNames: ['To Do'], subStatusValues: [], isSubStatusUnavailable: true }}
         onVocabularyChange={vi.fn()}
@@ -68,7 +100,7 @@ describe('ColumnVocabularyEditor — the mapping controls', () => {
   it('reorders a column and renumbers so the order stays contiguous', () => {
     const onVocabularyChange = vi.fn();
     render(
-      <ColumnVocabularyEditor canShare optionSources={OPTION_SOURCES} onVocabularyChange={onVocabularyChange} vocabulary={buildVocabulary()} />,
+      <ColumnVocabularyEditor allItems={BOARD_ITEMS} canShare optionSources={OPTION_SOURCES} onVocabularyChange={onVocabularyChange} vocabulary={buildVocabulary()} />,
     );
 
     fireEvent.click(screen.getByRole('button', { name: 'Move Waiting on SL test left' }));
@@ -80,16 +112,16 @@ describe('ColumnVocabularyEditor — the mapping controls', () => {
 });
 
 describe('ColumnVocabularyEditor — refusing an ambiguous vocabulary', () => {
-  it('refuses to publish two columns claiming the same Jira state, and says which', () => {
+  it('refuses to share two columns claiming the same Jira state, and says which', () => {
     const conflicting = buildVocabulary();
     conflicting.columns[1].mapping = { jiraStatusName: 'In Progress', subStatusValue: 'Dev In Progress' };
 
     render(
-      <ColumnVocabularyEditor canShare optionSources={OPTION_SOURCES} onVocabularyChange={vi.fn()} vocabulary={conflicting} />,
+      <ColumnVocabularyEditor allItems={BOARD_ITEMS} canShare optionSources={OPTION_SOURCES} onVocabularyChange={vi.fn()} vocabulary={conflicting} />,
     );
 
     expect(screen.getByRole('alert').textContent).toContain('One state can only mean one column');
-    expect((screen.getByRole('button', { name: 'Publish to the team' }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole('button', { name: 'Share my columns with the team' }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('refuses two columns with the same name', () => {
@@ -97,7 +129,7 @@ describe('ColumnVocabularyEditor — refusing an ambiguous vocabulary', () => {
     conflicting.columns[1].name = 'BEING CODED';
 
     render(
-      <ColumnVocabularyEditor canShare optionSources={OPTION_SOURCES} onVocabularyChange={vi.fn()} vocabulary={conflicting} />,
+      <ColumnVocabularyEditor allItems={BOARD_ITEMS} canShare optionSources={OPTION_SOURCES} onVocabularyChange={vi.fn()} vocabulary={conflicting} />,
     );
 
     expect(screen.getByRole('alert').textContent).toContain('both called');
@@ -107,7 +139,7 @@ describe('ColumnVocabularyEditor — refusing an ambiguous vocabulary', () => {
 describe('ColumnVocabularyEditor — sharing', () => {
   it('says when the columns were last shared, so a stale copy is detectable', () => {
     render(
-      <ColumnVocabularyEditor canShare optionSources={OPTION_SOURCES} onVocabularyChange={vi.fn()} vocabulary={buildVocabulary()} />,
+      <ColumnVocabularyEditor allItems={BOARD_ITEMS} canShare optionSources={OPTION_SOURCES} onVocabularyChange={vi.fn()} vocabulary={buildVocabulary()} />,
     );
 
     expect(screen.getByText(/never shared with the team/)).toBeTruthy();
@@ -115,11 +147,11 @@ describe('ColumnVocabularyEditor — sharing', () => {
 
   it('says plainly that sharing is unavailable when the team has no shared workspace', () => {
     render(
-      <ColumnVocabularyEditor canShare={false} optionSources={OPTION_SOURCES} onVocabularyChange={vi.fn()} vocabulary={buildVocabulary()} />,
+      <ColumnVocabularyEditor allItems={BOARD_ITEMS} canShare={false} optionSources={OPTION_SOURCES} onVocabularyChange={vi.fn()} vocabulary={buildVocabulary()} />,
     );
 
     expect(screen.getByText(/no shared ART workspace configured/)).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Publish to the team' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Share my columns with the team' })).toBeNull();
   });
 
   it('lists what a pull would change BEFORE anything changes', () => {
@@ -129,6 +161,7 @@ describe('ColumnVocabularyEditor — sharing', () => {
 
     render(
       <ColumnVocabularyEditor
+        allItems={BOARD_ITEMS}
         canShare
         onVocabularyChange={vi.fn()}
         optionSources={OPTION_SOURCES}
@@ -148,6 +181,7 @@ describe('ColumnVocabularyEditor — sharing', () => {
 
     render(
       <ColumnVocabularyEditor
+        allItems={BOARD_ITEMS}
         canShare
         onAcceptPull={onAcceptPull}
         onCancelPull={onCancelPull}
@@ -167,6 +201,7 @@ describe('ColumnVocabularyEditor — sharing', () => {
   it('says nothing has been published yet rather than showing an empty diff', () => {
     render(
       <ColumnVocabularyEditor
+        allItems={BOARD_ITEMS}
         canShare
         onVocabularyChange={vi.fn()}
         optionSources={OPTION_SOURCES}
@@ -176,5 +211,104 @@ describe('ColumnVocabularyEditor — sharing', () => {
     );
 
     expect(screen.getByText(/Nobody has published/)).toBeTruthy();
+  });
+});
+
+describe('ColumnVocabularyEditor — starting from what is really there', () => {
+  it('offers to build columns from the states the board is actually in', () => {
+    render(
+      <ColumnVocabularyEditor allItems={BOARD_ITEMS} canShare optionSources={OPTION_SOURCES} onVocabularyChange={vi.fn()} vocabulary={buildVocabulary()} />,
+    );
+
+    expect(screen.getByRole('button', { name: 'Suggest columns from this board' })).toBeTruthy();
+    // Three distinct state combinations across the four issues.
+    expect(screen.getByText(/3 found/)).toBeTruthy();
+  });
+
+  it('builds one mapped column per real state, busiest first, ready to rename', () => {
+    const onVocabularyChange = vi.fn();
+    render(
+      <ColumnVocabularyEditor allItems={BOARD_ITEMS} canShare optionSources={OPTION_SOURCES} onVocabularyChange={onVocabularyChange} vocabulary={buildVocabulary()} />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Suggest columns from this board' }));
+
+    const [nextVocabulary] = onVocabularyChange.mock.calls[0];
+    expect(nextVocabulary.columns).toHaveLength(3);
+    // "Dev Complete" holds two issues, so it leads.
+    expect(nextVocabulary.columns[0].mapping).toEqual({ jiraStatusName: 'In Progress', subStatusValue: 'Dev Complete' });
+    expect(nextVocabulary.columns.every((column: { mapping: unknown }) => column.mapping !== null)).toBe(true);
+  });
+
+  it('maps suggestions on status alone when this instance has no sub-status field', () => {
+    const onVocabularyChange = vi.fn();
+    render(
+      <ColumnVocabularyEditor
+        allItems={BOARD_ITEMS}
+        canShare
+        onVocabularyChange={onVocabularyChange}
+        optionSources={{ statusNames: ['To Do'], subStatusValues: [], isSubStatusUnavailable: true }}
+        vocabulary={buildVocabulary()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Suggest columns from this board' }));
+
+    const [nextVocabulary] = onVocabularyChange.mock.calls[0];
+    expect(nextVocabulary.columns.every((c: { mapping: { subStatusValue: string | null } }) => c.mapping.subStatusValue === null)).toBe(true);
+  });
+});
+
+describe('ColumnVocabularyEditor — live feedback while mapping', () => {
+  it('says how many issues each mapped column is holding right now', () => {
+    render(
+      <ColumnVocabularyEditor allItems={BOARD_ITEMS} canShare optionSources={OPTION_SOURCES} onVocabularyChange={vi.fn()} vocabulary={buildVocabulary()} />,
+    );
+
+    // "Being coded" = In Progress / Dev In Progress → 1 issue. "Waiting on SL test" → 2.
+    expect(screen.getByText('1 issues here now')).toBeTruthy();
+    expect(screen.getByText('2 issues here now')).toBeTruthy();
+  });
+
+  it('flags a column that would catch nothing, which is nearly always a mistake', () => {
+    const wrongMapping = buildVocabulary();
+    wrongMapping.columns[0].mapping = { jiraStatusName: 'Accepted', subStatusValue: null };
+
+    render(
+      <ColumnVocabularyEditor allItems={BOARD_ITEMS} canShare optionSources={OPTION_SOURCES} onVocabularyChange={vi.fn()} vocabulary={wrongMapping} />,
+    );
+
+    expect(screen.getByText('0 issues here now')).toBeTruthy();
+  });
+
+  it('says an unmapped column holds nothing, rather than showing a bare zero', () => {
+    const unmapped = buildVocabulary();
+    unmapped.columns[0].mapping = null;
+
+    render(
+      <ColumnVocabularyEditor allItems={BOARD_ITEMS} canShare optionSources={OPTION_SOURCES} onVocabularyChange={vi.fn()} vocabulary={unmapped} />,
+    );
+
+    expect(screen.getByText('not mapped — holds nothing')).toBeTruthy();
+  });
+});
+
+describe('ColumnVocabularyEditor — sharing says what it does', () => {
+  it('names the share action in plain terms rather than "Publish"', () => {
+    render(
+      <ColumnVocabularyEditor allItems={BOARD_ITEMS} canShare optionSources={OPTION_SOURCES} onVocabularyChange={vi.fn()} vocabulary={buildVocabulary()} />,
+    );
+
+    expect(screen.getByRole('button', { name: 'Share my columns with the team' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: "Get the team's columns" })).toBeTruthy();
+  });
+
+  it('explains what each of the two actions actually does', () => {
+    render(
+      <ColumnVocabularyEditor allItems={BOARD_ITEMS} canShare optionSources={OPTION_SOURCES} onVocabularyChange={vi.fn()} vocabulary={buildVocabulary()} />,
+    );
+
+    expect(screen.getByText(/sends the columns above to everyone on this team/)).toBeTruthy();
+    expect(screen.getByText(/shows you the differences before anything changes/)).toBeTruthy();
   });
 });
