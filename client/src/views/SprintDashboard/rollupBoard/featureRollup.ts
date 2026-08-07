@@ -201,7 +201,7 @@ export function resolveBoardItems(
     const issueFields = issue.fields as unknown as Record<string, unknown>;
     const statusName = ((issueFields.status as { name?: string })?.name ?? '').trim();
     const subStatusValue = readSubStatusValue(issue, scope.subStatusFieldId);
-    const assignee = issueFields.assignee as { accountId?: string; displayName?: string } | null;
+    const assignee = issueFields.assignee as { accountId?: string; name?: string; key?: string; displayName?: string } | null;
 
     return {
       issue,
@@ -215,7 +215,10 @@ export function resolveBoardItems(
       columnId: placement.resolveColumnId(statusName, subStatusValue),
       statusName,
       subStatusValue,
-      assigneeAccountId: assignee?.accountId ?? null,
+      // accountId is Jira CLOUD only. This instance is Data Center, where a user is identified by
+      // `name`/`key` — reading accountId alone left every issue looking unassigned, so the assignee
+      // filter had nobody to offer.
+      assigneeAccountId: assignee?.accountId ?? assignee?.name ?? assignee?.key ?? null,
       assigneeDisplayName: assignee?.displayName ?? null,
       fixVersionNames: ((issueFields.fixVersions as Array<{ name?: string }>) ?? [])
         .map((fixVersion) => fixVersion.name ?? '')

@@ -8,9 +8,18 @@
 // part of the data could not be read the board says which part, rather than quietly looking smaller
 // than the team's real workload.
 
-import { DndContext, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
+import {
+  DndContext,
+  PointerSensor,
+  pointerWithin,
+  rectIntersection,
+  useSensor,
+  useSensors,
+  type CollisionDetection,
+  type DragEndEvent,
+} from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import IssueDetailPanel from '../../../components/IssueDetailPanel/index.tsx';
 import { TransitionRequiredFields } from '../../../components/TransitionRequiredFields/index.tsx';
@@ -40,7 +49,7 @@ import {
 } from './boardPreferencesStore.ts';
 import { loadTeamVocabulary, markVocabularySynced, saveTeamVocabulary } from './boardVocabularyStore.ts';
 import { previewBoardVocabularyPull, publishBoardVocabulary, type VocabularyPullPreview } from './boardVocabularySync.ts';
-import { resolveCardDrop } from './cardDropRouting.ts';
+import { parseCardTargetId, resolveCardDrop } from './cardDropRouting.ts';
 import { loadColumnOptionSources, type ColumnOptionSources } from './columnOptionSources.ts';
 import { executeStatusMove } from './statusMoveWriter.ts';
 import { resolveBoardItems } from './featureRollup.ts';
@@ -266,10 +275,39 @@ export default function RollupBoardTab({
     setPreferences(nextPreferences);
   }, []);
 
+  /**
+   * Prefers a card over the column cell it sits inside.
+   *
+   * The default detection picks whichever target overlaps most, and a cell always contains the card
+   * — so dropping a card onto another card resolved to the cell, which reads as "same column, no
+   * change" and made vertical sorting look broken. The pointer is the honest signal here.
+   */
+  const detectCollisions = useCallback<CollisionDetection>((collisionArgs) => {
+    const pointerCollisions = pointerWithin(collisionArgs);
+    const draggedId = String(collisionArgs.active.id);
+    const isDraggingLane = allFeatureKeysRef.current.includes(draggedId);
+
+    if (!isDraggingLane) {
+      const cardCollision = pointerCollisions.find((collision) => {
+        const targetIssueKey = parseCardTargetId(String(collision.id));
+        return targetIssueKey !== null && targetIssueKey !== draggedId;
+      });
+      if (cardCollision) return [cardCollision];
+    }
+
+    return pointerCollisions.length > 0 ? pointerCollisions : rectIntersection(collisionArgs);
+  }, []);
+
   const allFeatureKeys = useMemo(
     () => layout.lanes.map((lane) => lane.masterCard.featureKey),
     [layout.lanes],
   );
+
+  // Read inside the collision detector, which must not be rebuilt on every lane change.
+  const allFeatureKeysRef = useRef<string[]>([]);
+  useEffect(() => {
+    allFeatureKeysRef.current = allFeatureKeys;
+  }, [allFeatureKeys]);
 
   /** Records a per-card message, so a refused or failed move is never a silent no-op. */
   const setCardMessage = useCallback((issueKey: string, message: string | null): void => {
@@ -620,7 +658,11 @@ export default function RollupBoardTab({
 
         {/* Cards and lanes are dragged in one context, and the drop-target id says which happened:
             a lane's sortable id is its Feature key, a column cell's carries the "::" separator. */}
-        <DndContext onDragEnd={(dragEndEvent) => void handleBoardDragEnd(dragEndEvent)} sensors={dragSensors}>
+        <DndContext
+          collisionDetection={detectCollisions}
+          onDragEnd={(dragEndEvent) => void handleBoardDragEnd(dragEndEvent)}
+          sensors={dragSensors}
+        >
           <SortableContext items={allFeatureKeys} strategy={verticalListSortingStrategy}>
             {layout.lanes.map((lane) => (
             <MasterCardLane
