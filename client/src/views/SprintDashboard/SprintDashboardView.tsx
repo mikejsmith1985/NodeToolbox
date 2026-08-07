@@ -6789,6 +6789,10 @@ export default function SprintDashboardView() {
         <RollupBoardTab
           boardId={state.boardId}
           key={`${activeDashboardTeamProfileId}:${state.boardId ?? 'none'}`}
+          // The dashboard's already-scoped set, so this tab mirrors the Sprint / Fix Version / PI
+          // selector above rather than re-querying the whole board filter.
+          scopeDescription={DASHBOARD_SCOPE_OPTION_LABELS[state.scopeMode]}
+          scopedIssues={state.sprintIssues}
           teamProfileId={activeDashboardTeamProfileId}
         />
       );
