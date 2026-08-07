@@ -17,6 +17,29 @@
 > `po-pi-dropdown.spec.js`. Feature 024's spec inherited a false "do not run concurrently with 022" constraint from
 > these stale entries before the code was checked. **Verify against the codebase before trusting a status below.**
 
+- **033-chg-rescope-rewrite** — *(planned on `feature/033-chg-rescope-rewrite` — ready for `/speckit-tasks`)* a
+  **Start Over** action on SNow Hub's **Modify Existing CHG**: discard a loaded change's contents and rebuild it from
+  the blank template exactly as a new change would be built — **scope, content, planning, environments, dates** — then
+  write the result to the **existing CHG number** instead of raising a new record. Scope is rebuilt by fix version or
+  JQL, "both" meaning fetch one then **add** the other (the operator's own pattern: pull a fixVersion, then add one
+  story by key). Explicitly **no** prior-scope recovery and **no** added/unchanged/removed diff — a rebuild replaces
+  wholesale. Plan: `specs/033-chg-rescope-rewrite/plan.md`. Contracts: `rebuild-entry.md`, `rebuild-mode.md`,
+  `rebuild-save.md`, `draft-isolation.md`.
+  **Framework-First is the whole story**: Phase 0 found the terminal action **already ships** —
+  `useCrgState.updateExistingChg` resolves a sys_id by number, PATCHes the **same** `buildChangeRequestPayload` that
+  `createChg` uses (so field parity is structural, not maintained), verifies by re-reading the record, and creates no
+  CTASKs. The builder **already takes a mode prop** (`CrgTabProps.mode`; `ConfigurationTab` mounts it as
+  `mode="configuration"`), and `actions.addIssues()` ("+ Add to Loaded Issues") already does the additive fetch. So
+  US2–US4 are **reuse**. **New work is four things**: the entry point + destructive confirmation in `ModifyChgTab`;
+  `mode="rebuild"` + `targetChangeNumber` binding (Create CHG button **absent**, not disabled); a **one-environment
+  guard** (`createChg` fans out one CHG per enabled environment but `updateExistingChg` silently keeps only the
+  first — a real existing defect); and **number-scoped draft storage** (`useCrgState(options?: {storageKey})`, key
+  `ntbx-crg-rebuild-state:<CHG>`) because the single global `ntbx-crg-state` would make a rebuild both inherit and
+  **destroy** the operator's in-progress Create draft. **Hard rule**: `ChgTab.tsx` and `ConfigurationTab.tsx` are
+  edited by zero tasks and their tests must pass **unmodified** — an edit means the prop stopped being additive.
+  Do **not** save through `PATCH /api/snow-relay/change/:changeKey`; its server payload map omits `requested_by`,
+  `assigned_to`, `u_tester`, `u_service_manager`, `u_expedited`, `change_manager`, custom fields, and planning aliases.
+
 - **032-pi-delivery-framework** — *(planned on `feature/032-pi-delivery-framework` — ready for `/speckit-tasks`)* the
   team's new delivery framework: **repo maps 1:1 to a coding Sub-task, not a Story** (a Story bridges FE+BE under a
   primary owner; each repo = an independently-assignable coding sub-task so devs work one Story in parallel), plus a
