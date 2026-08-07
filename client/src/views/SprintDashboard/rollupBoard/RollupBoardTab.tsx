@@ -14,6 +14,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import IssueDetailPanel from '../../../components/IssueDetailPanel/index.tsx';
 import { TransitionRequiredFields } from '../../../components/TransitionRequiredFields/index.tsx';
+import type { JiraIssue } from '../../../types/jira.ts';
 import { loadConfiguredFeatureLinkFieldId } from '../../../utils/featureLink.ts';
 import { loadHygieneFieldConfig } from '../../Hygiene/checks/hygieneFieldConfig.ts';
 import {
@@ -73,6 +74,16 @@ const NO_BOARD_MESSAGE =
 export interface RollupBoardTabProps {
   /** The board this team already selected; null means none is chosen yet. */
   boardId: number | null;
+  /**
+   * The issues the Team Dashboard has already scoped by Sprint / Fix Version / PI.
+   *
+   * Taking the dashboard's set rather than re-querying the board is what keeps this tab showing the
+   * same work as every other one. Sweeping the board directly returns its whole saved filter,
+   * backlog included, which ignores the sprint and the PI entirely.
+   */
+  scopedIssues: readonly JiraIssue[];
+  /** What the dashboard is currently scoped to, so the board can say what it is mirroring. */
+  scopeDescription?: string;
   /** Scopes the shared column vocabulary and this viewer's personal preferences. */
   teamProfileId: string;
   /** The team's shared ART workspace, when they have one. Without it the vocabulary stays local. */
@@ -146,6 +157,8 @@ const EMPTY_LOAD_STATE: RollupBoardLoadState = {
 /** Renders the roll-up board for the team's currently selected Jira board. */
 export default function RollupBoardTab({
   boardId,
+  scopedIssues,
+  scopeDescription,
   teamProfileId,
   sharedWorkspaceDatabaseId = readSharedWorkspaceDatabaseId(),
 }: RollupBoardTabProps) {
@@ -187,7 +200,7 @@ export default function RollupBoardTab({
         storyPointsFieldIds,
       };
 
-      const issueSet = await fetchRollupBoardIssues(scope);
+      const issueSet = await fetchRollupBoardIssues(scope, scopedIssues.map((issue) => issue.key));
       const boardItems = resolveBoardItems(issueSet, scope, {
         resolveColumnId: (statusName, subStatusValue) =>
           resolveColumnIdForItem(statusName, subStatusValue, vocabulary, discoveredSubStatusFieldId !== ''),
@@ -218,7 +231,7 @@ export default function RollupBoardTab({
     } catch (error: unknown) {
       setLoadState({ ...EMPTY_LOAD_STATE, loadError: String(error) });
     }
-  }, [boardId, teamProfileId, vocabulary, featureScope]);
+  }, [boardId, teamProfileId, vocabulary, featureScope, scopedIssues]);
 
   useEffect(() => {
     void loadBoard();
@@ -395,7 +408,8 @@ export default function RollupBoardTab({
         <span className={styles.boardStatusLine}>
           {loadState.isLoading
             ? 'Loading — this board is not showing everything yet.'
-            : `${layout.lanes.length} Feature lanes`}
+            : `${layout.lanes.length} Feature lanes · ${scopedIssues.length} issues in scope`}
+          {scopeDescription ? ` · ${scopeDescription}` : ''}
         </span>
       </div>
 

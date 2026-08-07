@@ -1,12 +1,13 @@
 // rollupBoardFetch.ts — Retrieves everything the Roll-Up Board needs, in three sweeps.
 //
-// Sweep 1 reads the team's board. Sweep 2 exists because a Jira agile board does NOT return
-// sub-tasks, yet sub-tasks are one of the ways this team breaks work down — without it, a large part
-// of the delivery detail would simply be missing. Sweep 3 reads the Features, which live in a
-// different Jira project from the work.
+// Sweep 1 re-reads the issues the Team Dashboard has ALREADY scoped, with the extra fields this
+// board needs. The scope is the dashboard's — whatever its Sprint / Fix Version / PI selector holds
+// — so this board shows the same work as every other tab by construction. Sweep 2 exists because a
+// Jira agile board does NOT return sub-tasks, yet sub-tasks are one of the ways this team breaks
+// work down. Sweep 3 reads the Features, which live in a different Jira project from the work.
 //
-// The board promises that nothing is hidden, so this module never trims a result set. A board page
-// that fails is fatal, because half a board that looks whole is worse than an error. A failed
+// The board promises that nothing is hidden, so this module never trims a result set. A failure in
+// sweep 1 is fatal, because half a board that looks whole is worse than an error. A failed
 // enrichment chunk is reported rather than swallowed, so the gap is visible.
 
 import { jiraGet } from '../../../services/jiraApi.ts';
@@ -23,10 +24,7 @@ import {
 
 // ── Named constants ──
 
-const BOARD_ISSUE_PAGE_SIZE = 100;
 const SEARCH_MAX_RESULTS = 200;
-/** A runaway guard on paging, far above any real board; reaching it would mean Jira contradicted itself. */
-const MAX_BOARD_PAGES = 50;
 
 /** Fields every sweep needs to place, colour, filter and explain an issue. */
 const BASE_ISSUE_FIELDS = [
@@ -44,13 +42,6 @@ const BASE_ISSUE_FIELDS = [
   // Jira's impediment flag, read through the shared impediment detection.
   'customfield_10021',
 ];
-
-interface JiraBoardIssuePage {
-  total?: number;
-  startAt?: number;
-  maxResults?: number;
-  issues?: JiraIssue[];
-}
 
 interface JiraSearchResponse {
   issues?: JiraIssue[];
@@ -84,33 +75,32 @@ function buildSearchPath(jql: string, fieldList: string): string {
 }
 
 /**
- * Reads every page of the team's board.
+ * Re-reads the issues the Team Dashboard has already scoped, with the fields this board needs.
  *
- * A rejected page throws. That is deliberate: the caller must not render a board that silently
- * stops partway, because the resulting count would look like the truth.
+ * The SCOPE comes from the dashboard — whatever its Sprint / Fix Version / PI selector currently
+ * holds — so the Roll-Up Board shows the same work as every other tab by construction and cannot
+ * drift from them. An earlier version swept `/board/{id}/issue` instead, which returns everything
+ * matching the board's saved filter including the whole backlog, so it ignored the sprint and the
+ * PI entirely and pulled far more than the team had asked to see.
+ *
+ * The re-read exists because the dashboard's own fetch does not request the Feature Link field, the
+ * native parent, or the sub-status — and widening that shared fetch would touch every other tab.
+ * Reading by key keeps the scope exact while leaving the dashboard alone.
  */
-async function fetchAllBoardIssues(
+async function fetchScopedIssueDetail(
+  scopedIssueKeys: readonly string[],
   scope: RollupBoardScope,
-): Promise<{ boardIssues: JiraIssue[]; expectedBoardIssueCount: number }> {
+): Promise<JiraIssue[]> {
+  if (scopedIssueKeys.length === 0) return [];
+
   const fieldList = buildFieldList(scope);
-  const boardIssues: JiraIssue[] = [];
-  let expectedBoardIssueCount = 0;
-  let startAt = 0;
+  const chunkResults = await Promise.all(
+    chunkList(scopedIssueKeys, FEATURE_KEY_CHUNK_SIZE).map((keyChunk) =>
+      jiraGet<JiraSearchResponse>(buildSearchPath(`key in (${keyChunk.join(',')})`, fieldList)),
+    ),
+  );
 
-  for (let pageIndex = 0; pageIndex < MAX_BOARD_PAGES; pageIndex += 1) {
-    const page = await jiraGet<JiraBoardIssuePage>(
-      `/rest/agile/1.0/board/${scope.boardId}/issue`
-      + `?startAt=${startAt}&maxResults=${BOARD_ISSUE_PAGE_SIZE}&fields=${encodeURIComponent(fieldList)}`,
-    );
-    expectedBoardIssueCount = page.total ?? boardIssues.length;
-    boardIssues.push(...(page.issues ?? []));
-    startAt += page.issues?.length ?? 0;
-    if (boardIssues.length >= expectedBoardIssueCount || (page.issues?.length ?? 0) === 0) {
-      break;
-    }
-  }
-
-  return { boardIssues, expectedBoardIssueCount };
+  return chunkResults.flatMap((chunkResult) => chunkResult.issues ?? []);
 }
 
 /**
@@ -231,9 +221,13 @@ function collectReferencedFeatureKeys(
  * and what was actually retrieved, so the UI can say "some of this is missing" instead of quietly
  * looking smaller than reality.
  */
-export async function fetchRollupBoardIssues(scope: RollupBoardScope): Promise<RollupBoardIssueSet> {
+export async function fetchRollupBoardIssues(
+  scope: RollupBoardScope,
+  scopedIssueKeys: readonly string[],
+): Promise<RollupBoardIssueSet> {
   const failures: LoadFailure[] = [];
-  const { boardIssues, expectedBoardIssueCount } = await fetchAllBoardIssues(scope);
+  const expectedBoardIssueCount = scopedIssueKeys.length;
+  const boardIssues = await fetchScopedIssueDetail(scopedIssueKeys, scope);
 
   const boardIssueKeys = boardIssues.map((boardIssue) => boardIssue.key);
   const subtaskIssues = await fetchSubtasksForParents(boardIssueKeys, scope, failures);

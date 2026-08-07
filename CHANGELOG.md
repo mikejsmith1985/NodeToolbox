@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Roll-Up Board — it ignored the Sprint / Fix Version / PI selector and pulled the whole board.**
+  The tab queried the Jira board's saved filter directly, which returns every issue that filter
+  matches — the entire backlog included — so it showed far more than the team had asked to see and
+  paid no attention to the scope chosen at the top of the Team Dashboard.
+  It now takes the issue set the dashboard has **already scoped**, so it mirrors Sprint / Fix Version
+  / PI by construction and shows exactly the same work as every other tab. The board states what it
+  is mirroring and how many issues are in scope, so the scope is never a mystery. The dashboard's own
+  fetch is untouched: the scoped issues are re-read by key to pick up the Feature Link, parent and
+  sub-status fields the board needs, rather than widening a query every other tab depends on.
 - **Roll-Up Board — the Feature project filter did not actually filter.** Applying a project list
   reloaded the board and showed exactly the same content. The scope treated a **Feature Link** as an
   override that kept the work whatever project it was in — and since nearly every issue on a real
