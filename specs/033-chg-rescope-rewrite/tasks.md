@@ -250,7 +250,7 @@ confirm the parsed fields are offered for per-field accept.
 - [X] T042 [P] Audit every new and modified function in `client/src/views/SnowHub/hooks/crgStorageKeys.ts`, `client/src/views/SnowHub/hooks/useCrgState.ts`, `client/src/views/SnowHub/tabs/CreateChgTab.tsx`, and `client/src/views/SnowHub/tabs/ModifyChgTab.tsx` against Article IV: verb-first names, `is/has/can/should/was` boolean prefixes, functions under 40 lines, no magic strings, file purpose comment, doc comment per export
 - [X] T043 Confirm `client/src/views/SnowHub/tabs/ChgTab.tsx` and `client/src/views/SnowHub/tabs/ConfigurationTab.tsx` show **zero** changes in `git diff`, and that no pre-existing test file was modified
 - [X] T044 Run `npx vitest run src/views/SnowHub` from `client/` and confirm the count is at or above the T001 baseline, then run `npx tsc --noEmit` clean
-- [ ] T045 Execute [quickstart.md](./quickstart.md) Tests 0–8 against a live disposable change, with **Test 4** (same change number, no second CHG created) as the deciding evidence per Article X
+- [X] T045 Execute [quickstart.md](./quickstart.md) Tests 0–8 against a live disposable change, with **Test 4** (same change number, no second CHG created) as the deciding evidence per Article X — **passed 2026-08-07 against live ServiceNow on v0.138.0**
 
 ---
 

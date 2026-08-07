@@ -2,6 +2,10 @@
 
 **Branch**: `feature/033-chg-rescope-rewrite` | **Date**: 2026-08-07 | **Spec**: [spec.md](./spec.md)
 
+**Status**: ✅ **Shipped in v0.138.0** (PR #307). All 45 tasks complete; quickstart validated against live
+ServiceNow on 2026-08-07, including Test 4 — the rebuild wrote to the existing change number and created no
+second change.
+
 **Input**: Feature specification from `/specs/033-chg-rescope-rewrite/spec.md`
 
 ## Summary
