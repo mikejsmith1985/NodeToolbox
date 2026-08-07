@@ -12,6 +12,7 @@ const BOARD_SCOPE_STORAGE_KEY = 'tbxRollupBoardScope';
 /** One team's stored scope. Absent fields mean "never configured", not "configured to nothing". */
 interface StoredTeamScope {
   featureProjectKeys?: string[];
+  shouldIncludeOutOfProjectFeatureLinks?: boolean;
   shouldIncludeIssueLinkedFeatures?: boolean;
 }
 
@@ -38,6 +39,9 @@ export function loadTeamFeatureScope(teamProfileId: string): FeatureScopeSetting
     featureProjectKeys: hasOwnProjectKeys
       ? storedScope!.featureProjectKeys!
       : readArtFeatureScopeSettings().featureProjectKeys,
+    // Both default OFF so the project list actually narrows the board. Out-of-project work is
+    // reported either way — it is named on the board rather than silently dropped.
+    shouldIncludeOutOfProjectFeatureLinks: storedScope?.shouldIncludeOutOfProjectFeatureLinks ?? false,
     shouldIncludeIssueLinkedFeatures: storedScope?.shouldIncludeIssueLinkedFeatures ?? false,
   };
 }
@@ -52,6 +56,7 @@ export function saveTeamFeatureScope(teamProfileId: string, settings: FeatureSco
   const allScopes = readAllTeamScopes();
   allScopes[teamProfileId] = {
     featureProjectKeys: [...settings.featureProjectKeys],
+    shouldIncludeOutOfProjectFeatureLinks: settings.shouldIncludeOutOfProjectFeatureLinks,
     shouldIncludeIssueLinkedFeatures: settings.shouldIncludeIssueLinkedFeatures,
   };
   window.localStorage.setItem(BOARD_SCOPE_STORAGE_KEY, JSON.stringify(allScopes));

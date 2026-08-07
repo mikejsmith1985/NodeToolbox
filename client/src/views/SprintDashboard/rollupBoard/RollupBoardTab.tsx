@@ -124,8 +124,10 @@ interface RollupBoardLoadState {
   hasSubStatusField: boolean;
   /** Issues held back because their Feature is in another project and only loosely linked. */
   hiddenIssueCount: number;
-  /** Features shown despite sitting outside the team's projects — flagged, not hidden. */
-  outOfScopeFeatureKeys: string[];
+  /** Out-of-project Features reached by the Feature Link field — named whether shown or hidden. */
+  featureLinkedOutOfProjectKeys: string[];
+  /** Out-of-project Features reached only by an issue link. */
+  issueLinkedOutOfProjectKeys: string[];
 }
 
 const EMPTY_LOAD_STATE: RollupBoardLoadState = {
@@ -137,7 +139,8 @@ const EMPTY_LOAD_STATE: RollupBoardLoadState = {
   isOversized: false,
   hasSubStatusField: true,
   hiddenIssueCount: 0,
-  outOfScopeFeatureKeys: [],
+  featureLinkedOutOfProjectKeys: [],
+  issueLinkedOutOfProjectKeys: [],
 };
 
 /** Renders the roll-up board for the team's currently selected Jira board. */
@@ -204,7 +207,8 @@ export default function RollupBoardTab({
         isOversized: issueSet.load.isOversized,
         hasSubStatusField: discoveredSubStatusFieldId !== '',
         hiddenIssueCount: scopedResult.hiddenIssueCount,
-        outOfScopeFeatureKeys: scopedResult.outOfScopeFeatureKeys,
+        featureLinkedOutOfProjectKeys: scopedResult.featureLinkedOutOfProjectKeys,
+        issueLinkedOutOfProjectKeys: scopedResult.issueLinkedOutOfProjectKeys,
       });
 
       // Loaded after the board so the editor offers real Jira values rather than free text; a
@@ -417,18 +421,20 @@ export default function RollupBoardTab({
           looks smaller than the team's Jira board. */}
       {loadState.hiddenIssueCount > 0 && (
         <p className={styles.boardWarning}>
-          {loadState.hiddenIssueCount} {loadState.hiddenIssueCount === 1 ? 'issue is' : 'issues are'} hidden: their
-          Feature is in another project and they are only reached by an issue link. Open <strong>Board setup</strong>
-          {' '}to include them or widen the projects.
+          {loadState.hiddenIssueCount} {loadState.hiddenIssueCount === 1 ? 'issue is' : 'issues are'} hidden because
+          {' '}{loadState.hiddenIssueCount === 1 ? 'its Feature is' : 'their Features are'} outside this team&apos;s
+          projects. Open <strong>Board setup</strong> to widen the projects or show them anyway.
         </p>
       )}
 
-      {loadState.outOfScopeFeatureKeys.length > 0 && (
+      {/* A Feature Link crossing projects is usually a mistake, so it is named even when its work is
+          hidden: the lane stays off the board, but the fact does not go unnoticed. */}
+      {loadState.featureLinkedOutOfProjectKeys.length > 0 && (
         <p className={styles.boardWarning}>
-          {loadState.outOfScopeFeatureKeys.length}{' '}
-          {loadState.outOfScopeFeatureKeys.length === 1 ? 'Feature is' : 'Features are'} outside this team&apos;s
-          projects but linked by the Feature Link field, so {loadState.outOfScopeFeatureKeys.length === 1 ? 'it is' : 'they are'}{' '}
-          shown anyway: {loadState.outOfScopeFeatureKeys.join(', ')}. That is usually worth correcting in Jira.
+          ⚠ {loadState.featureLinkedOutOfProjectKeys.length}{' '}
+          {loadState.featureLinkedOutOfProjectKeys.length === 1 ? 'Feature is' : 'Features are'} linked by the Feature
+          Link field but sit outside this team&apos;s projects: {loadState.featureLinkedOutOfProjectKeys.join(', ')}.
+          That is usually worth correcting in Jira.
         </p>
       )}
 
@@ -442,7 +448,9 @@ export default function RollupBoardTab({
       {isEditingColumns && (
         <FeatureScopePanel
           hasOwnScope={hasOwnScope}
+          featureLinkedOutOfProjectKeys={loadState.featureLinkedOutOfProjectKeys}
           hiddenIssueCount={loadState.hiddenIssueCount}
+          issueLinkedOutOfProjectKeys={loadState.issueLinkedOutOfProjectKeys}
           onResetScope={() => {
             clearTeamFeatureScope(teamProfileId);
             setHasOwnScope(false);

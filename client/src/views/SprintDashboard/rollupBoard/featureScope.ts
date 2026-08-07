@@ -1,35 +1,45 @@
 // featureScope.ts — Narrows the board to the Features a team actually tracks.
 //
-// A team board can carry work linked to Features across many portfolio projects, and lanes for
-// Features nobody on the team owns are pure noise. This filters them out — but not bluntly, because
-// HOW an issue reached its Feature says how much to trust the connection:
+// A team board carries work linked to Features across many portfolio projects, and lanes for
+// Features nobody on the team owns are noise. The project list is authoritative: if a Feature is
+// not in it, its work does not become a lane.
 //
-//   • The Feature Link FIELD is a deliberate, structural statement. If it points outside the team's
-//     projects that is not supposed to happen, and hiding it would hide the evidence. Always shown.
-//   • A plain "relates to" issue link is an inference the board made. Outside the team's projects
-//     that is noise, hidden until the viewer asks for it.
+// How an issue reached its Feature still matters, but it decides how the exclusion is REPORTED
+// rather than whether it applies:
 //
-// Whatever is hidden is counted, so the board can say what it left out rather than quietly looking
-// smaller than the team's Jira board.
+//   • Reached by the Feature Link FIELD — a deliberate, structural statement. Out of the team's
+//     projects that is worth knowing about, so the Features are NAMED on the board even while their
+//     work is hidden. It can be shown as lanes with a toggle.
+//   • Reached only by a plain "relates to" issue link — an inference the board made. Out of the
+//     team's projects that is just noise; counted, and shown only if asked for.
+//
+// An earlier version treated a Feature Link as an override that kept the work regardless of project.
+// That made the filter useless in practice, because nearly all real work IS Feature-Linked — the
+// override swallowed the whole filter and "Apply" appeared to do nothing.
 
 import type { RollUpRoute, RollupBoardItem } from './rollupBoardTypes.ts';
 
-/** Which Features a team tracks, and whether to include loosely-linked ones from elsewhere. */
+/** Which Features a team tracks, and which out-of-project ones it still wants to see. */
 export interface FeatureScopeSettings {
   /** Jira project keys whose Features this team owns. Empty means "no filtering at all". */
   featureProjectKeys: readonly string[];
-  /** When true, out-of-project Features reached only by an issue link are shown too. */
+  /** Show out-of-project Features that ARE linked by the Feature Link field. Off by default. */
+  shouldIncludeOutOfProjectFeatureLinks: boolean;
+  /** Show out-of-project Features reached only by an issue link. Off by default. */
   shouldIncludeIssueLinkedFeatures: boolean;
 }
 
-/** What survived the scope, and what did not. */
+/** What survived the scope, and what did not — with enough detail for the board to explain itself. */
 export interface FeatureScopeResult {
   items: RollupBoardItem[];
   hiddenIssueCount: number;
-  /** The Features whose work was hidden, so the board can name them if asked. */
-  hiddenFeatureKeys: string[];
-  /** Features shown despite sitting outside the team's projects — worth flagging, not hiding. */
-  outOfScopeFeatureKeys: string[];
+  /**
+   * Out-of-project Features reached by the Feature Link field, named whether or not their work is
+   * shown. This is the signal worth surfacing: a Feature Link crossing projects is usually a mistake.
+   */
+  featureLinkedOutOfProjectKeys: string[];
+  /** Out-of-project Features reached only by an issue link. */
+  issueLinkedOutOfProjectKeys: string[];
 }
 
 /** The project key part of a Jira issue key, upper-cased for comparison. */
@@ -42,7 +52,7 @@ function readProjectKey(issueKey: string): string {
  * True when the roll-up rests on the Feature Link field rather than on an inference.
  *
  * The test is the LAST hop into the Feature. A defect attached to a Story by "relates to" still
- * counts as authoritative, because the Story itself carries a real Feature Link — the defect is
+ * counts as Feature-Linked, because the Story itself carries a real Feature Link — the defect is
  * simply hanging off properly-linked work. Only a defect wired straight to a Feature by an issue
  * link has nothing structural behind it.
  */
@@ -70,12 +80,17 @@ export function applyFeatureScope(
 
   // Nothing configured means the board behaves exactly as it did before scoping existed.
   if (trackedProjectKeys.size === 0) {
-    return { items: [...items], hiddenIssueCount: 0, hiddenFeatureKeys: [], outOfScopeFeatureKeys: [] };
+    return {
+      items: [...items],
+      hiddenIssueCount: 0,
+      featureLinkedOutOfProjectKeys: [],
+      issueLinkedOutOfProjectKeys: [],
+    };
   }
 
   const keptItems: RollupBoardItem[] = [];
-  const hiddenFeatureKeys = new Set<string>();
-  const outOfScopeFeatureKeys = new Set<string>();
+  const featureLinkedOutOfProjectKeys = new Set<string>();
+  const issueLinkedOutOfProjectKeys = new Set<string>();
 
   for (const item of items) {
     if (item.featureKey === null) {
@@ -87,19 +102,27 @@ export function applyFeatureScope(
       continue;
     }
 
-    // Outside the team's projects. Whether it stays depends on how firmly it got here.
-    if (isAuthoritativeFeatureRoute(item.route) || settings.shouldIncludeIssueLinkedFeatures) {
-      outOfScopeFeatureKeys.add(item.featureKey);
-      keptItems.push(item);
-      continue;
+    // Outside the team's projects. It is recorded either way — the route decides which bucket it is
+    // reported in, and which toggle governs whether its work becomes lanes.
+    const isFeatureLinked = isAuthoritativeFeatureRoute(item.route);
+    if (isFeatureLinked) {
+      featureLinkedOutOfProjectKeys.add(item.featureKey);
+    } else {
+      issueLinkedOutOfProjectKeys.add(item.featureKey);
     }
-    hiddenFeatureKeys.add(item.featureKey);
+
+    const isAllowedIn = isFeatureLinked
+      ? settings.shouldIncludeOutOfProjectFeatureLinks
+      : settings.shouldIncludeIssueLinkedFeatures;
+    if (isAllowedIn) {
+      keptItems.push(item);
+    }
   }
 
   return {
     items: keptItems,
     hiddenIssueCount: items.length - keptItems.length,
-    hiddenFeatureKeys: [...hiddenFeatureKeys],
-    outOfScopeFeatureKeys: [...outOfScopeFeatureKeys],
+    featureLinkedOutOfProjectKeys: [...featureLinkedOutOfProjectKeys],
+    issueLinkedOutOfProjectKeys: [...issueLinkedOutOfProjectKeys],
   };
 }

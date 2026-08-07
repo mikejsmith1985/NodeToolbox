@@ -9,6 +9,7 @@ import type { FeatureScopeSettings } from '../featureScope.ts';
 
 const TRANSFORMERS_SCOPE: FeatureScopeSettings = {
   featureProjectKeys: ['ENCUC'],
+  shouldIncludeOutOfProjectFeatureLinks: false,
   shouldIncludeIssueLinkedFeatures: false,
 };
 
@@ -18,8 +19,10 @@ describe('FeatureScopePanel — configuring the projects', () => {
   it('shows the team\'s current project list', () => {
     render(
       <FeatureScopePanel
+        featureLinkedOutOfProjectKeys={[]}
         hasOwnScope
         hiddenIssueCount={0}
+        issueLinkedOutOfProjectKeys={[]}
         onResetScope={vi.fn()}
         onScopeChange={vi.fn()}
         scope={TRANSFORMERS_SCOPE}
@@ -34,8 +37,10 @@ describe('FeatureScopePanel — configuring the projects', () => {
     const onScopeChange = vi.fn();
     render(
       <FeatureScopePanel
+        featureLinkedOutOfProjectKeys={[]}
         hasOwnScope
         hiddenIssueCount={0}
+        issueLinkedOutOfProjectKeys={[]}
         onResetScope={vi.fn()}
         onScopeChange={onScopeChange}
         scope={TRANSFORMERS_SCOPE}
@@ -53,8 +58,10 @@ describe('FeatureScopePanel — configuring the projects', () => {
     const onScopeChange = vi.fn();
     render(
       <FeatureScopePanel
+        featureLinkedOutOfProjectKeys={[]}
         hasOwnScope
         hiddenIssueCount={0}
+        issueLinkedOutOfProjectKeys={[]}
         onResetScope={vi.fn()}
         onScopeChange={onScopeChange}
         scope={TRANSFORMERS_SCOPE}
@@ -70,8 +77,10 @@ describe('FeatureScopePanel — configuring the projects', () => {
   it('never offers the synthetic No Feature lane as a project', () => {
     render(
       <FeatureScopePanel
+        featureLinkedOutOfProjectKeys={[]}
         hasOwnScope
         hiddenIssueCount={0}
+        issueLinkedOutOfProjectKeys={[]}
         onResetScope={vi.fn()}
         onScopeChange={vi.fn()}
         scope={TRANSFORMERS_SCOPE}
@@ -85,8 +94,10 @@ describe('FeatureScopePanel — configuring the projects', () => {
   it('says when the team is inheriting rather than using its own list', () => {
     render(
       <FeatureScopePanel
+        featureLinkedOutOfProjectKeys={[]}
         hasOwnScope={false}
         hiddenIssueCount={0}
+        issueLinkedOutOfProjectKeys={[]}
         onResetScope={vi.fn()}
         onScopeChange={vi.fn()}
         scope={TRANSFORMERS_SCOPE}
@@ -103,8 +114,10 @@ describe('FeatureScopePanel — configuring the projects', () => {
     const onResetScope = vi.fn();
     render(
       <FeatureScopePanel
+        featureLinkedOutOfProjectKeys={[]}
         hasOwnScope
         hiddenIssueCount={0}
+        issueLinkedOutOfProjectKeys={[]}
         onResetScope={onResetScope}
         onScopeChange={vi.fn()}
         scope={TRANSFORMERS_SCOPE}
@@ -122,8 +135,10 @@ describe('FeatureScopePanel — being honest about what is hidden', () => {
   it('says how many issues the current scope is holding back', () => {
     render(
       <FeatureScopePanel
+        featureLinkedOutOfProjectKeys={[]}
         hasOwnScope
         hiddenIssueCount={8}
+        issueLinkedOutOfProjectKeys={[]}
         onResetScope={vi.fn()}
         onScopeChange={vi.fn()}
         scope={TRANSFORMERS_SCOPE}
@@ -131,30 +146,55 @@ describe('FeatureScopePanel — being honest about what is hidden', () => {
       />,
     );
 
-    expect(screen.getByText(/8 issues are hidden right now/)).toBeTruthy();
+    expect(screen.getByText(/8 issues are hidden by this scope/)).toBeTruthy();
   });
 
-  it('stops mentioning hidden issues once the toggle reveals them', () => {
+  it('names a cross-project Feature Link even while its work is hidden', () => {
+    // Hiding the lane is right; hiding the FACT is not — a Feature Link across projects is a mistake.
     render(
       <FeatureScopePanel
+        featureLinkedOutOfProjectKeys={['PORTFOLIO-12', 'ABC-4']}
         hasOwnScope
-        hiddenIssueCount={8}
+        hiddenIssueCount={5}
+        issueLinkedOutOfProjectKeys={[]}
         onResetScope={vi.fn()}
         onScopeChange={vi.fn()}
-        scope={{ ...TRANSFORMERS_SCOPE, shouldIncludeIssueLinkedFeatures: true }}
+        scope={TRANSFORMERS_SCOPE}
         visibleFeatureKeys={VISIBLE_FEATURE_KEYS}
       />,
     );
 
-    expect(screen.queryByText(/hidden right now/)).toBeNull();
+    expect(screen.getByText(/PORTFOLIO-12, ABC-4/)).toBeTruthy();
+    expect(screen.getByText(/usually worth correcting in Jira/)).toBeTruthy();
   });
 
-  it('lets the viewer reveal loosely-linked Features from other projects', () => {
+  it('offers both toggles, each off by default so the project list actually narrows the board', () => {
+    render(
+      <FeatureScopePanel
+        featureLinkedOutOfProjectKeys={[]}
+        hasOwnScope
+        hiddenIssueCount={0}
+        issueLinkedOutOfProjectKeys={[]}
+        onResetScope={vi.fn()}
+        onScopeChange={vi.fn()}
+        scope={TRANSFORMERS_SCOPE}
+        visibleFeatureKeys={VISIBLE_FEATURE_KEYS}
+      />,
+    );
+
+    const toggles = screen.getAllByRole('checkbox') as HTMLInputElement[];
+    expect(toggles).toHaveLength(2);
+    expect(toggles.every((toggle) => !toggle.checked)).toBe(true);
+  });
+
+  it('reveals Feature-Linked out-of-project work without touching the issue-link toggle', () => {
     const onScopeChange = vi.fn();
     render(
       <FeatureScopePanel
+        featureLinkedOutOfProjectKeys={['PORTFOLIO-12']}
         hasOwnScope
-        hiddenIssueCount={8}
+        hiddenIssueCount={5}
+        issueLinkedOutOfProjectKeys={[]}
         onResetScope={vi.fn()}
         onScopeChange={onScopeChange}
         scope={TRANSFORMERS_SCOPE}
@@ -162,16 +202,42 @@ describe('FeatureScopePanel — being honest about what is hidden', () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole('checkbox'));
+    fireEvent.click(screen.getAllByRole('checkbox')[0]);
 
-    expect(onScopeChange.mock.calls[0][0].shouldIncludeIssueLinkedFeatures).toBe(true);
+    const [nextScope] = onScopeChange.mock.calls[0];
+    expect(nextScope.shouldIncludeOutOfProjectFeatureLinks).toBe(true);
+    expect(nextScope.shouldIncludeIssueLinkedFeatures).toBe(false);
   });
 
-  it('states that Feature Link work is never hidden, whatever the project', () => {
+  it('reveals issue-linked out-of-project work without touching the Feature Link toggle', () => {
+    const onScopeChange = vi.fn();
     render(
       <FeatureScopePanel
+        featureLinkedOutOfProjectKeys={[]}
+        hasOwnScope
+        hiddenIssueCount={5}
+        issueLinkedOutOfProjectKeys={['OTHER-9']}
+        onResetScope={vi.fn()}
+        onScopeChange={onScopeChange}
+        scope={TRANSFORMERS_SCOPE}
+        visibleFeatureKeys={VISIBLE_FEATURE_KEYS}
+      />,
+    );
+
+    fireEvent.click(screen.getAllByRole('checkbox')[1]);
+
+    const [nextScope] = onScopeChange.mock.calls[0];
+    expect(nextScope.shouldIncludeIssueLinkedFeatures).toBe(true);
+    expect(nextScope.shouldIncludeOutOfProjectFeatureLinks).toBe(false);
+  });
+
+  it('says nothing about hidden issues when the scope is holding nothing back', () => {
+    render(
+      <FeatureScopePanel
+        featureLinkedOutOfProjectKeys={[]}
         hasOwnScope
         hiddenIssueCount={0}
+        issueLinkedOutOfProjectKeys={[]}
         onResetScope={vi.fn()}
         onScopeChange={vi.fn()}
         scope={TRANSFORMERS_SCOPE}
@@ -179,6 +245,6 @@ describe('FeatureScopePanel — being honest about what is hidden', () => {
       />,
     );
 
-    expect(screen.getByText(/is always shown, even if its Feature sits outside/)).toBeTruthy();
+    expect(screen.queryByText(/hidden by this scope/)).toBeNull();
   });
 });
