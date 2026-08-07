@@ -65,6 +65,7 @@ import {
 } from '../../utils/workflowDelivery.ts';
 import FeatureReviewTab from './FeatureReviewTab.tsx';
 import { BacklogRemediationPanel } from './backlogRemediation/BacklogRemediationPanel.tsx';
+import RollupBoardTab from './rollupBoard/RollupBoardTab.tsx';
 import MoveToSprintButton from './MoveToSprintButton.tsx';
 import RosterTab from './RosterTab.tsx';
 import SprintDashboardPiReviewTab from './SprintDashboardPiReviewTab.tsx';
@@ -131,6 +132,7 @@ const TAB_OPTIONS: { key: DashboardTab; label: string }[] = [
   { key: 'featurereview', label: 'Feature Review' },
   { key: 'pireview', label: 'PI Review' },
   { key: 'backlogremediation', label: 'Remediation' },
+  { key: 'rollupboard', label: 'Roll-Up Board' },
   { key: 'releases', label: 'Releases' },
   { key: 'settings', label: 'Settings' },
 ];
@@ -6776,6 +6778,18 @@ export default function SprintDashboardView() {
           teamProfileId={activeDashboardTeamProfileId}
           projectKey={state.projectKey}
           piName={state.selectedPiValue}
+        />
+      );
+    }
+
+    if (activeTab === 'rollupboard') {
+      return (
+        // Keyed by scope so switching team or board starts the board fresh rather than showing one
+        // team's lanes while another team's issues load in behind them.
+        <RollupBoardTab
+          boardId={state.boardId}
+          key={`${activeDashboardTeamProfileId}:${state.boardId ?? 'none'}`}
+          teamProfileId={activeDashboardTeamProfileId}
         />
       );
     }

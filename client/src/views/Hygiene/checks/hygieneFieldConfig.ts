@@ -121,6 +121,11 @@ export async function loadHygieneFieldConfig(): Promise<HygieneFieldConfig> {
     // to [] and the Readiness tab shows "not checked — no matching field" rather than false alerts.
     estimateFieldIds: matchFieldIdsByName(availableFields, ['Estimate (NF)', 'Estimate']),
     pcodeFieldIds: matchFieldIdsByName(availableFields, ['Spark ID/PCode', 'Spark ID', 'PCode']),
+    // 033 Roll-Up Board families — configured-only, same rule. The sub-status field id is this
+    // instance's CONFIGURATION, not a platform constant, so it is discovered by name and never
+    // hardcoded; resolving to [] is what tells the board to map columns on status alone and say so.
+    subStatusFieldIds: matchFieldIdsByName(availableFields, ['Sub-Status', 'Sub Status', 'Substatus']),
+    flaggedFieldIds: matchFieldIdsByName(availableFields, ['Flagged', 'Impediment']),
   });
 
   // Feature-link ids are the one list used to BUILD JQL (the child-story rollup), so it must hold

@@ -1,0 +1,162 @@
+// defectRollup.test.ts — Proves a defect always lands somewhere explainable.
+//
+// Defects in this Jira are linked inconsistently: sometimes to the dev Story, sometimes to the QA
+// issue, sometimes straight to the Feature. That inconsistency is the reason the board exists, so
+// these tests care most about the cases where SEVERAL routes are available at once — the placement
+// must be the same every time, and the routes not taken must still be visible.
+
+import { describe, expect, it } from 'vitest';
+
+import { resolveDefectRollup } from './defectRollup.ts';
+import type { JiraIssue } from '../../../types/jira.ts';
+
+const FEATURE_LINK_FIELD = 'customfield_10108';
+
+interface BuildIssueInput {
+  key: string;
+  typeName: string;
+  featureKey?: string;
+  linkedKeys?: string[];
+}
+
+/** Builds an issue with outward "relates to" links, which is how this team records these. */
+function buildIssue({ key, typeName, featureKey, linkedKeys = [] }: BuildIssueInput): JiraIssue {
+  return {
+    id: key,
+    key,
+    fields: {
+      summary: key,
+      issuetype: { name: typeName, subtask: typeName === 'Sub-task' },
+      [FEATURE_LINK_FIELD]: featureKey ?? null,
+      issuelinks: linkedKeys.map((linkedKey) => ({
+        type: { name: 'Relates', inward: 'relates to', outward: 'relates to' },
+        outwardIssue: { key: linkedKey },
+      })),
+    },
+  } as unknown as JiraIssue;
+}
+
+/** Indexes issues by key, as the resolver expects. */
+function buildIndex(issues: JiraIssue[]): Map<string, JiraIssue> {
+  return new Map(issues.map((issue) => [issue.key, issue]));
+}
+
+describe('resolveDefectRollup — precedence', () => {
+  it('prefers the development Story a defect is linked to', () => {
+    const devStory = buildIssue({ key: 'DEV-1', typeName: 'Story', featureKey: 'FEAT-1' });
+    const defect = buildIssue({ key: 'BUG-1', typeName: 'Defect', linkedKeys: ['DEV-1'] });
+
+    const route = resolveDefectRollup(defect, buildIndex([devStory, defect]), FEATURE_LINK_FIELD);
+
+    expect(route.featureKey).toBe('FEAT-1');
+    expect(route.precedenceRank).toBe('dev-story');
+  });
+
+  it('reaches the Feature through a QA issue when no dev Story is linked directly', () => {
+    const devStory = buildIssue({ key: 'DEV-1', typeName: 'Story', featureKey: 'FEAT-1' });
+    const qaIssue = buildIssue({ key: 'QA-1', typeName: 'Task', linkedKeys: ['DEV-1'] });
+    const defect = buildIssue({ key: 'BUG-1', typeName: 'Defect', linkedKeys: ['QA-1'] });
+
+    const route = resolveDefectRollup(defect, buildIndex([devStory, qaIssue, defect]), FEATURE_LINK_FIELD);
+
+    expect(route.featureKey).toBe('FEAT-1');
+    expect(route.precedenceRank).toBe('via-qa-issue');
+    // The intermediate must be nameable, or the card cannot explain how it got here.
+    expect(route.steps.some((step) => 'toKey' in step && step.toKey === 'QA-1')).toBe(true);
+  });
+
+  it('uses a direct Feature link when there is no delivery issue between them', () => {
+    const feature = buildIssue({ key: 'FEAT-1', typeName: 'Feature' });
+    const defect = buildIssue({ key: 'BUG-1', typeName: 'Defect', linkedKeys: ['FEAT-1'] });
+
+    const route = resolveDefectRollup(defect, buildIndex([feature, defect]), FEATURE_LINK_FIELD);
+
+    expect(route.featureKey).toBe('FEAT-1');
+    expect(route.precedenceRank).toBe('direct-feature');
+  });
+
+  it('lets the dev Story beat a competing QA route, keeping the loser visible', () => {
+    const devStory = buildIssue({ key: 'DEV-1', typeName: 'Story', featureKey: 'FEAT-1' });
+    const otherStory = buildIssue({ key: 'DEV-2', typeName: 'Story', featureKey: 'FEAT-2' });
+    const qaIssue = buildIssue({ key: 'QA-1', typeName: 'Task', linkedKeys: ['DEV-2'] });
+    const defect = buildIssue({ key: 'BUG-1', typeName: 'Defect', linkedKeys: ['QA-1', 'DEV-1'] });
+
+    const route = resolveDefectRollup(defect, buildIndex([devStory, otherStory, qaIssue, defect]), FEATURE_LINK_FIELD);
+
+    expect(route.precedenceRank).toBe('dev-story');
+    expect(route.featureKey).toBe('FEAT-1');
+    expect(route.unchosenCandidates.map((candidate) => candidate.toKey)).toContain('QA-1');
+  });
+
+  it('lands in No Feature when nothing is linked', () => {
+    const defect = buildIssue({ key: 'BUG-1', typeName: 'Defect' });
+
+    const route = resolveDefectRollup(defect, buildIndex([defect]), FEATURE_LINK_FIELD);
+
+    expect(route.featureKey).toBeNull();
+    expect(route.steps).toEqual([]);
+  });
+
+  it('lands in No Feature when every linked issue is itself unattributed', () => {
+    const orphanStory = buildIssue({ key: 'DEV-1', typeName: 'Story' });
+    const defect = buildIssue({ key: 'BUG-1', typeName: 'Defect', linkedKeys: ['DEV-1'] });
+
+    const route = resolveDefectRollup(defect, buildIndex([orphanStory, defect]), FEATURE_LINK_FIELD);
+
+    expect(route.featureKey).toBeNull();
+  });
+});
+
+describe('resolveDefectRollup — determinism and safety', () => {
+  it('breaks a tie between two same-rank Stories by ascending key, not by link order', () => {
+    const storyB = buildIssue({ key: 'DEV-2', typeName: 'Story', featureKey: 'FEAT-2' });
+    const storyA = buildIssue({ key: 'DEV-1', typeName: 'Story', featureKey: 'FEAT-1' });
+    const defectListedBFirst = buildIssue({ key: 'BUG-1', typeName: 'Defect', linkedKeys: ['DEV-2', 'DEV-1'] });
+    const defectListedAFirst = buildIssue({ key: 'BUG-2', typeName: 'Defect', linkedKeys: ['DEV-1', 'DEV-2'] });
+    const index = buildIndex([storyA, storyB, defectListedBFirst, defectListedAFirst]);
+
+    expect(resolveDefectRollup(defectListedBFirst, index, FEATURE_LINK_FIELD).featureKey).toBe('FEAT-1');
+    expect(resolveDefectRollup(defectListedAFirst, index, FEATURE_LINK_FIELD).featureKey).toBe('FEAT-1');
+  });
+
+  it('keeps the Feature it did not choose visible, so a duplicate concern is not lost', () => {
+    const storyA = buildIssue({ key: 'DEV-1', typeName: 'Story', featureKey: 'FEAT-1' });
+    const storyB = buildIssue({ key: 'DEV-2', typeName: 'Story', featureKey: 'FEAT-2' });
+    const defect = buildIssue({ key: 'BUG-1', typeName: 'Defect', linkedKeys: ['DEV-1', 'DEV-2'] });
+
+    const route = resolveDefectRollup(defect, buildIndex([storyA, storyB, defect]), FEATURE_LINK_FIELD);
+
+    expect(route.unchosenCandidates.map((candidate) => candidate.resolvedFeatureKey)).toContain('FEAT-2');
+    expect(route.notes).toContain('multiple-features-touched');
+  });
+
+  it('terminates on a circular link instead of recursing forever', () => {
+    const qaIssue = buildIssue({ key: 'QA-1', typeName: 'Task', linkedKeys: ['BUG-1'] });
+    const defect = buildIssue({ key: 'BUG-1', typeName: 'Defect', linkedKeys: ['QA-1'] });
+
+    const route = resolveDefectRollup(defect, buildIndex([qaIssue, defect]), FEATURE_LINK_FIELD);
+
+    expect(route.featureKey).toBeNull();
+    expect(route.notes).toContain('link-loop-detected');
+  });
+
+  it('stops at one intermediate hop, so a placement is always explainable in a sentence', () => {
+    const devStory = buildIssue({ key: 'DEV-1', typeName: 'Story', featureKey: 'FEAT-1' });
+    const middleIssue = buildIssue({ key: 'MID-1', typeName: 'Task', linkedKeys: ['DEV-1'] });
+    const qaIssue = buildIssue({ key: 'QA-1', typeName: 'Task', linkedKeys: ['MID-1'] });
+    const defect = buildIssue({ key: 'BUG-1', typeName: 'Defect', linkedKeys: ['QA-1'] });
+
+    const route = resolveDefectRollup(defect, buildIndex([devStory, middleIssue, qaIssue, defect]), FEATURE_LINK_FIELD);
+
+    // Two hops away is beyond the cap, so it falls through rather than being found by an open-ended walk.
+    expect(route.featureKey).toBeNull();
+  });
+
+  it('ignores a linked issue that is not in scope, since its own links cannot be read', () => {
+    const defect = buildIssue({ key: 'BUG-1', typeName: 'Defect', linkedKeys: ['ELSEWHERE-9'] });
+
+    const route = resolveDefectRollup(defect, buildIndex([defect]), FEATURE_LINK_FIELD);
+
+    expect(route.featureKey).toBeNull();
+  });
+});

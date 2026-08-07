@@ -25,6 +25,8 @@ const INSTANCE_FIELDS = [
   { id: 'customfield_20006', name: 'Unrelated Field' },
   { id: 'customfield_20007', name: 'Estimate (NF)' },
   { id: 'customfield_20008', name: 'Spark ID/PCode' },
+  { id: 'customfield_20009', name: 'Sub-Status' },
+  { id: 'customfield_20010', name: 'Flagged' },
 ];
 
 beforeEach(() => {
@@ -176,5 +178,38 @@ describe('loadHygieneFieldConfig', () => {
 
     expect(fieldConfig.estimateFieldIds).toEqual([]);
     expect(fieldConfig.pcodeFieldIds).toEqual([]);
+  });
+
+  // ── 033 Roll-Up Board: Sub-Status and Flagged discovered by name ──
+
+  it('discovers the Sub-Status and Flagged fields by name', async () => {
+    const fieldConfig = await loadHygieneFieldConfig();
+
+    expect(fieldConfig.subStatusFieldIds).toContain('customfield_20009');
+    expect(fieldConfig.flaggedFieldIds).toContain('customfield_20010');
+  });
+
+  it('matches the Sub Status and Substatus spellings the instance may use', async () => {
+    mockJiraGet.mockResolvedValue([
+      { id: 'customfield_30001', name: 'Sub Status' },
+      { id: 'customfield_30002', name: 'Substatus' },
+    ]);
+
+    const fieldConfig = await loadHygieneFieldConfig();
+
+    expect(fieldConfig.subStatusFieldIds).toEqual(
+      expect.arrayContaining(['customfield_30001', 'customfield_30002']),
+    );
+  });
+
+  it('leaves sub-status empty when the instance has no such field, never a hardcoded id', async () => {
+    mockJiraGet.mockResolvedValue([{ id: 'customfield_20006', name: 'Unrelated Field' }]);
+
+    const fieldConfig = await loadHygieneFieldConfig();
+
+    // An empty list is what tells the board to degrade to status-only columns and SAY so. Resolving to
+    // customfield_10201 here would be this instance's configuration masquerading as a platform constant.
+    expect(fieldConfig.subStatusFieldIds).toEqual([]);
+    expect(fieldConfig.flaggedFieldIds).toEqual([]);
   });
 });

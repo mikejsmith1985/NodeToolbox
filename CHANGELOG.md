@@ -8,6 +8,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Team Dashboard — a new "Roll-Up Board" tab that shows what each piece of work actually delivers.**
+  The team's already-selected Jira board is re-drawn as a stack of Feature swimlanes: every issue
+  appears in the lane of the Feature it delivers — including Features living in a different Jira
+  project — and in the column matching **its own** status. Sub-tasks and defects group under a
+  per-column parent container (the shape Jira itself uses), while the parent's own card stands
+  separately in its own status column, so a Story's progress is readable independently of its
+  children's. Cards are colour-coded by type (Stories green, Defects red, Sub-tasks blue) and always
+  carry a text label too, so the board is just as readable without colour.
+  Defects are attached inconsistently in this Jira — sometimes to the dev Story, sometimes to the QA
+  issue, sometimes straight to the Feature — so the board applies a fixed precedence (dev Story →
+  Story behind a linked QA issue → linked Feature) and then **states on the card which route it took**,
+  keeping any relationship it did not follow visible rather than discarding it.
+  Nothing is hidden: work that rolls up to no Feature lands in a **"No Feature"** lane with a live
+  count, turning the hygiene backlog into a number the team can act on. Quick filters (Stories /
+  Defects / Sub-tasks / assignee / fixVersion) narrow the cards but never change a Feature's
+  headline figures, and the board says so. Lanes open collapsed for a one-screen portfolio view,
+  and each person's collapse state and lane order stay local — never published to the team, never
+  written to Jira's own ranking.
+- **Roll-Up Board — the team names its own columns, and moving a card writes the compliant Jira
+  values.** A team defines column names in the words it actually uses ("Waiting on SL test") and maps
+  each to the Jira **status + sub-status** pair it stands for; dragging a card into a column writes
+  both. Every value on offer comes from Jira itself, so a mapping can never be saved that a card
+  would later refuse to move into, and two columns are refused from claiming the same Jira state
+  rather than being silently de-duplicated. When a transition demands screen fields, they are
+  collected on the board instead of sending you to Jira.
+  Where Jira's transition screen carries the sub-status field the move is written in **one** request.
+  Where it does not, the write must happen in two steps — and if the status change lands but the
+  sub-status is rejected, the card **stays where the issue actually is** and says exactly what
+  applied and what did not. Putting it back would draw a state Jira does not hold, and no error
+  message undoes a board showing a falsehood.
+  The vocabulary is the team's, not one person's: it publishes to the team's shared ART workspace
+  and others pull it, with the differences shown before anything changes and the pull refusable.
+  It rides its own Confluence property rather than the ART workspace payload, so colleagues on older
+  builds can neither break on it nor silently erase it.
+- **Roll-Up Board — click any card to edit it, and order the lanes however you work.** Opening a card
+  brings up the product's existing issue detail panel with in-place field editing, so the board adds
+  no write path of its own — a field it cannot safely write stays read-only here exactly as it does
+  everywhere else. Lanes reorder by dragging their header grip, and the same order is reachable from
+  **Send to top** / **Send to bottom** buttons for anyone who cannot drag. Every drag handle is
+  labelled, and dropping a lane on itself does nothing rather than quietly sending it to the bottom.
+- **Sub-Status and Flagged fields are now discovered by name.** The hygiene field configuration
+  gained two families, resolved from the live instance rather than hardcoded. Where an instance has
+  no sub-status field the Roll-Up Board's columns fall back to matching on status alone and say so,
+  instead of implying a precision it cannot deliver.
 - **SNow Hub (Modify Existing CHG) — "Start Over": rebuild a change from scratch, keeping its
   number.** When a release is re-cut or scope moves, patching a change's text by hand drifts from
   what the release actually contains — but raising a new change is wrong, because the number has

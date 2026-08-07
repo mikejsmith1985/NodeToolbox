@@ -1,0 +1,271 @@
+// rollupBoardTypes.ts — The shapes and named constants the Feature Roll-Up Board is built from.
+//
+// The board re-renders the team's existing Jira board as a stack of Feature swimlanes. Nothing here
+// performs work; this module exists so every other module in the feature agrees on one vocabulary,
+// and so the board's load-bearing promises ("nothing is hidden", "a parent is drawn once") can be
+// expressed as data invariants that a unit test can assert without rendering anything.
+
+import type { JiraIssue } from '../../../types/jira.ts';
+
+// ── Named constants ──
+
+/** The always-present column that holds issues whose status combination no team column claims. */
+export const UNMAPPED_COLUMN_ID = '__unmapped__';
+
+/** The synthetic Master Card key for work that cannot be traced to any Feature — a hygiene problem. */
+export const NO_FEATURE_KEY = '__no_feature__';
+
+/** Board size we design for. Passing it warns about responsiveness; it NEVER truncates the issue set. */
+export const EXPECTED_BOARD_ISSUE_CEILING = 300;
+
+/** Parent keys per `parent in (…)` request. One parent can fan out to many sub-tasks, so keep it small. */
+export const SUBTASK_PARENT_CHUNK_SIZE = 50;
+
+/** Issue keys per `key in (…)` request when reading Features, which live in other projects. */
+export const FEATURE_KEY_CHUNK_SIZE = 50;
+
+// ── Scope ──
+
+/** Everything that decides what the board shows. All of it is read-only input from the Team space. */
+export interface RollupBoardScope {
+  /** The Jira board already selected in team settings. The board never picks its own. */
+  boardId: number;
+  /** Keys the shared column vocabulary and the viewer's personal preferences. */
+  teamProfileId: string;
+  /** The custom field linking a child issue to its Feature on this instance. */
+  featureLinkFieldId: string;
+  /** The discovered sub-status field, or '' when this instance has none (columns then map on status alone). */
+  subStatusFieldId: string;
+  /** Candidate story-point field ids, in preference order. */
+  storyPointsFieldIds: readonly string[];
+}
+
+// ── Loaded issues ──
+
+/** Which retrieval stage failed, and what was lost, so the board can say so instead of looking short. */
+export interface LoadFailure {
+  stage: 'board' | 'subtasks' | 'features';
+  detail: string;
+}
+
+/** Whether the board is showing everything it should be, stated rather than inferred from an empty list. */
+export interface LoadCompleteness {
+  isComplete: boolean;
+  /** The total Jira itself reported for the board. */
+  expectedBoardIssueCount: number;
+  loadedBoardIssueCount: number;
+  /** True past EXPECTED_BOARD_ISSUE_CEILING — a warning, never a reason to drop issues. */
+  isOversized: boolean;
+  failures: LoadFailure[];
+}
+
+/** The raw result of the three retrieval sweeps, before anything is resolved. */
+export interface RollupBoardIssueSet {
+  boardIssues: JiraIssue[];
+  /** Sub-tasks are NOT returned by the board endpoint; they come from a separate parent sweep. */
+  subtaskIssues: JiraIssue[];
+  /** Features, read by key because they usually live in a different Jira project. */
+  featureIssues: Map<string, JiraIssue>;
+  load: LoadCompleteness;
+}
+
+// ── Roll-up ──
+
+/** One hop on the path from a child issue to the Feature it delivers. */
+export type RollUpRouteStep =
+  | { kind: 'featureLink'; fieldId: string; toKey: string }
+  | { kind: 'parent'; toKey: string }
+  | { kind: 'issueLink'; linkTypeName: string; toKey: string };
+
+/** Which rule of the defect precedence chain placed a defect. */
+export type DefectPrecedence = 'dev-story' | 'via-qa-issue' | 'direct-feature';
+
+/** Something the resolution examined but did not choose. Kept so no relationship is silently discarded. */
+export interface RollUpCandidate {
+  toKey: string;
+  viaLinkTypeName: string;
+  resolvedFeatureKey: string | null;
+}
+
+/** A note about how resolution behaved, surfaced on the card as a hygiene observation. */
+export type RollUpNote = 'link-loop-detected' | 'parent-out-of-scope' | 'multiple-features-touched';
+
+/** The displayable explanation of how one issue reaches its Master Card. */
+export interface RollUpRoute {
+  /** Ordered outward from the issue. Non-empty whenever featureKey is set — a Feature is never asserted bare. */
+  steps: RollUpRouteStep[];
+  featureKey: string | null;
+  /** Set only for defects, naming which precedence rule applied. */
+  precedenceRank: DefectPrecedence | null;
+  /** Every candidate examined and not taken. Never filtered for brevity. */
+  unchosenCandidates: RollUpCandidate[];
+  notes: RollUpNote[];
+}
+
+// ── Board items ──
+
+/** The visual family an issue belongs to. 'other' is a first-class value, not a place to hide things. */
+export type IssueTypeBucket = 'story' | 'defect' | 'subtask' | 'other';
+
+/** One resolved issue: where it belongs, where it sits, and how it got there. */
+export interface RollupBoardItem {
+  issue: JiraIssue;
+  key: string;
+  summary: string;
+  typeBucket: IssueTypeBucket;
+  typeName: string;
+  /** The issue this one groups under in a column, or null when it groups under nothing. */
+  parentKey: string | null;
+  route: RollUpRoute;
+  featureKey: string | null;
+  /** Derived from THIS issue's own status and sub-status — never from a parent's or a child's. */
+  columnId: string;
+  statusName: string;
+  subStatusValue: string | null;
+  assigneeAccountId: string | null;
+  assigneeDisplayName: string | null;
+  fixVersionNames: string[];
+  /** null means no estimate exists. It is never 0, which would claim an estimate of zero. */
+  storyPoints: number | null;
+  /** Present ONLY when the host issue carries readable checklist data; never defaulted to zero-of-zero. */
+  checklistCompletion: { completedCount: number; totalCount: number } | null;
+}
+
+// ── Master cards ──
+
+/** How complete a Feature is, and on what basis — the basis is inseparable from the number. */
+export interface FeatureProgress {
+  /** null when there is nothing to measure. */
+  percentComplete: number | null;
+  basis: 'story-points' | 'issue-count' | 'none';
+  completedUnits: number;
+  totalUnits: number;
+}
+
+/** The Feature vital signs shown in a swimlane header, readable without expanding the lane. */
+export interface MasterCardVitals {
+  key: string;
+  summary: string;
+  statusName: string | null;
+  progress: FeatureProgress;
+  dependencyCount: number;
+  isFlagged: boolean;
+  /** null means the Feature carries no estimate; it is stated as absent, not shown as zero. */
+  storyPoints: number | null;
+  priorityName: string | null;
+  childCount: number;
+}
+
+/** One Feature rendered as a collapsible full-width swimlane. */
+export interface MasterCard {
+  featureKey: string;
+  /** True for the synthetic "No Feature" card that collects unattributable work. */
+  isSynthetic: boolean;
+  featureIssue: JiraIssue | null;
+  /** The Feature key resolved but its issue could not be read — kept visible rather than folded away. */
+  isFeatureUnreadable: boolean;
+  vitals: MasterCardVitals;
+  /** The Feature's COMPLETE set. Filtering never mutates this, which is why vitals ignore filters. */
+  items: RollupBoardItem[];
+}
+
+// ── Column vocabulary ──
+
+/** The Jira state one team column stands for. */
+export interface ColumnStatusMapping {
+  jiraStatusName: string;
+  /** null when this instance has no sub-status field, so the column maps on status alone. */
+  subStatusValue: string | null;
+}
+
+/** One column in the team's own words. */
+export interface BoardColumn {
+  id: string;
+  name: string;
+  order: number;
+  /** null means defined but not yet mapped — it holds nothing and says so. Not an error. */
+  mapping: ColumnStatusMapping | null;
+}
+
+/** A team's agreed column set. Shared by the team, never per person. */
+export interface BoardVocabulary {
+  teamProfileId: string;
+  columns: BoardColumn[];
+  updatedAt: string;
+  /** null means never synchronised with the shared workspace. */
+  lastSyncedAt: string | null;
+}
+
+/** Why a vocabulary was refused. Two columns can never claim one Jira state. */
+export type VocabularyErrorKind = 'duplicate-mapping' | 'duplicate-name' | 'blank-name';
+
+export interface VocabularyError {
+  kind: VocabularyErrorKind;
+  message: string;
+  columnIds: string[];
+}
+
+export interface VocabularyValidation {
+  isValid: boolean;
+  errors: VocabularyError[];
+}
+
+// ── Layout ──
+
+/** A per-column grouping label. It is NOT a card and never counts as a rendering of the parent issue. */
+export interface ParentContainer {
+  parentKey: string;
+  parentSummary: string;
+  /** False when the parent is not on this board: the header still shows, but no parent card is drawn. */
+  isParentInScope: boolean;
+  items: RollupBoardItem[];
+}
+
+/** One column as rendered, including the always-present Unmapped column. */
+export interface RenderedColumn {
+  id: string;
+  name: string;
+  order: number;
+  mapping: ColumnStatusMapping | null;
+  isUnmappedColumn: boolean;
+}
+
+/** One column's worth of one lane. */
+export interface LaneCell {
+  containers: ParentContainer[];
+  /** Items with no in-scope parent — including a parent's own childless card. */
+  looseItems: RollupBoardItem[];
+}
+
+export interface RenderedLane {
+  masterCard: MasterCard;
+  isCollapsed: boolean;
+  /** Under the active filters. */
+  matchedItemCount: number;
+  /** Ignores filters, so "n of N match" is two counts of two sets rather than one count reused. */
+  totalItemCount: number;
+  cellsByColumnId: Record<string, LaneCell>;
+}
+
+export interface BoardLayout {
+  columns: RenderedColumn[];
+  lanes: RenderedLane[];
+}
+
+// ── Viewer state ──
+
+/** The active quick filters. An empty typeBuckets set means "no type filter", not "match nothing". */
+export interface QuickFilterState {
+  typeBuckets: ReadonlySet<IssueTypeBucket>;
+  assigneeAccountId: string | null;
+  fixVersionName: string | null;
+}
+
+/** One person's view preferences. Never shared with the team, never written to Jira. */
+export interface BoardPreferences {
+  teamProfileId: string;
+  boardId: number;
+  /** Feature keys in the viewer's chosen order. Anything absent sorts to the end. */
+  laneOrder: string[];
+  collapsedByFeatureKey: Record<string, boolean>;
+}

@@ -278,6 +278,18 @@ export interface TransitionRequiredField {
 /** A workflow transition plus the fields its screen requires (empty for most transitions). */
 export interface FeatureReviewTransition extends JiraTransition {
   requiredFields: TransitionRequiredField[];
+  /**
+   * Every field id on this transition's screen, required or not.
+   *
+   * A caller that must set a field alongside the status (the Roll-Up Board setting a sub-status) can
+   * do it in ONE request when the field is on the screen. Without this it would have to transition
+   * first and set the field second, which can half-apply and leave the board describing a state Jira
+   * does not hold.
+   *
+   * Optional purely so existing callers and their test fixtures stay valid — `fetchFeatureReviewTransitions`
+   * always populates it.
+   */
+  screenFieldIds?: string[];
 }
 
 /** The user's answer for one required transition field. */
@@ -316,6 +328,7 @@ export async function fetchFeatureReviewTransitions(issueKey: string): Promise<F
 
   return (transitionResponse.transitions ?? []).map((rawTransition) => ({
     ...rawTransition,
+    screenFieldIds: Object.keys(rawTransition.fields ?? {}),
     requiredFields: Object.entries(rawTransition.fields ?? {})
       .filter((fieldEntry): fieldEntry is [string, RawTransitionField] => fieldEntry[1]?.required === true)
       .map(([fieldId, rawField]) => ({
