@@ -16,7 +16,7 @@ const LATER_ISO = '2026-08-07T11:00:00.000Z';
 function buildVocabulary(teamProfileId: string): BoardVocabulary {
   return {
     teamProfileId,
-    columns: [{ id: 'col-1', name: 'Being coded', order: 0, mapping: { jiraStatusName: 'In Progress', subStatusValue: null } }],
+    columns: [{ id: 'col-1', name: 'Being coded', order: 0, mappings: [{ jiraStatusName: 'In Progress', subStatusValue: null }] }],
     updatedAt: '',
     lastSyncedAt: null,
   };

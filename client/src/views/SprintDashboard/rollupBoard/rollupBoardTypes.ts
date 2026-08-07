@@ -178,13 +178,19 @@ export interface ColumnStatusMapping {
   subStatusValue: string | null;
 }
 
-/** One column in the team's own words. */
+/**
+ * One column in the team's own words.
+ *
+ * A column claims MANY Jira states, exactly as a real Jira board column does — that is what lets a
+ * status nobody has placed yet be dropped into the column the team wants it in, instead of forcing
+ * a new column per state. An empty list means defined but not yet mapped: it holds nothing and says
+ * so, which is not an error.
+ */
 export interface BoardColumn {
   id: string;
   name: string;
   order: number;
-  /** null means defined but not yet mapped — it holds nothing and says so. Not an error. */
-  mapping: ColumnStatusMapping | null;
+  mappings: ColumnStatusMapping[];
 }
 
 /** A team's agreed column set. Shared by the team, never per person. */
@@ -226,7 +232,7 @@ export interface RenderedColumn {
   id: string;
   name: string;
   order: number;
-  mapping: ColumnStatusMapping | null;
+  mappings: ColumnStatusMapping[];
   isUnmappedColumn: boolean;
 }
 

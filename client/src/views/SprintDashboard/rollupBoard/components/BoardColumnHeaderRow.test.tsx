@@ -11,8 +11,8 @@ import { UNMAPPED_COLUMN_ID, type BoardVocabulary } from '../rollupBoardTypes.ts
 const VOCABULARY: BoardVocabulary = {
   teamProfileId: 'team-a',
   columns: [
-    { id: 'col-todo', name: 'Not started', order: 0, mapping: { jiraStatusName: 'To Do', subStatusValue: null } },
-    { id: 'col-dev', name: 'Being coded', order: 1, mapping: { jiraStatusName: 'In Progress', subStatusValue: 'Dev In Progress' } },
+    { id: 'col-todo', name: 'Not started', order: 0, mappings: [{ jiraStatusName: 'To Do', subStatusValue: null }] },
+    { id: 'col-dev', name: 'Being coded', order: 1, mappings: [{ jiraStatusName: 'In Progress', subStatusValue: 'Dev In Progress' }] },
   ],
   updatedAt: '',
   lastSyncedAt: null,

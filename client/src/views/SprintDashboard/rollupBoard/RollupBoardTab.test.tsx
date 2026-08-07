@@ -320,7 +320,7 @@ describe('RollupBoardTab — every drag has a keyboard equivalent', () => {
     expect(screen.getAllByRole('button', { name: 'Send to bottom' }).length).toBeGreaterThan(0);
   });
 
-  it('labels every drag handle, so it is announced rather than read as a decoration', async () => {
+  it('labels the lane grip and makes the whole card the draggable, keyboard-reachable target', async () => {
     mockJiraResponses({ boardIssues: [buildIssue('DEV-1', 'PORTFOLIO-9')] });
 
     render(<RollupBoardTab boardId={42} scopedIssues={SCOPED_ISSUES} teamProfileId="team-a" />);
@@ -329,7 +329,12 @@ describe('RollupBoardTab — every drag has a keyboard equivalent', () => {
     expect(screen.getByLabelText('Drag PORTFOLIO-9 to reorder it')).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: /Expand PORTFOLIO-9/ }));
-    expect(screen.getByLabelText('Drag DEV-1 to another column')).toBeTruthy();
+
+    // The card itself is the handle, as on a Jira board — not a grip hidden inside it.
+    const card = screen.getByTestId('rollup-card-DEV-1');
+    expect(card.getAttribute('role')).toBe('button');
+    expect(card.getAttribute('tabindex')).toBe('0');
+    expect(card.getAttribute('aria-label')).toContain('DEV-1');
   });
 });
 

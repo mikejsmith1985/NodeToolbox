@@ -426,7 +426,7 @@ export interface BoardVocabularyRecord {
     id: string;
     name: string;
     order: number;
-    mapping: { jiraStatusName: string; subStatusValue: string | null } | null;
+    mappings: Array<{ jiraStatusName: string; subStatusValue: string | null }>;
   }>;
   updatedAt: string;
   lastSyncedAt: string | null;

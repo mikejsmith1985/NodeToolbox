@@ -14,13 +14,16 @@ import { validateVocabulary } from '../boardColumns.ts';
 import { compareVocabularies, type VocabularyDifference, type VocabularyPullPreview } from '../boardVocabularySync.ts';
 import {
   collectObservedBoardStates,
-  countIssuesMatchingMapping,
+  collectUnmappedBoardStates,
+  countIssuesMatchingMappings,
   type ColumnOptionSources,
+  type ObservedBoardState,
 } from '../columnOptionSources.ts';
+import { UNMAPPED_COLUMN_ID } from '../rollupBoardTypes.ts';
+import { UnmappedStatusAssistant } from './UnmappedStatusAssistant.tsx';
 import styles from '../RollupBoardTab.module.css';
 import type { BoardColumn, BoardVocabulary, RollupBoardItem } from '../rollupBoardTypes.ts';
 
-const ANY_VALUE = '';
 const NEVER_SYNCED_LABEL = 'never shared with the team';
 
 export interface ColumnVocabularyEditorProps {
@@ -88,10 +91,10 @@ export function ColumnVocabularyEditor({
         id: `col-${stateIndex + 1}`,
         name: observedState.suggestedColumnName,
         order: stateIndex,
-        mapping: {
+        mappings: [{
           jiraStatusName: observedState.jiraStatusName,
           subStatusValue: hasSubStatusField ? observedState.subStatusValue : null,
-        },
+        }],
       })),
     });
   }
@@ -110,7 +113,7 @@ export function ColumnVocabularyEditor({
       ...vocabulary,
       columns: [
         ...vocabulary.columns,
-        { id: buildColumnId(vocabulary.columns), name: pendingColumnName.trim(), order: vocabulary.columns.length, mapping: null },
+        { id: buildColumnId(vocabulary.columns), name: pendingColumnName.trim(), order: vocabulary.columns.length, mappings: [] },
       ],
     });
     setPendingColumnName('');
@@ -131,18 +134,38 @@ export function ColumnVocabularyEditor({
     });
   }
 
-  /** Updates one half of a column's Jira mapping, keeping the other half. */
-  function handleMappingChange(column: BoardColumn, changes: { jiraStatusName?: string; subStatusValue?: string | null }): void {
-    const nextStatusName = changes.jiraStatusName ?? column.mapping?.jiraStatusName ?? '';
-    if (nextStatusName === '') {
-      updateColumn(column.id, { mapping: null });
-      return;
-    }
-    updateColumn(column.id, {
-      mapping: {
-        jiraStatusName: nextStatusName,
-        subStatusValue: changes.subStatusValue !== undefined ? changes.subStatusValue : column.mapping?.subStatusValue ?? null,
-      },
+  /** Adds one Jira state to a column's claim, ignoring a state it already holds. */
+  function handleAddStateToColumn(columnId: string, state: ObservedBoardState): void {
+    const targetColumn = vocabulary.columns.find((column) => column.id === columnId);
+    if (!targetColumn) return;
+
+    const nextMapping = {
+      jiraStatusName: state.jiraStatusName,
+      subStatusValue: hasSubStatusField ? state.subStatusValue : null,
+    };
+    const isAlreadyClaimed = targetColumn.mappings.some((mapping) =>
+      mapping.jiraStatusName === nextMapping.jiraStatusName && mapping.subStatusValue === nextMapping.subStatusValue);
+    if (isAlreadyClaimed) return;
+
+    updateColumn(columnId, { mappings: [...targetColumn.mappings, nextMapping] });
+  }
+
+  /** Creates a column that claims one state, named after it so the team can rename it. */
+  function handleCreateColumnForState(state: ObservedBoardState): void {
+    onVocabularyChange({
+      ...vocabulary,
+      columns: [
+        ...vocabulary.columns,
+        {
+          id: buildColumnId(vocabulary.columns),
+          name: state.suggestedColumnName,
+          order: vocabulary.columns.length,
+          mappings: [{
+            jiraStatusName: state.jiraStatusName,
+            subStatusValue: hasSubStatusField ? state.subStatusValue : null,
+          }],
+        },
+      ],
     });
   }
 
@@ -172,6 +195,13 @@ export function ColumnVocabularyEditor({
         </p>
       )}
 
+      <UnmappedStatusAssistant
+        columns={vocabulary.columns}
+        onAssignToColumn={handleAddStateToColumn}
+        onCreateColumnFor={handleCreateColumnForState}
+        unmappedStates={collectUnmappedBoardStates(allItems, UNMAPPED_COLUMN_ID)}
+      />
+
       {[...vocabulary.columns].sort((left, right) => left.order - right.order).map((column) => (
         <div className={styles.editorRow} key={column.id}>
           <input
@@ -181,40 +211,37 @@ export function ColumnVocabularyEditor({
             value={column.name}
           />
 
-          <select
-            aria-label={`Jira status for ${column.name}`}
-            className={styles.inputField}
-            onChange={(changeEvent) => handleMappingChange(column, { jiraStatusName: changeEvent.target.value })}
-            value={column.mapping?.jiraStatusName ?? ANY_VALUE}
-          >
-            <option value={ANY_VALUE}>Not mapped yet</option>
-            {optionSources.statusNames.map((statusName) => (
-              <option key={statusName} value={statusName}>{statusName}</option>
-            ))}
-          </select>
+          {/* A column claims MANY Jira states, like a Jira board column. */}
+          <span className={styles.fieldLabel}>
+            {column.mappings.length === 0
+              ? 'no statuses yet'
+              : column.mappings.map((mapping) => mapping.subStatusValue
+                ? `${mapping.jiraStatusName} / ${mapping.subStatusValue}`
+                : mapping.jiraStatusName).join(' · ')}
+          </span>
 
-          <select
-            aria-label={`Sub-status for ${column.name}`}
-            className={styles.inputField}
-            disabled={optionSources.isSubStatusUnavailable}
-            onChange={(changeEvent) => handleMappingChange(column, { subStatusValue: changeEvent.target.value || null })}
-            value={column.mapping?.subStatusValue ?? ANY_VALUE}
-          >
-            <option value={ANY_VALUE}>Any sub-status</option>
-            {optionSources.subStatusValues.map((subStatusValue) => (
-              <option key={subStatusValue} value={subStatusValue}>{subStatusValue}</option>
-            ))}
-          </select>
+          {column.mappings.map((mapping) => (
+            <button
+              className={styles.actionButton}
+              key={`${mapping.jiraStatusName}:${mapping.subStatusValue ?? ''}`}
+              onClick={() => updateColumn(column.id, {
+                mappings: column.mappings.filter((existing) => existing !== mapping),
+              })}
+              type="button"
+            >
+              Remove {mapping.subStatusValue ?? mapping.jiraStatusName}
+            </button>
+          ))}
 
           {/* Live feedback: a mapping that catches nothing is almost always a mistake, and the only
               way to see that today is to close the editor and look at the board. */}
-          <span className={countIssuesMatchingMapping(allItems, column.mapping, hasSubStatusField) === 0
+          <span className={countIssuesMatchingMappings(allItems, column.mappings, hasSubStatusField) === 0
             ? styles.laneVitalMissing
             : styles.fieldLabel}
           >
-            {column.mapping === null
-              ? 'not mapped — holds nothing'
-              : `${countIssuesMatchingMapping(allItems, column.mapping, hasSubStatusField)} issues here now`}
+            {column.mappings.length === 0
+              ? 'no statuses — holds nothing'
+              : `${countIssuesMatchingMappings(allItems, column.mappings, hasSubStatusField)} issues here now`}
           </span>
 
           <button aria-label={`Move ${column.name} left`} className={styles.actionButton} onClick={() => handleMoveColumn(column.id, -1)} type="button">←</button>

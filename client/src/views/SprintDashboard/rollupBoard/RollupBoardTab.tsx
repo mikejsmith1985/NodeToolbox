@@ -290,7 +290,8 @@ export default function RollupBoardTab({
         issueKey: decision.item.key,
         currentStatusName: decision.item.statusName,
         currentSubStatusValue: decision.item.subStatusValue,
-        targetMapping: decision.targetColumn.mapping!,
+        // A column can claim several statuses; a drop writes the first one it claims.
+        targetMapping: decision.targetColumn.mappings[0],
         subStatusFieldId,
       });
 
@@ -561,7 +562,13 @@ export default function RollupBoardTab({
       <QuickFilterBar allItems={loadState.allItems} filters={filters} onFiltersChange={setFilters} />
 
       <div className={styles.boardScroller}>
-        <BoardColumnHeaderRow columns={layout.columns} />
+        <BoardColumnHeaderRow
+          columns={layout.columns}
+          issueCountByColumnId={loadState.allItems.reduce<Record<string, number>>((counts, item) => {
+            counts[item.columnId] = (counts[item.columnId] ?? 0) + 1;
+            return counts;
+          }, {})}
+        />
 
         {/* Cards and lanes are dragged in one context, and the drop-target id says which happened:
             a lane's sortable id is its Feature key, a column cell's carries the "::" separator. */}

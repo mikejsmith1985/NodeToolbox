@@ -60,8 +60,7 @@ export function resolveColumnIdForItem(
   hasSubStatusField: boolean,
 ): string {
   const matchingColumn = vocabulary.columns.find((column) =>
-    column.mapping !== null
-    && doesMappingMatchState(column.mapping, statusName, subStatusValue, hasSubStatusField),
+    column.mappings.some((mapping) => doesMappingMatchState(mapping, statusName, subStatusValue, hasSubStatusField)),
   );
   return matchingColumn?.id ?? UNMAPPED_COLUMN_ID;
 }
@@ -70,9 +69,14 @@ export function resolveColumnIdForItem(
 function findDuplicateMappingErrors(columns: readonly BoardColumn[]): VocabularyError[] {
   const columnIdsByMappingKey = new Map<string, string[]>();
   for (const column of columns) {
-    if (column.mapping === null) continue;
-    const mappingKey = buildMappingComparisonKey(column.mapping);
-    columnIdsByMappingKey.set(mappingKey, [...(columnIdsByMappingKey.get(mappingKey) ?? []), column.id]);
+    for (const mapping of column.mappings) {
+      const mappingKey = buildMappingComparisonKey(mapping);
+      const claimingColumnIds = columnIdsByMappingKey.get(mappingKey) ?? [];
+      // A column claiming one state twice is a duplicate within itself, not a clash with a neighbour.
+      if (!claimingColumnIds.includes(column.id)) {
+        columnIdsByMappingKey.set(mappingKey, [...claimingColumnIds, column.id]);
+      }
+    }
   }
 
   return [...columnIdsByMappingKey.entries()]
@@ -143,7 +147,7 @@ export function buildRenderedColumns(vocabulary: BoardVocabulary): RenderedColum
       name: column.name,
       // Stored order is a preference, not user data: gaps are normalised rather than reported.
       order: columnIndex,
-      mapping: column.mapping,
+      mappings: column.mappings,
       isUnmappedColumn: false,
     }));
 
@@ -153,7 +157,7 @@ export function buildRenderedColumns(vocabulary: BoardVocabulary): RenderedColum
       id: UNMAPPED_COLUMN_ID,
       name: UNMAPPED_COLUMN_NAME,
       order: teamColumns.length,
-      mapping: null,
+      mappings: [],
       isUnmappedColumn: true,
     },
   ];

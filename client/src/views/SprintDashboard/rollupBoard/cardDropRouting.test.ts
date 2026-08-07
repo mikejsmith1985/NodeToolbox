@@ -32,10 +32,10 @@ function buildItem(key: string, featureKey: string | null, columnId: string): Ro
 }
 
 const COLUMNS = new Map<string, RenderedColumn>([
-  ['col-todo', { id: 'col-todo', name: 'Not started', order: 0, mapping: { jiraStatusName: 'To Do', subStatusValue: null }, isUnmappedColumn: false }],
-  ['col-dev', { id: 'col-dev', name: 'Being coded', order: 1, mapping: { jiraStatusName: 'In Progress', subStatusValue: 'Dev In Progress' }, isUnmappedColumn: false }],
-  ['col-new', { id: 'col-new', name: 'Somewhere new', order: 2, mapping: null, isUnmappedColumn: false }],
-  [UNMAPPED_COLUMN_ID, { id: UNMAPPED_COLUMN_ID, name: 'Unmapped', order: 3, mapping: null, isUnmappedColumn: true }],
+  ['col-todo', { id: 'col-todo', name: 'Not started', order: 0, mappings: [{ jiraStatusName: 'To Do', subStatusValue: null }], isUnmappedColumn: false }],
+  ['col-dev', { id: 'col-dev', name: 'Being coded', order: 1, mappings: [{ jiraStatusName: 'In Progress', subStatusValue: 'Dev In Progress' }], isUnmappedColumn: false }],
+  ['col-new', { id: 'col-new', name: 'Somewhere new', order: 2, mappings: [], isUnmappedColumn: false }],
+  [UNMAPPED_COLUMN_ID, { id: UNMAPPED_COLUMN_ID, name: 'Unmapped', order: 3, mappings: [], isUnmappedColumn: true }],
 ]);
 
 const ITEMS = new Map([['DEV-1', buildItem('DEV-1', 'FEAT-1', 'col-todo')]]);

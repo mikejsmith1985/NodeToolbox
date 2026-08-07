@@ -77,10 +77,10 @@ export function resolveCardDrop(input: ResolveCardDropInput): CardDropDecision {
     return { kind: 'ignore' };
   }
 
-  if (targetColumn.mapping === null) {
+  if (targetColumn.mappings.length === 0) {
     return {
       kind: 'refused',
-      reason: `"${targetColumn.name}" is not mapped to a Jira state yet, so there is nothing to write.`,
+      reason: `"${targetColumn.name}" does not claim any Jira status yet, so there is nothing to write.`,
     };
   }
 
