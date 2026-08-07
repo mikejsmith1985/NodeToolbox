@@ -185,8 +185,19 @@ export function resolveBoardItems(
   const allIssues = [...issueSet.boardIssues, ...issueSet.subtaskIssues];
   const uniqueIssuesByKey = new Map(allIssues.map((issue) => [issue.key, issue]));
 
+  // Route resolution needs to SEE the Features as well as the board's own work: a defect linked
+  // straight to a Feature can only be recognised if that Feature is look-up-able. Features are never
+  // on a team board, so without this the "direct-feature" precedence rank could never fire at all.
+  // This index is for lookup only — the Features themselves are not board items and are not rendered.
+  const resolutionIndexByKey = new Map(uniqueIssuesByKey);
+  for (const [featureKey, featureIssue] of issueSet.featureIssues) {
+    if (!resolutionIndexByKey.has(featureKey)) {
+      resolutionIndexByKey.set(featureKey, featureIssue);
+    }
+  }
+
   return [...uniqueIssuesByKey.values()].map((issue) => {
-    const route = resolveRouteForIssue(issue, uniqueIssuesByKey, scope.featureLinkFieldId);
+    const route = resolveRouteForIssue(issue, resolutionIndexByKey, scope.featureLinkFieldId);
     const issueFields = issue.fields as unknown as Record<string, unknown>;
     const statusName = ((issueFields.status as { name?: string })?.name ?? '').trim();
     const subStatusValue = readSubStatusValue(issue, scope.subStatusFieldId);

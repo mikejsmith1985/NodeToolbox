@@ -15,7 +15,11 @@ vi.mock('../featureReviewFixes.ts', () => ({
   fetchFeatureReviewEditMeta: mockFetchEditMeta,
 }));
 
-import { loadColumnOptionSources } from './columnOptionSources.ts';
+import {
+  collectObservedBoardStates,
+  countIssuesMatchingMapping,
+  loadColumnOptionSources,
+} from './columnOptionSources.ts';
 import type { RollupBoardItem } from './rollupBoardTypes.ts';
 import type { JiraIssue } from '../../../types/jira.ts';
 
@@ -136,5 +140,88 @@ describe('loadColumnOptionSources — sub-statuses', () => {
 
     expect(sources.statusNames).toEqual(['To Do']);
     expect(sources.isSubStatusUnavailable).toBe(true);
+  });
+});
+
+describe('collectObservedBoardStates — turning a blank page into a rename', () => {
+  it('lists each state combination the board is actually in, with its issue count', () => {
+    const states = collectObservedBoardStates([
+      buildItem('DEV-1', 'In Progress', 'Dev Complete'),
+      buildItem('DEV-2', 'In Progress', 'Dev Complete'),
+      buildItem('DEV-3', 'To Do', null),
+    ]);
+
+    expect(states).toHaveLength(2);
+    expect(states[0]).toMatchObject({ jiraStatusName: 'In Progress', subStatusValue: 'Dev Complete', issueCount: 2 });
+  });
+
+  it('puts the busiest states first, so the most useful columns get named first', () => {
+    const states = collectObservedBoardStates([
+      buildItem('DEV-1', 'To Do', null),
+      buildItem('DEV-2', 'In Progress', 'Dev Complete'),
+      buildItem('DEV-3', 'In Progress', 'Dev Complete'),
+      buildItem('DEV-4', 'In Progress', 'Dev Complete'),
+    ]);
+
+    expect(states.map((state) => state.issueCount)).toEqual([3, 1]);
+  });
+
+  it('separates two sub-statuses that share a Jira status', () => {
+    const states = collectObservedBoardStates([
+      buildItem('DEV-1', 'In Progress', 'Dev In Progress'),
+      buildItem('DEV-2', 'In Progress', 'Dev Complete'),
+    ]);
+
+    expect(states).toHaveLength(2);
+  });
+
+  it('suggests a name that reads like the state, for the viewer to replace with their own', () => {
+    const [state] = collectObservedBoardStates([buildItem('DEV-1', 'In Progress', 'Dev Complete')]);
+
+    expect(state.suggestedColumnName).toBe('In Progress — Dev Complete');
+  });
+
+  it('suggests the bare status when there is no sub-status', () => {
+    const [state] = collectObservedBoardStates([buildItem('DEV-1', 'To Do', null)]);
+
+    expect(state.suggestedColumnName).toBe('To Do');
+  });
+
+  it('only ever offers states that hold at least one issue, so no column can match nothing', () => {
+    const states = collectObservedBoardStates([buildItem('DEV-1', 'To Do', null)]);
+
+    expect(states.every((state) => state.issueCount > 0)).toBe(true);
+  });
+
+  it('ignores an issue with no status rather than offering a nameless column', () => {
+    expect(collectObservedBoardStates([buildItem('DEV-1', '', null)])).toEqual([]);
+  });
+
+  it('returns nothing for an empty board', () => {
+    expect(collectObservedBoardStates([])).toEqual([]);
+  });
+});
+
+describe('countIssuesMatchingMapping — live feedback while mapping', () => {
+  const ITEMS = [
+    buildItem('DEV-1', 'In Progress', 'Dev Complete'),
+    buildItem('DEV-2', 'In Progress', 'Dev In Progress'),
+    buildItem('DEV-3', 'To Do', null),
+  ];
+
+  it('counts what a mapping would catch', () => {
+    expect(countIssuesMatchingMapping(ITEMS, { jiraStatusName: 'In Progress', subStatusValue: 'Dev Complete' }, true)).toBe(1);
+  });
+
+  it('returns zero for a column nobody has mapped yet', () => {
+    expect(countIssuesMatchingMapping(ITEMS, null, true)).toBe(0);
+  });
+
+  it('shows zero for a mapping that catches nothing, which is the point of showing it', () => {
+    expect(countIssuesMatchingMapping(ITEMS, { jiraStatusName: 'Accepted', subStatusValue: null }, true)).toBe(0);
+  });
+
+  it('counts on status alone when this instance has no sub-status field', () => {
+    expect(countIssuesMatchingMapping(ITEMS, { jiraStatusName: 'In Progress', subStatusValue: null }, false)).toBe(2);
   });
 });

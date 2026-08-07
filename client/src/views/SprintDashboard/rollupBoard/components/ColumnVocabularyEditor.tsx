@@ -12,9 +12,13 @@ import { useState } from 'react';
 
 import { validateVocabulary } from '../boardColumns.ts';
 import { compareVocabularies, type VocabularyDifference, type VocabularyPullPreview } from '../boardVocabularySync.ts';
-import type { ColumnOptionSources } from '../columnOptionSources.ts';
+import {
+  collectObservedBoardStates,
+  countIssuesMatchingMapping,
+  type ColumnOptionSources,
+} from '../columnOptionSources.ts';
 import styles from '../RollupBoardTab.module.css';
-import type { BoardColumn, BoardVocabulary } from '../rollupBoardTypes.ts';
+import type { BoardColumn, BoardVocabulary, RollupBoardItem } from '../rollupBoardTypes.ts';
 
 const ANY_VALUE = '';
 const NEVER_SYNCED_LABEL = 'never shared with the team';
@@ -22,6 +26,8 @@ const NEVER_SYNCED_LABEL = 'never shared with the team';
 export interface ColumnVocabularyEditorProps {
   vocabulary: BoardVocabulary;
   optionSources: ColumnOptionSources;
+  /** Every issue on the board, so the editor can suggest real states and count live matches. */
+  allItems: readonly RollupBoardItem[];
   /** Absent when this team has no shared ART workspace, which makes sharing impossible but not the board. */
   canShare: boolean;
   pullPreview?: VocabularyPullPreview | null;
@@ -55,6 +61,7 @@ function describeDifference(difference: VocabularyDifference): string {
 export function ColumnVocabularyEditor({
   vocabulary,
   optionSources,
+  allItems,
   canShare,
   pullPreview = null,
   onVocabularyChange,
@@ -65,6 +72,29 @@ export function ColumnVocabularyEditor({
 }: ColumnVocabularyEditorProps) {
   const [pendingColumnName, setPendingColumnName] = useState('');
   const validation = validateVocabulary(vocabulary);
+  const hasSubStatusField = !optionSources.isSubStatusUnavailable;
+
+  /**
+   * Builds a starting set of columns from the states the board is genuinely in.
+   *
+   * Naming a state you can see beats guessing which states exist, and every column produced this way
+   * is guaranteed to catch at least one issue.
+   */
+  function handleSuggestColumns(): void {
+    const observedStates = collectObservedBoardStates(allItems);
+    onVocabularyChange({
+      ...vocabulary,
+      columns: observedStates.map((observedState, stateIndex) => ({
+        id: `col-${stateIndex + 1}`,
+        name: observedState.suggestedColumnName,
+        order: stateIndex,
+        mapping: {
+          jiraStatusName: observedState.jiraStatusName,
+          subStatusValue: hasSubStatusField ? observedState.subStatusValue : null,
+        },
+      })),
+    });
+  }
 
   /** Replaces one column, leaving the rest untouched. */
   function updateColumn(columnId: string, changes: Partial<BoardColumn>): void {
@@ -121,8 +151,20 @@ export function ColumnVocabularyEditor({
       <h3 className={styles.sectionTitle}>Board columns</h3>
 
       <p className={styles.fieldLabel}>
-        These columns are the team&apos;s, not yours alone. Last shared: {vocabulary.lastSyncedAt ?? NEVER_SYNCED_LABEL}.
+        Name each column the way your team talks about the work, then say which Jira state it stands for.
+        These columns belong to the whole team — last shared: {vocabulary.lastSyncedAt ?? NEVER_SYNCED_LABEL}.
       </p>
+
+      {/* Far easier than guessing which state combinations exist: start from the ones that do. */}
+      <div className={styles.editorRow}>
+        <button className={styles.actionButton} onClick={handleSuggestColumns} type="button">
+          Suggest columns from this board
+        </button>
+        <span className={styles.fieldLabel}>
+          Builds a column for every state your issues are actually in ({collectObservedBoardStates(allItems).length}{' '}
+          found) — then just rename them. This replaces the columns below.
+        </span>
+      </div>
 
       {optionSources.isSubStatusUnavailable && (
         <p className={styles.fieldLabel}>
@@ -164,6 +206,17 @@ export function ColumnVocabularyEditor({
             ))}
           </select>
 
+          {/* Live feedback: a mapping that catches nothing is almost always a mistake, and the only
+              way to see that today is to close the editor and look at the board. */}
+          <span className={countIssuesMatchingMapping(allItems, column.mapping, hasSubStatusField) === 0
+            ? styles.laneVitalMissing
+            : styles.fieldLabel}
+          >
+            {column.mapping === null
+              ? 'not mapped — holds nothing'
+              : `${countIssuesMatchingMapping(allItems, column.mapping, hasSubStatusField)} issues here now`}
+          </span>
+
           <button aria-label={`Move ${column.name} left`} className={styles.actionButton} onClick={() => handleMoveColumn(column.id, -1)} type="button">←</button>
           <button aria-label={`Move ${column.name} right`} className={styles.actionButton} onClick={() => handleMoveColumn(column.id, 1)} type="button">→</button>
           <button
@@ -203,10 +256,10 @@ export function ColumnVocabularyEditor({
           ? (
             <>
               <button className={styles.actionButton} disabled={!validation.isValid} onClick={onPublish} type="button">
-                Publish to the team
+                Share my columns with the team
               </button>
               <button className={styles.actionButton} onClick={onPreviewPull} type="button">
-                Pull the team&apos;s columns
+                Get the team&apos;s columns
               </button>
             </>
           )
@@ -216,6 +269,14 @@ export function ColumnVocabularyEditor({
             </span>
           )}
       </div>
+
+      {canShare && (
+        <p className={styles.fieldLabel}>
+          <strong>Share</strong> sends the columns above to everyone on this team — the next person to open the board
+          is shown what would change and can accept or keep their own. <strong>Get</strong> pulls whatever the team is
+          currently using, and shows you the differences before anything changes on your board.
+        </p>
+      )}
 
       {pullPreview !== null && (
         <div className={styles.panelCard} role="region">

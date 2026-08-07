@@ -57,11 +57,15 @@ function buildIssue(input: BuildIssueInput): JiraIssue {
   } as unknown as JiraIssue;
 }
 
-function buildIssueSet(boardIssues: JiraIssue[], subtaskIssues: JiraIssue[] = []): RollupBoardIssueSet {
+function buildIssueSet(
+  boardIssues: JiraIssue[],
+  subtaskIssues: JiraIssue[] = [],
+  featureIssues: Map<string, JiraIssue> = new Map(),
+): RollupBoardIssueSet {
   return {
     boardIssues,
     subtaskIssues,
-    featureIssues: new Map(),
+    featureIssues,
     load: {
       isComplete: true,
       expectedBoardIssueCount: boardIssues.length,
@@ -202,5 +206,62 @@ describe('resolveBoardItems — item shape', () => {
     const [item] = resolveBoardItems(buildIssueSet([story]), SCOPE, UNMAPPED_RESOLVER);
 
     expect(item.checklistCompletion).toBeNull();
+  });
+});
+
+describe('resolveBoardItems — defects linked straight to a Feature', () => {
+  /** A defect whose only link is to a Feature, which is never itself on a team board. */
+  function buildDefectLinkedToFeature(key: string, featureKey: string): JiraIssue {
+    return {
+      id: key,
+      key,
+      fields: {
+        summary: `Summary of ${key}`,
+        status: { name: 'To Do' },
+        issuetype: { name: 'Defect', subtask: false },
+        issuelinks: [{
+          type: { name: 'Relates', inward: 'relates to', outward: 'relates to' },
+          outwardIssue: { key: featureKey },
+        }],
+        fixVersions: [],
+      },
+    } as unknown as JiraIssue;
+  }
+
+  function buildFeature(key: string): JiraIssue {
+    return {
+      id: key,
+      key,
+      fields: { summary: `Feature ${key}`, issuetype: { name: 'Feature', subtask: false }, issuelinks: [] },
+    } as unknown as JiraIssue;
+  }
+
+  it('resolves a defect linked directly to a Feature, even though Features are never on the board', () => {
+    // Regression: the resolver only searched the board's own issues, so this rank never fired at all.
+    const defect = buildDefectLinkedToFeature('BUG-1', 'PORTFOLIO-9');
+    const issueSet = buildIssueSet([defect], [], new Map([['PORTFOLIO-9', buildFeature('PORTFOLIO-9')]]));
+
+    const [item] = resolveBoardItems(issueSet, SCOPE, UNMAPPED_RESOLVER);
+
+    expect(item.featureKey).toBe('PORTFOLIO-9');
+    expect(item.route.precedenceRank).toBe('direct-feature');
+  });
+
+  it('does not turn the Feature itself into a card on the board', () => {
+    const defect = buildDefectLinkedToFeature('BUG-1', 'PORTFOLIO-9');
+    const issueSet = buildIssueSet([defect], [], new Map([['PORTFOLIO-9', buildFeature('PORTFOLIO-9')]]));
+
+    const items = resolveBoardItems(issueSet, SCOPE, UNMAPPED_RESOLVER);
+
+    // The Feature is looked up, never rendered — it is the lane, not work inside it.
+    expect(items.map((item) => item.key)).toEqual(['BUG-1']);
+  });
+
+  it('still leaves the defect unattributed when the Feature could not be read', () => {
+    const defect = buildDefectLinkedToFeature('BUG-1', 'PORTFOLIO-9');
+
+    const [item] = resolveBoardItems(buildIssueSet([defect]), SCOPE, UNMAPPED_RESOLVER);
+
+    expect(item.featureKey).toBeNull();
   });
 });

@@ -8,6 +8,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Roll-Up Board — each team now says which Features are theirs.** A team board carries work linked
+  to Features across many portfolio projects, and lanes for Features nobody on the team owns are just
+  noise. **Board setup** now holds a per-team project list: Transformers can track one project,
+  Cleanup Crew two. A team that has not set its own keeps using the ART-wide list, so nothing changes
+  until someone narrows their board. The projects already on your board are offered as one-click
+  chips, so nobody has to retype a key.
+  Work linked by the **Feature Link field is always shown**, even when its Feature sits outside those
+  projects — that is not supposed to happen, so the board surfaces it and names the Features rather
+  than hiding the evidence. Work that only reaches an out-of-project Feature through an ordinary
+  issue link is hidden by default, with a toggle to bring it back; whatever is hidden is counted on
+  screen, so the board never just looks smaller than your Jira board.
+- **Roll-Up Board — setting up columns no longer starts from a blank page.** **Suggest columns from
+  this board** reads the status + sub-status combinations your issues are actually in and builds a
+  mapped column for each, busiest first — turning column setup into a renaming exercise over states
+  you can see. Every column now shows how many issues it is holding right now, so a mapping that
+  catches nothing is obvious while you are making it rather than after you close the editor.
+  "Publish to the team" is now **Share my columns with the team** (and "Pull" is **Get the team's
+  columns**), with a plain line explaining that sharing sends your columns to everyone and that
+  getting shows the differences before anything changes.
+
+### Fixed
+- **Roll-Up Board — a defect linked straight to a Feature never rolled up.** The resolver only
+  searched the issues on the team's board, and a Feature is never on a team board, so the whole
+  "linked directly to a Feature" route silently resolved to nothing and those defects appeared
+  unattributed. The Features are now available to the resolver, and — because the fetch previously
+  only looked for Features named by the Feature Link field — a defect's issue links are now followed
+  when deciding which Features to read. Only defect links are followed, since they are the only kind
+  whose roll-up walks links at all.
 - **Team Dashboard — a new "Roll-Up Board" tab that shows what each piece of work actually delivers.**
   The team's already-selected Jira board is re-drawn as a stack of Feature swimlanes: every issue
   appears in the lane of the Feature it delivers — including Features living in a different Jira
