@@ -4,7 +4,7 @@ description: "Task list for feature 033 — Feature Roll-Up Board"
 
 # Tasks: Feature Roll-Up Board
 
-**Input**: Design documents from `/specs/033-feature-rollup-board/`
+**Input**: Design documents from `/specs/034-feature-rollup-board/`
 
 **Prerequisites**: [plan.md](./plan.md), [spec.md](./spec.md), [research.md](./research.md),
 [data-model.md](./data-model.md), [contracts/](./contracts/)

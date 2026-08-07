@@ -1,6 +1,6 @@
 # Quickstart: Feature Roll-Up Board
 
-**Feature**: 033-feature-rollup-board | **Date**: 2026-08-07
+**Feature**: 034-feature-rollup-board | **Date**: 2026-08-07
 
 How to run the feature and what evidence proves it works. Article X applies: *"it compiles"* and *"the API returned
 200"* are not proof — each check below names an observable outcome.

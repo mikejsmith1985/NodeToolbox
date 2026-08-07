@@ -1,6 +1,6 @@
 # Phase 1 Data Model: Feature Roll-Up Board
 
-**Feature**: 033-feature-rollup-board | **Date**: 2026-08-07
+**Feature**: 034-feature-rollup-board | **Date**: 2026-08-07
 
 Shapes are TypeScript-flavoured for precision. Every invariant marked **INV-n** is a unit-testable assertion, not a
 UI convention — that is deliberate, because the spec's hardest guarantees ("nothing is hidden", "the parent is

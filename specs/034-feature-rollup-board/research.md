@@ -1,6 +1,6 @@
 # Phase 0 Research: Feature Roll-Up Board
 
-**Feature**: 033-feature-rollup-board | **Date**: 2026-08-07
+**Feature**: 034-feature-rollup-board | **Date**: 2026-08-07
 
 Every finding below was read from the codebase, not assumed. File and line references are the evidence.
 

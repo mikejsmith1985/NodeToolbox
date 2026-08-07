@@ -1,6 +1,6 @@
 # Feature Specification: Feature Roll-Up Board — Master Cards with a Configurable Status Vocabulary
 
-**Feature Branch**: `feature/033-feature-rollup-board`
+**Feature Branch**: `feature/034-feature-rollup-board`
 
 **Created**: 2026-08-07
 

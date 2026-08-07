@@ -15,7 +15,8 @@ import type {
 } from '../hooks/useCrgState.ts';
 import type { CrgPinnedField, CrgPinnedFieldInput } from '../hooks/useCrgFieldPins.ts';
 import { useCrgFieldPins } from '../hooks/useCrgFieldPins.ts';
-import { listEnvironmentDateOrderErrors, useCrgState } from '../hooks/useCrgState.ts';
+import { buildRebuildStorageKey } from '../hooks/crgStorageKeys.ts';
+import { listEnvironmentDateOrderErrors, listRebuildEnvironmentRefusal, useCrgState } from '../hooks/useCrgState.ts';
 import { useCtaskTemplates } from '../hooks/useCtaskTemplates.ts';
 import { useCrgTemplates } from '../hooks/useCrgTemplates.ts';
 import type { AiAssistGeneratedFields } from '../hooks/useAiAssist.ts';
@@ -29,6 +30,8 @@ import styles from './CreateChgTab.module.css';
 
 const TAB_TITLE = 'Change Request Generator';
 const TAB_SUBTITLE = 'Guide a release from Jira issue lookup through a complete ServiceNow Change Request.';
+const REBUILD_TAB_TITLE = 'Rebuild Change Request';
+const REBUILD_TAB_SUBTITLE = 'Build this change again from scratch — nothing is written until you update the change below.';
 const CONFIGURATION_TAB_TITLE = 'CRG Configuration';
 const CONFIGURATION_TAB_SUBTITLE = 'Load existing changes and CTASKs, save reusable defaults, and prepare templates before walking the CHG wizard.';
 const CONFIGURATION_SUMMARY = 'Configuration mode';
@@ -639,6 +642,8 @@ interface ResultsStepExtras {
   onOpenRiskCheckPrompt: () => void;
   /** The pasted risk review to display, or null when no review has been captured yet. */
   riskCheckReviewText: string | null;
+  /** The change a rebuild will overwrite, or empty when a new change is being raised. */
+  rebuildTargetNumber?: string;
 }
 
 interface StepRenderOptions {
@@ -2163,7 +2168,7 @@ function CtaskTemplatePanel({ state, actions, templates, saveTemplate, updateTem
   );
 }
 
-function ResultsStep({ state, actions, ctaskTemplates, environmentValueByKey, isAiAssistUnlocked, onOpenRiskCheckPrompt, riskCheckReviewText }: CrgStepProps & ResultsStepExtras) {
+function ResultsStep({ state, actions, ctaskTemplates, environmentValueByKey, isAiAssistUnlocked, onOpenRiskCheckPrompt, riskCheckReviewText, rebuildTargetNumber }: CrgStepProps & ResultsStepExtras) {
   const [selectedCtaskTemplateId, setSelectedCtaskTemplateId] = useState('');
   const [existingChgNumber, setExistingChgNumber] = useState('');
   const selectedCtaskTemplate = ctaskTemplates.find((template) => template.id === selectedCtaskTemplateId) ?? null;
@@ -2174,6 +2179,12 @@ function ResultsStep({ state, actions, ctaskTemplates, environmentValueByKey, is
   // End-before-start would reach ServiceNow as an unhelpful 403 (GH #282) — block create instead.
   const environmentDateOrderErrors = listEnvironmentDateOrderErrors(state);
   const normalizedExistingChgNumber = existingChgNumber.trim().toUpperCase();
+  const isRebuild = Boolean(rebuildTargetNumber);
+  // A rebuild replaces the whole change, so it cannot fall back to "use the first environment"
+  // the way the manual update button does — see listRebuildEnvironmentRefusal for why.
+  const rebuildEnvironmentRefusal = isRebuild
+    ? listRebuildEnvironmentRefusal(state)
+    : null;
 
   return (
     <section className={styles.section}>
@@ -2277,21 +2288,28 @@ function ResultsStep({ state, actions, ctaskTemplates, environmentValueByKey, is
       ) : null}
       {state.submitResult ? <p className={styles.successText}>{state.submitResult}</p> : null}
       {state.isSubmitting ? <p className={styles.loadingText}>Submitting change request...</p> : null}
-      <label className={styles.fieldGroup}>
-        <span className={styles.fieldLabel}>Existing CHG number</span>
-        <input
-          aria-label="Existing CHG number"
-          className={styles.input}
-          onChange={(event) => setExistingChgNumber(event.target.value.toUpperCase())}
-          placeholder="CHG0001234"
-          value={existingChgNumber}
-        />
-      </label>
-      {hasGeneratedContent && !hasEnabledEnvironment ? (
+      {/* A rebuild is bound to the change it was started from — typing another number here would
+          let it land on a record nobody confirmed discarding, so the field is create-only. */}
+      {isRebuild ? null : (
+        <label className={styles.fieldGroup}>
+          <span className={styles.fieldLabel}>Existing CHG number</span>
+          <input
+            aria-label="Existing CHG number"
+            className={styles.input}
+            onChange={(event) => setExistingChgNumber(event.target.value.toUpperCase())}
+            placeholder="CHG0001234"
+            value={existingChgNumber}
+          />
+        </label>
+      )}
+      {hasGeneratedContent && !hasEnabledEnvironment && !isRebuild ? (
         <p className={styles.errorText} role="alert">
           Enable at least one environment on the Environments step — a change request cannot be created until an
           environment is set.
         </p>
+      ) : null}
+      {rebuildEnvironmentRefusal ? (
+        <p className={styles.errorText} role="alert">{rebuildEnvironmentRefusal}</p>
       ) : null}
       {environmentDateOrderErrors.length > 0 ? (
         <p className={styles.errorText} role="alert">
@@ -2299,33 +2317,46 @@ function ResultsStep({ state, actions, ctaskTemplates, environmentValueByKey, is
         </p>
       ) : null}
       <div className={styles.buttonRow}>
-        <button
-          className={styles.primaryButton}
-          disabled={state.isSubmitting || !hasGeneratedContent || !hasEnabledEnvironment || environmentDateOrderErrors.length > 0}
-          onClick={() => void actions.createChg(environmentValueByKey)}
-          type="button"
-        >
-          {state.isSubmitting ? 'Creating CHG…' : 'Create CHG'}
-        </button>
-        <button
-          className={styles.secondaryButton}
-          disabled={state.isSubmitting || !hasGeneratedContent || !normalizedExistingChgNumber}
-          onClick={() => void actions.updateExistingChg(normalizedExistingChgNumber)}
-          type="button"
-        >
-          {state.isSubmitting ? 'Updating CHG…' : 'Update Existing CHG'}
-        </button>
-        {/* Same append the Configuration tab offers, surfaced where users look for it (user report):
-            queue CTASKs above, enter the CHG number, and add them without creating anything. */}
-        <button
-          className={styles.secondaryButton}
-          disabled={state.isSubmitting || state.changeTasks.length === 0 || !normalizedExistingChgNumber}
-          onClick={() => void actions.appendTasksToExistingChg(normalizedExistingChgNumber)}
-          title="Add the queued Change Tasks to the CHG number above, without creating or updating anything else"
-          type="button"
-        >
-          Add CTASKs to Existing CHG
-        </button>
+        {isRebuild ? (
+          <button
+            className={styles.primaryButton}
+            disabled={state.isSubmitting || !hasGeneratedContent || rebuildEnvironmentRefusal !== null || environmentDateOrderErrors.length > 0}
+            onClick={() => void actions.updateExistingChg(rebuildTargetNumber ?? '', { isRebuild: true })}
+            type="button"
+          >
+            {state.isSubmitting ? `Updating ${rebuildTargetNumber}…` : `Update ${rebuildTargetNumber}`}
+          </button>
+        ) : (
+          <>
+            <button
+              className={styles.primaryButton}
+              disabled={state.isSubmitting || !hasGeneratedContent || !hasEnabledEnvironment || environmentDateOrderErrors.length > 0}
+              onClick={() => void actions.createChg(environmentValueByKey)}
+              type="button"
+            >
+              {state.isSubmitting ? 'Creating CHG…' : 'Create CHG'}
+            </button>
+            <button
+              className={styles.secondaryButton}
+              disabled={state.isSubmitting || !hasGeneratedContent || !normalizedExistingChgNumber}
+              onClick={() => void actions.updateExistingChg(normalizedExistingChgNumber)}
+              type="button"
+            >
+              {state.isSubmitting ? 'Updating CHG…' : 'Update Existing CHG'}
+            </button>
+            {/* Same append the Configuration tab offers, surfaced where users look for it (user report):
+                queue CTASKs above, enter the CHG number, and add them without creating anything. */}
+            <button
+              className={styles.secondaryButton}
+              disabled={state.isSubmitting || state.changeTasks.length === 0 || !normalizedExistingChgNumber}
+              onClick={() => void actions.appendTasksToExistingChg(normalizedExistingChgNumber)}
+              title="Add the queued Change Tasks to the CHG number above, without creating or updating anything else"
+              type="button"
+            >
+              Add CTASKs to Existing CHG
+            </button>
+          </>
+        )}
         <button className={styles.secondaryButton} onClick={() => actions.reset()} type="button">
           Start Over
         </button>
@@ -2366,7 +2397,14 @@ function renderCurrentStepPanel(
 }
 
 export interface CrgTabProps {
-  mode?: 'wizard' | 'configuration';
+  /**
+   * Which job this builder is doing. 'wizard' raises a new change, 'configuration' exposes the
+   * reusable defaults as a flat panel, and 'rebuild' (feature 033) builds a change from the blank
+   * template and writes it over one that already exists. Omitting the prop keeps the wizard.
+   */
+  mode?: 'wizard' | 'configuration' | 'rebuild';
+  /** The change a rebuild will overwrite. Required in rebuild mode, ignored otherwise. */
+  targetChangeNumber?: string;
 }
 
 /**
@@ -2395,13 +2433,39 @@ const APPLY_FIELDS_BUTTON_LABEL = '✔ Apply reply to fields';
 const NO_RECOGNISABLE_FIELDS_MESSAGE =
   'No recognisable fields found — the reply must use the SHORT_DESCRIPTION / DESCRIPTION / JUSTIFICATION / RISK_AND_IMPACT markers.';
 
+/** Names the surface so an operator always knows whether they are creating or overwriting. */
+function resolveTabTitle(mode: CrgTabProps['mode'], rebuildTargetNumber: string): string {
+  if (mode === 'configuration') return CONFIGURATION_TAB_TITLE;
+  if (mode === 'rebuild') return `${REBUILD_TAB_TITLE} ${rebuildTargetNumber}`;
+  return TAB_TITLE;
+}
+
+/** Explains, in one line, what the current mode is for. */
+function resolveTabSubtitle(mode: CrgTabProps['mode']): string {
+  if (mode === 'configuration') return CONFIGURATION_TAB_SUBTITLE;
+  if (mode === 'rebuild') return REBUILD_TAB_SUBTITLE;
+  return TAB_SUBTITLE;
+}
+
 /**
  * Renders the Change Request Generator so release managers can turn Jira release scope into a
  * comprehensive six-step ServiceNow Change Request with all required fields.
  * A hidden prompt assist mode is available via keyboard shortcut for enhanced content generation.
  */
-export default function CrgTab({ mode = 'wizard' }: CrgTabProps) {
-  const { state, actions } = useCrgState();
+export default function CrgTab({ mode = 'wizard', targetChangeNumber }: CrgTabProps) {
+  const isRebuildMode = mode === 'rebuild';
+  const rebuildTargetNumber = (targetChangeNumber ?? '').trim().toUpperCase();
+  if (isRebuildMode && !rebuildTargetNumber) {
+    // Failing loudly beats silently behaving like the create wizard: a rebuild with no target
+    // would offer a Create button and raise a second change for work that already has a number.
+    throw new Error('Rebuild mode requires the change number the rebuild will overwrite.');
+  }
+
+  // A rebuild keeps its draft in its own per-change slot, so it neither inherits nor overwrites
+  // whatever the operator has in progress on the Create tab.
+  const { state, actions } = useCrgState(
+    isRebuildMode ? { storageKey: buildRebuildStorageKey(rebuildTargetNumber) } : undefined,
+  );
   const { isUnlocked, buildPrompt } = useAiAssist();
   const {
     templates,
@@ -2709,11 +2773,13 @@ export default function CrgTab({ mode = 'wizard' }: CrgTabProps) {
     isAiAssistUnlocked: isUnlocked,
     onOpenRiskCheckPrompt: handleOpenRiskCheckPrompt,
     riskCheckReviewText,
+    rebuildTargetNumber: isRebuildMode ? rebuildTargetNumber : undefined,
   };
 
-  const tabTitle = mode === 'configuration' ? CONFIGURATION_TAB_TITLE : TAB_TITLE;
-  const tabSubtitle = mode === 'configuration' ? CONFIGURATION_TAB_SUBTITLE : TAB_SUBTITLE;
-  const shouldShowWizardChrome = mode === 'wizard';
+  const tabTitle = resolveTabTitle(mode, rebuildTargetNumber);
+  const tabSubtitle = resolveTabSubtitle(mode);
+  // A rebuild walks the same six steps as the wizard; only configuration mode flattens them.
+  const shouldShowWizardChrome = mode !== 'configuration';
 
   return (
     <div className={styles.tabPanel}>
@@ -2724,6 +2790,13 @@ export default function CrgTab({ mode = 'wizard' }: CrgTabProps) {
         </div>
         <p className={styles.summaryPill}>{issueCountSummary}</p>
       </header>
+      {/* The destination stays on screen at every step so it is never ambiguous which record
+          this rebuild will overwrite. */}
+      {isRebuildMode ? (
+        <p className={styles.rebuildTargetBanner} role="status">
+          Rebuilding {rebuildTargetNumber} — nothing is saved until you update it on the last step.
+        </p>
+      ) : null}
       {shouldShowWizardChrome ? <StepIndicator currentStep={state.currentStep} onStepSelect={actions.goToStep} /> : null}
       {mode === 'configuration' ? (
         <>

@@ -1,8 +1,8 @@
 # Implementation Plan: Feature Roll-Up Board
 
-**Branch**: `feature/033-feature-rollup-board` | **Date**: 2026-08-07 | **Spec**: [spec.md](./spec.md)
+**Branch**: `feature/034-feature-rollup-board` | **Date**: 2026-08-07 | **Spec**: [spec.md](./spec.md)
 
-**Input**: Feature specification from `/specs/033-feature-rollup-board/spec.md`
+**Input**: Feature specification from `/specs/034-feature-rollup-board/spec.md`
 
 ## Summary
 
@@ -63,7 +63,7 @@ small additive edits to shipped files
 
 | Article | Gate | Pre-Phase-0 | Post-Phase-1 |
 |---------|------|-------------|--------------|
-| **III — Branching** | Work on `feature/*`, never `main` | ✅ `feature/033-feature-rollup-board` | ✅ unchanged |
+| **III — Branching** | Work on `feature/*`, never `main` | ✅ `feature/034-feature-rollup-board` | ✅ unchanged |
 | **IV — Code Quality** | Self-documenting names, `is/has/can/should/was` booleans, verb-first functions, <40-line functions, file purpose comments, no magic numbers | ✅ enforced in design (named constants for chunk sizes, column ids, storage keys) | ✅ `boardLayout.ts` is split into four named helpers — `computeLaneVitals`, `distributeItemsIntoColumns`, `groupItemsIntoParentContainers`, `orderLanes` — each under 40 lines, with `buildBoardLayout` as the thin composition. Instructed by task T025. |
 | **V — Testing** | TDD red → green; unit tests mock all I/O and are fast | ✅ 6 of the 9 logic modules are **pure** and testable with zero mocking | ✅ contracts define the assertions before code |
 | **VI — Documentation** | CHANGELOG is the single source of truth; no ad-hoc status docs | ✅ CHANGELOG entry planned; only `specs/033-*` artifacts created | ✅ |
@@ -84,7 +84,7 @@ second computation that could disagree.
 ### Documentation (this feature)
 
 ```text
-specs/033-feature-rollup-board/
+specs/034-feature-rollup-board/
 ├── plan.md              # This file
 ├── spec.md              # Feature specification (8 clarifications integrated)
 ├── research.md          # Phase 0 — reuse ledger and resolved unknowns
