@@ -500,3 +500,44 @@ describe('RollupBoardTab — it mirrors the dashboard\'s scope', () => {
     await waitFor(() => expect(screen.getByText(/nothing has been filtered out/)).toBeTruthy());
   });
 });
+
+describe('RollupBoardTab — columns saved by an older version', () => {
+  it('renders the board instead of a blank page when the saved vocabulary predates multi-status columns', async () => {
+    // The exact shape v0.140.x wrote. Without a migration the board called .some() on an array
+    // that was not there, React threw, and the tab rendered nothing at all.
+    window.localStorage.setItem('tbxRollupBoardVocabulary', JSON.stringify({
+      'team-a': {
+        teamProfileId: 'team-a',
+        columns: [{ id: 'col-1', name: 'Being coded', order: 0, mapping: { jiraStatusName: 'To Do', subStatusValue: null } }],
+        updatedAt: '2026-08-07T10:00:00.000Z',
+        lastSyncedAt: null,
+      },
+    }));
+    mockJiraResponses({ boardIssues: [buildIssue('DEV-1', 'PORTFOLIO-9')] });
+
+    render(<RollupBoardTab boardId={42} scopedIssues={SCOPED_ISSUES} teamProfileId="team-a" />);
+
+    await waitFor(() => expect(screen.getByTestId('rollup-lane-PORTFOLIO-9')).toBeTruthy());
+    expect(screen.getByTestId('rollup-column-header-row')).toBeTruthy();
+  });
+
+  it('still places issues into the upgraded column', async () => {
+    window.localStorage.setItem('tbxRollupBoardVocabulary', JSON.stringify({
+      'team-a': {
+        teamProfileId: 'team-a',
+        columns: [{ id: 'col-1', name: 'Being coded', order: 0, mapping: { jiraStatusName: 'To Do', subStatusValue: null } }],
+        updatedAt: '',
+        lastSyncedAt: null,
+      },
+    }));
+    mockJiraResponses({ boardIssues: [buildIssue('DEV-1', 'PORTFOLIO-9')] });
+
+    render(<RollupBoardTab boardId={42} scopedIssues={SCOPED_ISSUES} teamProfileId="team-a" />);
+
+    await waitFor(() => expect(screen.getByTestId('rollup-lane-PORTFOLIO-9')).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: /Expand PORTFOLIO-9/ }));
+
+    // The issue is in "To Do", which the upgraded column claims — so it lands there, not Unmapped.
+    expect(screen.getByTestId('rollup-cell-PORTFOLIO-9-col-1').textContent).toContain('DEV-1');
+  });
+});

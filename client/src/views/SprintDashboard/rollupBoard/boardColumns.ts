@@ -60,7 +60,7 @@ export function resolveColumnIdForItem(
   hasSubStatusField: boolean,
 ): string {
   const matchingColumn = vocabulary.columns.find((column) =>
-    column.mappings.some((mapping) => doesMappingMatchState(mapping, statusName, subStatusValue, hasSubStatusField)),
+    (column.mappings ?? []).some((mapping) => doesMappingMatchState(mapping, statusName, subStatusValue, hasSubStatusField)),
   );
   return matchingColumn?.id ?? UNMAPPED_COLUMN_ID;
 }
@@ -69,7 +69,7 @@ export function resolveColumnIdForItem(
 function findDuplicateMappingErrors(columns: readonly BoardColumn[]): VocabularyError[] {
   const columnIdsByMappingKey = new Map<string, string[]>();
   for (const column of columns) {
-    for (const mapping of column.mappings) {
+    for (const mapping of column.mappings ?? []) {
       const mappingKey = buildMappingComparisonKey(mapping);
       const claimingColumnIds = columnIdsByMappingKey.get(mappingKey) ?? [];
       // A column claiming one state twice is a duplicate within itself, not a clash with a neighbour.
@@ -147,7 +147,7 @@ export function buildRenderedColumns(vocabulary: BoardVocabulary): RenderedColum
       name: column.name,
       // Stored order is a preference, not user data: gaps are normalised rather than reported.
       order: columnIndex,
-      mappings: column.mappings,
+      mappings: column.mappings ?? [],
       isUnmappedColumn: false,
     }));
 

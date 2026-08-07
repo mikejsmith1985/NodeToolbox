@@ -5,9 +5,54 @@
 // This module holds the local copy; boardVocabularySync publishes it to, and pulls it from, the
 // team's shared Confluence workspace.
 
-import type { BoardVocabulary } from './rollupBoardTypes.ts';
+import type { BoardColumn, BoardVocabulary, ColumnStatusMapping } from './rollupBoardTypes.ts';
 
 const VOCABULARY_STORAGE_KEY = 'tbxRollupBoardVocabulary';
+
+/**
+ * A column as some earlier version of this board stored it.
+ *
+ * Columns used to claim exactly ONE Jira state, in a `mapping` field. Anything saved before that
+ * changed is still sitting in browsers and in the shared workspace, so every read has to accept it.
+ */
+interface StoredBoardColumn {
+  id: string;
+  name: string;
+  order: number;
+  mappings?: ColumnStatusMapping[];
+  /** The single-state shape this board used before a column could claim several. */
+  mapping?: ColumnStatusMapping | null;
+}
+
+/**
+ * Brings any stored column up to the current shape.
+ *
+ * Renaming a PERSISTED field without this is what turned the board into a blank page: the new code
+ * called `.some()` on a `mappings` array that older saved data simply did not have.
+ */
+export function normalizeStoredColumn(storedColumn: StoredBoardColumn): BoardColumn {
+  const upgradedMappings = storedColumn.mappings
+    ?? (storedColumn.mapping ? [storedColumn.mapping] : []);
+  return {
+    id: storedColumn.id,
+    name: storedColumn.name,
+    order: storedColumn.order,
+    mappings: upgradedMappings,
+  };
+}
+
+/** Brings a whole stored vocabulary up to the current shape, whatever version wrote it. */
+export function normalizeStoredVocabulary(
+  storedVocabulary: { teamProfileId: string; columns?: StoredBoardColumn[]; updatedAt?: string; lastSyncedAt?: string | null },
+  fallbackTeamProfileId: string,
+): BoardVocabulary {
+  return {
+    teamProfileId: storedVocabulary.teamProfileId || fallbackTeamProfileId,
+    columns: (storedVocabulary.columns ?? []).map(normalizeStoredColumn),
+    updatedAt: storedVocabulary.updatedAt ?? '',
+    lastSyncedAt: storedVocabulary.lastSyncedAt ?? null,
+  };
+}
 
 /** A team that has not defined any columns yet. Everything then shows as Unmapped, visibly. */
 export function buildEmptyVocabulary(teamProfileId: string): BoardVocabulary {
@@ -25,7 +70,9 @@ export function readAllVocabularies(): Record<string, BoardVocabulary> {
 
 /** Loads one team's vocabulary, falling back to an empty one. */
 export function loadTeamVocabulary(teamProfileId: string): BoardVocabulary {
-  return readAllVocabularies()[teamProfileId] ?? buildEmptyVocabulary(teamProfileId);
+  const storedVocabulary = readAllVocabularies()[teamProfileId];
+  if (!storedVocabulary) return buildEmptyVocabulary(teamProfileId);
+  return normalizeStoredVocabulary(storedVocabulary, teamProfileId);
 }
 
 /**
