@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Roll-Up Board — the Feature project filter did not actually filter.** Applying a project list
+  reloaded the board and showed exactly the same content. The scope treated a **Feature Link** as an
+  override that kept the work whatever project it was in — and since nearly every issue on a real
+  board *is* Feature-Linked, that override swallowed the entire filter.
+  The project list is now authoritative: a Feature outside it does not become a lane. How the Feature
+  was reached now decides how the exclusion is **reported**, not whether it applies. A cross-project
+  **Feature Link** is still surfaced — the Feature keys are named on the board and in Board setup,
+  because that is usually a mistake worth correcting in Jira — but its work stays off the board
+  unless you ask for it. There are now two independent toggles, both off by default: one for
+  out-of-project Features reached by the Feature Link field, one for those reached only by an issue
+  link. Hidden issues are still counted on screen, so the board never simply looks smaller than Jira.
+
 ### Added
 - **Roll-Up Board — each team now says which Features are theirs.** A team board carries work linked
   to Features across many portfolio projects, and lanes for Features nobody on the team owns are just

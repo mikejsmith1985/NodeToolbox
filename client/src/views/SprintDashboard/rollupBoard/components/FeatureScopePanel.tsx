@@ -21,6 +21,10 @@ export interface FeatureScopePanelProps {
   visibleFeatureKeys: readonly string[];
   /** How many issues the current scope is holding back. */
   hiddenIssueCount: number;
+  /** Out-of-project Features reached by the Feature Link field — named whether shown or hidden. */
+  featureLinkedOutOfProjectKeys: readonly string[];
+  /** Out-of-project Features reached only by an issue link. */
+  issueLinkedOutOfProjectKeys: readonly string[];
   onScopeChange: (scope: FeatureScopeSettings) => void;
   onResetScope: () => void;
 }
@@ -40,6 +44,8 @@ export function FeatureScopePanel({
   hasOwnScope,
   visibleFeatureKeys,
   hiddenIssueCount,
+  featureLinkedOutOfProjectKeys,
+  issueLinkedOutOfProjectKeys,
   onScopeChange,
   onResetScope,
 }: FeatureScopePanelProps) {
@@ -104,8 +110,20 @@ export function FeatureScopePanel({
         </div>
       )}
 
-      {/* A Feature Link pointing outside the team's projects is always shown — it is not supposed to
-          exist, so hiding it would hide the evidence. Only loosely-linked ones are optional. */}
+      {/* Both default OFF, so the project list above genuinely narrows the board. Out-of-project
+          Features are still NAMED below whether or not their work is shown. */}
+      <label className={styles.editorRow}>
+        <input
+          checked={scope.shouldIncludeOutOfProjectFeatureLinks}
+          onChange={(changeEvent) =>
+            onScopeChange({ ...scope, shouldIncludeOutOfProjectFeatureLinks: changeEvent.target.checked })}
+          type="checkbox"
+        />
+        <span className={styles.fieldLabel}>
+          Also show other projects&apos; Features that are linked by the <strong>Feature Link</strong> field
+        </span>
+      </label>
+
       <label className={styles.editorRow}>
         <input
           checked={scope.shouldIncludeIssueLinkedFeatures}
@@ -114,17 +132,30 @@ export function FeatureScopePanel({
           type="checkbox"
         />
         <span className={styles.fieldLabel}>
-          Also show other projects&apos; Features that are only reached by an issue link
-          {hiddenIssueCount > 0 && !scope.shouldIncludeIssueLinkedFeatures
-            ? ` — ${hiddenIssueCount} ${hiddenIssueCount === 1 ? 'issue is' : 'issues are'} hidden right now`
-            : ''}
+          Also show other projects&apos; Features that are only reached by an <strong>issue link</strong>
         </span>
       </label>
 
-      <p className={styles.fieldLabel}>
-        Work linked by the <strong>Feature Link</strong> field is always shown, even if its Feature sits outside
-        these projects — that is not supposed to happen, so the board surfaces it rather than hiding it.
-      </p>
+      {hiddenIssueCount > 0 && (
+        <p className={styles.fieldLabel}>
+          {hiddenIssueCount} {hiddenIssueCount === 1 ? 'issue is' : 'issues are'} hidden by this scope right now.
+        </p>
+      )}
+
+      {/* A Feature Link crossing projects is usually a mistake, so it is named even while hidden —
+          the work stays off the board, but the fact does not go unnoticed. */}
+      {featureLinkedOutOfProjectKeys.length > 0 && (
+        <p className={styles.editorError}>
+          ⚠ Linked by the Feature Link field but outside these projects:{' '}
+          {featureLinkedOutOfProjectKeys.join(', ')}. That is usually worth correcting in Jira.
+        </p>
+      )}
+
+      {issueLinkedOutOfProjectKeys.length > 0 && (
+        <p className={styles.fieldLabel}>
+          Reached only by an issue link, outside these projects: {issueLinkedOutOfProjectKeys.join(', ')}.
+        </p>
+      )}
     </section>
   );
 }

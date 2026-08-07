@@ -345,7 +345,7 @@ describe('RollupBoardTab — showing only the Features this team owns', () => {
 
   it('drops lanes for Features in projects the team does not track', async () => {
     window.localStorage.setItem('tbxRollupBoardScope', JSON.stringify({
-      'team-a': { featureProjectKeys: ['ENCUC'], shouldIncludeIssueLinkedFeatures: false },
+      'team-a': { featureProjectKeys: ['ENCUC'], shouldIncludeOutOfProjectFeatureLinks: false, shouldIncludeIssueLinkedFeatures: false },
     }));
     mockScopedBoard([buildIssue('DEV-1', 'ENCUC-1'), buildIssueLinkedDefect('BUG-1', 'OTHER-9')]);
 
@@ -357,7 +357,7 @@ describe('RollupBoardTab — showing only the Features this team owns', () => {
 
   it('says how many issues it held back, rather than just looking smaller', async () => {
     window.localStorage.setItem('tbxRollupBoardScope', JSON.stringify({
-      'team-a': { featureProjectKeys: ['ENCUC'], shouldIncludeIssueLinkedFeatures: false },
+      'team-a': { featureProjectKeys: ['ENCUC'], shouldIncludeOutOfProjectFeatureLinks: false, shouldIncludeIssueLinkedFeatures: false },
     }));
     mockScopedBoard([buildIssue('DEV-1', 'ENCUC-1'), buildIssueLinkedDefect('BUG-1', 'OTHER-9')]);
 
@@ -368,22 +368,48 @@ describe('RollupBoardTab — showing only the Features this team owns', () => {
     });
   });
 
-  it('shows an out-of-project Feature anyway when the Feature Link field says so, and flags it', async () => {
-    // "It shouldn't happen" — so when it does, the board surfaces it instead of hiding the evidence.
+  it('hides an out-of-project Feature even when the Feature Link field points at it', async () => {
+    // Regression: treating a Feature Link as an override made "Apply" appear to do nothing at all,
+    // because nearly every issue on a real board IS Feature-Linked.
     window.localStorage.setItem('tbxRollupBoardScope', JSON.stringify({
-      'team-a': { featureProjectKeys: ['ENCUC'], shouldIncludeIssueLinkedFeatures: false },
+      'team-a': { featureProjectKeys: ['ENCUC'], shouldIncludeOutOfProjectFeatureLinks: false, shouldIncludeIssueLinkedFeatures: false },
+    }));
+    mockScopedBoard([buildIssue('DEV-1', 'ENCUC-1'), buildIssue('DEV-2', 'OTHER-9')]);
+
+    render(<RollupBoardTab boardId={42} teamProfileId="team-a" />);
+
+    await waitFor(() => expect(screen.getByTestId('rollup-lane-ENCUC-1')).toBeTruthy());
+    expect(screen.queryByTestId('rollup-lane-OTHER-9')).toBeNull();
+  });
+
+  it('still names that cross-project Feature Link, so the mistake does not go unnoticed', async () => {
+    window.localStorage.setItem('tbxRollupBoardScope', JSON.stringify({
+      'team-a': { featureProjectKeys: ['ENCUC'], shouldIncludeOutOfProjectFeatureLinks: false, shouldIncludeIssueLinkedFeatures: false },
+    }));
+    mockScopedBoard([buildIssue('DEV-1', 'ENCUC-1'), buildIssue('DEV-2', 'OTHER-9')]);
+
+    render(<RollupBoardTab boardId={42} teamProfileId="team-a" />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/linked by the Feature Link field but sit outside/)).toBeTruthy();
+    });
+    expect(screen.getByText(/OTHER-9/)).toBeTruthy();
+  });
+
+  it('shows it as a lane once the Feature Link toggle is on', async () => {
+    window.localStorage.setItem('tbxRollupBoardScope', JSON.stringify({
+      'team-a': { featureProjectKeys: ['ENCUC'], shouldIncludeOutOfProjectFeatureLinks: true, shouldIncludeIssueLinkedFeatures: false },
     }));
     mockScopedBoard([buildIssue('DEV-1', 'ENCUC-1'), buildIssue('DEV-2', 'OTHER-9')]);
 
     render(<RollupBoardTab boardId={42} teamProfileId="team-a" />);
 
     await waitFor(() => expect(screen.getByTestId('rollup-lane-OTHER-9')).toBeTruthy());
-    expect(screen.getByText(/outside this team's projects but linked by the Feature Link field/)).toBeTruthy();
   });
 
   it('reveals the loosely-linked ones when the team turns the toggle on', async () => {
     window.localStorage.setItem('tbxRollupBoardScope', JSON.stringify({
-      'team-a': { featureProjectKeys: ['ENCUC'], shouldIncludeIssueLinkedFeatures: true },
+      'team-a': { featureProjectKeys: ['ENCUC'], shouldIncludeOutOfProjectFeatureLinks: false, shouldIncludeIssueLinkedFeatures: true },
     }));
     mockScopedBoard([buildIssue('DEV-1', 'ENCUC-1'), buildIssueLinkedDefect('BUG-1', 'OTHER-9')]);
 

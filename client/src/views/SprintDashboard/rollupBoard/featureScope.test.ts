@@ -93,18 +93,21 @@ function buildItem(key: string, route: RollUpRoute): RollupBoardItem {
 /** Transformers: one Feature project. */
 const SINGLE_PROJECT_SCOPE: FeatureScopeSettings = {
   featureProjectKeys: ['ENCUC'],
+  shouldIncludeOutOfProjectFeatureLinks: false,
   shouldIncludeIssueLinkedFeatures: false,
 };
 
 /** Cleanup Crew: two Feature projects. */
 const TWO_PROJECT_SCOPE: FeatureScopeSettings = {
   featureProjectKeys: ['ENCUC', 'DENP'],
+  shouldIncludeOutOfProjectFeatureLinks: false,
   shouldIncludeIssueLinkedFeatures: false,
 };
 
 /** Nothing configured — every Feature counts, which is how the board behaved before scoping existed. */
 const UNCONFIGURED_SCOPE: FeatureScopeSettings = {
   featureProjectKeys: [],
+  shouldIncludeOutOfProjectFeatureLinks: false,
   shouldIncludeIssueLinkedFeatures: false,
 };
 
@@ -141,12 +144,48 @@ describe('applyFeatureScope — a team that tracks one project', () => {
     expect(result.hiddenIssueCount).toBe(0);
   });
 
-  it('still shows an out-of-project Feature when the Feature Link field says so', () => {
-    // "It shouldn't happen" — so when it does, the board is the place it becomes visible.
+  it('hides an out-of-project Feature even when the Feature Link field points at it', () => {
+    // The project list is authoritative. Treating a Feature Link as an override made the filter
+    // useless, because nearly all real work IS Feature-Linked — the override swallowed the filter.
     const result = applyFeatureScope([buildItem('DEV-1', buildFeatureLinkRoute('OTHER-9'))], SINGLE_PROJECT_SCOPE);
 
+    expect(result.items).toEqual([]);
+    expect(result.hiddenIssueCount).toBe(1);
+  });
+
+  it('still NAMES that Feature, so a cross-project Feature Link does not go unnoticed', () => {
+    const result = applyFeatureScope([buildItem('DEV-1', buildFeatureLinkRoute('OTHER-9'))], SINGLE_PROJECT_SCOPE);
+
+    expect(result.featureLinkedOutOfProjectKeys).toEqual(['OTHER-9']);
+  });
+
+  it('shows Feature-Linked out-of-project work when the viewer asks for it', () => {
+    const result = applyFeatureScope(
+      [buildItem('DEV-1', buildFeatureLinkRoute('OTHER-9'))],
+      { ...SINGLE_PROJECT_SCOPE, shouldIncludeOutOfProjectFeatureLinks: true },
+    );
+
     expect(result.items.map((item) => item.key)).toEqual(['DEV-1']);
-    expect(result.outOfScopeFeatureKeys).toContain('OTHER-9');
+    expect(result.hiddenIssueCount).toBe(0);
+  });
+
+  it('keeps the two toggles independent, so revealing one does not reveal the other', () => {
+    const items = [
+      buildItem('DEV-1', buildFeatureLinkRoute('OTHER-1')),
+      buildItem('BUG-1', buildDefectDirectLinkRoute('OTHER-2')),
+    ];
+
+    const result = applyFeatureScope(items, { ...SINGLE_PROJECT_SCOPE, shouldIncludeOutOfProjectFeatureLinks: true });
+
+    expect(result.items.map((item) => item.key)).toEqual(['DEV-1']);
+    expect(result.issueLinkedOutOfProjectKeys).toEqual(['OTHER-2']);
+  });
+
+  it('hides a sub-task whose parent points at an out-of-project Feature', () => {
+    // Sub-tasks inherit an authoritative route, so this is the commonest case on a real board.
+    const result = applyFeatureScope([buildItem('DEV-1-1', buildParentRoute('OTHER-9'))], SINGLE_PROJECT_SCOPE);
+
+    expect(result.items).toEqual([]);
   });
 
   it('hides an out-of-project Feature reached only by an issue link', () => {
@@ -225,7 +264,7 @@ describe('applyFeatureScope — honesty', () => {
     );
 
     expect(result.hiddenIssueCount).toBe(2);
-    expect(result.hiddenFeatureKeys.sort()).toEqual(['OTHER-1', 'OTHER-2']);
+    expect(result.issueLinkedOutOfProjectKeys.sort()).toEqual(['OTHER-1', 'OTHER-2']);
   });
 
   it('compares project keys case-insensitively, since configuration is typed by hand', () => {
