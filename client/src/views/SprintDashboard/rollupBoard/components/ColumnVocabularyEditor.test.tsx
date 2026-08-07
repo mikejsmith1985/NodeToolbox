@@ -49,8 +49,8 @@ function buildVocabulary(overrides: Partial<BoardVocabulary> = {}): BoardVocabul
   return {
     teamProfileId: 'team-a',
     columns: [
-      { id: 'col-1', name: 'Being coded', order: 0, mapping: { jiraStatusName: 'In Progress', subStatusValue: 'Dev In Progress' } },
-      { id: 'col-2', name: 'Waiting on SL test', order: 1, mapping: { jiraStatusName: 'In Progress', subStatusValue: 'Dev Complete' } },
+      { id: 'col-1', name: 'Being coded', order: 0, mappings: [{ jiraStatusName: 'In Progress', subStatusValue: 'Dev In Progress' }] },
+      { id: 'col-2', name: 'Waiting on SL test', order: 1, mappings: [{ jiraStatusName: 'In Progress', subStatusValue: 'Dev Complete' }] },
     ],
     updatedAt: '2026-08-07T10:00:00.000Z',
     lastSyncedAt: null,
@@ -59,14 +59,35 @@ function buildVocabulary(overrides: Partial<BoardVocabulary> = {}): BoardVocabul
 }
 
 describe('ColumnVocabularyEditor — the mapping controls', () => {
-  it('only offers statuses Jira reported, never a free-text box', () => {
+  it('never offers a free-text box for a Jira status — states are only ever chosen from real ones', () => {
+    // Every state a column can claim comes from the board itself, so a mapping Jira would reject
+    // cannot be typed in. The only text input here names the COLUMN, which is the team's own words.
     render(
       <ColumnVocabularyEditor allItems={BOARD_ITEMS} canShare optionSources={OPTION_SOURCES} onVocabularyChange={vi.fn()} vocabulary={buildVocabulary()} />,
     );
 
-    const statusSelect = screen.getByLabelText('Jira status for Being coded');
-    expect(statusSelect.tagName).toBe('SELECT');
-    expect(screen.getAllByRole('option', { name: 'In Progress' }).length).toBeGreaterThan(0);
+    const textInputs = screen.getAllByRole('textbox') as HTMLInputElement[];
+    expect(textInputs.every((input) => /column/i.test(input.getAttribute('aria-label') ?? ''))).toBe(true);
+  });
+
+  it('lists the statuses a column claims, since a column can hold several like a Jira board', () => {
+    render(
+      <ColumnVocabularyEditor allItems={BOARD_ITEMS} canShare optionSources={OPTION_SOURCES} onVocabularyChange={vi.fn()} vocabulary={buildVocabulary()} />,
+    );
+
+    expect(screen.getAllByText(/In Progress \/ Dev In Progress/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/In Progress \/ Dev Complete/).length).toBeGreaterThan(0);
+  });
+
+  it('lets a claimed status be taken off a column again', () => {
+    const onVocabularyChange = vi.fn();
+    render(
+      <ColumnVocabularyEditor allItems={BOARD_ITEMS} canShare optionSources={OPTION_SOURCES} onVocabularyChange={onVocabularyChange} vocabulary={buildVocabulary()} />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Dev In Progress' }));
+
+    expect(onVocabularyChange.mock.calls[0][0].columns[0].mappings).toEqual([]);
   });
 
   it('lets a column be defined before it is mapped', () => {
@@ -79,22 +100,27 @@ describe('ColumnVocabularyEditor — the mapping controls', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Add column' }));
 
     const [nextVocabulary] = onVocabularyChange.mock.calls[0];
-    expect(nextVocabulary.columns[2]).toMatchObject({ name: 'Ready for release', mapping: null });
+    expect(nextVocabulary.columns[2]).toMatchObject({ name: 'Ready for release', mappings: [] });
   });
 
-  it('disables the sub-status picker when this board exposes none, instead of offering free text', () => {
+  it('says so, and claims status only, when this board exposes no sub-statuses', () => {
+    const onVocabularyChange = vi.fn();
     render(
       <ColumnVocabularyEditor
         allItems={BOARD_ITEMS}
         canShare
         optionSources={{ statusNames: ['To Do'], subStatusValues: [], isSubStatusUnavailable: true }}
-        onVocabularyChange={vi.fn()}
+        onVocabularyChange={onVocabularyChange}
         vocabulary={buildVocabulary()}
       />,
     );
 
-    expect((screen.getByLabelText('Sub-status for Being coded') as HTMLSelectElement).disabled).toBe(true);
     expect(screen.getByText(/columns can only be mapped to a status/)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Suggest columns from this board' }));
+    const [nextVocabulary] = onVocabularyChange.mock.calls[0];
+    expect(nextVocabulary.columns.every((c: { mappings: { subStatusValue: string | null }[] }) =>
+      c.mappings.every((mapping) => mapping.subStatusValue === null))).toBe(true);
   });
 
   it('reorders a column and renumbers so the order stays contiguous', () => {
@@ -114,7 +140,7 @@ describe('ColumnVocabularyEditor — the mapping controls', () => {
 describe('ColumnVocabularyEditor — refusing an ambiguous vocabulary', () => {
   it('refuses to share two columns claiming the same Jira state, and says which', () => {
     const conflicting = buildVocabulary();
-    conflicting.columns[1].mapping = { jiraStatusName: 'In Progress', subStatusValue: 'Dev In Progress' };
+    conflicting.columns[1].mappings = [{ jiraStatusName: 'In Progress', subStatusValue: 'Dev In Progress' }];
 
     render(
       <ColumnVocabularyEditor allItems={BOARD_ITEMS} canShare optionSources={OPTION_SOURCES} onVocabularyChange={vi.fn()} vocabulary={conflicting} />,
@@ -156,7 +182,7 @@ describe('ColumnVocabularyEditor — sharing', () => {
 
   it('lists what a pull would change BEFORE anything changes', () => {
     const remote = buildVocabulary({
-      columns: [{ id: 'col-1', name: 'In development', order: 0, mapping: { jiraStatusName: 'In Progress', subStatusValue: 'Dev In Progress' } }],
+      columns: [{ id: 'col-1', name: 'In development', order: 0, mappings: [{ jiraStatusName: 'In Progress', subStatusValue: 'Dev In Progress' }] }],
     });
 
     render(
@@ -177,7 +203,7 @@ describe('ColumnVocabularyEditor — sharing', () => {
   it('lets a pull be refused, leaving the local columns alone', () => {
     const onCancelPull = vi.fn();
     const onAcceptPull = vi.fn();
-    const remote = buildVocabulary({ columns: [{ id: 'col-1', name: 'In development', order: 0, mapping: null }] });
+    const remote = buildVocabulary({ columns: [{ id: 'col-1', name: 'In development', order: 0, mappings: [] }] });
 
     render(
       <ColumnVocabularyEditor
@@ -236,8 +262,8 @@ describe('ColumnVocabularyEditor — starting from what is really there', () => 
     const [nextVocabulary] = onVocabularyChange.mock.calls[0];
     expect(nextVocabulary.columns).toHaveLength(3);
     // "Dev Complete" holds two issues, so it leads.
-    expect(nextVocabulary.columns[0].mapping).toEqual({ jiraStatusName: 'In Progress', subStatusValue: 'Dev Complete' });
-    expect(nextVocabulary.columns.every((column: { mapping: unknown }) => column.mapping !== null)).toBe(true);
+    expect(nextVocabulary.columns[0].mappings[0]).toEqual({ jiraStatusName: 'In Progress', subStatusValue: 'Dev Complete' });
+    expect(nextVocabulary.columns.every((column: { mappings: unknown[] }) => column.mappings.length > 0)).toBe(true);
   });
 
   it('maps suggestions on status alone when this instance has no sub-status field', () => {
@@ -255,7 +281,7 @@ describe('ColumnVocabularyEditor — starting from what is really there', () => 
     fireEvent.click(screen.getByRole('button', { name: 'Suggest columns from this board' }));
 
     const [nextVocabulary] = onVocabularyChange.mock.calls[0];
-    expect(nextVocabulary.columns.every((c: { mapping: { subStatusValue: string | null } }) => c.mapping.subStatusValue === null)).toBe(true);
+    expect(nextVocabulary.columns.every((c: { mappings: [{ subStatusValue: string | null }] }) => c.mappings[0].subStatusValue === null)).toBe(true);
   });
 });
 
@@ -272,7 +298,7 @@ describe('ColumnVocabularyEditor — live feedback while mapping', () => {
 
   it('flags a column that would catch nothing, which is nearly always a mistake', () => {
     const wrongMapping = buildVocabulary();
-    wrongMapping.columns[0].mapping = { jiraStatusName: 'Accepted', subStatusValue: null };
+    wrongMapping.columns[0].mappings = [{ jiraStatusName: 'Accepted', subStatusValue: null }];
 
     render(
       <ColumnVocabularyEditor allItems={BOARD_ITEMS} canShare optionSources={OPTION_SOURCES} onVocabularyChange={vi.fn()} vocabulary={wrongMapping} />,
@@ -281,15 +307,15 @@ describe('ColumnVocabularyEditor — live feedback while mapping', () => {
     expect(screen.getByText('0 issues here now')).toBeTruthy();
   });
 
-  it('says an unmapped column holds nothing, rather than showing a bare zero', () => {
+  it('says a column claiming no status holds nothing, rather than showing a bare zero', () => {
     const unmapped = buildVocabulary();
-    unmapped.columns[0].mapping = null;
+    unmapped.columns[0].mappings = [];
 
     render(
       <ColumnVocabularyEditor allItems={BOARD_ITEMS} canShare optionSources={OPTION_SOURCES} onVocabularyChange={vi.fn()} vocabulary={unmapped} />,
     );
 
-    expect(screen.getByText('not mapped — holds nothing')).toBeTruthy();
+    expect(screen.getByText('no statuses — holds nothing')).toBeTruthy();
   });
 });
 

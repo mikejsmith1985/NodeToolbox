@@ -76,19 +76,32 @@ export function collectObservedBoardStates(items: readonly RollupBoardItem[]): O
   });
 }
 
-/** Counts how many of these issues a column's mapping would catch, for live feedback while mapping. */
-export function countIssuesMatchingMapping(
+/**
+ * The states currently landing in Unmapped, commonest first.
+ *
+ * This is the answer to "how do I find the statuses that fell out?" — the board knows exactly which
+ * ones nobody has claimed, so it lists them instead of leaving the team to guess.
+ */
+export function collectUnmappedBoardStates(
   items: readonly RollupBoardItem[],
-  mapping: { jiraStatusName: string; subStatusValue: string | null } | null,
+  unmappedColumnId: string,
+): ObservedBoardState[] {
+  return collectObservedBoardStates(items.filter((item) => item.columnId === unmappedColumnId));
+}
+
+/** Counts how many of these issues a column's mapping would catch, for live feedback while mapping. */
+export function countIssuesMatchingMappings(
+  items: readonly RollupBoardItem[],
+  mappings: readonly { jiraStatusName: string; subStatusValue: string | null }[],
   hasSubStatusField: boolean,
 ): number {
-  if (mapping === null) return 0;
+  if (mappings.length === 0) return 0;
 
-  return items.filter((item) => {
+  return items.filter((item) => mappings.some((mapping) => {
     if (item.statusName.trim().toLowerCase() !== mapping.jiraStatusName.trim().toLowerCase()) return false;
     if (!hasSubStatusField) return true;
     return (item.subStatusValue ?? '').trim().toLowerCase() === (mapping.subStatusValue ?? '').trim().toLowerCase();
-  }).length;
+  })).length;
 }
 
 /** Sorted, de-duplicated, blank-free. */

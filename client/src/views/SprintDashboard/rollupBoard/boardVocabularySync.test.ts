@@ -28,8 +28,8 @@ function buildVocabulary(teamProfileId: string, columns: BoardVocabulary['column
 }
 
 const LOCAL_COLUMNS: BoardVocabulary['columns'] = [
-  { id: 'col-1', name: 'Being coded', order: 0, mapping: { jiraStatusName: 'In Progress', subStatusValue: 'Dev In Progress' } },
-  { id: 'col-2', name: 'Waiting on SL test', order: 1, mapping: { jiraStatusName: 'In Progress', subStatusValue: 'Dev Complete' } },
+  { id: 'col-1', name: 'Being coded', order: 0, mappings: [{ jiraStatusName: 'In Progress', subStatusValue: 'Dev In Progress' }] },
+  { id: 'col-2', name: 'Waiting on SL test', order: 1, mappings: [{ jiraStatusName: 'In Progress', subStatusValue: 'Dev Complete' }] },
 ];
 
 beforeEach(() => {
@@ -50,7 +50,7 @@ describe('publishBoardVocabulary', () => {
   it('leaves every other team\'s columns byte-identical', async () => {
     const otherTeamRecord = {
       teamProfileId: 'team-b',
-      columns: [{ id: 'col-9', name: 'Their column', order: 0, mapping: null }],
+      columns: [{ id: 'col-9', name: 'Their column', order: 0, mappings: [] }],
       updatedAt: '2026-07-01T00:00:00.000Z',
       lastSyncedAt: null,
     };
@@ -71,7 +71,7 @@ describe('publishBoardVocabulary', () => {
       schemaVersion: 1,
       updatedAt: '',
       vocabularyByTeamProfileId: {
-        'team-a': { teamProfileId: 'team-a', columns: [{ id: 'old', name: 'Old', order: 0, mapping: null }], updatedAt: '', lastSyncedAt: null },
+        'team-a': { teamProfileId: 'team-a', columns: [{ id: 'old', name: 'Old', order: 0, mappings: [] }], updatedAt: '', lastSyncedAt: null },
       },
     });
 
@@ -112,7 +112,7 @@ describe('compareVocabularies', () => {
 
   it('reports a mapping change, which silently moves every card in that column', () => {
     const remapped = [
-      { ...LOCAL_COLUMNS[0], mapping: { jiraStatusName: 'In Progress', subStatusValue: 'Code Review' } },
+      { ...LOCAL_COLUMNS[0], mappings: [{ jiraStatusName: 'In Progress', subStatusValue: 'Code Review' }] },
       LOCAL_COLUMNS[1],
     ];
 
@@ -150,7 +150,7 @@ describe('previewBoardVocabularyPull', () => {
       schemaVersion: 1,
       updatedAt: '',
       vocabularyByTeamProfileId: {
-        'team-a': { teamProfileId: 'team-a', columns: [{ id: 'col-1', name: 'Renamed', order: 0, mapping: null }], updatedAt: '', lastSyncedAt: null },
+        'team-a': { teamProfileId: 'team-a', columns: [{ id: 'col-1', name: 'Renamed', order: 0, mappings: [] }], updatedAt: '', lastSyncedAt: null },
       },
     });
 
@@ -167,7 +167,7 @@ describe('previewBoardVocabularyPull', () => {
       vocabularyByTeamProfileId: {
         'team-a': {
           teamProfileId: 'team-a',
-          columns: [{ id: 'col-1', name: 'In development', order: 0, mapping: LOCAL_COLUMNS[0].mapping }],
+          columns: [{ id: 'col-1', name: 'In development', order: 0, mappings: LOCAL_COLUMNS[0].mappings }],
           updatedAt: '',
           lastSyncedAt: null,
         },

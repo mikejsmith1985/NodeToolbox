@@ -8,6 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Roll-Up Board — cards could not be dragged between columns.** The card was a button with the
+  drag listeners on a grip nested inside it — a button within a button — so the outer click fired on
+  release and every drag attempt opened the issue detail instead of moving the card. The whole card
+  is now the drag handle, the way it is on a Jira board: press and move to drag, press without
+  moving to open. It stays keyboard-reachable, and the lane grip still reorders swimlanes.
+- **Roll-Up Board — a column can now claim several Jira statuses, like a real Jira column.** Each
+  column held exactly one status + sub-status pair, so any status nobody had thought of landed in
+  **Unmapped** and looked as though it had fallen off the board, with no way to file it into the
+  column the team wanted. Columns now hold as many states as you like, and **Board setup** lists
+  every status currently sitting in Unmapped with its issue count — each one can be dropped into an
+  existing column or given a new one in a single click. Dragging a card into a column writes the
+  first status that column claims.
+- **Roll-Up Board — the columns now read as columns.** Column headers carry the issue count and the
+  statuses they stand for, and each column has its own walls and background so the board scans like
+  a Jira board rather than a flat grid. Cards were reshaped to match: key and assignee on top,
+  summary, fix-version chips, then type, priority and points along the bottom.
 - **Roll-Up Board — it ignored the Sprint / Fix Version / PI selector and pulled the whole board.**
   The tab queried the Jira board's saved filter directly, which returns every issue that filter
   matches — the entire backlog included — so it showed far more than the team had asked to see and

@@ -9,6 +9,8 @@ import type { RenderedColumn } from '../rollupBoardTypes.ts';
 
 export interface BoardColumnHeaderRowProps {
   columns: readonly RenderedColumn[];
+  /** How many issues each column is currently holding, keyed by column id. */
+  issueCountByColumnId?: Record<string, number>;
 }
 
 /**
@@ -22,7 +24,7 @@ export function buildColumnGridTemplate(columnCount: number): string {
 }
 
 /** Renders the board-level column headers in the team's chosen order, Unmapped always last. */
-export function BoardColumnHeaderRow({ columns }: BoardColumnHeaderRowProps) {
+export function BoardColumnHeaderRow({ columns, issueCountByColumnId = {} }: BoardColumnHeaderRowProps) {
   return (
     <div
       className={styles.columnHeaderRow}
@@ -34,12 +36,21 @@ export function BoardColumnHeaderRow({ columns }: BoardColumnHeaderRowProps) {
           className={column.isUnmappedColumn ? `${styles.columnHeader} ${styles.columnHeaderUnmapped}` : styles.columnHeader}
           key={column.id}
         >
-          {column.name}
-          {column.mapping !== null && (
-            <span className={styles.fieldLabel}>
-              {' '}({column.mapping.jiraStatusName}
-              {column.mapping.subStatusValue !== null ? ` / ${column.mapping.subStatusValue}` : ''})
+          <span>
+            {column.name} <span className={styles.columnHeaderMeta}>{issueCountByColumnId[column.id] ?? 0}</span>
+          </span>
+          {/* A Jira column stands for several statuses, so the header lists them rather than one. */}
+          {column.mappings.length > 0 && (
+            <span className={styles.columnHeaderMeta}>
+              {column.mappings
+                .map((mapping) => mapping.subStatusValue
+                  ? `${mapping.jiraStatusName} / ${mapping.subStatusValue}`
+                  : mapping.jiraStatusName)
+                .join(' · ')}
             </span>
+          )}
+          {column.mappings.length === 0 && !column.isUnmappedColumn && (
+            <span className={styles.columnHeaderMeta}>not mapped yet</span>
           )}
         </div>
       ))}

@@ -1,15 +1,18 @@
-// ChildCard.tsx — One issue on the Roll-Up Board.
+// ChildCard.tsx — One issue on the Roll-Up Board, shaped like a Jira board card.
 //
-// The card states three things a reader would otherwise have to work out: what kind of issue it is,
-// what state it is actually in, and how it rolls up to the Feature whose lane it sits in. Colour
-// carries the first of those quickly, but never alone — the type icon and its text label say the
-// same thing, so the card is just as readable to someone who cannot distinguish the colours.
+// The whole card is the drag handle, the way it is on a Jira board: you pick a card up by touching
+// it, not by finding a grip. An earlier version made the card a <button> with the drag listeners on
+// a nested grip — a button inside a button, so the outer click fired on release and every drag
+// attempt opened the detail panel instead of moving the card.
+//
+// Click and drag are told apart by the drag sensor's activation distance: a press that never moves
+// is a click and opens the issue; a press that travels is a drag.
 
 import { useDraggable } from '@dnd-kit/core';
 
 import { AssigneeAvatar } from '../../../../components/IssueMeta/AssigneeAvatar.tsx';
 import { IssueTypeIcon } from '../../../../components/IssueMeta/IssueTypeIcon.tsx';
-import { StatusChip } from '../../../../components/IssueMeta/StatusChip.tsx';
+import { PriorityBadge } from '../../../../components/IssueMeta/PriorityBadge.tsx';
 import styles from '../RollupBoardTab.module.css';
 import type { IssueTypeBucket, RollUpRoute, RollupBoardItem } from '../rollupBoardTypes.ts';
 
@@ -47,16 +50,12 @@ export function describeRollUpRoute(route: RollUpRoute): string {
     })
     .join(' → ');
 
-  if (route.precedenceRank === 'via-qa-issue') {
-    return `Raised via ${routeDescription}`;
-  }
-  if (route.precedenceRank === 'dev-story') {
-    return `Raised against ${routeDescription}`;
-  }
+  if (route.precedenceRank === 'via-qa-issue') return `Raised via ${routeDescription}`;
+  if (route.precedenceRank === 'dev-story') return `Raised against ${routeDescription}`;
   return `Rolls up via ${routeDescription}`;
 }
 
-/** Renders one issue card, colour-coded and labelled by type. */
+/** Renders one issue card, colour-coded and labelled by type, draggable as a whole. */
 export function ChildCard({
   item,
   isHighlighted = false,
@@ -65,73 +64,86 @@ export function ChildCard({
   onOpen,
   onSelectFamily,
 }: ChildCardProps) {
-  // The drag listeners live on the grip alone, so everything else on the card stays clickable —
-  // the same split the Todo board uses. A whole-card drag surface makes the card unopenable.
-  const { attributes, listeners, setNodeRef, setActivatorNodeRef } = useDraggable({ id: item.key });
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: item.key });
 
   const cardClassNames = [
     styles.card,
     CARD_CLASS_BY_TYPE_BUCKET[item.typeBucket],
     isHighlighted ? styles.cardHighlighted : '',
     isPending ? styles.cardPending : '',
+    isDragging ? styles.cardDragging : '',
   ].filter(Boolean).join(' ');
 
+  /** Opens the issue. Never fires mid-drag, since a travelling press is not a click. */
+  function handleOpen(): void {
+    if (isDragging) return;
+    onSelectFamily?.(item);
+    onOpen?.(item.key);
+  }
+
   return (
-    <button
+    <div
+      aria-label={`${item.typeName} ${item.key}: ${item.summary}`}
       className={cardClassNames}
       data-testid={`rollup-card-${item.key}`}
       data-type-bucket={item.typeBucket}
-      onClick={() => {
-        onSelectFamily?.(item);
-        onOpen?.(item.key);
+      onClick={handleOpen}
+      onKeyDown={(keyboardEvent) => {
+        if (keyboardEvent.key === 'Enter' || keyboardEvent.key === ' ') {
+          keyboardEvent.preventDefault();
+          handleOpen();
+        }
       }}
       ref={setNodeRef}
-      type="button"
+      {...listeners}
+      {...attributes}
+      role="button"
+      tabIndex={0}
     >
-      <span className={styles.cardHeaderRow}>
-        <span
-          className={styles.cardGrip}
-          ref={setActivatorNodeRef}
-          {...listeners}
-          {...attributes}
-          aria-label={`Drag ${item.key} to another column`}
-        >
-          ⠿
-        </span>
+      {/* Top row, as on a Jira card: the key on the left, who owns it on the right. */}
+      <div className={styles.cardTopRow}>
         <span className={styles.cardKey}>{item.key}</span>
-        <IssueTypeIcon issueTypeName={item.typeName} />
-      </span>
-
-      <span className={styles.cardSummary}>{item.summary}</span>
-
-      <span className={styles.cardMetaRow}>
-        <StatusChip statusName={item.statusName} />
-        {item.subStatusValue !== null && <span className={styles.cardTypeLabel}>{item.subStatusValue}</span>}
         <AssigneeAvatar displayName={item.assigneeDisplayName} />
-        {item.storyPoints !== null && <span className={styles.cardTypeLabel}>{item.storyPoints} pts</span>}
-      </span>
+      </div>
 
-      {/* Checklist progress only appears when the issue genuinely carries checklist data. */}
-      {item.checklistCompletion !== null && (
-        <span className={styles.cardChecklist}>
-          Checklist {item.checklistCompletion.completedCount}/{item.checklistCompletion.totalCount}
-        </span>
+      <div className={styles.cardSummary}>{item.summary}</div>
+
+      {item.fixVersionNames.length > 0 && (
+        <div className={styles.cardChipRow}>
+          {item.fixVersionNames.map((fixVersionName) => (
+            <span className={styles.cardChip} key={fixVersionName}>{fixVersionName}</span>
+          ))}
+        </div>
       )}
 
-      <span className={styles.cardRoute}>{describeRollUpRoute(item.route)}</span>
+      {/* Footer, as on a Jira card: type, priority, points. Type is text as well as colour. */}
+      <div className={styles.cardFooterRow}>
+        <IssueTypeIcon issueTypeName={item.typeName} />
+        <PriorityBadge priorityName={item.issue.fields.priority?.name ?? 'None'} />
+        {item.subStatusValue !== null && <span className={styles.cardSubStatus}>{item.subStatusValue}</span>}
+        {item.storyPoints !== null && <span className={styles.cardPoints}>{item.storyPoints}</span>}
+      </div>
+
+      {item.checklistCompletion !== null && (
+        <div className={styles.cardChecklist}>
+          Checklist {item.checklistCompletion.completedCount}/{item.checklistCompletion.totalCount}
+        </div>
+      )}
+
+      <div className={styles.cardRoute}>{describeRollUpRoute(item.route)}</div>
 
       {/* A relationship the precedence chain did not take is still a fact about this work. */}
       {item.route.unchosenCandidates.length > 0 && (
-        <span className={styles.cardRoute}>
+        <div className={styles.cardRoute}>
           Also linked to {item.route.unchosenCandidates.map((candidate) => candidate.toKey).join(', ')}
-        </span>
+        </div>
       )}
 
       {item.route.notes.includes('link-loop-detected') && (
-        <span className={styles.cardRoute}>⚠ Its links form a loop — worth tidying in Jira</span>
+        <div className={styles.cardRoute}>⚠ Its links form a loop — worth tidying in Jira</div>
       )}
 
-      {errorMessage !== null && <span className={styles.cardError}>{errorMessage}</span>}
-    </button>
+      {errorMessage !== null && <div className={styles.cardError}>{errorMessage}</div>}
+    </div>
   );
 }

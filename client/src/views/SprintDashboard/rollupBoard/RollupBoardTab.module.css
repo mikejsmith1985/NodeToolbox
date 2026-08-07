@@ -71,10 +71,27 @@
 
 .columnHeader {
   min-width: var(--layout-control-min-width);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--spacing-xs);
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-bottom: none;
   font-size: var(--font-size-sm);
   font-weight: 600;
-  color: var(--color-text-secondary);
-  text-align: center;
+  color: var(--color-text-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.columnHeaderMeta {
+  font-size: var(--font-size-xs);
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--color-text-muted);
 }
 
 .columnHeaderUnmapped {
@@ -154,6 +171,11 @@
   display: flex;
   flex-direction: column;
   gap: var(--spacing-xs);
+  padding: var(--spacing-xs);
+  background: var(--color-bg-subtle);
+  border-left: 1px solid var(--color-border);
+  border-right: 1px solid var(--color-border);
+  min-height: 60px;
 }
 
 .laneCellDropTarget {
@@ -193,14 +215,24 @@
   border: 1px solid var(--color-border);
   border-left-width: 4px;
   border-radius: var(--radius-sm);
-  background: var(--color-surface-1);
+  background: var(--color-card-bg);
+  box-shadow: var(--shadow-surface);
   padding: var(--spacing-xs);
   display: flex;
   flex-direction: column;
   gap: 4px;
   text-align: left;
   width: 100%;
-  cursor: pointer;
+  /* The whole card is the drag handle, as on a Jira board. */
+  cursor: grab;
+}
+
+.card:active {
+  cursor: grabbing;
+}
+
+.card:hover {
+  border-color: var(--color-accent);
 }
 
 .cardStory {
@@ -223,10 +255,48 @@
   outline: 2px solid var(--color-accent);
 }
 
-.cardHeaderRow {
+.cardTopRow {
   display: flex;
   gap: var(--spacing-xs);
   align-items: center;
+  justify-content: space-between;
+}
+
+.cardChipRow,
+.cardFooterRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+
+.cardChip {
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+}
+
+.cardSubStatus {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+}
+
+.cardPoints {
+  margin-left: auto;
+  min-width: 20px;
+  padding: 0 6px;
+  border-radius: 10px;
+  background: var(--color-surface-2);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
+  text-align: center;
+}
+
+.cardDragging {
+  opacity: 0.4;
 }
 
 .cardKey {

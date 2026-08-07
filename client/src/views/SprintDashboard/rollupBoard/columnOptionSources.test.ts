@@ -17,7 +17,8 @@ vi.mock('../featureReviewFixes.ts', () => ({
 
 import {
   collectObservedBoardStates,
-  countIssuesMatchingMapping,
+  collectUnmappedBoardStates,
+  countIssuesMatchingMappings,
   loadColumnOptionSources,
 } from './columnOptionSources.ts';
 import type { RollupBoardItem } from './rollupBoardTypes.ts';
@@ -210,18 +211,40 @@ describe('countIssuesMatchingMapping — live feedback while mapping', () => {
   ];
 
   it('counts what a mapping would catch', () => {
-    expect(countIssuesMatchingMapping(ITEMS, { jiraStatusName: 'In Progress', subStatusValue: 'Dev Complete' }, true)).toBe(1);
+    expect(countIssuesMatchingMappings(ITEMS, [{ jiraStatusName: 'In Progress', subStatusValue: 'Dev Complete' }], true)).toBe(1);
   });
 
-  it('returns zero for a column nobody has mapped yet', () => {
-    expect(countIssuesMatchingMapping(ITEMS, null, true)).toBe(0);
+  it('returns zero for a column that claims no status yet', () => {
+    expect(countIssuesMatchingMappings(ITEMS, [], true)).toBe(0);
   });
 
   it('shows zero for a mapping that catches nothing, which is the point of showing it', () => {
-    expect(countIssuesMatchingMapping(ITEMS, { jiraStatusName: 'Accepted', subStatusValue: null }, true)).toBe(0);
+    expect(countIssuesMatchingMappings(ITEMS, [{ jiraStatusName: 'Accepted', subStatusValue: null }], true)).toBe(0);
   });
 
   it('counts on status alone when this instance has no sub-status field', () => {
-    expect(countIssuesMatchingMapping(ITEMS, { jiraStatusName: 'In Progress', subStatusValue: null }, false)).toBe(2);
+    expect(countIssuesMatchingMappings(ITEMS, [{ jiraStatusName: 'In Progress', subStatusValue: null }], false)).toBe(2);
+  });
+});
+
+describe('collectUnmappedBoardStates — finding the statuses that fell out', () => {
+  it('lists only the states currently sitting in Unmapped, commonest first', () => {
+    const items = [
+      { ...buildItem('DEV-1', 'In Progress', 'Code Review'), columnId: '__unmapped__' },
+      { ...buildItem('DEV-2', 'In Progress', 'Code Review'), columnId: '__unmapped__' },
+      { ...buildItem('DEV-3', 'Blocked', null), columnId: '__unmapped__' },
+      { ...buildItem('DEV-4', 'To Do', null), columnId: 'col-todo' },
+    ];
+
+    const unmapped = collectUnmappedBoardStates(items, '__unmapped__');
+
+    expect(unmapped.map((state) => state.suggestedColumnName)).toEqual(['In Progress — Code Review', 'Blocked']);
+    expect(unmapped[0].issueCount).toBe(2);
+  });
+
+  it('returns nothing when every status already belongs to a column', () => {
+    const items = [{ ...buildItem('DEV-1', 'To Do', null), columnId: 'col-todo' }];
+
+    expect(collectUnmappedBoardStates(items, '__unmapped__')).toEqual([]);
   });
 });

@@ -406,7 +406,7 @@ const MOCK_BOARD_VOCABULARY_STORE = {
     'team-a': {
       teamProfileId: 'team-a',
       columns: [
-        { id: 'col-1', name: 'Ready for Dev', order: 0, mapping: { jiraStatusName: 'To Do', subStatusValue: 'Groomed' } },
+        { id: 'col-1', name: 'Ready for Dev', order: 0, mappings: [{ jiraStatusName: 'To Do', subStatusValue: 'Groomed' }] },
       ],
       updatedAt: '2026-08-01T09:00:00.000Z',
       lastSyncedAt: '2026-08-01T09:00:00.000Z',
@@ -495,7 +495,7 @@ describe('saveBoardVocabularyStore', () => {
         ...MOCK_BOARD_VOCABULARY_STORE.vocabularyByTeamProfileId,
         'team-b': {
           teamProfileId: 'team-b',
-          columns: [{ id: 'col-9', name: 'In SL Test', order: 0, mapping: null }],
+          columns: [{ id: 'col-9', name: 'In SL Test', order: 0, mappings: [] }],
           updatedAt: '2026-07-01T09:00:00.000Z',
           lastSyncedAt: null,
         },

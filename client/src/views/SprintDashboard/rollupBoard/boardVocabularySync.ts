@@ -22,7 +22,7 @@ export type VocabularyDifference =
   | { kind: 'column-added'; name: string }
   | { kind: 'column-removed'; name: string }
   | { kind: 'column-renamed'; fromName: string; toName: string }
-  | { kind: 'mapping-changed'; name: string; from: ColumnStatusMapping | null; to: ColumnStatusMapping | null }
+  | { kind: 'mapping-changed'; name: string; from: ColumnStatusMapping[]; to: ColumnStatusMapping[] }
   | { kind: 'order-changed'; name: string; fromOrder: number; toOrder: number };
 
 export interface VocabularyPullPreview {
@@ -40,7 +40,7 @@ function toRecord(vocabulary: BoardVocabulary): BoardVocabularyRecord {
       id: column.id,
       name: column.name,
       order: column.order,
-      mapping: column.mapping,
+      mappings: column.mappings,
     })),
     updatedAt: vocabulary.updatedAt,
     lastSyncedAt: vocabulary.lastSyncedAt,
@@ -57,9 +57,11 @@ function fromRecord(record: BoardVocabularyRecord): BoardVocabulary {
   };
 }
 
-/** True when two mappings describe the same Jira state. */
-function areMappingsEqual(left: ColumnStatusMapping | null, right: ColumnStatusMapping | null): boolean {
-  return JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
+/** True when two columns claim the same set of Jira states, whatever order they were added in. */
+function areMappingsEqual(left: readonly ColumnStatusMapping[], right: readonly ColumnStatusMapping[]): boolean {
+  const toSortedKeys = (mappings: readonly ColumnStatusMapping[]): string[] =>
+    mappings.map((mapping) => `${mapping.jiraStatusName}||${mapping.subStatusValue ?? ''}`).sort();
+  return JSON.stringify(toSortedKeys(left)) === JSON.stringify(toSortedKeys(right));
 }
 
 /**
@@ -100,12 +102,12 @@ export function compareVocabularies(
     if (localColumn.name !== remoteColumn.name) {
       differences.push({ kind: 'column-renamed', fromName: localColumn.name, toName: remoteColumn.name });
     }
-    if (!areMappingsEqual(localColumn.mapping, remoteColumn.mapping)) {
+    if (!areMappingsEqual(localColumn.mappings, remoteColumn.mappings)) {
       differences.push({
         kind: 'mapping-changed',
         name: remoteColumn.name,
-        from: localColumn.mapping,
-        to: remoteColumn.mapping,
+        from: localColumn.mappings,
+        to: remoteColumn.mappings,
       });
     }
     if (localColumn.order !== remoteColumn.order) {

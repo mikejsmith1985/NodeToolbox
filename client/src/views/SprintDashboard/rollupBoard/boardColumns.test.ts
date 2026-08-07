@@ -19,13 +19,13 @@ function buildVocabulary(): BoardVocabulary {
         id: 'col-dev',
         name: 'Being coded',
         order: 0,
-        mapping: { jiraStatusName: 'In Progress', subStatusValue: 'Dev In Progress' },
+        mappings: [{ jiraStatusName: 'In Progress', subStatusValue: 'Dev In Progress' }],
       },
       {
         id: 'col-sl',
         name: 'Waiting on SL test',
         order: 1,
-        mapping: { jiraStatusName: 'In Progress', subStatusValue: 'Dev Complete' },
+        mappings: [{ jiraStatusName: 'In Progress', subStatusValue: 'Dev Complete' }],
       },
     ],
     updatedAt: '2026-08-01T00:00:00.000Z',
@@ -58,7 +58,7 @@ describe('resolveColumnIdForItem', () => {
   it('matches on status alone when this instance has no sub-status field', () => {
     const statusOnlyVocabulary: BoardVocabulary = {
       ...buildVocabulary(),
-      columns: [{ id: 'col-dev', name: 'Being coded', order: 0, mapping: { jiraStatusName: 'In Progress', subStatusValue: null } }],
+      columns: [{ id: 'col-dev', name: 'Being coded', order: 0, mappings: [{ jiraStatusName: 'In Progress', subStatusValue: null }] }],
     };
 
     expect(resolveColumnIdForItem('In Progress', null, statusOnlyVocabulary, false)).toBe('col-dev');
@@ -67,7 +67,7 @@ describe('resolveColumnIdForItem', () => {
   it('ignores a sub-status value when the instance has no sub-status field to trust', () => {
     const statusOnlyVocabulary: BoardVocabulary = {
       ...buildVocabulary(),
-      columns: [{ id: 'col-dev', name: 'Being coded', order: 0, mapping: { jiraStatusName: 'In Progress', subStatusValue: null } }],
+      columns: [{ id: 'col-dev', name: 'Being coded', order: 0, mappings: [{ jiraStatusName: 'In Progress', subStatusValue: null }] }],
     };
 
     expect(resolveColumnIdForItem('In Progress', 'Whatever', statusOnlyVocabulary, false)).toBe('col-dev');
@@ -90,7 +90,7 @@ describe('resolveColumnIdForItem', () => {
   it('never places an item in a column that has been defined but not yet mapped', () => {
     const unmappedColumnVocabulary: BoardVocabulary = {
       ...buildVocabulary(),
-      columns: [{ id: 'col-new', name: 'Somewhere new', order: 0, mapping: null }],
+      columns: [{ id: 'col-new', name: 'Somewhere new', order: 0, mappings: [] }],
     };
 
     expect(resolveColumnIdForItem('In Progress', 'Dev Complete', unmappedColumnVocabulary, true)).toBe(UNMAPPED_COLUMN_ID);
@@ -104,7 +104,7 @@ describe('validateVocabulary', () => {
 
   it('refuses two columns claiming the same Jira state, naming both', () => {
     const vocabulary = buildVocabulary();
-    vocabulary.columns[1].mapping = { jiraStatusName: 'In Progress', subStatusValue: 'Dev In Progress' };
+    vocabulary.columns[1].mappings = [{ jiraStatusName: 'In Progress', subStatusValue: 'Dev In Progress' }];
 
     const validation = validateVocabulary(vocabulary);
 
@@ -132,15 +132,15 @@ describe('validateVocabulary', () => {
 
   it('accepts a column that is defined but not yet mapped — it simply holds nothing', () => {
     const vocabulary = buildVocabulary();
-    vocabulary.columns[1].mapping = null;
+    vocabulary.columns[1].mappings = [];
 
     expect(validateVocabulary(vocabulary).isValid).toBe(true);
   });
 
   it('accepts two unmapped columns, since neither claims a Jira state', () => {
     const vocabulary = buildVocabulary();
-    vocabulary.columns[0].mapping = null;
-    vocabulary.columns[1].mapping = null;
+    vocabulary.columns[0].mappings = [];
+    vocabulary.columns[1].mappings = [];
 
     expect(validateVocabulary(vocabulary).isValid).toBe(true);
   });
@@ -175,5 +175,62 @@ describe('buildRenderedColumns', () => {
 
     expect(rendered).toHaveLength(1);
     expect(rendered[0].id).toBe(UNMAPPED_COLUMN_ID);
+  });
+});
+
+describe('a column claims several Jira states, like a Jira board column', () => {
+  /** "Being coded" covers two sub-statuses, which is the whole point of the multi-state model. */
+  function buildMultiStateVocabulary(): BoardVocabulary {
+    return {
+      teamProfileId: 'team-a',
+      columns: [{
+        id: 'col-dev',
+        name: 'Being coded',
+        order: 0,
+        mappings: [
+          { jiraStatusName: 'In Progress', subStatusValue: 'Dev In Progress' },
+          { jiraStatusName: 'In Progress', subStatusValue: 'Code Review' },
+        ],
+      }],
+      updatedAt: '',
+      lastSyncedAt: null,
+    };
+  }
+
+  it('places an item matching any one of a column\'s claimed states', () => {
+    const vocabulary = buildMultiStateVocabulary();
+
+    expect(resolveColumnIdForItem('In Progress', 'Dev In Progress', vocabulary, true)).toBe('col-dev');
+    expect(resolveColumnIdForItem('In Progress', 'Code Review', vocabulary, true)).toBe('col-dev');
+  });
+
+  it('still sends a state the column does NOT claim to Unmapped', () => {
+    expect(resolveColumnIdForItem('In Progress', 'Dev Complete', buildMultiStateVocabulary(), true))
+      .toBe(UNMAPPED_COLUMN_ID);
+  });
+
+  it('refuses two DIFFERENT columns claiming the same state', () => {
+    const vocabulary = buildMultiStateVocabulary();
+    vocabulary.columns.push({
+      id: 'col-other',
+      name: 'Somewhere else',
+      order: 1,
+      mappings: [{ jiraStatusName: 'In Progress', subStatusValue: 'Code Review' }],
+    });
+
+    const validation = validateVocabulary(vocabulary);
+
+    expect(validation.isValid).toBe(false);
+    expect(validation.errors[0].columnIds).toEqual(['col-dev', 'col-other']);
+  });
+
+  it('accepts one column claiming many states — that is not a conflict', () => {
+    expect(validateVocabulary(buildMultiStateVocabulary()).isValid).toBe(true);
+  });
+
+  it('lists every claimed state on the rendered column, so the header can show them', () => {
+    const [renderedColumn] = buildRenderedColumns(buildMultiStateVocabulary());
+
+    expect(renderedColumn.mappings).toHaveLength(2);
   });
 });
