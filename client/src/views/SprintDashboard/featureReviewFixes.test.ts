@@ -161,6 +161,36 @@ describe('featureReviewFixes', () => {
     ]);
   });
 
+  // ── 033 Roll-Up Board: the OPTIONAL screen fields matter too ──
+  //
+  // A status move must set the sub-status as well. When that field is available on the transition's
+  // screen the two can be written in one request; when it is not, the write splits in two and can
+  // half-apply. Knowing which case applies needs every screen field, not only the required ones.
+
+  it('reports every field on a transition screen, required or optional, as screenFieldIds', async () => {
+    mockJiraGet.mockResolvedValue({
+      transitions: [
+        { id: '31', name: 'Start Progress', to: { name: 'In Progress' } },
+        {
+          id: '41',
+          name: 'Ready to Accept to Accepted',
+          to: { name: 'Accepted' },
+          fields: {
+            customfield_20001: { required: true, name: 'Defect Root Cause', schema: { type: 'option' } },
+            customfield_10201: { required: false, name: 'Sub-Status', schema: { type: 'option' } },
+          },
+        },
+      ],
+    });
+
+    const loadedTransitions = await fetchFeatureReviewTransitions('ENCUC-2163');
+
+    expect(loadedTransitions[0].screenFieldIds).toEqual([]);
+    expect(loadedTransitions[1].screenFieldIds).toEqual(['customfield_20001', 'customfield_10201']);
+    // The existing contract is untouched: requiredFields still holds ONLY the required ones.
+    expect(loadedTransitions[1].requiredFields.map((field) => field.fieldId)).toEqual(['customfield_20001']);
+  });
+
   it('saves a Jira transition from Feature Review', async () => {
     mockJiraPost.mockResolvedValue(undefined);
 

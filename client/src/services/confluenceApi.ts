@@ -394,6 +394,97 @@ export async function saveSharedArtWorkspace(
   );
 }
 
+// ── Roll-Up Board column vocabulary shared store ──
+//
+// ARTICLE VII DRIFT, RECORDED HERE ON PURPOSE.
+//
+// The team's Roll-Up Board column vocabulary is shared team-wide, and the shared ART workspace is
+// this product's existing mechanism for exactly that. It is deliberately NOT stored there, because
+// neither available route is safe:
+//
+//   1. Bumping SHARED_ART_WORKSPACE_SCHEMA_VERSION — loadSharedArtWorkspace REJECTS any payload
+//      newer than the client's own, so one publish from a new build would stop every colleague on an
+//      older build from loading the ENTIRE workspace, not merely the new field.
+//   2. Adding a field to the existing v2 team record — ArtView merges team records strictly over its
+//      SHARED_ART_TEAM_FIELD_NAMES allowlist, so an older client that publishes would silently DROP
+//      the vocabulary. Quiet data loss is worse than a loud failure.
+//
+// A sibling property has neither problem: clients that predate this feature never read or write the
+// key, so they can neither break on it nor erase it. The Jira template store below established this
+// same pattern in this same file for the same reason.
+
+/** Content-property key holding every team's Roll-Up Board column vocabulary. */
+export const BOARD_VOCABULARY_PROPERTY_KEY = 'nodetoolbox-board-vocabulary';
+
+/** Schema version of the board vocabulary store, independent of the ART workspace's own version. */
+export const BOARD_VOCABULARY_SCHEMA_VERSION = 1;
+
+/** One team's column vocabulary as carried in the shared store. */
+export interface BoardVocabularyRecord {
+  teamProfileId: string;
+  columns: Array<{
+    id: string;
+    name: string;
+    order: number;
+    mapping: { jiraStatusName: string; subStatusValue: string | null } | null;
+  }>;
+  updatedAt: string;
+  lastSyncedAt: string | null;
+}
+
+export interface BoardVocabularyStorePayload {
+  schemaVersion: number;
+  updatedAt: string;
+  vocabularyByTeamProfileId: Record<string, BoardVocabularyRecord>;
+}
+
+/** An empty store — the normal first-run state, never an error. */
+function buildEmptyBoardVocabularyStore(): BoardVocabularyStorePayload {
+  return {
+    schemaVersion: BOARD_VOCABULARY_SCHEMA_VERSION,
+    updatedAt: '',
+    vocabularyByTeamProfileId: {},
+  };
+}
+
+/**
+ * Loads every team's board vocabulary from the shared database.
+ *
+ * An absent property yields an empty store: nobody has published yet, which is normal. A version
+ * this client does not understand is refused, so a future format is never mis-parsed — and because
+ * this is a sibling property, that refusal blocks only the vocabulary, never the ART workspace.
+ */
+export async function loadBoardVocabularyStore(databaseId: string): Promise<BoardVocabularyStorePayload> {
+  const vocabularyProperty = await fetchConfluenceDatabasePropertyByKey<BoardVocabularyStorePayload>(
+    databaseId,
+    BOARD_VOCABULARY_PROPERTY_KEY,
+  );
+  if (!vocabularyProperty) {
+    return buildEmptyBoardVocabularyStore();
+  }
+  if (vocabularyProperty.value.schemaVersion !== BOARD_VOCABULARY_SCHEMA_VERSION) {
+    throw new Error(
+      `Unsupported board vocabulary schema version ${vocabularyProperty.value.schemaVersion}. `
+      + 'Update NodeToolbox to read this team\'s columns.',
+    );
+  }
+  return vocabularyProperty.value;
+}
+
+/** Persists every team's board vocabulary, stamping the schema version and save time. */
+export async function saveBoardVocabularyStore(
+  databaseId: string,
+  store: BoardVocabularyStorePayload,
+): Promise<BoardVocabularyStorePayload> {
+  const stampedStore: BoardVocabularyStorePayload = {
+    ...store,
+    schemaVersion: BOARD_VOCABULARY_SCHEMA_VERSION,
+    updatedAt: new Date().toISOString(),
+  };
+  await upsertConfluenceDatabaseProperty(databaseId, BOARD_VOCABULARY_PROPERTY_KEY, stampedStore);
+  return stampedStore;
+}
+
 // ── Jira Template Maker shared store ──
 // Templates persist as one JSON document under their own content-property key on the same
 // shared database used by the ART workspace, kept independent so the ART schema is untouched.

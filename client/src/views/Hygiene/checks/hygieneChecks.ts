@@ -78,6 +78,14 @@ export interface HygieneFieldConfig {
   estimateFieldIds?: string[];
   /** Spark ID / PCode field — configured-only; backs the 021 Readiness PCode alert (see above). */
   pcodeFieldIds?: string[];
+  /**
+   * Sub-status field — configured-only. The Roll-Up Board maps its columns to a status + sub-status
+   * pair; an empty list means this instance has no such field, so columns degrade to status alone and
+   * the board says so rather than pretending to a precision it cannot deliver.
+   */
+  subStatusFieldIds?: string[];
+  /** Jira's impediment "Flagged" field — configured-only; backs the Roll-Up Board's flagged indicator. */
+  flaggedFieldIds?: string[];
 }
 
 export interface HygieneEvaluationContext {
@@ -161,6 +169,8 @@ const DEFAULT_HYGIENE_FIELD_CONFIG: HygieneFieldConfig = {
   targetStartFieldIds: ['customfield_10101'],
   estimateFieldIds: [],
   pcodeFieldIds: [],
+  subStatusFieldIds: [],
+  flaggedFieldIds: [],
 };
 
 const BUILT_IN_HYGIENE_FLAGS: Record<BuiltInHygieneCheckId, HygieneFlag> = {
@@ -495,6 +505,8 @@ export function resolveHygieneFieldConfig(fieldConfig?: Partial<HygieneFieldConf
     // "not checked — no matching field" rather than flagging every feature.
     estimateFieldIds: buildUniqueFieldIds(fieldConfig?.estimateFieldIds ?? []),
     pcodeFieldIds: buildUniqueFieldIds(fieldConfig?.pcodeFieldIds ?? []),
+    subStatusFieldIds: buildUniqueFieldIds(fieldConfig?.subStatusFieldIds ?? []),
+    flaggedFieldIds: buildUniqueFieldIds(fieldConfig?.flaggedFieldIds ?? []),
   };
 }
 

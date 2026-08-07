@@ -3,12 +3,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  BOARD_VOCABULARY_PROPERTY_KEY,
   ConfluenceRequestError,
   createConfluenceDatabase,
   fetchConfluencePage,
   fetchConfluencePageByReference,
+  loadBoardVocabularyStore,
   loadSharedArtWorkspace,
   resolveConfluencePageIdFromReference,
+  saveBoardVocabularyStore,
   saveSharedArtWorkspace,
   SHARED_ART_DATABASE_PROPERTY_KEY,
   updateConfluencePage,
@@ -386,5 +389,131 @@ describe('ConfluenceRequestError — failure classification', () => {
     );
 
     expect(failure.message).toContain('Could not resolve the configured Confluence host');
+  });
+});
+
+// ── 033 Roll-Up Board: the column vocabulary rides its own content property ──
+//
+// It is deliberately NOT part of the shared ART workspace payload: bumping that schema would stop
+// older clients loading the workspace entirely, and adding an unlisted field to its team record
+// would have those clients silently drop the vocabulary on their next save.
+
+/** One team's published vocabulary, as the shared store holds it. */
+const MOCK_BOARD_VOCABULARY_STORE = {
+  schemaVersion: 1,
+  updatedAt: '2026-08-01T09:00:00.000Z',
+  vocabularyByTeamProfileId: {
+    'team-a': {
+      teamProfileId: 'team-a',
+      columns: [
+        { id: 'col-1', name: 'Ready for Dev', order: 0, mapping: { jiraStatusName: 'To Do', subStatusValue: 'Groomed' } },
+      ],
+      updatedAt: '2026-08-01T09:00:00.000Z',
+      lastSyncedAt: '2026-08-01T09:00:00.000Z',
+    },
+  },
+};
+
+/** Mocks the two-call property read: list by key, then fetch the found property. */
+function mockPropertyRead(propertyValue: unknown) {
+  return vi.spyOn(globalThis, 'fetch')
+    .mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({
+        results: [{ id: 'prop-9', key: BOARD_VOCABULARY_PROPERTY_KEY, version: { number: 2 } }],
+      }),
+    } as Response)
+    .mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({
+        id: 'prop-9',
+        key: BOARD_VOCABULARY_PROPERTY_KEY,
+        value: propertyValue,
+        version: { number: 2 },
+      }),
+    } as Response);
+}
+
+describe('loadBoardVocabularyStore', () => {
+  it('reads every team vocabulary from its own content property', async () => {
+    const fetchSpy = mockPropertyRead(MOCK_BOARD_VOCABULARY_STORE);
+
+    const store = await loadBoardVocabularyStore('db-123');
+
+    expect(store.vocabularyByTeamProfileId['team-a'].columns[0].name).toBe('Ready for Dev');
+    expect(fetchSpy).toHaveBeenNthCalledWith(
+      1,
+      '/confluence-proxy/wiki/api/v2/databases/db-123/properties?key=nodetoolbox-board-vocabulary',
+      undefined,
+    );
+  });
+
+  it('treats an absent property as an empty store, because nobody having published yet is normal', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ results: [] }),
+    } as Response);
+
+    const store = await loadBoardVocabularyStore('db-123');
+
+    expect(store.vocabularyByTeamProfileId).toEqual({});
+    expect(store.schemaVersion).toBe(1);
+  });
+
+  it('refuses a schema version it does not understand rather than mis-parsing it', async () => {
+    mockPropertyRead({ ...MOCK_BOARD_VOCABULARY_STORE, schemaVersion: 99 });
+
+    await expect(loadBoardVocabularyStore('db-123')).rejects.toThrow(/schema version 99/);
+  });
+});
+
+describe('saveBoardVocabularyStore', () => {
+  it('stamps the current schema version and save time', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce({ ok: true, status: 200, json: () => Promise.resolve({ results: [] }) } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ id: 'prop-9', key: BOARD_VOCABULARY_PROPERTY_KEY, value: {}, version: { number: 1 } }),
+      } as Response);
+
+    await saveBoardVocabularyStore('db-123', { ...MOCK_BOARD_VOCABULARY_STORE, schemaVersion: 0 });
+
+    const requestBody = JSON.parse(fetchSpy.mock.calls[1][1]?.body as string);
+    expect(requestBody.key).toBe(BOARD_VOCABULARY_PROPERTY_KEY);
+    expect(requestBody.value.schemaVersion).toBe(1);
+    expect(requestBody.value.updatedAt).not.toBe('');
+  });
+
+  it('leaves other teams byte-identical when one team publishes', async () => {
+    const twoTeamStore = {
+      ...MOCK_BOARD_VOCABULARY_STORE,
+      vocabularyByTeamProfileId: {
+        ...MOCK_BOARD_VOCABULARY_STORE.vocabularyByTeamProfileId,
+        'team-b': {
+          teamProfileId: 'team-b',
+          columns: [{ id: 'col-9', name: 'In SL Test', order: 0, mapping: null }],
+          updatedAt: '2026-07-01T09:00:00.000Z',
+          lastSyncedAt: null,
+        },
+      },
+    };
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce({ ok: true, status: 200, json: () => Promise.resolve({ results: [] }) } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ id: 'prop-9', key: BOARD_VOCABULARY_PROPERTY_KEY, value: {}, version: { number: 1 } }),
+      } as Response);
+
+    await saveBoardVocabularyStore('db-123', twoTeamStore);
+
+    const requestBody = JSON.parse(fetchSpy.mock.calls[1][1]?.body as string);
+    expect(requestBody.value.vocabularyByTeamProfileId['team-b']).toEqual(
+      twoTeamStore.vocabularyByTeamProfileId['team-b'],
+    );
   });
 });

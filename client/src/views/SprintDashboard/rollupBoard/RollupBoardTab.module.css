@@ -1,0 +1,361 @@
+/* RollupBoardTab.module.css — Styling for the Feature Roll-Up Board.
+ *
+ * Reuses the Sprint Dashboard's design tokens so the board reads as part of the same product.
+ * Deliberately NO width: calc(100% / zoom) anywhere — the app's standardised zoom already scales
+ * this surface, and re-applying it double-shrinks a full-width board.
+ */
+
+/* ── Board shell ── */
+
+.boardShell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.boardStatusLine {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+.boardWarning {
+  padding: var(--spacing-md);
+  border: 1px solid var(--color-warning);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-2);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+}
+
+.boardEmptyState {
+  padding: var(--spacing-lg);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text-secondary);
+  text-align: center;
+}
+
+.boardActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+  align-items: center;
+}
+
+.actionButton {
+  padding: var(--spacing-xs) var(--spacing-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-1);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+
+.actionButton:hover {
+  background: var(--color-surface-2);
+}
+
+/* ── The one shared column header row, and the scroll region that keeps lanes aligned ── */
+
+.boardScroller {
+  overflow-x: auto;
+}
+
+.columnHeaderRow {
+  display: grid;
+  gap: var(--spacing-xs);
+  padding-bottom: var(--spacing-xs);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.columnHeader {
+  min-width: var(--layout-control-min-width);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  text-align: center;
+}
+
+.columnHeaderUnmapped {
+  color: var(--color-warning);
+}
+
+/* ── Swimlane ── */
+
+.lane {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-card-bg);
+  margin-top: var(--spacing-md);
+}
+
+.laneHeader {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+  align-items: center;
+  padding: var(--spacing-xs) var(--spacing-md);
+  background: var(--color-surface-1);
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+}
+
+.laneHeaderSynthetic {
+  border-left: 4px solid var(--color-warning);
+}
+
+.laneToggle {
+  border: none;
+  background: none;
+  color: var(--color-text-primary);
+  cursor: pointer;
+  font-size: var(--font-size-md);
+}
+
+.laneKey {
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.laneSummary {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.laneVital {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+
+.laneVitalMissing {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
+.laneFlag {
+  color: var(--color-danger);
+}
+
+.laneGrip {
+  cursor: grab;
+  color: var(--color-text-muted);
+}
+
+.laneCells {
+  display: grid;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-xs);
+}
+
+.laneCell {
+  min-width: var(--layout-control-min-width);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.laneCellDropTarget {
+  outline: 2px dashed var(--color-accent);
+}
+
+/* ── Parent container: a grouping label, deliberately NOT card-shaped ── */
+
+.parentContainer {
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: var(--spacing-xs);
+  background: var(--color-bg-subtle);
+}
+
+.parentContainerHeader {
+  display: flex;
+  gap: var(--spacing-xs);
+  align-items: baseline;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+  margin-bottom: var(--spacing-xs);
+}
+
+.parentContainerKey {
+  font-weight: 600;
+}
+
+.parentContainerOutOfScope {
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
+/* ── Child card ── */
+
+.card {
+  border: 1px solid var(--color-border);
+  border-left-width: 4px;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-1);
+  padding: var(--spacing-xs);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: left;
+  width: 100%;
+  cursor: pointer;
+}
+
+.cardStory {
+  border-left-color: var(--color-success);
+}
+
+.cardDefect {
+  border-left-color: var(--color-danger);
+}
+
+.cardSubtask {
+  border-left-color: var(--color-cyan);
+}
+
+.cardOther {
+  border-left-color: var(--color-text-muted);
+}
+
+.cardHighlighted {
+  outline: 2px solid var(--color-accent);
+}
+
+.cardHeaderRow {
+  display: flex;
+  gap: var(--spacing-xs);
+  align-items: center;
+}
+
+.cardKey {
+  font-weight: 600;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-primary);
+}
+
+.cardTypeLabel {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+}
+
+.cardSummary {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-primary);
+}
+
+.cardMetaRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+
+.cardRoute {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+
+.cardChecklist {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+}
+
+.cardGrip {
+  cursor: grab;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.cardPending {
+  opacity: 0.6;
+}
+
+.cardError {
+  font-size: var(--font-size-xs);
+  color: var(--color-danger);
+}
+
+/* ── Quick filters ── */
+
+.filterBar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+  align-items: center;
+}
+
+.filterChip {
+  padding: 2px var(--spacing-xs);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-1);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+}
+
+.filterChipActive {
+  composes: filterChip;
+  background: var(--color-accent);
+  color: var(--color-text-on-accent);
+  border-color: var(--color-accent);
+}
+
+.filterLabel {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+}
+
+.inputField {
+  padding: 2px var(--spacing-xs);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-xs);
+}
+
+/* ── Vocabulary editor ── */
+
+.panelCard {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-card-bg);
+  padding: var(--spacing-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.sectionTitle {
+  font-size: var(--font-size-md);
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.fieldLabel {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+}
+
+.editorRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+  align-items: center;
+}
+
+.editorError {
+  font-size: var(--font-size-sm);
+  color: var(--color-danger);
+}
+
+.editorDiff {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+  margin: 0;
+  padding-left: var(--spacing-md);
+}

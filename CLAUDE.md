@@ -17,6 +17,37 @@
 > `po-pi-dropdown.spec.js`. Feature 024's spec inherited a false "do not run concurrently with 022" constraint from
 > these stale entries before the code was checked. **Verify against the codebase before trusting a status below.**
 
+- **033-feature-rollup-board** — *(planned on `feature/033-feature-rollup-board` — ready for `/speckit-tasks`)* a
+  **Roll-Up Board** tab on the Team space that re-renders the team's already-selected Jira board as a stack of
+  **Feature swimlanes**: one shared column header row across the whole board, each Feature a collapsible lane,
+  **every issue in the column of its OWN status**, and parentage drawn with **per-column parent containers** (GH #306's
+  rendering — a container header per column holding that column's children, while the parent's own card stands
+  childless in its own status column). Columns are the **team's own status names**, each mapped to a Jira
+  **status + sub-status** pair; a move writes the compliant combination back. Anything unmapped goes to a visible
+  **Unmapped** column; anything unattributable goes to a **No Feature** master card with a live count — the board
+  never hides work. Plan: `specs/033-feature-rollup-board/plan.md`. Contracts: `board-assembly.md`,
+  `board-layout.md`, `column-vocabulary.md`, `status-move.md`, `vocabulary-sync.md`.
+  **Framework-First**: 15 of 19 capabilities are **reuse** — board selection + `/board/{id}/issue`
+  (`useSprintData`), `featureLink.ts` (one-hop child→Feature, cross-project), `plannerFetch.fetchSubtasksForParents`
+  (the `parent in (…)` sweep — board issues do **not** include sub-tasks), `loadHygieneFieldConfig` name-discovery,
+  `detectImpedimentReasons` (flagged + dependencies), `fetchFeatureReviewTransitions`/`saveFeatureReviewTransition`
+  + `TransitionRequiredFields`, `IssueFieldEditors`/`IssueDetailPanel.fieldEditing`, the `IssueMeta` chips, and
+  **`@dnd-kit` (already a dependency — no new package)**. **New work** = 4 items, 3 of them pure: `defectRollup.ts`
+  (the FR-005 precedence **chain** — `featureLink.ts` only does one hop), `boardColumns.ts` (vocabulary + mapping;
+  `StatusMappingEditor` is Jira→**SNow**, unrelated), `boardLayout.ts` (no column board exists — DSU/Standup are
+  section lists), and the vocabulary's Confluence store.
+  **The one Article VII drift**: the vocabulary rides a **separate** content property (`nodetoolbox-board-vocabulary`),
+  NOT `SharedArtWorkspacePayload` — bumping its schema makes `loadSharedArtWorkspace` **hard-reject** the whole
+  workspace on older clients (`confluenceApi.ts:375`), and adding an unlisted team field makes
+  `mergeSharedArtTeamRecord` **silently drop** it (`ArtView.tsx:3518`). The Jira template store already established
+  the sibling-property pattern in that same file.
+  **Load-bearing invariants**: a parent is rendered as a **card exactly once** board-wide (container headers count
+  for nothing — L-2/INV-16, the likeliest bug); Master Card vitals are computed **before** filtering so FR-014 holds
+  by construction; the issue set is **never truncated** (~300 expected, warn-and-continue past it).
+  **Open item**: FR-022 ("failed move returns the card") is refined by `status-move.md` §4 — when the sub-status is
+  not on the transition screen the write is two steps, and a partial success must **not** revert the card, because
+  Jira really did change the status. Reconcile into the spec before `/speckit-implement`.
+
 - **032-pi-delivery-framework** — *(planned on `feature/032-pi-delivery-framework` — ready for `/speckit-tasks`)* the
   team's new delivery framework: **repo maps 1:1 to a coding Sub-task, not a Story** (a Story bridges FE+BE under a
   primary owner; each repo = an independently-assignable coding sub-task so devs work one Story in parallel), plus a
