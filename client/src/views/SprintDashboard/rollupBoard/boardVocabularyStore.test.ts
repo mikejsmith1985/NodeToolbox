@@ -81,3 +81,56 @@ describe('markVocabularySynced', () => {
     expect(loadTeamVocabulary('team-a').lastSyncedAt).toBe(LATER_ISO);
   });
 });
+
+describe('reading columns saved by an older version', () => {
+  /** Exactly what v0.140.x wrote: one Jira state per column, in a `mapping` field. */
+  const LEGACY_STORED = {
+    'team-a': {
+      teamProfileId: 'team-a',
+      columns: [
+        { id: 'col-1', name: 'Being coded', order: 0, mapping: { jiraStatusName: 'In Progress', subStatusValue: 'Dev In Progress' } },
+        { id: 'col-2', name: 'Not started', order: 1, mapping: null },
+      ],
+      updatedAt: '2026-08-07T10:00:00.000Z',
+      lastSyncedAt: null,
+    },
+  };
+
+  it('upgrades a single mapping into the list a column now claims', () => {
+    // Renaming this persisted field without a migration turned the board into a blank page:
+    // the new code called .some() on an array that older saved data did not have.
+    window.localStorage.setItem('tbxRollupBoardVocabulary', JSON.stringify(LEGACY_STORED));
+
+    const vocabulary = loadTeamVocabulary('team-a');
+
+    expect(vocabulary.columns[0].mappings).toEqual([{ jiraStatusName: 'In Progress', subStatusValue: 'Dev In Progress' }]);
+  });
+
+  it('turns a column that claimed nothing into one claiming an empty list, not undefined', () => {
+    window.localStorage.setItem('tbxRollupBoardVocabulary', JSON.stringify(LEGACY_STORED));
+
+    expect(loadTeamVocabulary('team-a').columns[1].mappings).toEqual([]);
+  });
+
+  it('gives every column a usable mappings array, so nothing downstream can throw', () => {
+    window.localStorage.setItem('tbxRollupBoardVocabulary', JSON.stringify(LEGACY_STORED));
+
+    const vocabulary = loadTeamVocabulary('team-a');
+
+    expect(vocabulary.columns.every((column) => Array.isArray(column.mappings))).toBe(true);
+  });
+
+  it('keeps the team\'s column names and order through the upgrade', () => {
+    window.localStorage.setItem('tbxRollupBoardVocabulary', JSON.stringify(LEGACY_STORED));
+
+    expect(loadTeamVocabulary('team-a').columns.map((column) => column.name)).toEqual(['Being coded', 'Not started']);
+  });
+
+  it('survives a stored column that has neither shape', () => {
+    window.localStorage.setItem('tbxRollupBoardVocabulary', JSON.stringify({
+      'team-a': { teamProfileId: 'team-a', columns: [{ id: 'col-1', name: 'Odd one', order: 0 }] },
+    }));
+
+    expect(loadTeamVocabulary('team-a').columns[0].mappings).toEqual([]);
+  });
+});

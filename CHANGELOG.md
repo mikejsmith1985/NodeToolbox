@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Roll-Up Board opened as a blank page for anyone who had already set up columns.** Columns gained
+  the ability to claim several Jira statuses, but the saved field was renamed without upgrading data
+  already in browsers — so the board read a list that was not there, threw, and rendered nothing at
+  all. Columns saved by any earlier version are now upgraded on read, in both the local copy and any
+  vocabulary published to the shared workspace: a column that claimed one status now claims a list
+  of one, and a column that claimed none claims an empty list. Nothing needs re-creating.
 - **Roll-Up Board — cards could not be dragged between columns.** The card was a button with the
   drag listeners on a grip nested inside it — a button within a button — so the outer click fired on
   release and every drag attempt opened the issue detail instead of moving the card. The whole card

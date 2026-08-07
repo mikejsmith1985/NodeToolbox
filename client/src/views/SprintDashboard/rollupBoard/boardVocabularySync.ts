@@ -15,7 +15,8 @@ import {
   saveBoardVocabularyStore,
   type BoardVocabularyRecord,
 } from '../../../services/confluenceApi.ts';
-import type { BoardColumn, BoardVocabulary, ColumnStatusMapping } from './rollupBoardTypes.ts';
+import { normalizeStoredVocabulary } from './boardVocabularyStore.ts';
+import type { BoardVocabulary, ColumnStatusMapping } from './rollupBoardTypes.ts';
 
 /** One way the team's published columns differ from the local ones. */
 export type VocabularyDifference =
@@ -40,7 +41,7 @@ function toRecord(vocabulary: BoardVocabulary): BoardVocabularyRecord {
       id: column.id,
       name: column.name,
       order: column.order,
-      mappings: column.mappings,
+      mappings: column.mappings ?? [],
     })),
     updatedAt: vocabulary.updatedAt,
     lastSyncedAt: vocabulary.lastSyncedAt,
@@ -49,12 +50,8 @@ function toRecord(vocabulary: BoardVocabulary): BoardVocabularyRecord {
 
 /** Converts a shared store record back to the local shape. */
 function fromRecord(record: BoardVocabularyRecord): BoardVocabulary {
-  return {
-    teamProfileId: record.teamProfileId,
-    columns: record.columns.map((column) => ({ ...column })) as BoardColumn[],
-    updatedAt: record.updatedAt,
-    lastSyncedAt: record.lastSyncedAt,
-  };
+  // A workspace published before a column could claim several states still holds the old shape.
+  return normalizeStoredVocabulary(record, record.teamProfileId);
 }
 
 /** True when two columns claim the same set of Jira states, whatever order they were added in. */

@@ -426,7 +426,10 @@ export interface BoardVocabularyRecord {
     id: string;
     name: string;
     order: number;
-    mappings: Array<{ jiraStatusName: string; subStatusValue: string | null }>;
+    /** Optional because workspaces published before a column could claim several states omit it. */
+    mappings?: Array<{ jiraStatusName: string; subStatusValue: string | null }>;
+    /** The single-state shape used before that change; still present in older published workspaces. */
+    mapping?: { jiraStatusName: string; subStatusValue: string | null } | null;
   }>;
   updatedAt: string;
   lastSyncedAt: string | null;
