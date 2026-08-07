@@ -35,10 +35,9 @@
 - **All items pass.** Both clarifications resolved in the 2026-08-07 session: rebuild the whole change from the
   blank template (not narrative-only), start with an empty scope basket (no prior-scope recovery), and write the
   result to the loaded CHG number rather than raising a new record.
-- **One assumption to confirm at plan time, not a blocker**: change tasks (CTASKs) are excluded from the rebuild.
-  "Delete everything" plausibly extends to them, but clearing tasks that may already be assigned or approved is
-  destructive beyond what was asked. Recorded in Assumptions and Out of Scope so the decision is visible rather
-  than silent.
+- **Resolved 2026-08-07**: change tasks (CTASKs) are excluded from the rebuild. "Delete everything" plausibly
+  extended to them, but clearing tasks that may already be assigned or approved is destructive beyond what was
+  asked. The operator confirmed a rebuild must not clear CTASKs — the shipped behaviour is correct.
 - **Framework-First signal for planning**: FR-005 through FR-031 describe the existing change-building flow with a
   different terminal action. The likely design is a blank builder bound to a change number, whose save updates a
   known record instead of raising a new one — not a second implementation of the wizard.
