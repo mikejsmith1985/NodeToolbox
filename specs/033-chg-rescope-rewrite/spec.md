@@ -371,9 +371,9 @@ that no additional change was created.
 - **Overwrite is the intent, not a hazard to design around.** Concurrent edits made by others in ServiceNow are
   overwritten by the save. This follows directly from "delete everything and start from a template"; no merge or
   conflict-detection behaviour is implied.
-- **Change tasks are not part of the rebuild** — see Out of Scope. The operator did not mention them, and silently
-  deleting change tasks that may already be assigned or approved would be destructive beyond what was asked. Worth
-  confirming at plan time if the operator expects a rebuild to clear them too.
+- **Change tasks are not part of the rebuild** — see Out of Scope. Deleting change tasks that may already be
+  assigned or approved would be destructive beyond what was asked. **Confirmed by the operator on 2026-08-07: a
+  rebuild must not clear CTASKs.**
 - **Approval state is not managed here.** Whether a rebuilt change must return through approval is a process
   question outside the tool; the tool only warns when a change is not in an editable state.
 
