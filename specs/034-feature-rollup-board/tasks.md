@@ -242,7 +242,13 @@ tests must pass **unmodified**, which is the proof the edit was additive.
 - [X] T068 **Measure** SC-012 rather than assume it: add a timed test in `client/src/views/SprintDashboard/rollupBoard/boardLayout.test.ts` asserting `buildBoardLayout` completes within its budget for a synthetic 300-issue / 40-lane / 8-column set, and record the wall-clock time to first readable board in quickstart V16. A performance criterion with no measurement is untestable
 - [X] T069 Confirm the additive edits really were additive: `hygieneFieldConfig.test.ts`, `hygieneChecks.test.ts`, `featureReviewFixes.test.ts`, `confluenceApi.test.ts` and the existing `SprintDashboardView` tests all pass **unmodified**. If any needed editing, revert and rework the change rather than adjusting the test
 - [X] T070 Run the full client suite (`cd client && npx vitest run`) and the server suite (`npm test` at repo root); both must be green, ignoring only the known `local-release.test.js` sandbox failure
-- [ ] T071 Execute every scenario in [quickstart.md](./quickstart.md) V1–V17 against live Jira and record the evidence (Article X — a green toast is not proof; confirm writes in Jira itself)
+- [ ] T071 Execute every scenario in [quickstart.md](./quickstart.md) **V0–V23** against live Jira and record the
+  evidence (Article X — a green toast is not proof; confirm writes in Jira itself).
+  **This task cannot be automated and is not agent-executable.** Every scenario needs a browser signed in to
+  Atlassian, and V7/V10/V19 write to real Jira issues. The quickstart was refreshed on 2026-08-07 to match
+  v0.142.0 — it now covers the per-team Feature scope, the unmapped-status assistant, multi-status columns,
+  whole-card drag, sticky/draggable column headers, copying a setup between teams, and the legacy-vocabulary
+  upgrade, none of which existed when it was first written.
 
 ---
 
