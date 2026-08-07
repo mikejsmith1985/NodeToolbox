@@ -71,6 +71,12 @@ const NO_BOARD_MESSAGE =
   'No board is selected for this team yet. Choose one in the Settings tab — the Roll-Up Board reads '
   + 'whichever board the team already uses, rather than asking you to pick a second one.';
 
+/** A team this board could copy a column setup from. */
+export interface CopyableTeam {
+  id: string;
+  name: string;
+}
+
 export interface RollupBoardTabProps {
   /** The board this team already selected; null means none is chosen yet. */
   boardId: number | null;
@@ -88,6 +94,8 @@ export interface RollupBoardTabProps {
   teamProfileId: string;
   /** The team's shared ART workspace, when they have one. Without it the vocabulary stays local. */
   sharedWorkspaceDatabaseId?: string;
+  /** Other teams on this machine, so a finished column setup can be reused instead of rebuilt. */
+  copyableTeams?: readonly CopyableTeam[];
 }
 
 const EMPTY_OPTION_SOURCES: ColumnOptionSources = {
@@ -139,6 +147,8 @@ interface RollupBoardLoadState {
   featureLinkedOutOfProjectKeys: string[];
   /** Out-of-project Features reached only by an issue link. */
   issueLinkedOutOfProjectKeys: string[];
+  /** Every Feature the board touches BEFORE scoping, so the scope panel can offer every project. */
+  allReferencedFeatureKeys: string[];
 }
 
 const EMPTY_LOAD_STATE: RollupBoardLoadState = {
@@ -152,6 +162,7 @@ const EMPTY_LOAD_STATE: RollupBoardLoadState = {
   hiddenIssueCount: 0,
   featureLinkedOutOfProjectKeys: [],
   issueLinkedOutOfProjectKeys: [],
+  allReferencedFeatureKeys: [],
 };
 
 /** Renders the roll-up board for the team's currently selected Jira board. */
@@ -161,6 +172,7 @@ export default function RollupBoardTab({
   scopeDescription,
   teamProfileId,
   sharedWorkspaceDatabaseId = readSharedWorkspaceDatabaseId(),
+  copyableTeams = [],
 }: RollupBoardTabProps) {
   const [loadState, setLoadState] = useState<RollupBoardLoadState>(EMPTY_LOAD_STATE);
   const [filters, setFilters] = useState<QuickFilterState>(EMPTY_QUICK_FILTER_STATE);
@@ -222,6 +234,10 @@ export default function RollupBoardTab({
         hiddenIssueCount: scopedResult.hiddenIssueCount,
         featureLinkedOutOfProjectKeys: scopedResult.featureLinkedOutOfProjectKeys,
         issueLinkedOutOfProjectKeys: scopedResult.issueLinkedOutOfProjectKeys,
+        // Collected BEFORE scoping: a project that has been excluded must still be offerable.
+        allReferencedFeatureKeys: [...new Set(
+          boardItems.map((item) => item.featureKey).filter((featureKey): featureKey is string => featureKey !== null),
+        )],
       });
 
       // Loaded after the board so the editor offers real Jira values rather than free text; a
@@ -477,7 +493,7 @@ export default function RollupBoardTab({
             setFeatureScope(nextScope);
           }}
           scope={featureScope}
-          visibleFeatureKeys={loadState.masterCards.map((masterCard) => masterCard.featureKey)}
+          allFeatureKeys={loadState.allReferencedFeatureKeys}
         />
       )}
 
@@ -501,6 +517,11 @@ export default function RollupBoardTab({
             if (!sharedWorkspaceDatabaseId) return;
             void publishBoardVocabulary(sharedWorkspaceDatabaseId, vocabulary)
               .then(() => setVocabulary(markVocabularySynced(vocabulary, new Date().toISOString())));
+          }}
+          copyableTeams={copyableTeams.filter((team) => team.id !== teamProfileId)}
+          onCopyFromTeam={(sourceTeamProfileId) => {
+            const sourceVocabulary = loadTeamVocabulary(sourceTeamProfileId);
+            handleVocabularyChange({ ...sourceVocabulary, teamProfileId, lastSyncedAt: null });
           }}
           onVocabularyChange={handleVocabularyChange}
           optionSources={optionSources}
@@ -568,6 +589,13 @@ export default function RollupBoardTab({
             counts[item.columnId] = (counts[item.columnId] ?? 0) + 1;
             return counts;
           }, {})}
+          onReorderColumns={(orderedColumnIds) => handleVocabularyChange({
+            ...vocabulary,
+            columns: vocabulary.columns.map((column) => ({
+              ...column,
+              order: orderedColumnIds.indexOf(column.id),
+            })).filter((column) => column.order >= 0),
+          })}
         />
 
         {/* Cards and lanes are dragged in one context, and the drop-target id says which happened:
