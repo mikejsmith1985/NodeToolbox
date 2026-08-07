@@ -9,6 +9,7 @@
 // once — in the column of its own status. Drawing it per column would inflate every count on the
 // board while looking entirely plausible on screen.
 
+import { buildCardCellKey } from './boardPreferencesStore.ts';
 import { selectMatchingItems } from './boardFilters.ts';
 import {
   type BoardLayout,
@@ -62,6 +63,26 @@ function distributeItemsIntoColumns(
 }
 
 /**
+ * Puts a column's cards in the sequence the viewer arranged them in.
+ *
+ * A board that shows work in the order it has to happen is worth far more than one sorted by
+ * whatever Jira returned, so a hand-placed order wins and anything new sorts to the end.
+ */
+function orderCardsWithinCell(
+  items: readonly RollupBoardItem[],
+  orderedIssueKeys: readonly string[],
+): RollupBoardItem[] {
+  if (orderedIssueKeys.length === 0) return [...items];
+
+  const positionByIssueKey = new Map(orderedIssueKeys.map((issueKey, position) => [issueKey, position]));
+  return [...items].sort((leftItem, rightItem) => {
+    const leftPosition = positionByIssueKey.get(leftItem.key) ?? Number.MAX_SAFE_INTEGER;
+    const rightPosition = positionByIssueKey.get(rightItem.key) ?? Number.MAX_SAFE_INTEGER;
+    return leftPosition - rightPosition;
+  });
+}
+
+/**
  * Step 4 — groups one column's items under their parents, and step 5 drops any container left empty.
  *
  * An item whose parent is not in the lane at all becomes a loose card rather than being hidden.
@@ -69,11 +90,12 @@ function distributeItemsIntoColumns(
 function groupItemsIntoParentContainers(
   columnItems: readonly RollupBoardItem[],
   itemsByKeyInLane: ReadonlyMap<string, RollupBoardItem>,
+  orderedIssueKeys: readonly string[],
 ): LaneCell {
   const containersByParentKey = new Map<string, ParentContainer>();
   const looseItems: RollupBoardItem[] = [];
 
-  for (const item of columnItems) {
+  for (const item of orderCardsWithinCell(columnItems, orderedIssueKeys)) {
     if (item.parentKey === null) {
       looseItems.push(item);
       continue;
@@ -133,6 +155,7 @@ function buildLane(
     cellsByColumnId[column.id] = groupItemsIntoParentContainers(
       itemsByColumnId.get(column.id) ?? [],
       itemsByKeyInLane,
+      preferences.cardOrderByCell?.[buildCardCellKey(masterCard.featureKey, column.id)] ?? [],
     );
   }
 

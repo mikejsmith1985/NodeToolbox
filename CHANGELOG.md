@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Roll-Up Board — cards can be dragged up and down within a column** so a lane shows the work in
+  the order it actually needs to happen. Drop a card onto another in the same column to place it
+  there; dropping onto a card in a *different* column still moves its status, as before. The
+  sequence is remembered per person, per lane and per column, and — like the lane order — is never
+  written to Jira's ranking.
+
+### Fixed
+- **Roll-Up Board — the column headers really do stay put now.** They were already marked sticky,
+  but the board's scroll area had no bounded height: `overflow-x: auto` makes an element a scroll
+  container on *both* axes, so the page scrolled instead of the board, and a sticky header had
+  nothing to stick inside. The board now takes a viewport-sized scroll area of its own, so the
+  headers lock while the lanes move underneath them.
+
+### Added
 - **Roll-Up Board — copy a column setup from another team.** Board setup now offers every other team
   on this machine: pick one and its columns become yours to adjust, so a setup built once does not
   have to be built again. The other team's board is untouched.

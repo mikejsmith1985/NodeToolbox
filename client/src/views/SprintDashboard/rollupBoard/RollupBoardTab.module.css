@@ -5,6 +5,12 @@
  * this surface, and re-applying it double-shrinks a full-width board.
  */
 
+/* Roughly the dashboard chrome above the board: the app header, the tab strip and the board's own
+   toolbar. The board takes the rest of the viewport so its column headers have something to stick to. */
+.boardShell {
+  --rollup-board-chrome-height: 340px;
+}
+
 /* ── Board shell ── */
 
 .boardShell {
@@ -59,7 +65,12 @@
 /* ── The one shared column header row, and the scroll region that keeps lanes aligned ── */
 
 .boardScroller {
-  overflow-x: auto;
+  /* Bounded on purpose. `overflow-x: auto` already makes this a scroll container on BOTH axes, so
+     without a height it grows with its content, the PAGE scrolls instead, and a sticky header has
+     nothing to stick inside. Giving it a viewport makes the header lock the way a Jira board does. */
+  overflow: auto;
+  max-height: calc(100vh - var(--rollup-board-chrome-height));
+  min-height: 300px;
 }
 
 .columnHeaderRow {
@@ -302,6 +313,11 @@
 
 .cardDragging {
   opacity: 0.4;
+}
+
+/* Shows where a dragged card would land when dropped onto this one. */
+.cardDropBefore {
+  border-top: 3px solid var(--color-accent);
 }
 
 .cardKey {

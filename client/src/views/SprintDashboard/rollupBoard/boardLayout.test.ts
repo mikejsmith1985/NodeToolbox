@@ -404,3 +404,61 @@ describe('buildBoardLayout — L-10: the timing budget is measured, not assumed'
     expect(countRenderedItems(buildBoardLayout(buildLargeBoardInput()))).toBe(320);
   });
 });
+
+describe('buildBoardLayout — cards sit in the order the viewer arranged', () => {
+  it('follows a hand-placed sequence within a column', () => {
+    const items = [
+      buildItem({ key: 'DEV-1', featureKey: 'FEAT-1', columnId: 'col-todo' }),
+      buildItem({ key: 'DEV-2', featureKey: 'FEAT-1', columnId: 'col-todo' }),
+      buildItem({ key: 'DEV-3', featureKey: 'FEAT-1', columnId: 'col-todo' }),
+    ];
+
+    const layout = buildBoardLayout({
+      masterCards: buildMasterCards(items, new Map([['FEAT-1', buildFeature('FEAT-1')]])),
+      columns: buildRenderedColumns(VOCABULARY),
+      filters: NO_FILTERS,
+      preferences: {
+        ...buildPreferences(),
+        collapsedByFeatureKey: { 'FEAT-1': false },
+        cardOrderByCell: { 'FEAT-1::col-todo': ['DEV-3', 'DEV-1', 'DEV-2'] },
+      },
+    });
+
+    expect(layout.lanes[0].cellsByColumnId['col-todo'].looseItems.map((item) => item.key))
+      .toEqual(['DEV-3', 'DEV-1', 'DEV-2']);
+  });
+
+  it('puts a card that appeared since the sequence was set at the end, not somewhere random', () => {
+    const items = [
+      buildItem({ key: 'DEV-1', featureKey: 'FEAT-1', columnId: 'col-todo' }),
+      buildItem({ key: 'DEV-NEW', featureKey: 'FEAT-1', columnId: 'col-todo' }),
+    ];
+
+    const layout = buildBoardLayout({
+      masterCards: buildMasterCards(items, new Map([['FEAT-1', buildFeature('FEAT-1')]])),
+      columns: buildRenderedColumns(VOCABULARY),
+      filters: NO_FILTERS,
+      preferences: { ...buildPreferences(), cardOrderByCell: { 'FEAT-1::col-todo': ['DEV-1'] } },
+    });
+
+    expect(layout.lanes[0].cellsByColumnId['col-todo'].looseItems.map((item) => item.key))
+      .toEqual(['DEV-1', 'DEV-NEW']);
+  });
+
+  it('leaves a column with no stored sequence exactly as it was', () => {
+    const items = [
+      buildItem({ key: 'DEV-1', featureKey: 'FEAT-1', columnId: 'col-todo' }),
+      buildItem({ key: 'DEV-2', featureKey: 'FEAT-1', columnId: 'col-todo' }),
+    ];
+
+    const layout = buildBoardLayout({
+      masterCards: buildMasterCards(items, new Map([['FEAT-1', buildFeature('FEAT-1')]])),
+      columns: buildRenderedColumns(VOCABULARY),
+      filters: NO_FILTERS,
+      preferences: buildPreferences(),
+    });
+
+    expect(layout.lanes[0].cellsByColumnId['col-todo'].looseItems.map((item) => item.key))
+      .toEqual(['DEV-1', 'DEV-2']);
+  });
+});

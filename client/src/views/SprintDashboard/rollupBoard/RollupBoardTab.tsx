@@ -31,6 +31,7 @@ import { EMPTY_QUICK_FILTER_STATE, hasActiveFilters } from './boardFilters.ts';
 import { buildBoardLayout } from './boardLayout.ts';
 import {
   loadBoardPreferences,
+  moveCardBefore,
   moveLaneBefore,
   moveLaneToEnd,
   saveBoardPreferences,
@@ -60,6 +61,7 @@ import { QuickFilterBar } from './components/QuickFilterBar.tsx';
 import styles from './RollupBoardTab.module.css';
 import {
   EXPECTED_BOARD_ISSUE_CEILING,
+  NO_FEATURE_KEY,
   type BoardPreferences,
   type MasterCard,
   type QuickFilterState,
@@ -299,6 +301,24 @@ export default function RollupBoardTab({
       return;
     }
 
+    // Sequencing work inside a column is a view preference, not a state change: nothing is written
+    // to Jira, exactly as with lane order.
+    if (decision.kind === 'reorder') {
+      const laneKey = decision.item.featureKey ?? NO_FEATURE_KEY;
+      const displayedIssueKeys = loadState.allItems
+        .filter((item) => (item.featureKey ?? NO_FEATURE_KEY) === laneKey && item.columnId === decision.item.columnId)
+        .map((item) => item.key);
+      applyPreferences(moveCardBefore(
+        preferences,
+        laneKey,
+        decision.item.columnId,
+        decision.item.key,
+        decision.targetIssueKey,
+        displayedIssueKeys,
+      ));
+      return;
+    }
+
     setCardMessage(decision.item.key, null);
     setPendingIssueKey(decision.item.key);
     try {
@@ -332,7 +352,7 @@ export default function RollupBoardTab({
     } finally {
       setPendingIssueKey(null);
     }
-  }, [loadState.allItems, renderedColumns, subStatusFieldId, setCardMessage, loadBoard]);
+  }, [loadState.allItems, renderedColumns, subStatusFieldId, setCardMessage, loadBoard, preferences, applyPreferences]);
 
   /**
    * Routes a drag to the right handler.

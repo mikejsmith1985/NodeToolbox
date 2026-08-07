@@ -274,4 +274,9 @@ export interface BoardPreferences {
   /** Feature keys in the viewer's chosen order. Anything absent sorts to the end. */
   laneOrder: string[];
   collapsedByFeatureKey: Record<string, boolean>;
+  /**
+   * The order cards sit in within one lane's column, so work can be shown in the sequence it needs
+   * to happen. Keyed by `<featureKey>::<columnId>`; anything absent sorts to the end.
+   */
+  cardOrderByCell?: Record<string, string[]>;
 }

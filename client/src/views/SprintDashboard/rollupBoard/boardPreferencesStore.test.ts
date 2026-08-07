@@ -3,8 +3,10 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import {
+  buildCardCellKey,
   buildDefaultPreferences,
   loadBoardPreferences,
+  moveCardBefore,
   moveLaneBefore,
   moveLaneToEnd,
   saveBoardPreferences,
@@ -107,8 +109,10 @@ describe('moveLaneToEnd', () => {
   it('never records anything that could reach Jira or the shared workspace', () => {
     const moved = moveLaneToEnd(buildDefaultPreferences('team-a', 42), 'FEAT-1', ['FEAT-1'], 'top');
 
-    // The whole entity is: which team, which board, the order, and what is collapsed. Nothing else.
-    expect(Object.keys(moved).sort()).toEqual(['boardId', 'collapsedByFeatureKey', 'laneOrder', 'teamProfileId']);
+    // The whole entity is: which team, which board, the lane order, the card order, and what is
+    // collapsed. Nothing else — nothing here can reach Jira or the shared workspace.
+    expect(Object.keys(moved).sort())
+      .toEqual(['boardId', 'cardOrderByCell', 'collapsedByFeatureKey', 'laneOrder', 'teamProfileId']);
   });
 });
 
@@ -144,5 +148,61 @@ describe('moveLaneBefore', () => {
     const moved = moveLaneBefore(buildDefaultPreferences('team-a', 42), 'FEAT-2', 'FEAT-2', ALL_KEYS);
 
     expect(moved.laneOrder).toEqual(ALL_KEYS);
+  });
+});
+
+describe('moveCardBefore — sequencing the work inside a column', () => {
+  const DISPLAYED = ['DEV-1', 'DEV-2', 'DEV-3'];
+
+  it('drops a card into the position the card it was dropped on currently holds', () => {
+    const moved = moveCardBefore(buildDefaultPreferences('team-a', 42), 'FEAT-1', 'col-dev', 'DEV-3', 'DEV-1', DISPLAYED);
+
+    expect(moved.cardOrderByCell?.[buildCardCellKey('FEAT-1', 'col-dev')]).toEqual(['DEV-3', 'DEV-1', 'DEV-2']);
+  });
+
+  it('moves only the dragged card, leaving the rest in sequence', () => {
+    const moved = moveCardBefore(buildDefaultPreferences('team-a', 42), 'FEAT-1', 'col-dev', 'DEV-1', 'DEV-3', DISPLAYED);
+
+    expect(moved.cardOrderByCell?.[buildCardCellKey('FEAT-1', 'col-dev')]).toEqual(['DEV-2', 'DEV-1', 'DEV-3']);
+  });
+
+  it('seeds from what is on screen, so a first drag does not reshuffle the column', () => {
+    const moved = moveCardBefore(buildDefaultPreferences('team-a', 42), 'FEAT-1', 'col-dev', 'DEV-2', 'DEV-1', DISPLAYED);
+
+    expect(moved.cardOrderByCell?.[buildCardCellKey('FEAT-1', 'col-dev')]).toHaveLength(3);
+  });
+
+  it('keeps each lane and column ordered on its own', () => {
+    const first = moveCardBefore(buildDefaultPreferences('team-a', 42), 'FEAT-1', 'col-dev', 'DEV-3', 'DEV-1', DISPLAYED);
+    const second = moveCardBefore(first, 'FEAT-2', 'col-dev', 'DEV-3', 'DEV-1', DISPLAYED);
+
+    expect(Object.keys(second.cardOrderByCell ?? {})).toEqual([
+      buildCardCellKey('FEAT-1', 'col-dev'),
+      buildCardCellKey('FEAT-2', 'col-dev'),
+    ]);
+  });
+
+  it('drops a card that has left the column out of the stored sequence', () => {
+    const preferences = {
+      ...buildDefaultPreferences('team-a', 42),
+      cardOrderByCell: { [buildCardCellKey('FEAT-1', 'col-dev')]: ['DEV-GONE', 'DEV-1', 'DEV-2'] },
+    };
+
+    const moved = moveCardBefore(preferences, 'FEAT-1', 'col-dev', 'DEV-2', 'DEV-1', DISPLAYED);
+
+    expect(moved.cardOrderByCell?.[buildCardCellKey('FEAT-1', 'col-dev')]).not.toContain('DEV-GONE');
+  });
+
+  it('is a no-op when a card is dropped on itself', () => {
+    const moved = moveCardBefore(buildDefaultPreferences('team-a', 42), 'FEAT-1', 'col-dev', 'DEV-2', 'DEV-2', DISPLAYED);
+
+    expect(moved.cardOrderByCell?.[buildCardCellKey('FEAT-1', 'col-dev')]).toEqual(DISPLAYED);
+  });
+
+  it('never records anything that could reach Jira', () => {
+    const moved = moveCardBefore(buildDefaultPreferences('team-a', 42), 'FEAT-1', 'col-dev', 'DEV-3', 'DEV-1', DISPLAYED);
+
+    expect(Object.keys(moved).sort())
+      .toEqual(['boardId', 'cardOrderByCell', 'collapsedByFeatureKey', 'laneOrder', 'teamProfileId']);
   });
 });
