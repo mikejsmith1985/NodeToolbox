@@ -227,10 +227,17 @@ const {
   };
 });
 
+// Records the options the component passed to useCrgState, so rebuild-mode tests can prove the
+// draft is stored under a per-change key instead of the Create wizard's shared one.
+const mockUseCrgStateOptions: { value: { storageKey?: string } | undefined } = { value: undefined };
+
 // Keep the module's pure exports (e.g. listEnvironmentDateOrderErrors) real — only the hook is mocked.
 vi.mock('../hooks/useCrgState.ts', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  useCrgState: () => ({ state: mockState, actions: mockActions }),
+  useCrgState: (options?: { storageKey?: string }) => {
+    mockUseCrgStateOptions.value = options;
+    return { state: mockState, actions: mockActions };
+  },
 }));
 
 // Mock the templates hook — no templates by default; tests can override via the mock.
@@ -1502,5 +1509,163 @@ describe('CreateChgTab', () => {
 
     await screen.findByText(/Missing test plan/);
     expect(screen.getByRole('button', { name: /Create CHG/i })).toBeInTheDocument();
+  });
+
+  // ── Rebuild mode (feature 033) ──
+  //
+  // A rebuild runs this same builder against a change that already exists: blank on entry, bound
+  // to one change number throughout, and saved by updating that record instead of raising a new
+  // one. Everything else — scope fetching, the additive add, content generation, the gated
+  // assist — is the wizard's own behaviour, reused unchanged.
+
+  describe('rebuild mode', () => {
+    const REBUILD_TARGET = 'CHG0001234';
+
+    function renderRebuild() {
+      return render(<CreateChgTab mode="rebuild" targetChangeNumber={REBUILD_TARGET} />);
+    }
+
+    it('shows the wizard step chrome, unlike configuration mode', () => {
+      renderRebuild();
+
+      expect(screen.getByRole('button', { name: '2. Review Issues' })).toBeInTheDocument();
+    });
+
+    it('stores its draft under a per-change key so the Create draft survives', () => {
+      renderRebuild();
+
+      expect(mockUseCrgStateOptions.value?.storageKey).toBe(`ntbx-crg-rebuild-state:${REBUILD_TARGET}`);
+    });
+
+    it('names the change being rebuilt so the destination is never ambiguous', () => {
+      renderRebuild();
+
+      expect(screen.getAllByText(new RegExp(REBUILD_TARGET)).length).toBeGreaterThan(0);
+    });
+
+    it('keeps the target number visible on the environments step too', () => {
+      mockState.currentStep = 5;
+      renderRebuild();
+
+      expect(screen.getAllByText(new RegExp(REBUILD_TARGET)).length).toBeGreaterThan(0);
+    });
+
+    it('offers the fix version and custom JQL scope sources', () => {
+      renderRebuild();
+
+      expect(screen.getByLabelText('Project Key')).toBeInTheDocument();
+      expect(screen.getByLabelText('Fix Version')).toBeInTheDocument();
+      expect(screen.getByRole('radio', { name: 'Custom JQL' })).toBeInTheDocument();
+    });
+
+    it('offers the additive add once issues are loaded', () => {
+      mockState.fetchedIssues = [{ key: 'ABC-1', fields: { summary: 'One' } }];
+      renderRebuild();
+
+      expect(screen.getByRole('button', { name: /Add to Loaded Issues/i })).toBeInTheDocument();
+    });
+
+    it('reports a Jira lookup failure without disturbing the rebuild in progress', () => {
+      mockState.fetchError = 'Failed to fetch issues: 401';
+      renderRebuild();
+
+      expect(screen.getByRole('alert')).toHaveTextContent('Failed to fetch issues');
+      expect(screen.getAllByText(new RegExp(REBUILD_TARGET)).length).toBeGreaterThan(0);
+    });
+
+    it('shows planning answers blank so nothing stale carries over', () => {
+      mockState.currentStep = 4;
+      renderRebuild();
+
+      expect(screen.getByLabelText(/Implementation Plan/i)).toHaveValue('');
+      expect(screen.getByLabelText(/Backout Plan/i)).toHaveValue('');
+    });
+
+    it('leaves every environment unticked on entry', () => {
+      mockState.currentStep = 5;
+      renderRebuild();
+
+      expect(screen.getByRole('checkbox', { name: 'REL enabled' })).not.toBeChecked();
+      expect(screen.getByRole('checkbox', { name: 'PRD enabled' })).not.toBeChecked();
+      expect(screen.getByRole('checkbox', { name: 'PFIX enabled' })).not.toBeChecked();
+    });
+
+    it('works in full with the assist locked', () => {
+      mockState.currentStep = 6;
+      mockState.generatedShortDescription = 'Rebuilt release';
+      mockState.relEnvironment.isEnabled = true;
+      renderRebuild();
+
+      expect(screen.queryByRole('button', { name: /AI Assist/i })).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: new RegExp(`Update ${REBUILD_TARGET}`) })).toBeEnabled();
+    });
+
+    it('offers the gated assist once unlocked', async () => {
+      mockState.currentStep = 6;
+      mockState.generatedShortDescription = 'Rebuilt release';
+      renderRebuild();
+      act(() => setAiAssistUnlocked(true));
+
+      expect(await screen.findByRole('button', { name: /Risk check with AI Assist/i })).toBeInTheDocument();
+    });
+
+    it('replaces Create CHG with an update targeting the loaded change', () => {
+      mockState.currentStep = 6;
+      mockState.generatedShortDescription = 'Rebuilt release';
+      mockState.relEnvironment.isEnabled = true;
+      renderRebuild();
+
+      expect(screen.getByRole('button', { name: new RegExp(`Update ${REBUILD_TARGET}`) })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /^Create CHG$/ })).not.toBeInTheDocument();
+    });
+
+    // The number is bound to the change that was loaded — typing another one would let a rebuild
+    // land on a record the operator never confirmed discarding.
+    it('does not offer a free-text CHG number on the review step', () => {
+      mockState.currentStep = 6;
+      mockState.generatedShortDescription = 'Rebuilt release';
+      renderRebuild();
+
+      expect(screen.queryByLabelText('Existing CHG number')).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Update Existing CHG' })).not.toBeInTheDocument();
+    });
+
+    it('updates the loaded change rather than creating one', async () => {
+      const user = userEvent.setup();
+      mockState.currentStep = 6;
+      mockState.generatedShortDescription = 'Rebuilt release';
+      mockState.relEnvironment.isEnabled = true;
+      mockState.relEnvironment.plannedStartDate = '2026-01-01T10:00';
+      mockState.relEnvironment.plannedEndDate = '2026-01-01T11:00';
+      renderRebuild();
+
+      await user.click(screen.getByRole('button', { name: new RegExp(`Update ${REBUILD_TARGET}`) }));
+
+      expect(mockActions.updateExistingChg).toHaveBeenCalledWith(REBUILD_TARGET, { isRebuild: true });
+      expect(mockActions.createChg).not.toHaveBeenCalled();
+    });
+
+    it('blocks the update and explains why when no environment is enabled', () => {
+      mockState.currentStep = 6;
+      mockState.generatedShortDescription = 'Rebuilt release';
+      renderRebuild();
+
+      expect(screen.getByRole('button', { name: new RegExp(`Update ${REBUILD_TARGET}`) })).toBeDisabled();
+      expect(screen.getByText(/Enable at least one environment/i)).toBeInTheDocument();
+    });
+
+    it('blocks the update and names both environments when two are enabled', () => {
+      mockState.currentStep = 6;
+      mockState.generatedShortDescription = 'Rebuilt release';
+      mockState.relEnvironment.isEnabled = true;
+      mockState.prdEnvironment.isEnabled = true;
+      renderRebuild();
+
+      expect(screen.getByRole('button', { name: new RegExp(`Update ${REBUILD_TARGET}`) })).toBeDisabled();
+      const refusalMessage = screen.getByText(/one change number/i);
+      expect(refusalMessage.textContent).toContain('REL');
+      expect(refusalMessage.textContent).toContain('PRD');
+    });
+
   });
 });

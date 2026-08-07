@@ -2240,6 +2240,287 @@ describe('useCrgState', () => {
   });
 });
 
+// ── Rebuild draft isolation (feature 033) ──
+//
+// A rebuild builds a whole change from the blank template and writes it to an existing CHG
+// number. It shares every step with the Create wizard, so without a separate storage key it
+// would both inherit the operator's in-progress Create draft (so it would not open blank) and
+// overwrite it on its first render (destroying unsaved work nobody agreed to discard).
+
+describe('useCrgState — rebuild draft isolation', () => {
+  const WIZARD_STORAGE_KEY = 'ntbx-crg-state';
+  const REBUILD_STORAGE_KEY = 'ntbx-crg-rebuild-state:CHG0001234';
+  const OTHER_REBUILD_STORAGE_KEY = 'ntbx-crg-rebuild-state:CHG0009999';
+
+  function seedWizardDraft(): void {
+    localStorage.setItem(WIZARD_STORAGE_KEY, JSON.stringify({
+      currentStep: 3,
+      projectKey: 'WIZARD',
+      fixVersion: '9.9.9',
+      fetchMode: 'project',
+      customJql: '',
+      fetchedIssues: [],
+      selectedIssueKeys: [],
+      cloneChgNumber: '',
+      generatedShortDescription: 'Wizard draft short description',
+      generatedDescription: '', generatedJustification: '', generatedRiskImpact: '',
+      relEnvironment: { isEnabled: true, plannedStartDate: '', plannedEndDate: '' },
+      prdEnvironment: { isEnabled: false, plannedStartDate: '', plannedEndDate: '' },
+      pfixEnvironment: { isEnabled: false, plannedStartDate: '', plannedEndDate: '' },
+    }));
+  }
+
+  beforeEach(() => {
+    localStorage.clear();
+    vi.mocked(jiraGet).mockResolvedValue([] as never);
+  });
+
+  afterEach(() => {
+    localStorage.clear();
+  });
+
+  it('does not hydrate the Create wizard draft into a rebuild', () => {
+    seedWizardDraft();
+
+    const { result } = renderHook(() => useCrgState({ storageKey: REBUILD_STORAGE_KEY }));
+
+    expect(result.current.state.projectKey).toBe('');
+    expect(result.current.state.generatedShortDescription).toBe('');
+    expect(result.current.state.currentStep).toBe(1);
+  });
+
+  it('does not write to the Create wizard key from a rebuild', async () => {
+    seedWizardDraft();
+    const wizardDraftBefore = localStorage.getItem(WIZARD_STORAGE_KEY);
+
+    const { result } = renderHook(() => useCrgState({ storageKey: REBUILD_STORAGE_KEY }));
+    act(() => { result.current.actions.setProjectKey('REBUILD'); });
+
+    await waitFor(() => {
+      expect(localStorage.getItem(REBUILD_STORAGE_KEY)).not.toBeNull();
+    });
+    expect(localStorage.getItem(WIZARD_STORAGE_KEY)).toBe(wizardDraftBefore);
+  });
+
+  // The SNow relay navigates the tab away and back, which is the whole reason drafts persist.
+  it('restores a rebuild draft on remount under the same key', async () => {
+    const { result } = renderHook(() => useCrgState({ storageKey: REBUILD_STORAGE_KEY }));
+    act(() => { result.current.actions.setProjectKey('RESUME'); });
+
+    await waitFor(() => {
+      expect(JSON.parse(localStorage.getItem(REBUILD_STORAGE_KEY)!).projectKey).toBe('RESUME');
+    });
+
+    const { result: remounted } = renderHook(() => useCrgState({ storageKey: REBUILD_STORAGE_KEY }));
+    expect(remounted.current.state.projectKey).toBe('RESUME');
+  });
+
+  // FR-033 is true by construction: a draft for one change is unreachable from another.
+  it('does not show one change’s rebuild draft under a different change number', async () => {
+    const { result } = renderHook(() => useCrgState({ storageKey: REBUILD_STORAGE_KEY }));
+    act(() => { result.current.actions.setProjectKey('BOUND'); });
+
+    await waitFor(() => {
+      expect(localStorage.getItem(REBUILD_STORAGE_KEY)).not.toBeNull();
+    });
+
+    const { result: otherChange } = renderHook(() => useCrgState({ storageKey: OTHER_REBUILD_STORAGE_KEY }));
+    expect(otherChange.current.state.projectKey).toBe('');
+  });
+
+  it('keeps environment ticks cleared on a rebuild remount', async () => {
+    localStorage.setItem(REBUILD_STORAGE_KEY, JSON.stringify({
+      currentStep: 5,
+      projectKey: 'TICKS',
+      fixVersion: '', fetchMode: 'project', customJql: '',
+      fetchedIssues: [], selectedIssueKeys: [], cloneChgNumber: '',
+      generatedShortDescription: '', generatedDescription: '', generatedJustification: '', generatedRiskImpact: '',
+      relEnvironment: { isEnabled: true, plannedStartDate: '', plannedEndDate: '' },
+      prdEnvironment: { isEnabled: true, plannedStartDate: '', plannedEndDate: '' },
+      pfixEnvironment: { isEnabled: true, plannedStartDate: '', plannedEndDate: '' },
+    }));
+
+    const { result } = renderHook(() => useCrgState({ storageKey: REBUILD_STORAGE_KEY }));
+
+    expect(result.current.state.relEnvironment.isEnabled).toBe(false);
+    expect(result.current.state.prdEnvironment.isEnabled).toBe(false);
+    expect(result.current.state.pfixEnvironment.isEnabled).toBe(false);
+  });
+
+  // FR-006: a rebuild starts blank, but the reusable defaults a NEW change would start from
+  // still apply — they live in their own slot, not in the draft the rebuild replaced.
+  it('still applies the saved short description defaults a new change would use', () => {
+    localStorage.setItem('ntbx-crg-short-description-config', JSON.stringify({
+      application: 'Enrollment',
+      team: 'Transformers',
+      changeDetailsOverride: '',
+    }));
+
+    const { result } = renderHook(() => useCrgState({ storageKey: REBUILD_STORAGE_KEY }));
+
+    expect(result.current.state.shortDescriptionConfig.application).toBe('Enrollment');
+    expect(result.current.state.shortDescriptionConfig.team).toBe('Transformers');
+    expect(result.current.state.generatedShortDescription).toBe('');
+  });
+
+  it('clears only the rebuild key on reset, leaving the wizard draft intact', async () => {
+    seedWizardDraft();
+    const wizardDraftBefore = localStorage.getItem(WIZARD_STORAGE_KEY);
+
+    const { result } = renderHook(() => useCrgState({ storageKey: REBUILD_STORAGE_KEY }));
+    act(() => { result.current.actions.setProjectKey('DISCARD'); });
+    await waitFor(() => {
+      expect(localStorage.getItem(REBUILD_STORAGE_KEY)).not.toBeNull();
+    });
+
+    act(() => { result.current.actions.reset(); });
+
+    // Reset clears the rebuild's own work. (Like the wizard's reset, defaults may be re-persisted
+    // by the next effect run — what matters is that the discarded work is gone.)
+    const rebuildDraftAfterReset = localStorage.getItem(REBUILD_STORAGE_KEY);
+    expect(rebuildDraftAfterReset === null || JSON.parse(rebuildDraftAfterReset).projectKey === '').toBe(true);
+    expect(result.current.state.projectKey).toBe('');
+    // The Create wizard's draft is somebody else's work and must not be touched.
+    expect(localStorage.getItem(WIZARD_STORAGE_KEY)).toBe(wizardDraftBefore);
+  });
+});
+
+// ── Rebuild environment guard (feature 033) ──
+//
+// createChg creates one CHG per enabled environment. A rebuild has exactly one change number,
+// and updateExistingChg silently keeps only the first target — so enabling REL + PRD used to
+// write REL and discard PRD without a word. A rebuild must refuse instead.
+
+describe('useCrgState — rebuild environment guard', () => {
+  const REBUILD_TARGET = 'CHG0001234';
+
+  function enableEnvironment(
+    hookResult: ReturnType<typeof renderHook<ReturnType<typeof useCrgState>, unknown>>['result'],
+    environmentKey: 'rel' | 'prd' | 'pfix',
+  ): void {
+    act(() => {
+      hookResult.current.actions.updateEnvironment(environmentKey, {
+        isEnabled: true,
+        plannedStartDate: '2026-01-01T10:00',
+        plannedEndDate: '2026-01-01T11:00',
+      });
+    });
+  }
+
+  function readSnowRequestUrls(): string[] {
+    return vi.mocked(snowFetch).mock.calls.map((snowFetchCall) => String(snowFetchCall[0]));
+  }
+
+  beforeEach(() => {
+    localStorage.clear();
+    vi.mocked(jiraGet).mockResolvedValue([] as never);
+    vi.mocked(snowFetch).mockReset();
+  });
+
+  afterEach(() => {
+    localStorage.clear();
+  });
+
+  it('refuses a rebuild with no enabled environment and issues no request', async () => {
+    const { result } = renderHook(() => useCrgState());
+
+    await act(async () => {
+      await result.current.actions.updateExistingChg(REBUILD_TARGET, { isRebuild: true });
+    });
+
+    expect(result.current.state.submitResult).toBe(NO_ENABLED_ENVIRONMENT_MESSAGE);
+    expect(vi.mocked(snowFetch)).not.toHaveBeenCalled();
+  });
+
+  it('refuses a rebuild with two enabled environments and names them', async () => {
+    const { result } = renderHook(() => useCrgState());
+    enableEnvironment(result, 'rel');
+    enableEnvironment(result, 'prd');
+
+    await act(async () => {
+      await result.current.actions.updateExistingChg(REBUILD_TARGET, { isRebuild: true });
+    });
+
+    expect(result.current.state.submitResult).toContain('REL');
+    expect(result.current.state.submitResult).toContain('PRD');
+    expect(vi.mocked(snowFetch)).not.toHaveBeenCalled();
+  });
+
+  it('permits a rebuild with exactly one enabled environment', async () => {
+    vi.mocked(snowFetch)
+      .mockResolvedValueOnce({ result: [{ sys_id: 'chg-sys-1234' }] } as never)
+      .mockResolvedValueOnce({ result: {} } as never)
+      .mockResolvedValueOnce({ result: [{}] } as never);
+
+    const { result } = renderHook(() => useCrgState());
+    enableEnvironment(result, 'rel');
+
+    await act(async () => {
+      await result.current.actions.updateExistingChg(REBUILD_TARGET, { isRebuild: true });
+    });
+
+    expect(result.current.state.submitResult).not.toBe(NO_ENABLED_ENVIRONMENT_MESSAGE);
+    expect(readSnowRequestUrls().some((url) => url.includes('change_request/chg-sys-1234'))).toBe(true);
+  });
+
+  // SC-003: a rebuild must never produce a second change number for the same work.
+  it('never POSTs to the change_request collection during a rebuild', async () => {
+    vi.mocked(snowFetch)
+      .mockResolvedValueOnce({ result: [{ sys_id: 'chg-sys-1234' }] } as never)
+      .mockResolvedValueOnce({ result: {} } as never)
+      .mockResolvedValueOnce({ result: [{}] } as never);
+
+    const { result } = renderHook(() => useCrgState());
+    enableEnvironment(result, 'prd');
+
+    await act(async () => {
+      await result.current.actions.updateExistingChg(REBUILD_TARGET, { isRebuild: true });
+    });
+
+    const postedRequests = vi.mocked(snowFetch).mock.calls.filter((snowFetchCall) => (
+      (snowFetchCall[1] as RequestInit | undefined)?.method === 'POST'
+    ));
+    expect(postedRequests).toHaveLength(0);
+  });
+
+  it('preserves the rebuild draft when the update fails so the operator can retry', async () => {
+    const rebuildStorageKey = 'ntbx-crg-rebuild-state:CHG0001234';
+    vi.mocked(snowFetch).mockRejectedValue(new Error('SNow relay unavailable'));
+
+    const { result } = renderHook(() => useCrgState({ storageKey: rebuildStorageKey }));
+    act(() => { result.current.actions.setProjectKey('RETRY'); });
+    enableEnvironment(result, 'rel');
+    await waitFor(() => {
+      expect(localStorage.getItem(rebuildStorageKey)).not.toBeNull();
+    });
+
+    await act(async () => {
+      await result.current.actions.updateExistingChg(REBUILD_TARGET, { isRebuild: true });
+    });
+
+    expect(result.current.state.submitResult).toContain('Error');
+    expect(JSON.parse(localStorage.getItem(rebuildStorageKey)!).projectKey).toBe('RETRY');
+  });
+
+  it('leaves the existing manual update path unguarded', async () => {
+    // The Create tab's "Update Existing CHG" button predates the rebuild and must keep working
+    // with no environment enabled — the guard applies only when isRebuild is set.
+    vi.mocked(snowFetch)
+      .mockResolvedValueOnce({ result: [{ sys_id: 'chg-sys-1234' }] } as never)
+      .mockResolvedValueOnce({ result: {} } as never)
+      .mockResolvedValueOnce({ result: [{}] } as never);
+
+    const { result } = renderHook(() => useCrgState());
+
+    await act(async () => {
+      await result.current.actions.updateExistingChg(REBUILD_TARGET);
+    });
+
+    expect(result.current.state.submitResult).not.toBe(NO_ENABLED_ENVIRONMENT_MESSAGE);
+    expect(vi.mocked(snowFetch)).toHaveBeenCalled();
+  });
+});
+
 describe('formatSnowDateTimeForApi', () => {
   it('converts datetime-local input into ServiceNow canonical format with seconds', () => {
     expect(formatSnowDateTimeForApi('2026-07-02T14:00')).toBe('2026-07-02 14:00:00');

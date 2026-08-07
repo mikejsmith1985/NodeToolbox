@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { jiraGet } from '../../../services/jiraApi.ts';
 import { snowFetch } from '../../../services/snowApi.ts';
+import { CRG_WIZARD_STORAGE_KEY } from './crgStorageKeys.ts';
 import { inferEnvironmentKeyFromValue } from './environmentKeyInference.ts';
 import type { JiraIssue } from '../../../types/jira.ts';
 import { useCrgSubmissionDebugStore } from '../../../hooks/useCrgSubmissionDebugStore.ts';
@@ -180,8 +181,8 @@ const INSPECTED_FIELD_SKIP_LIST = new Set([
   'implementation_plan', 'backout_plan', 'test_plan', 'planned_start_date', 'planned_end_date',
 ]);
 
-// localStorage key used to persist CRG wizard progress across relay reconnects and page navigations.
-const CRG_STATE_STORAGE_KEY = 'ntbx-crg-state';
+// The default draft slot lives in crgStorageKeys.ts as CRG_WIZARD_STORAGE_KEY; a rebuild
+// (feature 033) overrides it per change — see the storageKey option on useCrgState.
 const SHORT_DESCRIPTION_CONFIG_STORAGE_KEY = 'ntbx-crg-short-description-config';
 const CHANGE_MANAGER_ALIAS_FIELD_NAMES = ['change_manager', 'u_change_manager'] as const;
 const USER_LOOKUP_RESULT_FIELDS = 'sys_id';
@@ -473,13 +474,32 @@ interface CrgActions {
   /** Toggles whether CHG creation reconciles staged CTASKs with auto-created ones. */
   setReconcileAutoCtasks: (reconcileAutoCtasks: boolean) => void;
   appendTasksToExistingChg: (chgNumber: string) => Promise<void>;
-  updateExistingChg: (chgNumber: string) => Promise<void>;
+  updateExistingChg: (chgNumber: string, options?: UpdateExistingChgOptions) => Promise<void>;
   cloneCtaskTemplate: (ctaskNumber: string) => Promise<CtaskTemplateData>;
   updateEnvironment: (environmentKey: EnvironmentKey, update: Partial<EnvironmentConfig>) => void;
   goToStep: (step: CrgStep) => void;
   reset: () => void;
   /** POSTs all CHG fields to ServiceNow and stores the resulting CHG number. */
   createChg: (environmentValueByKey?: EnvironmentValueByKey) => Promise<void>;
+}
+
+/** Options accepted by the CRG state hook. */
+export interface UseCrgStateOptions {
+  /**
+   * Which localStorage slot holds this instance's draft. Defaults to the Create wizard's slot.
+   * A rebuild passes a per-change slot so it neither inherits nor overwrites the wizard's draft.
+   */
+  storageKey?: string;
+}
+
+/** Options accepted when updating a change that already exists. */
+export interface UpdateExistingChgOptions {
+  /**
+   * True when the update is a full rebuild rather than a manual field patch. A rebuild replaces
+   * the whole change, so it is held to the stricter one-environment rule and clears its draft
+   * once the write succeeds.
+   */
+  isRebuild?: boolean;
 }
 
 interface AutoCreatedChangeTaskRecord {
@@ -616,9 +636,9 @@ function restorePersistedEnvironmentConfig(
  * Reads persisted CRG progress from localStorage and converts stored arrays back to Sets.
  * Returns an empty object when nothing is stored or if the stored data is invalid.
  */
-function loadPersistedCrgState(): Partial<CrgState> {
+function loadPersistedCrgState(storageKey: string): Partial<CrgState> {
   try {
-    const stored = localStorage.getItem(CRG_STATE_STORAGE_KEY);
+    const stored = localStorage.getItem(storageKey);
     if (!stored) return {};
 
     const parsed = JSON.parse(stored) as Partial<PersistedCrgState>;
@@ -637,8 +657,8 @@ function loadPersistedCrgState(): Partial<CrgState> {
  * Creates the initial wizard state, merging clean defaults with any persisted progress.
  * Transient loading/error/result flags are always reset regardless of what was stored.
  */
-function createInitialCrgState(): CrgState {
-  const persisted = loadPersistedCrgState();
+function createInitialCrgState(storageKey: string): CrgState {
+  const persisted = loadPersistedCrgState(storageKey);
   const persistedShortDescriptionConfig = loadShortDescriptionConfigFromStorage();
   return {
     ...createDefaultCrgState(),
@@ -1415,6 +1435,32 @@ function readEnvironmentLabel(environmentKey: EnvironmentKey): string {
   return environmentKey.toUpperCase();
 }
 
+/**
+ * Explains why a rebuild cannot be saved yet, or returns null when it is safe to write.
+ *
+ * Framework-First drift (feature 033): creating a change fans out — one CHG per enabled
+ * environment — while updating one takes only the first target and discards the rest. That
+ * ambiguity is harmless when someone is patching a couple of fields by hand, but a rebuild
+ * replaces the entire change, so quietly dropping an environment would mean the saved change
+ * no longer describes the release. A rebuild therefore refuses rather than guesses.
+ *
+ * @param state - The rebuild's current wizard state.
+ * @returns A message to show the operator, or null when exactly one environment is enabled.
+ */
+export function listRebuildEnvironmentRefusal(state: CrgState): string | null {
+  const enabledEnvironmentKeys = readEnabledEnvironmentKeys(state);
+  if (enabledEnvironmentKeys.length === 0) {
+    return NO_ENABLED_ENVIRONMENT_MESSAGE;
+  }
+  if (enabledEnvironmentKeys.length === 1) {
+    return null;
+  }
+
+  const enabledEnvironmentLabels = enabledEnvironmentKeys.map(readEnvironmentLabel).join(' and ');
+  return `${enabledEnvironmentLabels} are both enabled, but a rebuild writes to one change number. `
+    + 'Enable only the environment this change covers, then update again.';
+}
+
 function buildChangeSubmissionTargets(
   state: CrgState,
   environmentValueByKey: EnvironmentValueByKey = {},
@@ -1498,8 +1544,14 @@ function buildClonedEnvironmentState(
  *  1. Fetch Issues → 2. Review Issues → 3. Change Details →
  *  4. Planning & Content → 5. Environments → 6. Review & Create
  */
-export function useCrgState(): { state: CrgState; actions: CrgActions } {
-  const [state, setState] = useState<CrgState>(() => createInitialCrgState());
+export function useCrgState(options?: UseCrgStateOptions): { state: CrgState; actions: CrgActions } {
+  // Framework-First drift (feature 033): the hook hard-coded one global localStorage slot and
+  // offered no scoping seam. A rebuild runs this same wizard against an existing change, so
+  // without its own slot it would inherit the operator's in-progress Create draft and overwrite
+  // it on the first keystroke. Scoping by key also makes "a rebuild is bound to the change it
+  // started from" a structural fact rather than a runtime check that can be forgotten.
+  const draftStorageKey = options?.storageKey ?? CRG_WIZARD_STORAGE_KEY;
+  const [state, setState] = useState<CrgState>(() => createInitialCrgState(draftStorageKey));
 
   // Tracks when reset() was just called so the persistence effect doesn't immediately
   // re-write the cleared localStorage entry with default values.
@@ -1516,7 +1568,7 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
     }
 
     if (state.submitResult?.endsWith(' created')) {
-      try { localStorage.removeItem(CRG_STATE_STORAGE_KEY); } catch { /* non-fatal */ }
+      try { localStorage.removeItem(draftStorageKey); } catch { /* non-fatal */ }
       return;
     }
 
@@ -1548,11 +1600,11 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
     };
 
     try {
-      localStorage.setItem(CRG_STATE_STORAGE_KEY, JSON.stringify(persistedState));
+      localStorage.setItem(draftStorageKey, JSON.stringify(persistedState));
     } catch {
       // Non-fatal — persistence fails gracefully (private mode, storage quota, etc.).
     }
-  }, [state]);
+  }, [state, draftStorageKey]);
 
   useEffect(() => {
     saveShortDescriptionConfigToStorage(state.shortDescriptionConfig);
@@ -1981,10 +2033,26 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
     }
   }, [state.changeTasks]);
 
-  const updateExistingChg = useCallback(async (chgNumber: string) => {
+  const updateExistingChg = useCallback(async (chgNumber: string, options?: UpdateExistingChgOptions) => {
     const normalizedChangeNumber = chgNumber.trim().toUpperCase();
     if (!normalizedChangeNumber) {
       setState((previousState) => ({ ...previousState, submitResult: 'Error: Enter a CHG number before updating.' }));
+      return;
+    }
+
+    // A rebuild replaces the whole change, so an ambiguous environment selection cannot be
+    // tolerated the way it is for the manual "Update Existing CHG" button — see the guard's
+    // own comment for why silently keeping the first environment would lose data.
+    const rebuildRefusalMessage = options?.isRebuild
+      ? listRebuildEnvironmentRefusal(state)
+      : null;
+    if (rebuildRefusalMessage) {
+      setState((previousState) => ({
+        ...previousState,
+        isSubmitting: false,
+        submitResult: rebuildRefusalMessage,
+        submissionDebug: null,
+      }));
       return;
     }
 
@@ -2024,6 +2092,12 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
         : `${normalizedChangeNumber} updated with verification warnings (${mismatchMessages.length})`;
 
       useCrgSubmissionDebugStore.getState().updateLastSubmissionDebug(submissionDebug);
+      // A rebuild's draft exists only to survive a relay reconnect mid-build; once it has been
+      // written to the change, keeping it would resurrect stale scope on the next rebuild.
+      if (options?.isRebuild) {
+        justResetRef.current = true;
+        try { localStorage.removeItem(draftStorageKey); } catch { /* non-fatal */ }
+      }
       setState((previousState) => ({
         ...previousState,
         isSubmitting: false,
@@ -2042,7 +2116,7 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
         submissionDebug: null,
       }));
     }
-  }, [state]);
+  }, [state, draftStorageKey]);
 
   const cloneCtaskTemplate = useCallback(async (ctaskNumber: string): Promise<CtaskTemplateData> => {
     const normalizedCtaskNumber = ctaskNumber.trim().toUpperCase();
@@ -2090,9 +2164,9 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
     // Signal the persistence effect to skip its next run — we don't want default values
     // immediately written back to localStorage after an explicit reset.
     justResetRef.current = true;
-    try { localStorage.removeItem(CRG_STATE_STORAGE_KEY); } catch { /* non-fatal */ }
+    try { localStorage.removeItem(draftStorageKey); } catch { /* non-fatal */ }
     setState(createDefaultCrgState());
-  }, []);
+  }, [draftStorageKey]);
 
   /**
    * Creates a ServiceNow Change Request using all collected CHG fields.
@@ -2211,7 +2285,7 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
       const creationSummary = formatCreatedChangeSummary(createdChangeRecords, state.changeTasks.length);
       // Clear persisted progress after a successful submission — the next change starts fresh.
       justResetRef.current = true;
-      try { localStorage.removeItem(CRG_STATE_STORAGE_KEY); } catch { /* non-fatal */ }
+      try { localStorage.removeItem(draftStorageKey); } catch { /* non-fatal */ }
       useCrgSubmissionDebugStore.getState().updateLastSubmissionDebug(latestSubmissionDebug);
       setState(() => ({
         ...createDefaultCrgState(),
@@ -2233,7 +2307,7 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
         submissionDebug: latestSubmissionDebug,
       }));
     }
-  }, [state]);
+  }, [state, draftStorageKey]);
 
   const actions = useMemo<CrgActions>(() => {
     return {

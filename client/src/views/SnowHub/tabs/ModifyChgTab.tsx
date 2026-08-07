@@ -8,6 +8,7 @@ import { useState, useCallback } from 'react';
 import { snowFetch } from '../../../services/snowApi.ts';
 import { normalizeRichTextToPlainText } from '../../../utils/richTextPlainText.ts';
 import { SnowLookupField } from '../components/SnowLookupField.tsx';
+import CreateChgTab from './CreateChgTab.tsx';
 import type {
   ChgBasicInfo,
   ChgPlanningAssessment,
@@ -69,9 +70,15 @@ const ENVIRONMENT_ROW_DEFINITIONS = [
   { key: 'prd', label: 'PRD', stateKey: 'prdEnvironment' },
   { key: 'pfix', label: 'PFIX', stateKey: 'pfixEnvironment' },
 ] as const;
+// States in which ServiceNow will not accept a rewritten change. Matched loosely on the display
+// label because instances name their closure states differently ("Closed Complete", "Cancelled").
+// Anything not matched here is treated as editable — see readRebuildBlockedWarning.
+const NON_EDITABLE_STATE_MARKERS = ['closed', 'cancel'];
+
 const CHANGE_LOOKUP_FIELDS = Array.from(new Set([
   'sys_id',
   'number',
+  'state',
   'short_description',
   'description',
   'justification',
@@ -107,6 +114,8 @@ type ServiceNowChangeRecord = Record<string, ServiceNowFieldValue | undefined>;
 interface EditableChange {
   sysId: string;
   number: string;
+  /** The change's ServiceNow workflow state as shown on the form, used to warn before a rebuild. */
+  stateLabel: string;
   shortDescription: string;
   description: string;
   justification: string;
@@ -132,6 +141,10 @@ interface ModifyChgState {
   myOpenChanges: MyOpenChange[];
   isLoadingMyChanges: boolean;
   myChangesError: string | null;
+  /** True once the operator has asked to start over and been shown the destructive confirmation. */
+  isRebuildConfirmationOpen: boolean;
+  /** The change number a confirmed rebuild is bound to, or null when no rebuild is running. */
+  rebuildTargetNumber: string | null;
 }
 
 interface ServiceNowChangeQueryResponse {
@@ -388,6 +401,34 @@ function buildMyActiveChangesPath(): string {
   );
 }
 
+/**
+ * Warns when a rebuild is unlikely to be accepted, or returns null to stay silent.
+ *
+ * The warning appears as soon as the change is loaded so nobody rebuilds a whole change only to
+ * be refused at the save. It is deliberately conservative: an unfamiliar state label means the
+ * tool does not know, and a false warning on every rebuild would be worse than a missing one —
+ * the save itself still fails loudly if ServiceNow refuses.
+ *
+ * @param loadedChange - The change currently open for modification.
+ * @returns A sentence to show the operator, or null when the change looks editable.
+ */
+function readRebuildBlockedWarning(loadedChange: EditableChange | null): string | null {
+  const normalizedStateLabel = (loadedChange?.stateLabel ?? '').trim().toLowerCase();
+  if (!normalizedStateLabel) {
+    return null;
+  }
+
+  const isNonEditableState = NON_EDITABLE_STATE_MARKERS.some((stateMarker) => (
+    normalizedStateLabel.includes(stateMarker)
+  ));
+  if (!isNonEditableState) {
+    return null;
+  }
+
+  return `${loadedChange?.number} is ${loadedChange?.stateLabel} and is no longer editable — `
+    + 'ServiceNow will most likely refuse a rebuild. Check the change before spending the effort.';
+}
+
 function mapServiceNowChangeRecord(changeRecord: ServiceNowChangeRecord): EditableChange {
   const loadedEnvironmentValue = extractServiceNowChoiceValue(changeRecord.u_environment);
   const loadedConfigItem = extractServiceNowReference(changeRecord.cmdb_ci);
@@ -402,6 +443,7 @@ function mapServiceNowChangeRecord(changeRecord: ServiceNowChangeRecord): Editab
   return {
     sysId: extractServiceNowTextValue(changeRecord.sys_id),
     number: extractServiceNowTextValue(changeRecord.number),
+    stateLabel: extractServiceNowTextValue(changeRecord.state),
     shortDescription: extractServiceNowTextValue(changeRecord.short_description),
     description: extractServiceNowTextValue(changeRecord.description),
     justification: extractServiceNowTextValue(changeRecord.justification),
@@ -1230,10 +1272,34 @@ export default function ModifyChgTab(): React.ReactElement {
     myOpenChanges: [],
     isLoadingMyChanges: false,
     myChangesError: null,
+    isRebuildConfirmationOpen: false,
+    rebuildTargetNumber: null,
   });
 
   const handleChangeKeyChange = useCallback((key: string) => {
     setModifyState((prev) => ({ ...prev, changeKey: key, fetchError: null }));
+  }, []);
+
+  const handleStartOverRequest = useCallback(() => {
+    setModifyState((prev) => ({ ...prev, isRebuildConfirmationOpen: true }));
+  }, []);
+
+  const handleStartOverCancel = useCallback(() => {
+    setModifyState((prev) => ({ ...prev, isRebuildConfirmationOpen: false }));
+  }, []);
+
+  // Confirming only swaps what is rendered — the change in ServiceNow is untouched until the
+  // rebuild is explicitly saved, so an operator who changes their mind loses nothing.
+  const handleStartOverConfirm = useCallback(() => {
+    setModifyState((prev) => ({
+      ...prev,
+      isRebuildConfirmationOpen: false,
+      rebuildTargetNumber: prev.change?.number || prev.changeKey.trim().toUpperCase() || null,
+    }));
+  }, []);
+
+  const handleLeaveRebuild = useCallback(() => {
+    setModifyState((prev) => ({ ...prev, rebuildTargetNumber: null }));
   }, []);
 
   const handleFetchChange = useCallback(async () => {
@@ -1422,6 +1488,27 @@ export default function ModifyChgTab(): React.ReactElement {
     }
   }, []);
 
+  const rebuildBlockedWarning = readRebuildBlockedWarning(modifyState.change);
+
+  // A confirmed rebuild replaces this tab's body with the change builder, bound to the loaded
+  // change number. The tab's own edit steps stay available to anyone who backs out.
+  if (modifyState.rebuildTargetNumber) {
+    return (
+      <div className={styles.container}>
+        <header className={styles.header}>
+          <h2 className={styles.title}>{TAB_TITLE}</h2>
+          <p className={styles.subtitle}>{TAB_SUBTITLE}</p>
+        </header>
+        <div className={styles.buttonRow}>
+          <button className={styles.linkButton} onClick={handleLeaveRebuild} type="button">
+            ← Back to this change
+          </button>
+        </div>
+        <CreateChgTab mode="rebuild" targetChangeNumber={modifyState.rebuildTargetNumber} />
+      </div>
+    );
+  }
+
   return (
     <div className={styles.container}>
       <header className={styles.header}>
@@ -1430,6 +1517,50 @@ export default function ModifyChgTab(): React.ReactElement {
       </header>
 
       <StepIndicator currentStep={modifyState.currentStep} onStepSelect={handleStepSelect} />
+
+      {/* Start Over — for a scope change big enough that patching the text by hand would drift
+          from what the release actually contains. Only offered once a change is loaded. */}
+      {modifyState.change && (
+        <div className={styles.clonePanel}>
+          {rebuildBlockedWarning && (
+            <p className={styles.errorText} role="alert">{rebuildBlockedWarning}</p>
+          )}
+          <div className={styles.buttonRow}>
+            <button
+              className={styles.secondaryButton}
+              onClick={handleStartOverRequest}
+              title="Discard this change's contents and build it again from scratch, keeping its CHG number"
+              type="button"
+            >
+              ♻️ Start Over — rebuild from scratch
+            </button>
+          </div>
+        </div>
+      )}
+
+      {modifyState.isRebuildConfirmationOpen && (
+        <div className={styles.passphraseOverlay}>
+          <div className={styles.promptModal} role="alertdialog" aria-label="Confirm rebuild">
+            <p className={styles.promptInstructions}>
+              Starting over will <strong>discard everything {modifyState.change?.number} currently says</strong> —
+              its description, justification, risk and impact, planning answers, environment and dates — and rebuild
+              it from the blank template, exactly as if it were a new change.
+            </p>
+            <p className={styles.promptInstructions}>
+              {modifyState.change?.number} keeps its number: nothing is written to ServiceNow until you save the
+              rebuild, so you can back out at any point before then.
+            </p>
+            <div className={styles.promptActions}>
+              <button className={styles.linkButton} onClick={handleStartOverCancel} type="button">
+                Keep this change
+              </button>
+              <button className={styles.dangerButton} onClick={handleStartOverConfirm} type="button">
+                Discard and rebuild
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {modifyState.currentStep === 1 && (
         <FetchChangeStep

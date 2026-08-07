@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **SNow Hub (Modify Existing CHG) — "Start Over": rebuild a change from scratch, keeping its
+  number.** When a release is re-cut or scope moves, patching a change's text by hand drifts from
+  what the release actually contains — but raising a new change is wrong, because the number has
+  already been circulated and approved. Load a change, press **Start Over**, confirm, and the full
+  change builder opens **blank** and bound to that CHG number: pull the new scope by fix version or
+  JQL, add the odd extra story with a quick key search ("+ Add to Loaded Issues"), generate the
+  content, complete planning and environments, then **Update CHG0001234**. Nothing is written to
+  ServiceNow until you save, so backing out at any point leaves the change exactly as you found it.
+  A rebuild in progress is kept per change number, so it survives a relay reconnect and never
+  disturbs whatever you have in progress on the Create tab. Changes that are closed or cancelled
+  are flagged before you spend the effort.
+
 - **GitHub Email Intake — Posted-comment audit.** A new Admin Hub section sweeps Jira for every
   comment carrying the automation's emoji + "GitHub:" signature (scoped to the configured project
   keys, adjustable lookback) and lists them newest-first with issue links, so mistaken posts can
@@ -22,6 +34,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Scrum boards are untouched.
 
 ### Fixed
+- **SNow Hub — updating an existing CHG with two environments enabled silently dropped one.**
+  Creating a change fans out — one CHG per enabled environment — but updating one took only the
+  first environment and discarded the rest without a word, so a change updated with REL and PRD
+  both ticked was written as REL only. A rebuild (which replaces the whole change) now refuses to
+  save until exactly one environment is enabled, naming the ones it found. The long-standing
+  "Update Existing CHG" button on the Create tab is unchanged.
 - **SNow Hub (Create CHG) — PFIX looked like a permanent default on the Environments step.** No
   environment was ever hard-coded as the default; the wizard persists its progress to localStorage
   and was restoring each card's **Enabled** tick along with it. So whichever environment a user
