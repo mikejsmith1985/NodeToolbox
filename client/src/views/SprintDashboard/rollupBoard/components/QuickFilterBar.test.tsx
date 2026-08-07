@@ -114,3 +114,32 @@ describe('QuickFilterBar', () => {
     expect(screen.getByText(/always describe the whole Feature/)).toBeTruthy();
   });
 });
+
+describe('QuickFilterBar — people on a Jira Data Center instance', () => {
+  it('offers everyone with work on the board, however Jira identifies them', () => {
+    // On Data Center a user has no accountId, so the identifier is their username. The filter must
+    // still list them — it was showing only "Anyone" because nobody resolved.
+    const dataCentreItems = [
+      buildItem('DEV-1', 'jsmith', []),
+      buildItem('DEV-2', 'JIRAUSER99', []),
+    ];
+
+    render(<QuickFilterBar allItems={dataCentreItems} filters={EMPTY_QUICK_FILTER_STATE} onFiltersChange={vi.fn()} />);
+
+    expect(screen.getByRole('option', { name: 'Person, jsmith (CTR)' })).toBeTruthy();
+    expect(screen.getByRole('option', { name: 'Person, JIRAUSER99 (CTR)' })).toBeTruthy();
+  });
+
+  it('offers only Anyone when nothing on the board is assigned', () => {
+    render(
+      <QuickFilterBar
+        allItems={[buildItem('DEV-1', null, [])]}
+        filters={EMPTY_QUICK_FILTER_STATE}
+        onFiltersChange={vi.fn()}
+      />,
+    );
+
+    const assigneeOptions = screen.getAllByRole('option').filter((option) => /Anyone|Person/.test(option.textContent ?? ''));
+    expect(assigneeOptions.map((option) => option.textContent)).toEqual(['Anyone']);
+  });
+});

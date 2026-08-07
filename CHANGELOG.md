@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Roll-Up Board — dragging a card up or down inside a column did nothing.** The card was a drop
+  target, but so was the column cell it sits in, and the default rule picks whichever target overlaps
+  most — which is always the cell, since it contains the card. Every sort resolved to "same column,
+  nothing to do". The board now follows the pointer and prefers the card under it, so cards sort the
+  way lanes already did.
+- **Roll-Up Board — the assignee filter only ever offered "Anyone".** An issue's assignee was read
+  by `accountId`, which exists on Jira Cloud but not on Data Center, where a user is identified by
+  username. Every issue looked unassigned, so the filter had nobody to list. It now reads whichever
+  identifier the instance actually uses.
+
 ### Added
 - **Roll-Up Board — cards can be dragged up and down within a column** so a lane shows the work in
   the order it actually needs to happen. Drop a card onto another in the same column to place it

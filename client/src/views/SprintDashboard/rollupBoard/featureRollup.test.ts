@@ -265,3 +265,57 @@ describe('resolveBoardItems — defects linked straight to a Feature', () => {
     expect(item.featureKey).toBeNull();
   });
 });
+
+describe('resolveBoardItems — who an issue is assigned to', () => {
+  /** Jira Data Center identifies a user by name/key; accountId is Cloud-only. */
+  function buildIssueAssignedOnDataCenter(key: string): JiraIssue {
+    return {
+      id: key,
+      key,
+      fields: {
+        summary: key,
+        status: { name: 'To Do' },
+        issuetype: { name: 'Story', subtask: false },
+        issuelinks: [],
+        fixVersions: [],
+        assignee: { name: 'jsmith', key: 'JIRAUSER123', displayName: 'Smith, Jane (CTR)' },
+      },
+    } as unknown as JiraIssue;
+  }
+
+  it('identifies an assignee on Jira Data Center, where there is no accountId', () => {
+    // Reading accountId alone left every issue looking unassigned, so the assignee filter had
+    // nobody to offer at all.
+    const [item] = resolveBoardItems(buildIssueSet([buildIssueAssignedOnDataCenter('DEV-1')]), SCOPE, UNMAPPED_RESOLVER);
+
+    expect(item.assigneeAccountId).toBe('jsmith');
+    expect(item.assigneeDisplayName).toBe('Smith, Jane (CTR)');
+  });
+
+  it('still prefers accountId when the instance is Jira Cloud', () => {
+    const cloudIssue = {
+      id: 'DEV-2',
+      key: 'DEV-2',
+      fields: {
+        summary: 'DEV-2',
+        status: { name: 'To Do' },
+        issuetype: { name: 'Story', subtask: false },
+        issuelinks: [],
+        fixVersions: [],
+        assignee: { accountId: 'abc-123', displayName: 'Smith, Jane (CTR)' },
+      },
+    } as unknown as JiraIssue;
+
+    const [item] = resolveBoardItems(buildIssueSet([cloudIssue]), SCOPE, UNMAPPED_RESOLVER);
+
+    expect(item.assigneeAccountId).toBe('abc-123');
+  });
+
+  it('reports genuinely unassigned work as unassigned', () => {
+    const story = buildIssue({ key: 'DEV-3', typeName: 'Story' });
+
+    const [item] = resolveBoardItems(buildIssueSet([story]), SCOPE, UNMAPPED_RESOLVER);
+
+    expect(item.assigneeAccountId).toBeNull();
+  });
+});
