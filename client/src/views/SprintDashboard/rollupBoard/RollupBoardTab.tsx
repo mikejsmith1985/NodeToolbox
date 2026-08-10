@@ -25,7 +25,7 @@ import IssueDetailPanel from '../../../components/IssueDetailPanel/index.tsx';
 import { TransitionRequiredFields } from '../../../components/TransitionRequiredFields/index.tsx';
 import type { JiraIssue } from '../../../types/jira.ts';
 import { loadConfiguredFeatureLinkFieldId } from '../../../utils/featureLink.ts';
-import { loadHygieneFieldConfig } from '../../Hygiene/checks/hygieneFieldConfig.ts';
+import { buildJqlFieldReference, loadHygieneFieldConfig, readConfiguredPiFieldId } from '../../Hygiene/checks/hygieneFieldConfig.ts';
 import {
   areTransitionSelectionsComplete,
   buildTransitionFieldsPayload,
@@ -54,7 +54,8 @@ import { loadColumnOptionSources, type ColumnOptionSources } from './columnOptio
 import { executeStatusMove } from './statusMoveWriter.ts';
 import { resolveBoardItems } from './featureRollup.ts';
 import { buildMasterCards } from './masterCards.ts';
-import { fetchRollupBoardIssues } from './rollupBoardFetch.ts';
+import { fetchRollupBoardIssues, fetchSprintPiReconciliation } from './rollupBoardFetch.ts';
+import { describeReconciliation, type SprintPiReconciliation } from '../sprintPiReconciliation.ts';
 import {
   clearTeamFeatureScope,
   hasTeamOwnFeatureScope,
@@ -107,6 +108,15 @@ export interface RollupBoardTabProps {
   sharedWorkspaceDatabaseId?: string;
   /** Other teams on this machine, so a finished column setup can be reused instead of rebuilt. */
   copyableTeams?: readonly CopyableTeam[];
+  /**
+   * The dashboard's current scope mode and PI label.
+   *
+   * Only needed for the PI reconciliation check: when the scope is a PI, work sitting in that PI's
+   * sprints with an empty PI field is missing from every PI-scoped tab at once, and the board is the
+   * place that can notice.
+   */
+  scopeMode?: string;
+  selectedPiValue?: string;
 }
 
 const EMPTY_OPTION_SOURCES: ColumnOptionSources = {
@@ -117,6 +127,9 @@ const EMPTY_OPTION_SOURCES: ColumnOptionSources = {
 
 /** Where the ART workspace settings live — the same store the hygiene field config reads. */
 const ART_SETTINGS_STORAGE_KEY = 'tbxARTSettings';
+
+/** The dashboard's PI scope mode. Only in this mode can a blank PI field hide work from the board. */
+const DASHBOARD_PI_SCOPE_MODE = 'pi';
 
 /**
  * Reads the team's shared Confluence workspace id.
@@ -184,6 +197,8 @@ export default function RollupBoardTab({
   teamProfileId,
   sharedWorkspaceDatabaseId = readSharedWorkspaceDatabaseId(),
   copyableTeams = [],
+  scopeMode,
+  selectedPiValue,
 }: RollupBoardTabProps) {
   const [loadState, setLoadState] = useState<RollupBoardLoadState>(EMPTY_LOAD_STATE);
   const [filters, setFilters] = useState<QuickFilterState>(EMPTY_QUICK_FILTER_STATE);
@@ -201,6 +216,7 @@ export default function RollupBoardTab({
   const [transitionSelections, setTransitionSelections] = useState<Record<string, TransitionFieldSelection>>({});
   const [featureScope, setFeatureScope] = useState<FeatureScopeSettings>(() => loadTeamFeatureScope(teamProfileId));
   const [hasOwnScope, setHasOwnScope] = useState(() => hasTeamOwnFeatureScope(teamProfileId));
+  const [sprintPiGap, setSprintPiGap] = useState<SprintPiReconciliation | null>(null);
   const [openIssueKey, setOpenIssueKey] = useState<string | null>(null);
   const [openIssueEditMeta, setOpenIssueEditMeta] = useState<Awaited<ReturnType<typeof fetchFeatureReviewEditMeta>> | null>(null);
 
@@ -263,6 +279,25 @@ export default function RollupBoardTab({
   useEffect(() => {
     void loadBoard();
   }, [loadBoard]);
+
+  // Runs alongside the board, not inside it: the reconciliation is a second opinion on the scope, and a
+  // slow or failed hygiene query must never hold up the work the team came here to look at.
+  useEffect(() => {
+    const isPiScoped = scopeMode === DASHBOARD_PI_SCOPE_MODE && Boolean(selectedPiValue);
+    if (boardId === null || !isPiScoped) {
+      setSprintPiGap(null);
+      return;
+    }
+
+    let isMounted = true;
+    void fetchSprintPiReconciliation(
+      boardId, selectedPiValue!, buildJqlFieldReference(readConfiguredPiFieldId()),
+    ).then((reconciliation) => {
+      if (isMounted) setSprintPiGap(reconciliation);
+    });
+
+    return () => { isMounted = false; };
+  }, [boardId, scopeMode, selectedPiValue]);
 
   const layout = useMemo(
     () => buildBoardLayout({ masterCards: loadState.masterCards, columns: renderedColumns, filters, preferences }),
@@ -524,6 +559,15 @@ export default function RollupBoardTab({
           {loadState.featureLinkedOutOfProjectKeys.length === 1 ? 'Feature is' : 'Features are'} linked by the Feature
           Link field but sit outside this team&apos;s projects: {loadState.featureLinkedOutOfProjectKeys.join(', ')}.
           That is usually worth correcting in Jira.
+        </p>
+      )}
+
+      {/* The PI query cannot see work whose PI field is blank, so sprint membership is checked as a
+          second opinion. Without this the issue — and the whole Feature above it — simply is not there. */}
+      {sprintPiGap !== null && sprintPiGap.mismatches.length > 0 && (
+        <p className={styles.boardWarning} data-testid="rollup-sprint-pi-gap">
+          ⚠ {describeReconciliation(sprintPiGap)} Set the PI field on{' '}
+          {sprintPiGap.mismatches.length === 1 ? 'it' : 'them'} in Jira and refresh.
         </p>
       )}
 

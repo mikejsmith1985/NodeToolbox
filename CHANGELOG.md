@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Roll-Up Board — sprint-in-PI reconciliation.** Every PI-scoped tab queries `<PI field> = "PI 26.4"`,
+  so an issue whose PI field was never filled in is missing from all of them at once, and missing
+  *silently* — which reads as "there is less work here" rather than "this board is wrong". Found in
+  production: ENCUC-2208 sat in Sprint 26.4.1 with a blank PI field, so its Feature DENP-1387 had
+  nothing to roll up and the entire Feature lane vanished without a word.
+  When the dashboard is scoped by PI the board now takes sprint membership as an independent second
+  opinion — a sprint sits inside a PI's dates whether or not anyone filled the field in — and names
+  the issues the PI query cannot see. Sprints are matched on **dates**, not on names, so the check does
+  not depend on a team's sprint-naming habit; closed sprints are included, since most of a PI's sprints
+  already are. Only a genuinely EMPTY PI field is reported: an issue tagged to a different PI is a
+  legitimate carry-over, and flagging it would turn normal practice into a permanent warning. The check
+  runs alongside the board rather than inside it, and any failure yields an empty result, so a hygiene
+  query can never delay or break a board that is otherwise loading fine.
+
 ### Fixed
 - **Sub-task → Story: a JQL typo read like a system failure.** A rejected query reported the whole
   percent-encoded request URL first, pushing Jira's actual sentence — *"The quoted string '[DEV]' has

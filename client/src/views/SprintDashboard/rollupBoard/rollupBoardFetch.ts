@@ -10,9 +10,15 @@
 // sweep 1 is fatal, because half a board that looks whole is worse than an error. A failed
 // enrichment chunk is reported rather than swallowed, so the gap is visible.
 
-import { jiraGet } from '../../../services/jiraApi.ts';
+import { jiraGet, type BoardSprint } from '../../../services/jiraApi.ts';
 import type { JiraIssue } from '../../../types/jira.ts';
 import { extractFeatureKeyFromIssueFields } from '../../../utils/featureLink.ts';
+import {
+  buildMistaggedSprintIssueJql,
+  selectSprintsInPiWindow,
+  toMismatch,
+  type SprintPiReconciliation,
+} from '../sprintPiReconciliation.ts';
 import {
   EXPECTED_BOARD_ISSUE_CEILING,
   FEATURE_KEY_CHUNK_SIZE,
@@ -25,6 +31,9 @@ import {
 // ── Named constants ──
 
 const SEARCH_MAX_RESULTS = 200;
+
+/** Enough to cover a PI's worth of sprints on a team board, closed ones included. */
+const SPRINT_PAGE_SIZE = 100;
 
 /** Fields every sweep needs to place, colour, filter and explain an issue. */
 const BASE_ISSUE_FIELDS = [
@@ -212,6 +221,54 @@ function collectReferencedFeatureKeys(
   }
 
   return [...referencedKeys];
+}
+
+/**
+ * Finds work sitting in this PI's sprints that carries no PI value at all.
+ *
+ * Every PI-scoped tab asks Jira for `<PI field> = "PI 26.4"`, so an issue whose PI field was never
+ * filled in is missing from all of them at once — and missing silently, which reads as "there is less
+ * work here" rather than "this board is wrong". Sprint membership is the independent second opinion:
+ * a sprint sits inside the PI's dates whether or not anyone filled the field in.
+ *
+ * Closed sprints are included deliberately. A PI spans several sprints and the earlier ones are usually
+ * already closed, so excluding them would blind the check to most of the PI.
+ *
+ * Any failure here returns an empty result rather than throwing: this is a supplementary hygiene check,
+ * and it must never be able to take down a board that is otherwise loading fine.
+ */
+export async function fetchSprintPiReconciliation(
+  boardId: number,
+  piName: string,
+  piFieldReference: string,
+): Promise<SprintPiReconciliation> {
+  const emptyResult: SprintPiReconciliation = {
+    mismatches: [], searchedSprintNames: [], undatedSprintNames: [],
+  };
+
+  try {
+    const sprintResponse = await jiraGet<{ values?: BoardSprint[] }>(
+      `/rest/agile/1.0/board/${boardId}/sprint?state=active,future,closed&maxResults=${SPRINT_PAGE_SIZE}`,
+    );
+    const { sprintsInPi, undatedSprintNames } = selectSprintsInPiWindow(sprintResponse.values ?? [], piName);
+
+    const reconciliationJql = buildMistaggedSprintIssueJql(
+      sprintsInPi.map((sprint) => sprint.id), piFieldReference,
+    );
+    if (!reconciliationJql) return { ...emptyResult, undatedSprintNames };
+
+    const searchResult = await jiraGet<JiraSearchResponse>(
+      buildSearchPath(reconciliationJql, 'summary,status'),
+    );
+
+    return {
+      mismatches: (searchResult.issues ?? []).map(toMismatch),
+      searchedSprintNames: sprintsInPi.map((sprint) => sprint.name),
+      undatedSprintNames,
+    };
+  } catch {
+    return emptyResult;
+  }
 }
 
 /**
