@@ -21,6 +21,29 @@ export const DEFAULT_CONTAINMENT_PHRASE = 'contained within';
 /** Fields carried from the sub-task onto the new Story. Anything not listed is deliberately dropped. */
 export const CARRIED_FIELD_NAMES = ['summary', 'description', 'assignee', 'priority', 'labels'] as const;
 
+// ── Reporting a failed request ──
+
+/** Marks the end of the request description and the start of what Jira actually said. */
+const JIRA_FAILURE_SEPARATOR = ' failed: ';
+
+/**
+ * Pulls the readable complaint out of a failed Jira request message.
+ *
+ * `jiraApi` throws "GET <url> failed: <status> — <what Jira said>". For a bad JQL that url carries the
+ * entire percent-encoded query, which shoves Jira's actual sentence hundreds of characters to the right
+ * and makes a one-character typo — an unclosed quote, say — read like a system fault. The status and
+ * Jira's own words are kept; the encoded url is dropped, because the operator can already see their
+ * query in the box they typed it into.
+ */
+export function describeJiraFailure(rawErrorMessage: string): string {
+  const rawMessage = String(rawErrorMessage || '').trim();
+  const separatorIndex = rawMessage.indexOf(JIRA_FAILURE_SEPARATOR);
+  if (separatorIndex === -1) return rawMessage;
+
+  const failureDetail = rawMessage.slice(separatorIndex + JIRA_FAILURE_SEPARATOR.length).trim();
+  return failureDetail || rawMessage;
+}
+
 // ── Link direction ──
 
 /** One entry of GET /rest/api/2/issueLinkType. */

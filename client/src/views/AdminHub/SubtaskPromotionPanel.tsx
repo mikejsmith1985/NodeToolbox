@@ -25,6 +25,7 @@ import {
   buildContainmentLinkInput,
   buildPromotionPlan,
   buildStoryCreatePayload,
+  describeJiraFailure,
   findTransitionToStatus,
   resolveContainmentLinkDirection,
   type ContainmentLinkDirection,
@@ -49,9 +50,9 @@ interface PromotionOutcome {
   errorMessage: string | null;
 }
 
-/** Reads a message off an unknown thrown value. */
+/** Reads a message off an unknown thrown value, keeping only the part a person can act on. */
 function toMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  return describeJiraFailure(error instanceof Error ? error.message : String(error));
 }
 
 /** Renders the resolved link direction so the operator can see the sentence before it is written. */
