@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Sub-task → Story: a JQL typo read like a system failure.** A rejected query reported the whole
+  percent-encoded request URL first, pushing Jira's actual sentence — *"The quoted string '[DEV]' has
+  not been completed"* — more than two hundred characters to the right, where it was effectively
+  invisible. The panel now leads with the status code and Jira's own words and drops the encoded URL,
+  which the operator can already see in the box they typed it into.
+
 ### Added
 - **Admin Hub → "⬆️ Sub-task → Story"**: bulk-promote sub-tasks into Stories that link back to their
   old parent with a "contained within" link. Jira exposes no API that changes an issue's type — that

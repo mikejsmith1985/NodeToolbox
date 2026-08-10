@@ -11,6 +11,7 @@ import {
   buildContainmentLinkInput,
   buildPromotionPlan,
   buildStoryCreatePayload,
+  describeJiraFailure,
   findTransitionToStatus,
   resolveContainmentLinkDirection,
   type JiraIssueLinkType,
@@ -37,6 +38,38 @@ const CONTAINER_LINK_TYPE: JiraIssueLinkType = {
   inward: 'is contained within',
   outward: 'contains',
 };
+
+describe('describeJiraFailure — a typo must not read like a system fault', () => {
+  it('drops the encoded url so Jira\'s actual complaint leads', () => {
+    const rawMessage = 'Jira GET /rest/api/2/search?jql=issuetype%20%3D%20Sub-task%20AND%20project'
+      + '%20in%20(ENCUC%2C%20ENFCT)%20and%20Summary%20~%20%22%5BDEV%5D&fields=summary%2Cstatus'
+      + '&maxResults=200 failed: 400 — Error in the JQL Query: The quoted string \'[DEV]\' has not'
+      + ' been completed. (line 1, character 66)';
+
+    expect(describeJiraFailure(rawMessage)).toBe(
+      '400 — Error in the JQL Query: The quoted string \'[DEV]\' has not been completed.'
+      + ' (line 1, character 66)',
+    );
+  });
+
+  it('keeps the status code, which is the part worth knowing about the request', () => {
+    expect(describeJiraFailure('Jira POST /rest/api/2/issue failed: 403 — You do not have permission'))
+      .toBe('403 — You do not have permission');
+  });
+
+  it('leaves a message that carries no request description untouched', () => {
+    expect(describeJiraFailure('Network request failed')).toBe('Network request failed');
+  });
+
+  it('falls back to the whole message rather than showing nothing', () => {
+    expect(describeJiraFailure('Jira GET /x failed: ')).toBe('Jira GET /x failed:');
+  });
+
+  it('survives an empty or missing message', () => {
+    expect(describeJiraFailure('')).toBe('');
+    expect(describeJiraFailure(undefined as unknown as string)).toBe('');
+  });
+});
 
 describe('resolveContainmentLinkDirection — which side does the Story go on', () => {
   it('puts the Story on the inward side when "contained within" is the inward phrase', () => {
