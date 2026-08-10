@@ -251,6 +251,18 @@ If any browser still has a vocabulary saved before v0.141.0, open the board ther
 **Pass**: the board renders with those columns intact — not a blank page. *(This is the regression
 that took the tab down; if no such browser exists, record that it could not be exercised.)*
 
+### V24 — Work in the PI's sprints with no PI value *(v0.145.0)*
+
+Scope the dashboard by **PI**. Find (or make) an issue that is in one of that PI's sprints but whose
+**PI field is empty** — the real case was ENCUC-2208 in Sprint 26.4.1, which took its whole Feature
+lane (DENP-1387) off the board.
+
+**Pass**: the board names that issue in a warning saying every PI-scoped tab is missing it. Set the
+PI field in Jira, refresh, and both the issue **and its Feature's lane** appear.
+
+**Also check**: an issue in the same sprint tagged to a *different* PI is **not** flagged — that is a
+legitimate carry-over, not a defect.
+
 ---
 
 ## Definition of done

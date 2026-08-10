@@ -11,7 +11,7 @@ const { mockJiraGet } = vi.hoisted(() => ({ mockJiraGet: vi.fn() }));
 
 vi.mock('../../../services/jiraApi.ts', () => ({ jiraGet: mockJiraGet }));
 
-import { fetchRollupBoardIssues } from './rollupBoardFetch.ts';
+import { fetchRollupBoardIssues, fetchSprintPiReconciliation } from './rollupBoardFetch.ts';
 import type { RollupBoardScope } from './rollupBoardTypes.ts';
 
 const SCOPE: RollupBoardScope = {
@@ -200,5 +200,70 @@ describe('fetchRollupBoardIssues — feature sweep', () => {
 
     expect(issueSet.load.isComplete).toBe(false);
     expect(issueSet.load.failures.some((failure) => failure.stage === 'features')).toBe(true);
+  });
+});
+
+describe('fetchSprintPiReconciliation — finding what the PI query cannot see', () => {
+  const PI_NAME = 'PI 26.4 (07/30/26 - 10/07/26)';
+  const SPRINT_IN_PI = {
+    id: 77, name: 'ENCUC Sprint 26.4.1', state: 'active',
+    startDate: '2026-08-03T00:00:00Z', endDate: '2026-08-17T00:00:00Z',
+  };
+
+  /** Answers the sprint listing, then the mistagged-issue search. */
+  function stubSprintsAndIssues(sprints: unknown[], issues: unknown[]): void {
+    mockJiraGet.mockImplementation(async (requestPath: string) => {
+      if (requestPath.includes('/sprint?')) return { values: sprints };
+      return { issues };
+    });
+  }
+
+  it('asks for closed sprints too, since most of a PI is already closed', async () => {
+    stubSprintsAndIssues([SPRINT_IN_PI], []);
+    await fetchSprintPiReconciliation(42, PI_NAME, 'cf[10301]');
+
+    const sprintRequestPath = mockJiraGet.mock.calls
+      .map((call) => String(call[0])).find((path) => path.includes('/sprint?'))!;
+    expect(sprintRequestPath).toContain('state=active,future,closed');
+  });
+
+  it('reports an issue in the PI\'s sprint whose PI field is blank', async () => {
+    stubSprintsAndIssues([SPRINT_IN_PI], [
+      { key: 'ENCUC-2208', fields: { summary: '[DENP-1387] Enhance IPM', status: { name: 'To Do' } } },
+    ]);
+
+    const reconciliation = await fetchSprintPiReconciliation(42, PI_NAME, 'cf[10301]');
+
+    expect(reconciliation.mismatches).toEqual([
+      { issueKey: 'ENCUC-2208', summary: '[DENP-1387] Enhance IPM', statusName: 'To Do' },
+    ]);
+    expect(reconciliation.searchedSprintNames).toEqual(['ENCUC Sprint 26.4.1']);
+  });
+
+  it('never queries when no sprint falls inside the PI, so nothing sweeps the project', async () => {
+    const sprintOutsidePi = {
+      ...SPRINT_IN_PI, id: 88, startDate: '2026-01-05T00:00:00Z', endDate: '2026-01-19T00:00:00Z',
+    };
+    stubSprintsAndIssues([sprintOutsidePi], [{ key: 'SHOULD-NOT-APPEAR', fields: {} }]);
+
+    const reconciliation = await fetchSprintPiReconciliation(42, PI_NAME, 'cf[10301]');
+
+    expect(reconciliation.mismatches).toEqual([]);
+    expect(mockJiraGet.mock.calls.every((call) => String(call[0]).includes('/sprint?'))).toBe(true);
+  });
+
+  it('returns an empty result instead of throwing, so a hygiene check cannot take the board down', async () => {
+    mockJiraGet.mockRejectedValue(new Error('Jira unreachable'));
+
+    await expect(fetchSprintPiReconciliation(42, PI_NAME, 'cf[10301]')).resolves.toEqual({
+      mismatches: [], searchedSprintNames: [], undatedSprintNames: [],
+    });
+  });
+
+  it('names an undated sprint rather than silently leaving it out of the check', async () => {
+    stubSprintsAndIssues([{ id: 99, name: 'Undated sprint', state: 'future' }], []);
+
+    const reconciliation = await fetchSprintPiReconciliation(42, PI_NAME, 'cf[10301]');
+    expect(reconciliation.undatedSprintNames).toEqual(['Undated sprint']);
   });
 });
