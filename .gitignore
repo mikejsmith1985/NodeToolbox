@@ -190,3 +190,7 @@ playwright-report/
 
 # Forge hook caches (e.g. the pre-push typecheck skip stamp) — machine-local state, never source.
 .forge/cache/
+
+# Rollback receipts from the one-off sub-task → Smart Checklist conversion. These hold real issue
+# text from a live Jira run, so they are local evidence, never source.
+subtask-checklist-receipt*.json

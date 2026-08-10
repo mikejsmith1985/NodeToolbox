@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Bulk conversion of sub-tasks into Smart Checklist items** (`scripts/subtasks-to-checklist.js`).
+  Jira promotes checklist items to sub-tasks but offers no way back, and none at all in bulk. The
+  script runs in four deliberate steps — `discover` (find the checklist field id on this instance and
+  print its real format from a sample issue, rather than guessing a third-party app's syntax), `plan`
+  (show the exact text destined for every parent, writing nothing), `apply` (write the checklists
+  only, leaving sub-tasks untouched, and record a receipt holding each parent's previous text), and
+  `remove-subtasks` (delete sub-tasks, and only ones re-verified as present on their parent's
+  checklist at that moment). Nothing writes without `--confirm`; merges never overwrite an existing
+  checklist and are idempotent, so an interrupted run can simply be re-run.
+
 ### Fixed
 - **Roll-Up Board — dragging a card up or down inside a column did nothing.** The card was a drop
   target, but so was the column cell it sits in, and the default rule picks whichever target overlaps
