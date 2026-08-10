@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Admin Hub → "⬆️ Sub-task → Story"**: bulk-promote sub-tasks into Stories that link back to their
+  old parent with a "contained within" link. Jira exposes no API that changes an issue's type — that
+  is the Move wizard, UI-only — so each promotion is create-Story → link-to-parent → optionally retire
+  the original, three calls with no transaction between them. The panel therefore previews everything
+  first, reports each step of each row independently, and keeps deleting the originals behind its own
+  button that appears only for sub-tasks whose replacement Story was both created *and* linked.
+  The link **direction** is resolved from the instance's own link-type catalogue rather than assumed:
+  "contained within" is one half of a pair whose other half reads "contains", and putting the Story on
+  the wrong side would make every promoted Story claim to contain its own parent. A new Story cannot be
+  created directly into a chosen status, so where a single transition can reach the sub-task's status
+  it is applied, and where none can the row says so instead of leaving the Story somewhere arbitrary.
 - **Bulk conversion of sub-tasks into Smart Checklist items** (`scripts/subtasks-to-checklist.js`).
   Jira promotes checklist items to sub-tasks but offers no way back, and none at all in bulk. The
   script runs in four deliberate steps — `discover` (find the checklist field id on this instance and
