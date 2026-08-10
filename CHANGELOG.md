@@ -17,6 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `remove-subtasks` (delete sub-tasks, and only ones re-verified as present on their parent's
   checklist at that moment). Nothing writes without `--confirm`; merges never overwrite an existing
   checklist and are idempotent, so an interrupted run can simply be re-run.
+  A converted sub-task keeps its state and its owner as real checklist data rather than as prose:
+  the checkbox marker carries to do / in progress / done — read from the Jira status *category*, so a
+  team-invented status like "Ready for QA" still lands as in-progress — and the assignee crosses over
+  as an `@userid` mention. The username is used, never the display name, which on this Data Center
+  instance reads "Lastname, Firstname (CTR)" and would resolve to nobody. The Jira status name is kept
+  as a trailing note, since three checklist states cannot express "In Dev" versus "Ready for QA".
 
 ### Fixed
 - **Roll-Up Board — dragging a card up or down inside a column did nothing.** The card was a drop

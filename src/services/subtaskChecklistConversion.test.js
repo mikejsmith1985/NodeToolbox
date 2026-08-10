@@ -7,6 +7,8 @@
 const {
   findChecklistFieldCandidates,
   isSubtaskDone,
+  resolveChecklistItemPrefix,
+  readAssigneeUserId,
   describeLossyContent,
   renderChecklistLine,
   renderChecklistBlock,
@@ -77,6 +79,50 @@ describe('isSubtaskDone — read the category, not the status name', () => {
   });
 });
 
+describe('resolveChecklistItemPrefix — a sub-task state becomes a checklist state', () => {
+  it('maps a not-started sub-task to an open item', () => {
+    expect(resolveChecklistItemPrefix(makeSubtask('A-1', 'x'))).toBe('- [ ] ');
+  });
+
+  it('maps started-but-unfinished work to the in-progress marker', () => {
+    const inProgress = { name: 'In Dev', statusCategory: { key: 'indeterminate' } };
+    expect(resolveChecklistItemPrefix(makeSubtask('A-1', 'x', { status: inProgress }))).toBe('- [>] ');
+  });
+
+  it('maps a finished sub-task to a done item', () => {
+    expect(resolveChecklistItemPrefix(makeSubtask('A-1', 'x', { status: DONE_STATUS }))).toBe('- [x] ');
+  });
+
+  it('maps a team-invented status by its category, not its name', () => {
+    const readyForQa = { name: 'Ready for QA', statusCategory: { key: 'indeterminate' } };
+    expect(resolveChecklistItemPrefix(makeSubtask('A-1', 'x', { status: readyForQa }))).toBe('- [>] ');
+  });
+
+  it('falls back to open when Jira returned no status at all', () => {
+    expect(resolveChecklistItemPrefix({ key: 'A-1', fields: {} })).toBe('- [ ] ');
+  });
+});
+
+describe('readAssigneeUserId — the mention needs a username, not a display name', () => {
+  it('uses the Data Center username', () => {
+    const subtask = makeSubtask('A-1', 'x', { assignee: { name: 'jsmith', displayName: 'Smith, Mike (CTR)' } });
+    expect(readAssigneeUserId(subtask)).toBe('jsmith');
+  });
+
+  it('never returns the display name, which would not resolve to a person', () => {
+    const subtask = makeSubtask('A-1', 'x', { assignee: { displayName: 'Smith, Mike (CTR)' } });
+    expect(readAssigneeUserId(subtask)).toBeNull();
+  });
+
+  it('falls back to the user key when no username is present', () => {
+    expect(readAssigneeUserId(makeSubtask('A-1', 'x', { assignee: { key: 'jsmith-key' } }))).toBe('jsmith-key');
+  });
+
+  it('returns nothing for an unassigned sub-task', () => {
+    expect(readAssigneeUserId(makeSubtask('A-1', 'x'))).toBeNull();
+  });
+});
+
 describe('renderChecklistLine — one sub-task, one line', () => {
   it('renders an open sub-task as an unticked item carrying its key', () => {
     const line = renderChecklistLine(makeSubtask('ENCUC-1', 'Build the widget'));
@@ -88,9 +134,33 @@ describe('renderChecklistLine — one sub-task, one line', () => {
     expect(line.startsWith('- [x] ')).toBe(true);
   });
 
-  it('keeps the assignee so the conversion does not silently drop who owned the work', () => {
-    const subtask = makeSubtask('ENCUC-3', 'Review', { assignee: { displayName: 'Smith, Mike (CTR)' } });
-    expect(renderChecklistLine(subtask)).toContain('Smith, Mike (CTR)');
+  it('renders in-progress work with the in-progress marker', () => {
+    const inProgress = { name: 'In Dev', statusCategory: { key: 'indeterminate' } };
+    const line = renderChecklistLine(makeSubtask('ENCUC-2', 'Ship it', { status: inProgress }));
+    expect(line.startsWith('- [>] ')).toBe(true);
+  });
+
+  it('assigns the item to the person with an @userid mention', () => {
+    const subtask = makeSubtask('ENCUC-3', 'Review', {
+      assignee: { name: 'jsmith', displayName: 'Smith, Mike (CTR)' },
+    });
+    expect(renderChecklistLine(subtask)).toBe('- [ ] ENCUC-3 Review @jsmith (To Do)');
+  });
+
+  it('keeps the real Jira status name, which the three checklist states cannot express', () => {
+    const readyForQa = { name: 'Ready for QA', statusCategory: { key: 'indeterminate' } };
+    const line = renderChecklistLine(makeSubtask('ENCUC-4', 'Test it', { status: readyForQa }));
+    expect(line).toBe('- [>] ENCUC-4 Test it (Ready for QA)');
+  });
+
+  it('leaves out the mention entirely for an unassigned sub-task', () => {
+    expect(renderChecklistLine(makeSubtask('ENCUC-5', 'Nobody owns this'))).not.toContain('@');
+  });
+
+  it('can drop the assignee and status when the team wants bare items', () => {
+    const subtask = makeSubtask('ENCUC-6', 'Bare', { assignee: { name: 'jsmith' } });
+    const line = renderChecklistLine(subtask, { shouldIncludeAssignee: false, shouldIncludeStatus: false });
+    expect(line).toBe('- [ ] ENCUC-6 Bare');
   });
 
   it('collapses newlines in a summary so one sub-task can never become two checklist items', () => {

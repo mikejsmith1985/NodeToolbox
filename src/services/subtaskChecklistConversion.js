@@ -16,9 +16,17 @@
 
 /** Status category Jira uses for "this work is finished", regardless of the status name on top of it. */
 const DONE_STATUS_CATEGORY_KEY = 'done';
+/** Status category Jira uses for work that has started but is not finished. */
+const IN_PROGRESS_STATUS_CATEGORY_KEY = 'indeterminate';
 
-/** Default Smart Checklist markdown: an open item, a completed item, and a section heading. */
+/**
+ * Smart Checklist markdown: an item's state lives in its checkbox marker.
+ *
+ * A checklist item carries the same three states a sub-task does, so a sub-task's state survives the
+ * conversion as a real checklist state rather than as a note a human has to read.
+ */
 const DEFAULT_OPEN_ITEM_PREFIX = '- [ ] ';
+const DEFAULT_IN_PROGRESS_ITEM_PREFIX = '- [>] ';
 const DEFAULT_DONE_ITEM_PREFIX = '- [x] ';
 const DEFAULT_HEADING_PREFIX = '# ';
 
@@ -69,6 +77,38 @@ function isSubtaskDone(subtaskIssue) {
   return String(statusCategoryKey || '').toLowerCase() === DONE_STATUS_CATEGORY_KEY;
 }
 
+/**
+ * Chooses the checklist checkbox marker that matches the sub-task's state.
+ *
+ * The status CATEGORY is read rather than the status name, because a team's status names are theirs to
+ * invent — "Ready for QA" and "In Dev" are both in-progress work, and only the category says so.
+ */
+function resolveChecklistItemPrefix(subtaskIssue, options = {}) {
+  const {
+    openItemPrefix = DEFAULT_OPEN_ITEM_PREFIX,
+    inProgressItemPrefix = DEFAULT_IN_PROGRESS_ITEM_PREFIX,
+    doneItemPrefix = DEFAULT_DONE_ITEM_PREFIX,
+  } = options;
+
+  const statusCategoryKey = String(subtaskIssue?.fields?.status?.statusCategory?.key || '').toLowerCase();
+  if (statusCategoryKey === DONE_STATUS_CATEGORY_KEY) return doneItemPrefix;
+  if (statusCategoryKey === IN_PROGRESS_STATUS_CATEGORY_KEY) return inProgressItemPrefix;
+  return openItemPrefix;
+}
+
+/**
+ * The user id Smart Checklist needs to assign an item, which is NOT the display name.
+ *
+ * This Jira is Data Center, where a person is identified by username — display names here read
+ * "Lastname, Firstname (CTR)" and would never resolve to an account if used as a mention.
+ */
+function readAssigneeUserId(subtaskIssue) {
+  const assignee = subtaskIssue?.fields?.assignee;
+  if (!assignee) return null;
+  const userId = assignee.name || assignee.key || assignee.accountId || '';
+  return userId ? String(userId) : null;
+}
+
 /** The parent key a sub-task hangs from, or null when Jira returned it without one. */
 function readParentKey(subtaskIssue) {
   const parentKey = subtaskIssue?.fields?.parent?.key;
@@ -112,33 +152,31 @@ function describeLossyContent(subtaskIssue, storyPointsFieldIds = []) {
 /**
  * Renders one sub-task as a single Smart Checklist line.
  *
- * The sub-task key is kept in the line by default so the checklist item can still be traced back to the
- * issue it came from once the sub-task itself is gone.
+ * Three things survive the conversion as real checklist data rather than as prose: the state (in the
+ * checkbox marker), the owner (as an `@userid` mention Smart Checklist resolves to that person), and the
+ * sub-task key, so the item can still be traced back to the issue it came from once that issue is gone.
+ *
+ * The Jira status NAME is kept as a trailing note as well, because the checklist's three states cannot
+ * express the difference between "In Dev" and "Ready for QA" and that distinction is worth keeping.
  */
 function renderChecklistLine(subtaskIssue, options = {}) {
   const {
     shouldIncludeKey = true,
     shouldIncludeStatus = true,
     shouldIncludeAssignee = true,
-    openItemPrefix = DEFAULT_OPEN_ITEM_PREFIX,
-    doneItemPrefix = DEFAULT_DONE_ITEM_PREFIX,
   } = options;
 
-  const linePrefix = isSubtaskDone(subtaskIssue) ? doneItemPrefix : openItemPrefix;
+  const linePrefix = resolveChecklistItemPrefix(subtaskIssue, options);
   const summaryText = String(subtaskIssue?.fields?.summary || '').replace(/\s+/g, ' ').trim();
   const keyText = shouldIncludeKey ? `${subtaskIssue.key} ` : '';
 
-  // Status and assignee ride along in a trailing note so no context is silently dropped on conversion.
-  const trailingNotes = [];
-  if (shouldIncludeStatus && subtaskIssue?.fields?.status?.name) {
-    trailingNotes.push(String(subtaskIssue.fields.status.name));
-  }
-  if (shouldIncludeAssignee && subtaskIssue?.fields?.assignee?.displayName) {
-    trailingNotes.push(String(subtaskIssue.fields.assignee.displayName));
-  }
-  const noteText = trailingNotes.length > 0 ? ` (${trailingNotes.join(' · ')})` : '';
+  const assigneeUserId = shouldIncludeAssignee ? readAssigneeUserId(subtaskIssue) : null;
+  const assigneeText = assigneeUserId ? ` @${assigneeUserId}` : '';
 
-  return `${linePrefix}${keyText}${summaryText}${noteText}`;
+  const statusName = subtaskIssue?.fields?.status?.name;
+  const noteText = shouldIncludeStatus && statusName ? ` (${String(statusName)})` : '';
+
+  return `${linePrefix}${keyText}${summaryText}${assigneeText}${noteText}`;
 }
 
 /**
@@ -284,11 +322,15 @@ function buildConversionPlan(subtaskIssues, parentChecklistTextByKey, options = 
 
 module.exports = {
   DONE_STATUS_CATEGORY_KEY,
+  IN_PROGRESS_STATUS_CATEGORY_KEY,
   DEFAULT_OPEN_ITEM_PREFIX,
+  DEFAULT_IN_PROGRESS_ITEM_PREFIX,
   DEFAULT_DONE_ITEM_PREFIX,
   DEFAULT_HEADING_PREFIX,
   findChecklistFieldCandidates,
   isSubtaskDone,
+  resolveChecklistItemPrefix,
+  readAssigneeUserId,
   readParentKey,
   describeLossyContent,
   renderChecklistLine,

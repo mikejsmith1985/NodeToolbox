@@ -13,6 +13,15 @@
 // receipt holding every parent's PREVIOUS checklist text, which is what makes step 3 reversible and what
 // step 4 reads to know which sub-tasks were genuinely captured.
 //
+// A converted sub-task keeps its state and its owner as real checklist data, not as prose:
+//
+//     - [>] ENCUC-1234 Wire up the retry handler @jsmith (Ready for QA)
+//       │    │                                   │       └─ the Jira status name, which the three
+//       │    │                                   │          checklist states cannot express on their own
+//       │    │                                   └─ assignee, as the mention Smart Checklist resolves
+//       │    └─ the sub-task key, so the item is still traceable once the sub-task is gone
+//       └─ to do [ ] · in progress [>] · done [x], taken from the Jira status CATEGORY
+//
 // Run it on a machine that can reach Jira (VPN on) — it uses the server-side credentials from the
 // NodeToolbox configuration and never prints them.
 
@@ -204,6 +213,8 @@ async function buildLivePlan(jiraContext, options) {
   return buildConversionPlan(subtaskIssues, parentChecklistTextByKey, {
     storyPointsFieldIds: jiraContext.storyPointsFieldIds,
     shouldIncludeKey: options['no-key'] !== true,
+    shouldIncludeAssignee: options['no-assignee'] !== true,
+    shouldIncludeStatus: options['no-status'] !== true,
     headingText: typeof options.heading === 'string' ? options.heading : 'Converted sub-tasks',
   });
 }
@@ -310,6 +321,8 @@ Options:
   --jql         Selects the SUB-TASKS to convert, e.g. "project = ENCUC AND issuetype = Sub-task"
   --heading     Heading placed above the converted items (default: "Converted sub-tasks")
   --no-key      Leave the sub-task key out of each checklist line
+  --no-assignee Do not carry the sub-task's assignee over as an @userid mention
+  --no-status   Do not append the Jira status name (the checkbox marker still carries the state)
   --max         Raise the ${DEFAULT_MAX_SUBTASKS} sub-task safety cap
   --receipt     Where the rollback receipt is written/read (default: ${DEFAULT_RECEIPT_PATH})
   --confirm     Actually write (apply) or actually delete (remove-subtasks)
