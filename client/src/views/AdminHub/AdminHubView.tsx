@@ -20,6 +20,7 @@ import { StandupBriefingPanel } from './StandupBriefingPanel.tsx'
 import { PiReviewSchedulerPanel } from './PiReviewSchedulerPanel.tsx'
 import { MonthlyDeliveryPanel } from './MonthlyDeliveryPanel.tsx'
 import { ComponentManagerPanel } from './ComponentManagerPanel.tsx'
+import { SubtaskPromotionPanel } from './SubtaskPromotionPanel.tsx'
 import { useAdminHubState } from './hooks/useAdminHubState.ts'
 import type {
   AdminHubActions,
@@ -68,7 +69,7 @@ const VIEW_SUBTITLE = 'Proxy configuration, PI field mappings, feature flags, an
 
 const TERMINAL_COMMAND = 'python "%USERPROFILE%\\Downloads\\toolbox-server.py"'
 
-type AdminHubTab = 'main' | 'repo-monitor' | 'reports-config' | 'standup-briefing' | 'pi-review-scheduler' | 'monthly-delivery' | 'component-manager' | 'dev-panel' | 'sprint-release'
+type AdminHubTab = 'main' | 'repo-monitor' | 'reports-config' | 'standup-briefing' | 'pi-review-scheduler' | 'monthly-delivery' | 'component-manager' | 'dev-panel' | 'sprint-release' | 'subtask-promotion'
 
 const ADMIN_HUB_TAB_OPTIONS: { key: AdminHubTab; label: string }[] = [
   { key: 'main', label: '⚙️ Config' },
@@ -79,6 +80,7 @@ const ADMIN_HUB_TAB_OPTIONS: { key: AdminHubTab; label: string }[] = [
   { key: 'monthly-delivery', label: '📅 Monthly Delivery' },
   { key: 'sprint-release', label: '🚀 Sprint Release' },
   { key: 'component-manager', label: '🧩 Components' },
+  { key: 'subtask-promotion', label: '⬆️ Sub-task → Story' },
 ]
 
 // The Dev Panel is admin-gated: its tab is offered only when Admin Access is unlocked, matching the
@@ -2812,6 +2814,13 @@ export default function AdminHubView() {
       {activeAdminTab === 'sprint-release' && (
         <section id="admin-hub-sprint-release-panel" role="tabpanel" aria-labelledby="admin-hub-sprint-release-tab">
           <SprintReleasePanel />
+        </section>
+      )}
+
+      {activeAdminTab === 'subtask-promotion' && (
+        <section id="admin-hub-subtask-promotion-panel" role="tabpanel" aria-labelledby="admin-hub-subtask-promotion-tab">
+          {/* Recreates sub-tasks as Stories linked back to their old parent — Jira offers no type change. */}
+          <SubtaskPromotionPanel />
         </section>
       )}
     </ViewFrame>
