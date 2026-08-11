@@ -104,6 +104,7 @@ import { BoardColumnHeaderRow } from './components/BoardColumnHeaderRow.tsx';
 import { ColumnVocabularyEditor } from './components/ColumnVocabularyEditor.tsx';
 import { FeatureScopePanel } from './components/FeatureScopePanel.tsx';
 import { MasterCardLane } from './components/MasterCardLane.tsx';
+import { PlacementTroubleshooter } from './components/PlacementTroubleshooter.tsx';
 import { QuickFilterBar } from './components/QuickFilterBar.tsx';
 import styles from './RollupBoardTab.module.css';
 import {
@@ -999,6 +1000,17 @@ export default function RollupBoardTab({
           scope={featureScope}
           allFeatureKeys={loadState.allReferencedFeatureKeys}
           availablePiValues={availablePiValues}
+        />
+      )}
+
+      {/* Lives with Board setup because every answer it gives points at a setting on that panel. */}
+      {isEditingColumns && (
+        <PlacementTroubleshooter
+          carryOverPiValue={featureScope.carryOverPiValue}
+          featureLinkFieldId={loadConfiguredFeatureLinkFieldId()}
+          featureProjectKeys={featureScope.featureProjectKeys}
+          piFieldId={readConfiguredPiFieldId()}
+          selectedPiValue={selectedPiValue ?? ''}
         />
       )}
 
