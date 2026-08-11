@@ -276,3 +276,39 @@ describe('applyFeatureScope — honesty', () => {
     expect(result.items).toHaveLength(1);
   });
 });
+
+describe('naming what was hidden', () => {
+  it('names the issues held back, not just how many', () => {
+    // A count sends somebody hunting; a key can be pasted into Jira.
+    const items = [buildItem('ENCUC-2070', buildFeatureLinkRoute('QEINT-613')), buildItem('ENCUC-1', buildFeatureLinkRoute('DENP-1414'))];
+
+    const result = applyFeatureScope(items, {
+      featureProjectKeys: ['DENP'],
+      shouldIncludeOutOfProjectFeatureLinks: false,
+      shouldIncludeIssueLinkedFeatures: false,
+    });
+
+    expect(result.hiddenIssueKeys).toEqual(['ENCUC-2070']);
+    expect(result.hiddenIssueCount).toBe(1);
+  });
+
+  it('names nothing when nothing is hidden', () => {
+    const result = applyFeatureScope([buildItem('ENCUC-1', buildFeatureLinkRoute('DENP-1414'))], {
+      featureProjectKeys: ['DENP'],
+      shouldIncludeOutOfProjectFeatureLinks: false,
+      shouldIncludeIssueLinkedFeatures: false,
+    });
+
+    expect(result.hiddenIssueKeys).toEqual([]);
+  });
+
+  it('names nothing when no project scope is configured at all', () => {
+    const result = applyFeatureScope([buildItem('ENCUC-2070', buildFeatureLinkRoute('QEINT-613'))], {
+      featureProjectKeys: [],
+      shouldIncludeOutOfProjectFeatureLinks: false,
+      shouldIncludeIssueLinkedFeatures: false,
+    });
+
+    expect(result.hiddenIssueKeys).toEqual([]);
+  });
+});

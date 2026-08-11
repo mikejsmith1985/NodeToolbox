@@ -34,6 +34,13 @@ export interface FeatureScopeResult {
   items: RollupBoardItem[];
   hiddenIssueCount: number;
   /**
+   * The issues actually held back, named rather than merely counted.
+   *
+   * A count sends somebody hunting for which issue vanished; a key can be pasted into Jira. This is
+   * the difference between "9 issues are hidden" and knowing ENCUC-2070 is one of them.
+   */
+  hiddenIssueKeys: string[];
+  /**
    * Out-of-project Features reached by the Feature Link field, named whether or not their work is
    * shown. This is the signal worth surfacing: a Feature Link crossing projects is usually a mistake.
    */
@@ -83,12 +90,14 @@ export function applyFeatureScope(
     return {
       items: [...items],
       hiddenIssueCount: 0,
+      hiddenIssueKeys: [],
       featureLinkedOutOfProjectKeys: [],
       issueLinkedOutOfProjectKeys: [],
     };
   }
 
   const keptItems: RollupBoardItem[] = [];
+  const hiddenIssueKeys: string[] = [];
   const featureLinkedOutOfProjectKeys = new Set<string>();
   const issueLinkedOutOfProjectKeys = new Set<string>();
 
@@ -116,12 +125,15 @@ export function applyFeatureScope(
       : settings.shouldIncludeIssueLinkedFeatures;
     if (isAllowedIn) {
       keptItems.push(item);
+    } else {
+      hiddenIssueKeys.push(item.key);
     }
   }
 
   return {
     items: keptItems,
     hiddenIssueCount: items.length - keptItems.length,
+    hiddenIssueKeys,
     featureLinkedOutOfProjectKeys: [...featureLinkedOutOfProjectKeys],
     issueLinkedOutOfProjectKeys: [...issueLinkedOutOfProjectKeys],
   };

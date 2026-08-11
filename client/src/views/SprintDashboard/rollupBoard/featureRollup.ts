@@ -25,6 +25,13 @@ const STORY_ISSUE_TYPE_NAMES = new Set(['story', 'task']);
 
 /** How the caller decides which column an item's own state belongs to. */
 export interface ColumnPlacement {
+  /**
+   * Which Features this team tracks, so a defect is never routed to a lane the board will then hide.
+   *
+   * Optional: absent means treat every Feature as tracked, which is how the board behaved before
+   * project scoping existed.
+   */
+  isFeatureInScope?: (featureKey: string) => boolean;
   resolveColumnId: (statusName: string, subStatusValue: string | null) => string;
 }
 
@@ -159,12 +166,13 @@ function resolveRouteForIssue(
   index: ReadonlyMap<string, JiraIssue>,
   featureLinkFieldId: string,
   isFeatureFinished: (featureKey: string) => boolean,
+  isFeatureInScope: (featureKey: string) => boolean,
 ): RollUpRoute {
   if (isSubtaskIssue(issue)) {
     return resolveSubtaskRoute(issue, index, featureLinkFieldId);
   }
   if (DEFECT_ISSUE_TYPE_NAMES.has(readIssueTypeName(issue))) {
-    return resolveDefectRollup(issue, index, featureLinkFieldId, isFeatureFinished);
+    return resolveDefectRollup(issue, index, featureLinkFieldId, isFeatureFinished, isFeatureInScope);
   }
   return resolveDirectRoute(issue, featureLinkFieldId);
 }
@@ -243,6 +251,9 @@ export function resolveBoardItems(
   const resolutionIndexByKey = new Map(uniqueIssuesByKey);
   // A defect linked to a shipped Feature is being delivered under whatever it is linked to NOW.
   const isFeatureFinished = buildFinishedFeatureTest(issueSet.featureIssues);
+  // Choosing a Feature this team does not track does not move a defect to another lane — the board's
+  // project scope removes it from the board altogether. So scope is asked before anything else.
+  const isFeatureInScope = placement.isFeatureInScope ?? (() => true);
   for (const [featureKey, featureIssue] of issueSet.featureIssues) {
     if (!resolutionIndexByKey.has(featureKey)) {
       resolutionIndexByKey.set(featureKey, featureIssue);
@@ -251,7 +262,7 @@ export function resolveBoardItems(
 
   return [...uniqueIssuesByKey.values()].map((issue) => {
     const route = resolveRouteForIssue(
-      issue, resolutionIndexByKey, scope.featureLinkFieldId, isFeatureFinished,
+      issue, resolutionIndexByKey, scope.featureLinkFieldId, isFeatureFinished, isFeatureInScope,
     );
     const issueFields = issue.fields as unknown as Record<string, unknown>;
     const statusName = ((issueFields.status as { name?: string })?.name ?? '').trim();

@@ -200,38 +200,79 @@ function selectByPrecedence(ranked: readonly RankedCandidate[]): RankedCandidate
   return null;
 }
 
+/** How a candidate's Feature scores, best first. Lower is better. */
+type CandidateStanding = 0 | 1 | 2 | 3;
+
 /**
- * Picks the winning candidate, preferring any route that reaches a Feature still in flight.
+ * Ranks a candidate's Feature by how useful its lane actually is to this team.
  *
- * The precedence chain answers "how was this defect linked", which is archaeology; it ranks the QA
- * route above a direct Feature link because that is usually the more specific fact. But a defect found
- * two PIs ago while testing a Feature that has since shipped is being DELIVERED under whatever it is
- * linked to now — so ranking alone would file live work under a finished Feature, in a lane nobody is
- * looking at. A finished Feature therefore loses to an unfinished one whatever its rank.
+ * Two questions, in this order, because they fail differently:
  *
- * Precedence is otherwise untouched: it decides the winner within each group. When nothing reaches an
- * unfinished Feature the original answer stands, because a finished Feature is better than none.
+ *   Is the Feature one this team tracks?  A route to another team's Feature is hidden by the board's
+ *   project scope, so choosing it does not move the defect to a different lane — it removes the defect
+ *   from the board entirely. A defect this team is working on must never disappear because one of its
+ *   many QA links happened to reach somebody else's Feature.
+ *
+ *   Has the Feature shipped?  A defect found while testing something that has since shipped is being
+ *   delivered under whatever it is linked to now, so a live Feature beats a finished one.
+ *
+ * In scope beats out of scope even when the out-of-scope Feature is the livelier of the two: a lane
+ * the viewer can see is worth more than a lane they cannot.
+ */
+function scoreCandidate(
+  featureKey: string,
+  isFeatureInScope: (featureKey: string) => boolean,
+  isFeatureFinished: (featureKey: string) => boolean,
+): CandidateStanding {
+  const inScope = isFeatureInScope(featureKey);
+  const finished = isFeatureFinished(featureKey);
+  if (inScope && !finished) return 0;
+  if (inScope) return 1;
+  return finished ? 3 : 2;
+}
+
+/**
+ * Picks the winning candidate: best-standing Feature first, then the precedence chain within it.
+ *
+ * Precedence still answers "how was this defect linked" — it just no longer gets to choose a lane the
+ * team cannot see, or one that shipped two PIs ago, when a better lane is available.
  */
 function selectWinningCandidate(
   ranked: readonly RankedCandidate[],
+  isFeatureInScope: (featureKey: string) => boolean,
   isFeatureFinished: (featureKey: string) => boolean,
   notes: RollUpNote[],
 ): RankedCandidate | null {
-  const reachingUnfinished = ranked.filter((rankedCandidate) => !isFeatureFinished(rankedCandidate.featureKey));
-  const reachingFinished = ranked.filter((rankedCandidate) => isFeatureFinished(rankedCandidate.featureKey));
+  const standings: CandidateStanding[] = [0, 1, 2, 3];
 
-  const unfinishedWinner = selectByPrecedence(reachingUnfinished);
-  if (unfinishedWinner === null) {
-    return selectByPrecedence(reachingFinished);
+  let bestWinner: RankedCandidate | null = null;
+  let bestStanding: CandidateStanding | null = null;
+
+  for (const standing of standings) {
+    const candidatesAtStanding = ranked.filter(
+      (rankedCandidate) =>
+        scoreCandidate(rankedCandidate.featureKey, isFeatureInScope, isFeatureFinished) === standing,
+    );
+    const winnerAtStanding = selectByPrecedence(candidatesAtStanding);
+    if (winnerAtStanding !== null) {
+      bestWinner = winnerAtStanding;
+      bestStanding = standing;
+      break;
+    }
   }
+
+  if (bestWinner === null) return null;
 
   // Only worth saying when a stronger-ranked route actually lost, which is the surprising case.
-  const finishedWinner = selectByPrecedence(reachingFinished);
-  if (finishedWinner !== null
-    && PRECEDENCE_ORDER.indexOf(finishedWinner.rank) < PRECEDENCE_ORDER.indexOf(unfinishedWinner.rank)) {
+  const strongestOverall = selectByPrecedence(ranked);
+  const wasStrongerRoutePassedOver = strongestOverall !== null
+    && strongestOverall.candidate.toKey !== bestWinner.candidate.toKey
+    && PRECEDENCE_ORDER.indexOf(strongestOverall.rank) < PRECEDENCE_ORDER.indexOf(bestWinner.rank);
+  if (wasStrongerRoutePassedOver && bestStanding === 0) {
     notes.push('preferred-unfinished-feature');
   }
-  return unfinishedWinner;
+
+  return bestWinner;
 }
 
 /**
@@ -249,10 +290,12 @@ export function resolveDefectRollup(
   featureLinkFieldId: string,
   /** Tells the resolver which Features have already shipped. Absent means treat none as finished. */
   isFeatureFinished: (featureKey: string) => boolean = () => false,
+  /** Tells the resolver which Features this team actually tracks. Absent means treat all as tracked. */
+  isFeatureInScope: (featureKey: string) => boolean = () => true,
 ): RollUpRoute {
   const notes: RollUpNote[] = [];
   const { ranked, examined } = collectRankedCandidates(defect, index, featureLinkFieldId, notes);
-  const winningCandidate = selectWinningCandidate(ranked, isFeatureFinished, notes);
+  const winningCandidate = selectWinningCandidate(ranked, isFeatureInScope, isFeatureFinished, notes);
 
   const distinctFeatureKeys = new Set(ranked.map((rankedCandidate) => rankedCandidate.featureKey));
   if (distinctFeatureKeys.size > 1) {
