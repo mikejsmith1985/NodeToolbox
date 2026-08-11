@@ -6793,6 +6793,7 @@ export default function SprintDashboardView() {
           // selector above rather than re-querying the whole board filter.
           // Other teams on this machine, so a finished column setup can be reused rather than rebuilt.
           copyableTeams={dashboardTeamProfiles.map((teamProfile) => ({ id: teamProfile.id, name: teamProfile.name }))}
+          availablePiValues={state.availablePiValues}
           projectKey={state.projectKey}
           scopeDescription={DASHBOARD_SCOPE_OPTION_LABELS[state.scopeMode]}
           scopeMode={state.scopeMode}

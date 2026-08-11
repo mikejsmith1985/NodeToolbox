@@ -16,6 +16,12 @@ import type { JiraIssue } from '../../../types/jira.ts';
 import { extractFeatureKeyFromIssueFields } from '../../../utils/featureLink.ts';
 import { buildFeaturesInPiJql } from './emptyFeatureScan.ts';
 import {
+  EMPTY_CARRY_OVER_SCOPE,
+  buildCarryOverFeatureJql,
+  buildCarryOverWorkJql,
+  type CarryOverScope,
+} from './carryOverScope.ts';
+import {
   buildMistaggedSprintIssueJql,
   selectSprintsInPiWindow,
   toMismatch,
@@ -449,5 +455,45 @@ export async function fetchTeamIssuesForFeatures(
     return chunkResults.flatMap((chunkResult) => chunkResult.issues ?? []);
   } catch {
     return [];
+  }
+}
+
+/**
+ * Finds last PI's unfinished Features and the work sitting under them.
+ *
+ * Two questions, because a carried-over Feature and its children can hold different PIs: which Features
+ * from the earlier PI never finished, and what is linked to them regardless of the PI those children
+ * carry. Filtering the children by PI would reintroduce the blindness this exists to remove.
+ *
+ * Any failure yields an empty scope rather than throwing — the board's job is to show this PI's work,
+ * and an extra sweep must never be able to prevent that.
+ */
+export async function fetchCarryOverScope(
+  featureProjectKeys: readonly string[],
+  carryOverPiValue: string,
+  piFieldReference: string,
+  featureLinkFieldReference: string,
+  scope: RollupBoardScope,
+): Promise<CarryOverScope> {
+  const featureJql = buildCarryOverFeatureJql(featureProjectKeys, carryOverPiValue, piFieldReference);
+  if (featureJql === null) return EMPTY_CARRY_OVER_SCOPE;
+
+  try {
+    const featureResult = await jiraGet<JiraSearchResponse>(
+      buildSearchPath(featureJql, buildFieldList(scope)),
+    );
+    const featureKeys = (featureResult.issues ?? []).map((featureIssue) => featureIssue.key);
+
+    const workJql = buildCarryOverWorkJql(featureKeys, featureLinkFieldReference);
+    if (workJql === null) return { featureKeys, issueKeys: [], fromPiValue: carryOverPiValue };
+
+    const workResult = await jiraGet<JiraSearchResponse>(buildSearchPath(workJql, 'summary'));
+    return {
+      featureKeys,
+      issueKeys: (workResult.issues ?? []).map((workIssue) => workIssue.key),
+      fromPiValue: carryOverPiValue,
+    };
+  } catch {
+    return EMPTY_CARRY_OVER_SCOPE;
   }
 }

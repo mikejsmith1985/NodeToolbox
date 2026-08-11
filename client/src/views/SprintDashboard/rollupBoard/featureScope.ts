@@ -27,6 +27,14 @@ export interface FeatureScopeSettings {
   shouldIncludeOutOfProjectFeatureLinks: boolean;
   /** Show out-of-project Features reached only by an issue link. Off by default. */
   shouldIncludeIssueLinkedFeatures: boolean;
+  /**
+   * A previous PI whose unfinished Features should also be pulled onto this board, with their work.
+   *
+   * Empty means the board shows only its own PI. A carried-over Feature keeps its original PI in Jira
+   * — rewriting it would falsify what the ART committed last PI — so it can only be reached by asking
+   * for it deliberately.
+   */
+  carryOverPiValue: string;
 }
 
 /** What survived the scope, and what did not — with enough detail for the board to explain itself. */
