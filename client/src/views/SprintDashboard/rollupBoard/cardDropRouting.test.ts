@@ -12,6 +12,7 @@ import {
   parseCardTargetId,
   parseDropTargetId,
   resolveCardDrop,
+  resolveCardDropZone,
 } from './cardDropRouting.ts';
 import { UNMAPPED_COLUMN_ID, type RenderedColumn, type RollupBoardItem } from './rollupBoardTypes.ts';
 import type { JiraIssue } from '../../../types/jira.ts';
@@ -95,18 +96,6 @@ describe('resolveCardDrop — non-events write nothing and say nothing', () => {
 });
 
 describe('resolveCardDrop — real attempts the board cannot honour', () => {
-  it('refuses a drop into another Feature\'s lane, explaining what would actually move it', () => {
-    const decision = resolveCardDrop({
-      draggedItemKey: 'DEV-1',
-      dropTargetId: buildDropTargetId('FEAT-OTHER', 'col-dev'),
-      itemsByKey: ITEMS,
-      columnsById: COLUMNS,
-    });
-
-    expect(decision.kind).toBe('refused');
-    expect(decision.kind === 'refused' && decision.reason).toContain('Change what it links to in Jira');
-  });
-
   it('refuses a drop into a column nobody has mapped yet, since there is nothing to write', () => {
     const decision = resolveCardDrop({
       draggedItemKey: 'DEV-1',
@@ -211,5 +200,103 @@ describe('resolveCardDrop — dropping a card onto another card', () => {
   it('round-trips a card target id', () => {
     expect(parseCardTargetId(buildCardTargetId('DEV-1'))).toBe('DEV-1');
     expect(parseCardTargetId('FEAT-1::col-todo')).toBeNull();
+  });
+});
+
+describe('resolveCardDrop — dropping into another Feature lane', () => {
+  it('re-points the issue at the Feature whose lane it was dropped in', () => {
+    const decision = resolveCardDrop({
+      draggedItemKey: 'DEV-1',
+      dropTargetId: buildDropTargetId('FEAT-OTHER', 'col-dev'),
+      itemsByKey: ITEMS,
+      columnsById: COLUMNS,
+    });
+
+    expect(decision).toEqual({
+      kind: 'relink',
+      item: ITEMS.get('DEV-1'),
+      targetFeatureKey: 'FEAT-OTHER',
+    });
+  });
+
+  it('re-links even when the target column differs, since the lane is the instruction', () => {
+    const decision = resolveCardDrop({
+      draggedItemKey: 'DEV-1',
+      dropTargetId: buildDropTargetId('FEAT-OTHER', 'col-qa'),
+      itemsByKey: ITEMS,
+      columnsById: COLUMNS,
+    });
+
+    expect(decision.kind).toBe('relink');
+  });
+});
+
+describe('resolveCardDropZone — the middle means inside, the edges mean near', () => {
+  it('treats the upper edge as sequencing before the card', () => {
+    expect(resolveCardDropZone(10, 0, 100)).toBe('before');
+  });
+
+  it('treats the lower edge as sequencing after the card', () => {
+    expect(resolveCardDropZone(90, 0, 100)).toBe('after');
+  });
+
+  it('treats the middle as putting the card inside', () => {
+    expect(resolveCardDropZone(50, 0, 100)).toBe('nest');
+  });
+
+  it('reads positions relative to where the target actually sits', () => {
+    expect(resolveCardDropZone(450, 400, 100)).toBe('nest');
+    expect(resolveCardDropZone(410, 400, 100)).toBe('before');
+  });
+
+  it('does not divide by a zero height', () => {
+    expect(resolveCardDropZone(10, 0, 0)).toBe('nest');
+  });
+});
+
+/** DEV-1 plus a sibling in the same column, which is the only place nesting is offered. */
+const ITEMS_WITH_SIBLING = new Map([
+  ['DEV-1', buildItem('DEV-1', 'FEAT-1', 'col-todo')],
+  ['DEV-2', buildItem('DEV-2', 'FEAT-1', 'col-todo')],
+]);
+
+describe('resolveCardDrop — dropping one card onto another', () => {
+  it('nests when the drop landed on the card body', () => {
+    const decision = resolveCardDrop({
+      draggedItemKey: 'DEV-1',
+      dropTargetId: buildCardTargetId('DEV-2'),
+      itemsByKey: ITEMS_WITH_SIBLING,
+      columnsById: COLUMNS,
+      cardDropZone: 'nest',
+    });
+
+    expect(decision).toEqual({
+      kind: 'nest',
+      item: ITEMS_WITH_SIBLING.get('DEV-1'),
+      containerIssueKey: 'DEV-2',
+    });
+  });
+
+  it('still sequences when the drop landed on an edge', () => {
+    const decision = resolveCardDrop({
+      draggedItemKey: 'DEV-1',
+      dropTargetId: buildCardTargetId('DEV-2'),
+      itemsByKey: ITEMS_WITH_SIBLING,
+      columnsById: COLUMNS,
+      cardDropZone: 'before',
+    });
+
+    expect(decision.kind).toBe('reorder');
+  });
+
+  it('sequences by default, so an unknown zone can never write to Jira', () => {
+    const decision = resolveCardDrop({
+      draggedItemKey: 'DEV-1',
+      dropTargetId: buildCardTargetId('DEV-2'),
+      itemsByKey: ITEMS_WITH_SIBLING,
+      columnsById: COLUMNS,
+    });
+
+    expect(decision.kind).toBe('reorder');
   });
 });

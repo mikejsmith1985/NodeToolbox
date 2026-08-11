@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Roll-Up Board — drag a card into another Feature's lane to re-point its Feature Link.** Previously
+  refused, on the grounds that a lane is a fact about the Jira links rather than a position somebody
+  can drag. The fact simply turned out to be editable, and the drag says exactly what the write should
+  be. Dropping into the **No Feature** lane clears the link instead of setting one — the same gesture
+  meaning "this does not belong to a Feature", and the only way to undo a mis-drop without leaving the
+  board.
+- **Roll-Up Board — drop a card onto the middle of another card to nest it.** This records a
+  "contained within" issue link, and the board then draws the pair with the same parent container it
+  already uses for real sub-tasks, so one visual answers "what is inside what" however the team
+  expressed it. The link type and its **direction** are resolved from this Jira's own catalogue rather
+  than assumed — "contained within" is one half of a pair, and the wrong side would say the dragged
+  issue *contains* the one it was dropped onto.
+  A drop on a card's top or bottom edge still sequences the work and writes nothing, so the gesture
+  people already use is unchanged; only the middle of a card nests. Nesting is offered only between
+  cards in the same column, because one gesture producing both a link and a status change at once is
+  the kind of surprise that stops people trusting drag-and-drop.
+
 ### Fixed
 - **Roll-Up Board — lane cells no longer line up with the column headers (regression in v0.149.0).**
   The horizontal-scroll fix set `width: max-content` on the header and lane grids. With `1fr` tracks

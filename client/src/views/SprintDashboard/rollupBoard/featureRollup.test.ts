@@ -320,3 +320,52 @@ describe('resolveBoardItems — who an issue is assigned to', () => {
     expect(item.assigneeAccountId).toBeNull();
   });
 });
+
+describe('containment links draw the same nesting as a real sub-task', () => {
+  /** An issue carrying a "contained within" link pointing at another card. */
+  function makeContainedIssue(key: string, containerKey: string, isInward = true) {
+    return {
+      id: key,
+      key,
+      fields: {
+        summary: key,
+        status: { name: 'To Do' },
+        issuetype: { name: 'Story' },
+        issuelinks: [{
+          type: { name: 'Container', inward: 'is contained within', outward: 'contains' },
+          ...(isInward ? { outwardIssue: { key: containerKey } } : { inwardIssue: { key: containerKey } }),
+        }],
+      },
+    } as unknown as JiraIssue;
+  }
+
+  it('groups a contained issue under the card that contains it', () => {
+    const issueSet = buildIssueSet([
+      makeContainedIssue('DEV-2', 'DEV-1'),
+    ]);
+
+    const [item] = resolveBoardItems(issueSet, SCOPE, UNMAPPED_RESOLVER);
+    expect(item.parentKey).toBe('DEV-1');
+  });
+
+  it('does not nest the CONTAINER under the thing it holds', () => {
+    // Only the inward side of the pair counts; the container reads "contains", not "contained within".
+    const issueSet = buildIssueSet([makeContainedIssue('DEV-1', 'DEV-2', false)]);
+
+    const [item] = resolveBoardItems(issueSet, SCOPE, UNMAPPED_RESOLVER);
+    expect(item.parentKey).toBeNull();
+  });
+
+  it('ignores an unrelated link type', () => {
+    const blockedIssue = {
+      id: 'DEV-3', key: 'DEV-3',
+      fields: {
+        summary: 'DEV-3', status: { name: 'To Do' }, issuetype: { name: 'Story' },
+        issuelinks: [{ type: { inward: 'is blocked by', outward: 'blocks' }, outwardIssue: { key: 'DEV-1' } }],
+      },
+    } as unknown as JiraIssue;
+
+    const [item] = resolveBoardItems(buildIssueSet([blockedIssue]), SCOPE, UNMAPPED_RESOLVER);
+    expect(item.parentKey).toBeNull();
+  });
+});

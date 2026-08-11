@@ -25,7 +25,7 @@ import IssueDetailPanel from '../../../components/IssueDetailPanel/index.tsx';
 import { TransitionRequiredFields } from '../../../components/TransitionRequiredFields/index.tsx';
 import type { JiraIssue } from '../../../types/jira.ts';
 import { loadConfiguredFeatureLinkFieldId } from '../../../utils/featureLink.ts';
-import { createIssue, getProjectIssueTypes, jiraGet, jiraPut } from '../../../services/jiraApi.ts';
+import { createIssue, createIssueLink, getProjectIssueTypes, jiraGet, jiraPut } from '../../../services/jiraApi.ts';
 import type { CreateMetaIssueType } from '../../../types/jira.ts';
 import { buildJqlFieldReference, loadHygieneFieldConfig, readConfiguredPiFieldId } from '../../Hygiene/checks/hygieneFieldConfig.ts';
 import {
@@ -51,7 +51,7 @@ import {
 } from './boardPreferencesStore.ts';
 import { loadTeamVocabulary, markVocabularySynced, saveTeamVocabulary } from './boardVocabularyStore.ts';
 import { previewBoardVocabularyPull, publishBoardVocabulary, type VocabularyPullPreview } from './boardVocabularySync.ts';
-import { parseCardTargetId, resolveCardDrop } from './cardDropRouting.ts';
+import { parseCardTargetId, resolveCardDrop, resolveCardDropZone } from './cardDropRouting.ts';
 import { loadColumnOptionSources, type ColumnOptionSources } from './columnOptionSources.ts';
 import { executeStatusMove } from './statusMoveWriter.ts';
 import { resolveBoardItems } from './featureRollup.ts';
@@ -68,6 +68,12 @@ import {
   describeCreationOutcome,
 } from './createWorkForFeature.ts';
 import { buildFeatureFieldUpdateFields, resolvePiFieldUpdateValue } from '../piFeatureRemap.ts';
+import {
+  buildContainmentLinkInput,
+  resolveContainmentLinkDirection,
+  type JiraIssueLinkType,
+} from '../../AdminHub/subtaskStoryPromotion.ts';
+import { describeJiraFailure } from '../../AdminHub/subtaskStoryPromotion.ts';
 import { sumUnplannedStoryPoints } from './emptyFeatureScan.ts';
 import {
   readFeatureKeysFromTeamIssues,
@@ -477,6 +483,65 @@ export default function RollupBoardTab({
     )),
   ], [loadState.masterCards, featuresWithoutWork, featureIssuesWithoutWork]);
 
+  /**
+   * Re-points an issue's Feature Link at the Feature whose lane it was dropped in.
+   *
+   * Dropping into the No Feature lane clears the link instead of setting one, which is the same
+   * gesture meaning "this does not belong to a Feature" — a legitimate answer, and the only way to
+   * undo a mis-drop without leaving the board.
+   */
+  const applyFeatureRelink = useCallback(async (
+    item: RollupBoardItem,
+    targetFeatureKey: string,
+  ): Promise<void> => {
+    setCardMessage(item.key, null);
+    setPendingIssueKey(item.key);
+    try {
+      const featureLinkFieldId = loadConfiguredFeatureLinkFieldId();
+      const isClearingFeature = targetFeatureKey === NO_FEATURE_KEY;
+      await jiraPut(`/rest/api/2/issue/${encodeURIComponent(item.key)}`, {
+        fields: isClearingFeature
+          ? { [featureLinkFieldId]: null }
+          : buildFeatureFieldUpdateFields(featureLinkFieldId, targetFeatureKey),
+      });
+      await loadBoard();
+    } catch (error: unknown) {
+      setCardMessage(item.key, describeJiraFailure(String(error)));
+    } finally {
+      setPendingIssueKey(null);
+    }
+  }, [loadBoard]);
+
+  /**
+   * Records that one issue is contained within another, which is what makes the board nest it.
+   *
+   * The link type and its direction are resolved from this Jira's own catalogue rather than assumed:
+   * "contained within" is one half of a pair, and putting the card on the wrong side would say the
+   * dragged issue CONTAINS the one it was dropped onto — backwards, and tedious to unpick.
+   */
+  const applyContainment = useCallback(async (
+    item: RollupBoardItem,
+    containerIssueKey: string,
+  ): Promise<void> => {
+    setCardMessage(item.key, null);
+    setPendingIssueKey(item.key);
+    try {
+      const linkTypes = await jiraGet<{ issueLinkTypes?: JiraIssueLinkType[] }>('/rest/api/2/issueLinkType');
+      const direction = resolveContainmentLinkDirection(linkTypes.issueLinkTypes ?? []);
+      if (direction === null) {
+        setCardMessage(item.key, 'This Jira has no "contained within" link type, so nothing was written.');
+        return;
+      }
+
+      await createIssueLink(buildContainmentLinkInput(direction, item.key, containerIssueKey));
+      await loadBoard();
+    } catch (error: unknown) {
+      setCardMessage(item.key, describeJiraFailure(String(error)));
+    } finally {
+      setPendingIssueKey(null);
+    }
+  }, [loadBoard]);
+
   const layout = useMemo(
     () => buildBoardLayout({ masterCards: laneMasterCards, columns: renderedColumns, filters, preferences }),
     [laneMasterCards, renderedColumns, filters, preferences],
@@ -539,11 +604,20 @@ export default function RollupBoardTab({
    * back would draw a state Jira does not hold.
    */
   const handleCardDrop = useCallback(async (dragEndEvent: DragEndEvent): Promise<void> => {
+    // Where the dragged card came to rest inside the target decides between sequencing and nesting.
+    // Both rectangles come from the drag event, so no extra pointer tracking is needed.
+    const draggedRect = dragEndEvent.active.rect.current.translated;
+    const targetRect = dragEndEvent.over?.rect ?? null;
+    const cardDropZone = draggedRect && targetRect
+      ? resolveCardDropZone(draggedRect.top + draggedRect.height / 2, targetRect.top, targetRect.height)
+      : undefined;
+
     const decision = resolveCardDrop({
       draggedItemKey: String(dragEndEvent.active.id),
       dropTargetId: dragEndEvent.over ? String(dragEndEvent.over.id) : null,
       itemsByKey: new Map(loadState.allItems.map((item) => [item.key, item])),
       columnsById: new Map(renderedColumns.map((column) => [column.id, column])),
+      cardDropZone,
     });
 
     if (decision.kind === 'ignore') return;
@@ -567,6 +641,18 @@ export default function RollupBoardTab({
         decision.targetIssueKey,
         displayedIssueKeys,
       ));
+      return;
+    }
+
+    // Dropped in another Feature's lane: the drag says which Feature this work now delivers.
+    if (decision.kind === 'relink') {
+      await applyFeatureRelink(decision.item, decision.targetFeatureKey);
+      return;
+    }
+
+    // Dropped on the body of another card: record containment, which the board then draws as nesting.
+    if (decision.kind === 'nest') {
+      await applyContainment(decision.item, decision.containerIssueKey);
       return;
     }
 
