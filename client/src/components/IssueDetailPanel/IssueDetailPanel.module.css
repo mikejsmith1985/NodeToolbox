@@ -233,6 +233,11 @@
   box-shadow: var(--field-elevation-shadow, none);
   color: var(--color-text-primary, #e6edf3);
   font-size: var(--font-size-sm, 0.875rem);
+  /* Giving a native control its own background opts it out of the root's `color-scheme`, so the
+     browser paints the OPEN option list light even in the dark theme — styling `option` alone does
+     not reach it. Inheriting the scheme back hands the popup to the browser's dark rendering, and
+     follows the theme rather than pinning it (the CapacityTab date-input precedent). */
+  color-scheme: inherit;
 }
 
 /*
