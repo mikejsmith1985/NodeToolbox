@@ -264,3 +264,63 @@ describe('a defect whose other links reach Features this team does not track', (
     expect(route.unchosenCandidates.map((candidate) => candidate.toKey)).toContain('INTTEST-4021');
   });
 });
+
+describe('a defect that names its own Feature', () => {
+  // The production case: ENCUC-2070 has Feature Link DENP-1414 set on the defect itself, yet sat in
+  // DENP-1288's lane because only its ELEVEN issue links were ever walked — while its own sub-tasks,
+  // which read the parent's Feature Link, sat under DENP-1414. The two disagreed about the same defect.
+  const QA_STORY = buildIssue({ key: 'DEV-OLD', typeName: 'Story', featureKey: 'DENP-1288' });
+  const QA_ISSUE = buildIssue({ key: 'INTTEST-3961', typeName: 'Task', linkedKeys: ['DEV-OLD'] });
+  const DEFECT = buildIssue({
+    key: 'ENCUC-2070', typeName: 'Defect', featureKey: 'DENP-1414', linkedKeys: ['INTTEST-3961'],
+  });
+  const INDEX = buildIndex([QA_STORY, QA_ISSUE, DEFECT]);
+
+  it('uses the Feature Link set on the defect, in preference to anything it walked to', () => {
+    const route = resolveDefectRollup(DEFECT, INDEX, FEATURE_LINK_FIELD);
+
+    expect(route.featureKey).toBe('DENP-1414');
+    expect(route.precedenceRank).toBe('own-feature-link');
+  });
+
+  it('agrees with where its own sub-tasks land, which read the same field', () => {
+    const route = resolveDefectRollup(DEFECT, INDEX, FEATURE_LINK_FIELD);
+    const subtaskFeatureKey = 'DENP-1414';
+
+    expect(route.featureKey).toBe(subtaskFeatureKey);
+  });
+
+  it('keeps the route it walked to as an unchosen candidate, so the QA trail survives', () => {
+    const route = resolveDefectRollup(DEFECT, INDEX, FEATURE_LINK_FIELD);
+    expect(route.unchosenCandidates.map((candidate) => candidate.toKey)).toContain('INTTEST-3961');
+  });
+
+  it('names the field it used in the route, so the card can still explain itself', () => {
+    const route = resolveDefectRollup(DEFECT, INDEX, FEATURE_LINK_FIELD);
+
+    expect(route.steps.some((step) => step.kind === 'featureLink' && step.toKey === 'DENP-1414')).toBe(true);
+  });
+
+  it('still walks the links when the defect names no Feature of its own', () => {
+    const unlinkedDefect = buildIssue({ key: 'BUG-2', typeName: 'Defect', linkedKeys: ['INTTEST-3961'] });
+    const route = resolveDefectRollup(
+      unlinkedDefect, buildIndex([QA_STORY, QA_ISSUE, unlinkedDefect]), FEATURE_LINK_FIELD,
+    );
+
+    expect(route.featureKey).toBe('DENP-1288');
+    expect(route.precedenceRank).toBe('via-qa-issue');
+  });
+
+  it('still avoids a Feature this team does not track, even one named on the defect', () => {
+    const outOfScopeDefect = buildIssue({
+      key: 'BUG-3', typeName: 'Defect', featureKey: 'QEINT-613', linkedKeys: ['INTTEST-3961'],
+    });
+    const route = resolveDefectRollup(
+      outOfScopeDefect, buildIndex([QA_STORY, QA_ISSUE, outOfScopeDefect]),
+      FEATURE_LINK_FIELD, () => false, (featureKey) => featureKey.startsWith('DENP-'),
+    );
+
+    // A lane the viewer can see still beats a lane they cannot, however the Feature was named.
+    expect(route.featureKey).toBe('DENP-1288');
+  });
+});

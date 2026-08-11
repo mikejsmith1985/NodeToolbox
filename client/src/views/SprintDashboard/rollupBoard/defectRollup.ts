@@ -94,7 +94,7 @@ interface RankedCandidate {
 }
 
 /** Ranks precedence so the strongest route wins regardless of discovery order. */
-const PRECEDENCE_ORDER: DefectPrecedence[] = ['dev-story', 'via-qa-issue', 'direct-feature'];
+const PRECEDENCE_ORDER: DefectPrecedence[] = ['own-feature-link', 'dev-story', 'via-qa-issue', 'direct-feature'];
 
 /** Collects every route this defect could take, one intermediate hop at most. */
 function collectRankedCandidates(
@@ -106,6 +106,26 @@ function collectRankedCandidates(
   const ranked: RankedCandidate[] = [];
   const examined: RollUpCandidate[] = [];
   const visitedKeys = new Set<string>([defect.key]);
+
+  // The defect's OWN Feature Link, which nothing here used to read. Walking issue links answers "what
+  // does this defect touch"; this field answers "what did somebody say it delivers", and the second
+  // question has a better answer whenever it has been filled in. Missing it is how a defect ended up
+  // in one lane while its sub-tasks — which DO read the parent's Feature Link — sat in another.
+  const ownFeatureKey = readFeatureKeyOf(defect, featureLinkFieldId);
+  if (ownFeatureKey) {
+    const ownCandidate: RollUpCandidate = {
+      toKey: ownFeatureKey,
+      viaLinkTypeName: null,
+      resolvedFeatureKey: ownFeatureKey,
+    };
+    examined.push(ownCandidate);
+    ranked.push({
+      rank: 'own-feature-link',
+      featureKey: ownFeatureKey,
+      steps: [{ kind: 'featureLink', fieldId: featureLinkFieldId, toKey: ownFeatureKey }],
+      candidate: ownCandidate,
+    });
+  }
 
   for (const linkReference of readLinkedIssueReferences(defect)) {
     const linkedIssue = index.get(linkReference.key);

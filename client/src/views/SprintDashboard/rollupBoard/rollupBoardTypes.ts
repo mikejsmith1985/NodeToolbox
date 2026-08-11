@@ -107,12 +107,22 @@ export type RollUpRouteStep =
   | { kind: 'issueLink'; linkTypeName: string; toKey: string };
 
 /** Which rule of the defect precedence chain placed a defect. */
-export type DefectPrecedence = 'dev-story' | 'via-qa-issue' | 'direct-feature';
+/**
+ * How a defect reached its Feature, strongest first.
+ *
+ * `own-feature-link` outranks the rest because it is the only one nobody has to infer: somebody set
+ * the Feature Link on the defect itself, which is a deliberate statement rather than a relationship
+ * the board deduced by walking links. Every other issue type on this board already treats that field
+ * as authoritative; defects were the exception, and that is why a defect could disagree with its own
+ * sub-tasks about which Feature it delivers.
+ */
+export type DefectPrecedence = 'own-feature-link' | 'dev-story' | 'via-qa-issue' | 'direct-feature';
 
 /** Something the resolution examined but did not choose. Kept so no relationship is silently discarded. */
 export interface RollUpCandidate {
   toKey: string;
-  viaLinkTypeName: string;
+  /** The issue-link type this candidate came through, or null when it came from a field. */
+  viaLinkTypeName: string | null;
   resolvedFeatureKey: string | null;
 }
 
