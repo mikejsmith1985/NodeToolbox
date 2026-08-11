@@ -106,15 +106,33 @@ export function setAllLanesCollapsed(
  * The order is seeded from what is on screen the first time someone drags, so a single drag moves
  * one lane rather than appearing to shuffle everything.
  */
+/**
+ * Every lane in a single ordered list, so a drop always has somewhere to land.
+ *
+ * Seeding from the stored order ALONE was the bug behind "only the top few lanes can be dragged": any
+ * lane never explicitly ordered was absent from the array, so `indexOf` on it returned -1 and the drop
+ * fell through to "append to the bottom" instead of landing where it was released. Since unordered
+ * lanes render after ordered ones, that looked exactly like the tail of the board being stuck.
+ *
+ * The stored order still wins for the lanes that have one; the rest follow in the order they are
+ * currently displayed, which is the board's default sequence.
+ */
+function seedFullLaneOrder(
+  preferences: BoardPreferences,
+  allFeatureKeys: readonly string[],
+): string[] {
+  const storedOrder = preferences.laneOrder.filter((orderedKey) => allFeatureKeys.includes(orderedKey));
+  const unorderedKeys = allFeatureKeys.filter((featureKey) => !storedOrder.includes(featureKey));
+  return [...storedOrder, ...unorderedKeys];
+}
+
 export function moveLaneBefore(
   preferences: BoardPreferences,
   movedFeatureKey: string,
   targetFeatureKey: string,
   allFeatureKeys: readonly string[],
 ): BoardPreferences {
-  const seededOrder = preferences.laneOrder.length > 0
-    ? preferences.laneOrder.filter((orderedKey) => allFeatureKeys.includes(orderedKey))
-    : [...allFeatureKeys];
+  const seededOrder = seedFullLaneOrder(preferences, allFeatureKeys);
 
   // Dropping a lane on itself is a non-event. Without this it would fall through to the append
   // branch below and send the lane to the bottom — the opposite of "nothing happened".
@@ -146,10 +164,9 @@ export function moveLaneToEnd(
   allFeatureKeys: readonly string[],
   destination: 'top' | 'bottom',
 ): BoardPreferences {
-  // Seed from the currently displayed order so a first-ever move does not reshuffle everything else.
-  const seededOrder = preferences.laneOrder.length > 0
-    ? preferences.laneOrder.filter((orderedKey) => allFeatureKeys.includes(orderedKey))
-    : [...allFeatureKeys];
+  // Seed from the currently displayed order so a first-ever move does not reshuffle everything else,
+  // and so a lane that has never been ordered is still somewhere in the list rather than nowhere.
+  const seededOrder = seedFullLaneOrder(preferences, allFeatureKeys);
   const withoutMovedKey = seededOrder.filter((orderedKey) => orderedKey !== featureKey);
 
   return {
