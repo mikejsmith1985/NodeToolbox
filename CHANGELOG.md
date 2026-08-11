@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Roll-Up Board — "This Feature could not be read" now says why, on the lane itself.** The reason was
+  already being established by asking Jira about the key directly, but it was only reported in a banner
+  above the board, so the lane kept showing the bare message with nowhere to go. The specific cause now
+  sits beside the lane that raises the question, and where no cause could be established the lane says
+  *that* rather than implying one.
+- **Roll-Up Board — a Feature with no work no longer claims it could not be read.** Lanes built for
+  Features the team owns but has not broken down set the unreadable flag whenever their issue was not
+  carried through, which put a permissions-sounding warning on a Feature the PI query had demonstrably
+  just read. Those lanes never claim unreadability now.
+
+### Fixed
 - **Roll-Up Board — lane order now genuinely matches the PI Review page.** Features with no work under
   them were appended after the ones that have work, splitting the board into two separately-sorted
   groups. PI Review lists a PI's Features in one run of key order, so DENP-1387 sat first there and

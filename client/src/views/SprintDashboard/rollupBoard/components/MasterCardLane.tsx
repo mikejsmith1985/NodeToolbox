@@ -53,6 +53,8 @@ export interface MasterCardLaneProps {
   /** Per-card failure reasons, shown in place so a rejected move is never silent. */
   errorMessageByIssueKey?: Record<string, string>;
   onToggleCollapsed: (featureKey: string) => void;
+  /** Why this Feature could not be read, when the board managed to establish a reason. */
+  featureReadFailureDetail?: string | null;
   onSendToTop?: (featureKey: string) => void;
   onSendToBottom?: (featureKey: string) => void;
   /** Opens the add-work form for this Feature. Absent when the board cannot create issues. */
@@ -86,6 +88,7 @@ export function MasterCardLane({
   pendingIssueKey = null,
   errorMessageByIssueKey,
   onToggleCollapsed,
+  featureReadFailureDetail = null,
   onSendToTop,
   onSendToBottom,
   onAddWork,
@@ -156,8 +159,13 @@ export function MasterCardLane({
             — hygiene: none of these roll up to a Feature, so they need linking in Jira
           </span>
         )}
+        {/* The reason belongs here, beside the lane that raises the question — a banner elsewhere is
+            easy to miss, and "could not be read" on its own leaves nowhere to go. */}
         {isFeatureUnreadable && (
-          <span className={styles.laneVitalMissing}>Feature details could not be read</span>
+          <span className={styles.laneVitalMissing}>
+            {featureReadFailureDetail
+              ?? 'Feature details could not be read, and asking Jira about it directly produced no reason either.'}
+          </span>
         )}
 
         {hasNoWorkYet && (

@@ -166,7 +166,10 @@ export function buildFeatureWithoutWorkCard(
     featureKey,
     isSynthetic: false,
     featureIssue,
-    isFeatureUnreadable: featureIssue === null,
+    // Never "unreadable": this Feature came back from the PI query moments ago, so it demonstrably
+    // reads. A missing issue here only means it was not carried through, which is not the same thing
+    // as Jira refusing it — and claiming otherwise put a permissions warning on a healthy Feature.
+    isFeatureUnreadable: false,
     hasNoWorkYet: true,
     vitals: buildVitals(featureKey, featureIssue, [], false, storyPointsFieldIds),
     items: [],

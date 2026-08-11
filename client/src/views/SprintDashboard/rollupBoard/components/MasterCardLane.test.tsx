@@ -227,3 +227,35 @@ describe('MasterCardLane — ordering actions', () => {
     expect(onToggleCollapsed).toHaveBeenCalledWith('FEAT-1');
   });
 });
+
+describe('MasterCardLane — an unreadable Feature says why', () => {
+  /** A lane whose Feature issue could not be read — the Feature map is empty, so it resolves to null. */
+  function renderUnreadableLane(featureReadFailureDetail?: string) {
+    const lane = buildBoardLayout({
+      masterCards: buildMasterCards([buildItem('DEV-1', 'col-todo')], new Map()),
+      columns: COLUMNS,
+      filters: EMPTY_QUICK_FILTER_STATE,
+      preferences: buildPreferences({}),
+    }).lanes[0];
+
+    render(
+      <MasterCardLane
+        columns={COLUMNS}
+        featureReadFailureDetail={featureReadFailureDetail}
+        hasActiveFilters={false}
+        lane={lane}
+        onToggleCollapsed={vi.fn()}
+      />,
+    );
+  }
+
+  it('shows the reason Jira gave, beside the lane that raises the question', () => {
+    renderUnreadableLane('DENP-1288 can be opened directly but does not come back from a search.');
+    expect(screen.getByText(/does not come back from a search/)).toBeInTheDocument();
+  });
+
+  it('admits when no reason could be established, rather than implying one', () => {
+    renderUnreadableLane();
+    expect(screen.getByText(/produced no reason either/)).toBeInTheDocument();
+  });
+});
