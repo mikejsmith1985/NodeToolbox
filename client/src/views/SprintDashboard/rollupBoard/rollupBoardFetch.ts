@@ -354,9 +354,30 @@ export async function fetchRollupBoardIssues(
   );
   const featureIssues = await fetchFeaturesByKeys(referencedFeatureKeys, scope, failures);
 
+  // ── One more hop ──
+  //
+  // A defect raised in testing points at the QA issue, and the QA issue points at the Feature. The
+  // first sweep collects the QA issue but never re-reads it, so the Feature at the end of that chain
+  // was requested by nobody: its lane appeared (the ROUTE knew the key) while its details never
+  // arrived, which is what "this Feature could not be read" was really reporting all along.
+  //
+  // Exactly one further hop, matching the one-hop cap the defect precedence chain already applies —
+  // enough for defect → QA issue → Feature, and bounded so a tangle of links cannot walk the instance.
+  const secondHopKeys = collectReferencedFeatureKeys(
+    [...featureIssues.values()],
+    scope.featureLinkFieldId,
+    new Set([...allLoadedIssues.map((issue) => issue.key), ...featureIssues.keys()]),
+  ).filter((featureKey) => !featureIssues.has(featureKey));
+
+  if (secondHopKeys.length > 0) {
+    const secondHopIssues = await fetchFeaturesByKeys(secondHopKeys, scope, failures);
+    for (const [featureKey, featureIssue] of secondHopIssues) featureIssues.set(featureKey, featureIssue);
+  }
+
   // A key that was asked for but did not come back is worth one direct question each, so the board
   // reports WHY a Feature is missing instead of only that it is.
-  const missingFeatureKeys = referencedFeatureKeys.filter((featureKey) => !featureIssues.has(featureKey));
+  const missingFeatureKeys = [...referencedFeatureKeys, ...secondHopKeys]
+    .filter((featureKey) => !featureIssues.has(featureKey));
   const featureReadFailures = await probeUnreadableFeatures(missingFeatureKeys, scope);
 
   return {
