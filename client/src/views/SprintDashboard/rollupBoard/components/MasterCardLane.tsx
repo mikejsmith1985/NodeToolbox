@@ -55,6 +55,8 @@ export interface MasterCardLaneProps {
   onToggleCollapsed: (featureKey: string) => void;
   onSendToTop?: (featureKey: string) => void;
   onSendToBottom?: (featureKey: string) => void;
+  /** Opens the add-work form for this Feature. Absent when the board cannot create issues. */
+  onAddWork?: (featureKey: string, featureSummary: string) => void;
   onOpenIssue?: (issueKey: string) => void;
   onSelectFamily?: (item: RollupBoardItem) => void;
 }
@@ -86,10 +88,11 @@ export function MasterCardLane({
   onToggleCollapsed,
   onSendToTop,
   onSendToBottom,
+  onAddWork,
   onOpenIssue,
   onSelectFamily,
 }: MasterCardLaneProps) {
-  const { vitals, featureKey, isSynthetic, isFeatureUnreadable } = lane.masterCard;
+  const { vitals, featureKey, isSynthetic, isFeatureUnreadable, hasNoWorkYet } = lane.masterCard;
   const headerClassName = isSynthetic
     ? `${styles.laneHeader} ${styles.laneHeaderSynthetic}`
     : styles.laneHeader;
@@ -155,6 +158,21 @@ export function MasterCardLane({
         )}
         {isFeatureUnreadable && (
           <span className={styles.laneVitalMissing}>Feature details could not be read</span>
+        )}
+
+        {hasNoWorkYet && (
+          <span className={styles.laneVitalMissing}>
+            No work rolls up to this Feature yet — it is committed to the PI with nothing underneath
+          </span>
+        )}
+
+        {/* Sits with Send to top / bottom because it is the same kind of action: something you do TO a
+            lane. Offered on every lane, not just empty ones — a Feature usually needs more stories
+            after the first few land. */}
+        {onAddWork && !isSynthetic && (
+          <button className={styles.actionButton} onClick={() => onAddWork(featureKey, vitals.summary)} type="button">
+            Add work
+          </button>
         )}
 
         {onSendToTop && (

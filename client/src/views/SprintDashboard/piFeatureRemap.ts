@@ -123,7 +123,7 @@ function buildJqlFieldReference(fieldId: string): string {
   return fieldId.includes(' ') ? `"${fieldId}"` : fieldId;
 }
 
-function buildFeatureFieldUpdateFields(featureLinkField: string, targetFeatureKey: string): Record<string, unknown> {
+export function buildFeatureFieldUpdateFields(featureLinkField: string, targetFeatureKey: string): Record<string, unknown> {
   if (featureLinkField === 'parent') {
     return { parent: { key: targetFeatureKey } };
   }

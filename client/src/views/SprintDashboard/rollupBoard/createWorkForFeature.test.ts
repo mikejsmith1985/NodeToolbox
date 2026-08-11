@@ -11,7 +11,6 @@ import {
   buildNewWorkPayload,
   describeCreationOutcome,
   isNewWorkRequestComplete,
-  shapeFieldValue,
 } from './createWorkForFeature.ts';
 
 const REQUEST = { projectKey: 'ENCUC', issueTypeId: '10001', summary: 'Wire up the retry handler' };
@@ -56,33 +55,12 @@ describe('isNewWorkRequestComplete — never send a half-filled create', () => {
   });
 });
 
-describe('shapeFieldValue — the schema decides, never a guess', () => {
-  it('wraps a select value the way Jira wants it', () => {
-    expect(shapeFieldValue({ schema: { type: 'option' } }, 'PI 26.4')).toEqual({ value: 'PI 26.4' });
-  });
-
-  it('wraps a multi-select value in an array', () => {
-    expect(shapeFieldValue({ schema: { type: 'array' } }, 'PI 26.4')).toEqual([{ value: 'PI 26.4' }]);
-  });
-
-  it('sends a text field as a bare string', () => {
-    expect(shapeFieldValue({ schema: { type: 'string' } }, 'DENP-1387')).toBe('DENP-1387');
-  });
-
-  it('returns null when the instance does not offer the field, so it is omitted not guessed', () => {
-    expect(shapeFieldValue(undefined, 'DENP-1387')).toBeNull();
-  });
-
-  it('returns null for an empty value rather than writing a blank over something', () => {
-    expect(shapeFieldValue({ schema: { type: 'string' } }, '   ')).toBeNull();
-  });
-});
+/** Stands in for resolvePiFieldUpdateValue, which the app already owns and tests. */
+const shapePiValue = (piValue: string) => ({ value: piValue });
+/** Stands in for buildFeatureFieldUpdateFields, likewise already owned and tested. */
+const shapeFeatureLink = (fieldId: string, featureKey: string) => ({ [fieldId]: featureKey });
 
 describe('buildBoardVisibilityPayload — both fields, for different reasons', () => {
-  const SHAPES = {
-    customfield_10108: { schema: { type: 'string' } },
-    customfield_10301: { schema: { type: 'option' } },
-  };
   const FIELDS = {
     featureLinkFieldId: 'customfield_10108',
     featureKey: 'DENP-1387',
@@ -91,7 +69,7 @@ describe('buildBoardVisibilityPayload — both fields, for different reasons', (
   };
 
   it('sets the Feature Link so the issue lands in the right lane, and the PI so it is in scope at all', () => {
-    expect(buildBoardVisibilityPayload(FIELDS, SHAPES)).toEqual({
+    expect(buildBoardVisibilityPayload(FIELDS, shapePiValue, shapeFeatureLink)).toEqual({
       fields: {
         customfield_10108: 'DENP-1387',
         customfield_10301: { value: 'PI 26.4' },
@@ -99,18 +77,31 @@ describe('buildBoardVisibilityPayload — both fields, for different reasons', (
     });
   });
 
-  it('still sets the Feature Link when the instance has no PI field', () => {
-    const payload = buildBoardVisibilityPayload({ ...FIELDS, piFieldId: '' }, SHAPES);
-    expect(payload).toEqual({ fields: { customfield_10108: 'DENP-1387' } });
+  it('delegates both shapes rather than deciding them here, so they cannot drift', () => {
+    const payload = buildBoardVisibilityPayload(
+      FIELDS,
+      (piValue) => `plain:${piValue}`,
+      (fieldId, featureKey) => ({ parent: { key: featureKey }, [fieldId]: featureKey }),
+    );
+
+    expect(payload!.fields.customfield_10301).toBe('plain:PI 26.4');
+    expect(payload!.fields.parent).toEqual({ key: 'DENP-1387' });
   });
 
-  it('omits a field this project does not carry rather than writing something Jira refuses', () => {
-    const payload = buildBoardVisibilityPayload(FIELDS, { customfield_10108: { schema: { type: 'string' } } });
+  it('still sets the Feature Link when the board is not scoped by a PI', () => {
+    const payload = buildBoardVisibilityPayload(
+      { ...FIELDS, piFieldId: '', piValue: '' }, shapePiValue, shapeFeatureLink,
+    );
     expect(payload).toEqual({ fields: { customfield_10108: 'DENP-1387' } });
   });
 
   it('returns null when neither field can be written, so no empty edit is sent', () => {
-    expect(buildBoardVisibilityPayload(FIELDS, {})).toBeNull();
+    const payload = buildBoardVisibilityPayload(
+      { featureLinkFieldId: '', featureKey: '', piFieldId: '', piValue: '' },
+      shapePiValue,
+      shapeFeatureLink,
+    );
+    expect(payload).toBeNull();
   });
 });
 

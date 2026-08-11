@@ -75,6 +75,11 @@
 
 .columnHeaderRow {
   display: grid;
+  /* `max-content` lets the tracks keep their minimum width instead of being squeezed to fit, which is
+     what makes the scroller actually have something to scroll; `min-width: 100%` still fills the space
+     when there IS room. Without this the last column is simply unreachable at larger text sizes. */
+  width: max-content;
+  min-width: 100%;
   gap: var(--spacing-xs);
   padding-bottom: var(--spacing-xs);
   border-bottom: 1px solid var(--color-border);
@@ -178,6 +183,10 @@
 
 .laneCells {
   display: grid;
+  /* Must match .columnHeaderRow exactly or the headers stop lining up with their cells once the board
+     is wider than the window. */
+  width: max-content;
+  min-width: 100%;
   gap: var(--spacing-xs);
   padding: var(--spacing-xs);
 }

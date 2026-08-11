@@ -25,7 +25,7 @@ import IssueDetailPanel from '../../../components/IssueDetailPanel/index.tsx';
 import { TransitionRequiredFields } from '../../../components/TransitionRequiredFields/index.tsx';
 import type { JiraIssue } from '../../../types/jira.ts';
 import { loadConfiguredFeatureLinkFieldId } from '../../../utils/featureLink.ts';
-import { createIssue, getIssueTypeFields, getProjectIssueTypes, jiraPut } from '../../../services/jiraApi.ts';
+import { createIssue, getProjectIssueTypes, jiraGet, jiraPut } from '../../../services/jiraApi.ts';
 import type { CreateMetaIssueType } from '../../../types/jira.ts';
 import { buildJqlFieldReference, loadHygieneFieldConfig, readConfiguredPiFieldId } from '../../Hygiene/checks/hygieneFieldConfig.ts';
 import {
@@ -55,19 +55,26 @@ import { parseCardTargetId, resolveCardDrop } from './cardDropRouting.ts';
 import { loadColumnOptionSources, type ColumnOptionSources } from './columnOptionSources.ts';
 import { executeStatusMove } from './statusMoveWriter.ts';
 import { resolveBoardItems } from './featureRollup.ts';
-import { buildMasterCards } from './masterCards.ts';
-import { fetchFeaturesInPi, fetchRollupBoardIssues, fetchSprintPiReconciliation } from './rollupBoardFetch.ts';
+import { buildFeatureWithoutWorkCard, buildMasterCards } from './masterCards.ts';
+import {
+  fetchFeaturesInPi,
+  fetchRollupBoardIssues,
+  fetchSprintPiReconciliation,
+  fetchTeamIssuesForFeatures,
+} from './rollupBoardFetch.ts';
 import {
   buildBoardVisibilityPayload,
   buildNewWorkPayload,
   describeCreationOutcome,
-  type CreateMetaFieldShape,
 } from './createWorkForFeature.ts';
+import { buildFeatureFieldUpdateFields, resolvePiFieldUpdateValue } from '../piFeatureRemap.ts';
+import { sumUnplannedStoryPoints } from './emptyFeatureScan.ts';
 import {
-  selectFeaturesWithoutWork,
-  sumUnplannedStoryPoints,
-  type FeatureWithoutWork,
-} from './emptyFeatureScan.ts';
+  readFeatureKeysFromTeamIssues,
+  selectTeamOwnedEmptyFeatures,
+  type TeamOwnedEmptyFeature,
+} from './teamFeatureOwnership.ts';
+import { useStandupRosterStore } from '../hooks/useStandupRosterStore.ts';
 import { describeReconciliation, type SprintPiReconciliation } from '../sprintPiReconciliation.ts';
 import {
   clearTeamFeatureScope,
@@ -238,7 +245,9 @@ export default function RollupBoardTab({
   const [featureScope, setFeatureScope] = useState<FeatureScopeSettings>(() => loadTeamFeatureScope(teamProfileId));
   const [hasOwnScope, setHasOwnScope] = useState(() => hasTeamOwnFeatureScope(teamProfileId));
   const [sprintPiGap, setSprintPiGap] = useState<SprintPiReconciliation | null>(null);
-  const [featuresWithoutWork, setFeaturesWithoutWork] = useState<FeatureWithoutWork[]>([]);
+  const [featuresWithoutWork, setFeaturesWithoutWork] = useState<TeamOwnedEmptyFeature[]>([]);
+  const [featureIssuesWithoutWork, setFeatureIssuesWithoutWork] = useState<Map<string, JiraIssue>>(new Map());
+  const rosterMembers = useStandupRosterStore((rosterState) => rosterState.rosterMembers);
   const [addWorkFeature, setAddWorkFeature] = useState<{ key: string; summary: string } | null>(null);
   const [creatableIssueTypes, setCreatableIssueTypes] = useState<CreateMetaIssueType[]>([]);
   const [isCreatingWork, setIsCreatingWork] = useState(false);
@@ -328,7 +337,8 @@ export default function RollupBoardTab({
   }, [boardId, scopeMode, selectedPiValue]);
 
   // Asked top-down, unlike every other query here: a Feature nobody has broken down has no work to be
-  // found from, so it can only be discovered by asking about Features directly.
+  // found from, so it can only be discovered by asking about Features directly. It is then narrowed to
+  // the team, because a PI holds every team's Features and an unnarrowed list ran to 77 rows.
   useEffect(() => {
     const isPiScoped = scopeMode === DASHBOARD_PI_SCOPE_MODE && Boolean(selectedPiValue);
     if (!isPiScoped || featureScope.featureProjectKeys.length === 0) {
@@ -337,30 +347,49 @@ export default function RollupBoardTab({
     }
 
     let isMounted = true;
+    const storyPointsFieldIds = getStoryPointsCandidateFieldIds();
+    const featureLinkFieldId = loadConfiguredFeatureLinkFieldId();
     const scanScope: RollupBoardScope = {
       boardId: boardId ?? 0,
       teamProfileId,
-      featureLinkFieldId: loadConfiguredFeatureLinkFieldId(),
+      featureLinkFieldId,
       subStatusFieldId,
-      storyPointsFieldIds: getStoryPointsCandidateFieldIds(),
+      storyPointsFieldIds,
     };
 
-    void fetchFeaturesInPi(
-      featureScope.featureProjectKeys,
-      selectedPiValue!,
-      buildJqlFieldReference(readConfiguredPiFieldId()),
-      scanScope,
-    ).then((piFeatures) => {
-      if (!isMounted) return;
-      setFeaturesWithoutWork(selectFeaturesWithoutWork(
-        piFeatures,
-        loadState.masterCards.map((masterCard) => masterCard.featureKey),
-        getStoryPointsCandidateFieldIds(),
-      ));
-    });
+    async function scanForUnbrokenFeatures(): Promise<void> {
+      const piFeatures = await fetchFeaturesInPi(
+        featureScope.featureProjectKeys,
+        selectedPiValue!,
+        buildJqlFieldReference(readConfiguredPiFieldId()),
+        scanScope,
+      );
+      if (!isMounted || piFeatures.length === 0) return;
 
+      // The third ownership test: any Feature a team-project issue points at is one the team is
+      // demonstrably working on, whoever it happens to be assigned to.
+      const teamIssues = await fetchTeamIssuesForFeatures(
+        projectKey, piFeatures.map((feature) => feature.key), featureLinkFieldId,
+      );
+
+      const productOwnerQueryValues = rosterMembers
+        .filter((rosterMember) => rosterMember.roleCapabilities?.canProductOwner === true)
+        .map((rosterMember) => rosterMember.assigneeQueryValue);
+
+      if (!isMounted) return;
+      setFeatureIssuesWithoutWork(new Map(piFeatures.map((feature) => [feature.key, feature])));
+      setFeaturesWithoutWork(selectTeamOwnedEmptyFeatures(piFeatures, {
+        productOwnerQueryValues,
+        featureKeysWithTeamChildren: readFeatureKeysFromTeamIssues(teamIssues, featureLinkFieldId),
+        featureKeysWithWork: loadState.masterCards.map((masterCard) => masterCard.featureKey),
+        storyPointsFieldIds,
+      }));
+    }
+
+    void scanForUnbrokenFeatures();
     return () => { isMounted = false; };
-  }, [boardId, scopeMode, selectedPiValue, featureScope, teamProfileId, subStatusFieldId, loadState.masterCards]);
+  }, [boardId, scopeMode, selectedPiValue, featureScope, teamProfileId, subStatusFieldId,
+    loadState.masterCards, projectKey, rosterMembers]);
 
   /** Opens the add-work form for one Feature, loading the project's own issue types first. */
   const openAddWork = useCallback(async (featureKey: string, featureSummary: string): Promise<void> => {
@@ -391,16 +420,26 @@ export default function RollupBoardTab({
     try {
       const created = await createIssue(buildNewWorkPayload({ projectKey, issueTypeId, summary }));
 
-      const fieldMeta = await getIssueTypeFields(projectKey, issueTypeId).catch(() => ({ values: [] }));
-      const fieldShapesById: Record<string, CreateMetaFieldShape | undefined> = {};
-      for (const field of fieldMeta.values ?? []) fieldShapesById[field.fieldId] = field;
+      // The PI value is shaped by the same writer the PI closeout remap uses, read from the new
+      // issue's own edit metadata — this instance stores PI as a select, and a bare string is refused.
+      const editMeta = await jiraGet<{ fields?: Record<string, unknown> }>(
+        `/rest/api/2/issue/${encodeURIComponent(created.key)}/editmeta`,
+      ).catch(() => ({ fields: {} as Record<string, unknown> }));
+      const piFieldId = scopeMode === DASHBOARD_PI_SCOPE_MODE ? readConfiguredPiFieldId() : '';
 
-      const visibilityPayload = buildBoardVisibilityPayload({
-        featureLinkFieldId: loadConfiguredFeatureLinkFieldId(),
-        featureKey: addWorkFeature.key,
-        piFieldId: scopeMode === DASHBOARD_PI_SCOPE_MODE ? readConfiguredPiFieldId() : '',
-        piValue: selectedPiValue ?? '',
-      }, fieldShapesById);
+      const visibilityPayload = buildBoardVisibilityPayload(
+        {
+          featureLinkFieldId: loadConfiguredFeatureLinkFieldId(),
+          featureKey: addWorkFeature.key,
+          piFieldId,
+          piValue: selectedPiValue ?? '',
+        },
+        (piValue) => resolvePiFieldUpdateValue(
+          (editMeta.fields ?? {})[piFieldId] as Parameters<typeof resolvePiFieldUpdateValue>[0],
+          piValue,
+        ),
+        buildFeatureFieldUpdateFields,
+      );
 
       let wasMadeVisible = false;
       let visibilityError: string | null = null;
@@ -425,9 +464,22 @@ export default function RollupBoardTab({
     }
   }, [addWorkFeature, projectKey, scopeMode, selectedPiValue, loadBoard]);
 
+  /**
+   * The lanes the board draws: the ones work rolls up to, followed by the Features the team owns and
+   * has not broken down. Appended last so the board still opens on real work.
+   */
+  const laneMasterCards = useMemo(() => [
+    ...loadState.masterCards,
+    ...featuresWithoutWork.map((feature) => buildFeatureWithoutWorkCard(
+      feature.featureKey,
+      featureIssuesWithoutWork.get(feature.featureKey) ?? null,
+      getStoryPointsCandidateFieldIds(),
+    )),
+  ], [loadState.masterCards, featuresWithoutWork, featureIssuesWithoutWork]);
+
   const layout = useMemo(
-    () => buildBoardLayout({ masterCards: loadState.masterCards, columns: renderedColumns, filters, preferences }),
-    [loadState.masterCards, renderedColumns, filters, preferences],
+    () => buildBoardLayout({ masterCards: laneMasterCards, columns: renderedColumns, filters, preferences }),
+    [laneMasterCards, renderedColumns, filters, preferences],
   );
 
   /** Persists a preference change immediately — a lane the viewer moved should stay moved. */
@@ -697,38 +749,6 @@ export default function RollupBoardTab({
         </p>
       )}
 
-      {/* The board's blind spot, stated: lanes are built from work upward, so a Feature nobody has
-          broken down has no lane at all — which is exactly when somebody most needs to see it. */}
-      {featuresWithoutWork.length > 0 && (
-        <div className={styles.boardWarning} data-testid="rollup-features-without-work">
-          ⚠ {featuresWithoutWork.length}{' '}
-          {featuresWithoutWork.length === 1 ? 'Feature is' : 'Features are'} committed to this PI with no
-          work under {featuresWithoutWork.length === 1 ? 'it' : 'them'}
-          {sumUnplannedStoryPoints(featuresWithoutWork) > 0
-            ? ` — ${sumUnplannedStoryPoints(featuresWithoutWork)} story points with nothing planned`
-            : ''}:
-          <ul>
-            {featuresWithoutWork.map((feature) => (
-              <li key={feature.featureKey}>
-                <strong>{feature.featureKey}</strong> {feature.summary}
-                {feature.statusName ? ` · ${feature.statusName}` : ''}
-                {feature.storyPoints !== null ? ` · ${feature.storyPoints} pts` : ''}
-                {feature.assigneeDisplayName ? ` · ${feature.assigneeDisplayName}` : ''}
-                {projectKey !== '' && (
-                  <button
-                    className={styles.actionButton}
-                    onClick={() => void openAddWork(feature.featureKey, feature.summary)}
-                    type="button"
-                  >
-                    Add work
-                  </button>
-                )}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
       {addWorkFeature !== null && (
         <AddWorkDialog
           errorMessage={createWorkError}
@@ -744,6 +764,18 @@ export default function RollupBoardTab({
 
       {createWorkOutcome !== null && (
         <p className={styles.boardStatusLine} data-testid="rollup-create-outcome">{createWorkOutcome}</p>
+      )}
+
+      {/* One line, not a list: the Features themselves are lanes below, where they can be acted on. */}
+      {featuresWithoutWork.length > 0 && (
+        <p className={styles.boardWarning} data-testid="rollup-features-without-work">
+          ⚠ {featuresWithoutWork.length}{' '}
+          {featuresWithoutWork.length === 1 ? 'Feature this team owns has' : 'Features this team owns have'}
+          {' '}no work under {featuresWithoutWork.length === 1 ? 'it' : 'them'}
+          {sumUnplannedStoryPoints(featuresWithoutWork) > 0
+            ? ` — ${sumUnplannedStoryPoints(featuresWithoutWork)} story points with nothing planned`
+            : ''}. {featuresWithoutWork.length === 1 ? 'Its lane is' : 'Their lanes are'} at the end of the board.
+        </p>
       )}
 
       {/* A Feature that simply "could not be read" leaves nowhere to go. Each one is asked about
@@ -905,6 +937,9 @@ export default function RollupBoardTab({
               highlightedFamilyKey={highlightedFamilyKey}
               key={lane.masterCard.featureKey}
               lane={lane}
+              onAddWork={projectKey !== ''
+                ? (laneFeatureKey, laneSummary) => void openAddWork(laneFeatureKey, laneSummary)
+                : undefined}
               onOpenIssue={(issueKey) => void handleOpenIssue(issueKey)}
               onSelectFamily={(item) => setHighlightedFamilyKey(item.parentKey ?? item.key)}
               onSendToBottom={(featureKey) =>

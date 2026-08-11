@@ -148,3 +148,27 @@ export function buildMasterCards(
     },
   ];
 }
+
+/**
+ * Builds the lane for a Feature the team owns but has not broken down.
+ *
+ * These are the deliberate exception to the rule above. A lane normally means real work, and an empty
+ * one would imply work that is not there — but a Feature committed to the PI with nothing under it is
+ * itself the thing worth seeing, and burying it in a list below the board proved easy to scroll past.
+ * It carries no items, so it reads as a gap rather than as progress.
+ */
+export function buildFeatureWithoutWorkCard(
+  featureKey: string,
+  featureIssue: JiraIssue | null,
+  storyPointsFieldIds: readonly string[] = [],
+): MasterCard {
+  return {
+    featureKey,
+    isSynthetic: false,
+    featureIssue,
+    isFeatureUnreadable: featureIssue === null,
+    hasNoWorkYet: true,
+    vitals: buildVitals(featureKey, featureIssue, [], false, storyPointsFieldIds),
+    items: [],
+  };
+}

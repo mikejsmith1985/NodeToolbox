@@ -1,0 +1,183 @@
+// teamFeatureOwnership.test.ts — Proves the empty-Feature list is the team's own, and short.
+//
+// Without these filters the check returned 77 Features for a team that owns a handful: other teams'
+// work, and a great many cancelled ones. A list that long is wallpaper, not a signal.
+
+import { describe, expect, it } from 'vitest';
+
+import {
+  isFeatureDone,
+  readFeatureKeysFromTeamIssues,
+  selectTeamOwnedEmptyFeatures,
+} from './teamFeatureOwnership.ts';
+
+const PO_QUERY_VALUES = ['smithm', 'phatates'];
+
+/** Builds a Feature the way a Jira search returns one. */
+function makeFeature(key: string, extraFields: Record<string, unknown> = {}) {
+  return {
+    key,
+    fields: {
+      summary: `${key} summary`,
+      status: { name: 'Ready Backlog', statusCategory: { key: 'new' } },
+      ...extraFields,
+    },
+  };
+}
+
+/** The inputs with nothing owned, so each test opts into exactly the ownership it means to prove. */
+const NO_OWNERSHIP = {
+  productOwnerQueryValues: [] as string[],
+  featureKeysWithTeamChildren: [] as string[],
+  featureKeysWithWork: [] as string[],
+};
+
+describe('isFeatureDone — cancelled counts as finished', () => {
+  it('is true for the done category however the status is named', () => {
+    const cancelled = { fields: { status: { name: 'Cancelled', statusCategory: { key: 'done' } } } };
+    expect(isFeatureDone(cancelled)).toBe(true);
+  });
+
+  it('is false for work still in flight', () => {
+    expect(isFeatureDone(makeFeature('A-1'))).toBe(false);
+  });
+
+  it('is false when Jira returned no status at all', () => {
+    expect(isFeatureDone({ fields: {} })).toBe(false);
+  });
+});
+
+describe('selectTeamOwnedEmptyFeatures — the three ways a Feature belongs to this team', () => {
+  it('claims a Feature assigned to the team\'s Product Owner', () => {
+    const feature = makeFeature('DENP-1387', { assignee: { name: 'smithm' } });
+    const result = selectTeamOwnedEmptyFeatures([feature], {
+      ...NO_OWNERSHIP, productOwnerQueryValues: PO_QUERY_VALUES,
+    });
+
+    expect(result).toHaveLength(1);
+    expect(result[0].ownershipReason).toBe('assigned-to-po');
+  });
+
+  it('claims a Feature reported by the team\'s Product Owner', () => {
+    const feature = makeFeature('DENP-1387', { reporter: { name: 'phatates' } });
+    const result = selectTeamOwnedEmptyFeatures([feature], {
+      ...NO_OWNERSHIP, productOwnerQueryValues: PO_QUERY_VALUES,
+    });
+
+    expect(result[0].ownershipReason).toBe('reported-by-po');
+  });
+
+  it('claims a Feature that already has a child in the team\'s project, whoever owns it', () => {
+    const result = selectTeamOwnedEmptyFeatures([makeFeature('DENP-1387')], {
+      ...NO_OWNERSHIP, featureKeysWithTeamChildren: ['DENP-1387'],
+    });
+
+    expect(result[0].ownershipReason).toBe('has-team-child');
+  });
+
+  it('matches a Product Owner by display name as well as username', () => {
+    const feature = makeFeature('DENP-1387', { assignee: { displayName: 'Phatate, Smita' } });
+    const result = selectTeamOwnedEmptyFeatures([feature], {
+      ...NO_OWNERSHIP, productOwnerQueryValues: ['Phatate, Smita'],
+    });
+
+    expect(result).toHaveLength(1);
+  });
+
+  it('leaves another team\'s Feature alone — the 77-row problem', () => {
+    const otherTeamFeature = makeFeature('DASP-448', { assignee: { name: 'someone-else' } });
+    const result = selectTeamOwnedEmptyFeatures([otherTeamFeature], {
+      ...NO_OWNERSHIP, productOwnerQueryValues: PO_QUERY_VALUES,
+    });
+
+    expect(result).toEqual([]);
+  });
+
+  it('claims nothing at all when the roster names no Product Owner', () => {
+    const feature = makeFeature('DENP-1387', { assignee: { name: 'smithm' } });
+    expect(selectTeamOwnedEmptyFeatures([feature], NO_OWNERSHIP)).toEqual([]);
+  });
+});
+
+describe('selectTeamOwnedEmptyFeatures — what it discards', () => {
+  const OWNED = { ...NO_OWNERSHIP, productOwnerQueryValues: PO_QUERY_VALUES };
+
+  it('drops a finished Feature even when the team owns it', () => {
+    const cancelled = makeFeature('DENP-1', {
+      assignee: { name: 'smithm' },
+      status: { name: 'Cancelled', statusCategory: { key: 'done' } },
+    });
+
+    expect(selectTeamOwnedEmptyFeatures([cancelled], OWNED)).toEqual([]);
+  });
+
+  it('drops a Feature that already has a lane, so nothing is listed twice', () => {
+    const feature = makeFeature('DENP-1387', { assignee: { name: 'smithm' } });
+    const result = selectTeamOwnedEmptyFeatures([feature], {
+      ...OWNED, featureKeysWithWork: ['DENP-1387'],
+    });
+
+    expect(result).toEqual([]);
+  });
+
+  it('keeps the owned, unfinished, unbroken-down one out of a realistic mix', () => {
+    const features = [
+      makeFeature('DENP-1387', { assignee: { name: 'smithm' } }),
+      makeFeature('DENP-1393', { assignee: { name: 'smithm' } }),
+      makeFeature('DASP-448', { assignee: { name: 'other' } }),
+      makeFeature('DENP-9', {
+        assignee: { name: 'smithm' },
+        status: { name: 'Cancelled', statusCategory: { key: 'done' } },
+      }),
+    ];
+
+    const result = selectTeamOwnedEmptyFeatures(features, {
+      ...OWNED, featureKeysWithWork: ['DENP-1393'],
+    });
+
+    expect(result.map((feature) => feature.featureKey)).toEqual(['DENP-1387']);
+  });
+});
+
+describe('selectTeamOwnedEmptyFeatures — what it carries through', () => {
+  it('carries status, points and assignee so the Feature can be acted on', () => {
+    const feature = makeFeature('DENP-1387', {
+      assignee: { name: 'smithm', displayName: 'Smith, Michael (CTR)' },
+      customfield_10016: 40,
+    });
+
+    const [result] = selectTeamOwnedEmptyFeatures([feature], {
+      ...NO_OWNERSHIP,
+      productOwnerQueryValues: PO_QUERY_VALUES,
+      storyPointsFieldIds: ['customfield_10016'],
+    });
+
+    expect(result.statusName).toBe('Ready Backlog');
+    expect(result.storyPoints).toBe(40);
+    expect(result.assigneeDisplayName).toBe('Smith, Michael (CTR)');
+  });
+});
+
+describe('readFeatureKeysFromTeamIssues — the third ownership test, made concrete', () => {
+  it('reads a Feature Link stored as a plain key string', () => {
+    const teamIssues = [{ fields: { customfield_10108: 'DENP-1387' } }];
+    expect(readFeatureKeysFromTeamIssues(teamIssues, 'customfield_10108')).toEqual(['DENP-1387']);
+  });
+
+  it('reads a Feature Link stored as an issue object', () => {
+    const teamIssues = [{ fields: { customfield_10108: { key: 'DENP-1387' } } }];
+    expect(readFeatureKeysFromTeamIssues(teamIssues, 'customfield_10108')).toEqual(['DENP-1387']);
+  });
+
+  it('reports each Feature once however many children point at it', () => {
+    const teamIssues = [
+      { fields: { customfield_10108: 'DENP-1387' } },
+      { fields: { customfield_10108: 'DENP-1387' } },
+    ];
+    expect(readFeatureKeysFromTeamIssues(teamIssues, 'customfield_10108')).toEqual(['DENP-1387']);
+  });
+
+  it('ignores an issue with no Feature Link at all', () => {
+    expect(readFeatureKeysFromTeamIssues([{ fields: {} }, {}], 'customfield_10108')).toEqual([]);
+  });
+});
