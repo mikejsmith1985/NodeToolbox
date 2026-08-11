@@ -27,8 +27,12 @@ describe('buildFeaturesInPiJql — ask the Feature projects, not the team projec
 
     expect(jql).toBe(
       'issuetype = Feature AND project in ("DENP") AND cf[10301] = '
-      + '"PI 26.4 (07/30/26 - 10/07/26)" ORDER BY key ASC',
+      + '"PI 26.4 (07/30/26 - 10/07/26)" AND statusCategory != Done ORDER BY key ASC',
     );
+  });
+
+  it('excludes finished Features, since a cancelled one is not a gap to fill', () => {
+    expect(buildFeaturesInPiJql(['DENP'], PI_NAME, 'cf[10301]')).toContain('statusCategory != Done');
   });
 
   it('covers every configured Feature project, since a team can own more than one', () => {

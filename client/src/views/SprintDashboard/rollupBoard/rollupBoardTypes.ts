@@ -193,6 +193,8 @@ export interface MasterCard {
   featureIssue: JiraIssue | null;
   /** The Feature key resolved but its issue could not be read — kept visible rather than folded away. */
   isFeatureUnreadable: boolean;
+  /** True for a Feature the team owns that nothing rolls up to yet — a gap, not progress. */
+  hasNoWorkYet?: boolean;
   vitals: MasterCardVitals;
   /** The Feature's COMPLETE set. Filtering never mutates this, which is why vitals ignore filters. */
   items: RollupBoardItem[];

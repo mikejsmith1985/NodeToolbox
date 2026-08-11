@@ -402,3 +402,31 @@ export async function fetchFeaturesInPi(
     return [];
   }
 }
+
+/**
+ * Finds which of these Features already have an issue in the team's own project.
+ *
+ * This is the ownership test that does not depend on anyone having filled a field in correctly: if the
+ * team has raised work against a Feature, it is the team's Feature, whatever its assignee says.
+ */
+export async function fetchTeamIssuesForFeatures(
+  teamProjectKey: string,
+  featureKeys: readonly string[],
+  featureLinkFieldId: string,
+): Promise<JiraIssue[]> {
+  if (!teamProjectKey || featureKeys.length === 0 || !featureLinkFieldId) return [];
+
+  try {
+    const chunkResults = await Promise.all(
+      chunkList(featureKeys, FEATURE_KEY_CHUNK_SIZE).map((featureKeyChunk) =>
+        jiraGet<JiraSearchResponse>(buildSearchPath(
+          `project = "${teamProjectKey}" AND "${featureLinkFieldId}" in (${featureKeyChunk.join(', ')})`,
+          featureLinkFieldId,
+        )).catch(() => ({ issues: [] as JiraIssue[] })),
+      ),
+    );
+    return chunkResults.flatMap((chunkResult) => chunkResult.issues ?? []);
+  } catch {
+    return [];
+  }
+}

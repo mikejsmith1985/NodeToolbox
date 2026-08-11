@@ -46,6 +46,8 @@ export function buildFeaturesInPiJql(
     `issuetype = ${FEATURE_ISSUE_TYPE_NAME}`,
     `project in (${projectList})`,
     `${piFieldReference} = ${quoteJqlValue(trimmedPiName)}`,
+    // Finished Features are not a gap to fill, however they finished — cancelled included.
+    'statusCategory != Done',
   ].join(' AND ') + ' ORDER BY key ASC';
 }
 

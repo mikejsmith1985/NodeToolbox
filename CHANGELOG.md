@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Roll-Up Board — empty Features are lanes now, and only the team's own.** The first cut listed every
+  Feature in the PI with no work under it, which on a shared PI meant **77 rows** of mostly other
+  teams' and cancelled work filling the screen above the board. It is now narrowed three ways: finished
+  Features are excluded by status **category** (so Cancelled goes too), and a Feature counts as this
+  team's only if the team's Product Owner is its **assignee** or its **reporter**, or it already has a
+  **child issue in the team's project** — the last catching Features nobody assigned properly but the
+  team is demonstrably working on. The survivors render as real lanes at the end of the board, marked
+  as having nothing underneath, rather than as a list you scroll past; only a one-line summary remains
+  above.
+- **Roll-Up Board — Add work sits with Send to top / bottom on every lane**, not just empty ones, since
+  a Feature usually needs more stories after the first few land.
+- **Roll-Up Board — the board scrolls horizontally again.** The column tracks were being squeezed to
+  fit the window instead of holding their minimum width, so the scroller never had anything to scroll
+  and the last column (Unmapped) became unreachable at larger text sizes. Header and lane rows now size
+  to their content and fill the window only when there is room to spare.
+
+### Fixed
+- **New work created from the board sets its PI the way the rest of the app does.** The create path was
+  shaping the PI and Feature Link values from create metadata on its own, when `resolvePiFieldUpdateValue`
+  and `buildFeatureFieldUpdateFields` — already used by the PI closeout remap against this instance —
+  settle both. Both are now delegated, so the two paths cannot drift.
+
 ### Added
 - **Roll-Up Board — create work directly from a Feature.** Each Feature listed as having no work under
   it now offers **Add work**: pick an issue type, type a summary, and the issue is created in the

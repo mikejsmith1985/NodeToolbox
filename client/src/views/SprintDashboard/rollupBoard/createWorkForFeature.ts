@@ -13,17 +13,6 @@
 
 // ── Named constants ──
 
-/** Jira schema types this module knows how to shape a value for. */
-const OPTION_SCHEMA_TYPE = 'option';
-const STRING_SCHEMA_TYPE = 'string';
-const ARRAY_SCHEMA_TYPE = 'array';
-
-/** One field as the create/edit metadata describes it. */
-export interface CreateMetaFieldShape {
-  schema?: { type?: string; custom?: string };
-  allowedValues?: Array<{ id?: string; value?: string; name?: string }>;
-}
-
 // ── Step one: the issue itself ──
 
 export interface NewWorkRequest {
@@ -58,38 +47,6 @@ export function isNewWorkRequestComplete(request: NewWorkRequest): boolean {
 
 // ── Step two: making it visible on this board ──
 
-/**
- * Shapes one field value the way its own metadata says Jira wants it.
- *
- * The same logical value is written three different ways depending on the field: a select wants
- * `{ value }`, a text field wants the bare string, and a multi-select wants an array of those objects.
- * Guessing produces a 400 that reads like a permissions problem, so the schema decides.
- *
- * @returns The shaped value, or null when this instance does not offer the field at all — the caller
- *          then omits it rather than writing something Jira will refuse.
- */
-export function shapeFieldValue(
-  fieldShape: CreateMetaFieldShape | undefined,
-  rawValue: string,
-): unknown | null {
-  if (!fieldShape || rawValue.trim() === '') return null;
-
-  const schemaType = String(fieldShape.schema?.type ?? '');
-
-  if (schemaType === OPTION_SCHEMA_TYPE) {
-    return { value: rawValue };
-  }
-  if (schemaType === ARRAY_SCHEMA_TYPE) {
-    return [{ value: rawValue }];
-  }
-  if (schemaType === STRING_SCHEMA_TYPE || schemaType === '') {
-    return rawValue;
-  }
-  // Anything else (issue links, versions, users) is written as a plain string, which is how this
-  // instance's Feature Link field behaves; a wrong guess surfaces as Jira's own message.
-  return rawValue;
-}
-
 export interface BoardVisibilityFields {
   featureLinkFieldId: string;
   featureKey: string;
@@ -101,26 +58,29 @@ export interface BoardVisibilityFields {
  * Builds the follow-up edit that makes a new issue visible on this board.
  *
  * Both fields matter for a different reason: without the Feature Link the issue lands in "No Feature",
- * and without the PI it is outside the dashboard's scope entirely and appears nowhere at all.
+ * and without the PI it falls outside the dashboard's scope entirely and appears nowhere at all.
+ *
+ * Neither value is shaped here. The PI field goes through `resolvePiFieldUpdateValue` and the Feature
+ * Link through `buildFeatureFieldUpdateFields` — the same writers the PI closeout remap already uses
+ * against this instance. Re-deriving either would be a second opinion about a shape the app has
+ * already settled, and the two could drift.
  *
  * @returns The update payload, or null when there is nothing this instance will accept — the caller
  *          skips the request instead of sending an empty edit.
  */
 export function buildBoardVisibilityPayload(
   fields: BoardVisibilityFields,
-  fieldShapesById: Record<string, CreateMetaFieldShape | undefined>,
+  shapePiValue: (piValue: string) => unknown,
+  shapeFeatureLink: (featureLinkFieldId: string, featureKey: string) => Record<string, unknown>,
 ): { fields: Record<string, unknown> } | null {
   const updateFields: Record<string, unknown> = {};
 
-  const featureLinkValue = fields.featureLinkFieldId
-    ? shapeFieldValue(fieldShapesById[fields.featureLinkFieldId], fields.featureKey)
-    : null;
-  if (featureLinkValue !== null) updateFields[fields.featureLinkFieldId] = featureLinkValue;
-
-  const piValue = fields.piFieldId
-    ? shapeFieldValue(fieldShapesById[fields.piFieldId], fields.piValue)
-    : null;
-  if (piValue !== null) updateFields[fields.piFieldId] = piValue;
+  if (fields.featureLinkFieldId && fields.featureKey.trim() !== '') {
+    Object.assign(updateFields, shapeFeatureLink(fields.featureLinkFieldId, fields.featureKey.trim()));
+  }
+  if (fields.piFieldId && fields.piValue.trim() !== '') {
+    updateFields[fields.piFieldId] = shapePiValue(fields.piValue.trim());
+  }
 
   return Object.keys(updateFields).length > 0 ? { fields: updateFields } : null;
 }
