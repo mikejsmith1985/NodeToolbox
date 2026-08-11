@@ -57,7 +57,7 @@ import { parseCardTargetId, resolveCardDrop, resolveCardDropZone } from './cardD
 import { loadColumnOptionSources, type ColumnOptionSources } from './columnOptionSources.ts';
 import { executeStatusMove } from './statusMoveWriter.ts';
 import { resolveBoardItems } from './featureRollup.ts';
-import { buildFeatureWithoutWorkCard, buildMasterCards } from './masterCards.ts';
+import { buildFeatureWithoutWorkCard, buildMasterCards, orderLanesLikePiReview } from './masterCards.ts';
 import {
   fetchFeaturesInPi,
   fetchRollupBoardIssues,
@@ -349,7 +349,11 @@ export default function RollupBoardTab({
   // the team, because a PI holds every team's Features and an unnarrowed list ran to 77 rows.
   useEffect(() => {
     const isPiScoped = scopeMode === DASHBOARD_PI_SCOPE_MODE && Boolean(selectedPiValue);
-    if (!isPiScoped || featureScope.featureProjectKeys.length === 0) {
+    // With nothing in scope EVERY Feature trivially has no work under it, so the answer would be the
+    // team's whole PI rendered as empty lanes — which reads as a broken board rather than as a board
+    // with nothing selected. The scope's own empty state says it better.
+    const hasWorkInScope = scopedIssues.length > 0;
+    if (!isPiScoped || !hasWorkInScope || featureScope.featureProjectKeys.length === 0) {
       setFeaturesWithoutWork([]);
       return;
     }
@@ -397,7 +401,7 @@ export default function RollupBoardTab({
     void scanForUnbrokenFeatures();
     return () => { isMounted = false; };
   }, [boardId, scopeMode, selectedPiValue, featureScope, teamProfileId, subStatusFieldId,
-    loadState.masterCards, projectKey, rosterMembers]);
+    loadState.masterCards, projectKey, rosterMembers, scopedIssues]);
 
   /** Opens the add-work form for one Feature, loading the project's own issue types first. */
   const openAddWork = useCallback(async (featureKey: string, featureSummary: string): Promise<void> => {
@@ -476,14 +480,14 @@ export default function RollupBoardTab({
    * The lanes the board draws: the ones work rolls up to, followed by the Features the team owns and
    * has not broken down. Appended last so the board still opens on real work.
    */
-  const laneMasterCards = useMemo(() => [
+  const laneMasterCards = useMemo(() => orderLanesLikePiReview([
     ...loadState.masterCards,
     ...featuresWithoutWork.map((feature) => buildFeatureWithoutWorkCard(
       feature.featureKey,
       featureIssuesWithoutWork.get(feature.featureKey) ?? null,
       getStoryPointsCandidateFieldIds(),
     )),
-  ], [loadState.masterCards, featuresWithoutWork, featureIssuesWithoutWork]);
+  ]), [loadState.masterCards, featuresWithoutWork, featureIssuesWithoutWork]);
 
   /**
    * Re-points an issue's Feature Link at the Feature whose lane it was dropped in.

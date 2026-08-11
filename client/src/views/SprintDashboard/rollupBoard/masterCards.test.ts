@@ -4,8 +4,11 @@
 // last assertion here is that claim, expressed arithmetically.
 
 import { describe, expect, it } from 'vitest';
+import type { MasterCard } from './rollupBoardTypes.ts';
 
-import { buildMasterCards } from './masterCards.ts';
+import { buildMasterCards,
+  orderLanesLikePiReview,
+} from './masterCards.ts';
 import { NO_FEATURE_KEY, type RollupBoardItem } from './rollupBoardTypes.ts';
 import type { JiraIssue } from '../../../types/jira.ts';
 
@@ -139,5 +142,48 @@ describe('buildMasterCards', () => {
 
     expect(masterCard.vitals.priorityName).toBeNull();
     expect(masterCard.vitals.storyPoints).toBeNull();
+  });
+});
+
+describe('orderLanesLikePiReview — one sequence, not two', () => {
+  /** A lane, real or not, reduced to what the ordering cares about. */
+  function makeCard(featureKey: string, isSynthetic = false): MasterCard {
+    return {
+      featureKey,
+      isSynthetic,
+      featureIssue: null,
+      isFeatureUnreadable: false,
+      vitals: {} as MasterCard['vitals'],
+      items: [],
+    };
+  }
+
+  it('interleaves Features with no work among those that have it, by key', () => {
+    // DENP-1387 has no work and used to be appended last; PI Review lists it first.
+    const ordered = orderLanesLikePiReview([
+      makeCard('DENP-1393'),
+      makeCard('DENP-1420'),
+      makeCard('DENP-1387'),
+    ]);
+
+    expect(ordered.map((card) => card.featureKey)).toEqual(['DENP-1387', 'DENP-1393', 'DENP-1420']);
+  });
+
+  it('sorts numerically, so DENP-99 comes before DENP-100', () => {
+    const ordered = orderLanesLikePiReview([makeCard('DENP-100'), makeCard('DENP-99')]);
+    expect(ordered.map((card) => card.featureKey)).toEqual(['DENP-99', 'DENP-100']);
+  });
+
+  it('keeps No Feature last, since it is a hygiene bucket rather than a Feature', () => {
+    const ordered = orderLanesLikePiReview([
+      makeCard(NO_FEATURE_KEY, true),
+      makeCard('DENP-1393'),
+    ]);
+
+    expect(ordered[ordered.length - 1].featureKey).toBe(NO_FEATURE_KEY);
+  });
+
+  it('survives an empty board', () => {
+    expect(orderLanesLikePiReview([])).toEqual([]);
   });
 });
