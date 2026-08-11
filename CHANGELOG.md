@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Roll-Up Board — lane cells no longer line up with the column headers (regression in v0.149.0).**
+  The horizontal-scroll fix set `width: max-content` on the header and lane grids. With `1fr` tracks
+  that sizes every track to *its own* content, so a lane holding cards got wide columns, an empty lane
+  got narrow ones, and no lane matched the header — each row drew a different number of visibly
+  different columns. Both rows now carry the same explicit **minimum** width instead
+  (`columns × column-minimum + gaps`), which keeps the tracks uniform, keeps every row identical, and
+  still forces the scroller to overflow when the window is too narrow to hold them. A test now pins the
+  shared width and asserts it never becomes `max-content` again.
+
 ### Changed
 - **Roll-Up Board — empty Features are lanes now, and only the team's own.** The first cut listed every
   Feature in the PI with no work under it, which on a shared PI meant **77 rows** of mostly other
