@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Roll-Up Board — Features committed to the PI with no work under them are now named.** The board
+  builds its lanes from the work upward, so a Feature nobody has broken down has no lane and no
+  presence at all — which is exactly the moment somebody most needs to see it. DENP-1387 sat in that
+  gap for a whole PI with 40 story points against it. When scoped by PI the board now also asks the
+  opposite question, top-down: every Feature in the team's configured Feature projects for this PI,
+  minus the ones that already have a lane. The result is reported as its own warning listing each
+  Feature with its status, points and assignee, plus the **total committed story points with nothing
+  planned behind them** — one 40-point Feature matters far more than three 1-pointers, so a bare count
+  would understate it. Kept separate from the lanes rather than rendered as empty ones, so a lane still
+  means real work.
+
+### Fixed
+- **Dark theme — open dropdowns rendered as white boxes with near-invisible text.** Giving a native
+  `<select>` its own background opts it out of the root's `color-scheme`, so the browser painted the
+  OPEN option list light on a dark page; styling `option` alone never reaches it. The status-transition
+  dropdown in the issue panel and the Priority / Fix Version editors now inherit the colour scheme,
+  matching the fix already used on the Capacity tab's date inputs, and follow the theme rather than
+  pinning it.
+
 ### Fixed
 - **Roll-Up Board — "This Feature could not be read" now says *why*.** Two Features in the team's own
   project (DENP-1288, DENP-1398) rendered as unreadable lanes while their neighbours resolved fine,

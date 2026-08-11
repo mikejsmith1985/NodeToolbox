@@ -54,7 +54,12 @@ import { loadColumnOptionSources, type ColumnOptionSources } from './columnOptio
 import { executeStatusMove } from './statusMoveWriter.ts';
 import { resolveBoardItems } from './featureRollup.ts';
 import { buildMasterCards } from './masterCards.ts';
-import { fetchRollupBoardIssues, fetchSprintPiReconciliation } from './rollupBoardFetch.ts';
+import { fetchFeaturesInPi, fetchRollupBoardIssues, fetchSprintPiReconciliation } from './rollupBoardFetch.ts';
+import {
+  selectFeaturesWithoutWork,
+  sumUnplannedStoryPoints,
+  type FeatureWithoutWork,
+} from './emptyFeatureScan.ts';
 import { describeReconciliation, type SprintPiReconciliation } from '../sprintPiReconciliation.ts';
 import {
   clearTeamFeatureScope,
@@ -221,6 +226,7 @@ export default function RollupBoardTab({
   const [featureScope, setFeatureScope] = useState<FeatureScopeSettings>(() => loadTeamFeatureScope(teamProfileId));
   const [hasOwnScope, setHasOwnScope] = useState(() => hasTeamOwnFeatureScope(teamProfileId));
   const [sprintPiGap, setSprintPiGap] = useState<SprintPiReconciliation | null>(null);
+  const [featuresWithoutWork, setFeaturesWithoutWork] = useState<FeatureWithoutWork[]>([]);
   const [openIssueKey, setOpenIssueKey] = useState<string | null>(null);
   const [openIssueEditMeta, setOpenIssueEditMeta] = useState<Awaited<ReturnType<typeof fetchFeatureReviewEditMeta>> | null>(null);
 
@@ -303,6 +309,41 @@ export default function RollupBoardTab({
 
     return () => { isMounted = false; };
   }, [boardId, scopeMode, selectedPiValue]);
+
+  // Asked top-down, unlike every other query here: a Feature nobody has broken down has no work to be
+  // found from, so it can only be discovered by asking about Features directly.
+  useEffect(() => {
+    const isPiScoped = scopeMode === DASHBOARD_PI_SCOPE_MODE && Boolean(selectedPiValue);
+    if (!isPiScoped || featureScope.featureProjectKeys.length === 0) {
+      setFeaturesWithoutWork([]);
+      return;
+    }
+
+    let isMounted = true;
+    const scanScope: RollupBoardScope = {
+      boardId: boardId ?? 0,
+      teamProfileId,
+      featureLinkFieldId: loadConfiguredFeatureLinkFieldId(),
+      subStatusFieldId,
+      storyPointsFieldIds: getStoryPointsCandidateFieldIds(),
+    };
+
+    void fetchFeaturesInPi(
+      featureScope.featureProjectKeys,
+      selectedPiValue!,
+      buildJqlFieldReference(readConfiguredPiFieldId()),
+      scanScope,
+    ).then((piFeatures) => {
+      if (!isMounted) return;
+      setFeaturesWithoutWork(selectFeaturesWithoutWork(
+        piFeatures,
+        loadState.masterCards.map((masterCard) => masterCard.featureKey),
+        getStoryPointsCandidateFieldIds(),
+      ));
+    });
+
+    return () => { isMounted = false; };
+  }, [boardId, scopeMode, selectedPiValue, featureScope, teamProfileId, subStatusFieldId, loadState.masterCards]);
 
   const layout = useMemo(
     () => buildBoardLayout({ masterCards: loadState.masterCards, columns: renderedColumns, filters, preferences }),
@@ -574,6 +615,29 @@ export default function RollupBoardTab({
           ⚠ {describeReconciliation(sprintPiGap)} Set the PI field on{' '}
           {sprintPiGap.mismatches.length === 1 ? 'it' : 'them'} in Jira and refresh.
         </p>
+      )}
+
+      {/* The board's blind spot, stated: lanes are built from work upward, so a Feature nobody has
+          broken down has no lane at all — which is exactly when somebody most needs to see it. */}
+      {featuresWithoutWork.length > 0 && (
+        <div className={styles.boardWarning} data-testid="rollup-features-without-work">
+          ⚠ {featuresWithoutWork.length}{' '}
+          {featuresWithoutWork.length === 1 ? 'Feature is' : 'Features are'} committed to this PI with no
+          work under {featuresWithoutWork.length === 1 ? 'it' : 'them'}
+          {sumUnplannedStoryPoints(featuresWithoutWork) > 0
+            ? ` — ${sumUnplannedStoryPoints(featuresWithoutWork)} story points with nothing planned`
+            : ''}:
+          <ul>
+            {featuresWithoutWork.map((feature) => (
+              <li key={feature.featureKey}>
+                <strong>{feature.featureKey}</strong> {feature.summary}
+                {feature.statusName ? ` · ${feature.statusName}` : ''}
+                {feature.storyPoints !== null ? ` · ${feature.storyPoints} pts` : ''}
+                {feature.assigneeDisplayName ? ` · ${feature.assigneeDisplayName}` : ''}
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
 
       {/* A Feature that simply "could not be read" leaves nowhere to go. Each one is asked about

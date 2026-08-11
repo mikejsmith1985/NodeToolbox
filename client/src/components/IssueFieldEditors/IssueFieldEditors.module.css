@@ -52,6 +52,15 @@
   background: var(--color-surface-3);
   color: var(--color-text-primary);
   font-size: var(--font-size-sm);
+  /* An explicit background opts the control out of the root's `color-scheme`, which leaves the OPEN
+     option list painted light on a dark page. Applies to Priority and Fix Version alike. */
+  color-scheme: inherit;
+}
+
+/* Belt and braces for browsers that do honour option colours. */
+.select option {
+  background: var(--color-surface-3);
+  color: var(--color-text-primary);
 }
 
 .editButton,

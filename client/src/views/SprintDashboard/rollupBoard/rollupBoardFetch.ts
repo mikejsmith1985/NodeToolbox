@@ -14,6 +14,7 @@ import { jiraGet, type BoardSprint } from '../../../services/jiraApi.ts';
 import { extractHttpStatus } from '../../../services/issueLookup.ts';
 import type { JiraIssue } from '../../../types/jira.ts';
 import { extractFeatureKeyFromIssueFields } from '../../../utils/featureLink.ts';
+import { buildFeaturesInPiJql } from './emptyFeatureScan.ts';
 import {
   buildMistaggedSprintIssueJql,
   selectSprintsInPiWindow,
@@ -371,4 +372,33 @@ export async function fetchRollupBoardIssues(
       failures,
     },
   };
+}
+
+/**
+ * Reads every Feature this team owns in the PI, so the board can name the ones with nothing under them.
+ *
+ * This is the one query that runs top-down instead of bottom-up. Everything else on the board starts
+ * from work and finds its Feature; a Feature nobody has broken down has no work to be found from, so it
+ * can only be discovered by asking about Features directly.
+ *
+ * Like the sprint reconciliation, a failure returns nothing rather than throwing — the board's job is
+ * to show the team's work, and an extra insight must never be able to prevent that.
+ */
+export async function fetchFeaturesInPi(
+  featureProjectKeys: readonly string[],
+  piName: string,
+  piFieldReference: string,
+  scope: RollupBoardScope,
+): Promise<JiraIssue[]> {
+  const featuresInPiJql = buildFeaturesInPiJql(featureProjectKeys, piName, piFieldReference);
+  if (featuresInPiJql === null) return [];
+
+  try {
+    const searchResult = await jiraGet<JiraSearchResponse>(
+      buildSearchPath(featuresInPiJql, buildFieldList(scope)),
+    );
+    return searchResult.issues ?? [];
+  } catch {
+    return [];
+  }
 }
