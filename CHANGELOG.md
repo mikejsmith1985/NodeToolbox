@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Roll-Up Board — "not on this board" was shown for a parent that is on the board, just elsewhere.**
+  The check read a LANE-scoped map, so any parent whose own card sits in a different lane was reported
+  as absent from the board entirely — sending the reader after a scope problem that does not exist.
+  Those are two different situations and now read as two different sentences: a parent in another lane
+  says which lane, and names the real problem (*it and this work disagree about which Feature they
+  deliver* — something to correct in Jira), while a parent genuinely off the board still says so.
+
 ### Changed
 - **Roll-Up Board — a defect now files under the Feature still in flight, not the one that shipped.**
   The precedence chain answers *how* a defect was linked, and ranks the QA route above a direct Feature
