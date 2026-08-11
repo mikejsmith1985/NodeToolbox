@@ -11,6 +11,7 @@
 // enrichment chunk is reported rather than swallowed, so the gap is visible.
 
 import { jiraGet, type BoardSprint } from '../../../services/jiraApi.ts';
+import { extractHttpStatus } from '../../../services/issueLookup.ts';
 import type { JiraIssue } from '../../../types/jira.ts';
 import { extractFeatureKeyFromIssueFields } from '../../../utils/featureLink.ts';
 import {
@@ -22,6 +23,8 @@ import {
 import {
   EXPECTED_BOARD_ISSUE_CEILING,
   FEATURE_KEY_CHUNK_SIZE,
+  MAX_FEATURE_READ_PROBES,
+  type FeatureReadFailure,
   SUBTASK_PARENT_CHUNK_SIZE,
   type LoadFailure,
   type RollupBoardIssueSet,
@@ -34,6 +37,10 @@ const SEARCH_MAX_RESULTS = 200;
 
 /** Enough to cover a PI's worth of sprints on a team board, closed ones included. */
 const SPRINT_PAGE_SIZE = 100;
+
+/** How Jira answers a direct read of an issue that is missing, or that this account may not see. */
+const NOT_FOUND_STATUS = 404;
+const NO_PERMISSION_STATUSES = [401, 403];
 
 /** Fields every sweep needs to place, colour, filter and explain an issue. */
 const BASE_ISSUE_FIELDS = [
@@ -173,6 +180,55 @@ async function fetchFeaturesByKeys(
   );
 }
 
+/**
+ * Asks Jira about each Feature the bulk read did not return, so the board can name the cause.
+ *
+ * A Feature that silently fails to come back is the least actionable thing the board can show: "could
+ * not be read" leaves a person with nowhere to go. Only the MISSING keys are probed — normally none,
+ * occasionally one or two — so this costs nothing on a healthy board.
+ *
+ * The interesting outcome is a key that reads perfectly well on its own after being absent from the
+ * bulk search. Jira keeps ARCHIVED issues out of search results while still serving them by key, so
+ * that combination is a positive signal rather than a mystery.
+ */
+async function probeUnreadableFeatures(
+  missingFeatureKeys: readonly string[],
+  scope: RollupBoardScope,
+): Promise<FeatureReadFailure[]> {
+  const probedKeys = missingFeatureKeys.slice(0, MAX_FEATURE_READ_PROBES);
+
+  return Promise.all(probedKeys.map(async (featureKey): Promise<FeatureReadFailure> => {
+    try {
+      await jiraGet<JiraIssue>(
+        `/rest/api/2/issue/${encodeURIComponent(featureKey)}?fields=${buildFieldList(scope)}`,
+      );
+      return {
+        featureKey,
+        reason: 'archived-or-unsearchable',
+        detail: `${featureKey} can be opened directly but does not come back from a search. `
+          + 'That is what an archived issue looks like — unarchive it in Jira to restore its details here.',
+      };
+    } catch (error: unknown) {
+      const httpStatus = extractHttpStatus(error);
+      if (httpStatus === NOT_FOUND_STATUS) {
+        return {
+          featureKey,
+          reason: 'not-found',
+          detail: `${featureKey} does not exist. Something still points a Feature Link at it — worth correcting in Jira.`,
+        };
+      }
+      if (httpStatus !== null && NO_PERMISSION_STATUSES.includes(httpStatus)) {
+        return {
+          featureKey,
+          reason: 'no-permission',
+          detail: `${featureKey} exists but this account cannot see it — a project permission or an issue security level.`,
+        };
+      }
+      return { featureKey, reason: 'error', detail: `${featureKey} could not be read: ${String(error)}` };
+    }
+  }));
+}
+
 /** Issue type names this instance uses for defects — the only type whose roll-up walks issue links. */
 const DEFECT_ISSUE_TYPE_NAMES = new Set(['defect', 'bug']);
 
@@ -297,10 +353,16 @@ export async function fetchRollupBoardIssues(
   );
   const featureIssues = await fetchFeaturesByKeys(referencedFeatureKeys, scope, failures);
 
+  // A key that was asked for but did not come back is worth one direct question each, so the board
+  // reports WHY a Feature is missing instead of only that it is.
+  const missingFeatureKeys = referencedFeatureKeys.filter((featureKey) => !featureIssues.has(featureKey));
+  const featureReadFailures = await probeUnreadableFeatures(missingFeatureKeys, scope);
+
   return {
     boardIssues,
     subtaskIssues,
     featureIssues,
+    featureReadFailures,
     load: {
       isComplete: failures.length === 0 && boardIssues.length >= expectedBoardIssueCount,
       expectedBoardIssueCount,

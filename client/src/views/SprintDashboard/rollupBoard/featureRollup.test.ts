@@ -66,6 +66,7 @@ function buildIssueSet(
     boardIssues,
     subtaskIssues,
     featureIssues,
+    featureReadFailures: [],
     load: {
       isComplete: true,
       expectedBoardIssueCount: boardIssues.length,

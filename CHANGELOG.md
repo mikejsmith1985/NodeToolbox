@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Roll-Up Board — "This Feature could not be read" now says *why*.** Two Features in the team's own
+  project (DENP-1288, DENP-1398) rendered as unreadable lanes while their neighbours resolved fine,
+  and the board offered no way to tell whether that was a permission problem, a deleted issue, or a
+  bug of its own. Notably no load-failure banner appeared, which rules out the bulk read having
+  errored — Jira answered successfully and simply left those keys out.
+  Any referenced Feature the bulk `key in (…)` read does not return is now asked about directly, one
+  request each, and the reason Jira gives is reported: **not found** (a Feature Link still pointing at
+  a deleted issue), **no permission** (a project restriction or an issue security level), or
+  **archived** — readable by key yet absent from search, which is exactly how Jira treats an archived
+  issue and the most likely explanation for these two. Only missing keys are probed, capped at ten, so
+  a healthy board makes no extra requests at all.
+
 ### Added
 - **Quick issue lookup (F2) — Fix Version is now editable.** The popup displayed a Fix Versions value
   but offered no way to change it, so the one field most likely to need a quick correction was the one
