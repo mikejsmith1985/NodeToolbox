@@ -188,8 +188,22 @@ export function buildFeatureWithoutWorkCard(
  * that would sort meaningfully among real ones.
  */
 export function orderLanesLikePiReview(masterCards: readonly MasterCard[]): MasterCard[] {
-  const realFeatureCards = masterCards.filter((masterCard) => !masterCard.isSynthetic);
-  const syntheticCards = masterCards.filter((masterCard) => masterCard.isSynthetic);
+  // One lane per Feature, always. A Feature can arrive twice — once because work rolls up to it, and
+  // again from the "committed to the PI with nothing underneath" scan if those two ran against
+  // different snapshots — and two lanes sharing a key means two headers, a collapse toggle that
+  // appears not to work because it flips both, and duplicate React keys. The lane carrying work wins:
+  // it is the one that is true.
+  const bestCardByFeatureKey = new Map<string, MasterCard>();
+  for (const masterCard of masterCards) {
+    const existingCard = bestCardByFeatureKey.get(masterCard.featureKey);
+    if (existingCard === undefined || (existingCard.items.length === 0 && masterCard.items.length > 0)) {
+      bestCardByFeatureKey.set(masterCard.featureKey, masterCard);
+    }
+  }
+  const uniqueCards = [...bestCardByFeatureKey.values()];
+
+  const realFeatureCards = uniqueCards.filter((masterCard) => !masterCard.isSynthetic);
+  const syntheticCards = uniqueCards.filter((masterCard) => masterCard.isSynthetic);
 
   const orderedRealCards = [...realFeatureCards].sort(
     (leftCard, rightCard) => leftCard.featureKey.localeCompare(rightCard.featureKey, undefined, { numeric: true }),

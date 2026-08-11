@@ -47,6 +47,7 @@ import {
   moveCardBefore,
   moveLaneBefore,
   moveLaneToEnd,
+  moveLaneToRank,
   saveBoardPreferences,
   setAllLanesCollapsed,
   toggleLaneCollapsed,
@@ -258,6 +259,8 @@ export default function RollupBoardTab({
   const [sprintPiGap, setSprintPiGap] = useState<SprintPiReconciliation | null>(null);
   const [featuresWithoutWork, setFeaturesWithoutWork] = useState<TeamOwnedEmptyFeature[]>([]);
   const [featureIssuesWithoutWork, setFeatureIssuesWithoutWork] = useState<Map<string, JiraIssue>>(new Map());
+  /** Bumped per empty-Feature scan so a slow earlier run cannot overwrite a newer one. */
+  const emptyFeatureScanToken = useRef(0);
   const rosterMembers = useStandupRosterStore((rosterState) => rosterState.rosterMembers);
   const [addWorkFeature, setAddWorkFeature] = useState<{ key: string; summary: string } | null>(null);
   const [creatableIssueTypes, setCreatableIssueTypes] = useState<CreateMetaIssueType[]>([]);
@@ -370,6 +373,13 @@ export default function RollupBoardTab({
     }
 
     let isMounted = true;
+    // Guards against an EARLIER scan finishing last and overwriting a newer answer. Without it a run
+    // that started before the board's work had loaded — when every Feature looks unbroken-down —
+    // could win, and a Feature that already has a lane would gain a second, empty one.
+    emptyFeatureScanToken.current += 1;
+    const scanToken = emptyFeatureScanToken.current;
+    const isCurrentScan = (): boolean => isMounted && emptyFeatureScanToken.current === scanToken;
+
     const storyPointsFieldIds = getStoryPointsCandidateFieldIds();
     const featureLinkFieldId = loadConfiguredFeatureLinkFieldId();
     const scanScope: RollupBoardScope = {
@@ -387,7 +397,7 @@ export default function RollupBoardTab({
         buildJqlFieldReference(readConfiguredPiFieldId()),
         scanScope,
       );
-      if (!isMounted || piFeatures.length === 0) return;
+      if (!isCurrentScan() || piFeatures.length === 0) return;
 
       // The third ownership test: any Feature a team-project issue points at is one the team is
       // demonstrably working on, whoever it happens to be assigned to.
@@ -399,7 +409,7 @@ export default function RollupBoardTab({
         .filter((rosterMember) => rosterMember.roleCapabilities?.canProductOwner === true)
         .map((rosterMember) => rosterMember.assigneeQueryValue);
 
-      if (!isMounted) return;
+      if (!isCurrentScan()) return;
       setFeatureIssuesWithoutWork(new Map(piFeatures.map((feature) => [feature.key, feature])));
       setFeaturesWithoutWork(selectTeamOwnedEmptyFeatures(piFeatures, {
         productOwnerQueryValues,
@@ -1051,7 +1061,7 @@ export default function RollupBoardTab({
           sensors={dragSensors}
         >
           <SortableContext items={allFeatureKeys} strategy={verticalListSortingStrategy}>
-            {layout.lanes.map((lane) => (
+            {layout.lanes.map((lane, laneIndex) => (
             <MasterCardLane
               columns={layout.columns}
               errorMessageByIssueKey={errorMessageByIssueKey}
@@ -1061,6 +1071,9 @@ export default function RollupBoardTab({
               featureReadFailureDetail={loadState.featureReadFailures
                 .find((failure) => failure.featureKey === lane.masterCard.featureKey)?.detail ?? null}
               lane={lane}
+              laneRank={laneIndex + 1}
+              onRankChange={(laneFeatureKey, nextRank) =>
+                applyPreferences(moveLaneToRank(preferences, laneFeatureKey, nextRank, allFeatureKeys))}
               onAddWork={projectKey !== ''
                 ? (laneFeatureKey, laneSummary) => void openAddWork(laneFeatureKey, laneSummary)
                 : undefined}

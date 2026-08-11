@@ -187,3 +187,37 @@ describe('orderLanesLikePiReview — one sequence, not two', () => {
     expect(orderLanesLikePiReview([])).toEqual([]);
   });
 });
+
+describe('orderLanesLikePiReview — one lane per Feature, always', () => {
+  /** A lane, real or not, reduced to what deduplication cares about. */
+  function makeLane(featureKey: string, itemCount: number): MasterCard {
+    return {
+      featureKey,
+      isSynthetic: false,
+      featureIssue: null,
+      isFeatureUnreadable: false,
+      vitals: {} as MasterCard['vitals'],
+      items: Array.from({ length: itemCount }, () => ({}) as MasterCard['items'][number]),
+    };
+  }
+
+  it('keeps only one lane when a Feature arrives twice', () => {
+    // Two headers for one Feature also means a collapse toggle that appears not to work, because it
+    // flips both at once.
+    const ordered = orderLanesLikePiReview([makeLane('DENP-1414', 22), makeLane('DENP-1414', 0)]);
+
+    expect(ordered).toHaveLength(1);
+  });
+
+  it('keeps the lane that carries the work, whichever order they arrive in', () => {
+    expect(orderLanesLikePiReview([makeLane('DENP-1414', 0), makeLane('DENP-1414', 22)])[0].items)
+      .toHaveLength(22);
+    expect(orderLanesLikePiReview([makeLane('DENP-1414', 22), makeLane('DENP-1414', 0)])[0].items)
+      .toHaveLength(22);
+  });
+
+  it('leaves distinct Features alone', () => {
+    const ordered = orderLanesLikePiReview([makeLane('DENP-2', 1), makeLane('DENP-1', 0)]);
+    expect(ordered.map((card) => card.featureKey)).toEqual(['DENP-1', 'DENP-2']);
+  });
+});

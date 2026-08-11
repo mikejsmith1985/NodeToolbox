@@ -1,7 +1,7 @@
 // MasterCardLane.test.tsx — Proves a collapsed lane is still a useful summary, and that its numbers
 // describe the whole Feature rather than whatever the viewer has filtered down to.
 
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { MasterCardLane } from './MasterCardLane.tsx';
@@ -257,5 +257,78 @@ describe('MasterCardLane — an unreadable Feature says why', () => {
   it('admits when no reason could be established, rather than implying one', () => {
     renderUnreadableLane();
     expect(screen.getByText(/produced no reason either/)).toBeInTheDocument();
+  });
+});
+
+describe('MasterCardLane — the rank box', () => {
+  /** Renders one lane showing its rank. */
+  function renderRankedLane(onRankChange = vi.fn()) {
+    render(
+      <MasterCardLane
+        columns={COLUMNS}
+        hasActiveFilters={false}
+        lane={buildLane([buildItem('DEV-1', 'col-todo')])}
+        laneRank={10}
+        onRankChange={onRankChange}
+        onToggleCollapsed={vi.fn()}
+      />,
+    );
+    return { onRankChange, rankBox: screen.getByLabelText('Rank of FEAT-1') as HTMLInputElement };
+  }
+
+  it('shows the lane\'s position on the board', () => {
+    expect(renderRankedLane().rankBox.value).toBe('10');
+  });
+
+  it('applies a typed rank when the field is left', () => {
+    const { onRankChange, rankBox } = renderRankedLane();
+
+    fireEvent.change(rankBox, { target: { value: '2' } });
+    fireEvent.blur(rankBox, { target: { value: '2' } });
+
+    expect(onRankChange).toHaveBeenCalledWith('FEAT-1', 2);
+  });
+
+  it('does not move the lane on every keystroke, so typing 12 does not first jump to 1', () => {
+    const { onRankChange, rankBox } = renderRankedLane();
+
+    fireEvent.change(rankBox, { target: { value: '1' } });
+    fireEvent.change(rankBox, { target: { value: '12' } });
+
+    expect(onRankChange).not.toHaveBeenCalled();
+  });
+
+  it('ignores a rank that is not a number', () => {
+    const { onRankChange, rankBox } = renderRankedLane();
+
+    fireEvent.blur(rankBox, { target: { value: 'abc' } });
+    expect(onRankChange).not.toHaveBeenCalled();
+  });
+
+  it('ignores an empty box rather than moving the lane to nowhere', () => {
+    const { onRankChange, rankBox } = renderRankedLane();
+
+    fireEvent.blur(rankBox, { target: { value: '   ' } });
+    expect(onRankChange).not.toHaveBeenCalled();
+  });
+
+  it('does nothing when the typed rank is the one it already has', () => {
+    const { onRankChange, rankBox } = renderRankedLane();
+
+    fireEvent.blur(rankBox, { target: { value: '10' } });
+    expect(onRankChange).not.toHaveBeenCalled();
+  });
+
+  it('hides the box entirely when the board cannot accept a rank', () => {
+    render(
+      <MasterCardLane
+        columns={COLUMNS}
+        hasActiveFilters={false}
+        lane={buildLane([buildItem('DEV-1', 'col-todo')])}
+        onToggleCollapsed={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByLabelText('Rank of FEAT-1')).not.toBeInTheDocument();
   });
 });
