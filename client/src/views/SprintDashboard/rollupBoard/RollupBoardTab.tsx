@@ -260,6 +260,7 @@ export default function RollupBoardTab({
   const [optionSources, setOptionSources] = useState<ColumnOptionSources>(EMPTY_OPTION_SOURCES);
   const [pullPreview, setPullPreview] = useState<VocabularyPullPreview | null>(null);
   const [isEditingColumns, setIsEditingColumns] = useState(false);
+  const [isTroubleshooting, setIsTroubleshooting] = useState(false);
   const [pendingIssueKey, setPendingIssueKey] = useState<string | null>(null);
   const [errorMessageByIssueKey, setErrorMessageByIssueKey] = useState<Record<string, string>>({});
   const [subStatusFieldId, setSubStatusFieldId] = useState('');
@@ -849,6 +850,16 @@ export default function RollupBoardTab({
         <button className={styles.actionButton} onClick={() => setIsEditingColumns(!isEditingColumns)} type="button">
           {isEditingColumns ? 'Hide board setup' : 'Board setup'}
         </button>
+        {/* Its own control, not buried in Board setup: this is what somebody reaches for when the board
+            is already behaving oddly, and hiding it behind a settings panel made it unfindable. */}
+        <button
+          className={styles.actionButton}
+          onClick={() => setIsTroubleshooting(!isTroubleshooting)}
+          title="Ask why a particular issue is not appearing on this board"
+          type="button"
+        >
+          {isTroubleshooting ? 'Hide troubleshooter' : "Why is an issue missing?"}
+        </button>
         {/* Manual order is sticky by design — a lane sent to the top stays there across sessions — so
             there has to be a way back that is not "drag every lane". Offered only when there is
             something to undo. */}
@@ -1003,8 +1014,7 @@ export default function RollupBoardTab({
         />
       )}
 
-      {/* Lives with Board setup because every answer it gives points at a setting on that panel. */}
-      {isEditingColumns && (
+      {isTroubleshooting && (
         <PlacementTroubleshooter
           carryOverPiValue={featureScope.carryOverPiValue}
           featureLinkFieldId={loadConfiguredFeatureLinkFieldId()}
