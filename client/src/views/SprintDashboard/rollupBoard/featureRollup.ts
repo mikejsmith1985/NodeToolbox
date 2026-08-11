@@ -157,7 +157,45 @@ function resolveRouteForIssue(
 }
 
 /** Which issue this one groups under inside a column, if any. */
+/** The relationship a nested card shows: it is contained within the card above it. */
+const CONTAINMENT_PHRASE = 'contained within';
+
+/** Loosens a link phrase so "is contained within" and "Contained within" compare equal. */
+function normalizeLinkPhrase(linkPhrase: string): string {
+  return String(linkPhrase || '').toLowerCase().replace(/^is\s+/, '').replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * The issue this one is explicitly contained in, read from its own issue links.
+ *
+ * A containment link is how work gets nested without being a sub-task — dragged onto another card, or
+ * linked by hand in Jira. Reading it here means the board draws the same parent container it already
+ * draws for real sub-tasks, so one visual answers "what is inside what" regardless of how the team
+ * happened to express it.
+ *
+ * Only the INWARD side counts: this issue must be the one the phrase applies to, or a container would
+ * appear to be contained in the thing it holds.
+ */
+function readContainmentParentKey(issue: JiraIssue): string | null {
+  const issueLinks = (issue.fields as { issuelinks?: unknown[] }).issuelinks ?? [];
+
+  for (const rawLink of issueLinks) {
+    const issueLink = rawLink as {
+      type?: { inward?: string };
+      outwardIssue?: { key?: string };
+    };
+    const isContainedWithin = normalizeLinkPhrase(issueLink.type?.inward ?? '') === CONTAINMENT_PHRASE;
+    if (isContainedWithin && issueLink.outwardIssue?.key) {
+      return String(issueLink.outwardIssue.key);
+    }
+  }
+  return null;
+}
+
 function readGroupingParentKey(issue: JiraIssue, route: RollUpRoute): string | null {
+  const containmentParentKey = readContainmentParentKey(issue);
+  if (containmentParentKey) return containmentParentKey;
+
   if (isSubtaskIssue(issue)) {
     return (issue.fields as { parent?: { key?: string } | null }).parent?.key ?? null;
   }

@@ -1,9 +1,18 @@
 // cardDropRouting.ts — Works out what a card drop actually means, before anything is written.
 //
 // Drag-and-drop libraries hand back opaque ids, so the interpretation lives here as plain functions
-// that a test can exercise without a browser. The rule worth stating: a card's LANE is decided by
-// which Feature it delivers, never by where someone drops it. Dragging a card into another Feature's
-// lane is refused rather than silently ignored, because silently ignoring it looks like a bug.
+// that a test can exercise without a browser.
+//
+// A drop can mean four different things, and the difference is worth being precise about because
+// three of them write to Jira:
+//   • onto a column cell in the SAME lane      → change the issue's status
+//   • onto a column cell in ANOTHER lane       → change which Feature the issue rolls up to
+//   • onto the middle of another card          → make it contained in that card
+//   • onto the top or bottom edge of a card    → sequence it, which touches nothing in Jira
+//
+// Nesting is restricted to cards in the same column on purpose. Dropping onto a card elsewhere still
+// means "move to that column", because one gesture producing two different writes at once is the kind
+// of surprise that stops people trusting drag-and-drop at all.
 
 import type { BoardColumn, RenderedColumn, RollupBoardItem } from './rollupBoardTypes.ts';
 
@@ -46,13 +55,46 @@ export type CardDropDecision =
   | { kind: 'refused'; reason: string }
   | { kind: 'move'; item: RollupBoardItem; targetColumn: BoardColumn | RenderedColumn }
   /** Same lane, same column: the viewer is sequencing the work, not changing its state. */
-  | { kind: 'reorder'; item: RollupBoardItem; targetIssueKey: string };
+  | { kind: 'reorder'; item: RollupBoardItem; targetIssueKey: string }
+  /** Dropped in another Feature's lane: re-point the issue's Feature Link at that Feature. */
+  | { kind: 'relink'; item: RollupBoardItem; targetFeatureKey: string }
+  /** Dropped onto the body of another card: record that this issue is contained in that one. */
+  | { kind: 'nest'; item: RollupBoardItem; containerIssueKey: string };
+
+/** Where within a card a drop landed, which decides whether it sequences or nests. */
+export type CardDropZone = 'before' | 'nest' | 'after';
+
+/** The middle share of a card's height that means "put this inside", not "put it near". */
+const NEST_ZONE_SHARE = 0.5;
+
+/**
+ * Works out whether a drop onto a card was aimed at its body or at the gap above or below it.
+ *
+ * Edge-versus-middle is how every tree control behaves, and it means nesting needs no modifier key —
+ * which matters because a hidden keyboard shortcut is a feature nobody finds.
+ */
+export function resolveCardDropZone(
+  draggedCenterY: number,
+  targetTopY: number,
+  targetHeight: number,
+): CardDropZone {
+  if (targetHeight <= 0) return 'nest';
+
+  const positionWithinTarget = (draggedCenterY - targetTopY) / targetHeight;
+  const nestBegins = (1 - NEST_ZONE_SHARE) / 2;
+
+  if (positionWithinTarget < nestBegins) return 'before';
+  if (positionWithinTarget > 1 - nestBegins) return 'after';
+  return 'nest';
+}
 
 export interface ResolveCardDropInput {
   draggedItemKey: string;
   dropTargetId: string | null;
   itemsByKey: ReadonlyMap<string, RollupBoardItem>;
   columnsById: ReadonlyMap<string, RenderedColumn>;
+  /** Where in the target card the drop landed. Defaults to sequencing, which writes nothing. */
+  cardDropZone?: CardDropZone;
 }
 
 /**
@@ -79,7 +121,9 @@ export function resolveCardDrop(input: ResolveCardDropInput): CardDropDecision {
     const targetItem = input.itemsByKey.get(targetIssueKey);
     if (!targetItem || targetItem.key === draggedItem.key) return { kind: 'ignore' };
     if (targetItem.columnId === draggedItem.columnId) {
-      return { kind: 'reorder', item: draggedItem, targetIssueKey };
+      return input.cardDropZone === 'nest'
+        ? { kind: 'nest', item: draggedItem, containerIssueKey: targetIssueKey }
+        : { kind: 'reorder', item: draggedItem, targetIssueKey };
     }
     const targetColumnForCard = input.columnsById.get(targetItem.columnId);
     if (!targetColumnForCard) return { kind: 'ignore' };
@@ -101,16 +145,12 @@ export function resolveCardDrop(input: ResolveCardDropInput): CardDropDecision {
     return { kind: 'ignore' };
   }
 
-  // A lane is where this work rolls up to, which is a fact about the Jira links — not a position
-  // somebody can drag. Saying so beats appearing to accept the drop and then undoing it.
+  // A lane IS the Feature an issue delivers, so dropping a card in another lane is a request to
+  // change that — the drag says exactly what the write should be. This was previously refused, on the
+  // grounds that a lane is a fact rather than a position; the fact simply turned out to be editable.
   const draggedItemLaneKey = draggedItem.featureKey ?? dropTarget.featureKey;
   if (dropTarget.featureKey !== draggedItemLaneKey) {
-    return {
-      kind: 'refused',
-      reason:
-        'A card sits in the lane of the Feature it delivers, so it cannot be dragged into another '
-        + 'Feature. Change what it links to in Jira to move it.',
-    };
+    return { kind: 'relink', item: draggedItem, targetFeatureKey: dropTarget.featureKey };
   }
 
   const targetColumn = input.columnsById.get(dropTarget.columnId);
