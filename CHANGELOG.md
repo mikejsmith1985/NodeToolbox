@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Roll-Up Board — "Why is an issue not on this board?" in Board setup.** The board excludes an issue
+  at any of several independent steps — the PI scope, the carry-over sweep, the roll-up route, the
+  Feature-project filter — and from the outside every one of them looks identical: the issue is simply
+  not there. Working out which required describing the symptom to somebody who could read the code.
+  Enter any issue key and the tool asks Jira the same questions the board asks, in the same order, and
+  reports what each decided with the values it compared — *"Its PI is 'PI 26.3', but the board is scoped
+  to 'PI 26.4'"*, or *"Its Feature DASP-925 is in project DASP, which is not in this team's Feature
+  projects (DENP, ENCUC)"*. It reads the **Feature** as well as the issue, because the carry-over sweep
+  judges the Feature's PI and status rather than the issue's — the commonest reason a carried-over story
+  never arrives. Every step is shown rather than only the first failing one, since more than one can be
+  wrong at once and fixing only the first sends you round the loop again.
+
+### Added
 - **Roll-Up Board — carry last PI's unfinished work onto this PI's board.** A Feature that did not
   finish keeps its original PI in Jira, because rewriting it would falsify what the ART committed last
   PI — so the Feature and the child stories that also still carry the old PI are invisible to a board
