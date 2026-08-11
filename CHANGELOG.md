@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Roll-Up Board — "Reset order".** Manual lane order is sticky by design: a lane sent to the top
+  stays there across sessions. There was no way back short of dragging every lane, so a Feature pinned
+  once could look permanently stuck at the top of the board even after other lanes were sent above it.
+  The control appears only when something has actually been re-ordered, and clears both lane order and
+  card sequencing. What it returns to is **Feature key ascending** — which is already what the PI
+  Review page uses for the same PI (`scopedTeamFeatures.ts`), so an un-re-ordered board and the PI
+  Review now demonstrably read the same way round. Which lanes are collapsed is left alone; that is not
+  an ordering choice.
+
+### Added
 - **Roll-Up Board — drag a card into another Feature's lane to re-point its Feature Link.** Previously
   refused, on the grounds that a lane is a fact about the Jira links rather than a position somebody
   can drag. The fact simply turned out to be editable, and the drag says exactly what the write should

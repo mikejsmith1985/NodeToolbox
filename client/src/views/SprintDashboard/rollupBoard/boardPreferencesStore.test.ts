@@ -1,6 +1,7 @@
 // boardPreferencesStore.test.ts — Proves one person's view of the board stays their own.
 
 import { beforeEach, describe, expect, it } from 'vitest';
+import type { BoardPreferences } from './rollupBoardTypes.ts';
 
 import {
   buildCardCellKey,
@@ -12,6 +13,8 @@ import {
   saveBoardPreferences,
   setAllLanesCollapsed,
   toggleLaneCollapsed,
+  clearManualOrder,
+  hasManualOrder,
 } from './boardPreferencesStore.ts';
 
 beforeEach(() => {
@@ -204,5 +207,40 @@ describe('moveCardBefore — sequencing the work inside a column', () => {
 
     expect(Object.keys(moved).sort())
       .toEqual(['boardId', 'cardOrderByCell', 'collapsedByFeatureKey', 'laneOrder', 'teamProfileId']);
+  });
+});
+
+describe('clearManualOrder — getting back to the default sequence', () => {
+  const ORDERED: BoardPreferences = {
+    teamProfileId: 'team-a',
+    boardId: 1,
+    laneOrder: ['DENP-1414', 'DENP-1393'],
+    collapsedByFeatureKey: { 'DENP-1414': true },
+    cardOrderByCell: { 'DENP-1393::col-todo': ['ENCUC-2', 'ENCUC-1'] },
+  };
+
+  it('drops the lane order so the board falls back to Feature key ascending', () => {
+    // That default is the order the PI Review page shows the same PI in.
+    expect(clearManualOrder(ORDERED).laneOrder).toEqual([]);
+  });
+
+  it('drops card sequencing too, since "reset the order" means all of it', () => {
+    expect(clearManualOrder(ORDERED).cardOrderByCell).toEqual({});
+  });
+
+  it('leaves which lanes are collapsed alone — that is not an ordering choice', () => {
+    expect(clearManualOrder(ORDERED).collapsedByFeatureKey).toEqual({ 'DENP-1414': true });
+  });
+
+  it('knows when there is a manual order to reset', () => {
+    expect(hasManualOrder(ORDERED)).toBe(true);
+  });
+
+  it('knows when there is nothing to reset, so the control can stay hidden', () => {
+    expect(hasManualOrder({ ...ORDERED, laneOrder: [], cardOrderByCell: {} })).toBe(false);
+  });
+
+  it('treats card sequencing alone as a manual order worth resetting', () => {
+    expect(hasManualOrder({ ...ORDERED, laneOrder: [] })).toBe(true);
   });
 });

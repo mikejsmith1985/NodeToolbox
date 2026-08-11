@@ -157,3 +157,23 @@ export function moveLaneToEnd(
     laneOrder: destination === 'top' ? [featureKey, ...withoutMovedKey] : [...withoutMovedKey, featureKey],
   };
 }
+
+/**
+ * Drops every manual ordering, returning the board to its default sequence.
+ *
+ * That default is Feature key ascending, which is the order the PI Review page shows the same PI in —
+ * so a board nobody has re-ordered and the PI Review read the same way round.
+ *
+ * This exists because manual order is sticky by design: once a lane has been sent to the top it stays
+ * there across sessions, and there was previously no way back short of dragging every lane. Card
+ * sequencing inside the cells is cleared with it, since "reset the order" plainly means all of it.
+ */
+export function clearManualOrder(preferences: BoardPreferences): BoardPreferences {
+  return { ...preferences, laneOrder: [], cardOrderByCell: {} };
+}
+
+/** True when anything has been manually ordered, so the reset control can hide when it would do nothing. */
+export function hasManualOrder(preferences: BoardPreferences): boolean {
+  return preferences.laneOrder.length > 0
+    || Object.keys(preferences.cardOrderByCell ?? {}).length > 0;
+}
