@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Roll-Up Board — a defect ignored its own Feature Link.** The defect resolver walked the defect's
+  ISSUE LINKS and nothing else, so a Feature Link set on the defect itself was never a candidate. With
+  eleven issue links, ENCUC-2070 was therefore filed under DENP-1288 — reached through a QA issue and
+  closed in PI 26.2 — while its own sub-tasks, which read the parent's Feature Link, sat under
+  DENP-1414. The same defect disagreed with itself about which Feature it delivers.
+  A defect's own Feature Link is now the **strongest** route, ahead of the dev Story and the QA issue,
+  because it is the only one nobody has to infer: somebody set that field deliberately, and every other
+  issue type on this board already treats it as authoritative — defects were the exception. The card
+  says *"Linked directly to …"* so the stronger claim is visible, the walked routes stay listed as
+  unchosen candidates, and a Feature outside the team's projects is still avoided however it was named.
+  This was not a recent regression; it had been the behaviour since the defect resolver was written,
+  and only became visible once the Features at the end of those chains could be read at all.
+
 ### Added
 - **Roll-Up Board — a rank box on every swimlane, beside the drag grip.** It shows the lane's position
   counting from 1 and accepts a typed number, behaving the way retyping a row number in a spreadsheet

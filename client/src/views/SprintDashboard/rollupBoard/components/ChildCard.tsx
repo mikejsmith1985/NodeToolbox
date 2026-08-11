@@ -51,6 +51,8 @@ export function describeRollUpRoute(route: RollUpRoute): string {
     })
     .join(' → ');
 
+  // Worth distinguishing: somebody SET this, rather than the board deducing it from a chain of links.
+  if (route.precedenceRank === 'own-feature-link') return `Linked directly to ${routeDescription}`;
   if (route.precedenceRank === 'via-qa-issue') return `Raised via ${routeDescription}`;
   if (route.precedenceRank === 'dev-story') return `Raised against ${routeDescription}`;
   return `Rolls up via ${routeDescription}`;
