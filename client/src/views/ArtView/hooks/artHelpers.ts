@@ -332,16 +332,21 @@ export function findMostRecentlyEndedPiName(
 }
 
 /**
- * Resolves which PI a scope selector should show, honoring a persisted choice only while it is
- * still alive: a persisted PI that is current, future, or date-less is kept (a deliberate choice is
- * never overridden), but one whose range has ENDED yields to the date-derived default (covering PI,
- * else the next-starting one) — so a finished PI never lingers as the selection. When every PI has
- * ended, the persisted choice (or the first option) remains as the honest fallback.
+ * Resolves which PI a scope selector should show, healing a stale selection forward.
+ *
+ * A persisted PI that is current, future, or date-less is kept; one whose range has ENDED yields to
+ * the date-derived default, so a finished PI never lingers merely because it was left there.
+ *
+ * `wasChosenDeliberately` switches that off. Healing exists to stop a PI going stale by neglect, and
+ * it must not overrule somebody who has just picked a past PI on purpose — reviewing what shipped, or
+ * chasing carry-over work. Left off, choosing last PI silently snapped back to the current one, which
+ * reads as the selector being broken.
  */
 export function resolvePiScopeSelection(
   availablePiValues: string[],
   persistedPiValue: string,
   todayDate: Date = new Date(),
+  wasChosenDeliberately = false,
 ): string {
   const persistedListedValue = availablePiValues.find((piValue) => piValue === persistedPiValue) ?? '';
   const persistedDateRange = persistedListedValue !== '' ? parsePiDateRange(persistedListedValue) : null;
@@ -353,7 +358,7 @@ export function resolvePiScopeSelection(
   const hasPersistedPiEnded = persistedDateRange !== null
     && persistedDateRange.endDate.getTime() < normalizedTodayTime;
 
-  if (persistedListedValue !== '' && !hasPersistedPiEnded) {
+  if (persistedListedValue !== '' && (!hasPersistedPiEnded || wasChosenDeliberately)) {
     return persistedListedValue;
   }
   const dateDerivedDefault = findDefaultPiNameForDate(availablePiValues, todayDate);
