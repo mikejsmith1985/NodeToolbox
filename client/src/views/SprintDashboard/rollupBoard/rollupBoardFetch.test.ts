@@ -267,3 +267,76 @@ describe('fetchSprintPiReconciliation — finding what the PI query cannot see',
     expect(reconciliation.undatedSprintNames).toEqual(['Undated sprint']);
   });
 });
+
+describe('probing a Feature the bulk read did not return', () => {
+  /** An error shaped the way jiraGet rejects, so extractHttpStatus can read its status. */
+  function buildHttpError(httpStatus: number): Error {
+    return new Error(`Jira GET /rest/api/2/issue/DENP-1288 failed: ${httpStatus} — nope`);
+  }
+
+  /** Board work pointing at one Feature the bulk `key in (…)` read never returns. */
+  function stubBoardWithUnreadableFeature(probeOutcome: () => Promise<unknown>): void {
+    mockJiraGet.mockImplementation(async (requestPath: string) => {
+      if (requestPath.includes('/rest/api/2/issue/DENP-1288')) return probeOutcome();
+      if (isKeyInRequest(requestPath) && requestPath.includes('DENP-1288')) return { issues: [] };
+      if (isKeyInRequest(requestPath)) {
+        return { issues: [buildIssue('BOARD-1', { customfield_10108: 'DENP-1288' })] };
+      }
+      return { issues: [] };
+    });
+  }
+
+  it('reports a missing Feature as archived when it reads fine on its own', async () => {
+    stubBoardWithUnreadableFeature(async () => buildIssue('DENP-1288'));
+
+    const issueSet = await fetchRollupBoardIssues(SCOPE, ['BOARD-1']);
+
+    expect(issueSet.featureReadFailures).toHaveLength(1);
+    expect(issueSet.featureReadFailures[0].reason).toBe('archived-or-unsearchable');
+    expect(issueSet.featureReadFailures[0].detail).toContain('archived');
+  });
+
+  it('reports a deleted Feature as not found, naming the stale Feature Link', async () => {
+    stubBoardWithUnreadableFeature(async () => { throw buildHttpError(404); });
+
+    const issueSet = await fetchRollupBoardIssues(SCOPE, ['BOARD-1']);
+
+    expect(issueSet.featureReadFailures[0].reason).toBe('not-found');
+    expect(issueSet.featureReadFailures[0].detail).toContain('does not exist');
+  });
+
+  it('reports a permission or security-level block as such', async () => {
+    stubBoardWithUnreadableFeature(async () => { throw buildHttpError(403); });
+
+    const issueSet = await fetchRollupBoardIssues(SCOPE, ['BOARD-1']);
+
+    expect(issueSet.featureReadFailures[0].reason).toBe('no-permission');
+    expect(issueSet.featureReadFailures[0].detail).toContain('issue security level');
+  });
+
+  it('falls back to a plain error rather than claiming a cause it does not know', async () => {
+    stubBoardWithUnreadableFeature(async () => { throw buildHttpError(500); });
+
+    const issueSet = await fetchRollupBoardIssues(SCOPE, ['BOARD-1']);
+    expect(issueSet.featureReadFailures[0].reason).toBe('error');
+  });
+
+  it('probes nothing when every referenced Feature came back', async () => {
+    mockJiraGet.mockImplementation(async (requestPath: string) => {
+      if (isKeyInRequest(requestPath) && requestPath.includes('DENP-1288')) {
+        return { issues: [buildIssue('DENP-1288')] };
+      }
+      if (isKeyInRequest(requestPath)) {
+        return { issues: [buildIssue('BOARD-1', { customfield_10108: 'DENP-1288' })] };
+      }
+      return { issues: [] };
+    });
+
+    const issueSet = await fetchRollupBoardIssues(SCOPE, ['BOARD-1']);
+
+    expect(issueSet.featureReadFailures).toEqual([]);
+    // A healthy board must not pay for a diagnosis it does not need.
+    expect(mockJiraGet.mock.calls.some((call) => String(call[0]).includes('/rest/api/2/issue/DENP-1288')))
+      .toBe(false);
+  });
+});

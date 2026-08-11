@@ -60,14 +60,43 @@ export interface LoadCompleteness {
 }
 
 /** The raw result of the three retrieval sweeps, before anything is resolved. */
+/**
+ * Why one Feature the board references could not be read, established by asking Jira about that key
+ * on its own rather than inferring it from a bulk query that simply came back short.
+ */
+export type FeatureReadFailureReason =
+  /** Jira says no such issue — usually a Feature Link left pointing at something deleted. */
+  | 'not-found'
+  /** The issue exists but this account may not see it: project permission or an issue security level. */
+  | 'no-permission'
+  /**
+   * Readable one at a time, yet absent from the bulk search. Jira excludes ARCHIVED issues from search
+   * results while still serving them by key, so this is the signature of an archived Feature.
+   */
+  | 'archived-or-unsearchable'
+  /** Something else went wrong; the message carries whatever Jira said. */
+  | 'error';
+
+/** One Feature that could not be read, with the cause named rather than guessed at. */
+export interface FeatureReadFailure {
+  featureKey: string;
+  reason: FeatureReadFailureReason;
+  detail: string;
+}
+
 export interface RollupBoardIssueSet {
   boardIssues: JiraIssue[];
   /** Sub-tasks are NOT returned by the board endpoint; they come from a separate parent sweep. */
   subtaskIssues: JiraIssue[];
   /** Features, read by key because they usually live in a different Jira project. */
   featureIssues: Map<string, JiraIssue>;
+  /** Referenced Features the bulk read did not return, each with the reason Jira gave. */
+  featureReadFailures: FeatureReadFailure[];
   load: LoadCompleteness;
 }
+
+/** How many missing Features are probed individually before the board stops asking. */
+export const MAX_FEATURE_READ_PROBES = 10;
 
 // ── Roll-up ──
 

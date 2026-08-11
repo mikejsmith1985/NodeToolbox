@@ -75,6 +75,7 @@ import {
   type BoardPreferences,
   type MasterCard,
   type QuickFilterState,
+  type FeatureReadFailure,
   type RollupBoardItem,
   type RollupBoardScope,
 } from './rollupBoardTypes.ts';
@@ -173,6 +174,8 @@ interface RollupBoardLoadState {
   issueLinkedOutOfProjectKeys: string[];
   /** Every Feature the board touches BEFORE scoping, so the scope panel can offer every project. */
   allReferencedFeatureKeys: string[];
+  /** Referenced Features that could not be read, each with the reason Jira gave for it. */
+  featureReadFailures: FeatureReadFailure[];
 }
 
 const EMPTY_LOAD_STATE: RollupBoardLoadState = {
@@ -181,6 +184,7 @@ const EMPTY_LOAD_STATE: RollupBoardLoadState = {
   masterCards: [],
   allItems: [],
   incompleteReasons: [],
+  featureReadFailures: [],
   isOversized: false,
   hasSubStatusField: true,
   hiddenIssueCount: 0,
@@ -256,6 +260,7 @@ export default function RollupBoardTab({
         masterCards: buildMasterCards(scopedResult.items, issueSet.featureIssues, storyPointsFieldIds),
         allItems: scopedResult.items,
         incompleteReasons: issueSet.load.failures.map((failure) => failure.detail),
+        featureReadFailures: issueSet.featureReadFailures,
         isOversized: issueSet.load.isOversized,
         hasSubStatusField: discoveredSubStatusFieldId !== '',
         hiddenIssueCount: scopedResult.hiddenIssueCount,
@@ -569,6 +574,20 @@ export default function RollupBoardTab({
           ⚠ {describeReconciliation(sprintPiGap)} Set the PI field on{' '}
           {sprintPiGap.mismatches.length === 1 ? 'it' : 'them'} in Jira and refresh.
         </p>
+      )}
+
+      {/* A Feature that simply "could not be read" leaves nowhere to go. Each one is asked about
+          directly, so the lane's blank header comes with the reason Jira itself gave. */}
+      {loadState.featureReadFailures.length > 0 && (
+        <div className={styles.boardWarning} data-testid="rollup-feature-read-failures">
+          ⚠ {loadState.featureReadFailures.length}{' '}
+          {loadState.featureReadFailures.length === 1 ? 'Feature' : 'Features'} could not be read:
+          <ul>
+            {loadState.featureReadFailures.map((failure) => (
+              <li key={failure.featureKey}>{failure.detail}</li>
+            ))}
+          </ul>
+        </div>
       )}
 
       {!loadState.hasSubStatusField && (
