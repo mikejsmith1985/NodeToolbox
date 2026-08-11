@@ -25,6 +25,8 @@ import IssueDetailPanel from '../../../components/IssueDetailPanel/index.tsx';
 import { TransitionRequiredFields } from '../../../components/TransitionRequiredFields/index.tsx';
 import type { JiraIssue } from '../../../types/jira.ts';
 import { loadConfiguredFeatureLinkFieldId } from '../../../utils/featureLink.ts';
+import { createIssue, getIssueTypeFields, getProjectIssueTypes, jiraPut } from '../../../services/jiraApi.ts';
+import type { CreateMetaIssueType } from '../../../types/jira.ts';
 import { buildJqlFieldReference, loadHygieneFieldConfig, readConfiguredPiFieldId } from '../../Hygiene/checks/hygieneFieldConfig.ts';
 import {
   areTransitionSelectionsComplete,
@@ -56,6 +58,12 @@ import { resolveBoardItems } from './featureRollup.ts';
 import { buildMasterCards } from './masterCards.ts';
 import { fetchFeaturesInPi, fetchRollupBoardIssues, fetchSprintPiReconciliation } from './rollupBoardFetch.ts';
 import {
+  buildBoardVisibilityPayload,
+  buildNewWorkPayload,
+  describeCreationOutcome,
+  type CreateMetaFieldShape,
+} from './createWorkForFeature.ts';
+import {
   selectFeaturesWithoutWork,
   sumUnplannedStoryPoints,
   type FeatureWithoutWork,
@@ -68,6 +76,7 @@ import {
   saveTeamFeatureScope,
 } from './boardScopeStore.ts';
 import { applyFeatureScope, type FeatureScopeSettings } from './featureScope.ts';
+import { AddWorkDialog } from './components/AddWorkDialog.tsx';
 import { BoardColumnHeaderRow } from './components/BoardColumnHeaderRow.tsx';
 import { ColumnVocabularyEditor } from './components/ColumnVocabularyEditor.tsx';
 import { FeatureScopePanel } from './components/FeatureScopePanel.tsx';
@@ -123,6 +132,8 @@ export interface RollupBoardTabProps {
    */
   scopeMode?: string;
   selectedPiValue?: string;
+  /** The Jira project new work is created in — the project this team's board issues live in. */
+  projectKey?: string;
 }
 
 const EMPTY_OPTION_SOURCES: ColumnOptionSources = {
@@ -208,6 +219,7 @@ export default function RollupBoardTab({
   copyableTeams = [],
   scopeMode,
   selectedPiValue,
+  projectKey = '',
 }: RollupBoardTabProps) {
   const [loadState, setLoadState] = useState<RollupBoardLoadState>(EMPTY_LOAD_STATE);
   const [filters, setFilters] = useState<QuickFilterState>(EMPTY_QUICK_FILTER_STATE);
@@ -227,6 +239,11 @@ export default function RollupBoardTab({
   const [hasOwnScope, setHasOwnScope] = useState(() => hasTeamOwnFeatureScope(teamProfileId));
   const [sprintPiGap, setSprintPiGap] = useState<SprintPiReconciliation | null>(null);
   const [featuresWithoutWork, setFeaturesWithoutWork] = useState<FeatureWithoutWork[]>([]);
+  const [addWorkFeature, setAddWorkFeature] = useState<{ key: string; summary: string } | null>(null);
+  const [creatableIssueTypes, setCreatableIssueTypes] = useState<CreateMetaIssueType[]>([]);
+  const [isCreatingWork, setIsCreatingWork] = useState(false);
+  const [createWorkError, setCreateWorkError] = useState<string | null>(null);
+  const [createWorkOutcome, setCreateWorkOutcome] = useState<string | null>(null);
   const [openIssueKey, setOpenIssueKey] = useState<string | null>(null);
   const [openIssueEditMeta, setOpenIssueEditMeta] = useState<Awaited<ReturnType<typeof fetchFeatureReviewEditMeta>> | null>(null);
 
@@ -344,6 +361,69 @@ export default function RollupBoardTab({
 
     return () => { isMounted = false; };
   }, [boardId, scopeMode, selectedPiValue, featureScope, teamProfileId, subStatusFieldId, loadState.masterCards]);
+
+  /** Opens the add-work form for one Feature, loading the project's own issue types first. */
+  const openAddWork = useCallback(async (featureKey: string, featureSummary: string): Promise<void> => {
+    setCreateWorkError(null);
+    setCreateWorkOutcome(null);
+    setAddWorkFeature({ key: featureKey, summary: featureSummary });
+    try {
+      const issueTypes = await getProjectIssueTypes(projectKey);
+      // Sub-task types are excluded: a sub-task needs a parent, which this form does not ask for.
+      setCreatableIssueTypes((issueTypes.values ?? []).filter((issueType) => !issueType.subtask));
+    } catch {
+      setCreatableIssueTypes([]);
+      setCreateWorkError('This project’s issue types could not be read.');
+    }
+  }, [projectKey]);
+
+  /**
+   * Creates the issue, then applies the two fields that make it visible on this board.
+   *
+   * The steps are separate because a custom field Jira refuses would otherwise fail the whole create
+   * and lose what the person typed. A half-success is reported as exactly that.
+   */
+  const createWorkForFeature = useCallback(async (issueTypeId: string, summary: string): Promise<void> => {
+    if (addWorkFeature === null) return;
+    setIsCreatingWork(true);
+    setCreateWorkError(null);
+
+    try {
+      const created = await createIssue(buildNewWorkPayload({ projectKey, issueTypeId, summary }));
+
+      const fieldMeta = await getIssueTypeFields(projectKey, issueTypeId).catch(() => ({ values: [] }));
+      const fieldShapesById: Record<string, CreateMetaFieldShape | undefined> = {};
+      for (const field of fieldMeta.values ?? []) fieldShapesById[field.fieldId] = field;
+
+      const visibilityPayload = buildBoardVisibilityPayload({
+        featureLinkFieldId: loadConfiguredFeatureLinkFieldId(),
+        featureKey: addWorkFeature.key,
+        piFieldId: scopeMode === DASHBOARD_PI_SCOPE_MODE ? readConfiguredPiFieldId() : '',
+        piValue: selectedPiValue ?? '',
+      }, fieldShapesById);
+
+      let wasMadeVisible = false;
+      let visibilityError: string | null = null;
+      if (visibilityPayload === null) {
+        visibilityError = 'this project does not offer those fields';
+      } else {
+        try {
+          await jiraPut(`/rest/api/2/issue/${encodeURIComponent(created.key)}`, visibilityPayload);
+          wasMadeVisible = true;
+        } catch (error: unknown) {
+          visibilityError = String(error);
+        }
+      }
+
+      setCreateWorkOutcome(describeCreationOutcome(created.key, wasMadeVisible, visibilityError));
+      setAddWorkFeature(null);
+      await loadBoard();
+    } catch (error: unknown) {
+      setCreateWorkError(String(error));
+    } finally {
+      setIsCreatingWork(false);
+    }
+  }, [addWorkFeature, projectKey, scopeMode, selectedPiValue, loadBoard]);
 
   const layout = useMemo(
     () => buildBoardLayout({ masterCards: loadState.masterCards, columns: renderedColumns, filters, preferences }),
@@ -634,10 +714,36 @@ export default function RollupBoardTab({
                 {feature.statusName ? ` · ${feature.statusName}` : ''}
                 {feature.storyPoints !== null ? ` · ${feature.storyPoints} pts` : ''}
                 {feature.assigneeDisplayName ? ` · ${feature.assigneeDisplayName}` : ''}
+                {projectKey !== '' && (
+                  <button
+                    className={styles.actionButton}
+                    onClick={() => void openAddWork(feature.featureKey, feature.summary)}
+                    type="button"
+                  >
+                    Add work
+                  </button>
+                )}
               </li>
             ))}
           </ul>
         </div>
+      )}
+
+      {addWorkFeature !== null && (
+        <AddWorkDialog
+          errorMessage={createWorkError}
+          featureKey={addWorkFeature.key}
+          featureSummary={addWorkFeature.summary}
+          isSaving={isCreatingWork}
+          issueTypes={creatableIssueTypes}
+          onCancel={() => setAddWorkFeature(null)}
+          onCreate={(issueTypeId, summary) => void createWorkForFeature(issueTypeId, summary)}
+          piValue={scopeMode === DASHBOARD_PI_SCOPE_MODE ? (selectedPiValue ?? '') : ''}
+        />
+      )}
+
+      {createWorkOutcome !== null && (
+        <p className={styles.boardStatusLine} data-testid="rollup-create-outcome">{createWorkOutcome}</p>
       )}
 
       {/* A Feature that simply "could not be read" leaves nowhere to go. Each one is asked about

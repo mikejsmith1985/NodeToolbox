@@ -8,6 +8,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Roll-Up Board — create work directly from a Feature.** Each Feature listed as having no work under
+  it now offers **Add work**: pick an issue type, type a summary, and the issue is created in the
+  team's project already carrying the **Feature Link** and the **PI**. Both are set deliberately, not
+  as a convenience — this board's scope is `<PI field> = "PI 26.4"` and its lanes come from the Feature
+  Link, so an issue created without them is invisible the moment it is saved, which is precisely how
+  ENCUC-2208 and DENP-1387 went missing for a whole PI. The form states both values before you press
+  Create, so neither is a surprise.
+  Creation runs in two steps: the issue is created with only what Jira accepts on every screen
+  (project, type, summary), then the Feature Link and PI are applied. A custom field the project
+  refuses therefore leaves a real, findable issue behind instead of failing the whole action and losing
+  what you typed — and the result says exactly which half worked rather than reporting a bare success.
+  Each field is shaped from its own create metadata (`{ value }` for a select, a bare string for text,
+  an array for a multi-select), because guessing produces a 400 that reads like a permissions problem.
+
+### Added
 - **Roll-Up Board — Features committed to the PI with no work under them are now named.** The board
   builds its lanes from the work upward, so a Feature nobody has broken down has no lane and no
   presence at all — which is exactly the moment somebody most needs to see it. DENP-1387 sat in that
