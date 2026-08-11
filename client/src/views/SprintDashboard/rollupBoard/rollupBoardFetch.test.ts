@@ -340,3 +340,69 @@ describe('probing a Feature the bulk read did not return', () => {
       .toBe(false);
   });
 });
+
+describe('reading the Feature at the end of a defect → QA issue → Feature chain', () => {
+  /** The real shape from GH #306: ENCUC-2070 → INTTEST-3961 → DENP-1288. */
+  function stubDefectViaQaIssueChain(): void {
+    mockJiraGet.mockImplementation(async (requestPath: string) => {
+      if (!isKeyInRequest(requestPath)) return { issues: [] };
+      const requestedKeys = readRequestedKeys(requestPath);
+
+      if (requestedKeys.includes('ENCUC-2070')) {
+        return {
+          issues: [{
+            id: 'ENCUC-2070',
+            key: 'ENCUC-2070',
+            fields: {
+              summary: 'Incorrect TCO Effective Dates',
+              issuetype: { name: 'Defect' },
+              issuelinks: [{ type: { name: 'Relates' }, outwardIssue: { key: 'INTTEST-3961' } }],
+            },
+          }],
+        };
+      }
+      // The QA issue names the Feature — but only if somebody reads it a second time.
+      if (requestedKeys.includes('INTTEST-3961')) {
+        return {
+          issues: [{
+            id: 'INTTEST-3961',
+            key: 'INTTEST-3961',
+            fields: { summary: 'QA issue', issuetype: { name: 'Test' }, customfield_10108: 'DENP-1288' },
+          }],
+        };
+      }
+      if (requestedKeys.includes('DENP-1288')) {
+        return { issues: [{ id: 'DENP-1288', key: 'DENP-1288', fields: { summary: 'The old Feature' } }] };
+      }
+      return { issues: [] };
+    });
+  }
+
+  it('fetches the Feature the QA issue points at, which the first sweep never asks for', async () => {
+    stubDefectViaQaIssueChain();
+
+    const issueSet = await fetchRollupBoardIssues(SCOPE, ['ENCUC-2070']);
+
+    expect(issueSet.featureIssues.get('DENP-1288')?.fields.summary).toBe('The old Feature');
+  });
+
+  it('reports no read failure for a Feature it successfully reached on the second hop', async () => {
+    stubDefectViaQaIssueChain();
+
+    const issueSet = await fetchRollupBoardIssues(SCOPE, ['ENCUC-2070']);
+
+    // Previously this Feature was never requested at all, so it was never probed either — the lane
+    // said "could not be read" and no reason was ever established.
+    expect(issueSet.featureReadFailures.map((failure) => failure.featureKey)).not.toContain('DENP-1288');
+  });
+
+  it('stops after one further hop rather than walking the whole link graph', async () => {
+    stubDefectViaQaIssueChain();
+    await fetchRollupBoardIssues(SCOPE, ['ENCUC-2070']);
+
+    // Board issues, sub-tasks, first-hop Features, second-hop Features — and no further round.
+    const keyInRequests = mockJiraGet.mock.calls
+      .map((call) => String(call[0])).filter(isKeyInRequest);
+    expect(keyInRequests.length).toBeLessThanOrEqual(4);
+  });
+});

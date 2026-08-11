@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Roll-Up Board — the Feature at the end of a defect → QA issue → Feature chain was never fetched.**
+  A defect raised in testing points at the QA issue, and the QA issue points at the Feature. The first
+  sweep collected the QA issue but never re-read it, so the Feature at the end of that chain was
+  requested by nobody: its lane appeared, because the roll-up ROUTE knew the key, while its details
+  never arrived. That is what *"this Feature could not be read (it may be in a project you cannot
+  see)"* was reporting all along — not a permission problem at all. It also explains why asking Jira
+  directly produced no reason: a key that was never requested is never recorded as missing, so nothing
+  was ever probed. Found in production as ENCUC-2070 → INTTEST-3961 → DENP-1288.
+  The board now takes exactly one further hop, matching the one-hop cap the defect precedence chain
+  already applies — enough for that chain, and bounded so a tangle of links cannot walk the instance.
+
+### Fixed
 - **Roll-Up Board — "This Feature could not be read" now says why, on the lane itself.** The reason was
   already being established by asking Jira about the key directly, but it was only reported in a banner
   above the board, so the lane kept showing the bare message with nowhere to go. The specific cause now
