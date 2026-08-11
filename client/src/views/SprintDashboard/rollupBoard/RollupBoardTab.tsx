@@ -41,6 +41,8 @@ import { buildRenderedColumns, resolveColumnIdForItem } from './boardColumns.ts'
 import { EMPTY_QUICK_FILTER_STATE, hasActiveFilters } from './boardFilters.ts';
 import { buildBoardLayout } from './boardLayout.ts';
 import {
+  clearManualOrder,
+  hasManualOrder,
   loadBoardPreferences,
   moveCardBefore,
   moveLaneBefore,
@@ -779,6 +781,19 @@ export default function RollupBoardTab({
         <button className={styles.actionButton} onClick={() => setIsEditingColumns(!isEditingColumns)} type="button">
           {isEditingColumns ? 'Hide board setup' : 'Board setup'}
         </button>
+        {/* Manual order is sticky by design — a lane sent to the top stays there across sessions — so
+            there has to be a way back that is not "drag every lane". Offered only when there is
+            something to undo. */}
+        {hasManualOrder(preferences) && (
+          <button
+            className={styles.actionButton}
+            onClick={() => applyPreferences(clearManualOrder(preferences))}
+            title="Return to Feature key order — the same order the PI Review page uses"
+            type="button"
+          >
+            Reset order
+          </button>
+        )}
         <span className={styles.boardStatusLine}>
           {loadState.isLoading
             ? 'Loading — this board is not showing everything yet.'
