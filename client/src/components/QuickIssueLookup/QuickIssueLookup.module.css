@@ -7,20 +7,27 @@
   display: flex;
   align-items: flex-start;
   justify-content: center;
-  padding: 48px 16px;
+  padding: 32px 16px;
   overflow-y: auto;
   background: rgba(0, 0, 0, 0.45);
 }
 
 .modal {
-  width: 720px;
-  max-width: calc(100vw - 32px);
-  padding: 20px;
+  /* Wide enough for a real description and a comment thread to read as prose rather than as a
+     column of two-or-three-word lines. Capped so the text does not sprawl on an ultrawide display,
+     and given plain px/min() — never a zoom-relative width, which double-shrinks at A+/A++. */
+  width: min(1120px, calc(100vw - 48px));
+  padding: 24px;
   background: var(--color-surface-1);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-floating);
   color: var(--color-text-primary);
+  /* The body scrolls inside the modal so the title and close button stay reachable on a long issue,
+     rather than the whole dialog growing past the top of the window. */
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 64px);
 }
 
 .modalHeader {
@@ -51,6 +58,14 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
+  /* Only this part scrolls, so the header above it stays put — see .modal. */
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  /* The popup is a reading surface first: a step up from the app's dense default makes a
+     description and a fifteen-comment thread legible without leaning into the screen. */
+  font-size: var(--font-size-md);
+  line-height: 1.55;
 }
 
 .searchBar {

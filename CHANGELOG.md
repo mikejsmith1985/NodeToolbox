@@ -8,6 +8,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Quick issue lookup (F2) — Fix Version is now editable.** The popup displayed a Fix Versions value
+  but offered no way to change it, so the one field most likely to need a quick correction was the one
+  field that sent you to Jira. It now appears in *Edit fields* whenever the issue's edit metadata says
+  the current user may set it, reusing the existing `saveFeatureReviewFixVersion` writer. Options are
+  keyed by version **name** rather than id, because that writer posts `{ name }` — an id-keyed option
+  would have sent a numeric id as a version name and been rejected. Released and archived versions are
+  left out, since Jira will not accept them on an issue. The version can also be **cleared**, not only
+  changed: single-selects previously refused to save an empty value, which is right for Priority but
+  made removing a fix version impossible. Where an issue carries more than one fix version, the editor
+  says so and warns that saving replaces all of them — the writer sets the whole array, and losing a
+  value the user could not see coming is the one outcome it must never produce silently.
+
+### Changed
+- **Quick issue lookup popup is larger and easier to read.** Widened from 720px to `min(1120px,
+  100vw - 48px)` with roomier padding and a step up in body text size and line height, so a
+  description and a long comment thread read as prose instead of a column of three-word lines. The
+  body scrolls inside the dialog rather than the dialog growing past the top of the window, so the
+  title and close button stay reachable on a long issue.
+
+### Added
 - **Roll-Up Board — sprint-in-PI reconciliation.** Every PI-scoped tab queries `<PI field> = "PI 26.4"`,
   so an issue whose PI field was never filled in is missing from all of them at once, and missing
   *silently* — which reads as "there is less work here" rather than "this board is wrong". Found in

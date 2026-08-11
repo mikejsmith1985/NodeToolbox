@@ -84,10 +84,18 @@ export interface SelectFieldEditorProps {
   options: FeatureReviewSelectOption[];
   onSave: (nextValue: string) => Promise<void>;
   onSaved?: () => void;
+  /**
+   * Label for the blank option, when saving it is a real choice rather than an unfinished one.
+   *
+   * Most select fields cannot meaningfully be emptied — a priority of "nothing" is not a value — so
+   * saving a blank draft is refused by default. A fix version genuinely can be removed, and without
+   * this the only way to take one off an issue would be to leave the popup for Jira.
+   */
+  clearOptionLabel?: string;
 }
 
 /** Inline editor for a single-select option field (e.g. priority). */
-export function SelectFieldEditor({ label, initialValue, options, onSave, onSaved }: SelectFieldEditorProps): React.JSX.Element {
+export function SelectFieldEditor({ label, initialValue, options, onSave, onSaved, clearOptionLabel }: SelectFieldEditorProps): React.JSX.Element {
   const editor = useFieldEditor(onSave, onSaved);
   const [draft, setDraft] = useState(initialValue);
 
@@ -103,14 +111,14 @@ export function SelectFieldEditor({ label, initialValue, options, onSave, onSave
             value={draft}
             onChange={(changeEvent) => setDraft(changeEvent.target.value)}
           >
-            <option value="">{CHOOSE_OPTION_LABEL}</option>
+            <option value="">{clearOptionLabel ?? CHOOSE_OPTION_LABEL}</option>
             {options.map((option) => (
               <option key={option.value} value={option.value}>{option.label}</option>
             ))}
           </select>
           <button
             className={styles.saveButton}
-            disabled={editor.isSaving || draft.trim() === ''}
+            disabled={editor.isSaving || (draft.trim() === '' && clearOptionLabel === undefined)}
             type="button"
             onClick={() => editor.save(draft)}
           >
