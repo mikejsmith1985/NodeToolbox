@@ -71,6 +71,21 @@ export function buildColumnGridTemplate(columnCount: number): string {
   return `repeat(${columnCount}, minmax(var(--layout-control-min-width), 1fr))`;
 }
 
+/**
+ * The width the board needs before its columns start being squeezed.
+ *
+ * Set on the header row AND on every lane's cells so all of them overflow together and stay aligned.
+ * Without it the tracks quietly compress to fit the window and the last column becomes unreachable,
+ * because the scroller has nothing wider than itself to scroll.
+ *
+ * It must be a plain minimum, never `width: max-content`: with `1fr` tracks that sizes each track to
+ * its own content, so a lane holding cards and an empty lane end up with different column widths.
+ */
+export function buildColumnRowMinWidth(columnCount: number): string {
+  return `calc(${columnCount} * var(--layout-control-min-width)`
+    + ` + ${Math.max(columnCount - 1, 0)} * var(--spacing-xs))`;
+}
+
 /** Renders the board-level column headers, draggable into the order the team wants. */
 export function BoardColumnHeaderRow({
   columns,
@@ -104,7 +119,10 @@ export function BoardColumnHeaderRow({
         <div
           className={styles.columnHeaderRow}
           data-testid="rollup-column-header-row"
-          style={{ gridTemplateColumns: buildColumnGridTemplate(columns.length) }}
+          style={{
+            gridTemplateColumns: buildColumnGridTemplate(columns.length),
+            minWidth: buildColumnRowMinWidth(columns.length),
+          }}
         >
           {columns.map((column) => (
             <SortableColumnHeader

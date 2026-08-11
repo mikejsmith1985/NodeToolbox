@@ -75,11 +75,9 @@
 
 .columnHeaderRow {
   display: grid;
-  /* `max-content` lets the tracks keep their minimum width instead of being squeezed to fit, which is
-     what makes the scroller actually have something to scroll; `min-width: 100%` still fills the space
-     when there IS room. Without this the last column is simply unreachable at larger text sizes. */
-  width: max-content;
-  min-width: 100%;
+  /* NOTE: never `width: max-content` here. With `1fr` tracks that sizes each track to ITS OWN content,
+     so a lane holding cards gets wide columns, an empty lane gets narrow ones, and no lane lines up
+     with the header. The row's minimum width is set inline instead — see buildColumnRowMinWidth. */
   gap: var(--spacing-xs);
   padding-bottom: var(--spacing-xs);
   border-bottom: 1px solid var(--color-border);
@@ -183,10 +181,8 @@
 
 .laneCells {
   display: grid;
-  /* Must match .columnHeaderRow exactly or the headers stop lining up with their cells once the board
-     is wider than the window. */
-  width: max-content;
-  min-width: 100%;
+  /* Sized by the same inline min-width as .columnHeaderRow; the two must always agree or the headers
+     stop lining up with their cells. */
   gap: var(--spacing-xs);
   padding: var(--spacing-xs);
 }

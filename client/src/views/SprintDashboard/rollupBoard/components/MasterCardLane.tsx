@@ -12,7 +12,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { buildDropTargetId } from '../cardDropRouting.ts';
 import styles from '../RollupBoardTab.module.css';
 import type { RenderedColumn, RenderedLane, RollupBoardItem } from '../rollupBoardTypes.ts';
-import { buildColumnGridTemplate } from './BoardColumnHeaderRow.tsx';
+import { buildColumnGridTemplate, buildColumnRowMinWidth } from './BoardColumnHeaderRow.tsx';
 import { ChildCard } from './ChildCard.tsx';
 import { ParentContainer } from './ParentContainer.tsx';
 
@@ -188,7 +188,13 @@ export function MasterCardLane({
       </header>
 
       {!lane.isCollapsed && (
-        <div className={styles.laneCells} style={{ gridTemplateColumns: buildColumnGridTemplate(columns.length) }}>
+        <div
+          className={styles.laneCells}
+          style={{
+            gridTemplateColumns: buildColumnGridTemplate(columns.length),
+            minWidth: buildColumnRowMinWidth(columns.length),
+          }}
+        >
           {columns.map((column) => {
             const cell = lane.cellsByColumnId[column.id];
             return (
