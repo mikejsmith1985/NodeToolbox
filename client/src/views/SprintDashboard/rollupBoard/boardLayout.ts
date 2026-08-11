@@ -91,6 +91,7 @@ function groupItemsIntoParentContainers(
   columnItems: readonly RollupBoardItem[],
   itemsByKeyInLane: ReadonlyMap<string, RollupBoardItem>,
   orderedIssueKeys: readonly string[],
+  laneKeyByIssueKey: ReadonlyMap<string, string>,
 ): LaneCell {
   const containersByParentKey = new Map<string, ParentContainer>();
   const looseItems: RollupBoardItem[] = [];
@@ -114,6 +115,11 @@ function groupItemsIntoParentContainers(
       // The parent may be real but outside this board's scope. The header still names it, so the
       // structure is intact and the reader can see why no parent card appears.
       isParentInScope: parentItem !== undefined,
+      // Where it went, when it IS on the board. Saying "not on this board" for a parent sitting two
+      // lanes down sends the reader hunting for a scope problem that does not exist.
+      parentLaneFeatureKey: parentItem === undefined
+        ? (laneKeyByIssueKey.get(item.parentKey) ?? null)
+        : null,
       items: [item],
     });
   }
@@ -144,6 +150,7 @@ function buildLane(
   columns: readonly RenderedColumn[],
   filters: QuickFilterState,
   preferences: BoardPreferences,
+  laneKeyByIssueKey: ReadonlyMap<string, string>,
 ): RenderedLane {
   const vitals = computeLaneVitals(masterCard);
   const matchedItems = selectMatchingItems(masterCard.items, filters);
@@ -156,6 +163,7 @@ function buildLane(
       itemsByColumnId.get(column.id) ?? [],
       itemsByKeyInLane,
       preferences.cardOrderByCell?.[buildCardCellKey(masterCard.featureKey, column.id)] ?? [],
+      laneKeyByIssueKey,
     );
   }
 
@@ -176,8 +184,15 @@ function buildLane(
  * asserted arithmetically instead of inspected on screen.
  */
 export function buildBoardLayout(input: BuildBoardLayoutInput): BoardLayout {
+  // Which lane every card ended up in, board-wide. Lets a container distinguish "the parent is
+  // elsewhere on this board" from "the parent is not here at all" — two very different problems.
+  const laneKeyByIssueKey = new Map<string, string>();
+  for (const masterCard of input.masterCards) {
+    for (const item of masterCard.items) laneKeyByIssueKey.set(item.key, masterCard.featureKey);
+  }
+
   const lanes = input.masterCards.map((masterCard) =>
-    buildLane(masterCard, input.columns, input.filters, input.preferences),
+    buildLane(masterCard, input.columns, input.filters, input.preferences, laneKeyByIssueKey),
   );
 
   return {

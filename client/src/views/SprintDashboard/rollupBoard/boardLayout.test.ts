@@ -462,3 +462,58 @@ describe('buildBoardLayout — cards sit in the order the viewer arranged', () =
       .toEqual(['DEV-1', 'DEV-2']);
   });
 });
+
+describe('a parent that is on the board but in another lane', () => {
+  // The production case: sub-tasks of ENCUC-2070 sat in FEAT-2's lane reading "not on this board",
+  // while ENCUC-2070's own card was in FEAT-1's — sending the reader after a scope problem that was
+  // really the parent and its children disagreeing about which Feature they deliver.
+  const FEATURES = new Map([['FEAT-1', buildFeature('FEAT-1')], ['FEAT-2', buildFeature('FEAT-2')]]);
+
+  /** Lays out a board from raw items, as the tab does. */
+  function layOut(items: RollupBoardItem[]) {
+    return buildBoardLayout({
+      masterCards: buildMasterCards(items, FEATURES),
+      columns: buildRenderedColumns(VOCABULARY),
+      filters: NO_FILTERS,
+      preferences: buildPreferences(),
+    });
+  }
+
+  /** The first container in one lane's To Do cell. */
+  function firstContainerIn(layout: ReturnType<typeof layOut>, featureKey: string) {
+    const lane = layout.lanes.find((candidate) => candidate.masterCard.featureKey === featureKey)!;
+    return lane.cellsByColumnId['col-todo'].containers[0];
+  }
+
+  it('names the lane the parent actually sits in', () => {
+    const layout = layOut([
+      buildItem({ key: 'ENCUC-2070', featureKey: 'FEAT-1', columnId: 'col-todo' }),
+      buildItem({ key: 'ENCUC-2253', featureKey: 'FEAT-2', columnId: 'col-todo', parentKey: 'ENCUC-2070' }),
+    ]);
+
+    const container = firstContainerIn(layout, 'FEAT-2');
+    expect(container.isParentInScope).toBe(false);
+    expect(container.parentLaneFeatureKey).toBe('FEAT-1');
+  });
+
+  it('reports no lane when the parent is genuinely absent from the board', () => {
+    const layout = layOut([
+      buildItem({ key: 'ENCUC-2253', featureKey: 'FEAT-2', columnId: 'col-todo', parentKey: 'ENCUC-GONE' }),
+    ]);
+
+    const container = firstContainerIn(layout, 'FEAT-2');
+    expect(container.isParentInScope).toBe(false);
+    expect(container.parentLaneFeatureKey).toBeNull();
+  });
+
+  it('still draws the parent normally when it is in the same lane', () => {
+    const layout = layOut([
+      buildItem({ key: 'ENCUC-2070', featureKey: 'FEAT-2', columnId: 'col-todo' }),
+      buildItem({ key: 'ENCUC-2253', featureKey: 'FEAT-2', columnId: 'col-todo', parentKey: 'ENCUC-2070' }),
+    ]);
+
+    const container = firstContainerIn(layout, 'FEAT-2');
+    expect(container.isParentInScope).toBe(true);
+    expect(container.parentLaneFeatureKey).toBeNull();
+  });
+});

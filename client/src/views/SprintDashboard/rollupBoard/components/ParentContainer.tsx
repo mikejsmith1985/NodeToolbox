@@ -33,13 +33,21 @@ export function ParentContainer({
     <div className={styles.parentContainer} data-testid={`rollup-container-${container.parentKey}`}>
       <div className={styles.parentContainerHeader}>
         <span className={styles.parentContainerKey}>{container.parentKey}</span>
-        {container.isParentInScope
-          ? <span>{container.parentSummary}</span>
-          : (
-            // The parent is real but not on this board, so no card for it exists anywhere. Saying so
-            // is better than leaving a reader wondering why the parent is nowhere to be found.
-            <span className={styles.parentContainerOutOfScope}>not on this board</span>
-          )}
+        {container.isParentInScope && <span>{container.parentSummary}</span>}
+
+        {/* Two different problems, so two different sentences. A parent sitting in another lane means
+            it and its children disagree about which Feature they deliver — something to fix in Jira,
+            not the scope gap that "not on this board" would send a reader looking for. */}
+        {!container.isParentInScope && container.parentLaneFeatureKey && (
+          <span className={styles.parentContainerOutOfScope}>
+            its own card is in the {container.parentLaneFeatureKey} lane — it and this work disagree
+            about which Feature they deliver
+          </span>
+        )}
+
+        {!container.isParentInScope && !container.parentLaneFeatureKey && (
+          <span className={styles.parentContainerOutOfScope}>not on this board</span>
+        )}
       </div>
 
       {container.items.map((item) => (

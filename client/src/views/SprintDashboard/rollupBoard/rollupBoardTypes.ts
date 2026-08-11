@@ -255,8 +255,16 @@ export interface VocabularyValidation {
 export interface ParentContainer {
   parentKey: string;
   parentSummary: string;
-  /** False when the parent is not on this board: the header still shows, but no parent card is drawn. */
+  /** False when the parent is not in THIS lane: the header still shows, but no parent card is drawn. */
   isParentInScope: boolean;
+  /**
+   * The lane the parent actually sits in, when it is on the board but somewhere else.
+   *
+   * Null means it is genuinely absent from the board. The distinction matters: a parent in another
+   * lane means the parent and its children disagree about which Feature they deliver, which is a data
+   * problem to go and fix — not the scope problem that "not on this board" implies.
+   */
+  parentLaneFeatureKey?: string | null;
   items: RollupBoardItem[];
 }
 
