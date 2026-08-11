@@ -142,16 +142,29 @@ function resolveDirectRoute(issue: JiraIssue, featureLinkFieldId: string): RollU
 }
 
 /** Picks the right resolution strategy for one issue. */
+/** True when a Feature has already shipped, read from its status CATEGORY not its status name. */
+function buildFinishedFeatureTest(
+  featureIssues: ReadonlyMap<string, JiraIssue>,
+): (featureKey: string) => boolean {
+  return (featureKey: string): boolean => {
+    const featureIssue = featureIssues.get(featureKey);
+    if (!featureIssue) return false;
+    const status = (featureIssue.fields as { status?: { statusCategory?: { key?: string } } }).status;
+    return String(status?.statusCategory?.key ?? '').toLowerCase() === 'done';
+  };
+}
+
 function resolveRouteForIssue(
   issue: JiraIssue,
   index: ReadonlyMap<string, JiraIssue>,
   featureLinkFieldId: string,
+  isFeatureFinished: (featureKey: string) => boolean,
 ): RollUpRoute {
   if (isSubtaskIssue(issue)) {
     return resolveSubtaskRoute(issue, index, featureLinkFieldId);
   }
   if (DEFECT_ISSUE_TYPE_NAMES.has(readIssueTypeName(issue))) {
-    return resolveDefectRollup(issue, index, featureLinkFieldId);
+    return resolveDefectRollup(issue, index, featureLinkFieldId, isFeatureFinished);
   }
   return resolveDirectRoute(issue, featureLinkFieldId);
 }
@@ -228,6 +241,8 @@ export function resolveBoardItems(
   // on a team board, so without this the "direct-feature" precedence rank could never fire at all.
   // This index is for lookup only — the Features themselves are not board items and are not rendered.
   const resolutionIndexByKey = new Map(uniqueIssuesByKey);
+  // A defect linked to a shipped Feature is being delivered under whatever it is linked to NOW.
+  const isFeatureFinished = buildFinishedFeatureTest(issueSet.featureIssues);
   for (const [featureKey, featureIssue] of issueSet.featureIssues) {
     if (!resolutionIndexByKey.has(featureKey)) {
       resolutionIndexByKey.set(featureKey, featureIssue);
@@ -235,7 +250,9 @@ export function resolveBoardItems(
   }
 
   return [...uniqueIssuesByKey.values()].map((issue) => {
-    const route = resolveRouteForIssue(issue, resolutionIndexByKey, scope.featureLinkFieldId);
+    const route = resolveRouteForIssue(
+      issue, resolutionIndexByKey, scope.featureLinkFieldId, isFeatureFinished,
+    );
     const issueFields = issue.fields as unknown as Record<string, unknown>;
     const statusName = ((issueFields.status as { name?: string })?.name ?? '').trim();
     const subStatusValue = readSubStatusValue(issue, scope.subStatusFieldId);

@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Roll-Up Board — a defect now files under the Feature still in flight, not the one that shipped.**
+  The precedence chain answers *how* a defect was linked, and ranks the QA route above a direct Feature
+  link because that is usually the more specific fact. But a defect found two PIs ago while testing a
+  Feature that has since shipped is being **delivered** under whatever it is linked to now — so rank
+  alone filed live work into a finished Feature's lane, which nobody is looking at. Seen in production:
+  ENCUC-2070 is active in PI 26.4 against DENP-1414, yet sat under DENP-1288, closed in PI 26.2.
+  A candidate reaching a finished Feature now loses to one reaching an unfinished Feature whatever its
+  rank, read from the status **category** so Cancelled counts as finished too. Precedence is otherwise
+  untouched — it still decides the winner within each group — and where every route reaches a finished
+  Feature the original answer stands, because a finished Feature beats none. The card says
+  *"Filed under the Feature still in flight"* when a stronger route was passed over, and the route not
+  taken stays listed, so the ticket that spawned the defect is never lost.
+
 ### Fixed
 - **Roll-Up Board — only the first few swimlanes could be dragged.** Both lane movers seeded their
   working list from the STORED order alone, so any lane never explicitly ordered was absent from it.

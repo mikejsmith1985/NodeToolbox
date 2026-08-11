@@ -149,6 +149,13 @@ export function ChildCard({
         </div>
       )}
 
+      {/* The one case where the route taken is NOT the highest-ranked one, so it is worth saying. */}
+      {item.route.notes.includes('preferred-unfinished-feature') && (
+        <div className={styles.cardRoute}>
+          Filed under the Feature still in flight — the stronger link reaches one that has shipped
+        </div>
+      )}
+
       {item.route.notes.includes('link-loop-detected') && (
         <div className={styles.cardRoute}>⚠ Its links form a loop — worth tidying in Jira</div>
       )}

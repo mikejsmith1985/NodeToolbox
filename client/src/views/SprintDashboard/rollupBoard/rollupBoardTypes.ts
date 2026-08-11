@@ -117,7 +117,9 @@ export interface RollUpCandidate {
 }
 
 /** A note about how resolution behaved, surfaced on the card as a hygiene observation. */
-export type RollUpNote = 'link-loop-detected' | 'parent-out-of-scope' | 'multiple-features-touched';
+export type RollUpNote = 'link-loop-detected' | 'parent-out-of-scope' | 'multiple-features-touched'
+  /** A stronger-ranked route was passed over because the Feature it reached is already finished. */
+  | 'preferred-unfinished-feature';
 
 /** The displayable explanation of how one issue reaches its Master Card. */
 export interface RollUpRoute {
