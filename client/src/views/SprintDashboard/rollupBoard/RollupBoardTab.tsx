@@ -1041,6 +1041,8 @@ export default function RollupBoardTab({
               hasActiveFilters={hasActiveFilters(filters)}
               highlightedFamilyKey={highlightedFamilyKey}
               key={lane.masterCard.featureKey}
+              featureReadFailureDetail={loadState.featureReadFailures
+                .find((failure) => failure.featureKey === lane.masterCard.featureKey)?.detail ?? null}
               lane={lane}
               onAddWork={projectKey !== ''
                 ? (laneFeatureKey, laneSummary) => void openAddWork(laneFeatureKey, laneSummary)
