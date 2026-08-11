@@ -95,6 +95,7 @@ const SINGLE_PROJECT_SCOPE: FeatureScopeSettings = {
   featureProjectKeys: ['ENCUC'],
   shouldIncludeOutOfProjectFeatureLinks: false,
   shouldIncludeIssueLinkedFeatures: false,
+  carryOverPiValue: '',
 };
 
 /** Cleanup Crew: two Feature projects. */
@@ -102,6 +103,7 @@ const TWO_PROJECT_SCOPE: FeatureScopeSettings = {
   featureProjectKeys: ['ENCUC', 'DENP'],
   shouldIncludeOutOfProjectFeatureLinks: false,
   shouldIncludeIssueLinkedFeatures: false,
+  carryOverPiValue: '',
 };
 
 /** Nothing configured — every Feature counts, which is how the board behaved before scoping existed. */
@@ -109,6 +111,7 @@ const UNCONFIGURED_SCOPE: FeatureScopeSettings = {
   featureProjectKeys: [],
   shouldIncludeOutOfProjectFeatureLinks: false,
   shouldIncludeIssueLinkedFeatures: false,
+  carryOverPiValue: '',
 };
 
 describe('isAuthoritativeFeatureRoute', () => {
@@ -286,6 +289,7 @@ describe('naming what was hidden', () => {
       featureProjectKeys: ['DENP'],
       shouldIncludeOutOfProjectFeatureLinks: false,
       shouldIncludeIssueLinkedFeatures: false,
+      carryOverPiValue: '',
     });
 
     expect(result.hiddenIssueKeys).toEqual(['ENCUC-2070']);
@@ -297,6 +301,7 @@ describe('naming what was hidden', () => {
       featureProjectKeys: ['DENP'],
       shouldIncludeOutOfProjectFeatureLinks: false,
       shouldIncludeIssueLinkedFeatures: false,
+      carryOverPiValue: '',
     });
 
     expect(result.hiddenIssueKeys).toEqual([]);
@@ -307,6 +312,7 @@ describe('naming what was hidden', () => {
       featureProjectKeys: [],
       shouldIncludeOutOfProjectFeatureLinks: false,
       shouldIncludeIssueLinkedFeatures: false,
+      carryOverPiValue: '',
     });
 
     expect(result.hiddenIssueKeys).toEqual([]);

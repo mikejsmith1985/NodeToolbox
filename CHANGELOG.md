@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Roll-Up Board — carry last PI's unfinished work onto this PI's board.** A Feature that did not
+  finish keeps its original PI in Jira, because rewriting it would falsify what the ART committed last
+  PI — so the Feature and the child stories that also still carry the old PI are invisible to a board
+  scoped to the current one, while the team works them. Board setup gains **"Also carry over unfinished
+  Features from PI"**, chosen from the PI list the dashboard already loads. The board then pulls in
+  every Feature in that PI whose status category is not Done, plus its child issues **whatever PI those
+  children carry** — filtering the children by PI would reintroduce the exact blindness this removes.
+  Carried-over work is merged into the scope without double-counting a child already tagged to the
+  current PI, and the board states what it added rather than quietly showing more than its own PI.
+  This derives carry-over from Jira rather than reading the PI Review page's checkbox, so it cannot
+  drift out of step and needs no maintaining as the set changes; the cost is that a Feature genuinely
+  abandoned rather than carried will also appear, which the setting says plainly.
+
 ### Fixed
 - **Roll-Up Board — a defect ignored its own Feature Link.** The defect resolver walked the defect's
   ISSUE LINKS and nothing else, so a Feature Link set on the defect itself was never a candidate. With

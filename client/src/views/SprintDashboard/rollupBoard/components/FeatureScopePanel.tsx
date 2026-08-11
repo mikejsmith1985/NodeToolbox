@@ -24,6 +24,8 @@ export interface FeatureScopePanelProps {
    * chip vanished, so there was no way to discover or re-add it.
    */
   allFeatureKeys: readonly string[];
+  /** PI values this instance offers, so carry-over is chosen rather than typed. */
+  availablePiValues?: readonly string[];
   /** How many issues the current scope is holding back. */
   hiddenIssueCount: number;
   /** Out-of-project Features reached by the Feature Link field — named whether shown or hidden. */
@@ -48,6 +50,7 @@ export function FeatureScopePanel({
   scope,
   hasOwnScope,
   allFeatureKeys,
+  availablePiValues = [],
   hiddenIssueCount,
   featureLinkedOutOfProjectKeys,
   issueLinkedOutOfProjectKeys,
@@ -149,6 +152,31 @@ export function FeatureScopePanel({
           Also show other projects&apos; Features that are only reached by an <strong>issue link</strong>
         </span>
       </label>
+
+      {/* Carry-over is a scope decision like the two above it, so it lives with them. */}
+      <div className={styles.editorRow}>
+        <label className={styles.fieldLabel} htmlFor="rollup-carry-over-pi">
+          Also carry over unfinished Features from PI
+        </label>
+        <select
+          className={styles.inputField}
+          id="rollup-carry-over-pi"
+          onChange={(changeEvent) => onScopeChange({ ...scope, carryOverPiValue: changeEvent.target.value })}
+          value={scope.carryOverPiValue}
+        >
+          <option value="">— None, show only this PI —</option>
+          {availablePiValues.map((piValue) => (
+            <option key={piValue} value={piValue}>{piValue}</option>
+          ))}
+        </select>
+      </div>
+
+      <p className={styles.fieldLabel}>
+        A Feature that did not finish keeps its original PI in Jira, so it and its work are invisible to
+        this board until you ask for them. This pulls in every <strong>unfinished</strong> Feature from
+        the PI you choose, with its child issues, whatever PI those children carry. A Feature you
+        abandoned rather than carried will appear too — remove it by narrowing the projects or closing it.
+      </p>
 
       {hiddenIssueCount > 0 && (
         <p className={styles.fieldLabel}>

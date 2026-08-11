@@ -60,6 +60,7 @@ import { executeStatusMove } from './statusMoveWriter.ts';
 import { resolveBoardItems } from './featureRollup.ts';
 import { buildFeatureWithoutWorkCard, buildMasterCards, orderLanesLikePiReview } from './masterCards.ts';
 import {
+  fetchCarryOverScope,
   fetchFeaturesInPi,
   fetchRollupBoardIssues,
   fetchSprintPiReconciliation,
@@ -78,6 +79,12 @@ import {
 } from '../../AdminHub/subtaskStoryPromotion.ts';
 import { describeJiraFailure } from '../../AdminHub/subtaskStoryPromotion.ts';
 import { sumUnplannedStoryPoints } from './emptyFeatureScan.ts';
+import {
+  EMPTY_CARRY_OVER_SCOPE,
+  describeCarryOverScope,
+  mergeScopedIssueKeys,
+  type CarryOverScope,
+} from './carryOverScope.ts';
 import {
   readFeatureKeysFromTeamIssues,
   selectTeamOwnedEmptyFeatures,
@@ -148,6 +155,8 @@ export interface RollupBoardTabProps {
    */
   scopeMode?: string;
   selectedPiValue?: string;
+  /** Every PI this instance offers, so carry-over is chosen from a list rather than typed. */
+  availablePiValues?: readonly string[];
   /** The Jira project new work is created in — the project this team's board issues live in. */
   projectKey?: string;
 }
@@ -238,6 +247,7 @@ export default function RollupBoardTab({
   copyableTeams = [],
   scopeMode,
   selectedPiValue,
+  availablePiValues = [],
   projectKey = '',
 }: RollupBoardTabProps) {
   const [loadState, setLoadState] = useState<RollupBoardLoadState>(EMPTY_LOAD_STATE);
@@ -256,6 +266,7 @@ export default function RollupBoardTab({
   const [transitionSelections, setTransitionSelections] = useState<Record<string, TransitionFieldSelection>>({});
   const [featureScope, setFeatureScope] = useState<FeatureScopeSettings>(() => loadTeamFeatureScope(teamProfileId));
   const [hasOwnScope, setHasOwnScope] = useState(() => hasTeamOwnFeatureScope(teamProfileId));
+  const [carryOverScope, setCarryOverScope] = useState<CarryOverScope>(EMPTY_CARRY_OVER_SCOPE);
   const [sprintPiGap, setSprintPiGap] = useState<SprintPiReconciliation | null>(null);
   const [featuresWithoutWork, setFeaturesWithoutWork] = useState<TeamOwnedEmptyFeature[]>([]);
   const [featureIssuesWithoutWork, setFeatureIssuesWithoutWork] = useState<Map<string, JiraIssue>>(new Map());
@@ -289,7 +300,10 @@ export default function RollupBoardTab({
         storyPointsFieldIds,
       };
 
-      const issueSet = await fetchRollupBoardIssues(scope, scopedIssues.map((issue) => issue.key));
+      const issueSet = await fetchRollupBoardIssues(
+        scope,
+        mergeScopedIssueKeys(scopedIssues.map((issue) => issue.key), carryOverScope.issueKeys),
+      );
       // The same project list the scope filter applies below, handed to the resolver FIRST so a defect
       // is never routed to a Feature that the filter will then remove it from the board for.
       const trackedProjectKeys = new Set(
@@ -333,7 +347,35 @@ export default function RollupBoardTab({
     } catch (error: unknown) {
       setLoadState({ ...EMPTY_LOAD_STATE, loadError: String(error) });
     }
-  }, [boardId, teamProfileId, vocabulary, featureScope, scopedIssues]);
+  }, [boardId, teamProfileId, vocabulary, featureScope, scopedIssues, carryOverScope]);
+
+  // Runs before the board's own load consumes it: last PI's unfinished Features keep their original PI
+  // in Jira, so their work can only be reached by asking for it deliberately.
+  useEffect(() => {
+    if (featureScope.carryOverPiValue.trim() === '' || featureScope.featureProjectKeys.length === 0) {
+      setCarryOverScope(EMPTY_CARRY_OVER_SCOPE);
+      return;
+    }
+
+    let isMounted = true;
+    const carryOverFetchScope: RollupBoardScope = {
+      boardId: boardId ?? 0,
+      teamProfileId,
+      featureLinkFieldId: loadConfiguredFeatureLinkFieldId(),
+      subStatusFieldId,
+      storyPointsFieldIds: getStoryPointsCandidateFieldIds(),
+    };
+
+    void fetchCarryOverScope(
+      featureScope.featureProjectKeys,
+      featureScope.carryOverPiValue,
+      buildJqlFieldReference(readConfiguredPiFieldId()),
+      buildJqlFieldReference(loadConfiguredFeatureLinkFieldId()),
+      carryOverFetchScope,
+    ).then((loadedScope) => { if (isMounted) setCarryOverScope(loadedScope); });
+
+    return () => { isMounted = false; };
+  }, [featureScope, boardId, teamProfileId, subStatusFieldId]);
 
   useEffect(() => {
     void loadBoard();
@@ -898,6 +940,13 @@ export default function RollupBoardTab({
         <p className={styles.boardStatusLine} data-testid="rollup-create-outcome">{createWorkOutcome}</p>
       )}
 
+      {/* The board is scoped to one PI, so anything beyond it is stated rather than quietly included. */}
+      {carryOverScope.featureKeys.length > 0 && (
+        <p className={styles.boardWarning} data-testid="rollup-carry-over-scope">
+          ↩ {describeCarryOverScope(carryOverScope)}
+        </p>
+      )}
+
       {/* One line, not a list: the Features themselves are lanes below, where they can be acted on. */}
       {featuresWithoutWork.length > 0 && (
         <p className={styles.boardWarning} data-testid="rollup-features-without-work">
@@ -949,6 +998,7 @@ export default function RollupBoardTab({
           }}
           scope={featureScope}
           allFeatureKeys={loadState.allReferencedFeatureKeys}
+          availablePiValues={availablePiValues}
         />
       )}
 
