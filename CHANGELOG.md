@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Team Dashboard — choosing a past PI snapped straight back to the current one.** A persisted PI
+  whose date range had ended was healed forward to the live PI, which is right when a PI has gone stale
+  by neglect but wrong the moment somebody picks a past PI on purpose — to review what shipped, or to
+  chase carry-over work. The selector appeared broken. A PI the user actively selects is now honoured
+  for the rest of the session, healing only applies to one that was merely left behind, and the team
+  profile is no longer rewritten behind a deliberate choice. A fresh app open still starts on the live
+  PI rather than wherever somebody last looked, which is what the healing was protecting.
+
 ### Added
 - **Roll-Up Board — "Why is an issue not on this board?" in Board setup.** The board excludes an issue
   at any of several independent steps — the PI scope, the carry-over sweep, the roll-up route, the

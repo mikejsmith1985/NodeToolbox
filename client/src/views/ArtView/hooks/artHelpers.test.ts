@@ -786,3 +786,29 @@ describe('generateMonthlyRisksText', () => {
     expect(result).toContain('TEST-1');
   });
 });
+
+describe('resolvePiScopeSelection — a past PI picked on purpose', () => {
+  const PI_VALUES = [
+    'PI 26.3 (04/22/26 - 07/29/26)',
+    'PI 26.4 (07/30/26 - 10/07/26)',
+  ];
+  const DURING_264 = new Date(2026, 7, 11);
+
+  it('heals a finished PI forward when it was merely left behind', () => {
+    // The behaviour this has always had: a PI nobody re-selected must not linger as the scope.
+    expect(resolvePiScopeSelection(PI_VALUES, PI_VALUES[0], DURING_264)).toBe(PI_VALUES[1]);
+  });
+
+  it('keeps a finished PI when it was deliberately chosen', () => {
+    // Reviewing what shipped, or chasing carry-over work, both mean choosing a past PI on purpose.
+    expect(resolvePiScopeSelection(PI_VALUES, PI_VALUES[0], DURING_264, true)).toBe(PI_VALUES[0]);
+  });
+
+  it('still keeps the live PI when that is what was chosen', () => {
+    expect(resolvePiScopeSelection(PI_VALUES, PI_VALUES[1], DURING_264, true)).toBe(PI_VALUES[1]);
+  });
+
+  it('ignores a deliberate choice that is not on offer at all', () => {
+    expect(resolvePiScopeSelection(PI_VALUES, 'PI 25.1', DURING_264, true)).toBe(PI_VALUES[1]);
+  });
+});

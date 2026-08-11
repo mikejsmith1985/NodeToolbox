@@ -422,6 +422,8 @@ export function useSprintData(
   // Held in a ref so callbacks can read the current value without being re-created
   // every time the configured story-points field changes.
   const sprintFieldListRef = useRef(buildSprintIssueFieldList(customStoryPointsFieldId));
+  /** The PI the user picked this session, so staleness-healing does not overrule a deliberate choice. */
+  const deliberatePiChoiceRef = useRef('');
   useEffect(() => {
     sprintFieldListRef.current = buildSprintIssueFieldList(customStoryPointsFieldId);
   }, [customStoryPointsFieldId]);
@@ -587,11 +589,18 @@ export function useSprintData(
       ?? '';
     // A persisted PI is honored only while it is still alive — one whose date range has ended
     // yields to the active (or next-starting) PI, so a finished PI never lingers as the scope.
-    const resolvedPiValue = resolvePiScopeSelection(availablePiValues, persistedPiValue);
+    // Deliberate for this session only: a past PI picked on purpose sticks while the user works with
+    // it, and a fresh app open still starts on the live PI rather than wherever they last looked.
+    const wasPiChosenDeliberately = persistedPiValue !== ''
+      && deliberatePiChoiceRef.current === persistedPiValue;
+    const resolvedPiValue = resolvePiScopeSelection(
+      availablePiValues, persistedPiValue, new Date(), wasPiChosenDeliberately,
+    );
     // When staleness advanced the PI, heal the saved TEAM PROFILE too: the profile restamps its
     // stored PI into the working selection on every activation, so without this the next app open
     // flashes (and briefly loads under) the finished PI before resolving forward again.
-    if (scopeMode === DASHBOARD_SCOPE_MODE_PI && resolvedPiValue !== '' && resolvedPiValue !== persistedPiValue) {
+    if (scopeMode === DASHBOARD_SCOPE_MODE_PI && resolvedPiValue !== '' && resolvedPiValue !== persistedPiValue
+      && !wasPiChosenDeliberately) {
       useSettingsStore.getState().updateActiveSprintDashboardTeamProfile({ selectedPiValue: resolvedPiValue });
     }
 
@@ -926,6 +935,10 @@ export function useSprintData(
 
   const selectPiScope = useCallback(async (piValue: string) => {
     persistScopeMode(DASHBOARD_SCOPE_MODE_PI);
+    // Remember that this PI was PICKED, not merely left behind. Staleness-healing exists to stop a PI
+    // going stale by neglect; it must not overrule somebody deliberately looking at a past PI to
+    // review what shipped or chase carry-over work.
+    deliberatePiChoiceRef.current = piValue;
     persistSelectedPiValue(piValue);
     setState((previousState) => ({
       ...previousState,
