@@ -91,3 +91,11 @@
   color: var(--color-success, #2e9e5b);
   font-size: var(--font-size-sm);
 }
+
+/* Warning shown when saving a fix version would replace several existing ones. Losing a value the
+   user could not see coming is the one outcome this editor must never produce silently. */
+.fieldHint {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  line-height: 1.4;
+}

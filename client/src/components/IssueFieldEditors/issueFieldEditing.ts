@@ -19,6 +19,39 @@ export function isFieldEditable(editMeta: IssueEditMeta, fieldId: string): boole
   return Boolean(editMeta[fieldId]);
 }
 
+/** Shown for the option that removes the issue's fix version entirely. */
+export const NO_FIX_VERSION_LABEL = '— None —';
+
+/**
+ * Builds the fix-version options keyed by NAME rather than by id.
+ *
+ * The shared `readFeatureReviewSelectOptions` prefers an option's `id`, which is right for priority
+ * but wrong here: the fix-version writer sends `{ name }`, so an id-keyed option would post the
+ * numeric id as though it were a version name and Jira would reject it. A released version is kept
+ * out of the list — Jira refuses to add one to an issue, so offering it would only produce an error.
+ *
+ * The blank "none" choice is NOT added here — the select editor renders its own, and a second one
+ * would show two indistinguishable empty rows.
+ */
+export function readFixVersionOptions(
+  editMetaField: { allowedValues?: Array<{ name?: string; released?: boolean; archived?: boolean }> } | undefined,
+): Array<{ label: string; value: string }> {
+  return (editMetaField?.allowedValues ?? [])
+    .filter((allowedValue) => !allowedValue.archived && !allowedValue.released)
+    .map((allowedValue) => String(allowedValue.name ?? ''))
+    .filter((versionName) => versionName !== '')
+    .map((versionName) => ({ label: versionName, value: versionName }));
+}
+
+/** The fix versions currently on an issue, in Jira's order. */
+export function readIssueFixVersionNames(issue: {
+  fields?: { fixVersions?: Array<{ name?: string }> };
+}): string[] {
+  return (issue.fields?.fixVersions ?? [])
+    .map((fixVersion) => String(fixVersion.name ?? ''))
+    .filter((versionName) => versionName !== '');
+}
+
 /** The editing lifecycle a single inline field editor drives its UI from. */
 export interface FieldEditor {
   isEditing: boolean;
