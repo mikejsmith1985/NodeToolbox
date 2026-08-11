@@ -199,6 +199,8 @@ interface RollupBoardLoadState {
   hasSubStatusField: boolean;
   /** Issues held back because their Feature is in another project and only loosely linked. */
   hiddenIssueCount: number;
+  /** Which issues were held back, so a vanished card can be identified rather than hunted for. */
+  hiddenIssueKeys: string[];
   /** Out-of-project Features reached by the Feature Link field — named whether shown or hidden. */
   featureLinkedOutOfProjectKeys: string[];
   /** Out-of-project Features reached only by an issue link. */
@@ -219,6 +221,7 @@ const EMPTY_LOAD_STATE: RollupBoardLoadState = {
   isOversized: false,
   hasSubStatusField: true,
   hiddenIssueCount: 0,
+  hiddenIssueKeys: [],
   featureLinkedOutOfProjectKeys: [],
   issueLinkedOutOfProjectKeys: [],
   allReferencedFeatureKeys: [],
@@ -284,9 +287,16 @@ export default function RollupBoardTab({
       };
 
       const issueSet = await fetchRollupBoardIssues(scope, scopedIssues.map((issue) => issue.key));
+      // The same project list the scope filter applies below, handed to the resolver FIRST so a defect
+      // is never routed to a Feature that the filter will then remove it from the board for.
+      const trackedProjectKeys = new Set(
+        featureScope.featureProjectKeys.map((projectKey) => projectKey.trim().toUpperCase()).filter(Boolean),
+      );
       const boardItems = resolveBoardItems(issueSet, scope, {
         resolveColumnId: (statusName, subStatusValue) =>
           resolveColumnIdForItem(statusName, subStatusValue, vocabulary, discoveredSubStatusFieldId !== ''),
+        isFeatureInScope: (featureKey) => trackedProjectKeys.size === 0
+          || trackedProjectKeys.has(featureKey.split('-')[0].trim().toUpperCase()),
       });
 
       // Narrow to the Features this team tracks BEFORE building lanes, so a Feature nobody here owns
@@ -304,6 +314,7 @@ export default function RollupBoardTab({
         isOversized: issueSet.load.isOversized,
         hasSubStatusField: discoveredSubStatusFieldId !== '',
         hiddenIssueCount: scopedResult.hiddenIssueCount,
+        hiddenIssueKeys: scopedResult.hiddenIssueKeys,
         featureLinkedOutOfProjectKeys: scopedResult.featureLinkedOutOfProjectKeys,
         issueLinkedOutOfProjectKeys: scopedResult.issueLinkedOutOfProjectKeys,
         // Collected BEFORE scoping: a project that has been excluded must still be offerable.
@@ -831,6 +842,12 @@ export default function RollupBoardTab({
           {loadState.hiddenIssueCount} {loadState.hiddenIssueCount === 1 ? 'issue is' : 'issues are'} hidden because
           {' '}{loadState.hiddenIssueCount === 1 ? 'its Feature is' : 'their Features are'} outside this team&apos;s
           projects. Open <strong>Board setup</strong> to widen the projects or show them anyway.
+          {loadState.hiddenIssueKeys.length > 0 && (
+            <> Hidden: {loadState.hiddenIssueKeys.slice(0, 12).join(', ')}
+              {loadState.hiddenIssueKeys.length > 12
+                ? ` and ${loadState.hiddenIssueKeys.length - 12} more`
+                : ''}.</>
+          )}
         </p>
       )}
 

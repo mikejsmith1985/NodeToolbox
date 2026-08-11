@@ -8,6 +8,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Roll-Up Board — a defect could vanish from the board entirely (regression in v0.153.0).** Preferring
+  a route to an *unfinished* Feature considered only whether that Feature had shipped, not whether the
+  team tracks it. A defect linked to a long tail of QA issues — ENCUC-2070 has eleven — could therefore
+  be routed to another team's Feature, and the board's project scope then removed the defect from the
+  board altogether rather than moving it to a different lane. Its sub-tasks stayed, under a container
+  naming a parent that appeared to be nowhere.
+  Candidate routes are now ranked by scope first and shipped-state second: a Feature this team tracks
+  beats one it does not **even when the untracked one is livelier**, because a lane the viewer can see
+  is worth more than a lane they cannot. An untracked Feature is still chosen over no Feature at all,
+  and precedence continues to decide the winner within each group.
+- **Roll-Up Board — hidden issues are named, not just counted.** "9 issues are hidden because their
+  Features are outside this team's projects" sent somebody hunting for which ones. The banner now lists
+  the keys, so a card that has vanished can be identified and pasted straight into Jira.
+
+### Fixed
 - **Roll-Up Board — "not on this board" was shown for a parent that is on the board, just elsewhere.**
   The check read a LANE-scoped map, so any parent whose own card sits in a different lane was reported
   as absent from the board entirely — sending the reader after a scope problem that does not exist.

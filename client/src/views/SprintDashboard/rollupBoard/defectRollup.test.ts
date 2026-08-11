@@ -212,3 +212,55 @@ describe('a defect whose stronger route reaches a Feature that has shipped', () 
     expect(route.notes).not.toContain('preferred-unfinished-feature');
   });
 });
+
+describe('a defect whose other links reach Features this team does not track', () => {
+  // The production regression: ENCUC-2070 links to a long tail of QA issues, some belonging to other
+  // teams' Features. Preferring "unfinished" alone chose one of those, and the board's project scope
+  // then removed the defect from the board entirely rather than moving it to another lane.
+  const OUT_OF_SCOPE_STORY = buildIssue({ key: 'QEINT-1', typeName: 'Story', featureKey: 'QEINT-613' });
+  const OUT_OF_SCOPE_QA = buildIssue({ key: 'INTTEST-4021', typeName: 'Task', linkedKeys: ['QEINT-1'] });
+  const OWN_FEATURE = buildIssue({ key: 'DENP-1414', typeName: 'Feature' });
+  const DEFECT = buildIssue({
+    key: 'ENCUC-2070', typeName: 'Defect', linkedKeys: ['INTTEST-4021', 'DENP-1414'],
+  });
+
+  const INDEX = buildIndex([OUT_OF_SCOPE_STORY, OUT_OF_SCOPE_QA, OWN_FEATURE, DEFECT]);
+  const isTracked = (featureKey: string) => featureKey.startsWith('DENP-');
+  const nothingFinished = () => false;
+
+  it('keeps the defect on a Feature this team tracks, even though the QA route ranks higher', () => {
+    const route = resolveDefectRollup(DEFECT, INDEX, FEATURE_LINK_FIELD, nothingFinished, isTracked);
+
+    expect(route.featureKey).toBe('DENP-1414');
+  });
+
+  it('would otherwise have chosen the out-of-scope Feature, which is what removed it from the board', () => {
+    const route = resolveDefectRollup(DEFECT, INDEX, FEATURE_LINK_FIELD, nothingFinished);
+
+    expect(route.featureKey).toBe('QEINT-613');
+  });
+
+  it('prefers a tracked Feature even when the untracked one is the livelier of the two', () => {
+    const trackedIsFinished = (featureKey: string) => featureKey === 'DENP-1414';
+    const route = resolveDefectRollup(DEFECT, INDEX, FEATURE_LINK_FIELD, trackedIsFinished, isTracked);
+
+    // A lane the viewer can see beats a lane they cannot, shipped or not.
+    expect(route.featureKey).toBe('DENP-1414');
+  });
+
+  it('falls back to an untracked Feature rather than nothing at all', () => {
+    const onlyUntracked = buildIssue({ key: 'BUG-9', typeName: 'Defect', linkedKeys: ['INTTEST-4021'] });
+    const route = resolveDefectRollup(
+      onlyUntracked, buildIndex([OUT_OF_SCOPE_STORY, OUT_OF_SCOPE_QA, onlyUntracked]),
+      FEATURE_LINK_FIELD, nothingFinished, isTracked,
+    );
+
+    expect(route.featureKey).toBe('QEINT-613');
+  });
+
+  it('keeps the untaken route visible, so the QA trail is not lost', () => {
+    const route = resolveDefectRollup(DEFECT, INDEX, FEATURE_LINK_FIELD, nothingFinished, isTracked);
+
+    expect(route.unchosenCandidates.map((candidate) => candidate.toKey)).toContain('INTTEST-4021');
+  });
+});
