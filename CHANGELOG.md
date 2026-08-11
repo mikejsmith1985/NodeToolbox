@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Roll-Up Board — only the first few swimlanes could be dragged.** Both lane movers seeded their
+  working list from the STORED order alone, so any lane never explicitly ordered was absent from it.
+  Dropping such a lane found no index for its target and fell through to "append to the bottom" instead
+  of landing where it was released — and because unordered lanes render after ordered ones, that looked
+  precisely like the tail of the board being stuck. The list is now seeded from the stored order plus
+  every remaining lane in displayed order, so every lane has a position and a drop always lands where
+  it was let go. This was **not** caused by matching the PI Review sort order, which is unchanged.
+
+### Fixed
 - **Roll-Up Board — the Feature at the end of a defect → QA issue → Feature chain was never fetched.**
   A defect raised in testing points at the QA issue, and the QA issue points at the Feature. The first
   sweep collected the QA issue but never re-read it, so the Feature at the end of that chain was

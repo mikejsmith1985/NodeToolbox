@@ -244,3 +244,47 @@ describe('clearManualOrder — getting back to the default sequence', () => {
     expect(hasManualOrder({ ...ORDERED, laneOrder: [] })).toBe(true);
   });
 });
+
+describe('dragging a lane that was never explicitly ordered', () => {
+  // The reported symptom: only the first few lanes could be dragged. Those were the ones already in
+  // the stored order; everything below it was absent from the array the move worked against.
+  const PARTIAL_ORDER: BoardPreferences = {
+    teamProfileId: 'team-a',
+    boardId: 1,
+    laneOrder: ['DENP-1', 'DENP-2'],
+    collapsedByFeatureKey: {},
+  };
+  const DISPLAYED = ['DENP-1', 'DENP-2', 'DENP-3', 'DENP-4', 'DENP-5'];
+
+  it('drops an unordered lane where it was released, not at the bottom', () => {
+    const next = moveLaneBefore(PARTIAL_ORDER, 'DENP-5', 'DENP-4', DISPLAYED);
+
+    // Every displayed lane is in the list, and DENP-5 landed immediately before the lane it was
+    // dropped on rather than being appended to the bottom.
+    expect(next.laneOrder).toEqual(['DENP-1', 'DENP-2', 'DENP-3', 'DENP-5', 'DENP-4']);
+  });
+
+  it('drops an unordered lane onto an ordered one correctly too', () => {
+    const next = moveLaneBefore(PARTIAL_ORDER, 'DENP-4', 'DENP-1', DISPLAYED);
+
+    expect(next.laneOrder[0]).toBe('DENP-4');
+  });
+
+  it('sends an unordered lane to the top when asked', () => {
+    const next = moveLaneToEnd(PARTIAL_ORDER, 'DENP-5', DISPLAYED, 'top');
+
+    expect(next.laneOrder[0]).toBe('DENP-5');
+  });
+
+  it('keeps every displayed lane in the order, so none is left unpositionable', () => {
+    const next = moveLaneBefore(PARTIAL_ORDER, 'DENP-5', 'DENP-3', DISPLAYED);
+
+    expect([...next.laneOrder].sort()).toEqual([...DISPLAYED].sort());
+  });
+
+  it('still honours the stored order for the lanes that have one', () => {
+    const next = moveLaneBefore(PARTIAL_ORDER, 'DENP-5', 'DENP-3', DISPLAYED);
+
+    expect(next.laneOrder.indexOf('DENP-1')).toBeLessThan(next.laneOrder.indexOf('DENP-2'));
+  });
+});
