@@ -160,3 +160,55 @@ describe('resolveDefectRollup — determinism and safety', () => {
     expect(route.featureKey).toBeNull();
   });
 });
+
+describe('a defect whose stronger route reaches a Feature that has shipped', () => {
+  // The production case: ENCUC-2070 reaches the live Feature FEAT-LIVE through a dev Story, and the
+  // shipped Feature FEAT-SHIPPED through a QA issue. Rank alone files it under the shipped one.
+  const SHIPPED_STORY = buildIssue({ key: 'DEV-OLD', typeName: 'Story', featureKey: 'FEAT-SHIPPED' });
+  const QA_ISSUE = buildIssue({ key: 'QA-1', typeName: 'Task', linkedKeys: ['DEV-OLD'] });
+  const LIVE_FEATURE = buildIssue({ key: 'FEAT-LIVE', typeName: 'Feature' });
+  const DEFECT = buildIssue({ key: 'BUG-1', typeName: 'Defect', linkedKeys: ['QA-1', 'FEAT-LIVE'] });
+
+  const INDEX = buildIndex([SHIPPED_STORY, QA_ISSUE, LIVE_FEATURE, DEFECT]);
+  const isShipped = (featureKey: string) => featureKey === 'FEAT-SHIPPED';
+
+  it('still prefers the QA route when nothing is known to have shipped', () => {
+    const route = resolveDefectRollup(DEFECT, INDEX, FEATURE_LINK_FIELD);
+
+    expect(route.featureKey).toBe('FEAT-SHIPPED');
+    expect(route.precedenceRank).toBe('via-qa-issue');
+  });
+
+  it('files it under the Feature still in flight once the shipped one is known', () => {
+    const route = resolveDefectRollup(DEFECT, INDEX, FEATURE_LINK_FIELD, isShipped);
+
+    expect(route.featureKey).toBe('FEAT-LIVE');
+    expect(route.precedenceRank).toBe('direct-feature');
+  });
+
+  it('says a stronger route was passed over, so the change is never silent', () => {
+    const route = resolveDefectRollup(DEFECT, INDEX, FEATURE_LINK_FIELD, isShipped);
+    expect(route.notes).toContain('preferred-unfinished-feature');
+  });
+
+  it('keeps the shipped route as an unchosen candidate, so the provenance survives', () => {
+    const route = resolveDefectRollup(DEFECT, INDEX, FEATURE_LINK_FIELD, isShipped);
+    expect(route.unchosenCandidates.map((candidate) => candidate.toKey)).toContain('QA-1');
+  });
+
+  it('falls back to the shipped Feature when every route reaches one', () => {
+    const route = resolveDefectRollup(DEFECT, INDEX, FEATURE_LINK_FIELD, () => true);
+
+    // A finished Feature is better than no Feature at all.
+    expect(route.featureKey).toBe('FEAT-SHIPPED');
+    expect(route.notes).not.toContain('preferred-unfinished-feature');
+  });
+
+  it('adds no note when the highest-ranked route was preferred anyway', () => {
+    const onlyLiveShipped = (featureKey: string) => featureKey === 'FEAT-LIVE';
+    const route = resolveDefectRollup(DEFECT, INDEX, FEATURE_LINK_FIELD, onlyLiveShipped);
+
+    expect(route.featureKey).toBe('FEAT-SHIPPED');
+    expect(route.notes).not.toContain('preferred-unfinished-feature');
+  });
+});

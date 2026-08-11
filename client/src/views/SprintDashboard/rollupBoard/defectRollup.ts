@@ -187,8 +187,8 @@ function walkIntermediate(
   return ranked;
 }
 
-/** Picks the strongest-ranked candidate, breaking ties by ascending issue key. */
-function selectWinningCandidate(ranked: readonly RankedCandidate[]): RankedCandidate | null {
+/** Picks the strongest-ranked candidate from one set, breaking ties by ascending issue key. */
+function selectByPrecedence(ranked: readonly RankedCandidate[]): RankedCandidate | null {
   for (const precedenceRank of PRECEDENCE_ORDER) {
     const candidatesAtRank = ranked
       .filter((rankedCandidate) => rankedCandidate.rank === precedenceRank)
@@ -198,6 +198,40 @@ function selectWinningCandidate(ranked: readonly RankedCandidate[]): RankedCandi
     }
   }
   return null;
+}
+
+/**
+ * Picks the winning candidate, preferring any route that reaches a Feature still in flight.
+ *
+ * The precedence chain answers "how was this defect linked", which is archaeology; it ranks the QA
+ * route above a direct Feature link because that is usually the more specific fact. But a defect found
+ * two PIs ago while testing a Feature that has since shipped is being DELIVERED under whatever it is
+ * linked to now — so ranking alone would file live work under a finished Feature, in a lane nobody is
+ * looking at. A finished Feature therefore loses to an unfinished one whatever its rank.
+ *
+ * Precedence is otherwise untouched: it decides the winner within each group. When nothing reaches an
+ * unfinished Feature the original answer stands, because a finished Feature is better than none.
+ */
+function selectWinningCandidate(
+  ranked: readonly RankedCandidate[],
+  isFeatureFinished: (featureKey: string) => boolean,
+  notes: RollUpNote[],
+): RankedCandidate | null {
+  const reachingUnfinished = ranked.filter((rankedCandidate) => !isFeatureFinished(rankedCandidate.featureKey));
+  const reachingFinished = ranked.filter((rankedCandidate) => isFeatureFinished(rankedCandidate.featureKey));
+
+  const unfinishedWinner = selectByPrecedence(reachingUnfinished);
+  if (unfinishedWinner === null) {
+    return selectByPrecedence(reachingFinished);
+  }
+
+  // Only worth saying when a stronger-ranked route actually lost, which is the surprising case.
+  const finishedWinner = selectByPrecedence(reachingFinished);
+  if (finishedWinner !== null
+    && PRECEDENCE_ORDER.indexOf(finishedWinner.rank) < PRECEDENCE_ORDER.indexOf(unfinishedWinner.rank)) {
+    notes.push('preferred-unfinished-feature');
+  }
+  return unfinishedWinner;
 }
 
 /**
@@ -213,10 +247,12 @@ export function resolveDefectRollup(
   defect: JiraIssue,
   index: ReadonlyMap<string, JiraIssue>,
   featureLinkFieldId: string,
+  /** Tells the resolver which Features have already shipped. Absent means treat none as finished. */
+  isFeatureFinished: (featureKey: string) => boolean = () => false,
 ): RollUpRoute {
   const notes: RollUpNote[] = [];
   const { ranked, examined } = collectRankedCandidates(defect, index, featureLinkFieldId, notes);
-  const winningCandidate = selectWinningCandidate(ranked);
+  const winningCandidate = selectWinningCandidate(ranked, isFeatureFinished, notes);
 
   const distinctFeatureKeys = new Set(ranked.map((rankedCandidate) => rankedCandidate.featureKey));
   if (distinctFeatureKeys.size > 1) {
