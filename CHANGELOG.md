@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Roll-Up Board — the troubleshooter has its own button.** It shipped inside the Board setup panel,
+  between the Feature scope settings and the column editor, where nobody found it. A diagnostic is what
+  somebody reaches for when the board is *already* behaving oddly, so hiding it behind a settings panel
+  defeated the point. **"Why is an issue missing?"** now sits in the board's own action row beside
+  Refresh and Board setup, and toggles independently.
+
 ### Fixed
 - **Team Dashboard — choosing a past PI snapped straight back to the current one.** A persisted PI
   whose date range had ended was healed forward to the live PI, which is right when a PI has gone stale
