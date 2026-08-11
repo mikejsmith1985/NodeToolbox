@@ -172,3 +172,25 @@ export function buildFeatureWithoutWorkCard(
     items: [],
   };
 }
+
+/**
+ * Puts every lane in one sequence, ordered the way the PI Review page orders the same PI.
+ *
+ * Features the team has not broken down were previously appended after the ones that have work, which
+ * split the board into two separately-sorted groups. PI Review lists the PI's Features in one run of
+ * key order, so a Feature like DENP-1387 sat first there and last here — the same PI apparently in two
+ * different orders, which is exactly the sort of disagreement this board exists to remove.
+ *
+ * "No Feature" stays last regardless: it is a hygiene bucket rather than a Feature, and it has no key
+ * that would sort meaningfully among real ones.
+ */
+export function orderLanesLikePiReview(masterCards: readonly MasterCard[]): MasterCard[] {
+  const realFeatureCards = masterCards.filter((masterCard) => !masterCard.isSynthetic);
+  const syntheticCards = masterCards.filter((masterCard) => masterCard.isSynthetic);
+
+  const orderedRealCards = [...realFeatureCards].sort(
+    (leftCard, rightCard) => leftCard.featureKey.localeCompare(rightCard.featureKey, undefined, { numeric: true }),
+  );
+
+  return [...orderedRealCards, ...syntheticCards];
+}

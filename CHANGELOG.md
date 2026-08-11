@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Roll-Up Board — lane order now genuinely matches the PI Review page.** Features with no work under
+  them were appended after the ones that have work, splitting the board into two separately-sorted
+  groups. PI Review lists a PI's Features in one run of key order, so DENP-1387 sat first there and
+  last here — the same PI apparently in two different orders. All lanes are now ordered together, with
+  "No Feature" still last since it is a hygiene bucket rather than a Feature. Sorting is numeric, so
+  DENP-99 precedes DENP-100.
+- **Roll-Up Board — an empty scope no longer fills the board with empty Feature lanes.** With nothing
+  in scope, *every* Feature trivially has no work under it, so the check reported the team's entire PI
+  as unbroken-down lanes — twelve of them, with every column reading 0. That looks like a broken board
+  rather than a board with nothing selected. The check now stands down when there is no work in scope
+  at all and lets the scope's own empty state speak.
+
 ### Added
 - **Roll-Up Board — "Reset order".** Manual lane order is sticky by design: a lane sent to the top
   stays there across sessions. There was no way back short of dragging every lane, so a Feature pinned
