@@ -194,3 +194,43 @@ export function hasManualOrder(preferences: BoardPreferences): boolean {
   return preferences.laneOrder.length > 0
     || Object.keys(preferences.cardOrderByCell ?? {}).length > 0;
 }
+
+/**
+ * Moves a lane to an explicit rank, the way retyping a row number in a spreadsheet behaves.
+ *
+ * Ranks are positions, not stored values: every lane's rank is simply where it sits, so the whole
+ * board renumbers itself after a move without anyone maintaining a second set of numbers that could
+ * drift out of step with the order.
+ *
+ * Typing 2 over the lane currently ranked 10 moves that lane into second place. Rank 1 is untouched,
+ * the lanes that were 2 through 9 each shift down one to make room, and everything from 11 onwards is
+ * unaffected because the gap the moved lane left is exactly the space that closed up behind it.
+ *
+ * A rank outside the board is clamped rather than refused: somebody typing 99 on a twelve-lane board
+ * plainly means "put it last", and rejecting that would be pedantry.
+ */
+export function moveLaneToRank(
+  preferences: BoardPreferences,
+  featureKey: string,
+  targetRank: number,
+  allFeatureKeys: readonly string[],
+): BoardPreferences {
+  const seededOrder = seedFullLaneOrder(preferences, allFeatureKeys);
+  if (!seededOrder.includes(featureKey)) {
+    return preferences;
+  }
+
+  const withoutMovedKey = seededOrder.filter((orderedKey) => orderedKey !== featureKey);
+  // Ranks a person types are 1-based; positions in the array are not.
+  const clampedRank = Math.min(Math.max(Math.trunc(targetRank), 1), seededOrder.length);
+  const insertionIndex = clampedRank - 1;
+
+  return {
+    ...preferences,
+    laneOrder: [
+      ...withoutMovedKey.slice(0, insertionIndex),
+      featureKey,
+      ...withoutMovedKey.slice(insertionIndex),
+    ],
+  };
+}

@@ -15,6 +15,7 @@ import {
   toggleLaneCollapsed,
   clearManualOrder,
   hasManualOrder,
+  moveLaneToRank,
 } from './boardPreferencesStore.ts';
 
 beforeEach(() => {
@@ -286,5 +287,73 @@ describe('dragging a lane that was never explicitly ordered', () => {
     const next = moveLaneBefore(PARTIAL_ORDER, 'DENP-5', 'DENP-3', DISPLAYED);
 
     expect(next.laneOrder.indexOf('DENP-1')).toBeLessThan(next.laneOrder.indexOf('DENP-2'));
+  });
+});
+
+describe('moveLaneToRank — retyping a row number, as in a spreadsheet', () => {
+  const TWELVE_LANES = Array.from({ length: 12 }, (_unused, index) => `DENP-${index + 1}`);
+  const NO_ORDER: BoardPreferences = {
+    teamProfileId: 'team-a', boardId: 1, laneOrder: [], collapsedByFeatureKey: {},
+  };
+
+  it('moves the lane ranked 10 into second place, shifting 2 through 9 down one', () => {
+    // The worked example: 1 stays put, 2..9 each drop one rank, 11 and 12 are untouched.
+    const next = moveLaneToRank(NO_ORDER, 'DENP-10', 2, TWELVE_LANES);
+
+    expect(next.laneOrder).toEqual([
+      'DENP-1', 'DENP-10',
+      'DENP-2', 'DENP-3', 'DENP-4', 'DENP-5', 'DENP-6', 'DENP-7', 'DENP-8', 'DENP-9',
+      'DENP-11', 'DENP-12',
+    ]);
+  });
+
+  it('leaves the lanes below the moved one exactly where they were', () => {
+    const next = moveLaneToRank(NO_ORDER, 'DENP-10', 2, TWELVE_LANES);
+
+    expect(next.laneOrder.indexOf('DENP-11')).toBe(10);
+    expect(next.laneOrder.indexOf('DENP-12')).toBe(11);
+  });
+
+  it('moves a lane down as well as up', () => {
+    const next = moveLaneToRank(NO_ORDER, 'DENP-2', 5, ['DENP-1', 'DENP-2', 'DENP-3', 'DENP-4', 'DENP-5']);
+
+    expect(next.laneOrder).toEqual(['DENP-1', 'DENP-3', 'DENP-4', 'DENP-5', 'DENP-2']);
+  });
+
+  it('treats rank 1 as the top', () => {
+    const next = moveLaneToRank(NO_ORDER, 'DENP-5', 1, TWELVE_LANES);
+    expect(next.laneOrder[0]).toBe('DENP-5');
+  });
+
+  it('clamps a rank past the end to last, since that is plainly what was meant', () => {
+    const next = moveLaneToRank(NO_ORDER, 'DENP-1', 99, TWELVE_LANES);
+    expect(next.laneOrder[next.laneOrder.length - 1]).toBe('DENP-1');
+  });
+
+  it('clamps zero and negatives to the top rather than refusing them', () => {
+    expect(moveLaneToRank(NO_ORDER, 'DENP-5', 0, TWELVE_LANES).laneOrder[0]).toBe('DENP-5');
+    expect(moveLaneToRank(NO_ORDER, 'DENP-5', -3, TWELVE_LANES).laneOrder[0]).toBe('DENP-5');
+  });
+
+  it('ignores a fractional rank rather than inventing a position between two lanes', () => {
+    const next = moveLaneToRank(NO_ORDER, 'DENP-10', 2.7, TWELVE_LANES);
+    expect(next.laneOrder[1]).toBe('DENP-10');
+  });
+
+  it('keeps every lane exactly once', () => {
+    const next = moveLaneToRank(NO_ORDER, 'DENP-10', 2, TWELVE_LANES);
+    expect([...next.laneOrder].sort()).toEqual([...TWELVE_LANES].sort());
+  });
+
+  it('does nothing for a lane that is not on the board', () => {
+    const next = moveLaneToRank(NO_ORDER, 'DENP-GONE', 2, TWELVE_LANES);
+    expect(next).toEqual(NO_ORDER);
+  });
+
+  it('respects an order the viewer has already set', () => {
+    const ordered = { ...NO_ORDER, laneOrder: ['DENP-3', 'DENP-1', 'DENP-2'] };
+    const next = moveLaneToRank(ordered, 'DENP-2', 1, ['DENP-1', 'DENP-2', 'DENP-3']);
+
+    expect(next.laneOrder).toEqual(['DENP-2', 'DENP-3', 'DENP-1']);
   });
 });

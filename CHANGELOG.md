@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Roll-Up Board — a rank box on every swimlane, beside the drag grip.** It shows the lane's position
+  counting from 1 and accepts a typed number, behaving the way retyping a row number in a spreadsheet
+  does: type 2 over the lane ranked 10 and it takes second place, rank 1 stays put, the lanes that were
+  2 through 9 each shift down one, and everything from 11 onwards is untouched. Ranks are positions
+  rather than stored values, so the board renumbers itself after every move and no second set of
+  numbers can drift out of step with the order. A rank past the end is clamped to last and zero or a
+  negative to first — plainly what was meant. The value commits on Enter or on leaving the box, never
+  per keystroke, so typing "12" does not first send the lane to rank 1; Escape abandons the edit.
+
+### Fixed
+- **Roll-Up Board — a Feature could get two swimlanes, and collapsing one appeared to do nothing.**
+  A Feature can arrive twice: once because work rolls up to it, and again from the "committed to the PI
+  with nothing underneath" scan when the two ran against different snapshots of the board. Two lanes
+  sharing a key means two headers and a collapse toggle that flips both at once. Lanes are now
+  deduplicated by Feature key with the one carrying work always winning, and the scan itself now
+  ignores its own stale responses — an earlier run finishing last could otherwise overwrite a newer
+  answer with one taken before the board's work had loaded, when every Feature looks unbroken-down.
+
 ### Fixed
 - **Roll-Up Board — a defect could vanish from the board entirely (regression in v0.153.0).** Preferring
   a route to an *unfinished* Feature considered only whether that Feature had shipped, not whether the

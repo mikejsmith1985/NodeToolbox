@@ -5,6 +5,8 @@
 // that header always describe the WHOLE Feature — applying a filter narrows the cards below without
 // ever changing what the Feature is worth.
 
+import { useState } from 'react';
+
 import { useDroppable } from '@dnd-kit/core';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -55,6 +57,10 @@ export interface MasterCardLaneProps {
   onToggleCollapsed: (featureKey: string) => void;
   /** Why this Feature could not be read, when the board managed to establish a reason. */
   featureReadFailureDetail?: string | null;
+  /** This lane's position on the board, counting from 1. */
+  laneRank?: number;
+  /** Moves this lane to a rank the viewer typed. Absent hides the rank box. */
+  onRankChange?: (featureKey: string, nextRank: number) => void;
   onSendToTop?: (featureKey: string) => void;
   onSendToBottom?: (featureKey: string) => void;
   /** Opens the add-work form for this Feature. Absent when the board cannot create issues. */
@@ -89,6 +95,8 @@ export function MasterCardLane({
   errorMessageByIssueKey,
   onToggleCollapsed,
   featureReadFailureDetail = null,
+  laneRank,
+  onRankChange,
   onSendToTop,
   onSendToBottom,
   onAddWork,
@@ -105,6 +113,18 @@ export function MasterCardLane({
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition } =
     useSortable({ id: featureKey });
 
+  // Held while the viewer is mid-edit; null means "show the lane's real rank".
+  const [rankDraft, setRankDraft] = useState<string | null>(null);
+
+  /** Applies a typed rank, ignoring anything that is not a number and restoring the real one. */
+  function commitRank(typedValue: string): void {
+    const typedRank = Number(typedValue.trim());
+    setRankDraft(null);
+    if (!Number.isFinite(typedRank) || typedValue.trim() === '') return;
+    if (typedRank === laneRank) return;
+    onRankChange?.(featureKey, typedRank);
+  }
+
   return (
     <section
       className={styles.lane}
@@ -113,6 +133,30 @@ export function MasterCardLane({
       style={{ transform: CSS.Transform.toString(transform), transition }}
     >
       <header className={headerClassName}>
+        {/* Sits with the grip because it does the same job by another means: dragging is quicker for
+            a short hop, typing a number is quicker across a long board. Committed on blur or Enter
+            rather than per keystroke, so typing "12" does not first move the lane to rank 1. */}
+        {laneRank !== undefined && onRankChange && (
+          <input
+            aria-label={`Rank of ${vitals.key}`}
+            className={styles.laneRankInput}
+            inputMode="numeric"
+            onBlur={(blurEvent) => commitRank(blurEvent.target.value)}
+            onChange={(changeEvent) => setRankDraft(changeEvent.target.value)}
+            onKeyDown={(keyboardEvent) => {
+              if (keyboardEvent.key === 'Enter') keyboardEvent.currentTarget.blur();
+              // Escape abandons the edit and puts the lane's real rank back in the box.
+              if (keyboardEvent.key === 'Escape') {
+                setRankDraft(null);
+                keyboardEvent.currentTarget.blur();
+              }
+            }}
+            // Never let a keystroke start a drag, or typing would pick the lane up.
+            onPointerDown={(pointerEvent) => pointerEvent.stopPropagation()}
+            type="text"
+            value={rankDraft ?? String(laneRank)}
+          />
+        )}
         <span
           className={styles.laneGrip}
           ref={setActivatorNodeRef}

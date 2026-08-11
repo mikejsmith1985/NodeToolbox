@@ -455,3 +455,24 @@
   margin: 0;
   padding-left: var(--spacing-md);
 }
+
+/* The rank box beside the lane grip. Narrow on purpose — it holds a row number, not a value, and a
+   wide field would imply there is more to type than there is. */
+.laneRankInput {
+  width: 3.25rem;
+  flex: 0 0 auto;
+  padding: 2px 6px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+  text-align: center;
+  /* Native controls given their own background opt out of the root scheme; inherit it back. */
+  color-scheme: inherit;
+}
+
+.laneRankInput:focus {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
