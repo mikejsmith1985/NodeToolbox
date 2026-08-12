@@ -91,6 +91,12 @@ import { sumUnplannedStoryPoints } from './emptyFeatureScan.ts';
 import { buildCardDetailIndex, type CardDetail } from './cardDetail.ts';
 import { selectDetailIssueKeys, selectVisibleColumns, toggleColumnFocus } from './columnFocus.ts';
 import {
+  describeEmptyFeatureMembership,
+  describeGuessedLaneCount,
+  describeWorkingLaneMembership,
+  type BoardMembershipReason,
+} from './boardMembershipReason.ts';
+import {
   COLUMN_DENSITY_LABELS,
   DEFAULT_COLUMN_DENSITY,
   describeColumnFit,
@@ -758,6 +764,54 @@ export default function RollupBoardTab({
     [loadState.allItems, renderedColumns],
   );
 
+  /**
+   * Why each Feature with no work is on this board.
+   *
+   * Only the empty ones: a lane carrying work explains itself, and repeating the reason under every
+   * lane would be the notices panel's old mistake in a new place.
+   */
+  const membershipReasonByFeatureKey = useMemo(() => {
+    const reasonByFeatureKey: Record<string, BoardMembershipReason> = {};
+    for (const feature of featuresWithoutWork) {
+      reasonByFeatureKey[feature.featureKey] = describeEmptyFeatureMembership(
+        feature.ownershipReason,
+        featureScope.teamFeatureLabel ?? '',
+      );
+    }
+    return reasonByFeatureKey;
+  }, [featuresWithoutWork, featureScope.teamFeatureLabel]);
+
+  /**
+   * Answers "why IS this on my board?" from what is already loaded.
+   *
+   * Handles both things a user might type: a Feature key, whose lane is explained by its work or by
+   * whichever ownership test admitted it; and a work item's key, whose presence is explained by the
+   * lane it rolls up to.
+   */
+  const explainLanePresence = useCallback((issueKey: string): BoardMembershipReason | null => {
+    const wantedKey = issueKey.trim().toUpperCase();
+
+    const emptyLaneReason = membershipReasonByFeatureKey[wantedKey];
+    if (emptyLaneReason) return emptyLaneReason;
+
+    const issuesUnderFeature = loadState.allItems.filter((item) => item.featureKey === wantedKey);
+    if (issuesUnderFeature.length > 0) return describeWorkingLaneMembership(issuesUnderFeature.length);
+
+    const matchedItem = loadState.allItems.find((item) => item.key === wantedKey);
+    if (matchedItem) {
+      return {
+        summary: matchedItem.featureKey === null
+          ? 'It is in your board\'s scope but rolls up to no Feature, so it sits in the "No Feature" lane.'
+          : `It is in your board's scope and rolls up to ${matchedItem.featureKey}.`,
+        howToRemove: 'If it should not be in scope at all, the board filter or the PI on the issue is'
+          + ' what put it there.',
+        isGuess: false,
+      };
+    }
+
+    return null;
+  }, [membershipReasonByFeatureKey, loadState.allItems]);
+
   const boardNotices = useMemo<BoardNotice[]>(() => {
     const notices: BoardNotice[] = [];
 
@@ -843,6 +897,26 @@ export default function RollupBoardTab({
       });
     }
 
+    const guessedLaneKeys = Object.entries(membershipReasonByFeatureKey)
+      .filter(([, reason]) => reason.isGuess)
+      .map(([featureKey]) => featureKey);
+    if (guessedLaneKeys.length > 0) {
+      notices.push({
+        id: 'guessed-lanes',
+        tone: 'info',
+        summary: describeGuessedLaneCount(guessedLaneKeys.length),
+        detail: (
+          <ul>
+            {guessedLaneKeys.map((featureKey) => (
+              <li key={featureKey}>
+                {featureKey} — {membershipReasonByFeatureKey[featureKey].summary}
+              </li>
+            ))}
+          </ul>
+        ),
+      });
+    }
+
     if (featuresWithoutWork.length > 0) {
       const unplannedPoints = sumUnplannedStoryPoints(featuresWithoutWork);
       notices.push({
@@ -882,7 +956,7 @@ export default function RollupBoardTab({
     }
 
     return notices;
-  }, [loadState, sprintPiGap, carryOverScope, featuresWithoutWork, unmappedStatusGroups]);
+  }, [loadState, sprintPiGap, carryOverScope, featuresWithoutWork, unmappedStatusGroups, membershipReasonByFeatureKey]);
 
   /**
    * The columns the board draws: all of them, or just the focused one.
@@ -1399,6 +1473,7 @@ export default function RollupBoardTab({
 
       {isTroubleshooting && (
         <PlacementTroubleshooter
+          explainLanePresence={explainLanePresence}
           carryOverPiValue={featureScope.carryOverPiValue}
           featureLinkFieldId={loadConfiguredFeatureLinkFieldId()}
           featureProjectKeys={featureScope.featureProjectKeys}
@@ -1529,6 +1604,7 @@ export default function RollupBoardTab({
                 .find((failure) => failure.featureKey === lane.masterCard.featureKey)?.detail ?? null}
               lane={lane}
               laneRank={laneIndex + 1}
+              membershipReason={membershipReasonByFeatureKey[lane.masterCard.featureKey] ?? null}
               onRankChange={(laneFeatureKey, nextRank) =>
                 applyPreferences(moveLaneToRank(preferences, laneFeatureKey, nextRank, allFeatureKeys))}
               onAddWork={projectKey !== ''

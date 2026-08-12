@@ -713,3 +713,10 @@
   font-size: var(--font-size-sm);
   color: var(--color-text-secondary);
 }
+
+/* Why a lane is on the board — shown on lanes with no work, where nothing else explains them. */
+.laneMembership {
+  font-size: var(--font-size-sm);
+  font-style: italic;
+  color: var(--color-text-secondary);
+}
