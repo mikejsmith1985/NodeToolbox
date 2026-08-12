@@ -11,6 +11,8 @@ import { useDroppable } from '@dnd-kit/core';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 
+import { buildJiraBrowseUrl } from '../../../../utils/jiraBrowseUrl.ts';
+import { useConnectionStore } from '../../../../store/connectionStore.ts';
 import { buildDropTargetId } from '../cardDropRouting.ts';
 import styles from '../RollupBoardTab.module.css';
 import type { RenderedColumn, RenderedLane, RollupBoardItem } from '../rollupBoardTypes.ts';
@@ -115,6 +117,7 @@ export function MasterCardLane({
 
   // Held while the viewer is mid-edit; null means "show the lane's real rank".
   const [rankDraft, setRankDraft] = useState<string | null>(null);
+  const jiraBaseUrl = useConnectionStore((connectionState) => connectionState.proxyStatus?.jira?.baseUrl ?? '');
 
   /** Applies a typed rank, ignoring anything that is not a number and restoring the real one. */
   function commitRank(typedValue: string): void {
@@ -176,7 +179,25 @@ export function MasterCardLane({
           {lane.isCollapsed ? COLLAPSED_ICON : EXPANDED_ICON}
         </button>
 
-        <span className={styles.laneKey}>{vitals.key}</span>
+        {/* The key opens the Feature in Jira. The click is stopped from reaching the header beneath
+            it, which would otherwise collapse the lane on the way to the new tab, and from the drag
+            sensor, which would treat the press as the start of a lane drag. "No Feature" is not a
+            real issue, so it stays plain text. */}
+        {isSynthetic
+          ? <span className={styles.laneKey}>{vitals.key}</span>
+          : (
+            <a
+              className={`${styles.laneKey} ${styles.laneKeyLink}`}
+              href={buildJiraBrowseUrl(vitals.key, jiraBaseUrl)}
+              onClick={(clickEvent) => clickEvent.stopPropagation()}
+              onPointerDown={(pointerEvent) => pointerEvent.stopPropagation()}
+              rel="noreferrer"
+              target="_blank"
+              title={`Open ${vitals.key} in Jira`}
+            >
+              {vitals.key}
+            </a>
+          )}
         <span className={styles.laneSummary}>{vitals.summary}</span>
 
         {vitals.statusName !== null && <span className={styles.laneVital}>{vitals.statusName}</span>}

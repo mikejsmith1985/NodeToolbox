@@ -102,6 +102,7 @@ import {
 } from './boardScopeStore.ts';
 import { applyFeatureScope, type FeatureScopeSettings } from './featureScope.ts';
 import { AddWorkDialog } from './components/AddWorkDialog.tsx';
+import { BoardNotices, type BoardNotice } from './components/BoardNotices.tsx';
 import { BoardColumnHeaderRow } from './components/BoardColumnHeaderRow.tsx';
 import { ColumnVocabularyEditor } from './components/ColumnVocabularyEditor.tsx';
 import { FeatureScopePanel } from './components/FeatureScopePanel.tsx';
@@ -631,6 +632,119 @@ export default function RollupBoardTab({
     }
   }, [loadBoard]);
 
+  /**
+   * Everything the board wants to say, gathered in one place.
+   *
+   * Each of these earned its own box once, and together they buried the board. Collected here they
+   * keep their exact wording — nothing is softened, and nothing is dropped — while costing one line
+   * until somebody asks for the detail.
+   */
+  const boardNotices = useMemo<BoardNotice[]>(() => {
+    const notices: BoardNotice[] = [];
+
+    if (loadState.incompleteReasons.length > 0) {
+      notices.push({
+        id: 'incomplete',
+        tone: 'warning',
+        summary: 'Part of this board could not be read, so it is showing less than the team actually has:',
+        detail: <ul>{loadState.incompleteReasons.map((reason) => <li key={reason}>{reason}</li>)}</ul>,
+      });
+    }
+
+    if (loadState.isOversized) {
+      notices.push({
+        id: 'oversized',
+        tone: 'info',
+        summary: `This board holds more than ${EXPECTED_BOARD_ISSUE_CEILING} issues. Everything is shown`
+          + ' — nothing has been dropped — but the board may feel slower than usual.',
+      });
+    }
+
+    if (loadState.hiddenIssueCount > 0) {
+      const hiddenList = loadState.hiddenIssueKeys.length > 0
+        ? ` Hidden: ${loadState.hiddenIssueKeys.slice(0, 12).join(', ')}`
+          + (loadState.hiddenIssueKeys.length > 12 ? ` and ${loadState.hiddenIssueKeys.length - 12} more` : '')
+          + '.'
+        : '';
+      notices.push({
+        id: 'hidden-by-scope',
+        tone: 'warning',
+        summary: `${loadState.hiddenIssueCount} ${loadState.hiddenIssueCount === 1 ? 'issue is' : 'issues are'}`
+          + ` hidden because ${loadState.hiddenIssueCount === 1 ? 'its Feature is' : 'their Features are'}`
+          + ' outside this team’s projects. Open Board setup to widen the projects or show them'
+          + ` anyway.${hiddenList}`,
+      });
+    }
+
+    if (loadState.featureLinkedOutOfProjectKeys.length > 0) {
+      notices.push({
+        id: 'feature-linked-out-of-project',
+        tone: 'warning',
+        summary: `${loadState.featureLinkedOutOfProjectKeys.length}`
+          + ` ${loadState.featureLinkedOutOfProjectKeys.length === 1 ? 'Feature is' : 'Features are'} linked by the`
+          + ' Feature Link field but sit outside this team’s projects:'
+          + ` ${loadState.featureLinkedOutOfProjectKeys.join(', ')}. That is usually worth correcting in Jira.`,
+      });
+    }
+
+    if (sprintPiGap !== null && sprintPiGap.mismatches.length > 0) {
+      notices.push({
+        id: 'sprint-pi-gap',
+        tone: 'warning',
+        summary: `${describeReconciliation(sprintPiGap)} Set the PI field on`
+          + ` ${sprintPiGap.mismatches.length === 1 ? 'it' : 'them'} in Jira and refresh.`,
+      });
+    }
+
+    if (carryOverScope.featureKeys.length > 0) {
+      notices.push({
+        id: 'carry-over',
+        tone: 'info',
+        summary: `↩ ${describeCarryOverScope(carryOverScope)}`,
+      });
+    }
+
+    if (featuresWithoutWork.length > 0) {
+      const unplannedPoints = sumUnplannedStoryPoints(featuresWithoutWork);
+      notices.push({
+        id: 'features-without-work',
+        tone: 'warning',
+        summary: `${featuresWithoutWork.length}`
+          + ` ${featuresWithoutWork.length === 1 ? 'Feature this team owns has' : 'Features this team own have'}`
+          + ` no work under ${featuresWithoutWork.length === 1 ? 'it' : 'them'}`
+          + (unplannedPoints > 0 ? ` — ${unplannedPoints} story points with nothing planned` : '')
+          + `. ${featuresWithoutWork.length === 1 ? 'Its lane is' : 'Their lanes are'} at the end of the board.`,
+      });
+    }
+
+    if (loadState.featureReadFailures.length > 0) {
+      notices.push({
+        id: 'feature-read-failures',
+        tone: 'warning',
+        summary: `${loadState.featureReadFailures.length}`
+          + ` ${loadState.featureReadFailures.length === 1 ? 'Feature' : 'Features'} could not be read:`,
+        detail: (
+          <ul>
+            {loadState.featureReadFailures.map((failure) => (
+              <li key={failure.featureKey}>{failure.detail}</li>
+            ))}
+          </ul>
+        ),
+      });
+    }
+
+    if (!loadState.hasSubStatusField) {
+      notices.push({
+        id: 'no-sub-status',
+        tone: 'info',
+        summary: 'This Jira instance has no sub-status field, so columns can only match on status. The'
+          + ' board is less precise than it would otherwise be.',
+      });
+    }
+
+    return notices;
+  }, [loadState, sprintPiGap, carryOverScope, featuresWithoutWork]);
+
   const layout = useMemo(
     () => buildBoardLayout({ masterCards: laneMasterCards, columns: renderedColumns, filters, preferences }),
     [laneMasterCards, renderedColumns, filters, preferences],
@@ -899,60 +1013,17 @@ export default function RollupBoardTab({
         </span>
       </div>
 
+      {/* A load failure is not a notice — it means there is no board — so it stays on its own. */}
       {loadState.loadError !== null && (
         <p className={styles.boardWarning}>Could not load the board: {loadState.loadError}</p>
       )}
 
-      {loadState.incompleteReasons.length > 0 && (
-        <div className={styles.boardWarning}>
-          <p>Part of this board could not be read, so it is showing less than the team actually has:</p>
-          <ul>{loadState.incompleteReasons.map((reason) => <li key={reason}>{reason}</li>)}</ul>
-        </div>
-      )}
+      {/* Everything else the board wants to say, in ONE collapsible box. Nine stacked boxes pushed the
+          board itself off the screen, and buried whatever was rendered among them — which is how the
+          add-work dialog came to look like a button that did nothing. */}
+      <BoardNotices notices={boardNotices} />
 
-      {loadState.isOversized && (
-        <p className={styles.boardWarning}>
-          This board holds more than {EXPECTED_BOARD_ISSUE_CEILING} issues. Everything is shown — nothing has been
-          dropped — but the board may feel slower than usual.
-        </p>
-      )}
-
-      {/* Anything the scope holds back is stated with the way to see it — the board never just
-          looks smaller than the team's Jira board. */}
-      {loadState.hiddenIssueCount > 0 && (
-        <p className={styles.boardWarning}>
-          {loadState.hiddenIssueCount} {loadState.hiddenIssueCount === 1 ? 'issue is' : 'issues are'} hidden because
-          {' '}{loadState.hiddenIssueCount === 1 ? 'its Feature is' : 'their Features are'} outside this team&apos;s
-          projects. Open <strong>Board setup</strong> to widen the projects or show them anyway.
-          {loadState.hiddenIssueKeys.length > 0 && (
-            <> Hidden: {loadState.hiddenIssueKeys.slice(0, 12).join(', ')}
-              {loadState.hiddenIssueKeys.length > 12
-                ? ` and ${loadState.hiddenIssueKeys.length - 12} more`
-                : ''}.</>
-          )}
-        </p>
-      )}
-
-      {/* A Feature Link crossing projects is usually a mistake, so it is named even when its work is
-          hidden: the lane stays off the board, but the fact does not go unnoticed. */}
-      {loadState.featureLinkedOutOfProjectKeys.length > 0 && (
-        <p className={styles.boardWarning}>
-          ⚠ {loadState.featureLinkedOutOfProjectKeys.length}{' '}
-          {loadState.featureLinkedOutOfProjectKeys.length === 1 ? 'Feature is' : 'Features are'} linked by the Feature
-          Link field but sit outside this team&apos;s projects: {loadState.featureLinkedOutOfProjectKeys.join(', ')}.
-          That is usually worth correcting in Jira.
-        </p>
-      )}
-
-      {/* The PI query cannot see work whose PI field is blank, so sprint membership is checked as a
-          second opinion. Without this the issue — and the whole Feature above it — simply is not there. */}
-      {sprintPiGap !== null && sprintPiGap.mismatches.length > 0 && (
-        <p className={styles.boardWarning} data-testid="rollup-sprint-pi-gap">
-          ⚠ {describeReconciliation(sprintPiGap)} Set the PI field on{' '}
-          {sprintPiGap.mismatches.length === 1 ? 'it' : 'them'} in Jira and refresh.
-        </p>
-      )}
-
+      {/* Below the notices, never among them, so it is always the first thing under the header. */}
       {addWorkFeature !== null && (
         <AddWorkDialog
           errorMessage={createWorkError}
@@ -968,46 +1039,6 @@ export default function RollupBoardTab({
 
       {createWorkOutcome !== null && (
         <p className={styles.boardStatusLine} data-testid="rollup-create-outcome">{createWorkOutcome}</p>
-      )}
-
-      {/* The board is scoped to one PI, so anything beyond it is stated rather than quietly included. */}
-      {carryOverScope.featureKeys.length > 0 && (
-        <p className={styles.boardWarning} data-testid="rollup-carry-over-scope">
-          ↩ {describeCarryOverScope(carryOverScope)}
-        </p>
-      )}
-
-      {/* One line, not a list: the Features themselves are lanes below, where they can be acted on. */}
-      {featuresWithoutWork.length > 0 && (
-        <p className={styles.boardWarning} data-testid="rollup-features-without-work">
-          ⚠ {featuresWithoutWork.length}{' '}
-          {featuresWithoutWork.length === 1 ? 'Feature this team owns has' : 'Features this team owns have'}
-          {' '}no work under {featuresWithoutWork.length === 1 ? 'it' : 'them'}
-          {sumUnplannedStoryPoints(featuresWithoutWork) > 0
-            ? ` — ${sumUnplannedStoryPoints(featuresWithoutWork)} story points with nothing planned`
-            : ''}. {featuresWithoutWork.length === 1 ? 'Its lane is' : 'Their lanes are'} at the end of the board.
-        </p>
-      )}
-
-      {/* A Feature that simply "could not be read" leaves nowhere to go. Each one is asked about
-          directly, so the lane's blank header comes with the reason Jira itself gave. */}
-      {loadState.featureReadFailures.length > 0 && (
-        <div className={styles.boardWarning} data-testid="rollup-feature-read-failures">
-          ⚠ {loadState.featureReadFailures.length}{' '}
-          {loadState.featureReadFailures.length === 1 ? 'Feature' : 'Features'} could not be read:
-          <ul>
-            {loadState.featureReadFailures.map((failure) => (
-              <li key={failure.featureKey}>{failure.detail}</li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {!loadState.hasSubStatusField && (
-        <p className={styles.boardWarning}>
-          This Jira instance has no sub-status field, so columns can only match on status. The board is less precise
-          than it would otherwise be.
-        </p>
       )}
 
       {isEditingColumns && (
