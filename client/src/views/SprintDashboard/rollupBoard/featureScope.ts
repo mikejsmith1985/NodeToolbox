@@ -53,6 +53,16 @@ export interface FeatureScopeSettings {
    * both teams can see it.
    */
   teamFeatureLabel: string;
+  /**
+   * Labels marking Features that should never get a lane of their own.
+   *
+   * Separate from the team label because it answers a different question. The team label says WHOSE a
+   * Feature is; this says whether a Feature is the kind that gets broken down at all. Placeholder and
+   * rolling Features — a defect bucket, a standing enhancement log — are genuinely the team's and
+   * genuinely in the PI, so no ownership rule can tell them apart from real work. Only a second,
+   * deliberate mark can. Suppresses EMPTY lanes only; a Feature with work under it keeps its lane.
+   */
+  excludedFeatureLabels: readonly string[];
 }
 
 /** What survived the scope, and what did not — with enough detail for the board to explain itself. */

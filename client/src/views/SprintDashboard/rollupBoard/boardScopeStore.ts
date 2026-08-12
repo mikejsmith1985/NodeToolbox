@@ -17,6 +17,7 @@ interface StoredTeamScope {
   carryOverPiValue?: string;
   carryOverSource?: 'none' | 'pi-review' | 'unfinished-in-pi';
   teamFeatureLabel?: string;
+  excludedFeatureLabels?: string[];
 }
 
 /** Reads every team's stored scope; unreadable storage counts as nothing stored. */
@@ -54,6 +55,7 @@ export function loadTeamFeatureScope(teamProfileId: string): FeatureScopeSetting
       ?? (storedScope?.carryOverPiValue ? 'unfinished-in-pi' : 'none'),
     // Empty keeps the inference every board used before labels existed.
     teamFeatureLabel: storedScope?.teamFeatureLabel ?? '',
+    excludedFeatureLabels: storedScope?.excludedFeatureLabels ?? [],
   };
 }
 
@@ -72,6 +74,7 @@ export function saveTeamFeatureScope(teamProfileId: string, settings: FeatureSco
     carryOverPiValue: settings.carryOverPiValue,
     carryOverSource: settings.carryOverSource,
     teamFeatureLabel: settings.teamFeatureLabel,
+    excludedFeatureLabels: [...settings.excludedFeatureLabels],
   };
   window.localStorage.setItem(BOARD_SCOPE_STORAGE_KEY, JSON.stringify(allScopes));
 }
