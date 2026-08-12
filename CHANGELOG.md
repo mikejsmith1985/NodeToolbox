@@ -8,6 +8,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Roll-Up Board — the open card now says where it can go from here.** Every other way of learning
+  this on a board was a guess: drag a card at a column and find out whether the workflow allows it by
+  whether it fails. For a card in Unmapped there was not even a guess available, since no column claims
+  the state it is in. Jira knows exactly, so opening a card asks and shows the answer — and each
+  destination is named with the **board column it lands in**, not only the Jira status, because the
+  column is what a board user was picturing: *"Send to QA → Ready for Testing · lands in SL Testing"*.
+  A destination no column claims says **"stays in Unmapped — no column claims that status"** before the
+  move is made rather than after. Anything the transition screen will demand is named up front
+  (*"asks for Story Points"*).
+  Each destination is a button: having been told where a card can go, the next thing anybody wants is
+  to send it there. Choosing one that needs fields opens the same dialog a refused drag uses, so being
+  asked for Story Points looks and behaves identically however the move was started. The landing column
+  is predicted using the sub-status the issue **keeps** — a plain transition changes the status and
+  leaves the sub-status alone — so the prediction is the honest one rather than the flattering one.
+  Read for the open card only: Jira has no batch transitions endpoint, so doing this for a whole column
+  would be one request per card. A read that fails is reported as "no moves offered" rather than as a
+  broken panel, and an in-flight read never reads as "nowhere to go".
+
+### Added
 - **Roll-Up Board — Unmapped cards now show the status they are actually in.** The board shows a
   sub-status in the card footer and leaves the STATUS to be implied by the column the card sits in.
   That works everywhere except the one column whose entire meaning is *"no column claims this"* — so

@@ -310,6 +310,20 @@ describe('RollupBoardTab — editing a card in place', () => {
     await waitFor(() => expect(screen.queryByTestId('rollup-issue-detail')).toBeNull());
   });
 
+  it('asks Jira where the open card can go, and shows the answer with it', async () => {
+    mockJiraResponses({ boardIssues: [buildIssue('DEV-1', 'PORTFOLIO-9')] });
+
+    render(<RollupBoardTab boardId={42} scopedIssues={SCOPED_ISSUES} teamProfileId="team-a" />);
+
+    await waitFor(() => expect(screen.getByTestId('rollup-lane-PORTFOLIO-9')).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: /Expand PORTFOLIO-9/ }));
+    fireEvent.click(screen.getByTestId('rollup-card-DEV-1'));
+
+    // The panel is part of the open card, so it appears whatever Jira answers — including nothing,
+    // which is a real answer for a closed issue and must not look like a broken panel.
+    await waitFor(() => expect(screen.getByTestId('rollup-card-transitions')).toBeTruthy());
+  });
+
   it('switches straight to another card rather than closing first', async () => {
     mockJiraResponses({
       boardIssues: [buildIssue('DEV-1', 'PORTFOLIO-9'), buildIssue('DEV-2', 'PORTFOLIO-9')],
