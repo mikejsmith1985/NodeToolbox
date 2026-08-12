@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildCardTransitionOptions,
+  buildTransitionChipLabel,
   describeCardTransitionOption,
   NO_TRANSITIONS_MESSAGE,
 } from './cardTransitions.ts';
@@ -113,5 +114,40 @@ describe('NO_TRANSITIONS_MESSAGE', () => {
   it('names both reasons an issue can have nowhere to go', () => {
     expect(NO_TRANSITIONS_MESSAGE).toMatch(/closed/);
     expect(NO_TRANSITIONS_MESSAGE).toMatch(/permission/);
+  });
+});
+
+describe('buildTransitionChipLabel', () => {
+  it('labels the chip with the destination, leaving the step name to the tooltip', () => {
+    const [option] = buildCardTransitionOptions(
+      [buildTransition({ name: 'Ready for Testing to Cancelled' })],
+      null,
+      VOCABULARY,
+      COLUMNS,
+      false,
+    );
+
+    // A workflow names its steps after their destination, so printing both said it twice.
+    expect(buildTransitionChipLabel(option).label).toBe(option.toStatusName);
+  });
+
+  it('hints the column only when it reads differently from the status', () => {
+    const [landsElsewhere] = buildCardTransitionOptions([buildTransition()], null, VOCABULARY, COLUMNS, false);
+    expect(buildTransitionChipLabel(landsElsewhere).hint).toBe('SL Testing');
+
+    const sameName = { ...landsElsewhere, toStatusName: 'SL Testing' };
+    expect(buildTransitionChipLabel(sameName).hint).toBe('');
+  });
+
+  it('hints one short word when the move would land nowhere', () => {
+    const [option] = buildCardTransitionOptions(
+      [buildTransition({ to: { name: 'Cancelled', statusCategory: { name: 'Done' } } })],
+      null,
+      VOCABULARY,
+      COLUMNS,
+      false,
+    );
+
+    expect(buildTransitionChipLabel(option).hint).toBe('unmapped');
   });
 });

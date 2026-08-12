@@ -10,6 +10,7 @@
 // wants is to send it there.
 
 import {
+  buildTransitionChipLabel,
   describeCardTransitionOption,
   NO_TRANSITIONS_MESSAGE,
   type CardTransitionOption,
@@ -34,31 +35,41 @@ export function CardTransitionsPanel({
 }: CardTransitionsPanelProps) {
   return (
     <section className={styles.transitionsPanel} data-testid="rollup-card-transitions">
-      <h4 className={styles.transitionsHeading}>Where this can go from here</h4>
+      {/* The heading sits on the same line as the chips: a whole row spent on three words was part of
+          what made this panel taller than the issue it belongs to. */}
+      <span className={styles.transitionsHeading}>Move to</span>
 
-      {isLoading && <p className={styles.transitionsNote}>Asking Jira…</p>}
+      {isLoading && <span className={styles.transitionsNote}>Asking Jira…</span>}
 
       {/* Only once the read has finished: an empty list mid-flight is not yet an answer. */}
       {!isLoading && options.length === 0 && (
-        <p className={styles.transitionsNote}>{NO_TRANSITIONS_MESSAGE}</p>
+        <span className={styles.transitionsNote}>{NO_TRANSITIONS_MESSAGE}</span>
       )}
 
-      {options.map((option) => (
-        <button
-          className={styles.transitionOption}
-          disabled={pendingTransitionId !== null}
-          key={option.transitionId}
-          onClick={() => onApply(option)}
-          type="button"
-        >
-          <span className={styles.transitionOptionName}>
-            {option.transitionName} → {option.toStatusName}
-          </span>
-          <span className={styles.transitionOptionDetail}>
-            {pendingTransitionId === option.transitionId ? 'Moving…' : describeCardTransitionOption(option)}
-          </span>
-        </button>
-      ))}
+      {options.map((option) => {
+        const { label, hint } = buildTransitionChipLabel(option);
+        const isMoving = pendingTransitionId === option.transitionId;
+
+        return (
+          <button
+            className={styles.transitionOption}
+            disabled={pendingTransitionId !== null}
+            key={option.transitionId}
+            onClick={() => onApply(option)}
+            // The full sentence still exists — it just no longer costs a line each.
+            title={describeCardTransitionOption(option)}
+            type="button"
+          >
+            <span className={styles.transitionOptionName}>{isMoving ? 'Moving…' : label}</span>
+            {!isMoving && hint !== '' && <span className={styles.transitionOptionDetail}>{hint}</span>}
+            {!isMoving && option.requiredFieldNames.length > 0 && (
+              <span className={styles.transitionOptionDetail} title={`Asks for ${option.requiredFieldNames.join(', ')}`}>
+                ⚠
+              </span>
+            )}
+          </button>
+        );
+      })}
     </section>
   );
 }

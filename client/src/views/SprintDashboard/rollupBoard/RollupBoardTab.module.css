@@ -661,13 +661,15 @@
    can go, the next thing anybody wants is to send it there. */
 .transitionsPanel {
   display: flex;
-  flex-direction: column;
+  /* Wrapping row, not a column: five full-width blocks filled three hundred pixels before the issue
+     itself came into view. */
+  flex-wrap: wrap;
+  align-items: center;
   gap: var(--spacing-xs);
   margin-bottom: var(--spacing-sm);
 }
 
 .transitionsHeading {
-  margin: 0;
   font-size: var(--font-size-sm);
   color: var(--color-text-secondary);
   text-transform: uppercase;
@@ -681,16 +683,16 @@
 }
 
 .transitionOption {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-  padding: var(--spacing-xs) var(--spacing-sm);
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--spacing-xs);
+  padding: 2px var(--spacing-xs);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   background: var(--color-bg-subtle);
+  font-size: var(--font-size-sm);
   cursor: pointer;
-  text-align: left;
+  white-space: nowrap;
 }
 
 .transitionOption:hover:not(:disabled) {

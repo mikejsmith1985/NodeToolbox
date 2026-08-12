@@ -91,3 +91,32 @@ export function describeCardTransitionOption(option: CardTransitionOption): stri
  */
 export const NO_TRANSITIONS_MESSAGE =
   'Jira offers no moves from here — the issue may be closed, or you may not have permission to move it.';
+
+/**
+ * The short label for one destination, as a chip rather than a paragraph.
+ *
+ * The first version of this panel gave every destination a full-width block carrying the transition's
+ * name, the destination, and a sentence — five of which filled three hundred pixels before the issue
+ * itself came into view, and repeated "stays in Unmapped" five times over. Almost all of that was
+ * duplication: a workflow names its steps "Ready for Testing to Cancelled", so printing the step name
+ * AND the destination says "Cancelled" twice.
+ *
+ * So the chip carries the destination and nothing else, with a two-word hint for the part that
+ * actually varies between them. The full sentence still exists — it moves to the tooltip.
+ */
+export function buildTransitionChipLabel(option: CardTransitionOption): { label: string; hint: string } {
+  const hint = option.landsInColumnName === null
+    ? 'unmapped'
+    // Naming the column only when it reads differently from the status: "Cancelled → Cancelled" is
+    // noise, whereas "Ready for Testing → SL Testing" is the whole point of showing a column at all.
+    : (normalizeForComparison(option.landsInColumnName) === normalizeForComparison(option.toStatusName)
+      ? ''
+      : option.landsInColumnName);
+
+  return { label: option.toStatusName, hint };
+}
+
+/** Compares two labels the way a reader would: trimmed, and casing is not a real distinction. */
+function normalizeForComparison(value: string): string {
+  return value.trim().toLowerCase();
+}

@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Roll-Up Board — "Where this can go" is one row of chips instead of a stack of blocks.** Five
+  destinations filled about three hundred pixels before the issue itself came into view, and almost
+  all of it was duplication. A workflow names its steps after their destination, so *"Ready for Testing
+  to Cancelled → Cancelled"* said "Cancelled" twice; and the explanatory sentence — *"stays in Unmapped
+  — no column claims that status"* — was repeated on every line. Each destination is now a compact chip
+  carrying the status name, with a short hint beside it for the part that actually varies: the column
+  it lands in, or `unmapped`, or nothing at all when the column reads the same as the status
+  ("Cancelled · Cancelled" being noise). A move Jira will demand fields for is marked with `⚠`. Nothing
+  is lost — the full sentence, the step's own name, and the field list all move to the tooltip.
+
 ### Fixed
 - **Roll-Up Board — the sub-status is now written the way each Jira actually defines the field.** The
   root cause of `400 — Could not find valid 'id' or 'value' in the Parent Option object`: the board
