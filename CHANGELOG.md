@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Roll-Up Board — Unmapped cards now show the status they are actually in.** The board shows a
+  sub-status in the card footer and leaves the STATUS to be implied by the column the card sits in.
+  That works everywhere except the one column whose entire meaning is *"no column claims this"* — so
+  Unmapped, the column that most needs explaining, was the only one saying nothing. Its cards now carry
+  a badge naming the state outright, both halves of it (`In Progress / Code Review`), because a card
+  can be unmapped on the sub-status alone.
+- **Roll-Up Board — a notice naming exactly which mappings are missing.** Forty-seven issues in
+  Unmapped is a number, not a task. The board now groups them by the state they are in, biggest first
+  — the mapping that clears the most cards is the one worth adding first — and for each one names the
+  column that already claims that status under a different sub-status: *"12 issues in "In Progress /
+  Code Review" (DENP-1288, DENP-1290, DENP-1301). Your "Working" column already claims "In Progress" —
+  add this sub-status to it in Board setup."* Where nothing claims the status at all, it says that
+  instead of implying a near miss that does not exist. Computed from every loaded issue rather than the
+  filtered view: a quick filter narrows what you are looking at, but it does not change which states
+  the team has forgotten to claim.
+
 ### Fixed
 - **Roll-Up Board — the ruled line down every column is gone, and Compact is finally compact.** Each
   column cell carried a left and right border, which drew a hard vertical rule down the full height of

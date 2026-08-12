@@ -15,6 +15,7 @@ import { IssueTypeIcon } from '../../../../components/IssueMeta/IssueTypeIcon.ts
 import { PriorityBadge } from '../../../../components/IssueMeta/PriorityBadge.tsx';
 import { buildCardTargetId } from '../cardDropRouting.ts';
 import { formatCommentDate, type CardDetail } from '../cardDetail.ts';
+import { describeStatusPair } from '../unmappedStatusSummary.ts';
 import styles from '../RollupBoardTab.module.css';
 import type { IssueTypeBucket, RollUpRoute, RollupBoardItem } from '../rollupBoardTypes.ts';
 
@@ -43,6 +44,14 @@ export interface ChildCardProps {
    * and reading one for every issue would be a large payload nobody is looking at.
    */
   detail?: CardDetail | null;
+  /**
+   * Shows the issue's actual Jira status on the card.
+   *
+   * Set only for the Unmapped column. Everywhere else the column IS the status, so printing it on
+   * every card would be noise; in Unmapped there is nothing to imply it from, which left the one
+   * column that most needs explaining as the only one saying nothing.
+   */
+  shouldShowStatus?: boolean;
 }
 
 /** Turns a resolved route into one readable sentence, so parentage is never inferred. */
@@ -75,6 +84,7 @@ export function ChildCard({
   onOpen,
   onSelectFamily,
   detail = null,
+  shouldShowStatus = false,
 }: ChildCardProps) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: item.key });
   // Also a drop target, so one card can be dropped onto another to sequence the work in a column.
@@ -126,6 +136,12 @@ export function ChildCard({
         <span className={styles.cardKey}>{item.key}</span>
         <AssigneeAvatar displayName={item.assigneeDisplayName} />
       </div>
+
+      {shouldShowStatus && (
+        <div className={styles.cardStatusBadge}>
+          {describeStatusPair(item.statusName, item.subStatusValue)}
+        </div>
+      )}
 
       <div className={styles.cardSummary}>{item.summary}</div>
 

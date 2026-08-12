@@ -19,6 +19,8 @@ export interface ParentContainerProps {
   errorMessageByIssueKey?: Record<string, string>;
   /** Extra context per issue, present only while a column is focused. */
   cardDetailByIssueKey?: Record<string, CardDetail>;
+  /** Shows each card's Jira status — set only for the Unmapped column. */
+  shouldShowStatus?: boolean;
   onOpenIssue?: (issueKey: string) => void;
   onSelectFamily?: (item: RollupBoardItem) => void;
 }
@@ -30,6 +32,7 @@ export function ParentContainer({
   pendingIssueKey = null,
   errorMessageByIssueKey,
   cardDetailByIssueKey,
+  shouldShowStatus,
   onOpenIssue,
   onSelectFamily,
 }: ParentContainerProps) {
@@ -57,6 +60,7 @@ export function ParentContainer({
       {container.items.map((item) => (
         <ChildCard
           detail={cardDetailByIssueKey?.[item.key] ?? null}
+          shouldShowStatus={shouldShowStatus}
           errorMessage={errorMessageByIssueKey?.[item.key] ?? null}
           isHighlighted={highlightedFamilyKey === container.parentKey}
           isPending={pendingIssueKey === item.key}

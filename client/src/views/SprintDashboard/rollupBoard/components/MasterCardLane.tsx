@@ -285,6 +285,7 @@ export function MasterCardLane({
                 {cell?.containers.map((container) => (
                   <ParentContainer
                     cardDetailByIssueKey={cardDetailByIssueKey}
+                    shouldShowStatus={column.isUnmappedColumn}
                     container={container}
                     errorMessageByIssueKey={errorMessageByIssueKey}
                     highlightedFamilyKey={highlightedFamilyKey}
@@ -297,6 +298,7 @@ export function MasterCardLane({
                 {cell?.looseItems.map((item) => (
                   <ChildCard
                     detail={cardDetailByIssueKey?.[item.key] ?? null}
+                    shouldShowStatus={column.isUnmappedColumn}
                     errorMessage={errorMessageByIssueKey?.[item.key] ?? null}
                     isHighlighted={highlightedFamilyKey === item.key || highlightedFamilyKey === item.parentKey}
                     isPending={pendingIssueKey === item.key}

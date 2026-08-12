@@ -183,3 +183,28 @@ describe('the detailed card shown while a column is focused', () => {
     expect(screen.queryByText(/attachment/)).toBeNull();
   });
 });
+
+describe('the status shown on an Unmapped card', () => {
+  it('says nothing extra in a normal column, where the column IS the status', () => {
+    render(<ChildCard item={buildItem({ statusName: 'In Progress', subStatusValue: 'Code Review' })} />);
+
+    expect(screen.queryByText('In Progress / Code Review')).toBeNull();
+  });
+
+  it('names both halves in Unmapped, since a card can be unmapped on the sub-status alone', () => {
+    render(
+      <ChildCard
+        item={buildItem({ statusName: 'In Progress', subStatusValue: 'Code Review' })}
+        shouldShowStatus
+      />,
+    );
+
+    expect(screen.getByText('In Progress / Code Review')).toBeTruthy();
+  });
+
+  it('names just the status when the issue has no sub-status', () => {
+    render(<ChildCard item={buildItem({ statusName: 'Triage', subStatusValue: null })} shouldShowStatus />);
+
+    expect(screen.getByText('Triage')).toBeTruthy();
+  });
+});
