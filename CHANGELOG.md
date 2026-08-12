@@ -8,6 +8,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Roll-Up Board — QE and BT work now appears as sub-lanes under the dev Feature it belongs to.**
+  Every team maintains two Jira projects, and QE and BT **clone** the dev Feature into their own Feature
+  project before breaking their own work down underneath the clone. The board saw none of that, so it
+  reported a Feature as complete when **dev** was complete while QE still had test execution open —
+  the same "looks finished, isn't" problem the board was built to end, reappearing one level up.
+  Name the other disciplines' projects in **Board setup → Other disciplines** and each clone is drawn
+  as a band beneath its dev Feature, in **your own column names**, with its own colour and a text
+  label. Nothing happens until a discipline is configured, so an existing board is untouched by this
+  shipping.
+  **A clone link alone is not enough, and getting this wrong would have been invisible.** The sampled
+  Feature is cloned by both `DENP-1359` — a peer in the dev team's own project, created to split scope
+  — and `QEINT-610`, QE's copy. Only the second is a sub-lane; the first keeps its own top-level lane.
+  **The project decides, not the link.** Matching on the Feature name was considered and kept only as a
+  narrow net: those two clones' titles share almost no words, because a discipline rewrites the title
+  for its own scope, so a name match is announced as an inference and never presented as a fact.
+  Sub-lanes are **read-only**. The board does not own another team's workflow, so it does not offer a
+  move it has no business making — and the restriction is announced on the band rather than discovered
+  by a card that silently snaps back. Clone discovery costs **no extra Jira request at all**, because
+  the links were already part of every board fetch.
+- **Roll-Up Board — a second progress figure covering every discipline.** A lane with clones now reads
+  *"Dev 100% · whole Feature 60%"*, and says out loud when dev is finished but the Feature is not.
+  The existing number is deliberately **not** redefined: every figure on the board and on the PI-level
+  surfaces means "dev's work", and quietly widening it would change what all of them claim without
+  anyone being told. Both figures come from the one existing computation, so they cannot drift. Where
+  one unpointed clone story demotes the family figure to counting issues, the line says which
+  weighting each figure used rather than inviting a subtraction that means nothing. A Feature with no
+  clones shows one figure, as before.
+
+### Added
 - **Roll-Up Board — mark placeholder Features so they stop appearing as permanently empty lanes.** A
   new **Labels marking placeholder Features** box in Board setup, separate from the team label because
   it answers a different question: the team label says WHOSE a Feature is, this says whether a Feature

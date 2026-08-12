@@ -21,6 +21,8 @@ export interface ParentContainerProps {
   cardDetailByIssueKey?: Record<string, CardDetail>;
   /** Shows each card's Jira status — set only for the Unmapped column. */
   shouldShowStatus?: boolean;
+  /** Passes read-only down to every card inside — used for another discipline's work. */
+  isReadOnly?: boolean;
   onOpenIssue?: (issueKey: string) => void;
   onSelectFamily?: (item: RollupBoardItem) => void;
 }
@@ -33,6 +35,7 @@ export function ParentContainer({
   errorMessageByIssueKey,
   cardDetailByIssueKey,
   shouldShowStatus,
+  isReadOnly,
   onOpenIssue,
   onSelectFamily,
 }: ParentContainerProps) {
@@ -59,6 +62,7 @@ export function ParentContainer({
 
       {container.items.map((item) => (
         <ChildCard
+          isReadOnly={isReadOnly}
           detail={cardDetailByIssueKey?.[item.key] ?? null}
           shouldShowStatus={shouldShowStatus}
           errorMessage={errorMessageByIssueKey?.[item.key] ?? null}

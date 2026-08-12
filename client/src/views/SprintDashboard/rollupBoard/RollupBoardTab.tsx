@@ -40,6 +40,10 @@ import {
   type TransitionRequiredField,
 } from '../featureReviewFixes.ts';
 import { buildRenderedColumns, resolveColumnIdForItem } from './boardColumns.ts';
+import { classifyClone, describeUnconfiguredClones, readCloneLinks } from './cloneFamily.ts';
+import { fetchCloneFeatures, fetchDisciplineWork } from './rollupBoardFetch.ts';
+import { buildSubLanes, readSubLaneItemLists } from './subLaneLayout.ts';
+import { computeFamilyProgress } from './familyProgress.ts';
 import {
   describeStatusPair,
   describeUnmappedStatusGroup,
@@ -145,6 +149,9 @@ import {
   EXPECTED_BOARD_ISSUE_CEILING,
   NO_FEATURE_KEY,
   UNMAPPED_COLUMN_ID,
+  type CloneClassification,
+  type FamilyProgress,
+  type SubLane,
   type BoardPreferences,
   type MasterCard,
   type QuickFilterState,
@@ -362,6 +369,10 @@ export default function RollupBoardTab({
   const [carryOverScope, setCarryOverScope] = useState<CarryOverScope>(EMPTY_CARRY_OVER_SCOPE);
   const [sprintPiGap, setSprintPiGap] = useState<SprintPiReconciliation | null>(null);
   const [featuresWithoutWork, setFeaturesWithoutWork] = useState<TeamOwnedEmptyFeature[]>([]);
+  /** What each dev Feature's clones turned out to be, keyed by the dev Feature. */
+  const [cloneFamilies, setCloneFamilies] = useState<Record<string, CloneClassification[]>>({});
+  const [cloneFeatureIssuesByKey, setCloneFeatureIssuesByKey] = useState<Map<string, JiraIssue>>(new Map());
+  const [disciplineItemsByCloneKey, setDisciplineItemsByCloneKey] = useState<Map<string, RollupBoardItem[]>>(new Map());
   const [featureIssuesWithoutWork, setFeatureIssuesWithoutWork] = useState<Map<string, JiraIssue>>(new Map());
   /** Bumped per empty-Feature scan so a slow earlier run cannot overwrite a newer one. */
   const emptyFeatureScanToken = useRef(0);
@@ -488,6 +499,110 @@ export default function RollupBoardTab({
   useEffect(() => {
     void loadBoard();
   }, [loadBoard]);
+
+  /**
+   * Finds each Feature's clones and reads the other disciplines' work.
+   *
+   * Discovery itself costs NOTHING: `issuelinks` is already part of every board fetch, so the clone
+   * keys are in hand before this runs. Only the disciplines' own work is new traffic, and none of it
+   * happens at all until a team configures a discipline.
+   */
+  useEffect(() => {
+    const devFeatureProjectKeys = featureScope.featureProjectKeys;
+    const disciplines = featureScope.disciplineProjects;
+
+    if (disciplines.length === 0) {
+      setCloneFamilies({});
+      setCloneFeatureIssuesByKey(new Map());
+      setDisciplineItemsByCloneKey(new Map());
+      return;
+    }
+
+    const classificationsByFeatureKey: Record<string, CloneClassification[]> = {};
+    for (const masterCard of loadState.masterCards) {
+      if (masterCard.isSynthetic || masterCard.featureIssue === null) continue;
+      const classifications = readCloneLinks(masterCard.featureIssue)
+        .map((cloneLink) => classifyClone(
+          cloneLink.cloneIssueKey,
+          cloneLink.evidence,
+          devFeatureProjectKeys,
+          disciplines,
+        ));
+      if (classifications.length > 0) classificationsByFeatureKey[masterCard.featureKey] = classifications;
+    }
+    setCloneFamilies(classificationsByFeatureKey);
+
+    const disciplineCloneKeys = Object.values(classificationsByFeatureKey)
+      .flat()
+      .filter((classification) => classification.kind === 'discipline')
+      .map((classification) => classification.cloneIssueKey);
+    if (disciplineCloneKeys.length === 0) {
+      setCloneFeatureIssuesByKey(new Map());
+      setDisciplineItemsByCloneKey(new Map());
+      return;
+    }
+
+    let isMounted = true;
+    const scope: RollupBoardScope = {
+      teamProfileId,
+      boardId: boardId ?? 0,
+      featureLinkFieldId: loadConfiguredFeatureLinkFieldId(),
+      subStatusFieldId,
+      storyPointsFieldIds: getStoryPointsCandidateFieldIds(),
+    };
+
+    void (async () => {
+      const cloneFeatures = await fetchCloneFeatures(disciplineCloneKeys, scope);
+      if (!isMounted) return;
+      setCloneFeatureIssuesByKey(cloneFeatures);
+
+      const itemsByCloneKey = new Map<string, RollupBoardItem[]>();
+      for (const discipline of disciplines) {
+        const keysForThisDiscipline = disciplineCloneKeys
+          .filter((cloneKey) => cloneKey.split('-')[0].trim().toUpperCase()
+            === discipline.featureProjectKey.trim().toUpperCase());
+        if (keysForThisDiscipline.length === 0) continue;
+
+        const workIssues = await fetchDisciplineWork(discipline.storyProjectKey, keysForThisDiscipline, scope);
+        // A discipline with no work yet still gets a band, because "QE has not started" is a fact
+        // worth showing rather than an absence to hide.
+        for (const cloneKey of keysForThisDiscipline) itemsByCloneKey.set(cloneKey, []);
+
+        // The board's OWN resolver, not a second item builder: the spec asks for the same roll-up
+        // rules, and two implementations would agree only until one of them was edited.
+        const cloneKeySet = new Set(keysForThisDiscipline);
+        const disciplineItems = resolveBoardItems(
+          {
+            boardIssues: workIssues,
+            subtaskIssues: [],
+            featureIssues: cloneFeatures,
+            featureReadFailures: [],
+            load: {
+              isComplete: true,
+              expectedBoardIssueCount: workIssues.length,
+              loadedBoardIssueCount: workIssues.length,
+              isOversized: false,
+              failures: [],
+            },
+          },
+          scope,
+          {
+            resolveColumnId: (statusName, subStatusValue) =>
+              resolveColumnIdForItem(statusName, subStatusValue, vocabulary, subStatusFieldId !== ''),
+            isFeatureInScope: (featureKey) => cloneKeySet.has(featureKey),
+          },
+        );
+
+        for (const item of disciplineItems) {
+          if (item.featureKey === null) continue;
+          itemsByCloneKey.set(item.featureKey, [...(itemsByCloneKey.get(item.featureKey) ?? []), item]);
+        }
+      }
+      if (isMounted) setDisciplineItemsByCloneKey(itemsByCloneKey);
+    })();
+
+    return () => { isMounted = false; };
+  }, [loadState.masterCards, featureScope.disciplineProjects, featureScope.featureProjectKeys, boardId, subStatusFieldId, vocabulary, teamProfileId]);
 
   useEffect(() => {
     const handleResize = (): void => setBoardWidth(window.innerWidth);
@@ -898,6 +1013,11 @@ export default function RollupBoardTab({
       });
     }
 
+    const unconfiguredNotice = describeUnconfiguredClones(Object.values(cloneFamilies).flat());
+    if (unconfiguredNotice !== '') {
+      notices.push({ id: 'unconfigured-clones', tone: 'info', summary: unconfiguredNotice });
+    }
+
     const guessedLaneKeys = Object.entries(membershipReasonByFeatureKey)
       .filter(([, reason]) => reason.isGuess)
       .map(([featureKey]) => featureKey);
@@ -957,7 +1077,7 @@ export default function RollupBoardTab({
     }
 
     return notices;
-  }, [loadState, sprintPiGap, carryOverScope, featuresWithoutWork, unmappedStatusGroups, membershipReasonByFeatureKey]);
+  }, [loadState, sprintPiGap, carryOverScope, featuresWithoutWork, unmappedStatusGroups, membershipReasonByFeatureKey, cloneFamilies]);
 
   /**
    * The columns the board draws: all of them, or just the focused one.
@@ -971,9 +1091,41 @@ export default function RollupBoardTab({
     [renderedColumns, focusedColumnId],
   );
 
+  /** Each Feature's discipline bands, in the dev team's own columns. */
+  const subLanesByFeatureKey = useMemo(() => {
+    const byFeatureKey: Record<string, SubLane[]> = {};
+    for (const [featureKey, classifications] of Object.entries(cloneFamilies)) {
+      const subLanes = buildSubLanes({
+        classifications,
+        cloneFeatureIssuesByKey,
+        itemsByCloneFeatureKey: disciplineItemsByCloneKey,
+        columns: visibleColumns,
+        filters,
+        preferences,
+        disciplineProjects: featureScope.disciplineProjects,
+      });
+      if (subLanes.length > 0) byFeatureKey[featureKey] = subLanes;
+    }
+    return byFeatureKey;
+  }, [cloneFamilies, cloneFeatureIssuesByKey, disciplineItemsByCloneKey, visibleColumns, filters, preferences, featureScope.disciplineProjects]);
+
+  /** Dev and whole-Feature progress, per lane. Absent for a Feature with no clones. */
+  const familyProgressByFeatureKey = useMemo(() => {
+    const byFeatureKey: Record<string, FamilyProgress> = {};
+    for (const masterCard of laneMasterCards) {
+      const subLanes = subLanesByFeatureKey[masterCard.featureKey] ?? [];
+      if (subLanes.length === 0) continue;
+      byFeatureKey[masterCard.featureKey] = computeFamilyProgress(
+        masterCard.items,
+        readSubLaneItemLists(subLanes),
+      );
+    }
+    return byFeatureKey;
+  }, [laneMasterCards, subLanesByFeatureKey]);
+
   const layout = useMemo(
-    () => buildBoardLayout({ masterCards: laneMasterCards, columns: visibleColumns, filters, preferences }),
-    [laneMasterCards, visibleColumns, filters, preferences],
+    () => buildBoardLayout({ masterCards: laneMasterCards, columns: visibleColumns, filters, preferences, subLanesByFeatureKey }),
+    [laneMasterCards, visibleColumns, filters, preferences, subLanesByFeatureKey],
   );
 
   /** Persists a preference change immediately — a lane the viewer moved should stay moved. */
@@ -1605,6 +1757,9 @@ export default function RollupBoardTab({
                 .find((failure) => failure.featureKey === lane.masterCard.featureKey)?.detail ?? null}
               lane={lane}
               laneRank={laneIndex + 1}
+              familyProgress={familyProgressByFeatureKey[lane.masterCard.featureKey] ?? null}
+              onToggleSubLaneCollapsed={(cloneFeatureKey) =>
+                applyPreferences(toggleLaneCollapsed(preferences, cloneFeatureKey))}
               membershipReason={membershipReasonByFeatureKey[lane.masterCard.featureKey] ?? null}
               onRankChange={(laneFeatureKey, nextRank) =>
                 applyPreferences(moveLaneToRank(preferences, laneFeatureKey, nextRank, allFeatureKeys))}

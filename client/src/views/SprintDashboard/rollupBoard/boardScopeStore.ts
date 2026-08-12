@@ -6,6 +6,7 @@
 
 import { readArtFeatureScopeSettings } from '../../ArtView/artFeatureScopeSettings.ts';
 import type { FeatureScopeSettings } from './featureScope.ts';
+import type { DisciplineProjects } from './rollupBoardTypes.ts';
 
 const BOARD_SCOPE_STORAGE_KEY = 'tbxRollupBoardScope';
 
@@ -18,6 +19,7 @@ interface StoredTeamScope {
   carryOverSource?: 'none' | 'pi-review' | 'unfinished-in-pi';
   teamFeatureLabel?: string;
   excludedFeatureLabels?: string[];
+  disciplineProjects?: DisciplineProjects[];
 }
 
 /** Reads every team's stored scope; unreadable storage counts as nothing stored. */
@@ -56,6 +58,9 @@ export function loadTeamFeatureScope(teamProfileId: string): FeatureScopeSetting
     // Empty keeps the inference every board used before labels existed.
     teamFeatureLabel: storedScope?.teamFeatureLabel ?? '',
     excludedFeatureLabels: storedScope?.excludedFeatureLabels ?? [],
+    // Empty means the whole sub-lane feature is off and every lane renders exactly as it did before
+    // it existed — which is what makes this opt-in rather than a change nobody asked for.
+    disciplineProjects: storedScope?.disciplineProjects ?? [],
   };
 }
 
@@ -75,6 +80,7 @@ export function saveTeamFeatureScope(teamProfileId: string, settings: FeatureSco
     carryOverSource: settings.carryOverSource,
     teamFeatureLabel: settings.teamFeatureLabel,
     excludedFeatureLabels: [...settings.excludedFeatureLabels],
+    disciplineProjects: [...settings.disciplineProjects],
   };
   window.localStorage.setItem(BOARD_SCOPE_STORAGE_KEY, JSON.stringify(allScopes));
 }

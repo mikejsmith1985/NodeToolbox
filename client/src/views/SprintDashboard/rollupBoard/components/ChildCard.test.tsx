@@ -1,7 +1,7 @@
 // ChildCard.test.tsx — Proves a card says what it is without relying on its colour, and always
 // explains how it got into the lane it is in.
 
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
 import { ChildCard, describeRollUpRoute } from './ChildCard.tsx';
@@ -206,5 +206,33 @@ describe('the status shown on an Unmapped card', () => {
     render(<ChildCard item={buildItem({ statusName: 'Triage', subStatusValue: null })} shouldShowStatus />);
 
     expect(screen.getByText('Triage')).toBeTruthy();
+  });
+});
+
+describe('a card in another discipline band', () => {
+  it('behaves exactly as before when it is not read-only', () => {
+    // R-01: making sub-lanes read-only must not change how the primary lane feels.
+    render(<ChildCard item={buildItem()} />);
+
+    expect(screen.getByTestId('rollup-card-DEV-1').hasAttribute('aria-roledescription')).toBe(true);
+  });
+
+  it('advertises nothing draggable when read-only', () => {
+    // R-02: the hook's `disabled` stops the drag, but its attributes would still tell assistive
+    // technology this is a draggable element — so the listeners AND attributes are withheld.
+    render(<ChildCard isReadOnly item={buildItem()} />);
+
+    const card = screen.getByTestId('rollup-card-DEV-1');
+    expect(card.hasAttribute('aria-roledescription')).toBe(false);
+    expect(card.getAttribute('draggable')).not.toBe('true');
+  });
+
+  it('still opens its detail when clicked, because read-only means immovable, not inert', () => {
+    const opened: string[] = [];
+    render(<ChildCard isReadOnly item={buildItem()} onOpen={(key) => opened.push(key)} />);
+
+    fireEvent.click(screen.getByTestId('rollup-card-DEV-1'));
+
+    expect(opened).toEqual(['DEV-1']);
   });
 });

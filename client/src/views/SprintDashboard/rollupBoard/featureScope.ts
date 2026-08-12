@@ -17,7 +17,7 @@
 // That made the filter useless in practice, because nearly all real work IS Feature-Linked — the
 // override swallowed the whole filter and "Apply" appeared to do nothing.
 
-import type { RollUpRoute, RollupBoardItem } from './rollupBoardTypes.ts';
+import type { DisciplineProjects, RollUpRoute, RollupBoardItem } from './rollupBoardTypes.ts';
 
 /** Which Features a team tracks, and which out-of-project ones it still wants to see. */
 export interface FeatureScopeSettings {
@@ -63,6 +63,14 @@ export interface FeatureScopeSettings {
    * deliberate mark can. Suppresses EMPTY lanes only; a Feature with work under it keeps its lane.
    */
   excludedFeatureLabels: readonly string[];
+  /**
+   * The other disciplines that clone this team's Features — QE, BT, and any others.
+   *
+   * Empty means the sub-lane feature is off entirely. This is the single thing that separates
+   * "another discipline's copy" from "our own second Feature", so it is explicit rather than inferred
+   * from a project naming convention.
+   */
+  disciplineProjects: readonly DisciplineProjects[];
 }
 
 /** What survived the scope, and what did not — with enough detail for the board to explain itself. */
