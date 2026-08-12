@@ -165,3 +165,83 @@ describe('summarizeDiagnosis — one sentence a person can act on', () => {
       .toContain('should be on the board');
   });
 });
+
+describe('diagnosePlacement — the issue IS a Feature', () => {
+  // DENP-1371 is itself a Feature, so "is it in the dashboard's PI scope?" and "does it roll up to a
+  // Feature?" are both category errors: the scope query asks the TEAM's project, which a Feature does
+  // not live in, and a Feature does not roll up to anything — it is the lane.
+  function buildFeatureInput(overrides: Partial<PlacementDiagnosisInput> = {}): PlacementDiagnosisInput {
+    return buildInput({
+      issueKey: 'DENP-1371',
+      issueFields: {
+        issuetype: { name: 'Feature' },
+        [PI_FIELD]: 'PI 26.3',
+        status: { statusCategory: { key: 'indeterminate' } },
+      },
+      carryOverPiValue: 'PI 26.3',
+      featureProjectKeys: ['DENP'],
+      featureKey: null,
+      featureFields: null,
+      ...overrides,
+    });
+  }
+
+  it('never asks a Feature whether it rolls up to a Feature', () => {
+    const questions = diagnosePlacement(buildFeatureInput()).map((step) => step.question);
+    expect(questions.some((question) => question.startsWith('Does it roll up'))).toBe(false);
+  });
+
+  it('never judges a Feature by the dashboard\'s PI scope, which asks the team\'s project', () => {
+    const questions = diagnosePlacement(buildFeatureInput()).map((step) => step.question);
+    expect(questions.some((question) => question.startsWith('Is it in the PI'))).toBe(false);
+  });
+
+  it('judges the carry-over sweep on the FEATURE\'S own PI and status', () => {
+    const steps = diagnosePlacement(buildFeatureInput());
+    const sweepStep = steps.find((step) => step.question.startsWith('Would the carry-over'))!;
+
+    expect(sweepStep.verdict).toBe('included');
+    expect(sweepStep.detail).toContain('DENP-1371');
+  });
+
+  it('says a finished Feature was delivered rather than carried', () => {
+    const steps = diagnosePlacement(buildFeatureInput({
+      issueFields: {
+        issuetype: { name: 'Feature' },
+        [PI_FIELD]: 'PI 26.3',
+        status: { statusCategory: { key: 'done' } },
+      },
+    }));
+
+    expect(steps.find((step) => step.question.startsWith('Would the carry-over'))!.verdict).toBe('excluded');
+  });
+
+  it('points at Board setup when no carry-over PI is configured', () => {
+    const steps = diagnosePlacement(buildFeatureInput({ carryOverPiValue: '' }));
+    const sweepStep = steps.find((step) => step.question.startsWith('Would the carry-over'))!;
+
+    expect(sweepStep.detail).toContain('no carry-over PI is set');
+    expect(sweepStep.detail).toContain('PI 26.3');
+  });
+
+  it('checks the Feature\'s OWN project against the tracked list', () => {
+    const steps = diagnosePlacement(buildFeatureInput({ featureProjectKeys: ['ENCUC'] }));
+    const projectStep = steps.find((step) => step.question.startsWith('Is it one of the Feature projects'))!;
+
+    expect(projectStep.verdict).toBe('excluded');
+    expect(projectStep.detail).toContain('DENP');
+  });
+
+  it('reminds that a Feature also earns a lane from work beneath it', () => {
+    const steps = diagnosePlacement(buildFeatureInput());
+    expect(steps.some((step) => step.question.startsWith('Does any in-scope work'))).toBe(true);
+  });
+
+  it('treats an Epic the same way, since the board counts both as the outcome', () => {
+    const steps = diagnosePlacement(buildFeatureInput({
+      issueFields: { issuetype: { name: 'Epic' }, [PI_FIELD]: 'PI 26.3', status: { statusCategory: { key: 'new' } } },
+    }));
+
+    expect(steps.some((step) => step.question.startsWith('Does it roll up'))).toBe(false);
+  });
+});

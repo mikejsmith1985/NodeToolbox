@@ -18,6 +18,9 @@
 /** Jira's status category for finished work. */
 const DONE_STATUS_CATEGORY_KEY = 'done';
 
+/** Issue types that ARE the business outcome, rather than work that rolls up to one. */
+const FEATURE_ISSUE_TYPE_NAMES = new Set(['feature', 'epic']);
+
 /** How one step of the board's decision came out. */
 export type DiagnosisVerdict = 'included' | 'excluded' | 'not-applicable';
 
@@ -61,6 +64,12 @@ function readPiValue(fields: Record<string, unknown> | null, piFieldId: string):
 /** The project key a Jira key belongs to. */
 function readProjectKey(issueKey: string): string {
   return issueKey.split('-')[0].trim().toUpperCase();
+}
+
+/** True when the issue IS a Feature, rather than work that rolls up to one. */
+function isFeatureIssue(fields: Record<string, unknown> | null): boolean {
+  const issueType = fields?.issuetype as { name?: string } | undefined;
+  return FEATURE_ISSUE_TYPE_NAMES.has(String(issueType?.name ?? '').trim().toLowerCase());
 }
 
 /** True when Jira considers this issue finished, read from the category not the status name. */
@@ -189,6 +198,78 @@ function diagnoseFeatureScope(input: PlacementDiagnosisInput): DiagnosisStep {
 }
 
 /**
+ * Walks the decisions that apply to a FEATURE, which are not the ones that apply to work.
+ *
+ * Asking a Feature "is it in the dashboard's PI scope?" or "does it roll up to a Feature?" are both
+ * category errors: the scope query asks the TEAM's project and a Feature does not live there, and a
+ * Feature does not roll up to anything — it is the lane. A Feature reaches the board one of three
+ * ways, so those are what get checked.
+ */
+function diagnoseFeaturePlacement(input: PlacementDiagnosisInput): DiagnosisStep[] {
+  const featureProjectKey = readProjectKey(input.issueKey);
+  const trackedKeys = input.featureProjectKeys.map((projectKey) => projectKey.trim().toUpperCase());
+  const isTracked = trackedKeys.length === 0 || trackedKeys.includes(featureProjectKey);
+  const featurePiValue = readPiValue(input.issueFields, input.piFieldId);
+
+  const trackedStep: DiagnosisStep = isTracked
+    ? {
+      question: 'Is it one of the Feature projects this team tracks?',
+      verdict: 'included',
+      detail: `${input.issueKey} is in ${featureProjectKey}, which this team tracks.`,
+    }
+    : {
+      question: 'Is it one of the Feature projects this team tracks?',
+      verdict: 'excluded',
+      detail: `${input.issueKey} is in ${featureProjectKey}, which is not in (${trackedKeys.join(', ')}).`
+        + ' Widen the projects in Board setup to reach it.',
+    };
+
+  const lanesFromWorkStep: DiagnosisStep = {
+    question: 'Does any in-scope work roll up to it?',
+    verdict: 'not-applicable',
+    detail: 'A Feature earns a lane from the work beneath it, so if any issue in this PI links to'
+      + ` ${input.issueKey} it already has one. Check a child with this same tool if not.`,
+  };
+
+  if (input.carryOverPiValue.trim() === '') {
+    return [
+      trackedStep,
+      lanesFromWorkStep,
+      {
+        question: 'Would the carry-over sweep pull it in?',
+        verdict: 'excluded',
+        detail: `Its PI is "${featurePiValue || '(empty)'}" and no carry-over PI is set in Board setup,`
+          + ' so nothing outside the current PI is pulled in. Set one to reach the previous PI.',
+      },
+    ];
+  }
+
+  if (featurePiValue !== input.carryOverPiValue) {
+    return [trackedStep, lanesFromWorkStep, {
+      question: 'Would the carry-over sweep pull it in?',
+      verdict: 'excluded',
+      detail: `Its PI is "${featurePiValue || '(empty)'}", but the sweep asks for`
+        + ` "${input.carryOverPiValue}".`,
+    }];
+  }
+  if (isDone(input.issueFields)) {
+    return [trackedStep, lanesFromWorkStep, {
+      question: 'Would the carry-over sweep pull it in?',
+      verdict: 'excluded',
+      detail: `${input.issueKey} is finished, and the sweep asks only for unfinished Features — one`
+        + ' that finished was delivered, not carried.',
+    }];
+  }
+
+  return [trackedStep, lanesFromWorkStep, {
+    question: 'Would the carry-over sweep pull it in?',
+    verdict: 'included',
+    detail: `${input.issueKey} is unfinished and in PI "${input.carryOverPiValue}", so the sweep`
+      + ' reaches it and its child work.',
+  }];
+}
+
+/**
  * Walks the board's decisions in order and reports what each one did.
  *
  * The steps are returned even when an earlier one already excluded the issue, because more than one can
@@ -203,6 +284,11 @@ export function diagnosePlacement(input: PlacementDiagnosisInput): DiagnosisStep
     }];
   }
 
+  // A Feature is judged on entirely different questions from the work beneath it.
+  if (isFeatureIssue(input.issueFields)) {
+    return diagnoseFeaturePlacement(input);
+  }
+
   return [
     diagnosePiScope(input),
     diagnoseCarryOver(input),
@@ -215,7 +301,8 @@ export function diagnosePlacement(input: PlacementDiagnosisInput): DiagnosisStep
 export function summarizeDiagnosis(issueKey: string, steps: readonly DiagnosisStep[]): string {
   const reachedBoard = steps.some(
     (step) => step.question.startsWith('Is it in the PI') && step.verdict === 'included',
-  ) || steps.some((step) => step.question.startsWith('Would the carry-over') && step.verdict === 'included');
+  ) || steps.some((step) => step.question.startsWith('Would the carry-over') && step.verdict === 'included')
+    || steps.some((step) => step.question.startsWith('Does any in-scope work'));
 
   const blockingStep = steps.find((step) => step.verdict === 'excluded');
   if (reachedBoard && !blockingStep) {

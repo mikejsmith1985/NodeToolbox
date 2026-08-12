@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Roll-Up Board troubleshooter — asked a Feature the wrong questions.** Checking DENP-1371, itself a
+  Feature, produced *"Does it roll up to a Feature? Nothing links it to a Feature"* and judged it
+  against the dashboard's PI scope. Both are category errors: the scope query asks the TEAM's project,
+  which a Feature does not live in, and a Feature does not roll up to anything — it **is** the lane.
+  A Feature is now judged on the three things that actually decide whether it reaches the board: is its
+  project one the team tracks, does any in-scope work roll up to it, and would the carry-over sweep
+  pull it in — that last read from the **Feature's own** PI and status rather than a Feature Link it
+  will never have. Epics are treated the same way, since the board counts both as the outcome.
+
+### Fixed
 - **Hygiene — the "Link feature" search could never find anything.** It restricted the search to the
   issue's OWN project, but a Feature lives in a portfolio project, never the team's — that separation
   is the entire reason a Feature Link field exists. So typing "Transformers" against an ENFCT issue
