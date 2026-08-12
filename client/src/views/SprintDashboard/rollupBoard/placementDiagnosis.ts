@@ -45,6 +45,8 @@ export interface PlacementDiagnosisInput {
   carryOverPiValue: string;
   /** Feature projects this team tracks. Empty means no project filtering at all. */
   featureProjectKeys: readonly string[];
+  /** The label marking this team's Features. When set it replaces the board's ownership guessing. */
+  teamFeatureLabel?: string;
   /** The Feature this issue points at, and that Feature's own fields, when they could be read. */
   featureKey: string | null;
   featureFields: Record<string, unknown> | null;
@@ -70,6 +72,40 @@ function readProjectKey(issueKey: string): string {
 function isFeatureIssue(fields: Record<string, unknown> | null): boolean {
   const issueType = fields?.issuetype as { name?: string } | undefined;
   return FEATURE_ISSUE_TYPE_NAMES.has(String(issueType?.name ?? '').trim().toLowerCase());
+}
+
+/** True when the Feature carries the team's label, whatever case it was typed in. */
+function carriesTeamLabel(fields: Record<string, unknown> | null, teamFeatureLabel: string): boolean {
+  const wantedLabel = teamFeatureLabel.trim().toLowerCase();
+  if (wantedLabel === '') return false;
+  const labels = Array.isArray(fields?.labels) ? fields!.labels as unknown[] : [];
+  return labels.some((label) => String(label).trim().toLowerCase() === wantedLabel);
+}
+
+/**
+ * Whether the team's label lets this Feature through, when one is in use.
+ *
+ * The commonest reason a Feature goes missing right after a team adopts a label is simply that it has
+ * not been applied yet — so the check has to name the label rather than leave a correct project check
+ * looking like the whole story.
+ */
+function diagnoseTeamLabel(
+  featureKey: string,
+  featureFields: Record<string, unknown> | null,
+  teamFeatureLabel: string,
+): DiagnosisStep | null {
+  if (teamFeatureLabel.trim() === '') return null;
+
+  const question = `Does it carry the team's "${teamFeatureLabel.trim()}" label?`;
+  return carriesTeamLabel(featureFields, teamFeatureLabel)
+    ? { question, verdict: 'included', detail: `${featureKey} carries it.` }
+    : {
+      question,
+      verdict: 'excluded',
+      detail: `${featureKey} does not carry it. With a label configured the board stops guessing`
+        + ' ownership entirely, so an unlabelled Feature is left out however it is assigned. Add the'
+        + ' label in Jira, or clear it in Board setup to go back to inferring ownership.',
+    };
 }
 
 /** True when Jira considers this issue finished, read from the category not the status name. */
@@ -224,6 +260,8 @@ function diagnoseFeaturePlacement(input: PlacementDiagnosisInput): DiagnosisStep
         + ' Widen the projects in Board setup to reach it.',
     };
 
+  const labelStep = diagnoseTeamLabel(input.issueKey, input.issueFields, input.teamFeatureLabel ?? '');
+
   const lanesFromWorkStep: DiagnosisStep = {
     question: 'Does any in-scope work roll up to it?',
     verdict: 'not-applicable',
@@ -234,6 +272,7 @@ function diagnoseFeaturePlacement(input: PlacementDiagnosisInput): DiagnosisStep
   if (input.carryOverPiValue.trim() === '') {
     return [
       trackedStep,
+      ...(labelStep ? [labelStep] : []),
       lanesFromWorkStep,
       {
         question: 'Would the carry-over sweep pull it in?',
@@ -245,7 +284,7 @@ function diagnoseFeaturePlacement(input: PlacementDiagnosisInput): DiagnosisStep
   }
 
   if (featurePiValue !== input.carryOverPiValue) {
-    return [trackedStep, lanesFromWorkStep, {
+    return [trackedStep, ...(labelStep ? [labelStep] : []), lanesFromWorkStep, {
       question: 'Would the carry-over sweep pull it in?',
       verdict: 'excluded',
       detail: `Its PI is "${featurePiValue || '(empty)'}", but the sweep asks for`
@@ -253,7 +292,7 @@ function diagnoseFeaturePlacement(input: PlacementDiagnosisInput): DiagnosisStep
     }];
   }
   if (isDone(input.issueFields)) {
-    return [trackedStep, lanesFromWorkStep, {
+    return [trackedStep, ...(labelStep ? [labelStep] : []), lanesFromWorkStep, {
       question: 'Would the carry-over sweep pull it in?',
       verdict: 'excluded',
       detail: `${input.issueKey} is finished, and the sweep asks only for unfinished Features — one`
@@ -261,7 +300,7 @@ function diagnoseFeaturePlacement(input: PlacementDiagnosisInput): DiagnosisStep
     }];
   }
 
-  return [trackedStep, lanesFromWorkStep, {
+  return [trackedStep, ...(labelStep ? [labelStep] : []), lanesFromWorkStep, {
     question: 'Would the carry-over sweep pull it in?',
     verdict: 'included',
     detail: `${input.issueKey} is unfinished and in PI "${input.carryOverPiValue}", so the sweep`
@@ -289,11 +328,16 @@ export function diagnosePlacement(input: PlacementDiagnosisInput): DiagnosisStep
     return diagnoseFeaturePlacement(input);
   }
 
+  const labelStep = input.featureKey === null
+    ? null
+    : diagnoseTeamLabel(input.featureKey, input.featureFields, input.teamFeatureLabel ?? '');
+
   return [
     diagnosePiScope(input),
     diagnoseCarryOver(input),
     diagnoseRollUp(input),
     diagnoseFeatureScope(input),
+    ...(labelStep ? [labelStep] : []),
   ];
 }
 
