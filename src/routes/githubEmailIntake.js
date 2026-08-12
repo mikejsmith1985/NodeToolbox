@@ -87,6 +87,8 @@ function sanitiseConfig(rawBody, previousSeenPrs) {
     errorFolder: toTrimmedString(rawBody && rawBody.errorFolder),
     // Server-relative URL of the SharePoint library folder the Power Automate flow drops emails into.
     sharePointFolderUrl: toTrimmedString(rawBody && rawBody.sharePointFolderUrl),
+    // Clearing the library is destructive, so it is off unless the team has explicitly asked for it.
+    shouldClearSharePointAfterIngest: Boolean(rawBody && rawBody.shouldClearSharePointAfterIngest),
     fileExtensions: rawExtensions.map(toTrimmedString).filter((extension) => extension !== ''),
     jiraProjectKeys: rawProjectKeys.map((key) => toTrimmedString(key).toUpperCase()).filter((key) => key !== ''),
     transitions: {
@@ -113,6 +115,7 @@ function buildDefaultConfigResponse() {
     processedArchiveFolder: '',
     errorFolder: '',
     sharePointFolderUrl: '',
+    shouldClearSharePointAfterIngest: false,
     fileExtensions: ['.eml', '.txt'],
     jiraProjectKeys: [],
     transitions: { branchCreated: '', commitPushed: '', prOpened: '', prMerged: '' },

@@ -25,7 +25,7 @@ function sharePointOnlyConfig(overrides: Record<string, unknown> = {}) {
     dropFolder: '',
     sharePointFolderUrl: '/sites/Team/GitHubEmails',
     scheduleTime: '07:00',
-    intervalMin: 30,
+    intervalMin: 30, shouldClearSharePointAfterIngest: false,
     ...overrides,
   };
 }
@@ -45,7 +45,7 @@ describe('computeAutoPullSlot (pure schedule rule)', () => {
     expect(computeAutoPullSlot({ ...baseInput, now: new Date('2026-08-04T15:41:00') })).toBeNull();      // off boundary
     expect(computeAutoPullSlot({ ...baseInput, now: new Date('2026-08-04T06:30:00') })).toBeNull();      // before 07:00
     expect(computeAutoPullSlot({ ...baseInput, isEnabled: false, now: new Date('2026-08-04T15:30:00') })).toBeNull();
-    expect(computeAutoPullSlot({ ...baseInput, intervalMin: 0, now: new Date('2026-08-04T15:30:00') })).toBeNull();
+    expect(computeAutoPullSlot({ ...baseInput, intervalMin: 0, shouldClearSharePointAfterIngest: false, now: new Date('2026-08-04T15:30:00') })).toBeNull();
   });
 
   it('only applies to a SharePoint-only setup (a local drop folder keeps the SERVER scheduler in charge)', () => {

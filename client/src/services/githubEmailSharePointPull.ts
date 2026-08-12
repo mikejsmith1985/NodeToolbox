@@ -19,6 +19,14 @@ const RELAY_SYSTEM = 'sharepoint' as const;
 const UNSUPPORTED_BINARY_EXTENSIONS = ['.msg', '.png', '.jpg', '.jpeg', '.gif', '.pdf', '.zip'];
 /** Upper bound on one folder listing — far above any sane library backlog. */
 const LISTING_PAGE_SIZE = 2000;
+/**
+ * How many pages the listing will follow before giving up.
+ *
+ * A backlog is normal — the folder is only emptied after a successful ingest — so the listing has to
+ * page rather than trust one $top. The cap exists purely so a malformed nextLink cannot loop forever;
+ * at this page size it covers 100,000 files, far beyond any real backlog.
+ */
+const MAX_LISTING_PAGES = 50;
 /** Max files per run POST — mirrors the server's per-batch cap. */
 const MAX_SOURCES_PER_BATCH = 20;
 /** Max accumulated email text per run POST, kept safely under the server's 1 MB JSON body limit. */
@@ -46,6 +54,10 @@ export interface SharePointEmailPullSummary {
   batchCount: number;
   /** Known-binary files (.msg, images…) the relay cannot read as email text — reported, never hidden. */
   unsupportedCount: number;
+  /** Emails removed from the library after the server confirmed it had recorded them. */
+  deletedCount: number;
+  /** Emails deliberately left behind — not confirmed ingested, or the delete itself failed. */
+  keptCount: number;
 }
 
 /**
@@ -114,9 +126,12 @@ function parseRelayJson<ResponseBody>(result: RelayResult): ResponseBody {
 }
 
 /** Executes one relay request and returns the raw result, throwing on a SharePoint-side failure. */
-async function executeRelayRequest(path: string): Promise<RelayResult> {
+async function executeRelayRequest(
+  path: string,
+  method: 'GET' | 'POST' = 'GET',
+): Promise<RelayResult> {
   const requestId = nextRequestId();
-  await postRelayRequest({ sys: RELAY_SYSTEM, id: requestId, method: 'GET', path });
+  await postRelayRequest({ sys: RELAY_SYSTEM, id: requestId, method, path });
   const result = await waitForRelayResult(requestId, RELAY_SYSTEM);
   if (!result.ok) {
     const detail = typeof result.data === 'string' && result.data.trim() !== ''
@@ -142,16 +157,44 @@ async function listFolderEmailFiles(folderServerRelativeUrl: string): Promise<{ 
   // The ...ByServerRelativePath(decodedUrl=@alias) form is REQUIRED: the older ...ByServerRelativeUrl('...')
   // 404s on any path containing '#' or '%' even when percent-encoded — and every GitHub PR email
   // subject contains '#' (the exact production failure on "… (PR #2636)").
-  const listingPath = `${siteRoot}/_api/web/GetFolderByServerRelativePath(decodedUrl=@folderPath)/Files`
+  let listingPath: string | null = `${siteRoot}/_api/web/GetFolderByServerRelativePath(decodedUrl=@folderPath)/Files`
     + `?$select=Name,TimeCreated&$top=${LISTING_PAGE_SIZE}&@folderPath='${encodeRestPathParameter(folderServerRelativeUrl)}'`;
-  const result = await executeRelayRequest(listingPath);
-  const body = parseRelayJson<{ value?: Array<{ Name?: string; TimeCreated?: string }> }>(result);
-  const namedFiles = (body.value ?? []).filter((file) => typeof file.Name === 'string');
+
+  // Page until SharePoint stops offering a next link. Reading only the first page silently ignored
+  // everything past $top — with no error — so a folder that outgrew the cap stopped ingesting new
+  // mail while appearing to work perfectly.
+  const namedFiles: Array<{ Name?: string; TimeCreated?: string }> = [];
+  for (let pageIndex = 0; pageIndex < MAX_LISTING_PAGES && listingPath !== null; pageIndex += 1) {
+    const result = await executeRelayRequest(listingPath);
+    const body = parseRelayJson<{
+      value?: Array<{ Name?: string; TimeCreated?: string }>;
+      'odata.nextLink'?: string;
+    }>(result);
+    namedFiles.push(...(body.value ?? []).filter((file) => typeof file.Name === 'string'));
+    listingPath = readNextListingPath(body['odata.nextLink']);
+  }
   const emailFileNames = namedFiles
     .filter((file) => !isUnsupportedBinaryFileName(file.Name as string))
     .sort((first, second) => String(first.TimeCreated ?? '').localeCompare(String(second.TimeCreated ?? '')))
     .map((file) => file.Name as string);
   return { emailFileNames, unsupportedCount: namedFiles.length - emailFileNames.length };
+}
+
+/**
+ * Turns SharePoint's next-page link into a path the relay can request.
+ *
+ * The relay builds its target as `location.origin + path`, so an absolute nextLink has to lose its
+ * origin or the request would end up at a doubled host.
+ */
+function readNextListingPath(nextLink: string | undefined): string | null {
+  if (typeof nextLink !== 'string' || nextLink.trim() === '') return null;
+  if (nextLink.startsWith('/')) return nextLink;
+  try {
+    const parsedLink = new URL(nextLink);
+    return `${parsedLink.pathname}${parsedLink.search}`;
+  } catch {
+    return null;
+  }
 }
 
 /** Downloads one file's raw text through the relay. */
@@ -163,6 +206,57 @@ async function downloadFileText(folderServerRelativeUrl: string, fileName: strin
     + `?@filePath='${encodeRestPathParameter(filePath)}'`;
   const result = await executeRelayRequest(downloadPath);
   return typeof result.data === 'string' ? result.data : '';
+}
+
+/**
+ * Permanently deletes one file from the library through the relay.
+ *
+ * Uses the same decodedUrl=@alias form as the download, for the same reason: the quoted-URL form 404s
+ * on the '#' that every GitHub PR email subject contains.
+ */
+async function deleteFile(folderServerRelativeUrl: string, fileName: string): Promise<void> {
+  const siteRoot = siteRootOfFolder(folderServerRelativeUrl);
+  const filePath = `${folderServerRelativeUrl}/${fileName}`;
+  const deletePath = `${siteRoot}/_api/web/GetFileByServerRelativePath(decodedUrl=@filePath)/recycle()`
+    + `?@filePath='${encodeRestPathParameter(filePath)}'`;
+  await executeRelayRequest(deletePath, 'POST');
+}
+
+/**
+ * Removes the files the server has confirmed it ingested, and reports what it could not.
+ *
+ * The confirmation is the server's OWN ledger, re-asked after the batches have run: a file it no
+ * longer calls "new" is one it has recorded. Nothing is deleted on the strength of a status code — a
+ * batch can report success while an individual email failed to parse, and that email must survive for
+ * somebody to look at.
+ *
+ * `recycle()` rather than a hard delete: it empties the folder exactly the same way, and the cost of
+ * being wrong drops from "gone" to "in the recycle bin".
+ */
+async function deleteConfirmedFiles(
+  folderServerRelativeUrl: string,
+  attemptedFileNames: readonly string[],
+  onProgress?: (message: string) => void,
+): Promise<{ deletedCount: number; keptCount: number }> {
+  if (attemptedFileNames.length === 0) return { deletedCount: 0, keptCount: 0 };
+
+  onProgress?.('Confirming which emails the server recorded…');
+  const stillNewFileNames = new Set(await fetchNewFileNames([...attemptedFileNames]));
+  const confirmedFileNames = attemptedFileNames.filter((fileName) => !stillNewFileNames.has(fileName));
+
+  let deletedCount = 0;
+  for (const [index, fileName] of confirmedFileNames.entries()) {
+    onProgress?.(`Clearing ${index + 1}/${confirmedFileNames.length}: ${fileName}`);
+    try {
+      await deleteFile(folderServerRelativeUrl, fileName);
+      deletedCount += 1;
+    } catch {
+      // A file that will not delete is left where it is. It has already been ingested, so the ledger
+      // stops it being processed twice; leaving it is untidy, never incorrect.
+    }
+  }
+
+  return { deletedCount, keptCount: attemptedFileNames.length - deletedCount };
 }
 
 /** Asks the server which of the listed files it has not ingested yet. */
@@ -282,6 +376,8 @@ function nextPullId(): string {
 export async function pullSharePointEmails(
   folderServerRelativeUrl: string,
   onProgress?: (message: string) => void,
+  /** Clears each ingested email from the library. Off unless the team has asked for it. */
+  shouldClearAfterIngest = false,
 ): Promise<SharePointEmailPullSummary> {
   return runExclusively(async () => {
     const { listedCount, unsupportedCount, sources } = await collectNewSharePointSources(folderServerRelativeUrl, onProgress);
@@ -295,6 +391,8 @@ export async function pullSharePointEmails(
       errorCount: 0,
       batchCount: 0,
       unsupportedCount,
+      deletedCount: 0,
+      keptCount: 0,
     };
     if (sources.length === 0) {
       // Still record the sweep server-side: "nothing new" must show up in the Activity Log (GH #282).
@@ -312,6 +410,17 @@ export async function pullSharePointEmails(
       summary.errorCount += runCounts.errorCount;
       summary.batchCount += 1;
     }
+
+    if (shouldClearAfterIngest) {
+      const cleanup = await deleteConfirmedFiles(
+        normalizeSharePointFolderInput(folderServerRelativeUrl),
+        sources.map((source) => source.fileName),
+        onProgress,
+      );
+      summary.deletedCount = cleanup.deletedCount;
+      summary.keptCount = cleanup.keptCount;
+    }
+
     return summary;
   });
 }

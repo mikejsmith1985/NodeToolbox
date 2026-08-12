@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **GitHub Email Intake — the SharePoint listing stopped at 2,000 files, silently.** The folder was read
+  with a single `$top=2000` and no paging, so once a library outgrew that the listing quietly returned
+  the first 2,000 and newer mail was never ingested — with no error anywhere. The listing now follows
+  SharePoint's `odata.nextLink` until it is exhausted. A folder at 1,293 files was 700 short of losing
+  mail without saying so.
+
+### Added
+- **GitHub Email Intake — the library can now be cleared as emails are ingested.** The pull was
+  read-only by design and cleanup was delegated to Power Automate; where that flow was absent or
+  failing, the folder simply grew forever. The SharePoint relay bookmarklet now obtains a form digest
+  (`POST /_api/contextinfo`, itself digest-free, from the authenticated page it already runs on) and
+  attaches it to writes, refetching once on a 403 so a long session cannot fail on an expired one —
+  which is what made SharePoint writes impossible before.
+  With **"Clear each email from the library once it has been ingested"** enabled in Admin Hub, a pull
+  removes each ingested email to the site's recycle bin. What gets removed is decided by the server's
+  OWN ledger, re-asked after the batches run: a file it no longer calls "new" is one it has recorded.
+  Nothing is deleted on the strength of a status code, so an email that failed to parse is deliberately
+  left behind for somebody to look at. Off by default, and the outcome line states what was cleared and
+  what was kept rather than letting a destructive step happen quietly.
+  **Re-install the SharePoint relay bookmarklet** to pick up digest support — the previous one cannot
+  write.
+
 ### Changed
 - **Roll-Up Board — the troubleshooter has its own button.** It shipped inside the Board setup panel,
   between the Feature scope settings and the column editor, where nobody found it. A diagnostic is what

@@ -21,6 +21,8 @@ interface AutoPullConfig {
   isEnabled: boolean;
   dropFolder: string;
   sharePointFolderUrl: string;
+  /** Clear each ingested email from the library, so the folder does not grow without bound. */
+  shouldClearSharePointAfterIngest: boolean;
   scheduleTime: string;
   intervalMin: number;
 }
@@ -74,6 +76,7 @@ async function fetchIntakeConfig(): Promise<AutoPullConfig | null> {
       isEnabled: body.isEnabled === true,
       dropFolder: typeof body.dropFolder === 'string' ? body.dropFolder : '',
       sharePointFolderUrl: typeof body.sharePointFolderUrl === 'string' ? body.sharePointFolderUrl : '',
+      shouldClearSharePointAfterIngest: body.shouldClearSharePointAfterIngest === true,
       scheduleTime: typeof body.scheduleTime === 'string' ? body.scheduleTime : '07:00',
       intervalMin: Number(body.intervalMin) || 0,
     };
@@ -109,7 +112,9 @@ export function useSharePointAutoPull(): void {
         }
         lastFiredSlotRef.current = dueSlot;
         isPullingRef.current = true;
-        await pullSharePointEmails(config.sharePointFolderUrl);
+        await pullSharePointEmails(
+          config.sharePointFolderUrl, undefined, config.shouldClearSharePointAfterIngest,
+        );
       } catch {
         // Silent by design: the Activity Log and the intake panel are the reporting surfaces.
       } finally {

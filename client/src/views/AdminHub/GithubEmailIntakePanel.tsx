@@ -36,6 +36,7 @@ interface IntakeConfig {
   errorFolder: string
   /** Server-relative URL of the SharePoint library folder the Power Automate flow drops emails into. */
   sharePointFolderUrl: string
+  shouldClearSharePointAfterIngest: boolean
   fileExtensions: string[]
   jiraProjectKeys: string[]
   transitions: IntakeTransitions
@@ -247,6 +248,7 @@ export function GithubEmailIntakePanel() {
         customRules: loadedConfig.customRules ?? [],
         subStatusFieldId: loadedConfig.subStatusFieldId ?? 'customfield_10201',
         sharePointFolderUrl: loadedConfig.sharePointFolderUrl ?? '',
+        shouldClearSharePointAfterIngest: loadedConfig.shouldClearSharePointAfterIngest === true,
       })
       setProjectKeysText((loadedConfig.jiraProjectKeys ?? []).join(', '))
       setFileExtensionsText((loadedConfig.fileExtensions ?? []).join(', '))
@@ -387,17 +389,27 @@ export function GithubEmailIntakePanel() {
         setConfig(nextConfig)
         await persist(nextConfig, 'Saved.')
       }
-      const summary = await pullSharePointEmails(folderUrl, (progressMessage) => setSharePointMessage(progressMessage))
+      const summary = await pullSharePointEmails(
+        folderUrl,
+        (progressMessage) => setSharePointMessage(progressMessage),
+        config.shouldClearSharePointAfterIngest,
+      )
       // Skipped binaries are named, never hidden — a folder full of .msg exports must not read as
       // "all caught up" (GH #282): the fix is the flow's "Export email" action saving .eml files.
       const unsupportedNote = summary.unsupportedCount > 0
         ? ` ⚠ ${summary.unsupportedCount} file(s) skipped — unsupported binary type (e.g. .msg): set the Power Automate flow to use "Export email" and save the output as .eml.`
         : ''
+      // Clearing files is destructive, so it is stated in the outcome rather than happening quietly.
+      const clearedNote = summary.deletedCount > 0 || summary.keptCount > 0
+        ? ` Cleared ${summary.deletedCount} from the library${summary.keptCount > 0
+          ? `; ${summary.keptCount} left in place because the server did not confirm them.`
+          : '.'}`
+        : ''
       const outcomeMessage = (summary.newCount === 0
         ? `All caught up — ${summary.listedCount} email file(s) in the folder, none new. (Sweep recorded in the Activity Log.)`
         : `Pulled ${summary.newCount} new email(s) of ${summary.listedCount} in the folder — `
           + `${summary.postedCount} posted, ${summary.skippedCount} skipped, ${summary.errorCount} error(s).`)
-        + unsupportedNote
+        + unsupportedNote + clearedNote
       // The outcome must be visible at the action buttons too (GH #282: "Run Now doesn't seem to
       // do anything" — the message only rendered in the SharePoint section mid-page).
       setSharePointMessage(outcomeMessage)
@@ -615,13 +627,31 @@ export function GithubEmailIntakePanel() {
           (use the flow&apos;s <strong>&quot;Export email&quot;</strong> action and save as <strong>.eml</strong> —
           .msg and other binaries cannot be read), and a pull reads it through the
           <strong> SharePoint relay</strong> (open the site, click the relay bookmarklet). Every non-binary
-          file is read regardless of extension, so subject-named files work. Files are never moved or
-          deleted in SharePoint — already-ingested files are skipped, so have the flow clean up old files.
+          file is read regardless of extension, so subject-named files work. Already-ingested files are
+          always skipped, whether or not the library is cleared.
           Note: with no local drop folder, the configured schedule (start time + interval below) runs the
           SharePoint pull <strong>while Toolbox is open in your browser</strong> and the relay is connected —
           the server alone cannot reach SharePoint. A closed Toolbox tab or disconnected relay simply skips
           that slot; every run that does happen (including empty sweeps) lands in the Activity Log.
         </p>
+        <label className={styles.flagRow}>
+          <input
+            checked={config.shouldClearSharePointAfterIngest}
+            onChange={(event) => updateConfig({ shouldClearSharePointAfterIngest: event.target.checked })}
+            type="checkbox"
+          />
+          <span className={styles.fieldLabel}>
+            Clear each email from the library once it has been ingested
+          </span>
+        </label>
+        <p className={styles.panelStatusLine}>
+          Off by default, because it removes files from SharePoint. An email is only cleared after the
+          server confirms it recorded it — anything that failed to parse is deliberately left behind for
+          you to look at. Files go to the site&apos;s <strong>recycle bin</strong> rather than being
+          destroyed. Leave this off if a Power Automate flow already empties the folder; with both
+          running, whichever gets there first simply wins.
+        </p>
+
         <button
           type="button"
           className={styles.actionButton}
