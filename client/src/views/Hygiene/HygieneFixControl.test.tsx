@@ -24,7 +24,7 @@ vi.mock('../SprintDashboard/featureReviewFixes.ts', async (importOriginal) => ({
   searchFeatureReviewUsers: vi.fn().mockResolvedValue([]),
 }));
 
-import { HygieneFixControl } from './HygieneFixControl.tsx';
+import { HygieneFixControl, buildLinkSearchJql } from './HygieneFixControl.tsx';
 import {
   resolveHygieneFieldConfig,
   type HygieneFlag,
@@ -213,7 +213,8 @@ describe('HygieneFixControl', () => {
     // The greyed, search-driven dropdown explains itself instead of looking broken.
     const assigneeSelect = screen.getByLabelText('Assign owner options');
     expect(assigneeSelect).toBeDisabled();
-    expect(screen.getByRole('option', { name: /type a name above to search/i })).toBeInTheDocument();
+    // Names the box rather than its position: the search input sits BESIDE this dropdown, not above.
+    expect(screen.getByRole('option', { name: /type a name in the search box/i })).toBeInTheDocument();
   });
 
   it('renders an Open in Jira link (no write control) for a derived openInJira flag', () => {
@@ -229,5 +230,33 @@ describe('HygieneFixControl', () => {
     expect(screen.getByRole('link', { name: /open in jira/i })).toHaveAttribute('href', '/browse/OLD-9');
     // A derived flag offers no inline write control at all — only the link out.
     expect(screen.queryByRole('button')).not.toBeInTheDocument();
+  });
+});
+
+describe('buildLinkSearchJql — where a Feature can actually be found', () => {
+  it('does not restrict a FEATURE search to the issue\'s own project', () => {
+    // Features live in a portfolio project, never the team's own — that separation is the whole
+    // reason a Feature Link field exists. Scoping to the issue's project meant no query could match,
+    // whatever was typed, which is exactly what was reported.
+    const jql = buildLinkSearchJql('Transformers', true, 'ENFCT');
+
+    expect(jql).toContain('issuetype in (Feature, Epic)');
+    expect(jql).toContain('summary ~ "Transformers"');
+    expect(jql).not.toContain('project = ENFCT');
+  });
+
+  it('still restricts a PARENT search to the same project, where a parent really does live', () => {
+    const jql = buildLinkSearchJql('anything', false, 'ENFCT');
+
+    expect(jql).toContain('project = ENFCT');
+    expect(jql).not.toContain('issuetype in (Feature, Epic)');
+  });
+
+  it('looks a pasted key up directly, without any project clause', () => {
+    expect(buildLinkSearchJql('denp-1414', true, 'ENFCT')).toBe('issuetype in (Feature, Epic) AND key = DENP-1414');
+  });
+
+  it('escapes a quote so a typed term cannot break the query', () => {
+    expect(buildLinkSearchJql('say "hi"', true, 'ENFCT')).toContain('\\"hi\\"');
   });
 });

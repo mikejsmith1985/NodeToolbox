@@ -47,7 +47,7 @@ export const AI_FIXABLE_CHECK_INSTRUCTIONS: Record<string, string> = {
   'missing-due-date': 'propose a due date as YYYY-MM-DD, reasoned from the issue context.',
   'missing-target-start': 'propose a target start date as YYYY-MM-DD.',
   'missing-target-end': 'propose a target end date as YYYY-MM-DD (after the start).',
-  'missing-fix-version': 'propose the fix version NAME exactly as it would appear in Jira.',
+  'missing-fix-version': 'choose one of the release names listed for that project — never invent one.',
   'missing-pi': 'propose the Program Increment value exactly as used on sibling issues.',
   'missing-sp': 'propose a story-point estimate as a plain number.',
   stale: 'propose a short, polite nudge comment asking the assignee for a status update (it will be posted as a Jira comment).',
@@ -163,9 +163,24 @@ function buildFindingBlock(finding: HygieneFinding, staleContextsByKey: Record<s
 export function buildHygieneAiPrompt(
   findings: readonly HygieneFinding[],
   staleContextsByKey: Record<string, StaleIssueContext> = {},
+  /**
+   * The open releases each project actually has, keyed by project.
+   *
+   * Without this the model was told to "propose the fix version NAME exactly as it would appear in
+   * Jira" and had nothing to go on, so it invented plausible-looking names — "PY 2027 AEP" — which
+   * Jira then rejected with a 400. A model cannot guess a release schedule; it can pick from one.
+   */
+  openVersionNamesByProject: Record<string, readonly string[]> = {},
 ): string {
   const fixableFindings = findings.filter(hasAiFixableFlags)
   const issueKeyList = fixableFindings.map((finding) => finding.issue.key).join(', ')
+  const releaseLines = Object.entries(openVersionNamesByProject)
+    .filter(([, versionNames]) => versionNames.length > 0)
+    .map(([projectKey, versionNames]) => `  ${projectKey}: ${versionNames.join(' | ')}`)
+  const releaseSection = releaseLines.length > 0
+    ? '\n\nOpen releases per project — a fix version MUST be copied exactly from this list:\n'
+      + releaseLines.join('\n')
+    : '\n\nNo release list was available, so OMIT every fix-version fix rather than guessing a name.'
 
   return `You are helping clean up Jira issue-health ("hygiene") flags. For each issue below, propose a
 concrete value for each listed fix. A human reviews every proposal and accepts or declines it
@@ -189,7 +204,7 @@ Rules:
 Issues (${fixableFindings.length}):
 ${fixableFindings.map((finding) => buildFindingBlock(finding, staleContextsByKey)).join('\n')}
 
-Issue keys you may use: ${issueKeyList}
+Issue keys you may use: ${issueKeyList}${releaseSection}
 
 Reply with this JSON object and nothing else:
 {

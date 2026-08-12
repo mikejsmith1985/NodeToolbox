@@ -23,6 +23,10 @@ import {
 } from './hygieneAiAssist.ts'
 import { applyHygieneAiProposal } from './hygieneAiApply.ts'
 import { fetchStaleIssueContexts } from './hygieneAiFetch.ts'
+import {
+  fetchFeatureReviewFixVersions,
+  readProjectKeyFromIssueKey,
+} from '../../SprintDashboard/featureReviewFixes.ts'
 import styles from '../HygieneView.module.css'
 
 /**
@@ -78,9 +82,34 @@ export function HygieneAiPanel({ findings, fieldConfig, onIssueFixed }: HygieneA
     }
   }, [fixableFindings])
 
+  // The projects in play, and the open releases each one actually has. Without this the model was
+  // asked to name a fix version with nothing to go on and invented plausible ones — "PY 2027 AEP" —
+  // which Jira rejected with a 400. A model cannot guess a release schedule; it can pick from one.
+  const [openVersionNamesByProject, setOpenVersionNamesByProject] = useState<Record<string, string[]>>({})
+  useEffect(() => {
+    const projectKeys = [...new Set(
+      fixableFindings.map((finding) => readProjectKeyFromIssueKey(finding.issue.key)).filter(Boolean),
+    )]
+    if (projectKeys.length === 0) {
+      setOpenVersionNamesByProject({})
+      return
+    }
+
+    let isActive = true
+    void Promise.all(projectKeys.map(async (projectKey) => {
+      const versions = await fetchFeatureReviewFixVersions(projectKey).catch(() => [])
+      return [projectKey, versions.map((version) => version.label).filter(Boolean)] as const
+    })).then((entries) => {
+      if (isActive) setOpenVersionNamesByProject(Object.fromEntries(entries))
+    })
+    return () => { isActive = false }
+  }, [fixableFindings])
+
   const promptText = useMemo(
-    () => (fixableFindings.length === 0 ? '' : buildHygieneAiPrompt(fixableFindings, staleContextsByKey)),
-    [fixableFindings, staleContextsByKey],
+    () => (fixableFindings.length === 0
+      ? ''
+      : buildHygieneAiPrompt(fixableFindings, staleContextsByKey, openVersionNamesByProject)),
+    [fixableFindings, staleContextsByKey, openVersionNamesByProject],
   )
 
   // Both paths land here. Auto is a shortcut past the paste box, never a second pipeline.
