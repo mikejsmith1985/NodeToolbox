@@ -293,7 +293,7 @@ describe('RollupBoardTab — editing a card in place', () => {
     });
   });
 
-  it('closes the detail panel again on request', async () => {
+  it('closes the detail panel when the same card is clicked again', async () => {
     mockJiraResponses({ boardIssues: [buildIssue('DEV-1', 'PORTFOLIO-9')] });
 
     render(<RollupBoardTab boardId={42} scopedIssues={SCOPED_ISSUES} teamProfileId="team-a" />);
@@ -303,9 +303,29 @@ describe('RollupBoardTab — editing a card in place', () => {
     fireEvent.click(screen.getByTestId('rollup-card-DEV-1'));
     await waitFor(() => expect(screen.getByTestId('rollup-issue-detail')).toBeTruthy());
 
-    fireEvent.click(screen.getByRole('button', { name: 'Close DEV-1' }));
+    // The same click that opened it closes it — the hand is already there, and a Close button can be
+    // pushed off screen by the very panel it belongs to.
+    fireEvent.click(screen.getByTestId('rollup-card-DEV-1'));
 
-    expect(screen.queryByTestId('rollup-issue-detail')).toBeNull();
+    await waitFor(() => expect(screen.queryByTestId('rollup-issue-detail')).toBeNull());
+  });
+
+  it('switches straight to another card rather than closing first', async () => {
+    mockJiraResponses({
+      boardIssues: [buildIssue('DEV-1', 'PORTFOLIO-9'), buildIssue('DEV-2', 'PORTFOLIO-9')],
+    });
+
+    render(<RollupBoardTab boardId={42} scopedIssues={SCOPED_ISSUES} teamProfileId="team-a" />);
+
+    await waitFor(() => expect(screen.getByTestId('rollup-lane-PORTFOLIO-9')).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: /Expand PORTFOLIO-9/ }));
+    fireEvent.click(screen.getByTestId('rollup-card-DEV-1'));
+    await waitFor(() => expect(screen.getByTestId('rollup-issue-detail')).toBeTruthy());
+
+    fireEvent.click(screen.getByTestId('rollup-card-DEV-2'));
+
+    await waitFor(() =>
+      expect(screen.getByTestId('rollup-issue-detail').getAttribute('aria-label')).toContain('DEV-2'));
   });
 });
 
