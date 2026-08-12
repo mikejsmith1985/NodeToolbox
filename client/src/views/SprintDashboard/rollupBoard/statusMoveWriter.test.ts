@@ -8,10 +8,10 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { mockFetchTransitions, mockSaveTransition, mockSaveOptionField, mockJiraGet, mockJiraPut } = vi.hoisted(() => ({
+const { mockFetchTransitions, mockSaveTransition, mockFetchEditMeta, mockJiraGet, mockJiraPut } = vi.hoisted(() => ({
   mockFetchTransitions: vi.fn(),
   mockSaveTransition: vi.fn(),
-  mockSaveOptionField: vi.fn(),
+  mockFetchEditMeta: vi.fn(),
   mockJiraGet: vi.fn(),
   mockJiraPut: vi.fn(),
 }));
@@ -19,8 +19,8 @@ const { mockFetchTransitions, mockSaveTransition, mockSaveOptionField, mockJiraG
 vi.mock('../featureReviewFixes.ts', () => ({
   fetchFeatureReviewTransitions: mockFetchTransitions,
   saveFeatureReviewTransition: mockSaveTransition,
-  saveFeatureReviewOptionField: mockSaveOptionField,
-  fetchFeatureReviewEditMeta: vi.fn(),
+  saveFeatureReviewOptionField: vi.fn(),
+  fetchFeatureReviewEditMeta: mockFetchEditMeta,
   isTransitionFieldSupported: (field: { schemaType: string }) =>
     ['option', 'option-with-child', 'string'].includes(field.schemaType),
   areTransitionSelectionsComplete: () => true,
@@ -54,10 +54,22 @@ const TRANSITION_WITHOUT_SUB_STATUS = {
 
 const TARGET: ColumnStatusMapping = { jiraStatusName: 'In Progress', subStatusValue: 'Dev Complete' };
 
+/** The sub-status field as this instance defines it, which is what the writer now resolves against. */
+const SUB_STATUS_EDIT_META = {
+  [SUB_STATUS_FIELD]: {
+    name: 'Sub-Status',
+    allowedValues: [
+      { id: '10', value: 'Dev In Progress' },
+      { id: '11', value: 'Dev Complete' },
+    ],
+  },
+};
+
 beforeEach(() => {
   vi.clearAllMocks();
   mockSaveTransition.mockResolvedValue(undefined);
-  mockSaveOptionField.mockResolvedValue(undefined);
+  mockFetchEditMeta.mockResolvedValue(SUB_STATUS_EDIT_META);
+  mockJiraPut.mockResolvedValue(undefined);
 });
 
 describe('planStatusMove — choosing how to write', () => {
@@ -176,8 +188,9 @@ describe('executeStatusMove — what actually gets sent', () => {
 
     expect(outcome.status).toBe('applied');
     expect(mockSaveTransition).toHaveBeenCalledTimes(1);
-    expect(mockSaveTransition).toHaveBeenCalledWith('DEV-1', '31', { [SUB_STATUS_FIELD]: { value: 'Dev Complete' } });
-    expect(mockSaveOptionField).not.toHaveBeenCalled();
+    // Resolved to the option's ID, which survives an admin renaming the label.
+    expect(mockSaveTransition).toHaveBeenCalledWith('DEV-1', '31', { [SUB_STATUS_FIELD]: { id: '11' } });
+    expect(mockJiraPut).not.toHaveBeenCalled();
   });
 
   it('sends the transition first and then the field when they cannot be written together', async () => {
@@ -193,7 +206,7 @@ describe('executeStatusMove — what actually gets sent', () => {
 
     expect(outcome.status).toBe('applied');
     expect(mockSaveTransition).toHaveBeenCalledTimes(1);
-    expect(mockSaveOptionField).toHaveBeenCalledTimes(1);
+    expect(mockJiraPut).toHaveBeenCalledTimes(1);
   });
 
   it('sends no transition when only the sub-status differs', async () => {
@@ -208,7 +221,7 @@ describe('executeStatusMove — what actually gets sent', () => {
     });
 
     expect(mockSaveTransition).not.toHaveBeenCalled();
-    expect(mockSaveOptionField).toHaveBeenCalledTimes(1);
+    expect(mockJiraPut).toHaveBeenCalledTimes(1);
   });
 
   it('sends nothing at all when the card was dropped where it already was', async () => {
@@ -224,7 +237,7 @@ describe('executeStatusMove — what actually gets sent', () => {
 
     expect(outcome.status).toBe('applied');
     expect(mockSaveTransition).not.toHaveBeenCalled();
-    expect(mockSaveOptionField).not.toHaveBeenCalled();
+    expect(mockJiraPut).not.toHaveBeenCalled();
   });
 
   it('writes nothing when the transition is not permitted, and names what Jira refused', async () => {
@@ -285,7 +298,7 @@ describe('executeStatusMove — failure honesty', () => {
     // Jira really did move the issue. Snapping the card back would show a state Jira does not hold,
     // and no error message can undo a board that is drawing a falsehood.
     mockFetchTransitions.mockResolvedValue([TRANSITION_WITHOUT_SUB_STATUS]);
-    mockSaveOptionField.mockRejectedValue(new Error('sub-status rejected'));
+    mockJiraPut.mockRejectedValue(new Error('sub-status rejected'));
     mockJiraGet.mockResolvedValue({
       key: 'DEV-1',
       fields: { status: { name: 'In Progress' }, [SUB_STATUS_FIELD]: null },
@@ -305,7 +318,7 @@ describe('executeStatusMove — failure honesty', () => {
 
   it('names exactly what applied and what did not after a partial write', async () => {
     mockFetchTransitions.mockResolvedValue([TRANSITION_WITHOUT_SUB_STATUS]);
-    mockSaveOptionField.mockRejectedValue(new Error('sub-status rejected'));
+    mockJiraPut.mockRejectedValue(new Error('sub-status rejected'));
     mockJiraGet.mockResolvedValue({
       key: 'DEV-1',
       fields: { status: { name: 'In Progress' }, [SUB_STATUS_FIELD]: null },
@@ -326,7 +339,7 @@ describe('executeStatusMove — failure honesty', () => {
 
   it('re-reads the issue after a partial write, so the card can settle at the truth', async () => {
     mockFetchTransitions.mockResolvedValue([TRANSITION_WITHOUT_SUB_STATUS]);
-    mockSaveOptionField.mockRejectedValue(new Error('sub-status rejected'));
+    mockJiraPut.mockRejectedValue(new Error('sub-status rejected'));
     mockJiraGet.mockResolvedValue({
       key: 'DEV-1',
       fields: { status: { name: 'In Progress' }, [SUB_STATUS_FIELD]: { value: 'Dev In Progress' } },
@@ -347,7 +360,7 @@ describe('executeStatusMove — failure honesty', () => {
 
   it('still reports the partial write when even the re-read fails, rather than claiming success', async () => {
     mockFetchTransitions.mockResolvedValue([TRANSITION_WITHOUT_SUB_STATUS]);
-    mockSaveOptionField.mockRejectedValue(new Error('sub-status rejected'));
+    mockJiraPut.mockRejectedValue(new Error('sub-status rejected'));
     mockJiraGet.mockRejectedValue(new Error('re-read failed'));
 
     const outcome = await executeStatusMove({
@@ -424,7 +437,7 @@ describe('planStatusMove — a column that claims the status on its own', () => 
 describe('executeStatusMove — clearing writes an empty value, not an empty string', () => {
   beforeEach(() => {
     mockJiraPut.mockReset();
-    mockSaveOptionField.mockReset();
+    mockJiraPut.mockResolvedValue(undefined);
     mockSaveTransition.mockReset();
     mockFetchTransitions.mockReset();
   });
@@ -441,9 +454,9 @@ describe('executeStatusMove — clearing writes an empty value, not an empty str
     });
 
     expect(outcome.status).toBe('applied');
-    // The option saver resolves a VALUE against Jira's allowed list, and no allowed value means
-    // "none" — so clearing has to be a direct write.
-    expect(mockSaveOptionField).not.toHaveBeenCalled();
+    // No allowed value means "none", so clearing is an empty write rather than a resolved option —
+    // and it needs no edit-metadata read at all.
+    expect(mockFetchEditMeta).not.toHaveBeenCalled();
     expect(mockJiraPut).toHaveBeenCalledWith(
       '/rest/api/2/issue/ENFCT-2019',
       { fields: { [SUB_STATUS_FIELD]: null } },
@@ -463,5 +476,77 @@ describe('executeStatusMove — clearing writes an empty value, not an empty str
     });
 
     expect(mockSaveTransition).toHaveBeenCalledWith('ENFCT-2019', '31', { [SUB_STATUS_FIELD]: null });
+  });
+});
+
+// ── The cascading sub-status field ──
+//
+// The exact failure from the board: dragging ENCUC-2201 to SL Testing produced
+// `400 — Could not find valid 'id' or 'value' in the Parent Option object`, because the board sent
+// `{ value: "Testing" }` at a field whose "Testing" is a CHILD of "Ready for Testing". The same
+// change made by hand in Jira worked, which is what proved the write and not the mapping was wrong.
+describe('executeStatusMove — a cascading sub-status field', () => {
+  const CASCADING_EDIT_META = {
+    [SUB_STATUS_FIELD]: {
+      name: 'Sub-Status',
+      allowedValues: [
+        { id: '200', value: 'Ready for Testing', children: [{ id: '201', value: 'Testing' }] },
+      ],
+    },
+  };
+
+  beforeEach(() => {
+    mockFetchEditMeta.mockResolvedValue(CASCADING_EDIT_META);
+    mockJiraPut.mockResolvedValue(undefined);
+  });
+
+  it('sends the parent alongside the child instead of the child alone', async () => {
+    mockFetchTransitions.mockResolvedValue([]);
+
+    const outcome = await executeStatusMove({
+      issueKey: 'ENCUC-2201',
+      currentStatusName: 'Ready for Testing',
+      currentSubStatusValue: null,
+      targetMapping: { jiraStatusName: 'Ready for Testing', subStatusValue: 'Testing' },
+      subStatusFieldId: SUB_STATUS_FIELD,
+    });
+
+    expect(outcome.status).toBe('applied');
+    expect(mockJiraPut).toHaveBeenCalledWith(
+      '/rest/api/2/issue/ENCUC-2201',
+      { fields: { [SUB_STATUS_FIELD]: { id: '200', child: { id: '201' } } } },
+    );
+  });
+
+  it('writes nothing at all when the mapping names an option the field does not have', async () => {
+    mockFetchTransitions.mockResolvedValue([]);
+
+    const outcome = await executeStatusMove({
+      issueKey: 'ENCUC-2201',
+      currentStatusName: 'Ready for Testing',
+      currentSubStatusValue: null,
+      targetMapping: { jiraStatusName: 'Ready for Testing', subStatusValue: 'Testng' },
+      subStatusFieldId: SUB_STATUS_FIELD,
+    });
+
+    expect(outcome.status).toBe('failed');
+    expect(outcome.message).toContain('Ready for Testing / Testing');
+    expect(mockJiraPut).not.toHaveBeenCalled();
+  });
+
+  it('refuses BEFORE transitioning, so an unwritable mapping cannot half-move the issue', async () => {
+    mockFetchTransitions.mockResolvedValue([TRANSITION_WITHOUT_SUB_STATUS]);
+
+    const outcome = await executeStatusMove({
+      issueKey: 'ENCUC-2201',
+      currentStatusName: 'To Do',
+      currentSubStatusValue: null,
+      targetMapping: { jiraStatusName: 'In Progress', subStatusValue: 'Testng' },
+      subStatusFieldId: SUB_STATUS_FIELD,
+    });
+
+    expect(outcome.status).toBe('failed');
+    // The status change is the part that cannot be undone, so it must not be attempted first.
+    expect(mockSaveTransition).not.toHaveBeenCalled();
   });
 });

@@ -12,12 +12,13 @@
 
 import { jiraGet, jiraPut } from '../../../services/jiraApi.ts';
 import {
+  fetchFeatureReviewEditMeta,
   fetchFeatureReviewTransitions,
-  saveFeatureReviewOptionField,
   saveFeatureReviewTransition,
   type FeatureReviewTransition,
   type TransitionRequiredField,
 } from '../featureReviewFixes.ts';
+import { resolveSubStatusFieldValue, type SubStatusFieldValue } from './subStatusFieldPayload.ts';
 import type { ColumnStatusMapping } from './rollupBoardTypes.ts';
 
 /** Compares Jira names the way Jira presents them: trimmed, and casing is not a real distinction. */
@@ -160,24 +161,36 @@ async function readIssueStateAfterPartialWrite(
 }
 
 /**
- * Sets the sub-status on its own — or empties it when the target column claims the status alone.
+ * Works out exactly what to write for a sub-status, by asking the issue what its field accepts.
  *
- * Clearing goes through a direct `null` write rather than the option saver, because an option saver
- * resolves a VALUE against Jira's allowed list and there is no allowed value meaning "none".
+ * The board cannot know whether a column's sub-status names a top-level option or one nested under a
+ * parent, and guessing `{ value: "Testing" }` at a cascading field is what produced Jira's
+ * "Could not find valid 'id' or 'value' in the Parent Option object". One read of the issue's edit
+ * metadata settles it — and settles it per issue, so a field configured differently on one issue type
+ * is handled rather than assumed away.
  */
-async function writeSubStatusField(
+async function planSubStatusWrite(
   issueKey: string,
   subStatusFieldId: string,
   subStatusValue: string | null,
-): Promise<void> {
-  if (subStatusValue === null) {
-    await jiraPut(`/rest/api/2/issue/${encodeURIComponent(issueKey)}`, {
-      fields: { [subStatusFieldId]: null },
-    });
-    return;
-  }
+  targetStatusName: string,
+): Promise<ReturnType<typeof resolveSubStatusFieldValue>> {
+  // Clearing needs no lookup: there is no allowed value meaning "none", so an empty write says it.
+  if (subStatusValue === null) return { kind: 'write', fieldValue: null };
 
-  await saveFeatureReviewOptionField(issueKey, subStatusFieldId, subStatusValue, undefined);
+  const editMeta = await fetchFeatureReviewEditMeta(issueKey).catch(() => null);
+  return resolveSubStatusFieldValue(editMeta?.[subStatusFieldId], subStatusValue, targetStatusName);
+}
+
+/** Writes a resolved sub-status value straight onto the issue. */
+async function writeSubStatusField(
+  issueKey: string,
+  subStatusFieldId: string,
+  fieldValue: SubStatusFieldValue,
+): Promise<void> {
+  await jiraPut(`/rest/api/2/issue/${encodeURIComponent(issueKey)}`, {
+    fields: { [subStatusFieldId]: fieldValue },
+  });
 }
 
 /**
@@ -205,18 +218,36 @@ export async function executeStatusMove(input: ExecuteStatusMoveInput): Promise<
     };
   }
 
+  if (plan.kind === 'transition-only') {
+    try {
+      await saveFeatureReviewTransition(input.issueKey, plan.transitionId);
+      return { status: 'applied', message: null };
+    } catch (error: unknown) {
+      return { status: 'failed', message: String(error), shouldRevertCard: true };
+    }
+  }
+
+  // Settle what the sub-status write will actually contain BEFORE anything is sent. A mapping the
+  // field cannot accept is then refused with nothing written, rather than after a status change has
+  // already landed and left the issue half-moved.
+  const subStatusWrite = await planSubStatusWrite(
+    input.issueKey,
+    input.subStatusFieldId,
+    plan.subStatusValue,
+    input.targetMapping.jiraStatusName,
+  );
+  if (subStatusWrite.kind === 'unwritable') {
+    return { status: 'failed', message: subStatusWrite.reason, shouldRevertCard: true };
+  }
+
   try {
     if (plan.kind === 'field-only') {
-      await writeSubStatusField(input.issueKey, input.subStatusFieldId, plan.subStatusValue);
-      return { status: 'applied', message: null };
-    }
-    if (plan.kind === 'transition-only') {
-      await saveFeatureReviewTransition(input.issueKey, plan.transitionId);
+      await writeSubStatusField(input.issueKey, input.subStatusFieldId, subStatusWrite.fieldValue);
       return { status: 'applied', message: null };
     }
     if (plan.kind === 'transition-with-substatus') {
       await saveFeatureReviewTransition(input.issueKey, plan.transitionId, {
-        [input.subStatusFieldId]: plan.subStatusValue === null ? null : { value: plan.subStatusValue },
+        [input.subStatusFieldId]: subStatusWrite.fieldValue,
       });
       return { status: 'applied', message: null };
     }
@@ -233,7 +264,7 @@ export async function executeStatusMove(input: ExecuteStatusMoveInput): Promise<
   }
 
   try {
-    await writeSubStatusField(input.issueKey, input.subStatusFieldId, plan.subStatusValue);
+    await writeSubStatusField(input.issueKey, input.subStatusFieldId, subStatusWrite.fieldValue);
     return { status: 'applied', message: null };
   } catch (error: unknown) {
     const actualState = await readIssueStateAfterPartialWrite(input.issueKey, input.subStatusFieldId);
