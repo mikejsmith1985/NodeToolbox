@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Roll-Up Board — moving a card to a column that claims a status on its own now CLEARS the
+  sub-status.** A card reading `Working / New` sat in Unmapped, because no column claims that exact
+  pair. Dragging it to the **Working** column — which claims the status on its own — was refused with
+  *"the workflow has no step from Working to this column"*, which was both wrong and confusing: the
+  status was already Working, so the planner went looking for a `Working → Working` transition that no
+  workflow has, instead of doing the one thing that would put the card where it was dropped. Emptying
+  the sub-status IS the move in that case, and it is now what happens. Where the status differs as
+  well, the transition and the clearing happen together — in a single request wherever Jira's screen
+  allows it, since an atomic write cannot half-apply. Moving that card on to a column whose mapping
+  DOES name a sub-status applies both halves for that column, as before. Clearing goes through a direct
+  empty write rather than the option saver, because an option saver resolves a value against Jira's
+  allowed list and no allowed value means "none". An instance with no sub-status field is never
+  touched, and a move whose sub-status is already correct no longer makes a second pointless write.
+
 ### Added
 - **Roll-Up Board — the open card now says where it can go from here.** Every other way of learning
   this on a board was a guess: drag a card at a column and find out whether the workflow allows it by

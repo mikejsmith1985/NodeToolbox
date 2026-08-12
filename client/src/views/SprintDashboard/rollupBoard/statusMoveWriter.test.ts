@@ -8,11 +8,12 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { mockFetchTransitions, mockSaveTransition, mockSaveOptionField, mockJiraGet } = vi.hoisted(() => ({
+const { mockFetchTransitions, mockSaveTransition, mockSaveOptionField, mockJiraGet, mockJiraPut } = vi.hoisted(() => ({
   mockFetchTransitions: vi.fn(),
   mockSaveTransition: vi.fn(),
   mockSaveOptionField: vi.fn(),
   mockJiraGet: vi.fn(),
+  mockJiraPut: vi.fn(),
 }));
 
 vi.mock('../featureReviewFixes.ts', () => ({
@@ -26,7 +27,7 @@ vi.mock('../featureReviewFixes.ts', () => ({
   buildTransitionFieldsPayload: () => ({}),
 }));
 
-vi.mock('../../../services/jiraApi.ts', () => ({ jiraGet: mockJiraGet }));
+vi.mock('../../../services/jiraApi.ts', () => ({ jiraGet: mockJiraGet, jiraPut: mockJiraPut }));
 
 import { executeStatusMove, planStatusMove } from './statusMoveWriter.ts';
 import type { ColumnStatusMapping } from './rollupBoardTypes.ts';
@@ -359,5 +360,108 @@ describe('executeStatusMove — failure honesty', () => {
 
     expect(outcome.status).toBe('partially-applied');
     expect(outcome.status === 'partially-applied' && outcome.shouldRevertCard).toBe(false);
+  });
+});
+
+// ── Clearing the sub-status ──
+//
+// The bug this covers, from the board: a card reading "Working / New" sat in Unmapped because no
+// column claims that pair. Dragging it to the Working column — which claims the STATUS on its own —
+// was refused with "the workflow has no step from Working to this column", because the status was
+// already Working and the planner went looking for a transition instead of emptying the sub-status.
+describe('planStatusMove — a column that claims the status on its own', () => {
+  it('empties the sub-status instead of hunting for a transition that cannot exist', () => {
+    const plan = planStatusMove({
+      currentStatusName: 'Working',
+      currentSubStatusValue: 'New',
+      targetMapping: { jiraStatusName: 'Working', subStatusValue: null },
+      transitions: [],
+      subStatusFieldId: SUB_STATUS_FIELD,
+    });
+
+    expect(plan.kind).toBe('field-only');
+    expect(plan.kind === 'field-only' && plan.subStatusValue).toBeNull();
+  });
+
+  it('transitions AND empties the sub-status when the status differs too', () => {
+    const plan = planStatusMove({
+      currentStatusName: 'To Do',
+      currentSubStatusValue: 'New',
+      targetMapping: { jiraStatusName: 'In Progress', subStatusValue: null },
+      transitions: [TRANSITION_WITHOUT_SUB_STATUS],
+      subStatusFieldId: SUB_STATUS_FIELD,
+    });
+
+    expect(plan.kind).toBe('transition-then-field');
+    expect(plan.kind === 'transition-then-field' && plan.subStatusValue).toBeNull();
+  });
+
+  it('still transitions alone when there is no sub-status to clear', () => {
+    const plan = planStatusMove({
+      currentStatusName: 'To Do',
+      currentSubStatusValue: null,
+      targetMapping: { jiraStatusName: 'In Progress', subStatusValue: null },
+      transitions: [TRANSITION_WITHOUT_SUB_STATUS],
+      subStatusFieldId: SUB_STATUS_FIELD,
+    });
+
+    expect(plan.kind).toBe('transition-only');
+  });
+
+  it('never touches a sub-status field this instance does not have', () => {
+    const plan = planStatusMove({
+      currentStatusName: 'Working',
+      currentSubStatusValue: null,
+      targetMapping: { jiraStatusName: 'Working', subStatusValue: null },
+      transitions: [],
+      subStatusFieldId: '',
+    });
+
+    expect(plan.kind).toBe('no-op');
+  });
+});
+
+describe('executeStatusMove — clearing writes an empty value, not an empty string', () => {
+  beforeEach(() => {
+    mockJiraPut.mockReset();
+    mockSaveOptionField.mockReset();
+    mockSaveTransition.mockReset();
+    mockFetchTransitions.mockReset();
+  });
+
+  it('sends null for the field rather than resolving an option that does not exist', async () => {
+    mockFetchTransitions.mockResolvedValue([]);
+
+    const outcome = await executeStatusMove({
+      issueKey: 'ENFCT-2019',
+      currentStatusName: 'Working',
+      currentSubStatusValue: 'New',
+      targetMapping: { jiraStatusName: 'Working', subStatusValue: null },
+      subStatusFieldId: SUB_STATUS_FIELD,
+    });
+
+    expect(outcome.status).toBe('applied');
+    // The option saver resolves a VALUE against Jira's allowed list, and no allowed value means
+    // "none" — so clearing has to be a direct write.
+    expect(mockSaveOptionField).not.toHaveBeenCalled();
+    expect(mockJiraPut).toHaveBeenCalledWith(
+      '/rest/api/2/issue/ENFCT-2019',
+      { fields: { [SUB_STATUS_FIELD]: null } },
+    );
+  });
+
+  it('clears the sub-status in the same request when the transition screen carries it', async () => {
+    mockFetchTransitions.mockResolvedValue([TRANSITION_WITH_SUB_STATUS]);
+    mockSaveTransition.mockResolvedValue(undefined);
+
+    await executeStatusMove({
+      issueKey: 'ENFCT-2019',
+      currentStatusName: 'To Do',
+      currentSubStatusValue: 'New',
+      targetMapping: { jiraStatusName: 'In Progress', subStatusValue: null },
+      subStatusFieldId: SUB_STATUS_FIELD,
+    });
+
+    expect(mockSaveTransition).toHaveBeenCalledWith('ENFCT-2019', '31', { [SUB_STATUS_FIELD]: null });
   });
 });
