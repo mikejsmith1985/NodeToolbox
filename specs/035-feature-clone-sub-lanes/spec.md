@@ -39,6 +39,9 @@ they belong: underneath the dev Feature they are copies of.
 
 - Q: What evidence in Jira marks a Feature as a clone of another? -> A: Jira's **Cloners** issue link where present,
   falling back to a **matching Feature Name** within the configured discipline projects.
+- Q: Does every Cloners link make a sub-lane? -> A: **No.** Only a clone living in a DIFFERENT, configured discipline
+  project becomes a sub-lane. A clone in the dev team's own Feature project is a peer Feature, not another
+  discipline's copy, and keeps its own top-level lane.
 - Q: Whose column vocabulary do sub-lane cards sit in? -> A: The **dev team's own vocabulary** — one board, one set of
   columns — and sub-lane cards are **view-only**.
 - Q: Do sub-lanes count toward the Feature's roll-up figures? -> A: **Both are shown, separately**: the dev figure and
@@ -112,6 +115,8 @@ work through a workflow I do not own — so sub-lanes are deliberately view-only
 - A QE story that carries a Feature Link pointing at the **dev** Feature rather than the QE clone — it must not appear
   twice.
 - A dev Feature that is itself a clone of somebody else's Feature.
+- A dev Feature cloned **within its own project** — a peer, not a discipline. Keeps its own top-level lane.
+- A clone in a project nobody has configured — reported, not guessed at.
 
 ## Requirements
 
@@ -124,12 +129,23 @@ work through a workflow I do not own — so sub-lanes are deliberately view-only
   2. failing that, a **matching Feature Name** between the dev Feature and a Feature in one of the configured
      discipline projects.
   The fallback exists because a discipline that creates its Feature by hand leaves no Cloners link, and a family that
-  silently loses a member would recreate the very blind spot this feature exists to close.
+  silently loses a member would recreate the very blind spot this feature exists to close. Observed evidence says the
+  fallback will rarely fire and must never be relied on: on the sampled Feature, the QE clone `QEINT-610` carries a
+  summary with no words in common with its dev original, because a discipline rewrites the title to describe its own
+  scope. **The Cloners link is the real mechanism; the name match is a net, not a plan.**
 - **FR-001a**: Where a clone is matched by name rather than by link, the sub-lane MUST say so. A name match is a
   reasonable inference and an edited title breaks it; presenting an inference as a fact is what makes a wrong board
   believable.
 - **FR-001b**: A name match MUST be considered only within the configured discipline projects (FR-013), never across
   Jira at large, and MUST require an exact match after trimming — not a fuzzy or partial one.
+- **FR-001c**: A clone MUST become a sub-lane **only when it lives in a different, configured discipline project**.
+  A Cloners link is not by itself evidence of another discipline: teams clone Features within their own project to
+  split scope — the sampled Feature is cloned by both `DENP-1359`, a peer in the dev team's own Feature project, and
+  `QEINT-610`, the QE copy. The first is a sibling Feature and MUST keep its own top-level lane; only the second is a
+  sub-lane. **The project decides, not the link.**
+- **FR-001d**: A clone in an unrecognised project — neither the dev team's own nor any configured discipline's — MUST
+  NOT become a sub-lane, and MUST NOT be silently discarded either. It MUST be reported once, so an unconfigured
+  discipline is discovered by being told rather than by a Feature quietly reading as finished.
 - **FR-002**: The board MUST render each identified clone as a **sub-lane** beneath its dev Feature's lane, labelled
   with the discipline it belongs to and the clone's own issue key.
 - **FR-003**: Each sub-lane MUST show the work that rolls up to **that clone**, using the same roll-up rules the board
@@ -170,7 +186,8 @@ work through a workflow I do not own — so sub-lanes are deliberately view-only
 - **FR-012**: The quick filters (type, assignee, fix version) MUST apply to sub-lane cards on the same terms as
   primary-lane cards.
 - **FR-013**: Which projects belong to which discipline MUST be configurable per team, alongside the board's existing
-  Feature-scope settings, and MUST NOT be inferred from project naming conventions.
+  Feature-scope settings, and MUST NOT be inferred from project naming conventions. The configuration is the single
+  thing that separates "another discipline's copy" from "our own second Feature", so it MUST be explicit.
 
 ### Key Entities
 
@@ -237,5 +254,6 @@ All three are answered; see **Clarifications** above.
 | # | Question | Decision |
 |---|---|---|
 | 1 | What marks a clone? | Cloners link, falling back to Feature Name within configured discipline projects |
+| 1a | Does every clone become a sub-lane? | No — only one in a different, configured discipline project |
 | 2 | Whose columns do sub-lane cards use? | The dev team's, and sub-lanes are view-only |
 | 3 | Do sub-lanes count toward the roll-up numbers? | Both figures shown separately: dev and family |
