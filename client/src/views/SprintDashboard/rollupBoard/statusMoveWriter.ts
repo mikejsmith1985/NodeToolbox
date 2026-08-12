@@ -10,7 +10,7 @@
 // is showing a falsehood, so the card settles where the issue actually is and the shortfall is said
 // out loud instead.
 
-import { jiraGet } from '../../../services/jiraApi.ts';
+import { jiraGet, jiraPut } from '../../../services/jiraApi.ts';
 import {
   fetchFeatureReviewTransitions,
   saveFeatureReviewOptionField,
@@ -29,9 +29,10 @@ function normalizeName(value: string | null): string {
 export type StatusMovePlan =
   | { kind: 'no-op' }
   | { kind: 'transition-only'; transitionId: string }
-  | { kind: 'transition-with-substatus'; transitionId: string; subStatusValue: string }
-  | { kind: 'transition-then-field'; transitionId: string; subStatusValue: string }
-  | { kind: 'field-only'; subStatusValue: string }
+  /** `subStatusValue: null` means CLEAR the field — the column claims the status on its own. */
+  | { kind: 'transition-with-substatus'; transitionId: string; subStatusValue: string | null }
+  | { kind: 'transition-then-field'; transitionId: string; subStatusValue: string | null }
+  | { kind: 'field-only'; subStatusValue: string | null }
   | { kind: 'needs-fields'; transitionId: string; requiredFields: TransitionRequiredField[] }
   | { kind: 'refused'; reason: string; reachableStatusNames: string[] };
 
@@ -61,9 +62,12 @@ export function planStatusMove(input: PlanStatusMoveInput): StatusMovePlan {
   }
 
   // Only the sub-status differs, so there is no status transition to attempt — and attempting one
-  // that does not exist would refuse a move that is perfectly legal.
-  if (isStatusAlreadyRight && targetSubStatusValue !== null) {
-    return { kind: 'field-only', subStatusValue: targetSubStatusValue };
+  // that does not exist would refuse a move that is perfectly legal. This covers CLEARING as well as
+  // setting: a card sitting in "Working / New" belongs in the Working column, which claims the status
+  // on its own, and the way to put it there is to empty the sub-status rather than to look for a
+  // Working → Working transition that no workflow has.
+  if (isStatusAlreadyRight) {
+    return hasSubStatusField ? { kind: 'field-only', subStatusValue: targetSubStatusValue } : { kind: 'no-op' };
   }
 
   const matchingTransition = input.transitions.find(
@@ -87,7 +91,9 @@ export function planStatusMove(input: PlanStatusMoveInput): StatusMovePlan {
     return { kind: 'needs-fields', transitionId: matchingTransition.id, requiredFields: matchingTransition.requiredFields };
   }
 
-  if (targetSubStatusValue === null) {
+  // Nothing to do to the sub-status: either this instance has no such field, or it already holds what
+  // the target column wants (including both being empty).
+  if (!hasSubStatusField || isSubStatusAlreadyRight) {
     return { kind: 'transition-only', transitionId: matchingTransition.id };
   }
 
@@ -153,8 +159,24 @@ async function readIssueStateAfterPartialWrite(
   }
 }
 
-/** Sets the sub-status on its own, as an option value. */
-async function writeSubStatusField(issueKey: string, subStatusFieldId: string, subStatusValue: string): Promise<void> {
+/**
+ * Sets the sub-status on its own — or empties it when the target column claims the status alone.
+ *
+ * Clearing goes through a direct `null` write rather than the option saver, because an option saver
+ * resolves a VALUE against Jira's allowed list and there is no allowed value meaning "none".
+ */
+async function writeSubStatusField(
+  issueKey: string,
+  subStatusFieldId: string,
+  subStatusValue: string | null,
+): Promise<void> {
+  if (subStatusValue === null) {
+    await jiraPut(`/rest/api/2/issue/${encodeURIComponent(issueKey)}`, {
+      fields: { [subStatusFieldId]: null },
+    });
+    return;
+  }
+
   await saveFeatureReviewOptionField(issueKey, subStatusFieldId, subStatusValue, undefined);
 }
 
@@ -194,7 +216,7 @@ export async function executeStatusMove(input: ExecuteStatusMoveInput): Promise<
     }
     if (plan.kind === 'transition-with-substatus') {
       await saveFeatureReviewTransition(input.issueKey, plan.transitionId, {
-        [input.subStatusFieldId]: { value: plan.subStatusValue },
+        [input.subStatusFieldId]: plan.subStatusValue === null ? null : { value: plan.subStatusValue },
       });
       return { status: 'applied', message: null };
     }
@@ -221,8 +243,11 @@ export async function executeStatusMove(input: ExecuteStatusMoveInput): Promise<
       actualStatusName: actualState.statusName,
       actualSubStatusValue: actualState.subStatusValue,
       message:
-        `Moved to "${input.targetMapping.jiraStatusName}", but the sub-status could not be set to `
-        + `"${plan.subStatusValue}": ${String(error)}`,
+        plan.subStatusValue === null
+          ? `Moved to "${input.targetMapping.jiraStatusName}", but the sub-status could not be cleared:`
+            + ` ${String(error)}`
+          : `Moved to "${input.targetMapping.jiraStatusName}", but the sub-status could not be set to `
+            + `"${plan.subStatusValue}": ${String(error)}`,
     };
   }
 }
