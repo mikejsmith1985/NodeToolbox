@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Roll-Up Board — a Jira label can state which Features a team owns, instead of the board guessing.**
+  Ownership was inferred from three signals — assigned to the PO, reported by the PO, or having a child
+  in the team's project — because nothing in Jira records it. Those inferences hold while a team owns
+  whole projects and break the moment two teams share one: adding DASP to reach a handful of Features
+  brought in every other team's DASP work with it.
+  Board setup now takes a **label** (e.g. `CUC`). When set it applies to every Feature sweep — the
+  empty-Feature scan and both carry-over paths — and **replaces** the inference rather than joining it.
+  That is deliberate: leaving the guesses running alongside a label would let exactly the work the label
+  exists to exclude back in through a side door. The trade-off is stated in the panel — a Feature of
+  yours without the label is missing until it is applied.
+  Unlike a "Carryover" label, this records a fact that lives nowhere else: whether a Feature belongs to
+  this team is currently a guess, not a second copy of something already written down.
+
 ### Changed
 - **Roll-Up Board — carry-over can now read the PI Review ticks instead of guessing.** Deriving
   carry-over as "every unfinished Feature from the previous PI" pulled in everything that was merely

@@ -35,6 +35,8 @@ export function buildFeaturesInPiJql(
   featureProjectKeys: readonly string[],
   piName: string,
   piFieldReference: string,
+  /** When set, only Features carrying this label count as the team's. */
+  teamFeatureLabel = '',
 ): string | null {
   const trimmedPiName = piName.trim();
   if (trimmedPiName === '' || featureProjectKeys.length === 0 || !piFieldReference) {
@@ -48,6 +50,9 @@ export function buildFeaturesInPiJql(
     `${piFieldReference} = ${quoteJqlValue(trimmedPiName)}`,
     // Finished Features are not a gap to fill, however they finished — cancelled included.
     'statusCategory != Done',
+    // The label is what makes a shared project usable: without it, adding DASP to reach six Features
+    // brings every other team's DASP work with it.
+    ...(teamFeatureLabel.trim() !== '' ? [`labels = ${quoteJqlValue(teamFeatureLabel.trim())}`] : []),
   ].join(' AND ') + ' ORDER BY key ASC';
 }
 

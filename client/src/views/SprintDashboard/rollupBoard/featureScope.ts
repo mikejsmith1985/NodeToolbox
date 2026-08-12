@@ -43,6 +43,16 @@ export interface FeatureScopeSettings {
    * also catches Features that were abandoned rather than carried.
    */
   carryOverSource: 'none' | 'pi-review' | 'unfinished-in-pi';
+  /**
+   * A Jira label marking the Features this team owns. Empty means fall back to inference.
+   *
+   * Ownership is otherwise GUESSED — assigned to the PO, reported by the PO, or having a child in the
+   * team's project — because nothing in Jira records it. Those guesses hold while a team owns whole
+   * projects and break as soon as two teams share one: adding DASP to reach six Features drags in
+   * every other team's DASP work too. A label is the missing fact, recorded once, in the one place
+   * both teams can see it.
+   */
+  teamFeatureLabel: string;
 }
 
 /** What survived the scope, and what did not — with enough detail for the board to explain itself. */
