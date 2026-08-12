@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Roll-Up Board — double-click a column header to open that status across the whole board.** Twelve
+  columns across a dozen lanes means every card is a narrow slice, wide enough for a key and a
+  truncated summary and nothing else. That is the right trade most of the time, but when the question
+  becomes "what is actually going on in Ready for QA", the other eleven columns are only consuming the
+  width the answer needs. Double-clicking a header hides the rest and gives that one status the full
+  board; double-clicking again brings everything back, so the same gesture is both the way in and the
+  way out. The drag sensor needs 4px of travel before a reorder starts, so a double-click that does
+  not move never drags a column by accident.
+- **Roll-Up Board — cards carry description, attachments, and the last comment while a column is
+  focused.** With the room a focused column provides, each card can finally answer the questions that
+  otherwise cost a click each: what this is actually about, whether there are attachments, and what
+  the last thing anybody said was. The last comment is deliberately the newest one whoever wrote it,
+  automation included — filtering bots out would hide exactly the build and deployment notices that
+  often *are* the latest news. These fields are read only for the focused column and only while one is
+  focused, so an unopened column costs nothing; a description and a comment thread for every issue on
+  the board would be a large payload for information nobody is looking at. Every quick filter, the
+  lane order, and each Feature's roll-up figures behave exactly as before, because focus narrows only
+  which columns are drawn — not which work the board is looking at. Focus is not remembered between
+  visits: coming back tomorrow to a board showing one column would read as broken.
+
 ### Changed
 - **Roll-Up Board — every message now lives in one collapsible box.** The board had grown to nine
   stacked notices — hidden issues, unreadable Features, work missing a PI, Features with nothing under

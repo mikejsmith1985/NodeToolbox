@@ -17,6 +17,10 @@ export interface BoardColumnHeaderRowProps {
   issueCountByColumnId?: Record<string, number>;
   /** Reorders the team's columns by dragging their headers. Omitted on a read-only board. */
   onReorderColumns?: (orderedColumnIds: string[]) => void;
+  /** The column currently opened to the full board width, or null when every column is shown. */
+  focusedColumnId?: string | null;
+  /** Double-clicking a header focuses that column, or restores every column when it already is. */
+  onToggleFocus?: (columnId: string) => void;
 }
 
 /** One draggable column header. Unmapped is fixed in place — it is not the team's column to move. */
@@ -24,10 +28,14 @@ function SortableColumnHeader({
   column,
   issueCount,
   isReorderable,
+  isFocused,
+  onToggleFocus,
 }: {
   column: RenderedColumn;
   issueCount: number;
   isReorderable: boolean;
+  isFocused: boolean;
+  onToggleFocus?: (columnId: string) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition } = useSortable({
     id: column.id,
@@ -42,8 +50,18 @@ function SortableColumnHeader({
 
   return (
     <div
-      className={column.isUnmappedColumn ? `${styles.columnHeader} ${styles.columnHeaderUnmapped}` : styles.columnHeader}
+      className={[
+        styles.columnHeader,
+        column.isUnmappedColumn ? styles.columnHeaderUnmapped : '',
+        isFocused ? styles.columnHeaderFocused : '',
+      ].filter(Boolean).join(' ')}
       ref={setNodeRef}
+      // Double-click opens this column to the full board width. The drag sensor needs 4px of travel
+      // to engage, so a double-click that does not move never starts a reorder.
+      onDoubleClick={() => onToggleFocus?.(column.id)}
+      title={isFocused
+        ? 'Double-click to show every column again'
+        : 'Double-click to focus this column across the whole board'}
       style={{ transform: CSS.Transform.toString(transform), transition, cursor: isReorderable ? 'grab' : 'default' }}
       {...(isReorderable ? listeners : {})}
       {...(isReorderable ? attributes : {})}
@@ -91,6 +109,8 @@ export function BoardColumnHeaderRow({
   columns,
   issueCountByColumnId = {},
   onReorderColumns,
+  focusedColumnId = null,
+  onToggleFocus,
 }: BoardColumnHeaderRowProps) {
   const dragSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
   const teamColumnIds = columns.filter((column) => !column.isUnmappedColumn).map((column) => column.id);
@@ -127,9 +147,11 @@ export function BoardColumnHeaderRow({
           {columns.map((column) => (
             <SortableColumnHeader
               column={column}
+              isFocused={focusedColumnId === column.id}
               isReorderable={Boolean(onReorderColumns) && !column.isUnmappedColumn}
               issueCount={issueCountByColumnId[column.id] ?? 0}
               key={column.id}
+              onToggleFocus={onToggleFocus}
             />
           ))}
         </div>

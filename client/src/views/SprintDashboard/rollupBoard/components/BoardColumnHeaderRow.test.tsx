@@ -1,7 +1,7 @@
 // BoardColumnHeaderRow.test.tsx — Proves there is one shared header row and that Unmapped is always
 // on it, whether or not anything is currently sitting there.
 
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
 import { BoardColumnHeaderRow, buildColumnGridTemplate, buildColumnRowMinWidth } from './BoardColumnHeaderRow.tsx';
@@ -81,5 +81,27 @@ describe('buildColumnRowMinWidth — every row must size identically or nothing 
     // The two are rendered by different components; if they ever disagree the board looks broken.
     expect(buildColumnRowMinWidth(12)).toBe(buildColumnRowMinWidth(12));
     expect(buildColumnGridTemplate(12)).toBe(buildColumnGridTemplate(12));
+  });
+});
+
+describe('focusing a column', () => {
+  it('asks for the double-clicked column to be focused', () => {
+    const focusRequests: string[] = [];
+    render(
+      <BoardColumnHeaderRow
+        columns={buildRenderedColumns(VOCABULARY)}
+        onToggleFocus={(columnId) => focusRequests.push(columnId)}
+      />,
+    );
+
+    fireEvent.doubleClick(screen.getByText('Being coded'));
+
+    expect(focusRequests).toEqual(['col-dev']);
+  });
+
+  it('tells the user how to get every column back once one is focused', () => {
+    render(<BoardColumnHeaderRow columns={buildRenderedColumns(VOCABULARY)} focusedColumnId="col-dev" />);
+
+    expect(screen.getByTitle(/Double-click to show every column again/)).toBeTruthy();
   });
 });

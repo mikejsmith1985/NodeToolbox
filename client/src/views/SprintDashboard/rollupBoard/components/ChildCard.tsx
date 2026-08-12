@@ -14,6 +14,7 @@ import { AssigneeAvatar } from '../../../../components/IssueMeta/AssigneeAvatar.
 import { IssueTypeIcon } from '../../../../components/IssueMeta/IssueTypeIcon.tsx';
 import { PriorityBadge } from '../../../../components/IssueMeta/PriorityBadge.tsx';
 import { buildCardTargetId } from '../cardDropRouting.ts';
+import { formatCommentDate, type CardDetail } from '../cardDetail.ts';
 import styles from '../RollupBoardTab.module.css';
 import type { IssueTypeBucket, RollUpRoute, RollupBoardItem } from '../rollupBoardTypes.ts';
 
@@ -35,6 +36,13 @@ export interface ChildCardProps {
   errorMessage?: string | null;
   onOpen?: (issueKey: string) => void;
   onSelectFamily?: (item: RollupBoardItem) => void;
+  /**
+   * Extra context, shown only while this card's column is focused.
+   *
+   * Absent means the terse card: with a dozen columns on screen there is no room for a description,
+   * and reading one for every issue would be a large payload nobody is looking at.
+   */
+  detail?: CardDetail | null;
 }
 
 /** Turns a resolved route into one readable sentence, so parentage is never inferred. */
@@ -66,6 +74,7 @@ export function ChildCard({
   errorMessage = null,
   onOpen,
   onSelectFamily,
+  detail = null,
 }: ChildCardProps) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: item.key });
   // Also a drop target, so one card can be dropped onto another to sequence the work in a column.
@@ -139,6 +148,25 @@ export function ChildCard({
       {item.checklistCompletion !== null && (
         <div className={styles.cardChecklist}>
           Checklist {item.checklistCompletion.completedCount}/{item.checklistCompletion.totalCount}
+        </div>
+      )}
+
+      {/* Only present in a focused column, where one status has the whole board width to itself. */}
+      {detail?.descriptionExcerpt && (
+        <div className={styles.cardDescription}>{detail.descriptionExcerpt}</div>
+      )}
+
+      {detail !== null && detail.attachmentCount > 0 && (
+        <div className={styles.cardAttachments}>
+          📎 {detail.attachmentCount} attachment{detail.attachmentCount === 1 ? '' : 's'}
+        </div>
+      )}
+
+      {detail?.lastComment && (
+        <div className={styles.cardLastComment}>
+          <span className={styles.cardLastCommentAuthor}>{detail.lastComment.authorDisplayName}</span>
+          {' '}· {formatCommentDate(detail.lastComment.createdAt)}
+          <div>{detail.lastComment.excerpt}</div>
         </div>
       )}
 
