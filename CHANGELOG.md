@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Roll-Up Board — every message now lives in one collapsible box.** The board had grown to nine
+  stacked notices — hidden issues, unreadable Features, work missing a PI, Features with nothing under
+  them, and more. Each earned its place, but together they pushed the board itself off the screen and
+  buried anything rendered among them, which is how the **Add work** dialog came to look like a button
+  that did nothing. They collapse into one line — *"6 board notices · 2 need attention"* — that opens
+  for the detail and can be dismissed until the board next loads. Collapsed is the default: a notice
+  already read and acted on should not cost screen space on every reload. Warnings are counted
+  separately from context, because "6 notices" reads as an alarm while "2 need attention" reads as a
+  status. A load failure keeps its own box, since that means there is no board rather than something
+  worth knowing about one. The add-work dialog now renders **below** the notices instead of among them.
+
+### Added
+- **Roll-Up Board — the Feature key in each swimlane opens that Feature in Jira**, in a new tab. The
+  click is kept off the lane header beneath it, which would otherwise collapse the lane on the way, and
+  off the drag sensor, which would read the press as the start of a lane drag. "No Feature" stays plain
+  text, being a hygiene bucket rather than a real issue.
+
 ### Fixed
 - **Roll-Up Board troubleshooter — did not know about the team label.** With a label configured it
   would confirm a Feature's project was tracked and stop there, leaving the real exclusion unmentioned

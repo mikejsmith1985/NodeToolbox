@@ -124,9 +124,10 @@ describe('RollupBoardTab — honest states', () => {
 
     render(<RollupBoardTab boardId={42} scopedIssues={SCOPED_ISSUES} teamProfileId="team-a" />);
 
-    await waitFor(() => {
-      expect(screen.getByText(/Part of this board could not be read/)).toBeTruthy();
-    });
+    // Notices collapse into one box now, so the detail is opened before it can be read.
+    await waitFor(() => expect(screen.getByTestId('rollup-board-notices')).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'Show details' }));
+    expect(screen.getByText(/Part of this board could not be read/)).toBeTruthy();
   });
 
   it('warns about an oversized board while still showing all of it', async () => {
@@ -135,9 +136,9 @@ describe('RollupBoardTab — honest states', () => {
 
     render(<RollupBoardTab boardId={42} scopedIssues={SCOPED_ISSUES} teamProfileId="team-a" />);
 
-    await waitFor(() => {
-      expect(screen.getByText(/nothing has been dropped/)).toBeTruthy();
-    });
+    await waitFor(() => expect(screen.getByTestId('rollup-board-notices')).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'Show details' }));
+    expect(screen.getByText(/nothing has been dropped/)).toBeTruthy();
   });
 
   it('states the reduced precision when this instance has no sub-status field', async () => {
@@ -145,9 +146,9 @@ describe('RollupBoardTab — honest states', () => {
 
     render(<RollupBoardTab boardId={42} scopedIssues={SCOPED_ISSUES} teamProfileId="team-a" />);
 
-    await waitFor(() => {
-      expect(screen.getByText(/no sub-status field/)).toBeTruthy();
-    });
+    await waitFor(() => expect(screen.getByTestId('rollup-board-notices')).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'Show details' }));
+    expect(screen.getByText(/no sub-status field/)).toBeTruthy();
   });
 
   it('distinguishes an empty board from a filtered one', async () => {
@@ -394,9 +395,9 @@ describe('RollupBoardTab — showing only the Features this team owns', () => {
 
     render(<RollupBoardTab boardId={42} scopedIssues={SCOPED_ISSUES} teamProfileId="team-a" />);
 
-    await waitFor(() => {
-      expect(screen.getByText(/1 issue is hidden/)).toBeTruthy();
-    });
+    await waitFor(() => expect(screen.getByTestId('rollup-board-notices')).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'Show details' }));
+    expect(screen.getByText(/1 issue is hidden/)).toBeTruthy();
   });
 
   it('hides an out-of-project Feature even when the Feature Link field points at it', async () => {
@@ -421,9 +422,9 @@ describe('RollupBoardTab — showing only the Features this team owns', () => {
 
     render(<RollupBoardTab boardId={42} scopedIssues={SCOPED_ISSUES} teamProfileId="team-a" />);
 
-    await waitFor(() => {
-      expect(screen.getByText(/linked by the Feature Link field but sit outside/)).toBeTruthy();
-    });
+    await waitFor(() => expect(screen.getByTestId('rollup-board-notices')).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'Show details' }));
+    expect(screen.getByText(/linked by the Feature Link field but sit outside/)).toBeTruthy();
     expect(screen.getByText(/OTHER-9/)).toBeTruthy();
   });
 

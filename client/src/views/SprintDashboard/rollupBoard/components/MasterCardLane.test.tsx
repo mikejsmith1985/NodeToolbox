@@ -332,3 +332,36 @@ describe('MasterCardLane — the rank box', () => {
     expect(screen.queryByLabelText('Rank of FEAT-1')).not.toBeInTheDocument();
   });
 });
+
+describe('MasterCardLane — the Feature key opens Jira', () => {
+  it('links the key, opening in a new tab', () => {
+    render(
+      <MasterCardLane
+        columns={COLUMNS}
+        hasActiveFilters={false}
+        lane={buildLane([buildItem('DEV-1', 'col-todo')])}
+        onToggleCollapsed={vi.fn()}
+      />,
+    );
+
+    const keyLink = screen.getByTitle('Open FEAT-1 in Jira') as HTMLAnchorElement;
+    expect(keyLink.getAttribute('href')).toContain('/browse/FEAT-1');
+    expect(keyLink.getAttribute('target')).toBe('_blank');
+  });
+
+  it('does not collapse the lane on the way to Jira', () => {
+    // The header beneath the key toggles the lane; without stopPropagation the click would do both.
+    const onToggleCollapsed = vi.fn();
+    render(
+      <MasterCardLane
+        columns={COLUMNS}
+        hasActiveFilters={false}
+        lane={buildLane([buildItem('DEV-1', 'col-todo')])}
+        onToggleCollapsed={onToggleCollapsed}
+      />,
+    );
+
+    fireEvent.click(screen.getByTitle('Open FEAT-1 in Jira'));
+    expect(onToggleCollapsed).not.toHaveBeenCalled();
+  });
+});

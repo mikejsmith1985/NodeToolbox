@@ -476,3 +476,61 @@
   outline: 2px solid var(--color-accent);
   outline-offset: 1px;
 }
+
+/* ── Board notices ──
+   One box for everything the board wants to say. Stacked individually these pushed the board itself
+   off the screen and buried anything rendered among them. */
+.noticePanel {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-2);
+  padding: var(--spacing-xs) var(--spacing-sm);
+}
+
+.noticeHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  flex-wrap: wrap;
+}
+
+.noticeHeadline {
+  flex: 1 1 auto;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+.noticeHeadlineWarning {
+  flex: 1 1 auto;
+  font-size: var(--font-size-sm);
+  color: var(--color-warning-text, var(--color-text-primary));
+}
+
+.noticeList {
+  margin: var(--spacing-xs) 0 0;
+  padding-left: var(--spacing-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.noticeItem {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+.noticeItemWarning {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-primary);
+}
+
+/* The Feature key in a lane header, opened in Jira. Looks like the link it is, and stops the click
+   reaching the lane's collapse toggle underneath it. */
+.laneKeyLink {
+  color: var(--color-accent);
+  text-decoration: none;
+}
+
+.laneKeyLink:hover {
+  text-decoration: underline;
+}
