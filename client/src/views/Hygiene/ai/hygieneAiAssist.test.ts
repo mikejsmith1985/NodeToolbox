@@ -6,6 +6,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  AI_FIXABLE_CHECK_INSTRUCTIONS,
   buildHygieneAiPrompt,
   hasAiFixableFlags,
   parseHygieneAiReply,
@@ -223,5 +224,44 @@ describe('parseHygieneAiReply', () => {
 
     expect(result.proposals).toHaveLength(1)
     expect(result.proposals[0].issueKey).toBe('TBX-1') // key normalized to upper case
+  })
+})
+
+describe('buildHygieneAiPrompt — fix versions must be real', () => {
+  /** One finding flagged as missing a fix version. */
+  function buildFixVersionFinding(issueKey: string) {
+    return {
+      issue: { key: issueKey, fields: { summary: issueKey, status: { name: 'To Do' } } },
+      flags: ['missing-fix-version'],
+    } as unknown as Parameters<typeof buildHygieneAiPrompt>[0][number]
+  }
+
+  it('lists the project\'s open releases and requires the value be copied from them', () => {
+    // Without this the model invented plausible names — "PY 2027 AEP" — which Jira rejected with a 400.
+    const prompt = buildHygieneAiPrompt([buildFixVersionFinding('ENCUC-2223')], {}, {
+      ENCUC: ['09/10/2026', '10/08/2026'],
+    })
+
+    expect(prompt).toContain('ENCUC: 09/10/2026 | 10/08/2026')
+    expect(prompt).toContain('MUST be copied exactly from this list')
+  })
+
+  it('tells the model to omit the fix entirely when no releases are known', () => {
+    const prompt = buildHygieneAiPrompt([buildFixVersionFinding('ENCUC-2223')], {}, {})
+
+    expect(prompt).toContain('OMIT every fix-version fix rather than guessing')
+  })
+
+  it('leaves out a project that has no open releases rather than listing it empty', () => {
+    const prompt = buildHygieneAiPrompt([buildFixVersionFinding('ENCUC-2223')], {}, {
+      ENCUC: ['09/10/2026'], DENP: [],
+    })
+
+    expect(prompt).toContain('ENCUC: 09/10/2026')
+    expect(prompt).not.toContain('DENP:')
+  })
+
+  it('no longer asks the model to produce a name from nothing', () => {
+    expect(AI_FIXABLE_CHECK_INSTRUCTIONS['missing-fix-version']).toContain('never invent one')
   })
 })

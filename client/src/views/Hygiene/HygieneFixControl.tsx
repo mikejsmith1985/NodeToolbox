@@ -414,8 +414,10 @@ function OptionSelect({
  * the user to type in the adjacent search box first.
  */
 function searchDrivenPlaceholder(query: string, resultCount: number, subject: string): string {
-  if (query.trim() === '') return `Type a ${subject} above to search`;
-  if (resultCount === 0) return 'No matches yet — keep typing';
+  // Says WHICH box to type in rather than where it sits: the search input is beside this dropdown,
+  // not above it, and "above" sent people looking in the wrong place.
+  if (query.trim() === '') return `Type a ${subject} in the search box to see matches`;
+  if (resultCount === 0) return `No matches for that ${subject}`;
   return 'Choose from the results';
 }
 
@@ -484,10 +486,13 @@ async function searchLinkableIssues(query: string, isFeatureLink: boolean, proje
 }
 
 /** Builds the JQL for a link search: match by key when the query looks like one, else by summary. */
-function buildLinkSearchJql(query: string, isFeatureLink: boolean, projectKey: string): string {
+export function buildLinkSearchJql(query: string, isFeatureLink: boolean, projectKey: string): string {
   const trimmedQuery = query.trim();
   const issueTypeClause = isFeatureLink ? 'issuetype in (Feature, Epic) AND ' : '';
-  const projectClause = projectKey ? `project = ${projectKey} AND ` : '';
+  // A FEATURE never lives in the team's own project — that separation is the whole reason a Feature
+  // Link field exists. Constraining the search to the issue's project meant a Feature search could
+  // never match anything, whatever was typed. A parent link IS same-project, so it keeps the clause.
+  const projectClause = projectKey && !isFeatureLink ? `project = ${projectKey} AND ` : '';
   if (/^[A-Za-z][A-Za-z0-9]*-\d+$/.test(trimmedQuery)) {
     return `${issueTypeClause}key = ${trimmedQuery.toUpperCase()}`;
   }

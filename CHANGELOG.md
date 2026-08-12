@@ -8,6 +8,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Hygiene — the "Link feature" search could never find anything.** It restricted the search to the
+  issue's OWN project, but a Feature lives in a portfolio project, never the team's — that separation
+  is the entire reason a Feature Link field exists. So typing "Transformers" against an ENFCT issue
+  searched ENFCT for Features and matched nothing, however much or little was typed. Feature searches
+  are no longer project-scoped; a PARENT-link search still is, because a parent really does live
+  alongside its child.
+- **Hygiene — the dropdown hint pointed at the wrong place.** It read *"Type a search term above to
+  search"* while the search box sits to its LEFT. It now names the box instead of its position, and
+  "No matches yet — keep typing" became "No matches for that search term" — the old wording implied
+  more typing would help when the query had already been answered.
+- **Hygiene AI — proposed fix versions that Jira rejected.** The prompt said *"propose the fix version
+  NAME exactly as it would appear in Jira"* and gave the model nothing to go on, so it invented
+  plausible names — `PY 2027 AEP` — which failed with *"Version name … is not valid"*. The prompt now
+  carries each project's **open releases** and requires the value be copied from that list; where no
+  release list is available it instructs the model to omit the fix rather than guess. A model cannot
+  guess a release schedule, but it can pick from one.
+
+### Fixed
 - **GitHub Email Intake — the SharePoint listing stopped at 2,000 files, silently.** The folder was read
   with a single `$top=2000` and no paging, so once a library outgrew that the listing quietly returned
   the first 2,000 and newer mail was never ingested — with no error anywhere. The listing now follows
