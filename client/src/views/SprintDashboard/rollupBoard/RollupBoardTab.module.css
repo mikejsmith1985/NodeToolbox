@@ -534,3 +534,38 @@
 .laneKeyLink:hover {
   text-decoration: underline;
 }
+
+/* The column opened to the full board width. Marked so it is obvious the board is showing one status
+   rather than having lost the others. */
+.columnHeaderFocused {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+}
+
+/* ── Detailed cards ──
+   Only in a focused column, where one status has the whole board's width to itself and the terse card
+   no longer has to compete with eleven neighbours. */
+.cardDescription {
+  margin-top: var(--spacing-xs);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  white-space: pre-wrap;
+}
+
+.cardAttachments {
+  margin-top: var(--spacing-xs);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+.cardLastComment {
+  margin-top: var(--spacing-xs);
+  padding-left: var(--spacing-xs);
+  border-left: 2px solid var(--color-border);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+.cardLastCommentAuthor {
+  color: var(--color-text-primary);
+}

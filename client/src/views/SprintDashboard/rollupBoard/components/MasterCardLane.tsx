@@ -15,6 +15,7 @@ import { buildJiraBrowseUrl } from '../../../../utils/jiraBrowseUrl.ts';
 import { useConnectionStore } from '../../../../store/connectionStore.ts';
 import { buildDropTargetId } from '../cardDropRouting.ts';
 import styles from '../RollupBoardTab.module.css';
+import type { CardDetail } from '../cardDetail.ts';
 import type { RenderedColumn, RenderedLane, RollupBoardItem } from '../rollupBoardTypes.ts';
 import { buildColumnGridTemplate, buildColumnRowMinWidth } from './BoardColumnHeaderRow.tsx';
 import { ChildCard } from './ChildCard.tsx';
@@ -69,6 +70,8 @@ export interface MasterCardLaneProps {
   onAddWork?: (featureKey: string, featureSummary: string) => void;
   onOpenIssue?: (issueKey: string) => void;
   onSelectFamily?: (item: RollupBoardItem) => void;
+  /** Extra context per issue, present only while a column is focused. */
+  cardDetailByIssueKey?: Record<string, CardDetail>;
 }
 
 /** Renders the Feature's progress with the basis it was worked out on, so it can be checked. */
@@ -104,6 +107,7 @@ export function MasterCardLane({
   onAddWork,
   onOpenIssue,
   onSelectFamily,
+  cardDetailByIssueKey,
 }: MasterCardLaneProps) {
   const { vitals, featureKey, isSynthetic, isFeatureUnreadable, hasNoWorkYet } = lane.masterCard;
   const headerClassName = isSynthetic
@@ -274,6 +278,7 @@ export function MasterCardLane({
               <LaneCellDropZone columnId={column.id} featureKey={featureKey} key={column.id}>
                 {cell?.containers.map((container) => (
                   <ParentContainer
+                    cardDetailByIssueKey={cardDetailByIssueKey}
                     container={container}
                     errorMessageByIssueKey={errorMessageByIssueKey}
                     highlightedFamilyKey={highlightedFamilyKey}
@@ -285,6 +290,7 @@ export function MasterCardLane({
                 ))}
                 {cell?.looseItems.map((item) => (
                   <ChildCard
+                    detail={cardDetailByIssueKey?.[item.key] ?? null}
                     errorMessage={errorMessageByIssueKey?.[item.key] ?? null}
                     isHighlighted={highlightedFamilyKey === item.key || highlightedFamilyKey === item.parentKey}
                     isPending={pendingIssueKey === item.key}

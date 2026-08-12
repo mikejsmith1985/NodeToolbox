@@ -150,3 +150,36 @@ describe('describeRollUpRoute', () => {
     expect(description).toContain('parent DEV-1');
   });
 });
+
+describe('the detailed card shown while a column is focused', () => {
+  const DETAIL = {
+    descriptionExcerpt: 'Rework the intake so a duplicate pull cannot post twice.',
+    attachmentCount: 3,
+    lastComment: {
+      authorDisplayName: 'Smith, Mike (CTR)',
+      createdAt: '2026-08-01T10:00:00.000+0000',
+      excerpt: 'Deployed to the test environment, ready for a look.',
+    },
+  };
+
+  it('shows nothing extra on the normal board, so a dozen columns stay readable', () => {
+    render(<ChildCard item={buildItem()} />);
+
+    expect(screen.queryByText(/attachment/)).toBeNull();
+  });
+
+  it('shows the description, the attachment count, and the last comment when focused', () => {
+    render(<ChildCard detail={DETAIL} item={buildItem()} />);
+
+    expect(screen.getByText(/Rework the intake/)).toBeTruthy();
+    expect(screen.getByText(/3 attachments/)).toBeTruthy();
+    expect(screen.getByText(/Smith, Mike \(CTR\)/)).toBeTruthy();
+    expect(screen.getByText(/ready for a look/)).toBeTruthy();
+  });
+
+  it('omits each part the issue does not have rather than showing an empty row', () => {
+    render(<ChildCard detail={{ descriptionExcerpt: null, attachmentCount: 0, lastComment: null }} item={buildItem()} />);
+
+    expect(screen.queryByText(/attachment/)).toBeNull();
+  });
+});

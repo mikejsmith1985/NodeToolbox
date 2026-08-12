@@ -18,6 +18,7 @@ import { buildFeaturesInPiJql } from './emptyFeatureScan.ts';
 import { fetchConfluencePageByReference } from '../../../services/confluenceApi.ts';
 import { parsePiReviewTable } from '../../ArtView/piReviewTable.ts';
 import { readCarryOverFeatureKeys } from './carryOverMarks.ts';
+import { CARD_DETAIL_FIELDS } from './cardDetail.ts';
 import {
   EMPTY_CARRY_OVER_SCOPE,
   buildCarryOverFeatureJql,
@@ -538,5 +539,32 @@ export async function fetchCarryOverScopeFromPiReview(
     };
   } catch {
     return EMPTY_CARRY_OVER_SCOPE;
+  }
+}
+
+/**
+ * Reads the extra context a focused column's cards show — description, attachments, last comment.
+ *
+ * Kept out of the board's normal sweep on purpose: a description and a whole comment thread for every
+ * issue is a large payload for information nobody is looking at while twelve columns are on screen.
+ * Focusing a column is the moment it becomes worth reading, and only for that column's issues.
+ *
+ * A failure yields no detail rather than throwing — the cards fall back to their terse form, which is
+ * exactly what they showed a moment earlier.
+ */
+export async function fetchCardDetails(issueKeys: readonly string[]): Promise<JiraIssue[]> {
+  if (issueKeys.length === 0) return [];
+
+  try {
+    const chunkResults = await Promise.all(
+      chunkList(issueKeys, FEATURE_KEY_CHUNK_SIZE).map((keyChunk) =>
+        jiraGet<JiraSearchResponse>(
+          buildSearchPath(`key in (${keyChunk.join(',')})`, CARD_DETAIL_FIELDS.join(',')),
+        ).catch(() => ({ issues: [] as JiraIssue[] })),
+      ),
+    );
+    return chunkResults.flatMap((chunkResult) => chunkResult.issues ?? []);
+  } catch {
+    return [];
   }
 }

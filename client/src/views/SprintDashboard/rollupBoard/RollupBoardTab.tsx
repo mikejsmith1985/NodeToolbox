@@ -60,6 +60,7 @@ import { executeStatusMove } from './statusMoveWriter.ts';
 import { resolveBoardItems } from './featureRollup.ts';
 import { buildFeatureWithoutWorkCard, buildMasterCards, orderLanesLikePiReview } from './masterCards.ts';
 import {
+  fetchCardDetails,
   fetchCarryOverScope,
   fetchCarryOverScopeFromPiReview,
   fetchFeaturesInPi,
@@ -80,6 +81,8 @@ import {
 } from '../../AdminHub/subtaskStoryPromotion.ts';
 import { describeJiraFailure } from '../../AdminHub/subtaskStoryPromotion.ts';
 import { sumUnplannedStoryPoints } from './emptyFeatureScan.ts';
+import { buildCardDetailIndex, type CardDetail } from './cardDetail.ts';
+import { selectDetailIssueKeys, selectVisibleColumns, toggleColumnFocus } from './columnFocus.ts';
 import { findPiReviewPageForPi } from './carryOverMarks.ts';
 import {
   EMPTY_CARRY_OVER_SCOPE,
@@ -267,6 +270,14 @@ export default function RollupBoardTab({
   const [pullPreview, setPullPreview] = useState<VocabularyPullPreview | null>(null);
   const [isEditingColumns, setIsEditingColumns] = useState(false);
   const [isTroubleshooting, setIsTroubleshooting] = useState(false);
+  /**
+   * The column opened to the full board width, or null for the normal board.
+   *
+   * Deliberately not persisted: focusing a status is something you do for a minute to look at one
+   * thing, not a setting. Coming back tomorrow to a board showing one column would read as broken.
+   */
+  const [focusedColumnId, setFocusedColumnId] = useState<string | null>(null);
+  const [cardDetailByIssueKey, setCardDetailByIssueKey] = useState<Record<string, CardDetail>>({});
   const [pendingIssueKey, setPendingIssueKey] = useState<string | null>(null);
   const [errorMessageByIssueKey, setErrorMessageByIssueKey] = useState<Record<string, string>>({});
   const [subStatusFieldId, setSubStatusFieldId] = useState('');
@@ -399,6 +410,25 @@ export default function RollupBoardTab({
   useEffect(() => {
     void loadBoard();
   }, [loadBoard]);
+
+  // Read the extra context only for the focused column's cards, and only while one is focused: a
+  // description and comment thread for every issue on a twelve-column board is a large payload for
+  // something nobody is looking at.
+  useEffect(() => {
+    if (focusedColumnId === null) {
+      setCardDetailByIssueKey({});
+      return;
+    }
+
+    const focusedIssueKeys = selectDetailIssueKeys(loadState.allItems, focusedColumnId);
+    if (focusedIssueKeys.length === 0) return;
+
+    let isMounted = true;
+    void fetchCardDetails(focusedIssueKeys).then((detailedIssues) => {
+      if (isMounted) setCardDetailByIssueKey(buildCardDetailIndex(detailedIssues));
+    });
+    return () => { isMounted = false; };
+  }, [focusedColumnId, loadState.allItems]);
 
   // Runs alongside the board, not inside it: the reconciliation is a second opinion on the scope, and a
   // slow or failed hygiene query must never hold up the work the team came here to look at.
@@ -745,9 +775,21 @@ export default function RollupBoardTab({
     return notices;
   }, [loadState, sprintPiGap, carryOverScope, featuresWithoutWork]);
 
+  /**
+   * The columns the board draws: all of them, or just the focused one.
+   *
+   * Narrowing here rather than anywhere deeper means everything else is untouched — the quick filters
+   * still select which cards appear, and each lane's figures still describe the WHOLE Feature, because
+   * both are computed before items are distributed into columns.
+   */
+  const visibleColumns = useMemo(
+    () => selectVisibleColumns(renderedColumns, focusedColumnId),
+    [renderedColumns, focusedColumnId],
+  );
+
   const layout = useMemo(
-    () => buildBoardLayout({ masterCards: laneMasterCards, columns: renderedColumns, filters, preferences }),
-    [laneMasterCards, renderedColumns, filters, preferences],
+    () => buildBoardLayout({ masterCards: laneMasterCards, columns: visibleColumns, filters, preferences }),
+    [laneMasterCards, visibleColumns, filters, preferences],
   );
 
   /** Persists a preference change immediately — a lane the viewer moved should stay moved. */
@@ -1162,6 +1204,9 @@ export default function RollupBoardTab({
       <div className={styles.boardScroller}>
         <BoardColumnHeaderRow
           columns={layout.columns}
+          focusedColumnId={focusedColumnId}
+          onToggleFocus={(columnId) =>
+            setFocusedColumnId((currentFocus) => toggleColumnFocus(currentFocus, columnId))}
           issueCountByColumnId={loadState.allItems.reduce<Record<string, number>>((counts, item) => {
             counts[item.columnId] = (counts[item.columnId] ?? 0) + 1;
             return counts;
@@ -1185,6 +1230,7 @@ export default function RollupBoardTab({
           <SortableContext items={allFeatureKeys} strategy={verticalListSortingStrategy}>
             {layout.lanes.map((lane, laneIndex) => (
             <MasterCardLane
+              cardDetailByIssueKey={cardDetailByIssueKey}
               columns={layout.columns}
               errorMessageByIssueKey={errorMessageByIssueKey}
               hasActiveFilters={hasActiveFilters(filters)}

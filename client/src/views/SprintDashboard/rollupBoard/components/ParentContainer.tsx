@@ -5,6 +5,7 @@
 // once, in the column of its own status — if this were card-shaped, a reader would reasonably count
 // it as an issue and every total on the board would be wrong.
 
+import type { CardDetail } from '../cardDetail.ts';
 import styles from '../RollupBoardTab.module.css';
 import type { ParentContainer as ParentContainerModel, RollupBoardItem } from '../rollupBoardTypes.ts';
 import { ChildCard } from './ChildCard.tsx';
@@ -16,6 +17,8 @@ export interface ParentContainerProps {
   pendingIssueKey?: string | null;
   /** Per-card failure reasons, shown on the card rather than in a toast that scrolls away. */
   errorMessageByIssueKey?: Record<string, string>;
+  /** Extra context per issue, present only while a column is focused. */
+  cardDetailByIssueKey?: Record<string, CardDetail>;
   onOpenIssue?: (issueKey: string) => void;
   onSelectFamily?: (item: RollupBoardItem) => void;
 }
@@ -26,6 +29,7 @@ export function ParentContainer({
   highlightedFamilyKey = null,
   pendingIssueKey = null,
   errorMessageByIssueKey,
+  cardDetailByIssueKey,
   onOpenIssue,
   onSelectFamily,
 }: ParentContainerProps) {
@@ -52,6 +56,7 @@ export function ParentContainer({
 
       {container.items.map((item) => (
         <ChildCard
+          detail={cardDetailByIssueKey?.[item.key] ?? null}
           errorMessage={errorMessageByIssueKey?.[item.key] ?? null}
           isHighlighted={highlightedFamilyKey === container.parentKey}
           isPending={pendingIssueKey === item.key}
