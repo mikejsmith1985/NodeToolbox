@@ -15,6 +15,7 @@ interface StoredTeamScope {
   shouldIncludeOutOfProjectFeatureLinks?: boolean;
   shouldIncludeIssueLinkedFeatures?: boolean;
   carryOverPiValue?: string;
+  carryOverSource?: 'none' | 'pi-review' | 'unfinished-in-pi';
 }
 
 /** Reads every team's stored scope; unreadable storage counts as nothing stored. */
@@ -46,6 +47,10 @@ export function loadTeamFeatureScope(teamProfileId: string): FeatureScopeSetting
     shouldIncludeIssueLinkedFeatures: storedScope?.shouldIncludeIssueLinkedFeatures ?? false,
     // Absent means "show only this PI", which is how every board behaved before carry-over existed.
     carryOverPiValue: storedScope?.carryOverPiValue ?? '',
+    // A board that already had a carry-over PI keeps deriving until somebody chooses otherwise;
+    // anything new starts with carry-over off, as every board did before it existed.
+    carryOverSource: storedScope?.carryOverSource
+      ?? (storedScope?.carryOverPiValue ? 'unfinished-in-pi' : 'none'),
   };
 }
 
@@ -62,6 +67,7 @@ export function saveTeamFeatureScope(teamProfileId: string, settings: FeatureSco
     shouldIncludeOutOfProjectFeatureLinks: settings.shouldIncludeOutOfProjectFeatureLinks,
     shouldIncludeIssueLinkedFeatures: settings.shouldIncludeIssueLinkedFeatures,
     carryOverPiValue: settings.carryOverPiValue,
+    carryOverSource: settings.carryOverSource,
   };
   window.localStorage.setItem(BOARD_SCOPE_STORAGE_KEY, JSON.stringify(allScopes));
 }

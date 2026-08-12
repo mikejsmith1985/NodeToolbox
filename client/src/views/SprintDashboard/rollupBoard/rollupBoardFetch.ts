@@ -15,6 +15,9 @@ import { extractHttpStatus } from '../../../services/issueLookup.ts';
 import type { JiraIssue } from '../../../types/jira.ts';
 import { extractFeatureKeyFromIssueFields } from '../../../utils/featureLink.ts';
 import { buildFeaturesInPiJql } from './emptyFeatureScan.ts';
+import { fetchConfluencePageByReference } from '../../../services/confluenceApi.ts';
+import { parsePiReviewTable } from '../../ArtView/piReviewTable.ts';
+import { readCarryOverFeatureKeys } from './carryOverMarks.ts';
 import {
   EMPTY_CARRY_OVER_SCOPE,
   buildCarryOverFeatureJql,
@@ -492,6 +495,42 @@ export async function fetchCarryOverScope(
       featureKeys,
       issueKeys: (workResult.issues ?? []).map((workIssue) => workIssue.key),
       fromPiValue: carryOverPiValue,
+    };
+  } catch {
+    return EMPTY_CARRY_OVER_SCOPE;
+  }
+}
+
+/**
+ * Reads the Features TICKED as carry-over on this PI's PI Review page, and their work.
+ *
+ * Preferred over deriving carry-over from status, because the tick is a decision somebody made rather
+ * than a heuristic: deriving also drags in Features that were abandoned or merely never closed, and a
+ * list containing work nobody is doing stops being read.
+ *
+ * A page that cannot be reached yields an empty scope rather than silently falling back to the derived
+ * behaviour — quietly showing a different, larger set than the one asked for is worse than showing none.
+ */
+export async function fetchCarryOverScopeFromPiReview(
+  pageReference: string,
+  piName: string,
+  featureLinkFieldReference: string,
+): Promise<CarryOverScope> {
+  if (pageReference.trim() === '') return EMPTY_CARRY_OVER_SCOPE;
+
+  try {
+    const page = await fetchConfluencePageByReference(pageReference);
+    const parsedTable = parsePiReviewTable(page.body.storage.value);
+    const featureKeys = readCarryOverFeatureKeys(parsedTable?.rows ?? []);
+
+    const workJql = buildCarryOverWorkJql(featureKeys, featureLinkFieldReference);
+    if (workJql === null) return { featureKeys, issueKeys: [], fromPiValue: piName };
+
+    const workResult = await jiraGet<JiraSearchResponse>(buildSearchPath(workJql, 'summary'));
+    return {
+      featureKeys,
+      issueKeys: (workResult.issues ?? []).map((workIssue) => workIssue.key),
+      fromPiValue: piName,
     };
   } catch {
     return EMPTY_CARRY_OVER_SCOPE;

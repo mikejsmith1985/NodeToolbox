@@ -35,6 +35,14 @@ export interface FeatureScopeSettings {
    * for it deliberately.
    */
   carryOverPiValue: string;
+  /**
+   * How carry-over is decided.
+   *
+   * 'pi-review' reads the Carry-Over ticks the team already maintains — exact, and impossible to
+   * disagree with the PI Review page. 'unfinished-in-pi' derives it from status, which is close but
+   * also catches Features that were abandoned rather than carried.
+   */
+  carryOverSource: 'none' | 'pi-review' | 'unfinished-in-pi';
 }
 
 /** What survived the scope, and what did not — with enough detail for the board to explain itself. */

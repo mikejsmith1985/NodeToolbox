@@ -155,28 +155,55 @@ export function FeatureScopePanel({
 
       {/* Carry-over is a scope decision like the two above it, so it lives with them. */}
       <div className={styles.editorRow}>
-        <label className={styles.fieldLabel} htmlFor="rollup-carry-over-pi">
-          Also carry over unfinished Features from PI
+        <label className={styles.fieldLabel} htmlFor="rollup-carry-over-source">
+          Carry work over from a previous PI
         </label>
         <select
           className={styles.inputField}
-          id="rollup-carry-over-pi"
-          onChange={(changeEvent) => onScopeChange({ ...scope, carryOverPiValue: changeEvent.target.value })}
-          value={scope.carryOverPiValue}
+          id="rollup-carry-over-source"
+          onChange={(changeEvent) =>
+            onScopeChange({ ...scope, carryOverSource: changeEvent.target.value as FeatureScopeSettings['carryOverSource'] })}
+          value={scope.carryOverSource}
         >
-          <option value="">— None, show only this PI —</option>
-          {availablePiValues.map((piValue) => (
-            <option key={piValue} value={piValue}>{piValue}</option>
-          ))}
+          <option value="none">— None, show only this PI —</option>
+          <option value="pi-review">Only Features ticked Carry-Over on the PI Review page</option>
+          <option value="unfinished-in-pi">Every unfinished Feature from a chosen PI</option>
         </select>
       </div>
 
-      <p className={styles.fieldLabel}>
-        A Feature that did not finish keeps its original PI in Jira, so it and its work are invisible to
-        this board until you ask for them. This pulls in every <strong>unfinished</strong> Feature from
-        the PI you choose, with its child issues, whatever PI those children carry. A Feature you
-        abandoned rather than carried will appear too — remove it by narrowing the projects or closing it.
-      </p>
+      {scope.carryOverSource === 'pi-review' && (
+        <p className={styles.fieldLabel}>
+          Reads the <strong>Carry-Over</strong> column on this PI&apos;s PI Review page — the ticks the
+          team already maintains — and pulls in those Features with their child work, whatever PI the
+          children carry. Nothing else is inferred, so the board and the PI Review cannot disagree.
+          Needs a PI Review page configured for this PI, and the ticks saved to Confluence.
+        </p>
+      )}
+
+      {scope.carryOverSource === 'unfinished-in-pi' && (
+        <>
+          <div className={styles.editorRow}>
+            <label className={styles.fieldLabel} htmlFor="rollup-carry-over-pi">Carry over from PI</label>
+            <select
+              className={styles.inputField}
+              id="rollup-carry-over-pi"
+              onChange={(changeEvent) => onScopeChange({ ...scope, carryOverPiValue: changeEvent.target.value })}
+              value={scope.carryOverPiValue}
+            >
+              <option value="">— Choose a PI —</option>
+              {availablePiValues.map((piValue) => (
+                <option key={piValue} value={piValue}>{piValue}</option>
+              ))}
+            </select>
+          </div>
+          <p className={styles.fieldLabel}>
+            Pulls in every Feature from that PI whose status category is not Done, with its child
+            issues. Derived rather than recorded, so it also catches a Feature that was
+            <strong> abandoned</strong> rather than carried — prefer the PI Review option where the
+            ticks exist.
+          </p>
+        </>
+      )}
 
       {hiddenIssueCount > 0 && (
         <p className={styles.fieldLabel}>

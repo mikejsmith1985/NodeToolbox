@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Roll-Up Board — carry-over can now read the PI Review ticks instead of guessing.** Deriving
+  carry-over as "every unfinished Feature from the previous PI" pulled in everything that was merely
+  never closed, not just the handful genuinely being carried — and a list containing work nobody is
+  doing stops being read. Board setup now offers **"Only Features ticked Carry-Over on the PI Review
+  page"**, which reads the Carry-Over column the team already maintains on this PI's page and pulls in
+  exactly those Features with their child work.
+  The derived option remains for teams without PI Review pages, relabelled to say plainly that it also
+  catches Features that were abandoned rather than carried. Boards that already had a carry-over PI
+  keep deriving until somebody chooses otherwise; a page that cannot be read yields nothing rather than
+  silently falling back to the larger derived set.
+  This is deliberately **not** a Jira label: a label would mean recording the same decision twice, and
+  the two would drift the first time one was updated without the other.
+
 ### Fixed
 - **Roll-Up Board troubleshooter — asked a Feature the wrong questions.** Checking DENP-1371, itself a
   Feature, produced *"Does it roll up to a Feature? Nothing links it to a Feature"* and judged it

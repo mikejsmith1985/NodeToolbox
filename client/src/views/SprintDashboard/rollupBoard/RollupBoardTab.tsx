@@ -61,6 +61,7 @@ import { resolveBoardItems } from './featureRollup.ts';
 import { buildFeatureWithoutWorkCard, buildMasterCards, orderLanesLikePiReview } from './masterCards.ts';
 import {
   fetchCarryOverScope,
+  fetchCarryOverScopeFromPiReview,
   fetchFeaturesInPi,
   fetchRollupBoardIssues,
   fetchSprintPiReconciliation,
@@ -79,6 +80,7 @@ import {
 } from '../../AdminHub/subtaskStoryPromotion.ts';
 import { describeJiraFailure } from '../../AdminHub/subtaskStoryPromotion.ts';
 import { sumUnplannedStoryPoints } from './emptyFeatureScan.ts';
+import { findPiReviewPageForPi } from './carryOverMarks.ts';
 import {
   EMPTY_CARRY_OVER_SCOPE,
   describeCarryOverScope,
@@ -158,6 +160,8 @@ export interface RollupBoardTabProps {
   selectedPiValue?: string;
   /** Every PI this instance offers, so carry-over is chosen from a list rather than typed. */
   availablePiValues?: readonly string[];
+  /** The team's configured PI Review pages, so carry-over can read the ticks already recorded there. */
+  piReviewPages?: readonly { piName: string; pageUrl: string }[];
   /** The Jira project new work is created in — the project this team's board issues live in. */
   projectKey?: string;
 }
@@ -249,6 +253,7 @@ export default function RollupBoardTab({
   scopeMode,
   selectedPiValue,
   availablePiValues = [],
+  piReviewPages = [],
   projectKey = '',
 }: RollupBoardTabProps) {
   const [loadState, setLoadState] = useState<RollupBoardLoadState>(EMPTY_LOAD_STATE);
@@ -354,7 +359,7 @@ export default function RollupBoardTab({
   // Runs before the board's own load consumes it: last PI's unfinished Features keep their original PI
   // in Jira, so their work can only be reached by asking for it deliberately.
   useEffect(() => {
-    if (featureScope.carryOverPiValue.trim() === '' || featureScope.featureProjectKeys.length === 0) {
+    if (featureScope.carryOverSource === 'none') {
       setCarryOverScope(EMPTY_CARRY_OVER_SCOPE);
       return;
     }
@@ -368,16 +373,27 @@ export default function RollupBoardTab({
       storyPointsFieldIds: getStoryPointsCandidateFieldIds(),
     };
 
-    void fetchCarryOverScope(
-      featureScope.featureProjectKeys,
-      featureScope.carryOverPiValue,
-      buildJqlFieldReference(readConfiguredPiFieldId()),
-      buildJqlFieldReference(loadConfiguredFeatureLinkFieldId()),
-      carryOverFetchScope,
-    ).then((loadedScope) => { if (isMounted) setCarryOverScope(loadedScope); });
+    const featureLinkReference = buildJqlFieldReference(loadConfiguredFeatureLinkFieldId());
+    // Reading the PI Review ticks is exact; deriving from status is close but also catches Features
+    // that were abandoned rather than carried. The team chooses which they want.
+    const carryOverLoad = featureScope.carryOverSource === 'pi-review'
+      ? fetchCarryOverScopeFromPiReview(
+        findPiReviewPageForPi(piReviewPages, selectedPiValue ?? '') ?? '',
+        selectedPiValue ?? '',
+        featureLinkReference,
+      )
+      : fetchCarryOverScope(
+        featureScope.featureProjectKeys,
+        featureScope.carryOverPiValue,
+        buildJqlFieldReference(readConfiguredPiFieldId()),
+        featureLinkReference,
+        carryOverFetchScope,
+      );
+
+    void carryOverLoad.then((loadedScope) => { if (isMounted) setCarryOverScope(loadedScope); });
 
     return () => { isMounted = false; };
-  }, [featureScope, boardId, teamProfileId, subStatusFieldId]);
+  }, [featureScope, boardId, teamProfileId, subStatusFieldId, piReviewPages, selectedPiValue]);
 
   useEffect(() => {
     void loadBoard();
