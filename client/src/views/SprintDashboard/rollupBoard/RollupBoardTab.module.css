@@ -720,3 +720,84 @@
   font-style: italic;
   color: var(--color-text-secondary);
 }
+
+/* ── Discipline sub-lanes ──
+   QE's and BT's copies of a Feature, drawn under the dev Feature they clone. Indented and tinted so
+   the band is unmistakably subordinate, but using the SAME column grid so everything still lines up
+   vertically with the header row. */
+.subLane {
+  margin: var(--spacing-xs) 0 var(--spacing-xs) var(--spacing-md);
+  border-left: 3px solid var(--sub-lane-tone, var(--color-border-strong));
+  border-radius: var(--radius-sm);
+  background: var(--sub-lane-tone-bg, var(--color-bg-subtle));
+}
+
+/* One tone per discipline, by its position in the team's configured list — so a discipline is the
+   same colour on every reload and for every viewer without a colour being stored anywhere. Both
+   halves of each pair come from the token set, so contrast holds in light and dark alike. */
+.subLane[data-tone='0'] { --sub-lane-tone: var(--color-tone-info-fg);    --sub-lane-tone-bg: var(--color-tone-info-bg); }
+.subLane[data-tone='1'] { --sub-lane-tone: var(--color-tone-purple-fg);  --sub-lane-tone-bg: var(--color-tone-purple-bg); }
+.subLane[data-tone='2'] { --sub-lane-tone: var(--color-tone-orange-fg);  --sub-lane-tone-bg: var(--color-tone-orange-bg); }
+.subLane[data-tone='3'] { --sub-lane-tone: var(--color-tone-success-fg); --sub-lane-tone-bg: var(--color-tone-success-bg); }
+.subLane[data-tone='4'] { --sub-lane-tone: var(--color-tone-warning-fg); --sub-lane-tone-bg: var(--color-tone-warning-bg); }
+.subLane[data-tone='5'] { --sub-lane-tone: var(--color-tone-neutral-fg); --sub-lane-tone-bg: var(--color-tone-neutral-bg); }
+
+.subLaneHeader {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-xs);
+  /* Sticky so the discipline stays named while the board is scrolled sideways. */
+  position: sticky;
+  left: 0;
+}
+
+.subLaneDiscipline {
+  padding: 1px var(--spacing-xs);
+  border-radius: var(--radius-sm);
+  background: var(--sub-lane-tone, var(--color-border-strong));
+  color: var(--color-bg);
+  font-weight: 600;
+  font-size: var(--font-size-sm);
+}
+
+.subLaneKey {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-primary);
+}
+
+.subLaneSummary,
+.subLaneReadOnly,
+.subLaneInferred {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+.subLaneReadOnly {
+  font-style: italic;
+}
+
+.subLaneInferred {
+  color: var(--color-warning);
+}
+
+.subLaneMissing {
+  margin: 0;
+  padding: 0 var(--spacing-xs) var(--spacing-xs);
+  font-size: var(--font-size-sm);
+  color: var(--color-warning);
+  position: sticky;
+  left: 0;
+}
+
+/* ── The two progress figures ── */
+.familyProgress {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+.familyProgressDisagreement {
+  font-size: var(--font-size-sm);
+  color: var(--color-warning);
+}

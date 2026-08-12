@@ -95,7 +95,7 @@ const SINGLE_PROJECT_SCOPE: FeatureScopeSettings = {
   featureProjectKeys: ['ENCUC'],
   shouldIncludeOutOfProjectFeatureLinks: false,
   shouldIncludeIssueLinkedFeatures: false,
-  carryOverPiValue: '', carryOverSource: 'none', teamFeatureLabel: '', excludedFeatureLabels: [],
+  carryOverPiValue: '', carryOverSource: 'none', teamFeatureLabel: '', excludedFeatureLabels: [], disciplineProjects: [],
 };
 
 /** Cleanup Crew: two Feature projects. */
@@ -103,7 +103,7 @@ const TWO_PROJECT_SCOPE: FeatureScopeSettings = {
   featureProjectKeys: ['ENCUC', 'DENP'],
   shouldIncludeOutOfProjectFeatureLinks: false,
   shouldIncludeIssueLinkedFeatures: false,
-  carryOverPiValue: '', carryOverSource: 'none', teamFeatureLabel: '', excludedFeatureLabels: [],
+  carryOverPiValue: '', carryOverSource: 'none', teamFeatureLabel: '', excludedFeatureLabels: [], disciplineProjects: [],
 };
 
 /** Nothing configured — every Feature counts, which is how the board behaved before scoping existed. */
@@ -111,7 +111,7 @@ const UNCONFIGURED_SCOPE: FeatureScopeSettings = {
   featureProjectKeys: [],
   shouldIncludeOutOfProjectFeatureLinks: false,
   shouldIncludeIssueLinkedFeatures: false,
-  carryOverPiValue: '', carryOverSource: 'none', teamFeatureLabel: '', excludedFeatureLabels: [],
+  carryOverPiValue: '', carryOverSource: 'none', teamFeatureLabel: '', excludedFeatureLabels: [], disciplineProjects: [],
 };
 
 describe('isAuthoritativeFeatureRoute', () => {
@@ -289,7 +289,7 @@ describe('naming what was hidden', () => {
       featureProjectKeys: ['DENP'],
       shouldIncludeOutOfProjectFeatureLinks: false,
       shouldIncludeIssueLinkedFeatures: false,
-      carryOverPiValue: '', carryOverSource: 'none', teamFeatureLabel: '', excludedFeatureLabels: [],
+      carryOverPiValue: '', carryOverSource: 'none', teamFeatureLabel: '', excludedFeatureLabels: [], disciplineProjects: [],
     });
 
     expect(result.hiddenIssueKeys).toEqual(['ENCUC-2070']);
@@ -301,7 +301,7 @@ describe('naming what was hidden', () => {
       featureProjectKeys: ['DENP'],
       shouldIncludeOutOfProjectFeatureLinks: false,
       shouldIncludeIssueLinkedFeatures: false,
-      carryOverPiValue: '', carryOverSource: 'none', teamFeatureLabel: '', excludedFeatureLabels: [],
+      carryOverPiValue: '', carryOverSource: 'none', teamFeatureLabel: '', excludedFeatureLabels: [], disciplineProjects: [],
     });
 
     expect(result.hiddenIssueKeys).toEqual([]);
@@ -312,7 +312,7 @@ describe('naming what was hidden', () => {
       featureProjectKeys: [],
       shouldIncludeOutOfProjectFeatureLinks: false,
       shouldIncludeIssueLinkedFeatures: false,
-      carryOverPiValue: '', carryOverSource: 'none', teamFeatureLabel: '', excludedFeatureLabels: [],
+      carryOverPiValue: '', carryOverSource: 'none', teamFeatureLabel: '', excludedFeatureLabels: [], disciplineProjects: [],
     });
 
     expect(result.hiddenIssueKeys).toEqual([]);

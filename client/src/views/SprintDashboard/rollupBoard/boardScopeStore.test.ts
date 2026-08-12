@@ -28,14 +28,14 @@ describe('loadTeamFeatureScope', () => {
 
   it('prefers the team\'s own narrower list over the ART-wide one', () => {
     window.localStorage.setItem('tbxARTSettings', JSON.stringify({ featureProjectKeys: ['ENCUC', 'DENP', 'OTHER'] }));
-    saveTeamFeatureScope('transformers', { featureProjectKeys: ['ENCUC'], shouldIncludeOutOfProjectFeatureLinks: false, shouldIncludeIssueLinkedFeatures: false, carryOverPiValue: '', carryOverSource: 'none', teamFeatureLabel: '', excludedFeatureLabels: [] });
+    saveTeamFeatureScope('transformers', { featureProjectKeys: ['ENCUC'], shouldIncludeOutOfProjectFeatureLinks: false, shouldIncludeIssueLinkedFeatures: false, carryOverPiValue: '', carryOverSource: 'none', teamFeatureLabel: '', excludedFeatureLabels: [], disciplineProjects: [] });
 
     expect(loadTeamFeatureScope('transformers').featureProjectKeys).toEqual(['ENCUC']);
   });
 
   it('lets one team track one project while another tracks two', () => {
-    saveTeamFeatureScope('transformers', { featureProjectKeys: ['ENCUC'], shouldIncludeOutOfProjectFeatureLinks: false, shouldIncludeIssueLinkedFeatures: false, carryOverPiValue: '', carryOverSource: 'none', teamFeatureLabel: '', excludedFeatureLabels: [] });
-    saveTeamFeatureScope('cleanup-crew', { featureProjectKeys: ['ENCUC', 'DENP'], shouldIncludeOutOfProjectFeatureLinks: false, shouldIncludeIssueLinkedFeatures: false, carryOverPiValue: '', carryOverSource: 'none', teamFeatureLabel: '', excludedFeatureLabels: [] });
+    saveTeamFeatureScope('transformers', { featureProjectKeys: ['ENCUC'], shouldIncludeOutOfProjectFeatureLinks: false, shouldIncludeIssueLinkedFeatures: false, carryOverPiValue: '', carryOverSource: 'none', teamFeatureLabel: '', excludedFeatureLabels: [], disciplineProjects: [] });
+    saveTeamFeatureScope('cleanup-crew', { featureProjectKeys: ['ENCUC', 'DENP'], shouldIncludeOutOfProjectFeatureLinks: false, shouldIncludeIssueLinkedFeatures: false, carryOverPiValue: '', carryOverSource: 'none', teamFeatureLabel: '', excludedFeatureLabels: [], disciplineProjects: [] });
 
     expect(loadTeamFeatureScope('transformers').featureProjectKeys).toEqual(['ENCUC']);
     expect(loadTeamFeatureScope('cleanup-crew').featureProjectKeys).toEqual(['ENCUC', 'DENP']);
@@ -43,13 +43,13 @@ describe('loadTeamFeatureScope', () => {
 
   it('treats an explicitly empty team list as "track everything", not as a typo to fall back from', () => {
     window.localStorage.setItem('tbxARTSettings', JSON.stringify({ featureProjectKeys: ['ENCUC'] }));
-    saveTeamFeatureScope('transformers', { featureProjectKeys: [], shouldIncludeOutOfProjectFeatureLinks: false, shouldIncludeIssueLinkedFeatures: false, carryOverPiValue: '', carryOverSource: 'none', teamFeatureLabel: '', excludedFeatureLabels: [] });
+    saveTeamFeatureScope('transformers', { featureProjectKeys: [], shouldIncludeOutOfProjectFeatureLinks: false, shouldIncludeIssueLinkedFeatures: false, carryOverPiValue: '', carryOverSource: 'none', teamFeatureLabel: '', excludedFeatureLabels: [], disciplineProjects: [] });
 
     expect(loadTeamFeatureScope('transformers').featureProjectKeys).toEqual([]);
   });
 
   it('remembers the issue-linked toggle', () => {
-    saveTeamFeatureScope('transformers', { featureProjectKeys: ['ENCUC'], shouldIncludeOutOfProjectFeatureLinks: false, shouldIncludeIssueLinkedFeatures: true, carryOverPiValue: '', carryOverSource: 'none', teamFeatureLabel: '', excludedFeatureLabels: [] });
+    saveTeamFeatureScope('transformers', { featureProjectKeys: ['ENCUC'], shouldIncludeOutOfProjectFeatureLinks: false, shouldIncludeIssueLinkedFeatures: true, carryOverPiValue: '', carryOverSource: 'none', teamFeatureLabel: '', excludedFeatureLabels: [], disciplineProjects: [] });
 
     expect(loadTeamFeatureScope('transformers').shouldIncludeIssueLinkedFeatures).toBe(true);
   });
@@ -73,7 +73,7 @@ describe('hasTeamOwnFeatureScope', () => {
   });
 
   it('is true once the team has set its own', () => {
-    saveTeamFeatureScope('transformers', { featureProjectKeys: ['ENCUC'], shouldIncludeOutOfProjectFeatureLinks: false, shouldIncludeIssueLinkedFeatures: false, carryOverPiValue: '', carryOverSource: 'none', teamFeatureLabel: '', excludedFeatureLabels: [] });
+    saveTeamFeatureScope('transformers', { featureProjectKeys: ['ENCUC'], shouldIncludeOutOfProjectFeatureLinks: false, shouldIncludeIssueLinkedFeatures: false, carryOverPiValue: '', carryOverSource: 'none', teamFeatureLabel: '', excludedFeatureLabels: [], disciplineProjects: [] });
 
     expect(hasTeamOwnFeatureScope('transformers')).toBe(true);
   });
@@ -81,14 +81,14 @@ describe('hasTeamOwnFeatureScope', () => {
 
 describe('saveTeamFeatureScope', () => {
   it('leaves other teams byte-identical', () => {
-    saveTeamFeatureScope('cleanup-crew', { featureProjectKeys: ['ENCUC', 'DENP'], shouldIncludeOutOfProjectFeatureLinks: false, shouldIncludeIssueLinkedFeatures: true, carryOverPiValue: '', carryOverSource: 'none', teamFeatureLabel: '', excludedFeatureLabels: [] });
-    saveTeamFeatureScope('transformers', { featureProjectKeys: ['ENCUC'], shouldIncludeOutOfProjectFeatureLinks: false, shouldIncludeIssueLinkedFeatures: false, carryOverPiValue: '', carryOverSource: 'none', teamFeatureLabel: '', excludedFeatureLabels: [] });
+    saveTeamFeatureScope('cleanup-crew', { featureProjectKeys: ['ENCUC', 'DENP'], shouldIncludeOutOfProjectFeatureLinks: false, shouldIncludeIssueLinkedFeatures: true, carryOverPiValue: '', carryOverSource: 'none', teamFeatureLabel: '', excludedFeatureLabels: [], disciplineProjects: [] });
+    saveTeamFeatureScope('transformers', { featureProjectKeys: ['ENCUC'], shouldIncludeOutOfProjectFeatureLinks: false, shouldIncludeIssueLinkedFeatures: false, carryOverPiValue: '', carryOverSource: 'none', teamFeatureLabel: '', excludedFeatureLabels: [], disciplineProjects: [] });
 
     expect(loadTeamFeatureScope('cleanup-crew')).toEqual({
       featureProjectKeys: ['ENCUC', 'DENP'],
       shouldIncludeOutOfProjectFeatureLinks: false,
       shouldIncludeIssueLinkedFeatures: true, carryOverPiValue: '', carryOverSource: 'none', teamFeatureLabel: '',
-  excludedFeatureLabels: [],
+  excludedFeatureLabels: [], disciplineProjects: [],
     });
   });
 });
@@ -96,11 +96,43 @@ describe('saveTeamFeatureScope', () => {
 describe('clearTeamFeatureScope', () => {
   it('puts a team back to inheriting the ART-wide setting', () => {
     window.localStorage.setItem('tbxARTSettings', JSON.stringify({ featureProjectKeys: ['ENCUC', 'DENP'] }));
-    saveTeamFeatureScope('transformers', { featureProjectKeys: ['ENCUC'], shouldIncludeOutOfProjectFeatureLinks: false, shouldIncludeIssueLinkedFeatures: false, carryOverPiValue: '', carryOverSource: 'none', teamFeatureLabel: '', excludedFeatureLabels: [] });
+    saveTeamFeatureScope('transformers', { featureProjectKeys: ['ENCUC'], shouldIncludeOutOfProjectFeatureLinks: false, shouldIncludeIssueLinkedFeatures: false, carryOverPiValue: '', carryOverSource: 'none', teamFeatureLabel: '', excludedFeatureLabels: [], disciplineProjects: [] });
 
     clearTeamFeatureScope('transformers');
 
     expect(hasTeamOwnFeatureScope('transformers')).toBe(false);
     expect(loadTeamFeatureScope('transformers').featureProjectKeys).toEqual(['ENCUC', 'DENP']);
+  });
+});
+
+describe('disciplineProjects', () => {
+  it('reads a scope saved before disciplines existed as having none', () => {
+    // T-01: absent means never configured, not corrupt — and none means the whole sub-lane feature
+    // is off, so an existing board is untouched by this shipping.
+    window.localStorage.setItem('tbxRollupBoardScope', JSON.stringify({
+      transformers: { featureProjectKeys: ['DENP'] },
+    }));
+
+    expect(loadTeamFeatureScope('transformers').disciplineProjects).toEqual([]);
+  });
+
+  it('round-trips disciplines in the order they were configured', () => {
+    // Order matters: it decides each discipline's colour, so a reordered list would repaint the board.
+    const disciplines = [
+      { name: 'QE', featureProjectKey: 'QEINT', storyProjectKey: 'QEINT' },
+      { name: 'BT', featureProjectKey: 'BTINT', storyProjectKey: 'BTINT' },
+    ];
+    saveTeamFeatureScope('transformers', {
+      featureProjectKeys: ['DENP'],
+      shouldIncludeOutOfProjectFeatureLinks: false,
+      shouldIncludeIssueLinkedFeatures: false,
+      carryOverPiValue: '',
+      carryOverSource: 'none',
+      teamFeatureLabel: '',
+      excludedFeatureLabels: [],
+      disciplineProjects: disciplines,
+    });
+
+    expect(loadTeamFeatureScope('transformers').disciplineProjects).toEqual(disciplines);
   });
 });

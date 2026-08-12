@@ -15,7 +15,10 @@ import { buildJiraBrowseUrl } from '../../../../utils/jiraBrowseUrl.ts';
 import { useConnectionStore } from '../../../../store/connectionStore.ts';
 import { buildDropTargetId } from '../cardDropRouting.ts';
 import styles from '../RollupBoardTab.module.css';
+import { SubLane } from './SubLane.tsx';
+import { describeProgressDisagreement, describeTwoFigures } from '../familyProgress.ts';
 import type { BoardMembershipReason } from '../boardMembershipReason.ts';
+import type { FamilyProgress } from '../rollupBoardTypes.ts';
 import type { CardDetail } from '../cardDetail.ts';
 import type { RenderedColumn, RenderedLane, RollupBoardItem } from '../rollupBoardTypes.ts';
 import { buildColumnGridTemplate, buildColumnRowMinWidth } from './BoardColumnHeaderRow.tsx';
@@ -79,6 +82,9 @@ export interface MasterCardLaneProps {
   columnMinWidth?: string;
   /** The open issue's detail panel, rendered inside THIS lane when the issue belongs to it. */
   inlineDetail?: React.ReactNode;
+  /** Both progress figures. Null when this Feature has no clones, which is the normal case. */
+  familyProgress?: FamilyProgress | null;
+  onToggleSubLaneCollapsed?: (cloneFeatureKey: string) => void;
 }
 
 /** Renders the Feature's progress with the basis it was worked out on, so it can be checked. */
@@ -118,6 +124,8 @@ export function MasterCardLane({
   cardDetailByIssueKey,
   columnMinWidth,
   inlineDetail,
+  familyProgress = null,
+  onToggleSubLaneCollapsed,
 }: MasterCardLaneProps) {
   const { vitals, featureKey, isSynthetic, isFeatureUnreadable, hasNoWorkYet } = lane.masterCard;
   const headerClassName = isSynthetic
@@ -247,6 +255,18 @@ export function MasterCardLane({
           </span>
         )}
 
+        {familyProgress?.family && (
+          <span className={styles.familyProgress}>
+            {describeTwoFigures(familyProgress)}
+          </span>
+        )}
+
+        {familyProgress?.hasDisagreement && (
+          <span className={styles.familyProgressDisagreement}>
+            {describeProgressDisagreement(familyProgress)}
+          </span>
+        )}
+
         {hasNoWorkYet && (
           <span className={styles.laneVitalMissing}>
             No work rolls up to this Feature yet — it is committed to the PI with nothing underneath
@@ -325,6 +345,18 @@ export function MasterCardLane({
           })}
         </div>
       )}
+
+      {/* Each discipline's copy of this Feature, under the dev work it duplicates. */}
+      {!lane.isCollapsed && lane.subLanes.map((subLane) => (
+        <SubLane
+          columnMinWidth={columnMinWidth}
+          columns={columns}
+          key={subLane.cloneFeatureKey}
+          onOpenIssue={onOpenIssue}
+          onToggleCollapsed={(cloneFeatureKey) => onToggleSubLaneCollapsed?.(cloneFeatureKey)}
+          subLane={subLane}
+        />
+      ))}
 
       {/* The open card's detail belongs HERE, under the lane it was clicked in. It used to render at
           the very top of the page, which meant opening a card four lanes down was a scroll up to read

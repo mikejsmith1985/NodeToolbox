@@ -4,7 +4,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
-import { FeatureScopePanel, parseLabelList } from './FeatureScopePanel.tsx';
+import { FeatureScopePanel, describeDisciplineProblems, parseLabelList } from './FeatureScopePanel.tsx';
 import type { FeatureScopeSettings } from '../featureScope.ts';
 
 const TRANSFORMERS_SCOPE: FeatureScopeSettings = {
@@ -12,7 +12,7 @@ const TRANSFORMERS_SCOPE: FeatureScopeSettings = {
   shouldIncludeOutOfProjectFeatureLinks: false,
   shouldIncludeIssueLinkedFeatures: false,
   carryOverPiValue: '', carryOverSource: 'none', teamFeatureLabel: '',
-  excludedFeatureLabels: [],
+  excludedFeatureLabels: [], disciplineProjects: [],
 };
 
 /** Every Feature the board touches, INCLUDING projects the current scope excludes. */
@@ -307,5 +307,37 @@ describe('parseLabelList', () => {
 
   it('reads an empty box as no exclusions at all', () => {
     expect(parseLabelList('')).toEqual([]);
+  });
+});
+
+describe('describeDisciplineProblems', () => {
+  it('says nothing about a sensible configuration', () => {
+    const disciplines = [{ name: 'QE', featureProjectKey: 'QEINT', storyProjectKey: 'QEINT' }];
+
+    expect(describeDisciplineProblems(disciplines, ['DENP'])).toBe('');
+  });
+
+  it('catches a discipline pointed at the team own Feature project', () => {
+    // The setting that would silently do nothing: every clone there is a peer, so the discipline
+    // would never match anything, and a setting that quietly does nothing is worse than one that
+    // refuses.
+    const disciplines = [{ name: 'Oops', featureProjectKey: 'DENP', storyProjectKey: 'ENCUC' }];
+
+    expect(describeDisciplineProblems(disciplines, ['DENP'])).toContain('peer Feature');
+  });
+
+  it('catches two disciplines naming the same Feature project', () => {
+    const disciplines = [
+      { name: 'QE', featureProjectKey: 'QEINT', storyProjectKey: 'QEINT' },
+      { name: 'BT', featureProjectKey: 'QEINT', storyProjectKey: 'BTINT' },
+    ];
+
+    expect(describeDisciplineProblems(disciplines, ['DENP'])).toContain('indistinguishable');
+  });
+
+  it('says nothing about a half-typed row somebody is still filling in', () => {
+    const disciplines = [{ name: '', featureProjectKey: '', storyProjectKey: '' }];
+
+    expect(describeDisciplineProblems(disciplines, ['DENP'])).toBe('');
   });
 });

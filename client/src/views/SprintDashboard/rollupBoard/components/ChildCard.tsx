@@ -52,6 +52,15 @@ export interface ChildCardProps {
    * column that most needs explaining as the only one saying nothing.
    */
   shouldShowStatus?: boolean;
+  /**
+   * Makes the card readable but immovable — used for another discipline's work in a sub-lane.
+   *
+   * The board does not own another team's workflow, so it must not offer a move it has no business
+   * making. Gating at the HOOK rather than filtering the drop matters: a filtered drop still lets the
+   * drag start and the card lift, so the restriction gets discovered by a card that silently snaps
+   * back, which is worse than never having offered it.
+   */
+  isReadOnly?: boolean;
 }
 
 /** Turns a resolved route into one readable sentence, so parentage is never inferred. */
@@ -85,10 +94,15 @@ export function ChildCard({
   onSelectFamily,
   detail = null,
   shouldShowStatus = false,
+  isReadOnly = false,
 }: ChildCardProps) {
-  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: item.key });
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: item.key, disabled: isReadOnly });
   // Also a drop target, so one card can be dropped onto another to sequence the work in a column.
-  const { isOver, setNodeRef: setDropRef } = useDroppable({ id: buildCardTargetId(item.key) });
+  // Disabled alongside the drag: a card nothing may be dragged FROM should not accept a drop either.
+  const { isOver, setNodeRef: setDropRef } = useDroppable({
+    id: buildCardTargetId(item.key),
+    disabled: isReadOnly,
+  });
 
   /** One element is both the drag source and the drop target. */
   function attachBothRefs(element: HTMLDivElement | null): void {
@@ -126,8 +140,10 @@ export function ChildCard({
         }
       }}
       ref={attachBothRefs}
-      {...listeners}
-      {...attributes}
+      // Withheld as well as disabled: the hook's `disabled` stops the drag, but the attributes it
+      // returns still advertise a draggable element to assistive technology.
+      {...(isReadOnly ? {} : listeners)}
+      {...(isReadOnly ? {} : attributes)}
       role="button"
       tabIndex={0}
     >

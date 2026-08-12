@@ -295,6 +295,75 @@ export interface LaneCell {
   looseItems: RollupBoardItem[];
 }
 
+/**
+ * One non-dev participant in a Feature family: QE, BT, or anything else a team adds later.
+ *
+ * Free-text name rather than a fixed enum, so a fourth discipline costs a configuration entry rather
+ * than a code change.
+ */
+export interface DisciplineProjects {
+  name: string;
+  /** The Jira project holding this discipline's CLONED Features, e.g. 'QEINT'. */
+  featureProjectKey: string;
+  /** The Jira project holding this discipline's work. May be the same as the Feature project. */
+  storyProjectKey: string;
+}
+
+/** One clone named on a dev Feature, before anything has judged what it is. */
+export interface CloneLink {
+  cloneIssueKey: string;
+  /** How it was found — reported to the user, because an inference must not read as a fact. */
+  evidence: 'cloners-link' | 'feature-name-match';
+}
+
+/**
+ * What the board decided a clone actually is.
+ *
+ * The three cases exist because a Cloners link is NOT by itself evidence of another discipline: a
+ * team clones inside its own project to split scope. The project decides, not the link.
+ */
+export type CloneClassification =
+  /** In a configured discipline project — becomes a sub-lane. */
+  | { kind: 'discipline'; discipline: DisciplineProjects; cloneIssueKey: string; evidence: CloneLink['evidence'] }
+  /** In the dev team's own Feature project — a peer Feature, which keeps its own top-level lane. */
+  | { kind: 'peer'; cloneIssueKey: string }
+  /** In a project nobody configured. Reported once; never silently dropped. */
+  | { kind: 'unconfigured'; cloneIssueKey: string; projectKey: string };
+
+/** One discipline's band beneath a primary lane. */
+export interface SubLane {
+  discipline: DisciplineProjects;
+  cloneFeatureKey: string;
+  /** Null when the clone could not be read; the band still renders and says so. */
+  cloneFeatureIssue: JiraIssue | null;
+  /** Which tone pair this discipline draws in, from its position in the configured list. */
+  toneIndex: number;
+  /** True when found by name rather than by link, so the inference is never presented as a fact. */
+  isInferredMatch: boolean;
+  /** In the DEV team's columns — the whole board reads as one board. */
+  cellsByColumnId: Record<string, LaneCell>;
+  /** Every item under this clone, unfiltered — what the family figure is computed from. */
+  items: RollupBoardItem[];
+  isCollapsed: boolean;
+  matchedItemCount: number;
+  totalItemCount: number;
+}
+
+/**
+ * The two progress figures a lane shows.
+ *
+ * Both come from the same computation. Redefining the existing number would silently change what
+ * every figure on the board and on the PI surfaces means; showing only the dev number lets a Feature
+ * read as finished while QE still has open work. Both are true and they answer different questions.
+ */
+export interface FamilyProgress {
+  dev: FeatureProgress;
+  /** Null when there are no sub-lanes — a family figure equal to the dev figure is noise. */
+  family: FeatureProgress | null;
+  /** True when dev reads complete and the family does not. The signal worth acting on. */
+  hasDisagreement: boolean;
+}
+
 export interface RenderedLane {
   masterCard: MasterCard;
   isCollapsed: boolean;
@@ -303,6 +372,8 @@ export interface RenderedLane {
   /** Ignores filters, so "n of N match" is two counts of two sets rather than one count reused. */
   totalItemCount: number;
   cellsByColumnId: Record<string, LaneCell>;
+  /** Empty for a Feature with no clones, which then renders exactly as it did before sub-lanes. */
+  subLanes: SubLane[];
 }
 
 export interface BoardLayout {

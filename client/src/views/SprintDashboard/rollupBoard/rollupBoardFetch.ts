@@ -568,3 +568,55 @@ export async function fetchCardDetails(issueKeys: readonly string[]): Promise<Ji
     return [];
   }
 }
+
+/**
+ * Reads the clone Features named on this board's Features.
+ *
+ * Cheap by design: the clone KEYS were already in hand, because `issuelinks` is part of every board
+ * fetch. This only reads the clone issues themselves, so their own status and title can be shown.
+ */
+export async function fetchCloneFeatures(
+  cloneFeatureKeys: readonly string[],
+  scope: RollupBoardScope,
+): Promise<Map<string, JiraIssue>> {
+  const featuresByKey = new Map<string, JiraIssue>();
+  if (cloneFeatureKeys.length === 0) return featuresByKey;
+
+  const chunkResults = await Promise.all(
+    chunkList([...new Set(cloneFeatureKeys)], FEATURE_KEY_CHUNK_SIZE).map((keyChunk) =>
+      jiraGet<JiraSearchResponse>(buildSearchPath(
+        `key in (${keyChunk.join(', ')}) ORDER BY key ASC`,
+        buildFieldList(scope),
+      )).catch(() => ({ issues: [] as JiraIssue[] })),
+    ),
+  );
+
+  for (const chunkResult of chunkResults) {
+    for (const issue of chunkResult.issues ?? []) featuresByKey.set(issue.key, issue);
+  }
+  return featuresByKey;
+}
+
+/**
+ * Reads one discipline's work — the issues rolling up to their cloned Features.
+ *
+ * Scoped by the discipline's own story project as well as the Feature Link, so a stray link from a
+ * third project cannot pull somebody else's work into a band labelled QE.
+ */
+export async function fetchDisciplineWork(
+  storyProjectKey: string,
+  cloneFeatureKeys: readonly string[],
+  scope: RollupBoardScope,
+): Promise<JiraIssue[]> {
+  if (!storyProjectKey || cloneFeatureKeys.length === 0 || !scope.featureLinkFieldId) return [];
+
+  const chunkResults = await Promise.all(
+    chunkList([...new Set(cloneFeatureKeys)], FEATURE_KEY_CHUNK_SIZE).map((keyChunk) =>
+      jiraGet<JiraSearchResponse>(buildSearchPath(
+        `project = "${storyProjectKey}" AND "${scope.featureLinkFieldId}" in (${keyChunk.join(', ')})`,
+        buildFieldList(scope),
+      )).catch(() => ({ issues: [] as JiraIssue[] })),
+    ),
+  );
+  return chunkResults.flatMap((chunkResult) => chunkResult.issues ?? []);
+}

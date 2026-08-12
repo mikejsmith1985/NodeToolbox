@@ -12,6 +12,7 @@ import {
 } from '../../../ArtView/artFeatureScopeSettings.ts';
 import type { FeatureScopeSettings } from '../featureScope.ts';
 import styles from '../RollupBoardTab.module.css';
+import type { DisciplineProjects } from '../rollupBoardTypes.ts';
 
 export interface FeatureScopePanelProps {
   scope: FeatureScopeSettings;
@@ -49,6 +50,46 @@ export function parseLabelList(typedValue: string): string[] {
     .split(/[,\s]+/)
     .map((label) => label.trim())
     .filter((label) => label !== '');
+}
+
+/** Replaces one discipline in the list, leaving the others — and crucially their ORDER — untouched. */
+function replaceDiscipline(
+  disciplineProjects: readonly DisciplineProjects[],
+  replaceIndex: number,
+  nextDiscipline: DisciplineProjects,
+): DisciplineProjects[] {
+  return disciplineProjects.map((discipline, index) => (index === replaceIndex ? nextDiscipline : discipline));
+}
+
+/**
+ * Names a configuration that cannot work, before it quietly produces a wrong board.
+ *
+ * The one worth catching: a discipline pointed at the team's OWN Feature project. Every clone there
+ * is a peer, so the discipline would never match anything — and a setting that silently does nothing
+ * is worse than one that refuses.
+ */
+export function describeDisciplineProblems(
+  disciplineProjects: readonly DisciplineProjects[],
+  devFeatureProjectKeys: readonly string[],
+): string {
+  const normalize = (value: string): string => value.trim().toUpperCase();
+  const ownProjectKeys = new Set(devFeatureProjectKeys.map(normalize));
+
+  const selfPointing = disciplineProjects
+    .filter((discipline) => discipline.featureProjectKey.trim() !== ''
+      && ownProjectKeys.has(normalize(discipline.featureProjectKey)))
+    .map((discipline) => discipline.featureProjectKey.trim());
+  if (selfPointing.length > 0) {
+    return `${selfPointing.join(', ')} is one of this team's own Feature projects, so nothing there is`
+      + ' another discipline. A clone in your own project is a peer Feature and keeps its own lane.';
+  }
+
+  const namedKeys = disciplineProjects.map((discipline) => normalize(discipline.featureProjectKey)).filter(Boolean);
+  if (new Set(namedKeys).size !== namedKeys.length) {
+    return 'Two disciplines name the same Feature project, so their sub-lanes would be indistinguishable.';
+  }
+
+  return '';
 }
 
 function collectProjectKeysInPlay(featureKeys: readonly string[]): string[] {
@@ -221,6 +262,85 @@ export function FeatureScopePanel({
             + 'only ever hides an EMPTY lane — if work turns up under one it gets its lane back, '
             + 'because hiding it would hide the work with it.'}
       </p>
+
+      {/* The other teams working from copies of these Features. Empty means the whole sub-lane
+          feature is off, which is what keeps it opt-in. */}
+      <h4 className={styles.sectionTitle}>Other disciplines that clone these Features</h4>
+      <p className={styles.fieldLabel}>
+        QE and BT clone a Feature into their own project and break their own work down underneath it.
+        Naming their projects draws that work as a sub-lane under the dev Feature. A clone in
+        <strong> your own</strong> Feature project is a peer, not a discipline, and keeps its own lane.
+      </p>
+
+      {scope.disciplineProjects.map((discipline, disciplineIndex) => (
+        <div className={styles.editorRow} key={`${discipline.featureProjectKey}-${disciplineIndex}`}>
+          <input
+            aria-label={`Discipline ${disciplineIndex + 1} name`}
+            className={styles.inputField}
+            onChange={(changeEvent) => onScopeChange({
+              ...scope,
+              disciplineProjects: replaceDiscipline(scope.disciplineProjects, disciplineIndex, {
+                ...discipline, name: changeEvent.target.value,
+              }),
+            })}
+            placeholder="QE"
+            value={discipline.name}
+          />
+          <input
+            aria-label={`Discipline ${disciplineIndex + 1} Feature project`}
+            className={styles.inputField}
+            onChange={(changeEvent) => onScopeChange({
+              ...scope,
+              disciplineProjects: replaceDiscipline(scope.disciplineProjects, disciplineIndex, {
+                ...discipline, featureProjectKey: changeEvent.target.value,
+              }),
+            })}
+            placeholder="Feature project, e.g. QEINT"
+            value={discipline.featureProjectKey}
+          />
+          <input
+            aria-label={`Discipline ${disciplineIndex + 1} story project`}
+            className={styles.inputField}
+            onChange={(changeEvent) => onScopeChange({
+              ...scope,
+              disciplineProjects: replaceDiscipline(scope.disciplineProjects, disciplineIndex, {
+                ...discipline, storyProjectKey: changeEvent.target.value,
+              }),
+            })}
+            placeholder="Story project"
+            value={discipline.storyProjectKey}
+          />
+          <button
+            className={styles.actionButton}
+            onClick={() => onScopeChange({
+              ...scope,
+              disciplineProjects: scope.disciplineProjects.filter((_, index) => index !== disciplineIndex),
+            })}
+            type="button"
+          >
+            Remove
+          </button>
+        </div>
+      ))}
+
+      <div className={styles.editorRow}>
+        <button
+          className={styles.actionButton}
+          onClick={() => onScopeChange({
+            ...scope,
+            disciplineProjects: [...scope.disciplineProjects, { name: '', featureProjectKey: '', storyProjectKey: '' }],
+          })}
+          type="button"
+        >
+          Add a discipline
+        </button>
+      </div>
+
+      {describeDisciplineProblems(scope.disciplineProjects, scope.featureProjectKeys) !== '' && (
+        <p className={styles.fieldLabel}>
+          ⚠ {describeDisciplineProblems(scope.disciplineProjects, scope.featureProjectKeys)}
+        </p>
+      )}
 
       {/* Carry-over is a scope decision like the two above it, so it lives with them. */}
       <div className={styles.editorRow}>

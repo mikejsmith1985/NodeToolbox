@@ -377,5 +377,23 @@
   tab, managed from an Admin Hub panel. `linkedom` hosts the DOM so the browser save engine (`piReviewTable.ts`) runs
   server-side. **Standing constraint**: `piReviewJira.ts`/`piReviewTable.ts` are bundled into the server engine
   (`npm run build:pi-review-engine`), so changes there must keep `npm run test:dom` green.
+- **035-feature-clone-sub-lanes** — *(**PLANNED** — spec + plan complete, ready for `/speckit-tasks`.)* QE and BT
+  **clone** the dev Feature into their own Feature projects and break their own work down underneath the clone, so the
+  Roll-Up Board reports a Feature as finished when **dev** is finished. This draws each clone as a **sub-lane** beneath
+  the dev Feature's lane, in the **dev team's own columns**, **read-only**, plus a **second progress figure** covering
+  the whole family alongside the unchanged dev figure.
+  **The decisive finding**: a Cloners link is NOT by itself evidence of another discipline. The sampled Feature is
+  cloned by both `DENP-1359` (a peer in the dev team's own project, which keeps its own top-level lane) and
+  `QEINT-610` (QE's copy, which becomes a sub-lane). **The project decides, not the link** (FR-001c). A second
+  finding: those two summaries share almost no words, so **Feature-Name matching finds nothing here** — it survives
+  only as a gated net for hand-created Features, never as the mechanism.
+  Plan: `specs/035-feature-clone-sub-lanes/plan.md`. Contracts: `module-contracts.md`.
+  **Framework-First**: gate passes with **no drift** — Jira's own Cloners link (already fetched via `issuelinks` in
+  `BASE_ISSUE_FIELDS`, so discovery costs **zero requests**), dnd-kit's own `disabled` (precedent:
+  `BoardColumnHeaderRow.tsx:43`), the existing `computeFeatureProgress` for **both** figures, the existing
+  `--color-tone-*` pairs for per-discipline colour, and one new field on the existing `boardScopeStore`.
+  **New work** = 3 pure modules (`cloneFamily.ts`, `familyProgress.ts`, `subLaneLayout.ts`), one component
+  (`SubLane.tsx`), one prop (`ChildCard.isReadOnly`), one setting. Everything else is wiring.
+
 <!-- SPECKIT END -->
 

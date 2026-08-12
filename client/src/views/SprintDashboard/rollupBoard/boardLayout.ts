@@ -22,6 +22,7 @@ import {
   type RenderedColumn,
   type RenderedLane,
   type RollupBoardItem,
+  type SubLane,
 } from './rollupBoardTypes.ts';
 
 export interface BuildBoardLayoutInput {
@@ -29,6 +30,13 @@ export interface BuildBoardLayoutInput {
   columns: readonly RenderedColumn[];
   filters: QuickFilterState;
   preferences: BoardPreferences;
+  /**
+   * Each Feature's discipline bands, already built.
+   *
+   * Absent means no clones anywhere, which is the normal case and must render exactly as the board
+   * did before sub-lanes existed.
+   */
+  subLanesByFeatureKey?: Record<string, SubLane[]>;
 }
 
 /**
@@ -144,6 +152,36 @@ function orderLanes(lanes: readonly RenderedLane[], laneOrder: readonly string[]
   });
 }
 
+/**
+ * Turns one band's items into a full row of column cells.
+ *
+ * Exported because a sub-lane is exactly this shape — a discipline's work arranged in the SAME
+ * columns as everything else. Sharing the builder is what guarantees a QE card is placed by the same
+ * rules as a dev card, rather than by a second implementation that agrees only until one is edited.
+ */
+export function buildCellsByColumnId(input: {
+  laneKey: string;
+  items: readonly RollupBoardItem[];
+  matchedItems: readonly RollupBoardItem[];
+  columns: readonly RenderedColumn[];
+  preferences: BoardPreferences;
+  laneKeyByIssueKey: ReadonlyMap<string, string>;
+}): Record<string, LaneCell> {
+  const itemsByKeyInLane = new Map(input.items.map((item) => [item.key, item]));
+  const itemsByColumnId = distributeItemsIntoColumns(input.matchedItems, input.columns);
+
+  const cellsByColumnId: Record<string, LaneCell> = {};
+  for (const column of input.columns) {
+    cellsByColumnId[column.id] = groupItemsIntoParentContainers(
+      itemsByColumnId.get(column.id) ?? [],
+      itemsByKeyInLane,
+      input.preferences.cardOrderByCell?.[buildCardCellKey(input.laneKey, column.id)] ?? [],
+      input.laneKeyByIssueKey,
+    );
+  }
+  return cellsByColumnId;
+}
+
 /** Builds one swimlane: vitals from everything, cells from what the filters left. */
 function buildLane(
   masterCard: MasterCard,
@@ -151,23 +189,21 @@ function buildLane(
   filters: QuickFilterState,
   preferences: BoardPreferences,
   laneKeyByIssueKey: ReadonlyMap<string, string>,
+  subLanes: readonly SubLane[],
 ): RenderedLane {
   const vitals = computeLaneVitals(masterCard);
   const matchedItems = selectMatchingItems(masterCard.items, filters);
-  const itemsByKeyInLane = new Map(masterCard.items.map((item) => [item.key, item]));
-  const itemsByColumnId = distributeItemsIntoColumns(matchedItems, columns);
-
-  const cellsByColumnId: Record<string, LaneCell> = {};
-  for (const column of columns) {
-    cellsByColumnId[column.id] = groupItemsIntoParentContainers(
-      itemsByColumnId.get(column.id) ?? [],
-      itemsByKeyInLane,
-      preferences.cardOrderByCell?.[buildCardCellKey(masterCard.featureKey, column.id)] ?? [],
-      laneKeyByIssueKey,
-    );
-  }
+  const cellsByColumnId = buildCellsByColumnId({
+    laneKey: masterCard.featureKey,
+    items: masterCard.items,
+    matchedItems,
+    columns,
+    preferences,
+    laneKeyByIssueKey,
+  });
 
   return {
+    subLanes: [...subLanes],
     masterCard: { ...masterCard, vitals },
     // A lane the viewer has never touched starts collapsed, so the board opens as an overview.
     isCollapsed: preferences.collapsedByFeatureKey[masterCard.featureKey] ?? true,
@@ -192,7 +228,14 @@ export function buildBoardLayout(input: BuildBoardLayoutInput): BoardLayout {
   }
 
   const lanes = input.masterCards.map((masterCard) =>
-    buildLane(masterCard, input.columns, input.filters, input.preferences, laneKeyByIssueKey),
+    buildLane(
+      masterCard,
+      input.columns,
+      input.filters,
+      input.preferences,
+      laneKeyByIssueKey,
+      input.subLanesByFeatureKey?.[masterCard.featureKey] ?? [],
+    ),
   );
 
   return {
