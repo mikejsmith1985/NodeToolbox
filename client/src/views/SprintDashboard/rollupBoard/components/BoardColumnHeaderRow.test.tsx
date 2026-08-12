@@ -58,9 +58,15 @@ describe('BoardColumnHeaderRow', () => {
 });
 
 describe('buildColumnRowMinWidth — every row must size identically or nothing lines up', () => {
+  it('sizes from the board own density setting, not the app form-control token', () => {
+    // The regression this guards: at up to 192px per column, twelve columns needed 2,300px of screen
+    // and the only way to see the whole board was to zoom the browser out to 80%.
+    expect(buildColumnRowMinWidth(12)).not.toContain('--layout-control-min-width');
+    expect(buildColumnGridTemplate(12)).not.toContain('--layout-control-min-width');
+  });
+
   it('reserves one column minimum per column, plus the gaps between them', () => {
-    expect(buildColumnRowMinWidth(3))
-      .toBe('calc(3 * var(--layout-control-min-width) + 2 * var(--spacing-xs))');
+    expect(buildColumnRowMinWidth(3, '136px')).toBe('calc(3 * 136px + 2 * var(--spacing-xs))');
   });
 
   it('adds no gap for a single column', () => {

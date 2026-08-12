@@ -569,3 +569,70 @@
 .cardLastCommentAuthor {
   color: var(--color-text-primary);
 }
+
+/* ── Column density ──
+   The board sizes its own columns now; this is where the team chooses how tightly. */
+.densityControl {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+/* ── The open card's detail, inside its own lane ──
+   Full width of the lane rather than of a column: this is where reading and editing happen, and it
+   sits under the row it belongs to so nothing has to be scrolled away from to reach it. */
+.laneInlineDetail {
+  margin-top: var(--spacing-sm);
+  padding: var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-1, #161b22);
+  /* The board scrolls sideways; the panel must not be dragged off with it. */
+  position: sticky;
+  left: 0;
+  max-width: 100%;
+}
+
+/* ── Move-blocked dialog ──
+   A refused move used to be a line of red text on a card, which was both unreadable and easy to drag
+   straight past. It is a dialog now, because a move that did not happen is worth stopping for. */
+.dialogOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-md);
+  background: var(--color-overlay-backdrop, rgb(0 0 0 / 45%));
+}
+
+.dialogCard {
+  width: min(560px, 100%);
+  max-height: 85vh;
+  overflow-y: auto;
+  padding: var(--spacing-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-1, #161b22);
+  box-shadow: var(--shadow-surface, 0 10px 30px rgb(0 0 0 / 35%));
+}
+
+.dialogHeadline {
+  margin: 0 0 var(--spacing-xs);
+  font-size: var(--font-size-md);
+  color: var(--color-text-primary);
+}
+
+.dialogExplanation {
+  margin: 0 0 var(--spacing-sm);
+  color: var(--color-text-secondary);
+}
+
+.dialogSteps {
+  margin: 0 0 var(--spacing-sm);
+  padding-left: var(--spacing-md);
+  color: var(--color-text-secondary);
+}

@@ -8,6 +8,7 @@ import { DndContext, PointerSensor, useSensor, useSensors, type DragEndEvent } f
 import { SortableContext, useSortable, horizontalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 
+import { DEFAULT_COLUMN_DENSITY, readColumnMinWidth } from '../columnDensity.ts';
 import styles from '../RollupBoardTab.module.css';
 import { UNMAPPED_COLUMN_ID, type RenderedColumn } from '../rollupBoardTypes.ts';
 
@@ -21,6 +22,8 @@ export interface BoardColumnHeaderRowProps {
   focusedColumnId?: string | null;
   /** Double-clicking a header focuses that column, or restores every column when it already is. */
   onToggleFocus?: (columnId: string) => void;
+  /** The CSS width one column may shrink to, from the team's density setting. */
+  columnMinWidth?: string;
 }
 
 /** One draggable column header. Unmapped is fixed in place — it is not the team's column to move. */
@@ -82,11 +85,15 @@ function SortableColumnHeader({
 /**
  * Builds the shared grid template so headers and every lane's cells line up exactly.
  *
- * The minimum comes from the app's own layout token rather than a fixed pixel value, so the board
- * scales with the standardised zoom instead of fighting it.
+ * The width comes from the board's OWN density setting. It used to borrow the app's form-control
+ * token, which at up to 192px a column meant twelve columns needed 2,300px of screen — and the only
+ * way to see the whole board was to zoom the browser out to 80%.
  */
-export function buildColumnGridTemplate(columnCount: number): string {
-  return `repeat(${columnCount}, minmax(var(--layout-control-min-width), 1fr))`;
+/** Used when a caller does not pass a width — the same default the density setting starts at. */
+const DEFAULT_COLUMN_MIN_WIDTH = readColumnMinWidth(DEFAULT_COLUMN_DENSITY);
+
+export function buildColumnGridTemplate(columnCount: number, columnMinWidth: string = DEFAULT_COLUMN_MIN_WIDTH): string {
+  return `repeat(${columnCount}, minmax(${columnMinWidth}, 1fr))`;
 }
 
 /**
@@ -99,8 +106,8 @@ export function buildColumnGridTemplate(columnCount: number): string {
  * It must be a plain minimum, never `width: max-content`: with `1fr` tracks that sizes each track to
  * its own content, so a lane holding cards and an empty lane end up with different column widths.
  */
-export function buildColumnRowMinWidth(columnCount: number): string {
-  return `calc(${columnCount} * var(--layout-control-min-width)`
+export function buildColumnRowMinWidth(columnCount: number, columnMinWidth: string = DEFAULT_COLUMN_MIN_WIDTH): string {
+  return `calc(${columnCount} * ${columnMinWidth}`
     + ` + ${Math.max(columnCount - 1, 0)} * var(--spacing-xs))`;
 }
 
@@ -111,6 +118,7 @@ export function BoardColumnHeaderRow({
   onReorderColumns,
   focusedColumnId = null,
   onToggleFocus,
+  columnMinWidth = DEFAULT_COLUMN_MIN_WIDTH,
 }: BoardColumnHeaderRowProps) {
   const dragSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
   const teamColumnIds = columns.filter((column) => !column.isUnmappedColumn).map((column) => column.id);
@@ -140,8 +148,8 @@ export function BoardColumnHeaderRow({
           className={styles.columnHeaderRow}
           data-testid="rollup-column-header-row"
           style={{
-            gridTemplateColumns: buildColumnGridTemplate(columns.length),
-            minWidth: buildColumnRowMinWidth(columns.length),
+            gridTemplateColumns: buildColumnGridTemplate(columns.length, columnMinWidth),
+            minWidth: buildColumnRowMinWidth(columns.length, columnMinWidth),
           }}
         >
           {columns.map((column) => (
