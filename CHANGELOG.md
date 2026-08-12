@@ -8,6 +8,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Roll-Up Board — the sub-status is now written the way each Jira actually defines the field.** The
+  root cause of `400 — Could not find valid 'id' or 'value' in the Parent Option object`: the board
+  asked its option saver to write the sub-status but passed it **no edit metadata**, so the saver had
+  nothing to resolve the value against and fell back to posting the bare string `"Testing"`. A Jira
+  select field — and especially a CASCADING one, a parent option with children under it — will not
+  accept that, which is why the card could not be moved on the board while the identical change made
+  by hand in Jira worked perfectly.
+  The board now reads the issue's own edit metadata and looks the wanted value up in it, **at both
+  levels**: a column's sub-status may name a top-level option or one nested under a parent, and the
+  board has no way to know which. A nested value is written as the parent **and** the child together,
+  which is exactly what Jira was complaining was missing. Options are referenced by id where the field
+  offers one, since an admin can rename a label but not an id. Where the same child sits under several
+  parents, the parent matching the target status wins.
+  A value the field genuinely does not offer is now refused **before anything is sent**, naming the
+  options it does accept (`Ready for Testing / Testing`) and pointing at Board setup — rather than
+  being posted anyway to produce a 400. Refusing up front also means an unwritable mapping can no
+  longer leave an issue half-moved with its status changed and its sub-status not.
+
+### Fixed
 - **Roll-Up Board — moving a card to a column that claims a status on its own now CLEARS the
   sub-status.** A card reading `Working / New` sat in Unmapped, because no column claims that exact
   pair. Dragging it to the **Working** column — which claims the status on its own — was refused with
