@@ -655,3 +655,59 @@
   color: var(--color-text-primary);
   background: var(--color-bg-subtle);
 }
+
+/* ── Where this can go from here ──
+   Inside the open card's detail. Each destination is a button, because having been told where a card
+   can go, the next thing anybody wants is to send it there. */
+.transitionsPanel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  margin-bottom: var(--spacing-sm);
+}
+
+.transitionsHeading {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.transitionsNote {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+.transitionOption {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-subtle);
+  cursor: pointer;
+  text-align: left;
+}
+
+.transitionOption:hover:not(:disabled) {
+  border-color: var(--color-border-strong);
+  background: var(--color-surface-hover);
+}
+
+.transitionOption:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.transitionOptionName {
+  color: var(--color-text-primary);
+}
+
+.transitionOptionDetail {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}

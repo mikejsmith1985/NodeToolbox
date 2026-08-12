@@ -31,6 +31,7 @@ import {
   areTransitionSelectionsComplete,
   buildTransitionFieldsPayload,
   fetchFeatureReviewEditMeta,
+  fetchFeatureReviewTransitions,
   getStoryPointsCandidateFieldIds,
   saveFeatureReviewOptionField,
   saveFeatureReviewSimpleField,
@@ -102,6 +103,8 @@ import {
   type MoveBlockDiagnosis,
 } from './moveBlockDiagnosis.ts';
 import { MoveBlockedDialog } from './components/MoveBlockedDialog.tsx';
+import { CardTransitionsPanel } from './components/CardTransitionsPanel.tsx';
+import { buildCardTransitionOptions, type CardTransitionOption } from './cardTransitions.ts';
 import { findPiReviewPageForPi } from './carryOverMarks.ts';
 import {
   EMPTY_CARRY_OVER_SCOPE,
@@ -364,6 +367,10 @@ export default function RollupBoardTab({
   const [createWorkOutcome, setCreateWorkOutcome] = useState<string | null>(null);
   const [openIssueKey, setOpenIssueKey] = useState<string | null>(null);
   const [openIssueEditMeta, setOpenIssueEditMeta] = useState<Awaited<ReturnType<typeof fetchFeatureReviewEditMeta>> | null>(null);
+  /** Where the open card can go, read from Jira for that one issue only. */
+  const [openIssueTransitions, setOpenIssueTransitions] = useState<CardTransitionOption[]>([]);
+  const [isReadingTransitions, setIsReadingTransitions] = useState(false);
+  const [pendingTransitionId, setPendingTransitionId] = useState<string | null>(null);
 
   const dragSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
   const renderedColumns = useMemo(() => buildRenderedColumns(vocabulary), [vocabulary]);
@@ -1143,12 +1150,75 @@ export default function RollupBoardTab({
     if (openIssueKey === issueKey) {
       setOpenIssueKey(null);
       setOpenIssueEditMeta(null);
+      setOpenIssueTransitions([]);
       return;
     }
 
     setOpenIssueKey(issueKey);
+    setOpenIssueTransitions([]);
+    setIsReadingTransitions(true);
     setOpenIssueEditMeta(await fetchFeatureReviewEditMeta(issueKey).catch(() => null));
-  }, [openIssueKey]);
+
+    // One issue, one read — which is why this lives on the OPEN card rather than on every card in a
+    // column. Jira has no batch transitions endpoint, so a whole column would be a request per card.
+    try {
+      const openedItem = loadState.allItems.find((item) => item.key === issueKey) ?? null;
+      const transitions = await fetchFeatureReviewTransitions(issueKey);
+      setOpenIssueTransitions(buildCardTransitionOptions(
+        transitions,
+        openedItem?.subStatusValue ?? null,
+        vocabulary,
+        renderedColumns,
+        subStatusFieldId !== '',
+      ));
+    } catch {
+      // A failed read is reported as "no moves offered" rather than as a broken panel: the user's
+      // next step is the same either way, and inventing destinations would be worse than saying none.
+      setOpenIssueTransitions([]);
+    } finally {
+      setIsReadingTransitions(false);
+    }
+  }, [openIssueKey, loadState.allItems, vocabulary, renderedColumns, subStatusFieldId]);
+
+  /**
+   * Applies a transition chosen from the open card.
+   *
+   * A transition whose screen demands fields is handed to the same dialog a refused drag uses, so
+   * being asked for Story Points looks and behaves identically however the move was started.
+   */
+  const handleApplyTransition = useCallback(async (option: CardTransitionOption): Promise<void> => {
+    if (openIssueKey === null) return;
+
+    const movedItem = loadState.allItems.find((item) => item.key === openIssueKey) ?? null;
+    setPendingTransitionId(option.transitionId);
+    try {
+      if (option.requiredFieldNames.length > 0) {
+        await openMoveBlockedDialog({
+          moveInput: {
+            issueKey: openIssueKey,
+            currentStatusName: movedItem?.statusName ?? '',
+            currentSubStatusValue: movedItem?.subStatusValue ?? null,
+            targetMapping: { jiraStatusName: option.toStatusName, subStatusValue: null },
+            subStatusFieldId,
+          },
+          targetColumnName: option.landsInColumnName ?? option.toStatusName,
+          issueSummary: movedItem?.summary ?? '',
+          transitionId: option.transitionId,
+          screenRequiredFields: option.requiredFields,
+          errorText: '',
+          reachableStatusNames: [],
+        });
+        return;
+      }
+
+      await saveFeatureReviewTransition(openIssueKey, option.transitionId);
+      await loadBoard();
+    } catch (error: unknown) {
+      setCardMessage(openIssueKey, describeJiraFailure(String(error)));
+    } finally {
+      setPendingTransitionId(null);
+    }
+  }, [openIssueKey, loadState.allItems, subStatusFieldId, openMoveBlockedDialog, loadBoard, setCardMessage]);
 
   /**
    * The Feature whose lane the open issue sits in, so its detail can be shown THERE.
@@ -1434,6 +1504,12 @@ export default function RollupBoardTab({
                     {/* Editing delegates entirely to the shared editors: the board adds no write path
                         of its own, so a field it cannot safely write stays read-only here as
                         everywhere. */}
+                    <CardTransitionsPanel
+                      isLoading={isReadingTransitions}
+                      onApply={(option) => void handleApplyTransition(option)}
+                      options={openIssueTransitions}
+                      pendingTransitionId={pendingTransitionId}
+                    />
                     <IssueDetailPanel
                       fieldEditing={openIssueEditMeta
                         ? { editMeta: openIssueEditMeta, onFieldSaved: () => void loadBoard() }
