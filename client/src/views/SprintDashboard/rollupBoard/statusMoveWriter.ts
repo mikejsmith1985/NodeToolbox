@@ -33,7 +33,7 @@ export type StatusMovePlan =
   | { kind: 'transition-then-field'; transitionId: string; subStatusValue: string }
   | { kind: 'field-only'; subStatusValue: string }
   | { kind: 'needs-fields'; transitionId: string; requiredFields: TransitionRequiredField[] }
-  | { kind: 'refused'; reason: string };
+  | { kind: 'refused'; reason: string; reachableStatusNames: string[] };
 
 export interface PlanStatusMoveInput {
   currentStatusName: string;
@@ -75,6 +75,11 @@ export function planStatusMove(input: PlanStatusMoveInput): StatusMovePlan {
       reason:
         `Jira does not allow moving from "${input.currentStatusName}" to `
         + `"${input.targetMapping.jiraStatusName}" — the workflow has no such transition.`,
+      // Naming where the card CAN go turns a dead end into a next step; without it the user is left
+      // guessing which of a dozen columns the workflow would have accepted.
+      reachableStatusNames: input.transitions
+        .map((transition) => transition.to?.name ?? '')
+        .filter((statusName) => statusName !== ''),
     };
   }
 
@@ -95,7 +100,7 @@ export function planStatusMove(input: PlanStatusMoveInput): StatusMovePlan {
 /** What happened, and what the board should do about the card. */
 export type StatusMoveOutcome =
   | { status: 'applied'; message: null }
-  | { status: 'refused'; message: string }
+  | { status: 'refused'; message: string; reachableStatusNames: string[] }
   | { status: 'needs-fields'; message: string; transitionId: string; requiredFields: TransitionRequiredField[] }
   | { status: 'failed'; message: string; shouldRevertCard: true }
   | {
@@ -167,7 +172,7 @@ export async function executeStatusMove(input: ExecuteStatusMoveInput): Promise<
     return { status: 'applied', message: null };
   }
   if (plan.kind === 'refused') {
-    return { status: 'refused', message: plan.reason };
+    return { status: 'refused', message: plan.reason, reachableStatusNames: plan.reachableStatusNames };
   }
   if (plan.kind === 'needs-fields') {
     return {

@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Roll-Up Board — the board fits the screen at 100% browser zoom again.** Columns were sized from
+  `--layout-control-min-width`, a token meant for FORM CONTROLS — a text box, a dropdown. At up to
+  192px a column that is sensible for one input and hopeless for twelve columns: 12 × 192px is 2,304px
+  of board, which no 1920px screen can show, and the only way to see the whole thing was to zoom the
+  browser out to 80% — the board asking the user to fix a layout bug on its behalf. The board sizes its
+  own columns now, with a **Column width** control on the toolbar offering Compact, Standard and Roomy.
+  Standard fits twelve columns on a 1920px screen; Compact fits fourteen. The choice is saved with the
+  team's other board preferences, and hovering the control says whether everything currently fits and
+  which setting would fix it if not.
+
+### Changed
+- **Roll-Up Board — clicking a card opens its detail inside that card's own swimlane.** The panel used
+  to render at the very top of the page. On a board tall enough to need scrolling — which is every real
+  board — that meant clicking a card four lanes down was a scroll up to read it, edit it, and a scroll
+  back down to find your place again, for every single issue. It now opens directly under the lane it
+  belongs to, and stays put when the board is scrolled sideways.
+- **Roll-Up Board — a refused move now explains itself and offers the fix.** A move Jira would not
+  accept used to leave a line of red text on the card reading `Error: 400 {"errors":{"customfield_10002":
+  "Story Points is required."}}` — Jira talking to whoever wrote the workflow, not to the person who
+  just dragged something, and easy to drag straight past without noticing the move never happened. It
+  is a proper dialog now: it names the issue and where it was going, says in plain words what stopped
+  it, and puts the missing field right there, so *"Story Points is required"* arrives **with a
+  story-points dropdown** rather than an instruction to go and find one. Answering it saves the field
+  and retries the same move automatically. Field names are resolved through the issue's own edit
+  metadata rather than a fixed list, so this works on an instance whose story-points field is not the
+  standard one. When the refusal is not fixable from a form — the workflow simply has no step from
+  where the card is to where it was dropped — the dialog says so and **names the statuses the issue can
+  actually reach**, instead of offering a hopeful form that would fail the same way twice. A field Jira
+  wants that the board cannot honestly render is named as a trip to Jira rather than left to be
+  discovered by a second failed attempt.
+
 ### Added
 - **Roll-Up Board — double-click a column header to open that status across the whole board.** Twelve
   columns across a dozen lanes means every card is a narrow slice, wide enough for a key and a

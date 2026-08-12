@@ -5,6 +5,7 @@
 // and so the board's load-bearing promises ("nothing is hidden", "a parent is drawn once") can be
 // expressed as data invariants that a unit test can assert without rendering anything.
 
+import type { ColumnDensity } from './columnDensity.ts';
 import type { JiraIssue } from '../../../types/jira.ts';
 
 // ── Named constants ──
@@ -330,4 +331,11 @@ export interface BoardPreferences {
    * to happen. Keyed by `<featureKey>::<columnId>`; anything absent sorts to the end.
    */
   cardOrderByCell?: Record<string, string[]>;
+  /**
+   * How tightly the board packs its columns.
+   *
+   * Absent on preferences saved before this existed, which reads as the default rather than as an
+   * error — a team that never chose gets the width that fits twelve columns on a normal screen.
+   */
+  columnDensity?: ColumnDensity;
 }

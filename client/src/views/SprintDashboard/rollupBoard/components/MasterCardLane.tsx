@@ -72,6 +72,10 @@ export interface MasterCardLaneProps {
   onSelectFamily?: (item: RollupBoardItem) => void;
   /** Extra context per issue, present only while a column is focused. */
   cardDetailByIssueKey?: Record<string, CardDetail>;
+  /** The CSS width one column may shrink to — must match the header row's or nothing lines up. */
+  columnMinWidth?: string;
+  /** The open issue's detail panel, rendered inside THIS lane when the issue belongs to it. */
+  inlineDetail?: React.ReactNode;
 }
 
 /** Renders the Feature's progress with the basis it was worked out on, so it can be checked. */
@@ -108,6 +112,8 @@ export function MasterCardLane({
   onOpenIssue,
   onSelectFamily,
   cardDetailByIssueKey,
+  columnMinWidth,
+  inlineDetail,
 }: MasterCardLaneProps) {
   const { vitals, featureKey, isSynthetic, isFeatureUnreadable, hasNoWorkYet } = lane.masterCard;
   const headerClassName = isSynthetic
@@ -268,8 +274,8 @@ export function MasterCardLane({
         <div
           className={styles.laneCells}
           style={{
-            gridTemplateColumns: buildColumnGridTemplate(columns.length),
-            minWidth: buildColumnRowMinWidth(columns.length),
+            gridTemplateColumns: buildColumnGridTemplate(columns.length, columnMinWidth),
+            minWidth: buildColumnRowMinWidth(columns.length, columnMinWidth),
           }}
         >
           {columns.map((column) => {
@@ -304,6 +310,13 @@ export function MasterCardLane({
             );
           })}
         </div>
+      )}
+
+      {/* The open card's detail belongs HERE, under the lane it was clicked in. It used to render at
+          the very top of the page, which meant opening a card four lanes down was a scroll up to read
+          it and a scroll back to find where you were. */}
+      {inlineDetail !== undefined && inlineDetail !== null && (
+        <div className={styles.laneInlineDetail}>{inlineDetail}</div>
       )}
     </section>
   );

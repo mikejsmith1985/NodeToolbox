@@ -22,7 +22,6 @@ import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import IssueDetailPanel from '../../../components/IssueDetailPanel/index.tsx';
-import { TransitionRequiredFields } from '../../../components/TransitionRequiredFields/index.tsx';
 import type { JiraIssue } from '../../../types/jira.ts';
 import { loadConfiguredFeatureLinkFieldId } from '../../../utils/featureLink.ts';
 import { createIssue, createIssueLink, getProjectIssueTypes, jiraGet, jiraPut } from '../../../services/jiraApi.ts';
@@ -33,6 +32,8 @@ import {
   buildTransitionFieldsPayload,
   fetchFeatureReviewEditMeta,
   getStoryPointsCandidateFieldIds,
+  saveFeatureReviewOptionField,
+  saveFeatureReviewSimpleField,
   saveFeatureReviewTransition,
   type TransitionFieldSelection,
   type TransitionRequiredField,
@@ -56,7 +57,7 @@ import { loadTeamVocabulary, markVocabularySynced, saveTeamVocabulary } from './
 import { previewBoardVocabularyPull, publishBoardVocabulary, type VocabularyPullPreview } from './boardVocabularySync.ts';
 import { parseCardTargetId, resolveCardDrop, resolveCardDropZone } from './cardDropRouting.ts';
 import { loadColumnOptionSources, type ColumnOptionSources } from './columnOptionSources.ts';
-import { executeStatusMove } from './statusMoveWriter.ts';
+import { executeStatusMove, type ExecuteStatusMoveInput } from './statusMoveWriter.ts';
 import { resolveBoardItems } from './featureRollup.ts';
 import { buildFeatureWithoutWorkCard, buildMasterCards, orderLanesLikePiReview } from './masterCards.ts';
 import {
@@ -83,6 +84,19 @@ import { describeJiraFailure } from '../../AdminHub/subtaskStoryPromotion.ts';
 import { sumUnplannedStoryPoints } from './emptyFeatureScan.ts';
 import { buildCardDetailIndex, type CardDetail } from './cardDetail.ts';
 import { selectDetailIssueKeys, selectVisibleColumns, toggleColumnFocus } from './columnFocus.ts';
+import {
+  COLUMN_DENSITY_LABELS,
+  DEFAULT_COLUMN_DENSITY,
+  describeColumnFit,
+  readColumnMinWidth,
+  type ColumnDensity,
+} from './columnDensity.ts';
+import {
+  diagnoseMoveBlock,
+  matchEditMetaFieldsByName,
+  type MoveBlockDiagnosis,
+} from './moveBlockDiagnosis.ts';
+import { MoveBlockedDialog } from './components/MoveBlockedDialog.tsx';
 import { findPiReviewPageForPi } from './carryOverMarks.ts';
 import {
   EMPTY_CARRY_OVER_SCOPE,
@@ -202,9 +216,48 @@ function readSharedWorkspaceDatabaseId(): string {
 /** A move Jira paused because its transition screen demands answers first. */
 interface BlockedMove {
   issueKey: string;
-  transitionId: string;
+  /** Set when Jira named its fields up front; null when it only complained after the attempt. */
+  transitionId: string | null;
+  /** The fields the dialog can collect — from the transition screen, or matched from edit metadata. */
   requiredFields: TransitionRequiredField[];
   targetColumnName: string;
+  /** What went wrong, said in words the person who dragged the card would use. */
+  diagnosis: MoveBlockDiagnosis;
+  /** Everything needed to try the same move again once the missing fields are answered. */
+  retryInput: ExecuteStatusMoveInput;
+}
+
+/**
+ * Writes the fields Jira said were missing, straight onto the issue.
+ *
+ * Used only for the refusal Jira raises AFTER the attempt, where there is no transition screen to
+ * carry the answers — the fields are simply absent on the issue and have to be set the ordinary way
+ * before the same move can be made again.
+ */
+async function writeMissingFields(
+  issueKey: string,
+  requiredFields: readonly TransitionRequiredField[],
+  selectionByFieldId: Record<string, TransitionFieldSelection>,
+): Promise<void> {
+  for (const requiredField of requiredFields) {
+    const selection = selectionByFieldId[requiredField.fieldId] ?? {};
+
+    if (requiredField.schemaType === 'string') {
+      if (selection.text !== undefined && selection.text.trim() !== '') {
+        await saveFeatureReviewSimpleField(issueKey, requiredField.fieldId, selection.text);
+      }
+      continue;
+    }
+
+    if (selection.optionId !== undefined && selection.optionId !== '') {
+      // The allowed values come back with the field, so the option can be resolved without a second
+      // read of edit metadata the board has already paid for.
+      await saveFeatureReviewOptionField(issueKey, requiredField.fieldId, selection.optionId, {
+        allowedValues: requiredField.allowedValues,
+        name: requiredField.name,
+      });
+    }
+  }
 }
 
 /** What the board managed to load, and what it could not. */
@@ -277,6 +330,12 @@ export default function RollupBoardTab({
    * thing, not a setting. Coming back tomorrow to a board showing one column would read as broken.
    */
   const [focusedColumnId, setFocusedColumnId] = useState<string | null>(null);
+  /** How tightly columns pack. Persisted with the other board preferences — it is a lasting choice. */
+  const columnDensity = preferences.columnDensity ?? DEFAULT_COLUMN_DENSITY;
+  const columnMinWidth = readColumnMinWidth(columnDensity);
+  /** The room the board has to draw in, so the density control can say whether everything fits. */
+  const [boardWidth, setBoardWidth] = useState(() =>
+    (typeof window === 'undefined' ? 0 : window.innerWidth));
   const [cardDetailByIssueKey, setCardDetailByIssueKey] = useState<Record<string, CardDetail>>({});
   const [pendingIssueKey, setPendingIssueKey] = useState<string | null>(null);
   const [errorMessageByIssueKey, setErrorMessageByIssueKey] = useState<Record<string, string>>({});
@@ -410,6 +469,12 @@ export default function RollupBoardTab({
   useEffect(() => {
     void loadBoard();
   }, [loadBoard]);
+
+  useEffect(() => {
+    const handleResize = (): void => setBoardWidth(window.innerWidth);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // Read the extra context only for the focused column's cards, and only while one is focused: a
   // description and comment thread for every issue on a twelve-column board is a large payload for
@@ -843,6 +908,55 @@ export default function RollupBoardTab({
   }, []);
 
   /**
+   * Opens the move-blocked dialog, working out first whether anything can be fixed from it.
+   *
+   * When Jira only complained AFTER the attempt it names its fields in prose, so the issue's own edit
+   * metadata is read to turn those names into real, editable fields. That read is what makes a
+   * "Story Points is required" refusal arrive with a story-points dropdown instead of an instruction,
+   * and reading the ISSUE's metadata rather than a fixed list is what makes it work on an instance
+   * whose story-points field is not the standard one.
+   */
+  const openMoveBlockedDialog = useCallback(async (input: {
+    moveInput: ExecuteStatusMoveInput;
+    targetColumnName: string;
+    issueSummary: string;
+    transitionId: string | null;
+    screenRequiredFields: TransitionRequiredField[];
+    errorText: string;
+    reachableStatusNames: readonly string[];
+  }): Promise<void> => {
+    const diagnosis = diagnoseMoveBlock({
+      issueKey: input.moveInput.issueKey,
+      issueSummary: input.issueSummary,
+      targetColumnName: input.targetColumnName,
+      currentStatusName: input.moveInput.currentStatusName,
+      screenRequiredFields: input.screenRequiredFields,
+      errorText: input.errorText,
+      reachableStatusNames: input.reachableStatusNames,
+    });
+
+    // Only worth a round trip when Jira named fields it wants; a dead-end workflow has nothing to fix.
+    const fieldsToCollect = input.screenRequiredFields.length > 0
+      ? input.screenRequiredFields
+      : matchEditMetaFieldsByName(
+        diagnosis.requiredFieldNames.length > 0
+          ? await fetchFeatureReviewEditMeta(input.moveInput.issueKey).catch(() => null)
+          : null,
+        diagnosis.requiredFieldNames,
+      );
+
+    setTransitionSelections({});
+    setBlockedMove({
+      issueKey: input.moveInput.issueKey,
+      transitionId: input.transitionId,
+      requiredFields: fieldsToCollect,
+      targetColumnName: input.targetColumnName,
+      diagnosis,
+      retryInput: input.moveInput,
+    });
+  }, []);
+
+  /**
    * Applies a dropped card's new status, then reloads so the board shows Jira's truth.
    *
    * A partial write is deliberately NOT reverted: the status really did change, so putting the card
@@ -904,27 +1018,45 @@ export default function RollupBoardTab({
     setCardMessage(decision.item.key, null);
     setPendingIssueKey(decision.item.key);
     try {
-      const outcome = await executeStatusMove({
+      const moveInput: ExecuteStatusMoveInput = {
         issueKey: decision.item.key,
         currentStatusName: decision.item.statusName,
         currentSubStatusValue: decision.item.subStatusValue,
         // A column can claim several statuses; a drop writes the first one it claims.
         targetMapping: decision.targetColumn.mappings[0],
         subStatusFieldId,
-      });
+      };
+      const outcome = await executeStatusMove(moveInput);
 
       if (outcome.status === 'needs-fields') {
         // Jira will not accept the move until its screen fields are answered, so collect them here
         // rather than sending the user to Jira for something we can ask on the spot.
-        setBlockedMove({
-          issueKey: decision.item.key,
-          transitionId: outcome.transitionId,
-          requiredFields: outcome.requiredFields,
+        await openMoveBlockedDialog({
+          moveInput,
           targetColumnName: decision.targetColumn.name,
+          issueSummary: decision.item.summary,
+          transitionId: outcome.transitionId,
+          screenRequiredFields: outcome.requiredFields,
+          errorText: '',
+          reachableStatusNames: [],
         });
-        setTransitionSelections({});
       }
-      if (outcome.message !== null) {
+
+      // A refusal or an outright failure used to leave nothing but Jira's own words on the card. Both
+      // now open the dialog, because both are moments where the user needs to be told what to do next.
+      if (outcome.status === 'refused' || outcome.status === 'failed') {
+        await openMoveBlockedDialog({
+          moveInput,
+          targetColumnName: decision.targetColumn.name,
+          issueSummary: decision.item.summary,
+          transitionId: null,
+          screenRequiredFields: [],
+          errorText: outcome.message,
+          reachableStatusNames: outcome.status === 'refused' ? outcome.reachableStatusNames : [],
+        });
+      }
+
+      if (outcome.message !== null && outcome.status !== 'refused' && outcome.status !== 'failed') {
         setCardMessage(decision.item.key, outcome.message);
       }
       // Reloading settles every card at Jira's actual state — including a half-applied one.
@@ -973,27 +1105,56 @@ export default function RollupBoardTab({
     setOpenIssueEditMeta(await fetchFeatureReviewEditMeta(issueKey).catch(() => null));
   }, []);
 
+  /**
+   * The Feature whose lane the open issue sits in, so its detail can be shown THERE.
+   *
+   * The panel used to render at the top of the page. On a board tall enough to need scrolling — which
+   * is every real board — that meant clicking a card was a scroll up to read it and a scroll back down
+   * to find your place again, for every single issue.
+   */
+  const openIssueLaneFeatureKey = useMemo(
+    () => loadState.allItems.find((item) => item.key === openIssueKey)?.featureKey ?? null,
+    [loadState.allItems, openIssueKey],
+  );
+
   /** The issue currently open, taken from the board's own loaded set rather than re-fetched. */
   const openIssue = useMemo(
     () => loadState.allItems.find((item) => item.key === openIssueKey)?.issue ?? null,
     [loadState.allItems, openIssueKey],
   );
 
-  /** Completes a move that Jira paused, now that its screen fields have been answered. */
+  /**
+   * Completes a move Jira refused, now that the missing answers have been given.
+   *
+   * Two shapes, because Jira refuses in two ways. When it named its fields UP FRONT the answers ride
+   * along with the transition itself, which is one atomic request. When it only complained AFTER the
+   * attempt there is no transition waiting on them — the fields are simply missing on the issue — so
+   * they are written first and the original move is then made again exactly as it was.
+   */
   const handleSubmitBlockedMove = useCallback(async (): Promise<void> => {
     if (blockedMove === null) return;
     setPendingIssueKey(blockedMove.issueKey);
     try {
-      await saveFeatureReviewTransition(
-        blockedMove.issueKey,
-        blockedMove.transitionId,
-        buildTransitionFieldsPayload(blockedMove.requiredFields, transitionSelections),
-      );
-      setCardMessage(blockedMove.issueKey, null);
+      if (blockedMove.transitionId !== null) {
+        await saveFeatureReviewTransition(
+          blockedMove.issueKey,
+          blockedMove.transitionId,
+          buildTransitionFieldsPayload(blockedMove.requiredFields, transitionSelections),
+        );
+      } else {
+        await writeMissingFields(blockedMove.issueKey, blockedMove.requiredFields, transitionSelections);
+        const retryOutcome = await executeStatusMove(blockedMove.retryInput);
+        // Saying the fields were saved matters even when the move still fails — otherwise the user
+        // cannot tell whether their answers were kept and would enter them a second time.
+        if (retryOutcome.status !== 'applied') {
+          setCardMessage(blockedMove.issueKey, `The fields were saved, but the move still failed: ${retryOutcome.message}`);
+        }
+      }
       setBlockedMove(null);
       await loadBoard();
     } catch (error: unknown) {
-      setCardMessage(blockedMove.issueKey, String(error));
+      setCardMessage(blockedMove.issueKey, describeJiraFailure(String(error)));
+      setBlockedMove(null);
     } finally {
       setPendingIssueKey(null);
     }
@@ -1024,6 +1185,22 @@ export default function RollupBoardTab({
         <button className={styles.actionButton} onClick={() => setIsEditingColumns(!isEditingColumns)} type="button">
           {isEditingColumns ? 'Hide board setup' : 'Board setup'}
         </button>
+        {/* Sits on the toolbar rather than inside Board setup because it is the answer to a problem
+            people hit on their first look at the board — too many columns for the screen — and the
+            reflex fix for that is the browser's zoom control, which shrinks the whole app instead. */}
+        <label className={styles.densityControl} title={describeColumnFit(renderedColumns.length, columnDensity, boardWidth)}>
+          Column width
+          <select
+            aria-label="Column width"
+            onChange={(changeEvent) =>
+              applyPreferences({ ...preferences, columnDensity: changeEvent.target.value as ColumnDensity })}
+            value={columnDensity}
+          >
+            {(Object.keys(COLUMN_DENSITY_LABELS) as ColumnDensity[]).map((density) => (
+              <option key={density} value={density}>{COLUMN_DENSITY_LABELS[density]}</option>
+            ))}
+          </select>
+        </label>
         {/* Its own control, not buried in Board setup: this is what somebody reaches for when the board
             is already behaving oddly, and hiding it behind a settings panel made it unfindable. */}
         <button
@@ -1150,59 +1327,29 @@ export default function RollupBoardTab({
       )}
 
       {blockedMove !== null && (
-        <section aria-label="Answers Jira needs before this move" className={styles.panelCard}>
-          <h3 className={styles.sectionTitle}>
-            {blockedMove.issueKey} → {blockedMove.targetColumnName}
-          </h3>
-          <p className={styles.fieldLabel}>
-            Jira needs a few answers before it will make this move. Anything it will not let us collect here is
-            named below and has to be done in Jira.
-          </p>
-          <TransitionRequiredFields
-            isDisabled={pendingIssueKey === blockedMove.issueKey}
-            onSelectionChange={(fieldId, selection) =>
-              setTransitionSelections((previousSelections) => ({ ...previousSelections, [fieldId]: selection }))}
-            requiredFields={blockedMove.requiredFields}
-            selectionByFieldId={transitionSelections}
-          />
-          <div className={styles.editorRow}>
-            <button
-              className={styles.actionButton}
-              disabled={!areTransitionSelectionsComplete(blockedMove.requiredFields, transitionSelections)}
-              onClick={() => void handleSubmitBlockedMove()}
-              type="button"
-            >
-              Complete the move
-            </button>
-            <button className={styles.actionButton} onClick={() => setBlockedMove(null)} type="button">
-              Cancel
-            </button>
-          </div>
-        </section>
-      )}
-
-      {openIssue !== null && (
-        <section aria-label={`Details for ${openIssue.key}`} data-testid="rollup-issue-detail">
-          <button className={styles.actionButton} onClick={() => setOpenIssueKey(null)} type="button">
-            Close {openIssue.key}
-          </button>
-          {/* Editing delegates entirely to the shared editors: the board adds no write path of its
-              own, so a field it cannot safely write simply stays read-only here as everywhere. */}
-          <IssueDetailPanel
-            fieldEditing={openIssueEditMeta
-              ? { editMeta: openIssueEditMeta, onFieldSaved: () => void loadBoard() }
-              : undefined}
-            isEmbedded
-            issue={openIssue}
-            onIssueUpdated={() => void loadBoard()}
-          />
-        </section>
+        <MoveBlockedDialog
+          canSubmit={areTransitionSelectionsComplete(blockedMove.requiredFields, transitionSelections)}
+          diagnosis={blockedMove.diagnosis}
+          fixableFields={blockedMove.requiredFields}
+          isSaving={pendingIssueKey === blockedMove.issueKey}
+          onDismiss={() => setBlockedMove(null)}
+          onOpenIssue={() => {
+            const issueKeyToOpen = blockedMove.issueKey;
+            setBlockedMove(null);
+            void handleOpenIssue(issueKeyToOpen);
+          }}
+          onSelectionChange={(fieldId, selection) =>
+            setTransitionSelections((previousSelections) => ({ ...previousSelections, [fieldId]: selection }))}
+          onSubmit={() => void handleSubmitBlockedMove()}
+          selectionByFieldId={transitionSelections}
+        />
       )}
 
       <QuickFilterBar allItems={loadState.allItems} filters={filters} onFiltersChange={setFilters} />
 
       <div className={styles.boardScroller}>
         <BoardColumnHeaderRow
+          columnMinWidth={columnMinWidth}
           columns={layout.columns}
           focusedColumnId={focusedColumnId}
           onToggleFocus={(columnId) =>
@@ -1231,7 +1378,28 @@ export default function RollupBoardTab({
             {layout.lanes.map((lane, laneIndex) => (
             <MasterCardLane
               cardDetailByIssueKey={cardDetailByIssueKey}
+              columnMinWidth={columnMinWidth}
               columns={layout.columns}
+              inlineDetail={openIssue !== null && lane.masterCard.featureKey === openIssueLaneFeatureKey
+                ? (
+                  <section aria-label={`Details for ${openIssue.key}`} data-testid="rollup-issue-detail">
+                    <button className={styles.actionButton} onClick={() => setOpenIssueKey(null)} type="button">
+                      Close {openIssue.key}
+                    </button>
+                    {/* Editing delegates entirely to the shared editors: the board adds no write path
+                        of its own, so a field it cannot safely write stays read-only here as
+                        everywhere. */}
+                    <IssueDetailPanel
+                      fieldEditing={openIssueEditMeta
+                        ? { editMeta: openIssueEditMeta, onFieldSaved: () => void loadBoard() }
+                        : undefined}
+                      isEmbedded
+                      issue={openIssue}
+                      onIssueUpdated={() => void loadBoard()}
+                    />
+                  </section>
+                )
+                : null}
               errorMessageByIssueKey={errorMessageByIssueKey}
               hasActiveFilters={hasActiveFilters(filters)}
               highlightedFamilyKey={highlightedFamilyKey}
