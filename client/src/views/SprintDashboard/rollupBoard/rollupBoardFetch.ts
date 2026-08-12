@@ -419,8 +419,9 @@ export async function fetchFeaturesInPi(
   piName: string,
   piFieldReference: string,
   scope: RollupBoardScope,
+  teamFeatureLabel = '',
 ): Promise<JiraIssue[]> {
-  const featuresInPiJql = buildFeaturesInPiJql(featureProjectKeys, piName, piFieldReference);
+  const featuresInPiJql = buildFeaturesInPiJql(featureProjectKeys, piName, piFieldReference, teamFeatureLabel);
   if (featuresInPiJql === null) return [];
 
   try {
@@ -477,8 +478,11 @@ export async function fetchCarryOverScope(
   piFieldReference: string,
   featureLinkFieldReference: string,
   scope: RollupBoardScope,
+  teamFeatureLabel = '',
 ): Promise<CarryOverScope> {
-  const featureJql = buildCarryOverFeatureJql(featureProjectKeys, carryOverPiValue, piFieldReference);
+  const featureJql = buildCarryOverFeatureJql(
+    featureProjectKeys, carryOverPiValue, piFieldReference, teamFeatureLabel,
+  );
   if (featureJql === null) return EMPTY_CARRY_OVER_SCOPE;
 
   try {

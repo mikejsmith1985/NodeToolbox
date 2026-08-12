@@ -129,3 +129,13 @@ describe('sumUnplannedStoryPoints — one big Feature outweighs three small ones
     expect(sumUnplannedStoryPoints([])).toBe(0);
   });
 });
+
+describe('buildFeaturesInPiJql — narrowing a shared project by label', () => {
+  it('asks only for Features carrying the team\'s label', () => {
+    expect(buildFeaturesInPiJql(['DENP', 'DASP'], PI_NAME, 'cf[10301]', 'CUC')).toContain('labels = "CUC"');
+  });
+
+  it('omits the clause entirely when no label is configured', () => {
+    expect(buildFeaturesInPiJql(['DENP'], PI_NAME, 'cf[10301]')).not.toContain('labels');
+  });
+});

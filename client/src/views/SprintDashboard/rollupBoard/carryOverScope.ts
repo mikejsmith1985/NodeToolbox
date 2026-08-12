@@ -33,6 +33,8 @@ export function buildCarryOverFeatureJql(
   featureProjectKeys: readonly string[],
   carryOverPiValue: string,
   piFieldReference: string,
+  /** When set, only Features carrying this label count as the team's. */
+  teamFeatureLabel = '',
 ): string | null {
   const trimmedPiValue = carryOverPiValue.trim();
   if (trimmedPiValue === '' || featureProjectKeys.length === 0 || !piFieldReference) {
@@ -46,6 +48,7 @@ export function buildCarryOverFeatureJql(
     `${piFieldReference} = ${quoteJqlValue(trimmedPiValue)}`,
     // A Feature that finished last PI is not carried over; it is done.
     'statusCategory != Done',
+    ...(teamFeatureLabel.trim() !== '' ? [`labels = ${quoteJqlValue(teamFeatureLabel.trim())}`] : []),
   ].join(' AND ') + ' ORDER BY key ASC';
 }
 

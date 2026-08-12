@@ -153,6 +153,32 @@ export function FeatureScopePanel({
         </span>
       </label>
 
+      {/* Stated before the carry-over options, because it narrows everything below it. */}
+      <div className={styles.editorRow}>
+        <label className={styles.fieldLabel} htmlFor="rollup-team-feature-label">
+          Jira label marking this team&apos;s Features
+        </label>
+        <input
+          className={styles.inputField}
+          id="rollup-team-feature-label"
+          onChange={(changeEvent) => onScopeChange({ ...scope, teamFeatureLabel: changeEvent.target.value })}
+          placeholder="e.g. CUC"
+          value={scope.teamFeatureLabel}
+        />
+      </div>
+
+      <p className={styles.fieldLabel}>
+        {scope.teamFeatureLabel.trim() === ''
+          ? 'Without a label the board GUESSES which Features are yours — assigned to the PO, reported '
+            + 'by the PO, or having a child in your project. Those guesses hold while a team owns whole '
+            + 'projects and break as soon as two share one: adding a second project then brings in the '
+            + 'other team’s work too. Set a label to state it instead of inferring it.'
+          : `Only Features carrying “${scope.teamFeatureLabel.trim()}” count as this team’s. The `
+            + 'guesses are switched off entirely — leaving them on would let the work this label exists '
+            + 'to exclude back in through a side door. Any Feature of yours without the label will be '
+            + 'missing until it is applied, and the board names them below so the gap is never silent.'}
+      </p>
+
       {/* Carry-over is a scope decision like the two above it, so it lives with them. */}
       <div className={styles.editorRow}>
         <label className={styles.fieldLabel} htmlFor="rollup-carry-over-source">

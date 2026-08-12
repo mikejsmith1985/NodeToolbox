@@ -181,3 +181,63 @@ describe('readFeatureKeysFromTeamIssues — the third ownership test, made concr
     expect(readFeatureKeysFromTeamIssues([{ fields: {} }, {}], 'customfield_10108')).toEqual([]);
   });
 });
+
+describe('a team label replaces the guessing', () => {
+  // Cleanup Crew supports Features in DENP and DASP. Adding DASP to reach six Features dragged in
+  // every other team's DASP work, because ownership was inferred from the PO rather than recorded.
+  const LABELLED = { ...NO_OWNERSHIP, teamFeatureLabel: 'CUC' };
+
+  it('claims a Feature carrying the label', () => {
+    const feature = makeFeature('DASP-925', { labels: ['CUC', 'tech-debt'] });
+    const [result] = selectTeamOwnedEmptyFeatures([feature], LABELLED);
+
+    expect(result.ownershipReason).toBe('carries-team-label');
+  });
+
+  it('matches the label whatever case it was typed in', () => {
+    const feature = makeFeature('DASP-925', { labels: ['cuc'] });
+    expect(selectTeamOwnedEmptyFeatures([feature], LABELLED)).toHaveLength(1);
+  });
+
+  it('leaves an unlabelled Feature alone even when the PO is its assignee', () => {
+    // The point of the label: once it is in use the guesses must stop, or exactly the work it was
+    // introduced to exclude walks back in through a side door.
+    const feature = makeFeature('DASP-999', { assignee: { name: 'smithm' } });
+    const result = selectTeamOwnedEmptyFeatures([feature], {
+      ...LABELLED, productOwnerQueryValues: ['smithm'],
+    });
+
+    expect(result).toEqual([]);
+  });
+
+  it('leaves an unlabelled Feature alone even when it has a child in the team\'s project', () => {
+    const feature = makeFeature('DASP-999');
+    const result = selectTeamOwnedEmptyFeatures([feature], {
+      ...LABELLED, featureKeysWithTeamChildren: ['DASP-999'],
+    });
+
+    expect(result).toEqual([]);
+  });
+
+  it('falls back to the guesses when no label is configured', () => {
+    const feature = makeFeature('DENP-1', { assignee: { name: 'smithm' } });
+    const [result] = selectTeamOwnedEmptyFeatures([feature], {
+      ...NO_OWNERSHIP, productOwnerQueryValues: ['smithm'],
+    });
+
+    expect(result.ownershipReason).toBe('assigned-to-po');
+  });
+
+  it('still drops a finished Feature, label or not', () => {
+    const feature = makeFeature('DASP-925', {
+      labels: ['CUC'], status: { name: 'Cancelled', statusCategory: { key: 'done' } },
+    });
+
+    expect(selectTeamOwnedEmptyFeatures([feature], LABELLED)).toEqual([]);
+  });
+
+  it('does not match a label that merely contains the team\'s', () => {
+    const feature = makeFeature('DASP-925', { labels: ['CUCUMBER'] });
+    expect(selectTeamOwnedEmptyFeatures([feature], LABELLED)).toEqual([]);
+  });
+});

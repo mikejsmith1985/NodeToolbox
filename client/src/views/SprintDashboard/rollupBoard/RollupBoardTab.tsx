@@ -456,6 +456,7 @@ export default function RollupBoardTab({
         selectedPiValue!,
         buildJqlFieldReference(readConfiguredPiFieldId()),
         scanScope,
+        featureScope.teamFeatureLabel,
       );
       if (!isCurrentScan() || piFeatures.length === 0) return;
 
@@ -472,6 +473,7 @@ export default function RollupBoardTab({
       if (!isCurrentScan()) return;
       setFeatureIssuesWithoutWork(new Map(piFeatures.map((feature) => [feature.key, feature])));
       setFeaturesWithoutWork(selectTeamOwnedEmptyFeatures(piFeatures, {
+        teamFeatureLabel: featureScope.teamFeatureLabel,
         productOwnerQueryValues,
         featureKeysWithTeamChildren: readFeatureKeysFromTeamIssues(teamIssues, featureLinkFieldId),
         featureKeysWithWork: loadState.masterCards.map((masterCard) => masterCard.featureKey),

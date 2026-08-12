@@ -24,11 +24,20 @@ export interface TeamOwnedEmptyFeature {
   storyPoints: number | null;
   assigneeDisplayName: string | null;
   /** Which test placed this Feature with the team, so the reason is never a mystery. */
-  ownershipReason: 'assigned-to-po' | 'reported-by-po' | 'has-team-child';
+  ownershipReason: 'carries-team-label' | 'assigned-to-po' | 'reported-by-po' | 'has-team-child';
 }
 
 /** The identities that count as this team's Product Owner, from the roster. */
 export interface TeamOwnershipInputs {
+  /**
+   * A label marking the Features this team owns. When set it REPLACES the inference below.
+   *
+   * The three inferred tests exist because nothing in Jira records ownership; they hold while a team
+   * owns whole projects and break the moment two teams share one. A label states the fact, so once a
+   * team has adopted one the guesses must stop — leaving them on would let exactly the work the label
+   * was introduced to exclude back in through a side door.
+   */
+  teamFeatureLabel?: string;
   productOwnerQueryValues: readonly string[];
   /** Features already proven to have a child issue in the team's project. */
   featureKeysWithTeamChildren: readonly string[];
@@ -74,12 +83,27 @@ function readStoryPoints(
   return null;
 }
 
-/** Which of the three ownership tests this Feature passes, or null when it belongs to another team. */
+/** True when the Feature carries the team's label, whatever case it was typed in. */
+function carriesTeamLabel(issueFields: Record<string, unknown>, teamFeatureLabel: string): boolean {
+  const wantedLabel = teamFeatureLabel.trim().toLowerCase();
+  if (wantedLabel === '') return false;
+
+  const labels = Array.isArray(issueFields.labels) ? issueFields.labels as unknown[] : [];
+  return labels.some((label) => String(label).trim().toLowerCase() === wantedLabel);
+}
+
+/** Which ownership test this Feature passes, or null when it belongs to another team. */
 function resolveOwnershipReason(
   featureIssue: { key: string; fields?: Record<string, unknown> },
   inputs: TeamOwnershipInputs,
 ): TeamOwnedEmptyFeature['ownershipReason'] | null {
   const issueFields = featureIssue.fields ?? {};
+  const teamFeatureLabel = inputs.teamFeatureLabel ?? '';
+
+  // A label is a recorded fact and the guesses are not, so once one is in use it decides alone.
+  if (teamFeatureLabel.trim() !== '') {
+    return carriesTeamLabel(issueFields, teamFeatureLabel) ? 'carries-team-label' : null;
+  }
 
   if (isProductOwner(issueFields.assignee, inputs.productOwnerQueryValues)) return 'assigned-to-po';
   if (isProductOwner(issueFields.reporter, inputs.productOwnerQueryValues)) return 'reported-by-po';

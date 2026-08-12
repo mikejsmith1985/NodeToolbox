@@ -109,3 +109,19 @@ describe('describeCarryOverScope — the board never silently shows more than it
     expect(describeCarryOverScope({ featureKeys: [], issueKeys: [], fromPiValue: 'PI 26.3' })).toBe('');
   });
 });
+
+describe('buildCarryOverFeatureJql — narrowing a shared project by label', () => {
+  it('asks only for Features carrying the team\'s label', () => {
+    const jql = buildCarryOverFeatureJql(['DENP', 'DASP'], PREVIOUS_PI, 'cf[10301]', 'CUC');
+
+    expect(jql).toContain('labels = "CUC"');
+  });
+
+  it('omits the clause entirely when no label is configured', () => {
+    expect(buildCarryOverFeatureJql(['DENP'], PREVIOUS_PI, 'cf[10301]')).not.toContain('labels');
+  });
+
+  it('ignores a label that is only whitespace', () => {
+    expect(buildCarryOverFeatureJql(['DENP'], PREVIOUS_PI, 'cf[10301]', '   ')).not.toContain('labels');
+  });
+});

@@ -11,7 +11,7 @@ const TRANSFORMERS_SCOPE: FeatureScopeSettings = {
   featureProjectKeys: ['ENCUC'],
   shouldIncludeOutOfProjectFeatureLinks: false,
   shouldIncludeIssueLinkedFeatures: false,
-  carryOverPiValue: '', carryOverSource: 'none',
+  carryOverPiValue: '', carryOverSource: 'none', teamFeatureLabel: '',
 };
 
 /** Every Feature the board touches, INCLUDING projects the current scope excludes. */
