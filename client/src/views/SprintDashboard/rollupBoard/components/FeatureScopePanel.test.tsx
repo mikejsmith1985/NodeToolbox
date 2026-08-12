@@ -4,7 +4,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
-import { FeatureScopePanel } from './FeatureScopePanel.tsx';
+import { FeatureScopePanel, parseLabelList } from './FeatureScopePanel.tsx';
 import type { FeatureScopeSettings } from '../featureScope.ts';
 
 const TRANSFORMERS_SCOPE: FeatureScopeSettings = {
@@ -12,6 +12,7 @@ const TRANSFORMERS_SCOPE: FeatureScopeSettings = {
   shouldIncludeOutOfProjectFeatureLinks: false,
   shouldIncludeIssueLinkedFeatures: false,
   carryOverPiValue: '', carryOverSource: 'none', teamFeatureLabel: '',
+  excludedFeatureLabels: [],
 };
 
 /** Every Feature the board touches, INCLUDING projects the current scope excludes. */
@@ -288,5 +289,23 @@ describe('FeatureScopePanel — being honest about what is hidden', () => {
     );
 
     expect(screen.queryByText(/hidden by this scope/)).toBeNull();
+  });
+});
+
+describe('parseLabelList', () => {
+  it('splits a comma-separated list the way somebody would type it', () => {
+    expect(parseLabelList('Backlog, No-Development')).toEqual(['Backlog', 'No-Development']);
+  });
+
+  it('accepts spaces as separators too, since a Jira label can never contain one', () => {
+    expect(parseLabelList('Backlog No-Development')).toEqual(['Backlog', 'No-Development']);
+  });
+
+  it('drops the empty entry a trailing comma leaves behind, which would match nothing', () => {
+    expect(parseLabelList('Backlog, ')).toEqual(['Backlog']);
+  });
+
+  it('reads an empty box as no exclusions at all', () => {
+    expect(parseLabelList('')).toEqual([]);
   });
 });

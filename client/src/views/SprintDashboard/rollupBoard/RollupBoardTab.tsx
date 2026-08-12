@@ -589,6 +589,7 @@ export default function RollupBoardTab({
       setFeatureIssuesWithoutWork(new Map(piFeatures.map((feature) => [feature.key, feature])));
       setFeaturesWithoutWork(selectTeamOwnedEmptyFeatures(piFeatures, {
         teamFeatureLabel: featureScope.teamFeatureLabel,
+        excludedFeatureLabels: featureScope.excludedFeatureLabels,
         productOwnerQueryValues,
         featureKeysWithTeamChildren: readFeatureKeysFromTeamIssues(teamIssues, featureLinkFieldId),
         featureKeysWithWork: loadState.masterCards.map((masterCard) => masterCard.featureKey),

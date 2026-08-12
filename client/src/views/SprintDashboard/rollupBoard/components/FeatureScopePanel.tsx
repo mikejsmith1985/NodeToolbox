@@ -37,6 +37,20 @@ export interface FeatureScopePanelProps {
 }
 
 /** The distinct Jira project keys among the Features currently on the board. */
+/**
+ * Splits a typed list of labels into individual ones.
+ *
+ * Commas AND whitespace, because a Jira label can never contain a space — so treating a space as a
+ * separator costs nothing and rescues the person who typed "Backlog No-Development". Blank entries are
+ * dropped rather than stored, or a trailing comma would leave an empty label that matches nothing.
+ */
+export function parseLabelList(typedValue: string): string[] {
+  return String(typedValue ?? '')
+    .split(/[,\s]+/)
+    .map((label) => label.trim())
+    .filter((label) => label !== '');
+}
+
 function collectProjectKeysInPlay(featureKeys: readonly string[]): string[] {
   return [...new Set(
     featureKeys
@@ -177,6 +191,35 @@ export function FeatureScopePanel({
             + 'guesses are switched off entirely — leaving them on would let the work this label exists '
             + 'to exclude back in through a side door. Any Feature of yours without the label will be '
             + 'missing until it is applied, and the board names them below so the gap is never silent.'}
+      </p>
+
+      {/* A different question from the one above: that says WHOSE a Feature is, this says whether it is
+          the kind that gets broken down at all. Placeholder and rolling Features are genuinely the
+          team's, so no ownership rule can separate them from real work — only a deliberate mark can. */}
+      <div className={styles.editorRow}>
+        <label className={styles.fieldLabel} htmlFor="rollup-excluded-feature-labels">
+          Labels marking placeholder Features
+        </label>
+        <input
+          className={styles.inputField}
+          id="rollup-excluded-feature-labels"
+          onChange={(changeEvent) => onScopeChange({
+            ...scope,
+            excludedFeatureLabels: parseLabelList(changeEvent.target.value),
+          })}
+          placeholder="e.g. Backlog, No-Development"
+          value={scope.excludedFeatureLabels.join(', ')}
+        />
+      </div>
+
+      <p className={styles.fieldLabel}>
+        {scope.excludedFeatureLabels.length === 0
+          ? 'Rolling and placeholder Features — a standing defect bucket, an enhancement log — are real '
+            + 'Features in the PI that are never broken down, so they show up here as empty lanes '
+            + 'forever. Name the labels they carry and the board stops laning them.'
+          : `Features labelled ${scope.excludedFeatureLabels.join(', ')} get no lane of their own. This `
+            + 'only ever hides an EMPTY lane — if work turns up under one it gets its lane back, '
+            + 'because hiding it would hide the work with it.'}
       </p>
 
       {/* Carry-over is a scope decision like the two above it, so it lives with them. */}

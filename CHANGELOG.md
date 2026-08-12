@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Roll-Up Board — mark placeholder Features so they stop appearing as permanently empty lanes.** A
+  new **Labels marking placeholder Features** box in Board setup, separate from the team label because
+  it answers a different question: the team label says WHOSE a Feature is, this says whether a Feature
+  is the kind that gets broken down at all. Rolling and placeholder Features — a standing defect
+  bucket, an enhancement log — are genuinely the team's, genuinely in the PI, and never broken down, so
+  no ownership rule can separate them from real work. They typically carry the team's own name as a
+  label too, which is why a team label cannot separate them either. Only a second, deliberate mark can.
+  The exclusion applies to **empty lanes only**, and deliberately runs after the has-work check: a
+  placeholder that acquires a defect stops being a placeholder and gets its lane back, because hiding
+  it would hide the work with it. Labels may be separated by commas or spaces — a Jira label can never
+  contain a space, so treating one as a separator costs nothing and rescues a mistyped list.
+
+### Added
 - **Roll-Up Board — "why IS this on my board?", answered.** The board could explain work that was
   missing and had nothing at all for the opposite question, which turns out to be the more common one:
   a lane appears for a Feature the team has never touched and there is no way to find out what put it

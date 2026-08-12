@@ -241,3 +241,83 @@ describe('a team label replaces the guessing', () => {
     expect(selectTeamOwnedEmptyFeatures([feature], LABELLED)).toEqual([]);
   });
 });
+
+// ── Placeholder Features ──
+//
+// The case behind these: DENP-1398 ("Placeholder feature to align Enrollment configuration defects")
+// and DENP-1429 ("EAM Cognizant Enhancement Requests and Discussions (2026 Rolling feature)") appeared
+// as permanently empty lanes. Both are genuinely the team's, genuinely in the PI, and never going to be
+// broken down — so no OWNERSHIP rule could remove them. They both carry the team's own name as a label
+// too, which is why a team label could not separate them either.
+describe('selectTeamOwnedEmptyFeatures — Features the team marks as placeholders', () => {
+  const OWNED = { ...NO_OWNERSHIP, productOwnerQueryValues: PO_QUERY_VALUES };
+  const PLACEHOLDER = makeFeature('DENP-1429', {
+    assignee: { name: 'smithm' },
+    labels: ['Backlog', 'No-Development', 'Transformers'],
+  });
+
+  it('gives no lane to a Feature carrying an excluded label', () => {
+    const empties = selectTeamOwnedEmptyFeatures([PLACEHOLDER], {
+      ...OWNED,
+      excludedFeatureLabels: ['No-Development'],
+    });
+
+    expect(empties).toEqual([]);
+  });
+
+  it('still lanes it when no exclusions are configured', () => {
+    expect(selectTeamOwnedEmptyFeatures([PLACEHOLDER], OWNED)).toHaveLength(1);
+  });
+
+  it('matches an excluded label whatever case it was typed in', () => {
+    const empties = selectTeamOwnedEmptyFeatures([PLACEHOLDER], {
+      ...OWNED,
+      excludedFeatureLabels: ['no-development'],
+    });
+
+    expect(empties).toEqual([]);
+  });
+
+  it('excludes on ANY of the listed labels, not all of them', () => {
+    const empties = selectTeamOwnedEmptyFeatures([PLACEHOLDER], {
+      ...OWNED,
+      excludedFeatureLabels: ['Nothing-Matches', 'Backlog'],
+    });
+
+    expect(empties).toEqual([]);
+  });
+
+  it('keeps a Feature whose labels do not overlap the exclusions', () => {
+    const empties = selectTeamOwnedEmptyFeatures([PLACEHOLDER], {
+      ...OWNED,
+      excludedFeatureLabels: ['Spike'],
+    });
+
+    expect(empties).toHaveLength(1);
+  });
+
+  it('never suppresses a Feature that has work, however it is labelled', () => {
+    // The safety property: this list is only ever the EMPTY Features, so an exclusion cannot reach a
+    // Feature with work under it — hiding that lane would hide the work with it.
+    const empties = selectTeamOwnedEmptyFeatures([PLACEHOLDER], {
+      ...OWNED,
+      featureKeysWithWork: ['DENP-1429'],
+      excludedFeatureLabels: ['No-Development'],
+    });
+
+    // Absent from the EMPTY list because it has work — its lane is built from that work instead.
+    expect(empties).toEqual([]);
+  });
+
+  it('does not touch a team label that happens to be on a placeholder too', () => {
+    // Both real Features and placeholders carry the team's name, which is exactly why the exclusion
+    // has to be a SEPARATE mark rather than a smarter reading of the ownership label.
+    const empties = selectTeamOwnedEmptyFeatures([PLACEHOLDER], {
+      ...NO_OWNERSHIP,
+      teamFeatureLabel: 'Transformers',
+      excludedFeatureLabels: ['No-Development'],
+    });
+
+    expect(empties).toEqual([]);
+  });
+});

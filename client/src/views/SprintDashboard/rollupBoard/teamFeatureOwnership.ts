@@ -39,6 +39,18 @@ export interface TeamOwnershipInputs {
    */
   teamFeatureLabel?: string;
   productOwnerQueryValues: readonly string[];
+  /**
+   * Labels marking Features that should never get a lane of their own.
+   *
+   * For the placeholder and rolling Features every team keeps — "26.4 Enrollment Config/Defects",
+   * "EAM Cognizant Enhancement Requests (2026 Rolling feature)" — which are genuinely the team's,
+   * genuinely in the PI, and genuinely never broken down. A team label cannot separate those from real
+   * work because they carry it too; only a second, deliberate mark can.
+   *
+   * Applies ONLY to Features with nothing under them. A Feature that turns out to have work keeps its
+   * lane whatever it is labelled, because hiding it would hide the work with it.
+   */
+  excludedFeatureLabels?: readonly string[];
   /** Features already proven to have a child issue in the team's project. */
   featureKeysWithTeamChildren: readonly string[];
   /** Features that already have a lane, because work rolls up to them. */
@@ -83,6 +95,20 @@ function readStoryPoints(
   return null;
 }
 
+/** True when the Feature carries any label the team has marked as "never lane this". */
+export function carriesExcludedLabel(
+  issueFields: Record<string, unknown>,
+  excludedFeatureLabels: readonly string[],
+): boolean {
+  const unwantedLabels = (excludedFeatureLabels ?? [])
+    .map((label) => label.trim().toLowerCase())
+    .filter((label) => label !== '');
+  if (unwantedLabels.length === 0) return false;
+
+  const labels = Array.isArray(issueFields.labels) ? issueFields.labels as unknown[] : [];
+  return labels.some((label) => unwantedLabels.includes(String(label).trim().toLowerCase()));
+}
+
 /** True when the Feature carries the team's label, whatever case it was typed in. */
 function carriesTeamLabel(issueFields: Record<string, unknown>, teamFeatureLabel: string): boolean {
   const wantedLabel = teamFeatureLabel.trim().toLowerCase();
@@ -114,9 +140,10 @@ function resolveOwnershipReason(
 /**
  * Narrows a PI's Features to the ones this team owns and has not broken down.
  *
- * Three filters, in the order that discards the most first: finished Features are irrelevant however
- * they were finished, Features another team owns are none of this board's business, and a Feature that
- * already has a lane must not be listed twice.
+ * Four filters, in the order that discards the most first: finished Features are irrelevant however
+ * they were finished, a Feature that already has a lane must not be listed twice, a Feature the team
+ * has marked as a placeholder was never going to be broken down, and Features another team owns are
+ * none of this board's business.
  */
 export function selectTeamOwnedEmptyFeatures(
   piFeatureIssues: readonly { key: string; fields?: Record<string, unknown> }[],
@@ -128,6 +155,9 @@ export function selectTeamOwnedEmptyFeatures(
   return piFeatureIssues
     .filter((featureIssue) => !isFeatureDone(featureIssue))
     .filter((featureIssue) => !keysWithWork.has(featureIssue.key))
+    // Deliberately after the has-work check, so an excluded label can only ever suppress an EMPTY
+    // lane. A placeholder that acquires a defect stops being a placeholder and gets its lane back.
+    .filter((featureIssue) => !carriesExcludedLabel(featureIssue.fields ?? {}, inputs.excludedFeatureLabels ?? []))
     .map((featureIssue) => ({ featureIssue, ownershipReason: resolveOwnershipReason(featureIssue, inputs) }))
     .filter((candidate): candidate is {
       featureIssue: { key: string; fields?: Record<string, unknown> };
