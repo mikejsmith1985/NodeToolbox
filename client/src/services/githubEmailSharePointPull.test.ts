@@ -328,3 +328,103 @@ describe('batchEmailSources', () => {
     expect(batches.map((batch) => batch.map((source) => source.fileName))).toEqual([['a.eml'], ['b.eml', 'c.eml']]);
   });
 });
+
+describe('listing a folder bigger than one page', () => {
+  it('follows the next link instead of silently stopping at $top', async () => {
+    // The failure this prevents: a backlog past $top stopped ingesting new mail with no error at all.
+    wireRelay([
+      { pathIncludes: '%24skiptoken', data: { value: [{ Name: 'second-page.eml', TimeCreated: '2026-01-02' }] } },
+      {
+        pathIncludes: '/Files',
+        data: {
+          value: [{ Name: 'first-page.eml', TimeCreated: '2026-01-01' }],
+          'odata.nextLink': 'https://tenant.sharepoint.com/sites/Team/_api/web/Files?%24skiptoken=x',
+        },
+      },
+      { pathIncludes: '/$value', data: 'email text' },
+    ]);
+    const { runBodies } = wireServer(['first-page.eml', 'second-page.eml']);
+
+    const summary = await pullSharePointEmails(FOLDER_URL);
+
+    expect(summary.listedCount).toBe(2);
+    expect(runBodies[0].sources.map((source) => source.fileName))
+      .toEqual(['first-page.eml', 'second-page.eml']);
+  });
+
+  it('stops when no next link is offered', async () => {
+    wireRelay([
+      { pathIncludes: '/Files', data: { value: [{ Name: 'only.eml', TimeCreated: '2026-01-01' }] } },
+      { pathIncludes: '/$value', data: 'email text' },
+    ]);
+    wireServer(['only.eml']);
+
+    expect((await pullSharePointEmails(FOLDER_URL)).listedCount).toBe(1);
+  });
+});
+
+describe('clearing the folder after ingest', () => {
+  /** Answers listing, download, filter-new (before and after), and the run endpoint. */
+  function wireForCleanup(stillNewAfterRun: string[]) {
+    wireRelay([
+      {
+        pathIncludes: '/Files',
+        data: { value: [{ Name: 'a.eml', TimeCreated: '1' }, { Name: 'b.eml', TimeCreated: '2' }] },
+      },
+      { pathIncludes: '/$value', data: 'email text' },
+      { pathIncludes: 'recycle()', data: {} },
+    ]);
+
+    let filterCallCount = 0;
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/sharepoint/filter-new')) {
+        filterCallCount += 1;
+        // First call selects what to ingest; the second confirms what the server actually recorded.
+        const newFileNames = filterCallCount === 1 ? ['a.eml', 'b.eml'] : stillNewAfterRun;
+        return new Response(JSON.stringify({ ok: true, newFileNames }), { status: 200 });
+      }
+      if (url.includes('/sharepoint/run')) {
+        return new Response(JSON.stringify({
+          ok: true, result: { postedCount: 2, skippedCount: 0, errorCount: 0 },
+        }), { status: 200 });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    }));
+  }
+
+  it('deletes nothing unless asked', async () => {
+    wireForCleanup([]);
+
+    const summary = await pullSharePointEmails(FOLDER_URL);
+
+    expect(summary.deletedCount).toBe(0);
+    const deleteRequests = [...relayRequestsById.values()].filter((request) => request.path.includes('recycle()'));
+    expect(deleteRequests).toHaveLength(0);
+  });
+
+  it('clears the emails the server confirmed it recorded', async () => {
+    wireForCleanup([]);
+
+    const summary = await pullSharePointEmails(FOLDER_URL, undefined, true);
+
+    expect(summary.deletedCount).toBe(2);
+    const deleteRequests = [...relayRequestsById.values()].filter((request) => request.path.includes('recycle()'));
+    expect(deleteRequests).toHaveLength(2);
+    expect(deleteRequests.every((request) => request.method === 'POST')).toBe(true);
+  });
+
+  it('keeps an email the server did NOT record, so a failure is never destroyed', async () => {
+    // b.eml is still "new" after the run — it did not make it into the ledger, so it must survive.
+    wireForCleanup(['b.eml']);
+
+    const summary = await pullSharePointEmails(FOLDER_URL, undefined, true);
+
+    expect(summary.deletedCount).toBe(1);
+    expect(summary.keptCount).toBe(1);
+    const deletedPaths = [...relayRequestsById.values()]
+      .filter((request) => request.path.includes('recycle()')).map((request) => request.path);
+    expect(deletedPaths.some((path) => path.includes('a.eml'))).toBe(true);
+    expect(deletedPaths.some((path) => path.includes('b.eml'))).toBe(false);
+  });
+});
