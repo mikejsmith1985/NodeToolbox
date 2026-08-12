@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Roll-Up Board troubleshooter — did not know about the team label.** With a label configured it
+  would confirm a Feature's project was tracked and stop there, leaving the real exclusion unmentioned
+  — and an unlabelled Feature is by far the likeliest reason one goes missing in the days after a team
+  adopts a label. It now asks whether the Feature carries the label, names it, and says that a
+  configured label switches ownership guessing off entirely, so an unlabelled Feature is left out
+  however it is assigned. For a work item the check reads the label on its **Feature**, which is where
+  it lives.
+
 ### Added
 - **Roll-Up Board — a Jira label can state which Features a team owns, instead of the board guessing.**
   Ownership was inferred from three signals — assigned to the PO, reported by the PO, or having a child

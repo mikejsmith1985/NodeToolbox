@@ -23,6 +23,8 @@ export interface PlacementTroubleshooterProps {
   selectedPiValue: string;
   carryOverPiValue: string;
   featureProjectKeys: readonly string[];
+  /** The label marking this team's Features, so an unlabelled one is explained rather than mysterious. */
+  teamFeatureLabel?: string;
 }
 
 /** Marks each verdict so a scan down the list lands on the problem. */
@@ -51,6 +53,7 @@ export function PlacementTroubleshooter({
   selectedPiValue,
   carryOverPiValue,
   featureProjectKeys,
+  teamFeatureLabel = '',
 }: PlacementTroubleshooterProps) {
   const [issueKeyInput, setIssueKeyInput] = useState('');
   const [steps, setSteps] = useState<DiagnosisStep[] | null>(null);
@@ -88,6 +91,7 @@ export function PlacementTroubleshooter({
         selectedPiValue,
         carryOverPiValue,
         featureProjectKeys,
+        teamFeatureLabel,
         featureKey,
         featureFields: featureIssue?.fields ?? null,
       };

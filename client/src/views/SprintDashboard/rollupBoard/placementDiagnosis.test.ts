@@ -245,3 +245,48 @@ describe('diagnosePlacement — the issue IS a Feature', () => {
     expect(steps.some((step) => step.question.startsWith('Does it roll up'))).toBe(false);
   });
 });
+
+describe('diagnosePlacement — the team label', () => {
+  // The commonest reason a Feature vanishes right after a team adopts a label is that it has not been
+  // applied yet. Without this step a correct project check read like the whole story.
+  it('says an unlabelled Feature was excluded by the label, not the project', () => {
+    const steps = diagnosePlacement(buildInput({
+      issueKey: 'DASP-925',
+      issueFields: { issuetype: { name: 'Feature' }, [PI_FIELD]: 'PI 26.4', labels: ['other-team'] },
+      featureProjectKeys: ['DENP', 'DASP'],
+      teamFeatureLabel: 'CUC',
+    }));
+
+    const labelStep = steps.find((step) => step.question.includes('"CUC" label'))!;
+    expect(labelStep.verdict).toBe('excluded');
+    expect(labelStep.detail).toContain('stops guessing ownership');
+  });
+
+  it('confirms a labelled Feature', () => {
+    const steps = diagnosePlacement(buildInput({
+      issueKey: 'DASP-925',
+      issueFields: { issuetype: { name: 'Feature' }, [PI_FIELD]: 'PI 26.4', labels: ['CUC'] },
+      featureProjectKeys: ['DASP'],
+      teamFeatureLabel: 'CUC',
+    }));
+
+    expect(steps.find((step) => step.question.includes('"CUC" label'))!.verdict).toBe('included');
+  });
+
+  it('checks the label on a work item\'s FEATURE, not on the work item', () => {
+    const steps = diagnosePlacement(buildInput({
+      issueKey: 'ENCUC-1',
+      featureKey: 'DASP-925',
+      featureFields: { labels: [] },
+      teamFeatureLabel: 'CUC',
+    }));
+
+    const labelStep = steps.find((step) => step.question.includes('"CUC" label'))!;
+    expect(labelStep.detail).toContain('DASP-925');
+  });
+
+  it('asks nothing about labels when none is configured', () => {
+    const steps = diagnosePlacement(buildInput());
+    expect(steps.some((step) => step.question.includes('label'))).toBe(false);
+  });
+})

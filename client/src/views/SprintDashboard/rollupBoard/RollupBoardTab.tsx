@@ -1039,6 +1039,7 @@ export default function RollupBoardTab({
           featureProjectKeys={featureScope.featureProjectKeys}
           piFieldId={readConfiguredPiFieldId()}
           selectedPiValue={selectedPiValue ?? ''}
+          teamFeatureLabel={featureScope.teamFeatureLabel}
         />
       )}
 
