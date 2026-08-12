@@ -39,6 +39,11 @@ import {
   type TransitionRequiredField,
 } from '../featureReviewFixes.ts';
 import { buildRenderedColumns, resolveColumnIdForItem } from './boardColumns.ts';
+import {
+  describeStatusPair,
+  describeUnmappedStatusGroup,
+  summarizeUnmappedStatuses,
+} from './unmappedStatusSummary.ts';
 import { EMPTY_QUICK_FILTER_STATE, hasActiveFilters } from './boardFilters.ts';
 import { buildBoardLayout } from './boardLayout.ts';
 import {
@@ -130,6 +135,7 @@ import styles from './RollupBoardTab.module.css';
 import {
   EXPECTED_BOARD_ISSUE_CEILING,
   NO_FEATURE_KEY,
+  UNMAPPED_COLUMN_ID,
   type BoardPreferences,
   type MasterCard,
   type QuickFilterState,
@@ -734,8 +740,39 @@ export default function RollupBoardTab({
    * keep their exact wording — nothing is softened, and nothing is dropped — while costing one line
    * until somebody asks for the detail.
    */
+  /**
+   * The states sitting in Unmapped, grouped so one missing mapping reads as one line.
+   *
+   * Computed from every loaded item rather than the filtered layout: a quick filter narrows what you
+   * are looking at, but it does not change which states the team has forgotten to claim.
+   */
+  const unmappedStatusGroups = useMemo(
+    () => summarizeUnmappedStatuses(loadState.allItems, UNMAPPED_COLUMN_ID, renderedColumns),
+    [loadState.allItems, renderedColumns],
+  );
+
   const boardNotices = useMemo<BoardNotice[]>(() => {
     const notices: BoardNotice[] = [];
+
+    if (unmappedStatusGroups.length > 0) {
+      const unmappedIssueCount = unmappedStatusGroups.reduce((total, group) => total + group.issueCount, 0);
+      const stateWord = unmappedStatusGroups.length === 1 ? 'state' : 'states';
+      notices.push({
+        id: 'unmapped-states',
+        tone: 'warning',
+        summary: `${unmappedIssueCount} issues sit in Unmapped across ${unmappedStatusGroups.length} ${stateWord}`
+          + ' that no column claims:',
+        detail: (
+          <ul>
+            {unmappedStatusGroups.map((group) => (
+              <li key={describeStatusPair(group.statusName, group.subStatusValue)}>
+                {describeUnmappedStatusGroup(group)}
+              </li>
+            ))}
+          </ul>
+        ),
+      });
+    }
 
     if (loadState.incompleteReasons.length > 0) {
       notices.push({
@@ -838,7 +875,7 @@ export default function RollupBoardTab({
     }
 
     return notices;
-  }, [loadState, sprintPiGap, carryOverScope, featuresWithoutWork]);
+  }, [loadState, sprintPiGap, carryOverScope, featuresWithoutWork, unmappedStatusGroups]);
 
   /**
    * The columns the board draws: all of them, or just the focused one.
