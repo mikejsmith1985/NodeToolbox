@@ -40,29 +40,47 @@ function renderPanel(overrides: Partial<React.ComponentProps<typeof CardTransiti
 }
 
 describe('CardTransitionsPanel', () => {
-  it('names the column a move lands in, not just the Jira status', () => {
+  it('names the destination and the column it lands in, without repeating either', () => {
     renderPanel();
 
-    expect(screen.getByText(/Send to QA → Ready for Testing/)).toBeTruthy();
-    expect(screen.getByText(/lands in SL Testing/)).toBeTruthy();
+    // The chip carries the destination; the column is the hint beside it. The workflow's own step
+    // name ("Send to QA") is deliberately NOT printed — it usually just says the destination again.
+    expect(screen.getByText('Ready for Testing')).toBeTruthy();
+    expect(screen.getByText('SL Testing')).toBeTruthy();
+    expect(screen.queryByText(/Send to QA/)).toBeNull();
+  });
+
+  it('says nothing about the column when it reads the same as the status', () => {
+    renderPanel({ options: [{ ...TO_TESTING, toStatusName: 'Cancelled', landsInColumnName: 'Cancelled' }] });
+
+    // "Cancelled · Cancelled" is noise; the column is only worth naming when it differs.
+    expect(screen.getAllByText('Cancelled')).toHaveLength(1);
+  });
+
+  it('keeps the full sentence on the chip as a tooltip, so nothing is lost', () => {
+    renderPanel();
+
+    expect(screen.getByTitle(/lands in SL Testing/)).toBeTruthy();
   });
 
   it('warns before a move that would drop the card back into Unmapped', () => {
     renderPanel({ options: [TO_NOWHERE] });
 
-    expect(screen.getByText(/stays in Unmapped/)).toBeTruthy();
+    // One short word per chip rather than the same sentence repeated down the panel.
+    expect(screen.getByText('unmapped')).toBeTruthy();
+    expect(screen.getByTitle(/stays in Unmapped/)).toBeTruthy();
   });
 
-  it('says what Jira will ask for before the move goes through', () => {
+  it('marks a move Jira will ask for fields before making', () => {
     renderPanel({ options: [{ ...TO_TESTING, requiredFieldNames: ['Story Points'] }] });
 
-    expect(screen.getByText(/asks for Story Points/)).toBeTruthy();
+    expect(screen.getByTitle('Asks for Story Points')).toBeTruthy();
   });
 
   it('applies the transition that was clicked', () => {
     const applied = renderPanel();
 
-    fireEvent.click(screen.getByText(/Send to QA/));
+    fireEvent.click(screen.getByText('Ready for Testing'));
 
     expect(applied).toEqual([TO_TESTING]);
   });
