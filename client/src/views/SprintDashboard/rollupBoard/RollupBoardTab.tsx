@@ -1095,15 +1095,23 @@ export default function RollupBoardTab({
   }, []);
 
   /**
-   * Opens one card's detail, asking Jira which of its fields this person may edit.
+   * Opens — or closes — one card's detail, asking Jira which of its fields this person may edit.
    *
    * When editmeta cannot be read the panel still opens read-only, because showing an editor that
    * would fail on save is worse than showing none.
    */
   const handleOpenIssue = useCallback(async (issueKey: string): Promise<void> => {
+    // Clicking the OPEN card closes it again. The same click that opened it is where the hand already
+    // is, which beats hunting for a Close button that may have been scrolled past by the panel itself.
+    if (openIssueKey === issueKey) {
+      setOpenIssueKey(null);
+      setOpenIssueEditMeta(null);
+      return;
+    }
+
     setOpenIssueKey(issueKey);
     setOpenIssueEditMeta(await fetchFeatureReviewEditMeta(issueKey).catch(() => null));
-  }, []);
+  }, [openIssueKey]);
 
   /**
    * The Feature whose lane the open issue sits in, so its detail can be shown THERE.
@@ -1383,9 +1391,9 @@ export default function RollupBoardTab({
               inlineDetail={openIssue !== null && lane.masterCard.featureKey === openIssueLaneFeatureKey
                 ? (
                   <section aria-label={`Details for ${openIssue.key}`} data-testid="rollup-issue-detail">
-                    <button className={styles.actionButton} onClick={() => setOpenIssueKey(null)} type="button">
-                      Close {openIssue.key}
-                    </button>
+                    <p className={styles.inlineDetailHint}>
+                      Click {openIssue.key} again to close this.
+                    </p>
                     {/* Editing delegates entirely to the shared editors: the board adds no write path
                         of its own, so a field it cannot safely write stays read-only here as
                         everywhere. */}

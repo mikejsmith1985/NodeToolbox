@@ -8,6 +8,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Roll-Up Board — the ruled line down every column is gone, and Compact is finally compact.** Each
+  column cell carried a left and right border, which drew a hard vertical rule down the full height of
+  the board — scaffolding rather than structure. The tinted panel and the gap between cells separate
+  the columns perfectly well on their own. The same cells (and the column headers) also still carried
+  `min-width: var(--layout-control-min-width)` — the old form-control token, up to 192px — which
+  silently overrode the new Column width setting, so **Compact could never actually be compact**. The
+  grid track sets the minimum now, as it was always meant to.
+
+### Changed
+- **Roll-Up Board — clicking an open card closes it.** The same click that opened the detail now shuts
+  it again, replacing the Close button. The hand is already on the card, and a Close button can be
+  pushed off screen by the very panel it belongs to. Clicking a *different* card switches straight to
+  it rather than making you close the first one.
+
+### Fixed
 - **Roll-Up Board — the board fits the screen at 100% browser zoom again.** Columns were sized from
   `--layout-control-min-width`, a token meant for FORM CONTROLS — a text box, a dropdown. At up to
   192px a column that is sensible for one input and hopeless for twelve columns: 12 × 192px is 2,304px
