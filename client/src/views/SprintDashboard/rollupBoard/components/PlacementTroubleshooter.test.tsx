@@ -88,3 +88,50 @@ describe('PlacementTroubleshooter', () => {
     expect(screen.getByText(/Is its Feature one this team tracks/)).toBeInTheDocument();
   });
 });
+
+describe('answering "why IS this here?"', () => {
+  it('explains a key that is already on the board, without asking Jira anything', async () => {
+    render(
+      <PlacementTroubleshooter
+        carryOverPiValue=""
+        explainLanePresence={() => ({
+          summary: 'It is ASSIGNED to the Product Owner for this team.',
+          howToRemove: 'Set a Jira label for team Features in Board setup.',
+          isGuess: true,
+        })}
+        featureLinkFieldId="customfield_10108"
+        featureProjectKeys={[]}
+        piFieldId="customfield_10301"
+        selectedPiValue="PI 26.4"
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText('Issue key to check'), { target: { value: 'DENP-1398' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Check' }));
+
+    expect(await screen.findByText(/DENP-1398 IS on this board/)).toBeTruthy();
+    expect(screen.getByText(/Set a Jira label/)).toBeTruthy();
+    // Walking the exclusion steps would be answering a question nobody asked.
+    expect(jiraGetMock).not.toHaveBeenCalled();
+  });
+
+  it('falls through to the missing-issue diagnosis when the key is not on the board', async () => {
+    jiraGetMock.mockResolvedValue({ fields: {} });
+
+    render(
+      <PlacementTroubleshooter
+        carryOverPiValue=""
+        explainLanePresence={() => null}
+        featureLinkFieldId="customfield_10108"
+        featureProjectKeys={[]}
+        piFieldId="customfield_10301"
+        selectedPiValue="PI 26.4"
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText('Issue key to check'), { target: { value: 'DENP-9999' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Check' }));
+
+    await waitFor(() => expect(jiraGetMock).toHaveBeenCalled());
+  });
+});

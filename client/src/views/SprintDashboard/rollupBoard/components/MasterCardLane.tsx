@@ -15,6 +15,7 @@ import { buildJiraBrowseUrl } from '../../../../utils/jiraBrowseUrl.ts';
 import { useConnectionStore } from '../../../../store/connectionStore.ts';
 import { buildDropTargetId } from '../cardDropRouting.ts';
 import styles from '../RollupBoardTab.module.css';
+import type { BoardMembershipReason } from '../boardMembershipReason.ts';
 import type { CardDetail } from '../cardDetail.ts';
 import type { RenderedColumn, RenderedLane, RollupBoardItem } from '../rollupBoardTypes.ts';
 import { buildColumnGridTemplate, buildColumnRowMinWidth } from './BoardColumnHeaderRow.tsx';
@@ -60,6 +61,8 @@ export interface MasterCardLaneProps {
   onToggleCollapsed: (featureKey: string) => void;
   /** Why this Feature could not be read, when the board managed to establish a reason. */
   featureReadFailureDetail?: string | null;
+  /** Why this lane is on the board at all — shown when there is no work to make that obvious. */
+  membershipReason?: BoardMembershipReason | null;
   /** This lane's position on the board, counting from 1. */
   laneRank?: number;
   /** Moves this lane to a rank the viewer typed. Absent hides the rank box. */
@@ -104,6 +107,7 @@ export function MasterCardLane({
   errorMessageByIssueKey,
   onToggleCollapsed,
   featureReadFailureDetail = null,
+  membershipReason = null,
   laneRank,
   onRankChange,
   onSendToTop,
@@ -246,6 +250,14 @@ export function MasterCardLane({
         {hasNoWorkYet && (
           <span className={styles.laneVitalMissing}>
             No work rolls up to this Feature yet — it is committed to the PI with nothing underneath
+          </span>
+        )}
+
+        {/* An empty lane is the one that provokes "why is this even here?", because there is no work
+            to justify it. The board knew the answer all along and never said it. */}
+        {membershipReason !== null && (
+          <span className={styles.laneMembership} title={membershipReason.howToRemove}>
+            {membershipReason.summary}
           </span>
         )}
 

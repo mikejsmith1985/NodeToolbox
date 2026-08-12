@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Roll-Up Board — "why IS this on my board?", answered.** The board could explain work that was
+  missing and had nothing at all for the opposite question, which turns out to be the more common one:
+  a lane appears for a Feature the team has never touched and there is no way to find out what put it
+  there. The answer existed all along — the ownership scan records which of its tests admitted each
+  Feature — it simply never reached the screen.
+  Every lane with **no work under it** now says why it is there, right on the lane. And the board is
+  explicit about which of those answers are **inferences**: without a Feature label set, the board
+  guesses ownership from the Product Owner being the assignee or the reporter, or from the Feature
+  having a child in the team's project. A Feature merely assigned to the PO is not the same as one the
+  team is working on, and saying so is what makes the lane's presence understandable. A single notice
+  counts the inferred lanes and names the fix once — setting a Feature label in Board setup, after
+  which the board stops guessing entirely.
+  The troubleshooter now answers **both** directions from one box: enter a key, and if it is on the
+  board you are told what put it there, otherwise it walks the exclusion steps as before. The presence
+  answer is read from what the board has already loaded, so it costs no request to Jira.
+
 ### Changed
 - **Roll-Up Board — "Where this can go" is one row of chips instead of a stack of blocks.** Five
   destinations filled about three hundred pixels before the issue itself came into view, and almost

@@ -9,6 +9,7 @@ import { useState } from 'react';
 
 import { jiraGet } from '../../../../services/jiraApi.ts';
 import styles from '../RollupBoardTab.module.css';
+import type { BoardMembershipReason } from '../boardMembershipReason.ts';
 import {
   diagnosePlacement,
   summarizeDiagnosis,
@@ -25,6 +26,14 @@ export interface PlacementTroubleshooterProps {
   featureProjectKeys: readonly string[];
   /** The label marking this team's Features, so an unlabelled one is explained rather than mysterious. */
   teamFeatureLabel?: string;
+  /**
+   * Answers "why IS this here?" from what the board has already loaded.
+   *
+   * Asked FIRST, and it needs no Jira call: if the key is on the board, walking the exclusion steps
+   * would be answering a question nobody asked. One input serves both directions, because from the
+   * outside "why is this here" and "why is this missing" are the same moment of confusion.
+   */
+  explainLanePresence?: (issueKey: string) => BoardMembershipReason | null;
 }
 
 /** Marks each verdict so a scan down the list lands on the problem. */
@@ -54,11 +63,13 @@ export function PlacementTroubleshooter({
   carryOverPiValue,
   featureProjectKeys,
   teamFeatureLabel = '',
+  explainLanePresence,
 }: PlacementTroubleshooterProps) {
   const [issueKeyInput, setIssueKeyInput] = useState('');
   const [steps, setSteps] = useState<DiagnosisStep[] | null>(null);
   const [summary, setSummary] = useState('');
   const [isChecking, setIsChecking] = useState(false);
+  const [presenceReason, setPresenceReason] = useState<BoardMembershipReason | null>(null);
 
   /** Reads the issue and its Feature, then walks the board's decisions over them. */
   async function runDiagnosis(): Promise<void> {
@@ -67,6 +78,17 @@ export function PlacementTroubleshooter({
 
     setIsChecking(true);
     setSteps(null);
+    setPresenceReason(null);
+
+    // On the board already? Then the question is why it is HERE, and the answer costs no round trip.
+    const lanePresence = explainLanePresence?.(issueKey) ?? null;
+    if (lanePresence !== null) {
+      setPresenceReason(lanePresence);
+      setSummary(`${issueKey} IS on this board.`);
+      setIsChecking(false);
+      return;
+    }
+
     try {
       const issue = await jiraGet<{ fields?: Record<string, unknown> }>(
         `/rest/api/2/issue/${encodeURIComponent(issueKey)}`,
@@ -106,10 +128,11 @@ export function PlacementTroubleshooter({
 
   return (
     <div className={styles.panelCard} data-testid="rollup-placement-troubleshooter">
-      <h4 className={styles.sectionTitle}>Why is an issue not on this board?</h4>
+      <h4 className={styles.sectionTitle}>Why is an issue on — or missing from — this board?</h4>
       <p className={styles.fieldLabel}>
-        Enter any issue key. This asks Jira the same questions the board asks, in the same order, and
-        shows what each one decided.
+        Enter any issue or Feature key. If it is on the board you are told what put it there; if it is
+        not, this asks Jira the same questions the board asks, in the same order, and shows what each
+        one decided.
       </p>
 
       <div className={styles.editorRow}>
@@ -131,6 +154,13 @@ export function PlacementTroubleshooter({
           {isChecking ? 'Checking…' : 'Check'}
         </button>
       </div>
+
+      {presenceReason !== null && (
+        <div className={styles.confirmationText}>
+          <p>{summary} {presenceReason.summary}</p>
+          {presenceReason.howToRemove !== '' && <p>{presenceReason.howToRemove}</p>}
+        </div>
+      )}
 
       {steps !== null && (
         <>
