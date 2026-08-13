@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Roll-Up Board — a refused Jira query no longer masquerades as "this discipline has no work".** The
+  three linkages were asked about in one `A OR B OR C` query, and a single unknown field id makes Jira
+  reject the **whole** thing — so one bad clause silently zeroed every discipline on the board. The
+  rejection was then swallowed by a `catch` that returned an empty array, which the sub-lane reported
+  as *"has not broken its work down yet"*. A fixable error was presented as an absence, which is the
+  same mistake in the same feature for the third time.
+  Each linkage is now asked about **separately**, so an unknown field costs only its own clause and the
+  other two still answer. Anything Jira refuses is carried all the way to the band and said out loud:
+  *"Jira would not answer about QEINT-608: Parent Link: 400 Field customfield_10100 does not exist"*.
+  An empty band and an unanswerable question are different things and now read differently.
+
 ### Added
 - **Change Review — tell your own edits apart from ones made on your behalf.** An issue turned up
   cancelled that nobody remembered cancelling. That question was previously unanswerable: the app

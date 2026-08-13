@@ -373,6 +373,8 @@ export default function RollupBoardTab({
   const [cloneFamilies, setCloneFamilies] = useState<Record<string, CloneClassification[]>>({});
   const [cloneFeatureIssuesByKey, setCloneFeatureIssuesByKey] = useState<Map<string, JiraIssue>>(new Map());
   const [disciplineItemsByCloneKey, setDisciplineItemsByCloneKey] = useState<Map<string, RollupBoardItem[]>>(new Map());
+  /** Linkages Jira refused, per clone — so an unaskable question never reads as an empty answer. */
+  const [disciplineFailuresByCloneKey, setDisciplineFailuresByCloneKey] = useState<Map<string, string[]>>(new Map());
   const [featureIssuesWithoutWork, setFeatureIssuesWithoutWork] = useState<Map<string, JiraIssue>>(new Map());
   /** Bumped per empty-Feature scan so a slow earlier run cannot overwrite a newer one. */
   const emptyFeatureScanToken = useRef(0);
@@ -515,6 +517,7 @@ export default function RollupBoardTab({
       setCloneFamilies({});
       setCloneFeatureIssuesByKey(new Map());
       setDisciplineItemsByCloneKey(new Map());
+      setDisciplineFailuresByCloneKey(new Map());
       return;
     }
 
@@ -557,13 +560,18 @@ export default function RollupBoardTab({
       setCloneFeatureIssuesByKey(cloneFeatures);
 
       const itemsByCloneKey = new Map<string, RollupBoardItem[]>();
+      const failuresByCloneKey = new Map<string, string[]>();
       for (const discipline of disciplines) {
         const keysForThisDiscipline = disciplineCloneKeys
           .filter((cloneKey) => cloneKey.split('-')[0].trim().toUpperCase()
             === discipline.featureProjectKey.trim().toUpperCase());
         if (keysForThisDiscipline.length === 0) continue;
 
-        const workIssues = await fetchDisciplineWork(discipline.storyProjectKeys, keysForThisDiscipline, scope);
+        const workOutcome = await fetchDisciplineWork(discipline.storyProjectKeys, keysForThisDiscipline, scope);
+        const workIssues = workOutcome.issues;
+        for (const cloneKey of keysForThisDiscipline) {
+          if (workOutcome.failures.length > 0) failuresByCloneKey.set(cloneKey, workOutcome.failures);
+        }
         // A discipline with no work yet still gets a band, because "QE has not started" is a fact
         // worth showing rather than an absence to hide.
         for (const cloneKey of keysForThisDiscipline) itemsByCloneKey.set(cloneKey, []);
@@ -604,7 +612,10 @@ export default function RollupBoardTab({
           itemsByCloneKey.set(cloneKey, [...(itemsByCloneKey.get(cloneKey) ?? []), item]);
         }
       }
-      if (isMounted) setDisciplineItemsByCloneKey(itemsByCloneKey);
+      if (isMounted) {
+        setDisciplineItemsByCloneKey(itemsByCloneKey);
+        setDisciplineFailuresByCloneKey(failuresByCloneKey);
+      }
     })();
 
     return () => { isMounted = false; };
@@ -1105,6 +1116,7 @@ export default function RollupBoardTab({
         classifications,
         cloneFeatureIssuesByKey,
         itemsByCloneFeatureKey: disciplineItemsByCloneKey,
+        lookupFailuresByCloneFeatureKey: disciplineFailuresByCloneKey,
         columns: visibleColumns,
         filters,
         preferences,
@@ -1113,7 +1125,7 @@ export default function RollupBoardTab({
       if (subLanes.length > 0) byFeatureKey[featureKey] = subLanes;
     }
     return byFeatureKey;
-  }, [cloneFamilies, cloneFeatureIssuesByKey, disciplineItemsByCloneKey, visibleColumns, filters, preferences, featureScope.disciplineProjects]);
+  }, [cloneFamilies, cloneFeatureIssuesByKey, disciplineItemsByCloneKey, disciplineFailuresByCloneKey, visibleColumns, filters, preferences, featureScope.disciplineProjects]);
 
   /** Dev and whole-Feature progress, per lane. Absent for a Feature with no clones. */
   const familyProgressByFeatureKey = useMemo(() => {

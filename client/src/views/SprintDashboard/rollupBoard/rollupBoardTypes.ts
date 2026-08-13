@@ -354,6 +354,13 @@ export interface SubLane {
   isCollapsed: boolean;
   matchedItemCount: number;
   totalItemCount: number;
+  /**
+   * Linkages Jira refused to answer about, if any.
+   *
+   * An empty band means one of two very different things — this discipline has no work, or the board
+   * could not ask — and reporting only the first is how a rejected query passed for an absence.
+   */
+  lookupFailures: string[];
 }
 
 /**

@@ -34,6 +34,11 @@ export function describeSubLaneSummary(subLane: SubLaneModel): string {
   if (subLane.cloneFeatureIssue === null) {
     return `${subLane.discipline.name}'s copy could not be read — its work is missing from this Feature.`;
   }
+  // A refused query is not an empty answer, and must never be reported as one.
+  if (subLane.lookupFailures.length > 0) {
+    return `Jira would not answer about ${subLane.cloneFeatureKey}: ${subLane.lookupFailures.join('; ')}`;
+  }
+
   if (subLane.totalItemCount === 0) {
     // Says what was actually looked for. "Has not broken its work down" is only ONE explanation for
     // an empty band — the other is that this discipline links its work by a field nobody checked, and

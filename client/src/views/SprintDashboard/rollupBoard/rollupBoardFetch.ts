@@ -614,42 +614,75 @@ export async function fetchCloneFeatures(
  * project found none of them at all. Anything linked to a discipline's clone IS that discipline's
  * work, whichever project it was raised in.
  */
+export interface DisciplineWorkOutcome {
+  issues: JiraIssue[];
+  /**
+   * Why a linkage could not be asked about, if any could not.
+   *
+   * Reported rather than swallowed. Returning an empty array for a REJECTED query is the same lie as
+   * "this discipline has not broken its work down" — it turns a fixable error into an absence, and
+   * that is precisely how the QE sub-lane sat empty across three releases with nobody able to see why.
+   */
+  failures: string[];
+}
+
+/**
+ * Reads one discipline's work — the issues rolling up to their cloned Features.
+ *
+ * Each linkage is asked about SEPARATELY, and that is the whole point. Combining them into one
+ * `A OR B OR C` looked tidier, but a single unknown field id makes Jira reject the WHOLE query, so one
+ * bad clause silently zeroed every discipline on the board. Asked one at a time, an unknown field
+ * costs only its own clause and says so.
+ *
+ * A project list only narrows further and is normally empty: a discipline's work spans whatever
+ * projects it spans, and anything linked to their clone is theirs wherever it was raised.
+ */
 export async function fetchDisciplineWork(
   storyProjectKeys: readonly string[],
   cloneFeatureKeys: readonly string[],
   scope: RollupBoardScope,
-): Promise<JiraIssue[]> {
-  if (cloneFeatureKeys.length === 0 || !scope.featureLinkFieldId) return [];
+): Promise<DisciplineWorkOutcome> {
+  if (cloneFeatureKeys.length === 0 || !scope.featureLinkFieldId) return { issues: [], failures: [] };
 
   const namedProjects = (storyProjectKeys ?? []).map((key) => key.trim()).filter((key) => key !== '');
   const projectClause = namedProjects.length === 0
     ? ''
     : `project in (${namedProjects.map((key) => `"${key}"`).join(', ')}) AND `;
 
-  const chunkResults = await Promise.all(
-    chunkList([...new Set(cloneFeatureKeys)], FEATURE_KEY_CHUNK_SIZE).map((keyChunk) => {
-      const keyList = keyChunk.join(', ');
-      // Three ways an issue can hang off a Feature on this instance, and a discipline does not have
-      // to use the same one the dev team does. Asking only about the Feature Link found nothing for
-      // QE, whose INTTEST work attaches through the portfolio hierarchy instead. Any of the three
-      // counts, because the question is "does this belong to that Feature", not "how was it wired".
-      const linkageClause = [
-        `"${scope.featureLinkFieldId}" in (${keyList})`,
-        `"${PARENT_LINK_FIELD_ID}" in (${keyList})`,
-        `parent in (${keyList})`,
-      ].join(' OR ');
+  // Three ways an issue can hang off a Feature. A discipline does not have to wire it the way the dev
+  // team does, so all three are asked — but independently, so one failing cannot silence the others.
+  const linkages = [
+    { label: 'Feature Link', buildClause: (keyList: string) => `"${scope.featureLinkFieldId}" in (${keyList})` },
+    { label: 'Parent Link', buildClause: (keyList: string) => `"${PARENT_LINK_FIELD_ID}" in (${keyList})` },
+    { label: 'sub-task parent', buildClause: (keyList: string) => `parent in (${keyList})` },
+  ];
 
-      return jiraGet<JiraSearchResponse>(buildSearchPath(
-        `${projectClause}(${linkageClause})`,
-        buildFieldList(scope, [PARENT_LINK_FIELD_ID]),
-      )).catch(() => ({ issues: [] as JiraIssue[] }));
-    }),
-  );
-
-  // One issue can satisfy two clauses, and each chunk is a separate read.
   const issuesByKey = new Map<string, JiraIssue>();
-  for (const chunkResult of chunkResults) {
-    for (const issue of chunkResult.issues ?? []) issuesByKey.set(issue.key, issue);
+  const failures: string[] = [];
+
+  for (const linkage of linkages) {
+    const chunkOutcomes = await Promise.all(
+      chunkList([...new Set(cloneFeatureKeys)], FEATURE_KEY_CHUNK_SIZE).map(async (keyChunk) => {
+        try {
+          const response = await jiraGet<JiraSearchResponse>(buildSearchPath(
+            `${projectClause}${linkage.buildClause(keyChunk.join(', '))}`,
+            buildFieldList(scope, [PARENT_LINK_FIELD_ID]),
+          ));
+          return { issues: response.issues ?? [], failure: null as string | null };
+        } catch (readError: unknown) {
+          return { issues: [] as JiraIssue[], failure: String(readError) };
+        }
+      }),
+    );
+
+    const firstFailure = chunkOutcomes.find((outcome) => outcome.failure !== null)?.failure;
+    // Named once per linkage, not once per chunk — the same rejection repeated is one problem.
+    if (firstFailure) failures.push(`${linkage.label}: ${firstFailure}`);
+    // One issue can satisfy two linkages, and each chunk is a separate read.
+    for (const outcome of chunkOutcomes) {
+      for (const issue of outcome.issues) issuesByKey.set(issue.key, issue);
+    }
   }
-  return [...issuesByKey.values()];
+
+  return { issues: [...issuesByKey.values()], failures };
 }
