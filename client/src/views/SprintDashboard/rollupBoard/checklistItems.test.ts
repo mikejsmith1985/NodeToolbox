@@ -210,3 +210,29 @@ describe('listChecklistFieldIds', () => {
     expect(fieldIds).toEqual(['customfield_10600', 'customfield_10601', 'customfield_10252']);
   });
 });
+
+describe('an empty Smart Checklist', () => {
+  // Straight off a real card in GH #363: the app stores an empty checklist as its own object graph
+  // with nothing in it. Nothing here says "Item(" or "value=", so the dump reader used to decline it
+  // and the markdown reader turned the line of Java into a checklist item.
+  const EMPTY_DUMP = ['Checklist(id=84509, issueId=302462, _items=[])'];
+
+  it('is recognised as a checklist, not as one item of prose', () => {
+    expect(parseChecklistItems(EMPTY_DUMP)).toEqual([]);
+  });
+
+  it('reports no progress at all rather than "0 of 1"', () => {
+    expect(summarizeChecklist(parseChecklistItems(EMPTY_DUMP))).toBeNull();
+  });
+
+  it('is not chosen as the field to read when another field holds real items', () => {
+    expect(chooseChecklistFieldByValue(['customfield_10600', 'customfield_10252'], {
+      customfield_10600: EMPTY_DUMP,
+      customfield_10252: '- [ ] a real item',
+    })).toBe('customfield_10252');
+  });
+
+  it('still reads a checklist that has items, so the wider match costs nothing', () => {
+    expect(parseChecklistItems(SMART_CHECKLIST_DUMP)).toHaveLength(1);
+  });
+});

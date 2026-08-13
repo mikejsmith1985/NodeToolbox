@@ -164,6 +164,48 @@ async function fetchSubtasksForParents(
   return chunkResults.flatMap((chunkResult) => chunkResult.issues ?? []);
 }
 
+/**
+ * Reads every issue that points at one of these Features, whatever scope it is in.
+ *
+ * The board is otherwise built bottom-up: it takes the work the dashboard has scoped and finds the
+ * Feature each piece rolls up to. That finds a Feature's children only when the children are already
+ * in scope — and a child with no PI of its own never is. On a real Feature that meant two closed
+ * Risks carrying the PI appeared while an open Story carrying none did not, so the lane read
+ * "100%, 2 of 2" with an open Story sitting under it in Jira. A completion figure that omits the
+ * unfinished work is the exact failure this board exists to prevent.
+ *
+ * So once the Features are known they are asked the question directly. The query is bounded by the
+ * Feature keys already on the board, so it cannot wander: it can only return work belonging to a
+ * lane the board is already drawing.
+ *
+ * A failed chunk is recorded rather than thrown — the same rule as every other sweep here.
+ */
+async function fetchFeatureChildren(
+  featureKeys: readonly string[],
+  scope: RollupBoardScope,
+  failures: LoadFailure[],
+): Promise<JiraIssue[]> {
+  if (featureKeys.length === 0 || String(scope.featureLinkFieldId ?? '') === '') return [];
+
+  const fieldList = buildFieldList(scope);
+  const featureLinkReference = buildJqlFieldReference(scope.featureLinkFieldId);
+  const chunkResults = await Promise.all(
+    chunkList(featureKeys, FEATURE_KEY_CHUNK_SIZE).map((featureKeyChunk) =>
+      jiraGet<JiraSearchResponse>(
+        buildSearchPath(`${featureLinkReference} in (${featureKeyChunk.join(',')})`, fieldList),
+      ).catch((error: unknown) => {
+        failures.push({
+          stage: 'feature-children',
+          detail: `The work under ${featureKeyChunk.length} Feature(s) could not be read: ${String(error)}`,
+        });
+        return { issues: [] as JiraIssue[] };
+      }),
+    ),
+  );
+
+  return chunkResults.flatMap((chunkResult) => chunkResult.issues ?? []);
+}
+
 /** Reads the Features the board's work rolls up to, by key, because they live in other projects. */
 async function fetchFeaturesByKeys(
   featureKeys: readonly string[],
@@ -377,6 +419,25 @@ export async function fetchRollupBoardIssues(
     new Set(allLoadedIssues.map((issue) => issue.key)),
   );
   const featureIssues = await fetchFeaturesByKeys(referencedFeatureKeys, scope, failures);
+
+  // ── Completing each Feature from the top ──
+  //
+  // Everything above found work first and its Feature second, which can only ever find the children
+  // that were already in scope. Now that the Features are known, they are asked directly for their
+  // own work, so a child the scope excluded — typically one with no PI of its own — still reaches the
+  // lane it belongs to. Without this a Feature's percentage counts only the children that happened to
+  // carry the scope's field, which is how one read 100% complete with an open Story underneath.
+  const loadedIssueKeys = new Set(allLoadedIssues.map((issue) => issue.key));
+  const featureChildIssues = (await fetchFeatureChildren([...featureIssues.keys()], scope, failures))
+    .filter((childIssue) => !loadedIssueKeys.has(childIssue.key));
+  boardIssues.push(...featureChildIssues);
+
+  // Their sub-tasks too, or a Story recovered here would arrive looking like it has no breakdown.
+  const recoveredSubtaskIssues = featureChildIssues.length > 0
+    ? (await fetchSubtasksForParents(featureChildIssues.map((issue) => issue.key), scope, failures))
+      .filter((subtaskIssue) => !loadedIssueKeys.has(subtaskIssue.key))
+    : [];
+  subtaskIssues.push(...recoveredSubtaskIssues);
 
   // ── One more hop ──
   //

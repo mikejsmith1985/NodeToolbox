@@ -60,7 +60,7 @@ export interface RollupBoardScope {
 
 /** Which retrieval stage failed, and what was lost, so the board can say so instead of looking short. */
 export interface LoadFailure {
-  stage: 'board' | 'subtasks' | 'features';
+  stage: 'board' | 'subtasks' | 'features' | 'feature-children';
   detail: string;
 }
 

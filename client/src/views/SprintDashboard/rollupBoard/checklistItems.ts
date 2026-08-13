@@ -114,10 +114,18 @@ function readDumpItemState(itemBlock: string): ChecklistItemState {
   return statusState === 'CHECKED' ? 'done' : 'open';
 }
 
-/** True when a value looks like the Smart Checklist app's object dump rather than checklist text. */
+/**
+ * True when a value looks like the Smart Checklist app's object dump rather than checklist text.
+ *
+ * An EMPTY checklist is the case this originally missed. The app stores one as
+ * `Checklist(id=84509, issueId=302462, _items=[])` — no `Item(` and no `value=` anywhere — so the
+ * dump fell through to the forgiving markdown reader, which turned that one line of Java into a
+ * single checklist item and made every card with an empty checklist read "Checklist 0/1".
+ */
 export function isSmartChecklistDump(rawValue: unknown): boolean {
   const candidateText = typeof rawValue === 'string' ? rawValue : '';
-  return candidateText.includes('Item(') && candidateText.includes('value=');
+  if (candidateText.includes('Item(') && candidateText.includes('value=')) return true;
+  return candidateText.includes('Checklist(') && candidateText.includes('_items=');
 }
 
 /** Reads the items out of the Smart Checklist app's own stored value. */

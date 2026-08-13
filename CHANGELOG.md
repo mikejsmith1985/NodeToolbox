@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Roll-Up Board — a Feature no longer reads 100% complete with an open Story underneath it.** On
+  DENP-1358 the lane showed *"100%, 2 of 2 by issue count"* and held only the two **closed Risks**.
+  The open Story ENFCT-1983 was missing, and the reason was that the Risks carry PI 26.4 while the
+  Story's PI is **Unassigned**.
+  The board was built bottom-up: it takes the work the dashboard has scoped and finds the Feature each
+  piece rolls up to. That can only ever find the children that were *already in scope*, so a child
+  with no PI of its own was invisible — and a completion figure that omits the unfinished work is the
+  exact failure this board exists to prevent.
+  Once the Features are known they are now asked for their own work directly, and anything the scope
+  left out is added to the lane it belongs to, along with its sub-tasks. The query is bounded by the
+  Feature keys already on the board, so it cannot wander — it can only return work belonging to a lane
+  already being drawn. A failed sweep is reported like every other, never silently shortening a lane.
+
+- **Roll-Up Board — an empty Smart Checklist no longer shows as "Checklist 0/1" with a line of Java in
+  it.** The app stores an empty checklist as `Checklist(id=…, _items=[])` — no `Item(` and no `value=`
+  anywhere — so it failed the dump test, fell through to the forgiving markdown reader, and that one
+  line became a checklist item. An empty checklist now reports nothing at all, which is the truth.
+
 ### Changed
 - **Roll-Up Board — the column headers now pin at the very top, and a lane shows far more cards.**
   Fixing the headers so they stopped scrolling away made the board's real problem visible: the

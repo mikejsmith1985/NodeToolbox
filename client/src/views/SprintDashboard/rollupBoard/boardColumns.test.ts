@@ -234,3 +234,30 @@ describe('a column claims several Jira states, like a Jira board column', () => 
     expect(renderedColumn.mappings).toHaveLength(2);
   });
 });
+
+describe('one column claiming two DIFFERENT statuses', () => {
+  /** The GH #363 ask: "Done" and "Accepted" should both land in the column labelled Accepted. */
+  const TWO_STATUS_VOCABULARY: BoardVocabulary = {
+    teamProfileId: 'team-a',
+    columns: [{
+      id: 'col-accepted',
+      name: 'Accepted',
+      order: 0,
+      mappings: [
+        { jiraStatusName: 'Accepted', subStatusValue: null },
+        { jiraStatusName: 'Done', subStatusValue: null },
+      ],
+    }],
+    updatedAt: '',
+    lastSyncedAt: null,
+  };
+
+  it('places an issue in either status into the one column', () => {
+    expect(resolveColumnIdForItem('Accepted', null, TWO_STATUS_VOCABULARY, true)).toBe('col-accepted');
+    expect(resolveColumnIdForItem('Done', null, TWO_STATUS_VOCABULARY, true)).toBe('col-accepted');
+  });
+
+  it('still sends a status nobody claimed to Unmapped, so the guarantee is unchanged', () => {
+    expect(resolveColumnIdForItem('Cancelled', null, TWO_STATUS_VOCABULARY, true)).toBe(UNMAPPED_COLUMN_ID);
+  });
+});

@@ -514,3 +514,76 @@ describe('fetchDisciplineWork', () => {
     expect((await fetchDisciplineWork([], ['QEINT-608'], SCOPE)).issues).toEqual([]);
   });
 });
+
+describe('fetchRollupBoardIssues — completing each Feature from the top', () => {
+  /**
+   * Reproduces the real board from GH #363: a Feature whose two closed Risks carry the PI and whose
+   * one OPEN Story does not. Bottom-up discovery finds only the Risks, so the lane reads 100%.
+   */
+  function mockFeatureWithAnOutOfScopeChild() {
+    mockJiraGet.mockImplementation((requestPath: string) => {
+      const decodedPath = decodeURIComponent(requestPath);
+
+      // The Feature's own children, asked for by the Feature Link field.
+      if (decodedPath.includes('cf[10108] in (DENP-1358)')) {
+        return Promise.resolve({
+          issues: [
+            buildIssue('ENFCT-1995', { customfield_10108: { key: 'DENP-1358' } }),
+            buildIssue('ENFCT-1983', { customfield_10108: { key: 'DENP-1358' } }),
+          ],
+        });
+      }
+      if (!isKeyInRequest(requestPath)) return Promise.resolve({ issues: [] });
+
+      return Promise.resolve({
+        issues: readRequestedKeys(requestPath).map((key) =>
+          buildIssue(key, key.startsWith('ENFCT') ? { customfield_10108: { key: 'DENP-1358' } } : {})),
+      });
+    });
+  }
+
+  it('recovers a Feature child the dashboard scope left out', async () => {
+    mockFeatureWithAnOutOfScopeChild();
+
+    // Only the Risk is in scope; the open Story carries no PI and so was never scoped.
+    const issueSet = await fetchRollupBoardIssues(SCOPE, ['ENFCT-1995']);
+
+    expect(issueSet.boardIssues.map((issue) => issue.key)).toContain('ENFCT-1983');
+  });
+
+  it('does not load the same issue twice when it was already in scope', async () => {
+    mockFeatureWithAnOutOfScopeChild();
+
+    const issueSet = await fetchRollupBoardIssues(SCOPE, ['ENFCT-1995']);
+    const keyCounts = issueSet.boardIssues.filter((issue) => issue.key === 'ENFCT-1995');
+
+    expect(keyCounts).toHaveLength(1);
+  });
+
+  it('asks nothing at all when no Feature was resolved, so an unlinked board costs no request', async () => {
+    mockKeyInEchoesRequest();
+
+    await fetchRollupBoardIssues(SCOPE, ['BOARD-1']);
+
+    const featureChildRequests = mockJiraGet.mock.calls
+      .filter(([requestPath]) => decodeURIComponent(String(requestPath)).includes('cf[10108] in ('));
+    expect(featureChildRequests).toHaveLength(0);
+  });
+
+  it('reports a failed sweep rather than quietly returning a shorter Feature', async () => {
+    mockJiraGet.mockImplementation((requestPath: string) => {
+      const decodedPath = decodeURIComponent(requestPath);
+      if (decodedPath.includes('cf[10108] in (')) return Promise.reject(new Error('field not visible'));
+      if (!isKeyInRequest(requestPath)) return Promise.resolve({ issues: [] });
+      return Promise.resolve({
+        issues: readRequestedKeys(requestPath).map((key) =>
+          buildIssue(key, key.startsWith('ENFCT') ? { customfield_10108: { key: 'DENP-1358' } } : {})),
+      });
+    });
+
+    const issueSet = await fetchRollupBoardIssues(SCOPE, ['ENFCT-1995']);
+
+    expect(issueSet.load.failures.some((failure) => failure.stage === 'feature-children')).toBe(true);
+    expect(issueSet.load.isComplete).toBe(false);
+  });
+});
