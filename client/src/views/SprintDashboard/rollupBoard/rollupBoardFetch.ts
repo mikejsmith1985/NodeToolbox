@@ -600,20 +600,28 @@ export async function fetchCloneFeatures(
 /**
  * Reads one discipline's work — the issues rolling up to their cloned Features.
  *
- * Scoped by the discipline's own story project as well as the Feature Link, so a stray link from a
- * third project cannot pull somebody else's work into a band labelled QE.
+ * The Feature Link does the real work here, exactly as it does for the dev team's own stories. A
+ * project list only narrows further, and is usually left empty: QE's children under QEINT-608 live in
+ * ENFCT and INTTEST — two projects, neither of them QE's own Feature project — so scoping to one
+ * project found none of them at all. Anything linked to a discipline's clone IS that discipline's
+ * work, whichever project it was raised in.
  */
 export async function fetchDisciplineWork(
-  storyProjectKey: string,
+  storyProjectKeys: readonly string[],
   cloneFeatureKeys: readonly string[],
   scope: RollupBoardScope,
 ): Promise<JiraIssue[]> {
-  if (!storyProjectKey || cloneFeatureKeys.length === 0 || !scope.featureLinkFieldId) return [];
+  if (cloneFeatureKeys.length === 0 || !scope.featureLinkFieldId) return [];
+
+  const namedProjects = (storyProjectKeys ?? []).map((key) => key.trim()).filter((key) => key !== '');
+  const projectClause = namedProjects.length === 0
+    ? ''
+    : `project in (${namedProjects.map((key) => `"${key}"`).join(', ')}) AND `;
 
   const chunkResults = await Promise.all(
     chunkList([...new Set(cloneFeatureKeys)], FEATURE_KEY_CHUNK_SIZE).map((keyChunk) =>
       jiraGet<JiraSearchResponse>(buildSearchPath(
-        `project = "${storyProjectKey}" AND "${scope.featureLinkFieldId}" in (${keyChunk.join(', ')})`,
+        `${projectClause}"${scope.featureLinkFieldId}" in (${keyChunk.join(', ')})`,
         buildFieldList(scope),
       )).catch(() => ({ issues: [] as JiraIssue[] })),
     ),

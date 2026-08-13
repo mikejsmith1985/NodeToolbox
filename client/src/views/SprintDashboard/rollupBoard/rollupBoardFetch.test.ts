@@ -11,7 +11,7 @@ const { mockJiraGet } = vi.hoisted(() => ({ mockJiraGet: vi.fn() }));
 
 vi.mock('../../../services/jiraApi.ts', () => ({ jiraGet: mockJiraGet }));
 
-import { fetchRollupBoardIssues, fetchSprintPiReconciliation } from './rollupBoardFetch.ts';
+import { fetchDisciplineWork, fetchRollupBoardIssues, fetchSprintPiReconciliation } from './rollupBoardFetch.ts';
 import type { RollupBoardScope } from './rollupBoardTypes.ts';
 
 const SCOPE: RollupBoardScope = {
@@ -404,5 +404,55 @@ describe('reading the Feature at the end of a defect → QA issue → Feature ch
     const keyInRequests = mockJiraGet.mock.calls
       .map((call) => String(call[0])).filter(isKeyInRequest);
     expect(keyInRequests.length).toBeLessThanOrEqual(4);
+  });
+});
+
+// ── A discipline's work is found by the Feature Link, not by its project ──
+//
+// The defect these cover: QEINT-608's children live in ENFCT and INTTEST — two projects, neither of
+// them QE's own Feature project. Scoping the read to a single story project found none of them, so
+// the QE sub-lane rendered correctly and reported "QE has not broken its work down yet" while the
+// Feature plainly had four children.
+describe('fetchDisciplineWork', () => {
+  it('asks for everything linked to the clone when no project is named', async () => {
+    mockJiraGet.mockResolvedValue({ issues: [buildIssue('INTTEST-4265')] });
+
+    const issues = await fetchDisciplineWork([], ['QEINT-608'], SCOPE);
+
+    const requestedJql = decodeURIComponent(String(mockJiraGet.mock.calls[0][0]));
+    expect(requestedJql).not.toContain('project in');
+    expect(requestedJql).toContain('customfield_10108" in (QEINT-608)');
+    expect(issues.map((issue) => issue.key)).toEqual(['INTTEST-4265']);
+  });
+
+  it('narrows to several projects at once when a team names them', async () => {
+    mockJiraGet.mockResolvedValue({ issues: [] });
+
+    await fetchDisciplineWork(['ENFCT', 'INTTEST'], ['QEINT-608'], SCOPE);
+
+    // One clause covering both, not one project scoped and the rest lost.
+    expect(decodeURIComponent(String(mockJiraGet.mock.calls[0][0])))
+      .toContain('project in ("ENFCT", "INTTEST")');
+  });
+
+  it('ignores blank entries a half-typed project list leaves behind', async () => {
+    mockJiraGet.mockResolvedValue({ issues: [] });
+
+    await fetchDisciplineWork(['ENFCT', '  ', ''], ['QEINT-608'], SCOPE);
+
+    expect(decodeURIComponent(String(mockJiraGet.mock.calls[0][0]))).toContain('project in ("ENFCT")');
+  });
+
+  it('asks Jira nothing when there are no clones to ask about', async () => {
+    mockJiraGet.mockResolvedValue({ issues: [] });
+
+    expect(await fetchDisciplineWork(['ENFCT'], [], SCOPE)).toEqual([]);
+    expect(mockJiraGet).not.toHaveBeenCalled();
+  });
+
+  it('returns nothing rather than throwing when Jira refuses the read', async () => {
+    mockJiraGet.mockRejectedValue(new Error('403'));
+
+    expect(await fetchDisciplineWork([], ['QEINT-608'], SCOPE)).toEqual([]);
   });
 });

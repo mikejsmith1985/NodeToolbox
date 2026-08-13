@@ -563,7 +563,7 @@ export default function RollupBoardTab({
             === discipline.featureProjectKey.trim().toUpperCase());
         if (keysForThisDiscipline.length === 0) continue;
 
-        const workIssues = await fetchDisciplineWork(discipline.storyProjectKey, keysForThisDiscipline, scope);
+        const workIssues = await fetchDisciplineWork(discipline.storyProjectKeys, keysForThisDiscipline, scope);
         // A discipline with no work yet still gets a band, because "QE has not started" is a fact
         // worth showing rather than an absence to hide.
         for (const cloneKey of keysForThisDiscipline) itemsByCloneKey.set(cloneKey, []);

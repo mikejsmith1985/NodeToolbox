@@ -19,7 +19,8 @@ interface StoredTeamScope {
   carryOverSource?: 'none' | 'pi-review' | 'unfinished-in-pi';
   teamFeatureLabel?: string;
   excludedFeatureLabels?: string[];
-  disciplineProjects?: DisciplineProjects[];
+  /** `storyProjectKey` is the pre-list shape, still read so an early configuration survives. */
+  disciplineProjects?: (Partial<DisciplineProjects> & { storyProjectKey?: string; name: string; featureProjectKey: string })[];
 }
 
 /** Reads every team's stored scope; unreadable storage counts as nothing stored. */
@@ -60,7 +61,14 @@ export function loadTeamFeatureScope(teamProfileId: string): FeatureScopeSetting
     excludedFeatureLabels: storedScope?.excludedFeatureLabels ?? [],
     // Empty means the whole sub-lane feature is off and every lane renders exactly as it did before
     // it existed — which is what makes this opt-in rather than a change nobody asked for.
-    disciplineProjects: storedScope?.disciplineProjects ?? [],
+    // Reads a discipline saved before the story projects became a list. One key becomes a
+    // one-entry list rather than being discarded, so nobody has to reconfigure.
+    disciplineProjects: (storedScope?.disciplineProjects ?? []).map((discipline) => ({
+      name: discipline.name,
+      featureProjectKey: discipline.featureProjectKey,
+      storyProjectKeys: discipline.storyProjectKeys
+        ?? (discipline.storyProjectKey ? [discipline.storyProjectKey] : []),
+    })),
   };
 }
 
