@@ -41,7 +41,13 @@ import {
 } from '../featureReviewFixes.ts';
 import { computeBoardScrollerMaxHeight, readDocumentTop } from './boardViewportFit.ts';
 import { buildRenderedColumns, resolveColumnIdForItem } from './boardColumns.ts';
-import { classifyClone, describeUnconfiguredClones, readCloneAttribution, readCloneLinks } from './cloneFamily.ts';
+import {
+  classifyClone,
+  describeMissingSubLanes,
+  describeUnconfiguredClones,
+  readCloneAttribution,
+  readCloneLinks,
+} from './cloneFamily.ts';
 import { fetchCloneFeatures, fetchDisciplineWork, PARENT_LINK_FIELD_ID } from './rollupBoardFetch.ts';
 import { buildSubLanes, readSubLaneItemLists } from './subLaneLayout.ts';
 import { computeFamilyProgress } from './familyProgress.ts';
@@ -1190,6 +1196,25 @@ export default function RollupBoardTab({
     return byFeatureKey;
   }, [cloneFamilies, cloneFeatureIssuesByKey, disciplineItemsByCloneKey, disciplineFailuresByCloneKey, visibleColumns, filters, preferences, featureScope.disciplineProjects]);
 
+  /**
+   * Why no discipline bands appeared.
+   *
+   * Kept apart from the other notices because it has to COUNT the bands, and so cannot be worked out
+   * until they have been built. Four different causes used to look identical on screen — nothing at
+   * all — which made "QE has not broken its work down" indistinguishable from "the board was never
+   * told what QE's project is".
+   */
+  const subLaneNotices = useMemo<BoardNotice[]>(() => {
+    const summary = describeMissingSubLanes({
+      disciplineCount: featureScope.disciplineProjects.length,
+      featuresRead: loadState.masterCards.filter((masterCard) =>
+        !masterCard.isSynthetic && masterCard.featureIssue !== null).length,
+      classifications: Object.values(cloneFamilies).flat(),
+      subLaneCount: Object.values(subLanesByFeatureKey).flat().length,
+    });
+    return summary === '' ? [] : [{ id: 'missing-sub-lanes', tone: 'info', summary }];
+  }, [featureScope.disciplineProjects, loadState.masterCards, cloneFamilies, subLanesByFeatureKey]);
+
   /** Dev and whole-Feature progress, per lane. Absent for a Feature with no clones. */
   const familyProgressByFeatureKey = useMemo(() => {
     const byFeatureKey: Record<string, FamilyProgress> = {};
@@ -1663,7 +1688,7 @@ export default function RollupBoardTab({
       {/* Everything else the board wants to say, in ONE collapsible box. Nine stacked boxes pushed the
           board itself off the screen, and buried whatever was rendered among them — which is how the
           add-work dialog came to look like a button that did nothing. */}
-      <BoardNotices notices={boardNotices} />
+      <BoardNotices notices={[...boardNotices, ...subLaneNotices]} />
 
       {/* Below the notices, never among them, so it is always the first thing under the header. */}
       {addWorkFeature !== null && (

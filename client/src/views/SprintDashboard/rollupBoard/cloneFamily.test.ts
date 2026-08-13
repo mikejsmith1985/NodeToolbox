@@ -12,6 +12,7 @@ import { describe, expect, it } from 'vitest';
 import {
   classifyClone,
   readCloneAttribution,
+  describeMissingSubLanes,
   describeUnconfiguredClones,
   findCloneByFeatureName,
   readCloneLinks,
@@ -221,5 +222,78 @@ describe('readCloneAttribution', () => {
 
   it('claims nothing for an issue with no linkage at all', () => {
     expect(readCloneAttribution({ fields: {} }, CLONES, FIELDS)).toBeNull();
+  });
+});
+
+describe('describeMissingSubLanes — why the board is drawing no discipline bands', () => {
+  const QE_DISCIPLINE: DisciplineProjects = {
+    name: 'QE', featureProjectKey: 'QEINT', storyProjectKeys: ['INTTEST'],
+  };
+
+  it('says nothing at all once bands are being drawn', () => {
+    expect(describeMissingSubLanes({
+      disciplineCount: 1, featuresRead: 4, classifications: [], subLaneCount: 2,
+    })).toBe('');
+  });
+
+  it('names the missing configuration, which is the commonest cause by far', () => {
+    const notice = describeMissingSubLanes({
+      disciplineCount: 0, featuresRead: 4, classifications: [], subLaneCount: 0,
+    });
+
+    expect(notice).toContain('no disciplines configured');
+    expect(notice).toContain('Board setup');
+  });
+
+  it('does not blame configuration when no Feature could be read in the first place', () => {
+    // Nothing can be checked for clones if nothing was read — saying "configure a discipline" there
+    // would send someone to fix a setting that is already correct.
+    const notice = describeMissingSubLanes({
+      disciplineCount: 1, featuresRead: 0, classifications: [], subLaneCount: 0,
+    });
+
+    expect(notice).toContain('no Feature');
+    expect(notice).not.toContain('Board setup');
+  });
+
+  it('says the Features carry no clone link at all, naming how many were checked', () => {
+    const notice = describeMissingSubLanes({
+      disciplineCount: 1, featuresRead: 12, classifications: [], subLaneCount: 0,
+    });
+
+    expect(notice).toContain('12');
+    expect(notice).toContain('Cloners');
+  });
+
+  it('distinguishes clones that exist but are all peers or in unknown projects', () => {
+    const notice = describeMissingSubLanes({
+      disciplineCount: 1,
+      featuresRead: 12,
+      classifications: [
+        { kind: 'peer', cloneIssueKey: 'DENP-1359' },
+        { kind: 'unconfigured', cloneIssueKey: 'UEFP-1580', projectKey: 'UEFP' },
+      ],
+      subLaneCount: 0,
+    });
+
+    expect(notice).toContain('2');
+    expect(notice).toContain('UEFP');
+    expect(notice).not.toContain('Cloners link');
+  });
+
+  it('reports the case where discipline clones were found but no band was drawn', () => {
+    // The genuinely surprising one: the link was right, the project was configured, and a band still
+    // did not appear — so the fault is downstream and must not be reported as a missing link.
+    const notice = describeMissingSubLanes({
+      disciplineCount: 1,
+      featuresRead: 12,
+      classifications: [{
+        kind: 'discipline', discipline: QE_DISCIPLINE, cloneIssueKey: 'QEINT-610', evidence: 'cloners-link',
+      }],
+      subLaneCount: 0,
+    });
+
+    expect(notice).toContain('QEINT-610');
+    expect(notice).toContain('could not be read');
   });
 });

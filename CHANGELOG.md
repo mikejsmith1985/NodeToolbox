@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Roll-Up Board — when no discipline bands appear, the board now says why.** Four different
+  situations produce zero sub-lanes and every one of them looked identical on screen: nothing at all.
+  "QE has not broken its work down yet" and "the board was never told what QE's project is" are very
+  different problems, and there was no way to tell them apart without reading REST responses by hand.
+  The board now names which of the four it is, in order of blame so nobody is sent to fix a setting
+  when the cause is upstream of it: **no Feature could be read**; **no disciplines are configured**
+  (with where to add one); **none of the N Features carries a Cloners link**, which is how a
+  discipline's copy is found; or **clones exist but none sits in a configured discipline project**,
+  naming the projects they are actually in. The fourth case — discipline clones found but no band
+  drawn — names the clone keys and the two usual causes, because that one means the fault is
+  downstream of the link and must not be reported as a missing link.
+
 ### Changed
 - **Roll-Up Board — a swimlane header is now a progress bar and labelled tiles instead of a sentence.**
   Every vital sign was already there, run together in the same small grey type: key, summary, status,

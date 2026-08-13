@@ -187,6 +187,71 @@ export function describeUnconfiguredClones(classifications: readonly CloneClassi
     + ' team\'s copy.';
 }
 
+/** What the board knows about its own attempt to find discipline bands. */
+export interface MissingSubLaneInput {
+  /** How many disciplines the team has configured in Board setup. */
+  disciplineCount: number;
+  /** How many Features the board managed to read, and could therefore check for clones. */
+  featuresRead: number;
+  /** Every clone found across every Feature, already classified. */
+  classifications: readonly CloneClassification[];
+  /** How many bands were actually drawn. Anything above zero means there is nothing to explain. */
+  subLaneCount: number;
+}
+
+/**
+ * Why no discipline bands appeared.
+ *
+ * Four different situations produce an empty result and, until now, all four looked identical from
+ * the board: nothing. That is the failure this board exists to end — an absence presented as a fact.
+ * "QE has not broken its work down yet" and "you never told the board what QE's project is" are very
+ * different problems, and on screen they were indistinguishable.
+ *
+ * The order below is the order of blame: never send someone to fix a setting when the real cause is
+ * upstream of it. Returns an empty string when bands are being drawn, because a board that is working
+ * should say nothing at all.
+ */
+export function describeMissingSubLanes({
+  disciplineCount,
+  featuresRead,
+  classifications,
+  subLaneCount,
+}: MissingSubLaneInput): string {
+  if (subLaneCount > 0) return '';
+
+  if (featuresRead === 0) {
+    return 'No discipline bands: no Feature on this board could be read, so none of them could be'
+      + ' checked for another discipline\'s copy.';
+  }
+
+  if (disciplineCount === 0) {
+    return 'No discipline bands: this board has no disciplines configured, so it is not looking for'
+      + ' anybody\'s copy of these Features. Add QE\'s or BT\'s Feature project under Board setup.';
+  }
+
+  const clones = classifications ?? [];
+  if (clones.length === 0) {
+    return `No discipline bands: none of the ${featuresRead} Features on this board carries a Cloners`
+      + ' link, which is how another discipline\'s copy is found. A discipline that has not cloned the'
+      + ' Feature cannot be located automatically.';
+  }
+
+  const disciplineClones = clones.filter((classification) => classification.kind === 'discipline');
+  if (disciplineClones.length === 0) {
+    const otherProjectKeys = [...new Set(clones.map((clone) => readProjectKey(clone.cloneIssueKey)))];
+    return `No discipline bands: ${clones.length} clone(s) were found, but none sits in a configured`
+      + ` discipline project — they are in ${otherProjectKeys.join(', ')}.`
+      + ' A clone in the dev team\'s own project is a peer Feature, not a discipline.';
+  }
+
+  // The genuinely surprising case: the links were right and the projects configured, and a band still
+  // did not appear. The fault is downstream, so it must not be reported as a missing link.
+  const cloneKeys = disciplineClones.map((clone) => clone.cloneIssueKey);
+  return `No discipline bands, although ${cloneKeys.length} discipline clone(s) were found`
+    + ` (${cloneKeys.join(', ')}). Their Features could not be read — most often the account cannot`
+    + ' see that project, or the project key in Board setup does not match the clone\'s.';
+}
+
 /**
  * Which clone Feature an issue belongs to, by whichever field actually carries the link.
  *
