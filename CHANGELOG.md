@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Roll-Up Board — the column headers now pin at the very top, and a lane shows far more cards.**
+  Fixing the headers so they stopped scrolling away made the board's real problem visible: the
+  toolbar, the notices box and the quick-filter bar sat *above* the scroll region, so they cost
+  roughly 200px of every screen for as long as the board was open. At the larger text sizes that left
+  room for about three cards in a lane.
+  All three now live **inside** the scroll region, above the column headers. They scroll away as soon
+  as you move down the board and the headers take their place at the very top — where the stop point
+  should have been. They are pinned horizontally, so scrolling sideways through the columns no longer
+  drags the toolbar off with it.
+  The swimlane header was compacted at the same time: each tile puts its caption **beside** its value
+  rather than above it, which halves the header's height for exactly the same information.
+
 ### Added
 - **Roll-Up Board — when no discipline bands appear, the board now says why.** Four different
   situations produce zero sub-lanes and every one of them looked identical on screen: nothing at all.

@@ -576,3 +576,21 @@ describe('RollupBoardTab — columns saved by an older version', () => {
     expect(screen.getByTestId('rollup-cell-PORTFOLIO-9-col-1').textContent).toContain('DEV-1');
   });
 });
+
+describe('RollupBoardTab — the board keeps its screen for the cards', () => {
+  it('puts the toolbar and filters INSIDE the scroll region, so they scroll away', async () => {
+    // The load-bearing structural fact. Above the scroller they cost ~200px of every screen for as
+    // long as the board was open, which at the larger text sizes left room for only three cards in a
+    // lane. Inside it they scroll away and the column headers take their place.
+    mockJiraResponses({ boardIssues: [buildIssue('DEV-1', 'PORTFOLIO-9')] });
+
+    const { container } = render(<RollupBoardTab boardId={42} scopedIssues={SCOPED_ISSUES} teamProfileId="team-a" />);
+    await waitFor(() => expect(screen.getByTestId('rollup-column-header-row')).toBeTruthy());
+
+    const scroller = screen.getByTestId('rollup-column-header-row').parentElement;
+    expect(scroller).toBeTruthy();
+    expect(scroller?.querySelector('[data-testid="rollup-filter-bar"]')).toBeTruthy();
+    // And the chrome is not a second scroll region of its own.
+    expect(container.querySelectorAll('[data-testid="rollup-column-header-row"]').length).toBe(1);
+  });
+});

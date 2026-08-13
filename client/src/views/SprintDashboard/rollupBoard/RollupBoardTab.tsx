@@ -1614,6 +1614,19 @@ export default function RollupBoardTab({
 
   return (
     <div className={styles.boardShell}>
+      {/* The scroll region starts HERE, above the board's own toolbar, so that toolbar, the notices
+          and the filter bar all scroll away and give their height back to the cards. Previously they
+          sat above the scroller and permanently cost ~200px of a screen that at the larger text sizes
+          had none to spare — which is why a lane could only show three cards.
+
+          Everything inside that is not part of the column grid is pinned with `left: 0`, so scrolling
+          sideways through the columns does not drag the toolbar off the screen with it. */}
+      <div
+        className={styles.boardScroller}
+        ref={boardScrollerRef}
+        style={boardScrollerMaxHeightPx === null ? undefined : { maxHeight: `${boardScrollerMaxHeightPx}px` }}
+      >
+      <div className={styles.boardChrome}>
       <div className={styles.boardActions}>
         <button className={styles.actionButton} onClick={() => void loadBoard()} type="button">Refresh</button>
         <button
@@ -1801,14 +1814,8 @@ export default function RollupBoardTab({
       )}
 
       <QuickFilterBar allItems={loadState.allItems} filters={filters} onFiltersChange={setFilters} />
+      </div>
 
-      {/* The height is measured rather than guessed — see useBoardScrollerMaxHeight. Until the first
-          measurement lands the stylesheet's fallback applies, so the board is never zero-height. */}
-      <div
-        className={styles.boardScroller}
-        ref={boardScrollerRef}
-        style={boardScrollerMaxHeightPx === null ? undefined : { maxHeight: `${boardScrollerMaxHeightPx}px` }}
-      >
         <BoardColumnHeaderRow
           columnMinWidth={columnMinWidth}
           columns={layout.columns}

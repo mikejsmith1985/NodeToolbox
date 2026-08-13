@@ -81,6 +81,24 @@
   position: relative;
 }
 
+/* The board's own toolbar, notices and filter bar, INSIDE the scroll region so they scroll away and
+   give their height back to the cards.
+
+   `left: 0` pins them horizontally: they are as wide as the whole column grid, so without it they
+   would slide off the screen as soon as you scrolled sideways through the columns. `width: 0` with
+   `min-width: 100%` keeps the box the width of the SCROLLER rather than of the grid, so its contents
+   wrap against the window instead of against a board that may be twice as wide. */
+.boardChrome {
+  position: sticky;
+  left: 0;
+  width: 0;
+  min-width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  padding-bottom: var(--spacing-sm);
+}
+
 .columnHeaderRow {
   display: grid;
   /* NOTE: never `width: max-content` here. With `1fr` tracks that sizes each track to ITS OWN content,
@@ -179,12 +197,14 @@
 
 /* ── The swimlane's vital signs: a bar for the proportion, tiles for the quantities ── */
 
+/* Deliberately shallow. Every pixel spent on a lane's header is a pixel taken from the cards under
+   it, and at three cards visible per lane the header was costing more than it was worth. */
 .laneMetrics {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--spacing-md);
-  padding: var(--spacing-xs) var(--spacing-md) var(--spacing-sm);
+  gap: var(--spacing-xs) var(--spacing-md);
+  padding: 2px var(--spacing-md) var(--spacing-xs);
   background: var(--color-surface-1);
 }
 
@@ -250,15 +270,16 @@
   gap: var(--spacing-xs);
 }
 
+/* Caption BESIDE the value rather than above it: stacked, the five tiles doubled the header's height
+   for no extra information. */
 .laneTile {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: var(--spacing-xs) var(--spacing-sm);
+  align-items: baseline;
+  gap: 6px;
+  padding: 2px var(--spacing-xs);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   background: var(--color-card-bg);
-  min-width: 72px;
 }
 
 .laneTileLabel {
