@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Change Review — tell your own edits apart from ones made on your behalf.** An issue turned up
+  cancelled that nobody remembered cancelling. That question was previously unanswerable: the app
+  authenticates to Jira as you, so Jira's history credits every change to you either way, and looking
+  at the issue's history proves nothing in either direction.
+  Three pieces close that gap. A **local write record** now logs every Jira write the app makes —
+  when, which endpoint, which issue, which part of the app. It stays on your machine, is never sent
+  to Jira, and deliberately stores **no request bodies**: its job is attribution, not a second copy
+  of your issues. A short **marker** is appended to comments the app writes for you, so a change has
+  a visible trace on the issue itself. And a new admin-only **🔎 Change Review** tab weighs both
+  against the timing pattern across issues — several issues moved by one person within seconds is a
+  bulk operation, because nobody clicks that fast.
+  The panel reports what each verdict rests on and **refuses to overstate**: before the local record
+  begins, its silence proves nothing, so those changes are reported as *undetermined* rather than
+  *hand-made*. The tab appears only while Admin Access is unlocked, so it can be put away once it has
+  served its purpose.
+- **Comments the app writes no longer name any tooling.** Two Jira comment templates ended
+  "_This comment was posted automatically by NodeToolbox Sprint–Release Workflow._". They now carry
+  the short operator marker instead. Teammates reading the issue see a person's initials, not an
+  announcement that a separate system is operating on their board.
+
 ### Changed
 - **The SharePoint GitHub-email schedule now runs on the server — the Toolbox tab no longer has to be
   open.** The schedule used to live in the browser, because listing the library, downloading each
@@ -24,6 +45,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   double every pull, race the server's run mutex, and split one sweep across two log rows.
 
 ### Fixed
+- **An automatic move asked to complete an issue could cancel it instead.** When a rule named a
+  target status, the matcher tried the exact status name and then fell back to Jira's status
+  **category**, taking whichever transition Jira happened to list first. Jira files "Done", "Closed"
+  and "Cancelled" all under the **Done** category — so on a project with no status literally named
+  *Done*, a rule configured for "Done" could resolve to **Cancelled** and close an issue as abandoned
+  work. An exact status name still always wins; a category now resolves **only when exactly one
+  transition matches it**. When several end states share the category the move is refused and the
+  candidates are logged, because there is no safe way to guess which one was meant. Name the exact
+  status in the rule to remove the ambiguity.
+- **A parent story with no coding sub-tasks was moved without anything being verified.** The guard
+  that holds a parent until every coding sub-task is done was checking that *none were unfinished* —
+  which an empty list satisfies. The stories the automation had the least information about were
+  therefore exactly the ones it waved through. Absence of evidence now **holds** the story and says
+  why. A parent move also leaves a short signed note explaining the delivery fact behind it, so the
+  change is no longer an unexplained status jump in the issue's history.
 - **Roll-Up Board — a discipline's work is found however that discipline links it.** QE's INTTEST
   stories hang off `QEINT-608` through the portfolio **Parent Link**, not the Feature Link the dev team
   uses. The board asked only about the Feature Link, so the previous fix widened the *project* scope and

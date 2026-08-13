@@ -248,3 +248,63 @@ describe('postJiraCommentForEvent — parent-story actions', () => {
     expect(nock.pendingMocks()).toEqual([]);
   });
 });
+
+// ── Guard integrity: a parent with no coding sub-tasks ──
+//
+// The "every coding sub-task is done" check used to pass vacuously on a parent that had no coding
+// sub-tasks at all — an empty list contains nothing that is not-done — so the stories the automation
+// had the least information about were exactly the ones it moved without hesitation. Absence of
+// evidence must HOLD the story.
+
+describe('postJiraCommentForEvent — parent held when there is nothing to verify', () => {
+  it('REGRESSION: does not move a parent that has no coding sub-tasks', async () => {
+    nock(JIRA_BASE).post('/rest/api/2/issue/SUB-1/comment').reply(201, {});
+    mockSubtaskLookup();
+    mockParentSubtasks([
+      workingStub('SUB-3', '[SL] SL Test: story'),
+      doneStub('SUB-4', '[INT] Deploy to INT'),
+    ]);
+
+    const results = [];
+    await postJiraCommentForEvent('SUB-1', 'merged', 'pr_merged', 'owner/repo', {}, buildConfig(), {
+      parentActions: buildParentActions({ subStatusValue: '' }),
+      recordResult: (record) => results.push(record),
+    });
+
+    // No parent transition interceptors were registered, so any parent move would have thrown.
+    expect(nock.pendingMocks()).toEqual([]);
+    expect(results.some((record) => /no coding sub-tasks/i.test(record.message || ''))).toBe(true);
+  });
+
+  it('REGRESSION: does not move a parent whose sub-task list is empty', async () => {
+    nock(JIRA_BASE).post('/rest/api/2/issue/SUB-1/comment').reply(201, {});
+    mockSubtaskLookup();
+    mockParentSubtasks([]);
+
+    const results = [];
+    await postJiraCommentForEvent('SUB-1', 'merged', 'pr_merged', 'owner/repo', {}, buildConfig(), {
+      parentActions: buildParentActions({ subStatusValue: '' }),
+      recordResult: (record) => results.push(record),
+    });
+
+    expect(nock.pendingMocks()).toEqual([]);
+    expect(results.some((record) => /no coding sub-tasks/i.test(record.message || ''))).toBe(true);
+  });
+
+  it('still moves the parent when the operator has turned the guard off', async () => {
+    nock(JIRA_BASE).post('/rest/api/2/issue/SUB-1/comment').reply(201, {});
+    mockSubtaskLookup();
+    nock(JIRA_BASE).post('/rest/api/2/issue/STORY-9/comment').reply(201, {});
+    nock(JIRA_BASE)
+      .get('/rest/api/2/issue/STORY-9/transitions')
+      .reply(200, { transitions: [{ id: '41', to: { name: 'Ready for Testing', statusCategory: { name: 'In Progress' } } }] });
+    const parentTransitionPost = nock(JIRA_BASE).post('/rest/api/2/issue/STORY-9/transitions').reply(204);
+
+    await postJiraCommentForEvent('SUB-1', 'merged', 'pr_merged', 'owner/repo', {}, buildConfig(), {
+      parentActions: buildParentActions({ requireAllDevDone: false, subStatusValue: '' }),
+      recordResult: () => {},
+    });
+
+    expect(parentTransitionPost.isDone()).toBe(true);
+  });
+});

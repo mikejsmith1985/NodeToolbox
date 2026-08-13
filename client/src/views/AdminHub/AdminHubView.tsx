@@ -53,6 +53,7 @@ function formatLastDelivery(outcome?: DeliveryOutcome): string {
   return `❌ Last run failed: ${outcome.message || 'error'} · ${when}`
 }
 import type { ConnectivityConfigResult, ConnectionProbeResult } from '../../types/config.ts'
+import ChangeAuditPanel from './ChangeAuditPanel'
 import ClientDiagnosticsPanel from './ClientDiagnosticsPanel'
 import SharePointRelayDiagnosticsPanel from './SharePointRelayDiagnosticsPanel'
 import CredentialManagementSection from './CredentialManagementSection'
@@ -69,7 +70,7 @@ const VIEW_SUBTITLE = 'Proxy configuration, PI field mappings, feature flags, an
 
 const TERMINAL_COMMAND = 'python "%USERPROFILE%\\Downloads\\toolbox-server.py"'
 
-type AdminHubTab = 'main' | 'repo-monitor' | 'reports-config' | 'standup-briefing' | 'pi-review-scheduler' | 'monthly-delivery' | 'component-manager' | 'dev-panel' | 'sprint-release' | 'subtask-promotion'
+type AdminHubTab = 'main' | 'repo-monitor' | 'reports-config' | 'standup-briefing' | 'pi-review-scheduler' | 'monthly-delivery' | 'component-manager' | 'dev-panel' | 'sprint-release' | 'subtask-promotion' | 'change-audit'
 
 const ADMIN_HUB_TAB_OPTIONS: { key: AdminHubTab; label: string }[] = [
   { key: 'main', label: '⚙️ Config' },
@@ -86,6 +87,11 @@ const ADMIN_HUB_TAB_OPTIONS: { key: AdminHubTab; label: string }[] = [
 // The Dev Panel is admin-gated: its tab is offered only when Admin Access is unlocked, matching the
 // intended admin scope (admin unlocks SNow access + the Dev Panel).
 const DEV_PANEL_ADMIN_TAB: { key: AdminHubTab; label: string } = { key: 'dev-panel', label: '🛰️ Dev Panel' }
+
+// Change Review is admin-gated for the same reason: it is a confidence check on the operator's own
+// account activity, meant to be available while trust is being established and easy to put away
+// again afterwards — not a standing part of the everyday surface.
+const CHANGE_AUDIT_ADMIN_TAB: { key: AdminHubTab; label: string } = { key: 'change-audit', label: '🔎 Change Review' }
 
 type ReportsConfigSubTab = 'scope-change' | 'feature-change' | 'hygiene-monitor'
 
@@ -2666,16 +2672,16 @@ export default function AdminHubView() {
   const [activeAdminTab, setActiveAdminTab] = useState<AdminHubTab>('main')
   const adminHubRootRef = useRef<HTMLDivElement | null>(null)
 
-  // The 🛰️ Dev Panel tab is offered only while Admin Access is unlocked.
+  // The 🛰️ Dev Panel and 🔎 Change Review tabs are offered only while Admin Access is unlocked.
   const adminHubTabs = [
     ...ADMIN_HUB_TAB_OPTIONS,
-    ...(state.isAdminUnlocked ? [DEV_PANEL_ADMIN_TAB] : []),
+    ...(state.isAdminUnlocked ? [DEV_PANEL_ADMIN_TAB, CHANGE_AUDIT_ADMIN_TAB] : []),
   ]
 
   // If a gated tab is active but its capability locks, fall back to Config. Done during render
   // (React's endorsed "adjust state when state changes" pattern) rather than in an effect, so it
   // does not trip react-hooks/set-state-in-effect and applies immediately.
-  if (!state.isAdminUnlocked && activeAdminTab === 'dev-panel') {
+  if (!state.isAdminUnlocked && (activeAdminTab === 'dev-panel' || activeAdminTab === 'change-audit')) {
     setActiveAdminTab('main')
   }
 
@@ -2728,6 +2734,12 @@ export default function AdminHubView() {
       {activeAdminTab === 'reports-config' && (
         <section id="admin-hub-reports-config-panel" role="tabpanel" aria-labelledby="admin-hub-reports-config-tab">
           <ReportsConfigContent state={state} actions={actions} />
+        </section>
+      )}
+
+      {activeAdminTab === 'change-audit' && state.isAdminUnlocked && (
+        <section id="admin-hub-change-audit-panel" role="tabpanel" aria-labelledby="admin-hub-change-audit-tab">
+          <ChangeAuditPanel />
         </section>
       )}
 
