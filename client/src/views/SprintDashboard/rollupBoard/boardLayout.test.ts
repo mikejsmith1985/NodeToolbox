@@ -72,6 +72,7 @@ function buildItem(input: BuildItemInput): RollupBoardItem {
     fixVersionNames: input.fixVersionNames ?? [],
     storyPoints: input.storyPoints ?? null,
     checklistCompletion: null,
+    checklistItems: [],
   };
 }
 

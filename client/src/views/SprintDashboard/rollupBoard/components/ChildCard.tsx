@@ -16,10 +16,18 @@ import { PriorityBadge } from '../../../../components/IssueMeta/PriorityBadge.ts
 import { buildCardTargetId } from '../cardDropRouting.ts';
 import { formatCommentDate, type CardDetail } from '../cardDetail.ts';
 import { describeStatusPair } from '../unmappedStatusSummary.ts';
+import type { ChecklistItemState } from '../checklistItems.ts';
 import styles from '../RollupBoardTab.module.css';
 import type { IssueTypeBucket, RollUpRoute, RollupBoardItem } from '../rollupBoardTypes.ts';
 
 /** Which colour class carries each visual family. Text always says the same thing (FR-028). */
+/** A glyph per checklist state, so the state survives even where colour does not. */
+const CHECKLIST_STATE_MARKS: Record<ChecklistItemState, string> = {
+  open: '☐',
+  'in-progress': '▶',
+  done: '☑',
+};
+
 const CARD_CLASS_BY_TYPE_BUCKET: Record<IssueTypeBucket, string> = {
   story: styles.cardStory,
   defect: styles.cardDefect,
@@ -181,6 +189,23 @@ export function ChildCard({
         <div className={styles.cardChecklist}>
           Checklist {item.checklistCompletion.completedCount}/{item.checklistCompletion.totalCount}
         </div>
+      )}
+
+      {/* The checklist's own items, nested inside the card they belong to. A third way teams break
+          work down — and the only one the board used to reduce to a bare count, so the breakdown that
+          costs nothing to create was the one you had to open Jira to read. */}
+      {item.checklistItems.length > 0 && (
+        <ul className={styles.checklistItemList}>
+          {item.checklistItems.map((checklistItem) => (
+            <li className={styles.checklistItemCard} data-state={checklistItem.state} key={checklistItem.id}>
+              <span className={styles.checklistItemMarker}>{CHECKLIST_STATE_MARKS[checklistItem.state]}</span>
+              <span className={styles.checklistItemText}>{checklistItem.text}</span>
+              {checklistItem.assigneeUserId && (
+                <span className={styles.checklistItemAssignee}>@{checklistItem.assigneeUserId}</span>
+              )}
+            </li>
+          ))}
+        </ul>
       )}
 
       {/* Only present in a focused column, where one status has the whole board width to itself. */}

@@ -31,6 +31,7 @@ function buildItem(key: string, featureKey: string | null): RollupBoardItem {
     fixVersionNames: [],
     storyPoints: null,
     checklistCompletion: null,
+    checklistItems: [],
   };
 }
 

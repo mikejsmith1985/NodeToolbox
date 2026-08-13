@@ -87,6 +87,7 @@ function buildItem(key: string, route: RollUpRoute): RollupBoardItem {
     fixVersionNames: [],
     storyPoints: null,
     checklistCompletion: null,
+    checklistItems: [],
   };
 }
 

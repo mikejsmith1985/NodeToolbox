@@ -5,6 +5,7 @@
 // and so the board's load-bearing promises ("nothing is hidden", "a parent is drawn once") can be
 // expressed as data invariants that a unit test can assert without rendering anything.
 
+import type { ChecklistItem } from './checklistItems.ts';
 import type { ColumnDensity } from './columnDensity.ts';
 import type { JiraIssue } from '../../../types/jira.ts';
 
@@ -39,6 +40,13 @@ export interface RollupBoardScope {
   subStatusFieldId: string;
   /** Candidate story-point field ids, in preference order. */
   storyPointsFieldIds: readonly string[];
+  /**
+   * The Smart Checklist field on this instance, or '' when it has none.
+   *
+   * Discovered rather than configured: the field belongs to a third-party app and its id differs
+   * between instances, so hardcoding one would silently show every team an empty checklist.
+   */
+  checklistFieldId?: string;
 }
 
 // ── Loaded issues ──
@@ -171,6 +179,13 @@ export interface RollupBoardItem {
   storyPoints: number | null;
   /** Present ONLY when the host issue carries readable checklist data; never defaulted to zero-of-zero. */
   checklistCompletion: { completedCount: number; totalCount: number } | null;
+  /**
+   * The checklist's own items, drawn nested inside this card.
+   *
+   * A third way teams break work down, alongside Stories and sub-tasks — and the only one the board
+   * used to reduce to a bare "2/5", which says how much is left but never what any of it is.
+   */
+  checklistItems: ChecklistItem[];
 }
 
 // ── Master cards ──

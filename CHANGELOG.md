@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Roll-Up Board — Smart Checklist items are drawn as nested cards inside the issue they belong to.**
+  Teams break work down three ways on this board — Stories, sub-tasks and checklist items — and the
+  third was invisible. A card showed a bare `Checklist 2/5`, which says how much is left but never what
+  any of it IS, so the one breakdown that costs nothing to create was the one you had to open Jira to
+  read. Each item now appears beneath its issue with its state, its text and the person it is assigned
+  to, indented and ruled exactly as a sub-task nested under its story.
+  The field is **discovered**, not configured: it belongs to a third-party app and its id differs
+  between instances, so a hardcoded one would have silently shown every team an empty checklist. A
+  field named "Checklist" wins over one that merely comes from the app. The parser is deliberately
+  forgiving — an unrecognised marker becomes a not-started item and an unparseable line is kept as
+  plain text, because an unreadable checklist should look odd, never empty. The `2/5` badge is now
+  derived from the items themselves, so the count and the cards beneath it cannot disagree.
+
+### Fixed
+- **Roll-Up Board — an issue contained within a card on the board is now pulled onto it, whatever its
+  own PI says.** The board scopes by PI, and a contained child often has no PI of its own — an SL story
+  promoted from a sub-task inherits none — so it was dropped before nesting was ever considered and its
+  parent appeared childless. Containment is precisely why it belongs there. This is what left
+  ENCUC-2311 off the board while ENCUC-2208 showed alone.
+- **Stale counts now say what they cover.** The Standup tab reported 20 stale issues while Hygiene and
+  My Day reported none, which reads as a bug. It is not: all three apply the **same** rule
+  (in-progress, and not updated in N business days). What differs is the scope — Standup scans the
+  whole project across **all PIs**, Hygiene counts only what its project key and Extra JQL select, and
+  My Day covers your configured teams. Each now states its scope beside the count, so three different
+  numbers stop looking like three different answers to one question.
+
 ### Fixed
 - **Containment links were being written backwards — a Dev story ended up "contained within" its own
   SL story.** Jira's create payload does not name each issue by the phrase it will display; it is the

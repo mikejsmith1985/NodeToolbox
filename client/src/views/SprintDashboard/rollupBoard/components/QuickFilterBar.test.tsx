@@ -27,6 +27,7 @@ function buildItem(key: string, assigneeAccountId: string | null, fixVersionName
     fixVersionNames,
     storyPoints: null,
     checklistCompletion: null,
+    checklistItems: [],
   };
 }
 

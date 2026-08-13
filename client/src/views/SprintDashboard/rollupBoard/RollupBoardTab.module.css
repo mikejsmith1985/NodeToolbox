@@ -801,3 +801,51 @@
   font-size: var(--font-size-sm);
   color: var(--color-warning);
 }
+
+/* ── Checklist items, nested inside the card that holds them ──
+   Indented and ruled so the parent/child relationship is the first thing read, exactly as it is for a
+   sub-task nested under its story. */
+.checklistItemList {
+  list-style: none;
+  margin: var(--spacing-xs) 0 0;
+  padding: 0 0 0 var(--spacing-sm);
+  border-left: 2px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.checklistItemCard {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-xs);
+  padding: 1px var(--spacing-xs);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-subtle);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+/* A finished item reads as finished without relying on the glyph alone. */
+.checklistItemCard[data-state='done'] .checklistItemText {
+  text-decoration: line-through;
+  opacity: 0.7;
+}
+
+.checklistItemCard[data-state='in-progress'] {
+  border-left: 2px solid var(--color-warning);
+}
+
+.checklistItemMarker {
+  flex: 0 0 auto;
+}
+
+.checklistItemText {
+  flex: 1 1 auto;
+  overflow-wrap: anywhere;
+}
+
+.checklistItemAssignee {
+  flex: 0 0 auto;
+  color: var(--color-text-primary);
+}

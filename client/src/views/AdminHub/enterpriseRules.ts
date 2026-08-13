@@ -154,7 +154,9 @@ const BUILT_IN_RULE_DEFINITIONS: readonly Omit<EnterpriseBuiltInRule, 'isBuiltIn
     checkId: 'stale',
     name: 'Stale Ticket',
     description:
-      "Tickets in-progress with no updates past the team's stale threshold (default 5 days) should be reviewed.",
+      "Tickets in-progress with no updates past the team's stale threshold (default 5 days) should be reviewed."
+      + ' Counted within whatever the project key and Extra JQL above select — a PI filter here will'
+      + ' legitimately report fewer than the Standup tab, which scans the project across all PIs.',
   },
   {
     id: 'old-in-sprint',
