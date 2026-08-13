@@ -8,6 +8,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **A checklist diagnostic in Board setup, behind two deliberate gates.** Three separate times, working
+  out why a board showed nothing meant asking somebody to open a REST URL on a machine only they can
+  reach and read JSON out of a browser tab. The information was always one request away from the app
+  itself, so it is in the app now.
+  The panel reports the three things that answer the question, in that order: **which fields on this
+  instance look like a checklist at all** (if none, nothing else matters), **the raw value stored on a
+  real issue** — rendered so a text value and a structured one cannot be mistaken for each other — and
+  **what the board's own parser made of it**. Zero items parsed from a non-empty value is the exact
+  signature of a stored format the parser does not yet support, and the panel says so rather than
+  leaving it to be inferred.
+  **Two gates, and neither alone is enough**: Admin Hub must be unlocked, AND *Board diagnostics* must
+  be switched on there. Unlocking Admin Hub for something unrelated must not put raw Jira custom field
+  ids on somebody's board, and a toggle left on must not leak to the next person who opens the app
+  locked. The toggle is off by default, and anything other than an explicit "on" marker in storage
+  counts as off — a diagnostic surface should never appear by accident.
+
+### Added
 - **A repair pass for the containment links written backwards before v0.168.4.** That release stopped
   new links being made wrong; this fixes the ones already in Jira. Jira has no route to reverse a link,
   so a repair is a delete followed by a create — destructive against production data, and treated as
