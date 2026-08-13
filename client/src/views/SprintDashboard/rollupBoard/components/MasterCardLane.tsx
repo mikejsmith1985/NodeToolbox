@@ -15,6 +15,7 @@ import { buildJiraBrowseUrl } from '../../../../utils/jiraBrowseUrl.ts';
 import { useConnectionStore } from '../../../../store/connectionStore.ts';
 import { buildDropTargetId } from '../cardDropRouting.ts';
 import styles from '../RollupBoardTab.module.css';
+import type { ColumnTrackStyle } from '../columnTrackLayout.ts';
 import { SubLane } from './SubLane.tsx';
 import { LaneContextMenu, type LaneMenuAction } from './LaneContextMenu.tsx';
 import { describeProgressDisagreement, describeTwoFigures } from '../familyProgress.ts';
@@ -23,7 +24,6 @@ import type { BoardMembershipReason } from '../boardMembershipReason.ts';
 import type { FamilyProgress } from '../rollupBoardTypes.ts';
 import type { CardDetail } from '../cardDetail.ts';
 import type { RenderedColumn, RenderedLane, RollupBoardItem } from '../rollupBoardTypes.ts';
-import { buildColumnGridTemplate, buildColumnRowMinWidth } from './BoardColumnHeaderRow.tsx';
 import { ChildCard } from './ChildCard.tsx';
 import { ParentContainer } from './ParentContainer.tsx';
 
@@ -80,8 +80,8 @@ export interface MasterCardLaneProps {
   onSelectFamily?: (item: RollupBoardItem) => void;
   /** Extra context per issue, present only while a column is focused. */
   cardDetailByIssueKey?: Record<string, CardDetail>;
-  /** The CSS width one column may shrink to — must match the header row's or nothing lines up. */
-  columnMinWidth?: string;
+  /** The grid tracks, computed ONCE for the whole board so the header and cells cannot diverge. */
+  columnTracks: ColumnTrackStyle;
   /** The open issue's detail panel, rendered inside THIS lane when the issue belongs to it. */
   inlineDetail?: React.ReactNode;
   /** Both progress figures. Null when this Feature has no clones, which is the normal case. */
@@ -170,7 +170,7 @@ export function MasterCardLane({
   onOpenIssue,
   onSelectFamily,
   cardDetailByIssueKey,
-  columnMinWidth,
+  columnTracks,
   inlineDetail,
   familyProgress = null,
   onToggleSubLaneCollapsed,
@@ -385,8 +385,8 @@ export function MasterCardLane({
         <div
           className={styles.laneCells}
           style={{
-            gridTemplateColumns: buildColumnGridTemplate(columns.length, columnMinWidth),
-            minWidth: buildColumnRowMinWidth(columns.length, columnMinWidth),
+            gridTemplateColumns: columnTracks.gridTemplateColumns,
+            minWidth: columnTracks.minWidth,
           }}
         >
           {columns.map((column) => {
@@ -428,7 +428,7 @@ export function MasterCardLane({
       {/* Each discipline's copy of this Feature, under the dev work it duplicates. */}
       {!lane.isCollapsed && lane.subLanes.map((subLane) => (
         <SubLane
-          columnMinWidth={columnMinWidth}
+          columnTracks={columnTracks}
           columns={columns}
           key={subLane.cloneFeatureKey}
           onOpenIssue={onOpenIssue}

@@ -439,6 +439,13 @@ export interface BoardPreferences {
    */
   cardOrderByCell?: Record<string, string[]>;
   /**
+   * Columns narrowed to a strip, by id.
+   *
+   * Local like the collapsed lanes beside it, and for the same reason: which columns you have
+   * narrowed on your screen is a view of your own, not a decision the team took.
+   */
+  collapsedColumnIds?: string[];
+  /**
    * How tightly the board packs its columns.
    *
    * Absent on preferences saved before this existed, which reads as the default rather than as an

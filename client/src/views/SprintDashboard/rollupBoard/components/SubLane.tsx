@@ -15,16 +15,17 @@
 //     never "a clone we failed to read" — the second silently restores the bug this whole feature
 //     exists to fix.
 
-import { buildColumnGridTemplate, buildColumnRowMinWidth } from './BoardColumnHeaderRow.tsx';
 import { ChildCard } from './ChildCard.tsx';
 import { ParentContainer } from './ParentContainer.tsx';
 import styles from '../RollupBoardTab.module.css';
+import type { ColumnTrackStyle } from '../columnTrackLayout.ts';
 import type { RenderedColumn, SubLane as SubLaneModel } from '../rollupBoardTypes.ts';
 
 export interface SubLaneProps {
   subLane: SubLaneModel;
   columns: readonly RenderedColumn[];
-  columnMinWidth?: string;
+  /** The grid tracks, computed ONCE for the whole board so the band cannot diverge from it. */
+  columnTracks: ColumnTrackStyle;
   onOpenIssue?: (issueKey: string) => void;
   onToggleCollapsed: (cloneFeatureKey: string) => void;
 }
@@ -59,7 +60,7 @@ export function describeSubLaneSummary(subLane: SubLaneModel): string {
 export function SubLane({
   subLane,
   columns,
-  columnMinWidth,
+  columnTracks,
   onOpenIssue,
   onToggleCollapsed,
 }: SubLaneProps) {
@@ -109,8 +110,8 @@ export function SubLane({
         <div
           className={styles.laneCells}
           style={{
-            gridTemplateColumns: buildColumnGridTemplate(columns.length, columnMinWidth),
-            minWidth: buildColumnRowMinWidth(columns.length, columnMinWidth),
+            gridTemplateColumns: columnTracks.gridTemplateColumns,
+            minWidth: columnTracks.minWidth,
           }}
         >
           {columns.map((column) => {

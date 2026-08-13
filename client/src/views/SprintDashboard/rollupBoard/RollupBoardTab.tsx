@@ -49,6 +49,7 @@ import {
   publishBoardOrder,
   type OrderPullPreview,
 } from './boardOrderSync.ts';
+import { buildColumnTracks, toggleColumnCollapsed } from './columnTrackLayout.ts';
 import { buildRenderedColumns, resolveColumnIdForItem } from './boardColumns.ts';
 import { describeMissingSubLanes, describeUnconfiguredClones } from './cloneFamily.ts';
 import { classifyCloneFamilies, discoverDisciplineWork } from './disciplineDiscovery.ts';
@@ -1196,6 +1197,19 @@ export default function RollupBoardTab({
     [laneMasterCards, visibleColumns, filters, preferences, subLanesByFeatureKey],
   );
 
+  /**
+   * The grid tracks, computed once for the WHOLE board.
+   *
+   * The header row and every lane's cells are handed this same object, so they cannot line up
+   * differently. Previously all three derived their own template from the same inputs and were
+   * expected to agree — safe while the calculation was a single repeat(), not once a column can be
+   * narrowed on its own.
+   */
+  const columnTracks = useMemo(
+    () => buildColumnTracks(layout.columns, new Set(preferences.collapsedColumnIds ?? []), columnMinWidth),
+    [layout.columns, preferences.collapsedColumnIds, columnMinWidth],
+  );
+
   /** Persists a preference change immediately — a lane the viewer moved should stay moved. */
   const applyPreferences = useCallback((nextPreferences: BoardPreferences): void => {
     saveBoardPreferences(nextPreferences);
@@ -1892,9 +1906,14 @@ export default function RollupBoardTab({
       </div>
 
         <BoardColumnHeaderRow
-          columnMinWidth={columnMinWidth}
+          collapsedColumnIds={preferences.collapsedColumnIds ?? []}
+          columnTracks={columnTracks}
           columns={layout.columns}
           focusedColumnId={focusedColumnId}
+          onToggleCollapsed={(columnId) => applyPreferences({
+            ...preferences,
+            collapsedColumnIds: toggleColumnCollapsed(preferences.collapsedColumnIds, columnId),
+          })}
           onToggleFocus={(columnId) =>
             setFocusedColumnId((currentFocus) => toggleColumnFocus(currentFocus, columnId))}
           issueCountByColumnId={loadState.allItems.reduce<Record<string, number>>((counts, item) => {
@@ -1944,7 +1963,7 @@ export default function RollupBoardTab({
             {layout.lanes.map((lane, laneIndex) => (
             <MasterCardLane
               cardDetailByIssueKey={cardDetailByIssueKey}
-              columnMinWidth={columnMinWidth}
+              columnTracks={columnTracks}
               columns={layout.columns}
               inlineDetail={openIssue !== null && lane.masterCard.featureKey === openIssueLaneFeatureKey
                 ? (

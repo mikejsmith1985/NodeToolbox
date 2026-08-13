@@ -7,6 +7,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { MasterCardLane } from './MasterCardLane.tsx';
 import { buildBoardLayout } from '../boardLayout.ts';
 import { buildRenderedColumns } from '../boardColumns.ts';
+import { buildColumnTracks } from '../columnTrackLayout.ts';
 import { buildMasterCards } from '../masterCards.ts';
 import { EMPTY_QUICK_FILTER_STATE } from '../boardFilters.ts';
 import type { BoardPreferences, BoardVocabulary, RollupBoardItem } from '../rollupBoardTypes.ts';
@@ -23,6 +24,8 @@ const VOCABULARY: BoardVocabulary = {
 };
 
 const COLUMNS = buildRenderedColumns(VOCABULARY);
+/** The same object the board builds, so the tests exercise the real layout path. */
+const COLUMN_TRACKS = buildColumnTracks(COLUMNS, new Set(), '136px');
 
 function buildItem(key: string, columnId: string, parentKey: string | null = null, storyPoints: number | null = null): RollupBoardItem {
   return {
@@ -82,6 +85,7 @@ describe('MasterCardLane — the header is the collapsed summary', () => {
     render(
       <MasterCardLane
         columns={COLUMNS}
+        columnTracks={COLUMN_TRACKS}
         hasActiveFilters={false}
         lane={buildLane([buildItem('DEV-1', 'col-todo')])}
         onToggleCollapsed={vi.fn()}
@@ -97,6 +101,7 @@ describe('MasterCardLane — the header is the collapsed summary', () => {
     render(
       <MasterCardLane
         columns={COLUMNS}
+        columnTracks={COLUMN_TRACKS}
         hasActiveFilters={false}
         lane={buildLane([buildItem('DEV-1', 'col-todo', null, 5)])}
         onToggleCollapsed={vi.fn()}
@@ -110,6 +115,7 @@ describe('MasterCardLane — the header is the collapsed summary', () => {
     render(
       <MasterCardLane
         columns={COLUMNS}
+        columnTracks={COLUMN_TRACKS}
         hasActiveFilters={false}
         lane={buildLane([buildItem('DEV-1', 'col-todo')])}
         onToggleCollapsed={vi.fn()}
@@ -126,6 +132,7 @@ describe('MasterCardLane — the header is the collapsed summary', () => {
     render(
       <MasterCardLane
         columns={COLUMNS}
+        columnTracks={COLUMN_TRACKS}
         hasActiveFilters={false}
         lane={buildLane([buildItem('DEV-1', 'col-todo')])}
         onToggleCollapsed={vi.fn()}
@@ -139,6 +146,7 @@ describe('MasterCardLane — the header is the collapsed summary', () => {
     render(
       <MasterCardLane
         columns={COLUMNS}
+        columnTracks={COLUMN_TRACKS}
         hasActiveFilters={false}
         lane={buildLane([buildItem('DEV-1', 'col-todo')], { 'FEAT-1': false })}
         onToggleCollapsed={vi.fn()}
@@ -154,6 +162,7 @@ describe('MasterCardLane — the vital signs as a bar and tiles', () => {
     render(
       <MasterCardLane
         columns={COLUMNS}
+        columnTracks={COLUMN_TRACKS}
         hasActiveFilters={false}
         lane={buildLane([buildItem('DEV-1', 'col-todo'), buildItem('DEV-2', 'col-dev')])}
         onToggleCollapsed={vi.fn()}
@@ -170,6 +179,7 @@ describe('MasterCardLane — the vital signs as a bar and tiles', () => {
     render(
       <MasterCardLane
         columns={COLUMNS}
+        columnTracks={COLUMN_TRACKS}
         hasActiveFilters={false}
         lane={buildLane([buildItem('DEV-1', 'col-todo')])}
         onToggleCollapsed={vi.fn()}
@@ -186,6 +196,7 @@ describe('MasterCardLane — the vital signs as a bar and tiles', () => {
     const { container } = render(
       <MasterCardLane
         columns={COLUMNS}
+        columnTracks={COLUMN_TRACKS}
         familyProgress={{
           dev: { percentComplete: 100, basis: 'issue-count', completedUnits: 2, totalUnits: 2 },
           family: { percentComplete: 50, basis: 'issue-count', completedUnits: 2, totalUnits: 4 },
@@ -204,6 +215,7 @@ describe('MasterCardLane — the vital signs as a bar and tiles', () => {
     render(
       <MasterCardLane
         columns={COLUMNS}
+        columnTracks={COLUMN_TRACKS}
         familyProgress={{
           dev: { percentComplete: 100, basis: 'issue-count', completedUnits: 2, totalUnits: 2 },
           family: { percentComplete: 50, basis: 'issue-count', completedUnits: 2, totalUnits: 4 },
@@ -226,6 +238,7 @@ describe('MasterCardLane — counts', () => {
     render(
       <MasterCardLane
         columns={COLUMNS}
+        columnTracks={COLUMN_TRACKS}
         hasActiveFilters={false}
         lane={buildLane([buildItem('DEV-1', 'col-todo'), buildItem('DEV-2', 'col-dev')])}
         onToggleCollapsed={vi.fn()}
@@ -244,7 +257,7 @@ describe('MasterCardLane — counts', () => {
       preferences: buildPreferences(),
     }).lanes[0];
 
-    render(<MasterCardLane columns={COLUMNS} hasActiveFilters lane={lane} onToggleCollapsed={vi.fn()} />);
+    render(<MasterCardLane columns={COLUMNS} columnTracks={COLUMN_TRACKS} hasActiveFilters lane={lane} onToggleCollapsed={vi.fn()} />);
 
     // The tile is captioned MATCHING and counts BOTH sets, so a narrowed lane can never be mistaken
     // for a Feature that only has that much work in it.
@@ -262,7 +275,7 @@ describe('MasterCardLane — the No Feature lane', () => {
       preferences: buildPreferences(),
     }).lanes[0];
 
-    render(<MasterCardLane columns={COLUMNS} hasActiveFilters={false} lane={lane} onToggleCollapsed={vi.fn()} />);
+    render(<MasterCardLane columns={COLUMNS} columnTracks={COLUMN_TRACKS} hasActiveFilters={false} lane={lane} onToggleCollapsed={vi.fn()} />);
 
     expect(screen.getByText('No Feature')).toBeTruthy();
     // Said twice on purpose — once as the lane's summary, once as the call to action.
@@ -278,6 +291,7 @@ describe('MasterCardLane — ordering actions', () => {
     render(
       <MasterCardLane
         columns={COLUMNS}
+        columnTracks={COLUMN_TRACKS}
         hasActiveFilters={false}
         lane={buildLane([buildItem('DEV-1', 'col-todo')])}
         onSendToBottom={vi.fn()}
@@ -297,6 +311,7 @@ describe('MasterCardLane — ordering actions', () => {
     render(
       <MasterCardLane
         columns={COLUMNS}
+        columnTracks={COLUMN_TRACKS}
         hasActiveFilters={false}
         lane={buildLane([buildItem('DEV-1', 'col-todo')])}
         onSendToBottom={onSendToBottom}
@@ -315,6 +330,7 @@ describe('MasterCardLane — ordering actions', () => {
     render(
       <MasterCardLane
         columns={COLUMNS}
+        columnTracks={COLUMN_TRACKS}
         hasActiveFilters={false}
         lane={buildLane([buildItem('DEV-1', 'col-todo')])}
         onToggleCollapsed={vi.fn()}
@@ -329,6 +345,7 @@ describe('MasterCardLane — ordering actions', () => {
     render(
       <MasterCardLane
         columns={COLUMNS}
+        columnTracks={COLUMN_TRACKS}
         hasActiveFilters={false}
         lane={buildLane([buildItem('DEV-1', 'col-todo')])}
         onToggleCollapsed={onToggleCollapsed}
@@ -356,6 +373,7 @@ describe('MasterCardLane — an unreadable Feature says why', () => {
     render(
       <MasterCardLane
         columns={COLUMNS}
+        columnTracks={COLUMN_TRACKS}
         featureReadFailureDetail={featureReadFailureDetail}
         hasActiveFilters={false}
         lane={lane}
@@ -381,6 +399,7 @@ describe('MasterCardLane — the rank box', () => {
     render(
       <MasterCardLane
         columns={COLUMNS}
+        columnTracks={COLUMN_TRACKS}
         hasActiveFilters={false}
         lane={buildLane([buildItem('DEV-1', 'col-todo')])}
         laneRank={10}
@@ -438,6 +457,7 @@ describe('MasterCardLane — the rank box', () => {
     render(
       <MasterCardLane
         columns={COLUMNS}
+        columnTracks={COLUMN_TRACKS}
         hasActiveFilters={false}
         lane={buildLane([buildItem('DEV-1', 'col-todo')])}
         onToggleCollapsed={vi.fn()}
@@ -453,6 +473,7 @@ describe('MasterCardLane — the Feature key opens Jira', () => {
     render(
       <MasterCardLane
         columns={COLUMNS}
+        columnTracks={COLUMN_TRACKS}
         hasActiveFilters={false}
         lane={buildLane([buildItem('DEV-1', 'col-todo')])}
         onToggleCollapsed={vi.fn()}
@@ -470,6 +491,7 @@ describe('MasterCardLane — the Feature key opens Jira', () => {
     render(
       <MasterCardLane
         columns={COLUMNS}
+        columnTracks={COLUMN_TRACKS}
         hasActiveFilters={false}
         lane={buildLane([buildItem('DEV-1', 'col-todo')])}
         onToggleCollapsed={onToggleCollapsed}
@@ -486,6 +508,7 @@ describe('the open card detail sits in its own lane', () => {
     render(
       <MasterCardLane
         columns={COLUMNS}
+        columnTracks={COLUMN_TRACKS}
         hasActiveFilters={false}
         inlineDetail={<p>Detail for DEV-1</p>}
         lane={buildLane([buildItem('DEV-1', 'col-todo')])}
@@ -503,6 +526,7 @@ describe('the open card detail sits in its own lane', () => {
     render(
       <MasterCardLane
         columns={COLUMNS}
+        columnTracks={COLUMN_TRACKS}
         hasActiveFilters={false}
         lane={buildLane([buildItem('DEV-1', 'col-todo')])}
         onToggleCollapsed={vi.fn()}

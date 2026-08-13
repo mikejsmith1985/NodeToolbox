@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 
 import { SubLane, describeSubLaneSummary } from './SubLane.tsx';
 import { buildRenderedColumns } from '../boardColumns.ts';
+import { buildColumnTracks } from '../columnTrackLayout.ts';
 import type { BoardVocabulary, DisciplineProjects, RollupBoardItem, SubLane as SubLaneModel } from '../rollupBoardTypes.ts';
 import type { JiraIssue } from '../../../../types/jira.ts';
 
@@ -16,6 +17,8 @@ const VOCABULARY: BoardVocabulary = {
   lastSyncedAt: null,
 };
 const COLUMNS = buildRenderedColumns(VOCABULARY);
+/** The same object the board builds, so the tests exercise the real layout path. */
+const COLUMN_TRACKS = buildColumnTracks(COLUMNS, new Set(), '136px');
 
 const QE: DisciplineProjects = { name: 'QE', featureProjectKey: 'QEINT', storyProjectKeys: ['QEINT'] };
 
@@ -63,6 +66,7 @@ function renderSubLane(subLane: SubLaneModel = buildSubLane()) {
   render(
     <SubLane
       columns={COLUMNS}
+      columnTracks={COLUMN_TRACKS}
       onToggleCollapsed={(key) => collapseRequests.push(key)}
       subLane={subLane}
     />,

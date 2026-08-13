@@ -148,6 +148,36 @@
   color: var(--color-warning);
 }
 
+/* A narrowed column. Still a column — still in the grid, still counted, still a drop target — just
+   not spending 136px on a status this team rarely uses. */
+.columnHeaderCollapsed {
+  align-items: center;
+  padding: var(--spacing-xs) 2px;
+  overflow: hidden;
+  text-align: center;
+}
+
+.columnCollapseToggle {
+  align-self: flex-end;
+  border: none;
+  background: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+  line-height: 1;
+  padding: 0 2px;
+}
+
+.columnCollapseToggle:hover,
+.columnCollapseToggle:focus-visible {
+  color: var(--color-accent);
+  outline: none;
+}
+
+.columnHeaderCollapsed .columnCollapseToggle {
+  align-self: center;
+}
+
 /* ── Swimlane ── */
 
 .lane {

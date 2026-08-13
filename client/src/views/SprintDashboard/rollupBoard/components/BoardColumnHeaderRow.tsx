@@ -8,7 +8,7 @@ import { DndContext, PointerSensor, useSensor, useSensors, type DragEndEvent } f
 import { SortableContext, useSortable, horizontalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 
-import { DEFAULT_COLUMN_DENSITY, readColumnMinWidth } from '../columnDensity.ts';
+import { isColumnCollapsed, type ColumnTrackStyle } from '../columnTrackLayout.ts';
 import styles from '../RollupBoardTab.module.css';
 import { UNMAPPED_COLUMN_ID, type RenderedColumn } from '../rollupBoardTypes.ts';
 
@@ -22,8 +22,12 @@ export interface BoardColumnHeaderRowProps {
   focusedColumnId?: string | null;
   /** Double-clicking a header focuses that column, or restores every column when it already is. */
   onToggleFocus?: (columnId: string) => void;
-  /** The CSS width one column may shrink to, from the team's density setting. */
-  columnMinWidth?: string;
+  /** The grid tracks, computed ONCE for the whole board — see columnTrackLayout. */
+  columnTracks: ColumnTrackStyle;
+  /** Which columns are narrowed to a strip. */
+  collapsedColumnIds?: readonly string[];
+  /** Narrows this column, or opens it again. Absent hides the control. */
+  onToggleCollapsed?: (columnId: string) => void;
 }
 
 /** One draggable column header. Unmapped is fixed in place — it is not the team's column to move. */
@@ -32,13 +36,17 @@ function SortableColumnHeader({
   issueCount,
   isReorderable,
   isFocused,
+  isCollapsed,
   onToggleFocus,
+  onToggleCollapsed,
 }: {
   column: RenderedColumn;
   issueCount: number;
   isReorderable: boolean;
   isFocused: boolean;
+  isCollapsed: boolean;
   onToggleFocus?: (columnId: string) => void;
+  onToggleCollapsed?: (columnId: string) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition } = useSortable({
     id: column.id,
@@ -57,58 +65,54 @@ function SortableColumnHeader({
         styles.columnHeader,
         column.isUnmappedColumn ? styles.columnHeaderUnmapped : '',
         isFocused ? styles.columnHeaderFocused : '',
+        isCollapsed ? styles.columnHeaderCollapsed : '',
       ].filter(Boolean).join(' ')}
       ref={setNodeRef}
       // Double-click opens this column to the full board width. The drag sensor needs 4px of travel
       // to engage, so a double-click that does not move never starts a reorder.
       onDoubleClick={() => onToggleFocus?.(column.id)}
-      title={isFocused
-        ? 'Double-click to show every column again'
-        : 'Double-click to focus this column across the whole board'}
+      title={isCollapsed
+        ? `${column.name} — ${issueCount} issue(s). Narrowed; use the chevron to open it again.`
+        : isFocused
+          ? 'Double-click to show every column again'
+          : 'Double-click to focus this column across the whole board'}
       style={{ transform: CSS.Transform.toString(transform), transition, cursor: isReorderable ? 'grab' : 'default' }}
       {...(isReorderable ? listeners : {})}
       {...(isReorderable ? attributes : {})}
       aria-label={isReorderable ? `Drag ${column.name} to reorder the columns` : column.name}
     >
-      <span>
-        {column.name} <span className={styles.columnHeaderMeta}>{issueCount}</span>
-      </span>
-      {/* A Jira column stands for several statuses, so the header lists them rather than one. */}
-      {column.mappings.length > 0 && <span className={styles.columnHeaderMeta}>{mappingSummary}</span>}
-      {column.mappings.length === 0 && !column.isUnmappedColumn && (
-        <span className={styles.columnHeaderMeta}>not mapped yet</span>
+      {/* The chevron is the whole control when collapsed and a corner affordance when not. Its label
+          always names the column, so a narrowed strip is never anonymous to a screen reader. */}
+      {onToggleCollapsed && (
+        <button
+          aria-label={`${isCollapsed ? 'Open' : 'Narrow'} the ${column.name} column`}
+          className={styles.columnCollapseToggle}
+          onClick={(clickEvent) => { clickEvent.stopPropagation(); onToggleCollapsed(column.id); }}
+          onPointerDown={(pointerEvent) => pointerEvent.stopPropagation()}
+          type="button"
+        >
+          {isCollapsed ? '›' : '‹'}
+        </button>
       )}
+
+      {/* Collapsed, the count is all that is shown — and the count is never dropped, so a narrowed
+          column still says how much work is in it rather than hiding it. */}
+      {isCollapsed
+        ? <span className={styles.columnHeaderMeta}>{issueCount}</span>
+        : (
+          <>
+            <span>
+              {column.name} <span className={styles.columnHeaderMeta}>{issueCount}</span>
+            </span>
+            {/* A Jira column stands for several statuses, so the header lists them rather than one. */}
+            {column.mappings.length > 0 && <span className={styles.columnHeaderMeta}>{mappingSummary}</span>}
+            {column.mappings.length === 0 && !column.isUnmappedColumn && (
+              <span className={styles.columnHeaderMeta}>not mapped yet</span>
+            )}
+          </>
+        )}
     </div>
   );
-}
-
-/**
- * Builds the shared grid template so headers and every lane's cells line up exactly.
- *
- * The width comes from the board's OWN density setting. It used to borrow the app's form-control
- * token, which at up to 192px a column meant twelve columns needed 2,300px of screen — and the only
- * way to see the whole board was to zoom the browser out to 80%.
- */
-/** Used when a caller does not pass a width — the same default the density setting starts at. */
-const DEFAULT_COLUMN_MIN_WIDTH = readColumnMinWidth(DEFAULT_COLUMN_DENSITY);
-
-export function buildColumnGridTemplate(columnCount: number, columnMinWidth: string = DEFAULT_COLUMN_MIN_WIDTH): string {
-  return `repeat(${columnCount}, minmax(${columnMinWidth}, 1fr))`;
-}
-
-/**
- * The width the board needs before its columns start being squeezed.
- *
- * Set on the header row AND on every lane's cells so all of them overflow together and stay aligned.
- * Without it the tracks quietly compress to fit the window and the last column becomes unreachable,
- * because the scroller has nothing wider than itself to scroll.
- *
- * It must be a plain minimum, never `width: max-content`: with `1fr` tracks that sizes each track to
- * its own content, so a lane holding cards and an empty lane end up with different column widths.
- */
-export function buildColumnRowMinWidth(columnCount: number, columnMinWidth: string = DEFAULT_COLUMN_MIN_WIDTH): string {
-  return `calc(${columnCount} * ${columnMinWidth}`
-    + ` + ${Math.max(columnCount - 1, 0)} * var(--spacing-xs))`;
 }
 
 /** Renders the board-level column headers, draggable into the order the team wants. */
@@ -118,7 +122,9 @@ export function BoardColumnHeaderRow({
   onReorderColumns,
   focusedColumnId = null,
   onToggleFocus,
-  columnMinWidth = DEFAULT_COLUMN_MIN_WIDTH,
+  columnTracks,
+  collapsedColumnIds = [],
+  onToggleCollapsed,
 }: BoardColumnHeaderRowProps) {
   const dragSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
   const teamColumnIds = columns.filter((column) => !column.isUnmappedColumn).map((column) => column.id);
@@ -148,14 +154,16 @@ export function BoardColumnHeaderRow({
           className={styles.columnHeaderRow}
           data-testid="rollup-column-header-row"
           style={{
-            gridTemplateColumns: buildColumnGridTemplate(columns.length, columnMinWidth),
-            minWidth: buildColumnRowMinWidth(columns.length, columnMinWidth),
+            gridTemplateColumns: columnTracks.gridTemplateColumns,
+            minWidth: columnTracks.minWidth,
           }}
         >
           {columns.map((column) => (
             <SortableColumnHeader
               column={column}
+              isCollapsed={isColumnCollapsed(collapsedColumnIds, column.id)}
               isFocused={focusedColumnId === column.id}
+              onToggleCollapsed={onToggleCollapsed}
               isReorderable={Boolean(onReorderColumns) && !column.isUnmappedColumn}
               issueCount={issueCountByColumnId[column.id] ?? 0}
               key={column.id}

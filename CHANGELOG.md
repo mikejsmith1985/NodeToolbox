@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Roll-Up Board — a column you rarely use can be narrowed to a strip.** Twelve columns is what forces
+  horizontal scrolling, and several of them routinely hold nothing — *SL Testing*, *Int Testing* and
+  *BT Testing* held 1, 0 and 0 on a real board while each still cost a full column of width. A chevron
+  on any column header narrows it to 40px; the setting is remembered per team.
+  **Narrowed, never hidden.** The column stays in the grid, stays a drop target, and — critically —
+  **keeps its count**, so a narrowed column still says how much work is in it. A column that vanished
+  when it emptied would break the one-row-across-the-whole-board alignment that makes this view worth
+  having, and would hide work the moment somebody moved an issue into it.
+  Which columns you have narrowed is **local**, like the collapsed lanes beside it: it is a view of
+  your own, not a decision the team took.
+
+### Changed
+- **Roll-Up Board — the header row and every lane now share ONE layout calculation.** Three components
+  each derived their own grid template from the same inputs and were expected to agree. They did — but
+  only because the calculation was a single `repeat()`. Making a column narrowable makes it per-column,
+  and three copies of a per-column calculation is three chances for the header to stop lining up with
+  its cells, which is the board's most load-bearing property.
+  It is now computed once and handed to all three, so they agree **by construction** rather than by
+  care. The two functions that made this possible to get wrong are gone, and the prop is required, so
+  the compiler refuses any component that tries to lay itself out independently.
+
 ### Fixed
 - **Roll-Up Board — a dragged card no longer disappears halfway through the drag.** dnd-kit was moving
   the original element, which lives in a cell inside a scrolling board — so the card was **clipped**
