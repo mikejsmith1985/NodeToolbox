@@ -194,20 +194,34 @@ function normalizeLinkPhrase(linkPhrase: string): string {
  * draws for real sub-tasks, so one visual answers "what is inside what" regardless of how the team
  * happened to express it.
  *
- * Only the INWARD side counts: this issue must be the one the phrase applies to, or a container would
- * appear to be contained in the thing it holds.
+ * Only the side the phrase applies TO counts, or a container would appear to be contained in the
+ * thing it holds. Which side that is depends on which end of the link this issue sits on:
+ *
+ *   • the entry names `inwardIssue`  → this issue is the outward end → the INWARD phrase describes it
+ *   • the entry names `outwardIssue` → this issue is the inward end  → the OUTWARD phrase describes it
+ *
+ * This used to read the inward phrase against the outwardIssue — both halves inverted — which only
+ * ever looked right because the WRITER was inverted in the same way. Two bugs cancelling: the board
+ * drew correct nesting from links that read backwards in Jira.
  */
 function readContainmentParentKey(issue: JiraIssue): string | null {
   const issueLinks = (issue.fields as { issuelinks?: unknown[] }).issuelinks ?? [];
 
   for (const rawLink of issueLinks) {
     const issueLink = rawLink as {
-      type?: { inward?: string };
+      type?: { inward?: string; outward?: string };
+      inwardIssue?: { key?: string };
       outwardIssue?: { key?: string };
     };
-    const isContainedWithin = normalizeLinkPhrase(issueLink.type?.inward ?? '') === CONTAINMENT_PHRASE;
-    if (isContainedWithin && issueLink.outwardIssue?.key) {
-      return String(issueLink.outwardIssue.key);
+
+    // Read whichever phrase actually describes THIS issue, and the key at the other end.
+    const otherEndKey = issueLink.inwardIssue?.key ?? issueLink.outwardIssue?.key ?? '';
+    const phraseForThisIssue = issueLink.inwardIssue?.key
+      ? issueLink.type?.inward ?? ''
+      : issueLink.type?.outward ?? '';
+
+    if (normalizeLinkPhrase(phraseForThisIssue) === CONTAINMENT_PHRASE && otherEndKey !== '') {
+      return String(otherEndKey);
     }
   }
   return null;

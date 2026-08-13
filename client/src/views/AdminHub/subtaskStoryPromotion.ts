@@ -103,16 +103,30 @@ export function resolveContainmentLinkDirection(
   return null;
 }
 
-/** Builds the issue-link request that makes the new Story read "contained within" its old parent. */
+/**
+ * Builds the issue-link request that makes the new Story read "contained within" its old parent.
+ *
+ * Jira's create payload does NOT name each issue by the phrase it will display — it is the other way
+ * round, and getting that backwards is what produced links reading "the Dev story is contained within
+ * the SL story". Posting `{ inwardIssue: I, outwardIssue: O }` creates a link that reads:
+ *
+ *     I <outward phrase> O          and equivalently          O <inward phrase> I
+ *
+ * So the issue that should DISPLAY the inward phrase — here the new Story, which must read "contained
+ * within" — has to be sent as the `outwardIssue`. Confirmed against a real link on this instance: we
+ * posted the Story as `inwardIssue` and Jira showed the PARENT as the contained one.
+ */
 export function buildContainmentLinkInput(
   direction: ContainmentLinkDirection,
   newStoryKey: string,
   parentKey: string,
 ): { type: { name: string }; inwardIssue: { key: string }; outwardIssue: { key: string } } {
+  // `isStoryTheInwardIssue` means the story should show the link type's INWARD phrase, which — per the
+  // note above — makes it the outwardIssue of the request.
   return {
     type: { name: direction.linkTypeName },
-    inwardIssue: { key: direction.isStoryTheInwardIssue ? newStoryKey : parentKey },
-    outwardIssue: { key: direction.isStoryTheInwardIssue ? parentKey : newStoryKey },
+    inwardIssue: { key: direction.isStoryTheInwardIssue ? parentKey : newStoryKey },
+    outwardIssue: { key: direction.isStoryTheInwardIssue ? newStoryKey : parentKey },
   };
 }
 

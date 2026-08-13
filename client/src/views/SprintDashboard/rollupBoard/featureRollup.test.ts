@@ -322,8 +322,15 @@ describe('resolveBoardItems — who an issue is assigned to', () => {
 });
 
 describe('containment links draw the same nesting as a real sub-task', () => {
-  /** An issue carrying a "contained within" link pointing at another card. */
-  function makeContainedIssue(key: string, containerKey: string, isInward = true) {
+  /**
+   * An issue carrying a Container link pointing at another card.
+   *
+   * `isContained` decides which end this issue sits on, which is what decides the phrase Jira shows
+   * against it. An entry naming `inwardIssue` means THIS issue is the outward end and so reads with
+   * the INWARD phrase — "is contained within". An entry naming `outwardIssue` reads with the outward
+   * phrase — "contains". This mapping is the thing the production bug got backwards.
+   */
+  function makeContainedIssue(key: string, containerKey: string, isContained = true) {
     return {
       id: key,
       key,
@@ -333,7 +340,7 @@ describe('containment links draw the same nesting as a real sub-task', () => {
         issuetype: { name: 'Story' },
         issuelinks: [{
           type: { name: 'Container', inward: 'is contained within', outward: 'contains' },
-          ...(isInward ? { outwardIssue: { key: containerKey } } : { inwardIssue: { key: containerKey } }),
+          ...(isContained ? { inwardIssue: { key: containerKey } } : { outwardIssue: { key: containerKey } }),
         }],
       },
     } as unknown as JiraIssue;
@@ -349,7 +356,9 @@ describe('containment links draw the same nesting as a real sub-task', () => {
   });
 
   it('does not nest the CONTAINER under the thing it holds', () => {
-    // Only the inward side of the pair counts; the container reads "contains", not "contained within".
+    // The container's own entry reads with the OUTWARD phrase — "contains" — so it must not be
+    // treated as contained. Getting this backwards is how a Dev story ended up nested under its own
+    // SL story in Jira while the board drew it the right way round.
     const issueSet = buildIssueSet([makeContainedIssue('DEV-1', 'DEV-2', false)]);
 
     const [item] = resolveBoardItems(issueSet, SCOPE, UNMAPPED_RESOLVER);
@@ -361,7 +370,7 @@ describe('containment links draw the same nesting as a real sub-task', () => {
       id: 'DEV-3', key: 'DEV-3',
       fields: {
         summary: 'DEV-3', status: { name: 'To Do' }, issuetype: { name: 'Story' },
-        issuelinks: [{ type: { inward: 'is blocked by', outward: 'blocks' }, outwardIssue: { key: 'DEV-1' } }],
+        issuelinks: [{ type: { inward: 'is blocked by', outward: 'blocks' }, inwardIssue: { key: 'DEV-1' } }],
       },
     } as unknown as JiraIssue;
 
