@@ -101,3 +101,57 @@ describe('ChecklistDiagnosticsPanel', () => {
     expect(mockJiraGet).not.toHaveBeenCalled();
   });
 });
+
+describe('ChecklistDiagnosticsPanel — it must agree with the board it explains', () => {
+  /** This instance's real shape: three checklist-ish fields holding the same item three ways. */
+  const THREE_FIELDS = [
+    { id: 'customfield_10600', name: 'Smart Checklist', schema: { custom: 'rw-smart-checklist-biz:x' } },
+    { id: 'customfield_10601', name: 'Smart Checklist Progress' },
+    { id: 'customfield_10252', name: 'Checklists' },
+  ];
+
+  it('names the field the board READS, not the one its name would suggest', async () => {
+    // The defect this pins: the panel picked by NAME while the board picks by VALUE, so the tool
+    // built to explain a blank checklist pointed at a different field than the board was using.
+    mockJiraResponses(THREE_FIELDS, {
+      // The name-first rule would pick 10600 for being called "Smart Checklist". Its value holds
+      // an empty checklist, so the board's value-first rule passes it over.
+      customfield_10600: 'Checklist(id=1, issueId=2, _items=[])',
+      customfield_10601: '0/1',
+      customfield_10252: '- [ ] this is a test',
+    });
+
+    await probeFor('ENCUC-2311');
+
+    await waitFor(() => expect(screen.getByTestId('rollup-checklist-diagnostics').textContent)
+      .toContain('The board would use customfield_10252'));
+  });
+
+  it('reports a parse count for EVERY candidate, not only the winner', async () => {
+    mockJiraResponses(THREE_FIELDS, {
+      customfield_10600: 'Checklist(id=1, issueId=2, _items=[])',
+      customfield_10601: '0/1',
+      customfield_10252: '- [ ] one\n- [x] two',
+    });
+
+    await probeFor('ENCUC-2311');
+
+    await waitFor(() => expect(screen.getByTestId('rollup-checklist-diagnostics').textContent)
+      .toMatch(/parser read\s*2\s*item/));
+    // The empty dump and the progress summary each get their own honest zero.
+    const zeroCounts = screen.getByTestId('rollup-checklist-diagnostics').textContent
+      ?.match(/parser read\s*0\s*item/g) ?? [];
+    expect(zeroCounts).toHaveLength(2);
+  });
+
+  it('still speaks up when NO field parses, which is when it is most needed', async () => {
+    mockJiraResponses(THREE_FIELDS, {
+      customfield_10600: [{ name: 'structured', checked: false }],
+      customfield_10601: '0/1',
+    });
+
+    await probeFor('ENCUC-2311');
+
+    expect(await screen.findByText(/No field yielded a single item/)).toBeTruthy();
+  });
+});

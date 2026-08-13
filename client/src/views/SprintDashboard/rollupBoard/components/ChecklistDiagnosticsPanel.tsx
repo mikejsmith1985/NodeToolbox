@@ -17,7 +17,7 @@
 import { useState } from 'react';
 
 import { jiraGet } from '../../../../services/jiraApi.ts';
-import { findChecklistFieldId, parseChecklistItems } from '../checklistItems.ts';
+import { chooseChecklistFieldByValue, findChecklistFieldId, parseChecklistItems } from '../checklistItems.ts';
 import styles from '../RollupBoardTab.module.css';
 
 /** How much of a raw value to show. Enough to recognise the shape, short of a wall of text. */
@@ -32,11 +32,17 @@ interface ChecklistFieldCandidate {
 
 interface ChecklistProbeResult {
   candidates: ChecklistFieldCandidate[];
-  /** Which field the board would actually use, by its own discovery rule. */
+  /** Which field the board would actually use. Null when no candidate yields a single item. */
   chosenFieldId: string | null;
   /** The raw stored value on the sampled issue, JSON-encoded so its SHAPE is visible. */
   rawValueByFieldId: Record<string, string>;
-  parsedItemCount: number | null;
+  /**
+   * What the board's parser made of EVERY candidate, not only the winner.
+   *
+   * Reporting the winner alone answered nothing in the case that matters most — when no field parses
+   * at all there is no winner, and the panel fell silent exactly when it was needed.
+   */
+  parsedItemCountByFieldId: Record<string, number>;
   errorMessage: string | null;
 }
 
@@ -54,7 +60,7 @@ function previewRawValue(rawValue: unknown): string {
 /** Reads the field catalogue and one issue, and reports what the board would make of them. */
 async function probeChecklistField(issueKey: string): Promise<ChecklistProbeResult> {
   const emptyResult: ChecklistProbeResult = {
-    candidates: [], chosenFieldId: null, rawValueByFieldId: {}, parsedItemCount: null, errorMessage: null,
+    candidates: [], chosenFieldId: null, rawValueByFieldId: {}, parsedItemCountByFieldId: {}, errorMessage: null,
   };
 
   try {
@@ -70,9 +76,10 @@ async function probeChecklistField(issueKey: string): Promise<ChecklistProbeResu
         schemaType: String(field.schema?.custom ?? ''),
       }));
 
-    const chosenFieldId = findChecklistFieldId(fieldCatalog ?? []);
+    // Without an issue there is no value to judge by, so the best that can be said is which field
+    // the NAME would pick. It is labelled as a guess below for exactly that reason.
     if (issueKey.trim() === '') {
-      return { ...emptyResult, candidates, chosenFieldId };
+      return { ...emptyResult, candidates, chosenFieldId: findChecklistFieldId(fieldCatalog ?? []) };
     }
 
     // Asking for the WHOLE issue rather than named fields: a field the board never requests is
@@ -83,13 +90,20 @@ async function probeChecklistField(issueKey: string): Promise<ChecklistProbeResu
     const issueFields = issue.fields ?? {};
 
     const rawValueByFieldId: Record<string, string> = {};
-    for (const candidate of candidates) rawValueByFieldId[candidate.id] = previewRawValue(issueFields[candidate.id]);
+    const parsedItemCountByFieldId: Record<string, number> = {};
+    for (const candidate of candidates) {
+      rawValueByFieldId[candidate.id] = previewRawValue(issueFields[candidate.id]);
+      parsedItemCountByFieldId[candidate.id] = parseChecklistItems(issueFields[candidate.id]).length;
+    }
 
+    // The SAME choice the board makes, not a second rule that happens to agree today. This panel
+    // previously reported the name-first pick while the board read the value-first one, so on the
+    // very instance it was built to explain it named a different field than the board was using.
     return {
       candidates,
-      chosenFieldId,
+      chosenFieldId: chooseChecklistFieldByValue(candidates.map((candidate) => candidate.id), issueFields),
       rawValueByFieldId,
-      parsedItemCount: chosenFieldId ? parseChecklistItems(issueFields[chosenFieldId]).length : null,
+      parsedItemCountByFieldId,
       errorMessage: null,
     };
   } catch (probeError: unknown) {
@@ -155,18 +169,25 @@ export function ChecklistDiagnosticsPanel() {
                 {candidate.id}{candidate.id === probeResult.chosenFieldId ? '  ← used' : ''}
               </code>
               <span className={styles.fieldLabel}>{candidate.name} · {candidate.schemaType || 'no schema type'}</span>
+              {probeResult.parsedItemCountByFieldId[candidate.id] !== undefined && (
+                <span className={styles.fieldLabel}>
+                  The board&apos;s parser read{' '}
+                  <strong>{probeResult.parsedItemCountByFieldId[candidate.id]}</strong> item(s) from this value.
+                </span>
+              )}
               {probeResult.rawValueByFieldId[candidate.id] !== undefined && (
                 <pre className={styles.diagnosticValue}>{probeResult.rawValueByFieldId[candidate.id]}</pre>
               )}
             </div>
           ))}
 
-          {probeResult.parsedItemCount !== null && (
+          {/* The case the panel exists for. Reporting only the WINNER's count said nothing here,
+              because when nothing parses there is no winner — it fell silent exactly when needed. */}
+          {probeResult.candidates.length > 0 && probeResult.chosenFieldId === null && (
             <p className={styles.fieldLabel}>
-              The board&apos;s parser read <strong>{probeResult.parsedItemCount}</strong> item(s) from that value.
-              {probeResult.parsedItemCount === 0
-                && ' Zero here with a non-empty value above means the stored format is not the one the'
-                  + ' parser expects — send that raw value and it can be supported.'}
+              No field yielded a single item, so the board can draw no checklist from this issue. Zero
+              against a non-empty value above means the stored format is not the one the parser expects
+              — send that raw value and it can be supported.
             </p>
           )}
         </>

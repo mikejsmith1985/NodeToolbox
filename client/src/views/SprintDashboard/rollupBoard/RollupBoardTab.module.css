@@ -5,10 +5,12 @@
  * this surface, and re-applying it double-shrinks a full-width board.
  */
 
-/* Roughly the dashboard chrome above the board: the app header, the tab strip and the board's own
-   toolbar. The board takes the rest of the viewport so its column headers have something to stick to. */
+/* The app header and the tab strip — all that now sits above the board, since its own toolbar moved
+   inside the scroll region. Only a fallback for the moment before the first real measurement; the
+   height that counts is measured. Deliberately an UNDER-estimate: too small only costs a scrollbar
+   for one frame, while too large lets the page scroll and takes the sticky headers with it. */
 .boardShell {
-  --rollup-board-chrome-height: 340px;
+  --rollup-board-chrome-height: 180px;
 }
 
 /* ── Board shell ── */
@@ -163,6 +165,14 @@
   padding: var(--spacing-xs) var(--spacing-md);
   background: var(--color-surface-1);
   border-radius: var(--radius-md) var(--radius-md) 0 0;
+  /* Pinned just below the column headers, whose measured height arrives as the variable, so a tall
+     lane never leaves you looking at cards without knowing which Feature they belong to. Sticky is
+     naturally bounded by the lane, so the header leaves with its own lane rather than hanging over
+     the next one. `left: 0` keeps it in place while the columns scroll sideways beneath it. */
+  position: sticky;
+  top: var(--rollup-column-header-height, 0px);
+  left: 0;
+  z-index: 1;
 }
 
 .laneHeaderSynthetic {
@@ -492,21 +502,9 @@
   color: var(--color-text-primary);
 }
 
-.cardTypeLabel {
-  font-size: var(--font-size-xs);
-  color: var(--color-text-secondary);
-}
-
 .cardSummary {
   font-size: var(--font-size-sm);
   color: var(--color-text-primary);
-}
-
-.cardMetaRow {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  align-items: center;
 }
 
 .cardRoute {
@@ -517,12 +515,6 @@
 .cardChecklist {
   font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
-}
-
-.cardGrip {
-  cursor: grab;
-  color: var(--color-text-muted);
-  font-size: var(--font-size-xs);
 }
 
 .cardPending {

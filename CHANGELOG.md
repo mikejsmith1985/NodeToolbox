@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Roll-Up Board — a swimlane's identity now stays on screen while you scroll through its cards.**
+  The Feature's header pins just below the column headers, at a stop point measured from the header
+  row rather than guessed, so a tall lane no longer leaves you looking at cards with no idea which
+  Feature they belong to. It is bounded by its own lane, so it leaves with that lane instead of
+  hanging over the next one, and stays put while the columns scroll sideways beneath it.
+
+### Fixed
+- **The checklist diagnostic named a different field than the board actually reads.** It picked by
+  NAME while the board picks by VALUE — so on the one instance it was built to explain, the tool
+  pointed at `customfield_10600` while the board was reading `customfield_10252`. It now makes the
+  board's own choice, by calling the same function, so the two cannot drift apart.
+  It also reports the parse count for **every** candidate field rather than only the winner. Reporting
+  the winner alone said nothing in the case that matters most: when no field parses at all there is no
+  winner, and the panel fell silent exactly when it was needed.
+
 ### Fixed
 - **Roll-Up Board — a Feature no longer reads 100% complete with an open Story underneath it.** On
   DENP-1358 the lane showed *"100%, 2 of 2 by issue count"* and held only the two **closed Risks**.

@@ -342,9 +342,13 @@ const EMPTY_LOAD_STATE: RollupBoardLoadState = {
  *
  * Re-measured on resize and on the app's text-size changes, both of which move where the board starts.
  */
-function useBoardScrollerMaxHeight(): [React.RefObject<HTMLDivElement | null>, number | null] {
+function useBoardScrollerMaxHeight(): [React.RefObject<HTMLDivElement | null>, number | null, number] {
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const [maxHeightPx, setMaxHeightPx] = useState<number | null>(null);
+  // Where a swimlane header must stop, so it pins UNDER the column headers rather than behind them.
+  // Measured, because the row's height depends on the text size and on how many Jira states each
+  // column names.
+  const [columnHeaderHeightPx, setColumnHeaderHeightPx] = useState(0);
 
   useEffect(() => {
     function measure(): void {
@@ -358,6 +362,9 @@ function useBoardScrollerMaxHeight(): [React.RefObject<HTMLDivElement | null>, n
         ),
         viewportHeightPx: window.innerHeight,
       }));
+
+      const columnHeaderRow = scrollerElement.querySelector('[data-testid="rollup-column-header-row"]');
+      setColumnHeaderHeightPx(Math.round(columnHeaderRow?.getBoundingClientRect().height ?? 0));
     }
 
     measure();
@@ -368,6 +375,9 @@ function useBoardScrollerMaxHeight(): [React.RefObject<HTMLDivElement | null>, n
     const sizeObserver = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
     if (sizeObserver !== null && scrollerRef.current?.parentElement) {
       sizeObserver.observe(scrollerRef.current.parentElement);
+      // The scroller too, because the column header row changes height inside it — when a column is
+      // focused, when the vocabulary changes — without the shell around it moving at all.
+      sizeObserver.observe(scrollerRef.current);
     }
 
     return () => {
@@ -376,7 +386,7 @@ function useBoardScrollerMaxHeight(): [React.RefObject<HTMLDivElement | null>, n
     };
   }, []);
 
-  return [scrollerRef, maxHeightPx];
+  return [scrollerRef, maxHeightPx, columnHeaderHeightPx];
 }
 
 /** Renders the roll-up board for the team's currently selected Jira board. */
@@ -393,7 +403,7 @@ export default function RollupBoardTab({
   piReviewPages = [],
   projectKey = '',
 }: RollupBoardTabProps) {
-  const [boardScrollerRef, boardScrollerMaxHeightPx] = useBoardScrollerMaxHeight();
+  const [boardScrollerRef, boardScrollerMaxHeightPx, columnHeaderHeightPx] = useBoardScrollerMaxHeight();
   const [loadState, setLoadState] = useState<RollupBoardLoadState>(EMPTY_LOAD_STATE);
   const [filters, setFilters] = useState<QuickFilterState>(EMPTY_QUICK_FILTER_STATE);
   const [preferences, setPreferences] = useState<BoardPreferences>(() =>
@@ -1624,7 +1634,13 @@ export default function RollupBoardTab({
       <div
         className={styles.boardScroller}
         ref={boardScrollerRef}
-        style={boardScrollerMaxHeightPx === null ? undefined : { maxHeight: `${boardScrollerMaxHeightPx}px` }}
+        style={{
+          ...(boardScrollerMaxHeightPx === null ? {} : { maxHeight: `${boardScrollerMaxHeightPx}px` }),
+          // Read by .laneHeader, so a swimlane's identity pins just below the column headers instead
+          // of scrolling away — on a board of twenty Features a tall lane otherwise leaves you
+          // looking at cards with no idea which Feature they belong to.
+          '--rollup-column-header-height': `${columnHeaderHeightPx}px`,
+        } as React.CSSProperties}
       >
       <div className={styles.boardChrome}>
       <div className={styles.boardActions}>
