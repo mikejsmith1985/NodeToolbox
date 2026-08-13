@@ -70,24 +70,22 @@ describe('useSharePointAutoPull (the 60s tick)', () => {
     vi.unstubAllGlobals();
   });
 
-  it('pulls once when a tick lands in a due slot, and not again for the same slot', async () => {
+  it('never pulls, because the server owns this schedule now', async () => {
+    // The retirement, asserted rather than assumed. Two schedulers for one job would double every
+    // pull, race the server's run mutex, and split one sweep across two Activity Log rows.
     renderHook(() => useSharePointAutoPull());
 
-    // 15:30:30 — the 30-minute boundary slot is due.
     await vi.advanceTimersByTimeAsync(60_000);
-    expect(mockPullSharePointEmails).toHaveBeenCalledTimes(1);
-    expect(mockPullSharePointEmails.mock.calls[0][0]).toBe('/sites/Team/GitHubEmails');
+    await vi.advanceTimersByTimeAsync(60_000);
 
-    // 15:31:30 — same half-hour, off boundary: no second pull.
-    await vi.advanceTimersByTimeAsync(60_000);
-    expect(mockPullSharePointEmails).toHaveBeenCalledTimes(1);
+    expect(mockPullSharePointEmails).not.toHaveBeenCalled();
   });
 
-  it('skips silently when the relay is not connected — the slot simply passes', async () => {
-    mockFetchRelayStatus.mockResolvedValue({ system: 'sharepoint', isConnected: false, lastPingAt: null, version: null });
+  it('does not even ask about the relay, since it is not the one pulling', async () => {
     renderHook(() => useSharePointAutoPull());
 
     await vi.advanceTimersByTimeAsync(60_000);
-    expect(mockPullSharePointEmails).not.toHaveBeenCalled();
+
+    expect(mockFetchRelayStatus).not.toHaveBeenCalled();
   });
 });

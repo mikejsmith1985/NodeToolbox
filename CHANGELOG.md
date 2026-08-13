@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **The SharePoint GitHub-email schedule now runs on the server — the Toolbox tab no longer has to be
+  open.** The schedule used to live in the browser, because listing the library, downloading each
+  email and clearing the ingested ones all ran there. Close the tab and the schedule stopped. Nothing
+  about SharePoint requires a browser to be *driving*, only that the requests are executed in the
+  authenticated session — and `submitRelayRequest` already hands a request to the bookmarklet and
+  waits for its answer. So the server drives the same conversation now. **Only your SharePoint tab has
+  to stay open.**
+  Everything after collection is the pipeline that already existed: `runGithubEmailSourcesNow` is what
+  the browser called too, so parsing, deduplication, the seen-names ledger, Jira posting and the
+  Activity Log are untouched. Batching, the shared pull id that keeps one sweep to one log row, the
+  empty-sweep record, and clear-after-ingest — including its refusal to delete anything the ledger has
+  not confirmed — all behave exactly as before.
+  The browser-side ticker is **retired**, deliberately and visibly: two schedulers for one job would
+  double every pull, race the server's run mutex, and split one sweep across two log rows.
+
+### Fixed
+- **Roll-Up Board — a discipline's work is found however that discipline links it.** QE's INTTEST
+  stories hang off `QEINT-608` through the portfolio **Parent Link**, not the Feature Link the dev team
+  uses. The board asked only about the Feature Link, so the previous fix widened the *project* scope and
+  still found nothing — the issues were being fetched and then discarded for having no Feature. All
+  three linkages now count: Feature Link, Parent Link, and sub-task parent. A discipline does not have
+  to wire its work the way the dev team does.
+- **An empty sub-lane now says what it searched for.** *"Has not broken its work down yet"* was only one
+  explanation for an empty band, and twice it was the wrong one while the real cause — a linkage nobody
+  checked — stayed hidden. The band now names the clone and the fields that were checked.
+
 ### Fixed
 - **The relay now survives a NodeToolbox restart — no more clicking the bookmarklet after every
   update.** This was a one-line omission, not a design limit. `isActive` was set only by `/register`,

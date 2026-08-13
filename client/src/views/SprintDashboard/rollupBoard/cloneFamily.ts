@@ -186,3 +186,35 @@ export function describeUnconfiguredClones(classifications: readonly CloneClassi
     + ' Add the project as a discipline in Board setup to see its work, or ignore this if it is another'
     + ' team\'s copy.';
 }
+
+/**
+ * Which clone Feature an issue belongs to, by whichever field actually carries the link.
+ *
+ * The board's own roll-up reads the Feature Link and nothing else, which is right for the dev team
+ * because that is how the dev team works. It is not universal: QE's INTTEST work hangs off QEINT-608
+ * through the portfolio Parent Link, so resolving by Feature Link alone found the issues and then
+ * discarded every one of them for having no Feature.
+ *
+ * The query already restricted the search to these clones, so anything reaching here belongs to one
+ * of them. This only has to say WHICH — and it tries each field in turn rather than assuming.
+ */
+export function readCloneAttribution(
+  issue: { fields?: Record<string, unknown> },
+  cloneFeatureKeys: ReadonlySet<string>,
+  linkageFieldIds: readonly string[],
+): string | null {
+  const issueFields = (issue?.fields ?? {}) as Record<string, unknown>;
+
+  for (const fieldId of linkageFieldIds) {
+    if (fieldId === '') continue;
+    const rawValue = issueFields[fieldId];
+    const linkedKey = typeof rawValue === 'string'
+      ? rawValue.trim()
+      : String((rawValue as { key?: string } | null | undefined)?.key ?? '').trim();
+    if (linkedKey !== '' && cloneFeatureKeys.has(linkedKey)) return linkedKey;
+  }
+
+  // A sub-task under a clone, which carries no custom field at all.
+  const parentKey = String((issueFields.parent as { key?: string } | undefined)?.key ?? '').trim();
+  return parentKey !== '' && cloneFeatureKeys.has(parentKey) ? parentKey : null;
+}

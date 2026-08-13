@@ -763,3 +763,161 @@ describe('run log persistence', () => {
     expect(typeof runs[0].ranAtIso).toBe('string');
   });
 });
+
+// ── The SharePoint schedule, now owned by the server ──────────────────────────
+//
+// This used to be impossible: the tick bailed on `!cfg.dropFolder`, so a SharePoint-only board had no
+// server schedule at all and the browser tab had to keep one. Closing the tab stopped it.
+
+describe('checkAndFireGithubEmailIntake — SharePoint-only boards', () => {
+  const sharePointConfig = {
+    scheduler: {
+      githubEmailIntake: {
+        isEnabled: true,
+        dropFolder: '',
+        sharePointFolderUrl: 'https://contoso.sharepoint.com/sites/T/Shared%20Documents/Mail',
+        scheduleTime: '07:00',
+        intervalMin: 30,
+      },
+    },
+  };
+
+  it('fires on a boundary even with no local drop folder', () => {
+    const fired = [];
+
+    const didFire = scheduler.checkAndFireGithubEmailIntake(sharePointConfig, {
+      today: '2026-08-13',
+      currentTime: '07:30',
+      isRunBusy: () => false,
+      lastAlignedSlot: null,
+      runIntake: (configuration) => { fired.push(configuration); return Promise.resolve({ ok: true }); },
+    });
+
+    expect(didFire).toBe(true);
+    expect(fired).toHaveLength(1);
+  });
+
+  it('still does nothing when neither a folder nor a SharePoint library is configured', () => {
+    const emptyConfig = { scheduler: { githubEmailIntake: { isEnabled: true, dropFolder: '', sharePointFolderUrl: '' } } };
+
+    expect(scheduler.checkAndFireGithubEmailIntake(emptyConfig, {
+      today: '2026-08-13', currentTime: '07:30', isRunBusy: () => false, lastAlignedSlot: null,
+    })).toBe(false);
+  });
+
+  it('honours the start time on a SharePoint board exactly as on a local one', () => {
+    expect(scheduler.checkAndFireGithubEmailIntake(sharePointConfig, {
+      today: '2026-08-13',
+      currentTime: '06:30',
+      isRunBusy: () => false,
+      lastAlignedSlot: null,
+      runIntake: () => Promise.resolve({ ok: true }),
+    })).toBe(false);
+  });
+
+  it('fires once per slot, not once per tick', () => {
+    expect(scheduler.checkAndFireGithubEmailIntake(sharePointConfig, {
+      today: '2026-08-13',
+      currentTime: '07:30',
+      isRunBusy: () => false,
+      lastAlignedSlot: '2026-08-13 07:30',
+      runIntake: () => Promise.resolve({ ok: true }),
+    })).toBe(false);
+  });
+});
+
+describe('runSharePointIntakeNow', () => {
+  const configuration = {
+    scheduler: {
+      githubEmailIntake: {
+        isEnabled: true,
+        dropFolder: '',
+        sharePointFolderUrl: 'https://contoso.sharepoint.com/sites/T/Shared%20Documents/Mail',
+        shouldClearSharePointAfterIngest: false,
+      },
+    },
+  };
+
+  it('collects the folder and hands it to the existing pipeline', async () => {
+    const runSources = jest.fn(async () => ({ ok: true, result: { postedCount: 2, skippedCount: 0, errorCount: 0 } }));
+    const relay = {
+      collectNewSharePointSources: async () => ({
+        sources: [{ fileName: 'mail-one', content: 'a' }, { fileName: 'mail-two', content: 'b' }],
+        listedCount: 2,
+        unsupportedCount: 0,
+      }),
+      recycleConfirmedFiles: jest.fn(),
+    };
+
+    const outcome = await scheduler.runSharePointIntakeNow(configuration, { relay, runSources, filterNewFileNames: async (names) => names });
+
+    expect(outcome.ok).toBe(true);
+    expect(outcome.result.postedCount).toBe(2);
+    // The clear flag is off, so nothing is touched in the library.
+    expect(relay.recycleConfirmedFiles).not.toHaveBeenCalled();
+  });
+
+  it('records an empty sweep, because "nothing new" once looked identical to "never ran"', async () => {
+    const runSources = jest.fn(async () => ({ ok: true, result: { postedCount: 0, skippedCount: 0, errorCount: 0 } }));
+    const relay = {
+      collectNewSharePointSources: async () => ({ sources: [], listedCount: 9, unsupportedCount: 0 }),
+      recycleConfirmedFiles: jest.fn(),
+    };
+
+    await scheduler.runSharePointIntakeNow(configuration, { relay, runSources, filterNewFileNames: async () => [] });
+
+    expect(runSources).toHaveBeenCalledTimes(1);
+    expect(runSources.mock.calls[0][1].sources).toEqual([]);
+  });
+
+  it('gives every batch of one sweep the same pull id, so the log shows one row', async () => {
+    const seenPullIds = [];
+    const runSources = jest.fn(async (ignored, pullInput) => {
+      seenPullIds.push(pullInput.pullId);
+      return { ok: true, result: {} };
+    });
+    const manySources = Array.from({ length: 25 }, (ignoredValue, index) => ({ fileName: `mail-${index}`, content: 'x' }));
+    const relay = {
+      collectNewSharePointSources: async () => ({ sources: manySources, listedCount: 25, unsupportedCount: 0 }),
+      recycleConfirmedFiles: jest.fn(),
+    };
+
+    await scheduler.runSharePointIntakeNow(configuration, { relay, runSources, filterNewFileNames: async (names) => names });
+
+    expect(seenPullIds.length).toBeGreaterThan(1);
+    expect(new Set(seenPullIds).size).toBe(1);
+  });
+
+  it('clears the library only when the board asked it to', async () => {
+    const clearingConfig = {
+      scheduler: {
+        githubEmailIntake: { ...configuration.scheduler.githubEmailIntake, shouldClearSharePointAfterIngest: true },
+      },
+    };
+    const relay = {
+      collectNewSharePointSources: async () => ({ sources: [{ fileName: 'mail', content: 'a' }], listedCount: 1, unsupportedCount: 0 }),
+      recycleConfirmedFiles: jest.fn(async () => ({ deletedCount: 1, keptCount: 0 })),
+    };
+
+    const outcome = await scheduler.runSharePointIntakeNow(clearingConfig, {
+      relay,
+      runSources: async () => ({ ok: true, result: {} }),
+      filterNewFileNames: async () => [],
+    });
+
+    expect(relay.recycleConfirmedFiles).toHaveBeenCalled();
+    expect(outcome.deletedCount).toBe(1);
+  });
+
+  it('says the relay is the problem rather than throwing a stack trace at the tick', async () => {
+    const relay = {
+      collectNewSharePointSources: async () => { throw new Error('Relay bridge is not active for sharepoint.'); },
+      recycleConfirmedFiles: jest.fn(),
+    };
+
+    const outcome = await scheduler.runSharePointIntakeNow(configuration, { relay, runSources: jest.fn(), filterNewFileNames: async () => [] });
+
+    expect(outcome.ok).toBe(false);
+    expect(outcome.message).toContain('Relay bridge is not active');
+  });
+});

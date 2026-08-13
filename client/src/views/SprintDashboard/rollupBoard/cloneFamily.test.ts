@@ -11,6 +11,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   classifyClone,
+  readCloneAttribution,
   describeUnconfiguredClones,
   findCloneByFeatureName,
   readCloneLinks,
@@ -185,5 +186,40 @@ describe('describeUnconfiguredClones', () => {
 
     expect(sentence).toContain('BTINT-77');
     expect(sentence).toContain('Board setup');
+  });
+});
+
+describe('readCloneAttribution', () => {
+  const CLONES = new Set(['QEINT-608']);
+  const FIELDS = ['customfield_10108', 'customfield_10100'];
+
+  it('reads the Feature Link, the way the dev team wires its work', () => {
+    const issue = { fields: { customfield_10108: { key: 'QEINT-608' } } };
+
+    expect(readCloneAttribution(issue, CLONES, FIELDS)).toBe('QEINT-608');
+  });
+
+  it('reads the portfolio Parent Link, the way QE wires its INTTEST work', () => {
+    // The case that made every QE sub-lane read "has not broken its work down yet": the issues were
+    // fetched and then discarded, because only the Feature Link was consulted.
+    const issue = { fields: { customfield_10100: 'QEINT-608' } };
+
+    expect(readCloneAttribution(issue, CLONES, FIELDS)).toBe('QEINT-608');
+  });
+
+  it('falls back to a sub-task parent, which carries no custom field at all', () => {
+    const issue = { fields: { parent: { key: 'QEINT-608' } } };
+
+    expect(readCloneAttribution(issue, CLONES, FIELDS)).toBe('QEINT-608');
+  });
+
+  it('claims nothing for an issue pointing at a Feature that is not one of these clones', () => {
+    const issue = { fields: { customfield_10108: { key: 'DENP-1400' } } };
+
+    expect(readCloneAttribution(issue, CLONES, FIELDS)).toBeNull();
+  });
+
+  it('claims nothing for an issue with no linkage at all', () => {
+    expect(readCloneAttribution({ fields: {} }, CLONES, FIELDS)).toBeNull();
   });
 });

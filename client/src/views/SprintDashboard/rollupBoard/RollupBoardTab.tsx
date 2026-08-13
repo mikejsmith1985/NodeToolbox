@@ -40,8 +40,8 @@ import {
   type TransitionRequiredField,
 } from '../featureReviewFixes.ts';
 import { buildRenderedColumns, resolveColumnIdForItem } from './boardColumns.ts';
-import { classifyClone, describeUnconfiguredClones, readCloneLinks } from './cloneFamily.ts';
-import { fetchCloneFeatures, fetchDisciplineWork } from './rollupBoardFetch.ts';
+import { classifyClone, describeUnconfiguredClones, readCloneAttribution, readCloneLinks } from './cloneFamily.ts';
+import { fetchCloneFeatures, fetchDisciplineWork, PARENT_LINK_FIELD_ID } from './rollupBoardFetch.ts';
 import { buildSubLanes, readSubLaneItemLists } from './subLaneLayout.ts';
 import { computeFamilyProgress } from './familyProgress.ts';
 import {
@@ -594,8 +594,14 @@ export default function RollupBoardTab({
         );
 
         for (const item of disciplineItems) {
-          if (item.featureKey === null) continue;
-          itemsByCloneKey.set(item.featureKey, [...(itemsByCloneKey.get(item.featureKey) ?? []), item]);
+          // Attributed by whichever field carried the link, NOT by the roll-up's Feature Link alone:
+          // a discipline may hang its work off the clone through the portfolio Parent Link instead,
+          // and resolving by Feature Link only would fetch those issues and then drop every one.
+          const cloneKey = item.featureKey !== null && cloneKeySet.has(item.featureKey)
+            ? item.featureKey
+            : readCloneAttribution(item.issue, cloneKeySet, [scope.featureLinkFieldId, PARENT_LINK_FIELD_ID]);
+          if (cloneKey === null) continue;
+          itemsByCloneKey.set(cloneKey, [...(itemsByCloneKey.get(cloneKey) ?? []), item]);
         }
       }
       if (isMounted) setDisciplineItemsByCloneKey(itemsByCloneKey);

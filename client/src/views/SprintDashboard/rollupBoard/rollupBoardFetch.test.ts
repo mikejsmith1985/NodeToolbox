@@ -421,8 +421,27 @@ describe('fetchDisciplineWork', () => {
 
     const requestedJql = decodeURIComponent(String(mockJiraGet.mock.calls[0][0]));
     expect(requestedJql).not.toContain('project in');
-    expect(requestedJql).toContain('customfield_10108" in (QEINT-608)');
     expect(issues.map((issue) => issue.key)).toEqual(['INTTEST-4265']);
+  });
+
+  it('accepts any of the three ways an issue can hang off a Feature', async () => {
+    // Asking only about the Feature Link found nothing for QE, whose INTTEST work attaches through
+    // the portfolio hierarchy. A discipline does not have to wire it the way the dev team does.
+    mockJiraGet.mockResolvedValue({ issues: [] });
+
+    await fetchDisciplineWork([], ['QEINT-608'], SCOPE);
+
+    const requestedJql = decodeURIComponent(String(mockJiraGet.mock.calls[0][0]));
+    expect(requestedJql).toContain('customfield_10108" in (QEINT-608)');
+    expect(requestedJql).toContain('customfield_10100" in (QEINT-608)');
+    expect(requestedJql).toContain('parent in (QEINT-608)');
+    expect(requestedJql).toMatch(/ OR /);
+  });
+
+  it('returns an issue once even when it satisfies two of the clauses', async () => {
+    mockJiraGet.mockResolvedValue({ issues: [buildIssue('INTTEST-4265'), buildIssue('INTTEST-4265')] });
+
+    expect(await fetchDisciplineWork([], ['QEINT-608'], SCOPE)).toHaveLength(1);
   });
 
   it('narrows to several projects at once when a team names them', async () => {

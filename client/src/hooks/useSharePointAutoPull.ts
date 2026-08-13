@@ -1,20 +1,21 @@
-// useSharePointAutoPull.ts — Client-side scheduler for the SharePoint GitHub-email pull (GH #282).
+// useSharePointAutoPull.ts — RETIRED scheduler, kept only for its schedule rule.
 //
-// The server's scheduled intake can only sweep a LOCAL drop folder: the SharePoint pull rides the
-// browser relay (the user's session), which the server does not have. So in a SharePoint-only setup
-// the schedule the user configured (start time + interval) is honored HERE, by the Toolbox client,
-// while the app is open: a 60-second tick fires the pull on each clock-aligned boundary — exactly
-// the server scheduler's cadence rules — and skips silently when the relay is not connected (the
-// slot simply passes; the next boundary tries again). Every run, including empty sweeps, still
-// lands in the Activity Log server-side, so the schedule's heartbeat stays visible.
+// This used to run the SharePoint pull on a 60-second tick inside the Toolbox tab, because the server
+// could only sweep a LOCAL drop folder — the SharePoint pull rides the browser relay, and the server
+// had no way to drive it. That made the schedule depend on a browser tab staying open, and on the
+// relay being recognised on the exact minute a boundary fell.
+//
+// The server drives the relay itself now (`runSharePointIntakeNow`), so the schedule lives with every
+// other schedule and runs whether or not this tab is open. Only the SharePoint tab has to be there.
+//
+// `computeAutoPullSlot` survives because it is a clean statement of the cadence rule and is still
+// worth its tests, but NOTHING calls it in anger. Two schedulers for one job would double every pull,
+// race for the server's mutex, and split one sweep's Activity Log row in half.
 
 import { useEffect, useRef } from 'react';
 
 import { fetchRelayStatus } from '../services/relayBridgeApi.ts';
 import { pullSharePointEmails } from '../services/githubEmailSharePointPull.ts';
-
-/** How often the client checks whether a scheduled slot is due — same cadence as the server tick. */
-const SCHEDULE_CHECK_INTERVAL_MS = 60_000;
 
 /** The intake-config fields the schedule rule reads (a subset of the server's config response). */
 interface AutoPullConfig {
@@ -122,13 +123,19 @@ export function useSharePointAutoPull(): void {
       }
     }
 
-    const intervalHandle = setInterval(() => { void runScheduleTick(); }, SCHEDULE_CHECK_INTERVAL_MS);
-    return () => clearInterval(intervalHandle);
+    // Deliberately NOT started. The server owns this schedule now, and a second ticker would double
+    // every pull, race the server's run mutex, and split one sweep across two Activity Log rows.
+    void runScheduleTick;
   }, []);
 }
 
-/** App-mounted gate (renders nothing) — the SharePoint schedule lives while Toolbox is open. */
+/**
+ * App-mounted gate, now a no-op.
+ *
+ * Kept mounted rather than deleted so the retirement is visible at the mount site: somebody looking
+ * for "where does the SharePoint schedule run" finds this and is told, instead of finding nothing and
+ * assuming it was lost.
+ */
 export function SharePointAutoPullGate(): null {
-  useSharePointAutoPull();
   return null;
 }
