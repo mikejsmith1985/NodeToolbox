@@ -417,31 +417,55 @@ describe('fetchDisciplineWork', () => {
   it('asks for everything linked to the clone when no project is named', async () => {
     mockJiraGet.mockResolvedValue({ issues: [buildIssue('INTTEST-4265')] });
 
-    const issues = await fetchDisciplineWork([], ['QEINT-608'], SCOPE);
+    const outcome = await fetchDisciplineWork([], ['QEINT-608'], SCOPE);
 
     const requestedJql = decodeURIComponent(String(mockJiraGet.mock.calls[0][0]));
     expect(requestedJql).not.toContain('project in');
-    expect(issues.map((issue) => issue.key)).toEqual(['INTTEST-4265']);
+    expect(outcome.issues.map((issue) => issue.key)).toEqual(['INTTEST-4265']);
   });
 
-  it('accepts any of the three ways an issue can hang off a Feature', async () => {
-    // Asking only about the Feature Link found nothing for QE, whose INTTEST work attaches through
-    // the portfolio hierarchy. A discipline does not have to wire it the way the dev team does.
+  it('asks about each linkage SEPARATELY, so one bad clause cannot reject the lot', async () => {
+    // Combined into `A OR B OR C`, a single unknown field id makes Jira reject the whole query — which
+    // silently zeroed every discipline on the board.
     mockJiraGet.mockResolvedValue({ issues: [] });
 
     await fetchDisciplineWork([], ['QEINT-608'], SCOPE);
 
-    const requestedJql = decodeURIComponent(String(mockJiraGet.mock.calls[0][0]));
-    expect(requestedJql).toContain('customfield_10108" in (QEINT-608)');
-    expect(requestedJql).toContain('customfield_10100" in (QEINT-608)');
-    expect(requestedJql).toContain('parent in (QEINT-608)');
-    expect(requestedJql).toMatch(/ OR /);
+    const requestedJql = mockJiraGet.mock.calls.map((call) => decodeURIComponent(String(call[0])));
+    expect(requestedJql).toHaveLength(3);
+    expect(requestedJql.some((jql) => jql.includes('customfield_10108" in (QEINT-608)'))).toBe(true);
+    expect(requestedJql.some((jql) => jql.includes('customfield_10100" in (QEINT-608)'))).toBe(true);
+    expect(requestedJql.some((jql) => jql.includes('parent in (QEINT-608)'))).toBe(true);
+    expect(requestedJql.every((jql) => !jql.includes(' OR '))).toBe(true);
   });
 
-  it('returns an issue once even when it satisfies two of the clauses', async () => {
-    mockJiraGet.mockResolvedValue({ issues: [buildIssue('INTTEST-4265'), buildIssue('INTTEST-4265')] });
+  it('keeps the answers it DID get when one linkage is refused', async () => {
+    mockJiraGet.mockImplementation((requestPath: string) => (
+      decodeURIComponent(requestPath).includes('customfield_10100" in (')
+        ? Promise.reject(new Error('400 Field customfield_10100 does not exist'))
+        : Promise.resolve({ issues: [buildIssue('INTTEST-4265')] })
+    ));
 
-    expect(await fetchDisciplineWork([], ['QEINT-608'], SCOPE)).toHaveLength(1);
+    const outcome = await fetchDisciplineWork([], ['QEINT-608'], SCOPE);
+
+    expect(outcome.issues.map((issue) => issue.key)).toEqual(['INTTEST-4265']);
+    expect(outcome.failures.join(' ')).toContain('Parent Link');
+  });
+
+  it('reports a refusal instead of returning a quietly empty result', async () => {
+    mockJiraGet.mockRejectedValue(new Error('400 bad JQL'));
+
+    const outcome = await fetchDisciplineWork([], ['QEINT-608'], SCOPE);
+
+    expect(outcome.issues).toEqual([]);
+    // Three linkages, three refusals — an empty array with no explanation is the bug being fixed.
+    expect(outcome.failures).toHaveLength(3);
+  });
+
+  it('returns an issue once even when two linkages both name it', async () => {
+    mockJiraGet.mockResolvedValue({ issues: [buildIssue('INTTEST-4265')] });
+
+    expect((await fetchDisciplineWork([], ['QEINT-608'], SCOPE)).issues).toHaveLength(1);
   });
 
   it('narrows to several projects at once when a team names them', async () => {
@@ -465,13 +489,13 @@ describe('fetchDisciplineWork', () => {
   it('asks Jira nothing when there are no clones to ask about', async () => {
     mockJiraGet.mockResolvedValue({ issues: [] });
 
-    expect(await fetchDisciplineWork(['ENFCT'], [], SCOPE)).toEqual([]);
+    expect((await fetchDisciplineWork(['ENFCT'], [], SCOPE)).issues).toEqual([]);
     expect(mockJiraGet).not.toHaveBeenCalled();
   });
 
   it('returns nothing rather than throwing when Jira refuses the read', async () => {
     mockJiraGet.mockRejectedValue(new Error('403'));
 
-    expect(await fetchDisciplineWork([], ['QEINT-608'], SCOPE)).toEqual([]);
+    expect((await fetchDisciplineWork([], ['QEINT-608'], SCOPE)).issues).toEqual([]);
   });
 });

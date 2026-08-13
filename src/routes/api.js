@@ -22,6 +22,7 @@ const {
 } = require('../utils/updater');
 const relayBridge = require('./relayBridge');
 const logBuffer   = require('../utils/logBuffer');
+const jiraWriteJournal = require('../services/jiraWriteJournal');
 
 /** Application version read once at startup — avoids repeated disk I/O per request */
 const APP_VERSION = require('../../package.json').version;
@@ -540,6 +541,22 @@ function createApiRouter(configuration, lifecycleHandlers = {}) {
   router.post('/api/logs/clear', (req, res) => {
     logBuffer.clearEntries();
     res.json({ ok: true });
+  });
+
+  // ── GET /api/jira-write-journal ───────────────────────────────────────────
+  // Returns this machine's local record of Jira writes, newest first, for the change review panel.
+  // The journal never leaves the machine and holds no issue content — only when a write happened,
+  // which endpoint it hit, and which part of the app made it.
+  //
+  // Query: ?sinceIso=2026-08-01T00:00:00.000Z  &issueKey=ABC-123  &limit=500
+
+  router.get('/api/jira-write-journal', (req, res) => {
+    const entries = jiraWriteJournal.queryJournal({
+      sinceIso: typeof req.query.sinceIso === 'string' ? req.query.sinceIso : undefined,
+      issueKey: typeof req.query.issueKey === 'string' ? req.query.issueKey : undefined,
+      limit:    req.query.limit ? Number(req.query.limit) : undefined,
+    });
+    res.json({ entries });
   });
 
   // ── GET /api/download/launcher-vbs ────────────────────────────────────────

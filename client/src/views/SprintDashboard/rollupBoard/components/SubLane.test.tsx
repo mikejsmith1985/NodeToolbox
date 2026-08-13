@@ -52,6 +52,7 @@ function buildSubLane(overrides: Partial<SubLaneModel> = {}): SubLaneModel {
     isCollapsed: false,
     matchedItemCount: items.length,
     totalItemCount: items.length,
+    lookupFailures: [],
     ...overrides,
   };
 }
@@ -160,5 +161,26 @@ describe('describeSubLaneSummary', () => {
 
   it('gives a plain count when nothing is filtered out', () => {
     expect(describeSubLaneSummary(buildSubLane({ matchedItemCount: 4, totalItemCount: 4 }))).toBe('4 items');
+  });
+});
+
+describe('a linkage Jira would not answer about', () => {
+  it('says the query was refused rather than claiming the discipline has no work', () => {
+    // The failure this guards: one unknown field id makes Jira reject the whole query, and swallowing
+    // that turned a fixable error into "QE has not broken its work down yet" for three releases.
+    const summary = describeSubLaneSummary(buildSubLane({
+      items: [], matchedItemCount: 0, totalItemCount: 0,
+      lookupFailures: ['Parent Link: Error: 400 Field customfield_10100 does not exist'],
+    }));
+
+    expect(summary).toContain('would not answer');
+    expect(summary).toContain('customfield_10100');
+    expect(summary).not.toContain('has not broken its work down');
+  });
+
+  it('reports a normal count when nothing was refused', () => {
+    const summary = describeSubLaneSummary(buildSubLane({ lookupFailures: [] }));
+
+    expect(summary).toBe('1 item');
   });
 });

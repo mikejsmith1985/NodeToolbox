@@ -14,6 +14,8 @@
 'use strict';
 
 const { makeJiraApiRequest, triggerWebhook } = require('../utils/httpClient');
+const { recordJiraWrite } = require('./jiraWriteJournal');
+const { OPERATOR_SIGNATURE } = require('./operatorSignature');
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -119,7 +121,7 @@ function buildHandoffComment(issueKey, handoffType, featureKey, featureSummary) 
     'Environment: ' + environmentName,
     'Parent feature: ' + featureKey + ' — ' + featureSummary,
     '',
-    '_This comment was posted automatically by NodeToolbox Sprint–Release Workflow._',
+    OPERATOR_SIGNATURE,
   ].join('\n');
 }
 
@@ -172,6 +174,7 @@ async function executeDevIssueDone(issueKey, jiraConfig, profileConfig, isTlsVer
       jiraConfig,
       isTlsVerified
     );
+    recordJiraWrite({ method: 'POST', path: transitionsPath, source: 'sprint-release' });
     console.log('[SprintRelease] Transitioned ' + issueKey + ' to "' + targetTransitionName + '".');
     return { wasTransitioned: true };
   } catch (transitionError) {
@@ -640,7 +643,7 @@ async function postDorViolationComment(issueKey, missingFields, jiraConfig, isTl
     '',
     'Please update the issue before the sprint begins.',
     '',
-    '_This comment was posted automatically by NodeToolbox Sprint–Release Workflow._',
+    OPERATOR_SIGNATURE,
   ].join('\n');
 
   const commentPath = '/rest/api/2/issue/' + encodeURIComponent(issueKey) + '/comment';

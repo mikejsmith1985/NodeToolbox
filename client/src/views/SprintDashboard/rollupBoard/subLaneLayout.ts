@@ -38,6 +38,8 @@ export interface BuildSubLanesInput {
   cloneFeatureIssuesByKey: ReadonlyMap<string, JiraIssue>;
   /** Every discipline's work, by the clone Feature key it rolls up to. */
   itemsByCloneFeatureKey: ReadonlyMap<string, RollupBoardItem[]>;
+  /** Linkages Jira refused to answer about, per clone. */
+  lookupFailuresByCloneFeatureKey?: ReadonlyMap<string, string[]>;
   /** The dev team's columns — the whole board reads as one board. */
   columns: readonly RenderedColumn[];
   filters: QuickFilterState;
@@ -90,6 +92,7 @@ export function buildSubLanes(input: BuildSubLanesInput): SubLane[] {
       matchedItemCount: matchedItems.length,
       // Counts everything, filtered or not — "3 of 11 match" is two counts of two sets.
       totalItemCount: items.length,
+      lookupFailures: input.lookupFailuresByCloneFeatureKey?.get(classification.cloneIssueKey) ?? [],
     };
   });
 }

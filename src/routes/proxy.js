@@ -10,6 +10,7 @@ const express    = require('express');
 const { proxyRequest } = require('../utils/httpClient');
 const snowSession      = require('../services/snowSession');
 const { hasAnyGitHubAuth, resolveEffectiveGitHubToken } = require('../services/githubAppAuth');
+const { recordJiraWrite } = require('../services/jiraWriteJournal');
 
 // ── Router Factory ────────────────────────────────────────────────────────────
 
@@ -31,6 +32,12 @@ function createProxyRouter(configuration) {
   router.all('/jira-proxy/*', (req, res) => {
     // Use req.url (not req.path) so query strings are preserved and forwarded downstream.
     const jiraPath = buildDownstreamPath(req.url, '/jira-proxy');
+
+    // Every write the browser makes to Jira passes through here, which makes this the one place
+    // that can answer "did this application change that issue?" after the fact. Reads are ignored
+    // by the journal itself. Recorded before forwarding so an attempt is never lost to a crash.
+    recordJiraWrite({ method: req.method, path: jiraPath, source: 'ui' });
+
     proxyRequest(req, res, configuration.jira, jiraPath, null, configuration.sslVerify);
   });
 
