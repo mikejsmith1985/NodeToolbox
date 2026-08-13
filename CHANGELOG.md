@@ -8,6 +8,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **A repair pass for the containment links written backwards before v0.168.4.** That release stopped
+  new links being made wrong; this fixes the ones already in Jira. Jira has no route to reverse a link,
+  so a repair is a delete followed by a create — destructive against production data, and treated as
+  such. Two steps, and nothing is written without `--confirm`:
+
+      node scripts/repair-containment-links.js plan  --jql "project = ENCUC"
+      node scripts/repair-containment-links.js apply --jql "project = ENCUC" --confirm
+
+  **It only repairs links it can PROVE are backwards.** "Backwards" is a statement about intent, and
+  intent is not recorded in a Jira link — so the tool never guesses. A Story the promotion tool created
+  carries a description naming the sub-task's old parent, which makes the intended direction a fact:
+  the promoted Story belongs *inside* that parent, and a link saying the opposite is provably wrong.
+  Every other containment link is listed for a human to judge and **left alone**, because somebody may
+  have made it by hand and meant exactly what they wrote.
+  The create runs before the delete, so a failure leaves the pair over-linked rather than unlinked —
+  losing nothing rather than losing the relationship. A receipt of every original link is written
+  before the first change, since a link id is gone the moment it is deleted. Each link is judged once
+  even though Jira shows it from both ends, and an instance that words the link type the other way
+  round is handled.
+
+### Added
 - **Roll-Up Board — Smart Checklist items are drawn as nested cards inside the issue they belong to.**
   Teams break work down three ways on this board — Stories, sub-tasks and checklist items — and the
   third was invisible. A card showed a bare `Checklist 2/5`, which says how much is left but never what
