@@ -141,3 +141,51 @@ describe('browserRelay', () => {
     });
   });
 });
+
+// ── The bookmarklets must be valid JavaScript ──
+//
+// A bookmarklet is a `javascript:` URL. If it does not parse, the browser does nothing at all: no
+// badge, no alert, no console error, nothing to report. That is exactly how a broken regex literal
+// went unnoticed — `\/` inside a quoted string collapses to `/`, so `/^(\/sites\/[^\/]+)/` shipped as
+// `/^(/sites/[^/]+)/`, the literal ended early, and `sites` was read as regex flags.
+//
+// These tests are cheap and they are the only thing standing between a typo and a dead bookmarklet.
+
+/** Compiles the bookmarklet body, throwing on any syntax error exactly as a browser would. */
+function assertBookmarkletParses(bookmarkletCode: string): void {
+  const javascriptBody = bookmarkletCode.replace(/^javascript:/, '');
+  // eslint-disable-next-line no-new-func
+  new Function(javascriptBody);
+}
+
+describe('the bookmarklets parse as JavaScript', () => {
+  it('the SharePoint relay bookmarklet parses', () => {
+    expect(() => assertBookmarkletParses(SHAREPOINT_RELAY_BOOKMARKLET_CODE)).not.toThrow();
+  });
+
+  it('the ServiceNow relay bookmarklet parses', () => {
+    expect(() => assertBookmarkletParses(SNOW_RELAY_BOOKMARKLET_CODE)).not.toThrow();
+  });
+
+  it('neither carries a regex literal, which cannot survive being written inside a string', () => {
+    // The rule this enforces: build patterns from string operations, or from `new RegExp("…")` where a
+    // pattern is genuinely needed. A bare /…/ literal in a quoted bookmarklet line is a latent break.
+    for (const bookmarkletCode of [SHAREPOINT_RELAY_BOOKMARKLET_CODE, SNOW_RELAY_BOOKMARKLET_CODE]) {
+      expect(bookmarkletCode).not.toMatch(/=\/\^/);
+    }
+  });
+
+  it('finds the site root of both managed paths, and nothing else', () => {
+    // The behaviour the broken regex was meant to provide — now covering /teams/ too, which it missed.
+    const siteRootOfPath = new Function('requestPath',
+      'var pathParts=String(requestPath||"").split("/");'
+      + 'var managedPath=(pathParts[1]||"").toLowerCase();'
+      + 'return (managedPath==="sites"||managedPath==="teams")&&pathParts[2]?"/"+pathParts[1]+"/"+pathParts[2]:"";',
+    ) as (requestPath: string) => string;
+
+    expect(siteRootOfPath('/sites/Transformers/Shared Documents/Mail')).toBe('/sites/Transformers');
+    expect(siteRootOfPath('/teams/Alpha/Docs')).toBe('/teams/Alpha');
+    expect(siteRootOfPath('/Shared Documents/Mail')).toBe('');
+    expect(siteRootOfPath('')).toBe('');
+  });
+});

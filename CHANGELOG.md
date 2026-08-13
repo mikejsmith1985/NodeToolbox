@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **The SharePoint relay bookmarklet did nothing at all — it could not be parsed.** A bookmarklet is a
+  `javascript:` URL, and a browser given one it cannot parse does exactly nothing: no badge, no alert,
+  no console error, nothing to report. Which is precisely what made it hard to describe.
+  The cause was a regex literal written inside a quoted string. `\/` collapses to `/` when the string
+  is parsed, so `/^(\/sites\/[^\/]+)/` shipped as `/^(/sites/[^/]+)/` — the literal ended at the
+  second slash and `sites` was read as regular-expression **flags**. One invalid character sequence
+  killed the entire script.
+  The site-root lookup is now done with string operations, which need no escaping and cannot fail that
+  way. It also now recognises **`/teams/` sites**, which the regex never matched. Three new tests
+  compile both bookmarklets exactly as a browser would and reject any bare regex literal in either —
+  verified to fail against the original code, so a dead bookmarklet cannot ship silently again.
+
+### Fixed
 - **Roll-Up Board — Smart Checklist items now appear, because the board finally reads the format this
   Jira actually stores.** The diagnostic added last release answered it in one look: this instance has
   **three** checklist-like fields holding the same single item three different ways —
