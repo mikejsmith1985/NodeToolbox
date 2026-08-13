@@ -7,7 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Roll-Up Board — a swimlane header is now a progress bar and labelled tiles instead of a sentence.**
+  Every vital sign was already there, run together in the same small grey type: key, summary, status,
+  percentage, dependency count, estimate, priority and item count. All present, none of them standing
+  out — so finding the Feature in trouble on a board of twenty meant reading twenty sentences word by
+  word.
+  It now uses the treatment the **Team Capacity** panel already uses for the same job: a filled bar for
+  the thing that is a proportion, and captioned tiles (STATUS · ITEMS · POINTS · PRIORITY ·
+  DEPENDENCIES) for the things that are quantities. The lane's own actions move to the right-hand end,
+  away from the Feature's identity.
+  Three rules are kept deliberately: the percentage still states the basis it was worked out on
+  (`10 of 28 by issue count`) so it can be checked; a figure Jira does not hold reads **"None"** in
+  italics, never a zero that looks measured; and while a filter is on the tile is captioned
+  **MATCHING** and counts *both* sets, so a narrowed lane is never mistaken for a smaller Feature.
+  Where another discipline has cloned the Feature, the family figure gets its **own** track rather
+  than sharing one — it can legitimately be lower than the dev figure, and two figures in one track
+  would read as progress having gone backwards. The sentence form survives as the hover text.
+
 ### Fixed
+- **Roll-Up Board — the column headers no longer scroll out of sight.** They stay put by sticking to
+  the top of the board's own scroll region, which only works while that region is the only thing that
+  scrolls. Its height was a fixed guess — "roughly 340px of chrome above the board" — and a guess is
+  wrong the moment anything above it changes size. At the larger text sizes the toolbar wraps onto a
+  second line, the board starts lower, the guess made it too tall, and so the **page** gained a
+  scrollbar: scrolling it carried the whole board, sticky headers included, up behind the tab strip.
+  The height is now measured from where the board actually sits, and re-measured on resize and
+  whenever the chrome above it changes size, so the page has nothing left to scroll. The header row
+  also gained an opaque background and an edge shadow, because cards showing through it read as the
+  header itself being half scrolled away. The arithmetic is a pure module with its own tests,
+  including the larger-text case that caused this.
+
 - **The SharePoint relay bookmarklet did nothing at all — it could not be parsed.** A bookmarklet is a
   `javascript:` URL, and a browser given one it cannot parse does exactly nothing: no badge, no alert,
   no console error, nothing to report. Which is precisely what made it hard to describe.

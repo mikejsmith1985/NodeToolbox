@@ -39,6 +39,7 @@ import {
   type TransitionFieldSelection,
   type TransitionRequiredField,
 } from '../featureReviewFixes.ts';
+import { computeBoardScrollerMaxHeight, readDocumentTop } from './boardViewportFit.ts';
 import { buildRenderedColumns, resolveColumnIdForItem } from './boardColumns.ts';
 import { classifyClone, describeUnconfiguredClones, readCloneAttribution, readCloneLinks } from './cloneFamily.ts';
 import { fetchCloneFeatures, fetchDisciplineWork, PARENT_LINK_FIELD_ID } from './rollupBoardFetch.ts';
@@ -325,6 +326,53 @@ const EMPTY_LOAD_STATE: RollupBoardLoadState = {
   allReferencedFeatureKeys: [],
 };
 
+/**
+ * Keeps the board's scroll region exactly as tall as the room left beneath the chrome above it.
+ *
+ * This is what makes the sticky column headers hold. If the region is even slightly too tall the
+ * PAGE gains a scrollbar, and scrolling the page carries the whole board — headers included — up
+ * behind the tab strip, which is how they came to be half hidden. The height was previously a fixed
+ * guess at the chrome's height, which was wrong at any text size but the default.
+ *
+ * Re-measured on resize and on the app's text-size changes, both of which move where the board starts.
+ */
+function useBoardScrollerMaxHeight(): [React.RefObject<HTMLDivElement | null>, number | null] {
+  const scrollerRef = useRef<HTMLDivElement | null>(null);
+  const [maxHeightPx, setMaxHeightPx] = useState<number | null>(null);
+
+  useEffect(() => {
+    function measure(): void {
+      const scrollerElement = scrollerRef.current;
+      if (scrollerElement === null) return;
+
+      setMaxHeightPx(computeBoardScrollerMaxHeight({
+        scrollerDocumentTopPx: readDocumentTop(
+          scrollerElement.getBoundingClientRect().top,
+          window.scrollY,
+        ),
+        viewportHeightPx: window.innerHeight,
+      }));
+    }
+
+    measure();
+    window.addEventListener('resize', measure);
+
+    // The toolbar above the board wraps onto a second line at the larger text sizes, which moves the
+    // board down without any window resize happening — so its own size is watched too.
+    const sizeObserver = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
+    if (sizeObserver !== null && scrollerRef.current?.parentElement) {
+      sizeObserver.observe(scrollerRef.current.parentElement);
+    }
+
+    return () => {
+      window.removeEventListener('resize', measure);
+      sizeObserver?.disconnect();
+    };
+  }, []);
+
+  return [scrollerRef, maxHeightPx];
+}
+
 /** Renders the roll-up board for the team's currently selected Jira board. */
 export default function RollupBoardTab({
   boardId,
@@ -339,6 +387,7 @@ export default function RollupBoardTab({
   piReviewPages = [],
   projectKey = '',
 }: RollupBoardTabProps) {
+  const [boardScrollerRef, boardScrollerMaxHeightPx] = useBoardScrollerMaxHeight();
   const [loadState, setLoadState] = useState<RollupBoardLoadState>(EMPTY_LOAD_STATE);
   const [filters, setFilters] = useState<QuickFilterState>(EMPTY_QUICK_FILTER_STATE);
   const [preferences, setPreferences] = useState<BoardPreferences>(() =>
@@ -1728,7 +1777,13 @@ export default function RollupBoardTab({
 
       <QuickFilterBar allItems={loadState.allItems} filters={filters} onFiltersChange={setFilters} />
 
-      <div className={styles.boardScroller}>
+      {/* The height is measured rather than guessed — see useBoardScrollerMaxHeight. Until the first
+          measurement lands the stylesheet's fallback applies, so the board is never zero-height. */}
+      <div
+        className={styles.boardScroller}
+        ref={boardScrollerRef}
+        style={boardScrollerMaxHeightPx === null ? undefined : { maxHeight: `${boardScrollerMaxHeightPx}px` }}
+      >
         <BoardColumnHeaderRow
           columnMinWidth={columnMinWidth}
           columns={layout.columns}

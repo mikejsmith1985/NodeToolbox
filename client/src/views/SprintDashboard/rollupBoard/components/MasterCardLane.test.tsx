@@ -116,7 +116,10 @@ describe('MasterCardLane — the header is the collapsed summary', () => {
       />,
     );
 
-    expect(screen.getByText('no estimate')).toBeTruthy();
+    // The POINTS tile reads "None", never "0" — a Feature nobody has estimated is not a Feature
+    // estimated at nothing.
+    expect(screen.getByText('POINTS')).toBeTruthy();
+    expect(screen.getByText('None')).toBeTruthy();
   });
 
   it('renders no cards at all while collapsed, so a collapsed board stays cheap', () => {
@@ -146,6 +149,78 @@ describe('MasterCardLane — the header is the collapsed summary', () => {
   });
 });
 
+describe('MasterCardLane — the vital signs as a bar and tiles', () => {
+  it('draws the progress bar filled to the percentage the Feature has reached', () => {
+    render(
+      <MasterCardLane
+        columns={COLUMNS}
+        hasActiveFilters={false}
+        lane={buildLane([buildItem('DEV-1', 'col-todo'), buildItem('DEV-2', 'col-dev')])}
+        onToggleCollapsed={vi.fn()}
+      />,
+    );
+
+    // Both cards are To Do, so nothing is complete — and the bar must show that as an empty bar
+    // rather than as no bar at all.
+    expect(screen.getByText('0%')).toBeTruthy();
+    expect(screen.getByText('0 of 2 by issue count')).toBeTruthy();
+  });
+
+  it('keeps every vital sign that the sentence used to carry', () => {
+    render(
+      <MasterCardLane
+        columns={COLUMNS}
+        hasActiveFilters={false}
+        lane={buildLane([buildItem('DEV-1', 'col-todo')])}
+        onToggleCollapsed={vi.fn()}
+      />,
+    );
+
+    for (const label of ['STATUS', 'ITEMS', 'POINTS', 'PRIORITY', 'DEPENDENCIES']) {
+      expect(screen.getByText(label)).toBeTruthy();
+    }
+    expect(screen.getByText('High')).toBeTruthy();
+  });
+
+  it('keeps the sentence form as hover text, since a bar is not readable by everyone', () => {
+    const { container } = render(
+      <MasterCardLane
+        columns={COLUMNS}
+        familyProgress={{
+          dev: { percentComplete: 100, basis: 'issue-count', completedUnits: 2, totalUnits: 2 },
+          family: { percentComplete: 50, basis: 'issue-count', completedUnits: 2, totalUnits: 4 },
+          hasDisagreement: true,
+        }}
+        hasActiveFilters={false}
+        lane={buildLane([buildItem('DEV-1', 'col-todo')])}
+        onToggleCollapsed={vi.fn()}
+      />,
+    );
+
+    expect(container.querySelector('[title*="%"]')).toBeTruthy();
+  });
+
+  it('draws the family figure in its OWN track, since it may be lower than the dev figure', () => {
+    render(
+      <MasterCardLane
+        columns={COLUMNS}
+        familyProgress={{
+          dev: { percentComplete: 100, basis: 'issue-count', completedUnits: 2, totalUnits: 2 },
+          family: { percentComplete: 50, basis: 'issue-count', completedUnits: 2, totalUnits: 4 },
+          hasDisagreement: true,
+        }}
+        hasActiveFilters={false}
+        lane={buildLane([buildItem('DEV-1', 'col-todo')])}
+        onToggleCollapsed={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('Dev')).toBeTruthy();
+    expect(screen.getByText('Whole Feature')).toBeTruthy();
+    expect(screen.getByText('50%')).toBeTruthy();
+  });
+});
+
 describe('MasterCardLane — counts', () => {
   it('reports a plain item count when no filter is active', () => {
     render(
@@ -157,7 +232,8 @@ describe('MasterCardLane — counts', () => {
       />,
     );
 
-    expect(screen.getByText('2 items')).toBeTruthy();
+    expect(screen.getByText('ITEMS')).toBeTruthy();
+    expect(screen.getByText('2')).toBeTruthy();
   });
 
   it('reports "n of N match" when a filter is active, so the omission is visible', () => {
@@ -170,7 +246,10 @@ describe('MasterCardLane — counts', () => {
 
     render(<MasterCardLane columns={COLUMNS} hasActiveFilters lane={lane} onToggleCollapsed={vi.fn()} />);
 
-    expect(screen.getByText('0 of 2 match')).toBeTruthy();
+    // The tile is captioned MATCHING and counts BOTH sets, so a narrowed lane can never be mistaken
+    // for a Feature that only has that much work in it.
+    expect(screen.getByText('MATCHING')).toBeTruthy();
+    expect(screen.getByText('0 of 2')).toBeTruthy();
   });
 });
 

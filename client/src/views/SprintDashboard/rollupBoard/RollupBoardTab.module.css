@@ -67,10 +67,18 @@
 .boardScroller {
   /* Bounded on purpose. `overflow-x: auto` already makes this a scroll container on BOTH axes, so
      without a height it grows with its content, the PAGE scrolls instead, and a sticky header has
-     nothing to stick inside. Giving it a viewport makes the header lock the way a Jira board does. */
+     nothing to stick inside. Giving it a viewport makes the header lock the way a Jira board does.
+
+     The real height is MEASURED and set inline — see useBoardScrollerMaxHeight. This value is only
+     the fallback for the moment before the first measurement, because the chrome above the board is
+     not a fixed height: at the larger text sizes the toolbar wraps and the board starts lower, which
+     made the old fixed guess too tall and let the page scroll the headers out of sight. */
   overflow: auto;
   max-height: calc(100vh - var(--rollup-board-chrome-height));
   min-height: 300px;
+  /* Anchors sticky children to THIS box even if an ancestor ever gains a transform or filter, either
+     of which would silently make the whole board the containing block instead. */
+  position: relative;
 }
 
 .columnHeaderRow {
@@ -85,7 +93,11 @@
   position: sticky;
   top: 0;
   z-index: 2;
+  /* Opaque, and with a shadow marking its lower edge: a translucent header lets the cards passing
+     beneath it show through, which reads as the header itself being half-scrolled away. */
   background: var(--color-bg);
+  padding-top: var(--spacing-xs);
+  box-shadow: 0 4px 8px -4px rgb(0 0 0 / 45%);
 }
 
 .columnHeader {
@@ -155,6 +167,134 @@
 .laneSummary {
   color: var(--color-text-secondary);
   font-size: var(--font-size-sm);
+}
+
+/* Pushes the lane's own actions to the right-hand end, away from the Feature's identity. */
+.laneHeaderActions {
+  display: flex;
+  gap: var(--spacing-xs);
+  margin-left: auto;
+  flex-wrap: wrap;
+}
+
+/* ── The swimlane's vital signs: a bar for the proportion, tiles for the quantities ── */
+
+.laneMetrics {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-md);
+  padding: var(--spacing-xs) var(--spacing-md) var(--spacing-sm);
+  background: var(--color-surface-1);
+}
+
+.laneProgress {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  /* Takes the leftover width so the bar is long enough to read a percentage off, while the tiles
+     keep their own natural size. */
+  flex: 1 1 320px;
+  min-width: 240px;
+}
+
+.laneProgressRow {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  font-size: var(--font-size-xs);
+}
+
+.laneProgressLabel {
+  color: var(--color-text-secondary);
+  min-width: 88px;
+}
+
+.laneProgressTrack {
+  flex: 1 1 auto;
+  height: 8px;
+  min-width: 80px;
+  border-radius: 999px;
+  background: var(--color-surface-2);
+  overflow: hidden;
+}
+
+.laneProgressFill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--color-success);
+}
+
+/* The whole family's figure, drawn in its own track — it can legitimately be LOWER than the dev
+   figure, which is the entire reason for showing it. */
+.laneProgressFillFamily {
+  background: var(--color-accent);
+}
+
+.laneProgressFigure {
+  font-weight: 600;
+  color: var(--color-text-primary);
+  min-width: 40px;
+  text-align: right;
+}
+
+/* The workings behind the percentage, so the figure can be checked rather than trusted. */
+.laneProgressDetail {
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
+.laneTiles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+}
+
+.laneTile {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-card-bg);
+  min-width: 72px;
+}
+
+.laneTileLabel {
+  font-size: var(--font-size-xs);
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+}
+
+.laneTileValue {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+/* A figure Jira does not hold. Italic as well as dimmed, so the distinction survives without colour. */
+.laneTileValueMissing {
+  color: var(--color-text-muted);
+  font-style: italic;
+  font-weight: 400;
+}
+
+.laneTileValueAlert {
+  color: var(--color-warning);
+}
+
+/* Everything the lane has to SAY rather than measure — hygiene, read failures, why it is here. */
+.laneNotices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+  align-items: center;
+  padding: 0 var(--spacing-md);
+}
+
+.laneNotices:empty {
+  display: none;
 }
 
 .laneVital {
@@ -791,12 +931,9 @@
   left: 0;
 }
 
-/* ── The two progress figures ── */
-.familyProgress {
-  font-size: var(--font-size-sm);
-  color: var(--color-text-secondary);
-}
-
+/* ── The two progress figures ──
+   The figures themselves are drawn as the two progress tracks in the lane header; only the
+   disagreement between them is still stated in words. */
 .familyProgressDisagreement {
   font-size: var(--font-size-sm);
   color: var(--color-warning);

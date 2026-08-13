@@ -17,6 +17,7 @@ import { buildDropTargetId } from '../cardDropRouting.ts';
 import styles from '../RollupBoardTab.module.css';
 import { SubLane } from './SubLane.tsx';
 import { describeProgressDisagreement, describeTwoFigures } from '../familyProgress.ts';
+import { buildLaneProgressBar, buildLaneVitalTiles, type LaneProgressBar, type LaneVitalTile } from '../laneVitals.ts';
 import type { BoardMembershipReason } from '../boardMembershipReason.ts';
 import type { FamilyProgress } from '../rollupBoardTypes.ts';
 import type { CardDetail } from '../cardDetail.ts';
@@ -87,19 +88,65 @@ export interface MasterCardLaneProps {
   onToggleSubLaneCollapsed?: (cloneFeatureKey: string) => void;
 }
 
-/** Renders the Feature's progress with the basis it was worked out on, so it can be checked. */
-function ProgressVital({ lane }: { lane: RenderedLane }) {
-  const { progress } = lane.masterCard.vitals;
-  if (progress.percentComplete === null) {
-    return <span className={styles.laneVitalMissing}>no work to measure yet</span>;
+/** One labelled figure in the header — a caption above a value, as on the Team Capacity panel. */
+function LaneVitalTileView({ tile }: { tile: LaneVitalTile }) {
+  const toneClassName = tile.tone === 'missing'
+    ? styles.laneTileValueMissing
+    : tile.tone === 'alert' ? styles.laneTileValueAlert : '';
+
+  return (
+    <div className={styles.laneTile}>
+      <span className={styles.laneTileLabel}>{tile.label}</span>
+      <span className={`${styles.laneTileValue} ${toneClassName}`.trim()}>{tile.value}</span>
+    </div>
+  );
+}
+
+/** One filled bar with the figure and its workings beside it, so the number can be checked. */
+function ProgressTrack({
+  percent, detail, label, isFamily,
+}: { percent: number; detail: string | null; label: string; isFamily: boolean }) {
+  return (
+    <div className={styles.laneProgressRow}>
+      <span className={styles.laneProgressLabel}>{label}</span>
+      <div className={styles.laneProgressTrack}>
+        <div
+          className={isFamily ? `${styles.laneProgressFill} ${styles.laneProgressFillFamily}` : styles.laneProgressFill}
+          style={{ width: `${Math.min(percent, 100)}%` }}
+        />
+      </div>
+      <span className={styles.laneProgressFigure}>{percent}%</span>
+      {detail !== null && <span className={styles.laneProgressDetail}>{detail}</span>}
+    </div>
+  );
+}
+
+/**
+ * Renders the Feature's progress as a bar rather than a sentence.
+ *
+ * Dev and family are drawn as separate tracks rather than stacked in one, because the family figure
+ * can be LOWER than the dev figure — that is the whole point of showing it — and two figures sharing
+ * a track would then read as one of them having gone backwards.
+ */
+function ProgressVital({ bar, sentenceForm }: { bar: LaneProgressBar; sentenceForm: string | null }) {
+  if (bar.devPercent === null) {
+    return <span className={styles.laneVitalMissing}>{bar.emptyLabel}</span>;
   }
 
-  const basisLabel = progress.basis === 'story-points' ? 'story points' : 'issue count';
+  // The sentence the bars replaced is kept as the hover and screen-reader text: bars are quicker to
+  // scan, but a proportion drawn as a shape is not readable by everyone or in every setting.
   return (
-    <span className={styles.laneVital}>
-      {progress.percentComplete}% complete
-      {' '}({progress.completedUnits} of {progress.totalUnits} by {basisLabel})
-    </span>
+    <div className={styles.laneProgress} title={sentenceForm ?? undefined}>
+      <ProgressTrack
+        detail={bar.devDetail}
+        isFamily={false}
+        label={bar.familyPercent === null ? 'Complete' : 'Dev'}
+        percent={bar.devPercent}
+      />
+      {bar.familyPercent !== null && (
+        <ProgressTrack detail={bar.familyDetail} isFamily label="Whole Feature" percent={bar.familyPercent} />
+      )}
+    </div>
   );
 }
 
@@ -136,6 +183,15 @@ export function MasterCardLane({
   // the whole lane by accident.
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition } =
     useSortable({ id: featureKey });
+
+  // Both are built from the vitals, which are computed BEFORE any filter runs — so the bar and the
+  // tiles always describe the whole Feature even while the cards beneath them are narrowed.
+  const progressBar = buildLaneProgressBar(vitals, familyProgress);
+  const vitalTiles = buildLaneVitalTiles(vitals, {
+    matchedItemCount: lane.matchedItemCount,
+    totalItemCount: lane.totalItemCount,
+    hasActiveFilters,
+  });
 
   // Held while the viewer is mid-edit; null means "show the lane's real rank".
   const [rankDraft, setRankDraft] = useState<string | null>(null);
@@ -221,26 +277,44 @@ export function MasterCardLane({
             </a>
           )}
         <span className={styles.laneSummary}>{vitals.summary}</span>
-
-        {vitals.statusName !== null && <span className={styles.laneVital}>{vitals.statusName}</span>}
-        <ProgressVital lane={lane} />
-        <span className={styles.laneVital}>
-          {vitals.dependencyCount} {vitals.dependencyCount === 1 ? 'dependency' : 'dependencies'}
-        </span>
         {vitals.isFlagged && <span className={styles.laneFlag}>⚑ Flagged</span>}
-        {vitals.storyPoints === null
-          ? <span className={styles.laneVitalMissing}>no estimate</span>
-          : <span className={styles.laneVital}>{vitals.storyPoints} pts</span>}
-        {vitals.priorityName === null
-          ? <span className={styles.laneVitalMissing}>no priority</span>
-          : <span className={styles.laneVital}>{vitals.priorityName}</span>}
 
-        <span className={styles.laneVital}>
-          {hasActiveFilters
-            ? `${lane.matchedItemCount} of ${lane.totalItemCount} match`
-            : `${lane.totalItemCount} items`}
+        {/* Sits with Send to top / bottom because it is the same kind of action: something you do TO a
+            lane. Offered on every lane, not just empty ones — a Feature usually needs more stories
+            after the first few land. */}
+        <span className={styles.laneHeaderActions}>
+          {onAddWork && !isSynthetic && (
+            <button className={styles.actionButton} onClick={() => onAddWork(featureKey, vitals.summary)} type="button">
+              Add work
+            </button>
+          )}
+          {onSendToTop && (
+            <button className={styles.actionButton} onClick={() => onSendToTop(featureKey)} type="button">
+              Send to top
+            </button>
+          )}
+          {onSendToBottom && (
+            <button className={styles.actionButton} onClick={() => onSendToBottom(featureKey)} type="button">
+              Send to bottom
+            </button>
+          )}
         </span>
+      </header>
 
+      {/* The vital signs, laid out the way the Team Capacity panel lays out its own: a bar for the
+          thing that is a proportion, labelled tiles for the things that are quantities. As one run-on
+          sentence in small grey type they were all present and none of them stood out. */}
+      <div className={styles.laneMetrics}>
+        <ProgressVital
+          bar={progressBar}
+          sentenceForm={familyProgress?.family ? describeTwoFigures(familyProgress) : null}
+        />
+        <div className={styles.laneTiles}>
+          {vitalTiles.map((tile) => <LaneVitalTileView key={tile.id} tile={tile} />)}
+        </div>
+      </div>
+
+      <div className={styles.laneNotices}>
         {isSynthetic && (
           <span className={styles.laneVital}>
             — hygiene: none of these roll up to a Feature, so they need linking in Jira
@@ -255,12 +329,9 @@ export function MasterCardLane({
           </span>
         )}
 
-        {familyProgress?.family && (
-          <span className={styles.familyProgress}>
-            {describeTwoFigures(familyProgress)}
-          </span>
-        )}
-
+        {/* The two figures themselves are the two progress tracks above; only the DISAGREEMENT still
+            needs words, because "dev has finished and the Feature has not" is a conclusion rather
+            than a number. */}
         {familyProgress?.hasDisagreement && (
           <span className={styles.familyProgressDisagreement}>
             {describeProgressDisagreement(familyProgress)}
@@ -281,26 +352,7 @@ export function MasterCardLane({
           </span>
         )}
 
-        {/* Sits with Send to top / bottom because it is the same kind of action: something you do TO a
-            lane. Offered on every lane, not just empty ones — a Feature usually needs more stories
-            after the first few land. */}
-        {onAddWork && !isSynthetic && (
-          <button className={styles.actionButton} onClick={() => onAddWork(featureKey, vitals.summary)} type="button">
-            Add work
-          </button>
-        )}
-
-        {onSendToTop && (
-          <button className={styles.actionButton} onClick={() => onSendToTop(featureKey)} type="button">
-            Send to top
-          </button>
-        )}
-        {onSendToBottom && (
-          <button className={styles.actionButton} onClick={() => onSendToBottom(featureKey)} type="button">
-            Send to bottom
-          </button>
-        )}
-      </header>
+      </div>
 
       {!lane.isCollapsed && (
         <div
