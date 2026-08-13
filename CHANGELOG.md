@@ -8,6 +8,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Roll-Up Board — the real reason sub-lanes were empty: the JQL could never have worked.** Jira
+  answered `Field 'customfield_10108' does not exist or you do not have permission to view it`, and it
+  was right to. **JQL cannot address a custom field by its raw id in quotes** — `"customfield_10108"`
+  is read as a field NAME, and no field is called that. The correct form is `cf[10108]`, and this app
+  has had a helper for it since GH #167, whose comment records the identical failure: a wrong field
+  reference gave an empty scope that then rendered as a perfect score. Every custom-field clause in the
+  board's fetch layer now goes through that helper.
+  This was never about project scope or linkage type — the two things fixed before it. The query was
+  malformed, the 400 was swallowed, and an empty result was reported as "this discipline has no work".
+  **The same broken form was also in the team-ownership scan**, where it silently defeated the
+  "has a child in this team's project" test — so a Feature the team was demonstrably working on could
+  never be recognised that way.
+- **Board setup — typing a discipline's project no longer loses focus after one character.** The row's
+  React key included the project key, so every keystroke changed the key, the input was thrown away and
+  rebuilt, and focus jumped to the next control. Rows are keyed by position now, which is what they are
+  identified by anyway — position decides each discipline's colour.
+- **Board setup — the discipline placeholders no longer overflow their boxes.** `Feature project, e.g.
+  QEINT` and `Story projects — leave empty for any` were both cut off mid-word. Short placeholders now,
+  with a header naming the three columns and the full explanation on hover.
+
+### Fixed
 - **Roll-Up Board — a refused Jira query no longer masquerades as "this discipline has no work".** The
   three linkages were asked about in one `A OR B OR C` query, and a single unknown field id makes Jira
   reject the **whole** thing — so one bad clause silently zeroed every discipline on the board. The
