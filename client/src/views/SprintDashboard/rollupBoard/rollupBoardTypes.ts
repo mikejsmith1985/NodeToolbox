@@ -47,6 +47,13 @@ export interface RollupBoardScope {
    * between instances, so hardcoding one would silently show every team an empty checklist.
    */
   checklistFieldId?: string;
+  /**
+   * Every checklist-ish field on this instance.
+   *
+   * Plural because one instance carries three, holding the same items in different formats, and which
+   * one is readable is a property of the VALUE rather than of the field's name.
+   */
+  checklistFieldIds?: readonly string[];
 }
 
 // ── Loaded issues ──

@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Roll-Up Board — Smart Checklist items now appear, because the board finally reads the format this
+  Jira actually stores.** The diagnostic added last release answered it in one look: this instance has
+  **three** checklist-like fields holding the same single item three different ways —
+  `customfield_10600` "Smart Checklist" (the app's own Java object graph rendered by `toString()`),
+  `customfield_10601` "Smart Checklist Progress" (the string `0/1`), and `customfield_10252`
+  "Checklists" (readable text). Choosing by NAME picked the object dump, which nothing could parse, so
+  the board showed an empty checklist while two other fields held the same item in plain sight.
+  Two changes, and the second is the one that matters: the object dump is now parsed — item text,
+  state and assignee, with `statusState` read for ticked/unticked and the status NAME preferred where
+  it says more, because `UNCHECKED` cannot express "in progress". And the field is now chosen **by what
+  it yields**, per issue, rather than by what it is called: whichever candidate parses to the most
+  items wins. A field that yields nothing cannot be the right one to read, whatever its name.
+  A bare `done/total` value is recognised as a progress summary and yields nothing, so it can never
+  win a tie against the real checklist by parsing to one meaningless item.
+
 ### Added
 - **A checklist diagnostic in Board setup, behind two deliberate gates.** Three separate times, working
   out why a board showed nothing meant asking somebody to open a REST URL on a machine only they can
