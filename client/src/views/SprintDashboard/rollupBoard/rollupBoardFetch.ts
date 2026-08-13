@@ -570,6 +570,14 @@ export async function fetchCardDetails(issueKeys: readonly string[]): Promise<Ji
 }
 
 /**
+ * Jira's portfolio Parent Link on this instance.
+ *
+ * Named here rather than discovered because it is already a known constant elsewhere in the app, and
+ * a wrong guess degrades safely: the JQL clause simply matches nothing.
+ */
+export const PARENT_LINK_FIELD_ID = 'customfield_10100';
+
+/**
  * Reads the clone Features named on this board's Features.
  *
  * Cheap by design: the clone KEYS were already in hand, because `issuelinks` is part of every board
@@ -619,12 +627,29 @@ export async function fetchDisciplineWork(
     : `project in (${namedProjects.map((key) => `"${key}"`).join(', ')}) AND `;
 
   const chunkResults = await Promise.all(
-    chunkList([...new Set(cloneFeatureKeys)], FEATURE_KEY_CHUNK_SIZE).map((keyChunk) =>
-      jiraGet<JiraSearchResponse>(buildSearchPath(
-        `${projectClause}"${scope.featureLinkFieldId}" in (${keyChunk.join(', ')})`,
-        buildFieldList(scope),
-      )).catch(() => ({ issues: [] as JiraIssue[] })),
-    ),
+    chunkList([...new Set(cloneFeatureKeys)], FEATURE_KEY_CHUNK_SIZE).map((keyChunk) => {
+      const keyList = keyChunk.join(', ');
+      // Three ways an issue can hang off a Feature on this instance, and a discipline does not have
+      // to use the same one the dev team does. Asking only about the Feature Link found nothing for
+      // QE, whose INTTEST work attaches through the portfolio hierarchy instead. Any of the three
+      // counts, because the question is "does this belong to that Feature", not "how was it wired".
+      const linkageClause = [
+        `"${scope.featureLinkFieldId}" in (${keyList})`,
+        `"${PARENT_LINK_FIELD_ID}" in (${keyList})`,
+        `parent in (${keyList})`,
+      ].join(' OR ');
+
+      return jiraGet<JiraSearchResponse>(buildSearchPath(
+        `${projectClause}(${linkageClause})`,
+        buildFieldList(scope, [PARENT_LINK_FIELD_ID]),
+      )).catch(() => ({ issues: [] as JiraIssue[] }));
+    }),
   );
-  return chunkResults.flatMap((chunkResult) => chunkResult.issues ?? []);
+
+  // One issue can satisfy two clauses, and each chunk is a separate read.
+  const issuesByKey = new Map<string, JiraIssue>();
+  for (const chunkResult of chunkResults) {
+    for (const issue of chunkResult.issues ?? []) issuesByKey.set(issue.key, issue);
+  }
+  return [...issuesByKey.values()];
 }

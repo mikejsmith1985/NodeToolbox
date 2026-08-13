@@ -139,9 +139,14 @@ describe('SubLane', () => {
 });
 
 describe('describeSubLaneSummary', () => {
-  it('says a discipline has not started rather than showing an empty band', () => {
-    expect(describeSubLaneSummary(buildSubLane({ items: [], matchedItemCount: 0, totalItemCount: 0 })))
-      .toContain('has not broken its work down');
+  it('names what it searched, not just that it found nothing', () => {
+    // An empty band has two explanations, and asserting only the flattering one is how the real cause
+    // stayed hidden twice: the discipline may link its work by a field nobody checked.
+    const summary = describeSubLaneSummary(buildSubLane({ items: [], matchedItemCount: 0, totalItemCount: 0 }));
+
+    expect(summary).toContain('QEINT-610');
+    expect(summary).toContain('Feature Link');
+    expect(summary).toContain('Parent Link');
   });
 
   it('says the copy could not be read, which is a different problem from having no work', () => {

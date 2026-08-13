@@ -19,7 +19,8 @@ const crypto = require('crypto');
 
 const { isScheduledTimeReached, loadFiredDates, recordFiredDate } = require('./schedulerFiredState');
 const { postJiraCommentForEvent } = require('./jiraEventOutput');
-const { isHttpUrl } = require('../utils/sharePointFolderUrl');
+const { isHttpUrl, normalizeSharePointFolderUrl } = require('../utils/sharePointFolderUrl');
+const sharePointEmailRelay = require('./sharePointEmailRelay');
 
 // ── Constants ──
 
@@ -769,14 +770,21 @@ function minutesSinceMidnight(hhmm) {
  */
 function checkAndFireGithubEmailIntake(configuration, options = {}) {
   const cfg = ((configuration.scheduler || {}).githubEmailIntake) || {};
-  if (!cfg.isEnabled || !cfg.dropFolder) {
+  // A SharePoint-only board has no drop folder, and this used to end the tick right here — which is
+  // why its schedule had to live in the browser tab instead, and why closing that tab stopped it.
+  const hasSharePointFolder = normalizeSharePointFolderUrl(cfg.sharePointFolderUrl || '') !== '';
+  if (!cfg.isEnabled || (!cfg.dropFolder && !hasSharePointFolder)) {
     return false;
   }
   const isRunBusy = options.isRunBusy || isGithubEmailIntakeRunInProgress;
   if (isRunBusy()) {
     return false;
   }
-  const runIntake = options.runIntake || ((liveConfiguration) => runGithubEmailIntakeNow(liveConfiguration, { trigger: 'scheduled' }));
+  // The drop folder wins when a board somehow has both: it is the local, always-available source, and
+  // silently preferring the one that needs a browser tab would be the worse surprise.
+  const runIntake = options.runIntake || (cfg.dropFolder
+    ? ((liveConfiguration) => runGithubEmailIntakeNow(liveConfiguration, { trigger: 'scheduled' }))
+    : ((liveConfiguration) => runSharePointIntakeNow(liveConfiguration)));
 
   const intervalMin = Number(cfg.intervalMin) || 0;
   if (intervalMin > 0) {
@@ -815,6 +823,108 @@ function checkAndFireGithubEmailIntake(configuration, options = {}) {
   return true;
 }
 
+
+// ── SharePoint pull, driven from the server ──────────────────────────────────
+
+/** Max files per run batch — mirrors the client batching this replaces. */
+const MAX_SHAREPOINT_SOURCES_PER_BATCH = 20;
+
+/** Max accumulated email text per batch, kept well under the JSON body limit. */
+const MAX_SHAREPOINT_BATCH_CONTENT_CHARS = 600000;
+
+/**
+ * Splits downloaded sources into batches capped by BOTH file count and accumulated size.
+ *
+ * Size as well as count because one 900 KB email would otherwise ride in a batch of twenty and blow
+ * the body limit on its own.
+ */
+function batchSharePointSources(sources) {
+  const batches = [];
+  let currentBatch = [];
+  let currentBatchChars = 0;
+
+  for (const source of sources) {
+    const wouldOverflow = currentBatch.length >= MAX_SHAREPOINT_SOURCES_PER_BATCH
+      || (currentBatch.length > 0
+        && currentBatchChars + source.content.length > MAX_SHAREPOINT_BATCH_CONTENT_CHARS);
+    if (wouldOverflow) {
+      batches.push(currentBatch);
+      currentBatch = [];
+      currentBatchChars = 0;
+    }
+    currentBatch.push(source);
+    currentBatchChars += source.content.length;
+  }
+  if (currentBatch.length > 0) {
+    batches.push(currentBatch);
+  }
+  return batches;
+}
+
+/** A pull id shared by every batch of one sweep, so the Activity Log shows one row rather than five. */
+function nextSharePointPullId() {
+  return 'srv-pull-' + Date.now();
+}
+
+/**
+ * Runs a whole SharePoint sweep from the server: list, download, ingest, and optionally clear.
+ *
+ * This is the same work the NodeToolbox tab used to do, moved to where the schedule lives. The user's
+ * SharePoint tab still executes every request — the relay has not changed — but it no longer has to be
+ * told what to fetch by a second tab that also had to be open. Only the SharePoint tab matters now.
+ *
+ * Everything after collection is the EXISTING pipeline: runGithubEmailSourcesNow is what the client
+ * called too, so parsing, deduplication, Jira posting, the ledger and the Activity Log are untouched.
+ */
+async function runSharePointIntakeNow(configuration, deps = {}) {
+  const cfg = ((configuration.scheduler || {}).githubEmailIntake) || {};
+  const folderUrl = normalizeSharePointFolderUrl(cfg.sharePointFolderUrl || '');
+  if (folderUrl === '') {
+    return { ok: false, message: 'No SharePoint folder is configured.' };
+  }
+
+  const relay = deps.relay || sharePointEmailRelay;
+  const filterNewFileNames = deps.filterNewFileNames
+    || ((fileNames) => Promise.resolve(filterNewSharePointFileNames(fileNames)));
+  const runSources = deps.runSources || runGithubEmailSourcesNow;
+
+  let collected;
+  try {
+    collected = await relay.collectNewSharePointSources(folderUrl, filterNewFileNames);
+  } catch (collectError) {
+    // The commonest cause by far is the relay bookmarklet not being active. Saying so beats a stack
+    // trace, because the fix is a click rather than anything in this code.
+    return { ok: false, message: 'Could not read the SharePoint folder: ' + (collectError && collectError.message) };
+  }
+
+  const pullId = (deps.nextPullId || nextSharePointPullId)();
+  const basePullInput = { folderLabel: folderUrl, pullId, listedCount: collected.listedCount };
+
+  // An all-caught-up sweep still records an empty run: "nothing new" was once indistinguishable from
+  // "never ran", which is the whole reason the Activity Log exists.
+  if (collected.sources.length === 0) {
+    const emptyOutcome = await runSources(configuration, { ...basePullInput, sources: [] }, deps);
+    return { ok: true, result: emptyOutcome.result, deletedCount: 0, keptCount: 0 };
+  }
+
+  const totals = { postedCount: 0, skippedCount: 0, errorCount: 0 };
+  for (const batch of batchSharePointSources(collected.sources)) {
+    const batchOutcome = await runSources(configuration, { ...basePullInput, sources: batch }, deps);
+    const batchResult = (batchOutcome && batchOutcome.result) || {};
+    totals.postedCount += Number(batchResult.postedCount) || 0;
+    totals.skippedCount += Number(batchResult.skippedCount) || 0;
+    totals.errorCount += Number(batchResult.errorCount) || 0;
+  }
+
+  if (!cfg.shouldClearSharePointAfterIngest) {
+    return { ok: true, result: totals, deletedCount: 0, keptCount: 0 };
+  }
+
+  const attemptedFileNames = collected.sources.map((source) => source.fileName);
+  const cleared = await relay.recycleConfirmedFiles(folderUrl, attemptedFileNames, filterNewFileNames);
+  return { ok: true, result: totals, deletedCount: cleared.deletedCount, keptCount: cleared.keptCount };
+}
+
 /** Runs the intake without blocking the tick; a failure is logged, never thrown. */
 function fireAndForget(runIntake, configuration) {
   Promise.resolve(runIntake(configuration)).catch((runError) => {
@@ -839,6 +949,8 @@ function startGithubEmailIntakeScheduler(configuration) {
 }
 
 module.exports = {
+  batchSharePointSources,
+  runSharePointIntakeNow,
   FIRED_STATE_SCHEDULER_NAME,
   FIRED_STATE_CONFIG_KEY,
   DEFAULT_SCHEDULE_TIME,

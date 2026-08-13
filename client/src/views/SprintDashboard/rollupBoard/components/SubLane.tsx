@@ -35,7 +35,12 @@ export function describeSubLaneSummary(subLane: SubLaneModel): string {
     return `${subLane.discipline.name}'s copy could not be read — its work is missing from this Feature.`;
   }
   if (subLane.totalItemCount === 0) {
-    return `${subLane.discipline.name} has not broken its work down yet.`;
+    // Says what was actually looked for. "Has not broken its work down" is only ONE explanation for
+    // an empty band — the other is that this discipline links its work by a field nobody checked, and
+    // twice now that has been the real answer while this line confidently claimed the first.
+    return `Nothing found under ${subLane.cloneFeatureKey}. Checked Feature Link, Parent Link and`
+      + ` sub-task parent — either ${subLane.discipline.name} has not broken its work down, or it links`
+      + ' it some other way.';
   }
 
   const itemWord = subLane.totalItemCount === 1 ? 'item' : 'items';
