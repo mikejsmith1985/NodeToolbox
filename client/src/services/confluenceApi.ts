@@ -488,6 +488,78 @@ export async function saveBoardVocabularyStore(
   return stampedStore;
 }
 
+// ── Roll-Up Board shared ORDER store ──
+//
+// A sibling property again, for the same reason as the vocabulary above it: an older client must be
+// able to ignore this key entirely rather than break on it or erase it.
+//
+// Kept SEPARATE from the vocabulary rather than folded into it, because the two are published by
+// different decisions. Columns are the language a team agrees on and change rarely; the order the
+// Features are worked in changes every planning session. One property for both would mean you could
+// not re-publish a re-prioritised board without also republishing the column definitions.
+//
+// Note what is deliberately NOT here: which lanes somebody has collapsed. Folding a lane is a view of
+// your own, not a decision the team takes, and sharing it would mean one person tidying their screen
+// refolded everybody else's.
+
+/** Content-property key holding every team's Roll-Up Board ordering. */
+export const BOARD_ORDER_PROPERTY_KEY = 'nodetoolbox-board-order';
+
+/** Schema version of the board order store, independent of every other store on this database. */
+export const BOARD_ORDER_SCHEMA_VERSION = 1;
+
+/** One team's published board ordering. */
+export interface BoardOrderRecord {
+  teamProfileId: string;
+  /** Feature keys in the order the team works them. */
+  laneOrder: string[];
+  /** Card order within one Feature's column, keyed `featureKey::columnId`. */
+  cardOrderByCell: Record<string, string[]>;
+  updatedAt: string;
+}
+
+export interface BoardOrderStorePayload {
+  schemaVersion: number;
+  updatedAt: string;
+  orderByTeamProfileId: Record<string, BoardOrderRecord>;
+}
+
+/** An empty store — the normal first-run state, never an error. */
+function buildEmptyBoardOrderStore(): BoardOrderStorePayload {
+  return { schemaVersion: BOARD_ORDER_SCHEMA_VERSION, updatedAt: '', orderByTeamProfileId: {} };
+}
+
+/** Loads every team's published board ordering. An absent property means nobody has published yet. */
+export async function loadBoardOrderStore(databaseId: string): Promise<BoardOrderStorePayload> {
+  const orderProperty = await fetchConfluenceDatabasePropertyByKey<BoardOrderStorePayload>(
+    databaseId,
+    BOARD_ORDER_PROPERTY_KEY,
+  );
+  if (!orderProperty) return buildEmptyBoardOrderStore();
+
+  if (orderProperty.value.schemaVersion !== BOARD_ORDER_SCHEMA_VERSION) {
+    throw new Error(
+      `Unsupported board order schema version ${orderProperty.value.schemaVersion}. `
+      + 'Update NodeToolbox to read this team\'s board order.',
+    );
+  }
+  return orderProperty.value;
+}
+
+/** Persists every team's board ordering, stamping the schema version and save time. */
+export async function saveBoardOrderStore(
+  databaseId: string,
+  store: BoardOrderStorePayload,
+): Promise<BoardOrderStorePayload> {
+  const stampedStore: BoardOrderStorePayload = {
+    ...store,
+    schemaVersion: BOARD_ORDER_SCHEMA_VERSION,
+    updatedAt: new Date().toISOString(),
+  };
+  await upsertConfluenceDatabaseProperty(databaseId, BOARD_ORDER_PROPERTY_KEY, stampedStore);
+  return stampedStore;
+}
+
 // ── Jira Template Maker shared store ──
 // Templates persist as one JSON document under their own content-property key on the same
 // shared database used by the ART workspace, kept independent so the ART schema is untouched.

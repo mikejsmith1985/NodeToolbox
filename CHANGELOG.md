@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Roll-Up Board — a dragged card no longer disappears halfway through the drag.** dnd-kit was moving
+  the original element, which lives in a cell inside a scrolling board — so the card was **clipped**
+  the moment it left its own column, which is every drag that actually matters on a twelve-column
+  board. It now travels in a `DragOverlay`, drawn in a layer outside the board where nothing can clip
+  it, sized to the column it was lifted from so the card you are carrying matches the gap you are
+  aiming at.
+  Two more things were making the drag feel unreliable rather than merely ugly. Drop targets were
+  measured **once**, so on a board that scrolls and whose lanes collapse and expand, a card carried
+  three columns across was being tested against rectangles describing where the cells *used* to be —
+  measuring is now continuous while a drag is in progress. And the card left behind stays in place,
+  faded, rather than being removed: the column no longer reflows under your hand mid-drag and moves
+  the target you were aiming at.
+
+### Added
+- **Roll-Up Board — the team's priority order can now be shared.** Lane order is a real decision —
+  the sequence a team agreed to work its Features in — and it lived in one person's browser, so the
+  planning session's outcome existed on exactly one machine while everybody else saw Features in key
+  order. **Share this order** publishes it; **Get the team's order** shows what accepting would change,
+  Feature by Feature, before anything moves.
+  Published explicitly, never on a drag, and pulled only through preview-and-accept — the same
+  discipline the column vocabulary already uses, because an order that changed under you without
+  being shown is worse than no shared order at all. Order travels as **keys**, not positions, so a
+  Feature that has left the board is simply not found rather than silently re-pointing at another one.
+  **Which lanes you have collapsed stays yours.** That is a view of your own, not a decision the team
+  took, and syncing it would mean one person tidying their screen refolded everybody else's.
+  Stored under its own content property (`nodetoolbox-board-order`), separate from the vocabulary:
+  columns change rarely, priorities change every planning session, and one property for both would
+  mean you could not republish a re-prioritised board without republishing the column definitions too.
+
 ### Changed
 - **Roll-Up Board — the lane's actions moved to right-click, where they were asked for in the first
   place.** *Send to top*, *Send to bottom* and *Add work* were buttons in every swimlane header: on a

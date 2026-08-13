@@ -10,6 +10,8 @@
 
 import {
   DndContext,
+  DragOverlay,
+  MeasuringStrategy,
   PointerSensor,
   pointerWithin,
   rectIntersection,
@@ -40,6 +42,13 @@ import {
   type TransitionRequiredField,
 } from '../featureReviewFixes.ts';
 import { computeBoardScrollerMaxHeight, readDocumentTop } from './boardViewportFit.ts';
+import {
+  applyBoardOrder,
+  describeOrderDifference,
+  previewBoardOrderPull,
+  publishBoardOrder,
+  type OrderPullPreview,
+} from './boardOrderSync.ts';
 import { buildRenderedColumns, resolveColumnIdForItem } from './boardColumns.ts';
 import { describeMissingSubLanes, describeUnconfiguredClones } from './cloneFamily.ts';
 import { classifyCloneFamilies, discoverDisciplineWork } from './disciplineDiscovery.ts';
@@ -149,6 +158,7 @@ import { BoardNotices, type BoardNotice } from './components/BoardNotices.tsx';
 import { BoardColumnHeaderRow } from './components/BoardColumnHeaderRow.tsx';
 import { ColumnVocabularyEditor } from './components/ColumnVocabularyEditor.tsx';
 import { FeatureScopePanel } from './components/FeatureScopePanel.tsx';
+import { ChildCard } from './components/ChildCard.tsx';
 import { MasterCardLane } from './components/MasterCardLane.tsx';
 import { PlacementTroubleshooter } from './components/PlacementTroubleshooter.tsx';
 import { QuickFilterBar } from './components/QuickFilterBar.tsx';
@@ -401,6 +411,11 @@ export default function RollupBoardTab({
   projectKey = '',
 }: RollupBoardTabProps) {
   const [boardScrollerRef, boardScrollerMaxHeightPx, columnHeaderHeightPx] = useBoardScrollerMaxHeight();
+  // The key of whatever is currently being dragged, so the overlay knows what to draw. Null at rest.
+  const [draggedItemKey, setDraggedItemKey] = useState<string | null>(null);
+  const [isSharingOrder, setIsSharingOrder] = useState(false);
+  const [orderShareMessage, setOrderShareMessage] = useState<string | null>(null);
+  const [orderPullPreview, setOrderPullPreview] = useState<OrderPullPreview | null>(null);
   const [loadState, setLoadState] = useState<RollupBoardLoadState>(EMPTY_LOAD_STATE);
   const [filters, setFilters] = useState<QuickFilterState>(EMPTY_QUICK_FILTER_STATE);
   const [preferences, setPreferences] = useState<BoardPreferences>(() =>
@@ -1210,6 +1225,38 @@ export default function RollupBoardTab({
     return pointerCollisions.length > 0 ? pointerCollisions : rectIntersection(collisionArgs);
   }, []);
 
+  // Only a CARD gets a preview: a lane's own drag already moves the whole swimlane, which is its own
+  // preview, and a lane key never matches an issue key so this simply yields null for one.
+  const draggedItem = useMemo(
+    () => loadState.allItems.find((item) => item.key === draggedItemKey) ?? null,
+    [loadState.allItems, draggedItemKey],
+  );
+
+  /** Publishes this board's order for the team. Never fires on a drag — always an explicit choice. */
+  async function handlePublishOrder(): Promise<void> {
+    setIsSharingOrder(true);
+    setOrderShareMessage(null);
+    try {
+      await publishBoardOrder(sharedWorkspaceDatabaseId, preferences);
+      setOrderShareMessage('Shared. Everyone on this team can now pull the same order.');
+    } catch (shareError: unknown) {
+      // Named rather than swallowed: a share that silently failed is a team believing they agree.
+      setOrderShareMessage(`Could not share the order: ${String(shareError)}`);
+    } finally {
+      setIsSharingOrder(false);
+    }
+  }
+
+  /** Reads the team's published order and shows what accepting it would change. Changes nothing. */
+  async function handlePreviewOrderPull(): Promise<void> {
+    setOrderShareMessage(null);
+    try {
+      setOrderPullPreview(await previewBoardOrderPull(sharedWorkspaceDatabaseId, preferences));
+    } catch (pullError: unknown) {
+      setOrderShareMessage(`Could not read the team's order: ${String(pullError)}`);
+    }
+  }
+
   const allFeatureKeys = useMemo(
     () => layout.lanes.map((lane) => lane.masterCard.featureKey),
     [layout.lanes],
@@ -1630,6 +1677,30 @@ export default function RollupBoardTab({
         >
           {isTroubleshooting ? 'Hide troubleshooter' : "Why is an issue missing?"}
         </button>
+        {/* Beside Reset order, because they are the same subject: what order this board is in, and
+            whose order that is. Offered only where there is a shared workspace to publish into. */}
+        {sharedWorkspaceDatabaseId !== '' && hasManualOrder(preferences) && (
+          <button
+            className={styles.actionButton}
+            disabled={isSharingOrder}
+            onClick={() => void handlePublishOrder()}
+            title="Publish this order so the rest of the team sees the same priorities"
+            type="button"
+          >
+            {isSharingOrder ? 'Sharing…' : 'Share this order'}
+          </button>
+        )}
+        {sharedWorkspaceDatabaseId !== '' && (
+          <button
+            className={styles.actionButton}
+            onClick={() => void handlePreviewOrderPull()}
+            title="See what the team's published order would change, before accepting it"
+            type="button"
+          >
+            Get the team&apos;s order
+          </button>
+        )}
+
         {/* Manual order is sticky by design — a lane sent to the top stays there across sessions — so
             there has to be a way back that is not "drag every lane". Offered only when there is
             something to undo. */}
@@ -1650,6 +1721,52 @@ export default function RollupBoardTab({
           {scopeDescription ? ` · ${scopeDescription}` : ''}
         </span>
       </div>
+
+      {orderShareMessage !== null && (
+        <p className={styles.boardStatusLine} data-testid="rollup-order-share-status">{orderShareMessage}</p>
+      )}
+
+      {/* Preview and accept, exactly as the column vocabulary does it: an order that changed under
+          you without being shown is worse than having no shared order at all. */}
+      {orderPullPreview !== null && (
+        <div className={styles.panelCard} data-testid="rollup-order-pull-preview" role="region">
+          {orderPullPreview.remote === null && (
+            <p className={styles.fieldLabel}>Nobody has published this team&apos;s board order yet.</p>
+          )}
+          {orderPullPreview.remote !== null && !orderPullPreview.hasDifferences && (
+            <p className={styles.fieldLabel}>Your board is already in the team&apos;s order.</p>
+          )}
+          {orderPullPreview.remote !== null && orderPullPreview.hasDifferences && (
+            <>
+              <p className={styles.fieldLabel}>Accepting the team&apos;s order would:</p>
+              <ul>
+                {orderPullPreview.differences.map((difference) => (
+                  <li className={styles.fieldLabel} key={JSON.stringify(difference)}>
+                    {describeOrderDifference(difference)}
+                  </li>
+                ))}
+              </ul>
+              <p className={styles.fieldLabel}>
+                Which lanes you have collapsed is your own view and is left exactly as it is.
+              </p>
+              <button
+                className={styles.actionButton}
+                onClick={() => {
+                  applyPreferences(applyBoardOrder(preferences, orderPullPreview.remote!));
+                  setOrderPullPreview(null);
+                  setOrderShareMessage('This board is now in the team\'s order.');
+                }}
+                type="button"
+              >
+                Accept the team&apos;s order
+              </button>
+            </>
+          )}
+          <button className={styles.actionButton} onClick={() => setOrderPullPreview(null)} type="button">
+            Close
+          </button>
+        </div>
+      )}
 
       {/* A load failure is not a notice — it means there is no board — so it stays on its own. */}
       {loadState.loadError !== null && (
@@ -1797,9 +1914,32 @@ export default function RollupBoardTab({
             a lane's sortable id is its Feature key, a column cell's carries the "::" separator. */}
         <DndContext
           collisionDetection={detectCollisions}
-          onDragEnd={(dragEndEvent) => void handleBoardDragEnd(dragEndEvent)}
+          // Re-measured continuously while a drag is in progress. Without this the drop targets are
+          // measured once, and the board is a scroll container whose lanes collapse and expand — so
+          // by the time a card is carried three columns across, the rectangles it is being tested
+          // against describe where the cells USED to be, and the card lands in the wrong one.
+          measuring={{ droppable: { strategy: MeasuringStrategy.Always } }}
+          onDragCancel={() => setDraggedItemKey(null)}
+          onDragEnd={(dragEndEvent) => {
+            setDraggedItemKey(null);
+            void handleBoardDragEnd(dragEndEvent);
+          }}
+          onDragStart={(dragStartEvent) => setDraggedItemKey(String(dragStartEvent.active.id))}
           sensors={dragSensors}
         >
+          {/* The card that follows the pointer, rendered in a layer of its own OUTSIDE the board.
+              Without it dnd-kit moves the original element, which lives inside a cell inside a
+              scrolling board — so the card was CLIPPED the moment it left its own column and
+              vanished halfway through every drag that mattered. */}
+          <DragOverlay dropAnimation={{ duration: 180, easing: 'cubic-bezier(0.18, 0.67, 0.6, 1.22)' }}>
+            {draggedItem === null ? null : (
+              // Sized to the column it was lifted from, so the card you are carrying is the same
+              // width as the gap you are aiming at.
+              <div className={styles.dragPreview} style={{ width: columnMinWidth }}>
+                <ChildCard item={draggedItem} />
+              </div>
+            )}
+          </DragOverlay>
           <SortableContext items={allFeatureKeys} strategy={verticalListSortingStrategy}>
             {layout.lanes.map((lane, laneIndex) => (
             <MasterCardLane

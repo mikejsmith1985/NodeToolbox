@@ -461,6 +461,9 @@
   width: 100%;
   /* The whole card is the drag handle, as on a Jira board. */
   cursor: grab;
+  /* Eased so the drop indicator arriving and leaving is something the eye can follow, rather than
+     an edge that appears fully formed under the pointer. */
+  transition: border-color 120ms ease, box-shadow 120ms ease, opacity 120ms ease;
 }
 
 .card:active {
@@ -531,13 +534,32 @@
   text-align: center;
 }
 
+/* The card left behind while its copy travels with the pointer. Faded rather than removed, so the
+   column does not reflow under your hand mid-drag and change where you were aiming. */
 .cardDragging {
-  opacity: 0.4;
+  opacity: 0.3;
+}
+
+/* The card that follows the pointer, drawn in the overlay layer outside the scrolling board.
+   Lifted and tilted very slightly: enough to read as picked up, not enough to be a performance. */
+.dragPreview {
+  width: var(--rollup-drag-preview-width, 15rem);
+  transform: rotate(1.5deg) scale(1.02);
+  box-shadow: 0 12px 28px -8px rgb(0 0 0 / 55%);
+  border-radius: var(--radius-sm);
+  cursor: grabbing;
+  /* The preview is a picture of the card, never a target — pointer events belong to what is beneath. */
+  pointer-events: none;
 }
 
 /* Shows where a dragged card would land when dropped onto this one. */
 .cardDropBefore {
   border-top: 3px solid var(--color-accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card { transition: none; }
+  .dragPreview { transform: none; }
 }
 
 .cardKey {
