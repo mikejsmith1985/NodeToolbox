@@ -122,15 +122,16 @@ describe('preview — look before anything is written', () => {
 });
 
 describe('promote — create, then link', () => {
-  it('creates the Story and links it with the Story on the inward side', async () => {
+  it('creates the Story and sends it as the OUTWARD issue, so it reads "contained within"', async () => {
     await renderAndPreview();
     await userEvent.click(screen.getByRole('button', { name: /Promote 1 sub-tasks/ }));
     await waitFor(() => expect(createIssueLinkMock).toHaveBeenCalled());
 
+    // The other way round produced a link reading "the Dev story is contained within the SL story".
     expect(createIssueLinkMock).toHaveBeenCalledWith({
       type: { name: 'Container' },
-      inwardIssue: { key: 'ENCUC-500' },
-      outwardIssue: { key: 'ENCUC-100' },
+      inwardIssue: { key: 'ENCUC-100' },
+      outwardIssue: { key: 'ENCUC-500' },
     });
   });
 

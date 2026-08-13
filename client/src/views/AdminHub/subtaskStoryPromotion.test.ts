@@ -111,16 +111,18 @@ describe('resolveContainmentLinkDirection — which side does the Story go on', 
 });
 
 describe('buildContainmentLinkInput — the Story reads "contained within" its parent', () => {
-  it('places the Story inward and the old parent outward for a normally worded pair', () => {
+  it('sends the Story as the OUTWARD issue, which is what makes it read "contained within"', () => {
     const direction = resolveContainmentLinkDirection([CONTAINER_LINK_TYPE])!;
     const linkInput = buildContainmentLinkInput(direction, 'ENCUC-500', 'ENCUC-100');
 
-    // Jira renders outwardIssue --(outward phrase)--> inwardIssue, so the parent "contains" the Story
-    // and the Story "is contained within" the parent. That is the right way round.
+    // Jira's payload does not name each issue by the phrase it will display — it is the reverse:
+    //     { inwardIssue: I, outwardIssue: O }  reads  "I <outward> O"  /  "O <inward> I"
+    // Confirmed on a real link: sending the Story as inwardIssue produced "the PARENT is contained
+    // within the Story", which is exactly backwards. The Story must be the outwardIssue.
     expect(linkInput).toEqual({
       type: { name: 'Container' },
-      inwardIssue: { key: 'ENCUC-500' },
-      outwardIssue: { key: 'ENCUC-100' },
+      inwardIssue: { key: 'ENCUC-100' },
+      outwardIssue: { key: 'ENCUC-500' },
     });
   });
 
@@ -131,8 +133,9 @@ describe('buildContainmentLinkInput — the Story reads "contained within" its p
     const direction = resolveContainmentLinkDirection([invertedLinkType])!;
     const linkInput = buildContainmentLinkInput(direction, 'ENCUC-500', 'ENCUC-100');
 
-    expect(linkInput.inwardIssue.key).toBe('ENCUC-100');
-    expect(linkInput.outwardIssue.key).toBe('ENCUC-500');
+    // Here "contained within" is the link type's OUTWARD phrase, so the Story takes the other end.
+    expect(linkInput.inwardIssue.key).toBe('ENCUC-500');
+    expect(linkInput.outwardIssue.key).toBe('ENCUC-100');
   });
 });
 

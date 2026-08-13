@@ -8,6 +8,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Containment links were being written backwards — a Dev story ended up "contained within" its own
+  SL story.** Jira's create payload does not name each issue by the phrase it will display; it is the
+  reverse. Posting `{ inwardIssue: I, outwardIssue: O }` produces a link reading **"I *outward* O"**
+  and equivalently **"O *inward* I"** — so the issue that should read "contained within" has to be sent
+  as the `outwardIssue`. We were sending it as the `inwardIssue`, which is why ENCUC-2208 read
+  *"contained within ENCUC-2311"* when the SL story is the thing that belongs inside the Dev story.
+  **The board's reader was inverted in exactly the same way, and the two cancelled out** — it matched
+  the link type's inward phrase against the `outwardIssue`, so the board drew correct nesting from
+  links that were wrong in Jira. Nobody could see the problem on the board, which is why it went
+  unnoticed. Both halves are fixed together, because fixing either alone would have broken nesting.
+  The reader now reads whichever phrase actually describes the issue in hand: an entry naming
+  `inwardIssue` means this issue is the outward end and so reads with the **inward** phrase; an entry
+  naming `outwardIssue` reads with the **outward** phrase. That also makes it work on an instance whose
+  link type words the pair the other way round.
+  Affects both places the app writes these links: the Admin Hub sub-task → Story promotion, and
+  dragging one card onto another on the Roll-Up Board. **Links already written are still backwards and
+  need correcting in Jira** — this stops new ones being made wrong.
+
+### Fixed
 - **Roll-Up Board — the real reason sub-lanes were empty: the JQL could never have worked.** Jira
   answered `Field 'customfield_10108' does not exist or you do not have permission to view it`, and it
   was right to. **JQL cannot address a custom field by its raw id in quotes** — `"customfield_10108"`
