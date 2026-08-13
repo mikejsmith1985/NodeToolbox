@@ -6,6 +6,7 @@
 // item so the card can state it — the board's promise is that a reader never has to infer parentage.
 
 import { extractFeatureKeyFromIssueFields } from '../../../utils/featureLink.ts';
+import { parseChecklistItems, summarizeChecklist } from './checklistItems.ts';
 import type { JiraIssue } from '../../../types/jira.ts';
 import { resolveDefectRollup } from './defectRollup.ts';
 import {
@@ -187,6 +188,45 @@ function normalizeLinkPhrase(linkPhrase: string): string {
 }
 
 /**
+ * The keys of issues CONTAINED WITHIN these ones, read from the container's own links.
+ *
+ * The board scopes by PI, and a contained child often has none of its own — the SL story promoted
+ * from a sub-task inherits nothing, so it was dropped before nesting was ever considered and the
+ * parent appeared childless. But containment IS the reason it belongs on the board: whatever its own
+ * PI says, it is part of the work of a card that is already here.
+ *
+ * Read from the CONTAINER's side because that is the side we have. Every link is visible from both
+ * ends; the phrase that would describe the other end is the opposite of the one describing this issue.
+ */
+export function collectContainedChildKeys(issues: readonly JiraIssue[]): string[] {
+  const childKeys = new Set<string>();
+
+  for (const issue of issues) {
+    const issueLinks = (issue.fields as { issuelinks?: unknown[] }).issuelinks ?? [];
+
+    for (const rawLink of issueLinks) {
+      const issueLink = rawLink as {
+        type?: { inward?: string; outward?: string };
+        inwardIssue?: { key?: string };
+        outwardIssue?: { key?: string };
+      };
+
+      // The phrase describing the OTHER end is the one this issue does not read with.
+      const otherEndKey = issueLink.inwardIssue?.key ?? issueLink.outwardIssue?.key ?? '';
+      const phraseForOtherEnd = issueLink.inwardIssue?.key
+        ? issueLink.type?.outward ?? ''
+        : issueLink.type?.inward ?? '';
+
+      if (normalizeLinkPhrase(phraseForOtherEnd) === CONTAINMENT_PHRASE && otherEndKey !== '') {
+        childKeys.add(String(otherEndKey));
+      }
+    }
+  }
+
+  return [...childKeys];
+}
+
+/**
  * The issue this one is explicitly contained in, read from its own issue links.
  *
  * A containment link is how work gets nested without being a sub-task — dragged onto another card, or
@@ -283,6 +323,11 @@ export function resolveBoardItems(
     const subStatusValue = readSubStatusValue(issue, scope.subStatusFieldId);
     const assignee = issueFields.assignee as { accountId?: string; name?: string; key?: string; displayName?: string } | null;
 
+    // Read once here so the badge and the nested cards come from the same parse.
+    const checklistItems = parseChecklistItems(
+      scope.checklistFieldId ? (issueFields as Record<string, unknown>)[scope.checklistFieldId] : '',
+    );
+
     return {
       issue,
       key: issue.key,
@@ -306,7 +351,10 @@ export function resolveBoardItems(
       storyPoints: readStoryPoints(issue, scope.storyPointsFieldIds),
       // Checklist data is a paid Jira app's field this instance may not expose at all. Absent means
       // absent — never a zero-of-zero indicator asserting a checklist that does not exist.
-      checklistCompletion: null,
+      checklistItems,
+      // Derived from the items themselves rather than counted separately, so the badge and the cards
+      // beneath it can never disagree.
+      checklistCompletion: summarizeChecklist(checklistItems),
     };
   });
 }

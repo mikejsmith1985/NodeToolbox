@@ -46,6 +46,7 @@ function buildItem(key: string, columnId: string, parentKey: string | null = nul
     fixVersionNames: [],
     storyPoints,
     checklistCompletion: null,
+    checklistItems: [],
   };
 }
 

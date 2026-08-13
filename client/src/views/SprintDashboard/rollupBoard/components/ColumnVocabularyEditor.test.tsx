@@ -42,6 +42,7 @@ function buildBoardItem(key: string, statusName: string, subStatusValue: string 
     fixVersionNames: [],
     storyPoints: null,
     checklistCompletion: null,
+    checklistItems: [],
   };
 }
 

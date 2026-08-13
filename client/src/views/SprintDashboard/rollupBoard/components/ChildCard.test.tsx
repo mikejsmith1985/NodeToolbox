@@ -32,6 +32,7 @@ function buildItem(overrides: Partial<RollupBoardItem> = {}): RollupBoardItem {
     fixVersionNames: [],
     storyPoints: null,
     checklistCompletion: null,
+    checklistItems: [],
     ...overrides,
   };
 }
@@ -234,5 +235,45 @@ describe('a card in another discipline band', () => {
     fireEvent.click(screen.getByTestId('rollup-card-DEV-1'));
 
     expect(opened).toEqual(['DEV-1']);
+  });
+});
+
+describe('checklist items nested inside the card', () => {
+  it('draws nothing when the issue has no checklist', () => {
+    render(<ChildCard item={buildItem()} />);
+
+    expect(screen.queryByText(/this is a test/)).toBeNull();
+  });
+
+  it('draws each item as its own nested row under the story it belongs to', () => {
+    render(<ChildCard item={buildItem({
+      checklistItems: [
+        { id: 'checklist-0', text: 'this is a test', state: 'open', assigneeUserId: 'C8Q6T3', headingText: null },
+        { id: 'checklist-1', text: 'and another', state: 'done', assigneeUserId: null, headingText: null },
+      ],
+    })} />);
+
+    expect(screen.getByText('this is a test')).toBeTruthy();
+    expect(screen.getByText('and another')).toBeTruthy();
+  });
+
+  it('names the person an item is assigned to', () => {
+    render(<ChildCard item={buildItem({
+      checklistItems: [
+        { id: 'checklist-0', text: 'review', state: 'open', assigneeUserId: 'jsmith', headingText: null },
+      ],
+    })} />);
+
+    expect(screen.getByText('@jsmith')).toBeTruthy();
+  });
+
+  it('marks the state as data, so a finished item does not rely on colour alone', () => {
+    const { container } = render(<ChildCard item={buildItem({
+      checklistItems: [
+        { id: 'checklist-0', text: 'done thing', state: 'done', assigneeUserId: null, headingText: null },
+      ],
+    })} />);
+
+    expect(container.querySelector('[data-state="done"]')).toBeTruthy();
   });
 });

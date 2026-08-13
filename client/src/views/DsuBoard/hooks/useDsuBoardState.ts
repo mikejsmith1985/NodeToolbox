@@ -62,7 +62,17 @@ const DEFAULT_STANDUP_NOTES: StandupNotes = {
 
 const DSU_SECTION_DEFINITIONS = [
   { key: 'new', icon: '🆕', label: 'New Since Last Business Day', help: 'Created since 5 PM on the last business day' },
-  { key: 'stale', icon: '⚠️', label: 'Stale Issues', help: 'Open issues not updated in N or more days' },
+  {
+    key: 'stale',
+    icon: '⚠️',
+    label: 'Stale Issues',
+    // Names the SCOPE, not just the rule. The rule is identical to Hygiene's and My Day's; what
+    // differs is what each is looking at — this counts the whole project with no PI filter, so it
+    // legitimately reports issues those two do not, and three different numbers read as a bug unless
+    // each says what it covers.
+    help: 'Open issues in this project — ALL PIs — not updated in N or more business days.'
+      + ' Hygiene and My Day apply the same rule to a narrower scope, so their counts are lower.',
+  },
   { key: 'release', icon: '🚀', label: 'Current Release', help: 'Issues targeting the current fix version' },
   { key: 'incidents', icon: '🔥', label: 'PRBs & Incidents', help: 'Issues with INC or PRB in the summary' },
   { key: 'open', icon: '📋', label: 'Open Issues', help: 'All issues in To Do or In Progress' },

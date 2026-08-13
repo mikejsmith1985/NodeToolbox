@@ -35,6 +35,7 @@ function buildItem(key: string, featureKey: string | null, columnId: string): Ro
     fixVersionNames: [],
     storyPoints: null,
     checklistCompletion: null,
+    checklistItems: [],
   };
 }
 

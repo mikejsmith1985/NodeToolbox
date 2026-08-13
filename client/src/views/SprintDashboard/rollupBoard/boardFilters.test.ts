@@ -35,6 +35,7 @@ function buildItem({ key, typeBucket = 'story', assigneeAccountId = null, fixVer
     fixVersionNames,
     storyPoints: null,
     checklistCompletion: null,
+    checklistItems: [],
   };
 }
 

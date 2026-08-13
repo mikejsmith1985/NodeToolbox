@@ -33,6 +33,7 @@ function buildItem(key: string, statusCategoryName: string, storyPoints: number 
     fixVersionNames: [],
     storyPoints,
     checklistCompletion: null,
+    checklistItems: [],
   };
 }
 

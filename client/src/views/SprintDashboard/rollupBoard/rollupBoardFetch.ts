@@ -16,6 +16,7 @@ import { buildJqlFieldReference } from '../../Hygiene/checks/hygieneFieldConfig.
 import type { JiraIssue } from '../../../types/jira.ts';
 import { extractFeatureKeyFromIssueFields } from '../../../utils/featureLink.ts';
 import { buildFeaturesInPiJql } from './emptyFeatureScan.ts';
+import { collectContainedChildKeys } from './featureRollup.ts';
 import { fetchConfluencePageByReference } from '../../../services/confluenceApi.ts';
 import { parsePiReviewTable } from '../../ArtView/piReviewTable.ts';
 import { readCarryOverFeatureKeys } from './carryOverMarks.ts';
@@ -82,6 +83,7 @@ function buildFieldList(scope: RollupBoardScope, extraFieldIds: readonly string[
     scope.featureLinkFieldId,
     scope.subStatusFieldId,
     ...scope.storyPointsFieldIds,
+    ...(scope.checklistFieldId ? [scope.checklistFieldId] : []),
     ...extraFieldIds,
   ].filter((fieldId) => Boolean(fieldId && fieldId.trim()));
   return Array.from(new Set(fieldIds)).join(',');
@@ -353,6 +355,17 @@ export async function fetchRollupBoardIssues(
   const failures: LoadFailure[] = [];
   const expectedBoardIssueCount = scopedIssueKeys.length;
   const boardIssues = await fetchScopedIssueDetail(scopedIssueKeys, scope);
+
+  // Pull in anything CONTAINED WITHIN a board issue that the board's own scope left out. A contained
+  // child frequently has no PI of its own — an SL story promoted from a sub-task inherits none — so it
+  // was dropped before nesting was considered and its parent appeared childless. Containment is the
+  // reason it belongs here, whatever its own fields say.
+  const containedChildKeys = collectContainedChildKeys(boardIssues)
+    .filter((childKey) => !boardIssues.some((boardIssue) => boardIssue.key === childKey));
+  const containedChildIssues = containedChildKeys.length > 0
+    ? await fetchScopedIssueDetail(containedChildKeys, scope)
+    : [];
+  boardIssues.push(...containedChildIssues);
 
   const boardIssueKeys = boardIssues.map((boardIssue) => boardIssue.key);
   const subtaskIssues = await fetchSubtasksForParents(boardIssueKeys, scope, failures);

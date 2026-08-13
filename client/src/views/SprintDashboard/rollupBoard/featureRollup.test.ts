@@ -6,7 +6,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { resolveBoardItems } from './featureRollup.ts';
+import { collectContainedChildKeys, resolveBoardItems } from './featureRollup.ts';
 import { UNMAPPED_COLUMN_ID, type RollupBoardIssueSet, type RollupBoardScope } from './rollupBoardTypes.ts';
 import type { JiraIssue } from '../../../types/jira.ts';
 
@@ -376,5 +376,79 @@ describe('containment links draw the same nesting as a real sub-task', () => {
 
     const [item] = resolveBoardItems(buildIssueSet([blockedIssue]), SCOPE, UNMAPPED_RESOLVER);
     expect(item.parentKey).toBeNull();
+  });
+});
+
+describe('collectContainedChildKeys — a contained child belongs on the board', () => {
+  /**
+   * A container's own link entry, as Jira returns it to the container.
+   *
+   * A container always reads with the "contains" phrase, and an issue reads with the OUTWARD phrase
+   * exactly when its entry names `outwardIssue` — so this is the only shape a container can have for
+   * a conventionally worded link type.
+   */
+  function makeContainerIssue(key: string, childKey: string, linkType = {
+    name: 'Container', inward: 'is contained within', outward: 'contains',
+  }) {
+    const isContainsTheOutwardPhrase = linkType.outward === 'contains';
+    return {
+      id: key, key,
+      fields: {
+        summary: key, status: { name: 'To Do' }, issuetype: { name: 'Story' },
+        issuelinks: [{
+          type: linkType,
+          ...(isContainsTheOutwardPhrase ? { outwardIssue: { key: childKey } } : { inwardIssue: { key: childKey } }),
+        }],
+      },
+    } as unknown as JiraIssue;
+  }
+
+  it('finds the child a board issue contains', () => {
+    // ENCUC-2208 contains ENCUC-2311. The child has no PI of its own, so the board's scope dropped it
+    // and 2208 appeared childless — but containment is exactly why 2311 belongs here.
+    expect(collectContainedChildKeys([makeContainerIssue('ENCUC-2208', 'ENCUC-2311')]))
+      .toEqual(['ENCUC-2311']);
+  });
+
+  it('finds it too on an instance that words the link type the other way round', () => {
+    const invertedType = { name: 'Containment', inward: 'contains', outward: 'is contained within' };
+
+    expect(collectContainedChildKeys([makeContainerIssue('ENCUC-2208', 'ENCUC-2311', invertedType)]))
+      .toEqual(['ENCUC-2311']);
+  });
+
+  it('does not collect the CONTAINER when reading from the child side', () => {
+    // The child reads "contained within"; nothing is contained within IT.
+    const childIssue = {
+      id: 'ENCUC-2311', key: 'ENCUC-2311',
+      fields: {
+        summary: 'child', status: { name: 'To Do' }, issuetype: { name: 'Story' },
+        issuelinks: [{
+          type: { name: 'Container', inward: 'is contained within', outward: 'contains' },
+          inwardIssue: { key: 'ENCUC-2208' },
+        }],
+      },
+    } as unknown as JiraIssue;
+
+    expect(collectContainedChildKeys([childIssue])).toEqual([]);
+  });
+
+  it('ignores link types that are not containment', () => {
+    const blockedIssue = {
+      id: 'DEV-1', key: 'DEV-1',
+      fields: {
+        summary: 'DEV-1', status: { name: 'To Do' }, issuetype: { name: 'Story' },
+        issuelinks: [{ type: { inward: 'is blocked by', outward: 'blocks' }, outwardIssue: { key: 'DEV-9' } }],
+      },
+    } as unknown as JiraIssue;
+
+    expect(collectContainedChildKeys([blockedIssue])).toEqual([]);
+  });
+
+  it('names each child once however many containers point at it', () => {
+    expect(collectContainedChildKeys([
+      makeContainerIssue('ENCUC-2208', 'ENCUC-2311'),
+      makeContainerIssue('ENCUC-2209', 'ENCUC-2311'),
+    ])).toEqual(['ENCUC-2311']);
   });
 });
