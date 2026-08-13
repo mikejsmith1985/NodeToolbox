@@ -3,6 +3,7 @@
 // The Config tab keeps the existing proxy, ART, access-control, hygiene, update, and backup sections.
 // The Dev Panel tab embeds the live API diagnostics view so leadership and support workflows stay in one hub.
 
+import { useDiagnosticsStore } from '../../store/diagnosticsStore.ts'
 import { useEffect, useRef, useState, useCallback, type ChangeEvent, type MouseEvent as ReactMouseEvent } from 'react'
 
 import { BookmarkletInstallLink } from '../../components/BookmarkletInstallLink/index.tsx'
@@ -456,6 +457,9 @@ interface AdminAccessSectionProps {
   onTryUnlock(): void
   onLock(): void
   onToggleFeatureFlag(flagKey: 'isSnowIntegrationEnabled'): void
+  /** Whether the troubleshooting panels may draw themselves. Requires this AND the unlock above. */
+  isBoardDiagnosticsEnabled: boolean
+  onToggleBoardDiagnostics(isEnabled: boolean): void
 }
 
 /** Clears all localStorage keys that start with the 'tbx' prefix. */
@@ -484,6 +488,8 @@ function AdminAccessSection({
   onTryUnlock,
   onLock,
   onToggleFeatureFlag,
+  isBoardDiagnosticsEnabled,
+  onToggleBoardDiagnostics,
 }: AdminAccessSectionProps) {
   const [wizardResetConfirmation, setWizardResetConfirmation] = useState('')
   const [clearDataConfirmation, setClearDataConfirmation] = useState('')
@@ -528,6 +534,21 @@ function AdminAccessSection({
             />
             <label htmlFor="flag-snow-integration" className={styles.fieldLabel}>
               SNow Integration
+            </label>
+          </div>
+
+          {/* Off by default and never turned on by unlocking alone. Diagnostics print raw Jira field
+              ids and raw stored values — indispensable when troubleshooting, clutter otherwise. */}
+          <div className={styles.flagRow}>
+            <input
+              id="flag-board-diagnostics"
+              type="checkbox"
+              checked={isBoardDiagnosticsEnabled}
+              onChange={() => onToggleBoardDiagnostics(!isBoardDiagnosticsEnabled)}
+              aria-label="Board diagnostics"
+            />
+            <label htmlFor="flag-board-diagnostics" className={styles.fieldLabel}>
+              Board diagnostics — shows raw Jira field ids and values in Board setup
             </label>
           </div>
 
@@ -2568,6 +2589,11 @@ interface AdminHubMainContentProps {
 
 /** Renders the existing Admin Hub configuration surface inside the Config tab. */
 function AdminHubMainContent({ state, actions }: AdminHubMainContentProps) {
+  // Read from the diagnostics store rather than admin state: it answers a different question — not
+  // "may this person see admin things" but "does this person want the raw field ids on screen".
+  const isBoardDiagnosticsEnabled = useDiagnosticsStore((store) => store.isBoardDiagnosticsEnabled);
+  const setBoardDiagnosticsEnabled = useDiagnosticsStore((store) => store.setBoardDiagnosticsEnabled);
+
   return (
     <>
       {/*
@@ -2588,6 +2614,8 @@ function AdminHubMainContent({ state, actions }: AdminHubMainContentProps) {
         onTryUnlock={actions.tryUnlock}
         onLock={actions.lock}
         onToggleFeatureFlag={actions.toggleFeatureFlag}
+        isBoardDiagnosticsEnabled={isBoardDiagnosticsEnabled}
+        onToggleBoardDiagnostics={setBoardDiagnosticsEnabled}
       />
 
       <UpdateManagementSection

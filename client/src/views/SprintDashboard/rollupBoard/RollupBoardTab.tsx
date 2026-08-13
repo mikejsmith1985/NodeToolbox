@@ -114,6 +114,9 @@ import {
   type MoveBlockDiagnosis,
 } from './moveBlockDiagnosis.ts';
 import { MoveBlockedDialog } from './components/MoveBlockedDialog.tsx';
+import { ChecklistDiagnosticsPanel } from './components/ChecklistDiagnosticsPanel.tsx';
+import { useAdminStore } from '../../../store/adminStore.ts';
+import { canShowBoardDiagnostics, useDiagnosticsStore } from '../../../store/diagnosticsStore.ts';
 import { CardTransitionsPanel } from './components/CardTransitionsPanel.tsx';
 import { buildCardTransitionOptions, type CardTransitionOption } from './cardTransitions.ts';
 import { findPiReviewPageForPi } from './carryOverMarks.ts';
@@ -391,6 +394,9 @@ export default function RollupBoardTab({
   const [openIssueTransitions, setOpenIssueTransitions] = useState<CardTransitionOption[]>([]);
   const [isReadingTransitions, setIsReadingTransitions] = useState(false);
   const [pendingTransitionId, setPendingTransitionId] = useState<string | null>(null);
+
+  const isAdminUnlocked = useAdminStore((store) => store.isAdminUnlocked);
+  const isBoardDiagnosticsEnabled = useDiagnosticsStore((store) => store.isBoardDiagnosticsEnabled);
 
   const dragSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
   const renderedColumns = useMemo(() => buildRenderedColumns(vocabulary), [vocabulary]);
@@ -1660,6 +1666,12 @@ export default function RollupBoardTab({
           selectedPiValue={selectedPiValue ?? ''}
           teamFeatureLabel={featureScope.teamFeatureLabel}
         />
+      )}
+
+      {/* Two gates, both deliberate: Admin Hub unlocked AND diagnostics explicitly switched on there.
+          Unlocking alone must not put raw Jira field ids on somebody's board. */}
+      {isEditingColumns && canShowBoardDiagnostics(isAdminUnlocked, isBoardDiagnosticsEnabled) && (
+        <ChecklistDiagnosticsPanel />
       )}
 
       {isEditingColumns && (

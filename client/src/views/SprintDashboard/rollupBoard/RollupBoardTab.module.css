@@ -849,3 +849,33 @@
   flex: 0 0 auto;
   color: var(--color-text-primary);
 }
+
+/* ── Diagnostics ──
+   Admin-gated and off by default. Monospaced because the whole point is the exact stored shape. */
+.diagnosticRow {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: var(--spacing-xs);
+}
+
+.diagnosticKey {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-primary);
+}
+
+.diagnosticValue {
+  margin: 0;
+  padding: var(--spacing-xs);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-subtle);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 240px;
+  overflow-y: auto;
+}
