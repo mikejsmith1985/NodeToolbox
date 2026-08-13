@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Internal
+- **The Roll-Up Board's sub-lane discovery is now its own tested module.** No behaviour change — the
+  37 existing board-tab tests pass **unmodified**, which is the point: a refactor that needed its
+  tests edited would not have been one.
+  It was a 110-line effect sitting among thirty-nine other pieces of state in a 1,900-line component,
+  reachable only by rendering the whole tab with Jira mocked. That is the wrong place to be checking
+  rules like *"a clone in the dev team's own project is a peer, not a discipline"* — and this is the
+  part of the board that has gone wrong most often: a peer Feature nested under its own sibling, QE's
+  work fetched and then silently discarded, every band vanishing at once.
+  The rules are now pure functions with direct tests, and the one piece that must talk to Jira takes
+  its two readers as arguments, so a test states what Jira returned instead of mocking a module.
+  **15 new tests covering logic that previously had none of its own.**
+
 ### Changed
 - **Roll-Up Board — a swimlane's identity now stays on screen while you scroll through its cards.**
   The Feature's header pins just below the column headers, at a stop point measured from the header

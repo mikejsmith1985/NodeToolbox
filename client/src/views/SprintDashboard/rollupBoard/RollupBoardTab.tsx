@@ -41,13 +41,8 @@ import {
 } from '../featureReviewFixes.ts';
 import { computeBoardScrollerMaxHeight, readDocumentTop } from './boardViewportFit.ts';
 import { buildRenderedColumns, resolveColumnIdForItem } from './boardColumns.ts';
-import {
-  classifyClone,
-  describeMissingSubLanes,
-  describeUnconfiguredClones,
-  readCloneAttribution,
-  readCloneLinks,
-} from './cloneFamily.ts';
+import { describeMissingSubLanes, describeUnconfiguredClones } from './cloneFamily.ts';
+import { classifyCloneFamilies, discoverDisciplineWork } from './disciplineDiscovery.ts';
 import { fetchCloneFeatures, fetchDisciplineWork, PARENT_LINK_FIELD_ID } from './rollupBoardFetch.ts';
 import { buildSubLanes, readSubLaneItemLists } from './subLaneLayout.ts';
 import { computeFamilyProgress } from './familyProgress.ts';
@@ -589,9 +584,7 @@ export default function RollupBoardTab({
    * happens at all until a team configures a discipline.
    */
   useEffect(() => {
-    const devFeatureProjectKeys = featureScope.featureProjectKeys;
     const disciplines = featureScope.disciplineProjects;
-
     if (disciplines.length === 0) {
       setCloneFamilies({});
       setCloneFeatureIssuesByKey(new Map());
@@ -600,102 +593,34 @@ export default function RollupBoardTab({
       return;
     }
 
-    const classificationsByFeatureKey: Record<string, CloneClassification[]> = {};
-    for (const masterCard of loadState.masterCards) {
-      if (masterCard.isSynthetic || masterCard.featureIssue === null) continue;
-      const classifications = readCloneLinks(masterCard.featureIssue)
-        .map((cloneLink) => classifyClone(
-          cloneLink.cloneIssueKey,
-          cloneLink.evidence,
-          devFeatureProjectKeys,
-          disciplines,
-        ));
-      if (classifications.length > 0) classificationsByFeatureKey[masterCard.featureKey] = classifications;
-    }
+    // Classification is pure and instant — the clone links are already in hand — so it is applied
+    // before anything is awaited, and a board with no discipline clones costs no request at all.
+    const classificationsByFeatureKey = classifyCloneFamilies(
+      loadState.masterCards, featureScope.featureProjectKeys, disciplines,
+    );
     setCloneFamilies(classificationsByFeatureKey);
 
-    const disciplineCloneKeys = Object.values(classificationsByFeatureKey)
-      .flat()
-      .filter((classification) => classification.kind === 'discipline')
-      .map((classification) => classification.cloneIssueKey);
-    if (disciplineCloneKeys.length === 0) {
-      setCloneFeatureIssuesByKey(new Map());
-      setDisciplineItemsByCloneKey(new Map());
-      return;
-    }
-
     let isMounted = true;
-    const scope: RollupBoardScope = {
-      teamProfileId,
-      boardId: boardId ?? 0,
-      featureLinkFieldId: loadConfiguredFeatureLinkFieldId(),
-      subStatusFieldId,
-      storyPointsFieldIds: getStoryPointsCandidateFieldIds(),
-    };
-
-    void (async () => {
-      const cloneFeatures = await fetchCloneFeatures(disciplineCloneKeys, scope);
+    void discoverDisciplineWork({
+      classificationsByFeatureKey,
+      disciplines,
+      scope: {
+        teamProfileId,
+        boardId: boardId ?? 0,
+        featureLinkFieldId: loadConfiguredFeatureLinkFieldId(),
+        subStatusFieldId,
+        storyPointsFieldIds: getStoryPointsCandidateFieldIds(),
+      },
+      vocabulary,
+      hasSubStatusField: subStatusFieldId !== '',
+      fallbackLinkFieldIds: [PARENT_LINK_FIELD_ID],
+      readers: { readCloneFeatures: fetchCloneFeatures, readDisciplineWork: fetchDisciplineWork },
+    }).then((discovered) => {
       if (!isMounted) return;
-      setCloneFeatureIssuesByKey(cloneFeatures);
-
-      const itemsByCloneKey = new Map<string, RollupBoardItem[]>();
-      const failuresByCloneKey = new Map<string, string[]>();
-      for (const discipline of disciplines) {
-        const keysForThisDiscipline = disciplineCloneKeys
-          .filter((cloneKey) => cloneKey.split('-')[0].trim().toUpperCase()
-            === discipline.featureProjectKey.trim().toUpperCase());
-        if (keysForThisDiscipline.length === 0) continue;
-
-        const workOutcome = await fetchDisciplineWork(discipline.storyProjectKeys, keysForThisDiscipline, scope);
-        const workIssues = workOutcome.issues;
-        for (const cloneKey of keysForThisDiscipline) {
-          if (workOutcome.failures.length > 0) failuresByCloneKey.set(cloneKey, workOutcome.failures);
-        }
-        // A discipline with no work yet still gets a band, because "QE has not started" is a fact
-        // worth showing rather than an absence to hide.
-        for (const cloneKey of keysForThisDiscipline) itemsByCloneKey.set(cloneKey, []);
-
-        // The board's OWN resolver, not a second item builder: the spec asks for the same roll-up
-        // rules, and two implementations would agree only until one of them was edited.
-        const cloneKeySet = new Set(keysForThisDiscipline);
-        const disciplineItems = resolveBoardItems(
-          {
-            boardIssues: workIssues,
-            subtaskIssues: [],
-            featureIssues: cloneFeatures,
-            featureReadFailures: [],
-            load: {
-              isComplete: true,
-              expectedBoardIssueCount: workIssues.length,
-              loadedBoardIssueCount: workIssues.length,
-              isOversized: false,
-              failures: [],
-            },
-          },
-          scope,
-          {
-            resolveColumnId: (statusName, subStatusValue) =>
-              resolveColumnIdForItem(statusName, subStatusValue, vocabulary, subStatusFieldId !== ''),
-            isFeatureInScope: (featureKey) => cloneKeySet.has(featureKey),
-          },
-        );
-
-        for (const item of disciplineItems) {
-          // Attributed by whichever field carried the link, NOT by the roll-up's Feature Link alone:
-          // a discipline may hang its work off the clone through the portfolio Parent Link instead,
-          // and resolving by Feature Link only would fetch those issues and then drop every one.
-          const cloneKey = item.featureKey !== null && cloneKeySet.has(item.featureKey)
-            ? item.featureKey
-            : readCloneAttribution(item.issue, cloneKeySet, [scope.featureLinkFieldId, PARENT_LINK_FIELD_ID]);
-          if (cloneKey === null) continue;
-          itemsByCloneKey.set(cloneKey, [...(itemsByCloneKey.get(cloneKey) ?? []), item]);
-        }
-      }
-      if (isMounted) {
-        setDisciplineItemsByCloneKey(itemsByCloneKey);
-        setDisciplineFailuresByCloneKey(failuresByCloneKey);
-      }
-    })();
+      setCloneFeatureIssuesByKey(discovered.cloneFeatureIssuesByKey);
+      setDisciplineItemsByCloneKey(discovered.itemsByCloneFeatureKey);
+      setDisciplineFailuresByCloneKey(discovered.failuresByCloneFeatureKey);
+    });
 
     return () => { isMounted = false; };
   }, [loadState.masterCards, featureScope.disciplineProjects, featureScope.featureProjectKeys, boardId, subStatusFieldId, vocabulary, teamProfileId]);
