@@ -33,6 +33,13 @@ export interface ChecklistItem {
 const DONE_MARKERS = new Set(['x', 'X']);
 const IN_PROGRESS_MARKERS = new Set(['>', '~', '/']);
 
+/**
+ * A bare `done/total` summary, which one of this instance's three checklist fields holds instead of
+ * items. Left to a forgiving reader it becomes a single item whose text is "0/1", and — being a tie on
+ * count with the real checklist — it could then be chosen as the field to read.
+ */
+const PROGRESS_SUMMARY_PATTERN = /^\s*\d+\s*\/\s*\d+\s*$/;
+
 /** A checklist line: an optional bullet, an optional `[state]` box, then the text. */
 const ITEM_LINE_PATTERN = /^\s*(?:[-*+]\s*)?(?:\[(.?)\]\s*)?(.*)$/;
 
@@ -62,6 +69,84 @@ function extractAssignee(itemText: string): { text: string; assigneeUserId: stri
   };
 }
 
+
+// ── The Smart Checklist app's own field ──
+//
+// The app stores its checklist as a Java object graph rendered by `toString()`, wrapped in an array:
+//
+//   ["Checklist(id=88538, issueId=305985, _items=[Item(id=43628, value=this is a test @C8Q6T3,
+//     rank=0, status=Status(id=1, statusState=UNCHECKED, name=TO DO, ...), assignees=[...])], ...)"]
+//
+// Not a format anybody designed to be read, and not one to be clever about. Only three things are
+// taken from each item — its text, its state and its owner — and anything unrecognised is skipped
+// rather than guessed at.
+
+/**
+ * The marker that starts each item.
+ *
+ * Split on rather than matched, because an item contains nested `Status(...)` and `History(...)`
+ * groups and no regex over unbalanced parentheses gets that right — the first attempt swallowed the
+ * second item of every pair.
+ */
+const DUMP_ITEM_MARKER = /Item\(/;
+
+/** The item's text, which runs to the next known key rather than to a delimiter it may contain. */
+const DUMP_VALUE_PATTERN = /(?:^|,\s*)value=([\s\S]*?)(?=,\s*(?:rank|status|quotes|assignees|history|mandatory|description|weight|removeStatus)=)/;
+
+/** Whether the app considers the item ticked. */
+const DUMP_STATUS_STATE_PATTERN = /statusState=([A-Z_]+)/;
+
+/** The status's display name, which is the only place "in progress" is expressible. */
+const DUMP_STATUS_NAME_PATTERN = /status=Status\([^)]*?\bname=([^,)]+)/;
+
+/** The first assignee's user name, which is what a mention resolves to. */
+const DUMP_ASSIGNEE_PATTERN = /Assignee\([^)]*?\buserName=([^,)]+)/;
+
+/** Status names that mean work has started. Compared loosely because they are display strings. */
+const DUMP_IN_PROGRESS_NAMES = ['in progress', 'in-progress', 'doing', 'started'];
+
+/** Reads one item block's state from its status, preferring the name where it says more. */
+function readDumpItemState(itemBlock: string): ChecklistItemState {
+  const statusName = (DUMP_STATUS_NAME_PATTERN.exec(itemBlock)?.[1] ?? '').trim().toLowerCase();
+  if (DUMP_IN_PROGRESS_NAMES.includes(statusName)) return 'in-progress';
+
+  const statusState = (DUMP_STATUS_STATE_PATTERN.exec(itemBlock)?.[1] ?? '').trim().toUpperCase();
+  return statusState === 'CHECKED' ? 'done' : 'open';
+}
+
+/** True when a value looks like the Smart Checklist app's object dump rather than checklist text. */
+export function isSmartChecklistDump(rawValue: unknown): boolean {
+  const candidateText = typeof rawValue === 'string' ? rawValue : '';
+  return candidateText.includes('Item(') && candidateText.includes('value=');
+}
+
+/** Reads the items out of the Smart Checklist app's own stored value. */
+export function parseSmartChecklistDump(rawValue: unknown): ChecklistItem[] {
+  const dumpText = typeof rawValue === 'string' ? rawValue : '';
+  if (dumpText === '') return [];
+
+  const items: ChecklistItem[] = [];
+  // The text before the first marker is the checklist's own header, never an item.
+  const [, ...itemBlocks] = dumpText.split(DUMP_ITEM_MARKER);
+
+  for (const itemBlock of itemBlocks) {
+    const itemText = (DUMP_VALUE_PATTERN.exec(itemBlock)?.[1] ?? '').trim();
+    if (itemText === '') continue;
+
+    // The mention is part of the stored text, so it is lifted out here exactly as it is for markdown.
+    const { text, assigneeUserId } = extractAssignee(itemText);
+    items.push({
+      id: `checklist-${items.length}`,
+      text,
+      state: readDumpItemState(itemBlock),
+      assigneeUserId: assigneeUserId ?? (DUMP_ASSIGNEE_PATTERN.exec(itemBlock)?.[1] ?? null),
+      headingText: null,
+    });
+  }
+
+  return items;
+}
+
 /**
  * Parses a Smart Checklist field value into its items.
  *
@@ -69,8 +154,16 @@ function extractAssignee(itemText: string): { text: string; assigneeUserId: stri
  * so a grouped checklist keeps its grouping without inventing a card for the group itself.
  */
 export function parseChecklistItems(rawChecklistValue: unknown): ChecklistItem[] {
+  // The app wraps its dump in a single-element array, so the array case is unwrapped rather than
+  // rejected — a shape this instance really uses, discovered by the Board setup diagnostic.
+  if (Array.isArray(rawChecklistValue)) {
+    return rawChecklistValue.flatMap((element) => parseChecklistItems(element));
+  }
+  if (isSmartChecklistDump(rawChecklistValue)) return parseSmartChecklistDump(rawChecklistValue);
+
   const checklistText = typeof rawChecklistValue === 'string' ? rawChecklistValue : '';
   if (checklistText.trim() === '') return [];
+  if (PROGRESS_SUMMARY_PATTERN.test(checklistText)) return [];
 
   const items: ChecklistItem[] = [];
   let currentHeading: string | null = null;
@@ -129,4 +222,43 @@ export function findChecklistFieldId(
     });
 
   return candidates.length > 0 ? String(candidates[0].id) : null;
+}
+
+/**
+ * Picks the checklist field to READ, by what its value actually yields on a real issue.
+ *
+ * Name alone chose wrong on a live instance. Three fields matched: "Smart Checklist" (the app's own
+ * object dump), "Smart Checklist Progress" (the string "0/1"), and "Checklists" (the readable text).
+ * Sorting by name put the dump first — and at the time nothing could read a dump, so the board showed
+ * an empty checklist while two other fields held the same items in plain sight.
+ *
+ * So the choice is made on evidence: whichever candidate parses to the most items wins. A field that
+ * yields nothing cannot be the right one to read, whatever it is called.
+ */
+export function chooseChecklistFieldByValue(
+  candidateFieldIds: readonly string[],
+  issueFields: Record<string, unknown>,
+): string | null {
+  let bestFieldId: string | null = null;
+  let bestItemCount = 0;
+
+  for (const fieldId of candidateFieldIds ?? []) {
+    const itemCount = parseChecklistItems(issueFields?.[fieldId]).length;
+    if (itemCount > bestItemCount) {
+      bestFieldId = fieldId;
+      bestItemCount = itemCount;
+    }
+  }
+
+  return bestFieldId;
+}
+
+/** Every checklist-ish field id on this instance, in name-first order. */
+export function listChecklistFieldIds(
+  fieldCatalog: readonly { id?: string; name?: string; schema?: { custom?: string } }[],
+): string[] {
+  return (fieldCatalog ?? [])
+    .filter((field) => /checklist/i.test(String(field.name ?? '')) || /checklist/i.test(String(field.schema?.custom ?? '')))
+    .map((field) => String(field.id ?? ''))
+    .filter((fieldId) => fieldId !== '');
 }

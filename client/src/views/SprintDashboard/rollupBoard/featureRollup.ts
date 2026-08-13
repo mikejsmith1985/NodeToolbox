@@ -6,7 +6,7 @@
 // item so the card can state it — the board's promise is that a reader never has to infer parentage.
 
 import { extractFeatureKeyFromIssueFields } from '../../../utils/featureLink.ts';
-import { parseChecklistItems, summarizeChecklist } from './checklistItems.ts';
+import { chooseChecklistFieldByValue, parseChecklistItems, summarizeChecklist } from './checklistItems.ts';
 import type { JiraIssue } from '../../../types/jira.ts';
 import { resolveDefectRollup } from './defectRollup.ts';
 import {
@@ -323,10 +323,17 @@ export function resolveBoardItems(
     const subStatusValue = readSubStatusValue(issue, scope.subStatusFieldId);
     const assignee = issueFields.assignee as { accountId?: string; name?: string; key?: string; displayName?: string } | null;
 
-    // Read once here so the badge and the nested cards come from the same parse.
-    const checklistItems = parseChecklistItems(
-      scope.checklistFieldId ? (issueFields as Record<string, unknown>)[scope.checklistFieldId] : '',
+    // Read once here so the badge and the nested cards come from the same parse. The field is chosen
+    // per issue by which candidate actually yields items — an instance can hold the same checklist in
+    // three fields, and only one of them in a form anything can read.
+    const candidateFieldIds = scope.checklistFieldIds
+      ?? (scope.checklistFieldId ? [scope.checklistFieldId] : []);
+    const readableFieldId = chooseChecklistFieldByValue(
+      candidateFieldIds, issueFields as Record<string, unknown>,
     );
+    const checklistItems = readableFieldId === null
+      ? []
+      : parseChecklistItems((issueFields as Record<string, unknown>)[readableFieldId]);
 
     return {
       issue,

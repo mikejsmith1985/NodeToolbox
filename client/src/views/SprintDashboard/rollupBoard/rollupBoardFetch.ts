@@ -83,7 +83,7 @@ function buildFieldList(scope: RollupBoardScope, extraFieldIds: readonly string[
     scope.featureLinkFieldId,
     scope.subStatusFieldId,
     ...scope.storyPointsFieldIds,
-    ...(scope.checklistFieldId ? [scope.checklistFieldId] : []),
+    ...(scope.checklistFieldIds ?? (scope.checklistFieldId ? [scope.checklistFieldId] : [])),
     ...extraFieldIds,
   ].filter((fieldId) => Boolean(fieldId && fieldId.trim()));
   return Array.from(new Set(fieldIds)).join(',');

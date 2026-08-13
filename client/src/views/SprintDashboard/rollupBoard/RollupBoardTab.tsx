@@ -93,7 +93,7 @@ import {
 import { describeJiraFailure } from '../../AdminHub/subtaskStoryPromotion.ts';
 import { sumUnplannedStoryPoints } from './emptyFeatureScan.ts';
 import { buildCardDetailIndex, type CardDetail } from './cardDetail.ts';
-import { findChecklistFieldId } from './checklistItems.ts';
+import { listChecklistFieldIds } from './checklistItems.ts';
 import { selectDetailIssueKeys, selectVisibleColumns, toggleColumnFocus } from './columnFocus.ts';
 import {
   describeEmptyFeatureMembership,
@@ -410,10 +410,10 @@ export default function RollupBoardTab({
       const [discoveredSubStatusFieldId = ''] = fieldConfig.subStatusFieldIds ?? [];
       // The Smart Checklist field belongs to a third-party app and its id differs between instances,
       // so it is discovered rather than assumed. Not finding one simply means no checklists are drawn.
-      const discoveredChecklistFieldId = findChecklistFieldId(
+      const discoveredChecklistFieldIds = listChecklistFieldIds(
         await jiraGet<{ id?: string; name?: string; schema?: { custom?: string } }[]>('/rest/api/2/field')
           .catch(() => []),
-      ) ?? '';
+      );
       const storyPointsFieldIds = getStoryPointsCandidateFieldIds();
       const scope: RollupBoardScope = {
         boardId,
@@ -421,7 +421,7 @@ export default function RollupBoardTab({
         featureLinkFieldId: loadConfiguredFeatureLinkFieldId(),
         subStatusFieldId: discoveredSubStatusFieldId,
         storyPointsFieldIds,
-        checklistFieldId: discoveredChecklistFieldId,
+        checklistFieldIds: discoveredChecklistFieldIds,
       };
 
       const issueSet = await fetchRollupBoardIssues(
