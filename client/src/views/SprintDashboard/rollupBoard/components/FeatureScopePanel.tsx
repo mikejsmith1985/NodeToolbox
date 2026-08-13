@@ -268,8 +268,11 @@ export function FeatureScopePanel({
       <h4 className={styles.sectionTitle}>Other disciplines that clone these Features</h4>
       <p className={styles.fieldLabel}>
         QE and BT clone a Feature into their own project and break their own work down underneath it.
-        Naming their projects draws that work as a sub-lane under the dev Feature. A clone in
+        Naming their Feature project draws that work as a sub-lane under the dev Feature. A clone in
         <strong> your own</strong> Feature project is a peer, not a discipline, and keeps its own lane.
+        Leave <strong>story projects empty</strong> unless you need to narrow it: a discipline&apos;s work
+        often spans several projects, and anything linked to their clone is theirs whichever project it
+        was raised in.
       </p>
 
       {scope.disciplineProjects.map((discipline, disciplineIndex) => (
@@ -299,16 +302,16 @@ export function FeatureScopePanel({
             value={discipline.featureProjectKey}
           />
           <input
-            aria-label={`Discipline ${disciplineIndex + 1} story project`}
+            aria-label={`Discipline ${disciplineIndex + 1} story projects`}
             className={styles.inputField}
             onChange={(changeEvent) => onScopeChange({
               ...scope,
               disciplineProjects: replaceDiscipline(scope.disciplineProjects, disciplineIndex, {
-                ...discipline, storyProjectKey: changeEvent.target.value,
+                ...discipline, storyProjectKeys: parseLabelList(changeEvent.target.value),
               }),
             })}
-            placeholder="Story project"
-            value={discipline.storyProjectKey}
+            placeholder="Story projects — leave empty for any"
+            value={discipline.storyProjectKeys.join(', ')}
           />
           <button
             className={styles.actionButton}
@@ -328,7 +331,7 @@ export function FeatureScopePanel({
           className={styles.actionButton}
           onClick={() => onScopeChange({
             ...scope,
-            disciplineProjects: [...scope.disciplineProjects, { name: '', featureProjectKey: '', storyProjectKey: '' }],
+            disciplineProjects: [...scope.disciplineProjects, { name: '', featureProjectKey: '', storyProjectKeys: [] }],
           })}
           type="button"
         >

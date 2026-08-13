@@ -312,7 +312,7 @@ describe('parseLabelList', () => {
 
 describe('describeDisciplineProblems', () => {
   it('says nothing about a sensible configuration', () => {
-    const disciplines = [{ name: 'QE', featureProjectKey: 'QEINT', storyProjectKey: 'QEINT' }];
+    const disciplines = [{ name: 'QE', featureProjectKey: 'QEINT', storyProjectKeys: ['QEINT'] }];
 
     expect(describeDisciplineProblems(disciplines, ['DENP'])).toBe('');
   });
@@ -321,22 +321,22 @@ describe('describeDisciplineProblems', () => {
     // The setting that would silently do nothing: every clone there is a peer, so the discipline
     // would never match anything, and a setting that quietly does nothing is worse than one that
     // refuses.
-    const disciplines = [{ name: 'Oops', featureProjectKey: 'DENP', storyProjectKey: 'ENCUC' }];
+    const disciplines = [{ name: 'Oops', featureProjectKey: 'DENP', storyProjectKeys: ['ENCUC'] }];
 
     expect(describeDisciplineProblems(disciplines, ['DENP'])).toContain('peer Feature');
   });
 
   it('catches two disciplines naming the same Feature project', () => {
     const disciplines = [
-      { name: 'QE', featureProjectKey: 'QEINT', storyProjectKey: 'QEINT' },
-      { name: 'BT', featureProjectKey: 'QEINT', storyProjectKey: 'BTINT' },
+      { name: 'QE', featureProjectKey: 'QEINT', storyProjectKeys: ['QEINT'] },
+      { name: 'BT', featureProjectKey: 'QEINT', storyProjectKeys: ['BTINT'] },
     ];
 
     expect(describeDisciplineProblems(disciplines, ['DENP'])).toContain('indistinguishable');
   });
 
   it('says nothing about a half-typed row somebody is still filling in', () => {
-    const disciplines = [{ name: '', featureProjectKey: '', storyProjectKey: '' }];
+    const disciplines = [{ name: '', featureProjectKey: '', storyProjectKeys: [] }];
 
     expect(describeDisciplineProblems(disciplines, ['DENP'])).toBe('');
   });

@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **The relay now survives a NodeToolbox restart — no more clicking the bookmarklet after every
+  update.** This was a one-line omission, not a design limit. `isActive` was set only by `/register`,
+  so after a restart the server rebuilt its state with the channel marked inactive — while the
+  bookmarklet's tab, which had never unloaded and so never sent a `/deregister`, simply reconnected its
+  poll loop and carried on. **The relay was alive and polling, and every consumer refused to use it**,
+  because they all gate on that flag. Only a human clicking the bookmarklet could clear it.
+  A poll IS the heartbeat, so it now also counts as proof of life. This cannot resurrect a channel that
+  is genuinely gone: a closed tab sends no polls, so there is nothing to mark. On top of that, the
+  server now tells a bookmarklet it has never seen register to announce itself, and both bookmarklets
+  do so automatically — which matters for **ServiceNow**, whose session token is only captured at
+  registration and would otherwise be missing after a restart even though the relay looked healthy.
+  Applies to the **SharePoint and ServiceNow** relays alike. Directly addresses the missed scheduled
+  GitHub-email pulls, which were being skipped on every boundary while the relay was wrongly reported
+  as disconnected.
+- **Roll-Up Board — a discipline's stories are found by their Feature Link, not by their project.**
+  The QE sub-lane for `QEINT-608` reported *"QE has not broken its work down yet"* while the Feature
+  plainly had four children. The read was scoped to a single story project, and QE's children live in
+  **ENFCT and INTTEST** — two projects, neither of them QE's own Feature project — so it found none of
+  them. The Feature Link is the real constraint, exactly as it is for the dev team's own stories:
+  anything linked to a discipline's clone is that discipline's work, whichever project it was raised
+  in. The **Story projects** setting is now a list and is normally left **empty**; naming projects only
+  narrows further. A discipline configured before this change keeps working — its single key is read
+  as a one-entry list rather than discarded.
+- **The relay status badge no longer stacks.** During an outage it appended a new badge every two
+  seconds; it now reuses one.
+
 ### Added
 - **Roll-Up Board — QE and BT work now appears as sub-lanes under the dev Feature it belongs to.**
   Every team maintains two Jira projects, and QE and BT **clone** the dev Feature into their own Feature

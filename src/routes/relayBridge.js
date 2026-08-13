@@ -66,6 +66,8 @@ function createBridgeChannel() {
   return {
     // True when the bookmarklet has registered and not yet deregistered
     isActive: false,
+    /** When a poll revived a channel this process had never seen register. Diagnostics only. */
+    lastRecoveredAt: null,
     // Requests queued by Toolbox waiting to be fetched by the bookmarklet
     pendingRequests: [],
     // Results posted by the bookmarklet, keyed by request id, waiting for Toolbox to read
@@ -269,7 +271,7 @@ router.post('/request', (req, res) => {
     // Bookmarklet is already waiting — deliver the request without queueing
     const waiter = channel.pollWaiters.shift();
     clearTimeout(waiter.timer);
-    waiter.res.json({ request: entry });
+    waiter.res.json({ request: entry, shouldReregister: waiter.shouldReregister === true });
   } else {
     channel.pendingRequests.push(entry);
   }
@@ -292,20 +294,39 @@ router.get('/poll', (req, res) => {
 
   if (!channel) return res.json({ request: null });
 
-  // Track when the bookmarklet last checked in — used by diagnostic reports
+  // A poll IS the heartbeat, so it is also the proof of life.
+  //
+  // This used to record the timestamp WITHOUT marking the channel active, and that one omission was
+  // the whole "reconnect after every update" problem: on restart this state is rebuilt with
+  // isActive=false, the bookmarklet's tab never unloaded so no /deregister ever arrived, and its
+  // poll loop simply reconnected and carried on. The relay was alive and polling, but every consumer
+  // gates on isActive and so refused to use it — until a human clicked the bookmarklet again.
+  //
+  // Marking it active here cannot resurrect a channel that is genuinely gone: a closed tab sends no
+  // polls, so nothing arrives to mark.
+  const wasKnownActive = channel.isActive;
+  channel.isActive = true;
   channel.lastPolledAt = Date.now();
+
+  // Whether the bookmarklet should re-announce itself. A poll proves it is THERE; it does not carry
+  // the session token that ServiceNow writes need, and that is only captured at /register. So a
+  // channel this process has never seen registered asks for one — once, not on every poll.
+  const shouldReregister = channel.lastRegisteredAt === null;
+  if (!wasKnownActive && shouldReregister) {
+    channel.lastRecoveredAt = Date.now();
+  }
 
   // Serve immediately if a request is already queued
   if (channel.pendingRequests.length > 0) {
-    return res.json({ request: channel.pendingRequests.shift() });
+    return res.json({ request: channel.pendingRequests.shift(), shouldReregister });
   }
 
   // Enter long-poll: hold the connection until a request arrives or timeout
-  const waiter = { res, timer: null };
+  const waiter = { res, timer: null, shouldReregister };
   waiter.timer = setTimeout(() => {
     const idx = channel.pollWaiters.indexOf(waiter);
     if (idx >= 0) channel.pollWaiters.splice(idx, 1);
-    res.json({ request: null });
+    res.json({ request: null, shouldReregister });
   }, POLL_TIMEOUT_MS);
 
   channel.pollWaiters.push(waiter);
@@ -491,7 +512,7 @@ module.exports.submitRelayRequest = async function submitRelayRequest(sys, reque
     // Bookmarklet is already waiting — deliver the request immediately
     const waiter = channel.pollWaiters.shift();
     clearTimeout(waiter.timer);
-    waiter.res.json({ request: entry });
+    waiter.res.json({ request: entry, shouldReregister: waiter.shouldReregister === true });
   } else {
     // Queue it for the bookmarklet to fetch next
     channel.pendingRequests.push(entry);

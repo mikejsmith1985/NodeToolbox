@@ -119,8 +119,8 @@ describe('disciplineProjects', () => {
   it('round-trips disciplines in the order they were configured', () => {
     // Order matters: it decides each discipline's colour, so a reordered list would repaint the board.
     const disciplines = [
-      { name: 'QE', featureProjectKey: 'QEINT', storyProjectKey: 'QEINT' },
-      { name: 'BT', featureProjectKey: 'BTINT', storyProjectKey: 'BTINT' },
+      { name: 'QE', featureProjectKey: 'QEINT', storyProjectKeys: ['QEINT'] },
+      { name: 'BT', featureProjectKey: 'BTINT', storyProjectKeys: ['BTINT'] },
     ];
     saveTeamFeatureScope('transformers', {
       featureProjectKeys: ['DENP'],

@@ -17,7 +17,7 @@ const VOCABULARY: BoardVocabulary = {
 };
 const COLUMNS = buildRenderedColumns(VOCABULARY);
 
-const QE: DisciplineProjects = { name: 'QE', featureProjectKey: 'QEINT', storyProjectKey: 'QEINT' };
+const QE: DisciplineProjects = { name: 'QE', featureProjectKey: 'QEINT', storyProjectKeys: ['QEINT'] };
 
 function buildItem(key: string): RollupBoardItem {
   return {

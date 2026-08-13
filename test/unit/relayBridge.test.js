@@ -448,3 +448,73 @@ describe('relay bridge full round-trip (request → poll → result → collect)
     expect(collectResponse.body.result.data[0].name).toBe('Alice');
   });
 });
+
+// ── Surviving a NodeToolbox restart ───────────────────────────────────────────
+//
+// The defect these cover: a server restart rebuilds the bridge state with isActive=false, but the
+// bookmarklet's tab never unloaded, so no /deregister ever arrived and its poll loop simply
+// reconnected. The relay was alive and polling while every consumer refused to use it, and only a
+// human clicking the bookmarklet again could fix it. That is what made every app update cost a manual
+// reconnect — and what caused scheduled SharePoint pulls to be silently skipped.
+
+describe.each(['snow', 'sharepoint'])('relay recovery after a restart (%s)', (sys) => {
+  /** Queues a request so the next poll returns at once instead of holding open for 28 seconds. */
+  async function queueOneRequest(app, requestId) {
+    await request(app)
+      .post('/api/relay-bridge/request')
+      .send({ sys, id: requestId, method: 'GET', path: '/api/now/table/incident' });
+  }
+
+  it('treats an arriving poll as proof the bookmarklet is alive', async () => {
+    const app = buildTestApp();
+    await queueOneRequest(app, 'req-alive');
+
+    // No /register: exactly the state a restart leaves behind, with the tab still polling.
+    await request(app).get(`/api/relay-bridge/poll?sys=${sys}`);
+
+    const statusResponse = await request(app).get(`/api/relay-bridge/status?sys=${sys}`);
+    expect(statusResponse.body.isConnected).toBe(true);
+  });
+
+  it('asks a bookmarklet it has never seen register to announce itself', async () => {
+    const app = buildTestApp();
+    await queueOneRequest(app, 'req-hint');
+
+    const pollResponse = await request(app).get(`/api/relay-bridge/poll?sys=${sys}`);
+
+    // The poll proves presence; it does not carry the session token a ServiceNow write needs, and
+    // that is only captured at registration.
+    expect(pollResponse.body.shouldReregister).toBe(true);
+  });
+
+  it('stops asking once the bookmarklet has registered', async () => {
+    const app = buildTestApp();
+    await request(app).post(`/api/relay-bridge/register?sys=${sys}`).send({});
+    await queueOneRequest(app, 'req-registered');
+
+    const pollResponse = await request(app).get(`/api/relay-bridge/poll?sys=${sys}`);
+
+    expect(pollResponse.body.shouldReregister).toBe(false);
+  });
+
+  it('leaves a deregistered channel disconnected, because a closed tab sends no polls', async () => {
+    const app = buildTestApp();
+    await request(app).post(`/api/relay-bridge/register?sys=${sys}`).send({});
+    await request(app).post(`/api/relay-bridge/deregister?sys=${sys}`).send({});
+
+    const statusResponse = await request(app).get(`/api/relay-bridge/status?sys=${sys}`);
+    expect(statusResponse.body.isConnected).toBe(false);
+  });
+
+  it('serves a queued request on the same poll that revives the channel', async () => {
+    const app = buildTestApp();
+    await request(app).post(`/api/relay-bridge/register?sys=${sys}`).send({});
+    await queueOneRequest(app, 'req-served');
+
+    const pollResponse = await request(app).get(`/api/relay-bridge/poll?sys=${sys}`);
+
+    // A recovering relay must not have to choose between announcing itself and doing its job.
+    expect(pollResponse.body.request).toBeTruthy();
+    expect(pollResponse.body).toHaveProperty('shouldReregister');
+  });
+});

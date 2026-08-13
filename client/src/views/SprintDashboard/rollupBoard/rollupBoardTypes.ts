@@ -305,8 +305,15 @@ export interface DisciplineProjects {
   name: string;
   /** The Jira project holding this discipline's CLONED Features, e.g. 'QEINT'. */
   featureProjectKey: string;
-  /** The Jira project holding this discipline's work. May be the same as the Feature project. */
-  storyProjectKey: string;
+  /**
+   * The Jira projects holding this discipline's work. EMPTY means "do not narrow by project".
+   *
+   * Plural, and optional, because of what QE actually does: QEINT-608's children live in ENFCT and
+   * INTTEST — two projects, neither of them QE's own Feature project. Narrowing to a single project
+   * found none of them. The Feature Link is the real constraint; a project list is only a further
+   * narrowing for a team that wants one.
+   */
+  storyProjectKeys: string[];
 }
 
 /** One clone named on a dev Feature, before anything has judged what it is. */

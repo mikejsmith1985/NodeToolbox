@@ -21,8 +21,8 @@ const VOCABULARY: BoardVocabulary = {
 
 const COLUMNS = buildRenderedColumns(VOCABULARY);
 
-const QE: DisciplineProjects = { name: 'QE', featureProjectKey: 'QEINT', storyProjectKey: 'QEINT' };
-const BT: DisciplineProjects = { name: 'BT', featureProjectKey: 'BTINT', storyProjectKey: 'BTINT' };
+const QE: DisciplineProjects = { name: 'QE', featureProjectKey: 'QEINT', storyProjectKeys: ['QEINT'] };
+const BT: DisciplineProjects = { name: 'BT', featureProjectKey: 'BTINT', storyProjectKeys: ['BTINT'] };
 
 const PREFERENCES: BoardPreferences = {
   teamProfileId: 'team-a',

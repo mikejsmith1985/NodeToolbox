@@ -21,8 +21,8 @@ import type { JiraIssue } from '../../../types/jira.ts';
 
 const DEV_PROJECTS = ['DENP'];
 
-const QE: DisciplineProjects = { name: 'QE', featureProjectKey: 'QEINT', storyProjectKey: 'QEINT' };
-const BT: DisciplineProjects = { name: 'BT', featureProjectKey: 'BTINT', storyProjectKey: 'BTINT' };
+const QE: DisciplineProjects = { name: 'QE', featureProjectKey: 'QEINT', storyProjectKeys: ['QEINT'] };
+const BT: DisciplineProjects = { name: 'BT', featureProjectKey: 'BTINT', storyProjectKeys: ['BTINT'] };
 
 /** Builds a Feature carrying the clone links exactly as Jira returns them. */
 function buildFeature(key: string, issuelinks: unknown[] = [], extraFields: Record<string, unknown> = {}): JiraIssue {
@@ -104,7 +104,7 @@ describe('classifyClone — the project decides, not the link', () => {
   });
 
   it('prefers peer over discipline when a team has configured its own project by mistake', () => {
-    const selfConfigured: DisciplineProjects = { name: 'Oops', featureProjectKey: 'DENP', storyProjectKey: 'DENP' };
+    const selfConfigured: DisciplineProjects = { name: 'Oops', featureProjectKey: 'DENP', storyProjectKeys: ['DENP'] };
 
     expect(classifyClone('DENP-1359', 'cloners-link', DEV_PROJECTS, [selfConfigured]).kind).toBe('peer');
   });
