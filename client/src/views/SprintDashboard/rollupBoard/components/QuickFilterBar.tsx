@@ -5,6 +5,7 @@
 // figure still describes the whole Feature.
 
 import styles from '../RollupBoardTab.module.css';
+import { hasActiveFilters } from '../boardFilters.ts';
 import type { IssueTypeBucket, QuickFilterState, RollupBoardItem } from '../rollupBoardTypes.ts';
 
 const TYPE_FILTER_OPTIONS: Array<{ bucket: IssueTypeBucket; label: string }> = [
@@ -97,17 +98,25 @@ export function QuickFilterBar({ filters, allItems, onFiltersChange }: QuickFilt
         </select>
       </label>
 
-      <button
-        className={styles.actionButton}
-        onClick={() => onFiltersChange({ typeBuckets: new Set(), assigneeAccountId: null, fixVersionName: null })}
-        type="button"
-      >
-        Clear filters
-      </button>
+      {/* Offered only when there is something to clear — a permanent Clear on an unfiltered board is
+          a control that does nothing. */}
+      {hasActiveFilters(filters) && (
+        <button
+          className={styles.actionButton}
+          onClick={() => onFiltersChange({ typeBuckets: new Set(), assigneeAccountId: null, fixVersionName: null })}
+          type="button"
+        >
+          Clear filters
+        </button>
+      )}
 
-      <span className={styles.filterLabel}>
-        Filters change which cards are shown. Each Feature&apos;s figures always describe the whole Feature.
-      </span>
+      {/* Said only while it applies. As a permanent line it explained a subtlety nobody had yet met,
+          and the swimlane's own MATCHING tile now makes the same point structurally. */}
+      {hasActiveFilters(filters) && (
+        <span className={styles.filterLabel}>
+          Filters narrow the cards. Each Feature&apos;s figures still describe the whole Feature.
+        </span>
+      )}
     </div>
   );
 }

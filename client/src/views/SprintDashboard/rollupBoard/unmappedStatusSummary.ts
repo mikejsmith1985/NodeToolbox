@@ -101,3 +101,26 @@ export function describeUnmappedStatusGroup(group: UnmappedStatusGroup): string 
 
   return `${group.issueCount} ${issueWord} in “${state}” (${examples}). ${advice}`;
 }
+
+/**
+ * When Unmapped has grown from a valve into a problem.
+ *
+ * Unmapped is the board's honesty guarantee and it is working exactly as intended — but a quarter of
+ * the board landing there is a configuration failure, not a state, and it was drawn as the last of
+ * twelve columns, off the right-hand edge, the one place somebody has to scroll to reach. The board
+ * already knew the number; it just never said it anywhere you would see.
+ *
+ * Silent below the threshold, because a handful of unmapped issues is ordinary and a notice about
+ * every one of them would be the noise this board is trying not to be.
+ */
+const UNMAPPED_SHARE_WORTH_RAISING = 0.1;
+
+export function describeUnmappedBoardShare(unmappedCount: number, totalCount: number): string {
+  if (totalCount <= 0 || unmappedCount <= 0) return '';
+  if (unmappedCount / totalCount < UNMAPPED_SHARE_WORTH_RAISING) return '';
+
+  const sharePercent = Math.round((unmappedCount / totalCount) * 100);
+  return `${unmappedCount} of ${totalCount} issues (${sharePercent}%) are in states no column claims,`
+    + ' so they are stacked in Unmapped rather than showing where the work has got to.'
+    + ' Open Board setup to map them — the list there is ordered by how many cards each mapping clears.';
+}

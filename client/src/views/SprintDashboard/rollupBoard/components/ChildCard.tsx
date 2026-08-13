@@ -28,6 +28,14 @@ const CHECKLIST_STATE_MARKS: Record<ChecklistItemState, string> = {
   done: '☑',
 };
 
+/**
+ * How many checklist items a card shows before it starts counting the rest.
+ *
+ * Three fits under a card without doubling its height, which is what a ten-item checklist was doing
+ * to a lane. A focused column shows them all — it has the board's whole width for one status.
+ */
+const MAX_COMPACT_CHECKLIST_ITEMS = 3;
+
 const CARD_CLASS_BY_TYPE_BUCKET: Record<IssueTypeBucket, string> = {
   story: styles.cardStory,
   defect: styles.cardDefect,
@@ -118,6 +126,14 @@ export function ChildCard({
     setDropRef(element);
   }
 
+  // A focused column has the whole board width to itself, so it can afford the full list; twelve
+  // columns side by side cannot.
+  const isDetailed = detail !== null;
+  const visibleChecklistItems = isDetailed
+    ? item.checklistItems
+    : item.checklistItems.slice(0, MAX_COMPACT_CHECKLIST_ITEMS);
+  const hiddenChecklistItemCount = item.checklistItems.length - visibleChecklistItems.length;
+
   const cardClassNames = [
     styles.card,
     CARD_CLASS_BY_TYPE_BUCKET[item.typeBucket],
@@ -193,10 +209,14 @@ export function ChildCard({
 
       {/* The checklist's own items, nested inside the card they belong to. A third way teams break
           work down — and the only one the board used to reduce to a bare count, so the breakdown that
-          costs nothing to create was the one you had to open Jira to read. */}
-      {item.checklistItems.length > 0 && (
+          costs nothing to create was the one you had to open Jira to read.
+
+          Capped on a compact card rather than hidden: a ten-item checklist filled a whole lane on its
+          own, but showing none of it would put back the bare count this was built to replace. The
+          remainder is COUNTED, so a truncated list never passes for a complete one. */}
+      {visibleChecklistItems.length > 0 && (
         <ul className={styles.checklistItemList}>
-          {item.checklistItems.map((checklistItem) => (
+          {visibleChecklistItems.map((checklistItem) => (
             <li className={styles.checklistItemCard} data-state={checklistItem.state} key={checklistItem.id}>
               <span className={styles.checklistItemMarker}>{CHECKLIST_STATE_MARKS[checklistItem.state]}</span>
               <span className={styles.checklistItemText}>{checklistItem.text}</span>
@@ -205,6 +225,11 @@ export function ChildCard({
               )}
             </li>
           ))}
+          {hiddenChecklistItemCount > 0 && (
+            <li className={styles.checklistItemMore}>
+              +{hiddenChecklistItemCount} more — open the card or focus this column to read them
+            </li>
+          )}
         </ul>
       )}
 

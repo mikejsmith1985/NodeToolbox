@@ -109,10 +109,23 @@ describe('QuickFilterBar', () => {
     expect(clearedFilters.fixVersionName).toBeNull();
   });
 
-  it('states that filtering does not change what a Feature is worth', () => {
+  it('stays quiet about filtering until something is actually filtered', () => {
     render(<QuickFilterBar allItems={ALL_ITEMS} filters={EMPTY_QUICK_FILTER_STATE} onFiltersChange={vi.fn()} />);
 
-    expect(screen.getByText(/always describe the whole Feature/)).toBeTruthy();
+    expect(screen.queryByText(/describe the whole Feature/)).toBeNull();
+    // Nothing to clear either, so the control that would do nothing is not offered.
+    expect(screen.queryByRole('button', { name: 'Clear filters' })).toBeNull();
+  });
+
+  it('states that filtering does not change what a Feature is worth, once one is on', () => {
+    render(<QuickFilterBar
+      allItems={ALL_ITEMS}
+      filters={{ ...EMPTY_QUICK_FILTER_STATE, typeBuckets: new Set(['defect' as const]) }}
+      onFiltersChange={vi.fn()}
+    />);
+
+    expect(screen.getByText(/describe the whole Feature/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Clear filters' })).toBeTruthy();
   });
 });
 

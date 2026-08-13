@@ -16,6 +16,7 @@ import { useConnectionStore } from '../../../../store/connectionStore.ts';
 import { buildDropTargetId } from '../cardDropRouting.ts';
 import styles from '../RollupBoardTab.module.css';
 import { SubLane } from './SubLane.tsx';
+import { LaneContextMenu, type LaneMenuAction } from './LaneContextMenu.tsx';
 import { describeProgressDisagreement, describeTwoFigures } from '../familyProgress.ts';
 import { buildLaneProgressBar, buildLaneVitalTiles, type LaneProgressBar, type LaneVitalTile } from '../laneVitals.ts';
 import type { BoardMembershipReason } from '../boardMembershipReason.ts';
@@ -193,6 +194,21 @@ export function MasterCardLane({
     hasActiveFilters,
   });
 
+  // Where the actions menu was opened, or null when it is closed.
+  const [menuPosition, setMenuPosition] = useState<{ xPx: number; yPx: number } | null>(null);
+
+  // Built from whatever the board actually offered this lane, so a read-only board gets no menu at
+  // all rather than a menu of nothing.
+  const laneActions: LaneMenuAction[] = [
+    ...(onAddWork && !isSynthetic
+      ? [{ id: 'add-work', label: 'Add work…', onSelect: () => onAddWork(featureKey, vitals.summary) }]
+      : []),
+    ...(onSendToTop ? [{ id: 'send-top', label: 'Send to top', onSelect: () => onSendToTop(featureKey) }] : []),
+    ...(onSendToBottom
+      ? [{ id: 'send-bottom', label: 'Send to bottom', onSelect: () => onSendToBottom(featureKey) }]
+      : []),
+  ];
+
   // Held while the viewer is mid-edit; null means "show the lane's real rank".
   const [rankDraft, setRankDraft] = useState<string | null>(null);
   const jiraBaseUrl = useConnectionStore((connectionState) => connectionState.proxyStatus?.jira?.baseUrl ?? '');
@@ -213,7 +229,17 @@ export function MasterCardLane({
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
     >
-      <header className={headerClassName}>
+      {/* Right-click anywhere on the header, which is what was asked for. The ⋯ button is the same
+          menu by another route, because an action reachable only by right-click is unreachable to
+          anyone navigating by keyboard or on a touch screen. */}
+      <header
+        className={headerClassName}
+        onContextMenu={(contextEvent) => {
+          if (laneActions.length === 0) return;
+          contextEvent.preventDefault();
+          setMenuPosition({ xPx: contextEvent.clientX, yPx: contextEvent.clientY });
+        }}
+      >
         {/* Sits with the grip because it does the same job by another means: dragging is quicker for
             a short hop, typing a number is quicker across a long board. Committed on blur or Enter
             rather than per keystroke, so typing "12" does not first move the lane to rank 1. */}
@@ -279,27 +305,28 @@ export function MasterCardLane({
         <span className={styles.laneSummary}>{vitals.summary}</span>
         {vitals.isFlagged && <span className={styles.laneFlag}>⚑ Flagged</span>}
 
-        {/* Sits with Send to top / bottom because it is the same kind of action: something you do TO a
-            lane. Offered on every lane, not just empty ones — a Feature usually needs more stories
-            after the first few land. */}
-        <span className={styles.laneHeaderActions}>
-          {onAddWork && !isSynthetic && (
-            <button className={styles.actionButton} onClick={() => onAddWork(featureKey, vitals.summary)} type="button">
-              Add work
-            </button>
-          )}
-          {onSendToTop && (
-            <button className={styles.actionButton} onClick={() => onSendToTop(featureKey)} type="button">
-              Send to top
-            </button>
-          )}
-          {onSendToBottom && (
-            <button className={styles.actionButton} onClick={() => onSendToBottom(featureKey)} type="button">
-              Send to bottom
-            </button>
-          )}
-        </span>
+        {/* One button where there were three. The actions live in the menu — see LaneContextMenu for
+            why they are no longer on screen at all times. */}
+        {laneActions.length > 0 && (
+          <button
+            aria-haspopup="menu"
+            aria-label={`Actions for ${vitals.key}`}
+            className={`${styles.actionButton} ${styles.laneMenuButton}`}
+            onClick={(clickEvent) => setMenuPosition({ xPx: clickEvent.clientX, yPx: clickEvent.clientY })}
+            onPointerDown={(pointerEvent) => pointerEvent.stopPropagation()}
+            type="button"
+          >
+            ⋯
+          </button>
+        )}
       </header>
+
+      <LaneContextMenu
+        actions={laneActions}
+        featureKey={featureKey}
+        onClose={() => setMenuPosition(null)}
+        position={menuPosition}
+      />
 
       {/* The vital signs, laid out the way the Team Capacity panel lays out its own: a bar for the
           thing that is a proportion, labelled tiles for the things that are quantities. As one run-on

@@ -48,6 +48,7 @@ import { buildSubLanes, readSubLaneItemLists } from './subLaneLayout.ts';
 import { computeFamilyProgress } from './familyProgress.ts';
 import {
   describeStatusPair,
+  describeUnmappedBoardShare,
   describeUnmappedStatusGroup,
   summarizeUnmappedStatuses,
 } from './unmappedStatusSummary.ts';
@@ -107,6 +108,7 @@ import {
   COLUMN_DENSITY_LABELS,
   DEFAULT_COLUMN_DENSITY,
   describeColumnFit,
+  measureBoardWidth,
   readColumnMinWidth,
   type ColumnDensity,
 } from './columnDensity.ts';
@@ -1026,6 +1028,16 @@ export default function RollupBoardTab({
       });
     }
 
+    // Unmapped is the board's honesty valve and it works — but a quarter of the board landing in the
+    // twelfth column, off the right-hand edge, is a configuration failure nobody was being told about.
+    const unmappedShareNotice = describeUnmappedBoardShare(
+      loadState.allItems.filter((item) => item.columnId === UNMAPPED_COLUMN_ID).length,
+      loadState.allItems.length,
+    );
+    if (unmappedShareNotice !== '') {
+      notices.push({ id: 'unmapped-share', tone: 'warning', summary: unmappedShareNotice });
+    }
+
     if (carryOverScope.featureKeys.length > 0) {
       notices.push({
         id: 'carry-over',
@@ -1587,9 +1599,13 @@ export default function RollupBoardTab({
         <button className={styles.actionButton} onClick={() => setIsEditingColumns(!isEditingColumns)} type="button">
           {isEditingColumns ? 'Hide board setup' : 'Board setup'}
         </button>
-        {/* Sits on the toolbar rather than inside Board setup because it is the answer to a problem
-            people hit on their first look at the board — too many columns for the screen — and the
-            reflex fix for that is the browser's zoom control, which shrinks the whole app instead. */}
+        {/* Stays on the toolbar rather than moving into Board setup, because it answers a problem people
+            hit on their FIRST look — too many columns for the screen — and the reflex fix for that is
+            the browser's zoom control, which shrinks the whole app instead. Discoverability beats
+            tidiness here.
+            But it is offered only while the columns actually overflow. On a board that already fits, a
+            width control is a setting nobody needs, sitting beside Refresh, which everybody presses. */}
+        {measureBoardWidth(renderedColumns.length, columnDensity) > boardWidth && (
         <label className={styles.densityControl} title={describeColumnFit(renderedColumns.length, columnDensity, boardWidth)}>
           Column width
           <select
@@ -1603,6 +1619,7 @@ export default function RollupBoardTab({
             ))}
           </select>
         </label>
+        )}
         {/* Its own control, not buried in Board setup: this is what somebody reaches for when the board
             is already behaving oddly, and hiding it behind a settings panel made it unfindable. */}
         <button

@@ -344,15 +344,17 @@ describe('RollupBoardTab — editing a card in place', () => {
 });
 
 describe('RollupBoardTab — every drag has a keyboard equivalent', () => {
-  it('offers reordering as buttons, not only as a drag', async () => {
+  it('offers reordering without a drag, through a keyboard-reachable menu', async () => {
     mockJiraResponses({ boardIssues: [buildIssue('DEV-1', 'PORTFOLIO-9'), buildIssue('DEV-2', null)] });
 
     render(<RollupBoardTab boardId={42} scopedIssues={SCOPED_ISSUES} teamProfileId="team-a" />);
 
     await waitFor(() => expect(screen.getByTestId('rollup-lane-PORTFOLIO-9')).toBeTruthy());
-    // Someone who cannot drag must still be able to order their board.
-    expect(screen.getAllByRole('button', { name: 'Send to top' }).length).toBeGreaterThan(0);
-    expect(screen.getAllByRole('button', { name: 'Send to bottom' }).length).toBeGreaterThan(0);
+    // Someone who cannot drag must still be able to order their board. The actions moved into a
+    // per-lane menu, so what matters is that the menu is opened by a real, focusable button.
+    fireEvent.click(screen.getByRole('button', { name: 'Actions for PORTFOLIO-9' }));
+    expect(screen.getByRole('menuitem', { name: 'Send to top' })).toBeTruthy();
+    expect(screen.getByRole('menuitem', { name: 'Send to bottom' })).toBeTruthy();
   });
 
   it('labels the lane grip and makes the whole card the draggable, keyboard-reachable target', async () => {

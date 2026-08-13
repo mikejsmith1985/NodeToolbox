@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   describeStatusPair,
+  describeUnmappedBoardShare,
   describeUnmappedStatusGroup,
   summarizeUnmappedStatuses,
 } from './unmappedStatusSummary.ts';
@@ -133,5 +134,30 @@ describe('describeUnmappedStatusGroup', () => {
     const [group] = summarizeUnmappedStatuses([buildItem('DEV-1', 'Triage', null)], UNMAPPED_COLUMN_ID, COLUMNS);
 
     expect(describeUnmappedStatusGroup(group)).toContain('No column claims this status at all');
+  });
+});
+
+describe('describeUnmappedBoardShare', () => {
+  it('says nothing when a handful of issues are unmapped, which is ordinary', () => {
+    expect(describeUnmappedBoardShare(3, 100)).toBe('');
+  });
+
+  it('raises it once Unmapped holds a tenth of the board', () => {
+    const notice = describeUnmappedBoardShare(25, 92);
+
+    expect(notice).toContain('25 of 92');
+    expect(notice).toContain('27%');
+    expect(notice).toContain('Board setup');
+  });
+
+  it('says nothing at all on a board with nothing unmapped, or nothing on it', () => {
+    expect(describeUnmappedBoardShare(0, 92)).toBe('');
+    expect(describeUnmappedBoardShare(0, 0)).toBe('');
+    expect(describeUnmappedBoardShare(5, 0)).toBe('');
+  });
+
+  it('fires exactly at the threshold, not just above it', () => {
+    expect(describeUnmappedBoardShare(10, 100)).not.toBe('');
+    expect(describeUnmappedBoardShare(9, 100)).toBe('');
   });
 });

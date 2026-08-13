@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Roll-Up Board — the lane's actions moved to right-click, where they were asked for in the first
+  place.** *Send to top*, *Send to bottom* and *Add work* were buttons in every swimlane header: on a
+  twenty-Feature board, sixty buttons permanently on screen for actions taken about twice a sprint,
+  crowding out the thing the header is for — saying which Feature this is.
+  They now open from a **right-click on the lane header**, which is what the original spec asked for
+  and what the board had no `onContextMenu` handler for anywhere. A single **⋯** button opens the same
+  menu, because an action reachable only by right-click is unreachable to anyone on a keyboard or a
+  touch screen; the menu focuses its first item on open and closes on Escape, on an outside click, or
+  when the board scrolls out from under it.
+
+- **Roll-Up Board — a long checklist no longer swallows the lane.** A card showed every checklist item
+  it had, and a ten-item checklist filled a lane on its own. A card now shows **three**, then counts
+  the rest — *"+7 more"* — and a focused column, which has the board's whole width for one status,
+  still shows them all. Capped rather than hidden: showing none would put back the bare count this was
+  built to replace, and the remainder is counted so a truncated list never passes for a complete one.
+
+- **Roll-Up Board — controls that do nothing are no longer offered.** *Clear filters* and the note
+  about filters not changing a Feature's figures appear only once a filter is actually on. The column
+  **width** control appears only when the columns genuinely overflow the screen — it stays on the
+  toolbar rather than moving into Board setup, because it answers a problem people hit on their first
+  look, and the reflex fix for that is the browser's zoom, which shrinks the whole app instead.
+
+### Added
+- **Roll-Up Board — Unmapped now speaks up when it stops being a valve and becomes a problem.** It is
+  the board's honesty guarantee and it works, but a quarter of the board landing there is a
+  configuration failure, not a state — and it was drawn as the last of twelve columns, off the
+  right-hand edge, the one place you have to scroll to reach. Once Unmapped holds **more than a tenth**
+  of the board, a notice names the count and the share and points at Board setup. Silent below that,
+  because a handful of unmapped issues is ordinary.
+
 ### Internal
 - **The Roll-Up Board's sub-lane discovery is now its own tested module.** No behaviour change — the
   37 existing board-tab tests pass **unmodified**, which is the point: a refactor that needed its

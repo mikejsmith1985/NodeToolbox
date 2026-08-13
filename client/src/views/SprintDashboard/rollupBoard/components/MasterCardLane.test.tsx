@@ -271,7 +271,9 @@ describe('MasterCardLane — the No Feature lane', () => {
 });
 
 describe('MasterCardLane — ordering actions', () => {
-  it('offers send-to-top and send-to-bottom as real buttons, reachable by keyboard', () => {
+  it('offers send-to-top through a menu opened by a real button, not only by right-click', () => {
+    // The actions moved off the header — sixty buttons for something done twice a sprint — but they
+    // must stay reachable WITHOUT a right-click, or somebody on a keyboard cannot order their board.
     const onSendToTop = vi.fn();
     render(
       <MasterCardLane
@@ -284,9 +286,42 @@ describe('MasterCardLane — ordering actions', () => {
       />,
     );
 
-    screen.getByRole('button', { name: 'Send to top' }).click();
+    fireEvent.click(screen.getByRole('button', { name: 'Actions for FEAT-1' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Send to top' }));
 
     expect(onSendToTop).toHaveBeenCalledWith('FEAT-1');
+  });
+
+  it('opens the same menu on right-click, which is what the feature was asked for', () => {
+    const onSendToBottom = vi.fn();
+    render(
+      <MasterCardLane
+        columns={COLUMNS}
+        hasActiveFilters={false}
+        lane={buildLane([buildItem('DEV-1', 'col-todo')])}
+        onSendToBottom={onSendToBottom}
+        onSendToTop={vi.fn()}
+        onToggleCollapsed={vi.fn()}
+      />,
+    );
+
+    fireEvent.contextMenu(screen.getByText('Enrolment revamp'));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Send to bottom' }));
+
+    expect(onSendToBottom).toHaveBeenCalledWith('FEAT-1');
+  });
+
+  it('offers no menu at all when the board cannot reorder, rather than an empty one', () => {
+    render(
+      <MasterCardLane
+        columns={COLUMNS}
+        hasActiveFilters={false}
+        lane={buildLane([buildItem('DEV-1', 'col-todo')])}
+        onToggleCollapsed={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByRole('button', { name: 'Actions for FEAT-1' })).toBeNull();
   });
 
   it('exposes the collapse control as a labelled, toggleable button', () => {

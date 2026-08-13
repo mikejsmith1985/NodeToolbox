@@ -197,12 +197,56 @@
   font-size: var(--font-size-sm);
 }
 
-/* Pushes the lane's own actions to the right-hand end, away from the Feature's identity. */
-.laneHeaderActions {
-  display: flex;
-  gap: var(--spacing-xs);
+/* The one remaining header action, pushed to the right-hand end away from the Feature's identity. */
+.laneMenuButton {
   margin-left: auto;
-  flex-wrap: wrap;
+  padding: 0 var(--spacing-sm);
+  line-height: 1.6;
+}
+
+/* Fixed rather than absolute: the menu is positioned from the pointer's VIEWPORT coordinates, and
+   the board is a scroll container, so anchoring it to the page would place it somewhere else. */
+.laneMenu {
+  position: fixed;
+  z-index: 20;
+  min-width: 11rem;
+  display: flex;
+  flex-direction: column;
+  padding: var(--spacing-xs);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-1);
+  box-shadow: 0 8px 24px -8px rgb(0 0 0 / 55%);
+}
+
+.laneMenuItem {
+  border: none;
+  background: none;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+  text-align: left;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.laneMenuItem:hover,
+.laneMenuItem:focus-visible {
+  background: var(--color-surface-2);
+  outline: none;
+}
+
+.laneMenuItem:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--color-accent);
+}
+
+/* The tail of a capped checklist. Counted, never silently truncated. */
+.checklistItemMore {
+  list-style: none;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  font-style: italic;
+  padding-top: 2px;
 }
 
 /* ── The swimlane's vital signs: a bar for the proportion, tiles for the quantities ── */
