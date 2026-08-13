@@ -341,3 +341,51 @@ describe('describeDisciplineProblems', () => {
     expect(describeDisciplineProblems(disciplines, ['DENP'])).toBe('');
   });
 });
+
+describe('the discipline editor', () => {
+  it('keeps a row identified by position, so typing does not throw the input away', () => {
+    // The bug: the row key included the project key, so every keystroke changed the key, React
+    // remounted the input, and focus jumped to the next control after ONE character.
+    const scope = {
+      featureProjectKeys: ['DENP'],
+      shouldIncludeOutOfProjectFeatureLinks: false,
+      shouldIncludeIssueLinkedFeatures: false,
+      carryOverPiValue: '',
+      carryOverSource: 'none' as const,
+      teamFeatureLabel: '',
+      excludedFeatureLabels: [],
+      disciplineProjects: [{ name: 'QE', featureProjectKey: 'QE', storyProjectKeys: [] }],
+    };
+    const scopeChanges: unknown[] = [];
+
+    const commonProps = {
+      allFeatureKeys: [],
+      featureLinkedOutOfProjectKeys: [],
+      hasOwnScope: true,
+      hiddenIssueCount: 0,
+      issueLinkedOutOfProjectKeys: [],
+      onResetScope: vi.fn(),
+    };
+
+    const { rerender } = render(
+      <FeatureScopePanel {...commonProps} onScopeChange={(next) => scopeChanges.push(next)} scope={scope} />,
+    );
+
+    const featureProjectInput = screen.getByLabelText('Discipline 1 Feature project');
+    featureProjectInput.focus();
+    fireEvent.change(featureProjectInput, { target: { value: 'QEI' } });
+
+    // Re-render with the typed value, exactly as the parent would.
+    rerender(
+      <FeatureScopePanel
+        {...commonProps}
+        onScopeChange={() => {}}
+        scope={{ ...scope, disciplineProjects: [{ name: 'QE', featureProjectKey: 'QEI', storyProjectKeys: [] }] }}
+      />,
+    );
+
+    // Same element, still focused — not a fresh one that lost the caret.
+    expect(screen.getByLabelText('Discipline 1 Feature project')).toBe(featureProjectInput);
+    expect(document.activeElement).toBe(featureProjectInput);
+  });
+});

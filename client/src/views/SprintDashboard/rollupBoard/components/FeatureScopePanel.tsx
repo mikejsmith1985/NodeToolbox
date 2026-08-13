@@ -275,8 +275,15 @@ export function FeatureScopePanel({
         was raised in.
       </p>
 
+      {scope.disciplineProjects.length > 0 && (
+        <p className={styles.fieldLabel}>Name · Feature project · Story projects (optional)</p>
+      )}
+
       {scope.disciplineProjects.map((discipline, disciplineIndex) => (
-        <div className={styles.editorRow} key={`${discipline.featureProjectKey}-${disciplineIndex}`}>
+        // Keyed by POSITION, not by content. Keying on the project key meant the key changed on
+        // every keystroke, so React threw the input away and built a new one — which is why typing
+        // here only ever got one character in before the focus jumped away.
+        <div className={styles.editorRow} key={disciplineIndex}>
           <input
             aria-label={`Discipline ${disciplineIndex + 1} name`}
             className={styles.inputField}
@@ -287,6 +294,7 @@ export function FeatureScopePanel({
               }),
             })}
             placeholder="QE"
+            title="What to call this discipline on its sub-lane"
             value={discipline.name}
           />
           <input
@@ -298,7 +306,8 @@ export function FeatureScopePanel({
                 ...discipline, featureProjectKey: changeEvent.target.value,
               }),
             })}
-            placeholder="Feature project, e.g. QEINT"
+            placeholder="QEINT"
+            title="The Jira project holding this discipline's cloned Features"
             value={discipline.featureProjectKey}
           />
           <input
@@ -310,7 +319,8 @@ export function FeatureScopePanel({
                 ...discipline, storyProjectKeys: parseLabelList(changeEvent.target.value),
               }),
             })}
-            placeholder="Story projects — leave empty for any"
+            placeholder="optional"
+            title="Narrow to these story projects. Leave empty to accept work from any project."
             value={discipline.storyProjectKeys.join(', ')}
           />
           <button

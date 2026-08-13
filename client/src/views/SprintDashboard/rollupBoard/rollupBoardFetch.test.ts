@@ -424,6 +424,21 @@ describe('fetchDisciplineWork', () => {
     expect(outcome.issues.map((issue) => issue.key)).toEqual(['INTTEST-4265']);
   });
 
+  it('addresses a custom field as cf[N], the only form JQL accepts', async () => {
+    // The bug this pins, and the reason the QE sub-lane was empty for four releases: JQL reads
+    // "customfield_10108" as a field NAME, and answers `Field 'customfield_10108' does not exist or
+    // you do not have permission to view it` — a 400 that the fetch then swallowed into an empty list.
+    mockJiraGet.mockResolvedValue({ issues: [] });
+
+    await fetchDisciplineWork([], ['QEINT-608'], SCOPE);
+
+    const requestedJql = mockJiraGet.mock.calls.map((call) => decodeURIComponent(String(call[0])));
+    expect(requestedJql.some((jql) => jql.includes('cf[10108] in (QEINT-608)'))).toBe(true);
+    expect(requestedJql.some((jql) => jql.includes('cf[10100] in (QEINT-608)'))).toBe(true);
+    // The quoted-id form must never come back.
+    expect(requestedJql.every((jql) => !jql.includes('"customfield_10108" in'))).toBe(true);
+  });
+
   it('asks about each linkage SEPARATELY, so one bad clause cannot reject the lot', async () => {
     // Combined into `A OR B OR C`, a single unknown field id makes Jira reject the whole query — which
     // silently zeroed every discipline on the board.
@@ -433,15 +448,15 @@ describe('fetchDisciplineWork', () => {
 
     const requestedJql = mockJiraGet.mock.calls.map((call) => decodeURIComponent(String(call[0])));
     expect(requestedJql).toHaveLength(3);
-    expect(requestedJql.some((jql) => jql.includes('customfield_10108" in (QEINT-608)'))).toBe(true);
-    expect(requestedJql.some((jql) => jql.includes('customfield_10100" in (QEINT-608)'))).toBe(true);
+    expect(requestedJql.some((jql) => jql.includes('cf[10108] in (QEINT-608)'))).toBe(true);
+    expect(requestedJql.some((jql) => jql.includes('cf[10100] in (QEINT-608)'))).toBe(true);
     expect(requestedJql.some((jql) => jql.includes('parent in (QEINT-608)'))).toBe(true);
     expect(requestedJql.every((jql) => !jql.includes(' OR '))).toBe(true);
   });
 
   it('keeps the answers it DID get when one linkage is refused', async () => {
     mockJiraGet.mockImplementation((requestPath: string) => (
-      decodeURIComponent(requestPath).includes('customfield_10100" in (')
+      decodeURIComponent(requestPath).includes('cf[10100] in (')
         ? Promise.reject(new Error('400 Field customfield_10100 does not exist'))
         : Promise.resolve({ issues: [buildIssue('INTTEST-4265')] })
     ));

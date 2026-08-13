@@ -12,6 +12,7 @@
 
 import { jiraGet, type BoardSprint } from '../../../services/jiraApi.ts';
 import { extractHttpStatus } from '../../../services/issueLookup.ts';
+import { buildJqlFieldReference } from '../../Hygiene/checks/hygieneFieldConfig.ts';
 import type { JiraIssue } from '../../../types/jira.ts';
 import { extractFeatureKeyFromIssueFields } from '../../../utils/featureLink.ts';
 import { buildFeaturesInPiJql } from './emptyFeatureScan.ts';
@@ -452,7 +453,8 @@ export async function fetchTeamIssuesForFeatures(
     const chunkResults = await Promise.all(
       chunkList(featureKeys, FEATURE_KEY_CHUNK_SIZE).map((featureKeyChunk) =>
         jiraGet<JiraSearchResponse>(buildSearchPath(
-          `project = "${teamProjectKey}" AND "${featureLinkFieldId}" in (${featureKeyChunk.join(', ')})`,
+          `project = "${teamProjectKey}" AND ${buildJqlFieldReference(featureLinkFieldId)}`
+            + ` in (${featureKeyChunk.join(', ')})`,
           featureLinkFieldId,
         )).catch(() => ({ issues: [] as JiraIssue[] })),
       ),
@@ -652,8 +654,14 @@ export async function fetchDisciplineWork(
   // Three ways an issue can hang off a Feature. A discipline does not have to wire it the way the dev
   // team does, so all three are asked — but independently, so one failing cannot silence the others.
   const linkages = [
-    { label: 'Feature Link', buildClause: (keyList: string) => `"${scope.featureLinkFieldId}" in (${keyList})` },
-    { label: 'Parent Link', buildClause: (keyList: string) => `"${PARENT_LINK_FIELD_ID}" in (${keyList})` },
+    {
+      label: 'Feature Link',
+      buildClause: (keyList: string) => `${buildJqlFieldReference(scope.featureLinkFieldId)} in (${keyList})`,
+    },
+    {
+      label: 'Parent Link',
+      buildClause: (keyList: string) => `${buildJqlFieldReference(PARENT_LINK_FIELD_ID)} in (${keyList})`,
+    },
     { label: 'sub-task parent', buildClause: (keyList: string) => `parent in (${keyList})` },
   ];
 
