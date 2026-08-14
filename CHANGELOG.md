@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Roll-Up Board — a flagged card now says it is flagged.** The answer to *"how do we show a flagged
+  issue card?"* was: **we don't.** The Feature's own flag has shown in the swimlane header since the
+  board shipped, but the work underneath it carried no marker at all — `RollupBoardItem` had no such
+  field — so a blocked Story sat in its column looking exactly like a moving one. On a board whose
+  whole job is status visibility, that is the worst thing to have left silent.
+  Cards now carry a **⚑ Flagged** chip beside the key: the word as well as the colour, and the whole
+  chip tinted rather than just the text, because on a board of forty cards a coloured word is easy to
+  scroll straight past. It reads through the **same** `detectImpedimentReasons` the lane header uses —
+  Jira's flag, a blocking link, or a status containing "block" — so a Feature and its children can
+  never disagree about what flagged means. The field it needs was already fetched for every issue, so
+  this costs no extra request.
+
 ### Fixed
 - **Roll-Up Board — the progress bars no longer wear the card colours.** The Dev bar was green and the
   Whole Feature bar was accent blue: the exact colours the cards below them use for **Story** and

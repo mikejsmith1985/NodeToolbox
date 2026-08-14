@@ -207,6 +207,9 @@ export function ChildCard({
       {/* Top row, as on a Jira card: the key on the left, who owns it on the right. */}
       <div className={styles.cardTopRow}>
         <span className={styles.cardKey}>{item.key}</span>
+        {/* Beside the key rather than in the footer: a blocked card is the one thing on this board
+            somebody must not scroll past, and the word is there as well as the colour. */}
+        {item.isFlagged && <span className={styles.cardFlag}>⚑ Flagged</span>}
         <AssigneeAvatar displayName={item.assigneeDisplayName} />
       </div>
 

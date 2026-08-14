@@ -33,6 +33,7 @@ function buildItem(overrides: Partial<RollupBoardItem> = {}): RollupBoardItem {
     storyPoints: null,
     checklistCompletion: null,
     checklistItems: [],
+    isFlagged: false,
     ...overrides,
   };
 }
@@ -336,5 +337,21 @@ describe('ChildCard — containment is asked for, never dropped into', () => {
     fireEvent.contextMenu(screen.getByTestId('rollup-card-DEV-1'));
 
     expect(screen.queryByRole('menu')).toBeNull();
+  });
+});
+
+describe('ChildCard — a blocked card says so', () => {
+  it('marks a flagged issue in words as well as colour', () => {
+    // The Feature's own flag has always shown in the lane header; the work under it had no marker at
+    // all, so a blocked Story sat in its column looking exactly like a moving one.
+    render(<ChildCard item={buildItem({ isFlagged: true })} />);
+
+    expect(screen.getByText('⚑ Flagged')).toBeTruthy();
+  });
+
+  it('says nothing at all when the issue is not flagged', () => {
+    render(<ChildCard item={buildItem({ isFlagged: false })} />);
+
+    expect(screen.queryByText(/Flagged/)).toBeNull();
   });
 });

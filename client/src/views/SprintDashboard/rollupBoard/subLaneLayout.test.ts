@@ -48,6 +48,7 @@ function buildItem(key: string, columnId: string, parentKey: string | null = nul
     featureKey: null,
     checklistCompletion: null,
     checklistItems: [],
+    isFlagged: false,
     route: { steps: [], featureKey: null, precedenceRank: null, unchosenCandidates: [], notes: [] },
     issue: { key, fields: { status: { statusCategory: { name: 'In Progress' } } } },
   } as unknown as RollupBoardItem;

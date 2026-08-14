@@ -7,6 +7,7 @@
 
 import { extractFeatureKeyFromIssueFields } from '../../../utils/featureLink.ts';
 import { chooseChecklistFieldByValue, parseChecklistItems, summarizeChecklist } from './checklistItems.ts';
+import { detectImpedimentReasons } from '../../ArtView/hooks/artHelpers.ts';
 import type { JiraIssue } from '../../../types/jira.ts';
 import { resolveDefectRollup } from './defectRollup.ts';
 import {
@@ -392,6 +393,10 @@ export function resolveBoardItems(
       // Derived from the items themselves rather than counted separately, so the badge and the cards
       // beneath it can never disagree.
       checklistCompletion: summarizeChecklist(checklistItems),
+      // The SAME detection the lane header uses for the Feature's own flag, so a Feature and its
+      // children cannot disagree about what "flagged" means. The field it reads is already fetched
+      // for every issue, so this costs no extra request.
+      isFlagged: detectImpedimentReasons(issue).length > 0,
     };
   });
 }

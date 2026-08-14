@@ -193,6 +193,17 @@ export interface RollupBoardItem {
    * used to reduce to a bare "2/5", which says how much is left but never what any of it is.
    */
   checklistItems: ChecklistItem[];
+  /**
+   * Whether Jira considers this issue impeded — flagged, blocked by status, or blocked by a link.
+   *
+   * The Feature's own flag has always been shown in the lane header; the work underneath it carried no
+   * such marker at all, so a blocked Story sat in its column looking exactly like a moving one. On a
+   * board whose whole job is status visibility that is the worst thing to leave silent.
+   *
+   * Read through the SAME detection the lane header uses, so a Feature and its children can never
+   * disagree about what "flagged" means.
+   */
+  isFlagged: boolean;
 }
 
 // ── Master cards ──

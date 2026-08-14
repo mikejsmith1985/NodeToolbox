@@ -43,6 +43,7 @@ function buildBoardItem(key: string, statusName: string, subStatusValue: string 
     storyPoints: null,
     checklistCompletion: null,
     checklistItems: [],
+    isFlagged: false,
   };
 }
 

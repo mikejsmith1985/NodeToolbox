@@ -50,6 +50,7 @@ function buildItem(key: string, columnId: string, parentKey: string | null = nul
     storyPoints,
     checklistCompletion: null,
     checklistItems: [],
+    isFlagged: false,
   };
 }
 

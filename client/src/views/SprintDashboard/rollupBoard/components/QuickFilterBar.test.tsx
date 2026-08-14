@@ -28,6 +28,7 @@ function buildItem(key: string, assigneeAccountId: string | null, fixVersionName
     storyPoints: null,
     checklistCompletion: null,
     checklistItems: [],
+    isFlagged: false,
   };
 }
 

@@ -38,6 +38,7 @@ function buildItem(key: string): RollupBoardItem {
     featureKey: 'QEINT-610',
     checklistCompletion: null,
     checklistItems: [],
+    isFlagged: false,
     route: { steps: [], featureKey: 'QEINT-610', precedenceRank: null, unchosenCandidates: [], notes: [] },
     issue: { key, fields: { status: { statusCategory: { name: 'In Progress' } }, priority: { name: 'High' } } },
   } as unknown as RollupBoardItem;

@@ -73,6 +73,7 @@ function buildItem(input: BuildItemInput): RollupBoardItem {
     storyPoints: input.storyPoints ?? null,
     checklistCompletion: null,
     checklistItems: [],
+    isFlagged: false,
   };
 }
 

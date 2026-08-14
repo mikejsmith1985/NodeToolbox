@@ -634,6 +634,19 @@
   .card { transition: none; }
 }
 
+/* Jira's impediment flag on a card. The word is there as well as the colour, and the whole chip is
+   tinted rather than just the text, because on a board of forty cards a coloured word is easy to
+   scroll straight past — which for "this is blocked" is the one outcome worth designing against. */
+.cardFlag {
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  color: var(--color-danger);
+  background: var(--color-tone-danger-bg, rgba(248, 81, 73, 0.16));
+  border-radius: var(--radius-sm);
+  padding: 0 var(--spacing-xs);
+  white-space: nowrap;
+}
+
 .cardKey {
   font-weight: 600;
   font-size: var(--font-size-xs);

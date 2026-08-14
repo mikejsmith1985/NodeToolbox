@@ -32,6 +32,7 @@ function buildItem(key: string, featureKey: string | null): RollupBoardItem {
     storyPoints: null,
     checklistCompletion: null,
     checklistItems: [],
+    isFlagged: false,
   };
 }
 

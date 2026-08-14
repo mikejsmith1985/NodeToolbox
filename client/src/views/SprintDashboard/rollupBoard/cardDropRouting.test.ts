@@ -37,6 +37,7 @@ function buildItem(key: string, featureKey: string | null, columnId: string): Ro
     storyPoints: null,
     checklistCompletion: null,
     checklistItems: [],
+    isFlagged: false,
   };
 }
 

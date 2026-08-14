@@ -45,6 +45,7 @@ function buildItem(key: string, statusName: string, subStatusValue: string | nul
     storyPoints: null,
     checklistCompletion: null,
     checklistItems: [],
+    isFlagged: false,
   };
 }
 

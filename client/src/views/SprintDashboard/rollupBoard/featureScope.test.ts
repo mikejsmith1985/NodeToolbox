@@ -88,6 +88,7 @@ function buildItem(key: string, route: RollUpRoute): RollupBoardItem {
     storyPoints: null,
     checklistCompletion: null,
     checklistItems: [],
+    isFlagged: false,
   };
 }
 
