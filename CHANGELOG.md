@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Roll-Up Board — the progress bars no longer wear the card colours.** The Dev bar was green and the
+  Whole Feature bar was accent blue: the exact colours the cards below them use for **Story** and
+  **sub-task**. Stacked in the same lane that reads as though the green bar explains the green cards
+  and the blue bar the cyan ones — which is not what either means. One hue cannot carry two unrelated
+  vocabularies in one view.
+  Both bars are **amber** now, because no card type claims it — green, red, cyan, purple and grey are
+  all spoken for. And they deliberately share a hue at two weights rather than taking two different
+  ones: dev and whole-Feature are the **same measure at two scopes**, related rather than different in
+  kind, so the darker band is dev and the lighter is everybody. That is the treatment the PI Review
+  capacity meter already uses for committed-versus-total.
+
 - **Roll-Up Board — a card's colour now means one thing, and only its own type decides it.** Three
   problems overlapped and the result looked like the colours were simply wrong.
   **The blue box was not a type colour at all.** A card in the family you last clicked was outlined in

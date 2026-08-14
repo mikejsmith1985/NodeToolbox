@@ -328,16 +328,30 @@
   overflow: hidden;
 }
 
+/* ── Progress is a MAGNITUDE, so it gets one hue at two weights, never two hues ──
+ *
+ * These bars used to be green (dev) and accent blue (whole Feature) — the exact colours the cards
+ * beneath them use for Story and sub-task. Stacked in the same lane, that read as though the green
+ * bar explained the green cards and the blue bar the cyan ones, which is not remotely what either
+ * means. One colour cannot carry two unrelated vocabularies in one view.
+ *
+ * Amber is used because no card type claims it: green, red, cyan, purple and grey are all spoken for.
+ * And the two bars share a hue on purpose — they are the SAME measure at two scopes, related rather
+ * than different in kind, so the darker band is dev and the lighter one is everybody. This is the
+ * treatment the PI Review capacity meter already uses for committed-versus-total.
+ *
+ * Amber's "warning" role elsewhere in the app is on text and borders, never a filled bar, so a filled
+ * amber bar does not read as an alarm here. */
 .laneProgressFill {
   height: 100%;
   border-radius: 999px;
-  background: var(--color-success);
+  background: linear-gradient(90deg, #d98a00, #f59e0b);
 }
 
-/* The whole family's figure, drawn in its own track — it can legitimately be LOWER than the dev
-   figure, which is the entire reason for showing it. */
+/* The whole family's figure, in its own track — it can legitimately be LOWER than the dev figure,
+   which is the entire reason for showing it. Lighter, because it is the wider, softer claim. */
 .laneProgressFillFamily {
-  background: var(--color-accent);
+  background: linear-gradient(90deg, #f6c453, #fcd34d);
 }
 
 .laneProgressFigure {
