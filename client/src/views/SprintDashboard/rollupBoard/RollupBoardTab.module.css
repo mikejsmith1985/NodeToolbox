@@ -536,8 +536,18 @@
   border-left-color: var(--color-text-muted);
 }
 
+/* "This card is in the family you selected" — a SELECTION, not a kind of work.
+
+   It used to be a solid blue outline, and the board's accent blue (#58a6ff) sits right next to the
+   sub-task cyan (#06b6d4). So a highlighted Story wore a blue box while its own left edge stayed
+   green, and the loudest thing on the card was a colour that means "sub-task" everywhere else.
+
+   Distinguished by FORM now, not by hue alone: dashed, and held off the card's edge so the type
+   colour on that edge is never touched. Dashed reads as a selection marquee wherever it appears,
+   and the board's own rule is that colour is never the only signal. */
 .cardHighlighted {
-  outline: 2px solid var(--color-accent);
+  outline: 2px dashed var(--color-accent);
+  outline-offset: 2px;
 }
 
 .cardTopRow {
@@ -1079,12 +1089,23 @@
   gap: 2px;
 }
 
+/* Its own colour in the vocabulary, and deliberately NOT the sub-task cyan.
+ *
+ * A checklist item is not a Jira issue: it has no key, no assignee object, no status, and nothing to
+ * open. Borrowing the sub-task colour would claim it is one — and the difference is exactly what
+ * somebody scanning the board needs to know, because a sub-task can be assigned and moved and this
+ * cannot. Purple is unused by any issue type, so the fourth breakdown mechanism reads as its own
+ * fourth thing.
+ *
+ * The stripe is narrower than a card's, because this is nested INSIDE the card it belongs to and
+ * should not compete with its parent's own edge. */
 .checklistItemCard {
   display: flex;
   align-items: baseline;
   gap: var(--spacing-xs);
   padding: 1px var(--spacing-xs);
   border-radius: var(--radius-sm);
+  border-left: 3px solid var(--color-tone-purple-fg);
   background: var(--color-bg-subtle);
   font-size: var(--font-size-sm);
   color: var(--color-text-secondary);

@@ -154,6 +154,40 @@ describe('resolveBoardItems — item shape', () => {
     expect(buckets).toEqual(expect.arrayContaining(['story', 'defect', 'other', 'subtask']));
   });
 
+  it('believes the issue TYPE over a parent link, so a parented Story stays a Story', () => {
+    // The hazard this pins: "has a parent" used to be tested first, so anything carrying one was
+    // coloured as a sub-task whatever Jira said it was. Newer Jira populates `parent` for a Story
+    // under a Feature, not only a sub-task under a Story — one instance change and every Story on
+    // the board would have turned cyan at once.
+    const parentedStory = buildIssue({ key: 'DEV-9', typeName: 'Story', parentKey: 'FEAT-1' });
+
+    const [item] = resolveBoardItems(buildIssueSet([parentedStory]), SCOPE, UNMAPPED_RESOLVER);
+
+    expect(item.typeBucket).toBe('story');
+  });
+
+  it('still trusts Jira when it marks something a sub-task, whatever the type is called', () => {
+    const oddlyNamedSubtask = buildIssue({
+      key: 'DEV-1-2', typeName: 'Technical Task', isSubtask: true, parentKey: 'DEV-1',
+    });
+
+    const items = resolveBoardItems(buildIssueSet([], [oddlyNamedSubtask]), SCOPE, UNMAPPED_RESOLVER);
+
+    expect(items[0].typeBucket).toBe('subtask');
+  });
+
+  it('falls back to the parent only when the type name means nothing to us', () => {
+    // A reasonable guess where Jira has told us nothing useful — never a contradiction of what it did.
+    const unknownWithParent = buildIssue({ key: 'X-1', typeName: 'Widget', parentKey: 'DEV-1' });
+    const unknownAlone = buildIssue({ key: 'X-2', typeName: 'Widget' });
+
+    const items = resolveBoardItems(buildIssueSet([unknownWithParent, unknownAlone]), SCOPE, UNMAPPED_RESOLVER);
+    const bucketByKey = new Map(items.map((item) => [item.key, item.typeBucket]));
+
+    expect(bucketByKey.get('X-1')).toBe('subtask');
+    expect(bucketByKey.get('X-2')).toBe('other');
+  });
+
   it('reports a missing estimate as absent rather than as an estimate of zero', () => {
     const story = buildIssue({ key: 'DEV-1', typeName: 'Story' });
 

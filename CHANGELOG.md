@@ -8,6 +8,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Roll-Up Board — a card's colour now means one thing, and only its own type decides it.** Three
+  problems overlapped and the result looked like the colours were simply wrong.
+  **The blue box was not a type colour at all.** A card in the family you last clicked was outlined in
+  the board's accent blue `#58a6ff`, which sits right beside the sub-task cyan `#06b6d4` — so a
+  highlighted Story wore a blue box while its own left edge stayed green, and the loudest thing on the
+  card meant "sub-task" everywhere else. Selection is now marked by **form**, not hue alone: a dashed
+  outline, held off the card's edge so the type colour there is never touched.
+  **A parent no longer overrules the issue's own type.** "Has a parent" was tested *first*, so anything
+  carrying one was coloured as a sub-task whatever Jira called it. That is live, not theoretical:
+  newer Jira populates `parent` for a Story under a Feature, so one instance change would have turned
+  every Story on the board cyan at once. The type is asked first and believed; a parent is consulted
+  only where the type name means nothing to us. Route resolution is deliberately **unchanged** — there,
+  "inherits from its parent" is the right question and flag-or-parent is the right answer.
+
+### Added
+- **Roll-Up Board — checklist items have their own colour.** They had none: they rendered as plain grey
+  pills, so the fourth way a team breaks work down was the one with no place in the vocabulary. They
+  now carry a **purple** stripe, deliberately *not* the sub-task cyan — a checklist item is not a Jira
+  issue at all (no key, no assignee, no status, nothing to open), and borrowing the sub-task colour
+  would claim it is one. The difference is exactly what somebody scanning the board needs, because a
+  sub-task can be assigned and moved and a checklist item cannot. The stripe is narrower than a card's,
+  since it sits nested inside the card it belongs to and should not compete with its parent's edge.
+
 - **GitHub email intake — the SharePoint library is cleared after every run, so it stops piling up.**
   The clearing code was written, correct and reachable, and had **never once run**. Four separate
   things had to be true and all four were wrong:

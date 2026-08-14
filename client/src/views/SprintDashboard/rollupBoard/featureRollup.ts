@@ -46,19 +46,49 @@ function readIssueTypeName(issue: JiraIssue): string {
   return ((issue.fields as { issuetype?: { name?: string } }).issuetype?.name ?? '').trim().toLowerCase();
 }
 
-/** True when Jira marks this issue as a sub-task, by flag or by carrying a parent. */
+/**
+ * True when this issue should be ROUTED through its parent — by Jira's flag, or by carrying one.
+ *
+ * Left as flag-or-parent deliberately. Routing asks "where does this issue's Feature come from?", and
+ * an issue with a parent genuinely does inherit it from there whatever its type is called. That is a
+ * different question from what COLOUR the card wears — see readTypeBucket, where the same test was
+ * wrong for exactly that reason.
+ */
 function isSubtaskIssue(issue: JiraIssue): boolean {
   const issueFields = issue.fields as { issuetype?: { subtask?: boolean }; parent?: { key?: string } | null };
   return issueFields.issuetype?.subtask === true || Boolean(issueFields.parent?.key);
 }
 
-/** The visual family this issue's card belongs to. 'other' is a real answer, not a dumping ground. */
+/** True when Jira itself marks this issue as a sub-task. The only unambiguous answer available. */
+function isMarkedSubtask(issue: JiraIssue): boolean {
+  return (issue.fields as { issuetype?: { subtask?: boolean } }).issuetype?.subtask === true;
+}
+
+/** True when the issue carries a parent — suggestive of a sub-task, but far from proof of one. */
+function hasParentIssue(issue: JiraIssue): boolean {
+  return Boolean((issue.fields as { parent?: { key?: string } | null }).parent?.key);
+}
+
+/**
+ * The visual family this issue's card belongs to. 'other' is a real answer, not a dumping ground.
+ *
+ * The ORDER matters, and it used to be wrong. "Has a parent" was tested first, so any issue carrying
+ * one was coloured as a sub-task whatever its own type said. That is a live hazard rather than a
+ * theoretical one: newer Jira populates `parent` for a Story under a Feature, not only for a sub-task
+ * under a Story, so one instance change would have turned every Story on the board cyan at once.
+ *
+ * The issue's own TYPE is asked first now, and believed. The parent is consulted only where the type
+ * name means nothing to us — there, "it has a parent, so it is probably a sub-task" is a reasonable
+ * guess rather than a contradiction of what Jira plainly said.
+ */
 function readTypeBucket(issue: JiraIssue): IssueTypeBucket {
-  if (isSubtaskIssue(issue)) return 'subtask';
+  if (isMarkedSubtask(issue)) return 'subtask';
+
   const typeName = readIssueTypeName(issue);
   if (DEFECT_ISSUE_TYPE_NAMES.has(typeName)) return 'defect';
   if (STORY_ISSUE_TYPE_NAMES.has(typeName)) return 'story';
-  return 'other';
+
+  return hasParentIssue(issue) ? 'subtask' : 'other';
 }
 
 /**
