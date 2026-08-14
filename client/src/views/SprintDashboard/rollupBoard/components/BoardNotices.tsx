@@ -12,6 +12,7 @@
 import { useState } from 'react';
 
 import styles from '../RollupBoardTab.module.css';
+import { InfoIcon, WarningIcon } from './BoardIcons.tsx';
 
 /** One thing the board wants to say. */
 export interface BoardNotice {
@@ -61,7 +62,7 @@ export function BoardNotices({ notices, shouldStartExpanded = false }: BoardNoti
     <div className={styles.noticePanel} data-testid="rollup-board-notices">
       <div className={styles.noticeHeader}>
         <span className={hasWarning ? styles.noticeHeadlineWarning : styles.noticeHeadline}>
-          {hasWarning ? '⚠' : 'ℹ'} {describeNoticeCount(notices)}
+          {hasWarning ? <WarningIcon /> : <InfoIcon />} {describeNoticeCount(notices)}
         </span>
         <button
           className={styles.actionButton}

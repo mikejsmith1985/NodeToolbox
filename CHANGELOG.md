@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Roll-Up Board — real icons instead of emoji (pilot).** The app carries **977 emoji glyphs across
+  141 files** and no icon library. That is the single biggest reason it reads as less professional
+  than Jira, and the reason is concrete rather than a matter of taste: an emoji is a **colour glyph
+  drawn by the operating system**, so it cannot inherit `currentColor` — a red ⛔ stayed the same red
+  in the light theme and the dark one, which is where the board's carefully-built two-theme palette
+  simply stopped. It is also Segoe UI Emoji on Windows and Apple Color Emoji on a Mac, so weight,
+  stroke and optical size were the vendor's choice; and each glyph has its own baseline, so ⚠ and 📎
+  never sat level with the text beside them.
+  The board's 21 glyphs are now **lucide** icons: monochrome line art that takes its colour from the
+  text around it, sized in `em` so it grows with the app's text setting, at one stroke weight.
+  They live behind a single `BoardIcons` module rather than being imported across the board, for the
+  same reason the status chips do — an icon is **vocabulary**, and "blocked" only looks the same
+  everywhere it is said while one place decides what it looks like.
+  This is a pilot on the flagship surface. The remaining ~956 glyphs are untouched.
 - **Roll-Up Board — a card now responds to being used, and gives the eye something to land on.** Two
   concrete deficits, both measurable rather than matters of taste.
   **It had one interaction state**: a 1px border recolour on hover. That is the weakest signal a

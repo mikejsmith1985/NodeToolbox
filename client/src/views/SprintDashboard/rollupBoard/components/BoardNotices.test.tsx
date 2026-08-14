@@ -72,11 +72,13 @@ describe('BoardNotices', () => {
 
   it('marks the panel as a warning when any notice is one', () => {
     render(<BoardNotices notices={NOTICES} />);
-    expect(screen.getByText(/⚠/)).toBeInTheDocument();
+    // Asserted by the icon's own name rather than a glyph: lucide renders an svg carrying its
+    // component name, and the name is the stable thing — the artwork is not.
+    expect(document.querySelector('.lucide-triangle-alert, .lucide-alert-triangle')).toBeTruthy();
   });
 
   it('marks it informational when none is', () => {
     render(<BoardNotices notices={[NOTICES[1]]} />);
-    expect(screen.getByText(/ℹ/)).toBeInTheDocument();
+    expect(document.querySelector('.lucide-info')).toBeTruthy();
   });
 });

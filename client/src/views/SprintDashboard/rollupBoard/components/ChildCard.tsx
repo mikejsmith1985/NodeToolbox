@@ -21,14 +21,23 @@ import { describeStatusPair } from '../unmappedStatusSummary.ts';
 import type { ChecklistItemState } from '../checklistItems.ts';
 import styles from '../RollupBoardTab.module.css';
 import { BoardContextMenu, type BoardMenuAction } from './BoardContextMenu.tsx';
+import {
+  AttachmentIcon,
+  BlockedIcon,
+  ChecklistDoneIcon,
+  ChecklistInProgressIcon,
+  ChecklistOpenIcon,
+  FlagIcon,
+  WarningIcon,
+} from './BoardIcons.tsx';
 import type { IssueTypeBucket, RollUpRoute, RollupBoardItem } from '../rollupBoardTypes.ts';
 
 /** Which colour class carries each visual family. Text always says the same thing (FR-028). */
-/** A glyph per checklist state, so the state survives even where colour does not. */
-const CHECKLIST_STATE_MARKS: Record<ChecklistItemState, string> = {
-  open: '☐',
-  'in-progress': '▶',
-  done: '☑',
+/** An icon per checklist state, so the state survives even where colour does not. */
+const CHECKLIST_STATE_ICONS: Record<ChecklistItemState, () => React.JSX.Element> = {
+  open: ChecklistOpenIcon,
+  'in-progress': ChecklistInProgressIcon,
+  done: ChecklistDoneIcon,
 };
 
 /**
@@ -47,11 +56,11 @@ const MAX_COMPACT_CHECKLIST_ITEMS = 3;
  * blocked STATUS by moving the card. Calling all three "Flagged" — which this briefly did — offered
  * to remove a flag that was never set, and removing it changed nothing.
  */
-const IMPEDIMENT_LABELS: Record<string, string> = {
-  Flagged: '⚑ Flagged',
-  'Blocked Link': '⛔ Blocked by a link',
-  'Blocked Status': '⛔ Blocked status',
-  Label: '⛔ Blocked label',
+const IMPEDIMENT_LABELS: Record<string, { Icon: () => React.JSX.Element; label: string }> = {
+  Flagged: { Icon: FlagIcon, label: 'Flagged' },
+  'Blocked Link': { Icon: BlockedIcon, label: 'Blocked by a link' },
+  'Blocked Status': { Icon: BlockedIcon, label: 'Blocked status' },
+  Label: { Icon: BlockedIcon, label: 'Blocked label' },
 };
 
 const CARD_CLASS_BY_TYPE_BUCKET: Record<IssueTypeBucket, string> = {
@@ -246,9 +255,12 @@ export function ChildCard({
             somebody must not scroll past, and the words are there as well as the colour. Each reason
             is named, because "flagged" and "blocked by a link" are undone in completely different
             places and a card that says the wrong one sends somebody to the wrong place. */}
-        {(item.impedimentReasons ?? []).map((reason) => (
-          <span className={styles.cardFlag} key={reason}>{IMPEDIMENT_LABELS[reason] ?? `⛔ ${reason}`}</span>
-        ))}
+        {(item.impedimentReasons ?? []).map((reason) => {
+          const { Icon, label } = IMPEDIMENT_LABELS[reason] ?? { Icon: BlockedIcon, label: reason };
+          return (
+            <span className={styles.cardFlag} key={reason}><Icon /> {label}</span>
+          );
+        })}
         <AssigneeAvatar displayName={item.assigneeDisplayName} />
       </div>
 
@@ -293,7 +305,12 @@ export function ChildCard({
         <ul className={styles.checklistItemList}>
           {visibleChecklistItems.map((checklistItem) => (
             <li className={styles.checklistItemCard} data-state={checklistItem.state} key={checklistItem.id}>
-              <span className={styles.checklistItemMarker}>{CHECKLIST_STATE_MARKS[checklistItem.state]}</span>
+              <span className={styles.checklistItemMarker}>
+                {(() => {
+                  const StateIcon = CHECKLIST_STATE_ICONS[checklistItem.state];
+                  return <StateIcon />;
+                })()}
+              </span>
               <span className={styles.checklistItemText}>{checklistItem.text}</span>
               {checklistItem.assigneeUserId && (
                 <span className={styles.checklistItemAssignee}>@{checklistItem.assigneeUserId}</span>
@@ -315,7 +332,7 @@ export function ChildCard({
 
       {detail !== null && detail.attachmentCount > 0 && (
         <div className={styles.cardAttachments}>
-          📎 {detail.attachmentCount} attachment{detail.attachmentCount === 1 ? '' : 's'}
+          <AttachmentIcon /> {detail.attachmentCount} attachment{detail.attachmentCount === 1 ? '' : 's'}
         </div>
       )}
 
@@ -344,7 +361,7 @@ export function ChildCard({
       )}
 
       {item.route.notes.includes('link-loop-detected') && (
-        <div className={styles.cardRoute}>⚠ Its links form a loop — worth tidying in Jira</div>
+        <div className={styles.cardRoute}><WarningIcon /> Its links form a loop — worth tidying in Jira</div>
       )}
 
       {errorMessage !== null && <div className={styles.cardError}>{errorMessage}</div>}

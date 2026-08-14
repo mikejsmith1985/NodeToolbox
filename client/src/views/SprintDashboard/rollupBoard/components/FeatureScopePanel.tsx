@@ -12,6 +12,7 @@ import {
 } from '../../../ArtView/artFeatureScopeSettings.ts';
 import type { FeatureScopeSettings } from '../featureScope.ts';
 import styles from '../RollupBoardTab.module.css';
+import { WarningIcon } from './BoardIcons.tsx';
 import type { DisciplineProjects } from '../rollupBoardTypes.ts';
 
 export interface FeatureScopePanelProps {
@@ -351,7 +352,7 @@ export function FeatureScopePanel({
 
       {describeDisciplineProblems(scope.disciplineProjects, scope.featureProjectKeys) !== '' && (
         <p className={styles.fieldLabel}>
-          ⚠ {describeDisciplineProblems(scope.disciplineProjects, scope.featureProjectKeys)}
+          <WarningIcon /> {describeDisciplineProblems(scope.disciplineProjects, scope.featureProjectKeys)}
         </p>
       )}
 
@@ -417,7 +418,7 @@ export function FeatureScopePanel({
           the work stays off the board, but the fact does not go unnoticed. */}
       {featureLinkedOutOfProjectKeys.length > 0 && (
         <p className={styles.editorError}>
-          ⚠ Linked by the Feature Link field but outside these projects:{' '}
+          <WarningIcon /> Linked by the Feature Link field but outside these projects:{' '}
           {featureLinkedOutOfProjectKeys.join(', ')}. That is usually worth correcting in Jira.
         </p>
       )}

@@ -9,6 +9,7 @@ import { useState } from 'react';
 
 import { jiraGet } from '../../../../services/jiraApi.ts';
 import styles from '../RollupBoardTab.module.css';
+import { ExcludedIcon, IncludedIcon, NotApplicableIcon } from './BoardIcons.tsx';
 import type { BoardMembershipReason } from '../boardMembershipReason.ts';
 import {
   diagnosePlacement,
@@ -37,10 +38,10 @@ export interface PlacementTroubleshooterProps {
 }
 
 /** Marks each verdict so a scan down the list lands on the problem. */
-const VERDICT_MARK: Record<DiagnosisStep['verdict'], string> = {
-  included: '✓',
-  excluded: '✗',
-  'not-applicable': '–',
+const VERDICT_ICONS: Record<DiagnosisStep['verdict'], () => React.JSX.Element> = {
+  included: IncludedIcon,
+  excluded: ExcludedIcon,
+  'not-applicable': NotApplicableIcon,
 };
 
 /** Reads the Feature key an issue points at, whether the field holds a key or an issue object. */
@@ -168,7 +169,13 @@ export function PlacementTroubleshooter({
           <ul>
             {steps.map((step) => (
               <li className={styles.fieldLabel} key={step.question}>
-                <strong>{VERDICT_MARK[step.verdict]} {step.question}</strong> {step.detail}
+                <strong>
+                  {(() => {
+                    const VerdictIcon = VERDICT_ICONS[step.verdict];
+                    return <VerdictIcon />;
+                  })()}
+                  {' '}{step.question}
+                </strong> {step.detail}
               </li>
             ))}
           </ul>

@@ -347,7 +347,7 @@ describe('ChildCard — a blocked card says so', () => {
     // all, so a blocked Story sat in its column looking exactly like a moving one.
     render(<ChildCard item={buildItem({ isFlagged: true, impedimentReasons: ['Flagged'] })} />);
 
-    expect(screen.getByText('⚑ Flagged')).toBeTruthy();
+    expect(screen.getByText('Flagged')).toBeTruthy();
   });
 
   it('names a blocking LINK as a link, never as a flag', () => {
@@ -355,7 +355,7 @@ describe('ChildCard — a blocked card says so', () => {
     // to remove a flag it never had — and removing it changed nothing, because there was none.
     render(<ChildCard item={buildItem({ isFlagged: false, impedimentReasons: ['Blocked Link'] })} />);
 
-    expect(screen.getByText('⛔ Blocked by a link')).toBeTruthy();
+    expect(screen.getByText('Blocked by a link')).toBeTruthy();
     expect(screen.queryByText(/Flagged/)).toBeNull();
   });
 
@@ -364,8 +364,8 @@ describe('ChildCard — a blocked card says so', () => {
       isFlagged: true, impedimentReasons: ['Flagged', 'Blocked Status'],
     })} />);
 
-    expect(screen.getByText('⚑ Flagged')).toBeTruthy();
-    expect(screen.getByText('⛔ Blocked status')).toBeTruthy();
+    expect(screen.getByText('Flagged')).toBeTruthy();
+    expect(screen.getByText('Blocked status')).toBeTruthy();
   });
 
   it('says nothing at all when the issue is not impeded', () => {

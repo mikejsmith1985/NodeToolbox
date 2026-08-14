@@ -18,6 +18,7 @@ import styles from '../RollupBoardTab.module.css';
 import { isColumnCollapsed, type ColumnTrackStyle } from '../columnTrackLayout.ts';
 import { SubLane } from './SubLane.tsx';
 import { BoardContextMenu, type BoardMenuAction } from './BoardContextMenu.tsx';
+import { FlagIcon } from './BoardIcons.tsx';
 import { describeProgressDisagreement, describeTwoFigures } from '../familyProgress.ts';
 import { buildLaneProgressBar, buildLaneVitalTiles, type LaneProgressBar, type LaneVitalTile } from '../laneVitals.ts';
 import type { BoardMembershipReason } from '../boardMembershipReason.ts';
@@ -318,7 +319,7 @@ export function MasterCardLane({
             </a>
           )}
         <span className={styles.laneSummary}>{vitals.summary}</span>
-        {vitals.isFlagged && <span className={styles.laneFlag}>⚑ Flagged</span>}
+        {vitals.isFlagged && <span className={styles.laneFlag}><FlagIcon /> Flagged</span>}
 
         {/* One button where there were three. The actions live in the menu — see BoardContextMenu for
             why they are no longer on screen at all times. */}

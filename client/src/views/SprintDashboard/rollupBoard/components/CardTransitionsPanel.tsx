@@ -16,6 +16,7 @@ import {
   type CardTransitionOption,
 } from '../cardTransitions.ts';
 import styles from '../RollupBoardTab.module.css';
+import { WarningIcon } from './BoardIcons.tsx';
 
 export interface CardTransitionsPanelProps {
   options: readonly CardTransitionOption[];
@@ -64,7 +65,7 @@ export function CardTransitionsPanel({
             {!isMoving && hint !== '' && <span className={styles.transitionOptionDetail}>{hint}</span>}
             {!isMoving && option.requiredFieldNames.length > 0 && (
               <span className={styles.transitionOptionDetail} title={`Asks for ${option.requiredFieldNames.join(', ')}`}>
-                ⚠
+                <WarningIcon />
               </span>
             )}
           </button>
