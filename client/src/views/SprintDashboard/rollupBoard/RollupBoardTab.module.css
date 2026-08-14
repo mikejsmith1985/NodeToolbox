@@ -139,6 +139,11 @@
   user-select: none;
   -webkit-user-select: none;
   touch-action: none;
+  /* Anchors the collapse control to the corner. It used to sit in the flex flow, which gave it a row
+     of its own above the column's name and made every header a line taller than it needed to be.
+     The right padding reserves the corner so a long mapping summary never runs under it. */
+  position: relative;
+  padding-right: 26px;
 }
 
 .columnHeaderMeta {
@@ -164,9 +169,14 @@
 
 /* A real target rather than a glyph. It was 2px of padding around a single chevron — hard to hit at
    the best of times and unreasonable in a 40px narrowed column, where it is the ONLY way back.
-   Sized so the whole square is clickable, not just the character. */
+   Sized so the whole square is clickable, not just the character.
+
+   Out of the flex flow and pinned to the bottom-right corner, because in flow it took a row of its
+   own and made every column header a line taller for the sake of one chevron. */
 .columnCollapseToggle {
-  align-self: flex-end;
+  position: absolute;
+  right: 0;
+  bottom: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -195,8 +205,15 @@
   box-shadow: inset 0 0 0 2px var(--color-accent);
 }
 
+/* Narrowed, the chevron is nearly all there is, so it returns to the flow and sits centred — there
+   is no name for it to keep out of the way of. */
 .columnHeaderCollapsed .columnCollapseToggle {
+  position: static;
   align-self: center;
+}
+
+.columnHeaderCollapsed {
+  padding-right: 2px;
 }
 
 /* ── Swimlane ── */

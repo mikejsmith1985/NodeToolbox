@@ -8,7 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
-- **Roll-Up Board — the column collapse control is a proper target, not a glyph.** It was a single
+- **Roll-Up Board — the column headers are a line shorter, and the collapse control is a proper
+  target.** The chevron sat in the header'"'"'s flex flow, so it took a **row of its own** above the
+  column name and made every header a line taller for the sake of one character. It is pinned to the
+  bottom-right corner now, out of the flow entirely, with the corner reserved so a long mapping
+  summary never runs under it. On a narrowed column it returns to the flow and centres, since there
+  is no name for it to keep out of the way of.
+  The control itself was a single chevron with 2px of padding: hard to hit anywhere, and unreasonable
+  on a narrowed column where it is the only way back and the column is 40px wide. It was a single
   chevron with 2px of padding: hard to hit anywhere, and unreasonable on a **narrowed** column where
   it is the only way back and the column is 40px wide. It is now a 26px square with the whole area
   clickable, a larger chevron, and a tinted hover — because on a narrowed column it sits alone, so the
