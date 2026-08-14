@@ -1,4 +1,4 @@
-// LaneContextMenu.tsx — The actions you take ON a swimlane, on right-click rather than on screen.
+// BoardContextMenu.tsx — The actions you take ON a swimlane, on right-click rather than on screen.
 //
 // These three — Send to top, Send to bottom, Add work — used to be buttons in every lane header. On a
 // twenty-Feature board that is sixty buttons permanently on screen for actions taken about twice a
@@ -13,19 +13,19 @@ import { useEffect, useRef } from 'react';
 import styles from '../RollupBoardTab.module.css';
 
 /** One entry in the menu. A disabled entry is not offered rather than shown greyed out. */
-export interface LaneMenuAction {
+export interface BoardMenuAction {
   id: string;
   label: string;
   onSelect: () => void;
 }
 
-export interface LaneContextMenuProps {
+export interface BoardContextMenuProps {
   /** Where the menu was opened, in viewport coordinates. Null means it is closed. */
   position: { xPx: number; yPx: number } | null;
-  actions: readonly LaneMenuAction[];
+  actions: readonly BoardMenuAction[];
   onClose: () => void;
   /** Named in the menu's label so screen-reader users know which lane they are acting on. */
-  featureKey: string;
+  ownerKey: string;
 }
 
 /** Keeps the menu on screen when it is opened near the right or bottom edge. */
@@ -41,7 +41,7 @@ function clampToViewport(position: { xPx: number; yPx: number }, menuElement: HT
 }
 
 /** Renders the lane's actions as a menu anchored where the pointer was. */
-export function LaneContextMenu({ position, actions, onClose, featureKey }: LaneContextMenuProps) {
+export function BoardContextMenu({ position, actions, onClose, ownerKey }: BoardContextMenuProps) {
   const menuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -75,9 +75,9 @@ export function LaneContextMenu({ position, actions, onClose, featureKey }: Lane
 
   return (
     <div
-      aria-label={`Actions for ${featureKey}`}
+      aria-label={`Actions for ${ownerKey}`}
       className={styles.laneMenu}
-      data-testid={`rollup-lane-menu-${featureKey}`}
+      data-testid={`rollup-menu-${ownerKey}`}
       ref={menuRef}
       role="menu"
       style={{ left: `${left}px`, top: `${top}px` }}

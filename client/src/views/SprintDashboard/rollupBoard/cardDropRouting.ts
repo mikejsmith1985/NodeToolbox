@@ -61,31 +61,47 @@ export type CardDropDecision =
   /** Dropped onto the body of another card: record that this issue is contained in that one. */
   | { kind: 'nest'; item: RollupBoardItem; containerIssueKey: string };
 
-/** Where within a card a drop landed, which decides whether it sequences or nests. */
+/**
+ * Where within a card a drop landed.
+ *
+ * `nest` is no longer produced by dragging at all — see resolveCardDropZone. It remains in the type
+ * because a containment link is still a thing the board can record; it is now asked for explicitly
+ * from the card's own menu rather than inferred from where a drop happened to land.
+ */
 export type CardDropZone = 'before' | 'nest' | 'after';
 
-/** The middle share of a card's height that means "put this inside", not "put it near". */
-const NEST_ZONE_SHARE = 0.5;
-
 /**
- * Works out whether a drop onto a card was aimed at its body or at the gap above or below it.
+ * Whether a drop onto a card lands above or below it.
  *
- * Edge-versus-middle is how every tree control behaves, and it means nesting needs no modifier key —
- * which matters because a hidden keyboard shortcut is a feature nobody finds.
+ * This used to have a third answer. The middle half of a card meant "put this inside", which made
+ * containment something you could do **by accident** while trying to sequence — and it was worse
+ * than that in practice, because the zone was measured against the dragged card's CENTRE rather than
+ * the pointer. A card is often 250px tall, so its centre only clears a target's top quarter once the
+ * card is most of a card-height above it. Sequencing was therefore nearly unreachable and virtually
+ * every drop nested.
+ *
+ * Dragging now only ever sequences. Nesting writes to Jira and sequencing writes nothing, so the two
+ * should not have shared one gesture in the first place; the explicit action lives in the card menu.
  */
 export function resolveCardDropZone(
-  draggedCenterY: number,
+  pointerY: number,
   targetTopY: number,
   targetHeight: number,
 ): CardDropZone {
-  if (targetHeight <= 0) return 'nest';
+  if (targetHeight <= 0) return 'after';
+  return pointerY < targetTopY + targetHeight / 2 ? 'before' : 'after';
+}
 
-  const positionWithinTarget = (draggedCenterY - targetTopY) / targetHeight;
-  const nestBegins = (1 - NEST_ZONE_SHARE) / 2;
-
-  if (positionWithinTarget < nestBegins) return 'before';
-  if (positionWithinTarget > 1 - nestBegins) return 'after';
-  return 'nest';
+/**
+ * Where the pointer is now, from what a drag event carries.
+ *
+ * dnd-kit reports the pointer only at the moment the drag STARTED, plus how far it has moved since,
+ * so adding them is the only way to get its current position — and the position is what every zone
+ * decision should be made against.
+ */
+export function readPointerY(activatorEvent: Event | null, deltaY: number): number | null {
+  const startY = (activatorEvent as PointerEvent | null)?.clientY;
+  return typeof startY === 'number' ? startY + deltaY : null;
 }
 
 export interface ResolveCardDropInput {

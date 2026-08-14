@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Roll-Up Board — dragging a card now only ever sequences it; containment moved to the card's own
+  right-click menu.** Dropping onto the middle of a card meant *"put this inside that one"*, so
+  containment — which **writes a link to Jira** — shared a single gesture with sequencing, which
+  writes nothing at all. Those were the wrong two things to conflate, and in practice the accident
+  was near-total: the zone was measured against the dragged card's **centre** rather than the
+  pointer, and a card is often 250px tall, so its centre only clears a target's top quarter once the
+  card is most of a card-height above it. Sequencing was effectively unreachable and virtually every
+  drop nested.
+  A drag now places a card **above or below** the one under the pointer, decided from where the
+  pointer actually is. Containment is still supported — it was a requirement — but it is asked for:
+  **right-click a card** and choose *"Contain within <KEY> — <summary>"*, from a list of the other
+  cards in the same column. The menu names the container before it records anything, and a card is
+  never offered as a container of itself.
+  Considered and rejected: a **right-button drag**. Browsers fire their own context menu on that
+  button, dnd-kit's pointer sensor ignores non-primary buttons by design, and — decisively — nobody
+  discovers a right-drag. Right-click opening a menu is the gesture the lane headers already use.
+
 ### Fixed
 - **Roll-Up Board — dragging a card selected its text instead of moving it.** Nothing on the board
   had `user-select: none`, so a press-and-move was read by the browser as *"select this text"*: the

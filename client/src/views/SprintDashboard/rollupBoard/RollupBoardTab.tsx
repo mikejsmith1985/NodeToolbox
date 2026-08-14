@@ -79,7 +79,7 @@ import {
 } from './boardPreferencesStore.ts';
 import { loadTeamVocabulary, markVocabularySynced, saveTeamVocabulary } from './boardVocabularyStore.ts';
 import { previewBoardVocabularyPull, publishBoardVocabulary, type VocabularyPullPreview } from './boardVocabularySync.ts';
-import { parseCardTargetId, resolveCardDrop, resolveCardDropZone } from './cardDropRouting.ts';
+import { parseCardTargetId, readPointerY, resolveCardDrop, resolveCardDropZone } from './cardDropRouting.ts';
 import { loadColumnOptionSources, type ColumnOptionSources } from './columnOptionSources.ts';
 import { executeStatusMove, type ExecuteStatusMoveInput } from './statusMoveWriter.ts';
 import { resolveBoardItems } from './featureRollup.ts';
@@ -1370,12 +1370,12 @@ export default function RollupBoardTab({
    * back would draw a state Jira does not hold.
    */
   const handleCardDrop = useCallback(async (dragEndEvent: DragEndEvent): Promise<void> => {
-    // Where the dragged card came to rest inside the target decides between sequencing and nesting.
-    // Both rectangles come from the drag event, so no extra pointer tracking is needed.
-    const draggedRect = dragEndEvent.active.rect.current.translated;
+    // Measured from the POINTER, never from the dragged card's rectangle: a tall card's centre is a
+    // long way from where the person believes they are dropping, which is what made this unusable.
+    const pointerY = readPointerY(dragEndEvent.activatorEvent, dragEndEvent.delta.y);
     const targetRect = dragEndEvent.over?.rect ?? null;
-    const cardDropZone = draggedRect && targetRect
-      ? resolveCardDropZone(draggedRect.top + draggedRect.height / 2, targetRect.top, targetRect.height)
+    const cardDropZone = pointerY !== null && targetRect
+      ? resolveCardDropZone(pointerY, targetRect.top, targetRect.height)
       : undefined;
 
     const decision = resolveCardDrop({
@@ -2018,6 +2018,10 @@ export default function RollupBoardTab({
                 )
                 : null}
               errorMessageByIssueKey={errorMessageByIssueKey}
+              onNestInto={(issueKey, containerIssueKey) => {
+                const item = loadState.allItems.find((candidate) => candidate.key === issueKey);
+                if (item) void applyContainment(item, containerIssueKey);
+              }}
               hasActiveFilters={hasActiveFilters(filters)}
               highlightedFamilyKey={highlightedFamilyKey}
               key={lane.masterCard.featureKey}

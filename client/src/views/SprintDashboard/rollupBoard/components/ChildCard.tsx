@@ -8,6 +8,8 @@
 // Click and drag are told apart by the drag sensor's activation distance: a press that never moves
 // is a click and opens the issue; a press that travels is a drag.
 
+import { useState } from 'react';
+
 import { useDraggable, useDroppable } from '@dnd-kit/core';
 
 import { AssigneeAvatar } from '../../../../components/IssueMeta/AssigneeAvatar.tsx';
@@ -18,6 +20,7 @@ import { formatCommentDate, type CardDetail } from '../cardDetail.ts';
 import { describeStatusPair } from '../unmappedStatusSummary.ts';
 import type { ChecklistItemState } from '../checklistItems.ts';
 import styles from '../RollupBoardTab.module.css';
+import { BoardContextMenu, type BoardMenuAction } from './BoardContextMenu.tsx';
 import type { IssueTypeBucket, RollUpRoute, RollupBoardItem } from '../rollupBoardTypes.ts';
 
 /** Which colour class carries each visual family. Text always says the same thing (FR-028). */
@@ -77,6 +80,16 @@ export interface ChildCardProps {
    * back, which is worse than never having offered it.
    */
   isReadOnly?: boolean;
+  /**
+   * The other cards in this card's column, offered as containers in its right-click menu.
+   *
+   * Containment used to be a DRAG: dropping onto the middle of a card meant "put this inside that
+   * one". It shared a gesture with sequencing, so it happened by accident — and since nesting writes
+   * to Jira and sequencing writes nothing, that was the wrong pair to conflate. It is asked for
+   * explicitly now, from a menu that names the container it is about to record.
+   */
+  containerCandidates?: readonly { key: string; summary: string }[];
+  onNestInto?: (issueKey: string, containerIssueKey: string) => void;
 }
 
 /** Turns a resolved route into one readable sentence, so parentage is never inferred. */
@@ -111,7 +124,22 @@ export function ChildCard({
   detail = null,
   shouldShowStatus = false,
   isReadOnly = false,
+  containerCandidates = [],
+  onNestInto,
 }: ChildCardProps) {
+  const [menuPosition, setMenuPosition] = useState<{ xPx: number; yPx: number } | null>(null);
+
+  // Only the cards beside this one in the same column can contain it, and only when the board can
+  // actually write the link. No candidates means no menu at all, rather than a menu of nothing.
+  const menuActions: BoardMenuAction[] = onNestInto && !isReadOnly
+    ? containerCandidates
+      .filter((candidate) => candidate.key !== item.key)
+      .map((candidate) => ({
+        id: `nest-${candidate.key}`,
+        label: `Contain within ${candidate.key} — ${candidate.summary}`,
+        onSelect: () => onNestInto(item.key, candidate.key),
+      }))
+    : [];
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: item.key, disabled: isReadOnly });
   // Also a drop target, so one card can be dropped onto another to sequence the work in a column.
   // Disabled alongside the drag: a card nothing may be dragged FROM should not accept a drop either.
@@ -157,6 +185,11 @@ export function ChildCard({
       data-testid={`rollup-card-${item.key}`}
       data-type-bucket={item.typeBucket}
       onClick={handleOpen}
+      onContextMenu={(contextEvent) => {
+        if (menuActions.length === 0) return;
+        contextEvent.preventDefault();
+        setMenuPosition({ xPx: contextEvent.clientX, yPx: contextEvent.clientY });
+      }}
       onKeyDown={(keyboardEvent) => {
         if (keyboardEvent.key === 'Enter' || keyboardEvent.key === ' ') {
           keyboardEvent.preventDefault();
@@ -273,6 +306,13 @@ export function ChildCard({
       )}
 
       {errorMessage !== null && <div className={styles.cardError}>{errorMessage}</div>}
+
+      <BoardContextMenu
+        actions={menuActions}
+        onClose={() => setMenuPosition(null)}
+        ownerKey={item.key}
+        position={menuPosition}
+      />
     </div>
   );
 }

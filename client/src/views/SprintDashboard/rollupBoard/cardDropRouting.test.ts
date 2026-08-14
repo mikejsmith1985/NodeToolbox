@@ -11,6 +11,7 @@ import {
   buildDropTargetId,
   parseCardTargetId,
   parseDropTargetId,
+  readPointerY,
   resolveCardDrop,
   resolveCardDropZone,
 } from './cardDropRouting.ts';
@@ -232,26 +233,44 @@ describe('resolveCardDrop — dropping into another Feature lane', () => {
   });
 });
 
-describe('resolveCardDropZone — the middle means inside, the edges mean near', () => {
-  it('treats the upper edge as sequencing before the card', () => {
+describe('resolveCardDropZone — a drag only ever sequences', () => {
+  it('sequences before the card when the pointer is in its upper half', () => {
     expect(resolveCardDropZone(10, 0, 100)).toBe('before');
+    expect(resolveCardDropZone(49, 0, 100)).toBe('before');
   });
 
-  it('treats the lower edge as sequencing after the card', () => {
+  it('sequences after the card when the pointer is in its lower half', () => {
+    expect(resolveCardDropZone(51, 0, 100)).toBe('after');
     expect(resolveCardDropZone(90, 0, 100)).toBe('after');
   });
 
-  it('treats the middle as putting the card inside', () => {
-    expect(resolveCardDropZone(50, 0, 100)).toBe('nest');
+  it('NEVER nests from a drag, whatever the pointer does', () => {
+    // The middle of a card used to mean "put this inside", so containment — which writes to Jira —
+    // shared one gesture with sequencing, which writes nothing. It happened by accident constantly.
+    const everyPositionOverTheCard = Array.from({ length: 101 }, (_ignored, offset) =>
+      resolveCardDropZone(offset, 0, 100));
+
+    expect(everyPositionOverTheCard).not.toContain('nest');
   });
 
   it('reads positions relative to where the target actually sits', () => {
-    expect(resolveCardDropZone(450, 400, 100)).toBe('nest');
     expect(resolveCardDropZone(410, 400, 100)).toBe('before');
+    expect(resolveCardDropZone(490, 400, 100)).toBe('after');
   });
 
   it('does not divide by a zero height', () => {
-    expect(resolveCardDropZone(10, 0, 0)).toBe('nest');
+    expect(resolveCardDropZone(10, 0, 0)).toBe('after');
+  });
+});
+
+describe('readPointerY — the zone must follow the pointer, not the card', () => {
+  it('adds how far the drag has travelled to where it began', () => {
+    expect(readPointerY({ clientY: 300 } as unknown as Event, 120)).toBe(420);
+  });
+
+  it('reports nothing when the activator carried no position, rather than guessing zero', () => {
+    expect(readPointerY(null, 120)).toBeNull();
+    expect(readPointerY({} as Event, 120)).toBeNull();
   });
 });
 

@@ -2,7 +2,7 @@
 // explains how it got into the lane it is in.
 
 import { fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { ChildCard, describeRollUpRoute } from './ChildCard.tsx';
 import type { IssueTypeBucket, RollupBoardItem } from '../rollupBoardTypes.ts';
@@ -275,5 +275,66 @@ describe('checklist items nested inside the card', () => {
     })} />);
 
     expect(container.querySelector('[data-state="done"]')).toBeTruthy();
+  });
+});
+
+describe('ChildCard — containment is asked for, never dropped into', () => {
+  const SIBLINGS = [
+    { key: 'DEV-1', summary: 'The card itself' },
+    { key: 'DEV-2', summary: 'A sibling in the same column' },
+  ];
+
+  it('offers each sibling as a container, naming what the link will say', () => {
+    render(
+      <ChildCard
+        containerCandidates={SIBLINGS}
+        item={buildItem()}
+        onNestInto={vi.fn()}
+      />,
+    );
+
+    fireEvent.contextMenu(screen.getByTestId('rollup-card-DEV-1'));
+
+    expect(screen.getByRole('menuitem', { name: /Contain within DEV-2/ })).toBeTruthy();
+  });
+
+  it('never offers the card as a container of itself', () => {
+    render(
+      <ChildCard containerCandidates={SIBLINGS} item={buildItem()} onNestInto={vi.fn()} />,
+    );
+
+    fireEvent.contextMenu(screen.getByTestId('rollup-card-DEV-1'));
+
+    expect(screen.queryByRole('menuitem', { name: /Contain within DEV-1/ })).toBeNull();
+  });
+
+  it('records the containment the menu named', () => {
+    const onNestInto = vi.fn();
+    render(<ChildCard containerCandidates={SIBLINGS} item={buildItem()} onNestInto={onNestInto} />);
+
+    fireEvent.contextMenu(screen.getByTestId('rollup-card-DEV-1'));
+    fireEvent.click(screen.getByRole('menuitem', { name: /Contain within DEV-2/ }));
+
+    expect(onNestInto).toHaveBeenCalledWith('DEV-1', 'DEV-2');
+  });
+
+  it('offers no menu on a read-only card, which the board has no business writing', () => {
+    render(
+      <ChildCard containerCandidates={SIBLINGS} isReadOnly item={buildItem()} onNestInto={vi.fn()} />,
+    );
+
+    fireEvent.contextMenu(screen.getByTestId('rollup-card-DEV-1'));
+
+    expect(screen.queryByRole('menu')).toBeNull();
+  });
+
+  it('offers no menu when this card has no siblings to be contained in', () => {
+    render(
+      <ChildCard containerCandidates={[{ key: 'DEV-1', summary: 'Alone' }]} item={buildItem()} onNestInto={vi.fn()} />,
+    );
+
+    fireEvent.contextMenu(screen.getByTestId('rollup-card-DEV-1'));
+
+    expect(screen.queryByRole('menu')).toBeNull();
   });
 });

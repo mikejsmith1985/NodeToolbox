@@ -17,7 +17,7 @@ import { buildDropTargetId } from '../cardDropRouting.ts';
 import styles from '../RollupBoardTab.module.css';
 import type { ColumnTrackStyle } from '../columnTrackLayout.ts';
 import { SubLane } from './SubLane.tsx';
-import { LaneContextMenu, type LaneMenuAction } from './LaneContextMenu.tsx';
+import { BoardContextMenu, type BoardMenuAction } from './BoardContextMenu.tsx';
 import { describeProgressDisagreement, describeTwoFigures } from '../familyProgress.ts';
 import { buildLaneProgressBar, buildLaneVitalTiles, type LaneProgressBar, type LaneVitalTile } from '../laneVitals.ts';
 import type { BoardMembershipReason } from '../boardMembershipReason.ts';
@@ -87,6 +87,8 @@ export interface MasterCardLaneProps {
   /** Both progress figures. Null when this Feature has no clones, which is the normal case. */
   familyProgress?: FamilyProgress | null;
   onToggleSubLaneCollapsed?: (cloneFeatureKey: string) => void;
+  /** Records that one issue is contained in another. Absent leaves the card's menu unoffered. */
+  onNestInto?: (issueKey: string, containerIssueKey: string) => void;
 }
 
 /** One labelled figure in the header — a caption above a value, as on the Team Capacity panel. */
@@ -174,6 +176,7 @@ export function MasterCardLane({
   inlineDetail,
   familyProgress = null,
   onToggleSubLaneCollapsed,
+  onNestInto,
 }: MasterCardLaneProps) {
   const { vitals, featureKey, isSynthetic, isFeatureUnreadable, hasNoWorkYet } = lane.masterCard;
   const headerClassName = isSynthetic
@@ -199,7 +202,7 @@ export function MasterCardLane({
 
   // Built from whatever the board actually offered this lane, so a read-only board gets no menu at
   // all rather than a menu of nothing.
-  const laneActions: LaneMenuAction[] = [
+  const laneActions: BoardMenuAction[] = [
     ...(onAddWork && !isSynthetic
       ? [{ id: 'add-work', label: 'Add work…', onSelect: () => onAddWork(featureKey, vitals.summary) }]
       : []),
@@ -305,7 +308,7 @@ export function MasterCardLane({
         <span className={styles.laneSummary}>{vitals.summary}</span>
         {vitals.isFlagged && <span className={styles.laneFlag}>⚑ Flagged</span>}
 
-        {/* One button where there were three. The actions live in the menu — see LaneContextMenu for
+        {/* One button where there were three. The actions live in the menu — see BoardContextMenu for
             why they are no longer on screen at all times. */}
         {laneActions.length > 0 && (
           <button
@@ -321,9 +324,9 @@ export function MasterCardLane({
         )}
       </header>
 
-      <LaneContextMenu
+      <BoardContextMenu
         actions={laneActions}
-        featureKey={featureKey}
+        ownerKey={featureKey}
         onClose={() => setMenuPosition(null)}
         position={menuPosition}
       />
@@ -408,6 +411,10 @@ export function MasterCardLane({
                 ))}
                 {cell?.looseItems.map((item) => (
                   <ChildCard
+                    containerCandidates={cell.looseItems.map((candidate) => ({
+                      key: candidate.key, summary: candidate.summary,
+                    }))}
+                    onNestInto={onNestInto}
                     detail={cardDetailByIssueKey?.[item.key] ?? null}
                     shouldShowStatus={column.isUnmappedColumn}
                     errorMessage={errorMessageByIssueKey?.[item.key] ?? null}

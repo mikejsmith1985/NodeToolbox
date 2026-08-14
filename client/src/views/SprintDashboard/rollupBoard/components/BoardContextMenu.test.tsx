@@ -1,4 +1,4 @@
-// LaneContextMenu.test.tsx — Proves the actions that left the lane header are still reachable, and
+// BoardContextMenu.test.tsx — Proves the actions that left the lane header are still reachable, and
 // that the menu gets out of the way as readily as it appeared.
 //
 // The whole point of moving them was to remove sixty buttons from the screen. That is only an
@@ -8,32 +8,32 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
-import { LaneContextMenu, type LaneMenuAction } from './LaneContextMenu.tsx';
+import { BoardContextMenu, type BoardMenuAction } from './BoardContextMenu.tsx';
 
 const AT_ORIGIN = { xPx: 20, yPx: 30 };
 
-function buildActions(onSelect = vi.fn()): LaneMenuAction[] {
+function buildActions(onSelect = vi.fn()): BoardMenuAction[] {
   return [
     { id: 'send-top', label: 'Send to top', onSelect },
     { id: 'send-bottom', label: 'Send to bottom', onSelect: vi.fn() },
   ];
 }
 
-describe('LaneContextMenu', () => {
+describe('BoardContextMenu', () => {
   it('renders nothing at all while closed, so a board of lanes carries no hidden menus', () => {
-    render(<LaneContextMenu actions={buildActions()} featureKey="FEAT-1" onClose={vi.fn()} position={null} />);
+    render(<BoardContextMenu actions={buildActions()} ownerKey="FEAT-1" onClose={vi.fn()} position={null} />);
 
     expect(screen.queryByRole('menu')).toBeNull();
   });
 
   it('renders nothing when there are no actions, rather than an empty menu', () => {
-    render(<LaneContextMenu actions={[]} featureKey="FEAT-1" onClose={vi.fn()} position={AT_ORIGIN} />);
+    render(<BoardContextMenu actions={[]} ownerKey="FEAT-1" onClose={vi.fn()} position={AT_ORIGIN} />);
 
     expect(screen.queryByRole('menu')).toBeNull();
   });
 
   it('names the lane it belongs to, so it is unambiguous read aloud', () => {
-    render(<LaneContextMenu actions={buildActions()} featureKey="FEAT-1" onClose={vi.fn()} position={AT_ORIGIN} />);
+    render(<BoardContextMenu actions={buildActions()} ownerKey="FEAT-1" onClose={vi.fn()} position={AT_ORIGIN} />);
 
     expect(screen.getByRole('menu', { name: 'Actions for FEAT-1' })).toBeTruthy();
   });
@@ -42,7 +42,7 @@ describe('LaneContextMenu', () => {
     const onSelect = vi.fn();
     const onClose = vi.fn();
     render(
-      <LaneContextMenu actions={buildActions(onSelect)} featureKey="FEAT-1" onClose={onClose} position={AT_ORIGIN} />,
+      <BoardContextMenu actions={buildActions(onSelect)} ownerKey="FEAT-1" onClose={onClose} position={AT_ORIGIN} />,
     );
 
     fireEvent.click(screen.getByRole('menuitem', { name: 'Send to top' }));
@@ -52,14 +52,14 @@ describe('LaneContextMenu', () => {
   });
 
   it('focuses its first action on open, so it can be driven from the keyboard', () => {
-    render(<LaneContextMenu actions={buildActions()} featureKey="FEAT-1" onClose={vi.fn()} position={AT_ORIGIN} />);
+    render(<BoardContextMenu actions={buildActions()} ownerKey="FEAT-1" onClose={vi.fn()} position={AT_ORIGIN} />);
 
     expect(document.activeElement).toBe(screen.getByRole('menuitem', { name: 'Send to top' }));
   });
 
   it('closes on Escape', () => {
     const onClose = vi.fn();
-    render(<LaneContextMenu actions={buildActions()} featureKey="FEAT-1" onClose={onClose} position={AT_ORIGIN} />);
+    render(<BoardContextMenu actions={buildActions()} ownerKey="FEAT-1" onClose={onClose} position={AT_ORIGIN} />);
 
     fireEvent.keyDown(document, { key: 'Escape' });
 
@@ -68,7 +68,7 @@ describe('LaneContextMenu', () => {
 
   it('closes on a press outside itself, but not on one inside', () => {
     const onClose = vi.fn();
-    render(<LaneContextMenu actions={buildActions()} featureKey="FEAT-1" onClose={onClose} position={AT_ORIGIN} />);
+    render(<BoardContextMenu actions={buildActions()} ownerKey="FEAT-1" onClose={onClose} position={AT_ORIGIN} />);
 
     fireEvent.mouseDown(screen.getByRole('menuitem', { name: 'Send to top' }));
     expect(onClose).not.toHaveBeenCalled();
@@ -81,7 +81,7 @@ describe('LaneContextMenu', () => {
     // It is positioned from the pointer's viewport coordinates, so scrolling moves the lane out from
     // under it and the menu would go on claiming to act on a Feature no longer beneath it.
     const onClose = vi.fn();
-    render(<LaneContextMenu actions={buildActions()} featureKey="FEAT-1" onClose={onClose} position={AT_ORIGIN} />);
+    render(<BoardContextMenu actions={buildActions()} ownerKey="FEAT-1" onClose={onClose} position={AT_ORIGIN} />);
 
     fireEvent.scroll(document, {});
 
@@ -90,9 +90,9 @@ describe('LaneContextMenu', () => {
 
   it('stays on screen when opened against the right-hand edge', () => {
     render(
-      <LaneContextMenu
+      <BoardContextMenu
         actions={buildActions()}
-        featureKey="FEAT-1"
+        ownerKey="FEAT-1"
         onClose={vi.fn()}
         position={{ xPx: window.innerWidth + 500, yPx: 10 }}
       />,
