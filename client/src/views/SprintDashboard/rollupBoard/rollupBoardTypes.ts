@@ -54,6 +54,13 @@ export interface RollupBoardScope {
    * one is readable is a property of the VALUE rather than of the field's name.
    */
   checklistFieldIds?: readonly string[];
+  /**
+   * Whichever field this instance keeps Jira's impediment flag in.
+   *
+   * Discovered by name, never assumed: the default `customfield_10021` is not it here, which made the
+   * flag unreadable and unwritable at the same time.
+   */
+  flagFieldId?: string;
 }
 
 // ── Loaded issues ──

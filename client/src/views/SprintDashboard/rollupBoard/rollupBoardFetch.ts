@@ -68,7 +68,9 @@ const BASE_ISSUE_FIELDS = [
   'issuelinks',
   'labels',
   'parent',
-  // Jira's impediment flag, read through the shared impediment detection.
+  // Jira's impediment flag on a DEFAULT install. Kept because it costs nothing where it is right, but
+  // it is not authoritative — scope.flagFieldId carries the id discovered on this instance, and on
+  // this one they differ. Asking for a field that does not exist is harmless; relying on it was not.
   'customfield_10021',
 ];
 
@@ -80,6 +82,7 @@ interface JiraSearchResponse {
 function buildFieldList(scope: RollupBoardScope, extraFieldIds: readonly string[] = []): string {
   const fieldIds = [
     ...BASE_ISSUE_FIELDS,
+    scope.flagFieldId ?? '',
     scope.featureLinkFieldId,
     scope.subStatusFieldId,
     ...scope.storyPointsFieldIds,

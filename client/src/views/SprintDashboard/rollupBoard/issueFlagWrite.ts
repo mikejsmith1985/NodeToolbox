@@ -26,6 +26,43 @@ const FLAG_FIELD_NAME_PATTERN = /^(flagged|impediment|flag)$/i;
 export type IssueEditMeta = Record<string, FeatureReviewEditMetaField | undefined>;
 
 /**
+ * Finds the flag in this instance's FIELD CATALOGUE, which is the only place that knows its real id.
+ *
+ * `customfield_10021` is Jira's id on a default install and was hard-coded here. On this instance it
+ * is something else, which failed in both directions at once and made the feature look like two
+ * separate bugs: the read asked for a field that does not exist, so no card ever showed as flagged;
+ * and the write to the same id came back
+ *
+ *   400 — Field 'customfield_10021' cannot be set. It is not on the appropriate screen, or unknown.
+ *
+ * The "or unknown" was the answer all along. Reads are not screen-gated, so a read returning nothing
+ * meant the id was wrong rather than the screen being wrong.
+ *
+ * This is the third field to teach the same lesson, after the sub-status and the checklist: on this
+ * Jira a field id is never knowable in advance, and only its NAME is stable.
+ */
+export function findFlagFieldInCatalog(
+  fieldCatalog: readonly { id?: string; name?: string }[],
+): string | null {
+  const flagField = (fieldCatalog ?? []).find((field) =>
+    FLAG_FIELD_NAME_PATTERN.test(String(field.name ?? '').trim()));
+  return flagField?.id ? String(flagField.id) : null;
+}
+
+/** Reads the flag off an issue, given whichever field this instance keeps it in. */
+export function readIsFlagSet(
+  issueFields: Record<string, unknown> | undefined,
+  flagFieldId: string,
+): boolean {
+  if (flagFieldId === '') return false;
+  const rawValue = (issueFields ?? {})[flagFieldId];
+  // An EMPTY array is how Jira reports "not flagged" for a multi-option field, and an empty array is
+  // truthy — so length is what decides, never the value itself.
+  if (Array.isArray(rawValue)) return rawValue.length > 0;
+  return Boolean(rawValue);
+}
+
+/**
  * Which field carries the flag.
  *
  * By NAME first, because a field id is instance-specific — the same lesson the checklist field
@@ -33,11 +70,12 @@ export type IssueEditMeta = Record<string, FeatureReviewEditMetaField | undefine
  * nothing: an absence from editmeta means the field is off the edit screen, which says nothing about
  * whether it can be written.
  */
-export function findFlagFieldId(editMeta: IssueEditMeta): string {
+export function findFlagFieldId(editMeta: IssueEditMeta, discoveredFieldId = ''): string {
   for (const [fieldId, editMetaField] of Object.entries(editMeta ?? {})) {
     if (FLAG_FIELD_NAME_PATTERN.test((editMetaField?.name ?? '').trim())) return fieldId;
   }
-  return CONVENTIONAL_FLAG_FIELD_ID;
+  // The id discovered from this instance's field catalogue beats the default, which is wrong here.
+  return discoveredFieldId !== '' ? discoveredFieldId : CONVENTIONAL_FLAG_FIELD_ID;
 }
 
 /** The single option to write, preferring an id over a value the way Jira's own writers do. */
@@ -64,8 +102,12 @@ export interface FlagWrite {
  * ships and the one that works when editmeta cannot tell us anything, which — for this field — is the
  * common case rather than the exception.
  */
-export function resolveFlagWrite(editMeta: IssueEditMeta, shouldBeFlagged: boolean): FlagWrite {
-  const fieldId = findFlagFieldId(editMeta);
+export function resolveFlagWrite(
+  editMeta: IssueEditMeta,
+  shouldBeFlagged: boolean,
+  discoveredFieldId = '',
+): FlagWrite {
+  const fieldId = findFlagFieldId(editMeta, discoveredFieldId);
   if (!shouldBeFlagged) return { fieldId, value: null };
 
   const editMetaField = (editMeta ?? {})[fieldId];
@@ -80,8 +122,9 @@ export async function setIssueFlag(
   issueKey: string,
   shouldBeFlagged: boolean,
   editMeta: IssueEditMeta,
+  discoveredFieldId = '',
 ): Promise<void> {
-  const flagWrite = resolveFlagWrite(editMeta, shouldBeFlagged);
+  const flagWrite = resolveFlagWrite(editMeta, shouldBeFlagged, discoveredFieldId);
 
   await jiraPut(`/rest/api/2/issue/${encodeURIComponent(issueKey)}`, {
     fields: { [flagWrite.fieldId]: flagWrite.value },

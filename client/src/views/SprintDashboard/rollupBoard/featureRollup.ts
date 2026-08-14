@@ -8,6 +8,7 @@
 import { extractFeatureKeyFromIssueFields } from '../../../utils/featureLink.ts';
 import { chooseChecklistFieldByValue, parseChecklistItems, summarizeChecklist } from './checklistItems.ts';
 import { detectImpedimentReasons } from '../../ArtView/hooks/artHelpers.ts';
+import { readIsFlagSet } from './issueFlagWrite.ts';
 import type { JiraIssue } from '../../../types/jira.ts';
 import { resolveDefectRollup } from './defectRollup.ts';
 import {
@@ -362,7 +363,15 @@ export function resolveBoardItems(
     const readableFieldId = chooseChecklistFieldByValue(
       candidateFieldIds, issueFields as Record<string, unknown>,
     );
-    const impedimentReasons = detectImpedimentReasons(issue);
+    // The flag is read from the field this instance actually keeps it in; the shared detector's own
+    // check is dropped because it hard-codes the default id, which is wrong here. Its OTHER signals —
+    // a blocking link, a blocking status — are instance-independent and kept exactly as they are.
+    const isFlagSet = readIsFlagSet(
+      issue.fields as unknown as Record<string, unknown>,
+      scope.flagFieldId ?? '',
+    );
+    const impedimentReasons: string[] = detectImpedimentReasons(issue).filter((reason) => reason !== 'Flagged');
+    if (isFlagSet) impedimentReasons.unshift('Flagged');
     const checklistItems = readableFieldId === null
       ? []
       : parseChecklistItems((issueFields as Record<string, unknown>)[readableFieldId]);
@@ -400,7 +409,7 @@ export function resolveBoardItems(
       // Split in two on purpose. `isFlagged` is the FLAG FIELD alone, because that is what the card's
       // menu can write — it was every impediment for one release, so a card blocked by a LINK claimed
       // to be flagged and then offered to remove a flag it never had, which removed nothing.
-      isFlagged: impedimentReasons.includes('Flagged'),
+      isFlagged: isFlagSet,
       impedimentReasons,
     };
   });

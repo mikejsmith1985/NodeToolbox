@@ -11,7 +11,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const { mockJiraPut } = vi.hoisted(() => ({ mockJiraPut: vi.fn() }));
 vi.mock('../../../services/jiraApi.ts', () => ({ jiraPut: mockJiraPut, jiraGet: vi.fn() }));
 
-import { findFlagFieldId, resolveFlagWrite, setIssueFlag } from './issueFlagWrite.ts';
+import {
+  findFlagFieldId,
+  findFlagFieldInCatalog,
+  readIsFlagSet,
+  resolveFlagWrite,
+  setIssueFlag,
+} from './issueFlagWrite.ts';
 
 /** Editmeta that knows the field: a named array-of-option with one allowed value. */
 const KNOWN_FLAG_META = {
@@ -103,5 +109,53 @@ describe('setIssueFlag', () => {
     await setIssueFlag('DEV 1', false, KNOWN_FLAG_META);
 
     expect(mockJiraPut).toHaveBeenCalledWith('/rest/api/2/issue/DEV%201', expect.anything());
+  });
+});
+
+describe('findFlagFieldInCatalog — the id is discovered, never assumed', () => {
+  it('finds the flag by name in this instance\'s field catalogue', () => {
+    // The whole bug: customfield_10021 is Jira's DEFAULT id and is not the one on this instance, so
+    // the read asked for a field that does not exist and the write was told the field was unknown.
+    const catalog = [
+      { id: 'customfield_10500', name: 'Flagged' },
+      { id: 'customfield_10016', name: 'Story Points' },
+    ];
+
+    expect(findFlagFieldInCatalog(catalog)).toBe('customfield_10500');
+  });
+
+  it('finds nothing rather than falling back to a default that is wrong here', () => {
+    expect(findFlagFieldInCatalog([{ id: 'customfield_1', name: 'Story Points' }])).toBeNull();
+    expect(findFlagFieldInCatalog([])).toBeNull();
+  });
+});
+
+describe('readIsFlagSet', () => {
+  it('reads the flag from whichever field this instance keeps it in', () => {
+    expect(readIsFlagSet({ customfield_10500: [{ value: 'Impediment' }] }, 'customfield_10500')).toBe(true);
+  });
+
+  it('treats an EMPTY array as not flagged, which plain truthiness gets wrong', () => {
+    // Jira reports "not flagged" for a multi-option field as [], and [] is truthy in JavaScript —
+    // so testing the value alone would have marked every issue on the board as flagged.
+    expect(readIsFlagSet({ customfield_10500: [] }, 'customfield_10500')).toBe(false);
+  });
+
+  it('is not flagged when the field is absent, or when no field was discovered', () => {
+    expect(readIsFlagSet({}, 'customfield_10500')).toBe(false);
+    expect(readIsFlagSet({ customfield_10500: [{ value: 'x' }] }, '')).toBe(false);
+    expect(readIsFlagSet(undefined, 'customfield_10500')).toBe(false);
+  });
+});
+
+describe('resolveFlagWrite — with a discovered id', () => {
+  it('writes to the discovered field rather than the default', () => {
+    expect(resolveFlagWrite({}, true, 'customfield_10500').fieldId).toBe('customfield_10500');
+  });
+
+  it('still prefers a field editmeta names, which is the most specific answer available', () => {
+    const namedMeta = { customfield_10777: { name: 'Flagged', allowedValues: [{ value: 'Impediment' }] } };
+
+    expect(resolveFlagWrite(namedMeta, true, 'customfield_10500').fieldId).toBe('customfield_10777');
   });
 });

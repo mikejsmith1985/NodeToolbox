@@ -8,6 +8,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Roll-Up Board — the flag field is now discovered rather than assumed, which is why it could
+  neither be read nor written.** Jira returned the answer in the end, verbatim on the card:
+  > `400 — Field 'customfield_10021' cannot be set. It is not on the appropriate screen, or unknown.`
+
+  **"Or unknown"** was it. `customfield_10021` is Jira's id on a *default* install and was hard-coded;
+  this instance keeps the flag somewhere else. That single wrong constant broke both directions at
+  once and made it look like two unrelated bugs — the read asked for a field that does not exist, so
+  no card ever showed as flagged, and the write to the same id was refused as unknown.
+  The tell was there in the pairing: **reads are not screen-gated**, so a read returning nothing meant
+  the id was wrong rather than the screen being wrong.
+  The id now comes from this instance's own field catalogue, matched by NAME, on the same request that
+  already discovers the checklist field — so it costs nothing extra. This is the **third** field to
+  teach the same lesson after the sub-status and the checklist: on this Jira a field id is never
+  knowable in advance and only the name is stable.
+  One more trap closed on the way: Jira reports *not flagged* on a multi-option field as `[]`, and an
+  empty array is truthy in JavaScript. Testing the value alone would have marked **every** issue on
+  the board as flagged, so the length is what decides.
 - **Roll-Up Board — right-clicking a sub-task gave you the browser's menu instead of the board's.**
   Cards nested inside a parent container were rendered **without** the action props, so their menu was
   empty — and an empty menu never calls `preventDefault`, which is precisely how the browser's own

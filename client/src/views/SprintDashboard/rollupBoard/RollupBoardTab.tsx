@@ -51,7 +51,7 @@ import {
   type OrderPullPreview,
 } from './boardOrderSync.ts';
 import { buildColumnTracks, toggleColumnCollapsed } from './columnTrackLayout.ts';
-import { setIssueFlag } from './issueFlagWrite.ts';
+import { findFlagFieldInCatalog, setIssueFlag } from './issueFlagWrite.ts';
 import { selectColumnMapping } from './selectColumnMapping.ts';
 import { buildRenderedColumns, resolveColumnIdForItem } from './boardColumns.ts';
 import { describeMissingSubLanes, describeUnconfiguredClones } from './cloneFamily.ts';
@@ -431,6 +431,8 @@ export default function RollupBoardTab({
   const [boardScrollerRef, boardScrollerMaxHeightPx, columnHeaderHeightPx] = useBoardScrollerMaxHeight();
   // The key of whatever is currently being dragged, so the overlay knows what to draw. Null at rest.
   const [draggedItemKey, setDraggedItemKey] = useState<string | null>(null);
+  // Whichever field this instance keeps Jira's impediment flag in, discovered on load.
+  const [flagFieldId, setFlagFieldId] = useState('');
   const [isSharingOrder, setIsSharingOrder] = useState(false);
   const [orderShareMessage, setOrderShareMessage] = useState<string | null>(null);
   const [orderPullPreview, setOrderPullPreview] = useState<OrderPullPreview | null>(null);
@@ -506,10 +508,14 @@ export default function RollupBoardTab({
       const [discoveredSubStatusFieldId = ''] = fieldConfig.subStatusFieldIds ?? [];
       // The Smart Checklist field belongs to a third-party app and its id differs between instances,
       // so it is discovered rather than assumed. Not finding one simply means no checklists are drawn.
-      const discoveredChecklistFieldIds = listChecklistFieldIds(
-        await jiraGet<{ id?: string; name?: string; schema?: { custom?: string } }[]>('/rest/api/2/field')
-          .catch(() => []),
-      );
+      // One catalogue read serves both discoveries. The flag's id is NOT the default on this
+      // instance, which broke reading and writing it at once — see findFlagFieldInCatalog.
+      const fieldCatalog = await jiraGet<{ id?: string; name?: string; schema?: { custom?: string } }[]>(
+        '/rest/api/2/field',
+      ).catch(() => []);
+      const discoveredChecklistFieldIds = listChecklistFieldIds(fieldCatalog);
+      const discoveredFlagFieldId = findFlagFieldInCatalog(fieldCatalog) ?? '';
+      setFlagFieldId(discoveredFlagFieldId);
       const storyPointsFieldIds = getStoryPointsCandidateFieldIds();
       const scope: RollupBoardScope = {
         boardId: boardId ?? 0,
@@ -518,6 +524,7 @@ export default function RollupBoardTab({
         subStatusFieldId: discoveredSubStatusFieldId,
         storyPointsFieldIds,
         checklistFieldIds: discoveredChecklistFieldIds,
+        flagFieldId: discoveredFlagFieldId,
       };
 
       const issueSet = await fetchRollupBoardIssues(
@@ -1587,14 +1594,14 @@ export default function RollupBoardTab({
     setCardMessage(issueKey, null);
     setPendingIssueKey(issueKey);
     try {
-      await setIssueFlag(issueKey, shouldBeFlagged, await fetchFeatureReviewEditMeta(issueKey));
+      await setIssueFlag(issueKey, shouldBeFlagged, await fetchFeatureReviewEditMeta(issueKey), flagFieldId);
       await loadBoard();
     } catch (flagError: unknown) {
       setCardMessage(issueKey, describeJiraFailure(String(flagError)));
     } finally {
       setPendingIssueKey(null);
     }
-  }, [setCardMessage, loadBoard]);
+  }, [setCardMessage, loadBoard, flagFieldId]);
 
   const handleApplyTransition = useCallback(async (option: CardTransitionOption): Promise<void> => {
     if (openIssueKey === null) return;
