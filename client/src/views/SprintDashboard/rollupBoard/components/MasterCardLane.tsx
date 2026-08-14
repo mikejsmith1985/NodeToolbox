@@ -404,6 +404,8 @@ export function MasterCardLane({
                     cardDetailByIssueKey={cardDetailByIssueKey}
                     shouldShowStatus={column.isUnmappedColumn}
                     container={container}
+                    onNestInto={onNestInto}
+                    onToggleFlag={onToggleFlag}
                     errorMessageByIssueKey={errorMessageByIssueKey}
                     highlightedFamilyKey={highlightedFamilyKey}
                     key={container.parentKey}

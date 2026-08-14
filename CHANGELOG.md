@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Roll-Up Board — right-clicking a sub-task gave you the browser's menu instead of the board's.**
+  Cards nested inside a parent container were rendered **without** the action props, so their menu was
+  empty — and an empty menu never calls `preventDefault`, which is precisely how the browser's own
+  menu ends up on screen. Every sub-task on the board was affected, which is most of them: the card in
+  the report, ENCUC-1814, is a sub-task under ENCUC-1969.
+  A container is a **grouping label, not a different kind of card**: what a loose card can do, a
+  contained one can do too. Both render paths now pass the same actions, and a test covers the
+  contained path so it cannot quietly lose them again.
 - **Roll-Up Board — "Flagged" now means flagged, which is why removing the flag appeared to do
   nothing.** The card's flag was set from `detectImpedimentReasons(...).length > 0` — and that detects
   **four** different things: Jira's flag field, a blocking *link*, a blocking *status*, and a label.

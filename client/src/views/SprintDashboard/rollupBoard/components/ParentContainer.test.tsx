@@ -1,7 +1,7 @@
 // ParentContainer.test.tsx — Proves the grouping label reads as a label, not as another issue.
 
-import { render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { fireEvent, render, screen } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
 
 import { ParentContainer } from './ParentContainer.tsx';
 import type { ParentContainer as ParentContainerModel, RollupBoardItem } from '../rollupBoardTypes.ts';
@@ -68,5 +68,31 @@ describe('ParentContainer', () => {
     render(<ParentContainer container={buildContainer({ isParentInScope: false })} />);
 
     expect(screen.getByText('not on this board')).toBeTruthy();
+  });
+});
+
+describe('ParentContainer — a contained card is still a card', () => {
+  it('gives its nested cards the same right-click menu a loose card gets', () => {
+    // The bug this pins: the container rendered its cards without the action props, so every
+    // sub-task inside one had an EMPTY menu — its right-click never called preventDefault and the
+    // BROWSER's context menu appeared instead. A container is a grouping label, not a kind of card.
+    render(
+      <ParentContainer
+        container={buildContainer()}
+        onToggleFlag={vi.fn()}
+      />,
+    );
+
+    fireEvent.contextMenu(screen.getByTestId('rollup-card-DEV-1-1'));
+
+    expect(screen.getByRole('menuitem', { name: /Flag as an impediment/ })).toBeTruthy();
+  });
+
+  it('lets the browser have the menu only when there is genuinely nothing to offer', () => {
+    render(<ParentContainer container={buildContainer()} />);
+
+    fireEvent.contextMenu(screen.getByTestId('rollup-card-DEV-1-1'));
+
+    expect(screen.queryByRole('menu')).toBeNull();
   });
 });

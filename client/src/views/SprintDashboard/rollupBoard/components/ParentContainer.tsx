@@ -23,6 +23,15 @@ export interface ParentContainerProps {
   shouldShowStatus?: boolean;
   /** Passes read-only down to every card inside — used for another discipline's work. */
   isReadOnly?: boolean;
+  /**
+   * The card actions, threaded through to the nested cards.
+   *
+   * Omitting them left every sub-task inside a container with an EMPTY menu, so its right-click never
+   * called preventDefault and the browser's own menu appeared instead. A container is a grouping
+   * label, not a different kind of card: what a loose card can do, a contained one can do too.
+   */
+  onNestInto?: (issueKey: string, containerIssueKey: string) => void;
+  onToggleFlag?: (issueKey: string, shouldBeFlagged: boolean) => void;
   onOpenIssue?: (issueKey: string) => void;
   onSelectFamily?: (item: RollupBoardItem) => void;
 }
@@ -36,6 +45,8 @@ export function ParentContainer({
   cardDetailByIssueKey,
   shouldShowStatus,
   isReadOnly,
+  onNestInto,
+  onToggleFlag,
   onOpenIssue,
   onSelectFamily,
 }: ParentContainerProps) {
@@ -62,6 +73,11 @@ export function ParentContainer({
 
       {container.items.map((item) => (
         <ChildCard
+          containerCandidates={container.items.map((candidate) => ({
+            key: candidate.key, summary: candidate.summary,
+          }))}
+          onNestInto={onNestInto}
+          onToggleFlag={onToggleFlag}
           isReadOnly={isReadOnly}
           detail={cardDetailByIssueKey?.[item.key] ?? null}
           shouldShowStatus={shouldShowStatus}
