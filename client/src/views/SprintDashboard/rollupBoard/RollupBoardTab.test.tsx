@@ -111,12 +111,27 @@ beforeEach(() => {
 });
 
 describe('RollupBoardTab — honest states', () => {
-  it('says plainly that a board must be selected instead of rendering an empty board', () => {
-    render(<RollupBoardTab boardId={null} scopedIssues={[]} teamProfileId="team-a" />);
+  it('still draws the board with no Jira board selected, saying only what is actually lost', async () => {
+    // The board takes its scope from the dashboard's Sprint / PI / Fix Version selector and does NOT
+    // read a Jira board's saved filter — a Kanban board shows all open work, a Scrum board shows the
+    // active sprint, and this board shows what you asked for. Refusing to render without one was
+    // therefore disproportionate: the selection buys the sprint-versus-PI check and nothing else.
+    mockJiraResponses({ boardIssues: [buildIssue('DEV-1', 'PORTFOLIO-9')] });
 
-    expect(screen.getByText(/No board is selected for this team yet/)).toBeTruthy();
-    // An empty board would read as "this team has no work", which is a different claim entirely.
-    expect(screen.queryByTestId('rollup-column-header-row')).toBeNull();
+    render(<RollupBoardTab boardId={null} scopedIssues={SCOPED_ISSUES} teamProfileId="team-a" />);
+
+    await waitFor(() => expect(screen.getByTestId('rollup-column-header-row')).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'Show details' }));
+    expect(screen.getByText(/sprint-versus-PI check is not running/)).toBeTruthy();
+  });
+
+  it('says nothing about a Jira board once one is selected', async () => {
+    mockJiraResponses({ boardIssues: [buildIssue('DEV-1', 'PORTFOLIO-9')] });
+
+    render(<RollupBoardTab boardId={42} scopedIssues={SCOPED_ISSUES} teamProfileId="team-a" />);
+
+    await waitFor(() => expect(screen.getByTestId('rollup-column-header-row')).toBeTruthy());
+    expect(screen.queryByText(/sprint-versus-PI check is not running/)).toBeNull();
   });
 
   it('names what could not be read, rather than rendering a silently shorter board', async () => {

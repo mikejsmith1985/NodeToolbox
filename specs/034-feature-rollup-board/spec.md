@@ -299,8 +299,10 @@ board card reflects it without a full board reload.
 
 ### Edge Cases
 
-- **No board selected in team settings** → the board states plainly that a board must be selected and links to where
-  to select it; it does not render an empty board that looks like "no work".
+- **No board selected in team settings** → the board renders as normal and raises a notice naming the one thing that
+  is lost: the sprint-versus-PI check, which is the only thing the Jira board selection is used for. *(Revised
+  v0.178.0 — see FR-052. It previously refused to render at all, which was disproportionate: this board does not read
+  a Jira board's saved filter, so the selection was gating a view that did not depend on it.)*
 - **Sub-status field not configured for this team** → columns fall back to status-only mapping, and the board states
   that sub-status is unavailable so the columns are less precise than intended.
 - **The Feature referenced by an issue cannot be read** (permissions, deleted, cross-project restriction) → a Master
@@ -493,8 +495,11 @@ board card reflects it without a full board reload.
 
 **Honesty and degradation**
 
-- **FR-052**: When no board is selected in team settings, the board MUST state that plainly instead of rendering an
-  empty board.
+- **FR-052** *(revised v0.178.0)*: The board takes its scope from the Team Dashboard's Sprint / Fix Version / PI
+  selector and MUST NOT read a Jira board's saved filter. A Kanban board shows all open work and a Scrum board shows
+  the active sprint; this board shows what the operator selected, which is the whole reason the tool exists. When no
+  Jira board is selected the board MUST still render, and MUST state the one capability that is unavailable without
+  one — the sprint-versus-PI reconciliation — rather than refusing to draw.
 - **FR-053**: When any part of the data could not be retrieved, the board MUST state what is missing and why, rather
   than rendering a silently shortened board.
 - **FR-054**: Checklist-item completion, where available, MUST be shown as a read-only indicator on its host issue's

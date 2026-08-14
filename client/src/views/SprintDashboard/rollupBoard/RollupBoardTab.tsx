@@ -179,9 +179,23 @@ import {
   type RollupBoardScope,
 } from './rollupBoardTypes.ts';
 
-const NO_BOARD_MESSAGE =
-  'No board is selected for this team yet. Choose one in the Settings tab — the Roll-Up Board reads '
-  + 'whichever board the team already uses, rather than asking you to pick a second one.';
+/**
+ * Said when no Jira board is selected — as a NOTICE, never as an empty state.
+ *
+ * This board does not read a Jira board's saved filter, and has not since an early version swept it
+ * and dragged in the whole backlog. A Kanban board shows all open work and a Scrum board shows the
+ * active sprint; this board shows whatever the Team Dashboard's Sprint / PI / Fix Version selector
+ * holds. Seeing the data in a way Jira will not is the entire point of it, so mirroring a Jira board
+ * would defeat the purpose rather than serve it.
+ *
+ * The selection is used here for exactly one thing: reading the sprint list, to check that the team's
+ * sprints and its PI agree. Its absence therefore costs that one check and nothing else — which is
+ * reported as the small gap it is, rather than as a reason to show no board at all.
+ */
+const NO_BOARD_SELECTED_NOTICE =
+  'No Jira board is selected for this team, so the sprint-versus-PI check is not running. Everything '
+  + 'else works as normal: this board takes its scope from the Sprint / PI / Fix Version selector, not '
+  + 'from a Jira board. Select one in the Settings tab to add that check.';
 
 /** A team this board could copy a column setup from. */
 export interface CopyableTeam {
@@ -479,8 +493,9 @@ export default function RollupBoardTab({
   const dragSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
   const renderedColumns = useMemo(() => buildRenderedColumns(vocabulary), [vocabulary]);
 
+  // Deliberately NOT gated on a Jira board being selected. The scope comes from the dashboard's own
+  // Sprint / PI / Fix Version selector, so a team with no board chosen still has work to show.
   const loadBoard = useCallback(async (): Promise<void> => {
-    if (boardId === null) return;
     setLoadState((previousState) => ({ ...previousState, isLoading: true, loadError: null }));
 
     try {
@@ -494,7 +509,7 @@ export default function RollupBoardTab({
       );
       const storyPointsFieldIds = getStoryPointsCandidateFieldIds();
       const scope: RollupBoardScope = {
-        boardId,
+        boardId: boardId ?? 0,
         teamProfileId,
         featureLinkFieldId: loadConfiguredFeatureLinkFieldId(),
         subStatusFieldId: discoveredSubStatusFieldId,
@@ -1042,6 +1057,12 @@ export default function RollupBoardTab({
         summary: `${describeReconciliation(sprintPiGap)} Set the PI field on`
           + ` ${sprintPiGap.mismatches.length === 1 ? 'it' : 'them'} in Jira and refresh.`,
       });
+    }
+
+    // Stated as the one small gap it is. The board used to refuse to render at all without a Jira
+    // board, which was disproportionate: it does not read a Jira board's filter, and never did.
+    if (boardId === null) {
+      notices.push({ id: 'no-board-selected', tone: 'info', summary: NO_BOARD_SELECTED_NOTICE });
     }
 
     // Unmapped is the board's honesty valve and it works — but a quarter of the board landing in the
@@ -1615,10 +1636,6 @@ export default function RollupBoardTab({
       setPendingIssueKey(null);
     }
   }, [blockedMove, transitionSelections, setCardMessage, loadBoard]);
-
-  if (boardId === null) {
-    return <p className={styles.boardEmptyState}>{NO_BOARD_MESSAGE}</p>;
-  }
 
   return (
     <div className={styles.boardShell}>

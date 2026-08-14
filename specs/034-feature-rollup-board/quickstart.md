@@ -47,7 +47,14 @@ cd ..; npm test                # server suite
 
 ## Validation scenarios
 
-### V0 — The board mirrors the dashboard's scope *(the thing that was wrong twice)*
+### V0 — The board mirrors the TOOLBOX scope selector, not the Jira board *(the thing that was wrong twice)*
+
+> **Read this before running it.** "Dashboard" here means the **Toolbox Team Dashboard**, never the
+> Jira board. This board does **not** read a Jira board's saved filter and is not meant to: a Kanban
+> board shows all open work and a Scrum board shows the active sprint, whereas this board shows
+> whatever you selected. Seeing the data in a way Jira will not is the point of the tool, so mirroring
+> a Jira board would defeat it. The Jira board selection buys exactly one thing — the sprint list for
+> the sprint-versus-PI check in V24 — and its absence costs only that.
 
 Note what the **Sprint / Fix Version / PI** selector at the top of the Team Dashboard is set to, and
 how many issues the other tabs show.
@@ -267,7 +274,7 @@ legitimate carry-over, not a defect.
 
 ## Definition of done
 
-- [ ] V0–V23 run against **live Jira**, with V16's ~300-issue timing **recorded**
+- [ ] V0–V24 run against **live Jira**, with V16's ~300-issue timing **recorded**
 - [ ] Writes in V7 and V10 confirmed **in Jira**, not from an on-screen message
 - [ ] `npx vitest run`, `npx tsc -b` and `npm test` green
 - [ ] Anything that could not be exercised (V15, V17, V23) **recorded as such**, not marked passed

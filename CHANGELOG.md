@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Roll-Up Board — a Jira board no longer has to be selected for the board to draw.** The Roll-Up
+  Board does **not** read a Jira board's saved filter, and has not since an early version swept it and
+  dragged the whole backlog in. Its scope comes from the Team Dashboard's **Sprint / Fix Version / PI**
+  selector — which is the point: a Kanban board shows all open work and a Scrum board shows the active
+  sprint, whereas this board is for seeing the data in a way Jira will not.
+  The board selection was still a **hard gate**, refusing to render anything without one. That was
+  disproportionate, because the selection buys exactly one thing: the sprint list behind the
+  sprint-versus-PI check. It is now a notice naming that one gap, and the board renders as normal.
+  The old empty state also stated the false premise outright — *"the Roll-Up Board reads whichever
+  board the team already uses"* — which is what made the design look wrong when it was not. Spec
+  FR-052, the edge case beside it, and quickstart **V0** are corrected to say what the board actually
+  does. V0's title now says *the Toolbox scope selector, not the Jira board*, since reading "dashboard"
+  there as "the Jira board" was a fair misreading and the one that prompted this.
+  Also corrected: T071 and the definition of done said **V0–V23** while the quickstart carries a V24.
+
 ### Added
 - **Roll-Up Board — a column you rarely use can be narrowed to a strip.** Twelve columns is what forces
   horizontal scrolling, and several of them routinely hold nothing — *SL Testing*, *Int Testing* and
