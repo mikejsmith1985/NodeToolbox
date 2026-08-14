@@ -248,7 +248,10 @@ export function GithubEmailIntakePanel() {
         customRules: loadedConfig.customRules ?? [],
         subStatusFieldId: loadedConfig.subStatusFieldId ?? 'customfield_10201',
         sharePointFolderUrl: loadedConfig.sharePointFolderUrl ?? '',
-        shouldClearSharePointAfterIngest: loadedConfig.shouldClearSharePointAfterIngest === true,
+        // `!== false`, not `=== true`. Clearing now defaults ON, so an older server or a payload saved
+        // before the field existed must arrive as ON — read as `=== true`, every such config came back
+        // OFF, which is one of the reasons the library was never being cleared.
+        shouldClearSharePointAfterIngest: loadedConfig.shouldClearSharePointAfterIngest !== false,
       })
       setProjectKeysText((loadedConfig.jiraProjectKeys ?? []).join(', '))
       setFileExtensionsText((loadedConfig.fileExtensions ?? []).join(', '))

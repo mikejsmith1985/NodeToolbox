@@ -509,8 +509,10 @@ async function runGithubEmailIntakeNow(configuration, deps = {}) {
 // flow) instead of a local drop folder. The client downloads new files through the SharePoint relay
 // (the user's own browser session) and posts them here as in-memory sources; the SAME pipeline —
 // parse, dedup ledger, Jira post, Activity Log — runs over them via the injectable deps seam.
-// Files are never moved or deleted in SharePoint (the relay bookmarklet cannot send the
-// X-RequestDigest header SharePoint writes require); instead a seen-file-names ledger prevents
+// Files ARE recycled after a confirmed ingest — see recycleConfirmedFiles. That was not always true:
+// the browser bookmarklet could not send the X-RequestDigest header SharePoint writes require, so the
+// pipeline was read-only and relied on the ledger alone. The server-side relay can obtain a digest, so
+// the folder is cleared as well. The ledger still runs, and still prevents
 // re-downloading, and the Power Automate flow owns library cleanup.
 
 /** Maximum file names kept in the SharePoint seen-ledger (newest kept; well above any real backlog). */

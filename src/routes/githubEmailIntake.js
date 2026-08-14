@@ -87,8 +87,11 @@ function sanitiseConfig(rawBody, previousSeenPrs) {
     errorFolder: toTrimmedString(rawBody && rawBody.errorFolder),
     // Server-relative URL of the SharePoint library folder the Power Automate flow drops emails into.
     sharePointFolderUrl: toTrimmedString(rawBody && rawBody.sharePointFolderUrl),
-    // Clearing the library is destructive, so it is off unless the team has explicitly asked for it.
-    shouldClearSharePointAfterIngest: Boolean(rawBody && rawBody.shouldClearSharePointAfterIngest),
+    // Defaults ON, and only an explicit false turns it off. It was default-off on the reasoning that
+    // clearing a library is destructive — but it recycles rather than deletes, and only files the
+    // ledger CONFIRMS were recorded, so the real risk ran the other way: the folder grew without
+    // limit and had to be emptied by hand.
+    shouldClearSharePointAfterIngest: (rawBody && rawBody.shouldClearSharePointAfterIngest) !== false,
     fileExtensions: rawExtensions.map(toTrimmedString).filter((extension) => extension !== ''),
     jiraProjectKeys: rawProjectKeys.map((key) => toTrimmedString(key).toUpperCase()).filter((key) => key !== ''),
     transitions: {
@@ -115,7 +118,7 @@ function buildDefaultConfigResponse() {
     processedArchiveFolder: '',
     errorFolder: '',
     sharePointFolderUrl: '',
-    shouldClearSharePointAfterIngest: false,
+    shouldClearSharePointAfterIngest: true,
     fileExtensions: ['.eml', '.txt'],
     jiraProjectKeys: [],
     transitions: { branchCreated: '', commitPushed: '', prOpened: '', prMerged: '' },

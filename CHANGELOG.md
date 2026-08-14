@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **GitHub email intake — the SharePoint library is cleared after every run, so it stops piling up.**
+  The clearing code was written, correct and reachable, and had **never once run**. Four separate
+  things had to be true and all four were wrong:
+  1. `shouldClearSharePointAfterIngest` defaulted to **false** in the API route, on the reasoning that
+     clearing a library is destructive.
+  2. The Admin Hub panel read it back as `=== true`, so any config saved before the field existed
+     loaded as **off**.
+  3. It was missing from the config **whitelist** in `loader.js` — the exact trap already documented
+     two lines below it for `subStatusFieldId` — so even once set it reverted on every restart.
+  4. A comment in the scheduler still asserted that files *cannot* be deleted, which was true of the
+     browser bookmarklet (it cannot send the `X-RequestDigest` header SharePoint writes need) but has
+     not been true since the server-side relay landed.
+  Clearing now defaults **on**, and only an explicit `false` turns it off. The risk was always the
+  wrong way round: files go to the **recycle bin**, not a hard delete, and only files the seen-names
+  ledger **confirms** were recorded are touched — a file that failed to parse survives for somebody to
+  look at, and one that will not delete is simply left, because the ledger already stops it being
+  processed twice.
+
 ### Changed
 - **Roll-Up Board — the two fix-version controls now say which is which, and the pickers lead with who
   is actually here.** They are not competing scopes and never were: **View Work By → Fix Version** is

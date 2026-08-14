@@ -203,6 +203,10 @@ function saveConfigToDisk(configuration) {
         errorFolder:            (configuration.scheduler.githubEmailIntake || {}).errorFolder            || '',
         // SharePoint library folder the macro-less pipeline pulls from (Power Automate drops emails there).
         sharePointFolderUrl:    (configuration.scheduler.githubEmailIntake || {}).sharePointFolderUrl    || '',
+        // Same whitelist trap as subStatusFieldId below: the route saved this, nothing read it back,
+        // so every restart reverted it to its default and the library was never cleared.
+        shouldClearSharePointAfterIngest:
+          (configuration.scheduler.githubEmailIntake || {}).shouldClearSharePointAfterIngest !== false,
         fileExtensions:         (configuration.scheduler.githubEmailIntake || {}).fileExtensions         || ['.eml', '.txt', '.msg'],
         jiraProjectKeys:        (configuration.scheduler.githubEmailIntake || {}).jiraProjectKeys        || [],
         transitions:            (configuration.scheduler.githubEmailIntake || {}).transitions            || { branchCreated: '', commitPushed: '', prOpened: '', prMerged: '' },
