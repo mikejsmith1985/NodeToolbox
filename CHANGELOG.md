@@ -8,6 +8,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Roll-Up Board — a column claiming several Jira states now writes the right one, not the first
+  one.** The board has always let a column claim more than one state — a real column named
+  **"Accepted/Done"** claims both and holds 106 issues — but the drop path took `mappings[0]` and
+  wrote that one, always. Fine while a column claims one state; wrong the moment it claims two. A
+  **Done** issue dropped into its own column was sent to **Accepted**, and where the workflow has no
+  such step the move simply failed, in Jira's words about a transition rather than in terms of
+  anything the person had done.
+  The state is now chosen from what the issue can actually do, in order: a claimed state it is
+  **already in** (so dropping into the column you are already in changes only the sub-status, with no
+  pointless status write); otherwise the first claimed state the **workflow can reach**; otherwise a
+  refusal in the board's own terms — *"Accepted/Done claims Accepted or Done, and this issue's
+  workflow offers none of them from In Progress. It offers: Code Review."*
+  Two deliberate limits. The transition list is read **only** when a column claims more than one
+  state, so an ordinary column still costs no extra request. And where several claimed states are all
+  reachable the first is taken rather than asking: the team named the column for several states on
+  purpose, so any of them is a correct landing place and a question on every drag would buy nothing.
+  If the transition lookup itself fails the move is still attempted, because a failed lookup must
+  never be dressed up as a workflow rule.
 - **Roll-Up Board — the dashed ring no longer circles every Story in a lane.** Clicking a card
   highlights "the rest of this work" — click a Story and its sub-tasks light up wherever they have got
   to across the columns, which is worth having. But the family root was the card's **parent**, and

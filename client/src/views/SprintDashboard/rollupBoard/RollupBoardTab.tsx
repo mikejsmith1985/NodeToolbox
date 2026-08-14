@@ -52,6 +52,7 @@ import {
 } from './boardOrderSync.ts';
 import { buildColumnTracks, toggleColumnCollapsed } from './columnTrackLayout.ts';
 import { setIssueFlag } from './issueFlagWrite.ts';
+import { selectColumnMapping } from './selectColumnMapping.ts';
 import { buildRenderedColumns, resolveColumnIdForItem } from './boardColumns.ts';
 import { describeMissingSubLanes, describeUnconfiguredClones } from './cloneFamily.ts';
 import { classifyCloneFamilies, discoverDisciplineWork } from './disciplineDiscovery.ts';
@@ -1427,12 +1428,35 @@ export default function RollupBoardTab({
     setCardMessage(decision.item.key, null);
     setPendingIssueKey(decision.item.key);
     try {
+      // A column may claim SEVERAL Jira states — "Accepted/Done" claims both — and the drop used to
+      // write whichever was listed first, always. Fine for one claim, wrong for two: a Done issue
+      // dropped into its own column was sent to Accepted, and where the workflow has no such step the
+      // move failed in Jira's words rather than the board's.
+      //
+      // The transition list is read only when there is genuinely something to choose between, so an
+      // ordinary single-claim column still costs no extra request.
+      const reachableStatusNames = decision.targetColumn.mappings.length > 1
+        ? (await fetchFeatureReviewTransitions(decision.item.key).catch(() => []))
+          .map((transition) => transition.to?.name ?? '')
+          .filter(Boolean)
+        : [];
+
+      const mappingChoice = selectColumnMapping(
+        decision.targetColumn.mappings,
+        decision.item.statusName,
+        reachableStatusNames,
+        decision.targetColumn.name,
+      );
+      if (mappingChoice.kind === 'refused') {
+        setCardMessage(decision.item.key, mappingChoice.reason);
+        return;
+      }
+
       const moveInput: ExecuteStatusMoveInput = {
         issueKey: decision.item.key,
         currentStatusName: decision.item.statusName,
         currentSubStatusValue: decision.item.subStatusValue,
-        // A column can claim several statuses; a drop writes the first one it claims.
-        targetMapping: decision.targetColumn.mappings[0],
+        targetMapping: mappingChoice.mapping,
         subStatusFieldId,
       };
       const outcome = await executeStatusMove(moveInput);
