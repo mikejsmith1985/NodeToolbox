@@ -538,10 +538,13 @@
   border-radius: var(--radius-sm);
   background: var(--color-card-bg);
   box-shadow: var(--shadow-surface);
-  padding: var(--spacing-xs);
+  /* Wider than it is tall. A card felt cramped because everything sat hard against its edges, but
+     vertical padding is paid for in cards-per-lane — so the breathing room is bought sideways, where
+     it costs nothing. */
+  padding: var(--spacing-xs) var(--spacing-sm);
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 5px;
   text-align: left;
   width: 100%;
   /* The whole card is the drag handle, as on a Jira board. */
@@ -556,15 +559,35 @@
   touch-action: none;
   /* Eased so the drop indicator arriving and leaving is something the eye can follow, rather than
      an edge that appears fully formed under the pointer. */
-  transition: border-color 120ms ease, box-shadow 120ms ease, opacity 120ms ease;
+  transition: border-color 120ms ease, box-shadow 120ms ease, opacity 120ms ease,
+    transform 120ms ease, background-color 120ms ease;
 }
 
-.card:active {
-  cursor: grabbing;
-}
-
+/* ── Interaction states ──
+ *
+ * The card had exactly one: a 1px border recolour on hover. That is the weakest signal a control can
+ * give, and it is most of why a card felt inert next to Jira's — where a card lifts under the pointer
+ * and presses when you take hold of it. None of this costs a pixel of height.
+ */
 .card:hover {
   border-color: var(--color-accent);
+  background: var(--color-surface-1);
+  box-shadow: 0 4px 10px -4px rgb(0 0 0 / 45%);
+  transform: translateY(-1px);
+}
+
+/* Taking hold of it puts it back down, so press is felt rather than only inferred from the cursor. */
+.card:active {
+  cursor: grabbing;
+  transform: translateY(0);
+  box-shadow: var(--shadow-surface);
+}
+
+/* There was NO focus style at all on a role="button" element, so a keyboard user could not see which
+   card they were on. */
+.card:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
 }
 
 .cardStory {
@@ -664,7 +687,9 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .card { transition: none; }
+  .card,
+  .card:hover,
+  .card:active { transition: none; transform: none; }
 }
 
 /* Jira's impediment flag on a card. The word is there as well as the colour, and the whole chip is
@@ -680,15 +705,25 @@
   white-space: nowrap;
 }
 
+/* The card's identifier, and the thing the eye should land on first.
+ *
+ * It was the SMALLEST text on the card — xs, while the summary beside it was sm — in the same colour
+ * as everything else. So four of the card's six elements were the same size in near-identical greys
+ * and nothing led. An issue key is a name: it reads as a label, in the board's accent, with figures
+ * that line up between cards. */
 .cardKey {
-  font-weight: 600;
-  font-size: var(--font-size-xs);
-  color: var(--color-text-primary);
+  font-weight: 700;
+  font-size: var(--font-size-sm);
+  color: var(--color-accent);
+  letter-spacing: 0.01em;
+  font-variant-numeric: tabular-nums;
 }
 
+/* Given room to be read rather than scanned. It is the one piece of prose on the card. */
 .cardSummary {
   font-size: var(--font-size-sm);
   color: var(--color-text-primary);
+  line-height: 1.35;
 }
 
 .cardRoute {

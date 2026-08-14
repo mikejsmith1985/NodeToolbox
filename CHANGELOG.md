@@ -8,8 +8,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Roll-Up Board — a card now responds to being used, and gives the eye something to land on.** Two
+  concrete deficits, both measurable rather than matters of taste.
+  **It had one interaction state**: a 1px border recolour on hover. That is the weakest signal a
+  control can give, and it is most of why a card felt inert beside Jira's. A card now **lifts** under
+  the pointer — shadow, a 1px rise, a lighter ground — and **presses back down** when you take hold of
+  it, so grabbing is felt rather than inferred from the cursor. There was also **no focus style at
+  all** on an element carrying `role="button"` and `tabIndex={0}`, so a keyboard user could not see
+  which card they were on. There is a visible ring now.
+  **It had no typographic hierarchy.** The issue key — the card's name, and what the eye should reach
+  first — was the *smallest* text on it: `xs`, while the summary beside it was `sm`. Four of the
+  card's six elements were the same size in near-identical greys, so nothing led. The key now reads as
+  a label: larger, heavier, in the board's accent, with figures that line up between cards.
+  Padding was widened **sideways only**. A card felt cramped because everything sat hard against its
+  edges, but vertical padding is paid for in cards-per-lane — so the room is bought where it costs no
+  height, and none of the interaction states cost height either.
+
+### Changed
 - **Roll-Up Board — the column headers are a line shorter, and the collapse control is a proper
-  target.** The chevron sat in the header'"'"'s flex flow, so it took a **row of its own** above the
+  target.** The chevron sat in the header's flex flow, so it took a **row of its own** above the
   column name and made every header a line taller for the sake of one character. It is pinned to the
   bottom-right corner now, out of the flow entirely, with the corner reserved so a long mapping
   summary never runs under it. On a narrowed column it returns to the flow and centres, since there
