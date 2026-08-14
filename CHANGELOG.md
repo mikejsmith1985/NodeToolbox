@@ -8,6 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Roll-Up Board — the depth pass was invisible in the dark theme, because it was built on the wrong
+  mechanism.** Reported as "not seeing any difference", and correctly: in the dark theme there was
+  almost none to see.
+  A black shadow at 40% over the board's `#0d1117` lands on `#08090e` — a shift of **five to nine
+  points out of 255**, which no eye will find. Depth in a dark interface is not carried by shadow at
+  all; it is carried by **lightness**. A raised thing is lighter than what is behind it, and a recess
+  is darker. The previous pass applied a light-theme mental model to a dark-first app.
+  The measurement made it plain: a card sat on `(24, 30, 44)` and the cell holding it on
+  `(24, 30, 42)` — **the same colour**, two points apart in blue alone. A raised card and its recess
+  were literally indistinguishable, and no shadow drawn on top could have changed that.
+  There is now a **surface ladder** with steps ~10 points apart, which is roughly where a flat area
+  starts reading as a different plane: the cell is recessed **below** the board, the card sits
+  **19 points above** it, and a hovered card another **10** above that. Opaque on purpose — a
+  translucent surface takes its lightness from whatever is behind it, so the ladder stops being one.
+  The shadows stay, doing what they are actually good for here: separation. In the light theme they
+  do real work, so there the two reinforce each other.
 - **Roll-Up Board — dropping a card at the top of a column now works.** The space above the first card
   is not a card, so aiming there hit the **cell** rather than a card — and a cell drop in the column
   you were already in resolved to `ignore`. Nothing happened at all, which is why the top of a column

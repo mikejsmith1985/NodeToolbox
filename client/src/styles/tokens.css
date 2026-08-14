@@ -78,6 +78,24 @@
    *
    * The recipe is not new here: the form fields have used exactly this since they were built. It was
    * simply never applied to anything else. */
+  /* ── Elevation surfaces: in a DARK interface, height is LIGHTNESS ──
+   *
+   * The shadows below do almost nothing here and it is worth being precise about why. A black shadow
+   * at 40% over #0d1117 lands on #08090e — a shift of five to nine points out of 255, which no eye
+   * will find. Depth in a dark theme has to come from the surface itself: a raised thing is LIGHTER
+   * than what is behind it, and a recess is darker. Shadows are then a separation cue, not the signal.
+   *
+   * This was measurably absent rather than merely weak. The card sat on (24, 30, 44) and its cell on
+   * (24, 30, 42) — the same colour, two points apart in blue alone — so a raised card and the recess
+   * holding it were literally indistinguishable, whatever shadow was drawn on top.
+   *
+   * Steps are ~10 points apart, which is the point at which a flat area reads as a different plane.
+   * Opaque on purpose: a translucent surface takes its lightness from whatever happens to be behind
+   * it, so the ladder stops being a ladder. */
+  --surface-recessed: #090d13;
+  --surface-raised: #202836;
+  --surface-raised-hover: #2a3444;
+
   --elevation-raised:
     inset 0 1px 0 rgba(255, 255, 255, 0.06),
     0 1px 2px rgba(0, 0, 0, 0.4),
@@ -205,6 +223,12 @@
 
   /* Same three steps, lit for a pale ground: a brighter top highlight, and a cooler, softer shadow —
      a hard black shadow on white reads as dirt rather than as depth. */
+  /* The same ladder for a pale ground, where it runs the other way: raised is WHITER, and the shadow
+     does real work here, so the two reinforce each other rather than one carrying it alone. */
+  --surface-recessed: #e3e9f0;
+  --surface-raised: #ffffff;
+  --surface-raised-hover: #ffffff;
+
   --elevation-raised:
     inset 0 1px 0 rgba(255, 255, 255, 0.9),
     0 1px 2px rgba(15, 23, 42, 0.1),
