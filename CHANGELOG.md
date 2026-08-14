@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Roll-Up Board — the column collapse control is a proper target, not a glyph.** It was a single
+  chevron with 2px of padding: hard to hit anywhere, and unreasonable on a **narrowed** column where
+  it is the only way back and the column is 40px wide. It is now a 26px square with the whole area
+  clickable, a larger chevron, and a tinted hover — because on a narrowed column it sits alone, so the
+  target should show itself rather than rely on one character changing colour. Keyboard focus gets a
+  visible ring.
+
 ### Fixed
 - **Roll-Up Board — a narrowed column now puts its cards away instead of crushing them.** Collapsing a
   column narrowed the **header** and nothing else: every lane went on rendering its cards into a 40px

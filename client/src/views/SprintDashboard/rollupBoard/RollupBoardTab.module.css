@@ -162,21 +162,37 @@
   text-align: center;
 }
 
+/* A real target rather than a glyph. It was 2px of padding around a single chevron — hard to hit at
+   the best of times and unreasonable in a 40px narrowed column, where it is the ONLY way back.
+   Sized so the whole square is clickable, not just the character. */
 .columnCollapseToggle {
   align-self: flex-end;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 26px;
+  min-height: 26px;
   border: none;
+  border-radius: var(--radius-sm);
   background: none;
   color: var(--color-text-muted);
   cursor: pointer;
-  font-size: var(--font-size-sm);
+  font-size: var(--font-size-md);
   line-height: 1;
-  padding: 0 2px;
+  padding: 0;
 }
 
 .columnCollapseToggle:hover,
 .columnCollapseToggle:focus-visible {
   color: var(--color-accent);
+  /* Tinted as well as recoloured: on a narrowed column the chevron sits alone, so the target should
+     show itself rather than rely on one character changing colour. */
+  background: var(--color-surface-1);
   outline: none;
+}
+
+.columnCollapseToggle:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--color-accent);
 }
 
 .columnHeaderCollapsed .columnCollapseToggle {
