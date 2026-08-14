@@ -322,3 +322,47 @@ describe('resolveCardDrop — dropping one card onto another', () => {
     expect(decision.kind).toBe('reorder');
   });
 });
+
+describe('resolveCardDrop — dropping on the column itself', () => {
+  const SAME_COLUMN_CELL = buildDropTargetId('FEAT-1', 'col-todo');
+
+  it('reads a drop in the upper half as "put it at the top"', () => {
+    // The bug: the space above the first card is not a card, so aiming there hit the CELL — and a
+    // cell drop in your own column was `ignore`. Nothing happened at all.
+    const decision = resolveCardDrop({
+      draggedItemKey: 'DEV-1',
+      dropTargetId: SAME_COLUMN_CELL,
+      itemsByKey: ITEMS_WITH_SIBLING,
+      columnsById: COLUMNS,
+      cellDropEdge: 'top',
+    });
+
+    expect(decision).toEqual({ kind: 'reorder-edge', item: ITEMS_WITH_SIBLING.get('DEV-1'), edge: 'top' });
+  });
+
+  it('reads a drop in the lower half as "put it at the bottom"', () => {
+    const decision = resolveCardDrop({
+      draggedItemKey: 'DEV-1',
+      dropTargetId: SAME_COLUMN_CELL,
+      itemsByKey: ITEMS_WITH_SIBLING,
+      columnsById: COLUMNS,
+      cellDropEdge: 'bottom',
+    });
+
+    expect(decision.kind).toBe('reorder-edge');
+    expect(decision.kind === 'reorder-edge' && decision.edge).toBe('bottom');
+  });
+
+  it('still does nothing when the pointer could not be read, rather than guessing an end', () => {
+    // Without a position there is no way to tell top from bottom, and picking one would move the
+    // card somewhere nobody asked for.
+    const decision = resolveCardDrop({
+      draggedItemKey: 'DEV-1',
+      dropTargetId: SAME_COLUMN_CELL,
+      itemsByKey: ITEMS_WITH_SIBLING,
+      columnsById: COLUMNS,
+    });
+
+    expect(decision).toEqual({ kind: 'ignore' });
+  });
+});

@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Roll-Up Board — dropping a card at the top of a column now works.** The space above the first card
+  is not a card, so aiming there hit the **cell** rather than a card — and a cell drop in the column
+  you were already in resolved to `ignore`. Nothing happened at all, which is why the top of a column
+  felt like it rejected you. Sequencing only worked if you landed precisely on another card.
+  A drop on the column itself is a sequencing request now, read from which half of the cell the
+  pointer was in: the upper half puts the card **first**, the lower half puts it **last**. If the
+  pointer position cannot be read it still does nothing rather than guessing an end, because picking
+  one would move the card somewhere nobody asked for.
+
 ### Changed
 - **Roll-Up Board — the components have depth now, and it cost no screen space (pilot).** The worry
   that depth would eat the board was reasonable but turns out not to apply: shadows, lit edges and

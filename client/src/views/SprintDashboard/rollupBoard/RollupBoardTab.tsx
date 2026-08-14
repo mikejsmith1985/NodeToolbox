@@ -1387,6 +1387,11 @@ export default function RollupBoardTab({
     const cardDropZone = pointerY !== null && targetRect
       ? resolveCardDropZone(pointerY, targetRect.top, targetRect.height)
       : undefined;
+    // The same reading applied to a COLUMN CELL rather than a card: which half of the column the
+    // pointer was in when it let go.
+    const cellDropEdge = pointerY !== null && targetRect
+      ? (pointerY < targetRect.top + targetRect.height / 2 ? 'top' as const : 'bottom' as const)
+      : undefined;
 
     const decision = resolveCardDrop({
       draggedItemKey: String(dragEndEvent.active.id),
@@ -1394,6 +1399,7 @@ export default function RollupBoardTab({
       itemsByKey: new Map(loadState.allItems.map((item) => [item.key, item])),
       columnsById: new Map(renderedColumns.map((column) => [column.id, column])),
       cardDropZone,
+      cellDropEdge,
     });
 
     if (decision.kind === 'ignore') return;
@@ -1404,17 +1410,27 @@ export default function RollupBoardTab({
 
     // Sequencing work inside a column is a view preference, not a state change: nothing is written
     // to Jira, exactly as with lane order.
-    if (decision.kind === 'reorder') {
+    if (decision.kind === 'reorder' || decision.kind === 'reorder-edge') {
       const laneKey = decision.item.featureKey ?? NO_FEATURE_KEY;
       const displayedIssueKeys = loadState.allItems
         .filter((item) => (item.featureKey ?? NO_FEATURE_KEY) === laneKey && item.columnId === decision.item.columnId)
         .map((item) => item.key);
+
+      // Dropped on the column itself: the caller resolves which card that means, because the cell
+      // knows nothing about its own order. Top means before whichever card is currently first — and
+      // that is the whole point, since the space above the first card is not a card to land on.
+      // Bottom names no card at all, which the mover reads as "append".
+      const remainingKeys = displayedIssueKeys.filter((issueKey) => issueKey !== decision.item.key);
+      const targetIssueKey = decision.kind === 'reorder'
+        ? decision.targetIssueKey
+        : (decision.edge === 'top' ? (remainingKeys[0] ?? decision.item.key) : '');
+
       applyPreferences(moveCardBefore(
         preferences,
         laneKey,
         decision.item.columnId,
         decision.item.key,
-        decision.targetIssueKey,
+        targetIssueKey,
         displayedIssueKeys,
       ));
       return;

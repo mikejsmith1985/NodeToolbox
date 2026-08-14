@@ -59,7 +59,16 @@ export type CardDropDecision =
   /** Dropped in another Feature's lane: re-point the issue's Feature Link at that Feature. */
   | { kind: 'relink'; item: RollupBoardItem; targetFeatureKey: string }
   /** Dropped onto the body of another card: record that this issue is contained in that one. */
-  | { kind: 'nest'; item: RollupBoardItem; containerIssueKey: string };
+  | { kind: 'nest'; item: RollupBoardItem; containerIssueKey: string }
+  /**
+   * Dropped on the COLUMN itself rather than on a card in it — to the top or to the bottom.
+   *
+   * Its own answer because the cell knows nothing about which cards it holds. Dropping in the space
+   * above the first card used to be `ignore`, so aiming at the top of a column did nothing at all,
+   * and the only way to sequence anything was to land precisely on another card. The caller resolves
+   * which card this lands beside, because the caller is what knows the order.
+   */
+  | { kind: 'reorder-edge'; item: RollupBoardItem; edge: 'top' | 'bottom' };
 
 /**
  * Where within a card a drop landed.
@@ -111,6 +120,8 @@ export interface ResolveCardDropInput {
   columnsById: ReadonlyMap<string, RenderedColumn>;
   /** Where in the target card the drop landed. Defaults to sequencing, which writes nothing. */
   cardDropZone?: CardDropZone;
+  /** Which half of a COLUMN CELL the drop landed in, when it landed on the cell rather than a card. */
+  cellDropEdge?: 'top' | 'bottom';
 }
 
 /**
@@ -157,8 +168,13 @@ export function resolveCardDrop(input: ResolveCardDropInput): CardDropDecision {
     return { kind: 'ignore' };
   }
 
+  // Dropped on its OWN column: a sequencing request, not a non-event. This was `ignore`, which is
+  // why aiming at the top of a column did nothing — the space above the first card is not a card, so
+  // there was nothing there to land on.
   if (dropTarget.columnId === draggedItem.columnId) {
-    return { kind: 'ignore' };
+    return input.cellDropEdge === undefined
+      ? { kind: 'ignore' }
+      : { kind: 'reorder-edge', item: draggedItem, edge: input.cellDropEdge };
   }
 
   // A lane IS the Feature an issue delivers, so dropping a card in another lane is a request to
