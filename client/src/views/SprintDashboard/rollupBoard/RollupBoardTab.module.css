@@ -1191,3 +1191,15 @@
   max-height: 240px;
   overflow-y: auto;
 }
+
+/* What a narrowed column shows in a lane instead of its cards: how many are in there.
+   A collapsed column that simply went blank would hide this Feature's work in it, and the board's
+   one rule is that work is never hidden without being counted. */
+.laneCellCollapsedCount {
+  display: block;
+  text-align: center;
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}

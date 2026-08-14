@@ -1,7 +1,7 @@
 // MasterCardLane.test.tsx — Proves a collapsed lane is still a useful summary, and that its numbers
 // describe the whole Feature rather than whatever the viewer has filtered down to.
 
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { MasterCardLane } from './MasterCardLane.tsx';
@@ -536,5 +536,57 @@ describe('the open card detail sits in its own lane', () => {
     );
 
     expect(screen.queryByText('Detail for DEV-1')).toBeNull();
+  });
+});
+
+describe('MasterCardLane — a narrowed column puts its cards away', () => {
+  it('draws no cards in a narrowed column, and says how many are in there', () => {
+    // The bug: narrowing the HEADER left every lane still rendering its cards into a 40px track, so
+    // the column got narrower and its contents were crushed rather than put away.
+    render(
+      <MasterCardLane
+        collapsedColumnIds={['col-todo']}
+        columnTracks={COLUMN_TRACKS}
+        columns={COLUMNS}
+        hasActiveFilters={false}
+        lane={buildLane([buildItem('DEV-1', 'col-todo'), buildItem('DEV-2', 'col-todo')], { 'FEAT-1': false })}
+        onToggleCollapsed={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByTestId('rollup-card-DEV-1')).toBeNull();
+    // Counted, never silently hidden — the board's one rule. Scoped to the CELL, because the lane's
+    // own ITEMS tile also reads 2 and matching either would prove nothing about the cell.
+    expect(within(screen.getByTestId('rollup-cell-FEAT-1-col-todo')).getByText('2')).toBeTruthy();
+  });
+
+  it('still draws the cards of a column that is NOT narrowed', () => {
+    render(
+      <MasterCardLane
+        collapsedColumnIds={['col-dev']}
+        columnTracks={COLUMN_TRACKS}
+        columns={COLUMNS}
+        hasActiveFilters={false}
+        lane={buildLane([buildItem('DEV-1', 'col-todo')], { 'FEAT-1': false })}
+        onToggleCollapsed={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByTestId('rollup-card-DEV-1')).toBeTruthy();
+  });
+
+  it('keeps a narrowed column as a drop target, so a card can still be moved into it', () => {
+    render(
+      <MasterCardLane
+        collapsedColumnIds={['col-dev']}
+        columnTracks={COLUMN_TRACKS}
+        columns={COLUMNS}
+        hasActiveFilters={false}
+        lane={buildLane([buildItem('DEV-1', 'col-todo')], { 'FEAT-1': false })}
+        onToggleCollapsed={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByTestId('rollup-cell-FEAT-1-col-dev')).toBeTruthy();
   });
 });

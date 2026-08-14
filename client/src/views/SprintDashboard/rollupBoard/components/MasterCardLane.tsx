@@ -15,7 +15,7 @@ import { buildJiraBrowseUrl } from '../../../../utils/jiraBrowseUrl.ts';
 import { useConnectionStore } from '../../../../store/connectionStore.ts';
 import { buildDropTargetId } from '../cardDropRouting.ts';
 import styles from '../RollupBoardTab.module.css';
-import type { ColumnTrackStyle } from '../columnTrackLayout.ts';
+import { isColumnCollapsed, type ColumnTrackStyle } from '../columnTrackLayout.ts';
 import { SubLane } from './SubLane.tsx';
 import { BoardContextMenu, type BoardMenuAction } from './BoardContextMenu.tsx';
 import { describeProgressDisagreement, describeTwoFigures } from '../familyProgress.ts';
@@ -91,6 +91,14 @@ export interface MasterCardLaneProps {
   onNestInto?: (issueKey: string, containerIssueKey: string) => void;
   /** Raises or clears Jira's impediment flag on a card. */
   onToggleFlag?: (issueKey: string, shouldBeFlagged: boolean) => void;
+  /**
+   * Columns narrowed to a strip, by id.
+   *
+   * The cells have to know as well as the header did. Narrowing only the HEADER left every lane still
+   * rendering its cards into a 40px track, so the column got narrower and its contents were crushed
+   * rather than put away — which is worse than not collapsing it at all.
+   */
+  collapsedColumnIds?: readonly string[];
 }
 
 /** One labelled figure in the header — a caption above a value, as on the Team Capacity panel. */
@@ -180,6 +188,7 @@ export function MasterCardLane({
   onToggleSubLaneCollapsed,
   onNestInto,
   onToggleFlag,
+  collapsedColumnIds = [],
 }: MasterCardLaneProps) {
   const { vitals, featureKey, isSynthetic, isFeatureUnreadable, hasNoWorkYet } = lane.masterCard;
   const headerClassName = isSynthetic
@@ -397,6 +406,28 @@ export function MasterCardLane({
         >
           {columns.map((column) => {
             const cell = lane.cellsByColumnId[column.id];
+
+            // A narrowed column keeps its cell — it is still somewhere a card can be dropped — but
+            // shows a COUNT instead of the cards. The count matters: a collapsed column that simply
+            // went blank would hide this Feature's work in it, and the board's one rule is that work
+            // is never hidden without being counted.
+            if (isColumnCollapsed(collapsedColumnIds, column.id)) {
+              const collapsedItemCount = (cell?.looseItems.length ?? 0)
+                + (cell?.containers ?? []).reduce((total, container) => total + container.items.length, 0);
+              return (
+                <LaneCellDropZone columnId={column.id} featureKey={featureKey} key={column.id}>
+                  {collapsedItemCount > 0 && (
+                    <span
+                      className={styles.laneCellCollapsedCount}
+                      title={`${collapsedItemCount} in ${column.name} — open the column to see them`}
+                    >
+                      {collapsedItemCount}
+                    </span>
+                  )}
+                </LaneCellDropZone>
+              );
+            }
+
             return (
               <LaneCellDropZone columnId={column.id} featureKey={featureKey} key={column.id}>
                 {cell?.containers.map((container) => (
@@ -441,6 +472,7 @@ export function MasterCardLane({
       {/* Each discipline's copy of this Feature, under the dev work it duplicates. */}
       {!lane.isCollapsed && lane.subLanes.map((subLane) => (
         <SubLane
+          collapsedColumnIds={collapsedColumnIds}
           columnTracks={columnTracks}
           columns={columns}
           key={subLane.cloneFeatureKey}

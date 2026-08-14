@@ -18,7 +18,7 @@
 import { ChildCard } from './ChildCard.tsx';
 import { ParentContainer } from './ParentContainer.tsx';
 import styles from '../RollupBoardTab.module.css';
-import type { ColumnTrackStyle } from '../columnTrackLayout.ts';
+import { isColumnCollapsed, type ColumnTrackStyle } from '../columnTrackLayout.ts';
 import type { RenderedColumn, SubLane as SubLaneModel } from '../rollupBoardTypes.ts';
 
 export interface SubLaneProps {
@@ -26,6 +26,8 @@ export interface SubLaneProps {
   columns: readonly RenderedColumn[];
   /** The grid tracks, computed ONCE for the whole board so the band cannot diverge from it. */
   columnTracks: ColumnTrackStyle;
+  /** Columns narrowed to a strip. A band must narrow with the board or it stops lining up with it. */
+  collapsedColumnIds?: readonly string[];
   onOpenIssue?: (issueKey: string) => void;
   onToggleCollapsed: (cloneFeatureKey: string) => void;
 }
@@ -61,6 +63,7 @@ export function SubLane({
   subLane,
   columns,
   columnTracks,
+  collapsedColumnIds = [],
   onOpenIssue,
   onToggleCollapsed,
 }: SubLaneProps) {
@@ -116,6 +119,21 @@ export function SubLane({
         >
           {columns.map((column) => {
             const cell = subLane.cellsByColumnId[column.id];
+
+            // Narrowed: the count, never the cards — the same rule as the lane above, so a band and
+            // its board always agree about which columns are open.
+            if (isColumnCollapsed(collapsedColumnIds, column.id)) {
+              const collapsedItemCount = (cell?.looseItems.length ?? 0)
+                + (cell?.containers ?? []).reduce((total, container) => total + container.items.length, 0);
+              return (
+                <div className={styles.laneCell} key={column.id}>
+                  {collapsedItemCount > 0 && (
+                    <span className={styles.laneCellCollapsedCount}>{collapsedItemCount}</span>
+                  )}
+                </div>
+              );
+            }
+
             return (
               <div className={styles.laneCell} key={column.id}>
                 {cell?.containers.map((container) => (

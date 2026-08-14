@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Roll-Up Board — a narrowed column now puts its cards away instead of crushing them.** Collapsing a
+  column narrowed the **header** and nothing else: every lane went on rendering its cards into a 40px
+  track, so the column got thinner and its contents were squashed rather than stowed. That is worse
+  than not collapsing it at all, and it happened at any number of collapsed columns. Only half the
+  feature had been built.
+  A narrowed cell now shows **how many** of that Feature's items are in there, and no cards. The count
+  is the point: a collapsed column that simply went blank would hide this Feature's work in it, and
+  the board's one rule is that work is never hidden without being counted. The cell also stays a
+  **drop target**, so a card can still be moved into a narrowed column. Discipline sub-lanes narrow
+  with the board, or a band would stop lining up with the columns above it.
 - **GH #374 — Jira's flag endpoint takes a POST, not a PUT.** The fallback added last release reached
   the right path and was refused **405 Method Not Allowed**, which is a genuinely useful refusal: 405
   says the path exists and only the verb was wrong. Sent as a POST now.

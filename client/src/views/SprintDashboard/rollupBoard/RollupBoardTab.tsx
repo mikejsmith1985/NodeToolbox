@@ -2077,6 +2077,7 @@ export default function RollupBoardTab({
                 )
                 : null}
               errorMessageByIssueKey={errorMessageByIssueKey}
+              collapsedColumnIds={preferences.collapsedColumnIds ?? []}
               onToggleFlag={(issueKey, shouldBeFlagged) => void handleToggleFlag(issueKey, shouldBeFlagged)}
               onNestInto={(issueKey, containerIssueKey) => {
                 const item = loadState.allItems.find((candidate) => candidate.key === issueKey);
