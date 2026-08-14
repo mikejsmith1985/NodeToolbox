@@ -1563,6 +1563,10 @@ export default function RollupBoardTab({
       setOpenIssueKey(null);
       setOpenIssueEditMeta(null);
       setOpenIssueTransitions([]);
+      // The family highlight goes with it. It is a companion to the open card — "here is the rest of
+      // this work" — so leaving a ring on the board after the card it belonged to has closed marks a
+      // relationship nobody is looking at any more.
+      setHighlightedFamilyKey(null);
       return;
     }
 

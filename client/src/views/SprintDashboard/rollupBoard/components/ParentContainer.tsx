@@ -82,7 +82,7 @@ export function ParentContainer({
           detail={cardDetailByIssueKey?.[item.key] ?? null}
           shouldShowStatus={shouldShowStatus}
           errorMessage={errorMessageByIssueKey?.[item.key] ?? null}
-          isHighlighted={highlightedFamilyKey === container.parentKey}
+          isHighlighted={highlightedFamilyKey !== null && highlightedFamilyKey === container.parentKey}
           isPending={pendingIssueKey === item.key}
           item={item}
           key={item.key}

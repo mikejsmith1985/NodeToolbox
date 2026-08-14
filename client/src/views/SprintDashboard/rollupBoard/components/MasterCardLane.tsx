@@ -456,7 +456,8 @@ export function MasterCardLane({
                     detail={cardDetailByIssueKey?.[item.key] ?? null}
                     shouldShowStatus={column.isUnmappedColumn}
                     errorMessage={errorMessageByIssueKey?.[item.key] ?? null}
-                    isHighlighted={highlightedFamilyKey === item.key || highlightedFamilyKey === item.parentKey}
+                    isHighlighted={highlightedFamilyKey !== null
+                      && (highlightedFamilyKey === item.key || highlightedFamilyKey === item.parentKey)}
                     isPending={pendingIssueKey === item.key}
                     item={item}
                     key={item.key}

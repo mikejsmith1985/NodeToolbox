@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Roll-Up Board — the dashed ring now goes away when the card is closed, and was appearing when
+  nothing was selected at all.** Chasing the first half turned up the second, which is the real one:
+  a card was highlighted by
+  ```js
+  highlightedFamilyKey === item.key || highlightedFamilyKey === item.parentKey
+  ```
+  and when nothing is selected `highlightedFamilyKey` is **null** — while a top-level card's
+  `parentKey` is *also* null. `null === null` is true, so **every parentless card on the board was
+  ringed whenever nothing was selected**. That is why rings kept appearing around cards for no reason
+  anybody could point at.
+  Both comparisons now require a selection to exist first. And closing a card's detail clears its ring
+  as well: the ring says *"here is the rest of this work"*, so it belongs to the open card, and
+  leaving it behind marks a relationship nobody is looking at any more.
 - **Roll-Up Board — the depth pass was invisible in the dark theme, because it was built on the wrong
   mechanism.** Reported as "not seeing any difference", and correctly: in the dark theme there was
   almost none to see.

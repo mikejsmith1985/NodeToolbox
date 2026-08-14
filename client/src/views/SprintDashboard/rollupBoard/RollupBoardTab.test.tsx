@@ -611,3 +611,26 @@ describe('RollupBoardTab — the board keeps its screen for the cards', () => {
     expect(container.querySelectorAll('[data-testid="rollup-column-header-row"]').length).toBe(1);
   });
 });
+
+describe('RollupBoardTab — the family highlight belongs to the open card', () => {
+  it('clears the ring when a second click closes the detail', async () => {
+    // The ring says "here is the rest of this work", so it is a companion to the open card. Leaving
+    // it on the board after that card has closed marks a relationship nobody is looking at any more.
+    mockJiraResponses({ boardIssues: [buildIssue('DEV-1', 'PORTFOLIO-9')] });
+
+    const { container } = render(
+      <RollupBoardTab boardId={42} scopedIssues={SCOPED_ISSUES} teamProfileId="team-a" />,
+    );
+    // Lanes open collapsed, so there is no card to click until the board is opened up.
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Expand all' })).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'Expand all' }));
+    await waitFor(() => expect(screen.getByTestId('rollup-card-DEV-1')).toBeTruthy());
+
+    fireEvent.click(screen.getByTestId('rollup-card-DEV-1'));
+    await waitFor(() => expect(container.querySelector('[class*="cardHighlighted"]')).toBeTruthy());
+
+    fireEvent.click(screen.getByTestId('rollup-card-DEV-1'));
+
+    await waitFor(() => expect(container.querySelector('[class*="cardHighlighted"]')).toBeNull());
+  });
+});
