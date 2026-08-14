@@ -81,14 +81,14 @@ describe('QuickFilterBar', () => {
   it('only offers people who actually have work on this board', () => {
     render(<QuickFilterBar allItems={ALL_ITEMS} filters={EMPTY_QUICK_FILTER_STATE} onFiltersChange={vi.fn()} />);
 
-    expect(screen.getByRole('option', { name: 'Person, acct-a (CTR)' })).toBeTruthy();
+    expect(screen.getByRole('option', { name: /^Person, acct-a \(CTR\) \(\d+\)$/ })).toBeTruthy();
     expect(screen.queryByRole('option', { name: /acct-c/ })).toBeNull();
   });
 
   it('only offers fix versions that appear on this board', () => {
     render(<QuickFilterBar allItems={ALL_ITEMS} filters={EMPTY_QUICK_FILTER_STATE} onFiltersChange={vi.fn()} />);
 
-    expect(screen.getByRole('option', { name: '26.4 ENCUC' })).toBeTruthy();
+    expect(screen.getByRole('option', { name: /^26\.4 ENCUC \(\d+\)$/ })).toBeTruthy();
   });
 
   it('clears every filter in one action', () => {
@@ -140,8 +140,8 @@ describe('QuickFilterBar — people on a Jira Data Center instance', () => {
 
     render(<QuickFilterBar allItems={dataCentreItems} filters={EMPTY_QUICK_FILTER_STATE} onFiltersChange={vi.fn()} />);
 
-    expect(screen.getByRole('option', { name: 'Person, jsmith (CTR)' })).toBeTruthy();
-    expect(screen.getByRole('option', { name: 'Person, JIRAUSER99 (CTR)' })).toBeTruthy();
+    expect(screen.getByRole('option', { name: /^Person, jsmith \(CTR\) \(\d+\)$/ })).toBeTruthy();
+    expect(screen.getByRole('option', { name: /^Person, JIRAUSER99 \(CTR\) \(\d+\)$/ })).toBeTruthy();
   });
 
   it('offers only Anyone when nothing on the board is assigned', () => {
@@ -155,5 +155,52 @@ describe('QuickFilterBar — people on a Jira Data Center instance', () => {
 
     const assigneeOptions = screen.getAllByRole('option').filter((option) => /Anyone|Person/.test(option.textContent ?? ''));
     expect(assigneeOptions.map((option) => option.textContent)).toEqual(['Anyone']);
+  });
+});
+
+describe('QuickFilterBar — telling the two fix-version controls apart', () => {
+  /** Three items: two carry the release the scope named, one carries a version from outside it. */
+  const MIXED_ITEMS = [
+    buildItem('DEV-1', 'acct-a', ['08/27/2026']),
+    buildItem('DEV-2', 'acct-a', ['08/27/2026']),
+    buildItem('DEV-3', 'acct-b', ['4/29/2025']),
+  ];
+
+  it('puts the busiest first, so the long tail reads as a tail', () => {
+    // The board deliberately pulls in every child of every Feature it draws, whatever scope those
+    // children are in — so a shared Feature brings other teams' versions and people with it.
+    // Alphabetical that reads like a directory of the instance; by count it reads like a board.
+    render(<QuickFilterBar allItems={MIXED_ITEMS} filters={EMPTY_QUICK_FILTER_STATE} onFiltersChange={vi.fn()} />);
+
+    const versionOptions = screen.getAllByRole('option').map((option) => option.textContent?.trim());
+    expect(versionOptions).toContain('08/27/2026 (2)');
+    expect(versionOptions.indexOf('08/27/2026 (2)')).toBeLessThan(versionOptions.indexOf('4/29/2025 (1)'));
+  });
+
+  it('names itself for what it does, so it cannot be read as a second scope', () => {
+    render(
+      <QuickFilterBar
+        allItems={MIXED_ITEMS}
+        filters={EMPTY_QUICK_FILTER_STATE}
+        onFiltersChange={vi.fn()}
+        scopeDescription="PI 26.4"
+      />,
+    );
+
+    expect(screen.getByTitle(/Narrows what is already on the board \(PI 26\.4\)/)).toBeTruthy();
+    expect(screen.getByText(/Fix version on the board/)).toBeTruthy();
+  });
+
+  it('says what the scope still is while a filter is on', () => {
+    render(
+      <QuickFilterBar
+        allItems={MIXED_ITEMS}
+        filters={{ ...EMPTY_QUICK_FILTER_STATE, fixVersionName: '4/29/2025' }}
+        onFiltersChange={vi.fn()}
+        scopeDescription="PI 26.4"
+      />,
+    );
+
+    expect(screen.getByText(/Scope is still PI 26\.4/)).toBeTruthy();
   });
 });

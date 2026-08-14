@@ -1920,7 +1920,12 @@ export default function RollupBoardTab({
         />
       )}
 
-      <QuickFilterBar allItems={loadState.allItems} filters={filters} onFiltersChange={setFilters} />
+      <QuickFilterBar
+        allItems={loadState.allItems}
+        filters={filters}
+        onFiltersChange={setFilters}
+        scopeDescription={scopeDescription}
+      />
       </div>
 
         <BoardColumnHeaderRow

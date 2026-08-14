@@ -8,6 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Roll-Up Board — the two fix-version controls now say which is which, and the pickers lead with who
+  is actually here.** They are not competing scopes and never were: **View Work By → Fix Version** is
+  the *scope* — what gets fetched — while the fix-version dropdown beside Assignee is a *filter within
+  whatever is already on the board*. Using a PI scope with a fix-version filter is a genuine double
+  cut and the intended use. The controls simply did not say so, which made them look like they
+  disagreed. They are now labelled **"Fix version on the board"** and **"Assignee on the board"**, with
+  hover text spelling out that they narrow rather than fetch, and the active-filter line names the
+  scope that still applies.
+  Both pickers now list the **busiest first with a count** (`08/27/2026 (14)`) instead of
+  alphabetically. This matters because of a change made two releases ago: the board deliberately pulls
+  in every child of every Feature it draws, *whatever scope those children are in*, so a Feature shared
+  with another team brings that team's people and releases with it. That is why the assignee list had
+  swollen to look like a directory of the whole instance, and why versions from outside the selected PI
+  — `4/29/2025`, `99/99/9999` — were being offered. Sorted by count, the handful of people and releases
+  actually working this board sit at the top and the long tail visibly reads as a tail.
+
 - **Roll-Up Board — dragging a card now only ever sequences it; containment moved to the card's own
   right-click menu.** Dropping onto the middle of a card meant *"put this inside that one"*, so
   containment — which **writes a link to Jira** — shared a single gesture with sequencing, which
