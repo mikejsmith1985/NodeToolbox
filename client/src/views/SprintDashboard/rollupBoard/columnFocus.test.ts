@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { selectDetailIssueKeys, selectVisibleColumns, toggleColumnFocus } from './columnFocus.ts';
+import { selectDetailIssueKeys, selectFamilyKey, selectVisibleColumns, toggleColumnFocus } from './columnFocus.ts';
 import type { RenderedColumn } from './rollupBoardTypes.ts';
 
 function buildColumn(columnId: string): RenderedColumn {
@@ -60,5 +60,25 @@ describe('selectDetailIssueKeys', () => {
 
   it('reads only the focused column, so an unopened column costs no fetch', () => {
     expect(selectDetailIssueKeys(ITEMS, 'ready-for-qa')).toEqual(['DENP-2', 'DENP-3']);
+  });
+});
+
+describe('selectFamilyKey — highlighting the rest of THIS work, not the whole lane', () => {
+  it('uses a sub-task\'s parent, so clicking one lights up its Story and its siblings', () => {
+    expect(selectFamilyKey({ key: 'DEV-1-1', parentKey: 'DEV-1', featureKey: 'DENP-1389' })).toBe('DEV-1');
+  });
+
+  it('uses the card itself when its parent is the lane\'s own Feature', () => {
+    // The degenerate case: every Story in a lane shares that parent, so using it ringed every Story
+    // together to say only "these are in the same swimlane" — which the swimlane already said.
+    expect(selectFamilyKey({ key: 'DEV-1', parentKey: 'DENP-1389', featureKey: 'DENP-1389' })).toBe('DEV-1');
+  });
+
+  it('uses the card itself when it has no parent at all', () => {
+    expect(selectFamilyKey({ key: 'DEV-1', parentKey: null, featureKey: 'DENP-1389' })).toBe('DEV-1');
+  });
+
+  it('still uses a parent that is not the lane Feature, since that groups something real', () => {
+    expect(selectFamilyKey({ key: 'DEV-2', parentKey: 'DEV-1', featureKey: null })).toBe('DEV-1');
   });
 });

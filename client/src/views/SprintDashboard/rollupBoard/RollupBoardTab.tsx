@@ -109,7 +109,7 @@ import { describeJiraFailure } from '../../AdminHub/subtaskStoryPromotion.ts';
 import { sumUnplannedStoryPoints } from './emptyFeatureScan.ts';
 import { buildCardDetailIndex, type CardDetail } from './cardDetail.ts';
 import { listChecklistFieldIds } from './checklistItems.ts';
-import { selectDetailIssueKeys, selectVisibleColumns, toggleColumnFocus } from './columnFocus.ts';
+import { selectDetailIssueKeys, selectFamilyKey, selectVisibleColumns, toggleColumnFocus } from './columnFocus.ts';
 import {
   describeEmptyFeatureMembership,
   describeGuessedLaneCount,
@@ -2068,7 +2068,7 @@ export default function RollupBoardTab({
                 ? (laneFeatureKey, laneSummary) => void openAddWork(laneFeatureKey, laneSummary)
                 : undefined}
               onOpenIssue={(issueKey) => void handleOpenIssue(issueKey)}
-              onSelectFamily={(item) => setHighlightedFamilyKey(item.parentKey ?? item.key)}
+              onSelectFamily={(item) => setHighlightedFamilyKey(selectFamilyKey(item))}
               onSendToBottom={(featureKey) =>
                 applyPreferences(moveLaneToEnd(preferences, featureKey, allFeatureKeys, 'bottom'))}
               onSendToTop={(featureKey) =>

@@ -9,6 +9,7 @@
 // somebody navigating by keyboard cannot take at all.
 
 import { useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 
 import styles from '../RollupBoardTab.module.css';
 
@@ -73,7 +74,11 @@ export function BoardContextMenu({ position, actions, onClose, ownerKey }: Board
 
   const { left, top } = clampToViewport(position, menuRef.current);
 
-  return (
+  // Portalled to the body. `position: fixed` is measured against the nearest TRANSFORMED ancestor,
+  // not the viewport, and every swimlane carries a transform from dnd-kit's sortable — so rendered in
+  // place the menu was positioned relative to the lane and appeared far below and right of the card
+  // that opened it. Out here there is no transformed ancestor to be measured against.
+  return createPortal(
     <div
       aria-label={`Actions for ${ownerKey}`}
       className={styles.laneMenu}
@@ -93,6 +98,7 @@ export function BoardContextMenu({ position, actions, onClose, ownerKey }: Board
           {action.label}
         </button>
       ))}
-    </div>
+    </div>,
+    document.body,
   );
 }

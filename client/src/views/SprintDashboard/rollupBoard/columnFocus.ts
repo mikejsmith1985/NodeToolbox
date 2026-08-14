@@ -52,3 +52,28 @@ export function selectDetailIssueKeys(
   if (focusedColumnId === null) return [];
   return items.filter((item) => item.columnId === focusedColumnId).map((item) => item.key);
 }
+
+/**
+ * Which key a click on a card should highlight the family of.
+ *
+ * The highlight exists to answer "where is the rest of this work?" — click a Story and its sub-tasks
+ * light up wherever they have got to across the columns. That is worth having, because the whole
+ * point of this board is that a piece of work's parentage is never something you have to infer.
+ *
+ * It degenerated when the card's parent was the LANE'S OWN FEATURE. Clicking any Story then
+ * highlighted every Story in the lane — because they all share that parent — which tells you only
+ * that they are in the same swimlane, and the swimlane already told you that. Two Stories ringed
+ * together for no reason reads as a signal that something is related, when nothing is.
+ *
+ * So a parent is used as the family root only when it groups something the LANE does not already
+ * group. Where it does not, the card itself is the root and its own children light up instead.
+ */
+export function selectFamilyKey(item: {
+  key: string;
+  parentKey: string | null;
+  featureKey: string | null;
+}): string {
+  const parentKey = item.parentKey;
+  if (parentKey === null || parentKey === item.featureKey) return item.key;
+  return parentKey;
+}

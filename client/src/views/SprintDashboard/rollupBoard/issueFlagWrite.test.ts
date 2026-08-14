@@ -1,46 +1,37 @@
-// issueFlagWrite.test.ts — Proves the flag is written from what Jira SAYS it will accept, never from
-// a shape inferred by having read the field.
+// issueFlagWrite.test.ts — Proves the flag write is attempted from what we know, and that Jira is
+// left to be the authority on whether it is allowed.
 //
-// The trap this guards is a real one the sub-status writer already fell into: reading a field only
-// establishes truthiness, so writing it blind produces "Could not find valid 'id' or 'value' in the
-// Parent Option object" — a message that explains nothing to the person who pressed the button.
+// The first version refused before sending anything when the flag was missing from editmeta. On a
+// real instance that rejected every attempt, because Jira's Flagged field is routinely left off the
+// edit screen while staying perfectly writable. The guard was not preventing a refusal, it was the
+// refusal — so these tests pin that a missing editmeta entry produces a REQUEST, not an excuse.
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { mockJiraPut, mockSaveOptionField } = vi.hoisted(() => ({
-  mockJiraPut: vi.fn(),
-  mockSaveOptionField: vi.fn(),
-}));
-
+const { mockJiraPut } = vi.hoisted(() => ({ mockJiraPut: vi.fn() }));
 vi.mock('../../../services/jiraApi.ts', () => ({ jiraPut: mockJiraPut, jiraGet: vi.fn() }));
-vi.mock('../featureReviewFixes.ts', () => ({ saveFeatureReviewOptionField: mockSaveOptionField }));
 
-import {
-  describeFlagUnavailable,
-  findFlagFieldId,
-  readFlagOptionName,
-  setIssueFlag,
-} from './issueFlagWrite.ts';
+import { findFlagFieldId, resolveFlagWrite, setIssueFlag } from './issueFlagWrite.ts';
 
-/** Editmeta as this instance really returns it: the flag as a named select with one allowed value. */
-const FLAG_EDIT_META = {
+/** Editmeta that knows the field: a named array-of-option with one allowed value. */
+const KNOWN_FLAG_META = {
   customfield_10021: {
     name: 'Flagged',
     schema: { type: 'array', items: 'option' },
     allowedValues: [{ value: 'Impediment' }],
   },
-  summary: { name: 'Summary', schema: { type: 'string' } },
 };
+
+/** The common real case: the flag is not on the edit screen at all. */
+const FLAG_ABSENT_META = { summary: { name: 'Summary', schema: { type: 'string' } } };
 
 beforeEach(() => {
   vi.clearAllMocks();
 });
 
 describe('findFlagFieldId', () => {
-  it('finds the flag by its NAME, so a different field id on another instance still works', () => {
-    const renamedIdMeta = { customfield_99999: { name: 'Flagged', allowedValues: [{ value: 'Impediment' }] } };
-
-    expect(findFlagFieldId(renamedIdMeta)).toBe('customfield_99999');
+  it('finds the flag by NAME, so a different id on another instance still works', () => {
+    expect(findFlagFieldId({ customfield_99999: { name: 'Flagged' } })).toBe('customfield_99999');
   });
 
   it('accepts the names Jira uses for the same idea', () => {
@@ -48,77 +39,68 @@ describe('findFlagFieldId', () => {
     expect(findFlagFieldId({ cf_2: { name: 'Flag' } })).toBe('cf_2');
   });
 
-  it('falls back to the conventional id when nothing is named like a flag', () => {
-    expect(findFlagFieldId({ customfield_10021: { schema: { type: 'array' } } })).toBe('customfield_10021');
-  });
-
-  it('finds nothing when the flag is not on this issue\'s edit screen', () => {
-    // A real answer, not a failure: some issue types genuinely do not carry the flag, and the board
-    // must not offer an action Jira is going to refuse.
-    expect(findFlagFieldId({ summary: { name: 'Summary' } })).toBeNull();
-    expect(findFlagFieldId({})).toBeNull();
+  it('falls back to the conventional id rather than giving up', () => {
+    // An absence from editmeta means the field is off the EDIT SCREEN. That says nothing at all about
+    // whether it can be written, and treating it as a refusal is what broke this the first time.
+    expect(findFlagFieldId(FLAG_ABSENT_META)).toBe('customfield_10021');
+    expect(findFlagFieldId({})).toBe('customfield_10021');
   });
 });
 
-describe('readFlagOptionName', () => {
-  it('takes the value Jira says is allowed rather than assuming "Impediment"', () => {
-    expect(readFlagOptionName({ allowedValues: [{ value: 'Blocked' }] })).toBe('Blocked');
+describe('resolveFlagWrite', () => {
+  it('clears with null, which is how Jira itself empties a field', () => {
+    // An empty array is accepted by some instances and refused by others; null is accepted everywhere.
+    expect(resolveFlagWrite(KNOWN_FLAG_META, false)).toEqual({ fieldId: 'customfield_10021', value: null });
   });
 
-  it('accepts an allowed value that carries a name instead of a value', () => {
-    expect(readFlagOptionName({ allowedValues: [{ name: 'Impediment' }] })).toBe('Impediment');
+  it('writes the option editmeta named, as an array, when editmeta knows the field', () => {
+    expect(resolveFlagWrite(KNOWN_FLAG_META, true)).toEqual({
+      fieldId: 'customfield_10021',
+      value: [{ value: 'Impediment' }],
+    });
   });
 
-  it('reports nothing when Jira offered no value at all', () => {
-    expect(readFlagOptionName({ allowedValues: [] })).toBeNull();
-    expect(readFlagOptionName(undefined)).toBeNull();
-  });
-});
+  it('prefers an option id over its value, the way Jira\'s own writers do', () => {
+    const withIds = { customfield_10021: { name: 'Flagged', allowedValues: [{ id: '10100', value: 'Impediment' }] } };
 
-describe('describeFlagUnavailable', () => {
-  it('says nothing when the flag can be written', () => {
-    expect(describeFlagUnavailable(FLAG_EDIT_META)).toBeNull();
+    expect(resolveFlagWrite(withIds, true).value).toEqual([{ id: '10100' }]);
   });
 
-  it('explains an issue type that has no flag field', () => {
-    expect(describeFlagUnavailable({ summary: { name: 'Summary' } }))
-      .toContain('no flag field on its edit screen');
+  it('sends the conventional shape when editmeta knows nothing about the field', () => {
+    expect(resolveFlagWrite(FLAG_ABSENT_META, true)).toEqual({
+      fieldId: 'customfield_10021',
+      value: [{ value: 'Impediment' }],
+    });
   });
 
-  it('explains a flag field Jira offered no value for', () => {
-    expect(describeFlagUnavailable({ customfield_10021: { name: 'Flagged', allowedValues: [] } }))
-      .toContain('did not offer a value');
+  it('sends a bare option, not an array, where editmeta says the field is not one', () => {
+    const singleOption = {
+      customfield_10021: { name: 'Flagged', schema: { type: 'option' }, allowedValues: [{ value: 'Impediment' }] },
+    };
+
+    expect(resolveFlagWrite(singleOption, true).value).toEqual({ value: 'Impediment' });
   });
 });
 
 describe('setIssueFlag', () => {
-  it('raises the flag through the shared option writer, which knows the payload shape', () => {
-    void setIssueFlag('DEV-1', true, FLAG_EDIT_META);
-
-    expect(mockSaveOptionField).toHaveBeenCalledWith(
-      'DEV-1', 'customfield_10021', 'Impediment', FLAG_EDIT_META.customfield_10021,
-    );
-  });
-
-  it('clears the flag with null rather than an empty array', async () => {
-    // An empty array is accepted by some instances and refused by others; null is how Jira itself
-    // clears a field, so it behaves the same everywhere.
-    await setIssueFlag('DEV-1', false, FLAG_EDIT_META);
+  it('sends the write even when the flag is absent from editmeta', async () => {
+    // The regression this guards: this case used to throw without ever contacting Jira.
+    await setIssueFlag('DEV-1', true, FLAG_ABSENT_META);
 
     expect(mockJiraPut).toHaveBeenCalledWith('/rest/api/2/issue/DEV-1', {
-      fields: { customfield_10021: null },
+      fields: { customfield_10021: [{ value: 'Impediment' }] },
     });
   });
 
-  it('refuses before sending anything when the flag is not writable here', async () => {
-    await expect(setIssueFlag('DEV-1', true, { summary: { name: 'Summary' } })).rejects.toThrow(/no flag field/);
+  it('lets a Jira refusal surface rather than substituting a guess of our own', async () => {
+    // Jira's own message says what is actually wrong; ours could only ever say what we assumed.
+    mockJiraPut.mockRejectedValueOnce(new Error('Field \'customfield_10021\' cannot be set'));
 
-    expect(mockJiraPut).not.toHaveBeenCalled();
-    expect(mockSaveOptionField).not.toHaveBeenCalled();
+    await expect(setIssueFlag('DEV-1', true, KNOWN_FLAG_META)).rejects.toThrow(/cannot be set/);
   });
 
   it('escapes an issue key that is not URL-safe', async () => {
-    await setIssueFlag('DEV 1', false, FLAG_EDIT_META);
+    await setIssueFlag('DEV 1', false, KNOWN_FLAG_META);
 
     expect(mockJiraPut).toHaveBeenCalledWith('/rest/api/2/issue/DEV%201', expect.anything());
   });

@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Roll-Up Board — the right-click menu opened nowhere near the card.** It is `position: fixed`, which
+  is measured against the nearest **transformed** ancestor rather than the viewport — and every
+  swimlane carries a transform from dnd-kit's sortable. So the menu was positioned relative to the
+  lane and landed far below and right of the card that opened it. Portalled to the document body now,
+  where there is no transformed ancestor to be measured against. Exactly the same cause, and the same
+  fix, as the drag preview two releases ago.
+
+- **Roll-Up Board — flagging always failed with *"this issue type has no flag field on its edit
+  screen"*.** That message was ours, not Jira's, and the guard behind it was wrong. It refused to send
+  anything when the flag was missing from the issue's editmeta, on the reasoning that the board should
+  never offer an action Jira will reject. But Jira's **Flagged** field is routinely left off the edit
+  screen while staying perfectly writable — its own board flag button writes it regardless. The guard
+  was not preventing a refusal, it *was* the refusal, and it rejected every attempt.
+  Editmeta is now used where it helps and never as permission: it supplies the field id and the exact
+  option value where it happens to know them, and where it does not the conventional shape is sent and
+  **Jira decides**. A real refusal from Jira says what is actually wrong; ours could only ever repeat
+  what we had assumed. Clearing still writes `null`, which is how Jira itself empties a field.
+
 ### Added
 - **Roll-Up Board — the flag can now be raised and cleared from the board.** It was view-only
   everywhere: `customfield_10021` appeared in six places in the app and **every one of them was a
