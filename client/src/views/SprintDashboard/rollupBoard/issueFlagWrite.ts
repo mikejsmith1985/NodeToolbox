@@ -11,7 +11,7 @@
 // shape is sent and JIRA is allowed to be the authority on whether that works. A real refusal from
 // Jira is far more useful than a guess of ours, because it says what is actually wrong.
 
-import { jiraPut } from '../../../services/jiraApi.ts';
+import { jiraPost, jiraPut } from '../../../services/jiraApi.ts';
 import type { FeatureReviewEditMetaField } from '../featureReviewFixes.ts';
 
 /** The field id Jira uses for the impediment flag on most instances. */
@@ -129,6 +129,9 @@ export function resolveFlagWrite(
  * The id was right by then — the card was reading the flag correctly — so only the screen was left.
  * This endpoint is how Jira flags an issue without one, which is why the button in Jira works on
  * issues whose edit screen has no such field.
+ *
+ * It takes a POST. Sent as a PUT it answers 405 Method Not Allowed — which was at least a useful
+ * answer, because 405 says the path is real and only the verb was wrong.
  */
 const AGILE_FLAG_PATH = '/rest/greenhopper/1.0/xboard/issue/flag/flag.json';
 
@@ -166,7 +169,7 @@ export async function setIssueFlag(
   } catch (fieldUpdateError: unknown) {
     const agileRequest = buildAgileFlagRequest(issueKey, shouldBeFlagged);
     try {
-      await jiraPut(agileRequest.path, agileRequest.body);
+      await jiraPost(agileRequest.path, agileRequest.body);
     } catch (agileError: unknown) {
       throw new Error(
         `${String(agileError)} — and updating the field directly also failed: ${String(fieldUpdateError)}`,

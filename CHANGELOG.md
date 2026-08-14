@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **GH #374 — Jira's flag endpoint takes a POST, not a PUT.** The fallback added last release reached
+  the right path and was refused **405 Method Not Allowed**, which is a genuinely useful refusal: 405
+  says the path exists and only the verb was wrong. Sent as a POST now.
+  Both failures being reported together is what made this readable at a glance — the card carried
+  *"405 — and updating the field directly also failed: … Field 'customfield_11200' cannot be set"*,
+  which is the whole story in one line: the field route is screen-blocked, the board route was right
+  but mis-addressed.
 - **Roll-Up Board — the flag is written through Jira's own board endpoint when the field is not on the
   edit screen.** With the right field id finally discovered, the card read the flag correctly and the
   write still came back:

@@ -8,8 +8,10 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { mockJiraPut } = vi.hoisted(() => ({ mockJiraPut: vi.fn() }));
-vi.mock('../../../services/jiraApi.ts', () => ({ jiraPut: mockJiraPut, jiraGet: vi.fn() }));
+const { mockJiraPut, mockJiraPost } = vi.hoisted(() => ({ mockJiraPut: vi.fn(), mockJiraPost: vi.fn() }));
+vi.mock('../../../services/jiraApi.ts', () => ({
+  jiraPut: mockJiraPut, jiraPost: mockJiraPost, jiraGet: vi.fn(),
+}));
 
 import {
   buildAgileFlagRequest,
@@ -167,6 +169,7 @@ describe('setIssueFlag — falling back to Jira\'s own board endpoint', () => {
 
     expect(mockJiraPut).toHaveBeenCalledTimes(1);
     expect(mockJiraPut.mock.calls[0][0]).toBe('/rest/api/2/issue/DEV-1');
+    expect(mockJiraPost).not.toHaveBeenCalled();
   });
 
   it('uses the board endpoint when the field is not on the edit screen', async () => {
@@ -177,11 +180,12 @@ describe('setIssueFlag — falling back to Jira\'s own board endpoint', () => {
 
     await setIssueFlag('ENCUC-1814', true, KNOWN_FLAG_META);
 
-    expect(mockJiraPut).toHaveBeenCalledTimes(2);
-    expect(mockJiraPut.mock.calls[1]).toEqual([
+    // POST, not PUT. Sent as a PUT this path answers 405 Method Not Allowed — which at least said
+    // the path was real and only the verb was wrong.
+    expect(mockJiraPost).toHaveBeenCalledWith(
       '/rest/greenhopper/1.0/xboard/issue/flag/flag.json',
       { issueKeys: ['ENCUC-1814'], flag: true },
-    ]);
+    );
   });
 
   it('clears through the board endpoint too, with flag false', async () => {
@@ -189,12 +193,13 @@ describe('setIssueFlag — falling back to Jira\'s own board endpoint', () => {
 
     await setIssueFlag('ENCUC-1814', false, KNOWN_FLAG_META);
 
-    expect(mockJiraPut.mock.calls[1][1]).toEqual({ issueKeys: ['ENCUC-1814'], flag: false });
+    expect(mockJiraPost.mock.calls[0][1]).toEqual({ issueKeys: ['ENCUC-1814'], flag: false });
   });
 
   it('reports BOTH failures when neither route works', async () => {
     // Two different facts, and either could be the one worth acting on.
     mockJiraPut.mockRejectedValue(new Error('everything refused'));
+    mockJiraPost.mockRejectedValue(new Error('everything refused'));
 
     await expect(setIssueFlag('ENCUC-1814', true, KNOWN_FLAG_META)).rejects.toThrow(
       /everything refused — and updating the field directly also failed: .*everything refused/,
