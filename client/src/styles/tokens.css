@@ -65,6 +65,31 @@
   --shadow-deep: 0 24px 72px rgba(0, 0, 0, 0.35);
   --shadow-floating: 0 16px 40px rgba(0, 0, 0, 0.28);
   --shadow-surface: 0 10px 28px rgba(0, 0, 0, 0.24);
+
+  /* ── Elevation: how a component reads as a physical thing ──
+   *
+   * Three steps, each an inset HIGHLIGHT on the top edge plus a TIGHT contact shadow beneath. That
+   * pairing is what makes an object look touchable: light arrives from above and catches its top
+   * edge, and the shadow it casts sits close to the surface it rests on.
+   *
+   * The board's surfaces used --shadow-surface for this, which is 10px down with a 28px blur — an
+   * object hovering far above the page rather than resting on it, diffuse enough to blur into the
+   * background. It reads weightless, which is most of why nothing felt interactive.
+   *
+   * The recipe is not new here: the form fields have used exactly this since they were built. It was
+   * simply never applied to anything else. */
+  --elevation-raised:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 1px 2px rgba(0, 0, 0, 0.4),
+    0 2px 4px rgba(0, 0, 0, 0.24);
+  --elevation-lifted:
+    inset 0 1px 0 rgba(255, 255, 255, 0.09),
+    0 2px 4px rgba(0, 0, 0, 0.44),
+    0 6px 12px rgba(0, 0, 0, 0.3);
+  --elevation-overlay:
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    0 4px 8px rgba(0, 0, 0, 0.4),
+    0 12px 28px rgba(0, 0, 0, 0.36);
   --color-background: var(--color-bg);
   --color-surface: var(--color-surface-1);
   --color-surface-secondary: var(--color-surface-1);
@@ -177,6 +202,21 @@
   --shadow-deep: 0 24px 72px rgba(15, 23, 42, 0.14);
   --shadow-floating: 0 16px 40px rgba(15, 23, 42, 0.12);
   --shadow-surface: 0 10px 28px rgba(15, 23, 42, 0.1);
+
+  /* Same three steps, lit for a pale ground: a brighter top highlight, and a cooler, softer shadow —
+     a hard black shadow on white reads as dirt rather than as depth. */
+  --elevation-raised:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 1px 2px rgba(15, 23, 42, 0.1),
+    0 2px 4px rgba(15, 23, 42, 0.06);
+  --elevation-lifted:
+    inset 0 1px 0 rgba(255, 255, 255, 0.95),
+    0 2px 4px rgba(15, 23, 42, 0.12),
+    0 6px 12px rgba(15, 23, 42, 0.1);
+  --elevation-overlay:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 4px 8px rgba(15, 23, 42, 0.12),
+    0 12px 28px rgba(15, 23, 42, 0.14);
 }
 
 /* When the user asks for more contrast, drop the subtle gradients/shadows for solid fields with a
@@ -188,6 +228,11 @@
     --field-elevation-border: var(--color-border-strong);
     --field-elevation-shadow: none;
     --comment-window-bg: var(--color-field-bg);
+    /* Depth is decoration; a visible boundary is not. Somebody asking for more contrast wants the
+       edges, so the elevation goes and the borders below carry the separation on their own. */
+    --elevation-raised: none;
+    --elevation-lifted: none;
+    --elevation-overlay: none;
   }
 }
 

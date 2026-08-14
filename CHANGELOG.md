@@ -8,6 +8,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Roll-Up Board — the components have depth now, and it cost no screen space (pilot).** The worry
+  that depth would eat the board was reasonable but turns out not to apply: shadows, lit edges and
+  hover lifts are all **0px**. Only padding and gaps cost room, and none were touched.
+  The app already owned the right recipe and had only ever applied it to **form fields**: an inset
+  highlight on the top edge plus a **tight** contact shadow. That pairing is what makes a thing look
+  touchable — light arrives from above and catches the top edge, and the shadow it casts sits close to
+  the surface it rests on. Every other surface used `--shadow-surface`, which is 10px down with a 28px
+  blur: an object hovering far above the page, diffuse enough to blur into the background. It reads
+  weightless, and that was most of why nothing felt interactive.
+  There is now a three-step **elevation scale** — `raised`, `lifted`, `overlay` — built for both
+  themes, with a brighter highlight and a cooler, softer shadow in light, because a hard black shadow
+  on white reads as dirt rather than depth. On the board: cards and lanes **rest** at `raised`, a
+  hovered card goes to `lifted`, menus and the drag preview float at `overlay`, and a card being
+  pressed goes **below** its resting state so taking hold of it is felt.
+  Two details that carry more than they look. Column cells are **inset**, not raised — a cell is a
+  recess the cards sit *in*, and giving a container the same treatment as the things it contains is
+  what flattens an interface. And column headers are now **opaque**: the lit top edge is a highlight
+  *on* that surface, and you cannot light an edge you can see through.
+  High-contrast mode strips the whole scale, exactly as it already did for fields — depth is
+  decoration, a visible boundary is not, and somebody asking for more contrast wants the edges.
 - **Roll-Up Board — real icons instead of emoji (pilot).** The app carries **977 emoji glyphs across
   141 files** and no icon library. That is the single biggest reason it reads as less professional
   than Jira, and the reason is concrete rather than a matter of taste: an emoji is a **colour glyph

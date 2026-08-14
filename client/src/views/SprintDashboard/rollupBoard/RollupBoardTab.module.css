@@ -126,9 +126,12 @@
   gap: 2px;
   padding: var(--spacing-xs);
   border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  /* Opaque, deliberately. The lit top edge below is a highlight ON this surface — you cannot light
+     an edge you can see through, so a translucent header dilutes the very thing that gives it form. */
   background: var(--color-surface-2);
   border: 1px solid var(--color-border);
   border-bottom: none;
+  box-shadow: var(--elevation-raised);
   font-size: var(--font-size-sm);
   font-weight: 600;
   color: var(--color-text-primary);
@@ -223,6 +226,8 @@
   border-radius: var(--radius-md);
   background: var(--color-card-bg);
   margin-top: var(--spacing-md);
+  /* A swimlane is a surface the work sits ON, so it is raised from the board behind it. */
+  box-shadow: var(--elevation-raised);
 }
 
 .laneHeader {
@@ -284,7 +289,7 @@
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   background: var(--color-surface-1);
-  box-shadow: 0 8px 24px -8px rgb(0 0 0 / 55%);
+  box-shadow: var(--elevation-overlay);
 }
 
 .laneMenuItem {
@@ -497,6 +502,10 @@
   background: var(--color-bg-subtle);
   border-radius: var(--radius-sm);
   min-height: 60px;
+  /* Inset, not raised: a column cell is a recess the cards sit IN. Giving the containers and the
+     things they contain the same treatment is what flattens an interface — the tray has to read as
+     below the things on it. */
+  box-shadow: inset 0 1px 2px rgb(0 0 0 / 18%);
 }
 
 .laneCellDropTarget {
@@ -537,7 +546,10 @@
   border-left-width: 4px;
   border-radius: var(--radius-sm);
   background: var(--color-card-bg);
-  box-shadow: var(--shadow-surface);
+  /* Rests on the cell rather than hovering above it — a tight contact shadow with the light caught
+     on its top edge. It used to carry --shadow-surface, which is 10px down with a 28px blur: an
+     object floating far above the page, and most of why a card felt weightless. */
+  box-shadow: var(--elevation-raised);
   /* Wider than it is tall. A card felt cramped because everything sat hard against its edges, but
      vertical padding is paid for in cards-per-lane — so the breathing room is bought sideways, where
      it costs nothing. */
@@ -572,7 +584,7 @@
 .card:hover {
   border-color: var(--color-accent);
   background: var(--color-surface-1);
-  box-shadow: 0 4px 10px -4px rgb(0 0 0 / 45%);
+  box-shadow: var(--elevation-lifted);
   transform: translateY(-1px);
 }
 
@@ -580,7 +592,8 @@
 .card:active {
   cursor: grabbing;
   transform: translateY(0);
-  box-shadow: var(--shadow-surface);
+  /* Pressed BELOW its resting state, so taking hold of a card is felt and not only inferred. */
+  box-shadow: inset 0 1px 2px rgb(0 0 0 / 22%);
 }
 
 /* There was NO focus style at all on a role="button" element, so a keyboard user could not see which
@@ -674,7 +687,8 @@
    that makes the preview disagree with the pointer is working against the person dragging it. The
    shadow alone is enough to say "picked up". */
 .dragPreview {
-  box-shadow: 0 12px 28px -8px rgb(0 0 0 / 55%);
+  /* The one thing genuinely in the air, so it takes the highest step in the scale. */
+  box-shadow: var(--elevation-overlay);
   border-radius: var(--radius-sm);
   cursor: grabbing;
   /* The preview is a picture of the card, never a target — pointer events belong to what is beneath. */
