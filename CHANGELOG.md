@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Roll-Up Board — dragging a card selected its text instead of moving it.** Nothing on the board
+  had `user-select: none`, so a press-and-move was read by the browser as *"select this text"*: the
+  card stayed put and its contents highlighted. Applied to all three drag handles — the card, the lane
+  grip and the column header — along with `touch-action: none`, which is the same problem on a touch
+  screen, where the gesture went to the browser's panning instead of to the drag.
+
+- **Roll-Up Board — the dragged card floated a couple of columns to the right of the pointer.** The
+  drag preview was rendered *inside* the board, which scrolls horizontally, so its position picked up
+  that scroll offset — while the pointer, correctly, still decided where the card landed. Preview and
+  pointer disagreeing is worse than having no preview at all. It is now portalled to the document
+  body, where there is no scrolled ancestor to inherit from.
+  The preview also no longer sets its own width — it takes the size of the card actually lifted, so
+  what you are carrying is what you picked up rather than a guess at the column's minimum. **And the
+  slight tilt is gone**: it made the preview harder to line up against the gap it was aiming at, which
+  is exactly the wrong trade on a control whose accuracy is the point.
+
 ### Changed
 - **Roll-Up Board — a Jira board no longer has to be selected for the board to draw.** The Roll-Up
   Board does **not** read a Jira board's saved filter, and has not since an early version swept it and

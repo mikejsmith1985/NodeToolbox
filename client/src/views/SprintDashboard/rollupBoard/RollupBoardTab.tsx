@@ -22,6 +22,7 @@ import {
 } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 import IssueDetailPanel from '../../../components/IssueDetailPanel/index.tsx';
 import type { JiraIssue } from '../../../types/jira.ts';
@@ -1963,19 +1964,27 @@ export default function RollupBoardTab({
           onDragStart={(dragStartEvent) => setDraggedItemKey(String(dragStartEvent.active.id))}
           sensors={dragSensors}
         >
-          {/* The card that follows the pointer, rendered in a layer of its own OUTSIDE the board.
-              Without it dnd-kit moves the original element, which lives inside a cell inside a
-              scrolling board — so the card was CLIPPED the moment it left its own column and
-              vanished halfway through every drag that mattered. */}
-          <DragOverlay dropAnimation={{ duration: 180, easing: 'cubic-bezier(0.18, 0.67, 0.6, 1.22)' }}>
-            {draggedItem === null ? null : (
-              // Sized to the column it was lifted from, so the card you are carrying is the same
-              // width as the gap you are aiming at.
-              <div className={styles.dragPreview} style={{ width: columnMinWidth }}>
-                <ChildCard item={draggedItem} />
-              </div>
-            )}
-          </DragOverlay>
+          {/* The card that follows the pointer, in a layer of its own. Without it dnd-kit moves the
+              original element, which lives in a cell inside a scrolling board — so the card was
+              CLIPPED the moment it left its own column.
+
+              Portalled to the body ON PURPOSE. Rendered in place it sits inside the board, which
+              scrolls horizontally, and its position picked that scroll offset up: the card appeared a
+              column or two to the RIGHT of the pointer while the pointer was still what decided where
+              it landed. Out here there is no scrolled ancestor to inherit from.
+
+              No width is set either. It takes the size of the card actually lifted, so what you are
+              carrying is what you picked up rather than a guess at the column's minimum width. */}
+          {createPortal(
+            <DragOverlay dropAnimation={{ duration: 180, easing: 'cubic-bezier(0.18, 0.67, 0.6, 1.22)' }}>
+              {draggedItem === null ? null : (
+                <div className={styles.dragPreview}>
+                  <ChildCard item={draggedItem} />
+                </div>
+              )}
+            </DragOverlay>,
+            document.body,
+          )}
           <SortableContext items={allFeatureKeys} strategy={verticalListSortingStrategy}>
             {layout.lanes.map((lane, laneIndex) => (
             <MasterCardLane

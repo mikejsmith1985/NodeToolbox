@@ -134,6 +134,11 @@
   color: var(--color-text-primary);
   text-transform: uppercase;
   letter-spacing: 0.03em;
+  /* Dragged to reorder the columns, so the same rule applies: a press-and-move must be handed to the
+     drag sensor rather than turned into a text selection. */
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
 }
 
 .columnHeaderMeta {
@@ -421,6 +426,9 @@
 .laneGrip {
   cursor: grab;
   color: var(--color-text-muted);
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
 }
 
 .laneCells {
@@ -491,6 +499,14 @@
   width: 100%;
   /* The whole card is the drag handle, as on a Jira board. */
   cursor: grab;
+  /* Without this a press-and-move is read by the browser as "select this text", so the card never
+     moves and its contents highlight instead — every drag looked broken. The card is a control, not
+     prose; selecting it was never useful, and dragging it is the whole point. */
+  user-select: none;
+  -webkit-user-select: none;
+  /* Same problem on a touch screen, where a press-and-move would scroll the board instead. dnd-kit
+     needs the gesture handed to it rather than to the browser's own panning. */
+  touch-action: none;
   /* Eased so the drop indicator arriving and leaving is something the eye can follow, rather than
      an edge that appears fully formed under the pointer. */
   transition: border-color 120ms ease, box-shadow 120ms ease, opacity 120ms ease;
@@ -571,10 +587,13 @@
 }
 
 /* The card that follows the pointer, drawn in the overlay layer outside the scrolling board.
-   Lifted and tilted very slightly: enough to read as picked up, not enough to be a performance. */
+   Width comes from the card that was lifted, never from a constant — see the DragOverlay comment.
+
+   Deliberately NOT rotated. A tilt was tried and removed: it made the preview harder to line up
+   against the gap it was aiming at, and where a card lands is decided by the POINTER, so anything
+   that makes the preview disagree with the pointer is working against the person dragging it. The
+   shadow alone is enough to say "picked up". */
 .dragPreview {
-  width: var(--rollup-drag-preview-width, 15rem);
-  transform: rotate(1.5deg) scale(1.02);
   box-shadow: 0 12px 28px -8px rgb(0 0 0 / 55%);
   border-radius: var(--radius-sm);
   cursor: grabbing;
@@ -589,7 +608,6 @@
 
 @media (prefers-reduced-motion: reduce) {
   .card { transition: none; }
-  .dragPreview { transform: none; }
 }
 
 .cardKey {
