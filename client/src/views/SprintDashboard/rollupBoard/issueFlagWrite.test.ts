@@ -12,6 +12,7 @@ const { mockJiraPut } = vi.hoisted(() => ({ mockJiraPut: vi.fn() }));
 vi.mock('../../../services/jiraApi.ts', () => ({ jiraPut: mockJiraPut, jiraGet: vi.fn() }));
 
 import {
+  buildAgileFlagRequest,
   findFlagFieldId,
   findFlagFieldInCatalog,
   readIsFlagSet,
@@ -98,13 +99,6 @@ describe('setIssueFlag', () => {
     });
   });
 
-  it('lets a Jira refusal surface rather than substituting a guess of our own', async () => {
-    // Jira's own message says what is actually wrong; ours could only ever say what we assumed.
-    mockJiraPut.mockRejectedValueOnce(new Error('Field \'customfield_10021\' cannot be set'));
-
-    await expect(setIssueFlag('DEV-1', true, KNOWN_FLAG_META)).rejects.toThrow(/cannot be set/);
-  });
-
   it('escapes an issue key that is not URL-safe', async () => {
     await setIssueFlag('DEV 1', false, KNOWN_FLAG_META);
 
@@ -157,5 +151,53 @@ describe('resolveFlagWrite — with a discovered id', () => {
     const namedMeta = { customfield_10777: { name: 'Flagged', allowedValues: [{ value: 'Impediment' }] } };
 
     expect(resolveFlagWrite(namedMeta, true, 'customfield_10500').fieldId).toBe('customfield_10777');
+  });
+});
+
+describe('setIssueFlag — falling back to Jira\'s own board endpoint', () => {
+  it('builds the request Jira\'s own flag button sends', () => {
+    expect(buildAgileFlagRequest('ENCUC-1814', true)).toEqual({
+      path: '/rest/greenhopper/1.0/xboard/issue/flag/flag.json',
+      body: { issueKeys: ['ENCUC-1814'], flag: true },
+    });
+  });
+
+  it('does not reach for the board endpoint when the field update works', async () => {
+    await setIssueFlag('DEV-1', true, KNOWN_FLAG_META);
+
+    expect(mockJiraPut).toHaveBeenCalledTimes(1);
+    expect(mockJiraPut.mock.calls[0][0]).toBe('/rest/api/2/issue/DEV-1');
+  });
+
+  it('uses the board endpoint when the field is not on the edit screen', async () => {
+    // The real refusal, once the field id was finally right:
+    //   400 — Field 'customfield_11200' cannot be set. It is not on the appropriate screen, or unknown.
+    // Jira's own flag button works on exactly those issues, and this is how.
+    mockJiraPut.mockRejectedValueOnce(new Error('400 — Field cannot be set. It is not on the appropriate screen'));
+
+    await setIssueFlag('ENCUC-1814', true, KNOWN_FLAG_META);
+
+    expect(mockJiraPut).toHaveBeenCalledTimes(2);
+    expect(mockJiraPut.mock.calls[1]).toEqual([
+      '/rest/greenhopper/1.0/xboard/issue/flag/flag.json',
+      { issueKeys: ['ENCUC-1814'], flag: true },
+    ]);
+  });
+
+  it('clears through the board endpoint too, with flag false', async () => {
+    mockJiraPut.mockRejectedValueOnce(new Error('400 — not on the appropriate screen'));
+
+    await setIssueFlag('ENCUC-1814', false, KNOWN_FLAG_META);
+
+    expect(mockJiraPut.mock.calls[1][1]).toEqual({ issueKeys: ['ENCUC-1814'], flag: false });
+  });
+
+  it('reports BOTH failures when neither route works', async () => {
+    // Two different facts, and either could be the one worth acting on.
+    mockJiraPut.mockRejectedValue(new Error('everything refused'));
+
+    await expect(setIssueFlag('ENCUC-1814', true, KNOWN_FLAG_META)).rejects.toThrow(
+      /everything refused — and updating the field directly also failed: .*everything refused/,
+    );
   });
 });

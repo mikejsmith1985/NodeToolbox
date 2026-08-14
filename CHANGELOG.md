@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Roll-Up Board — the flag is written through Jira's own board endpoint when the field is not on the
+  edit screen.** With the right field id finally discovered, the card read the flag correctly and the
+  write still came back:
+  > `400 — Field 'customfield_11200' cannot be set. It is not on the appropriate screen, or unknown.`
+
+  The id was right by then — the **⚑ Flagged** chip proved it — so only the screen was left. An
+  ordinary issue update validates every field against the issue's **edit screen**, and Flagged is very
+  commonly not on it. That is precisely why Jira's own flag button works on those issues: it does not
+  use a field update at all.
+  The field update is still tried first, because it is the sanctioned API and works wherever the field
+  *is* on the screen. Where it is refused, the same endpoint Jira's board uses is used instead. If
+  both fail **both** reasons are reported — "not on the screen" and whatever the board endpoint said
+  are different facts, and either could be the one worth acting on.
 - **Roll-Up Board — the flag field is now discovered rather than assumed, which is why it could
   neither be read nor written.** Jira returned the answer in the end, verbatim on the card:
   > `400 — Field 'customfield_10021' cannot be set. It is not on the appropriate screen, or unknown.`

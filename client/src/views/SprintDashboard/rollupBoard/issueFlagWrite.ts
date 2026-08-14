@@ -117,7 +117,39 @@ export function resolveFlagWrite(
   return { fieldId, value: isSingleOption ? flagOption : [flagOption] };
 }
 
-/** Raises or clears the flag, letting Jira decide whether it can be done. */
+/**
+ * Jira's OWN flag endpoint — the one its board's flag button uses.
+ *
+ * Needed because the ordinary issue update validates every field against the issue's EDIT SCREEN, and
+ * Flagged is very commonly not on it. With the right field id finally in hand, that is exactly what
+ * this instance said:
+ *
+ *   400 — Field 'customfield_11200' cannot be set. It is not on the appropriate screen, or unknown.
+ *
+ * The id was right by then — the card was reading the flag correctly — so only the screen was left.
+ * This endpoint is how Jira flags an issue without one, which is why the button in Jira works on
+ * issues whose edit screen has no such field.
+ */
+const AGILE_FLAG_PATH = '/rest/greenhopper/1.0/xboard/issue/flag/flag.json';
+
+/** The request Jira's own board sends, kept as a pure value so a test can state it exactly. */
+export function buildAgileFlagRequest(issueKey: string, shouldBeFlagged: boolean): {
+  path: string;
+  body: { issueKeys: string[]; flag: boolean };
+} {
+  return { path: AGILE_FLAG_PATH, body: { issueKeys: [issueKey], flag: shouldBeFlagged } };
+}
+
+/**
+ * Raises or clears the flag, letting Jira decide whether it can be done.
+ *
+ * The ordinary field update is tried first because it is the sanctioned API and it works wherever the
+ * field IS on the edit screen. Where it is not, Jira's own board endpoint is used — the same one its
+ * flag button uses, and the reason that button works where a field update does not.
+ *
+ * A failure of BOTH reports both, because "the field is not on the screen" and whatever the board
+ * endpoint said are different facts and either could be the one worth acting on.
+ */
 export async function setIssueFlag(
   issueKey: string,
   shouldBeFlagged: boolean,
@@ -126,7 +158,19 @@ export async function setIssueFlag(
 ): Promise<void> {
   const flagWrite = resolveFlagWrite(editMeta, shouldBeFlagged, discoveredFieldId);
 
-  await jiraPut(`/rest/api/2/issue/${encodeURIComponent(issueKey)}`, {
-    fields: { [flagWrite.fieldId]: flagWrite.value },
-  });
+  try {
+    await jiraPut(`/rest/api/2/issue/${encodeURIComponent(issueKey)}`, {
+      fields: { [flagWrite.fieldId]: flagWrite.value },
+    });
+    return;
+  } catch (fieldUpdateError: unknown) {
+    const agileRequest = buildAgileFlagRequest(issueKey, shouldBeFlagged);
+    try {
+      await jiraPut(agileRequest.path, agileRequest.body);
+    } catch (agileError: unknown) {
+      throw new Error(
+        `${String(agileError)} — and updating the field directly also failed: ${String(fieldUpdateError)}`,
+      );
+    }
+  }
 }
