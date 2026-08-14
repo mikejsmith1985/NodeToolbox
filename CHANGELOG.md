@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Roll-Up Board — the dashed ring no longer circles every Story in a lane.** Clicking a card
+  highlights "the rest of this work" — click a Story and its sub-tasks light up wherever they have got
+  to across the columns, which is worth having. But the family root was the card's **parent**, and
+  where that parent is the lane's own Feature *every* Story in the lane shares it. So clicking one
+  ringed them all, to say only that they are in the same swimlane — which the swimlane had already
+  said. Two cards ringed together reads as a signal that they are related, when nothing is.
+  A parent is used as the root only when it groups something the **lane does not already group**.
+  Where it does not, the card itself is the root and its own children light up instead.
+
 - **Roll-Up Board — the right-click menu opened nowhere near the card.** It is `position: fixed`, which
   is measured against the nearest **transformed** ancestor rather than the viewport — and every
   swimlane carries a transform from dnd-kit's sortable. So the menu was positioned relative to the
