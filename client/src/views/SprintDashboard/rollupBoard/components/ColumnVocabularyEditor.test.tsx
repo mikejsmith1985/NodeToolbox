@@ -44,6 +44,7 @@ function buildBoardItem(key: string, statusName: string, subStatusValue: string 
     checklistCompletion: null,
     checklistItems: [],
     isFlagged: false,
+    impedimentReasons: [],
   };
 }
 

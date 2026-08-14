@@ -27,6 +27,7 @@ function buildItem(key: string): RollupBoardItem {
     checklistCompletion: null,
     checklistItems: [],
     isFlagged: false,
+    impedimentReasons: [],
   };
 }
 

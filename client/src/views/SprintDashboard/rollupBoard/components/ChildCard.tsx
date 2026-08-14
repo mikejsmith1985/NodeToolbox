@@ -39,6 +39,21 @@ const CHECKLIST_STATE_MARKS: Record<ChecklistItemState, string> = {
  */
 const MAX_COMPACT_CHECKLIST_ITEMS = 3;
 
+/**
+ * What each impediment is called on a card.
+ *
+ * Named apart because they are not the same thing and cannot be undone the same way. Only the flag
+ * can be cleared from here; a blocking link is cleared by resolving the issue that blocks it, and a
+ * blocked STATUS by moving the card. Calling all three "Flagged" — which this briefly did — offered
+ * to remove a flag that was never set, and removing it changed nothing.
+ */
+const IMPEDIMENT_LABELS: Record<string, string> = {
+  Flagged: '⚑ Flagged',
+  'Blocked Link': '⛔ Blocked by a link',
+  'Blocked Status': '⛔ Blocked status',
+  Label: '⛔ Blocked label',
+};
+
 const CARD_CLASS_BY_TYPE_BUCKET: Record<IssueTypeBucket, string> = {
   story: styles.cardStory,
   defect: styles.cardDefect,
@@ -228,8 +243,12 @@ export function ChildCard({
       <div className={styles.cardTopRow}>
         <span className={styles.cardKey}>{item.key}</span>
         {/* Beside the key rather than in the footer: a blocked card is the one thing on this board
-            somebody must not scroll past, and the word is there as well as the colour. */}
-        {item.isFlagged && <span className={styles.cardFlag}>⚑ Flagged</span>}
+            somebody must not scroll past, and the words are there as well as the colour. Each reason
+            is named, because "flagged" and "blocked by a link" are undone in completely different
+            places and a card that says the wrong one sends somebody to the wrong place. */}
+        {(item.impedimentReasons ?? []).map((reason) => (
+          <span className={styles.cardFlag} key={reason}>{IMPEDIMENT_LABELS[reason] ?? `⛔ ${reason}`}</span>
+        ))}
         <AssigneeAvatar displayName={item.assigneeDisplayName} />
       </div>
 

@@ -89,6 +89,7 @@ function buildItem(key: string, route: RollUpRoute): RollupBoardItem {
     checklistCompletion: null,
     checklistItems: [],
     isFlagged: false,
+    impedimentReasons: [],
   };
 }
 

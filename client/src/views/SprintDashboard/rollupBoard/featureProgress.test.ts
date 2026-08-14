@@ -35,6 +35,7 @@ function buildItem(key: string, statusCategoryName: string, storyPoints: number 
     checklistCompletion: null,
     checklistItems: [],
     isFlagged: false,
+    impedimentReasons: [],
   };
 }
 

@@ -74,6 +74,7 @@ function buildItem(input: BuildItemInput): RollupBoardItem {
     checklistCompletion: null,
     checklistItems: [],
     isFlagged: false,
+    impedimentReasons: [],
   };
 }
 

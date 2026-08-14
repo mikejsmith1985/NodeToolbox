@@ -46,6 +46,7 @@ function buildItem(key: string, statusName: string, subStatusValue: string | nul
     checklistCompletion: null,
     checklistItems: [],
     isFlagged: false,
+    impedimentReasons: [],
   };
 }
 

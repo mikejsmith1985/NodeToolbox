@@ -202,8 +202,19 @@ export interface RollupBoardItem {
    *
    * Read through the SAME detection the lane header uses, so a Feature and its children can never
    * disagree about what "flagged" means.
+   *
+   * The FLAG FIELD only — not "impeded in some way". It was briefly the latter, which made a card
+   * blocked by a link claim it was flagged and then offer to remove a flag it never had. The toggle
+   * writes the flag field, so the thing it is labelled from has to be the flag field too.
    */
   isFlagged: boolean;
+  /**
+   * Every reason Jira considers this issue impeded — flagged, a blocking link, a blocking status.
+   *
+   * Kept separate from `isFlagged` because they answer different questions. This one says what is
+   * WRONG, which is what the card should show; `isFlagged` says what can be UNDONE from here.
+   */
+  impedimentReasons: string[];
 }
 
 // ── Master cards ──

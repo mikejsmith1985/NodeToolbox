@@ -29,6 +29,7 @@ function buildItem(key: string, assigneeAccountId: string | null, fixVersionName
     checklistCompletion: null,
     checklistItems: [],
     isFlagged: false,
+    impedimentReasons: [],
   };
 }
 

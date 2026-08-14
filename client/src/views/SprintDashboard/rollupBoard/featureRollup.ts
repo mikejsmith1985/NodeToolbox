@@ -362,6 +362,7 @@ export function resolveBoardItems(
     const readableFieldId = chooseChecklistFieldByValue(
       candidateFieldIds, issueFields as Record<string, unknown>,
     );
+    const impedimentReasons = detectImpedimentReasons(issue);
     const checklistItems = readableFieldId === null
       ? []
       : parseChecklistItems((issueFields as Record<string, unknown>)[readableFieldId]);
@@ -393,10 +394,14 @@ export function resolveBoardItems(
       // Derived from the items themselves rather than counted separately, so the badge and the cards
       // beneath it can never disagree.
       checklistCompletion: summarizeChecklist(checklistItems),
-      // The SAME detection the lane header uses for the Feature's own flag, so a Feature and its
-      // children cannot disagree about what "flagged" means. The field it reads is already fetched
-      // for every issue, so this costs no extra request.
-      isFlagged: detectImpedimentReasons(issue).length > 0,
+      // The SAME detection the lane header uses, so a Feature and its children cannot disagree. The
+      // field it reads is already fetched for every issue, so this costs no extra request.
+      //
+      // Split in two on purpose. `isFlagged` is the FLAG FIELD alone, because that is what the card's
+      // menu can write — it was every impediment for one release, so a card blocked by a LINK claimed
+      // to be flagged and then offered to remove a flag it never had, which removed nothing.
+      isFlagged: impedimentReasons.includes('Flagged'),
+      impedimentReasons,
     };
   });
 }

@@ -38,6 +38,7 @@ function buildItem(key: string, featureKey: string | null, columnId: string): Ro
     checklistCompletion: null,
     checklistItems: [],
     isFlagged: false,
+    impedimentReasons: [],
   };
 }
 

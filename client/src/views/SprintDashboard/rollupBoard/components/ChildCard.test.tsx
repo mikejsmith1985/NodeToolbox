@@ -34,6 +34,7 @@ function buildItem(overrides: Partial<RollupBoardItem> = {}): RollupBoardItem {
     checklistCompletion: null,
     checklistItems: [],
     isFlagged: false,
+    impedimentReasons: [],
     ...overrides,
   };
 }
@@ -344,15 +345,33 @@ describe('ChildCard — a blocked card says so', () => {
   it('marks a flagged issue in words as well as colour', () => {
     // The Feature's own flag has always shown in the lane header; the work under it had no marker at
     // all, so a blocked Story sat in its column looking exactly like a moving one.
-    render(<ChildCard item={buildItem({ isFlagged: true })} />);
+    render(<ChildCard item={buildItem({ isFlagged: true, impedimentReasons: ['Flagged'] })} />);
 
     expect(screen.getByText('⚑ Flagged')).toBeTruthy();
   });
 
-  it('says nothing at all when the issue is not flagged', () => {
+  it('names a blocking LINK as a link, never as a flag', () => {
+    // The bug this pins: every impediment was called "Flagged", so a card blocked by a link offered
+    // to remove a flag it never had — and removing it changed nothing, because there was none.
+    render(<ChildCard item={buildItem({ isFlagged: false, impedimentReasons: ['Blocked Link'] })} />);
+
+    expect(screen.getByText('⛔ Blocked by a link')).toBeTruthy();
+    expect(screen.queryByText(/Flagged/)).toBeNull();
+  });
+
+  it('shows every reason it is impeded, since they are undone in different places', () => {
+    render(<ChildCard item={buildItem({
+      isFlagged: true, impedimentReasons: ['Flagged', 'Blocked Status'],
+    })} />);
+
+    expect(screen.getByText('⚑ Flagged')).toBeTruthy();
+    expect(screen.getByText('⛔ Blocked status')).toBeTruthy();
+  });
+
+  it('says nothing at all when the issue is not impeded', () => {
     render(<ChildCard item={buildItem({ isFlagged: false })} />);
 
-    expect(screen.queryByText(/Flagged/)).toBeNull();
+    expect(screen.queryByText(/Flagged|Blocked/)).toBeNull();
   });
 });
 

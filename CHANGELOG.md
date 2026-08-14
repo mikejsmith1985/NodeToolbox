@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Roll-Up Board — "Flagged" now means flagged, which is why removing the flag appeared to do
+  nothing.** The card's flag was set from `detectImpedimentReasons(...).length > 0` — and that detects
+  **four** different things: Jira's flag field, a blocking *link*, a blocking *status*, and a label.
+  So a card blocked by a link wore **⚑ Flagged**, its menu offered *"Remove the flag in Jira"*, and
+  the write cleared a field that had never been set. Nothing changed, correctly, and the feature
+  looked broken.
+  The two are separated now. `isFlagged` is the **flag field alone**, because that is the only thing
+  the menu can write — what a card is labelled from has to be what the toggle acts on. And every
+  impediment is named for what it actually is: **⚑ Flagged**, **⛔ Blocked by a link**, **⛔ Blocked
+  status**. They are undone in completely different places — a link by resolving what blocks it, a
+  status by moving the card — so a card that named the wrong one was sending somebody somewhere that
+  could not help.
 - **Roll-Up Board — a column claiming several Jira states now writes the right one, not the first
   one.** The board has always let a column claim more than one state — a real column named
   **"Accepted/Done"** claims both and holds 106 issues — but the drop path took `mappings[0]` and

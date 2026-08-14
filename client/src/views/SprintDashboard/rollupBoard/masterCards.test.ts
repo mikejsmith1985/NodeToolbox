@@ -33,6 +33,7 @@ function buildItem(key: string, featureKey: string | null): RollupBoardItem {
     checklistCompletion: null,
     checklistItems: [],
     isFlagged: false,
+    impedimentReasons: [],
   };
 }
 

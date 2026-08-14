@@ -51,6 +51,7 @@ function buildItem(key: string, columnId: string, parentKey: string | null = nul
     checklistCompletion: null,
     checklistItems: [],
     isFlagged: false,
+    impedimentReasons: [],
   };
 }
 
