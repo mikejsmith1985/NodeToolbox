@@ -90,6 +90,13 @@ export interface ChildCardProps {
    */
   containerCandidates?: readonly { key: string; summary: string }[];
   onNestInto?: (issueKey: string, containerIssueKey: string) => void;
+  /**
+   * Raises or clears Jira's impediment flag on this issue.
+   *
+   * In the menu rather than on the chip: it writes to Jira, and a click target sitting on the card
+   * would compete with clicking the card itself to open it.
+   */
+  onToggleFlag?: (issueKey: string, shouldBeFlagged: boolean) => void;
 }
 
 /** Turns a resolved route into one readable sentence, so parentage is never inferred. */
@@ -126,12 +133,13 @@ export function ChildCard({
   isReadOnly = false,
   containerCandidates = [],
   onNestInto,
+  onToggleFlag,
 }: ChildCardProps) {
   const [menuPosition, setMenuPosition] = useState<{ xPx: number; yPx: number } | null>(null);
 
   // Only the cards beside this one in the same column can contain it, and only when the board can
   // actually write the link. No candidates means no menu at all, rather than a menu of nothing.
-  const menuActions: BoardMenuAction[] = onNestInto && !isReadOnly
+  const containmentActions: BoardMenuAction[] = onNestInto && !isReadOnly
     ? containerCandidates
       .filter((candidate) => candidate.key !== item.key)
       .map((candidate) => ({
@@ -140,6 +148,18 @@ export function ChildCard({
         onSelect: () => onNestInto(item.key, candidate.key),
       }))
     : [];
+
+  // Named for what it will DO, not for the state it is in, so a right-click never writes something
+  // other than what the entry said.
+  const flagActions: BoardMenuAction[] = onToggleFlag && !isReadOnly
+    ? [{
+      id: 'toggle-flag',
+      label: item.isFlagged ? 'Remove the flag in Jira' : 'Flag as an impediment in Jira',
+      onSelect: () => onToggleFlag(item.key, !item.isFlagged),
+    }]
+    : [];
+
+  const menuActions: BoardMenuAction[] = [...flagActions, ...containmentActions];
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: item.key, disabled: isReadOnly });
   // Also a drop target, so one card can be dropped onto another to sequence the work in a column.
   // Disabled alongside the drag: a card nothing may be dragged FROM should not accept a drop either.

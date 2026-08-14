@@ -89,6 +89,8 @@ export interface MasterCardLaneProps {
   onToggleSubLaneCollapsed?: (cloneFeatureKey: string) => void;
   /** Records that one issue is contained in another. Absent leaves the card's menu unoffered. */
   onNestInto?: (issueKey: string, containerIssueKey: string) => void;
+  /** Raises or clears Jira's impediment flag on a card. */
+  onToggleFlag?: (issueKey: string, shouldBeFlagged: boolean) => void;
 }
 
 /** One labelled figure in the header — a caption above a value, as on the Team Capacity panel. */
@@ -177,6 +179,7 @@ export function MasterCardLane({
   familyProgress = null,
   onToggleSubLaneCollapsed,
   onNestInto,
+  onToggleFlag,
 }: MasterCardLaneProps) {
   const { vitals, featureKey, isSynthetic, isFeatureUnreadable, hasNoWorkYet } = lane.masterCard;
   const headerClassName = isSynthetic
@@ -415,6 +418,7 @@ export function MasterCardLane({
                       key: candidate.key, summary: candidate.summary,
                     }))}
                     onNestInto={onNestInto}
+                    onToggleFlag={onToggleFlag}
                     detail={cardDetailByIssueKey?.[item.key] ?? null}
                     shouldShowStatus={column.isUnmappedColumn}
                     errorMessage={errorMessageByIssueKey?.[item.key] ?? null}

@@ -355,3 +355,39 @@ describe('ChildCard — a blocked card says so', () => {
     expect(screen.queryByText(/Flagged/)).toBeNull();
   });
 });
+
+describe('ChildCard — raising and clearing the flag', () => {
+  it('offers to flag an unflagged card, naming what it will do', () => {
+    render(<ChildCard item={buildItem({ isFlagged: false })} onToggleFlag={vi.fn()} />);
+
+    fireEvent.contextMenu(screen.getByTestId('rollup-card-DEV-1'));
+
+    expect(screen.getByRole('menuitem', { name: 'Flag as an impediment in Jira' })).toBeTruthy();
+  });
+
+  it('offers to remove the flag from a flagged card', () => {
+    render(<ChildCard item={buildItem({ isFlagged: true })} onToggleFlag={vi.fn()} />);
+
+    fireEvent.contextMenu(screen.getByTestId('rollup-card-DEV-1'));
+
+    expect(screen.getByRole('menuitem', { name: 'Remove the flag in Jira' })).toBeTruthy();
+  });
+
+  it('asks for the OPPOSITE of the state it is in, so the entry cannot lie', () => {
+    const onToggleFlag = vi.fn();
+    render(<ChildCard item={buildItem({ isFlagged: true })} onToggleFlag={onToggleFlag} />);
+
+    fireEvent.contextMenu(screen.getByTestId('rollup-card-DEV-1'));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Remove the flag in Jira' }));
+
+    expect(onToggleFlag).toHaveBeenCalledWith('DEV-1', false);
+  });
+
+  it('never offers it on a read-only card, whose workflow the board does not own', () => {
+    render(<ChildCard isReadOnly item={buildItem({ isFlagged: false })} onToggleFlag={vi.fn()} />);
+
+    fireEvent.contextMenu(screen.getByTestId('rollup-card-DEV-1'));
+
+    expect(screen.queryByRole('menu')).toBeNull();
+  });
+});

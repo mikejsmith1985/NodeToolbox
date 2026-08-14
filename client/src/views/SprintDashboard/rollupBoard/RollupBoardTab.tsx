@@ -51,6 +51,7 @@ import {
   type OrderPullPreview,
 } from './boardOrderSync.ts';
 import { buildColumnTracks, toggleColumnCollapsed } from './columnTrackLayout.ts';
+import { setIssueFlag } from './issueFlagWrite.ts';
 import { buildRenderedColumns, resolveColumnIdForItem } from './boardColumns.ts';
 import { describeMissingSubLanes, describeUnconfiguredClones } from './cloneFamily.ts';
 import { classifyCloneFamilies, discoverDisciplineWork } from './disciplineDiscovery.ts';
@@ -1268,6 +1269,7 @@ export default function RollupBoardTab({
     [loadState.allItems, draggedItemKey],
   );
 
+
   /** Publishes this board's order for the team. Never fires on a drag — always an explicit choice. */
   async function handlePublishOrder(): Promise<void> {
     setIsSharingOrder(true);
@@ -1549,6 +1551,27 @@ export default function RollupBoardTab({
    * A transition whose screen demands fields is handed to the same dialog a refused drag uses, so
    * being asked for Story Points looks and behaves identically however the move was started.
    */
+  /**
+   * Raises or clears Jira's impediment flag on one card.
+   *
+   * Editmeta is read at the moment of the write rather than up front. Asking for every card on the
+   * board would be one request per card for an action taken a handful of times a sprint — and the
+   * answer is only actionable at the point somebody presses it, where the failure path already
+   * exists: the card says why, in place, exactly as a refused status move does.
+   */
+  const handleToggleFlag = useCallback(async (issueKey: string, shouldBeFlagged: boolean): Promise<void> => {
+    setCardMessage(issueKey, null);
+    setPendingIssueKey(issueKey);
+    try {
+      await setIssueFlag(issueKey, shouldBeFlagged, await fetchFeatureReviewEditMeta(issueKey));
+      await loadBoard();
+    } catch (flagError: unknown) {
+      setCardMessage(issueKey, describeJiraFailure(String(flagError)));
+    } finally {
+      setPendingIssueKey(null);
+    }
+  }, [setCardMessage, loadBoard]);
+
   const handleApplyTransition = useCallback(async (option: CardTransitionOption): Promise<void> => {
     if (openIssueKey === null) return;
 
@@ -2023,6 +2046,7 @@ export default function RollupBoardTab({
                 )
                 : null}
               errorMessageByIssueKey={errorMessageByIssueKey}
+              onToggleFlag={(issueKey, shouldBeFlagged) => void handleToggleFlag(issueKey, shouldBeFlagged)}
               onNestInto={(issueKey, containerIssueKey) => {
                 const item = loadState.allItems.find((candidate) => candidate.key === issueKey);
                 if (item) void applyContainment(item, containerIssueKey);

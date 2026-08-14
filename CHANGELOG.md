@@ -8,6 +8,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Roll-Up Board — the flag can now be raised and cleared from the board.** It was view-only
+  everywhere: `customfield_10021` appeared in six places in the app and **every one of them was a
+  read**. Right-click a card → *"Flag as an impediment in Jira"* or *"Remove the flag in Jira"*, beside
+  *Contain within…* in the same menu. The entry is named for what it will **do**, never for the state
+  it is in, so a right-click cannot write something other than what it said.
+  **Nothing about the field's shape is assumed.** Reading it only ever established truthiness — the
+  app's own type calls it `boolean | string | null`, which is a guess good enough for a test and
+  useless for a write. The field is found in the issue's **own editmeta**, by NAME first so a
+  different field id on another instance still works, and the value written is the one editmeta says
+  is allowed rather than a hard-coded *"Impediment"*. This is the lesson the sub-status writer taught
+  the hard way, where writing an option field blind produced *"Could not find valid 'id' or 'value' in
+  the Parent Option object"*.
+  Clearing writes **null**, not an empty array: some instances accept an empty array and others refuse
+  it, while null is how Jira itself clears a field. An issue type with no flag on its edit screen says
+  so instead of sending a request Jira will reject, and a refusal appears on the card exactly as a
+  refused status move does. Read-only cards in a discipline sub-lane are never offered it — the board
+  does not own another team's workflow.
+
 - **Roll-Up Board — a flagged card now says it is flagged.** The answer to *"how do we show a flagged
   issue card?"* was: **we don't.** The Feature's own flag has shown in the swimlane header since the
   board shipped, but the work underneath it carried no marker at all — `RollupBoardItem` had no such
