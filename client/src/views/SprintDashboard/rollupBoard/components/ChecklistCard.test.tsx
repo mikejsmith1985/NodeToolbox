@@ -157,3 +157,36 @@ describe('opening the issue in Jira', () => {
     if (menuItem) expect(menuItem).toBeTruthy();
   });
 });
+
+describe('when this instance cannot write checklists at all', () => {
+  const BLOCKED = 'This Jira does not expose Smart Checklist for editing.';
+
+  it('stops offering the state as a control', () => {
+    // The board knows this at load. Drawing a pressable button that cannot work is the trap this
+    // whole sequence of failures was made of.
+    render(<ChecklistCard card={buildCard()} onSetState={vi.fn()} writeBlockedReason={BLOCKED} />);
+
+    expect(screen.queryByRole('button', { name: /Set to In progress/ })).toBeNull();
+  });
+
+  it('still says which state the item is in', () => {
+    // Saying the state is the card's job. Offering to change it is not, where nothing can.
+    render(<ChecklistCard card={buildCard({ state: 'done' })} writeBlockedReason={BLOCKED} />);
+
+    expect(screen.getByText('Done')).toBeTruthy();
+  });
+
+  it('offers the Jira route as the card’s own affordance, not as an error state', () => {
+    render(<ChecklistCard card={buildCard()} writeBlockedReason={BLOCKED} />);
+
+    // Present only when the board knows the Jira base URL.
+    const jiraLink = screen.queryByRole('link', { name: /Change it in DEV-1/ });
+    if (jiraLink) expect(jiraLink.getAttribute('target')).toBe('_blank');
+  });
+
+  it('keeps the control when writing IS available', () => {
+    render(<ChecklistCard card={buildCard()} onSetState={vi.fn()} />);
+
+    expect(screen.getByRole('button', { name: /Set to In progress/ })).toBeTruthy();
+  });
+});

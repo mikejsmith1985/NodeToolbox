@@ -9,6 +9,7 @@ import {
   describeChecklistWriteAdvice,
   describeChecklistWriteBlock,
   judgeChecklistFields,
+  summarizeChecklistWritability,
   verifyChecklistItemState,
   describeChecklistState,
   nextChecklistState,
@@ -309,5 +310,45 @@ describe('describeChecklistWriteAdvice', () => {
     );
 
     expect(advice).toContain('cannot change checklist items here at all');
+  });
+});
+
+describe('summarizeChecklistWritability — decided before anybody tries', () => {
+  it('says a checklist cannot be written when every field is the app’s own data', () => {
+    // The verified situation on the live instance: one dump field Jira accepts and the app ignores.
+    const writability = summarizeChecklistWritability([
+      { id: 'cf_dump', name: 'Smart Checklist', holds: 'app-data', isOnEditScreen: true, summary: '' },
+    ]);
+
+    expect(writability.canWrite).toBe(false);
+    expect(writability.reason).toContain('does not expose Smart Checklist for editing');
+    expect(writability.reason).toContain('Smart Checklist');
+  });
+
+  it('says so too when nothing is on the edit screen at all', () => {
+    const writability = summarizeChecklistWritability([
+      { id: 'cf_text', name: 'Checklists', holds: 'text', isOnEditScreen: false, summary: '' },
+    ]);
+
+    expect(writability.canWrite).toBe(false);
+  });
+
+  it('allows writing when one editable plain-text field exists', () => {
+    expect(summarizeChecklistWritability([
+      { id: 'cf_dump', name: 'Smart Checklist', holds: 'app-data', isOnEditScreen: true, summary: '' },
+      { id: 'cf_text', name: 'Checklists', holds: 'text', isOnEditScreen: true, summary: '' },
+    ]).canWrite).toBe(true);
+  });
+
+  it('assumes writable while nothing has been judged yet, rather than blocking on no evidence', () => {
+    // The board judges against a sampled issue after load. Refusing before that would make every
+    // board briefly read-only for no reason.
+    expect(summarizeChecklistWritability([]).canWrite).toBe(true);
+  });
+
+  it('says what the answer was based on, since field configuration is per issue type', () => {
+    expect(summarizeChecklistWritability([
+      { id: 'cf_dump', name: 'Smart Checklist', holds: 'app-data', isOnEditScreen: true, summary: '' },
+    ]).reason).toContain('edit screen');
   });
 });

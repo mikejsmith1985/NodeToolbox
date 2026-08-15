@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Roll-Up Board — checklist cards go read-only where the instance cannot write them.** The diagnostics
+  settled it on the live instance: the only checklist field Jira will accept a write to holds the app's
+  own internal data, which the app then ignores. The board had that evidence at load and used none of
+  it — it drew a draggable card with a pressable state button, let somebody aim, and only then
+  discovered there was nowhere to write. That is a trap it had the information to avoid.
+
+  Now, when no field can carry a change: the card is **not draggable**, the state is a **label rather
+  than a button**, the **Change it in DEV-123 ↗** link becomes the card's own affordance rather than
+  something that appears after a failure, and one **board notice at load** says why — instead of a red
+  paragraph after every attempt. Saying which state an item is in is still the card's job; offering to
+  change it is not, where nothing can.
+
+  The judgement is made against a sampled issue, because Jira's field configuration is per issue type
+  rather than per issue, and the notice says so.
+
 ### Fixed
 - **Roll-Up Board — the failed-write explanation was pointing off screen.** The card said "see the board
   notice above", and the notice was invisible twice over: notices collapse behind a count by default,

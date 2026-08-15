@@ -68,6 +68,7 @@ import {
   describeChecklistWriteAdvice,
   judgeChecklistFields,
   saveChecklistItemState,
+  summarizeChecklistWritability,
   verifyChecklistItemState,
   type ChecklistFieldVerdict,
 } from './checklistWrite.ts';
@@ -1049,6 +1050,18 @@ export default function RollupBoardTab({
     return null;
   }, [membershipReasonByFeatureKey, loadState.allItems]);
 
+  /**
+   * Whether this instance lets the board write checklists, decided at load rather than on failure.
+   *
+   * The board had this evidence all along and used none of it — it drew a draggable card, let
+   * somebody aim, and only then found there was nowhere to write. Deciding up front is what turns a
+   * trap into a plain statement of what this board can do here.
+   */
+  const checklistWritability = useMemo(
+    () => summarizeChecklistWritability(checklistFieldVerdicts),
+    [checklistFieldVerdicts],
+  );
+
   const boardNotices = useMemo<BoardNotice[]>(() => {
     const notices: BoardNotice[] = [];
     const checklistItemCount = loadState.allItems
@@ -1088,6 +1101,15 @@ export default function RollupBoardTab({
             Board setup → “Where checklist items go”.
           </p>
         ),
+      });
+    }
+
+    if (!checklistWritability.canWrite) {
+      notices.push({
+        id: 'checklist-read-only',
+        tone: 'info',
+        summary: 'Checklist items on this board are read-only.',
+        detail: <p>{checklistWritability.reason}</p>,
       });
     }
 
@@ -1243,7 +1265,7 @@ export default function RollupBoardTab({
 
     return notices;
   }, [loadState, sprintPiGap, carryOverScope, featuresWithoutWork, unmappedStatusGroups,
-    membershipReasonByFeatureKey, cloneFamilies, vocabulary.checklistColumnMapping, checklistWriteBlock]);
+    membershipReasonByFeatureKey, cloneFamilies, vocabulary.checklistColumnMapping, checklistWriteBlock, checklistWritability]);
 
   /**
    * The columns the board draws: all of them, or just the focused one.
@@ -2507,6 +2529,7 @@ export default function RollupBoardTab({
               pendingChecklistCardId={pendingChecklistCardId}
               errorMessageByChecklistCardId={errorMessageByChecklistCardId}
               errorDetailByChecklistCardId={errorDetailByChecklistCardId}
+              checklistWriteBlockedReason={checklistWritability.canWrite ? null : checklistWritability.reason}
               draggedItemKey={draggedItemKey}
               dropPreview={dropPreview}
               onToggleFlag={(issueKey, shouldBeFlagged) => void handleToggleFlag(issueKey, shouldBeFlagged)}

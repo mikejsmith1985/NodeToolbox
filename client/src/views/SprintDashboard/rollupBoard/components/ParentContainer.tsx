@@ -50,6 +50,8 @@ export interface ParentContainerProps {
   errorMessageByChecklistCardId?: Record<string, string>;
   /** The full explanation per failed checklist card, folded away on the card until asked for. */
   errorDetailByChecklistCardId?: Record<string, string>;
+  /** Why this instance cannot write checklists at all, when it cannot. */
+  checklistWriteBlockedReason?: string | null;
 }
 
 /** Renders one parent grouping and the children of that parent present in this column. */
@@ -72,6 +74,7 @@ export function ParentContainer({
   pendingChecklistCardId = null,
   errorMessageByChecklistCardId,
   errorDetailByChecklistCardId,
+  checklistWriteBlockedReason = null,
 }: ParentContainerProps) {
   // Reordering inside a container is the same gesture as reordering loose cards, so it gets the same
   // gap — the container simply happens to be where these particular cards are drawn.
@@ -131,6 +134,7 @@ export function ParentContainer({
           card={checklistCard}
           errorMessage={errorMessageByChecklistCardId?.[checklistCard.id] ?? null}
           errorDetail={errorDetailByChecklistCardId?.[checklistCard.id] ?? null}
+          writeBlockedReason={checklistWriteBlockedReason}
           isPending={pendingChecklistCardId === checklistCard.id}
           onSetState={onSetChecklistState}
           onOpenParent={onOpenChecklistParent}

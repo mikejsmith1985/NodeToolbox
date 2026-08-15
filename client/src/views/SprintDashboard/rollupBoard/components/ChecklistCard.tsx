@@ -54,6 +54,14 @@ export interface ChecklistCardProps {
    * on screen is worse than saying nothing.
    */
   errorDetail?: string | null;
+  /**
+   * Why this instance cannot write checklists at all, when it cannot.
+   *
+   * Set, the card stops pretending: no drag, no state button, and the Jira link in their place. The
+   * board knows this at load, so offering the gesture and failing afterwards was a trap it had the
+   * information to avoid.
+   */
+  writeBlockedReason?: string | null;
   /** Moves the item on without a drag. Dragging is the gesture; this is the one-click shortcut. */
   onSetState?: (card: ChecklistCardModel, nextState: ChecklistItemState) => void;
   /**
@@ -73,14 +81,18 @@ export function ChecklistCard({
   isPending = false,
   errorMessage = null,
   errorDetail = null,
+  writeBlockedReason = null,
   onSetState,
   onOpenParent,
 }: ChecklistCardProps): React.JSX.Element {
   const [menuPosition, setMenuPosition] = useState<{ xPx: number; yPx: number } | null>(null);
   const jiraBaseUrl = useConnectionStore((connectionState) => connectionState.proxyStatus?.jira?.baseUrl ?? '');
+  const isWriteBlocked = writeBlockedReason !== null && writeBlockedReason !== '';
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: buildChecklistDragId(card),
-    disabled: isReadOnly,
+    // Not draggable when there is nowhere for the drag to write. Dragging a card that always snaps
+    // back is the single most misleading thing this board could do.
+    disabled: isReadOnly || isWriteBlocked,
   });
 
   const jiraIssueUrl = jiraBaseUrl ? buildJiraBrowseUrl(card.parentKey, jiraBaseUrl) : '';
@@ -134,20 +146,29 @@ export function ChecklistCard({
       <div className={styles.checklistCardHead}>
         {/* Both gestures reach the same write. Dragging says where it should go; clicking is for
             the overwhelmingly common case of ticking the next one off without aiming at a column. */}
-        <button
-          aria-label={`${card.text} — ${describeChecklistState(card.state)}. `
-            + `Set to ${describeChecklistState(nextChecklistState(card.state))}`}
-          className={styles.checklistCardState}
-          disabled={onSetState === undefined || isReadOnly}
-          onClick={(clickEvent) => {
-            clickEvent.stopPropagation();
-            onSetState?.(card, nextChecklistState(card.state));
-          }}
-          type="button"
-        >
-          <StateIcon />
-          {describeChecklistState(card.state)}
-        </button>
+        {isWriteBlocked ? (
+          // A label, not a control. Saying the state is still the card's job; offering to change it
+          // is not, where nothing can.
+          <span className={styles.checklistCardState} title={writeBlockedReason ?? ''}>
+            <StateIcon />
+            {describeChecklistState(card.state)}
+          </span>
+        ) : (
+          <button
+            aria-label={`${card.text} — ${describeChecklistState(card.state)}. `
+              + `Set to ${describeChecklistState(nextChecklistState(card.state))}`}
+            className={styles.checklistCardState}
+            disabled={onSetState === undefined || isReadOnly}
+            onClick={(clickEvent) => {
+              clickEvent.stopPropagation();
+              onSetState?.(card, nextChecklistState(card.state));
+            }}
+            type="button"
+          >
+            <StateIcon />
+            {describeChecklistState(card.state)}
+          </button>
+        )}
         {/* Says what kind of thing this is. A card that looked like a sub-task but had no key would
             be read as a broken sub-task rather than as a checklist item. */}
         <span className={styles.checklistCardKind}>Checklist</span>
@@ -172,6 +193,8 @@ export function ChecklistCard({
         ownerKey={card.parentKey}
         position={menuPosition}
       />
+
+      {isWriteBlocked ? jiraLink : null}
 
       {errorMessage ? (
         <span className={styles.cardError}>

@@ -137,6 +137,7 @@ export interface MasterCardLaneProps {
   pendingChecklistCardId?: string | null;
   errorMessageByChecklistCardId?: Record<string, string>;
   errorDetailByChecklistCardId?: Record<string, string>;
+  checklistWriteBlockedReason?: string | null;
   /**
    * Columns narrowed to a strip, by id.
    *
@@ -242,6 +243,7 @@ export function MasterCardLane({
   pendingChecklistCardId = null,
   errorMessageByChecklistCardId,
   errorDetailByChecklistCardId,
+  checklistWriteBlockedReason = null,
   collapsedColumnIds = [],
   draggedItemKey = null,
   dropPreview = null,
@@ -523,6 +525,7 @@ export function MasterCardLane({
                     pendingChecklistCardId={pendingChecklistCardId}
                     errorMessageByChecklistCardId={errorMessageByChecklistCardId}
                     errorDetailByChecklistCardId={errorDetailByChecklistCardId}
+                    checklistWriteBlockedReason={checklistWriteBlockedReason}
                     errorMessageByIssueKey={errorMessageByIssueKey}
                     highlightedFamilyKey={highlightedFamilyKey}
                     key={`container-${entry.container.parentKey}`}

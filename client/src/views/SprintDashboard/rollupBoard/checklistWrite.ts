@@ -210,6 +210,48 @@ export async function saveChecklistItemState(input: {
   return { isWritten: true, message: '', targetFieldId };
 }
 
+/** Whether this instance exposes the checklist for writing at all, and why not when it does not. */
+export interface ChecklistWritability {
+  canWrite: boolean;
+  /** Empty when writing is available. Otherwise a sentence saying what this board can and cannot do. */
+  reason: string;
+}
+
+/**
+ * Decides, BEFORE anybody tries, whether a checklist can be written on this instance.
+ *
+ * The board had all of this at load and used none of it: it drew a draggable card with a pressable
+ * state button, let somebody aim, and only then discovered there was nowhere to write. A control that
+ * looks like it works and cannot is worse than one that never offered — the board applies that rule
+ * to another discipline's cards already, and this is the same situation for a different reason.
+ *
+ * Judged from a SAMPLED issue, because field configuration is per issue type rather than per issue.
+ * The reason says so, so a team whose other issue types differ is told what the answer was based on
+ * rather than left to wonder.
+ */
+export function summarizeChecklistWritability(
+  verdicts: readonly ChecklistFieldVerdict[],
+): ChecklistWritability {
+  if (verdicts.length === 0) return { canWrite: true, reason: '' };
+
+  const writableFields = verdicts.filter((verdict) =>
+    verdict.holds !== 'app-data' && verdict.isOnEditScreen);
+  if (writableFields.length > 0) return { canWrite: true, reason: '' };
+
+  const appDataFields = verdicts.filter((verdict) => verdict.holds === 'app-data');
+  const detail = appDataFields.length > 0
+    ? `The only checklist field Jira will accept a write to holds the app's own internal data `
+      + `(${appDataFields.map((verdict) => verdict.name).join(', ')}), which the app then ignores.`
+    : 'No checklist field on this issue type\'s edit screen can carry a change.';
+
+  return {
+    canWrite: false,
+    reason: `This Jira does not expose Smart Checklist for editing. ${detail} The board reads `
+      + 'checklists and shows them as cards; changing an item is done in Jira. A Jira admin adding '
+      + 'the checklist TEXT field to the edit screen would change that.',
+  };
+}
+
 /**
  * What somebody should DO after a write the checklist app ignored.
  *
