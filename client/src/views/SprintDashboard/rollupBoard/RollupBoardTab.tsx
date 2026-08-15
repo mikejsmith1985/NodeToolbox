@@ -19,6 +19,7 @@ import {
   useSensors,
   type CollisionDetection,
   type DragEndEvent,
+  type DragMoveEvent,
 } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -52,6 +53,7 @@ import {
 } from './boardOrderSync.ts';
 import { buildColumnTracks, toggleColumnCollapsed } from './columnTrackLayout.ts';
 import { findFlagFieldInCatalog, setIssueFlag } from './issueFlagWrite.ts';
+import { type DropPreview } from './dropPlaceholder.ts';
 import { selectColumnMapping } from './selectColumnMapping.ts';
 import { buildJiraBrowseUrl } from '../../../utils/jiraBrowseUrl.ts';
 import { useConnectionStore } from '../../../store/connectionStore.ts';
@@ -83,7 +85,13 @@ import {
 } from './boardPreferencesStore.ts';
 import { loadTeamVocabulary, markVocabularySynced, saveTeamVocabulary } from './boardVocabularyStore.ts';
 import { previewBoardVocabularyPull, publishBoardVocabulary, type VocabularyPullPreview } from './boardVocabularySync.ts';
-import { parseCardTargetId, readPointerY, resolveCardDrop, resolveCardDropZone } from './cardDropRouting.ts';
+import {
+  buildDropTargetId,
+  parseCardTargetId,
+  readPointerY,
+  resolveCardDrop,
+  resolveCardDropZone,
+} from './cardDropRouting.ts';
 import { loadColumnOptionSources, type ColumnOptionSources } from './columnOptionSources.ts';
 import { executeStatusMove, type ExecuteStatusMoveInput } from './statusMoveWriter.ts';
 import { resolveBoardItems } from './featureRollup.ts';
@@ -435,6 +443,8 @@ export default function RollupBoardTab({
   const [draggedItemKey, setDraggedItemKey] = useState<string | null>(null);
   // Whichever field this instance keeps Jira's impediment flag in, discovered on load.
   const [flagFieldId, setFlagFieldId] = useState('');
+  // Where the gap is currently open. Recomputed as the pointer moves, cleared when the drag ends.
+  const [dropPreview, setDropPreview] = useState<DropPreview | null>(null);
   const jiraBaseUrl = useConnectionStore((connectionState) => connectionState.proxyStatus?.jira?.baseUrl ?? '');
   const [isSharingOrder, setIsSharingOrder] = useState(false);
   const [orderShareMessage, setOrderShareMessage] = useState<string | null>(null);
@@ -1282,6 +1292,38 @@ export default function RollupBoardTab({
   );
 
 
+  /**
+   * Reads the gap's position from a drag in progress.
+   *
+   * The same pointer arithmetic the DROP uses, so what the gap promises and what the drop does cannot
+   * disagree — which would be worse than no preview at all.
+   */
+  const readDropPreview = useCallback((dragMoveEvent: DragMoveEvent): DropPreview | null => {
+    const overId = dragMoveEvent.over ? String(dragMoveEvent.over.id) : null;
+    const pointerY = readPointerY(dragMoveEvent.activatorEvent, dragMoveEvent.delta.y);
+    const overRect = dragMoveEvent.over?.rect ?? null;
+    if (overId === null || pointerY === null || overRect === null) return null;
+
+    // Over a CARD: the gap goes above or below that card.
+    const overIssueKey = parseCardTargetId(overId);
+    if (overIssueKey !== null) {
+      const overItem = loadState.allItems.find((item) => item.key === overIssueKey);
+      if (!overItem) return null;
+      return {
+        cellId: buildDropTargetId(overItem.featureKey ?? NO_FEATURE_KEY, overItem.columnId),
+        anchorKey: overIssueKey,
+        edge: resolveCardDropZone(pointerY, overRect.top, overRect.height) === 'before' ? 'before' : 'after',
+      };
+    }
+
+    // Over the COLUMN itself: one end of it or the other.
+    return {
+      cellId: overId,
+      anchorKey: null,
+      edge: pointerY < overRect.top + overRect.height / 2 ? 'before' : 'after',
+    };
+  }, [loadState.allItems]);
+
   /** Publishes this board's order for the team. Never fires on a drag — always an explicit choice. */
   async function handlePublishOrder(): Promise<void> {
     setIsSharingOrder(true);
@@ -2099,11 +2141,15 @@ export default function RollupBoardTab({
           // by the time a card is carried three columns across, the rectangles it is being tested
           // against describe where the cells USED to be, and the card lands in the wrong one.
           measuring={{ droppable: { strategy: MeasuringStrategy.Always } }}
-          onDragCancel={() => setDraggedItemKey(null)}
+          onDragCancel={() => { setDraggedItemKey(null); setDropPreview(null); }}
           onDragEnd={(dragEndEvent) => {
             setDraggedItemKey(null);
+            setDropPreview(null);
             void handleBoardDragEnd(dragEndEvent);
           }}
+          // Live, as the pointer moves: the gap has to open where the card would land RIGHT NOW, or
+          // it is telling you about somewhere you have already left.
+          onDragMove={(dragMoveEvent) => setDropPreview(readDropPreview(dragMoveEvent))}
           onDragStart={(dragStartEvent) => setDraggedItemKey(String(dragStartEvent.active.id))}
           sensors={dragSensors}
         >
@@ -2136,6 +2182,8 @@ export default function RollupBoardTab({
               columns={layout.columns}
               errorMessageByIssueKey={errorMessageByIssueKey}
               collapsedColumnIds={preferences.collapsedColumnIds ?? []}
+              draggedItemKey={draggedItemKey}
+              dropPreview={dropPreview}
               onToggleFlag={(issueKey, shouldBeFlagged) => void handleToggleFlag(issueKey, shouldBeFlagged)}
               onNestInto={(issueKey, containerIssueKey) => {
                 const item = loadState.allItems.find((candidate) => candidate.key === issueKey);

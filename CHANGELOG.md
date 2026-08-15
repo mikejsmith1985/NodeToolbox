@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Roll-Up Board — the drop target is now a gap the cards open, not a line.** Dragging a card used to
+  draw a 3px blue line along the top edge of the card underneath. A line marks a boundary and leaves
+  the rest to be inferred: how far things move, what ends up where, and — on this board specifically —
+  whether you are about to land *above* that card or *inside* it, since dropping onto a card creates a
+  containment link. Now the cards below slide down and a greyscale dashed box the size of a card opens
+  in the space, with the words **Move here** in it. The card being dragged is lifted out of its own
+  cell at the same time, so a column never shows both the slot it left and the slot it might land in —
+  two openings for one card, which read as though it were about to be copied. The box is deliberately
+  colourless: every other border on the board carries meaning (green Story, red Defect, the two
+  progress tones), so the one thing that is not an issue is the one thing with no hue. The gap opens
+  over 120ms, and not at all under `prefers-reduced-motion`.
+
 ### Fixed
 - **Roll-Up Board — two cards in a column can now be reordered.** Nothing was wrong with the drag: the
   lane drew **all containers first, then all loose cards**, so the order between a card belonging to a

@@ -757,9 +757,45 @@
   pointer-events: none;
 }
 
-/* Shows where a dragged card would land when dropped onto this one. */
-.cardDropBefore {
-  border-top: 3px solid var(--color-accent);
+/* The gap a dragged card would land in — the cards below it slide down to make the room, and the
+   room says what it is for.
+
+   This replaces a 3px blue line along the top edge of the card underneath. A line marks a boundary
+   and leaves the rest to be inferred: how far things move, what ends up where, whether you are about
+   to land above the card or inside it (this board does both). A space the size of the card, with the
+   words in it, answers all of that without being read. */
+.dropPlaceholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Roughly a card, so the room that opens is the room the card will occupy. */
+  min-height: 3.25rem;
+  padding: 0.5rem;
+  border: 2px dashed var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  /* Deliberately colourless: every other border on this board carries meaning — green for a Story,
+     red for a Defect, the two progress tones — so the one thing that is NOT an issue is the one
+     thing with no hue at all. */
+  background: var(--surface-recessed);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  /* Nothing is dropped ON the gap — it is drawn where the drop will go, and the cell beneath it is
+     the actual target. */
+  pointer-events: none;
+  animation: dropPlaceholderOpen 120ms ease-out;
+}
+
+/* The room opening, rather than appearing. At 120ms it reads as the cards moving aside. */
+@keyframes dropPlaceholderOpen {
+  from { min-height: 0; opacity: 0; padding-block: 0; }
+  to { min-height: 3.25rem; opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dropPlaceholder { animation: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {

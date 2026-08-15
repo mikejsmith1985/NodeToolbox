@@ -14,6 +14,11 @@ import { CSS } from '@dnd-kit/utilities';
 import { buildJiraBrowseUrl } from '../../../../utils/jiraBrowseUrl.ts';
 import { useConnectionStore } from '../../../../store/connectionStore.ts';
 import { buildDropTargetId } from '../cardDropRouting.ts';
+import {
+  resolvePlaceholderIndex,
+  shouldHideDraggedEntry,
+  type DropPreview,
+} from '../dropPlaceholder.ts';
 import styles from '../RollupBoardTab.module.css';
 import { isColumnCollapsed, type ColumnTrackStyle } from '../columnTrackLayout.ts';
 import { SubLane } from './SubLane.tsx';
@@ -24,7 +29,7 @@ import { buildLaneProgressBar, buildLaneVitalTiles, type LaneProgressBar, type L
 import type { BoardMembershipReason } from '../boardMembershipReason.ts';
 import type { FamilyProgress } from '../rollupBoardTypes.ts';
 import type { CardDetail } from '../cardDetail.ts';
-import type { RenderedColumn, RenderedLane, RollupBoardItem } from '../rollupBoardTypes.ts';
+import type { LaneCellEntry, RenderedColumn, RenderedLane, RollupBoardItem } from '../rollupBoardTypes.ts';
 import { ChildCard } from './ChildCard.tsx';
 import { ParentContainer } from './ParentContainer.tsx';
 
@@ -52,6 +57,35 @@ function LaneCellDropZone({
       {children}
     </div>
   );
+}
+
+/** One thing to draw in a cell: the entries the layout produced, plus the gap the drag opens. */
+type CellRenderEntry = LaneCellEntry | { kind: 'placeholder' };
+
+/**
+ * The cell's contents with the dragged card lifted out and the empty box dropped in.
+ *
+ * Built here rather than in the layout because it is about the drag in progress, which the board's
+ * data has no opinion about — the layout describes where cards ARE, this describes where one is going.
+ */
+function buildCellRenderList(
+  entries: readonly LaneCellEntry[],
+  dropPreview: DropPreview | null,
+  draggedItemKey: string | null,
+  cellId: string,
+): CellRenderEntry[] {
+  const visible = entries.filter((entry) => !(entry.kind === 'item'
+    && shouldHideDraggedEntry(draggedItemKey, entry.item.key)));
+  const placeholderIndex = resolvePlaceholderIndex(
+    dropPreview,
+    cellId,
+    visible.map((entry) => ({ itemKey: entry.kind === 'item' ? entry.item.key : null })),
+  );
+  if (placeholderIndex === null) return [...visible];
+
+  const rendered: CellRenderEntry[] = [...visible];
+  rendered.splice(placeholderIndex, 0, { kind: 'placeholder' });
+  return rendered;
 }
 
 export interface MasterCardLaneProps {
@@ -98,6 +132,10 @@ export interface MasterCardLaneProps {
    * rather than put away — which is worse than not collapsing it at all.
    */
   collapsedColumnIds?: readonly string[];
+  /** The card currently in the air, so the cell it came from does not also show its old slot. */
+  draggedItemKey?: string | null;
+  /** Where the gap is open, or null when nothing is being dragged. */
+  dropPreview?: DropPreview | null;
 }
 
 /** One labelled figure in the header — a caption above a value, as on the Team Capacity panel. */
@@ -187,6 +225,8 @@ export function MasterCardLane({
   onNestInto,
   onToggleFlag,
   collapsedColumnIds = [],
+  draggedItemKey = null,
+  dropPreview = null,
 }: MasterCardLaneProps) {
   const { vitals, featureKey, isSynthetic, isFeatureUnreadable, hasNoWorkYet } = lane.masterCard;
   const headerClassName = isSynthetic
@@ -431,7 +471,10 @@ export function MasterCardLane({
                 {/* ONE ordered list, containers and loose cards interleaved. Drawing all containers
                     and then all loose cards fixed their relative order in the markup, so a column
                     holding one of each could not be reordered by any drag. */}
-                {(cell?.entries ?? []).map((entry) => (entry.kind === 'container' ? (
+                {buildCellRenderList(cell?.entries ?? [], dropPreview, draggedItemKey,
+                  buildDropTargetId(featureKey, column.id)).map((entry) => (entry.kind === 'placeholder' ? (
+                  <div className={styles.dropPlaceholder} key="drop-placeholder">Move here</div>
+                ) : entry.kind === 'container' ? (
                   <ParentContainer
                     cardDetailByIssueKey={cardDetailByIssueKey}
                     shouldShowStatus={column.isUnmappedColumn}

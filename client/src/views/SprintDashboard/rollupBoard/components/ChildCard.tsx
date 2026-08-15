@@ -187,7 +187,7 @@ export function ChildCard({
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: item.key, disabled: isReadOnly });
   // Also a drop target, so one card can be dropped onto another to sequence the work in a column.
   // Disabled alongside the drag: a card nothing may be dragged FROM should not accept a drop either.
-  const { isOver, setNodeRef: setDropRef } = useDroppable({
+  const { setNodeRef: setDropRef } = useDroppable({
     id: buildCardTargetId(item.key),
     disabled: isReadOnly,
   });
@@ -212,7 +212,6 @@ export function ChildCard({
     isHighlighted ? styles.cardHighlighted : '',
     isPending ? styles.cardPending : '',
     isDragging ? styles.cardDragging : '',
-    isOver && !isDragging ? styles.cardDropBefore : '',
   ].filter(Boolean).join(' ');
 
   /** Opens the issue. Never fires mid-drag, since a travelling press is not a click. */
