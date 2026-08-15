@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Any field can be edited from a card — especially the EMPTY ones.** This is the gap that sent you to
+  Jira. Jira's own detail view will happily change a field that already has a value and simply does not
+  render one that is blank, so setting a fix version on an issue that has none meant a new tab, the Edit
+  button, the edit dialog, and a scroll. The one case where the shortcut is most needed was the one case
+  it never covered.
+
+  The card's edit section used to render four hard-coded fields — summary, priority, assignee, fix
+  version — because those were the four somebody had written writers for. It now renders whatever
+  `GET /issue/{key}/editmeta` says **the current user may set on this issue**, which is the same
+  question Jira's own edit dialog asks: correct on every issue type, in every project, without being
+  maintained. **Empty fields sort first and are counted in the header**, because they are the ones that
+  cost a round trip.
+
+  Controls follow the field's declared type — text, number, a real **date picker**, a select of Jira's
+  own allowed values, or a person search — and every select can be **cleared**, not just changed. Above
+  eight fields a filter box appears. Every write still goes through a writer that already shipped, so a
+  field edited here and the same field edited in Feature Review produce identical requests.
+
+  Two things are said out loud rather than hidden: a field holding several values warns **before** the
+  save that saving replaces all of them, and any field Jira allows that the panel has no control for is
+  **named and counted** — a panel that quietly omits fields is indistinguishable from one that never
+  saw them. `description` stays deliberately read-only until an editor exists that round-trips this
+  instance's wiki markup; a plain text box would hand back a flattened copy.
+
+  Reaches the Roll-Up Board card shelf and the **F2 quick lookup** alike.
+
+### Fixed
+- **A version field could have been saved as a numeric id.** Generalising the editors surfaced it: the
+  general option reader keys a choice by `id`, which is right for priority, while the fix-version writer
+  sends `{ name }` — so an id-keyed version option would have posted `10500` as though it were a version
+  name. Version fields now use their own reader, which keys by name and drops released and archived
+  versions Jira would refuse to add anyway.
+
 ### Fixed
 - **Roll-Up Board — half of every card reorder silently did nothing.** The drop worked out which half of
   the target card you released on, and then threw that answer away: every drop landed *before* the

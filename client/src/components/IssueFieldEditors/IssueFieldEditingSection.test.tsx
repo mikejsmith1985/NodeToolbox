@@ -17,6 +17,9 @@ vi.mock('../../views/SprintDashboard/featureReviewFixes.ts', () => ({
   saveFeatureReviewUserField: vi.fn().mockResolvedValue(undefined),
   searchFeatureReviewUsers: vi.fn().mockResolvedValue([]),
   saveFeatureReviewFixVersion: mockSaveFixVersion,
+  // The router asks about story points by field id, because on this instance they are a dropdown.
+  getStoryPointsCandidateFieldIds: () => ['customfield_10002'],
+  saveFeatureReviewStoryPoints: vi.fn().mockResolvedValue(undefined),
 }));
 
 import { IssueFieldEditingSection } from './IssueFieldEditingSection.tsx';
@@ -67,14 +70,15 @@ describe('IssueFieldEditingSection — fix version', () => {
 
   it('offers a Fix Version editor when editmeta allows it', () => {
     render(<IssueFieldEditingSection issue={ISSUE} editMeta={FIX_VERSION_META} onFieldSaved={vi.fn()} />);
-    expect(screen.getByText('Fix Version')).toBeInTheDocument();
+    // Jira's own name for the field, read from editmeta — not a label hard-coded here.
+    expect(screen.getByText('Fix Version/s')).toBeInTheDocument();
   });
 
   it('does not offer one when editmeta withholds the field', () => {
     render(
       <IssueFieldEditingSection issue={ISSUE} editMeta={{ summary: { name: 'Summary' } }} onFieldSaved={vi.fn()} />,
     );
-    expect(screen.queryByText('Fix Version')).not.toBeInTheDocument();
+    expect(screen.queryByText('Fix Version/s')).not.toBeInTheDocument();
   });
 
   it('saves the chosen version by NAME, which is what Jira accepts', async () => {
@@ -120,7 +124,7 @@ describe('IssueFieldEditingSection — fix version', () => {
     render(
       <IssueFieldEditingSection issue={multiVersionIssue} editMeta={FIX_VERSION_META} onFieldSaved={vi.fn()} />,
     );
-    expect(screen.getByText(/has 2 fix versions/)).toBeInTheDocument();
+    expect(screen.getByText(/has 2 values/)).toBeInTheDocument();
     expect(screen.getByText(/replaces all of them/)).toBeInTheDocument();
   });
 

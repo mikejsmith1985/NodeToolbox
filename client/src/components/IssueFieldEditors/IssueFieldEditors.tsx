@@ -37,12 +37,19 @@ function EditorFeedback({ error, justSaved }: { error: string | null; justSaved:
 export interface TextFieldEditorProps {
   label: string;
   initialValue: string;
+  /**
+   * The HTML input type — `text` unless the field is a number or a date.
+   *
+   * A date field gets a real date picker rather than a box somebody has to guess Jira's format for,
+   * which is the difference between setting a Target End here and giving up and opening Jira.
+   */
+  inputType?: 'text' | 'number' | 'date';
   onSave: (nextValue: string) => Promise<void>;
   onSaved?: () => void;
 }
 
-/** Inline editor for a plain single-line text field (e.g. summary). */
-export function TextFieldEditor({ label, initialValue, onSave, onSaved }: TextFieldEditorProps): React.JSX.Element {
+/** Inline editor for a plain single-line field — text, a number, or a date. */
+export function TextFieldEditor({ label, initialValue, inputType = 'text', onSave, onSaved }: TextFieldEditorProps): React.JSX.Element {
   const editor = useFieldEditor(onSave, onSaved);
   const [draft, setDraft] = useState(initialValue);
 
@@ -55,6 +62,7 @@ export function TextFieldEditor({ label, initialValue, onSave, onSaved }: TextFi
             aria-label={`${label} value`}
             className={styles.input}
             disabled={editor.isSaving}
+            type={inputType}
             value={draft}
             onChange={(changeEvent) => setDraft(changeEvent.target.value)}
           />

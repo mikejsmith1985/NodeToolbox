@@ -22,6 +22,12 @@ export interface FeatureReviewEditMetaAllowedValue {
   value?: string;
   /** Cascading (parent/child) select options carry their child options here. */
   children?: FeatureReviewEditMetaAllowedValue[];
+  /**
+   * Version-field flags. Jira lists every version a project has ever had, including the ones it will
+   * then refuse to put on an issue, so offering them unfiltered produces a choice that always fails.
+   */
+  released?: boolean;
+  archived?: boolean;
 }
 
 export interface FeatureReviewEditMetaField {
