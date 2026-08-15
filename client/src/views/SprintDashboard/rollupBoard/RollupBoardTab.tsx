@@ -54,6 +54,8 @@ import {
 import { buildColumnTracks, toggleColumnCollapsed } from './columnTrackLayout.ts';
 import { findFlagFieldInCatalog, setIssueFlag } from './issueFlagWrite.ts';
 import { type DropPreview } from './dropPlaceholder.ts';
+import type { ChecklistItemState } from './checklistItems.ts';
+import { saveChecklistItemState } from './checklistWrite.ts';
 import { selectColumnMapping } from './selectColumnMapping.ts';
 import { buildJiraBrowseUrl } from '../../../utils/jiraBrowseUrl.ts';
 import { useConnectionStore } from '../../../store/connectionStore.ts';
@@ -75,7 +77,7 @@ import {
   clearManualOrder,
   hasManualOrder,
   loadBoardPreferences,
-  moveCardBefore,
+  moveCardBeside,
   moveLaneBefore,
   moveLaneToEnd,
   moveLaneToRank,
@@ -443,6 +445,9 @@ export default function RollupBoardTab({
   const [draggedItemKey, setDraggedItemKey] = useState<string | null>(null);
   // Whichever field this instance keeps Jira's impediment flag in, discovered on load.
   const [flagFieldId, setFlagFieldId] = useState('');
+  // Every checklist-ish field this instance has. Kept because ticking an item off may have to write to
+  // a DIFFERENT one from the field it was read out of — the app's own dump is readable, never writable.
+  const [checklistFieldIds, setChecklistFieldIds] = useState<string[]>([]);
   // Where the gap is currently open. Recomputed as the pointer moves, cleared when the drag ends.
   const [dropPreview, setDropPreview] = useState<DropPreview | null>(null);
   const jiraBaseUrl = useConnectionStore((connectionState) => connectionState.proxyStatus?.jira?.baseUrl ?? '');
@@ -527,6 +532,7 @@ export default function RollupBoardTab({
         '/rest/api/2/field',
       ).catch(() => []);
       const discoveredChecklistFieldIds = listChecklistFieldIds(fieldCatalog);
+      setChecklistFieldIds(discoveredChecklistFieldIds);
       const discoveredFlagFieldId = findFlagFieldInCatalog(fieldCatalog) ?? '';
       setFlagFieldId(discoveredFlagFieldId);
       const storyPointsFieldIds = getStoryPointsCandidateFieldIds();
@@ -1471,13 +1477,16 @@ export default function RollupBoardTab({
         ? decision.targetIssueKey
         : (decision.edge === 'top' ? (remainingKeys[0] ?? decision.item.key) : '');
 
-      applyPreferences(moveCardBefore(
+      applyPreferences(moveCardBeside(
         preferences,
         laneKey,
         decision.item.columnId,
         decision.item.key,
         targetIssueKey,
         displayedIssueKeys,
+        // Dropped on a card: which half of it. Dropped on the column: the top edge means before the
+        // first card, and the bottom names no card at all, which appends.
+        decision.kind === 'reorder' ? decision.edge : 'before',
       ));
       return;
     }
@@ -1678,6 +1687,42 @@ export default function RollupBoardTab({
       setPendingIssueKey(null);
     }
   }, [setCardMessage, loadBoard, flagFieldId]);
+
+  /**
+   * Ticks one Smart Checklist line to its next state and writes it back.
+   *
+   * Reloads rather than patching the card in place, for the same reason the flag does: the checklist
+   * is a text field a third-party app also owns, so the only trustworthy picture of what it now says
+   * is the one Jira gives back.
+   */
+  const handleToggleChecklistItem = useCallback(async (
+    issueKey: string,
+    checklistItemId: string,
+    nextState: ChecklistItemState,
+  ): Promise<void> => {
+    const item = loadState.allItems.find((candidate) => candidate.key === issueKey);
+    if (!item) return;
+
+    setCardMessage(issueKey, null);
+    setPendingIssueKey(issueKey);
+    try {
+      const result = await saveChecklistItemState({
+        issueKey,
+        items: item.checklistItems,
+        itemId: checklistItemId,
+        nextState,
+        candidateFieldIds: checklistFieldIds,
+        readableFieldId: item.checklistFieldId ?? null,
+      });
+      if (!result.isWritten) {
+        setCardMessage(issueKey, result.message);
+        return;
+      }
+      await loadBoard();
+    } finally {
+      setPendingIssueKey(null);
+    }
+  }, [loadState.allItems, setCardMessage, loadBoard, checklistFieldIds]);
 
   const handleApplyTransition = useCallback(async (option: CardTransitionOption): Promise<void> => {
     if (openIssueKey === null) return;
@@ -2185,6 +2230,8 @@ export default function RollupBoardTab({
               draggedItemKey={draggedItemKey}
               dropPreview={dropPreview}
               onToggleFlag={(issueKey, shouldBeFlagged) => void handleToggleFlag(issueKey, shouldBeFlagged)}
+              onToggleChecklistItem={(issueKey, checklistItemId, nextState) =>
+                void handleToggleChecklistItem(issueKey, checklistItemId, nextState)}
               onNestInto={(issueKey, containerIssueKey) => {
                 const item = loadState.allItems.find((candidate) => candidate.key === issueKey);
                 if (item) void applyContainment(item, containerIssueKey);

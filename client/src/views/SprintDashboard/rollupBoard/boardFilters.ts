@@ -4,6 +4,7 @@
 // which are worked out before any of this runs — so "60% complete" always describes the whole
 // Feature, whatever the viewer has filtered down to.
 
+import { isChecklistItemOwnedBy } from './checklistOwners.ts';
 import type { QuickFilterState, RollupBoardItem } from './rollupBoardTypes.ts';
 
 /** No filters at all — the state the board opens in. */
@@ -20,7 +21,15 @@ function doesItemMatchFilters(item: RollupBoardItem, filters: QuickFilterState):
   if (filters.typeBuckets.size > 0 && !filters.typeBuckets.has(item.typeBucket)) {
     return false;
   }
-  if (filters.assigneeAccountId !== null && item.assigneeAccountId !== filters.assigneeAccountId) {
+  // A checklist item is work somebody was given, and the person given it is often not the person the
+  // card is assigned to — a Story assigned to its developer routinely carries a checklist line owned
+  // by a tester. Filtering to that tester used to hide the card, and with it the only place their
+  // work appears at all, so a board filtered to one person could show them nothing while they had a
+  // day's work on it.
+  if (filters.assigneeAccountId !== null
+    && item.assigneeAccountId !== filters.assigneeAccountId
+    && !item.checklistItems.some((checklistItem) =>
+      isChecklistItemOwnedBy(checklistItem, filters.assigneeAccountId ?? ''))) {
     return false;
   }
   if (filters.fixVersionName !== null && !item.fixVersionNames.includes(filters.fixVersionName)) {

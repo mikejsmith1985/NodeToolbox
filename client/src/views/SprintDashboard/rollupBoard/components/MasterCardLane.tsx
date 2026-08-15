@@ -15,9 +15,10 @@ import { buildJiraBrowseUrl } from '../../../../utils/jiraBrowseUrl.ts';
 import { useConnectionStore } from '../../../../store/connectionStore.ts';
 import { buildDropTargetId } from '../cardDropRouting.ts';
 import {
-  resolvePlaceholderIndex,
+  resolveCellPlaceholder,
   shouldHideDraggedEntry,
   type DropPreview,
+  type PlaceholderPlacement,
 } from '../dropPlaceholder.ts';
 import styles from '../RollupBoardTab.module.css';
 import { isColumnCollapsed, type ColumnTrackStyle } from '../columnTrackLayout.ts';
@@ -30,7 +31,7 @@ import type { BoardMembershipReason } from '../boardMembershipReason.ts';
 import type { FamilyProgress } from '../rollupBoardTypes.ts';
 import type { CardDetail } from '../cardDetail.ts';
 import type { LaneCellEntry, RenderedColumn, RenderedLane, RollupBoardItem } from '../rollupBoardTypes.ts';
-import { ChildCard } from './ChildCard.tsx';
+import { ChildCard, type ChildCardProps } from './ChildCard.tsx';
 import { ParentContainer } from './ParentContainer.tsx';
 
 const COLLAPSED_ICON = '▶';
@@ -59,6 +60,20 @@ function LaneCellDropZone({
   );
 }
 
+/** The gap's slot inside one named container, or null when the gap is not that container's to draw. */
+function readContainerPlaceholderIndex(
+  dropPreview: DropPreview | null,
+  cellId: string,
+  containers: readonly { parentKey: string; items: readonly { key: string }[] }[],
+  parentKey: string,
+): number | null {
+  const placement = resolveCellPlaceholder(dropPreview, cellId, [], containers.map((container) => ({
+    parentKey: container.parentKey,
+    itemKeys: container.items.map((containerItem) => containerItem.key),
+  })));
+  return placement?.target === 'container' && placement.parentKey === parentKey ? placement.index : null;
+}
+
 /** One thing to draw in a cell: the entries the layout produced, plus the gap the drag opens. */
 type CellRenderEntry = LaneCellEntry | { kind: 'placeholder' };
 
@@ -70,22 +85,15 @@ type CellRenderEntry = LaneCellEntry | { kind: 'placeholder' };
  */
 function buildCellRenderList(
   entries: readonly LaneCellEntry[],
-  dropPreview: DropPreview | null,
+  placement: PlaceholderPlacement | null,
   draggedItemKey: string | null,
-  cellId: string,
 ): CellRenderEntry[] {
-  const visible = entries.filter((entry) => !(entry.kind === 'item'
+  const visible: CellRenderEntry[] = entries.filter((entry) => !(entry.kind === 'item'
     && shouldHideDraggedEntry(draggedItemKey, entry.item.key)));
-  const placeholderIndex = resolvePlaceholderIndex(
-    dropPreview,
-    cellId,
-    visible.map((entry) => ({ itemKey: entry.kind === 'item' ? entry.item.key : null })),
-  );
-  if (placeholderIndex === null) return [...visible];
+  if (placement === null || placement.target !== 'cell') return visible;
 
-  const rendered: CellRenderEntry[] = [...visible];
-  rendered.splice(placeholderIndex, 0, { kind: 'placeholder' });
-  return rendered;
+  visible.splice(placement.index, 0, { kind: 'placeholder' });
+  return visible;
 }
 
 export interface MasterCardLaneProps {
@@ -124,6 +132,7 @@ export interface MasterCardLaneProps {
   onNestInto?: (issueKey: string, containerIssueKey: string) => void;
   /** Raises or clears Jira's impediment flag on a card. */
   onToggleFlag?: (issueKey: string, shouldBeFlagged: boolean) => void;
+  onToggleChecklistItem?: ChildCardProps['onToggleChecklistItem'];
   /**
    * Columns narrowed to a strip, by id.
    *
@@ -224,6 +233,7 @@ export function MasterCardLane({
   onToggleSubLaneCollapsed,
   onNestInto,
   onToggleFlag,
+  onToggleChecklistItem,
   collapsedColumnIds = [],
   draggedItemKey = null,
   dropPreview = null,
@@ -471,16 +481,31 @@ export function MasterCardLane({
                 {/* ONE ordered list, containers and loose cards interleaved. Drawing all containers
                     and then all loose cards fixed their relative order in the markup, so a column
                     holding one of each could not be reordered by any drag. */}
-                {buildCellRenderList(cell?.entries ?? [], dropPreview, draggedItemKey,
-                  buildDropTargetId(featureKey, column.id)).map((entry) => (entry.kind === 'placeholder' ? (
+                {buildCellRenderList(cell?.entries ?? [], resolveCellPlaceholder(
+                  dropPreview,
+                  buildDropTargetId(featureKey, column.id),
+                  (cell?.entries ?? []).map((entry) => ({
+                    itemKey: entry.kind === 'item' ? entry.item.key : null,
+                  })),
+                  (cell?.containers ?? []).map((container) => ({
+                    parentKey: container.parentKey,
+                    itemKeys: container.items.map((containerItem) => containerItem.key),
+                  })),
+                ), draggedItemKey).map((entry) => (entry.kind === 'placeholder' ? (
                   <div className={styles.dropPlaceholder} key="drop-placeholder">Move here</div>
                 ) : entry.kind === 'container' ? (
                   <ParentContainer
                     cardDetailByIssueKey={cardDetailByIssueKey}
                     shouldShowStatus={column.isUnmappedColumn}
                     container={entry.container}
+                    draggedItemKey={draggedItemKey}
+                    placeholderIndex={readContainerPlaceholderIndex(
+                      dropPreview, buildDropTargetId(featureKey, column.id),
+                      cell?.containers ?? [], entry.container.parentKey,
+                    )}
                     onNestInto={onNestInto}
                     onToggleFlag={onToggleFlag}
+                    onToggleChecklistItem={onToggleChecklistItem}
                     errorMessageByIssueKey={errorMessageByIssueKey}
                     highlightedFamilyKey={highlightedFamilyKey}
                     key={`container-${entry.container.parentKey}`}
@@ -495,6 +520,7 @@ export function MasterCardLane({
                     }))}
                     onNestInto={onNestInto}
                     onToggleFlag={onToggleFlag}
+                    onToggleChecklistItem={onToggleChecklistItem}
                     detail={cardDetailByIssueKey?.[entry.item.key] ?? null}
                     shouldShowStatus={column.isUnmappedColumn}
                     errorMessage={errorMessageByIssueKey?.[entry.item.key] ?? null}

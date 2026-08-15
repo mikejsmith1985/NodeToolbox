@@ -56,6 +56,54 @@ export function resolvePlaceholderIndex(
   return preview.edge === 'before' ? anchorIndex : anchorIndex + 1;
 }
 
+/** One container in a cell, reduced to the cards it holds. */
+export interface PlaceholderContainer {
+  parentKey: string;
+  itemKeys: readonly string[];
+}
+
+/** Where the one gap on the board goes: loose in a cell, or inside one of its containers. */
+export type PlaceholderPlacement =
+  | { target: 'cell'; index: number }
+  | { target: 'container'; parentKey: string; index: number };
+
+/**
+ * Resolves the ONE gap for a cell — including when it belongs inside a parent container.
+ *
+ * A container's cards are drawn inside it rather than in the cell's own list, so a cell that just
+ * asked "where does the anchor sit in my entries?" could not find a contained card and fell back to
+ * the end of the cell. That is what made a container's cards impossible to reorder: the gap opened
+ * somewhere else entirely, and the drop it was previewing landed somewhere else again.
+ *
+ * Resolving both placements in one function is what keeps the gap unique. Two independent rules — one
+ * for the cell, one for each container — would each have to decide the other is not drawing it, and
+ * a cell of three containers would then be four opinions about one card.
+ */
+export function resolveCellPlaceholder(
+  preview: DropPreview | null,
+  cellId: string,
+  entries: readonly PlaceholderCandidate[],
+  containers: readonly PlaceholderContainer[],
+): PlaceholderPlacement | null {
+  if (preview === null || preview.cellId !== cellId) return null;
+
+  // A contained card is the anchor: the gap opens between its siblings, inside their container.
+  if (preview.anchorKey !== null) {
+    const owningContainer = containers.find((container) => container.itemKeys.includes(preview.anchorKey ?? ''));
+    if (owningContainer) {
+      const anchorIndex = owningContainer.itemKeys.indexOf(preview.anchorKey);
+      return {
+        target: 'container',
+        parentKey: owningContainer.parentKey,
+        index: preview.edge === 'before' ? anchorIndex : anchorIndex + 1,
+      };
+    }
+  }
+
+  const cellIndex = resolvePlaceholderIndex(preview, cellId, entries);
+  return cellIndex === null ? null : { target: 'cell', index: cellIndex };
+}
+
 /**
  * The gap a card is lifted OUT of, so the cell does not appear to gain a slot while one is in the air.
  *

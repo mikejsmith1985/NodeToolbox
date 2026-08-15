@@ -54,8 +54,16 @@ export type CardDropDecision =
   | { kind: 'ignore' }
   | { kind: 'refused'; reason: string }
   | { kind: 'move'; item: RollupBoardItem; targetColumn: BoardColumn | RenderedColumn }
-  /** Same lane, same column: the viewer is sequencing the work, not changing its state. */
-  | { kind: 'reorder'; item: RollupBoardItem; targetIssueKey: string }
+  /**
+   * Same lane, same column: the viewer is sequencing the work, not changing its state.
+   *
+   * `edge` says which side of the target card to land on. It used to be dropped here, which meant
+   * every drop landed BEFORE the target however deliberately you aimed below it — so in a column of
+   * two cards only one of the two orders was reachable, and dragging the first card onto the second
+   * did nothing at all. It is also what the drop placeholder promises while the drag is in flight,
+   * so discarding it made the preview a lie.
+   */
+  | { kind: 'reorder'; item: RollupBoardItem; targetIssueKey: string; edge: 'before' | 'after' }
   /** Dropped in another Feature's lane: re-point the issue's Feature Link at that Feature. */
   | { kind: 'relink'; item: RollupBoardItem; targetFeatureKey: string }
   /** Dropped onto the body of another card: record that this issue is contained in that one. */
@@ -150,7 +158,12 @@ export function resolveCardDrop(input: ResolveCardDropInput): CardDropDecision {
     if (targetItem.columnId === draggedItem.columnId) {
       return input.cardDropZone === 'nest'
         ? { kind: 'nest', item: draggedItem, containerIssueKey: targetIssueKey }
-        : { kind: 'reorder', item: draggedItem, targetIssueKey };
+        : {
+          kind: 'reorder',
+          item: draggedItem,
+          targetIssueKey,
+          edge: input.cardDropZone === 'after' ? 'after' : 'before',
+        };
     }
     const targetColumnForCard = input.columnsById.get(targetItem.columnId);
     if (!targetColumnForCard) return { kind: 'ignore' };

@@ -19,6 +19,7 @@ import { buildCardTargetId } from '../cardDropRouting.ts';
 import { formatCommentDate, type CardDetail } from '../cardDetail.ts';
 import { describeStatusPair } from '../unmappedStatusSummary.ts';
 import type { ChecklistItemState } from '../checklistItems.ts';
+import { describeChecklistState, nextChecklistState } from '../checklistWrite.ts';
 import styles from '../RollupBoardTab.module.css';
 import { BoardContextMenu, type BoardMenuAction } from './BoardContextMenu.tsx';
 import {
@@ -121,6 +122,8 @@ export interface ChildCardProps {
    * would compete with clicking the card itself to open it.
    */
   onToggleFlag?: (issueKey: string, shouldBeFlagged: boolean) => void;
+  /** Ticks one Smart Checklist line on, off, or into "working". Absent leaves the markers read-only. */
+  onToggleChecklistItem?: (issueKey: string, checklistItemId: string, nextState: ChecklistItemState) => void;
 }
 
 /** Turns a resolved route into one readable sentence, so parentage is never inferred. */
@@ -158,6 +161,7 @@ export function ChildCard({
   containerCandidates = [],
   onNestInto,
   onToggleFlag,
+  onToggleChecklistItem,
 }: ChildCardProps) {
   const [menuPosition, setMenuPosition] = useState<{ xPx: number; yPx: number } | null>(null);
 
@@ -304,15 +308,40 @@ export function ChildCard({
         <ul className={styles.checklistItemList}>
           {visibleChecklistItems.map((checklistItem) => (
             <li className={styles.checklistItemCard} data-state={checklistItem.state} key={checklistItem.id}>
-              <span className={styles.checklistItemMarker}>
+              {/* A button, not a decoration: a checklist line is work somebody has to finish, and
+                  finishing it meant leaving for Jira. The state is spelled out beside the marker
+                  because "not ticked" covers both not-started and being-worked-on-right-now, which
+                  is the distinction a standup actually turns on. */}
+              <button
+                aria-label={`${checklistItem.text} — ${describeChecklistState(checklistItem.state)}. `
+                  + `Set to ${describeChecklistState(nextChecklistState(checklistItem.state))}`}
+                className={styles.checklistItemMarker}
+                disabled={onToggleChecklistItem === undefined || isReadOnly}
+                onClick={(clickEvent) => {
+                  // The card opens the detail view on click, and ticking a box is not asking for that.
+                  clickEvent.stopPropagation();
+                  onToggleChecklistItem?.(item.key, checklistItem.id, nextChecklistState(checklistItem.state));
+                }}
+                type="button"
+              >
                 {(() => {
                   const StateIcon = CHECKLIST_STATE_ICONS[checklistItem.state];
                   return <StateIcon />;
                 })()}
-              </span>
+                <span className={styles.checklistItemState}>{describeChecklistState(checklistItem.state)}</span>
+              </button>
               <span className={styles.checklistItemText}>{checklistItem.text}</span>
               {checklistItem.assigneeUserId && (
-                <span className={styles.checklistItemAssignee}>@{checklistItem.assigneeUserId}</span>
+                <span
+                  className={styles.checklistItemAssignee}
+                  // The raw id stays reachable, because it is what is written in Jira and what
+                  // somebody editing the checklist by hand will have to type.
+                  title={checklistItem.ownerDisplayName
+                    ? `${checklistItem.ownerDisplayName} (@${checklistItem.assigneeUserId})`
+                    : `@${checklistItem.assigneeUserId} — nobody on this board holds that Jira id`}
+                >
+                  {checklistItem.ownerDisplayName ?? `@${checklistItem.assigneeUserId}`}
+                </span>
               )}
             </li>
           ))}

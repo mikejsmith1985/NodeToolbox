@@ -27,6 +27,15 @@ export interface ChecklistItem {
   assigneeUserId: string | null;
   /** The `# heading` this item sits under, when the checklist is grouped. */
   headingText: string | null;
+  /**
+   * The owner, resolved against the people on the board — see `checklistOwners.ts`.
+   *
+   * Filled by a second pass rather than by the parser, which sees one issue at a time and so cannot
+   * know that `@C8Q6T3` is the person assigned three cards along. Optional because unresolved is a
+   * real state — the mention still names somebody, just nobody this board can put a face to.
+   */
+  ownerFilterId?: string | null;
+  ownerDisplayName?: string | null;
 }
 
 /** Marker characters, as the app writes them. */
@@ -149,6 +158,8 @@ export function parseSmartChecklistDump(rawValue: unknown): ChecklistItem[] {
       state: readDumpItemState(itemBlock),
       assigneeUserId: assigneeUserId ?? (DUMP_ASSIGNEE_PATTERN.exec(itemBlock)?.[1] ?? null),
       headingText: null,
+      ownerFilterId: null,
+      ownerDisplayName: null,
     });
   }
 
@@ -196,6 +207,8 @@ export function parseChecklistItems(rawChecklistValue: unknown): ChecklistItem[]
       state: readItemState(markerCharacter),
       assigneeUserId,
       headingText: currentHeading,
+      ownerFilterId: null,
+      ownerDisplayName: null,
     });
   }
 

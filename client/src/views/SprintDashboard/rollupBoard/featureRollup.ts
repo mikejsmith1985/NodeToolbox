@@ -7,6 +7,7 @@
 
 import { extractFeatureKeyFromIssueFields } from '../../../utils/featureLink.ts';
 import { chooseChecklistFieldByValue, parseChecklistItems, summarizeChecklist } from './checklistItems.ts';
+import { resolveChecklistOwners } from './checklistOwners.ts';
 import { detectImpedimentReasons } from '../../ArtView/hooks/artHelpers.ts';
 import { readIsFlagSet } from './issueFlagWrite.ts';
 import type { JiraIssue } from '../../../types/jira.ts';
@@ -346,7 +347,10 @@ export function resolveBoardItems(
     }
   }
 
-  return [...uniqueIssuesByKey.values()].map((issue) => {
+  // Wrapped in the owner pass: a checklist names its owner by a bare Jira user id, and turning that
+  // into a person needs every assignee on the board — including the ones on other cards. So the items
+  // are built first and their checklists resolved once, over the finished set.
+  return resolveChecklistOwners([...uniqueIssuesByKey.values()].map((issue) => {
     const route = resolveRouteForIssue(
       issue, resolutionIndexByKey, scope.featureLinkFieldId, isFeatureFinished, isFeatureInScope,
     );
@@ -393,6 +397,9 @@ export function resolveBoardItems(
       // filter had nobody to offer.
       assigneeAccountId: assignee?.accountId ?? assignee?.name ?? assignee?.key ?? null,
       assigneeDisplayName: assignee?.displayName ?? null,
+      // All three flavours, because a checklist names its owner by whichever one was to hand.
+      assigneeIdentifiers: [assignee?.accountId, assignee?.name, assignee?.key]
+        .filter((identifier): identifier is string => typeof identifier === 'string' && identifier !== ''),
       fixVersionNames: ((issueFields.fixVersions as Array<{ name?: string }>) ?? [])
         .map((fixVersion) => fixVersion.name ?? '')
         .filter(Boolean),
@@ -400,6 +407,7 @@ export function resolveBoardItems(
       // Checklist data is a paid Jira app's field this instance may not expose at all. Absent means
       // absent — never a zero-of-zero indicator asserting a checklist that does not exist.
       checklistItems,
+      checklistFieldId: readableFieldId,
       // Derived from the items themselves rather than counted separately, so the badge and the cards
       // beneath it can never disagree.
       checklistCompletion: summarizeChecklist(checklistItems),
@@ -412,5 +420,5 @@ export function resolveBoardItems(
       isFlagged: isFlagSet,
       impedimentReasons,
     };
-  });
+  }));
 }

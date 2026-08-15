@@ -1308,7 +1308,7 @@
  * should not compete with its parent's own edge. */
 .checklistItemCard {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: var(--spacing-xs);
   padding: 1px var(--spacing-xs);
   border-radius: var(--radius-sm);
@@ -1328,8 +1328,53 @@
   border-left: 2px solid var(--color-warning);
 }
 
+/* The marker is a control, so it has to look like one: a click target with a hover and a focus ring,
+   not an icon that happens to respond. The state's WORD sits inside it — "not ticked" covers both
+   not-started and in-progress, and that is the distinction a standup turns on. */
 .checklistItemMarker {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   flex: 0 0 auto;
+  padding: 1px 5px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised);
+  color: inherit;
+  font: inherit;
+  font-size: var(--font-size-xs);
+  line-height: 1.4;
+  cursor: pointer;
+  transition: background 90ms ease-out;
+}
+
+.checklistItemMarker:hover:not(:disabled) {
+  background: var(--surface-raised-hover);
+}
+
+.checklistItemMarker:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
+/* Read-only, and saying so: another discipline's card, or an instance with no writable checklist
+   field. A control that looks pressable and does nothing is worse than one that never offered. */
+.checklistItemMarker:disabled {
+  cursor: default;
+  border-color: transparent;
+  background: transparent;
+}
+
+.checklistItemState {
+  white-space: nowrap;
+  letter-spacing: 0.01em;
+}
+
+.checklistItemCard[data-state='done'] .checklistItemMarker { color: var(--color-success); }
+.checklistItemCard[data-state='in-progress'] .checklistItemMarker { color: var(--color-warning); }
+
+@media (prefers-reduced-motion: reduce) {
+  .checklistItemMarker { transition: none; }
 }
 
 .checklistItemText {

@@ -5,10 +5,13 @@
 // once, in the column of its own status — if this were card-shaped, a reader would reasonably count
 // it as an issue and every total on the board would be wrong.
 
+import { Fragment } from 'react';
+
 import type { CardDetail } from '../cardDetail.ts';
+import { shouldHideDraggedEntry } from '../dropPlaceholder.ts';
 import styles from '../RollupBoardTab.module.css';
 import type { ParentContainer as ParentContainerModel, RollupBoardItem } from '../rollupBoardTypes.ts';
-import { ChildCard } from './ChildCard.tsx';
+import { ChildCard, type ChildCardProps } from './ChildCard.tsx';
 
 export interface ParentContainerProps {
   container: ParentContainerModel;
@@ -32,8 +35,13 @@ export interface ParentContainerProps {
    */
   onNestInto?: (issueKey: string, containerIssueKey: string) => void;
   onToggleFlag?: (issueKey: string, shouldBeFlagged: boolean) => void;
+  onToggleChecklistItem?: ChildCardProps['onToggleChecklistItem'];
   onOpenIssue?: (issueKey: string) => void;
   onSelectFamily?: (item: RollupBoardItem) => void;
+  /** Where the drop gap opens among these cards, or null when it belongs elsewhere on the board. */
+  placeholderIndex?: number | null;
+  /** The card in the air, lifted out of the list so its old slot does not stay open beside the new one. */
+  draggedItemKey?: string | null;
 }
 
 /** Renders one parent grouping and the children of that parent present in this column. */
@@ -47,9 +55,16 @@ export function ParentContainer({
   isReadOnly,
   onNestInto,
   onToggleFlag,
+  onToggleChecklistItem,
   onOpenIssue,
   onSelectFamily,
+  placeholderIndex = null,
+  draggedItemKey = null,
 }: ParentContainerProps) {
+  // Reordering inside a container is the same gesture as reordering loose cards, so it gets the same
+  // gap — the container simply happens to be where these particular cards are drawn.
+  const visibleItems = container.items.filter((item) => !shouldHideDraggedEntry(draggedItemKey, item.key));
+
   return (
     <div className={styles.parentContainer} data-testid={`rollup-container-${container.parentKey}`}>
       <div className={styles.parentContainerHeader}>
@@ -71,13 +86,18 @@ export function ParentContainer({
         )}
       </div>
 
-      {container.items.map((item) => (
+      {visibleItems.map((item, itemIndex) => (
+        <Fragment key={item.key}>
+          {placeholderIndex === itemIndex && (
+            <div className={styles.dropPlaceholder}>Move here</div>
+          )}
         <ChildCard
           containerCandidates={container.items.map((candidate) => ({
             key: candidate.key, summary: candidate.summary,
           }))}
           onNestInto={onNestInto}
           onToggleFlag={onToggleFlag}
+          onToggleChecklistItem={onToggleChecklistItem}
           isReadOnly={isReadOnly}
           detail={cardDetailByIssueKey?.[item.key] ?? null}
           shouldShowStatus={shouldShowStatus}
@@ -85,11 +105,16 @@ export function ParentContainer({
           isHighlighted={highlightedFamilyKey !== null && highlightedFamilyKey === container.parentKey}
           isPending={pendingIssueKey === item.key}
           item={item}
-          key={item.key}
           onOpen={onOpenIssue}
           onSelectFamily={onSelectFamily}
         />
+        </Fragment>
       ))}
+
+      {/* Dropping below the last card is its own slot, and there is no card after it to hang it on. */}
+      {placeholderIndex !== null && placeholderIndex >= visibleItems.length && (
+        <div className={styles.dropPlaceholder}>Move here</div>
+      )}
     </div>
   );
 }

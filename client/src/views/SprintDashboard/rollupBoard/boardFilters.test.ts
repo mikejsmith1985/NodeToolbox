@@ -7,6 +7,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { EMPTY_QUICK_FILTER_STATE, hasActiveFilters, selectMatchingItems } from './boardFilters.ts';
+import type { ChecklistItem } from './checklistItems.ts';
 import type { IssueTypeBucket, RollupBoardItem } from './rollupBoardTypes.ts';
 import type { JiraIssue } from '../../../types/jira.ts';
 
@@ -15,9 +16,12 @@ interface BuildItemInput {
   typeBucket?: IssueTypeBucket;
   assigneeAccountId?: string | null;
   fixVersionNames?: string[];
+  checklistItems?: ChecklistItem[];
 }
 
-function buildItem({ key, typeBucket = 'story', assigneeAccountId = null, fixVersionNames = [] }: BuildItemInput): RollupBoardItem {
+function buildItem({
+  key, typeBucket = 'story', assigneeAccountId = null, fixVersionNames = [], checklistItems = [],
+}: BuildItemInput): RollupBoardItem {
   return {
     issue: { id: key, key, fields: { summary: key } } as unknown as JiraIssue,
     key,
@@ -35,7 +39,7 @@ function buildItem({ key, typeBucket = 'story', assigneeAccountId = null, fixVer
     fixVersionNames,
     storyPoints: null,
     checklistCompletion: null,
-    checklistItems: [],
+    checklistItems,
     isFlagged: false,
     impedimentReasons: [],
   };
@@ -147,5 +151,41 @@ describe('hasActiveFilters', () => {
 
   it('is true for a fix version filter', () => {
     expect(hasActiveFilters({ ...EMPTY_QUICK_FILTER_STATE, fixVersionName: '26.4' })).toBe(true);
+  });
+});
+
+describe('the assignee filter and Smart Checklist work', () => {
+  it('keeps a card whose CHECKLIST names the person, even when the card belongs to somebody else', () => {
+    // A Story assigned to its developer routinely carries a checklist line owned by a tester.
+    // Filtering to that tester used to hide the card, and with it the only place their work appears
+    // at all — so a board filtered to one person could show them nothing while they had a day's work
+    // on it.
+    const card = buildItem({
+      key: 'DEV-1',
+      assigneeAccountId: 'acc-dev',
+      checklistItems: [{
+        id: 'checklist-0', text: 'SL test', state: 'open', assigneeUserId: 'C8Q6T3',
+        headingText: null, ownerFilterId: 'acc-tester', ownerDisplayName: 'Smith, Michael (CTR)',
+      }],
+    });
+
+    expect(selectMatchingItems([card], {
+      ...EMPTY_QUICK_FILTER_STATE, assigneeAccountId: 'acc-tester',
+    })).toHaveLength(1);
+  });
+
+  it('still excludes a card that neither the assignee nor the checklist connects to that person', () => {
+    const card = buildItem({
+      key: 'DEV-2',
+      assigneeAccountId: 'acc-dev',
+      checklistItems: [{
+        id: 'checklist-0', text: 'SL test', state: 'open', assigneeUserId: 'OTHER',
+        headingText: null, ownerFilterId: 'acc-other', ownerDisplayName: null,
+      }],
+    });
+
+    expect(selectMatchingItems([card], {
+      ...EMPTY_QUICK_FILTER_STATE, assigneeAccountId: 'acc-tester',
+    })).toHaveLength(0);
   });
 });

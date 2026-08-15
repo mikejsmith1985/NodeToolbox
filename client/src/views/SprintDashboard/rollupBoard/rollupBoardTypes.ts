@@ -188,6 +188,16 @@ export interface RollupBoardItem {
   subStatusValue: string | null;
   assigneeAccountId: string | null;
   assigneeDisplayName: string | null;
+  /**
+   * Every id Jira gave for this assignee — account id, username, user key.
+   *
+   * Kept because a Smart Checklist mention names a person by whichever of these somebody typed, and
+   * matching it needs all of them. Not used for anything else.
+   *
+   * Optional because it only ever ADDS resolutions: absent, a person is still known by the single id
+   * the filter uses, which is what the board managed with before this existed.
+   */
+  assigneeIdentifiers?: string[];
   fixVersionNames: string[];
   /** null means no estimate exists. It is never 0, which would claim an estimate of zero. */
   storyPoints: number | null;
@@ -200,6 +210,14 @@ export interface RollupBoardItem {
    * used to reduce to a bare "2/5", which says how much is left but never what any of it is.
    */
   checklistItems: ChecklistItem[];
+  /**
+   * The field these items were READ from, which is where a write should be aimed first.
+   *
+   * Per issue rather than per board: the choice is made on which candidate field actually yields
+   * items for THAT issue, and an instance carrying three checklist fields does not fill the same one
+   * on every issue.
+   */
+  checklistFieldId?: string | null;
   /**
    * Whether Jira considers this issue impeded — flagged, blocked by status, or blocked by a link.
    *

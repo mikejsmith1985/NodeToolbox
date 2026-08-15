@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { resolvePlaceholderIndex, shouldHideDraggedEntry } from './dropPlaceholder.ts';
+import { resolveCellPlaceholder, resolvePlaceholderIndex, shouldHideDraggedEntry } from './dropPlaceholder.ts';
 
 const CELL = 'FEAT-1::col-todo';
 const ENTRIES = [{ itemKey: 'DEV-1' }, { itemKey: null }, { itemKey: 'DEV-2' }];
@@ -58,5 +58,50 @@ describe('shouldHideDraggedEntry', () => {
     expect(shouldHideDraggedEntry('DEV-1', 'DEV-2')).toBe(false);
     expect(shouldHideDraggedEntry(null, 'DEV-1')).toBe(false);
     expect(shouldHideDraggedEntry('DEV-1', null)).toBe(false);
+  });
+});
+
+describe('resolveCellPlaceholder', () => {
+  const CONTAINERS = [{ parentKey: 'DEV-9', itemKeys: ['SUB-1', 'SUB-2'] }];
+  const CELL_ENTRIES = [{ itemKey: null }, { itemKey: 'DEV-1' }];
+
+  it('opens the gap INSIDE the container when the anchor is one of its cards', () => {
+    // The case that made a container impossible to reorder: its cards are not in the cell's own list.
+    expect(resolveCellPlaceholder(
+      { cellId: CELL, anchorKey: 'SUB-2', edge: 'before' }, CELL, CELL_ENTRIES, CONTAINERS,
+    )).toEqual({ target: 'container', parentKey: 'DEV-9', index: 1 });
+  });
+
+  it('opens it after the last card of a container when the pointer is below it', () => {
+    expect(resolveCellPlaceholder(
+      { cellId: CELL, anchorKey: 'SUB-2', edge: 'after' }, CELL, CELL_ENTRIES, CONTAINERS,
+    )).toEqual({ target: 'container', parentKey: 'DEV-9', index: 2 });
+  });
+
+  it('opens it in the cell when the anchor is a loose card', () => {
+    expect(resolveCellPlaceholder(
+      { cellId: CELL, anchorKey: 'DEV-1', edge: 'after' }, CELL, CELL_ENTRIES, CONTAINERS,
+    )).toEqual({ target: 'cell', index: 2 });
+  });
+
+  it('opens it in the cell when no card is the anchor at all', () => {
+    expect(resolveCellPlaceholder(
+      { cellId: CELL, anchorKey: null, edge: 'before' }, CELL, CELL_ENTRIES, CONTAINERS,
+    )).toEqual({ target: 'cell', index: 0 });
+  });
+
+  it('draws exactly one gap — never both in the cell and in a container', () => {
+    // The invariant the whole function exists for.
+    const placement = resolveCellPlaceholder(
+      { cellId: CELL, anchorKey: 'SUB-1', edge: 'before' }, CELL, CELL_ENTRIES, CONTAINERS,
+    );
+
+    expect(placement?.target).toBe('container');
+  });
+
+  it('draws nothing in a cell that is not being hovered', () => {
+    expect(resolveCellPlaceholder(
+      { cellId: CELL, anchorKey: 'SUB-1', edge: 'before' }, 'OTHER::col', CELL_ENTRIES, CONTAINERS,
+    )).toBeNull();
   });
 });

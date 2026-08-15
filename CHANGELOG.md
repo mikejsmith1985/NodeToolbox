@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Roll-Up Board — half of every card reorder silently did nothing.** The drop worked out which half of
+  the target card you released on, and then threw that answer away: every drop landed *before* the
+  target, however deliberately you aimed below it. In a column of two cards that left exactly one
+  reachable arrangement — dragging the lower card up worked, and dragging the upper card down asked
+  for "before the card it is already before", which is where it already was. It also made the new drop
+  gap a lie, since the gap honoured the edge and the drop did not. Both now read the same pointer.
+- **Roll-Up Board — cards inside a parent container can be reordered.** A container's cards are drawn
+  inside it rather than in the column's own list, so the gap could not find the card it was supposed to
+  open beside and fell back to the end of the column — previewing a move somewhere the drop was never
+  going to land. The gap now resolves to the cell *or* to the container that owns the anchor, in one
+  decision, which is also what guarantees only one gap opens anywhere on the board.
+- **Roll-Up Board — filtering to a person no longer hides the checklist work assigned to them.** A
+  Story assigned to its developer routinely carries a Smart Checklist line owned by a tester. Filtering
+  to that tester hid the card, and with it the only place their work appears at all — so a board
+  filtered to one person could show them nothing while they had a day's work on it. A card now stays
+  when the person owns the card **or** any line of its checklist.
+
+### Added
+- **Roll-Up Board — Smart Checklist items can be ticked off from the board.** The marker beside each
+  line is now a button that cycles **To do → Working → Done**, and the state is spelled out beside it,
+  because "not ticked" covers both not-started and being-worked-on-right-now — which is the distinction
+  a standup actually turns on. The write goes to whichever checklist field the issue's *edit screen*
+  offers, asked of Jira at the moment of the write: the Smart Checklist app's own field holds a Java
+  object dump, which is readable with care and could never be written back. Where no checklist field is
+  on the edit screen, the marker is plainly unpressable and the card says why, naming the fix (add the
+  checklist text field to the edit screen) rather than reporting a failure.
+- **Roll-Up Board — checklist owners are shown by name.** A checklist line stores its owner as a bare
+  Jira id — `@C8Q6T3` — which is unreadable to everyone including the person it belongs to. The board
+  now maps a person's several ids (account id, username, user key) onto one person, using the people
+  already on the board, and shows the name; the raw id stays in the tooltip because that is what
+  somebody editing the checklist by hand has to type. The same resolution feeds the assignee filter, so
+  the name a card shows and the person the filter matches cannot disagree.
+
 ### Changed
 - **Roll-Up Board — the drop target is now a gap the cards open, not a line.** Dragging a card used to
   draw a 3px blue line along the top edge of the card underneath. A line marks a boundary and leaves

@@ -24,18 +24,24 @@ export function buildCardCellKey(featureKey: string, columnId: string): string {
 }
 
 /**
- * Moves one card to sit where another currently is, within the same lane and column.
+ * Moves one card to sit beside another, within the same lane and column.
  *
  * The order is seeded from what is on screen the first time someone drags, so a single move
  * reorders one card rather than appearing to shuffle the whole column.
+ *
+ * `placement` is what makes both orders reachable. While this could only place BEFORE, a column of
+ * two cards had exactly one achievable arrangement: dragging the lower card up worked, and dragging
+ * the upper card down asked for "before the card it is already before", which is where it already
+ * was. Half of every reorder silently did nothing.
  */
-export function moveCardBefore(
+export function moveCardBeside(
   preferences: BoardPreferences,
   featureKey: string,
   columnId: string,
   movedIssueKey: string,
   targetIssueKey: string,
   displayedIssueKeys: readonly string[],
+  placement: 'before' | 'after' = 'before',
 ): BoardPreferences {
   const cellKey = buildCardCellKey(featureKey, columnId);
   const storedOrder = preferences.cardOrderByCell?.[cellKey] ?? [];
@@ -49,11 +55,24 @@ export function moveCardBefore(
 
   const withoutMoved = seededOrder.filter((issueKey) => issueKey !== movedIssueKey);
   const targetIndex = withoutMoved.indexOf(targetIssueKey);
+  const insertIndex = placement === 'after' ? targetIndex + 1 : targetIndex;
   const nextOrder = targetIndex < 0
     ? [...withoutMoved, movedIssueKey]
-    : [...withoutMoved.slice(0, targetIndex), movedIssueKey, ...withoutMoved.slice(targetIndex)];
+    : [...withoutMoved.slice(0, insertIndex), movedIssueKey, ...withoutMoved.slice(insertIndex)];
 
   return { ...preferences, cardOrderByCell: { ...preferences.cardOrderByCell, [cellKey]: nextOrder } };
+}
+
+/** Places a card before another. Kept as the name every caller that only ever means "before" reads by. */
+export function moveCardBefore(
+  preferences: BoardPreferences,
+  featureKey: string,
+  columnId: string,
+  movedIssueKey: string,
+  targetIssueKey: string,
+  displayedIssueKeys: readonly string[],
+): BoardPreferences {
+  return moveCardBeside(preferences, featureKey, columnId, movedIssueKey, targetIssueKey, displayedIssueKeys);
 }
 
 /** Reads every stored preference set; unreadable storage is treated as "nothing stored yet". */
