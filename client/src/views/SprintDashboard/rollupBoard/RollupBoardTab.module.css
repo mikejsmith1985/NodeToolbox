@@ -1306,8 +1306,13 @@
  *
  * The stripe is narrower than a card's, because this is nested INSIDE the card it belongs to and
  * should not compete with its parent's own edge. */
+/* Two rows, not one. Three things — a state control, the item text, and an owner's full name — do not
+   fit across a 250px column, and when they were asked to, the only shrinkable one (the text) collapsed
+   to a single character wide and wrapped one letter per line. Text leads on its own row; the state and
+   the owner sit beneath it. */
 .checklistItemCard {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--spacing-xs);
   padding: 1px var(--spacing-xs);
@@ -1378,12 +1383,22 @@
 }
 
 .checklistItemText {
-  flex: 1 1 auto;
+  /* Its own full-width row, and `order` puts it above the controls that follow it in the markup —
+     the state button stays first in the DOM, where a keyboard reaches it before the label it acts on. */
+  flex: 1 1 100%;
+  order: -1;
+  min-width: 0;
   overflow-wrap: anywhere;
 }
 
 .checklistItemAssignee {
-  flex: 0 0 auto;
+  /* Shrinks and ellipsises rather than pushing the row apart: a display name here is
+     "Lastname, Firstname (CTR)", which is wider than most of the columns it has to sit in. */
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   color: var(--color-text-primary);
 }
 

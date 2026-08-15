@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Roll-Up Board — a checklist item's text wrapped one letter per line.** Three things — a state
+  control, the item text, and an owner's full name — were asked to fit across a 250px column. The
+  state button and the owner both refused to shrink, so the only flexible one left was the text, which
+  collapsed to a single character wide. Naming the owner properly (`Smith, Michael (CTR)` in place of
+  `@C8Q6T3`) is what pushed it over. The row is now two: text on its own line, state and owner beneath
+  it, with the name ellipsised rather than allowed to push the row apart.
+
 ### Added
 - **Any field can be edited from a card — especially the EMPTY ones.** This is the gap that sent you to
   Jira. Jira's own detail view will happily change a field that already has a value and simply does not
