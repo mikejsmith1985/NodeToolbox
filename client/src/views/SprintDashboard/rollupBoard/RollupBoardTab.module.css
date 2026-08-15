@@ -19,6 +19,64 @@
   display: flex;
   flex-direction: column;
   gap: var(--spacing-md);
+  /* The detail shelf is positioned against this, so it covers the board region and nothing else. */
+  position: relative;
+}
+
+/* ── The open card's detail, as a shelf over the right of the board ──
+ *
+ * Three placements preceded this and each fixed the last one's problem: top of the page (scroll up to
+ * read, scroll back to resume), end of the swimlane (opened below the fold on a tall lane), a dock
+ * along the bottom (left the columns a thin strip). The dock failed because HEIGHT is what this board
+ * is short of — and nobody needs to see all twelve columns at the moment they are working on one
+ * story, so width is the axis that can be spared while one is open.
+ *
+ * It COVERS the board rather than compressing it, so the board is exactly as it was the moment this
+ * closes — no reflow, no lost scroll position, nothing to find again. */
+.detailShelf {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 5;
+  width: min(30rem, 94vw);
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-raised);
+  border-left: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md) 0 0 var(--radius-md);
+  box-shadow: var(--elevation-overlay);
+  overflow: hidden;
+}
+
+.detailShelfBar {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-xs) var(--spacing-md);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface-1);
+  flex-shrink: 0;
+}
+
+.detailShelfTitle {
+  font-weight: 700;
+  font-size: var(--font-size-sm);
+  color: var(--color-accent);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The escape hatch to the full issue, kept even though the shelf can now edit an EMPTY field — the
+   thing Jira's own shelf sends you to a new tab for. */
+.detailShelfLink {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+  margin-right: auto;
+}
+
+.detailShelfBody {
+  overflow: auto;
+  padding: var(--spacing-sm) var(--spacing-md);
 }
 
 .boardStatusLine {
@@ -1290,64 +1348,3 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* ── The open card's detail, docked to the bottom of the board ──
- *
- * `sticky; bottom: 0` keeps it in the SCROLL REGION rather than over the whole window, so the board
- * goes on scrolling behind it and the card you clicked stays visible above. A modal would have put it
- * somewhere equally findable and hidden the board doing it — and seeing where work is, is the entire
- * point of this view.
- *
- * `left: 0` with `width: 0; min-width: 100%` is the same trick the toolbar uses: the dock is as wide
- * as the SCROLLER, not as the column grid, so it does not slide away when you scroll sideways through
- * twelve columns. */
-.detailDock {
-  position: sticky;
-  bottom: 0;
-  left: 0;
-  width: 0;
-  min-width: 100%;
-  z-index: 3;
-  display: flex;
-  flex-direction: column;
-  /* Raised above the board it covers, so the boundary is unmistakable. */
-  background: var(--surface-raised);
-  border-top: 1px solid var(--color-border-strong);
-  box-shadow: var(--elevation-overlay);
-  border-radius: var(--radius-md) var(--radius-md) 0 0;
-  /* Native, and free: the browser's own resize grip, so height is the viewer's to choose. Height is
-     the one axis this board can spare — a right-hand drawer would have taken the width it cannot. */
-  resize: vertical;
-  overflow: hidden;
-  height: 22rem;
-  max-height: 70vh;
-  min-height: 6rem;
-}
-
-.detailDockBar {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-sm);
-  padding: var(--spacing-xs) var(--spacing-md);
-  border-bottom: 1px solid var(--color-border);
-  background: var(--color-surface-1);
-  flex-shrink: 0;
-}
-
-.detailDockTitle {
-  font-weight: 700;
-  font-size: var(--font-size-sm);
-  color: var(--color-accent);
-  font-variant-numeric: tabular-nums;
-}
-
-.detailDockHint {
-  font-size: var(--font-size-xs);
-  color: var(--color-text-muted);
-  margin-right: auto;
-}
-
-/* The panel scrolls inside the dock, so a long description never grows the dock past where it was put. */
-.detailDockBody {
-  overflow: auto;
-  padding: var(--spacing-sm) var(--spacing-md);
-}

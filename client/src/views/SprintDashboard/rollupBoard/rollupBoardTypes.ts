@@ -344,7 +344,21 @@ export interface LaneCell {
   containers: ParentContainer[];
   /** Items with no in-scope parent — including a parent's own childless card. */
   looseItems: RollupBoardItem[];
+  /**
+   * Everything in the cell in the order it should be DRAWN, containers and loose cards interleaved.
+   *
+   * The two lists above are kept because counts and progress read them, but they cannot be rendered
+   * one after the other — which is what the lane used to do. All containers were drawn, then all loose
+   * cards, so the order between a contained card and a loose one was fixed by the markup and no drag
+   * could change it. A column holding one of each simply refused to reorder.
+   */
+  entries: LaneCellEntry[];
 }
+
+/** One drawable thing in a cell: a parent's container, or a card standing on its own. */
+export type LaneCellEntry =
+  | { kind: 'container'; container: ParentContainer }
+  | { kind: 'item'; item: RollupBoardItem };
 
 /**
  * One non-dev participant in a Feature family: QE, BT, or anything else a team adds later.

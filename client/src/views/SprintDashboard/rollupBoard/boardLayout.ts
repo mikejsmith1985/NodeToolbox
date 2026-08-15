@@ -15,6 +15,7 @@ import {
   type BoardLayout,
   type BoardPreferences,
   type LaneCell,
+  type LaneCellEntry,
   type MasterCard,
   type MasterCardVitals,
   type ParentContainer,
@@ -103,10 +104,14 @@ function groupItemsIntoParentContainers(
 ): LaneCell {
   const containersByParentKey = new Map<string, ParentContainer>();
   const looseItems: RollupBoardItem[] = [];
+  // Built in the SAME pass as the two lists, so the drawn order is the cell's real order rather than
+  // "containers first, then everything else" — which no drag could get past.
+  const entries: LaneCellEntry[] = [];
 
   for (const item of orderCardsWithinCell(columnItems, orderedIssueKeys)) {
     if (item.parentKey === null) {
       looseItems.push(item);
+      entries.push({ kind: 'item', item });
       continue;
     }
 
@@ -117,7 +122,7 @@ function groupItemsIntoParentContainers(
     }
 
     const parentItem = itemsByKeyInLane.get(item.parentKey);
-    containersByParentKey.set(item.parentKey, {
+    const newContainer: ParentContainer = {
       parentKey: item.parentKey,
       parentSummary: parentItem?.summary ?? '',
       // The parent may be real but outside this board's scope. The header still names it, so the
@@ -129,13 +134,19 @@ function groupItemsIntoParentContainers(
         ? (laneKeyByIssueKey.get(item.parentKey) ?? null)
         : null,
       items: [item],
-    });
+    };
+    containersByParentKey.set(item.parentKey, newContainer);
+    entries.push({ kind: 'container', container: newContainer });
   }
 
+  // Step 5: a container with no items would imply work that is not there.
+  const filledContainers = [...containersByParentKey.values()].filter((container) => container.items.length > 0);
+  const filledContainerKeys = new Set(filledContainers.map((container) => container.parentKey));
+
   return {
-    // Step 5: a container with no items would imply work that is not there.
-    containers: [...containersByParentKey.values()].filter((container) => container.items.length > 0),
+    containers: filledContainers,
     looseItems,
+    entries: entries.filter((entry) => entry.kind === 'item' || filledContainerKeys.has(entry.container.parentKey)),
   };
 }
 

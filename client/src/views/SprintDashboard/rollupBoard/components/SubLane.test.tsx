@@ -53,7 +53,7 @@ function buildSubLane(overrides: Partial<SubLaneModel> = {}): SubLaneModel {
     cloneFeatureIssue: { id: 'QEINT-610', key: 'QEINT-610', fields: { summary: 'QE copy' } } as unknown as JiraIssue,
     toneIndex: 1,
     isInferredMatch: false,
-    cellsByColumnId: { 'col-qa': { containers: [], looseItems: items } },
+    cellsByColumnId: { 'col-qa': { containers: [], entries: [], looseItems: items } },
     items,
     isCollapsed: false,
     matchedItemCount: items.length,

@@ -428,40 +428,42 @@ export function MasterCardLane({
 
             return (
               <LaneCellDropZone columnId={column.id} featureKey={featureKey} key={column.id}>
-                {cell?.containers.map((container) => (
+                {/* ONE ordered list, containers and loose cards interleaved. Drawing all containers
+                    and then all loose cards fixed their relative order in the markup, so a column
+                    holding one of each could not be reordered by any drag. */}
+                {(cell?.entries ?? []).map((entry) => (entry.kind === 'container' ? (
                   <ParentContainer
                     cardDetailByIssueKey={cardDetailByIssueKey}
                     shouldShowStatus={column.isUnmappedColumn}
-                    container={container}
+                    container={entry.container}
                     onNestInto={onNestInto}
                     onToggleFlag={onToggleFlag}
                     errorMessageByIssueKey={errorMessageByIssueKey}
                     highlightedFamilyKey={highlightedFamilyKey}
-                    key={container.parentKey}
+                    key={`container-${entry.container.parentKey}`}
                     onOpenIssue={onOpenIssue}
                     onSelectFamily={onSelectFamily}
                     pendingIssueKey={pendingIssueKey}
                   />
-                ))}
-                {cell?.looseItems.map((item) => (
+                ) : (
                   <ChildCard
-                    containerCandidates={cell.looseItems.map((candidate) => ({
+                    containerCandidates={(cell?.looseItems ?? []).map((candidate) => ({
                       key: candidate.key, summary: candidate.summary,
                     }))}
                     onNestInto={onNestInto}
                     onToggleFlag={onToggleFlag}
-                    detail={cardDetailByIssueKey?.[item.key] ?? null}
+                    detail={cardDetailByIssueKey?.[entry.item.key] ?? null}
                     shouldShowStatus={column.isUnmappedColumn}
-                    errorMessage={errorMessageByIssueKey?.[item.key] ?? null}
+                    errorMessage={errorMessageByIssueKey?.[entry.item.key] ?? null}
                     isHighlighted={highlightedFamilyKey !== null
-                      && (highlightedFamilyKey === item.key || highlightedFamilyKey === item.parentKey)}
-                    isPending={pendingIssueKey === item.key}
-                    item={item}
-                    key={item.key}
+                      && (highlightedFamilyKey === entry.item.key || highlightedFamilyKey === entry.item.parentKey)}
+                    isPending={pendingIssueKey === entry.item.key}
+                    item={entry.item}
+                    key={entry.item.key}
                     onOpen={onOpenIssue}
                     onSelectFamily={onSelectFamily}
                   />
-                ))}
+                )))}
               </LaneCellDropZone>
             );
           })}

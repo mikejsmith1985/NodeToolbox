@@ -520,3 +520,40 @@ describe('a parent that is on the board but in another lane', () => {
     expect(container.parentLaneFeatureKey).toBeNull();
   });
 });
+
+describe('buildBoardLayout — a cell draws in ONE order', () => {
+  /** One loose card and one card belonging to a parent, both in the same column. */
+  const MIXED_ITEMS = [
+    buildItem({ key: 'DEV-1', featureKey: 'FEAT-1', columnId: 'col-todo' }),
+    { ...buildItem({ key: 'DEV-2-1', featureKey: 'FEAT-1', columnId: 'col-todo' }), parentKey: 'DEV-2' },
+  ];
+
+  /** Builds the one lane, with the cards in the cell order given. */
+  function buildCellWith(orderedIssueKeys: string[]) {
+    const [lane] = buildBoardLayout({
+      masterCards: buildMasterCards(MIXED_ITEMS, new Map([['FEAT-1', buildFeature('FEAT-1')]])),
+      columns: buildRenderedColumns(VOCABULARY),
+      filters: NO_FILTERS,
+      preferences: { ...buildPreferences(), cardOrderByCell: { 'FEAT-1::col-todo': orderedIssueKeys } },
+    }).lanes;
+    return lane.cellsByColumnId['col-todo'];
+  }
+
+  it('interleaves a container with the loose cards around it', () => {
+    // The bug: all containers were drawn, then all loose cards. Their relative order lived in the
+    // markup, so a column holding one of each could not be reordered by any drag at all.
+    expect(buildCellWith(['DEV-1', 'DEV-2-1']).entries.map((entry) => entry.kind))
+      .toEqual(['item', 'container']);
+  });
+
+  it('puts the container first when the stored order does', () => {
+    expect(buildCellWith(['DEV-2-1', 'DEV-1']).entries.map((entry) => entry.kind))
+      .toEqual(['container', 'item']);
+  });
+
+  it('never lists a container that ended up with nothing in it', () => {
+    const cell = buildCellWith(['DEV-1', 'DEV-2-1']);
+
+    expect(cell.entries.filter((entry) => entry.kind === 'container')).toHaveLength(cell.containers.length);
+  });
+});

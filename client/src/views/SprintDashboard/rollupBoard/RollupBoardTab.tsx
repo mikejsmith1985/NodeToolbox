@@ -53,6 +53,8 @@ import {
 import { buildColumnTracks, toggleColumnCollapsed } from './columnTrackLayout.ts';
 import { findFlagFieldInCatalog, setIssueFlag } from './issueFlagWrite.ts';
 import { selectColumnMapping } from './selectColumnMapping.ts';
+import { buildJiraBrowseUrl } from '../../../utils/jiraBrowseUrl.ts';
+import { useConnectionStore } from '../../../store/connectionStore.ts';
 import { buildRenderedColumns, resolveColumnIdForItem } from './boardColumns.ts';
 import { describeMissingSubLanes, describeUnconfiguredClones } from './cloneFamily.ts';
 import { classifyCloneFamilies, discoverDisciplineWork } from './disciplineDiscovery.ts';
@@ -433,6 +435,7 @@ export default function RollupBoardTab({
   const [draggedItemKey, setDraggedItemKey] = useState<string | null>(null);
   // Whichever field this instance keeps Jira's impediment flag in, discovered on load.
   const [flagFieldId, setFlagFieldId] = useState('');
+  const jiraBaseUrl = useConnectionStore((connectionState) => connectionState.proxyStatus?.jira?.baseUrl ?? '');
   const [isSharingOrder, setIsSharingOrder] = useState(false);
   const [orderShareMessage, setOrderShareMessage] = useState<string | null>(null);
   const [orderPullPreview, setOrderPullPreview] = useState<OrderPullPreview | null>(null);
@@ -667,6 +670,7 @@ export default function RollupBoardTab({
 
     return () => { isMounted = false; };
   }, [loadState.masterCards, featureScope.disciplineProjects, featureScope.featureProjectKeys, boardId, subStatusFieldId, vocabulary, teamProfileId]);
+
 
   useEffect(() => {
     const handleResize = (): void => setBoardWidth(window.innerWidth);
@@ -1596,6 +1600,16 @@ export default function RollupBoardTab({
     }
   }, [openIssueKey, loadState.allItems, vocabulary, renderedColumns, subStatusFieldId]);
 
+  // Escape closes the open card, which is the gesture everybody already tries on a panel like this.
+  useEffect(() => {
+    if (openIssueKey === null) return;
+    const closeOnEscape = (keyboardEvent: KeyboardEvent): void => {
+      if (keyboardEvent.key === 'Escape') void handleOpenIssue(openIssueKey);
+    };
+    document.addEventListener('keydown', closeOnEscape);
+    return () => document.removeEventListener('keydown', closeOnEscape);
+  }, [openIssueKey, handleOpenIssue]);
+
   /**
    * Applies a transition chosen from the open card.
    *
@@ -1703,6 +1717,67 @@ export default function RollupBoardTab({
 
   return (
     <div className={styles.boardShell}>
+      {/* The open card's detail, as a shelf over the right of the board.
+
+          It began at the top of the page, then moved to the end of its swimlane, then to a dock along
+          the bottom — and the dock over-corrected. HEIGHT is what this board is short of: the dock
+          left the columns a thin strip, and nobody needs to see all twelve columns at the moment they
+          are working on one story. So it takes width, which is the axis that can be spared while a
+          story is open, and it COVERS the board rather than compressing it — the board is exactly as
+          it was the moment this closes.
+
+          Escape closes it, as does its own button, as does clicking the card again. */}
+      {openIssue !== null && (
+        <section
+          aria-label={`Details for ${openIssue.key}`}
+          className={styles.detailShelf}
+          data-testid="rollup-issue-detail"
+        >
+          <div className={styles.detailShelfBar}>
+            <span className={styles.detailShelfTitle}>{openIssue.key}</span>
+            <a
+              className={styles.detailShelfLink}
+              href={buildJiraBrowseUrl(openIssue.key, jiraBaseUrl)}
+              rel="noreferrer"
+              target="_blank"
+            >
+              Open in Jira
+            </a>
+            <button
+              className={styles.actionButton}
+              onClick={() => void handleOpenIssue(openIssue.key)}
+              type="button"
+            >
+              Close
+            </button>
+          </div>
+          <div className={styles.detailShelfBody}>
+            {/* Editing delegates entirely to the shared editors: the board adds no write path of its
+                own, so a field it cannot safely write stays read-only here as everywhere.
+
+                What it CAN do is offer a field that is EMPTY. Jira's own shelf shows only fields that
+                already hold a value, so setting a missing fix version means opening the issue in a new
+                tab and hunting for the Edit screen. These editors key off the issue's editmeta — "is
+                this field settable" — which says nothing about whether it currently holds anything, so
+                an empty field is offered exactly like a full one. */}
+            <CardTransitionsPanel
+              isLoading={isReadingTransitions}
+              onApply={(option) => void handleApplyTransition(option)}
+              options={openIssueTransitions}
+              pendingTransitionId={pendingTransitionId}
+            />
+            <IssueDetailPanel
+              fieldEditing={openIssueEditMeta
+                ? { editMeta: openIssueEditMeta, onFieldSaved: () => void loadBoard() }
+                : undefined}
+              isEmbedded
+              issue={openIssue}
+              onIssueUpdated={() => void loadBoard()}
+            />
+          </div>
+        </section>
+      )}
+
       {/* The scroll region starts HERE, above the board's own toolbar, so that toolbar, the notices
           and the filter bar all scroll away and give their height back to the cards. Previously they
           sat above the scroller and permanently cost ~200px of a screen that at the larger text sizes
@@ -2094,54 +2169,6 @@ export default function RollupBoardTab({
             ))}
           </SortableContext>
         </DndContext>
-
-        {/* The open card's detail, docked to the bottom of the board rather than buried at the end of
-            whichever swimlane the card happened to be in.
-            It used to render after that lane's cells and sub-lanes, so clicking a card near the top of
-            a tall lane opened the panel well below the fold — easy to click a card and never see what
-            you had opened. Anywhere FIXED solves that; the bottom was chosen over a modal because this
-            board's whole value is seeing where work is, and a modal hides the thing you clicked from.
-            It was chosen over a right-hand drawer because horizontal space is this board's scarcest
-            resource, while height can be dragged or collapsed.
-            `position: sticky; bottom: 0` keeps it in the scroll region, so the board still scrolls
-            behind it and the card stays visible above. */}
-        {openIssue !== null && (
-          <section
-            aria-label={`Details for ${openIssue.key}`}
-            className={styles.detailDock}
-            data-testid="rollup-issue-detail"
-          >
-            <div className={styles.detailDockBar}>
-              <span className={styles.detailDockTitle}>{openIssue.key}</span>
-              <span className={styles.detailDockHint}>Drag the top edge to resize</span>
-              <button
-                className={styles.actionButton}
-                onClick={() => void handleOpenIssue(openIssue.key)}
-                type="button"
-              >
-                Close
-              </button>
-            </div>
-            <div className={styles.detailDockBody}>
-              {/* Editing delegates entirely to the shared editors: the board adds no write path of its
-                  own, so a field it cannot safely write stays read-only here as everywhere. */}
-              <CardTransitionsPanel
-                isLoading={isReadingTransitions}
-                onApply={(option) => void handleApplyTransition(option)}
-                options={openIssueTransitions}
-                pendingTransitionId={pendingTransitionId}
-              />
-              <IssueDetailPanel
-                fieldEditing={openIssueEditMeta
-                  ? { editMeta: openIssueEditMeta, onFieldSaved: () => void loadBoard() }
-                  : undefined}
-                isEmbedded
-                issue={openIssue}
-                onIssueUpdated={() => void loadBoard()}
-              />
-            </div>
-          </section>
-        )}
 
         {!loadState.isLoading && layout.lanes.length === 0 && loadState.loadError === null && (
           <p className={styles.boardEmptyState}>

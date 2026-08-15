@@ -7,8 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Roll-Up Board — two cards in a column can now be reordered.** Nothing was wrong with the drag: the
+  lane drew **all containers first, then all loose cards**, so the order between a card belonging to a
+  parent and a card standing on its own lived in the *markup* and no drop could change it. A column
+  holding one of each simply refused to reorder, and the container header appearing above looked like
+  the drop had created a containment relationship — which it had not, since drag-to-nest was removed
+  two releases ago.
+  A cell now carries **one ordered list** with containers and loose cards interleaved, and the lane
+  draws from it. The separate lists remain because counts and progress read them, but nothing renders
+  from them any more.
+
 ### Changed
-- **Roll-Up Board — the card detail is docked to the bottom of the board instead of buried at the end
+- **Roll-Up Board — the card detail is a shelf on the right, not a dock along the bottom.** The dock
+  over-corrected: **height** is what this board is short of, and it left the columns a thin strip.
+  Nobody needs to see all twelve columns at the moment they are working on one story, so the panel
+  takes width — the axis that can be spared while a story is open — and **covers** the board rather
+  than compressing it, so the board is exactly as it was the moment it closes. Escape closes it, as
+  does its own button, as does clicking the card again.
+  Worth stating because it is invisible otherwise: this shelf can set a field that is **empty**.
+  Jira's own shelf lists only fields that already hold a value, so adding a missing fix version means
+  opening the issue in a new tab and finding the Edit screen. These editors key off the issue's
+  **editmeta** — *is this field settable* — which says nothing about whether it currently holds
+  anything, so an empty field is offered exactly like a full one.
+
+### Changed
+- **Roll-Up Board — the card detail was docked to the bottom of the board instead of buried at the end
   of a swimlane.** It rendered after that lane's cells and sub-lanes, so clicking a card near the top
   of a tall lane opened the panel well below the fold: easy to click a card and never see what you had
   opened. (That placement was itself a fix — it used to open at the top of the *page*, so opening a
