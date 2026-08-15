@@ -7,6 +7,7 @@ import {
   buildChecklistText,
   chooseWritableChecklistFieldId,
   describeChecklistWriteBlock,
+  judgeChecklistFields,
   verifyChecklistItemState,
   describeChecklistState,
   nextChecklistState,
@@ -178,8 +179,10 @@ describe('verifyChecklistItemState', () => {
     );
 
     expect(verdict.isWritten).toBe(false);
-    expect(verdict.message).toContain('did not act on it');
+    expect(verdict.message).toContain('the checklist app ignored it');
     expect(verdict.message).toContain('customfield_text');
+    // Names the setting that fixes it rather than a person to go and ask.
+    expect(verdict.message).toContain('Write checklist changes to');
   });
 
   it('reports an item that vanished from the checklist it was read from', () => {
@@ -187,5 +190,82 @@ describe('verifyChecklistItemState', () => {
 
     expect(verdict.isWritten).toBe(false);
     expect(verdict.message).toContain('no longer in the checklist');
+  });
+});
+
+describe('judgeChecklistFields — evidence for choosing a write target', () => {
+  const CANDIDATES = [
+    { id: 'cf_dump', name: 'Smart Checklist' },
+    { id: 'cf_text', name: 'Checklists' },
+    { id: 'cf_progress', name: 'Smart Checklist Progress' },
+  ];
+
+  it('names the field that holds the app’s own data, which a write would vanish into', () => {
+    const [dumpVerdict] = judgeChecklistFields({
+      candidates: CANDIDATES,
+      editableFieldIds: ['cf_dump', 'cf_text'],
+      issueFields: { cf_dump: APP_DUMP, cf_text: '- [ ] a', cf_progress: '0/1' },
+    });
+
+    expect(dumpVerdict.holds).toBe('app-data');
+    expect(dumpVerdict.summary).toContain('ignore it');
+  });
+
+  it('marks editable plain text as the likely target', () => {
+    const verdicts = judgeChecklistFields({
+      candidates: CANDIDATES,
+      editableFieldIds: ['cf_dump', 'cf_text'],
+      issueFields: { cf_dump: APP_DUMP, cf_text: '- [ ] a', cf_progress: '0/1' },
+    });
+
+    expect(verdicts.find((verdict) => verdict.id === 'cf_text')?.summary).toContain('likely write target');
+  });
+
+  it('says plainly when Jira would refuse the write, which is a different problem', () => {
+    // Not on the edit screen is an admin fix; the app ignoring it is a wrong-field fix. Collapsing
+    // the two into "cannot write" would send somebody after the wrong one.
+    const verdicts = judgeChecklistFields({
+      candidates: CANDIDATES,
+      editableFieldIds: ['cf_dump', 'cf_text'],
+      issueFields: { cf_dump: APP_DUMP, cf_text: '- [ ] a', cf_progress: '0/1' },
+    });
+
+    expect(verdicts.find((verdict) => verdict.id === 'cf_progress')?.summary)
+      .toContain('not on this issue’s edit screen');
+  });
+
+  it('reports an empty editable field as editable rather than as a problem', () => {
+    const [verdict] = judgeChecklistFields({
+      candidates: [{ id: 'cf_text', name: 'Checklists' }],
+      editableFieldIds: ['cf_text'],
+      issueFields: {},
+    });
+
+    expect(verdict.holds).toBe('empty');
+    expect(verdict.isOnEditScreen).toBe(true);
+  });
+});
+
+describe('a field the team nominated', () => {
+  it('beats every guess, because the team knows which field the app reads', () => {
+    expect(chooseWritableChecklistFieldId(
+      ['cf_a', 'cf_b'], ['cf_a', 'cf_b'], 'cf_a',
+      { cf_a: '- [ ] a', cf_b: '- [ ] a' },
+      'cf_b',
+    )).toBe('cf_b');
+  });
+
+  it('does NOT beat the dump check, which exists to stop a write that looks like it worked', () => {
+    expect(chooseWritableChecklistFieldId(
+      ['cf_dump', 'cf_text'], ['cf_dump', 'cf_text'], 'cf_text',
+      { cf_dump: APP_DUMP, cf_text: '- [ ] a' },
+      'cf_dump',
+    )).toBe('cf_text');
+  });
+
+  it('falls back to the board’s own choice when the nominated field is not editable here', () => {
+    expect(chooseWritableChecklistFieldId(
+      ['cf_text'], ['cf_text'], 'cf_text', { cf_text: '- [ ] a' }, 'cf_missing',
+    )).toBe('cf_text');
   });
 });

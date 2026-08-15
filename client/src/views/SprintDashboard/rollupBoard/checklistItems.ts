@@ -316,6 +316,22 @@ export function chooseChecklistFieldByValue(
   return bestFieldId;
 }
 
+/**
+ * Every checklist-ish field on this instance, with its name.
+ *
+ * The ids alone were enough while the board only READ a checklist. Choosing which field to WRITE to
+ * is a decision a person has to make, and `customfield_10252` is not something anybody can choose
+ * between — the names are what make the list mean anything.
+ */
+export function listChecklistFieldOptions(
+  fieldCatalog: readonly { id?: string; name?: string; schema?: { custom?: string } }[],
+): Array<{ id: string; name: string }> {
+  return (fieldCatalog ?? [])
+    .filter((field) => /checklist/i.test(String(field.name ?? '')) || /checklist/i.test(String(field.schema?.custom ?? '')))
+    .map((field) => ({ id: String(field.id ?? ''), name: String(field.name ?? field.id ?? '') }))
+    .filter((option) => option.id !== '');
+}
+
 /** Every checklist-ish field id on this instance, in name-first order. */
 export function listChecklistFieldIds(
   fieldCatalog: readonly { id?: string; name?: string; schema?: { custom?: string } }[],

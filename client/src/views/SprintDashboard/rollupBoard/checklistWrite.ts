@@ -93,11 +93,17 @@ export function chooseWritableChecklistFieldId(
   candidateFieldIds: readonly string[],
   readableFieldId: string | null,
   issueFields: Record<string, unknown> = {},
+  nominatedFieldId?: string,
 ): string | null {
   const editable = new Set(editableFieldIds);
   /** Editable, and holding something this can legitimately rewrite. */
   const isWritable = (fieldId: string): boolean =>
     editable.has(fieldId) && !isSmartChecklistDump(issueFields[fieldId]);
+
+  // A team that has nominated a field has information the board does not: which custom field the
+  // checklist app actually reads. That beats every guess below it — but not the dump check, because
+  // writing there produces a change that looks like it worked and did not.
+  if (nominatedFieldId && isWritable(nominatedFieldId)) return nominatedFieldId;
 
   if (readableFieldId !== null && isWritable(readableFieldId)) return readableFieldId;
   return candidateFieldIds.find(isWritable) ?? null;
@@ -159,6 +165,8 @@ export async function saveChecklistItemState(input: {
   readableFieldId: string | null;
   /** The issue's current field values, so a field holding the app's own dump can be ruled out. */
   issueFields?: Record<string, unknown>;
+  /** The field this team nominated in Board setup, when they have. */
+  nominatedFieldId?: string;
 }): Promise<ChecklistWriteResult> {
   let editableFieldIds: string[] = [];
   try {
@@ -176,6 +184,7 @@ export async function saveChecklistItemState(input: {
     input.candidateFieldIds,
     input.readableFieldId,
     issueFields,
+    input.nominatedFieldId,
   );
   if (targetFieldId === null) {
     return {
@@ -199,6 +208,53 @@ export async function saveChecklistItemState(input: {
   }
 
   return { isWritten: true, message: '', targetFieldId };
+}
+
+/** One checklist field, judged as a place to WRITE to. */
+export interface ChecklistFieldVerdict {
+  id: string;
+  name: string;
+  /** What is in it now, reduced to the only distinction that matters for writing. */
+  holds: 'app-data' | 'text' | 'empty';
+  /** True when this issue's edit screen exposes it, which is Jira's own answer. */
+  isOnEditScreen: boolean;
+  /** Plain-English summary, so the picker never asks somebody to interpret two flags. */
+  summary: string;
+}
+
+/**
+ * Judges each checklist field as a write target, from evidence rather than from its name.
+ *
+ * The picker this feeds exists because the board guessed wrong twice: the app's own field looks
+ * writable to Jira and is not, and a plain-text checklist field can be perfectly writable while
+ * being a MIRROR the app never reads back. Nothing the board can see distinguishes the mirror from
+ * the real one — but somebody who changes an item in Jira and looks at this list can.
+ */
+export function judgeChecklistFields(input: {
+  candidates: readonly { id: string; name: string }[];
+  editableFieldIds: readonly string[];
+  issueFields: Record<string, unknown>;
+}): ChecklistFieldVerdict[] {
+  const editable = new Set(input.editableFieldIds);
+
+  return input.candidates.map((candidate) => {
+    const rawValue = input.issueFields[candidate.id];
+    const isOnEditScreen = editable.has(candidate.id);
+    const holds: ChecklistFieldVerdict['holds'] = isSmartChecklistDump(rawValue)
+      ? 'app-data'
+      : (rawValue === null || rawValue === undefined || rawValue === '' ? 'empty' : 'text');
+
+    return { id: candidate.id, name: candidate.name, holds, isOnEditScreen, summary: describeVerdict(holds, isOnEditScreen) };
+  });
+}
+
+/** One sentence per field, saying whether it can be written and what would happen. */
+function describeVerdict(holds: ChecklistFieldVerdict['holds'], isOnEditScreen: boolean): string {
+  if (holds === 'app-data') {
+    return 'the checklist app’s own data — Jira would accept a write and the app would ignore it';
+  }
+  if (!isOnEditScreen) return 'not on this issue’s edit screen, so Jira would refuse a write';
+  return holds === 'empty' ? 'editable, currently empty' : 'editable plain text — a likely write target';
 }
 
 /**
@@ -228,10 +284,13 @@ export function verifyChecklistItemState(
   if (writtenItem.state !== expectedState) {
     return {
       isWritten: false,
+      // Names the setting rather than a person to go and ask. The board cannot know which custom
+      // field this instance's checklist app reads; the team can find out once and tell it.
       message: `Jira accepted the change to ${targetFieldId}, but the checklist still reads `
-        + `"${describeChecklistState(writtenItem.state)}" — so the checklist app did not act on it. `
-        + 'That field is almost certainly not the one the app reads. Change this item in Jira, and ask '
-        + 'an admin which checklist field is the editable text one.',
+        + `"${describeChecklistState(writtenItem.state)}" — so the checklist app ignored it. That is `
+        + 'the wrong field. Pick the right one in Board setup → “Where checklist items go” → '
+        + '“Write checklist changes to”, using the diagnostics there to see which field holds plain '
+        + 'text. Until then, change this item in Jira.',
     };
   }
 

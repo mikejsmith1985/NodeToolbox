@@ -322,6 +322,18 @@ export interface BoardVocabulary {
    * checklist items in Unmapped, visibly, rather than guessing a home for them.
    */
   checklistColumnMapping?: ChecklistColumnMapping;
+  /**
+   * The field checklist changes are written to, when the team has nominated one.
+   *
+   * A Smart Checklist lives in a third-party app, and which custom field the app actually READS is
+   * an instance decision the board cannot infer: on this instance the board wrote to a plain-text
+   * checklist field Jira accepted happily and the app ignored completely. Guessing again would only
+   * produce the same silence, so the team points at the right field once — with the diagnostics panel
+   * showing which candidates are text and which are the app's own data.
+   *
+   * Absent means "let the board choose", which is what every team had before this existed.
+   */
+  checklistWriteFieldId?: string;
   updatedAt: string;
   /** null means never synchronised with the shared workspace. */
   lastSyncedAt: string | null;

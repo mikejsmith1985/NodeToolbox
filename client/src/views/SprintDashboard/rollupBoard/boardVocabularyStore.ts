@@ -50,6 +50,7 @@ export function normalizeStoredVocabulary(
     updatedAt?: string;
     lastSyncedAt?: string | null;
     checklistColumnMapping?: ChecklistColumnMapping;
+    checklistWriteFieldId?: string;
   },
   fallbackTeamProfileId: string,
 ): BoardVocabulary {
@@ -62,6 +63,9 @@ export function normalizeStoredVocabulary(
     // defaulted here, so the board can tell "this team has not chosen" from "this team chose".
     ...(storedVocabulary.checklistColumnMapping
       ? { checklistColumnMapping: storedVocabulary.checklistColumnMapping }
+      : {}),
+    ...(storedVocabulary.checklistWriteFieldId
+      ? { checklistWriteFieldId: storedVocabulary.checklistWriteFieldId }
       : {}),
   };
 }

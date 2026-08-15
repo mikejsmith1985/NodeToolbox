@@ -64,7 +64,12 @@ import {
   type ChecklistCard,
 } from './checklistCards.ts';
 import type { ChecklistItemState } from './checklistItems.ts';
-import { saveChecklistItemState, verifyChecklistItemState } from './checklistWrite.ts';
+import {
+  judgeChecklistFields,
+  saveChecklistItemState,
+  verifyChecklistItemState,
+  type ChecklistFieldVerdict,
+} from './checklistWrite.ts';
 import { selectColumnMapping } from './selectColumnMapping.ts';
 import { buildJiraBrowseUrl } from '../../../utils/jiraBrowseUrl.ts';
 import { useConnectionStore } from '../../../store/connectionStore.ts';
@@ -131,7 +136,7 @@ import {
 import { describeJiraFailure } from '../../AdminHub/subtaskStoryPromotion.ts';
 import { sumUnplannedStoryPoints } from './emptyFeatureScan.ts';
 import { buildCardDetailIndex, type CardDetail } from './cardDetail.ts';
-import { listChecklistFieldIds } from './checklistItems.ts';
+import { listChecklistFieldIds, listChecklistFieldOptions } from './checklistItems.ts';
 import { selectDetailIssueKeys, selectFamilyKey, selectVisibleColumns, toggleColumnFocus } from './columnFocus.ts';
 import {
   describeEmptyFeatureMembership,
@@ -458,6 +463,10 @@ export default function RollupBoardTab({
   // Every checklist-ish field this instance has. Kept because ticking an item off may have to write to
   // a DIFFERENT one from the field it was read out of — the app's own dump is readable, never writable.
   const [checklistFieldIds, setChecklistFieldIds] = useState<string[]>([]);
+  // With names, because choosing between `customfield_10252` and `customfield_10251` is not a choice
+  // anybody can make.
+  const [checklistFieldOptions, setChecklistFieldOptions] = useState<Array<{ id: string; name: string }>>([]);
+  const [checklistFieldVerdicts, setChecklistFieldVerdicts] = useState<ChecklistFieldVerdict[]>([]);
   const [pendingChecklistCardId, setPendingChecklistCardId] = useState<string | null>(null);
   const [errorMessageByChecklistCardId, setErrorMessageByChecklistCardId] = useState<Record<string, string>>({});
   // Where the gap is currently open. Recomputed as the pointer moves, cleared when the drag ends.
@@ -548,6 +557,7 @@ export default function RollupBoardTab({
       ).catch(() => []);
       const discoveredChecklistFieldIds = listChecklistFieldIds(fieldCatalog);
       setChecklistFieldIds(discoveredChecklistFieldIds);
+      setChecklistFieldOptions(listChecklistFieldOptions(fieldCatalog));
       const discoveredFlagFieldId = findFlagFieldInCatalog(fieldCatalog) ?? '';
       setFlagFieldId(discoveredFlagFieldId);
       const storyPointsFieldIds = getStoryPointsCandidateFieldIds();
@@ -1281,6 +1291,35 @@ export default function RollupBoardTab({
   }, [laneMasterCards, subLanesByFeatureKey]);
 
   /**
+   * Judges each checklist field as a place to WRITE to, against a real issue that has a checklist.
+   *
+   * One extra request per board load, and it buys the only thing that makes the write-field picker a
+   * choice rather than a lottery: whether each candidate holds the app's own data or plain text, and
+   * whether Jira's edit screen exposes it at all. Sampling one issue is enough — field configuration
+   * is per issue type, not per issue, and a wrong sample is visibly wrong rather than silently so.
+   */
+  useEffect(() => {
+    const sampleItem = loadState.allItems.find((item) => item.checklistItems.length > 0);
+    if (sampleItem === undefined || checklistFieldOptions.length === 0) {
+      setChecklistFieldVerdicts([]);
+      return;
+    }
+
+    let isCurrent = true;
+    void (async () => {
+      const editMeta = await fetchFeatureReviewEditMeta(sampleItem.key).catch(() => ({}));
+      if (!isCurrent) return;
+      setChecklistFieldVerdicts(judgeChecklistFields({
+        candidates: checklistFieldOptions,
+        editableFieldIds: Object.keys(editMeta),
+        issueFields: sampleItem.issue.fields as unknown as Record<string, unknown>,
+      }));
+    })();
+
+    return () => { isCurrent = false; };
+  }, [loadState.allItems, checklistFieldOptions]);
+
+  /**
    * Where checklist items go, falling back to a suggestion when the team has not chosen.
    *
    * Leaving it unset meant every checklist item landed in Unmapped — which is honest, and was also
@@ -1563,6 +1602,7 @@ export default function RollupBoardTab({
         candidateFieldIds: checklistFieldIds,
         readableFieldId: parentItem.checklistFieldId ?? null,
         issueFields: parentItem.issue.fields as unknown as Record<string, unknown>,
+        nominatedFieldId: vocabulary.checklistWriteFieldId,
       });
       if (!result.isWritten) {
         setChecklistCardMessage(checklistCardId, result.message);
@@ -1586,7 +1626,8 @@ export default function RollupBoardTab({
     } finally {
       setPendingChecklistCardId(null);
     }
-  }, [effectiveChecklistMapping, loadState.allItems, checklistFieldIds, loadBoard, renderedColumns]);
+  }, [effectiveChecklistMapping, loadState.allItems, checklistFieldIds, loadBoard, renderedColumns,
+    vocabulary.checklistWriteFieldId]);
 
   const handleCardDrop = useCallback(async (dragEndEvent: DragEndEvent): Promise<void> => {
     // A checklist card is not an issue and none of the rules below fit it, so it is answered first.
@@ -1882,6 +1923,7 @@ export default function RollupBoardTab({
         candidateFieldIds: checklistFieldIds,
         readableFieldId: item.checklistFieldId ?? null,
         issueFields: item.issue.fields as unknown as Record<string, unknown>,
+        nominatedFieldId: vocabulary.checklistWriteFieldId,
       });
       if (!result.isWritten) {
         setChecklistCardMessage(checklistCardId, result.message);
@@ -1904,7 +1946,8 @@ export default function RollupBoardTab({
     } finally {
       setPendingChecklistCardId(null);
     }
-  }, [loadState.allItems, setChecklistCardMessage, loadBoard, checklistFieldIds]);
+  }, [loadState.allItems, setChecklistCardMessage, loadBoard, checklistFieldIds,
+    vocabulary.checklistWriteFieldId]);
 
   const handleApplyTransition = useCallback(async (option: CardTransitionOption): Promise<void> => {
     if (openIssueKey === null) return;
@@ -2278,6 +2321,7 @@ export default function RollupBoardTab({
       {isEditingColumns && (
         <ColumnVocabularyEditor
           allItems={loadState.allItems}
+          checklistFieldVerdicts={checklistFieldVerdicts}
           canShare={Boolean(sharedWorkspaceDatabaseId)}
           onAcceptPull={(remoteVocabulary) => {
             setVocabulary(markVocabularySynced(

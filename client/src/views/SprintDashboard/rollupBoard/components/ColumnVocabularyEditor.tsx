@@ -12,6 +12,7 @@ import { useState } from 'react';
 
 import { validateVocabulary } from '../boardColumns.ts';
 import { suggestChecklistColumnMapping, type ChecklistColumnMapping } from '../checklistCards.ts';
+import type { ChecklistFieldVerdict } from '../checklistWrite.ts';
 import { compareVocabularies, type VocabularyDifference, type VocabularyPullPreview } from '../boardVocabularySync.ts';
 import {
   collectObservedBoardStates,
@@ -39,6 +40,8 @@ export interface ColumnVocabularyEditorProps {
   onCopyFromTeam?: (sourceTeamProfileId: string) => void;
   pullPreview?: VocabularyPullPreview | null;
   onVocabularyChange: (vocabulary: BoardVocabulary) => void;
+  /** Each checklist field judged as a write target, so the picker shows evidence not just names. */
+  checklistFieldVerdicts?: readonly ChecklistFieldVerdict[];
   onPublish?: () => void;
   onPreviewPull?: () => void;
   onAcceptPull?: (remote: BoardVocabulary) => void;
@@ -74,6 +77,7 @@ export function ColumnVocabularyEditor({
   onCopyFromTeam,
   pullPreview = null,
   onVocabularyChange,
+  checklistFieldVerdicts = [],
   onPublish,
   onPreviewPull,
   onAcceptPull,
@@ -349,7 +353,11 @@ export function ColumnVocabularyEditor({
         </div>
       )}
 
-      <ChecklistColumnMappingEditor onVocabularyChange={onVocabularyChange} vocabulary={vocabulary} />
+      <ChecklistColumnMappingEditor
+        checklistFieldVerdicts={checklistFieldVerdicts}
+        onVocabularyChange={onVocabularyChange}
+        vocabulary={vocabulary}
+      />
     </section>
   );
 }
@@ -375,9 +383,11 @@ const CHECKLIST_STATE_ROWS: Array<{ key: keyof ChecklistColumnMapping; label: st
 function ChecklistColumnMappingEditor({
   vocabulary,
   onVocabularyChange,
+  checklistFieldVerdicts = [],
 }: {
   vocabulary: BoardVocabulary;
   onVocabularyChange: (vocabulary: BoardVocabulary) => void;
+  checklistFieldVerdicts?: readonly ChecklistFieldVerdict[];
 }): React.JSX.Element {
   const mapping = vocabulary.checklistColumnMapping
     ?? { openColumnId: '', inProgressColumnId: '', doneColumnId: '' };
@@ -430,6 +440,51 @@ function ChecklistColumnMappingEditor({
           >
             Suggest from my columns
           </button>
+        </>
+      )}
+
+      <h4 className={styles.sectionTitle}>Write checklist changes to</h4>
+      <p className={styles.fieldLabel}>
+        A Smart Checklist lives in a third-party app, and which custom field that app actually reads is
+        something only this instance knows. The board guessed and the app ignored it — so if moving a
+        checklist card reports that the change was accepted and nothing happened, name the right field
+        here.
+      </p>
+
+      {checklistFieldVerdicts.length === 0 ? (
+        <p className={styles.fieldLabel}>No checklist fields found on this instance.</p>
+      ) : (
+        <>
+          <label className={styles.editorRow}>
+            <span className={styles.fieldLabel}>Field</span>
+            <select
+              className={styles.inputField}
+              onChange={(changeEvent) => onVocabularyChange({
+                ...vocabulary,
+                checklistWriteFieldId: changeEvent.target.value || undefined,
+              })}
+              value={vocabulary.checklistWriteFieldId ?? ''}
+            >
+              <option value="">Let the board choose</option>
+              {checklistFieldVerdicts.map((verdict) => (
+                <option key={verdict.id} value={verdict.id}>{verdict.name} — {verdict.summary}</option>
+              ))}
+            </select>
+          </label>
+
+          {/* The evidence, beside the choice rather than in a separate panel: which field holds the
+              app's own data, which holds plain text, and which this issue's edit screen exposes. */}
+          <ul className={styles.editorDiff}>
+            {checklistFieldVerdicts.map((verdict) => (
+              <li key={verdict.id}>
+                <strong>{verdict.name}</strong> ({verdict.id}) — {verdict.summary}
+              </li>
+            ))}
+          </ul>
+          <p className={styles.fieldLabel}>
+            To find the right one: change a checklist item in Jira, reload this board, and see which
+            field’s contents changed with it.
+          </p>
         </>
       )}
     </div>

@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Board setup — "Write checklist changes to".** The read-back added last release did its job and
+  proved the board was writing to the wrong field: Jira accepted the change to `customfield_10252` and
+  the checklist app ignored it completely. That field is a **mirror** the app maintains and never reads
+  back, and nothing the board can see distinguishes a mirror from the real thing — so the board stops
+  guessing and lets the team name the field once.
+
+  Beside the picker sits the evidence, judged per field against a real issue that has a checklist:
+  which one holds the **app's own internal data** (Jira would accept a write and the app would ignore
+  it), which holds **plain text** and is on the edit screen (a likely target), and which Jira would
+  **refuse** outright because it is not on the edit screen. Those are three different problems with
+  three different fixes, so they are not collapsed into "cannot write". To identify the right one:
+  change an item in Jira, reload, and see which field's contents moved with it.
+
+  A nominated field beats every guess the board makes — but not the refusal to write into the app's own
+  data, because that produces a change that looks like it worked and did not.
+
+### Changed
+- **Roll-Up Board — the failed-write message names the setting, not a person to ask.** It read "ask an
+  admin which checklist field is the editable text one", which is true and unhelpful. It now points at
+  Board setup → "Where checklist items go" → "Write checklist changes to", where the answer can both be
+  found and recorded.
+
 ### Fixed
 - **Roll-Up Board — moving a checklist item no longer fails in silence.** Three separate silences, each
   now a sentence.
