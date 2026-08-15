@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Roll-Up Board — Smart Checklist items are cards now, in the column of their own state.** They were
+  lines inside their parent's card, which broke the one rule the whole board exists to enforce: every
+  piece of work sits in the column of ITS status. A **finished** checklist item sat in To Do because
+  the card it was drawn inside had not moved. Cramped layout was the symptom; that was the defect.
+
+  Each item is drawn as a card under its parent's grouping container — the same treatment a sub-task
+  gets, because it is the same relationship — and the container is opened in that column even where
+  the parent's own card is elsewhere, so the relationship is never lost. Drag one between columns to
+  change its state, or click the state to cycle it; both reach the same write. A new **Checklist only**
+  quick filter joins the three that were there.
+
+  It is deliberately **not** a fake sub-task. A checklist item has no key, no permalink, no transitions
+  and no children, so the card offers none of those rather than offering them as dead ends — it is
+  labelled `CHECKLIST` for the same reason. And it **does not count** toward a Feature's progress or
+  its item counts: adding it there would change every Feature's headline number the instant this
+  shipped and put the board permanently at odds with anything Jira reports. That is a decision to take
+  deliberately, not a side effect of a rendering change.
+
+### Added
+- **Board setup — "Where checklist items go".** Three states have to land somewhere among a team's own
+  columns and only the team knows where. Three dropdowns, beside the column mapping they belong with,
+  plus a **Suggest from my columns** button that proposes first / middle / last of the columns actually
+  built. Anything left unchosen shows in **Unmapped** — visibly unplaced, never quietly filed somewhere
+  plausible. It is part of the team's shared vocabulary rather than a personal preference, because two
+  people at the same standup must see a finished checklist item in the same place.
+
+### Fixed
+- **Checklist items now carry their own identity.** The board numbered them by position, so inserting a
+  line renumbered every item below it and drag order, selection and the pending marker would all have
+  moved to the wrong line. The app stores a real `id` and a real `rank` on every item —
+  `Item(id=43628, …, rank=0, …)` — and both were being parsed straight past. The board now reads them,
+  which is what makes a stable card possible at all, and shows items in the order somebody actually
+  arranged them in Jira.
+
 ### Fixed
 - **Roll-Up Board — a checklist item's text wrapped one letter per line.** Three things — a state
   control, the item text, and an owner's full name — were asked to fit across a 250px column. The

@@ -1333,6 +1333,83 @@
   border-left: 2px solid var(--color-warning);
 }
 
+/* ── The checklist item, as a card ──
+   Purple, because the board's other card colours are already spoken for and mean something: green is
+   a Story, red a Defect, blue a sub-task. A fourth kind of work needs a fourth colour, not a shade of
+   one of those — the whole point of the colour rule is that you never have to look twice. */
+.cardChecklistItem {
+  border-left: 3px solid var(--color-tone-purple-fg);
+  background: var(--surface-raised);
+}
+
+.checklistCardHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-xs);
+  margin-bottom: 4px;
+}
+
+/* Both the state and the button that changes it. Same control as the old inline marker, so ticking
+   an item off is still one click for the common case and a drag when the column matters. */
+.checklistCardState {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 5px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised-hover);
+  color: inherit;
+  font: inherit;
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 90ms ease-out;
+}
+
+.checklistCardState:hover:not(:disabled) { background: var(--color-bg-subtle); }
+.checklistCardState:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
+.checklistCardState:disabled { cursor: default; border-color: transparent; background: transparent; }
+
+.cardChecklistItem[data-state='done'] .checklistCardState { color: var(--color-success); }
+.cardChecklistItem[data-state='in-progress'] .checklistCardState { color: var(--color-warning); }
+.cardChecklistItem[data-state='done'] .checklistCardText { text-decoration: line-through; opacity: 0.7; }
+
+/* Names the KIND. A card that looked like a sub-task but carried no issue key would read as a broken
+   sub-task rather than as the different thing it is. */
+.checklistCardKind {
+  flex: 0 0 auto;
+  padding: 0 4px;
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-subtle);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.checklistCardText {
+  display: block;
+  overflow-wrap: anywhere;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-primary);
+}
+
+.checklistCardOwner {
+  display: block;
+  margin-top: 4px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .checklistCardState { transition: none; }
+}
+
 /* The marker is a control, so it has to look like one: a click target with a hover and a focus ring,
    not an icon that happens to respond. The state's WORD sits inside it — "not ticked" covers both
    not-started and in-progress, and that is the distinction a standup turns on. */

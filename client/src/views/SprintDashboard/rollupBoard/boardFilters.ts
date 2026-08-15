@@ -4,6 +4,7 @@
 // which are worked out before any of this runs — so "60% complete" always describes the whole
 // Feature, whatever the viewer has filtered down to.
 
+import type { ChecklistCard } from './checklistCards.ts';
 import { isChecklistItemOwnedBy } from './checklistOwners.ts';
 import type { QuickFilterState, RollupBoardItem } from './rollupBoardTypes.ts';
 
@@ -44,6 +45,30 @@ export function selectMatchingItems(
   filters: QuickFilterState,
 ): RollupBoardItem[] {
   return items.filter((item) => doesItemMatchFilters(item, filters));
+}
+
+/**
+ * Narrows the checklist cards the same way, so one filter means one thing everywhere.
+ *
+ * A checklist card carries an owner and nothing else a filter asks about, so a fix-version filter
+ * excludes them all — which is right: a checklist item genuinely has no fix version, and pretending
+ * it inherits its parent's would put work in a release nobody put it in.
+ */
+export function selectMatchingChecklistCards(
+  checklistCards: readonly ChecklistCard[],
+  filters: QuickFilterState,
+): ChecklistCard[] {
+  if (filters.fixVersionName !== null) return [];
+
+  return checklistCards.filter((checklistCard) => {
+    if (filters.typeBuckets.size > 0 && !filters.typeBuckets.has('checklist')) return false;
+    if (filters.assigneeAccountId !== null) {
+      const ownerId = checklistCard.ownerFilterId;
+      if (ownerId === null) return false;
+      if (ownerId.trim().toLowerCase() !== filters.assigneeAccountId.trim().toLowerCase()) return false;
+    }
+    return true;
+  });
 }
 
 /** True when any filter is active, so the board can say that its lane counts are narrowed. */

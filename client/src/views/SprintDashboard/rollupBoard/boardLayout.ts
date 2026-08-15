@@ -10,7 +10,8 @@
 // board while looking entirely plausible on screen.
 
 import { buildCardCellKey } from './boardPreferencesStore.ts';
-import { selectMatchingItems } from './boardFilters.ts';
+import type { ChecklistCard } from './checklistCards.ts';
+import { selectMatchingChecklistCards, selectMatchingItems } from './boardFilters.ts';
 import {
   type BoardLayout,
   type BoardPreferences,
@@ -38,6 +39,14 @@ export interface BuildBoardLayoutInput {
    * did before sub-lanes existed.
    */
   subLanesByFeatureKey?: Record<string, SubLane[]>;
+  /**
+   * Every checklist item on the board, as cards, keyed by the lane they belong to.
+   *
+   * Passed in rather than derived here because placing one needs the team's state→column mapping,
+   * which is vocabulary — and the layout deliberately knows nothing about vocabulary beyond the
+   * columns it was handed.
+   */
+  checklistCardsByFeatureKey?: Record<string, ChecklistCard[]>;
 }
 
 /**
@@ -101,6 +110,7 @@ function groupItemsIntoParentContainers(
   itemsByKeyInLane: ReadonlyMap<string, RollupBoardItem>,
   orderedIssueKeys: readonly string[],
   laneKeyByIssueKey: ReadonlyMap<string, string>,
+  columnChecklistCards: readonly ChecklistCard[] = [],
 ): LaneCell {
   const containersByParentKey = new Map<string, ParentContainer>();
   const looseItems: RollupBoardItem[] = [];
@@ -139,14 +149,44 @@ function groupItemsIntoParentContainers(
     entries.push({ kind: 'container', container: newContainer });
   }
 
-  // Step 5: a container with no items would imply work that is not there.
-  const filledContainers = [...containersByParentKey.values()].filter((container) => container.items.length > 0);
+  // A checklist card joins the container of the issue whose checklist it is — the same grouping a
+  // sub-task gets, because it is the same relationship. Where that issue has no container in this
+  // column (its own card is elsewhere), one is opened for it, exactly as it would be for a sub-task
+  // whose parent sits in another column.
+  for (const checklistCard of columnChecklistCards) {
+    const existingContainer = containersByParentKey.get(checklistCard.parentKey);
+    if (existingContainer) {
+      existingContainer.checklistCards = [...(existingContainer.checklistCards ?? []), checklistCard];
+      continue;
+    }
+
+    const parentItem = itemsByKeyInLane.get(checklistCard.parentKey);
+    const newContainer: ParentContainer = {
+      parentKey: checklistCard.parentKey,
+      parentSummary: parentItem?.summary ?? '',
+      isParentInScope: parentItem !== undefined,
+      parentLaneFeatureKey: parentItem === undefined
+        ? (laneKeyByIssueKey.get(checklistCard.parentKey) ?? null)
+        : null,
+      items: [],
+      checklistCards: [checklistCard],
+    };
+    containersByParentKey.set(checklistCard.parentKey, newContainer);
+    entries.push({ kind: 'container', container: newContainer });
+  }
+
+  // Step 5: a container with nothing in it would imply work that is not there. A container holding
+  // ONLY checklist cards is genuinely full — that is the whole point of placing them by their own
+  // state, and dropping it would put the finished checklist item back out of sight.
+  const filledContainers = [...containersByParentKey.values()]
+    .filter((container) => container.items.length > 0 || (container.checklistCards ?? []).length > 0);
   const filledContainerKeys = new Set(filledContainers.map((container) => container.parentKey));
 
   return {
     containers: filledContainers,
     looseItems,
-    entries: entries.filter((entry) => entry.kind === 'item' || filledContainerKeys.has(entry.container.parentKey)),
+    entries: entries.filter((entry) => entry.kind !== 'container'
+      || filledContainerKeys.has(entry.container.parentKey)),
   };
 }
 
@@ -177,9 +217,15 @@ export function buildCellsByColumnId(input: {
   columns: readonly RenderedColumn[];
   preferences: BoardPreferences;
   laneKeyByIssueKey: ReadonlyMap<string, string>;
+  /** This lane's checklist cards, already filtered. Absent means the board draws none. */
+  checklistCards?: readonly ChecklistCard[];
 }): Record<string, LaneCell> {
   const itemsByKeyInLane = new Map(input.items.map((item) => [item.key, item]));
   const itemsByColumnId = distributeItemsIntoColumns(input.matchedItems, input.columns);
+  const checklistCardsByColumnId = distributeChecklistCardsIntoColumns(
+    input.checklistCards ?? [],
+    input.columns,
+  );
 
   const cellsByColumnId: Record<string, LaneCell> = {};
   for (const column of input.columns) {
@@ -188,9 +234,35 @@ export function buildCellsByColumnId(input: {
       itemsByKeyInLane,
       input.preferences.cardOrderByCell?.[buildCardCellKey(input.laneKey, column.id)] ?? [],
       input.laneKeyByIssueKey,
+      checklistCardsByColumnId.get(column.id) ?? [],
     );
   }
   return cellsByColumnId;
+}
+
+/**
+ * Puts each checklist card in the column its STATE maps to.
+ *
+ * An unmapped state falls to the last column, which is always Unmapped — the same fallback an issue
+ * in an unrecognised status gets, and for the same reason: the board never hides work, it shows you
+ * that it does not know where to put it.
+ */
+function distributeChecklistCardsIntoColumns(
+  checklistCards: readonly ChecklistCard[],
+  columns: readonly RenderedColumn[],
+): Map<string, ChecklistCard[]> {
+  const cardsByColumnId = new Map<string, ChecklistCard[]>(
+    columns.map((column) => [column.id, [] as ChecklistCard[]]),
+  );
+
+  for (const checklistCard of checklistCards) {
+    const targetColumnId = cardsByColumnId.has(checklistCard.columnId)
+      ? checklistCard.columnId
+      : columns[columns.length - 1]?.id ?? checklistCard.columnId;
+    cardsByColumnId.set(targetColumnId, [...(cardsByColumnId.get(targetColumnId) ?? []), checklistCard]);
+  }
+
+  return cardsByColumnId;
 }
 
 /** Builds one swimlane: vitals from everything, cells from what the filters left. */
@@ -201,6 +273,7 @@ function buildLane(
   preferences: BoardPreferences,
   laneKeyByIssueKey: ReadonlyMap<string, string>,
   subLanes: readonly SubLane[],
+  checklistCards: readonly ChecklistCard[],
 ): RenderedLane {
   const vitals = computeLaneVitals(masterCard);
   const matchedItems = selectMatchingItems(masterCard.items, filters);
@@ -211,6 +284,7 @@ function buildLane(
     columns,
     preferences,
     laneKeyByIssueKey,
+    checklistCards: selectMatchingChecklistCards(checklistCards, filters),
   });
 
   return {
@@ -246,6 +320,7 @@ export function buildBoardLayout(input: BuildBoardLayoutInput): BoardLayout {
       input.preferences,
       laneKeyByIssueKey,
       input.subLanesByFeatureKey?.[masterCard.featureKey] ?? [],
+      input.checklistCardsByFeatureKey?.[masterCard.featureKey] ?? [],
     ),
   );
 

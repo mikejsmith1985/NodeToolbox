@@ -1,0 +1,98 @@
+// ChecklistCard.test.tsx — Proves a checklist item reads as a checklist item, not as a broken issue.
+
+import { fireEvent, render, screen } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
+
+import { ChecklistCard } from './ChecklistCard.tsx';
+import type { ChecklistCard as ChecklistCardModel } from '../checklistCards.ts';
+
+/** One card with only what the component draws. */
+function buildCard(overrides: Partial<ChecklistCardModel> = {}): ChecklistCardModel {
+  return {
+    id: 'DEV-1#item-43628',
+    parentKey: 'DEV-1',
+    featureKey: 'FEAT-1',
+    columnId: 'col-todo',
+    text: 'this is a test',
+    state: 'open',
+    ownerFilterId: null,
+    ownerDisplayName: null,
+    itemId: 'item-43628',
+    rank: 0,
+    ...overrides,
+  };
+}
+
+describe('ChecklistCard', () => {
+  it('says which of the three states it is in, in words', () => {
+    render(<ChecklistCard card={buildCard({ state: 'in-progress' })} />);
+
+    expect(screen.getByText('Working')).toBeTruthy();
+  });
+
+  it('marks the state as data too, so it never rests on colour alone', () => {
+    const { container } = render(<ChecklistCard card={buildCard({ state: 'done' })} />);
+
+    expect(container.querySelector('[data-state="done"]')).toBeTruthy();
+  });
+
+  it('says what KIND of thing it is', () => {
+    // A card that looked like a sub-task but carried no issue key would be read as a broken
+    // sub-task rather than as the different thing it is.
+    render(<ChecklistCard card={buildCard()} />);
+
+    expect(screen.getByText('Checklist')).toBeTruthy();
+  });
+
+  it('offers no issue key, because a checklist item has none', () => {
+    // The whole reason this is not a copy of the issue card: a key here would be a dead link.
+    render(<ChecklistCard card={buildCard()} />);
+
+    expect(screen.queryByText(/DEV-1/)).toBeNull();
+  });
+
+  it('names its owner rather than printing their Jira id', () => {
+    render(<ChecklistCard card={buildCard({
+      ownerFilterId: 'acc-11', ownerDisplayName: 'Smith, Michael (CTR)',
+    })} />);
+
+    expect(screen.getByText('Smith, Michael (CTR)')).toBeTruthy();
+  });
+
+  it('falls back to the raw id when nobody on the board holds it', () => {
+    render(<ChecklistCard card={buildCard({ ownerFilterId: 'GHOST' })} />);
+
+    expect(screen.getByText('@GHOST')).toBeTruthy();
+  });
+
+  it('moves the item on when its state is clicked', () => {
+    // Dragging says which column; clicking is the shortcut for ticking the next one off.
+    const stateChanges: Array<[string, string]> = [];
+    render(<ChecklistCard
+      card={buildCard()}
+      onSetState={(card, nextState) => stateChanges.push([card.itemId, nextState])}
+    />);
+
+    fireEvent.click(screen.getByRole('button', { name: /Set to Working/ }));
+
+    expect(stateChanges).toEqual([['item-43628', 'in-progress']]);
+  });
+
+  it('is unpressable when nothing can be written', () => {
+    render(<ChecklistCard card={buildCard()} onSetState={undefined} />);
+
+    expect(screen.getByRole('button', { name: /Set to Working/ }).hasAttribute('disabled')).toBe(true);
+  });
+
+  it('is unpressable on another discipline’s read-only work', () => {
+    render(<ChecklistCard card={buildCard()} isReadOnly onSetState={vi.fn()} />);
+
+    expect(screen.getByRole('button', { name: /Set to Working/ }).hasAttribute('disabled')).toBe(true);
+  });
+
+  it('shows a failed write on the card, not in a toast that scrolls away', () => {
+    render(<ChecklistCard card={buildCard()} errorMessage="No checklist field on the edit screen." />);
+
+    expect(screen.getByText('No checklist field on the edit screen.')).toBeTruthy();
+  });
+});

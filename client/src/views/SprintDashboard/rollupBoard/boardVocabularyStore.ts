@@ -5,6 +5,7 @@
 // This module holds the local copy; boardVocabularySync publishes it to, and pulls it from, the
 // team's shared Confluence workspace.
 
+import type { ChecklistColumnMapping } from './checklistCards.ts';
 import type { BoardColumn, BoardVocabulary, ColumnStatusMapping } from './rollupBoardTypes.ts';
 
 const VOCABULARY_STORAGE_KEY = 'tbxRollupBoardVocabulary';
@@ -43,7 +44,13 @@ export function normalizeStoredColumn(storedColumn: StoredBoardColumn): BoardCol
 
 /** Brings a whole stored vocabulary up to the current shape, whatever version wrote it. */
 export function normalizeStoredVocabulary(
-  storedVocabulary: { teamProfileId: string; columns?: StoredBoardColumn[]; updatedAt?: string; lastSyncedAt?: string | null },
+  storedVocabulary: {
+    teamProfileId: string;
+    columns?: StoredBoardColumn[];
+    updatedAt?: string;
+    lastSyncedAt?: string | null;
+    checklistColumnMapping?: ChecklistColumnMapping;
+  },
   fallbackTeamProfileId: string,
 ): BoardVocabulary {
   return {
@@ -51,6 +58,11 @@ export function normalizeStoredVocabulary(
     columns: (storedVocabulary.columns ?? []).map(normalizeStoredColumn),
     updatedAt: storedVocabulary.updatedAt ?? '',
     lastSyncedAt: storedVocabulary.lastSyncedAt ?? null,
+    // Absent on every vocabulary saved before checklist items became cards. Left absent rather than
+    // defaulted here, so the board can tell "this team has not chosen" from "this team chose".
+    ...(storedVocabulary.checklistColumnMapping
+      ? { checklistColumnMapping: storedVocabulary.checklistColumnMapping }
+      : {}),
   };
 }
 

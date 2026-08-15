@@ -11,6 +11,7 @@
 import { useState } from 'react';
 
 import { validateVocabulary } from '../boardColumns.ts';
+import { suggestChecklistColumnMapping, type ChecklistColumnMapping } from '../checklistCards.ts';
 import { compareVocabularies, type VocabularyDifference, type VocabularyPullPreview } from '../boardVocabularySync.ts';
 import {
   collectObservedBoardStates,
@@ -347,6 +348,86 @@ export function ColumnVocabularyEditor({
           )}
         </div>
       )}
+
+      <ChecklistColumnMappingEditor onVocabularyChange={onVocabularyChange} vocabulary={vocabulary} />
     </section>
+  );
+}
+
+/** The three states a Smart Checklist item can be in, and the wording the board uses for each. */
+const CHECKLIST_STATE_ROWS: Array<{ key: keyof ChecklistColumnMapping; label: string }> = [
+  { key: 'openColumnId', label: 'To do' },
+  { key: 'inProgressColumnId', label: 'Working' },
+  { key: 'doneColumnId', label: 'Done' },
+];
+
+/**
+ * Where a checklist item goes, now that it is drawn as a card rather than a line.
+ *
+ * Three fixed states have to land somewhere among a team's own columns, and only the team knows
+ * where. `Done` is usually obvious; `To do` and `Working` are not, which is exactly why this is asked
+ * rather than assumed. Anything left unchosen shows in Unmapped — visibly unplaced, never quietly
+ * filed somewhere plausible.
+ */
+function ChecklistColumnMappingEditor({
+  vocabulary,
+  onVocabularyChange,
+}: {
+  vocabulary: BoardVocabulary;
+  onVocabularyChange: (vocabulary: BoardVocabulary) => void;
+}): React.JSX.Element {
+  const mapping = vocabulary.checklistColumnMapping
+    ?? { openColumnId: '', inProgressColumnId: '', doneColumnId: '' };
+
+  /** Only columns that claim a Jira status: the Unmapped column is a destination, not a choice. */
+  const selectableColumns = vocabulary.columns.filter((column) => column.mappings.length > 0);
+
+  return (
+    <div className={styles.panelCard} data-testid="rollup-checklist-mapping">
+      <h3 className={styles.sectionTitle}>Where checklist items go</h3>
+      <p className={styles.fieldLabel}>
+        Smart Checklist items are drawn as cards in the column of their own state, the same as any
+        other work. They have three states; these are your columns.
+      </p>
+
+      {selectableColumns.length === 0 ? (
+        <p className={styles.fieldLabel}>
+          Build some columns above first — a column that claims no Jira status could not accept a
+          card anyway.
+        </p>
+      ) : (
+        <>
+          {CHECKLIST_STATE_ROWS.map((stateRow) => (
+            <label className={styles.editorRow} key={stateRow.key}>
+              <span className={styles.fieldLabel}>{stateRow.label}</span>
+              <select
+                className={styles.inputField}
+                onChange={(changeEvent) => onVocabularyChange({
+                  ...vocabulary,
+                  checklistColumnMapping: { ...mapping, [stateRow.key]: changeEvent.target.value },
+                })}
+                value={mapping[stateRow.key]}
+              >
+                <option value="">Unmapped — show it, do not place it</option>
+                {selectableColumns.map((column) => (
+                  <option key={column.id} value={column.id}>{column.name}</option>
+                ))}
+              </select>
+            </label>
+          ))}
+
+          <button
+            className={styles.actionButton}
+            onClick={() => onVocabularyChange({
+              ...vocabulary,
+              checklistColumnMapping: suggestChecklistColumnMapping(vocabulary.columns),
+            })}
+            type="button"
+          >
+            Suggest from my columns
+          </button>
+        </>
+      )}
+    </div>
   );
 }

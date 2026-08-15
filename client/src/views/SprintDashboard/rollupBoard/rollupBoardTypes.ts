@@ -6,6 +6,7 @@
 // expressed as data invariants that a unit test can assert without rendering anything.
 
 import type { ChecklistItem } from './checklistItems.ts';
+import type { ChecklistCard, ChecklistColumnMapping } from './checklistCards.ts';
 import type { ColumnDensity } from './columnDensity.ts';
 import type { JiraIssue } from '../../../types/jira.ts';
 
@@ -310,6 +311,17 @@ export interface BoardColumn {
 export interface BoardVocabulary {
   teamProfileId: string;
   columns: BoardColumn[];
+  /**
+   * Which column each Smart Checklist state belongs in.
+   *
+   * Part of the team's shared vocabulary rather than a personal preference, for the same reason the
+   * columns themselves are: two people looking at the same board must see a finished checklist item
+   * in the same place, or the board stops being a thing a team can hold a standup around.
+   *
+   * Optional because every vocabulary saved before this existed has none — the board then draws
+   * checklist items in Unmapped, visibly, rather than guessing a home for them.
+   */
+  checklistColumnMapping?: ChecklistColumnMapping;
   updatedAt: string;
   /** null means never synchronised with the shared workspace. */
   lastSyncedAt: string | null;
@@ -346,6 +358,14 @@ export interface ParentContainer {
    */
   parentLaneFeatureKey?: string | null;
   items: RollupBoardItem[];
+  /**
+   * This parent's checklist items that belong in THIS column.
+   *
+   * Separate from `items` on purpose. A checklist item is not a Jira issue, and everything reading
+   * `items` — counts, progress, the rollups — would silently start including it. Keeping the two
+   * apart makes "does this count?" a decision each of those takes for itself rather than inherits.
+   */
+  checklistCards?: ChecklistCard[];
 }
 
 /** One column as rendered, including the always-present Unmapped column. */
@@ -377,6 +397,11 @@ export interface LaneCell {
 export type LaneCellEntry =
   | { kind: 'container'; container: ParentContainer }
   | { kind: 'item'; item: RollupBoardItem };
+//
+// There is deliberately no loose `checklist` entry. A checklist item ALWAYS has a parent issue, so it
+// is always drawn inside that issue's container — the container is opened in this column if the
+// parent's own card happens to be in another one. Encoding that as an invariant rather than a
+// convention is what stops a checklist card ever appearing detached from the work it belongs to.
 
 /**
  * One non-dev participant in a Feature family: QE, BT, or anything else a team adds later.
@@ -482,7 +507,12 @@ export interface BoardLayout {
 
 /** The active quick filters. An empty typeBuckets set means "no type filter", not "match nothing". */
 export interface QuickFilterState {
-  typeBuckets: ReadonlySet<IssueTypeBucket>;
+  /**
+   * `'checklist'` is a filter value but never an ISSUE's bucket — a Jira issue is never a checklist
+   * item. Selecting it therefore hides every issue and leaves the checklist cards, which is exactly
+   * what "Checklist only" should do, and it falls out of the existing rule rather than needing one.
+   */
+  typeBuckets: ReadonlySet<IssueTypeBucket | 'checklist'>;
   assigneeAccountId: string | null;
   fixVersionName: string | null;
 }

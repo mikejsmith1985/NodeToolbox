@@ -31,8 +31,8 @@ import type { BoardMembershipReason } from '../boardMembershipReason.ts';
 import type { FamilyProgress } from '../rollupBoardTypes.ts';
 import type { CardDetail } from '../cardDetail.ts';
 import type { LaneCellEntry, RenderedColumn, RenderedLane, RollupBoardItem } from '../rollupBoardTypes.ts';
-import { ChildCard, type ChildCardProps } from './ChildCard.tsx';
-import { ParentContainer } from './ParentContainer.tsx';
+import { ChildCard } from './ChildCard.tsx';
+import { ParentContainer, type ParentContainerProps } from './ParentContainer.tsx';
 
 const COLLAPSED_ICON = '▶';
 const EXPANDED_ICON = '▼';
@@ -132,7 +132,9 @@ export interface MasterCardLaneProps {
   onNestInto?: (issueKey: string, containerIssueKey: string) => void;
   /** Raises or clears Jira's impediment flag on a card. */
   onToggleFlag?: (issueKey: string, shouldBeFlagged: boolean) => void;
-  onToggleChecklistItem?: ChildCardProps['onToggleChecklistItem'];
+  onSetChecklistState?: ParentContainerProps['onSetChecklistState'];
+  pendingChecklistCardId?: string | null;
+  errorMessageByChecklistCardId?: Record<string, string>;
   /**
    * Columns narrowed to a strip, by id.
    *
@@ -233,7 +235,9 @@ export function MasterCardLane({
   onToggleSubLaneCollapsed,
   onNestInto,
   onToggleFlag,
-  onToggleChecklistItem,
+  onSetChecklistState,
+  pendingChecklistCardId = null,
+  errorMessageByChecklistCardId,
   collapsedColumnIds = [],
   draggedItemKey = null,
   dropPreview = null,
@@ -505,7 +509,9 @@ export function MasterCardLane({
                     )}
                     onNestInto={onNestInto}
                     onToggleFlag={onToggleFlag}
-                    onToggleChecklistItem={onToggleChecklistItem}
+                    onSetChecklistState={onSetChecklistState}
+                    pendingChecklistCardId={pendingChecklistCardId}
+                    errorMessageByChecklistCardId={errorMessageByChecklistCardId}
                     errorMessageByIssueKey={errorMessageByIssueKey}
                     highlightedFamilyKey={highlightedFamilyKey}
                     key={`container-${entry.container.parentKey}`}
@@ -520,7 +526,6 @@ export function MasterCardLane({
                     }))}
                     onNestInto={onNestInto}
                     onToggleFlag={onToggleFlag}
-                    onToggleChecklistItem={onToggleChecklistItem}
                     detail={cardDetailByIssueKey?.[entry.item.key] ?? null}
                     shouldShowStatus={column.isUnmappedColumn}
                     errorMessage={errorMessageByIssueKey?.[entry.item.key] ?? null}

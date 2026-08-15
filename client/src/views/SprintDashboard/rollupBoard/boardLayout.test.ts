@@ -18,6 +18,8 @@ import {
   type RollupBoardItem,
 } from './rollupBoardTypes.ts';
 import type { JiraIssue } from '../../../types/jira.ts';
+import type { ChecklistCard } from './checklistCards.ts';
+import type { RenderedColumn } from './rollupBoardTypes.ts';
 
 const NO_FILTERS: QuickFilterState = {
   typeBuckets: new Set(),
@@ -555,5 +557,97 @@ describe('buildBoardLayout — a cell draws in ONE order', () => {
     const cell = buildCellWith(['DEV-1', 'DEV-2-1']);
 
     expect(cell.entries.filter((entry) => entry.kind === 'container')).toHaveLength(cell.containers.length);
+  });
+});
+
+describe('checklist cards in the layout', () => {
+  const CHECKLIST_COLUMNS = [
+    { id: 'col-todo', name: 'To Do', order: 1, mappings: [{ jiraStatusName: 'To Do', subStatusValue: null }], isUnmappedColumn: false },
+    { id: 'col-done', name: 'Done', order: 2, mappings: [{ jiraStatusName: 'Done', subStatusValue: null }], isUnmappedColumn: false },
+    { id: 'col-unmapped', name: 'Unmapped', order: 3, mappings: [], isUnmappedColumn: true },
+  ] as unknown as RenderedColumn[];
+
+  /** One checklist card with only what the layout reads. */
+  function buildChecklistCard(id: string, parentKey: string, columnId: string) {
+    return {
+      id, parentKey, columnId, featureKey: 'FEAT-1', text: id, state: 'open',
+      ownerFilterId: null, ownerDisplayName: null, itemId: id, rank: 0,
+    } as unknown as ChecklistCard;
+  }
+
+  it('places a checklist card in the column of its OWN state, not its parent’s', () => {
+    // The defect the whole change exists for: a finished checklist item sat in To Do because the
+    // card it was drawn inside had not moved.
+    const parent = buildItem({ key: 'DEV-1', featureKey: 'FEAT-1', columnId: 'col-todo' });
+    const layout = buildBoardLayout({
+      masterCards: buildMasterCards([parent], new Map([['FEAT-1', buildFeature('FEAT-1')]])),
+      columns: CHECKLIST_COLUMNS,
+      filters: NO_FILTERS,
+      preferences: buildPreferences(),
+      checklistCardsByFeatureKey: { 'FEAT-1': [buildChecklistCard('DEV-1#item-1', 'DEV-1', 'col-done')] },
+    });
+
+    const doneCell = layout.lanes[0].cellsByColumnId['col-done'];
+    expect(doneCell.containers[0].parentKey).toBe('DEV-1');
+    expect(doneCell.containers[0].checklistCards?.map((card) => card.id)).toEqual(['DEV-1#item-1']);
+  });
+
+  it('opens a container for the parent even where the parent’s own card is elsewhere', () => {
+    // The same treatment a sub-task gets whose parent sits in another column: the grouping header
+    // names the parent, so the relationship is never lost.
+    const layout = buildBoardLayout({
+      masterCards: buildMasterCards(
+        [buildItem({ key: 'DEV-1', featureKey: 'FEAT-1', columnId: 'col-todo' })],
+        new Map([['FEAT-1', buildFeature('FEAT-1')]]),
+      ),
+      columns: CHECKLIST_COLUMNS,
+      filters: NO_FILTERS,
+      preferences: buildPreferences(),
+      checklistCardsByFeatureKey: { 'FEAT-1': [buildChecklistCard('DEV-1#item-1', 'DEV-1', 'col-done')] },
+    });
+
+    expect(layout.lanes[0].cellsByColumnId['col-done'].containers[0].isParentInScope).toBe(true);
+    expect(layout.lanes[0].cellsByColumnId['col-done'].containers[0].items).toEqual([]);
+  });
+
+  it('shows an unplaced checklist card in Unmapped rather than hiding it', () => {
+    // The board's standing rule: work is never hidden, it is shown as unplaced.
+    const layout = buildBoardLayout({
+      masterCards: buildMasterCards(
+        [buildItem({ key: 'DEV-1', featureKey: 'FEAT-1', columnId: 'col-todo' })],
+        new Map([['FEAT-1', buildFeature('FEAT-1')]]),
+      ),
+      columns: CHECKLIST_COLUMNS,
+      filters: NO_FILTERS,
+      preferences: buildPreferences(),
+      // '' is what an unmapped state resolves to — the team has not said where these go.
+      checklistCardsByFeatureKey: { 'FEAT-1': [buildChecklistCard('DEV-1#item-1', 'DEV-1', '')] },
+    });
+
+    expect(layout.lanes[0].cellsByColumnId['col-unmapped'].containers[0].checklistCards)
+      .toHaveLength(1);
+  });
+
+  it('leaves every count alone, because a checklist item is not an issue', () => {
+    // Counting them would change every Feature's headline number overnight and put the board
+    // permanently at odds with anything Jira reports.
+    const layout = buildBoardLayout({
+      masterCards: buildMasterCards(
+        [buildItem({ key: 'DEV-1', featureKey: 'FEAT-1', columnId: 'col-todo' })],
+        new Map([['FEAT-1', buildFeature('FEAT-1')]]),
+      ),
+      columns: CHECKLIST_COLUMNS,
+      filters: NO_FILTERS,
+      preferences: buildPreferences(),
+      checklistCardsByFeatureKey: {
+        'FEAT-1': [
+          buildChecklistCard('DEV-1#item-1', 'DEV-1', 'col-done'),
+          buildChecklistCard('DEV-1#item-2', 'DEV-1', 'col-done'),
+        ],
+      },
+    });
+
+    expect(layout.lanes[0].totalItemCount).toBe(1);
+    expect(layout.lanes[0].matchedItemCount).toBe(1);
   });
 });

@@ -8,10 +8,12 @@ import styles from '../RollupBoardTab.module.css';
 import { hasActiveFilters } from '../boardFilters.ts';
 import type { IssueTypeBucket, QuickFilterState, RollupBoardItem } from '../rollupBoardTypes.ts';
 
-const TYPE_FILTER_OPTIONS: Array<{ bucket: IssueTypeBucket; label: string }> = [
+const TYPE_FILTER_OPTIONS: Array<{ bucket: IssueTypeBucket | 'checklist'; label: string }> = [
   { bucket: 'story', label: 'Stories only' },
   { bucket: 'defect', label: 'Defects only' },
   { bucket: 'subtask', label: 'Sub-tasks only' },
+  // The fourth way this team breaks work down, and now the fourth thing you can look at on its own.
+  { bucket: 'checklist', label: 'Checklist only' },
 ];
 
 const ANY_VALUE = '';
@@ -70,7 +72,7 @@ function collectFixVersions(items: readonly RollupBoardItem[]): Array<{ name: st
 /** Renders the type, assignee and fixVersion filters, plus a single clear action. */
 export function QuickFilterBar({ filters, allItems, onFiltersChange, scopeDescription = '' }: QuickFilterBarProps) {
   /** Turning a type filter on or off; the others are untouched, so filters combine. */
-  function handleToggleTypeBucket(bucket: IssueTypeBucket): void {
+  function handleToggleTypeBucket(bucket: IssueTypeBucket | 'checklist'): void {
     const nextTypeBuckets = new Set(filters.typeBuckets);
     if (nextTypeBuckets.has(bucket)) {
       nextTypeBuckets.delete(bucket);

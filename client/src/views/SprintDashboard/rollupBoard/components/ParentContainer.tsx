@@ -11,7 +11,8 @@ import type { CardDetail } from '../cardDetail.ts';
 import { shouldHideDraggedEntry } from '../dropPlaceholder.ts';
 import styles from '../RollupBoardTab.module.css';
 import type { ParentContainer as ParentContainerModel, RollupBoardItem } from '../rollupBoardTypes.ts';
-import { ChildCard, type ChildCardProps } from './ChildCard.tsx';
+import { ChecklistCard, type ChecklistCardProps } from './ChecklistCard.tsx';
+import { ChildCard } from './ChildCard.tsx';
 
 export interface ParentContainerProps {
   container: ParentContainerModel;
@@ -35,13 +36,17 @@ export interface ParentContainerProps {
    */
   onNestInto?: (issueKey: string, containerIssueKey: string) => void;
   onToggleFlag?: (issueKey: string, shouldBeFlagged: boolean) => void;
-  onToggleChecklistItem?: ChildCardProps['onToggleChecklistItem'];
+  onSetChecklistState?: ChecklistCardProps['onSetState'];
   onOpenIssue?: (issueKey: string) => void;
   onSelectFamily?: (item: RollupBoardItem) => void;
   /** Where the drop gap opens among these cards, or null when it belongs elsewhere on the board. */
   placeholderIndex?: number | null;
   /** The card in the air, lifted out of the list so its old slot does not stay open beside the new one. */
   draggedItemKey?: string | null;
+  /** The checklist card whose state change is still in flight. */
+  pendingChecklistCardId?: string | null;
+  /** Per-checklist-card failure reasons, shown on the card exactly as an issue's are. */
+  errorMessageByChecklistCardId?: Record<string, string>;
 }
 
 /** Renders one parent grouping and the children of that parent present in this column. */
@@ -55,11 +60,13 @@ export function ParentContainer({
   isReadOnly,
   onNestInto,
   onToggleFlag,
-  onToggleChecklistItem,
+  onSetChecklistState,
   onOpenIssue,
   onSelectFamily,
   placeholderIndex = null,
   draggedItemKey = null,
+  pendingChecklistCardId = null,
+  errorMessageByChecklistCardId,
 }: ParentContainerProps) {
   // Reordering inside a container is the same gesture as reordering loose cards, so it gets the same
   // gap — the container simply happens to be where these particular cards are drawn.
@@ -97,7 +104,6 @@ export function ParentContainer({
           }))}
           onNestInto={onNestInto}
           onToggleFlag={onToggleFlag}
-          onToggleChecklistItem={onToggleChecklistItem}
           isReadOnly={isReadOnly}
           detail={cardDetailByIssueKey?.[item.key] ?? null}
           shouldShowStatus={shouldShowStatus}
@@ -109,6 +115,21 @@ export function ParentContainer({
           onSelectFamily={onSelectFamily}
         />
         </Fragment>
+      ))}
+
+      {/* This parent's checklist items that belong in THIS column — the same grouping a sub-task
+          gets, because it is the same relationship: work underneath the issue that owns it. They are
+          drawn after the issue cards so a container always reads issues-then-checklist rather than
+          interleaving two kinds of thing that are counted differently. */}
+      {(container.checklistCards ?? []).map((checklistCard) => (
+        <ChecklistCard
+          card={checklistCard}
+          errorMessage={errorMessageByChecklistCardId?.[checklistCard.id] ?? null}
+          isPending={pendingChecklistCardId === checklistCard.id}
+          onSetState={onSetChecklistState}
+          isReadOnly={isReadOnly}
+          key={checklistCard.id}
+        />
       ))}
 
       {/* Dropping below the last card is its own slot, and there is no card after it to hang it on. */}

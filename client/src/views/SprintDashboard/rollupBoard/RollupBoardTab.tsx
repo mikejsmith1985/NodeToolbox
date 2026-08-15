@@ -54,6 +54,13 @@ import {
 import { buildColumnTracks, toggleColumnCollapsed } from './columnTrackLayout.ts';
 import { findFlagFieldInCatalog, setIssueFlag } from './issueFlagWrite.ts';
 import { type DropPreview } from './dropPlaceholder.ts';
+import {
+  buildChecklistCards,
+  parseChecklistCardId,
+  parseChecklistDragId,
+  resolveChecklistStateForColumn,
+  type ChecklistCard,
+} from './checklistCards.ts';
 import type { ChecklistItemState } from './checklistItems.ts';
 import { saveChecklistItemState } from './checklistWrite.ts';
 import { selectColumnMapping } from './selectColumnMapping.ts';
@@ -90,6 +97,7 @@ import { previewBoardVocabularyPull, publishBoardVocabulary, type VocabularyPull
 import {
   buildDropTargetId,
   parseCardTargetId,
+  parseDropTargetId,
   readPointerY,
   resolveCardDrop,
   resolveCardDropZone,
@@ -448,6 +456,8 @@ export default function RollupBoardTab({
   // Every checklist-ish field this instance has. Kept because ticking an item off may have to write to
   // a DIFFERENT one from the field it was read out of — the app's own dump is readable, never writable.
   const [checklistFieldIds, setChecklistFieldIds] = useState<string[]>([]);
+  const [pendingChecklistCardId, setPendingChecklistCardId] = useState<string | null>(null);
+  const [errorMessageByChecklistCardId, setErrorMessageByChecklistCardId] = useState<Record<string, string>>({});
   // Where the gap is currently open. Recomputed as the pointer moves, cleared when the drag ends.
   const [dropPreview, setDropPreview] = useState<DropPreview | null>(null);
   const jiraBaseUrl = useConnectionStore((connectionState) => connectionState.proxyStatus?.jira?.baseUrl ?? '');
@@ -1243,9 +1253,31 @@ export default function RollupBoardTab({
     return byFeatureKey;
   }, [laneMasterCards, subLanesByFeatureKey]);
 
+  /**
+   * Every Smart Checklist item on the board, as cards, grouped by lane.
+   *
+   * Built from the SAME items the issue cards come from, so a checklist item and the issue that owns
+   * it can never be drawn from two different reads of Jira.
+   */
+  const checklistCardsByFeatureKey = useMemo(() => {
+    const cardsByFeatureKey: Record<string, ChecklistCard[]> = {};
+    for (const checklistCard of buildChecklistCards(loadState.allItems, vocabulary.checklistColumnMapping)) {
+      const laneKey = checklistCard.featureKey ?? NO_FEATURE_KEY;
+      cardsByFeatureKey[laneKey] = [...(cardsByFeatureKey[laneKey] ?? []), checklistCard];
+    }
+    return cardsByFeatureKey;
+  }, [loadState.allItems, vocabulary.checklistColumnMapping]);
+
   const layout = useMemo(
-    () => buildBoardLayout({ masterCards: laneMasterCards, columns: visibleColumns, filters, preferences, subLanesByFeatureKey }),
-    [laneMasterCards, visibleColumns, filters, preferences, subLanesByFeatureKey],
+    () => buildBoardLayout({
+      masterCards: laneMasterCards,
+      columns: visibleColumns,
+      filters,
+      preferences,
+      subLanesByFeatureKey,
+      checklistCardsByFeatureKey,
+    }),
+    [laneMasterCards, visibleColumns, filters, preferences, subLanesByFeatureKey, checklistCardsByFeatureKey],
   );
 
   /**
@@ -1376,6 +1408,16 @@ export default function RollupBoardTab({
     });
   }, []);
 
+  /** The same, for a checklist card — its failures belong on it, not in a toast that scrolls away. */
+  const setChecklistCardMessage = useCallback((checklistCardId: string, message: string | null): void => {
+    setErrorMessageByChecklistCardId((previousMessages) => {
+      const nextMessages = { ...previousMessages };
+      if (message === null) delete nextMessages[checklistCardId];
+      else nextMessages[checklistCardId] = message;
+      return nextMessages;
+    });
+  }, []);
+
   /**
    * Opens the move-blocked dialog, working out first whether anything can be fixed from it.
    *
@@ -1431,7 +1473,74 @@ export default function RollupBoardTab({
    * A partial write is deliberately NOT reverted: the status really did change, so putting the card
    * back would draw a state Jira does not hold.
    */
+  /**
+   * A checklist card dropped into a column: the column names a state, and that state is written.
+   *
+   * Answered BEFORE the issue drop rules, and separately from them, because almost none of those
+   * rules apply. A checklist item cannot change which Feature it delivers (it belongs to its parent),
+   * cannot contain another card, and has no status of its own beyond these three — so routing it
+   * through the issue path would mean disabling most of that path for one case.
+   */
+  const handleChecklistCardDrop = useCallback(async (
+    checklistCardId: string,
+    dropTargetId: string | null,
+  ): Promise<void> => {
+    const cardParts = parseChecklistCardId(checklistCardId);
+    const dropTarget = dropTargetId === null ? null : parseDropTargetId(dropTargetId);
+    if (cardParts === null || dropTarget === null) return;
+
+    const nextState = resolveChecklistStateForColumn(
+      vocabulary.checklistColumnMapping,
+      dropTarget.columnId,
+    );
+    if (nextState === null) {
+      // A real attempt at something the board cannot do, so it says so rather than silently
+      // snapping the card back and leaving the person to guess why.
+      setChecklistCardMessage(
+        checklistCardId,
+        'That column does not stand for a checklist state. Set one in Board setup → Where checklist items go.',
+      );
+      return;
+    }
+
+    const parentItem = loadState.allItems.find((item) => item.key === cardParts.parentKey);
+    if (!parentItem) return;
+    // Dropped where it already is: not a non-event to refuse, just nothing to write.
+    const currentItem = parentItem.checklistItems.find((item) => item.id === cardParts.itemId);
+    if (currentItem?.state === nextState) return;
+
+    setChecklistCardMessage(checklistCardId, null);
+    setPendingChecklistCardId(checklistCardId);
+    try {
+      const result = await saveChecklistItemState({
+        issueKey: cardParts.parentKey,
+        items: parentItem.checklistItems,
+        itemId: cardParts.itemId,
+        nextState,
+        candidateFieldIds: checklistFieldIds,
+        readableFieldId: parentItem.checklistFieldId ?? null,
+      });
+      if (!result.isWritten) {
+        setChecklistCardMessage(checklistCardId, result.message);
+        return;
+      }
+      await loadBoard();
+    } finally {
+      setPendingChecklistCardId(null);
+    }
+  }, [vocabulary.checklistColumnMapping, loadState.allItems, checklistFieldIds, loadBoard]);
+
   const handleCardDrop = useCallback(async (dragEndEvent: DragEndEvent): Promise<void> => {
+    // A checklist card is not an issue and none of the rules below fit it, so it is answered first.
+    const checklistCardId = parseChecklistDragId(String(dragEndEvent.active.id));
+    if (checklistCardId !== null) {
+      await handleChecklistCardDrop(
+        checklistCardId,
+        dragEndEvent.over ? String(dragEndEvent.over.id) : null,
+      );
+      return;
+    }
+
     // Measured from the POINTER, never from the dragged card's rectangle: a tall card's centre is a
     // long way from where the person believes they are dropping, which is what made this unusable.
     const pointerY = readPointerY(dragEndEvent.activatorEvent, dragEndEvent.delta.y);
@@ -2227,11 +2336,13 @@ export default function RollupBoardTab({
               columns={layout.columns}
               errorMessageByIssueKey={errorMessageByIssueKey}
               collapsedColumnIds={preferences.collapsedColumnIds ?? []}
+              pendingChecklistCardId={pendingChecklistCardId}
+              errorMessageByChecklistCardId={errorMessageByChecklistCardId}
               draggedItemKey={draggedItemKey}
               dropPreview={dropPreview}
               onToggleFlag={(issueKey, shouldBeFlagged) => void handleToggleFlag(issueKey, shouldBeFlagged)}
-              onToggleChecklistItem={(issueKey, checklistItemId, nextState) =>
-                void handleToggleChecklistItem(issueKey, checklistItemId, nextState)}
+              onSetChecklistState={(checklistCard, nextState) =>
+                void handleToggleChecklistItem(checklistCard.parentKey, checklistCard.itemId, nextState)}
               onNestInto={(issueKey, containerIssueKey) => {
                 const item = loadState.allItems.find((candidate) => candidate.key === issueKey);
                 if (item) void applyContainment(item, containerIssueKey);

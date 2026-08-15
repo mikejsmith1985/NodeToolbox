@@ -19,7 +19,14 @@ export type ChecklistItemState = 'open' | 'in-progress' | 'done';
 
 /** One line of a Smart Checklist, ready to draw. */
 export interface ChecklistItem {
-  /** Stable within one issue — the item's position, since items have no id of their own. */
+  /**
+   * Stable within one issue.
+   *
+   * The app's OWN item id where it stored one — `Item(id=43628, …)` — falling back to the item's
+   * position only for a plain-text checklist, which really has nothing else. The difference matters
+   * as soon as an item is drawn as a card: a positional id renumbers every item below an insertion,
+   * so drag order, selection and the pending marker would all move to the wrong line.
+   */
   id: string;
   text: string;
   state: ChecklistItemState;
@@ -36,6 +43,8 @@ export interface ChecklistItem {
    */
   ownerFilterId?: string | null;
   ownerDisplayName?: string | null;
+  /** The app's own ordering, which the board respects rather than inventing one. */
+  rank?: number;
 }
 
 /** Marker characters, as the app writes them. */
@@ -108,6 +117,12 @@ const DUMP_STATUS_STATE_PATTERN = /statusState=([A-Z_]+)/;
 /** The status's display name, which is the only place "in progress" is expressible. */
 const DUMP_STATUS_NAME_PATTERN = /status=Status\([^)]*?\bname=([^,)]+)/;
 
+/** The item's own id, which the app assigns and keeps across edits and reorders. */
+const DUMP_ITEM_ID_PATTERN = /^id=(\d+)/;
+
+/** The app's own ordering of its items. */
+const DUMP_RANK_PATTERN = /(?:^|,\s*)rank=(\d+)/;
+
 /** The first assignee's user name, which is what a mention resolves to. */
 const DUMP_ASSIGNEE_PATTERN = /Assignee\([^)]*?\buserName=([^,)]+)/;
 
@@ -152,8 +167,12 @@ export function parseSmartChecklistDump(rawValue: unknown): ChecklistItem[] {
 
     // The mention is part of the stored text, so it is lifted out here exactly as it is for markdown.
     const { text, assigneeUserId } = extractAssignee(itemText);
+    const storedItemId = DUMP_ITEM_ID_PATTERN.exec(itemBlock)?.[1] ?? null;
+    const storedRank = DUMP_RANK_PATTERN.exec(itemBlock)?.[1];
     items.push({
-      id: `checklist-${items.length}`,
+      // The app's own id when it stored one, which survives inserts, deletes and reordering.
+      id: storedItemId === null ? `checklist-${items.length}` : `item-${storedItemId}`,
+      rank: storedRank === undefined ? items.length : Number(storedRank),
       text,
       state: readDumpItemState(itemBlock),
       assigneeUserId: assigneeUserId ?? (DUMP_ASSIGNEE_PATTERN.exec(itemBlock)?.[1] ?? null),
@@ -202,7 +221,9 @@ export function parseChecklistItems(rawChecklistValue: unknown): ChecklistItem[]
     if (text === '') continue;
 
     items.push({
+      // A plain-text checklist genuinely has no id, so position is all there is.
       id: `checklist-${items.length}`,
+      rank: items.length,
       text,
       state: readItemState(markerCharacter),
       assigneeUserId,

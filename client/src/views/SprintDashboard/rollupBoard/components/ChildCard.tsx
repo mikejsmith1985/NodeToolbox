@@ -18,36 +18,17 @@ import { PriorityBadge } from '../../../../components/IssueMeta/PriorityBadge.ts
 import { buildCardTargetId } from '../cardDropRouting.ts';
 import { formatCommentDate, type CardDetail } from '../cardDetail.ts';
 import { describeStatusPair } from '../unmappedStatusSummary.ts';
-import type { ChecklistItemState } from '../checklistItems.ts';
-import { describeChecklistState, nextChecklistState } from '../checklistWrite.ts';
 import styles from '../RollupBoardTab.module.css';
 import { BoardContextMenu, type BoardMenuAction } from './BoardContextMenu.tsx';
 import {
   AttachmentIcon,
   BlockedIcon,
-  ChecklistDoneIcon,
-  ChecklistInProgressIcon,
-  ChecklistOpenIcon,
   FlagIcon,
   WarningIcon,
 } from './BoardIcons.tsx';
 import type { IssueTypeBucket, RollUpRoute, RollupBoardItem } from '../rollupBoardTypes.ts';
 
 /** Which colour class carries each visual family. Text always says the same thing (FR-028). */
-/** An icon per checklist state, so the state survives even where colour does not. */
-const CHECKLIST_STATE_ICONS: Record<ChecklistItemState, () => React.JSX.Element> = {
-  open: ChecklistOpenIcon,
-  'in-progress': ChecklistInProgressIcon,
-  done: ChecklistDoneIcon,
-};
-
-/**
- * How many checklist items a card shows before it starts counting the rest.
- *
- * Three fits under a card without doubling its height, which is what a ten-item checklist was doing
- * to a lane. A focused column shows them all — it has the board's whole width for one status.
- */
-const MAX_COMPACT_CHECKLIST_ITEMS = 3;
 
 /**
  * What each impediment is called on a card.
@@ -122,8 +103,6 @@ export interface ChildCardProps {
    * would compete with clicking the card itself to open it.
    */
   onToggleFlag?: (issueKey: string, shouldBeFlagged: boolean) => void;
-  /** Ticks one Smart Checklist line on, off, or into "working". Absent leaves the markers read-only. */
-  onToggleChecklistItem?: (issueKey: string, checklistItemId: string, nextState: ChecklistItemState) => void;
 }
 
 /** Turns a resolved route into one readable sentence, so parentage is never inferred. */
@@ -161,7 +140,6 @@ export function ChildCard({
   containerCandidates = [],
   onNestInto,
   onToggleFlag,
-  onToggleChecklistItem,
 }: ChildCardProps) {
   const [menuPosition, setMenuPosition] = useState<{ xPx: number; yPx: number } | null>(null);
 
@@ -201,14 +179,6 @@ export function ChildCard({
     setNodeRef(element);
     setDropRef(element);
   }
-
-  // A focused column has the whole board width to itself, so it can afford the full list; twelve
-  // columns side by side cannot.
-  const isDetailed = detail !== null;
-  const visibleChecklistItems = isDetailed
-    ? item.checklistItems
-    : item.checklistItems.slice(0, MAX_COMPACT_CHECKLIST_ITEMS);
-  const hiddenChecklistItemCount = item.checklistItems.length - visibleChecklistItems.length;
 
   const cardClassNames = [
     styles.card,
@@ -297,61 +267,10 @@ export function ChildCard({
         </div>
       )}
 
-      {/* The checklist's own items, nested inside the card they belong to. A third way teams break
-          work down — and the only one the board used to reduce to a bare count, so the breakdown that
-          costs nothing to create was the one you had to open Jira to read.
-
-          Capped on a compact card rather than hidden: a ten-item checklist filled a whole lane on its
-          own, but showing none of it would put back the bare count this was built to replace. The
-          remainder is COUNTED, so a truncated list never passes for a complete one. */}
-      {visibleChecklistItems.length > 0 && (
-        <ul className={styles.checklistItemList}>
-          {visibleChecklistItems.map((checklistItem) => (
-            <li className={styles.checklistItemCard} data-state={checklistItem.state} key={checklistItem.id}>
-              {/* A button, not a decoration: a checklist line is work somebody has to finish, and
-                  finishing it meant leaving for Jira. The state is spelled out beside the marker
-                  because "not ticked" covers both not-started and being-worked-on-right-now, which
-                  is the distinction a standup actually turns on. */}
-              <button
-                aria-label={`${checklistItem.text} — ${describeChecklistState(checklistItem.state)}. `
-                  + `Set to ${describeChecklistState(nextChecklistState(checklistItem.state))}`}
-                className={styles.checklistItemMarker}
-                disabled={onToggleChecklistItem === undefined || isReadOnly}
-                onClick={(clickEvent) => {
-                  // The card opens the detail view on click, and ticking a box is not asking for that.
-                  clickEvent.stopPropagation();
-                  onToggleChecklistItem?.(item.key, checklistItem.id, nextChecklistState(checklistItem.state));
-                }}
-                type="button"
-              >
-                {(() => {
-                  const StateIcon = CHECKLIST_STATE_ICONS[checklistItem.state];
-                  return <StateIcon />;
-                })()}
-                <span className={styles.checklistItemState}>{describeChecklistState(checklistItem.state)}</span>
-              </button>
-              <span className={styles.checklistItemText}>{checklistItem.text}</span>
-              {checklistItem.assigneeUserId && (
-                <span
-                  className={styles.checklistItemAssignee}
-                  // The raw id stays reachable, because it is what is written in Jira and what
-                  // somebody editing the checklist by hand will have to type.
-                  title={checklistItem.ownerDisplayName
-                    ? `${checklistItem.ownerDisplayName} (@${checklistItem.assigneeUserId})`
-                    : `@${checklistItem.assigneeUserId} — nobody on this board holds that Jira id`}
-                >
-                  {checklistItem.ownerDisplayName ?? `@${checklistItem.assigneeUserId}`}
-                </span>
-              )}
-            </li>
-          ))}
-          {hiddenChecklistItemCount > 0 && (
-            <li className={styles.checklistItemMore}>
-              +{hiddenChecklistItemCount} more — open the card or focus this column to read them
-            </li>
-          )}
-        </ul>
-      )}
+      {/* The items themselves are no longer drawn here. They are cards now, in the column of their
+          own state — a FINISHED checklist item used to sit inside this card in the To Do column,
+          which broke the one rule the board exists to enforce. The count stays, because it says
+          something this card's own cards cannot: how much of the checklist is left. */}
 
       {/* Only present in a focused column, where one status has the whole board width to itself. */}
       {detail?.descriptionExcerpt && (

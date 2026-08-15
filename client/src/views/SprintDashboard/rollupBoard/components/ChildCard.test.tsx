@@ -240,103 +240,38 @@ describe('a card in another discipline band', () => {
   });
 });
 
-describe('checklist items nested inside the card', () => {
+describe('the checklist is COUNTED on the card, never listed on it', () => {
   it('draws nothing when the issue has no checklist', () => {
     render(<ChildCard item={buildItem()} />);
 
     expect(screen.queryByText(/this is a test/)).toBeNull();
   });
 
-  it('draws each item as its own nested row under the story it belongs to', () => {
+  it('does not draw the items — they are cards now, in the column of their own state', () => {
+    // The defect this replaced: a FINISHED checklist item sat inside this card in the To Do column,
+    // because the card it was drawn inside had not moved. Listing them here again would show every
+    // item twice, once where it belongs and once where its parent happens to be.
     render(<ChildCard item={buildItem({
       checklistItems: [
-        { id: 'checklist-0', text: 'this is a test', state: 'open', assigneeUserId: 'C8Q6T3', headingText: null },
-        { id: 'checklist-1', text: 'and another', state: 'done', assigneeUserId: null, headingText: null },
+        { id: 'item-1', text: 'this is a test', state: 'open', assigneeUserId: 'C8Q6T3', headingText: null },
+        { id: 'item-2', text: 'and another', state: 'done', assigneeUserId: null, headingText: null },
       ],
     })} />);
 
-    expect(screen.getByText('this is a test')).toBeTruthy();
-    expect(screen.getByText('and another')).toBeTruthy();
+    expect(screen.queryByText('this is a test')).toBeNull();
+    expect(screen.queryByText('and another')).toBeNull();
   });
 
-  it('names the person an item is assigned to', () => {
+  it('keeps the COUNT, which says something the individual cards cannot: how much is left', () => {
     render(<ChildCard item={buildItem({
       checklistItems: [
-        { id: 'checklist-0', text: 'review', state: 'open', assigneeUserId: 'jsmith', headingText: null },
+        { id: 'item-1', text: 'a', state: 'open', assigneeUserId: null, headingText: null },
+        { id: 'item-2', text: 'b', state: 'done', assigneeUserId: null, headingText: null },
       ],
+      checklistCompletion: { completedCount: 1, totalCount: 2 },
     })} />);
 
-    expect(screen.getByText('@jsmith')).toBeTruthy();
-  });
-
-  it('shows the resolved NAME rather than the Jira id it is written as', () => {
-    // `@C8Q6T3` is unreadable to everyone, including the person it belongs to.
-    render(<ChildCard item={buildItem({
-      checklistItems: [{
-        id: 'checklist-0', text: 'review', state: 'open', assigneeUserId: 'C8Q6T3',
-        headingText: null, ownerFilterId: 'acc-11', ownerDisplayName: 'Smith, Michael (CTR)',
-      }],
-    })} />);
-
-    expect(screen.getByText('Smith, Michael (CTR)')).toBeTruthy();
-    expect(screen.queryByText('@C8Q6T3')).toBeNull();
-  });
-
-  it('says which of the three states an item is in, in words', () => {
-    // "Not ticked" covers both not-started and being-worked-on-right-now, which is the distinction a
-    // standup actually turns on.
-    render(<ChildCard item={buildItem({
-      checklistItems: [
-        { id: 'checklist-0', text: 'a', state: 'open', assigneeUserId: null, headingText: null },
-        { id: 'checklist-1', text: 'b', state: 'in-progress', assigneeUserId: null, headingText: null },
-        { id: 'checklist-2', text: 'c', state: 'done', assigneeUserId: null, headingText: null },
-      ],
-    })} />);
-
-    expect(screen.getByText('To do')).toBeTruthy();
-    expect(screen.getByText('Working')).toBeTruthy();
-    expect(screen.getByText('Done')).toBeTruthy();
-  });
-
-  it('ticks an item to its next state without opening the card', () => {
-    const stateChanges: Array<[string, string, string]> = [];
-    const cardOpens: string[] = [];
-    render(<ChildCard
-      item={buildItem({
-        checklistItems: [
-          { id: 'checklist-0', text: 'a', state: 'open', assigneeUserId: null, headingText: null },
-        ],
-      })}
-      onOpen={(issueKey) => cardOpens.push(issueKey)}
-      onToggleChecklistItem={(issueKey, itemId, nextState) =>
-        stateChanges.push([issueKey, itemId, nextState])}
-    />);
-
-    fireEvent.click(screen.getByRole('button', { name: /Set to Working/ }));
-
-    expect(stateChanges).toEqual([['DEV-1', 'checklist-0', 'in-progress']]);
-    // Ticking a box is not a request to open the detail view.
-    expect(cardOpens).toEqual([]);
-  });
-
-  it('leaves the marker unpressable when nothing can be written', () => {
-    render(<ChildCard item={buildItem({
-      checklistItems: [
-        { id: 'checklist-0', text: 'a', state: 'open', assigneeUserId: null, headingText: null },
-      ],
-    })} />);
-
-    expect(screen.getByRole('button', { name: /Set to Working/ }).hasAttribute('disabled')).toBe(true);
-  });
-
-  it('marks the state as data, so a finished item does not rely on colour alone', () => {
-    const { container } = render(<ChildCard item={buildItem({
-      checklistItems: [
-        { id: 'checklist-0', text: 'done thing', state: 'done', assigneeUserId: null, headingText: null },
-      ],
-    })} />);
-
-    expect(container.querySelector('[data-state="done"]')).toBeTruthy();
+    expect(screen.getByText(/Checklist 1\/2/)).toBeTruthy();
   });
 });
 
