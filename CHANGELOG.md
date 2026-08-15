@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Roll-Up Board — checklist cards appeared nowhere.** Three things stacked, and the first was a
+  design decision that turned out to be wrong in practice. The board deliberately placed nothing until
+  the team mapped the three checklist states, so every item went to **Unmapped** — honest, and
+  indistinguishable from the feature being broken, because Unmapped sits at the far right of a board
+  twenty columns wide and is usually collapsed. The board now falls back to a **suggested** mapping and
+  says in a board notice that it guessed and where to change it. The stored value stays absent, so
+  "has not chosen" and "chose exactly this" are still different things.
+- **Roll-Up Board — a collapsed column did not count its checklist items.** Checklist cards are drawn
+  only inside parent containers, and the collapsed count read the container's ISSUES alone. A column
+  holding nothing but checklist items counted zero and went blank — precisely the hiding that count
+  exists to prevent, and exactly where every checklist item was landing.
+- **Roll-Up Board — the suggested checklist columns read the board instead of counting it.** First /
+  middle / last put "Working" in the sixth of eleven columns, which on the real board is *SL Testing* —
+  on a board that has a column called **WORKING**. The suggestion now matches column names first and
+  falls back to position only when no name says anything; Done is read from the end, so an early
+  "Ready for Done Review" cannot claim it.
+
 ### Changed
 - **Roll-Up Board — Smart Checklist items are cards now, in the column of their own state.** They were
   lines inside their parent's card, which broke the one rule the whole board exists to enforce: every

@@ -464,8 +464,13 @@ export function MasterCardLane({
             // went blank would hide this Feature's work in it, and the board's one rule is that work
             // is never hidden without being counted.
             if (isColumnCollapsed(collapsedColumnIds, column.id)) {
+              // Checklist cards count here too. They are drawn only inside containers, so a column
+              // holding nothing BUT checklist items counted zero and went blank — which is precisely
+              // the hiding this count exists to prevent, and it is where every checklist item lands
+              // until the team maps the states.
               const collapsedItemCount = (cell?.looseItems.length ?? 0)
-                + (cell?.containers ?? []).reduce((total, container) => total + container.items.length, 0);
+                + (cell?.containers ?? []).reduce((total, container) =>
+                  total + container.items.length + (container.checklistCards ?? []).length, 0);
               return (
                 <LaneCellDropZone columnId={column.id} featureKey={featureKey} key={column.id}>
                   {collapsedItemCount > 0 && (

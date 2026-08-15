@@ -556,3 +556,38 @@ describe('MasterCardLane — a narrowed column puts its cards away', () => {
     expect(screen.getByTestId('rollup-cell-FEAT-1-col-dev')).toBeTruthy();
   });
 });
+
+describe('a collapsed column counts checklist cards too', () => {
+  it('counts a column holding NOTHING but checklist items', () => {
+    // The bug this replaces: checklist cards are drawn only inside containers, and the collapsed
+    // count read `container.items` alone. A column holding only checklist items counted zero and
+    // went blank — which is exactly the hiding this count exists to prevent, and it is where every
+    // checklist item lands until the team maps the three states.
+    const lane = buildBoardLayout({
+      masterCards: buildMasterCards([buildItem('DEV-1', 'col-todo')], new Map([['FEAT-1', buildFeature()]])),
+      columns: COLUMNS,
+      filters: EMPTY_QUICK_FILTER_STATE,
+      preferences: buildPreferences({ 'FEAT-1': false }),
+      checklistCardsByFeatureKey: {
+        'FEAT-1': [{
+          id: 'DEV-1#item-1', parentKey: 'DEV-1', featureKey: 'FEAT-1', columnId: 'col-dev',
+          text: 'a checklist item', state: 'open', ownerFilterId: null, ownerDisplayName: null,
+          itemId: 'item-1', rank: 0,
+        }],
+      },
+    }).lanes[0];
+
+    render(
+      <MasterCardLane
+        collapsedColumnIds={['col-dev']}
+        columns={COLUMNS}
+        columnTracks={COLUMN_TRACKS}
+        hasActiveFilters={false}
+        lane={lane}
+        onToggleCollapsed={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByTitle(/1 in .* open the column to see them/)).toBeTruthy();
+  });
+});

@@ -59,6 +59,7 @@ import {
   parseChecklistCardId,
   parseChecklistDragId,
   resolveChecklistStateForColumn,
+  suggestChecklistColumnMapping,
   type ChecklistCard,
 } from './checklistCards.ts';
 import type { ChecklistItemState } from './checklistItems.ts';
@@ -1024,6 +1025,8 @@ export default function RollupBoardTab({
 
   const boardNotices = useMemo<BoardNotice[]>(() => {
     const notices: BoardNotice[] = [];
+    const checklistItemCount = loadState.allItems
+      .reduce((total, item) => total + item.checklistItems.length, 0);
 
     if (unmappedStatusGroups.length > 0) {
       const unmappedIssueCount = unmappedStatusGroups.reduce((total, group) => total + group.issueCount, 0);
@@ -1041,6 +1044,23 @@ export default function RollupBoardTab({
               </li>
             ))}
           </ul>
+        ),
+      });
+    }
+
+    // The board drew checklist cards somewhere the team never chose. Saying so is the difference
+    // between a guess and a silent decision, and the fix is one click away in Board setup.
+    if (checklistItemCount > 0 && vocabulary.checklistColumnMapping === undefined) {
+      notices.push({
+        id: 'checklist-columns-guessed',
+        tone: 'info',
+        summary: `${checklistItemCount} Smart Checklist items are placed by a guess, because this team `
+          + 'has not said which columns their three states belong in.',
+        detail: (
+          <p>
+            They are in the first, middle and last of your mapped columns for now. Set them properly in
+            Board setup → “Where checklist items go”.
+          </p>
         ),
       });
     }
@@ -1187,7 +1207,8 @@ export default function RollupBoardTab({
     }
 
     return notices;
-  }, [loadState, sprintPiGap, carryOverScope, featuresWithoutWork, unmappedStatusGroups, membershipReasonByFeatureKey, cloneFamilies]);
+  }, [loadState, sprintPiGap, carryOverScope, featuresWithoutWork, unmappedStatusGroups,
+    membershipReasonByFeatureKey, cloneFamilies, vocabulary.checklistColumnMapping]);
 
   /**
    * The columns the board draws: all of them, or just the focused one.
@@ -1254,6 +1275,22 @@ export default function RollupBoardTab({
   }, [laneMasterCards, subLanesByFeatureKey]);
 
   /**
+   * Where checklist items go, falling back to a suggestion when the team has not chosen.
+   *
+   * Leaving it unset meant every checklist item landed in Unmapped — which is honest, and was also
+   * indistinguishable from the feature being broken: the cards were off at the far right of a board
+   * twenty columns wide, in a column that is usually collapsed. A board nobody can tell is working
+   * is not more honest than one that guesses and says so, so it guesses and says so.
+   *
+   * The STORED value stays absent, so "has not chosen" and "chose exactly this" remain different
+   * things — the Board setup dropdowns show the guess and let it be corrected in one click.
+   */
+  const effectiveChecklistMapping = useMemo(
+    () => vocabulary.checklistColumnMapping ?? suggestChecklistColumnMapping(vocabulary.columns),
+    [vocabulary.checklistColumnMapping, vocabulary.columns],
+  );
+
+  /**
    * Every Smart Checklist item on the board, as cards, grouped by lane.
    *
    * Built from the SAME items the issue cards come from, so a checklist item and the issue that owns
@@ -1261,12 +1298,12 @@ export default function RollupBoardTab({
    */
   const checklistCardsByFeatureKey = useMemo(() => {
     const cardsByFeatureKey: Record<string, ChecklistCard[]> = {};
-    for (const checklistCard of buildChecklistCards(loadState.allItems, vocabulary.checklistColumnMapping)) {
+    for (const checklistCard of buildChecklistCards(loadState.allItems, effectiveChecklistMapping)) {
       const laneKey = checklistCard.featureKey ?? NO_FEATURE_KEY;
       cardsByFeatureKey[laneKey] = [...(cardsByFeatureKey[laneKey] ?? []), checklistCard];
     }
     return cardsByFeatureKey;
-  }, [loadState.allItems, vocabulary.checklistColumnMapping]);
+  }, [loadState.allItems, effectiveChecklistMapping]);
 
   const layout = useMemo(
     () => buildBoardLayout({
@@ -1489,10 +1526,7 @@ export default function RollupBoardTab({
     const dropTarget = dropTargetId === null ? null : parseDropTargetId(dropTargetId);
     if (cardParts === null || dropTarget === null) return;
 
-    const nextState = resolveChecklistStateForColumn(
-      vocabulary.checklistColumnMapping,
-      dropTarget.columnId,
-    );
+    const nextState = resolveChecklistStateForColumn(effectiveChecklistMapping, dropTarget.columnId);
     if (nextState === null) {
       // A real attempt at something the board cannot do, so it says so rather than silently
       // snapping the card back and leaving the person to guess why.
@@ -1528,7 +1562,7 @@ export default function RollupBoardTab({
     } finally {
       setPendingChecklistCardId(null);
     }
-  }, [vocabulary.checklistColumnMapping, loadState.allItems, checklistFieldIds, loadBoard]);
+  }, [effectiveChecklistMapping, loadState.allItems, checklistFieldIds, loadBoard]);
 
   const handleCardDrop = useCallback(async (dragEndEvent: DragEndEvent): Promise<void> => {
     // A checklist card is not an issue and none of the rules below fit it, so it is answered first.

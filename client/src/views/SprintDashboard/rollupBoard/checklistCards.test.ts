@@ -77,6 +77,48 @@ describe('suggestChecklistColumnMapping', () => {
     { id: 'col-unmapped', mappings: [], isUnmappedColumn: true },
   ];
 
+  it('reads the column NAMES rather than counting positions', () => {
+    // The real board: eleven mapped columns, of which the sixth is SL Testing. Counting to the
+    // middle put "Working" there, on a board with a column literally called WORKING.
+    const realBoard = [
+      { id: 'c1', name: 'To Do', mappings: ['x'] },
+      { id: 'c2', name: 'Triage', mappings: ['x'] },
+      { id: 'c3', name: 'Ready to Work', mappings: ['x'] },
+      { id: 'c4', name: 'Working', mappings: ['x'] },
+      { id: 'c5', name: 'Code Review', mappings: ['x'] },
+      { id: 'c6', name: 'SL Testing', mappings: ['x'] },
+      { id: 'c7', name: 'Int Testing', mappings: ['x'] },
+      { id: 'c8', name: 'BT Testing', mappings: ['x'] },
+      { id: 'c9', name: 'Ready to Accept', mappings: ['x'] },
+      { id: 'c10', name: 'Complete', mappings: ['x'] },
+    ];
+
+    expect(suggestChecklistColumnMapping(realBoard)).toEqual({
+      openColumnId: 'c1', inProgressColumnId: 'c4', doneColumnId: 'c10',
+    });
+  });
+
+  it('reads Done from the END, so an early "Ready for Testing / Done" cannot claim it', () => {
+    const columns = [
+      { id: 'early', name: 'Ready for Done Review', mappings: ['x'] },
+      { id: 'late', name: 'Complete', mappings: ['x'] },
+    ];
+
+    expect(suggestChecklistColumnMapping(columns).doneColumnId).toBe('late');
+  });
+
+  it('falls back to position when no column name says anything', () => {
+    const columns = [
+      { id: 'a', name: 'Column A', mappings: ['x'] },
+      { id: 'b', name: 'Column B', mappings: ['x'] },
+      { id: 'c', name: 'Column C', mappings: ['x'] },
+    ];
+
+    expect(suggestChecklistColumnMapping(columns)).toEqual({
+      openColumnId: 'a', inProgressColumnId: 'b', doneColumnId: 'c',
+    });
+  });
+
   it('opens with first, middle and last of the columns the team actually built', () => {
     expect(suggestChecklistColumnMapping(COLUMNS)).toEqual({
       openColumnId: 'col-todo', inProgressColumnId: 'col-working', doneColumnId: 'col-done',

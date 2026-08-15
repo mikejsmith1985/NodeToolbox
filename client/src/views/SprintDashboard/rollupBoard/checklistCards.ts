@@ -72,24 +72,52 @@ export function parseChecklistCardId(cardId: string): { parentKey: string; itemI
 }
 
 /**
- * A starting mapping, from the columns the team already built.
+ * Column names that say what a state is, so the guess reads the board rather than counting it.
  *
- * First, middle and last are guesses and are meant to be — the point is that the board opens with
- * something workable rather than with everything in Unmapped, and that the guess is then visible and
- * changeable in Board setup. Only columns that CLAIM a Jira status are considered, because the
- * Unmapped column is where things go when nothing else fits, never a default home.
+ * Position alone put "Working" in the sixth of eleven columns — which happened to be SL Testing —
+ * on a board that has a column literally called WORKING. Names first, position only as the fallback.
+ */
+const NAME_HINTS: Record<keyof ChecklistColumnMapping, RegExp> = {
+  openColumnId: /^(to.?do|backlog|triage|new|open|ready)/i,
+  inProgressColumnId: /(in.?progress|working|doing|develop)/i,
+  doneColumnId: /(done|complete|accepted|closed)/i,
+};
+
+/**
+ * A starting mapping, from the columns the team already built.
+
+ * A guess, and meant to be one — the point is that the board opens with something workable rather
+ * than with every checklist item in Unmapped, and that the guess is then visible and changeable in
+ * Board setup. Only columns that CLAIM a Jira status are considered, because the Unmapped column is
+ * where things go when nothing else fits, never a default home.
  */
 export function suggestChecklistColumnMapping(
-  columns: readonly { id: string; mappings: readonly unknown[]; isUnmappedColumn?: boolean }[],
+  columns: readonly { id: string; name?: string; mappings: readonly unknown[]; isUnmappedColumn?: boolean }[],
 ): ChecklistColumnMapping {
   const mappedColumns = columns.filter((column) => !column.isUnmappedColumn && column.mappings.length > 0);
   if (mappedColumns.length === 0) return { openColumnId: '', inProgressColumnId: '', doneColumnId: '' };
 
   const lastIndex = mappedColumns.length - 1;
-  return {
+  const positionFallback: ChecklistColumnMapping = {
     openColumnId: mappedColumns[0].id,
     inProgressColumnId: mappedColumns[Math.floor(lastIndex / 2)].id,
     doneColumnId: mappedColumns[lastIndex].id,
+  };
+
+  /** The first column whose NAME says this state, or the positional guess when none does. */
+  function pickColumnId(stateKey: keyof ChecklistColumnMapping): string {
+    const named = mappedColumns.find((column) => NAME_HINTS[stateKey].test(column.name ?? ''));
+    return named?.id ?? positionFallback[stateKey];
+  }
+
+  return {
+    openColumnId: pickColumnId('openColumnId'),
+    inProgressColumnId: pickColumnId('inProgressColumnId'),
+    // Done is read from the END, because a board's later columns are the finished ones and an early
+    // column named "Ready for Testing / Done" would otherwise claim it.
+    doneColumnId: [...mappedColumns].reverse()
+      .find((column) => NAME_HINTS.doneColumnId.test(column.name ?? ''))?.id
+      ?? positionFallback.doneColumnId,
   };
 }
 
