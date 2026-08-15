@@ -15,12 +15,20 @@ import { describeChecklistState, nextChecklistState } from '../checklistWrite.ts
 import { buildChecklistDragId, type ChecklistCard as ChecklistCardModel } from '../checklistCards.ts';
 import type { ChecklistItemState } from '../checklistItems.ts';
 import styles from '../RollupBoardTab.module.css';
-import { ChecklistDoneIcon, ChecklistInProgressIcon, ChecklistOpenIcon } from './BoardIcons.tsx';
+import {
+  ChecklistDoneIcon,
+  ChecklistInProgressIcon,
+  ChecklistOpenIcon,
+  NotApplicableIcon,
+} from './BoardIcons.tsx';
 
 /** One icon per state, so the state survives anywhere colour does not. */
-const STATE_ICONS = {
+const STATE_ICONS: Record<ChecklistItemState, () => React.JSX.Element> = {
   open: ChecklistOpenIcon,
   'in-progress': ChecklistInProgressIcon,
+  // Set aside on purpose, which is neither done nor waiting — the same glyph the board already uses
+  // for "did not apply".
+  skipped: NotApplicableIcon,
   done: ChecklistDoneIcon,
 };
 
@@ -34,6 +42,14 @@ export interface ChecklistCardProps {
   errorMessage?: string | null;
   /** Moves the item on without a drag. Dragging is the gesture; this is the one-click shortcut. */
   onSetState?: (card: ChecklistCardModel, nextState: ChecklistItemState) => void;
+  /**
+   * Opens the ISSUE this item belongs to.
+   *
+   * A checklist item has no detail of its own to open — no key, no description, no history. Its
+   * parent has all of that, plus the whole checklist in context, so that is what a click offers
+   * rather than a panel that would have almost nothing in it.
+   */
+  onOpenParent?: (card: ChecklistCardModel) => void;
 }
 
 /** Renders one checklist item as a draggable card. */
@@ -43,6 +59,7 @@ export function ChecklistCard({
   isPending = false,
   errorMessage = null,
   onSetState,
+  onOpenParent,
 }: ChecklistCardProps): React.JSX.Element {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: buildChecklistDragId(card),
@@ -63,7 +80,9 @@ export function ChecklistCard({
       className={cardClassNames}
       data-state={card.state}
       data-testid={`rollup-checklist-card-${card.id}`}
+      onClick={() => { if (!isDragging) onOpenParent?.(card); }}
       ref={setNodeRef}
+      title={`Checklist item on ${card.parentKey} — click to open it`}
       {...attributes}
       {...listeners}
     >

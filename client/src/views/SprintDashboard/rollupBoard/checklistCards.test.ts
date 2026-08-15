@@ -7,6 +7,7 @@ import type { RollupBoardItem } from './rollupBoardTypes.ts';
 import {
   buildChecklistCards,
   buildChecklistDragId,
+  describeChecklistDropRefusal,
   parseChecklistCardId,
   parseChecklistDragId,
   resolveChecklistColumnId,
@@ -18,6 +19,7 @@ import {
 const MAPPING: ChecklistColumnMapping = {
   openColumnId: 'col-todo',
   inProgressColumnId: 'col-working',
+  skippedColumnId: 'col-skipped',
   doneColumnId: 'col-done',
 };
 
@@ -94,7 +96,7 @@ describe('suggestChecklistColumnMapping', () => {
     ];
 
     expect(suggestChecklistColumnMapping(realBoard)).toEqual({
-      openColumnId: 'c1', inProgressColumnId: 'c4', doneColumnId: 'c10',
+      openColumnId: 'c1', inProgressColumnId: 'c4', skippedColumnId: '', doneColumnId: 'c10',
     });
   });
 
@@ -114,14 +116,17 @@ describe('suggestChecklistColumnMapping', () => {
       { id: 'c', name: 'Column C', mappings: ['x'] },
     ];
 
+    // Skipped is deliberately NOT guessed by position: a set-aside item is not "somewhere in the
+    // middle" of a workflow, and placing it in a real column would claim it is being worked on.
     expect(suggestChecklistColumnMapping(columns)).toEqual({
-      openColumnId: 'a', inProgressColumnId: 'b', doneColumnId: 'c',
+      openColumnId: 'a', inProgressColumnId: 'b', skippedColumnId: '', doneColumnId: 'c',
     });
   });
 
   it('opens with first, middle and last of the columns the team actually built', () => {
     expect(suggestChecklistColumnMapping(COLUMNS)).toEqual({
-      openColumnId: 'col-todo', inProgressColumnId: 'col-working', doneColumnId: 'col-done',
+      openColumnId: 'col-todo', inProgressColumnId: 'col-working', skippedColumnId: '',
+      doneColumnId: 'col-done',
     });
   });
 
@@ -201,5 +206,51 @@ describe('checklist drag ids', () => {
   it('splits back into the issue to write to and the item within it', () => {
     expect(parseChecklistCardId('DEV-1#item-43628'))
       .toEqual({ parentKey: 'DEV-1', itemId: 'item-43628' });
+  });
+});
+
+describe('describeChecklistDropRefusal', () => {
+  it('explains that checklist states are the APP’s, not Jira workflow statuses', () => {
+    // The unguessable part. Somebody who drops a checklist card on "Working" and sees nothing happen
+    // reasonably tries to add that status to the column mapping — and cannot, because it is not a
+    // Jira status at all. Nothing on screen said so.
+    const reason = describeChecklistDropRefusal(MAPPING, 'Code Review');
+
+    expect(reason).toContain('Code Review');
+    expect(reason).toContain('not Jira workflow statuses');
+    expect(reason).toContain('Where checklist items go');
+  });
+
+  it('says the mapping is simply unset when it is', () => {
+    const reason = describeChecklistDropRefusal(undefined, 'Working');
+
+    expect(reason).toContain('has not said');
+    expect(reason).toContain('Where checklist items go');
+  });
+
+  it('treats an all-blank mapping as unset, not as a set of refusals', () => {
+    const reason = describeChecklistDropRefusal(
+      { openColumnId: '', inProgressColumnId: '', skippedColumnId: '', doneColumnId: '' },
+      'Working',
+    );
+
+    expect(reason).toContain('has not said');
+  });
+});
+
+describe('the fourth state', () => {
+  it('places a SKIPPED item where the team pointed it', () => {
+    expect(resolveChecklistColumnId(MAPPING, 'skipped')).toBe('col-skipped');
+  });
+
+  it('leaves a skipped item unplaced when no column was chosen for it', () => {
+    // The board's standing answer for work it has not been told where to put: show it in Unmapped.
+    expect(resolveChecklistColumnId(
+      { openColumnId: 'a', inProgressColumnId: 'b', doneColumnId: 'c' }, 'skipped',
+    )).toBe('');
+  });
+
+  it('round-trips, so a skipped card dropped where it sits does not move', () => {
+    expect(resolveChecklistStateForColumn(MAPPING, 'col-skipped')).toBe('skipped');
   });
 });

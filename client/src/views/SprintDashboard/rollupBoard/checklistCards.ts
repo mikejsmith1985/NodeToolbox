@@ -29,6 +29,14 @@ const CHECKLIST_DRAG_PREFIX = 'checklist::';
 export interface ChecklistColumnMapping {
   openColumnId: string;
   inProgressColumnId: string;
+  /**
+   * Where a deliberately set-aside item goes.
+   *
+   * Optional because every mapping saved before the app's fourth status was modelled has none —
+   * absent simply means those items show in Unmapped, which is the board's standing answer for work
+   * it has not been told where to put.
+   */
+  skippedColumnId?: string;
   doneColumnId: string;
 }
 
@@ -80,6 +88,7 @@ export function parseChecklistCardId(cardId: string): { parentKey: string; itemI
 const NAME_HINTS: Record<keyof ChecklistColumnMapping, RegExp> = {
   openColumnId: /^(to.?do|backlog|triage|new|open|ready)/i,
   inProgressColumnId: /(in.?progress|working|doing|develop)/i,
+  skippedColumnId: /(skip|cancel|won.?t|n\/a)/i,
   doneColumnId: /(done|complete|accepted|closed)/i,
 };
 
@@ -98,9 +107,13 @@ export function suggestChecklistColumnMapping(
   if (mappedColumns.length === 0) return { openColumnId: '', inProgressColumnId: '', doneColumnId: '' };
 
   const lastIndex = mappedColumns.length - 1;
-  const positionFallback: ChecklistColumnMapping = {
+  const positionFallback: Record<keyof ChecklistColumnMapping, string> = {
     openColumnId: mappedColumns[0].id,
     inProgressColumnId: mappedColumns[Math.floor(lastIndex / 2)].id,
+    // Deliberately NOT guessed by position. A skipped item is not "somewhere in the middle" of a
+    // workflow, and putting it in a real column would claim it is being worked on. Unmapped is the
+    // honest answer until a team says otherwise.
+    skippedColumnId: '',
     doneColumnId: mappedColumns[lastIndex].id,
   };
 
@@ -113,6 +126,7 @@ export function suggestChecklistColumnMapping(
   return {
     openColumnId: pickColumnId('openColumnId'),
     inProgressColumnId: pickColumnId('inProgressColumnId'),
+    skippedColumnId: pickColumnId('skippedColumnId'),
     // Done is read from the END, because a board's later columns are the finished ones and an early
     // column named "Ready for Testing / Done" would otherwise claim it.
     doneColumnId: [...mappedColumns].reverse()
@@ -129,6 +143,7 @@ export function resolveChecklistColumnId(
   if (mapping === undefined) return '';
   if (state === 'done') return mapping.doneColumnId;
   if (state === 'in-progress') return mapping.inProgressColumnId;
+  if (state === 'skipped') return mapping.skippedColumnId ?? '';
   return mapping.openColumnId;
 }
 
@@ -140,8 +155,34 @@ export function resolveChecklistStateForColumn(
   if (mapping === undefined || columnId === '') return null;
   if (mapping.doneColumnId === columnId) return 'done';
   if (mapping.inProgressColumnId === columnId) return 'in-progress';
+  if (mapping.skippedColumnId === columnId) return 'skipped';
   if (mapping.openColumnId === columnId) return 'open';
   return null;
+}
+
+/**
+ * Why a drop onto this column did nothing, in words that name the fix.
+ *
+ * The failure it replaces was the worst kind: the card simply snapped back. A checklist item's states
+ * are the CHECKLIST APP's — To do, In progress, Skipped, Done — and they are not Jira statuses, so
+ * they cannot be added to the board's column vocabulary the way a workflow status can. That is not
+ * obvious, and somebody hitting it has no way to guess it.
+ */
+export function describeChecklistDropRefusal(
+  mapping: ChecklistColumnMapping | undefined,
+  columnName: string,
+): string {
+  const hasAnyMapping = mapping !== undefined && Object.values(mapping).some((columnId) => columnId !== '');
+
+  if (!hasAnyMapping) {
+    return 'This team has not said which columns the checklist states belong in. '
+      + 'Set them in Board setup → “Where checklist items go”.';
+  }
+
+  return `“${columnName}” is not one of the columns this team mapped a checklist state to. `
+    + 'A checklist item has only the four states the checklist app gives it — To do, In progress, '
+    + 'Skipped, Done — and those are not Jira workflow statuses, so they cannot be added as a column '
+    + 'mapping. Point a state at this column in Board setup → “Where checklist items go”.';
 }
 
 /**

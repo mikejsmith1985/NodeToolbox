@@ -37,6 +37,7 @@ export interface ParentContainerProps {
   onNestInto?: (issueKey: string, containerIssueKey: string) => void;
   onToggleFlag?: (issueKey: string, shouldBeFlagged: boolean) => void;
   onSetChecklistState?: ChecklistCardProps['onSetState'];
+  onOpenChecklistParent?: ChecklistCardProps['onOpenParent'];
   onOpenIssue?: (issueKey: string) => void;
   onSelectFamily?: (item: RollupBoardItem) => void;
   /** Where the drop gap opens among these cards, or null when it belongs elsewhere on the board. */
@@ -61,6 +62,7 @@ export function ParentContainer({
   onNestInto,
   onToggleFlag,
   onSetChecklistState,
+  onOpenChecklistParent,
   onOpenIssue,
   onSelectFamily,
   placeholderIndex = null,
@@ -127,6 +129,7 @@ export function ParentContainer({
           errorMessage={errorMessageByChecklistCardId?.[checklistCard.id] ?? null}
           isPending={pendingChecklistCardId === checklistCard.id}
           onSetState={onSetChecklistState}
+          onOpenParent={onOpenChecklistParent}
           isReadOnly={isReadOnly}
           key={checklistCard.id}
         />

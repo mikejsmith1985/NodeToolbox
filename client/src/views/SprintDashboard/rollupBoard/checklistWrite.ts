@@ -14,14 +14,13 @@
 // — the same lesson the sub-status, the flag and the checklist read each taught in turn.
 
 import { fetchFeatureReviewEditMeta, saveFeatureReviewSimpleField } from '../featureReviewFixes.ts';
-import type { ChecklistItem, ChecklistItemState } from './checklistItems.ts';
+import { isSmartChecklistDump, type ChecklistItem, type ChecklistItemState } from './checklistItems.ts';
 
 /** The marker each state is written back as. */
 const MARKER_BY_STATE: Record<ChecklistItemState, string> = {
   open: ' ',
-  // The app's own "in progress" marker. The reader accepts `>`, `~` and `/`, so a checklist edited
-  // elsewhere with either of the others still round-trips through here unchanged in meaning.
   'in-progress': '>',
+  skipped: '~',
   done: 'x',
 };
 
@@ -35,13 +34,18 @@ const MARKER_BY_STATE: Record<ChecklistItemState, string> = {
 export function nextChecklistState(currentState: ChecklistItemState): ChecklistItemState {
   if (currentState === 'open') return 'in-progress';
   if (currentState === 'in-progress') return 'done';
+  // Done goes back to the start rather than on to Skipped: skipping is a deliberate act, not
+  // somewhere you should arrive by clicking one too many times.
   return 'open';
 }
 
 /** The words for a state — always beside the marker, so the state never rests on a shape alone. */
 export function describeChecklistState(state: ChecklistItemState): string {
   if (state === 'done') return 'Done';
-  return state === 'in-progress' ? 'Working' : 'To do';
+  if (state === 'skipped') return 'Skipped';
+  // The app calls it "In progress"; the board's own columns call it Working. The app's word wins,
+  // because this label names a value that lives in the app and is edited there too.
+  return state === 'in-progress' ? 'In progress' : 'To do';
 }
 
 /** One item's state changed, the rest untouched. */
@@ -78,19 +82,56 @@ export function buildChecklistText(items: readonly ChecklistItem[]): string {
 /**
  * Picks the checklist field this issue can actually be written through.
  *
- * A field is offered here only because Jira's own edit metadata listed it, which is the one reliable
- * test of whether a write will be accepted — guessing by name is what sent the flag through six
- * releases. The field the board READS is preferred when it is also writable, so the change appears
- * where the board is looking rather than somewhere it will have to be told about.
+ * Two tests, and the second is the one that was missing. Jira's edit metadata says whether a write
+ * will be ACCEPTED — that part was right. It says nothing about whether the write will MEAN anything,
+ * and the app's own field holds a Java object dump: Jira takes a string for it happily, the request
+ * returns 204, and the checklist does not change. That is the silent failure this now refuses to
+ * produce. A field whose current value is a dump is never written to, however editable Jira says it is.
  */
 export function chooseWritableChecklistFieldId(
   editableFieldIds: readonly string[],
   candidateFieldIds: readonly string[],
   readableFieldId: string | null,
+  issueFields: Record<string, unknown> = {},
 ): string | null {
   const editable = new Set(editableFieldIds);
-  if (readableFieldId !== null && editable.has(readableFieldId)) return readableFieldId;
-  return candidateFieldIds.find((fieldId) => editable.has(fieldId)) ?? null;
+  /** Editable, and holding something this can legitimately rewrite. */
+  const isWritable = (fieldId: string): boolean =>
+    editable.has(fieldId) && !isSmartChecklistDump(issueFields[fieldId]);
+
+  if (readableFieldId !== null && isWritable(readableFieldId)) return readableFieldId;
+  return candidateFieldIds.find(isWritable) ?? null;
+}
+
+/**
+ * Why this issue's checklist cannot be written, in words somebody can act on.
+ *
+ * Separate from the attempt so the same explanation can be shown BEFORE anybody tries — on the card's
+ * own detail, rather than only after a drag has quietly done nothing.
+ */
+export function describeChecklistWriteBlock(input: {
+  issueKey: string;
+  editableFieldIds: readonly string[];
+  candidateFieldIds: readonly string[];
+  issueFields: Record<string, unknown>;
+}): string | null {
+  const editable = new Set(input.editableFieldIds);
+  const editableChecklistFieldIds = input.candidateFieldIds.filter((fieldId) => editable.has(fieldId));
+
+  if (editableChecklistFieldIds.length === 0) {
+    return `No checklist field appears on ${input.issueKey}'s edit screen, so the board can read this `
+      + 'checklist but cannot change it. A Jira admin can add the checklist TEXT field to the edit '
+      + 'screen for this issue type; until then, change the item in Jira.';
+  }
+
+  if (editableChecklistFieldIds.every((fieldId) => isSmartChecklistDump(input.issueFields[fieldId]))) {
+    return `The only checklist field on ${input.issueKey}'s edit screen holds the checklist app's own `
+      + 'internal data. Jira would accept a write to it and the app would then ignore it, so the board '
+      + 'refuses to make a change that would look like it worked. Ask a Jira admin to add the '
+      + 'checklist TEXT field to the edit screen for this issue type.';
+  }
+
+  return null;
 }
 
 /** What a checklist write did, or why it could not be attempted. */
@@ -98,6 +139,8 @@ export interface ChecklistWriteResult {
   isWritten: boolean;
   /** Said on the card, not in a toast — the same place every other per-card failure is reported. */
   message: string;
+  /** Which field the change was sent to, so the card's detail can report it. */
+  targetFieldId?: string;
 }
 
 /**
@@ -114,6 +157,8 @@ export async function saveChecklistItemState(input: {
   nextState: ChecklistItemState;
   candidateFieldIds: readonly string[];
   readableFieldId: string | null;
+  /** The issue's current field values, so a field holding the app's own dump can be ruled out. */
+  issueFields?: Record<string, unknown>;
 }): Promise<ChecklistWriteResult> {
   let editableFieldIds: string[] = [];
   try {
@@ -125,18 +170,24 @@ export async function saveChecklistItemState(input: {
     };
   }
 
+  const issueFields = input.issueFields ?? {};
   const targetFieldId = chooseWritableChecklistFieldId(
     editableFieldIds,
     input.candidateFieldIds,
     input.readableFieldId,
+    issueFields,
   );
   if (targetFieldId === null) {
     return {
       isWritten: false,
       // Names the reason rather than the symptom: this is an issue-screen configuration, and somebody
       // with Jira admin can change it.
-      message: `No checklist field on ${input.issueKey}'s edit screen, so the board can read this `
-        + 'checklist but cannot write to it. Add the checklist text field to the edit screen in Jira.',
+      message: describeChecklistWriteBlock({
+        issueKey: input.issueKey,
+        editableFieldIds,
+        candidateFieldIds: input.candidateFieldIds,
+        issueFields,
+      }) ?? `No checklist field on ${input.issueKey} can be written.`,
     };
   }
 
@@ -145,6 +196,43 @@ export async function saveChecklistItemState(input: {
     await saveFeatureReviewSimpleField(input.issueKey, targetFieldId, nextText);
   } catch (writeError) {
     return { isWritten: false, message: `Jira refused the checklist change: ${String(writeError)}` };
+  }
+
+  return { isWritten: true, message: '', targetFieldId };
+}
+
+/**
+ * Confirms the change actually took, by reading the checklist back.
+ *
+ * A 204 from Jira proves only that Jira stored a string. The checklist itself is owned by a
+ * third-party app that may or may not act on that string, so treating the 204 as success is exactly
+ * how a drag ends up doing nothing at all while reporting nothing at all. This is the check that
+ * turns that into a sentence somebody can act on.
+ */
+export function verifyChecklistItemState(
+  reReadItems: readonly ChecklistItem[],
+  itemId: string,
+  expectedState: ChecklistItemState,
+  targetFieldId: string,
+): ChecklistWriteResult {
+  const writtenItem = reReadItems.find((item) => item.id === itemId);
+
+  if (writtenItem === undefined) {
+    return {
+      isWritten: false,
+      message: 'Jira accepted the change, but the item is no longer in the checklist it was read from. '
+        + 'Reload the board before changing anything else here.',
+    };
+  }
+
+  if (writtenItem.state !== expectedState) {
+    return {
+      isWritten: false,
+      message: `Jira accepted the change to ${targetFieldId}, but the checklist still reads `
+        + `"${describeChecklistState(writtenItem.state)}" — so the checklist app did not act on it. `
+        + 'That field is almost certainly not the one the app reads. Change this item in Jira, and ask '
+        + 'an admin which checklist field is the editable text one.',
+    };
   }
 
   return { isWritten: true, message: '' };

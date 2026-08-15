@@ -29,8 +29,14 @@ describe('parseChecklistItems', () => {
   });
 
   it('accepts the other in-progress markers the app writes', () => {
-    expect(parseChecklistItems('- [~] a')[0].state).toBe('in-progress');
+    expect(parseChecklistItems('- [>] a')[0].state).toBe('in-progress');
     expect(parseChecklistItems('- [/] a')[0].state).toBe('in-progress');
+  });
+
+  it('reads a tilde as SKIPPED, which the app has as a status of its own', () => {
+    // Previously read as in-progress, so an item somebody deliberately set aside came back looking
+    // like work in flight — the opposite of what it says.
+    expect(parseChecklistItems('- [~] a')[0].state).toBe('skipped');
   });
 
   it('treats an unrecognised marker as not started rather than dropping the line', () => {

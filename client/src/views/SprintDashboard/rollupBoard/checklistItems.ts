@@ -14,8 +14,14 @@
 // not recognise is kept as plain item text rather than dropped. An unreadable checklist should look
 // odd, never empty.
 
-/** The three states a Smart Checklist item can hold. */
-export type ChecklistItemState = 'open' | 'in-progress' | 'done';
+/**
+ * The states a Smart Checklist item can hold.
+ *
+ * FOUR, not three. The app's own status menu offers TO DO, IN PROGRESS, SKIPPED and DONE, and
+ * `skipped` was previously read as `open` — so an item somebody had deliberately set aside came back
+ * as untouched work, which is the opposite of what it says.
+ */
+export type ChecklistItemState = 'open' | 'in-progress' | 'skipped' | 'done';
 
 /** One line of a Smart Checklist, ready to draw. */
 export interface ChecklistItem {
@@ -49,7 +55,9 @@ export interface ChecklistItem {
 
 /** Marker characters, as the app writes them. */
 const DONE_MARKERS = new Set(['x', 'X']);
-const IN_PROGRESS_MARKERS = new Set(['>', '~', '/']);
+const IN_PROGRESS_MARKERS = new Set(['>', '/']);
+/** The app writes a set-aside item with a tilde. */
+const SKIPPED_MARKERS = new Set(['~', '-']);
 
 /**
  * A bare `done/total` summary, which one of this instance's three checklist fields holds instead of
@@ -67,6 +75,7 @@ const HEADING_LINE_PATTERN = /^\s*#+\s*(.+)$/;
 /** Reads a marker character into the state it represents. Anything unrecognised means not started. */
 function readItemState(markerCharacter: string): ChecklistItemState {
   if (DONE_MARKERS.has(markerCharacter)) return 'done';
+  if (SKIPPED_MARKERS.has(markerCharacter)) return 'skipped';
   if (IN_PROGRESS_MARKERS.has(markerCharacter)) return 'in-progress';
   return 'open';
 }
@@ -129,12 +138,24 @@ const DUMP_ASSIGNEE_PATTERN = /Assignee\([^)]*?\buserName=([^,)]+)/;
 /** Status names that mean work has started. Compared loosely because they are display strings. */
 const DUMP_IN_PROGRESS_NAMES = ['in progress', 'in-progress', 'doing', 'started'];
 
-/** Reads one item block's state from its status, preferring the name where it says more. */
+/** Status names that mean the item was deliberately set aside — not started, and not going to be. */
+const DUMP_SKIPPED_NAMES = ['skipped', 'skip', 'n/a', 'not applicable'];
+
+/**
+ * Reads one item block's state from its status.
+ *
+ * The NAME is preferred over `statusState` because it is the only place the app expresses anything
+ * beyond ticked/unticked: both IN PROGRESS and SKIPPED are UNCHECKED as far as `statusState` is
+ * concerned, so reading that alone collapses three distinct states into one.
+ */
 function readDumpItemState(itemBlock: string): ChecklistItemState {
   const statusName = (DUMP_STATUS_NAME_PATTERN.exec(itemBlock)?.[1] ?? '').trim().toLowerCase();
   if (DUMP_IN_PROGRESS_NAMES.includes(statusName)) return 'in-progress';
+  if (DUMP_SKIPPED_NAMES.includes(statusName)) return 'skipped';
+  if (statusName === 'done') return 'done';
 
   const statusState = (DUMP_STATUS_STATE_PATTERN.exec(itemBlock)?.[1] ?? '').trim().toUpperCase();
+  if (statusState === 'SKIPPED') return 'skipped';
   return statusState === 'CHECKED' ? 'done' : 'open';
 }
 

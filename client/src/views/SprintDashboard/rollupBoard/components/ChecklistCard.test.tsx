@@ -27,7 +27,7 @@ describe('ChecklistCard', () => {
   it('says which of the three states it is in, in words', () => {
     render(<ChecklistCard card={buildCard({ state: 'in-progress' })} />);
 
-    expect(screen.getByText('Working')).toBeTruthy();
+    expect(screen.getByText('In progress')).toBeTruthy();
   });
 
   it('marks the state as data too, so it never rests on colour alone', () => {
@@ -73,7 +73,7 @@ describe('ChecklistCard', () => {
       onSetState={(card, nextState) => stateChanges.push([card.itemId, nextState])}
     />);
 
-    fireEvent.click(screen.getByRole('button', { name: /Set to Working/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Set to In progress/ }));
 
     expect(stateChanges).toEqual([['item-43628', 'in-progress']]);
   });
@@ -81,13 +81,13 @@ describe('ChecklistCard', () => {
   it('is unpressable when nothing can be written', () => {
     render(<ChecklistCard card={buildCard()} onSetState={undefined} />);
 
-    expect(screen.getByRole('button', { name: /Set to Working/ }).hasAttribute('disabled')).toBe(true);
+    expect(screen.getByRole('button', { name: /Set to In progress/ }).hasAttribute('disabled')).toBe(true);
   });
 
   it('is unpressable on another discipline’s read-only work', () => {
     render(<ChecklistCard card={buildCard()} isReadOnly onSetState={vi.fn()} />);
 
-    expect(screen.getByRole('button', { name: /Set to Working/ }).hasAttribute('disabled')).toBe(true);
+    expect(screen.getByRole('button', { name: /Set to In progress/ }).hasAttribute('disabled')).toBe(true);
   });
 
   it('shows a failed write on the card, not in a toast that scrolls away', () => {

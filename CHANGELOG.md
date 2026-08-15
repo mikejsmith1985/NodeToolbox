@@ -8,6 +8,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Roll-Up Board — moving a checklist item no longer fails in silence.** Three separate silences, each
+  now a sentence.
+
+  **The write could not land.** The board picked its target field from Jira's edit metadata, which
+  answers "will this write be accepted" and says nothing about "will it mean anything". The checklist
+  app's own field holds a Java object dump: Jira takes a string for it, returns 204, and the checklist
+  does not change. The board now refuses to write to a field whose value is that dump, and says so —
+  naming the fix, which is a Jira admin adding the checklist **text** field to the edit screen.
+
+  **A write that was accepted was assumed to have worked.** It now reads the item back and, when the
+  checklist still says something else, reports exactly that: Jira accepted the change to *field*, the
+  checklist still reads *state*, so the app did not act on it. Both the drag and the click go through
+  this, because they go through one writer and should meet one standard of proof.
+
+  **A drop on the wrong column just snapped back.** The card now says which column it was, and the
+  thing nobody could have guessed: a checklist item's states belong to the **checklist app**, not to
+  Jira's workflow, so they cannot be added to the board's column mapping the way a status can — they
+  are pointed at columns in Board setup instead.
+
+- **Roll-Up Board — SKIPPED is a real checklist state.** The app's status menu offers TO DO, IN
+  PROGRESS, **SKIPPED** and DONE; the board modelled three and read a skipped item as *To do*, so work
+  somebody had deliberately set aside came back looking untouched. It is now its own state, with its
+  own icon, its own row in the mapping, and its own `~` marker on the way back out. It is deliberately
+  **not** guessed by position — a set-aside item is not "somewhere in the middle" of a workflow, so it
+  stays in Unmapped until a team says otherwise.
+- **Roll-Up Board — "Working" is called "In progress".** The checklist app's own word, because the
+  label names a value that lives in the app and gets edited there too.
+
+### Added
+- **Roll-Up Board — clicking a checklist card opens the issue that owns it.** A checklist item has no
+  detail of its own — no key, no description, no history — but its parent has all of that plus the
+  whole checklist in context, so that is what a click offers rather than a panel with nothing in it.
+
+### Fixed
 - **Roll-Up Board — checklist cards appeared nowhere.** Three things stacked, and the first was a
   design decision that turned out to be wrong in practice. The board deliberately placed nothing until
   the team mapped the three checklist states, so every item went to **Unmapped** — honest, and

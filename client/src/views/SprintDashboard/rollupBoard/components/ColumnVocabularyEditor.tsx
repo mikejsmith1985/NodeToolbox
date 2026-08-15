@@ -356,8 +356,11 @@ export function ColumnVocabularyEditor({
 
 /** The three states a Smart Checklist item can be in, and the wording the board uses for each. */
 const CHECKLIST_STATE_ROWS: Array<{ key: keyof ChecklistColumnMapping; label: string }> = [
+  // The checklist app's own words, not the board's. These name values that live in the app and are
+  // edited there too, so calling "In progress" something else here would only cause arguments.
   { key: 'openColumnId', label: 'To do' },
-  { key: 'inProgressColumnId', label: 'Working' },
+  { key: 'inProgressColumnId', label: 'In progress' },
+  { key: 'skippedColumnId', label: 'Skipped' },
   { key: 'doneColumnId', label: 'Done' },
 ];
 
@@ -387,7 +390,8 @@ function ChecklistColumnMappingEditor({
       <h3 className={styles.sectionTitle}>Where checklist items go</h3>
       <p className={styles.fieldLabel}>
         Smart Checklist items are drawn as cards in the column of their own state, the same as any
-        other work. They have three states; these are your columns.
+        other work. Their four states belong to the checklist app rather than to Jira, so they cannot
+        be added to the columns above as a status mapping — they are pointed at your columns here.
       </p>
 
       {selectableColumns.length === 0 ? (
@@ -406,7 +410,7 @@ function ChecklistColumnMappingEditor({
                   ...vocabulary,
                   checklistColumnMapping: { ...mapping, [stateRow.key]: changeEvent.target.value },
                 })}
-                value={mapping[stateRow.key]}
+                value={mapping[stateRow.key] ?? ''}
               >
                 <option value="">Unmapped — show it, do not place it</option>
                 {selectableColumns.map((column) => (

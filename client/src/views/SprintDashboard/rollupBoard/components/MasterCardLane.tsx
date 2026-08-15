@@ -133,6 +133,7 @@ export interface MasterCardLaneProps {
   /** Raises or clears Jira's impediment flag on a card. */
   onToggleFlag?: (issueKey: string, shouldBeFlagged: boolean) => void;
   onSetChecklistState?: ParentContainerProps['onSetChecklistState'];
+  onOpenChecklistParent?: ParentContainerProps['onOpenChecklistParent'];
   pendingChecklistCardId?: string | null;
   errorMessageByChecklistCardId?: Record<string, string>;
   /**
@@ -236,6 +237,7 @@ export function MasterCardLane({
   onNestInto,
   onToggleFlag,
   onSetChecklistState,
+  onOpenChecklistParent,
   pendingChecklistCardId = null,
   errorMessageByChecklistCardId,
   collapsedColumnIds = [],
@@ -515,6 +517,7 @@ export function MasterCardLane({
                     onNestInto={onNestInto}
                     onToggleFlag={onToggleFlag}
                     onSetChecklistState={onSetChecklistState}
+                    onOpenChecklistParent={onOpenChecklistParent}
                     pendingChecklistCardId={pendingChecklistCardId}
                     errorMessageByChecklistCardId={errorMessageByChecklistCardId}
                     errorMessageByIssueKey={errorMessageByIssueKey}

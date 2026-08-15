@@ -58,12 +58,13 @@ import {
   buildChecklistCards,
   parseChecklistCardId,
   parseChecklistDragId,
+  describeChecklistDropRefusal,
   resolveChecklistStateForColumn,
   suggestChecklistColumnMapping,
   type ChecklistCard,
 } from './checklistCards.ts';
 import type { ChecklistItemState } from './checklistItems.ts';
-import { saveChecklistItemState } from './checklistWrite.ts';
+import { saveChecklistItemState, verifyChecklistItemState } from './checklistWrite.ts';
 import { selectColumnMapping } from './selectColumnMapping.ts';
 import { buildJiraBrowseUrl } from '../../../utils/jiraBrowseUrl.ts';
 import { useConnectionStore } from '../../../store/connectionStore.ts';
@@ -529,7 +530,10 @@ export default function RollupBoardTab({
 
   // Deliberately NOT gated on a Jira board being selected. The scope comes from the dashboard's own
   // Sprint / PI / Fix Version selector, so a team with no board chosen still has work to show.
-  const loadBoard = useCallback(async (): Promise<void> => {
+  // Returns the items it loaded as well as storing them. A caller that has just written something
+  // needs to check what Jira now holds, and React state is not readable from inside the callback that
+  // set it — so the freshly read set is handed straight back.
+  const loadBoard = useCallback(async (): Promise<RollupBoardItem[] | null> => {
     setLoadState((previousState) => ({ ...previousState, isLoading: true, loadError: null }));
 
     try {
@@ -596,6 +600,7 @@ export default function RollupBoardTab({
           boardItems.map((item) => item.featureKey).filter((featureKey): featureKey is string => featureKey !== null),
         )],
       });
+      return scopedResult.items;
 
       // Loaded after the board so the editor offers real Jira values rather than free text; a
       // failure here costs the mapping pickers, not the board.
@@ -603,6 +608,7 @@ export default function RollupBoardTab({
         .catch(() => EMPTY_OPTION_SOURCES));
     } catch (error: unknown) {
       setLoadState({ ...EMPTY_LOAD_STATE, loadError: String(error) });
+      return null;
     }
   }, [boardId, teamProfileId, vocabulary, featureScope, scopedIssues, carryOverScope]);
 
@@ -1528,11 +1534,14 @@ export default function RollupBoardTab({
 
     const nextState = resolveChecklistStateForColumn(effectiveChecklistMapping, dropTarget.columnId);
     if (nextState === null) {
-      // A real attempt at something the board cannot do, so it says so rather than silently
-      // snapping the card back and leaving the person to guess why.
+      // A real attempt at something the board cannot do, so it says so — naming the column and the
+      // fix — rather than snapping the card back and leaving the person to guess why. The reason is
+      // genuinely unguessable: a checklist item's states belong to the checklist app, not to Jira's
+      // workflow, so they cannot be added to the column mapping the way a status can.
+      const targetColumn = renderedColumns.find((column) => column.id === dropTarget.columnId);
       setChecklistCardMessage(
         checklistCardId,
-        'That column does not stand for a checklist state. Set one in Board setup → Where checklist items go.',
+        describeChecklistDropRefusal(effectiveChecklistMapping, targetColumn?.name ?? dropTarget.columnId),
       );
       return;
     }
@@ -1553,16 +1562,31 @@ export default function RollupBoardTab({
         nextState,
         candidateFieldIds: checklistFieldIds,
         readableFieldId: parentItem.checklistFieldId ?? null,
+        issueFields: parentItem.issue.fields as unknown as Record<string, unknown>,
       });
       if (!result.isWritten) {
         setChecklistCardMessage(checklistCardId, result.message);
         return;
       }
-      await loadBoard();
+
+      // Jira accepting the write proves only that Jira stored a string. The checklist belongs to a
+      // third-party app that may not act on it, so the board reads the item back and says plainly
+      // when it did not move — the alternative is a drag that does nothing and reports nothing.
+      const reloadedItems = await loadBoard();
+      const reReadParent = reloadedItems?.find((item) => item.key === cardParts.parentKey);
+      if (reReadParent) {
+        const verdict = verifyChecklistItemState(
+          reReadParent.checklistItems,
+          cardParts.itemId,
+          nextState,
+          result.targetFieldId ?? '',
+        );
+        if (!verdict.isWritten) setChecklistCardMessage(checklistCardId, verdict.message);
+      }
     } finally {
       setPendingChecklistCardId(null);
     }
-  }, [effectiveChecklistMapping, loadState.allItems, checklistFieldIds, loadBoard]);
+  }, [effectiveChecklistMapping, loadState.allItems, checklistFieldIds, loadBoard, renderedColumns]);
 
   const handleCardDrop = useCallback(async (dragEndEvent: DragEndEvent): Promise<void> => {
     // A checklist card is not an issue and none of the rules below fit it, so it is answered first.
@@ -1846,8 +1870,9 @@ export default function RollupBoardTab({
     const item = loadState.allItems.find((candidate) => candidate.key === issueKey);
     if (!item) return;
 
-    setCardMessage(issueKey, null);
-    setPendingIssueKey(issueKey);
+    const checklistCardId = `${issueKey}#${checklistItemId}`;
+    setChecklistCardMessage(checklistCardId, null);
+    setPendingChecklistCardId(checklistCardId);
     try {
       const result = await saveChecklistItemState({
         issueKey,
@@ -1856,16 +1881,30 @@ export default function RollupBoardTab({
         nextState,
         candidateFieldIds: checklistFieldIds,
         readableFieldId: item.checklistFieldId ?? null,
+        issueFields: item.issue.fields as unknown as Record<string, unknown>,
       });
       if (!result.isWritten) {
-        setCardMessage(issueKey, result.message);
+        setChecklistCardMessage(checklistCardId, result.message);
         return;
       }
-      await loadBoard();
+
+      // The same read-back the drag does. Clicking and dragging reach one writer, so they had better
+      // reach one standard of proof as well.
+      const reloadedItems = await loadBoard();
+      const reReadParent = reloadedItems?.find((candidate) => candidate.key === issueKey);
+      if (reReadParent) {
+        const verdict = verifyChecklistItemState(
+          reReadParent.checklistItems,
+          checklistItemId,
+          nextState,
+          result.targetFieldId ?? '',
+        );
+        if (!verdict.isWritten) setChecklistCardMessage(checklistCardId, verdict.message);
+      }
     } finally {
-      setPendingIssueKey(null);
+      setPendingChecklistCardId(null);
     }
-  }, [loadState.allItems, setCardMessage, loadBoard, checklistFieldIds]);
+  }, [loadState.allItems, setChecklistCardMessage, loadBoard, checklistFieldIds]);
 
   const handleApplyTransition = useCallback(async (option: CardTransitionOption): Promise<void> => {
     if (openIssueKey === null) return;
@@ -2375,6 +2414,7 @@ export default function RollupBoardTab({
               draggedItemKey={draggedItemKey}
               dropPreview={dropPreview}
               onToggleFlag={(issueKey, shouldBeFlagged) => void handleToggleFlag(issueKey, shouldBeFlagged)}
+              onOpenChecklistParent={(checklistCard) => handleOpenIssue(checklistCard.parentKey)}
               onSetChecklistState={(checklistCard, nextState) =>
                 void handleToggleChecklistItem(checklistCard.parentKey, checklistCard.itemId, nextState)}
               onNestInto={(issueKey, containerIssueKey) => {
