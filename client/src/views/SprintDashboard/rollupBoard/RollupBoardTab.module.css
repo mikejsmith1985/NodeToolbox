@@ -1333,6 +1333,18 @@
   border-left: 2px solid var(--color-warning);
 }
 
+/* The full explanation, folded away until asked for. A paragraph shown unconditionally is what made
+   a failed checklist card unreadable. */
+.checklistCardWhy {
+  margin-top: 4px;
+}
+
+.checklistCardWhy > summary {
+  cursor: pointer;
+  font-weight: 600;
+  text-decoration: underline;
+}
+
 /* The Jira escape shown beside a failed checklist write. Its own line, because a link buried inside a
    sentence in red is not findable at the moment somebody needs it. */
 .checklistCardJiraLink {

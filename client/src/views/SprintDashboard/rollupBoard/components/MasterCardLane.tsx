@@ -136,6 +136,7 @@ export interface MasterCardLaneProps {
   onOpenChecklistParent?: ParentContainerProps['onOpenChecklistParent'];
   pendingChecklistCardId?: string | null;
   errorMessageByChecklistCardId?: Record<string, string>;
+  errorDetailByChecklistCardId?: Record<string, string>;
   /**
    * Columns narrowed to a strip, by id.
    *
@@ -240,6 +241,7 @@ export function MasterCardLane({
   onOpenChecklistParent,
   pendingChecklistCardId = null,
   errorMessageByChecklistCardId,
+  errorDetailByChecklistCardId,
   collapsedColumnIds = [],
   draggedItemKey = null,
   dropPreview = null,
@@ -520,6 +522,7 @@ export function MasterCardLane({
                     onOpenChecklistParent={onOpenChecklistParent}
                     pendingChecklistCardId={pendingChecklistCardId}
                     errorMessageByChecklistCardId={errorMessageByChecklistCardId}
+                    errorDetailByChecklistCardId={errorDetailByChecklistCardId}
                     errorMessageByIssueKey={errorMessageByIssueKey}
                     highlightedFamilyKey={highlightedFamilyKey}
                     key={`container-${entry.container.parentKey}`}

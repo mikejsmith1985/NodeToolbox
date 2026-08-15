@@ -478,6 +478,7 @@ export default function RollupBoardTab({
   const [checklistWriteBlock, setChecklistWriteBlock] = useState<{ issueKey: string; detail: string } | null>(null);
   const [pendingChecklistCardId, setPendingChecklistCardId] = useState<string | null>(null);
   const [errorMessageByChecklistCardId, setErrorMessageByChecklistCardId] = useState<Record<string, string>>({});
+  const [errorDetailByChecklistCardId, setErrorDetailByChecklistCardId] = useState<Record<string, string>>({});
   // Where the gap is currently open. Recomputed as the pointer moves, cleared when the drag ends.
   const [dropPreview, setDropPreview] = useState<DropPreview | null>(null);
   const jiraBaseUrl = useConnectionStore((connectionState) => connectionState.proxyStatus?.jira?.baseUrl ?? '');
@@ -1532,11 +1533,12 @@ export default function RollupBoardTab({
     factMessage: string,
     attemptedFieldId: string,
   ): void => {
-    setChecklistCardMessage(checklistCardId, 'Did not move — see the board notice above.');
-    setChecklistWriteBlock({
-      issueKey,
-      detail: `${factMessage} ${describeChecklistWriteAdvice(checklistFieldVerdicts, attemptedFieldId)}`,
-    });
+    const detail = `${factMessage} ${describeChecklistWriteAdvice(checklistFieldVerdicts, attemptedFieldId)}`;
+    setChecklistCardMessage(checklistCardId, 'Did not move.');
+    // On the CARD as well as in the notice. The notice sits above a scroll region the reader has
+    // usually scrolled past, so a card pointing "above" was pointing off screen.
+    setErrorDetailByChecklistCardId((previousDetails) => ({ ...previousDetails, [checklistCardId]: detail }));
+    setChecklistWriteBlock({ issueKey, detail });
   }, [setChecklistCardMessage, checklistFieldVerdicts]);
 
   /**
@@ -2301,7 +2303,13 @@ export default function RollupBoardTab({
       {/* Everything else the board wants to say, in ONE collapsible box. Nine stacked boxes pushed the
           board itself off the screen, and buried whatever was rendered among them — which is how the
           add-work dialog came to look like a button that did nothing. */}
-      <BoardNotices notices={[...boardNotices, ...subLaneNotices]} />
+      {/* Opened, not collapsed, once something the viewer just DID has failed. A notice folded behind
+          a count is right for context that was already true when the board loaded; it is wrong for a
+          consequence of the last thing somebody tried. */}
+      <BoardNotices
+        notices={[...boardNotices, ...subLaneNotices]}
+        shouldStartExpanded={checklistWriteBlock !== null}
+      />
 
       {/* Below the notices, never among them, so it is always the first thing under the header. */}
       {addWorkFeature !== null && (
@@ -2498,6 +2506,7 @@ export default function RollupBoardTab({
               collapsedColumnIds={preferences.collapsedColumnIds ?? []}
               pendingChecklistCardId={pendingChecklistCardId}
               errorMessageByChecklistCardId={errorMessageByChecklistCardId}
+              errorDetailByChecklistCardId={errorDetailByChecklistCardId}
               draggedItemKey={draggedItemKey}
               dropPreview={dropPreview}
               onToggleFlag={(issueKey, shouldBeFlagged) => void handleToggleFlag(issueKey, shouldBeFlagged)}

@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Roll-Up Board — the failed-write explanation was pointing off screen.** The card said "see the board
+  notice above", and the notice was invisible twice over: notices collapse behind a count by default,
+  and they sit above the scroll region, which anybody looking at a card has already scrolled past. The
+  explanation is now **on the card**, folded behind a **Why?** disclosure — short until asked for, and
+  in the place the failure happened. The notice still carries it too, and now opens itself rather than
+  hiding behind a count: folding is right for context that was already true when the board loaded, and
+  wrong for the consequence of the last thing somebody tried.
+
+### Added
+- **Roll-Up Board — "Open DEV-123 in Jira" on every checklist card.** Right-click, at any time, not
+  only after something has failed. On an instance that does not let the board write checklists at all,
+  opening the issue is the workflow rather than the fallback, so it stops being buried in an error
+  state nobody should have to trigger to find it.
+
 ### Changed
 - **Roll-Up Board — a failed checklist write is readable again.** The explanation was right and in
   entirely the wrong place: a configuration problem with a two-sentence fix, rendered as a paragraph of

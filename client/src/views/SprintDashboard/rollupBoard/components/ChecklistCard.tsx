@@ -9,6 +9,8 @@
 // to. Dragging it between the columns the team mapped writes that state back to Jira; everything else
 // a card can normally do is simply absent rather than present-and-broken.
 
+import { useState } from 'react';
+
 import { useDraggable } from '@dnd-kit/core';
 
 import { buildJiraBrowseUrl } from '../../../../utils/jiraBrowseUrl.ts';
@@ -18,6 +20,7 @@ import { describeChecklistState, nextChecklistState } from '../checklistWrite.ts
 import { buildChecklistDragId, type ChecklistCard as ChecklistCardModel } from '../checklistCards.ts';
 import type { ChecklistItemState } from '../checklistItems.ts';
 import styles from '../RollupBoardTab.module.css';
+import { BoardContextMenu, type BoardMenuAction } from './BoardContextMenu.tsx';
 import {
   ChecklistDoneIcon,
   ChecklistInProgressIcon,
@@ -43,6 +46,14 @@ export interface ChecklistCardProps {
   isPending?: boolean;
   /** Why the last change to this item failed, said on the card rather than in a toast. */
   errorMessage?: string | null;
+  /**
+   * The full explanation, shown only when asked for.
+   *
+   * On the card rather than only in a board notice, because the notice sits above a scroll region
+   * the reader has usually scrolled past — a card telling somebody to look "above" at something not
+   * on screen is worse than saying nothing.
+   */
+  errorDetail?: string | null;
   /** Moves the item on without a drag. Dragging is the gesture; this is the one-click shortcut. */
   onSetState?: (card: ChecklistCardModel, nextState: ChecklistItemState) => void;
   /**
@@ -61,14 +72,39 @@ export function ChecklistCard({
   isReadOnly = false,
   isPending = false,
   errorMessage = null,
+  errorDetail = null,
   onSetState,
   onOpenParent,
 }: ChecklistCardProps): React.JSX.Element {
+  const [menuPosition, setMenuPosition] = useState<{ xPx: number; yPx: number } | null>(null);
   const jiraBaseUrl = useConnectionStore((connectionState) => connectionState.proxyStatus?.jira?.baseUrl ?? '');
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: buildChecklistDragId(card),
     disabled: isReadOnly,
   });
+
+  const jiraIssueUrl = jiraBaseUrl ? buildJiraBrowseUrl(card.parentKey, jiraBaseUrl) : '';
+  const jiraLink = jiraIssueUrl ? (
+    <a
+      className={styles.checklistCardJiraLink}
+      href={jiraIssueUrl}
+      onClick={(clickEvent) => clickEvent.stopPropagation()}
+      rel="noreferrer"
+      target="_blank"
+    >
+      Change it in {card.parentKey} ↗
+    </a>
+  ) : null;
+
+  // Always available, not only after something has failed. Where this instance does not let the board
+  // write a checklist at all, opening the issue IS the workflow rather than the fallback.
+  const menuActions: BoardMenuAction[] = jiraIssueUrl
+    ? [{
+      id: 'open-in-jira',
+      label: `Open ${card.parentKey} in Jira ↗`,
+      onSelect: () => window.open(jiraIssueUrl, '_blank', 'noreferrer'),
+    }]
+    : [];
 
   const StateIcon = STATE_ICONS[card.state];
   const cardClassNames = [
@@ -85,6 +121,11 @@ export function ChecklistCard({
       data-state={card.state}
       data-testid={`rollup-checklist-card-${card.id}`}
       onClick={() => { if (!isDragging) onOpenParent?.(card); }}
+      onContextMenu={(contextEvent) => {
+        if (menuActions.length === 0) return;
+        contextEvent.preventDefault();
+        setMenuPosition({ xPx: contextEvent.clientX, yPx: contextEvent.clientY });
+      }}
       ref={setNodeRef}
       title={`Checklist item on ${card.parentKey} — click to open it`}
       {...attributes}
@@ -125,22 +166,29 @@ export function ChecklistCard({
         </span>
       ) : null}
 
+      <BoardContextMenu
+        actions={menuActions}
+        onClose={() => setMenuPosition(null)}
+        ownerKey={card.parentKey}
+        position={menuPosition}
+      />
+
       {errorMessage ? (
         <span className={styles.cardError}>
           {errorMessage}
+
+          {/* Short by default, full on demand: the explanation is a paragraph, and a paragraph is
+              what made this card unreadable when it was always shown. */}
+          {errorDetail ? (
+            <details className={styles.checklistCardWhy}>
+              <summary onClick={(clickEvent) => clickEvent.stopPropagation()}>Why?</summary>
+              <span>{errorDetail}</span>
+            </details>
+          ) : null}
+
           {/* The escape, beside the failure rather than left to be worked out. Where the board cannot
               write this checklist, Jira can — and this is the one issue that needs opening. */}
-          {jiraBaseUrl ? (
-            <a
-              className={styles.checklistCardJiraLink}
-              href={buildJiraBrowseUrl(card.parentKey, jiraBaseUrl)}
-              onClick={(clickEvent) => clickEvent.stopPropagation()}
-              rel="noreferrer"
-              target="_blank"
-            >
-              Change it in {card.parentKey} ↗
-            </a>
-          ) : null}
+          {jiraLink}
         </span>
       ) : null}
     </div>

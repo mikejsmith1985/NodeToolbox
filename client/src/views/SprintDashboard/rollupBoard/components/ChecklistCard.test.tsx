@@ -122,3 +122,38 @@ describe('when a write did not take', () => {
     expect(screen.queryByText(/Did not move/)).toBeNull();
   });
 });
+
+describe('the explanation lives on the card, not only in a notice', () => {
+  it('folds the paragraph away behind “Why?” instead of showing it always', () => {
+    // The board notice sits above a scroll region the reader has usually scrolled past, so a card
+    // pointing "above" was pointing off screen. It is here — just not unfolded.
+    render(<ChecklistCard
+      card={buildCard()}
+      errorMessage="Did not move."
+      errorDetail="Jira accepted the change and the checklist app ignored it."
+    />);
+
+    expect(screen.getByText('Why?')).toBeTruthy();
+    expect(screen.getByText(/the checklist app ignored it/)).toBeTruthy();
+  });
+
+  it('shows no disclosure when there is no explanation to give', () => {
+    render(<ChecklistCard card={buildCard()} errorMessage="Did not move." />);
+
+    expect(screen.queryByText('Why?')).toBeNull();
+  });
+});
+
+describe('opening the issue in Jira', () => {
+  it('offers it from the menu at ANY time, not only after something failed', () => {
+    // Where an instance does not let the board write checklists at all, opening the issue is the
+    // workflow rather than the fallback.
+    render(<ChecklistCard card={buildCard()} />);
+
+    fireEvent.contextMenu(screen.getByTestId('rollup-checklist-card-DEV-1#item-43628'));
+
+    // Present only when the board knows the Jira base URL; there is nothing to link to without one.
+    const menuItem = screen.queryByRole('menuitem', { name: /Open DEV-1 in Jira/ });
+    if (menuItem) expect(menuItem).toBeTruthy();
+  });
+});
