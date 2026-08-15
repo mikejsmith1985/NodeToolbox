@@ -65,6 +65,7 @@ import {
 } from './checklistCards.ts';
 import type { ChecklistItemState } from './checklistItems.ts';
 import {
+  describeChecklistWriteAdvice,
   judgeChecklistFields,
   saveChecklistItemState,
   verifyChecklistItemState,
@@ -467,6 +468,14 @@ export default function RollupBoardTab({
   // anybody can make.
   const [checklistFieldOptions, setChecklistFieldOptions] = useState<Array<{ id: string; name: string }>>([]);
   const [checklistFieldVerdicts, setChecklistFieldVerdicts] = useState<ChecklistFieldVerdict[]>([]);
+  /**
+   * The last checklist write that Jira accepted and the checklist app ignored.
+   *
+   * Held for the board NOTICE rather than the card. The explanation is a configuration problem with a
+   * two-sentence fix, and a 250px card is the worst place on the screen to read one — it was covering
+   * the card it was about, every time, in red.
+   */
+  const [checklistWriteBlock, setChecklistWriteBlock] = useState<{ issueKey: string; detail: string } | null>(null);
   const [pendingChecklistCardId, setPendingChecklistCardId] = useState<string | null>(null);
   const [errorMessageByChecklistCardId, setErrorMessageByChecklistCardId] = useState<Record<string, string>>({});
   // Where the gap is currently open. Recomputed as the pointer moves, cleared when the drag ends.
@@ -1081,6 +1090,15 @@ export default function RollupBoardTab({
       });
     }
 
+    if (checklistWriteBlock !== null) {
+      notices.push({
+        id: 'checklist-write-blocked',
+        tone: 'warning',
+        summary: `A checklist change on ${checklistWriteBlock.issueKey} did not take.`,
+        detail: <p>{checklistWriteBlock.detail}</p>,
+      });
+    }
+
     if (loadState.incompleteReasons.length > 0) {
       notices.push({
         id: 'incomplete',
@@ -1224,7 +1242,7 @@ export default function RollupBoardTab({
 
     return notices;
   }, [loadState, sprintPiGap, carryOverScope, featuresWithoutWork, unmappedStatusGroups,
-    membershipReasonByFeatureKey, cloneFamilies, vocabulary.checklistColumnMapping]);
+    membershipReasonByFeatureKey, cloneFamilies, vocabulary.checklistColumnMapping, checklistWriteBlock]);
 
   /**
    * The columns the board draws: all of them, or just the focused one.
@@ -1501,6 +1519,27 @@ export default function RollupBoardTab({
   }, []);
 
   /**
+   * Records a checklist write the app ignored: a short line on the card, the explanation in a notice.
+   *
+   * Split because the two say different things to different readers. The card answers "did my drag
+   * work?" in one glance; the notice answers "why not, and what do I change?" with the room to do it
+   * — and the fix is per BOARD, not per card, so repeating it on every card that fails would be the
+   * same paragraph many times over.
+   */
+  const reportChecklistWriteFailure = useCallback((
+    checklistCardId: string,
+    issueKey: string,
+    factMessage: string,
+    attemptedFieldId: string,
+  ): void => {
+    setChecklistCardMessage(checklistCardId, 'Did not move — see the board notice above.');
+    setChecklistWriteBlock({
+      issueKey,
+      detail: `${factMessage} ${describeChecklistWriteAdvice(checklistFieldVerdicts, attemptedFieldId)}`,
+    });
+  }, [setChecklistCardMessage, checklistFieldVerdicts]);
+
+  /**
    * Opens the move-blocked dialog, working out first whether anything can be fixed from it.
    *
    * When Jira only complained AFTER the attempt it names its fields in prose, so the issue's own edit
@@ -1621,13 +1660,15 @@ export default function RollupBoardTab({
           nextState,
           result.targetFieldId ?? '',
         );
-        if (!verdict.isWritten) setChecklistCardMessage(checklistCardId, verdict.message);
+        if (!verdict.isWritten) {
+          reportChecklistWriteFailure(checklistCardId, cardParts.parentKey, verdict.message, result.targetFieldId ?? '');
+        }
       }
     } finally {
       setPendingChecklistCardId(null);
     }
   }, [effectiveChecklistMapping, loadState.allItems, checklistFieldIds, loadBoard, renderedColumns,
-    vocabulary.checklistWriteFieldId]);
+    vocabulary.checklistWriteFieldId, reportChecklistWriteFailure]);
 
   const handleCardDrop = useCallback(async (dragEndEvent: DragEndEvent): Promise<void> => {
     // A checklist card is not an issue and none of the rules below fit it, so it is answered first.
@@ -1941,13 +1982,15 @@ export default function RollupBoardTab({
           nextState,
           result.targetFieldId ?? '',
         );
-        if (!verdict.isWritten) setChecklistCardMessage(checklistCardId, verdict.message);
+        if (!verdict.isWritten) {
+          reportChecklistWriteFailure(checklistCardId, issueKey, verdict.message, result.targetFieldId ?? '');
+        }
       }
     } finally {
       setPendingChecklistCardId(null);
     }
   }, [loadState.allItems, setChecklistCardMessage, loadBoard, checklistFieldIds,
-    vocabulary.checklistWriteFieldId]);
+    vocabulary.checklistWriteFieldId, reportChecklistWriteFailure]);
 
   const handleApplyTransition = useCallback(async (option: CardTransitionOption): Promise<void> => {
     if (openIssueKey === null) return;

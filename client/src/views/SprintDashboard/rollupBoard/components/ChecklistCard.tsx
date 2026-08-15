@@ -11,6 +11,9 @@
 
 import { useDraggable } from '@dnd-kit/core';
 
+import { buildJiraBrowseUrl } from '../../../../utils/jiraBrowseUrl.ts';
+import { useConnectionStore } from '../../../../store/connectionStore.ts';
+
 import { describeChecklistState, nextChecklistState } from '../checklistWrite.ts';
 import { buildChecklistDragId, type ChecklistCard as ChecklistCardModel } from '../checklistCards.ts';
 import type { ChecklistItemState } from '../checklistItems.ts';
@@ -61,6 +64,7 @@ export function ChecklistCard({
   onSetState,
   onOpenParent,
 }: ChecklistCardProps): React.JSX.Element {
+  const jiraBaseUrl = useConnectionStore((connectionState) => connectionState.proxyStatus?.jira?.baseUrl ?? '');
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: buildChecklistDragId(card),
     disabled: isReadOnly,
@@ -121,7 +125,24 @@ export function ChecklistCard({
         </span>
       ) : null}
 
-      {errorMessage ? <span className={styles.cardError}>{errorMessage}</span> : null}
+      {errorMessage ? (
+        <span className={styles.cardError}>
+          {errorMessage}
+          {/* The escape, beside the failure rather than left to be worked out. Where the board cannot
+              write this checklist, Jira can — and this is the one issue that needs opening. */}
+          {jiraBaseUrl ? (
+            <a
+              className={styles.checklistCardJiraLink}
+              href={buildJiraBrowseUrl(card.parentKey, jiraBaseUrl)}
+              onClick={(clickEvent) => clickEvent.stopPropagation()}
+              rel="noreferrer"
+              target="_blank"
+            >
+              Change it in {card.parentKey} ↗
+            </a>
+          ) : null}
+        </span>
+      ) : null}
     </div>
   );
 }

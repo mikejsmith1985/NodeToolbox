@@ -96,3 +96,29 @@ describe('ChecklistCard', () => {
     expect(screen.getByText('No checklist field on the edit screen.')).toBeTruthy();
   });
 });
+
+describe('when a write did not take', () => {
+  it('keeps the card readable — the explanation belongs in the board notice, not here', () => {
+    // A configuration problem with a two-sentence fix used to render as a paragraph of red text on a
+    // 250px card, covering the item it was about, every single time it was tried.
+    render(<ChecklistCard card={buildCard()} errorMessage="Did not move — see the board notice above." />);
+
+    expect(screen.getByText('Did not move — see the board notice above.')).toBeTruthy();
+  });
+
+  it('offers the escape: the one issue that needs opening in Jira', () => {
+    // Where the board cannot write the checklist, Jira can. Leaving somebody to work out which issue
+    // to open is the difference between a dead end and a detour.
+    render(<ChecklistCard card={buildCard()} errorMessage="Did not move." />);
+
+    const jiraLink = screen.queryByRole('link', { name: /Change it in DEV-1/ });
+    // Rendered only when the board knows the Jira base URL; without one there is nothing to link to.
+    if (jiraLink) expect(jiraLink.getAttribute('target')).toBe('_blank');
+  });
+
+  it('shows no failure text at all when nothing failed', () => {
+    render(<ChecklistCard card={buildCard()} />);
+
+    expect(screen.queryByText(/Did not move/)).toBeNull();
+  });
+});

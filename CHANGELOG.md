@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Roll-Up Board — a failed checklist write is readable again.** The explanation was right and in
+  entirely the wrong place: a configuration problem with a two-sentence fix, rendered as a paragraph of
+  red text on a 250px card, covering the item it was about, every time it was tried. The card now says
+  one line — *"Did not move — see the board notice above"* — and the explanation goes to a board notice,
+  which has the width for it. The fix is per BOARD anyway, so repeating it on every card that failed
+  was the same paragraph many times over.
+- **Roll-Up Board — the advice now depends on whether anything else could work.** Two different
+  situations were getting one answer. If another field on this instance is editable plain text, it is
+  **named**, so the next attempt is informed rather than another guess. If none is, the board says so
+  outright: this Jira does not expose the checklist app's store as an editable field, the board will
+  keep reading checklists, and the items are changed in Jira — instead of sending somebody round a
+  picker where nothing works.
+
+### Added
+- **Roll-Up Board — the escape, beside the failure.** A checklist card whose change did not take now
+  offers *"Change it in DEV-123 ↗"*, opening the one issue that needs opening. Where the board cannot
+  write the checklist, Jira can; leaving somebody to work out which issue to open is the difference
+  between a dead end and a detour.
+
 ### Added
 - **Board setup — "Write checklist changes to".** The read-back added last release did its job and
   proved the board was writing to the wrong field: Jira accepted the change to `customfield_10252` and

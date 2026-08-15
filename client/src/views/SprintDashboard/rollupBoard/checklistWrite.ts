@@ -210,6 +210,35 @@ export async function saveChecklistItemState(input: {
   return { isWritten: true, message: '', targetFieldId };
 }
 
+/**
+ * What somebody should DO after a write the checklist app ignored.
+ *
+ * Two genuinely different situations, and telling them apart matters more than the words do. If some
+ * other field on this instance is editable plain text, one of them is probably the one the app reads
+ * and naming it fixes this for good. If none is, no amount of picking will help: this instance simply
+ * does not expose the checklist for writing, and the board should say so instead of sending somebody
+ * round a list where nothing works.
+ */
+export function describeChecklistWriteAdvice(
+  verdicts: readonly ChecklistFieldVerdict[],
+  attemptedFieldId: string,
+): string {
+  const otherViableFields = verdicts.filter((verdict) =>
+    verdict.id !== attemptedFieldId && verdict.holds !== 'app-data' && verdict.isOnEditScreen);
+
+  if (otherViableFields.length === 0) {
+    return 'No other checklist field on this instance can be written to, so the board cannot change '
+      + 'checklist items here at all — this Jira does not expose the checklist app’s own store as an '
+      + 'editable field. The board will keep READING checklists; change the items in Jira. '
+      + 'If your admin can add the checklist text field to the edit screen, that would change this.';
+  }
+
+  const names = otherViableFields.map((verdict) => `${verdict.name} (${verdict.id})`).join(', ');
+  return `Try naming a different field in Board setup → “Where checklist items go” → “Write checklist `
+    + `changes to”. The other editable candidates on this instance are: ${names}. To find the right `
+    + 'one, change an item in Jira, reload the board, and see which field’s contents moved with it.';
+}
+
 /** One checklist field, judged as a place to WRITE to. */
 export interface ChecklistFieldVerdict {
   id: string;
@@ -284,13 +313,10 @@ export function verifyChecklistItemState(
   if (writtenItem.state !== expectedState) {
     return {
       isWritten: false,
-      // Names the setting rather than a person to go and ask. The board cannot know which custom
-      // field this instance's checklist app reads; the team can find out once and tell it.
+      // The FACT only. What to do about it depends on which fields this instance has, which is a
+      // different question — see describeChecklistWriteAdvice.
       message: `Jira accepted the change to ${targetFieldId}, but the checklist still reads `
-        + `"${describeChecklistState(writtenItem.state)}" — so the checklist app ignored it. That is `
-        + 'the wrong field. Pick the right one in Board setup → “Where checklist items go” → '
-        + '“Write checklist changes to”, using the diagnostics there to see which field holds plain '
-        + 'text. Until then, change this item in Jira.',
+        + `"${describeChecklistState(writtenItem.state)}" — the checklist app ignored it.`,
     };
   }
 

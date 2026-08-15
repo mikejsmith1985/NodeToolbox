@@ -6,6 +6,7 @@ import { parseChecklistItems, type ChecklistItem } from './checklistItems.ts';
 import {
   buildChecklistText,
   chooseWritableChecklistFieldId,
+  describeChecklistWriteAdvice,
   describeChecklistWriteBlock,
   judgeChecklistFields,
   verifyChecklistItemState,
@@ -179,10 +180,10 @@ describe('verifyChecklistItemState', () => {
     );
 
     expect(verdict.isWritten).toBe(false);
+    // The FACT only. What to do about it depends on which fields the instance has, which is a
+    // different question with a different answer — see describeChecklistWriteAdvice.
     expect(verdict.message).toContain('the checklist app ignored it');
     expect(verdict.message).toContain('customfield_text');
-    // Names the setting that fixes it rather than a person to go and ask.
-    expect(verdict.message).toContain('Write checklist changes to');
   });
 
   it('reports an item that vanished from the checklist it was read from', () => {
@@ -267,5 +268,46 @@ describe('a field the team nominated', () => {
     expect(chooseWritableChecklistFieldId(
       ['cf_text'], ['cf_text'], 'cf_text', { cf_text: '- [ ] a' }, 'cf_missing',
     )).toBe('cf_text');
+  });
+});
+
+describe('describeChecklistWriteAdvice', () => {
+  const VERDICTS = [
+    { id: 'cf_dump', name: 'Smart Checklist', holds: 'app-data' as const, isOnEditScreen: true, summary: '' },
+    { id: 'cf_text', name: 'Checklists', holds: 'text' as const, isOnEditScreen: true, summary: '' },
+    { id: 'cf_other', name: 'Checklist Notes', holds: 'text' as const, isOnEditScreen: true, summary: '' },
+  ];
+
+  it('names the OTHER candidates worth trying, so the next attempt is informed', () => {
+    const advice = describeChecklistWriteAdvice(VERDICTS, 'cf_text');
+
+    expect(advice).toContain('Checklist Notes');
+    expect(advice).not.toContain('Smart Checklist (cf_dump)');
+    expect(advice).toContain('Write checklist changes to');
+  });
+
+  it('says plainly when NOTHING else can work, instead of sending somebody round a list', () => {
+    // The situation that matters: an instance that simply does not expose the checklist for writing.
+    // Offering a picker there would be a loop with no exit.
+    const advice = describeChecklistWriteAdvice(
+      [VERDICTS[0], { ...VERDICTS[1], id: 'cf_text' }], 'cf_text',
+    );
+
+    expect(advice).toContain('cannot change checklist items here at all');
+    expect(advice).toContain('keep READING');
+  });
+
+  it('does not count the app’s own data field as somewhere else to try', () => {
+    const advice = describeChecklistWriteAdvice([VERDICTS[0], VERDICTS[1]], 'cf_text');
+
+    expect(advice).toContain('cannot change checklist items here at all');
+  });
+
+  it('does not count a field Jira would refuse the write to', () => {
+    const advice = describeChecklistWriteAdvice(
+      [VERDICTS[1], { ...VERDICTS[2], isOnEditScreen: false }], 'cf_text',
+    );
+
+    expect(advice).toContain('cannot change checklist items here at all');
   });
 });

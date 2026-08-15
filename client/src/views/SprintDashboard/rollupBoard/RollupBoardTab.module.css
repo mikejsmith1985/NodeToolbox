@@ -1333,6 +1333,16 @@
   border-left: 2px solid var(--color-warning);
 }
 
+/* The Jira escape shown beside a failed checklist write. Its own line, because a link buried inside a
+   sentence in red is not findable at the moment somebody needs it. */
+.checklistCardJiraLink {
+  display: block;
+  margin-top: 4px;
+  color: var(--color-accent);
+  font-weight: 600;
+  text-decoration: underline;
+}
+
 /* ── The checklist item, as a card ──
    Purple, because the board's other card colours are already spoken for and mean something: green is
    a Story, red a Defect, blue a sub-task. A fourth kind of work needs a fourth colour, not a shade of
