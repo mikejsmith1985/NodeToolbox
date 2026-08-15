@@ -83,8 +83,6 @@ export interface MasterCardLaneProps {
   cardDetailByIssueKey?: Record<string, CardDetail>;
   /** The grid tracks, computed ONCE for the whole board so the header and cells cannot diverge. */
   columnTracks: ColumnTrackStyle;
-  /** The open issue's detail panel, rendered inside THIS lane when the issue belongs to it. */
-  inlineDetail?: React.ReactNode;
   /** Both progress figures. Null when this Feature has no clones, which is the normal case. */
   familyProgress?: FamilyProgress | null;
   onToggleSubLaneCollapsed?: (cloneFeatureKey: string) => void;
@@ -184,7 +182,6 @@ export function MasterCardLane({
   onSelectFamily,
   cardDetailByIssueKey,
   columnTracks,
-  inlineDetail,
   familyProgress = null,
   onToggleSubLaneCollapsed,
   onNestInto,
@@ -484,12 +481,6 @@ export function MasterCardLane({
         />
       ))}
 
-      {/* The open card's detail belongs HERE, under the lane it was clicked in. It used to render at
-          the very top of the page, which meant opening a card four lanes down was a scroll up to read
-          it and a scroll back to find where you were. */}
-      {inlineDetail !== undefined && inlineDetail !== null && (
-        <div className={styles.laneInlineDetail}>{inlineDetail}</div>
-      )}
     </section>
   );
 }

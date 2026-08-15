@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Roll-Up Board — the card detail is docked to the bottom of the board instead of buried at the end
+  of a swimlane.** It rendered after that lane's cells and sub-lanes, so clicking a card near the top
+  of a tall lane opened the panel well below the fold: easy to click a card and never see what you had
+  opened. (That placement was itself a fix — it used to open at the top of the *page*, so opening a
+  card four lanes down meant scrolling up to read and back to resume.)
+  It is now a panel docked to the bottom of the board's own scroll region: **always in the same
+  place**, resizable by dragging its top edge, with its own Close button as well as clicking the card
+  again.
+  **Deliberately not a modal**, despite the F2 quick lookup already being one and rendering the very
+  same panel. For a lookup with no board behind it a modal is right; for a card *on* a board it hides
+  the thing you clicked from — which column it sits in, what is beside it, what the lane says — and
+  seeing where work is, is this view's entire purpose. The board goes on scrolling behind the dock and
+  the card stays visible above it.
+  **And not a right-hand drawer**, which is what Jira does: horizontal space is this board's scarcest
+  resource at twelve columns, while height can be dragged smaller or the dock closed outright.
+
 ### Fixed
 - **Roll-Up Board — the dashed ring now goes away when the card is closed, and was appearing when
   nothing was selected at all.** Chasing the first half turned up the second, which is the real one:

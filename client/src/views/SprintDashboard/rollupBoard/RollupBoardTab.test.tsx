@@ -634,3 +634,43 @@ describe('RollupBoardTab — the family highlight belongs to the open card', () 
     await waitFor(() => expect(container.querySelector('[class*="cardHighlighted"]')).toBeNull());
   });
 });
+
+describe('RollupBoardTab — the detail is docked, not buried in a lane', () => {
+  /** Opens the first card on the board and hands back the render result. */
+  async function openFirstCard() {
+    mockJiraResponses({ boardIssues: [buildIssue('DEV-1', 'PORTFOLIO-9')] });
+    const rendered = render(<RollupBoardTab boardId={42} scopedIssues={SCOPED_ISSUES} teamProfileId="team-a" />);
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Expand all' })).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'Expand all' }));
+    await waitFor(() => expect(screen.getByTestId('rollup-card-DEV-1')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('rollup-card-DEV-1'));
+    await waitFor(() => expect(screen.getByTestId('rollup-issue-detail')).toBeTruthy());
+    return rendered;
+  }
+
+  it('renders the detail OUTSIDE any swimlane, so it cannot open below the fold', async () => {
+    // The bug: it rendered after a lane's cells and sub-lanes, so clicking a card near the top of a
+    // tall lane opened the panel well below the fold. Anywhere fixed solves that; the dock does it
+    // without hiding the board, which a modal would.
+    await openFirstCard();
+
+    expect(screen.getByTestId('rollup-issue-detail').closest('[data-testid^="rollup-lane-"]')).toBeNull();
+  });
+
+  it('keeps the board visible behind it, which is why it is not a modal', async () => {
+    await openFirstCard();
+
+    // The card is still on screen with its columns — a modal would have covered both.
+    expect(screen.getByTestId('rollup-card-DEV-1')).toBeTruthy();
+    expect(screen.getByTestId('rollup-column-header-row')).toBeTruthy();
+  });
+
+  it('closes from its own button as well as from the card', async () => {
+    await openFirstCard();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+
+    await waitFor(() => expect(screen.queryByTestId('rollup-issue-detail')).toBeNull());
+  });
+});

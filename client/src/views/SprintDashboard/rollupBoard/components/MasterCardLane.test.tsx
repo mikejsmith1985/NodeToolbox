@@ -505,40 +505,6 @@ describe('MasterCardLane — the Feature key opens Jira', () => {
   });
 });
 
-describe('the open card detail sits in its own lane', () => {
-  it('renders the detail inside the lane it was given to', () => {
-    render(
-      <MasterCardLane
-        columns={COLUMNS}
-        columnTracks={COLUMN_TRACKS}
-        hasActiveFilters={false}
-        inlineDetail={<p>Detail for DEV-1</p>}
-        lane={buildLane([buildItem('DEV-1', 'col-todo')])}
-        onToggleCollapsed={vi.fn()}
-      />,
-    );
-
-    // Inside the lane's own section — this is the whole point: the panel used to render at the top of
-    // the page, so opening a card four lanes down meant scrolling up to read it and back to continue.
-    const lane = screen.getByText('Detail for DEV-1').closest('section');
-    expect(lane?.textContent).toContain('FEAT-1');
-  });
-
-  it('adds nothing to a lane with no card open', () => {
-    render(
-      <MasterCardLane
-        columns={COLUMNS}
-        columnTracks={COLUMN_TRACKS}
-        hasActiveFilters={false}
-        lane={buildLane([buildItem('DEV-1', 'col-todo')])}
-        onToggleCollapsed={vi.fn()}
-      />,
-    );
-
-    expect(screen.queryByText('Detail for DEV-1')).toBeNull();
-  });
-});
-
 describe('MasterCardLane — a narrowed column puts its cards away', () => {
   it('draws no cards in a narrowed column, and says how many are in there', () => {
     // The bug: narrowing the HEADER left every lane still rendering its cards into a 40px track, so

@@ -1657,17 +1657,6 @@ export default function RollupBoardTab({
     }
   }, [openIssueKey, loadState.allItems, subStatusFieldId, openMoveBlockedDialog, loadBoard, setCardMessage]);
 
-  /**
-   * The Feature whose lane the open issue sits in, so its detail can be shown THERE.
-   *
-   * The panel used to render at the top of the page. On a board tall enough to need scrolling — which
-   * is every real board — that meant clicking a card was a scroll up to read it and a scroll back down
-   * to find your place again, for every single issue.
-   */
-  const openIssueLaneFeatureKey = useMemo(
-    () => loadState.allItems.find((item) => item.key === openIssueKey)?.featureKey ?? null,
-    [loadState.allItems, openIssueKey],
-  );
 
   /** The issue currently open, taken from the board's own loaded set rather than re-fetched. */
   const openIssue = useMemo(
@@ -2070,32 +2059,6 @@ export default function RollupBoardTab({
               cardDetailByIssueKey={cardDetailByIssueKey}
               columnTracks={columnTracks}
               columns={layout.columns}
-              inlineDetail={openIssue !== null && lane.masterCard.featureKey === openIssueLaneFeatureKey
-                ? (
-                  <section aria-label={`Details for ${openIssue.key}`} data-testid="rollup-issue-detail">
-                    <p className={styles.inlineDetailHint}>
-                      Click {openIssue.key} again to close this.
-                    </p>
-                    {/* Editing delegates entirely to the shared editors: the board adds no write path
-                        of its own, so a field it cannot safely write stays read-only here as
-                        everywhere. */}
-                    <CardTransitionsPanel
-                      isLoading={isReadingTransitions}
-                      onApply={(option) => void handleApplyTransition(option)}
-                      options={openIssueTransitions}
-                      pendingTransitionId={pendingTransitionId}
-                    />
-                    <IssueDetailPanel
-                      fieldEditing={openIssueEditMeta
-                        ? { editMeta: openIssueEditMeta, onFieldSaved: () => void loadBoard() }
-                        : undefined}
-                      isEmbedded
-                      issue={openIssue}
-                      onIssueUpdated={() => void loadBoard()}
-                    />
-                  </section>
-                )
-                : null}
               errorMessageByIssueKey={errorMessageByIssueKey}
               collapsedColumnIds={preferences.collapsedColumnIds ?? []}
               onToggleFlag={(issueKey, shouldBeFlagged) => void handleToggleFlag(issueKey, shouldBeFlagged)}
@@ -2131,6 +2094,54 @@ export default function RollupBoardTab({
             ))}
           </SortableContext>
         </DndContext>
+
+        {/* The open card's detail, docked to the bottom of the board rather than buried at the end of
+            whichever swimlane the card happened to be in.
+            It used to render after that lane's cells and sub-lanes, so clicking a card near the top of
+            a tall lane opened the panel well below the fold — easy to click a card and never see what
+            you had opened. Anywhere FIXED solves that; the bottom was chosen over a modal because this
+            board's whole value is seeing where work is, and a modal hides the thing you clicked from.
+            It was chosen over a right-hand drawer because horizontal space is this board's scarcest
+            resource, while height can be dragged or collapsed.
+            `position: sticky; bottom: 0` keeps it in the scroll region, so the board still scrolls
+            behind it and the card stays visible above. */}
+        {openIssue !== null && (
+          <section
+            aria-label={`Details for ${openIssue.key}`}
+            className={styles.detailDock}
+            data-testid="rollup-issue-detail"
+          >
+            <div className={styles.detailDockBar}>
+              <span className={styles.detailDockTitle}>{openIssue.key}</span>
+              <span className={styles.detailDockHint}>Drag the top edge to resize</span>
+              <button
+                className={styles.actionButton}
+                onClick={() => void handleOpenIssue(openIssue.key)}
+                type="button"
+              >
+                Close
+              </button>
+            </div>
+            <div className={styles.detailDockBody}>
+              {/* Editing delegates entirely to the shared editors: the board adds no write path of its
+                  own, so a field it cannot safely write stays read-only here as everywhere. */}
+              <CardTransitionsPanel
+                isLoading={isReadingTransitions}
+                onApply={(option) => void handleApplyTransition(option)}
+                options={openIssueTransitions}
+                pendingTransitionId={pendingTransitionId}
+              />
+              <IssueDetailPanel
+                fieldEditing={openIssueEditMeta
+                  ? { editMeta: openIssueEditMeta, onFieldSaved: () => void loadBoard() }
+                  : undefined}
+                isEmbedded
+                issue={openIssue}
+                onIssueUpdated={() => void loadBoard()}
+              />
+            </div>
+          </section>
+        )}
 
         {!loadState.isLoading && layout.lanes.length === 0 && loadState.loadError === null && (
           <p className={styles.boardEmptyState}>
