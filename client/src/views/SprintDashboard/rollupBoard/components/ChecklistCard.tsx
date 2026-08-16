@@ -124,7 +124,10 @@ export function ChecklistCard({
       label: 'Copy what Jira stored for this item',
       onSelect: () => void navigator.clipboard?.writeText(
         `${card.parentKey} · "${card.text}" · board read "${card.state}" from: `
-        + `${card.statusWords || '(no status found in the stored value)'}`,
+        + `${card.statusWords || '(no status found in the stored value)'}`
+        // The raw fragments as well as the reading. Twice the READING has been the thing that was
+        // wrong, and reporting only the reading makes every disagreement cost another round trip.
+        + `\n\nStored: ${card.statusSource || '(nothing status-shaped in the stored value)'}`,
       ),
     },
   ];

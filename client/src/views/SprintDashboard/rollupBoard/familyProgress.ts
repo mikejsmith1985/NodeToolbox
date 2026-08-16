@@ -27,15 +27,17 @@ const COMPLETE_PERCENT = 100;
 export function computeFamilyProgress(
   primaryItems: readonly RollupBoardItem[],
   subLaneItems: readonly (readonly RollupBoardItem[])[],
+  /** The team's columns in workflow order, so both figures earn part credit by the same rule. */
+  orderedColumnIds: readonly string[] = [],
 ): FamilyProgress {
-  const devProgress = computeFeatureProgress(primaryItems);
+  const devProgress = computeFeatureProgress(primaryItems, orderedColumnIds);
 
   if ((subLaneItems ?? []).length === 0) {
     return { dev: devProgress, family: null, hasDisagreement: false };
   }
 
   const everyItem = [...primaryItems, ...subLaneItems.flat()];
-  const familyProgress = computeFeatureProgress(everyItem);
+  const familyProgress = computeFeatureProgress(everyItem, orderedColumnIds);
 
   // Only a dev figure that reads FINISHED can disagree in the way that matters. A Feature at 40% dev
   // and 30% family is not telling anybody anything they did not already know.

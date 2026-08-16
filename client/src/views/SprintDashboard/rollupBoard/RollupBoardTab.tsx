@@ -547,6 +547,11 @@ export default function RollupBoardTab({
 
   const dragSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
   const renderedColumns = useMemo(() => buildRenderedColumns(vocabulary), [vocabulary]);
+  /** The team's columns in workflow order — the basis for crediting work that is under way. */
+  const orderedColumnIds = useMemo(
+    () => [...vocabulary.columns].sort((left, right) => left.order - right.order).map((column) => column.id),
+    [vocabulary.columns],
+  );
 
   // Deliberately NOT gated on a Jira board being selected. The scope comes from the dashboard's own
   // Sprint / PI / Fix Version selector, so a team with no board chosen still has work to show.
@@ -606,7 +611,15 @@ export default function RollupBoardTab({
       setLoadState({
         isLoading: false,
         loadError: null,
-        masterCards: buildMasterCards(scopedResult.items, issueSet.featureIssues, storyPointsFieldIds),
+        masterCards: buildMasterCards(
+          scopedResult.items,
+          issueSet.featureIssues,
+          storyPointsFieldIds,
+          // The team's own column order IS their workflow order, so unfinished work earns credit for
+          // how far along it they have moved it. The Unmapped column is deliberately absent: work
+          // nobody has placed has not demonstrably got anywhere.
+          [...vocabulary.columns].sort((left, right) => left.order - right.order).map((column) => column.id),
+        ),
         allItems: scopedResult.items,
         incompleteReasons: issueSet.load.failures.map((failure) => failure.detail),
         featureReadFailures: issueSet.featureReadFailures,
@@ -1326,10 +1339,11 @@ export default function RollupBoardTab({
       byFeatureKey[masterCard.featureKey] = computeFamilyProgress(
         masterCard.items,
         readSubLaneItemLists(subLanes),
+        orderedColumnIds,
       );
     }
     return byFeatureKey;
-  }, [laneMasterCards, subLanesByFeatureKey]);
+  }, [laneMasterCards, subLanesByFeatureKey, orderedColumnIds]);
 
   /**
    * Judges each checklist field as a place to WRITE to, against a real issue that has a checklist.

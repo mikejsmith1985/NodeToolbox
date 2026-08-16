@@ -56,13 +56,19 @@ export interface LaneItemCounts {
 
 /** Names the basis in words, because a percentage without its basis cannot be checked. */
 function describeBasis(basis: FeatureProgress['basis']): string {
-  return basis === 'story-points' ? 'story points' : 'issue count';
+  return basis.startsWith('story-points') ? 'story points' : 'issue count';
 }
 
 /** Spells out the workings behind a percentage. Null when the percentage itself is absent. */
 function describeWorkings(progress: FeatureProgress | null): string | null {
   if (progress === null || progress.percentComplete === null) return null;
-  return `${progress.completedUnits} of ${progress.totalUnits} by ${describeBasis(progress.basis)}`;
+  const partCreditNote = progress.basis.endsWith('-part-credit')
+    // Said out loud, because the figure now includes work that is under way rather than finished, and
+    // a reader comparing it with Jira's own "done" count needs to know why they differ.
+    ? ', part credit by column'
+    : '';
+  return `${progress.completedUnits} of ${progress.totalUnits} by ${describeBasis(progress.basis)}`
+    + partCreditNote;
 }
 
 /**

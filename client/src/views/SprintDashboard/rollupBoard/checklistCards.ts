@@ -57,6 +57,8 @@ export interface ChecklistCard {
   rank: number;
   /** What the state was read from, so a wrong state can be diagnosed from the card it is wrong on. */
   statusWords: string;
+  /** The stored fragments behind that, verbatim, so a wrong reading needs no further round trip. */
+  statusSource: string;
 }
 
 /** Builds the drag id for a checklist card, kept distinct from an issue key. */
@@ -229,5 +231,6 @@ function buildChecklistCard(
     itemId: checklistItem.id,
     rank: checklistItem.rank ?? 0,
     statusWords: checklistItem.statusWords ?? '',
+    statusSource: checklistItem.statusSource ?? '',
   };
 }

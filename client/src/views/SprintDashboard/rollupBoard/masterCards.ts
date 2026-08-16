@@ -66,6 +66,7 @@ function buildVitals(
   items: readonly RollupBoardItem[],
   isSynthetic: boolean,
   storyPointsFieldIds: readonly string[],
+  orderedColumnIds: readonly string[],
 ): MasterCardVitals {
   const issueFields = (featureIssue?.fields ?? {}) as {
     summary?: string;
@@ -81,7 +82,7 @@ function buildVitals(
     key: isSynthetic ? 'No Feature' : featureKey,
     summary,
     statusName: issueFields.status?.name ?? null,
-    progress: computeFeatureProgress(items),
+    progress: computeFeatureProgress(items, orderedColumnIds),
     dependencyCount: countBlockingDependencies(featureIssue),
     isFlagged: readIsFeatureFlagged(featureIssue),
     // null, not 0 — an absent estimate is a different statement from an estimate of nothing.
@@ -112,6 +113,13 @@ export function buildMasterCards(
   items: readonly RollupBoardItem[],
   featureIssues: ReadonlyMap<string, JiraIssue>,
   storyPointsFieldIds: readonly string[] = [],
+  /**
+   * The team's columns in workflow order, so unfinished work earns credit for how far it has got.
+   *
+   * Optional: without them the figure is exactly what it was before part credit existed, so a caller
+   * that has no vocabulary to hand cannot accidentally change what a Feature appears to be worth.
+   */
+  orderedColumnIds: readonly string[] = [],
 ): MasterCard[] {
   const itemsByFeatureKey = groupItemsByFeatureKey(items);
 
@@ -125,7 +133,7 @@ export function buildMasterCards(
         isSynthetic: false,
         featureIssue,
         isFeatureUnreadable: featureIssue === null,
-        vitals: buildVitals(featureKey, featureIssue, featureItems, false, storyPointsFieldIds),
+        vitals: buildVitals(featureKey, featureIssue, featureItems, false, storyPointsFieldIds, orderedColumnIds),
         items: featureItems,
       };
     });
@@ -143,7 +151,7 @@ export function buildMasterCards(
       isSynthetic: true,
       featureIssue: null,
       isFeatureUnreadable: false,
-      vitals: buildVitals(NO_FEATURE_KEY, null, unattributedItems, true, storyPointsFieldIds),
+      vitals: buildVitals(NO_FEATURE_KEY, null, unattributedItems, true, storyPointsFieldIds, orderedColumnIds),
       items: unattributedItems,
     },
   ];
@@ -171,7 +179,7 @@ export function buildFeatureWithoutWorkCard(
     // as Jira refusing it — and claiming otherwise put a permissions warning on a healthy Feature.
     isFeatureUnreadable: false,
     hasNoWorkYet: true,
-    vitals: buildVitals(featureKey, featureIssue, [], false, storyPointsFieldIds),
+    vitals: buildVitals(featureKey, featureIssue, [], false, storyPointsFieldIds, []),
     items: [],
   };
 }

@@ -152,17 +152,37 @@ describe('the Smart Checklist app\'s own stored value', () => {
     expect(parseChecklistItems(SMART_CHECKLIST_DUMP)[0].state).toBe('open');
   });
 
-  it('reads CHECKED as done', () => {
-    const doneDump = SMART_CHECKLIST_DUMP[0].replace('statusState=UNCHECKED', 'statusState=CHECKED');
+  it('reads the item’s CURRENT status from its latest transition, not from its status definition', () => {
+    // Proved against the live instance: an item sitting in IN PROGRESS still stores
+    // `status=Status(… name=TO DO, default=true …)`. That group is the app's status DEFINITION and
+    // does not move when the item does — reading it produced a board that confidently disagreed with
+    // Jira, which is worse than one admitting it does not know.
+    const movedDump = SMART_CHECKLIST_DUMP[0].replace(
+      'type=ITEM_CREATED, from=, to=TO DO, date=2026-08-13 12:28:21.985',
+      'type=ITEM_CREATED, from=, to=TO DO, date=2026-08-13 12:28:21.985, user=x), '
+        + 'history=History(id=2, type=STATUS_CHANGED, from=TO DO, to=IN PROGRESS, '
+        + 'date=2026-08-16 09:15:00.000',
+    );
 
-    expect(parseChecklistItems([doneDump])[0].state).toBe('done');
+    expect(parseChecklistItems([movedDump])[0].state).toBe('in-progress');
   });
 
-  it('prefers the status NAME where it says more than the checkbox can', () => {
-    // UNCHECKED cannot express "started"; the status name is the only place that lives.
-    const inProgressDump = SMART_CHECKLIST_DUMP[0].replace('name=TO DO', 'name=IN PROGRESS');
+  it('takes the LATEST transition, whichever order the app wrote them in', () => {
+    // Chosen by date rather than by position: a list read backwards would report the status an item
+    // was in when it was created, which is the bug being fixed rather than a fix for it.
+    const outOfOrder = ['Checklist(id=1, _items=[Item(id=1, value=a, rank=0, '
+      + 'status=Status(name=TO DO, statusState=UNCHECKED, default=true), '
+      + 'history=History(id=2, from=TO DO, to=DONE, date=2026-08-16 09:15:00.000), '
+      + 'history=History(id=1, from=, to=TO DO, date=2026-08-13 12:28:21.985))])'];
 
-    expect(parseChecklistItems([inProgressDump])[0].state).toBe('in-progress');
+    expect(parseChecklistItems(outOfOrder)[0].state).toBe('done');
+  });
+
+  it('falls back to the status definition when the item has no history at all', () => {
+    const noHistory = ['Checklist(id=1, _items=[Item(id=1, value=a, rank=0, '
+      + 'status=Status(name=DONE, statusState=CHECKED))])'];
+
+    expect(parseChecklistItems(noHistory)[0].state).toBe('done');
   });
 
   it('reads several items without merging them into one', () => {

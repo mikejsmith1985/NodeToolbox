@@ -51,6 +51,8 @@ export interface ChecklistItem {
   ownerDisplayName?: string | null;
   /** The app's own ordering, which the board respects rather than inventing one. */
   rank?: number;
+  /** The stored fragments the state was decided from, verbatim — see `readDumpStatusSource`. */
+  statusSource?: string;
   /**
    * The raw status words this item's state was resolved from.
    *
@@ -145,30 +147,104 @@ const DUMP_ASSIGNEE_PATTERN = /Assignee\([^)]*?\buserName=([^,)]+)/;
  * `statusState`, which says UNCHECKED for both "to do" and "in progress". That is exactly how an item
  * set to IN PROGRESS in Jira came back to the board as To do.
  */
-function extractStatusBlock(itemBlock: string): string {
-  const startIndex = itemBlock.indexOf('status=Status(');
-  if (startIndex < 0) return '';
+function extractBracketedBlock(itemBlock: string, marker: string, fromIndex = 0): {
+  block: string;
+  endIndex: number;
+} {
+  const startIndex = itemBlock.indexOf(marker, fromIndex);
+  if (startIndex < 0) return { block: '', endIndex: -1 };
 
   let openBracketCount = 0;
   for (let index = startIndex; index < itemBlock.length; index += 1) {
     if (itemBlock[index] === '(') openBracketCount += 1;
     else if (itemBlock[index] === ')') {
       openBracketCount -= 1;
-      if (openBracketCount === 0) return itemBlock.slice(startIndex, index + 1);
+      if (openBracketCount === 0) {
+        return { block: itemBlock.slice(startIndex, index + 1), endIndex: index + 1 };
+      }
     }
   }
   // Unterminated — take what there is rather than nothing, since the name usually comes early.
-  return itemBlock.slice(startIndex);
+  return { block: itemBlock.slice(startIndex), endIndex: itemBlock.length };
+}
+
+/**
+ * The status this item is in NOW, read from its history rather than from its `status=` group.
+ *
+ * `status=Status(…)` is the app's status DEFINITION, not the item's current value — the stored block
+ * for an item sitting in IN PROGRESS still reads `name=TO DO, default=true`. Reading it produced a
+ * board that confidently disagreed with Jira, which is worse than one that admits it does not know.
+ *
+ * The item's real status is the destination of its most recent transition: each change appends a
+ * `History(… from=X, to=Y, date=…)`. Chosen by the latest DATE rather than by position, because
+ * nothing guarantees the app writes them oldest-first — and a list read backwards would report the
+ * status an item was in when it was created, which is exactly the bug being fixed.
+ */
+function readLatestHistoryStatus(itemBlock: string): string {
+  let searchFromIndex = 0;
+  let latestDate = '';
+  let latestStatus = '';
+
+  for (;;) {
+    const { block, endIndex } = extractBracketedBlock(itemBlock, 'History(', searchFromIndex);
+    if (block === '') break;
+    searchFromIndex = endIndex;
+
+    const transitionTo = (/\bto=([^,)]*)/.exec(block)?.[1] ?? '').trim();
+    if (transitionTo === '') continue;
+    // Dates are `YYYY-MM-DD HH:MM:SS.mmm`, which compares correctly as text.
+    const transitionDate = (/\bdate=([^,)]*)/.exec(block)?.[1] ?? '').trim();
+    if (transitionDate >= latestDate) {
+      latestDate = transitionDate;
+      latestStatus = transitionTo;
+    }
+  }
+
+  return latestStatus;
 }
 
 /** The status words this item carries, lower-cased, from whichever of the two fields hold them. */
 export function readDumpStatusWords(itemBlock: string): string {
-  const statusBlock = extractStatusBlock(itemBlock);
+  // The item's own most recent transition wins over the status DEFINITION, which does not move when
+  // the item does.
+  const latestHistoryStatus = readLatestHistoryStatus(itemBlock);
+  if (latestHistoryStatus !== '') return latestHistoryStatus.toLowerCase();
+
+  const statusBlock = extractBracketedBlock(itemBlock, 'status=Status(').block;
   const statusName = /\bname=([^,)]*)/.exec(statusBlock)?.[1] ?? '';
   // Read from the whole item when there is no status group, but ONLY from a keyed token — matching
   // loose words against the whole block would let an item called "in progress work" set its own state.
   const statusState = /\bstatusState=([A-Za-z_ -]+)/.exec(statusBlock || itemBlock)?.[1] ?? '';
   return `${statusName} ${statusState}`.trim().toLowerCase();
+}
+
+/** How much stored status text to keep per item. Enough to diagnose, short of carrying the dump. */
+const STATUS_SOURCE_LIMIT = 400;
+
+/**
+ * The stored fragments an item's state was decided from, kept verbatim.
+ *
+ * `statusWords` is this module's INTERPRETATION, and twice now the interpretation has been the thing
+ * that was wrong — reporting it alone means every disagreement costs another round of guessing at
+ * data only the operator can see. The fragments themselves cost a few hundred bytes an item and end
+ * the argument.
+ */
+export function readDumpStatusSource(itemBlock: string): string {
+  const fragments: string[] = [];
+
+  const statusBlock = extractBracketedBlock(itemBlock, 'status=Status(').block;
+  if (statusBlock !== '') fragments.push(statusBlock);
+
+  let searchFromIndex = 0;
+  for (;;) {
+    const { block, endIndex } = extractBracketedBlock(itemBlock, 'History(', searchFromIndex);
+    if (block === '') break;
+    searchFromIndex = endIndex;
+    fragments.push(block);
+  }
+
+  const joined = fragments.join(' ');
+  return joined.length > STATUS_SOURCE_LIMIT ? `${joined.slice(0, STATUS_SOURCE_LIMIT)}…` : joined;
 }
 
 /**
@@ -229,6 +305,7 @@ export function parseSmartChecklistDump(rawValue: unknown): ChecklistItem[] {
       id: storedItemId === null ? `checklist-${items.length}` : `item-${storedItemId}`,
       rank: storedRank === undefined ? items.length : Number(storedRank),
       statusWords: readDumpStatusWords(itemBlock),
+      statusSource: readDumpStatusSource(itemBlock),
       text,
       state: readDumpItemState(itemBlock),
       assigneeUserId: assigneeUserId ?? (DUMP_ASSIGNEE_PATTERN.exec(itemBlock)?.[1] ?? null),

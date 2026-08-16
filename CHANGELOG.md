@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Roll-Up Board — a checklist item's status is read from its own history, not from a definition.**
+  You proved it: the stored block for an item sitting in IN PROGRESS still reads
+  `status=Status(… name=TO DO, default=true …)`. That group is the checklist app's status
+  **definition**; it does not move when the item does, and reading it gave a board that confidently
+  disagreed with Jira. The item's real status is the destination of its most recent transition — each
+  change appends a `History(… from=X, to=Y, date=…)` — chosen by the latest **date** rather than by
+  position, because nothing guarantees the app writes them oldest-first.
+
+### Changed
+- **Roll-Up Board — one progress bar, two tones, instead of two stacked bars.** Dev and Whole Feature
+  are two views of the same metric, and two tracks said "two metrics" while spending a whole extra row
+  of every lane to say it. Both fills are anchored left and overlaid rather than laid end to end,
+  because the family figure can legitimately be LOWER than the dev figure — that is the whole reason
+  for showing it — and segments in sequence would have to run backwards to express that. Each figure
+  is named beside its own swatch, so colour is still never the only signal.
+- **Roll-Up Board — progress credits work that is under way.** Every unfinished item counted zero, so a
+  Feature whose work was all in Code Review read the same as one nobody had started, and moving a card
+  across the board changed nothing until it reached the end. Unfinished work now earns credit for how
+  far along the team's **own columns** it has got — column 5 of 10 is halfway through their workflow by
+  their own definition, so nothing has to be configured twice. Combined with the existing points
+  weighting, a large story in Code Review is now worth considerably more than a small one nobody has
+  picked up. The workings say **"part credit by column"** out loud, because the figure now includes
+  work in flight and a reader comparing it against Jira's own done-count needs to know why they differ.
+  Unplaced work still earns nothing — it has not demonstrably got anywhere.
+
+### Added
+- **Roll-Up Board — a checklist card can show what its state was read FROM.** Hover for the status
+  words; right-click for **Copy what Jira stored for this item**, which now carries the raw stored
+  fragments as well as the board's reading of them. The same information lives in the checklist
+  diagnostics, but that panel sits behind three gates and the person who needs it is looking at a card
+  whose state is wrong. Two rounds were spent guessing at data only the operator can see; this ends it.
+
 ### Added
 - **Roll-Up Board — a checklist card can show what its state was read FROM.** Hover it and the tooltip
   says which status words the board resolved the state from; right-click gives **Copy what Jira stored

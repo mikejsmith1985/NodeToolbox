@@ -100,3 +100,61 @@ describe('computeFeatureProgress', () => {
     expect(progress).toHaveProperty('percentComplete');
   });
 });
+
+describe('part credit — work that is under way is worth more than work that is not', () => {
+  const COLUMNS = ['col-todo', 'col-working', 'col-review', 'col-done'];
+
+  /** The file's own builder, placed in a column. */
+  function buildInColumn(
+    key: string,
+    columnId: string,
+    storyPoints: number | null = null,
+    statusCategoryName = 'In Progress',
+  ): RollupBoardItem {
+    return { ...buildItem(key, statusCategoryName, storyPoints), columnId };
+  }
+
+  it('gives a story in the middle of the board a share of the credit', () => {
+    // Every unfinished item counted zero before this, so moving a card across the board changed
+    // nothing at all until it reached the end.
+    const progress = computeFeatureProgress([buildInColumn('DEV-1', 'col-working')], COLUMNS);
+
+    expect(progress.percentComplete).toBe(33);
+    expect(progress.basis).toBe('issue-count-part-credit');
+  });
+
+  it('gives an untouched story in the first column nothing', () => {
+    expect(computeFeatureProgress([buildInColumn('DEV-1', 'col-todo')], COLUMNS).percentComplete).toBe(0);
+  });
+
+  it('gives unplaced work nothing, rather than guessing where it got to', () => {
+    expect(computeFeatureProgress([buildInColumn('DEV-1', 'unmapped')], COLUMNS).percentComplete).toBe(0);
+  });
+
+  it('weights by SIZE as well as position, so a big story near the end outweighs a small new one', () => {
+    // The ask exactly: a large story in Code Review should not count the same as a small story
+    // nobody has started.
+    const progress = computeFeatureProgress([
+      buildInColumn('BIG-1', 'col-review', 13),
+      buildInColumn('SMALL-1', 'col-todo', 1),
+    ], COLUMNS);
+
+    // 13 points at two-thirds credit out of 14 points total.
+    expect(progress.percentComplete).toBe(62);
+    expect(progress.basis).toBe('story-points-part-credit');
+  });
+
+  it('still counts a finished item in full, wherever its column sits', () => {
+    const progress = computeFeatureProgress([buildInColumn('DEV-1', 'col-todo', null, 'Done')], COLUMNS);
+
+    expect(progress.percentComplete).toBe(100);
+  });
+
+  it('behaves exactly as before when the caller has no columns to give', () => {
+    // Adopting this late must not silently change what a Feature appears to be worth.
+    const progress = computeFeatureProgress([buildInColumn('DEV-1', 'col-working')]);
+
+    expect(progress.percentComplete).toBe(0);
+    expect(progress.basis).toBe('issue-count');
+  });
+});

@@ -25,37 +25,76 @@ function calculatePercent(completedUnits: number, totalUnits: number): number {
 }
 
 /**
+ * How much credit an item earns for the column it is sitting in.
+ *
+ * Every unfinished item counted zero before this, so a Feature whose work was all in Code Review read
+ * the same as one that had not been started — and moving a card across the board changed nothing until
+ * it reached the end. A large story nearly finished was worth exactly as much as a small one nobody
+ * had picked up.
+ *
+ * The credit comes from the team's OWN column order rather than from weights invented here. That order
+ * is already a statement about their workflow: column 5 of 10 is halfway through it by their own
+ * definition, and nothing has to be configured twice for the number to mean something.
+ */
+export function readColumnCredit(
+  columnId: string,
+  orderedColumnIds: readonly string[],
+): number {
+  const lastIndex = orderedColumnIds.length - 1;
+  if (lastIndex <= 0) return 0;
+
+  const columnIndex = orderedColumnIds.indexOf(columnId);
+  // A column outside the team's vocabulary — Unmapped, or one just deleted. Unplaced work has not
+  // demonstrably moved anywhere, so it earns nothing rather than a guess.
+  if (columnIndex < 0) return 0;
+  return columnIndex / lastIndex;
+}
+
+/**
  * Computes a Feature's completion from the items delivering it.
  *
  * Points weighting is used only when EVERY contributing item carries an estimate. One missing
  * estimate demotes the whole Feature to counting issues, because a points sum that quietly omits
  * unestimated work reports a Feature as further behind than it is — and does so invisibly.
  */
-export function computeFeatureProgress(items: readonly RollupBoardItem[]): FeatureProgress {
+export function computeFeatureProgress(
+  items: readonly RollupBoardItem[],
+  orderedColumnIds: readonly string[] = [],
+): FeatureProgress {
   if (items.length === 0) {
     return { percentComplete: null, basis: 'none', completedUnits: 0, totalUnits: 0 };
   }
+
+  // Absent columns means the caller has none to give, and the figure stays exactly what it was before
+  // part credit existed. Nothing regresses by adopting this late.
+  const isPartCredited = orderedColumnIds.length > 1;
+  /** What one item has earned: finished is finished, otherwise how far its column says it has got. */
+  const readItemCredit = (item: RollupBoardItem): number => {
+    if (isItemComplete(item)) return 1;
+    return isPartCredited ? readColumnCredit(item.columnId, orderedColumnIds) : 0;
+  };
 
   const isEveryItemEstimated = items.every((item) => item.storyPoints !== null);
   const totalStoryPoints = items.reduce((runningTotal, item) => runningTotal + (item.storyPoints ?? 0), 0);
 
   if (isEveryItemEstimated && totalStoryPoints > 0) {
-    const completedStoryPoints = items
-      .filter(isItemComplete)
-      .reduce((runningTotal, item) => runningTotal + (item.storyPoints ?? 0), 0);
+    const earnedStoryPoints = items
+      .reduce((runningTotal, item) => runningTotal + (item.storyPoints ?? 0) * readItemCredit(item), 0);
     return {
-      percentComplete: calculatePercent(completedStoryPoints, totalStoryPoints),
-      basis: 'story-points',
-      completedUnits: completedStoryPoints,
+      percentComplete: calculatePercent(earnedStoryPoints, totalStoryPoints),
+      basis: isPartCredited ? 'story-points-part-credit' : 'story-points',
+      // Rounded for display: a Feature reading "12.7 of 34 points" implies a precision that partial
+      // credit does not have, and the percentage is the figure anybody acts on.
+      completedUnits: Math.round(earnedStoryPoints),
       totalUnits: totalStoryPoints,
     };
   }
 
-  const completedItemCount = items.filter(isItemComplete).length;
+  const earnedItemCount = items.reduce((runningTotal, item) => runningTotal + readItemCredit(item), 0);
   return {
-    percentComplete: calculatePercent(completedItemCount, items.length),
-    basis: 'issue-count',
-    completedUnits: completedItemCount,
+    percentComplete: calculatePercent(earnedItemCount, items.length),
+    basis: isPartCredited ? 'issue-count-part-credit' : 'issue-count',
+    completedUnits: Math.round(earnedItemCount),
     totalUnits: items.length,
   };
 }

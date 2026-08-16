@@ -249,7 +249,13 @@ export interface RollupBoardItem {
 export interface FeatureProgress {
   /** null when there is nothing to measure. */
   percentComplete: number | null;
-  basis: 'story-points' | 'issue-count' | 'none';
+  /**
+   * How the figure was reached, returned WITH it so a reader can check it.
+   *
+   * The `-part-credit` variants mean unfinished work earned a share of its column's position in the
+   * team's own workflow, rather than counting zero until it reached the end.
+   */
+  basis: 'story-points' | 'issue-count' | 'story-points-part-credit' | 'issue-count-part-credit' | 'none';
   completedUnits: number;
   totalUnits: number;
 }

@@ -416,8 +416,11 @@
 }
 
 .laneProgressTrack {
+  /* One track carrying both figures, layered rather than stacked — the two are views of the same
+     metric, and two tracks said "two metrics" while costing a lane a whole extra row. */
+  position: relative;
   flex: 1 1 auto;
-  height: 8px;
+  height: 10px;
   min-width: 80px;
   border-radius: 999px;
   background: var(--color-surface-2);
@@ -439,6 +442,12 @@
  * Amber's "warning" role elsewhere in the app is on text and borders, never a filled bar, so a filled
  * amber bar does not read as an alarm here. */
 .laneProgressFill {
+  /* Both fills start at the left edge and overlay. Whichever figure is larger simply shows past the
+     other, so a family figure BELOW the dev figure — the whole reason for showing it — reads as two
+     lengths rather than as one of them having run backwards. */
+  position: absolute;
+  top: 0;
+  left: 0;
   height: 100%;
   border-radius: 999px;
   background: linear-gradient(90deg, #d98a00, #f59e0b);
@@ -447,6 +456,34 @@
 /* The whole family's figure, in its own track — it can legitimately be LOWER than the dev figure,
    which is the entire reason for showing it. Lighter, because it is the wider, softer claim. */
 .laneProgressFillFamily {
+  background: linear-gradient(90deg, #f6c453, #fcd34d);
+}
+
+/* The two figures named beside their own swatches. Colour is never the only signal on this board. */
+.laneProgressLegend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--spacing-xs) var(--spacing-sm);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+}
+
+.laneProgressLegendEntry {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.laneProgressSwatch {
+  align-self: center;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, #d98a00, #f59e0b);
+}
+
+.laneProgressSwatchFamily {
   background: linear-gradient(90deg, #f6c453, #fcd34d);
 }
 

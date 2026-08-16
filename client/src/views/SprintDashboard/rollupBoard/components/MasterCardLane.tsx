@@ -166,50 +166,60 @@ function LaneVitalTileView({ tile }: { tile: LaneVitalTile }) {
   );
 }
 
-/** One filled bar with the figure and its workings beside it, so the number can be checked. */
-function ProgressTrack({
-  percent, detail, label, isFamily,
-}: { percent: number; detail: string | null; label: string; isFamily: boolean }) {
-  return (
-    <div className={styles.laneProgressRow}>
-      <span className={styles.laneProgressLabel}>{label}</span>
-      <div className={styles.laneProgressTrack}>
-        <div
-          className={isFamily ? `${styles.laneProgressFill} ${styles.laneProgressFillFamily}` : styles.laneProgressFill}
-          style={{ width: `${Math.min(percent, 100)}%` }}
-        />
-      </div>
-      <span className={styles.laneProgressFigure}>{percent}%</span>
-      {detail !== null && <span className={styles.laneProgressDetail}>{detail}</span>}
-    </div>
-  );
-}
-
 /**
- * Renders the Feature's progress as a bar rather than a sentence.
+ * The Feature's progress as ONE bar carrying both figures.
  *
- * Dev and family are drawn as separate tracks rather than stacked in one, because the family figure
- * can be LOWER than the dev figure — that is the whole point of showing it — and two figures sharing
- * a track would then read as one of them having gone backwards.
+ * Two stacked tracks said "two metrics"; they are two views of the same one — how much of this
+ * Feature is done, counting the dev team's work alone or the whole family's. One track with two tones
+ * says that, and gives a lane back a row of vertical space it was spending to say it twice.
+ *
+ * Both fills are anchored left and overlaid rather than stacked end to end, because the family figure
+ * can be LOWER than the dev figure — that is the whole point of showing it — and segments laid one
+ * after the other would then have to run backwards. Overlaid, whichever is larger simply shows past
+ * the other, and the legend names both.
  */
 function ProgressVital({ bar, sentenceForm }: { bar: LaneProgressBar; sentenceForm: string | null }) {
   if (bar.devPercent === null) {
     return <span className={styles.laneVitalMissing}>{bar.emptyLabel}</span>;
   }
 
-  // The sentence the bars replaced is kept as the hover and screen-reader text: bars are quicker to
+  const hasFamilyFigure = bar.familyPercent !== null;
+
+  // The sentence the bar replaced is kept as the hover and screen-reader text: a bar is quicker to
   // scan, but a proportion drawn as a shape is not readable by everyone or in every setting.
   return (
     <div className={styles.laneProgress} title={sentenceForm ?? undefined}>
-      <ProgressTrack
-        detail={bar.devDetail}
-        isFamily={false}
-        label={bar.familyPercent === null ? 'Complete' : 'Dev'}
-        percent={bar.devPercent}
-      />
-      {bar.familyPercent !== null && (
-        <ProgressTrack detail={bar.familyDetail} isFamily label="Whole Feature" percent={bar.familyPercent} />
-      )}
+      <div className={styles.laneProgressTrack}>
+        {hasFamilyFigure && (
+          <div
+            className={`${styles.laneProgressFill} ${styles.laneProgressFillFamily}`}
+            style={{ width: `${Math.min(bar.familyPercent ?? 0, 100)}%` }}
+          />
+        )}
+        <div
+          className={styles.laneProgressFill}
+          style={{ width: `${Math.min(bar.devPercent, 100)}%` }}
+        />
+      </div>
+
+      {/* Colour is never the only signal: each figure is named beside its own swatch. */}
+      <div className={styles.laneProgressLegend}>
+        <span className={styles.laneProgressLegendEntry}>
+          <span className={styles.laneProgressSwatch} />
+          {hasFamilyFigure ? 'Dev' : 'Complete'} <strong>{bar.devPercent}%</strong>
+          {bar.devDetail !== null && <span className={styles.laneProgressDetail}>{bar.devDetail}</span>}
+        </span>
+
+        {hasFamilyFigure && (
+          <span className={styles.laneProgressLegendEntry}>
+            <span className={`${styles.laneProgressSwatch} ${styles.laneProgressSwatchFamily}`} />
+            Whole Feature <strong>{bar.familyPercent}%</strong>
+            {bar.familyDetail !== null && (
+              <span className={styles.laneProgressDetail}>{bar.familyDetail}</span>
+            )}
+          </span>
+        )}
+      </div>
     </div>
   );
 }

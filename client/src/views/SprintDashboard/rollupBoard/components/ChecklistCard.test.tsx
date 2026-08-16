@@ -20,6 +20,7 @@ function buildCard(overrides: Partial<ChecklistCardModel> = {}): ChecklistCardMo
     itemId: 'item-43628',
     rank: 0,
     statusWords: 'to do unchecked',
+    statusSource: 'status=Status(name=TO DO, default=true)',
     ...overrides,
   };
 }
