@@ -193,12 +193,21 @@ function ProgressVital({ bar, sentenceForm }: { bar: LaneProgressBar; sentenceFo
         {hasFamilyFigure && (
           <div
             className={`${styles.laneProgressFill} ${styles.laneProgressFillFamily}`}
-            style={{ width: `${Math.min(bar.familyPercent ?? 0, 100)}%` }}
+            // The SHORTER fill sits on top, so neither can be completely hidden by the other. Each
+            // series keeps its own tone and texture regardless, so which is which never depends on
+            // which happens to be ahead today.
+            style={{
+              width: `${Math.min(bar.familyPercent ?? 0, 100)}%`,
+              zIndex: (bar.familyPercent ?? 0) <= bar.devPercent ? 2 : 1,
+            }}
           />
         )}
         <div
           className={styles.laneProgressFill}
-          style={{ width: `${Math.min(bar.devPercent, 100)}%` }}
+          style={{
+            width: `${Math.min(bar.devPercent, 100)}%`,
+            zIndex: bar.devPercent < (bar.familyPercent ?? 0) ? 2 : 1,
+          }}
         />
       </div>
 

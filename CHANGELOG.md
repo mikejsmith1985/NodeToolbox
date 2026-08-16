@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Roll-Up Board — the two progress figures are separable again.** One hue at two weights was the
+  right call while Dev and Whole Feature had a track each; sharing one, they sat directly against each
+  other and the boundary disappeared. The whole-Feature fill is now a **deeper tone with a diagonal
+  stripe** — texture as well as lightness, because a stripe survives a small bar, a light theme and
+  colour-blindness, none of which a lightness step alone can be relied on for. Each fill also marks its
+  own end, and the **shorter of the two is drawn on top**, so neither figure can be completely hidden
+  by the other while each keeps its own tone regardless of which is ahead.
+
+### Fixed
 - **Roll-Up Board — a checklist item's status is read from its own history, not from a definition.**
   You proved it: the stored block for an item sitting in IN PROGRESS still reads
   `status=Status(… name=TO DO, default=true …)`. That group is the checklist app's status

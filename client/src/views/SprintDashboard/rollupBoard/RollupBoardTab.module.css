@@ -456,7 +456,29 @@
 /* The whole family's figure, in its own track — it can legitimately be LOWER than the dev figure,
    which is the entire reason for showing it. Lighter, because it is the wider, softer claim. */
 .laneProgressFillFamily {
-  background: linear-gradient(90deg, #f6c453, #fcd34d);
+  /* Separated from the dev fill by TEXTURE as well as tone. Two weights of one hue was the right call
+     while these were two separate tracks; sharing one, they sat directly against each other and the
+     boundary disappeared. The stripe survives a small bar, a light theme and colour-blindness, none of
+     which a lightness step on its own can be relied on for. */
+  background:
+    repeating-linear-gradient(
+      135deg,
+      rgb(255 255 255 / 45%) 0 3px,
+      rgb(255 255 255 / 0%) 3px 7px
+    ),
+    linear-gradient(90deg, #7c2d12, #9a3412);
+}
+
+/* The end of each fill, so the two lengths are separable even where one sits directly on the other. */
+.laneProgressFill::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 2px;
+  height: 100%;
+  background: var(--color-surface-2);
+  opacity: 0.9;
 }
 
 /* The two figures named beside their own swatches. Colour is never the only signal on this board. */
@@ -484,7 +506,13 @@
 }
 
 .laneProgressSwatchFamily {
-  background: linear-gradient(90deg, #f6c453, #fcd34d);
+  background:
+    repeating-linear-gradient(
+      135deg,
+      rgb(255 255 255 / 45%) 0 2px,
+      rgb(255 255 255 / 0%) 2px 5px
+    ),
+    linear-gradient(90deg, #7c2d12, #9a3412);
 }
 
 .laneProgressFigure {
