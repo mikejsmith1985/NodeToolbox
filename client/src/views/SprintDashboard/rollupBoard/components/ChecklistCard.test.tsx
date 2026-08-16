@@ -19,6 +19,7 @@ function buildCard(overrides: Partial<ChecklistCardModel> = {}): ChecklistCardMo
     ownerDisplayName: null,
     itemId: 'item-43628',
     rank: 0,
+    statusWords: 'to do unchecked',
     ...overrides,
   };
 }
@@ -188,5 +189,24 @@ describe('when this instance cannot write checklists at all', () => {
     render(<ChecklistCard card={buildCard()} onSetState={vi.fn()} />);
 
     expect(screen.getByRole('button', { name: /Set to In progress/ })).toBeTruthy();
+  });
+});
+
+describe('the state’s source is on the card', () => {
+  it('hands over what Jira stored, from the card whose state is wrong', () => {
+    // The diagnostics panel sits behind three gates. The person who needs this is looking at a card
+    // right now, and needs it now.
+    render(<ChecklistCard card={buildCard({ statusWords: 'in progress unchecked' })} />);
+
+    fireEvent.contextMenu(screen.getByTestId('rollup-checklist-card-DEV-1#item-43628'));
+
+    expect(screen.getByRole('menuitem', { name: /Copy what Jira stored/ })).toBeTruthy();
+  });
+
+  it('says so in the tooltip too, so one hover answers “why does this say To do?”', () => {
+    render(<ChecklistCard card={buildCard({ statusWords: 'to do unchecked' })} />);
+
+    expect(screen.getByTestId('rollup-checklist-card-DEV-1#item-43628').getAttribute('title'))
+      .toContain('to do unchecked');
   });
 });

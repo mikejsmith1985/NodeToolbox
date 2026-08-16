@@ -51,6 +51,14 @@ export interface ChecklistItem {
   ownerDisplayName?: string | null;
   /** The app's own ordering, which the board respects rather than inventing one. */
   rank?: number;
+  /**
+   * The raw status words this item's state was resolved from.
+   *
+   * Carried so a disagreement between Jira and the board can be settled by looking, rather than by
+   * another round of guessing: when Jira says In progress and the card says To do, the useful
+   * question is not what the parser decided but what it was reading when it decided.
+   */
+  statusWords?: string;
 }
 
 /** Marker characters, as the app writes them. */
@@ -220,6 +228,7 @@ export function parseSmartChecklistDump(rawValue: unknown): ChecklistItem[] {
       // The app's own id when it stored one, which survives inserts, deletes and reordering.
       id: storedItemId === null ? `checklist-${items.length}` : `item-${storedItemId}`,
       rank: storedRank === undefined ? items.length : Number(storedRank),
+      statusWords: readDumpStatusWords(itemBlock),
       text,
       state: readDumpItemState(itemBlock),
       assigneeUserId: assigneeUserId ?? (DUMP_ASSIGNEE_PATTERN.exec(itemBlock)?.[1] ?? null),

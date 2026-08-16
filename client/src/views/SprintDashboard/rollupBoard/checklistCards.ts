@@ -55,6 +55,8 @@ export interface ChecklistCard {
   /** The app's own item id, which is what a write has to name. */
   itemId: string;
   rank: number;
+  /** What the state was read from, so a wrong state can be diagnosed from the card it is wrong on. */
+  statusWords: string;
 }
 
 /** Builds the drag id for a checklist card, kept distinct from an issue key. */
@@ -226,5 +228,6 @@ function buildChecklistCard(
     ownerDisplayName: checklistItem.ownerDisplayName ?? null,
     itemId: checklistItem.id,
     rank: checklistItem.rank ?? 0,
+    statusWords: checklistItem.statusWords ?? '',
   };
 }

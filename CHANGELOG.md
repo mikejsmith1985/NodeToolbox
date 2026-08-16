@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Roll-Up Board — a checklist card can show what its state was read FROM.** Hover it and the tooltip
+  says which status words the board resolved the state from; right-click gives **Copy what Jira stored
+  for this item**. The same information exists in the checklist diagnostics, but that panel sits behind
+  three gates — Board setup open, Admin Hub unlocked, diagnostics switched on — and the person who
+  needs it is looking at a card whose state is wrong, right now. Two rounds of this have been spent
+  guessing at data only the operator can see; this ends that.
+
 ### Fixed
 - **Roll-Up Board — an item set to IN PROGRESS in Jira read as "To do" on the board.** The app stores an
   item's status twice: a `statusState` that only knows ticked from unticked, and a display `name` that

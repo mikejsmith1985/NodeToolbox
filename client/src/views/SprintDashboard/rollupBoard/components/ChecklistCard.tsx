@@ -110,13 +110,24 @@ export function ChecklistCard({
 
   // Always available, not only after something has failed. Where this instance does not let the board
   // write a checklist at all, opening the issue IS the workflow rather than the fallback.
-  const menuActions: BoardMenuAction[] = jiraIssueUrl
-    ? [{
+  const menuActions: BoardMenuAction[] = [
+    ...(jiraIssueUrl ? [{
       id: 'open-in-jira',
       label: `Open ${card.parentKey} in Jira ↗`,
       onSelect: () => window.open(jiraIssueUrl, '_blank', 'noreferrer'),
-    }]
-    : [];
+    }] : []),
+    // Here rather than behind the three gates on the diagnostics panel, because the person who needs
+    // it is the person looking at a card whose state is wrong — and they need it now, not after
+    // unlocking Admin Hub and switching diagnostics on.
+    {
+      id: 'copy-status-source',
+      label: 'Copy what Jira stored for this item',
+      onSelect: () => void navigator.clipboard?.writeText(
+        `${card.parentKey} · "${card.text}" · board read "${card.state}" from: `
+        + `${card.statusWords || '(no status found in the stored value)'}`,
+      ),
+    },
+  ];
 
   const StateIcon = STATE_ICONS[card.state];
   const cardClassNames = [
@@ -139,7 +150,10 @@ export function ChecklistCard({
         setMenuPosition({ xPx: contextEvent.clientX, yPx: contextEvent.clientY });
       }}
       ref={setNodeRef}
-      title={`Checklist item on ${card.parentKey} — click to open it`}
+      // The state's source in the tooltip: one hover answers "why does this say To do?" without
+      // opening anything.
+      title={`Checklist item on ${card.parentKey} — click to open it.`
+        + ` State read from: ${card.statusWords || '(no status found in the stored value)'}`}
       {...attributes}
       {...listeners}
     >

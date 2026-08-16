@@ -572,7 +572,7 @@ describe('a collapsed column counts checklist cards too', () => {
         'FEAT-1': [{
           id: 'DEV-1#item-1', parentKey: 'DEV-1', featureKey: 'FEAT-1', columnId: 'col-dev',
           text: 'a checklist item', state: 'open', ownerFilterId: null, ownerDisplayName: null,
-          itemId: 'item-1', rank: 0,
+          itemId: 'item-1', rank: 0, statusWords: 'to do unchecked',
         }],
       },
     }).lanes[0];
