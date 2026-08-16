@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Roll-Up Board — a checklist step the app declines is now one line at the pointer, not a paragraph
+  pinned to a card.** With the syntax fixed, moves work: To do → In progress → Done and back, one step
+  at a time. What the app will not do is jump two at once — Done straight back to To do — and that was
+  being reported with the full "this instance cannot write checklists" apparatus: red text on the card,
+  a fold-out explanation, and a board notice. All of it wrong, and all of it permanent, about an action
+  nobody was going to retry, on work that was perfectly fine.
+
+  It now says **"Move it to In progress first — the checklist will not go straight there"**, where the
+  drop happened, and clears itself after a few seconds. The long explanation is kept for what it was
+  written for: a board that cannot write checklists at all.
+
+  What the board remembers changed with it. It tracked refusals by TARGET STATE, which would have
+  banned "To do" outright — and To do writes perfectly well, just not from Done. It now remembers the
+  **step**, so one refused move never rules out a move that works.
+
 ### Fixed
 - **Roll-Up Board — checklist statuses now use the syntax the app documents, which I should have read
   five releases ago.** From Smart Checklist for Data Center's own formatting guide:

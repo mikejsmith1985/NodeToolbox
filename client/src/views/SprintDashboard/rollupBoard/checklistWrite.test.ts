@@ -8,6 +8,7 @@ import {
   chooseWritableChecklistFieldId,
   describeChecklistWriteAdvice,
   describeChecklistWriteBlock,
+  describeRefusedStep,
   describeUnwritableStateBlock,
   judgeChecklistFields,
   summarizeChecklistWritability,
@@ -389,5 +390,27 @@ describe('describeUnwritableStateBlock', () => {
     // The app documents a marker for every status, so a refusal almost always means a CUSTOM status
     // rather than a state with no text form. Claiming the latter sent somebody to the wrong fix.
     expect(describeUnwritableStateBlock('skipped')).toContain('Find out what this checklist accepts');
+  });
+});
+
+describe('describeRefusedStep', () => {
+  it('names the stage in between when the app will not jump two at once', () => {
+    // Observed: Done would not go straight back to To do, while every neighbouring step worked.
+    expect(describeRefusedStep('done', 'open')).toBe(
+      'Move it to In progress first — the checklist will not go straight there.',
+    );
+  });
+
+  it('names it going forwards too', () => {
+    expect(describeRefusedStep('open', 'done')).toContain('In progress first');
+  });
+
+  it('stays a single short sentence, because this is not a fault to go and fix', () => {
+    expect(describeRefusedStep('done', 'open').length).toBeLessThan(90);
+  });
+
+  it('says something sensible for a state outside the sequence', () => {
+    // Skipped is a decision about an item, not a stage of it, so it is nobody's way anywhere.
+    expect(describeRefusedStep('skipped', 'done')).toContain('would not move that item to Done');
   });
 });

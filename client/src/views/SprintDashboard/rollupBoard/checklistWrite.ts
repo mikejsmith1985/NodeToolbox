@@ -278,6 +278,39 @@ export function summarizeChecklistWritability(
 }
 
 /**
+ * The order the checklist app moves an item through.
+ *
+ * Observed rather than documented: Done would not go straight back to To do, while every step between
+ * neighbours worked. Skipped sits outside the sequence — it is a decision about an item, not a stage
+ * of it — so it is reachable from anywhere and is not a step on anybody's way somewhere else.
+ */
+const CHECKLIST_STATE_ORDER: ChecklistItemState[] = ['open', 'in-progress', 'done'];
+
+/**
+ * A short line for a move the checklist app would not make in one step, naming the way round.
+ *
+ * Deliberately one sentence. The long explanation is for a board that cannot write checklists at all;
+ * this is a board that writes them perfectly well and was asked for a step the app does not take, and
+ * dressing that up as a configuration failure sent people looking for a problem they do not have.
+ */
+export function describeRefusedStep(
+  fromState: ChecklistItemState,
+  toState: ChecklistItemState,
+): string {
+  const fromIndex = CHECKLIST_STATE_ORDER.indexOf(fromState);
+  const toIndex = CHECKLIST_STATE_ORDER.indexOf(toState);
+
+  // Both on the sequence and more than one step apart: name the stage in between.
+  if (fromIndex >= 0 && toIndex >= 0 && Math.abs(fromIndex - toIndex) > 1) {
+    const stepIndex = fromIndex < toIndex ? fromIndex + 1 : fromIndex - 1;
+    return `Move it to ${describeChecklistState(CHECKLIST_STATE_ORDER[stepIndex])} first — `
+      + 'the checklist will not go straight there.';
+  }
+
+  return `The checklist would not move that item to ${describeChecklistState(toState)}.`;
+}
+
+/**
  * The states this instance has been PROVED able to write, and the ones proved unable.
  *
  * Learned by doing rather than declared, because the two are not distinguishable up front: the same

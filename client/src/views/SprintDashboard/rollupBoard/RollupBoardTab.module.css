@@ -1409,6 +1409,34 @@
   text-decoration: underline;
 }
 
+/* A one-line note at the pointer, for something that did not work and needs no paragraph about it. */
+.boardHint {
+  position: fixed;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  max-width: 22rem;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised);
+  box-shadow: var(--elevation-overlay);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+  /* It reports; it is never a target. A hint that swallowed the next click would be worse than none. */
+  pointer-events: auto;
+}
+
+.boardHintClose {
+  border: 0;
+  background: none;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-md);
+  line-height: 1;
+  cursor: pointer;
+}
+
 /* ── The checklist item, as a card ──
    Purple, because the board's other card colours are already spoken for and mean something: green is
    a Story, red a Defect, blue a sub-task. A fourth kind of work needs a fourth colour, not a shade of

@@ -66,7 +66,7 @@ import {
 import type { ChecklistItemState } from './checklistItems.ts';
 import {
   describeChecklistWriteAdvice,
-  describeUnwritableStateBlock,
+  describeRefusedStep,
   judgeChecklistFields,
   saveChecklistItemState,
   summarizeChecklistWritability,
@@ -162,6 +162,7 @@ import {
 } from './moveBlockDiagnosis.ts';
 import { MoveBlockedDialog } from './components/MoveBlockedDialog.tsx';
 import { ChecklistDiagnosticsPanel } from './components/ChecklistDiagnosticsPanel.tsx';
+import { BoardHintPopup } from './components/BoardHintPopup.tsx';
 import { useAdminStore } from '../../../store/adminStore.ts';
 import { canShowBoardDiagnostics, useDiagnosticsStore } from '../../../store/diagnosticsStore.ts';
 import { CardTransitionsPanel } from './components/CardTransitionsPanel.tsx';
@@ -487,10 +488,18 @@ export default function RollupBoardTab({
    * that the advice stops claiming the field is wrong once something has landed through it.
    */
   const [provenWritableStates, setProvenWritableStates] = useState<ReadonlySet<ChecklistItemState>>(new Set());
-  const [provenUnwritableStates, setProvenUnwritableStates] = useState<ReadonlySet<ChecklistItemState>>(new Set());
+  /**
+   * Keyed by TRANSITION rather than by target state.
+   *
+   * "To do" is perfectly writable — from In progress. It is Done → To do in one step that the app
+   * refuses, and remembering the target alone would have banned a move that works.
+   */
+  const [refusedSteps, setRefusedSteps] = useState<ReadonlySet<string>>(new Set());
   const [pendingChecklistCardId, setPendingChecklistCardId] = useState<string | null>(null);
   const [errorMessageByChecklistCardId, setErrorMessageByChecklistCardId] = useState<Record<string, string>>({});
   const [errorDetailByChecklistCardId, setErrorDetailByChecklistCardId] = useState<Record<string, string>>({});
+  /** A one-line note at the pointer, for a move the app simply would not make. */
+  const [boardHint, setBoardHint] = useState<{ xPx: number; yPx: number; message: string } | null>(null);
   // Where the gap is currently open. Recomputed as the pointer moves, cleared when the drag ends.
   const [dropPreview, setDropPreview] = useState<DropPreview | null>(null);
   const jiraBaseUrl = useConnectionStore((connectionState) => connectionState.proxyStatus?.jira?.baseUrl ?? '');
@@ -1566,10 +1575,25 @@ export default function RollupBoardTab({
     });
   }, []);
 
-  /** Remembers what a read-back proved about one state, so the next attempt is better informed. */
-  const recordChecklistStateOutcome = useCallback((state: ChecklistItemState, isWritten: boolean): void => {
-    const addTo = isWritten ? setProvenWritableStates : setProvenUnwritableStates;
-    addTo((previousStates) => new Set([...previousStates, state]));
+  /** Raises a one-line note where the drop happened. Falls back to the top-left when there is no pointer. */
+  const showBoardHint = useCallback((
+    pointer: { xPx: number; yPx: number } | null,
+    message: string,
+  ): void => {
+    setBoardHint({ xPx: pointer?.xPx ?? 24, yPx: pointer?.yPx ?? 96, message });
+  }, []);
+
+  /** Remembers what a read-back proved, so the next attempt is better informed. */
+  const recordChecklistStateOutcome = useCallback((
+    fromState: ChecklistItemState | null,
+    toState: ChecklistItemState,
+    isWritten: boolean,
+  ): void => {
+    if (isWritten) {
+      setProvenWritableStates((previousStates) => new Set([...previousStates, toState]));
+      return;
+    }
+    if (fromState !== null) setRefusedSteps((previousSteps) => new Set([...previousSteps, `${fromState}->${toState}`]));
   }, []);
 
   /**
@@ -1661,6 +1685,7 @@ export default function RollupBoardTab({
   const handleChecklistCardDrop = useCallback(async (
     checklistCardId: string,
     dropTargetId: string | null,
+    dropPointer: { xPx: number; yPx: number } | null,
   ): Promise<void> => {
     const cardParts = parseChecklistCardId(checklistCardId);
     const dropTarget = dropTargetId === null ? null : parseDropTargetId(dropTargetId);
@@ -1686,14 +1711,11 @@ export default function RollupBoardTab({
     const currentItem = parentItem.checklistItems.find((item) => item.id === cardParts.itemId);
     if (currentItem?.state === nextState) return;
 
-    // Already proved this instance will not take this state. Trying again would produce the identical
-    // silence, so the card says so immediately instead.
-    if (provenUnwritableStates.has(nextState)) {
-      setChecklistCardMessage(checklistCardId, 'Did not move.');
-      setChecklistWriteBlock({
-        issueKey: cardParts.parentKey,
-        detail: describeUnwritableStateBlock(nextState),
-      });
+    // Already proved the app will not make THIS step. Trying again produces the identical silence, so
+    // it says so at once — and says it small, because a step the app declines is not a fault to fix.
+    const currentState = currentItem?.state ?? null;
+    if (currentState !== null && refusedSteps.has(`${currentState}->${nextState}`)) {
+      showBoardHint(dropPointer, describeRefusedStep(currentState, nextState));
       return;
     }
 
@@ -1728,25 +1750,38 @@ export default function RollupBoardTab({
           nextState,
           result.targetFieldId ?? '',
         );
-        recordChecklistStateOutcome(nextState, verdict.isWritten);
+        recordChecklistStateOutcome(currentState, nextState, verdict.isWritten);
         if (!verdict.isWritten) {
-          reportChecklistWriteFailure(checklistCardId, cardParts.parentKey, verdict.message, result.targetFieldId ?? '');
+          // A field that has already written something is not the problem, so this is the app
+          // declining one step — one line at the pointer, not a paragraph pinned to the card.
+          if (provenWritableStates.size > 0 && currentState !== null) {
+            showBoardHint(dropPointer, describeRefusedStep(currentState, nextState));
+          } else {
+            reportChecklistWriteFailure(checklistCardId, cardParts.parentKey, verdict.message, result.targetFieldId ?? '');
+          }
         }
       }
     } finally {
       setPendingChecklistCardId(null);
     }
   }, [effectiveChecklistMapping, loadState.allItems, checklistFieldIds, loadBoard, renderedColumns,
-    vocabulary.checklistWriteFieldId, reportChecklistWriteFailure, provenUnwritableStates,
-    recordChecklistStateOutcome]);
+    vocabulary.checklistWriteFieldId, reportChecklistWriteFailure, refusedSteps,
+    recordChecklistStateOutcome, provenWritableStates, showBoardHint]);
 
   const handleCardDrop = useCallback(async (dragEndEvent: DragEndEvent): Promise<void> => {
     // A checklist card is not an issue and none of the rules below fit it, so it is answered first.
     const checklistCardId = parseChecklistDragId(String(dragEndEvent.active.id));
     if (checklistCardId !== null) {
+      const pointerEvent = dragEndEvent.activatorEvent as PointerEvent | null;
       await handleChecklistCardDrop(
         checklistCardId,
         dragEndEvent.over ? String(dragEndEvent.over.id) : null,
+        typeof pointerEvent?.clientX === 'number'
+          ? {
+            xPx: pointerEvent.clientX + dragEndEvent.delta.x,
+            yPx: pointerEvent.clientY + dragEndEvent.delta.y,
+          }
+          : null,
       );
       return;
     }
@@ -2053,7 +2088,9 @@ export default function RollupBoardTab({
           nextState,
           result.targetFieldId ?? '',
         );
-        recordChecklistStateOutcome(nextState, verdict.isWritten);
+        recordChecklistStateOutcome(item.checklistItems.find(
+          (candidate) => candidate.id === checklistItemId,
+        )?.state ?? null, nextState, verdict.isWritten);
         if (!verdict.isWritten) {
           reportChecklistWriteFailure(checklistCardId, issueKey, verdict.message, result.targetFieldId ?? '');
         }
@@ -2379,6 +2416,12 @@ export default function RollupBoardTab({
       <BoardNotices
         notices={[...boardNotices, ...subLaneNotices]}
         shouldStartExpanded={checklistWriteBlock !== null}
+      />
+
+      <BoardHintPopup
+        message={boardHint?.message ?? ''}
+        onDismiss={() => setBoardHint(null)}
+        position={boardHint === null ? null : { xPx: boardHint.xPx, yPx: boardHint.yPx }}
       />
 
       {/* Below the notices, never among them, so it is always the first thing under the header. */}
