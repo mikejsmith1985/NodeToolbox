@@ -1709,6 +1709,7 @@ export default function RollupBoardTab({
         readableFieldId: parentItem.checklistFieldId ?? null,
         issueFields: parentItem.issue.fields as unknown as Record<string, unknown>,
         nominatedFieldId: vocabulary.checklistWriteFieldId,
+        formIdByState: vocabulary.checklistFormIdByState,
       });
       if (!result.isWritten) {
         setChecklistCardMessage(checklistCardId, result.message);
@@ -2034,6 +2035,7 @@ export default function RollupBoardTab({
         readableFieldId: item.checklistFieldId ?? null,
         issueFields: item.issue.fields as unknown as Record<string, unknown>,
         nominatedFieldId: vocabulary.checklistWriteFieldId,
+        formIdByState: vocabulary.checklistFormIdByState,
       });
       if (!result.isWritten) {
         setChecklistCardMessage(checklistCardId, result.message);

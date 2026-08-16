@@ -76,8 +76,22 @@ const SKIPPED_MARKERS = new Set(['~', '-']);
  */
 const PROGRESS_SUMMARY_PATTERN = /^\s*\d+\s*\/\s*\d+\s*$/;
 
-/** A checklist line: an optional bullet, an optional `[state]` box, then the text. */
-const ITEM_LINE_PATTERN = /^\s*(?:[-*+]\s*)?(?:\[(.?)\]\s*)?(.*)$/;
+/**
+ * A checklist line: an optional bullet, an optional `[state]` box, then the text.
+ *
+ * The BULLET is captured now rather than thrown away, because on this app it is the marker. An
+ * unfinished item is stored as a bare `- this is a test` with no checkbox anywhere, so a reader that
+ * treated `-`, `+` and `~` as decoration could only ever report "not started" for every line.
+ */
+const ITEM_LINE_PATTERN = /^\s*([-*+~])?\s*(?:\[(.?)\]\s*)?(.*)$/;
+
+/** What a bare bullet means, where the line carries no checkbox to say otherwise. */
+const STATE_BY_BULLET: Record<string, ChecklistItemState> = {
+  '-': 'open',
+  '*': 'open',
+  '+': 'done',
+  '~': 'skipped',
+};
 
 /** A heading line, which groups the items beneath it. */
 const HEADING_LINE_PATTERN = /^\s*#+\s*(.+)$/;
@@ -349,8 +363,9 @@ export function parseChecklistItems(rawChecklistValue: unknown): ChecklistItem[]
     }
 
     const itemMatch = ITEM_LINE_PATTERN.exec(rawLine);
-    const markerCharacter = itemMatch?.[1] ?? '';
-    const { text, assigneeUserId } = extractAssignee(itemMatch?.[2] ?? rawLine);
+    const bulletCharacter = itemMatch?.[1] ?? '';
+    const boxCharacter = itemMatch?.[2] ?? '';
+    const { text, assigneeUserId } = extractAssignee(itemMatch?.[3] ?? rawLine);
     if (text === '') continue;
 
     items.push({
@@ -358,7 +373,11 @@ export function parseChecklistItems(rawChecklistValue: unknown): ChecklistItem[]
       id: `checklist-${items.length}`,
       rank: items.length,
       text,
-      state: readItemState(markerCharacter),
+      // A checkbox says more than a bullet, so it wins where both are present — but a bare bullet is
+      // the only marker this app actually writes.
+      state: boxCharacter !== ''
+        ? readItemState(boxCharacter)
+        : (STATE_BY_BULLET[bulletCharacter] ?? 'open'),
       assigneeUserId,
       headingText: currentHeading,
       ownerFilterId: null,

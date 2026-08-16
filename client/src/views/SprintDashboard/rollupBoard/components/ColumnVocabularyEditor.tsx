@@ -22,6 +22,7 @@ import {
   type ObservedBoardState,
 } from '../columnOptionSources.ts';
 import { UNMAPPED_COLUMN_ID } from '../rollupBoardTypes.ts';
+import { ChecklistSyntaxProbePanel } from './ChecklistSyntaxProbePanel.tsx';
 import { UnmappedStatusAssistant } from './UnmappedStatusAssistant.tsx';
 import styles from '../RollupBoardTab.module.css';
 import type { BoardColumn, BoardVocabulary, RollupBoardItem } from '../rollupBoardTypes.ts';
@@ -485,6 +486,16 @@ function ChecklistColumnMappingEditor({
             To find the right one: change a checklist item in Jira, reload this board, and see which
             field’s contents changed with it.
           </p>
+
+          {/* Which field to write through is one question; what to write INTO it is another, and
+              guessing the second cost four releases. */}
+          <ChecklistSyntaxProbePanel
+            onFormsDiscovered={(formIdByState) => onVocabularyChange({
+              ...vocabulary,
+              checklistFormIdByState: formIdByState,
+            })}
+            writeFieldId={vocabulary.checklistWriteFieldId ?? ''}
+          />
         </>
       )}
     </div>

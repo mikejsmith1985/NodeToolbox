@@ -340,6 +340,13 @@ export interface BoardVocabulary {
    * Absent means "let the board choose", which is what every team had before this existed.
    */
   checklistWriteFieldId?: string;
+  /**
+   * The line form each checklist state is written as, found by probing this instance.
+   *
+   * Kept with the team's vocabulary rather than per person: it is a fact about the Jira everybody is
+   * looking at, and nobody should have to discover it twice.
+   */
+  checklistFormIdByState?: Partial<Record<string, string>>;
   updatedAt: string;
   /** null means never synchronised with the shared workspace. */
   lastSyncedAt: string | null;

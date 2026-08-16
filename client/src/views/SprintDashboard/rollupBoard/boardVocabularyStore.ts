@@ -51,6 +51,7 @@ export function normalizeStoredVocabulary(
     lastSyncedAt?: string | null;
     checklistColumnMapping?: ChecklistColumnMapping;
     checklistWriteFieldId?: string;
+    checklistFormIdByState?: Partial<Record<string, string>>;
   },
   fallbackTeamProfileId: string,
 ): BoardVocabulary {
@@ -66,6 +67,9 @@ export function normalizeStoredVocabulary(
       : {}),
     ...(storedVocabulary.checklistWriteFieldId
       ? { checklistWriteFieldId: storedVocabulary.checklistWriteFieldId }
+      : {}),
+    ...(storedVocabulary.checklistFormIdByState
+      ? { checklistFormIdByState: storedVocabulary.checklistFormIdByState }
       : {}),
   };
 }

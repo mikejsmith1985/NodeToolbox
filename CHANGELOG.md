@@ -8,6 +8,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Roll-Up Board — the checklist was being written in a syntax this app does not use.** The stored
+  text for an unfinished item is a bare `- this is a test @C8Q6T3`. **No checkbox anywhere.** The board
+  had been writing `- [x] …` and `- [>] …`, so the app read them as ordinary to-do items whose text
+  happened to begin with a bracket — which is exactly why an item dragged to Complete came back as
+  To Do rather than staying where it was.
+
+  The reader had the same blind spot from the other side: it treated `-`, `+`, `*` and `~` as bullet
+  decoration and looked for a checkbox that is never there, so it could only ever report "not started"
+  for a line the app had marked any other way. Both directions now use bare markers.
+
+### Added
+- **Board setup — "Find out what this checklist accepts".** Four rounds were spent guessing this
+  syntax and being wrong four times, each in the same expensive way: the write succeeded, Jira returned
+  204, and the checklist had not moved. Nothing visible distinguishes a form the app honours from one it
+  stores as literal text, so the only honest way to know is to write one and read it back.
+
+  Point it at an issue and it writes each candidate form to one item in turn, reads back what the app
+  made of each, shows the results, and records the ones that worked — after which every checklist write
+  uses them. Any status no form produced is reported as having no text form on this instance at all,
+  which is worth knowing as plainly as the ones that work.
+
+  It changes a real checklist item and **restores the original text when it finishes**, including after
+  a step throws, and says so before it runs rather than after. Candidate forms are limited to shapes
+  this kind of app is documented or observed to use — an unrecognised marker is stored as literal text,
+  so probing arbitrary characters would write rubbish into somebody's checklist to learn nothing.
+
+### Fixed
 - **Roll-Up Board — the whole-Feature band is drawn on top of the dev band.** The dev band is full
   height and therefore covers the bottom row as well, so a whole-Feature figure SHORTER than the dev
   one vanished underneath it completely — precisely the case the second figure exists to show.

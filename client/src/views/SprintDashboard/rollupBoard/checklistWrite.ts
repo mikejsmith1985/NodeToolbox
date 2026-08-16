@@ -15,13 +15,26 @@
 
 import { fetchFeatureReviewEditMeta, saveFeatureReviewSimpleField } from '../featureReviewFixes.ts';
 import { isSmartChecklistDump, type ChecklistItem, type ChecklistItemState } from './checklistItems.ts';
+import { CHECKLIST_LINE_FORMS } from './checklistSyntax.ts';
 
 /** The marker each state is written back as. */
-const MARKER_BY_STATE: Record<ChecklistItemState, string> = {
-  open: ' ',
-  'in-progress': '>',
-  skipped: '~',
-  done: 'x',
+/**
+ * The line form used for each state until a probe says otherwise.
+ *
+ * These were `- [ ]`, `- [x]`, `- [>]` and `- [~]`, and every one of them was wrong: the app stores an
+ * unfinished item as a bare `- this is a test`, with no checkbox anywhere. It therefore read a written
+ * `- [x] …` as an ordinary to-do item whose text began with a bracket, which is why an item dragged to
+ * Complete came back as To Do.
+ *
+ * Bare markers are the shape the stored data actually has. `open` is observed; the rest are the best
+ * remaining guess and are meant to be replaced by Board setup → "Find out what this checklist accepts",
+ * which settles it by experiment rather than by another round of this.
+ */
+const DEFAULT_FORM_ID_BY_STATE: Record<ChecklistItemState, string> = {
+  open: 'dash',
+  'in-progress': 'bracket-arrow',
+  skipped: 'tilde',
+  done: 'plus',
 };
 
 /**
@@ -63,7 +76,11 @@ export function withItemState(
  * Headings are re-emitted where they change, so a grouped checklist stays grouped; the owner mention
  * is put back on the end of the line it was lifted out of when the item was read.
  */
-export function buildChecklistText(items: readonly ChecklistItem[]): string {
+export function buildChecklistText(
+  items: readonly ChecklistItem[],
+  /** What the probe found this instance accepts, where it has been run. */
+  formIdByState: Partial<Record<ChecklistItemState, string>> = {},
+): string {
   const lines: string[] = [];
   let lastHeading: string | null = null;
 
@@ -73,7 +90,10 @@ export function buildChecklistText(items: readonly ChecklistItem[]): string {
       lastHeading = item.headingText;
     }
     const mention = item.assigneeUserId === null ? '' : ` @${item.assigneeUserId}`;
-    lines.push(`- [${MARKER_BY_STATE[item.state]}] ${item.text}${mention}`);
+    const formId = formIdByState[item.state] ?? DEFAULT_FORM_ID_BY_STATE[item.state];
+    const lineForm = CHECKLIST_LINE_FORMS.find((candidate) => candidate.id === formId)
+      ?? CHECKLIST_LINE_FORMS[0];
+    lines.push(lineForm.buildLine(`${item.text}${mention}`));
   }
 
   return lines.join('\n');
@@ -167,6 +187,8 @@ export async function saveChecklistItemState(input: {
   issueFields?: Record<string, unknown>;
   /** The field this team nominated in Board setup, when they have. */
   nominatedFieldId?: string;
+  /** The line forms the probe found this instance accepts, where it has been run. */
+  formIdByState?: Partial<Record<ChecklistItemState, string>>;
 }): Promise<ChecklistWriteResult> {
   let editableFieldIds: string[] = [];
   try {
@@ -200,7 +222,10 @@ export async function saveChecklistItemState(input: {
     };
   }
 
-  const nextText = buildChecklistText(withItemState(input.items, input.itemId, input.nextState));
+  const nextText = buildChecklistText(
+    withItemState(input.items, input.itemId, input.nextState),
+    input.formIdByState,
+  );
   try {
     await saveFeatureReviewSimpleField(input.issueKey, targetFieldId, nextText);
   } catch (writeError) {
