@@ -173,10 +173,10 @@ function LaneVitalTileView({ tile }: { tile: LaneVitalTile }) {
  * Feature is done, counting the dev team's work alone or the whole family's. One track with two tones
  * says that, and gives a lane back a row of vertical space it was spending to say it twice.
  *
- * Both fills are anchored left and overlaid rather than stacked end to end, because the family figure
- * can be LOWER than the dev figure — that is the whole point of showing it — and segments laid one
- * after the other would then have to run backwards. Overlaid, whichever is larger simply shows past
- * the other, and the legend names both.
+ * The two series occupy different ROWS of one track — the dev figure as the solid full-height band,
+ * the whole-Feature figure as a slim striped band along the bottom, exactly as the PI Review capacity
+ * meter draws carryover. Separating them by position rather than by tone is what makes the family
+ * figure legible when it is LOWER than the dev figure, which is the whole point of showing it.
  */
 function ProgressVital({ bar, sentenceForm }: { bar: LaneProgressBar; sentenceForm: string | null }) {
   if (bar.devPercent === null) {
@@ -193,21 +193,12 @@ function ProgressVital({ bar, sentenceForm }: { bar: LaneProgressBar; sentenceFo
         {hasFamilyFigure && (
           <div
             className={`${styles.laneProgressFill} ${styles.laneProgressFillFamily}`}
-            // The SHORTER fill sits on top, so neither can be completely hidden by the other. Each
-            // series keeps its own tone and texture regardless, so which is which never depends on
-            // which happens to be ahead today.
-            style={{
-              width: `${Math.min(bar.familyPercent ?? 0, 100)}%`,
-              zIndex: (bar.familyPercent ?? 0) <= bar.devPercent ? 2 : 1,
-            }}
+            style={{ width: `${Math.min(bar.familyPercent ?? 0, 100)}%` }}
           />
         )}
         <div
           className={styles.laneProgressFill}
-          style={{
-            width: `${Math.min(bar.devPercent, 100)}%`,
-            zIndex: bar.devPercent < (bar.familyPercent ?? 0) ? 2 : 1,
-          }}
+          style={{ width: `${Math.min(bar.devPercent, 100)}%` }}
         />
       </div>
 

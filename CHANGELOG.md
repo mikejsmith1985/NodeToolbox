@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Roll-Up Board — the progress bar now IS the PI Review capacity meter.** Copied rather than
+  approximated: same 22px track, the headline figure as a solid full-height band, and the second series
+  as a slim **striped indigo band along the bottom**, exactly as that meter draws carryover. It is the
+  same shape of statement — one bar carrying a figure with a second series annotating it — and two
+  surfaces drawing that two ways is two vocabularies to learn.
+
+  This also settles the separation problem properly. The two figures are now told apart by **position**
+  first — different rows of one track — which no lightness step can be beaten by, and only then by hue
+  and texture. Because they no longer sit edge to edge, neither can bury the other, so the layering
+  and end-markers added last release are gone rather than left in doing nothing.
+
 ### Fixed
 - **Roll-Up Board — the two progress figures are separable again.** One hue at two weights was the
   right call while Dev and Whole Feature had a track each; sharing one, they sat directly against each

@@ -416,70 +416,65 @@
 }
 
 .laneProgressTrack {
-  /* One track carrying both figures, layered rather than stacked — the two are views of the same
-     metric, and two tracks said "two metrics" while costing a lane a whole extra row. */
+  /* The PI Review capacity meter's own geometry, deliberately copied rather than approximated: it is
+     the same shape of statement — one bar carrying a headline figure with a second series annotating
+     it — and two surfaces drawing that differently is two vocabularies to learn. */
   position: relative;
   flex: 1 1 auto;
-  height: 10px;
+  height: 22px;
   min-width: 80px;
   border-radius: 999px;
-  background: var(--color-surface-2);
+  background: var(--color-surface-3, rgb(148 163 184 / 18%));
   overflow: hidden;
 }
 
-/* ── Progress is a MAGNITUDE, so it gets one hue at two weights, never two hues ──
+/* ── The two figures are separated by POSITION first, then hue and texture ──
  *
- * These bars used to be green (dev) and accent blue (whole Feature) — the exact colours the cards
- * beneath them use for Story and sub-task. Stacked in the same lane, that read as though the green
- * bar explained the green cards and the blue bar the cyan ones, which is not remotely what either
- * means. One colour cannot carry two unrelated vocabularies in one view.
+ * These bars were once green (dev) and accent blue (whole Feature) — the exact colours the cards
+ * beneath them use for Story and sub-task, which read as though the green bar explained the green
+ * cards. Amber replaced them because no card type claims it: green, red, cyan, purple and grey are
+ * all spoken for. Amber's "warning" role elsewhere is on text and borders, never a filled bar, so a
+ * filled amber bar does not read as an alarm here.
  *
- * Amber is used because no card type claims it: green, red, cyan, purple and grey are all spoken for.
- * And the two bars share a hue on purpose — they are the SAME measure at two scopes, related rather
- * than different in kind, so the darker band is dev and the lighter one is everybody. This is the
- * treatment the PI Review capacity meter already uses for committed-versus-total.
+ * They were then one hue at two weights, on the reasoning that the two figures are the SAME measure
+ * at two scopes and so should not look like different kinds of thing. That was right while each had
+ * its own track and wrong the moment they shared one: two weights of a hue, edge to edge, have no
+ * visible boundary at all.
  *
- * Amber's "warning" role elsewhere in the app is on text and borders, never a filled bar, so a filled
- * amber bar does not read as an alarm here. */
+ * So they are separated the way the PI Review capacity meter separates committed from carryover —
+ * different ROWS of one track, the headline figure solid and full height, the second series a slim
+ * striped band along the bottom. Position is the signal a lightness step cannot beat, and copying
+ * that meter rather than inventing a third treatment means one product reads as one product.
+ *
+ * The indigo stripe does sit near the purple the checklist cards use. Accepted knowingly: these are
+ * lane HEADER furniture rather than cards, they carry a legend naming them, and matching the meter
+ * this bar is modelled on is worth more than avoiding a hue at a distance. */
 .laneProgressFill {
-  /* Both fills start at the left edge and overlay. Whichever figure is larger simply shows past the
-     other, so a family figure BELOW the dev figure — the whole reason for showing it — reads as two
-     lengths rather than as one of them having run backwards. */
   position: absolute;
   top: 0;
   left: 0;
   height: 100%;
   border-radius: 999px;
   background: linear-gradient(90deg, #d98a00, #f59e0b);
+  transition: width 240ms ease;
 }
 
-/* The whole family's figure, in its own track — it can legitimately be LOWER than the dev figure,
-   which is the entire reason for showing it. Lighter, because it is the wider, softer claim. */
+/* The whole family's figure. It can legitimately be LOWER than the dev figure — the entire reason for
+   showing it — which is exactly why it gets a row of its own rather than a shade of the other's. */
 .laneProgressFillFamily {
-  /* Separated from the dev fill by TEXTURE as well as tone. Two weights of one hue was the right call
-     while these were two separate tracks; sharing one, they sat directly against each other and the
-     boundary disappeared. The stripe survives a small bar, a light theme and colour-blindness, none of
-     which a lightness step on its own can be relied on for. */
-  background:
-    repeating-linear-gradient(
-      135deg,
-      rgb(255 255 255 / 45%) 0 3px,
-      rgb(255 255 255 / 0%) 3px 7px
-    ),
-    linear-gradient(90deg, #7c2d12, #9a3412);
+  /* A slim striped band along the BOTTOM of the track, exactly as the capacity meter draws carryover.
+     Separated from the dev band by position first — which no amount of tone can be beaten by — then
+     by hue and texture. The two figures no longer sit edge to edge, so neither can bury the other and
+     neither needs drawing on top of the other. */
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 6px;
+  border-radius: 999px;
+  background: repeating-linear-gradient(45deg, #6366f1, #6366f1 5px, #818cf8 5px, #818cf8 10px);
+  transition: width 240ms ease;
 }
 
-/* The end of each fill, so the two lengths are separable even where one sits directly on the other. */
-.laneProgressFill::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  right: 0;
-  width: 2px;
-  height: 100%;
-  background: var(--color-surface-2);
-  opacity: 0.9;
-}
 
 /* The two figures named beside their own swatches. Colour is never the only signal on this board. */
 .laneProgressLegend {
@@ -506,13 +501,7 @@
 }
 
 .laneProgressSwatchFamily {
-  background:
-    repeating-linear-gradient(
-      135deg,
-      rgb(255 255 255 / 45%) 0 2px,
-      rgb(255 255 255 / 0%) 2px 5px
-    ),
-    linear-gradient(90deg, #7c2d12, #9a3412);
+  background: repeating-linear-gradient(45deg, #6366f1, #6366f1 3px, #818cf8 3px, #818cf8 6px);
 }
 
 .laneProgressFigure {
@@ -1495,6 +1484,8 @@
 
 @media (prefers-reduced-motion: reduce) {
   .checklistCardState { transition: none; }
+  .laneProgressFill,
+  .laneProgressFillFamily { transition: none; }
 }
 
 /* The marker is a control, so it has to look like one: a click target with a hover and a focus ring,
