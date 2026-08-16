@@ -242,3 +242,62 @@ describe('an empty Smart Checklist', () => {
     expect(parseChecklistItems(SMART_CHECKLIST_DUMP)).toHaveLength(1);
   });
 });
+
+describe('the app dump — reading a status that is not simply ticked or unticked', () => {
+  /** One item block in the app's own dump format. */
+  function buildDump(statusFragment: string): string {
+    return `["Checklist(id=1, issueId=2, _items=[Item(id=43628, value=this is a test @C8Q6T3, `
+      + `rank=0, ${statusFragment}, assignees=[Assignee(userName=C8Q6T3)])], done=0)"]`;
+  }
+
+  it('reads IN PROGRESS, which statusState alone calls UNCHECKED', () => {
+    // The bug this replaces: an item set to In progress in Jira came back to the board as To do,
+    // because the only field that distinguishes them is the display NAME.
+    expect(parseChecklistItems(buildDump('status=Status(id=2, statusState=UNCHECKED, name=IN PROGRESS)'))[0].state)
+      .toBe('in-progress');
+  });
+
+  it('still reaches the name when the status carries a nested group of its own', () => {
+    // A regex cannot: `[^)]*?` stops at the first closing bracket, so anything nested hid the name
+    // and the reader fell back to UNCHECKED — silently, and for every item.
+    const nested = 'status=Status(id=2, colour=Colour(r=1, g=2), statusState=UNCHECKED, name=IN PROGRESS)';
+
+    expect(parseChecklistItems(buildDump(nested))[0].state).toBe('in-progress');
+  });
+
+  it('reads a custom status name it has never seen before', () => {
+    // Display strings from a third-party app. An exact-match list turns every unfamiliar one into
+    // "not started", which is the quietest possible way to be wrong.
+    expect(parseChecklistItems(buildDump('status=Status(id=9, statusState=UNCHECKED, name=In Progress (dev))'))[0].state)
+      .toBe('in-progress');
+  });
+
+  it('still reads TO DO as not started', () => {
+    expect(parseChecklistItems(buildDump('status=Status(id=1, statusState=UNCHECKED, name=TO DO)'))[0].state)
+      .toBe('open');
+  });
+
+  it('still reads DONE as finished', () => {
+    expect(parseChecklistItems(buildDump('status=Status(id=3, statusState=CHECKED, name=DONE)'))[0].state)
+      .toBe('done');
+  });
+
+  it('reads SKIPPED as its own state, not as not-started', () => {
+    expect(parseChecklistItems(buildDump('status=Status(id=4, statusState=UNCHECKED, name=SKIPPED)'))[0].state)
+      .toBe('skipped');
+  });
+
+  it('never lets the item TEXT decide the state', () => {
+    // "progress" in somebody's checklist wording must not set the item to In progress.
+    const dump = `["Checklist(id=1, _items=[Item(id=1, value=review the progress report, rank=0, `
+      + `status=Status(id=1, statusState=UNCHECKED, name=TO DO))], done=0)"]`;
+
+    expect(parseChecklistItems(dump)[0].state).toBe('open');
+  });
+
+  it('falls back to statusState when the item carries no status group at all', () => {
+    const dump = '["Checklist(id=1, _items=[Item(id=1, value=a, rank=0, statusState=CHECKED)], done=1)"]';
+
+    expect(parseChecklistItems(dump)[0].state).toBe('done');
+  });
+});

@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Roll-Up Board — an item set to IN PROGRESS in Jira read as "To do" on the board.** The app stores an
+  item's status twice: a `statusState` that only knows ticked from unticked, and a display `name` that
+  is the only place *In progress* and *Skipped* can be expressed at all. The reader looked for the name
+  with a regex, and a regex cannot do this — `[^)]*?` stops at the first closing bracket, so the moment
+  a Status carried any nested group of its own the name was never reached and the reader fell back to
+  `statusState`, which says UNCHECKED for both. The status group is now extracted by counting brackets.
+- **Roll-Up Board — an unfamiliar checklist status is no longer read as "not started".** Statuses are
+  display strings from a third-party app, and the reader compared them against a list of exact values —
+  so "In Progress (dev)", or any custom status a team adds, silently became To do. It now matches on the
+  words. Where the two status fields disagree, ticked wins: the checkbox is the harder fact.
+
+### Added
+- **Checklist diagnostics now show what each item’s state was read FROM.** The counts alone could not
+  explain this one — the count was right and the state was wrong. Each item now reports its text, the
+  state the board resolved, and the raw status words it resolved that state from, so a disagreement
+  between Jira and the board is settled by looking at the one string it turns on.
+
 ### Changed
 - **Roll-Up Board — checklist cards go read-only where the instance cannot write them.** The diagnostics
   settled it on the live instance: the only checklist field Jira will accept a write to holds the app's

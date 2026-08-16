@@ -120,12 +120,6 @@ const DUMP_ITEM_MARKER = /Item\(/;
 /** The item's text, which runs to the next known key rather than to a delimiter it may contain. */
 const DUMP_VALUE_PATTERN = /(?:^|,\s*)value=([\s\S]*?)(?=,\s*(?:rank|status|quotes|assignees|history|mandatory|description|weight|removeStatus)=)/;
 
-/** Whether the app considers the item ticked. */
-const DUMP_STATUS_STATE_PATTERN = /statusState=([A-Z_]+)/;
-
-/** The status's display name, which is the only place "in progress" is expressible. */
-const DUMP_STATUS_NAME_PATTERN = /status=Status\([^)]*?\bname=([^,)]+)/;
-
 /** The item's own id, which the app assigns and keeps across edits and reorders. */
 const DUMP_ITEM_ID_PATTERN = /^id=(\d+)/;
 
@@ -135,28 +129,60 @@ const DUMP_RANK_PATTERN = /(?:^|,\s*)rank=(\d+)/;
 /** The first assignee's user name, which is what a mention resolves to. */
 const DUMP_ASSIGNEE_PATTERN = /Assignee\([^)]*?\buserName=([^,)]+)/;
 
-/** Status names that mean work has started. Compared loosely because they are display strings. */
-const DUMP_IN_PROGRESS_NAMES = ['in progress', 'in-progress', 'doing', 'started'];
+/**
+ * Pulls out one item's `status=Status(…)` group, counting brackets rather than matching them.
+ *
+ * A regex cannot do this. `[^)]*?` stops at the FIRST closing bracket, so the moment a Status carries
+ * any nested group of its own the name is never reached — and the reader silently falls back to
+ * `statusState`, which says UNCHECKED for both "to do" and "in progress". That is exactly how an item
+ * set to IN PROGRESS in Jira came back to the board as To do.
+ */
+function extractStatusBlock(itemBlock: string): string {
+  const startIndex = itemBlock.indexOf('status=Status(');
+  if (startIndex < 0) return '';
 
-/** Status names that mean the item was deliberately set aside — not started, and not going to be. */
-const DUMP_SKIPPED_NAMES = ['skipped', 'skip', 'n/a', 'not applicable'];
+  let openBracketCount = 0;
+  for (let index = startIndex; index < itemBlock.length; index += 1) {
+    if (itemBlock[index] === '(') openBracketCount += 1;
+    else if (itemBlock[index] === ')') {
+      openBracketCount -= 1;
+      if (openBracketCount === 0) return itemBlock.slice(startIndex, index + 1);
+    }
+  }
+  // Unterminated — take what there is rather than nothing, since the name usually comes early.
+  return itemBlock.slice(startIndex);
+}
+
+/** The status words this item carries, lower-cased, from whichever of the two fields hold them. */
+export function readDumpStatusWords(itemBlock: string): string {
+  const statusBlock = extractStatusBlock(itemBlock);
+  const statusName = /\bname=([^,)]*)/.exec(statusBlock)?.[1] ?? '';
+  // Read from the whole item when there is no status group, but ONLY from a keyed token — matching
+  // loose words against the whole block would let an item called "in progress work" set its own state.
+  const statusState = /\bstatusState=([A-Za-z_ -]+)/.exec(statusBlock || itemBlock)?.[1] ?? '';
+  return `${statusName} ${statusState}`.trim().toLowerCase();
+}
 
 /**
  * Reads one item block's state from its status.
  *
- * The NAME is preferred over `statusState` because it is the only place the app expresses anything
- * beyond ticked/unticked: both IN PROGRESS and SKIPPED are UNCHECKED as far as `statusState` is
- * concerned, so reading that alone collapses three distinct states into one.
+ * Matched by WORDS rather than against a list of exact values, because these are display strings from
+ * a third-party app: "IN PROGRESS", "In Progress" and a custom "In progress (dev)" all mean the same
+ * thing, and an exact-match list turns every one it has not seen into "not started" — the quietest
+ * possible way to be wrong.
+ *
+ * Order is load-bearing. "In progress" is UNCHECKED as far as `statusState` is concerned, so the
+ * progress test has to come before the unchecked one or it never fires.
  */
 function readDumpItemState(itemBlock: string): ChecklistItemState {
-  const statusName = (DUMP_STATUS_NAME_PATTERN.exec(itemBlock)?.[1] ?? '').trim().toLowerCase();
-  if (DUMP_IN_PROGRESS_NAMES.includes(statusName)) return 'in-progress';
-  if (DUMP_SKIPPED_NAMES.includes(statusName)) return 'skipped';
-  if (statusName === 'done') return 'done';
+  const statusWords = readDumpStatusWords(itemBlock);
 
-  const statusState = (DUMP_STATUS_STATE_PATTERN.exec(itemBlock)?.[1] ?? '').trim().toUpperCase();
-  if (statusState === 'SKIPPED') return 'skipped';
-  return statusState === 'CHECKED' ? 'done' : 'open';
+  if (/skip|\bn\/a\b|not applicable/.test(statusWords)) return 'skipped';
+  if (/progress|doing|started|\bwip\b/.test(statusWords)) return 'in-progress';
+  // Ticked beats every name. Where the two disagree the checkbox is the harder fact — and `unchecked`
+  // never matches `\bchecked\b`, because a word boundary needs a non-word character before it.
+  if (/\bchecked\b|\bdone\b|complete|finished/.test(statusWords)) return 'done';
+  return 'open';
 }
 
 /**

@@ -17,7 +17,12 @@
 import { useState } from 'react';
 
 import { jiraGet } from '../../../../services/jiraApi.ts';
-import { chooseChecklistFieldByValue, findChecklistFieldId, parseChecklistItems } from '../checklistItems.ts';
+import {
+  chooseChecklistFieldByValue,
+  findChecklistFieldId,
+  parseChecklistItems,
+  readDumpStatusWords,
+} from '../checklistItems.ts';
 import styles from '../RollupBoardTab.module.css';
 
 /** How much of a raw value to show. Enough to recognise the shape, short of a wall of text. */
@@ -43,6 +48,15 @@ interface ChecklistProbeResult {
    * at all there is no winner, and the panel fell silent exactly when it was needed.
    */
   parsedItemCountByFieldId: Record<string, number>;
+  /**
+   * What the parser made of each item in the CHOSEN field: its text, the state it resolved to, and
+   * the status words it resolved that state FROM.
+   *
+   * The counts alone could not explain the case that actually happened — an item set to In progress
+   * in Jira reading as To do on the board. The count was right; the state was wrong; and nothing on
+   * screen showed which of the app's two status fields the parser had been looking at.
+   */
+  parsedItems: Array<{ text: string; state: string; statusWords: string }>;
   errorMessage: string | null;
 }
 
@@ -57,10 +71,24 @@ function previewRawValue(rawValue: unknown): string {
     : encoded;
 }
 
+/**
+ * The status words behind one item, found by locating that item's own block in the stored dump.
+ *
+ * Reported rather than inferred: when the board and Jira disagree about an item's state, the useful
+ * question is not "what did the parser decide" but "what was it looking at when it decided".
+ */
+function readDumpStatusWordsForItem(rawValue: unknown, itemText: string): string {
+  const dumpText = typeof rawValue === 'string' ? rawValue : JSON.stringify(rawValue ?? '');
+  const itemBlocks = dumpText.split('Item(').slice(1);
+  const owningBlock = itemBlocks.find((itemBlock) => itemBlock.includes(itemText));
+  return owningBlock === undefined ? '' : readDumpStatusWords(owningBlock);
+}
+
 /** Reads the field catalogue and one issue, and reports what the board would make of them. */
 async function probeChecklistField(issueKey: string): Promise<ChecklistProbeResult> {
   const emptyResult: ChecklistProbeResult = {
-    candidates: [], chosenFieldId: null, rawValueByFieldId: {}, parsedItemCountByFieldId: {}, errorMessage: null,
+    candidates: [], chosenFieldId: null, rawValueByFieldId: {}, parsedItemCountByFieldId: {},
+    parsedItems: [], errorMessage: null,
   };
 
   try {
@@ -99,11 +127,25 @@ async function probeChecklistField(issueKey: string): Promise<ChecklistProbeResu
     // The SAME choice the board makes, not a second rule that happens to agree today. This panel
     // previously reported the name-first pick while the board read the value-first one, so on the
     // very instance it was built to explain it named a different field than the board was using.
+    const chosenFieldId = chooseChecklistFieldByValue(
+      candidates.map((candidate) => candidate.id),
+      issueFields,
+    );
+    // Read back through the SAME parser the board uses, reporting the status words each state came
+    // from — the one string a "Jira says In progress, the board says To do" disagreement turns on.
+    const chosenRawValue = chosenFieldId === null ? null : issueFields[chosenFieldId];
+    const parsedItems = parseChecklistItems(chosenRawValue).map((item) => ({
+      text: item.text,
+      state: item.state,
+      statusWords: readDumpStatusWordsForItem(chosenRawValue, item.text),
+    }));
+
     return {
       candidates,
-      chosenFieldId: chooseChecklistFieldByValue(candidates.map((candidate) => candidate.id), issueFields),
+      chosenFieldId,
       rawValueByFieldId,
       parsedItemCountByFieldId,
+      parsedItems,
       errorMessage: null,
     };
   } catch (probeError: unknown) {
@@ -180,6 +222,21 @@ export function ChecklistDiagnosticsPanel() {
               )}
             </div>
           ))}
+
+          {/* What the parser made of each item, beside the state Jira shows. An item reading To do on
+              the board while Jira says In progress is a disagreement about ONE string, and this is
+              the string. */}
+          {probeResult.parsedItems.length > 0 && (
+            <div className={styles.diagnosticRow}>
+              <span className={styles.fieldLabel}>Items the board read, and the state each resolved to:</span>
+              {probeResult.parsedItems.map((parsedItem) => (
+                <pre className={styles.diagnosticValue} key={parsedItem.text}>
+                  {parsedItem.text} → {parsedItem.state}
+                  {'\n'}from status: {parsedItem.statusWords || '(no status found in the stored value)'}
+                </pre>
+              ))}
+            </div>
+          )}
 
           {/* The case the panel exists for. Reporting only the WINNER's count said nothing here,
               because when nothing parses there is no winner — it fell silent exactly when needed. */}
