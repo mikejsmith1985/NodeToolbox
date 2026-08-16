@@ -37,14 +37,19 @@ export interface ChecklistLineForm {
  * that tried arbitrary symbols would be writing rubbish into somebody's checklist to learn nothing.
  */
 export const CHECKLIST_LINE_FORMS: ChecklistLineForm[] = [
-  { id: 'dash', label: '- item', buildLine: (itemText) => `- ${itemText}` },
-  { id: 'plus', label: '+ item', buildLine: (itemText) => `+ ${itemText}` },
-  { id: 'tilde', label: '~ item', buildLine: (itemText) => `~ ${itemText}` },
-  { id: 'star', label: '* item', buildLine: (itemText) => `* ${itemText}` },
-  { id: 'bracket-blank', label: '- [ ] item', buildLine: (itemText) => `- [ ] ${itemText}` },
-  { id: 'bracket-x', label: '- [x] item', buildLine: (itemText) => `- [x] ${itemText}` },
-  { id: 'bracket-tilde', label: '- [~] item', buildLine: (itemText) => `- [~] ${itemText}` },
-  { id: 'bracket-arrow', label: '- [>] item', buildLine: (itemText) => `- [>] ${itemText}` },
+  // The four the app documents, in its own words: "- item todo, + item done, ~ item in progress,
+  // x item cancelled".
+  { id: 'dash', label: '- item  (to do)', buildLine: (itemText) => `- ${itemText}` },
+  { id: 'plus', label: '+ item  (done)', buildLine: (itemText) => `+ ${itemText}` },
+  { id: 'tilde', label: '~ item  (in progress)', buildLine: (itemText) => `~ ${itemText}` },
+  { id: 'letter-x', label: 'x item  (cancelled)', buildLine: (itemText) => `x ${itemText}` },
+  // The custom-status form, kept because a team that has defined its own statuses writes them this
+  // way and the board should be able to confirm which ones this instance actually honours.
+  { id: 'custom-in-progress', label: '- [IN PROGRESS] item', buildLine: (itemText) => `- [IN PROGRESS] ${itemText}` },
+  { id: 'custom-done', label: '+ [DONE] item', buildLine: (itemText) => `+ [DONE] ${itemText}` },
+  // Kept only to DISPROVE it: this is the form the board wrongly wrote for four releases, and seeing
+  // it come back as "To do" beside the ones that work is the clearest possible record of why.
+  { id: 'bracket-x', label: '- [x] item  (wrong — a custom status named "x")', buildLine: (itemText) => `- [x] ${itemText}` },
 ];
 
 /** What one candidate form turned out to mean on this instance. */

@@ -22,32 +22,46 @@ describe('parseChecklistItems', () => {
     expect(items[0].assigneeUserId).toBe('C8Q6T3');
   });
 
-  it('reads all three states', () => {
-    const items = parseChecklistItems('- [ ] open\n- [>] doing\n- [x] finished');
+  it('reads the four states the app documents', () => {
+    // Straight from Smart Checklist's own formatting guide: "- item todo, + item done,
+    // ~ item in progress, x item cancelled". Every one of these was previously guessed instead of
+    // looked up, and every guess was wrong.
+    const items = parseChecklistItems('- todo\n+ finished\n~ doing\nx dropped');
 
-    expect(items.map((item) => item.state)).toEqual(['open', 'in-progress', 'done']);
+    expect(items.map((item) => item.state)).toEqual(['open', 'done', 'in-progress', 'skipped']);
   });
 
-  it('accepts the other in-progress markers the app writes', () => {
-    expect(parseChecklistItems('- [>] a')[0].state).toBe('in-progress');
-    expect(parseChecklistItems('- [/] a')[0].state).toBe('in-progress');
+  it('reads a tilde as IN PROGRESS, which is what the app means by it', () => {
+    // Read as "skipped" for two releases, so work actually in flight showed as deliberately set
+    // aside — and the board then refused to write the state it had misread.
+    expect(parseChecklistItems('~ a')[0].state).toBe('in-progress');
   });
 
-  it('reads a tilde as SKIPPED, which the app has as a status of its own', () => {
-    // Previously read as in-progress, so an item somebody deliberately set aside came back looking
-    // like work in flight — the opposite of what it says.
-    expect(parseChecklistItems('- [~] a')[0].state).toBe('skipped');
+  it('reads a bare x as cancelled, not as a checkbox', () => {
+    expect(parseChecklistItems('x a')[0].state).toBe('skipped');
   });
 
-  it('treats an unrecognised marker as not started rather than dropping the line', () => {
-    const items = parseChecklistItems('- [?] something odd');
+  it('reads a CUSTOM status by name, which is what the brackets are actually for', () => {
+    // `- [IN QA] Item text` in the app's guide. The board read the brackets as a single-character
+    // checkbox, which is why it wrote `- [x]` and the app read that as a custom status called "x".
+    expect(parseChecklistItems('- [IN PROGRESS] a')[0].state).toBe('in-progress');
+    expect(parseChecklistItems('+ [PASSED] a')[0].state).toBe('done');
+  });
+
+  it('falls back to the marker when a custom status means nothing here', () => {
+    // Exactly what the app itself does with a status it cannot resolve.
+    expect(parseChecklistItems('+ [SOME TEAM THING] a')[0].state).toBe('done');
+  });
+
+  it('keeps the text of an item whose marker it does not recognise', () => {
+    const items = parseChecklistItems('? something odd');
 
     expect(items).toHaveLength(1);
     expect(items[0].state).toBe('open');
   });
 
   it('carries a heading onto the items beneath it, without making a card for the heading', () => {
-    const items = parseChecklistItems('# Setup\n- [ ] first\n- [x] second\n# Teardown\n- [ ] third');
+    const items = parseChecklistItems('# Setup\n- first\n+ second\n# Teardown\n- third');
 
     expect(items).toHaveLength(3);
     expect(items[0].headingText).toBe('Setup');
@@ -55,7 +69,7 @@ describe('parseChecklistItems', () => {
   });
 
   it('takes the mention out of the text, so the owner is not printed twice', () => {
-    const items = parseChecklistItems('- [ ] review the mapping @jsmith please');
+    const items = parseChecklistItems('- review the mapping @jsmith please');
 
     expect(items[0].text).toBe('review the mapping please');
     expect(items[0].assigneeUserId).toBe('jsmith');
@@ -85,7 +99,7 @@ describe('parseChecklistItems', () => {
 
 describe('summarizeChecklist', () => {
   it('counts what is done against the whole list', () => {
-    expect(summarizeChecklist(parseChecklistItems('- [x] a\n- [ ] b\n- [>] c')))
+    expect(summarizeChecklist(parseChecklistItems('+ a\n- b\n~ c')))
       .toEqual({ completedCount: 1, totalCount: 3 });
   });
 

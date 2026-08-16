@@ -19,21 +19,21 @@ import { CHECKLIST_LINE_FORMS } from './checklistSyntax.ts';
 
 /** The marker each state is written back as. */
 /**
- * The line form used for each state until a probe says otherwise.
+ * The line form used for each state, from Smart Checklist's own formatting guide:
  *
- * These were `- [ ]`, `- [x]`, `- [>]` and `- [~]`, and every one of them was wrong: the app stores an
- * unfinished item as a bare `- this is a test`, with no checkbox anywhere. It therefore read a written
- * `- [x] …` as an ordinary to-do item whose text began with a bracket, which is why an item dragged to
- * Complete came back as To Do.
+ *     - item todo     + item done     ~ item in progress     x item cancelled
  *
- * Bare markers are the shape the stored data actually has. `open` is observed; the rest are the best
- * remaining guess and are meant to be replaced by Board setup → "Find out what this checklist accepts",
- * which settles it by experiment rather than by another round of this.
+ * Every one of these was previously guessed rather than looked up, and every guess was wrong — the
+ * board wrote `- [x]`, which the app reads as a CUSTOM STATUS named "x", fails to recognise, and falls
+ * back to the `-` in front of it. That is why an item dragged to Complete came back as To Do.
+ *
+ * A team that has defined its own custom statuses can still override these from Board setup, which
+ * probes what this particular instance honours.
  */
 const DEFAULT_FORM_ID_BY_STATE: Record<ChecklistItemState, string> = {
   open: 'dash',
-  'in-progress': 'bracket-arrow',
-  skipped: 'tilde',
+  'in-progress': 'tilde',
+  skipped: 'letter-x',
   done: 'plus',
 };
 
@@ -298,10 +298,11 @@ export interface ChecklistStateWriteHistory {
  * its own store, where only Jira can reach them.
  */
 export function describeUnwritableStateBlock(state: ChecklistItemState): string {
-  return `"${describeChecklistState(state)}" cannot be written through this instance's checklist text `
-    + 'field — Jira accepts the change and the checklist app leaves the item where it was. Its plain '
-    + 'text carries "To do" and "Done"; the other statuses exist only inside the app. Set this one in '
-    + 'Jira; the board will read it back.';
+  return `"${describeChecklistState(state)}" did not take through this instance's checklist text field `
+    + '— Jira accepted the change and the checklist app left the item where it was. The app documents '
+    + 'a marker for every status, so this usually means the team has a CUSTOM status here: run Board '
+    + 'setup → "Find out what this checklist accepts" to see which forms this instance honours. Until '
+    + 'then, set this one in Jira; the board will read it back.';
 }
 
 /**
@@ -323,9 +324,9 @@ export function describeChecklistWriteAdvice(
   // repeating it sends somebody to reconfigure a setting that is already correct.
   if (provenWritableStates.size > 0) {
     const workingStates = [...provenWritableStates].map(describeChecklistState).join(' and ');
-    return `Other states DO write through this field on this instance (${workingStates} both land), so `
-      + 'the field is right — this particular status is the part the checklist app will not take from '
-      + 'plain text. Set it in Jira; the board will read it back.';
+    return `Other states DO write through this field on this instance (${workingStates} land), so the `
+      + 'field is right and only this status is being refused. Run Board setup → "Find out what this '
+      + 'checklist accepts" to see which form it wants; until then, set this one in Jira.';
   }
 
   const otherViableFields = verdicts.filter((verdict) =>

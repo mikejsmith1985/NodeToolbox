@@ -64,10 +64,23 @@ export interface ChecklistItem {
 }
 
 /** Marker characters, as the app writes them. */
-const DONE_MARKERS = new Set(['x', 'X']);
-const IN_PROGRESS_MARKERS = new Set(['>', '/']);
-/** The app writes a set-aside item with a tilde. */
-const SKIPPED_MARKERS = new Set(['~', '-']);
+/**
+ * The app's documented text syntax, from Smart Checklist for Data Center's own formatting guide:
+ *
+ *     - item todo          + item done          ~ item in progress          x item cancelled
+ *
+ * Worth writing down because every one of these was previously guessed, and guessed wrong. The tilde
+ * is IN PROGRESS, not skipped; cancelled is a bare `x`, not `[x]`; and `>` — which the board invented
+ * — means nothing at all here.
+ */
+const STATE_BY_MARKER: Record<string, ChecklistItemState> = {
+  '-': 'open',
+  '*': 'open',
+  '+': 'done',
+  '~': 'in-progress',
+  x: 'skipped',
+  X: 'skipped',
+};
 
 /**
  * A bare `done/total` summary, which one of this instance's three checklist fields holds instead of
@@ -77,31 +90,43 @@ const SKIPPED_MARKERS = new Set(['~', '-']);
 const PROGRESS_SUMMARY_PATTERN = /^\s*\d+\s*\/\s*\d+\s*$/;
 
 /**
- * A checklist line: an optional bullet, an optional `[state]` box, then the text.
+ * A checklist line: an optional status marker, an optional `[CUSTOM STATUS]`, then the text.
  *
- * The BULLET is captured now rather than thrown away, because on this app it is the marker. An
- * unfinished item is stored as a bare `- this is a test` with no checkbox anywhere, so a reader that
- * treated `-`, `+` and `~` as decoration could only ever report "not started" for every line.
+ * The MARKER is captured rather than thrown away, because on this app it is the whole status. An
+ * unfinished item is stored as a bare `- this is a test`, so a reader treating `-`, `+`, `~` and `x`
+ * as bullet decoration could only ever report "not started" for every line.
+ *
+ * The bracket holds a custom status NAME — `- [IN QA] Item text` — not a single character. Reading it
+ * as one character is what made `- [x]` look like a valid way to write "done"; the app reads that as
+ * a custom status called "x", fails to recognise it, and falls back to the `-` in front of it.
  */
-const ITEM_LINE_PATTERN = /^\s*([-*+~])?\s*(?:\[(.?)\]\s*)?(.*)$/;
-
-/** What a bare bullet means, where the line carries no checkbox to say otherwise. */
-const STATE_BY_BULLET: Record<string, ChecklistItemState> = {
-  '-': 'open',
-  '*': 'open',
-  '+': 'done',
-  '~': 'skipped',
-};
+const ITEM_LINE_PATTERN = /^\s*(?:([-*+~xX])\s+)?(?:\[([^\]]*)\]\s*)?(.*)$/;
 
 /** A heading line, which groups the items beneath it. */
 const HEADING_LINE_PATTERN = /^\s*#+\s*(.+)$/;
 
 /** Reads a marker character into the state it represents. Anything unrecognised means not started. */
+/**
+ * Reads a status expressed in WORDS — a custom status name, or the app's own status display name.
+ *
+ * Shared by the text reader and the object-dump reader on purpose: an item marked `- [IN QA]` in text
+ * and the same item read out of the app's own store must land in the same state, or the board would
+ * disagree with itself depending on which field it happened to read.
+ */
+export function readStateFromWords(statusWords: string): ChecklistItemState | null {
+  const normalized = statusWords.trim().toLowerCase();
+  if (normalized === '') return null;
+
+  if (/skip|cancel|\bn\/a\b|not applicable|won.?t/.test(normalized)) return 'skipped';
+  if (/progress|doing|started|\bwip\b/.test(normalized)) return 'in-progress';
+  if (/\bchecked\b|\bdone\b|complete|finished|passed/.test(normalized)) return 'done';
+  if (/\bunchecked\b|\bto.?do\b|\bopen\b|\bnew\b|backlog/.test(normalized)) return 'open';
+  return null;
+}
+
+/** What a leading marker means. Anything unrecognised is an ordinary unfinished item. */
 function readItemState(markerCharacter: string): ChecklistItemState {
-  if (DONE_MARKERS.has(markerCharacter)) return 'done';
-  if (SKIPPED_MARKERS.has(markerCharacter)) return 'skipped';
-  if (IN_PROGRESS_MARKERS.has(markerCharacter)) return 'in-progress';
-  return 'open';
+  return STATE_BY_MARKER[markerCharacter] ?? 'open';
 }
 
 /**
@@ -275,12 +300,7 @@ export function readDumpStatusSource(itemBlock: string): string {
 function readDumpItemState(itemBlock: string): ChecklistItemState {
   const statusWords = readDumpStatusWords(itemBlock);
 
-  if (/skip|\bn\/a\b|not applicable/.test(statusWords)) return 'skipped';
-  if (/progress|doing|started|\bwip\b/.test(statusWords)) return 'in-progress';
-  // Ticked beats every name. Where the two disagree the checkbox is the harder fact — and `unchecked`
-  // never matches `\bchecked\b`, because a word boundary needs a non-word character before it.
-  if (/\bchecked\b|\bdone\b|complete|finished/.test(statusWords)) return 'done';
-  return 'open';
+  return readStateFromWords(statusWords) ?? 'open';
 }
 
 /**
@@ -363,8 +383,8 @@ export function parseChecklistItems(rawChecklistValue: unknown): ChecklistItem[]
     }
 
     const itemMatch = ITEM_LINE_PATTERN.exec(rawLine);
-    const bulletCharacter = itemMatch?.[1] ?? '';
-    const boxCharacter = itemMatch?.[2] ?? '';
+    const markerCharacter = itemMatch?.[1] ?? '';
+    const customStatusName = itemMatch?.[2] ?? '';
     const { text, assigneeUserId } = extractAssignee(itemMatch?.[3] ?? rawLine);
     if (text === '') continue;
 
@@ -373,11 +393,10 @@ export function parseChecklistItems(rawChecklistValue: unknown): ChecklistItem[]
       id: `checklist-${items.length}`,
       rank: items.length,
       text,
-      // A checkbox says more than a bullet, so it wins where both are present — but a bare bullet is
-      // the only marker this app actually writes.
-      state: boxCharacter !== ''
-        ? readItemState(boxCharacter)
-        : (STATE_BY_BULLET[bulletCharacter] ?? 'open'),
+      // A custom status name says more than the marker in front of it, so it wins where the board can
+      // recognise it. Where it cannot — a status this team invented that means nothing here — the
+      // marker decides, which is exactly what the app itself falls back to.
+      state: readStateFromWords(customStatusName) ?? readItemState(markerCharacter),
       assigneeUserId,
       headingText: currentHeading,
       ownerFilterId: null,

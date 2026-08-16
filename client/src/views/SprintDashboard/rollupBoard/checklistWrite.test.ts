@@ -382,10 +382,12 @@ describe('describeUnwritableStateBlock', () => {
     const message = describeUnwritableStateBlock('in-progress');
 
     expect(message).toContain('In progress');
-    expect(message).toContain('Set this one in Jira');
+    expect(message).toContain('set this one in Jira');
   });
 
-  it('says what the text form can carry, so the limit is understandable rather than arbitrary', () => {
-    expect(describeUnwritableStateBlock('skipped')).toContain('"To do" and "Done"');
+  it('points at the experiment rather than declaring a limit it cannot know', () => {
+    // The app documents a marker for every status, so a refusal almost always means a CUSTOM status
+    // rather than a state with no text form. Claiming the latter sent somebody to the wrong fix.
+    expect(describeUnwritableStateBlock('skipped')).toContain('Find out what this checklist accepts');
   });
 });

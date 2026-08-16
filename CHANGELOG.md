@@ -8,6 +8,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Roll-Up Board — checklist statuses now use the syntax the app documents, which I should have read
+  five releases ago.** From Smart Checklist for Data Center's own formatting guide:
+
+  ```
+  - item todo     + item done     ~ item in progress     x item cancelled
+  ```
+
+  Every marker the board used was invented instead of looked up, and every one was wrong. `~` is **in
+  progress**, not skipped — so work actually in flight was read as deliberately set aside, and the
+  board then refused to write the state it had misread. Cancelled is a bare `x`, not `[x]`. And `>`,
+  which the board wrote for in-progress, means nothing at all.
+
+  The brackets were misread too. `- [IN QA] Item text` is how the app expresses a **custom status by
+  name** — not a single-character checkbox. So `- [x]` was read by the app as a custom status called
+  "x", not recognised, and fell back to the `-` in front of it. That is the whole reason an item
+  dragged to Complete came back as **To Do**: the board was writing a valid to-do line every time.
+
+  Custom statuses are now read by name in both directions, falling back to the marker in front of them
+  when the name means nothing here — which is exactly what the app itself does.
+
+### Changed
+- **The syntax probe now tests the documented forms.** Its job has changed: the base syntax is settled
+  by the documentation, so the probe exists for the part documentation cannot answer — which **custom**
+  statuses a team has defined and whether this field honours them. It also still writes `- [x]`,
+  deliberately, so the form that cost five releases is visible failing beside the ones that work.
+- **The "this state has no text form" message was wrong and is gone.** The app documents a marker for
+  every status, so a refusal almost certainly means a custom status rather than a state that cannot be
+  expressed. It now points at the probe instead of asserting a limit it had no way to know.
+
+### Fixed
 - **Roll-Up Board — the checklist was being written in a syntax this app does not use.** The stored
   text for an unfinished item is a bare `- this is a test @C8Q6T3`. **No checkbox anywhere.** The board
   had been writing `- [x] …` and `- [>] …`, so the app read them as ordinary to-do items whose text
