@@ -177,6 +177,9 @@ function LaneVitalTileView({ tile }: { tile: LaneVitalTile }) {
  * the whole-Feature figure as a slim striped band along the bottom, exactly as the PI Review capacity
  * meter draws carryover. Separating them by position rather than by tone is what makes the family
  * figure legible when it is LOWER than the dev figure, which is the whole point of showing it.
+ *
+ * The striped band is painted LAST for the same reason: the dev band is full height and would
+ * otherwise cover it completely in exactly that case.
  */
 function ProgressVital({ bar, sentenceForm }: { bar: LaneProgressBar; sentenceForm: string | null }) {
   if (bar.devPercent === null) {
@@ -190,16 +193,19 @@ function ProgressVital({ bar, sentenceForm }: { bar: LaneProgressBar; sentenceFo
   return (
     <div className={styles.laneProgress} title={sentenceForm ?? undefined}>
       <div className={styles.laneProgressTrack}>
+        <div
+          className={styles.laneProgressFill}
+          style={{ width: `${Math.min(bar.devPercent, 100)}%` }}
+        />
+        {/* Drawn AFTER the dev band, not before. The dev band is full height, so it covers the bottom
+            row as well — a whole-Feature figure shorter than the dev one disappeared underneath it
+            entirely, which is precisely the case the second figure exists to show. */}
         {hasFamilyFigure && (
           <div
             className={`${styles.laneProgressFill} ${styles.laneProgressFillFamily}`}
             style={{ width: `${Math.min(bar.familyPercent ?? 0, 100)}%` }}
           />
         )}
-        <div
-          className={styles.laneProgressFill}
-          style={{ width: `${Math.min(bar.devPercent, 100)}%` }}
-        />
       </div>
 
       {/* Colour is never the only signal: each figure is named beside its own swatch. */}

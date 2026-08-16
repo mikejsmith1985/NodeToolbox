@@ -8,6 +8,7 @@ import {
   chooseWritableChecklistFieldId,
   describeChecklistWriteAdvice,
   describeChecklistWriteBlock,
+  describeUnwritableStateBlock,
   judgeChecklistFields,
   summarizeChecklistWritability,
   verifyChecklistItemState,
@@ -350,5 +351,41 @@ describe('summarizeChecklistWritability — decided before anybody tries', () =>
     expect(summarizeChecklistWritability([
       { id: 'cf_dump', name: 'Smart Checklist', holds: 'app-data', isOnEditScreen: true, summary: '' },
     ]).reason).toContain('edit screen');
+  });
+});
+
+describe('once a state has landed, the advice stops blaming the field', () => {
+  const VERDICTS = [
+    { id: 'cf_dump', name: 'Smart Checklist', holds: 'app-data' as const, isOnEditScreen: true, summary: '' },
+    { id: 'cf_text', name: 'Checklists', holds: 'text' as const, isOnEditScreen: true, summary: '' },
+  ];
+
+  it('says the FIELD is right when other states have already written through it', () => {
+    // Proved on the live instance: "To do" lands through customfield_10252 and "In progress" does
+    // not. Telling somebody to go and pick a different field would send them to change a setting
+    // that is already correct.
+    const advice = describeChecklistWriteAdvice(VERDICTS, 'cf_text', new Set(['open', 'done']));
+
+    expect(advice).toContain('the field is right');
+    expect(advice).toContain('To do and Done');
+    expect(advice).not.toContain('cannot change checklist items here at all');
+  });
+
+  it('still blames the field while nothing at all has landed', () => {
+    expect(describeChecklistWriteAdvice(VERDICTS, 'cf_text', new Set()))
+      .toContain('cannot change checklist items here at all');
+  });
+});
+
+describe('describeUnwritableStateBlock', () => {
+  it('names the state and where it CAN be set', () => {
+    const message = describeUnwritableStateBlock('in-progress');
+
+    expect(message).toContain('In progress');
+    expect(message).toContain('Set this one in Jira');
+  });
+
+  it('says what the text form can carry, so the limit is understandable rather than arbitrary', () => {
+    expect(describeUnwritableStateBlock('skipped')).toContain('"To do" and "Done"');
   });
 });

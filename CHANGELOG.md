@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Roll-Up Board — the whole-Feature band is drawn on top of the dev band.** The dev band is full
+  height and therefore covers the bottom row as well, so a whole-Feature figure SHORTER than the dev
+  one vanished underneath it completely — precisely the case the second figure exists to show.
+- **Roll-Up Board — the board no longer claims a checklist cannot be written when it demonstrably
+  can.** Writes DO land on this instance: moving a card to the To Do column reverts the item in Jira.
+  What does not land is **In progress** — Jira accepts it, the checklist app leaves the item where it
+  was. The board was reporting that as "no checklist field on this instance can be written to", which
+  is now known to be false and sent somebody off to reconfigure a setting that was already correct.
+
+  It now learns per STATE rather than per field, by doing: a read-back that succeeds proves that state
+  writable, one that fails proves it is not. Once **anything** has landed, the advice stops blaming the
+  field and says the true thing — the field is right, this status is the part the app will not take
+  from plain text, set it in Jira and the board will read it back. A state already proved unwritable is
+  refused immediately rather than failing identically every time, and the memory clears on reload, so
+  an instance that gains a proper checklist text field starts working without anybody clearing a flag.
+
 ### Changed
 - **Roll-Up Board — the progress bar now IS the PI Review capacity meter.** Copied rather than
   approximated: same 22px track, the headline figure as a solid full-height band, and the second series

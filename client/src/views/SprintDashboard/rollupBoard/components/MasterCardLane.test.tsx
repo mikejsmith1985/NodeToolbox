@@ -591,3 +591,34 @@ describe('a collapsed column counts checklist cards too', () => {
     expect(screen.getByTitle(/1 in .* open the column to see them/)).toBeTruthy();
   });
 });
+
+describe('the progress bar draws both figures whichever is ahead', () => {
+  /** The two fills, in the order they are painted. */
+  function readProgressFills(container: HTMLElement): Element[] {
+    return [...container.querySelectorAll('[class*="laneProgressFill"]')];
+  }
+
+  it('paints the whole-Feature band LAST, so a shorter one is not buried', () => {
+    // The dev band is full height and covers the bottom row too, so painting it second hid the
+    // whole-Feature figure completely in exactly the case that figure exists to show.
+    const { container } = render(
+      <MasterCardLane
+        columns={COLUMNS}
+        columnTracks={COLUMN_TRACKS}
+        familyProgress={{
+          dev: { percentComplete: 80, basis: 'issue-count', completedUnits: 8, totalUnits: 10 },
+          family: { percentComplete: 20, basis: 'issue-count', completedUnits: 2, totalUnits: 10 },
+          hasDisagreement: true,
+        }}
+        hasActiveFilters={false}
+        lane={buildLane([buildItem('DEV-1', 'col-todo')])}
+        onToggleCollapsed={vi.fn()}
+      />,
+    );
+
+    const fills = readProgressFills(container);
+    expect(fills).toHaveLength(2);
+    // The family band carries the extra class and must be the one painted second.
+    expect(fills[1].getAttribute('class')).toContain('laneProgressFillFamily');
+  });
+});

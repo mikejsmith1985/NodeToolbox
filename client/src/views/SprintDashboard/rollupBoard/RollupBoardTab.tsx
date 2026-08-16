@@ -66,6 +66,7 @@ import {
 import type { ChecklistItemState } from './checklistItems.ts';
 import {
   describeChecklistWriteAdvice,
+  describeUnwritableStateBlock,
   judgeChecklistFields,
   saveChecklistItemState,
   summarizeChecklistWritability,
@@ -477,6 +478,16 @@ export default function RollupBoardTab({
    * the card it was about, every time, in red.
    */
   const [checklistWriteBlock, setChecklistWriteBlock] = useState<{ issueKey: string; detail: string } | null>(null);
+  /**
+   * Which checklist states this instance has been PROVED able to write, and which it has not.
+   *
+   * Learned by doing, because nothing visible distinguishes them: the same field, the same request and
+   * the same 204 move the item for "To do" and leave it alone for "In progress". Remembering means a
+   * state that has already failed is refused up front instead of failing identically every time — and
+   * that the advice stops claiming the field is wrong once something has landed through it.
+   */
+  const [provenWritableStates, setProvenWritableStates] = useState<ReadonlySet<ChecklistItemState>>(new Set());
+  const [provenUnwritableStates, setProvenUnwritableStates] = useState<ReadonlySet<ChecklistItemState>>(new Set());
   const [pendingChecklistCardId, setPendingChecklistCardId] = useState<string | null>(null);
   const [errorMessageByChecklistCardId, setErrorMessageByChecklistCardId] = useState<Record<string, string>>({});
   const [errorDetailByChecklistCardId, setErrorDetailByChecklistCardId] = useState<Record<string, string>>({});
@@ -1555,6 +1566,12 @@ export default function RollupBoardTab({
     });
   }, []);
 
+  /** Remembers what a read-back proved about one state, so the next attempt is better informed. */
+  const recordChecklistStateOutcome = useCallback((state: ChecklistItemState, isWritten: boolean): void => {
+    const addTo = isWritten ? setProvenWritableStates : setProvenUnwritableStates;
+    addTo((previousStates) => new Set([...previousStates, state]));
+  }, []);
+
   /**
    * Records a checklist write the app ignored: a short line on the card, the explanation in a notice.
    *
@@ -1569,13 +1586,14 @@ export default function RollupBoardTab({
     factMessage: string,
     attemptedFieldId: string,
   ): void => {
-    const detail = `${factMessage} ${describeChecklistWriteAdvice(checklistFieldVerdicts, attemptedFieldId)}`;
+    const detail = `${factMessage} `
+      + describeChecklistWriteAdvice(checklistFieldVerdicts, attemptedFieldId, provenWritableStates);
     setChecklistCardMessage(checklistCardId, 'Did not move.');
     // On the CARD as well as in the notice. The notice sits above a scroll region the reader has
     // usually scrolled past, so a card pointing "above" was pointing off screen.
     setErrorDetailByChecklistCardId((previousDetails) => ({ ...previousDetails, [checklistCardId]: detail }));
     setChecklistWriteBlock({ issueKey, detail });
-  }, [setChecklistCardMessage, checklistFieldVerdicts]);
+  }, [setChecklistCardMessage, checklistFieldVerdicts, provenWritableStates]);
 
   /**
    * Opens the move-blocked dialog, working out first whether anything can be fixed from it.
@@ -1668,6 +1686,17 @@ export default function RollupBoardTab({
     const currentItem = parentItem.checklistItems.find((item) => item.id === cardParts.itemId);
     if (currentItem?.state === nextState) return;
 
+    // Already proved this instance will not take this state. Trying again would produce the identical
+    // silence, so the card says so immediately instead.
+    if (provenUnwritableStates.has(nextState)) {
+      setChecklistCardMessage(checklistCardId, 'Did not move.');
+      setChecklistWriteBlock({
+        issueKey: cardParts.parentKey,
+        detail: describeUnwritableStateBlock(nextState),
+      });
+      return;
+    }
+
     setChecklistCardMessage(checklistCardId, null);
     setPendingChecklistCardId(checklistCardId);
     try {
@@ -1698,6 +1727,7 @@ export default function RollupBoardTab({
           nextState,
           result.targetFieldId ?? '',
         );
+        recordChecklistStateOutcome(nextState, verdict.isWritten);
         if (!verdict.isWritten) {
           reportChecklistWriteFailure(checklistCardId, cardParts.parentKey, verdict.message, result.targetFieldId ?? '');
         }
@@ -1706,7 +1736,8 @@ export default function RollupBoardTab({
       setPendingChecklistCardId(null);
     }
   }, [effectiveChecklistMapping, loadState.allItems, checklistFieldIds, loadBoard, renderedColumns,
-    vocabulary.checklistWriteFieldId, reportChecklistWriteFailure]);
+    vocabulary.checklistWriteFieldId, reportChecklistWriteFailure, provenUnwritableStates,
+    recordChecklistStateOutcome]);
 
   const handleCardDrop = useCallback(async (dragEndEvent: DragEndEvent): Promise<void> => {
     // A checklist card is not an issue and none of the rules below fit it, so it is answered first.
@@ -2020,6 +2051,7 @@ export default function RollupBoardTab({
           nextState,
           result.targetFieldId ?? '',
         );
+        recordChecklistStateOutcome(nextState, verdict.isWritten);
         if (!verdict.isWritten) {
           reportChecklistWriteFailure(checklistCardId, issueKey, verdict.message, result.targetFieldId ?? '');
         }
@@ -2028,7 +2060,7 @@ export default function RollupBoardTab({
       setPendingChecklistCardId(null);
     }
   }, [loadState.allItems, setChecklistCardMessage, loadBoard, checklistFieldIds,
-    vocabulary.checklistWriteFieldId, reportChecklistWriteFailure]);
+    vocabulary.checklistWriteFieldId, reportChecklistWriteFailure, recordChecklistStateOutcome]);
 
   const handleApplyTransition = useCallback(async (option: CardTransitionOption): Promise<void> => {
     if (openIssueKey === null) return;

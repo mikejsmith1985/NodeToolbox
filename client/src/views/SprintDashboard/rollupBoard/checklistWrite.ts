@@ -253,6 +253,33 @@ export function summarizeChecklistWritability(
 }
 
 /**
+ * The states this instance has been PROVED able to write, and the ones proved unable.
+ *
+ * Learned by doing rather than declared, because the two are not distinguishable up front: the same
+ * field, the same request shape and the same 204 produce a checklist that moved for one state and did
+ * not for another. To Do lands; In progress does not. Nothing about the field says so.
+ */
+export interface ChecklistStateWriteHistory {
+  provenWritable: ReadonlySet<ChecklistItemState>;
+  provenUnwritable: ReadonlySet<ChecklistItemState>;
+}
+
+/**
+ * Why a state that has already been proved unwritable will not be attempted again.
+ *
+ * Distinguished from "nothing here can be written" on purpose, and the distinction is the whole
+ * point: once ANY state has landed, the field is right and the message must stop saying it is wrong.
+ * The checklist's plain-text form carries ticked and unticked; the app's other statuses live only in
+ * its own store, where only Jira can reach them.
+ */
+export function describeUnwritableStateBlock(state: ChecklistItemState): string {
+  return `"${describeChecklistState(state)}" cannot be written through this instance's checklist text `
+    + 'field — Jira accepts the change and the checklist app leaves the item where it was. Its plain '
+    + 'text carries "To do" and "Done"; the other statuses exist only inside the app. Set this one in '
+    + 'Jira; the board will read it back.';
+}
+
+/**
  * What somebody should DO after a write the checklist app ignored.
  *
  * Two genuinely different situations, and telling them apart matters more than the words do. If some
@@ -264,7 +291,18 @@ export function summarizeChecklistWritability(
 export function describeChecklistWriteAdvice(
   verdicts: readonly ChecklistFieldVerdict[],
   attemptedFieldId: string,
+  /** States already proved writable on this field. One is enough to settle that the field is right. */
+  provenWritableStates: ReadonlySet<ChecklistItemState> = new Set(),
 ): string {
+  // Once anything has landed through this field, "no field here can be written" is simply false, and
+  // repeating it sends somebody to reconfigure a setting that is already correct.
+  if (provenWritableStates.size > 0) {
+    const workingStates = [...provenWritableStates].map(describeChecklistState).join(' and ');
+    return `Other states DO write through this field on this instance (${workingStates} both land), so `
+      + 'the field is right — this particular status is the part the checklist app will not take from '
+      + 'plain text. Set it in Jira; the board will read it back.';
+  }
+
   const otherViableFields = verdicts.filter((verdict) =>
     verdict.id !== attemptedFieldId && verdict.holds !== 'app-data' && verdict.isOnEditScreen);
 
