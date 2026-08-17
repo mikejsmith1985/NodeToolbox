@@ -982,3 +982,15 @@
   color: var(--color-text-secondary);
   font-size: var(--font-size-xs, var(--font-size-sm));
 }
+
+/* Said in place of a list, never beside one. An empty table of headings looks like a failure; a
+   sentence looks like an answer. */
+.emptyIssueList {
+  margin: 0;
+  padding: var(--spacing-lg);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-subtle);
+  color: var(--color-text-secondary);
+  text-align: center;
+}

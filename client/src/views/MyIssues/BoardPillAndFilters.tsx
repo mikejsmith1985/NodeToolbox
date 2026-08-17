@@ -5,6 +5,7 @@
 // Returns null when no board is selected, so the caller can omit it entirely.
 
 import type { JiraBoardQuickFilter } from './myIssuesExtendedTypes.ts';
+import { ClipboardIcon } from '../../components/AppIcons/index.tsx';
 import styles from './BoardPillAndFilters.module.css';
 
 // ── Props ──
@@ -36,7 +37,7 @@ export default function BoardPillAndFilters({
     <div className={styles.container}>
       <div className={styles.boardRow}>
         <span className={styles.boardPill}>
-          📋 {boardName}
+          <ClipboardIcon /> {boardName}
           <button
             aria-label="Clear board"
             className={styles.clearBoardButton}

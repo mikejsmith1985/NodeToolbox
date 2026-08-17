@@ -12,6 +12,7 @@ import { openSharePointRelay, openSnowRelay, SHAREPOINT_RELAY_BOOKMARKLET_CODE, 
 import { readSharePointSiteUrl } from '../../services/sharePointSiteUrl.ts';
 import { useAdminStore } from '../../store/adminStore.ts';
 import { useConnectionStore } from '../../store/connectionStore.ts';
+import { ExcludedIcon, LoadedIcon, WarningIcon } from '../AppIcons/index.tsx';
 import styles from './ConnectionBar.module.css';
 
 // ── Types ──
@@ -113,14 +114,19 @@ function SnowPanel({
   return (
     <div className={styles.panelContent}>
       <p className={styles.panelStatus}>
-        {isSnowActive
-          ? `✅ ServiceNow reachable${lastPingText !== null ? ` — last relay ping at ${lastPingText}` : ''}`
-          : '❌ ServiceNow not reachable'}
+        {isSnowActive ? (
+          <>
+            <LoadedIcon /> ServiceNow reachable
+            {lastPingText !== null ? ` — last relay ping at ${lastPingText}` : ''}
+          </>
+        ) : (
+          <><ExcludedIcon /> ServiceNow not reachable</>
+        )}
       </p>
       <p className={styles.panelLabel}>Method: {getConnectionMethodText()}</p>
       {isRelayActive && !hasSessionToken ? (
         <p className={styles.panelWarning} role="alert">
-          ⚠ Relay is connected, but the ServiceNow session token is not ready yet. Wait for the SNow page to finish
+          <WarningIcon /> Relay is connected, but the ServiceNow session token is not ready yet. Wait for the SNow page to finish
           loading, then click the latest NodeToolbox SNow Relay bookmarklet again.
         </p>
       ) : null}

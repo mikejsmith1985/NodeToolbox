@@ -4,6 +4,7 @@ import type { WorkLogTab } from './hooks/useDevWorkspaceState.ts';
 import { useDevWorkspaceState } from './hooks/useDevWorkspaceState.ts';
 import { useDevWorkspaceSettings } from './hooks/useDevWorkspaceSettings.ts';
 import { useGitHubPollingEngine } from './hooks/useGitHubPollingEngine.ts';
+import { ExcludedIcon } from '../../components/AppIcons/index.tsx';
 import styles from './EmbeddedWorkspacePanels.module.css';
 
 const TICK_INTERVAL_MS = 1000;
@@ -113,7 +114,7 @@ function TimeTrackingPanel({ state, actions }: PanelProps) {
                   onClick={() => actions.removeTimer(timer.issueKey)}
                   aria-label={`Remove timer for ${timer.issueKey}`}
                 >
-                  ✕
+                  <ExcludedIcon />
                 </button>
               </div>
               <p className={styles.timerSummary}>{timer.issueSummary}</p>

@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Roll-Up Board — a card can be moved without a pointer.** Right-click → **Move to <column>**. Until
+  now there was exactly one way to move work: press and drag with a mouse. A keyboard could not do it,
+  a touch screen barely could, and when the drag itself misbehaved — which it did repeatedly — there
+  was nothing to fall back on. One gesture carrying the only path to the board's main verb is a single
+  point of failure, not a design.
+
+  Built as a synthetic drop handed to the SAME handler a real drag uses, rather than a second
+  implementation of "move". Everything that path learned the hard way — a column claiming several Jira
+  states, the transition screen that demands fields, the sub-status write, the refusal that must not
+  revert the card — applies here for free and cannot drift out of step. The card's own column is left
+  out (a no-op wearing the clothes of an option), and so is **Unmapped**, which is where the board puts
+  work it cannot place, never somewhere a person should file something.
+
+### Fixed
+- **My Issues — the compact and table views say when they are empty.** They returned their own bare
+  container, so a filter matching nothing left a row of column headings and no explanation. Answered
+  once, above the view modes, so none of them can forget it. (The default **cards** view already
+  handled this in `SwimlaneCardView` — the gap was narrower than first reported.)
+
+### Changed
+- **The connection strip and My Issues use the shared icon set.** `✅ ❌ ⚠ ✕ 📋 👤 🔗` are now icons that
+  take the theme and sit on the baseline. The status strip is the most-seen furniture in the app.
+
+  The **coloured circles are deliberately left alone**: 🔴🔵🟣⚫✅ in the swimlanes and 🟢🟡🔴 in the
+  linked-issue health are carrying the signal, not decorating it, and replacing them with monochrome
+  line art would delete information rather than tidy it. They need a coloured dot built from theme
+  tokens, which is a different job.
+
 ### Fixed
 - **A timed-out relay request no longer abandons a polling timer forever.** `submitRelayRequest` sets a
   timeout AND a 100ms interval that watches for the bookmarklet's answer. When the answer arrived, both

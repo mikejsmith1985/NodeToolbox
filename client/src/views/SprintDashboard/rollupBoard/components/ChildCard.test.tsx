@@ -405,3 +405,61 @@ describe('ChildCard — raising and clearing the flag', () => {
     expect(screen.queryByRole('menu')).toBeNull();
   });
 });
+
+describe('a card can be moved without a pointer', () => {
+  const COLUMNS = [
+    { id: 'col-todo', name: 'To Do' },
+    { id: 'col-dev', name: 'Working' },
+    { id: 'col-unmapped', name: 'Unmapped', isUnmappedColumn: true },
+  ];
+
+  it('offers every other column from the menu', () => {
+    // Until this existed there was exactly one way to move work: press and drag with a pointer. A
+    // keyboard could not, a touch screen barely could, and when the drag misbehaved — which it did
+    // repeatedly — there was nothing to fall back on.
+    render(<ChildCard item={buildItem({ columnId: 'col-todo' })} moveTargetColumns={COLUMNS} onMoveToColumn={vi.fn()} />);
+
+    fireEvent.contextMenu(screen.getByTestId('rollup-card-DEV-1'));
+
+    expect(screen.getByRole('menuitem', { name: 'Move to Working' })).toBeTruthy();
+  });
+
+  it('does not offer the column the card is already in', () => {
+    // "Move it where it already is" is not an option, it is a no-op wearing one.
+    render(<ChildCard item={buildItem({ columnId: 'col-todo' })} moveTargetColumns={COLUMNS} onMoveToColumn={vi.fn()} />);
+
+    fireEvent.contextMenu(screen.getByTestId('rollup-card-DEV-1'));
+
+    expect(screen.queryByRole('menuitem', { name: 'Move to To Do' })).toBeNull();
+  });
+
+  it('never offers Unmapped, which is where the board PUTS work it cannot place', () => {
+    render(<ChildCard item={buildItem({ columnId: 'col-todo' })} moveTargetColumns={COLUMNS} onMoveToColumn={vi.fn()} />);
+
+    fireEvent.contextMenu(screen.getByTestId('rollup-card-DEV-1'));
+
+    expect(screen.queryByRole('menuitem', { name: /Unmapped/ })).toBeNull();
+  });
+
+  it('reports the card and the column it was sent to', () => {
+    const moves: Array<[string, string]> = [];
+    render(<ChildCard
+      item={buildItem({ columnId: 'col-todo' })}
+      moveTargetColumns={COLUMNS}
+      onMoveToColumn={(issueKey, columnId) => moves.push([issueKey, columnId])}
+    />);
+    fireEvent.contextMenu(screen.getByTestId('rollup-card-DEV-1'));
+
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Move to Working' }));
+
+    expect(moves).toEqual([['DEV-1', 'col-dev']]);
+  });
+
+  it('offers nothing to move on another discipline’s read-only card', () => {
+    render(<ChildCard item={buildItem({ columnId: 'col-todo' })} isReadOnly moveTargetColumns={COLUMNS} onMoveToColumn={vi.fn()} />);
+
+    fireEvent.contextMenu(screen.getByTestId('rollup-card-DEV-1'));
+
+    expect(screen.queryByRole('menuitem', { name: /Move to/ })).toBeNull();
+  });
+});

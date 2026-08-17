@@ -103,6 +103,17 @@ export interface ChildCardProps {
    * would compete with clicking the card itself to open it.
    */
   onToggleFlag?: (issueKey: string, shouldBeFlagged: boolean) => void;
+  /**
+   * Moves this card to a column WITHOUT dragging it.
+   *
+   * Until this existed there was exactly one way to move work — press and drag with a pointer. A
+   * keyboard could not do it, a touch screen barely could, and when the drag itself misbehaved (which
+   * it did repeatedly) there was nothing to fall back on. The same gesture carrying the only path to
+   * the board's main verb is a single point of failure, not a design.
+   */
+  onMoveToColumn?: (issueKey: string, columnId: string) => void;
+  /** The columns this card can be sent to, in board order. Its own column is filtered out here. */
+  moveTargetColumns?: readonly { id: string; name: string; isUnmappedColumn?: boolean }[];
 }
 
 /** Turns a resolved route into one readable sentence, so parentage is never inferred. */
@@ -140,6 +151,8 @@ export function ChildCard({
   containerCandidates = [],
   onNestInto,
   onToggleFlag,
+  onMoveToColumn,
+  moveTargetColumns = [],
 }: ChildCardProps) {
   const [menuPosition, setMenuPosition] = useState<{ xPx: number; yPx: number } | null>(null);
 
@@ -165,7 +178,25 @@ export function ChildCard({
     }]
     : [];
 
-  const menuActions: BoardMenuAction[] = [...flagActions, ...containmentActions];
+  /**
+   * Every column this card could go to, named.
+   *
+   * Its own column is left out — "move it where it already is" is not an option, it is a no-op wearing
+   * one. Unmapped is left out too: it is where the board PUTS work it cannot place, never somewhere a
+   * person should be able to file something.
+   */
+  const moveActions: BoardMenuAction[] = onMoveToColumn && !isReadOnly
+    ? moveTargetColumns
+      .filter((column) => column.id !== item.columnId && !column.isUnmappedColumn)
+      .map((column) => ({
+        id: `move-${column.id}`,
+        label: `Move to ${column.name}`,
+        onSelect: () => onMoveToColumn(item.key, column.id),
+      }))
+    : [];
+
+  // Moves first: it is the board's main verb, and the thing somebody who could not drag came here for.
+  const menuActions: BoardMenuAction[] = [...moveActions, ...flagActions, ...containmentActions];
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: item.key, disabled: isReadOnly });
   // Also a drop target, so one card can be dropped onto another to sequence the work in a column.
   // Disabled alongside the drag: a card nothing may be dragged FROM should not accept a drop either.

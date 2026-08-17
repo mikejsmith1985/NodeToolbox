@@ -27,6 +27,8 @@ import {
   Paperclip,
   Pencil,
   Pin,
+  Link2,
+  User,
   Play,
   Plus,
   RotateCcw,
@@ -144,6 +146,16 @@ export function ClipboardIcon() {
 /** Starts again from the beginning. */
 export function StartOverIcon() {
   return <RotateCcw {...SHARED_ICON_PROPS} />;
+}
+
+/** A person — an assignee, a persona, whoever a view is currently standing in for. */
+export function PersonIcon() {
+  return <User {...SHARED_ICON_PROPS} />;
+}
+
+/** A link between two records. */
+export function LinkIcon() {
+  return <Link2 {...SHARED_ICON_PROPS} />;
 }
 
 /**

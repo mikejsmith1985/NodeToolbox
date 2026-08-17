@@ -2101,6 +2101,30 @@ export default function RollupBoardTab({
   }, [loadState.allItems, setChecklistCardMessage, loadBoard, checklistFieldIds,
     vocabulary.checklistWriteFieldId, reportChecklistWriteFailure, recordChecklistStateOutcome]);
 
+  /**
+   * Moves a card to a column from the menu, with no pointer involved.
+   *
+   * Deliberately built as a synthetic drop and handed to the SAME handler a real drag uses, rather
+   * than as a second implementation of "move". Everything that path learned the hard way — a column
+   * claiming several Jira states, the transition screen that demands fields, the sub-status write, the
+   * refusal that must not revert the card — applies here for free, and cannot drift out of step with
+   * the drag next time one of them changes.
+   *
+   * No pointer position and no rectangle: the zone maths those feed only matter for reordering WITHIN
+   * a column, and this is always a move to a different one.
+   */
+  const handleMoveToColumn = useCallback(async (issueKey: string, columnId: string): Promise<void> => {
+    const movedItem = loadState.allItems.find((item) => item.key === issueKey);
+    if (movedItem === undefined) return;
+
+    await handleCardDrop({
+      active: { id: issueKey },
+      over: { id: buildDropTargetId(movedItem.featureKey ?? NO_FEATURE_KEY, columnId) },
+      delta: { x: 0, y: 0 },
+      activatorEvent: null,
+    } as unknown as DragEndEvent);
+  }, [loadState.allItems, handleCardDrop]);
+
   const handleApplyTransition = useCallback(async (option: CardTransitionOption): Promise<void> => {
     if (openIssueKey === null) return;
 
@@ -2624,6 +2648,8 @@ export default function RollupBoardTab({
               draggedItemKey={draggedItemKey}
               dropPreview={dropPreview}
               onToggleFlag={(issueKey, shouldBeFlagged) => void handleToggleFlag(issueKey, shouldBeFlagged)}
+              onMoveToColumn={(issueKey, columnId) => void handleMoveToColumn(issueKey, columnId)}
+              moveTargetColumns={visibleColumns}
               onOpenChecklistParent={(checklistCard) => handleOpenIssue(checklistCard.parentKey)}
               onSetChecklistState={(checklistCard, nextState) =>
                 void handleToggleChecklistItem(checklistCard.parentKey, checklistCard.itemId, nextState)}

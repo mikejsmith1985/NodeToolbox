@@ -566,3 +566,26 @@ describe('MyIssuesView — personas', () => {
     );
   });
 });
+
+describe('an empty compact or table view says so', () => {
+  // The CARDS view — the default — already answered this, in SwimlaneCardView. The compact and table
+  // modes did not: they returned their own bare container, so a filter that matched nothing left a
+  // row of column headings and no explanation.
+  it('names why there is nothing, instead of showing headings with no rows', () => {
+    mockState.issues = [];
+    mockState.viewMode = 'compact';
+
+    renderMyIssues('report');
+
+    expect(screen.getByText(/No issues here/)).toBeTruthy();
+  });
+
+  it('says the same thing in table mode, since one answer covers every mode', () => {
+    mockState.issues = [];
+    mockState.viewMode = 'table';
+
+    renderMyIssues('report');
+
+    expect(screen.getByText(/No issues here/)).toBeTruthy();
+  });
+});

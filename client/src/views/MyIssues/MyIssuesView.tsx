@@ -46,6 +46,7 @@ import type { ExtendedJiraIssue } from './myIssuesExtendedTypes.ts';
 import SwimlaneCardView from './SwimlaneCardView.tsx';
 import BulkCommentPanel from './BulkCommentPanel.tsx';
 import BoardPillAndFilters from './BoardPillAndFilters.tsx';
+import { LinkIcon, PersonIcon } from '../../components/AppIcons/index.tsx';
 import styles from './MyIssuesView.module.css';
 
 // ── Named constants ──
@@ -381,12 +382,28 @@ function renderTableRow(issue: JiraIssue, inlineIssueExpansion: InlineIssueExpan
   );
 }
 
+/**
+ * Said when a view has no issues in it.
+ *
+ * Every view mode returned its own bare container when the list was empty — a table of headings with
+ * no rows, a card grid with no cards. That is the "is it broken or is it empty?" ambiguity this app
+ * removes everywhere else, and it was left standing on a screen somebody opens every morning. Naming
+ * the two likeliest causes turns a blank panel into a next step.
+ */
+const EMPTY_ISSUE_LIST_MESSAGE = 'No issues here. Either nothing matches the current filters, or the '
+  + 'query returned nothing — clear a filter, or widen the search.';
+
 /** Renders the full issue list in the selected view mode. */
 function renderIssueList(
   issues: JiraIssue[],
   viewMode: ViewMode,
   inlineIssueExpansion: InlineIssueExpansionProps,
 ) {
+  // Answered once, before the view modes, so no mode can forget it — which is how they all did.
+  if (issues.length === 0) {
+    return <p className={styles.emptyIssueList}>{EMPTY_ISSUE_LIST_MESSAGE}</p>;
+  }
+
   if (viewMode === 'compact') {
     return (
       <div className={styles.compactList}>
@@ -805,7 +822,7 @@ function PersonaBar({
               onClick={() => handlePickUser(candidate)}
               type="button"
             >
-              👤 View as {candidate.displayName}
+              <PersonIcon /> View as {candidate.displayName}
             </button>
           ))}
         </div>
@@ -1226,7 +1243,7 @@ export default function MyIssuesView() {
           {linkedPairs.length > 0 && (
             <div className={styles.linkedPairsSection} style={{ marginTop: 'var(--spacing-md)' }}>
               <h3 className={styles.snowSectionTitle}>
-                🔗 Linked Jira ↔ SNow ({linkedPairs.length})
+                <LinkIcon /> Linked Jira ↔ SNow ({linkedPairs.length})
               </h3>
               {linkedPairs.map((linkedPair) => (
                 <LinkedIssuePair key={linkedPair.pairId} pair={linkedPair} />

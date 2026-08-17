@@ -31,7 +31,7 @@ import type { BoardMembershipReason } from '../boardMembershipReason.ts';
 import type { FamilyProgress } from '../rollupBoardTypes.ts';
 import type { CardDetail } from '../cardDetail.ts';
 import type { LaneCellEntry, RenderedColumn, RenderedLane, RollupBoardItem } from '../rollupBoardTypes.ts';
-import { ChildCard } from './ChildCard.tsx';
+import { ChildCard, type ChildCardProps } from './ChildCard.tsx';
 import { ParentContainer, type ParentContainerProps } from './ParentContainer.tsx';
 
 const COLLAPSED_ICON = '▶';
@@ -132,6 +132,8 @@ export interface MasterCardLaneProps {
   onNestInto?: (issueKey: string, containerIssueKey: string) => void;
   /** Raises or clears Jira's impediment flag on a card. */
   onToggleFlag?: (issueKey: string, shouldBeFlagged: boolean) => void;
+  onMoveToColumn?: ChildCardProps['onMoveToColumn'];
+  moveTargetColumns?: ChildCardProps['moveTargetColumns'];
   onSetChecklistState?: ParentContainerProps['onSetChecklistState'];
   onOpenChecklistParent?: ParentContainerProps['onOpenChecklistParent'];
   pendingChecklistCardId?: string | null;
@@ -254,6 +256,8 @@ export function MasterCardLane({
   onToggleSubLaneCollapsed,
   onNestInto,
   onToggleFlag,
+  onMoveToColumn,
+  moveTargetColumns,
   onSetChecklistState,
   onOpenChecklistParent,
   pendingChecklistCardId = null,
@@ -536,6 +540,8 @@ export function MasterCardLane({
                     )}
                     onNestInto={onNestInto}
                     onToggleFlag={onToggleFlag}
+                    onMoveToColumn={onMoveToColumn}
+                    moveTargetColumns={moveTargetColumns}
                     onSetChecklistState={onSetChecklistState}
                     onOpenChecklistParent={onOpenChecklistParent}
                     pendingChecklistCardId={pendingChecklistCardId}
@@ -556,6 +562,8 @@ export function MasterCardLane({
                     }))}
                     onNestInto={onNestInto}
                     onToggleFlag={onToggleFlag}
+                    onMoveToColumn={onMoveToColumn}
+                    moveTargetColumns={moveTargetColumns}
                     detail={cardDetailByIssueKey?.[entry.item.key] ?? null}
                     shouldShowStatus={column.isUnmappedColumn}
                     errorMessage={errorMessageByIssueKey?.[entry.item.key] ?? null}

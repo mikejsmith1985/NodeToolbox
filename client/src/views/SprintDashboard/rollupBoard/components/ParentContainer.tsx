@@ -12,7 +12,7 @@ import { shouldHideDraggedEntry } from '../dropPlaceholder.ts';
 import styles from '../RollupBoardTab.module.css';
 import type { ParentContainer as ParentContainerModel, RollupBoardItem } from '../rollupBoardTypes.ts';
 import { ChecklistCard, type ChecklistCardProps } from './ChecklistCard.tsx';
-import { ChildCard } from './ChildCard.tsx';
+import { ChildCard, type ChildCardProps } from './ChildCard.tsx';
 
 export interface ParentContainerProps {
   container: ParentContainerModel;
@@ -36,6 +36,8 @@ export interface ParentContainerProps {
    */
   onNestInto?: (issueKey: string, containerIssueKey: string) => void;
   onToggleFlag?: (issueKey: string, shouldBeFlagged: boolean) => void;
+  onMoveToColumn?: ChildCardProps['onMoveToColumn'];
+  moveTargetColumns?: ChildCardProps['moveTargetColumns'];
   onSetChecklistState?: ChecklistCardProps['onSetState'];
   onOpenChecklistParent?: ChecklistCardProps['onOpenParent'];
   onOpenIssue?: (issueKey: string) => void;
@@ -65,6 +67,8 @@ export function ParentContainer({
   isReadOnly,
   onNestInto,
   onToggleFlag,
+  onMoveToColumn,
+  moveTargetColumns,
   onSetChecklistState,
   onOpenChecklistParent,
   onOpenIssue,
@@ -112,6 +116,8 @@ export function ParentContainer({
           }))}
           onNestInto={onNestInto}
           onToggleFlag={onToggleFlag}
+          onMoveToColumn={onMoveToColumn}
+          moveTargetColumns={moveTargetColumns}
           isReadOnly={isReadOnly}
           detail={cardDetailByIssueKey?.[item.key] ?? null}
           shouldShowStatus={shouldShowStatus}
