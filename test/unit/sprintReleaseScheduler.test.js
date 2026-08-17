@@ -37,6 +37,7 @@ const {
 
 const {
   startSprintReleaseScheduler,
+  stopSprintReleaseScheduler,
   triggerPollCycleNow,
   getSprintReleaseStatus,
 } = require('../../src/services/sprintReleaseScheduler');
@@ -83,6 +84,10 @@ describe('startSprintReleaseScheduler', () => {
   });
 
   afterEach(() => {
+    // Every start here left a live interval behind, which kept the Jest worker alive and made the
+    // whole server suite exit only because Jest force-killed it. Stopping is the test's job now that
+    // there is something to call.
+    stopSprintReleaseScheduler();
     jest.useRealTimers();
   });
 

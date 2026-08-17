@@ -8,6 +8,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **A timed-out relay request no longer abandons a polling timer forever.** `submitRelayRequest` sets a
+  timeout AND a 100ms interval that watches for the bookmarklet's answer. When the answer arrived, both
+  were cleared. When it did **not**, the timeout rejected the promise and left the interval running —
+  and nothing held a reference to it, so nothing could ever stop it. Every relay request that ever
+  timed out left another poller running for the life of the server process. The timeout now clears it,
+  with a test that pins the cleanup rather than the error.
+- **The Sprint–Release scheduler can be stopped.** It cleared its own handle when RESTARTED, but there
+  was no way to stop it without starting it again — so a process shutting down could not release its
+  timer, and the test suite could only leave the interval running and let Jest force-kill the worker
+  holding it. `stopSprintReleaseScheduler()` is now exported, safe to call when nothing is running, and
+  the tests use it.
+
+### Notes
+- Both were found by asking why `npm test` hard-codes `--forceExit`, and both are real process leaks
+  rather than test artefacts. Jest still reports one worker force-exiting when the whole suite runs in
+  parallel; every file is clean on its own and `test/unit` is clean as a directory, so the remainder is
+  an interaction inside `test/integration` that has not been isolated yet. It does not affect the
+  result — 1,042 server tests pass and the run exits 0.
+
+### Fixed
 - **The test suite is green because it passes, not because it got lucky.** Capping vitest to half the
   machine's cores finished what the timeout raise started. 632 test files on a 32 core box were being
   run at a parallelism the machine could not sustain: every worker builds its own jsdom, and that

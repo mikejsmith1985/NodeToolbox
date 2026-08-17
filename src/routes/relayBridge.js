@@ -520,12 +520,18 @@ module.exports.submitRelayRequest = async function submitRelayRequest(sys, reque
 
   // Wait for the bookmarklet to post the result
   return new Promise((resolve, reject) => {
+    // Declared before the timeout so the timeout can CLEAR it. Previously the timeout only rejected,
+    // leaving this interval polling every 100ms for the life of the process — one abandoned poller per
+    // relay request that ever timed out, and nothing to ever stop them.
+    let checkResult = null;
+
     const timer = setTimeout(() => {
+      clearInterval(checkResult);
       reject(new Error('Relay request timed out after ' + timeoutMs + 'ms. Ensure the bookmarklet is active and ServiceNow is accessible.'));
     }, timeoutMs);
 
     // Check for result frequently since the bookmarklet may be slow
-    const checkResult = setInterval(() => {
+    checkResult = setInterval(() => {
       if (channel.pendingResults[requestId]) {
         clearTimeout(timer);
         clearInterval(checkResult);

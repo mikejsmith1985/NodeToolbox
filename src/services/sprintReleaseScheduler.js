@@ -452,6 +452,26 @@ function startSprintReleaseScheduler(configuration) {
 }
 
 /**
+ * Stops the poll loop, if one is running.
+ *
+ * Every other scheduler here clears its handle when it restarts, and this one does too — but until
+ * now there was no way to stop it WITHOUT starting it again. That is a real gap rather than a test
+ * convenience: a process shutting down had no way to let its timer go, and the test suite could only
+ * leave the interval running and have Jest force-kill the worker holding it.
+ *
+ * Safe to call when nothing is running, so a caller never has to track whether it started one.
+ */
+function stopSprintReleaseScheduler() {
+  if (!schedulerIntervalHandle) {
+    return;
+  }
+  clearInterval(schedulerIntervalHandle);
+  schedulerIntervalHandle = null;
+  nextPollAt = null;
+  console.log('[SprintRelease] Scheduler stopped.');
+}
+
+/**
  * Triggers an immediate poll cycle outside the scheduled interval.
  * Used by the POST /api/sprint-release/run-now endpoint.
  *
@@ -487,6 +507,7 @@ function getSprintReleaseStatus(configuration) {
 
 module.exports = {
   startSprintReleaseScheduler,
+  stopSprintReleaseScheduler,
   triggerPollCycleNow,
   getSprintReleaseStatus,
   // Exported for unit tests:

@@ -518,3 +518,30 @@ describe.each(['snow', 'sharepoint'])('relay recovery after a restart (%s)', (sy
     expect(pollResponse.body).toHaveProperty('shouldReregister');
   });
 });
+
+// ── Timed-out requests must not leave a poller behind ─────────────────────────
+
+describe('submitRelayRequest() — a timeout releases everything it started', () => {
+  it('clears the 100ms result poller when the request times out', async () => {
+    // The bug this pins: the timeout rejected the promise and left the interval polling forever, so
+    // every relay request that ever timed out abandoned a 100ms timer for the life of the process.
+    // Nothing held a reference to it, so nothing could ever stop it.
+    const app = buildTestApp();
+    await request(app).post('/api/relay-bridge/register?sys=snow').send({});
+    await request(app)
+      .post('/api/relay-bridge/request')
+      .send({ sys: 'snow', id: 'prime-ready', method: 'GET', path: '/test' });
+    await request(app).get('/api/relay-bridge/poll?sys=snow');
+
+    const clearIntervalSpy = jest.spyOn(global, 'clearInterval');
+    // Short enough to expire on real timers without slowing the suite; the bookmarklet never answers.
+    const relayError = await relayBridgeRouter
+      .submitRelayRequest('snow', { method: 'GET', url: '/never-answered' }, 30)
+      .catch((caughtError) => caughtError);
+
+    expect(relayError.message).toContain('timed out');
+    expect(clearIntervalSpy).toHaveBeenCalled();
+
+    clearIntervalSpy.mockRestore();
+  });
+});
