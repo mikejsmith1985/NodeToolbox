@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **The test suite's timeouts fit the tests that are actually in it.** Four tests failed on nearly every
+  full run and passed on every isolated one, which had trained me to read a red suite and shrug — the
+  worst state a test suite can be in. The cause was not logic: `Test timed out in 5000ms`. Several
+  whole-journey tests drive a real component tree from an empty tab to a created Jira issue and take
+  **~2.8s on an idle machine**, so with 632 files competing for the CPU they were starved. Vitest's
+  default clock is now 15s.
+
+  Raised **globally**, which was the second attempt. The first named the three slowest files, and that
+  was the wrong shape: the point of contention is that it does not choose its victim in advance, so
+  naming files could only ever chase the last one to fail. A genuine hang still fails, ten seconds
+  later than before.
+
+- **PI Review — dragging a row no longer throws on every simulated drag.** `handleRowDragStart` and
+  `handleRowDragOver` wrote to `event.dataTransfer` unguarded. A real browser always supplies one and
+  jsdom does not, so every drag test threw a `TypeError` — caught, but noise that made a genuine
+  failure in that file harder to spot. Guarded, which is also correct for any browser that ever hands
+  over an event without one.
+
 ### Changed
 - **SNow Hub — emoji replaced with the app's icon set.** All 20 of them: ➕ ✏️ 📌 ✦ ⚠ ✔ ✓ 📋 ♻️ ✅. An
   emoji is a colour glyph the operating system draws, so it cannot take the app's palette, its type

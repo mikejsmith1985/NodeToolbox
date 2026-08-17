@@ -1088,6 +1088,10 @@ function PiReviewPagePanel({
 
   function handleRowDragStart(rowId: string, dragEvent: ReactDragEvent<HTMLElement>) {
     setDraggingRowId(rowId);
+    // Guarded because a real browser always supplies a dataTransfer and jsdom does not, so an
+    // unguarded write threw on every simulated drag — noise that made a genuine failure in this file
+    // harder to spot, and one more thing going wrong while 631 test files competed for a machine.
+    if (dragEvent.dataTransfer === null || dragEvent.dataTransfer === undefined) return;
     dragEvent.dataTransfer.effectAllowed = 'move';
     // Firefox will not start a drag unless some data is set on the transfer.
     dragEvent.dataTransfer.setData('text/plain', rowId);
@@ -1098,7 +1102,7 @@ function PiReviewPagePanel({
       return;
     }
     dragEvent.preventDefault(); // allow the drop
-    dragEvent.dataTransfer.dropEffect = 'move';
+    if (dragEvent.dataTransfer) dragEvent.dataTransfer.dropEffect = 'move';
     if (dragOverRowId !== rowId) {
       setDragOverRowId(rowId);
     }

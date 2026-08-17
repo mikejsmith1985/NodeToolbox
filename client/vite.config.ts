@@ -59,6 +59,14 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     setupFiles: ['./src/test/setup.ts'],
+    // Vitest's default is 5s. Several whole-journey tests here drive a real component tree from an
+    // empty tab to a created Jira issue and take ~3s on an IDLE machine — so with 632 files competing
+    // for the CPU they were being starved and timing out, in a different file each run.
+    //
+    // Raised globally rather than per file, which was the first attempt and the wrong shape: the point
+    // of contention is that it does not choose its victim in advance, so naming files could only ever
+    // chase the last one to fail. A genuine hang still fails, ten seconds later than it used to.
+    testTimeout: 15_000,
     coverage: {
       provider: 'v8',
       reporter: ['text', 'lcov'],
