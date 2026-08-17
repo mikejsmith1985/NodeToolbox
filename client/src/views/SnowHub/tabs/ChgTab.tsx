@@ -5,6 +5,7 @@ import { useState } from 'react';
 
 import CreateChgTab from './CreateChgTab.tsx';
 import ModifyChgTab from './ModifyChgTab.tsx';
+import { AddIcon, EditIcon } from '../../../components/AppIcons/index.tsx';
 import styles from './CreateChgTab.module.css';
 
 type ChgMode = 'create' | 'modify';
@@ -23,7 +24,7 @@ function ModeToggle({ mode, onModeChange }: {
         onClick={() => onModeChange('create')}
         type="button"
       >
-        ➕ Create New CHG
+        <AddIcon /> Create New CHG
       </button>
       <button
         aria-pressed={mode === 'modify'}
@@ -32,7 +33,7 @@ function ModeToggle({ mode, onModeChange }: {
         title="Load a change that already exists in ServiceNow — edit its fields or add CTASKs to it"
         type="button"
       >
-        ✏️ Modify Existing CHG
+        <EditIcon /> Modify Existing CHG
       </button>
     </div>
   );

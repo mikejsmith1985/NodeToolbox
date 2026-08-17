@@ -21,6 +21,7 @@ import { useCtaskTemplates } from '../hooks/useCtaskTemplates.ts';
 import type { SnowChoiceOptionMap } from '../hooks/useSnowChoiceOptions.ts';
 import { useSnowChoiceOptions } from '../hooks/useSnowChoiceOptions.ts';
 
+import { ClipboardIcon, StartOverIcon } from '../../../components/AppIcons/index.tsx';
 import styles from './CreateChgTab.module.css';
 
 const TAB_TITLE = 'Modify Change';
@@ -736,7 +737,7 @@ function FetchChangeStep({ state, onChangeKeyChange, onFetchClick, onLoadMyChang
 
       {/* My Open Changes section */}
       <div className={styles.fieldGroup}>
-        <label className={styles.fieldLabel}>📋 Load My Changes</label>
+        <label className={styles.fieldLabel}><ClipboardIcon /> Load My Changes</label>
         <div className={styles.cloneInputRow}>
           <button
             className={styles.secondaryButton}
@@ -1532,7 +1533,7 @@ export default function ModifyChgTab(): React.ReactElement {
               title="Discard this change's contents and build it again from scratch, keeping its CHG number"
               type="button"
             >
-              ♻️ Start Over — rebuild from scratch
+              <StartOverIcon /> Start Over — rebuild from scratch
             </button>
           </div>
         </div>

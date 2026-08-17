@@ -11,6 +11,7 @@
 import { useState, type ChangeEvent } from 'react';
 
 import type { usePrbState } from '../hooks/usePrbState.ts';
+import { LoadedIcon } from '../../../components/AppIcons/index.tsx';
 import styles from './PrbTab.module.css';
 
 const STEP_TITLES = ['Pick PRB', 'Issue', 'SL Story', 'Review'] as const;
@@ -50,7 +51,7 @@ function renderStepBody(currentStep: number, props: PrbWizardProps): React.React
         {state.fetchWarning ? <p className={styles.warningText} role="status">{state.fetchWarning}</p> : null}
         {state.prbData ? (
           <p className={styles.detailValue}>
-            ✅ Loaded {state.prbData.number}: {state.prbData.shortDescription}
+            <LoadedIcon /> Loaded {state.prbData.number}: {state.prbData.shortDescription}
           </p>
         ) : null}
       </div>

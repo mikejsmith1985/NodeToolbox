@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { snowFetch } from '../../../services/snowApi.ts';
 import type { SnowReference } from '../hooks/useCrgState.ts';
+import { CheckIcon } from '../../../components/AppIcons/index.tsx';
 import styles from './SnowLookupField.module.css';
 
 // Milliseconds of idle time after the user stops typing before the search fires.
@@ -230,7 +231,7 @@ export function SnowLookupField({
         />
         {isSearching && <span className={styles.spinner} aria-hidden="true" />}
         {isResolved && !isSearching && (
-          <span className={styles.checkmark} title="Record resolved" aria-label="resolved">✓</span>
+          <span className={styles.checkmark} title="Record resolved" aria-label="resolved"><CheckIcon /></span>
         )}
       </div>
       {isOpen && suggestions.length > 0 && (

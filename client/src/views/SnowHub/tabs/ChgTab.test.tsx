@@ -24,8 +24,8 @@ describe('ChgTab', () => {
 
   it('labels the modes with explicit new/existing wording so Modify is discoverable', () => {
     render(<ChgTab />);
-    expect(screen.getByRole('button', { name: '➕ Create New CHG' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '✏️ Modify Existing CHG' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Create New CHG' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Modify Existing CHG' })).toBeInTheDocument();
   });
 
   it('displays the Create tab by default', () => {

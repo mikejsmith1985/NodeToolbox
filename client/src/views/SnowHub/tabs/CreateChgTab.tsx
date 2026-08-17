@@ -26,6 +26,13 @@ import type { SnowChoiceOptionMap } from '../hooks/useSnowChoiceOptions.ts';
 import { useSnowChoiceOptions } from '../hooks/useSnowChoiceOptions.ts';
 import { CtaskEditForm } from '../components/CtaskEditForm.tsx';
 import { SnowLookupField } from '../components/SnowLookupField.tsx';
+import {
+  AiAssistIcon,
+  CheckIcon,
+  ClipboardIcon,
+  PinIcon,
+  WarningIcon,
+} from '../../../components/AppIcons/index.tsx';
 import styles from './CreateChgTab.module.css';
 
 const TAB_TITLE = 'Change Request Generator';
@@ -410,7 +417,7 @@ function FieldControls({
           onClick={handlePinToggle}
           type="button"
         >
-          {matchingPinnedField ? '📌 Saved' : '📌 Save option'}
+          <><PinIcon /> {matchingPinnedField ? 'Saved' : 'Save option'}</>
         </button>
       ) : null}
     </div>
@@ -1399,7 +1406,7 @@ function ChangeDetailsStep({
             title="Draft Short Description and Description from your selected Jira issues using AI Assist"
             type="button"
           >
-            ✦ Draft with AI Assist
+            <AiAssistIcon /> Draft with AI Assist
           </button>
         </div>
       ) : null}
@@ -1455,16 +1462,16 @@ function ChangeDetailsStep({
       {/* Choice availability warning — shown when options haven't been loaded yet. */}
       {!isRelayConnected && !isFetchFailed ? (
         <p className={styles.choiceUnavailableWarning} role="alert">
-          ⚠ SNow relay not connected — dropdown options will load automatically once connected.
+          <WarningIcon /> SNow relay not connected — dropdown options will load automatically once connected.
         </p>
       ) : isRelayConnected && !hasRelaySessionToken && !isFetchFailed ? (
         <p className={styles.choiceUnavailableWarning} role="alert">
-          ⚠ SNow relay is connected, but ServiceNow has not exposed the session token yet. Wait for the SNow page
+          <WarningIcon /> SNow relay is connected, but ServiceNow has not exposed the session token yet. Wait for the SNow page
           to fully load, then click the latest NodeToolbox SNow Relay bookmarklet again.
         </p>
       ) : isFetchFailed ? (
         <p className={styles.choiceUnavailableWarning} role="alert">
-          ⚠ Failed to load dropdown options from SNow
+          <WarningIcon /> Failed to load dropdown options from SNow
           {fetchErrorMessage ? `: ${fetchErrorMessage}` : '.'}{' '}
           <button className={styles.linkButton} onClick={retryFetch} type="button">Retry</button>
           {fetchErrorMessage ? (
@@ -1592,16 +1599,16 @@ function PlanningStep({
       {/* Choice availability warning — mirrors the logic in ChangeDetailsStep. */}
       {!isRelayConnected && !isFetchFailed ? (
         <p className={styles.choiceUnavailableWarning} role="alert">
-          ⚠ SNow relay not connected — dropdown options will load automatically once connected.
+          <WarningIcon /> SNow relay not connected — dropdown options will load automatically once connected.
         </p>
       ) : isRelayConnected && !hasRelaySessionToken && !isFetchFailed ? (
         <p className={styles.choiceUnavailableWarning} role="alert">
-          ⚠ SNow relay is connected, but ServiceNow has not exposed the session token yet. Wait for the SNow page
+          <WarningIcon /> SNow relay is connected, but ServiceNow has not exposed the session token yet. Wait for the SNow page
           to fully load, then click the latest NodeToolbox SNow Relay bookmarklet again.
         </p>
       ) : isFetchFailed ? (
         <p className={styles.choiceUnavailableWarning} role="alert">
-          ⚠ Failed to load dropdown options from SNow
+          <WarningIcon /> Failed to load dropdown options from SNow
           {fetchErrorMessage ? `: ${fetchErrorMessage}` : '.'}{' '}
           <button className={styles.linkButton} onClick={retryFetch} type="button">Retry</button>
           {fetchErrorMessage ? (
@@ -1724,7 +1731,7 @@ function PlanningStep({
             title="Generate a hidden prompt to enhance content with AI Assist"
             type="button"
           >
-            ✦ Enhance with prompt
+            <AiAssistIcon /> Enhance with prompt
           </button>
         </div>
       ) : null}
@@ -2276,7 +2283,7 @@ function ResultsStep({ state, actions, ctaskTemplates, environmentValueByKey, is
             title="Have AI Assist review the CHG payload and flag gaps before submission"
             type="button"
           >
-            ✦ Risk check with AI Assist
+            <AiAssistIcon /> Risk check with AI Assist
           </button>
           {riskCheckReviewText !== null ? (
             <div className={styles.riskCheckResult}>
@@ -2429,7 +2436,7 @@ interface AiAssistPromptSession {
 const ENHANCE_PROMPT_FIELD_KEYS: ReadonlyArray<keyof AiAssistGeneratedFields> = ['shortDescription', 'description', 'justification', 'riskImpact'];
 const DRAFT_PROMPT_FIELD_KEYS: ReadonlyArray<keyof AiAssistGeneratedFields> = ['shortDescription', 'description'];
 
-const APPLY_FIELDS_BUTTON_LABEL = '✔ Apply reply to fields';
+const APPLY_FIELDS_BUTTON_LABEL = 'Apply reply to fields';
 const NO_RECOGNISABLE_FIELDS_MESSAGE =
   'No recognisable fields found — the reply must use the SHORT_DESCRIPTION / DESCRIPTION / JUSTIFICATION / RISK_AND_IMPACT markers.';
 
@@ -2499,7 +2506,7 @@ export default function CrgTab({ mode = 'wizard', targetChangeNumber }: CrgTabPr
   // outcome message shown after the reply is consumed.
   const [aiAssistReplyText, setAiAssistReplyText] = useState<string>('');
   const [aiAssistApplyStatus, setAiAssistApplyStatus] = useState<string | null>(null);
-  // "✓ Copied!" confirmation for the prompt modal's copy button.
+  // The "Copied!" confirmation for the prompt modal's copy button.
   const { hasCopied: hasCopiedPrompt, confirmCopy: confirmPromptCopy } = useCopyFeedback();
   // The pasted pre-submission risk review, displayed on the Results step.
   const [riskCheckReviewText, setRiskCheckReviewText] = useState<string | null>(null);
@@ -2673,7 +2680,7 @@ export default function CrgTab({ mode = 'wizard', targetChangeNumber }: CrgTabPr
       instructions:
         'Copy this prompt and paste it into AI Assist to review the CHG for gaps, then paste the reply below — the review is shown on the Results step.',
       promptText: riskPrompt,
-      applyButtonLabel: '✔ Use this review',
+      applyButtonLabel: 'Use this review',
       applyReply: (replyText) => {
         const trimmedReview = replyText.trim();
         if (!trimmedReview) {
@@ -2827,7 +2834,9 @@ export default function CrgTab({ mode = 'wizard', targetChangeNumber }: CrgTabPr
                 onClick={() => confirmPromptCopy(aiAssistPromptSession.promptText)}
                 type="button"
               >
-                {hasCopiedPrompt ? '✓ Copied!' : '📋 Copy to Clipboard'}
+                {hasCopiedPrompt
+                  ? <><CheckIcon /> Copied!</>
+                  : <><ClipboardIcon /> Copy to Clipboard</>}
               </button>
               <button
                 className={styles.linkButton}
@@ -2857,7 +2866,7 @@ export default function CrgTab({ mode = 'wizard', targetChangeNumber }: CrgTabPr
                 onClick={handleApplyAiAssistReply}
                 type="button"
               >
-                {aiAssistPromptSession.applyButtonLabel}
+                <CheckIcon /> {aiAssistPromptSession.applyButtonLabel}
               </button>
             </div>
             {aiAssistApplyStatus !== null ? (

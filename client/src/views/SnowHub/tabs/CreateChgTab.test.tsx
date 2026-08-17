@@ -813,7 +813,7 @@ describe('CreateChgTab', () => {
     // shared store, so unlock it directly rather than driving a prompt this tab no longer renders.
     act(() => setAiAssistUnlocked(true));
 
-    expect(await screen.findByRole('button', { name: '✦ Enhance with prompt' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Enhance with prompt' })).toBeInTheDocument();
   });
 
   it('shows the prompt modal with a textarea when the hidden prompt button is clicked', async () => {
@@ -826,11 +826,11 @@ describe('CreateChgTab', () => {
     act(() => setAiAssistUnlocked(true));
 
     // Click enhance
-    await user.click(await screen.findByRole('button', { name: '✦ Enhance with prompt' }));
+    await user.click(await screen.findByRole('button', { name: 'Enhance with prompt' }));
 
     // Prompt modal should appear
     expect(await screen.findByText(/Copy this prompt and paste it into AI Assist/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '📋 Copy to Clipboard' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Copy to Clipboard' })).toBeInTheDocument();
   });
 
   it('closes the prompt modal when Close is clicked', async () => {
@@ -841,7 +841,7 @@ describe('CreateChgTab', () => {
     // The app-level AiAssistUnlockGate owns the shortcut and the prompt; this tab only reads the
     // shared store, so unlock it directly rather than driving a prompt this tab no longer renders.
     act(() => setAiAssistUnlocked(true));
-    await user.click(await screen.findByRole('button', { name: '✦ Enhance with prompt' }));
+    await user.click(await screen.findByRole('button', { name: 'Enhance with prompt' }));
 
     // Close prompt modal
     await user.click(await screen.findByRole('button', { name: 'Close' }));
@@ -856,10 +856,10 @@ describe('CreateChgTab', () => {
     mockState.currentStep = 4;
     render(<CreateChgTab />);
     act(() => setAiAssistUnlocked(true));
-    await user.click(await screen.findByRole('button', { name: '✦ Enhance with prompt' }));
+    await user.click(await screen.findByRole('button', { name: 'Enhance with prompt' }));
   }
 
-  it('confirms a prompt copy by flipping the button label to ✓ Copied!', async () => {
+  it('confirms a prompt copy by flipping the button label to Copied!', async () => {
     const user = userEvent.setup();
     // jsdom has no navigator.clipboard — stub it so the copy path resolves instead of falling back.
     Object.defineProperty(navigator, 'clipboard', {
@@ -868,9 +868,9 @@ describe('CreateChgTab', () => {
     });
     await openEnhancePromptModal(user);
 
-    await user.click(screen.getByRole('button', { name: '📋 Copy to Clipboard' }));
+    await user.click(screen.getByRole('button', { name: 'Copy to Clipboard' }));
 
-    expect(await screen.findByRole('button', { name: '✓ Copied!' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Copied!' })).toBeInTheDocument();
   });
 
   it('no longer offers the retired Run via AI Assist (auto) button in the prompt modal', async () => {
@@ -878,20 +878,20 @@ describe('CreateChgTab', () => {
     await openEnhancePromptModal(user);
 
     expect(screen.queryByRole('button', { name: /Run via AI Assist \(auto\)/i })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '✔ Apply reply to fields' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Apply reply to fields' })).toBeInTheDocument();
   });
 
   it('disables Apply reply to fields until a reply is pasted', async () => {
     const user = userEvent.setup();
     await openEnhancePromptModal(user);
 
-    expect(screen.getByRole('button', { name: '✔ Apply reply to fields' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Apply reply to fields' })).toBeDisabled();
 
     fireEvent.change(screen.getByRole('textbox', { name: "Paste the assistant's reply here" }), {
       target: { value: 'SHORT_DESCRIPTION: Deploy fix' },
     });
 
-    expect(screen.getByRole('button', { name: '✔ Apply reply to fields' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Apply reply to fields' })).toBeEnabled();
   });
 
   it('applies all four CHG fields from a pasted AI Assist reply', async () => {
@@ -907,7 +907,7 @@ describe('CreateChgTab', () => {
     fireEvent.change(screen.getByRole('textbox', { name: "Paste the assistant's reply here" }), {
       target: { value: pastedReply },
     });
-    await user.click(screen.getByRole('button', { name: '✔ Apply reply to fields' }));
+    await user.click(screen.getByRole('button', { name: 'Apply reply to fields' }));
 
     expect(mockActions.updateGeneratedField).toHaveBeenCalledWith('shortDescription', 'Deploy ABC-1 fix');
     expect(mockActions.updateGeneratedField).toHaveBeenCalledWith('description', 'Applies the release blocker patch.');
@@ -923,7 +923,7 @@ describe('CreateChgTab', () => {
     fireEvent.change(screen.getByRole('textbox', { name: "Paste the assistant's reply here" }), {
       target: { value: 'Sure! Here is some prose without any markers.' },
     });
-    await user.click(screen.getByRole('button', { name: '✔ Apply reply to fields' }));
+    await user.click(screen.getByRole('button', { name: 'Apply reply to fields' }));
 
     expect(mockActions.updateGeneratedField).not.toHaveBeenCalled();
     expect(screen.getByRole('status')).toHaveTextContent(/No recognisable fields/);
@@ -1432,7 +1432,7 @@ describe('CreateChgTab', () => {
     fireEvent.change(screen.getByRole('textbox', { name: "Paste the assistant's reply here" }), {
       target: { value: pastedReply },
     });
-    await user.click(screen.getByRole('button', { name: '✔ Apply reply to fields' }));
+    await user.click(screen.getByRole('button', { name: 'Apply reply to fields' }));
 
     expect(mockActions.updateGeneratedField).toHaveBeenCalledWith('shortDescription', 'Deploy ABC-1 fix');
     expect(mockActions.updateGeneratedField).toHaveBeenCalledWith('description', 'Applies the release blocker patch.');
@@ -1484,7 +1484,7 @@ describe('CreateChgTab', () => {
     fireEvent.change(screen.getByRole('textbox', { name: "Paste the assistant's reply here" }), {
       target: { value: 'GAP: Missing test plan\nGAP: No backout procedure documented' },
     });
-    await user.click(screen.getByRole('button', { name: '✔ Use this review' }));
+    await user.click(screen.getByRole('button', { name: 'Use this review' }));
     await user.click(screen.getByRole('button', { name: 'Close' }));
 
     expect(await screen.findByText(/Missing test plan/)).toBeInTheDocument();
@@ -1504,7 +1504,7 @@ describe('CreateChgTab', () => {
     fireEvent.change(screen.getByRole('textbox', { name: "Paste the assistant's reply here" }), {
       target: { value: 'GAP: Missing test plan' },
     });
-    await user.click(screen.getByRole('button', { name: '✔ Use this review' }));
+    await user.click(screen.getByRole('button', { name: 'Use this review' }));
     await user.click(screen.getByRole('button', { name: 'Close' }));
 
     await screen.findByText(/Missing test plan/);

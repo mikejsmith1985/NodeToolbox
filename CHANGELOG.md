@@ -8,6 +8,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **SNow Hub — emoji replaced with the app's icon set.** All 20 of them: ➕ ✏️ 📌 ✦ ⚠ ✔ ✓ 📋 ♻️ ✅. An
+  emoji is a colour glyph the operating system draws, so it cannot take the app's palette, its type
+  scale, or its baseline — a ⚠ never sat level with the words beside it, and stayed the same colour in
+  both themes.
+
+  Two buttons carried their glyph inside a `string` prop. The icon went to the render site and the
+  string kept only its words, rather than widening the prop to a node and spreading JSX through a state
+  object for no gain.
+
+- **The icon vocabulary is now shared, not the board's.** These wrappers were written for the Roll-Up
+  Board; the SNow Hub needed the same set, and a second copy would have been two places deciding what
+  "warning" looks like. The definitions moved to `components/AppIcons` and `BoardIcons` re-exports
+  them — so the board's eight importers and its own tests are **completely untouched**. The move is a
+  change of address, and nothing about the board has to know it happened.
+
+  Eight action icons were added for the SNow Hub, and the shared test asserts the whole set obeys one
+  contract: `currentColor`, sized in `em`, `aria-hidden`, one stroke weight. A resolved tick and a
+  loaded record are asserted to be DIFFERENT shapes — they mean different things, and a shared
+  vocabulary is only worth having while two meanings do not collapse into one picture.
+
+### Fixed
+- **SNow Hub — button names read better to a screen reader.** The glyphs were part of the accessible
+  name, so a button announced as "➕ Create New CHG" now announces as "Create New CHG"; the icon is
+  hidden, exactly as it should be. Twenty test assertions were updated to match — the intended
+  consequence of the change, not a test being bent to fit.
+
+### Changed
 - **SNow Hub — the CHG builder gets the Roll-Up Board's sense of depth.** The workspace panel now reads
   as the RECESSED ground everything sits on, and the summary, pinned-field, CTASK, clone and
   environment-mapping cards are raised off it, lifting further under the pointer where they are things
