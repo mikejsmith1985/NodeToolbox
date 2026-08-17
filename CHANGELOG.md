@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Admin Hub — Settings Backup.** Everything this app knows about a Jira — board columns, checklist
+  mappings and write field, team profiles, scope choices, PI names, field pins — lives in roughly a
+  hundred browser-storage keys, in one browser, and nowhere else. A cleared browser, a new laptop or a
+  new Jira and it is all gone or all re-entered by hand. **Save my settings to a file** writes the lot
+  as one dated JSON; **Restore from a file** puts them back.
+
+  Two rules shape it. **No secrets leave**: the admin passphrase is excluded outright, because a file
+  somebody emails to a colleague must never carry it, and so are the unlock flags, which say what this
+  machine is currently allowed to do rather than what the team configured — carrying those would hand
+  an unlocked Admin Hub to whoever opened the file. The panel says so where somebody is deciding
+  whether to send it.
+
+  And **nothing is applied blind**: choosing a file reports what it would change — replaced, added,
+  already matching — and *names* the settings it would overwrite rather than only counting them,
+  because a number is enough to worry somebody and not enough to let them decide. Writing happens on a
+  second, explicit press. A restore only ever writes keys this app owns, however the file was made, and
+  leaves settings the backup does not mention alone: it means "make these settings true", not "make
+  this machine identical".
+
 ### Changed
 - **Roll-Up Board — a checklist step the app declines is now one line at the pointer, not a paragraph
   pinned to a card.** With the syntax fixed, moves work: To do → In progress → Done and back, one step

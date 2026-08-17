@@ -20,6 +20,7 @@ import { SprintReleasePanel } from './SprintReleasePanel.tsx'
 import { StandupBriefingPanel } from './StandupBriefingPanel.tsx'
 import { PiReviewSchedulerPanel } from './PiReviewSchedulerPanel.tsx'
 import { MonthlyDeliveryPanel } from './MonthlyDeliveryPanel.tsx'
+import { ConfigBackupPanel } from './ConfigBackupPanel.tsx'
 import { ComponentManagerPanel } from './ComponentManagerPanel.tsx'
 import { SubtaskPromotionPanel } from './SubtaskPromotionPanel.tsx'
 import { useAdminHubState } from './hooks/useAdminHubState.ts'
@@ -71,7 +72,7 @@ const VIEW_SUBTITLE = 'Proxy configuration, PI field mappings, feature flags, an
 
 const TERMINAL_COMMAND = 'python "%USERPROFILE%\\Downloads\\toolbox-server.py"'
 
-type AdminHubTab = 'main' | 'repo-monitor' | 'reports-config' | 'standup-briefing' | 'pi-review-scheduler' | 'monthly-delivery' | 'component-manager' | 'dev-panel' | 'sprint-release' | 'subtask-promotion' | 'change-audit'
+type AdminHubTab = 'main' | 'repo-monitor' | 'reports-config' | 'standup-briefing' | 'pi-review-scheduler' | 'monthly-delivery' | 'component-manager' | 'dev-panel' | 'sprint-release' | 'subtask-promotion' | 'change-audit' | 'settings-backup'
 
 const ADMIN_HUB_TAB_OPTIONS: { key: AdminHubTab; label: string }[] = [
   { key: 'main', label: '⚙️ Config' },
@@ -83,6 +84,7 @@ const ADMIN_HUB_TAB_OPTIONS: { key: AdminHubTab; label: string }[] = [
   { key: 'sprint-release', label: '🚀 Sprint Release' },
   { key: 'component-manager', label: '🧩 Components' },
   { key: 'subtask-promotion', label: '⬆️ Sub-task → Story' },
+  { key: 'settings-backup', label: '💾 Settings Backup' },
 ]
 
 // The Dev Panel is admin-gated: its tab is offered only when Admin Access is unlocked, matching the
@@ -2841,6 +2843,13 @@ export default function AdminHubView() {
       {activeAdminTab === 'monthly-delivery' && (
         <section id="admin-hub-monthly-delivery-panel" role="tabpanel" aria-labelledby="admin-hub-monthly-delivery-tab">
           <MonthlyDeliveryPanel />
+        </section>
+      )}
+
+      {activeAdminTab === 'settings-backup' && (
+        <section id="admin-hub-settings-backup-panel" role="tabpanel" aria-labelledby="admin-hub-settings-backup-tab">
+          {/* Everything this app knows about a Jira lives in this browser and nowhere else. */}
+          <ConfigBackupPanel />
         </section>
       )}
 
