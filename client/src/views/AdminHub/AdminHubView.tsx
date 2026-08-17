@@ -21,6 +21,7 @@ import { StandupBriefingPanel } from './StandupBriefingPanel.tsx'
 import { PiReviewSchedulerPanel } from './PiReviewSchedulerPanel.tsx'
 import { MonthlyDeliveryPanel } from './MonthlyDeliveryPanel.tsx'
 import { ConfigBackupPanel } from './ConfigBackupPanel.tsx'
+import { FieldMappingPanel } from './FieldMappingPanel.tsx'
 import { ComponentManagerPanel } from './ComponentManagerPanel.tsx'
 import { SubtaskPromotionPanel } from './SubtaskPromotionPanel.tsx'
 import { useAdminHubState } from './hooks/useAdminHubState.ts'
@@ -72,7 +73,7 @@ const VIEW_SUBTITLE = 'Proxy configuration, PI field mappings, feature flags, an
 
 const TERMINAL_COMMAND = 'python "%USERPROFILE%\\Downloads\\toolbox-server.py"'
 
-type AdminHubTab = 'main' | 'repo-monitor' | 'reports-config' | 'standup-briefing' | 'pi-review-scheduler' | 'monthly-delivery' | 'component-manager' | 'dev-panel' | 'sprint-release' | 'subtask-promotion' | 'change-audit' | 'settings-backup'
+type AdminHubTab = 'main' | 'repo-monitor' | 'reports-config' | 'standup-briefing' | 'pi-review-scheduler' | 'monthly-delivery' | 'component-manager' | 'dev-panel' | 'sprint-release' | 'subtask-promotion' | 'change-audit' | 'settings-backup' | 'field-mapping'
 
 const ADMIN_HUB_TAB_OPTIONS: { key: AdminHubTab; label: string }[] = [
   { key: 'main', label: '⚙️ Config' },
@@ -85,6 +86,7 @@ const ADMIN_HUB_TAB_OPTIONS: { key: AdminHubTab; label: string }[] = [
   { key: 'component-manager', label: '🧩 Components' },
   { key: 'subtask-promotion', label: '⬆️ Sub-task → Story' },
   { key: 'settings-backup', label: '💾 Settings Backup' },
+  { key: 'field-mapping', label: '🔗 Field Mapping' },
 ]
 
 // The Dev Panel is admin-gated: its tab is offered only when Admin Access is unlocked, matching the
@@ -2843,6 +2845,13 @@ export default function AdminHubView() {
       {activeAdminTab === 'monthly-delivery' && (
         <section id="admin-hub-monthly-delivery-panel" role="tabpanel" aria-labelledby="admin-hub-monthly-delivery-tab">
           <MonthlyDeliveryPanel />
+        </section>
+      )}
+
+      {activeAdminTab === 'field-mapping' && (
+        <section id="admin-hub-field-mapping-panel" role="tabpanel" aria-labelledby="admin-hub-field-mapping-tab">
+          {/* Field ids differ per Jira instance; this is where a re-point is made survivable. */}
+          <FieldMappingPanel />
         </section>
       )}
 

@@ -8,6 +8,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Admin Hub — Jira field mapping.** Five custom fields carry most of what this app reasons about:
+  the **Feature Link**, **Story Points**, **Acceptance Criteria**, the classic **Epic Link** and the
+  **ServiceNow reference**. Each already resolved sensibly — a saved choice, then a field discovered by
+  NAME, then a hard-coded default — and that entire chain was invisible. Nothing on any screen said
+  which field had actually been picked.
+
+  The last step is the one that bites. On a different Jira, discovery misses and the default reads
+  **whatever happens to hold that id** — so the app carries on confidently, attached to the wrong data,
+  reporting nothing. A missing field announces itself; a silently wrong one does not. That is the
+  failure mode that would have eaten a migration day.
+
+  The panel names each field, says what it drives *in the reader's terms* ("which Feature every Story,
+  sub-task and defect rolls up to — so every swimlane, every progress figure and the whole Roll-Up
+  Board"), shows what it resolved to and **why** — chosen here / found by name / built-in default,
+  unconfirmed / NOT WORKING — and offers this Jira's own fields in a dropdown. Nobody has to look up a
+  `customfield_` number.
+
+  Three risks are called out where the control that fixes them sits: a default being read because
+  nothing matched, a default that **does not exist here either** (which is simply broken, and said so),
+  and a saved choice pointing at a field this Jira does not have — the signature of a settings file
+  restored from another instance, which the new backup feature makes easy to do.
+
+  Choices are saved into `tbxARTSettings`, the store the Feature Link and story-point readers already
+  consult, rather than a competing one — so choosing here takes effect instead of only looking like it
+  did. "Find it by name" stays the default answer, because it is the one that survives an instance
+  renaming ids while keeping names.
+
+### Added
 - **Admin Hub — Settings Backup.** Everything this app knows about a Jira — board columns, checklist
   mappings and write field, team profiles, scope choices, PI names, field pins — lives in roughly a
   hundred browser-storage keys, in one browser, and nowhere else. A cleared browser, a new laptop or a
