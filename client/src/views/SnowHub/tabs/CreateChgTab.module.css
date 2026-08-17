@@ -69,6 +69,9 @@
 }
 
 .section,
+/* The workspace the whole CHG is built in — the ground everything else sits on, so it is the one
+   surface that reads as RECESSED rather than raised. The accent wash at the top is kept: it is what
+   makes the panel read as a workspace rather than as another card. */
 .workspacePanel {
   display: flex;
   flex-direction: column;
@@ -76,13 +79,11 @@
   padding: var(--spacing-lg);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
-  background: var(--color-surface-1);
-}
-
-.workspacePanel {
+  /* Was two separate .workspacePanel rules, the second silently overriding the first's background.
+     Merged: a reader had to know the cascade to know which one won. */
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--color-accent) 8%, transparent), transparent 72%),
-    var(--color-surface-1);
+    var(--surface-recessed);
 }
 
 .stepHeading {
@@ -363,13 +364,17 @@
   font-size: var(--font-size-sm);
 }
 
+/* Raised off the workspace, the same way a board card is raised off its column. Depth here is
+   LIGHTNESS first and shadow second: over a near-black ground a shadow shifts a handful of values out
+   of 255 and is effectively invisible, which is what made an earlier attempt at this look identical. */
 .summaryCard {
   display: grid;
   gap: var(--spacing-md);
   padding: var(--spacing-md);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
-  background: var(--color-surface-2);
+  background: var(--surface-raised);
+  box-shadow: var(--elevation-raised);
 }
 
 .summaryTitle {
@@ -412,8 +417,17 @@
   padding: var(--spacing-sm) var(--spacing-md);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
-  background: var(--color-surface-1);
+  background: var(--surface-raised);
+  box-shadow: var(--elevation-raised);
   color: var(--color-text-primary);
+  transition: background 120ms ease-out, box-shadow 120ms ease-out;
+}
+
+/* These are handled — pinned, edited, reordered — so they answer to a pointer. */
+.pinnedFieldCard:hover,
+.ctaskCard:hover {
+  background: var(--surface-raised-hover);
+  box-shadow: var(--elevation-lifted);
 }
 
 .ctaskCard {
@@ -429,6 +443,7 @@
   padding: var(--spacing-md);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
+  box-shadow: var(--elevation-raised);
   background: var(--color-surface-2);
 }
 
@@ -747,5 +762,27 @@
 
   .payloadInspectorRow .secondaryButton {
     width: 100%;
+  }
+}
+
+/* ── Depth is a convenience, never the message ──
+ *
+ * At high contrast the whole point is flat, unambiguous edges, so every shadow goes and the borders
+ * carry the separation on their own. And a surface that animates its own lift is decoration, so it
+ * stops for anybody who has asked for less motion. */
+@media (prefers-contrast: more) {
+  .summaryCard,
+  .pinnedFieldCard,
+  .ctaskCard,
+  .clonePanel,
+  .environmentMappingPanel {
+    box-shadow: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pinnedFieldCard,
+  .ctaskCard {
+    transition: none;
   }
 }

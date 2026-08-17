@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **SNow Hub — the CHG builder gets the Roll-Up Board's sense of depth.** The workspace panel now reads
+  as the RECESSED ground everything sits on, and the summary, pinned-field, CTASK, clone and
+  environment-mapping cards are raised off it, lifting further under the pointer where they are things
+  you handle. Depth is **lightness first and shadow second** — over a near-black ground a shadow shifts
+  a handful of values out of 255 and is effectively invisible, which is what made an earlier attempt at
+  this on the board look identical to no attempt at all. Shadows are dropped entirely at high contrast,
+  where flat unambiguous edges are the whole point, and the lift stops animating for anybody who has
+  asked for less motion.
+
+### Fixed
+- **SNow Hub — one `.workspacePanel` rule instead of two fighting over the background.** The stylesheet
+  declared it twice, the second silently overriding the first, so a reader had to know the cascade to
+  know which background actually applied. Merged into one.
+
 ### Added
 - **Admin Hub — Jira field mapping.** Five custom fields carry most of what this app reasons about:
   the **Feature Link**, **Story Points**, **Acceptance Criteria**, the classic **Epic Link** and the
