@@ -67,6 +67,17 @@ export default defineConfig({
     // of contention is that it does not choose its victim in advance, so naming files could only ever
     // chase the last one to fail. A genuine hang still fails, ten seconds later than it used to.
     testTimeout: 15_000,
+    // ── Half the cores, not all of them ──
+    //
+    // 632 test files on a 32-core machine were being run at a parallelism the machine could not
+    // actually sustain: every worker builds its own jsdom, and the environment setup alone accounts
+    // for more CPU-seconds than the tests do. Oversubscribed, the slowest whole-journey tests were
+    // starved of a core long enough to hit even a generous clock, and a DIFFERENT one failed each run.
+    //
+    // Halving it trades a little wall-clock for a suite whose result means something. A red run that
+    // is sometimes red for no reason is worse than a slower one, because it teaches everybody to
+    // ignore red.
+    maxWorkers: '50%',
     coverage: {
       provider: 'v8',
       reporter: ['text', 'lcov'],

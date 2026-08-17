@@ -8,6 +8,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **The test suite is green because it passes, not because it got lucky.** Capping vitest to half the
+  machine's cores finished what the timeout raise started. 632 test files on a 32 core box were being
+  run at a parallelism the machine could not sustain: every worker builds its own jsdom, and that
+  environment setup alone burns more CPU-seconds than the tests do. Oversubscribed, the slowest
+  whole-journey tests were starved of a core for long enough to blow even a generous clock — and a
+  DIFFERENT test failed each run, which is what made it look like flakiness rather than contention.
+
+  | | Before | After |
+  |---|---|---|
+  | Wall clock | 244s | 253s |
+  | CPU in environment setup | 4,318s | **2,354s** |
+  | Clean full runs | 0 of 5 | **4 of 4** |
+
+  Nine seconds of wall clock for 45% less CPU thrash, and a result that means something. A suite that
+  is sometimes red for no reason is worse than a slower one, because it teaches everybody to ignore
+  red — which it had already taught me over the course of this work.
+
+### Fixed
 - **The test suite's timeouts fit the tests that are actually in it.** Four tests failed on nearly every
   full run and passed on every isolated one, which had trained me to read a red suite and shrug — the
   worst state a test suite can be in. The cause was not logic: `Test timed out in 5000ms`. Several
