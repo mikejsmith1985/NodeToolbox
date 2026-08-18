@@ -602,3 +602,50 @@ describe('useTodayDashboard — the Due / overdue count is attributable to a tea
     expect(teamShare?.teamProfileId).toBe('alpha-id');
   });
 });
+
+describe('useTodayDashboard — Open goes where the work actually is', () => {
+  it('opens the largest share, not the personal half by default', async () => {
+    // The whole "I cannot find them" complaint: the card counted 26 and its Open button went to the
+    // personal Hygiene tab, which can only ever show the 1 that is mine. The 24 were reachable only
+    // by noticing a chip. Open now leads to whichever share holds the most of the number on the card.
+    const scopedTeam = buildTeamProfile('alpha-id', 'Transformers', 'ENCUC');
+    installSettingsStore([scopedTeam]);
+    mockJiraGet.mockResolvedValue({ issues: [] });
+    mockRunHygieneScan.mockResolvedValue(buildScanOutcome([
+      buildFinding('TEAM-1', ['due-date-overdue']),
+      buildFinding('TEAM-2', ['due-date-overdue']),
+    ]));
+
+    const { result } = renderHook(() => useTodayDashboard());
+
+    await waitFor(() => expect(result.current.categories['due-overdue'].status).toBe('ready'));
+    expect(result.current.categories['due-overdue'].destination).toEqual({
+      kind: 'sprintTab',
+      tab: 'hygiene',
+      search: { hygieneFilter: 'due-date-overdue,target-end-overdue' },
+    });
+  });
+
+  it('still opens the personal view when the personal half is the larger one', async () => {
+    installSettingsStore([buildTeamProfile('alpha-id', 'Transformers', 'ENCUC')]);
+    mockRunHygieneScan.mockResolvedValue(buildScanOutcome([]));
+    mockJiraGet.mockImplementation((requestPath: string) =>
+      Promise.resolve({
+        issues: decodeURIComponent(String(requestPath)).includes('jql=assignee =')
+          ? [{
+            id: '1', key: 'MINE-1',
+            fields: {
+              summary: 'Overdue', issuetype: { name: 'Story' },
+              status: { name: 'In Progress', statusCategory: { key: 'indeterminate', name: 'In Progress' } },
+              created: LONG_PAST_ISO, updated: recentIso(), duedate: '2020-01-01',
+            },
+          }]
+          : [],
+      }));
+
+    const { result } = renderHook(() => useTodayDashboard());
+
+    await waitFor(() => expect(result.current.categories['due-overdue'].count).toBe(1));
+    expect(result.current.categories['due-overdue'].destination.kind).toBe('myIssuesTab');
+  });
+});

@@ -139,6 +139,11 @@ const UNTRIAGED_FIELDS = 'summary,status,priority,assignee,issuetype,created,upd
  */
 const DUE_OVERDUE_FILTER = DUE_OVERDUE_CHECK_IDS.join(',');
 
+/** The team-scoped Hygiene view, filtered to the same checks the count is built from. */
+const TEAM_HYGIENE_DESTINATION: TodayDestination = {
+  kind: 'sprintTab', tab: 'hygiene', search: { hygieneFilter: DUE_OVERDUE_FILTER },
+};
+
 // Each card's deep-link target. Team-scope cards point at the Sprint Dashboard / DSU surfaces;
 // personal cards stay inside My Issues. These mirror the destinations in data-model.md.
 const DESTINATIONS: Record<CategoryId, TodayDestination> = {
@@ -286,6 +291,36 @@ function buildMyIssuesSearchPath(
 function buildUntriagedSearchPath(projectKey: string): string {
   const jql = `project = "${projectKey}" AND created >= "${formatLastBusinessDayEndChicago()}" ORDER BY created DESC`;
   return `${SEARCH_PATH}?jql=${encodeURIComponent(jql)}&fields=${UNTRIAGED_FIELDS}&maxResults=${MYSELF_PAGE_SIZE}`;
+}
+
+/**
+ * Picks the destination of the biggest share behind a mixed count.
+ *
+ * A card whose Open button always went to the same half was, on a count dominated by the other
+ * half, a link to the wrong place — it showed one of twenty-six and looked like the number was
+ * invented. Per-team shares are preferred over the summary "Team" share because a team destination
+ * can name the team it opens, which the summary cannot when several teams contribute.
+ */
+function pickLargestShareDestination(
+  scopeShares: readonly CategoryScopeShare[],
+  teamShares: readonly TeamCountBreakdownEntry[] | undefined,
+): TodayDestination | null {
+  const personalShare = scopeShares.find((share) => share.id === 'mine');
+  const teamShare = scopeShares.find((share) => share.id === 'team');
+  const personalCount = personalShare?.count ?? 0;
+  const teamCount = teamShare?.count ?? 0;
+
+  if (personalCount >= teamCount) {
+    return personalShare?.destination ?? null;
+  }
+
+  // The team half wins. With one team the summary share already carries a usable link; with several,
+  // no single link is honest, so the card keeps its personal destination and the chips do the work.
+  const largestTeamShare = [...(teamShares ?? [])].sort((left, right) => right.count - left.count)[0];
+  if (teamShare?.destination) {
+    return teamShare.destination;
+  }
+  return largestTeamShare ? TEAM_HYGIENE_DESTINATION : null;
 }
 
 /** Builds a mixed-scope (my + team) category result, combining both source statuses. */
@@ -623,9 +658,6 @@ export function useTodayDashboard(): TodayDashboardData {
     // single team it could mean — otherwise the per-team chips below carry it, because a team scan
     // is only ever as wide as that team's own saved scope, and two teams can audit very different
     // populations of the same project.
-    const teamHygieneDestination: TodayDestination = {
-      kind: 'sprintTab', tab: 'hygiene', search: { hygieneFilter: DUE_OVERDUE_FILTER },
-    };
     const isSingleTeamScan = teamScanTargets.length === 1;
     const dueOverdueScopeBreakdown: CategoryScopeShare[] = [
       {
@@ -638,7 +670,7 @@ export function useTodayDashboard(): TodayDashboardData {
         id: 'team',
         label: 'Team',
         count: teamDueOverdueKeys.length,
-        destination: isSingleTeamScan ? teamHygieneDestination : undefined,
+        destination: isSingleTeamScan ? TEAM_HYGIENE_DESTINATION : undefined,
         teamProfileId: isSingleTeamScan ? teamScanTargets[0].teamProfileId : undefined,
       },
     ];
@@ -704,6 +736,11 @@ export function useTodayDashboard(): TodayDashboardData {
           dueOverdueTeamError,
           isMyCountPartial || isAnyTeamScanPartial,
         ),
+        // Open leads to whichever share holds the most of the number on the card. It used to be
+        // fixed to the personal view, which on a 26 made of 1 mine and 25 the team's opened the
+        // one — and the twenty-five were reachable only by noticing a chip.
+        destination: pickLargestShareDestination(dueOverdueScopeBreakdown, breakdownFor(DUE_OVERDUE_CHECK_IDS))
+          ?? DESTINATIONS['due-overdue'],
         scopeBreakdown: dueOverdueScopeBreakdown,
         // The attribution this card was missing while every other team-fed card had it: which team
         // the count belongs to, and a way into that team's own Hygiene view.

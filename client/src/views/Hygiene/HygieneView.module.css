@@ -219,7 +219,9 @@
    * only a narrow side column, overflowed and painted over the meta cards. A
    * dedicated full-width row removes that collision by construction (was GH #167).
    */
-  grid-template-columns: minmax(18rem, 1fr) minmax(18rem, 48rem);
+  /* The meta side is wider than it was: six cards share it now (Due joined), and at 48rem each was
+     narrow enough to break "Defect" and a date across two lines mid-word. */
+  grid-template-columns: minmax(16rem, 1fr) minmax(18rem, 60rem);
   grid-template-areas:
     "main meta"
     "flags flags";
@@ -325,23 +327,17 @@
    * a single line while Type and Age stay compact.
    */
   /*
-   * SIX tracks, one per meta card (Type, Status, PI, Assignee, Due, Age). It was four while the row
-   * rendered five cards, so the fifth wrapped onto a second line and left a tall empty band beside
-   * the summary — the blank space that made these rows look broken. Adding Due made it six, so the
-   * track count is now stated explicitly rather than left to wrap.
+   * Cards are laid out by MINIMUM WIDTH rather than by a fixed track count.
+   *
+   * A fixed count is wrong in both directions and was, in turn, wrong in both: four tracks while the
+   * row rendered five cards left the fifth wrapping and a tall blank band beside the summary; six
+   * tracks fixed the band and then squeezed each card until "Defect" and a date broke across two
+   * lines mid-word. A floor of 9rem lets the row fit as many as genuinely read well and wrap the
+   * rest, and because every row shares the same container width they still align with each other.
    */
-  grid-template-columns:
-    minmax(0, 0.7fr) minmax(0, 1.1fr) minmax(0, 1.5fr)
-    minmax(0, 1.3fr) minmax(0, 0.8fr) minmax(0, 0.55fr);
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
   gap: var(--spacing-sm);
   margin: 0;
-}
-
-/* Below this the six cards are too narrow to read; three per line keeps them legible. */
-@media (max-width: 1400px) {
-  .issueMeta {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
 }
 
 .issueMeta div {
@@ -355,7 +351,10 @@
   font-size: var(--font-size-sm);
 }
 
+/* A value may wrap between words, never inside one — a date split across two lines is unreadable. */
 .issueMeta dd {
+  overflow-wrap: break-word;
+  word-break: normal;
   margin: var(--spacing-xs) 0 0;
   color: var(--color-text-primary);
   /* Long values wrap within the fixed-width card instead of overflowing it. */

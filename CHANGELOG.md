@@ -32,6 +32,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   work it cannot place, never somewhere a person should file something.
 
 ### Fixed
+- **"Due / overdue today" opened the smallest half of its own count.** Open was fixed to the personal
+  Hygiene view, so a 26 made of 1 mine and 25 the team's opened the one — and the twenty-five were
+  reachable only by noticing a chip. That is the whole "I am told I have 26 and cannot find them
+  anywhere" complaint: the number was right, the link went to the wrong place. Open now leads to
+  whichever share holds the most of the number on the card.
+
+- **Hygiene meta cards broke values mid-word.** The row laid its cards out on a fixed track count,
+  which was wrong in both directions in turn: four tracks for five cards left the fifth wrapping and
+  a tall blank band beside the summary; six tracks closed the band and then squeezed each card until
+  "Defect" and a date split across two lines. Cards are now laid out by minimum width, so a row fits
+  as many as read well and wraps the rest — and since every row shares one container width, they
+  still align with each other.
+
 - **A chosen PI/sprint/fix version never reached the team profile, so Today and Hygiene scanned
   different slices.** The Hygiene tab reads the dashboard's LIVE selection; the Today team cards scan
   each SAVED profile, because they audit every team and only one is live at a time. A deliberate pick
