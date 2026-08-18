@@ -65,7 +65,17 @@ export interface CategoryScopeShare {
   id: 'mine' | 'team';
   label: string;
   count: number;
-  destination: TodayDestination;
+  /**
+   * Where this share opens — ABSENT when no single link can honestly show it.
+   *
+   * The team half of a several-team count is the case: a chip reading "Team 26" that lands on
+   * whichever team happens to be active shows a fraction of its own number, which is the dead end
+   * this card already had once. When the team half spans several teams the per-team chips carry
+   * the navigation and this stays a plain label.
+   */
+  destination?: TodayDestination;
+  /** The team to activate before navigating, when this share belongs to exactly one team. */
+  teamProfileId?: string;
 }
 
 /** The resolved state of one Today category, ready to render as a card. */
@@ -594,6 +604,7 @@ export function useTodayDashboard(): TodayDashboardData {
     const isAnyTeamScanPartial = teamScans.some((teamScan) => teamScan.isTruncated === true);
     const breakdownFor = (checkIds: readonly string[]): TeamCountBreakdownEntry[] | undefined =>
       teamScans.length > 1 ? buildTeamCountBreakdown(teamScans, checkIds) : undefined;
+    // The team destination every per-team chip opens, with the same filter the count is built from.
     // Due/overdue is a my+team union deduped by key; the team half reads the scan findings so it
     // honours the same scope and enabled checks as each team's Hygiene tab.
     // Same context as the team half: same instance field ids, same enabled checks, same thresholds.
@@ -606,8 +617,14 @@ export function useTodayDashboard(): TodayDashboardData {
       ? selectFindingKeysAcrossTeams(teamScans, DUE_OVERDUE_CHECK_IDS)
       : [];
     const dueOverdueCount = new Set([...myDueOverdueKeys, ...teamDueOverdueKeys]).size;
-    // Both halves named, each with the link that opens exactly that half. The card's own Open
-    // button covers "mine"; without these chips the team half had no route at all from here.
+    // Both halves named. "Mine" always has a link; the team half only gets one when there is a
+    // single team it could mean — otherwise the per-team chips below carry it, because a team scan
+    // is only ever as wide as that team's own saved scope, and two teams can audit very different
+    // populations of the same project.
+    const teamHygieneDestination: TodayDestination = {
+      kind: 'sprintTab', tab: 'hygiene', search: { hygieneFilter: DUE_OVERDUE_FILTER },
+    };
+    const isSingleTeamScan = teamScanTargets.length === 1;
     const dueOverdueScopeBreakdown: CategoryScopeShare[] = [
       {
         id: 'mine',
@@ -619,7 +636,8 @@ export function useTodayDashboard(): TodayDashboardData {
         id: 'team',
         label: 'Team',
         count: teamDueOverdueKeys.length,
-        destination: { kind: 'sprintTab', tab: 'hygiene', search: { hygieneFilter: DUE_OVERDUE_FILTER } },
+        destination: isSingleTeamScan ? teamHygieneDestination : undefined,
+        teamProfileId: isSingleTeamScan ? teamScanTargets[0].teamProfileId : undefined,
       },
     ];
     const dueOverdueTeamStatus: CategoryStatus = isTeamHygieneConfigured ? teamScanStatus : 'ready';
@@ -685,6 +703,9 @@ export function useTodayDashboard(): TodayDashboardData {
           isMyCountPartial || isAnyTeamScanPartial,
         ),
         scopeBreakdown: dueOverdueScopeBreakdown,
+        // The attribution this card was missing while every other team-fed card had it: which team
+        // the count belongs to, and a way into that team's own Hygiene view.
+        teamBreakdown: breakdownFor(DUE_OVERDUE_CHECK_IDS),
       },
       untriaged: isUntriagedConfigured
         ? {
@@ -708,6 +729,8 @@ export function useTodayDashboard(): TodayDashboardData {
     // The context the personal issues were fetched under travels with them, so both belong here.
     myIssuesResult.hygieneContext,
     myIssuesResult.isPartial,
+    // Read when deciding whether the team half can name a single team to open.
+    teamScanTargets,
     myIssuesStatus,
     myIssuesError,
     untriagedHygiene,

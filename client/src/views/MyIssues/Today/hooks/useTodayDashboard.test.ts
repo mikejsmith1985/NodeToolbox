@@ -545,3 +545,60 @@ describe('useTodayDashboard — a capped count says it is capped', () => {
     expect(result.current.categories['my-stale'].isPartial).toBe(true);
   });
 });
+
+describe('useTodayDashboard — the Due / overdue count is attributable to a team', () => {
+  /** Two ENCUC teams: one scoped to a PI, one whose saved scope selects the whole project. */
+  function installTwoTeamsOneUnscoped() {
+    const scopedTeam = buildTeamProfile('alpha-id', 'Transformers', 'ENCUC');
+    const unscopedTeam = { ...buildTeamProfile('beta-id', 'Cleanup Crew', 'ENCUC'), selectedPiValue: '' };
+    installSettingsStore([scopedTeam, unscopedTeam]);
+  }
+
+  it('breaks the team half down per team, like every other team-fed card', async () => {
+    // The reported symptom: the card said 26 while the team Hygiene tab — the very scan it counts —
+    // showed 2, and nothing on the card explained where the other 24 lived. They were a SECOND team
+    // profile whose saved scope selects the whole project, so its scan is a superset of the
+    // PI-scoped tab. The count was right; it was unattributable and unreachable.
+    installTwoTeamsOneUnscoped();
+    mockJiraGet.mockResolvedValue({ issues: [] });
+    mockRunHygieneScan.mockImplementation((options: { extraJql: string }) => Promise.resolve(buildScanOutcome(
+      options.extraJql === ''
+        ? [buildFinding('WIDE-1', ['due-date-overdue']), buildFinding('WIDE-2', ['due-date-overdue'])]
+        : [buildFinding('WIDE-1', ['due-date-overdue'])],
+    )));
+
+    const { result } = renderHook(() => useTodayDashboard());
+
+    await waitFor(() => expect(result.current.categories['due-overdue'].status).toBe('ready'));
+    expect(result.current.categories['due-overdue'].teamBreakdown?.map((share) => [share.teamName, share.count]))
+      .toEqual([['Transformers', 1], ['Cleanup Crew', 2]]);
+  });
+
+  it('does not offer a Team chip that would open the wrong team', async () => {
+    // A chip labelled "Team 26" that lands on whichever team happens to be active shows 2 of 26 —
+    // precisely the dead end this card already had. With several teams the per-team chips do the
+    // navigating and the summary chip stays a plain label.
+    installTwoTeamsOneUnscoped();
+    mockJiraGet.mockResolvedValue({ issues: [] });
+
+    const { result } = renderHook(() => useTodayDashboard());
+
+    await waitFor(() => expect(result.current.categories['due-overdue'].status).toBe('ready'));
+    const teamShare = result.current.categories['due-overdue'].scopeBreakdown?.find((share) => share.id === 'team');
+    expect(teamShare?.destination).toBeUndefined();
+  });
+
+  it('keeps the Team chip clickable when there is only one team to open', async () => {
+    installSettingsStore([buildTeamProfile('alpha-id', 'Transformers', 'ENCUC')]);
+    mockJiraGet.mockResolvedValue({ issues: [] });
+
+    const { result } = renderHook(() => useTodayDashboard());
+
+    await waitFor(() => expect(result.current.categories['due-overdue'].status).toBe('ready'));
+    const teamShare = result.current.categories['due-overdue'].scopeBreakdown?.find((share) => share.id === 'team');
+    expect(teamShare?.destination).toEqual({
+      kind: 'sprintTab', tab: 'hygiene', search: { hygieneFilter: 'due-date-overdue,target-end-overdue' },
+    });
+    expect(teamShare?.teamProfileId).toBe('alpha-id');
+  });
+});

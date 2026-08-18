@@ -129,17 +129,37 @@ export default function CategoryCard({
       </span>
       {scopeBreakdown ? (
         <div className={styles.teamBreakdown}>
-          {scopeBreakdown.map((scopeShare) => (
-            <button
-              className={styles.teamChip}
-              key={scopeShare.id}
-              onClick={() => onNavigate(scopeShare.destination)}
-              title={`Open the ${scopeShare.label.toLowerCase()} half — an issue in both is counted once in the total`}
-              type="button"
-            >
-              {scopeShare.label} {formatCount(scopeShare.count)}
-            </button>
-          ))}
+          {scopeBreakdown.map((scopeShare) => {
+            const chipText = `${scopeShare.label} ${formatCount(scopeShare.count)}`;
+            // No destination means no single link could honestly show this share — so it is a label
+            // rather than a button. A chip that goes somewhere other than where it says is worse
+            // than a chip that goes nowhere.
+            if (!scopeShare.destination) {
+              return (
+                <span
+                  className={styles.teamChip}
+                  key={scopeShare.id}
+                  title="Spread across several teams — open a team below to see its share"
+                >
+                  {chipText}
+                </span>
+              );
+            }
+            const shareDestination = scopeShare.destination;
+            return (
+              <button
+                className={styles.teamChip}
+                key={scopeShare.id}
+                onClick={() => (scopeShare.teamProfileId
+                  ? onOpenTeam?.(scopeShare.teamProfileId, shareDestination)
+                  : onNavigate(shareDestination))}
+                title={`Open the ${scopeShare.label.toLowerCase()} half — an issue in both is counted once in the total`}
+                type="button"
+              >
+                {chipText}
+              </button>
+            );
+          })}
         </div>
       ) : null}
       {teamBreakdown ? (

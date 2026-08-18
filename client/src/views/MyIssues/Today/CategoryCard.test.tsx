@@ -148,6 +148,38 @@ describe('CategoryCard', () => {
 
   // ── Partial counts (a floor must not read as a total) ──
 
+  it('renders a share with no destination as a label, not a button that goes somewhere wrong', () => {
+    renderCard({
+      result: buildResult({
+        scopeBreakdown: [
+          { id: 'mine', label: 'Mine', count: 1, destination: { kind: 'myIssuesTab', tab: 'hygiene' } },
+          { id: 'team', label: 'Team', count: 26 },
+        ],
+      }),
+    });
+
+    expect(screen.getByRole('button', { name: /Mine.*1/ })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Team.*26/ })).not.toBeInTheDocument();
+    expect(screen.getByText(/Team 26/)).toBeInTheDocument();
+  });
+
+  it('activates the team a share names before opening it', async () => {
+    const user = userEvent.setup();
+    const teamDestination = { kind: 'sprintTab', tab: 'hygiene' } as const;
+    const { onOpenTeam } = renderCard({
+      result: buildResult({
+        scopeBreakdown: [
+          { id: 'mine', label: 'Mine', count: 1, destination: { kind: 'myIssuesTab', tab: 'hygiene' } },
+          { id: 'team', label: 'Team', count: 26, destination: teamDestination, teamProfileId: 'alpha-id' },
+        ],
+      }),
+    });
+
+    await user.click(screen.getByRole('button', { name: /Team.*26/ }));
+
+    expect(onOpenTeam).toHaveBeenCalledWith('alpha-id', teamDestination);
+  });
+
   it('marks a partial count so a floor is not read as a total', () => {
     renderCard({ result: buildResult({ count: 26, isPartial: true }) });
 

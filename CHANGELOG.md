@@ -22,6 +22,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   work it cannot place, never somewhere a person should file something.
 
 ### Fixed
+- **"Due / overdue today" counted 26 that the Hygiene tab could not account for.** The card and the
+  tab run the *same* scan function, so identical inputs cannot produce 26 and 2 — the inputs
+  differed. The Today card scans **every saved Dashboard Team profile**, each with that profile's own
+  saved scope; the Hygiene tab scans the **active** team with its live PI selection. A second profile
+  whose saved scope selects no PI, sprint, or fix version audits the *whole project across all time*,
+  so its findings are a superset the PI-scoped tab can never show.
+
+  The count was right. What was missing was any way to see or reach it: this was the only team-fed
+  card without a per-team breakdown, so 26 arrived with no team attached. It now carries per-team
+  chips like every other team card, each activating that team before opening its own Hygiene view —
+  where the number reconciles, because the tab then uses that team's saved scope too.
+
+  The **Team** summary chip no longer navigates when several teams are in play. It used to land on
+  whichever team happened to be active and show a fraction of its own number, which was the same
+  dead end in a different costume; with several teams it is now a plain label and the per-team chips
+  do the opening.
+
 - **Hygiene counts stopped at a cap and never said so.** Both hygiene surfaces issued ONE Jira
   search with a `maxResults` limit — 100 for the Today dashboard's personal fetch, 200 for the
   hygiene scan — and presented whatever came back as the answer. A team with 240 open issues saw a
