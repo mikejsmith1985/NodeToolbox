@@ -95,6 +95,11 @@ export default function CategoryCard({
   const cardClassName = `${styles.card} ${isComplete ? styles.completeCard : ''}`.trim();
   // A breakdown is only informative when there is more than one team to break down.
   const teamBreakdown = (result.teamBreakdown?.length ?? 0) > 1 ? result.teamBreakdown : undefined;
+  // Likewise for scopes: a chip row saying "Mine 8 · Team 0" is noise, because the Open button
+  // already goes to the only scope that has anything in it. Two populated scopes is the case that
+  // needs saying, because one link cannot show both.
+  const populatedScopeShares = (result.scopeBreakdown ?? []).filter((scopeShare) => scopeShare.count > 0);
+  const scopeBreakdown = populatedScopeShares.length > 1 ? populatedScopeShares : undefined;
 
   return (
     <div className={cardClassName} data-category={entry.id} data-complete={isComplete}>
@@ -102,6 +107,21 @@ export default function CategoryCard({
       <span className={styles.count} aria-label={`${result.count} items need attention`}>
         {isCleared ? '✓' : formatCount(result.count)}
       </span>
+      {scopeBreakdown ? (
+        <div className={styles.teamBreakdown}>
+          {scopeBreakdown.map((scopeShare) => (
+            <button
+              className={styles.teamChip}
+              key={scopeShare.id}
+              onClick={() => onNavigate(scopeShare.destination)}
+              title={`Open the ${scopeShare.label.toLowerCase()} half — an issue in both is counted once in the total`}
+              type="button"
+            >
+              {scopeShare.label} {formatCount(scopeShare.count)}
+            </button>
+          ))}
+        </div>
+      ) : null}
       {teamBreakdown ? (
         <div className={styles.teamBreakdown}>
           {teamBreakdown.map((teamShare) => (

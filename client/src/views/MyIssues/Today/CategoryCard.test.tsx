@@ -96,6 +96,56 @@ describe('CategoryCard', () => {
     expect(onOpenTeam).toHaveBeenCalledWith('beta-id', { kind: 'sprintTab', tab: 'blockers' });
   });
 
+  // ── Per-scope breakdown (a my+team union cannot be opened by one link) ──
+
+  it('renders a chip per scope, each labelled with its own share of the count', () => {
+    renderCard({
+      result: buildResult({
+        scopeBreakdown: [
+          { id: 'mine', label: 'Mine', count: 8, destination: { kind: 'myIssuesTab', tab: 'hygiene' } },
+          { id: 'team', label: 'Team', count: 18, destination: { kind: 'sprintTab', tab: 'hygiene' } },
+        ],
+      }),
+    });
+
+    expect(screen.getByRole('button', { name: /Mine.*8/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Team.*18/ })).toBeInTheDocument();
+  });
+
+  it('opens the scope a chip names, not the card default', async () => {
+    // The whole point: the card's own Open button can only show one scope, so the OTHER scope had
+    // no route out of this screen at all.
+    const user = userEvent.setup();
+    const teamDestination = { kind: 'sprintTab', tab: 'hygiene', search: { hygieneFilter: 'due-date-overdue' } } as const;
+    const { onNavigate } = renderCard({
+      result: buildResult({
+        scopeBreakdown: [
+          { id: 'mine', label: 'Mine', count: 8, destination: { kind: 'myIssuesTab', tab: 'hygiene' } },
+          { id: 'team', label: 'Team', count: 18, destination: teamDestination },
+        ],
+      }),
+    });
+
+    await user.click(screen.getByRole('button', { name: /Team.*18/ }));
+
+    expect(onNavigate).toHaveBeenCalledWith(teamDestination);
+  });
+
+  it('says nothing about scopes when only one of them has anything in it', () => {
+    // A chip row reading "Mine 8 · Team 0" is noise; the Open button already goes to the only
+    // scope that has work in it.
+    renderCard({
+      result: buildResult({
+        scopeBreakdown: [
+          { id: 'mine', label: 'Mine', count: 8, destination: { kind: 'myIssuesTab', tab: 'hygiene' } },
+          { id: 'team', label: 'Team', count: 0, destination: { kind: 'sprintTab', tab: 'hygiene' } },
+        ],
+      }),
+    });
+
+    expect(screen.queryByRole('button', { name: /Mine/ })).not.toBeInTheDocument();
+  });
+
   it('marks a team whose scan failed instead of showing a false zero', () => {
     renderCard({
       result: buildResult({

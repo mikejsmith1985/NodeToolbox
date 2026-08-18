@@ -22,6 +22,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   work it cannot place, never somewhere a person should file something.
 
 ### Fixed
+- **The Today "Due / overdue" card opened a view that hid what it had just counted.** It was the one
+  hygiene-bound card with no `hygieneFilter` on its drill-through, and Hygiene falls back to the
+  filter it persisted in localStorage when a deep link supplies none — so clicking **Open** landed on
+  a view still filtered to whatever check had been looked at last, with the overdue issues filtered
+  straight back out. The link now carries its filter, built from the same check ids the count is
+  built from so the two cannot drift apart.
+
+  The card counts a **my + team union**, and one link can only ever show one of those scopes — the
+  two live on different surfaces with different queries. Rather than silently showing a fraction of
+  the number printed on the card, the card now names both halves as chips (**Mine 8 · Team 18**),
+  each opening its own correctly-scoped, correctly-filtered view. The team half previously had no
+  route out of this screen at all. Chips appear only when both halves have something in them, and
+  can sum to more than the total: an issue that is both mine and my team's is counted once.
+
 - **Two comparators answered "is this overdue?" differently.** Hygiene compared calendar days;
   the Readiness scan parsed the same date into a moment and compared it to `Date.now()`. A bare Jira
   date parses as UTC midnight, so west of Greenwich the two diverged every evening: from 20:00 in

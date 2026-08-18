@@ -53,6 +53,20 @@ export interface TodayDestination {
   search?: Record<string, string>;
 }
 
+/**
+ * One scope behind a mixed-scope count, with the link that opens exactly that scope.
+ *
+ * A count that unions "my issues" and "the team's issues" cannot be opened by a single link: the
+ * two live on different surfaces with different queries. Naming the halves is the honest
+ * alternative to a link that silently shows a fraction of the number printed on the card.
+ */
+export interface CategoryScopeShare {
+  id: 'mine' | 'team';
+  label: string;
+  count: number;
+  destination: TodayDestination;
+}
+
 /** The resolved state of one Today category, ready to render as a card. */
 export interface CategoryResult {
   id: CategoryId;
@@ -62,6 +76,13 @@ export interface CategoryResult {
   destination: TodayDestination;
   /** Per-team share of the count, present on team cards when more than one team was scanned. */
   teamBreakdown?: TeamCountBreakdownEntry[];
+  /**
+   * Per-scope share of a mixed my+team count, each with its own link.
+   *
+   * The shares can sum to MORE than `count`: an issue that is both mine and my team's is counted
+   * once in the total and appears in both scopes. The card says so rather than hiding it.
+   */
+  scopeBreakdown?: CategoryScopeShare[];
 }
 
 /** Everything the Today dashboard component needs to render in one stable object. */
@@ -87,6 +108,12 @@ const MYSELF_MAX_RESULTS = 100;
 // keeps the request small while still mirroring the DSU board's new-section query.
 const UNTRIAGED_FIELDS = 'summary,status,priority,assignee,issuetype,created,updated';
 
+/**
+ * The check filter the Due / overdue drill-throughs carry, built from the SAME ids the count is
+ * built from — so the link and the number cannot come to disagree about which checks they mean.
+ */
+const DUE_OVERDUE_FILTER = DUE_OVERDUE_CHECK_IDS.join(',');
+
 // Each card's deep-link target. Team-scope cards point at the Sprint Dashboard / DSU surfaces;
 // personal cards stay inside My Issues. These mirror the destinations in data-model.md.
 const DESTINATIONS: Record<CategoryId, TodayDestination> = {
@@ -105,9 +132,17 @@ const DESTINATIONS: Record<CategoryId, TodayDestination> = {
   // two checks, so its filter carries both ids.
   unassigned: { kind: 'sprintTab', tab: 'hygiene', search: { hygieneFilter: 'no-assignee' } },
   'commitment-gaps': { kind: 'sprintTab', tab: 'hygiene', search: { hygieneFilter: 'missing-sp,no-ac' } },
-  // Due/overdue is a my+team union; the personal cross-project scope shows at least the "my" half
-  // honestly rather than whatever project key was last persisted.
-  'due-overdue': { kind: 'myIssuesTab', tab: 'hygiene', search: { hygieneScope: 'mine' } },
+  // Due/overdue is a my+team union; the personal cross-project scope shows the "my" half rather
+  // than whatever project key was last persisted, and the team half is reachable from the card's
+  // own scope chips. The check filter is NOT optional here: Hygiene falls back to the filter it
+  // persisted in localStorage when a deep link supplies none, so this card — the only hygiene-bound
+  // card that omitted one — opened on whatever check the user last looked at, with the overdue
+  // issues it had just counted filtered straight back out.
+  'due-overdue': {
+    kind: 'myIssuesTab',
+    tab: 'hygiene',
+    search: { hygieneScope: 'mine', hygieneFilter: DUE_OVERDUE_FILTER },
+  },
   untriaged: { kind: 'dsuBoard' },
 };
 
@@ -536,6 +571,22 @@ export function useTodayDashboard(): TodayDashboardData {
       ? selectFindingKeysAcrossTeams(teamScans, DUE_OVERDUE_CHECK_IDS)
       : [];
     const dueOverdueCount = new Set([...myDueOverdueKeys, ...teamDueOverdueKeys]).size;
+    // Both halves named, each with the link that opens exactly that half. The card's own Open
+    // button covers "mine"; without these chips the team half had no route at all from here.
+    const dueOverdueScopeBreakdown: CategoryScopeShare[] = [
+      {
+        id: 'mine',
+        label: 'Mine',
+        count: myDueOverdueKeys.length,
+        destination: DESTINATIONS['due-overdue'],
+      },
+      {
+        id: 'team',
+        label: 'Team',
+        count: teamDueOverdueKeys.length,
+        destination: { kind: 'sprintTab', tab: 'hygiene', search: { hygieneFilter: DUE_OVERDUE_FILTER } },
+      },
+    ];
     const dueOverdueTeamStatus: CategoryStatus = isTeamHygieneConfigured ? teamScanStatus : 'ready';
     const dueOverdueTeamError = isTeamHygieneConfigured ? teamScanErrorMessage : null;
 
@@ -586,14 +637,17 @@ export function useTodayDashboard(): TodayDashboardData {
         teamScanErrorMessage,
         breakdownFor(COMMITMENT_GAP_CHECK_IDS),
       ),
-      'due-overdue': buildMixedCategory(
-        'due-overdue',
-        dueOverdueCount,
-        myIssuesStatus,
-        dueOverdueTeamStatus,
-        myIssuesError,
-        dueOverdueTeamError,
-      ),
+      'due-overdue': {
+        ...buildMixedCategory(
+          'due-overdue',
+          dueOverdueCount,
+          myIssuesStatus,
+          dueOverdueTeamStatus,
+          myIssuesError,
+          dueOverdueTeamError,
+        ),
+        scopeBreakdown: dueOverdueScopeBreakdown,
+      },
       untriaged: isUntriagedConfigured
         ? {
             id: 'untriaged',

@@ -390,11 +390,13 @@ describe('useTodayDashboard', () => {
       tab: 'hygiene',
       search: { hygieneFilter: 'missing-sp,no-ac' },
     });
-    // Due/overdue is a my+team union; the cross-project personal scope shows the "my" half honestly.
+    // Due/overdue is a my+team union; the cross-project personal scope shows the "my" half, and it
+    // carries its check filter like every other hygiene-bound card — without one, Hygiene falls back
+    // to the filter it last persisted and hides the very issues this card counted.
     expect(categories['due-overdue'].destination).toEqual({
       kind: 'myIssuesTab',
       tab: 'hygiene',
-      search: { hygieneScope: 'mine' },
+      search: { hygieneScope: 'mine', hygieneFilter: 'due-date-overdue,target-end-overdue' },
     });
   });
 });
@@ -449,5 +451,42 @@ describe('useTodayDashboard — the two halves of Due / overdue share one config
 
     await waitFor(() => expect(result.current.categories['due-overdue'].status).toBe('ready'));
     expect(result.current.categories['due-overdue'].count).toBe(0);
+  });
+});
+
+describe('useTodayDashboard — the Due / overdue card opens on what it counted', () => {
+  it('carries its own check filter, so the view is not left on whatever filter was last used', async () => {
+    // The reported bug: this was the ONE hygiene-bound card with no hygieneFilter. Hygiene falls
+    // back to the filter persisted in localStorage when a deep link supplies none, so clicking Open
+    // landed on a view still filtered to whatever check was looked at last — and the overdue issues
+    // it had just counted were filtered straight back out.
+    mockJiraGet.mockResolvedValue({ issues: [] });
+
+    const { result } = renderHook(() => useTodayDashboard());
+    await waitFor(() => expect(result.current.categories['due-overdue'].status).toBe('ready'));
+
+    expect(result.current.categories['due-overdue'].destination).toEqual({
+      kind: 'myIssuesTab',
+      tab: 'hygiene',
+      search: { hygieneScope: 'mine', hygieneFilter: 'due-date-overdue,target-end-overdue' },
+    });
+  });
+
+  it('names both scopes it counted, each opening its own correctly-scoped view', async () => {
+    // The count is a my + team union, but one link can only ever show one of those scopes. Rather
+    // than silently showing a fraction of the number on the card, the card says which half is which
+    // and lets the user open either.
+    mockJiraGet.mockResolvedValue({ issues: [] });
+
+    const { result } = renderHook(() => useTodayDashboard());
+    await waitFor(() => expect(result.current.categories['due-overdue'].status).toBe('ready'));
+
+    const scopeShares = result.current.categories['due-overdue'].scopeBreakdown;
+    expect(scopeShares?.map((share) => share.id)).toEqual(['mine', 'team']);
+    expect(scopeShares?.find((share) => share.id === 'team')?.destination).toEqual({
+      kind: 'sprintTab',
+      tab: 'hygiene',
+      search: { hygieneFilter: 'due-date-overdue,target-end-overdue' },
+    });
   });
 });
