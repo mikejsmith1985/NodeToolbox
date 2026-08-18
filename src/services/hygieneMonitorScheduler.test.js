@@ -74,3 +74,24 @@ describe('buildHygieneDigest', () => {
     expect(digest.scannedAt).toBe('2026-06-16T06:00:00.000Z');
   });
 });
+
+describe('buildEnabledCheckFilter — a saved config naming a retired check id still works', () => {
+  const { buildEnabledCheckFilter } = require('./hygieneMonitorScheduler');
+
+  it('translates the retired stale-issue id to the stale id both sides now use', () => {
+    // The port used to emit 'stale-issue' where the UI has always shown 'stale'. Renaming it to
+    // match would otherwise silently drop the rule from any team whose saved config names the old
+    // id — a monitor quietly checking one thing fewer than the operator asked for.
+    const filter = buildEnabledCheckFilter(['no-assignee', 'stale-issue']);
+
+    expect(filter.has('stale')).toBe(true);
+    expect(filter.has('no-assignee')).toBe(true);
+  });
+
+  it('leaves current ids untouched', () => {
+    const filter = buildEnabledCheckFilter(['stale', 'due-date-overdue']);
+
+    expect(filter.has('stale')).toBe(true);
+    expect(filter.has('due-date-overdue')).toBe(true);
+  });
+});

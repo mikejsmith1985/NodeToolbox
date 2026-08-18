@@ -5,6 +5,7 @@
 // can prove each default hygiene signal independently.
 
 import { businessDaysElapsedSince } from '../../../utils/businessDays.ts';
+import { isOnOrBeforeToday } from '../../../utils/calendarDate.ts';
 import { normalizeRichTextToPlainText } from '../../../utils/richTextPlainText.ts';
 import type { EnterpriseRequiredFieldRule } from '../../AdminHub/enterpriseRules.ts';
 
@@ -743,35 +744,15 @@ function hasMeaningfulValue(fieldValue: unknown): boolean {
   return Object.values(fieldValue).some((nestedValue) => hasMeaningfulValue(nestedValue));
 }
 
+/**
+ * True when a date field names today or an earlier day, for the person reading the screen.
+ *
+ * Delegates to the shared calendar comparator so this and the Readiness scan cannot answer the same
+ * question differently — they used to, for several hours every evening, because one compared
+ * calendar days and the other compared instants.
+ */
 function isDateTodayOrPast(fieldValue: unknown): boolean {
-  if (typeof fieldValue !== 'string' || fieldValue.trim() === '') {
-    return false;
-  }
-
-  const trimmedDateValue = fieldValue.trim();
-  const dateOnlyMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmedDateValue);
-  if (dateOnlyMatch) {
-    return trimmedDateValue <= buildTodayDateOnlyText();
-  }
-
-  const parsedDate = new Date(trimmedDateValue);
-  if (!Number.isFinite(parsedDate.getTime())) {
-    return false;
-  }
-
-  const today = new Date();
-  const normalizedToday = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
-  const normalizedFieldDate = new Date(Date.UTC(parsedDate.getUTCFullYear(), parsedDate.getUTCMonth(), parsedDate.getUTCDate()));
-  return normalizedFieldDate.getTime() <= normalizedToday.getTime();
-}
-
-function buildTodayDateOnlyText(): string {
-  const today = new Date();
-  return [
-    String(today.getFullYear()),
-    String(today.getMonth() + 1).padStart(2, '0'),
-    String(today.getDate()).padStart(2, '0'),
-  ].join('-');
+  return isOnOrBeforeToday(fieldValue);
 }
 
 function hasEmptyStoryPoints(fieldValue: unknown): boolean {

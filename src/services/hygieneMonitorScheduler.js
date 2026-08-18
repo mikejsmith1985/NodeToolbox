@@ -218,13 +218,28 @@ async function deliverHygieneDigest(digest, teamConfig, configuration) {
  * @param {object} configuration - Live server configuration object.
  * @returns {Promise<{ teamName: string, issuesScanned: number, violationsFound: number, fixesApplied: number, actionsRequired: number, unassignedCount: number, failures: object[] }>}
  */
+/**
+ * Check ids this server once emitted, mapped to the id the client has always used.
+ *
+ * The stale check answered to 'stale-issue' here and 'stale' in the UI, so a monitor configured from
+ * the UI's own check list silently never switched it on. The id is now 'stale' on both sides; this
+ * keeps a saved server config that still names the old one working rather than quietly dropping the
+ * rule from that team's scan.
+ */
+const LEGACY_CHECK_ID_ALIASES = { 'stale-issue': 'stale' };
+
+/** Builds the enabled-check lookup, translating any legacy id a saved config still carries. */
+function buildEnabledCheckFilter(enabledCheckIds) {
+  return new Set(enabledCheckIds.map((checkId) => LEGACY_CHECK_ID_ALIASES[checkId] ?? checkId));
+}
+
 async function runHygieneScan(teamConfig, configuration) {
   const scanStartedAt = new Date().toISOString();
   const isTlsVerified = configuration.sslVerify !== false;
   const jiraConfig = configuration.jira || {};
   const teamFieldConfig = teamConfig.fieldConfig || {};
   const enabledCheckFilter = teamConfig.enabledCheckIds && teamConfig.enabledCheckIds.length > 0
-    ? new Set(teamConfig.enabledCheckIds)
+    ? buildEnabledCheckFilter(teamConfig.enabledCheckIds)
     : null;
 
   let issuesScanned = 0;
@@ -392,6 +407,7 @@ function startHygieneMonitorScheduler(configuration) {
 }
 
 module.exports = {
+  buildEnabledCheckFilter,
   buildHygieneDigest,
   runHygieneScan,
   getLastScanStatus,

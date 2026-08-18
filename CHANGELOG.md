@@ -22,6 +22,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   work it cannot place, never somewhere a person should file something.
 
 ### Fixed
+- **Two comparators answered "is this overdue?" differently.** Hygiene compared calendar days;
+  the Readiness scan parsed the same date into a moment and compared it to `Date.now()`. A bare Jira
+  date parses as UTC midnight, so west of Greenwich the two diverged every evening: from 20:00 in
+  New York, Readiness called tomorrow "past" while Hygiene — and the person reading the screen —
+  still called it tomorrow. Both now go through one `calendarDate.ts`, which reduces every value to
+  the calendar day it names before comparing, and never parses a bare `YYYY-MM-DD` at all, because
+  parsing is what attached a timezone Jira never put there. Pinned by a test that sweeps 48 hours of
+  clock positions against a spread of dates and asserts the two surfaces never differ — a property,
+  so it holds in whatever timezone the suite runs in.
+
+- **The server hygiene port had drifted from the client it mirrors.** Four checks carried a
+  different severity (`missing-feature-link` and `no-assignee` were warnings that should have been
+  errors; `target-end-overdue` and `due-date-overdue` were errors that should have been warnings),
+  and the stale check answered to `stale-issue` where the UI has only ever shown `stale` — so a
+  monitor configured from the UI's own check list could never switch that rule on. All five are now
+  aligned to the client catalog, and a saved server config still naming `stale-issue` is translated
+  rather than silently dropped.
+
+  The monitor also derived "today" from `toISOString()`, which is the UTC day — the same evening
+  drift as above, between the scheduled scan and the screen. It now uses its own local calendar day.
+
+  None of this was visible from either side alone, so `test/unit/hygieneRulesParity.test.js` now
+  reads the client's flag catalog from source and fails when the two drift apart.
+
 - **Overdue warnings reached almost nothing.** A handful of issues sat visibly past their due date
   in Jira while the Today dashboard's **Due / overdue** card read zero. Three separate causes, each
   confirmed against the running evaluator rather than by reading:

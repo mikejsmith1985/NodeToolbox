@@ -94,30 +94,33 @@ describe('evaluateHygieneRules — no-assignee', () => {
   });
 });
 
-// ── stale-issue check ─────────────────────────────────────────────────────────
+// ── stale check ───────────────────────────────────────────────────────────────
+//
+// The id is 'stale', matching the client. It was 'stale-issue' here, which meant a monitor
+// configured from the UI's own check list could never switch this rule on.
 
-describe('evaluateHygieneRules — stale-issue', () => {
+describe('evaluateHygieneRules — stale', () => {
   // Staleness counts BUSINESS days against the 5-business-day default (one work week), matching every client
   // surface. The gaps below give the same outcome whatever weekday the test runs on: any 7-calendar-day span is
   // exactly 5 business days (5 weekdays + 2 weekend days), and any 3-calendar-day span is at most 3 business days.
-  it('flags stale-issue once an In Progress issue has 5+ business days (one week) of no update', () => {
+  it('flags stale once an In Progress issue has 5+ business days (one week) of no update', () => {
     const staleDateString = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
     const issue = buildStory({
       status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } },
       updated: staleDateString,
     });
     const flags = evaluateHygieneRules(issue, EMPTY_FIELD_CONFIG);
-    expect(extractCheckIds(flags)).toContain('stale-issue');
+    expect(extractCheckIds(flags)).toContain('stale');
   });
 
-  it('does not flag stale-issue when updated within the last 5 business days', () => {
+  it('does not flag stale when updated within the last 5 business days', () => {
     const recentDate = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
     const issue = buildStory({
       status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } },
       updated: recentDate,
     });
     const flags = evaluateHygieneRules(issue, EMPTY_FIELD_CONFIG);
-    expect(extractCheckIds(flags)).not.toContain('stale-issue');
+    expect(extractCheckIds(flags)).not.toContain('stale');
   });
 });
 

@@ -5,7 +5,10 @@
 // what the Jira REST API returns; the outputs mirror HygieneFlag objects so the
 // hygiene monitor scheduler can use the same check IDs the UI already displays.
 //
-// Rule: add logic here in lockstep with hygieneChecks.ts — never diverge.
+// Rule: add logic here in lockstep with hygieneChecks.ts — never diverge. The client's
+// BUILT_IN_HYGIENE_FLAGS catalog is the source of truth for every check id and severity below, and
+// test/unit/hygieneRulesParity.test.js reads it from source and fails when the two drift apart —
+// which is how four wrong severities and one wrong check id survived here unnoticed.
 
 'use strict';
 
@@ -126,10 +129,47 @@ function businessDaysElapsedSince(dateText) {
  * @returns {boolean}
  */
 function isDateTodayOrPast(fieldValue) {
-  if (!fieldValue) return false;
-  const parsedDate = new Date(String(fieldValue).split('T')[0]);
-  const todayDate = new Date(new Date().toISOString().split('T')[0]);
-  return parsedDate <= todayDate;
+  const calendarDay = readCalendarDay(fieldValue);
+  // Lexicographic order on YYYY-MM-DD is chronological order, which is why both sides compare days
+  // as strings rather than parsing them into moments.
+  return calendarDay !== null && calendarDay <= toCalendarDay(new Date());
+}
+
+/**
+ * Formats an instant as the calendar day it falls on for the SERVER's own clock.
+ *
+ * Deliberately local, not UTC. This used to derive "today" from `toISOString()`, which is the UTC
+ * day — so for several hours every evening west of Greenwich the monitor considered tomorrow's due
+ * dates already overdue while the UI, which compares local days, did not. Mirrors the client's
+ * client/src/utils/calendarDate.ts.
+ *
+ * @param {Date} instant
+ * @returns {string} The day in YYYY-MM-DD form.
+ */
+function toCalendarDay(instant) {
+  return [
+    String(instant.getFullYear()),
+    String(instant.getMonth() + 1).padStart(2, '0'),
+    String(instant.getDate()).padStart(2, '0'),
+  ].join('-');
+}
+
+/**
+ * Reads a Jira date or datetime as the calendar day it names, or null when it names none.
+ *
+ * A bare YYYY-MM-DD is returned untouched — never parsed, because parsing attaches a timezone Jira
+ * did not put there. A full datetime IS an instant, so it reduces to the day it falls on.
+ *
+ * @param {*} fieldValue
+ * @returns {string|null}
+ */
+function readCalendarDay(fieldValue) {
+  if (typeof fieldValue !== 'string') return null;
+  const trimmedValue = fieldValue.trim();
+  if (trimmedValue === '') return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmedValue)) return trimmedValue;
+  const parsedInstant = new Date(trimmedValue);
+  return Number.isFinite(parsedInstant.getTime()) ? toCalendarDay(parsedInstant) : null;
 }
 
 /**
@@ -219,7 +259,7 @@ function checkMissingFeatureLink(issue, fieldConfig) {
   const configuredIds = fieldConfig.featureLinkFieldIds || [];
   if (configuredIds.length === 0) return null;
   if (hasMeaningfulValueForAnyField(issue, configuredIds)) return null;
-  return { checkId: 'missing-feature-link', label: 'Missing feature link', severity: 'warn' };
+  return { checkId: 'missing-feature-link', label: 'Missing feature link', severity: 'error' };
 }
 
 function checkMissingParentLink(issue, fieldConfig) {
@@ -327,7 +367,7 @@ function checkTargetEndOverdue(issue, fieldConfig) {
     ? readIssueFieldValue(issue, configuredIds[0])
     : null;
   if (!targetEndValue || !isDateTodayOrPast(targetEndValue)) return null;
-  return { checkId: 'target-end-overdue', label: 'Target end date overdue', severity: 'error' };
+  return { checkId: 'target-end-overdue', label: 'Target end date overdue', severity: 'warn' };
 }
 
 // Flags any delivery work item past its due date. Previously gated to Feature/Epic, which meant a
@@ -336,7 +376,7 @@ function checkDueDateOverdue(issue) {
   if (!carriesOwnDueDate(issue)) return null;
   if (isDoneIssue(issue)) return null;
   if (!isDateTodayOrPast(issue.fields.duedate)) return null;
-  return { checkId: 'due-date-overdue', label: 'Due date overdue', severity: 'error' };
+  return { checkId: 'due-date-overdue', label: 'Due date overdue', severity: 'warn' };
 }
 
 function checkMissingStoryPoints(issue) {
@@ -356,7 +396,10 @@ function checkStaleIssue(issue) {
   // business days. Kept in lockstep with the client checkStaleIssue default.
   if (businessDaysElapsedSince(issue.fields.updated) < STALE_THRESHOLD_DAYS) return null;
   // Label derives from the constant so the wording can never drift from the threshold it describes.
-  return { checkId: 'stale-issue', label: `Stale — no update in ${STALE_THRESHOLD_DAYS}+ business days`, severity: 'warn' };
+  // 'stale', not 'stale-issue'. The port answered to an id the client has never used, so a monitor
+  // configured from the UI's check list could not switch this rule on. LEGACY_CHECK_ID_ALIASES keeps
+  // any saved server config that still names the old id working.
+  return { checkId: 'stale', label: `Stale — no update in ${STALE_THRESHOLD_DAYS}+ business days`, severity: 'warn' };
 }
 
 // Flags IN-PROGRESS issues with no assignee — active work nobody owns. To Do items are excluded
@@ -365,7 +408,7 @@ function checkStaleIssue(issue) {
 function checkNoAssignee(issue) {
   if (!isInProgressIssue(issue)) return null;
   if (hasMeaningfulValue(issue.fields.assignee)) return null;
-  return { checkId: 'no-assignee', label: 'No assignee', severity: 'warn' };
+  return { checkId: 'no-assignee', label: 'No assignee', severity: 'error' };
 }
 
 function checkNoAcceptanceCriteria(issue, fieldConfig) {

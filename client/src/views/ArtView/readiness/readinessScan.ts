@@ -9,6 +9,7 @@ import { classifyStatusBucket } from '../../../utils/workflowDelivery.ts';
 import { detectImpedimentReasons, type ImpedimentReason } from '../hooks/artHelpers.ts';
 import { readFeatureReviewFieldValue } from '../../SprintDashboard/featureReviewFixes.ts';
 import type { HygieneFieldConfig } from '../../Hygiene/checks/hygieneChecks.ts';
+import { isOnOrBeforeToday, readCalendarDay } from '../../../utils/calendarDate.ts';
 import type { JiraIssue } from '../../../types/jira.ts';
 
 // ── Types ──
@@ -136,12 +137,19 @@ function toReadinessBucket(issue: JiraIssue): ReadinessStatusBucket {
   return 'todo';
 }
 
-/** True when an ISO date is missing or strictly before the start of today. */
+/**
+ * True when a date is absent, unreadable, or names a day that has already arrived.
+ *
+ * The "missing" half is this surface's own rule — Readiness treats an unset Target End as an alert
+ * in its own right, which Hygiene reports as a separate `missing-*` check. The "past" half is NOT
+ * this surface's own rule and used to be: it parsed the date into a moment and compared it to
+ * `Date.now()`, which makes a bare Jira date UTC midnight and so called tomorrow "past" for every
+ * evening west of Greenwich. That half now goes through the shared calendar comparator, so this
+ * scan and the Hygiene checks cannot disagree about the same date.
+ */
 function isMissingOrPast(isoDate: string | null, nowMs: number): boolean {
-  if (!isoDate) return true;
-  const parsed = new Date(isoDate).getTime();
-  if (!Number.isFinite(parsed)) return true;
-  return parsed < nowMs;
+  if (readCalendarDay(isoDate) === null) return true;
+  return isOnOrBeforeToday(isoDate, nowMs);
 }
 
 // ── Alert evaluation ──
