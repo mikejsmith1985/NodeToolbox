@@ -70,6 +70,11 @@ export default function TodayDashboard() {
     }
 
     if (destination.kind === 'sprintTab') {
+      // A destination that names a team activates it first. Without this the link opens whichever
+      // team was last active, which on a count spread across teams lands on the wrong one.
+      if (destination.teamProfileId) {
+        useSettingsStore.getState().setSprintDashboardActiveTeamProfileId(destination.teamProfileId);
+      }
       // The Sprint Dashboard reopens to its last active tab, so set it before navigating.
       useSettingsStore.getState().setSprintDashboardActiveTab(destination.tab ?? DEFAULT_SPRINT_TAB);
       // Scope params (e.g. hygieneFilter) ride the URL so the landing tab opens showing exactly

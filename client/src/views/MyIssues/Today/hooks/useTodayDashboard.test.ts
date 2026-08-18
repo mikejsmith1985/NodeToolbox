@@ -476,6 +476,7 @@ describe('useTodayDashboard — the Due / overdue card opens on what it counted'
     // The count is a my + team union, but one link can only ever show one of those scopes. Rather
     // than silently showing a fraction of the number on the card, the card says which half is which
     // and lets the user open either.
+    installSettingsStore([buildTeamProfile('alpha-id', 'Transformers', 'ENCUC')]);
     mockJiraGet.mockResolvedValue({ issues: [] });
 
     const { result } = renderHook(() => useTodayDashboard());
@@ -483,9 +484,11 @@ describe('useTodayDashboard — the Due / overdue card opens on what it counted'
 
     const scopeShares = result.current.categories['due-overdue'].scopeBreakdown;
     expect(scopeShares?.map((share) => share.id)).toEqual(['mine', 'team']);
+    // One team, so the summary chip can name it; the destination carries the profile to activate.
     expect(scopeShares?.find((share) => share.id === 'team')?.destination).toEqual({
       kind: 'sprintTab',
       tab: 'hygiene',
+      teamProfileId: 'alpha-id',
       search: { hygieneFilter: 'due-date-overdue,target-end-overdue' },
     });
   });
@@ -597,7 +600,10 @@ describe('useTodayDashboard — the Due / overdue count is attributable to a tea
     await waitFor(() => expect(result.current.categories['due-overdue'].status).toBe('ready'));
     const teamShare = result.current.categories['due-overdue'].scopeBreakdown?.find((share) => share.id === 'team');
     expect(teamShare?.destination).toEqual({
-      kind: 'sprintTab', tab: 'hygiene', search: { hygieneFilter: 'due-date-overdue,target-end-overdue' },
+      kind: 'sprintTab',
+      tab: 'hygiene',
+      teamProfileId: 'alpha-id',
+      search: { hygieneFilter: 'due-date-overdue,target-end-overdue' },
     });
     expect(teamShare?.teamProfileId).toBe('alpha-id');
   });
@@ -622,6 +628,7 @@ describe('useTodayDashboard — Open goes where the work actually is', () => {
     expect(result.current.categories['due-overdue'].destination).toEqual({
       kind: 'sprintTab',
       tab: 'hygiene',
+      teamProfileId: 'alpha-id',
       search: { hygieneFilter: 'due-date-overdue,target-end-overdue' },
     });
   });
@@ -647,5 +654,35 @@ describe('useTodayDashboard — Open goes where the work actually is', () => {
 
     await waitFor(() => expect(result.current.categories['due-overdue'].count).toBe(1));
     expect(result.current.categories['due-overdue'].destination.kind).toBe('myIssuesTab');
+  });
+});
+
+
+describe('the reporter configuration — two teams, the team half dominant', () => {
+  it('names the team Open lands on, instead of trusting whichever team is active', async () => {
+    // Proven wrong once already: the destination was a bare sprintTab link with no team identity,
+    // and only handleOpenTeam activates a profile — so Open on a 26 could land on the team holding
+    // 2 of it. A destination that cannot say which team it means is the same dead end as before.
+    installSettingsStore([
+      buildTeamProfile('alpha-id', 'Transformers', 'ENCUC'),
+      buildTeamProfile('beta-id', 'Cleanup Crew', 'ENCUC'),
+    ]);
+    mockJiraGet.mockResolvedValue({ issues: [] });
+    mockRunHygieneScan.mockImplementation((options: { activeTeamProfileId: string }) =>
+      Promise.resolve(buildScanOutcome(
+        options.activeTeamProfileId === 'alpha-id'
+          ? Array.from({ length: 24 }, (_unused, index) => buildFinding(`T-${index}`, ['due-date-overdue']))
+          : Array.from({ length: 2 }, (_unused, index) => buildFinding(`C-${index}`, ['due-date-overdue'])),
+      )));
+
+    const { result } = renderHook(() => useTodayDashboard());
+    await waitFor(() => expect(result.current.categories['due-overdue'].count).toBe(26));
+
+    expect(result.current.categories['due-overdue'].destination).toEqual({
+      kind: 'sprintTab',
+      tab: 'hygiene',
+      teamProfileId: 'alpha-id',
+      search: { hygieneFilter: 'due-date-overdue,target-end-overdue' },
+    });
   });
 });

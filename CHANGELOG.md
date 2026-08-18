@@ -38,6 +38,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   anywhere" complaint: the number was right, the link went to the wrong place. Open now leads to
   whichever share holds the most of the number on the card.
 
+  A destination can now **name the team it means**. The first attempt at this fix did not, and was
+  therefore not a fix: with two teams configured it produced a bare Sprint-Dashboard link, and only
+  the per-team chips ever activated a profile — so Open on a 26 could still land on the team holding
+  2 of it. `TodayDestination` carries a `teamProfileId`, the navigator activates it before
+  navigating, and a test proves the click fails without that step.
+
 - **Hygiene meta cards broke values mid-word.** The row laid its cards out on a fixed track count,
   which was wrong in both directions in turn: four tracks for five cards left the fifth wrapping and
   a tall blank band beside the summary; six tracks closed the band and then squeezed each card until

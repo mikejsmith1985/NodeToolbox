@@ -52,6 +52,14 @@ export interface TodayDestination {
   tab?: string;
   /** Extra query params carried to the target, so the landing view opens in the SAME scope the card counted. */
   search?: Record<string, string>;
+  /**
+   * The team profile to activate before navigating.
+   *
+   * A `sprintTab` link without this opens whichever team happens to be active, which on a count
+   * spread across teams means landing on the one holding two of twenty-six. The destination has to
+   * be able to say which team it means, or it is not a destination at all.
+   */
+  teamProfileId?: string;
 }
 
 /**
@@ -314,13 +322,13 @@ function pickLargestShareDestination(
     return personalShare?.destination ?? null;
   }
 
-  // The team half wins. With one team the summary share already carries a usable link; with several,
-  // no single link is honest, so the card keeps its personal destination and the chips do the work.
+  // The team half wins, so Open must name the team holding most of it — not leave the choice to
+  // whichever profile happens to be active.
   const largestTeamShare = [...(teamShares ?? [])].sort((left, right) => right.count - left.count)[0];
-  if (teamShare?.destination) {
-    return teamShare.destination;
+  if (largestTeamShare) {
+    return { ...TEAM_HYGIENE_DESTINATION, teamProfileId: largestTeamShare.teamProfileId };
   }
-  return largestTeamShare ? TEAM_HYGIENE_DESTINATION : null;
+  return teamShare?.destination ?? null;
 }
 
 /** Builds a mixed-scope (my + team) category result, combining both source statuses. */
@@ -670,7 +678,9 @@ export function useTodayDashboard(): TodayDashboardData {
         id: 'team',
         label: 'Team',
         count: teamDueOverdueKeys.length,
-        destination: isSingleTeamScan ? TEAM_HYGIENE_DESTINATION : undefined,
+        destination: isSingleTeamScan
+          ? { ...TEAM_HYGIENE_DESTINATION, teamProfileId: teamScanTargets[0].teamProfileId }
+          : undefined,
         teamProfileId: isSingleTeamScan ? teamScanTargets[0].teamProfileId : undefined,
       },
     ];

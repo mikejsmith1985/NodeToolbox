@@ -15,8 +15,18 @@ const { mockUseTodayDashboard, mockUseChecklistCompletion } = vi.hoisted(() => (
 
 vi.mock('./hooks/useTodayDashboard.ts', () => ({ useTodayDashboard: mockUseTodayDashboard }));
 vi.mock('./hooks/useChecklistCompletion.ts', () => ({ useChecklistCompletion: mockUseChecklistCompletion }));
+const { mockSetActiveTab, mockSetActiveTeamProfileId } = vi.hoisted(() => ({
+  mockSetActiveTab: vi.fn(),
+  mockSetActiveTeamProfileId: vi.fn(),
+}));
+
 vi.mock('../../../store/settingsStore.ts', () => ({
-  useSettingsStore: { getState: () => ({ setSprintDashboardActiveTab: vi.fn() }) },
+  useSettingsStore: {
+    getState: () => ({
+      setSprintDashboardActiveTab: mockSetActiveTab,
+      setSprintDashboardActiveTeamProfileId: mockSetActiveTeamProfileId,
+    }),
+  },
 }));
 
 import TodayDashboard from './TodayDashboard.tsx';
@@ -193,5 +203,40 @@ describe('TodayDashboard', () => {
     renderDashboard();
 
     expect(screen.getByText(/done for today/i)).toBeInTheDocument();
+  });
+});
+
+describe('TodayDashboard — a destination that names a team opens THAT team', () => {
+  it('activates the named profile before navigating', () => {
+    // Without this the link opened whichever team was last active — so Open on a count of 26 spread
+    // across two teams could land on the one holding 2 of it, which is the dead end the card's
+    // whole per-team breakdown exists to remove.
+    mockUseTodayDashboard.mockReturnValue(buildDashboard({
+      categories: buildCategories({
+        'due-overdue': {
+          id: 'due-overdue',
+          status: 'ready',
+          count: 26,
+          destination: {
+            kind: 'sprintTab',
+            tab: 'hygiene',
+            teamProfileId: 'alpha-id',
+            search: { hygieneFilter: 'due-date-overdue,target-end-overdue' },
+          },
+        },
+      }),
+    }));
+    mockUseChecklistCompletion.mockReturnValue(buildCompletion());
+
+    render(
+      <MemoryRouter initialEntries={['/my-issues']}>
+        <TodayDashboard />
+      </MemoryRouter>,
+    );
+
+    const dueOverdueCard = screen.getByTestId('today-dashboard').querySelector('[data-category="due-overdue"]');
+    fireEvent.click(dueOverdueCard!.querySelector('button')!);
+
+    expect(mockSetActiveTeamProfileId).toHaveBeenCalledWith('alpha-id');
   });
 });
