@@ -1,4 +1,6 @@
-/* IssueFieldEditors.module.css — Inline field editors used inside the issue detail panel. */
+/* IssueFieldEditors.module.css — Inline field editors used inside the issue detail panel.
+   Sizes come from the shared tokens, which the quick-lookup dialog re-declares one step larger on
+   its own container — so this file scales with that surface without knowing it exists. */
 
 .section {
   display: flex;
@@ -20,23 +22,73 @@
 }
 
 .fieldRow {
-  display: flex;
-  flex-wrap: wrap;
+  /* Label and value in two aligned columns rather than a wrapping flex line. The old layout let a
+     long value push its label out of line, so no two rows shared an edge and the list read as a
+     jumble instead of a form. */
+  display: grid;
+  grid-template-columns: minmax(120px, 22%) 1fr;
   align-items: center;
-  gap: 8px;
+  column-gap: 12px;
+  row-gap: 4px;
+  padding: 2px 0;
 }
 
 .fieldLabel {
-  flex: 0 0 84px;
   font-size: var(--font-size-sm);
+  font-weight: 600;
   color: var(--color-text-secondary);
+}
+
+/* The resting state of a field: the whole value area is the button that starts an edit. Full width
+   so the target is the row rather than the few characters the value happens to occupy. */
+.valueButton {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-text-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.valueButton:hover,
+.valueButton:focus-visible {
+  border-color: var(--color-border-strong);
+  background: var(--color-surface-3);
+}
+
+/* The pencil stays out of the way until the row is the one being pointed at, so a long field list
+   is not a column of identical icons. */
+.editHint {
+  flex: 0 0 auto;
+  opacity: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.valueButton:hover .editHint,
+.valueButton:focus-visible .editHint {
+  opacity: 1;
+}
+
+/* An unset field says so in words. Italic and secondary so it never reads as a real value. */
+.emptyValue {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-md);
+  font-style: italic;
 }
 
 .controls {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
 
 .fieldValue {
@@ -46,15 +98,23 @@
 
 .input,
 .select {
-  padding: 6px 10px;
+  padding: 8px 10px;
   border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-md);
   background: var(--color-surface-3);
   color: var(--color-text-primary);
-  font-size: var(--font-size-sm);
+  font-size: var(--font-size-md);
   /* An explicit background opts the control out of the root's `color-scheme`, which leaves the OPEN
      option list painted light on a dark page. Applies to Priority and Fix Version alike. */
   color-scheme: inherit;
+}
+
+/* Only inside an editing row does a control stretch. `.section` is a flex COLUMN, so putting a
+   flex-basis on `.input` itself would have sized the find-a-field box's HEIGHT, not its width. */
+.controls .input,
+.controls .select {
+  flex: 1 1 220px;
+  min-width: 0;
 }
 
 /* Belt and braces for browsers that do honour option colours. */
@@ -65,7 +125,8 @@
 
 .editButton,
 .cancelButton {
-  padding: 4px 10px;
+  flex: 0 0 auto;
+  padding: 6px 12px;
   border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-md);
   background: var(--color-surface-3);
@@ -75,7 +136,8 @@
 }
 
 .saveButton {
-  padding: 4px 12px;
+  flex: 0 0 auto;
+  padding: 6px 14px;
   border: 1px solid var(--color-accent);
   border-radius: var(--radius-md);
   background: var(--color-accent);
@@ -90,13 +152,14 @@
 }
 
 .error {
-  flex-basis: 100%;
+  grid-column: 2;
   margin: 0;
   color: var(--color-danger, #d64545);
   font-size: var(--font-size-sm);
 }
 
 .saved {
+  grid-column: 2;
   color: var(--color-success, #2e9e5b);
   font-size: var(--font-size-sm);
 }

@@ -1,9 +1,14 @@
 // IssueFieldEditors.tsx — Reusable inline editors (text, single-select, assignee) for a Jira issue.
 //
 // These add editor SHAPE only: every save is delegated by the caller to an existing
-// featureReviewFixes writer (the recorded Art VII drift — writes stay single-sourced). Each editor
-// shows the current value with an Edit affordance; while editing it offers Save/Cancel and surfaces
-// an inline error on failure without changing the committed value (spec FR-008/FR-010).
+// featureReviewFixes writer (the recorded Art VII drift — writes stay single-sourced). While editing,
+// each editor offers Save/Cancel and surfaces an inline error on failure without changing the
+// committed value (spec FR-008/FR-010).
+//
+// The VALUE ITSELF is the control that starts an edit, rather than a separate Edit button beside it.
+// A button was more explicit, but it also doubled the width of every row and put the affordance
+// where the eye was not — and the fields that most need editing are the EMPTY ones, where there was
+// nothing to click next to. Those now read "Click to edit" in words, so nothing is left to infer.
 
 import { useState } from 'react';
 
@@ -16,10 +21,10 @@ import styles from './IssueFieldEditors.module.css';
 
 const SAVE_LABEL = 'Save';
 const CANCEL_LABEL = 'Cancel';
-const EDIT_LABEL = 'Edit';
+const EDIT_HINT_LABEL = 'Click to edit';
 const SEARCH_LABEL = 'Search';
 const SAVED_FLASH = '✓ Saved';
-const EMPTY_DISPLAY = '—';
+const EDIT_ACTION_PREFIX = 'Edit';
 const CHOOSE_OPTION_LABEL = 'Choose…';
 const NO_MATCHES_LABEL = 'No matching users';
 
@@ -32,6 +37,40 @@ function EditorFeedback({ error, justSaved }: { error: string | null; justSaved:
     return <span className={styles.saved} role="status">{SAVED_FLASH}</span>;
   }
   return null;
+}
+
+/**
+ * The resting state of every editor: the field's value, rendered as the control that edits it.
+ *
+ * `aria-label` names the ACTION rather than echoing the value, so a screen reader announces
+ * "Edit Priority" instead of reading back "High" with no clue it can be changed — and so the button
+ * has a stable name even when the field is empty.
+ */
+function FieldValueButton({
+  label,
+  displayValue,
+  onBeginEdit,
+}: {
+  label: string;
+  displayValue: string;
+  onBeginEdit: () => void;
+}): React.JSX.Element {
+  const hasValue = displayValue.trim() !== '';
+
+  return (
+    <button
+      aria-label={`${EDIT_ACTION_PREFIX} ${label}`}
+      className={styles.valueButton}
+      title={EDIT_HINT_LABEL}
+      type="button"
+      onClick={onBeginEdit}
+    >
+      <span className={hasValue ? styles.fieldValue : styles.emptyValue}>
+        {hasValue ? displayValue : EDIT_HINT_LABEL}
+      </span>
+      <span aria-hidden="true" className={styles.editHint}>✎</span>
+    </button>
+  );
 }
 
 export interface TextFieldEditorProps {
@@ -74,12 +113,11 @@ export function TextFieldEditor({ label, initialValue, inputType = 'text', onSav
           </button>
         </div>
       ) : (
-        <div className={styles.controls}>
-          <span className={styles.fieldValue}>{initialValue || EMPTY_DISPLAY}</span>
-          <button className={styles.editButton} type="button" onClick={() => { setDraft(initialValue); editor.beginEdit(); }}>
-            {EDIT_LABEL}
-          </button>
-        </div>
+        <FieldValueButton
+          displayValue={initialValue}
+          label={label}
+          onBeginEdit={() => { setDraft(initialValue); editor.beginEdit(); }}
+        />
       )}
       <EditorFeedback error={editor.error} justSaved={editor.justSaved} />
     </div>
@@ -137,16 +175,23 @@ export function SelectFieldEditor({ label, initialValue, options, onSave, onSave
           </button>
         </div>
       ) : (
-        <div className={styles.controls}>
-          <span className={styles.fieldValue}>{initialValue || EMPTY_DISPLAY}</span>
-          <button className={styles.editButton} type="button" onClick={() => { setDraft(initialValue); editor.beginEdit(); }}>
-            {EDIT_LABEL}
-          </button>
-        </div>
+        <FieldValueButton
+          // The option's own label, never the id behind it. `initialValue` is whatever the writer
+          // resolves against — for priority that is a numeric Jira id, and showing "3" where the
+          // user expects "High" is exactly the backend leak this panel must not produce.
+          displayValue={readOptionLabel(options, initialValue)}
+          label={label}
+          onBeginEdit={() => { setDraft(initialValue); editor.beginEdit(); }}
+        />
       )}
       <EditorFeedback error={editor.error} justSaved={editor.justSaved} />
     </div>
   );
+}
+
+/** The human label for a stored option value, falling back to the value when Jira no longer lists it. */
+function readOptionLabel(options: FeatureReviewSelectOption[], storedValue: string): string {
+  return options.find((option) => option.value === storedValue)?.label ?? storedValue;
 }
 
 export interface AssigneeFieldEditorProps {
@@ -214,10 +259,7 @@ export function AssigneeFieldEditor({ initialDisplayName, onSearchUsers, onSave,
           </button>
         </div>
       ) : (
-        <div className={styles.controls}>
-          <span className={styles.fieldValue}>{initialDisplayName || EMPTY_DISPLAY}</span>
-          <button className={styles.editButton} type="button" onClick={editor.beginEdit}>{EDIT_LABEL}</button>
-        </div>
+        <FieldValueButton displayValue={initialDisplayName} label="Assignee" onBeginEdit={editor.beginEdit} />
       )}
       <EditorFeedback error={editor.error} justSaved={editor.justSaved} />
     </div>

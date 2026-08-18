@@ -22,12 +22,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   work it cannot place, never somewhere a person should file something.
 
 ### Fixed
+- **F2 quick issue lookup — a dropdown no longer reports a set field as empty.** Jira hands the
+  panel two differently-keyed halves of the same fact: the issue carries its priority as a NAME
+  (`High`) while the option list is keyed by the Jira ID (`3`), because the ID is what the writer
+  resolves against. Nothing reconciled them, so the select opened on the blank row and told the
+  reader a priority was unset on an issue that plainly had one — and a careless save from there
+  would have written the blank. `resolveSelectedOptionValue` now matches the held value against
+  every identifier Jira might have used for the same allowed value, exactly as the writer does. A
+  value Jira no longer lists is kept rather than blanked, since a retired option is still the
+  issue's real value. Resting rows show the readable label, never the ID behind it.
+
+- **F2 quick issue lookup — enlarging the tool text now reaches it.** The popup mounts at the app
+  root, outside the only element carrying the A+/A++ `zoom`, so every request for bigger text had
+  been silently skipping the one surface most used for reading. The dialog now declares its own
+  type scale a step above the app's dense default.
+
 - **My Issues — the compact and table views say when they are empty.** They returned their own bare
   container, so a filter matching nothing left a row of column headings and no explanation. Answered
   once, above the view modes, so none of them can forget it. (The default **cards** view already
   handled this in `SwimlaneCardView` — the gap was narrower than first reported.)
 
 ### Changed
+- **F2 quick issue lookup is a near-full-screen dialog you edit by clicking the value.** Three
+  changes to one screen, all aimed at the same complaint — that it was small and fiddly.
+
+  It now fills 96vw × 94vh instead of a 1120px column, with the reading content capped at 1280px so
+  the extra width goes to margins and line height rather than to lines the eye loses its place in. A
+  thin margin is deliberately left around it: that is the click-away-to-close escape hatch, and
+  clicking it now closes (only a click on the backdrop itself — a click that merely bubbles out of
+  the dialog cannot throw away someone's work).
+
+  The **Edit** button beside every field is gone; the value itself is the control. The button was
+  more explicit, but it doubled the width of every row and put the affordance where the eye was not
+  — and the fields that most need editing are the EMPTY ones, where there was nothing to click
+  beside. An empty field now reads **"Click to edit"** in words, so nothing is left to infer, and
+  the field list is a two-column grid instead of a wrapping flex line that let a long value push its
+  own label out of alignment.
+
+  Size is set by redeclaring the shared tokens on the dialog's own container, so the detail panel,
+  the field editors and the comment thread all scale with it and none of them needs to know this
+  surface exists. The two knobs that could not be expressed that way — the description's max height
+  and the body reading size — are read from the host with the panel's existing values as defaults,
+  so every other host (hygiene lists, Agile Hub) renders byte-identically.
+
 - **The connection strip and My Issues use the shared icon set.** `✅ ❌ ⚠ ✕ 📋 👤 🔗` are now icons that
   take the theme and sit on the baseline. The status strip is the most-seen furniture in the app.
 

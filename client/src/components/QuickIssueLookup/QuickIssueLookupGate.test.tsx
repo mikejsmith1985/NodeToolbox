@@ -72,3 +72,28 @@ describe('QuickIssueLookupGate', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 });
+
+describe('QuickIssueLookupGate — clicking away', () => {
+  beforeEach(() => useQuickLookupStore.setState({ isOpen: false, seedKey: null, openNonce: 0 }));
+  afterEach(() => vi.clearAllMocks());
+
+  it('closes when the backdrop around the dialog is clicked', () => {
+    // The dialog is deliberately not edge-to-edge: the visible margin around it is the escape hatch
+    // for anyone who reaches for the mouse rather than Escape, so it has to actually close.
+    render(<QuickIssueLookupGate />);
+    act(() => { useQuickLookupStore.getState().open(); });
+
+    fireEvent.click(screen.getByRole('dialog'));
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('stays open when a click lands inside the dialog itself', () => {
+    render(<QuickIssueLookupGate />);
+    act(() => { useQuickLookupStore.getState().open(); });
+
+    fireEvent.click(screen.getByRole('heading', { name: /Quick issue lookup/ }));
+
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+  });
+});

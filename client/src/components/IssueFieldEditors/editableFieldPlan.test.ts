@@ -7,6 +7,7 @@ import {
   filterFieldPlans,
   readFieldOptions,
   resolveEditorKind,
+  resolveSelectedOptionValue,
 } from './editableFieldPlan.ts';
 
 describe('resolveEditorKind', () => {
@@ -164,5 +165,56 @@ describe('readFieldOptions', () => {
     }, {}).fields;
 
     expect(readFieldOptions(fieldPlan)).toEqual([{ label: 'High', value: '3' }]);
+  });
+});
+
+describe('resolveSelectedOptionValue', () => {
+  it('preselects a priority whose issue value is its NAME but whose option is keyed by id', () => {
+    // The defect this exists to stop: the issue carries `{ name: 'High' }` while the option list is
+    // keyed by id ('3'). A select handed 'High' matches no option and renders as though the field
+    // were empty — telling the user a priority is unset on an issue that plainly has one.
+    const [fieldPlan] = buildEditableFieldPlan({
+      priority: { name: 'Priority', schema: { type: 'priority' }, allowedValues: [{ id: '3', name: 'High' }] },
+    }, { priority: { id: '3', name: 'High' } }).fields;
+
+    expect(resolveSelectedOptionValue(fieldPlan)).toBe('3');
+  });
+
+  it('preselects a custom option field carried as `value` rather than `name`', () => {
+    const [fieldPlan] = buildEditableFieldPlan({
+      customfield_1: { name: 'T-Shirt Size', schema: { type: 'option' }, allowedValues: [{ id: '77', value: 'Large' }] },
+    }, { customfield_1: { id: '77', value: 'Large' } }).fields;
+
+    expect(resolveSelectedOptionValue(fieldPlan)).toBe('77');
+  });
+
+  it('preselects a version by name, matching how version options are keyed', () => {
+    const [fieldPlan] = buildEditableFieldPlan({
+      fixVersions: {
+        name: 'Fix Version/s',
+        schema: { type: 'array', items: 'version' },
+        allowedValues: [{ id: '10500', name: '09/10/2026' }],
+      },
+    }, { fixVersions: [{ id: '10500', name: '09/10/2026' }] }).fields;
+
+    expect(resolveSelectedOptionValue(fieldPlan)).toBe('09/10/2026');
+  });
+
+  it('reports an empty field as empty rather than guessing an option', () => {
+    const [fieldPlan] = buildEditableFieldPlan({
+      priority: { name: 'Priority', schema: { type: 'priority' }, allowedValues: [{ id: '3', name: 'High' }] },
+    }, {}).fields;
+
+    expect(resolveSelectedOptionValue(fieldPlan)).toBe('');
+  });
+
+  it('keeps a value Jira never listed rather than silently blanking it', () => {
+    // A field can hold a value that is no longer an allowed choice. Blanking it would make the
+    // editor look like the field is unset, and a careless save would then wipe a real value.
+    const [fieldPlan] = buildEditableFieldPlan({
+      priority: { name: 'Priority', schema: { type: 'priority' }, allowedValues: [{ id: '3', name: 'High' }] },
+    }, { priority: { id: '9', name: 'Retired' } }).fields;
+
+    expect(resolveSelectedOptionValue(fieldPlan)).toBe('Retired');
   });
 });

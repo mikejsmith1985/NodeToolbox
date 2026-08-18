@@ -11,7 +11,8 @@ const { mockSaveSimpleField, mockSaveFixVersion } = vi.hoisted(() => ({
 }));
 
 vi.mock('../../views/SprintDashboard/featureReviewFixes.ts', () => ({
-  readFeatureReviewSelectOptions: () => [{ label: 'High', value: 'High' }],
+  // Keyed by Jira id, as the real reader does — the id is what the option writer resolves against.
+  readFeatureReviewSelectOptions: () => [{ label: 'High', value: '3' }, { label: 'Low', value: '5' }],
   saveFeatureReviewSimpleField: mockSaveSimpleField,
   saveFeatureReviewOptionField: vi.fn().mockResolvedValue(undefined),
   saveFeatureReviewUserField: vi.fn().mockResolvedValue(undefined),
@@ -52,7 +53,7 @@ describe('IssueFieldEditingSection', () => {
     const onFieldSaved = vi.fn();
     render(<IssueFieldEditingSection issue={ISSUE} editMeta={{ summary: { name: 'Summary' } }} onFieldSaved={onFieldSaved} />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Summary' }));
     fireEvent.change(screen.getByLabelText('Summary value'), { target: { value: 'Revised' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
 
@@ -138,5 +139,27 @@ describe('IssueFieldEditingSection — fix version', () => {
       <IssueFieldEditingSection issue={singleVersionIssue} editMeta={FIX_VERSION_META} onFieldSaved={vi.fn()} />,
     );
     expect(screen.queryByText(/replaces all of them/)).not.toBeInTheDocument();
+  });
+});
+
+describe('IssueFieldEditingSection — option fields show labels, not Jira ids', () => {
+  afterEach(() => vi.clearAllMocks());
+
+  const PRIORITY_META = {
+    priority: { name: 'Priority', schema: { type: 'priority' }, allowedValues: [{ id: '3', name: 'High' }] },
+  };
+
+  it('shows the priority by its readable name at rest', () => {
+    render(<IssueFieldEditingSection issue={ISSUE} editMeta={PRIORITY_META} onFieldSaved={vi.fn()} />);
+    expect(screen.getByRole('button', { name: 'Edit Priority' })).toHaveTextContent('High');
+  });
+
+  it('opens the priority select already on the issue’s current option', () => {
+    // The issue carries `{ name: 'High' }` while the options are keyed by id, so without the
+    // reconciliation the select opened blank and reported a set priority as unset.
+    render(<IssueFieldEditingSection issue={ISSUE} editMeta={PRIORITY_META} onFieldSaved={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Priority' }));
+    expect(screen.getByLabelText('Priority value')).toHaveValue('3');
   });
 });

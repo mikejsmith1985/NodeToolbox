@@ -216,3 +216,29 @@ export function filterFieldPlans(
   if (normalizedQuery === '') return [...fields];
   return fields.filter((field) => field.label.toLowerCase().includes(normalizedQuery));
 }
+
+/**
+ * The option value a select should start on for a field that already holds a value.
+ *
+ * Needed because the two sides are keyed differently and nothing reconciled them. An issue carries
+ * its priority as `{ name: 'High' }`, while the option list is keyed by id ('3') because that is
+ * what the writer resolves against — so a select handed 'High' matched no option and rendered as
+ * though the field were empty. Somebody reading that panel was told a priority was unset on an
+ * issue that plainly had one.
+ *
+ * The match is made against every identifier Jira might have used for the same allowed value, which
+ * is the same set `buildOptionPayload` matches on when writing. A value Jira no longer lists is
+ * returned unchanged rather than blanked: an option that has been retired is still the issue's real
+ * value, and showing it as empty would invite a save that quietly wiped it.
+ */
+export function resolveSelectedOptionValue(fieldPlan: EditableFieldPlan): string {
+  const heldValue = fieldPlan.currentValue;
+  if (heldValue === '') return '';
+
+  const options = readFieldOptions(fieldPlan);
+  const matchedByOptionValue = options.find((option) => option.value === heldValue);
+  if (matchedByOptionValue) return matchedByOptionValue.value;
+
+  const matchedByLabel = options.find((option) => option.label === heldValue);
+  return matchedByLabel ? matchedByLabel.value : heldValue;
+}

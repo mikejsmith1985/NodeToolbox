@@ -1,33 +1,55 @@
-/* QuickIssueLookup.module.css — Centered modal for the app-wide F2 quick issue lookup popup. */
+/* QuickIssueLookup.module.css — Near-full-screen dialog for the app-wide F2 quick issue lookup. */
 
 .backdrop {
   position: fixed;
   inset: 0;
   z-index: 1000;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: center;
-  padding: 32px 16px;
-  overflow-y: auto;
-  background: rgba(0, 0, 0, 0.45);
+  /* A thin margin rather than none: it keeps the click-outside-to-close escape hatch reachable and
+     keeps the dialog reading as a dialog, at the cost of about four percent of the window. */
+  padding: 2vh 2vw;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.6);
 }
 
 .modal {
-  /* Wide enough for a real description and a comment thread to read as prose rather than as a
-     column of two-or-three-word lines. Capped so the text does not sprawl on an ultrawide display,
-     and given plain px/min() — never a zoom-relative width, which double-shrinks at A+/A++. */
-  width: min(1120px, calc(100vw - 48px));
-  padding: 24px;
+  /* Near the full window. This popup is where an issue is actually read and edited, and at the old
+     1120px the description, the comment thread and the field list competed for one narrow column.
+     Plain vw/vh units only — never a zoom-relative width, which double-shrinks at A+/A++ (GH #160). */
+  width: 96vw;
+  height: 94vh;
+
+  /* The dialog's OWN type scale, one step up from the app's dense default.
+     Redeclaring the shared tokens here rather than restyling anything means every child module —
+     the detail panel, the field editors, the comment thread — scales with it and none of them needs
+     to know this surface exists. The F2 popup also mounts OUTSIDE `.toolContent`, so the A+/A++
+     `zoom` never reached it; this is what finally makes the popup obey a request for larger text. */
+  --font-size-xs: 13px;
+  --font-size-sm: 14px;
+  --font-size-md: 16px;
+  --font-size-lg: 20px;
+
+  /* The detail panel's two host-controlled knobs (see IssueDetailPanel.module.css). A 320px
+     description box is right in a dense list and wrong in a full-window dialog, where it left most
+     of the screen blank and made people scroll a box inside a box. */
+  --issue-body-font-size: var(--font-size-md);
+  --issue-description-max-height: 46vh;
+  --issue-comment-box-min-height: 96px;
+
+  padding: clamp(16px, 2vw, 28px);
   background: var(--color-surface-1);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-floating);
   color: var(--color-text-primary);
+  font-size: var(--font-size-md);
   /* The body scrolls inside the modal so the title and close button stay reachable on a long issue,
      rather than the whole dialog growing past the top of the window. */
   display: flex;
   flex-direction: column;
-  max-height: calc(100vh - 64px);
+  min-height: 0;
 }
 
 .modalHeader {
@@ -43,8 +65,20 @@
   font-size: var(--font-size-lg);
 }
 
+/* The reading column. Left to fill 96vw the description would run to newspaper-column widths that
+   the eye loses its place in, so the CONTENT is capped even though the dialog is not — the space
+   goes to line height and breathing room rather than to longer lines. */
+.readingColumn {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  max-width: 1280px;
+  margin: 0 auto;
+}
+
 .closeButton {
-  padding: 2px 10px;
+  padding: 4px 14px;
   border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-md);
   background: var(--color-surface-3);
@@ -55,17 +89,15 @@
 }
 
 .body {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  /* Only this part scrolls, so the header above it stays put — see .modal. */
+  /* Only this part scrolls, so the header above it stays put — see .modal. Stacking now belongs to
+     .readingColumn, which is this element's single child. */
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
-  /* The popup is a reading surface first: a step up from the app's dense default makes a
-     description and a fifteen-comment thread legible without leaning into the screen. */
+  /* The popup is a reading surface first: the enlarged token scale on .modal plus this line height
+     makes a description and a fifteen-comment thread legible without leaning into the screen. */
   font-size: var(--font-size-md);
-  line-height: 1.55;
+  line-height: 1.6;
 }
 
 .searchBar {
@@ -82,7 +114,7 @@
 .searchInput {
   flex: 1 1 auto;
   min-width: 0;
-  padding: 8px 12px;
+  padding: 12px 16px;
   border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-md);
   background: var(--color-surface-3);
@@ -92,12 +124,12 @@
 
 .searchButton {
   flex: 0 0 auto;
-  padding: 8px 16px;
+  padding: 12px 24px;
   border: 1px solid var(--color-accent);
   border-radius: var(--radius-md);
   background: var(--color-accent);
   color: var(--color-text-on-accent);
-  font-size: var(--font-size-sm);
+  font-size: var(--font-size-md);
   cursor: pointer;
 }
 
@@ -124,7 +156,7 @@
 .jiraLink {
   align-self: flex-start;
   color: var(--color-accent);
-  font-size: var(--font-size-sm);
+  font-size: var(--font-size-md);
   font-weight: 600;
   text-decoration: none;
 }
@@ -158,15 +190,15 @@
 
 .recentItem {
   display: flex;
-  gap: 10px;
+  gap: 12px;
   align-items: baseline;
   width: 100%;
-  padding: 8px 10px;
+  padding: 12px 14px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   background: var(--color-surface-2);
   color: var(--color-text-primary);
-  font-size: var(--font-size-sm);
+  font-size: var(--font-size-md);
   text-align: left;
   cursor: pointer;
 }

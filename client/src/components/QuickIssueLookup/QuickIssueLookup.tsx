@@ -91,39 +91,44 @@ export function QuickIssueLookup({ inputRef, seedKey }: QuickIssueLookupProps): 
 
   return (
     <div className={styles.body}>
-      <IssueSearchBar inputRef={inputRef} initialText={seedKey ?? ''} onSearch={setLookupKey} />
+      {/* The dialog is near-full-width, but the CONTENT is not: capping the reading column keeps a
+          description from running to a line length the eye loses its place in. The extra width goes
+          to margins and line height instead. */}
+      <div className={styles.readingColumn}>
+        <IssueSearchBar inputRef={inputRef} initialText={seedKey ?? ''} onSearch={setLookupKey} />
 
-      {status === 'idle' ? <RecentIssuesList entries={recentEntries} onSelect={setLookupKey} /> : null}
+        {status === 'idle' ? <RecentIssuesList entries={recentEntries} onSelect={setLookupKey} /> : null}
 
-      {status === 'loading' ? (
-        <p className={styles.state} role="status">{LOADING_LABEL}</p>
-      ) : null}
+        {status === 'loading' ? (
+          <p className={styles.state} role="status">{LOADING_LABEL}</p>
+        ) : null}
 
-      {isMessageState(status) ? (
-        <p className={styles.state} role="alert">
-          {describeLookupState(status, lookupKey, errorMessage)}
-        </p>
-      ) : null}
+        {isMessageState(status) ? (
+          <p className={styles.state} role="alert">
+            {describeLookupState(status, lookupKey, errorMessage)}
+          </p>
+        ) : null}
 
-      {status === 'loaded' && issue ? (
-        <div className={styles.detail}>
-          <a
-            className={styles.jiraLink}
-            href={buildJiraBrowseUrl(issue.key, jiraBaseUrl ?? '')}
-            rel="noreferrer"
-            target="_blank"
-            title={OPEN_IN_JIRA_TITLE}
-          >
-            {issue.key} ↗
-          </a>
-          <IssueDetailPanel
-            issue={issue}
-            isEmbedded
-            onIssueUpdated={refetch}
-            fieldEditing={activeEditMeta ? { editMeta: activeEditMeta, onFieldSaved: refetch } : undefined}
-          />
-        </div>
-      ) : null}
+        {status === 'loaded' && issue ? (
+          <div className={styles.detail}>
+            <a
+              className={styles.jiraLink}
+              href={buildJiraBrowseUrl(issue.key, jiraBaseUrl ?? '')}
+              rel="noreferrer"
+              target="_blank"
+              title={OPEN_IN_JIRA_TITLE}
+            >
+              {issue.key} ↗
+            </a>
+            <IssueDetailPanel
+              issue={issue}
+              isEmbedded
+              onIssueUpdated={refetch}
+              fieldEditing={activeEditMeta ? { editMeta: activeEditMeta, onFieldSaved: refetch } : undefined}
+            />
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }

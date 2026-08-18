@@ -21,6 +21,7 @@ import {
   buildEditableFieldPlan,
   filterFieldPlans,
   readFieldOptions,
+  resolveSelectedOptionValue,
   type EditableFieldPlan,
 } from './editableFieldPlan.ts';
 import { saveEditableField } from './editableFieldWrite.ts';
@@ -73,7 +74,10 @@ function FieldEditor({
         // Every select can be emptied. A field you can set but never unset is a trap, and clearing
         // one was another of the trips to Jira this exists to remove.
         clearOptionLabel={NO_FIX_VERSION_LABEL}
-        initialValue={fieldPlan.currentValue}
+        // Reconciled to the option list's own key: the issue carries a priority as its NAME while
+        // the options are keyed by Jira id, so the raw value matched nothing and the select opened
+        // blank — telling the user a field was unset on an issue that plainly had a value.
+        initialValue={resolveSelectedOptionValue(fieldPlan)}
         options={readFieldOptions(fieldPlan)}
         onSave={save}
         onSaved={onFieldSaved}

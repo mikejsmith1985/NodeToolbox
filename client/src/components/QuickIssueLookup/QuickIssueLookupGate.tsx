@@ -2,8 +2,10 @@
 //
 // Mounted once at the app root (TodoQuickAdd / AiAssistUnlockGate precedent). F2 opens the popup and
 // preventDefault()s the browser default; F2 while already open re-focuses and clears the search
-// input (via a remount) rather than stacking a second popup. Escape closes. The global handler
-// ignores F2 while the user is typing in a field OUTSIDE the popup (keyboard-guard).
+// input (via a remount) rather than stacking a second popup. Escape closes, and so does a click on
+// the margin around the dialog — the dialog stops just short of the window edges precisely so that
+// escape hatch exists. The global handler ignores F2 while the user is typing in a field OUTSIDE
+// the popup (keyboard-guard).
 
 import { useCallback, useEffect, useRef } from 'react';
 
@@ -77,6 +79,13 @@ export function QuickIssueLookupGate(): React.JSX.Element | null {
       role="dialog"
       onKeyDown={(keyboardEvent) => {
         if (keyboardEvent.key === CLOSE_KEY) {
+          closeLookup();
+        }
+      }}
+      // Only a click on the backdrop ITSELF closes. Comparing target to currentTarget is what keeps
+      // a click that started inside the dialog and bubbled out from throwing away someone's work.
+      onClick={(clickEvent) => {
+        if (clickEvent.target === clickEvent.currentTarget) {
           closeLookup();
         }
       }}
