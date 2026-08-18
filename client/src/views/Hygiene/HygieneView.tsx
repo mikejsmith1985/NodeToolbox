@@ -11,6 +11,7 @@ import {
   type HygieneFlag,
 } from './checks/hygieneChecks.ts';
 import { useEffect, useRef, useState } from 'react';
+import { buildHygieneDiagnosticsReport } from './hygieneDiagnostics.ts';
 import { AgeBadge } from '../../components/IssueMeta/AgeBadge.tsx';
 import { AssigneeAvatar } from '../../components/IssueMeta/AssigneeAvatar.tsx';
 import { IssueTypeIcon } from '../../components/IssueMeta/IssueTypeIcon.tsx';
@@ -74,6 +75,9 @@ const CHECK_EXPLANATION_BY_ID: Record<string, string> = {
   'missing-pi': 'No Program Increment — attach this to the PI it belongs to.',
   'missing-feature-link': 'Not linked to a Feature — connect it to the initiative it supports.',
 };
+const DIAGNOSTICS_TOGGLE_LABEL = '🔧 Diagnostics';
+const DIAGNOSTICS_COPY_LABEL = 'Copy report';
+const DIAGNOSTICS_COPIED_LABEL = '✓ Copied';
 const JIRA_BROWSE_PREFIX = 'https://jira.healthspring-jira-prod.aws.zilverton.com/browse/';
 const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000;
 const MAX_HYGIENE_SCORE = 100;
@@ -314,6 +318,8 @@ export default function HygieneView({
           {'every count below is a minimum. Narrow the project or Extra JQL to see the whole picture.'}
         </div>
       )}
+
+      <HygieneDiagnosticsPanel hygieneState={hygieneState} />
 
       {hygieneState.isLoading && <div className={styles.emptyState}>Loading Hygiene results…</div>}
       {!hygieneState.isLoading && !hasLoadedFindings && !hasRunnableScope && (
@@ -670,6 +676,70 @@ function FindingRow({
             onCommentPosted={onCommentPosted}
           />
         </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * A collapsed, copyable account of what the scan actually did.
+ *
+ * Exists because two very different failures look identical on screen — the build on the machine is
+ * older than the fix, or the scan never received the field it is judging — and neither can be told
+ * apart from a screenshot. The version comes from the SERVER so it describes the running build
+ * rather than anything the page could assume about itself.
+ */
+function HygieneDiagnosticsPanel({ hygieneState }: { hygieneState: ReturnType<typeof useHygieneState> }) {
+  const [isPanelOpen, setIsPanelOpen] = useState(false);
+  const [runningVersion, setRunningVersion] = useState<string | null>(null);
+  const [hasCopied, setHasCopied] = useState(false);
+
+  useEffect(() => {
+    if (!isPanelOpen) return;
+    let isMounted = true;
+    fetch('/api/version-check')
+      .then((response) => (response.ok ? response.json() : null))
+      .then((payload: { currentVersion?: string } | null) => {
+        if (isMounted) setRunningVersion(payload?.currentVersion ?? null);
+      })
+      .catch(() => { if (isMounted) setRunningVersion(null); });
+    return () => { isMounted = false; };
+  }, [isPanelOpen]);
+
+  const diagnosticsReport = buildHygieneDiagnosticsReport({
+    appVersion: runningVersion,
+    scopeJql: hygieneState.scopeJql,
+    scannedIssueCount: hygieneState.scannedIssueCount,
+    totalMatchingCount: hygieneState.totalMatchingCount,
+    isTruncated: hygieneState.isTruncated,
+    fieldConfig: hygieneState.fieldConfig,
+    findings: hygieneState.findings,
+    enabledCheckIds: hygieneState.availableCheckIds,
+  });
+
+  return (
+    <div className={styles.diagnosticsPanel}>
+      <button
+        className={styles.diagnosticsToggle}
+        onClick={() => setIsPanelOpen((wasOpen) => !wasOpen)}
+        type="button"
+      >
+        {DIAGNOSTICS_TOGGLE_LABEL}
+      </button>
+      {isPanelOpen && (
+        <>
+          <button
+            className={styles.diagnosticsToggle}
+            onClick={() => {
+              void navigator.clipboard?.writeText(diagnosticsReport);
+              setHasCopied(true);
+            }}
+            type="button"
+          >
+            {hasCopied ? DIAGNOSTICS_COPIED_LABEL : DIAGNOSTICS_COPY_LABEL}
+          </button>
+          <pre className={styles.diagnosticsReport}>{diagnosticsReport}</pre>
+        </>
       )}
     </div>
   );

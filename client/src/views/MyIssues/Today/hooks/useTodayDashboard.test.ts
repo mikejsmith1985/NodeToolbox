@@ -233,8 +233,8 @@ describe('useTodayDashboard', () => {
     // SHARED-1 appears in both teams but counts once: {SHARED-1, A-2, B-3} = 3.
     expect(result.current.categories['team-stale'].count).toBe(3);
     expect(result.current.categories['team-stale'].teamBreakdown).toEqual([
-      { teamProfileId: 'alpha-id', teamName: 'Alpha', count: 2, hasError: false },
-      { teamProfileId: 'beta-id', teamName: 'Beta', count: 2, hasError: false },
+      { teamProfileId: 'alpha-id', teamName: 'Alpha', count: 2, hasError: false, isProjectWideScope: false },
+      { teamProfileId: 'beta-id', teamName: 'Beta', count: 2, hasError: false, isProjectWideScope: false },
     ]);
   });
 
@@ -256,8 +256,8 @@ describe('useTodayDashboard', () => {
 
     expect(result.current.categories['team-stale'].count).toBe(1);
     expect(result.current.categories['team-stale'].teamBreakdown).toEqual([
-      { teamProfileId: 'alpha-id', teamName: 'Alpha', count: 0, hasError: true },
-      { teamProfileId: 'beta-id', teamName: 'Beta', count: 1, hasError: false },
+      { teamProfileId: 'alpha-id', teamName: 'Alpha', count: 0, hasError: true, isProjectWideScope: false },
+      { teamProfileId: 'beta-id', teamName: 'Beta', count: 1, hasError: false, isProjectWideScope: false },
     ]);
   });
 

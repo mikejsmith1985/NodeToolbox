@@ -235,8 +235,8 @@ describe('buildTeamCountBreakdown', () => {
     ];
 
     expect(buildTeamCountBreakdown(teamScans, ['stale'])).toEqual([
-      { teamProfileId: 'alpha-id', teamName: 'Alpha', count: 2, hasError: false },
-      { teamProfileId: 'beta-id', teamName: 'Beta', count: 1, hasError: false },
+      { teamProfileId: 'alpha-id', teamName: 'Alpha', count: 2, hasError: false, isProjectWideScope: false },
+      { teamProfileId: 'beta-id', teamName: 'Beta', count: 1, hasError: false, isProjectWideScope: false },
     ]);
   });
 
@@ -247,8 +247,31 @@ describe('buildTeamCountBreakdown', () => {
     ];
 
     expect(buildTeamCountBreakdown(teamScans, ['stale'])).toEqual([
-      { teamProfileId: 'alpha-id', teamName: 'Alpha', count: 0, hasError: true },
-      { teamProfileId: 'beta-id', teamName: 'Beta', count: 1, hasError: false },
+      { teamProfileId: 'alpha-id', teamName: 'Alpha', count: 0, hasError: true, isProjectWideScope: false },
+      { teamProfileId: 'beta-id', teamName: 'Beta', count: 1, hasError: false, isProjectWideScope: false },
     ]);
+  });
+});
+
+describe('buildTeamCountBreakdown — an unscoped team says it audited everything', () => {
+  it('marks a team whose scan carried no PI, sprint or fix-version clause', () => {
+    // This is what made a Today count impossible to reconcile with a team's own Hygiene tab: a
+    // saved profile with nothing selected scans the WHOLE project across all time, so its findings
+    // are a superset of the PI-scoped tab and the extra ones appear to come from nowhere.
+    const breakdown = buildTeamCountBreakdown([
+      { teamProfileId: 'a', teamName: 'Transformers', findings: [], errorMessage: null, scopeJql: 'AND cf[10301] = "PI 26.4"' },
+      { teamProfileId: 'b', teamName: 'Cleanup Crew', findings: [], errorMessage: null, scopeJql: '' },
+    ], ['stale']);
+
+    expect(breakdown.map((share) => share.isProjectWideScope)).toEqual([false, true]);
+  });
+
+  it('treats a whitespace-only clause as no clause at all', () => {
+    const breakdown = buildTeamCountBreakdown(
+      [{ teamProfileId: 'a', teamName: 'Alpha', findings: [], errorMessage: null, scopeJql: '   ' }],
+      ['stale'],
+    );
+
+    expect(breakdown[0].isProjectWideScope).toBe(true);
   });
 });

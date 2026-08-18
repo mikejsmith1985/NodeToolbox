@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Hygiene diagnostics.** A collapsed **🔧 Diagnostics** panel at the foot of the Hygiene view
+  prints, and copies, an account of what the scan actually did: the **running build read from the
+  server**, the exact scope JQL, how much of it was read, the resolved field ids, and — per finding
+  — the RAW `duedate` / Target Start / Target End values alongside the checks that fired.
+
+  It exists because two very different failures look identical on screen: the build on the machine
+  is older than the fix, or the scan never received the field it is judging. Neither can be told
+  apart from a screenshot, so each round of "it still isn't showing" cost a screenshot, a guess, and
+  a release. One pasted report now separates a rendering bug from a fetch bug.
+
 - **Roll-Up Board — a card can be moved without a pointer.** Right-click → **Move to <column>**. Until
   now there was exactly one way to move work: press and drag with a mouse. A keyboard could not do it,
   a touch screen barely could, and when the drag itself misbehaved — which it did repeatedly — there
@@ -22,6 +32,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   work it cannot place, never somewhere a person should file something.
 
 ### Fixed
+- **A Hygiene finding row left a tall blank band beside the summary.** The meta grid had four
+  tracks while the row rendered five cards, so the fifth wrapped to a second line and stretched the
+  column; adding **Due** made it six. The track count is now stated explicitly — six across, three
+  on narrower windows — so a row is one line of cards again.
+
+- **A team auditing its whole project now says so.** A saved team profile with no PI, sprint, or fix
+  version selected scans the entire project across all time. That is a legitimate scan, but its
+  findings are a superset of the PI-scoped Hygiene tab, so without saying so the extra ones look
+  like the count being wrong rather than the scope being wide. The team chip's hover text names it.
+
 - **A Hygiene date flag never showed the date it was complaining about.** A card flagged "Due Date
   reached before completion" listed Type, Status, PI, Assignee and Age — and no due date anywhere.
   The sentence beneath it fell through to a generic line that repeated the flag's own label back.

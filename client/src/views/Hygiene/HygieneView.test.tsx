@@ -784,3 +784,32 @@ describe('HygieneView — a date flag shows the date it is complaining about', (
     expect(screen.getByText('Due')).toBeInTheDocument();
   });
 });
+
+describe('HygieneView — diagnostics', () => {
+  it('offers a diagnostics report naming the running build and the raw dates the scan saw', async () => {
+    // The tool that ends "it still isn't showing" arguments: it prints the version actually running
+    // and the raw field values behind each flag, so a rendering bug and a fetch bug look different.
+    mockUseHygieneState.mockReturnValue(buildHookState({
+      findings: [{
+        issue: {
+          key: 'ENCUC-2113',
+          fields: {
+            summary: 'SF - THUB reverting status',
+            issuetype: { name: 'Defect' },
+            status: { name: 'Ready for Testing', statusCategory: { key: 'indeterminate' } },
+            updated: buildDateDaysAgo(4),
+            duedate: '2026-07-15',
+          },
+        },
+        flags: [{ checkId: 'due-date-overdue', label: 'Due Date reached before completion', severity: 'warn' }],
+        programIncrement: 'PI 26.4',
+      } as unknown as HygieneFinding],
+    }));
+    render(<HygieneView />);
+
+    fireEvent.click(screen.getByRole('button', { name: /Diagnostics/i }));
+
+    expect(await screen.findByText(/duedate=2026-07-15/)).toBeInTheDocument();
+    expect(screen.getByText(/App version:/)).toBeInTheDocument();
+  });
+});

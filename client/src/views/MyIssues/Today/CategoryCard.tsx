@@ -7,6 +7,7 @@
 
 import type { CategoryCatalogEntry } from './todayCategories.ts';
 import type { CategoryResult, TodayDestination } from './hooks/useTodayDashboard.ts';
+import type { TeamCountBreakdownEntry } from './todayCategories.ts';
 import styles from './CategoryCard.module.css';
 
 // Counts above this render as "99+" so a single huge bucket never breaks the card layout.
@@ -41,6 +42,23 @@ function formatCount(count: number): string {
 function formatHeadlineCount(count: number, isPartial: boolean): string {
   const formattedCount = formatCount(count);
   return isPartial && !formattedCount.endsWith('+') ? `${formattedCount}+` : formattedCount;
+}
+
+/**
+ * The hover text for one team's chip: what it counted, and — when it matters — how widely it looked.
+ *
+ * A team profile with no PI, sprint or fix version selected audits its whole project across all
+ * time. That is a legitimate scan, but its findings are a superset of the PI-scoped Hygiene tab, so
+ * without saying so the extra ones look like the count being wrong rather than the scope being wide.
+ */
+function buildTeamChipTitle(teamShare: TeamCountBreakdownEntry): string {
+  if (teamShare.hasError) {
+    return `${teamShare.teamName}: scan failed — count unknown`;
+  }
+  const scopeNote = teamShare.isProjectWideScope
+    ? ' — this team audits its whole project (no PI, sprint or fix version selected on its profile)'
+    : '';
+  return `Open ${teamShare.teamName}'s view${scopeNote}`;
 }
 
 /** Renders the card header (icon + label) shared by every card state. */
@@ -169,9 +187,7 @@ export default function CategoryCard({
               className={styles.teamChip}
               key={teamShare.teamProfileId}
               onClick={() => onOpenTeam?.(teamShare.teamProfileId, result.destination)}
-              title={teamShare.hasError
-                ? `${teamShare.teamName}: scan failed — count unknown`
-                : `Open ${teamShare.teamName}'s view`}
+              title={buildTeamChipTitle(teamShare)}
               type="button"
             >
               {teamShare.teamName} {teamShare.hasError ? '⚠' : formatCount(teamShare.count)}

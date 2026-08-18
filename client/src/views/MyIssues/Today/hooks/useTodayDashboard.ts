@@ -543,12 +543,14 @@ export function useTodayDashboard(): TodayDashboardData {
             findings: scanOutcome.findings,
             errorMessage: null,
             isTruncated: scanOutcome.isTruncated,
+            scopeJql: target.scopeJql,
           }))
           .catch((unknownError: unknown): TeamScanEntry => ({
             teamProfileId: target.teamProfileId,
             teamName: target.teamName,
             findings: [],
             errorMessage: extractErrorMessage(unknownError),
+            scopeJql: target.scopeJql,
           })),
       ),
     ).then((teamScans) => {

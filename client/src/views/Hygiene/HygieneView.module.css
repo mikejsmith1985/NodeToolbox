@@ -324,9 +324,24 @@
    * Program Increment and Assignee the extra room they typically need to stay on
    * a single line while Type and Age stay compact.
    */
-  grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.5fr) minmax(0, 1.15fr) minmax(0, 0.6fr);
+  /*
+   * SIX tracks, one per meta card (Type, Status, PI, Assignee, Due, Age). It was four while the row
+   * rendered five cards, so the fifth wrapped onto a second line and left a tall empty band beside
+   * the summary — the blank space that made these rows look broken. Adding Due made it six, so the
+   * track count is now stated explicitly rather than left to wrap.
+   */
+  grid-template-columns:
+    minmax(0, 0.7fr) minmax(0, 1.1fr) minmax(0, 1.5fr)
+    minmax(0, 1.3fr) minmax(0, 0.8fr) minmax(0, 0.55fr);
   gap: var(--spacing-sm);
   margin: 0;
+}
+
+/* Below this the six cards are too narrow to read; three per line keeps them legible. */
+@media (max-width: 1400px) {
+  .issueMeta {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 
 .issueMeta div {
@@ -893,4 +908,43 @@
 .sortSelect:disabled {
   cursor: not-allowed;
   opacity: 0.5;
+}
+
+/* Diagnostics: collapsed by default and visually quiet — it is a tool for a bad day, not furniture. */
+.diagnosticsPanel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-md);
+}
+
+.diagnosticsToggle {
+  padding: 4px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 8px);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+
+.diagnosticsToggle:hover {
+  border-color: var(--color-border-strong);
+  color: var(--color-text-primary);
+}
+
+.diagnosticsReport {
+  flex-basis: 100%;
+  max-height: 24rem;
+  margin: 0;
+  padding: var(--spacing-sm);
+  overflow: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 8px);
+  background: var(--color-surface-2);
+  color: var(--color-text-primary);
+  font-family: var(--font-mono, monospace);
+  font-size: var(--font-size-sm);
+  white-space: pre;
 }

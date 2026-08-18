@@ -70,8 +70,8 @@ describe('CategoryCard', () => {
     renderCard({
       result: buildResult({
         teamBreakdown: [
-          { teamProfileId: 'alpha-id', teamName: 'Alpha', count: 2, hasError: false },
-          { teamProfileId: 'beta-id', teamName: 'Beta', count: 6, hasError: false },
+          { teamProfileId: 'alpha-id', teamName: 'Alpha', count: 2, hasError: false, isProjectWideScope: false },
+          { teamProfileId: 'beta-id', teamName: 'Beta', count: 6, hasError: false, isProjectWideScope: false },
         ],
       }),
     });
@@ -85,8 +85,8 @@ describe('CategoryCard', () => {
     const { onOpenTeam } = renderCard({
       result: buildResult({
         teamBreakdown: [
-          { teamProfileId: 'alpha-id', teamName: 'Alpha', count: 2, hasError: false },
-          { teamProfileId: 'beta-id', teamName: 'Beta', count: 6, hasError: false },
+          { teamProfileId: 'alpha-id', teamName: 'Alpha', count: 2, hasError: false, isProjectWideScope: false },
+          { teamProfileId: 'beta-id', teamName: 'Beta', count: 6, hasError: false, isProjectWideScope: false },
         ],
       }),
     });
@@ -194,12 +194,31 @@ describe('CategoryCard', () => {
     expect(screen.queryByText('26+')).not.toBeInTheDocument();
   });
 
+  it('marks a team that audited the whole project, so its share is explainable', () => {
+    // The number that could not be reconciled: a saved profile with no PI, sprint or fix version
+    // scans everything, so its findings are a superset of the PI-scoped Hygiene tab and the extra
+    // ones look like they came from nowhere. The chip now says which team did that.
+    renderCard({
+      result: buildResult({
+        teamBreakdown: [
+          { teamProfileId: 'alpha-id', teamName: 'Alpha', count: 2, hasError: false, isProjectWideScope: false },
+          { teamProfileId: 'beta-id', teamName: 'Beta', count: 24, hasError: false, isProjectWideScope: true },
+        ],
+      }),
+    });
+
+    expect(screen.getByRole('button', { name: /Beta.*24/ }))
+      .toHaveAttribute('title', expect.stringContaining('whole project'));
+    expect(screen.getByRole('button', { name: /Alpha.*2/ }))
+      .not.toHaveAttribute('title', expect.stringContaining('whole project'));
+  });
+
   it('marks a team whose scan failed instead of showing a false zero', () => {
     renderCard({
       result: buildResult({
         teamBreakdown: [
-          { teamProfileId: 'alpha-id', teamName: 'Alpha', count: 0, hasError: true },
-          { teamProfileId: 'beta-id', teamName: 'Beta', count: 6, hasError: false },
+          { teamProfileId: 'alpha-id', teamName: 'Alpha', count: 0, hasError: true, isProjectWideScope: false },
+          { teamProfileId: 'beta-id', teamName: 'Beta', count: 6, hasError: false, isProjectWideScope: false },
         ],
       }),
     });
@@ -210,7 +229,7 @@ describe('CategoryCard', () => {
   it('shows no breakdown when only one team was scanned', () => {
     renderCard({
       result: buildResult({
-        teamBreakdown: [{ teamProfileId: 'alpha-id', teamName: 'Alpha', count: 2, hasError: false }],
+        teamBreakdown: [{ teamProfileId: 'alpha-id', teamName: 'Alpha', count: 2, hasError: false, isProjectWideScope: false }],
       }),
     });
 

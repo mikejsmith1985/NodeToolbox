@@ -135,6 +135,11 @@ export interface TeamScanEntry {
   errorMessage: string | null;
   /** True when the scan hit its ceiling, so this team's counts are floors rather than totals. */
   isTruncated?: boolean;
+  /**
+   * The scope clause this team's scan ran with — empty when the saved profile selects no PI,
+   * sprint, or fix version, which means the scan covered the WHOLE project across all time.
+   */
+  scopeJql?: string;
 }
 
 /** One team's share of a card count, rendered as a drill-through chip on the card. */
@@ -143,6 +148,15 @@ export interface TeamCountBreakdownEntry {
   teamName: string;
   count: number;
   hasError: boolean;
+  /**
+   * True when this team's scan had no PI / sprint / fix-version clause, so it audited the whole
+   * project across all time.
+   *
+   * Worth saying out loud on the card, because it is the one thing that makes a Today count
+   * irreconcilable with the team's own Hygiene tab: the tab is scoped to the PI on screen, this
+   * scan was not, and the difference otherwise looks like the number being wrong.
+   */
+  isProjectWideScope: boolean;
 }
 
 /** Returns the deduped union of matching issue keys across every team's findings. */
@@ -175,6 +189,9 @@ export function buildTeamCountBreakdown(
     teamName: teamScan.teamName,
     count: countFindingsMatchingChecks(teamScan.findings, checkIds),
     hasError: teamScan.errorMessage !== null,
+    // Only claimed when the scope is KNOWN to be empty. An entry that carries no scope at all is
+    // an unknown, and marking an unknown as project-wide would be inventing a fact about it.
+    isProjectWideScope: teamScan.scopeJql !== undefined && teamScan.scopeJql.trim() === '',
   }));
 }
 
