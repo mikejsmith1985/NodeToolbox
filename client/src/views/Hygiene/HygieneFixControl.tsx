@@ -89,8 +89,27 @@ export function HygieneFixControl({ issue, flag, fieldConfig, onFixed }: Hygiene
     return <OpenInJiraLink issue={issue} note={UNCONFIGURED_FIELD_NOTE} />;
   }
 
+  // A flag whose rule names two remedies renders both, side by side, in the order the rule states
+  // them: move the work forward, or move the date.
+  const alternateFieldId = descriptor.alternateFix
+    ? resolveFixFieldId(descriptor.alternateFix, fieldConfig)
+    : null;
+  const hasUsableAlternate = descriptor.alternateFix !== undefined
+    && (!FIELD_ID_REQUIRED_KINDS.has(descriptor.alternateFix.kind) || alternateFieldId !== null);
+
   return (
-    <HygieneFixEditor issue={issue} kind={descriptor.kind} fieldId={fieldId ?? ''} label={descriptor.label} onFixed={onFixed} />
+    <>
+      <HygieneFixEditor issue={issue} kind={descriptor.kind} fieldId={fieldId ?? ''} label={descriptor.label} onFixed={onFixed} />
+      {hasUsableAlternate && descriptor.alternateFix ? (
+        <HygieneFixEditor
+          issue={issue}
+          kind={descriptor.alternateFix.kind}
+          fieldId={alternateFieldId ?? ''}
+          label={descriptor.alternateFix.label}
+          onFixed={onFixed}
+        />
+      ) : null}
+    </>
   );
 }
 

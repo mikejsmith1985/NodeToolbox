@@ -22,6 +22,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   work it cannot place, never somewhere a person should file something.
 
 ### Fixed
+- **A Hygiene date flag never showed the date it was complaining about.** A card flagged "Due Date
+  reached before completion" listed Type, Status, PI, Assignee and Age — and no due date anywhere.
+  The sentence beneath it fell through to a generic line that repeated the flag's own label back.
+  Nothing on screen let anyone judge whether the flag was fair, or how far past the date the issue
+  was. The three date flags now read the date they are about: *"Due 2026-07-15 (34 days ago) and not
+  finished — move it on, or reschedule the due date."* **Due** also joins the issue's own facts,
+  beside Status and Assignee.
+
+- **The inline fix for an overdue date offered only a status move.** The enterprise rule says the
+  team must *either* move the work on *or* update the date — and only the first was reachable, on a
+  card that says "fix it inline here". The three date flags now offer both remedies side by side, in
+  the order the rule states them.
+
 - **"Due / overdue today" counted 26 that the Hygiene tab could not account for.** The card and the
   tab run the *same* scan function, so identical inputs cannot produce 26 and 2 — the inputs
   differed. The Today card scans **every saved Dashboard Team profile**, each with that profile's own

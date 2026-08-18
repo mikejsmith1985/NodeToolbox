@@ -602,7 +602,9 @@ function FindingRow({
             <div key={flag.checkId} className={styles.flagFixRow}>
               {renderFlagChip(flag)}
               {/* Say what is flagged and what fixing does — never a bare control (FR-015). */}
-              <span className={styles.flagExplanation}>{buildFlagExplanation(flag, idleDayCount)}</span>
+              <span className={styles.flagExplanation}>
+                {buildFlagExplanation(flag, idleDayCount, finding, fieldConfig)}
+              </span>
               <HygieneFixControl issue={finding.issue} flag={flag} fieldConfig={fieldConfig} onFixed={onIssueUpdated} />
             </div>
           ))}
@@ -637,6 +639,12 @@ function FindingRow({
             <dt>Assignee</dt>
             <dd><AssigneeAvatar displayName={finding.issue.fields.assignee?.displayName ?? null} /></dd>
           </div>
+          {/* The due date is a fact about the issue in its own right — and the one the overdue
+              flags are entirely about. It was the only field the card never showed. */}
+          <div>
+            <dt>Due</dt>
+            <dd>{readDateFieldText(finding.issue.fields.duedate) ?? NO_VALUE_LABEL}</dd>
+          </div>
           <div>
             <dt>Age</dt>
             <dd>
@@ -667,13 +675,86 @@ function FindingRow({
   );
 }
 
-/** One plain-language sentence per flagged check; stale carries the actual idle-day count. */
-function buildFlagExplanation(flag: HygieneFlag, idleDayCount: number | null): string {
+/**
+ * One plain-language sentence per flagged check, carrying the fact that caused it.
+ *
+ * The date flags used to fall through to a generic line that simply repeated the flag label, on a
+ * card that never showed the date either — so a reader was told a due date had passed and given no
+ * way to see which date, how long ago, or whether the flag was even fair.
+ */
+function buildFlagExplanation(
+  flag: HygieneFlag,
+  idleDayCount: number | null,
+  finding: HygieneFinding,
+  fieldConfig: HygieneFieldConfig,
+): string {
   if (flag.checkId === 'stale') {
     const idleDaysText = idleDayCount === null ? 'a while' : `${idleDayCount} days`;
     return `No update in ${idleDaysText} — nudge with a comment, or Skip if the thread already explains the wait.`;
   }
+
+  const dateFlagExplanation = buildDateFlagExplanation(flag, finding, fieldConfig);
+  if (dateFlagExplanation !== null) {
+    return dateFlagExplanation;
+  }
+
   return CHECK_EXPLANATION_BY_ID[flag.checkId] ?? `${flag.label} — fix it inline here, or open the issue in Jira.`;
+}
+
+/** Which date each date-based flag is about, and how the sentence reads when it has passed. */
+const DATE_FLAG_SOURCES: Record<string, { readDate: (finding: HygieneFinding, fieldConfig: HygieneFieldConfig) => string | null; describe: (dateText: string, daysText: string) => string }> = {
+  'due-date-overdue': {
+    readDate: (finding) => readDateFieldText(finding.issue.fields.duedate),
+    describe: (dateText, daysText) =>
+      `Due ${dateText} (${daysText}) and not finished — move it on, or reschedule the due date.`,
+  },
+  'target-end-overdue': {
+    readDate: (finding, fieldConfig) => readConfiguredDateText(finding, fieldConfig.targetEndFieldIds),
+    describe: (dateText, daysText) =>
+      `Target End was ${dateText} (${daysText}) and it has not reached testing — move it on, or reschedule Target End.`,
+  },
+  'target-start-ready': {
+    readDate: (finding, fieldConfig) => readConfiguredDateText(finding, fieldConfig.targetStartFieldIds),
+    describe: (dateText, daysText) =>
+      `Target Start was ${dateText} (${daysText}) and it is still To Do — start it, or reschedule Target Start.`,
+  },
+};
+
+/** Builds the sentence for a date-based flag, or null when the flag is not one. */
+function buildDateFlagExplanation(
+  flag: HygieneFlag,
+  finding: HygieneFinding,
+  fieldConfig: HygieneFieldConfig,
+): string | null {
+  const dateFlagSource = DATE_FLAG_SOURCES[flag.checkId];
+  if (!dateFlagSource) return null;
+
+  const dateText = dateFlagSource.readDate(finding, fieldConfig);
+  // No readable date behind a date flag should never happen, but saying so beats inventing one.
+  if (dateText === null) return `${flag.label} — the date behind this flag could not be read.`;
+
+  return dateFlagSource.describe(dateText, describeDaysSince(dateText));
+}
+
+/** Reads a Jira date field down to its calendar day, or null when it holds none. */
+function readDateFieldText(rawValue: unknown): string | null {
+  return typeof rawValue === 'string' && rawValue.trim() !== '' ? rawValue.trim().slice(0, 10) : null;
+}
+
+/** Reads the first configured field in a family as a calendar day. */
+function readConfiguredDateText(finding: HygieneFinding, fieldIds: readonly string[]): string | null {
+  for (const fieldId of fieldIds) {
+    const dateText = readDateFieldText((finding.issue.fields as Record<string, unknown>)[fieldId]);
+    if (dateText !== null) return dateText;
+  }
+  return null;
+}
+
+/** "3 days ago" / "today" — the elapsed half of the sentence, so the age is not left to arithmetic. */
+function describeDaysSince(dateText: string): string {
+  const elapsedDays = Math.floor((Date.now() - new Date(`${dateText}T00:00:00`).getTime()) / MILLISECONDS_PER_DAY);
+  if (elapsedDays <= 0) return 'today';
+  return elapsedDays === 1 ? '1 day ago' : `${elapsedDays} days ago`;
 }
 
 function renderFlagChip(flag: HygieneFlag) {

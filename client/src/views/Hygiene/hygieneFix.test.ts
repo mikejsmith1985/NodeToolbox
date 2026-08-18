@@ -73,3 +73,34 @@ describe('resolveFixFieldId', () => {
     ).toBeNull();
   });
 });
+
+describe('date flags offer BOTH remedies the rule names', () => {
+  // The enterprise rule reads "the team must either move it forward OR update the date". The
+  // registry only ever offered the first, so the second remedy was unreachable from the card that
+  // raised the flag — a screen that says "fix it inline here" and then cannot.
+  it('offers rescheduling the due date beside moving the status', () => {
+    const descriptor = HYGIENE_FIX_BY_CHECK['due-date-overdue'];
+
+    expect(descriptor.kind).toBe('transition');
+    expect(descriptor.alternateFix?.kind).toBe('date');
+    expect(descriptor.alternateFix?.systemFieldId).toBe('duedate');
+  });
+
+  it('offers rescheduling Target End beside moving the status', () => {
+    const descriptor = HYGIENE_FIX_BY_CHECK['target-end-overdue'];
+
+    expect(descriptor.alternateFix?.kind).toBe('date');
+    expect(descriptor.alternateFix?.fieldConfigKey).toBe('targetEndFieldIds');
+  });
+
+  it('offers rescheduling Target Start beside moving the status', () => {
+    const descriptor = HYGIENE_FIX_BY_CHECK['target-start-ready'];
+
+    expect(descriptor.alternateFix?.kind).toBe('date');
+    expect(descriptor.alternateFix?.fieldConfigKey).toBe('targetStartFieldIds');
+  });
+
+  it('leaves the stale flag with a status move alone — no date is involved', () => {
+    expect(HYGIENE_FIX_BY_CHECK.stale.alternateFix).toBeUndefined();
+  });
+});

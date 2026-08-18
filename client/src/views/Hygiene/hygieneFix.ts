@@ -37,6 +37,15 @@ export interface HygieneFixDescriptor {
   systemFieldId?: string;
   /** Human-readable label describing the fix action. */
   label: string;
+  /**
+   * A SECOND remedy offered beside the first, for flags whose rule names two.
+   *
+   * "Due Date reached before completion" is the clearest case: the rule says the team must either
+   * finish the work or move the date, and the card offered only a status transition — so a due date
+   * that simply needed pushing could not be pushed from the screen that complained about it,
+   * directly under the words "fix it inline here".
+   */
+  alternateFix?: HygieneFixDescriptor;
 }
 
 /**
@@ -60,10 +69,24 @@ export const HYGIENE_FIX_BY_CHECK: Record<BuiltInHygieneCheckId, HygieneFixDescr
   'missing-initiative-type': { kind: 'select', fieldConfigKey: 'initiativeTypeFieldIds', label: 'Set initiative type' },
   'missing-application': { kind: 'select', fieldConfigKey: 'applicationFieldIds', label: 'Set application' },
   // Derived "stuck status" flags: the fix is to move the issue forward, offered as a transition.
+  // The three DATE flags carry a second remedy, because their rule names two: move the work on, or
+  // move the date. Only the first was reachable.
   stale: { kind: 'transition', label: 'Move status' },
-  'target-start-ready': { kind: 'transition', label: 'Move status' },
-  'target-end-overdue': { kind: 'transition', label: 'Move status' },
-  'due-date-overdue': { kind: 'transition', label: 'Move status' },
+  'target-start-ready': {
+    kind: 'transition',
+    label: 'Move status',
+    alternateFix: { kind: 'date', fieldConfigKey: 'targetStartFieldIds', label: 'Reschedule target start' },
+  },
+  'target-end-overdue': {
+    kind: 'transition',
+    label: 'Move status',
+    alternateFix: { kind: 'date', fieldConfigKey: 'targetEndFieldIds', label: 'Reschedule target end' },
+  },
+  'due-date-overdue': {
+    kind: 'transition',
+    label: 'Move status',
+    alternateFix: { kind: 'date', systemFieldId: 'duedate', label: 'Reschedule due date' },
+  },
   // Fix lives elsewhere (a child issue) or is a review judgement call: link out to Jira.
   'old-in-sprint': { kind: 'openInJira', label: 'Review in Jira' },
   'missing-child-story-points': { kind: 'openInJira', label: 'Review in Jira' },

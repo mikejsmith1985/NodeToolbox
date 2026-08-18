@@ -743,3 +743,44 @@ describe('HygieneView — a capped scan says so', () => {
     expect(screen.queryByText(/issues in scope were scanned/)).not.toBeInTheDocument();
   });
 });
+
+describe('HygieneView — a date flag shows the date it is complaining about', () => {
+  function buildOverdueFinding() {
+    return {
+      issue: {
+        key: 'ENCUC-2113',
+        fields: {
+          summary: 'SF - THUB reverting status back to Submitted in SF',
+          issuetype: { name: 'Defect' },
+          status: { name: 'Ready for Testing', statusCategory: { key: 'indeterminate' } },
+          assignee: { displayName: 'Tamang, Dhan R' },
+          updated: buildDateDaysAgo(4),
+          created: buildDateDaysAgo(30),
+          duedate: '2026-07-15',
+        },
+      },
+      flags: [{ checkId: 'due-date-overdue', label: 'Due Date reached before completion', severity: 'warn' }],
+      programIncrement: 'PI 26.4',
+    } as unknown as HygieneFinding;
+  }
+
+  it('names the due date in the explanation instead of restating the flag label', () => {
+    // The screenshot that started this: a card flagged "Due Date reached before completion" showing
+    // Type, Status, PI, Assignee and Age — and nowhere the due date. Nothing on screen let anyone
+    // judge the flag, and the sentence beneath it just repeated the label back.
+    mockUseHygieneState.mockReturnValue(buildHookState({ findings: [buildOverdueFinding()] }));
+    render(<HygieneView />);
+
+    // Twice, deliberately: once in the sentence that explains the flag, once as a fact on the issue.
+    expect(screen.getAllByText(/2026-07-15/).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText(/Due 2026-07-15 \(.*\) and not finished/)).toBeInTheDocument();
+    expect(screen.queryByText(/fix it inline here, or open the issue in Jira/)).not.toBeInTheDocument();
+  });
+
+  it('shows the due date as its own fact on the issue, beside status and assignee', () => {
+    mockUseHygieneState.mockReturnValue(buildHookState({ findings: [buildOverdueFinding()] }));
+    render(<HygieneView />);
+
+    expect(screen.getByText('Due')).toBeInTheDocument();
+  });
+});
