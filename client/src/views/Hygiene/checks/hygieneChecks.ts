@@ -18,14 +18,38 @@ const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000;
 const MODERN_STORY_POINTS_FIELD = 'customfield_10028';
 const LEGACY_STORY_POINTS_FIELD = 'customfield_10016';
 const SPRINT_FIELD = 'customfield_10020';
-const IMPLEMENTING_STATUS_NAME = 'implementing';
 const FEATURE_ISSUE_TYPE_NAMES = new Set(['feature', 'epic']);
+
+/**
+ * The delivery work items — the things a team commits to and ships.
+ *
+ * One set, asked two questions: "should this carry a release fix version?" and "should this warn
+ * when its due date passes?" They are the same question about the same population, and keeping two
+ * lists is how they would eventually disagree about, say, Spikes. Sub-tasks are deliberately out:
+ * they inherit the dates on their parent, so warning about both is warning twice. "Defect" is this
+ * instance's defect type (not "Bug"). "Epic" is out because this instance's hierarchy tops out at
+ * Feature, and naming a non-existent issue type makes the generated Jira JQL error (GH #200).
+ *
+ * If these two rules ever genuinely need to differ, split the set — deliberately, in one edit.
+ */
+const DELIVERY_ISSUE_TYPE_NAMES = new Set(['story', 'task', 'defect', 'feature']);
+
+/**
+ * Status names that mean the Feature has reached testing or later.
+ *
+ * Article VII note: `workflowDelivery.ts` answers a neighbouring question and was checked first,
+ * but it encodes the STORY workflow (Ready for Testing → Ready for QA → Ready to Accept). The
+ * Feature workflow this rule polices is a different vocabulary that tops out at Integrated Test, so
+ * the two cannot share a predicate without one of them lying. The overlap below is intentional:
+ * a Feature that somehow carries a story-workflow status has still reached testing.
+ */
+const FEATURE_TESTING_REACHED_STATUS_KEYWORDS = ['test', 'ready for qa', 'ready to accept'];
 // The delivery work items expected to carry a release fix version (GH #200). Exported so the Jira-link JQL clause
 // (US2) reuses the SAME list — the count and the "open in Jira" search can never disagree on scope. "Defect" is this
 // instance's defect type (not "Bug"); Sub-tasks are excluded because they inherit their parent's release. "Epic" is
 // excluded because this instance's hierarchy tops out at Feature — including a non-existent issue type makes the
 // generated Jira JQL error out (GH #200 follow-up).
-export const FIX_VERSION_ISSUE_TYPE_NAMES = new Set(['story', 'task', 'defect', 'feature']);
+export const FIX_VERSION_ISSUE_TYPE_NAMES = DELIVERY_ISSUE_TYPE_NAMES;
 const FEATURE_LINK_REQUIRED_ISSUE_TYPE_NAMES = new Set(['story', 'task', 'bug', 'defect', 'spike']);
 // Issue types that do not have a story-points field on their Jira screen; the missing-sp check must skip them.
 const STORY_POINTS_UNSUPPORTED_ISSUE_TYPE_NAMES = new Set(['risk']);
@@ -333,9 +357,17 @@ export function checkTargetStartReady(issue: JiraIssue, fieldConfig: HygieneFiel
   return isDateTodayOrPast(targetStartValue) ? BUILT_IN_HYGIENE_FLAGS['target-start-ready'] : null;
 }
 
-/** Flags features whose Target End has arrived before they progressed beyond To Do or Implementing. */
+/**
+ * Flags features whose Target End has arrived while they have still not reached testing.
+ *
+ * This used to be an allowlist of exactly two states: the To Do category, or the literal status
+ * name "Implementing". Every other status fell through silently — so a Feature sitting in
+ * "In Progress" or "Blocked", months past its Target End, produced no warning at all. The rule's
+ * own remedy has always been "move it to Integrated Test or update Target End", which is a
+ * statement about what the Feature has NOT reached; it now asks that question directly.
+ */
 export function checkTargetEndOverdue(issue: JiraIssue, fieldConfig: HygieneFieldConfig): HygieneFlag | null {
-  if (!isFeatureLikeIssue(issue) || (!isTodoIssue(issue) && !isImplementingIssue(issue))) {
+  if (!isFeatureLikeIssue(issue) || hasReachedFeatureTesting(issue)) {
     return null;
   }
 
@@ -343,9 +375,9 @@ export function checkTargetEndOverdue(issue: JiraIssue, fieldConfig: HygieneFiel
   return isDateTodayOrPast(targetEndValue) ? BUILT_IN_HYGIENE_FLAGS['target-end-overdue'] : null;
 }
 
-/** Flags features whose Due Date has arrived before the issue reached a done state. */
+/** Flags any delivery work item whose Due Date has arrived before it reached a done state. */
 export function checkDueDateOverdue(issue: JiraIssue): HygieneFlag | null {
-  if (!isFeatureLikeIssue(issue) || isDoneIssue(issue)) {
+  if (!carriesOwnDueDate(issue) || isDoneIssue(issue)) {
     return null;
   }
 
@@ -446,9 +478,26 @@ export function isFeatureLikeIssue(issue: JiraIssue): boolean {
   return FEATURE_ISSUE_TYPE_NAMES.has(readIssueTypeName(issue));
 }
 
-/** True for the delivery issue types expected to carry a release fix version (see FIX_VERSION_ISSUE_TYPE_NAMES). */
+/** True for the delivery issue types expected to carry a release fix version (see DELIVERY_ISSUE_TYPE_NAMES). */
 export function carriesFixVersion(issue: JiraIssue): boolean {
-  return FIX_VERSION_ISSUE_TYPE_NAMES.has(readIssueTypeName(issue));
+  return DELIVERY_ISSUE_TYPE_NAMES.has(readIssueTypeName(issue));
+}
+
+/**
+ * True for the issue types whose own due date is a commitment worth warning about.
+ *
+ * Deliberately WIDER than `isFeatureLikeIssue`, which this check used to be gated to. A Story two
+ * weeks past its due date is exactly the thing a Scrum Master needs to see on a Monday morning, and
+ * gating to Feature/Epic meant the Today card and the Hygiene tab both reported zero beside a board
+ * full of them.
+ *
+ * The union is a STRICT superset of the old behaviour — Epic is carried over from the feature-like
+ * set even though it is absent from the delivery set (where it is excluded for a JQL reason of its
+ * own). Broadening a warning must never quietly stop warning about something it used to catch.
+ */
+export function carriesOwnDueDate(issue: JiraIssue): boolean {
+  const issueTypeName = readIssueTypeName(issue);
+  return DELIVERY_ISSUE_TYPE_NAMES.has(issueTypeName) || FEATURE_ISSUE_TYPE_NAMES.has(issueTypeName);
 }
 
 /** Reads the configured field config with defaults applied so checks can stay deterministic. */
@@ -625,8 +674,18 @@ function isTodoIssue(issue: JiraIssue): boolean {
   return statusCategoryKey === 'new' || statusCategoryName === 'to do';
 }
 
-function isImplementingIssue(issue: JiraIssue): boolean {
-  return (issue.fields.status?.name?.toLowerCase() ?? '') === IMPLEMENTING_STATUS_NAME;
+/**
+ * True once a Feature has reached the testing stage — Integrated Test, either story-workflow
+ * testing status, or any done status. Reaching it IS the remedy this rule asks for, so a Feature
+ * that has complied stops being warned about.
+ */
+function hasReachedFeatureTesting(issue: JiraIssue): boolean {
+  if (isDoneIssue(issue)) {
+    return true;
+  }
+
+  const statusName = issue.fields.status?.name?.toLowerCase() ?? '';
+  return FEATURE_TESTING_REACHED_STATUS_KEYWORDS.some((statusKeyword) => statusName.includes(statusKeyword));
 }
 
 function isDoneIssue(issue: JiraIssue): boolean {

@@ -14,7 +14,8 @@ import { useSettingsStore } from '../../../../store/settingsStore.ts';
 import type { JiraIssue, JiraSprint } from '../../../../types/jira.ts';
 import type { JiraIssue as HygieneJiraIssue } from '../../../Hygiene/checks/hygieneChecks.ts';
 import { formatLastBusinessDayEndChicago } from '../../../../utils/lastBusinessDayChicago.ts';
-import { runHygieneScan } from '../../../Hygiene/hooks/hygieneScan.ts';
+import { loadHygieneEvaluationSetup, runHygieneScan } from '../../../Hygiene/hooks/hygieneScan.ts';
+import type { HygieneEvaluationContext } from '../../../Hygiene/checks/hygieneChecks.ts';
 import { loadDashboardConfigFromStorage } from '../../../SprintDashboard/hooks/useDashboardConfig.ts';
 import { useSprintData } from '../../../SprintDashboard/hooks/useSprintData.ts';
 import { buildTeamHygieneScopeJql } from '../../../SprintDashboard/teamHygieneScope.ts';
@@ -78,8 +79,10 @@ export interface TodayDashboardData {
 
 const SEARCH_PATH = '/rest/api/2/search';
 const MYSELF_MAX_RESULTS = 100;
-const MY_ISSUES_FIELDS =
-  'summary,status,assignee,issuetype,priority,created,updated,duedate,fixVersions,parent,customfield_10028,customfield_10016,customfield_10020,customfield_10200,customfield_10101,customfield_10102,customfield_10301';
+// The personal fetch's field list is NOT hard-coded here any more. It used to name
+// customfield_10101/10102 directly, which meant the "my" half of the Due / overdue card read a
+// Target End field the instance might not use, while the team half resolved the field by name —
+// two halves of one number, looking at different data. Both now come from the shared setup.
 // The untriaged card only needs enough fields to count the DSU "new" set, so a compact list
 // keeps the request small while still mirroring the DSU board's new-section query.
 const UNTRIAGED_FIELDS = 'summary,status,priority,assignee,issuetype,created,updated';
@@ -125,12 +128,21 @@ interface SourceResult {
   requestKey: string;
   issues: JiraIssue[];
   errorMessage: string | null;
+  /**
+   * The hygiene configuration these issues were fetched under, carried WITH them.
+   *
+   * It travels beside the issues rather than in its own state so the two can never be a run apart:
+   * evaluating this fetch's issues against a later fetch's field ids is precisely the kind of
+   * near-miss that produces a count nobody can reproduce. Null only for the untriaged fetch, which
+   * runs no hygiene rules.
+   */
+  hygieneContext: HygieneEvaluationContext | null;
 }
 
 /** Stands for "no fetch has completed yet" — chosen so it can never equal a real request key. */
 const REQUEST_NONE = '';
 
-const EMPTY_SOURCE_RESULT: SourceResult = { requestKey: REQUEST_NONE, issues: [], errorMessage: null };
+const EMPTY_SOURCE_RESULT: SourceResult = { requestKey: REQUEST_NONE, issues: [], errorMessage: null, hygieneContext: null };
 
 /**
  * The outcome of the team hygiene scans, stamped like SourceResult. Every saved Dashboard Team
@@ -196,9 +208,10 @@ function extractErrorMessage(unknownError: unknown): string {
 
 /** Builds the my-issues search path with every field the reused Hygiene rules read. The assignee clause is
  *  passed in so the Today checklist follows the tool-wide persona (view as the viewer or a simulated user). */
-function buildMyIssuesSearchPath(assigneeClause: string): string {
+function buildMyIssuesSearchPath(assigneeClause: string, requestedFields: readonly string[]): string {
   const jql = `${assigneeClause}${MY_ISSUES_JQL_SUFFIX}`;
-  return `${SEARCH_PATH}?jql=${encodeURIComponent(jql)}&fields=${MY_ISSUES_FIELDS}&maxResults=${MYSELF_MAX_RESULTS}`;
+  const fieldList = encodeURIComponent(requestedFields.join(','));
+  return `${SEARCH_PATH}?jql=${encodeURIComponent(jql)}&fields=${fieldList}&maxResults=${MYSELF_MAX_RESULTS}`;
 }
 
 /** Builds the DSU "new" search path for the untriaged card (reuses useDsuBoardState's cutoff + JQL). */
@@ -380,20 +393,35 @@ export function useTodayDashboard(): TodayDashboardData {
     }
 
     let isMounted = true;
-    jiraGet<JiraSearchResponse>(buildMyIssuesSearchPath(myIssuesAssigneeClause))
-      .then((response) => {
+    // The setup is loaded per fetch rather than cached: it decides both which fields to REQUEST and
+    // which rules to apply, and a stale one would silently ask Jira for the wrong Target End field.
+    loadHygieneEvaluationSetup(activeTeamProfileId)
+      .then(async (setup) => {
+        const response = await jiraGet<JiraSearchResponse>(
+          buildMyIssuesSearchPath(myIssuesAssigneeClause, setup.requestedFields),
+        );
         if (!isMounted) return;
-        setMyIssuesResult({ requestKey: myIssuesRequestKey, issues: response.issues ?? [], errorMessage: null });
+        setMyIssuesResult({
+          requestKey: myIssuesRequestKey,
+          issues: response.issues ?? [],
+          errorMessage: null,
+          hygieneContext: setup.evaluationContext,
+        });
       })
       .catch((unknownError: unknown) => {
         if (!isMounted) return;
-        setMyIssuesResult({ requestKey: myIssuesRequestKey, issues: [], errorMessage: extractErrorMessage(unknownError) });
+        setMyIssuesResult({
+          requestKey: myIssuesRequestKey,
+          issues: [],
+          errorMessage: extractErrorMessage(unknownError),
+          hygieneContext: null,
+        });
       });
 
     return () => {
       isMounted = false;
     };
-  }, [myIssuesRequestKey, myIssuesAssigneeClause]);
+  }, [myIssuesRequestKey, myIssuesAssigneeClause, activeTeamProfileId]);
 
   // ── Untriaged fetch (independent source; own DSU "new" query) ──
   useEffect(() => {
@@ -405,11 +433,11 @@ export function useTodayDashboard(): TodayDashboardData {
     jiraGet<JiraSearchResponse>(buildUntriagedSearchPath(trimmedDsuProjectKey))
       .then((response) => {
         if (!isMounted) return;
-        setUntriagedResult({ requestKey: untriagedRequestKey, issues: response.issues ?? [], errorMessage: null });
+        setUntriagedResult({ requestKey: untriagedRequestKey, issues: response.issues ?? [], errorMessage: null, hygieneContext: null });
       })
       .catch((unknownError: unknown) => {
         if (!isMounted) return;
-        setUntriagedResult({ requestKey: untriagedRequestKey, issues: [], errorMessage: extractErrorMessage(unknownError) });
+        setUntriagedResult({ requestKey: untriagedRequestKey, issues: [], errorMessage: extractErrorMessage(unknownError), hygieneContext: null });
       });
 
     return () => {
@@ -498,7 +526,12 @@ export function useTodayDashboard(): TodayDashboardData {
       teamScans.length > 1 ? buildTeamCountBreakdown(teamScans, checkIds) : undefined;
     // Due/overdue is a my+team union deduped by key; the team half reads the scan findings so it
     // honours the same scope and enabled checks as each team's Hygiene tab.
-    const myDueOverdueKeys = selectDueOverdue(myHygiene, [], { staleDaysThreshold }).map((issue) => issue.key);
+    // Same context as the team half: same instance field ids, same enabled checks, same thresholds.
+    // Before this the personal half passed only the stale threshold, so it read a hard-coded Target
+    // End field and went on counting a rule the admin had switched off.
+    const myHygieneContext: HygieneEvaluationContext =
+      myIssuesResult.hygieneContext ?? { staleDaysThreshold };
+    const myDueOverdueKeys = selectDueOverdue(myHygiene, [], myHygieneContext).map((issue) => issue.key);
     const teamDueOverdueKeys = isTeamHygieneConfigured
       ? selectFindingKeysAcrossTeams(teamScans, DUE_OVERDUE_CHECK_IDS)
       : [];
@@ -580,6 +613,8 @@ export function useTodayDashboard(): TodayDashboardData {
     isTeamConfigured,
     teamHygiene,
     myHygiene,
+    // The context the personal issues were fetched under travels with them, so both belong here.
+    myIssuesResult.hygieneContext,
     myIssuesStatus,
     myIssuesError,
     untriagedHygiene,

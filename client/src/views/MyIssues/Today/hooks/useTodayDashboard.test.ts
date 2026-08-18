@@ -18,6 +18,7 @@ const {
   mockUseSettingsStore,
   mockLoadDashboardConfig,
   mockRunHygieneScan,
+  mockLoadHygieneEvaluationSetup,
 } = vi.hoisted(() => ({
   mockJiraGet: vi.fn(),
   mockUseMentionsState: vi.fn(),
@@ -26,6 +27,7 @@ const {
   mockUseSettingsStore: vi.fn(),
   mockLoadDashboardConfig: vi.fn(),
   mockRunHygieneScan: vi.fn(),
+  mockLoadHygieneEvaluationSetup: vi.fn(),
 }));
 
 vi.mock('../../../../services/jiraApi.ts', () => ({ jiraGet: mockJiraGet }));
@@ -34,7 +36,10 @@ vi.mock('../../../SprintDashboard/hooks/useSprintData.ts', () => ({ useSprintDat
 vi.mock('../../../SprintDashboard/hooks/useDashboardConfig.ts', () => ({
   loadDashboardConfigFromStorage: mockLoadDashboardConfig,
 }));
-vi.mock('../../../Hygiene/hooks/hygieneScan.ts', () => ({ runHygieneScan: mockRunHygieneScan }));
+vi.mock('../../../Hygiene/hooks/hygieneScan.ts', () => ({
+  runHygieneScan: mockRunHygieneScan,
+  loadHygieneEvaluationSetup: mockLoadHygieneEvaluationSetup,
+}));
 vi.mock('../../../../store/connectionStore.ts', () => ({ useConnectionStore: mockUseConnectionStore }));
 vi.mock('../../../../store/settingsStore.ts', () => ({ useSettingsStore: mockUseSettingsStore }));
 
@@ -134,6 +139,17 @@ beforeEach(() => {
   window.localStorage.clear();
   mockLoadDashboardConfig.mockReturnValue({ staleDaysThreshold: 5, customStoryPointsFieldId: '' });
   mockRunHygieneScan.mockResolvedValue(buildScanOutcome([]));
+  // The personal half now asks for the SAME setup the team scan uses — instance-resolved field ids,
+  // the admin's enabled checks, the team's thresholds — instead of hard-coding its own.
+  mockLoadHygieneEvaluationSetup.mockResolvedValue({
+    evaluationContext: {
+      fieldConfig: { targetEndFieldIds: ['customfield_88888'], targetStartFieldIds: ['customfield_77777'] },
+      enabledBuiltInCheckIds: new Set(['due-date-overdue', 'target-end-overdue', 'stale', 'no-assignee']),
+      staleDaysThreshold: 5,
+    },
+    requestedFields: ['summary', 'status', 'issuetype', 'duedate', 'customfield_88888'],
+    enabledCheckDefinitions: [],
+  });
   mockUseConnectionStore.mockImplementation((selector: (state: { isJiraReady: boolean }) => unknown) =>
     selector({ isJiraReady: true }),
   );
@@ -380,5 +396,58 @@ describe('useTodayDashboard', () => {
       tab: 'hygiene',
       search: { hygieneScope: 'mine' },
     });
+  });
+});
+
+describe('useTodayDashboard — the two halves of Due / overdue share one configuration', () => {
+  it('requests the personal issues with the fields the shared setup resolved, not a hard-coded list', async () => {
+    // The bug this pins: the personal fetch named customfield_10101/10102 in its own string, so on
+    // an instance whose Target End lives elsewhere the "my" half was reading a field that is always
+    // empty — reporting zero overdue while the team half, which resolves by name, reported some.
+    renderHook(() => useTodayDashboard());
+
+    await waitFor(() => expect(mockJiraGet).toHaveBeenCalled());
+    // Match on the JQL, not the field list — the untriaged query happens to REQUEST the assignee
+    // field, and matching on the raw path would have picked that one up instead.
+    const personalSearchPath = mockJiraGet.mock.calls
+      .map(([requestPath]) => decodeURIComponent(String(requestPath)))
+      .find((requestPath) => requestPath.includes('jql=assignee ='));
+
+    expect(personalSearchPath).toBeDefined();
+    expect(personalSearchPath).toContain('customfield_88888');
+    expect(personalSearchPath).not.toContain('customfield_10102');
+  });
+
+  it('honours a rule the admin disabled on the personal half too', async () => {
+    // Previously the personal half passed no enabled-check set at all, so `evaluateHygieneIssue`
+    // defaulted to every rule: switching a rule off in Admin Hub silenced the team half and left
+    // the personal half still counting it, and the card's total never went to zero.
+    mockLoadHygieneEvaluationSetup.mockResolvedValue({
+      evaluationContext: {
+        fieldConfig: { targetEndFieldIds: ['customfield_88888'], targetStartFieldIds: ['customfield_77777'] },
+        enabledBuiltInCheckIds: new Set(['stale']),
+        staleDaysThreshold: 5,
+      },
+      requestedFields: ['summary', 'status', 'issuetype', 'duedate'],
+      enabledCheckDefinitions: [],
+    });
+    mockJiraGet.mockImplementation((requestPath: string) =>
+      Promise.resolve({
+        issues: decodeURIComponent(String(requestPath)).includes('jql=assignee =')
+          ? [{
+            id: '1', key: 'MINE-1',
+            fields: {
+              summary: 'Overdue story', issuetype: { name: 'Story' },
+              status: { name: 'In Progress', statusCategory: { key: 'indeterminate', name: 'In Progress' } },
+              created: LONG_PAST_ISO, updated: recentIso(), duedate: '2020-01-01',
+            },
+          }]
+          : [],
+      }));
+
+    const { result } = renderHook(() => useTodayDashboard());
+
+    await waitFor(() => expect(result.current.categories['due-overdue'].status).toBe('ready'));
+    expect(result.current.categories['due-overdue'].count).toBe(0);
   });
 });

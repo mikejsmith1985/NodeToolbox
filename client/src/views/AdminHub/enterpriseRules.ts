@@ -123,7 +123,7 @@ const BUILT_IN_RULE_DEFINITIONS: readonly Omit<EnterpriseBuiltInRule, 'isBuiltIn
     id: 'missing-due-date',
     checkId: 'missing-due-date',
     name: 'Missing Due Date',
-    description: 'Feature issues must include the committed release due date.',
+    description: 'Feature issues must include the committed release due date. Only Features are asked for one — the overdue rule above watches every delivery item that HAS a due date.',
   },
   {
     id: 'target-start-ready',
@@ -135,13 +135,13 @@ const BUILT_IN_RULE_DEFINITIONS: readonly Omit<EnterpriseBuiltInRule, 'isBuiltIn
     id: 'target-end-overdue',
     checkId: 'target-end-overdue',
     name: 'Target End reached before testing transition',
-    description: 'If a feature is still To Do or Implementing when Target End is today or earlier, the team must either move it to Integrated Test or update Target End.',
+    description: 'If a feature has not yet reached Integrated Test when Target End is today or earlier, the team must either move it forward or update Target End.',
   },
   {
     id: 'due-date-overdue',
     checkId: 'due-date-overdue',
     name: 'Due Date reached before completion',
-    description: 'If a feature is not Done when Due Date is today or earlier, the team must either finish it or update Due Date.',
+    description: 'If a Story, Task, Defect, or Feature is not Done when Due Date is today or earlier, the team must either finish it or update Due Date.',
   },
   {
     id: 'missing-sp',

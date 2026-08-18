@@ -25,7 +25,7 @@ const SPRINT_FIELD = 'customfield_10020';
 
 const FEATURE_LIKE_ISSUE_TYPES = new Set(['feature', 'epic']);
 // Delivery work items expected to carry a release fix version (GH #200). MUST match the client's
-// FIX_VERSION_ISSUE_TYPE_NAMES so the server hygiene monitor and the Hygiene view agree. "Defect" is this
+// DELIVERY_ISSUE_TYPE_NAMES so the server hygiene monitor and the Hygiene view agree. "Defect" is this
 // instance's defect type (not "Bug"); Sub-tasks inherit the parent release and are excluded; "Epic" is excluded
 // because this instance's hierarchy tops out at Feature.
 const FIX_VERSION_ISSUE_TYPES = new Set(['story', 'task', 'defect', 'feature']);
@@ -33,7 +33,10 @@ const STORY_LIKE_ISSUE_TYPES = new Set(['story', 'task', 'bug', 'defect', 'spike
 const STORY_POINTS_UNSUPPORTED_TYPES = new Set(['risk']);
 
 const DONE_STATUS_NAMES = new Set(['done', 'closed', 'resolved', 'complete']);
-const IMPLEMENTING_STATUS_NAME = 'implementing';
+// Status names meaning a Feature has reached testing or later. Reaching one IS the remedy the
+// target-end rule asks for, so a Feature that has complied stops being warned about. Mirrors the
+// client's FEATURE_TESTING_REACHED_STATUS_KEYWORDS — keep in lockstep.
+const FEATURE_TESTING_REACHED_STATUS_KEYWORDS = ['test', 'ready for qa', 'ready to accept'];
 
 // ── Helper functions ──────────────────────────────────────────────────────────
 
@@ -181,8 +184,11 @@ function isTodoIssue(issue) {
 }
 
 /** Returns true when the issue status is "Implementing". */
-function isImplementingIssue(issue) {
-  return (issue.fields.status?.name ?? '').toLowerCase() === IMPLEMENTING_STATUS_NAME;
+/** Returns true once a Feature has reached the testing stage (Integrated Test onward) or is Done. */
+function hasReachedFeatureTesting(issue) {
+  if (isDoneIssue(issue)) return true;
+  const statusName = (issue.fields.status?.name ?? '').toLowerCase();
+  return FEATURE_TESTING_REACHED_STATUS_KEYWORDS.some((statusKeyword) => statusName.includes(statusKeyword));
 }
 
 /** Returns true when the issue is in a Done state. */
@@ -277,6 +283,16 @@ function carriesFixVersion(issue) {
   return FIX_VERSION_ISSUE_TYPES.has((issue.fields.issuetype?.name ?? '').toLowerCase());
 }
 
+/**
+ * Returns true for the issue types whose own due date is a commitment worth warning about.
+ * A STRICT superset of the old Feature/Epic gate — Epic is carried over from the feature-like set
+ * even though the delivery set excludes it, so broadening never quietly drops a case.
+ */
+function carriesOwnDueDate(issue) {
+  const issueTypeName = (issue.fields.issuetype?.name ?? '').toLowerCase();
+  return FIX_VERSION_ISSUE_TYPES.has(issueTypeName) || FEATURE_LIKE_ISSUE_TYPES.has(issueTypeName);
+}
+
 function checkMissingFixVersion(issue) {
   if (!carriesFixVersion(issue)) return null;
   const fixVersions = issue.fields.fixVersions ?? [];
@@ -300,9 +316,12 @@ function checkTargetStartReady(issue, fieldConfig) {
   return { checkId: 'target-start-ready', label: 'Target start date reached — still To Do', severity: 'warn' };
 }
 
+// Flags a Feature past Target End in ANY status before testing. This used to be an allowlist of
+// exactly two states (To Do category, or the literal name "Implementing"), so a Feature sitting in
+// "In Progress" or "Blocked" months past its Target End produced nothing at all.
 function checkTargetEndOverdue(issue, fieldConfig) {
   if (!isFeatureLikeIssue(issue)) return null;
-  if (!isTodoIssue(issue) && !isImplementingIssue(issue)) return null;
+  if (hasReachedFeatureTesting(issue)) return null;
   const configuredIds = fieldConfig.targetEndFieldIds || [];
   const targetEndValue = configuredIds.length > 0
     ? readIssueFieldValue(issue, configuredIds[0])
@@ -311,8 +330,10 @@ function checkTargetEndOverdue(issue, fieldConfig) {
   return { checkId: 'target-end-overdue', label: 'Target end date overdue', severity: 'error' };
 }
 
+// Flags any delivery work item past its due date. Previously gated to Feature/Epic, which meant a
+// Story a fortnight overdue produced no warning on any surface.
 function checkDueDateOverdue(issue) {
-  if (!isFeatureLikeIssue(issue)) return null;
+  if (!carriesOwnDueDate(issue)) return null;
   if (isDoneIssue(issue)) return null;
   if (!isDateTodayOrPast(issue.fields.duedate)) return null;
   return { checkId: 'due-date-overdue', label: 'Due date overdue', severity: 'error' };

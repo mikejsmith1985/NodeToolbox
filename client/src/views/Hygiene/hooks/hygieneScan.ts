@@ -117,6 +117,49 @@ export function buildHygieneSearchPath(
   return `/rest/api/2/search?jql=${encodeURIComponent(jqlText)}&fields=${encodeURIComponent(buildUniqueFieldIds(requestedFields).join(','))}&maxResults=${HYGIENE_MAX_RESULTS}`;
 }
 
+/** Everything needed to evaluate hygiene consistently, independent of WHICH issues are evaluated. */
+export interface HygieneEvaluationSetup {
+  /** The context every hygiene evaluation must share: field ids, enabled checks, team thresholds. */
+  evaluationContext: HygieneEvaluationContext;
+  /** The Jira `fields=` list those checks need in order to see anything at all. */
+  requestedFields: string[];
+  /** The enabled check definitions the Hygiene tab renders its summary tiles from. */
+  enabledCheckDefinitions: EnabledCheckDefinitions;
+}
+
+/**
+ * Loads the shared hygiene evaluation setup: instance field ids, the admin's enabled checks, and
+ * the team's own story-points field and stale threshold.
+ *
+ * Split out of `runHygieneScan` because the scan is not the only evaluator. The Today dashboard's
+ * "Due / overdue" card evaluates the viewer's OWN issues from its own cross-project fetch, and it
+ * used to do so with no context at all — so it read a hard-coded `customfield_10102` for Target End
+ * while the team half resolved the field by name, and it kept counting a rule the admin had turned
+ * off. Two halves of one number, answering to two different configurations. Now there is one.
+ *
+ * `featureKeysWithPointedStories` is deliberately NOT here: it depends on which issues were loaded,
+ * so it belongs to a scan run rather than to the setup.
+ */
+export async function loadHygieneEvaluationSetup(activeTeamProfileId: string): Promise<HygieneEvaluationSetup> {
+  const enterpriseRules = loadEnterpriseRulesFromStorage();
+  const enabledCustomRules = readEnabledRequiredFieldRules(enterpriseRules);
+  const hygieneFieldConfig = await loadHygieneFieldConfig();
+  const dashboardConfig = loadDashboardConfigFromStorage(activeTeamProfileId);
+  const customStoryPointsFieldId = dashboardConfig.customStoryPointsFieldId || '';
+
+  return {
+    evaluationContext: {
+      customRules: enabledCustomRules,
+      enabledBuiltInCheckIds: readEnabledBuiltInCheckIds(enterpriseRules),
+      fieldConfig: hygieneFieldConfig,
+      customStoryPointsFieldId,
+      staleDaysThreshold: dashboardConfig.staleDaysThreshold,
+    },
+    requestedFields: buildRequestedHygieneFields(hygieneFieldConfig, enabledCustomRules, customStoryPointsFieldId),
+    enabledCheckDefinitions: readEnabledEnterpriseCheckDefinitions(enterpriseRules),
+  };
+}
+
 /**
  * Runs the full hygiene pipeline for one scope and returns findings plus the resolved config.
  *
@@ -126,25 +169,16 @@ export function buildHygieneSearchPath(
  * per-check counts derive them from the returned findings — never from a second computation.
  */
 export async function runHygieneScan(options: HygieneScanOptions): Promise<HygieneScanOutcome> {
-  const enterpriseRules = loadEnterpriseRulesFromStorage();
-  const enabledCheckDefinitions = readEnabledEnterpriseCheckDefinitions(enterpriseRules);
-  const enabledCustomRules = readEnabledRequiredFieldRules(enterpriseRules);
-  const enabledBuiltInCheckIds = readEnabledBuiltInCheckIds(enterpriseRules);
-  const hygieneFieldConfig = await loadHygieneFieldConfig();
-
-  // Read the team's configured story-points field so the missing-SP check uses the right field,
-  // and the same stale threshold the Blockers tab uses so every surface agrees on "stale".
-  const dashboardConfig = loadDashboardConfigFromStorage(options.activeTeamProfileId);
-  const customStoryPointsFieldId = dashboardConfig.customStoryPointsFieldId || '';
-  const staleDaysThreshold = dashboardConfig.staleDaysThreshold;
+  // The same setup the Today dashboard's personal half uses — one configuration, so the two halves
+  // of a mixed-scope count cannot answer to different field ids or different enabled checks.
+  const { evaluationContext, requestedFields, enabledCheckDefinitions } =
+    await loadHygieneEvaluationSetup(options.activeTeamProfileId);
+  const hygieneFieldConfig = evaluationContext.fieldConfig as HygieneFieldConfig;
+  const enabledBuiltInCheckIds = evaluationContext.enabledBuiltInCheckIds ?? new Set<never>();
+  const customStoryPointsFieldId = evaluationContext.customStoryPointsFieldId ?? '';
 
   const jiraSearchResponse = await jiraGet<JiraSearchResponse>(
-    buildHygieneSearchPath(
-      options.projectKey,
-      options.extraJql,
-      buildRequestedHygieneFields(hygieneFieldConfig, enabledCustomRules, customStoryPointsFieldId),
-      options.assigneeClause,
-    ),
+    buildHygieneSearchPath(options.projectKey, options.extraJql, requestedFields, options.assigneeClause),
   );
   const loadedIssues = jiraSearchResponse.issues ?? [];
 
@@ -162,12 +196,9 @@ export async function runHygieneScan(options: HygieneScanOptions): Promise<Hygie
 
   return {
     findings: mapIssuesToFindings(loadedIssues, {
-      customRules: enabledCustomRules,
+      ...evaluationContext,
       enabledBuiltInCheckIds: runCheckIds,
-      fieldConfig: hygieneFieldConfig,
       featureKeysWithPointedStories,
-      customStoryPointsFieldId,
-      staleDaysThreshold,
     }),
     scannedIssueCount: loadedIssues.length,
     fieldConfig: hygieneFieldConfig,

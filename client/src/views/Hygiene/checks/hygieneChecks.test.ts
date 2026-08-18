@@ -9,6 +9,7 @@ import {
   checkTargetEndOverdue,
   checkTargetStartReady,
   checkDueDateOverdue,
+  checkMissingDueDate,
   checkMissingTargetStart,
   checkMissingTargetEnd,
   checkMissingStoryPoints,
@@ -294,6 +295,73 @@ describe('hygiene check predicates', () => {
     });
 
     expect(checkDueDateOverdue(featureIssue)).toBeNull();
+  });
+
+  it('flags every delivery work item past its due date, not only Features', () => {
+    // The reason this exists: the check was gated to Feature/Epic, so a Story a fortnight past its
+    // due date produced no warning anywhere — Today, Hygiene, or the team scan. A Scrum Master's
+    // own queue is almost entirely Stories, so the card read zero beside a Jira board full of them.
+    const overdueOf = (issueTypeName: string) => buildIssue({
+      issuetype: { name: issueTypeName },
+      status: { name: 'In Progress', statusCategory: { key: 'indeterminate', name: 'In Progress' } },
+      duedate: '2026-07-15',
+    });
+
+    // Epic is in the list as a REGRESSION guard, not a new case: it was already covered by the old
+    // Feature/Epic gate, and broadening a warning must never quietly stop catching something.
+    ['Story', 'Task', 'Defect', 'Feature', 'Epic'].forEach((issueTypeName) => {
+      expect(checkDueDateOverdue(overdueOf(issueTypeName))?.checkId).toBe('due-date-overdue');
+    });
+  });
+
+  it('leaves a Sub-task alone, because it inherits the dates on its parent', () => {
+    expect(checkDueDateOverdue(buildIssue({
+      issuetype: { name: 'Sub-task' },
+      status: { name: 'In Progress', statusCategory: { key: 'indeterminate', name: 'In Progress' } },
+      duedate: '2026-07-15',
+    }))).toBeNull();
+  });
+
+  it('does NOT ask a Story for a due date it was never expected to carry', () => {
+    // Broadening the OVERDUE rule must not broaden the MISSING rule: a committed due date is a
+    // Feature-level commitment, and flagging every Story for lacking one would bury the real signal.
+    expect(checkMissingDueDate(buildIssue({
+      issuetype: { name: 'Story' },
+      status: ACTIVE_STATUS,
+      duedate: null,
+    }))).toBeNull();
+  });
+
+  it('flags a Feature past Target End in any status before testing', () => {
+    // Previously an allowlist of exactly two statuses (To Do category, or the literal name
+    // "Implementing"), so a Feature sitting In Progress or Blocked months past Target End was
+    // silent. The rule always meant "has not reached Integrated Test yet"; now it says so.
+    const pastTargetEndIn = (statusName: string, statusCategoryKey: string) => buildIssue({
+      issuetype: { name: 'Feature' },
+      status: { name: statusName, statusCategory: { key: statusCategoryKey, name: statusName } },
+      customfield_10102: '2026-07-15',
+    });
+
+    expect(checkTargetEndOverdue(pastTargetEndIn('To Do', 'new'), resolveHygieneFieldConfig())?.checkId).toBe('target-end-overdue');
+    expect(checkTargetEndOverdue(pastTargetEndIn('Implementing', 'indeterminate'), resolveHygieneFieldConfig())?.checkId).toBe('target-end-overdue');
+    expect(checkTargetEndOverdue(pastTargetEndIn('In Progress', 'indeterminate'), resolveHygieneFieldConfig())?.checkId).toBe('target-end-overdue');
+    expect(checkTargetEndOverdue(pastTargetEndIn('Blocked', 'indeterminate'), resolveHygieneFieldConfig())?.checkId).toBe('target-end-overdue');
+    expect(checkTargetEndOverdue(pastTargetEndIn('In Review', 'indeterminate'), resolveHygieneFieldConfig())?.checkId).toBe('target-end-overdue');
+  });
+
+  it('stops flagging Target End once the Feature has reached testing or later', () => {
+    // The rule's own remedy is "move it to Integrated Test or update Target End" — so a Feature that
+    // HAS moved has complied, and repeating the warning would be nagging about a done instruction.
+    const pastTargetEndIn = (statusName: string, statusCategoryKey: string) => buildIssue({
+      issuetype: { name: 'Feature' },
+      status: { name: statusName, statusCategory: { key: statusCategoryKey, name: statusName } },
+      customfield_10102: '2026-07-15',
+    });
+
+    expect(checkTargetEndOverdue(pastTargetEndIn('Integrated Test', 'indeterminate'), resolveHygieneFieldConfig())).toBeNull();
+    expect(checkTargetEndOverdue(pastTargetEndIn('Ready for QA', 'indeterminate'), resolveHygieneFieldConfig())).toBeNull();
+    expect(checkTargetEndOverdue(pastTargetEndIn('Ready to Accept', 'indeterminate'), resolveHygieneFieldConfig())).toBeNull();
+    expect(checkTargetEndOverdue(pastTargetEndIn('Done', 'done'), resolveHygieneFieldConfig())).toBeNull();
   });
 
   it('supports enabled built-in filtering and custom required-field rules', () => {

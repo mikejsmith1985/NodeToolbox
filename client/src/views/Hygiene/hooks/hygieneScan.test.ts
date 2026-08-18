@@ -11,7 +11,7 @@ vi.mock('../../../services/jiraApi.ts', () => ({
 }));
 
 import { jiraGet } from '../../../services/jiraApi.ts';
-import { buildHygieneSearchPath, runHygieneScan } from './hygieneScan.ts';
+import { buildHygieneSearchPath, loadHygieneEvaluationSetup, runHygieneScan } from './hygieneScan.ts';
 
 const mockJiraGet = vi.mocked(jiraGet);
 
@@ -150,5 +150,33 @@ describe('runHygieneScan', () => {
     const featureFinding = scanOutcome.findings.find((finding) => finding.issue.key === 'TBX-F');
     // The run survived, and the un-runnable check said nothing rather than flagging everything.
     expect(featureFinding?.flags.map((flag) => flag.checkId) ?? []).not.toContain('missing-child-story-points');
+  });
+});
+
+describe('loadHygieneEvaluationSetup', () => {
+  it('resolves the instance field ids, the enabled checks, and the fields a scan must request', async () => {
+    // This is the setup BOTH halves of the Today "Due / overdue" card must share. They used to
+    // diverge: the team half resolved Target End by name discovery while the personal half read a
+    // hard-coded customfield id and ignored the admin's enabled-check toggles entirely.
+    mockJiraGet.mockResolvedValueOnce(FIELD_METADATA);
+
+    const setup = await loadHygieneEvaluationSetup('team-1');
+
+    expect(setup.evaluationContext.fieldConfig?.targetEndFieldIds).toContain('customfield_10102');
+    expect(setup.evaluationContext.enabledBuiltInCheckIds?.has('due-date-overdue')).toBe(true);
+    expect(setup.requestedFields).toContain('duedate');
+    expect(setup.requestedFields).toContain('customfield_10102');
+  });
+
+  it('carries the admin’s disabled checks through, so a silenced rule is silent everywhere', async () => {
+    window.localStorage.setItem(
+      'tbxEnterpriseStandards',
+      JSON.stringify([{ id: 'due-date-overdue', isEnabled: false }]),
+    );
+    mockJiraGet.mockResolvedValueOnce(FIELD_METADATA);
+
+    const setup = await loadHygieneEvaluationSetup('team-1');
+
+    expect(setup.evaluationContext.enabledBuiltInCheckIds?.has('due-date-overdue')).toBe(false);
   });
 });

@@ -22,6 +22,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   work it cannot place, never somewhere a person should file something.
 
 ### Fixed
+- **Overdue warnings reached almost nothing.** A handful of issues sat visibly past their due date
+  in Jira while the Today dashboard's **Due / overdue** card read zero. Three separate causes, each
+  confirmed against the running evaluator rather than by reading:
+
+  **Only Features counted.** `checkDueDateOverdue` opened with `isFeatureLikeIssue`, so a Story,
+  Task, Defect, or Sub-task past its due date produced no flag on any surface — not Today, not the
+  Hygiene tab, not the scheduled monitor. A Scrum Master's own queue is almost entirely Stories, so
+  the card was structurally incapable of counting the thing it was named after. Due dates are now a
+  commitment on every delivery work item (Story / Task / Defect / Feature, plus Epic carried over so
+  the change is a strict superset). Sub-tasks stay out — they inherit the dates on their parent.
+  The **Missing** Due Date rule is deliberately NOT broadened: a committed date is a Feature-level
+  commitment, and asking every Story for one would bury the signal this fixes.
+
+  **Target End fired in two statuses only.** The rule was an allowlist of the To Do category or the
+  literal status name "Implementing". A Feature parked in "In Progress", "In Review" or "Blocked",
+  months past its Target End, was silent. The rule's own remedy has always been "move it to
+  Integrated Test or update Target End" — a statement about what the Feature has NOT reached — so it
+  now asks that question directly and stops once the Feature genuinely reaches testing.
+
+  **The two halves of one card answered to different configurations.** The team half resolved Target
+  End by name discovery against the live instance; the personal half read a hard-coded
+  `customfield_10102` in its own field string and passed no enabled-check set at all — so it looked
+  at a field the instance might not use, and went on counting a rule an admin had switched off in
+  Admin Hub. Both halves now load one `loadHygieneEvaluationSetup`, and the configuration a fetch
+  ran under travels beside its issues so the two can never be a run apart.
+
+  Mirrored in `src/services/hygieneRules.js` so the scheduled monitor and the in-app tiles agree,
+  and the Admin Hub rule descriptions were corrected — they described the old behaviour.
+
 - **F2 quick issue lookup — a dropdown no longer reports a set field as empty.** Jira hands the
   panel two differently-keyed halves of the same fact: the issue carries its priority as a NAME
   (`High`) while the option list is keyed by the Jira ID (`3`), because the ID is what the writer
