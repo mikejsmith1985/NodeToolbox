@@ -740,6 +740,69 @@ describe('useSprintData', () => {
       expect(result.current.state.hasUnsavedTeamChanges).toBe(false);
     });
 
+    /** Seeds one saved team profile and makes it the active one. */
+    function installActiveTeamProfile() {
+      useSettingsStore.setState({
+        sprintDashboardActiveTeamProfileId: 'alpha-id',
+        sprintDashboardTeamProfiles: [{
+          id: 'alpha-id', name: 'Transformers', projectKey: 'ENCUC',
+          boardId: '1', boardName: 'ENCUC board', boardType: 'scrum',
+          scopeMode: 'pi', selectedSprintId: '', selectedFixVersion: '',
+          selectedPiValue: 'PI 26.3 (04/30/26 - 07/29/26)',
+        }],
+      } as never);
+    }
+
+    /** The active profile as the settings store currently holds it. */
+    function readActiveTeamProfile() {
+      const settingsState = useSettingsStore.getState();
+      return settingsState.sprintDashboardTeamProfiles
+        .find((teamProfile) => teamProfile.id === settingsState.sprintDashboardActiveTeamProfileId);
+    }
+
+    it('records a chosen PI on the active team profile, so the Today cards scan what the tab shows', async () => {
+      // The divergence this closes: the Hygiene tab reads the LIVE selection while the Today team
+      // cards scan each saved PROFILE. A deliberate PI pick was persisted to the dashboard's own
+      // keys but never to the profile, so the card counted one PI's issues and the tab showed
+      // another's — a count that could not be found anywhere on the screen it linked to.
+      installActiveTeamProfile();
+      mockJiraGet.mockResolvedValue({ issues: [], values: [] });
+      const { result } = renderHook(() => useSprintData());
+
+      await act(async () => {
+        await result.current.actions.selectPiScope('PI 26.4 (08/13/26 - 10/28/26)');
+      });
+
+      expect(readActiveTeamProfile()?.selectedPiValue).toBe('PI 26.4 (08/13/26 - 10/28/26)');
+      expect(readActiveTeamProfile()?.scopeMode).toBe('pi');
+    });
+
+    it('records a chosen fix version on the active team profile too', async () => {
+      installActiveTeamProfile();
+      mockJiraGet.mockResolvedValue({ issues: [], values: [] });
+      const { result } = renderHook(() => useSprintData());
+
+      await act(async () => {
+        await result.current.actions.selectFixVersionScope('10/08/2026');
+      });
+
+      expect(readActiveTeamProfile()?.selectedFixVersion).toBe('10/08/2026');
+      expect(readActiveTeamProfile()?.scopeMode).toBe('fixVersion');
+    });
+
+    it('records a chosen sprint on the active team profile too', async () => {
+      installActiveTeamProfile();
+      mockJiraGet.mockResolvedValue({ issues: [], values: [] });
+      const { result } = renderHook(() => useSprintData());
+
+      await act(async () => {
+        await result.current.actions.selectSprintScope(42);
+      });
+
+      expect(readActiveTeamProfile()?.selectedSprintId).toBe('42');
+      expect(readActiveTeamProfile()?.scopeMode).toBe('sprint');
+    });
+
     it('clears the flag when markTeamChangesSaved is called', () => {
       const { result } = renderHook(() => useSprintData());
 

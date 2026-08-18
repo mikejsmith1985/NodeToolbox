@@ -2,10 +2,19 @@
    Sizes come from the shared tokens, which the quick-lookup dialog re-declares one step larger on
    its own container — so this file scales with that surface without knowing it exists. */
 
+/*
+ * The editable-field list.
+ *
+ * One column per field row is right in a narrow host and wasteful in a wide one: an issue with 44
+ * settable fields became a single column of rows using a third of a full-screen dialog's width, so
+ * finding a field meant scrolling past forty others. A host that has the room says so by setting
+ * --issue-field-columns; everywhere else it stays a single column exactly as before.
+ */
 .section {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+  display: grid;
+  grid-template-columns: repeat(var(--issue-field-columns, 1), minmax(0, 1fr));
+  align-content: start;
+  gap: 8px 20px;
   margin: 4px 0 12px;
   padding: 12px;
   background: var(--color-surface-2);
@@ -14,6 +23,7 @@
 }
 
 .sectionLabel {
+  grid-column: 1 / -1;
   font-size: var(--font-size-sm);
   font-weight: 600;
   color: var(--color-text-secondary);
@@ -166,7 +176,13 @@
 
 /* Warning shown when saving a fix version would replace several existing ones. Losing a value the
    user could not see coming is the one outcome this editor must never produce silently. */
+/* The find-a-field box spans the whole list rather than sitting in the first column. */
+.fieldFilterInput {
+  grid-column: 1 / -1;
+}
+
 .fieldHint {
+  grid-column: 1 / -1;
   color: var(--color-text-secondary);
   font-size: var(--font-size-sm);
   line-height: 1.4;

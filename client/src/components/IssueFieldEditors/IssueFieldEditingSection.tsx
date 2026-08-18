@@ -128,7 +128,7 @@ export function IssueFieldEditingSection({
       {plan.fields.length > FILTER_VISIBLE_THRESHOLD ? (
         <input
           aria-label="Find a field"
-          className={styles.input}
+          className={`${styles.input} ${styles.fieldFilterInput}`}
           placeholder="Find a field…"
           value={filterText}
           onChange={(changeEvent) => setFilterText(changeEvent.target.value)}

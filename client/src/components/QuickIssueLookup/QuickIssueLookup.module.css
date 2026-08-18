@@ -26,10 +26,10 @@
      the detail panel, the field editors, the comment thread — scales with it and none of them needs
      to know this surface exists. The F2 popup also mounts OUTSIDE `.toolContent`, so the A+/A++
      `zoom` never reached it; this is what finally makes the popup obey a request for larger text. */
-  --font-size-xs: 13px;
-  --font-size-sm: 14px;
-  --font-size-md: 16px;
-  --font-size-lg: 20px;
+  --font-size-xs: 14px;
+  --font-size-sm: 16px;
+  --font-size-md: 19px;
+  --font-size-lg: 24px;
 
   /* The detail panel's two host-controlled knobs (see IssueDetailPanel.module.css). A 320px
      description box is right in a dense list and wrong in a full-window dialog, where it left most
@@ -65,16 +65,30 @@
   font-size: var(--font-size-lg);
 }
 
-/* The reading column. Left to fill 96vw the description would run to newspaper-column widths that
-   the eye loses its place in, so the CONTENT is capped even though the dialog is not — the space
-   goes to line height and breathing room rather than to longer lines. */
+/* The content column.
+   It used to cap at 1280px, which turned a 96vw dialog into a narrow strip of text floating in a
+   large empty box — the width was taken and then not used. The cap is gone; long prose is kept
+   readable by the two-column split below rather than by starving the dialog of its own width. */
 .readingColumn {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
   width: 100%;
-  max-width: 1280px;
-  margin: 0 auto;
+}
+
+/* The dialog's own width is passed down to the panel through this custom property, which the
+   editable-field list reads to decide how many columns of fields it can show. Declared here rather
+   than measured, because the dialog is the only host wide enough for it to be true. */
+@media (min-width: 1100px) {
+  .readingColumn {
+    --issue-field-columns: 2;
+  }
+}
+
+@media (min-width: 1700px) {
+  .readingColumn {
+    --issue-field-columns: 3;
+  }
 }
 
 .closeButton {

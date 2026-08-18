@@ -310,6 +310,27 @@ function readPersistedPiReviewPages(): SprintDashboardPiReviewPage[] {
   return activeProfile?.piReviewPages ?? [];
 }
 
+/**
+ * Writes the chosen scope onto the active team profile.
+ *
+ * The dashboard persists its scope to its own keys, and the Hygiene tab reads that live selection —
+ * but the Today dashboard's team cards scan each SAVED PROFILE, because they audit every team and
+ * only one team is live at a time. While a deliberate pick never reached the profile, the two read
+ * different PIs: the card counted one population and the tab it linked to showed another, so the
+ * number appeared nowhere on the screen meant to explain it.
+ *
+ * This is NOT an edit to the team's configuration and must never flag unsaved changes — it records
+ * which slice of that team the user is looking at, which is exactly what the cards need to agree.
+ */
+function recordScopeOnActiveTeamProfile(scopeUpdates: {
+  scopeMode: string;
+  selectedSprintId?: string;
+  selectedFixVersion?: string;
+  selectedPiValue?: string;
+}): void {
+  useSettingsStore.getState().updateActiveSprintDashboardTeamProfile(scopeUpdates as never);
+}
+
 function createInitialSprintDataState(): SprintDataState {
   return {
     projectKey: readPersistedProjectKey(),
@@ -912,6 +933,7 @@ export function useSprintData(
   const selectSprintScope = useCallback(async (sprintId: number) => {
     persistScopeMode(DASHBOARD_SCOPE_MODE_SPRINT);
     persistSelectedSprintId(sprintId);
+    recordScopeOnActiveTeamProfile({ scopeMode: DASHBOARD_SCOPE_MODE_SPRINT, selectedSprintId: String(sprintId) });
     setState((previousState) => ({
       ...previousState,
       scopeMode: DASHBOARD_SCOPE_MODE_SPRINT,
@@ -924,6 +946,7 @@ export function useSprintData(
   const selectFixVersionScope = useCallback(async (fixVersionName: string) => {
     persistScopeMode(DASHBOARD_SCOPE_MODE_FIX_VERSION);
     persistSelectedFixVersionName(fixVersionName);
+    recordScopeOnActiveTeamProfile({ scopeMode: DASHBOARD_SCOPE_MODE_FIX_VERSION, selectedFixVersion: fixVersionName });
     setState((previousState) => ({
       ...previousState,
       scopeMode: DASHBOARD_SCOPE_MODE_FIX_VERSION,
@@ -940,6 +963,7 @@ export function useSprintData(
     // review what shipped or chase carry-over work.
     deliberatePiChoiceRef.current = piValue;
     persistSelectedPiValue(piValue);
+    recordScopeOnActiveTeamProfile({ scopeMode: DASHBOARD_SCOPE_MODE_PI, selectedPiValue: piValue });
     setState((previousState) => ({
       ...previousState,
       scopeMode: DASHBOARD_SCOPE_MODE_PI,

@@ -32,6 +32,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   work it cannot place, never somewhere a person should file something.
 
 ### Fixed
+- **A chosen PI/sprint/fix version never reached the team profile, so Today and Hygiene scanned
+  different slices.** The Hygiene tab reads the dashboard's LIVE selection; the Today team cards scan
+  each SAVED profile, because they audit every team and only one is live at a time. A deliberate pick
+  was written to the dashboard's own keys and to nothing else — only the staleness-healer ever
+  touched the profile, and it deliberately stands aside for a deliberate choice. So the card counted
+  one PI's issues and the Hygiene tab it links to showed another's, which is why a count of 24 could
+  not be found on the screen meant to explain it. All three scope selectors now record their choice
+  on the active profile. It is not an edit to the team's configuration and still never flags unsaved
+  changes — it records which slice is being looked at, which is exactly what the cards need.
+
+- **The quick issue lookup took the whole window and then did not use it.** The content was capped at
+  1280px, so a 96vw dialog rendered a narrow strip of text in a large empty box. The cap is gone, the
+  type scale is up again (19px body, 24px headings), and the editable-field list now flows into two
+  or three columns when the host has the room — an issue with 44 settable fields was a single column
+  using a third of the width, so finding one meant scrolling past forty others. Narrow hosts are
+  unchanged: the column count comes from the host, and defaults to one.
+
 - **A Hygiene finding row left a tall blank band beside the summary.** The meta grid had four
   tracks while the row rendered five cards, so the fifth wrapped to a second line and stretched the
   column; adding **Due** made it six. The track count is now stated explicitly — six across, three
