@@ -22,6 +22,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   work it cannot place, never somewhere a person should file something.
 
 ### Fixed
+- **Hygiene counts stopped at a cap and never said so.** Both hygiene surfaces issued ONE Jira
+  search with a `maxResults` limit — 100 for the Today dashboard's personal fetch, 200 for the
+  hygiene scan — and presented whatever came back as the answer. A team with 240 open issues saw a
+  scan of 200 described as *the* scan, and the forty never looked at were indistinguishable from
+  forty healthy ones.
+
+  Both now page through the whole search, up to a ceiling that exists because a mis-scoped JQL can
+  match an entire instance. The part that was actually missing is the second half: a run that still
+  cannot see everything **says which of the two it is**. Hygiene reports "200 of 240 scanned" with a
+  note above the results; a Today card shows `26+` and tells a screen reader "at least 26". A number
+  the reader knows to distrust beats a number they cannot.
+
+  The child-story rollup behind **Missing Pointed Child Story** was the sharpest case, because a
+  truncated rollup does not merely undercount — it *accuses*. Every Feature whose pointed story fell
+  past the cap looked unpointed. A rollup that cannot read every story now routes into the same
+  "skip this check" path an outright failure already took, rather than flagging healthy work.
+
 - **The Today "Due / overdue" card opened a view that hid what it had just counted.** It was the one
   hygiene-bound card with no `hygieneFilter` on its drill-through, and Hygiene falls back to the
   filter it persisted in localStorage when a deep link supplies none — so clicking **Open** landed on

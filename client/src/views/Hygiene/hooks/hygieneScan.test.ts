@@ -180,3 +180,51 @@ describe('loadHygieneEvaluationSetup', () => {
     expect(setup.evaluationContext.enabledBuiltInCheckIds?.has('due-date-overdue')).toBe(false);
   });
 });
+
+describe('runHygieneScan — completeness is reported, never assumed', () => {
+  it('pages past the old single-request cap instead of stopping at it', async () => {
+    // Before this, one search with maxResults=200 WAS the scan: a project with more open issues
+    // than that had the remainder silently excluded from every count on every hygiene surface.
+    mockJiraGet.mockImplementation((requestPath: string) => {
+      if (String(requestPath).includes('/rest/api/2/field')) return Promise.resolve(FIELD_METADATA);
+      const startAt = Number(/startAt=(\d+)/.exec(String(requestPath))?.[1] ?? '0');
+      const totalIssues = 250;
+      return Promise.resolve({
+        total: totalIssues,
+        issues: Array.from(
+          { length: Math.max(0, Math.min(200, totalIssues - startAt)) },
+          (_unused, indexInPage) => buildIssue(`SCAN-${startAt + indexInPage}`, buildHealthyStoryFields()),
+        ),
+      });
+    });
+
+    const outcome = await runHygieneScan({
+      projectKey: 'ENCUC', extraJql: '', assigneeClause: null, activeTeamProfileId: 'team-1',
+    });
+
+    expect(outcome.scannedIssueCount).toBe(250);
+    expect(outcome.isTruncated).toBe(false);
+    expect(outcome.totalMatchingCount).toBe(250);
+  });
+
+  it('says so when even the ceiling could not cover the scope', async () => {
+    mockJiraGet.mockImplementation((requestPath: string) => {
+      if (String(requestPath).includes('/rest/api/2/field')) return Promise.resolve(FIELD_METADATA);
+      const startAt = Number(/startAt=(\d+)/.exec(String(requestPath))?.[1] ?? '0');
+      // More than any ceiling this scan will accept, so the run genuinely leaves issues unread.
+      return Promise.resolve({
+        total: 100_000,
+        issues: Array.from({ length: 200 }, (_unused, indexInPage) =>
+          buildIssue(`SCAN-${startAt + indexInPage}`, buildHealthyStoryFields())),
+      });
+    });
+
+    const outcome = await runHygieneScan({
+      projectKey: 'ENCUC', extraJql: '', assigneeClause: null, activeTeamProfileId: 'team-1',
+    });
+
+    expect(outcome.isTruncated).toBe(true);
+    expect(outcome.totalMatchingCount).toBe(100_000);
+    expect(outcome.scannedIssueCount).toBeLessThan(outcome.totalMatchingCount);
+  });
+});

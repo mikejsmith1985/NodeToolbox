@@ -68,6 +68,10 @@ export interface HygieneState {
    * (wrong project key, PI value no issue carries) silently renders as a perfect score (GH #167).
    */
   scannedIssueCount: number | null;
+  /** Everything in scope, whether or not it was scanned; null before the first run. */
+  totalMatchingCount: number | null;
+  /** True when the scan hit its ceiling, so every count on screen is a floor. */
+  isTruncated: boolean;
   /** Standalone-only: search across every project the user is assigned in, matching the Today card. */
   isAllProjectsScope: boolean;
 }
@@ -142,6 +146,10 @@ export function useHygieneState(options: useHygieneStateOptions = {}): HygieneSt
   // unscoped team query (no project, no assignee) would scan the whole instance.
   const [isAllProjectsScope, setAllProjectsScope] = useState<boolean>(initialAllProjects && !isTeamMode);
   const [scannedIssueCount, setScannedIssueCount] = useState<number | null>(null);
+  // Kept beside the scanned count because the pair is the honest statement: "200 of 240 scanned"
+  // means something a bare "200 scanned" does not.
+  const [totalMatchingCount, setTotalMatchingCount] = useState<number | null>(null);
+  const [isTruncated, setIsTruncated] = useState<boolean>(false);
   // A deep-linked filter (e.g. 'stale' from the Today card) outranks the persisted one — the user
   // arrived asking a specific question, and the answer must not be filtered by last week's choice.
   const [selectedFilter, setSelectedFilter] = useState<string | null>(
@@ -209,6 +217,8 @@ export function useHygieneState(options: useHygieneStateOptions = {}): HygieneSt
       setAvailableCheckIds(scanOutcome.enabledCheckDefinitions.map((checkDefinition) => checkDefinition.checkId));
       setCheckLabelsById(buildCheckLabelsById(scanOutcome.enabledCheckDefinitions));
       setScannedIssueCount(scanOutcome.scannedIssueCount);
+      setTotalMatchingCount(scanOutcome.totalMatchingCount);
+      setIsTruncated(scanOutcome.isTruncated);
       setFindings(scanOutcome.findings);
     } catch (caughtError: unknown) {
       const errorMessage = caughtError instanceof Error ? caughtError.message : 'Failed to load Hygiene results';
@@ -242,6 +252,8 @@ export function useHygieneState(options: useHygieneStateOptions = {}): HygieneSt
     isLoading,
     loadError,
     scannedIssueCount,
+    totalMatchingCount,
+    isTruncated,
     isAllProjectsScope,
     setProjectKey: isProjectKeyControlled
       ? (nextProjectKey: string) => setTeamProjectKeyOverride(nextProjectKey)

@@ -133,6 +133,8 @@ export interface TeamScanEntry {
   findings: HygieneFinding[];
   /** Non-null when this team's scan failed — its count is unknown, not zero. */
   errorMessage: string | null;
+  /** True when the scan hit its ceiling, so this team's counts are floors rather than totals. */
+  isTruncated?: boolean;
 }
 
 /** One team's share of a card count, rendered as a drill-through chip on the card. */

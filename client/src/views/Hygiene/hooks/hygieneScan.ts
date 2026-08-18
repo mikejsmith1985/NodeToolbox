@@ -8,6 +8,7 @@
 // differ per surface; the scan may not.
 
 import { jiraGet } from '../../../services/jiraApi.ts';
+import { fetchIssuesPaged } from '../../../services/fetchIssuesPaged.ts';
 import { buildJqlFieldReference, loadHygieneFieldConfig } from '../checks/hygieneFieldConfig.ts';
 import {
   loadEnterpriseRulesFromStorage,
@@ -46,7 +47,16 @@ const BASE_HYGIENE_FIELDS = [
   'issuelinks',
   'labels',
 ];
-const HYGIENE_MAX_RESULTS = 200;
+/** Issues requested per search page. */
+const HYGIENE_PAGE_SIZE = 200;
+/**
+ * The most issues one scan will hold.
+ *
+ * A ceiling rather than no limit: a mis-scoped JQL can match a whole instance, and a scan that
+ * quietly tries to pull a hundred thousand issues into the browser is its own kind of failure. Past
+ * this the scan STOPS AND SAYS SO — which is the part that was missing, not the limit itself.
+ */
+const HYGIENE_ISSUE_CEILING = 2_000;
 const MODERN_STORY_POINTS_FIELD = 'customfield_10028';
 const LEGACY_STORY_POINTS_FIELD = 'customfield_10016';
 
@@ -54,6 +64,8 @@ export const DEFAULT_ASSIGNEE_CLAUSE = 'assignee = currentUser()';
 
 export interface JiraSearchResponse {
   issues?: JiraIssue[];
+  /** Jira's count of everything matching the JQL, used to tell a full scan from a capped one. */
+  total?: number;
 }
 
 /** The check definitions (id + label) the enterprise rules say are enabled for this instance. */
@@ -75,6 +87,10 @@ export interface HygieneScanOptions {
 export interface HygieneScanOutcome {
   findings: HygieneFinding[];
   scannedIssueCount: number;
+  /** Everything in scope, whether or not it was scanned — larger than the scanned count when capped. */
+  totalMatchingCount: number;
+  /** True when in-scope issues were genuinely left unscanned, so every count below is a floor. */
+  isTruncated: boolean;
   fieldConfig: HygieneFieldConfig;
   enabledCheckDefinitions: EnabledCheckDefinitions;
 }
@@ -112,9 +128,13 @@ export function buildHygieneSearchPath(
   extraJql: string,
   requestedFields: string[] = BASE_HYGIENE_FIELDS,
   assigneeClause: string | null = DEFAULT_ASSIGNEE_CLAUSE,
+  startAt = 0,
+  pageSize: number = HYGIENE_PAGE_SIZE,
 ): string {
   const jqlText = buildHygieneScopeJql(projectKey, extraJql, assigneeClause);
-  return `/rest/api/2/search?jql=${encodeURIComponent(jqlText)}&fields=${encodeURIComponent(buildUniqueFieldIds(requestedFields).join(','))}&maxResults=${HYGIENE_MAX_RESULTS}`;
+  const encodedFields = encodeURIComponent(buildUniqueFieldIds(requestedFields).join(','));
+  return `/rest/api/2/search?jql=${encodeURIComponent(jqlText)}&fields=${encodedFields}`
+    + `&startAt=${startAt}&maxResults=${pageSize}`;
 }
 
 /** Everything needed to evaluate hygiene consistently, independent of WHICH issues are evaluated. */
@@ -177,10 +197,15 @@ export async function runHygieneScan(options: HygieneScanOptions): Promise<Hygie
   const enabledBuiltInCheckIds = evaluationContext.enabledBuiltInCheckIds ?? new Set<never>();
   const customStoryPointsFieldId = evaluationContext.customStoryPointsFieldId ?? '';
 
-  const jiraSearchResponse = await jiraGet<JiraSearchResponse>(
-    buildHygieneSearchPath(options.projectKey, options.extraJql, requestedFields, options.assigneeClause),
+  // Paged, so a project with more open issues than one request returns is scanned in full — and
+  // when even the ceiling binds, the outcome says so rather than presenting a partial scan as the scan.
+  const searchOutcome = await fetchIssuesPaged<JiraIssue>(
+    (startAt, pageSize) => jiraGet<JiraSearchResponse>(
+      buildHygieneSearchPath(options.projectKey, options.extraJql, requestedFields, options.assigneeClause, startAt, pageSize),
+    ),
+    { pageSize: HYGIENE_PAGE_SIZE, ceiling: HYGIENE_ISSUE_CEILING },
   );
-  const loadedIssues = jiraSearchResponse.issues ?? [];
+  const loadedIssues = searchOutcome.issues;
 
   // The child-story rollup is a SECONDARY query over instance-matched fields; a surprise on it
   // (an unexpected 400, a permission gap) must not take down the whole run. On failure the
@@ -201,6 +226,8 @@ export async function runHygieneScan(options: HygieneScanOptions): Promise<Hygie
       featureKeysWithPointedStories,
     }),
     scannedIssueCount: loadedIssues.length,
+    totalMatchingCount: searchOutcome.totalMatchingCount,
+    isTruncated: searchOutcome.isTruncated,
     fieldConfig: hygieneFieldConfig,
     enabledCheckDefinitions,
   };
@@ -314,11 +341,27 @@ async function loadFeatureKeysWithPointedStories(
     ...(isRealCustomField ? [customStoryPointsFieldId] : []),
     ...fieldConfig.featureLinkFieldIds,
   ]);
-  const childIssueSearchPath =
-    `/rest/api/2/search?jql=${encodeURIComponent(childIssueJql)}&fields=${encodeURIComponent(childIssueFields.join(','))}&maxResults=${HYGIENE_MAX_RESULTS}`;
-  const childIssueResponse = await jiraGet<JiraSearchResponse>(childIssueSearchPath);
+  // Paged for a reason sharper than the parent scan's: a truncated rollup does not merely undercount,
+  // it ACCUSES. Every feature whose pointed child story fell past the cap looks unpointed, so the
+  // check would flag work that is perfectly healthy. A run that still cannot see everything therefore
+  // throws, which routes it into the same "skip this check" degrade path an outright failure takes.
+  const childSearchOutcome = await fetchIssuesPaged<JiraIssue>(
+    (startAt, pageSize) => jiraGet<JiraSearchResponse>(
+      `/rest/api/2/search?jql=${encodeURIComponent(childIssueJql)}`
+      + `&fields=${encodeURIComponent(childIssueFields.join(','))}`
+      + `&startAt=${startAt}&maxResults=${pageSize}`,
+    ),
+    { pageSize: HYGIENE_PAGE_SIZE, ceiling: HYGIENE_ISSUE_CEILING },
+  );
+  if (childSearchOutcome.isTruncated) {
+    throw new Error(
+      `Child-story rollup covered only ${childSearchOutcome.issues.length} of `
+      + `${childSearchOutcome.totalMatchingCount} stories — skipping the pointed-child check rather `
+      + 'than flagging features whose stories were never read.',
+    );
+  }
 
-  return (childIssueResponse.issues ?? []).reduce((featureKeySet, childIssue) => {
+  return childSearchOutcome.issues.reduce((featureKeySet, childIssue) => {
     const linkedFeatureKey = readLinkedFeatureKey(childIssue, fieldConfig.featureLinkFieldIds);
     // When a real custom field is configured, it is the authoritative source — consistent with
     // the pointing queue and Hygiene missing-SP check. Fall back to legacy fields otherwise.

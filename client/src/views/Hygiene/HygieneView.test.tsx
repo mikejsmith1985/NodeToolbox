@@ -39,6 +39,8 @@ interface OverrideHookState {
   isLoading?: boolean;
   loadError?: string | null;
   scannedIssueCount?: number | null;
+  totalMatchingCount?: number | null;
+  isTruncated?: boolean;
   isAllProjectsScope?: boolean;
 }
 
@@ -110,6 +112,8 @@ function buildHookState(overrides: OverrideHookState = {}): ReturnType<typeof us
     loadError: overrides.loadError ?? null,
     // Default to "scanned some issues" so pre-existing tests keep exercising the healthy path; the
     // empty-scope tests override this to 0 explicitly.
+    totalMatchingCount: overrides.totalMatchingCount ?? null,
+    isTruncated: overrides.isTruncated ?? false,
     scannedIssueCount: overrides.scannedIssueCount !== undefined ? overrides.scannedIssueCount : 25,
     isAllProjectsScope: overrides.isAllProjectsScope ?? false,
     setProjectKey: vi.fn(),
@@ -714,5 +718,28 @@ describe('HygieneView', () => {
     render(<HygieneView />);
 
     expect(screen.getByText(/No update in 16 days/)).toBeInTheDocument();
+  });
+});
+
+describe('HygieneView — a capped scan says so', () => {
+  it('names how much of the scope it actually read, so the counts are not read as totals', () => {
+    // The failure this covers is silent: the scan returned the first N issues and every tile
+    // described them as the answer, with nothing distinguishing a complete scan from a partial one.
+    mockUseHygieneState.mockReturnValue(buildHookState({
+      scannedIssueCount: 200, totalMatchingCount: 240, isTruncated: true,
+    }));
+    render(<HygieneView />);
+
+    expect(screen.getByText(/Only the first 200 of 240 issues in scope were scanned/)).toBeInTheDocument();
+    expect(screen.getByText(/200 of 240 scanned/)).toBeInTheDocument();
+  });
+
+  it('says nothing extra when the scan covered its whole scope', () => {
+    mockUseHygieneState.mockReturnValue(buildHookState({
+      scannedIssueCount: 200, totalMatchingCount: 200, isTruncated: false,
+    }));
+    render(<HygieneView />);
+
+    expect(screen.queryByText(/issues in scope were scanned/)).not.toBeInTheDocument();
   });
 });

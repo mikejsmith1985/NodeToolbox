@@ -296,13 +296,24 @@ export default function HygieneView({
           <strong>{hygieneState.summary.totalIssues} issues</strong>
           <span>
             {hygieneState.summary.totalFlags} flags
-            {hygieneState.scannedIssueCount !== null ? ` · ${hygieneState.scannedIssueCount} scanned` : ' total'}
+            {hygieneState.scannedIssueCount !== null
+              ? ` · ${hygieneState.scannedIssueCount}${hygieneState.isTruncated ? ` of ${hygieneState.totalMatchingCount}` : ''} scanned`
+              : ' total'}
           </span>
         </button>
         {hygieneState.availableCheckIds.map((checkId) =>
           renderSummaryTile(checkId, hygieneState, copiedCheckId, handleCopyCheckJql, jiraBaseUrl),
         )}
       </div>
+
+      {/* A scan that could not reach the end of its own scope says so, in place, above the results.
+          Every number below it is a floor, and a reader who is not told that will read them as totals. */}
+      {hygieneState.isTruncated && (
+        <div className={styles.emptyState} role="status">
+          {`Only the first ${hygieneState.scannedIssueCount} of ${hygieneState.totalMatchingCount} issues in scope were scanned — `}
+          {'every count below is a minimum. Narrow the project or Extra JQL to see the whole picture.'}
+        </div>
+      )}
 
       {hygieneState.isLoading && <div className={styles.emptyState}>Loading Hygiene results…</div>}
       {!hygieneState.isLoading && !hasLoadedFindings && !hasRunnableScope && (

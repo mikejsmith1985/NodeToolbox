@@ -146,6 +146,22 @@ describe('CategoryCard', () => {
     expect(screen.queryByRole('button', { name: /Mine/ })).not.toBeInTheDocument();
   });
 
+  // ── Partial counts (a floor must not read as a total) ──
+
+  it('marks a partial count so a floor is not read as a total', () => {
+    renderCard({ result: buildResult({ count: 26, isPartial: true }) });
+
+    expect(screen.getByLabelText(/at least 26/i)).toBeInTheDocument();
+    expect(screen.getByText('26+')).toBeInTheDocument();
+  });
+
+  it('leaves a complete count unmarked', () => {
+    renderCard({ result: buildResult({ count: 26 }) });
+
+    expect(screen.getByText('26')).toBeInTheDocument();
+    expect(screen.queryByText('26+')).not.toBeInTheDocument();
+  });
+
   it('marks a team whose scan failed instead of showing a false zero', () => {
     renderCard({
       result: buildResult({

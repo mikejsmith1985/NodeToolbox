@@ -14,6 +14,7 @@ import { useSettingsStore } from '../../../../store/settingsStore.ts';
 import type { JiraIssue, JiraSprint } from '../../../../types/jira.ts';
 import type { JiraIssue as HygieneJiraIssue } from '../../../Hygiene/checks/hygieneChecks.ts';
 import { formatLastBusinessDayEndChicago } from '../../../../utils/lastBusinessDayChicago.ts';
+import { fetchIssuesPaged } from '../../../../services/fetchIssuesPaged.ts';
 import { loadHygieneEvaluationSetup, runHygieneScan } from '../../../Hygiene/hooks/hygieneScan.ts';
 import type { HygieneEvaluationContext } from '../../../Hygiene/checks/hygieneChecks.ts';
 import { loadDashboardConfigFromStorage } from '../../../SprintDashboard/hooks/useDashboardConfig.ts';
@@ -73,6 +74,11 @@ export interface CategoryResult {
   status: CategoryStatus;
   count: number;
   errorMessage?: string;
+  /**
+   * True when the count is a FLOOR rather than a total — the fetch or scan behind it could not
+   * read everything in scope. A short number presented as the number is the failure this names.
+   */
+  isPartial?: boolean;
   destination: TodayDestination;
   /** Per-team share of the count, present on team cards when more than one team was scanned. */
   teamBreakdown?: TeamCountBreakdownEntry[];
@@ -99,7 +105,16 @@ export interface TodayDashboardData {
 // ── Constants ──
 
 const SEARCH_PATH = '/rest/api/2/search';
-const MYSELF_MAX_RESULTS = 100;
+/** Issues requested per page of the personal search. */
+const MYSELF_PAGE_SIZE = 100;
+/**
+ * The most personal issues one refresh will hold.
+ *
+ * This was a flat `maxResults=100` with no paging and no signal, so anyone with a queue longer than
+ * a hundred saw counts that were simply short. The ceiling stays — an unbounded pull into the
+ * browser is its own failure — but a run that hits it now marks its cards partial.
+ */
+const MYSELF_ISSUE_CEILING = 1_000;
 // The personal fetch's field list is NOT hard-coded here any more. It used to name
 // customfield_10101/10102 directly, which meant the "my" half of the Due / overdue card read a
 // Target End field the instance might not use, while the team half resolved the field by name —
@@ -163,6 +178,8 @@ interface SourceResult {
   requestKey: string;
   issues: JiraIssue[];
   errorMessage: string | null;
+  /** True when Jira held more issues than this fetch was willing to read. */
+  isPartial?: boolean;
   /**
    * The hygiene configuration these issues were fetched under, carried WITH them.
    *
@@ -243,16 +260,22 @@ function extractErrorMessage(unknownError: unknown): string {
 
 /** Builds the my-issues search path with every field the reused Hygiene rules read. The assignee clause is
  *  passed in so the Today checklist follows the tool-wide persona (view as the viewer or a simulated user). */
-function buildMyIssuesSearchPath(assigneeClause: string, requestedFields: readonly string[]): string {
+function buildMyIssuesSearchPath(
+  assigneeClause: string,
+  requestedFields: readonly string[],
+  startAt: number,
+  pageSize: number,
+): string {
   const jql = `${assigneeClause}${MY_ISSUES_JQL_SUFFIX}`;
   const fieldList = encodeURIComponent(requestedFields.join(','));
-  return `${SEARCH_PATH}?jql=${encodeURIComponent(jql)}&fields=${fieldList}&maxResults=${MYSELF_MAX_RESULTS}`;
+  return `${SEARCH_PATH}?jql=${encodeURIComponent(jql)}&fields=${fieldList}`
+    + `&startAt=${startAt}&maxResults=${pageSize}`;
 }
 
 /** Builds the DSU "new" search path for the untriaged card (reuses useDsuBoardState's cutoff + JQL). */
 function buildUntriagedSearchPath(projectKey: string): string {
   const jql = `project = "${projectKey}" AND created >= "${formatLastBusinessDayEndChicago()}" ORDER BY created DESC`;
-  return `${SEARCH_PATH}?jql=${encodeURIComponent(jql)}&fields=${UNTRIAGED_FIELDS}&maxResults=${MYSELF_MAX_RESULTS}`;
+  return `${SEARCH_PATH}?jql=${encodeURIComponent(jql)}&fields=${UNTRIAGED_FIELDS}&maxResults=${MYSELF_PAGE_SIZE}`;
 }
 
 /** Builds a mixed-scope (my + team) category result, combining both source statuses. */
@@ -263,6 +286,7 @@ function buildMixedCategory(
   teamStatus: CategoryStatus,
   myError: string | null,
   teamError: string | null,
+  isPartial = false,
 ): CategoryResult {
   const status = combineStatuses(myStatus, teamStatus);
   return {
@@ -270,6 +294,7 @@ function buildMixedCategory(
     status,
     count,
     errorMessage: status === 'error' ? (myError ?? teamError ?? undefined) : undefined,
+    isPartial,
     destination: DESTINATIONS[id],
   };
 }
@@ -432,14 +457,18 @@ export function useTodayDashboard(): TodayDashboardData {
     // which rules to apply, and a stale one would silently ask Jira for the wrong Target End field.
     loadHygieneEvaluationSetup(activeTeamProfileId)
       .then(async (setup) => {
-        const response = await jiraGet<JiraSearchResponse>(
-          buildMyIssuesSearchPath(myIssuesAssigneeClause, setup.requestedFields),
+        const searchOutcome = await fetchIssuesPaged<JiraIssue>(
+          (startAt, pageSize) => jiraGet<JiraSearchResponse>(
+            buildMyIssuesSearchPath(myIssuesAssigneeClause, setup.requestedFields, startAt, pageSize),
+          ),
+          { pageSize: MYSELF_PAGE_SIZE, ceiling: MYSELF_ISSUE_CEILING },
         );
         if (!isMounted) return;
         setMyIssuesResult({
           requestKey: myIssuesRequestKey,
-          issues: response.issues ?? [],
+          issues: searchOutcome.issues,
           errorMessage: null,
+          isPartial: searchOutcome.isTruncated,
           hygieneContext: setup.evaluationContext,
         });
       })
@@ -503,6 +532,7 @@ export function useTodayDashboard(): TodayDashboardData {
             teamName: target.teamName,
             findings: scanOutcome.findings,
             errorMessage: null,
+            isTruncated: scanOutcome.isTruncated,
           }))
           .catch((unknownError: unknown): TeamScanEntry => ({
             teamProfileId: target.teamProfileId,
@@ -557,6 +587,11 @@ export function useTodayDashboard(): TodayDashboardData {
     // Counts are the deduped union across every scanned team (GH #282); the per-team share is
     // attached as a breakdown only when there is genuinely more than one team to break down.
     const teamScans = teamScanResult.teamScans;
+    // Personal cards are floors when the personal fetch could not read to the end; team cards are
+    // floors when ANY team's scan hit its ceiling. Either way the card says so rather than passing
+    // a short number off as the number.
+    const isMyCountPartial = myIssuesResult.isPartial === true;
+    const isAnyTeamScanPartial = teamScans.some((teamScan) => teamScan.isTruncated === true);
     const breakdownFor = (checkIds: readonly string[]): TeamCountBreakdownEntry[] | undefined =>
       teamScans.length > 1 ? buildTeamCountBreakdown(teamScans, checkIds) : undefined;
     // Due/overdue is a my+team union deduped by key; the team half reads the scan findings so it
@@ -605,12 +640,14 @@ export function useTodayDashboard(): TodayDashboardData {
         teamStatusForMixed,
         myIssuesError,
         teamErrorForMixed,
+        isMyCountPartial,
       ),
       'my-stale': {
         id: 'my-stale',
         status: myIssuesStatus,
         count: selectMyStale(myHygiene, staleDaysThreshold).length,
         errorMessage: myIssuesStatus === 'error' ? (myIssuesError ?? undefined) : undefined,
+        isPartial: isMyCountPartial,
         destination: DESTINATIONS['my-stale'],
       },
       'team-stale': buildTeamCategory(
@@ -645,6 +682,7 @@ export function useTodayDashboard(): TodayDashboardData {
           dueOverdueTeamStatus,
           myIssuesError,
           dueOverdueTeamError,
+          isMyCountPartial || isAnyTeamScanPartial,
         ),
         scopeBreakdown: dueOverdueScopeBreakdown,
       },
@@ -669,6 +707,7 @@ export function useTodayDashboard(): TodayDashboardData {
     myHygiene,
     // The context the personal issues were fetched under travels with them, so both belong here.
     myIssuesResult.hygieneContext,
+    myIssuesResult.isPartial,
     myIssuesStatus,
     myIssuesError,
     untriagedHygiene,

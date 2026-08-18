@@ -31,6 +31,18 @@ function formatCount(count: number): string {
   return count > MAX_DISPLAYED_COUNT ? `${MAX_DISPLAYED_COUNT}+` : String(count);
 }
 
+/**
+ * Formats the card's headline number, marking a count that is only a floor.
+ *
+ * A fetch or scan that could not read everything in scope produces a number smaller than the truth.
+ * Printing it plainly is the failure: the reader has no way to tell an accurate 26 from a 26 that
+ * is really 140. The trailing "+" and the spoken label say which one they are looking at.
+ */
+function formatHeadlineCount(count: number, isPartial: boolean): string {
+  const formattedCount = formatCount(count);
+  return isPartial && !formattedCount.endsWith('+') ? `${formattedCount}+` : formattedCount;
+}
+
 /** Renders the card header (icon + label) shared by every card state. */
 function CardHeader({ entry }: { entry: CategoryCatalogEntry }) {
   return (
@@ -104,8 +116,16 @@ export default function CategoryCard({
   return (
     <div className={cardClassName} data-category={entry.id} data-complete={isComplete}>
       <CardHeader entry={entry} />
-      <span className={styles.count} aria-label={`${result.count} items need attention`}>
-        {isCleared ? '✓' : formatCount(result.count)}
+      <span
+        className={styles.count}
+        aria-label={result.isPartial
+          ? `at least ${result.count} items need attention — more were found than could be read`
+          : `${result.count} items need attention`}
+        title={result.isPartial
+          ? 'More matched than could be read in one pass — this is a floor, not a total.'
+          : undefined}
+      >
+        {isCleared ? '✓' : formatHeadlineCount(result.count, result.isPartial === true)}
       </span>
       {scopeBreakdown ? (
         <div className={styles.teamBreakdown}>

@@ -490,3 +490,58 @@ describe('useTodayDashboard — the Due / overdue card opens on what it counted'
     });
   });
 });
+
+describe('useTodayDashboard — a capped count says it is capped', () => {
+  it('pages the personal fetch instead of stopping at the first hundred', async () => {
+    // The personal search asked for 100 and presented whatever came back as the answer, so a queue
+    // of 140 reported the wrong number on every personal card with nothing to say so.
+    mockJiraGet.mockImplementation((requestPath: string) => {
+      const decodedPath = decodeURIComponent(String(requestPath));
+      if (!decodedPath.includes('jql=assignee =')) return Promise.resolve({ issues: [] });
+      const startAt = Number(/startAt=(\d+)/.exec(decodedPath)?.[1] ?? '0');
+      const totalIssues = 140;
+      return Promise.resolve({
+        total: totalIssues,
+        issues: Array.from({ length: Math.max(0, Math.min(100, totalIssues - startAt)) }, (_unused, i) => ({
+          id: String(startAt + i), key: `MINE-${startAt + i}`,
+          fields: {
+            summary: 'Overdue', issuetype: { name: 'Story' },
+            status: { name: 'In Progress', statusCategory: { key: 'indeterminate', name: 'In Progress' } },
+            created: LONG_PAST_ISO, updated: recentIso(), duedate: '2020-01-01',
+          },
+        })),
+      });
+    });
+
+    const { result } = renderHook(() => useTodayDashboard());
+
+    await waitFor(() => expect(result.current.categories['due-overdue'].status).toBe('ready'));
+    expect(result.current.categories['due-overdue'].count).toBe(140);
+    expect(result.current.categories['due-overdue'].isPartial).toBeFalsy();
+  });
+
+  it('marks the card partial when the personal fetch could not reach the end', async () => {
+    mockJiraGet.mockImplementation((requestPath: string) => {
+      const decodedPath = decodeURIComponent(String(requestPath));
+      if (!decodedPath.includes('jql=assignee =')) return Promise.resolve({ issues: [] });
+      const startAt = Number(/startAt=(\d+)/.exec(decodedPath)?.[1] ?? '0');
+      return Promise.resolve({
+        total: 100_000,
+        issues: Array.from({ length: 100 }, (_unused, i) => ({
+          id: String(startAt + i), key: `MINE-${startAt + i}`,
+          fields: {
+            summary: 'Overdue', issuetype: { name: 'Story' },
+            status: { name: 'In Progress', statusCategory: { key: 'indeterminate', name: 'In Progress' } },
+            created: LONG_PAST_ISO, updated: recentIso(), duedate: '2020-01-01',
+          },
+        })),
+      });
+    });
+
+    const { result } = renderHook(() => useTodayDashboard());
+
+    await waitFor(() => expect(result.current.categories['due-overdue'].status).toBe('ready'));
+    expect(result.current.categories['due-overdue'].isPartial).toBe(true);
+    expect(result.current.categories['my-stale'].isPartial).toBe(true);
+  });
+});
