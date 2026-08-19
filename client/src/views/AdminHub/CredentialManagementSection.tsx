@@ -1,53 +1,22 @@
-// CredentialManagementSection.tsx — Credential display and GitHub personal access token management.
+// CredentialManagementSection.tsx — Read-only display of the configured service URLs.
 //
-// Shows the Jira base URL and ServiceNow instance URL from the settings store (read-only,
-// with links to the Settings view for editing). Provides a masked input for storing a
-// GitHub Personal Access Token in localStorage for direct browser-to-GitHub API calls.
+// This used to offer a THIRD place to enter a GitHub Personal Access Token, stored in localStorage
+// under `tbxGithubPat` "for direct browser-to-GitHub API calls". Nothing ever read it — the key had
+// no consumer anywhere in the app. Its only real effect was to make somebody enter a token here,
+// watch it save, and then find every GitHub feature still unauthenticated, because the server reads
+// its own credential from the Connectivity section.
 //
-// Note: Server-backed operations (e.g. the repo monitor) use the GitHub credential
-// configured in the Admin Hub Connectivity section, which supports both PAT and
-// GitHub App authentication.
-
-import { useState } from 'react';
+// GitHub credentials live in exactly two places now, and each says what it is:
+//   • Admin Hub → Connectivity → GitHub — the SERVER's credential (intake, probes, monitors)
+//   • My Issues → Git Sync — that panel's own browser-side token
+//
+// A credential field that stores a value nobody reads is worse than no field: it looks like the
+// thing that would have worked.
 
 import { useSettingsStore } from '../../store/settingsStore';
 import styles from './AdminHubView.module.css';
 
 // ── Constants ──
-
-const GITHUB_PAT_STORAGE_KEY = 'tbxGithubPat';
-const SAVE_STATUS_CLEAR_MS = 2000;
-
-// ── Helpers ──
-
-/** Reads the GitHub PAT from localStorage, returning empty string on failure. */
-function readStoredGithubPat(): string {
-  try {
-    return localStorage.getItem(GITHUB_PAT_STORAGE_KEY) ?? '';
-  } catch {
-    return '';
-  }
-}
-
-/** Writes the GitHub PAT to localStorage. */
-function writeGithubPat(token: string): void {
-  try {
-    localStorage.setItem(GITHUB_PAT_STORAGE_KEY, token);
-  } catch {
-    // Non-fatal: in-memory state remains authoritative.
-  }
-}
-
-/** Removes the GitHub PAT from localStorage. */
-function deleteGithubPat(): void {
-  try {
-    localStorage.removeItem(GITHUB_PAT_STORAGE_KEY);
-  } catch {
-    // Non-fatal.
-  }
-}
-
-// ── Sub-components ──
 
 interface ServiceUrlRowProps {
   label: string;
@@ -74,154 +43,20 @@ function ServiceUrlRow({ label, configuredUrl, settingsLinkLabel }: ServiceUrlRo
   );
 }
 
-interface GithubPatRowProps {
-  storedPat: string;
-  isPatVisible: boolean;
-  patInput: string;
-  isEditingPat: boolean;
-  saveStatus: string | null;
-  onToggleVisibility(): void;
-  onEdit(): void;
-  onClear(): void;
-  onPatInputChange(value: string): void;
-  onSavePat(): void;
-  onCancelEdit(): void;
-}
-
-/** Renders the GitHub PAT masked display or input row. */
-function GithubPatRow({
-  storedPat,
-  isPatVisible,
-  patInput,
-  isEditingPat,
-  saveStatus,
-  onToggleVisibility,
-  onEdit,
-  onClear,
-  onPatInputChange,
-  onSavePat,
-  onCancelEdit,
-}: GithubPatRowProps) {
-  const isPatSaved = storedPat !== '';
-  const shouldShowMasked = isPatSaved && !isEditingPat;
-
-  return (
-    <div className={styles.fieldRow}>
-      <label className={styles.fieldLabel}>GitHub Personal Access Token</label>
-
-      {shouldShowMasked ? (
-        <div className={styles.inputRow}>
-          <span className={styles.maskedPat}>
-            {isPatVisible ? storedPat : '●●●●●●●●●●●●●●●●●●●●'}
-          </span>
-          <button
-            className={styles.actionButton}
-            onClick={onToggleVisibility}
-            aria-label={isPatVisible ? 'Hide PAT' : 'Show PAT'}
-          >
-            {isPatVisible ? '🙈 Hide' : '👁 Show PAT'}
-          </button>
-          <button
-            className={styles.actionButton}
-            onClick={onEdit}
-            aria-label="Edit GitHub PAT"
-          >
-            ✏️ Edit
-          </button>
-          <button
-            className={`${styles.actionButton} ${styles.dangerButton}`}
-            onClick={onClear}
-            aria-label="Clear GitHub PAT"
-          >
-            🗑 Clear
-          </button>
-        </div>
-      ) : (
-        <div className={styles.inputRow}>
-          <input
-            type="password"
-            className={styles.textInput}
-            value={patInput}
-            onChange={(changeEvent) => onPatInputChange(changeEvent.target.value)}
-            placeholder="ghp_… or github_pat_…"
-            aria-label="GitHub PAT input"
-            autoComplete="new-password"
-          />
-          <button
-            className={`${styles.actionButton} ${styles.saveButton}`}
-            onClick={onSavePat}
-            aria-label="Save PAT"
-          >
-            💾 Save PAT
-          </button>
-          {isEditingPat && (
-            <button className={styles.actionButton} onClick={onCancelEdit}>
-              Cancel
-            </button>
-          )}
-        </div>
-      )}
-
-      {saveStatus !== null && <span className={styles.saveStatus}>{saveStatus}</span>}
-      <p className={styles.adminDescription}>
-        This token is stored in browser localStorage for client-side GitHub access only. Requires{' '}
-        <code>repo</code> read scope. The server-backed repo monitor uses the GitHub credential
-        configured in Admin Hub and supports GitHub App authentication.
-      </p>
-    </div>
-  );
-}
-
-// ── Main component ──
-
-/** Credential Management section — displays configured service URLs and manages GitHub PAT. */
 export default function CredentialManagementSection() {
   const jiraBaseUrl = useSettingsStore((storeState) => storeState.changeRequestGeneratorJiraUrl);
   const snowInstanceUrl = useSettingsStore(
     (storeState) => storeState.changeRequestGeneratorSnowUrl,
   );
 
-  const [storedPat, setStoredPat] = useState<string>(readStoredGithubPat);
-  const [isPatVisible, setIsPatVisible] = useState(false);
-  const [patInput, setPatInput] = useState('');
-  const [isEditingPat, setIsEditingPat] = useState(false);
-  const [saveStatus, setSaveStatus] = useState<string | null>(null);
-
-  function showSaveStatus(message: string) {
-    setSaveStatus(message);
-    setTimeout(() => setSaveStatus(null), SAVE_STATUS_CLEAR_MS);
-  }
-
-  function handleSavePat() {
-    const trimmedToken = patInput.trim();
-    if (trimmedToken === '') return;
-    writeGithubPat(trimmedToken);
-    setStoredPat(trimmedToken);
-    setPatInput('');
-    setIsEditingPat(false);
-    showSaveStatus('✓ PAT saved');
-  }
-
-  function handleClearPat() {
-    deleteGithubPat();
-    setStoredPat('');
-    setIsPatVisible(false);
-    showSaveStatus('✓ PAT cleared');
-  }
-
-  function handleCancelEdit() {
-    setIsEditingPat(false);
-    setPatInput('');
-  }
-
   return (
     <section className={styles.sectionCard}>
       <h2 className={styles.sectionTitle}>🔑 Credential Management</h2>
       <p className={styles.adminDescription}>
-        Jira and ServiceNow URLs are configured in Settings. A Personal Access Token stored here
-        enables direct browser-to-GitHub access. For server-backed operations (such as the repo
-        monitor), configure GitHub credentials in the Connectivity section — both PAT and GitHub
-        App authentication are supported there.
+        Jira and ServiceNow URLs are configured in Settings. GitHub credentials are NOT set here:
+        the server&apos;s token (used by the email intake, the deployments probe and the monitors)
+        lives in <strong>Connectivity → GitHub</strong> below, and the Git Sync panel keeps its own
+        browser-side token in <strong>My Issues → Git Sync</strong>.
       </p>
 
       <ServiceUrlRow
@@ -236,19 +71,6 @@ export default function CredentialManagementSection() {
         settingsLinkLabel={snowInstanceUrl !== '' ? '✏️ Edit in Settings' : '⚙️ Open Settings'}
       />
 
-      <GithubPatRow
-        storedPat={storedPat}
-        isPatVisible={isPatVisible}
-        patInput={patInput}
-        isEditingPat={isEditingPat}
-        saveStatus={saveStatus}
-        onToggleVisibility={() => setIsPatVisible((current) => !current)}
-        onEdit={() => setIsEditingPat(true)}
-        onClear={handleClearPat}
-        onPatInputChange={setPatInput}
-        onSavePat={handleSavePat}
-        onCancelEdit={handleCancelEdit}
-      />
     </section>
   );
 }

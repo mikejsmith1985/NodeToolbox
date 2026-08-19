@@ -585,12 +585,15 @@ describe('GithubEmailIntakePanel — deployments probe guardrails', () => {
     await screen.findByText('GitHub Deployments — access check')
 
     expect(screen.getByRole('button', { name: /Test deployments access/i })).toBeDisabled()
+    // The reason is on screen — a greyed button with no explanation reads as a broken feature.
+    expect(screen.getByText(/Type an owner and a repository above to enable this/)).toBeInTheDocument()
 
     fireEvent.change(screen.getByLabelText('Owner (org)'), { target: { value: 'zilvertonz' } })
     expect(screen.getByRole('button', { name: /Test deployments access/i })).toBeDisabled()
 
     fireEvent.change(screen.getByLabelText('Repository'), { target: { value: 'usmg-elements-integrations' } })
     expect(screen.getByRole('button', { name: /Test deployments access/i })).toBeEnabled()
+    expect(screen.queryByText(/Type an owner and a repository above/)).not.toBeInTheDocument()
   })
 
   it('warns when the call went to public github.com, the likeliest cause on an Enterprise org', async () => {

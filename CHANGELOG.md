@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Removed
+- **The third GitHub token field is gone.** Credential Management offered a Personal Access Token
+  input that wrote to a localStorage key **nothing in the app ever read**. Its only real effect was
+  to let somebody enter a token, watch it save, and then find every GitHub feature still
+  unauthenticated — because the server reads its own credential from Connectivity. A credential field
+  that stores a value nobody reads is worse than no field: it looks like the thing that would have
+  worked. The section now names the two places that are real.
+
+### Removed
 - **The GitHub-email AI rule generator is gone.** It read raw notification emails out of the drop
   folder, bundled them into a prompt, and parsed a rule set back — `githubRulePrompt.ts`, the
   `/rule-samples` route, `collectRuleSamples`, and the Rule Assist panel section, all deleted. The
@@ -104,6 +112,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   work it cannot place, never somewhere a person should file something.
 
 ### Fixed
+- **The deployments probe looked broken because its placeholders looked like values.** The Owner and
+  Repository boxes used a real org and repository as PLACEHOLDER text, so empty fields read as filled
+  — and the button, disabled until both are given, read as a dead feature with a no-entry cursor.
+  Placeholders are generic now, and the reason for the disabled state is written under the button
+  instead of left to be guessed.
+
 - **The deployments probe now refuses an empty run and names a public-github base URL.** Clicking it
   with the fields blank spent a round trip to report `/repos///deployments`, which says nothing about
   the setup being diagnosed — the button is disabled until both are filled.

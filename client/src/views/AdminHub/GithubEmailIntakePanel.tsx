@@ -1117,7 +1117,7 @@ export function GithubEmailIntakePanel() {
         <input
           className={styles.inputField}
           id="deployments-probe-owner"
-          placeholder="zilvertonz"
+          placeholder="your-github-org"
           value={probeOwner}
           onChange={(changeEvent) => setProbeOwner(changeEvent.target.value)}
         />
@@ -1125,13 +1125,15 @@ export function GithubEmailIntakePanel() {
         <input
           className={styles.inputField}
           id="deployments-probe-repo"
-          placeholder="usmg-elements-integrations"
+          placeholder="your-repository"
           value={probeRepository}
           onChange={(changeEvent) => setProbeRepository(changeEvent.target.value)}
         />
         <div className={styles.panelActions}>
-          {/* Disabled until both fields are filled: an empty submit costs a round trip and returns
-              a URL like /repos///deployments, which tells the reader nothing about their real setup. */}
+          {/* Disabled until both fields are filled — but the reason is SHOWN. A greyed-out button
+              with no explanation reads as a broken feature, which is exactly how it was read: the
+              placeholders were a real org and repo, so empty fields looked filled and the button
+              looked dead. Placeholders are generic now, and the hint below says what is missing. */}
           <button
             className={styles.actionButton}
             disabled={isProbingDeployments || probeOwner.trim() === '' || probeRepository.trim() === ''}
@@ -1140,6 +1142,11 @@ export function GithubEmailIntakePanel() {
           >
             {isProbingDeployments ? 'Checking…' : '🔎 Test deployments access'}
           </button>
+          {probeOwner.trim() === '' || probeRepository.trim() === '' ? (
+            <span className={styles.panelStatusLine}>
+              Type an owner and a repository above to enable this — the grey text is an example, not a value.
+            </span>
+          ) : null}
           {probeReport ? (
             <button className={styles.actionButton} onClick={() => void navigator.clipboard?.writeText(probeReport)} type="button">
               📋 Copy result
