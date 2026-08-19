@@ -216,13 +216,13 @@ export function GithubEmailIntakePanel() {
   /** Copies the rule set as JSON — the shape `Import rules` reads back. */
   async function handleCopyRulesJson(): Promise<void> {
     // Config is null until the first load lands; an empty export is honest, a crash is not.
-    await navigator.clipboard?.writeText(buildRuleExport(config?.customRules ?? [], await readRunningVersion()))
+    await navigator.clipboard?.writeText(buildRuleExport(config?.customRules ?? [], await readRunningVersion(), getDefaultSerializedRules()))
     setCopiedRuleFormat('json')
   }
 
   /** Copies the rule set as prose — what each rule matches and what it does. */
   async function handleCopyRulesSummary(): Promise<void> {
-    await navigator.clipboard?.writeText(summariseRulesForReview(config?.customRules ?? []))
+    await navigator.clipboard?.writeText(summariseRulesForReview(config?.customRules ?? [], getDefaultSerializedRules()))
     setCopiedRuleFormat('summary')
   }
 

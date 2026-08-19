@@ -76,3 +76,31 @@ describe('summariseRulesForReview', () => {
     expect(summariseRulesForReview([])).toContain('No custom rules')
   })
 })
+
+describe('the export covers everything that RUNS, not just what was customised', () => {
+  const BUILT_INS: SerializedEmailRule[] = [
+    { id: 'builtin-branch', eventType: 'branch_created', bodyPattern: 'created a branch' },
+    { id: 'org-pr-merged', eventType: 'pr_merged', bodyPattern: 'overridden by a custom rule' },
+  ]
+
+  it('includes the built-in rules the operator has NOT overridden', () => {
+    // A custom-only export answers the wrong question: what runs is the custom rules followed by the
+    // built-ins nobody replaced, so reviewing three custom rules hides most of the classification.
+    const exported = JSON.parse(buildRuleExport(RULES, '0.211.1', BUILT_INS))
+
+    expect(exported.builtInRulesStillActive.map((rule: SerializedEmailRule) => rule.id)).toEqual(['builtin-branch'])
+  })
+
+  it('lists them in the readable summary too, marked as still running', () => {
+    const summary = summariseRulesForReview(RULES, BUILT_INS)
+
+    expect(summary).toContain('Built-in rules still active (1)')
+    expect(summary).toContain('builtin-branch')
+  })
+
+  it('keeps them out of the importable rules, so a default never becomes a custom rule by accident', () => {
+    const parsed = parseRuleExport(buildRuleExport(RULES, '0.211.1', BUILT_INS))
+
+    expect(parsed.rules.map((rule) => rule.id)).toEqual(['org-pr-merged', 'org-pr-opened'])
+  })
+})

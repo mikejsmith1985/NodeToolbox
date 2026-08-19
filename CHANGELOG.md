@@ -91,6 +91,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   work it cannot place, never somewhere a person should file something.
 
 ### Fixed
+- **The rule export left out the rules that do most of the work.** It carried only the CUSTOM rules,
+  so an operator with three of them exported three — while classification actually runs those three
+  followed by every built-in default nobody had overridden. Reviewing that export hid most of what
+  matches email and every status those defaults can move an issue to.
+
+  Both halves are exported now: `rules` (custom, importable) and `builtInRulesStillActive` (the
+  defaults not overridden), and the readable summary lists them under their own heading. They are
+  kept separate deliberately — an import must never turn a default into a custom rule by accident.
+
 - **AI Assist can propose the date fixes again.** They were asked for explicitly, then removed on the
   reasoning that a formula beats a language model. That was the wrong call: it answered a question
   nobody asked and took away a route somebody relies on for correcting drift made in Jira.

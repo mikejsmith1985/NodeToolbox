@@ -13,6 +13,9 @@ import { validateSerializedRule, type SerializedEmailRule } from '../GithubEmail
 /** Marks the payload as a rule export, so an unrelated JSON file is refused rather than imported. */
 const RULE_EXPORT_KIND = 'githubEmailRuleExport'
 
+/** Line break for the readable summary — named so no template literal has to carry a raw one. */
+const NEWLINE = String.fromCharCode(10)
+
 /** The outcome of reading an export: the usable rules, plus an honest count of what was dropped. */
 export interface RuleImportResult {
   ok: boolean
@@ -22,13 +25,31 @@ export interface RuleImportResult {
   message: string
 }
 
-/** Serialises the rule set with the build that produced it. */
-export function buildRuleExport(rules: readonly SerializedEmailRule[], appVersion: string | null): string {
+/**
+ * Serialises the rule set with the build that produced it.
+ *
+ * `builtInRules` is included because a custom-only export answers the wrong question. What runs on a
+ * machine is the custom rules FOLLOWED BY the built-in defaults the operator has not overridden — so
+ * an export of three custom rules, reviewed on its own, hides most of what actually classifies email
+ * and every status those defaults can move an issue to.
+ */
+export function buildRuleExport(
+  rules: readonly SerializedEmailRule[],
+  appVersion: string | null,
+  builtInRules: readonly SerializedEmailRule[] = [],
+): string {
+  const customisedIds = new Set(rules.map((rule) => rule.id))
+  const activeBuiltIns = builtInRules.filter((builtInRule) => !customisedIds.has(builtInRule.id))
+
   return JSON.stringify({
     kind: RULE_EXPORT_KIND,
     appVersion: appVersion ?? 'unknown',
     ruleCount: rules.length,
     rules,
+    // Named separately so an import cannot turn a default into a custom rule by accident, while a
+    // reviewer still sees everything that runs.
+    builtInRuleCount: activeBuiltIns.length,
+    builtInRulesStillActive: activeBuiltIns,
   }, null, 2)
 }
 
@@ -104,9 +125,27 @@ function describeRuleMatcher(rule: SerializedEmailRule): string {
  * Done?", "do these two catch the same email?") are answerable at a glance here and only by careful
  * reading of a JSON dump.
  */
-export function summariseRulesForReview(rules: readonly SerializedEmailRule[]): string {
+export function summariseRulesForReview(
+  rules: readonly SerializedEmailRule[],
+  builtInRules: readonly SerializedEmailRule[] = [],
+): string {
+  const customisedIds = new Set(rules.map((rule) => rule.id))
+  const activeBuiltIns = builtInRules.filter((builtInRule) => !customisedIds.has(builtInRule.id))
+  const builtInSection = activeBuiltIns.length === 0
+    ? []
+    : [
+      '',
+      `Built-in rules still active (${activeBuiltIns.length}) — these run too, after the custom ones:`,
+      ...activeBuiltIns.map((rule) => [
+        `  ${rule.id}`,
+        `      event:   ${rule.eventType}`,
+        `      matches: ${describeRuleMatcher(rule)}`,
+        `      does:    ${describeRuleActions(rule)}`,
+      ].join(NEWLINE)),
+    ]
+
   if (rules.length === 0) {
-    return 'No custom rules configured — classification uses the built-in rules only.'
+    return ['No custom rules configured — classification uses the built-in rules only.', ...builtInSection].join(NEWLINE)
   }
 
   return [
@@ -116,6 +155,7 @@ export function summariseRulesForReview(rules: readonly SerializedEmailRule[]): 
       `      event:   ${rule.eventType}`,
       `      matches: ${describeRuleMatcher(rule)}`,
       `      does:    ${describeRuleActions(rule)}`,
-    ].join('\n')),
-  ].join('\n')
+    ].join(NEWLINE)),
+    ...builtInSection,
+  ].join(NEWLINE)
 }
