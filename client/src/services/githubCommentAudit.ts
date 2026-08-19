@@ -5,14 +5,23 @@
 // prefix followed by "GitHub: " (see EVENT_COMMENT_TEMPLATES in githubEmailIntakeScheduler.js).
 
 import { jiraGet } from './jiraApi.ts';
+import {
+  correlateAutomationMoves,
+  type ChangelogHistoryEntry,
+  type MoveAuditRow,
+} from './automationMoveAudit.ts';
 
 // The automation's templates all open with a single emoji, a space, then "GitHub: ". Allowing the
 // token to start within the first few characters keeps the match tight enough to exclude human
 // comments that merely mention GitHub mid-sentence.
 const SIGNATURE_TOKEN = 'GitHub: ';
 const SIGNATURE_MAX_START_INDEX = 8;
-const AUDIT_SEARCH_FIELDS = 'summary,comment';
+// Status joins the fetch so an audited issue can say where it stands NOW, and the changelog joins it
+// so a status change can be matched to the comment that accompanied it (see automationMoveAudit).
+const AUDIT_SEARCH_FIELDS = 'summary,comment,status';
 const AUDIT_MAX_RESULTS = 200;
+
+export type { MoveAuditRow } from './automationMoveAudit.ts';
 
 export interface AutomationCommentRow {
   issueKey: string;
@@ -26,6 +35,36 @@ export interface GithubCommentAuditResult {
   rows: AutomationCommentRow[];
   /** How many candidate issues the JQL sweep returned — surfaced so users know the search breadth. */
   scannedIssueCount: number;
+  /** One row per audited ISSUE: where it stands now, and which moves the automation made. */
+  moveRows: MoveAuditRow[];
+}
+
+/**
+ * Builds the per-issue view: current status, and the status changes made alongside the automation's
+ * own comments. Separate from the per-comment rows because the question is different — "where has it
+ * commented" versus "what did it MOVE" — and the second was the half nobody could answer.
+ */
+export function collectAutomationMoveRows(issues: JiraAuditIssue[]): MoveAuditRow[] {
+  return issues
+    .map((candidateIssue) => {
+      const automationCommentIsos = (candidateIssue.fields?.comment?.comments ?? [])
+        .filter((issueComment) => isAutomationComment(issueComment.body ?? ''))
+        .map((issueComment) => issueComment.created ?? '');
+      const statusCategoryKey = candidateIssue.fields?.status?.statusCategory?.key ?? '';
+
+      return {
+        issueKey: candidateIssue.key ?? '',
+        issueSummary: candidateIssue.fields?.summary ?? '',
+        currentStatus: candidateIssue.fields?.status?.name ?? '(unknown)',
+        isCurrentStatusDone: statusCategoryKey.toLowerCase() === 'done',
+        commentCount: automationCommentIsos.length,
+        automationMoves: correlateAutomationMoves(
+          automationCommentIsos,
+          candidateIssue.changelog?.histories ?? [],
+        ),
+      };
+    })
+    .filter((moveRow) => moveRow.commentCount > 0);
 }
 
 interface JiraCommentEnvelope {
@@ -38,8 +77,10 @@ interface JiraAuditIssue {
   key?: string;
   fields?: {
     summary?: string;
+    status?: { name?: string; statusCategory?: { key?: string } };
     comment?: { comments?: JiraCommentEnvelope[] };
   };
+  changelog?: { histories?: ChangelogHistoryEntry[] };
 }
 
 interface JiraAuditSearchResponse {
@@ -93,11 +134,12 @@ export async function fetchGithubAutomationComments(
   const auditJql = buildGithubCommentAuditJql(projectKeys, lookbackDays);
   const searchPath =
     `/rest/api/2/search?jql=${encodeURIComponent(auditJql)}` +
-    `&fields=${encodeURIComponent(AUDIT_SEARCH_FIELDS)}&maxResults=${AUDIT_MAX_RESULTS}`;
+    `&fields=${encodeURIComponent(AUDIT_SEARCH_FIELDS)}&expand=changelog&maxResults=${AUDIT_MAX_RESULTS}`;
   const searchResponse = await jiraGet<JiraAuditSearchResponse>(searchPath);
   const candidateIssues = searchResponse.issues ?? [];
   return {
     rows: collectAutomationComments(candidateIssues),
     scannedIssueCount: candidateIssues.length,
+    moveRows: collectAutomationMoveRows(candidateIssues),
   };
 }

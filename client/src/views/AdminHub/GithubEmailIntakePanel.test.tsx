@@ -128,6 +128,7 @@ describe('GithubEmailIntakePanel', () => {
     mockFetchGithubAutomationComments.mockReset();
     mockFetchGithubAutomationComments.mockResolvedValue({
       scannedIssueCount: 3,
+      moveRows: [],
       rows: [
         {
           issueKey: 'DENP-9',
@@ -508,5 +509,42 @@ describe('GithubEmailIntakePanel — rule export', () => {
     fireEvent.click(screen.getByRole('button', { name: /Import rules/i }))
 
     expect(await screen.findByText(/not a rule export/i)).toBeInTheDocument()
+  })
+})
+
+describe('GithubEmailIntakePanel — what the automation moved', () => {
+  it('lists the issues it moved and lets them be searched by status', async () => {
+    // The half the comment sweep could never answer: it proves the automation was there and says
+    // nothing about status, so an issue it commented on AND cancelled looked like one it only
+    // commented on. Typing "cancelled" is meant to answer the question directly.
+    mockFetchGithubAutomationComments.mockReset()
+    mockFetchGithubAutomationComments.mockResolvedValue({
+      scannedIssueCount: 2,
+      rows: [],
+      moveRows: [
+        {
+          issueKey: 'ENFCT-2020', issueSummary: 'Add letters', currentStatus: 'Cancelled',
+          isCurrentStatusDone: true, commentCount: 2,
+          automationMoves: [{ fromStatus: 'Code Review', toStatus: 'Cancelled', atIso: '2026-08-18T14:30:00.000Z' }],
+        },
+        {
+          issueKey: 'ENFCT-1530', issueSummary: 'MEET Fallout', currentStatus: 'In Progress',
+          isCurrentStatusDone: false, commentCount: 1, automationMoves: [],
+        },
+      ],
+    })
+    stubFetch({}, { ...DEFAULT_CONFIG, jiraProjectKeys: ['ENFCT'] })
+    render(<GithubEmailIntakePanel />)
+    await screen.findByText('Posted-comment audit')
+
+    fireEvent.click(screen.getByRole('button', { name: /scan jira for automation comments/i }))
+    expect(await screen.findByText(/What the automation moved/)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'ENFCT-2020' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'ENFCT-1530' })).toBeInTheDocument()
+
+    fireEvent.change(screen.getByLabelText('Search audited issues'), { target: { value: 'cancelled' } })
+
+    expect(screen.getByRole('link', { name: 'ENFCT-2020' })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'ENFCT-1530' })).not.toBeInTheDocument()
   })
 })

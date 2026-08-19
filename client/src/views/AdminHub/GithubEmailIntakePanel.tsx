@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useState } from 'react'
 
 import { fetchGithubAutomationComments, type AutomationCommentRow } from '../../services/githubCommentAudit.ts'
+import { filterMoveAuditRows, type MoveAuditRow } from '../../services/automationMoveAudit.ts'
 import { normalizeSharePointFolderInput, previewSharePointEmails, pullSharePointEmails } from '../../services/githubEmailSharePointPull.ts'
 import { fetchJiraBaseUrl } from '../../services/proxyApi.ts'
 import { buildJiraBrowseUrl } from '../../utils/jiraBrowseUrl.ts'
@@ -66,6 +67,9 @@ interface IntakeRunResult {
   folderError?: string
   events?: IntakeEvent[]
 }
+
+/** Line break for the copyable reports — named so a template literal never has to carry a raw one. */
+const NEWLINE = String.fromCharCode(10)
 
 const MODE_LABELS: Record<IntakeMode, string> = {
   dryRun: 'Dry run — parse & log only, never touch Jira',
@@ -266,6 +270,33 @@ export function GithubEmailIntakePanel() {
   const [auditRows, setAuditRows] = useState<AutomationCommentRow[]>([])
   const [auditSummary, setAuditSummary] = useState('')
   const [auditJiraBaseUrl, setAuditJiraBaseUrl] = useState('')
+  const [moveRows, setMoveRows] = useState<MoveAuditRow[]>([])
+  const [moveSearchText, setMoveSearchText] = useState('')
+  const [isShowingMovedOnly, setIsShowingMovedOnly] = useState(false)
+  const [hasCopiedMoveAudit, setHasCopiedMoveAudit] = useState(false)
+
+  const visibleMoveRows = filterMoveAuditRows(moveRows, moveSearchText, isShowingMovedOnly)
+  const movedIssueCount = moveRows.filter((moveRow) => moveRow.automationMoves.length > 0).length
+
+  /** Copies exactly what is on screen — the filtered list, so a shared list matches what was seen. */
+  async function handleCopyMoveAudit(): Promise<void> {
+    const reportLines = [
+      `Automation moves — ${visibleMoveRows.length} of ${moveRows.length} audited issue(s) shown`,
+      moveSearchText.trim() ? `Search: "${moveSearchText.trim()}"` : '',
+      isShowingMovedOnly ? 'Filtered to issues the automation moved' : '',
+      '',
+      ...visibleMoveRows.map((moveRow) => [
+        `  ${moveRow.issueKey}  now=${moveRow.currentStatus}`,
+        `      ${moveRow.issueSummary}`,
+        moveRow.automationMoves.length === 0
+          ? '      no status change within 3 minutes of an automation comment'
+          : moveRow.automationMoves
+            .map((move) => `      moved ${move.fromStatus} → ${move.toStatus} at ${move.atIso}`).join(NEWLINE),
+      ].join(NEWLINE)),
+    ].filter((line) => line !== '')
+    await navigator.clipboard?.writeText(reportLines.join(NEWLINE))
+    setHasCopiedMoveAudit(true)
+  }
 
   const loadEverything = useCallback(async () => {
     try {
@@ -323,12 +354,16 @@ export function GithubEmailIntakePanel() {
       setAuditJiraBaseUrl(loadedBaseUrl)
       const auditResult = await fetchGithubAutomationComments(config?.jiraProjectKeys ?? [], lookbackDays)
       setAuditRows(auditResult.rows)
+      // Defaulted, not assumed: an older server (or any partial payload) would otherwise blank the
+      // whole panel rather than simply showing no move rows.
+      setMoveRows(auditResult.moveRows ?? [])
       setAuditSummary(
         `${auditResult.rows.length} automation comment${auditResult.rows.length === 1 ? '' : 's'} ` +
         `across ${auditResult.scannedIssueCount} candidate issue(s) in the last ${lookbackDays} days.`,
       )
     } catch (auditError) {
       setAuditRows([])
+      setMoveRows([])
       setAuditSummary(auditError instanceof Error ? auditError.message : 'Comment audit failed.')
     } finally {
       setIsAuditing(false)
@@ -1026,6 +1061,60 @@ export function GithubEmailIntakePanel() {
           {isAuditing ? 'Scanning…' : '🔎 Scan Jira for automation comments'}
         </button>
         {auditSummary ? <p className={styles.panelStatusLine}>{auditSummary}</p> : null}
+
+        {/* What the automation MOVED, not just where it commented. The comment sweep alone could
+            never answer "did our automation cancel this?" — it proves the automation was there and
+            says nothing about status. A status change within three minutes of its own comment is
+            attributed to the same run, because a person does not also leave a signed comment. */}
+        {moveRows.length > 0 ? (
+          <div className={styles.panelSection}>
+            <label className={styles.fieldLabel}>What the automation moved</label>
+            <p className={styles.panelStatusLine}>
+              {movedIssueCount} of {moveRows.length} audited issue(s) had a status change within three
+              minutes of an automation comment. Search a key, a summary, or a status — typing
+              <strong> cancelled</strong> answers the question this exists for.
+            </p>
+            <input
+              aria-label="Search audited issues"
+              className={styles.inputField}
+              placeholder="Search key, summary, or status…"
+              value={moveSearchText}
+              onChange={(changeEvent) => setMoveSearchText(changeEvent.target.value)}
+            />
+            <label className={styles.fieldLabel}>
+              <input
+                type="checkbox"
+                checked={isShowingMovedOnly}
+                onChange={(changeEvent) => setIsShowingMovedOnly(changeEvent.target.checked)}
+              />
+              {' '}Only issues the automation moved
+            </label>
+            <div className={styles.panelActions}>
+              <button className={styles.actionButton} onClick={() => void handleCopyMoveAudit()} type="button">
+                📋 {hasCopiedMoveAudit ? 'Copied' : 'Copy this list'}
+              </button>
+            </div>
+            <ul>
+              {visibleMoveRows.map((moveRow) => (
+                <li key={moveRow.issueKey}>
+                  <a href={buildJiraBrowseUrl(moveRow.issueKey, auditJiraBaseUrl)} rel="noreferrer" target="_blank">
+                    {moveRow.issueKey}
+                  </a>
+                  {' · now '}<strong>{moveRow.currentStatus}</strong>
+                  {moveRow.automationMoves.length === 0
+                    ? ' · no status change near a comment'
+                    : ' · ' + moveRow.automationMoves
+                      .map((move) => `${move.fromStatus} → ${move.toStatus}`).join(', ')}
+                  {moveRow.issueSummary ? <em>{' (' + moveRow.issueSummary + ')'}</em> : null}
+                </li>
+              ))}
+            </ul>
+            {visibleMoveRows.length === 0 ? (
+              <p className={styles.panelStatusLine}>Nothing matches that search.</p>
+            ) : null}
+          </div>
+        ) : null}
+
         {auditRows.length > 0 ? (
           <ul>
             {auditRows.map((auditRow, rowIndex) => (

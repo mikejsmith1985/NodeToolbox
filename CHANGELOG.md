@@ -16,6 +16,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   disabled, and deleted, and `findEventTypeOverlaps` still warns about overlapping matchers.
 
 ### Added
+- **The posted-comment audit now says what the automation MOVED, not just where it commented.** The
+  sweep proved the automation had been on an issue and said nothing about status, so one it commented
+  on *and cancelled* looked exactly like one it only commented on — half an answer to the question
+  people actually had.
+
+  The audit now fetches each candidate's current status and changelog, and attributes any status
+  change made within **three minutes** of an automation comment to the same run. That window is the
+  whole trick: the app authenticates to Jira AS the operator, so history credits every change to them
+  either way and proves nothing — but a run posts its comment and fires its transition seconds apart,
+  and a person doing it by hand does not also leave a signed comment moments earlier.
+
+  The list is searchable across key, summary, current status, and the status an issue was moved TO —
+  so typing **cancelled** answers the question directly — with an "only issues the automation moved"
+  filter and a copy of exactly what is on screen. Three minutes is deliberately generous: missing a
+  cancellation the automation caused leaves a real problem unfound, while over-claiming one merely
+  sends somebody to look at an issue.
+
 - **Intake rules can be exported and imported.** Two copies from the Rules section: **JSON** that
   round-trips exactly, and a **readable** summary listing each rule's id, event, what it matches, and
   what it does (status, parent status, sub-status, or *comment only*), with disabled rules marked.
