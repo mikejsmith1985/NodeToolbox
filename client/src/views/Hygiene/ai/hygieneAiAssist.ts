@@ -9,6 +9,7 @@
 // rest, but an item naming an issue that is not on the page is reported and dropped, never applied.
 
 import { extractJsonPayload } from '../../../utils/extractJsonPayload.ts'
+import { deriveIssueDates, readDrivingFixVersion } from '../checks/issueDateRules.ts'
 import type { HygieneFinding } from '../checks/hygieneChecks.ts'
 
 // ── Constants ──
@@ -41,16 +42,24 @@ const LAST_COMMENT_EXCERPT_LENGTH = 300
  * judgement call (who should own this?) or that are fixed on a different issue entirely are not
  * offered to the model — a proposal there could only ever be a guess.
  *
- * The DATE flags are deliberately absent, and the reason is worth keeping. They were briefly listed
- * here with the team's policy spelled out — "21 calendar days before the fix version release date",
- * "two working days after Ready to Work" — while the per-issue block carried no fix version, no
- * release date and no status history. The model did as it was told and omitted everything, replying
+ * The DATE flags are here, and how they are asked matters. They were first listed with the team's
+ * policy spelled out — "21 calendar days before the fix version release date", "two working days
+ * after Ready to Work" — while the per-issue block carried no fix version, no release date and no
+ * status history. The model did as it was told and omitted everything, replying
  * `{"kind":"hygiene","items":[]}` to fifty-three issues.
  *
- * Supplying those facts would have made the prompt answerable but not correct: the dates are pure
- * arithmetic that `derivedDateFix.ts` already performs exactly, and an LLM that merely agrees with a
- * formula adds nothing while an LLM that disagrees with it puts two answers on screen for one
- * policy. Dates are fixed by the "Fix all date mismatches" action, not proposed.
+ * They were then removed altogether on the reasoning that a formula beats an LLM. That was the wrong
+ * call: it answered a question nobody asked and took away a route somebody relies on.
+ *
+ * `dates-out-of-sync` is NOT offered, for a different reason: it covers three fields at once, so an
+ * accepted proposal has no single field to write to and the apply path would refuse it. The three
+ * specific missing-date fixes cover the same ground with a target each, and the deterministic
+ * "Fix all date mismatches" button handles the combined case.
+ *
+ * The fix is to hand the model the ANSWER rather than the arithmetic. `buildFindingBlock` computes
+ * the policy value with the same module the deterministic fix uses and states it in the prompt, so a
+ * proposal cannot be unanswerable and cannot disagree with the button beside it. A date the policy
+ * cannot derive is said to be underivable, which is an instruction to omit, not to guess.
  */
 export const AI_FIXABLE_CHECK_INSTRUCTIONS: Record<string, string> = {
   'missing-summary': 'propose a concise, specific summary (one line).',
@@ -58,6 +67,10 @@ export const AI_FIXABLE_CHECK_INSTRUCTIONS: Record<string, string> = {
   'missing-fix-version': 'choose one of the release names listed for that project — never invent one.',
   'missing-pi': 'propose the Program Increment value exactly as used on sibling issues.',
   'missing-sp': 'propose a story-point estimate as a plain number.',
+  // Each date fix carries its policy value in the issue block; the model copies it, never computes it.
+  'missing-due-date': 'copy the "policy value for Due Date" shown for that issue, exactly. Omit the fix if none is shown.',
+  'missing-target-start': 'copy the "policy value for Target Start" shown for that issue, exactly. Omit the fix if none is shown.',
+  'missing-target-end': 'copy the "policy value for Target End" shown for that issue, exactly. Omit the fix if none is shown.',
   stale: 'propose a short, polite nudge comment asking the assignee for a status update (it will be posted as a Jira comment).',
 }
 
@@ -154,11 +167,52 @@ function buildFindingBlock(finding: HygieneFinding, staleContextsByKey: Record<s
     `- ${finding.issue.key} · ${issueFields.issuetype?.name ?? 'issue'} · ${issueFields.summary ?? '(no summary)'}`,
     `    description: ${descriptionExcerpt.trim() || '(none in Jira)'}`,
     finding.programIncrement ? `    program increment: ${finding.programIncrement}` : '',
+    ...buildDatePolicyLines(finding, fixableFlags),
     ...(isStaleAsked ? buildStaleContextLines(finding, staleContextsByKey[finding.issue.key]) : []),
     `    fixes needed:`,
     ...fixableFlags.map((flag) => `      * ${flag.checkId}: ${AI_FIXABLE_CHECK_INSTRUCTIONS[flag.checkId]}`),
   ]
   return lines.filter(Boolean).join('\n')
+}
+
+/**
+ * The date facts one issue's block carries: the release it is committed to, and the value the policy
+ * says each flagged date should hold.
+ *
+ * Computed with the SAME `deriveIssueDates` the deterministic fix uses, so the proposal the model
+ * copies and the value the "Fix all" button writes are the same number by construction rather than
+ * by two implementations happening to agree.
+ *
+ * Target Start needs the changelog entry for "Ready to Work", which the scan does not fetch — so it
+ * is reported as underivable here and left to the inline fix, which reads it per issue. Saying so is
+ * the point: a blank line invites a guess, and a guessed commitment date is indistinguishable from a
+ * real one once written.
+ */
+function buildDatePolicyLines(finding: HygieneFinding, fixableFlags: readonly { checkId: string }[]): string[] {
+  const dateCheckIds = ['missing-due-date', 'missing-target-end', 'missing-target-start', 'dates-out-of-sync']
+  if (!fixableFlags.some((flag) => dateCheckIds.includes(flag.checkId))) {
+    return []
+  }
+
+  const issueFields = finding.issue.fields as unknown as Record<string, unknown>
+  const fixVersions = (issueFields.fixVersions ?? []) as Array<{ name?: string; releaseDate?: string; released?: boolean }>
+  const drivingFixVersion = readDrivingFixVersion(fixVersions)
+  const derived = deriveIssueDates({
+    fixVersions,
+    readyToWorkEnteredIso: null,
+    currentDueDate: null,
+    currentTargetStart: null,
+    currentTargetEnd: null,
+  })
+
+  return [
+    drivingFixVersion
+      ? `    fix version: ${drivingFixVersion.name} (releases ${drivingFixVersion.releaseDate})`
+      : '    fix version: none with a release date — every date below cannot be derived',
+    derived.dueDate ? `    policy value for Due Date: ${derived.dueDate}` : '    Due Date cannot be derived — omit that fix',
+    derived.targetEnd ? `    policy value for Target End: ${derived.targetEnd}` : '    Target End cannot be derived — omit that fix',
+    '    Target Start cannot be derived here (needs the issue history) — omit that fix',
+  ]
 }
 
 /**

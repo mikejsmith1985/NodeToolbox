@@ -269,35 +269,56 @@ describe('buildHygieneAiPrompt — fix versions must be real', () => {
   })
 })
 
-describe('the date fixes are not the AI\'s job', () => {
-  it('never asks the model for a date it derives deterministically', () => {
-    // What went wrong: the prompt told the model the date POLICY — "21 calendar days before the fix
-    // version release date", "two working days after Ready to Work" — while the per-issue block
-    // carried no fix version, no release date and no status history. The model did exactly as
-    // instructed and omitted everything, returning {"kind":"hygiene","items":[]} for 53 issues.
-    //
-    // Supplying those facts would make the prompt answerable, but not correct: the dates are pure
-    // arithmetic that `derivedDateFix` already performs exactly. An LLM cannot beat a formula, and
-    // can differ from it — which would put two answers on screen for one policy.
-    expect(Object.keys(AI_FIXABLE_CHECK_INSTRUCTIONS)).not.toContain('missing-due-date')
-    expect(Object.keys(AI_FIXABLE_CHECK_INSTRUCTIONS)).not.toContain('missing-target-start')
-    expect(Object.keys(AI_FIXABLE_CHECK_INSTRUCTIONS)).not.toContain('missing-target-end')
-    expect(Object.keys(AI_FIXABLE_CHECK_INSTRUCTIONS)).not.toContain('dates-out-of-sync')
-  })
 
-  it('does not count an issue whose only flags are dates as something to ask about', () => {
-    // The panel shows "No AI-fixable flags on this page" for these, rather than handing the model an
-    // issue it may propose nothing for — which is what produced an empty reply to 53 issues.
-    const dateOnlyFinding = {
-      issue: { key: 'ENFCT-1', fields: { summary: 'Dates only', issuetype: { name: 'Story' } } },
+describe('date fixes carry the facts the policy needs', () => {
+  function buildDateFinding(overrides: Record<string, unknown> = {}) {
+    return {
+      issue: {
+        key: 'ENFCT-1',
+        fields: {
+          summary: 'A story committed to a release',
+          issuetype: { name: 'Story' },
+          status: { name: 'Ready to Work', statusCategory: { key: 'indeterminate' } },
+          fixVersions: [{ name: '10/08/2026', releaseDate: '2026-10-08', released: false }],
+          ...overrides,
+        },
+      },
       flags: [
-        { checkId: 'missing-target-start', label: 'Missing Target Start', severity: 'warn' },
+        { checkId: 'missing-due-date', label: 'Missing Due Date', severity: 'warn' },
         { checkId: 'missing-target-end', label: 'Missing Target End', severity: 'warn' },
       ],
       programIncrement: 'PI 26.4',
     } as unknown as HygieneFinding
+  }
 
-    expect(hasAiFixableFlags(dateOnlyFinding)).toBe(false)
-    expect(buildHygieneAiPrompt([dateOnlyFinding], {}, {})).not.toContain('ENFCT-1')
+  it('offers the date fixes again — they were removed and should not have been', () => {
+    expect(Object.keys(AI_FIXABLE_CHECK_INSTRUCTIONS)).toContain('missing-due-date')
+    expect(Object.keys(AI_FIXABLE_CHECK_INSTRUCTIONS)).toContain('missing-target-end')
+    expect(Object.keys(AI_FIXABLE_CHECK_INSTRUCTIONS)).toContain('missing-target-start')
+  })
+
+  it('leaves dates-out-of-sync out — it names three fields, so a proposal has nowhere to be written', () => {
+    // Its fix descriptor resolves no single field id, so an accepted proposal would be refused by
+    // the apply path. The three specific date fixes cover the same ground with a target each.
+    expect(Object.keys(AI_FIXABLE_CHECK_INSTRUCTIONS)).not.toContain('dates-out-of-sync')
+  })
+
+  it('states the DERIVED value in the prompt, so the model copies rather than calculates', () => {
+    // The first attempt put the policy in the prompt without the facts — no fix version, no release
+    // date — so the model correctly omitted everything and replied with an empty item list to 53
+    // issues. Handing it the answer the deterministic fix would write removes both failure modes:
+    // it cannot be unanswerable, and it cannot disagree with the button beside it.
+    const prompt = buildHygieneAiPrompt([buildDateFinding()], {}, {})
+
+    expect(prompt).toContain('fix version: 10/08/2026 (releases 2026-10-08)')
+    expect(prompt).toContain('policy value for Due Date: 2026-10-08')
+    expect(prompt).toContain('policy value for Target End: 2026-09-17')
+  })
+
+  it('says a date cannot be derived rather than inviting a guess', () => {
+    const prompt = buildHygieneAiPrompt([buildDateFinding({ fixVersions: [] })], {}, {})
+
+    expect(prompt).toContain('cannot be derived')
+    expect(prompt).not.toContain('policy value for Due Date:')
   })
 })

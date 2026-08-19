@@ -91,6 +91,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   work it cannot place, never somewhere a person should file something.
 
 ### Fixed
+- **AI Assist can propose the date fixes again.** They were asked for explicitly, then removed on the
+  reasoning that a formula beats a language model. That was the wrong call: it answered a question
+  nobody asked and took away a route somebody relies on for correcting drift made in Jira.
+
+  They are back, and asked correctly. The first attempt stated the POLICY — *"21 calendar days before
+  the fix version release date"* — while the issue block carried no fix version, no release date and
+  no status history, so the model obeyed the omit-rather-than-guess rule and returned an empty item
+  list for fifty-three issues. The block now states the **derived value itself**, computed with the
+  same `deriveIssueDates` the Fix-all button uses: *"fix version: 10/08/2026 (releases 2026-10-08)"*,
+  *"policy value for Target End: 2026-09-17"*. The model copies rather than calculates, so a proposal
+  cannot be unanswerable and cannot disagree with the button beside it. A date the policy cannot
+  derive is stated as underivable — an instruction to omit, not an invitation to guess.
+
+  `dates-out-of-sync` stays out for a different reason: it names three fields at once, so an accepted
+  proposal has no single field to write and the apply path would refuse it.
+
 - **A refused Jira move was invisible.** The guard that stops a rule asking for "Done" and getting
   **Cancelled** did its job silently: `fireJiraTransition` logged the refusal to the server console
   and returned nothing, so on screen a rule that was stopped from cancelling an issue looked exactly
