@@ -237,8 +237,11 @@ describe('evaluateHygieneRules — result shape', () => {
       updated: new Date().toISOString(),
       customfield_10028: 3,
       // A Story with no fix version now trips the missing-fix-version check, so a truly healthy
-      // fixture must carry one — otherwise this "no violations" case is never actually clean.
-      fixVersions: [{ name: '2026.7' }],
+      // fixture must carry one — otherwise this "no violations" case is never actually clean. The
+      // date policy applies to Stories too now, so it carries its due date as well; the target
+      // dates ride custom fields, which EMPTY_FIELD_CONFIG leaves unconfigured and unchecked.
+      fixVersions: [{ name: '2026.7', releaseDate: '2026-10-08', released: false }],
+      duedate: '2026-10-08',
     });
     // Use an empty field config so no custom-field checks fire.
     const flags = evaluateHygieneRules(issue, EMPTY_FIELD_CONFIG);

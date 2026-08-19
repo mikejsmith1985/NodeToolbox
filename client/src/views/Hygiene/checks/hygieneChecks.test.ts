@@ -9,6 +9,7 @@ import {
   checkTargetEndOverdue,
   checkTargetStartReady,
   checkDueDateOverdue,
+  checkDatesOutOfSync,
   checkMissingDueDate,
   checkMissingTargetStart,
   checkMissingTargetEnd,
@@ -322,14 +323,15 @@ describe('hygiene check predicates', () => {
     }))).toBeNull();
   });
 
-  it('does NOT ask a Story for a due date it was never expected to carry', () => {
-    // Broadening the OVERDUE rule must not broaden the MISSING rule: a committed due date is a
-    // Feature-level commitment, and flagging every Story for lacking one would bury the real signal.
+  it('DOES ask a Story for a due date, now that one can be derived for it', () => {
+    // A deliberate reversal. This used to be Feature-only so a hundred unfixable flags would not
+    // bury the signal; the due date is now derived from the fix version, so a missing one is both
+    // detectable and fixable in a single action rather than a hundred manual edits.
     expect(checkMissingDueDate(buildIssue({
       issuetype: { name: 'Story' },
       status: ACTIVE_STATUS,
       duedate: null,
-    }))).toBeNull();
+    }))?.checkId).toBe('missing-due-date');
   });
 
   it('flags a Feature past Target End in any status before testing', () => {
@@ -396,9 +398,17 @@ describe('hygiene check predicates', () => {
   });
 
   it('aggregates summary counts across a mixed finding set', () => {
-    // Give it a fix version so it carries ONLY the missing-sp flag (GH #200 broadened the fix-version check to
-    // Stories, which would otherwise add a second flag and change this aggregation count).
-    const missingStoryPointsIssue = buildIssue({ customfield_10028: null, customfield_10016: null, fixVersions: [{ name: 'R1' }] });
+    // Given a fix version AND the three policy dates so it carries ONLY the missing-sp flag. Both
+    // broadenings land here: GH #200 put the fix-version check on Stories, and the date policy now
+    // asks every delivery type for its dates — either would otherwise add flags and change the count.
+    const missingStoryPointsIssue = buildIssue({
+      customfield_10028: null,
+      customfield_10016: null,
+      fixVersions: [{ name: 'R1', releaseDate: '2026-10-08', released: false }],
+      duedate: '2026-10-08',
+      customfield_10101: '2026-09-01',
+      customfield_10102: '2026-09-17',
+    });
     const staleIssue = { ...buildIssue(), key: 'TBX-102' };
     const findings = [
       { issue: missingStoryPointsIssue, flags: evaluateHygieneIssue(missingStoryPointsIssue) },
@@ -501,5 +511,68 @@ describe('resolveHygieneFieldConfig — a configured field outranks the built-in
     });
 
     expect(checkMissingProgramIncrement(issueWithPiInTheDefaultField, fieldConfig)).toBeNull();
+  });
+});
+
+describe('date policy checks apply to every delivery work item', () => {
+  const RELEASE_FIX_VERSION = [{ name: '10/08/2026', releaseDate: '2026-10-08', released: false }];
+
+  function buildStoryWithDates(overrides: Record<string, unknown>) {
+    return buildIssue({
+      issuetype: { name: 'Story' },
+      status: { name: 'Ready to Work', statusCategory: { key: 'indeterminate', name: 'In Progress' } },
+      fixVersions: RELEASE_FIX_VERSION,
+      ...overrides,
+    });
+  }
+
+  it('asks a Story for its target dates, which only Features used to be asked for', () => {
+    // The blind spot the reporter spotted: every Target Start / Target End tile read 0 on a board of
+    // Stories and Defects, because the checks were gated to Feature/Epic and nothing was looking.
+    const storyIssue = buildStoryWithDates({ duedate: null, customfield_10101: null, customfield_10102: null });
+    const flagIds = evaluateHygieneIssue(storyIssue).map((flag) => flag.checkId);
+
+    expect(flagIds).toContain('missing-target-start');
+    expect(flagIds).toContain('missing-target-end');
+    expect(flagIds).toContain('missing-due-date');
+  });
+
+  it('still leaves a Sub-task alone — it inherits its parent dates', () => {
+    const subTaskIssue = buildIssue({
+      issuetype: { name: 'Sub-task' },
+      status: ACTIVE_STATUS,
+      duedate: null,
+    });
+
+    expect(evaluateHygieneIssue(subTaskIssue).map((flag) => flag.checkId)).not.toContain('missing-due-date');
+  });
+
+  it('flags dates that disagree with the fix version the issue is committed to', () => {
+    const storyIssue = buildStoryWithDates({
+      duedate: '2026-11-30',
+      customfield_10102: '2026-09-17',
+    });
+
+    expect(checkDatesOutOfSync(storyIssue, resolveHygieneFieldConfig())?.checkId).toBe('dates-out-of-sync');
+  });
+
+  it('says nothing when the derivable dates already match the release', () => {
+    const storyIssue = buildStoryWithDates({
+      duedate: '2026-10-08',
+      customfield_10102: '2026-09-17',
+    });
+
+    expect(checkDatesOutOfSync(storyIssue, resolveHygieneFieldConfig())).toBeNull();
+  });
+
+  it('says nothing when there is no dated fix version to derive from', () => {
+    const storyIssue = buildIssue({
+      issuetype: { name: 'Story' },
+      status: ACTIVE_STATUS,
+      fixVersions: [],
+      duedate: '2026-11-30',
+    });
+
+    expect(checkDatesOutOfSync(storyIssue, resolveHygieneFieldConfig())).toBeNull();
   });
 });

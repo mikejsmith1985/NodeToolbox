@@ -47,6 +47,7 @@ describe('HYGIENE_FIX_BY_CHECK registry', () => {
       'due-date-overdue': 'transition',
       'old-in-sprint': 'openInJira',
       'missing-child-story-points': 'openInJira',
+    'dates-out-of-sync': 'derivedDates',
     };
     (Object.keys(expectedKindByCheck) as BuiltInHygieneCheckId[]).forEach((checkId) => {
       expect(HYGIENE_FIX_BY_CHECK[checkId].kind, checkId).toBe(expectedKindByCheck[checkId]);

@@ -51,7 +51,12 @@ function buildJiraIssue(overrides: Partial<JiraIssue['fields']> = {}, issueKey =
       customfield_10020: [],
       // A healthy default issue carries a fix version — GH #200 broadened the fix-version check to Stories,
       // so an omitted fixVersion would now add a missing-fix-version flag and change these baselines.
-      fixVersions: [{ name: 'R1' }],
+      // It also carries the three policy dates, matching its release: the date checks now apply to
+      // every delivery type, so an issue without them is genuinely unhealthy rather than a baseline.
+      fixVersions: [{ name: 'R1', releaseDate: '2026-10-08', released: false }],
+      duedate: '2026-10-08',
+      customfield_10101: '2026-09-01',
+      customfield_10102: '2026-09-17',
       ...overrides,
     },
   };

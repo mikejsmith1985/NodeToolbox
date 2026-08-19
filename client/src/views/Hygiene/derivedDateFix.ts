@@ -1,0 +1,150 @@
+// derivedDateFix.ts — Turns the date policy into Jira writes, for one issue or a hundred.
+//
+// The check says an issue's dates disagree with the release it is committed to; this works out what
+// they should be and writes them. Nobody is asked to retype a date the policy already knows —
+// retyping is how a hundred issues stay wrong.
+//
+// Target Start is the one date the scan cannot see: deriving it needs the changelog entry for
+// "Ready to Work", and the scan does not fetch changelogs for every issue it reads. So it is fetched
+// HERE, per issue, only for the issues actually being fixed.
+//
+// Every write goes through the shipped `saveFeatureReviewSimpleField`, so a date set from Hygiene
+// and the same date set from Feature Review produce identical requests.
+
+import { jiraGet } from '../../services/jiraApi.ts';
+import { saveFeatureReviewSimpleField } from '../SprintDashboard/featureReviewFixes.ts';
+import type { HygieneFieldConfig, JiraIssue } from './checks/hygieneChecks.ts';
+import { deriveIssueDates, READY_TO_WORK_STATUS_NAME } from './checks/issueDateRules.ts';
+
+/** One field the fix will set, named so the user can see it before it happens. */
+export interface DerivedDateWrite {
+  fieldId: string;
+  fieldName: string;
+  value: string;
+}
+
+/** What a fix would do to one issue, and what it could not work out. */
+export interface DerivedDatePlan {
+  issueKey: string;
+  writes: DerivedDateWrite[];
+  undecidedReasons: string[];
+}
+
+/** The result of a run: what landed, and precisely what did not. */
+export interface DerivedDateOutcome {
+  updatedIssueKeys: string[];
+  failures: Array<{ issueKey: string; reason: string }>;
+}
+
+/** One changelog history entry, reduced to what the Ready-to-Work lookup needs. */
+interface ChangelogHistory {
+  created?: string;
+  items?: Array<{ field?: string; toString?: string }>;
+}
+
+/**
+ * The first time the issue entered Ready to Work, or null when it never has.
+ *
+ * FIRST rather than most recent: the clock on Target Start starts when the work first became
+ * workable, and an issue that bounced back and forth should not keep resetting its own start date.
+ */
+async function readReadyToWorkEnteredIso(issueKey: string): Promise<string | null> {
+  const response = await jiraGet<{ changelog?: { histories?: ChangelogHistory[] } }>(
+    `/rest/api/2/issue/${encodeURIComponent(issueKey)}?expand=changelog&fields=summary`,
+  );
+  const entryTimes = (response.changelog?.histories ?? [])
+    .filter((history) => (history.items ?? []).some((item) =>
+      item.field === 'status' && (item.toString ?? '').trim().toLowerCase() === READY_TO_WORK_STATUS_NAME.toLowerCase()))
+    .map((history) => history.created ?? '')
+    .filter((createdIso) => createdIso !== '')
+    .sort();
+
+  return entryTimes[0] ?? null;
+}
+
+/** Reads a Jira field as its raw date text, or null. */
+function readFieldText(issue: JiraIssue, fieldId: string): string | null {
+  const rawValue = (issue.fields as unknown as Record<string, unknown>)[fieldId];
+  return typeof rawValue === 'string' && rawValue.trim() !== '' ? rawValue.trim() : null;
+}
+
+/** The first configured field id in a family, or null when the instance has none. */
+function readFirstFieldId(fieldIds: readonly string[]): string | null {
+  return fieldIds[0] ?? null;
+}
+
+/**
+ * Works out every date write one issue needs, without performing any of them.
+ *
+ * Separated from the writing so the UI can show exactly what is about to change — a bulk action
+ * that writes first and reports afterwards is not something anyone can agree to.
+ */
+export async function planDerivedDateWrites(
+  issue: JiraIssue,
+  fieldConfig: HygieneFieldConfig,
+): Promise<DerivedDatePlan> {
+  const targetStartFieldId = readFirstFieldId(fieldConfig.targetStartFieldIds);
+  const targetEndFieldId = readFirstFieldId(fieldConfig.targetEndFieldIds);
+  const readyToWorkEnteredIso = await readReadyToWorkEnteredIso(issue.key).catch(() => null);
+
+  const derived = deriveIssueDates({
+    fixVersions: issue.fields.fixVersions ?? [],
+    readyToWorkEnteredIso,
+    currentDueDate: readFieldText(issue, 'duedate'),
+    currentTargetEnd: targetEndFieldId ? readFieldText(issue, targetEndFieldId) : null,
+    currentTargetStart: targetStartFieldId ? readFieldText(issue, targetStartFieldId) : null,
+  });
+
+  const candidateWrites: Array<DerivedDateWrite | null> = [
+    derived.mismatchedFieldNames.includes('Due Date') && derived.dueDate
+      ? { fieldId: 'duedate', fieldName: 'Due Date', value: derived.dueDate }
+      : null,
+    derived.mismatchedFieldNames.includes('Target End') && derived.targetEnd && targetEndFieldId
+      ? { fieldId: targetEndFieldId, fieldName: 'Target End', value: derived.targetEnd }
+      : null,
+    derived.mismatchedFieldNames.includes('Target Start') && derived.targetStart && targetStartFieldId
+      ? { fieldId: targetStartFieldId, fieldName: 'Target Start', value: derived.targetStart }
+      : null,
+  ];
+
+  return {
+    issueKey: issue.key,
+    writes: candidateWrites.filter((write): write is DerivedDateWrite => write !== null),
+    undecidedReasons: derived.undecidedReasons,
+  };
+}
+
+/**
+ * Applies the derived dates to every issue given.
+ *
+ * One issue's failure never stops the run, and never claims the others failed with it: a locked
+ * field on one ticket is not a reason to leave ninety-nine others wrong, and a whole-run "failed"
+ * would hide the ninety-nine that worked.
+ */
+export async function applyDerivedDates(
+  issues: readonly JiraIssue[],
+  fieldConfig: HygieneFieldConfig,
+): Promise<DerivedDateOutcome> {
+  const updatedIssueKeys: string[] = [];
+  const failures: Array<{ issueKey: string; reason: string }> = [];
+
+  for (const issue of issues) {
+    try {
+      const plan = await planDerivedDateWrites(issue, fieldConfig);
+      if (plan.writes.length === 0) {
+        continue;
+      }
+      for (const write of plan.writes) {
+        await saveFeatureReviewSimpleField(issue.key, write.fieldId, write.value);
+      }
+      updatedIssueKeys.push(issue.key);
+    } catch (caughtError) {
+      failures.push({
+        issueKey: issue.key,
+        reason: caughtError instanceof Error ? caughtError.message : 'Write failed',
+      });
+    }
+  }
+
+  return { updatedIssueKeys, failures };
+}

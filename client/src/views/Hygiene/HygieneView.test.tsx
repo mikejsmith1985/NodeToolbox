@@ -813,3 +813,41 @@ describe('HygieneView — diagnostics', () => {
     expect(screen.getByText(/App version:/)).toBeInTheDocument();
   });
 });
+
+describe('HygieneView — Fix all dates', () => {
+  function buildOutOfSyncFinding(issueKey: string) {
+    return {
+      issue: {
+        key: issueKey,
+        fields: {
+          summary: 'A story committed to a release',
+          issuetype: { name: 'Story' },
+          status: { name: 'Ready to Work', statusCategory: { key: 'indeterminate' } },
+          updated: buildDateDaysAgo(1),
+          fixVersions: [{ name: 'R1', releaseDate: '2026-10-08', released: false }],
+          duedate: null,
+        },
+      },
+      flags: [{ checkId: 'dates-out-of-sync', label: 'Dates do not match the fix version', severity: 'warn' }],
+      programIncrement: null,
+    } as unknown as HygieneFinding;
+  }
+
+  it('offers a bulk fix naming how many issues it will correct', () => {
+    // The point of the bulk action: a policy that derives dates makes a hundred wrong issues one
+    // click rather than a hundred edits. It says the count up front so the click is not a leap.
+    mockUseHygieneState.mockReturnValue(buildHookState({
+      findings: [buildOutOfSyncFinding('ENCUC-1'), buildOutOfSyncFinding('ENCUC-2')],
+    }));
+    render(<HygieneView />);
+
+    expect(screen.getByRole('button', { name: /Fix all 2 date/i })).toBeInTheDocument();
+  });
+
+  it('offers no bulk fix when no issue has dates to correct', () => {
+    mockUseHygieneState.mockReturnValue(buildHookState({ findings: [] }));
+    render(<HygieneView />);
+
+    expect(screen.queryByRole('button', { name: /Fix all/i })).not.toBeInTheDocument();
+  });
+});

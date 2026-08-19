@@ -48,9 +48,11 @@ describe('server hygiene — due date overdue applies to every delivery work ite
     expect(flagIdsFor(issue)).not.toContain('due-date-overdue');
   });
 
-  test('does NOT ask a Story for a due date it never had to carry', () => {
+  test('DOES ask a Story for a due date, now that one is derived from the fix version', () => {
+    // A deliberate reversal, in lockstep with the client: the due date follows from the release, so
+    // a missing one is fixable in a single action rather than a hundred manual edits.
     const issue = buildIssue('Story', 'In Progress', 'indeterminate', { duedate: null });
-    expect(flagIdsFor(issue)).not.toContain('missing-due-date');
+    expect(flagIdsFor(issue)).toContain('missing-due-date');
   });
 });
 

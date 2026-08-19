@@ -44,9 +44,13 @@ const LAST_COMMENT_EXCERPT_LENGTH = 300
 export const AI_FIXABLE_CHECK_INSTRUCTIONS: Record<string, string> = {
   'missing-summary': 'propose a concise, specific summary (one line).',
   'no-ac': 'propose acceptance criteria in Given/When/Then form based on the description.',
-  'missing-due-date': 'propose a due date as YYYY-MM-DD, reasoned from the issue context.',
-  'missing-target-start': 'propose a target start date as YYYY-MM-DD.',
-  'missing-target-end': 'propose a target end date as YYYY-MM-DD (after the start).',
+  // The three date fixes state the team's POLICY rather than inviting a judgement. These dates are
+  // derived, not estimated, so an AI reasoning its way to a plausible-looking date would be inventing
+  // a commitment — and a wrong commitment date is indistinguishable from a real one once written.
+  'missing-due-date': 'set the due date to the fix version release date, as YYYY-MM-DD. Omit if it has no dated, unreleased fix version.',
+  'missing-target-start': 'set the target start to two WORKING days after the issue reached "Ready to Work", as YYYY-MM-DD. Omit if it has not reached that status.',
+  'missing-target-end': 'set the target end to exactly 21 calendar days BEFORE the fix version release date, as YYYY-MM-DD. Omit if it has no dated, unreleased fix version.',
+  'dates-out-of-sync': 'recompute Due Date (= release date), Target End (= release date minus 21 days) and Target Start (= two working days after "Ready to Work"); propose the ONE date that is wrong, as YYYY-MM-DD.',
   'missing-fix-version': 'choose one of the release names listed for that project — never invent one.',
   'missing-pi': 'propose the Program Increment value exactly as used on sibling issues.',
   'missing-sp': 'propose a story-point estimate as a plain number.',

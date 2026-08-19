@@ -32,6 +32,7 @@ import {
 } from '../SprintDashboard/featureReviewFixes.ts';
 import type { HygieneFlag, HygieneFieldConfig, JiraIssue, BuiltInHygieneCheckId } from './checks/hygieneChecks.ts';
 import { HYGIENE_FIX_BY_CHECK, resolveFixFieldId, type HygieneFixKind } from './hygieneFix.ts';
+import { applyDerivedDates, planDerivedDateWrites, type DerivedDatePlan } from './derivedDateFix.ts';
 import styles from './HygieneView.module.css';
 
 const RELATIVE_BROWSE_PREFIX = '/browse/';
@@ -82,6 +83,12 @@ export function HygieneFixControl({ issue, flag, fieldConfig, onFixed }: Hygiene
   const descriptor = HYGIENE_FIX_BY_CHECK[flag.checkId as BuiltInHygieneCheckId];
   if (!descriptor || descriptor.kind === 'openInJira') {
     return <OpenInJiraLink issue={issue} note={descriptor ? DERIVED_FLAG_NOTE : UNCONFIGURED_FIELD_NOTE} />;
+  }
+
+  // The derived-dates fix needs the whole field config rather than one target field: it writes three
+  // fields at once, and works out their values instead of taking them from an input.
+  if (descriptor.kind === 'derivedDates') {
+    return <DerivedDatesFixInput issue={issue} fieldConfig={fieldConfig} onFixed={onFixed} />;
   }
 
   const fieldId = resolveFixFieldId(descriptor, fieldConfig);
@@ -182,6 +189,70 @@ function FixInput({ issue, kind, fieldId, label, isSubmitting, onSubmit }: FixIn
     return <OptionFixInput issue={issue} kind={kind} fieldId={fieldId} label={label} isSubmitting={isSubmitting} onSubmit={onSubmit} />;
   }
   return <ValueFixInput issue={issue} kind={kind} fieldId={fieldId} label={label} isSubmitting={isSubmitting} onSubmit={onSubmit} />;
+}
+
+/**
+ * The derived-dates fix: no input, because the dates follow from the fix version.
+ *
+ * It SHOWS what it will write before it writes it. A control that silently sets three dates on
+ * somebody's ticket is not a fix, it is a surprise — and the one thing this must never be is a
+ * button whose effect you learn afterwards.
+ */
+function DerivedDatesFixInput({
+  issue,
+  fieldConfig,
+  onFixed,
+}: {
+  issue: JiraIssue;
+  fieldConfig: HygieneFieldConfig;
+  onFixed: (issueKey: string) => void;
+}) {
+  const [plan, setPlan] = useState<DerivedDatePlan | null>(null);
+  const [isApplying, setIsApplying] = useState(false);
+  const [applyError, setApplyError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    void planDerivedDateWrites(issue, fieldConfig)
+      .then((loadedPlan) => { if (isMounted) setPlan(loadedPlan); })
+      .catch(() => { if (isMounted) setPlan({ issueKey: issue.key, writes: [], undecidedReasons: ['could not read the issue'] }); });
+    return () => { isMounted = false; };
+  }, [issue, fieldConfig]);
+
+  if (plan === null) {
+    return <span className={styles.fixNote}>Working out the dates…</span>;
+  }
+  if (plan.writes.length === 0) {
+    return <span className={styles.fixNote}>{plan.undecidedReasons.join('; ') || 'Dates already match the release.'}</span>;
+  }
+
+  async function applyPlan(): Promise<void> {
+    if (plan === null) return;
+    setIsApplying(true);
+    setApplyError(null);
+    try {
+      const outcome = await applyDerivedDates([issue], fieldConfig);
+      if (outcome.failures.length > 0) {
+        setApplyError(outcome.failures[0].reason);
+        return;
+      }
+      onFixed(issue.key);
+    } finally {
+      setIsApplying(false);
+    }
+  }
+
+  return (
+    <span className={styles.fixRow}>
+      <span className={styles.fixNote}>
+        {plan.writes.map((write) => `${write.fieldName} → ${write.value}`).join(', ')}
+      </span>
+      <button className={styles.fixButton} disabled={isApplying} type="button" onClick={() => void applyPlan()}>
+        {isApplying ? 'Applying…' : 'Apply'}
+      </button>
+      {applyError && <span className={styles.fixError}>{applyError}</span>}
+    </span>
+  );
 }
 
 /** Text, date, and story-points inputs — a single value field plus a Fix button. */

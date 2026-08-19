@@ -947,3 +947,20 @@
   font-size: var(--font-size-sm);
   white-space: pre;
 }
+
+/* The derived-dates fix: what it will write, then the button that writes it. */
+.fixRow {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+/* The bulk action, sat beside the summary tiles it acts on. */
+.bulkFixRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-sm);
+}

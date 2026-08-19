@@ -8,6 +8,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Dates are derived from the release, not typed.** One policy, stated once in `issueDateRules.ts`:
+  **Due Date** = the fix version's release date; **Target End** = 21 calendar days before it;
+  **Target Start** = two working days after the issue reached *Ready to Work*. Several fix versions
+  resolve to the **earliest unreleased** one — an issue tagged for two releases is committed to the
+  first, and dating it from the later one hands the team weeks nobody granted.
+
+  A new **Dates do not match the fix version** check flags issues that disagree, each with an inline
+  fix that shows what it will write before writing it, and a **📅 Fix all N date mismatches** button
+  over the whole scan — the dates are derived, so there is nothing per-issue to decide and pressing
+  Apply a hundred times is how a hundred issues stay wrong. One locked field never fails the run: the
+  outcome names what landed and what did not.
+
+  An issue with no dated, unreleased fix version is reported as **undecidable**, never guessed — a
+  guessed commitment date is indistinguishable from a real one once written. Target Start needs the
+  changelog, which the scan does not fetch, so it is read per issue only when a fix actually runs.
+  The AI assist now carries the policy as a RULE rather than an invitation to estimate.
+
 - **Hygiene diagnostics.** A collapsed **🔧 Diagnostics** panel at the foot of the Hygiene view
   prints, and copies, an account of what the scan actually did: the **running build read from the
   server**, the exact scope JQL, how much of it was read, the resolved field ids, and — per finding
@@ -32,6 +49,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   work it cannot place, never somewhere a person should file something.
 
 ### Fixed
+- **Target Start and Target End were never checked on anything but Features.** A board of Stories and
+  Defects reported zero missing target dates because nothing was asking — and an empty date cannot be
+  "overdue" either, so all four target tiles read 0 on a scan where every single issue had both
+  fields blank. Two blind spots stacked into what looked like a clean bill of health. All three date
+  checks now apply to every delivery type. Mirrored in `src/services/hygieneRules.js`.
+
 - **"Due / overdue today" opened the smallest half of its own count.** Open was fixed to the personal
   Hygiene view, so a 26 made of 1 mine and 25 the team's opened the one — and the twenty-five were
   reachable only by noticing a chip. That is the whole "I am told I have 26 and cannot find them

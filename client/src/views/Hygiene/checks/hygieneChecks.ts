@@ -6,6 +6,7 @@
 
 import { businessDaysElapsedSince } from '../../../utils/businessDays.ts';
 import { isOnOrBeforeToday } from '../../../utils/calendarDate.ts';
+import { deriveIssueDates } from './issueDateRules.ts';
 import { normalizeRichTextToPlainText } from '../../../utils/richTextPlainText.ts';
 import type { EnterpriseRequiredFieldRule } from '../../AdminHub/enterpriseRules.ts';
 
@@ -71,6 +72,7 @@ export type BuiltInHygieneCheckId =
   | 'target-start-ready'
   | 'target-end-overdue'
   | 'due-date-overdue'
+  | 'dates-out-of-sync'
   | 'missing-child-story-points'
   | 'missing-sp'
   | 'stale'
@@ -153,7 +155,8 @@ export interface JiraIssue {
     updated?: string;
     description?: unknown;
     duedate?: string | null;
-    fixVersions?: Array<{ name?: string }> | null;
+    /** Release date and released flag included: the date policy derives every date from them. */
+    fixVersions?: Array<{ name?: string; releaseDate?: string; released?: boolean }> | null;
     parent?: { key?: string } | null;
     customfield_10028?: unknown;
     customfield_10016?: unknown;
@@ -213,6 +216,7 @@ const BUILT_IN_HYGIENE_FLAGS: Record<BuiltInHygieneCheckId, HygieneFlag> = {
   'target-start-ready': { checkId: 'target-start-ready', label: 'Target Start reached while still To Do', severity: 'warn' },
   'target-end-overdue': { checkId: 'target-end-overdue', label: 'Target End reached before testing transition', severity: 'warn' },
   'due-date-overdue': { checkId: 'due-date-overdue', label: 'Due Date reached before completion', severity: 'warn' },
+  'dates-out-of-sync': { checkId: 'dates-out-of-sync', label: 'Dates do not match the fix version', severity: 'warn' },
   'missing-child-story-points': { checkId: 'missing-child-story-points', label: 'Missing Pointed Child Story', severity: 'warn' },
   'missing-sp': { checkId: 'missing-sp', label: 'Missing SP', severity: 'warn' },
   stale: { checkId: 'stale', label: 'Stale', severity: 'warn' },
@@ -235,6 +239,7 @@ export const HYGIENE_CHECK_IDS: BuiltInHygieneCheckId[] = [
   'target-start-ready',
   'target-end-overdue',
   'due-date-overdue',
+  'dates-out-of-sync',
   'missing-child-story-points',
   'missing-summary',
   'no-assignee',
@@ -301,9 +306,15 @@ export function checkMissingProgramIncrement(issue: JiraIssue, fieldConfig: Hygi
   return hasMeaningfulValueForAnyField(issue, fieldConfig.programIncrementFieldIds) ? null : BUILT_IN_HYGIENE_FLAGS['missing-pi'];
 }
 
-/** Flags feature issues that are missing the target start date required by the rollout standard. */
+/**
+ * Flags delivery work items missing their target start date.
+ *
+ * Widened from Feature/Epic to every delivery type. The narrow gate was a blind spot rather than a
+ * policy: a board of Stories and Defects reported zero missing target dates because nothing was
+ * asking, which read as clean rather than unexamined.
+ */
 export function checkMissingTargetStart(issue: JiraIssue, fieldConfig: HygieneFieldConfig): HygieneFlag | null {
-  if (!isFeatureLikeIssue(issue)) {
+  if (!carriesDeliveryDates(issue)) {
     return null;
   }
 
@@ -312,9 +323,9 @@ export function checkMissingTargetStart(issue: JiraIssue, fieldConfig: HygieneFi
     : BUILT_IN_HYGIENE_FLAGS['missing-target-start'];
 }
 
-/** Flags feature issues that are missing the target end date required by the rollout standard. */
+/** Flags delivery work items missing their target end date (see checkMissingTargetStart). */
 export function checkMissingTargetEnd(issue: JiraIssue, fieldConfig: HygieneFieldConfig): HygieneFlag | null {
-  if (!isFeatureLikeIssue(issue)) {
+  if (!carriesDeliveryDates(issue)) {
     return null;
   }
 
@@ -339,13 +350,60 @@ export function checkMissingFixVersion(issue: JiraIssue): HygieneFlag | null {
   return issue.fields.fixVersions?.length ? null : BUILT_IN_HYGIENE_FLAGS['missing-fix-version'];
 }
 
-/** Flags feature issues that are missing the committed due date. */
+/**
+ * Flags delivery work items missing their committed due date.
+ *
+ * Previously Feature-only, deliberately, to avoid burying the signal. That reasoning no longer
+ * holds: the due date is now DERIVED from the fix version, so a missing one is both detectable and
+ * fixable in one action rather than a hundred manual edits.
+ */
 export function checkMissingDueDate(issue: JiraIssue): HygieneFlag | null {
-  if (!isFeatureLikeIssue(issue)) {
+  if (!carriesDeliveryDates(issue)) {
     return null;
   }
 
   return hasMeaningfulValue(issue.fields.duedate) ? null : BUILT_IN_HYGIENE_FLAGS['missing-due-date'];
+}
+
+/**
+ * True for the issue types the date policy governs.
+ *
+ * The same delivery set that carries a fix version, because the fix version is what the dates are
+ * derived FROM — a type without one cannot be dated by this policy and must not be asked for dates.
+ */
+export function carriesDeliveryDates(issue: JiraIssue): boolean {
+  return DELIVERY_ISSUE_TYPE_NAMES.has(readIssueTypeName(issue))
+    || FEATURE_ISSUE_TYPE_NAMES.has(readIssueTypeName(issue));
+}
+
+/**
+ * Flags an issue whose dates disagree with the release it is committed to.
+ *
+ * Only the dates the policy can actually derive are compared: an issue with no dated, unreleased fix
+ * version says nothing here, because "we cannot tell" is not "it is wrong". Target Start is not
+ * compared — deriving it needs the changelog, which the scan does not fetch; the fix reads it for
+ * the issues that need it.
+ */
+export function checkDatesOutOfSync(issue: JiraIssue, fieldConfig: HygieneFieldConfig): HygieneFlag | null {
+  if (!carriesDeliveryDates(issue) || isDoneIssue(issue)) {
+    return null;
+  }
+
+  const derived = deriveIssueDates({
+    fixVersions: issue.fields.fixVersions ?? [],
+    readyToWorkEnteredIso: null,
+    currentDueDate: readDateFieldText(issue.fields.duedate),
+    currentTargetEnd: readDateFieldText(readFirstConfiguredFieldValue(issue, fieldConfig.targetEndFieldIds)),
+    // Not derivable without the changelog, so it is passed as already-agreeing and never mismatches.
+    currentTargetStart: null,
+  });
+
+  return derived.mismatchedFieldNames.length > 0 ? BUILT_IN_HYGIENE_FLAGS['dates-out-of-sync'] : null;
+}
+
+/** Reads a possibly-object Jira field value as its date text, or null. */
+function readDateFieldText(fieldValue: unknown): string | null {
+  return typeof fieldValue === 'string' && fieldValue.trim() !== '' ? fieldValue.trim() : null;
 }
 
 /** Flags features that should have started implementation because Target Start has arrived. */
@@ -580,6 +638,7 @@ export function evaluateHygieneIssue(issue: JiraIssue, evaluationContext: Hygien
     checkTargetStartReady(issue, fieldConfig),
     checkTargetEndOverdue(issue, fieldConfig),
     checkDueDateOverdue(issue),
+    checkDatesOutOfSync(issue, fieldConfig),
     checkMissingChildStoryPoints(issue, featureKeysWithPointedStories),
     checkMissingStoryPoints(issue, evaluationContext.customStoryPointsFieldId),
     checkStaleIssue(issue, evaluationContext.staleDaysThreshold),

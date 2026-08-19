@@ -13,6 +13,9 @@ import type { BuiltInHygieneCheckId, HygieneFieldConfig } from './checks/hygiene
  * - Field writes: `text`, `date`, `assignee`, `feature`, `parent`, `fixVersion`, `programIncrement`,
  *   `storyPoints`, `select` — each maps to a `saveFeatureReview*` helper.
  * - `transition` — a "Move status" dropdown for derived flags that are really a stuck workflow state.
+ * - `derivedDates` — no input at all: the dates follow from the fix version, so the control shows
+ *   what it will write and writes it. Asking someone to retype a date the policy already knows is
+ *   how a hundred issues stay wrong.
  * - `openInJira` — the flag is derived elsewhere (or its field is unconfigured); link out instead.
  */
 export type HygieneFixKind =
@@ -26,6 +29,7 @@ export type HygieneFixKind =
   | 'storyPoints'
   | 'select'
   | 'transition'
+  | 'derivedDates'
   | 'openInJira';
 
 /** Describes how one Hygiene flag is fixed: the control kind and where its value is written. */
@@ -87,6 +91,8 @@ export const HYGIENE_FIX_BY_CHECK: Record<BuiltInHygieneCheckId, HygieneFixDescr
     label: 'Move status',
     alternateFix: { kind: 'date', systemFieldId: 'duedate', label: 'Reschedule due date' },
   },
+  // Dates that disagree with the release: recomputed and written, never retyped.
+  'dates-out-of-sync': { kind: 'derivedDates', label: 'Apply release dates' },
   // Fix lives elsewhere (a child issue) or is a review judgement call: link out to Jira.
   'old-in-sprint': { kind: 'openInJira', label: 'Review in Jira' },
   'missing-child-story-points': { kind: 'openInJira', label: 'Review in Jira' },

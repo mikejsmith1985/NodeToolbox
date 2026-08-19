@@ -295,7 +295,7 @@ function checkMissingProgramIncrement(issue, fieldConfig) {
 }
 
 function checkMissingTargetStart(issue, fieldConfig) {
-  if (!isFeatureLikeIssue(issue)) return null;
+  if (!carriesOwnDueDate(issue)) return null;
   const configuredIds = fieldConfig.targetStartFieldIds || [];
   if (configuredIds.length === 0) return null;
   if (hasMeaningfulValueForAnyField(issue, configuredIds)) return null;
@@ -303,7 +303,7 @@ function checkMissingTargetStart(issue, fieldConfig) {
 }
 
 function checkMissingTargetEnd(issue, fieldConfig) {
-  if (!isFeatureLikeIssue(issue)) return null;
+  if (!carriesOwnDueDate(issue)) return null;
   const configuredIds = fieldConfig.targetEndFieldIds || [];
   if (configuredIds.length === 0) return null;
   if (hasMeaningfulValueForAnyField(issue, configuredIds)) return null;
@@ -324,7 +324,10 @@ function carriesFixVersion(issue) {
 }
 
 /**
- * Returns true for the issue types whose own due date is a commitment worth warning about.
+ * Returns true for the issue types the date policy governs — due date AND target start/end.
+ *
+ * Widened from Feature/Epic in lockstep with the client: those checks were gated so narrowly that a
+ * board of Stories and Defects reported zero missing target dates because nothing was asking.
  * A STRICT superset of the old Feature/Epic gate — Epic is carried over from the feature-like set
  * even though the delivery set excludes it, so broadening never quietly drops a case.
  */
@@ -341,7 +344,7 @@ function checkMissingFixVersion(issue) {
 }
 
 function checkMissingDueDate(issue) {
-  if (!isFeatureLikeIssue(issue)) return null;
+  if (!carriesOwnDueDate(issue)) return null;
   if (hasMeaningfulValue(issue.fields.duedate)) return null;
   return { checkId: 'missing-due-date', label: 'Missing due date', severity: 'warn' };
 }

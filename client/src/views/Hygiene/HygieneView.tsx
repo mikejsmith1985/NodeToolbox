@@ -12,6 +12,7 @@ import {
 } from './checks/hygieneChecks.ts';
 import { useEffect, useRef, useState } from 'react';
 import { buildHygieneDiagnosticsReport } from './hygieneDiagnostics.ts';
+import { applyDerivedDates } from './derivedDateFix.ts';
 import { AgeBadge } from '../../components/IssueMeta/AgeBadge.tsx';
 import { AssigneeAvatar } from '../../components/IssueMeta/AssigneeAvatar.tsx';
 import { IssueTypeIcon } from '../../components/IssueMeta/IssueTypeIcon.tsx';
@@ -75,6 +76,8 @@ const CHECK_EXPLANATION_BY_ID: Record<string, string> = {
   'missing-pi': 'No Program Increment — attach this to the PI it belongs to.',
   'missing-feature-link': 'Not linked to a Feature — connect it to the initiative it supports.',
 };
+/** The check whose findings the bulk date fix acts on. */
+const DATES_OUT_OF_SYNC_CHECK_ID = 'dates-out-of-sync';
 const DIAGNOSTICS_TOGGLE_LABEL = '🔧 Diagnostics';
 const DIAGNOSTICS_COPY_LABEL = 'Copy report';
 const DIAGNOSTICS_COPIED_LABEL = '✓ Copied';
@@ -318,6 +321,8 @@ export default function HygieneView({
           {'every count below is a minimum. Narrow the project or Extra JQL to see the whole picture.'}
         </div>
       )}
+
+      <BulkDateFixButton hygieneState={hygieneState} />
 
       <HygieneDiagnosticsPanel hygieneState={hygieneState} />
 
@@ -677,6 +682,58 @@ function FindingRow({
           />
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Corrects every issue whose dates disagree with the release it is committed to, in one action.
+ *
+ * The reason this is a bulk button rather than a row of inline fixes: the dates are DERIVED, so
+ * there is nothing per-issue to decide. Once the policy is agreed, a hundred wrong issues are one
+ * click, and asking somebody to press Apply a hundred times is how they stay wrong instead.
+ *
+ * It states the count before acting, reports what actually landed, and never claims a whole-run
+ * success — one locked field on one ticket must not read as a failed run for the other ninety-nine.
+ */
+function BulkDateFixButton({ hygieneState }: { hygieneState: ReturnType<typeof useHygieneState> }) {
+  const [isApplying, setIsApplying] = useState(false);
+  const [resultMessage, setResultMessage] = useState<string | null>(null);
+
+  const outOfSyncIssues = hygieneState.findings
+    .filter((finding) => finding.flags.some((flag) => flag.checkId === DATES_OUT_OF_SYNC_CHECK_ID))
+    .map((finding) => finding.issue);
+
+  if (outOfSyncIssues.length === 0) {
+    return null;
+  }
+
+  async function applyEveryDateFix(): Promise<void> {
+    setIsApplying(true);
+    setResultMessage(null);
+    try {
+      const outcome = await applyDerivedDates(outOfSyncIssues, hygieneState.fieldConfig);
+      const failureNote = outcome.failures.length > 0
+        ? ` ${outcome.failures.length} could not be written: ${outcome.failures.map((failure) => failure.issueKey).join(', ')}.`
+        : '';
+      setResultMessage(`Updated ${outcome.updatedIssueKeys.length} issue(s).${failureNote}`);
+      hygieneState.loadHygiene();
+    } finally {
+      setIsApplying(false);
+    }
+  }
+
+  return (
+    <div className={styles.bulkFixRow}>
+      <button
+        className={styles.actionButton}
+        disabled={isApplying}
+        type="button"
+        onClick={() => void applyEveryDateFix()}
+      >
+        {isApplying ? 'Applying…' : `📅 Fix all ${outOfSyncIssues.length} date mismatch(es)`}
+      </button>
+      {resultMessage && <span className={styles.fixNote} role="status">{resultMessage}</span>}
     </div>
   );
 }
