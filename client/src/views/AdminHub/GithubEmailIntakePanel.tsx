@@ -11,6 +11,7 @@ import { normalizeSharePointFolderInput, previewSharePointEmails, pullSharePoint
 import { fetchJiraBaseUrl } from '../../services/proxyApi.ts'
 import { buildJiraBrowseUrl } from '../../utils/jiraBrowseUrl.ts'
 import { findEventTypeOverlaps, getDefaultSerializedRules, type SerializedEmailRule } from '../GithubEmail/lib/githubEmailRules.ts'
+import { buildIntakeRunReport } from './intakeRunExport.ts'
 import styles from './AdminHubView.module.css'
 
 // ── Types (mirror src/routes/githubEmailIntake.js) ──
@@ -185,6 +186,31 @@ export function GithubEmailIntakePanel() {
   const [projectKeysText, setProjectKeysText] = useState('')
   const [fileExtensionsText, setFileExtensionsText] = useState('')
   const [lastRun, setLastRun] = useState<IntakeRunResult>({ hasRun: false })
+  const [hasCopiedRun, setHasCopiedRun] = useState(false)
+
+  // How many events describe a move Jira did not make. Counted from the run rather than tracked
+  // separately, so the banner and the exported report can never disagree about the number.
+  const refusedMoveCount = (lastRun.events ?? [])
+    .filter((event) => /did not move|refus|transition failed/i.test(event.message ?? '')).length
+
+  /** The build the server reports, or null when it cannot be reached — never assumed. */
+  async function readRunningVersion(): Promise<string | null> {
+    try {
+      const versionResponse = await fetch('/api/version-check')
+      if (!versionResponse.ok) return null
+      const versionPayload = await versionResponse.json() as { currentVersion?: string }
+      return versionPayload.currentVersion ?? null
+    } catch {
+      return null
+    }
+  }
+
+  /** Copies the whole run — build, mode, per-file outcome, and every refused move — as plain text. */
+  async function handleExportRun(): Promise<void> {
+    const runningVersion = await readRunningVersion()
+    await navigator.clipboard?.writeText(buildIntakeRunReport(lastRun, runningVersion))
+    setHasCopiedRun(true)
+  }
   // Persistent run history (newest first) + which row is expanded to its per-email details.
   const [runLog, setRunLog] = useState<IntakeRunResult[]>([])
   const [expandedRunIndex, setExpandedRunIndex] = useState<number | null>(null)
@@ -836,6 +862,20 @@ export function GithubEmailIntakePanel() {
             Last run ({lastRun.mode}, {lastRun.trigger}) — posted {lastRun.postedCount ?? 0}, skipped {lastRun.skippedCount ?? 0}, errors {lastRun.errorCount ?? 0}
           </p>
           {lastRun.folderError ? <p className={styles.panelStatusLine}>⚠ {lastRun.folderError}</p> : null}
+          {/* Moves Jira REFUSED get their own line. Everywhere else a refusal reads as "nothing
+              happened", which is the worst presentation a safety guard can have — an ambiguous
+              "Done" that could have meant Cancelled looks identical to a rule that did nothing. */}
+          {refusedMoveCount > 0 ? (
+            <p className={styles.panelStatusLine}>
+              ⚠ {refusedMoveCount} issue(s) were NOT moved — Jira refused or the move failed. See the
+              lines below, or export the run for the full reason.
+            </p>
+          ) : null}
+          <div className={styles.panelActions}>
+            <button className={styles.actionButton} onClick={() => void handleExportRun()} type="button">
+              📋 {hasCopiedRun ? 'Copied' : 'Copy run details'}
+            </button>
+          </div>
           <ul>
             {(lastRun.events ?? []).slice(0, 25).map((event, index) => (
               <li key={event.fileName + '-' + index}>

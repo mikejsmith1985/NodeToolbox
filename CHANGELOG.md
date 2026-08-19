@@ -16,6 +16,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   disabled, and deleted, and `findEventTypeOverlaps` still warns about overlapping matchers.
 
 ### Added
+- **Intake run export.** A **📋 Copy run details** button on the Last run section copies the whole
+  run as plain text: the build the server reports, the mode and trigger, every file with its outcome,
+  and — its own section, with its own count — every move Jira **refused or failed**. A run can now be
+  handed over whole instead of a screenshot at a time.
+
 - **Dates are derived from the release, not typed.** One policy, stated once in `issueDateRules.ts`:
   **Due Date** = the fix version's release date; **Target End** = 21 calendar days before it;
   **Target Start** = two working days after the issue reached *Ready to Work*. Several fix versions
@@ -57,6 +62,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   work it cannot place, never somewhere a person should file something.
 
 ### Fixed
+- **A refused Jira move was invisible.** The guard that stops a rule asking for "Done" and getting
+  **Cancelled** did its job silently: `fireJiraTransition` logged the refusal to the server console
+  and returned nothing, so on screen a rule that was stopped from cancelling an issue looked exactly
+  like a rule that did nothing. That is the worst presentation a safety guard can have — its whole
+  value is telling you it acted.
+
+  The transition now RETURNS its outcome — moved, refused, or failed, with the reason — and both call
+  sites record it, so it lands in the run log beside everything else. The Last run section also warns
+  above the list when any move was refused, with the count.
+
 - **The Dev Panel's tab strip covered the Admin Hub's own.** Both are `PrimaryTabs`, both pinned to
   `top: 0` at the same `z-index`, and the nested one wins by DOM order — so the moment the page
   scrolled, the Admin Hub's tabs disappeared behind *Jira API | Server Logs*. Every Admin Hub tab

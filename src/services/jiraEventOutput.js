@@ -161,8 +161,14 @@ async function applyParentStoryActions(subTaskKey, parentActions, eventTypeName,
     // history as an unexplained status jump by the operator. A short signed note next to it gives
     // the change a visible reason and makes it searchable later.
     await postParentMoveNote(parentKey, subTaskKey, requestedParentStatus, configuration);
-    await fireJiraTransition(parentKey, requestedParentStatus, configuration);
-    report(parentKey, 'parent moved toward "' + requestedParentStatus + '"', true);
+    const parentOutcome = await fireJiraTransition(parentKey, requestedParentStatus, configuration);
+    report(
+      parentKey,
+      parentOutcome.didMove
+        ? 'parent moved to "' + parentOutcome.toStatusName + '"'
+        : 'parent did not move to "' + requestedParentStatus + '": ' + parentOutcome.reason,
+      parentOutcome.didMove,
+    );
   }
 
   const subStatusValue = String(parentActions.subStatusValue || '').trim();
@@ -258,8 +264,20 @@ function postJiraCommentForEvent(jiraIssueKey, commentText, eventTypeName, repoF
         // transition a custom bucket (no map entry) can have. Blank on both → comment only.
         const forcedTransition = (resolvedOptions.forcedTransitionStatus || '').trim();
         const requestedTransition = forcedTransition || jiraTransitions[TRANSITION_KEY_MAP[eventTypeName] || ''] || '';
+        // The transition's outcome is REPORTED, not just logged: a refusal (an ambiguous "Done"
+        // that could have meant Cancelled) otherwise looked identical to a rule that did nothing.
         const transitionPromise = requestedTransition
-          ? fireJiraTransition(jiraIssueKey, requestedTransition, configuration)
+          ? fireJiraTransition(jiraIssueKey, requestedTransition, configuration).then((outcome) => {
+            recordResult({
+              repo:      repoFullPath,
+              eventType: eventTypeName,
+              jiraKey:   jiraIssueKey,
+              message:   outcome.didMove
+                ? eventLabel + ' — moved to "' + outcome.toStatusName + '"'
+                : eventLabel + ' — did not move to "' + requestedTransition + '": ' + outcome.reason,
+              isSuccess: outcome.didMove,
+            });
+          })
           : Promise.resolve();
         // Parent-story actions run AFTER the sub-task's own transition, so an all-dev-done guard read
         // already sees the just-completed sub-task as done. Comment-only mode never reaches here.
@@ -335,10 +353,15 @@ function selectTransitionForStatus(availableTransitions, requestedStatusName) {
  * Finds and fires the Jira transition that satisfies the requested status name, refusing to act when
  * the request is ambiguous (see selectTransitionForStatus).
  *
+ * RETURNS its outcome rather than swallowing it. The ambiguity guard that stops a "Done" request
+ * resolving to Cancelled used to console.log and return void, so on screen a refusal looked exactly
+ * like nothing happening — the worst presentation a safety guard can have, because the operator
+ * cannot tell a rule that did nothing from one that was stopped from doing harm.
+ *
  * @param {string} jiraIssueKey
  * @param {string} requestedStatusName
  * @param {object} configuration
- * @returns {Promise<void>}
+ * @returns {Promise<{ didMove: boolean, toStatusName: string|null, reason: string }>}
  */
 function fireJiraTransition(jiraIssueKey, requestedStatusName, configuration) {
   const isTlsVerified = configuration.sslVerify !== false;
@@ -365,12 +388,15 @@ function fireJiraTransition(jiraIssueKey, requestedStatusName, configuration) {
           isTlsVerified
         ).then(() => {
           console.log('  [JiraEventOutput] ' + jiraIssueKey + ' → ' + matchingTransition.to.name + ' (' + reason + ')');
+          return { didMove: true, toStatusName: matchingTransition.to.name, reason: reason };
         });
       }
       console.log('  [JiraEventOutput] ' + jiraIssueKey + ': ' + reason);
+      return { didMove: false, toStatusName: null, reason: reason };
     })
     .catch((transitionError) => {
       console.log('  [JiraEventOutput] transition failed for ' + jiraIssueKey + ': ' + transitionError.message);
+      return { didMove: false, toStatusName: null, reason: 'transition failed: ' + transitionError.message };
     });
 }
 

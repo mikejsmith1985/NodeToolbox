@@ -46,7 +46,13 @@ const DEFAULT_CONFIG = {
 // Per-test run-log payload for the Activity Log section; reset in stubFetch.
 let runLogOverride: unknown[] = [];
 
-function stubFetch(overrides: Record<string, unknown> = {}, configOverride: Record<string, unknown> | null = null, runLog: unknown[] = []) {
+function stubFetch(
+  overrides: Record<string, unknown> = {},
+  configOverride: Record<string, unknown> | null = null,
+  runLog: unknown[] = [],
+  /** The last-run payload the /status endpoint returns; defaults to "nothing has run". */
+  statusOverride: Record<string, unknown> = { hasRun: false },
+) {
   runLogOverride = runLog;
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
@@ -60,7 +66,7 @@ function stubFetch(overrides: Record<string, unknown> = {}, configOverride: Reco
       return { ok: true, json: async () => ({ options: ['Dev Complete', 'In QA'] }) } as Response;
     }
     if (url.endsWith('/status')) {
-      return { ok: true, json: async () => ({ hasRun: false }) } as Response;
+      return { ok: true, json: async () => statusOverride } as Response;
     }
     if (url.endsWith('/run-log')) {
       return { ok: true, json: async () => ({ ok: true, runs: runLogOverride }) } as Response;
@@ -453,3 +459,29 @@ describe('GithubEmailIntakePanel', () => {
   });
 
 });
+
+describe('GithubEmailIntakePanel — refused moves are visible', () => {
+  const RUN_WITH_REFUSAL = {
+    hasRun: true, mode: 'full', trigger: 'manual', postedCount: 1, skippedCount: 0, errorCount: 0,
+    events: [{
+      fileName: 'b.eml', outcome: 'posted', jiraKey: 'ENFCT-10', eventType: 'pr_merged',
+      message: 'pr merged — did not move to "Done": ambiguous — "Done" category offers several end states (Cancelled, Closed)',
+    }],
+  }
+
+  it('warns when Jira refused to move an issue, instead of leaving it silent', async () => {
+    // The failure this closes: a refusal looked exactly like a rule that did nothing, so the guard
+    // that stopped an issue being cancelled was invisible to the person it protected.
+    stubFetch({}, null, [], RUN_WITH_REFUSAL)
+    render(<GithubEmailIntakePanel />)
+
+    expect(await screen.findByText(/1 issue\(s\) were NOT moved/)).toBeInTheDocument()
+  })
+
+  it('offers a copyable run export so a whole run can be handed over at once', async () => {
+    stubFetch({}, null, [], RUN_WITH_REFUSAL)
+    render(<GithubEmailIntakePanel />)
+
+    expect(await screen.findByRole('button', { name: /Copy run details/i })).toBeInTheDocument()
+  })
+})
