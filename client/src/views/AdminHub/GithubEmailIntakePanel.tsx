@@ -88,17 +88,23 @@ interface DeploymentsProbeResult {
  * base URL must never be readable as "this repo has no deployments".
  */
 function buildDeploymentsProbeReport(outcome: DeploymentsProbeResult): string {
-  // Calling api.github.com against a GitHub ENTERPRISE org fails in ways that look like anything but
-  // a wrong host — 404s that read as "no such repo", 401s that read as a token problem. Saying it
-  // here turns the most likely cause of a failure into the first line somebody reads.
-  const isPublicGithubHost = outcome.requestUrl.startsWith('https://api.github.com/')
+  // A 404 is far more often a misspelled repository than anything else — one transposed pair of
+  // letters produced exactly this, and the name is only visible in the URL. So the hint that fires on
+  // a 404 points at the name first.
+  //
+  // The old hint here claimed api.github.com was wrong for "Enterprise" orgs. That is only true of
+  // self-hosted Enterprise SERVER; an Enterprise CLOUD org lives on github.com and api.github.com is
+  // correct for it. The advice sent a reader hunting for a host that does not exist, which is worse
+  // than saying nothing.
+  const isProbableNameTypo = outcome.httpStatus === 404
   const headerLines = [
     `Result:  ${outcome.ok ? 'OK' : 'FAILED'}   HTTP ${outcome.httpStatus}`,
     `URL:     ${outcome.requestUrl}`,
     `Auth:    ${outcome.authType}`,
-    isPublicGithubHost
-      ? 'NOTE:    this is PUBLIC github.com. If your GitHub is Enterprise, set the GitHub base URL'
-        + ' in Config to your own host (e.g. https://your-host/api/v3) — every call fails otherwise.'
+    isProbableNameTypo
+      ? 'NOTE:    a 404 usually means the owner or repository name above is misspelt — check the URL'
+        + ' letter by letter before assuming an access problem. If the name is right, it is scope:'
+        + ' the token needs repo access to that repository (and SSO authorisation, on a SAML org).'
       : '',
   ].filter((line) => line !== '')
   if (!outcome.ok) {
@@ -1130,23 +1136,19 @@ export function GithubEmailIntakePanel() {
           onChange={(changeEvent) => setProbeRepository(changeEvent.target.value)}
         />
         <div className={styles.panelActions}>
-          {/* Disabled until both fields are filled — but the reason is SHOWN. A greyed-out button
-              with no explanation reads as a broken feature, which is exactly how it was read: the
-              placeholders were a real org and repo, so empty fields looked filled and the button
-              looked dead. Placeholders are generic now, and the hint below says what is missing. */}
+          {/* Deliberately NOT disabled on empty fields. It was, to save a wasted round trip, and that
+              cost two rounds of "the button is locked and I cannot tell why" — a far worse trade than
+              the click it saved. The server answers an empty submit with a plain sentence saying what
+              is missing, which explains itself without anyone having to hover a dead control. */}
           <button
             className={styles.actionButton}
-            disabled={isProbingDeployments || probeOwner.trim() === '' || probeRepository.trim() === ''}
+            disabled={isProbingDeployments}
             type="button"
             onClick={() => { void handleDeploymentsProbe() }}
           >
             {isProbingDeployments ? 'Checking…' : '🔎 Test deployments access'}
           </button>
-          {probeOwner.trim() === '' || probeRepository.trim() === '' ? (
-            <span className={styles.panelStatusLine}>
-              Type an owner and a repository above to enable this — the grey text is an example, not a value.
-            </span>
-          ) : null}
+
           {probeReport ? (
             <button className={styles.actionButton} onClick={() => void navigator.clipboard?.writeText(probeReport)} type="button">
               📋 Copy result

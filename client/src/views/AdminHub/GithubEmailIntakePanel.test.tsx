@@ -577,26 +577,18 @@ describe('GithubEmailIntakePanel — deployments access check', () => {
 })
 
 describe('GithubEmailIntakePanel — deployments probe guardrails', () => {
-  it('will not run until both owner and repository are given', async () => {
-    // An empty submit spends a round trip to report a URL like /repos///deployments, which says
-    // nothing about the setup being diagnosed.
+  it('stays clickable with empty fields, because a locked button explains nothing', async () => {
+    // It WAS disabled until both fields were filled, to save a wasted round trip. That cost two
+    // rounds of "the button is locked and I cannot tell why" — a far worse trade. The server's own
+    // reply names what is missing.
     stubFetch()
     render(<GithubEmailIntakePanel />)
     await screen.findByText('GitHub Deployments — access check')
 
-    expect(screen.getByRole('button', { name: /Test deployments access/i })).toBeDisabled()
-    // The reason is on screen — a greyed button with no explanation reads as a broken feature.
-    expect(screen.getByText(/Type an owner and a repository above to enable this/)).toBeInTheDocument()
-
-    fireEvent.change(screen.getByLabelText('Owner (org)'), { target: { value: 'zilvertonz' } })
-    expect(screen.getByRole('button', { name: /Test deployments access/i })).toBeDisabled()
-
-    fireEvent.change(screen.getByLabelText('Repository'), { target: { value: 'usmg-elements-integrations' } })
     expect(screen.getByRole('button', { name: /Test deployments access/i })).toBeEnabled()
-    expect(screen.queryByText(/Type an owner and a repository above/)).not.toBeInTheDocument()
   })
 
-  it('warns when the call went to public github.com, the likeliest cause on an Enterprise org', async () => {
+  it('points a 404 at the repository NAME first, which is what it usually is', async () => {
     stubFetch()
     render(<GithubEmailIntakePanel />)
     await screen.findByText('GitHub Deployments — access check')
@@ -612,6 +604,8 @@ describe('GithubEmailIntakePanel — deployments probe guardrails', () => {
     } as Response)))
     fireEvent.click(screen.getByRole('button', { name: /Test deployments access/i }))
 
-    expect(await screen.findByText(/this is PUBLIC github.com/)).toBeInTheDocument()
+    // One transposed pair of letters in a repo name produced exactly this, and the name is only
+    // visible in the URL — so the hint says to read it before suspecting access.
+    expect(await screen.findByText(/misspelt/)).toBeInTheDocument()
   })
 })

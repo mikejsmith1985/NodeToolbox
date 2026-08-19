@@ -112,6 +112,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   work it cannot place, never somewhere a person should file something.
 
 ### Fixed
+- **The deployments probe stopped locking its own button, and stopped giving wrong advice.** The
+  button was disabled until both fields were filled, to save a wasted round trip — and cost two
+  rounds of *"it is locked and I cannot tell why"* instead. It is always clickable now; the server's
+  own reply names what is missing.
+
+  Its 404 hint was wrong as well. It claimed `api.github.com` was the wrong host for an "Enterprise"
+  org, which is only true of self-hosted Enterprise **Server** — an Enterprise **Cloud** org lives on
+  github.com and that host is correct for it. The advice sent a reader hunting for a host that does
+  not exist. A 404 now points at the **repository name** first, which is what it usually is: one
+  transposed pair of letters produced exactly this, and the name is only visible in the URL.
+
 - **The deployments probe looked broken because its placeholders looked like values.** The Owner and
   Repository boxes used a real org and repository as PLACEHOLDER text, so empty fields read as filled
   — and the button, disabled until both are given, read as a dead feature with a no-entry cursor.
