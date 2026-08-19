@@ -69,7 +69,7 @@ export const AI_FIXABLE_CHECK_INSTRUCTIONS: Record<string, string> = {
   'missing-sp': 'propose a story-point estimate as a plain number.',
   // Each date fix carries its policy value in the issue block; the model copies it, never computes it.
   'missing-due-date': 'copy the "policy value for Due Date" shown for that issue, exactly. Omit the fix if none is shown.',
-  'missing-target-start': 'copy the "policy value for Target Start" shown for that issue, exactly. Omit the fix if none is shown.',
+  'missing-target-start': 'copy the "policy value for Target Start" shown for that issue, exactly. Omit the fix if none is shown, which is usual: that date comes from the status history.',
   'missing-target-end': 'copy the "policy value for Target End" shown for that issue, exactly. Omit the fix if none is shown.',
   stale: 'propose a short, polite nudge comment asking the assignee for a status update (it will be posted as a Jira comment).',
 }
@@ -211,7 +211,9 @@ function buildDatePolicyLines(finding: HygieneFinding, fixableFlags: readonly { 
       : '    fix version: none with a release date — every date below cannot be derived',
     derived.dueDate ? `    policy value for Due Date: ${derived.dueDate}` : '    Due Date cannot be derived — omit that fix',
     derived.targetEnd ? `    policy value for Target End: ${derived.targetEnd}` : '    Target End cannot be derived — omit that fix',
-    '    Target Start cannot be derived here (needs the issue history) — omit that fix',
+    // Target Start comes from the issue's status history, which the scan does not fetch — the inline
+    // fix reads it per issue. Saying so is an instruction to omit, not an invitation to estimate.
+    '    Target Start cannot be derived here (needs the issue status history) — omit that fix',
   ]
 }
 

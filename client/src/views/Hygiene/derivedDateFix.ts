@@ -14,7 +14,7 @@
 import { jiraGet } from '../../services/jiraApi.ts';
 import { saveFeatureReviewSimpleField } from '../SprintDashboard/featureReviewFixes.ts';
 import type { HygieneFieldConfig, JiraIssue } from './checks/hygieneChecks.ts';
-import { deriveIssueDates, READY_TO_WORK_STATUS_NAME } from './checks/issueDateRules.ts';
+import { deriveIssueDates, READY_TO_WORK_STATUS_NAME, WORKING_STATUS_NAME } from './checks/issueDateRules.ts';
 
 /** One field the fix will set, named so the user can see it before it happens. */
 export interface DerivedDateWrite {
@@ -42,24 +42,38 @@ interface ChangelogHistory {
   items?: Array<{ field?: string; toString?: string }>;
 }
 
-/**
- * The first time the issue entered Ready to Work, or null when it never has.
- *
- * FIRST rather than most recent: the clock on Target Start starts when the work first became
- * workable, and an issue that bounced back and forth should not keep resetting its own start date.
- */
-async function readReadyToWorkEnteredIso(issueKey: string): Promise<string | null> {
-  const response = await jiraGet<{ changelog?: { histories?: ChangelogHistory[] } }>(
-    `/rest/api/2/issue/${encodeURIComponent(issueKey)}?expand=changelog&fields=summary`,
-  );
-  const entryTimes = (response.changelog?.histories ?? [])
+/** The first time the issue entered a named status, from a changelog already fetched. */
+function readFirstEntryInto(histories: readonly ChangelogHistory[], statusName: string): string | null {
+  // FIRST rather than most recent: the clock starts when the work first reached that state, and an
+  // issue that bounced back and forth should not keep resetting its own start date.
+  const entryTimes = histories
     .filter((history) => (history.items ?? []).some((item) =>
-      item.field === 'status' && (item.toString ?? '').trim().toLowerCase() === READY_TO_WORK_STATUS_NAME.toLowerCase()))
+      item.field === 'status' && (item.toString ?? '').trim().toLowerCase() === statusName.toLowerCase()))
     .map((history) => history.created ?? '')
     .filter((createdIso) => createdIso !== '')
     .sort();
 
   return entryTimes[0] ?? null;
+}
+
+/**
+ * Reads the two status entries Target Start can come from, in ONE request.
+ *
+ * Both come out of the same changelog, so asking for it twice would double the cost of every fix for
+ * nothing. Ready to Work supports a prediction; Working is the day work actually began and wins
+ * whenever it exists — including for work that skipped Ready to Work entirely, which had no source
+ * at all before and stayed permanently undated.
+ */
+async function readStartStatusEntries(issueKey: string): Promise<{ readyToWorkIso: string | null; workingIso: string | null }> {
+  const response = await jiraGet<{ changelog?: { histories?: ChangelogHistory[] } }>(
+    `/rest/api/2/issue/${encodeURIComponent(issueKey)}?expand=changelog&fields=summary`,
+  );
+  const histories = response.changelog?.histories ?? [];
+
+  return {
+    readyToWorkIso: readFirstEntryInto(histories, READY_TO_WORK_STATUS_NAME),
+    workingIso: readFirstEntryInto(histories, WORKING_STATUS_NAME),
+  };
 }
 
 /** Reads a Jira field as its raw date text, or null. */
@@ -85,11 +99,13 @@ export async function planDerivedDateWrites(
 ): Promise<DerivedDatePlan> {
   const targetStartFieldId = readFirstFieldId(fieldConfig.targetStartFieldIds);
   const targetEndFieldId = readFirstFieldId(fieldConfig.targetEndFieldIds);
-  const readyToWorkEnteredIso = await readReadyToWorkEnteredIso(issue.key).catch(() => null);
+  const startEntries = await readStartStatusEntries(issue.key)
+    .catch(() => ({ readyToWorkIso: null, workingIso: null }));
 
   const derived = deriveIssueDates({
     fixVersions: issue.fields.fixVersions ?? [],
-    readyToWorkEnteredIso,
+    readyToWorkEnteredIso: startEntries.readyToWorkIso,
+    workingEnteredIso: startEntries.workingIso,
     currentDueDate: readFieldText(issue, 'duedate'),
     currentTargetEnd: targetEndFieldId ? readFieldText(issue, targetEndFieldId) : null,
     currentTargetStart: targetStartFieldId ? readFieldText(issue, targetStartFieldId) : null,

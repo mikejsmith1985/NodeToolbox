@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import {
   deriveIssueDates,
   READY_TO_WORK_STATUS_NAME,
+  WORKING_STATUS_NAME,
   readDrivingFixVersion,
   type IssueDateInput,
 } from './issueDateRules.ts';
@@ -12,6 +13,7 @@ import {
 const BASE_INPUT: IssueDateInput = {
   fixVersions: [{ name: '10/08/2026', releaseDate: '2026-10-08', released: false }],
   readyToWorkEnteredIso: null,
+  workingEnteredIso: null,
   currentDueDate: null,
   currentTargetStart: null,
   currentTargetEnd: null,
@@ -51,15 +53,33 @@ describe('deriveIssueDates', () => {
     expect(deriveIssueDates(BASE_INPUT).targetEnd).toBe('2026-09-17');
   });
 
-  it('sets target start two WORKING days after Ready to Work, so a Friday lands on Tuesday', () => {
+  it('predicts target start as three days after Ready to Work while work has not started', () => {
     const derived = deriveIssueDates({ ...BASE_INPUT, readyToWorkEnteredIso: '2026-09-04T15:00:00.000Z' });
-    expect(derived.targetStart).toBe('2026-09-08');
+    expect(derived.targetStart).toBe('2026-09-07');
   });
 
-  it('leaves target start underivable until the issue has actually reached Ready to Work', () => {
+  it('uses the day work ACTUALLY started once the issue reaches Working', () => {
+    // A prediction is only worth having until the fact arrives. Entering Working is the fact, so it
+    // replaces the Ready-to-Work estimate rather than sitting alongside it.
+    const derived = deriveIssueDates({
+      ...BASE_INPUT,
+      readyToWorkEnteredIso: '2026-09-04T15:00:00.000Z',
+      workingEnteredIso: '2026-09-09T09:00:00.000Z',
+    });
+    expect(derived.targetStart).toBe('2026-09-09');
+  });
+
+  it('uses the Working date even when the issue never passed through Ready to Work', () => {
+    // The case that made this rule necessary: work that jumped straight in has no Ready-to-Work
+    // stamp at all, and was therefore left permanently undated by the old rule.
+    const derived = deriveIssueDates({ ...BASE_INPUT, workingEnteredIso: '2026-09-09T09:00:00.000Z' });
+    expect(derived.targetStart).toBe('2026-09-09');
+  });
+
+  it('leaves target start underivable until the issue has reached either status', () => {
     const derived = deriveIssueDates(BASE_INPUT);
     expect(derived.targetStart).toBeNull();
-    expect(derived.undecidedReasons).toContain(`not yet in ${READY_TO_WORK_STATUS_NAME}`);
+    expect(derived.undecidedReasons).toContain(`not yet in ${READY_TO_WORK_STATUS_NAME} or ${WORKING_STATUS_NAME}`);
   });
 
   it('says it cannot date anything without a usable fix version, rather than inventing dates', () => {
@@ -88,7 +108,7 @@ describe('deriveIssueDates', () => {
       readyToWorkEnteredIso: '2026-09-04T15:00:00.000Z',
       currentDueDate: '2026-10-08',
       currentTargetEnd: '2026-09-17',
-      currentTargetStart: '2026-09-08',
+      currentTargetStart: '2026-09-07',
     });
     expect(derived.mismatchedFieldNames).toEqual([]);
   });

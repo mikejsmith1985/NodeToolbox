@@ -104,6 +104,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   work it cannot place, never somewhere a person should file something.
 
 ### Fixed
+- **Target Start now has two sources, and the right one wins.** It was derived only from *Ready to
+  Work*, so work that jumped straight into *Working* — skipping that status entirely — had no source
+  at all and stayed permanently undated. That is a hygiene flag nobody could clear.
+
+  The rule now: **entering Working IS the start date**, because it is the fact. *Ready to Work + 3
+  days* is a prediction, worth having until the fact arrives and worthless afterwards — so Working
+  replaces it rather than sitting alongside it. Both statuses come out of ONE changelog fetch;
+  asking twice would have doubled the cost of every fix for nothing.
+
 - **The rule export left out the rules that do most of the work.** It carried only the CUSTOM rules,
   so an operator with three of them exported three — while classification actually runs those three
   followed by every built-in default nobody had overridden. Reviewing that export hid most of what

@@ -47,7 +47,7 @@ describe('planDerivedDateWrites', () => {
     ]);
   });
 
-  it('adds Target Start once the changelog shows when Ready to Work was reached', async () => {
+  it('predicts Target Start three days after Ready to Work while work has not started', async () => {
     mockJiraGet.mockResolvedValue({
       changelog: {
         histories: [{
@@ -60,7 +60,41 @@ describe('planDerivedDateWrites', () => {
     const plan = await planDerivedDateWrites(buildIssue(), FIELD_CONFIG);
 
     expect(plan.writes).toContainEqual({
-      fieldId: 'customfield_10101', fieldName: 'Target Start', value: '2026-09-08',
+      fieldId: 'customfield_10101', fieldName: 'Target Start', value: '2026-09-07',
+    });
+  });
+
+  it('uses the day work actually started, from the same changelog, in one request', async () => {
+    // Both statuses come out of one fetch: asking twice would double the cost of every fix for
+    // nothing. Working wins over the Ready-to-Work prediction because it is the fact.
+    mockJiraGet.mockResolvedValue({
+      changelog: {
+        histories: [
+          { created: '2026-09-04T15:00:00.000+0000', items: [{ field: 'status', toString: 'Ready to Work' }] },
+          { created: '2026-09-09T09:00:00.000+0000', items: [{ field: 'status', toString: 'Working' }] },
+        ],
+      },
+    });
+
+    const plan = await planDerivedDateWrites(buildIssue(), FIELD_CONFIG);
+
+    expect(plan.writes).toContainEqual({
+      fieldId: 'customfield_10101', fieldName: 'Target Start', value: '2026-09-09',
+    });
+    expect(mockJiraGet).toHaveBeenCalledTimes(1);
+  });
+
+  it('dates work that skipped Ready to Work entirely, which used to stay undated forever', async () => {
+    mockJiraGet.mockResolvedValue({
+      changelog: {
+        histories: [{ created: '2026-09-09T09:00:00.000+0000', items: [{ field: 'status', toString: 'Working' }] }],
+      },
+    });
+
+    const plan = await planDerivedDateWrites(buildIssue(), FIELD_CONFIG);
+
+    expect(plan.writes).toContainEqual({
+      fieldId: 'customfield_10101', fieldName: 'Target Start', value: '2026-09-09',
     });
   });
 

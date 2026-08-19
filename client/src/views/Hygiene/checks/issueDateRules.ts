@@ -17,14 +17,17 @@
 
 import { readCalendarDay, toCalendarDay } from '../../../utils/calendarDate.ts';
 
-/** The status whose entry starts the clock on Target Start. */
+/** The status whose entry starts the clock on a PREDICTED Target Start. */
 export const READY_TO_WORK_STATUS_NAME = 'Ready to Work';
+
+/** The status whose entry IS the start — the fact a prediction is only standing in for. */
+export const WORKING_STATUS_NAME = 'Working';
 
 /** Calendar days between Target End and the release — the buffer, not a workload estimate. */
 const TARGET_END_LEAD_DAYS = 21;
 
-/** Working days after reaching Ready to Work before work is expected to start. */
-const TARGET_START_WORKING_DAYS = 2;
+/** Calendar days after reaching Ready to Work that work is expected to begin. */
+const TARGET_START_LEAD_DAYS = 3;
 
 const MILLISECONDS_PER_DAY = 86_400_000;
 
@@ -41,6 +44,8 @@ export interface IssueDateInput {
   fixVersions: readonly IssueFixVersion[];
   /** When the issue first reached Ready to Work, or null when it has not (or is unknown). */
   readyToWorkEnteredIso: string | null;
+  /** When the issue first reached Working — the day work actually began, if it has. */
+  workingEnteredIso?: string | null;
   currentDueDate: string | null;
   currentTargetStart: string | null;
   currentTargetEnd: string | null;
@@ -76,25 +81,6 @@ export function readDrivingFixVersion(fixVersions: readonly IssueFixVersion[]): 
 /** Shifts a calendar day by a whole number of calendar days. */
 function shiftCalendarDays(calendarDay: string, dayOffset: number): string {
   return toCalendarDay(new Date(new Date(`${calendarDay}T12:00:00`).getTime() + dayOffset * MILLISECONDS_PER_DAY));
-}
-
-/**
- * Adds working days to a calendar day, skipping weekends.
- *
- * Walks forward a day at a time, skipping Saturday and Sunday — the same weekend rule
- * `businessDays.ts` applies when it counts backwards.
- */
-function addWorkingDays(calendarDay: string, workingDayCount: number): string {
-  let cursorDay = calendarDay;
-  let remainingWorkingDays = workingDayCount;
-  while (remainingWorkingDays > 0) {
-    cursorDay = shiftCalendarDays(cursorDay, 1);
-    const cursorDate = new Date(`${cursorDay}T12:00:00`);
-    if (cursorDate.getDay() !== 0 && cursorDate.getDay() !== 6) {
-      remainingWorkingDays -= 1;
-    }
-  }
-  return cursorDay;
 }
 
 /** Matches a value that OPENS with a calendar day, whatever time or zone may follow it. */
@@ -135,16 +121,22 @@ export function deriveIssueDates(input: IssueDateInput): DerivedIssueDates {
   }
 
   // The Ready-to-Work stamp IS an instant (a changelog entry), so it converts to a local day.
+  // Target Start has two sources and they are not equals. Entering Working is the day work ACTUALLY
+  // began, so it is the answer whenever it exists. Ready to Work only supports a prediction — three
+  // days on — which is worth having until the fact arrives and worthless afterwards. Work that
+  // jumped straight into Working, skipping Ready to Work entirely, had no source at all before this
+  // and stayed permanently undated.
   const readyToWorkDay = readCalendarDay(input.readyToWorkEnteredIso);
-  if (readyToWorkDay === null) {
-    undecidedReasons.push(`not yet in ${READY_TO_WORK_STATUS_NAME}`);
+  const workingDay = readCalendarDay(input.workingEnteredIso ?? null);
+  if (readyToWorkDay === null && workingDay === null) {
+    undecidedReasons.push(`not yet in ${READY_TO_WORK_STATUS_NAME} or ${WORKING_STATUS_NAME}`);
   }
 
   const dueDate = releaseDay;
   const targetEnd = releaseDay === null ? null : shiftCalendarDays(releaseDay, -TARGET_END_LEAD_DAYS);
-  const targetStart = readyToWorkDay === null
-    ? null
-    : addWorkingDays(readyToWorkDay, TARGET_START_WORKING_DAYS);
+  const targetStart = workingDay !== null
+    ? workingDay
+    : readyToWorkDay === null ? null : shiftCalendarDays(readyToWorkDay, TARGET_START_LEAD_DAYS);
 
   const mismatchedFieldNames = [
     agreesWithDerived(input.currentDueDate, dueDate) ? null : 'Due Date',
