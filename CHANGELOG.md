@@ -104,6 +104,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   work it cannot place, never somewhere a person should file something.
 
 ### Fixed
+- **The deployments probe now refuses an empty run and names a public-github base URL.** Clicking it
+  with the fields blank spent a round trip to report `/repos///deployments`, which says nothing about
+  the setup being diagnosed — the button is disabled until both are filled.
+
+  More usefully, a call that went to `https://api.github.com` now says so in the result. A GitHub
+  **Enterprise** org called through the public host fails in ways that look like anything but a wrong
+  address — 404s that read as "no such repo", 401s that read as a token problem. Naming it turns the
+  likeliest cause of a failure into the first line somebody reads.
+
 - **Target Start now has two sources, and the right one wins.** It was derived only from *Ready to
   Work*, so work that jumped straight into *Working* — skipping that status entirely — had no source
   at all and stayed permanently undated. That is a hygiene flag nobody could clear.

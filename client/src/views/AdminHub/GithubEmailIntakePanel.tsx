@@ -88,11 +88,19 @@ interface DeploymentsProbeResult {
  * base URL must never be readable as "this repo has no deployments".
  */
 function buildDeploymentsProbeReport(outcome: DeploymentsProbeResult): string {
+  // Calling api.github.com against a GitHub ENTERPRISE org fails in ways that look like anything but
+  // a wrong host — 404s that read as "no such repo", 401s that read as a token problem. Saying it
+  // here turns the most likely cause of a failure into the first line somebody reads.
+  const isPublicGithubHost = outcome.requestUrl.startsWith('https://api.github.com/')
   const headerLines = [
     `Result:  ${outcome.ok ? 'OK' : 'FAILED'}   HTTP ${outcome.httpStatus}`,
     `URL:     ${outcome.requestUrl}`,
     `Auth:    ${outcome.authType}`,
-  ]
+    isPublicGithubHost
+      ? 'NOTE:    this is PUBLIC github.com. If your GitHub is Enterprise, set the GitHub base URL'
+        + ' in Config to your own host (e.g. https://your-host/api/v3) — every call fails otherwise.'
+      : '',
+  ].filter((line) => line !== '')
   if (!outcome.ok) {
     return [...headerLines, '', 'Error body:', outcome.errorBody || '(empty)'].join(NEWLINE)
   }
@@ -1122,9 +1130,11 @@ export function GithubEmailIntakePanel() {
           onChange={(changeEvent) => setProbeRepository(changeEvent.target.value)}
         />
         <div className={styles.panelActions}>
+          {/* Disabled until both fields are filled: an empty submit costs a round trip and returns
+              a URL like /repos///deployments, which tells the reader nothing about their real setup. */}
           <button
             className={styles.actionButton}
-            disabled={isProbingDeployments}
+            disabled={isProbingDeployments || probeOwner.trim() === '' || probeRepository.trim() === ''}
             type="button"
             onClick={() => { void handleDeploymentsProbe() }}
           >

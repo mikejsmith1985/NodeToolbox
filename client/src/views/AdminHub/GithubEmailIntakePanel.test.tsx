@@ -575,3 +575,40 @@ describe('GithubEmailIntakePanel — deployments access check', () => {
     expect(screen.getByText(/Not Found/)).toBeInTheDocument()
   })
 })
+
+describe('GithubEmailIntakePanel — deployments probe guardrails', () => {
+  it('will not run until both owner and repository are given', async () => {
+    // An empty submit spends a round trip to report a URL like /repos///deployments, which says
+    // nothing about the setup being diagnosed.
+    stubFetch()
+    render(<GithubEmailIntakePanel />)
+    await screen.findByText('GitHub Deployments — access check')
+
+    expect(screen.getByRole('button', { name: /Test deployments access/i })).toBeDisabled()
+
+    fireEvent.change(screen.getByLabelText('Owner (org)'), { target: { value: 'zilvertonz' } })
+    expect(screen.getByRole('button', { name: /Test deployments access/i })).toBeDisabled()
+
+    fireEvent.change(screen.getByLabelText('Repository'), { target: { value: 'usmg-elements-integrations' } })
+    expect(screen.getByRole('button', { name: /Test deployments access/i })).toBeEnabled()
+  })
+
+  it('warns when the call went to public github.com, the likeliest cause on an Enterprise org', async () => {
+    stubFetch()
+    render(<GithubEmailIntakePanel />)
+    await screen.findByText('GitHub Deployments — access check')
+    fireEvent.change(screen.getByLabelText('Owner (org)'), { target: { value: 'zilvertonz' } })
+    fireEvent.change(screen.getByLabelText('Repository'), { target: { value: 'repo' } })
+
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        ok: false, httpStatus: 404, requestUrl: 'https://api.github.com/repos/zilvertonz/repo/deployments?per_page=5',
+        authType: 'github-app', errorBody: '{"message":"Not Found"}', deployments: [],
+      }),
+    } as Response)))
+    fireEvent.click(screen.getByRole('button', { name: /Test deployments access/i }))
+
+    expect(await screen.findByText(/this is PUBLIC github.com/)).toBeInTheDocument()
+  })
+})
