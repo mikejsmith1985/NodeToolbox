@@ -12,6 +12,7 @@ import { fetchJiraBaseUrl } from '../../services/proxyApi.ts'
 import { buildJiraBrowseUrl } from '../../utils/jiraBrowseUrl.ts'
 import { findEventTypeOverlaps, getDefaultSerializedRules, type SerializedEmailRule } from '../GithubEmail/lib/githubEmailRules.ts'
 import { buildIntakeRunReport } from './intakeRunExport.ts'
+import { buildRuleExport, parseRuleExport, summariseRulesForReview } from './intakeRuleExport.ts'
 import styles from './AdminHubView.module.css'
 
 // ── Types (mirror src/routes/githubEmailIntake.js) ──
@@ -187,6 +188,9 @@ export function GithubEmailIntakePanel() {
   const [fileExtensionsText, setFileExtensionsText] = useState('')
   const [lastRun, setLastRun] = useState<IntakeRunResult>({ hasRun: false })
   const [hasCopiedRun, setHasCopiedRun] = useState(false)
+  const [copiedRuleFormat, setCopiedRuleFormat] = useState<'json' | 'summary' | null>(null)
+  const [ruleImportText, setRuleImportText] = useState('')
+  const [ruleTransferMessage, setRuleTransferMessage] = useState<string | null>(null)
 
   // How many events describe a move Jira did not make. Counted from the run rather than tracked
   // separately, so the banner and the exported report can never disagree about the number.
@@ -203,6 +207,36 @@ export function GithubEmailIntakePanel() {
     } catch {
       return null
     }
+  }
+
+  /** Copies the rule set as JSON — the shape `Import rules` reads back. */
+  async function handleCopyRulesJson(): Promise<void> {
+    // Config is null until the first load lands; an empty export is honest, a crash is not.
+    await navigator.clipboard?.writeText(buildRuleExport(config?.customRules ?? [], await readRunningVersion()))
+    setCopiedRuleFormat('json')
+  }
+
+  /** Copies the rule set as prose — what each rule matches and what it does. */
+  async function handleCopyRulesSummary(): Promise<void> {
+    await navigator.clipboard?.writeText(summariseRulesForReview(config?.customRules ?? []))
+    setCopiedRuleFormat('summary')
+  }
+
+  /**
+   * Replaces the rule set from a pasted export.
+   *
+   * Replaces rather than merges: an export is a whole set, and quietly merging two would produce a
+   * third that neither machine has and nobody reviewed.
+   */
+  function handleImportRules(): void {
+    const parsed = parseRuleExport(ruleImportText)
+    if (!parsed.ok) {
+      setRuleTransferMessage(parsed.message)
+      return
+    }
+    updateConfig({ customRules: parsed.rules })
+    setRuleImportText('')
+    setRuleTransferMessage(`${parsed.message} Review them below, then Save to persist.`)
   }
 
   /** Copies the whole run — build, mode, per-file outcome, and every refused move — as plain text. */
@@ -671,6 +705,35 @@ export function GithubEmailIntakePanel() {
           status transition. Edits mark the config dirty; the main Save below persists them. */}
       <div className={styles.panelSection}>
         <label className={styles.fieldLabel}>Rules — what Toolbox does when an email matches</label>
+        {/* Export/import exists because a rule set is the thing people need to compare and reproduce,
+            and until now the only way to share one was a screenshot per rule. */}
+        <div className={styles.panelActions}>
+          <button className={styles.actionButton} onClick={() => void handleCopyRulesJson()} type="button">
+            📋 {copiedRuleFormat === 'json' ? 'Copied' : 'Copy rules (JSON)'}
+          </button>
+          <button className={styles.actionButton} onClick={() => void handleCopyRulesSummary()} type="button">
+            📋 {copiedRuleFormat === 'summary' ? 'Copied' : 'Copy rules (readable)'}
+          </button>
+        </div>
+        <label className={styles.fieldLabel}>Paste a rule export to import</label>
+        <textarea
+          className={styles.inputField}
+          rows={3}
+          value={ruleImportText}
+          placeholder={'{"kind":"githubEmailRuleExport","rules":[ ... ]}'}
+          onChange={(event) => setRuleImportText(event.target.value)}
+        />
+        <div className={styles.panelActions}>
+          <button
+            className={styles.actionButton}
+            disabled={!ruleImportText.trim()}
+            onClick={handleImportRules}
+            type="button"
+          >
+            Import rules
+          </button>
+        </div>
+        {ruleTransferMessage ? <p className={styles.panelStatusLine}>{ruleTransferMessage}</p> : null}
         {eventTypeOverlaps.length > 0 ? (
           <p className={styles.panelStatusLine}>
             ⚠ Heads up: {eventTypeOverlaps.map((overlap) => `${overlap.ruleCount} rules target ${overlap.eventType}`).join('; ')}.

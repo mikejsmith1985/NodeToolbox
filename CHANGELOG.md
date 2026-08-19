@@ -16,6 +16,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   disabled, and deleted, and `findEventTypeOverlaps` still warns about overlapping matchers.
 
 ### Added
+- **Intake rules can be exported and imported.** Two copies from the Rules section: **JSON** that
+  round-trips exactly, and a **readable** summary listing each rule's id, event, what it matches, and
+  what it does (status, parent status, sub-status, or *comment only*), with disabled rules marked.
+  Pasting an export back replaces the set — replaces rather than merges, because merging two whole
+  sets produces a third that neither machine has and nobody reviewed.
+
+  A rule set is the thing people actually need to compare and reproduce, and until now the only way
+  to share one was a screenshot per rule — which is why "do I have duplicates?" had no answer.
+  Import validates through `validateSerializedRule`, not `compileCustomRule`: the latter deliberately
+  returns null for a DISABLED rule, so using it here would have silently dropped every rule somebody
+  had chosen to keep but not run.
+
 - **Intake run export.** A **📋 Copy run details** button on the Last run section copies the whole
   run as plain text: the build the server reports, the mode and trigger, every file with its outcome,
   and — its own section, with its own count — every move Jira **refused or failed**. A run can now be

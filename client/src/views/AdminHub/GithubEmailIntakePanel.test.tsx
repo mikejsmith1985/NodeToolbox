@@ -485,3 +485,28 @@ describe('GithubEmailIntakePanel — refused moves are visible', () => {
     expect(await screen.findByRole('button', { name: /Copy run details/i })).toBeInTheDocument()
   })
 })
+
+describe('GithubEmailIntakePanel — rule export', () => {
+  it('offers both a machine and a readable copy of the rule set', async () => {
+    // A rule set is the thing people compare and reproduce; before this the only way to share one
+    // was a screenshot per rule, which is why "do I have duplicates?" was unanswerable.
+    stubFetch()
+    render(<GithubEmailIntakePanel />)
+
+    expect(await screen.findByRole('button', { name: /Copy rules \(JSON\)/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Copy rules \(readable\)/i })).toBeInTheDocument()
+  })
+
+  it('refuses an import that is not a rule export instead of wiping the rules', async () => {
+    stubFetch()
+    render(<GithubEmailIntakePanel />)
+    await screen.findByText('📧 GitHub Email Intake')
+
+    fireEvent.change(screen.getByPlaceholderText(/githubEmailRuleExport/), {
+      target: { value: '{"kind":"somethingElse","rules":[]}' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: /Import rules/i }))
+
+    expect(await screen.findByText(/not a rule export/i)).toBeInTheDocument()
+  })
+})
