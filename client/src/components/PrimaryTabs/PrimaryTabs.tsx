@@ -13,6 +13,13 @@ interface PrimaryTabsProps<TTabKey extends string> {
   onChange: (tabKey: TTabKey) => void;
   ariaLabel: string;
   idPrefix?: string;
+  /**
+   * True when this strip sits inside another tabbed view.
+   *
+   * A nested strip does not pin: two sticky strips in one scroll container fight for the same
+   * top edge, and the inner one wins by DOM order — hiding the navigation that owns the page.
+   */
+  isNested?: boolean;
 }
 
 /** Renders a shared sticky tablist so all tools follow one consistent navigation pattern. */
@@ -22,9 +29,11 @@ export function PrimaryTabs<TTabKey extends string>({
   onChange,
   ariaLabel,
   idPrefix = 'tool',
+  isNested = false,
 }: PrimaryTabsProps<TTabKey>) {
+  const tabListClassName = isNested ? styles.tabList : `${styles.tabList} ${styles.stickyTabList}`;
   return (
-    <div className={styles.tabList} role="tablist" aria-label={ariaLabel}>
+    <div className={tabListClassName} role="tablist" aria-label={ariaLabel}>
       {tabs.map((tabOption) => {
         const isActiveTab = tabOption.key === activeTab;
         const tabId = `${idPrefix}-${tabOption.key}-tab`;

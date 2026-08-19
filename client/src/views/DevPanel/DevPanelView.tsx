@@ -42,6 +42,7 @@ export default function DevPanelView() {
 
       {/* ── Tab bar ── */}
       <PrimaryTabs
+        isNested
         ariaLabel="Dev Panel tabs"
         idPrefix="dev-panel"
         tabs={DEV_PANEL_TAB_OPTIONS}

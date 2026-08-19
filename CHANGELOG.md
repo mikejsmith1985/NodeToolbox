@@ -57,6 +57,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   work it cannot place, never somewhere a person should file something.
 
 ### Fixed
+- **The Dev Panel's tab strip covered the Admin Hub's own.** Both are `PrimaryTabs`, both pinned to
+  `top: 0` at the same `z-index`, and the nested one wins by DOM order — so the moment the page
+  scrolled, the Admin Hub's tabs disappeared behind *Jira API | Server Logs*. Every Admin Hub tab
+  became unreachable without scrolling to the very top, which is why **🔎 Change Review** looked
+  missing to someone who had admin unlocked and was standing on the Dev Panel.
+
+  Pinning now belongs to the outermost strip only: `PrimaryTabs` takes an `isNested` flag that drops
+  the sticky positioning, and the Dev Panel passes it. Two sticky strips in one scroll container were
+  always going to fight over the same top edge.
+
 - **The hygiene AI was asked for dates it had no facts to compute.** The date policy went into the
   prompt — *"21 calendar days before the fix version release date"*, *"two working days after Ready
   to Work"* — while the per-issue block carried no fix version, no release date and no status

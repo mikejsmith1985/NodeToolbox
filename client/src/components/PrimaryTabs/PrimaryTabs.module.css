@@ -3,9 +3,6 @@
 .tabList {
   display: flex;
   gap: var(--spacing-xs);
-  position: sticky;
-  top: 0;
-  z-index: 40;
   background: var(--color-tab-bar-bg);
   flex-wrap: wrap;
   padding: var(--spacing-xs);
@@ -13,6 +10,15 @@
   border-radius: 999px;
   box-shadow: var(--shadow-surface);
   backdrop-filter: blur(16px) saturate(140%);
+}
+
+/* Pinning belongs to the OUTERMOST strip only. A nested strip pinned to the same top:0 with the
+   same z-index paints over its parent the moment the page scrolls, which is how the Admin Hub's own
+   tabs — Change Review among them — became unreachable while the Dev Panel was open. */
+.stickyTabList {
+  position: sticky;
+  top: var(--layout-sticky-top-offset, 0px);
+  z-index: 40;
 }
 
 .tabButton {
@@ -36,7 +42,16 @@
     border-radius: var(--radius-lg);
   }
 
-  .tabButton {
+  /* Pinning belongs to the OUTERMOST strip only. A nested strip pinned to the same top:0 with the
+   same z-index paints over its parent the moment the page scrolls, which is how the Admin Hub's own
+   tabs — Change Review among them — became unreachable while the Dev Panel was open. */
+.stickyTabList {
+  position: sticky;
+  top: var(--layout-sticky-top-offset, 0px);
+  z-index: 40;
+}
+
+.tabButton {
     flex: 1 1 max-content;
     min-width: min(100%, var(--layout-control-min-width));
     text-align: center;

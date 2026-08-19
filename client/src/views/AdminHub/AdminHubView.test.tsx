@@ -896,3 +896,21 @@ describe('Feature Request section', () => {
     expect(screen.getByText(/copied!/i)).toBeInTheDocument();
   });
 });
+
+describe('AdminHubView — Change Review tab', () => {
+  it('offers the Change Review tab whenever admin is unlocked', () => {
+    // Reported as missing with admin unlocked. This pins the tab's presence so the answer to
+    // "where did it go?" is a test rather than a reading of the code.
+    mockState.isAdminUnlocked = true;
+    renderAdminHubView();
+
+    expect(screen.getByRole('tab', { name: /change review/i })).toBeInTheDocument();
+  });
+
+  it('hides it again when admin is locked', () => {
+    mockState.isAdminUnlocked = false;
+    renderAdminHubView();
+
+    expect(screen.queryByRole('tab', { name: /change review/i })).not.toBeInTheDocument();
+  });
+});
