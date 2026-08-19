@@ -9,10 +9,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { fetchGithubAutomationComments, type AutomationCommentRow } from '../../services/githubCommentAudit.ts'
 import { normalizeSharePointFolderInput, previewSharePointEmails, pullSharePointEmails } from '../../services/githubEmailSharePointPull.ts'
 import { fetchJiraBaseUrl } from '../../services/proxyApi.ts'
-import { useAiAssistStore } from '../../store/aiAssistStore.ts'
 import { buildJiraBrowseUrl } from '../../utils/jiraBrowseUrl.ts'
-import { buildRulePrompt, buildBulkRulePrompt, parseRuleReplyToList, type EmailSample } from '../GithubEmail/lib/githubRulePrompt.ts'
-import { findEventTypeOverlaps, getDefaultSerializedRules, ruleSignature, type SerializedEmailRule } from '../GithubEmail/lib/githubEmailRules.ts'
+import { findEventTypeOverlaps, getDefaultSerializedRules, type SerializedEmailRule } from '../GithubEmail/lib/githubEmailRules.ts'
 import styles from './AdminHubView.module.css'
 
 // ── Types (mirror src/routes/githubEmailIntake.js) ──
@@ -170,26 +168,7 @@ async function postAction(pathSuffix: 'run-now' | 'preview'): Promise<{ ok: bool
   return await response.json() as { ok: boolean; message?: string; result?: IntakeRunResult }
 }
 
-interface RuleSamplesResponse {
-  ok: boolean
-  message?: string
-  samples: EmailSample[]
-  totalCount: number
-  unknownCount: number
-  truncated: boolean
-}
-
-/** Reads the drop folder (server-side, read-only) and returns raw emails + their current classification. */
-async function fetchRuleSamples(includeAll: boolean): Promise<RuleSamplesResponse> {
-  const response = await fetch('/api/github-email-intake/rule-samples', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ includeAll }),
-  })
-  return await response.json() as RuleSamplesResponse
-}
-
-/** Renders a comma-separated list into a trimmed string array, dropping blanks. */
+/** Splits a comma-separated field into a trimmed string array, dropping blanks. */
 function splitList(value: string): string[] {
   return value.split(',').map((part) => part.trim()).filter((part) => part !== '')
 }
@@ -217,13 +196,7 @@ export function GithubEmailIntakePanel() {
   const [jiraStatuses, setJiraStatuses] = useState<string[]>([])
   const [subStatusOptions, setSubStatusOptions] = useState<string[]>([])
   // Rule Assist (AI): the generated prompt, the pasted JSON reply, and a validation message.
-  const isAiUnlocked = useAiAssistStore((state) => state.isAiAssistUnlocked)
-  const [rulePrompt, setRulePrompt] = useState('')
-  const [ruleReply, setRuleReply] = useState('')
-  const [ruleMessage, setRuleMessage] = useState('')
   // Bulk rule generation: whether to bundle every email or only the currently-unclassified ones.
-  const [includeAllSamples, setIncludeAllSamples] = useState(false)
-  const [isCollectingSamples, setIsCollectingSamples] = useState(false)
   // SharePoint source pull (macro-less pipeline): progress/summary message + in-flight flag.
   const [isPullingSharePoint, setIsPullingSharePoint] = useState(false)
   const [sharePointMessage, setSharePointMessage] = useState('')
@@ -460,91 +433,6 @@ export function GithubEmailIntakePanel() {
     }
   }
 
-  function handleGenerateRulePrompt() {
-    setRulePrompt(buildRulePrompt())
-    setRuleMessage('Prompt generated — copy it, paste it plus a real email into your AI, then paste the JSON reply below.')
-  }
-
-  // Reads the drop folder (server-side) and builds ONE prompt covering every distinct email shape, so the
-  // operator can generate a whole rule set with a single paste into their own AI. Nothing leaves the machine.
-  async function handleGenerateBulkPrompt() {
-    setIsCollectingSamples(true)
-    setRuleMessage('')
-    try {
-      const response = await fetchRuleSamples(includeAllSamples)
-      if (!response.ok) {
-        setRuleMessage(response.message || 'Could not read the drop folder.')
-        return
-      }
-      if (response.samples.length === 0) {
-        const scope = includeAllSamples ? 'emails' : 'unclassified emails'
-        const hint = response.totalCount === 0
-          ? ' The drop folder and its _processed / _errors archives are empty — save a real GitHub email there first.'
-          : ' Tick "Include already-classified emails" to bundle them anyway.'
-        setRuleMessage(`No ${scope} found (${response.totalCount} email(s) scanned, ${response.unknownCount} unclassified).${hint}`)
-        setRulePrompt('')
-        return
-      }
-      const built = buildBulkRulePrompt(response.samples)
-      setRulePrompt(built.prompt)
-      const scope = includeAllSamples ? 'all emails' : 'unclassified emails'
-      const omittedNote = built.omittedCount > 0 ? ` (${built.omittedCount} extra shape(s) omitted to keep the prompt pasteable)` : ''
-      const truncatedNote = response.truncated ? ' The drop folder is large — only the first batch was read.' : ''
-      setRuleMessage(
-        `Bundled ${built.representativeCount} distinct email shape(s) from ${response.samples.length} ${scope}${omittedNote}.`
-        + ` Copy the prompt into your AI, then paste the JSON rule set below.${truncatedNote}`,
-      )
-    } catch (sampleError) {
-      setRuleMessage(sampleError instanceof Error ? sampleError.message : 'Could not read the drop folder.')
-    } finally {
-      setIsCollectingSamples(false)
-    }
-  }
-
-  // Validates a pasted AI reply (single rule OR a bulk rule set) and, on success, adds every valid rule and saves.
-  async function handleAddRulesFromReply() {
-    if (config === null) return
-    const outcome = parseRuleReplyToList(ruleReply)
-    if (!outcome.ok || outcome.rules.length === 0) {
-      setRuleMessage(outcome.error || 'Could not read a rule from the reply.')
-      return
-    }
-    // Two-layer dedup. By SIGNATURE first: an incoming rule whose matcher already exists under a DIFFERENT id
-    // is a content-duplicate — skip it (the existing rule already covers those emails) rather than clutter the
-    // list. By ID second: an incoming rule that reuses an existing id REPLACES it, so re-pasting a refined rule
-    // updates in place. Signatures accumulate as we accept, so duplicates WITHIN one reply are caught too.
-    const signatureToId = new Map(config.customRules.map((rule) => [ruleSignature(rule), rule.id]))
-    const accepted: SerializedEmailRule[] = []
-    const skipped: string[] = []
-    for (const incoming of outcome.rules) {
-      const existingId = signatureToId.get(ruleSignature(incoming))
-      if (existingId !== undefined && existingId !== incoming.id) {
-        skipped.push(`"${incoming.id}" (same match as "${existingId}")`)
-        continue
-      }
-      accepted.push(incoming)
-      signatureToId.set(ruleSignature(incoming), incoming.id)
-    }
-
-    if (accepted.length === 0) {
-      setRuleMessage(`No rules added — ${skipped.length === 1 ? 'it is a' : 'they are'} duplicate of an existing rule: ${skipped.join(', ')}.`)
-      return
-    }
-
-    const acceptedIds = new Set(accepted.map((rule) => rule.id))
-    const withoutDuplicates = config.customRules.filter((rule) => !acceptedIds.has(rule.id))
-    const nextConfig = { ...config, customRules: [...withoutDuplicates, ...accepted] }
-    setConfig(nextConfig)
-    setRuleReply('')
-    const rejectedNote = outcome.rejectedCount > 0 ? ` (${outcome.rejectedCount} rejected as invalid)` : ''
-    const skippedNote = skipped.length > 0 ? ` (${skipped.length} skipped as duplicate)` : ''
-    const summary = accepted.length === 1
-      ? `rule "${accepted[0].id}" (${accepted[0].eventType})`
-      : `${accepted.length} rules`
-    setRuleMessage(`Added ${summary}${rejectedNote}${skippedNote}.`)
-    await persist(nextConfig, `Saved ${summary}.`)
-  }
-
   async function handleRemoveRule(ruleId: string) {
     if (config === null) return
     const nextConfig = { ...config, customRules: config.customRules.filter((rule) => rule.id !== ruleId) }
@@ -751,49 +639,6 @@ export function GithubEmailIntakePanel() {
           )
         ))}
       </div>
-
-      {isAiUnlocked ? (
-        <div className={styles.panelSection}>
-            <label className={styles.fieldLabel}>Rule Assist (AI) — classify a new kind of email into an event type</label>
-            <p className={styles.panelStatusLine}>
-              A rule only decides <strong>which event</strong> a new kind of email is (branch created, PR opened,
-              PR merged, …) — its bucket. What then happens for that event — the Jira comment and the status
-              transition — is set deterministically in <strong>Transitions</strong> above, never by the AI.
-              Generate a prompt, paste it plus a real notification email into your own AI, then paste the JSON
-              rule it returns. Custom rules are applied <strong>before</strong> the built-in classifiers. The
-              emails never leave this machine — only you and your own AI ever see them.
-            </p>
-            <label className={styles.fieldLabel}>
-              <input
-                type="checkbox"
-                checked={includeAllSamples}
-                onChange={(event) => setIncludeAllSamples(event.target.checked)}
-              />
-              {' '}Include already-classified emails (default: only unclassified)
-            </label>
-            <div className={styles.panelActions}>
-              <button className={styles.actionButton} disabled={isCollectingSamples} onClick={() => void handleGenerateBulkPrompt()} type="button">
-                {isCollectingSamples ? 'Reading drop folder…' : 'Generate rule prompt from drop folder'}
-              </button>
-              <button className={styles.actionButton} onClick={handleGenerateRulePrompt} type="button">Generate prompt for one email</button>
-            </div>
-            {rulePrompt ? (
-              <textarea className={styles.inputField} readOnly rows={6} value={rulePrompt} onFocus={(event) => event.currentTarget.select()} />
-            ) : null}
-            <label className={styles.fieldLabel}>Paste the AI&apos;s JSON rule reply (one rule or a whole rule set)</label>
-            <textarea
-              className={styles.inputField}
-              rows={4}
-              value={ruleReply}
-              placeholder={'{"kind":"githubEmailRuleSet","rules":[ ... ]}'}
-              onChange={(event) => setRuleReply(event.target.value)}
-            />
-            <button className={styles.actionButton} disabled={!ruleReply.trim()} onClick={() => void handleAddRulesFromReply()} type="button">
-              Validate &amp; add rule(s)
-            </button>
-            {ruleMessage ? <p className={styles.panelStatusLine}>{ruleMessage}</p> : null}
-        </div>
-      ) : null}
 
       {/* Rules — always visible (managing existing rules is operator config, not an AI action). Shows exactly
           what Toolbox does per rule, and lets the operator turn it on/off, reword the comment, and force a

@@ -40,17 +40,21 @@ const LAST_COMMENT_EXCERPT_LENGTH = 300
  * Deliberately only the field-writable ones plus a stale-nudge comment: flags that are a human
  * judgement call (who should own this?) or that are fixed on a different issue entirely are not
  * offered to the model — a proposal there could only ever be a guess.
+ *
+ * The DATE flags are deliberately absent, and the reason is worth keeping. They were briefly listed
+ * here with the team's policy spelled out — "21 calendar days before the fix version release date",
+ * "two working days after Ready to Work" — while the per-issue block carried no fix version, no
+ * release date and no status history. The model did as it was told and omitted everything, replying
+ * `{"kind":"hygiene","items":[]}` to fifty-three issues.
+ *
+ * Supplying those facts would have made the prompt answerable but not correct: the dates are pure
+ * arithmetic that `derivedDateFix.ts` already performs exactly, and an LLM that merely agrees with a
+ * formula adds nothing while an LLM that disagrees with it puts two answers on screen for one
+ * policy. Dates are fixed by the "Fix all date mismatches" action, not proposed.
  */
 export const AI_FIXABLE_CHECK_INSTRUCTIONS: Record<string, string> = {
   'missing-summary': 'propose a concise, specific summary (one line).',
   'no-ac': 'propose acceptance criteria in Given/When/Then form based on the description.',
-  // The three date fixes state the team's POLICY rather than inviting a judgement. These dates are
-  // derived, not estimated, so an AI reasoning its way to a plausible-looking date would be inventing
-  // a commitment — and a wrong commitment date is indistinguishable from a real one once written.
-  'missing-due-date': 'set the due date to the fix version release date, as YYYY-MM-DD. Omit if it has no dated, unreleased fix version.',
-  'missing-target-start': 'set the target start to two WORKING days after the issue reached "Ready to Work", as YYYY-MM-DD. Omit if it has not reached that status.',
-  'missing-target-end': 'set the target end to exactly 21 calendar days BEFORE the fix version release date, as YYYY-MM-DD. Omit if it has no dated, unreleased fix version.',
-  'dates-out-of-sync': 'recompute Due Date (= release date), Target End (= release date minus 21 days) and Target Start (= two working days after "Ready to Work"); propose the ONE date that is wrong, as YYYY-MM-DD.',
   'missing-fix-version': 'choose one of the release names listed for that project — never invent one.',
   'missing-pi': 'propose the Program Increment value exactly as used on sibling issues.',
   'missing-sp': 'propose a story-point estimate as a plain number.',

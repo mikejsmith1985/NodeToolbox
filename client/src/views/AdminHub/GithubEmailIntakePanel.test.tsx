@@ -403,22 +403,6 @@ describe('GithubEmailIntakePanel', () => {
     await waitFor(() => expect(screen.getByRole('checkbox', { name: /Enable rule/i })).toBeInTheDocument())
   })
 
-  it('skips a content-duplicate rule (same matcher, different id) when adding from a reply', async () => {
-    useAiAssistStore.setState({ isAiAssistUnlocked: true })
-    const existing = { id: 'pr-approved', eventType: 'pr_approved', bodyPattern: 'approved this pull request', requiresPrNumber: true }
-    stubFetch({}, { ...DEFAULT_CONFIG, customRules: [existing] })
-    render(<GithubEmailIntakePanel />)
-    await screen.findByText('📧 GitHub Email Intake')
-
-    // Paste a reply with a NEW id but the SAME matcher as the existing rule.
-    fireEvent.change(screen.getByPlaceholderText(/githubEmailRuleSet/), {
-      target: { value: JSON.stringify({ kind: 'githubEmailRuleSet', rules: [{ id: 'approved-pr', eventType: 'pr_approved', bodyPattern: 'approved this pull request', requiresPrNumber: true }] }) },
-    })
-    fireEvent.click(screen.getByRole('button', { name: /Validate & add rule/i }))
-
-    await waitFor(() => expect(screen.getByText(/duplicate of an existing rule/i)).toBeInTheDocument())
-    expect(screen.queryByText('approved-pr')).not.toBeInTheDocument()
-  })
 
   it('softly warns when a custom rule overlaps a built-in event type', async () => {
     const custom = { id: 'my-open', eventType: 'pr_opened', subjectPattern: 'please review', requiresPrNumber: true }
@@ -459,29 +443,13 @@ describe('GithubEmailIntakePanel', () => {
     render(<GithubEmailIntakePanel />);
     await screen.findByText('📧 GitHub Email Intake');
 
-    // Nothing about Rule Assist may show while locked — not the title, the buttons, and CRUCIALLY not any
-    // hint that advertises how to unlock the gated feature (no "Ctrl+Alt+Z" leak to a locked user).
+    // Rule Assist is gone entirely — the AI rule generator was removed once the rule set was
+    // complete, so this now pins its ABSENCE rather than its gating. The "no Ctrl+Alt+Z leak"
+    // assertion is kept: the panel must still never advertise an unlock to a locked user.
     expect(screen.queryByText(/Rule Assist \(AI\)/i)).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Generate rule prompt/i })).not.toBeInTheDocument();
     expect(screen.queryByText(/Ctrl\+Alt\+Z/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/Unlock AI Assist/i)).not.toBeInTheDocument();
   });
 
-  it('generates a prompt and adds a validated custom rule when AI is unlocked', async () => {
-    useAiAssistStore.setState({ isAiAssistUnlocked: true });
-    stubFetch();
-    render(<GithubEmailIntakePanel />);
-    await screen.findByText('📧 GitHub Email Intake');
-
-    fireEvent.click(screen.getByRole('button', { name: /Generate prompt for one email/i }));
-    expect(screen.getByDisplayValue(/PASTE THE FULL RAW GITHUB NOTIFICATION EMAIL/)).toBeInTheDocument();
-
-    fireEvent.change(screen.getByPlaceholderText(/githubEmailRuleSet/), {
-      target: { value: '{"kind":"githubEmailRule","rule":{"id":"org-pr-opened","eventType":"pr_opened","bodyPattern":"wants to merge","requiresPrNumber":true}}' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: /Validate & add rule/i }));
-
-    await waitFor(() => expect(screen.getByText('org-pr-opened')).toBeInTheDocument());
-    expect(screen.getByText(/Added rule "org-pr-opened"/)).toBeInTheDocument();
-  });
 });

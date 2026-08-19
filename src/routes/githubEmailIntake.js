@@ -14,7 +14,6 @@ const {
   runGithubEmailIntakeNow,
   runGithubEmailSourcesNow,
   filterNewSharePointFileNames,
-  collectRuleSamples,
   isGithubEmailIntakeRunInProgress,
   readLastRunResult,
   readRunLog,
@@ -383,23 +382,6 @@ function createGithubEmailIntakeRouter(configuration) {
     }
   });
 
-
-  // Rule samples: reads the drop folder (read-only) and returns raw email sources + their current
-  // classification, so the panel can bundle them into ONE bulk AI rule-generation prompt. Defaults to the
-  // unclassified emails only; pass { includeAll: true } to return every eligible email.
-  router.post('/api/github-email-intake/rule-samples', (req, res) => {
-    const includeAll = !!(req.body && req.body.includeAll);
-    try {
-      const outcome = collectRuleSamples(configuration, { includeAll });
-      if (!outcome.ok) {
-        return res.status(400).json(outcome);
-      }
-      return res.json(outcome);
-    } catch (sampleError) {
-      const errorMessage = sampleError instanceof Error ? sampleError.message : String(sampleError);
-      return res.status(500).json({ ok: false, message: errorMessage, samples: [] });
-    }
-  });
 
   // SharePoint source, step 1: given the library's file listing, return only the names the server has
   // not yet ingested — so the client downloads new files only through the (slow, per-file) relay.

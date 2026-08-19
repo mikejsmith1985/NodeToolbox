@@ -639,102 +639,6 @@ async function runGithubEmailSourcesNow(configuration, pullInput, deps = {}) {
   return outcome;
 }
 
-// ── Rule-sample collection (read-only: for the bulk AI rule generator) ──
-
-// Cap the number of emails returned so a huge drop folder can't build an unusable payload/prompt.
-const MAX_RULE_SAMPLES = 60;
-
-/**
- * Reads the drop folder and returns the raw source of each email with its current classification, so the
- * Admin panel can bundle them into ONE bulk AI prompt. Purely read-only: it never posts, moves, or ledgers.
- * By default it returns only the emails the engine currently classifies as 'unknown' (the ones that actually
- * need a rule); pass options.includeAll to return every eligible email. All I/O is injected for tests.
- *
- * @param {object} configuration - live server config
- * @param {object} deps - { includeAll?, listFiles?, readFile?, engine? }
- * @returns {{ ok: boolean, message?: string, samples: object[], totalCount: number, unknownCount: number, truncated: boolean }}
- */
-function collectRuleSamples(configuration, deps = {}) {
-  const cfg = ((configuration.scheduler || {}).githubEmailIntake) || {};
-  const dropFolder = cfg.dropFolder || '';
-  if (dropFolder === '') {
-    return { ok: false, message: 'No drop folder configured — set it and save first.', samples: [], totalCount: 0, unknownCount: 0, truncated: false };
-  }
-
-  const includeAll = deps.includeAll === true;
-  const listFiles = deps.listFiles || defaultListFiles;
-  const readFile = deps.readFile || defaultReadFile;
-  const engine = deps.engine || getEngine();
-  const fileExtensions = cfg.fileExtensions || ['.eml', '.txt', '.msg'];
-
-  // Scan the drop folder AND its processed/error archives. After ANY run — including the default dry run —
-  // every email is moved out of the root into _processed (or _errors), so the emails a user needs to teach a
-  // rule for almost always live there, not in the root. Reading the root alone found nothing once a run had
-  // swept the folder (GH #262 follow-up). The root is required; a missing/unreadable archive is simply skipped.
-  const processedDir = cfg.processedArchiveFolder || path.join(dropFolder, PROCESSED_SUBFOLDER);
-  const errorDir = cfg.errorFolder || path.join(dropFolder, ERROR_SUBFOLDER);
-
-  let rootFileNames;
-  try {
-    rootFileNames = listFiles(dropFolder, fileExtensions);
-  } catch (listError) {
-    return { ok: false, message: 'Could not read drop folder: ' + listError.message, samples: [], totalCount: 0, unknownCount: 0, truncated: false };
-  }
-
-  // Gather (folder, fileName) pairs from the root first, then the archives; dedup by file name so a moved
-  // email (which keeps its name and lives in exactly one folder) is never counted twice.
-  const seenFileNames = new Set();
-  const candidates = [];
-  const addFolderFiles = (folder, fileNames) => {
-    for (const fileName of fileNames) {
-      if (seenFileNames.has(fileName)) {
-        continue;
-      }
-      seenFileNames.add(fileName);
-      candidates.push({ folder, fileName });
-    }
-  };
-  addFolderFiles(dropFolder, rootFileNames);
-  for (const archiveDir of [processedDir, errorDir]) {
-    try {
-      addFolderFiles(archiveDir, listFiles(archiveDir, fileExtensions));
-    } catch (_archiveError) {
-      // An archive folder that does not exist yet (no run has swept anything) is simply skipped.
-    }
-  }
-
-  const samples = [];
-  let totalCount = 0;
-  let unknownCount = 0;
-  for (const candidate of candidates) {
-    const fullPath = path.join(candidate.folder, candidate.fileName);
-    let rawSource;
-    try {
-      rawSource = readFile(fullPath);
-    } catch (_readError) {
-      continue; // An unreadable file is simply skipped for sample-collection.
-    }
-    let event;
-    try {
-      event = engine.parseGithubEmail(rawSource, cfg.customRules || []);
-    } catch (_parseError) {
-      // A file we cannot parse is itself a candidate needing a rule — treat it as 'unknown'.
-      event = { eventType: 'unknown', jiraKey: null };
-    }
-    totalCount += 1;
-    const isUnknown = event.eventType === 'unknown';
-    if (isUnknown) {
-      unknownCount += 1;
-    }
-    if (includeAll || isUnknown) {
-      samples.push({ fileName: candidate.fileName, eventType: event.eventType, jiraKey: event.jiraKey || null, rawSource });
-    }
-  }
-
-  const truncated = samples.length > MAX_RULE_SAMPLES;
-  return { ok: true, samples: samples.slice(0, MAX_RULE_SAMPLES), totalCount, unknownCount, truncated };
-}
-
 // ── Scheduled tick ──
 
 function getTodayDateString() {
@@ -964,7 +868,6 @@ module.exports = {
   runGithubEmailIntakeNow,
   runGithubEmailSourcesNow,
   filterNewSharePointFileNames,
-  collectRuleSamples,
   isGithubEmailIntakeRunInProgress,
   readLastRunResult,
   sanitizeLastRunResult,

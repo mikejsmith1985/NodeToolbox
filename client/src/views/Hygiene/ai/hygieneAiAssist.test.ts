@@ -170,21 +170,24 @@ describe('parseHygieneAiReply', () => {
     expect(result.unparsedCount).toBe(1)
   })
 
-  it('rejects malformed dates and non-positive points rather than writing garbage', () => {
+  it('rejects non-positive points and unknown fixes rather than writing garbage', () => {
+    // The date fixes this used to cover are no longer offered to the model at all — they are derived
+    // arithmetic, not proposals. The parser's date validation stays as a guard against a reply that
+    // invents one, but the reachable cases are the value fixes below.
     const result = parseHygieneAiReply(
       reply([{
         issueKey: 'TBX-1',
         fixes: [
           { checkId: 'missing-due-date', value: 'next Tuesday' },
-          { checkId: 'missing-target-start', value: '2026-08-01' },
           { checkId: 'missing-sp', value: '-2' },
+          { checkId: 'missing-summary', value: 'A real summary' },
         ],
       }]),
       KNOWN_KEYS,
     )
 
     expect(result.proposals).toEqual([
-      { issueKey: 'TBX-1', checkId: 'missing-target-start', proposedValue: '2026-08-01', rationale: null },
+      { issueKey: 'TBX-1', checkId: 'missing-summary', proposedValue: 'A real summary', rationale: null },
     ])
     expect(result.unparsedCount).toBe(2)
   })
@@ -263,5 +266,38 @@ describe('buildHygieneAiPrompt — fix versions must be real', () => {
 
   it('no longer asks the model to produce a name from nothing', () => {
     expect(AI_FIXABLE_CHECK_INSTRUCTIONS['missing-fix-version']).toContain('never invent one')
+  })
+})
+
+describe('the date fixes are not the AI\'s job', () => {
+  it('never asks the model for a date it derives deterministically', () => {
+    // What went wrong: the prompt told the model the date POLICY — "21 calendar days before the fix
+    // version release date", "two working days after Ready to Work" — while the per-issue block
+    // carried no fix version, no release date and no status history. The model did exactly as
+    // instructed and omitted everything, returning {"kind":"hygiene","items":[]} for 53 issues.
+    //
+    // Supplying those facts would make the prompt answerable, but not correct: the dates are pure
+    // arithmetic that `derivedDateFix` already performs exactly. An LLM cannot beat a formula, and
+    // can differ from it — which would put two answers on screen for one policy.
+    expect(Object.keys(AI_FIXABLE_CHECK_INSTRUCTIONS)).not.toContain('missing-due-date')
+    expect(Object.keys(AI_FIXABLE_CHECK_INSTRUCTIONS)).not.toContain('missing-target-start')
+    expect(Object.keys(AI_FIXABLE_CHECK_INSTRUCTIONS)).not.toContain('missing-target-end')
+    expect(Object.keys(AI_FIXABLE_CHECK_INSTRUCTIONS)).not.toContain('dates-out-of-sync')
+  })
+
+  it('does not count an issue whose only flags are dates as something to ask about', () => {
+    // The panel shows "No AI-fixable flags on this page" for these, rather than handing the model an
+    // issue it may propose nothing for — which is what produced an empty reply to 53 issues.
+    const dateOnlyFinding = {
+      issue: { key: 'ENFCT-1', fields: { summary: 'Dates only', issuetype: { name: 'Story' } } },
+      flags: [
+        { checkId: 'missing-target-start', label: 'Missing Target Start', severity: 'warn' },
+        { checkId: 'missing-target-end', label: 'Missing Target End', severity: 'warn' },
+      ],
+      programIncrement: 'PI 26.4',
+    } as unknown as HygieneFinding
+
+    expect(hasAiFixableFlags(dateOnlyFinding)).toBe(false)
+    expect(buildHygieneAiPrompt([dateOnlyFinding], {}, {})).not.toContain('ENFCT-1')
   })
 })

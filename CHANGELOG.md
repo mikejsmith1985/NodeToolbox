@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+- **The GitHub-email AI rule generator is gone.** It read raw notification emails out of the drop
+  folder, bundled them into a prompt, and parsed a rule set back — `githubRulePrompt.ts`, the
+  `/rule-samples` route, `collectRuleSamples`, and the Rule Assist panel section, all deleted. The
+  rule set is complete, so the generator's only remaining effect was to keep a path open that reads
+  email bodies into a prompt. Managing rules is untouched: defaults can still be adopted, edited,
+  disabled, and deleted, and `findEventTypeOverlaps` still warns about overlapping matchers.
+
 ### Added
 - **Dates are derived from the release, not typed.** One policy, stated once in `issueDateRules.ts`:
   **Due Date** = the fix version's release date; **Target End** = 21 calendar days before it;
@@ -49,6 +57,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   work it cannot place, never somewhere a person should file something.
 
 ### Fixed
+- **The hygiene AI was asked for dates it had no facts to compute.** The date policy went into the
+  prompt — *"21 calendar days before the fix version release date"*, *"two working days after Ready
+  to Work"* — while the per-issue block carried no fix version, no release date and no status
+  history. The model obeyed the "omit rather than guess" rule and replied `{"kind":"hygiene",
+  "items":[]}` to fifty-three issues, which was correct behaviour and a useless answer.
+
+  Supplying the facts would have made the prompt answerable but not correct: those dates are
+  arithmetic `derivedDateFix.ts` already performs exactly, and an LLM that agrees with a formula adds
+  nothing while one that disagrees puts two answers on screen for one policy. The date checks are out
+  of the AI's remit entirely; an issue flagged only for its dates no longer enters the prompt, and
+  **📅 Fix all** handles them.
+
 - **Target Start and Target End were never checked on anything but Features.** A board of Stories and
   Defects reported zero missing target dates because nothing was asking — and an empty date cannot be
   "overdue" either, so all four target tiles read 0 on a scan where every single issue had both
