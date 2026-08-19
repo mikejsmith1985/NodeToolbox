@@ -548,3 +548,30 @@ describe('GithubEmailIntakePanel — what the automation moved', () => {
     expect(screen.queryByRole('link', { name: 'ENFCT-1530' })).not.toBeInTheDocument()
   })
 })
+
+describe('GithubEmailIntakePanel — deployments access check', () => {
+  it('reports a failure with the URL and body, never as an empty deployment list', async () => {
+    // The failure mode this exists to prevent: a 404 from a wrong Enterprise base URL rendering as
+    // "no deployments", which is an error dressed as an absence.
+    stubFetch()
+    render(<GithubEmailIntakePanel />)
+    await screen.findByText('GitHub Deployments — access check')
+
+    fireEvent.change(screen.getByLabelText('Owner (org)'), { target: { value: 'zilvertonz' } })
+    fireEvent.change(screen.getByLabelText('Repository'), { target: { value: 'usmg-elements-integrations' } })
+
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        ok: false, httpStatus: 404, requestUrl: 'https://gh.example/api/v3/repos/a/b/deployments?per_page=5',
+        authType: 'github-app', errorBody: '{"message":"Not Found"}', deployments: [],
+      }),
+    } as Response)))
+    fireEvent.click(screen.getByRole('button', { name: /Test deployments access/i }))
+
+    // Whitespace is normalised by the query, so the column alignment is not part of the assertion.
+    expect(await screen.findByText(/Result: FAILED/)).toBeInTheDocument()
+    expect(screen.getByText(/HTTP 404/)).toBeInTheDocument()
+    expect(screen.getByText(/Not Found/)).toBeInTheDocument()
+  })
+})

@@ -986,3 +986,18 @@
   flex-wrap: wrap;
   margin-top: var(--spacing-xs);
 }
+
+/* Probe / diagnostics output: monospace, scrollable, and never allowed to push the panel wide. */
+.diagnosticsReport {
+  max-height: 20rem;
+  margin: 0;
+  padding: var(--spacing-sm);
+  overflow: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 8px);
+  background: var(--color-surface-2);
+  color: var(--color-text-primary);
+  font-family: var(--font-mono, monospace);
+  font-size: var(--font-size-sm);
+  white-space: pre;
+}

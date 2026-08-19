@@ -18,6 +18,7 @@ const {
   readLastRunResult,
   readRunLog,
 } = require('../services/githubEmailIntakeScheduler');
+const { probeGithubDeployments } = require('../services/githubDeploymentProbe');
 
 const DEFAULT_SCHEDULE_TIME = '07:00';
 const SCHEDULE_TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -382,6 +383,22 @@ function createGithubEmailIntakeRouter(configuration) {
     }
   });
 
+
+  // Deployments probe: a read-only check of whether GitHub's Deployments API is reachable from this
+  // machine. The email pipeline exists because direct API access has failed here before and nobody
+  // could say why; the connection check only calls GET /user, which proves nothing about reading a
+  // repo. This asks the real question and reports the status, body, URL and auth method either way.
+  router.post('/api/github-email-intake/deployments-probe', async (req, res) => {
+    const ownerName = (req.body && req.body.owner) || '';
+    const repositoryName = (req.body && req.body.repository) || '';
+    try {
+      const outcome = await probeGithubDeployments(configuration, ownerName, repositoryName);
+      return res.json(outcome);
+    } catch (probeError) {
+      const errorMessage = probeError instanceof Error ? probeError.message : String(probeError);
+      return res.status(500).json({ ok: false, httpStatus: 0, requestUrl: '', authType: 'none', errorBody: errorMessage, deployments: [] });
+    }
+  });
 
   // SharePoint source, step 1: given the library's file listing, return only the names the server has
   // not yet ingested — so the client downloads new files only through the (slow, per-file) relay.

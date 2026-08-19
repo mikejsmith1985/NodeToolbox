@@ -71,6 +71,42 @@ interface IntakeRunResult {
 /** Line break for the copyable reports — named so a template literal never has to carry a raw one. */
 const NEWLINE = String.fromCharCode(10)
 
+/** What the read-only deployments probe reports back. */
+interface DeploymentsProbeResult {
+  ok: boolean
+  httpStatus: number
+  requestUrl: string
+  authType: string
+  errorBody: string
+  deployments: Array<{ id: number; environment: string; ref: string; description: string; createdAt: string }>
+}
+
+/**
+ * Renders the probe outcome as plain text.
+ *
+ * A failure prints the URL, status and body rather than an empty list — a 404 from a wrong Enterprise
+ * base URL must never be readable as "this repo has no deployments".
+ */
+function buildDeploymentsProbeReport(outcome: DeploymentsProbeResult): string {
+  const headerLines = [
+    `Result:  ${outcome.ok ? 'OK' : 'FAILED'}   HTTP ${outcome.httpStatus}`,
+    `URL:     ${outcome.requestUrl}`,
+    `Auth:    ${outcome.authType}`,
+  ]
+  if (!outcome.ok) {
+    return [...headerLines, '', 'Error body:', outcome.errorBody || '(empty)'].join(NEWLINE)
+  }
+  return [
+    ...headerLines,
+    '',
+    `Deployments returned (${outcome.deployments.length}):`,
+    ...(outcome.deployments.length === 0
+      ? ['  none — the call succeeded but this repo has no deployments']
+      : outcome.deployments.map((deployment) =>
+        `  ${deployment.environment || '(no env)'}  ref=${deployment.ref}  ${deployment.createdAt}${NEWLINE}      ${deployment.description}`)),
+  ].join(NEWLINE)
+}
+
 const MODE_LABELS: Record<IntakeMode, string> = {
   dryRun: 'Dry run — parse & log only, never touch Jira',
   commentOnly: 'Comment only — post comments, no status transitions',
@@ -274,6 +310,29 @@ export function GithubEmailIntakePanel() {
   const [moveSearchText, setMoveSearchText] = useState('')
   const [isShowingMovedOnly, setIsShowingMovedOnly] = useState(false)
   const [hasCopiedMoveAudit, setHasCopiedMoveAudit] = useState(false)
+  const [probeOwner, setProbeOwner] = useState('')
+  const [probeRepository, setProbeRepository] = useState('')
+  const [isProbingDeployments, setIsProbingDeployments] = useState(false)
+  const [probeReport, setProbeReport] = useState('')
+
+  /** Runs the read-only deployments check and renders whatever came back, success or failure. */
+  async function handleDeploymentsProbe(): Promise<void> {
+    setIsProbingDeployments(true)
+    setProbeReport('')
+    try {
+      const response = await fetch('/api/github-email-intake/deployments-probe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ owner: probeOwner, repository: probeRepository }),
+      })
+      const outcome = await response.json() as DeploymentsProbeResult
+      setProbeReport(buildDeploymentsProbeReport(outcome))
+    } catch (probeError) {
+      setProbeReport(probeError instanceof Error ? probeError.message : 'The probe request failed.')
+    } finally {
+      setIsProbingDeployments(false)
+    }
+  }
 
   const visibleMoveRows = filterMoveAuditRows(moveRows, moveSearchText, isShowingMovedOnly)
   const movedIssueCount = moveRows.filter((moveRow) => moveRow.automationMoves.length > 0).length
@@ -1034,6 +1093,50 @@ export function GithubEmailIntakePanel() {
             ))}
           </ul>
         )}
+      </div>
+
+      {/* Deployments probe — a read-only check of whether GitHub's Deployments API can be read from
+          this machine. The whole email pipeline exists because that has failed here before; the
+          connection dot only proves GET /user works, which says nothing about reading a repo. */}
+      <div className={styles.panelSection}>
+        <h3 className={styles.sectionTitle}>GitHub Deployments — access check</h3>
+        <p className={styles.panelStatusLine}>
+          Read-only. Asks GitHub for a repo&apos;s five most recent deployments and reports exactly what
+          came back — status, URL, auth method, and the error body if it failed. A deployment names the
+          environment (dev / int / rel), which is the only reliable signal for SL / INT / BT testing.
+        </p>
+        <label className={styles.fieldLabel} htmlFor="deployments-probe-owner">Owner (org)</label>
+        <input
+          className={styles.inputField}
+          id="deployments-probe-owner"
+          placeholder="zilvertonz"
+          value={probeOwner}
+          onChange={(changeEvent) => setProbeOwner(changeEvent.target.value)}
+        />
+        <label className={styles.fieldLabel} htmlFor="deployments-probe-repo">Repository</label>
+        <input
+          className={styles.inputField}
+          id="deployments-probe-repo"
+          placeholder="usmg-elements-integrations"
+          value={probeRepository}
+          onChange={(changeEvent) => setProbeRepository(changeEvent.target.value)}
+        />
+        <div className={styles.panelActions}>
+          <button
+            className={styles.actionButton}
+            disabled={isProbingDeployments}
+            type="button"
+            onClick={() => { void handleDeploymentsProbe() }}
+          >
+            {isProbingDeployments ? 'Checking…' : '🔎 Test deployments access'}
+          </button>
+          {probeReport ? (
+            <button className={styles.actionButton} onClick={() => void navigator.clipboard?.writeText(probeReport)} type="button">
+              📋 Copy result
+            </button>
+          ) : null}
+        </div>
+        {probeReport ? <pre className={styles.diagnosticsReport}>{probeReport}</pre> : null}
       </div>
 
       {/* Posted-comment audit — finds every Jira comment carrying the automation's signature so

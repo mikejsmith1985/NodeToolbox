@@ -16,6 +16,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   disabled, and deleted, and `findEventTypeOverlaps` still warns about overlapping matchers.
 
 ### Added
+- **GitHub Deployments — access check.** A read-only probe in the intake panel: give it an owner and
+  a repo and it asks GitHub for the five most recent deployments, then reports exactly what came back
+  — HTTP status, the URL it called, the auth method used, and the error body when it fails.
+
+  It exists because the entire email pipeline exists: direct GitHub API access has failed in this
+  environment before and nobody could say why. The connection indicator only ever calls `GET /user`,
+  which proves a token works and says nothing about reading a repository. A failure prints its status
+  and body rather than an empty list, so a 404 from a wrong Enterprise base URL can never be read as
+  *"this repo has no deployments"* — an error dressed as an absence.
+
+  A deployment names its environment (dev / int / rel), which is the only reliable signal for when
+  work reaches SL, INT, or BT testing. Nothing in a pull-request notification carries it.
+
 - **The posted-comment audit now says what the automation MOVED, not just where it commented.** The
   sweep proved the automation had been on an issue and said nothing about status, so one it commented
   on *and cancelled* looked exactly like one it only commented on — half an answer to the question
