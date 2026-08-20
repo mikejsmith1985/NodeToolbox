@@ -1,23 +1,17 @@
 // piFeatureRemap.ts — Helpers for Team Dashboard PI closeout remapping of open child issues between features.
 
+import { resolveConfiguredFieldIds, resolveWriteFieldId } from '../../services/jiraFieldMapping.ts';
 import { jiraGet, jiraPut } from '../../services/jiraApi.ts';
 import type { JiraIssue } from '../../types/jira.ts';
 import { readArtFeatureScopeSettings } from '../ArtView/artFeatureScopeSettings.ts';
 import { findMostRecentlyEndedPiName, findPiNameForDate, parsePiDateRange } from '../ArtView/hooks/artHelpers.ts';
 import { buildDirectFeatureJql } from '../ArtView/piReviewPullFeatures.ts';
 
-const ART_SETTINGS_STORAGE_KEY = 'tbxARTSettings';
-const DEFAULT_FEATURE_LINK_FIELD = 'customfield_10108';
 const DEFAULT_EPIC_LINK_FIELD = 'customfield_10014';
-const DEFAULT_PI_FIELD_ID = 'customfield_10301';
 const FEATURE_REMAP_SEARCH_FIELDS = ['summary', 'status', 'issuetype', 'parent'];
 // The feature dropdowns list every Feature in a PI; only summary/status/PI are needed to build an option.
 const PI_FEATURE_OPTION_FIELDS = ['summary', 'status'];
 const PI_FEATURE_OPTION_MAX_RESULTS = 200;
-interface StoredArtSettings {
-  featureLinkField?: string;
-}
-
 interface JiraSearchResponse {
   issues?: JiraIssue[];
 }
@@ -72,14 +66,6 @@ export interface FeatureRemapPiOptions {
    * bucketing its leftovers into the NEXT PI, so this is what makes "I'm on the next PI" the default.
    */
   defaultTargetPiName: string;
-}
-
-function readStoredArtSettings(): StoredArtSettings {
-  try {
-    return JSON.parse(localStorage.getItem(ART_SETTINGS_STORAGE_KEY) || '{}') as StoredArtSettings;
-  } catch {
-    return {};
-  }
 }
 
 function readIssueFieldValue(issue: JiraIssue, fieldId: string): unknown {
@@ -202,7 +188,7 @@ async function fetchPiFeatureOptions(
   const searchFields = buildUniqueFieldIds([
     ...PI_FEATURE_OPTION_FIELDS,
     featureRemapSettings.piFieldId,
-    DEFAULT_PI_FIELD_ID,
+    ...resolveConfiguredFieldIds('piFieldId', window.localStorage),
   ]);
   const searchPath = `/rest/api/2/search?jql=${encodeURIComponent(featureOptionsJql)}`
     + `&fields=${encodeURIComponent(searchFields.join(','))}`
@@ -220,10 +206,11 @@ async function fetchPiFeatureOptions(
 
 /** Reads the configured Jira field IDs and optional feature-project filter for Team Dashboard remapping. */
 export function readFeatureRemapSettings(): FeatureRemapSettings {
-  const storedArtSettings = readStoredArtSettings();
   const featureScopeSettings = readArtFeatureScopeSettings();
   return {
-    featureLinkField: storedArtSettings.featureLinkField?.trim() || DEFAULT_FEATURE_LINK_FIELD,
+    // Both ids come from the mapping module now; this file used to parse the settings store for one
+    // of them and read the scope helper for the other, which is two chains for one question.
+    featureLinkField: resolveWriteFieldId('featureLinkField', window.localStorage),
     piFieldId: featureScopeSettings.piFieldId,
     featureProjectKeys: featureScopeSettings.featureProjectKeys,
   };
@@ -231,9 +218,11 @@ export function readFeatureRemapSettings(): FeatureRemapSettings {
 
 /** Extracts the feature key from a Jira issue using the configured field plus known fallback fields. */
 export function extractFeatureKeyFromIssue(issue: JiraIssue, featureLinkField: string): string | null {
+  // The mapping already knows the Feature Link chain; the Epic Link is its own logical field and is
+  // kept as the last resort, exactly as before.
   const candidateFieldIds = buildUniqueFieldIds([
     featureLinkField,
-    DEFAULT_FEATURE_LINK_FIELD,
+    ...resolveConfiguredFieldIds('featureLinkField', window.localStorage),
     DEFAULT_EPIC_LINK_FIELD,
   ]);
 
@@ -259,8 +248,12 @@ export function readProgramIncrementValueFromIssue(issue: JiraIssue, piFieldId: 
     return optionValue.value ?? optionValue.name ?? '';
   }
 
-  if (piFieldId !== DEFAULT_PI_FIELD_ID) {
-    return readProgramIncrementValueFromIssue(issue, DEFAULT_PI_FIELD_ID);
+  // Fall back to the mapping's own PI candidates rather than a local default, so a configured field
+  // and its fallback come from one chain instead of two that can disagree.
+  const fallbackPiFieldId = resolveConfiguredFieldIds('piFieldId', window.localStorage)
+    .find((candidateFieldId) => candidateFieldId !== piFieldId);
+  if (fallbackPiFieldId) {
+    return readProgramIncrementValueFromIssue(issue, fallbackPiFieldId);
   }
 
   return '';
@@ -279,10 +272,10 @@ export function buildFeatureRemapSearchPath(
   const searchFields = buildUniqueFieldIds([
     ...FEATURE_REMAP_SEARCH_FIELDS,
     featureLinkField,
-    DEFAULT_FEATURE_LINK_FIELD,
+    ...resolveConfiguredFieldIds('featureLinkField', window.localStorage),
     DEFAULT_EPIC_LINK_FIELD,
     piFieldId,
-    DEFAULT_PI_FIELD_ID,
+    ...resolveConfiguredFieldIds('piFieldId', window.localStorage),
   ]);
   const jql = `project = "${trimmedProjectKey}" AND statusCategory != Done AND ${jqlFieldReference} = ${trimmedSourceFeatureKey} ORDER BY key ASC`;
   return `/rest/api/2/search?jql=${encodeURIComponent(jql)}&fields=${encodeURIComponent(searchFields.join(','))}&maxResults=200`;
@@ -368,7 +361,7 @@ export async function executeFeatureRemap(
   const targetFeatureIssue = await fetchIssueByKey(normalizedTargetFeatureKey, [
     'summary',
     featureRemapSettings.piFieldId,
-    DEFAULT_PI_FIELD_ID,
+    ...resolveConfiguredFieldIds('piFieldId', window.localStorage),
   ]);
   const targetPiValue = readProgramIncrementValueFromIssue(targetFeatureIssue, featureRemapSettings.piFieldId).trim();
   if (targetPiValue === '') {

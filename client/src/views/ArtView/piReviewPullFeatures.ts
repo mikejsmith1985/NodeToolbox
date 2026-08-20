@@ -9,13 +9,12 @@
 // Discovered Features are de-duplicated against the rows already in the table so a pull only ever
 // appends genuinely new Features.
 
+import { resolveWriteFieldId } from '../../services/jiraFieldMapping.ts';
 import { jiraGet } from '../../services/jiraApi.ts';
 import type { JiraIssue } from '../../types/jira.ts';
 import { extractPiReviewFeatureKey } from './piReviewJira.ts';
 import { createEmptyPiReviewRow, type PiReviewRow } from './piReviewTable.ts';
 
-const ART_SETTINGS_STORAGE_KEY = 'tbxARTSettings';
-const DEFAULT_PI_FIELD_ID = 'customfield_10301';
 const DIRECT_FEATURE_SEARCH_MAX_RESULTS = 200;
 // Only the fields needed to build a row; reconciliation fills priority/estimate/etc. afterwards.
 const DIRECT_FEATURE_FIELD_IDS = ['summary', 'status', 'assignee'];
@@ -44,17 +43,9 @@ interface DiscoveredFeature {
 
 /** Reads the PI field id from ART settings, falling back to the safe default. */
 export function readPiReviewPullSettings(): PiReviewPullSettings {
-  try {
-    const storedSettings = JSON.parse(localStorage.getItem(ART_SETTINGS_STORAGE_KEY) || '{}') as {
-      piFieldId?: unknown;
-    };
-    const piFieldId = typeof storedSettings.piFieldId === 'string' && storedSettings.piFieldId.trim() !== ''
-      ? storedSettings.piFieldId.trim()
-      : DEFAULT_PI_FIELD_ID;
-    return { piFieldId };
-  } catch {
-    return { piFieldId: DEFAULT_PI_FIELD_ID };
-  }
+  // Delegated: the override-then-default chain lives in the mapping module, and a local copy of it
+  // is one more thing to keep in step with the field it is trying to name.
+  return { piFieldId: resolveWriteFieldId('piFieldId', window.localStorage) };
 }
 
 /** Wraps a JQL value in quotes, escaping embedded quotes the same way the roster clause builder does. */

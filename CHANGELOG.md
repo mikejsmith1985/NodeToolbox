@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Two more modules resolve their Jira fields centrally.** `piReviewPullFeatures` and
+  `piFeatureRemap` each carried their own settings parse and their own default field ids —
+  `piFeatureRemap` had three separate fallback lists naming the PI and Feature Link defaults by hand.
+  All of them now come from the mapping module's candidate chain, so a configured field and its
+  fallbacks are one list rather than several that can disagree. Their debt entries are struck off.
+
 ### Added
 - **A "Team hygiene flags" card on Today, counting everything the other cards do not.** Today showed
   five green ticks over a board holding 41 hygiene flags — 27 missing Target Start, 6 missing Target
