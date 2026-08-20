@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **The Rules panel now points at the deployment rules, not past them.** Adding a rule per
+  environment moved the goalposts on advice the panel still gave: "Customize **pr-merged** to move a
+  story to Ready for Testing when its branches merge". With `pr-merged-dev` … `pr-merged-prd` sitting
+  above it, the generic rule now only catches merges into ordinary feature branches, so following
+  that sentence would configure the one rule a deployment never reaches. The guidance names the
+  environment rules instead, and says why.
+- **Pinned that the environment rules are reachable at all.** They classify correctly but are inert
+  until an operator seeds an editable copy, because the scheduler reads a transition only from a
+  custom rule matching the id — and the panel's "Customize" over `getDefaultSerializedRules()` is the
+  only way to make one. That path works; it now has tests, because nothing else would fail if a
+  future edit dropped the four from the seed list. The whole environment distinction would go on
+  classifying perfectly and doing nothing.
+
 ### Added
 - **Deployment tracking, read from the merge emails already arriving.** GitHub's Deployments API is
   unreachable from this network — the org runs an IP allow list and every call returns 403 with

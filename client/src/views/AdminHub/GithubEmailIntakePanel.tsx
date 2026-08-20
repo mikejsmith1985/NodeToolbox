@@ -986,8 +986,11 @@ export function GithubEmailIntakePanel() {
             <p className={styles.panelStatusLine}>
               These ship with Toolbox and run automatically. Click <strong>Customize</strong> to make an editable
               copy you can turn off, reword, give a status transition, or give <strong>parent-story actions</strong>
-              (move the parent / set its Sub-status) — e.g. Customize <strong>pr-merged</strong> to move a story to
-              Ready for Testing when its branches merge.
+              (move the parent / set its Sub-status). For deployments, customise the rule for the ENVIRONMENT —
+              <strong>pr-merged-int</strong> or <strong>pr-merged-prd</strong> — not the generic{' '}
+              <strong>pr-merged</strong>, which now only catches merges into ordinary feature branches. Each
+              environment rule fires on its own branch, so a merge into <code>prd</code> can move a story
+              somewhere a merge into <code>dev</code> does not.
             </p>
             <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 'var(--spacing-xs)' }}>
               {uncustomizedDefaults.map((rule) => (
