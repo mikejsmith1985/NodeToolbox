@@ -466,6 +466,22 @@ interface AdminAccessSectionProps {
   onToggleBoardDiagnostics(isEnabled: boolean): void
 }
 
+/**
+ * What the clear button actually destroys, said plainly.
+ *
+ * "Connection data" sounds like credentials and endpoints. It is every `tbx*` key, and the team
+ * roster and Roll-Up Board columns are among them — so the warning names them rather than leaving
+ * the reader to discover it afterwards.
+ */
+const CLEAR_ALL_DATA_WARNING = [
+  'This clears EVERY saved setting on this machine, not just connections: your team roster, your',
+  'Roll-Up Board columns and their status mappings, and the link to your shared ART workspace.',
+  'Losing that link matters most — your roster and columns stay in Confluence, but Toolbox will no',
+  'longer know where to find them, so the "Get the team’s columns" button comes back empty until',
+  'you re-enter the workspace. Take a backup first: Admin Hub → Settings Backup → Export.',
+  'This cannot be undone.',
+].join(' ')
+
 /** Clears all localStorage keys that start with the 'tbx' prefix. */
 function clearAllConnectionData(): void {
   const keysToRemove: string[] = []
@@ -497,6 +513,7 @@ function AdminAccessSection({
 }: AdminAccessSectionProps) {
   const [wizardResetConfirmation, setWizardResetConfirmation] = useState('')
   const [clearDataConfirmation, setClearDataConfirmation] = useState('')
+  const [isConfirmingClearAll, setIsConfirmingClearAll] = useState(false)
 
   function handleResetOnboarding() {
     for (const onboardingKey of ONBOARDING_STORAGE_KEYS) {
@@ -505,7 +522,21 @@ function AdminAccessSection({
     setWizardResetConfirmation('✅ Wizard reset — reload to re-run onboarding')
   }
 
+  /**
+   * Asks before wiping, and names what will actually go.
+   *
+   * It fired on a single click. What it clears is every `tbx*` key, which includes the team roster,
+   * the Roll-Up Board columns, and `tbxARTSettings` — the pointer to the shared Confluence
+   * workspace. Losing that pointer is the cruel part: the roster and columns survive in Confluence,
+   * but the app no longer knows where they are, so pulling them back finds nothing and the loss
+   * looks total when it is not.
+   */
   function handleClearAllData() {
+    setIsConfirmingClearAll(true)
+  }
+
+  function handleConfirmClearAllData() {
+    setIsConfirmingClearAll(false)
     clearAllConnectionData()
     setClearDataConfirmation('✅ All connection data cleared')
   }
@@ -573,6 +604,16 @@ function AdminAccessSection({
           )}
           {clearDataConfirmation !== '' && (
             <p className={styles.confirmationText}>{clearDataConfirmation}</p>
+          )}
+          {isConfirmingClearAll && (
+            <ConfirmDialog
+              isDangerous
+              confirmLabel="Clear everything"
+              cancelLabel="Cancel"
+              message={CLEAR_ALL_DATA_WARNING}
+              onCancel={() => setIsConfirmingClearAll(false)}
+              onConfirm={handleConfirmClearAllData}
+            />
           )}
         </>
       ) : (

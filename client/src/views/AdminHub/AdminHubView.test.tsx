@@ -1,6 +1,6 @@
 // AdminHubView.test.tsx — Unit tests for the Admin Hub view component.
 
-import { act, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -912,5 +912,56 @@ describe('AdminHubView — Change Review tab', () => {
     renderAdminHubView();
 
     expect(screen.queryByRole('tab', { name: /change review/i })).not.toBeInTheDocument();
+  });
+});
+
+describe('Clear All Connection Data — one misclick cost a team roster', () => {
+  // It fired on a single click and wiped every tbx* key, which includes the Roll-Up Board column
+  // vocabulary, the team roster, AND `tbxARTSettings` — the pointer to the shared Confluence
+  // workspace. Losing that pointer is the cruel part: the data survives in Confluence, but
+  // "Get the team's columns" then has nowhere to look and silently finds nothing (GH #375).
+  function openAdminUtilities() {
+    mockState.isAdminUnlocked = true;
+    renderAdminHubView();
+  }
+
+  it('does not wipe anything on the first click', () => {
+    localStorage.setItem('tbxRollupBoardVocabulary', '{"columns":[]}');
+    openAdminUtilities();
+
+    fireEvent.click(screen.getByRole('button', { name: /clear all connection data/i }));
+
+    expect(localStorage.getItem('tbxRollupBoardVocabulary')).not.toBeNull();
+  });
+
+  it('names what will be destroyed, not just "connection data"', () => {
+    openAdminUtilities();
+
+    fireEvent.click(screen.getByRole('button', { name: /clear all connection data/i }));
+
+    const dialogText = screen.getByRole('dialog').textContent ?? '';
+    expect(dialogText).toMatch(/roster/i);
+    expect(dialogText).toMatch(/column/i);
+    expect(dialogText).toMatch(/back ?up/i);
+  });
+
+  it('clears only after the confirmation is accepted', () => {
+    localStorage.setItem('tbxRollupBoardVocabulary', '{"columns":[]}');
+    openAdminUtilities();
+
+    fireEvent.click(screen.getByRole('button', { name: /clear all connection data/i }));
+    fireEvent.click(screen.getByRole('button', { name: /clear everything/i }));
+
+    expect(localStorage.getItem('tbxRollupBoardVocabulary')).toBeNull();
+  });
+
+  it('leaves everything untouched when the confirmation is cancelled', () => {
+    localStorage.setItem('tbxRollupBoardVocabulary', '{"columns":[]}');
+    openAdminUtilities();
+
+    fireEvent.click(screen.getByRole('button', { name: /clear all connection data/i }));
+    fireEvent.click(screen.getByRole('button', { name: /cancel/i }));
+
+    expect(localStorage.getItem('tbxRollupBoardVocabulary')).not.toBeNull();
   });
 });

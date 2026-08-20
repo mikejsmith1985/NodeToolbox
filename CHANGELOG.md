@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **"Clear All Connection Data" now asks first, and says what it will destroy.** It fired on a single
+  click. The label reads like credentials and endpoints; what it actually removes is every `tbx*`
+  key, which includes the team roster, the Roll-Up Board columns and their status mappings, and
+  `tbxARTSettings` — the pointer to the shared Confluence workspace. That last one is the cruel part:
+  the roster and columns survive in Confluence, but the app no longer knows where they are, so
+  pulling them back finds nothing and a recoverable loss looks total. One misclick did all of that
+  silently. The confirmation names each of those things, points at Settings Backup → Export, and
+  says it cannot be undone.
+
+### Fixed
 - **A SharePoint pull no longer throws away most of its skipped-email records.** Batches of one pull
   are merged into a single Activity Log row, and that merge spread the newer batch and explicitly
   concatenated only `events` — so a field added later was silently taken from the last batch alone.
