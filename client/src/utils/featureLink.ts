@@ -6,10 +6,17 @@
 // handling); this module is the shared implementation so every surface (blueprint, reports) links a child
 // to its feature identically instead of re-deriving it.
 
-// Where the ART advanced settings (including the feature-link field override) are persisted.
-const ART_SETTINGS_STORAGE_KEY = 'tbxARTSettings';
+// This module is bundled into the SERVER engine (monthlyDeliveryEngine.entry.ts), so it must stay
+// free of anything browser-only at import time. The field id therefore comes from the mapping module
+// lazily, inside the function that needs it, never as a module-level constant read at load.
+import { resolveWriteFieldId } from '../services/jiraFieldMapping.ts';
 
-/** Default "Feature Link" custom field id (child → parent feature) used when the ART settings don't override it. */
+/**
+ * Default "Feature Link" custom field id.
+ *
+ * @deprecated Resolved by `services/jiraFieldMapping.ts`. Kept only so the server engine bundle's
+ * existing export surface keeps compiling; it is no longer the source of the answer.
+ */
 export const FEATURE_LINK_DEFAULT_FIELD = 'customfield_10108';
 
 /** Classic Jira "Epic Link" custom field id — the fallback candidate when the Feature Link field is unset. */
@@ -33,12 +40,12 @@ export interface FeatureLinkFields {
  * when unset or when the store is missing/corrupt. Mirrors how the story-points field id is resolved.
  */
 export function loadConfiguredFeatureLinkFieldId(): string {
-  try {
-    const settings = JSON.parse(localStorage.getItem(ART_SETTINGS_STORAGE_KEY) || '{}') as { featureLinkField?: string };
-    return settings.featureLinkField?.trim() || FEATURE_LINK_DEFAULT_FIELD;
-  } catch {
+  // Guarded because this module runs server-side too, where there is no localStorage and the
+  // configured override simply does not exist. The mapping's default is the right answer there.
+  if (typeof localStorage === 'undefined') {
     return FEATURE_LINK_DEFAULT_FIELD;
   }
+  return resolveWriteFieldId('featureLinkField', localStorage);
 }
 
 /** The ordered, de-duplicated list of custom field ids to try when reading an issue's feature link. */

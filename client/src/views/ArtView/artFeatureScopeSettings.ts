@@ -1,12 +1,7 @@
 // artFeatureScopeSettings.ts — Shared helpers for reading and normalizing ART feature-scope settings.
 
-const ART_SETTINGS_STORAGE_KEY = 'tbxARTSettings';
-const DEFAULT_PI_FIELD_ID = 'customfield_10301';
-
-interface StoredArtFeatureScopeSettings {
-  piFieldId?: string;
-  featureProjectKeys?: string[];
-}
+import { readArtSettings } from '../../services/artSettingsStore.ts';
+import { resolveWriteFieldId } from '../../services/jiraFieldMapping.ts';
 
 export interface ArtFeatureScopeSettings {
   piFieldId: string;
@@ -32,20 +27,14 @@ export function formatFeatureProjectKeysInput(featureProjectKeys: readonly strin
 
 /** Reads the ART-wide feature scope settings used by Team Dashboard feature discovery. */
 export function readArtFeatureScopeSettings(): ArtFeatureScopeSettings {
-  try {
-    const storedSettings = JSON.parse(localStorage.getItem(ART_SETTINGS_STORAGE_KEY) || '{}') as StoredArtFeatureScopeSettings;
-    return {
-      piFieldId: storedSettings.piFieldId?.trim() || DEFAULT_PI_FIELD_ID,
-      featureProjectKeys: Array.isArray(storedSettings.featureProjectKeys)
-        ? storedSettings.featureProjectKeys
-          .map((featureProjectKey) => featureProjectKey.trim().toUpperCase())
-          .filter(Boolean)
-        : [],
-    };
-  } catch {
-    return {
-      piFieldId: DEFAULT_PI_FIELD_ID,
-      featureProjectKeys: [],
-    };
-  }
+  // Both halves delegate: the field id to the mapping module, the project scope to the settings
+  // reader. This file used to parse the store and default the id itself, which is one more copy of
+  // each to keep in step and no benefit for either.
+  return {
+    piFieldId: resolveWriteFieldId('piFieldId', window.localStorage),
+    featureProjectKeys: readArtSettings()
+      .featureProjectKeys
+      .map((featureProjectKey) => featureProjectKey.trim().toUpperCase())
+      .filter(Boolean),
+  };
 }

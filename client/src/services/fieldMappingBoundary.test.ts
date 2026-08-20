@@ -187,7 +187,6 @@ const PI_UNMIGRATED_FILES = [
   'views/AdminHub/piReviewSchedulerImport.ts',
   'views/AdminHub/PiReviewSchedulerPanel.test.tsx',
   'views/AdminHub/PiReviewSchedulerPanel.tsx',
-  'views/ArtView/artFeatureScopeSettings.ts',
   'views/ArtView/ArtView.test.tsx',
   'views/ArtView/ArtView.tsx',
   'views/ArtView/blueprintHierarchy.test.ts',
@@ -251,10 +250,8 @@ const ART_SETTINGS_ALLOWED_FILES = [
 const ART_SETTINGS_UNMIGRATED_FILES = [
   'services/jiraFieldMapping.test.ts',
   'utils/featureLink.test.ts',
-  'utils/featureLink.ts',
   'views/AdminHub/FieldMappingPanel.test.tsx',
   'views/AdminHub/hooks/useAdminHubState.ts',
-  'views/ArtView/artFeatureScopeSettings.ts',
   'views/ArtView/ArtView.test.tsx',
   'views/ArtView/ArtView.tsx',
   'views/ArtView/blueprintHierarchy.test.ts',
@@ -323,17 +320,23 @@ describe('the ART settings are read through one module', () => {
   });
 });
 
-/** Files allowed to name the Feature Link field id. */
+/**
+ * Files allowed to name the Feature Link field id.
+ *
+ * `utils/featureLink.ts` earns its place: it is bundled into the SERVER engine, where there is no
+ * localStorage and therefore no configured override to resolve. It keeps the id as the answer for
+ * that environment only — the browser path delegates to the mapping like everything else.
+ */
 const FEATURE_LINK_ALLOWED_FILES = [
   'services/jiraFieldMapping.ts',
   'services/jiraFieldMapping.test.ts',
   'services/fieldMappingBoundary.test.ts',
+  'utils/featureLink.ts',
 ];
 
 /** The Feature Link debt list. Only ever shrinks. */
 const FEATURE_LINK_UNMIGRATED_FILES = [
   'types/jira.ts',
-  'utils/featureLink.ts',
   'views/AdminHub/FieldMappingPanel.test.tsx',
   'views/AdminHub/MonthlyDeliveryPanel.test.tsx',
   'views/ArtView/blueprintHierarchy.test.ts',

@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Two more modules resolve their field through the mapping instead of their own copy.**
+  `utils/featureLink.ts` and `views/ArtView/artFeatureScopeSettings.ts` now delegate, and their debt
+  entries are struck off. `featureLink.ts` needed care rather than a rewrite: it is bundled into the
+  SERVER engine, where there is no localStorage and so no configured override to read — its browser
+  path delegates and its server path keeps the built-in id, with the guard saying why. Verified by
+  rebuilding the engine bundle and running the server suite, not by assuming.
+  The ratchet earned itself here: migrating the files made the debt-list test fail until they were
+  struck off, so a tidied file cannot quietly leave the list describing a state that no longer exists.
+
+### Changed
 - **`SharedArtWorkspacePayload` is declared once, and the merge whitelist is now enforced by the
   compiler.** The wire format for the shared Confluence workspace was declared twice — in
   `confluenceApi.ts` and again inside `ArtView.tsx` — and the copies had drifted three settings
