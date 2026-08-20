@@ -25,7 +25,8 @@ export type CategoryId =
   | 'unassigned'
   | 'commitment-gaps'
   | 'due-overdue'
-  | 'untriaged';
+  | 'untriaged'
+  | 'team-hygiene';
 
 /** Display metadata for a single Today category: its label, emoji icon, and ownership scope. */
 export interface CategoryCatalogEntry {
@@ -45,6 +46,9 @@ export const CATEGORY_CATALOG: readonly CategoryCatalogEntry[] = [
   { id: 'commitment-gaps', label: 'Sprint commitment gaps', icon: '📐', scope: 'team' },
   { id: 'due-overdue', label: 'Due / overdue today', icon: '📅', scope: 'mixed' },
   { id: 'untriaged', label: 'Untriaged new issues', icon: '🆕', scope: 'team' },
+  // Everything the cards above do NOT watch. Without it Today showed five green ticks over a board
+  // holding 41 hygiene flags — a checklist silent about most of the list, which reads as "finished".
+  { id: 'team-hygiene', label: 'Team hygiene flags', icon: '🩺', scope: 'team' },
 ];
 
 // ── Blocked detection ──
@@ -195,6 +199,22 @@ export function buildTeamCountBreakdown(
   }));
 }
 
+/**
+ * Per-team totals for the "everything else" card, counting FLAGS rather than issues.
+ *
+ * The other breakdowns count issues because their cards do; this one matches the Hygiene page's own
+ * headline, which is a flag count. Two numbers describing one scan have to be the same number.
+ */
+export function buildTeamFlagBreakdown(teamScans: readonly TeamScanEntry[]): TeamCountBreakdownEntry[] {
+  return teamScans.map((teamScan) => ({
+    teamProfileId: teamScan.teamProfileId,
+    teamName: teamScan.teamName,
+    count: countAllTeamHygieneFlags(teamScan.findings),
+    hasError: teamScan.errorMessage !== null,
+    isProjectWideScope: teamScan.scopeJql !== undefined && teamScan.scopeJql.trim() === '',
+  }));
+}
+
 // ── Untriaged ──
 
 /**
@@ -224,4 +244,83 @@ function dedupeByKey(issues: JiraIssue[]): JiraIssue[] {
     uniqueIssues.push(issue);
   });
   return uniqueIssues;
+}
+
+/**
+ * Every hygiene flag on a team's scan, counted the way the Hygiene page counts them.
+ *
+ * FLAGS, not issues. The Hygiene page's headline is a flag count, and counting issues here would
+ * report a smaller number for the same state — putting two surfaces that describe one scan back
+ * into the disagreement this card exists to end.
+ */
+export function countAllTeamHygieneFlags(findings: readonly HygieneFinding[]): number {
+  return findings.reduce((flagTotal, finding) => flagTotal + finding.flags.length, 0);
+}
+
+/** One team profile's saved scope selection, as the settings store holds it. */
+export interface SavedTeamScopeSelection {
+  teamProfileId: string;
+  scopeMode: string;
+  selectedPiValue: string;
+  selectedFixVersion: string;
+  selectedSprintId: string | number | null;
+}
+
+/** The scope the dashboard is showing right now. */
+export interface LiveScopeSelection {
+  scopeMode: string;
+  selectedPiValue: string;
+  selectedFixVersionName: string;
+  selectedSprintId: number | null;
+}
+
+/** The scope one team's scan should use. */
+export interface ResolvedTeamScanScope {
+  scopeMode: string;
+  selectedPiValue: string;
+  selectedFixVersionName: string;
+  selectedSprintId: number | null;
+}
+
+/** True when a live selection actually names something to scope by. */
+function isLiveSelectionUsable(liveSelection: LiveScopeSelection): boolean {
+  return liveSelection.selectedPiValue.trim() !== ''
+    || liveSelection.selectedFixVersionName.trim() !== ''
+    || liveSelection.selectedSprintId !== null;
+}
+
+/**
+ * Decides which scope a team's Today scan runs under.
+ *
+ * The ACTIVE team follows the live dashboard selection; every other team keeps its own saved one.
+ * That split is the whole point. Today scoped every team from its persisted selection while the
+ * Hygiene tab used the live one, so the team you were actually looking at could be audited against a
+ * different PI than the page beside it — which is how the same state reported 1 overdue here and 2
+ * there. Applying the live selection to the OTHER teams would be worse than stale: it would audit
+ * them against a PI they are not in.
+ *
+ * A live selection that names nothing is ignored rather than obeyed. A dashboard mid-load has no PI
+ * yet, and taking that literally would silently widen the active team's scan to its whole project.
+ */
+export function resolveTeamScanScope(
+  savedSelection: SavedTeamScopeSelection,
+  activeTeamProfileId: string,
+  liveSelection: LiveScopeSelection,
+): ResolvedTeamScanScope {
+  const isActiveTeam = activeTeamProfileId !== '' && savedSelection.teamProfileId === activeTeamProfileId;
+  if (isActiveTeam && isLiveSelectionUsable(liveSelection)) {
+    return {
+      scopeMode: liveSelection.scopeMode,
+      selectedPiValue: liveSelection.selectedPiValue,
+      selectedFixVersionName: liveSelection.selectedFixVersionName,
+      selectedSprintId: liveSelection.selectedSprintId,
+    };
+  }
+
+  return {
+    scopeMode: savedSelection.scopeMode,
+    selectedPiValue: savedSelection.selectedPiValue,
+    selectedFixVersionName: savedSelection.selectedFixVersion,
+    selectedSprintId: savedSelection.selectedSprintId ? Number(savedSelection.selectedSprintId) : null,
+  };
 }

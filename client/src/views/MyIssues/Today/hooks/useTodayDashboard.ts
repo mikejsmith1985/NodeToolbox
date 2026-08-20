@@ -26,6 +26,9 @@ import { buildAssigneeJql } from '../../myIssuesRoleLens.ts';
 import { useMyIssuesPersonaStore } from '../../hooks/useMyIssuesPersonaStore.ts';
 import {
   buildTeamCountBreakdown,
+  buildTeamFlagBreakdown,
+  countAllTeamHygieneFlags,
+  resolveTeamScanScope,
   COMMITMENT_GAP_CHECK_IDS,
   countUniqueFindingKeysAcrossTeams,
   DUE_OVERDUE_CHECK_IDS,
@@ -162,6 +165,9 @@ const DESTINATIONS: Record<CategoryId, TodayDestination> = {
   // persisted project key showed a different (often zero) answer than the card (GH #167).
   'my-stale': { kind: 'myIssuesTab', tab: 'hygiene', search: { hygieneScope: 'mine', hygieneFilter: 'stale' } },
   'team-stale': { kind: 'sprintTab', tab: 'hygiene', search: { hygieneFilter: 'stale' } },
+  // No check filter: this card counts EVERY flag, so its drill-through must show every flag. A
+  // filter here would open a narrower page than the number that led the user to it.
+  'team-hygiene': { kind: 'sprintTab', tab: 'hygiene' },
   // Unassigned and commitment-gap counts come from the TEAM's sprint issues, so they must land on
   // the team dashboard's Hygiene tab. The personal Hygiene tab filters to assignee = currentUser(),
   // where an unassigned issue can never appear — the old link was a guaranteed zero (GH #167).
@@ -434,12 +440,26 @@ export function useTodayDashboard(): TodayDashboardData {
         teamProfileId: teamProfile.id,
         teamName: teamProfile.name,
         projectKey: teamProfile.projectKey.trim(),
-        scopeJql: buildTeamHygieneScopeJql({
-          scopeMode: teamProfile.scopeMode,
-          selectedPiValue: teamProfile.selectedPiValue,
-          selectedFixVersionName: teamProfile.selectedFixVersion,
-          selectedSprintId: teamProfile.selectedSprintId ? Number(teamProfile.selectedSprintId) : null,
-        }),
+        // The ACTIVE team follows the live dashboard selection, so the card and the Hygiene tab
+        // beside it audit the same issues; the others keep their saved scope, which is the only
+        // scope they have. Reading every team from its persisted selection is why this card could
+        // report 1 overdue where the team's own Hygiene page showed 2.
+        scopeJql: buildTeamHygieneScopeJql(resolveTeamScanScope(
+          {
+            teamProfileId: teamProfile.id,
+            scopeMode: teamProfile.scopeMode,
+            selectedPiValue: teamProfile.selectedPiValue,
+            selectedFixVersion: teamProfile.selectedFixVersion,
+            selectedSprintId: teamProfile.selectedSprintId,
+          },
+          activeTeamProfileId,
+          {
+            scopeMode: sprintState.scopeMode,
+            selectedPiValue: sprintState.selectedPiValue,
+            selectedFixVersionName: sprintState.selectedFixVersionName,
+            selectedSprintId: sprintState.selectedSprintId,
+          },
+        )),
       }));
     if (profileTargets.length > 0) {
       return profileTargets;
@@ -756,6 +776,16 @@ export function useTodayDashboard(): TodayDashboardData {
         // the count belongs to, and a way into that team's own Hygiene view.
         teamBreakdown: breakdownFor(DUE_OVERDUE_CHECK_IDS),
       },
+      // Everything the other cards do not watch. Without it, five green ticks sat over a board
+      // holding 41 hygiene flags — 27 missing Target Start alone — and Today read as "finished".
+      'team-hygiene': buildTeamCategory(
+        'team-hygiene',
+        teamScans.reduce((flagTotal, teamScan) => flagTotal + countAllTeamHygieneFlags(teamScan.findings), 0),
+        isTeamHygieneConfigured,
+        teamScanStatus,
+        teamScanErrorMessage,
+        teamScans.length > 1 ? buildTeamFlagBreakdown(teamScans) : undefined,
+      ),
       untriaged: isUntriagedConfigured
         ? {
             id: 'untriaged',

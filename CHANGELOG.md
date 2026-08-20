@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **A "Team hygiene flags" card on Today, counting everything the other cards do not.** Today showed
+  five green ticks over a board holding 41 hygiene flags — 27 missing Target Start, 6 missing Target
+  End, 6 missing fix version — because no card watched those families (GH #375). A checklist silent
+  about most of the list is worse than no checklist: it says you are finished. The card counts FLAGS
+  rather than issues, matching the Hygiene page's own headline, because two numbers describing one
+  scan have to be the same number. Its drill-through carries no check filter, so the page it opens is
+  as wide as the number that sent you there.
+
+### Fixed
+- **Today and the Hygiene tab now scope the active team identically.** Today built every team's scope
+  from that profile's PERSISTED selection while the Hygiene tab used the LIVE one, so the team you
+  were looking at could be audited against a different PI than the page beside it — the same state
+  reporting 1 overdue on one surface and 2 on the other. The active team now follows the live
+  selection; every other team keeps its saved one, because the live selection describes a single team
+  and applying it to the rest would audit them against a PI they are not in. A live selection naming
+  nothing is ignored rather than obeyed, since a dashboard mid-load would otherwise widen the active
+  team's scan to its whole project.
+
 ### Changed
 - **Two more private copies of the ART settings reader are gone.** `DependenciesTab` and
   `piReviewJira` each carried their own `readArtSettings` and their own copy of the default

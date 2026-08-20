@@ -25,6 +25,8 @@ import {
   TEAM_UNASSIGNED_CHECK_IDS,
   type CategoryId,
   type TeamScanEntry,
+  countAllTeamHygieneFlags,
+  resolveTeamScanScope,
 } from './todayCategories.ts';
 
 // A date far enough in the past to clear any stale / overdue threshold.
@@ -273,5 +275,90 @@ describe('buildTeamCountBreakdown — an unscoped team says it audited everythin
     );
 
     expect(breakdown[0].isProjectWideScope).toBe(true);
+  });
+});
+
+describe('countAllTeamHygieneFlags — the flags no Today card was watching', () => {
+  // Today showed five green ticks while the team's Hygiene page held 41 flags: 27 missing Target
+  // Start, 6 missing Target End, 6 missing Fix Version. None of those has a card, so a board with
+  // real outstanding work read as "all clear" (GH #375). A checklist that is silent about most of
+  // the list is worse than no checklist — it is a checklist that says you are finished.
+  function finding(issueKey: string, checkIds: string[]): HygieneFinding {
+    return {
+      issue: { key: issueKey, fields: { summary: issueKey } },
+      flags: checkIds.map((checkId) => ({ checkId, label: checkId, severity: 'warn' })),
+    } as unknown as HygieneFinding;
+  }
+
+  it('counts every flag, not every issue', () => {
+    // The Hygiene page reports flags. Counting issues here would produce a smaller number for the
+    // same state and put the two surfaces back into disagreement.
+    const flagCount = countAllTeamHygieneFlags([
+      finding('A-1', ['missing-target-start', 'missing-target-end']),
+      finding('A-2', ['missing-fix-version']),
+    ]);
+
+    expect(flagCount).toBe(3);
+  });
+
+  it('is zero for a clean scan', () => {
+    expect(countAllTeamHygieneFlags([])).toBe(0);
+  });
+
+  it('counts the families no other card watches', () => {
+    const flagCount = countAllTeamHygieneFlags([finding('A-1', ['missing-target-start'])]);
+
+    expect(flagCount).toBe(1);
+  });
+});
+
+describe('resolveTeamScanScope — the team on screen must agree with the page on screen', () => {
+  // Today scoped every team from its PERSISTED selection while the Hygiene tab used the LIVE one,
+  // so the team you are actually looking at could be audited against a different PI than the page
+  // beside it — reporting 1 overdue where Hygiene showed 2 (GH #375).
+  const LIVE = { scopeMode: 'pi', selectedPiValue: 'PI 26.4', selectedFixVersionName: '', selectedSprintId: null };
+
+  it('uses the live selection for the active team', () => {
+    const scope = resolveTeamScanScope(
+      { teamProfileId: 'team-a', scopeMode: 'pi', selectedPiValue: 'PI 26.3', selectedFixVersion: '', selectedSprintId: null },
+      'team-a',
+      LIVE,
+    );
+
+    expect(scope.selectedPiValue).toBe('PI 26.4');
+  });
+
+  it('leaves every other team on its own saved selection', () => {
+    // The live selection describes ONE team. Applying it to the others would audit them against a
+    // PI they are not in, which is a worse answer than a slightly stale one.
+    const scope = resolveTeamScanScope(
+      { teamProfileId: 'team-b', scopeMode: 'pi', selectedPiValue: 'PI 26.3', selectedFixVersion: '', selectedSprintId: null },
+      'team-a',
+      LIVE,
+    );
+
+    expect(scope.selectedPiValue).toBe('PI 26.3');
+  });
+
+  it('falls back to the saved selection when no team is active', () => {
+    const scope = resolveTeamScanScope(
+      { teamProfileId: 'team-a', scopeMode: 'pi', selectedPiValue: 'PI 26.3', selectedFixVersion: '', selectedSprintId: null },
+      '',
+      LIVE,
+    );
+
+    expect(scope.selectedPiValue).toBe('PI 26.3');
+  });
+
+  it('ignores a live selection that names nothing, rather than emptying the scope', () => {
+    // A dashboard mid-load has no PI yet. Taking that literally would widen the active team's scan
+    // to the whole project and report a number nothing on screen explains.
+    const scope = resolveTeamScanScope(
+      { teamProfileId: 'team-a', scopeMode: 'pi', selectedPiValue: 'PI 26.3', selectedFixVersion: '', selectedSprintId: null },
+      'team-a',
+      { scopeMode: 'pi', selectedPiValue: '', selectedFixVersionName: '', selectedSprintId: null },
+    );
+
+    expect(scope.selectedPiValue).toBe('PI 26.3');
   });
 });
