@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **A column's status and sub-status are CHOSEN from Jira's own lists, not typed.** They shipped as
+  text boxes with suggestions, which means a wrong case or a stray space saves cleanly and produces a
+  column that silently holds nothing — with nothing on screen saying why. Both are now dropdowns
+  built from the same lists the board already loads (observed statuses plus available transitions;
+  sub-statuses from the field's allowed values plus those in use). A chosen value cannot be wrong.
+- **"No sub-status values" now says what it costs and how to fix it.** It read as a mild limitation —
+  "columns can only be mapped to a status" — when on a workflow where several columns share one Jira
+  status (Working covers both *Working* and *Code Review*; Ready for Testing covers *SL*, *INT* and
+  *BT Testing*) the sub-status is the only thing telling them apart. Without it those columns cannot
+  be built at all. The message now says so and points at Admin Hub → Field Mapping, where the
+  undiscovered field is usually the cause.
+
 ### Added
 - **The team roster now travels in the shared ART workspace.** It lived only in
   `tbxSprintDashboardRoster` on one machine, so "Clear All Connection Data" took it with no copy

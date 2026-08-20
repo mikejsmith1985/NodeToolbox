@@ -1,7 +1,7 @@
 // ColumnVocabularyEditor.test.tsx — Proves the editor cannot produce a mapping Jira would reject,
 // and cannot replace someone's columns without showing them what changes.
 
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { ColumnVocabularyEditor } from './ColumnVocabularyEditor.tsx';
@@ -122,7 +122,9 @@ describe('ColumnVocabularyEditor — the mapping controls', () => {
       />,
     );
 
-    expect(screen.getByText(/columns can only be mapped to a status/)).toBeTruthy();
+    expect(screen.getByRole('alert').textContent).toMatch(/no sub-status values were found/i);
+    // Naming the fix, because on this workflow the missing field is not a limitation to work around.
+    expect(screen.getByRole('alert').textContent).toMatch(/field mapping/i);
 
     fireEvent.click(screen.getByRole('button', { name: 'Suggest columns from this board' }));
     const [nextVocabulary] = onVocabularyChange.mock.calls[0];
@@ -412,17 +414,17 @@ describe('ColumnVocabularyEditor — mapping a state no issue is currently in', 
     renderEditor({ onVocabularyChange, columns: [{ id: 'col-1', name: 'BT Testing', order: 0, mappings: [] }] });
 
     fireEvent.change(screen.getByLabelText('Status for column col-1'), {
-      target: { value: 'Ready for Testing' },
+      target: { value: 'In Progress' },
     });
     fireEvent.change(screen.getByLabelText('Sub-status for column col-1'), {
-      target: { value: 'Ready for UAT' },
+      target: { value: 'Dev Complete' },
     });
     fireEvent.click(screen.getByRole('button', { name: /add status to bt testing/i }));
 
     expect(onVocabularyChange).toHaveBeenCalled();
     const savedColumn = onVocabularyChange.mock.calls[0][0].columns[0];
     expect(savedColumn.mappings).toEqual([
-      { jiraStatusName: 'Ready for Testing', subStatusValue: 'Ready for UAT' },
+      { jiraStatusName: 'In Progress', subStatusValue: 'Dev Complete' },
     ]);
   });
 
@@ -430,11 +432,11 @@ describe('ColumnVocabularyEditor — mapping a state no issue is currently in', 
     const onVocabularyChange = vi.fn();
     renderEditor({ onVocabularyChange, columns: [{ id: 'col-1', name: 'Triage', order: 0, mappings: [] }] });
 
-    fireEvent.change(screen.getByLabelText('Status for column col-1'), { target: { value: 'Triage' } });
+    fireEvent.change(screen.getByLabelText('Status for column col-1'), { target: { value: 'Done' } });
     fireEvent.click(screen.getByRole('button', { name: /add status to triage/i }));
 
     expect(onVocabularyChange.mock.calls[0][0].columns[0].mappings).toEqual([
-      { jiraStatusName: 'Triage', subStatusValue: null },
+      { jiraStatusName: 'Done', subStatusValue: null },
     ]);
   });
 
@@ -451,12 +453,36 @@ describe('ColumnVocabularyEditor — mapping a state no issue is currently in', 
     const onVocabularyChange = vi.fn();
     renderEditor({
       onVocabularyChange,
-      columns: [{ id: 'col-1', name: 'Triage', order: 0, mappings: [{ jiraStatusName: 'Triage', subStatusValue: null }] }],
+      columns: [{ id: 'col-1', name: 'Triage', order: 0, mappings: [{ jiraStatusName: 'Done', subStatusValue: null }] }],
     });
 
-    fireEvent.change(screen.getByLabelText('Status for column col-1'), { target: { value: 'Triage' } });
+    fireEvent.change(screen.getByLabelText('Status for column col-1'), { target: { value: 'Done' } });
     fireEvent.click(screen.getByRole('button', { name: /add status to triage/i }));
 
     expect(onVocabularyChange).not.toHaveBeenCalled();
+  });
+});
+
+describe('ColumnVocabularyEditor — a status is chosen, never typed', () => {
+  // A typed status has to match Jira exactly: case, spacing, the lot. A near miss saves cleanly and
+  // produces a column that silently holds nothing, with nothing on screen saying why.
+  it('offers the statuses as a dropdown rather than a text box', () => {
+    render(
+      <ColumnVocabularyEditor allItems={BOARD_ITEMS} canShare optionSources={OPTION_SOURCES} onVocabularyChange={vi.fn()} vocabulary={buildVocabulary()} />,
+    );
+
+    const statusControl = screen.getAllByLabelText(/^Status for column /)[0];
+    expect(statusControl.tagName).toBe('SELECT');
+    expect(within(statusControl as HTMLSelectElement).getByRole('option', { name: 'In Progress' })).toBeTruthy();
+  });
+
+  it('offers the sub-statuses as a dropdown too', () => {
+    render(
+      <ColumnVocabularyEditor allItems={BOARD_ITEMS} canShare optionSources={OPTION_SOURCES} onVocabularyChange={vi.fn()} vocabulary={buildVocabulary()} />,
+    );
+
+    const subStatusControl = screen.getAllByLabelText(/^Sub-status for column /)[0];
+    expect(subStatusControl.tagName).toBe('SELECT');
+    expect(within(subStatusControl as HTMLSelectElement).getByRole('option', { name: 'Dev Complete' })).toBeTruthy();
   });
 });

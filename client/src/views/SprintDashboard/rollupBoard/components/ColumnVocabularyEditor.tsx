@@ -142,8 +142,9 @@ export function ColumnVocabularyEditor({
    * Separate from `handleAddStateToColumn` because that one only accepts a state OBSERVED on the
    * board — a state some issue is sitting in right now. That made an empty column unfillable until
    * somebody found a matching issue and moved it, and made a status the team has not used yet
-   * impossible to map at all. The status list is offered as suggestions rather than enforced, so a
-   * status Jira has but this board has not shown is still reachable.
+   * impossible to map at all. The value is CHOSEN from Jira's own lists rather than typed: a typed
+   * status must match exactly, and a wrong case or a stray space yields a column that holds nothing
+   * and never says why.
    */
   function handleAddTypedStateToColumn(columnId: string): void {
     const targetColumn = vocabulary.columns.find((column) => column.id === columnId);
@@ -258,9 +259,16 @@ export function ColumnVocabularyEditor({
         </span>
       </div>
 
+      {/* A dead end unless it says why. On a workflow where several columns share one status —
+          Working covers both Working and Code Review, Ready for Testing covers SL, INT and BT — the
+          sub-status is the ONLY thing telling them apart, so "no sub-status values" does not mean
+          "map by status alone", it means those columns cannot be built at all. */}
       {optionSources.isSubStatusUnavailable && (
-        <p className={styles.fieldLabel}>
-          No sub-status values are available on this board, so columns can only be mapped to a status.
+        <p className={styles.editorError} role="alert">
+          <strong>No sub-status values were found for this board.</strong> Columns can only be mapped
+          to a status until that is fixed — so any two columns that share a Jira status (for example
+          Working vs Code Review) cannot be told apart. Usually the sub-status field has not been
+          discovered: set it in Admin Hub → Field Mapping, then reload the board.
         </p>
       )}
 
@@ -303,35 +311,33 @@ export function ColumnVocabularyEditor({
           ))}
 
           {/* Say which state this column stands for, without needing an issue already sitting in it.
-              The lists are SUGGESTIONS, not a closed set: a status Jira has but this board has not
-              shown yet must still be reachable, which is the whole reason a column could previously
-              only be filled by finding a matching issue and moving it. */}
-          <input
+              CHOSEN, never typed. A typed status has to match Jira exactly — case, spacing, the lot —
+              and a near miss produces a column that silently holds nothing with no indication why.
+              These lists come from Jira itself, so a chosen value cannot be wrong. */}
+          <select
             aria-label={`Status for column ${column.id}`}
             className={styles.inputField}
-            list={`status-options-${column.id}`}
             onChange={(changeEvent) => updatePendingState(column.id, { statusName: changeEvent.target.value })}
-            placeholder="Jira status"
             value={pendingStateByColumn[column.id]?.statusName ?? ''}
-          />
-          <datalist id={`status-options-${column.id}`}>
-            {optionSources.statusNames.map((statusName) => <option key={statusName} value={statusName} />)}
-          </datalist>
+          >
+            <option value="">Choose a status…</option>
+            {optionSources.statusNames.map((statusName) => (
+              <option key={statusName} value={statusName}>{statusName}</option>
+            ))}
+          </select>
 
           {hasSubStatusField && (
-            <>
-              <input
-                aria-label={`Sub-status for column ${column.id}`}
-                className={styles.inputField}
-                list={`sub-status-options-${column.id}`}
-                onChange={(changeEvent) => updatePendingState(column.id, { subStatusValue: changeEvent.target.value })}
-                placeholder="Sub-status (optional)"
-                value={pendingStateByColumn[column.id]?.subStatusValue ?? ''}
-              />
-              <datalist id={`sub-status-options-${column.id}`}>
-                {optionSources.subStatusValues.map((subStatus) => <option key={subStatus} value={subStatus} />)}
-              </datalist>
-            </>
+            <select
+              aria-label={`Sub-status for column ${column.id}`}
+              className={styles.inputField}
+              onChange={(changeEvent) => updatePendingState(column.id, { subStatusValue: changeEvent.target.value })}
+              value={pendingStateByColumn[column.id]?.subStatusValue ?? ''}
+            >
+              <option value="">No sub-status</option>
+              {optionSources.subStatusValues.map((subStatus) => (
+                <option key={subStatus} value={subStatus}>{subStatus}</option>
+              ))}
+            </select>
           )}
 
           <button
