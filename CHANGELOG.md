@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Feature Review can write the release-derived dates for every Feature at once.** These dates are
+  planned at the Feature level, and the only bulk button for them lived on the Hygiene page — so
+  correcting a PI meant opening each Feature and retyping a date the policy already knows. The tab
+  now carries the same deterministic write, running the same engine as Hygiene so the two can never
+  disagree about what a date should be.
+
+### Fixed
+- **"Could not be dated" now names the issues.** The message reported counts and reasons —
+  "4 could not be dated — not yet in Ready to Work or Working (3)" — which says there is a problem
+  and gives nowhere to go (GH #375). Each reason now lists the keys behind it, so they can be opened
+  and dealt with. A very long list is capped with "+N more" while the count stays honest.
+
 ### Fixed
 - **Story points are read from the field this instance actually uses.** Forty-one issues that plainly
   had estimates were reported as missing them (GH #375). Three stores had an opinion and none agreed:

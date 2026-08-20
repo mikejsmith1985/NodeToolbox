@@ -259,3 +259,27 @@ describe('summariseUndecidedDates', () => {
     expect(summary).toContain('reason B (1)');
   });
 });
+
+describe('summariseUndecidedDates — the keys are what make it actionable', () => {
+  it('names the issues behind each reason', () => {
+    // "4 could not be dated" told the user there was a problem and gave them nowhere to go.
+    const summary = summariseUndecidedDates([
+      { issueKey: 'ENFCT-1', reasons: ['not yet in Ready to Work or Working'] },
+      { issueKey: 'ENFCT-2', reasons: ['not yet in Ready to Work or Working'] },
+    ]);
+
+    expect(summary).toContain('ENFCT-1, ENFCT-2');
+  });
+
+  it('caps a very long list but keeps the count honest', () => {
+    const many = Array.from({ length: 30 }, (_unused, index) => ({
+      issueKey: `ENFCT-${index + 1}`,
+      reasons: ['no unreleased fix version with a release date'],
+    }));
+
+    const summary = summariseUndecidedDates(many);
+
+    expect(summary).toContain('(30)');
+    expect(summary).toContain('+18 more');
+  });
+});

@@ -216,8 +216,13 @@ export function readDeterministicDateFixCandidates(
     .map((finding) => finding.issue);
 }
 
+/** How many issue keys one reason lists before it summarises the rest. */
+const MAX_LISTED_UNDECIDED_KEYS = 12;
+
 /**
- * Turns the undecided list into one readable phrase, grouped by reason.
+ * Turns the undecided list into one readable phrase, grouped by reason and NAMING the issues.
+ *
+ * The keys are what makes it actionable: a count says there is a problem and gives nowhere to go.
  *
  * Grouped because the reasons repeat: nineteen issues in To Do produce nineteen identical lines,
  * which is a wall rather than an explanation. "not yet in Ready to Work or Working (18)" is the
@@ -229,15 +234,31 @@ export function readDeterministicDateFixCandidates(
 export function summariseUndecidedDates(
   undecided: readonly { issueKey: string; reasons: string[] }[],
 ): string {
-  const countByReason = new Map<string, number>();
+  const countByReason = new Map<string, string[]>();
   for (const undecidedIssue of undecided) {
     for (const reason of undecidedIssue.reasons) {
-      countByReason.set(reason, (countByReason.get(reason) ?? 0) + 1);
+      countByReason.set(reason, [...(countByReason.get(reason) ?? []), undecidedIssue.issueKey]);
     }
   }
 
   return [...countByReason.entries()]
-    .sort((first, second) => second[1] - first[1])
-    .map(([reason, issueCount]) => `${reason} (${issueCount})`)
+    .sort((first, second) => second[1].length - first[1].length)
+    .map(([reason, issueKeys]) => `${reason} (${issueKeys.length}): ${formatIssueKeyList(issueKeys)}`)
     .join('; ');
+}
+
+/**
+ * Lists the issue keys behind one reason, capping a long list rather than printing all of it.
+ *
+ * The keys are the whole point — "3 could not be dated" tells somebody there is a problem and gives
+ * them nowhere to go, while three issue keys can be opened. The cap exists because a scan of two
+ * thousand could otherwise put two thousand keys on one line, and the count still states the truth
+ * after the "+N more".
+ */
+function formatIssueKeyList(issueKeys: readonly string[]): string {
+  if (issueKeys.length <= MAX_LISTED_UNDECIDED_KEYS) {
+    return issueKeys.join(', ');
+  }
+  const listedKeys = issueKeys.slice(0, MAX_LISTED_UNDECIDED_KEYS).join(', ');
+  return `${listedKeys} +${issueKeys.length - MAX_LISTED_UNDECIDED_KEYS} more`;
 }

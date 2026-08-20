@@ -9,6 +9,8 @@ import { useSettingsStore } from '../../store/settingsStore.ts';
 import { useToast } from '../../components/Toast/ToastContext.ts';
 import { normalizeRichTextToPlainText } from '../../utils/richTextPlainText.ts';
 import type { JiraTransition } from '../../types/jira.ts';
+import { applyDerivedDates, summariseUndecidedDates } from '../Hygiene/derivedDateFix.ts';
+import type { JiraIssue } from '../Hygiene/checks/hygieneChecks.ts';
 import type { BlueprintHealthStatus, BlueprintStoryNode } from '../ArtView/blueprintHierarchy.ts';
 import type { ArtTeam } from '../ArtView/hooks/useArtData.ts';
 import type { HygieneCheckId, HygieneFieldConfig, HygieneFlag } from '../Hygiene/checks/hygieneChecks.ts';
@@ -879,6 +881,18 @@ export default function FeatureReviewTab({
         </span>
       </div>
 
+      {/* The same deterministic date write the Hygiene page offers, at the level these dates are
+          actually planned at. A Feature's Due Date and Target End follow from its fix version, so
+          asking somebody to open each Feature and retype a date the policy already knows is how a
+          PI's worth of Features stay wrong. */}
+      {featureReviewFieldConfig !== null && featureReviewItems.length > 0 ? (
+        <FeatureDateFixButton
+          featureIssues={featureReviewItems.map((featureReviewItem) => featureReviewItem.featureIssue)}
+          fieldConfig={featureReviewFieldConfig}
+          onFixed={() => void loadFeatureReviewData()}
+        />
+      ) : null}
+
       {isLoading ? <p className={styles.piReviewAuthoringText}>Loading feature rollup and hygiene flags...</p> : null}
       {loadError ? <p className={styles.errorMessage}>{loadError}</p> : null}
       {!isLoading && !loadError && productOwnerQueryWarning ? (
@@ -1007,5 +1021,57 @@ export default function FeatureReviewTab({
         </div>
       ) : null}
     </section>
+  );
+}
+
+/**
+ * Writes the release-derived dates onto every Feature on this tab, in one action.
+ *
+ * Bulk rather than per-row for the same reason as the Hygiene page's button: the dates are DERIVED,
+ * so there is nothing per-Feature to decide. Once the policy is agreed, a PI of wrong Features is one
+ * click, and asking somebody to press Apply forty times is how they stay wrong instead.
+ *
+ * It NAMES the Features it could not date, rather than reporting a bare zero. "Updated 0" is true and
+ * useless: the reason — no dated fix version, work not started — is the only part somebody can act on.
+ */
+function FeatureDateFixButton({ featureIssues, fieldConfig, onFixed }: {
+  featureIssues: JiraIssue[];
+  fieldConfig: HygieneFieldConfig;
+  onFixed: () => void;
+}) {
+  const [isApplying, setIsApplying] = useState(false);
+  const [resultMessage, setResultMessage] = useState<string | null>(null);
+
+  async function applyEveryFeatureDate(): Promise<void> {
+    setIsApplying(true);
+    setResultMessage(null);
+    try {
+      const outcome = await applyDerivedDates(featureIssues, fieldConfig);
+      const failureNote = outcome.failures.length > 0
+        ? ` ${outcome.failures.length} could not be written: ${outcome.failures.map((failure) => failure.issueKey).join(', ')}.`
+        : '';
+      const undecidedSummary = summariseUndecidedDates(outcome.undecided);
+      const undecidedNote = undecidedSummary === ''
+        ? ''
+        : ` ${outcome.undecided.length} could not be dated — ${undecidedSummary}.`;
+      setResultMessage(`Updated ${outcome.updatedIssueKeys.length} feature(s).${failureNote}${undecidedNote}`);
+      onFixed();
+    } finally {
+      setIsApplying(false);
+    }
+  }
+
+  return (
+    <div className={styles.featureReviewFixActions}>
+      <button
+        className={styles.featureReviewSaveAllButton}
+        disabled={isApplying}
+        onClick={() => void applyEveryFeatureDate()}
+        type="button"
+      >
+        {isApplying ? 'Applying…' : `📅 Fix all ${featureIssues.length} feature date(s)`}
+      </button>
+      {resultMessage ? <span className={styles.piReviewAuthoringText} role="status">{resultMessage}</span> : null}
+    </div>
   );
 }
