@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Typing a space inside a Hygiene finding row no longer collapses it.** The row is a
+  `role="button"`, and its keyboard handler ran for every key that bubbled out of the controls
+  inside it. A space typed into the Feature search box was swallowed by `preventDefault()` and
+  toggled the row shut on its way past — so a multi-word Feature name could never be typed, the
+  search never ran, and the dropdown "was never found no matter what I type" (GH #375). The handler
+  now acts only on keys raised on the row itself; a key raised inside it belongs to whatever holds
+  focus. The Readiness panel already worked this way — the guard existed, it had just never been
+  applied here. The hygiene summary tiles get the same guard, so Enter on a tile's "open in Jira"
+  link follows the link instead of being cancelled and re-read as a filter click.
+- **A My Issues card can now be bulk-selected from the keyboard.** Same defect, opposite symptom:
+  pressing space over a card's bulk-select checkbox toggled the selection twice — once natively,
+  once via the card's own handler — so the two cancelled out and nothing was ever selected.
+
 ### Removed
 - **The third GitHub token field is gone.** Credential Management offered a Personal Access Token
   input that wrote to a localStorage key **nothing in the app ever read**. Its only real effect was

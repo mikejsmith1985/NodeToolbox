@@ -488,6 +488,9 @@ function renderSummaryTile(
   }
 
   function handleTileKeyDown(keyEvent: React.KeyboardEvent) {
+    // Same guard as the finding row: the tile holds an "open in Jira" link, and Enter on that link
+    // must follow it rather than being cancelled and re-read as a filter click.
+    if (keyEvent.target !== keyEvent.currentTarget) return;
     if (keyEvent.key === 'Enter' || keyEvent.key === ' ') {
       keyEvent.preventDefault();
       hygieneState.selectFilter(checkId);
@@ -570,6 +573,12 @@ function FindingRow({
   ].filter(Boolean).join(' ');
 
   function handleKeyDown(keyEvent: React.KeyboardEvent) {
+    // The row is a button that CONTAINS text inputs, so every key typed into a fix control bubbles
+    // through here. Acting on all of them meant a space typed into the Feature search box was eaten
+    // by preventDefault() and collapsed the row on its way past — a multi-word Feature name could
+    // never be typed and the dropdown never appeared (GH #375). A key raised inside the row belongs
+    // to whatever holds focus; only a key raised ON the row is the row's to act on.
+    if (keyEvent.target !== keyEvent.currentTarget) return;
     if (keyEvent.key === 'Enter' || keyEvent.key === ' ') {
       keyEvent.preventDefault();
       onToggleExpand();

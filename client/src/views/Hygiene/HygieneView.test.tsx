@@ -851,3 +851,58 @@ describe('HygieneView — Fix all dates', () => {
     expect(screen.queryByRole('button', { name: /Fix all/i })).not.toBeInTheDocument();
   });
 });
+
+describe('HygieneView — typing inside a finding row', () => {
+  // The row is a role="button" that CONTAINS text inputs. Its keydown handler ran for every key
+  // bubbling out of those inputs, so a space typed into the Feature search box was swallowed by
+  // preventDefault() and collapsed the row on the way past. A multi-word Feature name could
+  // therefore never be typed and the dropdown never appeared (GH #375).
+  function buildFeatureLinkFinding(): HygieneFinding {
+    return {
+      issue: {
+        key: 'TBX-909',
+        fields: {
+          summary: 'Needs a feature link',
+          created: buildDateDaysAgo(3),
+          updated: buildDateDaysAgo(3),
+          status: { name: 'To Do', statusCategory: { key: 'new' } },
+        },
+      },
+      flags: [{ checkId: 'missing-feature-link', label: 'Missing feature link', severity: 'warn' }],
+    };
+  }
+
+  beforeEach(() => {
+    mockUseHygieneState.mockReturnValue(buildHookState({ findings: [buildFeatureLinkFinding()] }));
+  });
+
+  it('does not toggle the row when a space is typed into the feature search box', () => {
+    render(<HygieneView />);
+
+    const searchBox = screen.getByLabelText(/search issues for link feature/i);
+    const findingRow = screen.getByRole('link', { name: 'TBX-909' }).closest('[aria-expanded]');
+    expect(findingRow).toHaveAttribute('aria-expanded', 'false');
+
+    fireEvent.keyDown(searchBox, { key: ' ' });
+
+    expect(findingRow).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('lets the space character reach the input rather than cancelling it', () => {
+    render(<HygieneView />);
+
+    const searchBox = screen.getByLabelText(/search issues for link feature/i);
+    const wasNotCancelled = fireEvent.keyDown(searchBox, { key: ' ' });
+
+    expect(wasNotCancelled).toBe(true);
+  });
+
+  it('still toggles the row when the space lands on the row itself', () => {
+    render(<HygieneView />);
+
+    const findingRow = screen.getByRole('link', { name: 'TBX-909' }).closest('[aria-expanded]');
+    fireEvent.keyDown(findingRow as Element, { key: ' ' });
+
+    expect(findingRow).toHaveAttribute('aria-expanded', 'true');
+  });
+});

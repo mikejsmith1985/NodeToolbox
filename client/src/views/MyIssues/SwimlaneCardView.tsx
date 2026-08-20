@@ -121,6 +121,11 @@ function IssueCard({
   }
 
   function handleKeyDown(keyboardEvent: React.KeyboardEvent) {
+    // The card is a button that CONTAINS the bulk-select checkbox, so a space pressed over that
+    // checkbox bubbled here and toggled the selection a second time — the two cancelled and the
+    // card could never be selected from the keyboard. A key raised inside the card belongs to
+    // whatever holds focus; only a key raised ON the card is the card's to act on.
+    if (keyboardEvent.target !== keyboardEvent.currentTarget) return;
     if (keyboardEvent.key === 'Enter' || keyboardEvent.key === ' ') {
       handleClick();
     }

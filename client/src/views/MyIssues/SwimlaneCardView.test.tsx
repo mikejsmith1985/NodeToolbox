@@ -175,6 +175,36 @@ describe('SwimlaneCardView', () => {
     expect(screen.queryByText('Summary for TBX-1')).not.toBeInTheDocument();
   });
 
+  // The card is a role="button" whose keydown handler ran for every key bubbling out of it,
+  // including the bulk-select checkbox it contains. Pressing space over that checkbox toggled the
+  // selection TWICE — once natively, once via the card — so the two cancelled and a card could
+  // never be selected from the keyboard. Same defect class as the Hygiene feature-search box
+  // swallowing spaces (GH #375).
+  it('toggles bulk selection exactly once when space is pressed on the checkbox', async () => {
+    const user = userEvent.setup();
+    const handleToggleBulk = vi.fn();
+
+    render(
+      <SwimlaneCardView
+        activeQuickFilterIds={{}}
+        bulkSelectedKeys={{}}
+        collapsedSwimlanes={{}}
+        expandedIssueKey={null}
+        isBulkModeActive={true}
+        issues={[createIssue('TBX-2', 'In Progress', 'indeterminate')]}
+        onIssueClick={vi.fn()}
+        onIssueUpdated={vi.fn()}
+        onToggleBulkKey={handleToggleBulk}
+        onToggleSwimlane={vi.fn()}
+      />,
+    );
+
+    screen.getByRole('checkbox').focus();
+    await user.keyboard(' ');
+
+    expect(handleToggleBulk).toHaveBeenCalledTimes(1);
+  });
+
   it('shows checkbox when bulk mode is active', () => {
     render(
       <SwimlaneCardView
