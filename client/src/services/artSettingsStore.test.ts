@@ -78,3 +78,22 @@ describe('readArtSettings', () => {
     expect(readArtSettings(localStorage).depLinkTypes).toEqual(DEFAULT_ART_SETTINGS.depLinkTypes);
   });
 });
+
+describe('readArtSettings in a server bundle', () => {
+  // Several modules that read these settings are bundled into the SERVER engines, where there is no
+  // `window` at all. Touching `window.localStorage` eagerly throws before any default can apply —
+  // which is exactly what took eight PI-review DOM tests down the moment this reader replaced a
+  // local one. The DOM suite caught it; this test keeps it caught.
+  it('returns the defaults when no storage exists at all', () => {
+    const originalWindow = globalThis.window;
+    // @ts-expect-error — deliberately simulating the server bundle, where window is absent.
+    delete globalThis.window;
+
+    try {
+      expect(readArtSettings().sharedArtKey).toBe(DEFAULT_ART_SETTINGS.sharedArtKey);
+      expect(readArtSettings().depLinkTypes).toEqual(DEFAULT_ART_SETTINGS.depLinkTypes);
+    } finally {
+      globalThis.window = originalWindow;
+    }
+  });
+});

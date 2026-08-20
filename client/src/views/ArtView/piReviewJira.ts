@@ -1,5 +1,6 @@
 // piReviewJira.ts — Jira-backed PI Review reconciliation helpers for feature summaries, links, and estimates.
 
+import { readArtSettings } from '../../services/artSettingsStore.ts';
 import { jiraGet, jiraPost, jiraPut } from '../../services/jiraApi.ts';
 import type { JiraIssue, JiraIssueLink, JiraTransition } from '../../types/jira.ts';
 import type { PiReviewRow } from './piReviewTable.ts';
@@ -18,10 +19,8 @@ import {
 import type { PiReviewDeliveryDates, RawDeliveryIssue, RawStatusCatalogEntry } from './piReviewDeliveryDates.ts';
 import { featureLinkCandidateFieldIds, loadConfiguredFeatureLinkFieldId } from '../../utils/featureLink.ts';
 
-const ART_SETTINGS_STORAGE_KEY = 'tbxARTSettings';
 /** The checkbox value a ticked Carry-Over cell carries — a carryover row's estimate is decoupled from Jira. */
 const PI_REVIEW_CARRY_OVER_MARKED_VALUE = 'Yes';
-const DEFAULT_DEPENDENCY_LINK_TYPES = ['blocks', 'is blocked by', 'depends on', 'is depended on by', 'relates to'];
 const FEATURE_QUERY_BATCH_SIZE = 50;
 const FEATURE_KEY_PATTERN = /\b[A-Z][A-Z0-9]+-\d+\b/i;
 const BLANKISH_TEXT_VALUES = new Set(['', 'n/a', 'na', 'none', 'no', '-', '--']);
@@ -46,13 +45,6 @@ const TARGET_END_LABEL = 'Target End';
 const DUE_DATE_LABEL = 'Due Date';
 const FIX_VERSION_LABEL = 'Fix Version';
 
-interface ArtAdvancedSettings {
-  depLinkTypes?: string[];
-  piReviewTargetStartFieldId?: string;
-  piReviewTargetEndFieldId?: string;
-  /** Status whose first entry marks Dev Start on the delivery-milestone columns (default "Implementing"). */
-  piReviewDevStartStatusName?: string;
-}
 
 export interface PiReviewEstimateUpdate {
   featureKey: string;
@@ -172,14 +164,6 @@ function resolveAllowedValuePayload(
     return { accountId: matchedAllowedValue.accountId };
   }
   return selectedValue;
-}
-
-function readArtSettings(): ArtAdvancedSettings {
-  try {
-    return JSON.parse(localStorage.getItem(ART_SETTINGS_STORAGE_KEY) || '{}') as ArtAdvancedSettings;
-  } catch {
-    return {};
-  }
 }
 
 function readConfiguredFieldId(fieldValue: string | undefined): string | null {
@@ -381,7 +365,7 @@ function readImportedCellValue(cellValues: string[], columnIndex: number | null)
 }
 
 function readConfiguredDependencyLinkTypes(): Set<string> {
-  const configuredDependencyLinkTypes = readArtSettings().depLinkTypes ?? DEFAULT_DEPENDENCY_LINK_TYPES;
+  const configuredDependencyLinkTypes = readArtSettings().depLinkTypes;
   return new Set(configuredDependencyLinkTypes.map((linkTypeName) => normalizeFreeText(linkTypeName)));
 }
 

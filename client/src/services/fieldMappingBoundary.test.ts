@@ -239,6 +239,9 @@ const PI_UNMIGRATED_FILES = [
 
 /** Files allowed to name the ART settings storage key directly. */
 const ART_SETTINGS_ALLOWED_FILES = [
+  // Lists the key in a storage-cleanup array rather than parsing it — naming a key to CLEAR it is
+  // not a second reader, and forcing it through the reader would be ceremony with no benefit.
+  'views/ReportsHub/ReportsHubRuntimeBoundary.tsx',
   'services/artSettingsStore.ts',
   'services/artSettingsStore.test.ts',
   'services/jiraFieldMapping.ts',
@@ -257,11 +260,9 @@ const ART_SETTINGS_UNMIGRATED_FILES = [
   'views/ArtView/blueprintHierarchy.test.ts',
   'views/ArtView/blueprintHierarchy.ts',
   'views/ArtView/DependenciesTab.test.tsx',
-  'views/ArtView/DependenciesTab.tsx',
   'views/ArtView/hooks/useArtData.test.ts',
   'views/ArtView/hooks/useArtData.ts',
   'views/ArtView/piReviewJira.test.ts',
-  'views/ArtView/piReviewJira.ts',
   'views/ArtView/piReviewPullFeatures.ts',
   'views/ArtView/PiReviewTab.test.tsx',
   'views/Hygiene/checks/hygieneFieldConfig.test.ts',
@@ -270,7 +271,6 @@ const ART_SETTINGS_UNMIGRATED_FILES = [
   'views/ReportsHub/hooks/useReportsHubState.test.ts',
   'views/ReportsHub/hooks/useReportsHubState.ts',
   'views/ReportsHub/PersonalFlowTab.test.tsx',
-  'views/ReportsHub/ReportsHubRuntimeBoundary.tsx',
   'views/ReportsHub/storyPointsField.test.ts',
   'views/SprintDashboard/featureReview.test.ts',
   'views/SprintDashboard/featureReviewFixes.ts',

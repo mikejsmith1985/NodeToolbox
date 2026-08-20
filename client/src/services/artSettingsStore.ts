@@ -25,6 +25,16 @@ export interface ArtSettings {
   featureProjectKeys: string[];
   /** Jira link types the dependency graph includes by default. */
   depLinkTypes: string[];
+  /**
+   * PI Review's own date fields and its "work started" status.
+   *
+   * These default to EMPTY, not to an id. Their callers already read blank as "not configured" and
+   * skip the write — inventing a default here would make PI Review write dates to a field nobody
+   * chose, which is the exact failure the story-points work just undid.
+   */
+  piReviewTargetStartFieldId: string;
+  piReviewTargetEndFieldId: string;
+  piReviewDevStartStatusName: string;
   /** The Confluence workspace this ART shares through. */
   sharedArtName: string;
   sharedArtKey: string;
@@ -43,6 +53,9 @@ export const DEFAULT_ART_SETTINGS: ArtSettings = {
   piEndDate: '',
   featureProjectKeys: [],
   depLinkTypes: ['blocks', 'is blocked by', 'depends on', 'is depended on by', 'relates to'],
+  piReviewTargetStartFieldId: '',
+  piReviewTargetEndFieldId: '',
+  piReviewDevStartStatusName: '',
   sharedArtName: 'Sales to Enrollment',
   sharedArtKey: 'S2E',
   sharedArtDatabaseId: '684163133',
@@ -73,10 +86,22 @@ function readStoredList(storedValue: unknown, defaultValue: string[]): string[] 
   return cleanedEntries.length === 0 ? [...defaultValue] : cleanedEntries;
 }
 
-/** Parses the stored blob. Unreadable storage is "nothing stored", which the defaults answer for. */
-function readStoredSettingsObject(storage: Storage): Record<string, unknown> {
+/**
+ * Parses the stored blob. Unreadable OR ABSENT storage is "nothing stored".
+ *
+ * The absent case is not hypothetical: several modules that read these settings are bundled into the
+ * SERVER engines, where there is no `window` at all. Touching `window.localStorage` eagerly there
+ * throws before any default can apply — which is what took eight PI-review DOM tests down the moment
+ * this reader replaced a local one.
+ */
+function readStoredSettingsObject(storage?: Storage): Record<string, unknown> {
   try {
-    return JSON.parse(storage.getItem(ART_SETTINGS_STORAGE_KEY) || '{}') as Record<string, unknown>;
+    const resolvedStorage = storage
+      ?? (typeof window === 'undefined' ? undefined : window.localStorage);
+    if (!resolvedStorage) {
+      return {};
+    }
+    return JSON.parse(resolvedStorage.getItem(ART_SETTINGS_STORAGE_KEY) || '{}') as Record<string, unknown>;
   } catch {
     return {};
   }
@@ -89,7 +114,7 @@ function readStoredSettingsObject(storage: Storage): Record<string, unknown> {
  * nothing is configured — it is evidence that this machine has not been told, and the build already
  * knows what to assume. Reading it as "nothing" is exactly how two screens came to disagree.
  */
-export function readArtSettings(storage: Storage = window.localStorage): ArtSettings {
+export function readArtSettings(storage?: Storage): ArtSettings {
   const storedSettings = readStoredSettingsObject(storage);
 
   return {
@@ -102,6 +127,9 @@ export function readArtSettings(storage: Storage = window.localStorage): ArtSett
       ? readStoredList(storedSettings.featureProjectKeys, [])
       : [],
     depLinkTypes: readStoredList(storedSettings.depLinkTypes, DEFAULT_ART_SETTINGS.depLinkTypes),
+    piReviewTargetStartFieldId: readStoredText(storedSettings.piReviewTargetStartFieldId, ''),
+    piReviewTargetEndFieldId: readStoredText(storedSettings.piReviewTargetEndFieldId, ''),
+    piReviewDevStartStatusName: readStoredText(storedSettings.piReviewDevStartStatusName, ''),
     sharedArtName: readStoredText(storedSettings.sharedArtName, DEFAULT_ART_SETTINGS.sharedArtName),
     sharedArtKey: readStoredText(storedSettings.sharedArtKey, DEFAULT_ART_SETTINGS.sharedArtKey),
     sharedArtDatabaseId: readStoredText(storedSettings.sharedArtDatabaseId, DEFAULT_ART_SETTINGS.sharedArtDatabaseId),

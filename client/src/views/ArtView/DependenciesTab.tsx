@@ -18,6 +18,7 @@ import {
 } from './dependencyGraph.ts';
 import { fetchBlueprintDependencySourceIssues } from './blueprintHierarchy.ts';
 import type { ArtTeam } from './hooks/useArtData.ts';
+import { readArtSettings } from '../../services/artSettingsStore.ts';
 import styles from './DependenciesTab.module.css';
 
 interface DependenciesTabProps {
@@ -25,9 +26,6 @@ interface DependenciesTabProps {
   selectedPiName: string;
 }
 
-interface ArtAdvancedSettings {
-  depLinkTypes?: string[];
-}
 
 interface DependencyDetailDrawerProps {
   dependencyGraphData: DependencyGraphData;
@@ -37,8 +35,6 @@ interface DependencyDetailDrawerProps {
 }
 
 const ART_DEP_FILTER_STORAGE_KEY = 'tbxARTDepFilter';
-const ART_SETTINGS_STORAGE_KEY = 'tbxARTSettings';
-const DEFAULT_DEPENDENCY_LINK_TYPES = ['blocks', 'is blocked by', 'depends on', 'is depended on by', 'relates to'];
 const JIRA_BROWSE_PREFIX = 'https://jira.healthspring-jira-prod.aws.zilverton.com/browse/';
 const NODE_WIDTH = 136;
 const NODE_HEIGHT = 40;
@@ -49,17 +45,11 @@ const PROGRAM_EPIC_NODE_FILL_COLOR = '#7c3aed';
 const FEATURE_NODE_FILL_COLOR = '#0ea5e9';
 const STORY_NODE_FILL_COLOR = '#22c55e';
 
-function readArtSettings(): ArtAdvancedSettings {
-  try {
-    return JSON.parse(localStorage.getItem(ART_SETTINGS_STORAGE_KEY) || '{}') as ArtAdvancedSettings;
-  } catch {
-    return {};
-  }
-}
-
 function readConfiguredDependencyLinkTypes(): string[] {
-  const configuredTypes = readArtSettings().depLinkTypes ?? [];
-  return configuredTypes.length > 0 ? configuredTypes : DEFAULT_DEPENDENCY_LINK_TYPES;
+  // The shared reader already restores the default list when the stored one is empty, so the local
+  // copy of both the parse and the default is gone. Two copies of a default is two chances to
+  // change one of them.
+  return readArtSettings().depLinkTypes;
 }
 
 function readPersistedDependencyFilterState(): DependencyFilterState {

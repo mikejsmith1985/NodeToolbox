@@ -8,6 +8,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Two more private copies of the ART settings reader are gone.** `DependenciesTab` and
+  `piReviewJira` each carried their own `readArtSettings` and their own copy of the default
+  dependency link types — the same function and the same list, twice, which is two chances to change
+  one of them. Both now use the shared reader, which already restores that default when the stored
+  list is emptied.
+  The compiler found three settings the shared type had been missing (`piReviewTargetStartFieldId`,
+  `piReviewTargetEndFieldId`, `piReviewDevStartStatusName`). They default to **empty, not to an id**:
+  their callers read blank as "not configured" and skip the write, and inventing a default would make
+  PI Review write dates to a field nobody chose — the exact failure the story-points work just undid.
+
+### Fixed
+- **The shared settings reader no longer breaks the server engines.** It resolved
+  `window.localStorage` in a default parameter, which throws outright in the PI Review and
+  monthly-delivery bundles, where there is no `window` — eight PI-review DOM tests went red the
+  moment it replaced a local reader. Absent storage now reads as "nothing stored", so the defaults
+  apply as they should. The DOM suite caught it; a unit test now keeps it caught.
+
+### Changed
 - **Two more modules resolve their field through the mapping instead of their own copy.**
   `utils/featureLink.ts` and `views/ArtView/artFeatureScopeSettings.ts` now delegate, and their debt
   entries are struck off. `featureLink.ts` needed care rather than a rewrite: it is bundled into the
