@@ -1,7 +1,7 @@
 // jiraFieldMapping.test.ts — Proves the app says which field it chose and why, and never presents a
 // guess as a fact.
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import type { JiraField } from '../types/jira.ts';
 import {
@@ -12,6 +12,8 @@ import {
   resolveAllFieldMappings,
   resolveFieldMapping,
   writeFieldMappingOverride,
+  resolveConfiguredFieldIds,
+  resolveWriteFieldId,
 } from './jiraFieldMapping.ts';
 
 /** The Feature Link entry, the one whose being wrong breaks the most. */
@@ -170,5 +172,67 @@ describe('describeMappingHealth', () => {
     ), {});
 
     expect(describeMappingHealth(resolutions)).toContain('resolve cleanly');
+  });
+});
+
+describe('resolveConfiguredFieldIds — the synchronous path every check and fix uses', () => {
+  // Discovery needs Jira's field list, which a pure check cannot fetch. Without a synchronous entry
+  // point, twelve modules resolved story points themselves — under fourteen constant names holding
+  // four different values, one of which (`story_points`) is not a field id at all (GH #375).
+  beforeEach(() => localStorage.clear());
+  afterEach(() => localStorage.clear());
+
+  it('prefers the saved override', () => {
+    localStorage.setItem('tbxARTSettings', JSON.stringify({ spFieldId: 'customfield_10236' }));
+
+    expect(resolveConfiguredFieldIds('spFieldId', localStorage)[0]).toBe('customfield_10236');
+  });
+
+  it('falls back to the hard default when nothing is saved', () => {
+    expect(resolveConfiguredFieldIds('spFieldId', localStorage)[0]).toBe('customfield_10236');
+  });
+
+  it('ignores a saved value that is not a Jira field id', () => {
+    // The dashboard config shipped the placeholder `story_points`, which read as "configured".
+    localStorage.setItem('tbxARTSettings', JSON.stringify({ spFieldId: 'story_points' }));
+
+    expect(resolveConfiguredFieldIds('spFieldId', localStorage)).not.toContain('story_points');
+  });
+
+  it('lists the legacy story-points fields too, since points there are still points', () => {
+    localStorage.setItem('tbxARTSettings', JSON.stringify({ spFieldId: 'customfield_10236' }));
+
+    const fieldIds = resolveConfiguredFieldIds('spFieldId', localStorage);
+
+    expect(fieldIds).toContain('customfield_10028');
+    expect(fieldIds).toContain('customfield_10016');
+  });
+
+  it('lists each field once, however the overrides line up', () => {
+    localStorage.setItem('tbxARTSettings', JSON.stringify({ spFieldId: 'customfield_10028' }));
+
+    const fieldIds = resolveConfiguredFieldIds('spFieldId', localStorage);
+
+    expect(new Set(fieldIds).size).toBe(fieldIds.length);
+  });
+
+  it('returns only the one field for a mapping with no alternates', () => {
+    expect(resolveConfiguredFieldIds('featureLinkField', localStorage)).toEqual(['customfield_10108']);
+  });
+
+  it('survives unreadable storage', () => {
+    localStorage.setItem('tbxARTSettings', 'not json');
+
+    expect(resolveConfiguredFieldIds('spFieldId', localStorage)[0]).toBe('customfield_10236');
+  });
+});
+
+describe('resolveWriteFieldId', () => {
+  beforeEach(() => localStorage.clear());
+
+  it('is the field a read would consult first, so a write clears what a check sees', () => {
+    localStorage.setItem('tbxARTSettings', JSON.stringify({ spFieldId: 'customfield_10236' }));
+
+    expect(resolveWriteFieldId('spFieldId', localStorage)).toBe('customfield_10236');
   });
 });

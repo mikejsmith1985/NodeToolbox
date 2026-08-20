@@ -27,6 +27,8 @@ export interface FieldMappingEntry {
   /** The key inside the ART settings this override is saved under. */
   settingsKey: 'featureLinkField' | 'spFieldId' | 'acFieldId' | 'epicLinkFieldId' | 'snowRefFieldId';
   label: string;
+  /** Older fields the same value may sit in. Read as a fallback, never written to. */
+  alternateReadFieldIds?: string[];
   /** What breaks when this is wrong — in the reader's terms, not the code's. */
   whatItDrives: string;
   /** Matched case-insensitively against the instance's field NAMES. */
@@ -57,7 +59,13 @@ export const FIELD_MAPPING_ENTRIES: FieldMappingEntry[] = [
     label: 'Story Points',
     whatItDrives: 'capacity planning, and whether progress is weighted by size or counted by issue',
     namePattern: /story point/i,
-    hardDefaultFieldId: 'customfield_10028',
+    // The field this org actually uses. It was `customfield_10028` here while ReportsHub already
+    // defaulted to this one — and a wiped settings store put the wrong default back in charge,
+    // reporting forty-one estimated issues as unestimated (GH #375).
+    hardDefaultFieldId: 'customfield_10236',
+    // Older fields an estimate may still be sitting in. READ but never written: points in a legacy
+    // field are still points, and ignoring them is the same false positive facing the other way.
+    alternateReadFieldIds: ['customfield_10028', 'customfield_10016'],
     importance: 'critical',
   },
   {
@@ -231,4 +239,53 @@ export function describeMappingHealth(resolutions: readonly FieldMappingResoluti
   }
   return `${needsAttention.length} of ${resolutions.length} fields need attention: `
     + `${needsAttention.map((resolution) => resolution.entry.label).join(', ')}.`;
+}
+
+/** True for a value that names a real Jira custom field rather than a placeholder or a label. */
+function isRealCustomFieldId(fieldId: string | null | undefined): boolean {
+  return typeof fieldId === 'string' && fieldId.trim().startsWith('customfield_');
+}
+
+/**
+ * Every field one logical mapping may be READ from, most authoritative first — synchronously.
+ *
+ * The synchronous part is the point. Discovery needs Jira's field list, which a pure check cannot
+ * fetch, so twelve modules resolved story points for themselves instead — under fourteen constant
+ * names holding four different values, one of them (`story_points`) not a field id at all. A check
+ * and a fix reading different fields produce the two worst outcomes available: a flag that cannot be
+ * cleared, and a write that reports success and changes nothing visible.
+ *
+ * A saved override that is not a real field id is IGNORED rather than trusted. That placeholder read
+ * as "a field is configured" and sent every reader to the wrong place.
+ */
+export function resolveConfiguredFieldIds(
+  settingsKey: FieldMappingEntry['settingsKey'],
+  storage: Storage,
+): string[] {
+  const entry = FIELD_MAPPING_ENTRIES.find((mappingEntry) => mappingEntry.settingsKey === settingsKey);
+  if (!entry) {
+    return [];
+  }
+
+  const savedOverride = readFieldMappingOverrides(storage)[settingsKey];
+  const orderedFieldIds = [
+    isRealCustomFieldId(savedOverride) ? (savedOverride as string).trim() : null,
+    entry.hardDefaultFieldId,
+    ...(entry.alternateReadFieldIds ?? []),
+  ].filter((fieldId): fieldId is string => fieldId !== null && fieldId !== '');
+
+  return [...new Set(orderedFieldIds)];
+}
+
+/**
+ * The single field a WRITE should target: the one a read consults first.
+ *
+ * Writing anywhere else in the list clears nothing the user can see — which is precisely how forty-one
+ * accepted estimates reported success and left every flag standing.
+ */
+export function resolveWriteFieldId(
+  settingsKey: FieldMappingEntry['settingsKey'],
+  storage: Storage,
+): string {
+  return resolveConfiguredFieldIds(settingsKey, storage)[0];
 }

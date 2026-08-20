@@ -7,10 +7,13 @@
 
 // The team's known story-points custom field, used when the ART settings do not override it. It is a
 // dropdown/select on this instance, hence the object-unwrapping reader below.
+/**
+ * @deprecated The field id is resolved by `services/jiraFieldMapping.ts`. Kept only so existing
+ * imports keep compiling; it is no longer consulted when resolving.
+ */
 export const DEFAULT_STORY_POINTS_FIELD_ID = 'customfield_10236';
 
-// localStorage key the Team Dashboard / ART settings write the configured story-points field id under.
-const ART_SETTINGS_STORAGE_KEY = 'tbxARTSettings';
+import { resolveWriteFieldId } from '../../services/jiraFieldMapping.ts';
 
 /**
  * Reads a numeric value from a Jira field however Jira shaped it: a finite number is taken as-is, a
@@ -38,12 +41,10 @@ export function readNumericFieldValue(fieldValue: unknown): number | null {
  * settings change is picked up on the next report without reloading the app.
  */
 export function readConfiguredStoryPointsFieldId(): string {
-  try {
-    const storedSettings = JSON.parse(localStorage.getItem(ART_SETTINGS_STORAGE_KEY) || '{}') as { spFieldId?: string };
-    return storedSettings.spFieldId?.trim() || DEFAULT_STORY_POINTS_FIELD_ID;
-  } catch {
-    return DEFAULT_STORY_POINTS_FIELD_ID;
-  }
+  // Delegated. This module used to resolve the id itself, and its answer (customfield_10236) was
+  // right while Hygiene's answer was wrong — two resolvers, one of them silently mis-reporting a
+  // whole board. The reading helpers below stay here; the CHOICE belongs in one place.
+  return resolveWriteFieldId('spFieldId', window.localStorage);
 }
 
 /** Reads the story-points value from the single configured field, unwrapping a dropdown object, or null. */

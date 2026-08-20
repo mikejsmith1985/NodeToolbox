@@ -70,8 +70,8 @@ describe('applyHygieneAiProposal', () => {
   it('routes story points through the dedicated helper', async () => {
     await applyHygieneAiProposal(proposal({ checkId: 'missing-sp', proposedValue: '8' }), FIELD_CONFIG)
 
-    // Pinned to the field this view reads — see the agree-by-construction test below.
-    expect(mockSaveStoryPoints).toHaveBeenCalledWith('TBX-1', '8', 'customfield_10028')
+    // The instance's real story-points field, resolved centrally rather than hard-coded here.
+    expect(mockSaveStoryPoints).toHaveBeenCalledWith('TBX-1', '8', 'customfield_10236')
   })
 
   it('routes a fix version through the version helper, letting Jira validate the name', async () => {
@@ -158,6 +158,6 @@ describe('applyHygieneAiProposal — story points must land where Hygiene reads 
       resolveHygieneFieldConfig(),
     );
 
-    expect(mockSaveStoryPoints).toHaveBeenCalledWith('TBX-1', '5', 'customfield_10028');
+    expect(mockSaveStoryPoints).toHaveBeenCalledWith('TBX-1', '5', 'customfield_10236');
   });
 });

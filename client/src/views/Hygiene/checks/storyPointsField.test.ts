@@ -42,8 +42,10 @@ describe('resolveStoryPointsFieldIds', () => {
     expect(fieldIds).toContain('customfield_10016');
   });
 
-  it('falls back to the built-ins when nothing is configured anywhere', () => {
-    expect(resolveStoryPointsFieldIds('')).toEqual(['customfield_10028', 'customfield_10016']);
+  it('falls back to the instance field first when nothing is configured anywhere', () => {
+    // The old expectation was customfield_10028 -- the wrong field, and precisely what a wiped
+    // settings store put back in charge of judging a whole board.
+    expect(resolveStoryPointsFieldIds('')[0]).toBe('customfield_10236');
   });
 
   it('lists each field once', () => {
@@ -57,7 +59,7 @@ describe('resolveStoryPointsFieldIds', () => {
   it('survives ART settings that are not readable', () => {
     localStorage.setItem(ART_SETTINGS_STORAGE_KEY, 'not json');
 
-    expect(resolveStoryPointsFieldIds('')).toEqual(['customfield_10028', 'customfield_10016']);
+    expect(resolveStoryPointsFieldIds('')[0]).toBe('customfield_10236');
   });
 });
 

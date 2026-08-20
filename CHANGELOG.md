@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **The story-points field is resolved in one place, and a test keeps it there.** An inventory found
+  55 hard-coded `customfield_*` ids across 82 files, story points alone declared under **14 constant
+  names holding 4 different values** — one of them (`story_points`) not a field id at all. Three live
+  defects came out of that in a single week, and none of them was a crash: divergence type-checks,
+  passes every test, and surfaces later as a screen that looks right and is not.
+  `services/jiraFieldMapping.ts` already existed to be the single authority and had exactly one
+  consumer — its own Admin panel. It now offers a **synchronous** resolver, which is what the twelve
+  modules that resolved the field for themselves actually needed: a pure check cannot fetch Jira's
+  field list, so each invented its own answer. Hygiene's and ReportsHub's competing resolvers now
+  delegate to it, and the shipped default is corrected to `customfield_10236` — the field this
+  instance uses, which ReportsHub had right all along while Hygiene had it wrong.
+  A saved override that is not a real field id is now ignored rather than trusted, because the
+  placeholder read as "configured" and sent every reader to the wrong place. Legacy fields are still
+  READ but never written: an estimate in an older field is still an estimate.
+- **A boundary test stops the ids spreading again.** 63 files name a story-points id today, so
+  requiring all of them at once would have produced a test somebody skipped rather than a rule
+  anybody kept. It is a **ratchet**: a debt list that may only shrink, failing on any new file and on
+  any entry that has quietly been settled without being struck off. Offenders are named, not counted
+  — a bare number says the rule broke and not where.
+
 ### Added
 - **Feature Review can write the release-derived dates for every Feature at once.** These dates are
   planned at the Feature level, and the only bulk button for them lived on the Hygiene page — so
