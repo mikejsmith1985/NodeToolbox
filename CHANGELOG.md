@@ -16,6 +16,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (can this Feature reach Integrated Test?). The two are always shown side by side and never merged:
   a team is measured on one and operates on the other, and collapsing them into a single figure is the
   confusion this exists to end.
+- **Every issue now carries one verdict: ahead, on track, start today, or behind.** The latest day work
+  can begin and still land, worked back from whichever deadline binds. Work already under way is charged
+  only for what is left of it, using the board's own column order — so an almost-finished story does not
+  make a whole release look over capacity. Unsized, unassigned and undated work is named rather than
+  guessed at, and counted beside every total it could otherwise have quietly changed.
 
 ### Fixed
 - **The Program Increment field could not be discovered by name.** Its name pattern had been written

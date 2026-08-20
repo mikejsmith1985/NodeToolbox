@@ -58,18 +58,22 @@ not yesterday. This mirrors `piPlanDates.spanEnd`, which the codebase already us
 |---|---|---|
 | 1 | `unsized` | `effort.isEstimated === false` |
 | 2 | `unforecastable` | `drivingClock === 'none'` |
-| 3 | `cannot-fit` | `remainingWorkingDays > workingDaysBetween(todayIso, drivingDeadlineIso)` |
-| 4 | `unassignable` | `assigneeAccountId === null && assigneeDisplayName === null` |
-| 5 | `behind` | `latestStartIso < todayIso` and `actualStartIso === null` |
-| 6 | `start-today` | `latestStartIso === todayIso` |
-| 7 | `ahead` | `actualStartIso !== null && actualStartIso < latestStartIso` |
-| 8 | `on-track` | everything else |
+| 3 | `on-track` | `remainingWorkingDays === 0` — nothing left to be late with |
+| 4 | `cannot-fit` | `drivingDeadlineIso < todayIso && remainingWorkingDays > 0` — the deadline itself has gone |
+| 5 | `unassignable` | `assigneeAccountId === null && assigneeDisplayName === null` |
+| 6 | `behind` | `latestStartIso < todayIso` and `actualStartIso === null` |
+| 7 | `start-today` | `latestStartIso === todayIso` and `actualStartIso === null` |
+| 8 | `ahead` | `actualStartIso !== null && actualStartIso < latestStartIso` |
+| 9 | `on-track` | everything else |
 
 **Why `unsized` first**: every other verdict is computed *from* a size. Reporting "on track" for work nobody measured
 is the false comfort FR-003 exists to prevent.
 
-**Why `cannot-fit` outranks `behind`**: they demand different actions. `behind` says start it now; `cannot-fit` says
-starting it now will not help — split it, or cut it.
+**Why `cannot-fit` outranks `behind`** *(corrected during implementation)*: the two must differ in **kind**. The
+first draft defined `cannot-fit` as effort exceeding the days remaining — which is arithmetically the same condition
+as a latest start in the past, so `behind` would have been unreachable. `cannot-fit` now means the deadline itself has
+passed, and `behind` means the runway is gone while the deadline is still ahead. Oversized work with a future deadline
+reports as `behind` with the shortfall in `slackWorkingDays`, which is more actionable than a flat refusal.
 
 **Why a started issue is never `behind`**: `behind` means *not started and out of runway*. A started issue that is
 running long surfaces through `slackWorkingDays` and, at the Feature level, through `at-risk`.
@@ -96,7 +100,7 @@ Always populated, always naming the arithmetic:
 |---|---|
 | `behind` | `"3 days of work left, 1 working day to code freeze (2026-09-11) — should have started 2026-08-18"` |
 | `start-today` | `"2 days of work left, due at PI end 2026-11-06 — last day to start"` |
-| `cannot-fit` | `"8 days of work left, 5 working days remain — cannot fit regardless of start date"` |
+| `cannot-fit` | `"8 working days of work left and code freeze 2026-08-10 has already passed — no start date can recover this"` |
 | `unsized` | `"No estimate — cannot forecast"` |
 | `ahead` | `"Started 2026-08-11, 4 working days ahead of the latest start"` |
 
@@ -104,14 +108,16 @@ Always populated, always naming the arithmetic:
 
 | # | Given | Expect |
 |---|---|---|
-| 1 | 5 pts unstarted, 4 working days to freeze, rate 1 | `behind`, slack −1 |
+| 1 | 5 pts unstarted, 3 working days to freeze, rate 1 | `behind`, slack negative |
 | 2 | 3 pts unstarted, exactly 3 working days to freeze | `start-today`, slack 0 |
 | 3 | 3 pts, 10 working days to freeze | `on-track`, slack positive |
 | 4 | 5 pts, credit 0.6 → 2 days, 4 days left | `on-track` (credit applied — US1-4) |
 | 5 | Started 2026-08-11, latest start 2026-08-15 | `ahead` |
 | 6 | `storyPoints` null | `unsized` regardless of dates |
 | 7 | No assignee, dates fine | `unassignable` |
-| 8 | 8 days work, 5 days window | `cannot-fit`, not `behind` |
+| 8 | 8 days work, deadline already passed | `cannot-fit` |
+| 8a | 20 days work, deadline still ahead | `behind` with the shortfall in slack — never `cannot-fit` |
+| 8b | Finished issue, deadline already passed | `on-track` — nothing left to be late with |
 | 9 | Release deadline 2026-09-11, PI end 2026-11-06 | `drivingClock = 'release'` |
 | 10 | Release deadline 2026-12-01, PI end 2026-11-06 | `drivingClock = 'pi'` |
 | 11 | Both null | `unforecastable` |

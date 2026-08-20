@@ -10,6 +10,7 @@
 
 import type { MasterCard, RollupBoardItem } from '../rollupBoard/rollupBoardTypes.ts';
 import { buildPiClock, buildReleaseClock } from './forecastWindows.ts';
+import { computeIssueForecasts } from './issueForecast.ts';
 import { computeRemainingEffort } from './effortModel.ts';
 import { resolveReleaseDates } from './releaseDateResolve.ts';
 import type {
@@ -18,6 +19,8 @@ import type {
   ForecastCompleteness,
   ForecastConfig,
   ForecastResult,
+  IssueForecastInput,
+  PiClock,
   ReleaseClock,
   RemainingEffort,
 } from './forecastTypes.ts';
@@ -99,6 +102,49 @@ function buildReleaseClocks(
   return clocksByVersionName;
 }
 
+/**
+ * Picks the fix version that dates an issue: the EARLIEST one with a clock.
+ *
+ * Earliest because an issue tagged for two releases is committed to the first; dating it from the
+ * later one hands the team weeks nobody granted. This mirrors the date policy's own rule, which
+ * chooses the earliest unreleased dated version for exactly that reason.
+ */
+function readCodeFreezeDeadline(
+  fixVersionNames: readonly string[],
+  releaseClocksByVersionName: Record<string, ReleaseClock>,
+): string | null {
+  const codeFreezeDays = fixVersionNames
+    .map((versionName) => releaseClocksByVersionName[versionName]?.codeFreezeIso)
+    .filter((codeFreezeIso): codeFreezeIso is string => typeof codeFreezeIso === 'string')
+    .sort();
+  return codeFreezeDays[0] ?? null;
+}
+
+/** Turns board items into the shape the per-issue forecast reads. */
+function buildIssueForecastInputs(
+  items: readonly RollupBoardItem[],
+  effortByIssueKey: Map<string, RemainingEffort>,
+  releaseClocksByVersionName: Record<string, ReleaseClock>,
+  piClock: PiClock,
+  teamProfileId: string | null,
+): IssueForecastInput[] {
+  return items.map((item) => ({
+    issueKey: item.key,
+    summary: item.summary,
+    teamProfileId,
+    assigneeAccountId: item.assigneeAccountId,
+    assigneeDisplayName: item.assigneeDisplayName,
+    effort: effortByIssueKey.get(item.key) ?? computeRemainingEffort(null, item.columnId, [], false, 1),
+    releaseDeadlineIso: readCodeFreezeDeadline(item.fixVersionNames, releaseClocksByVersionName),
+    piDeadlineIso: piClock.piEndIso,
+    // The board does not fetch changelogs, so the day work actually began is not available here.
+    // The bulk date fix, which does read the changelog, supplies it on the write path instead.
+    actualStartIso: null,
+    storedTargetStartIso: null,
+    isComplete: isItemComplete(item),
+  }));
+}
+
 /** Tallies everything a total could otherwise have omitted without saying so. */
 function buildCompleteness(
   items: readonly RollupBoardItem[],
@@ -132,13 +178,23 @@ export function computeForecast(input: ForecastInput, config: ForecastConfig): F
   const undatedVersionCount = releaseDateResolutions
     .filter((resolution) => resolution.resolvedDateIso === null).length;
 
+  const piClock = buildPiClock(input.piEndDate, config);
+  const releaseClocksByVersionName = buildReleaseClocks(releaseDateResolutions, config);
+
+  // Cancelled work is excluded from every verdict, and counted in the completeness record instead:
+  // dropping it silently would make a Feature look finished because its remaining work was killed.
+  const forecastableItems = input.items.filter((item) => !isItemCancelled(item));
+
   return {
     config,
     rejectedSettings: [],
-    piClock: buildPiClock(input.piEndDate, config),
-    releaseClocksByVersionName: buildReleaseClocks(releaseDateResolutions, config),
+    piClock,
+    releaseClocksByVersionName,
     releaseDateResolutions,
-    issueForecasts: [],
+    issueForecasts: computeIssueForecasts(
+      buildIssueForecastInputs(forecastableItems, effortByIssueKey, releaseClocksByVersionName, piClock, input.teamProfileId),
+      config,
+    ),
     featureAssessments: [],
     sizingFlags: [],
     codeFreezeCapacityByVersionName: {},

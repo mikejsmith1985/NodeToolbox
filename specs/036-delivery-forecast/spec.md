@@ -351,6 +351,16 @@ every morning.
   shows both. Neither may be omitted or merged into a single figure.
 - **FR-015**: Ahead / on-track / behind MUST be determined against the computed forecast; where a stored Jira date
   disagrees with the forecast, that disagreement MUST itself be reported.
+- **FR-015a** *(corrected during implementation)*: "Behind" and "cannot fit" MUST differ in **kind**, not in degree.
+  The originally-drafted rule — remaining effort greater than the days remaining — is arithmetically identical to a
+  latest start date in the past, which would have left one of the two states unreachable and told a reader nothing
+  the other did not. **Behind** therefore means the runway is gone while the deadline is still ahead: start it now
+  and it lands late by the slack figure. **Cannot fit** means the deadline itself has passed, so "start it" is not
+  even advice. Oversized work with a future deadline is reported as behind with the shortfall in the slack, which is
+  more actionable than a flat refusal.
+- **FR-015b** *(corrected during implementation)*: An issue with no remaining effort MUST be reported as on track,
+  whatever its deadline. Without this, finished work whose deadline has since passed appears at the top of a list
+  headed "start these today".
 
 **Definition of Done**
 

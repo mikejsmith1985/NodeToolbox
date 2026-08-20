@@ -148,6 +148,73 @@ describe('computeForecast', () => {
     });
   });
 
+  describe('the per-issue verdicts', () => {
+    it('returns one verdict per forecastable issue', () => {
+      const result = computeForecast(
+        forecastInput({ items: [boardItem({ key: 'ENC-1' }), boardItem({ key: 'ENC-2' })] }),
+        CONFIG,
+      );
+      expect(result.issueForecasts.map((forecast) => forecast.issueKey)).toEqual(['ENC-1', 'ENC-2']);
+    });
+
+    it('leaves cancelled work out of the verdicts while still counting it', () => {
+      // Dropping it silently would make a Feature look finished because its remaining work was
+      // killed; giving it a verdict would put dead work on a list of things to start.
+      const result = computeForecast(
+        forecastInput({ items: [boardItem({ key: 'ENC-1' }), boardItem({ key: 'ENC-2', statusName: 'Cancelled' })] }),
+        CONFIG,
+      );
+      expect(result.issueForecasts.map((forecast) => forecast.issueKey)).toEqual(['ENC-1']);
+      expect(result.completeness.cancelledIssueCount).toBe(1);
+    });
+
+    it('dates an issue from the EARLIEST of its fix versions', () => {
+      // An issue tagged for two releases is committed to the first. Dating it from the later one
+      // would hand the team weeks nobody granted.
+      const result = computeForecast(
+        forecastInput({
+          items: [boardItem({ fixVersionNames: ['Release 12/01/2026', 'Release 10/02/2026'] })],
+          fixVersions: [
+            { name: 'Release 12/01/2026', releaseDate: '2026-12-01' },
+            { name: 'Release 10/02/2026', releaseDate: '2026-10-02' },
+          ],
+        }),
+        CONFIG,
+      );
+      expect(result.issueForecasts[0].releaseDeadlineIso).toBe('2026-09-11');
+    });
+
+    it('gives an issue on an undated version no release deadline', () => {
+      const result = computeForecast(
+        forecastInput({
+          items: [boardItem({ fixVersionNames: ['Sprint 5'] })],
+          fixVersions: [{ name: 'Sprint 5' }],
+        }),
+        CONFIG,
+      );
+      expect(result.issueForecasts[0].releaseDeadlineIso).toBeNull();
+      // The PI clock still applies, so it is forecastable — just on one clock rather than two.
+      expect(result.issueForecasts[0].drivingClock).toBe('pi');
+    });
+
+    it('reports an issue with no clock at all as unforecastable, never as on track', () => {
+      const result = computeForecast(
+        forecastInput({
+          items: [boardItem({ fixVersionNames: [] })],
+          fixVersions: [],
+          piEndDate: '',
+        }),
+        CONFIG,
+      );
+      expect(result.issueForecasts[0].state).toBe('unforecastable');
+    });
+
+    it('attributes every verdict to the team the scan came from', () => {
+      const result = computeForecast(forecastInput({ teamProfileId: 'team-b' }), CONFIG);
+      expect(result.issueForecasts[0].teamProfileId).toBe('team-b');
+    });
+  });
+
   it('survives an empty board without throwing', () => {
     const result = computeForecast(forecastInput({ items: [], fixVersions: [] }), CONFIG);
     expect(result.completeness.totalIssueCount).toBe(0);

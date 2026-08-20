@@ -2152,6 +2152,80 @@ describe('ArtView', () => {
     mockState.activeTab = 'overview';
   });
 
+  // ── Delivery forecast settings ──
+  //
+  // These three turn story points into time. A bad value here does not fail loudly; it produces an
+  // ordinary-looking forecast built on the wrong arithmetic, which is why each one refuses rather
+  // than clamps.
+
+  it('persists the points-per-working-day rate', () => {
+    mockState.activeTab = 'settings';
+    localStorage.removeItem('tbxARTSettings');
+    renderArtView();
+
+    fireEvent.change(screen.getByRole('spinbutton', { name: /story points per working day/i }), {
+      target: { value: '2' },
+    });
+
+    const stored = JSON.parse(localStorage.getItem('tbxARTSettings') ?? '{}') as { pointsPerWorkingDay?: number };
+    expect(stored.pointsPerWorkingDay).toBe(2);
+
+    localStorage.removeItem('tbxARTSettings');
+    mockState.activeTab = 'overview';
+  });
+
+  it('leaves the stored rate alone when the typed one could not divide', () => {
+    // A zero rate would be a divide-by-zero in every deadline, so a half-typed value must not land.
+    mockState.activeTab = 'settings';
+    localStorage.setItem('tbxARTSettings', JSON.stringify({ pointsPerWorkingDay: 2 }));
+    renderArtView();
+
+    fireEvent.change(screen.getByRole('spinbutton', { name: /story points per working day/i }), {
+      target: { value: '0' },
+    });
+
+    const stored = JSON.parse(localStorage.getItem('tbxARTSettings') ?? '{}') as { pointsPerWorkingDay?: number };
+    expect(stored.pointsPerWorkingDay).toBe(2);
+
+    localStorage.removeItem('tbxARTSettings');
+    mockState.activeTab = 'overview';
+  });
+
+  it('persists the holidays it can read and names the ones it cannot', () => {
+    // Dropping an unreadable entry silently would leave somebody believing a holiday was configured
+    // while every forecast counted it as a working day.
+    mockState.activeTab = 'settings';
+    localStorage.removeItem('tbxARTSettings');
+    renderArtView();
+
+    fireEvent.change(screen.getByRole('textbox', { name: /^holidays$/i }), {
+      target: { value: '2026-12-25, Christmas' },
+    });
+
+    const stored = JSON.parse(localStorage.getItem('tbxARTSettings') ?? '{}') as { holidayIsoDates?: string[] };
+    expect(stored.holidayIsoDates).toEqual(['2026-12-25']);
+    expect(screen.getByText(/ignored \(not YYYY-MM-DD\): Christmas/i)).toBeInTheDocument();
+
+    localStorage.removeItem('tbxARTSettings');
+    mockState.activeTab = 'overview';
+  });
+
+  it('persists a sizing tolerance of zero, which is a real value rather than an absent one', () => {
+    mockState.activeTab = 'settings';
+    localStorage.setItem('tbxARTSettings', JSON.stringify({ featureSizingTolerancePercent: 15 }));
+    renderArtView();
+
+    fireEvent.change(screen.getByRole('spinbutton', { name: /feature sizing tolerance/i }), {
+      target: { value: '0' },
+    });
+
+    const stored = JSON.parse(localStorage.getItem('tbxARTSettings') ?? '{}') as { featureSizingTolerancePercent?: number };
+    expect(stored.featureSizingTolerancePercent).toBe(0);
+
+    localStorage.removeItem('tbxARTSettings');
+    mockState.activeTab = 'overview';
+  });
+
   it('persists the default PI Review page URL to localStorage when the input value changes', () => {
     mockState.activeTab = 'settings';
     localStorage.removeItem('tbxARTSettings');

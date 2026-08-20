@@ -127,9 +127,9 @@ genuinely gains a column.
 state, with the completeness line naming unsized/unassigned/undated counts. Verifiable with the quickstart's fixed
 `todayIso` of 2026-08-20 and no live Jira.
 
-- [ ] T028 [P] [US1] Write failing tests for `computeIssueForecast` (18 cases from `contracts/issue-forecast.md` §1, covering the full state precedence) in `client/src/views/SprintDashboard/forecast/issueForecast.test.ts`
-- [ ] T029 [US1] Implement `computeIssueForecast` and `computeIssueForecasts` in `client/src/views/SprintDashboard/forecast/issueForecast.ts`: driving deadline = the earlier of release and PI (tie → release), `latestStartIso = subtractWorkingDays(deadline, days − 1)`, the eight-state precedence with `unsized` first and `cannot-fit` above `behind`, `slackWorkingDays`, `hasStoredDateDisagreement`, and an always-populated `reason`
-- [ ] T030 [US1] Populate `issueForecasts` in `client/src/views/SprintDashboard/forecast/forecastCompose.ts` (shared file — sequential)
+- [X] T028 [P] [US1] Write failing tests for `computeIssueForecast` (18 cases from `contracts/issue-forecast.md` §1, covering the full state precedence) in `client/src/views/SprintDashboard/forecast/issueForecast.test.ts`
+- [X] T029 [US1] Implement `computeIssueForecast` and `computeIssueForecasts` in `client/src/views/SprintDashboard/forecast/issueForecast.ts`: driving deadline = the earlier of release and PI (tie → release), `latestStartIso = subtractWorkingDays(deadline, days − 1)`, the eight-state precedence with `unsized` first and `cannot-fit` above `behind`, `slackWorkingDays`, `hasStoredDateDisagreement`, and an always-populated `reason`
+- [X] T030 [US1] Populate `issueForecasts` in `client/src/views/SprintDashboard/forecast/forecastCompose.ts` (shared file — sequential)
 - [ ] T031 [P] [US1] Write failing tests for the new `forecast` field, per-team `loadTeamVocabulary` lookup and injected `todayIso` in `client/src/views/MyIssues/Today/hooks/useTodayDashboard.test.ts`
 - [ ] T032 [US1] Add the additive `forecast: ForecastResult | null` field to `TodayDashboardData` in `client/src/views/MyIssues/Today/hooks/useTodayDashboard.ts`, computed over the issues the **existing** team scan already returned (zero new Jira requests), attributing each result to its `teamProfileId`, and loading each team's column order via `boardVocabularyStore.loadTeamVocabulary`
 - [ ] T033 [P] [US1] Write failing tests for grouping, per-row content, team labelling, the completeness line and the empty state in `client/src/views/MyIssues/Today/ForecastSection.test.tsx`
