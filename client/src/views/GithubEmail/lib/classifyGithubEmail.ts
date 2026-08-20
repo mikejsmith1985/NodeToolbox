@@ -24,7 +24,17 @@ export interface GitHubEmailEvent {
   jiraKey: string | null;
   repo: string | null;
   prNumber: number | null;
+  /** The SOURCE branch — the feature branch the work came from. */
   branch: string | null;
+  /**
+   * The branch a completed merge landed ON, or null when this email is not a merge.
+   *
+   * Named for the merge rather than "target" because it is deliberately only set by a merge: a pull
+   * request OPENED against prd is not a deployment to prd, and a field called `targetBranch` would
+   * invite exactly that reading. Paired with the deploy ladder, this is the team's deployment signal
+   * — the one the GitHub Deployments API would have given us if the org's IP allow list let us ask.
+   */
+  mergedIntoBranch: string | null;
   actor: string | null;
   /** ISO-8601 time the event occurred, from the email Date header; used only for comment text. */
   occurredAtIso: string | null;
@@ -93,6 +103,19 @@ function readBranch(bodyText: string): string | null {
   // A feature-style branch reference anywhere.
   const featureMatch = bodyText.match(/\b(feature\/[\w./-]+)/i);
   return featureMatch ? stripTrailingPunctuation(featureMatch[1]) : null;
+}
+
+/**
+ * Reads the branch a COMPLETED merge landed on: the "into <branch>" of "Merged #967 into prd."
+ *
+ * Anchored on the word "merged" so only a finished merge yields a value. A PR-opened notification
+ * says "wants to merge N commits into prd from …" — same "into" phrase, entirely different meaning —
+ * and treating that as a production deployment would close a deploy sub-task for work that had not
+ * shipped.
+ */
+function readMergedIntoBranch(bodyText: string): string | null {
+  const mergedMatch = bodyText.match(/\bmerged\s+(?:#\d+\s+)?into\s+([\w./-]+)/i);
+  return mergedMatch ? mergedMatch[1].replace(/[.,;:]+$/, '') : null;
 }
 
 /** Extracts the first Jira key from any of the candidate strings, upper-cased. */
@@ -198,6 +221,7 @@ export function classifyGithubEmail(
     repo,
     prNumber,
     branch,
+    mergedIntoBranch: readMergedIntoBranch(bodyText),
     actor: readActor(message, bodyText),
     occurredAtIso: readOccurredAtIso(message),
     sourceMessageId: getHeader(message, 'message-id'),

@@ -9,12 +9,15 @@
 // format. They MUST be validated (and likely refined) against the team's real emails during the
 // dry-run rollout. Order matters: more specific events come first (a merge email also mentions the PR).
 
+import { buildEnvironmentMergeRules } from './deployEnvironments.ts';
+
 /**
  * The internal event vocabulary. The named types align 1:1 with the repo monitor's Jira-output event types;
  * the open `(string & {})` arm lets an operator add a NEW bucket via an AI-authored rule (e.g. `pr_approved`,
  * `pr_closed`) without a code change. A custom bucket is comment-only — it posts a plain Jira comment and never
  * triggers a status transition, which only the named types with a configured transition do.
  */
+
 export type GithubEmailEventType =
   | 'branch_created'
   | 'commit_pushed'
@@ -45,6 +48,12 @@ export interface EmailClassificationRule {
  * so a review notification is not mistaken for a push.
  */
 export const GITHUB_EMAIL_RULES: EmailClassificationRule[] = [
+  // One rule per deployment environment, ABOVE the generic merge rule so the specific one is reached
+  // first. Each carries its own id, which is how an operator gives a merge into prd a different Jira
+  // action from a merge into dev — the environment is the whole point, and a single `pr-merged` rule
+  // could only ever carry one action for all four. Generated from the deploy ladder so the branch
+  // names that classify an email and the branch names that name an environment cannot drift apart.
+  ...buildEnvironmentMergeRules(),
   {
     id: 'pr-merged',
     eventType: 'pr_merged',

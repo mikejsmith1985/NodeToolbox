@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Deployment tracking, read from the merge emails already arriving.** GitHub's Deployments API is
+  unreachable from this network — the org runs an IP allow list and every call returns 403 with
+  "your IP address is not permitted" (GH #375), which no credential fixes. It turned out nothing
+  needed fixing: the merge notifications already landing in the intake folder say
+  "Merged #967 into prd.", and the branch a merge lands on names the environment. The classifier was
+  reading only the SOURCE branch (the "from feature/…" half), so the signal was being discarded.
+  Merges now carry `mergedIntoBranch`, deliberately set only by a completed merge — a pull request
+  merely OPENED against prd is not a deployment to prd. A new ordered ladder (`dev → int → rel →
+  prd`, configurable) maps a branch to an environment, and that same order is the forward-only
+  guard, so a late dev-merge email cannot drag a story that has reached INT back to SL. A branch the
+  ladder does not know reports NO environment rather than a guess, and an unknown environment is
+  incomparable rather than "earliest" — ranking it first is exactly what would let a stray email
+  move work backwards. Each rung gets its own classification rule (`pr-merged-dev` … `pr-merged-prd`)
+  generated from the ladder, so an operator can give a merge into prd a different Jira action from a
+  merge into dev using the existing Rules panel, and the branch names that classify an email cannot
+  drift from the branch names that name an environment.
+
 ### Fixed
 - **The Hygiene AI prompt now fits the agent's input box.** A run over a whole board produced
   181,411 characters against a 128,000-character limit, so the paste was refused outright and the

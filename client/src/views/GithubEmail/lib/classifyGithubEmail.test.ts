@@ -130,3 +130,48 @@ describe('classifyGithubEmail', () => {
     expect(event.jiraKey).toBe('ACME-9');
   });
 });
+
+describe('classifyGithubEmail — which environment the merge landed in', () => {
+  // The Deployments API is unreachable behind the org's IP allow list (GH #375), but these emails
+  // name the branch the work landed on, and the team deploys by branch: dev, int, rel, prd. The
+  // classifier read only the SOURCE branch ("from feature/…"), so the signal was being discarded.
+  it('reads the branch a merge landed on, in the short form GitHub actually sends', () => {
+    const event = parseGithubEmail(email(
+      { ...BASE_HEADERS, 'Subject': '[zilvertonz/usmg-db-elements] Lisrider ledger (#967)' },
+      'Merged #967 into prd.',
+    ));
+
+    expect(event.eventType).toBe('pr_merged');
+    expect(event.mergedIntoBranch).toBe('prd');
+  });
+
+  it('reads the target branch without mistaking it for the source branch', () => {
+    const event = parseGithubEmail(email(
+      { ...BASE_HEADERS, 'Subject': '[myorg/toolbox] Add facets (#2885)' },
+      'Merged #2885 into dev from feature/ENFCT-1690.',
+    ));
+
+    expect(event.mergedIntoBranch).toBe('dev');
+    expect(event.branch).toBe('feature/ENFCT-1690');
+  });
+
+  it('leaves the merge target unset on an email that is not a merge', () => {
+    // A pull request OPENED against prd is not a deployment to prd. Only a completed merge is.
+    const event = parseGithubEmail(email(
+      { ...BASE_HEADERS, 'Subject': '[myorg/toolbox] Add facets (#2886)' },
+      'jsmith opened this pull request and wants to merge 3 commits into prd from feature/ENFCT-1.',
+    ));
+
+    expect(event.eventType).toBe('pr_opened');
+    expect(event.mergedIntoBranch).toBeNull();
+  });
+
+  it('keeps sentence punctuation out of the branch name', () => {
+    const event = parseGithubEmail(email(
+      { ...BASE_HEADERS, 'Subject': '[myorg/toolbox] Ship it (#4)' },
+      'Merged #4 into rel.',
+    ));
+
+    expect(event.mergedIntoBranch).toBe('rel');
+  });
+})
