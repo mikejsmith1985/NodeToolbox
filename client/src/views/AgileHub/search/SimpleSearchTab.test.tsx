@@ -1,6 +1,6 @@
 // SimpleSearchTab.test.tsx — Render-layer tests for the Agile Hub Simple Search space.
 
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -47,6 +47,9 @@ function buildViewState(
   return {
     keyword: overrides.keyword ?? '',
     setKeyword: overrides.setKeyword ?? vi.fn(),
+    issueTypeFilter: overrides.issueTypeFilter ?? '',
+    setIssueTypeFilter: overrides.setIssueTypeFilter ?? vi.fn(),
+    availableIssueTypes: overrides.availableIssueTypes ?? [],
     sortOption: overrides.sortOption ?? 'summary-first',
     setSortOption: overrides.setSortOption ?? vi.fn(),
     isLoading: overrides.isLoading ?? false,
@@ -310,5 +313,37 @@ describe('SimpleSearchTab', () => {
 
     expect(screen.queryByRole('button', { name: /Stablization/ })).not.toBeInTheDocument();
     expect(screen.queryByText('Actions')).not.toBeInTheDocument();
+  });
+});
+
+describe('SimpleSearchTab — narrowing results to one issue type', () => {
+  function renderTab(viewState: UseSimpleSearchStateResult) {
+    mockUseSimpleSearchState.mockReturnValue(viewState);
+    return render(<SimpleSearchTab />);
+  }
+
+  it('offers no type control until a search has returned something to narrow', () => {
+    // An empty dropdown is a control that can only disappoint.
+    renderTab(buildViewState({ availableIssueTypes: [] }));
+
+    expect(screen.queryByLabelText('Filter by issue type')).toBeNull();
+  });
+
+  it('offers each type the results actually contain, plus an all-types choice', () => {
+    renderTab(buildViewState({ availableIssueTypes: ['Defect', 'Story'] }));
+
+    const typeControl = screen.getByLabelText('Filter by issue type');
+    expect(within(typeControl).getByRole('option', { name: 'All types' })).toBeTruthy();
+    expect(within(typeControl).getByRole('option', { name: 'Defect' })).toBeTruthy();
+    expect(within(typeControl).getByRole('option', { name: 'Story' })).toBeTruthy();
+  });
+
+  it('reports the chosen type back to the caller', () => {
+    const setIssueTypeFilter = vi.fn();
+    renderTab(buildViewState({ availableIssueTypes: ['Defect', 'Story'], setIssueTypeFilter }));
+
+    fireEvent.change(screen.getByLabelText('Filter by issue type'), { target: { value: 'Defect' } });
+
+    expect(setIssueTypeFilter).toHaveBeenCalledWith('Defect');
   });
 });

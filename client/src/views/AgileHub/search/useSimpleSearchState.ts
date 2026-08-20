@@ -2,6 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
+import {
+  ALL_ISSUE_TYPES,
+  filterResultsByIssueType,
+  readAvailableIssueTypes,
+} from './simpleSearchIssueTypeFilter.ts';
+
 import { jiraGet } from '../../../services/jiraApi.ts';
 import type { JiraIssue, JiraIssueLink } from '../../../types/jira.ts';
 import { normalizeRichTextToPlainText } from '../../../utils/richTextPlainText.ts';
@@ -97,6 +103,11 @@ export interface UseSimpleSearchStateResult {
   results: SimpleSearchResult[];
   rawResultCount: number;
   hasSearched: boolean;
+  /** The chosen issue type, or `ALL_ISSUE_TYPES` for no filter. */
+  issueTypeFilter: string;
+  setIssueTypeFilter: (issueType: string) => void;
+  /** The types present in the current results — the only ones worth offering. */
+  availableIssueTypes: string[];
   runSearch: () => Promise<void>;
   detailByIssueKey: Record<string, SimpleSearchIssueDetail | undefined>;
   detailErrorByIssueKey: Record<string, string | undefined>;
@@ -460,6 +471,9 @@ export function useSimpleSearchState(): UseSimpleSearchStateResult {
   const [detailByIssueKey, setDetailByIssueKey] = useState<Record<string, SimpleSearchIssueDetail | undefined>>({});
   const [detailErrorByIssueKey, setDetailErrorByIssueKey] = useState<Record<string, string | undefined>>({});
   const [loadingDetailKeys, setLoadingDetailKeys] = useState<string[]>([]);
+  // Not persisted with the keyword and sort: a type filter is a way of reading THIS result set, and
+  // restoring it days later would silently hide most of the next search's results.
+  const [issueTypeFilter, setIssueTypeFilter] = useState<string>(ALL_ISSUE_TYPES);
 
   useEffect(() => {
     writePersistedSimpleSearchState(persistedState);
@@ -540,9 +554,15 @@ export function useSimpleSearchState(): UseSimpleSearchStateResult {
     }
   }, [detailByIssueKey, loadingDetailKeys]);
 
+  // Offered from what came back, so the control can never propose a type that would empty the list.
+  const availableIssueTypes = useMemo(() => readAvailableIssueTypes(rawResults), [rawResults]);
+
   const results = useMemo(
-    () => sortSimpleSearchResults(rawResults, persistedState.sortOption),
-    [persistedState.sortOption, rawResults],
+    () => sortSimpleSearchResults(
+      filterResultsByIssueType(rawResults, issueTypeFilter),
+      persistedState.sortOption,
+    ),
+    [issueTypeFilter, persistedState.sortOption, rawResults],
   );
 
   return useMemo(
@@ -555,6 +575,9 @@ export function useSimpleSearchState(): UseSimpleSearchStateResult {
       errorMessage,
       results,
       rawResultCount,
+      issueTypeFilter,
+      setIssueTypeFilter,
+      availableIssueTypes,
       hasSearched,
       runSearch,
       detailByIssueKey,
@@ -570,6 +593,8 @@ export function useSimpleSearchState(): UseSimpleSearchStateResult {
       isLoading,
       loadIssueDetail,
       loadingDetailKeys,
+      availableIssueTypes,
+      issueTypeFilter,
       persistedState.keyword,
       persistedState.sortOption,
       rawResultCount,

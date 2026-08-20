@@ -13,6 +13,7 @@ import type {
   SimpleSearchSortOption,
 } from './useSimpleSearchState.ts';
 import { useSimpleSearchState } from './useSimpleSearchState.ts';
+import { ALL_ISSUE_TYPES } from './simpleSearchIssueTypeFilter.ts';
 import styles from './SimpleSearchTab.module.css';
 
 const TAB_TITLE = 'Simple Search';
@@ -313,6 +314,26 @@ export default function SimpleSearchTab() {
             ))}
           </select>
         </label>
+
+        {/* Only drawn once a search has returned something to narrow. Offered before then it would
+            be an empty dropdown, and its options come from the results themselves so it can never
+            propose a type that would blank the list. */}
+        {simpleSearchState.availableIssueTypes.length > 0 && (
+          <label className={styles.controlGroup}>
+            Issue type
+            <select
+              aria-label="Filter by issue type"
+              className={styles.controlSelect}
+              onChange={(changeEvent) => simpleSearchState.setIssueTypeFilter(changeEvent.target.value)}
+              value={simpleSearchState.issueTypeFilter}
+            >
+              <option value={ALL_ISSUE_TYPES}>All types</option>
+              {simpleSearchState.availableIssueTypes.map((issueType) => (
+                <option key={issueType} value={issueType}>{issueType}</option>
+              ))}
+            </select>
+          </label>
+        )}
 
         <button className={styles.buttonPrimary} disabled={simpleSearchState.isLoading} type="submit">
           {simpleSearchState.isLoading ? 'Searching…' : 'Run search'}

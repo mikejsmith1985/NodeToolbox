@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Simple Search can be narrowed to one issue type.** A keyword search returns whatever carries the
+  word — Stories, Defects, Sub-tasks and the Feature above them — and scrolling past the rest was the
+  whole cost of a search that had otherwise worked.
+  The filter runs over results already in hand rather than in the JQL, so changing the type
+  re-filters instantly instead of going back to Jira, and the options are built from what actually
+  came back — the control can never offer a type that would empty the list. It appears only once a
+  search has returned something to narrow. A chosen type that matches nothing returns nothing rather
+  than quietly returning everything: ignoring a filter somebody set is how a screen comes to show
+  rows that contradict the control above it. The choice is NOT persisted with the keyword and sort —
+  a type filter is a way of reading one result set, and restoring it days later would silently hide
+  most of the next search.
+
 ### Fixed
 - **Accepted story-point estimates now land where Hygiene looks for them.** Forty-one accepted
   proposals reported success and changed nothing visible (GH #375). The writer walked a list of
