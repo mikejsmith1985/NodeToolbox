@@ -7,6 +7,7 @@
 // phantom commitment gaps beside a Hygiene tab showing 1 (GH #177). Counting and rendering may
 // differ per surface; the scan may not.
 
+import { resolveStoryPointsFieldIds, resolveStoryPointsWriteFieldId } from '../checks/storyPointsField.ts';
 import { jiraGet } from '../../../services/jiraApi.ts';
 import { fetchIssuesPaged } from '../../../services/fetchIssuesPaged.ts';
 import { buildJqlFieldReference, loadHygieneFieldConfig } from '../checks/hygieneFieldConfig.ts';
@@ -61,8 +62,7 @@ const HYGIENE_PAGE_SIZE = 200;
  * this the scan STOPS AND SAYS SO — which is the part that was missing, not the limit itself.
  */
 const HYGIENE_ISSUE_CEILING = 2_000;
-const MODERN_STORY_POINTS_FIELD = 'customfield_10028';
-const LEGACY_STORY_POINTS_FIELD = 'customfield_10016';
+// Story-points field ids are resolved by storyPointsField.ts, never declared here — see that file.
 
 export const DEFAULT_ASSIGNEE_CLAUSE = 'assignee = currentUser()';
 
@@ -169,7 +169,10 @@ export async function loadHygieneEvaluationSetup(activeTeamProfileId: string): P
   const enabledCustomRules = readEnabledRequiredFieldRules(enterpriseRules);
   const hygieneFieldConfig = await loadHygieneFieldConfig();
   const dashboardConfig = loadDashboardConfigFromStorage(activeTeamProfileId);
-  const customStoryPointsFieldId = dashboardConfig.customStoryPointsFieldId || '';
+  // Resolved rather than taken as-is: the dashboard config's default is the placeholder
+  // `story_points`, which is not a Jira field, so an instance that had chosen a field on the ART
+  // settings screen was still judged against the built-ins it does not use (GH #375).
+  const customStoryPointsFieldId = resolveStoryPointsWriteFieldId(dashboardConfig.customStoryPointsFieldId || '');
 
   return {
     evaluationContext: {
@@ -304,7 +307,7 @@ function buildRequestedHygieneFields(
 ): string[] {
   return buildUniqueFieldIds([
     ...BASE_HYGIENE_FIELDS,
-    ...(customStoryPointsFieldId ? [customStoryPointsFieldId] : []),
+    ...resolveStoryPointsFieldIds(customStoryPointsFieldId),
     ...customRules.map((customRule) => customRule.fieldId),
     ...fieldConfig.acceptanceCriteriaFieldIds,
     ...fieldConfig.applicationFieldIds,
@@ -338,11 +341,8 @@ async function loadFeatureKeysWithPointedStories(
   const childIssueJql = `(${[...featureLinkJqlClauses, `parent in (${encodedFeatureKeys})`].join(' OR ')}) AND issuetype = Story`;
 
   // Include the configured story-points field so Select-type values are available for the check.
-  const isRealCustomField = customStoryPointsFieldId.startsWith('customfield_');
   const childIssueFields = buildUniqueFieldIds([
-    MODERN_STORY_POINTS_FIELD,
-    LEGACY_STORY_POINTS_FIELD,
-    ...(isRealCustomField ? [customStoryPointsFieldId] : []),
+    ...resolveStoryPointsFieldIds(customStoryPointsFieldId),
     ...fieldConfig.featureLinkFieldIds,
   ]);
   // Paged for a reason sharper than the parent scan's: a truncated rollup does not merely undercount,
@@ -369,10 +369,10 @@ async function loadFeatureKeysWithPointedStories(
     const linkedFeatureKey = readLinkedFeatureKey(childIssue, fieldConfig.featureLinkFieldIds);
     // When a real custom field is configured, it is the authoritative source — consistent with
     // the pointing queue and Hygiene missing-SP check. Fall back to legacy fields otherwise.
-    const hasPointedStory = isRealCustomField
-      ? hasPositiveStoryPoints((childIssue.fields as Record<string, unknown>)[customStoryPointsFieldId])
-      : hasPositiveStoryPoints(childIssue.fields[MODERN_STORY_POINTS_FIELD])
-        || hasPositiveStoryPoints(childIssue.fields[LEGACY_STORY_POINTS_FIELD]);
+    // Points in ANY resolved field count. Reading only the newest one reported a pointed story as
+    // unpointed whenever the estimate sat in the field this instance actually uses.
+    const hasPointedStory = resolveStoryPointsFieldIds(customStoryPointsFieldId).some((fieldId) =>
+      hasPositiveStoryPoints((childIssue.fields as Record<string, unknown>)[fieldId]));
     if (linkedFeatureKey && hasPointedStory) {
       featureKeySet.add(linkedFeatureKey);
     }

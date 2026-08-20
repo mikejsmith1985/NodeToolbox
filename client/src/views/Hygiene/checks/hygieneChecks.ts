@@ -6,6 +6,7 @@
 
 import { businessDaysElapsedSince } from '../../../utils/businessDays.ts';
 import { isOnOrBeforeToday } from '../../../utils/calendarDate.ts';
+import { resolveStoryPointsFieldIds } from './storyPointsField.ts';
 import { deriveIssueDates } from './issueDateRules.ts';
 import { normalizeRichTextToPlainText } from '../../../utils/richTextPlainText.ts';
 import type { EnterpriseRequiredFieldRule } from '../../AdminHub/enterpriseRules.ts';
@@ -17,16 +18,10 @@ import type { EnterpriseRequiredFieldRule } from '../../AdminHub/enterpriseRules
 const STALE_THRESHOLD_DAYS = 5;
 const OLD_IN_SPRINT_THRESHOLD_DAYS = 30;
 const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000;
-/**
- * The ONLY field this view reads story points from.
- *
- * Exported because a writer that picks a different field is worse than one that fails: the write
- * succeeds, Jira reports success, and the flag stays exactly where it was with nothing explaining
- * why. Anything writing story points for this view must target this id.
- */
-export const HYGIENE_STORY_POINTS_FIELD_ID = 'customfield_10028';
-const MODERN_STORY_POINTS_FIELD = HYGIENE_STORY_POINTS_FIELD_ID;
-const LEGACY_STORY_POINTS_FIELD = 'customfield_10016';
+// Story-points field ids are NOT declared here. They are resolved at call time by
+// `storyPointsField.ts`, because this instance keeps them in a field chosen on the ART settings
+// screen and a constant in this file cannot know that. A hard-coded id here is what reported
+// forty-one pointed issues as unpointed.
 const SPRINT_FIELD = 'customfield_10020';
 const FEATURE_ISSUE_TYPE_NAMES = new Set(['feature', 'epic']);
 
@@ -528,19 +523,12 @@ export function checkMissingStoryPoints(issue: JiraIssue, customStoryPointsField
   const shouldCheckStoryPoints = issueTypeName === 'story' || issueTypeName === 'task';
   if (!shouldCheckStoryPoints) return null;
 
-  // When a real Jira custom field is configured, treat it as the authoritative source.
-  const isRealCustomField = customStoryPointsFieldId?.startsWith('customfield_') ?? false;
-  if (isRealCustomField && customStoryPointsFieldId) {
-    const configuredValue = issue.fields[customStoryPointsFieldId];
-    return hasEmptyStoryPoints(configuredValue) ? BUILT_IN_HYGIENE_FLAGS['missing-sp'] : null;
-  }
-
-  // Fallback: no real custom field configured — check both built-in fields.
-  const modernStoryPoints = issue.fields[MODERN_STORY_POINTS_FIELD];
-  const legacyStoryPoints = issue.fields[LEGACY_STORY_POINTS_FIELD];
-  return hasEmptyStoryPoints(modernStoryPoints) && hasEmptyStoryPoints(legacyStoryPoints)
-    ? BUILT_IN_HYGIENE_FLAGS['missing-sp']
-    : null;
+  // An estimate in ANY of the resolved fields means the issue is pointed. Judging it against one
+  // field reported forty-one pointed issues as missing points, because the field being read was not
+  // the field this instance keeps them in (GH #375).
+  const resolvedFieldIds = resolveStoryPointsFieldIds(customStoryPointsFieldId);
+  const isPointed = resolvedFieldIds.some((fieldId) => !hasEmptyStoryPoints(issue.fields[fieldId]));
+  return isPointed ? null : BUILT_IN_HYGIENE_FLAGS['missing-sp'];
 }
 
 /**

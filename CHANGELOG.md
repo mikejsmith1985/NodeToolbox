@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Story points are read from the field this instance actually uses.** Forty-one issues that plainly
+  had estimates were reported as missing them (GH #375). Three stores had an opinion and none agreed:
+  the scan read `tbxSprintDashboardConfig.customStoryPointsFieldId`, whose default is the literal
+  string `story_points` — not a Jira field id — so it concluded nothing was configured and fell back
+  to `customfield_10028` / `customfield_10016`, while the field the operator had actually chosen,
+  `customfield_10236` ("Story Points Selection"), lives in `tbxARTSettings.spFieldId` and is the one
+  the write helper already targeted. Clearing local settings put the dashboard config back to its
+  placeholder, which is why the false positives appeared all at once.
+  The field is now resolved in ONE place (`storyPointsField.ts`) and every read and write goes
+  through it: the dashboard's setting when it names a real field, else the ART settings screen's,
+  else the built-ins. All candidates are read rather than just the winner, because an estimate in a
+  legacy field is still an estimate and reporting it as missing would be the same false positive
+  facing the other way. The hard-coded ids are gone from the check and the scan — a constant in those
+  files cannot know which field an instance chose, and that is what produced this.
+
 ### Added
 - **Simple Search can be narrowed to one issue type.** A keyword search returns whatever carries the
   word — Stories, Defects, Sub-tasks and the Feature above them — and scrolling past the rest was the

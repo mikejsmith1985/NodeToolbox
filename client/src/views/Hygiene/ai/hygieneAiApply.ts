@@ -15,7 +15,7 @@ import {
   saveFeatureReviewSimpleField,
   saveFeatureReviewStoryPoints,
 } from '../../SprintDashboard/featureReviewFixes.ts'
-import { HYGIENE_STORY_POINTS_FIELD_ID } from '../checks/hygieneChecks.ts'
+import { resolveStoryPointsWriteFieldId } from '../checks/storyPointsField.ts'
 import type { BuiltInHygieneCheckId, HygieneFieldConfig } from '../checks/hygieneChecks.ts'
 import { HYGIENE_FIX_BY_CHECK, resolveFixFieldId } from '../hygieneFix.ts'
 import type { HygieneAiProposal } from './hygieneAiAssist.ts'
@@ -69,7 +69,7 @@ export async function applyHygieneAiProposal(
   if (checkId === 'missing-sp') {
     // Pinned to the field this view READS, so a successful write and a cleared flag are the
     // same event rather than two things that usually coincide.
-    await saveFeatureReviewStoryPoints(issueKey, proposedValue, HYGIENE_STORY_POINTS_FIELD_ID)
+    await saveFeatureReviewStoryPoints(issueKey, proposedValue, resolveStoryPointsWriteFieldId(''))
     return
   }
   if (checkId === 'missing-fix-version') {
