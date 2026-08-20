@@ -686,3 +686,72 @@ describe('the reporter configuration — two teams, the team half dominant', () 
     });
   });
 });
+
+describe('the daily forecast', () => {
+  // Everything here is computed over issues the scans ALREADY returned. If any of it started
+  // costing a Jira request, the Today tab would go from one round of fetches to two.
+
+  it('holds no forecast until the hygiene setup has landed', async () => {
+    installSettingsStore([buildTeamProfile('alpha-id', 'Transformers', 'ENCUC')]);
+    mockLoadHygieneEvaluationSetup.mockReturnValue(new Promise(() => undefined));
+
+    const { result } = renderHook(() => useTodayDashboard());
+
+    expect(result.current.forecast).toBeNull();
+  });
+
+  it('forecasts the issues the scans returned, without asking Jira for anything more', async () => {
+    installSettingsStore([buildTeamProfile('alpha-id', 'Transformers', 'ENCUC')]);
+    mockRunHygieneScan.mockResolvedValue(buildScanOutcome([
+      buildFinding('ENC-1', []),
+      buildFinding('ENC-2', []),
+    ]));
+    const jiraCallsBefore = mockJiraGet.mock.calls.length;
+
+    const { result } = renderHook(() => useTodayDashboard());
+    await waitFor(() => expect(result.current.forecast).not.toBeNull());
+
+    expect(result.current.forecast?.completeness.totalIssueCount).toBeGreaterThan(0);
+    // The only Jira calls are the ones the cards already made — the forecast adds none.
+    const forecastOnlyCalls = mockJiraGet.mock.calls.slice(jiraCallsBefore)
+      .filter(([path]: [string]) => String(path).includes('/version'));
+    expect(forecastOnlyCalls).toHaveLength(0);
+  });
+
+  it('counts one issue once even when it appears in both the personal and team scans', async () => {
+    // A Scrum Master's own issues also show up in their team's scan. Counting one issue twice would
+    // double its effort in every total it touches.
+    installSettingsStore([buildTeamProfile('alpha-id', 'Transformers', 'ENCUC')]);
+    mockRunHygieneScan.mockResolvedValue(buildScanOutcome([buildFinding('ENC-1', []), buildFinding('ENC-1', [])]));
+
+    const { result } = renderHook(() => useTodayDashboard());
+    await waitFor(() => expect(result.current.forecast).not.toBeNull());
+
+    expect(result.current.forecast?.completeness.totalIssueCount).toBe(1);
+  });
+
+  it('says every item was charged at full size, because Today has no board columns', async () => {
+    installSettingsStore([buildTeamProfile('alpha-id', 'Transformers', 'ENCUC')]);
+    mockRunHygieneScan.mockResolvedValue(buildScanOutcome([buildFinding('ENC-1', [])]));
+
+    const { result } = renderHook(() => useTodayDashboard());
+    await waitFor(() => expect(result.current.forecast).not.toBeNull());
+
+    expect(result.current.forecast?.completeness.hasBoardVocabulary).toBe(false);
+  });
+
+  it('names every scanned team, so a forecast row can be attributed to one of them', async () => {
+    installSettingsStore([
+      buildTeamProfile('alpha-id', 'Transformers', 'ENCUC'),
+      buildTeamProfile('beta-id', 'Cleanup Crew', 'ENCUC'),
+    ]);
+
+    const { result } = renderHook(() => useTodayDashboard());
+    await waitFor(() => expect(Object.keys(result.current.teamNamesByProfileId)).toHaveLength(2));
+
+    expect(result.current.teamNamesByProfileId).toEqual({
+      'alpha-id': 'Transformers',
+      'beta-id': 'Cleanup Crew',
+    });
+  });
+});

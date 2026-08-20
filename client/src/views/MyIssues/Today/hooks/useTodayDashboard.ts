@@ -16,10 +16,17 @@ import type { JiraIssue as HygieneJiraIssue } from '../../../Hygiene/checks/hygi
 import { formatLastBusinessDayEndChicago } from '../../../../utils/lastBusinessDayChicago.ts';
 import { fetchIssuesPaged } from '../../../../services/fetchIssuesPaged.ts';
 import { loadHygieneEvaluationSetup, runHygieneScan } from '../../../Hygiene/hooks/hygieneScan.ts';
+import { resolveStoryPointsFieldIds } from '../../../Hygiene/checks/storyPointsField.ts';
+import { toCalendarDay } from '../../../../utils/calendarDate.ts';
 import type { HygieneEvaluationContext } from '../../../Hygiene/checks/hygieneChecks.ts';
 import { loadDashboardConfigFromStorage } from '../../../SprintDashboard/hooks/useDashboardConfig.ts';
 import { useSprintData } from '../../../SprintDashboard/hooks/useSprintData.ts';
 import { buildTeamHygieneScopeJql } from '../../../SprintDashboard/teamHygieneScope.ts';
+import { readArtSettings } from '../../../../services/artSettingsStore.ts';
+import { adaptHygieneIssues, collectFixVersionNames } from '../../../SprintDashboard/forecast/forecastAdapters.ts';
+import { buildForecastConfig } from '../../../SprintDashboard/forecast/forecastSettings.ts';
+import { computeForecast } from '../../../SprintDashboard/forecast/forecastCompose.ts';
+import type { ForecastResult } from '../../../SprintDashboard/forecast/forecastTypes.ts';
 import { useMentionsState } from '../../hooks/useMentionsState.ts';
 import { MY_ISSUES_JQL_SUFFIX } from '../../hooks/useMyIssuesState.ts';
 import { buildAssigneeJql } from '../../myIssuesRoleLens.ts';
@@ -121,6 +128,21 @@ export interface TodayDashboardData {
   sprintIssues: HygieneJiraIssue[];
   /** The active sprint, or null when no scrum sprint is selected. */
   sprintInfo: JiraSprint | null;
+  /**
+   * The daily forecast across every saved Dashboard Team, or null before the first scan lands.
+   *
+   * Computed over issues the team scans ALREADY returned — no extra Jira request. It is the same
+   * `computeForecast` the Roll-Up Board and the Forecast tab call, which is why the three cannot
+   * report different figures for the same issue.
+   */
+  forecast: ForecastResult | null;
+  /**
+   * Team display names by profile id, so the forecast can attribute every row.
+   *
+   * Returned from the hook rather than read from the store by the view: these come from the very
+   * profiles the scans ran against, so a row can never be labelled with a team that was not scanned.
+   */
+  teamNamesByProfileId: Record<string, string>;
 }
 
 // ── Constants ──
@@ -823,11 +845,70 @@ export function useTodayDashboard(): TodayDashboardData {
     teamScanErrorMessage,
   ]);
 
+  const teamNamesByProfileId = useMemo(
+    () => Object.fromEntries(teamScanTargets.map((target) => [target.teamProfileId, target.teamName])),
+    [teamScanTargets],
+  );
+
+  // ── The daily forecast ──
+  //
+  // Built from issues the scans above ALREADY returned, so it costs no extra Jira request. Today
+  // has no board and therefore no column order, which means every item is charged at full size —
+  // stated in the completeness record rather than left for a reader to infer, and conservative
+  // rather than wrong.
+  const forecast = useMemo<ForecastResult | null>(() => {
+    const fieldConfig = myIssuesResult.hygieneContext?.fieldConfig;
+    if (!fieldConfig) {
+      return null;
+    }
+
+    const scannedIssues = [
+      ...myIssuesResult.issues,
+      ...teamScanResult.teamScans.flatMap((teamScan) => teamScan.findings.map((finding) => finding.issue)),
+    ];
+    // Deduped by key: a Scrum Master's own issues also appear in their team's scan, and counting one
+    // issue twice would double its effort in every total it touches.
+    const uniqueIssuesByKey = new Map(scannedIssues.map((issue) => [issue.key, issue]));
+
+    const items = adaptHygieneIssues([...uniqueIssuesByKey.values()], {
+      storyPointsFieldIds: resolveStoryPointsFieldIds(myIssuesResult.hygieneContext?.customStoryPointsFieldId ?? ''),
+      subStatusFieldIds: fieldConfig.subStatusFieldIds ?? [],
+      targetStartFieldIds: fieldConfig.targetStartFieldIds ?? [],
+    });
+
+    const artSettings = readArtSettings();
+    const { config, rejectedSettings } = buildForecastConfig(artSettings, toCalendarDay(new Date()));
+    const computed = computeForecast(
+      {
+        items,
+        orderedColumnIds: [],
+        // Only the versions this work is actually committed to: fetching the project's whole
+        // version list would be a request Today does not currently make.
+        fixVersions: collectFixVersionNames(items).map((versionName) => ({ name: versionName })),
+        people: [],
+        piEndDate: artSettings.piEndDate,
+        hasSubStatusField: (fieldConfig.subStatusFieldIds ?? []).length > 0,
+        teamProfileId: activeTeamProfileId,
+      },
+      config,
+    );
+    // Carried through rather than dropped: a rate somebody set to zero has to be visible, or the
+    // numbers cannot be reconciled with the settings screen.
+    return { ...computed, rejectedSettings };
+  }, [
+    myIssuesResult.hygieneContext,
+    myIssuesResult.issues,
+    teamScanResult.teamScans,
+    activeTeamProfileId,
+  ]);
+
   return {
     categories,
     isConnectionReady,
     refresh,
     sprintIssues: teamHygiene,
     sprintInfo: sprintState.sprintInfo,
+    forecast,
+    teamNamesByProfileId,
   };
 }

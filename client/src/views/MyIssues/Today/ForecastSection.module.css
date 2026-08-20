@@ -1,0 +1,144 @@
+/* ForecastSection.module.css — the daily forecast panel on the Today dashboard.
+   Matches SprintFlowSnapshot's vocabulary so the two informational panels read as one surface. */
+
+.forecastPanel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 8px);
+  background: var(--color-surface);
+}
+
+.panelHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  flex-wrap: wrap;
+}
+
+.panelTitle {
+  margin: 0;
+  font-size: 1rem;
+}
+
+/* Always rendered, never conditional on there being a problem: a total that omits what it could
+   not see is a wrong number presented confidently, and this is the line that says so. */
+.completenessLine {
+  font-size: 0.8125rem;
+  color: var(--color-text-muted, #6b7280);
+}
+
+.rejectedSettings {
+  margin: 0;
+  padding: var(--spacing-sm);
+  list-style: none;
+  border: 1px solid var(--color-warning, #d97706);
+  border-radius: var(--radius-sm, 4px);
+  font-size: 0.8125rem;
+}
+
+.emptyMessage {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--color-text-muted, #6b7280);
+}
+
+.group,
+.groupAlert {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs, 4px);
+  padding: var(--spacing-sm);
+  border-radius: var(--radius-sm, 4px);
+  border: 1px solid var(--color-border);
+}
+
+/* Colour is an addition to the heading text, never a replacement for it — the label already says
+   "Behind" in words, so a reader who cannot see the tint loses nothing. */
+.groupAlert {
+  border-color: var(--color-danger, #dc2626);
+}
+
+.groupHeading {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs, 4px);
+  margin: 0;
+  font-size: 0.875rem;
+}
+
+.groupCount {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.rowList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs, 4px);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.forecastRow {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--spacing-xs, 4px) 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.forecastRow:first-child {
+  border-top: none;
+}
+
+.rowHeadline {
+  display: flex;
+  gap: var(--spacing-xs, 4px);
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+
+.issueKey {
+  font-weight: 600;
+  font-size: 0.875rem;
+  white-space: nowrap;
+}
+
+.issueSummary {
+  font-size: 0.875rem;
+  /* Wraps rather than truncates: a summary cut off mid-word is the part a reader needs. */
+  overflow-wrap: anywhere;
+}
+
+.rowMeta {
+  display: flex;
+  gap: var(--spacing-xs, 4px);
+  flex-wrap: wrap;
+}
+
+.metaChip,
+.metaChipWarning {
+  font-size: 0.75rem;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  white-space: nowrap;
+}
+
+.metaChipWarning {
+  border-color: var(--color-warning, #d97706);
+}
+
+/* The workings behind the verdict, so a number somebody disputes can be checked rather than argued
+   about. Muted because it is evidence, not the headline. */
+.rowReason {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--color-text-muted, #6b7280);
+}

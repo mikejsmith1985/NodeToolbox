@@ -8,7 +8,6 @@
 // versions, the people, today's date — arrives as data. That is also what keeps it clear of the
 // field-mapping boundary rule: it never resolves a Jira field, because it never sees one.
 
-import type { MasterCard, RollupBoardItem } from '../rollupBoard/rollupBoardTypes.ts';
 import { buildPiClock, buildReleaseClock } from './forecastWindows.ts';
 import { computeIssueForecasts } from './issueForecast.ts';
 import { computeRemainingEffort } from './effortModel.ts';
@@ -18,6 +17,7 @@ import type {
   FixVersionLike,
   ForecastCompleteness,
   ForecastConfig,
+  ForecastIssue,
   ForecastResult,
   IssueForecastInput,
   PiClock,
@@ -28,13 +28,10 @@ import type {
 /** The status name that takes an issue out of both the capacity sum and the Definition of Done. */
 const CANCELLED_STATUS_NAME = 'cancelled';
 
-/** Jira status-category names that mean the work is finished. */
-const DONE_STATUS_CATEGORY_NAMES = new Set(['done', 'complete', 'completed']);
-
 /** Everything one forecast run needs, gathered by whichever surface is asking. */
 export interface ForecastInput {
-  items: readonly RollupBoardItem[];
-  masterCards: readonly MasterCard[];
+  /** The work in scope, already adapted into the shape the engine reads. */
+  items: readonly ForecastIssue[];
   /** The team's own column order — the basis for how much credit in-flight work has earned. */
   orderedColumnIds: readonly string[];
   fixVersions: readonly FixVersionLike[];
@@ -46,26 +43,19 @@ export interface ForecastInput {
   teamProfileId: string | null;
 }
 
-/** True when Jira's own status category says this issue is finished. */
-export function isItemComplete(item: RollupBoardItem): boolean {
-  const statusField = (item.issue.fields as { status?: { statusCategory?: { name?: string }; name?: string } }).status;
-  const statusCategoryName = (statusField?.statusCategory?.name ?? statusField?.name ?? '').trim().toLowerCase();
-  return DONE_STATUS_CATEGORY_NAMES.has(statusCategoryName);
-}
-
 /** True when the issue has been cancelled — counted and named, never silently dropped. */
-export function isItemCancelled(item: RollupBoardItem): boolean {
+export function isItemCancelled(item: ForecastIssue): boolean {
   return item.statusName.trim().toLowerCase() === CANCELLED_STATUS_NAME;
 }
 
 /** True when nobody holds this issue, under either identity Jira might have given. */
-export function isItemUnassigned(item: RollupBoardItem): boolean {
+export function isItemUnassigned(item: ForecastIssue): boolean {
   return item.assigneeAccountId === null && item.assigneeDisplayName === null;
 }
 
 /** Works out the remaining effort for every item, keyed by issue key so later stages can look it up. */
 export function buildEffortByIssueKey(
-  items: readonly RollupBoardItem[],
+  items: readonly ForecastIssue[],
   orderedColumnIds: readonly string[],
   config: ForecastConfig,
 ): Map<string, RemainingEffort> {
@@ -75,7 +65,7 @@ export function buildEffortByIssueKey(
       item.storyPoints,
       item.columnId,
       orderedColumnIds,
-      isItemComplete(item),
+      item.isComplete,
       config.pointsPerWorkingDay,
     ));
   });
@@ -122,7 +112,7 @@ function readCodeFreezeDeadline(
 
 /** Turns board items into the shape the per-issue forecast reads. */
 function buildIssueForecastInputs(
-  items: readonly RollupBoardItem[],
+  items: readonly ForecastIssue[],
   effortByIssueKey: Map<string, RemainingEffort>,
   releaseClocksByVersionName: Record<string, ReleaseClock>,
   piClock: PiClock,
@@ -137,17 +127,18 @@ function buildIssueForecastInputs(
     effort: effortByIssueKey.get(item.key) ?? computeRemainingEffort(null, item.columnId, [], false, 1),
     releaseDeadlineIso: readCodeFreezeDeadline(item.fixVersionNames, releaseClocksByVersionName),
     piDeadlineIso: piClock.piEndIso,
-    // The board does not fetch changelogs, so the day work actually began is not available here.
-    // The bulk date fix, which does read the changelog, supplies it on the write path instead.
-    actualStartIso: null,
-    storedTargetStartIso: null,
-    isComplete: isItemComplete(item),
+    // Usually null: neither the board nor the hygiene scan fetches changelogs, which is the only
+    // place the day work actually began is recorded. The bulk date fix, which does read one, is
+    // where an actual start date enters the picture.
+    actualStartIso: item.actualStartIso,
+    storedTargetStartIso: item.storedTargetStartIso,
+    isComplete: item.isComplete,
   }));
 }
 
 /** Tallies everything a total could otherwise have omitted without saying so. */
 function buildCompleteness(
-  items: readonly RollupBoardItem[],
+  items: readonly ForecastIssue[],
   effortByIssueKey: Map<string, RemainingEffort>,
   undatedVersionCount: number,
   input: ForecastInput,

@@ -21,6 +21,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   only for what is left of it, using the board's own column order — so an almost-finished story does not
   make a whole release look over capacity. Unsized, unassigned and undated work is named rather than
   guessed at, and counted beside every total it could otherwise have quietly changed.
+- **A daily forecast on the Today tab, across every saved team.** Grouped by what needs a decision
+  this morning — behind, must start today, deadline already passed — then the good news, then the
+  work that could not be forecast at all, each under its own heading rather than folded into "on
+  track". Every row carries its workings, so a figure somebody disputes can be checked. It costs no
+  extra Jira request: the arithmetic runs over issues the team scans already returned.
 
 ### Fixed
 - **The Program Increment field could not be discovered by name.** Its name pattern had been written

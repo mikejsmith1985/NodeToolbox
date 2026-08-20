@@ -11,7 +11,7 @@ import { describe, expect, it } from 'vitest';
 
 import { buildForecastConfig } from './forecastSettings.ts';
 import { computeForecast, type ForecastInput } from './forecastCompose.ts';
-import type { RollupBoardItem } from '../rollupBoard/rollupBoardTypes.ts';
+import type { ForecastIssue } from './forecastTypes.ts';
 
 const TODAY_ISO = '2026-08-20';
 
@@ -20,16 +20,12 @@ const CONFIG = buildForecastConfig(
   TODAY_ISO,
 ).config;
 
-/** A board item with everything the forecast reads, so each test varies only what it cares about. */
-function boardItem(overrides: Partial<RollupBoardItem> = {}): RollupBoardItem {
+/** One issue with everything the forecast reads, so each test varies only what it cares about. */
+function boardItem(overrides: Partial<ForecastIssue> = {}): ForecastIssue {
   return {
-    issue: { key: 'ENC-1', fields: { status: { name: 'Working', statusCategory: { name: 'In Progress' } } } } as never,
     key: 'ENC-1',
     summary: '[DEV] Build the thing',
     typeBucket: 'story',
-    typeName: 'Story',
-    parentKey: null,
-    route: { steps: [], notes: [] } as never,
     featureKey: 'DENP-1',
     columnId: 'col-1',
     statusName: 'Working',
@@ -38,10 +34,9 @@ function boardItem(overrides: Partial<RollupBoardItem> = {}): RollupBoardItem {
     assigneeDisplayName: 'Smith, Jane (CTR)',
     fixVersionNames: ['Release 10/02/2026'],
     storyPoints: 3,
-    checklistCompletion: null,
-    checklistItems: [],
-    isFlagged: false,
-    impedimentReasons: [],
+    isComplete: false,
+    actualStartIso: null,
+    storedTargetStartIso: null,
     ...overrides,
   };
 }
@@ -50,7 +45,6 @@ function boardItem(overrides: Partial<RollupBoardItem> = {}): RollupBoardItem {
 function forecastInput(overrides: Partial<ForecastInput> = {}): ForecastInput {
   return {
     items: [boardItem()],
-    masterCards: [],
     orderedColumnIds: ['col-1', 'col-2', 'col-3', 'col-4', 'col-5'],
     fixVersions: [{ name: 'Release 10/02/2026', releaseDate: '2026-10-02' }],
     people: [],

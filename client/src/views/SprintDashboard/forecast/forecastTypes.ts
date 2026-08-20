@@ -49,6 +49,42 @@ export interface ForecastConfigResult {
   rejectedSettings: RejectedSetting[];
 }
 
+// ── The issue, as the forecast needs it ───────────────────────────────────────
+
+/** How an issue's type bears on the forecast: only sub-tasks are treated differently. */
+export type ForecastIssueType = 'story' | 'defect' | 'subtask' | 'other';
+
+/**
+ * One piece of work, reduced to what a forecast actually reads.
+ *
+ * Deliberately NOT the Roll-Up Board's own item type, even though the board is the richest source.
+ * The Today tab reaches the engine through a hygiene scan and has no board items at all, and an
+ * engine that insisted on them would have forced Today to fabricate the twenty fields it does not
+ * have. Each surface adapts into this shape instead, and there is still only one engine.
+ */
+export interface ForecastIssue {
+  key: string;
+  summary: string;
+  typeBucket: ForecastIssueType;
+  /** The Feature this delivers, or null when nothing attributes it. */
+  featureKey: string | null;
+  /** The team column it sits in, which is how much credit it has earned. */
+  columnId: string;
+  statusName: string;
+  subStatusValue: string | null;
+  assigneeAccountId: string | null;
+  assigneeDisplayName: string | null;
+  fixVersionNames: string[];
+  /** null means unestimated. Never 0, which would claim an estimate of zero. */
+  storyPoints: number | null;
+  /** Whether Jira's own status category says the work is finished. */
+  isComplete: boolean;
+  /** The day it entered Working, where the caller could read a changelog. Usually null. */
+  actualStartIso: string | null;
+  /** What Jira currently holds as Target Start, so a disagreement can be reported. */
+  storedTargetStartIso: string | null;
+}
+
 // ── Effort ────────────────────────────────────────────────────────────────────
 
 /** What is LEFT in one issue, and the workings behind that figure. */
