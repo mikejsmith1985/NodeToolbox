@@ -23,8 +23,14 @@ export const READY_TO_WORK_STATUS_NAME = 'Ready to Work';
 /** The status whose entry IS the start — the fact a prediction is only standing in for. */
 export const WORKING_STATUS_NAME = 'Working';
 
-/** Calendar days between Target End and the release — the buffer, not a workload estimate. */
-const TARGET_END_LEAD_DAYS = 21;
+/**
+ * Calendar days between Target End and the release — the buffer, not a workload estimate.
+ *
+ * Exported because this date has a second name: the delivery forecast calls it CODE FREEZE, and it
+ * is the same day. Importing the number is what stops there being two answers to "when does the
+ * build stop for this release", which is the sort of disagreement nobody notices until a release.
+ */
+export const TARGET_END_LEAD_DAYS = 21;
 
 /** Calendar days after reaching Ready to Work that work is expected to begin. */
 const TARGET_START_LEAD_DAYS = 3;

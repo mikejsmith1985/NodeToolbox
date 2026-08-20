@@ -8,13 +8,12 @@
 
 import type { PlanResult } from '../../FeatureCanvas/planner/capacityTypes.ts';
 
-/** A working-day calendar: which weekdays are non-working, plus explicit organisational holidays. */
-export interface WorkingCalendar {
-  /** JS getUTCDay() values treated as non-working (Sunday=0 … Saturday=6). Default weekend = [0, 6]. */
-  weekendDays: number[];
-  /** Organisational holiday dates as 'YYYY-MM-DD'. Honoured where a holiday calendar is available. */
-  holidayIsoDates: string[];
-}
+// A working-day calendar — which weekdays are non-working, plus explicit organisational holidays.
+// Declared once in utils/workingDays.ts alongside the arithmetic that consumes it, and re-exported
+// here so every existing `from './piPlanTypes.ts'` import keeps resolving. Two structurally
+// identical declarations would type-check happily and then drift, which is the failure this
+// codebase has spent several changes removing.
+export type { WorkingCalendar } from '../../../utils/workingDays.ts';
 
 /** One classified sub-task kind beneath a Story.
  *  028 kinds: 'internalTest' + the three deploys. 032 (PI Delivery Framework) ADDS 'coding' (one per repo,

@@ -318,6 +318,11 @@ function buildRequestedHygieneFields(
     ...fieldConfig.programIncrementFieldIds,
     ...fieldConfig.targetStartFieldIds,
     ...fieldConfig.targetEndFieldIds,
+    // No hygiene CHECK reads the sub-status, but the delivery forecast does: an issue is at the PI
+    // Definition of Done only when its status is Ready for Testing AND its sub-status is Integration
+    // Test. The field was already discovered by name here and simply never asked for, so Today could
+    // not tell an INT-ready issue from one that had barely started.
+    ...(fieldConfig.subStatusFieldIds ?? []),
   ]);
 }
 

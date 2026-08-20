@@ -17,6 +17,44 @@
 > `po-pi-dropdown.spec.js`. Feature 024's spec inherited a false "do not run concurrently with 022" constraint from
 > these stale entries before the code was checked. **Verify against the codebase before trusting a status below.**
 
+- **036-delivery-forecast** — *(**PLANNED** — spec + plan + contracts complete, ready for `/speckit-tasks`.)* turn
+  story points into time and time into a verdict, on **two clocks that do not coincide**: the **release clock**
+  (can this be built, code-frozen, externally tested and shipped?) and the **PI clock** (can this Feature reach
+  **Integrated Test**?). A daily forecast on **Today** ("if these don't start today we're behind"), forecast tiles +
+  card badges on the **Roll-Up Board**, and a new **Forecast** tab carrying release capacity, the external-test
+  window, and Feature-level PI DoD. Plan: `specs/036-delivery-forecast/plan.md`. Contracts: `effort-and-windows.md`,
+  `issue-forecast.md`, `capacity-load.md`, `int-readiness-and-chain.md`, `release-date-resolve.md`,
+  `forecast-ai.md`, `surface-wiring.md`.
+  **The decisive constraint**: `chore/migrate-field-id-debt-2` is an **active rebase** centralising field ids behind
+  `services/jiraFieldMapping.ts`, guarded by `services/fieldMappingBoundary.test.ts` — a **ratchet that fails on any
+  NEW file naming a `customfield_*` id**. Every new module here is therefore **pure and field-blind**: it receives
+  points, statuses and dates as data and resolves nothing. That is also what makes the whole engine unit-testable
+  with no Jira.
+  **Framework-First**: 19 of 27 capabilities are **reuse** — **code freeze already exists** as Target End
+  (`issueDateRules.ts`, release − 21 days: name it, never recompute it), `readColumnCredit` (remaining effort =
+  points × (1 − credit)), `derivedDateFix` + `saveFeatureReviewSimpleField` (the write path), the Today multi-team
+  scan, `hygieneFieldConfig.subStatusFieldIds` (**already discovered, simply never requested** — a one-line fix),
+  `fetchPiWindowFixVersions`, `ReportAiPanel` (renders **nothing** when locked, so US8-4 is satisfied by
+  construction), and `boardVocabularyStore.loadTeamVocabulary`. **New work** = 8 pure modules
+  (`effortModel`, `forecastWindows`, `issueForecast`, `capacityLoad`, `intReadiness`, `devSlChain`, `featureSizing`,
+  `releaseDateResolve`) behind ONE entry point `computeForecast` — so FR-043 ("no surface re-derives a verdict") is
+  structural, not a rule to remember.
+  **Two recorded drifts, each with a behaviour-preservation proof**: the working-day primitives **move** from
+  `ArtView/piPlan/piPlanDates.ts` to `utils/workingDays.ts` (Hygiene must not depend on the PI planner) —
+  `piPlanDates.test.ts` passes **unmodified** or the move is reverted; and `issueDateRules.ts` is extended **in
+  place** with three **optional** inputs (FR-013 — a parallel Target Start rule is the exact defect that module
+  exists to prevent).
+  **Load-bearing invariants**: `utils/workflowDelivery.ts` is **NOT touched** and `workflowDelivery.test.ts` passes
+  unmodified — "delivered = Ready for QA" keeps its meaning for predictability/monthly-delivery/flow, while
+  **INT-ready** (`Ready for Testing` + sub-status `Integration Test`) is a **second, earlier** rule; a Feature with
+  **zero children** is `not-int-ready`, never complete (an all-satisfied check over an empty set returns true);
+  `unsized` outranks every other issue state; and the DEV→SL chain reads **status + sub-status directly, never a
+  board column**, so a team without the new `Internal Test Ready` column still forecasts correctly.
+  **The three new settings stay in `tbxARTSettings` only** — `SharedArtWorkspaceSettingsRecord` is deliberately NOT
+  bumped, because 034 recorded that a schema bump makes `loadSharedArtWorkspace` hard-reject the whole workspace on
+  older clients. **No refactors**: `RollupBoardTab.tsx` (2,694 lines) and `SprintDashboardView.tsx` (~6,800) receive
+  additive edits only; the one existing test that legitimately changes is `defaultBoardColumns.test.ts`.
+
 - **034-feature-rollup-board** — *(**IMPLEMENTED AND MERGED** — 70/71 tasks; only live-Jira quickstart
   validation (T071) is outstanding, deliberately left to production. Branch `feature/033-feature-rollup-board`
   — the branch keeps the old number because its PR was already open when main shipped a different 033

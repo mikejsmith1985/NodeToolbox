@@ -3117,6 +3117,16 @@ interface ArtAdvancedSettings {
    * Defaults to DEFAULT_SPRINT_WINDOW_DAYS when not set.
    */
   sprintWindowDays?: number;
+  /**
+   * How many story points one person completes in one working day — the delivery forecast's
+   * conversion from size to time. Local to this machine: deliberately NOT in the shared workspace
+   * field list, because bumping that schema makes older clients reject the whole workspace.
+   */
+  pointsPerWorkingDay?: number;
+  /** Organisational holidays as 'YYYY-MM-DD', excluded from every working-day count. */
+  holidayIsoDates?: string[];
+  /** How far a Feature's children may exceed its own estimate before it is flagged, as a percentage. */
+  featureSizingTolerancePercent?: number;
   /** Numeric Confluence page ID that contains the PI Review table synced by the PI Review tab. */
   piReviewPageId?: string;
   /** Shared fallback Confluence page URL or page ID used when no team-specific PI Review page is configured. */
@@ -3158,9 +3168,15 @@ const DEFAULT_SHARED_ART_SETTINGS: Pick<
   'sharedArtName' | 'sharedArtKey' | 'sharedArtDatabaseId' | 'sharedArtSpaceId' | 'sharedArtParentId'
 > = SHARED_ART_WORKSPACE_DEFAULTS;
 
+/** A bare calendar day, the only shape a holiday entry may take. */
+const CALENDAR_DAY_INPUT_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const DEFAULT_STALE_DAYS_SETTING = 5;
 /** Default sprint length in calendar days (2-week sprint). Used by stale-issue and sprint-window calculations. */
 const DEFAULT_SPRINT_WINDOW_DAYS = 14;
+/** One point a day: fourteen working days to code freeze makes fourteen points a full load. */
+const DEFAULT_POINTS_PER_WORKING_DAY = 1;
+/** Zero tolerance: any amount by which a Feature's children outgrow its estimate is worth seeing. */
+const DEFAULT_FEATURE_SIZING_TOLERANCE_PERCENT = 0;
 const DEFAULT_DEPENDENCY_LINK_TYPES = ['blocks', 'is blocked by', 'depends on', 'is depended on by', 'relates to'];
 const DEFAULT_PI_REVIEW_TARGET_START_FIELD_ID = 'customfield_10101';
 const DEFAULT_PI_REVIEW_TARGET_END_FIELD_ID = 'customfield_10102';
@@ -3673,6 +3689,16 @@ function SettingsPanel({
     String(storedSettings.sprintWindowDays ?? DEFAULT_SPRINT_WINDOW_DAYS),
   );
   const [piEndDate, setPiEndDate] = useState(storedSettings.piEndDate ?? '');
+  const [pointsPerWorkingDayInput, setPointsPerWorkingDayInput] = useState(
+    String(storedSettings.pointsPerWorkingDay ?? DEFAULT_POINTS_PER_WORKING_DAY),
+  );
+  const [holidayIsoDatesInput, setHolidayIsoDatesInput] = useState(
+    (storedSettings.holidayIsoDates ?? []).join(', '),
+  );
+  const [featureSizingToleranceInput, setFeatureSizingToleranceInput] = useState(
+    String(storedSettings.featureSizingTolerancePercent ?? DEFAULT_FEATURE_SIZING_TOLERANCE_PERCENT),
+  );
+  const [holidayInputNotice, setHolidayInputNotice] = useState('');
   const [piReviewPageUrl, setPiReviewPageUrl] = useState(
     storedSettings.piReviewPageUrl ?? storedSettings.piReviewPageId ?? '',
   );
@@ -3779,6 +3805,46 @@ function SettingsPanel({
     const parsedDays = parseInt(value, 10);
     if (!isNaN(parsedDays) && parsedDays > 0) {
       saveSettingField('sprintWindowDays', parsedDays);
+    }
+  }
+
+  /**
+   * Saves the points-to-days rate, refusing anything that cannot divide.
+   *
+   * Zero and negatives are not clamped — a zero rate is a divide-by-zero waiting to become an
+   * infinite deadline, so a half-typed value simply leaves the stored rate alone until it is valid.
+   */
+  function handlePointsPerWorkingDayChange(value: string) {
+    setPointsPerWorkingDayInput(value);
+    const parsedRate = Number(value);
+    if (Number.isFinite(parsedRate) && parsedRate > 0) {
+      saveSettingField('pointsPerWorkingDay', parsedRate);
+    }
+  }
+
+  /**
+   * Saves the holiday list, and says which entries it refused.
+   *
+   * Dropping an unparseable entry silently would leave somebody believing a holiday was configured
+   * while every forecast counted it as a working day.
+   */
+  function handleHolidayIsoDatesChange(value: string) {
+    setHolidayIsoDatesInput(value);
+    const typedEntries = value.split(/[\n,]/).map((entry) => entry.trim()).filter((entry) => entry !== '');
+    const validDays = typedEntries.filter((entry) => CALENDAR_DAY_INPUT_PATTERN.test(entry));
+    const refusedEntries = typedEntries.filter((entry) => !CALENDAR_DAY_INPUT_PATTERN.test(entry));
+    setHolidayInputNotice(
+      refusedEntries.length === 0 ? '' : `Ignored (not YYYY-MM-DD): ${refusedEntries.join(', ')}`,
+    );
+    saveSettingField('holidayIsoDates', validDays);
+  }
+
+  /** Saves the sizing tolerance. Zero is a real value here, so only negatives are refused. */
+  function handleFeatureSizingToleranceChange(value: string) {
+    setFeatureSizingToleranceInput(value);
+    const parsedPercent = Number(value);
+    if (Number.isFinite(parsedPercent) && parsedPercent >= 0) {
+      saveSettingField('featureSizingTolerancePercent', parsedPercent);
     }
   }
 
@@ -4389,6 +4455,53 @@ function SettingsPanel({
             type="text"
             value={piEndDate}
             placeholder="YYYY-MM-DD"
+          />
+        </div>
+
+        {/* Delivery forecast: how size becomes time, which days do not count, and how far a
+            Feature's children may outgrow its estimate before anybody is told. */}
+        <div className={styles.settingsFieldRow}>
+          <label className={styles.settingsFieldLabel}>Story Points per Working Day</label>
+          <input
+            aria-label="Story Points per Working Day"
+            className={styles.textInput}
+            min={0.1}
+            onChange={(event) => handlePointsPerWorkingDayChange(event.target.value)}
+            placeholder={String(DEFAULT_POINTS_PER_WORKING_DAY)}
+            step={0.1}
+            type="number"
+            value={pointsPerWorkingDayInput}
+          />
+        </div>
+
+        <div className={styles.settingsFieldRow}>
+          <div className={styles.settingsFieldBlock}>
+            <label className={styles.settingsFieldLabel} htmlFor="art-holiday-dates">Holidays (YYYY-MM-DD, comma separated)</label>
+            <input
+              aria-label="Holidays"
+              className={styles.textInput}
+              id="art-holiday-dates"
+              onChange={(event) => handleHolidayIsoDatesChange(event.target.value)}
+              placeholder="2026-12-25, 2027-01-01"
+              type="text"
+              value={holidayIsoDatesInput}
+            />
+            {holidayInputNotice !== '' && (
+              <div className={styles.settingsFieldHint}>{holidayInputNotice}</div>
+            )}
+          </div>
+        </div>
+
+        <div className={styles.settingsFieldRow}>
+          <label className={styles.settingsFieldLabel}>Feature Sizing Tolerance (%)</label>
+          <input
+            aria-label="Feature Sizing Tolerance"
+            className={styles.textInput}
+            min={0}
+            onChange={(event) => handleFeatureSizingToleranceChange(event.target.value)}
+            placeholder={String(DEFAULT_FEATURE_SIZING_TOLERANCE_PERCENT)}
+            type="number"
+            value={featureSizingToleranceInput}
           />
         </div>
 

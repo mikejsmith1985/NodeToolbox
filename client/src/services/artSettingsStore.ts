@@ -35,6 +35,18 @@ export interface ArtSettings {
   piReviewTargetStartFieldId: string;
   piReviewTargetEndFieldId: string;
   piReviewDevStartStatusName: string;
+  /**
+   * How many story points one person completes in one working day.
+   *
+   * The conversion the whole delivery forecast rests on: fourteen working days to code freeze means
+   * a person holding more than fourteen points is over capacity. One number per ART rather than per
+   * person, because per-person velocity is not recorded anywhere.
+   */
+  pointsPerWorkingDay: number;
+  /** Organisational holidays as 'YYYY-MM-DD'. Empty by default; without it every December is wrong. */
+  holidayIsoDates: string[];
+  /** How far a Feature's children may exceed its own estimate before it is flagged, as a percentage. */
+  featureSizingTolerancePercent: number;
   /** The Confluence workspace this ART shares through. */
   sharedArtName: string;
   sharedArtKey: string;
@@ -56,6 +68,9 @@ export const DEFAULT_ART_SETTINGS: ArtSettings = {
   piReviewTargetStartFieldId: '',
   piReviewTargetEndFieldId: '',
   piReviewDevStartStatusName: '',
+  pointsPerWorkingDay: 1,
+  holidayIsoDates: [],
+  featureSizingTolerancePercent: 0,
   sharedArtName: 'Sales to Enrollment',
   sharedArtKey: 'S2E',
   sharedArtDatabaseId: '684163133',
@@ -84,6 +99,43 @@ function readStoredList(storedValue: unknown, defaultValue: string[]): string[] 
     .map((entry) => entry.trim())
     .filter((entry) => entry !== '');
   return cleanedEntries.length === 0 ? [...defaultValue] : cleanedEntries;
+}
+
+/** Matches a bare calendar day. Anything else is not a date a calendar can act on. */
+const CALENDAR_DAY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Reads a points-per-working-day rate, refusing anything that cannot divide.
+ *
+ * Zero and negatives are rejected rather than clamped: a rate of zero is a divide-by-zero waiting
+ * to become an infinite deadline, and a negative one would run every forecast backwards.
+ */
+function readStoredRate(storedValue: unknown, defaultValue: number): number {
+  const parsedValue = Number(storedValue);
+  return Number.isFinite(parsedValue) && parsedValue > 0 ? parsedValue : defaultValue;
+}
+
+/** Reads a percentage, allowing zero — which is this setting's deliberate default, not an absence. */
+function readStoredPercentage(storedValue: unknown, defaultValue: number): number {
+  const parsedValue = Number(storedValue);
+  return Number.isFinite(parsedValue) && parsedValue >= 0 ? parsedValue : defaultValue;
+}
+
+/**
+ * Reads a holiday list, keeping only entries shaped like a calendar day.
+ *
+ * An EMPTY list is a real answer here, unlike every other list in this store: an ART with no
+ * holidays configured is the normal case, and defaulting a cleared field back to something would
+ * make the field impossible to clear.
+ */
+function readStoredCalendarDays(storedValue: unknown): string[] {
+  if (!Array.isArray(storedValue)) {
+    return [];
+  }
+  return storedValue
+    .filter((entry): entry is string => typeof entry === 'string')
+    .map((entry) => entry.trim())
+    .filter((entry) => CALENDAR_DAY_PATTERN.test(entry));
 }
 
 /**
@@ -130,6 +182,15 @@ export function readArtSettings(storage?: Storage): ArtSettings {
     piReviewTargetStartFieldId: readStoredText(storedSettings.piReviewTargetStartFieldId, ''),
     piReviewTargetEndFieldId: readStoredText(storedSettings.piReviewTargetEndFieldId, ''),
     piReviewDevStartStatusName: readStoredText(storedSettings.piReviewDevStartStatusName, ''),
+    // Rate and tolerance are read through their OWN guards rather than readStoredCount: a rate of
+    // zero would be used as a divisor, and a tolerance of zero is the deliberate default rather
+    // than an absent value, so "positive only" is the wrong rule for both.
+    pointsPerWorkingDay: readStoredRate(storedSettings.pointsPerWorkingDay, DEFAULT_ART_SETTINGS.pointsPerWorkingDay),
+    holidayIsoDates: readStoredCalendarDays(storedSettings.holidayIsoDates),
+    featureSizingTolerancePercent: readStoredPercentage(
+      storedSettings.featureSizingTolerancePercent,
+      DEFAULT_ART_SETTINGS.featureSizingTolerancePercent,
+    ),
     sharedArtName: readStoredText(storedSettings.sharedArtName, DEFAULT_ART_SETTINGS.sharedArtName),
     sharedArtKey: readStoredText(storedSettings.sharedArtKey, DEFAULT_ART_SETTINGS.sharedArtKey),
     sharedArtDatabaseId: readStoredText(storedSettings.sharedArtDatabaseId, DEFAULT_ART_SETTINGS.sharedArtDatabaseId),

@@ -97,3 +97,68 @@ describe('readArtSettings in a server bundle', () => {
     }
   });
 });
+
+describe('the delivery forecast settings', () => {
+  it('defaults the rate to one point per working day', () => {
+    // The conversion the whole forecast rests on. One means "fourteen working days to code freeze
+    // makes fourteen points a full load", which is how the team already talks about it.
+    expect(readArtSettings(localStorage).pointsPerWorkingDay).toBe(1);
+  });
+
+  it('keeps a stored rate that can actually divide', () => {
+    storeSettings({ pointsPerWorkingDay: 0.5 });
+    expect(readArtSettings(localStorage).pointsPerWorkingDay).toBe(0.5);
+  });
+
+  it('refuses a rate of zero, which would be a divide-by-zero in every deadline', () => {
+    storeSettings({ pointsPerWorkingDay: 0 });
+    expect(readArtSettings(localStorage).pointsPerWorkingDay).toBe(1);
+  });
+
+  it('refuses a negative rate, which would run every forecast backwards', () => {
+    storeSettings({ pointsPerWorkingDay: -3 });
+    expect(readArtSettings(localStorage).pointsPerWorkingDay).toBe(1);
+  });
+
+  it('refuses a rate that is not a number at all', () => {
+    storeSettings({ pointsPerWorkingDay: 'fast' });
+    expect(readArtSettings(localStorage).pointsPerWorkingDay).toBe(1);
+  });
+
+  it('starts with no holidays, because most ARTs have configured none', () => {
+    expect(readArtSettings(localStorage).holidayIsoDates).toEqual([]);
+  });
+
+  it('keeps only entries shaped like a calendar day', () => {
+    storeSettings({ holidayIsoDates: ['2026-12-25', 'Christmas', '', '2026-01-01'] });
+    expect(readArtSettings(localStorage).holidayIsoDates).toEqual(['2026-12-25', '2026-01-01']);
+  });
+
+  it('lets a cleared holiday list stay cleared', () => {
+    // Unlike every other list in this store, an empty holiday list is a real answer rather than an
+    // absence — so defaulting it back to something would make the field impossible to clear.
+    storeSettings({ holidayIsoDates: [] });
+    expect(readArtSettings(localStorage).holidayIsoDates).toEqual([]);
+  });
+
+  it('defaults the sizing tolerance to zero, so any overage is flagged', () => {
+    expect(readArtSettings(localStorage).featureSizingTolerancePercent).toBe(0);
+  });
+
+  it('keeps a stored tolerance of zero rather than treating it as absent', () => {
+    // Zero is this setting's deliberate value, which is why it cannot use the positive-only guard
+    // the other counts use.
+    storeSettings({ featureSizingTolerancePercent: 0 });
+    expect(readArtSettings(localStorage).featureSizingTolerancePercent).toBe(0);
+  });
+
+  it('keeps a stored positive tolerance', () => {
+    storeSettings({ featureSizingTolerancePercent: 20 });
+    expect(readArtSettings(localStorage).featureSizingTolerancePercent).toBe(20);
+  });
+
+  it('refuses a negative tolerance', () => {
+    storeSettings({ featureSizingTolerancePercent: -1 });
+    expect(readArtSettings(localStorage).featureSizingTolerancePercent).toBe(0);
+  });
+});

@@ -5,12 +5,25 @@
 // existing module does calendar cadence — see plan.md drift ledger).
 
 import type { DatedItem, ReleaseSchedule, ScheduledStory, WorkingCalendar } from './piPlanTypes.ts';
+import {
+  addWorkingDays,
+  isWorkingDay,
+  rollToWorkingDay,
+  subtractWorkingDays,
+  workingDaysBetween,
+} from '../../../utils/workingDays.ts';
 
 /** Deploy-to-INT must land within 24h of internal-test completion → the next calendar day, then rolled. */
 const INT_AFTER_TEST_CALENDAR_DAYS = 1;
 /** Deploy-to-REL happens five working days after deploy-to-INT (clarified: working, not calendar, days). */
 const INT_TO_REL_WORKING_DAYS = 5;
 const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000;
+
+// The working-day primitives moved to utils/workingDays.ts so that Hygiene's date policy, My Issues
+// and the Team Dashboard could use them without depending on the PI planner. They are re-exported
+// here unchanged, so every existing import path still resolves and this module's own tests still
+// describe the same behaviour.
+export { isWorkingDay, rollToWorkingDay, addWorkingDays, subtractWorkingDays, workingDaysBetween };
 
 /** The injected context the cadence needs: the calendar, the PI window, releases, and the velocity rate. */
 export interface DateContext {
@@ -23,69 +36,14 @@ export interface DateContext {
   todayIso: string;
 }
 
-// ── Date primitives (UTC, string-in / string-out) ─────────────────────────────
-
-/** Parses a 'YYYY-MM-DD' (or longer ISO) string into a UTC Date at midnight, avoiding timezone drift. */
-function parseIsoDate(iso: string): Date {
-  const [year, month, day] = iso.slice(0, 10).split('-').map((part) => Number(part));
-  return new Date(Date.UTC(year, month - 1, day));
-}
-
-/** Formats a UTC Date back to 'YYYY-MM-DD'. */
-function formatIsoDate(date: Date): string {
-  const year = date.getUTCFullYear();
-  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(date.getUTCDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
-
 /** Returns the ISO date `days` calendar days after `iso`. */
 function addCalendarDays(iso: string, days: number): string {
-  return formatIsoDate(new Date(parseIsoDate(iso).getTime() + days * MILLISECONDS_PER_DAY));
-}
-
-/** True when the given date is neither a configured weekend day nor a listed holiday. */
-export function isWorkingDay(iso: string, calendar: WorkingCalendar): boolean {
-  const weekday = parseIsoDate(iso).getUTCDay();
-  const isWeekend = calendar.weekendDays.includes(weekday);
-  const isHoliday = calendar.holidayIsoDates.includes(iso.slice(0, 10));
-  return !isWeekend && !isHoliday;
-}
-
-/** Advances to the next working day if `iso` is a weekend/holiday; otherwise returns it unchanged. */
-export function rollToWorkingDay(iso: string, calendar: WorkingCalendar): string {
-  let candidate = iso.slice(0, 10);
-  while (!isWorkingDay(candidate, calendar)) {
-    candidate = addCalendarDays(candidate, 1);
-  }
-  return candidate;
-}
-
-/** Returns the date `count` working days after `iso` (count=0 returns `iso` unchanged). */
-export function addWorkingDays(iso: string, count: number, calendar: WorkingCalendar): string {
-  let result = iso.slice(0, 10);
-  let remaining = count;
-  while (remaining > 0) {
-    result = addCalendarDays(result, 1);
-    if (isWorkingDay(result, calendar)) {
-      remaining -= 1;
-    }
-  }
-  return result;
-}
-
-/** Counts working days in the half-open interval (startIso, endIso]. */
-export function workingDaysBetween(startIso: string, endIso: string, calendar: WorkingCalendar): number {
-  let cursor = startIso.slice(0, 10);
-  let count = 0;
-  const end = endIso.slice(0, 10);
-  while (cursor < end) {
-    cursor = addCalendarDays(cursor, 1);
-    if (isWorkingDay(cursor, calendar)) {
-      count += 1;
-    }
-  }
-  return count;
+  const [year, month, day] = iso.slice(0, 10).split('-').map((part) => Number(part));
+  const shifted = new Date(Date.UTC(year, month - 1, day) + days * MILLISECONDS_PER_DAY);
+  const shiftedYear = shifted.getUTCFullYear();
+  const shiftedMonth = String(shifted.getUTCMonth() + 1).padStart(2, '0');
+  const shiftedDay = String(shifted.getUTCDate()).padStart(2, '0');
+  return `${shiftedYear}-${shiftedMonth}-${shiftedDay}`;
 }
 
 // ── Deploy cadence ────────────────────────────────────────────────────────────

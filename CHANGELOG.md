@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **A delivery forecast, on the two clocks that do not coincide.** The app already wrote three dates per
+  issue from a policy, and already knew how far a card had moved through a team's own columns. It had
+  never multiplied the two, so it could say what a date *should* be and never whether the work *fits*.
+  Story points now become working days, and working days become a verdict — on the **release clock**
+  (can this be built, code-frozen, externally tested and shipped?) and, separately, on the **PI clock**
+  (can this Feature reach Integrated Test?). The two are always shown side by side and never merged:
+  a team is measured on one and operates on the other, and collapsing them into a single figure is the
+  confusion this exists to end.
+
 ### Fixed
 - **The Program Increment field could not be discovered by name.** Its name pattern had been written
   with literal backspace characters instead of word boundaries (`PI` mangled to `PI`),
