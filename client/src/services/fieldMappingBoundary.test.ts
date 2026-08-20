@@ -245,6 +245,9 @@ const ART_SETTINGS_ALLOWED_FILES = [
   'services/jiraFieldMapping.ts',
   'services/fieldMappingBoundary.test.ts',
   'views/ArtView/sharedArtWorkspaceSettings.ts',
+  // Still names the key because it WRITES the settings blob — the Advanced ART Settings panel lives
+  // here. Writing is not a second reader, and routing a write through the reader would be ceremony.
+  'views/ArtView/ArtView.tsx',
 ];
 
 /** The direct-settings-read debt list. Only ever shrinks. */
@@ -254,7 +257,6 @@ const ART_SETTINGS_UNMIGRATED_FILES = [
   'views/AdminHub/FieldMappingPanel.test.tsx',
   'views/AdminHub/hooks/useAdminHubState.ts',
   'views/ArtView/ArtView.test.tsx',
-  'views/ArtView/ArtView.tsx',
   'views/ArtView/blueprintHierarchy.test.ts',
   'views/ArtView/blueprintHierarchy.ts',
   'views/ArtView/DependenciesTab.test.tsx',

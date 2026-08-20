@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Two ART surfaces could mark every issue stale.** `ArtView` read the stale-day threshold in four
+  separate places, and they did not agree: two guarded `staleDays > 0`, while the SoS narrative and
+  the report formatter accepted any number — so a stored `0` made those two treat **every** issue as
+  stale while the Overview card, guarded correctly, showed normal counts. One setting, four readers,
+  two behaviours. All four now go through the shared reader, which applies one guard.
+
+### Changed
+- **`ArtView` reads the ART settings once instead of six times.** Six near-identical parse blocks
+  (four for the stale threshold, two for the PI end date) are gone, along with the three separate
+  local defaults they fell back to — `OVERVIEW_CARD_STALE_DAYS_DEFAULT`, `IMPEDIMENT_STALE_DAYS_DEFAULT`
+  and `DEFAULT_STALE_DAYS`, all holding 5, all now redundant. The `try/catch` around each is gone too:
+  the shared reader is total, so wrapping it was dead code claiming a failure that cannot happen.
+  The file keeps its reference to the storage key because it WRITES the settings blob — the Advanced
+  ART Settings panel lives there — and writing is not a second reader.
+
 ### Changed
 - **Two more modules resolve their Jira fields centrally.** `piReviewPullFeatures` and
   `piFeatureRemap` each carried their own settings parse and their own default field ids —

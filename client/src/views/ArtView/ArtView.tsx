@@ -39,6 +39,7 @@ import type { JiraIssue } from '../../types/jira.ts';
 import { useSettingsStore } from '../../store/settingsStore.ts';
 import { findMatchingTeamProfileForArtTeam } from '../SprintDashboard/sprintDashboardArtContext.ts';
 import { DEFAULT_SHARED_ART_SETTINGS as SHARED_ART_WORKSPACE_DEFAULTS } from './sharedArtWorkspaceSettings.ts';
+import { readArtSettings } from '../../services/artSettingsStore.ts';
 import { buildSharedRoster, findRosterProfileId, readSharedRoster } from './sharedRoster.ts';
 import { buildTeamScopedStorageKey, readTeamScopedStorageValue } from '../SprintDashboard/hooks/teamScopedStorage.ts';
 import {
@@ -246,13 +247,7 @@ function PiProgressHeader({
   const progressBarWidth = `${stats.completionPercent}%`;
 
   // Read piEndDate from localStorage so the header stays in sync with the Settings panel.
-  let piEndDate: string | undefined;
-  try {
-    const artSettings = JSON.parse(localStorage.getItem('tbxARTSettings') || '{}') as { piEndDate?: string };
-    piEndDate = artSettings.piEndDate;
-  } catch {
-    // localStorage errors are non-fatal.
-  }
+  const piEndDate = readArtSettings().piEndDate;
 
   const daysRemaining = computeDaysRemainingInPi(piEndDate);
   const daysRemainingLabel = daysRemaining === null
@@ -481,11 +476,6 @@ function computeArtSummaryStats(teams: ArtTeam[], piEndDate?: string): ArtSummar
 const OVERVIEW_CARD_STATUS_DONE = 'done';
 /** Status category key Jira uses for items that are actively in progress. */
 const OVERVIEW_CARD_STATUS_IN_PROGRESS = 'indeterminate';
-/**
- * Fallback stale-issue threshold in days.
- * Matches the default in the SoS section and the ART Settings default.
- */
-const OVERVIEW_CARD_STALE_DAYS_DEFAULT = 5;
 
 interface TeamCardHealthStats {
   totalIssueCount: number;
@@ -510,15 +500,7 @@ function computeTeamCardHealthStats(team: ArtTeam): TeamCardHealthStats {
   const MS_PER_DAY = 86_400_000;
 
   // Read the user-configured stale threshold so the Overview card stays in sync with SoS settings.
-  let staleDays = OVERVIEW_CARD_STALE_DAYS_DEFAULT;
-  try {
-    const artSettings = JSON.parse(localStorage.getItem('tbxARTSettings') || '{}') as { staleDays?: number };
-    if (typeof artSettings.staleDays === 'number' && artSettings.staleDays > 0) {
-      staleDays = artSettings.staleDays;
-    }
-  } catch {
-    // Storage errors are non-fatal; the default threshold is used instead.
-  }
+  const staleDays = readArtSettings().staleDays;
 
   const doneIssues = team.sprintIssues.filter((issue) => {
     const categoryKey = issue.fields.status.statusCategory?.key;
@@ -640,13 +622,7 @@ function ArtSummaryBar({ teams }: { teams: ArtTeam[] }) {
   if (teams.length === 0) return null;
 
   // Read piEndDate from settings so the bar stays in sync with the Settings panel.
-  let piEndDate: string | undefined;
-  try {
-    const artSettings = JSON.parse(localStorage.getItem('tbxARTSettings') || '{}') as { piEndDate?: string };
-    piEndDate = artSettings.piEndDate;
-  } catch {
-    // localStorage errors are non-fatal; days remaining is simply omitted.
-  }
+  const piEndDate = readArtSettings().piEndDate;
 
   const stats = computeArtSummaryStats(teams, piEndDate);
   const { daysRemaining } = stats;
@@ -765,21 +741,12 @@ const IMPEDIMENT_LEGEND_ENTRIES: Array<{ reason: ImpedimentReason; description: 
   { reason: 'Label', description: 'The issue carries a "blocked" or "impediment" label.' },
 ];
 
-/** Default stale threshold in days when no ART settings are persisted. */
-const IMPEDIMENT_STALE_DAYS_DEFAULT = 5;
 
 // ── Helpers: Impediments panel ──
 
 /** Reads the stale-days threshold from ART settings in localStorage, falling back to the default. */
 function readStaleDaysThreshold(): number {
-  try {
-    const settings = JSON.parse(localStorage.getItem('tbxARTSettings') || '{}') as { staleDays?: number };
-    return typeof settings.staleDays === 'number' && settings.staleDays > 0
-      ? settings.staleDays
-      : IMPEDIMENT_STALE_DAYS_DEFAULT;
-  } catch {
-    return IMPEDIMENT_STALE_DAYS_DEFAULT;
-  }
+  return readArtSettings().staleDays;
 }
 
 /**
@@ -1819,7 +1786,6 @@ const SOS_NARRATIVE_FIELD_LABELS: Record<SosNarrativeField, string> = {
 };
 
 const SOS_NARRATIVE_FIELDS: SosNarrativeField[] = ['yesterday', 'today', 'blockers', 'risks', 'dependencies'];
-const DEFAULT_STALE_DAYS = 5;
 
 interface SosTeamNarrativeProps {
   team: ArtTeam;
@@ -1871,13 +1837,9 @@ function SosTeamNarrative({ team, selectedDateString, sosIssueKey }: SosTeamNarr
   const storedNarrative = readStoredSosNarrative(team.id, selectedDateString);
 
   // Load settings for stale-day threshold
-  let staleDays = DEFAULT_STALE_DAYS;
-  try {
-    const settings = JSON.parse(localStorage.getItem('tbxARTSettings') || '{}') as { staleDays?: number };
-    if (typeof settings.staleDays === 'number') staleDays = settings.staleDays;
-  } catch {
-    // Use default
-  }
+  // Was `typeof === 'number'`, which accepted a stored 0 and marked EVERY issue stale — while two
+  // other readers of the same setting guarded `> 0` and behaved normally. One reader, one guard.
+  const staleDays = readArtSettings().staleDays;
 
   const autoNarrative = autoGenerateSosNarrative(team, staleDays);
   const [narrativeData, setNarrativeData] = useState<SosNarrativeData>(
@@ -2037,13 +1999,9 @@ function SosPanel({ teams, sosExpandedTeams, onToggleSosTeam }: SosPanelProps) {
   const [selectedDateString, setSelectedDateString] = useState(sosDateOptions[0].value);
 
   // Load stale-days threshold for the report formatter
-  let staleDays = DEFAULT_STALE_DAYS;
-  try {
-    const settings = JSON.parse(localStorage.getItem('tbxARTSettings') || '{}') as { staleDays?: number };
-    if (typeof settings.staleDays === 'number') staleDays = settings.staleDays;
-  } catch {
-    // Use default
-  }
+  // Was `typeof === 'number'`, which accepted a stored 0 and marked EVERY issue stale — while two
+  // other readers of the same setting guarded `> 0` and behaved normally. One reader, one guard.
+  const staleDays = readArtSettings().staleDays;
 
   function handleCopySosReport() {
     const text = formatSosReportAsText(teams, selectedDateString, staleDays);
