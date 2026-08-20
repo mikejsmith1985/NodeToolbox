@@ -322,3 +322,71 @@ describe('the ART settings are read through one module', () => {
     expect(ART_SETTINGS_UNMIGRATED_FILES.filter((relativePath) => !namingFiles.has(relativePath))).toEqual([]);
   });
 });
+
+/** Files allowed to name the Feature Link field id. */
+const FEATURE_LINK_ALLOWED_FILES = [
+  'services/jiraFieldMapping.ts',
+  'services/jiraFieldMapping.test.ts',
+  'services/fieldMappingBoundary.test.ts',
+];
+
+/** The Feature Link debt list. Only ever shrinks. */
+const FEATURE_LINK_UNMIGRATED_FILES = [
+  'types/jira.ts',
+  'utils/featureLink.ts',
+  'views/AdminHub/FieldMappingPanel.test.tsx',
+  'views/AdminHub/MonthlyDeliveryPanel.test.tsx',
+  'views/ArtView/blueprintHierarchy.test.ts',
+  'views/ArtView/blueprintHierarchy.ts',
+  'views/ArtView/BlueprintTab.test.tsx',
+  'views/ArtView/carryoverEstimateFetch.test.ts',
+  'views/ArtView/DependenciesTab.test.tsx',
+  'views/ArtView/piPlan/piPlanFields.test.ts',
+  'views/ArtView/piPlan/piPlanFields.ts',
+  'views/ArtView/piPlan/piPlanJira.test.ts',
+  'views/ArtView/piReviewDeliveryDates.test.ts',
+  'views/ArtView/piReviewDeliveryDates.ts',
+  'views/ArtView/piReviewJira.test.ts',
+  'views/ArtView/PiReviewTab.test.tsx',
+  'views/Hygiene/checks/hygieneChecks.test.ts',
+  'views/Hygiene/checks/hygieneChecks.ts',
+  'views/Hygiene/checks/hygieneFieldConfig.test.ts',
+  'views/Hygiene/checks/hygieneFieldConfig.ts',
+  'views/Hygiene/featureLinkInheritFix.test.ts',
+  'views/Hygiene/hooks/hygieneScan.test.ts',
+  'views/Hygiene/hooks/useHygieneState.test.ts',
+  'views/PoTool/jira/compositionReadiness.test.ts',
+  'views/SprintDashboard/featureReview.test.ts',
+  'views/SprintDashboard/FeatureReviewTab.test.tsx',
+  'views/SprintDashboard/piFeatureRemap.test.ts',
+  'views/SprintDashboard/piFeatureRemap.ts',
+  'views/SprintDashboard/rollupBoard/cloneFamily.test.ts',
+  'views/SprintDashboard/rollupBoard/components/ChildCard.test.tsx',
+  'views/SprintDashboard/rollupBoard/components/PlacementTroubleshooter.test.tsx',
+  'views/SprintDashboard/rollupBoard/createWorkForFeature.test.ts',
+  'views/SprintDashboard/rollupBoard/defectRollup.test.ts',
+  'views/SprintDashboard/rollupBoard/disciplineDiscovery.test.ts',
+  'views/SprintDashboard/rollupBoard/featureRollup.test.ts',
+  'views/SprintDashboard/rollupBoard/featureScope.test.ts',
+  'views/SprintDashboard/rollupBoard/placementDiagnosis.test.ts',
+  'views/SprintDashboard/rollupBoard/rollupBoardFetch.test.ts',
+  'views/SprintDashboard/rollupBoard/RollupBoardTab.test.tsx',
+  'views/SprintDashboard/rollupBoard/teamFeatureOwnership.test.ts',
+];
+
+describe('the Feature Link field id stays in one place', () => {
+  // It decides which Feature every Story, sub-task and defect rolls up to — so every swimlane, every
+  // progress figure and the whole Roll-Up Board. 40 files name it under four different constant
+  // names, agreeing by coincidence.
+  it('is named by no file the debt list does not already know about', () => {
+    const newOffenders = findFilesNaming('customfield_10108', FEATURE_LINK_ALLOWED_FILES)
+      .filter((relativePath) => !FEATURE_LINK_UNMIGRATED_FILES.includes(relativePath));
+
+    expect(newOffenders).toEqual([]);
+  });
+
+  it('has a debt list that only shrinks', () => {
+    const namingFiles = new Set(findFilesNaming('customfield_10108', FEATURE_LINK_ALLOWED_FILES));
+    expect(FEATURE_LINK_UNMIGRATED_FILES.filter((relativePath) => !namingFiles.has(relativePath))).toEqual([]);
+  });
+});

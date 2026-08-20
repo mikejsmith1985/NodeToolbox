@@ -9,7 +9,9 @@ import {
   createConfluenceDatabase,
   loadSharedArtWorkspace,
   saveSharedArtWorkspace,
-  type SharedArtWorkspaceRosterMember,
+  // Imported, never redeclared. A second copy of this type drifted three fields ahead of the real
+  // one, so a field added to it type-checked and then vanished at the boundary.
+  type SharedArtWorkspacePayload,
 } from '../../services/confluenceApi.ts';
 import { PrimaryTabs } from '../../components/PrimaryTabs/PrimaryTabs.tsx';
 import { useToast } from '../../components/Toast/ToastContext.ts';
@@ -3243,6 +3245,28 @@ const SHARED_ART_TEAM_FIELD_NAMES = [
   'sosIssueKey',
   'roster',
 ] as const;
+
+/**
+ * Team fields the merge is allowed not to carry.
+ *
+ * `id` identifies the record rather than travelling in it, and `piReviewPageUrl` is the schema-v1
+ * shape read on import and never written again.
+ */
+type UnmergedTeamFieldName = 'id' | 'piReviewPageUrl';
+
+/**
+ * Compile-time proof that the whitelist covers the type.
+ *
+ * Without this, adding a field to `SharedArtWorkspaceTeamRecord` and forgetting this list produced
+ * a field that saved successfully and disappeared on the next sync, with nothing reporting it —
+ * present, then gone. Adding one now fails the build until the merge knows about it.
+ */
+type TeamFieldMissingFromMerge = Exclude<
+  keyof Omit<SharedArtWorkspacePayload['teams'][number], UnmergedTeamFieldName>,
+  typeof SHARED_ART_TEAM_FIELD_NAMES[number]
+>;
+const _everyTeamFieldIsMerged: TeamFieldMissingFromMerge extends never ? true : never = true;
+void _everyTeamFieldIsMerged;
 /**
  * Matches a fully-formed Jira custom field ID (e.g. "customfield_10301").
  * Requires at least 4 digits after the prefix because Jira's generated IDs
@@ -3297,46 +3321,6 @@ interface SharedArtRecentWorkspace {
   databaseId: string;
 }
 
-interface SharedArtWorkspacePayload {
-  schemaVersion: number;
-  artKey: string;
-  artName: string;
-  updatedAt: string;
-  teams: Array<{
-    id: string;
-    name: string;
-    boardId: string;
-    boardName?: string;
-    projectKey?: string;
-    piReviewPages?: Array<{ piName: string; pageUrl: string }>;
-    /** Legacy single-page field (schema v1) — read on import, no longer written. */
-    piReviewPageUrl?: string;
-    sosIssueKey?: string;
-    /**
-     * The team's roster, shared so it survives a machine and travels between teams.
-     *
-     * NOTE: this interface DUPLICATES `SharedArtWorkspaceTeamRecord` in `services/confluenceApi.ts`
-     * (their settings shapes diverged, which is why they are not one type). A field added to one and
-     * not the other type-checks fine and then goes missing at the boundary, so add to both.
-     */
-    roster?: SharedArtWorkspaceRosterMember[];
-  }>;
-  settings: {
-    piFieldId?: string;
-    spFieldId?: string;
-    isSpAutoDetect?: boolean;
-    featureLinkField?: string;
-    featureProjectKeys?: string[];
-    pCodeField?: string;
-    piReviewTargetStartFieldId?: string;
-    piReviewTargetEndFieldId?: string;
-    depLinkTypes?: string[];
-    staleDays?: number;
-    piEndDate?: string;
-    sprintWindowDays?: number;
-    piReviewPageUrl?: string;
-  };
-}
 
 interface SharedArtMergeConflict {
   path: string;

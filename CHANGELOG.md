@@ -8,6 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **`SharedArtWorkspacePayload` is declared once, and the merge whitelist is now enforced by the
+  compiler.** The wire format for the shared Confluence workspace was declared twice — in
+  `confluenceApi.ts` and again inside `ArtView.tsx` — and the copies had drifted three settings
+  fields apart. A field added to one type-checked cleanly and then went missing at the boundary,
+  which is the quietest way a wire format can break.
+  Worse, the three-way merge rebuilt each team by walking `SHARED_ART_TEAM_FIELD_NAMES`, a list kept
+  by hand: a field absent from it was written successfully and silently dropped on the next sync —
+  present, then gone, with nothing reporting it. Adding the roster required editing three separate
+  places to be safe. A type-level exhaustiveness check now derives the requirement from the type, so
+  adding a team field **fails the build** until the merge knows about it. Verified by adding a probe
+  field and watching the build break, then restoring it.
+- **Feature Link joins the boundary ratchet.** 40 files name `customfield_10108` under four constant
+  names, agreeing by coincidence — on the field that decides which Feature every Story, sub-task and
+  defect rolls up to, and therefore every swimlane, every progress figure and the whole Roll-Up Board.
+
+### Changed
 - **The ART settings have one reader.** `tbxARTSettings` was parsed by hand in nineteen files, each
   with its own idea of what an absent or blank value meant — which is not a tidiness problem: the
   Roll-Up Board and the Train settings screen read the same key with different fallbacks, so after a

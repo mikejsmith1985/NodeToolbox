@@ -105,12 +105,22 @@ export interface SharedArtWorkspaceRosterMember {
   workingHours?: string;
 }
 
+/**
+ * The ART settings a workspace carries.
+ *
+ * This is the ONLY declaration. ArtView kept a second copy that had drifted three fields ahead of
+ * this one — a field added to one type-checked cleanly and then went missing at the boundary, which
+ * is the quietest way a wire format can break.
+ */
 export interface SharedArtWorkspaceSettingsRecord {
   piFieldId?: string;
   spFieldId?: string;
   isSpAutoDetect?: boolean;
   featureLinkField?: string;
+  featureProjectKeys?: string[];
   pCodeField?: string;
+  piReviewTargetStartFieldId?: string;
+  piReviewTargetEndFieldId?: string;
   depLinkTypes?: string[];
   staleDays?: number;
   piEndDate?: string;
