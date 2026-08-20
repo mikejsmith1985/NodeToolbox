@@ -70,14 +70,20 @@ describe('readHygieneArtSettings', () => {
     expect(readHygieneArtSettings().piFieldId).toBe('customfield_99999');
   });
 
-  it('treats unreadable settings as nothing configured rather than throwing', () => {
+  it('falls back to the mapped defaults when the settings are unreadable', () => {
+    // This used to expect `{}` — "nothing configured" — and every caller then applied its own
+    // default. Four callers, four copies of the same id, which is how a check came to read a field
+    // this instance does not use. The mapping answers once, so an unreadable blob still yields the
+    // right field rather than a blank one each caller fills in differently.
     window.localStorage.setItem('tbxARTSettings', '{not json');
 
-    expect(readHygieneArtSettings()).toEqual({});
+    expect(readHygieneArtSettings().piFieldId).toBe('customfield_10301');
+    expect(readHygieneArtSettings().featureLinkField).toBe('customfield_10108');
   });
 
-  it('treats absent settings as nothing configured', () => {
-    expect(readHygieneArtSettings()).toEqual({});
+  it('falls back to the mapped defaults when nothing is stored at all', () => {
+    expect(readHygieneArtSettings().piReviewTargetStartFieldId).toBe('customfield_10101');
+    expect(readHygieneArtSettings().piReviewTargetEndFieldId).toBe('customfield_10102');
   });
 });
 

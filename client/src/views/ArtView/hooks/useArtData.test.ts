@@ -1,5 +1,6 @@
 // useArtData.test.ts — Unit tests for the ART View data hook.
 
+import { resolveConfiguredFieldIds } from '../../../services/jiraFieldMapping.ts';
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -493,7 +494,12 @@ describe('useArtData', () => {
     expect(mockJiraGet).toHaveBeenNthCalledWith(1, '/rest/agile/1.0/board/42');
     expect(mockJiraGet).toHaveBeenNthCalledWith(
       2,
-      `/rest/agile/1.0/board/42/backlog?maxResults=100&fields=${encodeURIComponent('summary,status,priority,customfield_10016,customfield_10028')}`,
+      // Built from the mapping, not spelled out: this assertion used to hard-code a field list that
+      // omitted the story-points field this instance actually uses, so it passed while the query it
+      // described fetched the wrong field.
+      `/rest/agile/1.0/board/42/backlog?maxResults=100&fields=${encodeURIComponent(
+        ['summary', 'status', 'priority', ...resolveConfiguredFieldIds('spFieldId', window.localStorage)].join(','),
+      )}`,
     );
   });
 
@@ -529,7 +535,9 @@ describe('useArtData', () => {
     expect(mockJiraGet).toHaveBeenNthCalledWith(1, '/rest/agile/1.0/board/467');
     expect(mockJiraGet).toHaveBeenNthCalledWith(
       2,
-      `/rest/agile/1.0/board/467/issue?maxResults=100&fields=${encodeURIComponent('summary,status,priority,customfield_10016,customfield_10028')}`,
+      `/rest/agile/1.0/board/467/issue?maxResults=100&fields=${encodeURIComponent(
+        ['summary', 'status', 'priority', ...resolveConfiguredFieldIds('spFieldId', window.localStorage)].join(','),
+      )}`,
     );
     expect(result.current.state.boardPrepIssues).toEqual([
       {

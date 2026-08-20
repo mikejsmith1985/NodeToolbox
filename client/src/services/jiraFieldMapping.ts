@@ -25,7 +25,8 @@ export type FieldMappingImportance = 'critical' | 'important';
 /** One logical field, and everything needed to resolve, explain and change it. */
 export interface FieldMappingEntry {
   /** The key inside the ART settings this override is saved under. */
-  settingsKey: 'featureLinkField' | 'spFieldId' | 'piFieldId' | 'acFieldId' | 'epicLinkFieldId' | 'snowRefFieldId';
+  settingsKey: 'featureLinkField' | 'spFieldId' | 'piFieldId' | 'piReviewTargetStartFieldId'
+    | 'piReviewTargetEndFieldId' | 'acFieldId' | 'epicLinkFieldId' | 'snowRefFieldId';
   label: string;
   /** Older fields the same value may sit in. Read as a fallback, never written to. */
   alternateReadFieldIds?: string[];
@@ -72,9 +73,25 @@ export const FIELD_MAPPING_ENTRIES: FieldMappingEntry[] = [
     settingsKey: 'piFieldId',
     label: 'Program Increment',
     whatItDrives: 'which PI an issue belongs to — every PI-scoped board, report, planner and hygiene scan',
-    namePattern: /program increment|PI/i,
+    namePattern: /program increment|\bPI\b/i,
     hardDefaultFieldId: 'customfield_10301',
     importance: 'critical',
+  },
+  {
+    settingsKey: 'piReviewTargetStartFieldId',
+    label: 'Target Start',
+    whatItDrives: 'when work is expected to begin — the hygiene date checks and the PI Review dates',
+    namePattern: /target start/i,
+    hardDefaultFieldId: 'customfield_10101',
+    importance: 'important',
+  },
+  {
+    settingsKey: 'piReviewTargetEndFieldId',
+    label: 'Target End',
+    whatItDrives: 'when work is expected to finish — the hygiene date checks and the PI Review dates',
+    namePattern: /target end/i,
+    hardDefaultFieldId: 'customfield_10102',
+    importance: 'important',
   },
   {
     settingsKey: 'acFieldId',

@@ -302,8 +302,10 @@ describe('fetchFeatureReviewItemsByJql', () => {
   it('overrides child story points with the configured custom field (not just the legacy field)', async () => {
     mockJiraGet.mockImplementation((path: string) => {
       const decoded = decodeURIComponent(path);
-      // The per-story fetch for the configured SP field returns different (correct) values.
-      if (decoded.includes('customfield_10236')) {
+      // The per-story override fetch, identified by `issueKey in (…)` — NOT merely by the field id.
+      // Blueprint child discovery now requests the configured SP field too (it resolves the whole
+      // candidate list rather than naming two ids), so matching on the id alone caught both calls.
+      if (decoded.includes('issueKey in (') && decoded.includes('customfield_10236')) {
         return Promise.resolve({ issues: [
           { key: 'S-1', fields: { customfield_10236: 8 } },
           { key: 'S-2', fields: { customfield_10236: 5 } },

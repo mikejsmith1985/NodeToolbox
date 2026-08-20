@@ -1,5 +1,6 @@
 // useArtData.ts — State management hook for the ART (Agile Release Train) View.
 
+import { resolveConfiguredFieldIds, resolveWriteFieldId } from '../../../services/jiraFieldMapping.ts';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { jiraGet } from '../../../services/jiraApi.ts';
 import { fetchPiNameSuggestions } from '../../../services/piNameSuggestions.ts';
@@ -24,25 +25,31 @@ const SPRINT_ISSUE_FIELDS = [
   'issuelinks',
   // Release parity
   'fixVersions',
-  // Story-point fields (primary + alternate instance field)
-  'customfield_10016', 'customfield_10028',
+  // Story-point fields — every candidate the mapping knows, so the fields REQUESTED are the fields
+  // the readers look in. A literal here is how a scan came to fetch a field this instance does not use.
+  ...resolveConfiguredFieldIds('spFieldId', window.localStorage),
   // Impediment / flagged field
   'customfield_10021',
-  // Program Increment scoping field
-  'customfield_10301',
+  // Program Increment scoping field — every candidate the mapping knows.
+  ...resolveConfiguredFieldIds('piFieldId', window.localStorage),
   // Label-based impediment detection and planning grouping
   'labels',
   // Epic fallback for planning hierarchy
   'parent',
 ].join(',');
 
-// Board Prep backlog queries include both story-point fields so resolveIssueStoryPoints
-// can handle instances that only populate the alternate field.
-const BOARD_PREP_FIELDS = 'summary,status,priority,customfield_10016,customfield_10028';
+// Board Prep backlog queries include EVERY story-point candidate, so resolveIssueStoryPoints can
+// handle an instance that populates any of them. Built from the mapping rather than spelled out:
+// this list naming a field the resolver does not read is what made a pointed issue look unpointed.
+const BOARD_PREP_FIELDS = [
+  'summary',
+  'status',
+  'priority',
+  ...resolveConfiguredFieldIds('spFieldId', window.localStorage),
+].join(',');
 const BOARD_PREP_MAX_RESULTS = 100;
 const ART_TEAMS_STORAGE_KEY = 'nodetoolbox-art-teams';
 const ART_SETTINGS_STORAGE_KEY = 'tbxARTSettings';
-const DEFAULT_PI_FIELD_ID = 'customfield_10301';
 const EMPTY_PI_NAME = '';
 
 type ArtBoardType = 'scrum' | 'kanban' | 'simple' | 'unknown';
@@ -183,7 +190,7 @@ export async function loadAvailablePiNamesFromJira(teams: ArtTeam[]): Promise<st
   }
 
   const projectKeys = createUniqueProjectKeys(teams);
-  const piFieldId = readArtAdvancedSettings().piFieldId?.trim() || DEFAULT_PI_FIELD_ID;
+  const piFieldId = resolveWriteFieldId('piFieldId', window.localStorage);
   const autocompletePiNames = await fetchPiNameSuggestions(piFieldId);
 
   if (autocompletePiNames.length > 0) {
@@ -652,7 +659,7 @@ export function useArtData(): { state: ArtDataState; actions: ArtDataActions } {
       const boardMetadata = await jiraGet<JiraBoardMetadata>(`/rest/agile/1.0/board/${boardId}`);
       const normalizedBoardType = normalizeBoardType(boardMetadata.type);
       const resolvedBoardName = boardMetadata.name?.trim() || targetTeam.boardName;
-      const piFieldId = readArtAdvancedSettings().piFieldId?.trim() || DEFAULT_PI_FIELD_ID;
+      const piFieldId = resolveWriteFieldId('piFieldId', window.localStorage);
       const hasSelectedPiName = selectedPiNameRef.current.trim() !== '';
       const resolvedProjectKey = hasSelectedPiName
         ? await resolveTeamProjectKey(targetTeam)

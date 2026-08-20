@@ -167,6 +167,8 @@ describe('describeMappingHealth', () => {
       ['customfield_1', 'Feature Link'],
       ['customfield_2', 'Story Points'],
       ['customfield_6', 'PI (Program Increment)'],
+      ['customfield_7', 'Target start'],
+      ['customfield_8', 'Target end'],
       ['customfield_3', 'Acceptance Criteria'],
       ['customfield_4', 'Epic Link'],
       ['customfield_5', 'ServiceNow Reference'],

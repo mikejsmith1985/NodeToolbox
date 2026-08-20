@@ -1,12 +1,12 @@
 // blueprintHierarchy.ts — Legacy-compatible bottom-up Jira query flow for the Art View Blueprint tab.
 
+import { resolveConfiguredFieldIds, resolveWriteFieldId } from '../../services/jiraFieldMapping.ts';
 import { jiraGet } from '../../services/jiraApi.ts';
 import { isDeliveredWorkflowStatusName } from '../../utils/workflowDelivery.ts';
 import { computeCompletionPercent } from './featureCompletion.ts';
 // The feature-link resolution (candidate field order, value-shape handling) is shared with the reports so
 // a child is linked to its feature identically everywhere. Aliased to the long-standing local names.
 import {
-  FEATURE_LINK_DEFAULT_FIELD as DEFAULT_FEATURE_LINK_FIELD,
   EPIC_LINK_FIELD as DEFAULT_EPIC_LINK_FIELD,
   extractIssueKeyFromLinkValue,
   featureLinkCandidateFieldIds,
@@ -44,6 +44,8 @@ interface BlueprintIssueFields {
   subtasks?: Array<{ key?: string }>;
   issuelinks?: BlueprintIssueLinkObject[];
   customfield_10014?: string | BlueprintLinkedIssueValue | null;
+  // Named here as TYPES, not as resolution. The index signature below admits any field; these give
+  // the story-point reads a number type instead of `unknown`. Resolution goes through the mapping.
   customfield_10016?: number | null;
   customfield_10028?: number | null;
   customfield_10100?: string | BlueprintLinkedIssueValue | null;
@@ -118,12 +120,6 @@ export interface BlueprintProgramEpicNode {
   features: BlueprintFeatureNode[];
 }
 
-interface ArtAdvancedSettings {
-  featureLinkField?: string;
-  parentLinkField?: string;
-  piFieldId?: string;
-}
-
 interface BlueprintQuerySourceData {
   allTeamIssues: BlueprintIssueRecord[];
   featureIssueMap: Map<string, BlueprintIssueRecord>;
@@ -136,7 +132,6 @@ interface BlueprintQuerySourceData {
 }
 
 const DEFAULT_PARENT_LINK_FIELD = 'customfield_10100';
-const DEFAULT_PI_FIELD_ID = 'customfield_10301';
 const PI_ISSUE_MAX_RESULTS = 500;
 const OPEN_SPRINT_MAX_RESULTS = 200;
 const OPEN_SPRINT_JQL = 'sprint in openSprints()';
@@ -147,14 +142,6 @@ const SEARCH_BATCH_MAX_RESULTS = 200;
 const PROGRAM_EPIC_EMPTY_BUCKET_KEY = '_none_';
 const DONE_STATUS_KEYWORDS = ['done', 'closed', 'resolved', 'complete'];
 const BLOCKED_STATUS_KEYWORDS = ['blocked', 'impediment'];
-
-function loadArtSettings(): ArtAdvancedSettings {
-  try {
-    return JSON.parse(localStorage.getItem('tbxARTSettings') || '{}') as ArtAdvancedSettings;
-  } catch {
-    return {};
-  }
-}
 
 function readUniqueFieldIds(fieldIds: Array<string | undefined>): string[] {
   return Array.from(new Set(fieldIds.filter((fieldId): fieldId is string => Boolean(fieldId))));
@@ -293,15 +280,16 @@ function createTeamIssueSearchFields(
     'issuelinks',
     'parent',
     'subtasks',
-    'customfield_10016',
-    'customfield_10028',
+    // Every candidate for these three comes from the mapping's own chain, so the fields REQUESTED
+    // from Jira are exactly the fields the readers will look in.
+    ...resolveConfiguredFieldIds('spFieldId', window.localStorage),
     featureLinkField,
-    DEFAULT_FEATURE_LINK_FIELD,
+    ...resolveConfiguredFieldIds('featureLinkField', window.localStorage),
     DEFAULT_EPIC_LINK_FIELD,
     parentLinkField,
     DEFAULT_PARENT_LINK_FIELD,
     piFieldId,
-    DEFAULT_PI_FIELD_ID,
+    ...resolveConfiguredFieldIds('piFieldId', window.localStorage),
   ]).join(',');
 }
 
@@ -335,11 +323,11 @@ function createChildIssueFields(featureLinkField: string, piFieldId: string): st
     'issuelinks',
     'parent',
     'customfield_10016',
-    'customfield_10028',
+    ...resolveConfiguredFieldIds('spFieldId', window.localStorage),
     piFieldId,
-    DEFAULT_PI_FIELD_ID,
+    ...resolveConfiguredFieldIds('piFieldId', window.localStorage),
     DEFAULT_EPIC_LINK_FIELD,
-    DEFAULT_FEATURE_LINK_FIELD,
+    ...resolveConfiguredFieldIds('featureLinkField', window.localStorage),
     featureLinkField,
   ]).join(',');
 }
@@ -522,8 +510,12 @@ async function fetchAllFeatureChildren(
 
   for (const childIssue of childBatchResults.flatMap((result) => result.issues ?? [])) {
     const parentKey = childIssue.fields.parent?.key ?? null;
+    // Walks the mapping's own Feature Link candidates rather than one hard-coded id, so the field
+    // read here is the field the rest of the app writes and requests.
     const epicLinkKey = extractIssueKeyFromLinkValue(childIssue.fields[DEFAULT_EPIC_LINK_FIELD])
-      ?? extractIssueKeyFromLinkValue(childIssue.fields[DEFAULT_FEATURE_LINK_FIELD])
+      ?? resolveConfiguredFieldIds('featureLinkField', window.localStorage)
+        .map((candidateFieldId) => extractIssueKeyFromLinkValue(childIssue.fields[candidateFieldId]))
+        .find((linkedKey) => linkedKey !== null)
       ?? extractIssueKeyFromLinkValue(childIssue.fields[featureLinkField]);
     const featureKey = parentKey ?? epicLinkKey;
     if (!featureKey || !featureIssueMap.has(featureKey)) {
@@ -700,9 +692,10 @@ export async function fetchFeatureNodesByKeys(featureKeys: string[]): Promise<Bl
     return [];
   }
 
-  const artSettings = loadArtSettings();
-  const featureLinkField = artSettings.featureLinkField || DEFAULT_FEATURE_LINK_FIELD;
-  const piFieldId = artSettings.piFieldId || DEFAULT_PI_FIELD_ID;
+  // Both ids resolved centrally: this file used to parse the settings blob and apply its own
+  // defaults, which is a second answer to a question the mapping module already answers.
+  const featureLinkField = resolveWriteFieldId('featureLinkField', window.localStorage);
+  const piFieldId = resolveWriteFieldId('piFieldId', window.localStorage);
 
   const featureIssueMap = await fetchFeatureIssuesByKeysForBlueprint(uniqueFeatureKeys, featureLinkField, piFieldId);
   const childIssueMap = await fetchAllFeatureChildren(featureIssueMap, featureLinkField, piFieldId);
@@ -796,10 +789,11 @@ async function fetchBlueprintQuerySourceData(
   teams: ArtTeam[],
   selectedPiName: string,
 ): Promise<BlueprintQuerySourceData | null> {
-  const settings = loadArtSettings();
-  const featureLinkField = settings.featureLinkField?.trim() || DEFAULT_FEATURE_LINK_FIELD;
-  const parentLinkField = settings.parentLinkField?.trim() || DEFAULT_PARENT_LINK_FIELD;
-  const piFieldId = settings.piFieldId?.trim() || DEFAULT_PI_FIELD_ID;
+  const featureLinkField = resolveWriteFieldId('featureLinkField', window.localStorage);
+  // Parent Link is not a mapped field — it has no override and no discovery — so its own default
+  // stays here, where it is the only copy.
+  const parentLinkField = DEFAULT_PARENT_LINK_FIELD;
+  const piFieldId = resolveWriteFieldId('piFieldId', window.localStorage);
   const allTeamIssues = await fetchTeamIssuesForBlueprint(teams, selectedPiName, featureLinkField, parentLinkField, piFieldId);
   const featureKeys = createFeatureKeySet(allTeamIssues, featureLinkField);
   if (featureKeys.length === 0) {

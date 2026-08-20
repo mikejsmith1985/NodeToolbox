@@ -8,6 +8,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **The Program Increment field could not be discovered by name.** Its name pattern had been written
+  with literal backspace characters instead of word boundaries (`PI` mangled to `PI`),
+  so an instance relying on name discovery for its PI field silently fell through to the hard default.
+  Caught by lint, not by a test — a pattern that compiles and matches nothing looks like working code.
+
+### Changed
+- **`blueprintHierarchy`, `useArtData` and `hygieneFieldConfig` resolve their fields centrally.**
+  Between them they carried four private settings parsers and eight hard-coded ids — including the
+  Jira field LISTS the queries request, which is the part that matters most: a fetch naming a field
+  the reader does not consult is exactly how a pointed issue came to look unpointed. Those lists are
+  now built from the mapping's candidate chain, so the fields REQUESTED are the fields read.
+  Target Start and Target End join the mapping as logical fields, so their ids stop being spelled out
+  wherever they are needed. The files that still name the storage key are the two that WRITE it (the
+  Admin Hub editor and the Train space) plus one legacy-migration read — a writer is not a second
+  reader, and the boundary test now records that distinction rather than pretending they are the same.
+
+### Fixed
 - **Two ART surfaces could mark every issue stale.** `ArtView` read the stale-day threshold in four
   separate places, and they did not agree: two guarded `staleDays > 0`, while the SoS narrative and
   the report formatter accepted any number — so a stored `0` made those two treat **every** issue as

@@ -10,35 +10,33 @@
 // surface that evaluates hygiene can obtain a real config. The alternative — each caller reimplementing
 // the name-matching — would drift, and drifting hygiene rules is a problem this codebase already has.
 
+import { resolveWriteFieldId } from '../../../services/jiraFieldMapping.ts';
 import { jiraGet } from '../../../services/jiraApi.ts';
 import type { JiraField } from '../../../types/jira.ts';
 import { resolveHygieneFieldConfig, type HygieneFieldConfig } from './hygieneChecks.ts';
 
 /** Where the ART workspace keeps the field ids an admin configured by hand. */
-const ART_SETTINGS_STORAGE_KEY = 'tbxARTSettings';
 
-// Fallbacks used when the workspace has not configured a field explicitly. They are only a starting
-// point — whatever the live instance reports by name is layered on top.
-const DEFAULT_FEATURE_LINK_FIELD = 'customfield_10108';
-const DEFAULT_PI_FIELD_ID = 'customfield_10301';
-const DEFAULT_TARGET_START_FIELD_ID = 'customfield_10101';
-const DEFAULT_TARGET_END_FIELD_ID = 'customfield_10102';
+// The four field ids this module used to default for itself now come from `jiraFieldMapping.ts`,
+// which owns the override → discovered-by-name → default chain for every logical field. A copy here
+// was a second answer to a question that must only have one.
 
 /** The subset of ART workspace settings that name hygiene-relevant fields. */
 export interface HygieneArtSettings {
-  featureLinkField?: string;
-  piFieldId?: string;
-  piReviewTargetStartFieldId?: string;
-  piReviewTargetEndFieldId?: string;
+  featureLinkField: string;
+  piFieldId: string;
+  piReviewTargetStartFieldId: string;
+  piReviewTargetEndFieldId: string;
 }
 
-/** Reads the workspace's configured field ids; an unreadable blob means "nothing configured". */
+/** Reads the workspace's configured field ids, each resolved through the shared mapping. */
 export function readHygieneArtSettings(): HygieneArtSettings {
-  try {
-    return JSON.parse(window.localStorage.getItem(ART_SETTINGS_STORAGE_KEY) || '{}') as HygieneArtSettings;
-  } catch {
-    return {};
-  }
+  return {
+    featureLinkField: resolveWriteFieldId('featureLinkField', window.localStorage),
+    piFieldId: resolveWriteFieldId('piFieldId', window.localStorage),
+    piReviewTargetStartFieldId: resolveWriteFieldId('piReviewTargetStartFieldId', window.localStorage),
+    piReviewTargetEndFieldId: resolveWriteFieldId('piReviewTargetEndFieldId', window.localStorage),
+  };
 }
 
 /**
@@ -49,7 +47,7 @@ export function readHygieneArtSettings(): HygieneArtSettings {
  * which the Hygiene view then rendered as a perfect score (GH #167).
  */
 export function readConfiguredPiFieldId(): string {
-  return readHygieneArtSettings().piFieldId || DEFAULT_PI_FIELD_ID;
+  return resolveWriteFieldId('piFieldId', window.localStorage);
 }
 
 /** Converts a `customfield_N` id into its JQL `cf[N]` reference; other ids pass through (quoted if spaced). */
@@ -93,7 +91,7 @@ export function matchFieldIdsByName(availableFields: JiraField[], fieldNames: st
 export async function loadHygieneFieldConfig(): Promise<HygieneFieldConfig> {
   const availableFields = await jiraGet<JiraField[]>('/rest/api/2/field');
   const artSettings = readHygieneArtSettings();
-  const configuredFeatureLinkField = artSettings.featureLinkField || DEFAULT_FEATURE_LINK_FIELD;
+  const configuredFeatureLinkField = artSettings.featureLinkField;
 
   const resolvedConfig = resolveHygieneFieldConfig({
     acceptanceCriteriaFieldIds: matchFieldIdsByName(availableFields, ['Acceptance Criteria']),
@@ -106,15 +104,15 @@ export async function loadHygieneFieldConfig(): Promise<HygieneFieldConfig> {
     parentLinkFieldIds: ['parent', ...matchFieldIdsByName(availableFields, ['Parent Link'])],
     productOwnerFieldIds: matchFieldIdsByName(availableFields, ['Product Owner']),
     programIncrementFieldIds: [
-      artSettings.piFieldId || DEFAULT_PI_FIELD_ID,
+      resolveWriteFieldId('piFieldId', window.localStorage),
       ...matchFieldIdsByName(availableFields, ['PI', 'Program Increment']),
     ],
     targetStartFieldIds: [
-      artSettings.piReviewTargetStartFieldId || DEFAULT_TARGET_START_FIELD_ID,
+      artSettings.piReviewTargetStartFieldId,
       ...matchFieldIdsByName(availableFields, ['Target Start']),
     ],
     targetEndFieldIds: [
-      artSettings.piReviewTargetEndFieldId || DEFAULT_TARGET_END_FIELD_ID,
+      artSettings.piReviewTargetEndFieldId,
       ...matchFieldIdsByName(availableFields, ['Target End']),
     ],
     // 021 Readiness families — configured-only (no default), so an instance lacking them resolves
