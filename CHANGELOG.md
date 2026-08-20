@@ -24,6 +24,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   generated from the ladder, so an operator can give a merge into prd a different Jira action from a
   merge into dev using the existing Rules panel, and the branch names that classify an email cannot
   drift from the branch names that name an environment.
+  Validated against a real notification rather than the documented format: the org's subject numbers
+  the PR as "(PR #973)", the corporate mail gateway prepends an external-sender banner, and the
+  `X-GitHub-Reason` header reads `review_requested` even on a merge — so the merge rules sitting
+  above the review rules is load-bearing, and that sample is now a permanent fixture. It also proves
+  the remaining gap: a merge email carries NO Jira key and no source branch, so which issue shipped
+  has to come from an earlier email about the same PR number.
 
 ### Fixed
 - **The Hygiene AI prompt now fits the agent's input box.** A run over a whole board produced
