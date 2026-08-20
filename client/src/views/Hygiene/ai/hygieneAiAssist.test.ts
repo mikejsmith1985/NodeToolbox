@@ -316,11 +316,14 @@ describe('date fixes carry the facts the policy needs', () => {
     expect(prompt).toContain('policy value for Target End: 2026-09-17')
   })
 
-  it('says a date cannot be derived rather than inviting a guess', () => {
+  it('omits an undated issue entirely rather than asking a question it answers itself', () => {
+    // This used to print "Due Date cannot be derived — omit that fix" and leave the ask in place.
+    // Printing an instruction to omit IS the omission, done in the most expensive way available:
+    // 133 such issues bought 118,630 characters of prompt and one empty reply (GH #375).
     const prompt = buildHygieneAiPrompt([buildDateFinding({ fixVersions: [] })], {}, {})
 
-    expect(prompt).toContain('cannot be derived')
     expect(prompt).not.toContain('policy value for Due Date:')
+    expect(prompt).not.toContain('missing-due-date')
   })
 })
 
@@ -410,5 +413,81 @@ describe('buildHygieneAiPromptPlan — the parser must not trust a key the promp
 
     expect(plan.includedIssueKeys).toHaveLength(plan.includedCount)
     expect(plan.includedIssueKeys).not.toContain('TBX-200')
+  })
+})
+
+describe('buildHygieneAiPromptPlan — never ask for what the prompt itself says to omit', () => {
+  // A real run over 133 issues produced 118,630 characters in which the ONLY fix requested for
+  // nearly every issue was missing-target-start, beside the line "Target Start cannot be derived
+  // here — omit that fix". The prompt asked the model to omit the only thing it asked for, so the
+  // only correct reply was an empty list (GH #375).
+  function datedFinding(issueKey: string, checkIds: string[], fixVersions: unknown[]): HygieneFinding {
+    return finding(issueKey, checkIds, { fixVersions })
+  }
+
+  it('does not ask for Target Start, which it can never derive in a prompt', () => {
+    const plan = buildHygieneAiPromptPlan([
+      datedFinding('TBX-1', ['missing-target-start', 'missing-sp'], [
+        { name: '09/10/2026', releaseDate: '2026-09-10', released: false },
+      ]),
+    ])
+
+    expect(plan.promptText).not.toContain('missing-target-start')
+    expect(plan.promptText).toContain('missing-sp')
+  })
+
+  it('drops an issue whose only ask is one it cannot answer', () => {
+    const plan = buildHygieneAiPromptPlan([
+      datedFinding('TBX-1', ['missing-target-start'], []),
+      datedFinding('TBX-2', ['missing-sp'], []),
+    ])
+
+    expect(plan.promptText).not.toContain('TBX-1')
+    expect(plan.promptText).toContain('TBX-2')
+    expect(plan.includedCount).toBe(1)
+  })
+
+  it('drops a due-date ask when no fix version dates it', () => {
+    const plan = buildHygieneAiPromptPlan([datedFinding('TBX-1', ['missing-due-date'], [])])
+
+    expect(plan.includedCount).toBe(0)
+  })
+
+  it('KEEPS a due-date ask when the fix version does date it', () => {
+    // The derivable dates must survive — removing them wholesale was the previous wrong answer.
+    const plan = buildHygieneAiPromptPlan([
+      datedFinding('TBX-1', ['missing-due-date', 'missing-target-end'], [
+        { name: '09/10/2026', releaseDate: '2026-09-10', released: false },
+      ]),
+    ])
+
+    expect(plan.promptText).toContain('missing-due-date')
+    expect(plan.promptText).toContain('policy value for Due Date: 2026-09-10')
+    expect(plan.promptText).toContain('missing-target-end')
+  })
+})
+
+describe('buildHygieneAiPromptPlan — descriptions carry text, not markup', () => {
+  it('strips the HTML a Jira description is stored as', () => {
+    const htmlFinding = finding('TBX-1', ['missing-sp'], {
+      description: '<p dir="auto" style="animation-duration:0.01ms"><b>Impact</b>: blocked.</p>'
+        + '<table border="1"><colgroup><col width="89"></colgroup><tbody><tr><td>cell</td></tr></tbody></table>',
+    })
+
+    const plan = buildHygieneAiPromptPlan([htmlFinding])
+
+    expect(plan.promptText).not.toContain('colgroup')
+    expect(plan.promptText).not.toContain('animation-duration')
+    expect(plan.promptText).toContain('Impact')
+    expect(plan.promptText).toContain('blocked')
+  })
+
+  it('decodes the entities that survive that markup', () => {
+    const plan = buildHygieneAiPromptPlan([
+      finding('TBX-1', ['missing-sp'], { description: '<p>Blocked&nbsp;due to&nbsp;Letter Queue</p>' }),
+    ])
+
+    expect(plan.promptText).not.toContain('&nbsp;')
+    expect(plan.promptText).toContain('Blocked due to Letter Queue')
   })
 })

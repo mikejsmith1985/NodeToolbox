@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **The Hygiene AI prompt no longer asks for what it tells the model to omit.** A run over 133
+  issues produced 118,630 characters in which nearly every issue's only ask was
+  `missing-target-start`, printed directly beside the line "Target Start cannot be derived here —
+  omit that fix" (GH #375). The prompt asked the model to omit the only thing it asked for, so an
+  empty reply was the correct one and the whole budget bought nothing. A date the policy cannot name
+  a value for is no longer asked at all, and an issue left with nothing to ask leaves the prompt.
+  Target Start is never askable this way — deriving it needs the status history the scan does not
+  fetch — so it belongs to the inline Fix button, which reads the changelog per issue and writes it.
+  Due Date and Target End are unaffected when a dated fix version supplies them.
+- **Descriptions in the prompt carry text, not markup.** Jira stores them as HTML and they were
+  shipped raw, so the model received `<colgroup>`, `<col width="89">` and inline `animation-duration`
+  styles — noise that says nothing about the issue and spends the character budget saying it. They
+  are now normalised through `normalizeRichTextToPlainText` BEFORE the 400-character excerpt is
+  taken, so the excerpt is 400 characters of description rather than 400 characters of table markup.
+  Measured on the same 133 issues: **118,630 characters down to 9,102**, with 14 answerable issues
+  asked and nothing dropped for budget.
+
 ### Added
 - **An [SL] story can take its Feature link from the [DEV] story it is linked to.** The team splits
   one piece of work into a [DEV] story and an [SL] test story and links them, but only the DEV story

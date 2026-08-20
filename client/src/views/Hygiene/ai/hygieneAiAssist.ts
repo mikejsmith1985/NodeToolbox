@@ -9,6 +9,7 @@
 // rest, but an item naming an issue that is not on the page is reported and dropped, never applied.
 
 import { extractJsonPayload } from '../../../utils/extractJsonPayload.ts'
+import { normalizeRichTextToPlainText } from '../../../utils/richTextPlainText.ts'
 import { deriveIssueDates, readDrivingFixVersion } from '../checks/issueDateRules.ts'
 import type { HygieneFinding } from '../checks/hygieneChecks.ts'
 
@@ -126,6 +127,38 @@ export function isBlockedStatusIssue(finding: HygieneFinding): boolean {
  * app data, so it is enforced here rather than hoped for in the prompt (GH #167 follow-up: "don't
  * ask for an update when the ticket already says why it's waiting").
  */
+/** The date checks. Grouped because they share one rule: never ask for a value we cannot state. */
+const DATE_CHECK_IDS = ['missing-due-date', 'missing-target-end', 'missing-target-start'] as const
+
+/**
+ * The date checks this issue can actually be asked about — the ones the policy can name a value for.
+ *
+ * A run over 133 issues produced a 118,630-character prompt in which nearly every issue's ONLY ask
+ * was `missing-target-start`, printed directly beside "Target Start cannot be derived here — omit
+ * that fix". The prompt asked the model to omit the only thing it asked for, so an empty reply was
+ * the correct one, and the entire budget bought nothing.
+ *
+ * Target Start is never in this set: deriving it needs the issue's status history, which the scan
+ * does not fetch. It is not unhandled — the inline Fix button reads the changelog per issue and
+ * writes it — it simply does not belong in a prompt that cannot state it.
+ */
+function readAnswerableDateCheckIds(finding: HygieneFinding): Set<string> {
+  const issueFields = finding.issue.fields as unknown as Record<string, unknown>
+  const fixVersions = (issueFields.fixVersions ?? []) as Array<{ name?: string; releaseDate?: string; released?: boolean }>
+  const derived = deriveIssueDates({
+    fixVersions,
+    readyToWorkEnteredIso: null,
+    currentDueDate: null,
+    currentTargetStart: null,
+    currentTargetEnd: null,
+  })
+
+  const answerable = new Set<string>()
+  if (derived.dueDate !== null) answerable.add('missing-due-date')
+  if (derived.targetEnd !== null) answerable.add('missing-target-end')
+  return answerable
+}
+
 export function readAiFixableFlags(
   finding: HygieneFinding,
   /**
@@ -138,10 +171,15 @@ export function readAiFixableFlags(
    */
   restrictToCheckIds: readonly string[] = [],
 ): HygieneFinding['flags'] {
+  const answerableDateCheckIds = readAnswerableDateCheckIds(finding)
   return finding.flags.filter((flag) => {
     if (!(flag.checkId in AI_FIXABLE_CHECK_INSTRUCTIONS)) return false
     if (restrictToCheckIds.length > 0 && !restrictToCheckIds.includes(flag.checkId)) return false
     if (flag.checkId === 'stale' && isBlockedStatusIssue(finding)) return false
+    // A date the policy cannot name a value for is not a question, it is an instruction to omit.
+    if ((DATE_CHECK_IDS as readonly string[]).includes(flag.checkId) && !answerableDateCheckIds.has(flag.checkId)) {
+      return false
+    }
     return true
   })
 }
@@ -176,8 +214,11 @@ function buildFindingBlock(
   const issueFields = finding.issue.fields
   const fixableFlags = readAiFixableFlags(finding, restrictToCheckIds)
   const isStaleAsked = fixableFlags.some((flag) => flag.checkId === 'stale')
-  const rawDescription = typeof issueFields.description === 'string' ? issueFields.description : ''
-  const descriptionExcerpt = rawDescription.slice(0, DESCRIPTION_EXCERPT_LENGTH)
+  // Jira stores the description as HTML, and shipping it raw sent `<colgroup>`, `<col width="89">`
+  // and inline `animation-duration` styles to the model — noise that says nothing about the issue
+  // and spends the character budget saying it. Excerpt AFTER stripping, so the 400 characters are
+  // 400 characters of description rather than 400 characters of table markup.
+  const descriptionExcerpt = normalizeRichTextToPlainText(issueFields.description).slice(0, DESCRIPTION_EXCERPT_LENGTH)
 
   const lines = [
     `- ${finding.issue.key} · ${issueFields.issuetype?.name ?? 'issue'} · ${issueFields.summary ?? '(no summary)'}`,
