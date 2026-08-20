@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **An [SL] story can take its Feature link from the [DEV] story it is linked to.** The team splits
+  one piece of work into a [DEV] story and an [SL] test story and links them, but only the DEV story
+  carries the Feature link — so the SL story sits flagged "missing feature link" indefinitely while
+  the answer is one field away on an issue it is already linked to. The AI panel cannot help and
+  never will: a Feature link is a lookup, not a judgement, and a model offered that question could
+  only guess. The flag now carries a button naming the exact value and where it came from
+  ("Copy ENFCT-1900 from ENFCT-2041"), stated before it writes.
+  Two rules keep it safe. Candidates are restricted to the **same project**, because a link to
+  another project's issue (a QE clone) carries that project's Feature. And linked issues that name
+  **different** Features are refused outright rather than resolved by preference — a wrong Feature
+  link is not a smaller version of a missing one: it misreports on the roll-up board and in
+  everything built from it, while a missing one merely stays flagged. Finding the candidates costs
+  no requests (`issuelinks` is already in the scan's fields), an issue with no same-project link
+  makes none at all, and a sibling that cannot be read counts as carrying nothing rather than
+  failing the fix. The write delegates to the same writer the manual picker uses.
+
 ### Fixed
 - **The Rules panel now points at the deployment rules, not past them.** Adding a rule per
   environment moved the goalposts on advice the panel still gave: "Customize **pr-merged** to move a

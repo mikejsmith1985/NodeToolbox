@@ -33,6 +33,8 @@ import {
 import type { HygieneFlag, HygieneFieldConfig, JiraIssue, BuiltInHygieneCheckId } from './checks/hygieneChecks.ts';
 import { HYGIENE_FIX_BY_CHECK, resolveFixFieldId, type HygieneFixKind } from './hygieneFix.ts';
 import { applyDerivedDates, planDerivedDateWrites, type DerivedDatePlan } from './derivedDateFix.ts';
+import { applyInheritedFeatureLink, planInheritedFeatureLink } from './featureLinkInheritFix.ts';
+import type { InheritedFeatureLinkChoice } from './featureLinkInheritance.ts';
 import styles from './HygieneView.module.css';
 
 const RELATIVE_BROWSE_PREFIX = '/browse/';
@@ -359,6 +361,14 @@ function IssueLinkFixInput({ issue, kind, fieldId, label, isSubmitting, onSubmit
 
   return (
     <>
+      {kind === 'feature' && (
+        <InheritFeatureLinkButton
+          issue={issue}
+          fieldId={fieldId}
+          isSubmitting={isSubmitting}
+          onSubmit={onSubmit}
+        />
+      )}
       <input
         className={styles.fixInput}
         type="text"
@@ -383,6 +393,54 @@ function IssueLinkFixInput({ issue, kind, fieldId, label, isSubmitting, onSubmit
         onClick={() => void onSubmit(() => saveFeatureReviewIssueLinkField(issue.key, fieldId, selectedKey))}
       />
     </>
+  );
+}
+
+/**
+ * Copies the Feature link from a linked story in the same project.
+ *
+ * The team splits work into a [DEV] story and an [SL] test story, links them, and puts the Feature
+ * link on the DEV one — so the SL story sits flagged while the answer is one field away on an issue
+ * it is already linked to. The AI panel is no help here and never will be: a Feature link is a
+ * lookup, not a judgement, and a model offered that question could only guess.
+ *
+ * It states the value BEFORE writing (the derived-dates control's rule), and refuses rather than
+ * choosing when linked issues name different Features.
+ */
+function InheritFeatureLinkButton({ issue, fieldId, isSubmitting, onSubmit }: {
+  issue: JiraIssue;
+  fieldId: string;
+  isSubmitting: boolean;
+  onSubmit: (write: () => Promise<void>) => Promise<void>;
+}) {
+  const [plan, setPlan] = useState<InheritedFeatureLinkChoice | null>(null);
+
+  useEffect(() => {
+    let isActive = true;
+    planInheritedFeatureLink(issue, fieldId)
+      .then((foundPlan) => { if (isActive) setPlan(foundPlan); })
+      .catch(() => { if (isActive) setPlan(null); });
+    return () => { isActive = false; };
+  }, [issue, fieldId]);
+
+  // Nothing to inherit is the ordinary case, and an always-present disabled button beside every
+  // Feature-link flag would be noise on the issues it can never help.
+  if (plan === null || plan.featureLinkValue === null) {
+    return null;
+  }
+
+  return (
+    <span className={styles.fixNote}>
+      <button
+        type="button"
+        className={styles.fixButton}
+        disabled={isSubmitting}
+        title={`Copy ${plan.featureLinkValue} from linked issue ${plan.sourceIssueKey}`}
+        onClick={() => void onSubmit(async () => { await applyInheritedFeatureLink(issue, fieldId); })}
+      >
+        {isSubmitting ? 'Saving…' : `Copy ${plan.featureLinkValue} from ${plan.sourceIssueKey}`}
+      </button>
+    </span>
   );
 }
 
