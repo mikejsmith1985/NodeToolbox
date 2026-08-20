@@ -12,8 +12,13 @@ vi.mock('../SprintDashboard/featureReviewFixes.ts', () => ({
   saveFeatureReviewSimpleField: mockSaveField,
 }));
 
-import { applyDerivedDates, planDerivedDateWrites, readDeterministicDateFixCandidates } from './derivedDateFix.ts';
-import type { HygieneFinding } from './checks/hygieneChecks.ts';
+import {
+  applyDerivedDates,
+  planDerivedDateWrites,
+  readDeterministicDateFixCandidates,
+  summariseUndecidedDates,
+} from './derivedDateFix.ts';
+import type { HygieneFinding, JiraIssue } from './checks/hygieneChecks.ts';
 import { resolveHygieneFieldConfig } from './checks/hygieneChecks.ts';
 
 const FIELD_CONFIG = resolveHygieneFieldConfig();
@@ -193,5 +198,64 @@ describe('readDeterministicDateFixCandidates', () => {
     ]);
 
     expect(candidates).toEqual([]);
+  });
+});
+
+describe('applyDerivedDates — an issue it cannot date must say why', () => {
+  // "Fix all 19 date issue(s)" reported "Updated 0 issue(s)." and nothing else (GH #375). The engine
+  // was right — 18 of them were in To Do, and Target Start comes from entering Working or Ready to
+  // Work, which a To Do issue has never done — but a button that does nothing and explains nothing
+  // is indistinguishable from a broken one, which is exactly how it was read.
+  function toDoIssue(issueKey: string): JiraIssue {
+    return { key: issueKey, fields: { summary: issueKey, fixVersions: [] } } as unknown as JiraIssue;
+  }
+
+  it('reports the reason an issue could not be dated instead of skipping it silently', async () => {
+    mockJiraGet.mockResolvedValue({ changelog: { histories: [] } });
+
+    const outcome = await applyDerivedDates([toDoIssue('TBX-1')], FIELD_CONFIG);
+
+    expect(outcome.updatedIssueKeys).toEqual([]);
+    expect(outcome.undecided).toHaveLength(1);
+    expect(outcome.undecided[0].issueKey).toBe('TBX-1');
+    expect(outcome.undecided[0].reasons.join(' ')).toMatch(/Ready to Work|Working/);
+  });
+
+  it('does not report an issue it actually wrote to', async () => {
+    mockJiraGet.mockResolvedValue({
+      changelog: { histories: [{ created: '2026-08-03T10:00:00.000Z', items: [{ field: 'status', toString: 'Working' }] }] },
+    });
+
+    const outcome = await applyDerivedDates([toDoIssue('TBX-1')], FIELD_CONFIG);
+
+    expect(outcome.updatedIssueKeys).toEqual(['TBX-1']);
+    expect(outcome.undecided).toEqual([]);
+  });
+});
+
+describe('summariseUndecidedDates', () => {
+  it('groups one reason across many issues into a single counted phrase', () => {
+    // Nineteen identical lines is a wall; "not yet in Ready to Work or Working (18)" is an answer.
+    const summary = summariseUndecidedDates([
+      { issueKey: 'TBX-1', reasons: ['not yet in Ready to Work or Working'] },
+      { issueKey: 'TBX-2', reasons: ['not yet in Ready to Work or Working'] },
+      { issueKey: 'TBX-3', reasons: ['no unreleased fix version with a release date'] },
+    ]);
+
+    expect(summary).toContain('not yet in Ready to Work or Working (2)');
+    expect(summary).toContain('no unreleased fix version with a release date (1)');
+  });
+
+  it('is empty when nothing was left undecided, so the caller can say nothing', () => {
+    expect(summariseUndecidedDates([])).toBe('');
+  });
+
+  it('counts an issue once per distinct reason it carries', () => {
+    const summary = summariseUndecidedDates([
+      { issueKey: 'TBX-1', reasons: ['reason A', 'reason B'] },
+    ]);
+
+    expect(summary).toContain('reason A (1)');
+    expect(summary).toContain('reason B (1)');
   });
 });

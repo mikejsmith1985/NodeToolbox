@@ -34,6 +34,15 @@ export interface DerivedDatePlan {
 export interface DerivedDateOutcome {
   updatedIssueKeys: string[];
   failures: Array<{ issueKey: string; reason: string }>;
+  /**
+   * Issues the policy could not date, with the reason.
+   *
+   * Separate from `failures`: nothing went wrong here. A To Do issue genuinely has no Target Start,
+   * because that date comes from entering Working or Ready to Work and it has done neither. But
+   * skipping it silently reported "Updated 0 issue(s)" for a run of nineteen, which reads exactly
+   * like a broken button and was.
+   */
+  undecided: Array<{ issueKey: string; reasons: string[] }>;
 }
 
 /** One changelog history entry, reduced to what the Ready-to-Work lookup needs. */
@@ -143,11 +152,20 @@ export async function applyDerivedDates(
 ): Promise<DerivedDateOutcome> {
   const updatedIssueKeys: string[] = [];
   const failures: Array<{ issueKey: string; reason: string }> = [];
+  const undecided: Array<{ issueKey: string; reasons: string[] }> = [];
 
   for (const issue of issues) {
     try {
       const plan = await planDerivedDateWrites(issue, fieldConfig);
       if (plan.writes.length === 0) {
+        // Nothing to write is an ANSWER, not a non-event: the policy could not derive a value, and
+        // the reason is the only thing that tells a user whether to wait, fix Jira, or look again.
+        undecided.push({
+          issueKey: issue.key,
+          reasons: plan.undecidedReasons.length > 0
+            ? plan.undecidedReasons
+            : ['its dates already match the release'],
+        });
         continue;
       }
       for (const write of plan.writes) {
@@ -162,7 +180,7 @@ export async function applyDerivedDates(
     }
   }
 
-  return { updatedIssueKeys, failures };
+  return { updatedIssueKeys, failures, undecided };
 }
 
 /**
@@ -196,4 +214,30 @@ export function readDeterministicDateFixCandidates(
   return findings
     .filter((finding) => finding.flags.some((flag) => DETERMINISTIC_DATE_CHECK_IDS.includes(flag.checkId)))
     .map((finding) => finding.issue);
+}
+
+/**
+ * Turns the undecided list into one readable phrase, grouped by reason.
+ *
+ * Grouped because the reasons repeat: nineteen issues in To Do produce nineteen identical lines,
+ * which is a wall rather than an explanation. "not yet in Ready to Work or Working (18)" is the
+ * whole answer in one clause.
+ *
+ * An issue carrying two reasons counts toward both — it is blocked by both, and reporting only the
+ * first would send somebody to fix one thing and find the date still missing.
+ */
+export function summariseUndecidedDates(
+  undecided: readonly { issueKey: string; reasons: string[] }[],
+): string {
+  const countByReason = new Map<string, number>();
+  for (const undecidedIssue of undecided) {
+    for (const reason of undecidedIssue.reasons) {
+      countByReason.set(reason, (countByReason.get(reason) ?? 0) + 1);
+    }
+  }
+
+  return [...countByReason.entries()]
+    .sort((first, second) => second[1] - first[1])
+    .map(([reason, issueCount]) => `${reason} (${issueCount})`)
+    .join('; ');
 }

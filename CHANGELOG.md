@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **"Fix all dates" now says why it changed nothing.** A run over nineteen issues reported
+  "Updated 0 issue(s)." and stopped there (GH #375). The engine was right — eighteen of them sat in
+  **To Do**, and Target Start comes from entering *Working* or *Ready to Work*, which a To Do issue
+  has never done, so there was genuinely nothing to write. But a button that does nothing and
+  explains nothing is indistinguishable from a broken one, and was read as exactly that.
+  An issue the policy cannot date is now reported with its reason, grouped and counted:
+  "18 could not be dated — not yet in Ready to Work or Working (18)". Grouped because the reasons
+  repeat, and nineteen identical lines is a wall rather than an answer. These are kept apart from
+  write **failures** deliberately: nothing went wrong, the date simply does not exist yet, and
+  conflating the two would turn a normal state into an error. An issue blocked by two reasons is
+  counted under both — reporting only the first sends somebody to fix one thing and find the date
+  still missing.
+
 ### Added
 - **The Roll-Up Board now ships with the org's columns instead of a blank board.** A team opening it
   for the first time got no columns at all: every issue landed in Unmapped and the board was useless

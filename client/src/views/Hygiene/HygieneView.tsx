@@ -12,7 +12,11 @@ import {
 } from './checks/hygieneChecks.ts';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { buildHygieneDiagnosticsReport } from './hygieneDiagnostics.ts';
-import { applyDerivedDates, readDeterministicDateFixCandidates } from './derivedDateFix.ts';
+import {
+  applyDerivedDates,
+  readDeterministicDateFixCandidates,
+  summariseUndecidedDates,
+} from './derivedDateFix.ts';
 import { AgeBadge } from '../../components/IssueMeta/AgeBadge.tsx';
 import { AssigneeAvatar } from '../../components/IssueMeta/AssigneeAvatar.tsx';
 import { IssueTypeIcon } from '../../components/IssueMeta/IssueTypeIcon.tsx';
@@ -734,7 +738,13 @@ function BulkDateFixButton({ hygieneState }: { hygieneState: ReturnType<typeof u
       const failureNote = outcome.failures.length > 0
         ? ` ${outcome.failures.length} could not be written: ${outcome.failures.map((failure) => failure.issueKey).join(', ')}.`
         : '';
-      setResultMessage(`Updated ${outcome.updatedIssueKeys.length} issue(s).${failureNote}`);
+      // Why nothing changed is the whole message when nothing changed. Reporting "Updated 0" alone
+      // for a run of nineteen reads exactly like a broken button, and did.
+      const undecidedSummary = summariseUndecidedDates(outcome.undecided);
+      const undecidedNote = undecidedSummary === ''
+        ? ''
+        : ` ${outcome.undecided.length} could not be dated — ${undecidedSummary}.`;
+      setResultMessage(`Updated ${outcome.updatedIssueKeys.length} issue(s).${failureNote}${undecidedNote}`);
       hygieneState.loadHygiene();
     } finally {
       setIsApplying(false);
