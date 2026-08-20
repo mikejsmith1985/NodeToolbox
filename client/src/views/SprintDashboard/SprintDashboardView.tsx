@@ -66,6 +66,7 @@ import {
 import FeatureReviewTab from './FeatureReviewTab.tsx';
 import { BacklogRemediationPanel } from './backlogRemediation/BacklogRemediationPanel.tsx';
 import RollupBoardTab from './rollupBoard/RollupBoardTab.tsx';
+import ForecastTab from './forecast/ForecastTab.tsx';
 import MoveToSprintButton from './MoveToSprintButton.tsx';
 import RosterTab from './RosterTab.tsx';
 import SprintDashboardPiReviewTab from './SprintDashboardPiReviewTab.tsx';
@@ -133,6 +134,7 @@ const TAB_OPTIONS: { key: DashboardTab; label: string }[] = [
   { key: 'pireview', label: 'PI Review' },
   { key: 'backlogremediation', label: 'Remediation' },
   { key: 'rollupboard', label: 'Roll-Up Board' },
+  { key: 'forecast', label: 'Forecast' },
   { key: 'releases', label: 'Releases' },
   { key: 'settings', label: 'Settings' },
 ];
@@ -6800,6 +6802,18 @@ export default function SprintDashboardView() {
           scopeMode={state.scopeMode}
           scopedIssues={state.sprintIssues}
           selectedPiValue={state.selectedPiValue}
+          teamProfileId={activeDashboardTeamProfileId}
+        />
+      );
+    }
+
+    if (activeTab === 'forecast') {
+      return (
+        <ForecastTab
+          key={`${activeDashboardTeamProfileId}:${state.projectKey}`}
+          projectKey={state.projectKey}
+          // The dashboard's already-scoped set, so this tab re-queries nothing.
+          scopedIssues={state.sprintIssues}
           teamProfileId={activeDashboardTeamProfileId}
         />
       );

@@ -68,7 +68,8 @@ export type DashboardTab =
   | 'pireview'
   | 'featurereview'
   | 'backlogremediation'
-  | 'rollupboard';
+  | 'rollupboard'
+  | 'forecast';
 
 export type DashboardScopeMode =
   | typeof DASHBOARD_SCOPE_MODE_SPRINT

@@ -9,12 +9,15 @@
 // field-mapping boundary rule: it never resolves a Jira field, because it never sees one.
 
 import { buildPiClock, buildReleaseClock } from './forecastWindows.ts';
+import { assessCapacity } from './capacityLoad.ts';
 import { classifyChainRole, scheduleDevSlChain } from './devSlChain.ts';
 import { computeIssueForecasts } from './issueForecast.ts';
 import { isInternalTestReady, rollUpFeatureIntReadiness } from './intReadiness.ts';
 import { computeRemainingEffort } from './effortModel.ts';
 import { resolveReleaseDates } from './releaseDateResolve.ts';
 import type {
+  CapacityAssessment,
+  CapacityItem,
   CapacityPerson,
   ChainItem,
   FeatureDodAssessment,
@@ -238,6 +241,53 @@ function groupByFeatureKey(items: readonly ForecastIssue[]): Map<string, Forecas
   return byFeatureKey;
 }
 
+/**
+ * Turns board work into the shape a capacity sum reads, marking which of it is in this release.
+ *
+ * Every issue is included, not only the ones on the chosen version: a person's TOTAL load is part of
+ * the answer, or somebody looks free while drowning in another release.
+ */
+function buildCapacityItems(
+  items: readonly ForecastIssue[],
+  effortByIssueKey: Map<string, RemainingEffort>,
+  inScopeVersionName: string,
+): CapacityItem[] {
+  return items.map((item) => {
+    const effort = effortByIssueKey.get(item.key);
+    return {
+      issueKey: item.key,
+      // The account id where Jira gave one, the display name otherwise — the same identity the
+      // roster is matched on.
+      assigneePersonKey: item.assigneeAccountId ?? item.assigneeDisplayName,
+      remainingWorkingDays: effort?.remainingWorkingDays ?? null,
+      isEstimated: effort?.isEstimated ?? false,
+      isInScope: item.fixVersionNames.includes(inScopeVersionName),
+      chainRole: classifyChainRole({ summary: item.summary, assigneeCanInternalTest: null }),
+    };
+  });
+}
+
+/** Assesses one window per release, for one population. */
+function buildCapacityByVersion(
+  releaseClocksByVersionName: Record<string, ReleaseClock>,
+  windowOf: (clock: ReleaseClock) => ReleaseClock['toCodeFreeze'],
+  roleFilter: 'dev' | 'test',
+  input: ForecastInput,
+  effortByIssueKey: Map<string, RemainingEffort>,
+  undatedIssueCount: number,
+): Record<string, CapacityAssessment> {
+  const assessmentsByVersionName: Record<string, CapacityAssessment> = {};
+  Object.entries(releaseClocksByVersionName).forEach(([versionName, clock]) => {
+    assessmentsByVersionName[versionName] = assessCapacity(
+      buildCapacityItems(input.items, effortByIssueKey, versionName),
+      input.people,
+      windowOf(clock),
+      { roleFilter, undatedIssueCount },
+    );
+  });
+  return assessmentsByVersionName;
+}
+
 /** Tallies everything a total could otherwise have omitted without saying so. */
 function buildCompleteness(
   items: readonly ForecastIssue[],
@@ -292,8 +342,24 @@ export function computeForecast(input: ForecastInput, config: ForecastConfig): F
       ([featureKey, children]) => assessFeature(featureKey, children, effortByIssueKey, piClock, input, config),
     ),
     sizingFlags: [],
-    codeFreezeCapacityByVersionName: {},
-    externalTestCapacityByVersionName: {},
+    codeFreezeCapacityByVersionName: buildCapacityByVersion(
+      releaseClocksByVersionName,
+      (clock) => clock.toCodeFreeze,
+      'dev',
+      { ...input, items: forecastableItems },
+      effortByIssueKey,
+      undatedVersionCount,
+    ),
+    // The DEPLOY BUFFER window is deliberately never assessed: the last week before a release
+    // carries no test capacity by definition, so scheduling into it would invent runway.
+    externalTestCapacityByVersionName: buildCapacityByVersion(
+      releaseClocksByVersionName,
+      (clock) => clock.externalTest,
+      'test',
+      { ...input, items: forecastableItems },
+      effortByIssueKey,
+      undatedVersionCount,
+    ),
     completeness: buildCompleteness(input.items, effortByIssueKey, undatedVersionCount, input),
   };
 }

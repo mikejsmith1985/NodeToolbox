@@ -23,11 +23,17 @@ const FALLBACK_SIZING_TOLERANCE_PERCENT = 0;
 /** A bare calendar day. A holiday has to name a day, not an instant and not a description. */
 const CALENDAR_DAY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
-/** Just the ART settings this module reads — so it never has to import the store or a browser. */
+/**
+ * Just the ART settings this module reads — so it never has to import the store or a browser.
+ *
+ * Deliberately `unknown`-tolerant: the caller passes what is STORED rather than what the store's own
+ * reader has already corrected. A value this module never sees in its broken form is a value it can
+ * never report as broken, and reporting it is the whole point.
+ */
 export interface ArtSettingsLike {
-  pointsPerWorkingDay: number;
-  holidayIsoDates: string[];
-  featureSizingTolerancePercent: number;
+  pointsPerWorkingDay: unknown;
+  holidayIsoDates: unknown;
+  featureSizingTolerancePercent: unknown;
 }
 
 /**
@@ -48,34 +54,37 @@ function isRealCalendarDay(candidate: string): boolean {
 }
 
 /** Resolves the points-to-days rate, refusing anything that cannot serve as a divisor. */
-function resolveRate(storedRate: number, rejectedSettings: RejectedSetting[]): number {
+function resolveRate(storedValue: unknown, rejectedSettings: RejectedSetting[]): number {
+  const storedRate = Number(storedValue);
   if (Number.isFinite(storedRate) && storedRate > 0) {
     return storedRate;
   }
   rejectedSettings.push({
     name: 'pointsPerWorkingDay',
-    storedValue: String(storedRate),
+    storedValue: String(storedValue),
     reason: `must be greater than zero; using ${FALLBACK_POINTS_PER_WORKING_DAY} point per working day`,
   });
   return FALLBACK_POINTS_PER_WORKING_DAY;
 }
 
 /** Resolves the sizing tolerance. Zero is allowed — it is the intended default, not an absent value. */
-function resolveTolerance(storedTolerance: number, rejectedSettings: RejectedSetting[]): number {
+function resolveTolerance(storedValue: unknown, rejectedSettings: RejectedSetting[]): number {
+  const storedTolerance = Number(storedValue);
   if (Number.isFinite(storedTolerance) && storedTolerance >= 0) {
     return storedTolerance;
   }
   rejectedSettings.push({
     name: 'featureSizingTolerancePercent',
-    storedValue: String(storedTolerance),
+    storedValue: String(storedValue),
     reason: `must be zero or greater; using ${FALLBACK_SIZING_TOLERANCE_PERCENT}%`,
   });
   return FALLBACK_SIZING_TOLERANCE_PERCENT;
 }
 
 /** Keeps the entries that name a real day, and reports each one that does not. */
-function resolveHolidays(storedHolidays: string[], rejectedSettings: RejectedSetting[]): string[] {
+function resolveHolidays(storedValue: unknown, rejectedSettings: RejectedSetting[]): string[] {
   const usableDays: string[] = [];
+  const storedHolidays = Array.isArray(storedValue) ? storedValue : [];
   storedHolidays.forEach((storedHoliday) => {
     const trimmedHoliday = String(storedHoliday).trim();
     if (isRealCalendarDay(trimmedHoliday)) {
@@ -106,7 +115,7 @@ export function buildForecastConfig(artSettings: ArtSettingsLike, todayIso: stri
     pointsPerWorkingDay: resolveRate(artSettings.pointsPerWorkingDay, rejectedSettings),
     calendar: {
       weekendDays: [...WEEKEND_DAY_INDEXES],
-      holidayIsoDates: resolveHolidays(artSettings.holidayIsoDates ?? [], rejectedSettings),
+      holidayIsoDates: resolveHolidays(artSettings.holidayIsoDates, rejectedSettings),
     },
     featureSizingTolerancePercent: resolveTolerance(artSettings.featureSizingTolerancePercent, rejectedSettings),
     todayIso: todayIso.slice(0, 10),

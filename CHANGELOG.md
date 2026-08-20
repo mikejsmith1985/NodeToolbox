@@ -38,6 +38,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that have already saved their own columns add it there; the forecast reads the status directly, so
   it is correct either way.
 
+- **A Forecast tab on the Team space: can this release be built in the time left?** Pick a fix version
+  from Jira's own list and see the working days to code freeze, who is over capacity and by how much,
+  and whether the fortnight of external testing after code freeze can absorb what is coming. Where a
+  release does not fit, the shortfall is stated in working days and both remedies are named — a flag
+  on its own does not say what to do about it. The final week before a release is labelled as deploy
+  buffer and credited with no test capacity, because that is what it is.
+
 ### Changed
 - **Target Start now means "the latest day this can begin and still land".** Where an issue's size is
   known, the date is worked back from whichever deadline binds — code freeze or the PI's own,

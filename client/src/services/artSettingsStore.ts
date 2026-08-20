@@ -198,3 +198,25 @@ export function readArtSettings(storage?: Storage): ArtSettings {
     sharedArtParentId: readStoredText(storedSettings.sharedArtParentId, DEFAULT_ART_SETTINGS.sharedArtParentId),
   };
 }
+
+/**
+ * The three delivery-forecast settings exactly as stored, before any defaulting.
+ *
+ * `readArtSettings` deliberately corrects an unusable value so that every reader gets something it
+ * can work with. That is right for a reader and wrong for a REPORTER: the forecast has to be able
+ * to say "your rate is zero and is being ignored", and it cannot say that about a value it only
+ * ever sees as one. So the raw values are available too, and the forecast validates them itself.
+ */
+export function readRawForecastSettings(storage?: Storage): {
+  pointsPerWorkingDay: unknown;
+  holidayIsoDates: unknown;
+  featureSizingTolerancePercent: unknown;
+} {
+  const storedSettings = readStoredSettingsObject(storage);
+  return {
+    pointsPerWorkingDay: storedSettings.pointsPerWorkingDay ?? DEFAULT_ART_SETTINGS.pointsPerWorkingDay,
+    holidayIsoDates: storedSettings.holidayIsoDates ?? DEFAULT_ART_SETTINGS.holidayIsoDates,
+    featureSizingTolerancePercent: storedSettings.featureSizingTolerancePercent
+      ?? DEFAULT_ART_SETTINGS.featureSizingTolerancePercent,
+  };
+}

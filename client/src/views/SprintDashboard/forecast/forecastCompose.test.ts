@@ -316,6 +316,98 @@ describe('computeForecast', () => {
     });
   });
 
+  describe('the capacity assessments', () => {
+    const PEOPLE = [
+      { personKey: 'acct-1', displayName: 'Smith, Jane (CTR)', isOnRoster: true, canDevelop: true, canInternalTest: false },
+      { personKey: 'acct-2', displayName: 'Doe, John (CTR)', isOnRoster: true, canDevelop: false, canInternalTest: true },
+    ];
+
+    it('assesses dev capacity against the window that ends at code freeze', () => {
+      const result = computeForecast(
+        forecastInput({
+          items: [boardItem({ summary: '[DEV] Build it', storyPoints: 3 })],
+          people: PEOPLE,
+        }),
+        CONFIG,
+      );
+      const assessment = result.codeFreezeCapacityByVersionName['Release 10/02/2026'];
+      expect(assessment.window.kind).toBe('to-code-freeze');
+      expect(assessment.personLoads[0].displayName).toBe('Smith, Jane (CTR)');
+    });
+
+    it('assesses test capacity against the fortnight after code freeze', () => {
+      const result = computeForecast(
+        forecastInput({
+          items: [boardItem({ key: 'S-1', summary: '[SL] Test it', assigneeAccountId: 'acct-2', storyPoints: 2 })],
+          people: PEOPLE,
+        }),
+        CONFIG,
+      );
+      const assessment = result.externalTestCapacityByVersionName['Release 10/02/2026'];
+      expect(assessment.window.kind).toBe('external-test');
+      expect(assessment.personLoads[0].displayName).toBe('Doe, John (CTR)');
+    });
+
+    it('never assesses the deploy buffer, which carries no test capacity by definition', () => {
+      const result = computeForecast(forecastInput({ people: PEOPLE }), CONFIG);
+      const everyWindow = [
+        ...Object.values(result.codeFreezeCapacityByVersionName),
+        ...Object.values(result.externalTestCapacityByVersionName),
+      ];
+      expect(everyWindow.map((assessment) => assessment.window.kind)).not.toContain('deploy-buffer');
+    });
+
+    it('counts other work toward a total but not toward this release', () => {
+      const result = computeForecast(
+        forecastInput({
+          items: [
+            boardItem({ key: 'ENC-1', summary: '[DEV] This release', storyPoints: 3 }),
+            boardItem({ key: 'ENC-2', summary: '[DEV] Another release', storyPoints: 9, fixVersionNames: ['Release 12/01/2026'] }),
+          ],
+          fixVersions: [
+            { name: 'Release 10/02/2026', releaseDate: '2026-10-02' },
+            { name: 'Release 12/01/2026', releaseDate: '2026-12-01' },
+          ],
+          people: PEOPLE,
+        }),
+        CONFIG,
+      );
+      const load = result.codeFreezeCapacityByVersionName['Release 10/02/2026'].personLoads[0];
+      expect(load.inScopeWorkingDays).toBe(3);
+      expect(load.totalAssignedWorkingDays).toBe(12);
+    });
+
+    it('builds no assessment for a release nothing can date', () => {
+      const result = computeForecast(
+        forecastInput({ items: [boardItem({ fixVersionNames: ['Sprint 5'] })], fixVersions: [{ name: 'Sprint 5' }] }),
+        CONFIG,
+      );
+      expect(result.codeFreezeCapacityByVersionName).toEqual({});
+    });
+
+    it('carries the undated count into every assessment', () => {
+      const result = computeForecast(
+        forecastInput({
+          fixVersions: [{ name: 'Release 10/02/2026', releaseDate: '2026-10-02' }, { name: 'Sprint 5' }],
+          people: PEOPLE,
+        }),
+        CONFIG,
+      );
+      expect(result.codeFreezeCapacityByVersionName['Release 10/02/2026'].undatedIssueCount).toBe(1);
+    });
+
+    it('leaves cancelled work out of the capacity sum', () => {
+      const result = computeForecast(
+        forecastInput({
+          items: [boardItem({ summary: '[DEV] Killed', statusName: 'Cancelled', storyPoints: 40 })],
+          people: PEOPLE,
+        }),
+        CONFIG,
+      );
+      expect(result.codeFreezeCapacityByVersionName['Release 10/02/2026'].totalRemainingWorkingDays).toBe(0);
+    });
+  });
+
   it('survives an empty board without throwing', () => {
     const result = computeForecast(forecastInput({ items: [], fixVersions: [] }), CONFIG);
     expect(result.completeness.totalIssueCount).toBe(0);

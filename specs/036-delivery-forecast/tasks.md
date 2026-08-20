@@ -196,14 +196,14 @@ and whether scope must come out.
 **Independent test**: 14 working days to code freeze and a person holding 18 remaining points at rate 1.0 reports them
 over capacity by 4 days; a release short on capacity raises the scope-removal flag with the exact points.
 
-- [ ] T058 [P] [US2] Write failing tests for `assessCapacity` (16 cases from `contracts/capacity-load.md`) in `client/src/views/SprintDashboard/forecast/capacityLoad.test.ts`
-- [ ] T059 [US2] Implement `assessCapacity` in `client/src/views/SprintDashboard/forecast/capacityLoad.ts`: full availability per person, in-scope versus total load kept separate, unassigned effort summed and named but never pooled, `totalAvailableWorkingDays` counting only people who hold in-scope work, a passed window zeroing availability, and deterministic sort order
-- [ ] T060 [US2] Populate `codeFreezeCapacityByVersionName` in `client/src/views/SprintDashboard/forecast/forecastCompose.ts` using `roleFilter: 'dev'` over `releaseClock.toCodeFreeze` (shared file — sequential)
-- [ ] T061 [US2] Add `'forecast'` to the `DashboardTab` union in `client/src/views/SprintDashboard/hooks/useSprintData.ts`
-- [ ] T062 [P] [US2] Write failing tests for the version picker, release-clock display and capacity table in `client/src/views/SprintDashboard/forecast/ForecastTab.test.tsx`
-- [ ] T063 [US2] Create `client/src/views/SprintDashboard/forecast/ForecastTab.tsx` and `ForecastTab.module.css`: a `<select>` version picker fed by `piPlanReleaseSchedule.fetchPiWindowFixVersions` (Jira's own list — never a text box), the four release-clock spans with their working-day counts, the code-freeze capacity table sorted most-over-capacity first, the scope-removal flag, `rejectedSettings` when non-empty, and the completeness line. Reuse `SprintDashboardView.module.css` class vocabulary
-- [ ] T064 [US2] Add `{ key: 'forecast', label: 'Forecast' }` to `TAB_OPTIONS` and one `<ForecastTab>` mount beside the existing `RollupBoardTab` mount in `client/src/views/SprintDashboard/SprintDashboardView.tsx`. Change no other line; do **not** touch the inline `ReleasesTab`
-- [ ] T065 [US2] Run the full client suite and commit with a CHANGELOG entry
+- [X] T058 [P] [US2] Write failing tests for `assessCapacity` (16 cases from `contracts/capacity-load.md`) in `client/src/views/SprintDashboard/forecast/capacityLoad.test.ts`
+- [X] T059 [US2] Implement `assessCapacity` in `client/src/views/SprintDashboard/forecast/capacityLoad.ts`: full availability per person, in-scope versus total load kept separate, unassigned effort summed and named but never pooled, `totalAvailableWorkingDays` counting only people who hold in-scope work, a passed window zeroing availability, and deterministic sort order
+- [X] T060 [US2] Populate `codeFreezeCapacityByVersionName` in `client/src/views/SprintDashboard/forecast/forecastCompose.ts` using `roleFilter: 'dev'` over `releaseClock.toCodeFreeze` (shared file — sequential)
+- [X] T061 [US2] Add `'forecast'` to the `DashboardTab` union in `client/src/views/SprintDashboard/hooks/useSprintData.ts`
+- [X] T062 [P] [US2] Write failing tests for the version picker, release-clock display and capacity table in `client/src/views/SprintDashboard/forecast/ForecastTab.test.tsx`
+- [X] T063 [US2] Create `client/src/views/SprintDashboard/forecast/ForecastTab.tsx` and `ForecastTab.module.css`: a `<select>` version picker fed by `piPlanReleaseSchedule.fetchPiWindowFixVersions` (Jira's own list — never a text box), the four release-clock spans with their working-day counts, the code-freeze capacity table sorted most-over-capacity first, the scope-removal flag, `rejectedSettings` when non-empty, and the completeness line. Reuse `SprintDashboardView.module.css` class vocabulary
+- [X] T064 [US2] Add `{ key: 'forecast', label: 'Forecast' }` to `TAB_OPTIONS` and one `<ForecastTab>` mount beside the existing `RollupBoardTab` mount in `client/src/views/SprintDashboard/SprintDashboardView.tsx`. Change no other line; do **not** touch the inline `ReleasesTab`
+- [X] T065 [US2] Run the full client suite and commit with a CHANGELOG entry
 
 **Checkpoint**: The release capacity question is answerable before code freeze, not at it.
 
@@ -217,10 +217,10 @@ remedies.
 **Independent test**: Test effort exceeding the testers' capacity in the 14-day window raises a flag naming reduce-scope
 and add-test-resource with the shortfall; the final week credits no test capacity.
 
-- [ ] T066 [US3] Populate `externalTestCapacityByVersionName` in `client/src/views/SprintDashboard/forecast/forecastCompose.ts` using `roleFilter: 'test'` over `releaseClock.externalTest`, and assert the deploy-buffer window is never used for capacity (shared file — sequential)
-- [ ] T067 [P] [US3] Write failing tests for the external-test section, the two named remedies and the zero-capacity deploy buffer in `client/src/views/SprintDashboard/forecast/ForecastTab.test.tsx`
-- [ ] T068 [US3] Add the external-test capacity section to `client/src/views/SprintDashboard/forecast/ForecastTab.tsx`, showing the tester load table, the shortfall, both remedies stated explicitly, and the deploy buffer labelled as carrying no test capacity
-- [ ] T069 [US3] Run the full client suite and commit with a CHANGELOG entry
+- [X] T066 [US3] Populate `externalTestCapacityByVersionName` in `client/src/views/SprintDashboard/forecast/forecastCompose.ts` using `roleFilter: 'test'` over `releaseClock.externalTest`, and assert the deploy-buffer window is never used for capacity (shared file — sequential)
+- [X] T067 [P] [US3] Write failing tests for the external-test section, the two named remedies and the zero-capacity deploy buffer in `client/src/views/SprintDashboard/forecast/ForecastTab.test.tsx`
+- [X] T068 [US3] Add the external-test capacity section to `client/src/views/SprintDashboard/forecast/ForecastTab.tsx`, showing the tester load table, the shortfall, both remedies stated explicitly, and the deploy buffer labelled as carrying no test capacity
+- [X] T069 [US3] Run the full client suite and commit with a CHANGELOG entry
 
 **Checkpoint**: Both halves of the release clock are now visible and separately actionable.
 

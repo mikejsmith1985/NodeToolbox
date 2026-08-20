@@ -10,7 +10,7 @@
 // size here. That is the conservative direction: it can only ever pull a Target Start earlier, never
 // later, so no date it produces claims more runway than the team actually has.
 
-import { readArtSettings } from '../../../services/artSettingsStore.ts';
+import { readArtSettings, readRawForecastSettings } from '../../../services/artSettingsStore.ts';
 import { toCalendarDay } from '../../../utils/calendarDate.ts';
 import { adaptHygieneIssues, type JiraIssueLike, type TodayAdapterFieldIds } from './forecastAdapters.ts';
 import { buildForecastConfig } from './forecastSettings.ts';
@@ -36,7 +36,7 @@ export function buildDerivedDateForecastContext(
   nowInstant: Date = new Date(),
 ): DerivedDateForecastContext {
   const artSettings = readArtSettings();
-  const { config } = buildForecastConfig(artSettings, toCalendarDay(nowInstant));
+  const { config } = buildForecastConfig(readRawForecastSettings(), toCalendarDay(nowInstant));
 
   const remainingEffortWorkingDaysByKey: Record<string, number | null> = {};
   adaptHygieneIssues(issues, fieldIds).forEach((issue) => {

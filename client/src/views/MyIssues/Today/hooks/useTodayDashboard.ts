@@ -22,7 +22,7 @@ import type { HygieneEvaluationContext } from '../../../Hygiene/checks/hygieneCh
 import { loadDashboardConfigFromStorage } from '../../../SprintDashboard/hooks/useDashboardConfig.ts';
 import { useSprintData } from '../../../SprintDashboard/hooks/useSprintData.ts';
 import { buildTeamHygieneScopeJql } from '../../../SprintDashboard/teamHygieneScope.ts';
-import { readArtSettings } from '../../../../services/artSettingsStore.ts';
+import { readArtSettings, readRawForecastSettings } from '../../../../services/artSettingsStore.ts';
 import { adaptHygieneIssues, collectFixVersionNames } from '../../../SprintDashboard/forecast/forecastAdapters.ts';
 import { buildForecastConfig } from '../../../SprintDashboard/forecast/forecastSettings.ts';
 import { computeForecast } from '../../../SprintDashboard/forecast/forecastCompose.ts';
@@ -877,7 +877,7 @@ export function useTodayDashboard(): TodayDashboardData {
     });
 
     const artSettings = readArtSettings();
-    const { config, rejectedSettings } = buildForecastConfig(artSettings, toCalendarDay(new Date()));
+    const { config, rejectedSettings } = buildForecastConfig(readRawForecastSettings(), toCalendarDay(new Date()));
     const computed = computeForecast(
       {
         items,

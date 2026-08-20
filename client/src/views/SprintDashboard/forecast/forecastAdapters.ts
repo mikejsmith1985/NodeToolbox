@@ -36,6 +36,27 @@ function readText(fields: Record<string, unknown>, fieldId: string): string | nu
   return typeof rawValue === 'string' && rawValue.trim() !== '' ? rawValue.trim() : null;
 }
 
+/**
+ * Reads the Feature this issue delivers, from whichever configured field carries it.
+ *
+ * Jira returns a Feature link as a bare key on a custom field, or as an object on `parent`. Both
+ * shapes are read; anything else yields null, which the assessments treat as "nothing attributes
+ * this" rather than guessing a parent.
+ */
+function readFeatureKey(fields: Record<string, unknown>, fieldIds: readonly string[]): string | null {
+  for (const fieldId of fieldIds) {
+    const rawValue = fields[fieldId];
+    if (typeof rawValue === 'string' && rawValue.trim() !== '') {
+      return rawValue.trim();
+    }
+    const linkedKey = (rawValue as { key?: string } | undefined)?.key;
+    if (typeof linkedKey === 'string' && linkedKey.trim() !== '') {
+      return linkedKey.trim();
+    }
+  }
+  return null;
+}
+
 /** Reads a Jira field as a number, treating anything unreadable as no estimate at all. */
 function readNumber(fields: Record<string, unknown>, fieldIds: readonly string[]): number | null {
   for (const fieldId of fieldIds) {
@@ -93,6 +114,14 @@ export interface TodayAdapterFieldIds {
   storyPointsFieldIds: readonly string[];
   subStatusFieldIds: readonly string[];
   targetStartFieldIds: readonly string[];
+  /**
+   * Where this instance keeps the Feature link.
+   *
+   * Optional: a caller with no Feature configuration gets issues that claim no Feature, and the
+   * Feature-level assessments are simply absent rather than wrong. Supplying it is what lets a
+   * surface working from a plain Jira search answer the PI question at all.
+   */
+  featureLinkFieldIds?: readonly string[];
 }
 
 /**
@@ -125,8 +154,10 @@ export function adaptHygieneIssue(issue: JiraIssueLike, fieldIds: TodayAdapterFi
     key: issue.key,
     summary: readText(fields, 'summary') ?? '',
     typeBucket: readTypeBucket(issueTypeField?.name ?? '', issueTypeField?.subtask === true),
-    // Today's scan does not resolve Feature links into a rollup, so no Feature is claimed here.
-    featureKey: null,
+    // Read from the configured Feature-link field where the caller supplied one. Absent means
+    // nothing attributes this issue, which is reported rather than inferred from a chain of links —
+    // that fuller resolution belongs to the Roll-Up Board, which fetches what it needs for it.
+    featureKey: readFeatureKey(fields, fieldIds.featureLinkFieldIds ?? []),
     // No board, so no column: every item is charged at full size, and completeness says so.
     columnId: '',
     statusName: statusField?.name ?? '',

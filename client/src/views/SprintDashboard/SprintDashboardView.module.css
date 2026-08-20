@@ -3765,3 +3765,128 @@
   cursor: help;
 }
 
+
+/* ── Delivery forecast tab ──
+   The release clock and the PI clock, rendered as separate blocks and never merged into one
+   figure — that merge is the confusion the whole forecast exists to end. */
+
+.forecastTab {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.forecastHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  flex-wrap: wrap;
+}
+
+.forecastHeading {
+  margin: 0;
+  font-size: var(--font-size-lg);
+}
+
+.forecastVersionPicker {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  font-size: var(--font-size-sm);
+}
+
+.forecastSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+.forecastSectionTitle {
+  margin: 0;
+  font-size: var(--font-size-md);
+}
+
+.forecastSectionNote {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+.forecastFigureRow {
+  display: flex;
+  gap: var(--spacing-md);
+  flex-wrap: wrap;
+}
+
+.forecastFigure {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.forecastFigureLabel {
+  font-size: var(--font-size-sm);
+  letter-spacing: 0.04em;
+  color: var(--color-text-secondary);
+}
+
+.forecastFigureValue,
+.forecastFigureValueAlert {
+  font-size: var(--font-size-md);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Colour is an addition to the figure's label and value, never the only thing saying it is wrong. */
+.forecastFigureValueAlert {
+  color: var(--color-danger, #dc2626);
+}
+
+.forecastAlert {
+  margin: 0;
+  padding: var(--spacing-sm);
+  border: 1px solid var(--color-danger, #dc2626);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-sm);
+}
+
+.forecastTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-sm);
+}
+
+.forecastTable th,
+.forecastTable td {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  text-align: left;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.forecastTable td {
+  font-variant-numeric: tabular-nums;
+}
+
+.forecastRowAlert {
+  background: var(--color-bg-subtle);
+}
+
+.forecastNoteChip {
+  margin-left: var(--spacing-xs);
+  padding: 0 4px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 999px;
+  font-size: var(--font-size-sm);
+  font-weight: 400;
+}
+
+.forecastNoteList {
+  margin: 0;
+  padding-left: var(--spacing-md);
+  font-size: var(--font-size-sm);
+}

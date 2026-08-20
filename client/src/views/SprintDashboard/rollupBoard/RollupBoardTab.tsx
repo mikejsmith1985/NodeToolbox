@@ -119,7 +119,7 @@ import { buildFeatureWithoutWorkCard, buildMasterCards, orderLanesLikePiReview }
 import { adaptBoardItems, collectFixVersionNames } from '../forecast/forecastAdapters.ts';
 import { buildForecastConfig } from '../forecast/forecastSettings.ts';
 import { computeForecast } from '../forecast/forecastCompose.ts';
-import { readArtSettings } from '../../../services/artSettingsStore.ts';
+import { readArtSettings, readRawForecastSettings } from '../../../services/artSettingsStore.ts';
 import { toCalendarDay } from '../../../utils/calendarDate.ts';
 import {
   fetchCardDetails,
@@ -585,7 +585,7 @@ export default function RollupBoardTab({
   const boardForecast = useMemo(() => {
     const items = adaptBoardItems(loadState.allItems);
     const artSettings = readArtSettings();
-    const { config, rejectedSettings } = buildForecastConfig(artSettings, toCalendarDay(new Date()));
+    const { config, rejectedSettings } = buildForecastConfig(readRawForecastSettings(), toCalendarDay(new Date()));
     const computed = computeForecast(
       {
         items,
