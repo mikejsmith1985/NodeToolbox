@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **The team roster now travels in the shared ART workspace.** It lived only in
+  `tbxSprintDashboardRoster` on one machine, so "Clear All Connection Data" took it with no copy
+  anywhere, and the team-to-team sharing that already covered boards, PI pages and settings did not
+  cover the people — a new machine, or a second person on the same team, started from an empty roster
+  and rebuilt it by hand. Publishing a workspace now carries each team's roster; loading one writes
+  it back into the Team Dashboard it belongs to.
+  Three things make it safe. The schema version is **deliberately not bumped**: `loadSharedArtWorkspace`
+  rejects any payload newer than it knows, so raising it would make every not-yet-updated client
+  hard-fail on the whole workspace — losing the boards and settings too, in order to add a roster.
+  An empty roster publishes as an **absent field, never an empty array**, so the first person with a
+  blank machine to press Share cannot overwrite a colleague's roster with emptiness. And an ART team
+  is joined to its dashboard profile by **board id**, because they are separate records with separate
+  ids; when no board matches, or two profiles claim one, it shares nothing rather than guessing —
+  the wrong team's roster would put other people into this team's capacity planning with nothing on
+  screen saying where they came from.
+  `roster` is also added to `SHARED_ART_TEAM_FIELD_NAMES`, which is a whitelist rather than
+  documentation: the three-way merge rebuilds each team from that list, so a field missing from it
+  is present when written and gone after the next sync, silently.
+
 ### Fixed
 - **The Roll-Up Board and the Train settings screen now read the shared workspace the same way.**
   Train settings read `tbxARTSettings` and merged the built-in defaults, so it always showed a

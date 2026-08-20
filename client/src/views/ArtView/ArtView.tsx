@@ -9,6 +9,7 @@ import {
   createConfluenceDatabase,
   loadSharedArtWorkspace,
   saveSharedArtWorkspace,
+  type SharedArtWorkspaceRosterMember,
 } from '../../services/confluenceApi.ts';
 import { PrimaryTabs } from '../../components/PrimaryTabs/PrimaryTabs.tsx';
 import { useToast } from '../../components/Toast/ToastContext.ts';
@@ -36,6 +37,12 @@ import type { JiraIssue } from '../../types/jira.ts';
 import { useSettingsStore } from '../../store/settingsStore.ts';
 import { findMatchingTeamProfileForArtTeam } from '../SprintDashboard/sprintDashboardArtContext.ts';
 import { DEFAULT_SHARED_ART_SETTINGS as SHARED_ART_WORKSPACE_DEFAULTS } from './sharedArtWorkspaceSettings.ts';
+import { buildSharedRoster, findRosterProfileId, readSharedRoster } from './sharedRoster.ts';
+import { buildTeamScopedStorageKey, readTeamScopedStorageValue } from '../SprintDashboard/hooks/teamScopedStorage.ts';
+import {
+  STANDUP_ROSTER_STORAGE_KEY,
+  type StandupRosterMember,
+} from '../SprintDashboard/hooks/useStandupRosterStore.ts';
 import styles from './ArtView.module.css';
 
 // ── Constants ──
@@ -3220,6 +3227,13 @@ const SHARED_ART_SETTINGS_FIELD_NAMES = [
   'sprintWindowDays',
   'piReviewPageUrl',
 ] as const;
+/**
+ * The team fields the three-way merge carries.
+ *
+ * This list is a WHITELIST, not documentation: `mergeSharedArtTeamRecord` builds the merged team
+ * from scratch by walking it, so a field added to the type but not added here is silently discarded
+ * on every merge — present when written, gone after the next sync, with nothing reporting it.
+ */
 const SHARED_ART_TEAM_FIELD_NAMES = [
   'name',
   'boardId',
@@ -3227,6 +3241,7 @@ const SHARED_ART_TEAM_FIELD_NAMES = [
   'projectKey',
   'piReviewPages',
   'sosIssueKey',
+  'roster',
 ] as const;
 /**
  * Matches a fully-formed Jira custom field ID (e.g. "customfield_10301").
@@ -3297,6 +3312,14 @@ interface SharedArtWorkspacePayload {
     /** Legacy single-page field (schema v1) — read on import, no longer written. */
     piReviewPageUrl?: string;
     sosIssueKey?: string;
+    /**
+     * The team's roster, shared so it survives a machine and travels between teams.
+     *
+     * NOTE: this interface DUPLICATES `SharedArtWorkspaceTeamRecord` in `services/confluenceApi.ts`
+     * (their settings shapes diverged, which is why they are not one type). A field added to one and
+     * not the other type-checks fine and then goes missing at the boundary, so add to both.
+     */
+    roster?: SharedArtWorkspaceRosterMember[];
   }>;
   settings: {
     piFieldId?: string;
@@ -3373,6 +3396,60 @@ function upsertRecentSharedArtWorkspace(workspace: SharedArtRecentWorkspace): Sh
   return nextRecentWorkspaces;
 }
 
+/**
+ * Reads the roster the Team Dashboard holds for one Train team, ready to share.
+ *
+ * Returns an empty roster whenever the team cannot be joined to exactly one dashboard profile, or
+ * its stored roster cannot be read. Empty means "nothing to share", which `buildSharedRoster` turns
+ * into an absent field rather than an empty array — so a machine that has no roster for this team
+ * publishes nothing about it instead of overwriting a colleague's with emptiness.
+ */
+function readTeamRosterForSharing(team: { id: string; boardId?: string }): StandupRosterMember[] {
+  const dashboardProfiles = useSettingsStore.getState().sprintDashboardTeamProfiles ?? [];
+  const rosterProfileId = findRosterProfileId(team, dashboardProfiles);
+  if (rosterProfileId === null) {
+    return [];
+  }
+  try {
+    const storedRoster = readTeamScopedStorageValue(STANDUP_ROSTER_STORAGE_KEY, rosterProfileId);
+    const parsedRoster = storedRoster ? JSON.parse(storedRoster) : null;
+    return Array.isArray(parsedRoster) ? parsedRoster as StandupRosterMember[] : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Writes each shared roster back into the Team Dashboard profile it belongs to.
+ *
+ * A team whose payload carries NO roster is skipped rather than emptied. An absent roster is what
+ * every workspace written before rosters were shared looks like, and what a colleague on a machine
+ * with no roster publishes — treating either as "this team has nobody" would delete a roster that
+ * was never in question.
+ */
+function restoreSharedRosters(teams: SharedArtWorkspacePayload['teams']): void {
+  const dashboardProfiles = useSettingsStore.getState().sprintDashboardTeamProfiles ?? [];
+  for (const team of teams) {
+    const sharedMembers = readSharedRoster(team.roster);
+    if (sharedMembers.length === 0) {
+      continue;
+    }
+    const rosterProfileId = findRosterProfileId(team, dashboardProfiles);
+    if (rosterProfileId === null) {
+      continue;
+    }
+    try {
+      window.localStorage.setItem(
+        buildTeamScopedStorageKey(STANDUP_ROSTER_STORAGE_KEY, rosterProfileId),
+        JSON.stringify(sharedMembers),
+      );
+    } catch {
+      // A full or blocked storage must not fail the whole workspace load — the boards, settings and
+      // PI pages that came with it are still worth having.
+    }
+  }
+}
+
 function buildSharedArtWorkspacePayload(
   artName: string,
   artKey: string,
@@ -3393,6 +3470,10 @@ function buildSharedArtWorkspacePayload(
       projectKey: team.projectKey,
       piReviewPages: team.piReviewPages ?? [],
       sosIssueKey: team.sosIssueKey,
+      // Read from the roster store at publish time rather than held on the team: the dashboard owns
+      // the roster and edits it constantly, so a copy carried on the team record would go stale
+      // between the last edit and the next share.
+      roster: buildSharedRoster(readTeamRosterForSharing(team)),
     })),
     settings: {
       piFieldId: settings.piFieldId?.trim() || undefined,
@@ -3845,6 +3926,10 @@ function SettingsPanel({
     const nextIsSpAutoDetect = sharedWorkspace.settings.isSpAutoDetect ?? false;
 
     onReplaceTeams(sharedWorkspace.teams);
+    // Restore each shared roster into the Team Dashboard it belongs to. Done here rather than in the
+    // dashboard because this is the moment the workspace arrives; leaving it to the dashboard would
+    // mean the roster only reappeared once somebody happened to open that team.
+    restoreSharedRosters(sharedWorkspace.teams);
     setSharedArtName(nextArtName);
     setSharedArtKey(nextArtKey);
     setSharedArtDatabaseId(databaseId);

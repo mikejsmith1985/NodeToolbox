@@ -70,6 +70,39 @@ export interface SharedArtWorkspaceTeamRecord {
   /** Legacy single-page field (schema v1) — still read on import for back-compat. */
   piReviewPageUrl?: string;
   sosIssueKey?: string;
+  /**
+   * The team's roster, so it survives a machine and travels between teams.
+   *
+   * Added WITHOUT a schema bump, deliberately. `loadSharedArtWorkspace` rejects any payload whose
+   * version exceeds the one it knows, so raising the number would make every client that had not yet
+   * updated hard-fail on the whole workspace — losing the boards and settings too, to add a roster.
+   * An absent `roster` reads as "this team has not shared one", which is what an older client writes.
+   */
+  roster?: SharedArtWorkspaceRosterMember[];
+}
+
+/**
+ * One roster member as the shared workspace carries them.
+ *
+ * Declared here rather than imported from the roster store: this module is the wire format, and a
+ * shape the UI is free to change is not one a stored payload can be pinned to. Every field beyond
+ * the identity is optional, because a payload written by an older build simply will not have it.
+ */
+export interface SharedArtWorkspaceRosterMember {
+  id: string;
+  displayName: string;
+  assigneeQueryValue: string;
+  jiraAccountId?: string;
+  githubAccountId?: string;
+  snowUserDisplayName?: string;
+  snowUserSysId?: string;
+  teamName?: string;
+  roleName?: string;
+  roleCapabilities?: Record<string, boolean>;
+  emailAddress?: string;
+  locationTimeZone?: string;
+  lanId?: string;
+  workingHours?: string;
 }
 
 export interface SharedArtWorkspaceSettingsRecord {

@@ -9,7 +9,8 @@ import {
   resolveTeamScopedStorageProfileId,
 } from './teamScopedStorage.ts';
 
-const STANDUP_ROSTER_STORAGE_KEY = 'tbxSprintDashboardRoster';
+/** Exported so the Train space can read a team's roster when publishing the shared workspace. */
+export const STANDUP_ROSTER_STORAGE_KEY = 'tbxSprintDashboardRoster';
 
 /**
  * The three independent role capabilities a team member may perform, used by the Feature Canvas
