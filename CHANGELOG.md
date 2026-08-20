@@ -27,6 +27,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   track". Every row carries its workings, so a figure somebody disputes can be checked. It costs no
   extra Jira request: the arithmetic runs over issues the team scans already returned.
 
+### Changed
+- **Target Start now means "the latest day this can begin and still land".** Where an issue's size is
+  known, the date is worked back from whichever deadline binds — code freeze or the PI's own,
+  whichever is earlier. The day work actually began still wins wherever it exists, because a fact
+  beats a prediction, and an issue with no size falls back to the rule it always used. The bulk date
+  fix on Hygiene and Feature Review now says which rule produced each date it wrote: a date worked
+  back from real effort and one set three days after an issue became workable mean very different
+  things to somebody deciding whether to trust the schedule.
+
 ### Fixed
 - **The Program Increment field could not be discovered by name.** Its name pattern had been written
   with literal backspace characters instead of word boundaries (`PI` mangled to `PI`),

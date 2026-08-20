@@ -10,6 +10,11 @@ import { useToast } from '../../components/Toast/ToastContext.ts';
 import { normalizeRichTextToPlainText } from '../../utils/richTextPlainText.ts';
 import type { JiraTransition } from '../../types/jira.ts';
 import { applyDerivedDates, summariseUndecidedDates } from '../Hygiene/derivedDateFix.ts';
+import {
+  buildDerivedDateForecastContext,
+  describeTargetStartBases,
+} from './forecast/derivedDateForecastContext.ts';
+import { resolveStoryPointsFieldIds } from '../Hygiene/checks/storyPointsField.ts';
 import type { JiraIssue } from '../Hygiene/checks/hygieneChecks.ts';
 import type { BlueprintHealthStatus, BlueprintStoryNode } from '../ArtView/blueprintHierarchy.ts';
 import type { ArtTeam } from '../ArtView/hooks/useArtData.ts';
@@ -1046,7 +1051,15 @@ function FeatureDateFixButton({ featureIssues, fieldConfig, onFixed }: {
     setIsApplying(true);
     setResultMessage(null);
     try {
-      const outcome = await applyDerivedDates(featureIssues, fieldConfig);
+      // Effort turns Target Start from "roughly when this became workable" into "the latest day it
+      // can begin and still land". Supplied here rather than left out, so the date this writes and
+      // the verdict the forecast shows come from one arithmetic.
+      const forecastContext = buildDerivedDateForecastContext(featureIssues, {
+        storyPointsFieldIds: resolveStoryPointsFieldIds(''),
+        subStatusFieldIds: fieldConfig.subStatusFieldIds ?? [],
+        targetStartFieldIds: fieldConfig.targetStartFieldIds,
+      });
+      const outcome = await applyDerivedDates(featureIssues, fieldConfig, forecastContext);
       const failureNote = outcome.failures.length > 0
         ? ` ${outcome.failures.length} could not be written: ${outcome.failures.map((failure) => failure.issueKey).join(', ')}.`
         : '';
@@ -1054,7 +1067,10 @@ function FeatureDateFixButton({ featureIssues, fieldConfig, onFixed }: {
       const undecidedNote = undecidedSummary === ''
         ? ''
         : ` ${outcome.undecided.length} could not be dated — ${undecidedSummary}.`;
-      setResultMessage(`Updated ${outcome.updatedIssueKeys.length} feature(s).${failureNote}${undecidedNote}`);
+      const basisNote = describeTargetStartBases(outcome.targetStartBasisCounts);
+      setResultMessage(
+        `Updated ${outcome.updatedIssueKeys.length} feature(s).${failureNote}${undecidedNote}${basisNote}`,
+      );
       onFixed();
     } finally {
       setIsApplying(false);

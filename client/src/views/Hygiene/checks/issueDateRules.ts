@@ -4,8 +4,10 @@
 // committed to, and from when the work became workable.
 //
 //   Due Date    = the fix version's release date
-//   Target End  = three weeks before it, the buffer the release has to clear
-//   Target Start = two working days after the issue reached "Ready to Work"
+//   Target End  = three weeks before it, the buffer the release has to clear (also called CODE FREEZE)
+//   Target Start = the latest day work can begin and still finish by its deadline, where the effort
+//                  is known; otherwise the day it actually started, or a few days after it became
+//                  workable
 //
 // Stating them here rather than in a check, a fix, and a prompt separately is the point: those three
 // would otherwise each carry their own copy and drift, and a board that disagrees with itself about
@@ -16,6 +18,7 @@
 // a real one once it is written.
 
 import { readCalendarDay, toCalendarDay } from '../../../utils/calendarDate.ts';
+import { subtractWorkingDays, type WorkingCalendar } from '../../../utils/workingDays.ts';
 
 /** The status whose entry starts the clock on a PREDICTED Target Start. */
 export const READY_TO_WORK_STATUS_NAME = 'Ready to Work';
@@ -55,6 +58,20 @@ export interface IssueDateInput {
   currentDueDate: string | null;
   currentTargetStart: string | null;
   currentTargetEnd: string | null;
+  /**
+   * How many working days of work are LEFT in this issue.
+   *
+   * Supplying it turns Target Start from "roughly when this became workable" into "the latest day
+   * it can begin and still land", which is the only form that can answer whether a team is behind.
+   *
+   * Optional, and absent by default: every caller that predates the forecast supplies nothing and
+   * gets exactly the dates it got before.
+   */
+  remainingEffortWorkingDays?: number | null;
+  /** The PI Definition-of-Done deadline, when the ART has configured one. */
+  piDodDeadlineIso?: string | null;
+  /** Weekend and holiday calendar. Required for the back-calculation; ignored without it. */
+  workingCalendar?: WorkingCalendar;
 }
 
 /** What the policy says the dates should be, and where the issue departs from it. */
@@ -66,6 +83,12 @@ export interface DerivedIssueDates {
   mismatchedFieldNames: string[];
   /** Why a date could not be derived — shown instead of a fix, so the gap is explained. */
   undecidedReasons: string[];
+  /**
+   * Which rule produced `targetStart`, so a bulk fix can say what it did rather than just how many.
+   *
+   * Optional for the same reason the new inputs are: nothing that existed before this needs it.
+   */
+  targetStartBasis?: 'actual-working' | 'back-calculated' | 'ready-to-work-lead' | 'none';
 }
 
 /**
@@ -113,6 +136,62 @@ function agreesWithDerived(currentValue: string | null, derivedDay: string | nul
 }
 
 /**
+ * Works out Target Start, and says which of the four rules produced it.
+ *
+ * The order is a hierarchy of evidence, strongest first:
+ *
+ *   1. The day work ACTUALLY began. A fact always beats a prediction, so this wins whenever it
+ *      exists — including for work that jumped straight into Working and skipped Ready to Work.
+ *   2. The latest day it could begin and still land, from the effort it has left. This is the only
+ *      form that can answer "if this does not start today we are behind", and it is why the
+ *      forecast supplies effort at all.
+ *   3. A few days after it became workable. The original rule, kept for every caller that has no
+ *      effort figure to offer.
+ *   4. Nothing, with the reason already recorded by the caller.
+ *
+ * Rule 2 measures against whichever deadline is EARLIER — code freeze or the PI's own — because the
+ * tighter commitment is the one that actually binds.
+ */
+function deriveTargetStart(
+  input: IssueDateInput,
+  workingDay: string | null,
+  readyToWorkDay: string | null,
+  targetEnd: string | null,
+): { targetStart: string | null; targetStartBasis: DerivedIssueDates['targetStartBasis'] } {
+  if (workingDay !== null) {
+    return { targetStart: workingDay, targetStartBasis: 'actual-working' };
+  }
+
+  const remainingWorkingDays = input.remainingEffortWorkingDays ?? null;
+  const piDodDeadlineIso = input.piDodDeadlineIso ?? null;
+  const bindingDeadline = [targetEnd, piDodDeadlineIso]
+    .filter((deadline): deadline is string => deadline !== null)
+    .sort()[0] ?? null;
+
+  if (
+    input.workingCalendar !== undefined
+    && remainingWorkingDays !== null
+    && remainingWorkingDays > 0
+    && bindingDeadline !== null
+  ) {
+    return {
+      // Inclusive of its own start day: one day of work due today starts today, not yesterday.
+      targetStart: subtractWorkingDays(bindingDeadline, remainingWorkingDays - 1, input.workingCalendar),
+      targetStartBasis: 'back-calculated',
+    };
+  }
+
+  if (readyToWorkDay !== null) {
+    return {
+      targetStart: shiftCalendarDays(readyToWorkDay, TARGET_START_LEAD_DAYS),
+      targetStartBasis: 'ready-to-work-lead',
+    };
+  }
+
+  return { targetStart: null, targetStartBasis: 'none' };
+}
+
+/**
  * Applies the policy to one issue.
  *
  * Every returned date is either derivable from what Jira holds or null with a stated reason; the
@@ -140,9 +219,7 @@ export function deriveIssueDates(input: IssueDateInput): DerivedIssueDates {
 
   const dueDate = releaseDay;
   const targetEnd = releaseDay === null ? null : shiftCalendarDays(releaseDay, -TARGET_END_LEAD_DAYS);
-  const targetStart = workingDay !== null
-    ? workingDay
-    : readyToWorkDay === null ? null : shiftCalendarDays(readyToWorkDay, TARGET_START_LEAD_DAYS);
+  const { targetStart, targetStartBasis } = deriveTargetStart(input, workingDay, readyToWorkDay, targetEnd);
 
   const mismatchedFieldNames = [
     agreesWithDerived(input.currentDueDate, dueDate) ? null : 'Due Date',
@@ -150,5 +227,5 @@ export function deriveIssueDates(input: IssueDateInput): DerivedIssueDates {
     agreesWithDerived(input.currentTargetStart, targetStart) ? null : 'Target Start',
   ].filter((fieldName): fieldName is string => fieldName !== null);
 
-  return { dueDate, targetStart, targetEnd, mismatchedFieldNames, undecidedReasons };
+  return { dueDate, targetStart, targetEnd, mismatchedFieldNames, undecidedReasons, targetStartBasis };
 }

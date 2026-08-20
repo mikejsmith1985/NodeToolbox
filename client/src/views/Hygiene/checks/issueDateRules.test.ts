@@ -118,3 +118,137 @@ describe('deriveIssueDates', () => {
     expect(derived.mismatchedFieldNames).not.toContain('Due Date');
   });
 });
+
+describe('Target Start, back-calculated from the effort left', () => {
+  // APPENDED, never edited. Every case above must keep passing untouched: the three new inputs are
+  // optional precisely so that no caller predating the forecast sees a different date.
+
+  /** Weekends off, no holidays. Target End for the base input is 2026-09-17. */
+  const PLAIN_CALENDAR = { weekendDays: [0, 6], holidayIsoDates: [] };
+
+  it('changes nothing when no effort is supplied', () => {
+    const derived = deriveIssueDates({ ...BASE_INPUT, readyToWorkEnteredIso: '2026-08-10T09:00:00.000Z' });
+    expect(derived.targetStart).toBe('2026-08-13');
+    expect(derived.targetStartBasis).toBe('ready-to-work-lead');
+  });
+
+  it('works back from code freeze when the effort is known', () => {
+    // Target End (code freeze) is 2026-09-17, a Thursday. Three days of work: Tue 15, Wed 16, Thu 17.
+    const derived = deriveIssueDates({
+      ...BASE_INPUT,
+      remainingEffortWorkingDays: 3,
+      workingCalendar: PLAIN_CALENDAR,
+    });
+    expect(derived.targetStart).toBe('2026-09-15');
+    expect(derived.targetStartBasis).toBe('back-calculated');
+  });
+
+  it('lets the day work actually began win over any calculation', () => {
+    // A fact beats a prediction. This is also the case where the issue skipped Ready to Work
+    // entirely and previously had no Target Start at all.
+    const derived = deriveIssueDates({
+      ...BASE_INPUT,
+      workingEnteredIso: '2026-08-03T09:00:00.000Z',
+      remainingEffortWorkingDays: 3,
+      workingCalendar: PLAIN_CALENDAR,
+    });
+    expect(derived.targetStart).toBe('2026-08-03');
+    expect(derived.targetStartBasis).toBe('actual-working');
+  });
+
+  it('measures against the PI deadline when that is the earlier of the two', () => {
+    const derived = deriveIssueDates({
+      ...BASE_INPUT,
+      remainingEffortWorkingDays: 3,
+      piDodDeadlineIso: '2026-08-27',
+      workingCalendar: PLAIN_CALENDAR,
+    });
+    // Thu 2026-08-27 back three working days: Tue 25, Wed 26, Thu 27.
+    expect(derived.targetStart).toBe('2026-08-25');
+  });
+
+  it('measures against code freeze when that is the earlier of the two', () => {
+    const derived = deriveIssueDates({
+      ...BASE_INPUT,
+      remainingEffortWorkingDays: 3,
+      piDodDeadlineIso: '2026-12-01',
+      workingCalendar: PLAIN_CALENDAR,
+    });
+    expect(derived.targetStart).toBe('2026-09-15');
+  });
+
+  it('steps back over a weekend', () => {
+    // Five days back from Thursday 2026-09-17 reaches the previous Friday.
+    const derived = deriveIssueDates({
+      ...BASE_INPUT,
+      remainingEffortWorkingDays: 5,
+      workingCalendar: PLAIN_CALENDAR,
+    });
+    expect(derived.targetStart).toBe('2026-09-11');
+  });
+
+  it('steps back over a holiday', () => {
+    const derived = deriveIssueDates({
+      ...BASE_INPUT,
+      remainingEffortWorkingDays: 3,
+      workingCalendar: { weekendDays: [0, 6], holidayIsoDates: ['2026-09-16'] },
+    });
+    expect(derived.targetStart).toBe('2026-09-14');
+  });
+
+  it('falls back to the old rule when effort is supplied without a calendar', () => {
+    const derived = deriveIssueDates({
+      ...BASE_INPUT,
+      readyToWorkEnteredIso: '2026-08-10T09:00:00.000Z',
+      remainingEffortWorkingDays: 3,
+    });
+    expect(derived.targetStartBasis).toBe('ready-to-work-lead');
+  });
+
+  it('falls back to the old rule when the effort is unknown', () => {
+    const derived = deriveIssueDates({
+      ...BASE_INPUT,
+      readyToWorkEnteredIso: '2026-08-10T09:00:00.000Z',
+      remainingEffortWorkingDays: null,
+      workingCalendar: PLAIN_CALENDAR,
+    });
+    expect(derived.targetStartBasis).toBe('ready-to-work-lead');
+  });
+
+  it('dates work that never reached Ready to Work, which previously had no date at all', () => {
+    const derived = deriveIssueDates({
+      ...BASE_INPUT,
+      readyToWorkEnteredIso: null,
+      remainingEffortWorkingDays: 2,
+      workingCalendar: PLAIN_CALENDAR,
+    });
+    expect(derived.targetStart).toBe('2026-09-16');
+    expect(derived.targetStartBasis).toBe('back-calculated');
+  });
+
+  it('names Target Start as a mismatch when Jira holds a different day', () => {
+    const derived = deriveIssueDates({
+      ...BASE_INPUT,
+      remainingEffortWorkingDays: 3,
+      workingCalendar: PLAIN_CALENDAR,
+      currentTargetStart: '2026-07-01',
+    });
+    expect(derived.mismatchedFieldNames).toContain('Target Start');
+  });
+
+  it('leaves Target Start out of the mismatch list when Jira already holds the derived day', () => {
+    const derived = deriveIssueDates({
+      ...BASE_INPUT,
+      remainingEffortWorkingDays: 3,
+      workingCalendar: PLAIN_CALENDAR,
+      currentTargetStart: '2026-09-15',
+    });
+    expect(derived.mismatchedFieldNames).not.toContain('Target Start');
+  });
+
+  it('reports no basis at all when nothing can date the issue', () => {
+    const derived = deriveIssueDates({ ...BASE_INPUT });
+    expect(derived.targetStart).toBeNull();
+    expect(derived.targetStartBasis).toBe('none');
+  });
+});

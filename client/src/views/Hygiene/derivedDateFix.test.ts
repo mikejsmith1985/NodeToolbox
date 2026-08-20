@@ -283,3 +283,87 @@ describe('summariseUndecidedDates — the keys are what make it actionable', () 
     expect(summary).toContain('+18 more');
   });
 });
+
+describe('the forecast context', () => {
+  // Optional everywhere. The point of these tests is that a caller which supplies nothing still
+  // gets exactly the dates it got before the forecast existed.
+
+  const PLAIN_CALENDAR = { weekendDays: [0, 6], holidayIsoDates: [] };
+
+  it('works the Target Start back from the effort when a context is supplied', () => {
+    // Release 2026-10-08 gives a code freeze of 2026-09-17; three days back is 2026-09-15.
+    return planDerivedDateWrites(buildIssue(), FIELD_CONFIG, {
+      remainingEffortWorkingDaysByKey: { 'ENCUC-1': 3 },
+      workingCalendar: PLAIN_CALENDAR,
+    }).then((plan) => {
+      const targetStartWrite = plan.writes.find((write) => write.fieldName === 'Target Start');
+      expect(targetStartWrite?.value).toBe('2026-09-15');
+      expect(plan.targetStartBasis).toBe('back-calculated');
+    });
+  });
+
+  it('falls back to the old rule for an issue the context says nothing about', async () => {
+    mockJiraGet.mockResolvedValue({
+      changelog: { histories: [{ created: '2026-08-10T09:00:00.000Z', items: [{ field: 'status', toString: 'Ready to Work' }] }] },
+    });
+
+    const plan = await planDerivedDateWrites(buildIssue(), FIELD_CONFIG, {
+      remainingEffortWorkingDaysByKey: { 'SOMEONE-ELSE-9': 3 },
+      workingCalendar: PLAIN_CALENDAR,
+    });
+
+    expect(plan.targetStartBasis).toBe('ready-to-work-lead');
+  });
+
+  it('lets the day work actually began win over the calculation', async () => {
+    mockJiraGet.mockResolvedValue({
+      changelog: { histories: [{ created: '2026-08-03T09:00:00.000Z', items: [{ field: 'status', toString: 'Working' }] }] },
+    });
+
+    const plan = await planDerivedDateWrites(buildIssue(), FIELD_CONFIG, {
+      remainingEffortWorkingDaysByKey: { 'ENCUC-1': 3 },
+      workingCalendar: PLAIN_CALENDAR,
+    });
+
+    expect(plan.targetStartBasis).toBe('actual-working');
+  });
+
+  it('still works when the changelog fetch fails', async () => {
+    mockJiraGet.mockRejectedValue(new Error('Jira is down'));
+
+    const plan = await planDerivedDateWrites(buildIssue(), FIELD_CONFIG, {
+      remainingEffortWorkingDaysByKey: { 'ENCUC-1': 3 },
+      workingCalendar: PLAIN_CALENDAR,
+    });
+
+    // No changelog means no actual start day, so the back-calculation is what is left — and it is
+    // better than the nothing this issue would otherwise have had.
+    expect(plan.targetStartBasis).toBe('back-calculated');
+  });
+
+  it('reports how many Target Starts each rule produced', async () => {
+    mockJiraGet.mockResolvedValue({ changelog: { histories: [] } });
+    mockSaveField.mockResolvedValue(undefined);
+
+    const outcome = await applyDerivedDates(
+      [buildIssue({}, 'ENCUC-1'), buildIssue({}, 'ENCUC-2')],
+      FIELD_CONFIG,
+      { remainingEffortWorkingDaysByKey: { 'ENCUC-1': 3 }, workingCalendar: PLAIN_CALENDAR },
+    );
+
+    // One date worked back from real effort, one issue that could not be dated at all. Reporting
+    // only "2 updated" would hide the difference between a plan and a placeholder.
+    expect(outcome.targetStartBasisCounts['back-calculated']).toBe(1);
+  });
+
+  it('behaves exactly as before when no context is given at all', async () => {
+    mockJiraGet.mockResolvedValue({
+      changelog: { histories: [{ created: '2026-08-10T09:00:00.000Z', items: [{ field: 'status', toString: 'Ready to Work' }] }] },
+    });
+
+    const plan = await planDerivedDateWrites(buildIssue(), FIELD_CONFIG);
+
+    expect(plan.writes.find((write) => write.fieldName === 'Target Start')?.value).toBe('2026-08-13');
+    expect(plan.targetStartBasis).toBe('ready-to-work-lead');
+  });
+});

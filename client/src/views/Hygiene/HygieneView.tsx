@@ -13,6 +13,11 @@ import {
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { buildHygieneDiagnosticsReport } from './hygieneDiagnostics.ts';
 import {
+  buildDerivedDateForecastContext,
+  describeTargetStartBases,
+} from '../SprintDashboard/forecast/derivedDateForecastContext.ts';
+import { resolveStoryPointsFieldIds } from './checks/storyPointsField.ts';
+import {
   applyDerivedDates,
   readDeterministicDateFixCandidates,
   summariseUndecidedDates,
@@ -734,7 +739,14 @@ function BulkDateFixButton({ hygieneState }: { hygieneState: ReturnType<typeof u
     setIsApplying(true);
     setResultMessage(null);
     try {
-      const outcome = await applyDerivedDates(datedIssues, hygieneState.fieldConfig);
+      // Same context Feature Review builds, from the same settings — the two surfaces write the
+      // same date for the same issue because they run one calculation, not two that agree today.
+      const forecastContext = buildDerivedDateForecastContext(datedIssues, {
+        storyPointsFieldIds: resolveStoryPointsFieldIds(''),
+        subStatusFieldIds: hygieneState.fieldConfig.subStatusFieldIds ?? [],
+        targetStartFieldIds: hygieneState.fieldConfig.targetStartFieldIds,
+      });
+      const outcome = await applyDerivedDates(datedIssues, hygieneState.fieldConfig, forecastContext);
       const failureNote = outcome.failures.length > 0
         ? ` ${outcome.failures.length} could not be written: ${outcome.failures.map((failure) => failure.issueKey).join(', ')}.`
         : '';
@@ -744,7 +756,10 @@ function BulkDateFixButton({ hygieneState }: { hygieneState: ReturnType<typeof u
       const undecidedNote = undecidedSummary === ''
         ? ''
         : ` ${outcome.undecided.length} could not be dated — ${undecidedSummary}.`;
-      setResultMessage(`Updated ${outcome.updatedIssueKeys.length} issue(s).${failureNote}${undecidedNote}`);
+      const basisNote = describeTargetStartBases(outcome.targetStartBasisCounts);
+      setResultMessage(
+        `Updated ${outcome.updatedIssueKeys.length} issue(s).${failureNote}${undecidedNote}${basisNote}`,
+      );
       hygieneState.loadHygiene();
     } finally {
       setIsApplying(false);

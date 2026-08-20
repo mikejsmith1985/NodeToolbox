@@ -149,13 +149,13 @@ date fix. Drift 2 — additive only.
 **Independent test**: An estimated, unstarted issue's Target Start equals `code freeze − (remaining working days − 1)`;
 an issue already in `Working` keeps its actual start date.
 
-- [ ] T037 [P] [US1] **Append** failing tests (10 cases from `contracts/issue-forecast.md` §2) to `client/src/views/Hygiene/checks/issueDateRules.test.ts` — append only, never modify an existing assertion
-- [ ] T038 [US1] Add optional `remainingEffortWorkingDays`, `piDodDeadlineIso` and `workingCalendar` to `IssueDateInput`, add `targetStartBasis` to `DerivedIssueDates`, and insert the back-calculation as precedence step 2 in `deriveIssueDates` in `client/src/views/Hygiene/checks/issueDateRules.ts`. All three optional; absent, the output is today's output exactly
-- [ ] T039 [US1] **Verify guard G3**: `git diff --stat` on `issueDateRules.test.ts` shows additions only, zero modifications
-- [ ] T040 [P] [US1] Write failing tests for the optional `DerivedDateContext` parameter (5 cases from `contracts/issue-forecast.md` §3) in `client/src/views/Hygiene/derivedDateFix.test.ts`
-- [ ] T041 [US1] Add the optional `context?: DerivedDateContext` parameter to `planDerivedDateWrites` and `applyDerivedDates` in `client/src/views/Hygiene/derivedDateFix.ts`, passing effort through by issue key and keeping the single changelog request per issue
-- [ ] T042 [US1] Pass the forecast context from the bulk date-fix callers in `client/src/views/SprintDashboard/FeatureReviewTab.tsx` and `client/src/views/Hygiene/HygieneView.tsx`, and report the Target Start basis split (e.g. "12 back-calculated from effort, 4 from Ready to Work") in the outcome message
-- [ ] T043 [US1] Run the full client suite, confirm G3 still holds, and commit with a CHANGELOG entry
+- [X] T037 [P] [US1] **Append** failing tests (10 cases from `contracts/issue-forecast.md` §2) to `client/src/views/Hygiene/checks/issueDateRules.test.ts` — append only, never modify an existing assertion
+- [X] T038 [US1] Add optional `remainingEffortWorkingDays`, `piDodDeadlineIso` and `workingCalendar` to `IssueDateInput`, add `targetStartBasis` to `DerivedIssueDates`, and insert the back-calculation as precedence step 2 in `deriveIssueDates` in `client/src/views/Hygiene/checks/issueDateRules.ts`. All three optional; absent, the output is today's output exactly
+- [X] T039 [US1] **Verify guard G3**: `git diff --stat` on `issueDateRules.test.ts` shows additions only, zero modifications
+- [X] T040 [P] [US1] Write failing tests for the optional `DerivedDateContext` parameter (5 cases from `contracts/issue-forecast.md` §3) in `client/src/views/Hygiene/derivedDateFix.test.ts`
+- [X] T041 [US1] Add the optional `context?: DerivedDateContext` parameter to `planDerivedDateWrites` and `applyDerivedDates` in `client/src/views/Hygiene/derivedDateFix.ts`, passing effort through by issue key and keeping the single changelog request per issue
+- [X] T042 [US1] Pass the forecast context from the bulk date-fix callers in `client/src/views/SprintDashboard/FeatureReviewTab.tsx` and `client/src/views/Hygiene/HygieneView.tsx`, and report the Target Start basis split (e.g. "12 back-calculated from effort, 4 from Ready to Work") in the outcome message
+- [X] T043 [US1] Run the full client suite, confirm G3 still holds, and commit with a CHANGELOG entry
 
 **Checkpoint**: Jira now holds the revised Target Start, and Today, Hygiene and Feature Review agree about what it should be.
 

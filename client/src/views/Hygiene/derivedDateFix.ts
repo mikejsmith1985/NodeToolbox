@@ -15,6 +15,22 @@ import { jiraGet } from '../../services/jiraApi.ts';
 import { saveFeatureReviewSimpleField } from '../SprintDashboard/featureReviewFixes.ts';
 import type { HygieneFieldConfig, HygieneFinding, JiraIssue } from './checks/hygieneChecks.ts';
 import { deriveIssueDates, READY_TO_WORK_STATUS_NAME, WORKING_STATUS_NAME } from './checks/issueDateRules.ts';
+import type { WorkingCalendar } from '../../utils/workingDays.ts';
+
+/**
+ * What the forecast knows that the date policy cannot work out for itself.
+ *
+ * Optional at every call site. Without it the fix behaves exactly as it did before the forecast
+ * existed — which is what lets Hygiene and Feature Review adopt it one at a time rather than all at
+ * once.
+ */
+export interface DerivedDateContext {
+  /** Remaining working days per issue key. A key that is absent simply falls back to the old rule. */
+  remainingEffortWorkingDaysByKey?: Record<string, number | null>;
+  /** The PI Definition-of-Done deadline, when the ART has configured one. */
+  piDodDeadlineIso?: string | null;
+  workingCalendar?: WorkingCalendar;
+}
 
 /** One field the fix will set, named so the user can see it before it happens. */
 export interface DerivedDateWrite {
@@ -28,6 +44,8 @@ export interface DerivedDatePlan {
   issueKey: string;
   writes: DerivedDateWrite[];
   undecidedReasons: string[];
+  /** Which rule produced the Target Start, so a bulk run can report what it did rather than a count. */
+  targetStartBasis?: 'actual-working' | 'back-calculated' | 'ready-to-work-lead' | 'none';
 }
 
 /** The result of a run: what landed, and precisely what did not. */
@@ -43,6 +61,14 @@ export interface DerivedDateOutcome {
    * like a broken button and was.
    */
   undecided: Array<{ issueKey: string; reasons: string[] }>;
+  /**
+   * How many Target Starts each rule produced.
+   *
+   * A run that reports only a count leaves the operator unable to tell a date worked back from the
+   * effort left from one that is merely three days after the issue became workable. Those two mean
+   * very different things to somebody deciding whether the plan is real.
+   */
+  targetStartBasisCounts: Record<string, number>;
 }
 
 /** One changelog history entry, reduced to what the Ready-to-Work lookup needs. */
@@ -105,6 +131,7 @@ function readFirstFieldId(fieldIds: readonly string[]): string | null {
 export async function planDerivedDateWrites(
   issue: JiraIssue,
   fieldConfig: HygieneFieldConfig,
+  context?: DerivedDateContext,
 ): Promise<DerivedDatePlan> {
   const targetStartFieldId = readFirstFieldId(fieldConfig.targetStartFieldIds);
   const targetEndFieldId = readFirstFieldId(fieldConfig.targetEndFieldIds);
@@ -118,6 +145,11 @@ export async function planDerivedDateWrites(
     currentDueDate: readFieldText(issue, 'duedate'),
     currentTargetEnd: targetEndFieldId ? readFieldText(issue, targetEndFieldId) : null,
     currentTargetStart: targetStartFieldId ? readFieldText(issue, targetStartFieldId) : null,
+    // Absent unless the caller has a forecast in hand. The policy then falls back to the rule it
+    // always used, so nothing that has not adopted the forecast changes behaviour.
+    remainingEffortWorkingDays: context?.remainingEffortWorkingDaysByKey?.[issue.key] ?? null,
+    piDodDeadlineIso: context?.piDodDeadlineIso ?? null,
+    workingCalendar: context?.workingCalendar,
   });
 
   const candidateWrites: Array<DerivedDateWrite | null> = [
@@ -136,6 +168,7 @@ export async function planDerivedDateWrites(
     issueKey: issue.key,
     writes: candidateWrites.filter((write): write is DerivedDateWrite => write !== null),
     undecidedReasons: derived.undecidedReasons,
+    targetStartBasis: derived.targetStartBasis,
   };
 }
 
@@ -149,14 +182,19 @@ export async function planDerivedDateWrites(
 export async function applyDerivedDates(
   issues: readonly JiraIssue[],
   fieldConfig: HygieneFieldConfig,
+  context?: DerivedDateContext,
 ): Promise<DerivedDateOutcome> {
   const updatedIssueKeys: string[] = [];
   const failures: Array<{ issueKey: string; reason: string }> = [];
   const undecided: Array<{ issueKey: string; reasons: string[] }> = [];
+  const targetStartBasisCounts: Record<string, number> = {};
 
   for (const issue of issues) {
     try {
-      const plan = await planDerivedDateWrites(issue, fieldConfig);
+      const plan = await planDerivedDateWrites(issue, fieldConfig, context);
+      if (plan.writes.some((write) => write.fieldName === 'Target Start') && plan.targetStartBasis) {
+        targetStartBasisCounts[plan.targetStartBasis] = (targetStartBasisCounts[plan.targetStartBasis] ?? 0) + 1;
+      }
       if (plan.writes.length === 0) {
         // Nothing to write is an ANSWER, not a non-event: the policy could not derive a value, and
         // the reason is the only thing that tells a user whether to wait, fix Jira, or look again.
@@ -180,7 +218,7 @@ export async function applyDerivedDates(
     }
   }
 
-  return { updatedIssueKeys, failures, undecided };
+  return { updatedIssueKeys, failures, undecided, targetStartBasisCounts };
 }
 
 /**

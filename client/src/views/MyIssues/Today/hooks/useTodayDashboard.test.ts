@@ -714,7 +714,7 @@ describe('the daily forecast', () => {
     expect(result.current.forecast?.completeness.totalIssueCount).toBeGreaterThan(0);
     // The only Jira calls are the ones the cards already made — the forecast adds none.
     const forecastOnlyCalls = mockJiraGet.mock.calls.slice(jiraCallsBefore)
-      .filter(([path]: [string]) => String(path).includes('/version'));
+      .filter((call) => String(call[0]).includes('/version'));
     expect(forecastOnlyCalls).toHaveLength(0);
   });
 
