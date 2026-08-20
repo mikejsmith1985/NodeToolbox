@@ -843,3 +843,30 @@ describe('runSharePointIntakeNow', () => {
     expect(outcome.message).toContain('Relay bridge is not active');
   });
 });
+
+describe('mergePullRunResults — the skipped-email records must survive batching', () => {
+  // A SharePoint pull arrives in batches of 20 and every batch is merged into ONE log row. The merge
+  // spread the newer result and concatenated `events`, so a field added later was silently taken
+  // from the last batch alone — a 200-file pull would keep the skips of the final 20 and report
+  // them as the whole pull. The report exists to answer "should this have been skipped?", and one
+  // that quietly covers a tenth of the traffic answers it wrongly while looking complete.
+  const { mergePullRunResults } = require('../../src/services/githubEmailIntakeScheduler');
+
+  it('keeps the records from every batch, not just the last', () => {
+    const merged = mergePullRunResults(
+      { skippedEmails: [{ fileName: 'first.eml' }], events: [], skippedCount: 1 },
+      { skippedEmails: [{ fileName: 'second.eml' }], events: [], skippedCount: 1 },
+    );
+
+    expect(merged.skippedEmails.map((record) => record.fileName)).toEqual(['first.eml', 'second.eml']);
+  });
+
+  it('survives a batch that recorded none', () => {
+    const merged = mergePullRunResults(
+      { skippedEmails: [{ fileName: 'first.eml' }], events: [] },
+      { events: [] },
+    );
+
+    expect(merged.skippedEmails).toHaveLength(1);
+  });
+});

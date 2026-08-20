@@ -175,6 +175,11 @@ function mergePullRunResults(previousResult, nextResult) {
     skippedCount: (previousResult.skippedCount || 0) + (nextResult.skippedCount || 0),
     errorCount: (previousResult.errorCount || 0) + (nextResult.errorCount || 0),
     events: [...(previousResult.events || []), ...(nextResult.events || [])],
+    // Concatenated for the same reason as `events`, and easy to miss for the same reason: the spread
+    // above quietly takes the newer batch's value, so a 200-file pull would keep the skips of the
+    // final 20 and present them as the whole pull. A skip report covering a tenth of the traffic
+    // answers "should this have been skipped?" wrongly while looking complete.
+    skippedEmails: [...(previousResult.skippedEmails || []), ...(nextResult.skippedEmails || [])],
   };
 }
 

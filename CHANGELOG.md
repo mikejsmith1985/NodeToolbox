@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **A SharePoint pull no longer throws away most of its skipped-email records.** Batches of one pull
+  are merged into a single Activity Log row, and that merge spread the newer batch and explicitly
+  concatenated only `events` — so a field added later was silently taken from the last batch alone.
+  A 200-file pull would have kept the skips of the final 20 and presented them as the whole pull.
+  The report exists to answer "should this have been skipped?", and one quietly covering a tenth of
+  the traffic answers that wrongly while looking complete.
+
 ### Added
 - **Skipped emails can now be reviewed instead of merely counted.** The intake passed over an email
   it could not classify, or one carrying no Jira key, and recorded the file name and a one-word
