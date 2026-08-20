@@ -12,7 +12,8 @@ vi.mock('../SprintDashboard/featureReviewFixes.ts', () => ({
   saveFeatureReviewSimpleField: mockSaveField,
 }));
 
-import { applyDerivedDates, planDerivedDateWrites } from './derivedDateFix.ts';
+import { applyDerivedDates, planDerivedDateWrites, readDeterministicDateFixCandidates } from './derivedDateFix.ts';
+import type { HygieneFinding } from './checks/hygieneChecks.ts';
 import { resolveHygieneFieldConfig } from './checks/hygieneChecks.ts';
 
 const FIELD_CONFIG = resolveHygieneFieldConfig();
@@ -145,5 +146,52 @@ describe('applyDerivedDates', () => {
 
     expect(mockSaveField).not.toHaveBeenCalled();
     expect(outcome.updatedIssueKeys).toEqual([]);
+  });
+});
+
+describe('readDeterministicDateFixCandidates', () => {
+  // The bulk button was gated to `dates-out-of-sync` alone, so an issue simply MISSING a date was
+  // never offered to it — the one case there was most of. Nothing about those dates needs a person
+  // or a model: the policy derives them, and the changelog supplies the start (GH #375).
+  function findingWith(issueKey: string, checkIds: string[]): HygieneFinding {
+    return {
+      issue: { key: issueKey, fields: {} },
+      flags: checkIds.map((checkId) => ({ checkId, label: checkId, severity: 'warn' })),
+    } as unknown as HygieneFinding;
+  }
+
+  it('includes an issue that is simply missing a date, not only one that disagrees', () => {
+    const candidates = readDeterministicDateFixCandidates([
+      findingWith('TBX-1', ['missing-target-start']),
+      findingWith('TBX-2', ['missing-due-date']),
+      findingWith('TBX-3', ['missing-target-end']),
+      findingWith('TBX-4', ['dates-out-of-sync']),
+    ]);
+
+    expect(candidates.map((issue) => issue.key)).toEqual(['TBX-1', 'TBX-2', 'TBX-3', 'TBX-4']);
+  });
+
+  it('counts an issue once however many date flags it carries', () => {
+    const candidates = readDeterministicDateFixCandidates([
+      findingWith('TBX-1', ['missing-due-date', 'missing-target-end', 'dates-out-of-sync']),
+    ]);
+
+    expect(candidates).toHaveLength(1);
+  });
+
+  it('leaves out an issue with no date flag', () => {
+    const candidates = readDeterministicDateFixCandidates([findingWith('TBX-1', ['missing-sp', 'no-ac'])]);
+
+    expect(candidates).toEqual([]);
+  });
+
+  it('leaves out the overdue flags, which a date write would only hide', () => {
+    // "Due date passed while the issue sat in an early status" is a real state, not a wrong field.
+    // Rewriting the date to make the warning go away is the one thing that must never be automatic.
+    const candidates = readDeterministicDateFixCandidates([
+      findingWith('TBX-1', ['due-date-overdue', 'target-end-overdue', 'target-start-ready']),
+    ]);
+
+    expect(candidates).toEqual([]);
   });
 });

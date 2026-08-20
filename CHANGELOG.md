@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **"Fix all dates" now covers a missing date, not only a disagreeing one.** The bulk button was
+  gated to `dates-out-of-sync` — an issue whose dates contradict its release — while the far commoner
+  case is an issue simply missing one. So the deterministic fix sat one click away from a hundred
+  issues and was offered to almost none of them, and the AI panel was left being asked for values it
+  could not derive. Nothing about these dates needs a person or a model: the policy derives them from
+  the fix version and the changelog supplies the start. The button now offers every issue a derived
+  write would change, counted once however many date flags it carries.
+  The three OVERDUE flags stay out of it deliberately: "due date passed while the issue sat in an
+  early status" is a true statement about the work, not a wrong field, and rewriting the date to make
+  the warning disappear is the one thing that must never happen automatically.
+
+### Fixed
 - **The Hygiene AI prompt no longer asks for what it tells the model to omit.** A run over 133
   issues produced 118,630 characters in which nearly every issue's only ask was
   `missing-target-start`, printed directly beside the line "Target Start cannot be derived here —

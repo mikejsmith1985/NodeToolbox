@@ -13,7 +13,7 @@
 
 import { jiraGet } from '../../services/jiraApi.ts';
 import { saveFeatureReviewSimpleField } from '../SprintDashboard/featureReviewFixes.ts';
-import type { HygieneFieldConfig, JiraIssue } from './checks/hygieneChecks.ts';
+import type { HygieneFieldConfig, HygieneFinding, JiraIssue } from './checks/hygieneChecks.ts';
 import { deriveIssueDates, READY_TO_WORK_STATUS_NAME, WORKING_STATUS_NAME } from './checks/issueDateRules.ts';
 
 /** One field the fix will set, named so the user can see it before it happens. */
@@ -163,4 +163,37 @@ export async function applyDerivedDates(
   }
 
   return { updatedIssueKeys, failures };
+}
+
+/**
+ * The date checks a derived write actually fixes.
+ *
+ * `dates-out-of-sync` covers an issue whose dates DISAGREE with its release, but the far commoner
+ * case is an issue simply missing one — and the bulk button was gated to the disagreement alone, so
+ * the majority case was never offered to it. Nothing about these needs a person or a model: the
+ * policy derives the value and the changelog supplies the start.
+ *
+ * The three OVERDUE flags are deliberately absent. "Due date passed while the issue sat in an early
+ * status" is a true statement about the work, not a wrong field, and rewriting the date to make the
+ * warning disappear is the one thing that must never happen automatically.
+ */
+const DETERMINISTIC_DATE_CHECK_IDS = [
+  'missing-due-date',
+  'missing-target-start',
+  'missing-target-end',
+  'dates-out-of-sync',
+];
+
+/**
+ * The issues a bulk derived-date write would actually change, each listed once.
+ *
+ * Pure and separately testable because it decides the number shown on the button, and a count that
+ * disagrees with what the button then writes is worse than no count.
+ */
+export function readDeterministicDateFixCandidates(
+  findings: readonly HygieneFinding[],
+): JiraIssue[] {
+  return findings
+    .filter((finding) => finding.flags.some((flag) => DETERMINISTIC_DATE_CHECK_IDS.includes(flag.checkId)))
+    .map((finding) => finding.issue);
 }
