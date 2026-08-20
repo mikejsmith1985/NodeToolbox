@@ -62,9 +62,13 @@ function buildVocabulary(overrides: Partial<BoardVocabulary> = {}): BoardVocabul
 }
 
 describe('ColumnVocabularyEditor — the mapping controls', () => {
-  it('never offers a free-text box for a Jira status — states are only ever chosen from real ones', () => {
-    // Every state a column can claim comes from the board itself, so a mapping Jira would reject
-    // cannot be typed in. The only text input here names the COLUMN, which is the team's own words.
+  it('labels every input with the column it belongs to, so a multi-column editor stays readable', () => {
+    // This used to require that the ONLY text input named a column, on the reasoning that every
+    // claimable state came from the board and so could not be mistyped. That reasoning cost more
+    // than it saved: a column could not be given a status until an issue was already sitting in it,
+    // so an empty column was unfillable and a status the team had not used yet was unreachable.
+    // Status entry is now typed, with the real Jira names offered as suggestions — every input here
+    // still announces which column it belongs to, which is what keeps the editor readable.
     render(
       <ColumnVocabularyEditor allItems={BOARD_ITEMS} canShare optionSources={OPTION_SOURCES} onVocabularyChange={vi.fn()} vocabulary={buildVocabulary()} />,
     );
@@ -380,5 +384,79 @@ describe('ColumnVocabularyEditor — sharing says what it does', () => {
 
     expect(screen.getByText(/through the team's shared Confluence workspace/)).toBeTruthy();
     expect(screen.getByText(/Neither touches another team/)).toBeTruthy();
+  });
+});
+
+describe('ColumnVocabularyEditor — mapping a state no issue is currently in', () => {
+  // Every add-a-state path ran off `collectObservedBoardStates(allItems)`, which only knows the
+  // states the board's CURRENT issues occupy. So an empty column could not be given a status until
+  // somebody found an issue that already matched and moved it there — the tail wagging the dog, and
+  // impossible for a status the team has not used yet (GH #375).
+  function renderEditor({ onVocabularyChange, columns }: {
+    onVocabularyChange: (vocabulary: BoardVocabulary) => void;
+    columns: BoardVocabulary['columns'];
+  }) {
+    return render(
+      <ColumnVocabularyEditor
+        allItems={BOARD_ITEMS}
+        canShare
+        optionSources={OPTION_SOURCES}
+        onVocabularyChange={onVocabularyChange}
+        vocabulary={buildVocabulary({ columns })}
+      />,
+    );
+  }
+
+  it('adds a typed status to a column with no issue in that state', () => {
+    const onVocabularyChange = vi.fn();
+    renderEditor({ onVocabularyChange, columns: [{ id: 'col-1', name: 'BT Testing', order: 0, mappings: [] }] });
+
+    fireEvent.change(screen.getByLabelText('Status for column col-1'), {
+      target: { value: 'Ready for Testing' },
+    });
+    fireEvent.change(screen.getByLabelText('Sub-status for column col-1'), {
+      target: { value: 'Ready for UAT' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /add status to bt testing/i }));
+
+    expect(onVocabularyChange).toHaveBeenCalled();
+    const savedColumn = onVocabularyChange.mock.calls[0][0].columns[0];
+    expect(savedColumn.mappings).toEqual([
+      { jiraStatusName: 'Ready for Testing', subStatusValue: 'Ready for UAT' },
+    ]);
+  });
+
+  it('accepts a status with no sub-status', () => {
+    const onVocabularyChange = vi.fn();
+    renderEditor({ onVocabularyChange, columns: [{ id: 'col-1', name: 'Triage', order: 0, mappings: [] }] });
+
+    fireEvent.change(screen.getByLabelText('Status for column col-1'), { target: { value: 'Triage' } });
+    fireEvent.click(screen.getByRole('button', { name: /add status to triage/i }));
+
+    expect(onVocabularyChange.mock.calls[0][0].columns[0].mappings).toEqual([
+      { jiraStatusName: 'Triage', subStatusValue: null },
+    ]);
+  });
+
+  it('refuses a blank status rather than storing a mapping that can match nothing', () => {
+    const onVocabularyChange = vi.fn();
+    renderEditor({ onVocabularyChange, columns: [{ id: 'col-1', name: 'Triage', order: 0, mappings: [] }] });
+
+    fireEvent.click(screen.getByRole('button', { name: /add status to triage/i }));
+
+    expect(onVocabularyChange).not.toHaveBeenCalled();
+  });
+
+  it('does not add the same state twice', () => {
+    const onVocabularyChange = vi.fn();
+    renderEditor({
+      onVocabularyChange,
+      columns: [{ id: 'col-1', name: 'Triage', order: 0, mappings: [{ jiraStatusName: 'Triage', subStatusValue: null }] }],
+    });
+
+    fireEvent.change(screen.getByLabelText('Status for column col-1'), { target: { value: 'Triage' } });
+    fireEvent.click(screen.getByRole('button', { name: /add status to triage/i }));
+
+    expect(onVocabularyChange).not.toHaveBeenCalled();
   });
 });

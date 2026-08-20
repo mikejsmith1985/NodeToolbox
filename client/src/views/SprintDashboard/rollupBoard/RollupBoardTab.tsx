@@ -197,6 +197,7 @@ import { ChildCard } from './components/ChildCard.tsx';
 import { MasterCardLane } from './components/MasterCardLane.tsx';
 import { PlacementTroubleshooter } from './components/PlacementTroubleshooter.tsx';
 import { QuickFilterBar } from './components/QuickFilterBar.tsx';
+import { readSharedArtDatabaseId } from '../../ArtView/sharedArtWorkspaceSettings.ts';
 import styles from './RollupBoardTab.module.css';
 import {
   EXPECTED_BOARD_ISSUE_CEILING,
@@ -280,7 +281,6 @@ const EMPTY_OPTION_SOURCES: ColumnOptionSources = {
 };
 
 /** Where the ART workspace settings live — the same store the hygiene field config reads. */
-const ART_SETTINGS_STORAGE_KEY = 'tbxARTSettings';
 
 /** The dashboard's PI scope mode. Only in this mode can a blank PI field hide work from the board. */
 const DASHBOARD_PI_SCOPE_MODE = 'pi';
@@ -292,14 +292,11 @@ const DASHBOARD_PI_SCOPE_MODE = 'pi';
  * this machine, and the editor says so rather than offering a Publish button that cannot work.
  */
 function readSharedWorkspaceDatabaseId(): string {
-  try {
-    const artSettings = JSON.parse(window.localStorage.getItem(ART_SETTINGS_STORAGE_KEY) || '{}') as {
-      sharedArtDatabaseId?: string;
-    };
-    return artSettings.sharedArtDatabaseId?.trim() ?? '';
-  } catch {
-    return '';
-  }
+  // Delegates, rather than reading the key itself. Reading it here meant a cleared setting produced
+  // an empty id and the board concluded no workspace was configured — while the Train settings
+  // screen, reading the SAME key with the built-in defaults merged in, showed one. "Get the team's
+  // columns" then returned nothing with the columns sitting safe in Confluence the whole time.
+  return readSharedArtDatabaseId();
 }
 
 /** A move Jira paused because its transition screen demands answers first. */

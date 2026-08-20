@@ -85,6 +85,11 @@ export function ColumnVocabularyEditor({
   onCancelPull,
 }: ColumnVocabularyEditorProps) {
   const [pendingColumnName, setPendingColumnName] = useState('');
+  // What has been typed into each column's status boxes but not yet added. Kept per column so two
+  // columns can be edited without one clearing the other.
+  const [pendingStateByColumn, setPendingStateByColumn] = useState<
+    Record<string, { statusName: string; subStatusValue: string }>
+  >({});
   const validation = validateVocabulary(vocabulary);
   const hasSubStatusField = !optionSources.isSubStatusUnavailable;
 
@@ -130,6 +135,48 @@ export function ColumnVocabularyEditor({
     setPendingColumnName('');
   }
 
+
+  /**
+   * Adds the state typed or chosen for one column, ignoring a state the column already holds.
+   *
+   * Separate from `handleAddStateToColumn` because that one only accepts a state OBSERVED on the
+   * board — a state some issue is sitting in right now. That made an empty column unfillable until
+   * somebody found a matching issue and moved it, and made a status the team has not used yet
+   * impossible to map at all. The status list is offered as suggestions rather than enforced, so a
+   * status Jira has but this board has not shown is still reachable.
+   */
+  function handleAddTypedStateToColumn(columnId: string): void {
+    const targetColumn = vocabulary.columns.find((column) => column.id === columnId);
+    if (!targetColumn) return;
+
+    const typedStatusName = (pendingStateByColumn[columnId]?.statusName ?? '').trim();
+    // A blank status would produce a mapping that can never match anything, which reads on the board
+    // as a column that silently holds nothing.
+    if (typedStatusName === '') return;
+
+    const typedSubStatus = hasSubStatusField
+      ? ((pendingStateByColumn[columnId]?.subStatusValue ?? '').trim() || null)
+      : null;
+    const isAlreadyClaimed = targetColumn.mappings.some((mapping) =>
+      mapping.jiraStatusName === typedStatusName && mapping.subStatusValue === typedSubStatus);
+    if (isAlreadyClaimed) return;
+
+    updateColumn(columnId, {
+      mappings: [...targetColumn.mappings, { jiraStatusName: typedStatusName, subStatusValue: typedSubStatus }],
+    });
+    setPendingStateByColumn((currentPending) => ({ ...currentPending, [columnId]: { statusName: '', subStatusValue: '' } }));
+  }
+
+  /** Records what has been typed for one column without touching the saved vocabulary. */
+  function updatePendingState(columnId: string, changes: { statusName?: string; subStatusValue?: string }): void {
+    setPendingStateByColumn((currentPending) => ({
+      ...currentPending,
+      [columnId]: {
+        statusName: changes.statusName ?? currentPending[columnId]?.statusName ?? '',
+        subStatusValue: changes.subStatusValue ?? currentPending[columnId]?.subStatusValue ?? '',
+      },
+    }));
+  }
 
   /** Adds one Jira state to a column's claim, ignoring a state it already holds. */
   function handleAddStateToColumn(columnId: string, state: ObservedBoardState): void {
@@ -254,6 +301,46 @@ export function ColumnVocabularyEditor({
               Remove {mapping.subStatusValue ?? mapping.jiraStatusName}
             </button>
           ))}
+
+          {/* Say which state this column stands for, without needing an issue already sitting in it.
+              The lists are SUGGESTIONS, not a closed set: a status Jira has but this board has not
+              shown yet must still be reachable, which is the whole reason a column could previously
+              only be filled by finding a matching issue and moving it. */}
+          <input
+            aria-label={`Status for column ${column.id}`}
+            className={styles.inputField}
+            list={`status-options-${column.id}`}
+            onChange={(changeEvent) => updatePendingState(column.id, { statusName: changeEvent.target.value })}
+            placeholder="Jira status"
+            value={pendingStateByColumn[column.id]?.statusName ?? ''}
+          />
+          <datalist id={`status-options-${column.id}`}>
+            {optionSources.statusNames.map((statusName) => <option key={statusName} value={statusName} />)}
+          </datalist>
+
+          {hasSubStatusField && (
+            <>
+              <input
+                aria-label={`Sub-status for column ${column.id}`}
+                className={styles.inputField}
+                list={`sub-status-options-${column.id}`}
+                onChange={(changeEvent) => updatePendingState(column.id, { subStatusValue: changeEvent.target.value })}
+                placeholder="Sub-status (optional)"
+                value={pendingStateByColumn[column.id]?.subStatusValue ?? ''}
+              />
+              <datalist id={`sub-status-options-${column.id}`}>
+                {optionSources.subStatusValues.map((subStatus) => <option key={subStatus} value={subStatus} />)}
+              </datalist>
+            </>
+          )}
+
+          <button
+            className={styles.actionButton}
+            onClick={() => handleAddTypedStateToColumn(column.id)}
+            type="button"
+          >
+            Add status to {column.name}
+          </button>
 
           {/* Live feedback: a mapping that catches nothing is almost always a mistake, and the only
               way to see that today is to close the editor and look at the board. */}

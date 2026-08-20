@@ -35,6 +35,7 @@ import {
 import type { JiraIssue } from '../../types/jira.ts';
 import { useSettingsStore } from '../../store/settingsStore.ts';
 import { findMatchingTeamProfileForArtTeam } from '../SprintDashboard/sprintDashboardArtContext.ts';
+import { DEFAULT_SHARED_ART_SETTINGS as SHARED_ART_WORKSPACE_DEFAULTS } from './sharedArtWorkspaceSettings.ts';
 import styles from './ArtView.module.css';
 
 // ── Constants ──
@@ -3183,16 +3184,12 @@ function writeArtAdvancedSettings(settings: ArtAdvancedSettings): void {
   localStorage.setItem('tbxARTSettings', JSON.stringify(settings));
 }
 
+// Imported rather than declared here: the Roll-Up Board needs the same values, and a second copy is
+// how this screen came to show a workspace the board could not see.
 const DEFAULT_SHARED_ART_SETTINGS: Pick<
   ArtAdvancedSettings,
   'sharedArtName' | 'sharedArtKey' | 'sharedArtDatabaseId' | 'sharedArtSpaceId' | 'sharedArtParentId'
-> = {
-  sharedArtName: 'Sales to Enrollment',
-  sharedArtKey: 'S2E',
-  sharedArtDatabaseId: '684163133',
-  sharedArtSpaceId: '256344064',
-  sharedArtParentId: '685473797',
-};
+> = SHARED_ART_WORKSPACE_DEFAULTS;
 
 const DEFAULT_STALE_DAYS_SETTING = 5;
 /** Default sprint length in calendar days (2-week sprint). Used by stale-issue and sprint-window calculations. */

@@ -8,6 +8,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **The Roll-Up Board and the Train settings screen now read the shared workspace the same way.**
+  Train settings read `tbxARTSettings` and merged the built-in defaults, so it always showed a
+  workspace. The board read the same key RAW and fell back to an empty string. After "Clear All
+  Connection Data" removed the key, the settings screen said a workspace was configured and the board
+  believed none was — so "Get the team's columns" silently returned nothing while the columns sat
+  safe in Confluence the whole time, and a recoverable loss looked total. Both now go through one
+  reader (`sharedArtWorkspaceSettings.ts`), which also treats a blank stored value as unset rather
+  than as "no workspace". A setting shown in two places has to be read in one place; anything else is
+  two implementations agreeing until the day they do not.
+
+### Changed
+- **A board column can be given a status no issue is currently sitting in.** Every add-a-state path
+  ran off the states the board's CURRENT issues occupy, so an empty column could not be mapped until
+  somebody found an issue that already matched and moved it there — and a status the team had not
+  used yet was unreachable entirely. Each column now has its own status and sub-status boxes with the
+  real Jira names offered as suggestions. Suggestions, not a closed list: a status Jira has but this
+  board has not shown must still be reachable, which was the whole problem. A blank status is refused
+  rather than stored, because a mapping that can never match reads on the board as a column that
+  silently holds nothing.
+
+### Fixed
 - **"Clear All Connection Data" now asks first, and says what it will destroy.** It fired on a single
   click. The label reads like credentials and endpoints; what it actually removes is every `tbx*`
   key, which includes the team roster, the Roll-Up Board columns and their status mappings, and
