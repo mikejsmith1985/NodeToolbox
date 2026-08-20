@@ -167,3 +167,158 @@ describe('the story-points field id stays in one place', () => {
     expect(staleEntries).toEqual([]);
   });
 });
+
+/** Files allowed to name the Program Increment field id. */
+const PI_ALLOWED_FILES = [
+  'services/jiraFieldMapping.ts',
+  'services/jiraFieldMapping.test.ts',
+  'services/fieldMappingBoundary.test.ts',
+];
+
+/** The PI field id debt list. Only ever shrinks — see the story-points list above. */
+const PI_UNMIGRATED_FILES = [
+  'services/confluenceApi.test.ts',
+  'services/piNameSuggestions.test.ts',
+  'services/piNameSuggestions.ts',
+  'types/jira.ts',
+  'views/AdminHub/AdminHubView.test.tsx',
+  'views/AdminHub/AdminHubView.tsx',
+  'views/AdminHub/piReviewSchedulerImport.test.ts',
+  'views/AdminHub/piReviewSchedulerImport.ts',
+  'views/AdminHub/PiReviewSchedulerPanel.test.tsx',
+  'views/AdminHub/PiReviewSchedulerPanel.tsx',
+  'views/ArtView/artFeatureScopeSettings.ts',
+  'views/ArtView/ArtView.test.tsx',
+  'views/ArtView/ArtView.tsx',
+  'views/ArtView/blueprintHierarchy.test.ts',
+  'views/ArtView/blueprintHierarchy.ts',
+  'views/ArtView/hooks/useArtData.test.ts',
+  'views/ArtView/hooks/useArtData.ts',
+  'views/ArtView/piPlan/piPlanFields.test.ts',
+  'views/ArtView/piPlan/piPlanFields.ts',
+  'views/ArtView/piPlan/piPlanJira.test.ts',
+  'views/ArtView/piReviewPullFeatures.test.ts',
+  'views/ArtView/piReviewPullFeatures.ts',
+  'views/ArtView/PiReviewTab.test.tsx',
+  'views/ArtView/readiness/readinessFeatureQuery.test.ts',
+  'views/ArtView/readiness/readinessScan.test.ts',
+  'views/DsuBoard/DsuBoardView.test.tsx',
+  'views/DsuBoard/DsuBoardView.tsx',
+  'views/DsuBoard/hooks/useDsuBoardState.test.ts',
+  'views/DsuBoard/hooks/useDsuBoardState.ts',
+  'views/DsuBoard/hooks/useDsuFilters.test.ts',
+  'views/DsuBoard/hooks/useDsuFilters.ts',
+  'views/FeatureCanvas/canvas/scopeQuery.test.ts',
+  'views/FeatureCanvas/canvas/useCanvasScope.test.ts',
+  'views/Hygiene/ai/hygieneAiApply.test.ts',
+  'views/Hygiene/checks/dateComparatorParity.test.ts',
+  'views/Hygiene/checks/hygieneChecks.test.ts',
+  'views/Hygiene/checks/hygieneChecks.ts',
+  'views/Hygiene/checks/hygieneFieldConfig.test.ts',
+  'views/Hygiene/checks/hygieneFieldConfig.ts',
+  'views/Hygiene/hooks/hygieneScan.test.ts',
+  'views/Hygiene/hooks/useHygieneState.test.ts',
+  'views/PoTool/ai/compositionFieldPrefill.test.ts',
+  'views/PoTool/hooks/usePoHygieneContext.test.ts',
+  'views/PoTool/jira/compositionReadiness.test.ts',
+  'views/ReportsHub/hooks/useReportsHubState.test.ts',
+  'views/ReportsHub/hooks/useReportsHubState.ts',
+  'views/SprintDashboard/featureReview.test.ts',
+  'views/SprintDashboard/FeatureReviewTab.test.tsx',
+  'views/SprintDashboard/hooks/useSprintData.test.ts',
+  'views/SprintDashboard/hooks/useSprintData.ts',
+  'views/SprintDashboard/piFeatureRemap.test.ts',
+  'views/SprintDashboard/piFeatureRemap.ts',
+  'views/SprintDashboard/productOwnerFeatureReview.test.ts',
+  'views/SprintDashboard/RiskManagementSection.tsx',
+  'views/SprintDashboard/rollupBoard/components/PlacementTroubleshooter.test.tsx',
+  'views/SprintDashboard/rollupBoard/createWorkForFeature.test.ts',
+  'views/SprintDashboard/rollupBoard/placementDiagnosis.test.ts',
+  'views/SprintDashboard/scopedTeamFeatures.test.ts',
+  'views/SprintDashboard/scopedTeamFeatures.ts',
+];
+
+/** Files allowed to name the ART settings storage key directly. */
+const ART_SETTINGS_ALLOWED_FILES = [
+  'services/artSettingsStore.ts',
+  'services/artSettingsStore.test.ts',
+  'services/jiraFieldMapping.ts',
+  'services/fieldMappingBoundary.test.ts',
+  'views/ArtView/sharedArtWorkspaceSettings.ts',
+];
+
+/** The direct-settings-read debt list. Only ever shrinks. */
+const ART_SETTINGS_UNMIGRATED_FILES = [
+  'services/jiraFieldMapping.test.ts',
+  'utils/featureLink.test.ts',
+  'utils/featureLink.ts',
+  'views/AdminHub/FieldMappingPanel.test.tsx',
+  'views/AdminHub/hooks/useAdminHubState.ts',
+  'views/ArtView/artFeatureScopeSettings.ts',
+  'views/ArtView/ArtView.test.tsx',
+  'views/ArtView/ArtView.tsx',
+  'views/ArtView/blueprintHierarchy.test.ts',
+  'views/ArtView/blueprintHierarchy.ts',
+  'views/ArtView/DependenciesTab.test.tsx',
+  'views/ArtView/DependenciesTab.tsx',
+  'views/ArtView/hooks/useArtData.test.ts',
+  'views/ArtView/hooks/useArtData.ts',
+  'views/ArtView/piReviewJira.test.ts',
+  'views/ArtView/piReviewJira.ts',
+  'views/ArtView/piReviewPullFeatures.ts',
+  'views/ArtView/PiReviewTab.test.tsx',
+  'views/Hygiene/checks/hygieneFieldConfig.test.ts',
+  'views/Hygiene/checks/hygieneFieldConfig.ts',
+  'views/Hygiene/checks/storyPointsField.test.ts',
+  'views/ReportsHub/hooks/useReportsHubState.test.ts',
+  'views/ReportsHub/hooks/useReportsHubState.ts',
+  'views/ReportsHub/PersonalFlowTab.test.tsx',
+  'views/ReportsHub/ReportsHubRuntimeBoundary.tsx',
+  'views/ReportsHub/storyPointsField.test.ts',
+  'views/SprintDashboard/featureReview.test.ts',
+  'views/SprintDashboard/featureReviewFixes.ts',
+  'views/SprintDashboard/piFeatureRemap.ts',
+  'views/SprintDashboard/rollupBoard/boardScopeStore.test.ts',
+  'views/SprintDashboard/sprintDashboardArtContext.ts',
+  'views/SprintDashboard/TeamDashboardHygieneTab.test.tsx',
+  'views/SprintDashboard/teamHygieneScope.test.ts',
+];
+
+/** Every file naming `needle`, excluding the ones allowed to. */
+function findFilesNaming(needle: string, allowedFiles: readonly string[]): string[] {
+  return listSourceFiles(CLIENT_SOURCE_ROOT)
+    .filter((relativePath) => !allowedFiles.includes(relativePath))
+    .filter((relativePath) => readFileSync(join(CLIENT_SOURCE_ROOT, relativePath), 'utf8').includes(needle));
+}
+
+describe('the Program Increment field id stays in one place', () => {
+  // 59 files name it today, all agreeing on customfield_10301 — an agreement nothing enforces. The
+  // Jira re-instance turns ten copies into ten edits and one chance to miss.
+  it('is named by no file the debt list does not already know about', () => {
+    const newOffenders = findFilesNaming('customfield_10301', PI_ALLOWED_FILES)
+      .filter((relativePath) => !PI_UNMIGRATED_FILES.includes(relativePath));
+
+    expect(newOffenders).toEqual([]);
+  });
+
+  it('has a debt list that only shrinks', () => {
+    const namingFiles = new Set(findFilesNaming('customfield_10301', PI_ALLOWED_FILES));
+    expect(PI_UNMIGRATED_FILES.filter((relativePath) => !namingFiles.has(relativePath))).toEqual([]);
+  });
+});
+
+describe('the ART settings are read through one module', () => {
+  // Nineteen hand-rolled parses, each with its own idea of what absent meant, is how the Roll-Up
+  // Board and the Train settings screen came to disagree about whether a workspace existed at all.
+  it('is parsed by no file the debt list does not already know about', () => {
+    const newOffenders = findFilesNaming("'tbxARTSettings'", ART_SETTINGS_ALLOWED_FILES)
+      .filter((relativePath) => !ART_SETTINGS_UNMIGRATED_FILES.includes(relativePath));
+
+    expect(newOffenders).toEqual([]);
+  });
+
+  it('has a debt list that only shrinks', () => {
+    const namingFiles = new Set(findFilesNaming("'tbxARTSettings'", ART_SETTINGS_ALLOWED_FILES));
+    expect(ART_SETTINGS_UNMIGRATED_FILES.filter((relativePath) => !namingFiles.has(relativePath))).toEqual([]);
+  });
+});

@@ -166,6 +166,7 @@ describe('describeMappingHealth', () => {
     const resolutions = resolveAllFieldMappings(buildFields(
       ['customfield_1', 'Feature Link'],
       ['customfield_2', 'Story Points'],
+      ['customfield_6', 'PI (Program Increment)'],
       ['customfield_3', 'Acceptance Criteria'],
       ['customfield_4', 'Epic Link'],
       ['customfield_5', 'ServiceNow Reference'],
@@ -234,5 +235,28 @@ describe('resolveWriteFieldId', () => {
     localStorage.setItem('tbxARTSettings', JSON.stringify({ spFieldId: 'customfield_10236' }));
 
     expect(resolveWriteFieldId('spFieldId', localStorage)).toBe('customfield_10236');
+  });
+});
+
+describe('the Program Increment field is a mapped field like any other', () => {
+  // 27 reads across 10 files, under two constant names, all currently agreeing on
+  // customfield_10301 — an agreement they enjoy rather than one anything enforces. With a Jira
+  // re-instance expected, ten copies is ten edits and one chance to miss.
+  beforeEach(() => localStorage.clear());
+
+  it('resolves to the instance default when nothing is saved', () => {
+    expect(resolveWriteFieldId('piFieldId', localStorage)).toBe('customfield_10301');
+  });
+
+  it('honours a saved override', () => {
+    localStorage.setItem('tbxARTSettings', JSON.stringify({ piFieldId: 'customfield_20301' }));
+
+    expect(resolveWriteFieldId('piFieldId', localStorage)).toBe('customfield_20301');
+  });
+
+  it('is listed as critical, because every PI-scoped screen reads it', () => {
+    const piEntry = FIELD_MAPPING_ENTRIES.find((entry) => entry.settingsKey === 'piFieldId');
+
+    expect(piEntry?.importance).toBe('critical');
   });
 });

@@ -1,16 +1,17 @@
-// sharedArtWorkspaceSettings.ts — One reader for the shared ART workspace, used by every surface.
+// sharedArtWorkspaceSettings.ts — The shared workspace, read through the one ART settings reader.
 //
-// This exists because two readers of the same setting disagreed, and the disagreement was invisible.
-// The Train settings screen read `tbxARTSettings` and merged in the built-in defaults, so it always
-// showed a workspace. The Roll-Up Board read the same key RAW and fell back to an empty string, so
-// after "Clear All Connection Data" removed the key the board believed no workspace was configured —
-// while the settings screen, two clicks away, said one was.
+// This module was created to stop two surfaces disagreeing about the workspace: the Train settings
+// screen merged the built-in defaults and always showed one, while the Roll-Up Board read the raw key
+// and fell back to an empty string, so after a settings wipe the board believed no workspace existed
+// and "Get the team's columns" silently returned nothing (GH #375).
 //
-// The visible cost: "Get the team's columns" silently returned nothing. The columns were safe in
-// Confluence the whole time; the board simply had no id to ask with, and nothing on screen said so.
-//
-// A setting shown in two places must be READ in one place. Anything else is two implementations
-// agreeing until the day they do not.
+// It now delegates to `services/artSettingsStore.ts`, which applies that same policy to EVERY ART
+// setting rather than to these five. Two reader modules with one policy is still two reader modules;
+// the point was never this file, it was that the policy live in exactly one place.
+
+import { DEFAULT_ART_SETTINGS, readArtSettings } from '../../services/artSettingsStore.ts';
+
+export { ART_SETTINGS_STORAGE_KEY } from '../../services/artSettingsStore.ts';
 
 /** The keys that locate a team's shared workspace in Confluence. */
 export interface SharedArtWorkspaceSettings {
@@ -21,49 +22,28 @@ export interface SharedArtWorkspaceSettings {
   sharedArtParentId: string;
 }
 
-/** Where the ART settings live. Note the `tbx` prefix — "Clear All Connection Data" removes it. */
-export const ART_SETTINGS_STORAGE_KEY = 'tbxARTSettings';
-
-/**
- * The workspace this build ships pointing at.
- *
- * Real values, not placeholders: the team that uses this tool shares one workspace, and a blank
- * default would mean every fresh install started unable to share anything.
- */
+/** The workspace this build ships pointing at. */
 export const DEFAULT_SHARED_ART_SETTINGS: SharedArtWorkspaceSettings = {
-  sharedArtName: 'Sales to Enrollment',
-  sharedArtKey: 'S2E',
-  sharedArtDatabaseId: '684163133',
-  sharedArtSpaceId: '256344064',
-  sharedArtParentId: '685473797',
+  sharedArtName: DEFAULT_ART_SETTINGS.sharedArtName,
+  sharedArtKey: DEFAULT_ART_SETTINGS.sharedArtKey,
+  sharedArtDatabaseId: DEFAULT_ART_SETTINGS.sharedArtDatabaseId,
+  sharedArtSpaceId: DEFAULT_ART_SETTINGS.sharedArtSpaceId,
+  sharedArtParentId: DEFAULT_ART_SETTINGS.sharedArtParentId,
 };
 
-/**
- * Reads the shared workspace settings, with the built-in defaults filling anything absent.
- *
- * Unreadable or absent storage yields the defaults rather than blanks, because a missing setting is
- * not evidence that no workspace exists — it is evidence that this machine has not been told about
- * one, and the build already knows which one that is.
- */
+/** Reads the shared workspace settings, with the built-in defaults filling anything absent. */
 export function readSharedArtWorkspaceSettings(): SharedArtWorkspaceSettings {
-  try {
-    const storedSettings = JSON.parse(
-      window.localStorage.getItem(ART_SETTINGS_STORAGE_KEY) || '{}',
-    ) as Partial<SharedArtWorkspaceSettings>;
-    return { ...DEFAULT_SHARED_ART_SETTINGS, ...storedSettings };
-  } catch {
-    return { ...DEFAULT_SHARED_ART_SETTINGS };
-  }
+  const artSettings = readArtSettings();
+  return {
+    sharedArtName: artSettings.sharedArtName,
+    sharedArtKey: artSettings.sharedArtKey,
+    sharedArtDatabaseId: artSettings.sharedArtDatabaseId,
+    sharedArtSpaceId: artSettings.sharedArtSpaceId,
+    sharedArtParentId: artSettings.sharedArtParentId,
+  };
 }
 
-/**
- * The Confluence database id every shared-workspace read and write goes through.
- *
- * Returns the default when the stored value is missing OR blank. A stored empty string is the shape
- * a half-finished settings edit leaves behind, and treating it as "no workspace" is exactly how the
- * board came to disagree with the screen that configures it.
- */
+/** The Confluence database id every shared-workspace read and write goes through. */
 export function readSharedArtDatabaseId(): string {
-  const storedDatabaseId = readSharedArtWorkspaceSettings().sharedArtDatabaseId?.trim() ?? '';
-  return storedDatabaseId === '' ? DEFAULT_SHARED_ART_SETTINGS.sharedArtDatabaseId : storedDatabaseId;
+  return readSharedArtWorkspaceSettings().sharedArtDatabaseId;
 }

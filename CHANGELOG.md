@@ -8,6 +8,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **The ART settings have one reader.** `tbxARTSettings` was parsed by hand in nineteen files, each
+  with its own idea of what an absent or blank value meant — which is not a tidiness problem: the
+  Roll-Up Board and the Train settings screen read the same key with different fallbacks, so after a
+  settings wipe the screen said a workspace was configured and the board said none was, and pulling
+  the team's columns returned nothing while they sat safe in Confluence. `services/artSettingsStore.ts`
+  now owns the parse and the defaulting policy for every setting that is not a field id.
+  Two policies, both deliberate: an absent workspace, threshold or link-type list falls back to the
+  shipped default, because a missing setting means this machine has not been told rather than that
+  nothing exists. Feature project keys stay EMPTY, because scoping a Feature search to a guessed
+  project returns another team's work, which is worse than returning none.
+- **The Program Increment field is a mapped field like any other.** 59 files name
+  `customfield_10301`, all agreeing — an agreement nothing enforced, on the field every PI-scoped
+  board, report and scan depends on. With a Jira re-instance expected, that was 59 edits and one
+  chance to miss. It now resolves through `jiraFieldMapping.ts` with the same override → discovery →
+  default chain as the rest.
+- **The boundary ratchet covers the PI field and the settings key too.** Each has its own debt list
+  that may only shrink, failing on a new file and on any entry quietly settled without being struck
+  off — so a tidied state cannot rot back into fiction.
+
+### Changed
 - **The story-points field is resolved in one place, and a test keeps it there.** An inventory found
   55 hard-coded `customfield_*` ids across 82 files, story points alone declared under **14 constant
   names holding 4 different values** — one of them (`story_points`) not a field id at all. Three live

@@ -24,6 +24,7 @@ describe('FieldMappingPanel', () => {
     mockFields(
       ['customfield_99999', 'Feature Link'],
       ['customfield_2', 'Story Points'],
+      ['customfield_6', 'PI (Program Increment)'],
       ['customfield_3', 'Acceptance Criteria'],
       ['customfield_4', 'Epic Link'],
       ['customfield_5', 'ServiceNow Reference'],
