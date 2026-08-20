@@ -3,7 +3,7 @@
 // row); the only setting is the target project. On import, when auto-create is on, each new row
 // becomes an issue with the reporter set to the submitter (integration-account fallback). Spec 005.
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import IntakeConfigPanel from './components/IntakeConfigPanel.tsx';
 import IntakeQueue from './components/IntakeQueue.tsx';
@@ -34,6 +34,20 @@ export default function JiraIntake() {
   const isConfigured = Boolean(config);
   const shouldShowSettings = isEditingSettings || !config;
   const isSharePointConfigured = Boolean(config?.sharePointSiteRelativeUrl && config?.sharePointListName);
+
+  // Rebuild the localStorage bridge from the loaded config, not only when it is saved.
+  //
+  // The bridge is a CACHE of two values the Connection Bar and the Admin Hub diagnostics cannot read
+  // for themselves; the configuration itself lives in Confluence and survives anything the browser
+  // does. Writing the cache on save alone meant a local reset — "Clear all connection data" — took
+  // the "Open SharePoint" button away permanently, with no route back except retyping a URL the
+  // person may not have to hand. A cache that cannot rebuild itself from its own source is not a
+  // cache, it is a second copy waiting to be lost.
+  useEffect(() => {
+    if (!config) return;
+    saveSharePointSiteUrl(config.sharePointSiteRelativeUrl);
+    saveSharePointListName(config.sharePointListName);
+  }, [config]);
 
   async function handleSaveConfig(nextConfig: IntakeConfig): Promise<void> {
     setIsSaving(true);

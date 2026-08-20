@@ -119,3 +119,37 @@ describe('JiraIntake', () => {
     await waitFor(() => expect(createAllNew).toHaveBeenCalledWith([ENTRY]));
   });
 });
+
+describe('JiraIntake — the SharePoint bridge heals itself', () => {
+  it('re-bridges the site URL and list name whenever the config loads', async () => {
+    // The bridge was written on SAVE only, so a browser reset — "Clear all connection data" — wiped
+    // it and the Connection Bar's "Open SharePoint" button vanished with no way back except
+    // retyping a URL nobody had to hand. The config itself lives in Confluence and was never lost,
+    // so the cache can simply be rebuilt from it on load.
+    localStorage.clear();
+    stubConfig({
+      ...CONFIG,
+      sharePointSiteRelativeUrl: 'https://contoso.sharepoint.com/sites/intake',
+      sharePointListName: 'Intake Requests',
+    } as IntakeConfig);
+    stubQueue();
+
+    render(<JiraIntake />);
+
+    await waitFor(() => {
+      expect(localStorage.getItem('tbxSharePointSiteUrl')).toBe('https://contoso.sharepoint.com/sites/intake');
+    });
+    expect(localStorage.getItem('tbxSharePointListName')).toBe('Intake Requests');
+  });
+
+  it('does not write a bridge for a site-relative path, which cannot be opened', async () => {
+    localStorage.clear();
+    stubConfig({ ...CONFIG, sharePointSiteRelativeUrl: '/sites/intake' } as IntakeConfig);
+    stubQueue();
+
+    render(<JiraIntake />);
+
+    await waitFor(() => expect(useIntakeConfigMock).toHaveBeenCalled());
+    expect(localStorage.getItem('tbxSharePointSiteUrl')).toBeNull();
+  });
+});

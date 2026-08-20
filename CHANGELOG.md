@@ -112,6 +112,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   work it cannot place, never somewhere a person should file something.
 
 ### Fixed
+- **"Open SharePoint" could disappear permanently after a local reset.** The Connection Bar's button
+  only renders when a full site URL sits in localStorage, and that cache was written when the intake
+  config was SAVED — never when it was loaded. So clearing local connection data took the button away
+  for good, with no route back except retyping a URL the operator may not have to hand.
+
+  The configuration itself lives in Confluence and survives anything the browser does, so the cache
+  is now rebuilt from it every time the Jira Intake view loads. A cache that cannot rebuild itself
+  from its own source is not a cache — it is a second copy waiting to be lost.
+
 - **The deployments probe stopped locking its own button, and stopped giving wrong advice.** The
   button was disabled until both fields were filled, to save a wasted round trip — and cost two
   rounds of *"it is locked and I cannot tell why"* instead. It is always clickable now; the server's
