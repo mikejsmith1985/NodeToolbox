@@ -3,6 +3,8 @@
 
 import { beforeEach, describe, expect, it } from 'vitest';
 
+import { buildDefaultBoardColumns } from './defaultBoardColumns.ts';
+
 import {
   loadTeamVocabulary,
   markVocabularySynced,
@@ -27,8 +29,17 @@ beforeEach(() => {
 });
 
 describe('loadTeamVocabulary', () => {
-  it('starts a team with no columns, which shows everything as Unmapped rather than as nothing', () => {
-    expect(loadTeamVocabulary('team-a').columns).toEqual([]);
+  it('starts a team on the org board rather than a blank one', () => {
+    // This used to expect no columns at all, which put every issue in Unmapped and left a first-time
+    // board useless until somebody rebuilt the enterprise workflow by hand.
+    expect(loadTeamVocabulary('team-a').columns.map((column) => column.name))
+      .toEqual(buildDefaultBoardColumns().map((column) => column.name));
+  });
+
+  it('leaves updatedAt empty on the shipped default, which nobody has edited', () => {
+    // Stamping a time would present a default as this team's own decision, and the board uses that
+    // stamp to tell a viewer their columns have drifted from what the team agreed.
+    expect(loadTeamVocabulary('team-a').updatedAt).toBe('');
   });
 
   it('survives a round trip through storage', () => {
@@ -40,13 +51,15 @@ describe('loadTeamVocabulary', () => {
   it('keeps one team\'s vocabulary out of another team\'s board', () => {
     saveTeamVocabulary(buildVocabulary('team-a'), NOW_ISO);
 
-    expect(loadTeamVocabulary('team-b').columns).toEqual([]);
+    expect(loadTeamVocabulary('team-b').columns.map((column) => column.name))
+      .toEqual(buildDefaultBoardColumns().map((column) => column.name));
   });
 
   it('treats unreadable storage as nothing stored, rather than throwing on load', () => {
     window.localStorage.setItem('tbxRollupBoardVocabulary', '{{{ not json');
 
-    expect(loadTeamVocabulary('team-a').columns).toEqual([]);
+    expect(loadTeamVocabulary('team-a').columns.map((column) => column.name))
+      .toEqual(buildDefaultBoardColumns().map((column) => column.name));
   });
 });
 

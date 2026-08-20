@@ -5,6 +5,7 @@
 // This module holds the local copy; boardVocabularySync publishes it to, and pulls it from, the
 // team's shared Confluence workspace.
 
+import { buildDefaultBoardColumns } from './defaultBoardColumns.ts';
 import type { ChecklistColumnMapping } from './checklistCards.ts';
 import type { BoardColumn, BoardVocabulary, ColumnStatusMapping } from './rollupBoardTypes.ts';
 
@@ -74,9 +75,18 @@ export function normalizeStoredVocabulary(
   };
 }
 
-/** A team that has not defined any columns yet. Everything then shows as Unmapped, visibly. */
+/**
+ * What a team gets before it has saved any columns of its own: the org's standard board.
+ *
+ * It used to be genuinely empty, which put every issue in Unmapped and left the board useless until
+ * somebody rebuilt the enterprise workflow by hand — a lot of setup for a layout that is the same
+ * for every team here, and the reason a lost vocabulary meant a rebuild rather than a nuisance.
+ *
+ * `updatedAt` stays empty on purpose. These columns have not been edited by anyone, and stamping a
+ * time would present a shipped default as this team's own decision.
+ */
 export function buildEmptyVocabulary(teamProfileId: string): BoardVocabulary {
-  return { teamProfileId, columns: [], updatedAt: '', lastSyncedAt: null };
+  return { teamProfileId, columns: buildDefaultBoardColumns(), updatedAt: '', lastSyncedAt: null };
 }
 
 /** Reads every team's stored vocabulary; unreadable storage counts as nothing stored. */

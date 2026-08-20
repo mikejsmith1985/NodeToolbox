@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **The Roll-Up Board now ships with the org's columns instead of a blank board.** A team opening it
+  for the first time got no columns at all: every issue landed in Unmapped and the board was useless
+  until somebody rebuilt the enterprise workflow by hand. That is a lot of setup for a layout that is
+  the same for every team here, and it is what turned a lost vocabulary into a rebuild rather than an
+  inconvenience. The eleven standard columns are the starting point now — To Do, Triage, Ready to
+  Work, Working, Code Review, SL/INT/BT Testing, Ready to Accept, Accepted - Done, Cancelled — with
+  the status + sub-status pairs that distinguish them.
+  They are a starting point, not a rule: a team edits them like any others, and once a team has saved
+  its own set the default is never consulted for that team again. `updatedAt` stays empty on the
+  shipped default, because nobody has edited it and stamping a time would present it as the team's
+  own decision — the board uses that stamp to say a viewer's columns have drifted from the agreed set.
+
 ### Fixed
 - **A column's status and sub-status are CHOSEN from Jira's own lists, not typed.** They shipped as
   text boxes with suggestions, which means a wrong case or a stray space saves cleanly and produces a
