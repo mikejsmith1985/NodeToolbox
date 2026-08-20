@@ -8,6 +8,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Accepted story-point estimates now land where Hygiene looks for them.** Forty-one accepted
+  proposals reported success and changed nothing visible (GH #375). The writer walked a list of
+  candidate fields and took the first one EDITABLE on that issue, while the check only ever reads
+  `customfield_10028` — so on an issue where that field is off the edit screen the value went into
+  the legacy `customfield_10016`, Jira returned success, and the flag stayed exactly where it was
+  with nothing reporting a problem. Both the AI apply path and the inline Fix control now pin the
+  write to the field the view reads; if that field is not editable the write FAILS and says so,
+  because writing somewhere else is the outcome that looks like success and is not.
+- **The default Roll-Up Board columns now apply to a team that has visited the board before.** They
+  only filled in when NOTHING was stored, and merely opening the column editor saves an empty
+  vocabulary — so for anyone who had already been to the board the shipped default did nothing at
+  all. A stored record with zero columns gets the defaults too: no team chooses to have no columns,
+  that is just a board showing every issue as Unmapped.
+- **Missing Target Start no longer flags work that has not started.** It flagged every dateless
+  delivery issue, so eighteen items sitting in To Do were reported as gaps that no tool could fix —
+  the date is derived from ENTERING Ready to Work or Working, which they had done neither of. The
+  team assigns Target Start once work reaches **Ready to Work**, so the check now fires only after
+  an issue has sat there beyond the three-day grace the policy itself allows, or once it has moved
+  past into actual work, where the date is simply overdue. Elapsed time comes from
+  `statuscategorychangedate`, now requested by the scan — the changelog would cost one request per
+  issue, which a 2,000-issue scan cannot afford. A Ready-to-Work issue whose change date cannot be
+  read is flagged rather than excused, since treating an unreadable history as "just arrived" would
+  hide the flag permanently on exactly the issues hardest to inspect.
+
+### Fixed
 - **"Fix all dates" now says why it changed nothing.** A run over nineteen issues reported
   "Updated 0 issue(s)." and stopped there (GH #375). The engine was right — eighteen of them sat in
   **To Do**, and Target Start comes from entering *Working* or *Ready to Work*, which a To Do issue

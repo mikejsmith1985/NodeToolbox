@@ -492,9 +492,38 @@ const STORY_POINTS_FIELD_NAME_PATTERN = /story\s*points?/i;
  * back to any editable field NAMED like story points, and otherwise fails with a readable message
  * instead of a screen error.
  */
-export async function saveFeatureReviewStoryPoints(issueKey: string, storyPointsValue: string): Promise<void> {
+export async function saveFeatureReviewStoryPoints(
+  issueKey: string,
+  storyPointsValue: string,
+  /**
+   * The field the CALLER reads story points from, when it has one.
+   *
+   * Without this the writer takes the first candidate that happens to be editable on the issue,
+   * which on a screen where the modern field is hidden means the value lands in the legacy one:
+   * Jira reports success and the caller's own check, reading the other field, still sees nothing.
+   * Given an id, that field is used or the write FAILS — writing somewhere else is the outcome that
+   * looks like success and is not.
+   */
+  preferredFieldId?: string,
+): Promise<void> {
   const numericStoryPoints = Number(storyPointsValue);
   const editMetaFields = await fetchFeatureReviewEditMeta(issueKey);
+
+  if (preferredFieldId) {
+    if (editMetaFields[preferredFieldId] === undefined) {
+      throw new Error(
+        `Story points cannot be written: the field this view reads (${preferredFieldId}) is not on `
+        + `this issue's edit screen. Writing to a different points field would report success and `
+        + `leave the flag in place.`,
+      );
+    }
+    await jiraPut(`/rest/api/2/issue/${encodeURIComponent(issueKey)}`, {
+      fields: {
+        [preferredFieldId]: buildStoryPointsPayload(editMetaFields[preferredFieldId], storyPointsValue, numericStoryPoints),
+      },
+    });
+    return;
+  }
 
   const candidateFieldIds = [
     readStoredStoryPointsFieldId(),

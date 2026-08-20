@@ -250,6 +250,9 @@ describe('hygiene check predicates', () => {
       customfield_10102: null,
       fixVersions: [],
       duedate: null,
+      // In progress, so a Target Start is genuinely owed. The default fixture sits in an unstarted
+      // status, where a missing Target Start is correct rather than a gap.
+      status: { name: 'Working', statusCategory: { key: 'indeterminate' } },
     });
     const fieldConfig = resolveHygieneFieldConfig();
 
@@ -575,4 +578,67 @@ describe('date policy checks apply to every delivery work item', () => {
 
     expect(checkDatesOutOfSync(storyIssue, resolveHygieneFieldConfig())).toBeNull();
   });
+});
+
+describe('checkMissingTargetStart — a date nobody has earned yet is not a gap', () => {
+  // It flagged every delivery issue with no Target Start, so eighteen issues sitting in To Do were
+  // reported as hygiene gaps and the bulk fix could not touch one of them: the date comes from
+  // ENTERING Ready to Work, so a To Do issue correctly has none (GH #375). The team assigns Target
+  // Start once work reaches Ready to Work, with three days of grace.
+  const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
+  const FIELD_CONFIG = resolveHygieneFieldConfig();
+
+  function issueInStatus(statusName: string, categoryKey: string, statusChangedIso: string | null): JiraIssue {
+    return {
+      key: 'TBX-1',
+      fields: {
+        summary: 'A story',
+        issuetype: { name: 'Story' },
+        status: { name: statusName, statusCategory: { key: categoryKey } },
+        ...(statusChangedIso ? { statuscategorychangedate: statusChangedIso } : {}),
+      },
+    } as unknown as JiraIssue;
+  }
+
+  function isoDaysAgo(dayCount: number): string {
+    return new Date(Date.now() - dayCount * 24 * 60 * 60 * 1000).toISOString();
+  }
+
+  it('does not flag an issue that has not reached Ready to Work', () => {
+    expect(checkMissingTargetStart(issueInStatus('To Do', 'new', isoDaysAgo(40)), FIELD_CONFIG)).toBeNull();
+    expect(checkMissingTargetStart(issueInStatus('Triage', 'new', isoDaysAgo(40)), FIELD_CONFIG)).toBeNull();
+  });
+
+  it('does not flag an issue that only just reached Ready to Work', () => {
+    // Three days of grace: the policy itself dates Target Start at Ready to Work + 3.
+    expect(checkMissingTargetStart(issueInStatus('Ready to Work', 'new', isoDaysAgo(1)), FIELD_CONFIG)).toBeNull();
+  });
+
+  it('flags an issue that has sat in Ready to Work past the grace period', () => {
+    expect(checkMissingTargetStart(issueInStatus('Ready to Work', 'new', isoDaysAgo(4)), FIELD_CONFIG)).not.toBeNull();
+  });
+
+  it('flags an issue already being worked, whatever the clock says', () => {
+    // Past Ready to Work the date is simply overdue — there is no grace left to give.
+    expect(checkMissingTargetStart(issueInStatus('Working', 'indeterminate', isoDaysAgo(0)), FIELD_CONFIG)).not.toBeNull();
+  });
+
+  it('flags a Ready to Work issue whose status-change date is missing rather than assuming it is fresh', () => {
+    // An absent date means the grace period cannot be measured. Treating that as "just arrived"
+    // would hide the flag forever on exactly the issues whose history is hardest to read.
+    expect(checkMissingTargetStart(issueInStatus('Ready to Work', 'new', null), FIELD_CONFIG)).not.toBeNull();
+  });
+
+  it('still never flags an issue that already has a target start', () => {
+    const dated = issueInStatus('Working', 'indeterminate', isoDaysAgo(10));
+    (dated.fields as Record<string, unknown>)[FIELD_CONFIG.targetStartFieldIds[0]] = '2026-08-01';
+
+    expect(checkMissingTargetStart(dated, FIELD_CONFIG)).toBeNull();
+  });
+
+  it('ignores case and padding in the status name, which Jira instances vary on', () => {
+    expect(checkMissingTargetStart(issueInStatus('  ready to work ', 'new', isoDaysAgo(9)), FIELD_CONFIG)).not.toBeNull();
+  });
+
+  void THREE_DAYS_MS;
 });

@@ -30,6 +30,7 @@ import {
   type TransitionFieldSelection,
   type TransitionRequiredField,
 } from '../SprintDashboard/featureReviewFixes.ts';
+import { HYGIENE_STORY_POINTS_FIELD_ID } from './checks/hygieneChecks.ts';
 import type { HygieneFlag, HygieneFieldConfig, JiraIssue, BuiltInHygieneCheckId } from './checks/hygieneChecks.ts';
 import { HYGIENE_FIX_BY_CHECK, resolveFixFieldId, type HygieneFixKind } from './hygieneFix.ts';
 import { applyDerivedDates, planDerivedDateWrites, type DerivedDatePlan } from './derivedDateFix.ts';
@@ -264,7 +265,9 @@ function ValueFixInput({ issue, kind, fieldId, label, isSubmitting, onSubmit }: 
 
   function writeValue(): Promise<void> {
     if (kind === 'storyPoints') {
-      return saveFeatureReviewStoryPoints(issue.key, value);
+      // Same pinning as the AI apply path: the inline Fix must write where this view reads, or it
+      // reports success and leaves the flag standing.
+      return saveFeatureReviewStoryPoints(issue.key, value, HYGIENE_STORY_POINTS_FIELD_ID);
     }
     return saveFeatureReviewSimpleField(issue.key, fieldId, value);
   }

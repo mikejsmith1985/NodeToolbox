@@ -147,3 +147,21 @@ describe('reading columns saved by an older version', () => {
     expect(loadTeamVocabulary('team-a').columns[0].mappings).toEqual([]);
   });
 });
+
+describe('loadTeamVocabulary — a stored-but-empty vocabulary still gets the org board', () => {
+  it('fills in the defaults for a team whose saved record has no columns', () => {
+    // Opening the board editor once saves an empty vocabulary, so "nothing stored" is much narrower
+    // than it looks — and it is why shipping a default appeared to change nothing for a team that
+    // had already visited the board (GH #375).
+    saveTeamVocabulary({ teamProfileId: 'team-a', columns: [], updatedAt: '', lastSyncedAt: null }, NOW_ISO);
+
+    expect(loadTeamVocabulary('team-a').columns.map((column) => column.name))
+      .toEqual(buildDefaultBoardColumns().map((column) => column.name));
+  });
+
+  it('leaves a team that deliberately kept one column alone', () => {
+    saveTeamVocabulary(buildVocabulary('team-a'), NOW_ISO);
+
+    expect(loadTeamVocabulary('team-a').columns).toHaveLength(buildVocabulary('team-a').columns.length);
+  });
+});

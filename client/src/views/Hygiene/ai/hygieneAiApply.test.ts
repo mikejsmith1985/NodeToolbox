@@ -70,7 +70,8 @@ describe('applyHygieneAiProposal', () => {
   it('routes story points through the dedicated helper', async () => {
     await applyHygieneAiProposal(proposal({ checkId: 'missing-sp', proposedValue: '8' }), FIELD_CONFIG)
 
-    expect(mockSaveStoryPoints).toHaveBeenCalledWith('TBX-1', '8')
+    // Pinned to the field this view reads — see the agree-by-construction test below.
+    expect(mockSaveStoryPoints).toHaveBeenCalledWith('TBX-1', '8', 'customfield_10028')
   })
 
   it('routes a fix version through the version helper, letting Jira validate the name', async () => {
@@ -142,3 +143,21 @@ describe('applyHygieneAiProposal', () => {
     expect(mockSaveSimpleField).not.toHaveBeenCalled()
   })
 })
+
+describe('applyHygieneAiProposal — story points must land where Hygiene reads them', () => {
+  // Forty-one accepted point estimates reported success and changed nothing visible (GH #375). The
+  // writer walks a list of candidate fields and takes the first one EDITABLE on that issue, while
+  // the hygiene check only ever reads customfield_10028 — so on an issue where 10028 is off the edit
+  // screen the value landed in 10016, Jira returned success, and the flag stayed exactly where it
+  // was with nothing reporting a problem.
+  it('writes to the field the check reads, not merely to an editable one', async () => {
+    mockSaveStoryPoints.mockResolvedValue(undefined);
+
+    await applyHygieneAiProposal(
+      { issueKey: 'TBX-1', checkId: 'missing-sp', proposedValue: '5', rationale: null },
+      resolveHygieneFieldConfig(),
+    );
+
+    expect(mockSaveStoryPoints).toHaveBeenCalledWith('TBX-1', '5', 'customfield_10028');
+  });
+});

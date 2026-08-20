@@ -102,7 +102,16 @@ export function readAllVocabularies(): Record<string, BoardVocabulary> {
 export function loadTeamVocabulary(teamProfileId: string): BoardVocabulary {
   const storedVocabulary = readAllVocabularies()[teamProfileId];
   if (!storedVocabulary) return buildEmptyVocabulary(teamProfileId);
-  return normalizeStoredVocabulary(storedVocabulary, teamProfileId);
+
+  const normalizedVocabulary = normalizeStoredVocabulary(storedVocabulary, teamProfileId);
+  // A stored record with NO columns gets the defaults too. Merely opening the board editor saves an
+  // empty vocabulary, so "nothing stored" is a narrower case than it looks — and that is why the
+  // shipped default appeared to do nothing for a team that had already visited the board once.
+  // Zero columns is not a configuration anybody chose: it is a board that shows every issue as
+  // Unmapped and can do nothing else.
+  return normalizedVocabulary.columns.length === 0
+    ? { ...normalizedVocabulary, columns: buildDefaultBoardColumns() }
+    : normalizedVocabulary;
 }
 
 /**

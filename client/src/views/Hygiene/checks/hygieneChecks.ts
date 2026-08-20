@@ -17,7 +17,15 @@ import type { EnterpriseRequiredFieldRule } from '../../AdminHub/enterpriseRules
 const STALE_THRESHOLD_DAYS = 5;
 const OLD_IN_SPRINT_THRESHOLD_DAYS = 30;
 const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000;
-const MODERN_STORY_POINTS_FIELD = 'customfield_10028';
+/**
+ * The ONLY field this view reads story points from.
+ *
+ * Exported because a writer that picks a different field is worse than one that fails: the write
+ * succeeds, Jira reports success, and the flag stays exactly where it was with nothing explaining
+ * why. Anything writing story points for this view must target this id.
+ */
+export const HYGIENE_STORY_POINTS_FIELD_ID = 'customfield_10028';
+const MODERN_STORY_POINTS_FIELD = HYGIENE_STORY_POINTS_FIELD_ID;
 const LEGACY_STORY_POINTS_FIELD = 'customfield_10016';
 const SPRINT_FIELD = 'customfield_10020';
 const FEATURE_ISSUE_TYPE_NAMES = new Set(['feature', 'epic']);
@@ -306,21 +314,72 @@ export function checkMissingProgramIncrement(issue: JiraIssue, fieldConfig: Hygi
   return hasMeaningfulValueForAnyField(issue, fieldConfig.programIncrementFieldIds) ? null : BUILT_IN_HYGIENE_FLAGS['missing-pi'];
 }
 
+/** Days of grace after reaching Ready to Work before a missing Target Start is a gap. */
+const TARGET_START_GRACE_DAYS = 3;
+
+/** The status at which this team starts expecting a Target Start. */
+const TARGET_START_EXPECTED_FROM_STATUS = 'ready to work';
+
 /**
- * Flags delivery work items missing their target start date.
+ * True once the issue has reached the point where a Target Start is expected.
+ *
+ * Two ways to qualify. The issue is sitting in Ready to Work and has been for longer than the grace
+ * period — the policy itself dates Target Start at Ready to Work + 3 days, so a date is not owed
+ * before then. Or it has moved past Ready to Work into actual work, where the date is simply overdue
+ * and there is no grace left to give; `indeterminate` and `done` are Jira's own categories for that.
+ *
+ * A Ready to Work issue whose status-change date cannot be read qualifies rather than being excused.
+ * Treating an unreadable history as "just arrived" would hide the flag permanently on exactly the
+ * issues whose history is hardest to inspect.
+ */
+function hasReachedTargetStartExpectation(issue: JiraIssue, nowMs: number): boolean {
+  const statusFields = issue.fields as unknown as Record<string, unknown>;
+  const status = statusFields.status as { name?: string; statusCategory?: { key?: string } } | undefined;
+  const statusName = (status?.name ?? '').trim().toLowerCase();
+  const statusCategoryKey = status?.statusCategory?.key ?? '';
+
+  if (statusCategoryKey === 'indeterminate' || statusCategoryKey === 'done') {
+    return true;
+  }
+  if (statusName !== TARGET_START_EXPECTED_FROM_STATUS) {
+    return false;
+  }
+
+  const statusChangedMs = Date.parse(String(statusFields.statuscategorychangedate ?? ''));
+  if (Number.isNaN(statusChangedMs)) {
+    return true;
+  }
+  return nowMs - statusChangedMs > TARGET_START_GRACE_DAYS * MILLISECONDS_PER_DAY;
+}
+
+/**
+ * Flags delivery work items that should have a target start date and do not.
+ *
+ * "Should" is the whole point. This used to flag every dateless delivery issue, so eighteen items
+ * sitting in To Do were reported as gaps — and the deterministic fix could not touch one of them,
+ * because Target Start is derived from ENTERING Ready to Work or Working and they had done neither.
+ * A flag nothing can act on is not a finding, it is a distraction sized like one (GH #375).
  *
  * Widened from Feature/Epic to every delivery type. The narrow gate was a blind spot rather than a
  * policy: a board of Stories and Defects reported zero missing target dates because nothing was
  * asking, which read as clean rather than unexamined.
  */
-export function checkMissingTargetStart(issue: JiraIssue, fieldConfig: HygieneFieldConfig): HygieneFlag | null {
+export function checkMissingTargetStart(
+  issue: JiraIssue,
+  fieldConfig: HygieneFieldConfig,
+  nowMs: number = Date.now(),
+): HygieneFlag | null {
   if (!carriesDeliveryDates(issue)) {
     return null;
   }
+  if (hasMeaningfulValueForAnyField(issue, fieldConfig.targetStartFieldIds)) {
+    return null;
+  }
+  if (!hasReachedTargetStartExpectation(issue, nowMs)) {
+    return null;
+  }
 
-  return hasMeaningfulValueForAnyField(issue, fieldConfig.targetStartFieldIds)
-    ? null
-    : BUILT_IN_HYGIENE_FLAGS['missing-target-start'];
+  return BUILT_IN_HYGIENE_FLAGS['missing-target-start'];
 }
 
 /** Flags delivery work items missing their target end date (see checkMissingTargetStart). */

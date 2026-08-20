@@ -46,6 +46,10 @@ const BASE_HYGIENE_FIELDS = [
   // linked issues WITH their statuses, and label chips. No secondary fetch exists.
   'issuelinks',
   'labels',
+  // When the issue last changed status category. The Target Start check needs to know how long an
+  // issue has sat in Ready to Work, and this is the only elapsed-time signal a search returns —
+  // the changelog costs one request per issue, which a 2,000-issue scan cannot afford.
+  'statuscategorychangedate',
 ];
 /** Issues requested per search page. */
 const HYGIENE_PAGE_SIZE = 200;
