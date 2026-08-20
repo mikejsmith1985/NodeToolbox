@@ -13,6 +13,7 @@ import { fetchJiraBaseUrl } from '../../services/proxyApi.ts'
 import { buildJiraBrowseUrl } from '../../utils/jiraBrowseUrl.ts'
 import { findEventTypeOverlaps, getDefaultSerializedRules, type SerializedEmailRule } from '../GithubEmail/lib/githubEmailRules.ts'
 import { buildIntakeRunReport } from './intakeRunExport.ts'
+import { formatSkippedEmailReport, summariseSkippedEmails, type SkippedEmailRecord } from '../GithubEmail/lib/skippedEmailReport.ts'
 import { buildRuleExport, parseRuleExport, summariseRulesForReview } from './intakeRuleExport.ts'
 import styles from './AdminHubView.module.css'
 
@@ -66,6 +67,8 @@ interface IntakeRunResult {
   errorCount?: number
   folderError?: string
   events?: IntakeEvent[]
+  /** Skipped emails kept for review, so a skip can be judged rather than merely counted. */
+  skippedEmails?: SkippedEmailRecord[]
 }
 
 /** Line break for the copyable reports — named so a template literal never has to carry a raw one. */
@@ -263,6 +266,19 @@ export function GithubEmailIntakePanel() {
     }
   }
 
+  /**
+   * Copies the skipped-email report, drawn from the whole run log rather than the last run alone.
+   *
+   * A skip is rare within one run and repetitive across many, so a single run says almost nothing
+   * while the log shows the shapes. This is what replaces asking somebody to open an email and read
+   * it back — the question "does this kind of email ever name a Jira key?" is answered here.
+   */
+  async function handleCopySkippedReport(): Promise<void> {
+    const skippedRecords = [lastRun, ...runLog].flatMap((oneRun) => oneRun.skippedEmails ?? [])
+    await navigator.clipboard?.writeText(formatSkippedEmailReport(skippedRecords))
+    setHasCopiedSkippedReport(true)
+  }
+
   /** Copies the rule set as JSON — the shape `Import rules` reads back. */
   async function handleCopyRulesJson(): Promise<void> {
     // Config is null until the first load lands; an empty export is honest, a crash is not.
@@ -301,6 +317,7 @@ export function GithubEmailIntakePanel() {
   }
   // Persistent run history (newest first) + which row is expanded to its per-email details.
   const [runLog, setRunLog] = useState<IntakeRunResult[]>([])
+  const [hasCopiedSkippedReport, setHasCopiedSkippedReport] = useState(false)
   const [expandedRunIndex, setExpandedRunIndex] = useState<number | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
@@ -1066,6 +1083,14 @@ export function GithubEmailIntakePanel() {
 
       {/* Persistent run history — proves whether scheduled runs actually fire (user report:
           90+ emails sat untouched with no way to tell) and records what each run did. */}
+      {/* Skipped-email review. A one-word reason says an email was passed over; only these shapes say
+          whether it SHOULD have been — and until now the only way to check was to open one by hand. */}
+      <SkippedEmailReviewSection
+        runs={[lastRun, ...runLog]}
+        hasCopied={hasCopiedSkippedReport}
+        onCopy={() => void handleCopySkippedReport()}
+      />
+
       <div className={styles.panelSection}>
         <h3 className={styles.sectionTitle}>Activity Log</h3>
         <p className={styles.panelStatusLine}>
@@ -1259,3 +1284,63 @@ export function GithubEmailIntakePanel() {
     </div>
   )
 }
+
+/**
+ * The shapes of email the intake passed over, commonest first.
+ *
+ * Grouped rather than listed: emails of one kind arrive in bulk, so two hundred rows would bury the
+ * conclusion they exist to show. The "ever carries" line is the load-bearing one — it answers, from
+ * real traffic rather than from one sample somebody happened to open, whether a kind of email can
+ * identify the work at all.
+ */
+function SkippedEmailReviewSection({ runs, hasCopied, onCopy }: {
+  runs: IntakeRunResult[]
+  hasCopied: boolean
+  onCopy: () => void
+}) {
+  const skippedRecords = runs.flatMap((oneRun) => oneRun.skippedEmails ?? [])
+  const shapes = summariseSkippedEmails(skippedRecords)
+
+  return (
+    <div className={styles.panelSection}>
+      <h3 className={styles.sectionTitle}>Skipped emails — review</h3>
+      <p className={styles.panelStatusLine}>
+        Every email the intake passed over, grouped by shape. Use this to confirm a skip was right, and to
+        see whether a kind of email ever carries a Jira key or a branch.
+      </p>
+      {shapes.length === 0 ? (
+        <p className={styles.panelStatusLine}>
+          Nothing recorded yet. Skipped emails are captured from the next run onward — older runs pre-date
+          this record and cannot be recovered.
+        </p>
+      ) : (
+        <>
+          <ul>
+            {shapes.map((shape, shapeIndex) => (
+              <li key={shape.reason + shapeIndex}>
+                <strong>{shape.emailCount}</strong> skipped as <code>{shape.reason}</code>
+                {' · '}{shape.eventType}
+                {shape.matchedRuleId ? ' (' + shape.matchedRuleId + ')' : ' (no rule matched)'}
+                <p className={styles.panelStatusLine}>
+                  Ever carries:{' '}
+                  {[
+                    shape.hasEverCarriedJiraKey ? 'Jira key' : '',
+                    shape.hasEverCarriedBranch ? 'branch' : '',
+                    shape.hasEverCarriedPrNumber ? 'PR number' : '',
+                  ].filter(Boolean).join(', ') || 'NOTHING that identifies an issue'}
+                </p>
+                <p className={styles.panelStatusLine}>
+                  e.g. <em>{shape.exampleRecord.subject}</em> — {shape.exampleRecord.bodyExcerpt.slice(0, 160)}
+                </p>
+              </li>
+            ))}
+          </ul>
+          <button className={styles.actionButton} onClick={onCopy} type="button">
+            {hasCopied ? '✓ Copied' : 'Copy skipped-email report'}
+          </button>
+        </>
+      )}
+    </div>
+  )
+}
+

@@ -52,6 +52,14 @@ function getEngine() {
 
 // ── Ledger + last-run persistence (env-overridable paths, AppData convention) ──
 
+/**
+ * How many skipped emails one run keeps for review.
+ *
+ * A misconfigured folder can skip thousands in a single sweep, and a report nobody can finish
+ * reading answers nothing — the shapes repeat long before this cap is reached.
+ */
+const MAX_SKIPPED_EMAIL_RECORDS = 500;
+
 function getLedgerFilePath() {
   return process.env.TBX_GITHUB_EMAIL_LEDGER_PATH
     || path.join(process.env.APPDATA || os.homedir(), 'NodeToolbox', 'github-email-processed.json');
@@ -216,6 +224,36 @@ function buildDedupKeys(event, rawSource) {
   return { fileKey, eventKey };
 }
 
+
+/**
+ * Adds one skipped email to the run's review list.
+ *
+ * Wrapped in its own try/catch: this exists to explain a skip, and a fault in the explanation must
+ * never turn a skipped email into a failed run. The list is capped, because a misconfigured folder
+ * can produce thousands of skips in one sweep and the report is meant to be read.
+ */
+function recordSkippedEmail(runResult, engine, details) {
+  try {
+    if (!Array.isArray(runResult.skippedEmails)) {
+      runResult.skippedEmails = [];
+    }
+    if (runResult.skippedEmails.length >= MAX_SKIPPED_EMAIL_RECORDS) {
+      return;
+    }
+    const message = engine.parseMime(details.rawSource);
+    runResult.skippedEmails.push(engine.buildSkippedEmailRecord({
+      fileName: details.fileName,
+      reason: details.reason,
+      subject: engine.getHeader(message, 'subject') || '',
+      reasonHeader: engine.getHeader(message, 'x-github-reason') || null,
+      bodyText: message.textPlain || '',
+      event: details.event,
+    }));
+  } catch (_recordError) {
+    // Deliberately silent: an unexplained skip is still a skip, and still counted.
+  }
+}
+
 /** True when the Jira key's project prefix is allowed by the configured filter ([] = all). */
 function isProjectAllowed(jiraKey, jiraProjectKeys) {
   if (!jiraProjectKeys || jiraProjectKeys.length === 0) {
@@ -280,7 +318,7 @@ async function processDropFolder(configuration, deps) {
   const errorDir = cfg.errorFolder || path.join(dropFolder, ERROR_SUBFOLDER);
   const fileExtensions = cfg.fileExtensions || ['.eml', '.txt', '.msg'];
 
-  const runResult = { hasRun: true, ranAtIso: nowIso, trigger: deps.trigger || 'manual', mode, dropFolder, events: [], postedCount: 0, skippedCount: 0, errorCount: 0 };
+  const runResult = { hasRun: true, ranAtIso: nowIso, trigger: deps.trigger || 'manual', mode, dropFolder, events: [], skippedEmails: [], postedCount: 0, skippedCount: 0, errorCount: 0 };
 
   let fileNames;
   try {
@@ -334,6 +372,10 @@ async function processDropFolder(configuration, deps) {
         : event.jiraKey === null ? 'no-jira-key' : 'project-filtered';
       runResult.skippedCount += 1;
       runResult.events.push({ fileName, outcome: 'skipped', reason, jiraKey: event.jiraKey, eventType: event.eventType });
+      // Record WHY it looked unusable, not just that it was skipped. A one-word reason can say an
+      // email was passed over; only these fields can say whether it should have been — and without
+      // them the only way to review a skip has been to ask somebody to open the email and read it.
+      recordSkippedEmail(runResult, engine, { fileName, reason, rawSource, event });
       ledger = engine.appendProcessed(ledger, { key: fileKey, processedAtIso: nowIso, eventType: event.eventType, jiraKey: event.jiraKey, outcome: 'skipped' });
       safeMove(deps, fullPath, processedDir, fileName, runResult);
       continue;

@@ -27,3 +27,9 @@ export {
   appendProcessed,
   type EmailLedgerEntry,
 } from '../views/GithubEmail/lib/emailLedger.ts';
+export {
+  buildSkippedEmailRecord,
+  summariseSkippedEmails,
+  formatSkippedEmailReport,
+  type SkippedEmailRecord,
+} from '../views/GithubEmail/lib/skippedEmailReport.ts';

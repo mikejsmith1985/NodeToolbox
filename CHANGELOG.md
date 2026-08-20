@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Skipped emails can now be reviewed instead of merely counted.** The intake passed over an email
+  it could not classify, or one carrying no Jira key, and recorded the file name and a one-word
+  reason — enough to know something was skipped and nothing at all to know whether it *should* have
+  been. Every question about what actually arrives ("does a review-request email name the branch?",
+  "does any email carry a Jira key?") could only be answered by asking a person to open one and read
+  it back (GH #375). Each skip now keeps the signals that decide the question: subject, the
+  `X-GitHub-Reason` header, repo, PR number, branch, merge target, the rule that matched or did not,
+  and a plain-text body excerpt — HTML-stripped, because an excerpt of raw markup describes the mail
+  gateway rather than the email.
+  The Admin Hub shows them **grouped by shape**, commonest first, with one real example each and a
+  copyable report. Grouping is the point: emails of one kind arrive in bulk, so two hundred rows
+  would bury the conclusion they exist to show. The load-bearing line on each shape is
+  **"ever carries"** — an OR across the whole group, not the example's own values, because the
+  question is whether that KIND of email can ever identify the work, and a single example that
+  happens to lack a branch would answer "never" for a group where half of them have one.
+  Capped at 500 records per run (a misconfigured folder can skip thousands and a report nobody
+  finishes reading answers nothing), and the capture is wrapped so a fault in explaining a skip can
+  never turn it into a failed run.
+
 ### Fixed
 - **"Fix all dates" now covers a missing date, not only a disagreeing one.** The bulk button was
   gated to `dates-out-of-sync` — an issue whose dates contradict its release — while the far commoner
