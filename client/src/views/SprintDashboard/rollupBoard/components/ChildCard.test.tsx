@@ -7,6 +7,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { ChildCard, describeRollUpRoute } from './ChildCard.tsx';
 import type { IssueTypeBucket, RollupBoardItem } from '../rollupBoardTypes.ts';
 import type { JiraIssue } from '../../../../types/jira.ts';
+import type { IssueForecast, IssueForecastState } from '../../forecast/forecastTypes.ts';
 
 function buildItem(overrides: Partial<RollupBoardItem> = {}): RollupBoardItem {
   return {
@@ -461,5 +462,81 @@ describe('a card can be moved without a pointer', () => {
     fireEvent.contextMenu(screen.getByTestId('rollup-card-DEV-1'));
 
     expect(screen.queryByRole('menuitem', { name: /Move to/ })).toBeNull();
+  });
+});
+
+describe('ChildCard — the schedule verdict', () => {
+  // APPENDED. The prop is optional, so every case above renders exactly the card it always did.
+
+  function buildForecast(state: IssueForecastState): IssueForecast {
+    return {
+      issueKey: 'ENC-1',
+      summary: 'Build it',
+      teamProfileId: 'team-a',
+      assigneeDisplayName: null,
+      assigneeAccountId: null,
+      effort: {
+        storyPoints: 3,
+        columnCredit: 0,
+        remainingPoints: 3,
+        remainingWorkingDays: 3,
+        isEstimated: true,
+        basis: '3 pts',
+      },
+      releaseDeadlineIso: '2026-09-11',
+      piDeadlineIso: null,
+      drivingDeadlineIso: '2026-09-11',
+      drivingClock: 'release',
+      latestStartIso: '2026-09-09',
+      actualStartIso: null,
+      state,
+      slackWorkingDays: 0,
+      storedTargetStartIso: null,
+      hasStoredDateDisagreement: false,
+      reason: 'three working days of work left',
+    };
+  }
+
+  it('draws no badge at all when no forecast is supplied', () => {
+    render(<ChildCard item={buildItem()} />);
+    expect(screen.queryByText(/BEHIND|START TODAY|AHEAD|UNSIZED|NO OWNER/)).not.toBeInTheDocument();
+  });
+
+  it('draws no badge on work that is simply on track', () => {
+    // A marker on every card marks nothing. The board's value is that exceptions stand out.
+    render(<ChildCard item={buildItem()} forecast={buildForecast('on-track')} />);
+    expect(screen.queryByText(/BEHIND|START TODAY|AHEAD/)).not.toBeInTheDocument();
+  });
+
+  it('draws no badge on work nothing can date', () => {
+    render(<ChildCard item={buildItem()} forecast={buildForecast('unforecastable')} />);
+    expect(screen.queryByText(/BEHIND|START TODAY|AHEAD/)).not.toBeInTheDocument();
+  });
+
+  it('names each verdict in words, so colour is never the only cue', () => {
+    const cases: Array<[IssueForecastState, RegExp]> = [
+      ['behind', /BEHIND/],
+      ['start-today', /START TODAY/],
+      ['cannot-fit', /WON'T FIT/],
+      ['ahead', /AHEAD/],
+      ['unsized', /UNSIZED/],
+      ['unassignable', /NO OWNER/],
+    ];
+    cases.forEach(([state, expectedLabel]) => {
+      const { unmount } = render(<ChildCard item={buildItem()} forecast={buildForecast(state)} />);
+      expect(screen.getByText(expectedLabel)).toBeInTheDocument();
+      unmount();
+    });
+  });
+
+  it('carries the workings as a title, so a figure can be checked rather than trusted', () => {
+    render(<ChildCard item={buildItem()} forecast={buildForecast('behind')} />);
+    expect(screen.getByText(/BEHIND/)).toHaveAttribute('title', 'three working days of work left');
+  });
+
+  it('leaves the rest of the card untouched', () => {
+    render(<ChildCard item={buildItem({ summary: 'Build the widget' })} forecast={buildForecast('behind')} />);
+    expect(screen.getByText('Build the widget')).toBeInTheDocument();
+    expect(screen.getByText(/BEHIND/)).toBeInTheDocument();
   });
 });

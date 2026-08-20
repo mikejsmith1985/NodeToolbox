@@ -27,6 +27,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   track". Every row carries its workings, so a figure somebody disputes can be checked. It costs no
   extra Jira request: the arithmetic runs over issues the team scans already returned.
 
+- **The Roll-Up Board now shows the PI clock, beside the release one it already showed.** Each swimlane
+  carries whether its Feature can reach Integrated Test and when, and each card carries its own
+  verdict — but only where there is something to say, because a badge on every card is a badge on
+  none. A Feature at risk names which half is at fault: dev work too large, or too little room left
+  to test it. Those are two different conversations, and a bare "at risk" cannot tell them apart.
+- **The shipped default board gains an Internal Test Ready column** — `Ready for Testing` with no
+  sub-status, the gap between development finishing and testing starting. It matched no column
+  before and landed in Unmapped, which hid the very state that releases the test story to run. Teams
+  that have already saved their own columns add it there; the forecast reads the status directly, so
+  it is correct either way.
+
 ### Changed
 - **Target Start now means "the latest day this can begin and still land".** Where an issue's size is
   known, the date is worked back from whichever deadline binds — code freeze or the PI's own,

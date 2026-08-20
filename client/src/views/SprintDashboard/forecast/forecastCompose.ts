@@ -9,16 +9,21 @@
 // field-mapping boundary rule: it never resolves a Jira field, because it never sees one.
 
 import { buildPiClock, buildReleaseClock } from './forecastWindows.ts';
+import { classifyChainRole, scheduleDevSlChain } from './devSlChain.ts';
 import { computeIssueForecasts } from './issueForecast.ts';
+import { isInternalTestReady, rollUpFeatureIntReadiness } from './intReadiness.ts';
 import { computeRemainingEffort } from './effortModel.ts';
 import { resolveReleaseDates } from './releaseDateResolve.ts';
 import type {
   CapacityPerson,
+  ChainItem,
+  FeatureDodAssessment,
   FixVersionLike,
   ForecastCompleteness,
   ForecastConfig,
   ForecastIssue,
   ForecastResult,
+  IntReadinessInput,
   IssueForecastInput,
   PiClock,
   ReleaseClock,
@@ -136,6 +141,103 @@ function buildIssueForecastInputs(
   }));
 }
 
+/** Reads the status pair the INT check needs off one adapted issue. */
+function toIntReadinessInput(item: ForecastIssue, hasSubStatusField: boolean): IntReadinessInput {
+  return { statusName: item.statusName, subStatusValue: item.subStatusValue, hasSubStatusField };
+}
+
+/**
+ * Works out which constraint actually binds a Feature that will miss the PI.
+ *
+ * Dev is checked FIRST: when the dev work alone already overruns the increment, the test window was
+ * never the limiting factor, and telling a team to find more testers would be the wrong advice.
+ */
+function readRiskCause(
+  devCompleteIso: string | null,
+  dodDateIso: string | null,
+  piEndIso: string,
+): FeatureDodAssessment['riskCause'] {
+  if (devCompleteIso !== null && devCompleteIso > piEndIso) {
+    return 'dev-too-large';
+  }
+  if (dodDateIso !== null && dodDateIso > piEndIso) {
+    return 'test-squeeze';
+  }
+  return null;
+}
+
+/**
+ * Assesses one Feature: where its work has got to, when it can reach Integration Test, and whether
+ * that lands inside the PI.
+ */
+function assessFeature(
+  featureKey: string,
+  children: readonly ForecastIssue[],
+  effortByIssueKey: Map<string, RemainingEffort>,
+  piClock: PiClock,
+  input: ForecastInput,
+  config: ForecastConfig,
+): FeatureDodAssessment {
+  const readiness = rollUpFeatureIntReadiness(
+    featureKey,
+    children.map((child) => ({ issueKey: child.key, ...toIntReadinessInput(child, input.hasSubStatusField) })),
+  );
+
+  const chainItems: ChainItem[] = children
+    .filter((child) => !isItemCancelled(child))
+    .map((child) => ({
+      issueKey: child.key,
+      summary: child.summary,
+      role: classifyChainRole({
+        summary: child.summary,
+        // The roster capability is a secondary signal the board cannot supply per issue, so the
+        // prefix carries this on its own here and unprefixed work is reported as unclassified.
+        assigneeCanInternalTest: null,
+      }),
+      remainingWorkingDays: effortByIssueKey.get(child.key)?.remainingWorkingDays ?? null,
+      isInternalTestReady: isInternalTestReady(toIntReadinessInput(child, input.hasSubStatusField)),
+      isComplete: child.isComplete,
+    }));
+
+  const schedule = scheduleDevSlChain(chainItems, config.todayIso, config);
+
+  const piVerdict: FeatureDodAssessment['piVerdict'] = !piClock.isConfigured || piClock.piEndIso === null
+    ? 'not-configured'
+    : schedule.dodDateIso !== null && schedule.dodDateIso <= piClock.piEndIso ? 'meets' : 'at-risk';
+
+  return {
+    featureKey,
+    intReadyState: readiness.state,
+    blockingIssueKeys: readiness.blockingIssueKeys,
+    cancelledIssueKeys: readiness.cancelledIssueKeys,
+    devCompleteIso: schedule.devCompleteIso,
+    slStartIso: schedule.slStartIso,
+    slWorkingDays: schedule.slWorkingDays,
+    dodDateIso: schedule.dodDateIso,
+    hasNoSlStory: schedule.hasNoSlStory,
+    unclassifiedIssueKeys: schedule.unclassifiedIssueKeys,
+    piVerdict,
+    riskCause: piClock.piEndIso === null
+      ? null
+      : readRiskCause(schedule.devCompleteIso, schedule.dodDateIso, piClock.piEndIso),
+    shortfallWorkingDays: null,
+  };
+}
+
+/** Groups the work by the Feature it delivers, keeping first-seen Feature order. */
+function groupByFeatureKey(items: readonly ForecastIssue[]): Map<string, ForecastIssue[]> {
+  const byFeatureKey = new Map<string, ForecastIssue[]>();
+  items.forEach((item) => {
+    if (item.featureKey === null) {
+      return;
+    }
+    const existing = byFeatureKey.get(item.featureKey) ?? [];
+    existing.push(item);
+    byFeatureKey.set(item.featureKey, existing);
+  });
+  return byFeatureKey;
+}
+
 /** Tallies everything a total could otherwise have omitted without saying so. */
 function buildCompleteness(
   items: readonly ForecastIssue[],
@@ -186,7 +288,9 @@ export function computeForecast(input: ForecastInput, config: ForecastConfig): F
       buildIssueForecastInputs(forecastableItems, effortByIssueKey, releaseClocksByVersionName, piClock, input.teamProfileId),
       config,
     ),
-    featureAssessments: [],
+    featureAssessments: [...groupByFeatureKey(input.items).entries()].map(
+      ([featureKey, children]) => assessFeature(featureKey, children, effortByIssueKey, piClock, input, config),
+    ),
     sizingFlags: [],
     codeFreezeCapacityByVersionName: {},
     externalTestCapacityByVersionName: {},

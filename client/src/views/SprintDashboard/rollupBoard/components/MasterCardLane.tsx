@@ -29,6 +29,7 @@ import { describeProgressDisagreement, describeTwoFigures } from '../familyProgr
 import { buildLaneProgressBar, buildLaneVitalTiles, type LaneProgressBar, type LaneVitalTile } from '../laneVitals.ts';
 import type { BoardMembershipReason } from '../boardMembershipReason.ts';
 import type { FamilyProgress } from '../rollupBoardTypes.ts';
+import type { FeatureDodAssessment, IssueForecast } from '../../forecast/forecastTypes.ts';
 import type { CardDetail } from '../cardDetail.ts';
 import type { LaneCellEntry, RenderedColumn, RenderedLane, RollupBoardItem } from '../rollupBoardTypes.ts';
 import { ChildCard, type ChildCardProps } from './ChildCard.tsx';
@@ -127,6 +128,15 @@ export interface MasterCardLaneProps {
   columnTracks: ColumnTrackStyle;
   /** Both progress figures. Null when this Feature has no clones, which is the normal case. */
   familyProgress?: FamilyProgress | null;
+  /**
+   * This Feature's PI-commitment verdict, drawn as its own two tiles beside the release-shaped ones.
+   *
+   * Kept separate deliberately: the release clock and the PI clock do not coincide, and merging them
+   * into one figure is the confusion the forecast exists to end.
+   */
+  featureForecast?: FeatureDodAssessment | null;
+  /** Each card's schedule verdict, keyed by issue key. Absent leaves every card as it was. */
+  forecastByIssueKey?: Record<string, IssueForecast>;
   onToggleSubLaneCollapsed?: (cloneFeatureKey: string) => void;
   /** Records that one issue is contained in another. Absent leaves the card's menu unoffered. */
   onNestInto?: (issueKey: string, containerIssueKey: string) => void;
@@ -254,6 +264,8 @@ export function MasterCardLane({
   columnTracks,
   familyProgress = null,
   onToggleSubLaneCollapsed,
+  featureForecast = null,
+  forecastByIssueKey,
   onNestInto,
   onToggleFlag,
   onMoveToColumn,
@@ -285,7 +297,7 @@ export function MasterCardLane({
     matchedItemCount: lane.matchedItemCount,
     totalItemCount: lane.totalItemCount,
     hasActiveFilters,
-  });
+  }, featureForecast);
 
   // Where the actions menu was opened, or null when it is closed.
   const [menuPosition, setMenuPosition] = useState<{ xPx: number; yPx: number } | null>(null);
@@ -574,6 +586,7 @@ export function MasterCardLane({
                     key={entry.item.key}
                     onOpen={onOpenIssue}
                     onSelectFamily={onSelectFamily}
+                    forecast={forecastByIssueKey?.[entry.item.key] ?? null}
                   />
                 )))}
               </LaneCellDropZone>

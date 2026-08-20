@@ -3,6 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
+import type { FeatureDodAssessment } from '../forecast/forecastTypes.ts';
 import { buildLaneProgressBar, buildLaneVitalTiles } from './laneVitals.ts';
 import type { FamilyProgress, FeatureProgress, MasterCardVitals } from './rollupBoardTypes.ts';
 
@@ -144,5 +145,104 @@ describe('buildLaneVitalTiles', () => {
     expect(tiles.find((tile) => tile.id === 'items')?.value).toBe('0');
     expect(tiles.find((tile) => tile.id === 'points')?.value).toBe('0');
     expect(tiles.find((tile) => tile.id === 'points')?.tone).toBe('normal');
+  });
+});
+
+describe('the PI Definition-of-Done tiles', () => {
+  // APPENDED. The parameter is optional precisely so every case above keeps passing untouched.
+
+  function assessment(overrides: Partial<FeatureDodAssessment> = {}): FeatureDodAssessment {
+    return {
+      featureKey: 'DENP-1',
+      intReadyState: 'not-int-ready',
+      blockingIssueKeys: [],
+      cancelledIssueKeys: [],
+      devCompleteIso: '2026-09-01',
+      slStartIso: '2026-09-02',
+      slWorkingDays: 2,
+      dodDateIso: '2026-09-03',
+      hasNoSlStory: false,
+      unclassifiedIssueKeys: [],
+      piVerdict: 'meets',
+      riskCause: null,
+      shortfallWorkingDays: null,
+      ...overrides,
+    };
+  }
+
+  const VITALS: MasterCardVitals = {
+    key: 'DENP-1',
+    summary: 'A feature',
+    statusName: 'Implementing',
+    progress: { percentComplete: 50, basis: 'story-points', completedUnits: 5, totalUnits: 10 },
+    dependencyCount: 0,
+    isFlagged: false,
+    storyPoints: 10,
+    priorityName: 'High',
+    childCount: 3,
+  };
+
+  const COUNTS = { matchedItemCount: 3, totalItemCount: 3, hasActiveFilters: false };
+
+  it('draws the same five tiles as ever when no forecast is supplied', () => {
+    expect(buildLaneVitalTiles(VITALS, COUNTS)).toHaveLength(5);
+  });
+
+  it('adds the two PI tiles when a forecast is supplied', () => {
+    const tiles = buildLaneVitalTiles(VITALS, COUNTS, assessment());
+    expect(tiles.map((tile) => tile.id)).toEqual([
+      'status', 'items', 'points', 'priority', 'dependencies', 'pi-dod', 'dod-date',
+    ]);
+  });
+
+  it('keeps the PI verdict in its OWN tile rather than folding it into the release figures', () => {
+    // The two clocks do not coincide, and merging them is the confusion this exists to end.
+    const tiles = buildLaneVitalTiles(VITALS, COUNTS, assessment());
+    const piTile = tiles.find((tile) => tile.id === 'pi-dod');
+    const pointsTile = tiles.find((tile) => tile.id === 'points');
+    expect(piTile?.value).not.toBe(pointsTile?.value);
+  });
+
+  it('says READY once every child is at Integration Test', () => {
+    const tiles = buildLaneVitalTiles(VITALS, COUNTS, assessment({ intReadyState: 'int-ready' }));
+    expect(tiles.find((tile) => tile.id === 'pi-dod')?.value).toBe('Ready');
+  });
+
+  it('names WHICH half is at risk, because the two need different conversations', () => {
+    const testSqueeze = buildLaneVitalTiles(VITALS, COUNTS, assessment({ piVerdict: 'at-risk', riskCause: 'test-squeeze' }));
+    expect(testSqueeze.find((tile) => tile.id === 'pi-dod')?.value).toContain('test squeeze');
+
+    const devTooLarge = buildLaneVitalTiles(VITALS, COUNTS, assessment({ piVerdict: 'at-risk', riskCause: 'dev-too-large' }));
+    expect(devTooLarge.find((tile) => tile.id === 'pi-dod')?.value).toContain('dev too large');
+  });
+
+  it('carries the alert tone on a Feature at risk, with the words saying so too', () => {
+    const tiles = buildLaneVitalTiles(VITALS, COUNTS, assessment({ piVerdict: 'at-risk', riskCause: 'test-squeeze' }));
+    const piTile = tiles.find((tile) => tile.id === 'pi-dod');
+    expect(piTile?.tone).toBe('alert');
+    // Colour is never the only cue: the value alone tells a reader the verdict.
+    expect(piTile?.value).toMatch(/at risk/i);
+  });
+
+  it('says NO PI END SET rather than judging against a deadline nobody configured', () => {
+    const tiles = buildLaneVitalTiles(VITALS, COUNTS, assessment({ piVerdict: 'not-configured' }));
+    expect(tiles.find((tile) => tile.id === 'pi-dod')?.value).toBe('No PI end set');
+  });
+
+  it('says NOT CHECKED when the instance has no sub-status field', () => {
+    const tiles = buildLaneVitalTiles(VITALS, COUNTS, assessment({ intReadyState: 'unknown-sub-status' }));
+    expect(tiles.find((tile) => tile.id === 'pi-dod')?.value).toBe('Not checked');
+  });
+
+  it('shows the day the Feature can reach Integration Test', () => {
+    const tiles = buildLaneVitalTiles(VITALS, COUNTS, assessment());
+    expect(tiles.find((tile) => tile.id === 'dod-date')?.value).toBe('2026-09-03');
+  });
+
+  it('marks the date absent rather than showing a guess when the chain cannot be dated', () => {
+    const tiles = buildLaneVitalTiles(VITALS, COUNTS, assessment({ dodDateIso: null }));
+    const dateTile = tiles.find((tile) => tile.id === 'dod-date');
+    expect(dateTile?.value).toBe('None');
+    expect(dateTile?.tone).toBe('missing');
   });
 });

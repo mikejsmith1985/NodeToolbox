@@ -19,6 +19,7 @@ import { buildCardTargetId } from '../cardDropRouting.ts';
 import { formatCommentDate, type CardDetail } from '../cardDetail.ts';
 import { describeStatusPair } from '../unmappedStatusSummary.ts';
 import styles from '../RollupBoardTab.module.css';
+import type { IssueForecast, IssueForecastState } from '../../forecast/forecastTypes.ts';
 import { BoardContextMenu, type BoardMenuAction } from './BoardContextMenu.tsx';
 import {
   AttachmentIcon,
@@ -114,7 +115,25 @@ export interface ChildCardProps {
   onMoveToColumn?: (issueKey: string, columnId: string) => void;
   /** The columns this card can be sent to, in board order. Its own column is filtered out here. */
   moveTargetColumns?: readonly { id: string; name: string; isUnmappedColumn?: boolean }[];
+  /**
+   * This issue's schedule verdict, drawn as a badge.
+   *
+   * Absent leaves the card exactly as it was before the forecast existed. Work that is simply on
+   * track draws NOTHING even when a forecast is supplied: a badge on every card is a badge on none,
+   * and the board's whole value is that the exceptions stand out.
+   */
+  forecast?: IssueForecast | null;
 }
+
+/** What each verdict is called on a card, and whether it should catch the eye. */
+const FORECAST_BADGES: Partial<Record<IssueForecastState, { label: string; isAlert: boolean }>> = {
+  behind: { label: 'BEHIND', isAlert: true },
+  'start-today': { label: 'START TODAY', isAlert: true },
+  'cannot-fit': { label: "WON'T FIT", isAlert: true },
+  ahead: { label: 'AHEAD', isAlert: false },
+  unsized: { label: 'UNSIZED', isAlert: false },
+  unassignable: { label: 'NO OWNER', isAlert: false },
+};
 
 /** Turns a resolved route into one readable sentence, so parentage is never inferred. */
 export function describeRollUpRoute(route: RollUpRoute): string {
@@ -153,8 +172,12 @@ export function ChildCard({
   onToggleFlag,
   onMoveToColumn,
   moveTargetColumns = [],
+  forecast = null,
 }: ChildCardProps) {
   const [menuPosition, setMenuPosition] = useState<{ xPx: number; yPx: number } | null>(null);
+
+  // On-track and unforecastable work draws no badge at all: a marker on every card marks nothing.
+  const forecastBadge = forecast ? FORECAST_BADGES[forecast.state] ?? null : null;
 
   // Only the cards beside this one in the same column can contain it, and only when the board can
   // actually write the link. No candidates means no menu at all, rather than a menu of nothing.
@@ -271,6 +294,17 @@ export function ChildCard({
       {shouldShowStatus && (
         <div className={styles.cardStatusBadge}>
           {describeStatusPair(item.statusName, item.subStatusValue)}
+        </div>
+      )}
+
+      {forecastBadge !== null && (
+        // The reason travels as the title so the arithmetic is one hover away, rather than a figure
+        // a reader has to take on trust.
+        <div
+          className={forecastBadge.isAlert ? styles.cardForecastBadgeAlert : styles.cardForecastBadge}
+          title={forecast?.reason}
+        >
+          {forecastBadge.label}
         </div>
       )}
 

@@ -9,9 +9,11 @@
 // a STARTING POINT, not a rule — a team edits them like any other columns, and once a team has saved
 // its own set this file is never consulted again for them.
 //
-// The pairs matter. Two columns share the status `Working` (Working and Code Review) and three share
-// `Ready for Testing` (SL, INT and BT Testing): the sub-status is the only thing telling them apart,
-// which is why a board with no sub-status field cannot express this workflow at all.
+// The pairs matter. Two columns share the status `Working` (Working and Code Review) and FOUR share
+// `Ready for Testing` (Internal Test Ready, SL, INT and BT Testing): the sub-status is the only
+// thing telling them apart, which is why a board with no sub-status field cannot express this
+// workflow at all. Internal Test Ready is the one with NO sub-status — the gap between dev finishing
+// and testing starting, which every other column implicitly assumed away.
 
 import type { BoardColumn } from './rollupBoardTypes.ts';
 
@@ -22,6 +24,10 @@ const DEFAULT_COLUMN_DEFINITIONS: Array<[columnName: string, jiraStatusName: str
   ['Ready to Work', 'Ready to Work', null],
   ['Working', 'Working', null],
   ['Code Review', 'Working', 'Code Review'],
+  // Dev complete and deployed to the Dev environment, waiting for shift-left test to pick it up.
+  // The state has no sub-status at all, which is why it matched no column and landed in Unmapped —
+  // and it is the state that releases the [SL] story to start, so it is worth a column of its own.
+  ['Internal Test Ready', 'Ready for Testing', null],
   ['SL Testing', 'Ready for Testing', 'Testing'],
   ['INT Testing', 'Ready for Testing', 'Integration Test'],
   ['BT Testing', 'Ready for Testing', 'Ready for UAT'],

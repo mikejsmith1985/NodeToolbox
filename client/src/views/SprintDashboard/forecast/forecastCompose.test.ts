@@ -209,6 +209,113 @@ describe('computeForecast', () => {
     });
   });
 
+  describe('the Feature assessments', () => {
+    const INT_READY = { statusName: 'Ready for Testing', subStatusValue: 'Integration Test' };
+
+    it('reports a Feature whose every child is at Integration Test as INT-ready', () => {
+      const result = computeForecast(
+        forecastInput({
+          items: [
+            boardItem({ key: 'ENC-1', ...INT_READY }),
+            boardItem({ key: 'ENC-2', ...INT_READY }),
+          ],
+        }),
+        CONFIG,
+      );
+      expect(result.featureAssessments[0].intReadyState).toBe('int-ready');
+    });
+
+    it('names the child holding a Feature back', () => {
+      const result = computeForecast(
+        forecastInput({
+          items: [boardItem({ key: 'ENC-1', ...INT_READY }), boardItem({ key: 'ENC-2' })],
+        }),
+        CONFIG,
+      );
+      expect(result.featureAssessments[0].blockingIssueKeys).toEqual(['ENC-2']);
+    });
+
+    it('says NOT CONFIGURED rather than judging a Feature against a PI end nobody set', () => {
+      const result = computeForecast(forecastInput({ piEndDate: '' }), CONFIG);
+      expect(result.featureAssessments[0].piVerdict).toBe('not-configured');
+    });
+
+    it('blames the dev work when dev alone overruns the increment', () => {
+      // Checked first deliberately: telling this team to find more testers would be wrong advice.
+      const result = computeForecast(
+        forecastInput({
+          items: [
+            boardItem({ key: 'ENC-1', summary: '[DEV] Enormous', storyPoints: 400 }),
+            boardItem({ key: 'ENC-2', summary: '[SL] Test it', storyPoints: 1 }),
+          ],
+          piEndDate: '2026-09-30',
+        }),
+        CONFIG,
+      );
+      expect(result.featureAssessments[0].riskCause).toBe('dev-too-large');
+    });
+
+    it('blames the test squeeze when dev fits and the Feature still does not', () => {
+      // 20 dev days from 2026-08-20 lands 2026-09-16; 10 more SL days push DoD past 2026-09-18.
+      const result = computeForecast(
+        forecastInput({
+          items: [
+            boardItem({ key: 'ENC-1', summary: '[DEV] Build it', storyPoints: 20 }),
+            boardItem({ key: 'ENC-2', summary: '[SL] Test it', storyPoints: 10 }),
+          ],
+          piEndDate: '2026-09-18',
+        }),
+        CONFIG,
+      );
+      const assessment = result.featureAssessments[0];
+      expect(assessment.riskCause).toBe('test-squeeze');
+      expect(assessment.piVerdict).toBe('at-risk');
+    });
+
+    it('reports a Feature that fits as meeting the commitment, with no cause to name', () => {
+      const result = computeForecast(
+        forecastInput({
+          items: [
+            boardItem({ key: 'ENC-1', summary: '[DEV] Build it', storyPoints: 2 }),
+            boardItem({ key: 'ENC-2', summary: '[SL] Test it', storyPoints: 1 }),
+          ],
+        }),
+        CONFIG,
+      );
+      expect(result.featureAssessments[0].piVerdict).toBe('meets');
+      expect(result.featureAssessments[0].riskCause).toBeNull();
+    });
+
+    it('reports a Feature with no SL story rather than dating it as though testing were free', () => {
+      const result = computeForecast(
+        forecastInput({ items: [boardItem({ summary: '[DEV] Build it' })] }),
+        CONFIG,
+      );
+      expect(result.featureAssessments[0].hasNoSlStory).toBe(true);
+    });
+
+    it('names work it could not classify', () => {
+      const result = computeForecast(
+        forecastInput({ items: [boardItem({ key: 'ENC-7', summary: 'Do the work' })] }),
+        CONFIG,
+      );
+      expect(result.featureAssessments[0].unclassifiedIssueKeys).toEqual(['ENC-7']);
+    });
+
+    it('produces no Feature assessment for work nothing attributes', () => {
+      const result = computeForecast(
+        forecastInput({ items: [boardItem({ featureKey: null })] }),
+        CONFIG,
+      );
+      expect(result.featureAssessments).toEqual([]);
+    });
+
+    it('says INT readiness was NOT CHECKED when the instance has no sub-status field', () => {
+      const result = computeForecast(forecastInput({ hasSubStatusField: false }), CONFIG);
+      expect(result.featureAssessments[0].intReadyState).toBe('unknown-sub-status');
+    });
+  });
+
   it('survives an empty board without throwing', () => {
     const result = computeForecast(forecastInput({ items: [], fixVersions: [] }), CONFIG);
     expect(result.completeness.totalIssueCount).toBe(0);

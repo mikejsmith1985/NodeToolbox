@@ -10,18 +10,23 @@ describe('buildDefaultBoardColumns', () => {
 
     expect(columnNames).toEqual([
       'To Do', 'Triage', 'Ready to Work', 'Working', 'Code Review',
-      'SL Testing', 'INT Testing', 'BT Testing',
+      // Internal Test Ready sits between dev finishing and testing starting. It matched no column
+      // before and landed in Unmapped, which hid the very state that releases the SL story to run.
+      'Internal Test Ready', 'SL Testing', 'INT Testing', 'BT Testing',
       'Ready to Accept', 'Accepted - Done', 'Cancelled',
     ]);
   });
 
   it('separates the columns that share a Jira status by sub-status', () => {
     // The load-bearing pairs. Working covers both Working and Code Review; Ready for Testing covers
-    // SL, INT and BT — so without the sub-status these five columns collapse into two.
+    // Internal Test Ready, SL, INT and BT — so without the sub-status these six columns collapse
+    // into two. Internal Test Ready is the one with NO sub-status.
     const columnsByName = new Map(buildDefaultBoardColumns().map((column) => [column.name, column]));
 
     expect(columnsByName.get('Working')?.mappings).toEqual([{ jiraStatusName: 'Working', subStatusValue: null }]);
     expect(columnsByName.get('Code Review')?.mappings).toEqual([{ jiraStatusName: 'Working', subStatusValue: 'Code Review' }]);
+    expect(columnsByName.get('Internal Test Ready')?.mappings)
+      .toEqual([{ jiraStatusName: 'Ready for Testing', subStatusValue: null }]);
     expect(columnsByName.get('SL Testing')?.mappings).toEqual([{ jiraStatusName: 'Ready for Testing', subStatusValue: 'Testing' }]);
     expect(columnsByName.get('INT Testing')?.mappings).toEqual([{ jiraStatusName: 'Ready for Testing', subStatusValue: 'Integration Test' }]);
     expect(columnsByName.get('BT Testing')?.mappings).toEqual([{ jiraStatusName: 'Ready for Testing', subStatusValue: 'Ready for UAT' }]);

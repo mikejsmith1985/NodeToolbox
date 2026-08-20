@@ -1183,6 +1183,27 @@
 }
 
 /* The Jira status, shown only on Unmapped cards — the one column that cannot imply one. */
+/* The schedule verdict, drawn only on cards that need attention. The words carry the meaning;
+   the colour is an addition, so a reader who cannot see the tint loses nothing. */
+.cardForecastBadge,
+.cardForecastBadgeAlert {
+  align-self: flex-start;
+  margin-top: 2px;
+  padding: 1px var(--spacing-xs);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--color-text-primary);
+  background: var(--color-bg-subtle);
+}
+
+.cardForecastBadgeAlert {
+  border-color: var(--color-danger, #dc2626);
+  color: var(--color-danger, #dc2626);
+}
+
 .cardStatusBadge {
   align-self: flex-start;
   margin-top: 2px;

@@ -13,6 +13,7 @@
 // bar's percentage must come from the same vitals the tiles do so the two cannot contradict.
 
 import type { FamilyProgress, FeatureProgress, MasterCardVitals } from './rollupBoardTypes.ts';
+import type { FeatureDodAssessment } from '../forecast/forecastTypes.ts';
 
 /** Shown in place of the bar when a Feature has no work under it at all. */
 const NOTHING_TO_MEASURE_LABEL = 'no work to measure yet';
@@ -105,7 +106,11 @@ function buildItemsTile(counts: LaneItemCounts): LaneVitalTile {
  * Order is deliberate: where the Feature is, how much is in it, how big it is, how urgent it is, and
  * what is holding it up — the order the questions are actually asked in.
  */
-export function buildLaneVitalTiles(vitals: MasterCardVitals, counts: LaneItemCounts): LaneVitalTile[] {
+export function buildLaneVitalTiles(
+  vitals: MasterCardVitals,
+  counts: LaneItemCounts,
+  forecast?: FeatureDodAssessment | null,
+): LaneVitalTile[] {
   return [
     {
       id: 'status',
@@ -133,5 +138,58 @@ export function buildLaneVitalTiles(vitals: MasterCardVitals, counts: LaneItemCo
       // A dependency is something else's schedule deciding yours, so any at all is worth the eye.
       tone: vitals.dependencyCount > 0 ? 'alert' : 'normal',
     },
+    // The PI clock, kept as its OWN tiles beside the release-shaped ones rather than folded into
+    // them. A team is measured on this and operates on the other, and a single merged figure is
+    // exactly the confusion the forecast exists to end.
+    ...buildPiDodTiles(forecast),
   ];
+}
+
+/**
+ * The two PI-commitment tiles: whether the Feature is at Integration Test, and when it can be.
+ *
+ * Returns nothing when no forecast was supplied, so every caller that predates this gets the same
+ * five tiles it has always had.
+ */
+function buildPiDodTiles(forecast: FeatureDodAssessment | null | undefined): LaneVitalTile[] {
+  if (!forecast) {
+    return [];
+  }
+
+  return [
+    {
+      id: 'pi-dod',
+      label: 'PI DoD',
+      value: describePiVerdict(forecast),
+      // Colour is an addition to the words, never a replacement: the value already says which it is.
+      tone: forecast.piVerdict === 'at-risk'
+        ? 'alert'
+        : forecast.piVerdict === 'not-configured' ? 'missing' : 'normal',
+    },
+    {
+      id: 'dod-date',
+      label: 'INT BY',
+      value: forecast.dodDateIso ?? ABSENT_VALUE_LABEL,
+      tone: forecast.dodDateIso === null ? 'missing' : forecast.piVerdict === 'at-risk' ? 'alert' : 'normal',
+    },
+  ];
+}
+
+/** Puts the PI verdict into words, naming the constraint when there is one. */
+function describePiVerdict(forecast: FeatureDodAssessment): string {
+  if (forecast.intReadyState === 'int-ready') {
+    return 'Ready';
+  }
+  if (forecast.intReadyState === 'unknown-sub-status') {
+    return 'Not checked';
+  }
+  if (forecast.piVerdict === 'not-configured') {
+    return 'No PI end set';
+  }
+  if (forecast.piVerdict === 'meets') {
+    return 'On track';
+  }
+  // Naming WHICH half is at fault is the difference between "find more testers" and "split the
+  // work" — two very different conversations that a bare "at risk" cannot tell apart.
+  return forecast.riskCause === 'test-squeeze' ? 'At risk — test squeeze' : 'At risk — dev too large';
 }

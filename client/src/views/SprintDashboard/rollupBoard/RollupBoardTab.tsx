@@ -116,6 +116,11 @@ import { loadColumnOptionSources, type ColumnOptionSources } from './columnOptio
 import { executeStatusMove, type ExecuteStatusMoveInput } from './statusMoveWriter.ts';
 import { resolveBoardItems } from './featureRollup.ts';
 import { buildFeatureWithoutWorkCard, buildMasterCards, orderLanesLikePiReview } from './masterCards.ts';
+import { adaptBoardItems, collectFixVersionNames } from '../forecast/forecastAdapters.ts';
+import { buildForecastConfig } from '../forecast/forecastSettings.ts';
+import { computeForecast } from '../forecast/forecastCompose.ts';
+import { readArtSettings } from '../../../services/artSettingsStore.ts';
+import { toCalendarDay } from '../../../utils/calendarDate.ts';
 import {
   fetchCardDetails,
   fetchCarryOverScope,
@@ -568,6 +573,47 @@ export default function RollupBoardTab({
   const orderedColumnIds = useMemo(
     () => [...vocabulary.columns].sort((left, right) => left.order - right.order).map((column) => column.id),
     [vocabulary.columns],
+  );
+
+  /**
+   * The whole delivery forecast for this board, computed once.
+   *
+   * Costs no extra Jira request: the board already carries points, fix versions, assignee, column
+   * and sub-status. It calls the SAME computeForecast the Today tab and the Forecast tab call, which
+   * is why the three cannot report different figures for one issue — there is only one figure.
+   */
+  const boardForecast = useMemo(() => {
+    const items = adaptBoardItems(loadState.allItems);
+    const artSettings = readArtSettings();
+    const { config, rejectedSettings } = buildForecastConfig(artSettings, toCalendarDay(new Date()));
+    const computed = computeForecast(
+      {
+        items,
+        orderedColumnIds,
+        // Only the versions this work is actually committed to. The board does not read the
+        // project's version list, so a date has to come from the version's name where its field is
+        // blank — which is exactly what releaseDateResolve is for.
+        fixVersions: collectFixVersionNames(items).map((versionName) => ({ name: versionName })),
+        people: [],
+        piEndDate: artSettings.piEndDate,
+        hasSubStatusField: loadState.hasSubStatusField,
+        teamProfileId,
+      },
+      config,
+    );
+    return { ...computed, rejectedSettings };
+  }, [loadState.allItems, loadState.hasSubStatusField, orderedColumnIds, teamProfileId]);
+
+  /** Each card's verdict, keyed so a lane can hand one to every card without searching. */
+  const forecastByIssueKey = useMemo(
+    () => Object.fromEntries(boardForecast.issueForecasts.map((forecast) => [forecast.issueKey, forecast])),
+    [boardForecast.issueForecasts],
+  );
+
+  /** Each Feature's PI-commitment verdict, keyed by Feature key. */
+  const featureForecastByKey = useMemo(
+    () => Object.fromEntries(boardForecast.featureAssessments.map((assessment) => [assessment.featureKey, assessment])),
+    [boardForecast.featureAssessments],
   );
 
   // Deliberately NOT gated on a Jira board being selected. The scope comes from the dashboard's own
@@ -2633,6 +2679,8 @@ export default function RollupBoardTab({
           <SortableContext items={allFeatureKeys} strategy={verticalListSortingStrategy}>
             {layout.lanes.map((lane, laneIndex) => (
             <MasterCardLane
+              featureForecast={featureForecastByKey[lane.masterCard.featureKey] ?? null}
+              forecastByIssueKey={forecastByIssueKey}
               cardDetailByIssueKey={cardDetailByIssueKey}
               columnTracks={columnTracks}
               columns={layout.columns}
