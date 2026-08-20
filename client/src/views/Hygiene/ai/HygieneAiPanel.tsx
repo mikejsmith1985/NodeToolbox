@@ -15,7 +15,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ReportAiPanel } from '../../ReportsHub/ReportAiPanel.tsx'
 import type { HygieneFieldConfig, HygieneFinding } from '../checks/hygieneChecks.ts'
 import {
-  buildHygieneAiPrompt,
+  buildHygieneAiPromptPlan,
   hasAiFixableFlags,
   parseHygieneAiReply,
   type HygieneAiProposal,
@@ -39,6 +39,15 @@ const JIRA_WRITE_DISCLOSURE =
 const NO_FIXABLE_FLAGS_MESSAGE =
   'No AI-fixable flags on this page — run Hygiene first, or everything fixable is already clean.'
 
+/**
+ * The "no filter" value, as a module constant rather than a default `[]` in the signature.
+ *
+ * A literal default is a NEW array on every render, and this value feeds the dependency array of
+ * the memo that feeds the effects — so the default alone re-ran the comment fetch on every render
+ * and spun the panel in an endless render loop.
+ */
+const NO_CHECK_RESTRICTION: readonly string[] = []
+
 /** Where one proposal sits in its lifecycle. Only `applied` has touched Jira. */
 type ProposalStatus =
   | { state: 'pending' }
@@ -49,13 +58,26 @@ type ProposalStatus =
 /** Props: the page's current findings, the resolved field config, and the rescan callback. */
 export interface HygieneAiPanelProps {
   findings: readonly HygieneFinding[]
+  /**
+   * The checks the page is filtered to, or empty for "no filter".
+   *
+   * Someone reading the stale list is working on stale issues; asking the agent about every missing
+   * estimate and absent acceptance criterion as well is how one run reached 181,411 characters
+   * against a 128,000-character input box and was refused outright (GH #375).
+   */
+  restrictToCheckIds?: readonly string[]
   fieldConfig: HygieneFieldConfig
   /** Called after a successful write so the page rescans and the fixed flag disappears. */
   onIssueFixed: (issueKey: string) => void
 }
 
 /** Renders the AI Assist workflow for the Hygiene page. The parent gates it behind Ctrl+Alt+Z. */
-export function HygieneAiPanel({ findings, fieldConfig, onIssueFixed }: HygieneAiPanelProps) {
+export function HygieneAiPanel({
+  findings,
+  restrictToCheckIds = NO_CHECK_RESTRICTION,
+  fieldConfig,
+  onIssueFixed,
+}: HygieneAiPanelProps) {
   const [proposals, setProposals] = useState<HygieneAiProposal[]>([])
   const [statusByProposal, setStatusByProposal] = useState<Record<string, ProposalStatus>>({})
   const [unknownKeys, setUnknownKeys] = useState<string[]>([])
@@ -63,7 +85,10 @@ export function HygieneAiPanel({ findings, fieldConfig, onIssueFixed }: HygieneA
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
 
-  const fixableFindings = useMemo(() => findings.filter(hasAiFixableFlags), [findings])
+  const fixableFindings = useMemo(
+    () => findings.filter((finding) => hasAiFixableFlags(finding, restrictToCheckIds)),
+    [findings, restrictToCheckIds],
+  )
 
   // The stale asks carry each issue's LAST COMMENT so the model can decline to nudge a ticket that
   // already explains its delay. Fetched on demand, only for stale-flagged issues; failures degrade
@@ -74,13 +99,13 @@ export function HygieneAiPanel({ findings, fieldConfig, onIssueFixed }: HygieneA
       return
     }
     let isActive = true
-    void fetchStaleIssueContexts(fixableFindings).then((contexts) => {
+    void fetchStaleIssueContexts(fixableFindings, restrictToCheckIds).then((contexts) => {
       if (isActive) setStaleContextsByKey(contexts)
     })
     return () => {
       isActive = false
     }
-  }, [fixableFindings])
+  }, [fixableFindings, restrictToCheckIds])
 
   // The projects in play, and the open releases each one actually has. Without this the model was
   // asked to name a fix version with nothing to go on and invented plausible ones — "PY 2027 AEP" —
@@ -105,17 +130,21 @@ export function HygieneAiPanel({ findings, fieldConfig, onIssueFixed }: HygieneA
     return () => { isActive = false }
   }, [fixableFindings])
 
-  const promptText = useMemo(
-    () => (fixableFindings.length === 0
-      ? ''
-      : buildHygieneAiPrompt(fixableFindings, staleContextsByKey, openVersionNamesByProject)),
-    [fixableFindings, staleContextsByKey, openVersionNamesByProject],
+  const promptPlan = useMemo(
+    () => buildHygieneAiPromptPlan(
+      fixableFindings,
+      { restrictToCheckIds },
+      staleContextsByKey,
+      openVersionNamesByProject,
+    ),
+    [fixableFindings, restrictToCheckIds, staleContextsByKey, openVersionNamesByProject],
   )
+  const promptText = fixableFindings.length === 0 ? '' : promptPlan.promptText
 
   // Both paths land here. Auto is a shortcut past the paste box, never a second pipeline.
   const applyResponse = useCallback((responseText: string) => {
     try {
-      const runResult = parseHygieneAiReply(responseText, fixableFindings.map((finding) => finding.issue.key))
+      const runResult = parseHygieneAiReply(responseText, promptPlan.includedIssueKeys)
       setProposals(runResult.proposals)
       setStatusByProposal({})
       setUnknownKeys(runResult.unknownKeys)
@@ -125,7 +154,7 @@ export function HygieneAiPanel({ findings, fieldConfig, onIssueFixed }: HygieneA
     } catch (parseError) {
       setErrorMessage(parseError instanceof Error ? parseError.message : 'Could not read the response.')
     }
-  }, [fixableFindings])
+  }, [promptPlan.includedIssueKeys])
 
   function proposalKey(proposal: HygieneAiProposal): string {
     return `${proposal.issueKey}:${proposal.checkId}`
@@ -169,6 +198,17 @@ export function HygieneAiPanel({ findings, fieldConfig, onIssueFixed }: HygieneA
       title="AI Assist hygiene fixes"
     >
       {statusMessage !== null && <p className={styles.aiStatusNote}>{statusMessage}</p>}
+
+      {/* A prompt that quietly covers 60 of 300 issues reads exactly like one that covers all of
+          them; the difference only shows up when the missing 240 turn up unfixed weeks later. */}
+      {promptPlan.omittedCount > 0 && (
+        <p className={styles.aiWarningNote}>
+          This prompt covers <strong>{promptPlan.includedCount}</strong> of{' '}
+          {promptPlan.includedCount + promptPlan.omittedCount} issues — the rest would not fit the
+          agent&apos;s input limit. Fix these, rescan, and run it again for the remainder, or filter
+          the page to one flag to cover more issues per run.
+        </p>
+      )}
 
       {unknownKeys.length > 0 && (
         <p className={styles.aiWarningNote}>

@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest'
 import {
   AI_FIXABLE_CHECK_INSTRUCTIONS,
   buildHygieneAiPrompt,
+  buildHygieneAiPromptPlan,
   hasAiFixableFlags,
   parseHygieneAiReply,
   MAX_AI_COMMENT_LENGTH,
@@ -320,5 +321,94 @@ describe('date fixes carry the facts the policy needs', () => {
 
     expect(prompt).toContain('cannot be derived')
     expect(prompt).not.toContain('policy value for Due Date:')
+  })
+})
+
+describe('buildHygieneAiPromptPlan — the prompt has to fit in the agent box', () => {
+  // A run over a whole board produced 181,411 characters against a 128,000 limit, so the paste was
+  // simply refused (GH #375). Two things shrink it: asking only about the flag the page is filtered
+  // to, and refusing to emit more than the box will take.
+  function manyFindings(issueCount: number): HygieneFinding[] {
+    return Array.from({ length: issueCount }, (_unused, index) =>
+      finding(`TBX-${index + 1}`, ['missing-sp', 'no-ac', 'stale']))
+  }
+
+  it('asks only about the checks the page is filtered to', () => {
+    const plan = buildHygieneAiPromptPlan([finding('TBX-1', ['missing-sp', 'no-ac', 'stale'])], {
+      restrictToCheckIds: ['missing-sp'],
+    })
+
+    expect(plan.promptText).toContain('missing-sp')
+    expect(plan.promptText).not.toContain('no-ac')
+    expect(plan.promptText).not.toContain('stale')
+  })
+
+  it('drops a finding entirely when the filter leaves it no fixable flag', () => {
+    const plan = buildHygieneAiPromptPlan(
+      [finding('TBX-1', ['missing-sp']), finding('TBX-2', ['no-ac'])],
+      { restrictToCheckIds: ['missing-sp'] },
+    )
+
+    expect(plan.promptText).toContain('TBX-1')
+    expect(plan.promptText).not.toContain('TBX-2')
+    expect(plan.includedCount).toBe(1)
+  })
+
+  it('keeps the whole prompt inside the character budget', () => {
+    const plan = buildHygieneAiPromptPlan(manyFindings(400), { maxCharacterCount: 5_000 })
+
+    expect(plan.promptText.length).toBeLessThanOrEqual(5_000)
+  })
+
+  it('reports what it left out rather than truncating in silence', () => {
+    const plan = buildHygieneAiPromptPlan(manyFindings(400), { maxCharacterCount: 5_000 })
+
+    expect(plan.omittedCount).toBeGreaterThan(0)
+    expect(plan.includedCount + plan.omittedCount).toBe(400)
+    expect(plan.includedCount).toBeGreaterThan(0)
+  })
+
+  it('omits nothing and reports zero when the whole set fits', () => {
+    const plan = buildHygieneAiPromptPlan(manyFindings(2))
+
+    expect(plan.omittedCount).toBe(0)
+    expect(plan.includedCount).toBe(2)
+  })
+
+  it('never emits a partial issue block — every key it lists is a key it described', () => {
+    const plan = buildHygieneAiPromptPlan(manyFindings(400), { maxCharacterCount: 5_000 })
+    const listedKeys = plan.promptText.slice(plan.promptText.indexOf('Issue keys you may use:'))
+
+    for (let issueIndex = 1; issueIndex <= plan.includedCount; issueIndex += 1) {
+      expect(listedKeys).toContain(`TBX-${issueIndex}`)
+    }
+  })
+
+  it('still returns a usable prompt when a single finding alone exceeds the budget', () => {
+    const plan = buildHygieneAiPromptPlan(manyFindings(3), { maxCharacterCount: 10 })
+
+    expect(plan.includedCount).toBe(0)
+    expect(plan.omittedCount).toBe(3)
+    expect(plan.promptText).toContain('hygiene')
+  })
+})
+
+describe('buildHygieneAiPromptPlan — the parser must not trust a key the prompt never carried', () => {
+  it('reports exactly the keys it described', () => {
+    const plan = buildHygieneAiPromptPlan(
+      [finding('TBX-1', ['missing-sp']), finding('TBX-2', ['missing-sp'])],
+    )
+
+    expect(plan.includedIssueKeys).toEqual(['TBX-1', 'TBX-2'])
+  })
+
+  it('leaves a budget-trimmed issue out of the trusted key list', () => {
+    const crowded = Array.from({ length: 200 }, (_unused, index) =>
+      finding(`TBX-${index + 1}`, ['missing-sp']))
+
+    const plan = buildHygieneAiPromptPlan(crowded, { maxCharacterCount: 4_000 })
+
+    expect(plan.includedIssueKeys).toHaveLength(plan.includedCount)
+    expect(plan.includedIssueKeys).not.toContain('TBX-200')
   })
 })

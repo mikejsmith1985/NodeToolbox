@@ -51,9 +51,15 @@ function readRecentComments(response: JiraCommentResponse): StaleIssueContext {
  */
 export async function fetchStaleIssueContexts(
   findings: readonly HygieneFinding[],
+  /**
+   * The checks the page is filtered to. Passed through so a run filtered to, say, missing estimates
+   * does not fetch the comment thread of every issue that also happens to be stale — those threads
+   * cost one Jira request each and would not appear in the prompt.
+   */
+  restrictToCheckIds: readonly string[] = [],
 ): Promise<Record<string, StaleIssueContext>> {
   const staleFindings = findings.filter((finding) =>
-    readAiFixableFlags(finding).some((flag) => flag.checkId === 'stale'),
+    readAiFixableFlags(finding, restrictToCheckIds).some((flag) => flag.checkId === 'stale'),
   )
 
   const contextEntries = await Promise.all(

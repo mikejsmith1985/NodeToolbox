@@ -126,17 +126,29 @@ export function isBlockedStatusIssue(finding: HygieneFinding): boolean {
  * app data, so it is enforced here rather than hoped for in the prompt (GH #167 follow-up: "don't
  * ask for an update when the ticket already says why it's waiting").
  */
-export function readAiFixableFlags(finding: HygieneFinding): HygieneFinding['flags'] {
+export function readAiFixableFlags(
+  finding: HygieneFinding,
+  /**
+   * The checks the page is currently filtered to, or empty for "no filter".
+   *
+   * A run over an unfiltered board produced a 181,411-character prompt against a 128,000-character
+   * input box, so the paste was simply refused (GH #375). Most of that bulk was answers nobody was
+   * looking at: filtering to stale issues and then being asked about every missing estimate and
+   * every absent acceptance criterion as well. Someone reading one flag is working on one flag.
+   */
+  restrictToCheckIds: readonly string[] = [],
+): HygieneFinding['flags'] {
   return finding.flags.filter((flag) => {
     if (!(flag.checkId in AI_FIXABLE_CHECK_INSTRUCTIONS)) return false
+    if (restrictToCheckIds.length > 0 && !restrictToCheckIds.includes(flag.checkId)) return false
     if (flag.checkId === 'stale' && isBlockedStatusIssue(finding)) return false
     return true
   })
 }
 
 /** True when this finding carries at least one flag the AI is allowed to propose a fix for. */
-export function hasAiFixableFlags(finding: HygieneFinding): boolean {
-  return readAiFixableFlags(finding).length > 0
+export function hasAiFixableFlags(finding: HygieneFinding, restrictToCheckIds: readonly string[] = []): boolean {
+  return readAiFixableFlags(finding, restrictToCheckIds).length > 0
 }
 
 /** The stale ask's context lines: current status plus the recent conversation, oldest first. */
@@ -156,9 +168,13 @@ function buildStaleContextLines(finding: HygieneFinding, staleContext: StaleIssu
 }
 
 /** One issue's block: identity and signals on the header, the fixable flags as numbered asks. */
-function buildFindingBlock(finding: HygieneFinding, staleContextsByKey: Record<string, StaleIssueContext>): string {
+function buildFindingBlock(
+  finding: HygieneFinding,
+  staleContextsByKey: Record<string, StaleIssueContext>,
+  restrictToCheckIds: readonly string[] = [],
+): string {
   const issueFields = finding.issue.fields
-  const fixableFlags = readAiFixableFlags(finding)
+  const fixableFlags = readAiFixableFlags(finding, restrictToCheckIds)
   const isStaleAsked = fixableFlags.some((flag) => flag.checkId === 'stale')
   const rawDescription = typeof issueFields.description === 'string' ? issueFields.description : ''
   const descriptionExcerpt = rawDescription.slice(0, DESCRIPTION_EXCERPT_LENGTH)
@@ -224,6 +240,115 @@ function buildDatePolicyLines(finding: HygieneFinding, fixableFlags: readonly { 
  * never see an issue it has nothing to propose for. Stale asks carry the issue's status and last
  * comment (when supplied) so the model can decline to nudge a ticket that already explains itself.
  */
+/**
+ * The agent's input box refuses a longer paste. Measured, not guessed: a whole-board run reported
+ * "181,411 / 128,000 — Character limit exceeded" (GH #375). The budget sits below the limit so the
+ * few characters a chat client adds around a paste cannot push a fitting prompt back over it.
+ */
+export const DEFAULT_PROMPT_CHARACTER_BUDGET = 120_000
+
+/**
+ * The guidance on judging a stale thread. Hoisted out of the template so the character budget can
+ * reserve its exact length rather than an estimate — a guess here reappears as a prompt that
+ * overshoots the agent's input box by a few hundred characters and is refused all over again.
+ */
+const STALE_JUDGEMENT_RULES = `  - For "stale" fixes: read the issue's status and its recent comments — the WHOLE conversation,
+    not just the newest line (a bare "thanks" often sits on top of the comment that explains
+    everything). If the thread already explains why the ticket is waiting (blocked by other work,
+    waiting on a dependency or another team, queued or ready for testing, deprioritized, scheduled
+    for later), OMIT the stale fix for that issue — asking for an update the ticket has already
+    given is noise, not hygiene. Only propose a nudge when the thread is genuinely silent about
+    why it has stalled.
+`
+
+/** The ", " that joins one more key onto the "keys you may use" list. */
+const KEY_LIST_SEPARATOR_LENGTH = 2
+
+/** Covers the handful of characters the issue COUNT in the header grows by as issues are added. */
+const BUDGET_SAFETY_MARGIN = 16
+
+/** How the caller narrows the prompt: to the page's filter, and to what the agent will accept. */
+export interface HygieneAiPromptOptions {
+  /** Check ids the page is filtered to. Empty means "no filter — ask about every fixable flag". */
+  restrictToCheckIds?: readonly string[]
+  maxCharacterCount?: number
+}
+
+/** A built prompt together with an honest account of the issues it could not carry. */
+export interface HygieneAiPromptPlan {
+  promptText: string
+  /** Issues actually described in the prompt. */
+  includedCount: number
+  /**
+   * The keys the prompt carried. The reply parser trusts THIS, not the page's full key list — an
+   * issue trimmed for budget must not have a proposal accepted for it from a stale earlier reply.
+   */
+  includedIssueKeys: string[]
+  /** Issues left out to stay inside the budget — never silently dropped. */
+  omittedCount: number
+}
+
+/**
+ * Builds the prompt, narrowed to the page's filter and trimmed to fit the agent's input box.
+ *
+ * Issues are kept in the order given — the order on screen — so what survives is the top of the
+ * list the user is looking at rather than an arbitrary subset. Whole issues are dropped, never part
+ * of one: a half-described issue invites a proposal made from half the facts.
+ *
+ * The count that could not be carried is RETURNED rather than swallowed. A prompt that quietly
+ * covers 60 of 300 issues reads exactly like one that covers all of them, and the difference is
+ * only discovered when the missing 240 turn up unfixed weeks later.
+ */
+export function buildHygieneAiPromptPlan(
+  findings: readonly HygieneFinding[],
+  options: HygieneAiPromptOptions = {},
+  staleContextsByKey: Record<string, StaleIssueContext> = {},
+  openVersionNamesByProject: Record<string, readonly string[]> = {},
+): HygieneAiPromptPlan {
+  const restrictToCheckIds = options.restrictToCheckIds ?? []
+  const characterBudget = options.maxCharacterCount ?? DEFAULT_PROMPT_CHARACTER_BUDGET
+  const fixableFindings = findings.filter((finding) => hasAiFixableFlags(finding, restrictToCheckIds))
+
+  const renderAll = () => renderPrompt(fixableFindings, staleContextsByKey, openVersionNamesByProject, restrictToCheckIds)
+  const wholeSetPrompt = renderAll()
+  if (wholeSetPrompt.length <= characterBudget) {
+    return {
+      promptText: wholeSetPrompt,
+      includedCount: fixableFindings.length,
+      includedIssueKeys: fixableFindings.map((finding) => finding.issue.key),
+      omittedCount: 0,
+    }
+  }
+
+  // Cost is measured per issue against an EMPTY scaffold rather than by trimming the full prompt,
+  // because an issue costs the prompt twice: its description block, and its key in the "keys you may
+  // use" list. Reserving the full 400-key list up front would price out issues that comfortably fit
+  // once the list shrinks with them.
+  const emptyScaffoldLength = renderPrompt([], staleContextsByKey, openVersionNamesByProject, restrictToCheckIds).length
+  const perFindingCosts = fixableFindings.map((finding) =>
+    buildFindingBlock(finding, staleContextsByKey, restrictToCheckIds).length + 1
+    + finding.issue.key.length + KEY_LIST_SEPARATOR_LENGTH)
+
+  const isStaleAskedAnywhere = fixableFindings.some((finding) =>
+    readAiFixableFlags(finding, restrictToCheckIds).some((flag) => flag.checkId === 'stale'))
+  const staleGuidanceReserve = isStaleAskedAnywhere ? STALE_JUDGEMENT_RULES.length : 0
+
+  let remainingCharacters = characterBudget - emptyScaffoldLength - staleGuidanceReserve - BUDGET_SAFETY_MARGIN
+  let includedCount = 0
+  while (includedCount < perFindingCosts.length && perFindingCosts[includedCount] <= remainingCharacters) {
+    remainingCharacters -= perFindingCosts[includedCount]
+    includedCount += 1
+  }
+
+  const chosenFindings = fixableFindings.slice(0, includedCount)
+  return {
+    promptText: renderPrompt(chosenFindings, staleContextsByKey, openVersionNamesByProject, restrictToCheckIds),
+    includedCount,
+    includedIssueKeys: chosenFindings.map((finding) => finding.issue.key),
+    omittedCount: fixableFindings.length - includedCount,
+  }
+}
+
 export function buildHygieneAiPrompt(
   findings: readonly HygieneFinding[],
   staleContextsByKey: Record<string, StaleIssueContext> = {},
@@ -235,9 +360,25 @@ export function buildHygieneAiPrompt(
    * Jira then rejected with a 400. A model cannot guess a release schedule; it can pick from one.
    */
   openVersionNamesByProject: Record<string, readonly string[]> = {},
+  options: HygieneAiPromptOptions = {},
 ): string {
-  const fixableFindings = findings.filter(hasAiFixableFlags)
+  return buildHygieneAiPromptPlan(findings, options, staleContextsByKey, openVersionNamesByProject).promptText
+}
+
+/** Renders the prompt for an already-chosen set of findings. Pure string assembly, no selection. */
+function renderPrompt(
+  chosenFindings: readonly HygieneFinding[],
+  staleContextsByKey: Record<string, StaleIssueContext>,
+  openVersionNamesByProject: Record<string, readonly string[]>,
+  restrictToCheckIds: readonly string[],
+): string {
+  const fixableFindings = chosenFindings
   const issueKeyList = fixableFindings.map((finding) => finding.issue.key).join(', ')
+  // Seven lines of guidance on judging a stale thread are worth their length when a nudge is being
+  // asked for and are pure noise when one is not — which is every run filtered to another flag.
+  const isAnyStaleAsked = fixableFindings.some((finding) =>
+    readAiFixableFlags(finding, restrictToCheckIds).some((flag) => flag.checkId === 'stale'))
+  const staleRulesSection = isAnyStaleAsked ? STALE_JUDGEMENT_RULES : ''
   const releaseLines = Object.entries(openVersionNamesByProject)
     .filter(([, versionNames]) => versionNames.length > 0)
     .map(([projectKey, versionNames]) => `  ${projectKey}: ${versionNames.join(' | ')}`)
@@ -253,20 +394,13 @@ individually before anything is written.
 Rules:
   - Use only the issue keys listed below. Never invent an issue or a key.
   - Dates must be YYYY-MM-DD. Story points must be a plain positive number.
-  - Keep field values under ${MAX_AI_FIX_VALUE_LENGTH} characters; a stale-nudge comment under ${MAX_AI_COMMENT_LENGTH}.
+  - Keep field values under ${MAX_AI_FIX_VALUE_LENGTH} characters.${isAnyStaleAsked ? ` A nudge comment may run to ${MAX_AI_COMMENT_LENGTH}.` : ''}
   - Omit a fix entirely when the context is not enough to propose responsibly — a human has to
     catch every bad guess, so say nothing rather than guess.
-  - For "stale" fixes: read the issue's status and its recent comments — the WHOLE conversation,
-    not just the newest line (a bare "thanks" often sits on top of the comment that explains
-    everything). If the thread already explains why the ticket is waiting (blocked by other work,
-    waiting on a dependency or another team, queued or ready for testing, deprioritized, scheduled
-    for later), OMIT the stale fix for that issue — asking for an update the ticket has already
-    given is noise, not hygiene. Only propose a nudge when the thread is genuinely silent about
-    why it has stalled.
-  - Give a one-line "rationale" per fix so the reviewer understands your reasoning.
+${staleRulesSection}  - Give a one-line "rationale" per fix so the reviewer understands your reasoning.
 
 Issues (${fixableFindings.length}):
-${fixableFindings.map((finding) => buildFindingBlock(finding, staleContextsByKey)).join('\n')}
+${fixableFindings.map((finding) => buildFindingBlock(finding, staleContextsByKey, restrictToCheckIds)).join('\n')}
 
 Issue keys you may use: ${issueKeyList}${releaseSection}
 

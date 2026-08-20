@@ -10,7 +10,7 @@ import {
   type HygieneFinding,
   type HygieneFlag,
 } from './checks/hygieneChecks.ts';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { buildHygieneDiagnosticsReport } from './hygieneDiagnostics.ts';
 import { applyDerivedDates } from './derivedDateFix.ts';
 import { AgeBadge } from '../../components/IssueMeta/AgeBadge.tsx';
@@ -125,6 +125,12 @@ export default function HygieneView({
     assigneeClause,
   });
   const isAiAssistUnlocked = useAiAssistStore((storeState) => storeState.isAiAssistUnlocked);
+  // Memoised because it is a new array on every render otherwise, and the AI panel rebuilds its
+  // prompt (and re-fetches comment context) whenever this identity changes.
+  const aiRestrictToCheckIds = useMemo(
+    () => parseHygieneFilterCheckIds(hygieneState.selectedFilter),
+    [hygieneState.selectedFilter],
+  );
   const jiraBaseUrl = useConnectionStore((state) => state.proxyStatus?.jira?.baseUrl ?? null);
   // The same stale threshold the scan grades with — the AgeBadge heat derives from it (spec 019 FR-005).
   const activeTeamProfileId = useSettingsStore((storeState) => storeState.sprintDashboardActiveTeamProfileId);
@@ -435,7 +441,11 @@ export default function HygieneView({
       {isAiAssistUnlocked && (
         <HygieneAiPanel
           fieldConfig={fixFieldConfig}
-          findings={hygieneState.findings}
+          // The page's filter, not the whole scan: someone reading the stale list is working on
+          // stale issues, and asking about every other flag as well is what pushed one prompt to
+          // 181,411 characters against a 128,000-character input box (GH #375).
+          findings={hygieneState.filteredFindings}
+          restrictToCheckIds={aiRestrictToCheckIds}
           onIssueFixed={() => {
             void hygieneState.loadHygiene();
           }}

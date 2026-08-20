@@ -144,3 +144,35 @@ describe('HygieneAiPanel', () => {
     expect(screen.getByRole('alert')).toBeInTheDocument()
   })
 })
+
+describe('HygieneAiPanel — the prompt has to fit the agent box', () => {
+  it('asks only about the flag the page is filtered to', () => {
+    render(
+      <HygieneAiPanel
+        fieldConfig={FIELD_CONFIG}
+        findings={[finding('TBX-1', ['missing-sp', 'no-ac'])]}
+        onIssueFixed={vi.fn()}
+        restrictToCheckIds={['missing-sp']}
+      />,
+    )
+
+    const promptBox = screen.getByLabelText('AI Assist hygiene fixes prompt') as HTMLTextAreaElement
+    expect(promptBox.value).toContain('missing-sp')
+    expect(promptBox.value).not.toContain('no-ac')
+  })
+
+  it('says how many issues it left out rather than trimming in silence', () => {
+    const crowdedFindings = Array.from({ length: 1_500 }, (_unused, index) =>
+      finding(`TBX-${index + 1}`, ['no-ac']))
+
+    render(
+      <HygieneAiPanel
+        fieldConfig={FIELD_CONFIG}
+        findings={crowdedFindings}
+        onIssueFixed={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByText(/would not fit the agent/i)).toBeInTheDocument()
+  })
+})

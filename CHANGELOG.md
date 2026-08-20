@@ -8,6 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **The Hygiene AI prompt now fits the agent's input box.** A run over a whole board produced
+  181,411 characters against a 128,000-character limit, so the paste was refused outright and the
+  feature did nothing at all (GH #375). Three things shrink it. The prompt now follows the page's
+  **filter**: someone reading the stale list is working on stale issues, so only stale is asked
+  about, and issues carrying no flag of that kind drop out of the prompt entirely. The seven lines
+  of guidance on judging a stale thread are emitted only when a nudge is actually being asked for.
+  And the prompt is now built to a character budget, dropping whole issues from the end rather than
+  cutting one in half — a half-described issue invites a proposal made from half the facts.
+  What did not fit is **stated on the panel** ("covers 43 of 210 issues"), because a prompt that
+  quietly covers a fifth of the page reads exactly like one that covers all of it, and the
+  difference only shows up when the missing issues turn up unfixed weeks later. The reply parser
+  trusts only the keys the prompt actually carried, so a trimmed issue cannot have a proposal
+  accepted for it. Filtering also stops the panel fetching comment threads it will not use — one
+  Jira request per stale issue that was being spent on context nobody would read.
+
+### Fixed
 - **Typing a space inside a Hygiene finding row no longer collapses it.** The row is a
   `role="button"`, and its keyboard handler ran for every key that bubbled out of the controls
   inside it. A space typed into the Feature search box was swallowed by `preventDefault()` and
