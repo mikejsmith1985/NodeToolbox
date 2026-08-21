@@ -19,6 +19,7 @@ import { readStoredStandupRosterMembers } from '../hooks/useStandupRosterStore.t
 import { adaptHygieneIssues, type JiraIssueLike } from './forecastAdapters.ts';
 import { buildForecastConfig } from './forecastSettings.ts';
 import { computeForecast } from './forecastCompose.ts';
+import { ForecastAiPanel } from './ai/ForecastAiPanel.tsx';
 import type { CapacityAssessment, CapacityPerson, ForecastResult, ReleaseClock } from './forecastTypes.ts';
 import styles from '../SprintDashboardView.module.css';
 
@@ -435,6 +436,17 @@ export default function ForecastTab({ projectKey, teamProfileId, scopedIssues }:
 
       {forecast !== null && <PiCommitmentSection forecast={forecast} />}
       {forecast !== null && <SizingSection forecast={forecast} />}
+      {forecast !== null && (
+        <ForecastAiPanel
+          forecast={forecast}
+          codeFreezeAssessment={selectedVersionName === ''
+            ? null
+            : forecast.codeFreezeCapacityByVersionName[selectedVersionName] ?? null}
+          externalTestAssessment={selectedVersionName === ''
+            ? null
+            : forecast.externalTestCapacityByVersionName[selectedVersionName] ?? null}
+        />
+      )}
       {forecast !== null && <ReleaseDateNotes forecast={forecast} />}
     </div>
   );

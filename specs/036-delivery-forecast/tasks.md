@@ -262,14 +262,14 @@ wins and the disagreement is flagged; `Sprint 5` yields no date and its issues r
 **Independent test**: A reply naming an unsupplied issue key is rejected and the key named; a reply containing
 `"days": 14` is rejected as an unexpected property; locking AI Assist removes the panel entirely.
 
-- [ ] T078 [P] [US8] Write failing tests for the three prompt builders (6 cases from `contracts/forecast-ai.md` §6) in `client/src/views/SprintDashboard/forecast/ai/forecastAiAssist.test.ts`
-- [ ] T079 [US8] Implement `buildForecastDailyPrompt`, `buildScopeCutPrompt` and `buildTestCapacityPrompt` in `client/src/views/SprintDashboard/forecast/ai/forecastAiAssist.ts` as pure functions over `ForecastResult`; every figure verbatim, every legal issue key and person key named, the do-not-invent instruction present, deterministic output, and no AI-attribution phrasing requested
-- [ ] T080 [P] [US8] Write failing tests for `parseForecastAiReply` (12 cases, including the `"days": 14` unexpected-property rejection) appended to `forecastAiAssist.test.ts`
-- [ ] T081 [US8] Implement `parseForecastAiReply` in the same file, using `utils/extractJsonPayload.ts`; the item schema carries `id`, `headline`, `narrative`, `issueKeys` and `personKeys` and **no numeric field at all**, so any numeric property is an unexpected property and the item is rejected and named
-- [ ] T082 [P] [US8] Write failing tests for the locked/unlocked render, ingest error handling and per-item accept in `client/src/views/SprintDashboard/forecast/ai/ForecastAiPanel.test.tsx`
-- [ ] T083 [US8] Create `client/src/views/SprintDashboard/forecast/ai/ForecastAiPanel.tsx` as a thin wrapper over `ReportsHub/ReportAiPanel.tsx` — adding no gate of its own, keeping the default "writes nothing to Jira" hint (which is accurate here), and holding per-item accept/decline state
-- [ ] T084 [US8] Mount `<ForecastAiPanel>` at the foot of `client/src/views/SprintDashboard/forecast/ForecastTab.tsx`
-- [ ] T085 [US8] Run the full client suite and commit with a CHANGELOG entry
+- [X] T078 [P] [US8] Write failing tests for the three prompt builders (6 cases from `contracts/forecast-ai.md` §6) in `client/src/views/SprintDashboard/forecast/ai/forecastAiAssist.test.ts`
+- [X] T079 [US8] Implement `buildForecastDailyPrompt`, `buildScopeCutPrompt` and `buildTestCapacityPrompt` in `client/src/views/SprintDashboard/forecast/ai/forecastAiAssist.ts` as pure functions over `ForecastResult`; every figure verbatim, every legal issue key and person key named, the do-not-invent instruction present, deterministic output, and no AI-attribution phrasing requested
+- [X] T080 [P] [US8] Write failing tests for `parseForecastAiReply` (12 cases, including the `"days": 14` unexpected-property rejection) appended to `forecastAiAssist.test.ts`
+- [X] T081 [US8] Implement `parseForecastAiReply` in the same file, using `utils/extractJsonPayload.ts`; the item schema carries `id`, `headline`, `narrative`, `issueKeys` and `personKeys` and **no numeric field at all**, so any numeric property is an unexpected property and the item is rejected and named
+- [X] T082 [P] [US8] Write failing tests for the locked/unlocked render, ingest error handling and per-item accept in `client/src/views/SprintDashboard/forecast/ai/ForecastAiPanel.test.tsx`
+- [X] T083 [US8] Create `client/src/views/SprintDashboard/forecast/ai/ForecastAiPanel.tsx` as a thin wrapper over `ReportsHub/ReportAiPanel.tsx` — adding no gate of its own, keeping the default "writes nothing to Jira" hint (which is accurate here), and holding per-item accept/decline state
+- [X] T084 [US8] Mount `<ForecastAiPanel>` at the foot of `client/src/views/SprintDashboard/forecast/ForecastTab.tsx`
+- [X] T085 [US8] Run the full client suite and commit with a CHANGELOG entry
 
 ---
 

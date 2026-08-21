@@ -56,6 +56,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   name disagree the field wins and the disagreement is named, because a version name that lies about
   its own date is a real defect worth fixing.
 
+- **Three optional AI narratives, which can write prose and cannot change a number.** A daily
+  who-is-behind summary, a scope-cut recommendation, and a test-capacity mitigation weighing both
+  remedies. Every figure is rule-derived and appears in the prompt verbatim; the reply schema has no
+  numeric field at all, so a model that emits one has invented a property and the item is rejected
+  and named. Naming an issue or a person the prompt never mentioned is rejected the same way. Gated
+  behind the existing AI unlock, propose-only, and invisible when locked.
+
 ### Changed
 - **Target Start now means "the latest day this can begin and still land".** Where an issue's size is
   known, the date is worked back from whichever deadline binds — code freeze or the PI's own,
