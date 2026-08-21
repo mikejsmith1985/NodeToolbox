@@ -119,6 +119,7 @@ import { buildFeatureWithoutWorkCard, buildMasterCards, orderLanesLikePiReview }
 import { adaptBoardItems, collectFixVersionNames } from '../forecast/forecastAdapters.ts';
 import { buildForecastConfig } from '../forecast/forecastSettings.ts';
 import { computeForecast } from '../forecast/forecastCompose.ts';
+import { buildForecastNotices } from '../forecast/forecastNotices.ts';
 import { readArtSettings, readRawForecastSettings } from '../../../services/artSettingsStore.ts';
 import { toCalendarDay } from '../../../utils/calendarDate.ts';
 import {
@@ -608,6 +609,15 @@ export default function RollupBoardTab({
     );
     return { ...computed, rejectedSettings };
   }, [loadState.allItems, loadState.hasSubStatusField, loadState.masterCards, orderedColumnIds, teamProfileId]);
+
+  // What the forecast could not measure, and any setting it had to refuse. Built by a pure module so
+  // the wording is tested once and every surface says the same thing.
+  // The sub-status gap is omitted here: the board already carries a fuller notice about it, and two
+  // notices saying one thing is the noise that stops people reading the ones that matter.
+  const forecastNotices = useMemo<BoardNotice[]>(
+    () => buildForecastNotices(boardForecast, { omitSubStatusGap: true }),
+    [boardForecast],
+  );
 
   /** Each card's verdict, keyed so a lane can hand one to every card without searching. */
   const forecastByIssueKey = useMemo(
@@ -2486,7 +2496,7 @@ export default function RollupBoardTab({
           a count is right for context that was already true when the board loaded; it is wrong for a
           consequence of the last thing somebody tried. */}
       <BoardNotices
-        notices={[...boardNotices, ...subLaneNotices]}
+        notices={[...boardNotices, ...subLaneNotices, ...forecastNotices]}
         shouldStartExpanded={checklistWriteBlock !== null}
       />
 

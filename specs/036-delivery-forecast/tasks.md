@@ -275,14 +275,14 @@ wins and the disagreement is flagged; `Sprint 5` yields no date and its issues r
 
 ## Phase 11: Polish & Cross-Cutting Concerns
 
-- [ ] T086 [P] Confirm the completeness line ("N unsized · N unassigned · N undated") renders beside every total on all three surfaces (SC-012)
-- [ ] T087 [P] Confirm `rejectedSettings` renders wherever a forecast is shown, so a bad setting is visible rather than silently corrected
-- [ ] T088 [P] Audit the new UI against the GH #160 zoom rules and confirm no `width: calc(100%/zoom)` was introduced
-- [ ] T089 Confirm every new module's file header states its purpose and every exported function carries a doc comment (Article IV)
-- [ ] T090 **Verify all four guards**: `git diff --stat` on `workflowDelivery.test.ts`, `piPlanDates.test.ts` shows zero lines; `issueDateRules.test.ts` shows additions only; `fieldMappingBoundary.test.ts` passes
-- [ ] T091 Run the full regression sweep: `cd client && npm test`, `npm test` (server), `npm run test:dom`, `cd client && npx tsc -b` — all green
-- [ ] T092 Work through `quickstart.md` offline tests 1–9 and record the results
-- [ ] T093 Finalise the `CHANGELOG.md` entry describing the feature's user-visible behaviour
+- [X] T086 [P] Confirm the completeness line ("N unsized · N unassigned · N undated") renders beside every total on all three surfaces (SC-012)
+- [X] T087 [P] Confirm `rejectedSettings` renders wherever a forecast is shown, so a bad setting is visible rather than silently corrected
+- [X] T088 [P] Audit the new UI against the GH #160 zoom rules and confirm no `width: calc(100%/zoom)` was introduced
+- [X] T089 Confirm every new module's file header states its purpose and every exported function carries a doc comment (Article IV)
+- [X] T090 **Verify all four guards**: `git diff --stat` on `workflowDelivery.test.ts`, `piPlanDates.test.ts` shows zero lines; `issueDateRules.test.ts` shows additions only; `fieldMappingBoundary.test.ts` passes
+- [X] T091 Run the full regression sweep: `cd client && npm test`, `npm test` (server), `npm run test:dom`, `cd client && npx tsc -b` — all green
+- [X] T092 Work through `quickstart.md` offline tests 1–9 and record the results
+- [X] T093 Finalise the `CHANGELOG.md` entry describing the feature's user-visible behaviour
 - [ ] T094 Live validation: `quickstart.md` tests 10–15 against production Jira, including **test 14 step 3** — remove the Internal Test Ready column and confirm the chain forecast is unchanged
 
 ---

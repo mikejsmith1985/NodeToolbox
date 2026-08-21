@@ -63,6 +63,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and named. Naming an issue or a person the prompt never mentioned is rejected the same way. Gated
   behind the existing AI unlock, propose-only, and invisible when locked.
 
+- **Every forecast figure says what it could not see.** Unsized, unassigned, undated and cancelled
+  work is counted beside the totals it would otherwise have quietly changed, and a setting the app
+  had to ignore is reported rather than silently corrected. A total that omits what it missed is not
+  a smaller number — it is a wrong one, presented confidently.
+
 ### Changed
 - **Target Start now means "the latest day this can begin and still land".** Where an issue's size is
   known, the date is worked back from whichever deadline binds — code freeze or the PI's own,
