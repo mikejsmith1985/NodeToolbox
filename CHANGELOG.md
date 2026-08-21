@@ -78,6 +78,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   things to somebody deciding whether to trust the schedule.
 
 ### Fixed
+- **The Roll-Up Board's column editor offered no statuses to choose from.** The call that loads the
+  status and sub-status options sat immediately *after* the board loader's `return`, so it never ran
+  — "Choose a status…" was permanently empty and no column could be given a status at all. The
+  sub-status picker disappeared with it, which is why three columns sharing one Jira status
+  (SL, INT and BT Testing) all reported the same issue count: the matching had silently fallen back
+  to status alone. Nothing threw and nothing logged; the board rendered perfectly and simply could
+  not be configured.
 - **The Program Increment field could not be discovered by name.** Its name pattern had been written
   with literal backspace characters instead of word boundaries (`PI` mangled to `PI`),
   so an instance relying on name discovery for its PI field silently fell through to the hard default.

@@ -6,9 +6,18 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { mockJiraGet } = vi.hoisted(() => ({ mockJiraGet: vi.fn() }));
+const { mockJiraGet, mockLoadColumnOptionSources } = vi.hoisted(() => ({
+  mockJiraGet: vi.fn(),
+  mockLoadColumnOptionSources: vi.fn(),
+}));
 
 vi.mock('../../../services/jiraApi.ts', () => ({ jiraGet: mockJiraGet }));
+// Mocked so the board's call to it can be OBSERVED. It sat after a `return` for several releases
+// and therefore never ran at all — see the regression test at the foot of this file.
+vi.mock('./columnOptionSources.ts', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./columnOptionSources.ts')>()),
+  loadColumnOptionSources: mockLoadColumnOptionSources,
+}));
 
 import RollupBoardTab from './RollupBoardTab.tsx';
 import type { JiraIssue } from '../../../types/jira.ts';
@@ -108,6 +117,11 @@ beforeEach(() => {
   vi.clearAllMocks();
   window.localStorage.clear();
   SCOPED_ISSUES = [];
+  mockLoadColumnOptionSources.mockResolvedValue({
+    statusNames: ['To Do', 'Working', 'Ready for Testing'],
+    subStatusValues: ['Code Review', 'Testing', 'Integration Test'],
+    isSubStatusUnavailable: false,
+  });
 });
 
 describe('RollupBoardTab — honest states', () => {
@@ -672,5 +686,47 @@ describe('RollupBoardTab — the detail is docked, not buried in a lane', () => 
     fireEvent.click(screen.getByRole('button', { name: 'Close' }));
 
     await waitFor(() => expect(screen.queryByTestId('rollup-issue-detail')).toBeNull());
+  });
+});
+
+describe('RollupBoardTab — the mapping pickers are actually populated', () => {
+  // This is a regression test for a bug that shipped in several releases and that no existing test
+  // could have caught: the call loading the editor's status and sub-status options sat AFTER the
+  // function's `return`, so it never ran. Nothing threw, nothing logged, the board rendered
+  // perfectly — and "Choose a status…" offered nothing to choose, so no column could be given a
+  // status at all.
+  //
+  // Unreachable code is invisible to every test that only checks what the screen says. The only way
+  // to catch it is to assert that the call HAPPENS.
+
+  it('loads the status and sub-status options while the board loads', async () => {
+    mockJiraResponses({ boardIssues: [buildIssue('DEV-1', 'PORTFOLIO-9')] });
+
+    render(<RollupBoardTab boardId={42} scopedIssues={SCOPED_ISSUES} teamProfileId="team-a" />);
+
+    await waitFor(() => expect(mockLoadColumnOptionSources).toHaveBeenCalled());
+  });
+
+  it('passes the discovered sub-status field id, so the sub-status picker has values to offer', async () => {
+    // Without the id the loader returns isSubStatusUnavailable, the sub-status picker disappears,
+    // and every column sharing one Jira status reports the same issue count.
+    mockJiraResponses({ boardIssues: [buildIssue('DEV-1', 'PORTFOLIO-9')] });
+
+    render(<RollupBoardTab boardId={42} scopedIssues={SCOPED_ISSUES} teamProfileId="team-a" />);
+
+    await waitFor(() => expect(mockLoadColumnOptionSources).toHaveBeenCalled());
+    const [, subStatusFieldId] = mockLoadColumnOptionSources.mock.calls[0];
+    expect(subStatusFieldId).toBe('customfield_10201');
+  });
+
+  it('passes the board its scoped items, so the options come from real work', async () => {
+    mockJiraResponses({ boardIssues: [buildIssue('DEV-1', 'PORTFOLIO-9')] });
+
+    render(<RollupBoardTab boardId={42} scopedIssues={SCOPED_ISSUES} teamProfileId="team-a" />);
+
+    await waitFor(() => expect(mockLoadColumnOptionSources).toHaveBeenCalled());
+    const [items] = mockLoadColumnOptionSources.mock.calls[0];
+    expect(Array.isArray(items)).toBe(true);
+    expect((items as unknown[]).length).toBeGreaterThan(0);
   });
 });

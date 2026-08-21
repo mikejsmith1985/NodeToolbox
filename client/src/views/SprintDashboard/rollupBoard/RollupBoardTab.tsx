@@ -712,12 +712,16 @@ export default function RollupBoardTab({
           boardItems.map((item) => item.featureKey).filter((featureKey): featureKey is string => featureKey !== null),
         )],
       });
-      return scopedResult.items;
-
-      // Loaded after the board so the editor offers real Jira values rather than free text; a
-      // failure here costs the mapping pickers, not the board.
+      // Loaded BEFORE the return, which is where it always meant to be. Sitting after it, this call
+      // never ran at all: the mapping pickers stayed permanently empty, so "Choose a status…" offered
+      // nothing to choose and no column could be given a status. The sub-status picker vanished with
+      // it, which is why three columns sharing one Jira status all reported the same issue count.
+      //
+      // A failure here costs the pickers, not the board — hence the catch rather than a rethrow.
       setOptionSources(await loadColumnOptionSources(scopedResult.items, discoveredSubStatusFieldId)
         .catch(() => EMPTY_OPTION_SOURCES));
+
+      return scopedResult.items;
     } catch (error: unknown) {
       setLoadState({ ...EMPTY_LOAD_STATE, loadError: String(error) });
       return null;
