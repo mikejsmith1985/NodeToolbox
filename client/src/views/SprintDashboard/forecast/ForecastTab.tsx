@@ -16,10 +16,12 @@ import { resolveStoryPointsFieldIds } from '../../Hygiene/checks/storyPointsFiel
 import { readArtSettings, readRawForecastSettings } from '../../../services/artSettingsStore.ts';
 import { toCalendarDay } from '../../../utils/calendarDate.ts';
 import { readStoredStandupRosterMembers } from '../hooks/useStandupRosterStore.ts';
+import { loadBoardPreferences } from '../rollupBoard/boardPreferencesStore.ts';
 import { adaptHygieneIssues, type JiraIssueLike } from './forecastAdapters.ts';
 import { buildForecastConfig } from './forecastSettings.ts';
 import { computeForecast } from './forecastCompose.ts';
 import { ForecastAiPanel } from './ai/ForecastAiPanel.tsx';
+import { buildScopeCutPlan, type ScopeCutPlan } from './scopeCut.ts';
 import type { CapacityAssessment, CapacityPerson, ForecastResult, ReleaseClock } from './forecastTypes.ts';
 import styles from '../SprintDashboardView.module.css';
 
@@ -31,6 +33,8 @@ const LOADING_MESSAGE = 'Loading fix versions…';
 export interface ForecastTabProps {
   projectKey: string;
   teamProfileId: string;
+  /** The Jira board, so the saved lane order (the team's own priority) can be read back. */
+  boardId?: number | null;
   /** The dashboard's already-scoped issue set — this tab re-queries nothing. */
   scopedIssues: readonly JiraIssueLike[];
 }
@@ -54,6 +58,148 @@ function describeCompleteness(assessment: CapacityAssessment): string {
     assessment.unassignedIssueKeys.length > 0 ? `${assessment.unassignedIssueKeys.length} unassigned` : null,
   ].filter((caveat): caveat is string => caveat !== null);
   return caveats.length === 0 ? 'nothing unmeasured' : caveats.join(' · ');
+}
+
+/**
+ * The one line somebody should be able to read from across the room.
+ *
+ * The complaint this answers: two lists that told a Scrum Master nothing about whether they were on
+ * track. A verdict has to come first and be unmissable, and every figure below it is the working
+ * that supports it — not a substitute for it.
+ */
+function VerdictBanner({
+  versionName,
+  assessment,
+  counts,
+}: {
+  versionName: string;
+  assessment: CapacityAssessment;
+  counts: Record<string, number>;
+}) {
+  const lateCount = (counts.behind ?? 0) + (counts['start-today'] ?? 0) + (counts['cannot-fit'] ?? 0);
+  const isAtRisk = assessment.shouldRemoveScope || lateCount > 0 || assessment.window.hasPassed;
+
+  const headline = assessment.window.hasPassed
+    ? 'CODE FREEZE HAS PASSED'
+    : assessment.shouldRemoveScope
+      ? `AT RISK — SHORT BY ${assessment.shortfallWorkingDays} WORKING DAYS`
+      : lateCount > 0
+        ? `AT RISK — ${lateCount} ITEM${lateCount === 1 ? '' : 'S'} LATE`
+        : 'ON TRACK';
+
+  const detail = assessment.window.hasPassed
+    ? 'Every day in this window is behind, not remaining.'
+    : `${assessment.window.workingDayCount} working days to code freeze · `
+      + `${assessment.totalRemainingWorkingDays} days of work left · `
+      + `${assessment.totalAvailableWorkingDays} days of capacity`;
+
+  return (
+    <section className={isAtRisk ? styles.verdictBannerRisk : styles.verdictBannerOk}>
+      <span className={styles.verdictVersion}>{versionName}</span>
+      {/* The words carry it. The colour is an addition, never the only thing saying "at risk". */}
+      <strong className={styles.verdictHeadline}>{headline}</strong>
+      <span className={styles.verdictDetail}>{detail}</span>
+    </section>
+  );
+}
+
+/** The whole board in six numbers, so nothing has to be counted by eye. */
+function StatusStrip({ counts }: { counts: Record<string, number> }) {
+  const cells: Array<{ state: string; label: string; tone: 'bad' | 'warn' | 'good' | 'muted' }> = [
+    { state: 'behind', label: 'Behind', tone: 'bad' },
+    { state: 'start-today', label: 'Start today', tone: 'warn' },
+    { state: 'cannot-fit', label: 'Deadline gone', tone: 'bad' },
+    { state: 'on-track', label: 'On track', tone: 'good' },
+    { state: 'ahead', label: 'Ahead', tone: 'good' },
+    { state: 'unsized', label: 'Unsized', tone: 'muted' },
+    { state: 'unassignable', label: 'No owner', tone: 'muted' },
+  ];
+
+  return (
+    <div className={styles.statusStrip}>
+      {cells.map((cell) => (
+        <div className={styles[`statusCell_${cell.tone}`] ?? styles.statusCell_muted} key={cell.state}>
+          <strong className={styles.statusCount}>{counts[cell.state] ?? 0}</strong>
+          <span className={styles.statusLabel}>{cell.label}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** A bar for one person, so being over capacity is visible before the number is read. */
+function LoadBar({ inScopeDays, availableDays }: { inScopeDays: number; availableDays: number }) {
+  const capacity = Math.max(availableDays, 1);
+  const filledPercent = Math.min(100, Math.round((inScopeDays / capacity) * 100));
+  const isOver = inScopeDays > availableDays;
+
+  return (
+    <div className={styles.loadBarTrack} title={`${inScopeDays}d of ${availableDays}d`}>
+      <div
+        className={isOver ? styles.loadBarFillOver : styles.loadBarFill}
+        style={{ width: `${filledPercent}%` }}
+      />
+    </div>
+  );
+}
+
+/** The work proposed for removal, in the team's own board order. */
+function ScopeCutSection({ plan }: { plan: ScopeCutPlan }) {
+  if (plan.candidates.length === 0) {
+    return null;
+  }
+
+  return (
+    <section className={styles.forecastSection}>
+      <h4 className={styles.forecastSectionTitle}>
+        {`To make this release fit, drop ${plan.candidates.length} item${plan.candidates.length === 1 ? '' : 's'}`}
+      </h4>
+      <p className={styles.forecastSectionNote}>
+        Ordered by the rank you set on the Roll-Up Board — lowest-priority Feature first. This
+        proposes nothing about priority; it reads the order you already gave.
+      </p>
+
+      {plan.isStillShortAfterCut && (
+        <p className={styles.forecastAlert} role="status">
+          {`Dropping all of this recovers ${plan.recoveredWorkingDays} of the ${plan.shortfallWorkingDays} `}
+          {'working days needed. The release does not fit even then — the gap is bigger than the work available to cut.'}
+        </p>
+      )}
+
+      <table className={styles.forecastTable}>
+        <thead>
+          <tr>
+            <th scope="col">Drop</th>
+            <th scope="col">Feature</th>
+            <th scope="col">Rank</th>
+            <th scope="col">Owner</th>
+            <th scope="col">Recovers</th>
+            <th scope="col">Still short</th>
+          </tr>
+        </thead>
+        <tbody>
+          {plan.candidates.map((candidate) => (
+            <tr key={candidate.issueKey}>
+              <th scope="row">{`${candidate.issueKey} — ${candidate.summary}`}</th>
+              <td>{candidate.featureKey ?? '—'}</td>
+              <td>{candidate.featureRank ?? 'unranked'}</td>
+              <td>{candidate.assigneeDisplayName ?? 'Unassigned'}</td>
+              <td>{`${candidate.remainingWorkingDays}d`}</td>
+              <td>{candidate.remainingShortfallWorkingDays === 0 ? '✓ fits' : `${candidate.remainingShortfallWorkingDays}d`}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      {plan.unsizedIssueKeys.length > 0 && (
+        <p className={styles.forecastSectionNote}>
+          {`${plan.unsizedIssueKeys.length} item${plan.unsizedIssueKeys.length === 1 ? '' : 's'} could not be weighed `}
+          {'because nobody sized them, so they are not proposed: '}
+          {plan.unsizedIssueKeys.join(', ')}
+        </p>
+      )}
+    </section>
+  );
 }
 
 /** One capacity table: who holds what, who is over, and whether the whole thing fits. */
@@ -117,10 +263,13 @@ function CapacitySection({
                       exists to surface, so it is labelled rather than hidden. */}
                   {!load.isOnRoster && <span className={styles.forecastNoteChip}>not on roster</span>}
                 </th>
-                <td>{load.inScopeWorkingDays}d</td>
+                <td>
+                  <LoadBar inScopeDays={load.inScopeWorkingDays} availableDays={load.availableWorkingDays} />
+                  {`${load.inScopeWorkingDays}d`}
+                </td>
                 <td>{load.totalAssignedWorkingDays}d</td>
                 <td>{load.availableWorkingDays}d</td>
-                <td>{load.isOverCapacity ? `${load.overCapacityWorkingDays}d` : '—'}</td>
+                <td>{load.isOverCapacity ? `⚠ ${load.overCapacityWorkingDays}d over` : '✓ fits'}</td>
               </tr>
             ))}
           </tbody>
@@ -288,7 +437,7 @@ function ReleaseDateNotes({ forecast }: { forecast: ForecastResult }) {
 }
 
 /** Renders the release clock and the PI clock for one team, side by side and separately labelled. */
-export default function ForecastTab({ projectKey, teamProfileId, scopedIssues }: ForecastTabProps) {
+export default function ForecastTab({ projectKey, teamProfileId, scopedIssues, boardId = null }: ForecastTabProps) {
   const [versionNames, setVersionNames] = useState<string[] | null>(null);
   const [selectedVersionName, setSelectedVersionName] = useState('');
   const [fieldIds, setFieldIds] = useState<{
@@ -331,6 +480,20 @@ export default function ForecastTab({ projectKey, teamProfileId, scopedIssues }:
     return () => { isMounted = false; };
   }, []);
 
+  /**
+   * The team's own lane order, as ranks.
+   *
+   * Read from the saved board vocabulary rather than recomputed: this IS the priority somebody set
+   * by dragging lanes, and a second ordering derived here would eventually disagree with the board
+   * it claims to reflect.
+   */
+  const featureRankByKey = useMemo<Record<string, number>>(() => {
+    // Board id 0 is the same key the board itself falls back to when no Jira board is selected;
+    // the lane order is stored per team-and-board and this reads whichever the team actually saved.
+    const preferences = loadBoardPreferences(teamProfileId, boardId ?? 0);
+    return Object.fromEntries(preferences.laneOrder.map((featureKey, index) => [featureKey, index + 1]));
+  }, [teamProfileId, boardId]);
+
   const readRosterPeople = useCallback((): CapacityPerson[] => readStoredStandupRosterMembers(teamProfileId)
     .map((member) => ({
       personKey: member.jiraAccountId ?? member.displayName,
@@ -370,6 +533,36 @@ export default function ForecastTab({ projectKey, teamProfileId, scopedIssues }:
   }, [scopedIssues, versionNames, fieldIds, readRosterPeople, teamProfileId]);
 
   const selectedClock = forecast?.releaseClocksByVersionName[selectedVersionName] ?? null;
+  const codeFreezeAssessment = forecast?.codeFreezeCapacityByVersionName[selectedVersionName] ?? null;
+
+  /** How many issues sit in each verdict, so the strip can be read without counting rows. */
+  const stateCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    (forecast?.issueForecasts ?? []).forEach((issueForecast) => {
+      counts[issueForecast.state] = (counts[issueForecast.state] ?? 0) + 1;
+    });
+    return counts;
+  }, [forecast]);
+
+  /**
+   * The work to drop, in the team's own board order.
+   *
+   * The rank comes from the saved board vocabulary's lane order, which is the priority the team
+   * already set by dragging. Nothing here decides what matters least.
+   */
+  const scopeCutPlan = useMemo<ScopeCutPlan | null>(() => {
+    if (forecast === null || codeFreezeAssessment === null || !codeFreezeAssessment.shouldRemoveScope) {
+      return null;
+    }
+    const inScopeIssueKeys = codeFreezeAssessment.personLoads.flatMap((load) => load.inScopeIssueKeys)
+      .concat(codeFreezeAssessment.unassignedIssueKeys);
+    return buildScopeCutPlan(
+      forecast,
+      codeFreezeAssessment.shortfallWorkingDays,
+      inScopeIssueKeys,
+      { rankByFeatureKey: featureRankByKey },
+    );
+  }, [forecast, codeFreezeAssessment, featureRankByKey]);
 
   return (
     <div className={styles.forecastTab} data-testid="forecast-tab">
@@ -416,8 +609,15 @@ export default function ForecastTab({ projectKey, teamProfileId, scopedIssues }:
         </p>
       )}
 
-      {forecast !== null && selectedClock !== null && (
+      {forecast !== null && selectedClock !== null && codeFreezeAssessment !== null && (
         <>
+          <VerdictBanner
+            versionName={selectedVersionName}
+            assessment={codeFreezeAssessment}
+            counts={stateCounts}
+          />
+          <StatusStrip counts={stateCounts} />
+          {scopeCutPlan !== null && <ScopeCutSection plan={scopeCutPlan} />}
           <ReleaseCalendar clock={selectedClock} />
           <CapacitySection
             title="Release clock — can this be built by code freeze?"
@@ -445,6 +645,7 @@ export default function ForecastTab({ projectKey, teamProfileId, scopedIssues }:
           externalTestAssessment={selectedVersionName === ''
             ? null
             : forecast.externalTestCapacityByVersionName[selectedVersionName] ?? null}
+          scopeCutPlan={scopeCutPlan}
         />
       )}
       {forecast !== null && <ReleaseDateNotes forecast={forecast} />}

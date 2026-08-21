@@ -18,6 +18,7 @@ import {
   type ForecastAiItem,
   type ForecastAiKind,
 } from './forecastAiAssist.ts';
+import type { ScopeCutPlan } from '../scopeCut.ts';
 import type { CapacityAssessment, ForecastResult } from '../forecastTypes.ts';
 import styles from '../../SprintDashboardView.module.css';
 
@@ -34,6 +35,13 @@ export interface ForecastAiPanelProps {
   codeFreezeAssessment?: CapacityAssessment | null;
   /** The external-test assessment for the chosen release, when one is chosen. */
   externalTestAssessment?: CapacityAssessment | null;
+  /**
+   * The ranked drop proposal, when the release does not fit.
+   *
+   * Passed IN rather than asked for: the order comes from the team's own board ranks, and a model
+   * re-deriving it would be inventing a priority nobody gave it.
+   */
+  scopeCutPlan?: ScopeCutPlan | null;
 }
 
 /** Builds the prompt for one narrative, or explains why there is nothing to ask about yet. */
@@ -42,6 +50,7 @@ function buildPrompt(
   forecast: ForecastResult,
   codeFreezeAssessment: CapacityAssessment | null,
   externalTestAssessment: CapacityAssessment | null,
+  scopeCutPlan: ScopeCutPlan | null,
 ): string {
   if (kind === 'forecastDaily') {
     return buildForecastDailyPrompt(forecast);
@@ -49,7 +58,7 @@ function buildPrompt(
   if (kind === 'forecastScopeCut') {
     return codeFreezeAssessment === null
       ? 'Pick a fix version first — there is no release to recommend scope cuts for.'
-      : buildScopeCutPrompt(codeFreezeAssessment, forecast.issueForecasts);
+      : buildScopeCutPrompt(codeFreezeAssessment, forecast.issueForecasts, scopeCutPlan);
   }
   return externalTestAssessment === null
     ? 'Pick a fix version first — there is no test window to mitigate.'
@@ -133,6 +142,7 @@ export function ForecastAiPanel({
   forecast,
   codeFreezeAssessment = null,
   externalTestAssessment = null,
+  scopeCutPlan = null,
 }: ForecastAiPanelProps) {
   // Only what the prompt actually named may come back. Everything else is rejected on ingest.
   const allowedIssueKeys = forecast.issueForecasts.map((issueForecast) => issueForecast.issueKey);
@@ -152,7 +162,7 @@ export function ForecastAiPanel({
           kind={narrative.kind}
           title={narrative.title}
           ingestLabel={narrative.ingestLabel}
-          prompt={buildPrompt(narrative.kind, forecast, codeFreezeAssessment, externalTestAssessment)}
+          prompt={buildPrompt(narrative.kind, forecast, codeFreezeAssessment, externalTestAssessment, scopeCutPlan)}
           allowedIssueKeys={allowedIssueKeys}
           allowedPersonKeys={allowedPersonKeys}
         />

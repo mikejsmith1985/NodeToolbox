@@ -6810,6 +6810,7 @@ export default function SprintDashboardView() {
     if (activeTab === 'forecast') {
       return (
         <ForecastTab
+          boardId={state.boardId}
           key={`${activeDashboardTeamProfileId}:${state.projectKey}`}
           projectKey={state.projectKey}
           // The dashboard's already-scoped set, so this tab re-queries nothing.

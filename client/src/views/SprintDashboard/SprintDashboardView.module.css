@@ -3890,3 +3890,116 @@
   padding-left: var(--spacing-md);
   font-size: var(--font-size-sm);
 }
+
+/* ── Forecast: the verdict, first and unmissable ──
+   The complaint this answers is that the screen showed two lists and no answer. A verdict has to be
+   readable from across the room, and every figure under it is the working that supports it. Colour
+   is always an addition to words that already say the same thing. */
+
+.verdictBannerOk,
+.verdictBannerRisk {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: var(--spacing-md);
+  border-radius: var(--radius-md);
+  border-left: 6px solid var(--color-success, #16a34a);
+  background: var(--color-surface);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.28), 0 8px 24px rgb(0 0 0 / 0.18);
+}
+
+.verdictBannerRisk {
+  border-left-color: var(--color-danger, #dc2626);
+}
+
+.verdictVersion {
+  font-size: var(--font-size-sm);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+}
+
+.verdictHeadline {
+  font-size: 1.5rem;
+  line-height: 1.2;
+  letter-spacing: 0.01em;
+}
+
+.verdictBannerRisk .verdictHeadline {
+  color: var(--color-danger, #dc2626);
+}
+
+.verdictBannerOk .verdictHeadline {
+  color: var(--color-success, #16a34a);
+}
+
+.verdictDetail {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+/* The whole board in seven numbers, so nothing has to be counted by eye. */
+.statusStrip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: var(--spacing-sm);
+}
+
+.statusCell_bad,
+.statusCell_warn,
+.statusCell_good,
+.statusCell_muted {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: var(--spacing-sm);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  border-top: 3px solid var(--color-border-strong);
+  background: var(--color-surface);
+}
+
+.statusCell_bad { border-top-color: var(--color-danger, #dc2626); }
+.statusCell_warn { border-top-color: var(--color-warning, #d97706); }
+.statusCell_good { border-top-color: var(--color-success, #16a34a); }
+
+.statusCount {
+  font-size: 1.75rem;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.statusCell_bad .statusCount { color: var(--color-danger, #dc2626); }
+.statusCell_warn .statusCount { color: var(--color-warning, #d97706); }
+.statusCell_good .statusCount { color: var(--color-success, #16a34a); }
+
+.statusLabel {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  text-align: center;
+}
+
+/* Being over capacity should be visible before the number is read. */
+.loadBarTrack {
+  display: block;
+  width: 100%;
+  min-width: 80px;
+  height: 6px;
+  margin-bottom: 3px;
+  border-radius: 999px;
+  background: var(--color-bg-subtle);
+  overflow: hidden;
+}
+
+.loadBarFill,
+.loadBarFillOver {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--color-success, #16a34a);
+}
+
+.loadBarFillOver {
+  background: var(--color-danger, #dc2626);
+}

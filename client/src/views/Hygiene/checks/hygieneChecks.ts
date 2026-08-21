@@ -6,7 +6,7 @@
 
 import { businessDaysElapsedSince } from '../../../utils/businessDays.ts';
 import { isOnOrBeforeToday } from '../../../utils/calendarDate.ts';
-import { resolveStoryPointsFieldIds } from './storyPointsField.ts';
+import { readStoryPointsValue, resolveStoryPointsFieldIds } from './storyPointsField.ts';
 import { deriveIssueDates } from './issueDateRules.ts';
 import { normalizeRichTextToPlainText } from '../../../utils/richTextPlainText.ts';
 import type { EnterpriseRequiredFieldRule } from '../../AdminHub/enterpriseRules.ts';
@@ -861,22 +861,15 @@ function isDateTodayOrPast(fieldValue: unknown): boolean {
   return isOnOrBeforeToday(fieldValue);
 }
 
+/**
+ * True when a story-points field holds no usable estimate.
+ *
+ * Delegates to the shared reader rather than repeating the shape handling. Jira returns this
+ * instance's story-points field as a SELECT object, and a second copy of that knowledge is exactly
+ * how one surface came to see estimates another surface could not.
+ */
 function hasEmptyStoryPoints(fieldValue: unknown): boolean {
-  if (fieldValue === null || fieldValue === undefined || fieldValue === '') return true;
-  if (typeof fieldValue === 'number') return fieldValue <= 0;
-  // A string is only non-empty when it parses as a positive finite number.
-  // Non-numeric placeholder values like "None" that Jira returns for an explicitly-cleared
-  // Select field are treated as empty — consistent with how parseNumericValue works.
-  if (typeof fieldValue === 'string') {
-    const parsedNumber = Number(fieldValue);
-    return !Number.isFinite(parsedNumber) || parsedNumber <= 0;
-  }
-  if (Array.isArray(fieldValue)) return fieldValue.length === 0;
-  // Jira Select-type fields return {id, value} objects — extract and re-evaluate the numeric value.
-  if (typeof fieldValue === 'object') {
-    return hasEmptyStoryPoints((fieldValue as Record<string, unknown>).value);
-  }
-  return false;
+  return readStoryPointsValue(fieldValue) === null;
 }
 
 function calculateAgeInDays(dateText: string | undefined): number {

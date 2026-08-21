@@ -105,6 +105,27 @@ describe('adaptHygieneIssue', () => {
     expect(adaptHygieneIssue(hygieneIssue({ customfield_points: '5' }), FIELD_IDS).storyPoints).toBe(5);
   });
 
+  it('reads an estimate from a SELECT field, which is how this instance stores them', () => {
+    // The bug this test exists for: Jira returns a select as { id, value }, and a reader handling
+    // only numbers and strings saw every estimated issue as unestimated — a whole board of
+    // "no estimate — cannot forecast" over work that was fully pointed.
+    const adapted = adaptHygieneIssue(hygieneIssue({ customfield_points: { id: '10102', value: '5' } }), FIELD_IDS);
+    expect(adapted.storyPoints).toBe(5);
+  });
+
+  it('treats an explicitly cleared select as unestimated rather than as zero', () => {
+    const adapted = adaptHygieneIssue(hygieneIssue({ customfield_points: { id: '1', value: 'None' } }), FIELD_IDS);
+    expect(adapted.storyPoints).toBeNull();
+  });
+
+  it('falls through a select that holds nothing to the next configured field', () => {
+    const adapted = adaptHygieneIssue(
+      hygieneIssue({ customfield_points: { id: '1', value: 'None' }, customfield_legacy_points: 8 }),
+      FIELD_IDS,
+    );
+    expect(adapted.storyPoints).toBe(8);
+  });
+
   it('reads a cascading sub-status through its value', () => {
     const adapted = adaptHygieneIssue(
       hygieneIssue({ customfield_substatus: { value: 'Integration Test' } }),

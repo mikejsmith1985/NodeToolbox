@@ -110,17 +110,23 @@ function buildReleaseClocks(
 }
 
 /**
- * Picks the fix version that dates an issue: the EARLIEST one with a clock.
+ * Picks the fix version that dates an issue: the earliest UNRELEASED one with a clock.
  *
  * Earliest because an issue tagged for two releases is committed to the first; dating it from the
- * later one hands the team weeks nobody granted. This mirrors the date policy's own rule, which
- * chooses the earliest unreleased dated version for exactly that reason.
+ * later one hands the team weeks nobody granted.
+ *
+ * Unreleased because a shipped version's date is history, not a commitment. Measuring open work
+ * against a release that already went out reports it as hopelessly late against a deadline nobody is
+ * still working to — which is most of what a long-lived project's version list contains. This is the
+ * same rule the date policy uses to choose a driving version, for the same reason.
  */
 function readCodeFreezeDeadline(
   fixVersionNames: readonly string[],
   releaseClocksByVersionName: Record<string, ReleaseClock>,
+  releasedVersionNames: ReadonlySet<string>,
 ): string | null {
   const codeFreezeDays = fixVersionNames
+    .filter((versionName) => !releasedVersionNames.has(versionName))
     .map((versionName) => releaseClocksByVersionName[versionName]?.codeFreezeIso)
     .filter((codeFreezeIso): codeFreezeIso is string => typeof codeFreezeIso === 'string')
     .sort();
@@ -134,6 +140,7 @@ function buildIssueForecastInputs(
   releaseClocksByVersionName: Record<string, ReleaseClock>,
   piClock: PiClock,
   teamProfileId: string | null,
+  releasedVersionNames: ReadonlySet<string>,
 ): IssueForecastInput[] {
   return items.map((item) => ({
     issueKey: item.key,
@@ -142,7 +149,7 @@ function buildIssueForecastInputs(
     assigneeAccountId: item.assigneeAccountId,
     assigneeDisplayName: item.assigneeDisplayName,
     effort: effortByIssueKey.get(item.key) ?? computeRemainingEffort(null, item.columnId, [], false, 1),
-    releaseDeadlineIso: readCodeFreezeDeadline(item.fixVersionNames, releaseClocksByVersionName),
+    releaseDeadlineIso: readCodeFreezeDeadline(item.fixVersionNames, releaseClocksByVersionName, releasedVersionNames),
     piDeadlineIso: piClock.piEndIso,
     // Usually null: neither the board nor the hygiene scan fetches changelogs, which is the only
     // place the day work actually began is recorded. The bulk date fix, which does read one, is
@@ -336,6 +343,11 @@ export function computeForecast(input: ForecastInput, config: ForecastConfig): F
   // Cancelled work is excluded from every verdict, and counted in the completeness record instead:
   // dropping it silently would make a Feature look finished because its remaining work was killed.
   const forecastableItems = input.items.filter((item) => !isItemCancelled(item));
+  // A shipped version's date is history, not a commitment. Work still open against one is not late
+  // for it — nobody is working to that date any more.
+  const releasedVersionNames = new Set(
+    releaseDateResolutions.filter((resolution) => resolution.isReleased).map((resolution) => resolution.versionName),
+  );
 
   return {
     config,
@@ -344,7 +356,9 @@ export function computeForecast(input: ForecastInput, config: ForecastConfig): F
     releaseClocksByVersionName,
     releaseDateResolutions,
     issueForecasts: computeIssueForecasts(
-      buildIssueForecastInputs(forecastableItems, effortByIssueKey, releaseClocksByVersionName, piClock, input.teamProfileId),
+      buildIssueForecastInputs(
+        forecastableItems, effortByIssueKey, releaseClocksByVersionName, piClock, input.teamProfileId, releasedVersionNames,
+      ),
       config,
     ),
     featureAssessments: [...groupByFeatureKey(input.items).entries()].map(

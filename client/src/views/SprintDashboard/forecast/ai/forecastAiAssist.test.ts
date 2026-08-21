@@ -157,6 +157,69 @@ describe('the prompts', () => {
     expect(prompt).toContain('2 undated versions');
   });
 
+  it('carries the ranked drop proposal instead of asking the model to invent one', () => {
+    // The order is the team's, taken from their board. A model reordering it would be inventing a
+    // priority nobody gave it, and the reply is meant to be executable rather than a second opinion.
+    const prompt = buildScopeCutPrompt(SAMPLE_ASSESSMENT, [], {
+      shortfallWorkingDays: 5,
+      candidates: [{
+        issueKey: 'ENC-9',
+        summary: 'Lowest priority work',
+        featureKey: 'DENP-9',
+        featureRank: 9,
+        assigneeDisplayName: 'Smith, Jane (CTR)',
+        remainingWorkingDays: 5,
+        state: 'on-track',
+        remainingShortfallWorkingDays: 0,
+      }],
+      recoveredWorkingDays: 5,
+      isStillShortAfterCut: false,
+      unsizedIssueKeys: [],
+    });
+
+    expect(prompt).toContain('board rank ALREADY decides the drop order');
+    expect(prompt).toContain('ENC-9');
+    expect(prompt).toContain('rank 9');
+    expect(prompt).toContain('closes the whole 5d shortfall');
+  });
+
+  it('asks for an executable plan, not a discussion', () => {
+    const prompt = buildScopeCutPrompt(SAMPLE_ASSESSMENT, []);
+    expect(prompt).toContain('EXECUTABLE course-correction plan');
+    expect(prompt).toMatch(/which issue key/);
+    expect(prompt).toMatch(/how many working days it recovers/);
+  });
+
+  it('offers re-assignment as an alternative to dropping work', () => {
+    const prompt = buildScopeCutPrompt(SAMPLE_ASSESSMENT, []);
+    expect(prompt).toMatch(/spare capacity/);
+  });
+
+  it('says plainly when dropping everything still leaves the release short', () => {
+    const prompt = buildScopeCutPrompt(SAMPLE_ASSESSMENT, [], {
+      shortfallWorkingDays: 20,
+      candidates: [{
+        issueKey: 'ENC-9',
+        summary: 'Only droppable work',
+        featureKey: null,
+        featureRank: null,
+        assigneeDisplayName: null,
+        remainingWorkingDays: 4,
+        state: 'behind',
+        remainingShortfallWorkingDays: 16,
+      }],
+      recoveredWorkingDays: 4,
+      isStillShortAfterCut: true,
+      unsizedIssueKeys: [],
+    });
+
+    expect(prompt).toContain('recovers only 4d of the 20d needed');
+  });
+
+  it('says no cut is required when the work fits', () => {
+    expect(buildScopeCutPrompt(SAMPLE_ASSESSMENT, [], null)).toContain('No cut is required');
+  });
+
   it('asks the test-capacity prompt to weigh BOTH remedies', () => {
     const prompt = buildTestCapacityPrompt(SAMPLE_ASSESSMENT, []);
     expect(prompt).toMatch(/reduce scope, or add test resource/i);

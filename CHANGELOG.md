@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **The forecast reported every issue as unsized, so it forecast nothing at all.** This instance keeps
+  story points in a Jira SELECT field, which returns `{ id, value }` rather than a number — and the
+  forecast's own reader handled only numbers and strings. Thirty-three fully-pointed issues came back
+  as "no estimate". There is now one reader for that field, shared with the Hygiene check that
+  already knew the shape.
+- **Work was measured against releases that had already shipped.** A released version's date is
+  history, not a commitment, so open work was reported as hopelessly late for a deadline nobody is
+  still working to. The forecast now dates work from the earliest UNRELEASED version, which is the
+  rule the date policy already used.
+
+### Added
+- **The Forecast tab now leads with a verdict instead of two lists.** A banner states on-track or
+  at-risk with the one number that matters, a status strip counts every issue by verdict, and
+  per-person load bars make being over capacity visible before the figure is read.
+- **When a release does not fit, the tab names the work to drop.** Ordered by the rank you already
+  set by dragging lanes on the Roll-Up Board — lowest-priority Feature first — taking only as much as
+  the shortfall needs and counting down to the item that closes it. It proposes no priority of its
+  own; it reads the one you gave. Work nobody sized is named rather than proposed, because it cannot
+  be weighed.
+- **The scope-cut AI prompt now carries that ranked plan** and asks for an executable
+  course-correction: what to do, to which issue, by whom, and how many days it recovers — including
+  where moving work to somebody with spare capacity beats dropping it.
+
 ### Changed
 - **The release build is roughly four times faster.** `tsc -b` was rechecking the whole client on
   every run — ninety-one seconds even when nothing had changed — because the two referenced

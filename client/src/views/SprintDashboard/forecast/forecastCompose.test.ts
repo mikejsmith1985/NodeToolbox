@@ -485,6 +485,47 @@ describe('computeForecast', () => {
     });
   });
 
+  describe('released fix versions', () => {
+    it('does not date work against a release that already shipped', () => {
+      // A shipped version's date is history, not a commitment. Measuring open work against it
+      // reports the work as hopelessly late for a deadline nobody is still working to — which is
+      // most of what a long-lived project's version list contains.
+      const result = computeForecast(
+        forecastInput({
+          items: [boardItem({ fixVersionNames: ['Release 01/05/2026'] })],
+          fixVersions: [{ name: 'Release 01/05/2026', releaseDate: '2026-01-05', released: true }],
+        }),
+        CONFIG,
+      );
+      expect(result.issueForecasts[0].releaseDeadlineIso).toBeNull();
+    });
+
+    it('dates work against the earliest UNRELEASED version when it carries both', () => {
+      const result = computeForecast(
+        forecastInput({
+          items: [boardItem({ fixVersionNames: ['Release 01/05/2026', 'Release 10/02/2026'] })],
+          fixVersions: [
+            { name: 'Release 01/05/2026', releaseDate: '2026-01-05', released: true },
+            { name: 'Release 10/02/2026', releaseDate: '2026-10-02', released: false },
+          ],
+        }),
+        CONFIG,
+      );
+      expect(result.issueForecasts[0].releaseDeadlineIso).toBe('2026-09-11');
+    });
+
+    it('still falls back to the PI clock when every version has shipped', () => {
+      const result = computeForecast(
+        forecastInput({
+          items: [boardItem({ fixVersionNames: ['Release 01/05/2026'] })],
+          fixVersions: [{ name: 'Release 01/05/2026', releaseDate: '2026-01-05', released: true }],
+        }),
+        CONFIG,
+      );
+      expect(result.issueForecasts[0].drivingClock).toBe('pi');
+    });
+  });
+
   it('survives an empty board without throwing', () => {
     const result = computeForecast(forecastInput({ items: [], fixVersions: [] }), CONFIG);
     expect(result.completeness.totalIssueCount).toBe(0);

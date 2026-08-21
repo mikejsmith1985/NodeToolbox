@@ -13,6 +13,7 @@
 // carries the text out and the reply back.
 
 import { extractJsonPayload } from '../../../../utils/extractJsonPayload.ts';
+import type { ScopeCutPlan } from '../scopeCut.ts';
 import type { CapacityAssessment, ForecastResult, IssueForecast } from '../forecastTypes.ts';
 
 /** Which of the three narratives a prompt and its reply belong to. */
@@ -111,26 +112,56 @@ export function buildForecastDailyPrompt(result: ForecastResult): string {
   ].join('\n');
 }
 
-/** Builds the scope-cut prompt for a release whose work outruns the people holding it. */
+/** Describes the already-ranked cut proposal, so the model argues about it rather than inventing one. */
+function describeScopeCutPlan(plan: ScopeCutPlan | null): string[] {
+  if (plan === null || plan.candidates.length === 0) {
+    return ['No cut is required — the work fits the capacity available.'];
+  }
+  return [
+    'The board rank ALREADY decides the drop order. This is the proposal, lowest priority first:',
+    ...plan.candidates.map((candidate) => `  - ${candidate.issueKey} (${candidate.summary})`
+      + ` | Feature ${candidate.featureKey ?? 'none'} rank ${candidate.featureRank ?? 'unranked'}`
+      + ` | owner ${candidate.assigneeDisplayName ?? 'none'}`
+      + ` | recovers ${candidate.remainingWorkingDays}d`
+      + ` | still short after this: ${candidate.remainingShortfallWorkingDays}d`),
+    plan.isStillShortAfterCut
+      ? `Dropping ALL of it recovers only ${plan.recoveredWorkingDays}d of the ${plan.shortfallWorkingDays}d needed.`
+      : `That closes the whole ${plan.shortfallWorkingDays}d shortfall.`,
+  ];
+}
+
+/**
+ * Builds the scope-cut prompt for a release whose work outruns the people holding it.
+ *
+ * Carries the ranked proposal rather than asking for one. The drop order is already decided by the
+ * lane order on the team's own board; a model reordering it would be inventing a priority nobody
+ * gave it. What is wanted back is an executable plan, not a second opinion on the backlog.
+ */
 export function buildScopeCutPrompt(
   assessment: CapacityAssessment,
   forecasts: readonly IssueForecast[],
+  plan: ScopeCutPlan | null = null,
 ): string {
   return [
     PROMPT_PREAMBLE,
     `Window: ${assessment.window.startIso} to ${assessment.window.endIso}`
-      + ` (${assessment.window.workingDayCount} working days).`,
+      + ` (${assessment.window.workingDayCount} working days to code freeze).`,
     `Work left: ${assessment.totalRemainingWorkingDays}d. Capacity: ${assessment.totalAvailableWorkingDays}d.`,
     `Shortfall: ${assessment.shortfallWorkingDays}d.`,
     describeCompleteness(assessment),
     '',
-    'Per person:',
+    'Per person — in-scope load, their total load, days available, and how far over they are:',
     ...describePersonLoad(assessment),
     '',
-    'The work in scope:',
+    ...describeScopeCutPlan(plan),
+    '',
+    'Every item in scope, with the verdict already computed for it:',
     ...forecasts.map((forecast) => describeIssue(forecast)),
     '',
-    'Recommend which scope should come out of this release, and say why for each suggestion.',
+    'Write an EXECUTABLE course-correction plan. For each step say what to do, to which issue key,',
+    'who does it, and how many working days it recovers. Keep the drop order above — it is the',
+    "team's own priority, not a suggestion. Where moving work to somebody with spare capacity would",
+    'help more than dropping it, say so and name both people.',
     buildReplyInstruction('forecastScopeCut'),
   ].join('\n');
 }

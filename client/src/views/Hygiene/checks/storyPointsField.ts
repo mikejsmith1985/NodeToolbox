@@ -31,3 +31,50 @@ export function resolveStoryPointsFieldIds(dashboardConfigFieldId: string | null
 export function resolveStoryPointsWriteFieldId(dashboardConfigFieldId: string | null | undefined): string {
   return resolveStoryPointsFieldIds(dashboardConfigFieldId)[0] ?? resolveWriteFieldId('spFieldId', window.localStorage);
 }
+
+/**
+ * Reads a story-points field value as a number, whatever shape Jira returned it in.
+ *
+ * This instance keeps story points in a SELECT field, so Jira returns `{ id, value }` rather than a
+ * number — and a reader that handles only numbers and strings sees every estimated issue as
+ * unestimated. That is not a small miss: it is the difference between a forecast and thirty-three
+ * rows saying "no estimate".
+ *
+ * Lives here, beside the field resolution, so there is one answer to "what does this field say"
+ * rather than one per surface. Returns null for anything that is not a positive number, including
+ * the "None" placeholder Jira gives for an explicitly cleared select.
+ */
+export function readStoryPointsValue(fieldValue: unknown): number | null {
+  if (fieldValue === null || fieldValue === undefined || fieldValue === '') {
+    return null;
+  }
+  if (typeof fieldValue === 'number') {
+    return Number.isFinite(fieldValue) && fieldValue > 0 ? fieldValue : null;
+  }
+  if (typeof fieldValue === 'string') {
+    const parsedNumber = Number(fieldValue);
+    return Number.isFinite(parsedNumber) && parsedNumber > 0 ? parsedNumber : null;
+  }
+  if (Array.isArray(fieldValue)) {
+    return fieldValue.length === 0 ? null : readStoryPointsValue(fieldValue[0]);
+  }
+  if (typeof fieldValue === 'object') {
+    // A Jira select returns { id, value }; the estimate is the value.
+    return readStoryPointsValue((fieldValue as Record<string, unknown>).value);
+  }
+  return null;
+}
+
+/** The first of the configured fields that actually holds an estimate, or null when none does. */
+export function readStoryPointsFromFields(
+  fields: Record<string, unknown>,
+  fieldIds: readonly string[],
+): number | null {
+  for (const fieldId of fieldIds) {
+    const storyPoints = readStoryPointsValue(fields[fieldId]);
+    if (storyPoints !== null) {
+      return storyPoints;
+    }
+  }
+  return null;
+}

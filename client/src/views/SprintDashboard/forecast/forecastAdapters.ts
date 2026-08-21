@@ -8,6 +8,7 @@
 // So each surface adapts here, and there is still exactly one engine — which is what stops the two
 // screens ever disagreeing about a figure they both show.
 
+import { readStoryPointsFromFields } from '../../Hygiene/checks/storyPointsField.ts';
 import type { RollupBoardItem } from '../rollupBoard/rollupBoardTypes.ts';
 import type { ForecastIssue, ForecastIssueType } from './forecastTypes.ts';
 
@@ -52,18 +53,6 @@ function readFeatureKey(fields: Record<string, unknown>, fieldIds: readonly stri
     const linkedKey = (rawValue as { key?: string } | undefined)?.key;
     if (typeof linkedKey === 'string' && linkedKey.trim() !== '') {
       return linkedKey.trim();
-    }
-  }
-  return null;
-}
-
-/** Reads a Jira field as a number, treating anything unreadable as no estimate at all. */
-function readNumber(fields: Record<string, unknown>, fieldIds: readonly string[]): number | null {
-  for (const fieldId of fieldIds) {
-    const rawValue = fields[fieldId];
-    const parsedValue = typeof rawValue === 'string' ? Number(rawValue) : rawValue;
-    if (typeof parsedValue === 'number' && Number.isFinite(parsedValue)) {
-      return parsedValue;
     }
   }
   return null;
@@ -167,7 +156,11 @@ export function adaptHygieneIssue(issue: JiraIssueLike, fieldIds: TodayAdapterFi
     fixVersionNames: fixVersionsField
       .map((fixVersion) => (fixVersion.name ?? '').trim())
       .filter((versionName) => versionName !== ''),
-    storyPoints: readNumber(fields, fieldIds.storyPointsFieldIds),
+    // Read through the SHARED reader. This instance keeps story points in a SELECT field, so Jira
+    // returns { id, value } rather than a number — a local reader that handled only numbers and
+    // strings saw all thirty-three estimated issues as unestimated and produced a forecast of
+    // nothing at all.
+    storyPoints: readStoryPointsFromFields(fields, fieldIds.storyPointsFieldIds),
     isComplete: readIsComplete(fields.status),
     actualStartIso: null,
     storedTargetStartIso: fieldIds.targetStartFieldIds
