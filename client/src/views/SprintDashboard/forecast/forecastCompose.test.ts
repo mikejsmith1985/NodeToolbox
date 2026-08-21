@@ -408,6 +408,83 @@ describe('computeForecast', () => {
     });
   });
 
+  describe('the sizing flags', () => {
+    it('flags a Feature whose children have outgrown its estimate', () => {
+      const result = computeForecast(
+        forecastInput({
+          items: [boardItem({ key: 'ENC-1', storyPoints: 34 })],
+          featurePointsByKey: { 'DENP-1': 20 },
+        }),
+        CONFIG,
+      );
+      expect(result.sizingFlags[0].state).toBe('over');
+      expect(result.sizingFlags[0].overagePoints).toBe(14);
+    });
+
+    it('reports NOT SIZED when no Feature estimate was supplied at all', () => {
+      // The honest answer. Comparing against nothing and calling the result "within" would report a
+      // Feature nobody sized as healthy.
+      const result = computeForecast(forecastInput({ items: [boardItem({ storyPoints: 40 })] }), CONFIG);
+      expect(result.sizingFlags[0].state).toBe('not-sized');
+    });
+
+    it('honours the configured tolerance', () => {
+      const tolerantConfig = buildForecastConfig(
+        { pointsPerWorkingDay: 1, holidayIsoDates: [], featureSizingTolerancePercent: 50 },
+        TODAY_ISO,
+      ).config;
+      const result = computeForecast(
+        forecastInput({ items: [boardItem({ storyPoints: 26 })], featurePointsByKey: { 'DENP-1': 20 } }),
+        tolerantConfig,
+      );
+      expect(result.sizingFlags[0].state).toBe('within');
+    });
+
+    it('produces no flag for work nothing attributes to a Feature', () => {
+      const result = computeForecast(forecastInput({ items: [boardItem({ featureKey: null })] }), CONFIG);
+      expect(result.sizingFlags).toEqual([]);
+    });
+  });
+
+  describe('a fix version nothing can date, end to end', () => {
+    it('reads the date out of the version NAME when its field is blank', () => {
+      // Without this, every release whose date lives only in its name drops silently out of the
+      // forecast — which reads as "nothing to forecast" rather than "the field is empty".
+      const result = computeForecast(
+        forecastInput({
+          items: [boardItem({ fixVersionNames: ['Release 10/02/2026'] })],
+          fixVersions: [{ name: 'Release 10/02/2026' }],
+        }),
+        CONFIG,
+      );
+      expect(result.releaseDateResolutions[0].source).toBe('name');
+      expect(result.issueForecasts[0].releaseDeadlineIso).toBe('2026-09-11');
+    });
+
+    it('reports its work as UNFORECASTABLE, never as on track', () => {
+      const result = computeForecast(
+        forecastInput({
+          items: [boardItem({ fixVersionNames: ['Sprint 5'] })],
+          fixVersions: [{ name: 'Sprint 5' }],
+          piEndDate: '',
+        }),
+        CONFIG,
+      );
+      expect(result.issueForecasts[0].state).toBe('unforecastable');
+      expect(result.completeness.undatedVersionCount).toBe(1);
+    });
+
+    it('lets the field win over the name and reports the disagreement', () => {
+      const result = computeForecast(
+        forecastInput({ fixVersions: [{ name: 'Release 10/02/2026', releaseDate: '2026-11-02' }] }),
+        CONFIG,
+      );
+      const resolution = result.releaseDateResolutions[0];
+      expect(resolution.hasDisagreement).toBe(true);
+      expect(resolution.resolvedDateIso).toBe('2026-11-02');
+    });
+  });
+
   it('survives an empty board without throwing', () => {
     const result = computeForecast(forecastInput({ items: [], fixVersions: [] }), CONFIG);
     expect(result.completeness.totalIssueCount).toBe(0);

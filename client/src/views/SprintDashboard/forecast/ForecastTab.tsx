@@ -206,6 +206,59 @@ function describePiVerdict(
   return riskCause === 'test-squeeze' ? 'At risk — test squeeze' : 'At risk — dev too large';
 }
 
+/**
+ * Features whose children have outgrown the estimate somebody put on them.
+ *
+ * Only the ones worth acting on are listed. A Feature sized correctly needs no row, and a table of
+ * mostly-fine rows is one nobody reads.
+ */
+function SizingSection({ forecast }: { forecast: ForecastResult }) {
+  const notable = forecast.sizingFlags.filter((flag) => flag.state !== 'within');
+  if (notable.length === 0) {
+    return null;
+  }
+
+  return (
+    <section className={styles.forecastSection}>
+      <h4 className={styles.forecastSectionTitle}>Features that have outgrown their estimate</h4>
+      <p className={styles.forecastSectionNote}>
+        Stories are built out through the PI rather than up front, so a mis-sized Feature only shows
+        up after the fact — and only if something is watching.
+      </p>
+      <table className={styles.forecastTable}>
+        <thead>
+          <tr>
+            <th scope="col">Feature</th>
+            <th scope="col">Estimated</th>
+            <th scope="col">Children</th>
+            <th scope="col">Over by</th>
+          </tr>
+        </thead>
+        <tbody>
+          {notable.map((flag) => (
+            <tr key={flag.featureKey} className={flag.state === 'over' ? styles.forecastRowAlert : undefined}>
+              <th scope="row">
+                {flag.featureKey}
+                {flag.unsizedChildCount > 0 && (
+                  // The sum beside it is a floor, not a total, and a reader has to know that.
+                  <span className={styles.forecastNoteChip}>{`${flag.unsizedChildCount} unsized`}</span>
+                )}
+              </th>
+              <td>{flag.featurePoints === null ? 'Not sized' : flag.featurePoints}</td>
+              <td>{flag.childrenPoints}</td>
+              <td>
+                {flag.state === 'not-sized'
+                  ? '—'
+                  : `${flag.overagePoints} pts (${flag.overagePercent}%)`}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
 /** Only the fix versions whose dates need explaining — a clean resolution needs no row. */
 function ReleaseDateNotes({ forecast }: { forecast: ForecastResult }) {
   const notable = forecast.releaseDateResolutions.filter(
@@ -381,6 +434,7 @@ export default function ForecastTab({ projectKey, teamProfileId, scopedIssues }:
       )}
 
       {forecast !== null && <PiCommitmentSection forecast={forecast} />}
+      {forecast !== null && <SizingSection forecast={forecast} />}
       {forecast !== null && <ReleaseDateNotes forecast={forecast} />}
     </div>
   );

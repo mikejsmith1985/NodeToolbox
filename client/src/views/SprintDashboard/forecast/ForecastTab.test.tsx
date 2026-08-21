@@ -177,4 +177,18 @@ describe('ForecastTab', () => {
     // the tab forecasts the set the dashboard already scoped.
     expect(mockFetchVersions).toHaveBeenCalledWith('ENCUC');
   });
+
+  it('lists a Feature whose children have outgrown its estimate', async () => {
+    // No Feature estimate reaches this surface, so it reports NOT SIZED rather than comparing
+    // against nothing and calling the result healthy.
+    renderTab([issue('ENC-1', { [POINTS_FIELD]: 40 })]);
+    await waitFor(() => expect(screen.getByText(/outgrown their estimate/i)).toBeInTheDocument());
+    expect(screen.getByText(/Not sized/i)).toBeInTheDocument();
+  });
+
+  it('shows no sizing table when every Feature is sized correctly', async () => {
+    renderTab([issue('ENC-1', { customfield_featurelink: null })]);
+    await waitFor(() => expect(screen.getByRole('combobox', { name: /fix version/i })).toBeInTheDocument());
+    expect(screen.queryByText(/outgrown their estimate/i)).not.toBeInTheDocument();
+  });
 });

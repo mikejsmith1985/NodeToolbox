@@ -233,11 +233,11 @@ and add-test-resource with the shortfall; the final week credits no test capacit
 **Independent test**: A Feature estimated at 20 whose children total 34 flags at 14 points / 70%; sub-task points are
 excluded; an unsized Feature reads "not sized", never over-size.
 
-- [ ] T070 [P] [US6] Write failing tests for `assessFeatureSizing` (10 cases from `contracts/int-readiness-and-chain.md` §3) in `client/src/views/SprintDashboard/forecast/featureSizing.test.ts`
-- [ ] T071 [US6] Implement `assessFeatureSizing` in `client/src/views/SprintDashboard/forecast/featureSizing.ts`, counting stories, defects and tasks but **excluding sub-tasks**, guarding a zero-point Feature against an infinite percentage, and leaving `piPlanCapacityFlags.detectDefectUndersize` untouched
-- [ ] T072 [US6] Populate `sizingFlags` in `client/src/views/SprintDashboard/forecast/forecastCompose.ts` using the configured tolerance (shared file — sequential)
-- [ ] T073 [US6] Add the sizing section to `client/src/views/SprintDashboard/forecast/ForecastTab.tsx`, listing over-size and not-sized Features with the overage in both points and percent
-- [ ] T074 [US6] Run the full client suite and commit with a CHANGELOG entry
+- [X] T070 [P] [US6] Write failing tests for `assessFeatureSizing` (10 cases from `contracts/int-readiness-and-chain.md` §3) in `client/src/views/SprintDashboard/forecast/featureSizing.test.ts`
+- [X] T071 [US6] Implement `assessFeatureSizing` in `client/src/views/SprintDashboard/forecast/featureSizing.ts`, counting stories, defects and tasks but **excluding sub-tasks**, guarding a zero-point Feature against an infinite percentage, and leaving `piPlanCapacityFlags.detectDefectUndersize` untouched
+- [X] T072 [US6] Populate `sizingFlags` in `client/src/views/SprintDashboard/forecast/forecastCompose.ts` using the configured tolerance (shared file — sequential)
+- [X] T073 [US6] Add the sizing section to `client/src/views/SprintDashboard/forecast/ForecastTab.tsx`, listing over-size and not-sized Features with the overage in both points and percent
+- [X] T074 [US6] Run the full client suite and commit with a CHANGELOG entry
 
 ---
 
@@ -249,9 +249,9 @@ an undated version makes its issues unforecastable rather than on-track.
 **Independent test**: `Release 08/20/2026` with no field resolves to 2026-08-20; with a field of 2026-09-01 the field
 wins and the disagreement is flagged; `Sprint 5` yields no date and its issues read `unforecastable`.
 
-- [ ] T075 [US7] Add the release-date resolution section to `client/src/views/SprintDashboard/forecast/ForecastTab.tsx`, listing **only** rows with `hasDisagreement`, `hasAmbiguousName`, or `source: 'none'` — a clean resolution needs no row
-- [ ] T076 [P] [US7] Write an end-to-end test in `client/src/views/SprintDashboard/forecast/forecastCompose.test.ts` proving an issue whose only fix version is undated resolves to `unforecastable`, never `on-track`, and increments `completeness.undatedVersionCount`
-- [ ] T077 [US7] Run the full client suite and commit with a CHANGELOG entry
+- [X] T075 [US7] Add the release-date resolution section to `client/src/views/SprintDashboard/forecast/ForecastTab.tsx`, listing **only** rows with `hasDisagreement`, `hasAmbiguousName`, or `source: 'none'` — a clean resolution needs no row
+- [X] T076 [P] [US7] Write an end-to-end test in `client/src/views/SprintDashboard/forecast/forecastCompose.test.ts` proving an issue whose only fix version is undated resolves to `unforecastable`, never `on-track`, and increments `completeness.undatedVersionCount`
+- [X] T077 [US7] Run the full client suite and commit with a CHANGELOG entry
 
 ---
 

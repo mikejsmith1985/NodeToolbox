@@ -597,12 +597,17 @@ export default function RollupBoardTab({
         people: [],
         piEndDate: artSettings.piEndDate,
         hasSubStatusField: loadState.hasSubStatusField,
+        // The Feature's own estimate, which its children are measured against. The board is the one
+        // surface that already holds it, having read the Feature issues to build its lanes.
+        featurePointsByKey: Object.fromEntries(
+          loadState.masterCards.map((masterCard) => [masterCard.featureKey, masterCard.vitals.storyPoints]),
+        ),
         teamProfileId,
       },
       config,
     );
     return { ...computed, rejectedSettings };
-  }, [loadState.allItems, loadState.hasSubStatusField, orderedColumnIds, teamProfileId]);
+  }, [loadState.allItems, loadState.hasSubStatusField, loadState.masterCards, orderedColumnIds, teamProfileId]);
 
   /** Each card's verdict, keyed so a lane can hand one to every card without searching. */
   const forecastByIssueKey = useMemo(

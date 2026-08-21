@@ -10,6 +10,7 @@
 
 import { buildPiClock, buildReleaseClock } from './forecastWindows.ts';
 import { assessCapacity } from './capacityLoad.ts';
+import { assessFeatureSizing } from './featureSizing.ts';
 import { classifyChainRole, scheduleDevSlChain } from './devSlChain.ts';
 import { computeIssueForecasts } from './issueForecast.ts';
 import { isInternalTestReady, rollUpFeatureIntReadiness } from './intReadiness.ts';
@@ -48,6 +49,14 @@ export interface ForecastInput {
   piEndDate: string;
   /** False when this instance has no sub-status field, so INT readiness cannot be evaluated. */
   hasSubStatusField: boolean;
+  /**
+   * Each Feature's OWN estimate, which its children are measured against.
+   *
+   * The Feature is not among the items — those are the work delivering it — so its size has to
+   * arrive separately. A surface that cannot supply it gets every Feature reported as NOT SIZED,
+   * which is the honest answer rather than a comparison against nothing.
+   */
+  featurePointsByKey?: Record<string, number | null>;
   teamProfileId: string | null;
 }
 
@@ -341,7 +350,16 @@ export function computeForecast(input: ForecastInput, config: ForecastConfig): F
     featureAssessments: [...groupByFeatureKey(input.items).entries()].map(
       ([featureKey, children]) => assessFeature(featureKey, children, effortByIssueKey, piClock, input, config),
     ),
-    sizingFlags: [],
+    sizingFlags: [...groupByFeatureKey(input.items).entries()].map(([featureKey, children]) => assessFeatureSizing(
+      featureKey,
+      input.featurePointsByKey?.[featureKey] ?? null,
+      children.map((child) => ({
+        issueKey: child.key,
+        typeBucket: child.typeBucket,
+        storyPoints: child.storyPoints,
+      })),
+      config.featureSizingTolerancePercent,
+    )),
     codeFreezeCapacityByVersionName: buildCapacityByVersion(
       releaseClocksByVersionName,
       (clock) => clock.toCodeFreeze,

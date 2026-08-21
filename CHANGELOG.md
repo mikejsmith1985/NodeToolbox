@@ -45,6 +45,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   on its own does not say what to do about it. The final week before a release is labelled as deploy
   buffer and credited with no test capacity, because that is what it is.
 
+- **Features whose children have outgrown their estimate are flagged, with the overage in points and
+  percent.** Stories are built out through the PI rather than up front, so a Feature sized at 20 that
+  grows into 34 points of work is only discoverable after the fact — and only if something is
+  watching. Sub-task points are excluded, because they belong to their parent. An unsized Feature
+  reports as "not sized" rather than over-size: there is no budget to overrun.
+- **A fix version whose release date lives only in its name is now read correctly.** The naming
+  convention carries the date, and until now nothing read it — so those releases dropped silently out
+  of every calculation, which looks exactly like having nothing to report. Where the field and the
+  name disagree the field wins and the disagreement is named, because a version name that lies about
+  its own date is a real defect worth fixing.
+
 ### Changed
 - **Target Start now means "the latest day this can begin and still land".** Where an issue's size is
   known, the date is worked back from whichever deadline binds — code freeze or the PI's own,
