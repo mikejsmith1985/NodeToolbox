@@ -19,6 +19,8 @@ export interface RawJiraVersion {
   name: string;
   releaseDate?: string;
   archived?: boolean;
+  /** Jira's own marker that this version has shipped. Optional so older callers are unaffected. */
+  released?: boolean;
 }
 
 /** Returns the ISO date `days` after `iso` (used to extend the window past the PI end). */

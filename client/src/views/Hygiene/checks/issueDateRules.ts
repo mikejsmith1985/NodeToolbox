@@ -68,6 +68,17 @@ export interface IssueDateInput {
    * gets exactly the dates it got before.
    */
   remainingEffortWorkingDays?: number | null;
+  /**
+   * The day this issue has to start for its Feature's WHOLE chain to make the deadline.
+   *
+   * The issue's own effort is not the whole story: a dev story with a week of SL testing queued
+   * behind it, and two days of handover between them, has to begin far earlier than its own size
+   * suggests. Worked out by the caller, which can see the Feature's other issues; this module sees
+   * one issue at a time and could never derive it.
+   *
+   * Optional and absent by default, so every caller that predates the chain gets what it always got.
+   */
+  chainTargetStartIso?: string | null;
   /** The PI Definition-of-Done deadline, when the ART has configured one. */
   piDodDeadlineIso?: string | null;
   /** Weekend and holiday calendar. Required for the back-calculation; ignored without it. */
@@ -88,7 +99,7 @@ export interface DerivedIssueDates {
    *
    * Optional for the same reason the new inputs are: nothing that existed before this needs it.
    */
-  targetStartBasis?: 'actual-working' | 'back-calculated' | 'ready-to-work-lead' | 'none';
+  targetStartBasis?: 'actual-working' | 'chain-back-calculated' | 'back-calculated' | 'ready-to-work-lead' | 'none';
 }
 
 /**
@@ -162,6 +173,13 @@ function deriveTargetStart(
     return { targetStart: workingDay, targetStartBasis: 'actual-working' };
   }
 
+  // Above the issue's own effort, below the day work actually began. The chain accounts for the work
+  // that has to FOLLOW this issue, so it is the earlier and truer of the two derived dates -- but a
+  // date work really started on is a fact, and a fact outranks any plan.
+  if (input.chainTargetStartIso !== undefined && input.chainTargetStartIso !== null) {
+    return { targetStart: input.chainTargetStartIso, targetStartBasis: 'chain-back-calculated' };
+  }
+
   const remainingWorkingDays = input.remainingEffortWorkingDays ?? null;
   const piDodDeadlineIso = input.piDodDeadlineIso ?? null;
   const bindingDeadline = [targetEnd, piDodDeadlineIso]
@@ -189,6 +207,19 @@ function deriveTargetStart(
   }
 
   return { targetStart: null, targetStartBasis: 'none' };
+}
+
+/**
+ * The day work on an issue has to be finished by: code freeze, three weeks before its release.
+ *
+ * The same arithmetic this module's own Target End uses, exported so a caller reasoning about a
+ * whole Feature computes the deadline identically rather than re-deriving it and slowly drifting.
+ * Returns null when no unreleased fix version carries a release date.
+ */
+export function readCodeFreezeDeadline(fixVersions: readonly IssueFixVersion[]): string | null {
+  const drivingFixVersion = readDrivingFixVersion(fixVersions);
+  const releaseDay = drivingFixVersion ? readCalendarDay(drivingFixVersion.releaseDate) : null;
+  return releaseDay === null ? null : shiftCalendarDays(releaseDay, -TARGET_END_LEAD_DAYS);
 }
 
 /**

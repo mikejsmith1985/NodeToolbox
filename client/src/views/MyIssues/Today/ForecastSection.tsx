@@ -117,8 +117,16 @@ function ForecastRow({ forecast, teamName }: { forecast: IssueForecast; teamName
         {forecast.hasStoredDateDisagreement && (
           // Reported, never corrected: changing a date is the operator's explicit action, and a
           // silent overwrite of somebody's deliberate value is worse than a visible disagreement.
-          <span className={styles.metaChipWarning}>
-            Jira holds {forecast.storedTargetStartIso}
+          //
+          // Named in full. "Jira holds 2026-07-07" had to be asked about, which is the definition of
+          // a label that is not doing its job — it never said WHICH field, so the date read as a
+          // mystery rather than as a disagreement about Target Start.
+          <span
+            className={styles.metaChipWarning}
+            title={"Jira's Target Start for this issue disagrees with the date the forecast computed. "
+              + 'Run the bulk date fix to bring it in line, or leave it if the stored date is deliberate.'}
+          >
+            Target Start in Jira: {forecast.storedTargetStartIso}
           </span>
         )}
       </div>

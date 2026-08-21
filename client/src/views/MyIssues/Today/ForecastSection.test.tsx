@@ -130,7 +130,9 @@ describe('ForecastSection', () => {
 
   it('reports a disagreement with the date Jira holds without changing it', () => {
     renderSection(forecastFor([issue({ storyPoints: 3, storedTargetStartIso: '2026-07-01' })]));
-    expect(screen.getByText(/Jira holds 2026-07-01/)).toBeInTheDocument();
+    // Named for the field it actually is. "Jira holds 2026-07-01" left a reader guessing WHICH date
+    // was being quoted at them, which is the question this chip exists to answer.
+    expect(screen.getByText(/Target Start in Jira: 2026-07-01/)).toBeInTheDocument();
   });
 
   it('shows a refused setting rather than swallowing it', () => {

@@ -143,6 +143,16 @@ export interface MasterCardLaneProps {
   onNestInto?: (issueKey: string, containerIssueKey: string) => void;
   /** Raises or clears Jira's impediment flag on a card. */
   onToggleFlag?: (issueKey: string, shouldBeFlagged: boolean) => void;
+  /**
+   * Raises or clears the flag on the FEATURE itself.
+   *
+   * Separate from the card handler only because the lane header is not a card. It writes through the
+   * same path, because a Feature is an ordinary Jira issue and flagging one is the same act as
+   * flagging a Story — the board simply never offered it.
+   *
+   * A synthetic lane ("No Feature") has no issue behind it, so it never gets this action.
+   */
+  onToggleFeatureFlag?: (featureKey: string, shouldBeFlagged: boolean) => void;
   onMoveToColumn?: ChildCardProps['onMoveToColumn'];
   moveTargetColumns?: ChildCardProps['moveTargetColumns'];
   onSetChecklistState?: ParentContainerProps['onSetChecklistState'];
@@ -308,6 +318,7 @@ export function MasterCardLane({
   membershipReason = null,
   laneRank,
   onRankChange,
+  onToggleFeatureFlag,
   onSendToTop,
   onSendToBottom,
   onAddWork,
@@ -334,9 +345,14 @@ export function MasterCardLane({
   dropPreview = null,
 }: MasterCardLaneProps) {
   const { vitals, featureKey, isSynthetic, isFeatureUnreadable, hasNoWorkYet } = lane.masterCard;
-  const headerClassName = isSynthetic
-    ? `${styles.laneHeader} ${styles.laneHeaderSynthetic}`
-    : styles.laneHeader;
+  // A blocked Feature tints its whole header, not just a chip in it. On a board of a dozen lanes a
+  // small marker is exactly the thing somebody scrolls past, and a blocked Feature is the one item
+  // here that must not be scrolled past.
+  const headerClassName = [
+    styles.laneHeader,
+    isSynthetic ? styles.laneHeaderSynthetic : '',
+    vitals.isFlagged ? styles.laneHeaderBlocked : '',
+  ].filter(Boolean).join(' ');
 
   // The lane's own drag lives on its header grip, so dragging a CARD inside the lane never picks up
   // the whole lane by accident.
@@ -377,6 +393,19 @@ export function MasterCardLane({
     ...(onSendToTop ? [{ id: 'send-top', label: 'Send to top', onSelect: () => onSendToTop(featureKey) }] : []),
     ...(onSendToBottom
       ? [{ id: 'send-bottom', label: 'Send to bottom', onSelect: () => onSendToBottom(featureKey) }]
+      : []),
+    // In the menu rather than on the header, matching how a card offers it: this WRITES to Jira, and
+    // a click target on the header would compete with clicking the header to collapse the lane.
+    //
+    // The synthetic "No Feature" lane is excluded because there is no issue behind it to flag.
+    ...(onToggleFeatureFlag && !isSynthetic
+      ? [{
+        id: 'toggle-feature-flag',
+        // Names the ACTION, not the state. "Flagged" as a label leaves a reader guessing whether
+        // clicking it sets or clears the thing it is describing.
+        label: vitals.isFlagged ? 'Remove blocked flag' : 'Flag as blocked',
+        onSelect: () => onToggleFeatureFlag(featureKey, !vitals.isFlagged),
+      }]
       : []),
   ];
 
@@ -474,7 +503,10 @@ export function MasterCardLane({
             </a>
           )}
         <span className={styles.laneSummary}>{vitals.summary}</span>
-        {vitals.isFlagged && <span className={styles.laneFlag}><FlagIcon /> Flagged</span>}
+        {/* The word BLOCKED, in the header, at size. Colour repeats it rather than carrying it. */}
+        {vitals.isFlagged && (
+          <span className={styles.laneBlockedBadge}><FlagIcon /> BLOCKED</span>
+        )}
 
         {/* One button where there were three. The actions live in the menu — see BoardContextMenu for
             why they are no longer on screen at all times. */}

@@ -84,6 +84,46 @@ describe('ForecastTab', () => {
     expect(screen.getByRole('option', { name: 'Release 10/02/2026' })).toBeInTheDocument();
   });
 
+  it('offers only the OPEN versions, because a shipped release cannot be forecast', async () => {
+    // A released version's date is in the past and its work is out of the door. Listing it invites
+    // somebody to pick a release that already happened and read the resulting alarm as real.
+    mockFetchVersions.mockResolvedValue([
+      { name: 'Release 10/02/2026', archived: false, released: false },
+      { name: 'Release 07/24/2025', archived: false, released: true },
+      { name: 'Sprint 24.2.1', archived: true, released: false },
+    ]);
+    renderTab();
+
+    await waitFor(() => expect(screen.getByRole('option', { name: 'Release 10/02/2026' })).toBeInTheDocument());
+    expect(screen.queryByRole('option', { name: 'Release 07/24/2025' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'Sprint 24.2.1' })).not.toBeInTheDocument();
+  });
+
+  it('says so when every version in the project has already shipped', async () => {
+    mockFetchVersions.mockResolvedValue([{ name: 'Release 07/24/2025', archived: false, released: true }]);
+    renderTab();
+    await waitFor(() => expect(screen.getByText(/no fix versions to forecast/i)).toBeInTheDocument());
+  });
+
+  it('carries Jira own release-date field through, so the field can win over the name', async () => {
+    // The name and the field disagree on purpose here. The engine prefers the field and REPORTS the
+    // disagreement -- but only if the field reaches it, and a name-only list threw it away.
+    mockFetchVersions.mockResolvedValue([
+      { name: 'Release 10/02/2026', archived: false, released: false, releaseDate: '2026-11-13' },
+    ]);
+    renderTab();
+
+    await waitFor(() => expect(screen.getByRole('option', { name: 'Release 10/02/2026' })).toBeInTheDocument());
+    fireEvent.change(screen.getByRole('combobox', { name: /fix version/i }),
+      { target: { value: 'Release 10/02/2026' } });
+
+    // The field's date drives the clock, and the version whose name disagrees with it is named
+    // rather than quietly corrected.
+    await waitFor(() => expect(screen.getAllByText(/2026-11-13/).length).toBeGreaterThan(0));
+    expect(screen.getByText(/the release date says 2026-11-13, the name says 2026-10-02/i))
+      .toBeInTheDocument();
+  });
+
   it('asks for a version rather than guessing one', async () => {
     renderTab();
     await waitFor(() => expect(screen.getByText(/Pick a fix version/i)).toBeInTheDocument());

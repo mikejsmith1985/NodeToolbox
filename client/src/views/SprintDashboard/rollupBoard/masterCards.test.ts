@@ -224,3 +224,46 @@ describe('orderLanesLikePiReview — one lane per Feature, always', () => {
     expect(ordered.map((card) => card.featureKey)).toEqual(['DENP-1', 'DENP-2']);
   });
 });
+
+describe('a Feature flagged as blocked', () => {
+  /** Builds a Feature carrying an impediment flag in whichever field the instance uses for it. */
+  function buildFlaggedFeature(key: string, flagFieldId: string): JiraIssue {
+    return {
+      id: key,
+      key,
+      fields: {
+        summary: 'Enrolment',
+        status: { name: 'In Progress' },
+        priority: { name: 'High' },
+        issuelinks: [],
+        [flagFieldId]: [{ value: 'Impediment' }],
+      },
+    } as unknown as JiraIssue;
+  }
+
+  it('reads the flag from the field this instance actually keeps it in', () => {
+    // This instance holds the flag in customfield_11200, not Jira's default. Reading the default
+    // would show every Feature as unblocked however many are flagged -- and a board that draws
+    // nothing looks like good news rather than a misconfiguration.
+    const features = new Map([['FEAT-1', buildFlaggedFeature('FEAT-1', 'customfield_11200')]]);
+    const cards = buildMasterCards([buildItem('DEV-1', 'FEAT-1')], features, [], [], 'customfield_11200');
+
+    expect(cards.find((card) => card.featureKey === 'FEAT-1')?.vitals.isFlagged).toBe(true);
+  });
+
+  it('reads as unflagged when no flag field has been discovered', () => {
+    // Guessing at Jira's default id would show either every Feature as blocked or none of them, and
+    // both look like the data rather than the configuration.
+    const features = new Map([['FEAT-1', buildFlaggedFeature('FEAT-1', 'customfield_11200')]]);
+    const cards = buildMasterCards([buildItem('DEV-1', 'FEAT-1')], features);
+
+    expect(cards.find((card) => card.featureKey === 'FEAT-1')?.vitals.isFlagged).toBe(false);
+  });
+
+  it('leaves an unflagged Feature unflagged', () => {
+    const features = new Map([['FEAT-1', buildFeature('FEAT-1', 'Enrolment')]]);
+    const cards = buildMasterCards([buildItem('DEV-1', 'FEAT-1')], features, [], [], 'customfield_11200');
+
+    expect(cards.find((card) => card.featureKey === 'FEAT-1')?.vitals.isFlagged).toBe(false);
+  });
+});

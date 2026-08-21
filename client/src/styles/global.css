@@ -39,6 +39,25 @@ textarea {
   font: inherit;
 }
 
+/* Dropdown lists, everywhere, in both themes.
+ *
+ * The root sets `color-scheme: dark`, which is what normally makes an OPEN dropdown paint itself
+ * dark with light text. But a browser treats any control given its OWN background as one the page
+ * has taken responsibility for, and drops it out of that scheme -- so the open list kept the dark
+ * panel and reverted to the light theme's near-black text, leaving it unreadable on itself.
+ *
+ * Almost every styled dropdown in this app sets a background, so pin the pair here once rather than
+ * leaving each surface to rediscover it. Element selectors, so any component class still wins. */
+select {
+  color: var(--color-text-primary);
+}
+
+select option,
+select optgroup {
+  background-color: var(--color-input-bg);
+  color: var(--color-text-primary);
+}
+
 ::-webkit-scrollbar {
   width: 12px;
   height: 12px;

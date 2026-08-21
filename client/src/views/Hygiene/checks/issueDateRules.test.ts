@@ -252,3 +252,59 @@ describe('Target Start, back-calculated from the effort left', () => {
     expect(derived.targetStartBasis).toBe('none');
   });
 });
+
+describe('Target Start, worked back through the whole DEV → SL chain', () => {
+  const PLAIN_CALENDAR = { weekendDays: [0, 6], holidayIsoDates: [] };
+
+  it('prefers a chain date over the issue own effort, because the chain is the longer truth', () => {
+    // The issue's own effort says it could start on the 15th. The chain says the 9th, because a week
+    // of SL testing has to follow it and two days of handover sit between the two. The chain wins:
+    // the earlier date is the one that makes the Feature's deadline, not just this issue's.
+    const derived = deriveIssueDates({
+      ...BASE_INPUT,
+      remainingEffortWorkingDays: 3,
+      workingCalendar: PLAIN_CALENDAR,
+      chainTargetStartIso: '2026-09-09',
+    });
+
+    expect(derived.targetStart).toBe('2026-09-09');
+    expect(derived.targetStartBasis).toBe('chain-back-calculated');
+  });
+
+  it('still yields to the day work ACTUALLY began, which is a fact rather than a plan', () => {
+    const derived = deriveIssueDates({
+      ...BASE_INPUT,
+      workingEnteredIso: '2026-08-20T09:00:00.000+0000',
+      remainingEffortWorkingDays: 3,
+      workingCalendar: PLAIN_CALENDAR,
+      chainTargetStartIso: '2026-09-09',
+    });
+
+    expect(derived.targetStart).toBe('2026-08-20');
+    expect(derived.targetStartBasis).toBe('actual-working');
+  });
+
+  it('falls back to the issue own effort when no chain date could be worked out', () => {
+    // An unsized SL story leaves the chain undatable. The old rule is still better than no date.
+    const derived = deriveIssueDates({
+      ...BASE_INPUT,
+      remainingEffortWorkingDays: 3,
+      workingCalendar: PLAIN_CALENDAR,
+      chainTargetStartIso: null,
+    });
+
+    expect(derived.targetStart).toBe('2026-09-15');
+    expect(derived.targetStartBasis).toBe('back-calculated');
+  });
+
+  it('changes nothing for a caller that supplies no chain date at all', () => {
+    const withoutChain = deriveIssueDates({
+      ...BASE_INPUT,
+      remainingEffortWorkingDays: 3,
+      workingCalendar: PLAIN_CALENDAR,
+    });
+
+    expect(withoutChain.targetStart).toBe('2026-09-15');
+    expect(withoutChain.targetStartBasis).toBe('back-calculated');
+  });
+});

@@ -133,3 +133,31 @@ describe('custom properties', () => {
     expect([...new Set(colourPinnedFallbacks)]).toEqual([]);
   });
 });
+
+describe('open dropdown lists stay readable', () => {
+  // The bug this pins down: the root sets `color-scheme: dark`, which is what normally makes an
+  // OPEN dropdown paint itself dark with light text. A browser drops any control given its OWN
+  // background out of that scheme, so the open list kept its dark panel and reverted to the light
+  // theme's near-black text -- unreadable on itself. Four separate components each rediscovered
+  // this and pinned it locally before the pair was set once, globally.
+  const globalStylesheet = readFileSync(resolve(process.cwd(), 'src/styles/global.css'), 'utf8');
+
+  it('pins both the option background AND its text colour', () => {
+    const optionRule = /select option,\s*select optgroup \{([^}]*)\}/.exec(globalStylesheet);
+    expect(optionRule).not.toBeNull();
+    expect(optionRule?.[1]).toMatch(/background-color:\s*var\(--color-input-bg\)/);
+    expect(optionRule?.[1]).toMatch(/color:\s*var\(--color-text-primary\)/);
+  });
+
+  it('sets them from theme tokens, so both themes follow', () => {
+    // A hardcoded pair here would fix dark mode and break light mode, which is how this class of
+    // bug travels rather than gets fixed.
+    const optionRule = /select option,\s*select optgroup \{([^}]*)\}/.exec(globalStylesheet)?.[1] ?? '';
+    expect(optionRule).not.toMatch(/#[0-9a-f]{3,8}/i);
+    expect(optionRule).not.toMatch(/rgba?\(/i);
+  });
+
+  it('uses element selectors, so any component class can still override them', () => {
+    expect(globalStylesheet).toMatch(/^select \{/m);
+  });
+});

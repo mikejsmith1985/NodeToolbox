@@ -117,6 +117,8 @@ import { executeStatusMove, type ExecuteStatusMoveInput } from './statusMoveWrit
 import { resolveBoardItems } from './featureRollup.ts';
 import { buildFeatureWithoutWorkCard, buildMasterCards, orderLanesLikePiReview } from './masterCards.ts';
 import { adaptBoardItems, collectFixVersionNames } from '../forecast/forecastAdapters.ts';
+import { mergeProjectVersionMetadata } from '../forecast/projectVersions.ts';
+import { fetchPiWindowFixVersions, type RawJiraVersion } from '../../ArtView/piPlan/piPlanReleaseSchedule.ts';
 import { buildForecastConfig } from '../forecast/forecastSettings.ts';
 import { computeForecast } from '../forecast/forecastCompose.ts';
 import { buildForecastNotices } from '../forecast/forecastNotices.ts';
@@ -583,6 +585,30 @@ export default function RollupBoardTab({
    * and sub-status. It calls the SAME computeForecast the Today tab and the Forecast tab call, which
    * is why the three cannot report different figures for one issue — there is only one figure.
    */
+  /**
+   * The project's own record of its fix versions.
+   *
+   * The board reads version NAMES off the issues, which cannot tell a live release from one that
+   * shipped last year. Without this, every carryover issue still tagged with a shipped version is
+   * reported as late against a date nobody is working to. An empty list is a safe answer: the
+   * forecast then falls back to reading dates out of the version names, as it did before.
+   */
+  const [projectVersions, setProjectVersions] = useState<RawJiraVersion[]>([]);
+
+  // Read once per project. A refusal is not surfaced: the forecast still works from the dates in
+  // the version names, so an unavailable list degrades the answer rather than removing it.
+  useEffect(() => {
+    let isMounted = true;
+    if (projectKey.trim() === '') {
+      setProjectVersions([]);
+      return;
+    }
+    void fetchPiWindowFixVersions(projectKey)
+      .then((versions) => { if (isMounted) setProjectVersions(versions); })
+      .catch(() => { if (isMounted) setProjectVersions([]); });
+    return () => { isMounted = false; };
+  }, [projectKey]);
+
   const boardForecast = useMemo(() => {
     const items = adaptBoardItems(loadState.allItems);
     const artSettings = readArtSettings();
@@ -591,10 +617,9 @@ export default function RollupBoardTab({
       {
         items,
         orderedColumnIds,
-        // Only the versions this work is actually committed to. The board does not read the
-        // project's version list, so a date has to come from the version's name where its field is
-        // blank — which is exactly what releaseDateResolve is for.
-        fixVersions: collectFixVersionNames(items).map((versionName) => ({ name: versionName })),
+        // The versions this work is committed to, paired with the project's own record of each so
+        // a shipped release is recognised as history rather than treated as a live deadline.
+        fixVersions: mergeProjectVersionMetadata(collectFixVersionNames(items), projectVersions),
         people: [],
         piEndDate: artSettings.piEndDate,
         // The dashboard's own PI selection carries its window in the name, which is what makes the
@@ -611,7 +636,7 @@ export default function RollupBoardTab({
       config,
     );
     return { ...computed, rejectedSettings };
-  }, [loadState.allItems, loadState.hasSubStatusField, loadState.masterCards, orderedColumnIds, selectedPiValue, teamProfileId]);
+  }, [loadState.allItems, loadState.hasSubStatusField, loadState.masterCards, orderedColumnIds, projectVersions, selectedPiValue, teamProfileId]);
 
   // What the forecast could not measure, and any setting it had to refuse. Built by a pure module so
   // the wording is tested once and every surface says the same thing.
@@ -700,6 +725,8 @@ export default function RollupBoardTab({
           // how far along it they have moved it. The Unmapped column is deliberately absent: work
           // nobody has placed has not demonstrably got anywhere.
           [...vocabulary.columns].sort((left, right) => left.order - right.order).map((column) => column.id),
+          // The id discovered on THIS instance, not Jira's default — the same one the cards read.
+          discoveredFlagFieldId,
         ),
         allItems: scopedResult.items,
         incompleteReasons: issueSet.load.failures.map((failure) => failure.detail),
@@ -2715,6 +2742,10 @@ export default function RollupBoardTab({
               draggedItemKey={draggedItemKey}
               dropPreview={dropPreview}
               onToggleFlag={(issueKey, shouldBeFlagged) => void handleToggleFlag(issueKey, shouldBeFlagged)}
+              // A Feature is an ordinary Jira issue, so flagging one is the same act and the same
+              // write path as flagging a Story. The board simply never offered it.
+              onToggleFeatureFlag={(flaggedFeatureKey, shouldBeFlagged) =>
+                void handleToggleFlag(flaggedFeatureKey, shouldBeFlagged)}
               onMoveToColumn={(issueKey, columnId) => void handleMoveToColumn(issueKey, columnId)}
               moveTargetColumns={visibleColumns}
               onOpenChecklistParent={(checklistCard) => handleOpenIssue(checklistCard.parentKey)}

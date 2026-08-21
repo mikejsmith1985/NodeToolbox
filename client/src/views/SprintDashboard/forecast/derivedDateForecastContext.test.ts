@@ -103,3 +103,81 @@ describe('describeTargetStartBases', () => {
       .not.toContain('became workable');
   });
 });
+
+describe('the DEV → SL chain start', () => {
+  /** Field ids that include the Feature link, which is what makes a chain visible at all. */
+  const CHAIN_FIELD_IDS: TodayAdapterFieldIds = {
+    ...FIELD_IDS,
+    featureLinkFieldIds: ['customfield_featurelink'],
+  };
+
+  /** A story on a Feature, with a fix version whose release date drives the code-freeze deadline. */
+  function chainIssue(key: string, summary: string, points: number | null): JiraIssueLike {
+    return {
+      key,
+      fields: {
+        summary,
+        status: { name: 'Working' },
+        customfield_featurelink: 'DENP-1',
+        customfield_points: points,
+        // Release 2026-10-16 → code freeze 21 days earlier, 2026-09-25, a Friday.
+        fixVersions: [{ name: 'Release 10/16/2026', releaseDate: '2026-10-16', released: false }],
+      },
+    };
+  }
+
+  it('works each issue start back through the SL story and both handover buffers', () => {
+    // SL needs 2 days ending Fri 25: Thu 24, Fri 25. SL queue Wed 23, code review Tue 22 — so dev
+    // must be complete Tue 22, and its 3 days run Fri 18, Mon 21, Tue 22.
+    const context = buildDerivedDateForecastContext(
+      [chainIssue('ENC-1', '[DEV] Build it', 3), chainIssue('ENC-2', '[SL] Test it', 2)],
+      CHAIN_FIELD_IDS,
+      NOW,
+    );
+
+    expect(context.chainTargetStartByKey['ENC-1']).toBe('2026-09-18');
+    expect(context.chainTargetStartByKey['ENC-2']).toBe('2026-09-24');
+  });
+
+  it('gives an issue on no Feature no chain date, because it has no chain', () => {
+    const context = buildDerivedDateForecastContext(
+      [issue('ENC-1', { summary: '[DEV] Build it', customfield_points: 3 })],
+      CHAIN_FIELD_IDS,
+      NOW,
+    );
+
+    expect(context.chainTargetStartByKey['ENC-1']).toBeUndefined();
+  });
+
+  it('dates no issue in a Feature that holds unsized work', () => {
+    // One unmeasured story makes the whole chain a guess, and a guessed date reads like a real one.
+    const context = buildDerivedDateForecastContext(
+      [chainIssue('ENC-1', '[DEV] Build it', 3), chainIssue('ENC-2', '[SL] Test it', null)],
+      CHAIN_FIELD_IDS,
+      NOW,
+    );
+
+    expect(context.chainTargetStartByKey).toEqual({});
+  });
+
+  it('gives nothing when no fix version supplies a deadline to work back from', () => {
+    const context = buildDerivedDateForecastContext(
+      [issue('ENC-1', { summary: '[DEV] Build it', customfield_points: 3, customfield_featurelink: 'DENP-1' })],
+      CHAIN_FIELD_IDS,
+      NOW,
+    );
+
+    expect(context.chainTargetStartByKey).toEqual({});
+  });
+
+  it('produces no chain at all for a caller that does not resolve Feature links', () => {
+    // Byte-identical behaviour for every surface that predates this: no Feature link, no chain.
+    const context = buildDerivedDateForecastContext(
+      [chainIssue('ENC-1', '[DEV] Build it', 3), chainIssue('ENC-2', '[SL] Test it', 2)],
+      FIELD_IDS,
+      NOW,
+    );
+
+    expect(context.chainTargetStartByKey).toEqual({});
+  });
+});

@@ -622,3 +622,135 @@ describe('the progress bar draws both figures whichever is ahead', () => {
     expect(fills[1].getAttribute('class')).toContain('laneProgressFillFamily');
   });
 });
+
+describe('MasterCardLane — flagging the Feature itself as blocked', () => {
+  /** Builds a lane whose Feature carries an impediment flag in the discovered field. */
+  function buildFlaggedLane() {
+    const flaggedFeature = {
+      id: 'FEAT-1',
+      key: 'FEAT-1',
+      fields: {
+        summary: 'Enrolment revamp',
+        status: { name: 'In Progress' },
+        priority: { name: 'High' },
+        issuelinks: [],
+        customfield_11200: [{ value: 'Impediment' }],
+      },
+    } as unknown as JiraIssue;
+
+    return buildBoardLayout({
+      masterCards: buildMasterCards(
+        [buildItem('DEV-1', 'col-todo')],
+        new Map([['FEAT-1', flaggedFeature]]),
+        [],
+        [],
+        'customfield_11200',
+      ),
+      columns: COLUMNS,
+      filters: EMPTY_QUICK_FILTER_STATE,
+      preferences: buildPreferences(),
+    }).lanes[0];
+  }
+
+  it('offers flagging the Feature the same way a child issue is flagged', () => {
+    render(
+      <MasterCardLane
+        columns={COLUMNS}
+        columnTracks={COLUMN_TRACKS}
+        hasActiveFilters={false}
+        lane={buildLane([buildItem('DEV-1', 'col-todo')])}
+        onToggleCollapsed={vi.fn()}
+        onToggleFeatureFlag={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByLabelText('Actions for FEAT-1'));
+    expect(screen.getByText('Flag as blocked')).toBeTruthy();
+  });
+
+  it('asks to REMOVE the flag from a Feature that already carries one', () => {
+    render(
+      <MasterCardLane
+        columns={COLUMNS}
+        columnTracks={COLUMN_TRACKS}
+        hasActiveFilters={false}
+        lane={buildFlaggedLane()}
+        onToggleCollapsed={vi.fn()}
+        onToggleFeatureFlag={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByLabelText('Actions for FEAT-1'));
+    expect(screen.getByText('Remove blocked flag')).toBeTruthy();
+  });
+
+  it('reports which Feature to flag, and which way round', () => {
+    const onToggleFeatureFlag = vi.fn();
+    render(
+      <MasterCardLane
+        columns={COLUMNS}
+        columnTracks={COLUMN_TRACKS}
+        hasActiveFilters={false}
+        lane={buildLane([buildItem('DEV-1', 'col-todo')])}
+        onToggleCollapsed={vi.fn()}
+        onToggleFeatureFlag={onToggleFeatureFlag}
+      />,
+    );
+
+    fireEvent.click(screen.getByLabelText('Actions for FEAT-1'));
+    fireEvent.click(screen.getByText('Flag as blocked'));
+
+    expect(onToggleFeatureFlag).toHaveBeenCalledWith('FEAT-1', true);
+  });
+
+  it('says BLOCKED in the lane header in words, so it cannot be missed', () => {
+    // The whole point of the request: a blocked Feature that only differs by a tint is a blocked
+    // Feature nobody notices. The word is the signal; the colour only repeats it.
+    render(
+      <MasterCardLane
+        columns={COLUMNS}
+        columnTracks={COLUMN_TRACKS}
+        hasActiveFilters={false}
+        lane={buildFlaggedLane()}
+        onToggleCollapsed={vi.fn()}
+        onToggleFeatureFlag={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('BLOCKED')).toBeTruthy();
+  });
+
+  it('says nothing about blocking when the Feature is not flagged', () => {
+    render(
+      <MasterCardLane
+        columns={COLUMNS}
+        columnTracks={COLUMN_TRACKS}
+        hasActiveFilters={false}
+        lane={buildLane([buildItem('DEV-1', 'col-todo')])}
+        onToggleCollapsed={vi.fn()}
+        onToggleFeatureFlag={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByText('BLOCKED')).toBeNull();
+  });
+
+  it('omits the action entirely when the board cannot write the flag', () => {
+    // Offering an action that silently does nothing is worse than not offering it.
+    render(
+      <MasterCardLane
+        columns={COLUMNS}
+        columnTracks={COLUMN_TRACKS}
+        hasActiveFilters={false}
+        lane={buildLane([buildItem('DEV-1', 'col-todo')])}
+        onToggleCollapsed={vi.fn()}
+      />,
+    );
+
+    const actionsButton = screen.queryByLabelText('Actions for FEAT-1');
+    if (actionsButton) {
+      fireEvent.click(actionsButton);
+      expect(screen.queryByText('Flag as blocked')).toBeNull();
+    }
+  });
+});

@@ -26,6 +26,7 @@ import { buildScopeCutPlan, type ScopeCutPlan } from './scopeCut.ts';
 import type {
   CapacityAssessment,
   CapacityPerson,
+  FixVersionLike,
   ForecastResult,
   IssueForecast,
   ReleaseClock,
@@ -504,7 +505,7 @@ export default function ForecastTab({
   boardId = null,
   selectedPiValue = '',
 }: ForecastTabProps) {
-  const [versionNames, setVersionNames] = useState<string[] | null>(null);
+  const [openVersions, setOpenVersions] = useState<FixVersionLike[] | null>(null);
   const [selectedVersionName, setSelectedVersionName] = useState('');
   const [fieldIds, setFieldIds] = useState<{
     subStatusFieldIds: string[];
@@ -512,22 +513,39 @@ export default function ForecastTab({
     featureLinkFieldIds: string[];
   } | null>(null);
 
-  // Jira's own list, never a typed name: a value that must match Jira exactly is picked, not typed.
+  /**
+   * The OPEN fix versions of this team's own project.
+   *
+   * Jira's own list, never a typed name: a value that must match Jira exactly is picked, not typed.
+   *
+   * Released and archived versions are left out. A released version's date is already in the past
+   * and its work is already out of the door, so every figure a forecast produced for one would be
+   * alarming and meaningless at the same time -- and a list of eighty shipped releases also buries
+   * the two or three anybody is actually working toward.
+   *
+   * The whole version is kept rather than just its name, so Jira's release-date FIELD survives the
+   * trip. Mapping to names alone silently discarded it and left the engine with only the date in
+   * the version's name to go on.
+   */
   useEffect(() => {
     let isMounted = true;
     if (projectKey.trim() === '') {
-      setVersionNames([]);
+      setOpenVersions([]);
       return;
     }
     void fetchPiWindowFixVersions(projectKey)
       .then((versions) => {
         if (!isMounted) return;
-        setVersionNames(versions
-          .filter((version) => version.archived !== true)
-          .map((version) => (version.name ?? '').trim())
-          .filter((versionName) => versionName !== ''));
+        setOpenVersions(versions
+          .filter((version) => version.archived !== true && version.released !== true)
+          .map((version) => ({
+            name: (version.name ?? '').trim(),
+            releaseDate: version.releaseDate ?? null,
+            released: false,
+          }))
+          .filter((version) => version.name !== ''));
       })
-      .catch(() => { if (isMounted) setVersionNames([]); });
+      .catch(() => { if (isMounted) setOpenVersions([]); });
     return () => { isMounted = false; };
   }, [projectKey]);
 
@@ -587,7 +605,7 @@ export default function ForecastTab({
       {
         items,
         orderedColumnIds: [],
-        fixVersions: (versionNames ?? []).map((versionName) => ({ name: versionName })),
+        fixVersions: openVersions ?? [],
         people: readRosterPeople(),
         piEndDate: artSettings.piEndDate,
         piName: selectedPiValue,
@@ -597,7 +615,7 @@ export default function ForecastTab({
       config,
     );
     return { ...computed, rejectedSettings };
-  }, [scopedIssues, versionNames, fieldIds, readRosterPeople, teamProfileId, selectedPiValue]);
+  }, [scopedIssues, openVersions, fieldIds, readRosterPeople, teamProfileId, selectedPiValue]);
 
   const selectedClock = forecast?.releaseClocksByVersionName[selectedVersionName] ?? null;
   const codeFreezeAssessment = forecast?.codeFreezeCapacityByVersionName[selectedVersionName] ?? null;
@@ -643,8 +661,8 @@ export default function ForecastTab({
             value={selectedVersionName}
           >
             <option value="">— pick a version —</option>
-            {(versionNames ?? []).map((versionName) => (
-              <option key={versionName} value={versionName}>{versionName}</option>
+            {(openVersions ?? []).map((version) => (
+              <option key={version.name} value={version.name}>{version.name}</option>
             ))}
           </select>
         </label>
@@ -662,11 +680,11 @@ export default function ForecastTab({
         </ul>
       )}
 
-      {versionNames === null && <p className={styles.forecastSectionNote} role="status">{LOADING_MESSAGE}</p>}
-      {versionNames !== null && versionNames.length === 0 && (
+      {openVersions === null && <p className={styles.forecastSectionNote} role="status">{LOADING_MESSAGE}</p>}
+      {openVersions !== null && openVersions.length === 0 && (
         <p className={styles.forecastSectionNote} role="status">{NO_VERSIONS_MESSAGE}</p>
       )}
-      {versionNames !== null && versionNames.length > 0 && selectedVersionName === '' && (
+      {openVersions !== null && openVersions.length > 0 && selectedVersionName === '' && (
         <p className={styles.forecastSectionNote} role="status">{NO_VERSION_MESSAGE}</p>
       )}
 

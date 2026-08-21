@@ -14,7 +14,12 @@
 import { jiraGet } from '../../services/jiraApi.ts';
 import { saveFeatureReviewSimpleField } from '../SprintDashboard/featureReviewFixes.ts';
 import type { HygieneFieldConfig, HygieneFinding, JiraIssue } from './checks/hygieneChecks.ts';
-import { deriveIssueDates, READY_TO_WORK_STATUS_NAME, WORKING_STATUS_NAME } from './checks/issueDateRules.ts';
+import {
+  deriveIssueDates,
+  READY_TO_WORK_STATUS_NAME,
+  WORKING_STATUS_NAME,
+  type DerivedIssueDates,
+} from './checks/issueDateRules.ts';
 import type { WorkingCalendar } from '../../utils/workingDays.ts';
 
 /**
@@ -27,6 +32,13 @@ import type { WorkingCalendar } from '../../utils/workingDays.ts';
 export interface DerivedDateContext {
   /** Remaining working days per issue key. A key that is absent simply falls back to the old rule. */
   remainingEffortWorkingDaysByKey?: Record<string, number | null>;
+  /**
+   * The day each issue has to start for its Feature's whole DEV → SL chain to make code freeze.
+   *
+   * A key that is absent falls back to the issue's own effort, which is what every caller that
+   * cannot see a Feature's other issues gets.
+   */
+  chainTargetStartByKey?: Record<string, string>;
   /** The PI Definition-of-Done deadline, when the ART has configured one. */
   piDodDeadlineIso?: string | null;
   workingCalendar?: WorkingCalendar;
@@ -45,7 +57,9 @@ export interface DerivedDatePlan {
   writes: DerivedDateWrite[];
   undecidedReasons: string[];
   /** Which rule produced the Target Start, so a bulk run can report what it did rather than a count. */
-  targetStartBasis?: 'actual-working' | 'back-calculated' | 'ready-to-work-lead' | 'none';
+  // Taken from the policy's own type rather than restated. The two had already drifted once: a rule
+  // added there was a compile error here, which is the good version of this mistake.
+  targetStartBasis?: DerivedIssueDates['targetStartBasis'];
 }
 
 /** The result of a run: what landed, and precisely what did not. */
@@ -148,6 +162,7 @@ export async function planDerivedDateWrites(
     // Absent unless the caller has a forecast in hand. The policy then falls back to the rule it
     // always used, so nothing that has not adopted the forecast changes behaviour.
     remainingEffortWorkingDays: context?.remainingEffortWorkingDaysByKey?.[issue.key] ?? null,
+    chainTargetStartIso: context?.chainTargetStartByKey?.[issue.key] ?? null,
     piDodDeadlineIso: context?.piDodDeadlineIso ?? null,
     workingCalendar: context?.workingCalendar,
   });

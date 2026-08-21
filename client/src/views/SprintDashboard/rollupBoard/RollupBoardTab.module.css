@@ -1765,3 +1765,28 @@
 .laneScheduleSwatch_due { background: linear-gradient(135deg, #f59e0b, #fbbf24); }
 .laneScheduleSwatch_good { background: linear-gradient(135deg, #22c55e, #10b981); }
 .laneScheduleSwatch_unknown { background: linear-gradient(135deg, #94a3b8, #64748b); }
+
+/* ── A blocked Feature ──
+   The whole header is tinted, not just a chip inside it. On a board of a dozen lanes a small marker
+   is exactly what gets scrolled past, and a blocked Feature is the one thing here that must not be.
+   The word BLOCKED does the work; the colour repeats it. */
+
+.laneHeaderBlocked {
+  border-left: 4px solid var(--color-danger, #dc2626);
+  background: linear-gradient(135deg, rgba(244, 63, 94, 0.18), rgba(251, 113, 133, 0.06));
+}
+
+.laneBlockedBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 12px;
+  border: 1px solid rgba(244, 63, 94, 0.6);
+  border-radius: 999px;
+  background: linear-gradient(135deg, rgba(244, 63, 94, 0.24), rgba(251, 113, 133, 0.14));
+  box-shadow: 0 0 0 1px rgba(244, 63, 94, 0.16), 0 8px 20px rgba(244, 63, 94, 0.18);
+  color: #f43f5e;
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}

@@ -780,6 +780,10 @@ function BulkDateFixButton({ hygieneState }: { hygieneState: ReturnType<typeof u
         storyPointsFieldIds: resolveStoryPointsFieldIds(''),
         subStatusFieldIds: hygieneState.fieldConfig.subStatusFieldIds ?? [],
         targetStartFieldIds: hygieneState.fieldConfig.targetStartFieldIds,
+        // What makes the DEV → SL chain visible. Without the Feature link every issue is scheduled
+        // on its own effort alone, which is what a dev story with a week of testing behind it
+        // reads as right up until the Feature misses its deadline.
+        featureLinkFieldIds: hygieneState.fieldConfig.featureLinkFieldIds ?? [],
       });
       const outcome = await applyDerivedDates(datedIssues, hygieneState.fieldConfig, forecastContext);
       const failureNote = outcome.failures.length > 0

@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Target Start is now worked back through the whole DEV → SL chain, with the two handover days in
+  it.** It counted only the issue's OWN effort, so a dev story with a week of SL testing queued behind
+  it was told it could start a week later than it really could — and it read "on track" every day
+  until the Feature missed its commitment, because the dev story genuinely was on track. The work
+  that made it late was never the work being measured. The chain is now counted backwards from code
+  freeze: SL testing, one day for the SL queue, one day for code review, then dev. Both waits are
+  reserved even when there is no SL story, because dev is still reviewed and the work still sits
+  waiting for whoever picks it up. A Feature holding any unsized work is given no chain date at all
+  rather than one that quietly omits it. A date work ACTUALLY began on still wins over any of this.
+- **A Feature can be flagged as blocked on the Roll-Up Board, the same way a child issue can** — from
+  the lane's own actions menu. A blocked Feature's lane header then says **BLOCKED** in words, beside a
+  red edge and tint, so a lane in trouble cannot be scrolled past. The flag is read from the field this
+  instance actually keeps it in rather than Jira's default id, which is the difference between showing
+  every Feature as blocked, none of them, and the right ones.
 - **The Today forecast leads with the four figures you act on** — behind, must start today, on track,
   cannot forecast — as cards, before any list. A screen that opens with rows makes the reader do the
   counting.
@@ -23,6 +37,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   green for the date — instead of a row of identical grey chips that had to be read one at a time.
 
 ### Fixed
+- **Dropdown text is readable again, in every dropdown and both themes.** The app sets
+  `color-scheme: dark`, which is what normally paints an OPEN dropdown dark with light text — but a
+  browser drops any control given its OWN background out of that scheme, and almost every styled
+  dropdown here sets one. The open list kept its dark panel and reverted to the light theme's
+  near-black text, unreadable on itself. The pair is now pinned once, globally, from theme tokens;
+  four components had each rediscovered it and patched it locally.
+- **The Forecast tab's fix-version picker now lists only the OPEN versions of the team's own project.**
+  It filtered archived versions but not released ones, so the list opened on dozens of shipped releases
+  going back years, with the two anybody is working toward buried among them.
+- **A shipped release is no longer treated as a live deadline on the Roll-Up Board and the Today
+  dashboard.** Both read fix versions off the issues, which carry a name and nothing else — so the
+  engine, which deliberately excuses work still open against a released version, was never told which
+  ones those were. Every carryover issue still tagged with last year's release was reported as
+  catastrophically late against a date nobody is working to. Both surfaces now pair those names with
+  the project's own record of each version, which also carries Jira's release-date FIELD through for
+  the first time, so the field can win over the date in the version's name as it was always meant to.
 - **Two more surfaces were reading story points through the wrong field and the wrong shape.** The ART
   Overview's point totals and the Predictability tab's velocity both named two hard-coded custom
   field ids — neither of which is the field this instance uses — and then accepted only a plain

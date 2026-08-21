@@ -700,22 +700,44 @@ describe('the daily forecast', () => {
     expect(result.current.forecast).toBeNull();
   });
 
-  it('forecasts the issues the scans returned, without asking Jira for anything more', async () => {
+  it('forecasts the very issues the scans returned, so the two halves of the screen agree', async () => {
     installSettingsStore([buildTeamProfile('alpha-id', 'Transformers', 'ENCUC')]);
     mockRunHygieneScan.mockResolvedValue(buildScanOutcome([
       buildFinding('ENC-1', []),
       buildFinding('ENC-2', []),
     ]));
-    const jiraCallsBefore = mockJiraGet.mock.calls.length;
 
     const { result } = renderHook(() => useTodayDashboard());
     await waitFor(() => expect(result.current.forecast).not.toBeNull());
 
-    expect(result.current.forecast?.completeness.totalIssueCount).toBeGreaterThan(0);
-    // The only Jira calls are the ones the cards already made — the forecast adds none.
-    const forecastOnlyCalls = mockJiraGet.mock.calls.slice(jiraCallsBefore)
-      .filter((call) => String(call[0]).includes('/version'));
-    expect(forecastOnlyCalls).toHaveLength(0);
+    // Measured from the set the cards already hold rather than a fresh query of its own. A second
+    // fetch would eventually return a different set and the screen would quietly disagree with
+    // itself.
+    expect(result.current.forecast?.completeness.totalIssueCount).toBe(2);
+  });
+
+  it('asks each scanned project for its versions, once, so a shipped release is known as shipped', async () => {
+    // This request was deliberately avoided until it became clear what its absence cost: the engine
+    // excuses work still open against a RELEASED version, and it could not, because a version name
+    // read off an issue cannot say whether it shipped. Every carryover issue was reported as
+    // catastrophically late against a date nobody is working to.
+    installSettingsStore([
+      buildTeamProfile('alpha-id', 'Transformers', 'ENCUC'),
+      buildTeamProfile('beta-id', 'Autobots', 'DENP'),
+    ]);
+    mockRunHygieneScan.mockResolvedValue(buildScanOutcome([buildFinding('ENC-1', [])]));
+
+    const { result } = renderHook(() => useTodayDashboard());
+    await waitFor(() => expect(result.current.forecast).not.toBeNull());
+
+    const versionCalls = mockJiraGet.mock.calls
+      .map((call) => String(call[0]))
+      .filter((path) => path.includes('/versions'));
+    expect(versionCalls.some((path) => path.includes('ENCUC'))).toBe(true);
+    expect(versionCalls.some((path) => path.includes('DENP'))).toBe(true);
+    // One per project, not one per render: a list that reloaded on every keystroke would be worse
+    // than the problem it solves.
+    expect(new Set(versionCalls).size).toBe(versionCalls.length);
   });
 
   it('counts one issue once even when it appears in both the personal and team scans', async () => {

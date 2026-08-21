@@ -6,7 +6,7 @@
 // not be read still gets a lane — folding it into "No Feature" would misreport a permissions or
 // visibility problem as a data-quality one.
 
-import { detectImpedimentReasons } from '../../ArtView/hooks/artHelpers.ts';
+import { readIsFlagSet } from './issueFlagWrite.ts';
 import type { JiraIssue } from '../../../types/jira.ts';
 import { computeFeatureProgress } from './featureProgress.ts';
 import {
@@ -22,14 +22,20 @@ const UNREADABLE_FEATURE_SUMMARY = 'This Feature could not be read (it may be in
 /**
  * Reads whether Jira's impediment flag is set on a Feature.
  *
- * The shared impediment detection reads `fields.status.name` unguarded, so an issue Jira returned
- * without a status would throw. One Feature missing one field must not take the whole board down —
- * a board that fails to render hides far more than a missing flag does.
+ * Reads the field id this instance actually keeps the flag in, exactly as the CARDS do. It used to
+ * go through the shared impediment detector, whose own flag check hard-codes Jira's default id —
+ * which is not the id here. That fails in both directions at once and looks like two bugs: the
+ * board could write a flag to the right field and then never show it, so the action appeared to do
+ * nothing at all.
+ *
+ * The status guard stays: the shared detector reads `fields.status.name` unguarded, and one Feature
+ * Jira returned without a status must not take the whole board down — a board that fails to render
+ * hides far more than a missing flag does.
  */
-function readIsFeatureFlagged(featureIssue: JiraIssue | null): boolean {
+function readIsFeatureFlagged(featureIssue: JiraIssue | null, flagFieldId: string): boolean {
   const hasStatusName = Boolean((featureIssue?.fields as { status?: { name?: string } } | undefined)?.status?.name);
   if (!featureIssue || !hasStatusName) return false;
-  return detectImpedimentReasons(featureIssue).includes('Flagged');
+  return readIsFlagSet(featureIssue.fields as unknown as Record<string, unknown>, flagFieldId);
 }
 
 /** Counts the blocking relationships on a Feature, which is what "dependencies" means on this board. */
@@ -67,6 +73,8 @@ function buildVitals(
   isSynthetic: boolean,
   storyPointsFieldIds: readonly string[],
   orderedColumnIds: readonly string[],
+  /** The field this instance keeps the impediment flag in. Empty reads as "not flagged". */
+  flagFieldId = '',
 ): MasterCardVitals {
   const issueFields = (featureIssue?.fields ?? {}) as {
     summary?: string;
@@ -84,7 +92,7 @@ function buildVitals(
     statusName: issueFields.status?.name ?? null,
     progress: computeFeatureProgress(items, orderedColumnIds),
     dependencyCount: countBlockingDependencies(featureIssue),
-    isFlagged: readIsFeatureFlagged(featureIssue),
+    isFlagged: readIsFeatureFlagged(featureIssue, flagFieldId),
     // null, not 0 — an absent estimate is a different statement from an estimate of nothing.
     storyPoints: readFeatureStoryPoints(featureIssue, storyPointsFieldIds),
     priorityName: issueFields.priority?.name ?? null,
@@ -120,6 +128,14 @@ export function buildMasterCards(
    * that has no vocabulary to hand cannot accidentally change what a Feature appears to be worth.
    */
   orderedColumnIds: readonly string[] = [],
+  /**
+   * The field this instance keeps the impediment flag in, discovered by name.
+   *
+   * Optional and empty by default, which reads as "not flagged" rather than guessing at Jira's
+   * default id — a wrong id here would show every Feature as flagged or none of them, and both look
+   * like the data rather than the configuration.
+   */
+  flagFieldId = '',
 ): MasterCard[] {
   const itemsByFeatureKey = groupItemsByFeatureKey(items);
 
@@ -133,7 +149,7 @@ export function buildMasterCards(
         isSynthetic: false,
         featureIssue,
         isFeatureUnreadable: featureIssue === null,
-        vitals: buildVitals(featureKey, featureIssue, featureItems, false, storyPointsFieldIds, orderedColumnIds),
+        vitals: buildVitals(featureKey, featureIssue, featureItems, false, storyPointsFieldIds, orderedColumnIds, flagFieldId),
         items: featureItems,
       };
     });
@@ -151,7 +167,7 @@ export function buildMasterCards(
       isSynthetic: true,
       featureIssue: null,
       isFeatureUnreadable: false,
-      vitals: buildVitals(NO_FEATURE_KEY, null, unattributedItems, true, storyPointsFieldIds, orderedColumnIds),
+      vitals: buildVitals(NO_FEATURE_KEY, null, unattributedItems, true, storyPointsFieldIds, orderedColumnIds, flagFieldId),
       items: unattributedItems,
     },
   ];
@@ -169,6 +185,8 @@ export function buildFeatureWithoutWorkCard(
   featureKey: string,
   featureIssue: JiraIssue | null,
   storyPointsFieldIds: readonly string[] = [],
+  /** The field this instance keeps the impediment flag in. Empty reads as "not flagged". */
+  flagFieldId = '',
 ): MasterCard {
   return {
     featureKey,
@@ -179,7 +197,7 @@ export function buildFeatureWithoutWorkCard(
     // as Jira refusing it — and claiming otherwise put a permissions warning on a healthy Feature.
     isFeatureUnreadable: false,
     hasNoWorkYet: true,
-    vitals: buildVitals(featureKey, featureIssue, [], false, storyPointsFieldIds, []),
+    vitals: buildVitals(featureKey, featureIssue, [], false, storyPointsFieldIds, [], flagFieldId),
     items: [],
   };
 }

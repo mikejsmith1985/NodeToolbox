@@ -24,6 +24,11 @@ import { useSprintData } from '../../../SprintDashboard/hooks/useSprintData.ts';
 import { buildTeamHygieneScopeJql } from '../../../SprintDashboard/teamHygieneScope.ts';
 import { readArtSettings, readRawForecastSettings } from '../../../../services/artSettingsStore.ts';
 import { adaptHygieneIssues, collectFixVersionNames } from '../../../SprintDashboard/forecast/forecastAdapters.ts';
+import { mergeProjectVersionMetadata } from '../../../SprintDashboard/forecast/projectVersions.ts';
+import {
+  fetchPiWindowFixVersions,
+  type RawJiraVersion,
+} from '../../../ArtView/piPlan/piPlanReleaseSchedule.ts';
 import { buildForecastConfig } from '../../../SprintDashboard/forecast/forecastSettings.ts';
 import { computeForecast } from '../../../SprintDashboard/forecast/forecastCompose.ts';
 import type { ForecastResult } from '../../../SprintDashboard/forecast/forecastTypes.ts';
@@ -856,6 +861,34 @@ export function useTodayDashboard(): TodayDashboardData {
   // has no board and therefore no column order, which means every item is charged at full size —
   // stated in the completeness record rather than left for a reader to infer, and conservative
   // rather than wrong.
+  /**
+   * Every scanned project's own record of its fix versions.
+   *
+   * Today reads version NAMES off the issues, which cannot tell a live release from one that
+   * shipped last year -- and a carryover issue still tagged with a shipped version would then be
+   * reported as badly late against a date nobody is working to. Every configured team is scanned
+   * here, so every one of their projects is asked. A refused list is not an error: the forecast
+   * falls back to the dates in the version names, as it did before.
+   */
+  const [projectVersions, setProjectVersions] = useState<RawJiraVersion[]>([]);
+
+  const scannedProjectKeys = useMemo(
+    () => [...new Set(teamScanTargets.map((target) => target.projectKey).filter((key) => key !== ''))].sort(),
+    [teamScanTargets],
+  );
+
+  useEffect(() => {
+    let isMounted = true;
+    if (scannedProjectKeys.length === 0) {
+      setProjectVersions([]);
+      return;
+    }
+    void Promise.all(scannedProjectKeys.map((projectKey) => fetchPiWindowFixVersions(projectKey)
+      .catch((): RawJiraVersion[] => [])))
+      .then((versionLists) => { if (isMounted) setProjectVersions(versionLists.flat()); });
+    return () => { isMounted = false; };
+  }, [scannedProjectKeys]);
+
   const forecast = useMemo<ForecastResult | null>(() => {
     const fieldConfig = myIssuesResult.hygieneContext?.fieldConfig;
     if (!fieldConfig) {
@@ -882,9 +915,9 @@ export function useTodayDashboard(): TodayDashboardData {
       {
         items,
         orderedColumnIds: [],
-        // Only the versions this work is actually committed to: fetching the project's whole
-        // version list would be a request Today does not currently make.
-        fixVersions: collectFixVersionNames(items).map((versionName) => ({ name: versionName })),
+        // The versions this work is committed to, paired with each project's own record of them so
+        // a release that has already shipped is read as history rather than as a missed deadline.
+        fixVersions: mergeProjectVersionMetadata(collectFixVersionNames(items), projectVersions),
         people: [],
         piEndDate: artSettings.piEndDate,
         // The active team's PI carries its window in the name, so the PI clock works here too
