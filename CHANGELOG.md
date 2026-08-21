@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **The SharePoint library browser is wired into Bulk Re-write's shared material.** Point at a library
+  folder, press Browse, and Toolbox walks it through the relay and lists what it found -- each document
+  with the folder it lives in and the day it last changed, because two folders can hold one name and a
+  stale standard looks exactly like a current one. Tick the ones that matter and they become shared
+  material like any other source. What could NOT be read, and the folders the walk did not descend
+  into, are both shown: a listing of only the readable documents would read as "this is the whole
+  library", which is the one thing it is not. A document that fails to fetch is named, so somebody who
+  ticked six and received five knows which one is missing and why.
 - **Word documents can be read from a SharePoint library.** A .docx is a ZIP, so it could not travel
   through the relay at all -- reading the response as text decodes the bytes as UTF-8 and destroys
   them. The relay now carries a base64 response mode for binary files, and the document is rebuilt and

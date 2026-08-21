@@ -53,7 +53,25 @@ export interface PasteSource {
   text: string;
 }
 
-export type ReferencedSource = ConfluenceSource | WorkbookSource | JiraSource | PasteSource;
+/** A document read out of a SharePoint library. */
+export interface SharePointSource {
+  kind: 'sharepoint';
+  id: string;
+  fileName: string;
+  /** The folder it was found in, kept so provenance survives — two folders can hold one name. */
+  folderPath: string;
+  /** Its server-relative url, which is what identifies it uniquely. */
+  serverRelativeUrl: string;
+  text: string;
+  fetchedAtIso: string;
+}
+
+export type ReferencedSource =
+  | ConfluenceSource
+  | WorkbookSource
+  | JiraSource
+  | PasteSource
+  | SharePointSource;
 
 /**
  * Describes where a source came from, for display beside it.
@@ -73,6 +91,8 @@ export function describeSourceOrigin(source: ReferencedSource): string {
       return source.issueKey;
     case 'paste':
       return 'Pasted';
+    case 'sharepoint':
+      return `SharePoint · ${source.folderPath}`;
   }
 }
 
@@ -87,6 +107,8 @@ export function describeSourceTitle(source: ReferencedSource): string {
       return `${source.issueKey} — ${source.summary}`;
     case 'paste':
       return source.label || 'Pasted note';
+    case 'sharepoint':
+      return source.fileName;
   }
 }
 
@@ -95,6 +117,7 @@ export function readSourceText(source: ReferencedSource): string {
   switch (source.kind) {
     case 'confluence':
     case 'paste':
+    case 'sharepoint':
       return source.text;
     case 'jira':
       return `${source.issueKey} (${source.status}): ${source.summary}`;

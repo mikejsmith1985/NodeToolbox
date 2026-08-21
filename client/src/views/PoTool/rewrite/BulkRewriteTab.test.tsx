@@ -326,3 +326,105 @@ describe('BulkRewriteTab shared material', () => {
     expect(await screen.findByText('Accessibility Standard')).toBeInTheDocument();
   });
 });
+
+describe('BulkRewriteTab SharePoint library browsing', () => {
+  /** Persists a batch to open, so the shared-material panel is on screen. */
+  function seedOpenableBatch(id: string, name: string) {
+    saveBatch({
+      id,
+      name,
+      teamProfileId: 'team-1',
+      createdAtIso: '2026-08-21T00:00:00.000Z',
+      updatedAtIso: '2026-08-21T00:00:00.000Z',
+      items: [{
+        jiraKey: 'ABC-1',
+        original: { summary: 'S', description: 'd', acceptanceCriteria: 'a', capturedAtIso: '2026-08-21T00:00:00.000Z' },
+        proposed: null,
+        state: 'captured',
+        captureError: null,
+        submitResult: null,
+      }],
+    });
+  }
+
+  /** Answers the two document endpoints; everything else falls through to the existing stub. */
+  function stubLibraryFetch(browseBody: unknown, fetchBody: unknown = { ok: true, documents: [] }) {
+    const previousFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/sharepoint-documents/browse')) {
+        return { ok: true, status: 200, json: async () => browseBody } as Response;
+      }
+      if (url.includes('/api/sharepoint-documents/fetch')) {
+        return { ok: true, status: 200, json: async () => fetchBody } as Response;
+      }
+      return previousFetch(input as RequestInfo, init);
+    }) as unknown as typeof fetch;
+  }
+
+  it('lists the documents a walk found, with where each one lives', async () => {
+    const user = userEvent.setup();
+    seedOpenableBatch('batch-sp-1', 'Library batch');
+    stubLibraryFetch({
+      ok: true,
+      documents: [{
+        name: 'Accessibility Standard.md',
+        folderPath: '/sites/D/Docs/Standards',
+        serverRelativeUrl: '/sites/D/Docs/Standards/Accessibility Standard.md',
+        modifiedAtIso: '2026-08-01T00:00:00Z',
+      }],
+      unreadable: [],
+      skippedTooDeep: [],
+      visitedFolderCount: 2,
+    });
+
+    render(<BulkRewriteTab dashboardTeamProfileId="team-1" />);
+    await user.click(await screen.findByRole('button', { name: 'Open' }));
+    await user.type(screen.getByLabelText('SharePoint library folder'), '/sites/D/Docs');
+    await user.click(screen.getByRole('button', { name: /browse library/i }));
+
+    expect(await screen.findByText('Accessibility Standard.md')).toBeInTheDocument();
+    expect(screen.getByText(/\/sites\/D\/Docs\/Standards/)).toBeInTheDocument();
+  });
+
+  it('says what it could not read and what it did not look in', async () => {
+    // A listing showing only the readable documents would read as "this is the whole library",
+    // which is the one thing it is not.
+    const user = userEvent.setup();
+    seedOpenableBatch('batch-sp-2', 'Gaps batch');
+    stubLibraryFetch({
+      ok: true,
+      documents: [],
+      unreadable: [{ name: 'Report.pdf', folderPath: '/x', serverRelativeUrl: '/x', modifiedAtIso: '', reason: 'pdf' }],
+      skippedTooDeep: ['/sites/D/Docs/a/b/c/d/e/f/g'],
+      visitedFolderCount: 7,
+    });
+
+    render(<BulkRewriteTab dashboardTeamProfileId="team-1" />);
+    await user.click(await screen.findByRole('button', { name: 'Open' }));
+    await user.type(screen.getByLabelText('SharePoint library folder'), '/sites/D/Docs');
+    await user.click(screen.getByRole('button', { name: /browse library/i }));
+
+    expect(await screen.findByText(/Not readable: Report\.pdf/)).toBeInTheDocument();
+    expect(screen.getByText(/Not looked in \(too deep\)/)).toBeInTheDocument();
+  });
+
+  it('will not fetch until something is actually ticked', async () => {
+    const user = userEvent.setup();
+    seedOpenableBatch('batch-sp-3', 'Nothing ticked');
+    stubLibraryFetch({
+      ok: true,
+      documents: [{ name: 'A.md', folderPath: '/x', serverRelativeUrl: '/x/A.md', modifiedAtIso: '' }],
+      unreadable: [],
+      skippedTooDeep: [],
+      visitedFolderCount: 1,
+    });
+
+    render(<BulkRewriteTab dashboardTeamProfileId="team-1" />);
+    await user.click(await screen.findByRole('button', { name: 'Open' }));
+    await user.type(screen.getByLabelText('SharePoint library folder'), '/sites/D/Docs');
+    await user.click(screen.getByRole('button', { name: /browse library/i }));
+
+    expect(await screen.findByRole('button', { name: /Add 0 selected/i })).toBeDisabled();
+  });
+});

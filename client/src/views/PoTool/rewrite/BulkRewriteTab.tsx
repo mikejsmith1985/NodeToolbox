@@ -38,6 +38,13 @@ import { revertItems } from './rewriteRevert';
 import { ConfluenceSourceError, readConfluenceSource } from '../sources/confluenceSource';
 import { readWorkbookSource, WORKBOOK_FILE_ACCEPT, WorkbookReadError } from '../sources/workbookSource';
 import {
+  browseSharePointLibrary,
+  fetchSharePointDocuments,
+  SharePointSourceError,
+  type LibraryBrowseResult,
+  type LibraryDocumentSummary,
+} from '../sources/sharePointSource';
+import {
   describeSourceOrigin,
   describeSourceTitle,
   mintSourceId,
@@ -95,6 +102,11 @@ export default function BulkRewriteTab({ dashboardTeamProfileId, selectedPiName 
   const [pasteInput, setPasteInput] = useState('');
   const [pasteLabelInput, setPasteLabelInput] = useState('');
   const [sourceError, setSourceError] = useState<string | null>(null);
+  const [libraryFolderInput, setLibraryFolderInput] = useState('');
+  const [libraryBrowseResult, setLibraryBrowseResult] = useState<LibraryBrowseResult | null>(null);
+  const [selectedDocumentUrls, setSelectedDocumentUrls] = useState<string[]>([]);
+  const [isBrowsingLibrary, setIsBrowsingLibrary] = useState(false);
+  const [isFetchingDocuments, setIsFetchingDocuments] = useState(false);
   const [ingestNotice, setIngestNotice] = useState<{ accepted: number; rejected: { key: string; reason: string }[]; unparsedCount: number } | null>(null);
 
   const refreshBatchList = useCallback(() => {
@@ -205,6 +217,69 @@ export default function BulkRewriteTab({ dashboardTeamProfileId, selectedPiName 
       return;
     }
     persistBatch({ ...batch, sharedSources: (batch.sharedSources ?? []).filter((source) => source.id !== sourceId) });
+  }
+
+  /**
+   * Walks the library and shows what is in it — names only.
+   *
+   * The contents are a second, deliberate step: a library holds hundreds of documents, and reading
+   * them all to find the three that matter would bury the useful material in the rest.
+   */
+  async function handleBrowseLibrary(): Promise<void> {
+    setIsBrowsingLibrary(true);
+    setSourceError(null);
+    try {
+      const result = await browseSharePointLibrary(libraryFolderInput);
+      setLibraryBrowseResult(result);
+      setSelectedDocumentUrls([]);
+      if (result.documents.length === 0) {
+        showToast('That folder holds no documents this can read.', 'error');
+      }
+    } catch (error) {
+      setLibraryBrowseResult(null);
+      setSourceError(error instanceof SharePointSourceError
+        ? error.message
+        : 'That library could not be browsed.');
+    } finally {
+      setIsBrowsingLibrary(false);
+    }
+  }
+
+  function handleToggleDocument(serverRelativeUrl: string): void {
+    setSelectedDocumentUrls((urls) => (urls.includes(serverRelativeUrl)
+      ? urls.filter((each) => each !== serverRelativeUrl)
+      : [...urls, serverRelativeUrl]));
+  }
+
+  /** Fetches the ticked documents and adds them to the batch's shared material. */
+  async function handleAddSelectedDocuments(): Promise<void> {
+    if (!batch || libraryBrowseResult === null || selectedDocumentUrls.length === 0) {
+      return;
+    }
+    const chosen: LibraryDocumentSummary[] = libraryBrowseResult.documents
+      .filter((document) => selectedDocumentUrls.includes(document.serverRelativeUrl));
+
+    setIsFetchingDocuments(true);
+    try {
+      const { sources, failures } = await fetchSharePointDocuments(
+        chosen,
+        batch.sharedSources ?? [],
+        new Date().toISOString(),
+      );
+      if (sources.length > 0) {
+        persistBatch({ ...batch, sharedSources: [...(batch.sharedSources ?? []), ...sources] });
+      }
+      setSelectedDocumentUrls([]);
+      // Named rather than counted: somebody who ticked six and received five needs to know which.
+      const failureNote = failures.length === 0
+        ? ''
+        : ` ${failures.map((failure) => `${failure.name} (${failure.reason})`).join(', ')} could not be read.`;
+      showToast(`Added ${sources.length} document(s).${failureNote}`, failures.length > 0 ? 'error' : 'success');
+    } catch (error) {
+      setSourceError(error instanceof SharePointSourceError ? error.message : 'Those documents could not be read.');
+    } finally {
+      setIsFetchingDocuments(false);
+    }
   }
 
   async function handleAddSharedConfluencePage(): Promise<void> {
@@ -727,6 +802,86 @@ export default function BulkRewriteTab({ dashboardTeamProfileId, selectedPiName 
                   Add note
                 </button>
               </div>
+
+              {/* Point at a library and pick from it, rather than downloading a folder to find
+                  three documents. The walk runs through the relay -- the user's own authenticated
+                  SharePoint tab -- so nothing here holds a credential. */}
+              <div className={styles.loadBar}>
+                <div className={styles.loadFieldWide}>
+                  <label className={styles.fieldLabel} htmlFor="shared-library-folder">SharePoint library folder</label>
+                  <input
+                    className={styles.textInput}
+                    id="shared-library-folder"
+                    onChange={(changeEvent) => setLibraryFolderInput(changeEvent.target.value)}
+                    placeholder="/sites/Delivery/Shared Documents"
+                    value={libraryFolderInput}
+                  />
+                </div>
+                <button
+                  className={styles.secondaryButton}
+                  type="button"
+                  disabled={isBrowsingLibrary}
+                  onClick={handleBrowseLibrary}
+                >
+                  {isBrowsingLibrary ? 'Browsing…' : 'Browse library'}
+                </button>
+              </div>
+
+              {libraryBrowseResult !== null ? (
+                <>
+                  <p className={styles.panelSubtitle}>
+                    {libraryBrowseResult.documents.length} readable document(s) across{' '}
+                    {libraryBrowseResult.visitedFolderCount} folder(s).
+                  </p>
+
+                  {libraryBrowseResult.documents.length > 0 ? (
+                    <>
+                      <ul className={styles.noticeList} aria-label="Library documents">
+                        {libraryBrowseResult.documents.map((document) => (
+                          <li key={document.serverRelativeUrl}>
+                            <label>
+                              <input
+                                checked={selectedDocumentUrls.includes(document.serverRelativeUrl)}
+                                onChange={() => handleToggleDocument(document.serverRelativeUrl)}
+                                type="checkbox"
+                              />
+                              {' '}
+                              <strong>{document.name}</strong>
+                              {' — '}
+                              {document.folderPath}
+                              {document.modifiedAtIso ? ` · changed ${document.modifiedAtIso.slice(0, 10)}` : ''}
+                            </label>
+                          </li>
+                        ))}
+                      </ul>
+                      <button
+                        className={styles.primaryButton}
+                        type="button"
+                        disabled={isFetchingDocuments || selectedDocumentUrls.length === 0}
+                        onClick={handleAddSelectedDocuments}
+                      >
+                        {isFetchingDocuments
+                          ? 'Reading…'
+                          : `Add ${selectedDocumentUrls.length} selected document(s)`}
+                      </button>
+                    </>
+                  ) : null}
+
+                  {/* Both stated rather than filtered away: a listing that showed only what it could
+                      read would say "this is the whole library", which is the one thing it is not. */}
+                  {libraryBrowseResult.unreadable.length > 0 ? (
+                    <p className={styles.panelSubtitle}>
+                      Not readable: {libraryBrowseResult.unreadable.map((document) => document.name).join(', ')}.
+                      Export to .docx, .txt, .md or .html, or paste the content in.
+                    </p>
+                  ) : null}
+                  {libraryBrowseResult.skippedTooDeep.length > 0 ? (
+                    <p className={styles.panelSubtitle}>
+                      Not looked in (too deep): {libraryBrowseResult.skippedTooDeep.join(', ')}.
+                    </p>
+                  ) : null}
+                </>
+              ) : null}
 
               {sharedSources.length === 0 ? (
                 <p className={styles.panelSubtitle}>
