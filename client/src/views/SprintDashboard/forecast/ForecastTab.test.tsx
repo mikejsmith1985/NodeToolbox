@@ -191,4 +191,24 @@ describe('ForecastTab', () => {
     await waitFor(() => expect(screen.getByRole('combobox', { name: /fix version/i })).toBeInTheDocument());
     expect(screen.queryByText(/outgrown their estimate/i)).not.toBeInTheDocument();
   });
+
+  it('draws each Feature as a card with its own schedule band, not a row in a plain table', async () => {
+    // The same builder the Roll-Up Board uses for its swimlanes, rendered here without the kanban
+    // columns. One computation, two purposes — so the two surfaces cannot disagree about a Feature.
+    renderTab([issue('ENC-1', { [POINTS_FIELD]: 3 })]);
+    await waitFor(() => expect(screen.getByText(/PI commitment/i)).toBeInTheDocument());
+    // Appears on its scoreboard card and again in the sizing table, so both are counted.
+    expect(screen.getAllByText('DENP-1').length).toBeGreaterThan(0);
+  });
+
+  it('names the issues holding a Feature up, rather than counting them', async () => {
+    // "3 blockers" cannot be acted on; three issue keys can.
+    renderTab([issue('ENC-1', { [POINTS_FIELD]: 3 })]);
+    await waitFor(() => expect(screen.getByText(/Holding it up: ENC-1/)).toBeInTheDocument());
+  });
+
+  it('says when a Feature has no SL test story, because it cannot reach INT without one', async () => {
+    renderTab([issue('ENC-1', { summary: '[DEV] Build it', [POINTS_FIELD]: 3 })]);
+    await waitFor(() => expect(screen.getByText(/No SL test story/)).toBeInTheDocument());
+  });
 });

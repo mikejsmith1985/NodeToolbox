@@ -21,8 +21,15 @@ import { adaptHygieneIssues, type JiraIssueLike } from './forecastAdapters.ts';
 import { buildForecastConfig } from './forecastSettings.ts';
 import { computeForecast } from './forecastCompose.ts';
 import { ForecastAiPanel } from './ai/ForecastAiPanel.tsx';
+import { buildLaneSchedule } from './laneSchedule.ts';
 import { buildScopeCutPlan, type ScopeCutPlan } from './scopeCut.ts';
-import type { CapacityAssessment, CapacityPerson, ForecastResult, ReleaseClock } from './forecastTypes.ts';
+import type {
+  CapacityAssessment,
+  CapacityPerson,
+  ForecastResult,
+  IssueForecast,
+  ReleaseClock,
+} from './forecastTypes.ts';
 import styles from '../SprintDashboardView.module.css';
 
 const TAB_HEADING = 'Delivery forecast';
@@ -302,58 +309,109 @@ function ReleaseCalendar({ clock }: { clock: ReleaseClock }) {
 }
 
 /** The PI commitment for every Feature on this board — the OTHER clock, kept visibly apart. */
-function PiCommitmentSection({ forecast }: { forecast: ForecastResult }) {
+function FeatureScoreboard({
+  forecast,
+  featureRankByKey,
+}: {
+  forecast: ForecastResult;
+  featureRankByKey: Record<string, number>;
+}) {
   if (forecast.featureAssessments.length === 0) {
     return null;
   }
+
+  // Each Feature's own work, so a band can be drawn for it. Built from the same verdicts the board
+  // draws, through the same builder — the two surfaces show one Feature's schedule, not two.
+  const forecastsByFeature = new Map<string, IssueForecast[]>();
+  forecast.featureAssessments.forEach((assessment) => forecastsByFeature.set(assessment.featureKey, []));
+  forecast.issueForecasts.forEach((issueForecast) => {
+    const owningFeature = forecast.featureAssessments.find((assessment) =>
+      assessment.blockingIssueKeys.includes(issueForecast.issueKey));
+    if (owningFeature) {
+      forecastsByFeature.get(owningFeature.featureKey)?.push(issueForecast);
+    }
+  });
+
+  // Worst first, then the team's own board rank. A scoreboard sorted by anything else asks the
+  // reader to find the problem, which is the job it exists to do for them.
+  const TONE_WEIGHT: Record<string, number> = { late: 0, due: 1, unknown: 2, good: 3 };
+  const rows = forecast.featureAssessments
+    .map((assessment) => ({
+      assessment,
+      rank: featureRankByKey[assessment.featureKey] ?? Number.MAX_SAFE_INTEGER,
+      schedule: buildLaneSchedule(forecastsByFeature.get(assessment.featureKey) ?? [], assessment),
+    }))
+    .sort((left, right) => (TONE_WEIGHT[left.schedule.tone] ?? 4) - (TONE_WEIGHT[right.schedule.tone] ?? 4)
+      || left.rank - right.rank
+      || left.assessment.featureKey.localeCompare(right.assessment.featureKey));
 
   return (
     <section className={styles.forecastSection}>
       <h4 className={styles.forecastSectionTitle}>PI commitment — can each Feature reach Integrated Test?</h4>
       <p className={styles.forecastSectionNote}>
         A different deadline from the release above, and often the tighter one. A Feature can miss its
-        release and still meet the PI, or make the release with the PI at risk.
+        release and still meet the PI, or make the release with the PI at risk. Ordered worst first,
+        then by the rank you set on the Roll-Up Board.
       </p>
-      <table className={styles.forecastTable}>
-        <thead>
-          <tr>
-            <th scope="col">Feature</th>
-            <th scope="col">INT by</th>
-            <th scope="col">Verdict</th>
-            <th scope="col">Holding it up</th>
-          </tr>
-        </thead>
-        <tbody>
-          {forecast.featureAssessments.map((assessment) => (
-            <tr
-              key={assessment.featureKey}
-              className={assessment.piVerdict === 'at-risk' ? styles.forecastRowAlert : undefined}
-            >
-              <th scope="row">{assessment.featureKey}</th>
-              <td>{assessment.dodDateIso ?? '—'}</td>
-              <td>{describePiVerdict(assessment.piVerdict, assessment.riskCause)}</td>
-              <td>
-                {assessment.blockingIssueKeys.length === 0
-                  ? (assessment.hasNoSlStory ? 'No SL test story' : '—')
-                  : assessment.blockingIssueKeys.join(', ')}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+
+      <div className={styles.featureScoreboard}>
+        {rows.map(({ assessment, rank, schedule }) => (
+          <article className={styles.featureCard} key={assessment.featureKey}>
+            <header className={styles.featureCardHeader}>
+              <span className={styles.featureCardKey}>{assessment.featureKey}</span>
+              {rank !== Number.MAX_SAFE_INTEGER && (
+                <span className={styles.featureCardRank}>{`rank ${rank}`}</span>
+              )}
+              {/* Words carry the verdict; the tint below only repeats it. */}
+              <span className={styles[`laneScheduleTone_${schedule.tone}`] ?? styles.laneScheduleTone_unknown}>
+                {schedule.headline}
+              </span>
+              <span className={styles.featureCardDate}>
+                {schedule.dodDateIso === null
+                  ? 'Cannot be dated'
+                  : schedule.isMissingPi
+                    ? `INT ${schedule.dodDateIso} — past PI end`
+                    : `INT by ${schedule.dodDateIso}`}
+              </span>
+            </header>
+
+            {schedule.segments.length > 0 && (
+              <div className={styles.laneScheduleBand}>
+                {schedule.segments.map((segment) => (
+                  <span
+                    className={styles[`laneScheduleSegment_${segment.tone}`] ?? styles.laneScheduleSegment_unknown}
+                    key={segment.state}
+                    style={{ width: `${segment.widthPercent}%` }}
+                  />
+                ))}
+              </div>
+            )}
+
+            <div className={styles.laneScheduleLegend}>
+              {schedule.segments.map((segment) => (
+                <span className={styles.laneScheduleLegendEntry} key={segment.state}>
+                  <span className={styles[`laneScheduleSwatch_${segment.tone}`] ?? styles.laneScheduleSwatch_unknown} />
+                  {segment.label} <strong>{segment.issueCount}</strong>
+                </span>
+              ))}
+            </div>
+
+            {assessment.blockingIssueKeys.length > 0 && (
+              // Named, not counted. "3 blockers" cannot be acted on; three issue keys can.
+              <p className={styles.forecastSectionNote}>
+                {`Holding it up: ${assessment.blockingIssueKeys.join(', ')}`}
+              </p>
+            )}
+            {assessment.hasNoSlStory && (
+              <p className={styles.forecastSectionNote}>
+                No SL test story — the Feature cannot reach Integrated Test without one.
+              </p>
+            )}
+          </article>
+        ))}
+      </div>
     </section>
   );
-}
-
-/** Puts the PI verdict into words, naming which half of the chain is at fault when one is. */
-function describePiVerdict(
-  piVerdict: ForecastResult['featureAssessments'][number]['piVerdict'],
-  riskCause: ForecastResult['featureAssessments'][number]['riskCause'],
-): string {
-  if (piVerdict === 'not-configured') return 'No PI end date set';
-  if (piVerdict === 'meets') return 'On track';
-  // Naming the cause is the difference between "find more testers" and "split the work".
-  return riskCause === 'test-squeeze' ? 'At risk — test squeeze' : 'At risk — dev too large';
 }
 
 /**
@@ -634,7 +692,9 @@ export default function ForecastTab({ projectKey, teamProfileId, scopedIssues, b
         </>
       )}
 
-      {forecast !== null && <PiCommitmentSection forecast={forecast} />}
+      {forecast !== null && (
+        <FeatureScoreboard forecast={forecast} featureRankByKey={featureRankByKey} />
+      )}
       {forecast !== null && <SizingSection forecast={forecast} />}
       {forecast !== null && (
         <ForecastAiPanel

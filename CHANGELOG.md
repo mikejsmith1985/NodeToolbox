@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **The Forecast tab's Feature section is a scoreboard rather than a table.** Each Feature is a card
+  carrying the same schedule band the Roll-Up Board draws on its swimlanes — one proportional run per
+  verdict, the headline that leads on what needs doing, and the day it can reach Integrated Test.
+  Ordered worst first, then by the rank you set on the board: a scoreboard sorted any other way asks
+  the reader to find the problem, which is the job it exists to do for them. Blockers are named
+  rather than counted, because three issue keys can be acted on and "3 blockers" cannot.
+  Both surfaces call one builder, so they cannot disagree about a Feature.
+
 ### Added
 - **Every Feature swimlane now shows whether the REST of it is going to land.** Beside the completion
   bar sits a schedule band: one proportional run per verdict — behind, start today, on track, ahead,
