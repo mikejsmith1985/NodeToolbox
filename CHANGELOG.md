@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **The enterprise Feature workflow is encoded once, and the AI prompts now write toward it.** The
+  organisation publishes a table -- which fields a Feature must carry to leave each state, and what
+  "Done" actually means -- and every surface that cared was re-deriving a piece of it. It now lives in
+  one field-blind module: the gates out of Funnel, Analyzing, Ready Backlog, Implementing, Integrated
+  Test and Deployed, and the rule people most often get wrong -- code in production is NOT delivery,
+  so a Feature whose value has not reached the customer is **Deployed**, never Done. A Feature that
+  was never meant to deliver value (a spike, a test, a deployment) is Done once its stories are
+  complete. Criteria Toolbox cannot see from Jira -- whether code reached a region, whether checkout
+  ran -- are reported as **unverifiable** rather than counted as satisfied, because a gate that read
+  silence as success would wave a Feature through on a fact nobody supplied. Both the Feature
+  Composition and Bulk Re-write prompts read the same definition, so the wording an assistant writes
+  toward and the criteria a check measures cannot drift apart.
 - **Bulk Re-write takes shared material: one set of documents, many Features.** The batch could only
   ever re-write an issue from its OWN text, which is backwards for the job people actually have -- a
   new standard, a compliance note, a design decision that changes a dozen Features at once. Confluence

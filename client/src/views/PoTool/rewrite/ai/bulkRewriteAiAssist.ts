@@ -8,6 +8,7 @@ import { extractJsonPayload } from '../../../../utils/extractJsonPayload.ts';
 import { normalizeFeatureDescription, stripAiAttribution, VALIDATION_MARKER } from '../../ai/featureDocSections.ts';
 import type { BatchReplyParseResult, CapturedOriginal, ProposedRewrite } from '../rewriteBatchModel';
 import { buildSharedMaterialBlock } from './sharedMaterial.ts';
+import { describeEnterpriseFeatureRules } from '../../../../domain/featureStateGates.ts';
 import type { ReferencedSource } from '../../sources/sourceModel.ts';
 
 export const BULK_REWRITE_REPLY_KIND = 'featureRewriteBatch';
@@ -42,6 +43,7 @@ function buildPromptShell(blocks: string[], partIndex: number, partCount: number
     `  ${VALIDATION_MARKER.business}  |  ${VALIDATION_MARKER.technical}  |  ${VALIDATION_MARKER.both}`,
     'Put the FULL acceptance criteria both in the description\'s "Acceptance Criteria" section AND in the item\'s acceptanceCriteria.',
     'Never state or imply that any of this was written, generated, or drafted by AI — a marker means information is missing, not AI authorship.',
+    describeEnterpriseFeatureRules(),
     '',
     // Repeated in EVERY part, deliberately. A large batch is split across prompts, and material
     // carried only in part one would leave every issue after the split re-written from nothing.

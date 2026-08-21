@@ -16,6 +16,7 @@ import type { CompositionDraft } from '../drafts/draftModel';
 import { describeSourceOrigin, describeSourceTitle, readSourceText } from '../sources/sourceModel';
 import { normalizeFeatureDescription, stripAiAttribution, VALIDATION_MARKER } from './featureDocSections.ts';
 import type { AiIngestResult } from './splitAiAssist';
+import { describeEnterpriseFeatureRules } from '../../../domain/featureStateGates.ts';
 
 /** The fixed discriminator the assistant must echo. */
 const COMPOSITION_INGEST_KIND = 'featureCompositionIngest';
@@ -87,6 +88,10 @@ export function buildCompositionPrompt(
     '',
     'A Feature is ready when:',
     readinessLines,
+    '',
+    // Read from the one module that encodes the org's published table, so the AI writes toward
+    // exactly the criteria the Feature is later measured against by the readiness checks.
+    describeEnterpriseFeatureRules(),
     '',
     'Write the Feature so it meets that bar. Lead the description with the problem and who has it, not the',
     'solution. Make every acceptance criterion something a tester could check without asking a question.',

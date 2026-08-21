@@ -118,3 +118,18 @@ describe('buildBulkRewritePrompts with shared material', () => {
     expect(buildBulkRewritePrompts(items, [])).toEqual(buildBulkRewritePrompts(items));
   });
 });
+
+describe('the enterprise Feature rules ride in every prompt', () => {
+  it('tells the assistant that production is not delivery', () => {
+    // Read from the shared gate module rather than restated here, so the prompt and the readiness
+    // checks cannot drift into describing two different workflows.
+    const prompts = buildBulkRewritePrompts([{ jiraKey: 'ABC-1', original: original() }]);
+    expect(prompts[0]).toMatch(/Code in production is not delivery/i);
+  });
+
+  it('names the fields a Feature has to carry', () => {
+    const prompts = buildBulkRewritePrompts([{ jiraKey: 'ABC-1', original: original() }]);
+    expect(prompts[0]).toContain('Parent Link (Program Epic)');
+    expect(prompts[0]).toContain('CMDB Application');
+  });
+});
