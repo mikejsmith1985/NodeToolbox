@@ -42,6 +42,8 @@ export interface ForecastTabProps {
   teamProfileId: string;
   /** The Jira board, so the saved lane order (the team's own priority) can be read back. */
   boardId?: number | null;
+  /** The selected PI, whose name carries its own window — the PI clock reads it when unset. */
+  selectedPiValue?: string;
   /** The dashboard's already-scoped issue set — this tab re-queries nothing. */
   scopedIssues: readonly JiraIssueLike[];
 }
@@ -495,7 +497,13 @@ function ReleaseDateNotes({ forecast }: { forecast: ForecastResult }) {
 }
 
 /** Renders the release clock and the PI clock for one team, side by side and separately labelled. */
-export default function ForecastTab({ projectKey, teamProfileId, scopedIssues, boardId = null }: ForecastTabProps) {
+export default function ForecastTab({
+  projectKey,
+  teamProfileId,
+  scopedIssues,
+  boardId = null,
+  selectedPiValue = '',
+}: ForecastTabProps) {
   const [versionNames, setVersionNames] = useState<string[] | null>(null);
   const [selectedVersionName, setSelectedVersionName] = useState('');
   const [fieldIds, setFieldIds] = useState<{
@@ -582,13 +590,14 @@ export default function ForecastTab({ projectKey, teamProfileId, scopedIssues, b
         fixVersions: (versionNames ?? []).map((versionName) => ({ name: versionName })),
         people: readRosterPeople(),
         piEndDate: artSettings.piEndDate,
+        piName: selectedPiValue,
         hasSubStatusField: fieldIds.subStatusFieldIds.length > 0,
         teamProfileId,
       },
       config,
     );
     return { ...computed, rejectedSettings };
-  }, [scopedIssues, versionNames, fieldIds, readRosterPeople, teamProfileId]);
+  }, [scopedIssues, versionNames, fieldIds, readRosterPeople, teamProfileId, selectedPiValue]);
 
   const selectedClock = forecast?.releaseClocksByVersionName[selectedVersionName] ?? null;
   const codeFreezeAssessment = forecast?.codeFreezeCapacityByVersionName[selectedVersionName] ?? null;

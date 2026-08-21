@@ -887,6 +887,9 @@ export function useTodayDashboard(): TodayDashboardData {
         fixVersions: collectFixVersionNames(items).map((versionName) => ({ name: versionName })),
         people: [],
         piEndDate: artSettings.piEndDate,
+        // The active team's PI carries its window in the name, so the PI clock works here too
+        // without anybody having filled in the ART setting.
+        piName: sprintState.selectedPiValue,
         hasSubStatusField: (fieldConfig.subStatusFieldIds ?? []).length > 0,
         teamProfileId: activeTeamProfileId,
       },
@@ -900,6 +903,7 @@ export function useTodayDashboard(): TodayDashboardData {
     myIssuesResult.issues,
     teamScanResult.teamScans,
     activeTeamProfileId,
+    sprintState.selectedPiValue,
   ]);
 
   return {

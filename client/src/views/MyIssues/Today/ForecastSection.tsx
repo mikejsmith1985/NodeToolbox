@@ -38,6 +38,14 @@ const FORECAST_GROUPS: readonly ForecastGroup[] = [
   { state: 'unforecastable', label: 'No deadline — cannot be forecast', icon: '📅', isAlert: false },
 ];
 
+/** The four figures worth leading with, and what each one means in plain words. */
+const STAT_CARDS: Array<{ label: string; states: IssueForecastState[]; note: string; tone: string }> = [
+  { label: 'BEHIND', states: ['behind', 'cannot-fit'], note: 'should already have started', tone: 'bad' },
+  { label: 'START TODAY', states: ['start-today'], note: 'last day to begin', tone: 'warn' },
+  { label: 'ON TRACK', states: ['on-track', 'ahead'], note: 'no action needed', tone: 'good' },
+  { label: 'CANNOT FORECAST', states: ['unsized', 'unassignable', 'unforecastable'], note: 'unsized, unowned or undated', tone: 'muted' },
+];
+
 const PANEL_TITLE = 'Daily forecast';
 const EMPTY_MESSAGE = 'Nothing has to start today.';
 const NOT_READY_MESSAGE = 'The forecast runs once the team scans have loaded.';
@@ -92,14 +100,19 @@ function ForecastRow({ forecast, teamName }: { forecast: IssueForecast; teamName
         <span className={styles.issueKey}>{forecast.issueKey}</span>
         <span className={styles.issueSummary}>{forecast.summary}</span>
       </div>
+      {/* One hue per KIND of fact, as on PI Review. A row of identical grey chips makes the reader
+          parse each one to find the date; a blue chip is always the date and a violet one is always
+          the person, so the eye can go straight to the field it wants. */}
       <div className={styles.rowMeta}>
-        {teamName !== null && <span className={styles.metaChip}>{teamName}</span>}
-        <span className={styles.metaChip}>{forecast.assigneeDisplayName ?? 'Unassigned'}</span>
+        {teamName !== null && <span className={styles.metaChipTeam}>{teamName}</span>}
+        <span className={styles.metaChipOwner}>{forecast.assigneeDisplayName ?? 'Unassigned'}</span>
         {forecast.latestStartIso !== null && (
-          <span className={styles.metaChip}>Start by {forecast.latestStartIso}</span>
+          <span className={styles.metaChipDate}>Start by {forecast.latestStartIso}</span>
         )}
         {describeSlack(forecast) !== '' && (
-          <span className={styles.metaChip}>{describeSlack(forecast)}</span>
+          <span className={(forecast.slackWorkingDays ?? 0) < 0 ? styles.metaChipLate : styles.metaChipSlack}>
+            {describeSlack(forecast)}
+          </span>
         )}
         {forecast.hasStoredDateDisagreement && (
           // Reported, never corrected: changing a date is the operator's explicit action, and a
@@ -158,6 +171,21 @@ export function ForecastSection({ forecast, teamNamesByProfileId = {} }: Forecas
           ))}
         </ul>
       )}
+
+      {/* The four figures somebody actually acts on, before any list. PI Review leads with its
+          capacity band for the same reason: a screen that opens with rows makes you do the counting. */}
+      <div className={styles.statBand}>
+        {STAT_CARDS.map((card) => {
+          const count = card.states.reduce((runningTotal, state) => runningTotal + (forecastsByState.get(state)?.length ?? 0), 0);
+          return (
+            <div className={styles[`statCard_${card.tone}`] ?? styles.statCard_muted} key={card.label}>
+              <span className={styles.statCardLabel}>{card.label}</span>
+              <strong className={styles.statCardValue}>{count}</strong>
+              <span className={styles.statCardNote}>{card.note}</span>
+            </div>
+          );
+        })}
+      </div>
 
       {!hasAnythingUrgent && <p className={styles.emptyMessage} role="status">{EMPTY_MESSAGE}</p>}
 

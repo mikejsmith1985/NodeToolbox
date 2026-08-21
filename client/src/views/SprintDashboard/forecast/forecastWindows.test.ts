@@ -7,7 +7,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { buildPiClock, buildReleaseClock } from './forecastWindows.ts';
+import { buildPiClock, buildReleaseClock, parsePiEndFromName } from './forecastWindows.ts';
 import type { ForecastConfig } from './forecastTypes.ts';
 
 /** Today is Thursday 2026-08-20 throughout, so every expected count can be checked by hand. */
@@ -112,5 +112,61 @@ describe('buildPiClock', () => {
     const clock = buildPiClock('2026-07-01', configOn('2026-08-20'));
     expect(clock.toPiEnd?.hasPassed).toBe(true);
     expect(clock.toPiEnd?.workingDayCount).toBe(0);
+  });
+});
+
+describe('parsePiEndFromName', () => {
+  // The org writes the window into the PI name. Without reading it, every board reported
+  // "No PI end set" while the answer sat in the PI selector directly above it.
+
+  it('reads the END of the range, not the start', () => {
+    // Taking the opening date would put the deadline at the beginning of the increment and report
+    // every Feature as hopelessly late on day one.
+    expect(parsePiEndFromName('PI 26.4 (07/30/26 - 10/07/26)')).toBe('2026-10-07');
+  });
+
+  it('handles four-digit years', () => {
+    expect(parsePiEndFromName('PI 26.4 (07/30/2026 - 10/07/2026)')).toBe('2026-10-07');
+  });
+
+  it('handles single-digit months and days', () => {
+    expect(parsePiEndFromName('PI 27.1 (1/5/27 - 3/9/27)')).toBe('2027-03-09');
+  });
+
+  it('finds nothing in a PI named without a window', () => {
+    expect(parsePiEndFromName('PI 26.4')).toBeNull();
+    expect(parsePiEndFromName('')).toBeNull();
+  });
+
+  it('refuses a value that is not a day the calendar has', () => {
+    expect(parsePiEndFromName('PI 26.4 (13/45/26 - 99/99/26)')).toBeNull();
+  });
+});
+
+describe('buildPiClock falling back to the PI name', () => {
+  it('uses the ART setting when one is configured', () => {
+    // A setting is somebody's deliberate answer and outranks a parse.
+    const clock = buildPiClock('2026-11-06', configOn('2026-08-20'), 'PI 26.4 (07/30/26 - 10/07/26)');
+    expect(clock.piEndIso).toBe('2026-11-06');
+  });
+
+  it('falls back to the PI name when the setting is blank', () => {
+    const clock = buildPiClock('', configOn('2026-08-20'), 'PI 26.4 (07/30/26 - 10/07/26)');
+    expect(clock.isConfigured).toBe(true);
+    expect(clock.piEndIso).toBe('2026-10-07');
+  });
+
+  it('falls back when the stored setting is not a date', () => {
+    const clock = buildPiClock('not-a-date', configOn('2026-08-20'), 'PI 26.4 (07/30/26 - 10/07/26)');
+    expect(clock.piEndIso).toBe('2026-10-07');
+  });
+
+  it('still reports unconfigured when neither the setting nor the name carries a date', () => {
+    const clock = buildPiClock('', configOn('2026-08-20'), 'PI 26.4');
+    expect(clock.isConfigured).toBe(false);
+  });
+
+  it('behaves as before when no PI name is supplied at all', () => {
+    expect(buildPiClock('', configOn('2026-08-20')).isConfigured).toBe(false);
   });
 });

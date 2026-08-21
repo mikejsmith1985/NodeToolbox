@@ -6815,6 +6815,7 @@ export default function SprintDashboardView() {
           projectKey={state.projectKey}
           // The dashboard's already-scoped set, so this tab re-queries nothing.
           scopedIssues={state.sprintIssues}
+          selectedPiValue={state.selectedPiValue}
           teamProfileId={activeDashboardTeamProfileId}
         />
       );

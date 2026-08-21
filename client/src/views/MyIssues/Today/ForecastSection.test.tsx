@@ -152,4 +152,37 @@ describe('ForecastSection', () => {
     expect(heading).not.toBeNull();
     expect(within(heading as HTMLElement).getByText('2')).toBeInTheDocument();
   });
+
+  it('leads with the four figures somebody acts on, before any list', () => {
+    // A screen that opens with rows makes the reader do the counting. PI Review leads with its
+    // capacity band for the same reason.
+    renderSection(forecastFor([
+      issue({ key: 'ENC-1', storyPoints: 3 }),
+      issue({ key: 'ENC-2', storyPoints: null }),
+    ]));
+
+    expect(screen.getByText('BEHIND')).toBeInTheDocument();
+    expect(screen.getByText('START TODAY')).toBeInTheDocument();
+    expect(screen.getByText('ON TRACK')).toBeInTheDocument();
+    expect(screen.getByText('CANNOT FORECAST')).toBeInTheDocument();
+  });
+
+  it('counts unsized, unowned and undated work together as "cannot forecast"', () => {
+    // Three different reasons, one action: go and fill something in. Splitting them across three
+    // cards would fill the band with figures nobody acts on separately.
+    renderSection(forecastFor([
+      issue({ key: 'ENC-1', storyPoints: null }),
+      issue({ key: 'ENC-2', assigneeAccountId: null, assigneeDisplayName: null }),
+    ]));
+
+    const card = screen.getByText('CANNOT FORECAST').closest('div');
+    expect(card).not.toBeNull();
+    expect(within(card as HTMLElement).getByText('2')).toBeInTheDocument();
+  });
+
+  it('says what each figure means, rather than leaving a bare number', () => {
+    renderSection(forecastFor([issue()]));
+    expect(screen.getByText('should already have started')).toBeInTheDocument();
+    expect(screen.getByText('unsized, unowned or undated')).toBeInTheDocument();
+  });
 });

@@ -597,6 +597,9 @@ export default function RollupBoardTab({
         fixVersions: collectFixVersionNames(items).map((versionName) => ({ name: versionName })),
         people: [],
         piEndDate: artSettings.piEndDate,
+        // The dashboard's own PI selection carries its window in the name, which is what makes the
+        // PI clock work on a board where nobody has filled in the ART setting.
+        piName: selectedPiValue,
         hasSubStatusField: loadState.hasSubStatusField,
         // The Feature's own estimate, which its children are measured against. The board is the one
         // surface that already holds it, having read the Feature issues to build its lanes.
@@ -608,7 +611,7 @@ export default function RollupBoardTab({
       config,
     );
     return { ...computed, rejectedSettings };
-  }, [loadState.allItems, loadState.hasSubStatusField, loadState.masterCards, orderedColumnIds, teamProfileId]);
+  }, [loadState.allItems, loadState.hasSubStatusField, loadState.masterCards, orderedColumnIds, selectedPiValue, teamProfileId]);
 
   // What the forecast could not measure, and any setting it had to refuse. Built by a pure module so
   // the wording is tested once and every surface says the same thing.

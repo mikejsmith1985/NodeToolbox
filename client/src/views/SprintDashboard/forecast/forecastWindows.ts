@@ -100,14 +100,59 @@ export function buildReleaseClock(releaseDateIso: string, config: ForecastConfig
 }
 
 /**
+ * A PI name's own date range, e.g. `PI 26.4 (07/30/26 - 10/07/26)`.
+ *
+ * The org writes the window into the name, so the PI clock does not have to depend on somebody
+ * having filled in an ART setting as well. Without this, every board reported "No PI end set" while
+ * the answer was sitting in the PI selector directly above it.
+ */
+const PI_NAME_DATE_PATTERN = /(?<!\d)(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})(?!\d)/g;
+
+/** Two-digit years at or above this read as last century; below it, as this one. */
+const TWO_DIGIT_YEAR_CENTURY_SPLIT = 80;
+
+/**
+ * Reads the PI's LAST date from its name — the end of the window, not the start.
+ *
+ * The last rather than the first, deliberately: a PI name carries a range, and taking the opening
+ * date would put the deadline at the beginning of the increment and report every Feature as
+ * hopelessly late on day one.
+ */
+export function parsePiEndFromName(piName: string): string | null {
+  const matches = [...piName.matchAll(PI_NAME_DATE_PATTERN)];
+  const calendarDays = matches
+    .map(([, rawMonth, rawDay, rawYear]) => {
+      const yearNumber = Number(rawYear);
+      const year = rawYear.length === 4
+        ? yearNumber
+        : yearNumber >= TWO_DIGIT_YEAR_CENTURY_SPLIT ? 1900 + yearNumber : 2000 + yearNumber;
+      const month = Number(rawMonth);
+      const day = Number(rawDay);
+      const parsed = new Date(Date.UTC(year, month - 1, day));
+      const isRealDay = parsed.getUTCFullYear() === year
+        && parsed.getUTCMonth() === month - 1
+        && parsed.getUTCDate() === day;
+      return isRealDay
+        ? `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+        : null;
+    })
+    .filter((candidate): candidate is string => candidate !== null);
+
+  return calendarDays.length === 0 ? null : calendarDays[calendarDays.length - 1];
+}
+
+/**
  * Derives the PI's deadline, or reports that the ART has not set one.
  *
  * An unconfigured PI end yields `isConfigured: false` rather than a fallback. A guessed commitment
  * date is indistinguishable from a real one the moment somebody plans against it.
  */
-export function buildPiClock(piEndDate: string, config: ForecastConfig): PiClock {
-  const piEndIso = piEndDate.slice(0, 10);
-  if (!isRealCalendarDay(piEndIso)) {
+export function buildPiClock(piEndDate: string, config: ForecastConfig, piName = ''): PiClock {
+  // The ART setting first, then the PI's own name. The setting is somebody's deliberate answer and
+  // outranks a parse; the name is what makes the clock work when nobody filled the setting in.
+  const configuredIso = piEndDate.slice(0, 10);
+  const piEndIso = isRealCalendarDay(configuredIso) ? configuredIso : parsePiEndFromName(piName);
+  if (piEndIso === null || !isRealCalendarDay(piEndIso)) {
     return { piEndIso: null, toPiEnd: null, isConfigured: false };
   }
 

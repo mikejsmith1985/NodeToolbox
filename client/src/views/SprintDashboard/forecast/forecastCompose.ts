@@ -45,8 +45,15 @@ export interface ForecastInput {
   orderedColumnIds: readonly string[];
   fixVersions: readonly FixVersionLike[];
   people: readonly CapacityPerson[];
-  /** The ART's PI end date. Blank means the PI clock reports itself unconfigured. */
+  /** The ART's PI end date. Blank falls back to the date in the PI's own name. */
   piEndDate: string;
+  /**
+   * The selected PI's name, e.g. `PI 26.4 (07/30/26 - 10/07/26)`.
+   *
+   * The org writes the window into the name, so the PI clock works without anybody having filled in
+   * an ART setting as well. Optional: absent and unconfigured, the clock honestly reports itself so.
+   */
+  piName?: string;
   /** False when this instance has no sub-status field, so INT readiness cannot be evaluated. */
   hasSubStatusField: boolean;
   /**
@@ -337,7 +344,7 @@ export function computeForecast(input: ForecastInput, config: ForecastConfig): F
   const undatedVersionCount = releaseDateResolutions
     .filter((resolution) => resolution.resolvedDateIso === null).length;
 
-  const piClock = buildPiClock(input.piEndDate, config);
+  const piClock = buildPiClock(input.piEndDate, config, input.piName ?? '');
   const releaseClocksByVersionName = buildReleaseClocks(releaseDateResolutions, config);
 
   // Cancelled work is excluded from every verdict, and counted in the completeness record instead:

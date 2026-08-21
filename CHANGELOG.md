@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **The Today forecast leads with the four figures you act on** — behind, must start today, on track,
+  cannot forecast — as cards, before any list. A screen that opens with rows makes the reader do the
+  counting.
+- **The PI clock now reads the PI's own name.** The org writes the window into it
+  (`PI 26.4 (07/30/26 - 10/07/26)`), so every board was reporting "No PI end set" while the answer sat
+  in the PI selector directly above. A configured ART setting still wins; the name is what makes the
+  clock work when nobody filled one in. The END of the range is taken, not the start — the opening
+  date would put the deadline on day one and report every Feature as hopelessly late.
+
+### Changed
+- **The Today forecast is styled like the PI Review tab.** Pill shapes, two-tone gradients, a ring
+  plus a soft drop shadow, and one hue per KIND of fact — blue for the team, violet for the person,
+  green for the date — instead of a row of identical grey chips that had to be read one at a time.
+
 ### Fixed
 - **Two more surfaces were reading story points through the wrong field and the wrong shape.** The ART
   Overview's point totals and the Predictability tab's velocity both named two hard-coded custom
