@@ -41,6 +41,7 @@ vi.mock('../hooks/usePoHygieneContext', () => ({
 
 import { setAiAssistUnlocked } from '../../../store/aiAssistStore';
 import BulkRewriteTab from './BulkRewriteTab.tsx';
+import { saveBatch } from './rewriteBatchStore.ts';
 
 beforeEach(() => {
   mockJiraGet.mockReset();
@@ -210,5 +211,67 @@ describe('BulkRewriteTab honest states', () => {
     await waitFor(() => expect(screen.getByText(/Applied 1 re-write/)).toBeInTheDocument());
     // ABC-1 now has a proposal, but the AI panel is still there so the PO can re-generate.
     expect(screen.getByRole('button', { name: /build the prompt/i })).toBeInTheDocument();
+  });
+});
+
+describe('BulkRewriteTab — reverting a re-write nobody liked', () => {
+  /** Persists a batch holding one issue Toolbox has already written, ready to be reverted. */
+  function seedSubmittedBatch() {
+    saveBatch({
+      id: 'batch-1',
+      name: 'Enhancements',
+      teamProfileId: 'team-1',
+      createdAtIso: '2026-08-21T00:00:00.000Z',
+      updatedAtIso: '2026-08-21T00:00:00.000Z',
+      items: [{
+        jiraKey: 'ABC-1',
+        original: {
+          summary: 'Original summary',
+          description: 'orig desc',
+          acceptanceCriteria: 'orig ac',
+          capturedAtIso: '2026-08-21T00:00:00.000Z',
+        },
+        proposed: { description: 'rewritten desc', acceptanceCriteria: 'rewritten ac', isEdited: false },
+        state: 'submitted',
+        captureError: null,
+        submitResult: { ok: true },
+      }],
+    });
+  }
+
+  it('offers to put a written issue back, counting what it would restore', async () => {
+    // The capability the "before" snapshot existed for and never had: without it, a re-write the PO
+    // dislikes leaves them worse off than never having run the batch.
+    const user = userEvent.setup();
+    seedSubmittedBatch();
+    render(<BulkRewriteTab dashboardTeamProfileId="team-1" />);
+
+    await user.click(await screen.findByRole('button', { name: 'Open' }));
+
+    expect(await screen.findByRole('button', { name: /Revert 1 to the captured original/i })).toBeInTheDocument();
+  });
+
+  it('offers nothing to revert before anything has been written', async () => {
+    const user = userEvent.setup();
+    saveBatch({
+      id: 'batch-2',
+      name: 'Untouched',
+      teamProfileId: 'team-1',
+      createdAtIso: '2026-08-21T00:00:00.000Z',
+      updatedAtIso: '2026-08-21T00:00:00.000Z',
+      items: [{
+        jiraKey: 'ABC-9',
+        original: { summary: 'S', description: 'd', acceptanceCriteria: 'a', capturedAtIso: '2026-08-21T00:00:00.000Z' },
+        proposed: null,
+        state: 'captured',
+        captureError: null,
+        submitResult: null,
+      }],
+    });
+    render(<BulkRewriteTab dashboardTeamProfileId="team-1" />);
+
+    await user.click(await screen.findByRole('button', { name: 'Open' }));
+
+    expect(screen.queryByRole('button', { name: /Revert .* to the captured original/i })).not.toBeInTheDocument();
   });
 });

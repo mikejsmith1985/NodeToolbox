@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Bulk Re-write can put a Feature back exactly as it found it.** The "before" snapshot has always
+  been captured and was only ever shown — which is the wrong half to have: a re-write the PO dislikes
+  left them worse off than never running the batch, because the original wording was gone and
+  rebuilding it from memory is a worse job than the one it replaced. One click restores summary,
+  description and acceptance criteria TOGETHER (a Feature holding its old description and a new
+  summary is a state nobody chose). Every revert re-reads the live issue first and is HELD, naming
+  the fields, if somebody has edited it since Toolbox wrote — with "Revert anyway" once the cost is
+  on screen. A field already back at its original is never reported as a conflict, because a warning
+  that cries wolf is the one people click past on the day it is real.
 - **Target Start is now worked back through the whole DEV → SL chain, with the two handover days in
   it.** It counted only the issue's OWN effort, so a dev story with a week of SL testing queued behind
   it was told it could start a week later than it really could — and it read "on track" every day

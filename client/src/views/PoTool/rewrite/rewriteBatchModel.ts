@@ -13,7 +13,9 @@ export type ItemState =
   | 'rejected'    // excluded from export/submit
   | 'changed'     // live Jira content differs from the captured snapshot (set at submit-time drift check)
   | 'submitted'   // written to Jira (terminal for a re-run)
-  | 'failed';     // a submit write failed (retryable)
+  | 'failed'      // a submit write failed (retryable)
+  | 'reverted'    // the captured original was written back over the Toolbox re-write
+  | 'revert-blocked'; // a revert would discard somebody else's later edit; the fields are named
 
 /** The immutable "before" — the issue's current content captured at a recorded time. */
 export interface CapturedOriginal {

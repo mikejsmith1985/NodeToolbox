@@ -34,6 +34,7 @@ import { buildReviewPageStorage, parseReviewPageStorage } from './rewriteReviewD
 import { deleteBatch, listBatches, loadBatch, saveBatch } from './rewriteBatchStore';
 import { canPersistDrafts } from '../drafts/splitDraftStorage';
 import { submitApprovedItems } from './rewriteSubmit';
+import { revertItems } from './rewriteRevert';
 import styles from './rewrite.module.css';
 
 interface BulkRewriteTabProps {
@@ -80,6 +81,8 @@ export default function BulkRewriteTab({ dashboardTeamProfileId, selectedPiName 
   const [isWritingApproved, setIsWritingApproved] = useState(false);
   // Ephemeral per-session override: a PO who accepts a drift warning can force a single submit.
   const [submitAnywayKeys, setSubmitAnywayKeys] = useState<string[]>([]);
+  const [revertAnywayKeys, setRevertAnywayKeys] = useState<string[]>([]);
+  const [isReverting, setIsReverting] = useState(false);
   const [ingestNotice, setIngestNotice] = useState<{ accepted: number; rejected: { key: string; reason: string }[]; unparsedCount: number } | null>(null);
 
   const refreshBatchList = useCallback(() => {
@@ -349,6 +352,46 @@ export default function BulkRewriteTab({ dashboardTeamProfileId, selectedPiName 
   }
 
   /** Force-submits a single held item on the next write run, per FR-053's operator override. */
+  /**
+   * Puts the named issues back exactly as they were captured, all three fields together.
+   *
+   * Re-reads each issue first: anything a person has edited since Toolbox wrote it is HELD and the
+   * fields named, because the one thing a revert must not do is quietly undo somebody else's work.
+   */
+  async function handleRevertToOriginal(jiraKeys: string[]): Promise<void> {
+    if (!batch || jiraKeys.length === 0) {
+      return;
+    }
+    setIsReverting(true);
+    try {
+      const result = await revertItems(
+        batch,
+        { acceptanceCriteriaFieldId, fieldDescriptors: [] },
+        submitDeps,
+        jiraKeys,
+        { revertAnywayKeys },
+      );
+      persistBatch(result);
+      const reverted = result.items.filter((item) => item.state === 'reverted').length;
+      const held = result.items.filter((item) => item.state === 'revert-blocked').length;
+      const failed = result.items.filter((item) => item.state === 'failed').length;
+      showToast(
+        'Restored ' + reverted + ' to the captured original. ' + held + ' held (changed in Jira since), ' + failed + ' failed.',
+        failed > 0 ? 'error' : 'success',
+      );
+    } catch (error) {
+      showToast(error instanceof Error ? 'Could not revert: ' + error.message : 'Could not revert.', 'error');
+    } finally {
+      setIsReverting(false);
+    }
+  }
+
+  /** Clears the hold on one issue: the operator has seen what the revert would replace. */
+  function handleRevertAnyway(jiraKey: string): void {
+    setRevertAnywayKeys((keys) => (keys.includes(jiraKey) ? keys : [...keys, jiraKey]));
+    showToast(jiraKey + ' will be restored on the next revert, replacing the later change.', 'success');
+  }
+
   function handleSubmitAnyway(jiraKey: string): void {
     setSubmitAnywayKeys((keys) => (keys.includes(jiraKey) ? keys : [...keys, jiraKey]));
     showToast(`${jiraKey} will be written on the next run despite the change.`, 'success');
@@ -380,6 +423,9 @@ export default function BulkRewriteTab({ dashboardTeamProfileId, selectedPiName 
   const notYetRewritten = (batch?.items ?? []).filter((item) => !item.proposed && !item.captureError);
   const failedItems = (batch?.items ?? []).filter((item) => item.state === 'failed');
   const changedItems = (batch?.items ?? []).filter((item) => item.state === 'changed');
+  const revertableItems = (batch?.items ?? []).filter((item) => item.state === 'submitted');
+  const revertBlockedItems = (batch?.items ?? []).filter((item) => item.state === 'revert-blocked');
+  const revertedItems = (batch?.items ?? []).filter((item) => item.state === 'reverted');
 
   return (
     <div className={styles.rewriteTab}>
@@ -550,6 +596,47 @@ export default function BulkRewriteTab({ dashboardTeamProfileId, selectedPiName 
                 {isWritingApproved ? 'Writing…' : 'Write approved to Jira'}
               </button>
             </div>
+
+            {/* The half the "before" snapshot was always missing. Capturing an original and only ever
+                showing it leaves a PO worse off than never running the batch: the old wording is
+                gone and rebuilding it from memory is a worse job than the one it replaced. */}
+            {revertableItems.length > 0 ? (
+              <div className={styles.buttonRow}>
+                <button
+                  className={styles.secondaryButton}
+                  type="button"
+                  disabled={isReverting}
+                  onClick={() => handleRevertToOriginal(revertableItems.map((item) => item.jiraKey))}
+                >
+                  {isReverting
+                    ? 'Reverting…'
+                    : 'Revert ' + revertableItems.length + ' to the captured original'}
+                </button>
+              </div>
+            ) : null}
+
+            {revertBlockedItems.length > 0 ? (
+              <div className={styles.warningBanner}>
+                <strong>Changed in Jira since Toolbox wrote — revert held back:</strong>
+                <ul className={styles.noticeList}>
+                  {revertBlockedItems.map((item) => (
+                    <li key={item.jiraKey}>
+                      {item.jiraKey}
+                      {' — reverting would replace: '}
+                      {(item.submitResult?.fieldErrors ?? []).join(', ')}
+                      {' '}
+                      <button className={styles.secondaryButton} type="button" onClick={() => handleRevertAnyway(item.jiraKey)}>Revert anyway</button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+
+            {revertedItems.length > 0 ? (
+              <p className={styles.noticeList}>
+                {revertedItems.length} restored to the captured original.
+              </p>
+            ) : null}
 
             {changedItems.length > 0 ? (
               <div className={styles.warningBanner}>

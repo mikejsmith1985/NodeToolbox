@@ -30,6 +30,8 @@ const STATE_LABELS: Record<ItemState, string> = {
   rejected: 'Rejected',
   changed: 'Changed in Jira',
   submitted: 'Submitted',
+  reverted: 'Reverted to original',
+  'revert-blocked': 'Revert held — changed in Jira',
   failed: 'Failed',
 };
 
