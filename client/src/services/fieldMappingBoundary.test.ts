@@ -70,7 +70,6 @@ const STORY_POINTS_UNMIGRATED_FILES = [
   'types/jira.ts',
   'views/AdminHub/AdminHubView.tsx',
   'views/ArtView/ArtView.test.tsx',
-  'views/ArtView/ArtView.tsx',
   'views/ArtView/blueprintHierarchy.ts',
   'views/ArtView/blueprintHierarchy.test.ts',
   'views/ArtView/carryoverEstimateFetch.test.ts',

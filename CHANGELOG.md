@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Two more surfaces were reading story points through the wrong field and the wrong shape.** The ART
+  Overview's point totals and the Predictability tab's velocity both named two hard-coded custom
+  field ids — neither of which is the field this instance uses — and then accepted only a plain
+  number, while that field is a Jira SELECT returning `{ id, value }`. Two independent reasons for
+  every figure to read zero, each of which hid the other. Both now use the shared reader, and
+  `ArtView.tsx` comes off the field-id debt list as a result. The Pipeline rollup had the same shape
+  blindness and was fixed with it.
+
 ### Changed
 - **The Forecast tab's Feature section is a scoreboard rather than a table.** Each Feature is a card
   carrying the same schedule band the Roll-Up Board draws on its swimlanes — one proportional run per

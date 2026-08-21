@@ -39,6 +39,10 @@ import type { JiraIssue } from '../../types/jira.ts';
 import { useSettingsStore } from '../../store/settingsStore.ts';
 import { findMatchingTeamProfileForArtTeam } from '../SprintDashboard/sprintDashboardArtContext.ts';
 import { DEFAULT_SHARED_ART_SETTINGS as SHARED_ART_WORKSPACE_DEFAULTS } from './sharedArtWorkspaceSettings.ts';
+import {
+  readStoryPointsFromFields,
+  resolveStoryPointsFieldIds,
+} from '../Hygiene/checks/storyPointsField.ts';
 import { readArtSettings } from '../../services/artSettingsStore.ts';
 import { buildSharedRoster, findRosterProfileId, readSharedRoster } from './sharedRoster.ts';
 import { buildTeamScopedStorageKey, readTeamScopedStorageValue } from '../SprintDashboard/hooks/teamScopedStorage.ts';
@@ -445,11 +449,16 @@ function computeArtSummaryStats(teams: ArtTeam[], piEndDate?: string): ArtSummar
       const isBlocked = issue.fields.status.name.toLowerCase().includes('block');
       if (isBlocked) blockedCount++;
 
-      // Try the standard story points fields; fall back gracefully when absent.
-      const storyPoints =
-        (issue.fields as Record<string, unknown>)['customfield_10016'] ??
-        (issue.fields as Record<string, unknown>)['customfield_10028'];
-      if (typeof storyPoints === 'number' && storyPoints > 0) {
+      // Resolved and read through the shared reader, which this was doing neither of. It named two
+      // hard-coded ids, and NEITHER is the field this instance keeps points in — and it then accepted
+      // only `typeof === 'number'`, while that field is a Jira SELECT returning { id, value }. Two
+      // independent reasons for every ART point total on this instance to read zero, each of which
+      // would have hidden the other.
+      const storyPoints = readStoryPointsFromFields(
+        issue.fields as unknown as Record<string, unknown>,
+        resolveStoryPointsFieldIds(''),
+      );
+      if (storyPoints !== null) {
         totalStoryPoints += storyPoints;
         if (isDone) doneStoryPoints += storyPoints;
       }
@@ -993,11 +1002,17 @@ function isIssueActivelyInProgress(issue: JiraIssue): boolean {
 }
 
 /**
- * Returns the story-point estimate for an issue, checking the two common custom field IDs.
- * Returns null when neither field is populated.
+ * Returns the story-point estimate for an issue.
+ *
+ * Resolved and read through the shared reader. It used to name two custom field ids directly, and
+ * neither is the field this instance keeps points in — so the Predictability tab's velocity read
+ * zero for every team, quietly, and looked like a team with no estimates rather than a bug.
  */
 function getIssueStoryPoints(issue: JiraIssue): number | null {
-  return issue.fields.customfield_10016 ?? issue.fields.customfield_10028 ?? null;
+  return readStoryPointsFromFields(
+    issue.fields as unknown as Record<string, unknown>,
+    resolveStoryPointsFieldIds(''),
+  );
 }
 
 /** Aggregate per-team metrics surfaced in the Predictability tab. */
@@ -4302,7 +4317,7 @@ function SettingsPanel({
           />
         </div>
 
-        {/* Auto-detect toggle: when checked, the secondary story-point field (customfield_10028) is
+        {/* Auto-detect toggle: when checked, the secondary story-point field in the mapping is
             tried automatically so teams whose Jira instances use the alternate field get correct counts. */}
         <div className={styles.settingsFieldRow}>
           <label className={styles.settingsCheckboxLabel}>

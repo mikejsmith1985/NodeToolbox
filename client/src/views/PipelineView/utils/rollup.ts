@@ -1,5 +1,7 @@
 // rollup.ts — Pure Pipeline View helpers for Jira story-point and completion rollups.
 
+import { readStoryPointsFromFields } from '../../Hygiene/checks/storyPointsField.ts';
+
 // ── Named constants — keep Jira field IDs and percentage math easy to audit. ─────
 
 /** Jira Cloud story-points field used by newer NodeToolbox screens. */
@@ -26,14 +28,15 @@ export interface ChildIssue {
 
 // ── Rollup helpers. ────────────────────────────────────────────────────────────
 
-/** Reads Jira story points from known fields so mixed Cloud and legacy projects both work. */
+/**
+ * Reads Jira story points from known fields so mixed Cloud and legacy projects both work.
+ *
+ * Delegates the VALUE reading to the shared reader. Accepting only `typeof === 'number'` missed
+ * every estimate on an instance that keeps points in a Jira SELECT field — which returns
+ * `{ id, value }` — and did so silently, reporting fully-pointed work as unpointed.
+ */
 export function readStoryPoints(fieldsObject: Record<string, unknown>): number | null {
-  const preferredStoryPoints = fieldsObject[STORY_POINTS_FIELD_PREFERRED];
-  const fallbackStoryPoints = fieldsObject[STORY_POINTS_FIELD_FALLBACK];
-
-  if (typeof preferredStoryPoints === 'number') return preferredStoryPoints;
-  if (typeof fallbackStoryPoints === 'number') return fallbackStoryPoints;
-  return null;
+  return readStoryPointsFromFields(fieldsObject, [STORY_POINTS_FIELD_PREFERRED, STORY_POINTS_FIELD_FALLBACK]);
 }
 
 /** Sums child story points after lazy loading, or falls back to the epic estimate before children exist. */
