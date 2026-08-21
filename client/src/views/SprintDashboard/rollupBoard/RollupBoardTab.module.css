@@ -1648,3 +1648,120 @@
   font-variant-numeric: tabular-nums;
 }
 
+
+/* ── The schedule band: whether the REST of a Feature is going to land ──
+   Borrowed wholesale from the PI Review tab's vocabulary — pill shapes, two-tone diagonal
+   gradients, a tight ring plus a soft drop shadow — because that surface is the one people
+   actually enjoy looking at, and a report nobody wants to open reports nothing. */
+
+.laneSchedule {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 220px;
+  flex: 1 1 260px;
+}
+
+.laneScheduleHeadline {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* The headline says the verdict in words. Every tint below only repeats it. */
+.laneScheduleTone_late,
+.laneScheduleTone_due,
+.laneScheduleTone_good,
+.laneScheduleTone_unknown {
+  padding: 3px 12px;
+  border-radius: 999px;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.laneScheduleTone_late {
+  border: 1px solid rgba(244, 63, 94, 0.52);
+  background: linear-gradient(135deg, rgba(244, 63, 94, 0.18), rgba(251, 113, 133, 0.12));
+  box-shadow: 0 0 0 1px rgba(244, 63, 94, 0.12), 0 8px 20px rgba(244, 63, 94, 0.14);
+  color: #f43f5e;
+}
+
+.laneScheduleTone_due {
+  border: 1px solid rgba(245, 158, 11, 0.55);
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.2), rgba(251, 191, 36, 0.12));
+  box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.12), 0 8px 20px rgba(245, 158, 11, 0.14);
+  color: #f59e0b;
+}
+
+.laneScheduleTone_good {
+  border: 1px solid rgba(34, 197, 94, 0.55);
+  background: linear-gradient(135deg, rgba(34, 197, 94, 0.18), rgba(16, 185, 129, 0.14));
+  box-shadow: 0 0 0 1px rgba(34, 197, 94, 0.12), 0 8px 20px rgba(16, 185, 129, 0.12);
+  color: #22c55e;
+}
+
+.laneScheduleTone_unknown {
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  background: linear-gradient(135deg, rgba(148, 163, 184, 0.14), rgba(100, 116, 139, 0.08));
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.12);
+  color: var(--color-text-secondary);
+}
+
+.laneScheduleDate {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+/* One band, split by verdict. Proportional by issue count so unsized work still takes up room. */
+.laneScheduleBand {
+  display: flex;
+  height: 10px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(148, 163, 184, 0.14);
+  box-shadow: inset 0 1px 2px rgb(0 0 0 / 0.28);
+}
+
+.laneScheduleSegment_late,
+.laneScheduleSegment_due,
+.laneScheduleSegment_good,
+.laneScheduleSegment_unknown {
+  display: block;
+  height: 100%;
+}
+
+.laneScheduleSegment_late { background: linear-gradient(135deg, #f43f5e, #fb7185); }
+.laneScheduleSegment_due { background: linear-gradient(135deg, #f59e0b, #fbbf24); }
+.laneScheduleSegment_good { background: linear-gradient(135deg, #22c55e, #10b981); }
+.laneScheduleSegment_unknown { background: linear-gradient(135deg, #94a3b8, #64748b); }
+
+.laneScheduleLegend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+.laneScheduleLegendEntry {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.laneScheduleSwatch_late,
+.laneScheduleSwatch_due,
+.laneScheduleSwatch_good,
+.laneScheduleSwatch_unknown {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+}
+
+.laneScheduleSwatch_late { background: linear-gradient(135deg, #f43f5e, #fb7185); }
+.laneScheduleSwatch_due { background: linear-gradient(135deg, #f59e0b, #fbbf24); }
+.laneScheduleSwatch_good { background: linear-gradient(135deg, #22c55e, #10b981); }
+.laneScheduleSwatch_unknown { background: linear-gradient(135deg, #94a3b8, #64748b); }

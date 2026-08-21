@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Every Feature swimlane now shows whether the REST of it is going to land.** Beside the completion
+  bar sits a schedule band: one proportional run per verdict — behind, start today, on track, ahead,
+  unsized — with a headline that leads on the number that needs doing and the day the Feature can
+  reach Integrated Test. The two bars answer different questions and the difference matters: a
+  Feature at 80% with every remaining item behind is in more trouble than one at 40% that is on
+  track, and a completion bar alone draws those two the other way round.
+
+### Changed
+- **The forecast surfaces now look like the PI Review tab.** Pill shapes, two-tone gradients, a ring
+  plus a soft drop shadow, and a lift on hover — the vocabulary from the one surface people actually
+  enjoy opening. A report nobody wants to look at reports nothing. Every verdict is still written in
+  words first; the colour only repeats what the words already say.
+
 ### Fixed
 - **The forecast reported every issue as unsized, so it forecast nothing at all.** This instance keeps
   story points in a Jira SELECT field, which returns `{ id, value }` rather than a number — and the

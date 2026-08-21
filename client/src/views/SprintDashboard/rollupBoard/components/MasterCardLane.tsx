@@ -27,6 +27,7 @@ import { BoardContextMenu, type BoardMenuAction } from './BoardContextMenu.tsx';
 import { FlagIcon } from './BoardIcons.tsx';
 import { describeProgressDisagreement, describeTwoFigures } from '../familyProgress.ts';
 import { buildLaneProgressBar, buildLaneVitalTiles, type LaneProgressBar, type LaneVitalTile } from '../laneVitals.ts';
+import { buildLaneSchedule, type LaneSchedule } from '../../forecast/laneSchedule.ts';
 import type { BoardMembershipReason } from '../boardMembershipReason.ts';
 import type { FamilyProgress } from '../rollupBoardTypes.ts';
 import type { FeatureDodAssessment, IssueForecast } from '../../forecast/forecastTypes.ts';
@@ -242,6 +243,58 @@ function ProgressVital({ bar, sentenceForm }: { bar: LaneProgressBar; sentenceFo
   );
 }
 
+/**
+ * The schedule band: whether the REST of this Feature is going to land.
+ *
+ * Sits beside the completion bar because they answer different questions and the difference matters.
+ * A Feature at 80% with every remaining item behind is in more trouble than one at 40% that is on
+ * track, and a completion bar alone draws those two the other way round.
+ */
+function ScheduleVital({ schedule }: { schedule: LaneSchedule }) {
+  if (schedule.totalIssueCount === 0) {
+    return <span className={styles.laneVitalMissing}>{schedule.headline}</span>;
+  }
+
+  const bandTitle = schedule.segments
+    .map((segment) => `${segment.issueCount} ${segment.label.toLowerCase()}`)
+    .join(' · ');
+
+  return (
+    <div className={styles.laneSchedule}>
+      <div className={styles.laneScheduleHeadline}>
+        {/* Words first. The tint repeats what this already says, for people who can see it. */}
+        <span className={styles[`laneScheduleTone_${schedule.tone}`] ?? styles.laneScheduleTone_unknown}>
+          {schedule.headline}
+        </span>
+        {schedule.dodDateIso !== null && (
+          <span className={styles.laneScheduleDate}>
+            {schedule.isMissingPi ? `INT ${schedule.dodDateIso} — past PI end` : `INT by ${schedule.dodDateIso}`}
+          </span>
+        )}
+      </div>
+
+      <div className={styles.laneScheduleBand} title={bandTitle}>
+        {schedule.segments.map((segment) => (
+          <span
+            className={styles[`laneScheduleSegment_${segment.tone}`] ?? styles.laneScheduleSegment_unknown}
+            key={segment.state}
+            style={{ width: `${segment.widthPercent}%` }}
+          />
+        ))}
+      </div>
+
+      <div className={styles.laneScheduleLegend}>
+        {schedule.segments.map((segment) => (
+          <span className={styles.laneScheduleLegendEntry} key={segment.state}>
+            <span className={styles[`laneScheduleSwatch_${segment.tone}`] ?? styles.laneScheduleSwatch_unknown} />
+            {segment.label} <strong>{segment.issueCount}</strong>
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /** Renders one Feature swimlane: vitals in the header, cards beneath when expanded. */
 export function MasterCardLane({
   lane,
@@ -298,6 +351,19 @@ export function MasterCardLane({
     totalItemCount: lane.totalItemCount,
     hasActiveFilters,
   }, featureForecast);
+
+  /**
+   * This Feature's OWN schedule, from the verdicts already computed for its items.
+   *
+   * Built from the lane's complete item set rather than the filtered one, exactly as the vitals are:
+   * a filter narrows what is drawn beneath the header, never what the header claims.
+   */
+  const laneSchedule = buildLaneSchedule(
+    lane.masterCard.items
+      .map((item) => forecastByIssueKey?.[item.key])
+      .filter((issueForecast): issueForecast is IssueForecast => issueForecast !== undefined),
+    featureForecast,
+  );
 
   // Where the actions menu was opened, or null when it is closed.
   const [menuPosition, setMenuPosition] = useState<{ xPx: number; yPx: number } | null>(null);
@@ -441,6 +507,8 @@ export function MasterCardLane({
           bar={progressBar}
           sentenceForm={familyProgress?.family ? describeTwoFigures(familyProgress) : null}
         />
+        {/* Only where a forecast reached this lane. Absent, the header is exactly what it was. */}
+        {forecastByIssueKey !== undefined && <ScheduleVital schedule={laneSchedule} />}
         <div className={styles.laneTiles}>
           {vitalTiles.map((tile) => <LaneVitalTileView key={tile.id} tile={tile} />)}
         </div>
