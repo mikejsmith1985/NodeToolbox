@@ -2286,3 +2286,92 @@ describe('PiReviewTab — AI Assistance mount', () => {
     expect(await within(alphaSection).findByText(/⚡ AI Assistance/i)).toBeInTheDocument();
   });
 });
+
+describe('matching a page to the PI Jira actually holds', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  /** Renders the tab against a PI name carrying the window Jira appends. */
+  function renderForWindowedPi(teams: ArtTeam[]) {
+    return render(
+      <ToastProvider>
+        <PiReviewTab
+          mode="authoring"
+          selectedPiName="PI 26.4 (07/30/26 - 10/07/26)"
+          teams={teams}
+        />
+      </ToastProvider>,
+    );
+  }
+
+  /** A team whose pages are typed the way people type them: no window. */
+  function teamWithTypedPiNames(): ArtTeam[] {
+    return [{
+      id: 'team-1',
+      name: 'Alpha Team',
+      boardId: '42',
+      piReviewPages: [
+        { piName: 'PI 26.3', pageUrl: 'https://example.atlassian.net/wiki/pages/12345/Alpha-263' },
+        { piName: 'PI 26.4', pageUrl: 'https://example.atlassian.net/wiki/pages/67890/Alpha-264' },
+      ],
+      sprintIssues: [],
+      isLoading: false,
+      loadError: null,
+    }];
+  }
+
+  it('finds the page for this PI even though Jira name carries its date window', async () => {
+    // The regression: "PI 26.4" and "PI 26.4 (07/30/26 - 10/07/26)" never matched as whole strings,
+    // so the correctly-configured page vanished from its own PI.
+    mockFetchConfluencePageByReference.mockImplementation((pageReference: string) =>
+      Promise.resolve(pageReference.includes('12345') ? ALPHA_PAGE : BETA_PAGE));
+
+    renderForWindowedPi(teamWithTypedPiNames());
+
+    expect(await screen.findByRole('region', { name: /pi 26\.4 pi review/i })).toBeVisible();
+    expect(screen.queryByRole('region', { name: /pi 26\.3 pi review/i, hidden: true })).not.toBeInTheDocument();
+  });
+
+  it('never stands another PI page in for this one when this one exists', async () => {
+    mockFetchConfluencePageByReference.mockImplementation((pageReference: string) =>
+      Promise.resolve(pageReference.includes('12345') ? ALPHA_PAGE : BETA_PAGE));
+
+    renderForWindowedPi(teamWithTypedPiNames());
+    await screen.findByRole('region', { name: /pi 26\.4 pi review/i });
+
+    // Only the 26.4 page is fetched. Fetching 26.3 at all is how its rows reached a 26.4 board.
+    const fetchedReferences = mockFetchConfluencePageByReference.mock.calls.map((call) => String(call[0]));
+    expect(fetchedReferences.some((reference) => reference.includes('67890'))).toBe(true);
+    expect(fetchedReferences.some((reference) => reference.includes('12345'))).toBe(false);
+  });
+
+  it('says so, loudly, when a page belonging to NO PI is being adopted for this one', async () => {
+    // Adopting a page with no PI is deliberate. Doing it silently let a board load another Program
+    // Increment's page, report its figures as this one's, and offer to save over it.
+    mockFetchConfluencePageByReference.mockResolvedValue(ALPHA_PAGE);
+
+    renderForWindowedPi([{
+      id: 'team-1',
+      name: 'Alpha Team',
+      boardId: '42',
+      piReviewPages: [{ piName: '', pageUrl: 'https://example.atlassian.net/wiki/pages/12345/Alpha' }],
+      sprintIssues: [],
+      isLoading: false,
+      loadError: null,
+    }]);
+
+    expect(await screen.findByText(/not assigned to a Program Increment/i)).toBeInTheDocument();
+    expect(screen.getByText(/saving here writes/i)).toBeInTheDocument();
+  });
+
+  it('says nothing of the sort when the page really does name this PI', async () => {
+    mockFetchConfluencePageByReference.mockImplementation((pageReference: string) =>
+      Promise.resolve(pageReference.includes('12345') ? ALPHA_PAGE : BETA_PAGE));
+
+    renderForWindowedPi(teamWithTypedPiNames());
+    await screen.findByRole('region', { name: /pi 26\.4 pi review/i });
+
+    expect(screen.queryByText(/not assigned to a Program Increment/i)).not.toBeInTheDocument();
+  });
+});

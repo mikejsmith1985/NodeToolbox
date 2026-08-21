@@ -76,6 +76,7 @@ import {
   removeIgnoredPiReviewFeatureKey,
 } from './piReviewIgnoredFeatures.ts';
 import { computePiReviewLoadComparison } from './piReviewLoad.ts';
+import { doPiNamesMatch } from './piNameMatch.ts';
 import styles from './PiReviewTab.module.css';
 
 const LONG_TEXT_COLUMNS = new Set<PiReviewColumnKey>(['dependency', 'risks', 'notes']);
@@ -151,6 +152,15 @@ interface PiReviewLoadTarget {
   targetKey: string;
   targetLabel: string;
   pageReference: string;
+  /**
+   * True when this page does not name the selected PI and was adopted for it as a legacy fallback.
+   *
+   * Carried so the panel can SAY so. Adopting a page belonging to no PI is deliberate, but doing it
+   * silently means a board can load another Program Increment's page, report its figures as this
+   * one's, and offer to save over it — with the only clue being a page title nobody was asked to
+   * read.
+   */
+  isAdoptedForSelectedPi?: boolean;
 }
 
 interface PiReviewPagePanelProps {
@@ -217,12 +227,20 @@ function selectTargetsForSelectedPi(
     return configuredTargets;
   }
 
-  const targetsClaimingSelectedPi = configuredTargets.filter((target) => target.piName === trimmedSelectedPiName);
+  // Compared by PI identifier, not as whole strings. A page's PI is typed by a person; the value it
+  // is matched against comes from Jira and carries the window — "PI 26.4 (07/30/26 - 10/07/26)" —
+  // so an exact comparison made a correctly-configured page vanish from its own PI and let a legacy
+  // page belonging to a DIFFERENT PI be adopted in its place.
+  const targetsClaimingSelectedPi = configuredTargets.filter(
+    (target) => doPiNamesMatch(target.piName, trimmedSelectedPiName),
+  );
   if (targetsClaimingSelectedPi.length > 0) {
     return targetsClaimingSelectedPi;
   }
 
-  return configuredTargets.filter((target) => target.piName === '');
+  return configuredTargets
+    .filter((target) => target.piName === '')
+    .map((target) => ({ ...target, isAdoptedForSelectedPi: true }));
 }
 
 function readDefaultPiReviewTargetKey(configuredTargets: PiReviewLoadTarget[]): string {
@@ -2306,6 +2324,20 @@ function PiReviewPagePanel({
           )}
         </div>
       </div>
+
+      {/* Adopting a page that names no PI is deliberate; doing it quietly is what caused real harm.
+          A 26.4 board loaded the 26.3 page, reported its figures as this PI's, and left Save armed
+          over somebody else's Program Increment — with a page title as the only clue. */}
+      {target.isAdoptedForSelectedPi === true && (
+        <p className={styles.adoptedPageWarning} role="status">
+          <strong>This page is not assigned to a Program Increment.</strong>{' '}
+          It is configured without a PI, so it is shown for whichever PI is selected — right now{' '}
+          <strong>{effectivePiName.trim() || 'none'}</strong>
+          {pageTitle ? <> — while the page itself is titled “{pageTitle}”.</> : '.'}{' '}
+          Saving here writes {effectivePiName.trim() || 'the selected PI'}&apos;s table onto that page.
+          Give each page its own PI in Team Dashboard → Saved Dashboard Teams → PI Review Pages.
+        </p>
+      )}
 
       <div className={styles.pageSummaryCard}>
         <div>

@@ -37,6 +37,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   green for the date — instead of a row of identical grey chips that had to be read one at a time.
 
 ### Fixed
+- **A PI Review page is found again when Jira's PI name carries its date window.** Pages record their
+  PI as somebody types it — "PI 26.4" — while the value matched against comes from Jira as
+  "PI 26.4 (07/30/26 - 10/07/26)". Compared as whole strings those never matched, so a correctly
+  configured page vanished from its own PI and a LEGACY page — one saved with no PI at all — was
+  adopted in its place: a 26.4 board silently loading the 26.3 page, reporting its rows and order as
+  this PI's, with Save armed over the wrong Program Increment. The comparison now forgives the
+  window, the case and the spacing, and nothing else — "PI 26.4" and "PI 26.40" stay different PIs.
+- **Adopting a page that names no PI now says so, loudly.** The fallback is deliberate and stays, but
+  it is announced above the page: which PI is selected, what the page is actually titled, and that
+  saving writes this PI's table onto it.
 - **The cross-project Feature Link notice now says which way round it is.** The same red line appeared
   whether the Feature's work was on the board or kept off it, so it read as an exclusion while it was
   in fact a list of exactly what the toggle above had let in — "how did this get on my board at all?"

@@ -1191,3 +1191,21 @@ details[open] .deltaBannerSummary::before {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* Shown when a page configured without a PI is standing in for the selected one. Loud on purpose:
+   the quiet version of this let one Program Increment's board load and offer to overwrite another's
+   page, with the page title as the only clue that anything was wrong. */
+.adoptedPageWarning {
+  margin: 0 0 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--color-warning);
+  border-left-width: 4px;
+  border-radius: 8px;
+  /* --color-warning-soft is NOT a defined token (the rest of this file only ever reached it behind a
+     fallback). Tinting from the warning colour itself keeps both themes correct without inventing
+     one — a hardcoded amber here would look right in dark and wrong in light. */
+  background: color-mix(in srgb, var(--color-warning) 14%, transparent);
+  color: var(--color-text-primary);
+  font-size: 13px;
+  line-height: 1.5;
+}
