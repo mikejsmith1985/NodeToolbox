@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **A SharePoint document library can be browsed, and only the documents that matter are fetched.**
+  Point at a folder and Toolbox walks it through the relay -- the user's own authenticated SharePoint
+  tab, so nothing here holds a credential -- and returns the document NAMES. A second, optional prompt
+  hands those names to the assistant, which replies with a shortlist; only those are read. A library
+  holds hundreds of files, and fetching them all to find the three that matter would bury the useful
+  material in the rest. A name the assistant invents is REFUSED and reported rather than fetched.
+  Formats nothing here can turn into text (.docx, .pdf) are listed with a reason rather than silently
+  omitted, and a walk that stopped at the depth limit says which folders it did not look in.
 - **The enterprise Feature workflow is encoded once, and the AI prompts now write toward it.** The
   organisation publishes a table -- which fields a Feature must carry to leave each state, and what
   "Done" actually means -- and every surface that cared was re-deriving a piece of it. It now lives in

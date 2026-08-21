@@ -156,6 +156,7 @@ try {
 // githubEmailEngine bundle; a missing bundle disables the routes rather than crashing startup.
 try {
   app.use(require('./src/routes/githubEmailIntake')(configuration));
+  app.use(require('./src/routes/sharePointDocuments')());
 } catch (githubEmailIntakeRouteError) {
   console.error('  ⚠ GitHub Email Intake routes unavailable: ' + githubEmailIntakeRouteError.message);
 }
