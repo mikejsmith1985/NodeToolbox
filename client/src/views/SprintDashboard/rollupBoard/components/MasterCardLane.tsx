@@ -115,6 +115,15 @@ export interface MasterCardLaneProps {
   membershipReason?: BoardMembershipReason | null;
   /** This lane's position on the board, counting from 1. */
   laneRank?: number;
+  /**
+   * Whether that position is a decision or an accident.
+   *
+   * Lanes with no saved order fall back to Feature-key order, so the Feature whose key happens to
+   * sort first was presented as rank 1 — an alphabetical accident wearing the clothes of a priority
+   * somebody set. Undefined means "do not say", which is what every caller that predates this gets:
+   * the number, exactly as before.
+   */
+  isLaneOrderSaved?: boolean;
   /** Moves this lane to a rank the viewer typed. Absent hides the rank box. */
   onRankChange?: (featureKey: string, nextRank: number) => void;
   onSendToTop?: (featureKey: string) => void;
@@ -317,6 +326,7 @@ export function MasterCardLane({
   featureReadFailureDetail = null,
   membershipReason = null,
   laneRank,
+  isLaneOrderSaved,
   onRankChange,
   onToggleFeatureFlag,
   onSendToTop,
@@ -411,6 +421,9 @@ export function MasterCardLane({
 
   // Held while the viewer is mid-edit; null means "show the lane's real rank".
   const [rankDraft, setRankDraft] = useState<string | null>(null);
+  // Only an explicit `false` means unranked. Undefined is "the caller did not say", which keeps every
+  // surface that predates this showing exactly the number it always did.
+  const isUnranked = isLaneOrderSaved === false;
   const jiraBaseUrl = useConnectionStore((connectionState) => connectionState.proxyStatus?.jira?.baseUrl ?? '');
 
   /** Applies a typed rank, ignoring anything that is not a number and restoring the real one. */
@@ -446,7 +459,7 @@ export function MasterCardLane({
         {laneRank !== undefined && onRankChange && (
           <input
             aria-label={`Rank of ${vitals.key}`}
-            className={styles.laneRankInput}
+            className={isUnranked ? styles.laneRankInputUnset : styles.laneRankInput}
             inputMode="numeric"
             onBlur={(blurEvent) => commitRank(blurEvent.target.value)}
             onChange={(changeEvent) => setRankDraft(changeEvent.target.value)}
@@ -460,8 +473,14 @@ export function MasterCardLane({
             }}
             // Never let a keystroke start a drag, or typing would pick the lane up.
             onPointerDown={(pointerEvent) => pointerEvent.stopPropagation()}
+            placeholder={isUnranked ? String(laneRank) : undefined}
+            title={isUnranked
+              ? 'Not ranked yet — lanes are in Feature key order. Type a number or drag a lane to set the team’s own order.'
+              : `Rank ${laneRank}. Type a number or drag to change it.`}
             type="text"
-            value={rankDraft ?? String(laneRank)}
+            // Empty on an unranked board: the position is still offered as a placeholder, so the box
+            // remains usable, but nothing claims somebody chose it.
+            value={rankDraft ?? (isUnranked ? '' : String(laneRank))}
           />
         )}
         <span

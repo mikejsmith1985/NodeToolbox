@@ -754,3 +754,95 @@ describe('MasterCardLane — flagging the Feature itself as blocked', () => {
     }
   });
 });
+
+describe('MasterCardLane — an unranked board does not pretend to be ranked', () => {
+  /** Renders a lane whose board has no saved order — every position is alphabetical, not chosen. */
+  function renderUnranked() {
+    render(
+      <MasterCardLane
+        columns={COLUMNS}
+        columnTracks={COLUMN_TRACKS}
+        hasActiveFilters={false}
+        isLaneOrderSaved={false}
+        lane={buildLane([buildItem('DEV-1', 'col-todo')])}
+        laneRank={1}
+        onRankChange={vi.fn()}
+        onToggleCollapsed={vi.fn()}
+      />,
+    );
+    return screen.getByLabelText('Rank of FEAT-1') as HTMLInputElement;
+  }
+
+  it('leaves the box empty rather than showing a position nobody chose', () => {
+    // The whole confusion: lanes default to alphabetical key order, so the Feature whose key happens
+    // to sort first was presented as rank 1 — an accident wearing the clothes of a decision.
+    expect(renderUnranked().value).toBe('');
+  });
+
+  it('offers the position it WOULD take as a placeholder, so the box is still usable', () => {
+    expect(renderUnranked().placeholder).toBe('1');
+  });
+
+  it('says in words that the order is alphabetical until somebody sets one', () => {
+    const rankBox = renderUnranked();
+    expect(rankBox.title).toMatch(/not ranked/i);
+    expect(rankBox.title).toMatch(/key order/i);
+  });
+
+  it('shows the number plainly once an order really has been saved', () => {
+    render(
+      <MasterCardLane
+        columns={COLUMNS}
+        columnTracks={COLUMN_TRACKS}
+        hasActiveFilters={false}
+        isLaneOrderSaved
+        lane={buildLane([buildItem('DEV-1', 'col-todo')])}
+        laneRank={3}
+        onRankChange={vi.fn()}
+        onToggleCollapsed={vi.fn()}
+      />,
+    );
+
+    const rankBox = screen.getByLabelText('Rank of FEAT-1') as HTMLInputElement;
+    expect(rankBox.value).toBe('3');
+    expect(rankBox.title).not.toMatch(/not ranked/i);
+  });
+
+  it('still shows the number when no caller says either way, so nothing that predates this changes', () => {
+    render(
+      <MasterCardLane
+        columns={COLUMNS}
+        columnTracks={COLUMN_TRACKS}
+        hasActiveFilters={false}
+        lane={buildLane([buildItem('DEV-1', 'col-todo')])}
+        laneRank={3}
+        onRankChange={vi.fn()}
+        onToggleCollapsed={vi.fn()}
+      />,
+    );
+
+    expect((screen.getByLabelText('Rank of FEAT-1') as HTMLInputElement).value).toBe('3');
+  });
+
+  it('accepts a typed rank on an unranked board, which is how the first order gets set', () => {
+    const onRankChange = vi.fn();
+    render(
+      <MasterCardLane
+        columns={COLUMNS}
+        columnTracks={COLUMN_TRACKS}
+        hasActiveFilters={false}
+        isLaneOrderSaved={false}
+        lane={buildLane([buildItem('DEV-1', 'col-todo')])}
+        laneRank={1}
+        onRankChange={onRankChange}
+        onToggleCollapsed={vi.fn()}
+      />,
+    );
+
+    const rankBox = screen.getByLabelText('Rank of FEAT-1');
+    fireEvent.change(rankBox, { target: { value: '4' } });
+    fireEvent.blur(rankBox, { target: { value: '4' } });
+
+    expect(onRankChange).toHaveBeenCalledWith('FEAT-1', 4);
+  });
+});

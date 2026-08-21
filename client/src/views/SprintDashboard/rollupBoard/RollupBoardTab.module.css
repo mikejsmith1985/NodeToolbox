@@ -1010,7 +1010,21 @@
   color-scheme: inherit;
 }
 
-.laneRankInput:focus {
+/* The same box, drawn as the empty field it is until somebody sets an order. Dashed rather than
+   solid because a dashed border reads as "waiting to be filled in", which is exactly its state. */
+.laneRankInputUnset {
+  composes: laneRankInput;
+  border-style: dashed;
+  color: var(--color-text-muted);
+}
+
+.laneRankInputUnset::placeholder {
+  color: var(--color-text-muted);
+  opacity: 0.6;
+}
+
+.laneRankInput:focus,
+.laneRankInputUnset:focus {
   outline: 2px solid var(--color-accent);
   outline-offset: 1px;
 }

@@ -231,6 +231,10 @@ export function orderLanesLikePiReview(masterCards: readonly MasterCard[]): Mast
   const realFeatureCards = uniqueCards.filter((masterCard) => !masterCard.isSynthetic);
   const syntheticCards = uniqueCards.filter((masterCard) => masterCard.isSynthetic);
 
+  // Feature KEY order, despite this function's name -- it is a deterministic default, not a
+  // priority, and the two were being confused. A board with no saved lane order puts whichever
+  // Feature's key sorts first at the top, and the lane rank box used to present that alphabetical
+  // accident as rank 1. It now draws itself as unset until somebody really sets an order.
   const orderedRealCards = [...realFeatureCards].sort(
     (leftCard, rightCard) => leftCard.featureKey.localeCompare(rightCard.featureKey, undefined, { numeric: true }),
   );

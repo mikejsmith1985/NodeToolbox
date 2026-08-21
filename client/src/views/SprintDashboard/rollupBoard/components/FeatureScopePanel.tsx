@@ -229,10 +229,14 @@ export function FeatureScopePanel({
             + 'by the PO, or having a child in your project. Those guesses hold while a team owns whole '
             + 'projects and break as soon as two share one: adding a second project then brings in the '
             + 'other team’s work too. Set a label to state it instead of inferring it.'
-          : `Only Features carrying “${scope.teamFeatureLabel.trim()}” count as this team’s. The `
-            + 'guesses are switched off entirely — leaving them on would let the work this label exists '
-            + 'to exclude back in through a side door. Any Feature of yours without the label will be '
-            + 'missing until it is applied, and the board names them below so the gap is never silent.'}
+          : `Applies to Features with NO work under them yet: only those carrying `
+            + `“${scope.teamFeatureLabel.trim()}” are pulled in, and the guesses are switched off `
+            + 'entirely — leaving them on would let the work this label exists to exclude back in '
+            + 'through a side door. A Feature your board’s own work rolls up to it keeps its lane '
+            + 'whatever labels it carries, because work sitting on your board is the stronger claim; '
+            + 'use the project list and the two toggles above to narrow that. An empty Feature of '
+            + 'yours without the label stays missing until it is applied, and the board names them '
+            + 'below so the gap is never silent.'}
       </p>
 
       {/* A different question from the one above: that says WHOSE a Feature is, this says whether it is
@@ -414,12 +418,19 @@ export function FeatureScopePanel({
         </p>
       )}
 
-      {/* A Feature Link crossing projects is usually a mistake, so it is named even while hidden —
-          the work stays off the board, but the fact does not go unnoticed. */}
+      {/* A Feature Link crossing projects is usually a mistake, so it is named either way — but WHICH
+          way round matters and the one message could not say. The same red line appeared whether the
+          Feature was on the board or kept off it, so it read as an exclusion while it was in fact a
+          list of what the toggle above had let in. That is the whole of "how did this get on my
+          board at all?", and the answer is now in the sentence. */}
       {featureLinkedOutOfProjectKeys.length > 0 && (
         <p className={styles.editorError}>
           <WarningIcon /> Linked by the Feature Link field but outside these projects:{' '}
-          {featureLinkedOutOfProjectKeys.join(', ')}. That is usually worth correcting in Jira.
+          {featureLinkedOutOfProjectKeys.join(', ')}.{' '}
+          {scope.shouldIncludeOutOfProjectFeatureLinks
+            ? 'Their work is on this board because “Also show other projects’ Features that are linked by the Feature Link field” is ticked — untick it to keep them off.'
+            : 'Their work is kept off this board, because that toggle is off.'}
+          {' '}Either way, a Feature Link across projects is usually worth correcting in Jira.
         </p>
       )}
 

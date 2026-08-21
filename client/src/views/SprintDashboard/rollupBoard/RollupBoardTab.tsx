@@ -2762,6 +2762,10 @@ export default function RollupBoardTab({
                 .find((failure) => failure.featureKey === lane.masterCard.featureKey)?.detail ?? null}
               lane={lane}
               laneRank={laneIndex + 1}
+              // Whether that number is a decision or an accident. With no saved order the lanes fall
+              // back to Feature-key order, and the Feature whose key happens to sort first was being
+              // presented as rank 1 as if somebody had chosen it.
+              isLaneOrderSaved={preferences.laneOrder.length > 0}
               familyProgress={familyProgressByFeatureKey[lane.masterCard.featureKey] ?? null}
               onToggleSubLaneCollapsed={(cloneFeatureKey) =>
                 applyPreferences(toggleLaneCollapsed(preferences, cloneFeatureKey))}

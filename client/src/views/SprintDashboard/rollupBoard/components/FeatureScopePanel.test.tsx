@@ -389,3 +389,72 @@ describe('the discipline editor', () => {
     expect(document.activeElement).toBe(featureProjectInput);
   });
 });
+
+describe('the cross-project notice says which way round it is', () => {
+  /** The same scope with the Feature Link toggle switched on — the state that ADMITS these Features. */
+  const ADMITTING_SCOPE: FeatureScopeSettings = {
+    ...TRANSFORMERS_SCOPE,
+    shouldIncludeOutOfProjectFeatureLinks: true,
+  };
+
+  function renderWithScope(scope: FeatureScopeSettings) {
+    return render(
+      <FeatureScopePanel
+        featureLinkedOutOfProjectKeys={['CISMP-1130']}
+        hasOwnScope
+        hiddenIssueCount={0}
+        issueLinkedOutOfProjectKeys={[]}
+        onResetScope={vi.fn()}
+        onScopeChange={vi.fn()}
+        scope={scope}
+        allFeatureKeys={ALL_FEATURE_KEYS}
+      />,
+    );
+  }
+
+  it('says the work is ON the board when the toggle that admits it is on', () => {
+    // The whole confusion: the same red line appeared whether the Feature was on the board or kept
+    // off it, so it read as an exclusion while it was in fact a list of what the box above let in.
+    renderWithScope(ADMITTING_SCOPE);
+
+    expect(screen.getByText(/on this board/i)).toBeTruthy();
+    expect(screen.getByText(/CISMP-1130/)).toBeTruthy();
+  });
+
+  it('names the toggle to untick, so the fix is in the sentence', () => {
+    renderWithScope(ADMITTING_SCOPE);
+    expect(screen.getByText(/untick/i)).toBeTruthy();
+  });
+
+  it('says the work is kept OFF the board when the toggle is off', () => {
+    renderWithScope(TRANSFORMERS_SCOPE);
+    expect(screen.getByText(/kept off this board/i)).toBeTruthy();
+  });
+
+  it('still says a cross-project Feature Link is worth correcting, either way', () => {
+    renderWithScope(ADMITTING_SCOPE);
+    expect(screen.getByText(/worth correcting in Jira/)).toBeTruthy();
+  });
+});
+
+describe('the team label copy does not overstate what the label does', () => {
+  it('says the label governs Features with no work under them, not every lane', () => {
+    // The old copy read "Only Features carrying CUC count as this team's", which is not what happens:
+    // a Feature the board's own work rolls up to gets a lane whatever labels it carries.
+    render(
+      <FeatureScopePanel
+        featureLinkedOutOfProjectKeys={[]}
+        hasOwnScope
+        hiddenIssueCount={0}
+        issueLinkedOutOfProjectKeys={[]}
+        onResetScope={vi.fn()}
+        onScopeChange={vi.fn()}
+        scope={{ ...TRANSFORMERS_SCOPE, teamFeatureLabel: 'CUC' }}
+        allFeatureKeys={ALL_FEATURE_KEYS}
+      />,
+    );
+
+    expect(screen.getByText(/rolls up to it keeps its lane whatever labels it carries/i)).toBeTruthy();
+    expect(screen.queryByText(/Only Features carrying/)).toBeNull();
+  });
+});

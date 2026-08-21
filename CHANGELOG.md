@@ -37,6 +37,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   green for the date — instead of a row of identical grey chips that had to be read one at a time.
 
 ### Fixed
+- **The cross-project Feature Link notice now says which way round it is.** The same red line appeared
+  whether the Feature's work was on the board or kept off it, so it read as an exclusion while it was
+  in fact a list of exactly what the toggle above had let in — "how did this get on my board at all?"
+  with the answer three lines higher. It now names the toggle and says which way it is set.
+- **The team Feature label copy no longer overstates what the label does.** It said "Only Features
+  carrying X count as this team's", which is not what happens: the label gates the scans for Features
+  with NO work under them, while a Feature the board's own work rolls up to keeps its lane whatever
+  labels it carries. The copy now says so and points at the controls that do narrow the board.
+- **A lane rank box is drawn as unset until an order is really saved.** Lanes default to Feature-key
+  order, so whichever key sorted first was presented as rank 1 — an alphabetical accident wearing the
+  clothes of a priority somebody set. The box is now empty with the position offered as a placeholder,
+  and says "Not ranked yet — lanes are in Feature key order" on hover.
 - **Dropdown text is readable again, in every dropdown and both themes.** The app sets
   `color-scheme: dark`, which is what normally paints an OPEN dropdown dark with light text — but a
   browser drops any control given its OWN background out of that scheme, and almost every styled
