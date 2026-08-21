@@ -545,3 +545,97 @@ describe('submitRelayRequest() — a timeout releases everything it started', ()
     clearIntervalSpy.mockRestore();
   });
 });
+
+// ── Authorization, which is NOT the same fact as connection ───────────────────
+//
+// A dropped VPN leaves the bookmarklet long-polling this machine perfectly happily while every
+// SharePoint call comes back 403. Reporting that as "connected" is a false positive somebody plans
+// a morning around, so the last real outcome is recorded and reported separately.
+
+describe('relay authorization', () => {
+  /** Registers a channel and marks it polled, so it reads as connected. */
+  async function connectRelay(app, sys) {
+    await request(app).post(`/api/relay-bridge/register?sys=${sys}`).send({});
+    // A poll would normally block; the register alone is enough for these assertions.
+  }
+
+  it('treats a relay that has never been refused as authorized', async () => {
+    const app = buildTestApp();
+    await connectRelay(app, 'sharepoint');
+
+    const response = await request(app).get('/api/relay-bridge/status?sys=sharepoint');
+    expect(response.body.isAuthorized).toBe(true);
+    expect(response.body.lastUnauthorizedAt).toBeNull();
+  });
+
+  it('reports unauthorized after the far system returns 403', async () => {
+    const app = buildTestApp();
+    await connectRelay(app, 'sharepoint');
+
+    await request(app).post('/api/relay-bridge/result').send({
+      id: 'req-1', sys: 'sharepoint', ok: false, status: 403, error: 'Unauthorized',
+    });
+
+    const response = await request(app).get('/api/relay-bridge/status?sys=sharepoint');
+    expect(response.body.isAuthorized).toBe(false);
+    expect(response.body.lastUnauthorizedAt).not.toBeNull();
+  });
+
+  it('reports unauthorized after a 401 as well', async () => {
+    const app = buildTestApp();
+    await connectRelay(app, 'sharepoint');
+
+    await request(app).post('/api/relay-bridge/result').send({
+      id: 'req-1', sys: 'sharepoint', ok: false, status: 401, error: 'Unauthenticated',
+    });
+
+    expect((await request(app).get('/api/relay-bridge/status?sys=sharepoint')).body.isAuthorized).toBe(false);
+  });
+
+  it('recovers once a later request succeeds, so a reconnected VPN clears the warning', async () => {
+    const app = buildTestApp();
+    await connectRelay(app, 'sharepoint');
+
+    await request(app).post('/api/relay-bridge/result').send({
+      id: 'req-1', sys: 'sharepoint', ok: false, status: 403, error: 'Unauthorized',
+    });
+    await request(app).post('/api/relay-bridge/result').send({
+      id: 'req-2', sys: 'sharepoint', ok: true, status: 200, data: { value: [] },
+    });
+
+    expect((await request(app).get('/api/relay-bridge/status?sys=sharepoint')).body.isAuthorized).toBe(true);
+  });
+
+  it('does not treat an ordinary failure as a refusal', async () => {
+    // A 500 or a timeout means the far system could not answer, not that it refused us. Only 401
+    // and 403 say "I know who you are and the answer is no".
+    const app = buildTestApp();
+    await connectRelay(app, 'sharepoint');
+
+    await request(app).post('/api/relay-bridge/result').send({
+      id: 'req-1', sys: 'sharepoint', ok: false, status: 500, error: 'Server error',
+    });
+
+    expect((await request(app).get('/api/relay-bridge/status?sys=sharepoint')).body.isAuthorized).toBe(true);
+  });
+
+  it('keeps authorization per system, so a refused SharePoint does not mark SNow refused', async () => {
+    const app = buildTestApp();
+    await connectRelay(app, 'sharepoint');
+    await connectRelay(app, 'snow');
+
+    await request(app).post('/api/relay-bridge/result').send({
+      id: 'req-1', sys: 'sharepoint', ok: false, status: 403, error: 'Unauthorized',
+    });
+
+    expect((await request(app).get('/api/relay-bridge/status?sys=sharepoint')).body.isAuthorized).toBe(false);
+    expect((await request(app).get('/api/relay-bridge/status?sys=snow')).body.isAuthorized).toBe(true);
+  });
+
+  it('reports an unknown system as authorized rather than as refused', async () => {
+    // Nothing has refused us; the system simply is not one we relay.
+    const response = await request(buildTestApp()).get('/api/relay-bridge/status?sys=nope');
+    expect(response.body.isConnected).toBe(false);
+    expect(response.body.isAuthorized).toBe(true);
+  });
+});

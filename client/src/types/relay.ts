@@ -11,6 +11,20 @@ export interface RelayBridgeStatus {
   version: string | null;
   /** True when the ServiceNow bookmarklet found g_ck, which is needed for write APIs. */
   hasSessionToken?: boolean;
+  /**
+   * False when the far system REFUSED the last relayed request (401/403).
+   *
+   * Separate from `isConnected` because they are different facts and a dropped VPN makes them
+   * disagree: the bookmarklet keeps long-polling this machine perfectly happily while every
+   * SharePoint call comes back unauthorized. Showing that as connected is a false positive somebody
+   * plans around.
+   *
+   * Optional, and treated as `true` when absent — an older server that does not report it has not
+   * told us we are refused.
+   */
+  isAuthorized?: boolean;
+  /** When the far system last refused us, so the panel can say how long it has been broken. */
+  lastUnauthorizedAt?: string | null;
 }
 
 /** Relay channel registration metadata returned by the backend. */

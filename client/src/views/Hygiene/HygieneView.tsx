@@ -166,6 +166,22 @@ export default function HygieneView({
     && hasRunnableScope
     && !hasVisibleFindings
     && hasScoreData;
+  /**
+   * A filter is hiding findings that genuinely exist.
+   *
+   * The filter is PERSISTED, so one clicked days ago silently survives into every later scan. The
+   * result is a page reporting a score of 70 over six flags with an empty list underneath — which
+   * reads as broken software, not as a filter, because nothing on screen named the filter or
+   * offered to clear it.
+   */
+  const isFilterHidingEverything = shouldShowNoFlags
+    && hygieneState.selectedFilter !== null
+    && hygieneState.findings.length > 0;
+  const activeFilterLabel = (hygieneState.selectedFilter ?? '')
+    .split(',')
+    .map((checkId) => hygieneState.checkLabelsById[checkId.trim()] ?? checkId.trim())
+    .filter((label) => label !== '')
+    .join(' or ');
   const [expandedIssueKey, setExpandedIssueKey] = useState<string | null>(null);
   const [copiedCheckId, setCopiedCheckId] = useState<string | null>(null);
   // Optional list ordering (status / assignee / issue type / age); scan order by default.
@@ -348,7 +364,26 @@ export default function HygieneView({
           ⚠ {EMPTY_SCOPE_MESSAGE}
         </div>
       )}
-      {shouldShowNoFlags && <div className={styles.emptyState}>{NO_FLAGS_MESSAGE}</div>}
+      {isFilterHidingEverything && (
+        // Names the filter and clears it in one click. "No flags found for the current project and
+        // filter" is true and useless: it never said WHICH filter, and the only control that cleared
+        // one was an unlabelled tile at the far left of a row of twenty.
+        <div className={styles.emptyScopeWarning} role="status">
+          {`⚠ ${hygieneState.findings.length} finding${hygieneState.findings.length === 1 ? '' : 's'} `}
+          {`${hygieneState.findings.length === 1 ? 'is' : 'are'} hidden by the “${activeFilterLabel}” filter, `}
+          {'which matches none of them.'}
+          <button
+            className={styles.actionButton}
+            onClick={() => hygieneState.selectFilter(null)}
+            type="button"
+          >
+            {`Show all ${hygieneState.findings.length}`}
+          </button>
+        </div>
+      )}
+      {shouldShowNoFlags && !isFilterHidingEverything && (
+        <div className={styles.emptyState}>{NO_FLAGS_MESSAGE}</div>
+      )}
 
       {/* End-of-session report — informational only, all four buckets, never overstates progress. */}
       {session.endedSummary && (

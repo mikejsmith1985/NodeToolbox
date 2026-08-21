@@ -54,6 +54,19 @@ const RELAY_DISCONNECTED_ERROR = 'Relay bridge disconnected. Reopen the source t
 // ── Bridge state ──────────────────────────────────────────────────────────────
 
 /**
+ * True when the last relayed request this channel saw was NOT refused.
+ *
+ * Deliberately optimistic before any request has been made: a channel that has never been used has
+ * not been refused, and reporting a fresh relay as unauthorized would be its own false alarm.
+ */
+function isRelayAuthorized(channel) {
+  if (channel.lastUnauthorizedAt === null) {
+    return true;
+  }
+  return channel.lastAuthorizedAt !== null && channel.lastAuthorizedAt > channel.lastUnauthorizedAt;
+}
+
+/**
  * Creates a clean, empty bridge channel for one system (snow / jira / conf).
  * Isolated per system so SNow and Jira can be relayed independently.
  *
@@ -82,8 +95,21 @@ function createBridgeChannel() {
     lastPolledAt:        null,
     // True when the SNow bookmarklet found g_ck and can send X-UserToken
     hasSessionToken:     false,
+    /**
+     * When the relayed system last REFUSED a request (401/403), and when it last accepted one.
+     *
+     * The bookmarklet polling this server proves the browser tab is alive. It proves nothing at all
+     * about whether the far system will still talk to us -- a dropped VPN leaves the tab happily
+     * long-polling while every SharePoint call comes back 403. Reporting that as "connected" is a
+     * false positive somebody acts on, so the last real outcome is recorded here.
+     */
+    lastUnauthorizedAt:  null,
+    lastAuthorizedAt:    null,
   };
 }
+
+/** HTTP statuses that mean the far system refused us, rather than failing to answer. */
+const UNAUTHORIZED_STATUSES = [401, 403];
 
 /** Live bridge state for all supported systems — resets when the server restarts. */
 const bridgeState = SUPPORTED_SYSTEMS.reduce(function(acc, sys) {
@@ -223,10 +249,23 @@ router.get('/status', (req, res) => {
   const sys = req.query.sys || 'snow';
   const channel = bridgeState[sys];
   if (!channel) {
-    return res.json({ isConnected: false, system: sys, lastPingAt: null, version: null });
+    return res.json({
+      isConnected: false,
+      isAuthorized: true,
+      lastUnauthorizedAt: null,
+      system: sys,
+      lastPingAt: null,
+      version: null,
+    });
   }
   res.json({
     isConnected: isRelayReady(channel),
+    // Separate from isConnected on purpose. The relay being alive and the far system being willing
+    // to answer are two different facts, and a dropped VPN makes them disagree.
+    isAuthorized: isRelayAuthorized(channel),
+    lastUnauthorizedAt: channel.lastUnauthorizedAt !== null
+      ? new Date(channel.lastUnauthorizedAt).toISOString()
+      : null,
     system:      sys,
     hasSessionToken: channel.hasSessionToken,
     // lastPolledAt is a millisecond timestamp — convert to ISO string for the client.
@@ -348,6 +387,14 @@ router.post('/result', (req, res) => {
 
   const channel = bridgeState[sys];
   if (!channel) return res.status(400).json({ error: 'Unknown sys: ' + sys });
+
+  // Record what the far system actually said. This is the only place the server learns that a
+  // relayed call was refused, and without it a 403 leaves the connection pill green.
+  if (UNAUTHORIZED_STATUSES.includes(Number(status))) {
+    channel.lastUnauthorizedAt = Date.now();
+  } else if (ok === true) {
+    channel.lastAuthorizedAt = Date.now();
+  }
 
   const result = { id, ok, status, data, error };
   const waiter  = channel.resultWaiters[id];

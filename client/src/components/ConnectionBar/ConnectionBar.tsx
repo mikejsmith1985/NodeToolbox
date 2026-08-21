@@ -237,6 +237,15 @@ function GitHubPanel({ isGitHubReady }: GitHubPanelProps) {
 interface SharePointPanelProps {
   isSharePointConnected: boolean;
   lastPingAt: string | null;
+  /**
+   * The bookmarklet is still polling, but SharePoint refused the last request it relayed.
+   *
+   * The commonest cause by far is a VPN that dropped overnight: the tab never closed, so every
+   * heartbeat still arrives, and the relay looks perfectly healthy right up until a pull returns
+   * nothing and blames itself.
+   */
+  isRelayAliveButRefused?: boolean;
+  lastUnauthorizedAt?: string | null;
 }
 
 /**
@@ -244,8 +253,14 @@ interface SharePointPanelProps {
  * is inactive it shows the draggable bookmarklet + drag-to-bookmarks steps; when active it shows the
  * connection status. Used by the Jira Intake live pull (feature 007/008).
  */
-function SharePointPanel({ isSharePointConnected, lastPingAt }: SharePointPanelProps) {
+function SharePointPanel({
+  isSharePointConnected,
+  lastPingAt,
+  isRelayAliveButRefused = false,
+  lastUnauthorizedAt = null,
+}: SharePointPanelProps) {
   const lastPingText = lastPingAt !== null ? new Date(lastPingAt).toLocaleTimeString() : null;
+  const refusedAtText = lastUnauthorizedAt !== null ? new Date(lastUnauthorizedAt).toLocaleTimeString() : null;
   // The full site URL is configured in Jira Intake settings and bridged via localStorage.
   const sharePointSiteUrl = readSharePointSiteUrl();
 
@@ -270,10 +285,24 @@ function SharePointPanel({ isSharePointConnected, lastPingAt }: SharePointPanelP
       <p className={styles.panelStatus}>
         {isSharePointConnected
           ? `✅ SharePoint relay connected${lastPingText !== null ? ` — last ping at ${lastPingText}` : ''}`
-          : '❌ SharePoint relay not connected'}
+          : isRelayAliveButRefused
+            ? `⚠ SharePoint refused the last request${refusedAtText !== null ? ` at ${refusedAtText}` : ''}`
+            : '❌ SharePoint relay not connected'}
       </p>
 
-      {!isSharePointConnected && (
+      {isRelayAliveButRefused && (
+        // Named specifically, because the fix is different from the one below. The bookmarklet is
+        // fine; the connection to SharePoint itself is not, and reconnecting the VPN is usually all
+        // it takes.
+        <p className={styles.panelLabel}>
+          The bookmarklet is still running and reaching this machine. SharePoint itself is returning
+          &ldquo;unauthorized&rdquo;, which normally means the VPN has dropped or the SharePoint
+          session has expired. Reconnect the VPN, reload the SharePoint tab, then click the
+          bookmarklet again.
+        </p>
+      )}
+
+      {!isSharePointConnected && !isRelayAliveButRefused && (
         <>
           <p className={styles.panelLabel}>To activate the relay bridge:</p>
           <ol className={styles.panelSteps}>
@@ -361,7 +390,12 @@ export function ConnectionBar() {
   const hasSessionToken = relayBridgeStatus?.hasSessionToken ?? false;
   // SharePoint relay status is tracked per-system (feature 008) so it never clobbers ServiceNow.
   const sharePointRelayStatus = useConnectionStore((state) => state.relayStatusBySystem?.sharepoint);
-  const isSharePointConnected = sharePointRelayStatus?.isConnected ?? false;
+  // The relay being alive and SharePoint being willing to answer are different facts. A dropped VPN
+  // leaves the bookmarklet long-polling happily while every request comes back 403, so the pill goes
+  // amber-to-red rather than staying green on the strength of a tab nobody closed.
+  const isSharePointAuthorized = sharePointRelayStatus?.isAuthorized ?? true;
+  const isSharePointConnected = (sharePointRelayStatus?.isConnected ?? false) && isSharePointAuthorized;
+  const isSharePointRelayAliveButRefused = (sharePointRelayStatus?.isConnected ?? false) && !isSharePointAuthorized;
   const sharePointLastPingAt = sharePointRelayStatus?.lastPingAt ?? null;
 
   const [activePanel, setActivePanel] = useState<ActivePanel>(null);
@@ -463,6 +497,8 @@ export function ConnectionBar() {
           {activePanel === 'sharepoint' && (
             <SharePointPanel
               isSharePointConnected={isSharePointConnected}
+              isRelayAliveButRefused={isSharePointRelayAliveButRefused}
+              lastUnauthorizedAt={sharePointRelayStatus?.lastUnauthorizedAt ?? null}
               lastPingAt={sharePointLastPingAt}
             />
           )}

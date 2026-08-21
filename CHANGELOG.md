@@ -78,6 +78,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   things to somebody deciding whether to trust the schedule.
 
 ### Fixed
+- **Hygiene reported a score with an empty list under it.** The check filter is remembered between
+  sessions, so one clicked days earlier silently survived into every later scan — producing a page
+  that said "70/100, 6 flags" above "no flags found". Both figures were right; nothing on screen
+  named the filter or offered to clear it, so the page read as broken software. It now says which
+  filter is hiding how many findings, and clears it in one click.
+- **The SharePoint indicator stayed green after the VPN dropped.** It was reporting that the relay
+  bookmarklet was still reaching this machine, which was true and not the question — the tab keeps
+  long-polling happily while every SharePoint call comes back 403. The relay now records what the
+  far system actually said, and a refusal turns the indicator off with a panel explaining that the
+  bookmarklet is fine and the VPN or SharePoint session is not. A 500 or a timeout is still treated
+  as a failure to answer rather than a refusal.
 - **The Roll-Up Board's column editor offered no statuses to choose from.** The call that loads the
   status and sub-status options sat immediately *after* the board loader's `return`, so it never ran
   — "Choose a status…" was permanently empty and no column could be given a status at all. The

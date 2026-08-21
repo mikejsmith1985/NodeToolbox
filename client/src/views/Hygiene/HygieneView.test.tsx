@@ -906,3 +906,95 @@ describe('HygieneView — typing inside a finding row', () => {
     expect(findingRow).toHaveAttribute('aria-expanded', 'true');
   });
 });
+
+describe('HygieneView — a filter that hides everything says so', () => {
+  // The reported symptom: a score of 70 over six flags with an empty list underneath. Both figures
+  // were correct; a filter clicked in an earlier session had persisted and matched nothing in the
+  // new scan. Nothing on screen named that filter or offered to clear it, so the page read as
+  // broken software rather than as a filter — which is the worst way for a UI to be right.
+
+  it('names the filter hiding the findings, and says how many are hidden', () => {
+    mockUseHygieneState.mockReturnValue(buildHookState({
+      projectKey: 'TBX',
+      findings: [buildFinding()],
+      filteredFindings: [],
+      selectedFilter: 'target-end-overdue',
+      checkLabelsById: { 'target-end-overdue': 'Target End reached before testing transition' },
+      scannedIssueCount: 6,
+      summary: buildSummary({ totalIssues: 2, totalFlags: 6 }),
+    }));
+
+    render(<HygieneView />);
+
+    // The label also appears on its summary tile, so the notice is matched by its own wording.
+    const notice = screen.getByText(/hidden by the/);
+    expect(notice).toBeInTheDocument();
+    expect(notice.textContent).toContain('Target End reached before testing transition');
+    expect(notice.textContent).toContain('matches none of them');
+  });
+
+  it('offers a one-click way out, rather than an unlabelled tile at the end of a row', () => {
+    const selectFilter = vi.fn();
+    mockUseHygieneState.mockReturnValue({
+      ...buildHookState({
+        projectKey: 'TBX',
+        findings: [buildFinding()],
+        filteredFindings: [],
+        selectedFilter: 'target-end-overdue',
+        checkLabelsById: { 'target-end-overdue': 'Target End overdue' },
+        scannedIssueCount: 6,
+      }),
+      selectFilter,
+    });
+
+    render(<HygieneView />);
+    fireEvent.click(screen.getByRole('button', { name: /Show all 1/ }));
+
+    expect(selectFilter).toHaveBeenCalledWith(null);
+  });
+
+  it('says nothing about filters when the scan genuinely found no flags', () => {
+    // "Everything is clean" and "a filter is hiding it" must never look the same.
+    mockUseHygieneState.mockReturnValue(buildHookState({
+      projectKey: 'TBX',
+      findings: [],
+      filteredFindings: [],
+      selectedFilter: null,
+      scannedIssueCount: 6,
+    }));
+
+    render(<HygieneView />);
+
+    expect(screen.queryByText(/hidden by the/)).not.toBeInTheDocument();
+    expect(screen.getByText(/No Hygiene flags found/)).toBeInTheDocument();
+  });
+
+  it('says nothing about filters when a filter is set and still matches something', () => {
+    mockUseHygieneState.mockReturnValue(buildHookState({
+      projectKey: 'TBX',
+      findings: [buildFinding()],
+      filteredFindings: [buildFinding()],
+      selectedFilter: 'missing-sp',
+      scannedIssueCount: 6,
+    }));
+
+    render(<HygieneView />);
+
+    expect(screen.queryByText(/hidden by the/)).not.toBeInTheDocument();
+  });
+
+  it('names every check in a multi-check filter, so a deep link can be understood too', () => {
+    mockUseHygieneState.mockReturnValue(buildHookState({
+      projectKey: 'TBX',
+      findings: [buildFinding()],
+      filteredFindings: [],
+      selectedFilter: 'missing-sp,no-ac',
+      checkLabelsById: { 'missing-sp': 'Missing story points', 'no-ac': 'Missing acceptance criteria' },
+      scannedIssueCount: 6,
+    }));
+
+    render(<HygieneView />);
+
+    expect(screen.getByText(/Missing story points or Missing acceptance criteria/)).toBeInTheDocument();
+  });
+});
