@@ -11,6 +11,8 @@ import { readFeatureReviewFieldValue } from '../../SprintDashboard/featureReview
 import type { HygieneFieldConfig } from '../../Hygiene/checks/hygieneChecks.ts';
 import { isOnOrBeforeToday, readCalendarDay } from '../../../utils/calendarDate.ts';
 import type { JiraIssue } from '../../../types/jira.ts';
+import { evaluateFeatureGate, readFeatureState, type FeatureGateEvaluation } from '../../../domain/featureStateGates.ts';
+import { buildReadinessGateFacts } from './readinessGateFacts.ts';
 
 // ── Types ──
 
@@ -52,6 +54,14 @@ export interface ReadinessFeature {
   ageDays: number | null;
   impedimentReasons: ImpedimentReason[];
   alerts: ReadinessAlertId[];
+  /**
+   * Where this Feature sits in the ENTERPRISE workflow, and what it still needs to leave that state.
+   *
+   * Separate from `alerts`, which are this team's hygiene families. The two answer different
+   * questions — "is this tidy?" and "can this move?" — and a Feature can be perfectly tidy and still
+   * be two fields short of Ready Backlog.
+   */
+  gate: FeatureGateEvaluation;
 }
 
 /** One PI lens: which PIs it covers, the features in it, and its derived counts. */
@@ -207,6 +217,17 @@ function evaluateFeature(
     ageDays: computeAgeDays(issue, nowMs),
     impedimentReasons: detectImpedimentReasons(issue),
     alerts,
+    // Read from the shared module rather than re-derived here, so this panel and the AI prompts
+    // describe the same workflow rather than two that agree today.
+    gate: evaluateFeatureGate(
+      readFeatureState(issue.fields.status.name),
+      buildReadinessGateFacts(
+        issue,
+        { productOwnerDisplayName, estimateValue, targetEndIso },
+        input.fieldConfig,
+        input.piFieldId,
+      ),
+    ),
   };
 }
 

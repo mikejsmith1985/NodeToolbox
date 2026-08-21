@@ -268,3 +268,41 @@ describe('describeEnterpriseFeatureRules', () => {
     expect(describeEnterpriseFeatureRules()).toMatch(/child story WITH points/i);
   });
 });
+
+describe('a caller that could not look at everything', () => {
+  it('reports a fact it never read as unverifiable, not as missing', () => {
+    // The Readiness surface reads Features, not their children, and Jira has no standard field for
+    // Initiative Type. Reporting those as MISSING would send a PO to fill in a field that may well
+    // already be filled in — the surface simply did not look.
+    const gate = evaluateFeatureGate('funnel', facts({
+      hasProductOwner: true,
+      hasAssignee: true,
+      hasParentLink: true,
+      hasEstimate: true,
+      hasProgramIncrement: true,
+      hasInitiativeType: null,
+    }));
+
+    expect(gate.missingRequirements).toEqual([]);
+    expect(gate.unverifiableRequirements).toEqual(['Initiative Type']);
+    expect(gate.canExit).toBe(false);
+  });
+
+  it('holds Implementing open when nobody counted the children', () => {
+    const gate = evaluateFeatureGate('implementing', facts({
+      areAllChildrenClosed: null, isCodeInUpperTestRegion: true,
+    }));
+
+    expect(gate.unverifiableRequirements).toEqual(['All children accepted, done or cancelled']);
+    expect(gate.canExit).toBe(false);
+  });
+
+  it('still counts a fact it DID read and found absent', () => {
+    const gate = evaluateFeatureGate('ready-backlog', facts({
+      hasDueDate: true, hasFixVersion: false, hasApplication: null,
+    }));
+
+    expect(gate.missingRequirements).toEqual(['Fix Version']);
+    expect(gate.unverifiableRequirements).toEqual(['Application (CMDB)']);
+  });
+});

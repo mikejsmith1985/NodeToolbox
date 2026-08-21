@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **The Readiness panel now says what each Feature needs to reach its next enterprise state.** The
+  hygiene alerts beside it answer "is this tidy?"; this answers "can this move?", and a Feature can be
+  perfectly tidy and still be two fields short of Ready Backlog. Read from the same gate module the AI
+  prompts write toward, so the two describe one workflow rather than two that agree today. What the
+  scan did NOT look at -- Initiative Type, the CMDB Application, and anything about a Feature's
+  children, since Readiness reads Features alone -- is listed separately as "not checked here" rather
+  than reported as missing. Naming a field as missing when nobody looked would send a Product Owner
+  to fill in one that is very likely already filled in, and the second time would teach them to
+  ignore the panel.
 - **The SharePoint library browser is wired into Bulk Re-write's shared material.** Point at a library
   folder, press Browse, and Toolbox walks it through the relay and lists what it found -- each document
   with the folder it lives in and the day it last changed, because two folders can hold one name and a

@@ -38,6 +38,16 @@ function buildFeature(key: string, overrides: Partial<ReadinessFeature> = {}, la
     ageDays: 5,
     impedimentReasons: [],
     alerts: [],
+    // The enterprise gate every scanned Feature now carries. Built here rather than left off,
+    // because the fixture is cast and a missing field would reach the component instead of the
+    // compiler.
+    gate: {
+      state: 'analyzing' as const,
+      nextState: 'ready-backlog' as const,
+      missingRequirements: [],
+      unverifiableRequirements: [],
+      canExit: false,
+    },
     ...overrides,
   } as unknown as ReadinessFeature;
 }
@@ -378,5 +388,77 @@ describe('ReadinessPanel', () => {
     renderPanel(); // rosterTeams=[] in the default renderPanel
 
     expect(screen.queryByLabelText('Filter by team')).not.toBeInTheDocument();
+  });
+});
+
+describe('ReadinessPanel — the enterprise gate line', () => {
+  /** Renders one Feature carrying the given gate, and nothing else to distract from it. */
+  function renderFeatureWithGate(gate: ReadinessFeature['gate']) {
+    mockUseReadinessData.mockReturnValue({
+      scanResult: buildScan({
+        lenses: {
+          current: { id: 'current', piNames: ['PI 26.3'], features: [buildFeature('CUR-1', { gate })], countsByBucket: { todo: 1, inProgress: 0, done: 0 }, refinedCount: 0, unrefinedCount: 0, isPiConfigured: true, isCoverageCapped: false },
+          upcoming: { id: 'upcoming', piNames: [], features: [], countsByBucket: { todo: 0, inProgress: 0, done: 0 }, refinedCount: 0, unrefinedCount: 0, isPiConfigured: false, isCoverageCapped: false },
+          carryover: { id: 'carryover', piNames: [], features: [], countsByBucket: { todo: 0, inProgress: 0, done: 0 }, refinedCount: 0, unrefinedCount: 0, isPiConfigured: true, isCoverageCapped: false },
+        },
+      } as unknown as Partial<ReadinessScanResult>),
+      isLoading: false,
+      reload: vi.fn(),
+    });
+    renderPanel();
+  }
+
+  it('says how many fields stand between this Feature and its next state', () => {
+    // The question a PO actually has, which the hygiene alerts beside it do not answer: not "is
+    // this tidy?" but "can this move?".
+    renderFeatureWithGate({
+      state: 'analyzing',
+      nextState: 'ready-backlog',
+      missingRequirements: ['Acceptance Criteria', 'Target Start'],
+      unverifiableRequirements: [],
+      canExit: false,
+    });
+
+    expect(screen.getByText(/2 to go before Ready Backlog/)).toBeInTheDocument();
+    expect(screen.getByText(/Acceptance Criteria, Target Start/)).toBeInTheDocument();
+  });
+
+  it('separates what nobody checked from what is actually missing', () => {
+    // Listing "Application (CMDB)" as missing would send a PO to fill in a field that is very
+    // likely already filled in -- Readiness simply never read it.
+    renderFeatureWithGate({
+      state: 'ready-backlog',
+      nextState: 'implementing',
+      missingRequirements: ['Fix Version'],
+      unverifiableRequirements: ['Application (CMDB)'],
+      canExit: false,
+    });
+
+    expect(screen.getByText(/Not checked here/)).toBeInTheDocument();
+  });
+
+  it('says a Feature is ready to move when nothing is outstanding', () => {
+    renderFeatureWithGate({
+      state: 'funnel',
+      nextState: 'analyzing',
+      missingRequirements: [],
+      unverifiableRequirements: [],
+      canExit: true,
+    });
+
+    expect(screen.getByText(/Ready to move on/)).toBeInTheDocument();
+  });
+
+  it('says nothing at all for a Feature already Done', () => {
+    renderFeatureWithGate({
+      state: 'done',
+      nextState: null,
+      missingRequirements: [],
+      unverifiableRequirements: [],
+      canExit: false,
+    });
+
+    expect(screen.queryByText(/to go before/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Ready to move on/)).not.toBeInTheDocument();
   });
 });

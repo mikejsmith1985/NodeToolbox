@@ -66,6 +66,18 @@ const ALERT_LABELS: Record<ReadinessAlertId, string> = {
 // One colour per alert family so a reviewer can tell the families apart at a glance, mirroring the original
 // Jira readiness report (GH #197) instead of painting every flag the same amber. Each id maps to its own
 // CSS-module modifier; the shared `.alertFlag` base still owns shape, spacing, and typography.
+/** How each enterprise state is written on a card. */
+const GATE_STATE_LABELS: Record<string, string> = {
+  funnel: 'Funnel',
+  analyzing: 'Analyzing',
+  'ready-backlog': 'Ready Backlog',
+  implementing: 'Implementing',
+  'integrated-test': 'Integrated Test',
+  deployed: 'Deployed',
+  done: 'Done',
+  unknown: 'the next state',
+};
+
 const ALERT_FLAG_CLASSES: Record<ReadinessAlertId, string> = {
   'missing-ownership': styles.alertMissingOwnership,
   'missing-estimate': styles.alertMissingEstimate,
@@ -458,6 +470,36 @@ function ReadinessFeatureRow({
         <div><dt>Owner</dt><dd><AssigneeAvatar displayName={feature.assigneeDisplayName ?? feature.productOwnerDisplayName} /></dd></div>
         <div><dt>Age</dt><dd>{feature.ageDays === null ? '—' : <AgeBadge ageDays={feature.ageDays} staleDaysThreshold={staleDaysThreshold} />}</dd></div>
       </dl>
+      {/* The ENTERPRISE gate, beside this team's own hygiene alerts but answering a different
+          question: not "is this tidy?" but "can this move?". A Feature can be perfectly tidy and
+          still be two fields short of the next state. */}
+      {feature.gate.nextState !== null && (
+        <p className={styles.gateLine}>
+          {feature.gate.missingRequirements.length === 0 ? (
+            <>
+              <strong>Ready to move on</strong>
+              {feature.gate.unverifiableRequirements.length > 0
+                ? ' once somebody confirms: '
+                : '.'}
+            </>
+          ) : (
+            <>
+              <strong>
+                {feature.gate.missingRequirements.length} to go before{' '}
+                {GATE_STATE_LABELS[feature.gate.nextState]}
+              </strong>
+              {': '}
+              {feature.gate.missingRequirements.join(', ')}.
+              {feature.gate.unverifiableRequirements.length > 0 ? ' Not checked here: ' : ''}
+            </>
+          )}
+          {/* Never counted as satisfied, and never as missing either. Somebody has to confirm these,
+              and saying which is the difference between a nudge and a wrong instruction. */}
+          {feature.gate.unverifiableRequirements.length > 0
+            ? `${feature.gate.unverifiableRequirements.join(', ')}.`
+            : ''}
+        </p>
+      )}
       {feature.alerts.length > 0 && (
         <div className={styles.alertList}>
           {feature.alerts.map((alertId) => (

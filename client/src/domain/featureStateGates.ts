@@ -29,7 +29,8 @@ export type FeatureState =
 /**
  * What a caller has established about one Feature.
  *
- * The booleans are things Jira can answer. The `boolean | null` ones are things it cannot: whether
+ * The booleans are things any caller can answer. The `boolean | null` ones are things a given
+ * caller may not have looked at, or that Jira cannot answer at all: whether
  * code actually reached a region, whether checkout happened, whether a customer can use the
  * solution. `null` means "nobody has told us", and it is reported as unverifiable rather than
  * counted either way — a gate that read silence as success would wave through a Feature on the
@@ -39,20 +40,28 @@ export interface FeatureGateFacts {
   hasSummary: boolean;
   hasReporter: boolean;
   hasProductOwner: boolean;
-  hasInitiativeType: boolean;
+  /** null where the caller has no way to read it — Jira has no standard field for this. */
+  hasInitiativeType: boolean | null;
   hasAssignee: boolean;
   hasParentLink: boolean;
   hasEstimate: boolean;
   hasProgramIncrement: boolean;
   hasAcceptanceCriteria: boolean;
-  /** Children carrying points. The gate wants at least one; a listed-but-unpointed child is not it. */
-  childStoriesWithPointsCount: number;
+  /**
+   * Children carrying points. The gate wants at least one; a listed-but-unpointed child is not it.
+   *
+   * null where the caller did not read the Feature's children — most surfaces read Features alone,
+   * and a count of zero would be a confident claim that a broken-down Feature has nothing under it.
+   */
+  childStoriesWithPointsCount: number | null;
   hasTargetStart: boolean;
   hasTargetEnd: boolean;
   hasDueDate: boolean;
   hasFixVersion: boolean;
-  hasApplication: boolean;
-  areAllChildrenClosed: boolean;
+  /** The CMDB application. null where the caller does not resolve it. */
+  hasApplication: boolean | null;
+  /** null where the caller did not read the Feature's children, which is most surfaces. */
+  areAllChildrenClosed: boolean | null;
   isCodeInUpperTestRegion: boolean | null;
   isCodeInProduction: boolean | null;
   haveTestExitCriteriaBeenMet: boolean | null;
@@ -133,7 +142,12 @@ const GATES: Record<FeatureState, { nextState: FeatureState | null; requirements
     nextState: 'ready-backlog',
     requirements: [
       { label: 'Acceptance Criteria', read: (facts) => facts.hasAcceptanceCriteria },
-      { label: 'At least one child story with points', read: (facts) => facts.childStoriesWithPointsCount > 0 },
+      {
+        label: 'At least one child story with points',
+        read: (facts) => (facts.childStoriesWithPointsCount === null
+          ? null
+          : facts.childStoriesWithPointsCount > 0),
+      },
       { label: 'Target Start', read: (facts) => facts.hasTargetStart },
       { label: 'Target End', read: (facts) => facts.hasTargetEnd },
     ],
