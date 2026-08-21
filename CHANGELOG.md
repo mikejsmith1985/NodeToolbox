@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **The release build is roughly four times faster.** `tsc -b` was rechecking the whole client on
+  every run — ninety-one seconds even when nothing had changed — because the two referenced
+  TypeScript projects were missing `composite: true`, which build mode needs before it will trust its
+  own incremental cache. A no-op typecheck now takes 1.2 seconds and the whole client build 6, down
+  from 95. Nothing about the checking changed: a deliberately broken file was still caught.
+
 ### Added
 - **A delivery forecast, on the two clocks that do not coincide.** The app already wrote three dates per
   issue from a policy, and already knew how far a card had moved through a team's own columns. It had
