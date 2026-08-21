@@ -12,6 +12,7 @@
 
 const {
   browseDocumentLibrary,
+  downloadDocumentText,
   buildFolderListingPath,
   buildDocumentListingPath,
   isReadableDocumentName,
@@ -60,10 +61,16 @@ describe('isReadableDocumentName', () => {
     expect(isReadableDocumentName('Capacity.xlsx')).toBe(true);
   });
 
+  test('accepts a Word document, now that there is a parser for one', () => {
+    // Read through a different path entirely -- base64 out of the relay, then mammoth -- because a
+    // .docx is a ZIP and reading it as text destroys it.
+    expect(isReadableDocumentName('Enrollment Spec.docx')).toBe(true);
+  });
+
   test('refuses formats nothing here can turn into text', () => {
     // Named rather than silently skipped by the caller — a document library is mostly Word and PDF,
     // and a reader that quietly ignored them would look broken rather than limited.
-    ['Spec.docx', 'Report.pdf', 'Diagram.png', 'Deck.pptx'].forEach((name) => {
+    ['Report.pdf', 'Diagram.png', 'Deck.pptx', 'Legacy.doc'].forEach((name) => {
       expect(isReadableDocumentName(name)).toBe(false);
     });
   });
@@ -78,18 +85,19 @@ describe('selectReadableDocuments', () => {
     { Name: 'Standard.txt', ServerRelativeUrl: '/sites/D/Standard.txt', TimeLastModified: '2026-08-01T00:00:00Z' },
     { Name: 'Spec.docx', ServerRelativeUrl: '/sites/D/Spec.docx', TimeLastModified: '2026-08-02T00:00:00Z' },
     { Name: 'Report.pdf', ServerRelativeUrl: '/sites/D/Report.pdf', TimeLastModified: '2026-08-03T00:00:00Z' },
+    { Name: 'Deck.pptx', ServerRelativeUrl: '/sites/D/Deck.pptx', TimeLastModified: '2026-08-04T00:00:00Z' },
   ];
 
   test('splits what it can read from what it cannot, keeping both', () => {
     const result = selectReadableDocuments(listing);
 
-    expect(result.readable.map((document) => document.name)).toEqual(['Standard.txt']);
-    expect(result.unreadable.map((document) => document.name)).toEqual(['Spec.docx', 'Report.pdf']);
+    expect(result.readable.map((document) => document.name)).toEqual(['Standard.txt', 'Spec.docx']);
+    expect(result.unreadable.map((document) => document.name)).toEqual(['Report.pdf', 'Deck.pptx']);
   });
 
   test('says WHY each unreadable one was left out, in words a person can act on', () => {
     const result = selectReadableDocuments(listing);
-    result.unreadable.forEach((document) => expect(document.reason).toMatch(/cannot be read as text/i));
+    result.unreadable.forEach((document) => expect(document.reason).toMatch(/cannot be read/i));
   });
 
   test('survives a listing entry with no name at all', () => {
@@ -182,12 +190,12 @@ describe('browseDocumentLibrary', () => {
   test('reports what it could not read rather than leaving it out silently', async () => {
     const result = await browseDocumentLibrary('/sites/D/Docs', {
       submitRelayRequest: relayStub({
-        '/sites/D/Docs': { files: [{ Name: 'Spec.docx', ServerRelativeUrl: '/x' }], folders: [] },
+        '/sites/D/Docs': { files: [{ Name: 'Report.pdf', ServerRelativeUrl: '/x' }], folders: [] },
       }),
     });
 
     expect(result.documents).toEqual([]);
-    expect(result.unreadable[0].name).toBe('Spec.docx');
+    expect(result.unreadable[0].name).toBe('Report.pdf');
   });
 
   test('visits a folder once however many times it is linked', async () => {
@@ -199,5 +207,40 @@ describe('browseDocumentLibrary', () => {
     });
 
     expect(result.visitedFolderCount).toBe(1);
+  });
+});
+
+describe('downloadDocumentText', () => {
+  test('asks for a Word document as base64, because reading it as text destroys it', async () => {
+    // The whole reason .docx needed a second path: a ZIP read through .text() is decoded as UTF-8
+    // and comes back as bytes that can never be reassembled.
+    const requests = [];
+    await downloadDocumentText('/sites/D/Docs/Spec.docx', {
+      submitRelayRequest: async (system, request) => {
+        requests.push(request);
+        return '';
+      },
+    }).catch(() => {});
+
+    expect(requests[0].responseType).toBe('base64');
+  });
+
+  test('asks for everything else as plain text, exactly as it always did', async () => {
+    const requests = [];
+    const text = await downloadDocumentText('/sites/D/Docs/Standard.md', {
+      submitRelayRequest: async (system, request) => {
+        requests.push(request);
+        return '# Standard';
+      },
+    });
+
+    expect(requests[0].responseType).toBeUndefined();
+    expect(text).toBe('# Standard');
+  });
+
+  test('reports a Word document that came back empty rather than returning nothing quietly', async () => {
+    await expect(downloadDocumentText('/sites/D/Docs/Spec.docx', {
+      submitRelayRequest: async () => '',
+    })).rejects.toThrow(/could not be read/i);
   });
 });

@@ -42,7 +42,8 @@
   "dependencies": {
     "compression": "^1.8.1",
     "express": "^4.21.0",
-    "linkedom": "^0.18.13"
+    "linkedom": "^0.18.13",
+    "mammoth": "^1.12.1"
   },
   "devDependencies": {
     "@playwright/test": "^1.59.1",

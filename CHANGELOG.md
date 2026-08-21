@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Word documents can be read from a SharePoint library.** A .docx is a ZIP, so it could not travel
+  through the relay at all -- reading the response as text decodes the bytes as UTF-8 and destroys
+  them. The relay now carries a base64 response mode for binary files, and the document is rebuilt and
+  converted server-side. A payload that is damaged, or was never a .docx, is REFUSED rather than
+  returned as mojibake: a page of nonsense is still a string, and would have been handed to an
+  assistant as if it were a standard. PDF stays unreadable and still says so.
+  **Re-drag the SharePoint relay bookmarklet** -- the code lives in the bookmark, so the base64 mode
+  only reaches it when the bookmarklet is added again.
 - **A SharePoint document library can be browsed, and only the documents that matter are fetched.**
   Point at a folder and Toolbox walks it through the relay -- the user's own authenticated SharePoint
   tab, so nothing here holds a credential -- and returns the document NAMES. A second, optional prompt

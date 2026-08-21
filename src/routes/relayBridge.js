@@ -553,6 +553,10 @@ module.exports.submitRelayRequest = async function submitRelayRequest(sys, reque
     path: request.url,
     body: request.body || null,
     authHeader: null,  // Server requests don't need authHeader
+    // Binary documents (.docx is a ZIP) are destroyed by reading the response as text, so the
+    // bookmarklet is asked for base64 and the bytes are rebuilt here. Absent for every other
+    // request, which keeps the existing text path byte-identical.
+    responseType: request.responseType || null,
   };
 
   if (channel.pollWaiters.length > 0) {

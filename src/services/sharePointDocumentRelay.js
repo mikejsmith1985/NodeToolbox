@@ -15,6 +15,7 @@
 
 const { encodeRestPathParameter } = require('./sharePointEmailRelay');
 const { submitRelayRequest } = require('../routes/relayBridge');
+const { isDocxFileName, readDocxTextFromBase64 } = require('./docxText');
 
 /** One listing page. Far above any sane folder, and the paging follows nextLink regardless. */
 const LISTING_PAGE_SIZE = 2000;
@@ -31,12 +32,15 @@ const MAX_FOLDER_DEPTH = 6;
 /**
  * Formats this application can honestly turn into text.
  *
- * Deliberately short. A document library is mostly Word and PDF, and neither can be read without a
- * parser the project does not have — so they are named as unreadable rather than half-read into
- * something that would silently mislead whoever relied on it. Spreadsheets are here because the app
- * already reads them.
+ * Word documents are here because a parser was added for them; PDF is not, and is named as
+ * unreadable rather than half-read into something that would silently mislead whoever relied on it.
+ * Spreadsheets the app already reads.
  */
-const READABLE_DOCUMENT_EXTENSIONS = ['.txt', '.md', '.csv', '.json', '.html', '.htm', '.aspx', '.xml', '.xlsx', '.xls'];
+const READABLE_DOCUMENT_EXTENSIONS = [
+  '.txt', '.md', '.csv', '.json', '.html', '.htm', '.aspx', '.xml', '.xlsx', '.xls',
+  // Binary, and read through a different path: base64 out of the relay, then mammoth.
+  '.docx',
+];
 
 /** The site root a REST call has to be made against, taken from the managed path. */
 function siteRootOfFolder(folderServerRelativeUrl) {
@@ -115,7 +119,7 @@ function selectReadableDocuments(listingEntries) {
     }
     unreadable.push({
       ...document,
-      reason: `${name.split('.').pop()} cannot be read as text here — export it to .txt, .md or .html, or paste it in.`,
+      reason: `${name.split('.').pop()} cannot be read here — export it to .docx, .txt, .md or .html, or paste it in.`,
     });
   });
 
@@ -168,9 +172,13 @@ function planDocumentWalk(rootFolderServerRelativeUrl, discoveredSubfolders) {
 const RELAY_REQUEST_TIMEOUT_MS = 30000;
 
 /** One relay round trip, returning the parsed body. Injectable so the walk is testable with no SharePoint. */
-async function requestThroughRelay(requestPath, deps) {
+async function requestThroughRelay(requestPath, deps, responseType) {
   const submit = deps.submitRelayRequest || submitRelayRequest;
-  return submit('sharepoint', { method: 'GET', url: requestPath }, RELAY_REQUEST_TIMEOUT_MS);
+  const request = { method: 'GET', url: requestPath };
+  if (responseType) {
+    request.responseType = responseType;
+  }
+  return submit('sharepoint', request, RELAY_REQUEST_TIMEOUT_MS);
 }
 
 /**
@@ -228,6 +236,14 @@ async function downloadDocumentText(serverRelativeUrl, deps = {}) {
   const path = `${siteRootOfFolder(serverRelativeUrl)}`
     + '/_api/web/GetFileByServerRelativePath(decodedUrl=@filePath)/$value'
     + `?@filePath='${encodeRestPathParameter(serverRelativeUrl)}'`;
+
+  // A .docx is a ZIP. Read as text its bytes are decoded as UTF-8 and destroyed, so it is asked for
+  // base64 and rebuilt here. Every other format keeps the plain text path it always had.
+  if (isDocxFileName(serverRelativeUrl)) {
+    const encoded = await requestThroughRelay(path, deps, 'base64');
+    return readDocxTextFromBase64(typeof encoded === 'string' ? encoded : '');
+  }
+
   const body = await requestThroughRelay(path, deps);
   return typeof body === 'string' ? body : '';
 }
