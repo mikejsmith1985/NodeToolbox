@@ -2305,6 +2305,13 @@ function PiReviewPagePanel({
               aria-pressed={isEditMode}
               className={joinClassNames(styles.actionButton, styles.actionButtonPrimary)}
               disabled={isToolbarBusy || !tableBinding}
+              // A disabled button with no reason is indistinguishable from a broken one, and was
+              // reported as exactly that. The page had loaded; it simply held no table to edit.
+              title={!tableBinding
+                ? 'Editing is unavailable: this Confluence page holds no PI Review table yet. '
+                  + 'Start a Toolbox PI Review draft below to create one, or check that the page '
+                  + 'configured for this PI is the right one.'
+                : isToolbarBusy ? 'Busy — wait for the current Confluence operation to finish.' : undefined}
               onClick={() => {
                 setIsEditMode((currentIsEditMode) => !currentIsEditMode);
                 setIsJiraDatePasteVisible(false);

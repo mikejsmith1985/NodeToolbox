@@ -2375,3 +2375,56 @@ describe('matching a page to the PI Jira actually holds', () => {
     expect(screen.queryByText(/not assigned to a Program Increment/i)).not.toBeInTheDocument();
   });
 });
+
+describe('the Edit PI Review button explains why it cannot be used', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  /** A Confluence page carrying no PI Review table at all. */
+  const PAGE_WITHOUT_TABLE = {
+    id: '12345',
+    title: 'ENCUC: 26.4 Candidate Features',
+    version: { number: 3 },
+    body: { storage: { value: '<p>Nothing here yet.</p>' } },
+  };
+
+  function renderWithPage(page: unknown) {
+    mockFetchConfluencePageByReference.mockResolvedValue(page);
+    return render(
+      <ToastProvider>
+        <PiReviewTab
+          mode="authoring"
+          selectedPiName="PI 26.4"
+          teams={[{
+            id: 'team-1',
+            name: 'Alpha Team',
+            boardId: '42',
+            piReviewPages: [{ piName: 'PI 26.4', pageUrl: 'https://example.atlassian.net/wiki/pages/12345/Alpha' }],
+            sprintIssues: [],
+            isLoading: false,
+            loadError: null,
+          }]}
+        />
+      </ToastProvider>,
+    );
+  }
+
+  it('says on the button itself why editing is unavailable', async () => {
+    // A disabled button with no reason is indistinguishable from a broken one, and was reported as
+    // exactly that. The page loaded fine; it simply had no PI Review table to edit.
+    renderWithPage(PAGE_WITHOUT_TABLE);
+
+    const editButton = await screen.findByRole('button', { name: /edit pi review/i });
+    expect(editButton).toBeDisabled();
+    expect(editButton.getAttribute('title')).toMatch(/no PI Review table/i);
+  });
+
+  it('carries no such excuse when the page really does have a table', async () => {
+    renderWithPage(ALPHA_PAGE);
+
+    const editButton = await screen.findByRole('button', { name: /edit pi review/i });
+    expect(editButton).toBeEnabled();
+    expect(editButton.getAttribute('title') ?? '').not.toMatch(/no PI Review table/i);
+  });
+})

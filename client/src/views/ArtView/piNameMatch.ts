@@ -13,6 +13,16 @@
 const TRAILING_WINDOW_PATTERN = /\s*\([^)]*\)\s*$/;
 
 /**
+ * A leading "PI" label, with or without the space after it.
+ *
+ * People write the same Increment as "PI 26.4", "PI26.4" and plain "26.4". The number is the only
+ * part every spelling shares, so the label is dropped and the number compared. It must be followed
+ * by a DIGIT: "PIVOT 1" keeps its name, because a prefix rule that ate letters would invent
+ * matches rather than find them.
+ */
+const LEADING_PI_LABEL_PATTERN = /^pi\s*(?=\d)/;
+
+/**
  * Reduces a PI name to the part that actually names the PI.
  *
  * Only a TRAILING parenthesised run is dropped, and only one: a PI genuinely named with brackets in
@@ -23,7 +33,8 @@ export function readPiIdentifier(piName: string): string {
     .replace(TRAILING_WINDOW_PATTERN, '')
     .trim()
     .replace(/\s+/g, ' ')
-    .toLowerCase();
+    .toLowerCase()
+    .replace(LEADING_PI_LABEL_PATTERN, '');
 }
 
 /**

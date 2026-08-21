@@ -393,6 +393,61 @@ function selectTransitionForStatus(availableTransitions, requestedStatusName) {
 }
 
 /**
+ * Whether a PERSON has already moved this issue out of the status the automation wants to set.
+ *
+ * The automation cancelled issues, somebody moved them back to Working, and the next poll cancelled
+ * them again. The duplicate-event ledger cannot stop that: it only knows whether the same EMAIL was
+ * processed before, and a fresh notification about the same branch is a new event. What repeats is
+ * the OUTCOME, against a decision a human already made.
+ *
+ * So the changelog is read for the one thing that settles it: did somebody who is not the automation
+ * move this issue OUT of the requested status? If so the automation stands down. It is not asked
+ * whether that happened recently, because a person's decision does not expire — and an automation
+ * move made afterwards is the loop itself, not evidence the reversal was withdrawn.
+ *
+ * With no automation account configured every move looks like a person's, and the guard holds. That
+ * is the safe direction: declining to act beats acting on an identity we could not establish.
+ *
+ * Pure, so the rule is directly testable.
+ *
+ * @param {Array<object>} changelogHistories - entries from Jira's ?expand=changelog
+ * @param {string} requestedStatusName
+ * @param {string} automationAccountName - the account the automation itself posts as
+ * @returns {{ wasReversed: boolean, reason: string }}
+ */
+function wasStatusReversedByPerson(changelogHistories, requestedStatusName, automationAccountName) {
+  const histories = Array.isArray(changelogHistories) ? changelogHistories : [];
+  const normalizedRequest = String(requestedStatusName || '').trim().toLowerCase();
+  const normalizedAutomation = String(automationAccountName || '').trim().toLowerCase();
+
+  for (const history of histories) {
+    const items = (history && Array.isArray(history.items)) ? history.items : [];
+    const hasMoveOutOfRequested = items.some((item) =>
+      item && String(item.field || '').trim().toLowerCase() === 'status'
+      && String(item.fromString || '').trim().toLowerCase() === normalizedRequest);
+    if (!hasMoveOutOfRequested) {
+      continue;
+    }
+
+    const author = (history && history.author) || {};
+    const authorName = String(author.name || author.displayName || '').trim().toLowerCase();
+    const isAutomationsOwnMove = normalizedAutomation !== '' && authorName === normalizedAutomation;
+    if (isAutomationsOwnMove) {
+      continue;
+    }
+
+    const authorLabel = author.displayName || author.name || 'someone';
+    return {
+      wasReversed: true,
+      reason: 'held — ' + authorLabel + ' already moved this issue out of "' + requestedStatusName
+        + '"; not putting it back. Move it there by hand if the automation was right.',
+    };
+  }
+
+  return { wasReversed: false, reason: '' };
+}
+
+/**
  * Finds and fires the Jira transition that satisfies the requested status name, refusing to act when
  * the request is ambiguous (see selectTransitionForStatus).
  *
@@ -409,6 +464,45 @@ function selectTransitionForStatus(availableTransitions, requestedStatusName) {
 function fireJiraTransition(jiraIssueKey, requestedStatusName, configuration) {
   const isTlsVerified = configuration.sslVerify !== false;
 
+  // Read the issue's own history first. A person who has already moved this issue out of the status
+  // being requested has overruled the automation, and re-applying it is the automation arguing with
+  // them once per poll. A changelog that cannot be read is not treated as a reversal: the guard is
+  // for a decision we can SEE, and inventing one from a failed request would stop the automation
+  // working whenever Jira hiccuped.
+  return makeJiraApiRequest(
+    'GET',
+    '/rest/api/2/issue/' + encodeURIComponent(jiraIssueKey) + '?expand=changelog&fields=status',
+    null,
+    configuration.jira,
+    isTlsVerified
+  )
+    .then((issueResponse) => {
+      const histories = (issueResponse.body && issueResponse.body.changelog && issueResponse.body.changelog.histories)
+        || [];
+      return wasStatusReversedByPerson(histories, requestedStatusName, (configuration.jira || {}).username || '');
+    })
+    .catch(() => ({ wasReversed: false, reason: '' }))
+    .then((reversalVerdict) => {
+      if (reversalVerdict.wasReversed) {
+        return { didMove: false, toStatusName: null, reason: reversalVerdict.reason };
+      }
+      return fireResolvedJiraTransition(jiraIssueKey, requestedStatusName, configuration, isTlsVerified);
+    });
+}
+
+/**
+ * Resolves and fires the transition, once the reversal guard has allowed it.
+ *
+ * Split out so `fireJiraTransition` reads as the two decisions it makes -- may we move, and which
+ * move is it -- rather than one function doing both.
+ *
+ * @param {string} jiraIssueKey
+ * @param {string} requestedStatusName
+ * @param {object} configuration
+ * @param {boolean} isTlsVerified
+ * @returns {Promise<{ didMove: boolean, toStatusName: string|null, reason: string }>}
+ */
+function fireResolvedJiraTransition(jiraIssueKey, requestedStatusName, configuration, isTlsVerified) {
   return makeJiraApiRequest(
     'GET',
     '/rest/api/2/issue/' + encodeURIComponent(jiraIssueKey) + '/transitions',
@@ -448,6 +542,7 @@ module.exports = {
   extractJiraIssueKey,
   postJiraCommentForEvent,
   fireJiraTransition,
+  wasStatusReversedByPerson,
   selectTransitionForStatus,
   applyParentStoryActions,
 };

@@ -11,19 +11,19 @@ import { doPiNamesMatch, readPiIdentifier } from './piNameMatch.ts';
 
 describe('readPiIdentifier', () => {
   it('drops the window Jira appends, keeping what actually names the PI', () => {
-    expect(readPiIdentifier('PI 26.4 (07/30/26 - 10/07/26)')).toBe('pi 26.4');
+    expect(readPiIdentifier('PI 26.4 (07/30/26 - 10/07/26)')).toBe('26.4');
   });
 
   it('leaves a name that carries no window alone', () => {
-    expect(readPiIdentifier('PI 26.4')).toBe('pi 26.4');
+    expect(readPiIdentifier('PI 26.4')).toBe('26.4');
   });
 
   it('ignores case and surrounding space, which people type inconsistently', () => {
-    expect(readPiIdentifier('  pi 26.4  ')).toBe('pi 26.4');
+    expect(readPiIdentifier('  pi 26.4  ')).toBe('26.4');
   });
 
   it('collapses runs of space, so "PI  26.4" is the same PI', () => {
-    expect(readPiIdentifier('PI  26.4')).toBe('pi 26.4');
+    expect(readPiIdentifier('PI  26.4')).toBe('26.4');
   });
 
   it('keeps an empty name empty, which is what marks a page as belonging to no PI', () => {
@@ -54,5 +54,27 @@ describe('doPiNamesMatch', () => {
 
   it('matches two windowed names whose windows were typed differently', () => {
     expect(doPiNamesMatch('PI 26.4 (7/30/26 - 10/7/26)', 'PI 26.4 (07/30/26 - 10/07/26)')).toBe(true);
+  });
+});
+
+describe('the "PI" prefix people do and do not type', () => {
+  it('matches a page saved as "26.4" against Jira "PI 26.4 (...)"', () => {
+    // People type the PI several ways. The one thing every spelling shares is the number, and that
+    // is the part that actually identifies the Increment.
+    expect(doPiNamesMatch('26.4', 'PI 26.4 (07/30/26 - 10/07/26)')).toBe(true);
+  });
+
+  it('matches "PI26.4" written without the space', () => {
+    expect(doPiNamesMatch('PI26.4', 'PI 26.4')).toBe(true);
+  });
+
+  it('still refuses a different Increment however it is spelled', () => {
+    expect(doPiNamesMatch('26.3', 'PI 26.4')).toBe(false);
+    expect(doPiNamesMatch('PI26.3', '26.4')).toBe(false);
+  });
+
+  it('does not strip a "PI" that is part of a real name', () => {
+    // "PIVOT" is not a PI prefix. Stripping letters rather than the whole word would make it one.
+    expect(doPiNamesMatch('PIVOT 1', 'PI VOT 1')).toBe(false);
   });
 });

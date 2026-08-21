@@ -37,6 +37,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   green for the date — instead of a row of identical grey chips that had to be read one at a time.
 
 ### Fixed
+- **The intake no longer re-applies a move a person reversed.** It cancelled issues, somebody moved
+  them back to Working, and the next poll cancelled them again -- the duplicate-event ledger only
+  knows whether the same EMAIL was seen before, and a fresh notification about the same branch is a
+  new event. What repeated was the OUTCOME. Before any move, the issue's changelog is read: if
+  somebody who is not the automation has already moved it out of the status being requested, the
+  automation stands down and says who overruled it. A changelog Jira will not return is never
+  treated as a reversal, so a hiccup cannot silently stop the automation working.
+- **The "Edit PI Review" button says why it is unavailable.** It is disabled when the Confluence page
+  holds no recognised PI Review table -- which, with no reason given, is indistinguishable from a
+  broken button and was reported as one. It now names the cause and what to do about it.
+- **PI page matching also forgives the "PI" label.** People write the same Increment as "PI 26.4",
+  "PI26.4" and plain "26.4"; the number is the part every spelling shares. "PIVOT 1" keeps its name --
+  the label is only dropped when a digit follows it.
 - **GitHub intake can no longer INFER a cancellation.** A rule asking for "Done" resolved by status
   CATEGORY when no status carries that exact name, and Jira files Cancelled under Done. The existing
   guard refused only when a category offered SEVERAL end states -- so a workflow whose only
