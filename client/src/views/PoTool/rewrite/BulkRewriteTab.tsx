@@ -35,6 +35,14 @@ import { deleteBatch, listBatches, loadBatch, saveBatch } from './rewriteBatchSt
 import { canPersistDrafts } from '../drafts/splitDraftStorage';
 import { submitApprovedItems } from './rewriteSubmit';
 import { revertItems } from './rewriteRevert';
+import { ConfluenceSourceError, readConfluenceSource } from '../sources/confluenceSource';
+import { readWorkbookSource, WORKBOOK_FILE_ACCEPT, WorkbookReadError } from '../sources/workbookSource';
+import {
+  describeSourceOrigin,
+  describeSourceTitle,
+  mintSourceId,
+  type ReferencedSource,
+} from '../sources/sourceModel';
 import styles from './rewrite.module.css';
 
 interface BulkRewriteTabProps {
@@ -83,6 +91,10 @@ export default function BulkRewriteTab({ dashboardTeamProfileId, selectedPiName 
   const [submitAnywayKeys, setSubmitAnywayKeys] = useState<string[]>([]);
   const [revertAnywayKeys, setRevertAnywayKeys] = useState<string[]>([]);
   const [isReverting, setIsReverting] = useState(false);
+  const [confluenceUrlInput, setConfluenceUrlInput] = useState('');
+  const [pasteInput, setPasteInput] = useState('');
+  const [pasteLabelInput, setPasteLabelInput] = useState('');
+  const [sourceError, setSourceError] = useState<string | null>(null);
   const [ingestNotice, setIngestNotice] = useState<{ accepted: number; rejected: { key: string; reason: string }[]; unparsedCount: number } | null>(null);
 
   const refreshBatchList = useCallback(() => {
@@ -170,10 +182,62 @@ export default function BulkRewriteTab({ dashboardTeamProfileId, selectedPiName 
     () => (batch ? batch.items.filter((item) => !item.captureError) : []),
     [batch],
   );
+  const sharedSources = batch?.sharedSources ?? [];
   const prompts = useMemo(
-    () => buildBulkRewritePrompts(capturableItems.map((item) => ({ jiraKey: item.jiraKey, original: item.original }))),
-    [capturableItems],
+    () => buildBulkRewritePrompts(
+      capturableItems.map((item) => ({ jiraKey: item.jiraKey, original: item.original })),
+      batch?.sharedSources ?? [],
+    ),
+    [capturableItems, batch?.sharedSources],
   );
+
+  /** Adds one document to the batch's shared material, which every issue is re-written against. */
+  function handleAddSharedSource(source: ReferencedSource): void {
+    if (!batch) {
+      return;
+    }
+    persistBatch({ ...batch, sharedSources: [...(batch.sharedSources ?? []), source] });
+    setSourceError(null);
+  }
+
+  function handleRemoveSharedSource(sourceId: string): void {
+    if (!batch) {
+      return;
+    }
+    persistBatch({ ...batch, sharedSources: (batch.sharedSources ?? []).filter((source) => source.id !== sourceId) });
+  }
+
+  async function handleAddSharedConfluencePage(): Promise<void> {
+    try {
+      handleAddSharedSource(await readConfluenceSource(confluenceUrlInput, sharedSources, new Date().toISOString()));
+      setConfluenceUrlInput('');
+    } catch (error) {
+      // The message already says WHICH failure this was — missing, forbidden, unreachable, unconfigured.
+      setSourceError(error instanceof ConfluenceSourceError ? error.message : 'That page could not be added.');
+    }
+  }
+
+  async function handleAddSharedWorkbook(file: File): Promise<void> {
+    try {
+      handleAddSharedSource(await readWorkbookSource(file, sharedSources));
+    } catch (error) {
+      setSourceError(error instanceof WorkbookReadError ? error.message : 'That file could not be added.');
+    }
+  }
+
+  function handleAddSharedPaste(): void {
+    if (pasteInput.trim() === '') {
+      return;
+    }
+    handleAddSharedSource({
+      kind: 'paste',
+      id: mintSourceId(sharedSources, 'paste'),
+      label: pasteLabelInput.trim() || 'Pasted note',
+      text: pasteInput,
+    });
+    setPasteInput('');
+    setPasteLabelInput('');
+  }
 
   /** Ingests one (possibly partial) reply, merging proposals into the batch by key. No Jira write here. */
   function handleIngest(replyText: string): { acceptedCount: number; errors: string[] } {
@@ -596,6 +660,98 @@ export default function BulkRewriteTab({ dashboardTeamProfileId, selectedPiName 
                 {isWritingApproved ? 'Writing…' : 'Write approved to Jira'}
               </button>
             </div>
+
+            {/* One set of documents, applied to every Feature in the batch.
+                The job people actually have is a new standard or a design decision that changes a
+                dozen Features at once. Without this the PO pasted the same material into a dozen
+                separate runs and hoped the answers came back consistent. */}
+            <section className={styles.panel}>
+              <h3 className={styles.panelTitle}>Shared material</h3>
+              <p className={styles.panelSubtitle}>
+                Documents every issue in this batch is re-written against. They ride in every prompt,
+                including the later parts of a batch too large for one.
+              </p>
+
+              {sourceError ? <p className={styles.errorBanner}>{sourceError}</p> : null}
+
+              <div className={styles.loadBar}>
+                <div className={styles.loadFieldWide}>
+                  <label className={styles.fieldLabel} htmlFor="shared-confluence-url">Confluence page URL</label>
+                  <input
+                    className={styles.textInput}
+                    id="shared-confluence-url"
+                    onChange={(changeEvent) => setConfluenceUrlInput(changeEvent.target.value)}
+                    placeholder="https://…/wiki/spaces/…"
+                    value={confluenceUrlInput}
+                  />
+                </div>
+                <button className={styles.secondaryButton} type="button" onClick={handleAddSharedConfluencePage}>
+                  Add page
+                </button>
+                <div className={styles.loadField}>
+                  <label className={styles.fieldLabel} htmlFor="shared-workbook">Spreadsheet</label>
+                  <input
+                    accept={WORKBOOK_FILE_ACCEPT}
+                    className={styles.textInput}
+                    id="shared-workbook"
+                    onChange={(changeEvent) => {
+                      const file = changeEvent.target.files?.[0];
+                      if (file) void handleAddSharedWorkbook(file);
+                    }}
+                    type="file"
+                  />
+                </div>
+              </div>
+
+              <div className={styles.loadBar}>
+                <div className={styles.loadField}>
+                  <label className={styles.fieldLabel} htmlFor="shared-paste-label">Note name</label>
+                  <input
+                    className={styles.textInput}
+                    id="shared-paste-label"
+                    onChange={(changeEvent) => setPasteLabelInput(changeEvent.target.value)}
+                    placeholder="Compliance note"
+                    value={pasteLabelInput}
+                  />
+                </div>
+                <div className={styles.loadFieldWide}>
+                  <label className={styles.fieldLabel} htmlFor="shared-paste">Pasted note</label>
+                  <textarea
+                    className={styles.textArea}
+                    id="shared-paste"
+                    onChange={(changeEvent) => setPasteInput(changeEvent.target.value)}
+                    value={pasteInput}
+                  />
+                </div>
+                <button className={styles.secondaryButton} type="button" onClick={handleAddSharedPaste}>
+                  Add note
+                </button>
+              </div>
+
+              {sharedSources.length === 0 ? (
+                <p className={styles.panelSubtitle}>
+                  No shared material yet — each issue will be re-written from its own text alone.
+                </p>
+              ) : (
+                <ul className={styles.noticeList} aria-label="Shared material">
+                  {sharedSources.map((source) => (
+                    <li key={source.id}>
+                      <strong>{describeSourceTitle(source)}</strong>
+                      {' — '}
+                      {describeSourceOrigin(source)}
+                      {' '}
+                      <button
+                        className={styles.dangerButton}
+                        type="button"
+                        onClick={() => handleRemoveSharedSource(source.id)}
+                      >
+                        Remove
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
 
             {/* The half the "before" snapshot was always missing. Capturing an original and only ever
                 showing it leaves a PO worse off than never running the batch: the old wording is

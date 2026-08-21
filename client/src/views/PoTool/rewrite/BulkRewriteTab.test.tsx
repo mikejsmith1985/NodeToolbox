@@ -275,3 +275,54 @@ describe('BulkRewriteTab — reverting a re-write nobody liked', () => {
     expect(screen.queryByRole('button', { name: /Revert .* to the captured original/i })).not.toBeInTheDocument();
   });
 });
+
+describe('BulkRewriteTab shared material', () => {
+  it('says plainly when a batch has none, rather than leaving the panel blank', async () => {
+    const user = userEvent.setup();
+    saveBatch({
+      id: 'batch-3',
+      name: 'No material',
+      teamProfileId: 'team-1',
+      createdAtIso: '2026-08-21T00:00:00.000Z',
+      updatedAtIso: '2026-08-21T00:00:00.000Z',
+      items: [{
+        jiraKey: 'ABC-1',
+        original: { summary: 'S', description: 'd', acceptanceCriteria: 'a', capturedAtIso: '2026-08-21T00:00:00.000Z' },
+        proposed: null,
+        state: 'captured',
+        captureError: null,
+        submitResult: null,
+      }],
+    });
+    render(<BulkRewriteTab dashboardTeamProfileId="team-1" />);
+    await user.click(await screen.findByRole('button', { name: 'Open' }));
+
+    expect(await screen.findByText(/re-written from its own text alone/i)).toBeInTheDocument();
+  });
+
+  it('lists material the batch already carries, so a PO returning days later sees it', async () => {
+    // The approval loop spans days. Material held only in the page would be gone by the time the
+    // PO came back to the batch it produced.
+    const user = userEvent.setup();
+    saveBatch({
+      id: 'batch-4',
+      name: 'With material',
+      teamProfileId: 'team-1',
+      createdAtIso: '2026-08-21T00:00:00.000Z',
+      updatedAtIso: '2026-08-21T00:00:00.000Z',
+      items: [{
+        jiraKey: 'ABC-1',
+        original: { summary: 'S', description: 'd', acceptanceCriteria: 'a', capturedAtIso: '2026-08-21T00:00:00.000Z' },
+        proposed: null,
+        state: 'captured',
+        captureError: null,
+        submitResult: null,
+      }],
+      sharedSources: [{ kind: 'paste', id: 'p1', label: 'Accessibility Standard', text: 'Contrast 4.5:1' }],
+    });
+    render(<BulkRewriteTab dashboardTeamProfileId="team-1" />);
+    await user.click(await screen.findByRole('button', { name: 'Open' }));
+
+    expect(await screen.findByText('Accessibility Standard')).toBeInTheDocument();
+  });
+});

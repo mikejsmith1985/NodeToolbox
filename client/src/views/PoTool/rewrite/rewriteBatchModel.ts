@@ -5,6 +5,8 @@
 // no I/O, no clock — so the store, the AI ingest, the export, and the submit layer all share one shape.
 
 /** Per-issue lifecycle. See spec data-model.md for the transition diagram. */
+import type { ReferencedSource } from '../sources/sourceModel.ts';
+
 export type ItemState =
   | 'captured'    // original snapshotted, no proposal yet
   | 'proposed'    // an AI re-write exists, not yet reviewed
@@ -52,6 +54,14 @@ export interface RewriteBatch {
   items: RewriteItem[];
   /** The Confluence page this batch's before/after review is published to and read back from (US3). */
   reviewPageUrl?: string;
+  /**
+   * Documents that apply to the WHOLE batch — a new standard, a compliance note, a design decision.
+   *
+   * Persisted with the batch rather than held in the page, because the approval loop spans days and
+   * a PO returning to a batch has to see the material the re-writes were made from. Optional, so
+   * every batch saved before this loads unchanged.
+   */
+  sharedSources?: ReferencedSource[];
 }
 
 /** A lightweight batch listing entry (for the resume/batch-list UI), with per-state counts. */

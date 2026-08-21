@@ -7,6 +7,8 @@
 import { extractJsonPayload } from '../../../../utils/extractJsonPayload.ts';
 import { normalizeFeatureDescription, stripAiAttribution, VALIDATION_MARKER } from '../../ai/featureDocSections.ts';
 import type { BatchReplyParseResult, CapturedOriginal, ProposedRewrite } from '../rewriteBatchModel';
+import { buildSharedMaterialBlock } from './sharedMaterial.ts';
+import type { ReferencedSource } from '../../sources/sourceModel.ts';
 
 export const BULK_REWRITE_REPLY_KIND = 'featureRewriteBatch';
 
@@ -31,7 +33,7 @@ function buildIssueBlock(jiraKey: string, original: CapturedOriginal): string {
 }
 
 /** The fixed instruction header + reply template wrapping the issue blocks (part N of M). */
-function buildPromptShell(blocks: string[], partIndex: number, partCount: number): string {
+function buildPromptShell(blocks: string[], partIndex: number, partCount: number, sharedMaterialBlock = ''): string {
   return [
     `You are re-writing existing Jira Features into a standard format. This is part ${partIndex} of ${partCount}.`,
     'Re-write EACH issue below. Structure each description as these nine sections, in this exact order, each a "Label:" heading:',
@@ -41,6 +43,9 @@ function buildPromptShell(blocks: string[], partIndex: number, partCount: number
     'Put the FULL acceptance criteria both in the description\'s "Acceptance Criteria" section AND in the item\'s acceptanceCriteria.',
     'Never state or imply that any of this was written, generated, or drafted by AI — a marker means information is missing, not AI authorship.',
     '',
+    // Repeated in EVERY part, deliberately. A large batch is split across prompts, and material
+    // carried only in part one would leave every issue after the split re-written from nothing.
+    ...(sharedMaterialBlock === '' ? [] : [sharedMaterialBlock, '']),
     'Issues:',
     blocks.join('\n\n'),
     '',
@@ -70,14 +75,25 @@ function partitionBlocks(blocks: string[], shellOverhead: number): string[][] {
 }
 
 /** Builds an ordered set of prompts covering every issue (one when the batch fits the cap). */
-export function buildBulkRewritePrompts(items: { jiraKey: string; original: CapturedOriginal }[]): string[] {
+export function buildBulkRewritePrompts(
+  items: { jiraKey: string; original: CapturedOriginal }[],
+  /**
+   * Documents that apply to the WHOLE batch — a new standard, a compliance note, a design decision.
+   *
+   * Optional and empty by default, so a batch without them builds exactly the prompt it always did.
+   */
+  sharedSources: readonly ReferencedSource[] = [],
+): string[] {
   if (items.length === 0) {
     return [];
   }
+  const sharedMaterialBlock = buildSharedMaterialBlock(sharedSources);
   const blocks = items.map((each) => buildIssueBlock(each.jiraKey, each.original));
-  const shellOverhead = buildPromptShell([], 1, 1).length;
+  // The material counts against the budget: it rides in every part, so ignoring its size here would
+  // build parts that overflow the cap by exactly the length of the documents.
+  const shellOverhead = buildPromptShell([], 1, 1, sharedMaterialBlock).length;
   const groups = partitionBlocks(blocks, shellOverhead);
-  return groups.map((group, index) => buildPromptShell(group, index + 1, groups.length));
+  return groups.map((group, index) => buildPromptShell(group, index + 1, groups.length, sharedMaterialBlock));
 }
 
 /** Coerces to a trimmed string. */

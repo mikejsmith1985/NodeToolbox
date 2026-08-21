@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import { buildBulkRewritePrompts, parseBulkRewriteReply } from './bulkRewriteAiAssist.ts';
 import type { CapturedOriginal } from '../rewriteBatchModel';
+import type { ReferencedSource } from '../../sources/sourceModel.ts';
 
 function original(overrides: Partial<CapturedOriginal> = {}): CapturedOriginal {
   return { summary: 'sum', description: 'desc', acceptanceCriteria: 'ac', capturedAtIso: '2026-07-26T00:00:00Z', ...overrides };
@@ -68,5 +69,52 @@ describe('parseBulkRewriteReply', () => {
     const part2 = parseBulkRewriteReply(JSON.stringify({ kind: 'featureRewriteBatch', items: [{ key: 'ABC-2', description: 'Description: two', acceptanceCriteria: 'b' }] }), known);
     const merged = { ...part1.rewritesByKey, ...part2.rewritesByKey };
     expect(Object.keys(merged).sort()).toEqual(['ABC-1', 'ABC-2']);
+  });
+});
+
+describe('buildBulkRewritePrompts with shared material', () => {
+  function note(label: string, text: string): ReferencedSource {
+    return { kind: 'paste', id: label, label, text };
+  }
+
+  it('carries the shared documents into the prompt', () => {
+    const prompts = buildBulkRewritePrompts(
+      [{ jiraKey: 'ABC-1', original: original() }],
+      [note('Accessibility Standard', 'Contrast must be 4.5:1.')],
+    );
+
+    expect(prompts[0]).toContain('Accessibility Standard');
+    expect(prompts[0]).toContain('Contrast must be 4.5:1.');
+  });
+
+  it('repeats the material in EVERY part, so a split batch is not re-written from nothing', () => {
+    // The rule the whole feature rests on. Material carried only in part one would leave every
+    // issue after the split re-written without the document that prompted the batch.
+    const big = 'x'.repeat(4000);
+    const items = Array.from({ length: 6 }, (_unused, index) => (
+      { jiraKey: 'ABC-' + (index + 1), original: original({ description: big }) }
+    ));
+
+    const prompts = buildBulkRewritePrompts(items, [note('Standard', 'Contrast must be 4.5:1.')]);
+
+    expect(prompts.length).toBeGreaterThan(1);
+    prompts.forEach((prompt) => expect(prompt).toContain('Contrast must be 4.5:1.'));
+  });
+
+  it('still splits correctly once the material is taking up room', () => {
+    // The material counts against the prompt budget. Ignoring it would build parts that overflow.
+    const big = 'x'.repeat(4000);
+    const items = Array.from({ length: 6 }, (_unused, index) => (
+      { jiraKey: 'ABC-' + (index + 1), original: original({ description: big }) }
+    ));
+
+    const withMaterial = buildBulkRewritePrompts(items, [note('Standard', 'y'.repeat(5000))]);
+    const combined = withMaterial.join(' ');
+    items.forEach((item) => expect(combined).toContain(item.jiraKey));
+  });
+
+  it('is byte-identical to a plain batch when no material is supplied', () => {
+    const items = [{ jiraKey: 'ABC-1', original: original() }];
+    expect(buildBulkRewritePrompts(items, [])).toEqual(buildBulkRewritePrompts(items));
   });
 });

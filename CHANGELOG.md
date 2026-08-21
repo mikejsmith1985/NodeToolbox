@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Bulk Re-write takes shared material: one set of documents, many Features.** The batch could only
+  ever re-write an issue from its OWN text, which is backwards for the job people actually have -- a
+  new standard, a compliance note, a design decision that changes a dozen Features at once. Confluence
+  pages, spreadsheets and pasted notes are attached to the batch (and persisted with it, because the
+  approval loop spans days) and ride in EVERY prompt part -- material carried only in part one would
+  leave every issue after a split re-written from nothing. The budget is shared evenly across
+  documents rather than spent first-come, so a short decisive note added last is never silently
+  swallowed by a long one, and a truncation always says so.
 - **Bulk Re-write can put a Feature back exactly as it found it.** The "before" snapshot has always
   been captured and was only ever shown — which is the wrong half to have: a re-write the PO dislikes
   left them worse off than never running the batch, because the original wording was gone and
