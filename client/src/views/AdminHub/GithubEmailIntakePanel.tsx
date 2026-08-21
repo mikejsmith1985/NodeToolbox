@@ -235,6 +235,23 @@ function splitList(value: string): string[] {
 // ── Component ──
 
 /** Admin Hub panel that configures, previews, and triggers the GitHub email intake engine. */
+/**
+ * End states that DISCARD work rather than complete it.
+ *
+ * Mirrors the server's refusal list (`jiraEventOutput.js`). The server will not INFER one of these
+ * from a status category; a rule that names one explicitly is still obeyed, which is why naming one
+ * has to be visible here.
+ */
+const DISCARD_STATUS_NAMES = [
+  'cancelled', 'canceled', 'rejected', 'abandoned', 'withdrawn',
+  "won't do", 'wont do', "won't fix", 'wont fix', 'duplicate',
+];
+
+/** Whether a configured status name throws the work away. */
+function isDiscardStatusName(statusName: string | undefined): boolean {
+  return DISCARD_STATUS_NAMES.includes((statusName ?? '').trim().toLowerCase());
+}
+
 export function GithubEmailIntakePanel() {
   const [config, setConfig] = useState<IntakeConfig | null>(null)
   // Raw text drafts for the comma-separated inputs. Rendering the parsed array back into the
@@ -992,6 +1009,23 @@ export function GithubEmailIntakePanel() {
                     {(rule.parentSubStatusValue ?? '').trim() !== '' ? ` Parent Sub-status → “${rule.parentSubStatusValue}”.` : ''}
                     {!isRuleEnabled ? ' — currently DISABLED.' : ''}
                   </p>
+
+                  {/* GH #375: automation moved live development work to Cancelled. The rule summary
+                      announced it in the same quiet grey as every other setting, so the one option
+                      that throws work away read exactly like the one that adds a comment. */}
+                  {(isDiscardStatusName(rule.transitionStatus) || isDiscardStatusName(rule.parentTransitionStatus)) && (
+                    <p className={styles.panelStatusLine} role="status">
+                      ⚠️ <strong>This rule discards the work.</strong>{' '}
+                      {isDiscardStatusName(rule.transitionStatus)
+                        ? `Every matching email moves its issue to “${rule.transitionStatus}”. `
+                        : ''}
+                      {isDiscardStatusName(rule.parentTransitionStatus)
+                        ? `Every match moves the PARENT story to “${rule.parentTransitionStatus}”. `
+                        : ''}
+                      That is an end state nobody works out of — set it only if a matching email really
+                      means the work is abandoned.
+                    </p>
+                  )}
                 </li>
               )
             })}

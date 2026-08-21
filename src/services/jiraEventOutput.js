@@ -11,6 +11,38 @@ const { recordJiraWrite } = require('./jiraWriteJournal');
 const { appendOperatorSignature } = require('./operatorSignature');
 
 /** Maps an internal event type to the config key holding its target Jira status name. */
+/**
+ * End states that DISCARD the work rather than complete it.
+ *
+ * Jira files these under the Done category alongside genuine completions, so a rule asking for
+ * "Done" on a workflow whose only Done-category transition is "Cancelled" resolved to it and
+ * cancelled live development work. Cancelling is not a kind of completing: it throws the work away,
+ * and no amount of category agreement makes that a safe guess.
+ *
+ * These stay reachable — an operator who types the name gets exactly that status — but they are
+ * never INFERRED from a category.
+ */
+const DISCARD_STATUS_NAMES = [
+  'cancelled',
+  'canceled',
+  'rejected',
+  'abandoned',
+  'withdrawn',
+  "won't do",
+  'wont do',
+  "won't fix",
+  'wont fix',
+  'duplicate',
+];
+
+/** Whether a transition lands on a state that discards the work. */
+function isDiscardTransition(transition) {
+  const statusName = transition && transition.to && transition.to.name
+    ? String(transition.to.name).trim().toLowerCase()
+    : '';
+  return DISCARD_STATUS_NAMES.indexOf(statusName) !== -1;
+}
+
 const TRANSITION_KEY_MAP = {
   branch_created: 'branchCreated',
   commit_pushed:  'commitPushed',
@@ -336,6 +368,17 @@ function selectTransitionForStatus(availableTransitions, requestedStatusName) {
     && transition.to.statusCategory.name.trim().toLowerCase() === normalizedRequest);
 
   if (categoryMatches.length === 1) {
+    // The gap the ambiguity rule below left open. One candidate is unambiguous, but "the only
+    // Done-category transition out of Working is Cancelled" is exactly the workflow shape that let a
+    // merged-PR rule discard live development work. Refused by name, not by count.
+    if (isDiscardTransition(categoryMatches[0])) {
+      return {
+        transition: null,
+        reason: 'refusing to infer a cancellation — the only "' + requestedStatusName + '" category status here is "'
+          + categoryMatches[0].to.name + '", which discards the work rather than completing it. '
+          + 'Name the exact status in the rule if that is really what you want.',
+      };
+    }
     return { transition: categoryMatches[0], reason: 'matched the only "' + requestedStatusName + '" category status' };
   }
   if (categoryMatches.length > 1) {

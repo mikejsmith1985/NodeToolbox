@@ -609,3 +609,50 @@ describe('GithubEmailIntakePanel — deployments probe guardrails', () => {
     expect(await screen.findByText(/misspelt/)).toBeInTheDocument()
   })
 })
+
+describe('GithubEmailIntakePanel — a rule that discards work says so', () => {
+  it('warns on a rule configured to move issues to Cancelled', async () => {
+    // GH #375: live development work was moved to Cancelled by automation. The rule summary read
+    // "and moves the issue to Cancelled" in the same quiet grey as every other rule, so the one
+    // setting that throws work away looked exactly like the one that adds a comment.
+    stubFetch({}, {
+      ...DEFAULT_CONFIG,
+      customRules: [{
+        id: 'branch-merged', eventType: 'pr_merged',
+        bodyPattern: 'merged .* into (main|develop)', transitionStatus: 'Cancelled',
+      }],
+    });
+    render(<GithubEmailIntakePanel />);
+    await screen.findByText('📧 GitHub Email Intake');
+
+    expect(await screen.findByText(/discards the work/i)).toBeInTheDocument();
+  });
+
+  it('warns when it is the PARENT story that gets discarded', async () => {
+    stubFetch({}, {
+      ...DEFAULT_CONFIG,
+      customRules: [{
+        id: 'branch-merged', eventType: 'pr_merged',
+        bodyPattern: 'merged .* into (main|develop)', parentTransitionStatus: "Won't Do",
+      }],
+    });
+    render(<GithubEmailIntakePanel />);
+    await screen.findByText('📧 GitHub Email Intake');
+
+    expect(await screen.findByText(/discards the work/i)).toBeInTheDocument();
+  });
+
+  it('says nothing of the sort for a rule that completes work', async () => {
+    stubFetch({}, {
+      ...DEFAULT_CONFIG,
+      customRules: [{
+        id: 'branch-merged', eventType: 'pr_merged',
+        bodyPattern: 'merged .* into (main|develop)', transitionStatus: 'Done',
+      }],
+    });
+    render(<GithubEmailIntakePanel />);
+    await screen.findByText('📧 GitHub Email Intake');
+
+    expect(screen.queryByText(/discards the work/i)).not.toBeInTheDocument();
+  });
+});

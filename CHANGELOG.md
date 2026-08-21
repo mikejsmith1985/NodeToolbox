@@ -37,6 +37,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   green for the date — instead of a row of identical grey chips that had to be read one at a time.
 
 ### Fixed
+- **GitHub intake can no longer INFER a cancellation.** A rule asking for "Done" resolved by status
+  CATEGORY when no status carries that exact name, and Jira files Cancelled under Done. The existing
+  guard refused only when a category offered SEVERAL end states -- so a workflow whose only
+  Done-category transition out of "Working" was "Cancelled" sailed through the single-candidate rule
+  and discarded live development work (GH #375). Cancelling is not a kind of completing: Cancelled,
+  Rejected, Abandoned, Withdrawn, Won't Do, Won't Fix and Duplicate are now never reached by
+  inference. They stay reachable by an operator naming the exact status, and the refusal says which
+  status it refused and why.
+- **A rule configured to discard work now says so in the Rules panel.** "and moves the issue to
+  Cancelled" read in the same quiet grey as every other setting, so the one option that throws work
+  away looked exactly like the one that adds a comment. It now carries a warning, for the issue and
+  for the parent story alike.
 - **A PI Review page is found again when Jira's PI name carries its date window.** Pages record their
   PI as somebody types it — "PI 26.4" — while the value matched against comes from Jira as
   "PI 26.4 (07/30/26 - 10/07/26)". Compared as whole strings those never matched, so a correctly

@@ -64,3 +64,52 @@ describe('selectTransitionForStatus — category ambiguity', () => {
     expect(selectTransitionForStatus([{ id: '1' }], 'Done').transition).toBeNull();
   });
 });
+
+describe('selectTransitionForStatus — a cancellation is never INFERRED', () => {
+  // The gap the ambiguity guard left open. It refuses when a category offers several end states, but
+  // a workflow that offers exactly ONE Done-category transition out of "Working" — and that one is
+  // Cancelled — sailed straight through the single-candidate rule. That is how a merged-PR rule
+  // asking for "Done" cancelled live development work (GH #375).
+  //
+  // Cancelling is not a kind of completing. It discards the work, and no amount of category
+  // agreement makes it a safe guess. It stays reachable, but only by an operator typing the name.
+
+  test('REGRESSION: a "Done" request never resolves to a lone Cancelled transition', () => {
+    const { transition, reason } = selectTransitionForStatus([CANCELLED, WORKING], 'Done');
+
+    expect(transition).toBeNull();
+    expect(reason).toMatch(/cancel/i);
+    expect(reason).toContain('Cancelled');
+  });
+
+  test('the refusal names the exact status to type, so the operator can act on it', () => {
+    const { reason } = selectTransitionForStatus([CANCELLED, WORKING], 'Done');
+    expect(reason).toMatch(/name the exact status/i);
+  });
+
+  test('an operator who types "Cancelled" still gets exactly that', () => {
+    // Refusing the inference must not remove the ability. Asked for by name, it fires.
+    const { transition } = selectTransitionForStatus([CANCELLED, WORKING], 'Cancelled');
+    expect(transition).toBe(CANCELLED);
+  });
+
+  test('other discard-style end states are refused by inference too', () => {
+    ['Rejected', 'Abandoned', 'Withdrawn', "Won't Do", "Won't Fix", 'Duplicate', 'Canceled'].forEach((statusName) => {
+      const discardTransition = buildTransition('90', statusName, 'Done');
+      const { transition } = selectTransitionForStatus([discardTransition, WORKING], 'Done');
+      expect(transition).toBeNull();
+    });
+  });
+
+  test('a genuine completion is still inferred, so nothing that worked stops working', () => {
+    expect(selectTransitionForStatus([CLOSED, WORKING], 'Done').transition).toBe(CLOSED);
+    expect(selectTransitionForStatus([DONE, WORKING], 'Done').transition).toBe(DONE);
+  });
+
+  test('a category offering a discard AND a completion stays ambiguous, as it already did', () => {
+    // Deliberately NOT "drop Cancelled, then Closed is unambiguous". That would quietly relax a
+    // guard written after a real incident, and the safe answer when two end states are on offer is
+    // still to refuse and ask. This rule only ever removes options, never adds one back.
+    expect(selectTransitionForStatus([CANCELLED, CLOSED, WORKING], 'Done').transition).toBeNull();
+  });
+});
