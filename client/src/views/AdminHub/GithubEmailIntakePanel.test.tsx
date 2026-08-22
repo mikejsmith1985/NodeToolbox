@@ -22,6 +22,13 @@ vi.mock('../../services/githubEmailSharePointPull.ts', async (importOriginal) =>
 const { mockFetchGithubAutomationComments } = vi.hoisted(() => ({
   mockFetchGithubAutomationComments: vi.fn(),
 }));
+const mockFetchTransitions = vi.fn()
+const mockSaveTransition = vi.fn()
+vi.mock('../SprintDashboard/featureReviewFixes', () => ({
+  fetchFeatureReviewTransitions: (...args: unknown[]) => mockFetchTransitions(...args),
+  saveFeatureReviewTransition: (...args: unknown[]) => mockSaveTransition(...args),
+}))
+
 vi.mock('../../services/githubCommentAudit.ts', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../services/githubCommentAudit.ts')>()),
   fetchGithubAutomationComments: mockFetchGithubAutomationComments,
@@ -654,5 +661,62 @@ describe('GithubEmailIntakePanel — a rule that discards work says so', () => {
     await screen.findByText('📧 GitHub Email Intake');
 
     expect(screen.queryByText(/discards the work/i)).not.toBeInTheDocument();
+  });
+});
+
+describe('GithubEmailIntakePanel — putting an automation move back', () => {
+  /** Scans an audit holding one cancelled issue the automation moved out of Working. */
+  function scanOneCancelledIssue() {
+    mockFetchGithubAutomationComments.mockReset()
+    mockFetchGithubAutomationComments.mockResolvedValue({
+      scannedIssueCount: 1,
+      rows: [],
+      moveRows: [{
+        issueKey: 'ENFCT-2019', issueSummary: 'Automate cleanup', currentStatus: 'Cancelled',
+        isCurrentStatusDone: true, commentCount: 1,
+        automationMoves: [{ fromStatus: 'Working', toStatus: 'Cancelled', atIso: '2026-08-21T15:30:36.000Z' }],
+      }],
+    })
+    stubFetch({}, { ...DEFAULT_CONFIG, jiraProjectKeys: ['ENFCT'] })
+  }
+
+  it('offers to put back only the moves an undo would actually change', async () => {
+    scanOneCancelledIssue()
+    render(<GithubEmailIntakePanel />)
+    await screen.findByText('Posted-comment audit')
+    fireEvent.click(screen.getByRole('button', { name: /scan jira for automation comments/i }))
+
+    expect(await screen.findByRole('button', { name: /Put 1 back/i })).toBeInTheDocument()
+  });
+
+  it('says per row where the issue would go back to', async () => {
+    // "Put 9 back" does not tell anybody which nine, nor why the tenth is not among them.
+    scanOneCancelledIssue()
+    render(<GithubEmailIntakePanel />)
+    await screen.findByText('Posted-comment audit')
+    fireEvent.click(screen.getByRole('button', { name: /scan jira for automation comments/i }))
+
+    expect(await screen.findByText(/can go back to Working/)).toBeInTheDocument()
+  });
+
+  it('offers nothing for an issue somebody has already moved on', async () => {
+    // Putting it back would override THEIR decision, which is this bug in the other direction.
+    mockFetchGithubAutomationComments.mockReset()
+    mockFetchGithubAutomationComments.mockResolvedValue({
+      scannedIssueCount: 1,
+      rows: [],
+      moveRows: [{
+        issueKey: 'ENFCT-1717', issueSummary: 'Mailing notification', currentStatus: 'Ready for Testing',
+        isCurrentStatusDone: false, commentCount: 1,
+        automationMoves: [{ fromStatus: 'Ready for Testing', toStatus: 'Cancelled', atIso: '2026-08-21T14:00:20.000Z' }],
+      }],
+    })
+    stubFetch({}, { ...DEFAULT_CONFIG, jiraProjectKeys: ['ENFCT'] })
+    render(<GithubEmailIntakePanel />)
+    await screen.findByText('Posted-comment audit')
+    fireEvent.click(screen.getByRole('button', { name: /scan jira for automation comments/i }))
+
+    expect(await screen.findByText(/Already moved on/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Put \d+ back/i })).not.toBeInTheDocument()
   });
 });

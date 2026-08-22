@@ -8,6 +8,15 @@ import { useCallback, useEffect, useState } from 'react'
 
 import { fetchGithubAutomationComments, type AutomationCommentRow } from '../../services/githubCommentAudit.ts'
 import { filterMoveAuditRows, type MoveAuditRow } from '../../services/automationMoveAudit.ts'
+import {
+  planAutomationMoveUndo,
+  selectUndoableRows,
+  undoAutomationMoves,
+} from '../../services/automationMoveUndo'
+import {
+  fetchFeatureReviewTransitions,
+  saveFeatureReviewTransition,
+} from '../SprintDashboard/featureReviewFixes'
 import { normalizeSharePointFolderInput, previewSharePointEmails, pullSharePointEmails } from '../../services/githubEmailSharePointPull.ts'
 import { fetchJiraBaseUrl } from '../../services/proxyApi.ts'
 import { buildJiraBrowseUrl } from '../../utils/jiraBrowseUrl.ts'
@@ -358,6 +367,8 @@ export function GithubEmailIntakePanel() {
   const [moveSearchText, setMoveSearchText] = useState('')
   const [isShowingMovedOnly, setIsShowingMovedOnly] = useState(false)
   const [hasCopiedMoveAudit, setHasCopiedMoveAudit] = useState(false)
+  const [isUndoingMoves, setIsUndoingMoves] = useState(false)
+  const [undoReport, setUndoReport] = useState<string[]>([])
   const [probeOwner, setProbeOwner] = useState('')
   const [probeRepository, setProbeRepository] = useState('')
   const [isProbingDeployments, setIsProbingDeployments] = useState(false)
@@ -383,7 +394,44 @@ export function GithubEmailIntakePanel() {
   }
 
   const visibleMoveRows = filterMoveAuditRows(moveRows, moveSearchText, isShowingMovedOnly)
+  // Only the rows an undo would actually change. Offering to put back an issue somebody has
+  // already moved on would override THEIR decision, which is this bug in the other direction.
+  const undoableRowCount = selectUndoableRows(visibleMoveRows).length
   const movedIssueCount = moveRows.filter((moveRow) => moveRow.automationMoves.length > 0).length
+
+  /**
+   * Puts the automation's moves back, for the rows an undo would actually change.
+   *
+   * Scoped to what is ON SCREEN, like the copy button beside it: an operator who filtered to
+   * "cancelled" and pressed undo means those, and a hidden row being moved would be the worst kind
+   * of surprise. Every outcome is reported, because a run that says "12 restored" while four failed
+   * silently is how somebody learns not to trust the button.
+   */
+  async function handleUndoAutomationMoves(): Promise<void> {
+    const undoable = selectUndoableRows(visibleMoveRows)
+    if (undoable.length === 0) {
+      return
+    }
+    setIsUndoingMoves(true)
+    setUndoReport([])
+    try {
+      const outcomes = await undoAutomationMoves(undoable.map((entry) => entry.row), {
+        fetchTransitions: (issueKey) => fetchFeatureReviewTransitions(issueKey),
+        applyTransition: (issueKey, transitionId) => saveFeatureReviewTransition(issueKey, transitionId),
+      })
+      setUndoReport(outcomes.map((outcome) => (outcome.didMove
+        ? `${outcome.issueKey} → ${outcome.targetStatusName}`
+        : `${outcome.issueKey} — ${outcome.reason}`)))
+      const restoredCount = outcomes.filter((outcome) => outcome.didMove).length
+      setMoveRows((rows) => rows.map((moveRow) => {
+        const restored = outcomes.find((outcome) => outcome.issueKey === moveRow.issueKey && outcome.didMove)
+        return restored ? { ...moveRow, currentStatus: restored.targetStatusName } : moveRow
+      }))
+      setStatusMessage(`Put back ${restoredCount} of ${outcomes.length}. Re-scan to confirm against Jira.`)
+    } finally {
+      setIsUndoingMoves(false)
+    }
+  }
 
   /** Copies exactly what is on screen — the filtered list, so a shared list matches what was seen. */
   async function handleCopyMoveAudit(): Promise<void> {
@@ -1277,7 +1325,26 @@ export function GithubEmailIntakePanel() {
               <button className={styles.actionButton} onClick={() => void handleCopyMoveAudit()} type="button">
                 📋 {hasCopiedMoveAudit ? 'Copied' : 'Copy this list'}
               </button>
+              {/* Scoped to what is ON SCREEN, like the copy button beside it. An operator who
+                  filtered to "cancelled" and pressed this means those, and moving a hidden row
+                  would be the worst kind of surprise. */}
+              {undoableRowCount > 0 ? (
+                <button
+                  className={styles.actionButton}
+                  disabled={isUndoingMoves}
+                  onClick={() => void handleUndoAutomationMoves()}
+                  type="button"
+                >
+                  {isUndoingMoves ? 'Putting back…' : `↩ Put ${undoableRowCount} back`}
+                </button>
+              ) : null}
             </div>
+
+            {undoReport.length > 0 ? (
+              <ul className={styles.panelStatusLine}>
+                {undoReport.map((line) => <li key={line}>{line}</li>)}
+              </ul>
+            ) : null}
             <ul>
               {visibleMoveRows.map((moveRow) => (
                 <li key={moveRow.issueKey}>
@@ -1290,6 +1357,15 @@ export function GithubEmailIntakePanel() {
                     : ' · ' + moveRow.automationMoves
                       .map((move) => `${move.fromStatus} → ${move.toStatus}`).join(', ')}
                   {moveRow.issueSummary ? <em>{' (' + moveRow.issueSummary + ')'}</em> : null}
+                  {/* Said per row, because "Put 9 back" does not tell anybody which nine, nor why
+                      the tenth is not among them. */}
+                  {moveRow.automationMoves.length > 0 ? (
+                    <span className={styles.panelStatusLine}>
+                      {planAutomationMoveUndo(moveRow).canUndo
+                        ? ` ↩ can go back to ${planAutomationMoveUndo(moveRow).targetStatusName}`
+                        : ` · ${planAutomationMoveUndo(moveRow).reason}`}
+                    </span>
+                  ) : null}
                 </li>
               ))}
             </ul>

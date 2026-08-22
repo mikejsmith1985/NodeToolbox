@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **The automation-move audit can put its moves back.** The two earlier fixes stopped the intake
+  cancelling live work; neither restored the issues already cancelled, and a list of twenty-one keys
+  to correct by hand is not much better than no list. Each audited row now says where the issue would
+  go back to -- the status it was in before the automation touched it, taken from the changelog -- and
+  one button restores every row on screen. Scoped to what is VISIBLE, like the copy button beside it:
+  somebody who filtered to "cancelled" and pressed it means those. A row somebody has already moved on
+  is refused and says so, because putting it back would override a person's decision -- the same
+  mistake in the other direction. The transition is chosen by DESTINATION rather than by name, since a
+  workflow may call the move back anything at all; where Jira offers no way back, it names the
+  transitions it does offer so the status can be walked back by hand.
 - **The Readiness panel now says what each Feature needs to reach its next enterprise state.** The
   hygiene alerts beside it answer "is this tidy?"; this answers "can this move?", and a Feature can be
   perfectly tidy and still be two fields short of Ready Backlog. Read from the same gate module the AI
