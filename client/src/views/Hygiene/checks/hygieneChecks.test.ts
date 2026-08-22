@@ -354,6 +354,54 @@ describe('hygiene check predicates', () => {
     expect(checkTargetEndOverdue(pastTargetEndIn('In Review', 'indeterminate'), resolveHygieneFieldConfig())?.checkId).toBe('target-end-overdue');
   });
 
+  it('flags a STORY past Target End that has not reached testing (GH #375)', () => {
+    // The check was gated to Feature-like issues, so a [DEV] story sitting in Code Review a month
+    // past its Target End produced nothing at all — while its [SL] sibling, whose DUE date had also
+    // passed, was flagged by a different rule. Two stories with the same Target End, one warned
+    // about and one silent, is what made the panel look arbitrary.
+    //
+    // Target End is the day code is expected to reach the upper test region. A story in Code Review
+    // has not reached it, whatever its type.
+    const storyPastTargetEnd = buildIssue({
+      issuetype: { name: 'Story' },
+      status: { name: 'Working', statusCategory: { key: 'indeterminate', name: 'In Progress' } },
+      customfield_10102: '2026-07-15',
+    });
+
+    expect(checkTargetEndOverdue(storyPastTargetEnd, resolveHygieneFieldConfig())?.checkId).toBe('target-end-overdue');
+  });
+
+  it('flags a Task and a Defect too, since they carry the same date', () => {
+    const pastTargetEndOfType = (issueTypeName: string) => buildIssue({
+      issuetype: { name: issueTypeName },
+      status: { name: 'Working', statusCategory: { key: 'indeterminate', name: 'In Progress' } },
+      customfield_10102: '2026-07-15',
+    });
+
+    expect(checkTargetEndOverdue(pastTargetEndOfType('Task'), resolveHygieneFieldConfig())?.checkId).toBe('target-end-overdue');
+    expect(checkTargetEndOverdue(pastTargetEndOfType('Defect'), resolveHygieneFieldConfig())?.checkId).toBe('target-end-overdue');
+  });
+
+  it('leaves a Sub-task alone, which inherits its parent dates rather than carrying its own', () => {
+    const subTask = buildIssue({
+      issuetype: { name: 'Sub-task' },
+      status: { name: 'Working', statusCategory: { key: 'indeterminate', name: 'In Progress' } },
+      customfield_10102: '2026-07-15',
+    });
+
+    expect(checkTargetEndOverdue(subTask, resolveHygieneFieldConfig())).toBeNull();
+  });
+
+  it('stops flagging a story once it has reached testing, exactly as for a Feature', () => {
+    const storyInTesting = buildIssue({
+      issuetype: { name: 'Story' },
+      status: { name: 'Ready for Testing', statusCategory: { key: 'indeterminate', name: 'In Progress' } },
+      customfield_10102: '2026-07-15',
+    });
+
+    expect(checkTargetEndOverdue(storyInTesting, resolveHygieneFieldConfig())).toBeNull();
+  });
+
   it('stops flagging Target End once the Feature has reached testing or later', () => {
     // The rule's own remedy is "move it to Integrated Test or update Target End" — so a Feature that
     // HAS moved has complied, and repeating the warning would be nagging about a done instruction.

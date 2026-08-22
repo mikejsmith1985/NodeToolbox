@@ -109,6 +109,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   green for the date — instead of a row of identical grey chips that had to be read one at a time.
 
 ### Fixed
+- **The Target End check now covers Stories, Tasks and Defects, not just Features (GH #375).** It was
+  gated to Feature-like issues, so a [DEV] story sitting in Code Review a month past its Target End
+  produced nothing at all -- while its [SL] sibling, whose DUE date had also passed, was flagged by a
+  different rule. Two stories on the same Feature, one warned about and one silent, is what made the
+  panel look arbitrary. Target End is the day code is expected to reach the upper test region and a
+  story carries it exactly as a Feature does. Scoped by the same delivery-type list the release checks
+  use, so the two can never disagree about what counts as delivery work; Sub-tasks stay out because
+  they inherit their parent's dates rather than carrying their own.
 - **The intake no longer re-applies a move a person reversed.** It cancelled issues, somebody moved
   them back to Working, and the next poll cancelled them again -- the duplicate-event ledger only
   knows whether the same EMAIL was seen before, and a fresh notification about the same branch is a

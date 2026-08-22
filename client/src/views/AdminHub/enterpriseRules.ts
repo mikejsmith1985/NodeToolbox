@@ -135,7 +135,7 @@ const BUILT_IN_RULE_DEFINITIONS: readonly Omit<EnterpriseBuiltInRule, 'isBuiltIn
     id: 'target-end-overdue',
     checkId: 'target-end-overdue',
     name: 'Target End reached before testing transition',
-    description: 'If a feature has not yet reached Integrated Test when Target End is today or earlier, the team must either move it forward or update Target End.',
+    description: 'If a Feature, Story, Task or Defect has not yet reached testing when Target End is today or earlier, the team must either move it forward or update Target End. Sub-tasks inherit their parent dates and are not checked.',
   },
   {
     id: 'due-date-overdue',

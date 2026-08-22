@@ -471,16 +471,24 @@ export function checkTargetStartReady(issue: JiraIssue, fieldConfig: HygieneFiel
 }
 
 /**
- * Flags features whose Target End has arrived while they have still not reached testing.
+ * Flags delivery work whose Target End has arrived while it has still not reached testing.
  *
  * This used to be an allowlist of exactly two states: the To Do category, or the literal status
  * name "Implementing". Every other status fell through silently — so a Feature sitting in
  * "In Progress" or "Blocked", months past its Target End, produced no warning at all. The rule's
  * own remedy has always been "move it to Integrated Test or update Target End", which is a
- * statement about what the Feature has NOT reached; it now asks that question directly.
+ * statement about what the work has NOT reached; it now asks that question directly.
+ *
+ * It was also gated to FEATURES, which made the panel look arbitrary (GH #375): a [DEV] story in
+ * Code Review a month past its Target End produced nothing, while its [SL] sibling was flagged by
+ * the due-date rule — two stories, one warned about and one silent. Target End is the day code is
+ * expected to reach the upper test region, and a story carries it exactly as a Feature does. Scoped
+ * by `carriesFixVersion`, the same delivery-type list the release checks use, so the two can never
+ * disagree about which issues are delivery work. Sub-tasks stay out: they inherit their parent's
+ * dates rather than carrying their own.
  */
 export function checkTargetEndOverdue(issue: JiraIssue, fieldConfig: HygieneFieldConfig): HygieneFlag | null {
-  if (!isFeatureLikeIssue(issue) || hasReachedFeatureTesting(issue)) {
+  if (!carriesFixVersion(issue) || hasReachedFeatureTesting(issue)) {
     return null;
   }
 
