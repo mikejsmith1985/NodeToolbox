@@ -998,3 +998,59 @@ describe('HygieneView — a filter that hides everything says so', () => {
     expect(screen.getByText(/Missing story points or Missing acceptance criteria/)).toBeInTheDocument();
   });
 });
+
+describe('HygieneView — a scan that has not been run yet', () => {
+  it('says so, instead of showing a grid of zeros that reads as a clean project', () => {
+    // The reported failure: after picking a team and a PI, every tile reads 0, the score reads a
+    // dash, and NOTHING on screen says why. "Not run yet" and "ran and found nothing" and
+    // "everything is clean" all rendered identically — so a panel awaiting a button press looked
+    // exactly like a broken one, and was reported as one.
+    mockUseHygieneState.mockReturnValue(buildHookState({ projectKey: 'ENFCT', scannedIssueCount: null }));
+
+    render(<HygieneView />);
+
+    expect(screen.getByText(/has not been run/i)).toBeInTheDocument();
+  });
+
+  it('names the button that would run it, so the next step is on screen', () => {
+    mockUseHygieneState.mockReturnValue(buildHookState({ projectKey: 'ENFCT', scannedIssueCount: null }));
+
+    render(<HygieneView />);
+
+    // The notice names the same button that is on screen — the point being that a reader is told
+    // what to press, not left to guess which of twenty tiles is broken.
+    expect(screen.getByRole('status')).toHaveTextContent(/Press Run Hygiene/i);
+    expect(screen.getByRole('button', { name: /Run Hygiene/i })).toBeInTheDocument();
+  });
+
+  it('says nothing of the sort once a scan really has run and matched nothing', () => {
+    // That state has its own message, and showing both would leave a reader unable to tell which
+    // of the two situations they are in.
+    mockUseHygieneState.mockReturnValue(buildHookState({ projectKey: 'ENFCT', scannedIssueCount: 0 }));
+
+    render(<HygieneView />);
+
+    expect(screen.queryByText(/has not been run/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/matched no Jira issues/i)).toBeInTheDocument();
+  });
+
+  it('says nothing of the sort once a scan has found issues', () => {
+    mockUseHygieneState.mockReturnValue(buildHookState({ projectKey: 'ENFCT', scannedIssueCount: 25 }));
+
+    render(<HygieneView />);
+
+    expect(screen.queryByText(/has not been run/i)).not.toBeInTheDocument();
+  });
+
+  it('still says it when a failed run left no count behind', () => {
+    // A failed run also leaves scannedIssueCount null, and its error is shown separately. The panel
+    // must not go on presenting stale zeros as though they were this scope's answer.
+    mockUseHygieneState.mockReturnValue(buildHookState({
+      projectKey: 'ENFCT', scannedIssueCount: null, loadError: 'Jira returned 400',
+    }));
+
+    render(<HygieneView />);
+
+    expect(screen.getByText(/Jira returned 400/)).toBeInTheDocument();
+  });
+});

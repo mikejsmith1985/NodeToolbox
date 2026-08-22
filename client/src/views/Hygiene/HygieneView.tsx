@@ -59,6 +59,12 @@ const EMPTY_SCOPE_MESSAGE =
   'The current scope matched no Jira issues — check the project key, PI, and extra JQL. '
   + 'No score is shown for an empty scope.';
 const EMPTY_SCOPE_SCORE_LABEL = '—';
+// Shown before the FIRST run for a scope. Distinct from both messages above, because "not run yet",
+// "ran and matched nothing" and "everything is clean" render almost identically otherwise — a grid
+// of zeros and a dash — and a panel merely awaiting a button press was reported as a broken one.
+const NEVER_RUN_MESSAGE =
+  'Hygiene has not been run for this scope yet — the zeros below are not results. '
+  + 'Press Run Hygiene to check it.';
 // The checks that have NO default field and silently skip themselves when the instance has no
 // matching field. Their tiles must say "not configured", because a bare 0 from a check that never
 // ran reads exactly like a clean result — the same lie as the empty-scope perfect score (GH #167).
@@ -162,6 +168,9 @@ export default function HygieneView({
   // run (scannedIssueCount is null), or on an empty scope, the tile shows a dash — a failed search
   // rendering a green 100/100 next to its own error message was half of GH #167's confusion.
   const hasScoreData = (hygieneState.scannedIssueCount ?? 0) > 0;
+  // No run has produced a count for this scope. Either it has never been run, or the last attempt
+  // failed — the error is shown separately, and in both cases the tiles below describe nothing.
+  const hasNeverRun = !hygieneState.isLoading && hygieneState.scannedIssueCount === null;
   const shouldShowNoFlags = !hygieneState.isLoading
     && hasRunnableScope
     && !hasVisibleFindings
@@ -358,6 +367,13 @@ export default function HygieneView({
       {hygieneState.isLoading && <div className={styles.emptyState}>Loading Hygiene results…</div>}
       {!hygieneState.isLoading && !hasLoadedFindings && !hasRunnableScope && (
         <div className={styles.emptyState}>{EMPTY_STATE_MESSAGE}</div>
+      )}
+      {/* Rendered only when the last attempt did not fail: an error already says what happened, and
+          two notices about one situation is how people learn to read neither. */}
+      {hasNeverRun && hygieneState.loadError === null && (
+        <div className={styles.emptyScopeWarning} role="status">
+          ⚠ {NEVER_RUN_MESSAGE}
+        </div>
       )}
       {isScopeEmpty && (
         <div className={styles.emptyScopeWarning} role="status">

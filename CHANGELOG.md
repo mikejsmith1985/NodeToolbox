@@ -109,6 +109,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   green for the date — instead of a row of identical grey chips that had to be read one at a time.
 
 ### Fixed
+- **A Hygiene panel that has not been run yet now says so.** With a project key entered but no scan
+  run, every tile read 0, the score read a dash, and nothing on screen explained why -- so "not run
+  yet", "ran and matched nothing" and "everything is clean" all rendered identically. A panel merely
+  awaiting a button press looked exactly like a broken one, and was reported as one. It now states
+  plainly that the zeros are not results and names the button that would produce some. The
+  empty-scope message it sits beside is deliberately separate, and only one ever shows: two notices
+  about one situation is how people learn to read neither.
 - **A change scheduled for 1pm no longer appears in ServiceNow at 9am (GH #375).** The planned window
   was sent exactly as typed, and ServiceNow reads a bare datetime as UTC before rendering it in the
   user's profile timezone -- so every CHG and CTASK window landed adrift by the operator's own offset.
