@@ -109,6 +109,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   green for the date — instead of a row of identical grey chips that had to be read one at a time.
 
 ### Fixed
+- **A change scheduled for 1pm no longer appears in ServiceNow at 9am (GH #375).** The planned window
+  was sent exactly as typed, and ServiceNow reads a bare datetime as UTC before rendering it in the
+  user's profile timezone -- so every CHG and CTASK window landed adrift by the operator's own offset.
+  The value was never wrong, only never converted. It is now converted to UTC on the way out and back
+  to the operator's clock on the way in. Both halves had to move together: fixing only the write would
+  have made loading an existing change and saving it straight back shift its window by the offset every
+  single time, walking the schedule further off on each edit. The error was invisible from inside
+  Toolbox precisely because both directions were unconverted in the same way -- it only ever showed in
+  ServiceNow's own screen.
 - **The Target End check now covers Stories, Tasks and Defects, not just Features (GH #375).** It was
   gated to Feature-like issues, so a [DEV] story sitting in Code Review a month past its Target End
   produced nothing at all -- while its [SL] sibling, whose DUE date had also passed, was flagged by a

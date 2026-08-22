@@ -796,12 +796,32 @@ function buildChangeTaskPayload(changeSysId: string, template: CtaskTemplate): R
   return ctaskPayload;
 }
 
+/**
+ * Turns the value ServiceNow stores into the wall clock the operator should see.
+ *
+ * The Table API's internal value for a glide_date_time is UTC, and the form shows the operator's
+ * own clock — so it is converted, not just reshaped. The two halves of this round trip have to move
+ * the same amount in opposite directions; a fix to one alone would make loading a change and saving
+ * it straight back shift its window every time.
+ */
 function normalizeSnowDateTimeForInput(field: unknown): string {
   const snowDateTime = extractChoiceValue(field) || extractStringValue(field);
   if (!snowDateTime) return EMPTY_VALUE;
 
   const dateTimeMatch = SNOW_DATE_TIME_INPUT_PATTERN.exec(snowDateTime);
-  return dateTimeMatch ? `${dateTimeMatch[1]}T${dateTimeMatch[2]}` : snowDateTime;
+  if (!dateTimeMatch) return snowDateTime;
+
+  const utcInstant = new Date(`${dateTimeMatch[1]}T${dateTimeMatch[2]}:00Z`);
+  if (Number.isNaN(utcInstant.getTime())) return snowDateTime;
+
+  return formatLocalDateTimeInput(utcInstant);
+}
+
+/** Renders an instant as the `YYYY-MM-DDTHH:mm` a datetime-local input expects, in local time. */
+function formatLocalDateTimeInput(instant: Date): string {
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${instant.getFullYear()}-${pad(instant.getMonth() + 1)}-${pad(instant.getDate())}`
+    + `T${pad(instant.getHours())}:${pad(instant.getMinutes())}`;
 }
 
 // Matches the HTML datetime-local input shape (and tolerates a space separator or
@@ -813,8 +833,13 @@ const SNOW_API_DATE_TIME_PATTERN = /^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})(:\d{2}
  * into the format the ServiceNow Table API expects for glide_date_time fields:
  * "YYYY-MM-DD HH:MM:SS" (space separator, seconds always present). Without this, the
  * API silently drops the value on insert, leaving Planned start/end date empty.
- * The wall-clock value is preserved as-typed (no timezone shift). Unrecognized or empty
- * input passes through untouched so we never fabricate a date.
+ *
+ * The value is converted from the operator's local clock to UTC, because ServiceNow reads a bare
+ * datetime as UTC and then displays it in the user's profile timezone. It used to be sent as typed,
+ * which is why a change scheduled for 1pm showed up in ServiceNow at 9am — four hours adrift, and
+ * invisible from inside Toolbox because the read path was unconverted in exactly the same way.
+ *
+ * Unrecognized or empty input passes through untouched so we never fabricate a date.
  */
 export function formatSnowDateTimeForApi(inputValue: string): string {
   const trimmedValue = (inputValue || '').trim();
@@ -824,7 +849,14 @@ export function formatSnowDateTimeForApi(inputValue: string): string {
   if (!dateTimeMatch) return trimmedValue;
 
   const [, datePart, hoursAndMinutes, secondsPart] = dateTimeMatch;
-  return `${datePart} ${hoursAndMinutes}${secondsPart || ':00'}`;
+  // The operator typed their own wall clock; ServiceNow reads a bare datetime as UTC and then
+  // renders it in their profile timezone. Sending it unconverted is why a change scheduled for 1pm
+  // appeared in ServiceNow at 9am (GH #375) — the value was never wrong, only never converted.
+  const localInstant = new Date(`${datePart}T${hoursAndMinutes}${secondsPart || ':00'}`);
+  if (Number.isNaN(localInstant.getTime())) {
+    return `${datePart} ${hoursAndMinutes}${secondsPart || ':00'}`;
+  }
+  return localInstant.toISOString().slice(0, 19).replace('T', ' ');
 }
 
 function buildCtaskTemplateDataFromRecord(ctaskRecord: Record<string, unknown>): CtaskTemplateData {

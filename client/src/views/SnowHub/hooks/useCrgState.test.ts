@@ -16,6 +16,19 @@ vi.mock('../../../services/snowApi.ts', () => ({
   snowFetch: vi.fn(),
 }));
 
+/** The UTC string ServiceNow should receive for a wall clock typed in this machine's timezone. */
+function expectedUtcFor(localInput: string): string {
+  return new Date(localInput).toISOString().slice(0, 19).replace('T', ' ');
+}
+
+/** The wall clock a form should SHOW for a UTC value ServiceNow returned. */
+function expectedLocalInputFor(utcValue: string): string {
+  const instant = new Date(`${utcValue.replace(' ', 'T').slice(0, 19)}Z`);
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${instant.getFullYear()}-${pad(instant.getMonth() + 1)}-${pad(instant.getDate())}`
+    + `T${pad(instant.getHours())}:${pad(instant.getMinutes())}`;
+}
+
 function createMockJiraIssue(issueKey: string, summary: string, issueTypeName = 'Story') {
   return {
     id: issueKey,
@@ -1150,22 +1163,23 @@ describe('useCrgState', () => {
       expect(relPayload.u_environment).toBe('rel-env');
       expect(relPayload.cmdb_ci).toBe('ci-rel-001');
       expect(relPayload.u_impacted_persons_aware).toBe('rel-aware');
-      // change_request stores the requested window as start_date/end_date, not planned_*,
-      // and the values are sent in ServiceNow's canonical "YYYY-MM-DD HH:MM:SS" format.
-      expect(relPayload.start_date).toBe('2025-02-01 08:00:00');
-      expect(relPayload.end_date).toBe('2025-02-01 09:00:00');
+      // change_request stores the requested window as start_date/end_date, not planned_*, in
+      // ServiceNow's canonical "YYYY-MM-DD HH:MM:SS" format and in UTC — the operator's wall clock
+      // converted, not copied (GH #375). Asserted against the instant so this holds in any timezone.
+      expect(relPayload.start_date).toBe(expectedUtcFor('2025-02-01T08:00'));
+      expect(relPayload.end_date).toBe(expectedUtcFor('2025-02-01T09:00'));
 
       expect(prdPayload.u_environment).toBe('prd-env');
       expect(prdPayload.cmdb_ci).toBe('ci-prd-001');
       expect(prdPayload.u_impacted_persons_aware).toBe('prd-aware');
-      expect(prdPayload.start_date).toBe('2025-02-02 08:00:00');
-      expect(prdPayload.end_date).toBe('2025-02-02 09:00:00');
+      expect(prdPayload.start_date).toBe(expectedUtcFor('2025-02-02T08:00'));
+      expect(prdPayload.end_date).toBe(expectedUtcFor('2025-02-02T09:00'));
 
       expect(pfixPayload.u_environment).toBe('pfix-env');
       expect(pfixPayload.cmdb_ci).toBe('ci-pfix-001');
       expect(pfixPayload.u_impacted_persons_aware).toBe('pfix-aware');
-      expect(pfixPayload.start_date).toBe('2025-02-03 08:00:00');
-      expect(pfixPayload.end_date).toBe('2025-02-03 09:00:00');
+      expect(pfixPayload.start_date).toBe(expectedUtcFor('2025-02-03T08:00'));
+      expect(pfixPayload.end_date).toBe(expectedUtcFor('2025-02-03T09:00'));
       expect(result.current.state.submitResult).toBe(
         '3 CHGs created: REL CHG0002001, PRD CHG0002002, PFIX CHG0002003',
       );
@@ -1647,8 +1661,10 @@ describe('useCrgState', () => {
         description:      'Run smoke tests after deployment.',
         assignmentGroup:  { sysId: 'grp-001', displayName: 'Platform Team' },
         assignedTo:       { sysId: 'usr-001', displayName: 'Jane Smith' },
-        plannedStartDate: '2026-01-01T10:00',
-        plannedEndDate:   '2026-01-01T11:00',
+        // The fixture's value is what ServiceNow stores: UTC. The form shows the operator's own
+        // clock, so these are the same instant rendered locally (GH #375).
+        plannedStartDate: expectedLocalInputFor('2026-01-01T10:00:00'),
+        plannedEndDate:   expectedLocalInputFor('2026-01-01T11:00:00'),
         closeNotes:       'Validation complete.',
       });
     });
@@ -2523,15 +2539,41 @@ describe('useCrgState — rebuild environment guard', () => {
 
 describe('formatSnowDateTimeForApi', () => {
   it('converts datetime-local input into ServiceNow canonical format with seconds', () => {
-    expect(formatSnowDateTimeForApi('2026-07-02T14:00')).toBe('2026-07-02 14:00:00');
+    expect(formatSnowDateTimeForApi('2026-07-02T14:00')).toBe(expectedUtcFor('2026-07-02T14:00'));
+    expect(formatSnowDateTimeForApi('2026-07-02T14:00')).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
   });
 
-  it('preserves the wall-clock value without shifting the time', () => {
-    expect(formatSnowDateTimeForApi('2026-12-31T23:59')).toBe('2026-12-31 23:59:00');
+  it('REGRESSION: converts the operator wall clock to UTC rather than sending it as typed', () => {
+    // GH #375: a change scheduled for 1pm appeared in ServiceNow at 9am. The value was never wrong,
+    // only never converted — ServiceNow reads a bare datetime as UTC and then renders it in the
+    // user's profile timezone, so sending the local clock verbatim shifts it by the offset.
+    //
+    // Asserted against the instant rather than a fixed string, so this holds wherever it is run.
+    const sentValue = formatSnowDateTimeForApi('2026-07-02T13:00');
+    const sentInstantMs = new Date(sentValue.replace(' ', 'T') + 'Z').getTime();
+
+    expect(sentInstantMs).toBe(new Date('2026-07-02T13:00').getTime());
   });
 
-  it('accepts an already space-separated value and keeps existing seconds', () => {
-    expect(formatSnowDateTimeForApi('2026-07-02 14:00:30')).toBe('2026-07-02 14:00:30');
+  it('accepts an already space-separated value and converts it too', () => {
+    // Same instant, whichever separator it arrived with — the separator says nothing about the zone.
+    expect(formatSnowDateTimeForApi('2026-07-02 14:00:30')).toBe(expectedUtcFor('2026-07-02T14:00:30'));
+  });
+
+  it('keeps the seconds it was given rather than rounding the window', () => {
+    const sentValue = formatSnowDateTimeForApi('2026-07-02 14:00:30');
+    expect(sentValue.endsWith(':30')).toBe(true);
+  });
+
+  it('survives the round trip, which is what keeps a re-saved change from drifting', () => {
+    // The two halves have to move the same amount in opposite directions. Fixing only the write
+    // would make loading an existing change and saving it straight back shift its window by the
+    // timezone offset every single time — a change that walks four hours earlier on each edit.
+    const typedWallClock = '2026-07-02T13:00';
+    const sentToServiceNow = formatSnowDateTimeForApi(typedWallClock);
+    const shownWhenLoadedBack = expectedLocalInputFor(sentToServiceNow);
+
+    expect(shownWhenLoadedBack).toBe(typedWallClock);
   });
 
   it('returns an empty string for empty or whitespace input', () => {
