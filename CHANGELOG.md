@@ -8,6 +8,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Hygiene now shows the release each issue ships in, beside the dates it produces.** The card
+  carried Target Start, Due and Target End and never said which release they came from — yet all
+  three are derived from exactly one input, so a blank release is three blank dates and the card gave
+  no hint of it. A **teal chip** names the release; it turns **amber** whenever that release cannot
+  date the issue, which is the same signal an empty planning date already uses and means the same
+  thing. Amber deliberately covers the trap case: a version that is **set but carries no release
+  date** looks perfectly fine on the card and blocks every date all the same. The chip's tooltip
+  carries the reason, so "add a fix version" and "give that release a date in Jira" are told apart at
+  a glance.
+- **A one-click "copy the release from the parent Feature" fix**, beside the fix-version picker. A
+  story belongs to the release its Feature belongs to, so the answer was one hop away while the issue
+  sat flagged and undatable. It names the release **before** writing it, refuses rather than guessing
+  when the Feature cannot date its own work either, and writes through the same
+  `saveFeatureReviewFixVersion` the manual picker uses — so an inherited release and a hand-picked
+  one are literally the same Jira request. The version it copies is chosen by `readDrivingFixVersion`,
+  the same function the date policy uses, so a child can never inherit a different release from the
+  one its dates are derived from.
+
+### Changed
+- **"Could not be dated" now names which of three different problems it is.** The bulk date fix
+  reported `no unreleased fix version with a release date` for three situations that need three
+  different people: **no fix version set on the issue** (fixed on the issue), **fix version has no
+  release date in Jira (2026.09)** (fixed **once**, in release admin, unblocking every issue on that
+  version at the same moment), and **every fix version on the issue is already released** (the work
+  was never moved forward). Reporting them as one phrase sent people to check the issue when the
+  release was at fault.
+  Because the reason now **names the release**, the run's summary rolls up **by release** for free:
+  seven issue-level failures become one line saying which release to open. Two different releases stay
+  two lines, because they are two jobs.
+
+### Added
 - **The Hygiene tab now reads like PI Review and the daily forecast.** It opened with twenty
   identical tiles — every number the same size and colour — over rows of identical bordered boxes
   where every fact carried the same weight. Twenty equal numbers is not a summary; it is the counting

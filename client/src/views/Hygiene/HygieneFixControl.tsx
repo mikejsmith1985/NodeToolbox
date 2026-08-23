@@ -36,6 +36,8 @@ import { HYGIENE_FIX_BY_CHECK, resolveFixFieldId, type HygieneFixKind } from './
 import { applyDerivedDates, planDerivedDateWrites, type DerivedDatePlan } from './derivedDateFix.ts';
 import { applyInheritedFeatureLink, planInheritedFeatureLink } from './featureLinkInheritFix.ts';
 import type { InheritedFeatureLinkChoice } from './featureLinkInheritance.ts';
+import { applyInheritedFixVersion, planInheritedFixVersion } from './fixVersionInheritFix.ts';
+import type { InheritedFixVersionChoice } from './fixVersionInheritance.ts';
 import styles from './HygieneView.module.css';
 
 const RELATIVE_BROWSE_PREFIX = '/browse/';
@@ -109,7 +111,7 @@ export function HygieneFixControl({ issue, flag, fieldConfig, onFixed }: Hygiene
 
   return (
     <>
-      <HygieneFixEditor issue={issue} kind={descriptor.kind} fieldId={fieldId ?? ''} label={descriptor.label} onFixed={onFixed} />
+      <HygieneFixEditor issue={issue} kind={descriptor.kind} fieldId={fieldId ?? ''} label={descriptor.label} onFixed={onFixed} fieldConfig={fieldConfig} />
       {hasUsableAlternate && descriptor.alternateFix ? (
         <HygieneFixEditor
           issue={issue}
@@ -117,6 +119,7 @@ export function HygieneFixControl({ issue, flag, fieldConfig, onFixed }: Hygiene
           fieldId={alternateFieldId ?? ''}
           label={descriptor.alternateFix.label}
           onFixed={onFixed}
+          fieldConfig={fieldConfig}
         />
       ) : null}
     </>
@@ -130,10 +133,12 @@ interface HygieneFixEditorProps {
   fieldId: string;
   label: string;
   onFixed: (issueKey: string) => void;
+  /** Passed through to the fix-version input, which reads the Feature link to offer a copy. */
+  fieldConfig: HygieneFieldConfig;
 }
 
 /** Owns the shared submit lifecycle (submitting flag, success/error message) for one inline fix. */
-function HygieneFixEditor({ issue, kind, fieldId, label, onFixed }: HygieneFixEditorProps) {
+function HygieneFixEditor({ issue, kind, fieldId, label, onFixed, fieldConfig }: HygieneFixEditorProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -159,7 +164,7 @@ function HygieneFixEditor({ issue, kind, fieldId, label, onFixed }: HygieneFixEd
     <div className={styles.fixControl}>
       {/* Every fix input carries a VISIBLE label naming what it writes (spec 019 FR-015). */}
       <span className={styles.fixLabel}>{label}:</span>
-      <FixInput issue={issue} kind={kind} fieldId={fieldId} label={label} isSubmitting={isSubmitting} onSubmit={submitFix} />
+      <FixInput issue={issue} kind={kind} fieldId={fieldId} label={label} isSubmitting={isSubmitting} onSubmit={submitFix} fieldConfig={fieldConfig} />
       {successMessage && <span className={styles.fixSuccess}>{successMessage}</span>}
       {errorMessage && (
         <span className={styles.fixError} role="alert">
@@ -178,20 +183,23 @@ interface FixInputProps {
   label: string;
   isSubmitting: boolean;
   onSubmit: (write: () => Promise<void>) => Promise<void>;
+  /** Needed only by the fix-version input, which reads the issue's Feature link to offer a copy. */
+  fieldConfig: HygieneFieldConfig;
 }
 
 /** Renders the input variant that matches the fix kind. */
-function FixInput({ issue, kind, fieldId, label, isSubmitting, onSubmit }: FixInputProps) {
+function FixInput(props: FixInputProps) {
+  const { issue, kind, fieldId, label, isSubmitting, onSubmit } = props;
   if (kind === 'assignee') {
-    return <UserFixInput issue={issue} kind={kind} fieldId={fieldId} label={label} isSubmitting={isSubmitting} onSubmit={onSubmit} />;
+    return <UserFixInput {...props} />;
   }
   if (kind === 'feature' || kind === 'parent') {
-    return <IssueLinkFixInput issue={issue} kind={kind} fieldId={fieldId} label={label} isSubmitting={isSubmitting} onSubmit={onSubmit} />;
+    return <IssueLinkFixInput {...props} />;
   }
   if (kind === 'fixVersion' || kind === 'select' || kind === 'programIncrement' || kind === 'transition') {
-    return <OptionFixInput issue={issue} kind={kind} fieldId={fieldId} label={label} isSubmitting={isSubmitting} onSubmit={onSubmit} />;
+    return <OptionFixInput {...props} />;
   }
-  return <ValueFixInput issue={issue} kind={kind} fieldId={fieldId} label={label} isSubmitting={isSubmitting} onSubmit={onSubmit} />;
+  return <ValueFixInput issue={issue} kind={kind} fieldId={fieldId} label={label} isSubmitting={isSubmitting} onSubmit={onSubmit} fieldConfig={props.fieldConfig} />;
 }
 
 /**
@@ -448,7 +456,7 @@ function InheritFeatureLinkButton({ issue, fieldId, isSubmitting, onSubmit }: {
 }
 
 /** Fix version, select/option custom fields, program increment, and status transition dropdowns. */
-function OptionFixInput({ issue, kind, fieldId, label, isSubmitting, onSubmit }: FixInputProps) {
+function OptionFixInput({ issue, kind, fieldId, label, isSubmitting, onSubmit, fieldConfig }: FixInputProps) {
   const [selected, setSelected] = useState('');
   // The settled option load, TAGGED with the request it answers. Deriving "loaded"/"options" from
   // this tag (rather than resetting state inside the effect) keeps the effect free of synchronous
@@ -506,6 +514,14 @@ function OptionFixInput({ issue, kind, fieldId, label, isSubmitting, onSubmit }:
 
   return (
     <>
+      {kind === 'fixVersion' && (
+        <InheritFixVersionButton
+          issue={issue}
+          fieldConfig={fieldConfig}
+          isSubmitting={isSubmitting}
+          onSubmit={onSubmit}
+        />
+      )}
       <OptionSelect label={label} options={options} value={selected} disabled={isSubmitting || options.length === 0} onChange={handleSelectOption} />
       <TransitionRequiredFields
         requiredFields={selectedTransitionRequiredFields}
@@ -521,6 +537,54 @@ function OptionFixInput({ issue, kind, fieldId, label, isSubmitting, onSubmit }:
         onClick={() => void onSubmit(writeOption)}
       />
     </>
+  );
+}
+
+/**
+ * Copies the release from the issue's parent Feature.
+ *
+ * A missing fix version is not one blank field — it is THREE missing dates, because Due, Target End
+ * and Target Start are all derived from the release the work is committed to. So the bulk date fix
+ * reports these issues as undatable when the only thing actually absent is a value the Feature
+ * already holds one hop away.
+ *
+ * It states the release BEFORE writing (the derived-dates control's rule), and refuses rather than
+ * choosing when the Feature cannot date its own work either.
+ */
+function InheritFixVersionButton({ issue, fieldConfig, isSubmitting, onSubmit }: {
+  issue: JiraIssue;
+  fieldConfig: HygieneFieldConfig;
+  isSubmitting: boolean;
+  onSubmit: (write: () => Promise<void>) => Promise<void>;
+}) {
+  const [plan, setPlan] = useState<InheritedFixVersionChoice | null>(null);
+
+  useEffect(() => {
+    let isActive = true;
+    planInheritedFixVersion(issue, fieldConfig)
+      .then((foundPlan) => { if (isActive) setPlan(foundPlan); })
+      .catch(() => { if (isActive) setPlan(null); });
+    return () => { isActive = false; };
+  }, [issue, fieldConfig]);
+
+  // Nothing to inherit is the ordinary case, and an always-present disabled button beside every
+  // fix-version flag would be noise on the issues it can never help.
+  if (plan === null || plan.fixVersionName === null) {
+    return null;
+  }
+
+  return (
+    <span className={styles.fixNote}>
+      <button
+        type="button"
+        className={styles.fixButton}
+        disabled={isSubmitting}
+        title={`Copy release ${plan.fixVersionName} from Feature ${plan.sourceIssueKey}`}
+        onClick={() => void onSubmit(async () => { await applyInheritedFixVersion(issue, fieldConfig); })}
+      >
+        {isSubmitting ? 'Saving…' : `Copy ${plan.fixVersionName} from ${plan.sourceIssueKey}`}
+      </button>
+    </span>
   );
 }
 

@@ -118,6 +118,38 @@ export function readDrivingFixVersion(fixVersions: readonly IssueFixVersion[]): 
     (readCalendarDay(leftVersion.releaseDate) ?? '').localeCompare(readCalendarDay(rightVersion.releaseDate) ?? ''))[0];
 }
 
+/**
+ * Why no fix version can date this issue — naming WHICH of three different problems it is.
+ *
+ * The three read identically in a report and need completely different people to fix them: a missing
+ * version is set on the issue, a dateless version is one edit in Jira's release admin that unblocks
+ * every issue on it at once, and an all-released set means the work was never moved to the next
+ * release. Reporting them as one phrase sent somebody to check the issue when the release was at
+ * fault, which is the failure this replaces.
+ *
+ * Returns null when a driving version exists — there is then nothing to explain.
+ */
+export function explainMissingDrivingFixVersion(fixVersions: readonly IssueFixVersion[]): string | null {
+  if (readDrivingFixVersion(fixVersions) !== null) return null;
+
+  if (fixVersions.length === 0) {
+    return 'no fix version set on the issue';
+  }
+
+  const unreleased = fixVersions.filter((fixVersion) => fixVersion.released !== true);
+  if (unreleased.length === 0) {
+    return 'every fix version on the issue is already released';
+  }
+
+  // Named, because this one is fixed ONCE in the release rather than once per issue, and the name is
+  // the only thing that tells somebody which release to open.
+  const undatedNames = unreleased
+    .map((fixVersion) => (fixVersion.name ?? '').trim())
+    .filter((versionName) => versionName !== '');
+  const namedVersions = undatedNames.length > 0 ? ` (${undatedNames.join(', ')})` : '';
+  return `fix version has no release date in Jira${namedVersions}`;
+}
+
 /** Shifts a calendar day by a whole number of calendar days. */
 function shiftCalendarDays(calendarDay: string, dayOffset: number): string {
   return toCalendarDay(new Date(new Date(`${calendarDay}T12:00:00`).getTime() + dayOffset * MILLISECONDS_PER_DAY));
@@ -232,8 +264,9 @@ export function deriveIssueDates(input: IssueDateInput): DerivedIssueDates {
   const undecidedReasons: string[] = [];
   const drivingFixVersion = readDrivingFixVersion(input.fixVersions);
   const releaseDay = drivingFixVersion ? readCalendarDay(drivingFixVersion.releaseDate) : null;
-  if (releaseDay === null) {
-    undecidedReasons.push('no unreleased fix version with a release date');
+  const missingFixVersionReason = explainMissingDrivingFixVersion(input.fixVersions);
+  if (missingFixVersionReason !== null) {
+    undecidedReasons.push(missingFixVersionReason);
   }
 
   // The Ready-to-Work stamp IS an instant (a changelog entry), so it converts to a local day.

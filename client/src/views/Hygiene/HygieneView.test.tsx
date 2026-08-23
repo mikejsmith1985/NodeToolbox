@@ -1074,6 +1074,17 @@ describe('HygieneView — the PI Review treatment', () => {
     } as unknown as HygieneFinding;
   }
 
+  /** The same dated finding, carrying whatever releases a test needs to talk about. */
+  function buildFindingWithFixVersions(
+    fixVersions: Array<{ name?: string; releaseDate?: string; released?: boolean }>,
+  ): HygieneFinding {
+    const finding = buildDatedFinding();
+    return {
+      ...finding,
+      issue: { ...finding.issue, fields: { ...finding.issue.fields, fixVersions } },
+    } as unknown as HygieneFinding;
+  }
+
   it('leads with four figures instead of twenty equal tiles', () => {
     mockUseHygieneState.mockReturnValue(buildHookState({ findings: [buildDatedFinding()], scannedIssueCount: 31 }));
     render(<HygieneView />);
@@ -1099,6 +1110,35 @@ describe('HygieneView — the PI Review treatment', () => {
     render(<HygieneView />);
 
     expect((screen.getByLabelText('Due for ENCUC-2316') as HTMLInputElement).value).toBe('2026-09-10');
+  });
+
+  it('shows the release beside the dates it produces', () => {
+    // Target Start, Due and Target End are ALL derived from the release, so one blank release is
+    // three blank dates — and the card never said which release the issue was on.
+    mockUseHygieneState.mockReturnValue(buildHookState({
+      findings: [buildFindingWithFixVersions([{ name: '2026.09', releaseDate: '2026-09-30' }])],
+    }));
+    render(<HygieneView />);
+
+    expect(screen.getByTitle('Ships in 2026.09')).toBeInTheDocument();
+  });
+
+  it('says plainly when an issue has no release, which is why its dates cannot be fixed', () => {
+    mockUseHygieneState.mockReturnValue(buildHookState({ findings: [buildFindingWithFixVersions([])] }));
+    render(<HygieneView />);
+
+    expect(screen.getByTitle('no fix version set on the issue')).toHaveTextContent('no release');
+  });
+
+  it('flags a release that is SET but carries no release date — the trap the old message hid', () => {
+    // The chip shows a version and everything looks fine, while all three dates stay underivable.
+    // The tooltip names the version because THAT is fixed once, in Jira, for every issue on it.
+    mockUseHygieneState.mockReturnValue(buildHookState({
+      findings: [buildFindingWithFixVersions([{ name: '2026.09' }])],
+    }));
+    render(<HygieneView />);
+
+    expect(screen.getByTitle('fix version has no release date in Jira (2026.09)')).toHaveTextContent('2026.09');
   });
 
   it('does not collapse the row when a date input is clicked', () => {

@@ -1038,6 +1038,8 @@
 .metaChipType,
 .metaChipStatus,
 .metaChipPi,
+.metaChipRelease,
+.metaChipReleaseMissing,
 .metaChipOwner,
 .metaChipAge {
   display: inline-flex;
@@ -1066,6 +1068,23 @@
   border: 1px solid rgba(56, 189, 248, 0.5);
   background: linear-gradient(135deg, rgba(56, 189, 248, 0.18), rgba(14, 165, 233, 0.1));
   color: #38bdf8;
+}
+
+/* Teal for the release: its own hue, because it is its own KIND of fact — not the PI it was planned
+   in, and not a date. One hue per kind is what lets the eye go straight to the field it wants. */
+.metaChipRelease {
+  border: 1px solid rgba(45, 212, 191, 0.45);
+  background: linear-gradient(135deg, rgba(45, 212, 191, 0.16), rgba(13, 148, 136, 0.1));
+  color: #2dd4bf;
+}
+
+/* Amber, the same signal an empty planning date carries, and it means the same thing: this is the
+   gap the page exists to find. Covers a release that is SET but undated, which looks fine and still
+   blocks all three dates — so it must not read as the healthy chip. */
+.metaChipReleaseMissing {
+  border: 1px solid rgba(245, 158, 11, 0.55);
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.18), rgba(217, 119, 6, 0.1));
+  color: #f59e0b;
 }
 
 .metaChipOwner {

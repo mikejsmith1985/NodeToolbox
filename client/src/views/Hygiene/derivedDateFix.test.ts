@@ -108,7 +108,14 @@ describe('planDerivedDateWrites', () => {
     const plan = await planDerivedDateWrites(buildIssue({ fixVersions: [] }), FIELD_CONFIG);
 
     expect(plan.writes).toEqual([]);
-    expect(plan.undecidedReasons).toContain('no unreleased fix version with a release date');
+    expect(plan.undecidedReasons).toContain('no fix version set on the issue');
+  });
+
+  it('says WHICH release is undated, because that is fixed once for every issue on it', async () => {
+    const plan = await planDerivedDateWrites(buildIssue({ fixVersions: [{ name: '2026.09' }] }), FIELD_CONFIG);
+
+    expect(plan.writes).toEqual([]);
+    expect(plan.undecidedReasons).toContain('fix version has no release date in Jira (2026.09)');
   });
 
   it('plans nothing when every date already agrees, so a fix run is a no-op', async () => {
@@ -239,11 +246,11 @@ describe('summariseUndecidedDates', () => {
     const summary = summariseUndecidedDates([
       { issueKey: 'TBX-1', reasons: ['not yet in Ready to Work or Working'] },
       { issueKey: 'TBX-2', reasons: ['not yet in Ready to Work or Working'] },
-      { issueKey: 'TBX-3', reasons: ['no unreleased fix version with a release date'] },
+      { issueKey: 'TBX-3', reasons: ['no fix version set on the issue'] },
     ]);
 
     expect(summary).toContain('not yet in Ready to Work or Working (2)');
-    expect(summary).toContain('no unreleased fix version with a release date (1)');
+    expect(summary).toContain('no fix version set on the issue (1)');
   });
 
   it('is empty when nothing was left undecided, so the caller can say nothing', () => {
@@ -274,7 +281,7 @@ describe('summariseUndecidedDates — the keys are what make it actionable', () 
   it('caps a very long list but keeps the count honest', () => {
     const many = Array.from({ length: 30 }, (_unused, index) => ({
       issueKey: `ENFCT-${index + 1}`,
-      reasons: ['no unreleased fix version with a release date'],
+      reasons: ['no fix version set on the issue'],
     }));
 
     const summary = summariseUndecidedDates(many);
@@ -365,5 +372,41 @@ describe('the forecast context', () => {
 
     expect(plan.writes.find((write) => write.fieldName === 'Target Start')?.value).toBe('2026-08-13');
     expect(plan.targetStartBasis).toBe('ready-to-work-lead');
+  });
+});
+
+describe('summariseUndecidedDates — rolled up by release, not by issue', () => {
+  it('collapses every issue blocked by one undated release into a single line naming it', () => {
+    // The whole point: this is fixed ONCE, in Jira's release admin, and it unblocks all three of
+    // these at the same moment. Seven issue-level failures hid that it was one job.
+    const summary = summariseUndecidedDates([
+      { issueKey: 'ENCUC-2198', reasons: ['fix version has no release date in Jira (2026.09)'] },
+      { issueKey: 'ENCUC-2196', reasons: ['fix version has no release date in Jira (2026.09)'] },
+      { issueKey: 'ENCUC-2170', reasons: ['fix version has no release date in Jira (2026.09)'] },
+    ]);
+
+    expect(summary).toBe(
+      'fix version has no release date in Jira (2026.09) (3): ENCUC-2198, ENCUC-2196, ENCUC-2170',
+    );
+  });
+
+  it('keeps different releases apart, because they are different jobs for different people', () => {
+    const summary = summariseUndecidedDates([
+      { issueKey: 'ENCUC-1', reasons: ['fix version has no release date in Jira (2026.09)'] },
+      { issueKey: 'ENCUC-2', reasons: ['fix version has no release date in Jira (2026.12)'] },
+    ]);
+
+    expect(summary).toContain('(2026.09) (1): ENCUC-1');
+    expect(summary).toContain('(2026.12) (1): ENCUC-2');
+  });
+
+  it('separates a missing release from an undated one — the two need different fixes', () => {
+    const summary = summariseUndecidedDates([
+      { issueKey: 'ENCUC-1', reasons: ['no fix version set on the issue'] },
+      { issueKey: 'ENCUC-2', reasons: ['fix version has no release date in Jira (2026.09)'] },
+    ]);
+
+    expect(summary).toContain('no fix version set on the issue (1): ENCUC-1');
+    expect(summary).toContain('fix version has no release date in Jira (2026.09) (1): ENCUC-2');
   });
 });

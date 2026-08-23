@@ -7,6 +7,10 @@
 // Pure on purpose: reading a date out of an issue and knowing which field to write it to are separate
 // questions from rendering an input, and only the first two are worth testing without a browser.
 
+import {
+  explainMissingDrivingFixVersion,
+  readDrivingFixVersion,
+} from './checks/issueDateRules.ts';
 import type { HygieneFieldConfig, JiraIssue } from './checks/hygieneChecks.ts';
 
 /** Matches a value that OPENS with a calendar day, whatever time or zone may follow it. */
@@ -77,4 +81,41 @@ export function readIssuePlanningDates(
       value: targetEndFieldId ? readPlanningDateValue(issueFields[targetEndFieldId]) : null,
     },
   ];
+}
+
+/** The release an issue is committed to, reduced to what one chip has to say about it. */
+export interface IssueReleaseSummary {
+  /** The version names, or a plain statement that there are none. */
+  label: string;
+  /**
+   * True when this release CANNOT date the issue — the exact condition the bulk date fix refuses on.
+   *
+   * Not the same as "no fix version": a version with no release date, or one already released, looks
+   * perfectly set on the issue and still leaves all three dates underivable. Tying the chip to the
+   * same test the fix uses is what stops a card looking fine while the fix reports it as blocked.
+   */
+  isUndatable: boolean;
+  /** Why it cannot date the issue, for the chip's tooltip; null when it can. */
+  undatableReason: string | null;
+}
+
+/**
+ * Reads the release for the chip row.
+ *
+ * The release is on this row for one reason: it is the single input every derived date hangs off, so
+ * an issue missing it is missing Target Start, Due AND Target End at once. Showing it beside those
+ * three turns "why are these blank" into something answerable without leaving the page.
+ */
+export function readIssueReleaseSummary(issue: JiraIssue): IssueReleaseSummary {
+  const fixVersions = issue.fields.fixVersions ?? [];
+  const versionNames = fixVersions
+    .map((fixVersion) => (fixVersion.name ?? '').trim())
+    .filter((versionName) => versionName !== '');
+  const undatableReason = explainMissingDrivingFixVersion(fixVersions);
+
+  return {
+    label: versionNames.length > 0 ? versionNames.join(', ') : 'no release',
+    isUndatable: readDrivingFixVersion(fixVersions) === null,
+    undatableReason,
+  };
 }

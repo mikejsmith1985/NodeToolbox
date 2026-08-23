@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { readIssuePlanningDates, readPlanningDateValue } from './issuePlanningDates.ts';
+import { readIssuePlanningDates, readIssueReleaseSummary, readPlanningDateValue } from './issuePlanningDates.ts';
 import { resolveHygieneFieldConfig, type JiraIssue } from './checks/hygieneChecks.ts';
 
 const FIELD_CONFIG = resolveHygieneFieldConfig();
@@ -78,5 +78,50 @@ describe('readIssuePlanningDates', () => {
     const dates = readIssuePlanningDates(issueWithDates({ duedate: '' }), FIELD_CONFIG);
 
     expect(dates[1].value).toBeNull();
+  });
+});
+
+describe('readIssueReleaseSummary', () => {
+  it('names the release the work is committed to', () => {
+    const summary = readIssueReleaseSummary(issueWithDates({
+      fixVersions: [{ name: '2026.09', releaseDate: '2026-09-30' }],
+    }));
+
+    expect(summary.label).toBe('2026.09');
+    expect(summary.isUndatable).toBe(false);
+    expect(summary.undatableReason).toBeNull();
+  });
+
+  it('says so plainly when there is no release at all', () => {
+    const summary = readIssueReleaseSummary(issueWithDates({}));
+
+    expect(summary.label).toBe('no release');
+    expect(summary.isUndatable).toBe(true);
+  });
+
+  it('flags a release that is SET but cannot date the issue', () => {
+    // The likeliest trap: the chip shows a version, everything looks fine, and all three dates are
+    // still underivable because nobody put a release date on it in Jira.
+    const summary = readIssueReleaseSummary(issueWithDates({ fixVersions: [{ name: '2026.09' }] }));
+
+    expect(summary.label).toBe('2026.09');
+    expect(summary.isUndatable).toBe(true);
+    expect(summary.undatableReason).toBe('fix version has no release date in Jira (2026.09)');
+  });
+
+  it('flags an already-released version, which also cannot date future work', () => {
+    const summary = readIssueReleaseSummary(issueWithDates({
+      fixVersions: [{ name: '2026.06', releaseDate: '2026-06-30', released: true }],
+    }));
+
+    expect(summary.isUndatable).toBe(true);
+  });
+
+  it('lists every release when an issue carries more than one', () => {
+    const summary = readIssueReleaseSummary(issueWithDates({
+      fixVersions: [{ name: '2026.09', releaseDate: '2026-09-30' }, { name: '2026.12', releaseDate: '2026-12-31' }],
+    }));
+
+    expect(summary.label).toBe('2026.09, 2026.12');
   });
 });

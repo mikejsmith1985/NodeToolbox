@@ -31,6 +31,7 @@ import { useSettingsStore } from '../../store/settingsStore.ts';
 import { useAiAssistStore } from '../../store/aiAssistStore.ts';
 import { HygieneFixControl } from './HygieneFixControl.tsx';
 import { PlanningDateFields } from './PlanningDateFields.tsx';
+import { readIssueReleaseSummary } from './issuePlanningDates.ts';
 import { buildHygieneStatBand } from './hygieneStatBand.ts';
 import { HygieneAiPanel } from './ai/HygieneAiPanel.tsx';
 import { parseHygieneFilterCheckIds, useHygieneState } from './hooks/useHygieneState.ts';
@@ -734,6 +735,11 @@ function FindingRow({
             </span>
           )}
           {finding.programIncrement && <span className={styles.metaChipPi}>{finding.programIncrement}</span>}
+          {/* The release sits with the dates because it IS the dates: Target Start, Due and Target
+              End are all derived from it, so one blank release is three blank dates. Amber whenever
+              it cannot date the issue — including when a version IS set but carries no release date,
+              which looks perfectly fine and blocks the fix all the same. */}
+          {renderReleaseChip(finding.issue)}
           <span className={styles.metaChipOwner}>
             <AssigneeAvatar displayName={finding.issue.fields.assignee?.displayName ?? null} />
           </span>
@@ -1050,6 +1056,26 @@ function readFeatureLinkKey(finding: HygieneFinding, fieldConfig: HygieneFieldCo
     }
   }
   return finding.issue.fields.parent?.key ?? null;
+}
+
+/**
+ * The release chip: what the issue ships in, and whether that release can date it.
+ *
+ * Amber is the same signal an empty planning date uses, and it means the same thing here — this is
+ * the gap the page exists to find. The tooltip carries the reason, which is the difference between
+ * "add a fix version" and "ask whoever owns that release to give it a date".
+ */
+function renderReleaseChip(issue: HygieneFinding['issue']) {
+  const release = readIssueReleaseSummary(issue);
+
+  return (
+    <span
+      className={release.isUndatable ? styles.metaChipReleaseMissing : styles.metaChipRelease}
+      title={release.undatableReason ?? `Ships in ${release.label}`}
+    >
+      {release.label}
+    </span>
+  );
 }
 
 /** Days since the given timestamp, or null when the value is missing/unparseable. */

@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   deriveIssueDates,
+  explainMissingDrivingFixVersion,
   READY_TO_WORK_STATUS_NAME,
   WORKING_STATUS_NAME,
   readDrivingFixVersion,
@@ -86,7 +87,7 @@ describe('deriveIssueDates', () => {
     const derived = deriveIssueDates({ ...BASE_INPUT, fixVersions: [] });
     expect(derived.dueDate).toBeNull();
     expect(derived.targetEnd).toBeNull();
-    expect(derived.undecidedReasons).toContain('no unreleased fix version with a release date');
+    expect(derived.undecidedReasons).toContain('no fix version set on the issue');
   });
 
   it('reports which dates disagree with the policy, and only those', () => {
@@ -306,5 +307,36 @@ describe('Target Start, worked back through the whole DEV → SL chain', () => {
 
     expect(withoutChain.targetStart).toBe('2026-09-15');
     expect(withoutChain.targetStartBasis).toBe('back-calculated');
+  });
+});
+
+describe('explainMissingDrivingFixVersion', () => {
+  it('says nothing when a version can date the issue', () => {
+    expect(explainMissingDrivingFixVersion([{ name: '2026.09', releaseDate: '2026-09-30' }])).toBeNull();
+  });
+
+  it('distinguishes no version at all — a fix made on the issue', () => {
+    expect(explainMissingDrivingFixVersion([])).toBe('no fix version set on the issue');
+  });
+
+  it('distinguishes a version with no release date, and NAMES it', () => {
+    // This one is fixed ONCE in Jira's release admin and unblocks every issue on that version. The
+    // name is the only thing that says which release to open.
+    expect(explainMissingDrivingFixVersion([{ name: '2026.09' }]))
+      .toBe('fix version has no release date in Jira (2026.09)');
+  });
+
+  it('names every undated unreleased version, not just the first', () => {
+    expect(explainMissingDrivingFixVersion([{ name: '2026.09' }, { name: '2026.10' }]))
+      .toBe('fix version has no release date in Jira (2026.09, 2026.10)');
+  });
+
+  it('distinguishes a set that is entirely released — the work was never moved forward', () => {
+    expect(explainMissingDrivingFixVersion([{ name: '2026.06', releaseDate: '2026-06-30', released: true }]))
+      .toBe('every fix version on the issue is already released');
+  });
+
+  it('still explains a nameless undated version rather than printing empty brackets', () => {
+    expect(explainMissingDrivingFixVersion([{}])).toBe('fix version has no release date in Jira');
   });
 });
