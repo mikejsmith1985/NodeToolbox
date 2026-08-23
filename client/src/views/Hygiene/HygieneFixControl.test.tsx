@@ -260,3 +260,67 @@ describe('buildLinkSearchJql — where a Feature can actually be found', () => {
     expect(buildLinkSearchJql('say "hi"', true, 'ENFCT')).toContain('\\"hi\\"');
   });
 });
+
+describe('HygieneFixControl — the date pills own the dates now', () => {
+  it('renders no control for a plain date flag: the card-s own pill writes that field', () => {
+    // Two writers for one field, and the slower one was here: a label, a date box and a Fix button
+    // to set a value the pill takes in one click.
+    const { container } = render(
+      <HygieneFixControl
+        issue={buildIssue()}
+        flag={buildFlag('missing-due-date', 'Missing Due Date')}
+        fieldConfig={FIELD_CONFIG}
+        onFixed={vi.fn()}
+      />,
+    );
+
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it.each([
+    ['missing-target-start', 'Missing Target Start'],
+    ['missing-target-end', 'Missing Target End'],
+  ] as const)('renders no control for %s either', (checkId, label) => {
+    const { container } = render(
+      <HygieneFixControl
+        issue={buildIssue()}
+        flag={buildFlag(checkId, label)}
+        fieldConfig={FIELD_CONFIG}
+        onFixed={vi.fn()}
+      />,
+    );
+
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it('keeps the status transition on an overdue flag, and drops only its duplicate date box', async () => {
+    // The rule names two remedies: move the work on, or move the date. The pill covers the second,
+    // so losing the first would leave the flag with no fix at all.
+    render(
+      <HygieneFixControl
+        issue={buildIssue()}
+        flag={buildFlag('due-date-overdue', 'Due date passed')}
+        fieldConfig={FIELD_CONFIG}
+        onFixed={vi.fn()}
+      />,
+    );
+
+    expect(await screen.findByLabelText('Move status options')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Reschedule due date options')).toBeNull();
+    expect(screen.queryByText('Reschedule due date:')).toBeNull();
+  });
+
+  it('still offers the release-derived date fix, which the pill cannot do', () => {
+    // The pill takes a date somebody typed; this one WORKS OUT all three from the release.
+    render(
+      <HygieneFixControl
+        issue={buildIssue()}
+        flag={buildFlag('dates-out-of-sync', 'Dates disagree with the release')}
+        fieldConfig={FIELD_CONFIG}
+        onFixed={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText(/Apply release dates|Working out|dates/i)).toBeInTheDocument();
+  });
+});

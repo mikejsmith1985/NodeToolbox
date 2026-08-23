@@ -96,6 +96,14 @@ export function HygieneFixControl({ issue, flag, fieldConfig, onFixed }: Hygiene
     return <DerivedDatesFixInput issue={issue} fieldConfig={fieldConfig} onFixed={onFixed} />;
   }
 
+  // Every plain date fix targets Target Start, Due or Target End -- the three the card's own date
+  // pills already edit in place. Rendering a second, identical writer beside them was two controls
+  // for one job, and the slower of the two: a label, a date box and a Fix button to set a value the
+  // pill takes in one click. The pill is the fix now; this renders nothing.
+  if (descriptor.kind === 'date') {
+    return null;
+  }
+
   const fieldId = resolveFixFieldId(descriptor, fieldConfig);
   if (FIELD_ID_REQUIRED_KINDS.has(descriptor.kind) && !fieldId) {
     return <OpenInJiraLink issue={issue} note={UNCONFIGURED_FIELD_NOTE} />;
@@ -107,6 +115,9 @@ export function HygieneFixControl({ issue, flag, fieldConfig, onFixed }: Hygiene
     ? resolveFixFieldId(descriptor.alternateFix, fieldConfig)
     : null;
   const hasUsableAlternate = descriptor.alternateFix !== undefined
+    // A date alternate ("reschedule the due date") is likewise the pill's job now, so the overdue
+    // flags keep their transition and drop the duplicate date box.
+    && descriptor.alternateFix.kind !== 'date'
     && (!FIELD_ID_REQUIRED_KINDS.has(descriptor.alternateFix.kind) || alternateFieldId !== null);
 
   return (

@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Fixing an issue on Hygiene no longer re-scans the whole board.** Every field written — a date
+  pill, an inline fix, an accepted AI proposal — triggered a full re-scan: hundreds of issues, one
+  paged Jira sweep, and the entire page redrawn to update a single row. The user's next click landed
+  on a screen still rebuilding itself.
+  It now **re-reads just the issue that changed** — one request — and swaps that row in place, or
+  removes it when the issue comes back clean. Every other row keeps its object identity and its
+  position, so nothing around it flickers or moves. It genuinely re-reads rather than assuming the
+  write worked: a date write can clear two flags at once or leave a new mismatch, and a row edited by
+  guesswork would drift away from what a later scan says. The re-check is judged by the **same
+  evaluation context the scan used** — including a check the scan had to drop for that run — so a
+  refreshed row can never be judged by different rules from the row beside it. If the re-read fails
+  for any reason it falls back to the full scan, because a stale row is the one outcome worth a redraw.
+  The bulk "Fix all N date issues" button still reloads in full: it changes many issues at once.
+
+### Removed
+- **The duplicate date editors beside date flags.** `Set due date`, `Set target start`,
+  `Set target end` and the `Reschedule …` alternates each rendered a label, a date box and a Fix
+  button to write a field the card's own **date pill** now takes in one click. Two writers for one
+  job, and the slower one was the one in the way. The overdue flags keep their **Move status**
+  transition — the rule names two remedies and the pill only covers the second — and the
+  release-derived **Apply release dates** fix stays, because it works all three dates out from the
+  release rather than taking one that was typed.
+
 ### Added
 - **Hygiene now shows the release each issue ships in, beside the dates it produces.** The card
   carried Target Start, Due and Target End and never said which release they came from — yet all

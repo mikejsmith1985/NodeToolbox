@@ -8,6 +8,7 @@ import {
   HYGIENE_PROJECT_KEY_STORAGE_KEY,
   buildHygieneSearchPath,
   mapJiraIssueToHygieneFinding,
+  replaceOrDropFinding,
   useHygieneState,
 } from './useHygieneState.ts';
 import type { JiraIssue } from '../checks/hygieneChecks.ts';
@@ -368,5 +369,50 @@ describe('useHygieneState', () => {
 
     await waitFor(() => expect(result.current.loadError).toBe('Jira down'));
     expect(result.current.findings).toEqual([]);
+  });
+});
+
+describe('replaceOrDropFinding', () => {
+  function findingFor(issueKey: string, checkId = 'missing-sp') {
+    return {
+      issue: { key: issueKey, fields: { summary: issueKey } },
+      flags: [{ checkId, label: checkId, severity: 'warn' as const }],
+      programIncrement: null,
+    } as unknown as Parameters<typeof replaceOrDropFinding>[0][number];
+  }
+
+  it('drops the row when the re-checked issue came back clean', () => {
+    const remaining = replaceOrDropFinding([findingFor('TBX-1'), findingFor('TBX-2')], 'TBX-1', null);
+
+    expect(remaining.map((finding) => finding.issue.key)).toEqual(['TBX-2']);
+  });
+
+  it('swaps the row in place when problems remain, keeping its position', () => {
+    // A row that jumps has cost the reader their place just as surely as a full redraw.
+    const refreshed = findingFor('TBX-2', 'no-assignee');
+
+    const remaining = replaceOrDropFinding(
+      [findingFor('TBX-1'), findingFor('TBX-2'), findingFor('TBX-3')],
+      'TBX-2',
+      refreshed,
+    );
+
+    expect(remaining.map((finding) => finding.issue.key)).toEqual(['TBX-1', 'TBX-2', 'TBX-3']);
+    expect(remaining[1].flags[0].checkId).toBe('no-assignee');
+  });
+
+  it('leaves every other row untouched — that is the whole point of not re-scanning', () => {
+    const untouched = findingFor('TBX-1');
+
+    const remaining = replaceOrDropFinding([untouched, findingFor('TBX-2')], 'TBX-2', null);
+
+    expect(remaining[0]).toBe(untouched);
+  });
+
+  it('does not add an issue that was never in the list', () => {
+    // The list is the last scan-s scope; inserting an unscanned row would make the counts wrong.
+    const remaining = replaceOrDropFinding([findingFor('TBX-1')], 'TBX-9', findingFor('TBX-9'));
+
+    expect(remaining.map((finding) => finding.issue.key)).toEqual(['TBX-1']);
   });
 });

@@ -5,7 +5,7 @@
 // pipeline the Today dashboard's team cards count from), and compose the results
 // into summary and drill-down state for the view.
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { useSettingsStore } from '../../../store/settingsStore.ts';
 import {
@@ -14,11 +14,12 @@ import {
 import {
   resolveHygieneFieldConfig,
   summarizeHygieneFindings,
+  type HygieneEvaluationContext,
   type HygieneFieldConfig,
   type HygieneFinding,
   type HygieneSummary,
 } from '../checks/hygieneChecks.ts';
-import { buildHygieneScopeJql, DEFAULT_ASSIGNEE_CLAUSE, runHygieneScan } from './hygieneScan.ts';
+import { buildHygieneScopeJql, DEFAULT_ASSIGNEE_CLAUSE, rescanSingleHygieneIssue, runHygieneScan } from './hygieneScan.ts';
 
 // The scan pipeline moved to hygieneScan.ts so the Today dashboard can run the exact same scan;
 // these re-exports keep every existing import of this module working unchanged.
@@ -82,6 +83,11 @@ export interface HygieneActions {
   selectFilter: (checkId: string | null) => void;
   setAllProjectsScope: (isAllProjects: boolean) => void;
   loadHygiene: () => Promise<void>;
+  /**
+   * Re-checks ONE issue after a fix and updates just its row — or drops the row when it comes back
+   * clean. Costs one Jira request instead of re-scanning the whole board and redrawing the page.
+   */
+  refreshIssue: (issueKey: string) => Promise<void>;
 }
 
 export interface useHygieneStateOptions {
@@ -162,6 +168,13 @@ export function useHygieneState(options: useHygieneStateOptions = {}): HygieneSt
   const [fieldConfig, setFieldConfig] = useState<HygieneFieldConfig>(() => resolveHygieneFieldConfig());
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  // How the LAST scan evaluated, kept in a ref so a single-issue re-check is judged by exactly the
+  // same rules as the rows beside it. A ref rather than state: nothing renders from it, and putting
+  // it in state would re-render every row each time a scan finished.
+  const lastScanEvaluationRef = useRef<{
+    evaluationContext: HygieneEvaluationContext;
+    requestedFields: string[];
+  } | null>(null);
 
   useEffect(() => {
     // Only the standalone view persists the project key. Persisting the team-supplied key would
@@ -220,6 +233,10 @@ export function useHygieneState(options: useHygieneStateOptions = {}): HygieneSt
       setTotalMatchingCount(scanOutcome.totalMatchingCount);
       setIsTruncated(scanOutcome.isTruncated);
       setFindings(scanOutcome.findings);
+      lastScanEvaluationRef.current = {
+        evaluationContext: scanOutcome.evaluationContext,
+        requestedFields: scanOutcome.requestedFields,
+      };
     } catch (caughtError: unknown) {
       const errorMessage = caughtError instanceof Error ? caughtError.message : 'Failed to load Hygiene results';
       setLoadError(errorMessage);
@@ -229,6 +246,36 @@ export function useHygieneState(options: useHygieneStateOptions = {}): HygieneSt
       setIsLoading(false);
     }
   }, [activeDashboardTeamProfileId, extraJql, isAllProjectsScope, isTeamMode, projectKey, personalAssigneeClause]);
+
+  /**
+   * Re-checks one issue after a fix, and touches nothing else.
+   *
+   * The old behaviour was a full re-scan for every single field written: hundreds of issues, several
+   * seconds, and the entire page redrawn — so the user's next click landed on a screen still
+   * rebuilding itself. This reads the one issue that changed and swaps its row.
+   *
+   * It re-reads rather than assuming: a date write can clear two flags at once or leave a new
+   * mismatch, so guessing would let the row drift from what a real scan says. If the re-read fails
+   * for any reason it falls back to the full scan — a stale row is the one outcome worth a redraw.
+   */
+  const refreshIssue = useCallback(async (issueKey: string): Promise<void> => {
+    const lastScanEvaluation = lastScanEvaluationRef.current;
+    if (lastScanEvaluation === null) {
+      await loadHygiene();
+      return;
+    }
+
+    try {
+      const refreshedFinding = await rescanSingleHygieneIssue(
+        issueKey,
+        lastScanEvaluation.evaluationContext,
+        lastScanEvaluation.requestedFields,
+      );
+      setFindings((currentFindings) => replaceOrDropFinding(currentFindings, issueKey, refreshedFinding));
+    } catch {
+      await loadHygiene();
+    }
+  }, [loadHygiene]);
 
   // The exact scope JQL the scan runs within — exposed so the per-check "open in Jira" links (GH #200 US2)
   // reuse the SAME scope as the count (agree by construction).
@@ -262,7 +309,29 @@ export function useHygieneState(options: useHygieneStateOptions = {}): HygieneSt
     selectFilter,
     setAllProjectsScope,
     loadHygiene,
+    refreshIssue,
   };
+}
+
+/**
+ * Swaps one issue's row for its re-checked self, or removes it when it came back clean.
+ *
+ * Pure and separate because it is the whole behaviour the user actually sees: the fixed row
+ * disappears and the ones around it stay exactly where they were. Order is preserved rather than
+ * rebuilt — a row that jumps has cost the reader their place just as surely as a full redraw.
+ *
+ * An issue that was never in the list is not added by a refresh. The list is the last scan's scope,
+ * and quietly inserting a row nobody scanned would make the counts beside it wrong.
+ */
+export function replaceOrDropFinding(
+  currentFindings: readonly HygieneFinding[],
+  issueKey: string,
+  refreshedFinding: HygieneFinding | null,
+): HygieneFinding[] {
+  if (refreshedFinding === null) {
+    return currentFindings.filter((finding) => finding.issue.key !== issueKey);
+  }
+  return currentFindings.map((finding) => (finding.issue.key === issueKey ? refreshedFinding : finding));
 }
 
 function filterFindingsByCheck(findings: HygieneFinding[], selectedFilter: string | null): HygieneFinding[] {

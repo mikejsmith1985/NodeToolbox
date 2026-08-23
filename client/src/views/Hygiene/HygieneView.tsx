@@ -498,7 +498,9 @@ export default function HygieneView({
                   session.markFixed(finding.issue.key);
                   return;
                 }
-                void hygieneState.loadHygiene();
+                // ONE issue, not the whole board. Re-scanning hundreds of issues to update a row
+                // the user just fixed redrew the entire page and made their next click wait on it.
+                void hygieneState.refreshIssue(finding.issue.key);
               }}
               onCommentPosted={() => {
                 if (session.isSessionActive) {
@@ -521,8 +523,10 @@ export default function HygieneView({
           // 181,411 characters against a 128,000-character input box (GH #375).
           findings={hygieneState.filteredFindings}
           restrictToCheckIds={aiRestrictToCheckIds}
-          onIssueFixed={() => {
-            void hygieneState.loadHygiene();
+          onIssueFixed={(issueKey) => {
+            // Same reason as an inline fix: accepting one AI proposal changed one issue, and
+            // re-scanning the board to reflect it made every following accept wait on the redraw.
+            void hygieneState.refreshIssue(issueKey);
           }}
         />
       )}

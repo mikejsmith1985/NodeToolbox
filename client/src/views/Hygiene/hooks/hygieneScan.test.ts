@@ -11,7 +11,12 @@ vi.mock('../../../services/jiraApi.ts', () => ({
 }));
 
 import { jiraGet } from '../../../services/jiraApi.ts';
-import { buildHygieneSearchPath, loadHygieneEvaluationSetup, runHygieneScan } from './hygieneScan.ts';
+import {
+  buildHygieneSearchPath,
+  loadHygieneEvaluationSetup,
+  rescanSingleHygieneIssue,
+  runHygieneScan,
+} from './hygieneScan.ts';
 
 const mockJiraGet = vi.mocked(jiraGet);
 
@@ -226,5 +231,58 @@ describe('runHygieneScan — completeness is reported, never assumed', () => {
     expect(outcome.isTruncated).toBe(true);
     expect(outcome.totalMatchingCount).toBe(100_000);
     expect(outcome.scannedIssueCount).toBeLessThan(outcome.totalMatchingCount);
+  });
+});
+
+describe('rescanSingleHygieneIssue', () => {
+  it('reads ONE issue rather than re-running the whole scan', async () => {
+    // Fixing a field used to re-scan hundreds of issues and redraw the page, so the user-s next
+    // click landed on a screen still rebuilding itself.
+    mockJiraGet.mockResolvedValue(buildIssue('TBX-1', { summary: 'Has a summary', assignee: null }));
+
+    await rescanSingleHygieneIssue('TBX-1', { enabledBuiltInCheckIds: new Set(['no-assignee']) }, ['summary', 'assignee']);
+
+    expect(mockJiraGet).toHaveBeenCalledTimes(1);
+    expect(mockJiraGet.mock.calls[0][0]).toContain('/rest/api/2/issue/TBX-1');
+  });
+
+  it('asks for the same fields the scan asked for, so the re-check sees what the scan saw', async () => {
+    mockJiraGet.mockResolvedValue(buildIssue('TBX-1', { summary: 'x' }));
+
+    await rescanSingleHygieneIssue('TBX-1', {}, ['summary', 'duedate', 'customfield_10101']);
+
+    expect(mockJiraGet.mock.calls[0][0]).toContain(encodeURIComponent('summary,duedate,customfield_10101'));
+  });
+
+  it('returns the issue-s remaining problems when it still has some', async () => {
+    mockJiraGet.mockResolvedValue(buildIssue('TBX-1', {
+      summary: 'Has a summary',
+      assignee: null,
+      status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } },
+    }));
+
+    const finding = await rescanSingleHygieneIssue(
+      'TBX-1',
+      { enabledBuiltInCheckIds: new Set(['no-assignee']) },
+      ['summary', 'assignee'],
+    );
+
+    expect(finding?.flags.map((flag) => flag.checkId)).toEqual(['no-assignee']);
+  });
+
+  it('returns null when nothing is wrong any more — the caller drops the row', async () => {
+    mockJiraGet.mockResolvedValue(buildIssue('TBX-1', {
+      summary: 'Has a summary',
+      assignee: { displayName: 'Someone' },
+      status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } },
+    }));
+
+    const finding = await rescanSingleHygieneIssue(
+      'TBX-1',
+      { enabledBuiltInCheckIds: new Set(['no-assignee']) },
+      ['summary', 'assignee'],
+    );
+
+    expect(finding).toBeNull();
   });
 });

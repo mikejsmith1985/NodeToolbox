@@ -27,6 +27,7 @@ const mockUseHygieneState = vi.mocked(useHygieneState);
 const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000;
 
 interface OverrideHookState {
+  refreshIssue?: ReturnType<typeof useHygieneState>['refreshIssue'];
   projectKey?: string;
   extraJql?: string;
   scopeJql?: string;
@@ -121,6 +122,7 @@ function buildHookState(overrides: OverrideHookState = {}): ReturnType<typeof us
     selectFilter: vi.fn(),
     setAllProjectsScope: vi.fn(),
     loadHygiene: vi.fn(),
+    refreshIssue: overrides.refreshIssue ?? vi.fn(),
   };
 }
 
@@ -1139,6 +1141,22 @@ describe('HygieneView — the PI Review treatment', () => {
     render(<HygieneView />);
 
     expect(screen.getByTitle('fix version has no release date in Jira (2026.09)')).toHaveTextContent('2026.09');
+  });
+
+  it('re-checks only the fixed issue, instead of re-scanning the whole board', async () => {
+    // A full re-scan for one field write redrew the entire page — hundreds of issues, several
+    // seconds — so the user's next click landed on a screen still rebuilding itself.
+    const refreshIssue = vi.fn().mockResolvedValue(undefined);
+    const hookState = buildHookState({ findings: [buildDatedFinding()], refreshIssue });
+    mockUseHygieneState.mockReturnValue(hookState);
+    render(<HygieneView />);
+
+    const dueInput = screen.getByLabelText('Due for ENCUC-2316');
+    fireEvent.change(dueInput, { target: { value: '2026-09-11' } });
+    fireEvent.blur(dueInput, { target: { value: '2026-09-11' } });
+
+    await waitFor(() => expect(refreshIssue).toHaveBeenCalledWith('ENCUC-2316'));
+    expect(hookState.loadHygiene).not.toHaveBeenCalled();
   });
 
   it('does not collapse the row when a date input is clicked', () => {

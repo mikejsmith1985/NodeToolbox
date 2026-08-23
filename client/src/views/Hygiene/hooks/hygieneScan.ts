@@ -97,6 +97,18 @@ export interface HygieneScanOutcome {
   isTruncated: boolean;
   fieldConfig: HygieneFieldConfig;
   enabledCheckDefinitions: EnabledCheckDefinitions;
+  /**
+   * The context this run ACTUALLY evaluated with, kept so one issue can be re-checked afterwards.
+   *
+   * Not the same as the setup's context: a failed child-story rollup removes a check for this run
+   * only, and the rollup set itself depends on which issues were loaded. Re-checking a fixed issue
+   * against the setup instead of against this would judge it by a different rule set than the row
+   * beside it — which is exactly the kind of disagreement a single shared computation exists to
+   * prevent.
+   */
+  evaluationContext: HygieneEvaluationContext;
+  /** The `fields=` list this run requested, so a re-read of one issue sees the same fields. */
+  requestedFields: string[];
 }
 
 /**
@@ -226,17 +238,23 @@ export async function runHygieneScan(options: HygieneScanOptions): Promise<Hygie
     runCheckIds = new Set([...enabledBuiltInCheckIds].filter((checkId) => checkId !== 'missing-child-story-points'));
   }
 
+  // Built once and both RETURNED and used, so a later single-issue re-check is judged by the same
+  // rules as the scan that produced the row it replaces.
+  const runEvaluationContext: HygieneEvaluationContext = {
+    ...evaluationContext,
+    enabledBuiltInCheckIds: runCheckIds,
+    featureKeysWithPointedStories,
+  };
+
   return {
-    findings: mapIssuesToFindings(loadedIssues, {
-      ...evaluationContext,
-      enabledBuiltInCheckIds: runCheckIds,
-      featureKeysWithPointedStories,
-    }),
+    findings: mapIssuesToFindings(loadedIssues, runEvaluationContext),
     scannedIssueCount: loadedIssues.length,
     totalMatchingCount: searchOutcome.totalMatchingCount,
     isTruncated: searchOutcome.isTruncated,
     fieldConfig: hygieneFieldConfig,
     enabledCheckDefinitions,
+    evaluationContext: runEvaluationContext,
+    requestedFields,
   };
 }
 
@@ -433,4 +451,28 @@ function hasPositiveStoryPoints(fieldValue: unknown): boolean {
     return hasPositiveStoryPoints((fieldValue as Record<string, unknown>).value);
   }
   return false;
+}
+
+/**
+ * Re-reads ONE issue and re-runs the hygiene checks on it.
+ *
+ * Why this exists: fixing a field used to trigger a full re-scan — hundreds of issues, several
+ * seconds, and the whole page redrawn — to update one row. The user's next click landed on a screen
+ * that was still rebuilding. One issue is one request.
+ *
+ * It genuinely RE-READS rather than assuming the write worked. A date write can clear two flags at
+ * once, or leave a new mismatch behind, and a row edited by guesswork would drift away from what a
+ * later scan says. Returns null when the issue is now clean — the caller drops the row.
+ */
+export async function rescanSingleHygieneIssue(
+  issueKey: string,
+  evaluationContext: HygieneEvaluationContext,
+  requestedFields: string[],
+): Promise<HygieneFinding | null> {
+  const encodedFields = encodeURIComponent(buildUniqueFieldIds(requestedFields).join(','));
+  const issue = await jiraGet<JiraIssue>(
+    `/rest/api/2/issue/${encodeURIComponent(issueKey)}?fields=${encodedFields}`,
+  );
+
+  return mapJiraIssueToHygieneFinding(issue, evaluationContext);
 }
