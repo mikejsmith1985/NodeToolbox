@@ -964,3 +964,193 @@
   gap: var(--spacing-sm);
   margin-top: var(--spacing-sm);
 }
+
+/* ══ PI Review / forecast treatment ═══════════════════════════════════════════════════════════
+   The page was a wall of identical bordered boxes: every fact the same weight, every row the same
+   colour, nothing saying which issue to open first. These bring it in line with the daily forecast —
+   the figures somebody acts on before any list, and one hue per KIND of fact so the eye can go
+   straight to the field it wants instead of parsing each grey box to find it. */
+
+.statBand {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-md);
+}
+
+.statCard_bad,
+.statCard_warn,
+.statCard_good,
+.statCard_muted {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 8px);
+  border-left-width: 3px;
+}
+
+.statCard_bad { border-left-color: #f43f5e; }
+.statCard_warn { border-left-color: #f59e0b; }
+.statCard_good { border-left-color: #22c55e; }
+.statCard_muted { border-left-color: var(--color-text-muted, #94a3b8); }
+
+.statCardLabel {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.statCardValue {
+  font-size: 1.75rem;
+  font-weight: 700;
+  line-height: 1.05;
+  font-variant-numeric: tabular-nums;
+}
+
+.statCard_bad .statCardValue { color: #f43f5e; }
+.statCard_warn .statCardValue { color: #f59e0b; }
+.statCard_good .statCardValue { color: #22c55e; }
+.statCard_muted .statCardValue { color: var(--color-text-muted, #94a3b8); }
+
+.statCardNote {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+
+/* A severity stripe on the row itself, so the worst issues are findable while scrolling rather than
+   only after reading each flag. Text still carries the verdict; colour never carries it alone. */
+.findingRowError { border-left: 3px solid #f43f5e; }
+.findingRowWarn { border-left: 3px solid #f59e0b; }
+
+/* ── Meta chips: one hue per KIND of fact ── */
+.metaChips {
+  grid-area: meta;
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 6px;
+}
+
+.metaChipType,
+.metaChipStatus,
+.metaChipPi,
+.metaChipOwner,
+.metaChipAge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.metaChipType {
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  background: linear-gradient(135deg, rgba(148, 163, 184, 0.14), rgba(100, 116, 139, 0.06));
+  color: var(--color-text-primary);
+}
+
+.metaChipStatus {
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  background: linear-gradient(135deg, rgba(148, 163, 184, 0.14), rgba(100, 116, 139, 0.06));
+  color: var(--color-text-primary);
+}
+
+.metaChipPi {
+  border: 1px solid rgba(56, 189, 248, 0.5);
+  background: linear-gradient(135deg, rgba(56, 189, 248, 0.18), rgba(14, 165, 233, 0.1));
+  color: #38bdf8;
+}
+
+.metaChipOwner {
+  border: 1px solid rgba(168, 85, 247, 0.45);
+  background: linear-gradient(135deg, rgba(168, 85, 247, 0.16), rgba(99, 102, 241, 0.1));
+  color: #a855f7;
+}
+
+.metaChipAge {
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  background: linear-gradient(135deg, rgba(148, 163, 184, 0.14), rgba(100, 116, 139, 0.06));
+  color: var(--color-text-muted);
+}
+
+/* ── The three planning dates, together and editable ── */
+.planningDates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  width: 100%;
+  margin-top: var(--spacing-xs);
+}
+
+.planningDate {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px 3px 8px;
+  border: 1px solid rgba(34, 197, 94, 0.35);
+  border-radius: 999px;
+  background: linear-gradient(135deg, rgba(34, 197, 94, 0.1), rgba(16, 185, 129, 0.05));
+}
+
+.planningDateLabel {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #22c55e;
+}
+
+.planningDateInput,
+.planningDateInputEmpty {
+  border: none;
+  background: transparent;
+  color: var(--color-text-primary);
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  padding: 0;
+  color-scheme: dark light;
+}
+
+/* An empty date reads as a GAP rather than as a filled field that happens to be blank — this page
+   exists to find the gaps, so they must not be the quietest thing on the card. */
+.planningDateInputEmpty {
+  color: #f59e0b;
+}
+
+.planningDateInput:focus-visible,
+.planningDateInputEmpty:focus-visible {
+  outline: 2px solid var(--color-accent, #38bdf8);
+  outline-offset: 2px;
+}
+
+.planningDateUnconfigured {
+  font-size: 0.75rem;
+  font-style: italic;
+  color: var(--color-text-muted);
+}
+
+.planningDateNote {
+  font-size: 0.7rem;
+  color: var(--color-text-muted);
+}
+
+.planningDateSaved {
+  font-size: 0.8rem;
+  color: #22c55e;
+}
+
+.planningDateError {
+  font-size: 0.7rem;
+  color: #f43f5e;
+  max-width: 18rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

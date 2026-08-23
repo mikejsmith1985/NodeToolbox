@@ -8,6 +8,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **The Hygiene tab now reads like PI Review and the daily forecast.** It opened with twenty
+  identical tiles — every number the same size and colour — over rows of identical bordered boxes
+  where every fact carried the same weight. Twenty equal numbers is not a summary; it is the counting
+  job the reader came to avoid, and nothing in it said which issue to open first.
+  It now leads with **four figures somebody acts on**: what is broken, what is merely untidy, what a
+  single click clears with no decisions, and how much of the board is clean. Issues are counted, not
+  flags — an issue is the thing somebody opens — and an issue carrying both an error and a warning
+  counts only as broken, so the figures cannot sum to more than the board.
+  Each finding's facts are now **chips with one hue per KIND of fact** — blue is always the PI, violet
+  always the person — so the eye goes to the field it wants instead of reading every grey box to find
+  it. Rows carry a severity stripe so the worst are findable while scrolling; the text still carries
+  the verdict, so colour never carries it alone.
+- **Target Start, Due and Target End are shown together and editable in place.** Every date flag on
+  this page is about one of the three, and the card showed one — so deciding whether a flagged date
+  was actually wrong meant opening the issue in Jira, on the screen whose whole job is to let you fix
+  it here. Each writes through the same helper the inline Fix controls use, so an edit here and an
+  edit there are the same Jira request.
+  Saved on blur rather than behind a button: a date input's value is only ever a whole date, so there
+  is no half-finished state a button would protect, and three dates behind three buttons is six
+  clicks to fix one timeline. An empty date is **coloured as a gap** rather than rendered as a quiet
+  blank — this page exists to find the gaps. A failed write says so and **keeps what was typed**,
+  because the field is the only record of it. A date whose Jira field this instance has not configured
+  says "not configured" instead of offering an input that cannot save.
+
+### Added
 - **The automation-move audit can put its moves back.** The two earlier fixes stopped the intake
   cancelling live work; neither restored the issues already cancelled, and a list of twenty-one keys
   to correct by hand is not much better than no list. Each audited row now says where the issue would

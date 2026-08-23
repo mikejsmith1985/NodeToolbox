@@ -1054,3 +1054,61 @@ describe('HygieneView — a scan that has not been run yet', () => {
     expect(screen.getByText(/Jira returned 400/)).toBeInTheDocument();
   });
 });
+
+describe('HygieneView — the PI Review treatment', () => {
+  function buildDatedFinding(): HygieneFinding {
+    return {
+      issue: {
+        key: 'ENCUC-2316',
+        fields: {
+          summary: '[SL]- AWS Critical Vulnerabilities',
+          issuetype: { name: 'Story' },
+          status: { name: 'To Do', statusCategory: { key: 'new' } },
+          created: buildDateDaysAgo(3),
+          updated: buildDateDaysAgo(3),
+          duedate: '2026-09-10',
+        },
+      },
+      flags: [{ checkId: 'missing-target-start', label: 'Missing Target Start', severity: 'warn' }],
+      programIncrement: 'PI 26.4',
+    } as unknown as HygieneFinding;
+  }
+
+  it('leads with four figures instead of twenty equal tiles', () => {
+    mockUseHygieneState.mockReturnValue(buildHookState({ findings: [buildDatedFinding()], scannedIssueCount: 31 }));
+    render(<HygieneView />);
+
+    const band = screen.getByTestId('hygiene-stat-band');
+    expect(band.textContent).toContain('BROKEN');
+    expect(band.textContent).toContain('DATES FIXABLE');
+    expect(band.textContent).toContain('CLEAN');
+  });
+
+  it('shows all three planning dates on the card, editable', () => {
+    // The card showed only the due date, so judging a flagged Target Start meant opening Jira.
+    mockUseHygieneState.mockReturnValue(buildHookState({ findings: [buildDatedFinding()] }));
+    render(<HygieneView />);
+
+    expect(screen.getByLabelText('Target Start for ENCUC-2316')).toBeInTheDocument();
+    expect(screen.getByLabelText('Due for ENCUC-2316')).toBeInTheDocument();
+    expect(screen.getByLabelText('Target End for ENCUC-2316')).toBeInTheDocument();
+  });
+
+  it('carries the stored due date into its input', () => {
+    mockUseHygieneState.mockReturnValue(buildHookState({ findings: [buildDatedFinding()] }));
+    render(<HygieneView />);
+
+    expect((screen.getByLabelText('Due for ENCUC-2316') as HTMLInputElement).value).toBe('2026-09-10');
+  });
+
+  it('does not collapse the row when a date input is clicked', () => {
+    // The row is a role="button"; a click meant for a date must not also close the card it sits in.
+    mockUseHygieneState.mockReturnValue(buildHookState({ findings: [buildDatedFinding()] }));
+    render(<HygieneView />);
+
+    const findingRow = screen.getByRole('link', { name: 'ENCUC-2316' }).closest('[aria-expanded]');
+    fireEvent.click(screen.getByLabelText('Due for ENCUC-2316'));
+
+    expect(findingRow).toHaveAttribute('aria-expanded', 'false');
+  });
+});

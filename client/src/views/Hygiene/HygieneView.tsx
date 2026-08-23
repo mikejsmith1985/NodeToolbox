@@ -30,6 +30,8 @@ import { loadDashboardConfigFromStorage } from '../SprintDashboard/hooks/useDash
 import { useSettingsStore } from '../../store/settingsStore.ts';
 import { useAiAssistStore } from '../../store/aiAssistStore.ts';
 import { HygieneFixControl } from './HygieneFixControl.tsx';
+import { PlanningDateFields } from './PlanningDateFields.tsx';
+import { buildHygieneStatBand } from './hygieneStatBand.ts';
 import { HygieneAiPanel } from './ai/HygieneAiPanel.tsx';
 import { parseHygieneFilterCheckIds, useHygieneState } from './hooks/useHygieneState.ts';
 import { useHygieneSession, type HygieneSessionOutcome } from './hooks/useHygieneSession.ts';
@@ -74,7 +76,6 @@ const FIELD_DEPENDENT_CHECKS: ReadonlyArray<{ checkId: string; fieldConfigKey: k
   { checkId: 'missing-application', fieldConfigKey: 'applicationFieldIds' },
 ];
 const NOT_CONFIGURED_TILE_LABEL = 'not checked — no matching Jira field';
-const NO_VALUE_LABEL = '—';
 // Visible marks for findings settled during a cleanup session; untouched rows carry none.
 const SESSION_OUTCOME_MARKS: Record<HygieneSessionOutcome, string> = {
   fixed: '✓ fixed',
@@ -360,6 +361,21 @@ export default function HygieneView({
         </div>
       )}
 
+      {/* The four figures somebody acts on, before any list. Twenty equal tiles is the counting job
+          the reader came here to avoid; this says what is broken, what is untidy, what one click
+          clears, and how much of the board is fine. */}
+      {hasLoadedFindings && (
+        <div className={styles.statBand} data-testid="hygiene-stat-band">
+          {buildHygieneStatBand(hygieneState.findings, hygieneState.scannedIssueCount ?? 0).map((stat) => (
+            <div className={styles[`statCard_${stat.tone}`]} key={stat.id}>
+              <span className={styles.statCardLabel}>{stat.label}</span>
+              <strong className={styles.statCardValue}>{stat.count}</strong>
+              <span className={styles.statCardNote}>{stat.note}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
       <BulkDateFixButton hygieneState={hygieneState} />
 
       <HygieneDiagnosticsPanel hygieneState={hygieneState} />
@@ -634,8 +650,11 @@ function FindingRow({
   onCommentPosted,
 }: FindingRowProps) {
   const idleDayCount = calculateDaysSince(finding.issue.fields.updated ?? finding.issue.fields.created);
+  // The worst issues become findable while scrolling, instead of only after reading each flag.
+  const hasErrorFlag = finding.flags.some((flag) => flag.severity === 'error');
   const rowClassName = [
     styles.findingRow,
+    hasErrorFlag ? styles.findingRowError : styles.findingRowWarn,
     sessionOutcome ? styles.findingRowSettled : '',
     isSessionCurrent ? styles.findingRowCurrent : '',
   ].filter(Boolean).join(' ');
@@ -697,51 +716,43 @@ function FindingRow({
             </div>
           ))}
         </div>
-        <dl className={styles.issueMeta}>
-          <div>
-            <dt>Type</dt>
-            <dd>
-              {finding.issue.fields.issuetype?.name
-                ? <IssueTypeIcon issueTypeName={finding.issue.fields.issuetype.name} />
-                : NO_VALUE_LABEL}
-            </dd>
+        {/* Chips rather than a grid of identical bordered cards. One hue per KIND of fact — blue is
+            always the PI, violet always the person — so the eye goes to the field it wants instead of
+            reading every box to find it. Same vocabulary as the daily forecast and PI Review. */}
+        <div className={styles.metaChips}>
+          {finding.issue.fields.issuetype?.name && (
+            <span className={styles.metaChipType}>
+              <IssueTypeIcon issueTypeName={finding.issue.fields.issuetype.name} />
+            </span>
+          )}
+          {finding.issue.fields.status?.name && (
+            <span className={styles.metaChipStatus}>
+              <StatusChip
+                statusName={finding.issue.fields.status.name}
+                statusCategoryKey={finding.issue.fields.status.statusCategory?.key}
+              />
+            </span>
+          )}
+          {finding.programIncrement && <span className={styles.metaChipPi}>{finding.programIncrement}</span>}
+          <span className={styles.metaChipOwner}>
+            <AssigneeAvatar displayName={finding.issue.fields.assignee?.displayName ?? null} />
+          </span>
+          {idleDayCount !== null && (
+            <span className={styles.metaChipAge}>
+              <AgeBadge ageDays={idleDayCount} staleDaysThreshold={staleDaysThreshold} />
+            </span>
+          )}
+          {/* The three dates every date flag on this page is about, editable here rather than in
+              Jira. Stops propagation because a click meant for a date input must not also collapse
+              the row it sits in. */}
+          <div onClick={(clickEvent) => clickEvent.stopPropagation()} role="presentation">
+            <PlanningDateFields
+              fieldConfig={fieldConfig}
+              issue={finding.issue}
+              onDateSaved={onIssueUpdated}
+            />
           </div>
-          <div>
-            <dt>Status</dt>
-            <dd>
-              {finding.issue.fields.status?.name
-                ? (
-                    <StatusChip
-                      statusName={finding.issue.fields.status.name}
-                      statusCategoryKey={finding.issue.fields.status.statusCategory?.key}
-                    />
-                  )
-                : NO_VALUE_LABEL}
-            </dd>
-          </div>
-          <div>
-            <dt>PI</dt>
-            <dd>{finding.programIncrement || NO_VALUE_LABEL}</dd>
-          </div>
-          <div>
-            <dt>Assignee</dt>
-            <dd><AssigneeAvatar displayName={finding.issue.fields.assignee?.displayName ?? null} /></dd>
-          </div>
-          {/* The due date is a fact about the issue in its own right — and the one the overdue
-              flags are entirely about. It was the only field the card never showed. */}
-          <div>
-            <dt>Due</dt>
-            <dd>{readDateFieldText(finding.issue.fields.duedate) ?? NO_VALUE_LABEL}</dd>
-          </div>
-          <div>
-            <dt>Age</dt>
-            <dd>
-              {idleDayCount === null
-                ? NO_VALUE_LABEL
-                : <AgeBadge ageDays={idleDayCount} staleDaysThreshold={staleDaysThreshold} />}
-            </dd>
-          </div>
-        </dl>
+        </div>
       </div>
       {isExpanded && (
         <div className={styles.issueDetailCell}>
