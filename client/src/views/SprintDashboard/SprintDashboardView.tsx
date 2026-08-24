@@ -72,6 +72,11 @@ import RosterTab from './RosterTab.tsx';
 import SprintDashboardPiReviewTab from './SprintDashboardPiReviewTab.tsx';
 import StandupTab from './StandupTab.tsx';
 import TeamDashboardHygieneTab from './TeamDashboardHygieneTab.tsx';
+import {
+  readStoryPointsFromFields,
+  resolveStoryPointsFieldIds,
+  resolveStoryPointsWriteFieldId,
+} from '../Hygiene/checks/storyPointsField.ts';
 import { useCapacityStore } from './hooks/useCapacityStore.ts';
 import type { DashboardConfig } from './hooks/useDashboardConfig.ts';
 import { useDashboardConfig } from './hooks/useDashboardConfig.ts';
@@ -3790,13 +3795,13 @@ function PointingTableRow({
   onOverride, onSave, onToggleExpand,
 }: PointingTableRowProps) {
   const issueKey = issue.key;
-  const storyPointsFieldId = customStoryPointsFieldId || 'customfield_10016';
-  const rawCurrentValue = (issue.fields as Record<string, unknown>)[storyPointsFieldId]
-    ?? (issue.fields as Record<string, unknown>).customfield_10028 ?? null;
-  // Select-type story-points fields return {id, value} objects — extract the numeric value.
-  const currentPoints = rawCurrentValue !== null && typeof rawCurrentValue === 'object'
-    ? ((rawCurrentValue as Record<string, unknown>).value ?? null)
-    : rawCurrentValue;
+  // Read through the central resolver, not `setting || customfield_10016`: the Team Dashboard's
+  // default is the placeholder `story_points`, so that fallback sent every read to a field this
+  // instance does not use and reported estimated issues as unestimated (GH #375).
+  const currentPoints = readStoryPointsFromFields(
+    issue.fields as unknown as Record<string, unknown>,
+    resolveStoryPointsFieldIds(customStoryPointsFieldId),
+  );
   const effectivePoints = override ?? estimate?.suggestedPoints;
 
   return (
@@ -4012,11 +4017,13 @@ function PointingTab({
   // {id, value} for Select fields and a bare number for numeric fields. When all issues are
   // unpointed (null), detection returns false and handleSaveRow falls back via retry.
   const isStoryPointsFieldDropdown = useMemo(() => {
-    const storyPointsFieldId = config.customStoryPointsFieldId || 'customfield_10016';
+    const storyPointsFieldIds = resolveStoryPointsFieldIds(config.customStoryPointsFieldId);
     for (const issue of issues) {
-      const rawFieldValue = (issue.fields as Record<string, unknown>)[storyPointsFieldId];
-      if (rawFieldValue !== null && rawFieldValue !== undefined && typeof rawFieldValue === 'object') {
-        return true;
+      for (const storyPointsFieldId of storyPointsFieldIds) {
+        const rawFieldValue = (issue.fields as Record<string, unknown>)[storyPointsFieldId];
+        if (rawFieldValue !== null && rawFieldValue !== undefined && typeof rawFieldValue === 'object') {
+          return true;
+        }
       }
     }
     return false;
@@ -4122,7 +4129,9 @@ function PointingTab({
     setSaveProgressByKey((prev) => ({ ...prev, [issueKey]: 'saving' }));
     setSaveErrorByKey((prev) => { const next = { ...prev }; delete next[issueKey]; return next; });
     try {
-      const storyPointsFieldId = config.customStoryPointsFieldId || 'customfield_10016';
+      // The single field a write must target: the one a read consults FIRST, so a saved estimate is
+      // read back by the same surface that saved it.
+      const storyPointsFieldId = resolveStoryPointsWriteFieldId(config.customStoryPointsFieldId);
 
       // Jira Select (dropdown) fields require {value: "N"} format; plain number fields take a bare number.
       // Detection uses existing field values from sprint board issues; falls back to bare number

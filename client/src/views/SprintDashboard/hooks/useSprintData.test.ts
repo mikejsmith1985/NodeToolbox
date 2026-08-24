@@ -18,7 +18,7 @@ vi.mock('../../../services/piNameSuggestions.ts', () => ({
   fetchPiNameSuggestions: mockFetchPiNameSuggestions,
 }));
 
-import { useSprintData } from './useSprintData.ts';
+import { buildSprintIssueFieldList, useSprintData } from './useSprintData.ts';
 import { useConnectionStore } from '../../../store/connectionStore.ts';
 import { useSettingsStore } from '../../../store/settingsStore.ts';
 
@@ -860,5 +860,48 @@ describe('useSprintData', () => {
       const { result } = renderHook(() => useSprintData('team-a'));
       expect(result.current.state.piReviewPages).toEqual([{ piName: 'PI 26.3', pageUrl: 'url-263' }]);
     });
+  });
+});
+
+describe('buildSprintIssueFieldList — asking Jira for the field the resolver already knows', () => {
+  const STORY_POINTS_MAPPING_KEY = 'tbxJiraFieldMapping';
+
+  afterEach(() => {
+    window.localStorage.removeItem(STORY_POINTS_MAPPING_KEY);
+  });
+
+  it('requests the RESOLVED story-points field when handed the placeholder setting', () => {
+    // The Team Dashboard's default is `story_points`, which is not a Jira field. This asked Jira for
+    // it, never asked for the real one, and every issue in the Forecast tab read as UNSIZED — 68 of
+    // them — while the resolver had known the right id all along (GH #375).
+    const fieldList = buildSprintIssueFieldList('story_points');
+
+    expect(fieldList).not.toContain('story_points');
+    expect(fieldList.split(',')).toContain('customfield_10236');
+  });
+
+  it('never asks for a field that is not a real custom field', () => {
+    expect(buildSprintIssueFieldList('not a field').split(',').every((fieldId) =>
+      fieldId.startsWith('customfield_') || !fieldId.includes(' '))).toBe(true);
+  });
+
+  it('honours an explicitly configured field, and still keeps the resolved ones', () => {
+    const fieldList = buildSprintIssueFieldList('customfield_19999').split(',');
+
+    expect(fieldList).toContain('customfield_19999');
+    expect(fieldList).toContain('customfield_10236');
+  });
+
+  it('does not duplicate a field the base list already carries', () => {
+    const fieldList = buildSprintIssueFieldList('customfield_10016').split(',');
+    const occurrences = fieldList.filter((fieldId) => fieldId === 'customfield_10016');
+
+    expect(occurrences).toHaveLength(1);
+  });
+
+  it('still carries the fields every other tab reads', () => {
+    const fieldList = buildSprintIssueFieldList('story_points').split(',');
+
+    expect(fieldList).toEqual(expect.arrayContaining(['summary', 'status', 'assignee', 'fixVersions', 'issuelinks']));
   });
 });

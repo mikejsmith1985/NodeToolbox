@@ -8,6 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **The Forecast tab reported 68 issues as unsized because it never asked Jira for the estimates.**
+  The Sprint Dashboard's issue fetch built its `fields=` list from the Team Dashboard's raw
+  story-points setting, whose default is the placeholder `story_points` — not a Jira field. So the
+  request asked for a field that does not exist, never asked for the one that does
+  (`customfield_10236` here), and every issue came back estimate-less. The Forecast tab then resolved
+  the field **correctly** and found nothing there, because the data had never been fetched.
+  Discovered, never requested — the same shape as the sub-status gap.
+  `buildSprintIssueFieldList` now **resolves** the field instead of trusting what it was handed, and
+  appends every resolved id rather than the first, so an instance mid-migration does not silently
+  lose half its estimates. Three more bypasses in the Pointing tab — a read, a dropdown-detection
+  read and the write, each doing `setting || customfield_10016` — now go through the same central
+  resolver, so an estimate saved there is read back by the surface that saved it.
+  This is why Today's forecast said "1 unsized" and the Forecast tab said "68": two surfaces, one
+  calculation, **two different field lists**.
+
+### Fixed
 - **The Hygiene date button now says what it will not do.** A board showing seven date flags offered
   to "Fix all 1 date issue(s)", with nothing on screen explaining the gap — so a correct decision
   read as a broken button (GH #375). The six it skipped were **overdue** flags: Target End passed

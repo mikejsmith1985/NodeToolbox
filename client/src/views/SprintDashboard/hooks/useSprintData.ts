@@ -12,6 +12,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { jiraGet } from '../../../services/jiraApi.ts';
 import { buildJqlFieldReference, readConfiguredPiFieldId } from '../../Hygiene/checks/hygieneFieldConfig.ts';
+import { resolveStoryPointsFieldIds } from '../../Hygiene/checks/storyPointsField.ts';
 import { fetchPiNameSuggestions } from '../../../services/piNameSuggestions.ts';
 import { filterPiNamesToPlanningWindow, resolvePiScopeSelection } from '../../ArtView/hooks/artHelpers.ts';
 import { useConnectionStore } from '../../../store/connectionStore.ts';
@@ -33,16 +34,25 @@ const DASHBOARD_SCOPE_MODE_PI = 'pi';
 const SPRINT_ISSUE_BASE_FIELDS =
   'summary,status,priority,issuetype,assignee,reporter,created,updated,duedate,description,customfield_10016,customfield_10021,customfield_10028,customfield_10101,customfield_10102,customfield_10200,customfield_10301,fixVersions,issuelinks';
 
-/** Returns the full field list for sprint/board issue requests, appending the configured
- *  story-points field when it differs from the legacy customfield_10016 already in the base. */
-function buildSprintIssueFieldList(customStoryPointsFieldId: string): string {
-  const shouldAppend =
-    customStoryPointsFieldId
-    && customStoryPointsFieldId !== 'customfield_10016'
-    && !SPRINT_ISSUE_BASE_FIELDS.includes(customStoryPointsFieldId);
-  return shouldAppend
-    ? `${SPRINT_ISSUE_BASE_FIELDS},${customStoryPointsFieldId}`
-    : SPRINT_ISSUE_BASE_FIELDS;
+/**
+ * The full `fields=` list for sprint/board issue requests.
+ *
+ * It RESOLVES the story-points field rather than trusting what it was handed. The Team Dashboard's
+ * setting defaults to the placeholder `story_points`, which is not a Jira field — so this asked Jira
+ * for a field that does not exist, never requested the one that does (`customfield_10236` on this
+ * instance), and every issue in the Forecast tab came back reading as UNSIZED. The resolver already
+ * knew the right id; nobody had ever asked for it. Discovered, never requested.
+ *
+ * Every resolved id is appended, not just the first: an instance mid-migration keeps points in the
+ * old field on old issues and the new one on new issues, and requesting one of the two silently
+ * halves the estimates.
+ */
+export function buildSprintIssueFieldList(customStoryPointsFieldId: string): string {
+  const missingFieldIds = resolveStoryPointsFieldIds(customStoryPointsFieldId)
+    .filter((fieldId) => !SPRINT_ISSUE_BASE_FIELDS.split(',').includes(fieldId));
+  return missingFieldIds.length === 0
+    ? SPRINT_ISSUE_BASE_FIELDS
+    : `${SPRINT_ISSUE_BASE_FIELDS},${missingFieldIds.join(',')}`;
 }
 const BOARDS_API_PATH = '/rest/agile/1.0/board';
 const NO_ACTIVE_SPRINT_MESSAGE =
