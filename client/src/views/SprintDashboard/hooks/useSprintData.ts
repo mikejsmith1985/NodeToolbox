@@ -13,6 +13,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { jiraGet } from '../../../services/jiraApi.ts';
 import { buildJqlFieldReference, readConfiguredPiFieldId } from '../../Hygiene/checks/hygieneFieldConfig.ts';
 import { resolveStoryPointsFieldIds } from '../../Hygiene/checks/storyPointsField.ts';
+import { escapeJqlValue } from '../../../utils/jqlValue.ts';
 import { fetchPiNameSuggestions } from '../../../services/piNameSuggestions.ts';
 import { filterPiNamesToPlanningWindow, resolvePiScopeSelection } from '../../ArtView/hooks/artHelpers.ts';
 import { useConnectionStore } from '../../../store/connectionStore.ts';
@@ -388,10 +389,6 @@ async function loadAvailableBoardsForProject(projectKey: string): Promise<JiraBo
 
 function buildIssueSearchPath(jql: string, fieldList: string): string {
   return `/rest/api/2/search?jql=${encodeURIComponent(jql)}&fields=${fieldList}&maxResults=${SPRINT_ISSUE_MAX_RESULTS}&expand=changelog`;
-}
-
-function escapeJqlValue(jqlValue: string): string {
-  return jqlValue.replaceAll('\\', '\\\\').replaceAll('"', '\\"');
 }
 
 function createAlphabeticalValues(values: Iterable<string>): string[] {

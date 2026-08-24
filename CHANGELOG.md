@@ -8,6 +8,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Scope movement, on the Releases tab: where did this release&#39;s issues go?** A release had 27
+  issues and now has 15, and Jira will tell you what is in a version today while saying nothing at
+  all about what left it — so the only way to answer was to remember. It now asks Jira for the
+  history (`fixVersion WAS`), compares it with the present, and names every departure, **grouped by
+  where it landed** so twelve going to one place is said once rather than twelve times. Issues whose
+  fix version was cleared entirely are their own destination — *no fix version at all* — because that
+  is a different event from a move.
+  It also names **who took the version off, and when**, read from the change history that arrives
+  with the same request. This is usually the whole answer: a release losing a dozen issues is rarely
+  a dozen decisions, it is one person doing one thing that cleared the field as a side effect.
+- **A point-in-time view of any release**: pick a date and time in your own zone and see what the
+  release held at that moment, plus what has been **removed** and **added** since. Jira cannot be
+  asked this. It is reconstructed by rewinding each issue's fix-version history from what it carries
+  today — a fact — rather than replaying forward from a value the changelog never records. Free and
+  instant: the histories already arrived with the trace, so every date typed costs nothing.
+- **A version finder**, because the other half of the problem is not remembering the name. Every
+  version in the project, filtered by any part of its name, newest release date first — and
+  deliberately **including released and archived** ones, since the version being hunted for is
+  usually an old one that was renamed and pushed. The open-versions list every other surface uses is
+  exactly the list it will not be in.
+  The whole panel ships **collapsed and fetches nothing** until opened: the Releases tab is for the
+  radar, and a lookup nobody opened should cost neither a request nor screen space.
+  When Jira refuses the history query, the departure count reads **unknown** rather than 0 and the
+  point-in-time view refuses to reconstruct anything — an empty list meaning "we could not look"
+  reads identically to "nothing moved", and those are opposite answers.
+
+### Changed
+- **One JQL value escaper instead of two.** There were two copies and a third about to be written;
+  a value that must match Jira exactly cannot afford two subtly different answers about how to
+  escape it. Now `utils/jqlValue.ts`, with backslashes escaped before quotes so it never doubles its
+  own output.
+
+### Added
 - **A PI clock on the Forecast tab, and it leads.** The tab could only answer "can this ship in
   version X" — a question that matters near a ship and on no other day. It now opens with the
   question a team actually asks: **can this reach Integrated Test by the end of the PI**, measured

@@ -72,6 +72,7 @@ import RosterTab from './RosterTab.tsx';
 import SprintDashboardPiReviewTab from './SprintDashboardPiReviewTab.tsx';
 import StandupTab from './StandupTab.tsx';
 import TeamDashboardHygieneTab from './TeamDashboardHygieneTab.tsx';
+import { VersionMovementPanel } from './releaseScope/VersionMovementPanel.tsx';
 import {
   readStoryPointsFromFields,
   resolveStoryPointsFieldIds,
@@ -5990,6 +5991,11 @@ function ReleasesTab({
 
   return (
     <div>
+      {/* A lookup somebody arrives at with a specific question — "this release had 27 issues and
+          now has 15" — so it is collapsed and costs nothing until opened. The radar below is what
+          this tab is for. */}
+      <VersionMovementPanel projectKey={projectKey} />
+
       <h2 className={styles.blockersSectionTitle}>Release Radar</h2>
       {isLoadingReleaseRadar && (
         <p style={{ color: 'var(--color-text-secondary)' }}>Building Release Radar…</p>
