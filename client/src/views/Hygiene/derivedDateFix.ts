@@ -256,6 +256,37 @@ const DETERMINISTIC_DATE_CHECK_IDS = [
 ];
 
 /**
+ * The date flags the bulk fix will NEVER write, however plainly they are about a date.
+ *
+ * Each says the date has ARRIVED and the work has not: Target Start came and went while the issue
+ * sat in To Do, Target End passed before testing, the due date passed before completion. The field
+ * is correct; the schedule is not. Moving the date would make the warning disappear and change
+ * nothing about the work, which is the one thing an automatic fix must never do.
+ */
+const OVERDUE_DATE_CHECK_IDS = [
+  'target-start-ready',
+  'target-end-overdue',
+  'due-date-overdue',
+];
+
+/**
+ * How many issues carry a date problem the button deliberately leaves alone.
+ *
+ * The button counted only what it would write, so a board showing seven date flags offered to fix
+ * one and never said why — which reads as a broken button rather than as a decision. This is the
+ * number that makes the difference visible, so the screen states its own scope instead of leaving
+ * the reader to work out that the two figures measure different things.
+ *
+ * An issue that ALSO has something fixable is not counted here: it is already in the button's set,
+ * and counting it twice would make the two figures overlap and stop adding up.
+ */
+export function countUnfixableDateIssues(findings: readonly HygieneFinding[]): number {
+  return findings.filter((finding) =>
+    finding.flags.some((flag) => OVERDUE_DATE_CHECK_IDS.includes(flag.checkId))
+    && !finding.flags.some((flag) => DETERMINISTIC_DATE_CHECK_IDS.includes(flag.checkId))).length;
+}
+
+/**
  * The issues a bulk derived-date write would actually change, each listed once.
  *
  * Pure and separately testable because it decides the number shown on the button, and a count that

@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **The Hygiene date button now says what it will not do.** A board showing seven date flags offered
+  to "Fix all 1 date issue(s)", with nothing on screen explaining the gap — so a correct decision
+  read as a broken button (GH #375). The six it skipped were **overdue** flags: Target End passed
+  before testing, the due date passed before completion. Those fields are right; the schedule is not,
+  and moving the date would erase the warning while changing nothing about the work.
+  The button is now labelled for what it actually writes — **"Fix N blank or mismatched date(s)"** —
+  and carries a note beside it: *"6 more have an overdue date — not auto-fixed, because the date is
+  right and the work is late."* An issue that has both kinds is counted only once, in the button, so
+  the two figures never overlap.
+  It also **no longer disappears** when nothing is auto-fixable. On a board full of overdue dates,
+  no button at all is indistinguishable from a missing feature; it now states that plainly instead.
+
 ### Changed
 - **Fixing an issue on Hygiene no longer re-scans the whole board.** Every field written — a date
   pill, an inline fix, an accepted AI proposal — triggered a full re-scan: hundreds of issues, one

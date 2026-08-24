@@ -843,7 +843,7 @@ describe('HygieneView — Fix all dates', () => {
     }));
     render(<HygieneView />);
 
-    expect(screen.getByRole('button', { name: /Fix all 2 date/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Fix 2 blank or mismatched date/i })).toBeInTheDocument();
   });
 
   it('offers no bulk fix when no issue has dates to correct', () => {
@@ -1168,5 +1168,60 @@ describe('HygieneView — the PI Review treatment', () => {
     fireEvent.click(screen.getByLabelText('Due for ENCUC-2316'));
 
     expect(findingRow).toHaveAttribute('aria-expanded', 'false');
+  });
+});
+
+describe('HygieneView — the date button says what it will NOT do', () => {
+  function findingWith(issueKey: string, checkIds: string[]): HygieneFinding {
+    return {
+      issue: {
+        key: issueKey,
+        fields: {
+          summary: `Summary ${issueKey}`,
+          status: { name: 'To Do', statusCategory: { key: 'new' } },
+          created: buildDateDaysAgo(3),
+          updated: buildDateDaysAgo(3),
+        },
+      },
+      flags: checkIds.map((checkId) => ({ checkId, label: checkId, severity: 'warn' as const })),
+      programIncrement: null,
+    } as unknown as HygieneFinding;
+  }
+
+  it('names how many issues it is leaving alone, and why', () => {
+    // Seven date flags on the board, one on the button, and nothing on screen saying they measure
+    // different things — so it read as broken rather than as a decision (GH #375).
+    mockUseHygieneState.mockReturnValue(buildHookState({
+      findings: [
+        findingWith('ENFCT-1', ['missing-target-end']),
+        findingWith('ENFCT-2', ['target-end-overdue']),
+        findingWith('ENFCT-3', ['target-end-overdue']),
+      ],
+    }));
+    render(<HygieneView />);
+
+    expect(screen.getByRole('button', { name: /Fix 1 blank or mismatched date/ })).toBeInTheDocument();
+    expect(screen.getByText(/2 more have an overdue date/)).toBeInTheDocument();
+  });
+
+  it('still explains itself when NOTHING is auto-fixable, instead of showing no button at all', () => {
+    // "No button" is indistinguishable from "the feature is missing" on a board full of date flags.
+    mockUseHygieneState.mockReturnValue(buildHookState({
+      findings: [findingWith('ENFCT-2', ['due-date-overdue'])],
+    }));
+    render(<HygieneView />);
+
+    expect(screen.queryByRole('button', { name: /blank or mismatched date/ })).toBeNull();
+    expect(screen.getByText(/None can be auto-fixed/)).toBeInTheDocument();
+  });
+
+  it('says nothing at all when there are no date problems of either kind', () => {
+    mockUseHygieneState.mockReturnValue(buildHookState({
+      findings: [findingWith('ENFCT-9', ['missing-sp'])],
+    }));
+    render(<HygieneView />);
+
+    expect(screen.queryByText(/overdue date/)).toBeNull();
+    expect(screen.queryByRole('button', { name: /blank or mismatched date/ })).toBeNull();
   });
 });

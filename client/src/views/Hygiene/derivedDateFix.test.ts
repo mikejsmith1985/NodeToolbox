@@ -16,6 +16,7 @@ import {
   applyDerivedDates,
   planDerivedDateWrites,
   readDeterministicDateFixCandidates,
+  countUnfixableDateIssues,
   summariseUndecidedDates,
 } from './derivedDateFix.ts';
 import type { HygieneFinding, JiraIssue } from './checks/hygieneChecks.ts';
@@ -408,5 +409,51 @@ describe('summariseUndecidedDates — rolled up by release, not by issue', () =>
 
     expect(summary).toContain('no fix version set on the issue (1): ENCUC-1');
     expect(summary).toContain('fix version has no release date in Jira (2026.09) (1): ENCUC-2');
+  });
+});
+
+describe('countUnfixableDateIssues', () => {
+  function findingWith(issueKey: string, checkIds: string[]): HygieneFinding {
+    return {
+      issue: { key: issueKey, fields: { summary: issueKey } },
+      flags: checkIds.map((checkId) => ({ checkId, label: checkId, severity: 'warn' as const })),
+    } as unknown as HygieneFinding;
+  }
+
+  it('counts the overdue-date issues the button deliberately leaves alone', () => {
+    // The board showed seven date flags and the button offered to fix one, with nothing on screen
+    // saying the two figures measure different things — so it read as broken (GH #375).
+    const count = countUnfixableDateIssues([
+      findingWith('ENFCT-1', ['target-end-overdue']),
+      findingWith('ENFCT-2', ['due-date-overdue']),
+      findingWith('ENFCT-3', ['target-start-ready']),
+    ]);
+
+    expect(count).toBe(3);
+  });
+
+  it('does not count an issue that also has something fixable', () => {
+    // It is already in the button-s set; counting it twice would make the two figures overlap.
+    const count = countUnfixableDateIssues([
+      findingWith('ENFCT-1', ['target-end-overdue', 'missing-target-end']),
+    ]);
+
+    expect(count).toBe(0);
+  });
+
+  it('ignores flags that are not about dates at all', () => {
+    expect(countUnfixableDateIssues([findingWith('ENFCT-1', ['missing-sp', 'no-assignee'])])).toBe(0);
+  });
+
+  it('counts an issue once however many overdue flags it carries', () => {
+    const count = countUnfixableDateIssues([
+      findingWith('ENFCT-1', ['target-end-overdue', 'due-date-overdue']),
+    ]);
+
+    expect(count).toBe(1);
+  });
+
+  it('is zero for an empty scan', () => {
+    expect(countUnfixableDateIssues([])).toBe(0);
   });
 });

@@ -19,6 +19,7 @@ import {
 import { resolveStoryPointsFieldIds } from './checks/storyPointsField.ts';
 import {
   applyDerivedDates,
+  countUnfixableDateIssues,
   readDeterministicDateFixCandidates,
   summariseUndecidedDates,
 } from './derivedDateFix.ts';
@@ -802,9 +803,18 @@ function BulkDateFixButton({ hygieneState }: { hygieneState: ReturnType<typeof u
   // release. Missing dates were the majority case and the button could never see them, so the
   // deterministic fix sat one click away from a hundred issues and was offered to almost none.
   const datedIssues = readDeterministicDateFixCandidates(hygieneState.findings);
+  // Counted whether or not the button renders: "nothing here is auto-fixable" is itself the answer
+  // on a board full of overdue dates, and returning null said nothing at all.
+  const unfixableDateIssueCount = countUnfixableDateIssues(hygieneState.findings);
 
   if (datedIssues.length === 0) {
-    return null;
+    return unfixableDateIssueCount === 0 ? null : (
+      <div className={styles.bulkFixRow}>
+        <span className={styles.fixNote}>
+          {`${unfixableDateIssueCount} issue(s) have an overdue date. None can be auto-fixed — the dates are right and the work is late.`}
+        </span>
+      </div>
+    );
   }
 
   async function applyEveryDateFix(): Promise<void> {
@@ -850,8 +860,16 @@ function BulkDateFixButton({ hygieneState }: { hygieneState: ReturnType<typeof u
         type="button"
         onClick={() => void applyEveryDateFix()}
       >
-        {isApplying ? 'Applying…' : `📅 Fix all ${datedIssues.length} date issue(s)`}
+        {isApplying ? 'Applying…' : `📅 Fix ${datedIssues.length} blank or mismatched date(s)`}
       </button>
+      {/* The board can show seven date flags while this button offers to fix one, and the two
+          figures measure different things. Saying so is the difference between a decision and a
+          button that looks broken — which is exactly how it read (GH #375). */}
+      {unfixableDateIssueCount > 0 && (
+        <span className={styles.fixNote}>
+          {`${unfixableDateIssueCount} more have an overdue date — not auto-fixed, because the date is right and the work is late.`}
+        </span>
+      )}
       {resultMessage && <span className={styles.fixNote} role="status">{resultMessage}</span>}
     </div>
   );
