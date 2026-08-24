@@ -10,6 +10,13 @@
 import { jiraGet } from '../../../services/jiraApi.ts';
 import { fetchIssuesPaged } from '../../../services/fetchIssuesPaged.ts';
 import {
+  buildUpdatedSinceJql,
+  collectFixVersionRemovals,
+  formatJqlDateTime,
+  readStartOfLocalDay,
+  type FixVersionRemoval,
+} from './recentVersionChanges.ts';
+import {
   buildCurrentlyInVersionJql,
   buildEverInVersionJql,
   buildVersionSnapshot,
@@ -131,4 +138,28 @@ export async function loadVersionMovement(
  */
 export function readVersionSnapshotAt(outcome: VersionMovementOutcome, atIso: string): VersionSnapshot {
   return buildVersionSnapshot(outcome.movement.versionName, outcome.everInIssues, atIso);
+}
+
+/**
+ * Every fix version taken off an issue in this project since a moment.
+ *
+ * No version has to be chosen, and no history JQL is used: it asks for issues UPDATED since then —
+ * a clause every Jira supports — and reads the change histories that come back with them. An issue
+ * whose fix version changed was necessarily updated when it did, so the superset is complete, and
+ * "updated today" is small enough that reading it is cheap.
+ */
+export async function loadFixVersionRemovalsSince(
+  projectKey: string,
+  since: Date,
+): Promise<FixVersionRemoval[]> {
+  const issues = await searchMembers(buildUpdatedSinceJql(projectKey, formatJqlDateTime(since)), true);
+  return collectFixVersionRemovals(issues, since.toISOString());
+}
+
+/** The same sweep, scoped to today — the question this is almost always opened to ask. */
+export async function loadFixVersionRemovalsToday(
+  projectKey: string,
+  now: Date,
+): Promise<FixVersionRemoval[]> {
+  return loadFixVersionRemovalsSince(projectKey, readStartOfLocalDay(now));
 }

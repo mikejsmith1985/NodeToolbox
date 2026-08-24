@@ -14,6 +14,7 @@ import { fetchPiWindowFixVersions, type RawJiraVersion } from '../../ArtView/piP
 import { buildJiraIssueNavigatorUrl } from '../../Hygiene/utils/buildHygieneJqlUrl.ts';
 import { useConnectionStore } from '../../../store/connectionStore.ts';
 import { groupDeparturesByDestination, type VersionSnapshot } from './versionMovement.ts';
+import { ClearedTodaySection } from './ClearedTodaySection.tsx';
 import { loadVersionMovement, readVersionSnapshotAt, type VersionMovementOutcome } from './versionMovementFetch.ts';
 import styles from '../SprintDashboardView.module.css';
 
@@ -371,6 +372,11 @@ export function VersionMovementPanel({ projectKey }: VersionMovementPanelProps) 
       <summary className={styles.forecastSectionTitle}>
         Scope movement — where did this release&apos;s issues go?
       </summary>
+
+      {/* First, because it is the question people arrive with — "something cleared a batch of fix
+          versions this morning" — and it needs no release chosen. The version trace below answers
+          the narrower "where did THIS release's work go". */}
+      {isPanelOpen && <ClearedTodaySection projectKey={projectKey} />}
 
       {isPanelOpen && versions === null && (
         <p className={styles.forecastSectionNote} role="status">Reading this project&apos;s versions…</p>

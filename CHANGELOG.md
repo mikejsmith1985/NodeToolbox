@@ -8,6 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **"Fix versions cleared recently" — a project-wide sweep needing no release chosen.** The version
+  trace answers *where did THIS release&#39;s work go*, which needs a release in mind. This answers the
+  question you arrive with before you have one: something cleared a batch of fix versions this
+  morning and you want the batch, not a release-by-release hunt. One click for **Today**,
+  **Since yesterday** or **Last 7 days**, and it lists every issue in the project that lost a fix
+  version — what came off, what it carries now, who did it and when.
+  Grouped by **who** first, because the answer is almost never "twelve issues each lost their
+  release"; it is one person clearing twelve while doing something else, and grouping is what makes
+  that one line instead of twelve rows a reader has to spot the pattern in. Moved-to-another-release
+  and left-on-none-at-all are told apart, since those are different events.
+  It uses **no history JQL at all** — only `updated >=`, which every Jira deployment supports — and
+  reads the change histories that come back with it. An issue whose fix version changed was
+  necessarily updated when it did, so the sweep is complete even on instances that do not expose the
+  `WAS` / `CHANGED` operators the version trace relies on.
+
+### Added
 - **Scope movement, on the Releases tab: where did this release&#39;s issues go?** A release had 27
   issues and now has 15, and Jira will tell you what is in a version today while saying nothing at
   all about what left it — so the only way to answer was to remember. It now asks Jira for the
