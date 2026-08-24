@@ -425,5 +425,18 @@ export interface ForecastResult {
   sizingFlags: FeatureSizingFlag[];
   codeFreezeCapacityByVersionName: Record<string, CapacityAssessment>;
   externalTestCapacityByVersionName: Record<string, CapacityAssessment>;
+  /**
+   * Whether the WHOLE scope fits in the days left before the PI ends.
+   *
+   * The second clock, and the one that runs most days. A release clock asks "can this ship on the
+   * 10th"; this asks "can this team reach Integrated Test by the end of the PI" — a question that
+   * spans every fix version in the PI at once, and one no per-version figure can answer.
+   *
+   * Assessed over the whole roster (`roleFilter: 'all'`) because reaching INT needs the dev work AND
+   * the SL test behind it; splitting them would let a team look fine on each half and miss on both.
+   *
+   * Null when the PI clock is not configured — an honest "not checked", never a zero.
+   */
+  piCapacity: CapacityAssessment | null;
   completeness: ForecastCompleteness;
 }

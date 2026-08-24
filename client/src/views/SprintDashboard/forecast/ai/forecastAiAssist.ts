@@ -95,7 +95,57 @@ function describeCompleteness(assessment: CapacityAssessment): string {
     + ` ${assessment.unassignedIssueKeys.length} unassigned.`;
 }
 
-/** Builds the daily who-is-behind-and-who-is-ahead prompt. */
+/**
+ * The PI clock's own figures, when there is one.
+ *
+ * Carried in the DAILY prompt because "where are we" is a PI question before it is a release
+ * question — and because the per-person load is the only thing that can answer who is overloaded
+ * and who has room. Without it the prompt named nobody but the assignees of flagged issues, so a
+ * roster member with spare capacity could not be mentioned without the reply being rejected for
+ * naming somebody the prompt never did.
+ */
+function describePiClock(result: ForecastResult): string[] {
+  if (result.piCapacity === null) {
+    return ['No PI end date is configured, so there is no PI deadline to measure against.'];
+  }
+
+  const capacity = result.piCapacity;
+  return [
+    `PI ends ${capacity.window.endIso} — ${capacity.window.workingDayCount} working days left.`,
+    `Work left: ${capacity.totalRemainingWorkingDays}d. Capacity: ${capacity.totalAvailableWorkingDays}d.`
+      + ` Shortfall: ${capacity.shortfallWorkingDays}d.`,
+    describeCompleteness(capacity),
+    '',
+    'Everyone on the team — their in-scope load, their total load, days available, and how far over'
+      + ' they are. A person with 0d in scope is holding none of this work.',
+    ...describePersonLoad(capacity),
+  ];
+}
+
+/** Each Feature's PI verdict, and which constraint binds — the material for a recovery suggestion. */
+function describeFeatureVerdicts(result: ForecastResult): string[] {
+  const atRiskAssessments = result.featureAssessments.filter((assessment) => assessment.piVerdict === 'at-risk');
+  if (atRiskAssessments.length === 0) {
+    return ['No Feature is currently at risk of missing Integrated Test by the end of the PI.'];
+  }
+
+  return [
+    'Features at risk of missing Integrated Test by the end of the PI, with the binding constraint:',
+    ...atRiskAssessments.map((assessment) => `  - ${assessment.featureKey}`
+      + ` | cause: ${assessment.riskCause ?? 'unstated'}`
+      + ` | short by: ${assessment.shortfallWorkingDays ?? 'n/a'} working days`
+      + ` | blocked by: ${assessment.blockingIssueKeys.join(', ') || 'nothing named'}`),
+  ];
+}
+
+/**
+ * Builds the daily "where are we" prompt.
+ *
+ * It asks the question people actually open this for — who is overloaded, who has room, what moves
+ * would get the PI back on track — rather than for a standup paragraph. Every figure it could need
+ * is already computed and written out above the question, so the model has nothing left to do but
+ * read the table and say what it means.
+ */
 export function buildForecastDailyPrompt(result: ForecastResult): string {
   if (result.issueForecasts.length === 0) {
     return `${PROMPT_PREAMBLE}There is no work in scope to report on today.${buildReplyInstruction('forecastDaily')}`;
@@ -104,10 +154,20 @@ export function buildForecastDailyPrompt(result: ForecastResult): string {
   return [
     PROMPT_PREAMBLE,
     `Today is ${result.config.todayIso}.`,
+    ...describePiClock(result),
+    '',
+    ...describeFeatureVerdicts(result),
+    '',
     'Every issue in scope, with the verdict already computed for it:',
     ...result.issueForecasts.map((forecast) => describeIssue(forecast)),
     '',
-    'Write a short standup narrative naming what must start today and what is running ahead.',
+    'Write an assessment of where this team stands against the end of the PI. Cover, in this order:',
+    '  1. Where we are — what must start today, and what is already past saving.',
+    '  2. Who is overloaded — name them, and say by how many days, using the figures above.',
+    '  3. Who has room — name anyone whose available days exceed their in-scope load.',
+    '  4. What would get us back on track — concrete moves, naming both people when work should',
+    '     shift from one to another, and naming the issue keys involved.',
+    'Do not propose a move that leaves the receiving person over capacity.',
     buildReplyInstruction('forecastDaily'),
   ].join('\n');
 }

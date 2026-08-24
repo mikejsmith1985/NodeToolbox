@@ -112,3 +112,29 @@ export function resolveReleaseDate(fixVersion: FixVersionLike): ReleaseDateResol
 export function resolveReleaseDates(fixVersions: readonly FixVersionLike[]): ReleaseDateResolution[] {
   return fixVersions.map((fixVersion) => resolveReleaseDate(fixVersion));
 }
+
+/**
+ * The version a release view should open on: the NEXT unreleased one.
+ *
+ * Nothing used to be selected, so the tab opened on "— pick a version —" and every figure below it
+ * was blank until somebody chose. The next release is what a team is working toward on almost every
+ * day of a PI, so it is the only sensible thing to open on.
+ *
+ * Earliest resolved date first. A version nothing can date is skipped rather than ordered
+ * arbitrarily — it cannot drive a clock, so opening on it would only show the "cannot be forecast"
+ * message. Returns null when no version can be dated at all, which the caller reports as itself.
+ *
+ * `released` is honoured even though callers usually pre-filter: a past release's dates are history,
+ * and a view that opened on one would present a finished ship as the thing to worry about.
+ */
+export function pickDefaultVersionName(fixVersions: readonly FixVersionLike[]): string | null {
+  const datedVersions = resolveReleaseDates(fixVersions)
+    .filter((resolution) => resolution.resolvedDateIso !== null && !resolution.isReleased);
+  if (datedVersions.length === 0) {
+    return null;
+  }
+
+  return [...datedVersions]
+    .sort((left, right) => (left.resolvedDateIso ?? '').localeCompare(right.resolvedDateIso ?? ''))[0]
+    .versionName;
+}

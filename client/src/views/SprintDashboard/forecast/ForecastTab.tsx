@@ -11,6 +11,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { fetchPiWindowFixVersions } from '../../ArtView/piPlan/piPlanReleaseSchedule.ts';
+import { pickDefaultVersionName } from './releaseDateResolve.ts';
 import { loadHygieneFieldConfig } from '../../Hygiene/checks/hygieneFieldConfig.ts';
 import { resolveStoryPointsFieldIds } from '../../Hygiene/checks/storyPointsField.ts';
 import { readArtSettings, readRawForecastSettings } from '../../../services/artSettingsStore.ts';
@@ -35,6 +36,11 @@ import styles from '../SprintDashboardView.module.css';
 
 const TAB_HEADING = 'Delivery forecast';
 const NO_VERSION_MESSAGE = 'Pick a fix version to see whether its work fits the time left.';
+
+/** Said plainly rather than shown as a zero: nobody has told Toolbox when this PI ends. */
+const NO_PI_CLOCK_MESSAGE =
+  'No PI end date is configured, so the PI clock cannot be worked out. Set the PI end date in ART settings, '
+  + 'or pick a PI whose name carries its window.';
 const NO_VERSIONS_MESSAGE = 'This project has no fix versions to forecast.';
 const LOADING_MESSAGE = 'Loading fix versions…';
 
@@ -506,7 +512,9 @@ export default function ForecastTab({
   selectedPiValue = '',
 }: ForecastTabProps) {
   const [openVersions, setOpenVersions] = useState<FixVersionLike[] | null>(null);
-  const [selectedVersionName, setSelectedVersionName] = useState('');
+  // The user's OVERRIDE, not the selection itself. Null means "whatever the default is", which is
+  // what lets the default follow the version list when the team changes without an effect racing it.
+  const [pickedVersionName, setPickedVersionName] = useState<string | null>(null);
   const [fieldIds, setFieldIds] = useState<{
     subStatusFieldIds: string[];
     targetStartFieldIds: string[];
@@ -617,6 +625,15 @@ export default function ForecastTab({
     return { ...computed, rejectedSettings };
   }, [scopedIssues, openVersions, fieldIds, readRosterPeople, teamProfileId, selectedPiValue]);
 
+  /**
+   * The release actually shown: the user's pick, or the NEXT unreleased one.
+   *
+   * Derived rather than seeded into state. Nothing was selected before, so the tab opened on
+   * "— pick a version —" with every figure beneath it blank, on a screen whose whole job is
+   * answering a question at a glance.
+   */
+  const selectedVersionName = pickedVersionName
+    ?? (openVersions === null ? '' : pickDefaultVersionName(openVersions) ?? '');
   const selectedClock = forecast?.releaseClocksByVersionName[selectedVersionName] ?? null;
   const codeFreezeAssessment = forecast?.codeFreezeCapacityByVersionName[selectedVersionName] ?? null;
 
@@ -657,7 +674,7 @@ export default function ForecastTab({
           <span>Fix version</span>
           <select
             aria-label="Fix version"
-            onChange={(changeEvent) => setSelectedVersionName(changeEvent.target.value)}
+            onChange={(changeEvent) => setPickedVersionName(changeEvent.target.value)}
             value={selectedVersionName}
           >
             <option value="">— pick a version —</option>
@@ -691,6 +708,23 @@ export default function ForecastTab({
       {forecast !== null && selectedVersionName !== '' && selectedClock === null && (
         <p className={styles.forecastAlert} role="status">
           {`${selectedVersionName} has no release date, and none could be read from its name — its work cannot be forecast.`}
+        </p>
+      )}
+
+      {/* The PI lens comes FIRST, and stands on its own: it spans every fix version at once and is
+          the question a team asks on most days of a PI. The release picker below it answers the
+          narrower "can this ship on the 10th", which only matters near a ship. */}
+      {forecast !== null && forecast.piCapacity !== null && (
+        <CapacitySection
+          title="PI clock — can this reach Integrated Test by the end of the PI?"
+          explanation="Working days left in the PI, against every piece of work in scope — all fix versions at once, dev and test together."
+          assessment={forecast.piCapacity}
+          remedies="Move work to the next PI, or rebalance it onto people who still have room."
+        />
+      )}
+      {forecast !== null && forecast.piCapacity === null && (
+        <p className={styles.forecastSectionNote} role="status">
+          {NO_PI_CLOCK_MESSAGE}
         </p>
       )}
 

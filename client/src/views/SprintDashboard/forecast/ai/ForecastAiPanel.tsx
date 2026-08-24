@@ -152,6 +152,10 @@ export function ForecastAiPanel({
       .filter((displayName): displayName is string => displayName !== null),
     ...(codeFreezeAssessment?.personLoads ?? []).map((load) => load.displayName),
     ...(externalTestAssessment?.personLoads ?? []).map((load) => load.displayName),
+    // The PI load table, which the daily prompt now carries. Without it, a reply that named a
+    // rostered person with spare capacity was rejected for naming somebody the prompt never did —
+    // so the one narrative that is ABOUT who has room could not mention them (GH #375).
+    ...(forecast.piCapacity?.personLoads ?? []).map((load) => load.displayName),
   ])];
 
   return (

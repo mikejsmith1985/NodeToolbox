@@ -360,3 +360,79 @@ describe('stripAiAttribution', () => {
     expect(ingest.items[0].narrative).toContain('ENC-1');
   });
 });
+
+describe('the daily prompt answers the question people open it for', () => {
+  const ROSTER = [
+    { personKey: 'acct-1', displayName: 'Busy, Person', isOnRoster: true, canDevelop: true, canInternalTest: false },
+    { personKey: 'acct-2', displayName: 'Idle, Person', isOnRoster: true, canDevelop: true, canInternalTest: true },
+  ];
+
+  function forecastWithRoster(items: ForecastIssue[], piEndDate = '2026-11-06'): ForecastResult {
+    return computeForecast(
+      {
+        items,
+        orderedColumnIds: [],
+        fixVersions: [{ name: 'Release 10/02/2026', releaseDate: '2026-10-02' }],
+        people: ROSTER,
+        piEndDate,
+        hasSubStatusField: true,
+        teamProfileId: 'team-a',
+      },
+      CONFIG,
+    );
+  }
+
+  it('carries the PI deadline, not only the release one', () => {
+    const prompt = buildForecastDailyPrompt(forecastWithRoster([issue({ key: 'ENC-1' })]));
+
+    expect(prompt).toContain('PI ends 2026-11-06');
+  });
+
+  it('names everyone on the roster, including whoever is holding nothing', () => {
+    // This is the whole point of #3: a reply naming a person with spare capacity used to be
+    // REJECTED for naming somebody the prompt never did — on the narrative that is about who has
+    // room (GH #375).
+    const prompt = buildForecastDailyPrompt(forecastWithRoster([
+      issue({ key: 'ENC-1', assigneeAccountId: 'acct-1', assigneeDisplayName: 'Busy, Person' }),
+    ]));
+
+    expect(prompt).toContain('Busy, Person');
+    expect(prompt).toContain('Idle, Person');
+  });
+
+  it('carries each person-s available days and how far over they are', () => {
+    const prompt = buildForecastDailyPrompt(forecastWithRoster([
+      issue({ key: 'ENC-1', assigneeAccountId: 'acct-1', assigneeDisplayName: 'Busy, Person', storyPoints: 400 }),
+    ]));
+
+    expect(prompt).toMatch(/available: \d+d/);
+    expect(prompt).toMatch(/over by: \d+d/);
+  });
+
+  it('asks for who is overloaded, who has room, and what to do — not for a standup paragraph', () => {
+    const prompt = buildForecastDailyPrompt(forecastWithRoster([issue({ key: 'ENC-1' })]));
+
+    expect(prompt).toContain('Who is overloaded');
+    expect(prompt).toContain('Who has room');
+    expect(prompt).toContain('What would get us back on track');
+  });
+
+  it('forbids a move that just relocates the overload', () => {
+    const prompt = buildForecastDailyPrompt(forecastWithRoster([issue({ key: 'ENC-1' })]));
+
+    expect(prompt).toContain('leaves the receiving person over capacity');
+  });
+
+  it('says there is no PI deadline rather than implying one, when none is configured', () => {
+    const prompt = buildForecastDailyPrompt(forecastWithRoster([issue({ key: 'ENC-1' })], ''));
+
+    expect(prompt).toContain('No PI end date is configured');
+    expect(prompt).not.toContain('PI ends');
+  });
+
+  it('still forbids inventing a figure', () => {
+    const prompt = buildForecastDailyPrompt(forecastWithRoster([issue({ key: 'ENC-1' })]));
+
+    expect(prompt).toMatch(/NOT NEGOTIABLE/);
+  });
+});

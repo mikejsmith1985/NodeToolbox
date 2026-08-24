@@ -124,8 +124,24 @@ describe('ForecastTab', () => {
       .toBeInTheDocument();
   });
 
-  it('asks for a version rather than guessing one', async () => {
+  it('opens on the next unreleased version rather than on a blank picker', async () => {
+    // Nothing was selected before, so every figure beneath the picker was blank until somebody
+    // chose — on a tab whose whole job is answering a question at a glance (GH #375).
     renderTab();
+
+    await waitFor(() => expect(
+      (screen.getByLabelText('Fix version') as HTMLSelectElement).value,
+    ).toBe('Release 10/02/2026'));
+    expect(screen.queryByText(/Pick a fix version/i)).toBeNull();
+  });
+
+  it('lets the user override the default, and keeps their choice', async () => {
+    renderTab();
+    const versionPicker = await screen.findByLabelText('Fix version');
+
+    fireEvent.change(versionPicker, { target: { value: '' } });
+
+    expect((versionPicker as HTMLSelectElement).value).toBe('');
     await waitFor(() => expect(screen.getByText(/Pick a fix version/i)).toBeInTheDocument());
   });
 
@@ -250,5 +266,36 @@ describe('ForecastTab', () => {
   it('says when a Feature has no SL test story, because it cannot reach INT without one', async () => {
     renderTab([issue('ENC-1', { summary: '[DEV] Build it', [POINTS_FIELD]: 3 })]);
     await waitFor(() => expect(screen.getByText(/No SL test story/)).toBeInTheDocument());
+  });
+});
+
+describe('ForecastTab — the PI clock, which is the everyday lens', () => {
+  it('leads with the PI question, before any single release', async () => {
+    // A release clock asks "can this ship on the 10th". A team asks "can we reach INT by the end of
+    // the PI" on most days of a PI, and that question spans every fix version at once.
+    localStorage.setItem(ART_SETTINGS_STORAGE_KEY, JSON.stringify({ piEndDate: '2026-11-06' }));
+    renderTab();
+
+    const piHeading = await screen.findByText(/PI clock — can this reach Integrated Test/i);
+    const releaseHeading = await screen.findByText(/Release clock — can this be built by code freeze/i);
+    expect(piHeading.compareDocumentPosition(releaseHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('names who holds the work and how much room they have', async () => {
+    // The question the panel is actually opened to answer: who is overloaded, and who could help.
+    localStorage.setItem(ART_SETTINGS_STORAGE_KEY, JSON.stringify({ piEndDate: '2026-11-06' }));
+    renderTab();
+
+    await screen.findByText(/PI clock — can this reach Integrated Test/i);
+    expect(screen.getAllByText('Smith, Jane (CTR)').length).toBeGreaterThan(0);
+  });
+
+  it('says the PI clock is unconfigured rather than showing it as zero', async () => {
+    // A zero reads as "no work and no time left"; this says nobody has set a PI end date.
+    localStorage.setItem(ART_SETTINGS_STORAGE_KEY, JSON.stringify({ piEndDate: '' }));
+    renderTab();
+
+    await waitFor(() => expect(screen.getByText(/No PI end date is configured/i)).toBeInTheDocument());
+    expect(screen.queryByText(/PI clock — can this reach Integrated Test/i)).toBeNull();
   });
 });

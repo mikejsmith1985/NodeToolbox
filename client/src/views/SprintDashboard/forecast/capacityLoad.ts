@@ -117,6 +117,17 @@ export function assessCapacity(
   const peopleByKey = new Map(people.filter((person) => isPersonInRole(person, options.roleFilter))
     .map((person) => [person.personKey, person]));
 
+  // Rostered people holding NONE of this work still get a row, with an empty load.
+  //
+  // They were previously absent, and they are the answer to the question a capacity report is most
+  // often opened to ask: who has room. Somebody with nothing assigned is the MOST available person
+  // on the team and was the one person the report could not show.
+  //
+  // Every total is untouched by this, structurally rather than by care: `totalRemainingWorkingDays`
+  // sums their zero, and `totalAvailableWorkingDays` already filters to people holding in-scope
+  // work — so an idle member still does not count as release capacity.
+  const idlePersonKeys = [...peopleByKey.keys()].filter((personKey) => !itemsByPersonKey.has(personKey));
+
   const personLoads = [...itemsByPersonKey.entries()]
     // A person the roster has never heard of still gets a row: work assigned to somebody nobody
     // rostered is exactly the sort of thing a capacity report exists to surface.
@@ -126,6 +137,11 @@ export function assessCapacity(
       heldItems,
       availableWorkingDays,
     ))
+    .concat(idlePersonKeys.map((personKey) => buildPersonLoad(
+      peopleByKey.get(personKey) as CapacityPerson,
+      [],
+      availableWorkingDays,
+    )))
     .sort((left, right) => right.overCapacityWorkingDays - left.overCapacityWorkingDays
       || left.displayName.localeCompare(right.displayName));
 

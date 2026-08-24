@@ -150,7 +150,12 @@ describe('unassigned work', () => {
 
     expect(assessment.unassignedWorkingDays).toBe(7);
     expect(assessment.unassignedIssueKeys).toEqual(['ENC-1', 'ENC-2']);
-    expect(assessment.personLoads).toEqual([]);
+    // The rostered person is LISTED — somebody with nothing assigned is the most available person
+    // on the team — but carries none of the unassigned work. Spreading it across a pool would
+    // invent an owner for work that has none.
+    expect(assessment.personLoads.map((load) => load.personKey)).toEqual(['acct-1']);
+    expect(assessment.personLoads[0].inScopeWorkingDays).toBe(0);
+    expect(assessment.personLoads[0].inScopeIssueKeys).toEqual([]);
   });
 
   it('still counts it toward the release total', () => {
@@ -265,5 +270,65 @@ describe('the role filter', () => {
   it('filters nothing when every role is wanted', () => {
     const assessment = assessCapacity(MIXED_WORK, [DEV, TESTER], windowOf(14), ALL_ROLES);
     expect(assessment.totalRemainingWorkingDays).toBe(11);
+  });
+});
+
+describe('the people who have room', () => {
+  const WINDOW = { kind: 'to-code-freeze' as const, startIso: '2026-08-20', endIso: '2026-09-10', workingDayCount: 14, hasPassed: false };
+  const ROSTER = [
+    { personKey: 'acct-1', displayName: 'Busy, Person', isOnRoster: true, canDevelop: true, canInternalTest: false },
+    { personKey: 'acct-2', displayName: 'Idle, Person', isOnRoster: true, canDevelop: true, canInternalTest: false },
+  ];
+
+  function itemFor(issueKey: string, assigneePersonKey: string | null, remainingWorkingDays: number) {
+    return {
+      issueKey,
+      assigneePersonKey,
+      remainingWorkingDays,
+      isEstimated: true,
+      isInScope: true,
+      chainRole: 'dev' as const,
+    };
+  }
+
+  it('lists a rostered person holding nothing — the most available person on the team', () => {
+    // They were invisible exactly when they were most useful to see.
+    const assessment = assessCapacity([itemFor('ENC-1', 'acct-1', 3)], ROSTER, WINDOW, {
+      roleFilter: 'dev',
+      undatedIssueCount: 0,
+    });
+
+    const idle = assessment.personLoads.find((load) => load.personKey === 'acct-2');
+    expect(idle).toBeDefined();
+    expect(idle?.inScopeWorkingDays).toBe(0);
+    expect(idle?.availableWorkingDays).toBe(14);
+  });
+
+  it('does not let an idle member count as capacity for work they do not hold', () => {
+    // Structural, not careful: the total already filters to people holding in-scope work, so adding
+    // a row cannot quietly inflate the runway a release appears to have.
+    const withIdle = assessCapacity([itemFor('ENC-1', 'acct-1', 3)], ROSTER, WINDOW, {
+      roleFilter: 'dev',
+      undatedIssueCount: 0,
+    });
+    const withoutIdle = assessCapacity([itemFor('ENC-1', 'acct-1', 3)], [ROSTER[0]], WINDOW, {
+      roleFilter: 'dev',
+      undatedIssueCount: 0,
+    });
+
+    expect(withIdle.totalAvailableWorkingDays).toBe(withoutIdle.totalAvailableWorkingDays);
+    expect(withIdle.totalRemainingWorkingDays).toBe(withoutIdle.totalRemainingWorkingDays);
+    expect(withIdle.shortfallWorkingDays).toBe(withoutIdle.shortfallWorkingDays);
+  });
+
+  it('keeps the most over-capacity person first, so the order still leads with the problem', () => {
+    const assessment = assessCapacity(
+      [itemFor('ENC-1', 'acct-1', 40)],
+      ROSTER,
+      WINDOW,
+      { roleFilter: 'dev', undatedIssueCount: 0 },
+    );
+
+    expect(assessment.personLoads[0].personKey).toBe('acct-1');
   });
 });

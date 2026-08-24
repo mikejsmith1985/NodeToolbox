@@ -9,7 +9,12 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { parseReleaseDateFromName, resolveReleaseDate, resolveReleaseDates } from './releaseDateResolve.ts';
+import {
+  parseReleaseDateFromName,
+  pickDefaultVersionName,
+  resolveReleaseDate,
+  resolveReleaseDates,
+} from './releaseDateResolve.ts';
 
 describe('parseReleaseDateFromName', () => {
   it('reads a four-digit-year date with padded parts', () => {
@@ -138,5 +143,45 @@ describe('resolveReleaseDates', () => {
       'Sprint 5',
       'Release 09/01/2026',
     ]);
+  });
+});
+
+describe('pickDefaultVersionName', () => {
+  it('opens on the NEXT release, not on a blank picker', () => {
+    // Nothing selected meant every figure below the picker was blank until somebody chose, on a tab
+    // whose whole job is answering a question at a glance.
+    const chosen = pickDefaultVersionName([
+      { name: 'Release 11/06/2026', releaseDate: '2026-11-06' },
+      { name: 'Release 09/10/2026', releaseDate: '2026-09-10' },
+    ]);
+
+    expect(chosen).toBe('Release 09/10/2026');
+  });
+
+  it('skips a version nothing can date — it could only show "cannot be forecast"', () => {
+    const chosen = pickDefaultVersionName([
+      { name: 'Backlog' },
+      { name: 'Release 11/06/2026', releaseDate: '2026-11-06' },
+    ]);
+
+    expect(chosen).toBe('Release 11/06/2026');
+  });
+
+  it('never opens on a released version — its dates are history', () => {
+    const chosen = pickDefaultVersionName([
+      { name: 'Release 06/12/2026', releaseDate: '2026-06-12', released: true },
+      { name: 'Release 11/06/2026', releaseDate: '2026-11-06' },
+    ]);
+
+    expect(chosen).toBe('Release 11/06/2026');
+  });
+
+  it('reads a date out of the version NAME, the way the rest of this module does', () => {
+    expect(pickDefaultVersionName([{ name: 'Release 09/10/2026' }])).toBe('Release 09/10/2026');
+  });
+
+  it('chooses nothing rather than something arbitrary when no version can be dated', () => {
+    expect(pickDefaultVersionName([{ name: 'Backlog' }, { name: 'Someday' }])).toBeNull();
+    expect(pickDefaultVersionName([])).toBeNull();
   });
 });

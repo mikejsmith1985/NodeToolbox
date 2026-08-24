@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **A PI clock on the Forecast tab, and it leads.** The tab could only answer "can this ship in
+  version X" — a question that matters near a ship and on no other day. It now opens with the
+  question a team actually asks: **can this reach Integrated Test by the end of the PI**, measured
+  across **every fix version at once**, dev and test together, because reaching INT needs both and
+  splitting them lets a team look fine on each half while missing on both. Built from the same
+  `assessCapacity` the release clocks use, so the two can never disagree about how much work a person
+  is holding — only about which window they are measured against. Not configured reports itself as
+  **not configured**, never as a zero.
+- **People with nothing assigned now appear in the capacity table.** They were absent, and they are
+  the answer to the question a capacity report is most often opened to ask: *who has room*. Somebody
+  holding no work is the most available person on the team and was the one person the table could not
+  show. Every total is unchanged by this **structurally** rather than by care — the available-days
+  total already counts only people holding in-scope work, so an idle member still is not release
+  capacity.
+
+### Changed
+- **The Forecast tab opens on the next unreleased release** instead of "— pick a version —" with
+  every figure beneath it blank. Derived, not seeded, so it follows the version list when the team
+  changes and a deliberate pick still wins. A version nothing can date is skipped; when none can be
+  dated the tab says so.
+- **The daily AI narrative now answers the question it is opened for.** It asked for "a short
+  standup narrative" and was given only the flagged issues — so the reply could not mention a
+  teammate with spare capacity without being **rejected for naming somebody the prompt never did**,
+  on the one narrative that is about exactly that. The prompt now carries the **PI deadline**, the
+  **whole roster's load** (in-scope, total, available, how far over), and each **at-risk Feature with
+  its binding constraint**; and it asks, in order, where we are · who is overloaded · who has room ·
+  what would get us back on track — forbidding any move that leaves the receiving person over
+  capacity. Every figure is still rule-derived; the model still has nowhere in the envelope to put a
+  number.
+
 ### Fixed
 - **The Forecast tab reported 68 issues as unsized because it never asked Jira for the estimates.**
   The Sprint Dashboard's issue fetch built its `fields=` list from the Team Dashboard's raw

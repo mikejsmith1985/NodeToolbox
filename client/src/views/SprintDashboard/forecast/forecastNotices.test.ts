@@ -27,6 +27,7 @@ function forecastWith(overrides: Partial<ForecastResult['completeness']> = {},
     sizingFlags: [],
     codeFreezeCapacityByVersionName: {},
     externalTestCapacityByVersionName: {},
+    piCapacity: null,
     completeness: {
       totalIssueCount: 10,
       unsizedIssueCount: 0,

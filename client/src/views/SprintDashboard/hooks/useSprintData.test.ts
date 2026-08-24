@@ -19,6 +19,7 @@ vi.mock('../../../services/piNameSuggestions.ts', () => ({
 }));
 
 import { buildSprintIssueFieldList, useSprintData } from './useSprintData.ts';
+import { resolveStoryPointsFieldIds } from '../../Hygiene/checks/storyPointsField.ts';
 import { useConnectionStore } from '../../../store/connectionStore.ts';
 import { useSettingsStore } from '../../../store/settingsStore.ts';
 
@@ -877,7 +878,9 @@ describe('buildSprintIssueFieldList — asking Jira for the field the resolver a
     const fieldList = buildSprintIssueFieldList('story_points');
 
     expect(fieldList).not.toContain('story_points');
-    expect(fieldList.split(',')).toContain('customfield_10236');
+    // Asserted against the central resolver rather than a literal id: the whole failure was two
+    // modules deciding this separately, and a test that hard-codes the answer is a third.
+    expect(fieldList.split(',')).toEqual(expect.arrayContaining(resolveStoryPointsFieldIds('')));
   });
 
   it('never asks for a field that is not a real custom field', () => {
@@ -889,14 +892,14 @@ describe('buildSprintIssueFieldList — asking Jira for the field the resolver a
     const fieldList = buildSprintIssueFieldList('customfield_19999').split(',');
 
     expect(fieldList).toContain('customfield_19999');
-    expect(fieldList).toContain('customfield_10236');
+    expect(fieldList).toEqual(expect.arrayContaining(resolveStoryPointsFieldIds('')));
   });
 
   it('does not duplicate a field the base list already carries', () => {
-    const fieldList = buildSprintIssueFieldList('customfield_10016').split(',');
-    const occurrences = fieldList.filter((fieldId) => fieldId === 'customfield_10016');
+    const fieldList = buildSprintIssueFieldList(resolveStoryPointsFieldIds('')[0]).split(',');
+    const uniqueFieldIds = new Set(fieldList);
 
-    expect(occurrences).toHaveLength(1);
+    expect(uniqueFieldIds.size).toBe(fieldList.length);
   });
 
   it('still carries the fields every other tab reads', () => {

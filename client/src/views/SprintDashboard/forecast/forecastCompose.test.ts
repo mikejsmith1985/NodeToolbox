@@ -532,3 +532,68 @@ describe('computeForecast', () => {
     expect(result.issueForecasts).toEqual([]);
   });
 });
+
+describe('computeForecast — the PI clock, which spans every release at once', () => {
+  const ROSTER = [
+    { personKey: 'acct-1', displayName: 'Smith, Jane (CTR)', isOnRoster: true, canDevelop: true, canInternalTest: false },
+    { personKey: 'acct-2', displayName: 'Doe, Alex', isOnRoster: true, canDevelop: true, canInternalTest: true },
+  ];
+
+  it('counts work from EVERY fix version, not just one', () => {
+    // The whole point of the second clock: "can this team reach INT by the end of the PI" is a
+    // question about all the work at once, and no per-version figure can answer it.
+    const result = computeForecast(forecastInput({
+      items: [
+        boardItem({ key: 'ENC-1', fixVersionNames: ['Release 10/02/2026'] }),
+        boardItem({ key: 'ENC-2', fixVersionNames: ['Release 11/06/2026'] }),
+        boardItem({ key: 'ENC-3', fixVersionNames: [] }),
+      ],
+      fixVersions: [{ name: 'Release 10/02/2026', releaseDate: '2026-10-02' }],
+      people: ROSTER,
+    }), CONFIG);
+
+    const inScopeKeys = result.piCapacity?.personLoads.flatMap((load) => load.inScopeIssueKeys) ?? [];
+    expect(inScopeKeys).toEqual(expect.arrayContaining(['ENC-1', 'ENC-2', 'ENC-3']));
+  });
+
+  it('measures against the days left in the PI, not against a release date', () => {
+    const result = computeForecast(forecastInput({ people: ROSTER }), CONFIG);
+
+    expect(result.piCapacity?.window.endIso).toBe(result.piClock.toPiEnd?.endIso);
+    expect(result.piCapacity?.window.endIso).toBe('2026-11-06');
+  });
+
+  it('assesses the WHOLE roster — reaching INT needs the dev work and the test behind it', () => {
+    // Splitting dev from test here would let a team look fine on each half and miss on both.
+    const result = computeForecast(forecastInput({
+      items: [boardItem({ key: 'ENC-1' }), boardItem({ key: 'ENC-9', summary: '[SL] Test the thing', assigneeAccountId: 'acct-2' })],
+      people: ROSTER,
+    }), CONFIG);
+
+    expect(result.piCapacity?.personLoads.map((load) => load.personKey).sort()).toEqual(['acct-1', 'acct-2']);
+  });
+
+  it('names who is over capacity and who has room, which is the question people actually ask', () => {
+    const result = computeForecast(forecastInput({
+      // 200 points at one point per working day is far more than the PI has left.
+      items: [boardItem({ key: 'ENC-1', storyPoints: 200, assigneeAccountId: 'acct-1' })],
+      people: ROSTER,
+    }), CONFIG);
+
+    const overloaded = result.piCapacity?.personLoads.find((load) => load.personKey === 'acct-1');
+    const light = result.piCapacity?.personLoads.find((load) => load.personKey === 'acct-2');
+    expect(overloaded?.isOverCapacity).toBe(true);
+    expect(overloaded?.overCapacityWorkingDays).toBeGreaterThan(0);
+    expect(light?.isOverCapacity).toBe(false);
+    expect(light?.availableWorkingDays).toBeGreaterThan(0);
+  });
+
+  it('reports no PI capacity at all rather than a zero when the PI is not configured', () => {
+    // A zero reads as "no work and no time"; null reads as "nobody told us when the PI ends".
+    const result = computeForecast(forecastInput({ piEndDate: '', piName: '', people: ROSTER }), CONFIG);
+
+    expect(result.piCapacity).toBeNull();
+    // The release clock is unaffected — one clock being unset never silences the other.
+    expect(Object.keys(result.codeFreezeCapacityByVersionName)).toHaveLength(1);
+  });
+});

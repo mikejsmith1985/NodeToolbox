@@ -273,7 +273,13 @@ function groupByFeatureKey(items: readonly ForecastIssue[]): Map<string, Forecas
 function buildCapacityItems(
   items: readonly ForecastIssue[],
   effortByIssueKey: Map<string, RemainingEffort>,
-  inScopeVersionName: string,
+  /**
+   * The version whose work counts as in scope, or null for the WHOLE scope.
+   *
+   * Null is the PI lens: a PI spans several releases, and asking "can this team reach INT by the end
+   * of the PI" is a question about all of that work at once, not about any one ship date.
+   */
+  inScopeVersionName: string | null,
 ): CapacityItem[] {
   return items.map((item) => {
     const effort = effortByIssueKey.get(item.key);
@@ -284,7 +290,7 @@ function buildCapacityItems(
       assigneePersonKey: item.assigneeAccountId ?? item.assigneeDisplayName,
       remainingWorkingDays: effort?.remainingWorkingDays ?? null,
       isEstimated: effort?.isEstimated ?? false,
-      isInScope: item.fixVersionNames.includes(inScopeVersionName),
+      isInScope: inScopeVersionName === null || item.fixVersionNames.includes(inScopeVersionName),
       chainRole: classifyChainRole({ summary: item.summary, assigneeCanInternalTest: null }),
     };
   });
@@ -398,6 +404,15 @@ export function computeForecast(input: ForecastInput, config: ForecastConfig): F
       { ...input, items: forecastableItems },
       effortByIssueKey,
       undatedVersionCount,
+    ),
+    // The PI lens: the whole scope, every version at once, against the days left in the PI. Built
+    // from the SAME assessCapacity as the release clocks, so the two can never disagree about how
+    // much work a person is holding — only about which window they are being measured against.
+    piCapacity: piClock.toPiEnd === null ? null : assessCapacity(
+      buildCapacityItems(forecastableItems, effortByIssueKey, null),
+      input.people,
+      piClock.toPiEnd,
+      { roleFilter: 'all', undatedIssueCount: undatedVersionCount },
     ),
     completeness: buildCompleteness(input.items, effortByIssueKey, undatedVersionCount, input),
   };

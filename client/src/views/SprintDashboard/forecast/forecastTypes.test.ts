@@ -131,7 +131,8 @@ describe('the one result object', () => {
       sizingFlags: [],
       codeFreezeCapacityByVersionName: {},
       externalTestCapacityByVersionName: {},
-      completeness: {
+      piCapacity: null,
+    completeness: {
         totalIssueCount: 0,
         unsizedIssueCount: 0,
         unassignedIssueCount: 0,
@@ -141,7 +142,7 @@ describe('the one result object', () => {
         hasBoardVocabulary: false,
       },
     };
-    expect(Object.keys(empty)).toHaveLength(11);
+    expect(Object.keys(empty)).toHaveLength(12);
   });
 
   it('keeps the release and the PI capacity assessments apart', () => {
