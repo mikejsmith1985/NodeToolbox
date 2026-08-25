@@ -213,12 +213,40 @@ function resolveRouteForIssue(
 }
 
 /** Which issue this one groups under inside a column, if any. */
-/** The relationship a nested card shows: it is contained within the card above it. */
-const CONTAINMENT_PHRASE = 'contained within';
+/**
+ * Phrases that mean "I sit inside the other end" — the CHILD's side of a containment link.
+ *
+ * A set rather than one literal, because Jira instances word this link type differently and the
+ * wording is chosen by whoever configured the instance, not by us. Matching only "contained within"
+ * meant a story linked with **"is contained in"** — the same relationship, a different noun phrase —
+ * silently failed to nest, and the parent card looked childless with nothing on screen to say why.
+ */
+const CONTAINMENT_CHILD_PHRASES = new Set([
+  'contained within',
+  'contained in',
+  'contained by',
+  'part of',
+]);
+
+/** Phrases that mean "the other end sits inside me" — the CONTAINER's side of the same link. */
+const CONTAINMENT_PARENT_PHRASES = new Set([
+  'contains',
+  'has part',
+]);
 
 /** Loosens a link phrase so "is contained within" and "Contained within" compare equal. */
 function normalizeLinkPhrase(linkPhrase: string): string {
   return String(linkPhrase || '').toLowerCase().replace(/^is\s+/, '').replace(/\s+/g, ' ').trim();
+}
+
+/** Whether a phrase, however this instance words it, says the reader is inside the other end. */
+function isContainedWithinPhrase(linkPhrase: string): boolean {
+  return CONTAINMENT_CHILD_PHRASES.has(normalizeLinkPhrase(linkPhrase));
+}
+
+/** Whether a phrase says the other end is inside the reader. */
+function isContainerPhrase(linkPhrase: string): boolean {
+  return CONTAINMENT_PARENT_PHRASES.has(normalizeLinkPhrase(linkPhrase));
 }
 
 /**
@@ -250,8 +278,16 @@ export function collectContainedChildKeys(issues: readonly JiraIssue[]): string[
       const phraseForOtherEnd = issueLink.inwardIssue?.key
         ? issueLink.type?.outward ?? ''
         : issueLink.type?.inward ?? '';
+      const phraseForThisIssue = issueLink.inwardIssue?.key
+        ? issueLink.type?.inward ?? ''
+        : issueLink.type?.outward ?? '';
 
-      if (normalizeLinkPhrase(phraseForOtherEnd) === CONTAINMENT_PHRASE && otherEndKey !== '') {
+      // Either wording is enough. An instance that words one direction of its own link type in a
+      // way this does not recognise still nests correctly from the other, so a containment link is
+      // read as long as ONE of its two phrases is recognisable.
+      const isOtherEndContained = isContainedWithinPhrase(phraseForOtherEnd)
+        || isContainerPhrase(phraseForThisIssue);
+      if (isOtherEndContained && otherEndKey !== '') {
         childKeys.add(String(otherEndKey));
       }
     }
@@ -294,7 +330,14 @@ function readContainmentParentKey(issue: JiraIssue): string | null {
       ? issueLink.type?.inward ?? ''
       : issueLink.type?.outward ?? '';
 
-    if (normalizeLinkPhrase(phraseForThisIssue) === CONTAINMENT_PHRASE && otherEndKey !== '') {
+    const phraseForOtherEnd = issueLink.inwardIssue?.key
+      ? issueLink.type?.outward ?? ''
+      : issueLink.type?.inward ?? '';
+
+    // Symmetric with the container-side read: one recognisable phrase of the two is enough.
+    const isThisIssueContained = isContainedWithinPhrase(phraseForThisIssue)
+      || isContainerPhrase(phraseForOtherEnd);
+    if (isThisIssueContained && otherEndKey !== '') {
       return String(otherEndKey);
     }
   }

@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **A story linked with "is contained in" did not nest under its parent card.** The Roll-Up Board
+  matched exactly one wording — `contained within` — so the same relationship expressed as
+  **"is contained in"** was not recognised at all: the SL story sat loose in its column and the dev
+  story showed as childless, with nothing on screen to say why.
+  The wording of a link type is chosen by whoever configured the Jira instance, not by us, so it is
+  now a **family**: `contained within`, `contained in`, `contained by` and `part of` on the child's
+  side; `contains` and `has part` on the container's. Both readers accept **either** phrase of the
+  pair, so an instance that words one direction unrecognisably still nests correctly from the other.
+  It stays a whitelist — `relates to` must never start nesting cards under each other — and the
+  direction is still read from the end the phrase applies to, so a container can never appear nested
+  inside its own child.
+
 ### Added
 - **Roll-Up Board cards now say how long they have sat in their column.** A board reports where work
   IS and says nothing about how long it has been there, so a card stuck for three weeks looked

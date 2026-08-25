@@ -530,3 +530,78 @@ describe('resolveBoardItems — how long a card has sat where it is', () => {
     expect(item.issue).toBe(issue);
   });
 });
+
+describe('resolveBoardItems — however this instance words its containment link', () => {
+  /** One issue linked to a container by a link type worded whichever way the instance chose. */
+  function issueLinkedBy(key: string, containerKey: string, inward: string, outward: string): JiraIssue {
+    return {
+      id: key,
+      key,
+      fields: {
+        summary: key,
+        status: { name: 'To Do' },
+        issuetype: { name: 'Story' },
+        issuelinks: [{
+          type: { name: 'Container', inward, outward },
+          inwardIssue: { key: containerKey },
+        }],
+      },
+    } as unknown as JiraIssue;
+  }
+
+  it.each([
+    ['is contained within', 'contains'],
+    // The wording that prompted this: the same relationship, a different noun phrase, and the SL
+    // story silently failed to nest while the parent card looked childless.
+    ['is contained in', 'contains'],
+    ['is contained by', 'contains'],
+    ['is part of', 'has part'],
+  ])('nests a story linked by "%s"', (inward, outward) => {
+    const issueSet = buildIssueSet([
+      issueLinkedBy('ENCUC-2358', 'ENCUC-2213', inward, outward),
+      buildIssue({ key: 'ENCUC-2213', typeName: 'Story' }),
+    ]);
+
+    const items = resolveBoardItems(issueSet, SCOPE, UNMAPPED_RESOLVER);
+
+    expect(items.find((item) => item.key === 'ENCUC-2358')?.parentKey).toBe('ENCUC-2213');
+  });
+
+  it('nests from the CONTAINER-s phrase when only that one is recognisable', () => {
+    // One recognisable phrase of the two is enough, so an instance that words one direction oddly
+    // still nests correctly from the other.
+    const issueSet = buildIssueSet([
+      issueLinkedBy('ENCUC-2358', 'ENCUC-2213', 'lives inside', 'contains'),
+      buildIssue({ key: 'ENCUC-2213', typeName: 'Story' }),
+    ]);
+
+    const items = resolveBoardItems(issueSet, SCOPE, UNMAPPED_RESOLVER);
+
+    expect(items.find((item) => item.key === 'ENCUC-2358')?.parentKey).toBe('ENCUC-2213');
+  });
+
+  it('still nests nothing under a link that is not about containment at all', () => {
+    // The rule stays a whitelist: "relates to" must not start nesting cards under each other.
+    const issueSet = buildIssueSet([
+      issueLinkedBy('ENCUC-2358', 'ENCUC-2213', 'relates to', 'relates to'),
+      buildIssue({ key: 'ENCUC-2213', typeName: 'Story' }),
+    ]);
+
+    const items = resolveBoardItems(issueSet, SCOPE, UNMAPPED_RESOLVER);
+
+    expect(items.find((item) => item.key === 'ENCUC-2358')?.parentKey).toBeNull();
+  });
+
+  it('does not invert the relationship — the container is not contained in its child', () => {
+    // The production bug this family of tests exists for: reading the wrong end's phrase makes the
+    // parent nest under its own child.
+    const issueSet = buildIssueSet([
+      issueLinkedBy('ENCUC-2358', 'ENCUC-2213', 'is contained in', 'contains'),
+      buildIssue({ key: 'ENCUC-2213', typeName: 'Story' }),
+    ]);
+
+    const items = resolveBoardItems(issueSet, SCOPE, UNMAPPED_RESOLVER);
+
+    expect(items.find((item) => item.key === 'ENCUC-2213')?.parentKey).toBeNull();
+  });
+});
