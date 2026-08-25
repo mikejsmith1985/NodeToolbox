@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **The Feature-link search on Hygiene now finds things.** Two separate faults, both of which
+  produced the same empty dropdown (GH #375).
+  Jira&#39;s `~` operator matches **whole words**, so `summary ~ "crit"` finds nothing at all against
+  *Critical Vulnerabilities* — and anybody who types while they think, which is everybody, saw
+  nothing and reasonably concluded the search was broken. The term still being typed is now
+  wildcarded. Earlier terms are left whole: a space means that word is finished, and widening it
+  would match more for no reason.
+  And characters Jira&#39;s text index treats as **operators** — `: - ( ) * ? " …` — were passed
+  straight through, which does not merely fail to match, it makes the query **invalid**. A Feature
+  summary routinely carries a key and a colon, so typing what you can see was the surest way to get
+  a 400 instead of that issue. They are now stripped, and a query with nothing usable left is not
+  run at all rather than asking Jira a question with no terms in it.
+- **A refused search now says so.** The rejection was swallowed, so a bad query, an issue type this
+  instance does not have, and a genuine no-match all rendered identically as an empty dropdown —
+  which is precisely why this looked like a search that never works. Jira&#39;s own words now appear
+  beside the box, and clear again as soon as a search succeeds.
+
 ### Added
 - **"Fix versions cleared recently" — a project-wide sweep needing no release chosen.** The version
   trace answers *where did THIS release&#39;s work go*, which needs a release in mind. This answers the

@@ -367,6 +367,10 @@ function IssueLinkFixInput({ issue, kind, fieldId, label, isSubmitting, onSubmit
   // Kept with the query that produced them - see the note in UserFixInput.
   const [matchResult, setMatchResult] = useState<{ query: string; options: FixChoiceOption[] }>({ query: '', options: [] });
   const [selectedKey, setSelectedKey] = useState('');
+  // Jira's own words when a search fails. Previously the rejection was swallowed, so a refused
+  // query, an unknown issue type and a genuine no-match all rendered as the same empty dropdown —
+  // which is why this read as "the search NEVER finds anything" (GH #375).
+  const [searchError, setSearchError] = useState<string | null>(null);
 
   const matches = query.trim() !== '' && matchResult.query === query ? matchResult.options : [];
 
@@ -376,8 +380,16 @@ function IssueLinkFixInput({ issue, kind, fieldId, label, isSubmitting, onSubmit
     }
     let isActive = true;
     searchLinkableIssues(query, kind === 'feature', readProjectKeyFromIssueKey(issue.key))
-      .then((issues) => { if (isActive) setMatchResult({ query, options: issues }); })
-      .catch(() => { if (isActive) setMatchResult({ query, options: [] }); });
+      .then((issues) => {
+        if (!isActive) return;
+        setSearchError(null);
+        setMatchResult({ query, options: issues });
+      })
+      .catch((caughtError: unknown) => {
+        if (!isActive) return;
+        setSearchError(caughtError instanceof Error ? caughtError.message : 'Jira refused this search.');
+        setMatchResult({ query, options: [] });
+      });
     return () => { isActive = false; };
   }, [query, kind, issue.key]);
 
@@ -408,6 +420,9 @@ function IssueLinkFixInput({ issue, kind, fieldId, label, isSubmitting, onSubmit
         onChange={setSelectedKey}
         placeholder={searchDrivenPlaceholder(query, matches.length, 'search term')}
       />
+      {searchError !== null && (
+        <span className={styles.fixError} role="alert">{searchError}</span>
+      )}
       <FixButton
         label={label}
         disabled={isSubmitting || selectedKey === ''}
@@ -702,8 +717,14 @@ function toFixChoiceOptions(selectOptions: FeatureReviewSelectOption[]): FixChoi
 
 /** Searches Jira for issues that can be linked, restricting to Feature/Epic types for feature links. */
 async function searchLinkableIssues(query: string, isFeatureLink: boolean, projectKey: string): Promise<FixChoiceOption[]> {
+  const searchJql = buildLinkSearchJql(query, isFeatureLink, projectKey);
+  if (searchJql === null) {
+    // Nothing usable survived the reserved characters. Running the query anyway would ask Jira a
+    // question with no terms in it and get back either everything or an error.
+    return [];
+  }
   const searchResponse = await jiraGet<{ issues?: Array<{ key: string; fields?: { summary?: string } }> }>(
-    `/rest/api/2/search?jql=${encodeURIComponent(buildLinkSearchJql(query, isFeatureLink, projectKey))}&fields=summary&maxResults=${ISSUE_SEARCH_MAX_RESULTS}`,
+    `/rest/api/2/search?jql=${encodeURIComponent(searchJql)}&fields=summary&maxResults=${ISSUE_SEARCH_MAX_RESULTS}`,
   );
   return (searchResponse.issues ?? []).map((foundIssue) => ({
     label: `${foundIssue.key} — ${foundIssue.fields?.summary ?? ''}`.trim(),
@@ -711,8 +732,51 @@ async function searchLinkableIssues(query: string, isFeatureLink: boolean, proje
   }));
 }
 
+/**
+ * Characters Jira's text index treats as OPERATORS rather than as text.
+ *
+ * Left in, they are not merely ignored — they make the query invalid, and Jira answers a summary
+ * like "ENCUC-1972: Critical Vulnerabilities" with a 400 rather than with that issue. Since a
+ * Feature summary routinely carries a key and a colon, typing what you can see was the surest way
+ * to get nothing back.
+ */
+const JIRA_TEXT_RESERVED_PATTERN = /[+\-&|!(){}[\]^~*?\\:"]/g;
+
+/**
+ * Turns what somebody typed into terms Jira's `~` operator will actually match.
+ *
+ * Two things were wrong with passing the raw text through. Reserved characters made the query
+ * invalid. And `~` matches WHOLE WORDS — `summary ~ "crit"` finds nothing at all against "Critical
+ * Vulnerabilities" — so anybody typing while they think, which is everybody, saw an empty dropdown
+ * and concluded the search was broken. It was, for that input.
+ *
+ * The trailing term gets a wildcard because that is the one still being typed. Earlier terms are
+ * left whole: somebody who typed a space has finished that word, and wildcarding it would widen the
+ * match for no reason.
+ *
+ * Returns null when nothing usable survives, so the caller can say "keep typing" rather than run a
+ * query that cannot match.
+ *
+ * Not exported: every behaviour here is observable through `buildLinkSearchJql`, and a second
+ * non-component export from this file trips the fast-refresh rule for no gain.
+ */
+function buildIssueTextMatchTerms(query: string): string | null {
+  const terms = query
+    .replace(JIRA_TEXT_RESERVED_PATTERN, ' ')
+    .split(/\s+/)
+    .filter((term) => term !== '');
+  if (terms.length === 0) {
+    return null;
+  }
+
+  const lastTerm = terms[terms.length - 1];
+  // One character plus a wildcard matches most of the instance, which is not a search result.
+  const wildcardedLastTerm = lastTerm.length >= 2 ? `${lastTerm}*` : lastTerm;
+  return [...terms.slice(0, -1), wildcardedLastTerm].join(' ');
+}
+
 /** Builds the JQL for a link search: match by key when the query looks like one, else by summary. */
-export function buildLinkSearchJql(query: string, isFeatureLink: boolean, projectKey: string): string {
+export function buildLinkSearchJql(query: string, isFeatureLink: boolean, projectKey: string): string | null {
   const trimmedQuery = query.trim();
   const issueTypeClause = isFeatureLink ? 'issuetype in (Feature, Epic) AND ' : '';
   // A FEATURE never lives in the team's own project — that separation is the whole reason a Feature
@@ -722,8 +786,11 @@ export function buildLinkSearchJql(query: string, isFeatureLink: boolean, projec
   if (/^[A-Za-z][A-Za-z0-9]*-\d+$/.test(trimmedQuery)) {
     return `${issueTypeClause}key = ${trimmedQuery.toUpperCase()}`;
   }
-  const escapedQuery = trimmedQuery.replace(/"/g, '\\"');
-  return `${projectClause}${issueTypeClause}summary ~ "${escapedQuery}" ORDER BY updated DESC`;
+  const matchTerms = buildIssueTextMatchTerms(trimmedQuery);
+  if (matchTerms === null) {
+    return null;
+  }
+  return `${projectClause}${issueTypeClause}summary ~ "${matchTerms}" ORDER BY updated DESC`;
 }
 
 /** Derives the Jira browse URL for an issue from its `self` link, falling back to a relative path. */

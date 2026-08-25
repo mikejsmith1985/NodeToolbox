@@ -4,6 +4,16 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+// The issue SEARCH goes straight to Jira rather than through a Feature Review helper, so it needs
+// its own mock. Defaults to an empty result, which is what the control saw before this file mocked
+// it at all — so nothing else in here changes behaviour.
+const { mockJiraGet } = vi.hoisted(() => ({ mockJiraGet: vi.fn() }));
+
+vi.mock('../../services/jiraApi.ts', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../services/jiraApi.ts')>()),
+  jiraGet: mockJiraGet,
+}));
+
 // The control delegates every Jira write to the proven Feature Review helpers; mock the network
 // and write functions so the tests assert the control calls the correct helper with the correct
 // arguments per fix kind. Pure helpers (selection completeness, payload building, field support)
@@ -241,7 +251,8 @@ describe('buildLinkSearchJql — where a Feature can actually be found', () => {
     const jql = buildLinkSearchJql('Transformers', true, 'ENFCT');
 
     expect(jql).toContain('issuetype in (Feature, Epic)');
-    expect(jql).toContain('summary ~ "Transformers"');
+    // Wildcarded: `~` matches whole words, so a term still being typed matches nothing without it.
+    expect(jql).toContain('summary ~ "Transformers*"');
     expect(jql).not.toContain('project = ENFCT');
   });
 
@@ -256,8 +267,10 @@ describe('buildLinkSearchJql — where a Feature can actually be found', () => {
     expect(buildLinkSearchJql('denp-1414', true, 'ENFCT')).toBe('issuetype in (Feature, Epic) AND key = DENP-1414');
   });
 
-  it('escapes a quote so a typed term cannot break the query', () => {
-    expect(buildLinkSearchJql('say "hi"', true, 'ENFCT')).toContain('\\"hi\\"');
+  it('strips a quote rather than escaping it — Jira-s text index treats it as an operator', () => {
+    const jql = buildLinkSearchJql('say "hi"', true, 'ENFCT');
+
+    expect(jql).toContain('summary ~ "say hi*"');
   });
 });
 
@@ -322,5 +335,128 @@ describe('HygieneFixControl — the date pills own the dates now', () => {
     );
 
     expect(screen.getByText(/Apply release dates|Working out|dates/i)).toBeInTheDocument();
+  });
+});
+
+describe('the match terms — why the search never found anything', () => {
+  /** The terms the JQL ends up carrying, read back through the only exported entry point. */
+  function readMatchTerms(query: string): string | null {
+    const jql = buildLinkSearchJql(query, true, 'ENFCT');
+    return jql === null ? null : /summary ~ "([^"]*)"/.exec(jql)?.[1] ?? null;
+  }
+
+  it('wildcards the term still being typed, because ~ matches WHOLE words', () => {
+    // `summary ~ "crit"` finds nothing at all against "Critical Vulnerabilities". Anybody typing
+    // while they think — which is everybody — saw an empty dropdown and concluded it was broken.
+    expect(readMatchTerms('crit')).toBe('crit*');
+  });
+
+  it('leaves finished words alone and wildcards only the last', () => {
+    // A space means that word is finished; widening it would match more for no reason.
+    expect(readMatchTerms('critical vuln')).toBe('critical vuln*');
+  });
+
+  it('strips the reserved characters that made the query INVALID, not merely unmatched', () => {
+    // A Feature summary routinely carries a key and a colon, so typing what you can see was the
+    // surest way to get a 400 back instead of that issue.
+    expect(readMatchTerms('ENCUC-1972: Critical')).toBe('ENCUC 1972 Critical*');
+  });
+
+  it('does not wildcard a single character, which would match most of the instance', () => {
+    expect(readMatchTerms('a')).toBe('a');
+  });
+
+  it('returns nothing when the query is only reserved characters', () => {
+    // Running it anyway would ask Jira a question with no terms in it.
+    expect(readMatchTerms('***')).toBeNull();
+    expect(readMatchTerms('   ')).toBeNull();
+  });
+
+  it('collapses runs of whitespace rather than emitting empty terms', () => {
+    expect(readMatchTerms('  critical    vuln  ')).toBe('critical vuln*');
+  });
+});
+
+describe('buildLinkSearchJql — a query that cannot match is not run', () => {
+  it('returns no JQL at all when nothing usable survives', () => {
+    expect(buildLinkSearchJql('***', true, 'ENFCT')).toBeNull();
+  });
+
+  it('still looks a pasted key up, reserved hyphen and all', () => {
+    expect(buildLinkSearchJql('DENP-1414', true, 'ENFCT')).toBe('issuetype in (Feature, Epic) AND key = DENP-1414');
+  });
+});
+
+describe('the Feature-link search says when Jira refused it', () => {
+  it('shows Jira-s own words instead of an empty dropdown', async () => {
+    // Previously the rejection was swallowed, so a refused query, an unknown issue type and a
+    // genuine no-match all rendered identically — which is why this read as "the search NEVER
+    // finds anything" (GH #375).
+    mockJiraGet.mockRejectedValue(new Error("Field 'issuetype' value 'Feature' does not exist"));
+    render(
+      <HygieneFixControl
+        issue={buildIssue('ENCUC-1983')}
+        flag={buildFlag('missing-feature-link', 'Missing Feature Link')}
+        fieldConfig={FIELD_CONFIG}
+        onFixed={vi.fn()}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText(/Search issues for/i), { target: { value: 'critical' } });
+
+    expect(await screen.findByRole('alert')).toHaveTextContent("value 'Feature' does not exist");
+  });
+
+  it('clears the message once a search succeeds', async () => {
+    mockJiraGet.mockRejectedValueOnce(new Error('Jira is down'));
+    render(
+      <HygieneFixControl
+        issue={buildIssue('ENCUC-1983')}
+        flag={buildFlag('missing-feature-link', 'Missing Feature Link')}
+        fieldConfig={FIELD_CONFIG}
+        onFixed={vi.fn()}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText(/Search issues for/i), { target: { value: 'critical' } });
+    await screen.findByRole('alert');
+
+    mockJiraGet.mockResolvedValue({ issues: [{ key: 'DENP-1', fields: { summary: 'Critical Vulnerabilities' } }] });
+    fireEvent.change(screen.getByLabelText(/Search issues for/i), { target: { value: 'critical v' } });
+
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
+  });
+
+  it('offers what Jira returned, so a successful search is visibly different from a failed one', async () => {
+    mockJiraGet.mockResolvedValue({ issues: [{ key: 'DENP-1', fields: { summary: 'Critical Vulnerabilities' } }] });
+    render(
+      <HygieneFixControl
+        issue={buildIssue('ENCUC-1983')}
+        flag={buildFlag('missing-feature-link', 'Missing Feature Link')}
+        fieldConfig={FIELD_CONFIG}
+        onFixed={vi.fn()}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText(/Search issues for/i), { target: { value: 'critical' } });
+
+    expect(await screen.findByRole('option', { name: /DENP-1 — Critical Vulnerabilities/ })).toBeInTheDocument();
+  });
+
+  it('asks Jira with a wildcard, so a half-typed word can match', async () => {
+    mockJiraGet.mockResolvedValue({ issues: [] });
+    render(
+      <HygieneFixControl
+        issue={buildIssue('ENCUC-1983')}
+        flag={buildFlag('missing-feature-link', 'Missing Feature Link')}
+        fieldConfig={FIELD_CONFIG}
+        onFixed={vi.fn()}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText(/Search issues for/i), { target: { value: 'crit' } });
+
+    await waitFor(() => expect(mockJiraGet).toHaveBeenCalled());
+    const requestedPath = decodeURIComponent(String(mockJiraGet.mock.calls.at(-1)?.[0]));
+    expect(requestedPath).toContain('summary ~ "crit*"');
   });
 });
