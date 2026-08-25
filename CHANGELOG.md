@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Groundwork for linking Confluence test documentation to the Jira issue that owns it.** The
+  scenarios live in a page tree filed at **Feature** level, but they belong to the **SL story** that
+  runs them, so getting them onto the right issue is a routing problem before it is an integration
+  one. Three pure modules, each testable without Jira or Confluence:
+  `pageTitleKeys` reads which issue a page is about, from all four shapes this team actually writes:
+  `DENP-477: …`, `DENP 842: …` (a space, not a hyphen), `INC0100170/ENCUC-2070 …` (the key behind a
+  ServiceNow number), and titles naming nothing at all. A title naming both a Feature and a story
+  routes from the **Feature** — a page titled that way is about the Feature's work, and routing to
+  the story beside it would file the whole Feature's scenarios against one piece of it.
+  `slStoryRouting` maps a Feature down to its SL story, delegating every judgement about what makes
+  a story an SL story to **`classifyChainRole`** — the same function the forecast and the roll-up
+  board use, so there is one answer to "is this the test story". A Feature with several SL stories is
+  **reported, never resolved**: choosing the first would file scenarios against an arbitrary third of
+  them. A Feature with none names the dev story to clone from, so a report can offer the action.
+  `slStoryClone` owns the team's own convention for making the missing SL story: clone the dev story,
+  swap **`[DEV]` for `[SL]`** and change nothing else — keeping the rest byte-identical is what makes
+  the pair recognisable to a person and to `classifyChainRole` — and link the new story as
+  **contained in** the one it came from, in the direction the board nests.
+
 ### Fixed
 - **A fix version taken off and put back by the same action is no longer reported as removed.** A
   transition screen re-submits the field it displays, so Jira records the version coming off and
