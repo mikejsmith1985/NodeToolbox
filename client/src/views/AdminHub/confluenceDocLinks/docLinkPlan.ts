@@ -1,0 +1,110 @@
+// docLinkPlan.ts — What the run WOULD do, worked out before anything is written.
+//
+// Nothing here talks to Jira or Confluence. It takes a crawled page list and whatever the caller
+// managed to learn about each Feature's children, and produces the row-per-page plan the panel
+// shows and the writer executes. Separating the two means a dry run and a real run are the same
+// decision — the only difference is whether the writer is called — so what you approved is
+// necessarily what happens.
+
+import { readPageSubject } from './pageTitleKeys.ts';
+import { routeDocToIssue, type DocRoute, type FeatureChild } from './slStoryRouting.ts';
+
+/** One crawled page, reduced to what planning reads. */
+export interface CrawledPage {
+  id: string;
+  title: string;
+  webUrl: string;
+}
+
+/** One page's fate: where its link goes, or why it has nowhere to go yet. */
+export interface DocLinkPlanRow {
+  pageId: string;
+  pageTitle: string;
+  pageUrl: string;
+  /** The key read from the title, before routing. */
+  titleIssueKey: string | null;
+  route: DocRoute;
+  /** True when this row would write a link if the run were not a dry run. */
+  isActionable: boolean;
+}
+
+/** The whole run, and what it could not do. */
+export interface DocLinkPlan {
+  rows: DocLinkPlanRow[];
+  /** Rows that would write a link. */
+  linkableCount: number;
+  /** Rows held for a decision — several SL stories, or a missing one. */
+  needsDecisionCount: number;
+  /** Pages whose titles name no issue, so nobody has told us what they document. */
+  untaggedCount: number;
+  /** True when the crawl hit its ceiling, so every count here is a floor. */
+  isTruncated: boolean;
+}
+
+/** Whether a route would actually write something. */
+function isRouteActionable(route: DocRoute): boolean {
+  return route.targetIssueKey !== null;
+}
+
+/**
+ * Builds the plan for a crawled tree.
+ *
+ * `featureChildrenByKey` is whatever the caller managed to fetch. A Feature MISSING from it is
+ * treated as having no children, which reports honestly ("no stories under it yet") rather than
+ * silently skipping the page — a page that vanishes from a report is the one nobody chases.
+ */
+export function buildDocLinkPlan(
+  pages: readonly CrawledPage[],
+  featureProjectKeys: readonly string[],
+  featureChildrenByKey: Readonly<Record<string, FeatureChild[]>>,
+  isTruncated = false,
+): DocLinkPlan {
+  const rows = pages.map((page) => {
+    const subject = readPageSubject(page.title, featureProjectKeys);
+    const featureChildren = subject.issueKey === null
+      ? []
+      : featureChildrenByKey[subject.issueKey] ?? [];
+    const route = routeDocToIssue(subject.issueKey, subject.isFeatureKey, featureChildren);
+
+    return {
+      pageId: page.id,
+      pageTitle: page.title,
+      pageUrl: page.webUrl,
+      titleIssueKey: subject.issueKey,
+      route,
+      isActionable: isRouteActionable(route),
+    };
+  });
+
+  return {
+    rows,
+    linkableCount: rows.filter((row) => row.isActionable).length,
+    untaggedCount: rows.filter((row) => row.route.outcome === 'no-key-in-title').length,
+    // Everything that named an issue and still has nowhere to go. Counted separately because it is
+    // the pile somebody has to work through, and folding it into "untagged" would hide it.
+    needsDecisionCount: rows.filter((row) => !row.isActionable && row.route.outcome !== 'no-key-in-title').length,
+    isTruncated,
+  };
+}
+
+/**
+ * Every FEATURE key the plan will need children for.
+ *
+ * Read from the titles before any Jira call, so the caller fetches each Feature once rather than
+ * once per page — a tree with forty pages under one Feature would otherwise ask forty times.
+ */
+export function readFeatureKeysToResolve(
+  pages: readonly CrawledPage[],
+  featureProjectKeys: readonly string[],
+): string[] {
+  const featureKeys = new Set<string>();
+
+  pages.forEach((page) => {
+    const subject = readPageSubject(page.title, featureProjectKeys);
+    if (subject.isFeatureKey && subject.issueKey !== null) {
+      featureKeys.add(subject.issueKey);
+    }
+  });
+
+  return [...featureKeys];
+}

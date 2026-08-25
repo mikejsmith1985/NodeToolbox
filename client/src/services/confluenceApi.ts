@@ -726,3 +726,106 @@ export function mergeJiraTemplateStores(
     conflicts,
   };
 }
+
+/** One page in a tree crawl: enough to route it, and to link back to it. */
+export interface ConfluenceTreePage {
+  id: string;
+  title: string;
+  /** The browser URL, which is what a Jira link has to point at. */
+  webUrl: string;
+}
+
+/** How many children one request asks for, and the ceiling a crawl will not read past. */
+const CONFLUENCE_CHILD_PAGE_LIMIT = 100;
+const CONFLUENCE_CRAWL_CEILING = 2000;
+
+/** One page of Confluence child results. */
+interface ConfluenceChildPageResponse {
+  results?: Array<{ id?: string; title?: string; _links?: { webui?: string } }>;
+  size?: number;
+  _links?: { base?: string; next?: string };
+}
+
+/**
+ * Finds a page by its exact title in a space, so a configuration can name the page a human sees.
+ *
+ * Titles are what people can read off the Confluence sidebar; ids are not. Resolving one to the
+ * other at run time also means a page MOVED within its space keeps working, while a page renamed
+ * fails loudly rather than silently crawling nothing.
+ */
+export async function findConfluencePageByTitle(
+  spaceKey: string,
+  pageTitle: string,
+): Promise<ConfluenceTreePage | null> {
+  const searchPath = `${CONFLUENCE_PROXY_BASE}/wiki/rest/api/content`
+    + `?spaceKey=${encodeURIComponent(spaceKey)}&title=${encodeURIComponent(pageTitle)}`
+    + '&type=page&limit=2';
+  const response = await fetchConfluenceJson<ConfluenceChildPageResponse>(
+    searchPath,
+    `Confluence page lookup "${pageTitle}" in ${spaceKey} failed`,
+  );
+
+  const firstMatch = (response.results ?? [])[0];
+  if (!firstMatch?.id) {
+    return null;
+  }
+  return {
+    id: firstMatch.id,
+    title: firstMatch.title ?? pageTitle,
+    webUrl: buildConfluenceWebUrl(response._links?.base, firstMatch._links?.webui, firstMatch.id),
+  };
+}
+
+/** The browser URL for a page, falling back to a proxy-relative path when Confluence gave no base. */
+function buildConfluenceWebUrl(baseUrl: string | undefined, webui: string | undefined, pageId: string): string {
+  if (baseUrl && webui) {
+    return `${baseUrl}${webui}`;
+  }
+  return `/pages/viewpage.action?pageId=${encodeURIComponent(pageId)}`;
+}
+
+/**
+ * Every page beneath one page, depth first, including the root's own descendants at every level.
+ *
+ * Depth matters here: the tree is folders of folders — a space holds a Feature folder, which holds
+ * "Testing scenarios and results", which holds a page per Feature. A one-level read would find the
+ * folders and none of the documents.
+ *
+ * Bounded by a ceiling and reported when it binds, so a crawl that hits it says the list is a floor
+ * rather than presenting a partial tree as the tree.
+ */
+export async function crawlConfluencePageTree(
+  rootPageId: string,
+): Promise<{ pages: ConfluenceTreePage[]; isTruncated: boolean }> {
+  const collectedPages: ConfluenceTreePage[] = [];
+  const pageIdsToVisit: string[] = [rootPageId];
+  const visitedPageIds = new Set<string>();
+
+  while (pageIdsToVisit.length > 0) {
+    if (collectedPages.length >= CONFLUENCE_CRAWL_CEILING) {
+      return { pages: collectedPages, isTruncated: true };
+    }
+    const currentPageId = pageIdsToVisit.shift() as string;
+    if (visitedPageIds.has(currentPageId)) continue;
+    visitedPageIds.add(currentPageId);
+
+    const childPath = `${CONFLUENCE_PROXY_BASE}/wiki/rest/api/content/${encodeURIComponent(currentPageId)}`
+      + `/child/page?limit=${CONFLUENCE_CHILD_PAGE_LIMIT}`;
+    const response = await fetchConfluenceJson<ConfluenceChildPageResponse>(
+      childPath,
+      `Confluence child pages of ${currentPageId} failed`,
+    ).catch(() => ({ results: [] } as ConfluenceChildPageResponse));
+
+    for (const childPage of response.results ?? []) {
+      if (!childPage.id) continue;
+      collectedPages.push({
+        id: childPage.id,
+        title: childPage.title ?? '',
+        webUrl: buildConfluenceWebUrl(response._links?.base, childPage._links?.webui, childPage.id),
+      });
+      pageIdsToVisit.push(childPage.id);
+    }
+  }
+
+  return { pages: collectedPages, isTruncated: false };
+}

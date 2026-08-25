@@ -8,6 +8,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Admin Hub → 📄 Confluence Docs: link test documentation to the Jira issue that owns it.** Crawls
+  a Confluence page tree, works out which issue each page documents, and writes the page onto that
+  issue as a **remote link** — a real entry in Jira&#39;s Links panel, with a stable `globalId` so
+  running it again updates rather than adding a thirtieth copy of the same document.
+  **Scan and Link are two buttons on purpose.** Scanning writes nothing and can be run freely; the
+  Link button walks the plan the scan produced. What you approved is therefore what happens, by
+  construction rather than by promise. Every row says what it would do in words — *links to the
+  Feature&#39;s SL story*, *several SL stories — pick one*, *the title names no issue* — and the
+  summary counts the three piles separately, because "needs a decision" is work somebody has to do
+  and "names no issue" is a page nobody has labelled.
+  **Creating a missing SL story stays one deliberate click**, on the row that needs it. It clones the
+  dev story, swaps `[DEV]` for `[SL]`, and links the new story as contained in its source — the
+  team&#39;s own convention, so the roll-up board nests the pair and the forecast tells dev work from
+  test work. A scheduled bulk create is precisely the shape that frightens people, so it is not one.
+  A renamed root page **fails loudly**: an empty crawl and a missing page look identical on screen and
+  mean opposite things. A Feature whose children cannot be read is reported as childless rather than
+  dropping its page from the list, because a page that vanishes from a report is the one nobody
+  chases.
+
+### Added
 - **Groundwork for linking Confluence test documentation to the Jira issue that owns it.** The
   scenarios live in a page tree filed at **Feature** level, but they belong to the **SL story** that
   runs them, so getting them onto the right issue is a routing problem before it is an integration
