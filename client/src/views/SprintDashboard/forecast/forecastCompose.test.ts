@@ -597,3 +597,41 @@ describe('computeForecast — the PI clock, which spans every release at once', 
     expect(Object.keys(result.codeFreezeCapacityByVersionName)).toHaveLength(1);
   });
 });
+
+describe('computeForecast — attributing a row to the team it came FROM', () => {
+  it('uses the issue-s own team over the run-s, so a merged view labels each row correctly', () => {
+    // Today merges several teams' scans into one forecast. A single run-level team labelled every
+    // row with whichever team happened to be active, so Cleanup Crew's ENCUC issues all showed as
+    // Transformers (GH #375).
+    const result = computeForecast(forecastInput({
+      items: [
+        boardItem({ key: 'ENCUC-2243', teamProfileId: 'cleanup-crew' }),
+        boardItem({ key: 'ENFCT-1709', teamProfileId: 'transformers' }),
+      ],
+      teamProfileId: 'transformers',
+    }), CONFIG);
+
+    const teamByKey = Object.fromEntries(result.issueForecasts.map((issueForecast) =>
+      [issueForecast.issueKey, issueForecast.teamProfileId]));
+    expect(teamByKey['ENCUC-2243']).toBe('cleanup-crew');
+    expect(teamByKey['ENFCT-1709']).toBe('transformers');
+  });
+
+  it('honours an explicit null — unattributable is not the same as unsupplied', () => {
+    // `??` would treat "known to have no team" as "not supplied" and relabel it with the run's
+    // team, which is the bug in miniature.
+    const result = computeForecast(forecastInput({
+      items: [boardItem({ key: 'ENC-1', teamProfileId: null })],
+      teamProfileId: 'transformers',
+    }), CONFIG);
+
+    expect(result.issueForecasts[0].teamProfileId).toBeNull();
+  });
+
+  it('falls back to the run-s team for every caller that scans ONE team', () => {
+    // The field is optional precisely so single-team surfaces are unaffected.
+    const result = computeForecast(forecastInput({ teamProfileId: 'transformers' }), CONFIG);
+
+    expect(result.issueForecasts[0].teamProfileId).toBe('transformers');
+  });
+});

@@ -83,6 +83,18 @@ export interface ForecastIssue {
   actualStartIso: string | null;
   /** What Jira currently holds as Target Start, so a disagreement can be reported. */
   storedTargetStartIso: string | null;
+  /**
+   * The Dashboard Team this issue actually came from, when the caller knows.
+   *
+   * Optional, and absent from every caller that scans ONE team — those are correctly attributed by
+   * the run-level team. It exists for the caller that merges several teams' scans into one view,
+   * where a single run-level team labels every row with whichever team happened to be active:
+   * Cleanup Crew's issues were all shown as Transformers (GH #375).
+   *
+   * Explicitly `null` means "known to be unattributable", which is a different claim from absent,
+   * and is honoured rather than falling back to the run's team.
+   */
+  teamProfileId?: string | null;
 }
 
 // ── Effort ────────────────────────────────────────────────────────────────────

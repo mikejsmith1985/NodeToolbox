@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Every row in the daily forecast wore the same team chip.** Cleanup Crew&#39;s `ENCUC` issues were
+  all labelled **Transformers** (GH #375). Today merges several teams&#39; scans into one forecast, and
+  the engine was handed a **single** run-level team that it stamped onto every row — so each issue
+  showed whichever team happened to be active rather than the team whose scan returned it.
+  An issue can now carry its own team, and the engine prefers it. The field is **optional**, so every
+  surface that scans one team is unaffected and still attributed by the run. An explicit `null` is
+  honoured rather than falling back — "known to have no team" and "not supplied" are different
+  claims, and treating them alike is the bug in miniature. An issue in nobody&#39;s team scan now shows
+  **no chip**: no chip is right, a wrong team is not.
+
+### Fixed
 - **The automation-move audit no longer reads as an accusation against issues it exonerated.** A
   cancelled Defect appeared in the list under the heading **"What the automation moved"**, with
   nothing beside it but *no status change near a comment* — a correct verdict that explains nothing,

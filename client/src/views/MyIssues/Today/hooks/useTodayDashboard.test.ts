@@ -716,6 +716,27 @@ describe('the daily forecast', () => {
     expect(result.current.forecast?.completeness.totalIssueCount).toBe(2);
   });
 
+  it('attributes each forecast row to the team whose scan returned it', async () => {
+    // Today merges several teams' scans into one forecast, and a single run-level team labelled
+    // every row with whichever team happened to be active — so Cleanup Crew's ENCUC issues all
+    // showed a Transformers chip (GH #375).
+    installSettingsStore([
+      buildTeamProfile('transformers-id', 'Transformers', 'ENFCT'),
+      buildTeamProfile('cleanup-id', 'Cleanup Crew', 'ENCUC'),
+    ]);
+    mockRunHygieneScan.mockImplementation((options: { projectKey: string }) => Promise.resolve(
+      buildScanOutcome([buildFinding(options.projectKey === 'ENCUC' ? 'ENCUC-2243' : 'ENFCT-1709', [])]),
+    ));
+
+    const { result } = renderHook(() => useTodayDashboard());
+    await waitFor(() => expect(result.current.forecast?.issueForecasts.length).toBe(2));
+
+    const teamByKey = Object.fromEntries((result.current.forecast?.issueForecasts ?? [])
+      .map((issueForecast) => [issueForecast.issueKey, issueForecast.teamProfileId]));
+    expect(teamByKey['ENCUC-2243']).toBe('cleanup-id');
+    expect(teamByKey['ENFCT-1709']).toBe('transformers-id');
+  });
+
   it('asks each scanned project for its versions, once, so a shipped release is known as shipped', async () => {
     // This request was deliberately avoided until it became clear what its absence cost: the engine
     // excuses work still open against a RELEASED version, and it could not, because a version name

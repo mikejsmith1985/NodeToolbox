@@ -903,11 +903,21 @@ export function useTodayDashboard(): TodayDashboardData {
     // issue twice would double its effort in every total it touches.
     const uniqueIssuesByKey = new Map(scannedIssues.map((issue) => [issue.key, issue]));
 
+    // Which team each issue actually came FROM. This view merges several teams' scans, so a single
+    // run-level team labelled every row with whichever team happened to be active — Cleanup Crew's
+    // ENCUC issues were all shown as Transformers (GH #375).
+    const teamProfileIdByIssueKey = new Map<string, string>(
+      teamScanResult.teamScans.flatMap((teamScan) =>
+        teamScan.findings.map((finding) => [finding.issue.key, teamScan.teamProfileId] as const)),
+    );
+
     const items = adaptHygieneIssues([...uniqueIssuesByKey.values()], {
       storyPointsFieldIds: resolveStoryPointsFieldIds(myIssuesResult.hygieneContext?.customStoryPointsFieldId ?? ''),
       subStatusFieldIds: fieldConfig.subStatusFieldIds ?? [],
       targetStartFieldIds: fieldConfig.targetStartFieldIds ?? [],
-    });
+    // An issue in no team scan is one of the viewer's OWN, from a project no scanned team covers.
+    // Explicitly null rather than the active team: no chip is right, a wrong team is not.
+    }).map((item) => ({ ...item, teamProfileId: teamProfileIdByIssueKey.get(item.key) ?? null }));
 
     const artSettings = readArtSettings();
     const { config, rejectedSettings } = buildForecastConfig(readRawForecastSettings(), toCalendarDay(new Date()));

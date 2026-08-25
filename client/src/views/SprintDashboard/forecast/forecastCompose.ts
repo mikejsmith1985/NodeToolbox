@@ -152,7 +152,10 @@ function buildIssueForecastInputs(
   return items.map((item) => ({
     issueKey: item.key,
     summary: item.summary,
-    teamProfileId,
+    // The issue's OWN team wins where the caller supplied one, including when it supplied null —
+    // `??` would treat "known to be unattributable" as "not supplied" and relabel it with the run's
+    // team, which is the bug this exists to fix.
+    teamProfileId: item.teamProfileId !== undefined ? item.teamProfileId : teamProfileId,
     assigneeAccountId: item.assigneeAccountId,
     assigneeDisplayName: item.assigneeDisplayName,
     effort: effortByIssueKey.get(item.key) ?? computeRemainingEffort(null, item.columnId, [], false, 1),
