@@ -11,7 +11,11 @@ import { useState } from 'react';
 
 import { buildJiraIssueNavigatorUrl } from '../../Hygiene/utils/buildHygieneJqlUrl.ts';
 import { useConnectionStore } from '../../../store/connectionStore.ts';
-import { groupRemovalsByAuthor, type FixVersionRemoval } from './recentVersionChanges.ts';
+import {
+  groupRemovalsByAuthor,
+  summariseRemovalCauses,
+  type FixVersionRemoval,
+} from './recentVersionChanges.ts';
 import { loadFixVersionRemovalsSince } from './versionMovementFetch.ts';
 import styles from '../SprintDashboardView.module.css';
 
@@ -91,6 +95,7 @@ function RemovalTable({ removals, jiraBaseUrl }: {
           <th scope="col">Now on</th>
           <th scope="col">Cleared by</th>
           <th scope="col">When</th>
+          <th scope="col">What did it</th>
         </tr>
       </thead>
       <tbody>
@@ -111,10 +116,42 @@ function RemovalTable({ removals, jiraBaseUrl }: {
             </td>
             <td>{removal.byDisplayName ?? 'unattributed'}</td>
             <td>{describeInstant(removal.atIso)}</td>
+            {/* The decisive column. Jira records one action as one changelog entry, so a version
+                that vanished alongside a status change was cleared BY that transition — a workflow
+                post-function or a transition screen — not typed away by hand. */}
+            <td>
+              {removal.statusChangeInSameAction === null
+                ? 'a field edit'
+                : `the move ${removal.statusChangeInSameAction.fromStatus} → ${removal.statusChangeInSameAction.toStatus}`}
+            </td>
           </tr>
         ))}
       </tbody>
     </table>
+  );
+}
+
+/**
+ * Whether these removals rode along with a status change, or were plain field edits.
+ *
+ * The question every one of these reports turns into: "is the automation clearing our fix
+ * versions?" Nothing in our own code names that field, so reading the code cannot answer it — but a
+ * transition clears whatever its workflow is configured to clear, whoever fires it. Jira records one
+ * action as one changelog entry, so this is the only place the two can be told apart.
+ */
+function RemovalCauseSummary({ removals }: { removals: readonly FixVersionRemoval[] }) {
+  const causes = summariseRemovalCauses(removals);
+
+  return (
+    <p className={causes.withStatusChange > 0 ? styles.forecastAlert : styles.forecastSectionNote} role="status">
+      {causes.withStatusChange === 0
+        ? `All ${causes.fieldEditOnly} were plain field edits — somebody changed the field itself. `
+          + 'No status change happened in the same action, so no workflow transition cleared them.'
+        : `${causes.withStatusChange} of ${removals.length} happened in the SAME action as a status change. `
+          + 'A transition cleared those, not a person editing the field — which means a workflow '
+          + 'post-function or a transition screen on that move. It clears them for anybody who makes '
+          + `that move, automation or not. ${causes.fieldEditOnly} were plain field edits.`}
+    </p>
   );
 }
 
@@ -180,6 +217,10 @@ export function ClearedTodaySection({ projectKey }: ClearedTodaySectionProps) {
           <p className={styles.forecastSectionNote} role="status">
             {`${removals.length} fix-version removal${removals.length === 1 ? '' : 's'} — ${(ranChoiceLabel ?? '').toLowerCase()}.`}
           </p>
+          {/* Answers the question people argue about. No code that never names `fixVersions` can be
+              ruled in or out by reading it — a transition clears whatever its workflow tells it to,
+              and only the changelog can say which happened. */}
+          <RemovalCauseSummary removals={removals} />
           {/* Grouped first: the answer is almost never "twelve issues each lost their release", it
               is "one person cleared twelve while doing something else". */}
           <AuthorBatchTable removals={removals} jiraBaseUrl={jiraBaseUrl} />

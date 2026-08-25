@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **"Fix versions cleared recently" now says WHAT cleared them, not just who.** The recurring report
+  is "the automation is losing our fix versions", and no amount of reading our own code can settle
+  it: the intake writes exactly three things — a comment, a parent sub-status, and a transition id —
+  and **never names `fixVersions`**. But a transition clears whatever its workflow is configured to
+  clear, for anybody who fires it, so the code being innocent proves nothing.
+  Jira records one action as one changelog entry, which is where the two can be told apart. Each
+  removal now reports **what did it**: *the move Ready for Testing → Cancelled*, or *a field edit*.
+  A version that vanished in the same entry as a status change was cleared **by that transition** —
+  a workflow post-function or a transition screen — and would be cleared for a person making the
+  same move by hand. A summary line above the table counts both populations, so the answer is one
+  sentence rather than a table somebody has to interpret.
+
 ### Fixed
 - **A story linked with "is contained in" did not nest under its parent card.** The Roll-Up Board
   matched exactly one wording — `contained within` — so the same relationship expressed as

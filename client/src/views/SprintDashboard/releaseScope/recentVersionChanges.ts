@@ -29,6 +29,16 @@ export interface FixVersionRemoval {
   currentVersionNames: string[];
   atIso: string;
   byDisplayName: string | null;
+  /**
+   * The status change made by the SAME action, when there was one.
+   *
+   * The decisive fact. Jira records one action as one changelog entry, so a fix version that
+   * disappeared in the same entry as a status change was not edited away by hand — a **transition**
+   * did both, which means a workflow post-function or a transition screen. That is a Jira
+   * configuration answer, and it is the difference between "somebody cleared this" and "the
+   * workflow clears this every time anybody moves the issue".
+   */
+  statusChangeInSameAction: { fromStatus: string; toStatus: string } | null;
 }
 
 /**
@@ -87,7 +97,21 @@ export function readFixVersionRemovals(
       currentVersionNames: issue.fixVersionNames,
       atIso: entry.history.created as string,
       byDisplayName: entry.history.author?.displayName ?? null,
+      statusChangeInSameAction: readStatusChangeInEntry(entry.history),
     }));
+}
+
+/** The status change made in the same entry, or null when the entry changed no status. */
+function readStatusChangeInEntry(history: VersionChangeHistory): { fromStatus: string; toStatus: string } | null {
+  const statusItem = (history.items ?? []).find((item) =>
+    (item.field ?? '').trim().toLowerCase() === 'status');
+  if (statusItem === undefined) {
+    return null;
+  }
+  return {
+    fromStatus: (statusItem.fromString ?? '').trim() || '(none)',
+    toStatus: (statusItem.toString ?? '').trim() || '(none)',
+  };
 }
 
 /** The version names one change entry took off. */
@@ -138,4 +162,19 @@ export function groupRemovalsByAuthor(removals: readonly FixVersionRemoval[]): R
     .map(([byDisplayName, authorRemovals]) => ({ byDisplayName, removals: authorRemovals }))
     .sort((left, right) => right.removals.length - left.removals.length
       || left.byDisplayName.localeCompare(right.byDisplayName));
+}
+
+/**
+ * How many removals happened as part of a status change, and how many were plain field edits.
+ *
+ * The question people actually argue about: "is the automation clearing our fix versions?" A
+ * removal that rode along with a transition was done BY that transition — no caller has to name the
+ * field for it to be cleared, so no amount of reading our own code can rule it in or out. This
+ * counts the two populations so the argument can be settled with evidence instead of suspicion.
+ */
+export function summariseRemovalCauses(
+  removals: readonly FixVersionRemoval[],
+): { withStatusChange: number; fieldEditOnly: number } {
+  const withStatusChange = removals.filter((removal) => removal.statusChangeInSameAction !== null).length;
+  return { withStatusChange, fieldEditOnly: removals.length - withStatusChange };
 }

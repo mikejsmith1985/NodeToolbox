@@ -9,6 +9,7 @@ import {
   groupRemovalsByAuthor,
   readFixVersionRemovals,
   readStartOfLocalDay,
+  summariseRemovalCauses,
   type FixVersionRemoval,
 } from './recentVersionChanges.ts';
 import type { VersionChangeHistory, VersionMemberIssue } from './versionMovement.ts';
@@ -172,6 +173,7 @@ describe('groupRemovalsByAuthor', () => {
       currentVersionNames: [],
       atIso: '2026-08-24T12:00:00.000Z',
       byDisplayName,
+      statusChangeInSameAction: null,
     };
   }
 
@@ -195,5 +197,53 @@ describe('groupRemovalsByAuthor', () => {
 
   it('is empty when nothing was cleared', () => {
     expect(groupRemovalsByAuthor([])).toEqual([]);
+  });
+});
+
+describe('what actually cleared the fix version', () => {
+  /** One changelog entry that changed BOTH the fix version and the status — i.e. a transition. */
+  function transitionEntry(createdIso: string) {
+    return {
+      created: createdIso,
+      author: { displayName: 'Kumar, Sidhant' },
+      items: [
+        { field: 'Fix Version', fromString: '08/27/2026', toString: null },
+        { field: 'status', fromString: 'Ready for Testing', toString: 'Cancelled' },
+      ],
+    };
+  }
+
+  it('names the status change made by the SAME action', () => {
+    // Jira records one action as one changelog entry, so a version that vanished alongside a status
+    // change was cleared BY that transition — a workflow post-function or a transition screen.
+    const removals = readFixVersionRemovals(issueWith('ENC-2', [transitionEntry('2026-08-24T12:00:00.000Z')]), THIS_MORNING);
+
+    expect(removals[0].statusChangeInSameAction).toEqual({
+      fromStatus: 'Ready for Testing',
+      toStatus: 'Cancelled',
+    });
+  });
+
+  it('reports a plain field edit as having no status change beside it', () => {
+    const removals = readFixVersionRemovals(
+      issueWith('ENC-2', [versionChange('2026-08-24T12:00:00.000Z', '08/27/2026', null)]),
+      THIS_MORNING,
+    );
+
+    expect(removals[0].statusChangeInSameAction).toBeNull();
+  });
+
+  it('counts the two populations, which is what settles the argument', () => {
+    const removals = collectFixVersionRemovals([
+      issueWith('ENC-1', [transitionEntry('2026-08-24T12:00:00.000Z')]),
+      issueWith('ENC-2', [transitionEntry('2026-08-24T13:00:00.000Z')]),
+      issueWith('ENC-3', [versionChange('2026-08-24T14:00:00.000Z', '08/27/2026', null)]),
+    ], THIS_MORNING);
+
+    expect(summariseRemovalCauses(removals)).toEqual({ withStatusChange: 2, fieldEditOnly: 1 });
+  });
+
+  it('is all zeroes when nothing was cleared', () => {
+    expect(summariseRemovalCauses([])).toEqual({ withStatusChange: 0, fieldEditOnly: 0 });
   });
 });

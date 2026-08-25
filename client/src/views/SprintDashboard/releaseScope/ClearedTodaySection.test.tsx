@@ -20,6 +20,7 @@ function removal(overrides: Partial<FixVersionRemoval> = {}): FixVersionRemoval 
     currentVersionNames: [],
     atIso: '2026-08-24T12:00:00.000Z',
     byDisplayName: 'Kumar, Sidhant',
+    statusChangeInSameAction: null,
     ...overrides,
   };
 }
@@ -100,5 +101,44 @@ describe('ClearedTodaySection', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Today' }));
 
     expect((await screen.findAllByText('unattributed')).length).toBeGreaterThan(0);
+  });
+});
+
+describe('ClearedTodaySection — what actually cleared the fix version', () => {
+  it('says a transition did it when the same action changed the status', async () => {
+    // The question every one of these reports turns into. Nothing in our own code names the field,
+    // so reading the code cannot answer it — a transition clears whatever its workflow says.
+    mockLoadRemovals.mockResolvedValue([
+      removal({ statusChangeInSameAction: { fromStatus: 'Ready for Testing', toStatus: 'Cancelled' } }),
+    ]);
+    render(<ClearedTodaySection projectKey="ENCUC" />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Today' }));
+
+    expect(await screen.findByText(/happened in the SAME action as a status change/)).toBeInTheDocument();
+    expect(screen.getByText(/the move Ready for Testing → Cancelled/)).toBeInTheDocument();
+  });
+
+  it('says plainly when they were field edits, so the workflow is ruled OUT', async () => {
+    mockLoadRemovals.mockResolvedValue([removal({ statusChangeInSameAction: null })]);
+    render(<ClearedTodaySection projectKey="ENCUC" />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Today' }));
+
+    expect(await screen.findByText(/no workflow transition cleared them/)).toBeInTheDocument();
+    expect(screen.getByText('a field edit')).toBeInTheDocument();
+  });
+
+  it('counts both populations rather than reporting only the louder one', async () => {
+    mockLoadRemovals.mockResolvedValue([
+      removal({ issueKey: 'ENC-1', statusChangeInSameAction: { fromStatus: 'Working', toStatus: 'Cancelled' } }),
+      removal({ issueKey: 'ENC-2', statusChangeInSameAction: null }),
+    ]);
+    render(<ClearedTodaySection projectKey="ENCUC" />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Today' }));
+
+    expect(await screen.findByText(/1 of 2 happened in the SAME action/)).toBeInTheDocument();
+    expect(screen.getByText(/1 were plain field edits/)).toBeInTheDocument();
   });
 });
