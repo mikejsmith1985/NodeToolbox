@@ -533,10 +533,11 @@ describe('GithubEmailIntakePanel — what the automation moved', () => {
           issueKey: 'ENFCT-2020', issueSummary: 'Add letters', currentStatus: 'Cancelled',
           isCurrentStatusDone: true, commentCount: 2,
           automationMoves: [{ fromStatus: 'Code Review', toStatus: 'Cancelled', atIso: '2026-08-18T14:30:00.000Z' }],
+          lastStatusChange: null,
         },
         {
           issueKey: 'ENFCT-1530', issueSummary: 'MEET Fallout', currentStatus: 'In Progress',
-          isCurrentStatusDone: false, commentCount: 1, automationMoves: [],
+          isCurrentStatusDone: false, commentCount: 1, automationMoves: [], lastStatusChange: null,
         },
       ],
     })
@@ -545,7 +546,7 @@ describe('GithubEmailIntakePanel — what the automation moved', () => {
     await screen.findByText('Posted-comment audit')
 
     fireEvent.click(screen.getByRole('button', { name: /scan jira for automation comments/i }))
-    expect(await screen.findByText(/What the automation moved/)).toBeInTheDocument()
+    expect(await screen.findByText(/Automation move audit/)).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'ENFCT-2020' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'ENFCT-1530' })).toBeInTheDocument()
 
@@ -720,3 +721,66 @@ describe('GithubEmailIntakePanel — putting an automation move back', () => {
     expect(screen.queryByRole('button', { name: /Put \d+ back/i })).not.toBeInTheDocument()
   });
 });
+
+describe('GithubEmailIntakePanel — an exonerated row says who DID move it', () => {
+  /** One audited issue the automation commented on but did not move. */
+  function auditWithBystander(lastStatusChange: unknown) {
+    mockFetchGithubAutomationComments.mockReset()
+    mockFetchGithubAutomationComments.mockResolvedValue({
+      scannedIssueCount: 1,
+      rows: [],
+      moveRows: [{
+        issueKey: 'ENCUC-2172',
+        issueSummary: 'EGWP: Load Status Report Error',
+        currentStatus: 'Cancelled',
+        isCurrentStatusDone: true,
+        commentCount: 3,
+        automationMoves: [],
+        lastStatusChange,
+      }],
+    })
+  }
+
+  it('names the person and the moment instead of only exonerating the automation', async () => {
+    // A cancelled issue sitting under an automation heading with nothing but "no status change near
+    // a comment" reads as an accusation nobody can answer (GH #375).
+    auditWithBystander({
+      fromStatus: 'Ready for Testing',
+      toStatus: 'Cancelled',
+      atIso: '2026-08-25T09:05:00.000Z',
+      byDisplayName: 'Malhotra, Manya (CTR)',
+    })
+    stubFetch({}, { ...DEFAULT_CONFIG, jiraProjectKeys: ['ENCUC'] })
+    render(<GithubEmailIntakePanel />)
+    await screen.findByText('Posted-comment audit')
+
+    fireEvent.click(screen.getByRole('button', { name: /scan jira for automation comments/i }))
+
+    expect(await screen.findByText(/not the automation — Malhotra, Manya \(CTR\) moved it Ready for Testing → Cancelled/))
+      .toBeInTheDocument()
+  })
+
+  it('says there is no status change on record rather than inventing one', async () => {
+    // An issue can have been created in the status it sits in.
+    auditWithBystander(null)
+    stubFetch({}, { ...DEFAULT_CONFIG, jiraProjectKeys: ['ENCUC'] })
+    render(<GithubEmailIntakePanel />)
+    await screen.findByText('Posted-comment audit')
+
+    fireEvent.click(screen.getByRole('button', { name: /scan jira for automation comments/i }))
+
+    expect(await screen.findByText(/no status change on record at all/)).toBeInTheDocument()
+  })
+
+  it('heads the list for what it actually holds — every audited issue, moved or not', async () => {
+    auditWithBystander(null)
+    stubFetch({}, { ...DEFAULT_CONFIG, jiraProjectKeys: ['ENCUC'] })
+    render(<GithubEmailIntakePanel />)
+    await screen.findByText('Posted-comment audit')
+
+    fireEvent.click(screen.getByRole('button', { name: /scan jira for automation comments/i }))
+
+    expect(await screen.findByText('Automation move audit')).toBeInTheDocument()
+    expect(screen.getByText(/whether or not it moved it/)).toBeInTheDocument()
+  })
+})

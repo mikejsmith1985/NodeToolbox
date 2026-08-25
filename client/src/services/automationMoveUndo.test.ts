@@ -24,6 +24,7 @@ function row(overrides: Partial<MoveAuditRow> = {}): MoveAuditRow {
     issueSummary: 'Automate cleanup',
     currentStatus: 'Cancelled',
     isCurrentStatusDone: true,
+    lastStatusChange: null,
     commentCount: 1,
     automationMoves: [{ fromStatus: 'Working', toStatus: 'Cancelled', atIso: '2026-08-21T15:30:36.000+0000' }],
     ...overrides,

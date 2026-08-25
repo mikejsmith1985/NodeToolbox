@@ -7,7 +7,11 @@
 import { useCallback, useEffect, useState } from 'react'
 
 import { fetchGithubAutomationComments, type AutomationCommentRow } from '../../services/githubCommentAudit.ts'
-import { filterMoveAuditRows, type MoveAuditRow } from '../../services/automationMoveAudit.ts'
+import {
+  filterMoveAuditRows,
+  type LastStatusChange,
+  type MoveAuditRow,
+} from '../../services/automationMoveAudit.ts'
 import {
   planAutomationMoveUndo,
   selectUndoableRows,
@@ -198,6 +202,28 @@ async function fetchRunLog(): Promise<IntakeRunResult[]> {
   } catch {
     return []
   }
+}
+
+/**
+ * Says who moved an issue the automation did NOT move.
+ *
+ * "No status change near a comment" is the correct verdict and, on its own, a useless one: it left a
+ * cancelled issue sitting under an automation heading with nothing to explain how it got there, and
+ * an operator reasonably read it as an accusation (GH #375). Naming the person and the moment turns
+ * the same row into a complete answer.
+ *
+ * When the history has no status change at all, that is stated rather than dressed up — an issue can
+ * have been created in the status it sits in.
+ */
+function describeNonAutomationMove(lastStatusChange: LastStatusChange | null): string {
+  if (lastStatusChange === null) {
+    return ' · not the automation — and no status change on record at all'
+  }
+
+  const mover = lastStatusChange.byDisplayName ?? 'somebody Jira did not name'
+  const movedAt = formatRunTimestamp(lastStatusChange.atIso)
+  return ` · not the automation — ${mover} moved it `
+    + `${lastStatusChange.fromStatus} → ${lastStatusChange.toStatus} at ${movedAt}`
 }
 
 /** Formats a run's ISO timestamp for the Activity Log; an unparseable value renders as-is. */
@@ -1300,10 +1326,15 @@ export function GithubEmailIntakePanel() {
             attributed to the same run, because a person does not also leave a signed comment. */}
         {moveRows.length > 0 ? (
           <div className={styles.panelSection}>
-            <label className={styles.fieldLabel}>What the automation moved</label>
+            {/* Not "what the automation moved": the list holds every audited issue, and most of
+                them the automation did NOT move. A heading that claims otherwise turns an
+                exonerated row into an accusation nobody can answer (GH #375). */}
+            <label className={styles.fieldLabel}>Automation move audit</label>
             <p className={styles.panelStatusLine}>
-              {movedIssueCount} of {moveRows.length} audited issue(s) had a status change within three
-              minutes of an automation comment. Search a key, a summary, or a status — typing
+              Every issue the automation commented on, whether or not it moved it.{' '}
+              <strong>{movedIssueCount} of {moveRows.length}</strong> had a status change within three
+              minutes of an automation comment; the rest were moved by somebody else, and each says
+              who. Search a key, a summary, or a status — typing
               <strong> cancelled</strong> answers the question this exists for.
             </p>
             <input
@@ -1352,8 +1383,11 @@ export function GithubEmailIntakePanel() {
                     {moveRow.issueKey}
                   </a>
                   {' · now '}<strong>{moveRow.currentStatus}</strong>
+                  {/* An exonerated row says WHO did it. "No status change near a comment" is the
+                      right verdict and a useless one on its own: it left a cancelled issue sitting
+                      under an automation heading with nothing to explain how it got there. */}
                   {moveRow.automationMoves.length === 0
-                    ? ' · no status change near a comment'
+                    ? describeNonAutomationMove(moveRow.lastStatusChange)
                     : ' · ' + moveRow.automationMoves
                       .map((move) => `${move.fromStatus} → ${move.toStatus}`).join(', ')}
                   {moveRow.issueSummary ? <em>{' (' + moveRow.issueSummary + ')'}</em> : null}

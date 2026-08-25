@@ -26,7 +26,17 @@ export interface AutomationMove {
 /** One changelog history entry, reduced to what attribution needs. */
 export interface ChangelogHistoryEntry {
   created?: string;
+  /** Who Jira credits the change to — the answer when the automation is NOT responsible. */
+  author?: { displayName?: string } | null;
   items?: Array<{ field?: string; toString?: string; fromString?: string }>;
+}
+
+/** The most recent status change on an issue, whoever made it. */
+export interface LastStatusChange {
+  fromStatus: string;
+  toStatus: string;
+  atIso: string;
+  byDisplayName: string | null;
 }
 
 /** One audited issue: what the automation said, what it did, and where the issue stands now. */
@@ -38,6 +48,15 @@ export interface MoveAuditRow {
   isCurrentStatusDone: boolean;
   commentCount: number;
   automationMoves: AutomationMove[];
+  /**
+   * The last status change on the issue, whoever made it — null when there has never been one.
+   *
+   * Carried so a row the automation did NOT move can say who DID. Listing an issue as "now
+   * Cancelled" beneath a heading about automation, with nothing but "no status change near a
+   * comment" to exonerate it, reads as an accusation nobody can answer (GH #375). The name and the
+   * timestamp turn the same row into a complete statement.
+   */
+  lastStatusChange: LastStatusChange | null;
 }
 
 /** Milliseconds for an ISO stamp, or null when it cannot be read. */
@@ -82,6 +101,33 @@ export function correlateAutomationMoves(
   }
 
   return claimedMoves;
+}
+
+/**
+ * The most recent status change on an issue, whoever made it.
+ *
+ * Deliberately independent of the automation window: this is the answer for rows the automation did
+ * NOT move, and it must not be filtered by the very correlation that exonerated them.
+ */
+export function readLastStatusChange(
+  changelogHistories: readonly ChangelogHistoryEntry[],
+): LastStatusChange | null {
+  const statusChanges = changelogHistories
+    .map((history) => ({ history, statusItem: (history.items ?? []).find((item) => item.field === 'status') }))
+    .filter((entry) => entry.statusItem !== undefined && (entry.history.created ?? '') !== '')
+    .sort((left, right) => (left.history.created ?? '').localeCompare(right.history.created ?? ''));
+
+  const lastChange = statusChanges[statusChanges.length - 1];
+  if (lastChange === undefined) {
+    return null;
+  }
+
+  return {
+    fromStatus: lastChange.statusItem?.fromString ?? '(unknown)',
+    toStatus: lastChange.statusItem?.toString ?? '(unknown)',
+    atIso: lastChange.history.created as string,
+    byDisplayName: lastChange.history.author?.displayName ?? null,
+  };
 }
 
 /** Everything about one row a free-text search should look at. */

@@ -7,6 +7,7 @@
 import { jiraGet } from './jiraApi.ts';
 import {
   correlateAutomationMoves,
+  readLastStatusChange,
   type ChangelogHistoryEntry,
   type MoveAuditRow,
 } from './automationMoveAudit.ts';
@@ -62,6 +63,10 @@ export function collectAutomationMoveRows(issues: JiraAuditIssue[]): MoveAuditRo
           automationCommentIsos,
           candidateIssue.changelog?.histories ?? [],
         ),
+        // Read from the WHOLE history, not the automation-correlated slice: this is the answer for
+        // rows the automation did not move, and filtering it by the correlation that exonerated
+        // them would leave those rows with nothing to say.
+        lastStatusChange: readLastStatusChange(candidateIssue.changelog?.histories ?? []),
       };
     })
     .filter((moveRow) => moveRow.commentCount > 0);

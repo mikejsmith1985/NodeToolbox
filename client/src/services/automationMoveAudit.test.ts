@@ -7,6 +7,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  readLastStatusChange,
   AUTOMATION_MOVE_WINDOW_MS,
   correlateAutomationMoves,
   filterMoveAuditRows,
@@ -63,16 +64,71 @@ describe('correlateAutomationMoves', () => {
   });
 });
 
+describe('readLastStatusChange — who moved it, when the automation did not', () => {
+  function statusChange(createdIso: string, fromStatus: string, toStatus: string, author: string | null = 'Malhotra, Manya (CTR)') {
+    return {
+      created: createdIso,
+      author: author === null ? null : { displayName: author },
+      items: [{ field: 'status', fromString: fromStatus, toString: toStatus }],
+    };
+  }
+
+  it('names the person and the moment, which is the answer an exonerated row owes', () => {
+    // "No status change near a comment" is the right verdict and a useless one alone: it left a
+    // cancelled issue under an automation heading with nothing to explain how it got there.
+    const lastChange = readLastStatusChange([statusChange('2026-08-25T09:05:00.000Z', 'Ready for Testing', 'Cancelled')]);
+
+    expect(lastChange).toEqual({
+      fromStatus: 'Ready for Testing',
+      toStatus: 'Cancelled',
+      atIso: '2026-08-25T09:05:00.000Z',
+      byDisplayName: 'Malhotra, Manya (CTR)',
+    });
+  });
+
+  it('takes the LAST change — the one that explains where the issue sits now', () => {
+    const lastChange = readLastStatusChange([
+      statusChange('2026-08-01T09:00:00.000Z', 'To Do', 'Working'),
+      statusChange('2026-08-25T09:05:00.000Z', 'Ready for Testing', 'Cancelled', 'Someone, Else'),
+    ]);
+
+    expect(lastChange?.byDisplayName).toBe('Someone, Else');
+  });
+
+  it('ignores changes to other fields', () => {
+    const lastChange = readLastStatusChange([{
+      created: '2026-08-25T09:05:00.000Z',
+      author: { displayName: 'Malhotra, Manya (CTR)' },
+      items: [{ field: 'Attachment', fromString: null, toString: 'screenshot-1.png' } as never],
+    }]);
+
+    expect(lastChange).toBeNull();
+  });
+
+  it('reports no status change at all rather than inventing one', () => {
+    // An issue can have been created in the status it sits in.
+    expect(readLastStatusChange([])).toBeNull();
+  });
+
+  it('says the mover is unnamed rather than dropping the change', () => {
+    const lastChange = readLastStatusChange([statusChange('2026-08-25T09:05:00.000Z', 'To Do', 'Cancelled', null)]);
+
+    expect(lastChange?.byDisplayName).toBeNull();
+    expect(lastChange?.toStatus).toBe('Cancelled');
+  });
+});
+
 describe('filterMoveAuditRows', () => {
   const ROWS: MoveAuditRow[] = [
     {
       issueKey: 'ENFCT-2020', issueSummary: 'Add letters that Prod support clears', currentStatus: 'Cancelled',
       isCurrentStatusDone: true, commentCount: 2,
       automationMoves: [{ toStatus: 'Cancelled', fromStatus: 'Code Review', atIso: COMMENT_AT }],
+      lastStatusChange: null,
     },
     {
       issueKey: 'ENFCT-1530', issueSummary: 'MEET Fallout for Hospice', currentStatus: 'In Progress',
-      isCurrentStatusDone: false, commentCount: 1, automationMoves: [],
+      isCurrentStatusDone: false, commentCount: 1, automationMoves: [], lastStatusChange: null,
     },
   ];
 

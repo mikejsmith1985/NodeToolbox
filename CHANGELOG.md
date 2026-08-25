@@ -8,6 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **The automation-move audit no longer reads as an accusation against issues it exonerated.** A
+  cancelled Defect appeared in the list under the heading **"What the automation moved"**, with
+  nothing beside it but *no status change near a comment* — a correct verdict that explains nothing,
+  on a screen whose heading claimed the opposite (GH #375). The reasonable reading was "the tool
+  thinks the automation cancelled this", when the tool was in fact saying it did not.
+  Three changes, all honesty rather than logic. The heading is now **"Automation move audit"** —
+  every issue the automation commented on, whether or not it moved it — with the split stated in
+  words. An exonerated row now **names who actually did it**: *not the automation — Malhotra, Manya
+  (CTR) moved it Ready for Testing → Cancelled at …*, read from the changelog already being fetched,
+  so it costs nothing. And an issue with no status change on record says exactly that, rather than
+  being dressed up as one — an issue can have been created in the status it sits in.
+  The person is read from the **whole** history, deliberately not from the automation-correlated
+  slice: that slice is what exonerated the row, and filtering by it would leave the row with nothing
+  to say.
+
+### Fixed
 - **The Feature-link search on Hygiene now finds things.** Two separate faults, both of which
   produced the same empty dropdown (GH #375).
   Jira&#39;s `~` operator matches **whole words**, so `summary ~ "crit"` finds nothing at all against
