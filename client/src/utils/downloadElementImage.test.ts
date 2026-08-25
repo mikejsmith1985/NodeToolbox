@@ -22,7 +22,13 @@ vi.mock('html2canvas', () => ({
   default: mockHtml2Canvas,
 }));
 
-import { copyElementImageToClipboard, copyElementReportToClipboard, downloadElementImage } from './downloadElementImage.ts';
+import {
+  copyElementImageToClipboard,
+  copyElementReportToClipboard,
+  downloadElementImage,
+  readExportRenderScale,
+  renameForBlobType,
+} from './downloadElementImage.ts';
 
 function createMockCanvas(width: number, height: number): HTMLCanvasElement {
   return {
@@ -173,5 +179,54 @@ describe('downloadElementImage', () => {
 
     expect(mockRevokeObjectUrl).toHaveBeenCalledWith('blob:shared-export');
     expect(document.querySelector('a[download="shared-export.png"]')).toBeNull();
+  });
+});
+
+describe('readExportRenderScale — an export nobody can attach is not an export', () => {
+  it('keeps the crisp scale for a panel small enough to afford it', () => {
+    // 1200 x 800 at scale 3 is under three megapixels; nothing needs to change.
+    expect(readExportRenderScale(1200, 800)).toBe(3);
+  });
+
+  it('drops the scale for a full board, which at scale 3 lands past twenty megabytes', () => {
+    // 2500 x 3000 at scale 3 is sixty-seven megapixels of LOSSLESS PNG — too big for a GitHub
+    // comment, too big for the web UI, too big to email. Beautiful and unusable.
+    const scale = readExportRenderScale(2500, 3000);
+
+    expect(scale).toBeLessThan(3);
+    expect(2500 * 3000 * scale * scale).toBeLessThanOrEqual(24_000_000);
+  });
+
+  it('never scales UP, so this can only ever make an export smaller', () => {
+    expect(readExportRenderScale(10, 10)).toBe(3);
+    expect(readExportRenderScale(10, 10, 2)).toBe(2);
+  });
+
+  it('never drops below 1 — an export nobody can READ is not the smaller problem', () => {
+    expect(readExportRenderScale(20000, 20000)).toBe(1);
+  });
+
+  it('treats a zero-sized element as one pixel rather than dividing by nothing', () => {
+    expect(Number.isFinite(readExportRenderScale(0, 0))).toBe(true);
+  });
+});
+
+describe('renameForBlobType', () => {
+  it('leaves a PNG name alone', () => {
+    expect(renameForBlobType('roll-up-board.png', 'image/png')).toBe('roll-up-board.png');
+  });
+
+  it('renames to .jpg when the encoder fell back to JPEG', () => {
+    // A JPEG saved as .png opens in some viewers and not others, and the ones it fails in report a
+    // corrupt file rather than a renamed one.
+    expect(renameForBlobType('roll-up-board.png', 'image/jpeg')).toBe('roll-up-board.jpg');
+  });
+
+  it('adds the extension when the name had none', () => {
+    expect(renameForBlobType('roll-up-board', 'image/png')).toBe('roll-up-board.png');
+  });
+
+  it('does not mangle a name containing a dot that is not an extension', () => {
+    expect(renameForBlobType('board v1.2', 'image/png')).toBe('board v1.2.png');
   });
 });

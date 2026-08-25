@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Export PNG produced files too big to attach anywhere.** Every capture rendered at three device
+  pixels per CSS pixel as lossless PNG with no ceiling, so a full-width board became roughly
+  **sixty-seven megapixels** — the Today screenshot came out at **18.6 MB**, past GitHub&#39;s 10 MB
+  comment limit and past what its web UI will commit. The picture was beautiful and unusable.
+  Two limits now apply, and neither touches an export that was already fine. A **pixel budget** of 24
+  megapixels lowers the scale only when a capture would exceed it — a small panel is still rendered
+  at full scale, and the scale never drops below 1, because an export nobody can read is not the
+  smaller problem. Past **8 MB** the PNG is re-encoded as a high-quality JPEG, since a screenshot too
+  large to attach is not an export.
+  The download **extension follows what was actually encoded**: a JPEG saved as `.png` opens in some
+  viewers and not others, and the ones it fails in report a corrupt file rather than a renamed one.
+  A refused JPEG encode leaves the oversized PNG, which still beats no export at all.
+
 ### Added
 - **Admin Hub → 📄 Confluence Docs: link test documentation to the Jira issue that owns it.** Crawls
   a Confluence page tree, works out which issue each page documents, and writes the page onto that
