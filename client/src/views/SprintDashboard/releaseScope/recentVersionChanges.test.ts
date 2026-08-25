@@ -247,3 +247,56 @@ describe('what actually cleared the fix version', () => {
     expect(summariseRemovalCauses([])).toEqual({ withStatusChange: 0, fieldEditOnly: 0 });
   });
 });
+
+describe('a version taken off and put back by the SAME action is not a removal', () => {
+  it('ignores a no-op re-write of the same version', () => {
+    // A transition screen re-submits the field it displays, so Jira records the version coming off
+    // and going back on in one entry. Reading only `fromString` reported that as a removal — on an
+    // issue that plainly still carried the version (ENCUC-2178, GH #375).
+    const removals = readFixVersionRemovals(issueWith('ENC-2178', [{
+      created: '2026-08-24T14:51:26.000Z',
+      author: { displayName: 'Smith, Michael (CTR)' },
+      items: [
+        { field: 'Fix Version', fromString: '09/10/2026', toString: null },
+        { field: 'Fix Version', fromString: null, toString: '09/10/2026' },
+        { field: 'status', fromString: 'Accepted', toString: 'Working' },
+      ],
+    }], ['09/10/2026']), THIS_MORNING);
+
+    expect(removals).toEqual([]);
+  });
+
+  it('still reports a genuine SWAP as a removal of the version that left', () => {
+    // from 08/27 to 09/10 really did take 08/27 off, and the old release really did lose it.
+    const removals = readFixVersionRemovals(issueWith('ENC-1829', [{
+      created: '2026-08-24T15:22:02.000Z',
+      author: { displayName: 'Smith, Michael (CTR)' },
+      items: [{ field: 'Fix Version', fromString: '09/10/2026', toString: '08/27/2026' }],
+    }], ['08/27/2026']), THIS_MORNING);
+
+    expect(removals[0].removedVersionNames).toEqual(['09/10/2026']);
+  });
+
+  it('still reports a clean removal, where nothing was added back', () => {
+    const removals = readFixVersionRemovals(
+      issueWith('ENC-2109', [versionChange('2026-08-24T18:26:55.000Z', 'TBD', null)]),
+      THIS_MORNING,
+    );
+
+    expect(removals[0].removedVersionNames).toEqual(['TBD']);
+  });
+
+  it('nets per version, so one going and another staying is reported correctly', () => {
+    const removals = readFixVersionRemovals(issueWith('ENC-9', [{
+      created: '2026-08-24T12:00:00.000Z',
+      author: { displayName: 'Kumar, Sidhant' },
+      items: [
+        { field: 'Fix Version', fromString: '08/27/2026', toString: null },
+        { field: 'Fix Version', fromString: '09/10/2026', toString: null },
+        { field: 'Fix Version', fromString: null, toString: '09/10/2026' },
+      ],
+    }]), THIS_MORNING);
+
+    expect(removals[0].removedVersionNames).toEqual(['08/27/2026']);
+  });
+});

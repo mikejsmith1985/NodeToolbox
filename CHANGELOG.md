@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **A fix version taken off and put back by the same action is no longer reported as removed.** A
+  transition screen re-submits the field it displays, so Jira records the version coming off and
+  going back on within one changelog entry — and the sweep, reading only the "from" side, reported
+  that no-op as a removal on an issue that plainly still carried the version (ENCUC-2178, GH #375).
+  Removals are now netted against additions **within the same entry**: one action, one net effect. A
+  genuine swap still reports the version that left, because the old release really did lose it, and
+  a clean removal is unaffected.
+  This mattered more than a tidy-up: the report is being used to decide whether a workflow is
+  clearing fix versions, and an over-count on the transition side is the one error that would send
+  somebody to their Jira admin with nothing to find.
+
 ### Added
 - **"Fix versions cleared recently" now says WHAT cleared them, not just who.** The recurring report
   is "the automation is losing our fix versions", and no amount of reading our own code can settle

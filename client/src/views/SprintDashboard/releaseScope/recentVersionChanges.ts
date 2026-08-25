@@ -116,10 +116,20 @@ function readStatusChangeInEntry(history: VersionChangeHistory): { fromStatus: s
 
 /** The version names one change entry took off. */
 function readRemovedVersionNames(history: VersionChangeHistory): string[] {
-  return (history.items ?? [])
-    .filter((item) => (item.field ?? '').trim().toLowerCase() === FIX_VERSION_CHANGE_FIELD)
+  const fixVersionItems = (history.items ?? [])
+    .filter((item) => (item.field ?? '').trim().toLowerCase() === FIX_VERSION_CHANGE_FIELD);
+
+  // Versions this same action ADDED. A transition screen re-submits the field it displays, so Jira
+  // records a version being taken off and put back in one entry — and reading only `fromString`
+  // reported that no-op as a removal, on an issue that plainly still carries the version. Netting
+  // the two within the entry is the fix: one action, one net effect.
+  const addedVersionNames = new Set(fixVersionItems
+    .map((item) => (item.toString ?? '').trim())
+    .filter((versionName) => versionName !== ''));
+
+  return fixVersionItems
     .map((item) => (item.fromString ?? '').trim())
-    .filter((versionName) => versionName !== '');
+    .filter((versionName) => versionName !== '' && !addedVersionNames.has(versionName));
 }
 
 /**
