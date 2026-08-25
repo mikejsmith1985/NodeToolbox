@@ -12,6 +12,7 @@ import { detectImpedimentReasons } from '../../ArtView/hooks/artHelpers.ts';
 import { readIsFlagSet } from './issueFlagWrite.ts';
 import type { JiraIssue } from '../../../types/jira.ts';
 import { resolveDefectRollup } from './defectRollup.ts';
+import { readColumnEntryIso, type ColumnChangeHistory } from './daysInColumn.ts';
 import {
   type IssueTypeBucket,
   type RollUpNote,
@@ -392,6 +393,17 @@ export function resolveBoardItems(
       columnId: placement.resolveColumnId(statusName, subStatusValue),
       statusName,
       subStatusValue,
+      // Matched on the sub-status FIELD ID, which Jira Data Center puts on a changelog item. Where
+      // it does not, only the status entry is found and the card ages from when it entered the
+      // status rather than the column — coarser, and coarse in the direction that sends somebody to
+      // look at a card, which is the safer of the two errors on a board.
+      columnEnteredIso: readColumnEntryIso({
+        changeHistories: (issue as { changelog?: { histories?: ColumnChangeHistory[] } }).changelog?.histories ?? [],
+        statusName,
+        subStatusValue,
+        subStatusFieldNames: scope.subStatusFieldId ? [scope.subStatusFieldId] : [],
+        createdIso: typeof issueFields.created === 'string' ? issueFields.created : null,
+      }),
       // accountId is Jira CLOUD only. This instance is Data Center, where a user is identified by
       // `name`/`key` — reading accountId alone left every issue looking unassigned, so the assignee
       // filter had nobody to offer.

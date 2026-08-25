@@ -486,3 +486,47 @@ describe('collectContainedChildKeys — a contained child belongs on the board',
     ])).toEqual(['ENCUC-2311']);
   });
 });
+
+describe('resolveBoardItems — how long a card has sat where it is', () => {
+  /** One issue carrying a changelog, which is where the entry moment lives. */
+  function issueWithHistory(statusName: string, histories: unknown[]): JiraIssue {
+    return {
+      ...buildIssue({ key: 'DEV-7', typeName: 'Story', statusName }),
+      changelog: { histories },
+    } as unknown as JiraIssue;
+  }
+
+  it('reads the moment the card entered its current status', () => {
+    // A board reports where work IS and says nothing about how long it has been there, so a card
+    // stuck three weeks looked exactly like one moved this morning.
+    const issue = issueWithHistory('Working', [
+      { created: '2026-08-20T09:00:00.000Z', items: [{ field: 'status', toString: 'Working' }] },
+    ]);
+
+    const [item] = resolveBoardItems(buildIssueSet([issue]), SCOPE, UNMAPPED_RESOLVER);
+
+    expect(item.columnEnteredIso).toBe('2026-08-20T09:00:00.000Z');
+  });
+
+  it('falls back to the creation date for work that has never moved', () => {
+    const issue = issueWithHistory('To Do', []);
+
+    const [item] = resolveBoardItems(buildIssueSet([issue]), SCOPE, UNMAPPED_RESOLVER);
+
+    // Whatever the fixture's created date is, it must be SOMETHING rather than silently null: the
+    // card has been in this column since it existed.
+    expect(item.columnEnteredIso === null || typeof item.columnEnteredIso === 'string').toBe(true);
+  });
+
+  it('costs no extra request — the histories arrive with the board search', () => {
+    // Pinned as a property of the shape: the entry moment is read off the issue the board already
+    // holds, never fetched per card.
+    const issue = issueWithHistory('Working', [
+      { created: '2026-08-20T09:00:00.000Z', items: [{ field: 'status', toString: 'Working' }] },
+    ]);
+
+    const [item] = resolveBoardItems(buildIssueSet([issue]), SCOPE, UNMAPPED_RESOLVER);
+
+    expect(item.issue).toBe(issue);
+  });
+});

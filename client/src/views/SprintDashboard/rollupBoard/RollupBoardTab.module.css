@@ -778,6 +778,34 @@
   color: var(--color-text-secondary);
 }
 
+/* How long the card has sat here. Neutral until it is worth noticing, then amber, then red — the
+   colour is the whole point of putting a number on a board somebody scans rather than reads. Text
+   carries the verdict too ("6d"), so colour is never the only signal. */
+.cardDaysInColumn,
+.cardDaysInColumnWarn,
+.cardDaysInColumnStale {
+  padding: 0 6px;
+  border-radius: 10px;
+  font-size: var(--font-size-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.cardDaysInColumn {
+  background: var(--color-surface-2);
+  color: var(--color-text-secondary);
+}
+
+.cardDaysInColumnWarn {
+  background: rgba(245, 158, 11, 0.16);
+  color: #f59e0b;
+}
+
+.cardDaysInColumnStale {
+  background: rgba(244, 63, 94, 0.16);
+  color: #f43f5e;
+}
+
 .cardPoints {
   margin-left: auto;
   min-width: 20px;

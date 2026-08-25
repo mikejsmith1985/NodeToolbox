@@ -187,6 +187,18 @@ export interface RollupBoardItem {
   columnId: string;
   statusName: string;
   subStatusValue: string | null;
+  /**
+   * When this card entered the column it is in now, or null when nothing says.
+   *
+   * A board reports where work IS and says nothing about how long it has been there, so a card stuck
+   * for three weeks looked exactly like one moved this morning. Read from the changelog that arrives
+   * with the board's own search, so it costs no extra request.
+   *
+   * Optional: absent, the card shows no age at all, which is what every caller that predates this
+   * already did. Absent and explicit-null mean the same thing here — nothing is known — so there is
+   * nothing for the two to disagree about.
+   */
+  columnEnteredIso?: string | null;
   assigneeAccountId: string | null;
   assigneeDisplayName: string | null;
   /**

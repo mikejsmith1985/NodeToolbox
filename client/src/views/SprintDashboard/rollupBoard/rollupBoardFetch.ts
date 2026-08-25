@@ -101,10 +101,18 @@ function chunkList<TItem>(items: readonly TItem[], chunkSize: number): TItem[][]
   return chunks;
 }
 
-/** Builds a JQL search path with an explicit field list. */
+/**
+ * Builds a JQL search path with an explicit field list.
+ *
+ * `expand=changelog` is what lets a card say how long it has been in its column. A board reports
+ * where work IS and says nothing about how long it has been there, so a card stuck three weeks looks
+ * exactly like one moved this morning — which is the single most useful thing a standup reads off a
+ * board. The histories arrive with the issues, so it costs no extra request; the Sprint Dashboard's
+ * own board fetch has expanded them the same way for as long as it has existed.
+ */
 function buildSearchPath(jql: string, fieldList: string): string {
   return `/rest/api/2/search?jql=${encodeURIComponent(jql)}`
-    + `&fields=${encodeURIComponent(fieldList)}&maxResults=${SEARCH_MAX_RESULTS}`;
+    + `&fields=${encodeURIComponent(fieldList)}&maxResults=${SEARCH_MAX_RESULTS}&expand=changelog`;
 }
 
 /**

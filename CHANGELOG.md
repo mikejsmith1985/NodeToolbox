@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Roll-Up Board cards now say how long they have sat in their column.** A board reports where work
+  IS and says nothing about how long it has been there, so a card stuck for three weeks looked
+  exactly like one moved this morning — which is the single most useful thing a standup reads off a
+  board. Each card carries a `6d` badge in its footer: neutral for the first three days, amber to a
+  week, red beyond. The number is there as well as the colour, so colour is never the only signal.
+  A column here is a **status AND sub-status** pair, so the badge counts from the later of the last
+  move into that status and the last move into that sub-status. Counting by status alone would age a
+  card from when work first began the moment it moved between two columns sharing one status, which
+  is most of this board.
+  It costs **no extra request**: the change histories arrive with the board's own search, the way the
+  Sprint Dashboard's board fetch has always expanded them. Work that has never moved counts from its
+  creation date — it has been there since it existed — and a card whose entry moment cannot be
+  established shows **no badge at all** rather than a `0d` that would claim it just arrived.
+
 ### Fixed
 - **Every row in the daily forecast wore the same team chip.** Cleanup Crew&#39;s `ENCUC` issues were
   all labelled **Transformers** (GH #375). Today merges several teams&#39; scans into one forecast, and

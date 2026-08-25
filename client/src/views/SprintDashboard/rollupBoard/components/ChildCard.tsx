@@ -15,6 +15,7 @@ import { useDraggable, useDroppable } from '@dnd-kit/core';
 import { AssigneeAvatar } from '../../../../components/IssueMeta/AssigneeAvatar.tsx';
 import { IssueTypeIcon } from '../../../../components/IssueMeta/IssueTypeIcon.tsx';
 import { PriorityBadge } from '../../../../components/IssueMeta/PriorityBadge.tsx';
+import { countDaysInColumn } from '../daysInColumn.ts';
 import { buildCardTargetId } from '../cardDropRouting.ts';
 import { formatCommentDate, type CardDetail } from '../cardDetail.ts';
 import { describeStatusPair } from '../unmappedStatusSummary.ts';
@@ -157,6 +158,38 @@ export function describeRollUpRoute(route: RollUpRoute): string {
 }
 
 /** Renders one issue card, colour-coded and labelled by type, draggable as a whole. */
+/** Days at which a card stops being neutral and starts asking to be looked at. */
+const DAYS_IN_COLUMN_WARN = 3;
+const DAYS_IN_COLUMN_STALE = 7;
+
+/**
+ * How long this card has sat in this column.
+ *
+ * The single most useful thing a standup reads off a board, and the one thing a board cannot say:
+ * it reports where work IS, so a card stuck three weeks looks exactly like one moved this morning.
+ *
+ * Renders NOTHING when the entry moment is unknown rather than a zero — a zero claims the card just
+ * arrived, which is the opposite of "we could not tell".
+ */
+function DaysInColumnBadge({ columnEnteredIso }: { columnEnteredIso: string | null }) {
+  const daysInColumn = countDaysInColumn(columnEnteredIso, new Date().toISOString());
+  if (daysInColumn === null) {
+    return null;
+  }
+
+  const badgeClassName = daysInColumn >= DAYS_IN_COLUMN_STALE
+    ? styles.cardDaysInColumnStale
+    : daysInColumn >= DAYS_IN_COLUMN_WARN
+      ? styles.cardDaysInColumnWarn
+      : styles.cardDaysInColumn;
+
+  return (
+    <span className={badgeClassName} title={`In this column since ${(columnEnteredIso ?? '').slice(0, 10)}`}>
+      {`${daysInColumn}d`}
+    </span>
+  );
+}
+
 export function ChildCard({
   item,
   isHighlighted = false,
@@ -318,11 +351,13 @@ export function ChildCard({
         </div>
       )}
 
-      {/* Footer, as on a Jira card: type, priority, points. Type is text as well as colour. */}
+      {/* Footer, as on a Jira card: type, priority, how long it has sat here, points. Type is text
+          as well as colour. */}
       <div className={styles.cardFooterRow}>
         <IssueTypeIcon issueTypeName={item.typeName} />
         <PriorityBadge priorityName={item.issue.fields.priority?.name ?? 'None'} />
         {item.subStatusValue !== null && <span className={styles.cardSubStatus}>{item.subStatusValue}</span>}
+        <DaysInColumnBadge columnEnteredIso={item.columnEnteredIso ?? null} />
         {item.storyPoints !== null && <span className={styles.cardPoints}>{item.storyPoints}</span>}
       </div>
 
