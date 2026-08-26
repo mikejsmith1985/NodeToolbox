@@ -39,6 +39,20 @@ const EXPECTED_CHANGE_REQUEST = {
   plannedEndDate: '2025-02-01 09:00:00',
   risk: 'Moderate',
   impact: 'Medium',
+  // The CAB-relevant fields the lookup now reads. Empty here because this fixture's record does not
+  // carry them, which is itself the case worth pinning: an absent field maps to '' rather than
+  // undefined, so the fact sheet reports it as EMPTY instead of silently omitting it.
+  description: '',
+  justification: '',
+  riskImpactAnalysis: '',
+  implementationPlan: '',
+  backoutPlan: '',
+  testPlan: '',
+  availabilityImpact: '',
+  hasBeenTested: '',
+  performedPreviously: '',
+  successProbability: '',
+  canBeBackedOut: '',
 };
 
 const EXPECTED_ACTIVE_CHANGE_SUMMARY = {

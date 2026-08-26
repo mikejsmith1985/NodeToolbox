@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **CAB preparation moved to Release Management, and gained a scope you can see.** It shipped on the
+  Create CHG wizard, which is the wrong moment: a review board happens **after** the change exists —
+  you arrive at the meeting with a number, not a draft. It now sits beneath a **loaded change** on
+  Release Management, and is gone from Create CHG entirely, because two places building the same pack
+  from different data is how they drift.
+  The move exposed the harder problem: **nothing in ServiceNow records which Jira issues a change
+  covers.** The only trace is the keys the create flow writes into the change's own text. So the
+  scope is now an **editable list**, seeded from those keys and correctable before anything is built —
+  a scope nobody can see is a scope you simply have to trust, and *"is everything in this change
+  finished?"* is one of the questions the board actually asks.
+  Loading it reports what it could not use: keys named on the change that Jira **did not return** —
+  a typo, a deleted issue, a project you cannot see — and entries **ignored** for not being keys at
+  all. A pack built from twenty-eight of thirty issues answers that question from an incomplete
+  picture.
+  Release Management now reads the **CAB-relevant change fields** too — justification, risk and
+  impact, implementation, backout and test plans, and the five planning assessments — in the same
+  request its monitor already made, so the pack and the monitor cannot describe one change
+  differently.
+
 ### Added
 - **A recency window on the Confluence documentation scan.** A tree crawl finds everything every
   time, so an unfiltered run re-reports two hundred pages dealt with weeks ago and buries the handful

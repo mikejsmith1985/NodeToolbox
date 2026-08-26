@@ -33,13 +33,6 @@ import {
   PinIcon,
   WarningIcon,
 } from '../../../components/AppIcons/index.tsx';
-import {
-  readStoryPointsFromFields,
-  resolveStoryPointsFieldIds,
-} from '../../Hygiene/checks/storyPointsField.ts';
-import { buildCabFactSheet } from '../cabPrep/cabFactSheet.ts';
-import { buildCabPrepPrompt, parseCabPrepReply } from '../cabPrep/cabPrepPrompt.ts';
-import { buildCabPrepPack, formatCabPrepPack } from '../cabPrep/cabPrepPack.ts';
 import styles from './CreateChgTab.module.css';
 
 const TAB_TITLE = 'Change Request Generator';
@@ -656,10 +649,6 @@ interface ResultsStepExtras {
   onOpenRiskCheckPrompt: () => void;
   /** The pasted risk review to display, or null when no review has been captured yet. */
   riskCheckReviewText: string | null;
-  /** Opens the gated CAB preparation round trip. */
-  onOpenCabPrepPrompt: () => void;
-  /** The rendered CAB pack, or null before one has been built. */
-  cabPrepPackText: string | null;
   /** The change a rebuild will overwrite, or empty when a new change is being raised. */
   rebuildTargetNumber?: string;
 }
@@ -2186,7 +2175,7 @@ function CtaskTemplatePanel({ state, actions, templates, saveTemplate, updateTem
   );
 }
 
-function ResultsStep({ state, actions, ctaskTemplates, environmentValueByKey, isAiAssistUnlocked, onOpenRiskCheckPrompt, riskCheckReviewText, onOpenCabPrepPrompt, cabPrepPackText, rebuildTargetNumber }: CrgStepProps & ResultsStepExtras) {
+function ResultsStep({ state, actions, ctaskTemplates, environmentValueByKey, isAiAssistUnlocked, onOpenRiskCheckPrompt, riskCheckReviewText, rebuildTargetNumber }: CrgStepProps & ResultsStepExtras) {
   const [selectedCtaskTemplateId, setSelectedCtaskTemplateId] = useState('');
   const [existingChgNumber, setExistingChgNumber] = useState('');
   const selectedCtaskTemplate = ctaskTemplates.find((template) => template.id === selectedCtaskTemplateId) ?? null;
@@ -2300,23 +2289,6 @@ function ResultsStep({ state, actions, ctaskTemplates, environmentValueByKey, is
             <div className={styles.riskCheckResult}>
               <p className={styles.riskCheckHeading}>AI Assist risk review:</p>
               <pre className={styles.riskCheckText}>{riskCheckReviewText}</pre>
-            </div>
-          ) : null}
-          {/* CAB preparation. A different question from the risk check beside it: that one asks what
-              is missing from the CHG, this one asks what a director will ask and whether we can
-              answer it — which surfaces gaps the form has no field for. */}
-          <button
-            className={styles.aiAssistButton}
-            onClick={onOpenCabPrepPrompt}
-            title="Prepare answers to the questions a Change Advisory Board will ask about this change"
-            type="button"
-          >
-            <AiAssistIcon /> Prepare for CAB review
-          </button>
-          {cabPrepPackText !== null ? (
-            <div className={styles.riskCheckResult}>
-              <p className={styles.riskCheckHeading}>CAB preparation pack:</p>
-              <pre className={styles.riskCheckText}>{cabPrepPackText}</pre>
             </div>
           ) : null}
         </div>
@@ -2447,19 +2419,6 @@ export interface CrgTabProps {
  * affordance (Enhance, Draft, Risk check) opens a session carrying its own instructions,
  * prompt text, and reply handling, so one modal serves all three without any automated exchange.
  */
-/**
- * Story points off a fetched Jira issue, through the central resolver.
- *
- * Never a hard-coded field id: this instance keeps points in a select field whose id is configured,
- * and a second opinion about where they live is the exact defect the field-mapping work removed.
- */
-function readCabStoryPoints(fetchedIssue: { fields?: Record<string, unknown> }): number | null {
-  return readStoryPointsFromFields(
-    (fetchedIssue.fields ?? {}) as Record<string, unknown>,
-    resolveStoryPointsFieldIds(''),
-  );
-}
-
 interface AiAssistPromptSession {
   /** Sentence shown above the prompt telling the user what this round trip produces. */
   instructions: string;
@@ -2551,8 +2510,6 @@ export default function CrgTab({ mode = 'wizard', targetChangeNumber }: CrgTabPr
   const { hasCopied: hasCopiedPrompt, confirmCopy: confirmPromptCopy } = useCopyFeedback();
   // The pasted pre-submission risk review, displayed on the Results step.
   const [riskCheckReviewText, setRiskCheckReviewText] = useState<string | null>(null);
-  // The rendered CAB preparation pack, shown on the Results step and copyable out.
-  const [cabPrepPackText, setCabPrepPackText] = useState<string | null>(null);
 
   const issueCountSummary = useMemo(() => {
     if (mode === 'configuration') {
@@ -2735,91 +2692,6 @@ export default function CrgTab({ mode = 'wizard', targetChangeNumber }: CrgTabPr
     });
   }, [state.generatedShortDescription, state.generatedDescription, state.generatedJustification, state.generatedRiskImpact]);
 
-  /**
-   * CAB preparation: the questions a change advisory board will ask, answered from this change.
-   *
-   * Distinct from the risk check beside it. That one asks "what is missing from this CHG"; this one
-   * asks "what will a director ask, and can we answer it" — which surfaces gaps the CHG form has no
-   * field for, and which nobody discovers until they are stood up in the meeting.
-   *
-   * The question set is OURS (`cabQuestionBank`), not the model's: it answers our questions against
-   * our facts rather than inventing an agenda, which keeps the pack the same shape every week.
-   */
-  const handleOpenCabPrepPrompt = useCallback(() => {
-    const scopedIssues = state.fetchedIssues
-      .filter((fetchedIssue) => state.selectedIssueKeys.has(fetchedIssue.key))
-      .map((fetchedIssue) => ({
-        key: fetchedIssue.key,
-        summary: fetchedIssue.fields?.summary ?? '',
-        issueType: fetchedIssue.fields?.issuetype?.name ?? 'Issue',
-        status: fetchedIssue.fields?.status?.name ?? 'unknown',
-        assignee: fetchedIssue.fields?.assignee?.displayName ?? null,
-        storyPoints: readCabStoryPoints(fetchedIssue),
-        isComplete: (fetchedIssue.fields?.status?.statusCategory?.key ?? '').toLowerCase() === 'done',
-      }));
-
-    const factSheet = buildCabFactSheet({
-      changeNumber: rebuildTargetNumber ?? '',
-      shortDescription: state.generatedShortDescription,
-      description: state.generatedDescription,
-      justification: state.generatedJustification,
-      riskImpactAnalysis: state.generatedRiskImpact,
-      implementationPlan: state.chgPlanningContent.implementationPlan,
-      backoutPlan: state.chgPlanningContent.backoutPlan,
-      testPlan: state.chgPlanningContent.testPlan,
-      assessment: {
-        Impact: state.chgPlanningAssessment.impact,
-        'System availability implication': state.chgPlanningAssessment.systemAvailabilityImplication,
-        'Has been tested': state.chgPlanningAssessment.hasBeenTested,
-        'Performed previously': state.chgPlanningAssessment.hasBeenPerformedPreviously,
-        'Success probability': state.chgPlanningAssessment.successProbability,
-        'Can be backed out': state.chgPlanningAssessment.canBeBackedOut,
-      },
-      environments: [
-        { name: 'REL', plannedStart: state.relEnvironment.plannedStartDate, plannedEnd: state.relEnvironment.plannedEndDate },
-        { name: 'PRD', plannedStart: state.prdEnvironment.plannedStartDate, plannedEnd: state.prdEnvironment.plannedEndDate },
-        { name: 'PFIX', plannedStart: state.pfixEnvironment.plannedStartDate, plannedEnd: state.pfixEnvironment.plannedEndDate },
-      ].filter((environment) => environment.plannedStart !== '' || environment.plannedEnd !== ''),
-      changeTaskNames: state.changeTasks.map((changeTask) => changeTask.name),
-    }, scopedIssues);
-
-    setAiAssistPromptSession({
-      instructions:
-        'Copy this prompt into AI Assist to prepare for the CAB review, then paste the reply below. '
-        + 'The pack is shown here and can be copied out — nothing is written to ServiceNow or Jira.',
-      promptText: buildCabPrepPrompt(factSheet),
-      applyButtonLabel: 'Build the CAB pack',
-      applyReply: (replyText) => {
-        try {
-          const ingest = parseCabPrepReply(replyText);
-          if (ingest.answers.length === 0) {
-            return { statusMessage: 'No usable answers were in that reply.', wasApplied: false };
-          }
-          const pack = buildCabPrepPack(ingest.answers);
-          setCabPrepPackText(formatCabPrepPack(pack, factSheet.change.changeNumber));
-          // Rejections are reported, never swallowed: an answer that vanished silently is one the
-          // presenter walks in without and does not know it.
-          const rejectionNote = ingest.rejectedItems.length === 0
-            ? ''
-            : ` ${ingest.rejectedItems.length} item(s) rejected: `
-              + ingest.rejectedItems.map((rejected) => `${rejected.id} ${rejected.reason}`).join('; ');
-          return {
-            statusMessage: `CAB pack built — ${pack.answeredCount} answered, `
-              + `${pack.unanswerableAnswers.length} not answerable from what is recorded.${rejectionNote}`,
-            wasApplied: true,
-          };
-        } catch (caughtError) {
-          return {
-            statusMessage: caughtError instanceof Error ? caughtError.message : 'That reply could not be read.',
-            wasApplied: false,
-          };
-        }
-      },
-    });
-    // `rebuildTargetNumber` is in the deps because a rebuild binds this pack to the CHG it is
-    // rewriting: without it, switching change would build the pack under the previous number.
-  }, [state, rebuildTargetNumber]);
-
   // Consumes the pasted reply through the active session and reports the outcome.
   const handleApplyAiAssistReply = useCallback(() => {
     if (!aiAssistPromptSession) return;
@@ -2907,8 +2779,6 @@ export default function CrgTab({ mode = 'wizard', targetChangeNumber }: CrgTabPr
     },
     isAiAssistUnlocked: isUnlocked,
     onOpenRiskCheckPrompt: handleOpenRiskCheckPrompt,
-    onOpenCabPrepPrompt: handleOpenCabPrepPrompt,
-    cabPrepPackText,
     riskCheckReviewText,
     rebuildTargetNumber: isRebuildMode ? rebuildTargetNumber : undefined,
   };

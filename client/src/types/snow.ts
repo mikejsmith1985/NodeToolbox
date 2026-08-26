@@ -21,6 +21,24 @@ export interface ChangeRequest {
   plannedEndDate: string;
   risk: string;
   impact: string;
+  /**
+   * The long-form and assessment fields a Change Advisory Board asks about.
+   *
+   * Optional because the active-changes list reads a much smaller field set: a summary row has no
+   * backout plan, and requiring one would mean inventing empty strings for a shape that never had
+   * them. A CAB pack reads them from a fully loaded change and reports any that are absent.
+   */
+  description?: string;
+  justification?: string;
+  riskImpactAnalysis?: string;
+  implementationPlan?: string;
+  backoutPlan?: string;
+  testPlan?: string;
+  availabilityImpact?: string;
+  hasBeenTested?: string;
+  performedPreviously?: string;
+  successProbability?: string;
+  canBeBackedOut?: string;
 }
 
 /** ServiceNow approval state for a change request. */

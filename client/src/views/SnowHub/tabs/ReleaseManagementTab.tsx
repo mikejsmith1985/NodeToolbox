@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import { ALL_CHG_STATES, CHG_STATE_TRANSITIONS } from '../hooks/useReleaseManagement.ts';
 import { useReleaseManagement } from '../hooks/useReleaseManagement.ts';
+import { CabPrepSection } from '../cabPrep/CabPrepSection.tsx';
 import styles from './ReleaseManagementTab.module.css';
 
 const TAB_TITLE = 'Release Management';
@@ -337,6 +338,13 @@ export default function ReleaseManagementTab() {
           <LoadedChangeCard actions={actions} state={state} />
         </div>
       </section>
+      {/* CAB preparation sits with a LOADED change, because a review board happens after the change
+          exists: you arrive at the meeting with a number, not a draft. Keyed on that number, so
+          loading a different change mounts a fresh section and its scope edits and built pack cannot
+          survive into a change they do not describe. */}
+      {state.loadedChg !== null ? (
+        <CabPrepSection key={state.loadedChg.number} loadedChange={state.loadedChg} styles={styles} />
+      ) : null}
       <AlertMonitorSettingsSection actions={actions} state={state} />
       <ActiveChangesSection actions={actions} state={state} />
       <ActivityLogSection actions={actions} state={state} />

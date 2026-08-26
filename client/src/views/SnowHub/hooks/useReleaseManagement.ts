@@ -64,8 +64,17 @@ const EMPTY_VALUE = '';
 const RELEASE_MONITOR_SETTINGS_STORAGE_KEY = 'tbx-release-monitor-settings';
 const CHANGE_TABLE_PATH = '/api/now/table/change_request';
 // SNow change_request table stores schedule dates as start_date and end_date (not planned_*)
-const CHANGE_LOOKUP_FIELDS =
-  'sys_id,number,short_description,state,assigned_to,start_date,end_date,risk,impact';
+// The seven the monitor needs, plus the long-form fields and assessments a CAB asks about. Reading
+// them here rather than in a second request means the pack and the monitor cannot describe the same
+// change differently.
+const CHANGE_LOOKUP_FIELDS = [
+  'sys_id', 'number', 'short_description', 'state', 'assigned_to', 'start_date', 'end_date',
+  'risk', 'impact',
+  'description', 'justification', 'risk_impact_analysis',
+  'implementation_plan', 'backout_plan', 'test_plan',
+  'u_availability_impact', 'u_change_tested', 'u_performed_previously',
+  'u_success_probability', 'u_can_be_backed_out',
+].join(',');
 const ACTIVE_CHANGE_FIELDS = 'sys_id,number,short_description,state,start_date,end_date';
 const CHANGE_LOOKUP_LIMIT = 1;
 const ACTIVE_CHANGE_LIMIT = 20;
@@ -356,6 +365,17 @@ function mapChangeRecord(changeRecord: ServiceNowChangeRecord): ChangeRequest {
     plannedEndDate: extractServiceNowFieldValue(changeRecord.end_date),
     risk: extractServiceNowFieldValue(changeRecord.risk),
     impact: extractServiceNowFieldValue(changeRecord.impact),
+    description: extractServiceNowFieldValue(changeRecord.description),
+    justification: extractServiceNowFieldValue(changeRecord.justification),
+    riskImpactAnalysis: extractServiceNowFieldValue(changeRecord.risk_impact_analysis),
+    implementationPlan: extractServiceNowFieldValue(changeRecord.implementation_plan),
+    backoutPlan: extractServiceNowFieldValue(changeRecord.backout_plan),
+    testPlan: extractServiceNowFieldValue(changeRecord.test_plan),
+    availabilityImpact: extractServiceNowFieldValue(changeRecord.u_availability_impact),
+    hasBeenTested: extractServiceNowFieldValue(changeRecord.u_change_tested),
+    performedPreviously: extractServiceNowFieldValue(changeRecord.u_performed_previously),
+    successProbability: extractServiceNowFieldValue(changeRecord.u_success_probability),
+    canBeBackedOut: extractServiceNowFieldValue(changeRecord.u_can_be_backed_out),
   };
 }
 
