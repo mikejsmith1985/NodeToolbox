@@ -1491,6 +1491,71 @@ describe('CreateChgTab', () => {
     expect(screen.getByText(/No backout procedure documented/)).toBeInTheDocument();
   });
 
+  // ── Step 6: CAB preparation ──────────────────────────────────────────────
+
+  it('hides Prepare for CAB review when the gate is locked', () => {
+    // Same gate as every other AI affordance: nothing appears until AI Assist is unlocked.
+    mockState.currentStep = 6;
+    render(<CreateChgTab />);
+
+    expect(screen.queryByRole('button', { name: /Prepare for CAB review/i })).not.toBeInTheDocument();
+  });
+
+  it('shows Prepare for CAB review once the gate is unlocked', async () => {
+    mockState.currentStep = 6;
+    render(<CreateChgTab />);
+
+    act(() => setAiAssistUnlocked(true));
+
+    expect(await screen.findByRole('button', { name: /Prepare for CAB review/i })).toBeInTheDocument();
+  });
+
+  it('builds a readable pack from a pasted reply, and leads with what cannot be answered', async () => {
+    // The gaps are the point: a presenter who reads only the top should still know what they cannot
+    // answer, because that is what gets caught out in the room.
+    const user = userEvent.setup();
+    mockState.currentStep = 6;
+    render(<CreateChgTab />);
+    act(() => setAiAssistUnlocked(true));
+
+    await user.click(await screen.findByRole('button', { name: /Prepare for CAB review/i }));
+    expect(await screen.findByText(/Copy this prompt into AI Assist to prepare for the CAB review/))
+      .toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole('textbox', { name: "Paste the assistant's reply here" }), {
+      target: {
+        value: JSON.stringify({
+          kind: 'cabPrep',
+          answers: [
+            { questionId: 'why-now', answer: 'The vendor contract lapses on the 30th.', isUnanswerable: false, whatWouldAnswerIt: '' },
+            { questionId: 'backout-tested', answer: '', isUnanswerable: true, whatWouldAnswerIt: 'A recorded backout rehearsal.' },
+          ],
+        }),
+      },
+    });
+    await user.click(screen.getByRole('button', { name: 'Build the CAB pack' }));
+    await user.click(screen.getByRole('button', { name: 'Close' }));
+
+    expect(await screen.findByText(/Cannot be answered from what is recorded/)).toBeInTheDocument();
+    expect(screen.getByText(/A recorded backout rehearsal/)).toBeInTheDocument();
+    expect(screen.getByText(/The vendor contract lapses on the 30th/)).toBeInTheDocument();
+  });
+
+  it('refuses a reply meant for a different prompt rather than building a wrong pack', async () => {
+    const user = userEvent.setup();
+    mockState.currentStep = 6;
+    render(<CreateChgTab />);
+    act(() => setAiAssistUnlocked(true));
+
+    await user.click(await screen.findByRole('button', { name: /Prepare for CAB review/i }));
+    fireEvent.change(screen.getByRole('textbox', { name: "Paste the assistant's reply here" }), {
+      target: { value: JSON.stringify({ kind: 'piReview', items: [] }) },
+    });
+    await user.click(screen.getByRole('button', { name: 'Build the CAB pack' }));
+
+    expect(await screen.findByText(/not "cabPrep"/)).toBeInTheDocument();
+  });
+
   it('Create CHG button remains available at step 6 after Risk check with AI Assist', async () => {
     const user = userEvent.setup();
     mockState.currentStep = 6;

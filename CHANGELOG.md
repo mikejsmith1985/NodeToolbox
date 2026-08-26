@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Prepare for CAB review** — a gated round trip on the CHG Results step that answers the questions a
+  Change Advisory Board will ask about this change, from the change itself and the Jira work in its
+  scope.
+  **The question bank is ours, not the model&#39;s.** Asking an assistant for "questions the board might
+  ask" returns the four everyone already prepared. The useful ones are asked ninth, and they follow a
+  stable pattern because a CAB is a risk-acceptance meeting rather than a status review — so the
+  feature ships **32 questions across 12 concerns**, each carrying *what the asker is really checking*.
+  "Why do we have to do this?" is rarely a request for the business case; it is a test of whether the
+  change could have waited, and an answer reciting the benefit misses it. Half the bank is flagged as
+  **commonly unprepared**: has the backout itself been tested, what could not be tested and why, at
+  what point can we no longer back out, does this change data or only code, is there one person who
+  has to be awake, what was pulled out of this change.
+  **The facts are gathered, and so are the gaps.** The prompt carries every CHG field verbatim, every
+  scoped issue with its status, owner and estimate — and an explicit list of what is **empty**,
+  **not complete** and **unestimated**. An empty backout plan is written out as EMPTY and the model is
+  forbidden from answering from it, because a pack that answers smoothly from a field nobody filled in
+  has invented the reassurance, and it will be repeated aloud to directors by someone who trusts it.
+  **The pack leads with what it cannot answer.** Unanswerable questions come first, each naming what
+  would answer it, above the questions the reply skipped, above the answers themselves — so a
+  presenter who reads only the top still walks in knowing where they are exposed. Rendered as Markdown
+  and copyable, since the person presenting is often not the person who ran it.
+  Propose-only throughout: gated behind the same AI Assist unlock as every other affordance, one
+  manual copy-out and paste-back, and nothing is written to ServiceNow or Jira.
+
 ### Fixed
 - **Export PNG produced files too big to attach anywhere.** Every capture rendered at three device
   pixels per CSS pixel as lossless PNG with no ceiling, so a full-width board became roughly
