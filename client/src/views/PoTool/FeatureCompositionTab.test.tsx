@@ -511,4 +511,51 @@ describe('FeatureCompositionTab — repo component mapping (spec 031)', () => {
     await waitFor(() => expect(within(panel).getByText(/Enrollment.*ignored/)).toBeInTheDocument());
     expect(within(panel).getByText(/proposal\(s\) added/)).toBeInTheDocument();
   });
+
+  // ── Dropping a file, and everything that is not one (GH #376) ─────────────
+
+  /** Fires a drop carrying whatever a real DataTransfer would have supplied. */
+  function dropOnZone(files: File[], uriList = ''): void {
+    fireEvent.drop(screen.getByText(/Drop a spreadsheet here/), {
+      dataTransfer: { files, getData: () => uriList },
+    });
+  }
+
+  it('finds the spreadsheet when a preview thumbnail is dropped alongside it', async () => {
+    // Outlook and Teams supply a preview beside the attachment and often put the image first, so
+    // reading files[0] reported that a GUID-named .png was not a spreadsheet.
+    renderTab();
+
+    dropOnZone([new File(['x'], '205a8d63-3156-4ad4-855b-aa8017c4e91e.png'), buildWorkbookFile()]);
+
+    const sources = await screen.findByLabelText('Referenced sources');
+    await waitFor(() => expect(within(sources).getAllByText('volumes.xlsx').length).toBeGreaterThan(0));
+  });
+
+  it('says a OneDrive link is not a file, and what to do instead', async () => {
+    // The spreadsheet is still in the cloud: there is nothing to read and no parsing that helps.
+    renderTab();
+
+    dropOnZone([], 'https://contoso-my.sharepoint.com/personal/x/Documents/scope.xlsx');
+
+    expect(await screen.findByText(/OneDrive or SharePoint link/)).toBeInTheDocument();
+    expect(screen.getByText(/save a copy to this machine/)).toBeInTheDocument();
+  });
+
+  it('names what was dropped when none of it is a spreadsheet', async () => {
+    renderTab();
+
+    dropOnZone([new File(['x'], 'screenshot.png')]);
+
+    expect(await screen.findByText(/"screenshot\.png" is not a spreadsheet/)).toBeInTheDocument();
+  });
+
+  it('still reads an ordinary dropped spreadsheet', async () => {
+    renderTab();
+
+    dropOnZone([buildWorkbookFile()]);
+
+    const sources = await screen.findByLabelText('Referenced sources');
+    await waitFor(() => expect(within(sources).getAllByText('volumes.xlsx').length).toBeGreaterThan(0));
+  });
 });

@@ -50,6 +50,7 @@ import {
   readSourceText,
   type ReferencedSource,
 } from './sources/sourceModel';
+import { readDroppedWorkbookFile } from './sources/droppedWorkbookFile.ts';
 import { readWorkbookSource, WORKBOOK_FILE_ACCEPT, WorkbookReadError } from './sources/workbookSource';
 import styles from './FeatureCompositionTab.module.css';
 
@@ -506,10 +507,18 @@ export default function FeatureCompositionTab({
             onDrop={(dropEvent) => {
               dropEvent.preventDefault();
               setIsDragActive(false);
-              const droppedFile = dropEvent.dataTransfer.files?.[0];
-              if (droppedFile) {
-                void handleAddWorkbook(droppedFile);
+              // Not `files[0]`. A drag from Outlook or Teams supplies a preview thumbnail beside the
+              // attachment and often puts the image first, and a OneDrive link drag supplies no file
+              // at all — each of which needs a different thing said (GH #376).
+              const outcome = readDroppedWorkbookFile({
+                files: Array.from(dropEvent.dataTransfer.files ?? []),
+                uriList: dropEvent.dataTransfer.getData('text/uri-list'),
+              });
+              if (outcome.kind === 'file') {
+                void handleAddWorkbook(outcome.file);
+                return;
               }
+              setSourceError(outcome.message);
             }}
           >
             Drop a spreadsheet here, or click to choose one (.xlsx, .xls, .csv)

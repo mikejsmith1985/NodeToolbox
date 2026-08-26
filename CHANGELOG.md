@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Dragging a spreadsheet onto Feature Composition could report that a `.png` is not a spreadsheet.**
+  The drop handler took `dataTransfer.files[0]` — the FIRST file — and a drag is not a file. Depending
+  where it was dragged from, the browser hands over any of three things, and each needed a different
+  answer (GH #376).
+  A drag from **Outlook or Teams** supplies a preview thumbnail beside the attachment, frequently
+  first, so the reader opened a GUID-named image and blamed it. The spreadsheet is now chosen **by
+  name, not by position**, so the thumbnail is simply passed over.
+  A drag of a **OneDrive or SharePoint link** supplies no file at all — the spreadsheet is still in
+  the cloud and the browser was handed an address, not bytes. That is now named as what it is, with
+  the only instruction that resolves it: open it, save a copy locally, drag that. No parsing could
+  ever have made the old message true.
+  And when files did arrive but none is a spreadsheet, the message now **names what did arrive** and
+  points at the Outlook case, because "could not be read as a spreadsheet" about a file the person
+  never chose to drop is baffling rather than informative.
+
 ### Changed
 - **CAB preparation moved to Release Management, and gained a scope you can see.** It shipped on the
   Create CHG wizard, which is the wrong moment: a review board happens **after** the change exists —
