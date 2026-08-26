@@ -733,6 +733,10 @@ export interface ConfluenceTreePage {
   title: string;
   /** The browser URL, which is what a Jira link has to point at. */
   webUrl: string;
+  /** When the page was last edited, or null when Confluence did not say. */
+  lastModifiedIso: string | null;
+  /** When the page was first created — what separates a NEW page from an edited one. */
+  createdIso: string | null;
 }
 
 /** How many children one request asks for, and the ceiling a crawl will not read past. */
@@ -741,7 +745,13 @@ const CONFLUENCE_CRAWL_CEILING = 2000;
 
 /** One page of Confluence child results. */
 interface ConfluenceChildPageResponse {
-  results?: Array<{ id?: string; title?: string; _links?: { webui?: string } }>;
+  results?: Array<{
+    id?: string;
+    title?: string;
+    _links?: { webui?: string };
+    version?: { when?: string };
+    history?: { createdDate?: string };
+  }>;
   size?: number;
   _links?: { base?: string; next?: string };
 }
@@ -773,6 +783,9 @@ export async function findConfluencePageByTitle(
     id: firstMatch.id,
     title: firstMatch.title ?? pageTitle,
     webUrl: buildConfluenceWebUrl(response._links?.base, firstMatch._links?.webui, firstMatch.id),
+    // The root is only ever used for its id, so its dates are not requested.
+    lastModifiedIso: null,
+    createdIso: null,
   };
 }
 
@@ -810,7 +823,9 @@ export async function crawlConfluencePageTree(
     visitedPageIds.add(currentPageId);
 
     const childPath = `${CONFLUENCE_PROXY_BASE}/wiki/rest/api/content/${encodeURIComponent(currentPageId)}`
-      + `/child/page?limit=${CONFLUENCE_CHILD_PAGE_LIMIT}`;
+      // `version` carries the last edit and `history` the creation date. Both are needed to tell a
+      // NEW page from an edited one, which is the difference between "link this" and "already done".
+      + `/child/page?limit=${CONFLUENCE_CHILD_PAGE_LIMIT}&expand=version,history`;
     const response = await fetchConfluenceJson<ConfluenceChildPageResponse>(
       childPath,
       `Confluence child pages of ${currentPageId} failed`,
@@ -822,6 +837,8 @@ export async function crawlConfluencePageTree(
         id: childPage.id,
         title: childPage.title ?? '',
         webUrl: buildConfluenceWebUrl(response._links?.base, childPage._links?.webui, childPage.id),
+        lastModifiedIso: childPage.version?.when ?? null,
+        createdIso: childPage.history?.createdDate ?? null,
       });
       pageIdsToVisit.push(childPage.id);
     }

@@ -6,9 +6,17 @@ import { buildDocLinkPlan, readFeatureKeysToResolve, type CrawledPage } from './
 
 const FEATURE_PROJECTS = ['DENP'];
 
-function page(id: string, title: string): CrawledPage {
-  return { id, title, webUrl: `https://confluence/pages/${id}` };
+function page(id: string, title: string, changedIso = '2026-08-25T12:00:00.000Z'): CrawledPage {
+  return {
+    id,
+    title,
+    webUrl: `https://confluence/pages/${id}`,
+    lastModifiedIso: changedIso,
+    createdIso: '2025-01-01T00:00:00.000Z',
+  };
 }
+
+const NOW_ISO = '2026-08-26T12:00:00.000Z';
 
 describe('buildDocLinkPlan', () => {
   it('routes a team-issue page straight to it', () => {
@@ -93,5 +101,77 @@ describe('readFeatureKeysToResolve', () => {
     ], FEATURE_PROJECTS);
 
     expect(featureKeys).toEqual([]);
+  });
+});
+
+describe('buildDocLinkPlan — the recency window', () => {
+  it('reports only pages changed inside the window', () => {
+    // A nightly run should not re-report two hundred pages dealt with weeks ago.
+    const plan = buildDocLinkPlan([
+      page('1', 'ENCUC-1 recent', '2026-08-25T12:00:00.000Z'),
+      page('2', 'ENCUC-2 stale', '2026-06-01T12:00:00.000Z'),
+    ], FEATURE_PROJECTS, {}, false, 7, NOW_ISO);
+
+    expect(plan.rows.map((row) => row.pageId)).toEqual(['1']);
+  });
+
+  it('says how many it left out, so a small count is not read as a small tree', () => {
+    const plan = buildDocLinkPlan([
+      page('1', 'ENCUC-1 recent', '2026-08-25T12:00:00.000Z'),
+      page('2', 'ENCUC-2 stale', '2026-06-01T12:00:00.000Z'),
+      page('3', 'ENCUC-3 stale', '2026-05-01T12:00:00.000Z'),
+    ], FEATURE_PROJECTS, {}, false, 7, NOW_ISO);
+
+    expect(plan.outsideWindowCount).toBe(2);
+  });
+
+  it('reports everything when no window is set', () => {
+    const plan = buildDocLinkPlan([
+      page('1', 'ENCUC-1', '2026-08-25T12:00:00.000Z'),
+      page('2', 'ENCUC-2', '2020-01-01T12:00:00.000Z'),
+    ], FEATURE_PROJECTS, {}, false, 0, NOW_ISO);
+
+    expect(plan.rows).toHaveLength(2);
+    expect(plan.outsideWindowCount).toBe(0);
+  });
+
+  it('tells a NEW page from an edited one on each row', () => {
+    // Different kinds of work: a new page needs linking, an edited one may already be linked.
+    const newPage: CrawledPage = {
+      id: '9',
+      title: 'ENCUC-9 brand new',
+      webUrl: 'https://confluence/pages/9',
+      lastModifiedIso: '2026-08-25T12:00:00.000Z',
+      createdIso: '2026-08-25T12:00:00.000Z',
+    };
+
+    const plan = buildDocLinkPlan([newPage, page('1', 'ENCUC-1 edited')], FEATURE_PROJECTS, {}, false, 7, NOW_ISO);
+
+    expect(plan.rows.find((row) => row.pageId === '9')?.recencyKind).toBe('new');
+    expect(plan.rows.find((row) => row.pageId === '1')?.recencyKind).toBe('updated');
+  });
+
+  it('keeps a page whose dates Confluence never returned', () => {
+    // Dropping it would hide exactly the pages whose metadata is broken.
+    const undatedPage: CrawledPage = {
+      id: '5', title: 'ENCUC-5', webUrl: 'https://confluence/pages/5', lastModifiedIso: null, createdIso: null,
+    };
+
+    const plan = buildDocLinkPlan([undatedPage], FEATURE_PROJECTS, {}, false, 7, NOW_ISO);
+
+    expect(plan.rows).toHaveLength(1);
+    expect(plan.rows[0].recencyKind).toBe('unknown');
+  });
+});
+
+describe('readFeatureKeysToResolve — the window applies here too', () => {
+  it('does not fetch a Feature for a page outside the window', () => {
+    // The request count should follow the work, not the tree.
+    const featureKeys = readFeatureKeysToResolve([
+      page('1', 'DENP-475: recent', '2026-08-25T12:00:00.000Z'),
+      page('2', 'DENP-999: stale', '2026-01-01T12:00:00.000Z'),
+    ], FEATURE_PROJECTS, 7, NOW_ISO);
+
+    expect(featureKeys).toEqual(['DENP-475']);
   });
 });

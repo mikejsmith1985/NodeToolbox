@@ -36,6 +36,8 @@ function planRow(overrides: Record<string, unknown> = {}) {
       reason: 'DENP-475 → its SL story ENCUC-2358',
     },
     isActionable: true,
+    changedAtIso: '2026-08-25T12:00:00.000Z',
+    recencyKind: 'updated',
     ...overrides,
   };
 }
@@ -48,6 +50,7 @@ function planWith(rows: ReturnType<typeof planRow>[]) {
       needsDecisionCount: rows.filter((row) => !row.isActionable && row.route.outcome !== 'no-key-in-title').length,
       untaggedCount: rows.filter((row) => row.route.outcome === 'no-key-in-title').length,
       isTruncated: false,
+      outsideWindowCount: 0,
     },
     failureReason: null,
   };

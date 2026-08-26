@@ -52,6 +52,7 @@ describe('readDocLinkSettings', () => {
       storyProjectKey: 'ENCUC',
       storyIssueTypeId: '10001',
       containmentLinkTypeName: 'Container',
+      recentDaysWindow: '7',
     }, storage);
 
     expect(readDocLinkSettings(storage).rootPageTitle).toBe('ENCUC: CleanUpCrew: SF Integration');

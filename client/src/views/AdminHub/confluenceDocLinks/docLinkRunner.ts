@@ -51,6 +51,8 @@ export interface DocLinkScanRequest {
   rootPageTitle: string;
   featureProjectKeys: string[];
   featureLinkFieldId: string;
+  /** Only report pages created or edited in the last N days. 0 means the whole tree. */
+  windowDays: number;
 }
 
 /** A planning run's outcome, including what it could not read. */
@@ -77,10 +79,20 @@ export async function scanForDocLinks(request: DocLinkScanRequest): Promise<DocL
   }
 
   const crawl = await crawlConfluencePageTree(rootPage.id);
-  const pages: CrawledPage[] = crawl.pages.map((page) => ({ id: page.id, title: page.title, webUrl: page.webUrl }));
+  const pages: CrawledPage[] = crawl.pages.map((page) => ({
+    id: page.id,
+    title: page.title,
+    webUrl: page.webUrl,
+    lastModifiedIso: page.lastModifiedIso,
+    createdIso: page.createdIso,
+  }));
 
-  // Each Feature once, however many pages sit under it.
-  const featureKeys = readFeatureKeysToResolve(pages, request.featureProjectKeys);
+  // One clock reading for the whole run: a window evaluated per page would drift across a long
+  // crawl, and a page could fall in or out depending on how long the request before it took.
+  const nowIso = new Date().toISOString();
+
+  // Each Feature once, and only for pages inside the window.
+  const featureKeys = readFeatureKeysToResolve(pages, request.featureProjectKeys, request.windowDays, nowIso);
   const featureChildrenByKey: Record<string, FeatureChild[]> = {};
   for (const featureKey of featureKeys) {
     featureChildrenByKey[featureKey] = await fetchFeatureChildren(featureKey, request.featureLinkFieldId)
@@ -90,7 +102,14 @@ export async function scanForDocLinks(request: DocLinkScanRequest): Promise<DocL
   }
 
   return {
-    plan: buildDocLinkPlan(pages, request.featureProjectKeys, featureChildrenByKey, crawl.isTruncated),
+    plan: buildDocLinkPlan(
+      pages,
+      request.featureProjectKeys,
+      featureChildrenByKey,
+      crawl.isTruncated,
+      request.windowDays,
+      nowIso,
+    ),
     failureReason: null,
   };
 }

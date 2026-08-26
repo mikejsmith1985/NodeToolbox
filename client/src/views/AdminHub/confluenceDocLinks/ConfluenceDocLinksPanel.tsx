@@ -20,6 +20,7 @@ import {
 } from './docLinkRunner.ts';
 import type { DocLinkPlan, DocLinkPlanRow } from './docLinkPlan.ts';
 import { readDocLinkSettings, saveDocLinkSettings, type DocLinkSettings } from './docLinkSettings.ts';
+import { describeWindow, readWindowDays } from './pageRecency.ts';
 import styles from '../AdminHubView.module.css';
 
 /** Plain-English names for each outcome, so a row explains itself without a legend. */
@@ -54,13 +55,21 @@ function SettingField({ label, value, placeholder, onChange }: {
 }
 
 /** The counts, said in words rather than left as a table to interpret. */
-function PlanSummary({ plan }: { plan: DocLinkPlan }) {
+function PlanSummary({ plan, windowDays }: { plan: DocLinkPlan; windowDays: number }) {
   return (
     <>
       <p className={styles.panelStatusLine} role="status">
-        {`${plan.rows.length} page(s) found. ${plan.linkableCount} would be linked, `
+        {`${plan.rows.length} page(s) found — ${describeWindow(windowDays)}. `
+          + `${plan.linkableCount} would be linked, `
           + `${plan.needsDecisionCount} need a decision, ${plan.untaggedCount} name no issue.`}
       </p>
+      {/* Said out loud, because three rows out of two hundred pages otherwise reads as a small tree
+          rather than a narrow window. */}
+      {plan.outsideWindowCount > 0 && (
+        <p className={styles.panelStatusLine} role="status">
+          {`${plan.outsideWindowCount} page(s) were outside the window and are not shown.`}
+        </p>
+      )}
       {plan.isTruncated && (
         <p className={styles.panelStatusLine} role="status">
           The crawl hit its ceiling, so every count above is a floor — there are more pages than this.
@@ -101,6 +110,7 @@ export function ConfluenceDocLinksPanel() {
         rootPageTitle: settings.rootPageTitle,
         featureProjectKeys: settings.featureProjectKeys.split(',').map((key) => key.trim()).filter(Boolean),
         featureLinkFieldId: settings.featureLinkFieldName,
+        windowDays: readWindowDays(settings.recentDaysWindow),
       });
       setPlan(outcome.plan);
       setFailureReason(outcome.failureReason);
@@ -201,6 +211,12 @@ export function ConfluenceDocLinksPanel() {
           value={settings.storyIssueTypeId}
         />
         <SettingField
+          label="Only pages changed in the last N days (blank or 0 = the whole tree)"
+          onChange={(nextValue) => updateSetting('recentDaysWindow', nextValue)}
+          placeholder="7"
+          value={settings.recentDaysWindow}
+        />
+        <SettingField
           label="Containment link type name"
           onChange={(nextValue) => updateSetting('containmentLinkTypeName', nextValue)}
           placeholder="Container"
@@ -226,13 +242,14 @@ export function ConfluenceDocLinksPanel() {
 
       {failureReason !== null && <p className={styles.panelStatusLine} role="alert">{failureReason}</p>}
       {statusLine !== null && <p className={styles.panelStatusLine} role="status">{statusLine}</p>}
-      {plan !== null && <PlanSummary plan={plan} />}
+      {plan !== null && <PlanSummary plan={plan} windowDays={readWindowDays(settings.recentDaysWindow)} />}
 
       {plan !== null && plan.rows.length > 0 && (
         <table className={styles.installationsTable}>
           <thead>
             <tr>
               <th scope="col">Page</th>
+              <th scope="col">Changed</th>
               <th scope="col">What happens</th>
               <th scope="col">Target</th>
               <th scope="col">Action</th>
@@ -243,6 +260,16 @@ export function ConfluenceDocLinksPanel() {
               <tr key={row.pageId}>
                 <td>
                   <a href={row.pageUrl} rel="noreferrer" target="_blank">{row.pageTitle}</a>
+                </td>
+                {/* New pages almost certainly need linking; edited ones may already be linked and
+                    only need a second look. */}
+                {/* Nullish, not a strict null check: a row built by anything that predates these
+                    fields carries undefined, and crashing the whole panel over a missing date would
+                    take the report down with it. */}
+                <td title={row.changedAtIso ?? 'Confluence gave no date for this page'}>
+                  {row.changedAtIso
+                    ? `${row.recencyKind ?? 'unknown'} · ${row.changedAtIso.slice(0, 10)}`
+                    : 'unknown'}
                 </td>
                 <td title={row.route.reason}>{OUTCOME_LABELS[row.route.outcome]}</td>
                 <td>

@@ -8,6 +8,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **A recency window on the Confluence documentation scan.** A tree crawl finds everything every
+  time, so an unfiltered run re-reports two hundred pages dealt with weeks ago and buries the handful
+  that matter. The scan now takes **"only pages changed in the last N days"**, defaulting to **7**;
+  blank or 0 still reads the whole tree.
+  Measured against the **later of created and last-edited**, so a page written a year ago and edited
+  yesterday is news, and so is one written yesterday. Each row says **which** — `new` or `updated`
+  with the date — because those are different jobs: a new page almost certainly needs linking, an
+  edited one may already be linked and only needs a second look.
+  The window is applied **before** routing, so a narrowed run does not fetch Jira Features for pages
+  it will never report on — the request count follows the work rather than the tree. One clock
+  reading serves the whole run, so a page cannot fall in or out depending on how long the request
+  before it took.
+  Pages excluded by the window are **counted and said out loud**: three rows out of two hundred pages
+  otherwise reads as a small tree rather than a narrow window. And a page whose dates Confluence never
+  returned is **kept**, because dropping it would hide exactly the pages whose metadata is broken.
+
+### Fixed
+- A documentation row whose change date was absent could crash the panel rather than reading as
+  unknown — a strict null check missed `undefined`, which is what a row built before these fields
+  existed carries.
+
+### Added
 - **Prepare for CAB review** — a gated round trip on the CHG Results step that answers the questions a
   Change Advisory Board will ask about this change, from the change itself and the Jira work in its
   scope.

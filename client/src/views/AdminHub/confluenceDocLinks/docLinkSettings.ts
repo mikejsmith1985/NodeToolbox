@@ -18,6 +18,13 @@ export interface DocLinkSettings {
   storyProjectKey: string;
   storyIssueTypeId: string;
   containmentLinkTypeName: string;
+  /**
+   * Only report pages created or edited in the last N days. Blank or 0 means the whole tree.
+   *
+   * Stored as text because it is a typed field: keeping it a string lets a half-typed value stay
+   * on screen instead of snapping to a number nobody meant.
+   */
+  recentDaysWindow: string;
 }
 
 /**
@@ -36,6 +43,9 @@ const DEFAULT_DOC_LINK_SETTINGS: DocLinkSettings = {
   storyProjectKey: '',
   storyIssueTypeId: '',
   containmentLinkTypeName: 'Container',
+  // Seven days by default. A tree crawl finds everything every time, so an unfiltered nightly run
+  // re-reports pages dealt with weeks ago and buries the handful that matter.
+  recentDaysWindow: '7',
 };
 
 /** Reads a stored string field, falling back to the default when it is missing or the wrong type. */
@@ -66,6 +76,7 @@ export function readDocLinkSettings(storage: Storage = window.localStorage): Doc
       storyProjectKey: readStoredField(stored, 'storyProjectKey'),
       storyIssueTypeId: readStoredField(stored, 'storyIssueTypeId'),
       containmentLinkTypeName: readStoredField(stored, 'containmentLinkTypeName'),
+      recentDaysWindow: readStoredField(stored, 'recentDaysWindow'),
     };
   } catch {
     return { ...DEFAULT_DOC_LINK_SETTINGS };

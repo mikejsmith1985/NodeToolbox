@@ -35,6 +35,8 @@ const SCAN_REQUEST = {
   rootPageTitle: 'ENCUC: CleanUpCrew: SF Integration',
   featureProjectKeys: ['DENP'],
   featureLinkFieldId: 'Feature Link',
+  // 0 = the whole tree, so the existing tests keep measuring what they were written to measure.
+  windowDays: 0,
 };
 
 beforeEach(() => {
