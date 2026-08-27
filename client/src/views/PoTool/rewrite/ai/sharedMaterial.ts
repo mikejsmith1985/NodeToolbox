@@ -15,6 +15,8 @@
 
 import { describeSourceTitle, readSourceText } from '../../sources/sourceModel.ts';
 import type { ReferencedSource } from '../../sources/sourceModel.ts';
+import { renderCorpusBrief } from './corpusBrief.ts';
+import type { CorpusBrief } from './corpusBrief.ts';
 
 /**
  * The most shared material one prompt will carry.
@@ -40,7 +42,25 @@ function capDocumentText(text: string, budgetChars: number): string {
  * Spending it in order would let one long document silently swallow every one after it, and the PO
  * who added a short decisive note last would never learn it had been dropped.
  */
-export function buildSharedMaterialBlock(sources: readonly ReferencedSource[]): string {
+export function buildSharedMaterialBlock(
+  sources: readonly ReferencedSource[],
+  /**
+   * A brief consolidated from these documents, when one has been built.
+   *
+   * When present it REPLACES the raw documents rather than joining them. That is the entire point of
+   * building one: a corpus that did not fit is now a block that does, and pasting the originals back
+   * in beside it would restore the problem the consolidation just solved.
+   */
+  brief: CorpusBrief | null = null,
+): string {
+  if (brief !== null) {
+    return [
+      `Shared material — consolidated from ${brief.extractCount} documents. This applies to EVERY issue`,
+      'in this prompt, not just the first:',
+      renderCorpusBrief(brief),
+    ].join('\n');
+  }
+
   const documentsWithText = sources
     .map((source) => ({ title: describeSourceTitle(source), text: readSourceText(source).trim() }))
     .filter((document) => document.text !== '');

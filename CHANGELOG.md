@@ -8,6 +8,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Condense a body of material far larger than any prompt.** Adding thirty documents as shared
+  material never failed loudly — it divided the budget thirty ways and re-wrote every Feature from
+  about two hundred characters per document. A folder of emails, a stack of PDFs and a OneNote
+  notebook run to hundreds of thousands of characters; a prompt holds sixteen thousand, and the
+  issues being re-written have to fit in there too.
+  The Bulk Re-write tab now reads a corpus in the only order that fits. **Condense** each document on
+  its own, where it has the whole prompt to itself, down to its decisions, requirements, open
+  questions and facts &mdash; each carrying the document it came from. Then **consolidate** the
+  extracts into one brief, which is where repetition collapses and, the part worth the whole
+  exercise, two documents that disagree stop being two plausible statements in a pile and become a
+  named **conflict** the re-write is told not to resolve on its own.
+  The brief *replaces* the raw documents in every re-write prompt rather than joining them; keeping
+  both would restore the problem the consolidation just solved. A document too long for one prompt is
+  split rather than truncated, and a later part **adds** to its extract instead of replacing it &mdash;
+  a fourth reply that overwrote the first three would leave an extract of a notebook page&#39;s last
+  quarter wearing the whole page&#39;s name. A source title the reply invented is dropped rather than
+  shown, because provenance that cannot be followed back to a document reads as verified and is not.
+  Extracts and the brief are persisted with the batch: condensing a corpus is many round trips over
+  more than one sitting, and a PO who lost them on a refresh would simply not do it twice. The panel
+  shows the arithmetic throughout &mdash; the size of the corpus, and the size it came down to.
+
+### Added
 - **Pasting into shared material now keeps its tables.** A OneNote page living in a Teams tab cannot
   be exported or downloaded, so a paste is the only way its content reaches a prompt — and the
   team&#39;s working notes are mostly tables. A Billing Grid comparing *Blue current state* against

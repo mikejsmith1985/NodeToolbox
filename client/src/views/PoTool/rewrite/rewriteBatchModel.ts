@@ -6,6 +6,8 @@
 
 /** Per-issue lifecycle. See spec data-model.md for the transition diagram. */
 import type { ReferencedSource } from '../sources/sourceModel.ts';
+import type { DocumentExtract } from './ai/documentExtract.ts';
+import type { CorpusBrief } from './ai/corpusBrief.ts';
 
 export type ItemState =
   | 'captured'    // original snapshotted, no proposal yet
@@ -62,6 +64,15 @@ export interface RewriteBatch {
    * every batch saved before this loads unchanged.
    */
   sharedSources?: ReferencedSource[];
+  /**
+   * Per-document extracts, keyed by source id, for material too large to carry raw.
+   *
+   * Persisted because condensing a corpus is many round trips over more than one sitting, and a PO
+   * who lost them on a page refresh would simply not do it a second time.
+   */
+  sourceExtracts?: Record<string, DocumentExtract>;
+  /** The single brief consolidated from those extracts — what the re-writes are actually made from. */
+  sharedBrief?: CorpusBrief;
 }
 
 /** A lightweight batch listing entry (for the resume/batch-list UI), with per-state counts. */

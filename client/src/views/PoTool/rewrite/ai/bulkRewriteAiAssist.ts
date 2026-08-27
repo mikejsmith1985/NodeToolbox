@@ -10,6 +10,7 @@ import type { BatchReplyParseResult, CapturedOriginal, ProposedRewrite } from '.
 import { buildSharedMaterialBlock } from './sharedMaterial.ts';
 import { describeEnterpriseFeatureRules } from '../../../../domain/featureStateGates.ts';
 import type { ReferencedSource } from '../../sources/sourceModel.ts';
+import type { CorpusBrief } from './corpusBrief.ts';
 
 export const BULK_REWRITE_REPLY_KIND = 'featureRewriteBatch';
 
@@ -85,11 +86,17 @@ export function buildBulkRewritePrompts(
    * Optional and empty by default, so a batch without them builds exactly the prompt it always did.
    */
   sharedSources: readonly ReferencedSource[] = [],
+  /**
+   * A brief consolidated from those documents, when the corpus was too large to carry raw.
+   *
+   * Optional, so a batch whose material already fits builds exactly the prompt it always did.
+   */
+  sharedBrief: CorpusBrief | null = null,
 ): string[] {
   if (items.length === 0) {
     return [];
   }
-  const sharedMaterialBlock = buildSharedMaterialBlock(sharedSources);
+  const sharedMaterialBlock = buildSharedMaterialBlock(sharedSources, sharedBrief);
   const blocks = items.map((each) => buildIssueBlock(each.jiraKey, each.original));
   // The material counts against the budget: it rides in every part, so ignoring its size here would
   // build parts that overflow the cap by exactly the length of the documents.

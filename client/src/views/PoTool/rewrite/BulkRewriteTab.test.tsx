@@ -1,7 +1,7 @@
 // BulkRewriteTab.test.tsx — Honest states (spec 030, US6): capture errors are shown per key, the
 // AI panel is invisible while locked, and an ingest surfaces unknown/unparsed keys. Nothing fails silently.
 
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -383,7 +383,11 @@ describe('BulkRewriteTab shared material', () => {
     render(<BulkRewriteTab dashboardTeamProfileId="team-1" />);
     await user.click(await screen.findByRole('button', { name: 'Open' }));
 
-    expect(await screen.findByText('Accessibility Standard')).toBeInTheDocument();
+    // Scoped to the shared-material list: the condense panel lists the same documents, and an
+    // unscoped query would pass or fail on which of the two happened to render first.
+    const sharedMaterialList = await screen.findByLabelText('Shared material');
+
+    expect(within(sharedMaterialList).getByText('Accessibility Standard')).toBeInTheDocument();
   });
 });
 

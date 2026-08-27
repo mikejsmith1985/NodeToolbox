@@ -22,6 +22,9 @@ import PoAiPanel from '../ai/PoAiPanel';
 import { buildBulkRewritePrompts, parseBulkRewriteReply } from './ai/bulkRewriteAiAssist';
 import { usePoHygieneContext } from '../hooks/usePoHygieneContext';
 import BeforeAfterRow from './BeforeAfterRow.tsx';
+import CondenseMaterialPanel from './CondenseMaterialPanel.tsx';
+import type { DocumentExtract } from './ai/documentExtract.ts';
+import type { CorpusBrief } from './ai/corpusBrief.ts';
 import { captureOriginals, parseIssueKeys } from './captureOriginals';
 import type {
   BatchExportInput,
@@ -200,9 +203,29 @@ export default function BulkRewriteTab({ dashboardTeamProfileId, selectedPiName 
     () => buildBulkRewritePrompts(
       capturableItems.map((item) => ({ jiraKey: item.jiraKey, original: item.original })),
       batch?.sharedSources ?? [],
+      batch?.sharedBrief ?? null,
     ),
-    [capturableItems, batch?.sharedSources],
+    [capturableItems, batch?.sharedSources, batch?.sharedBrief],
   );
+
+  /** Stores one document's extract. Keyed by source id, so re-condensing replaces rather than piles up. */
+  function handleExtractDocument(extract: DocumentExtract): void {
+    if (!batch) {
+      return;
+    }
+    persistBatch({
+      ...batch,
+      sourceExtracts: { ...(batch.sourceExtracts ?? {}), [extract.sourceId]: extract },
+    });
+  }
+
+  /** Stores the consolidated brief, which every re-write prompt then carries instead of the documents. */
+  function handleBuildBrief(brief: CorpusBrief): void {
+    if (!batch) {
+      return;
+    }
+    persistBatch({ ...batch, sharedBrief: brief });
+  }
 
   /** Adds one document to the batch's shared material, which every issue is re-written against. */
   function handleAddSharedSource(source: ReferencedSource): void {
@@ -920,6 +943,16 @@ export default function BulkRewriteTab({ dashboardTeamProfileId, selectedPiName 
                 </ul>
               )}
             </section>
+
+            {/* The corpus is usually far larger than any prompt. This is where it is read down to a
+                size a re-write can carry — and where two documents that disagree get named. */}
+            <CondenseMaterialPanel
+              sources={sharedSources}
+              extracts={batch.sourceExtracts ?? {}}
+              brief={batch.sharedBrief ?? null}
+              onExtractDocument={handleExtractDocument}
+              onBuildBrief={handleBuildBrief}
+            />
 
             {/* The half the "before" snapshot was always missing. Capturing an original and only ever
                 showing it leaves a PO worse off than never running the batch: the old wording is

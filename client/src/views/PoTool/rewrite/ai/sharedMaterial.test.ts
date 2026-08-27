@@ -85,3 +85,38 @@ describe('buildSharedMaterialBlock', () => {
     expect(block).toBe('');
   });
 });
+
+describe('buildSharedMaterialBlock — a consolidated brief', () => {
+  const brief = {
+    overview: 'Billing moves from LIS to consolidated statements.',
+    decisions: [{ text: 'Consolidated statements', sourceTitles: ['Billing Grid'] }],
+    requirements: [],
+    openQuestions: [],
+    conflicts: [],
+    extractCount: 31,
+    builtAtIso: '2026-08-27T00:00:00.000Z',
+  };
+
+  it('REPLACES the raw documents rather than joining them', () => {
+    // A corpus that did not fit is now a block that does; pasting the originals back in beside it
+    // would restore the exact problem the consolidation just solved.
+    const block = buildSharedMaterialBlock([pasteSource('paste-1', 'Billing Grid', 'the whole raw notebook page')], brief);
+
+    expect(block).toContain('Consolidated statements');
+    expect(block).not.toContain('the whole raw notebook page');
+  });
+
+  it('says how many documents stand behind it', () => {
+    expect(buildSharedMaterialBlock([], brief)).toContain('31 documents');
+  });
+
+  it('still says the material applies to every issue, not just the first', () => {
+    expect(buildSharedMaterialBlock([], brief)).toContain('EVERY issue');
+  });
+
+  it('falls back to the raw documents when no brief has been built', () => {
+    const block = buildSharedMaterialBlock([pasteSource('paste-1', 'Billing Grid', 'raw text')], null);
+
+    expect(block).toContain('raw text');
+  });
+});
