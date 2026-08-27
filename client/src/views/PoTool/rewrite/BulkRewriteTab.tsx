@@ -36,6 +36,7 @@ import { canPersistDrafts } from '../drafts/splitDraftStorage';
 import { submitApprovedItems } from './rewriteSubmit';
 import { revertItems } from './rewriteRevert';
 import { ConfluenceSourceError, readConfluenceSource } from '../sources/confluenceSource';
+import { readPastedText } from '../sources/pastedRichText.ts';
 import { readWorkbookSource, WORKBOOK_FILE_ACCEPT, WorkbookReadError } from '../sources/workbookSource';
 import {
   browseSharePointLibrary,
@@ -794,6 +795,18 @@ export default function BulkRewriteTab({ dashboardTeamProfileId, selectedPiName 
                   <textarea
                     className={styles.textArea}
                     id="shared-paste"
+                    onPaste={(pasteEvent) => {
+                      // A OneNote page in a Teams tab cannot be exported, so a paste is the only way
+                      // its content arrives — and its tables are the content. Read the HTML flavour
+                      // so a four-column grid does not land as an undifferentiated run of sentences.
+                      const pastedText = readPastedText(
+                        pasteEvent.clipboardData.getData('text/html'),
+                        pasteEvent.clipboardData.getData('text/plain'),
+                      );
+                      if (pastedText.trim() === '') return;
+                      pasteEvent.preventDefault();
+                      setPasteInput((currentText) => currentText + pastedText);
+                    }}
                     onChange={(changeEvent) => setPasteInput(changeEvent.target.value)}
                     value={pasteInput}
                   />

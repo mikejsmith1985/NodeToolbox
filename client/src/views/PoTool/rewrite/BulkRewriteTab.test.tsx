@@ -277,6 +277,66 @@ describe('BulkRewriteTab — reverting a re-write nobody liked', () => {
 });
 
 describe('BulkRewriteTab shared material', () => {
+  /** One captured batch, which is what makes the Shared material panel reachable. */
+  function seedBatchForPaste(): void {
+    saveBatch({
+      id: 'batch-paste',
+      name: 'Paste',
+      teamProfileId: 'team-1',
+      createdAtIso: '2026-08-21T00:00:00.000Z',
+      updatedAtIso: '2026-08-21T00:00:00.000Z',
+      items: [{
+        jiraKey: 'ABC-1',
+        original: { summary: 'S', description: 'd', acceptanceCriteria: 'a', capturedAtIso: '2026-08-21T00:00:00.000Z' },
+        proposed: null,
+        state: 'captured',
+        captureError: null,
+        submitResult: null,
+      }],
+    });
+  }
+
+  // ── Pasting a page whose meaning is its table (GH #376) ──────────────────
+
+  it('keeps the columns when a table is pasted into a shared note', async () => {
+    // A OneNote page in a Teams tab cannot be exported, so a paste is the only way it arrives — and
+    // a four-column Billing Grid pasted as plain text loses the thing that made its cells mean
+    // anything: which column they were in.
+    const user = userEvent.setup();
+    seedBatchForPaste();
+    render(<BulkRewriteTab dashboardTeamProfileId="team-1" />);
+    await user.click(await screen.findByRole('button', { name: 'Open' }));
+
+    const noteBox = await screen.findByLabelText('Pasted note');
+    fireEvent.paste(noteBox, {
+      clipboardData: {
+        getData: (flavour: string) => (flavour === 'text/html'
+          ? '<table><tr><td>Process</td><td>Blue</td><td>Assumption</td></tr>'
+            + '<tr><td>LIS Processing</td><td>Consolidated</td><td>Blue gains flexibility</td></tr></table>'
+          : 'Process Blue Assumption LIS Processing Consolidated Blue gains flexibility'),
+      },
+    });
+
+    await waitFor(() => expect((noteBox as HTMLTextAreaElement).value)
+      .toContain('| Process | Blue | Assumption |'));
+    expect((noteBox as HTMLTextAreaElement).value).toContain('| LIS Processing | Consolidated | Blue gains flexibility |');
+  });
+
+  it('takes the plain text when a paste carries no HTML', async () => {
+    // An ordinary paste from a plain-text editor, not an error.
+    const user = userEvent.setup();
+    seedBatchForPaste();
+    render(<BulkRewriteTab dashboardTeamProfileId="team-1" />);
+    await user.click(await screen.findByRole('button', { name: 'Open' }));
+
+    const noteBox = await screen.findByLabelText('Pasted note');
+    fireEvent.paste(noteBox, {
+      clipboardData: { getData: (flavour: string) => (flavour === 'text/html' ? '' : 'just some words') },
+    });
+
+    await waitFor(() => expect((noteBox as HTMLTextAreaElement).value).toBe('just some words'));
+  });
+
   it('says plainly when a batch has none, rather than leaving the panel blank', async () => {
     const user = userEvent.setup();
     saveBatch({

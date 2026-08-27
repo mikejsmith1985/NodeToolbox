@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Pasting into shared material now keeps its tables.** A OneNote page living in a Teams tab cannot
+  be exported or downloaded, so a paste is the only way its content reaches a prompt — and the
+  team&#39;s working notes are mostly tables. A Billing Grid comparing *Blue current state* against
+  *Purple current state* against *Assumption*, pasted into a plain box, collapsed into an
+  undifferentiated run of sentences: every cell survived, and the only thing that made them mean
+  anything — which column they were in — did not.
+  The paste now reads the clipboard&#39;s **HTML flavour** and rewrites tables as Markdown, which models
+  read reliably and a person can still check by eye. The first row becomes the header whether or not
+  it was marked up as one, because OneNote and Word emit header rows as ordinary cells with bold text
+  and requiring `&lt;th&gt;` would leave most real tables headerless. Ragged rows are padded rather than
+  dropped, and a pipe inside a cell is escaped so one value cannot break the table around it.
+  Lists keep their bullets — a list of requirements read as a paragraph is a different claim. A paste
+  carrying no HTML, or HTML with nothing readable in it, falls back to the plain text rather than
+  failing or blanking what was there.
+
 ### Fixed
 - **Dragging a spreadsheet onto Feature Composition could report that a `.png` is not a spreadsheet.**
   The drop handler took `dataTransfer.files[0]` — the FIRST file — and a drag is not a file. Depending
