@@ -201,3 +201,67 @@ describe('buildSharedMaterialBlock — a document condensed but not consolidated
     expect(block).not.toContain('Payment History is the only billing report changing');
   });
 });
+
+describe('buildSharedMaterialBlock — sharing the budget by size', () => {
+  it('pays a document that fits IN FULL rather than cutting it to an even share', () => {
+    // An even split cut a 2,009-character email by 179 characters while 179 characters of its own
+    // allowance went unused (GH #376).
+    const block = buildSharedMaterialBlock([
+      pasteSource('paste-1', 'Short email', 'S'.repeat(400)),
+      pasteSource('paste-2', 'Long email', 'L'.repeat(9000)),
+    ]);
+
+    expect(block).toContain('S'.repeat(400));
+    expect((block.match(/truncated/g) ?? []).length).toBe(1);
+  });
+
+  it('gives what the short document did not need to the one that did', () => {
+    const evenShare = Math.floor(MAX_SHARED_MATERIAL_CHARS / 2);
+
+    const block = buildSharedMaterialBlock([
+      pasteSource('paste-1', 'Short email', 'S'.repeat(200)),
+      pasteSource('paste-2', 'Long email', 'L'.repeat(9000)),
+    ]);
+
+    const longestKept = (block.match(/L+/g) ?? []).reduce((most, run) => Math.max(most, run.length), 0);
+
+    expect(longestKept).toBeGreaterThan(evenShare);
+  });
+
+  it('still protects a short document from a long one, which is what the even split was for', () => {
+    // The rule that must not regress: one long document cannot swallow the budget of a short one.
+    const block = buildSharedMaterialBlock([
+      pasteSource('paste-1', 'Enormous', 'E'.repeat(50000)),
+      pasteSource('paste-2', 'One decisive note', 'N'.repeat(300)),
+    ]);
+
+    expect(block).toContain('N'.repeat(300));
+  });
+
+  it('keeps the order the PO added them in, whatever order the budget was worked out in', () => {
+    const block = buildSharedMaterialBlock([
+      pasteSource('paste-1', 'Added first', 'F'.repeat(5000)),
+      pasteSource('paste-2', 'Added second', 'S'.repeat(100)),
+    ]);
+
+    expect(block.indexOf('Added first')).toBeLessThan(block.indexOf('Added second'));
+  });
+
+  it('holds the whole block within the budget', () => {
+    const block = buildSharedMaterialBlock([
+      pasteSource('paste-1', 'A', 'A'.repeat(9000)),
+      pasteSource('paste-2', 'B', 'B'.repeat(9000)),
+      pasteSource('paste-3', 'C', 'C'.repeat(9000)),
+    ]);
+
+    expect(block.length).toBeLessThan(MAX_SHARED_MATERIAL_CHARS + 500);
+  });
+
+  it('gives a lone document the whole budget', () => {
+    const block = buildSharedMaterialBlock([pasteSource('paste-1', 'Only one', 'O'.repeat(9000))]);
+
+    const longestKept = (block.match(/O+/g) ?? []).reduce((most, run) => Math.max(most, run.length), 0);
+
+    expect(longestKept).toBe(MAX_SHARED_MATERIAL_CHARS);
+  });
+});

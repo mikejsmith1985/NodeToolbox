@@ -26,7 +26,7 @@ import type { DocumentExtract } from './documentExtract.ts';
  * Sized so the documents inform the re-write without displacing the issues. The issues are the point;
  * the material is context, and context that leaves no room for the subject has stopped being useful.
  */
-export const MAX_SHARED_MATERIAL_CHARS = 6000;
+export const MAX_SHARED_MATERIAL_CHARS = 3000;
 
 /** Trims one document to its share of the budget and says plainly when it was cut. */
 function capDocumentText(text: string, budgetChars: number): string {
@@ -35,6 +35,36 @@ function capDocumentText(text: string, budgetChars: number): string {
     return trimmed;
   }
   return `${trimmed.slice(0, budgetChars)}\n… (truncated)`;
+}
+
+/**
+ * Shares the budget out, giving documents that fit their whole length before splitting the rest.
+ *
+ * An even split is the wrong rule when the documents differ in size: a 2,000-character email and a
+ * 3,000-character one each got 1,830, so the short one was cut by 179 characters while 179 characters
+ * of its own allowance went unused. Paying the ones that fit in full costs nothing and leaves MORE for
+ * the documents that genuinely need trimming.
+ *
+ * Shortest first, and the share is recomputed after each: once the small ones are paid, everything
+ * left belongs to the documents that are actually competing for it.
+ */
+function allocateDocumentBudgets(
+  documents: readonly { title: string; text: string }[],
+  totalBudget: number,
+): { document: { title: string; text: string }; budget: number }[] {
+  const shortestFirst = [...documents].sort((left, right) => left.text.length - right.text.length);
+  const allocations = new Map<string, number>();
+  let remaining = totalBudget;
+
+  shortestFirst.forEach((document, index) => {
+    const evenShare = Math.floor(remaining / (shortestFirst.length - index));
+    const granted = Math.min(document.text.length, evenShare);
+    allocations.set(document.title, granted);
+    remaining -= granted;
+  });
+
+  // Returned in the caller's order: the PO added them in an order that meant something to them.
+  return documents.map((document) => ({ document, budget: allocations.get(document.title) ?? 0 }));
 }
 
 /**
@@ -92,13 +122,11 @@ export function buildSharedMaterialBlock(
   // never trimmed — trimming a summary produces a worse summary, not a shorter document.
   const condensedChars = condensedBlocks.join('').length;
   const remainingBudget = Math.max(0, MAX_SHARED_MATERIAL_CHARS - condensedChars);
-  const budgetPerDocument = documentsWithText.length === 0
-    ? 0
-    : Math.floor(remainingBudget / documentsWithText.length);
+
   const renderedDocuments = [
     ...condensedBlocks,
-    ...documentsWithText.map((document) =>
-      [`### ${document.title}`, capDocumentText(document.text, budgetPerDocument)].join('\n')),
+    ...allocateDocumentBudgets(documentsWithText, remainingBudget).map(({ document, budget }) =>
+      [`### ${document.title}`, capDocumentText(document.text, budget)].join('\n')),
   ];
 
   return [

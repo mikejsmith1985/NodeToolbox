@@ -572,15 +572,16 @@ describe('BulkRewriteTab workflow order', () => {
     expect(screen.getByLabelText(/publish the review TO/)).toBeInTheDocument();
   });
 
-  it('refuses to write to Jira when no issue has a re-write, however the URL got filled in', async () => {
+  it('refuses to write to Jira when nothing is approved, however the URL got filled in', async () => {
     // The old guard was only "the URL is non-empty", so a link pasted into the wrong field enabled a
-    // terminal action at a stage where there was nothing whatsoever to write.
+    // terminal action at a stage where there was nothing whatsoever to write. The write no longer
+    // depends on the URL at all — it writes what was approved here.
     const user = userEvent.setup();
     await openSeededBatch();
 
     await user.type(await screen.findByLabelText(/publish the review TO/), 'https://example.atlassian.net/wiki/pages/1/Notes');
 
-    expect(screen.getByRole('button', { name: 'Write approved to Jira' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Write 0 approved to Jira/ })).toBeDisabled();
   });
 
   it('says WHY it cannot write yet rather than leaving a dead button', async () => {
@@ -787,5 +788,144 @@ describe('BulkRewriteTab file ingestion', () => {
     await waitFor(() => expect(materialList).toHaveTextContent('one.pdf'));
     expect(materialList).toHaveTextContent('two.pdf');
     expect(within(materialList).getAllByRole('button', { name: 'Remove' })).toHaveLength(2);
+  });
+});
+
+// ── A reply that parsed but carried nothing (GH #376) ──────────────────────
+
+describe('BulkRewriteTab empty reply', () => {
+  it('explains an empty item list instead of doing nothing at all', async () => {
+    // The shape of a prompt cut short when pasted: the issues sit after the notes, so the assistant
+    // read instructions about issues it never saw and answered about none of them. Saying nothing sent
+    // somebody looking for a bug in their own reply.
+    const user = userEvent.setup();
+    setAiAssistUnlocked(true);
+    mockJiraGet.mockResolvedValue({ fields: { summary: 'S', description: 'd', customfield_10200: 'ac' } });
+
+    render(<BulkRewriteTab dashboardTeamProfileId="team-1" />);
+    await user.type(screen.getByLabelText('Jira keys'), 'ABC-1');
+    await user.click(screen.getByRole('button', { name: /capture originals/i }));
+    await user.click(await screen.findByRole('button', { name: /build the prompt/i }));
+
+    fireEvent.change(await screen.findByLabelText(/paste the assistant/i), {
+      target: { value: '{"kind":"featureRewriteBatch","items":[]}' },
+    });
+    await user.click(screen.getByRole('button', { name: /read the reply/i }));
+
+    expect(await screen.findByText(/contained no issues at all/)).toBeInTheDocument();
+    expect(screen.getByText(/cut short when it was pasted/)).toBeInTheDocument();
+  });
+
+  it('says nothing about truncation when the reply simply rejected keys', async () => {
+    // A reply that named the wrong issues is a different problem, and the existing message covers it.
+    const user = userEvent.setup();
+    setAiAssistUnlocked(true);
+    mockJiraGet.mockResolvedValue({ fields: { summary: 'S', description: 'd', customfield_10200: 'ac' } });
+
+    render(<BulkRewriteTab dashboardTeamProfileId="team-1" />);
+    await user.type(screen.getByLabelText('Jira keys'), 'ABC-1');
+    await user.click(screen.getByRole('button', { name: /capture originals/i }));
+    await user.click(await screen.findByRole('button', { name: /build the prompt/i }));
+
+    fireEvent.change(await screen.findByLabelText(/paste the assistant/i), {
+      target: { value: '{"kind":"featureRewriteBatch","items":[{"key":"OTHER-9","description":"x"}]}' },
+    });
+    await user.click(screen.getByRole('button', { name: /read the reply/i }));
+
+    // Reported in both the panel error list and the ingest notice, which is deliberate.
+    await waitFor(() => expect(screen.getAllByText(/not in this batch/).length).toBeGreaterThan(0));
+    expect(screen.queryByText(/contained no issues at all/)).not.toBeInTheDocument();
+  });
+});
+
+// ── Approving here, and approving on the page (GH #376) ────────────────────
+
+describe('BulkRewriteTab approving', () => {
+  /** A batch with one item already approved in this tab. */
+  function seedApprovedBatch(): void {
+    saveBatch({
+      id: 'batch-approve',
+      name: 'Approve',
+      teamProfileId: 'team-1',
+      createdAtIso: '2026-08-21T00:00:00.000Z',
+      updatedAtIso: '2026-08-21T00:00:00.000Z',
+      items: [{
+        jiraKey: 'ABC-1',
+        original: { summary: 'S', description: 'd', acceptanceCriteria: 'a', capturedAtIso: '2026-08-21T00:00:00.000Z' },
+        proposed: { description: 'Description:\nnew', acceptanceCriteria: 'ac', isEdited: false },
+        state: 'approved',
+        captureError: null,
+        submitResult: null,
+      }],
+    });
+  }
+
+  it('offers to write what is approved HERE, without needing a Confluence page', async () => {
+    // The write used to read the page first and take its tick boxes as the truth, so an in-app
+    // approval was downgraded to "reviewing" and the write then refused.
+    const user = userEvent.setup();
+    seedApprovedBatch();
+
+    render(<BulkRewriteTab dashboardTeamProfileId="team-1" />);
+    await user.click(await screen.findByRole('button', { name: 'Open' }));
+
+    expect(await screen.findByRole('button', { name: 'Write 1 approved to Jira' })).toBeEnabled();
+  });
+
+  it('counts the approvals in the button, so it is clear what will be written', async () => {
+    const user = userEvent.setup();
+    seedApprovedBatch();
+
+    render(<BulkRewriteTab dashboardTeamProfileId="team-1" />);
+    await user.click(await screen.findByRole('button', { name: 'Open' }));
+
+    expect(await screen.findByRole('button', { name: /Write 1 approved to Jira/ })).toBeInTheDocument();
+  });
+
+  it('refuses to write when nothing is approved, and says where to approve', async () => {
+    const user = userEvent.setup();
+    saveBatch({
+      id: 'batch-none',
+      name: 'None approved',
+      teamProfileId: 'team-1',
+      createdAtIso: '2026-08-21T00:00:00.000Z',
+      updatedAtIso: '2026-08-21T00:00:00.000Z',
+      items: [{
+        jiraKey: 'ABC-1',
+        original: { summary: 'S', description: 'd', acceptanceCriteria: 'a', capturedAtIso: '2026-08-21T00:00:00.000Z' },
+        proposed: { description: 'Description:\nnew', acceptanceCriteria: 'ac', isEdited: false },
+        state: 'reviewing',
+        captureError: null,
+        submitResult: null,
+      }],
+    });
+
+    render(<BulkRewriteTab dashboardTeamProfileId="team-1" />);
+    await user.click(await screen.findByRole('button', { name: 'Open' }));
+
+    expect(await screen.findByRole('button', { name: /Write 0 approved to Jira/ })).toBeDisabled();
+    expect(screen.getByText(/Mark items Approve in Step 4/)).toBeInTheDocument();
+  });
+
+  it('keeps pulling the page ticks as its own, separately named action', async () => {
+    // Un-approving is a real thing that page wants to do; it must be something somebody asked for and
+    // not a side effect of trying to submit.
+    const user = userEvent.setup();
+    seedApprovedBatch();
+
+    render(<BulkRewriteTab dashboardTeamProfileId="team-1" />);
+    await user.click(await screen.findByRole('button', { name: 'Open' }));
+
+    expect(await screen.findByRole('button', { name: 'Pull approvals from the page' })).toBeInTheDocument();
+  });
+
+  it('does not offer to pull approvals without a page to pull them from', async () => {
+    const user = userEvent.setup();
+    seedApprovedBatch();
+
+    render(<BulkRewriteTab dashboardTeamProfileId="team-1" />);
+    await user.click(await screen.findByRole('button', { name: 'Open' }));
+
+    expect(await screen.findByRole('button', { name: 'Pull approvals from the page' })).toBeDisabled();
   });
 });

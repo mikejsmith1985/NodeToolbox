@@ -99,6 +99,7 @@ export default function BulkRewriteTab({ dashboardTeamProfileId, selectedPiName 
   const [isCapturing, setIsCapturing] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
+  const [isPullingApprovals, setIsPullingApprovals] = useState(false);
   const [isWritingApproved, setIsWritingApproved] = useState(false);
   // Ephemeral per-session override: a PO who accepts a drift warning can force a single submit.
   const [submitAnywayKeys, setSubmitAnywayKeys] = useState<string[]>([]);
@@ -209,6 +210,8 @@ export default function BulkRewriteTab({ dashboardTeamProfileId, selectedPiName 
     [batch],
   );
   const sharedSources = batch?.sharedSources ?? [];
+  /** What pressing "Write approved to Jira" will actually write — approved HERE, in this tab. */
+  const approvedItems = (batch?.items ?? []).filter((item) => item.state === 'approved');
   const prompts = useMemo(
     () => buildBulkRewritePrompts(
       // The current proposal rides along so a re-run after adding notes EXTENDS the draft rather than
@@ -437,9 +440,21 @@ export default function BulkRewriteTab({ dashboardTeamProfileId, selectedPiName 
       unparsedCount: result.unparsedCount,
       overwrittenEditedKeys,
     });
+    // A well-formed reply carrying NO items at all is the shape of a prompt that was cut short when
+    // pasted: the issues sit after the shared material, so a truncated paste leaves the assistant
+    // reading instructions about issues it never saw. Silence here sent somebody looking for a bug in
+    // their own reply (GH #376).
+    const hadNothingAtAll = acceptedCount === 0
+      && result.rejected.length === 0
+      && result.unparsedCount === 0;
     const errors = [
       ...result.rejected.map((entry) => `${entry.key}: ${entry.reason}`),
       ...(result.unparsedCount > 0 ? [`${result.unparsedCount} issue(s) had no usable re-write in the reply.`] : []),
+      ...(hadNothingAtAll
+        ? ['The reply was read but contained no issues at all. That usually means the prompt was cut '
+          + 'short when it was pasted — the issues come after the notes, so a truncated paste leaves '
+          + 'nothing to re-write. Copy the prompt again and check the whole thing arrived.']
+        : []),
     ];
     return { acceptedCount, errors };
   }
@@ -522,47 +537,29 @@ export default function BulkRewriteTab({ dashboardTeamProfileId, selectedPiName 
    * only the ticked (approved) rows to Jira with the live drift guard. The page is authoritative for both
    * the final wording and the approval decision.
    */
+  /**
+   * Writes the items approved HERE, in this tab, to Jira.
+   *
+   * It used to read the Confluence review page first and take its tick boxes as the truth, replacing
+   * every item's state with what the page said. A PO who approved in Step 4 and pressed this therefore
+   * had their approvals silently downgraded to "reviewing" and was then told no rows were ticked —
+   * an action named "Write approved" undoing the approving (GH #376).
+   *
+   * Pulling the page's approvals is a real thing to want; it is now its own button, so a downgrade is
+   * something somebody asked for rather than a side effect of trying to submit.
+   */
   async function handleWriteApprovedToJira(): Promise<void> {
-    if (!batch || reviewPageUrl.trim() === '') {
+    if (!batch) {
+      return;
+    }
+    if (approvedItems.length === 0) {
+      showToast('Nothing is approved yet — mark at least one item Approve in Step 4.', 'error');
       return;
     }
     setIsWritingApproved(true);
     try {
-      const page = await fetchConfluencePageByReference(reviewPageUrl.trim());
-      const pageRows = parseReviewPageStorage(page.body.storage.value);
-      if (pageRows.length === 0) {
-        showToast('No review table was found on that Confluence page — publish the before/after first.', 'error');
-        return;
-      }
-      const rowsByKey = new Map(pageRows.map((row) => [row.jiraKey, row]));
-      // Apply each page row to its item: a ticked row → approved with the PO's (re-normalized) wording; an
-      // un-ticked row → reviewing. Descriptions are re-normalized to the nine sections (idempotent, 029).
-      const nextItems = batch.items.map((item) => {
-        const pageRow = rowsByKey.get(item.jiraKey);
-        if (!pageRow || !item.proposed) {
-          return item;
-        }
-        const description = stripAiAttribution(normalizeFeatureDescription(pageRow.description));
-        const hasEdit = description !== item.proposed.description || pageRow.acceptanceCriteria !== item.proposed.acceptanceCriteria;
-        return {
-          ...item,
-          proposed: {
-            description,
-            acceptanceCriteria: pageRow.acceptanceCriteria,
-            isEdited: item.proposed.isEdited || hasEdit,
-          },
-          state: (pageRow.isApproved ? 'approved' : 'reviewing') as ItemState,
-        };
-      });
-      const withPageState: RewriteBatch = { ...batch, items: nextItems, reviewPageUrl: reviewPageUrl.trim() };
-      persistBatch(withPageState);
-
-      if (nextItems.filter((item) => item.state === 'approved').length === 0) {
-        showToast('No rows are ticked Approve on the Confluence page yet.', 'error');
-        return;
-      }
       const result = await submitApprovedItems(
-        withPageState,
+        batch,
         { acceptanceCriteriaFieldId, fieldDescriptors: [] },
         submitDeps,
         { submitAnywayKeys },
@@ -576,9 +573,67 @@ export default function BulkRewriteTab({ dashboardTeamProfileId, selectedPiName 
         failed > 0 ? 'error' : 'success',
       );
     } catch (error) {
-      showToast(error instanceof Error ? `Could not read the Confluence page: ${error.message}` : 'Could not read the Confluence page.', 'error');
+      showToast(error instanceof Error ? `Could not write to Jira: ${error.message}` : 'Could not write to Jira.', 'error');
     } finally {
       setIsWritingApproved(false);
+    }
+  }
+
+  /**
+   * Takes the reviewing PO's ticks from the Confluence page and applies them here.
+   *
+   * Deliberately separate from writing to Jira, and deliberately capable of un-approving: on this page
+   * an un-ticked row MEANS not approved, and that is the whole point of sending it to somebody. What
+   * must never happen is that meaning being applied by an action somebody pressed for another reason.
+   */
+  async function handlePullApprovalsFromConfluence(): Promise<void> {
+    if (!batch || reviewPageUrl.trim() === '') {
+      return;
+    }
+    setIsPullingApprovals(true);
+    try {
+      const page = await fetchConfluencePageByReference(reviewPageUrl.trim());
+      const pageRows = parseReviewPageStorage(page.body.storage.value);
+      if (pageRows.length === 0) {
+        showToast('No review table was found on that Confluence page — publish the before/after first.', 'error');
+        return;
+      }
+      const rowsByKey = new Map(pageRows.map((row) => [row.jiraKey, row]));
+      // A ticked row becomes approved with the reviewer's own wording; an un-ticked one returns to
+      // reviewing. Descriptions are re-normalized to the nine sections (idempotent, 029).
+      const nextItems = batch.items.map((item) => {
+        const pageRow = rowsByKey.get(item.jiraKey);
+        if (!pageRow || !item.proposed) {
+          return item;
+        }
+        const description = stripAiAttribution(normalizeFeatureDescription(pageRow.description));
+        const hasEdit = description !== item.proposed.description
+          || pageRow.acceptanceCriteria !== item.proposed.acceptanceCriteria;
+        return {
+          ...item,
+          proposed: {
+            description,
+            acceptanceCriteria: pageRow.acceptanceCriteria,
+            isEdited: item.proposed.isEdited || hasEdit,
+          },
+          state: (pageRow.isApproved ? 'approved' : 'reviewing') as ItemState,
+        };
+      });
+      persistBatch({ ...batch, items: nextItems, reviewPageUrl: reviewPageUrl.trim() });
+      const approvedOnPage = nextItems.filter((item) => item.state === 'approved').length;
+      showToast(
+        approvedOnPage === 0
+          ? 'Read the page — no rows are ticked Approve on it yet.'
+          : `Read the page — ${approvedOnPage} row(s) ticked Approve.`,
+        approvedOnPage === 0 ? 'error' : 'success',
+      );
+    } catch (error) {
+      showToast(
+        error instanceof Error ? `Could not read the Confluence page: ${error.message}` : 'Could not read the Confluence page.',
+        'error',
+      );
+    } finally {
+      setIsPullingApprovals(false);
     }
   }
 
@@ -1019,10 +1074,10 @@ export default function BulkRewriteTab({ dashboardTeamProfileId, selectedPiName 
           <section className={styles.panel}>
             <h3 className={styles.panelTitle}>Step 5 — Publish for review &amp; write to Jira</h3>
             <p className={styles.helpText}>
-              Publish the before/after to a Confluence page. The reviewing PO edits the Proposed columns and
-              ticks Approve on the page; then Write approved to Jira reads the page back and writes only the
-              ticked rows (with a live drift check). The page is the shared, editable record — nothing reaches
-              Jira until you click Write approved.
+              Write approved to Jira writes what YOU approved in Step 4 — it needs no Confluence page at all.
+              The page is for a second reviewer: publish the before/after, let them edit the Proposed columns
+              and tick Approve, then pull their ticks back with "Pull approvals from the page". Nothing
+              reaches Jira until you click Write approved, and every write runs a live drift check.
             </p>
             <label className={styles.fieldLabel} htmlFor="rewrite-review-url">Confluence page to publish the review TO (a new, empty page)</label>
             <input
@@ -1046,10 +1101,20 @@ export default function BulkRewriteTab({ dashboardTeamProfileId, selectedPiName 
               <button
                 className={styles.primaryButton}
                 type="button"
-                disabled={isWritingApproved || reviewPageUrl.trim() === '' || reviewItems.length === 0}
+                disabled={isPullingApprovals || reviewPageUrl.trim() === '' || reviewItems.length === 0}
+                onClick={handlePullApprovalsFromConfluence}
+              >
+                {isPullingApprovals ? 'Reading…' : 'Pull approvals from the page'}
+              </button>
+              <button
+                className={styles.primaryButton}
+                type="button"
+                disabled={isWritingApproved || approvedItems.length === 0}
                 onClick={handleWriteApprovedToJira}
               >
-                {isWritingApproved ? 'Writing…' : 'Write approved to Jira'}
+                {isWritingApproved
+                  ? 'Writing…'
+                  : `Write ${approvedItems.length} approved to Jira`}
               </button>
             </div>
             {/* A disabled button with no reason given is how somebody ends up pasting a link into
@@ -1058,6 +1123,11 @@ export default function BulkRewriteTab({ dashboardTeamProfileId, selectedPiName 
               <p className={styles.helpText}>
                 Nothing to publish or write back yet — no issue in this batch has a re-write. Put your notes
                 in Step 1, then run Step 3 to draft them.
+              </p>
+            ) : approvedItems.length === 0 ? (
+              <p className={styles.helpText}>
+                Nothing is approved yet. Mark items Approve in Step 4 above — or, if a reviewer ticked them
+                on the Confluence page, pull those approvals back with the button beside this one.
               </p>
             ) : null}
 

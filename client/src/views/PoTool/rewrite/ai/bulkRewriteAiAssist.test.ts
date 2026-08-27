@@ -223,3 +223,45 @@ describe('buildBulkRewritePrompts — a second pass adds to the first', () => {
     expect(withoutField).toEqual(withNull);
   });
 });
+
+describe('buildBulkRewritePrompts — sized for the chat box it is pasted into', () => {
+  const original = {
+    summary: 'Review the OEC file specs',
+    description: 'D'.repeat(1200),
+    acceptanceCriteria: 'AC'.repeat(100),
+    capturedAtIso: '2026-08-21T00:00:00.000Z',
+  };
+
+  /** The shared material a real run carries: one condensed page and two pasted emails. */
+  const sources = [
+    { kind: 'paste' as const, id: 'p-1', label: 'FW: HS MAPD May EDV Results', text: 'F'.repeat(2009) },
+    { kind: 'paste' as const, id: 'p-2', label: 'RE: HS MAPD May EDV Results', text: 'R'.repeat(2995) },
+  ];
+
+  it('keeps every part small enough to survive a paste into a chat box', () => {
+    // At sixteen thousand the paste was cut short by the assistant's own input limit, and because the
+    // issues come after the notes, what got cut was the issues (GH #376).
+    const items = ['A-1', 'A-2', 'A-3', 'A-4', 'A-5'].map((jiraKey) => ({ jiraKey, original }));
+
+    buildBulkRewritePrompts(items, sources).forEach((prompt) => {
+      expect(prompt.length).toBeLessThan(10000);
+    });
+  });
+
+  it('never builds a part with no issues in it, however much material there is', () => {
+    // A part carrying only instructions and notes asks for a re-write of nothing, and gets one.
+    const items = ['A-1', 'A-2', 'A-3'].map((jiraKey) => ({ jiraKey, original }));
+
+    buildBulkRewritePrompts(items, sources).forEach((prompt) => {
+      expect(prompt).toMatch(/--- A-\d+ ---/);
+    });
+  });
+
+  it('still covers every issue across the parts', () => {
+    const items = ['A-1', 'A-2', 'A-3', 'A-4', 'A-5'].map((jiraKey) => ({ jiraKey, original }));
+
+    const joined = buildBulkRewritePrompts(items, sources).join('\n');
+
+    items.forEach((item) => expect(joined).toContain(`--- ${item.jiraKey} ---`));
+  });
+});

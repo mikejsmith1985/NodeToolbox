@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **&ldquo;Write approved to Jira&rdquo; was undoing the approving.** It read the Confluence review page
+  first and took that page&#39;s tick boxes as the truth for every item &mdash; so a PO who approved in
+  Step 4 and pressed it had their approvals silently downgraded to &ldquo;reviewing&rdquo;, and was then
+  told no rows were ticked. An action named for writing approvals was destroying them.
+  Writing now submits what was approved **here, in this tab**, and needs no Confluence page at all. The
+  button says how many it will write. Taking a reviewer&#39;s ticks off the page is still available and
+  still able to un-approve &mdash; on that page an un-ticked row genuinely means not approved &mdash;
+  but it is now its own button, so a downgrade is something somebody asked for rather than a side effect
+  of trying to submit.
+- **A prompt too large to paste came back empty, and said nothing.** At a sixteen-thousand-character cap
+  the paste was cut short by the assistant&#39;s own input limit; because the issues sit after the shared
+  notes, what got cut was the issues, and the reply arrived as an empty item list. Toolbox then reported
+  nothing at all, sending the operator looking for a fault in their own reply.
+  The cap is now sized for the chat box rather than the model behind it, and the shared-material budget
+  with it, so every part carries at least one issue and comfortably survives a paste. A reply that parses
+  but contains no issues is now **named as such**, with the truncated paste given as the likely cause.
+- **The shared-material budget is shared by size, not split evenly.** An even split gave a
+  2,009-character email and a 2,995-character one 1,830 each &mdash; cutting the short one by 179
+  characters while 179 characters of its own allowance went unused. Documents that fit are now paid in
+  full first, shortest first, and what remains is shared among the ones actually competing for it. One
+  long document still cannot swallow a short decisive note, which is what the even split was there for.
+
 ### Changed
 - **A second pass now re-writes the requirement whole, rather than bolting the new notes onto the end.**
   The instruction told the assistant to &ldquo;EXTEND&rdquo; the draft and &ldquo;keep what is still

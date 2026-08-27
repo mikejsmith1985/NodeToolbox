@@ -15,8 +15,15 @@ import type { DocumentExtract } from './documentExtract.ts';
 
 export const BULK_REWRITE_REPLY_KIND = 'featureRewriteBatch';
 
-/** One prompt is capped here; a batch exceeding it splits across an ordered set of prompts. */
-const MAX_CHARS_PER_PROMPT = 16000;
+/**
+ * One prompt is capped here; a batch exceeding it splits across an ordered set of prompts.
+ *
+ * Sized for the CHAT BOX it gets pasted into, not for the model behind it. At sixteen thousand the
+ * paste was silently cut short by the assistant's own input limit — and because the issues come after
+ * the shared material, what got cut was the issues. The reply then came back as an empty item list,
+ * with nothing on either side saying why (GH #376).
+ */
+const MAX_CHARS_PER_PROMPT = 9000;
 /** Each issue's source text is capped so one long issue cannot crowd out the rest (matches composition). */
 const MAX_SOURCE_CHARS = 4000;
 
