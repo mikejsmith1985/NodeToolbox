@@ -17,6 +17,7 @@ import { buildFeatureChangeSendPayload, buildScopeChangeSendPayload, surfaceForT
 import { HygieneReportTab } from './HygieneReportTab.tsx'
 import { PersonalFlowTab } from './PersonalFlowTab.tsx'
 import { IssueAgingTab } from './IssueAgingTab.tsx'
+import ReworkTab from './ReworkTab.tsx'
 import { IssueFlowTab } from './IssueFlowTab.tsx'
 import { findDefaultPiNameForDate } from '../ArtView/hooks/artHelpers.ts'
 import type {
@@ -59,6 +60,7 @@ const TAB_OPTIONS: { key: ReportsHubTab; label: string }[] = [
   { key: 'personalFlow', label: '⏱️ Personal Flow' },
   { key: 'issueFlow', label: '🔁 Flow Analysis' },
   { key: 'issueAging', label: '⏳ Aging' },
+  { key: 'rework', label: '🔁 Rework' },
 ]
 
 const ALL_PIS_LABEL = 'All PIs'
@@ -180,6 +182,13 @@ const TAB_DESCRIPTIONS: Record<ReportsHubTab, string[]> = {
     'Lead time, cycle time and the pre-work wait are always shown together, in working days; stage durations sum exactly to the totals, so the figures can be checked by hand against Jira history.',
     'Time an issue spent unassigned appears as its own Unassigned stage and is never charged to whoever picked it up next.',
     'Use for: finding where delivery actually stalls, separating queue time from hands-on work, and validating the per-person Personal Flow figures.',
+  ],
+  rework: [
+    'Rework report: every issue that reached the team’s delivery line (“Ready for QA” or beyond) and then moved back out of it, read from Jira changelog history.',
+    'Reports how many came back, how many round trips, how many working days they spent out of delivery, and which status they fell back into — the closest the history gets to naming which stage found the defect.',
+    'The rate is stated against the issues that REACHED delivery, not everything scanned: an issue that never got there had no opportunity to come back.',
+    'Points are the size of the issues that returned, which is the scale of the cost rather than a measurement of it — the second pass is almost never re-estimated.',
+    'Use for: pricing late defect discovery, making the case for testing capacity, and showing what a story that stays open through the whole downstream chain absorbs for free.',
   ],
   issueAging: [
     'Open-item aging report: for a scope JQL, ages every NOT-Done issue by the calendar days since it was created, grouped by issue type.',
@@ -2623,6 +2632,8 @@ export default function ReportsHubView() {
         return <IssueFlowTab teamFilter={state.teamFilter} />
       case 'issueAging':
         return <IssueAgingTab />
+      case 'rework':
+        return <ReworkTab />
       default:
         return null
     }

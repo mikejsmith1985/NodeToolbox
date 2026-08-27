@@ -8,6 +8,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **A Rework report, in Reports Hub: what the work done twice actually cost.** A story that stays open
+  until the whole downstream chain finishes absorbs its own rework for free. A defect comes back from
+  testing, the developer fixes it inside the open ticket, no points are added, and the round trip is
+  recorded nowhere. The team then cannot say what late defect discovery costs them &mdash; and an
+  argument for testing capacity with no number attached is not an argument.
+  The evidence was in the changelog all along. The report finds every issue that reached the team&#39;s
+  own delivery line (&ldquo;Ready for QA&rdquo; or beyond) and then moved back out of it, and reports
+  how many came back, how many round trips, how many **working** days they spent away, and **which
+  status they fell back into** &mdash; the closest the history gets to naming which stage found the
+  defect late.
+  Three rules keep it honest. Only a return **from delivery** counts, because moving between two
+  in-progress statuses is ordinary work and counting it would inflate the number until nobody believed
+  any of it. An issue still out is **counted and said to be still out**, since waiting for it to come
+  back would under-report exactly the worst cases. And the rate is stated against the issues that
+  **reached** delivery, not everything scanned &mdash; one that never got there had no opportunity to
+  return.
+  The points figure says of itself that it is the scale of the cost and not a measurement: nobody
+  re-estimated the second pass, which is the whole problem, and a number presented as exact would be
+  the first thing challenged in the room. A scan that hits its cap says so rather than letting a sample
+  be quoted as the whole scope.
+
+### Added
 - **The Bulk Re-write tab now tells you what to do next.** Five numbered panels, each with its own
   controls, all looked equally ready to be pressed. That answers &ldquo;what are the steps&rdquo;, which
   is not the question anybody had; the question is <em>what do I do right now</em>, and nothing on the

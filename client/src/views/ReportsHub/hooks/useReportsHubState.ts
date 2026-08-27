@@ -55,6 +55,7 @@ export type ReportsHubTab =
   | 'personalFlow'
   | 'issueFlow'
   | 'issueAging'
+  | 'rework'
 
 /** A single ART team configuration loaded from localStorage. */
 export interface ArtTeamConfig {
