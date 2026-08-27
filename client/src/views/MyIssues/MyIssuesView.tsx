@@ -20,6 +20,7 @@ import { detectLinkedPairs, collectLinkedSnowSysIds } from '../../utils/issueLin
 import { EmbeddedGitSyncPanel, EmbeddedTimeTrackingPanel } from './EmbeddedWorkspacePanels.tsx';
 import HygieneView from '../Hygiene/HygieneView.tsx';
 import MentionsTab from './MentionsTab.tsx';
+import CheckInTab from './checkIn/CheckInTab.tsx';
 import { LinkedIssuePair } from './LinkedIssuePair.tsx';
 import { SnowIssueRow } from './SnowIssueRow.tsx';
 import { StatusMappingEditor } from './StatusMappingEditor.tsx';
@@ -85,11 +86,12 @@ const AGING_WARN_DAYS = 5;
 const AGING_STALE_DAYS = 10;
 const MS_PER_DAY = 86_400_000;
 
-type MyIssuesTab = 'today' | 'report' | 'mentions' | 'hygiene' | 'time' | 'gitsync' | 'settings';
+type MyIssuesTab = 'today' | 'report' | 'checkin' | 'mentions' | 'hygiene' | 'time' | 'gitsync' | 'settings';
 
 const MY_ISSUES_TABS: { key: MyIssuesTab; label: string }[] = [
   { key: 'today', label: 'Today' },
   { key: 'report', label: 'Report' },
+  { key: 'checkin', label: 'Check-in' },
   { key: 'mentions', label: 'Mentions' },
   { key: 'hygiene', label: 'Hygiene' },
   { key: 'time', label: 'Time Tracking' },
@@ -655,6 +657,18 @@ function deriveSubjectDefaultRole(
 }
 
 /** Returns the display name for the "Viewing as/team" banner, or null for the plain viewer. */
+/** How to name the persona subject in a message written to them. */
+function resolveSubjectName(subject: ReportSubject): string {
+  if (subject.kind === 'user') {
+    return subject.displayName;
+  }
+  if (subject.kind === 'team') {
+    return `the ${subject.teamName} team`;
+  }
+  // The viewer checking in on themselves is a real use — reviewing your own plate before a standup.
+  return 'you';
+}
+
 function resolveSubjectBannerLabel(subject: ReportSubject): string | null {
   if (subject.kind === 'user') {
     return `Viewing as ${subject.displayName}`;
@@ -1318,6 +1332,17 @@ export default function MyIssuesView() {
       )}
 
       {/* ── Mentions tab ── */}
+      {/* ── Check-in tab: whoever the persona picker is pointed at, and the message to send them ── */}
+      {activeTab === 'checkin' && (
+        <section id="my-issues-checkin-panel" role="tabpanel" aria-labelledby="my-issues-checkin-tab">
+          <CheckInTab
+            subject={state.subject}
+            memberIdentifiers={state.subjectMemberIdentifiers}
+            subjectName={resolveSubjectName(state.subject)}
+          />
+        </section>
+      )}
+
       {activeTab === 'mentions' && (
         <section id="my-issues-mentions-panel" role="tabpanel" aria-labelledby="my-issues-mentions-tab">
           <MentionsTab />

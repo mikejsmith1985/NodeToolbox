@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **A Check-in tab in My Issues: the message you were going to write anyway.** The persona picker
+  already answers &ldquo;whose work?&rdquo;. This takes that answer, gathers the detail a status
+  conversation actually needs, and drafts a short message to paste into a chat and send.
+  For each open item it reads how long it has sat at its current **stage**, when anything last changed
+  on it, whether it is past its due date, the **Feature** it delivers, and the **latest comments** —
+  because a status question whose answer is already in the newest comment wastes somebody&#39;s
+  afternoon. The plate is shown before the message is drafted, most pressing first: overdue leads, then
+  whatever has sat longest without moving.
+  **Three rules shape what comes back.** The assistant never states what an item&#39;s status IS — it
+  has read a ticket, not talked to anyone, and the whole reason for sending the message is that only
+  the developer knows; anything inferred is phrased as something to confirm. It asks **one specific
+  question** per item that needs one, because &ldquo;still waiting on the Axway change?&rdquo; is worth
+  sending and &ldquo;please provide a status update&rdquo; is not. And an item that looks fine is
+  **said to look fine**, collapsed into one closing line — a check-in that queries everything teaches
+  the reader to skim it, and the next real question gets skimmed too.
+  The message is **plain text, never Markdown**, because Markdown renders in some chat clients and
+  shows as raw asterisks in others. It is fully editable before it goes anywhere, and a question about
+  a ticket the person does not hold is **dropped rather than sent** — there is no recovering from that
+  once it is in a chat window. Nothing is written to Jira and nothing sends itself.
+  Time is measured from Jira&#39;s own `statuscategorychangedate`, which costs no changelog fetch and
+  measures the thing that matters: an item shuffled between two in-progress statuses has not started
+  moving again, and this does not pretend it has.
+
 ### Fixed
 - **Defects no longer fall into &ldquo;No Feature&rdquo; on the release notes.** Most items say which
   Feature they deliver; defects do not. A defect found in testing might be linked to the development
