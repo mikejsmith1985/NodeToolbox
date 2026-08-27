@@ -23,6 +23,7 @@ import { buildBulkRewritePrompts, parseBulkRewriteReply } from './ai/bulkRewrite
 import { usePoHygieneContext } from '../hooks/usePoHygieneContext';
 import BeforeAfterRow from './BeforeAfterRow.tsx';
 import CondenseMaterialPanel from './CondenseMaterialPanel.tsx';
+import { readRewriteJourney } from './rewriteJourney.ts';
 import type { DocumentExtract } from './ai/documentExtract.ts';
 import type { CorpusBrief } from './ai/corpusBrief.ts';
 import { captureOriginals, parseIssueKeys } from './captureOriginals';
@@ -212,6 +213,9 @@ export default function BulkRewriteTab({ dashboardTeamProfileId, selectedPiName 
   const sharedSources = batch?.sharedSources ?? [];
   /** What pressing "Write approved to Jira" will actually write — approved HERE, in this tab. */
   const approvedItems = (batch?.items ?? []).filter((item) => item.state === 'approved');
+  // Where the run has got to, and the one thing to do next. Worked out in one place so the strip and
+  // the panels below can never disagree about which step somebody is on.
+  const journey = readRewriteJourney(batch);
   const prompts = useMemo(
     () => buildBulkRewritePrompts(
       // The current proposal rides along so a re-run after adding notes EXTENDS the draft rather than
@@ -776,6 +780,30 @@ export default function BulkRewriteTab({ dashboardTeamProfileId, selectedPiName 
 
       {batch ? (
         <>
+          {/* Five panels that all look equally ready to be pressed answer "what are the steps";
+              nobody was asking that. This answers the question people actually have, which is what
+              to do RIGHT NOW (GH #376). */}
+          <section className={styles.panel} aria-label="Where you are">
+            <ol className={styles.journeyStrip} aria-label="Progress">
+              {journey.steps.map((step) => (
+                <li
+                  className={`${styles.journeyStep} ${styles[`journey_${step.state}`] ?? ''}`}
+                  key={step.number}
+                  aria-current={step.state === 'current' ? 'step' : undefined}
+                >
+                  <span className={styles.journeyMark}>
+                    {step.state === 'done' ? '✓' : step.state === 'skipped' ? '–' : step.number}
+                  </span>
+                  {step.label}
+                </li>
+              ))}
+            </ol>
+            <p className={styles.journeyNextAction}>
+              <strong>{journey.isComplete ? 'Finished. ' : 'Do this next: '}</strong>
+              {journey.nextAction}
+            </p>
+          </section>
+
           {/* ── Batch header + honest states ── */}
           <section className={styles.panel}>
             <h3 className={styles.panelTitle}>{batch.name}</h3>

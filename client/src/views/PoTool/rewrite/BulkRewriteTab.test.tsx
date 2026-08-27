@@ -57,6 +57,7 @@ import { setAiAssistUnlocked } from '../../../store/aiAssistStore';
 import BulkRewriteTab from './BulkRewriteTab.tsx';
 import { saveBatch } from './rewriteBatchStore.ts';
 import { PdfReadError } from '../sources/pdfSource.ts';
+import type { ItemState as ItemStateForTest } from './rewriteBatchModel.ts';
 
 beforeEach(() => {
   mockJiraGet.mockReset();
@@ -927,5 +928,92 @@ describe('BulkRewriteTab approving', () => {
     await user.click(await screen.findByRole('button', { name: 'Open' }));
 
     expect(await screen.findByRole('button', { name: 'Pull approvals from the page' })).toBeDisabled();
+  });
+});
+
+// ── The guided strip (GH #376) ─────────────────────────────────────────────
+
+describe('BulkRewriteTab guided strip', () => {
+  /** A batch whose items are in the given state. */
+  function seedBatchInState(id: string, state: ItemStateForTest, hasProposal: boolean): void {
+    saveBatch({
+      id,
+      name: 'Guided',
+      teamProfileId: 'team-1',
+      createdAtIso: '2026-08-21T00:00:00.000Z',
+      updatedAtIso: '2026-08-21T00:00:00.000Z',
+      items: [{
+        jiraKey: 'ABC-1',
+        original: { summary: 'S', description: 'd', acceptanceCriteria: 'a', capturedAtIso: '2026-08-21T00:00:00.000Z' },
+        proposed: hasProposal ? { description: 'Description:\nx', acceptanceCriteria: 'ac', isEdited: false } : null,
+        state,
+        captureError: null,
+        submitResult: null,
+      }],
+    });
+  }
+
+  it('names the one thing to do next, above everything else', async () => {
+    // Five panels that all look equally ready to be pressed answer "what are the steps"; nobody was
+    // asking that.
+    const user = userEvent.setup();
+    seedBatchInState('guided-1', 'captured', false);
+
+    render(<BulkRewriteTab dashboardTeamProfileId="team-1" />);
+    await user.click(await screen.findByRole('button', { name: 'Open' }));
+
+    expect(await screen.findByText(/Do this next:/)).toBeInTheDocument();
+    expect(screen.getByText(/Add the notes these issues should be re-written from/)).toBeInTheDocument();
+  });
+
+  it('shows all five steps, so the shape of the run is never a surprise', async () => {
+    const user = userEvent.setup();
+    seedBatchInState('guided-2', 'captured', false);
+
+    render(<BulkRewriteTab dashboardTeamProfileId="team-1" />);
+    await user.click(await screen.findByRole('button', { name: 'Open' }));
+
+    const strip = await screen.findByLabelText('Progress');
+
+    ['Notes', 'Condense', 'Draft', 'Review', 'Send'].forEach((label) => {
+      expect(strip).toHaveTextContent(label);
+    });
+  });
+
+  it('marks exactly one step as the one you are on', async () => {
+    const user = userEvent.setup();
+    seedBatchInState('guided-3', 'proposed', true);
+
+    render(<BulkRewriteTab dashboardTeamProfileId="team-1" />);
+    await user.click(await screen.findByRole('button', { name: 'Open' }));
+
+    const strip = await screen.findByLabelText('Progress');
+    const currentSteps = within(strip).getAllByRole('listitem').filter(
+      (step) => step.getAttribute('aria-current') === 'step',
+    );
+
+    expect(currentSteps).toHaveLength(1);
+    expect(currentSteps[0]).toHaveTextContent('Review');
+  });
+
+  it('moves the instruction on as the run progresses', async () => {
+    const user = userEvent.setup();
+    seedBatchInState('guided-4', 'approved', true);
+
+    render(<BulkRewriteTab dashboardTeamProfileId="team-1" />);
+    await user.click(await screen.findByRole('button', { name: 'Open' }));
+
+    expect(await screen.findByText(/Write N approved to Jira/)).toBeInTheDocument();
+  });
+
+  it('says the run is finished rather than pointing at another step', async () => {
+    const user = userEvent.setup();
+    seedBatchInState('guided-5', 'submitted', true);
+
+    render(<BulkRewriteTab dashboardTeamProfileId="team-1" />);
+    await user.click(await screen.findByRole('button', { name: 'Open' }));
+
+    expect(await screen.findByText(/Finished\./)).toBeInTheDocument();
+    expect(screen.queryByText(/Do this next:/)).not.toBeInTheDocument();
   });
 });

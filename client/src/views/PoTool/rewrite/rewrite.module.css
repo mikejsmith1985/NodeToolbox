@@ -331,3 +331,78 @@
   flex-wrap: wrap;
   gap: 8px;
 }
+
+/* ── The guided strip: where you are, and what to do next ────────────────── */
+
+/* Five steps read left to right, wrapping on a narrow window rather than scrolling
+   sideways — this is the one thing on the page that must be readable at a glance. */
+.journeyStrip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 10px;
+  padding: 0;
+  list-style: none;
+}
+
+.journeyStep {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+/* The number, tick or dash. Fixed width so the labels line up whatever the mark is. */
+.journeyMark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--color-surface-2);
+  font-size: var(--font-size-xs, 11px);
+  font-weight: 700;
+}
+
+.journey_done {
+  color: var(--color-text-primary);
+}
+
+.journey_done .journeyMark {
+  background: var(--color-success, #2f7d4f);
+  color: #ffffff;
+}
+
+/* The live step is the only emphasised thing in the strip. Emphasising more than one
+   would put us back where we started, with everything shouting equally. */
+.journey_current {
+  border-color: var(--color-accent);
+  color: var(--color-text-primary);
+  font-weight: 700;
+}
+
+.journey_current .journeyMark {
+  background: var(--color-accent);
+  color: #ffffff;
+}
+
+/* Skipped is stated, not hidden: work nobody needed is different from work left undone. */
+.journey_skipped {
+  opacity: 0.65;
+}
+
+.journey_waiting {
+  opacity: 0.55;
+}
+
+.journeyNextAction {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+  line-height: 1.5;
+}

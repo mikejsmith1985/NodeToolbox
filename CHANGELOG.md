@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **The Bulk Re-write tab now tells you what to do next.** Five numbered panels, each with its own
+  controls, all looked equally ready to be pressed. That answers &ldquo;what are the steps&rdquo;, which
+  is not the question anybody had; the question is <em>what do I do right now</em>, and nothing on the
+  screen answered it.
+  A strip at the top of an open batch shows all five steps with a tick, a number or a dash, marks the
+  **one** you are on, and states that step&#39;s action in a sentence: which button to press, what
+  happens when you do, and what it will look like when it has worked. It moves on by itself as the run
+  progresses, and says &ldquo;Finished&rdquo; rather than pointing at a sixth thing when there is
+  nothing left.
+  Steps nobody needed are marked **skipped**, not done &mdash; notes are optional when an issue is
+  re-written from its own text, and condensing is pointless with no documents. Claiming those as
+  complete would be claiming work that never happened. And no step is ever **locked**: re-running the
+  draft after approving is a sensible thing to do, and a guided flow that forbade it would be a worse
+  tool than the one that confused people.
+  Where the run has got to is worked out in one place, so the strip and the panels beneath it cannot
+  disagree about which step you are on.
+
 ### Changed
 - **Step 2 says exactly what to press, and folds away once it is done.** It explained in prose why
   condensing matters and left the operator unsure whether they had done it right at all. It now numbers
