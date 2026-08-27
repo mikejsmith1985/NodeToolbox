@@ -65,7 +65,7 @@ describe('CondenseMaterialPanel', () => {
     renderPanel({ sources: [pasteSource('paste-1', 'Billing Grid', 'x'.repeat(148000))] });
 
     expect(screen.getByText(/runs to 148,000 characters/)).toBeInTheDocument();
-    expect(screen.getByText(/a prompt holds about/)).toBeInTheDocument();
+    expect(screen.getByText(/One prompt holds about/)).toBeInTheDocument();
   });
 
   it('says which documents have been condensed and which have not', () => {
@@ -176,5 +176,110 @@ describe('CondenseMaterialPanel', () => {
     });
 
     expect(screen.queryByLabelText(/Consolidate/)).not.toBeInTheDocument();
+  });
+});
+
+// ── Folding away once the work is done, and saying how to do it (GH #376) ──
+
+describe('CondenseMaterialPanel guidance and folding', () => {
+  beforeEach(() => {
+    useAiAssistStore.setState({ isAiAssistUnlocked: true });
+  });
+
+  /** A brief, so the panel counts the consolidation as finished. */
+  function builtBrief(extractCount: number): CorpusBrief {
+    return {
+      overview: 'The consolidated view.',
+      decisions: [], requirements: [], openQuestions: [], conflicts: [],
+      extractCount,
+      builtAtIso: '2026-08-27T00:00:00.000Z',
+    };
+  }
+
+  it('spells out what to press, and how to tell that it took', () => {
+    // "It needs to be WAY more specific" — a prose paragraph left somebody unsure whether they had
+    // done it right at all.
+    renderPanel();
+
+    const steps = screen.getByLabelText('How to condense');
+
+    expect(steps).toHaveTextContent('Condense this one');
+    expect(steps).toHaveTextContent('Read the reply');
+    expect(steps).toHaveTextContent('condensed to N points');
+  });
+
+  it('warns that skipping a part of a split document loses that part', () => {
+    renderPanel({ sources: [pasteSource('paste-1', 'Big', 'x'.repeat(30000))] });
+
+    expect(screen.getByLabelText('How to condense')).toHaveTextContent('every');
+  });
+
+  it('counts the work in its own heading, so progress reads at a glance', () => {
+    renderPanel({
+      sources: [pasteSource('paste-1', 'A', 'a'), pasteSource('paste-2', 'B', 'b')],
+      extracts: { 'paste-1': extract('paste-1', 'A') },
+    });
+
+    expect(screen.getByText(/Step 2 — Condense the material \(1 of 2 done\)/)).toBeInTheDocument();
+  });
+
+  it('stays open while a document is still to be condensed', () => {
+    renderPanel({ sources: [pasteSource('paste-1', 'A', 'a')] });
+
+    expect(screen.getByLabelText('How to condense')).toBeInTheDocument();
+  });
+
+  it('stays open when everything is condensed but nothing is consolidated yet', () => {
+    // Folding away here would hide the one step that catches two documents contradicting each other.
+    renderPanel({
+      sources: [pasteSource('paste-1', 'A', 'a'), pasteSource('paste-2', 'B', 'b')],
+      extracts: { 'paste-1': extract('paste-1', 'A'), 'paste-2': extract('paste-2', 'B') },
+    });
+
+    expect(screen.getByLabelText(/Consolidate 2 extracts/)).toBeInTheDocument();
+  });
+
+  it('folds away once there is nothing left to do here', () => {
+    renderPanel({
+      sources: [pasteSource('paste-1', 'A', 'a'), pasteSource('paste-2', 'B', 'b')],
+      extracts: { 'paste-1': extract('paste-1', 'A'), 'paste-2': extract('paste-2', 'B') },
+      brief: builtBrief(2),
+    });
+
+    expect(screen.queryByLabelText('How to condense')).not.toBeInTheDocument();
+    expect(screen.getByText(/carried by every prompt in Step 3/)).toBeInTheDocument();
+  });
+
+  it('hides nothing — the folded heading still says what is feeding the prompts', () => {
+    renderPanel({
+      sources: [pasteSource('paste-1', 'A', 'a'), pasteSource('paste-2', 'B', 'b')],
+      extracts: { 'paste-1': extract('paste-1', 'A'), 'paste-2': extract('paste-2', 'B') },
+      brief: builtBrief(2),
+    });
+
+    expect(screen.getByText(/\(2 of 2 done\)/)).toBeInTheDocument();
+  });
+
+  it('can be opened again, because what fed a draft is a fair thing to go back and look at', async () => {
+    const user = userEvent.setup();
+    renderPanel({
+      sources: [pasteSource('paste-1', 'A', 'a'), pasteSource('paste-2', 'B', 'b')],
+      extracts: { 'paste-1': extract('paste-1', 'A'), 'paste-2': extract('paste-2', 'B') },
+      brief: builtBrief(2),
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Show' }));
+
+    expect(screen.getByLabelText('How to condense')).toBeInTheDocument();
+  });
+
+  it('can be folded away by hand while work is still outstanding', async () => {
+    const user = userEvent.setup();
+    renderPanel({ sources: [pasteSource('paste-1', 'A', 'a')] });
+
+    await user.click(screen.getByRole('button', { name: 'Hide' }));
+
+    expect(screen.queryByLabelText('How to condense')).not.toBeInTheDocument();
+    expect(screen.getByText(/1 document\(s\) still to condense/)).toBeInTheDocument();
   });
 });

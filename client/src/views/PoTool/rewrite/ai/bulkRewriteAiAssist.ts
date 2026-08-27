@@ -23,7 +23,7 @@ export const BULK_REWRITE_REPLY_KIND = 'featureRewriteBatch';
  * the shared material, what got cut was the issues. The reply then came back as an empty item list,
  * with nothing on either side saying why (GH #376).
  */
-const MAX_CHARS_PER_PROMPT = 9000;
+export const MAX_CHARS_PER_PROMPT = 9000;
 /** Each issue's source text is capped so one long issue cannot crowd out the rest (matches composition). */
 const MAX_SOURCE_CHARS = 4000;
 

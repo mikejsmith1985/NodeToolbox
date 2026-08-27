@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Step 2 says exactly what to press, and folds away once it is done.** It explained in prose why
+  condensing matters and left the operator unsure whether they had done it right at all. It now numbers
+  the actions, names the buttons, and says what success looks like &mdash; the document&#39;s line
+  changes to &ldquo;condensed to N points&rdquo;. A split document warns that skipping a part loses that
+  part of the document.
+  The heading counts progress (&ldquo;2 of 3 done&rdquo;) and the whole panel folds away once nothing
+  here can still be done &mdash; including the consolidation, which would otherwise have been hidden the
+  moment two extracts existed. Folded, the heading still says what is feeding the prompts, so nothing is
+  concealed, and it re-opens on request: what fed a draft is a fair thing to go back and look at.
+  The copy also no longer claims a prompt holds sixteen thousand characters. It reads the real cap and
+  the real notes budget, so it cannot drift out of step with them again.
+
 ### Fixed
 - **&ldquo;Write approved to Jira&rdquo; was undoing the approving.** It read the Confluence review page
   first and took that page&#39;s tick boxes as the truth for every item &mdash; so a PO who approved in

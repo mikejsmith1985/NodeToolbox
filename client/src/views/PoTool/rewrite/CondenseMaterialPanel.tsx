@@ -27,6 +27,8 @@ import {
 } from './ai/documentExtract.ts';
 import type { DocumentExtract } from './ai/documentExtract.ts';
 import { buildCorpusBriefPrompt, parseCorpusBriefReply, renderCorpusBrief } from './ai/corpusBrief.ts';
+import { MAX_CHARS_PER_PROMPT } from './ai/bulkRewriteAiAssist.ts';
+import { MAX_SHARED_MATERIAL_CHARS } from './ai/sharedMaterial.ts';
 import type { CorpusBrief } from './ai/corpusBrief.ts';
 import { describeSourceTitle, readSourceText } from '../sources/sourceModel.ts';
 import type { ReferencedSource } from '../sources/sourceModel.ts';
@@ -64,6 +66,8 @@ export default function CondenseMaterialPanel({
   onBuildBrief,
 }: CondenseMaterialPanelProps) {
   const [openSourceId, setOpenSourceId] = useState<string | null>(null);
+  // null means "follow the work": open while anything is outstanding, closed once nothing is.
+  const [manualExpansion, setManualExpansion] = useState<boolean | null>(null);
 
   if (sources.length === 0) {
     return null;
@@ -73,6 +77,15 @@ export default function CondenseMaterialPanel({
   const builtExtracts = sources
     .map((source) => extracts[source.id])
     .filter((extract): extract is DocumentExtract => extract !== undefined);
+  const condensedCount = builtExtracts.length;
+  const outstandingCount = sources.length - condensedCount;
+  // Consolidating is outstanding work too. Folding the panel away with two extracts and no brief
+  // would hide the one step that catches two documents contradicting each other.
+  const canStillConsolidate = condensedCount >= 2 && brief === null;
+  // Follows the work by default: open while anything can still be done here, folded away once
+  // nothing can. A manual Show/Hide wins, because somebody looking back at what fed a draft is
+  // entitled to see it.
+  const isExpanded = manualExpansion ?? (outstandingCount > 0 || canStillConsolidate);
   const openSource = sources.find((source) => source.id === openSourceId) ?? null;
   const openSourcePrompts = openSource === null ? [] : buildDocumentExtractPrompts(openSource);
 
@@ -103,13 +116,57 @@ export default function CondenseMaterialPanel({
 
   return (
     <section className={styles.panel} aria-label="Condense shared material">
-      <h3 className={styles.panelTitle}>Step 2 — Condense the material</h3>
+      <div className={styles.buttonRow}>
+        <h3 className={styles.panelTitle}>
+          {`Step 2 — Condense the material (${condensedCount} of ${sources.length} done)`}
+        </h3>
+        <button className={styles.secondaryButton} type="button" onClick={() => setManualExpansion(!isExpanded)}>
+          {isExpanded ? 'Hide' : 'Show'}
+        </button>
+      </div>
+
+      {/* Once every document is condensed there is nothing to DO here, and a list of finished work
+          sits between the operator and Step 3. The count above still says what is feeding the
+          prompts, so nothing is hidden — only folded away. */}
+      {!isExpanded ? (
+        <p className={styles.helpText}>
+          {outstandingCount === 0
+            ? 'Everything here is condensed and is carried by every prompt in Step 3.'
+            : `${outstandingCount} document(s) still to condense.`}
+        </p>
+      ) : null}
+
+      {isExpanded ? (
+        <>
       <p className={styles.panelSubtitle}>
-        {`This material runs to ${formatCharacterCount(rawCorpusChars)} characters and a prompt holds about `}
-        {'16,000 — with the issues in it too. Added raw, each document would get a couple of hundred '}
-        {'characters and every Feature would be re-written from almost nothing. Condense each document '}
-        {'on its own, then consolidate them into one brief the re-write can carry whole.'}
+        {`This material runs to ${formatCharacterCount(rawCorpusChars)} characters. One prompt holds about `}
+        {`${formatCharacterCount(MAX_CHARS_PER_PROMPT)}, of which the notes may use `}
+        {`${formatCharacterCount(MAX_SHARED_MATERIAL_CHARS)} — the issues need the rest. Added raw, each `}
+        {'document would be cut to a fraction of itself. Condensing turns each one into a short list of '}
+        {'decisions, requirements, open questions and facts that fits whole.'}
       </p>
+
+      <ol className={styles.noticeList} aria-label="How to condense">
+        <li>
+          {'Press '}<strong>Condense this one</strong>{' on a document below, then '}
+          <strong>Build the prompt</strong>{' and '}<strong>Copy</strong>{' it into your assistant.'}
+        </li>
+        <li>
+          {'Paste the assistant’s WHOLE reply back and press '}<strong>Read the reply</strong>
+          {'. That document’s line changes to "condensed to N points" — that is how you know it took.'}
+        </li>
+        <li>
+          {'A document too long for one prompt is split into parts. Run '}<strong>every</strong>
+          {' part and paste each reply — later parts add to the extract rather than replacing it.'}
+        </li>
+        <li>{'Repeat for every document in the list. Small ones take one prompt each.'}</li>
+        <li>
+          {'With two or more condensed, press '}<strong>Consolidate…</strong>
+          {' to merge them into one brief that also names where they disagree. Optional, but it is the '}
+          {'only step that catches two documents contradicting each other.'}
+        </li>
+        <li>{'Go to Step 3. The prompts there now carry the condensed material instead of the raw text.'}</li>
+      </ol>
 
       {brief !== null ? (
         <div className={styles.infoBanner}>
@@ -167,8 +224,14 @@ export default function CondenseMaterialPanel({
               ? `Condense "${describeSourceTitle(openSource)}" — part ${partIndex + 1} of ${openSourcePrompts.length}`
               : `Condense "${describeSourceTitle(openSource)}"`}
             helpText={openSourcePrompts.length > 1
-              ? 'This document is too long for one prompt, so it is split. Run every part and paste each reply back — later parts add to the extract rather than replacing it.'
-              : 'Asks for this one document, reduced to its decisions, requirements, open questions and facts. Nothing reaches Jira.'}
+              ? `Part ${partIndex + 1} of ${openSourcePrompts.length}. Build it, copy it into your assistant, `
+                + 'paste the whole reply back and press Read the reply. Do the same for every part — each one '
+                + 'ADDS to this document’s extract rather than replacing it, so skipping a part loses that '
+                + 'section of the document. Nothing reaches Jira.'
+              : 'Build it, copy it into your assistant, then paste the whole reply back and press Read the '
+                + 'reply. It asks for this one document reduced to its decisions, requirements, open questions '
+                + 'and facts. The document’s line above will change to "condensed to N points" when it '
+                + 'has taken. Nothing reaches Jira.'}
             buildPrompt={() => promptText}
             onIngest={(replyText) => handleIngestExtract(openSource, replyText)}
           />
@@ -178,7 +241,10 @@ export default function CondenseMaterialPanel({
       {builtExtracts.length >= 2 ? (
         <PoAiPanel
           title={`Consolidate ${builtExtracts.length} extracts into one brief`}
-          helpText="Collapses what several documents say once, and — the part worth the whole exercise — names the places where two of them disagree instead of quietly picking one. The brief is what the re-writes are then made from."
+          helpText={'Build it, copy it into your assistant, then paste the whole reply back and press Read '
+            + 'the reply. It says what several documents agree on ONCE, and — the part worth the whole '
+            + 'exercise — names the places where two of them disagree instead of quietly picking one. The '
+            + 'brief then replaces the individual documents in every Step 3 prompt.'}
           buildPrompt={() => buildCorpusBriefPrompt(builtExtracts)}
           onIngest={handleIngestBrief}
         />
@@ -187,6 +253,8 @@ export default function CondenseMaterialPanel({
           {`Condense at least two documents to consolidate them into a brief (${builtExtracts.length} done).`}
         </p>
       )}
+        </>
+      ) : null}
     </section>
   );
 }
