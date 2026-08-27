@@ -5,10 +5,24 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { mockJiraGet, mockShowToast, mockImportKeys } = vi.hoisted(() => ({
+const { mockJiraGet, mockShowToast, mockImportKeys, mockReadPdf, mockReadMessage } = vi.hoisted(() => ({
   mockJiraGet: vi.fn(),
   mockShowToast: vi.fn(),
   mockImportKeys: vi.fn(),
+  mockReadPdf: vi.fn(),
+  mockReadMessage: vi.fn(),
+}));
+
+// The readers are proved against real property streams and real page items in their own unit tests.
+// Here only the wiring is under test, and loading pdf.js into jsdom to prove it would test nothing.
+vi.mock('../sources/pdfSource.ts', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../sources/pdfSource.ts')>()),
+  readPdfSource: mockReadPdf,
+}));
+
+vi.mock('../sources/outlookMessageSource.ts', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../sources/outlookMessageSource.ts')>()),
+  readOutlookMessageSource: mockReadMessage,
 }));
 
 // The PI Review import resolver is exercised in its own unit test; here we only prove the wiring.
@@ -42,6 +56,7 @@ vi.mock('../hooks/usePoHygieneContext', () => ({
 import { setAiAssistUnlocked } from '../../../store/aiAssistStore';
 import BulkRewriteTab from './BulkRewriteTab.tsx';
 import { saveBatch } from './rewriteBatchStore.ts';
+import { PdfReadError } from '../sources/pdfSource.ts';
 
 beforeEach(() => {
   mockJiraGet.mockReset();
@@ -641,5 +656,130 @@ describe('BulkRewriteTab refine loop', () => {
 
     await waitFor(() => expect(screen.getByText(/Applied 1 re-write/)).toBeInTheDocument());
     expect(screen.queryByText(/replaced wording you had edited by hand/)).not.toBeInTheDocument();
+  });
+});
+
+// ── A folder of PDFs and saved emails (GH #376) ────────────────────────────
+//
+// The material a Feature is written from is often a folder of .msg files and a stack of PDFs. Adding
+// them one at a time is how somebody stops bothering, and one bad file among thirty must not throw
+// away the twenty-nine that read perfectly well.
+
+describe('BulkRewriteTab file ingestion', () => {
+  /** One captured batch, which is what puts Step 1 on screen. */
+  function seedBatchForFiles(): void {
+    saveBatch({
+      id: 'batch-files',
+      name: 'Files',
+      teamProfileId: 'team-1',
+      createdAtIso: '2026-08-21T00:00:00.000Z',
+      updatedAtIso: '2026-08-21T00:00:00.000Z',
+      items: [{
+        jiraKey: 'ABC-1',
+        original: { summary: 'S', description: 'd', acceptanceCriteria: 'a', capturedAtIso: '2026-08-21T00:00:00.000Z' },
+        proposed: null,
+        state: 'captured',
+        captureError: null,
+        submitResult: null,
+      }],
+    });
+  }
+
+  /** Opens the seeded batch and hands back the file picker. */
+  async function openBatchAndFindPicker(): Promise<HTMLElement> {
+    const user = userEvent.setup();
+    seedBatchForFiles();
+    render(<BulkRewriteTab dashboardTeamProfileId="team-1" />);
+    await user.click(await screen.findByRole('button', { name: 'Open' }));
+    return screen.getByLabelText(/Files — PDFs, saved Outlook emails/);
+  }
+
+  it('takes a PDF and a saved email in one go', async () => {
+    mockReadPdf.mockResolvedValue({ kind: 'pdf', id: 'pdf-1', fileName: 'spec.pdf', pageCount: 40, text: 'x' });
+    mockReadMessage.mockResolvedValue({
+      kind: 'email',
+      id: 'email-1',
+      fileName: 'runout.msg',
+      subject: 'Runout ownership',
+      senderName: 'Reynolds, Kevin',
+      sentDate: 'Mon, 17 Aug 2026 14:02:11 -0400',
+      text: 'y',
+    });
+
+    const picker = await openBatchAndFindPicker();
+    fireEvent.change(picker, {
+      target: { files: [new File(['a'], 'spec.pdf'), new File(['b'], 'runout.msg')] },
+    });
+
+    const materialList = await screen.findByLabelText('Shared material');
+
+    await waitFor(() => expect(materialList).toHaveTextContent('spec.pdf'));
+    expect(materialList).toHaveTextContent('Runout ownership');
+  });
+
+  it('describes a PDF by its page count and an email by who sent it and when', async () => {
+    // "Which of these did that figure come from?" is the question a PO asks of their own workspace.
+    mockReadPdf.mockResolvedValue({ kind: 'pdf', id: 'pdf-1', fileName: 'spec.pdf', pageCount: 40, text: 'x' });
+    mockReadMessage.mockResolvedValue({
+      kind: 'email',
+      id: 'email-1',
+      fileName: 'runout.msg',
+      subject: 'Runout ownership',
+      senderName: 'Reynolds, Kevin',
+      sentDate: 'Mon, 17 Aug 2026',
+      text: 'y',
+    });
+
+    const picker = await openBatchAndFindPicker();
+    fireEvent.change(picker, {
+      target: { files: [new File(['a'], 'spec.pdf'), new File(['b'], 'runout.msg')] },
+    });
+
+    const materialList = await screen.findByLabelText('Shared material');
+
+    await waitFor(() => expect(materialList).toHaveTextContent('40 pages'));
+    expect(materialList).toHaveTextContent('Email from Reynolds, Kevin, Mon, 17 Aug 2026');
+  });
+
+  it('keeps the files that read and NAMES the one that did not', async () => {
+    // A single scan among thirty documents must not throw the other twenty-nine away, and "3 files
+    // failed" sends somebody hunting — the file and the reason say whether it was a scan or a lock.
+    mockReadPdf
+      .mockRejectedValueOnce(new PdfReadError('"scan.pdf" has no text in it — it is almost certainly a scan.'))
+      .mockResolvedValueOnce({ kind: 'pdf', id: 'pdf-1', fileName: 'good.pdf', pageCount: 2, text: 'x' });
+
+    const picker = await openBatchAndFindPicker();
+    fireEvent.change(picker, {
+      target: { files: [new File(['a'], 'scan.pdf'), new File(['b'], 'good.pdf')] },
+    });
+
+    const failures = await screen.findByLabelText('Files that could not be read');
+
+    expect(failures).toHaveTextContent('scan.pdf');
+    expect(failures).toHaveTextContent(/almost certainly a scan/);
+    expect(await screen.findByLabelText('Shared material')).toHaveTextContent('good.pdf');
+  });
+
+  it('mints a distinct id for every file added in the same run', async () => {
+    // Ids are minted against what has already been accepted in this run, before anything is saved —
+    // otherwise two files chosen together would both be "pdf-1" and one would overwrite the other.
+    mockReadPdf.mockImplementation(async (file: File, existing: readonly { id: string }[]) => ({
+      kind: 'pdf',
+      id: `pdf-${existing.length + 1}`,
+      fileName: file.name,
+      pageCount: 1,
+      text: 'x',
+    }));
+
+    const picker = await openBatchAndFindPicker();
+    fireEvent.change(picker, {
+      target: { files: [new File(['a'], 'one.pdf'), new File(['b'], 'two.pdf')] },
+    });
+
+    const materialList = await screen.findByLabelText('Shared material');
+
+    await waitFor(() => expect(materialList).toHaveTextContent('one.pdf'));
+    expect(materialList).toHaveTextContent('two.pdf');
+    expect(within(materialList).getAllByRole('button', { name: 'Remove' })).toHaveLength(2);
   });
 });

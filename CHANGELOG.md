@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **PDFs and saved Outlook emails go straight into the material a batch is written from.** The record
+  of what a Feature has to do is very often a stack of PDFs and a folder of `.msg` files somebody
+  dragged out of Outlook. Until now the only route in was to open each one, select all, and paste.
+  One picker now takes **as many files as you like at once** &mdash; PDFs, saved emails, spreadsheets
+  &mdash; because a folder is the actual unit of work and adding thirty documents one at a time is how
+  a person stops bothering.
+  **PDFs keep their page boundaries.** &ldquo;Page 12 says X&rdquo; is how a specification gets cited,
+  and an extract that cannot name the page it came from cannot be checked by whoever signs it off. Each
+  page arrives under its own marker, and a page with nothing on it is still numbered so page seven stays
+  page seven. A PDF with no text at all is **refused with the reason** &mdash; it is a scan, a picture of
+  words, and adding it would have put a document in the workspace that silently contributed nothing to
+  every prompt it rode in.
+  **Emails keep who sent them and when.** Those are usually the two facts that settle an argument about
+  what was agreed, so the sender, recipients and date head the body as text rather than sitting in a
+  field an assistant never sees. Every property is read in **both** encodings Outlook uses, because
+  reading only the Unicode form works perfectly until somebody hands you a file from another mail
+  client. The plain-text body is preferred and the HTML one is the fallback, reduced by the same
+  converter that keeps a pasted table&#39;s columns.
+  **One unreadable file does not throw the rest away.** Each failure is listed by **name and reason**,
+  beside the documents that read perfectly well &mdash; &ldquo;3 files failed&rdquo; sends somebody
+  hunting, while the file and the reason say whether it was a scan, a locked pack, or the wrong format.
+  **Framework-First**: `cfb` &mdash; the OLE2 container parser a `.msg` needs &mdash; already shipped
+  with the spreadsheet reader, so only the MAPI property decoding is new. `pdfjs-dist` is a new
+  dependency, dynamic-imported like SheetJS so its weight stays out of the main bundle.
+
 ### Fixed
 - **The Bulk Re-write tab led you to the wrong field, and then lit up the wrong button.** The panel
   that READS your notes in sat *inside* the panel that PUBLISHES the review document out, below it on

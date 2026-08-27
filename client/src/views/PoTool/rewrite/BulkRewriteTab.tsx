@@ -41,6 +41,8 @@ import { revertItems } from './rewriteRevert';
 import { ConfluenceSourceError, readConfluenceSource } from '../sources/confluenceSource';
 import { readPastedText } from '../sources/pastedRichText.ts';
 import { readWorkbookSource, WORKBOOK_FILE_ACCEPT, WorkbookReadError } from '../sources/workbookSource';
+import { PDF_FILE_ACCEPT, PdfReadError, readPdfSource } from '../sources/pdfSource.ts';
+import { EMAIL_FILE_ACCEPT, OutlookMessageReadError, readOutlookMessageSource } from '../sources/outlookMessageSource.ts';
 import {
   browseSharePointLibrary,
   fetchSharePointDocuments,
@@ -111,6 +113,8 @@ export default function BulkRewriteTab({ dashboardTeamProfileId, selectedPiName 
   const [selectedDocumentUrls, setSelectedDocumentUrls] = useState<string[]>([]);
   const [isBrowsingLibrary, setIsBrowsingLibrary] = useState(false);
   const [isFetchingDocuments, setIsFetchingDocuments] = useState(false);
+  const [isReadingFiles, setIsReadingFiles] = useState(false);
+  const [fileReadFailures, setFileReadFailures] = useState<{ fileName: string; reason: string }[]>([]);
   const [ingestNotice, setIngestNotice] = useState<{
     accepted: number;
     rejected: { key: string; reason: string }[];
@@ -322,12 +326,54 @@ export default function BulkRewriteTab({ dashboardTeamProfileId, selectedPiName 
     }
   }
 
-  async function handleAddSharedWorkbook(file: File): Promise<void> {
-    try {
-      handleAddSharedSource(await readWorkbookSource(file, sharedSources));
-    } catch (error) {
-      setSourceError(error instanceof WorkbookReadError ? error.message : 'That file could not be added.');
+  /** Reads one dropped or chosen file into a source, choosing the reader by its extension. */
+  async function readFileAsSource(file: File, alreadyAdded: readonly ReferencedSource[]): Promise<ReferencedSource> {
+    const fileName = file.name.toLowerCase();
+    if (fileName.endsWith('.pdf')) {
+      return readPdfSource(file, alreadyAdded);
     }
+    if (fileName.endsWith('.msg')) {
+      return readOutlookMessageSource(file, alreadyAdded);
+    }
+    return readWorkbookSource(file, alreadyAdded);
+  }
+
+  /**
+   * Adds several files at once, reporting the ones that could not be read WITHOUT losing the ones that could.
+   *
+   * A folder of emails and PDFs is the actual unit of work here, and a single bad file among thirty —
+   * a scan, a password-protected pack — must not throw the other twenty-nine away. Each source is
+   * minted against the ones already accepted in this run, so ids stay unique before anything is saved.
+   */
+  async function handleAddSharedFiles(files: readonly File[]): Promise<void> {
+    if (!batch || files.length === 0) {
+      return;
+    }
+    setIsReadingFiles(true);
+    setSourceError(null);
+
+    const addedSources: ReferencedSource[] = [];
+    const failures: { fileName: string; reason: string }[] = [];
+
+    for (const file of files) {
+      try {
+        addedSources.push(await readFileAsSource(file, [...sharedSources, ...addedSources]));
+      } catch (error) {
+        const isKnownReadError = error instanceof PdfReadError
+          || error instanceof OutlookMessageReadError
+          || error instanceof WorkbookReadError;
+        failures.push({
+          fileName: file.name,
+          reason: isKnownReadError ? error.message : 'it could not be read.',
+        });
+      }
+    }
+
+    setFileReadFailures(failures);
+    if (addedSources.length > 0) {
+      persistBatch({ ...batch, sharedSources: [...(batch.sharedSources ?? []), ...addedSources] });
+    }
+    setIsReadingFiles(false);
   }
 
   function handleAddSharedPaste(): void {
@@ -732,6 +778,18 @@ export default function BulkRewriteTab({ dashboardTeamProfileId, selectedPiName 
             </p>
 
             {sourceError ? <p className={styles.errorBanner}>{sourceError}</p> : null}
+            {isReadingFiles ? <p className={styles.helpText}>Reading the files…</p> : null}
+            {/* Named, not counted. "3 files failed" sends somebody hunting; the file and the reason
+                tell them whether it was a scan, a locked pack, or the wrong format entirely. */}
+            {fileReadFailures.length > 0 ? (
+              <ul className={styles.noticeList} aria-label="Files that could not be read">
+                {fileReadFailures.map((failure) => (
+                  <li className={styles.outcomeFailed} key={failure.fileName}>
+                    {`${failure.fileName} — ${failure.reason}`}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
 
             <div className={styles.loadBar}>
               <div className={styles.loadFieldWide}>
@@ -747,15 +805,22 @@ export default function BulkRewriteTab({ dashboardTeamProfileId, selectedPiName 
               <button className={styles.secondaryButton} type="button" onClick={handleAddSharedConfluencePage}>
                 Add page
               </button>
-              <div className={styles.loadField}>
-                <label className={styles.fieldLabel} htmlFor="shared-workbook">Spreadsheet</label>
+              {/* One picker for every kind of file, taking MANY at once: a folder of emails and PDFs
+                  is the actual unit of work, and adding thirty documents one at a time is how a PO
+                  stops bothering. */}
+              <div className={styles.loadFieldWide}>
+                <label className={styles.fieldLabel} htmlFor="shared-files">
+                  Files — PDFs, saved Outlook emails (.msg), spreadsheets (choose as many as you like)
+                </label>
                 <input
-                  accept={WORKBOOK_FILE_ACCEPT}
+                  accept={`${PDF_FILE_ACCEPT},${EMAIL_FILE_ACCEPT},${WORKBOOK_FILE_ACCEPT}`}
                   className={styles.textInput}
-                  id="shared-workbook"
+                  disabled={isReadingFiles}
+                  id="shared-files"
+                  multiple
                   onChange={(changeEvent) => {
-                    const file = changeEvent.target.files?.[0];
-                    if (file) void handleAddSharedWorkbook(file);
+                    const chosenFiles = Array.from(changeEvent.target.files ?? []);
+                    if (chosenFiles.length > 0) void handleAddSharedFiles(chosenFiles);
                   }}
                   type="file"
                 />

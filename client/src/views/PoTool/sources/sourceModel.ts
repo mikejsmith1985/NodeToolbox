@@ -66,12 +66,38 @@ export interface SharePointSource {
   fetchedAtIso: string;
 }
 
+/** A PDF the PO dropped in — a requirements pack, a design note, a signed-off specification. */
+export interface PdfSource {
+  kind: 'pdf';
+  id: string;
+  fileName: string;
+  /** Kept so a citation can say "page 12 of 40" rather than just "page 12". */
+  pageCount: number;
+  /** Every page's text, under its own page marker, so a requirement stays citable. */
+  text: string;
+}
+
+/** A saved Outlook message (.msg) — where a great many decisions were actually made. */
+export interface EmailSource {
+  kind: 'email';
+  id: string;
+  fileName: string;
+  subject: string;
+  senderName: string;
+  /** As the sender's own headers wrote it; empty when the message carried no date. */
+  sentDate: string;
+  /** The body, headed by who sent it and when — the two facts that settle what was agreed. */
+  text: string;
+}
+
 export type ReferencedSource =
   | ConfluenceSource
   | WorkbookSource
   | JiraSource
   | PasteSource
-  | SharePointSource;
+  | SharePointSource
+  | PdfSource
+  | EmailSource;
 
 /**
  * Describes where a source came from, for display beside it.
@@ -93,6 +119,10 @@ export function describeSourceOrigin(source: ReferencedSource): string {
       return 'Pasted';
     case 'sharepoint':
       return `SharePoint · ${source.folderPath}`;
+    case 'pdf':
+      return `${source.fileName} · ${source.pageCount} page${source.pageCount === 1 ? '' : 's'}`;
+    case 'email':
+      return source.sentDate === '' ? `Email from ${source.senderName}` : `Email from ${source.senderName}, ${source.sentDate}`;
   }
 }
 
@@ -109,6 +139,10 @@ export function describeSourceTitle(source: ReferencedSource): string {
       return source.label || 'Pasted note';
     case 'sharepoint':
       return source.fileName;
+    case 'pdf':
+      return source.fileName;
+    case 'email':
+      return source.subject || source.fileName;
   }
 }
 
@@ -118,6 +152,8 @@ export function readSourceText(source: ReferencedSource): string {
     case 'confluence':
     case 'paste':
     case 'sharepoint':
+    case 'pdf':
+    case 'email':
       return source.text;
     case 'jira':
       return `${source.issueKey} (${source.status}): ${source.summary}`;
