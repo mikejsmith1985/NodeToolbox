@@ -1762,6 +1762,15 @@
   font-weight: 400;
 }
 
+/* Why a defect sits under this Feature, when it did not say so itself. Deliberately quieter than the
+   status badges beside it: it answers a question, it is not one of the item's own facts. */
+.releaseNotesAttributionNote {
+  align-self: center;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs, 11px);
+  font-style: italic;
+}
+
 .releaseNotesItemCell {
   display: grid;
   gap: 6px;

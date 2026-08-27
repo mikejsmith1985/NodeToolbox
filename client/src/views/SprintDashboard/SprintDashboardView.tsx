@@ -41,16 +41,18 @@ import {
 import { copyElementReportToClipboard } from '../../utils/downloadElementImage.ts';
 import { useCopyFeedback } from '../../hooks/useCopyFeedback.ts';
 import { normalizeRichTextToPlainText } from '../../utils/richTextPlainText.ts';
-import {
-  extractFeatureKeyFromIssueFields,
-  featureLinkCandidateFieldIds,
-  loadConfiguredFeatureLinkFieldId,
-} from '../../utils/featureLink.ts';
+import { featureLinkCandidateFieldIds, loadConfiguredFeatureLinkFieldId } from '../../utils/featureLink.ts';
 import {
   groupReleaseRowsByFeature,
   isGroupingWorthShowing,
   describeGroupHeading,
 } from './hooks/releaseNotesGrouping.ts';
+import {
+  buildLinkedIssueFields,
+  describeAttributionRoute,
+  resolveReleaseFeatureAttribution,
+} from './hooks/releaseFeatureAttribution.ts';
+import type { FeatureAttribution } from './hooks/releaseFeatureAttribution.ts';
 import type { ReleaseNotesGroup } from './hooks/releaseNotesGrouping.ts';
 import { useAiAssist } from '../SnowHub/hooks/useAiAssist.ts';
 import {
@@ -181,7 +183,7 @@ const OVERVIEW_GROUP_ORDER = ['In Progress', 'To Do', 'Done'] as const;
 const BLOCKERS_FILTER_LABEL = 'Show:';
 
 const RELEASE_BASE_FIELDS =
-  'summary,status,assignee,priority,issuetype,fixVersions,description,customfield_10200,comment,parent';
+  'summary,status,assignee,priority,issuetype,fixVersions,description,customfield_10200,comment,parent,issuelinks';
 
 /**
  * The fields a release fetch asks for, including whichever field this Jira uses to link an issue to
@@ -807,6 +809,8 @@ interface ReleaseRadarEntry {
   issues: JiraIssue[];
   /** Which Feature each issue delivers, resolved from Jira. Null for work nothing could be filed under. */
   featureKeyByIssueKey: Map<string, string | null>;
+  /** How each was reached, so a defect placed through its linked story can say so. */
+  featureAttributionByIssueKey: Map<string, FeatureAttribution>;
   /** Those Features' own summaries, so a heading can read as more than a key. */
   featureSummaryByKey: Map<string, string>;
   doneCount: number;
@@ -5770,6 +5774,16 @@ function ReleasesTab({
       }
     }
 
+    /** Fetches linked issues by key, carrying the fields the precedence chain reads. */
+    async function fetchIssuesByKeys(issueKeys: readonly string[]): Promise<JiraIssue[]> {
+      const keyList = issueKeys.map((issueKey) => `"${escapeJqlValue(issueKey)}"`).join(',');
+      const linkedResponse = await jiraGet<{ issues?: JiraIssue[] }>(
+        `/rest/api/2/search?jql=${encodeURIComponent(`key in (${keyList})`)}`
+          + `&maxResults=${issueKeys.length}&fields=${buildLinkedIssueFields(featureLinkFieldId)}`,
+      );
+      return linkedResponse.issues ?? [];
+    }
+
     async function loadReleaseRadar() {
       setIsLoadingReleaseRadar(true);
       setReleaseRadarError(null);
@@ -5830,11 +5844,17 @@ function ReleasesTab({
               // Which Feature each item delivers, read from Jira's own link fields. Resolved here
               // rather than asked of the assistant: a release note that misattributes work is worse
               // than one that never grouped at all.
+              //
+              // Defects rarely state their own Feature — they are linked to the dev story, to the QA
+              // issue, or straight to the Feature, and a single hop drops every one of them into "No
+              // Feature". The Roll-Up Board's precedence chain picks those up.
+              const featureAttributionByIssueKey = await resolveReleaseFeatureAttribution(
+                versionIssues,
+                featureLinkFieldId,
+                fetchIssuesByKeys,
+              );
               const featureKeyByIssueKey = new Map<string, string | null>(
-                versionIssues.map((issue) => [
-                  issue.key,
-                  extractFeatureKeyFromIssueFields(issue.fields as never, featureLinkFieldId),
-                ]),
+                [...featureAttributionByIssueKey].map(([issueKey, attribution]) => [issueKey, attribution.featureKey]),
               );
               const featureSummaryByKey = await loadFeatureSummaries(featureKeyByIssueKey);
 
@@ -5851,6 +5871,7 @@ function ReleasesTab({
                 version,
                 issues: versionIssues,
                 featureKeyByIssueKey,
+                featureAttributionByIssueKey,
                 featureSummaryByKey,
                 doneCount,
                 progressCount,
@@ -5866,6 +5887,7 @@ function ReleasesTab({
                 version,
                 issues: [],
                 featureKeyByIssueKey: new Map<string, string | null>(),
+                featureAttributionByIssueKey: new Map<string, FeatureAttribution>(),
                 featureSummaryByKey: new Map<string, string>(),
                 doneCount: 0,
                 progressCount: 0,
@@ -6151,6 +6173,11 @@ function ReleasesTab({
                     releaseItem: ReleaseAiAssistTableRow,
                   ) => {
                     const matchingIssue = issueByKey.get(releaseItem.issueKey) ?? null;
+                    // Only the placements somebody might query. An item carrying its own Feature link
+                    // needs no explanation, and labelling every row would bury the few that do.
+                    const attributionRoute = describeAttributionRoute(
+                      releaseEntry.featureAttributionByIssueKey.get(releaseItem.issueKey),
+                    );
                     return (
                       <tr key={`${releaseEntry.version.id}-${releaseItem.issueKey}`}>
                         <td>
@@ -6161,6 +6188,9 @@ function ReleasesTab({
                               <div className={styles.releaseNotesMetaRow}>
                                 <span className={styles.statusBadge}>{readIssueStatusName(matchingIssue)}</span>
                                 <span className={styles.statusBadge}>{readAssigneeName(matchingIssue)}</span>
+                                {attributionRoute ? (
+                                  <span className={styles.releaseNotesAttributionNote}>{attributionRoute}</span>
+                                ) : null}
                               </div>
                             ) : null}
                           </div>

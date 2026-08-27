@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Defects no longer fall into &ldquo;No Feature&rdquo; on the release notes.** Most items say which
+  Feature they deliver; defects do not. A defect found in testing might be linked to the development
+  Story, to the QA issue that found it, or straight to the Feature &mdash; the team has no single
+  convention and cannot adopt one. Read with a single hop, every one of them landed under
+  &ldquo;No Feature&rdquo;, and the release note then reported that a third of the release delivered
+  nothing in particular.
+  The Roll-Up Board&#39;s precedence chain is now wired in, so a defect is placed by its linked story,
+  by the story behind its QA issue, or by a Feature it links to directly &mdash; whichever ranks
+  highest. Because that chain walks a chain, it needs the linked issues themselves: they are fetched in
+  **two rounds** (what the defects link to, then what THOSE link to), which is exactly the longest
+  legitimate route and no further &mdash; the chain caps at one intermediate hop, so a third round could
+  not change an answer and would only cost a request.
+  The chain runs **only** over items a single hop could not place. An item that stated its own Feature
+  is already right, and a second opinion could only disagree with it. Nothing is fetched at all when
+  every item named its Feature, or when an unplaced item has no links to follow.
+  A placement that was not stated by the item itself now **says how it was reached** &mdash;
+  &ldquo;via its linked story&rdquo;, &ldquo;via the QA issue and its story&rdquo; &mdash; because the
+  module&#39;s whole point is that a reader never has to guess whether a defect was filed correctly.
+  Rows that carry their own Feature link say nothing extra; labelling every row would bury the few that
+  matter. A failed lookup costs the attribution, never the table.
+
 ### Added
 - **Release notes now carry the Feature each item delivers, and group by it.** A release read as a flat
   list of twenty Jira keys is a list of twenty unrelated-looking changes. The people it gets sent to
