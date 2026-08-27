@@ -164,11 +164,42 @@ describe('buildBulkRewritePrompts — a second pass adds to the first', () => {
     expect(prompt).toContain('A discovery feature for OEC file reviews.');
   });
 
-  it('tells the assistant that a SHORTER draft losing agreed detail is wrong', () => {
+  it('asks for a whole re-write, not the new material bolted onto the end', () => {
+    // Told merely to preserve, an assistant appends the new notes as extra bullets and the requirement
+    // becomes a pile of sediment nobody can read.
     const [prompt] = buildBulkRewritePrompts([{ jiraKey: 'DENP-1437', original, proposed: working }]);
 
-    expect(prompt).toContain('EXTEND it');
-    expect(prompt).toContain('loses detail already agreed is wrong');
+    expect(prompt).toContain('RE-WRITE IT WHOLE');
+    expect(prompt).toContain('Do NOT append the new');
+  });
+
+  it('separates what must survive from what may be re-worded', () => {
+    // Separating the INFORMATION from the WORDING is what lets "lose nothing" and "do not just
+    // append" both be true at once.
+    const [prompt] = buildBulkRewritePrompts([{ jiraKey: 'DENP-1437', original, proposed: working }]);
+
+    expect(prompt).toContain('Every FACT, decision, constraint and acceptance criterion already in the draft must survive');
+    expect(prompt).toContain('restate, merge and re-order freely');
+  });
+
+  it('names duplication as the tell-tale of appending', () => {
+    const [prompt] = buildBulkRewritePrompts([{ jiraKey: 'DENP-1437', original, proposed: working }]);
+
+    expect(prompt).toContain('Say each thing ONCE');
+  });
+
+  it('makes a contradiction win AND get flagged, rather than silently reversing', () => {
+    // A reversal nobody has agreed to is exactly what the validation markers exist for.
+    const [prompt] = buildBulkRewritePrompts([{ jiraKey: 'DENP-1437', original, proposed: working }]);
+
+    expect(prompt).toContain('CONTRADICTS the draft, the new material wins');
+    expect(prompt).toContain('must begin');
+  });
+
+  it('still forbids losing detail already agreed', () => {
+    const [prompt] = buildBulkRewritePrompts([{ jiraKey: 'DENP-1437', original, proposed: working }]);
+
+    expect(prompt).toContain('lost detail already agreed');
   });
 
   it('says nothing about a working draft on a first pass', () => {

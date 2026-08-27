@@ -20,6 +20,22 @@ const MAX_CHARS_PER_PROMPT = 16000;
 /** Each issue's source text is capped so one long issue cannot crowd out the rest (matches composition). */
 const MAX_SOURCE_CHARS = 4000;
 
+/**
+ * The room reserved for a working draft when deciding where the batch splits, whether or not one
+ * exists yet.
+ *
+ * Sizing on the ACTUAL draft would make the split move under the operator: ingesting part one gives
+ * those issues a draft, their blocks grow, the batch re-packs, and part two's panel disappears from
+ * under an in-flight review (GH #220). Reserving the room up front keeps the split identical before
+ * and after every ingest, which is the only property that makes a multi-part run reviewable.
+ *
+ * Set to what a nine-section draft typically costs, NOT to the worst case. A part carrying several
+ * unusually long drafts may therefore run over the prompt cap — which is the right trade: the cap is
+ * a comfort guideline, while truncating a requirement to respect it would destroy the very detail
+ * this whole pass exists to preserve.
+ */
+const WORKING_DRAFT_ALLOWANCE_CHARS = 2000;
+
 /** Trims a source field and says plainly when it was cut. */
 function capSource(text: string): string {
   return text.length <= MAX_SOURCE_CHARS ? text : `${text.slice(0, MAX_SOURCE_CHARS)}\n… (truncated)`;
@@ -57,11 +73,23 @@ function buildPromptShell(blocks: string[], partIndex: number, partCount: number
     `  ${VALIDATION_MARKER.business}  |  ${VALIDATION_MARKER.technical}  |  ${VALIDATION_MARKER.both}`,
     'Put the FULL acceptance criteria both in the description\'s "Acceptance Criteria" section AND in the item\'s acceptanceCriteria.',
     'Never state or imply that any of this was written, generated, or drafted by AI — a marker means information is missing, not AI authorship.',
-    // A PO who adds a second set of notes expects the draft to GROW. Getting back a shorter one that
-    // lost last week's agreed detail is the failure this instruction exists to prevent.
-    'Where an issue shows a WORKING DRAFT, treat that as the current text and EXTEND it: keep what is',
-    'still correct and fold the new material in. Drop a line only where the material actually',
-    'contradicts it. Returning a shorter draft that loses detail already agreed is wrong.',
+    // The hard part of a second pass is that it pulls two ways. Told to preserve, an assistant appends
+    // the new notes as extra bullets and the requirement becomes a pile of sediment nobody can read.
+    // Told to re-write, it produces something clean that quietly lost half of last week's decisions.
+    // Separating the INFORMATION (which must survive) from the WORDING AND ORDER (which must not) is
+    // what lets both be true at once.
+    'Where an issue shows a WORKING DRAFT, that draft is the current state of the requirement.',
+    'RE-WRITE IT WHOLE as one coherent requirement covering everything now known. Do NOT append the new',
+    'material to the end of what is there, and do not leave the draft standing with additions bolted on.',
+    'Every FACT, decision, constraint and acceptance criterion already in the draft must survive. Its',
+    'WORDING and ORDER must not: restate, merge and re-order freely so the result reads as though it',
+    'had been written once, in a single sitting, with all of this material to hand.',
+    'Say each thing ONCE. Two bullets making the same point is the clearest sign new material was',
+    'appended rather than folded in.',
+    'Where the new material CONTRADICTS the draft, the new material wins AND that section must begin',
+    'with the matching validation marker above — a reversal nobody has agreed to yet is exactly what',
+    'those markers are for.',
+    'Never return a requirement that has lost detail already agreed.',
     describeEnterpriseFeatureRules(),
     '',
     // Repeated in EVERY part, deliberately. A large batch is split across prompts, and material
@@ -75,19 +103,25 @@ function buildPromptShell(blocks: string[], partIndex: number, partCount: number
   ].join('\n');
 }
 
-/** Greedily packs issue blocks into groups that each fit the prompt cap (a lone oversized block stands alone). */
-function partitionBlocks(blocks: string[], shellOverhead: number): string[][] {
+/**
+ * Greedily packs issue blocks into groups that each fit the prompt cap (a lone oversized block stands
+ * alone).
+ *
+ * Packs by a SIZING length rather than the block's own, so the split can reserve room for a draft that
+ * does not exist yet and therefore never moves once one does.
+ */
+function partitionBlocks(blocks: { text: string; sizingLength: number }[], shellOverhead: number): string[][] {
   const groups: string[][] = [];
   let current: string[] = [];
   let currentLength = shellOverhead;
   for (const block of blocks) {
-    if (current.length > 0 && currentLength + block.length > MAX_CHARS_PER_PROMPT) {
+    if (current.length > 0 && currentLength + block.sizingLength > MAX_CHARS_PER_PROMPT) {
       groups.push(current);
       current = [];
       currentLength = shellOverhead;
     }
-    current.push(block);
-    currentLength += block.length;
+    current.push(block.text);
+    currentLength += block.sizingLength;
   }
   if (current.length > 0) {
     groups.push(current);
@@ -122,7 +156,13 @@ export function buildBulkRewritePrompts(
     return [];
   }
   const sharedMaterialBlock = buildSharedMaterialBlock(sharedSources, sharedBrief, sharedExtracts);
-  const blocks = items.map((each) => buildIssueBlock(each.jiraKey, each.original, each.proposed ?? null));
+  // Every issue is sized as though it already carried a draft, so the split is the same on the first
+  // run as on the fifth.
+  const blocks = items.map((each) => {
+    const text = buildIssueBlock(each.jiraKey, each.original, each.proposed ?? null);
+    const withoutDraft = buildIssueBlock(each.jiraKey, each.original, null);
+    return { text, sizingLength: withoutDraft.length + WORKING_DRAFT_ALLOWANCE_CHARS };
+  });
   // The material counts against the budget: it rides in every part, so ignoring its size here would
   // build parts that overflow the cap by exactly the length of the documents.
   const shellOverhead = buildPromptShell([], 1, 1, sharedMaterialBlock).length;

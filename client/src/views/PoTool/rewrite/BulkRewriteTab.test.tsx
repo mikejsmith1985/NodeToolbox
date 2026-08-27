@@ -169,7 +169,8 @@ describe('BulkRewriteTab honest states', () => {
   // NOT re-pack the remaining issues and make a later part's panel disappear mid-review.
   it('keeps every prompt part visible after an earlier part is ingested', async () => {
     const user = userEvent.setup();
-    // Descriptions long enough (each capped at 4000 chars in the prompt) that five issues force a 2-part split.
+    // Descriptions long enough (each capped at 4000 chars in the prompt) that five issues force a split.
+    // The exact part COUNT is fixture arithmetic and not the point; that it does not MOVE is.
     const bigDescription = 'A'.repeat(4100);
     mockJiraGet.mockResolvedValue({ fields: { summary: 'S', description: bigDescription, customfield_10200: 'ac' } });
     setAiAssistUnlocked(true);
@@ -178,11 +179,14 @@ describe('BulkRewriteTab honest states', () => {
     await user.type(screen.getByLabelText('Jira keys'), 'ABC-1 ABC-2 ABC-3 ABC-4 ABC-5');
     await user.click(screen.getByRole('button', { name: /capture originals/i }));
 
-    // The batch splits into two parts up front.
+    // The batch splits up front. Whatever it split into is what must survive the ingest below.
     await waitFor(() => {
-      expect(screen.getByText(/part 1 of 2/i)).toBeInTheDocument();
+      expect(screen.getByText(/part 1 of \d+/i)).toBeInTheDocument();
     });
-    expect(screen.getByText(/part 2 of 2/i)).toBeInTheDocument();
+    // Counted as PANELS, not as text: once a prompt is built its own text also contains the words.
+    const partCountBeforeIngest = screen.getAllByRole('region', { name: /part \d+ of \d+/i }).length;
+
+    expect(partCountBeforeIngest).toBeGreaterThan(1);
 
     // Build + ingest part 1 only (propose the first three issues, leaving the rest outstanding).
     await user.click(screen.getAllByRole('button', { name: /build the prompt/i })[0]);
@@ -200,11 +204,13 @@ describe('BulkRewriteTab honest states', () => {
     fireEvent.change(screen.getByLabelText(/paste the assistant/i), { target: { value: partOneReply } });
     await user.click(screen.getByRole('button', { name: /read the reply/i }));
 
-    // Part 2 must still be on screen — the outstanding issues did not collapse the partition.
+    // Every part must still be on screen. Ingesting part one gives those issues a working draft, and
+    // sizing the split on the ACTUAL draft would re-pack the batch and make a later part vanish from
+    // under an in-flight review — which is why the split reserves room for a draft up front.
     await waitFor(() => {
       expect(screen.getByText(/Applied 3 re-write/)).toBeInTheDocument();
     });
-    expect(screen.getByText(/part 2 of 2/i)).toBeInTheDocument();
+    expect(screen.getAllByRole('region', { name: /part \d+ of \d+/i })).toHaveLength(partCountBeforeIngest);
   });
 
   // GH #220: the AI panel must stay available after every issue has a proposal, so a PO can re-run/regenerate

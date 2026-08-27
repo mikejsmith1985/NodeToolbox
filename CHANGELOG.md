@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **A second pass now re-writes the requirement whole, rather than bolting the new notes onto the end.**
+  The instruction told the assistant to &ldquo;EXTEND&rdquo; the draft and &ldquo;keep what is still
+  correct&rdquo;, which is preservation wording: it invites appending the new material as extra bullets
+  until the requirement is a pile of sediment nobody can read. Told the opposite &mdash; just re-write
+  it &mdash; an assistant produces something clean that has quietly lost half of last week&#39;s
+  decisions. The two pull against each other.
+  What resolves it is separating the **information**, which must survive, from the **wording and
+  order**, which must not. The draft is now presented as the current state of the requirement, to be
+  **re-written whole** as one coherent requirement covering everything known so far: every fact,
+  decision, constraint and acceptance criterion in it must survive, but it may be restated, merged and
+  re-ordered freely so the result reads as though it had been written once, in a single sitting, with
+  all the material to hand. Saying the same thing twice is called out as the tell-tale of appending.
+  Where new material **contradicts** the draft it wins, and that section must carry the matching
+  validation marker &mdash; a reversal nobody has agreed to yet is exactly what those markers are for.
+
+### Fixed
+- **Ingesting one part of a large batch no longer re-packs the remaining parts.** Sending the current
+  draft made each issue&#39;s block longer, so ingesting part one grew those issues and the batch
+  re-split — making a later part&#39;s panel disappear from under a review already in progress, the
+  exact failure GH #220 was raised for. The split now reserves room for a draft up front, whether or
+  not one exists, so it is identical on the first run and the fifth. A part carrying several unusually
+  long drafts may run over the prompt cap as a result, which is the right trade: the cap is a comfort
+  guideline, and truncating a requirement to respect it would destroy the detail the pass exists to
+  preserve.
+
 ### Fixed
 - **Condensing a single document did nothing.** A corpus of one long document &mdash; a Confluence page
   of meeting notes, say &mdash; was split, condensed part by part, and merged into one extract, exactly
