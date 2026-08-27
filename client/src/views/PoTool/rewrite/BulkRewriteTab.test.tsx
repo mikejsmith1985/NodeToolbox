@@ -492,3 +492,154 @@ describe('BulkRewriteTab SharePoint library browsing', () => {
     expect(await screen.findByRole('button', { name: /Add 0 selected/i })).toBeDisabled();
   });
 });
+
+// ── Workflow order and honest affordances (GH #376) ────────────────────────
+//
+// A PO pasted their notes link into "Confluence review page URL" — the field that PUBLISHES the
+// review document — because it sat above the field that READS notes in, wore a near-identical
+// label, and lit up the only enabled button on the screen: "Write approved to Jira".
+
+describe('BulkRewriteTab workflow order', () => {
+  /** One captured batch with no proposal yet — the state the PO was actually in. */
+  function seedCapturedBatch(): void {
+    saveBatch({
+      id: 'batch-order',
+      name: 'Order',
+      teamProfileId: 'team-1',
+      createdAtIso: '2026-08-21T00:00:00.000Z',
+      updatedAtIso: '2026-08-21T00:00:00.000Z',
+      items: [{
+        jiraKey: 'ABC-1',
+        original: { summary: 'S', description: 'd', acceptanceCriteria: 'a', capturedAtIso: '2026-08-21T00:00:00.000Z' },
+        proposed: null,
+        state: 'captured',
+        captureError: null,
+        submitResult: null,
+      }],
+    });
+  }
+
+  /** Opens the seeded batch, which is what puts the workflow sections on screen. */
+  async function openSeededBatch(): Promise<void> {
+    const user = userEvent.setup();
+    seedCapturedBatch();
+    render(<BulkRewriteTab dashboardTeamProfileId="team-1" />);
+    await user.click(await screen.findByRole('button', { name: 'Open' }));
+  }
+
+  it('numbers the steps so the order of operations is on screen', async () => {
+    await openSeededBatch();
+
+    expect(await screen.findByText(/Step 1 — Notes to write from/)).toBeInTheDocument();
+    expect(screen.getByText(/Step 4 — Review before \/ after/)).toBeInTheDocument();
+    expect(screen.getByText(/Step 5 — Publish for review/)).toBeInTheDocument();
+  });
+
+  it('puts the notes you write FROM above the review you publish TO', async () => {
+    // Reading order was backwards: the submit controls rendered above the place you add your source.
+    await openSeededBatch();
+
+    const pageText = document.body.textContent ?? '';
+
+    expect(pageText.indexOf('Step 1 — Notes to write from')).toBeLessThan(pageText.indexOf('Step 5 — Publish for review'));
+  });
+
+  it('names each Confluence field by its DIRECTION, so the two cannot be confused', async () => {
+    await openSeededBatch();
+
+    expect(await screen.findByLabelText(/notes to read FROM/)).toBeInTheDocument();
+    expect(screen.getByLabelText(/publish the review TO/)).toBeInTheDocument();
+  });
+
+  it('refuses to write to Jira when no issue has a re-write, however the URL got filled in', async () => {
+    // The old guard was only "the URL is non-empty", so a link pasted into the wrong field enabled a
+    // terminal action at a stage where there was nothing whatsoever to write.
+    const user = userEvent.setup();
+    await openSeededBatch();
+
+    await user.type(await screen.findByLabelText(/publish the review TO/), 'https://example.atlassian.net/wiki/pages/1/Notes');
+
+    expect(screen.getByRole('button', { name: 'Write approved to Jira' })).toBeDisabled();
+  });
+
+  it('says WHY it cannot write yet rather than leaving a dead button', async () => {
+    await openSeededBatch();
+
+    expect(await screen.findByText(/no issue in this batch has a re-write/)).toBeInTheDocument();
+  });
+});
+
+// ── The refine loop (GH #376) ──────────────────────────────────────────────
+//
+// Re-running the prompt after adding more notes is the intended way to work a set of Features up
+// over several sittings. Silently discarding wording the PO typed by hand is not.
+
+describe('BulkRewriteTab refine loop', () => {
+  it('names the issues whose hand-edited wording a re-run replaced', async () => {
+    const user = userEvent.setup();
+    setAiAssistUnlocked(true);
+    saveBatch({
+      id: 'batch-refine',
+      name: 'Refine',
+      teamProfileId: 'team-1',
+      createdAtIso: '2026-08-21T00:00:00.000Z',
+      updatedAtIso: '2026-08-21T00:00:00.000Z',
+      items: [
+        {
+          jiraKey: 'ABC-1',
+          original: { summary: 'S', description: 'd', acceptanceCriteria: 'a', capturedAtIso: '2026-08-21T00:00:00.000Z' },
+          proposed: { description: 'Description:\nmy own careful wording', acceptanceCriteria: 'ac', isEdited: true },
+          state: 'reviewing',
+          captureError: null,
+          submitResult: null,
+        },
+        {
+          jiraKey: 'ABC-2',
+          original: { summary: 'S2', description: 'd2', acceptanceCriteria: 'a2', capturedAtIso: '2026-08-21T00:00:00.000Z' },
+          proposed: { description: 'Description:\nuntouched', acceptanceCriteria: 'ac', isEdited: false },
+          state: 'proposed',
+          captureError: null,
+          submitResult: null,
+        },
+      ],
+    });
+
+    render(<BulkRewriteTab dashboardTeamProfileId="team-1" />);
+    await user.click(await screen.findByRole('button', { name: 'Open' }));
+    await user.click(await screen.findByRole('button', { name: /build the prompt/i }));
+
+    const reply = JSON.stringify({
+      kind: 'featureRewriteBatch',
+      items: [
+        { key: 'ABC-1', description: 'Description:\nfresh draft', acceptanceCriteria: 'ac' },
+        { key: 'ABC-2', description: 'Description:\nfresh draft', acceptanceCriteria: 'ac' },
+      ],
+    });
+    fireEvent.change(await screen.findByLabelText(/paste the assistant/i), { target: { value: reply } });
+    await user.click(screen.getByRole('button', { name: /read the reply/i }));
+
+    const notice = await screen.findByText(/replaced wording you had edited by hand/);
+
+    expect(notice).toHaveTextContent('ABC-1');
+    // ABC-2 was never hand-edited, so replacing it is exactly what a re-run is for — no warning.
+    expect(notice).not.toHaveTextContent('ABC-2');
+  });
+
+  it('says nothing about lost edits when a re-run replaced no hand-edited wording', async () => {
+    const user = userEvent.setup();
+    setAiAssistUnlocked(true);
+    mockJiraGet.mockResolvedValue({ fields: { summary: 'S', description: 'd', customfield_10200: 'ac' } });
+
+    render(<BulkRewriteTab dashboardTeamProfileId="team-1" />);
+    await user.type(screen.getByLabelText('Jira keys'), 'ABC-9');
+    await user.click(screen.getByRole('button', { name: /capture originals/i }));
+    await user.click(await screen.findByRole('button', { name: /build the prompt/i }));
+
+    const reply = JSON.stringify({ kind: 'featureRewriteBatch', items: [{ key: 'ABC-9', description: 'Description:\nx', acceptanceCriteria: 'ac' }] });
+    fireEvent.change(await screen.findByLabelText(/paste the assistant/i), { target: { value: reply } });
+    await user.click(screen.getByRole('button', { name: /read the reply/i }));
+
+    await waitFor(() => expect(screen.getByText(/Applied 1 re-write/)).toBeInTheDocument());
+    expect(screen.queryByText(/replaced wording you had edited by hand/)).not.toBeInTheDocument();
+  });
+});

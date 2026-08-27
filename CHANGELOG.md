@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **The Bulk Re-write tab led you to the wrong field, and then lit up the wrong button.** The panel
+  that READS your notes in sat *inside* the panel that PUBLISHES the review document out, below it on
+  the page, wearing a near-identical label: &ldquo;Confluence page URL&rdquo; against &ldquo;Confluence
+  review page URL&rdquo;. The reading order was backwards from the workflow. A PO pasting a link to
+  their notes reasonably used the first field they met &mdash; which is the *output* one &mdash; and
+  that filled the only condition guarding **Write approved to Jira**, so a terminal action became the
+  single enabled control on a batch that had no re-writes in it at all.
+  The sections are now in workflow order and numbered: **1 Notes to write from**, **2 Condense**,
+  **3 Draft the re-writes**, **4 Review before / after**, **5 Publish for review &amp; write to Jira**.
+  Each Confluence field is named by its direction &mdash; *notes to read FROM* against *page to publish
+  the review TO*. Writing to Jira now requires that at least one issue actually has a re-write, and
+  when it does not the screen says so, because a dead button with no reason given is how somebody ends
+  up pasting a link into whatever field will light something up.
+- **Images in a Confluence page no longer vanish without trace.** Reducing a page to text stripped
+  every tag, so `<ac:image>` was deleted outright: a page whose whole point was an architecture
+  diagram arrived as a gap between two bullet points, and nothing downstream could tell that anything
+  had ever been there. Each image now becomes a named placeholder &mdash; `[Image: logical-architecture.png]`
+  &mdash; **left exactly where the image sat**, so the sentences around it still say what it was for.
+  The name is its alt text where there is one, else its file name, else the last segment of its url;
+  an image the markup names not at all still says `[Image: unnamed]`, because knowing something is
+  missing here beats silence.
+
+### Changed
+- **Re-running a draft says which of your own edits it replaced.** Adding more notes and re-running is
+  the intended way to work a set of Features up over several sittings &mdash; but the re-run replaced
+  hand-edited wording with no word said. The ingest now names each issue whose edits it overwrote, and
+  says plainly that the previous version is not recoverable. An issue nobody had edited is replaced
+  quietly, because that is exactly what a re-run is for.
+
 ### Added
 - **Condense a body of material far larger than any prompt.** Adding thirty documents as shared
   material never failed loudly — it divided the budget thirty ways and re-wrote every Feature from

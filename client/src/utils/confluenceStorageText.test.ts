@@ -74,3 +74,62 @@ describe('readConfluenceStorageText', () => {
     expect(readConfluenceStorageText('<p>One</p><p></p><p></p><p>Two</p>')).toBe('One\nTwo');
   });
 });
+
+describe('readConfluenceStorageText — images become named placeholders', () => {
+  it('keeps a trace of an attached image instead of deleting it', () => {
+    // Stripping every tag deleted images without a trace: a page whose point was an architecture
+    // diagram arrived as a gap between two bullets, and nothing downstream could tell (GH #376).
+    const text = readConfluenceStorageText(
+      '<p>Potential Risk</p><ac:image ac:align="center"><ri:attachment ri:filename="logical-architecture.png" /></ac:image><p>Potential work</p>',
+    );
+
+    expect(text).toContain('[Image: logical-architecture.png]');
+  });
+
+  it('leaves the placeholder where the image sat, so the sentences around it still explain it', () => {
+    const text = readConfluenceStorageText(
+      '<p>Before the diagram</p><ac:image><ri:attachment ri:filename="d.png" /></ac:image><p>After the diagram</p>',
+    );
+
+    const lines = text.split('\n');
+
+    expect(lines.indexOf('Before the diagram')).toBeLessThan(lines.indexOf('[Image: d.png]'));
+    expect(lines.indexOf('[Image: d.png]')).toBeLessThan(lines.indexOf('After the diagram'));
+  });
+
+  it('prefers alt text, which describes the diagram better than a file name', () => {
+    const text = readConfluenceStorageText(
+      '<ac:image ac:alt="Logical Architecture - Online Enrollment Intake"><ri:attachment ri:filename="p31.png" /></ac:image>',
+    );
+
+    expect(text).toBe('[Image: Logical Architecture - Online Enrollment Intake]');
+  });
+
+  it('names an external image by its file name rather than its whole url', () => {
+    const text = readConfluenceStorageText('<ac:image><ri:url ri:value="https://example.com/a/b/flow.png?v=2" /></ac:image>');
+
+    expect(text).toBe('[Image: flow.png]');
+  });
+
+  it('handles a plain img tag, which some Confluence content still carries', () => {
+    expect(readConfluenceStorageText('<img src="/download/attachments/1/chart.png" />')).toBe('[Image: chart.png]');
+  });
+
+  it('says an image is there even when the markup gives it no name at all', () => {
+    // "unnamed" is still worth far more than silence: it tells a reader something is missing here.
+    expect(readConfluenceStorageText('<ac:image></ac:image>')).toBe('[Image: unnamed]');
+  });
+
+  it('marks every image on a page, not just the first', () => {
+    const text = readConfluenceStorageText(
+      '<ac:image><ri:attachment ri:filename="one.png" /></ac:image><ac:image><ri:attachment ri:filename="two.png" /></ac:image>',
+    );
+
+    expect(text).toContain('[Image: one.png]');
+    expect(text).toContain('[Image: two.png]');
+  });
+
+  it('leaves a page with no images exactly as it was', () => {
+    expect(readConfluenceStorageText('<p>Just words</p>')).toBe('Just words');
+  });
+});

@@ -103,7 +103,7 @@ export default function CondenseMaterialPanel({
 
   return (
     <section className={styles.panel} aria-label="Condense shared material">
-      <h3 className={styles.panelTitle}>Condense the material</h3>
+      <h3 className={styles.panelTitle}>Step 2 — Condense the material</h3>
       <p className={styles.panelSubtitle}>
         {`This material runs to ${formatCharacterCount(rawCorpusChars)} characters and a prompt holds about `}
         {'16,000 — with the issues in it too. Added raw, each document would get a couple of hundred '}

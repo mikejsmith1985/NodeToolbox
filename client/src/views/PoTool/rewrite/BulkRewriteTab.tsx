@@ -111,7 +111,13 @@ export default function BulkRewriteTab({ dashboardTeamProfileId, selectedPiName 
   const [selectedDocumentUrls, setSelectedDocumentUrls] = useState<string[]>([]);
   const [isBrowsingLibrary, setIsBrowsingLibrary] = useState(false);
   const [isFetchingDocuments, setIsFetchingDocuments] = useState(false);
-  const [ingestNotice, setIngestNotice] = useState<{ accepted: number; rejected: { key: string; reason: string }[]; unparsedCount: number } | null>(null);
+  const [ingestNotice, setIngestNotice] = useState<{
+    accepted: number;
+    rejected: { key: string; reason: string }[];
+    unparsedCount: number;
+    /** Issues whose hand-edited wording this reply replaced — named, never silently discarded. */
+    overwrittenEditedKeys: string[];
+  } | null>(null);
 
   const refreshBatchList = useCallback(() => {
     setSavedBatches(listBatches(dashboardTeamProfileId));
@@ -358,6 +364,10 @@ export default function BulkRewriteTab({ dashboardTeamProfileId, selectedPiName 
         errors: [`Could not read the reply: ${reason} Paste the assistant's full reply (it must be the JSON that starts with {"kind":"featureRewriteBatch"}).`],
       };
     }
+    const overwrittenEditedKeys = batch.items
+      .filter((item) => item.proposed?.isEdited && result.rewritesByKey[item.jiraKey])
+      .map((item) => item.jiraKey);
+
     const items = batch.items.map((item) => {
       const proposed = result.rewritesByKey[item.jiraKey];
       if (!proposed) {
@@ -368,7 +378,12 @@ export default function BulkRewriteTab({ dashboardTeamProfileId, selectedPiName 
     });
     persistBatch({ ...batch, items });
     const acceptedCount = Object.keys(result.rewritesByKey).length;
-    setIngestNotice({ accepted: acceptedCount, rejected: result.rejected, unparsedCount: result.unparsedCount });
+    setIngestNotice({
+      accepted: acceptedCount,
+      rejected: result.rejected,
+      unparsedCount: result.unparsedCount,
+      overwrittenEditedKeys,
+    });
     const errors = [
       ...result.rejected.map((entry) => `${entry.key}: ${entry.reason}`),
       ...(result.unparsedCount > 0 ? [`${result.unparsedCount} issue(s) had no usable re-write in the reply.`] : []),
@@ -684,6 +699,14 @@ export default function BulkRewriteTab({ dashboardTeamProfileId, selectedPiName 
                 {ingestNotice.unparsedCount > 0 ? (
                   <li className={styles.outcomeFailed}>{ingestNotice.unparsedCount} issue(s) had no usable re-write.</li>
                 ) : null}
+                {/* Re-running after adding notes is the intended way to refine a set. Losing wording
+                    the PO typed by hand is not, so the replacement is named rather than silent. */}
+                {ingestNotice.overwrittenEditedKeys.length > 0 ? (
+                  <li className={styles.outcomeFailed}>
+                    {`This reply replaced wording you had edited by hand on ${ingestNotice.overwrittenEditedKeys.join(', ')}. `}
+                    {'Re-read those before approving — the previous version is not recoverable.'}
+                  </li>
+                ) : null}
               </ul>
             ) : null}
             {failedItems.length > 0 ? (
@@ -695,14 +718,212 @@ export default function BulkRewriteTab({ dashboardTeamProfileId, selectedPiName 
             ) : null}
           </section>
 
+          {/* One set of documents, applied to every Feature in the batch.
+              The job people actually have is a new standard or a design decision that changes a
+              dozen Features at once. Without this the PO pasted the same material into a dozen
+              separate runs and hoped the answers came back consistent. */}
+          <section className={styles.panel}>
+            <h3 className={styles.panelTitle}>Step 1 — Notes to write from</h3>
+            <p className={styles.panelSubtitle}>
+              The material every issue in this batch is re-written FROM — a Confluence page of notes, a
+              spreadsheet, a pasted page, a library folder. It rides in every prompt, including the later
+              parts of a batch too large for one. This is not where the review document gets published;
+              that is Step 5.
+            </p>
+
+            {sourceError ? <p className={styles.errorBanner}>{sourceError}</p> : null}
+
+            <div className={styles.loadBar}>
+              <div className={styles.loadFieldWide}>
+                <label className={styles.fieldLabel} htmlFor="shared-confluence-url">Confluence page of notes to read FROM</label>
+                <input
+                  className={styles.textInput}
+                  id="shared-confluence-url"
+                  onChange={(changeEvent) => setConfluenceUrlInput(changeEvent.target.value)}
+                  placeholder="https://…/wiki/spaces/…"
+                  value={confluenceUrlInput}
+                />
+              </div>
+              <button className={styles.secondaryButton} type="button" onClick={handleAddSharedConfluencePage}>
+                Add page
+              </button>
+              <div className={styles.loadField}>
+                <label className={styles.fieldLabel} htmlFor="shared-workbook">Spreadsheet</label>
+                <input
+                  accept={WORKBOOK_FILE_ACCEPT}
+                  className={styles.textInput}
+                  id="shared-workbook"
+                  onChange={(changeEvent) => {
+                    const file = changeEvent.target.files?.[0];
+                    if (file) void handleAddSharedWorkbook(file);
+                  }}
+                  type="file"
+                />
+              </div>
+            </div>
+
+            <div className={styles.loadBar}>
+              <div className={styles.loadField}>
+                <label className={styles.fieldLabel} htmlFor="shared-paste-label">Note name</label>
+                <input
+                  className={styles.textInput}
+                  id="shared-paste-label"
+                  onChange={(changeEvent) => setPasteLabelInput(changeEvent.target.value)}
+                  placeholder="Compliance note"
+                  value={pasteLabelInput}
+                />
+              </div>
+              <div className={styles.loadFieldWide}>
+                <label className={styles.fieldLabel} htmlFor="shared-paste">Pasted note</label>
+                <textarea
+                  className={styles.textArea}
+                  id="shared-paste"
+                  onPaste={(pasteEvent) => {
+                    // A OneNote page in a Teams tab cannot be exported, so a paste is the only way
+                    // its content arrives — and its tables are the content. Read the HTML flavour
+                    // so a four-column grid does not land as an undifferentiated run of sentences.
+                    const pastedText = readPastedText(
+                      pasteEvent.clipboardData.getData('text/html'),
+                      pasteEvent.clipboardData.getData('text/plain'),
+                    );
+                    if (pastedText.trim() === '') return;
+                    pasteEvent.preventDefault();
+                    setPasteInput((currentText) => currentText + pastedText);
+                  }}
+                  onChange={(changeEvent) => setPasteInput(changeEvent.target.value)}
+                  value={pasteInput}
+                />
+              </div>
+              <button className={styles.secondaryButton} type="button" onClick={handleAddSharedPaste}>
+                Add note
+              </button>
+            </div>
+
+            {/* Point at a library and pick from it, rather than downloading a folder to find
+                three documents. The walk runs through the relay -- the user's own authenticated
+                SharePoint tab -- so nothing here holds a credential. */}
+            <div className={styles.loadBar}>
+              <div className={styles.loadFieldWide}>
+                <label className={styles.fieldLabel} htmlFor="shared-library-folder">SharePoint library folder</label>
+                <input
+                  className={styles.textInput}
+                  id="shared-library-folder"
+                  onChange={(changeEvent) => setLibraryFolderInput(changeEvent.target.value)}
+                  placeholder="/sites/Delivery/Shared Documents"
+                  value={libraryFolderInput}
+                />
+              </div>
+              <button
+                className={styles.secondaryButton}
+                type="button"
+                disabled={isBrowsingLibrary}
+                onClick={handleBrowseLibrary}
+              >
+                {isBrowsingLibrary ? 'Browsing…' : 'Browse library'}
+              </button>
+            </div>
+
+            {libraryBrowseResult !== null ? (
+              <>
+                <p className={styles.panelSubtitle}>
+                  {libraryBrowseResult.documents.length} readable document(s) across{' '}
+                  {libraryBrowseResult.visitedFolderCount} folder(s).
+                </p>
+
+                {libraryBrowseResult.documents.length > 0 ? (
+                  <>
+                    <ul className={styles.noticeList} aria-label="Library documents">
+                      {libraryBrowseResult.documents.map((document) => (
+                        <li key={document.serverRelativeUrl}>
+                          <label>
+                            <input
+                              checked={selectedDocumentUrls.includes(document.serverRelativeUrl)}
+                              onChange={() => handleToggleDocument(document.serverRelativeUrl)}
+                              type="checkbox"
+                            />
+                            {' '}
+                            <strong>{document.name}</strong>
+                            {' — '}
+                            {document.folderPath}
+                            {document.modifiedAtIso ? ` · changed ${document.modifiedAtIso.slice(0, 10)}` : ''}
+                          </label>
+                        </li>
+                      ))}
+                    </ul>
+                    <button
+                      className={styles.primaryButton}
+                      type="button"
+                      disabled={isFetchingDocuments || selectedDocumentUrls.length === 0}
+                      onClick={handleAddSelectedDocuments}
+                    >
+                      {isFetchingDocuments
+                        ? 'Reading…'
+                        : `Add ${selectedDocumentUrls.length} selected document(s)`}
+                    </button>
+                  </>
+                ) : null}
+
+                {/* Both stated rather than filtered away: a listing that showed only what it could
+                    read would say "this is the whole library", which is the one thing it is not. */}
+                {libraryBrowseResult.unreadable.length > 0 ? (
+                  <p className={styles.panelSubtitle}>
+                    Not readable: {libraryBrowseResult.unreadable.map((document) => document.name).join(', ')}.
+                    Export to .docx, .txt, .md or .html, or paste the content in.
+                  </p>
+                ) : null}
+                {libraryBrowseResult.skippedTooDeep.length > 0 ? (
+                  <p className={styles.panelSubtitle}>
+                    Not looked in (too deep): {libraryBrowseResult.skippedTooDeep.join(', ')}.
+                  </p>
+                ) : null}
+              </>
+            ) : null}
+
+            {sharedSources.length === 0 ? (
+              <p className={styles.panelSubtitle}>
+                No shared material yet — each issue will be re-written from its own text alone.
+              </p>
+            ) : (
+              <ul className={styles.noticeList} aria-label="Shared material">
+                {sharedSources.map((source) => (
+                  <li key={source.id}>
+                    <strong>{describeSourceTitle(source)}</strong>
+                    {' — '}
+                    {describeSourceOrigin(source)}
+                    {' '}
+                    <button
+                      className={styles.dangerButton}
+                      type="button"
+                      onClick={() => handleRemoveSharedSource(source.id)}
+                    >
+                      Remove
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          {/* The corpus is usually far larger than any prompt. This is where it is read down to a
+              size a re-write can carry — and where two documents that disagree get named. */}
+          <CondenseMaterialPanel
+            sources={sharedSources}
+            extracts={batch.sourceExtracts ?? {}}
+            brief={batch.sharedBrief ?? null}
+            onExtractDocument={handleExtractDocument}
+            onBuildBrief={handleBuildBrief}
+          />
+
           {/* ── Gated AI round-trip: one stable panel per prompt part. Shown whenever the batch has
               capturable issues (and AI is unlocked) — NOT hidden once every issue has a proposal — so
               unlocking AI always reveals it and the PO can re-run / re-generate a re-write (GH #220). ── */}
           {prompts.length > 0 ? prompts.map((promptText, partIndex) => (
             <PoAiPanel
               key={`prompt-part-${partIndex}`}
-              title={prompts.length > 1 ? `Re-write prompt — part ${partIndex + 1} of ${prompts.length}` : 'Re-write these issues'}
-              helpText="Builds a prompt that asks for a re-write of every issue in this batch, in the nine-section format. Paste the reply back and it fills the After column below — every word stays editable, and nothing reaches Jira until you approve and submit."
+              title={prompts.length > 1
+                ? `Step 3 — Draft the re-writes (part ${partIndex + 1} of ${prompts.length})`
+                : 'Step 3 — Draft the re-writes'}
+              helpText="Builds a prompt that asks for a re-write of every issue in this batch, in the nine-section format, from the notes in Step 1. Paste the reply back and it fills the After column below — every word stays editable, and nothing reaches Jira until you approve and submit. Run this again after adding more notes to refine the whole set." 
               buildPrompt={() => promptText}
               onIngest={handleIngest}
             />
@@ -710,7 +931,7 @@ export default function BulkRewriteTab({ dashboardTeamProfileId, selectedPiName 
 
           {/* ── Before/after review grid ── */}
           <section className={styles.panel}>
-            <h3 className={styles.panelTitle}>Review before / after</h3>
+            <h3 className={styles.panelTitle}>Step 4 — Review before / after</h3>
             <div className={styles.reviewGrid}>
               {batch.items.map((item, index) => (
                 <BeforeAfterRow
@@ -724,14 +945,14 @@ export default function BulkRewriteTab({ dashboardTeamProfileId, selectedPiName 
 
           {/* ── Confluence review + submit ── */}
           <section className={styles.panel}>
-            <h3 className={styles.panelTitle}>Review on Confluence &amp; submit</h3>
+            <h3 className={styles.panelTitle}>Step 5 — Publish for review &amp; write to Jira</h3>
             <p className={styles.helpText}>
               Publish the before/after to a Confluence page. The reviewing PO edits the Proposed columns and
               ticks Approve on the page; then Write approved to Jira reads the page back and writes only the
               ticked rows (with a live drift check). The page is the shared, editable record — nothing reaches
               Jira until you click Write approved.
             </p>
-            <label className={styles.fieldLabel} htmlFor="rewrite-review-url">Confluence review page URL</label>
+            <label className={styles.fieldLabel} htmlFor="rewrite-review-url">Confluence page to publish the review TO (a new, empty page)</label>
             <input
               id="rewrite-review-url"
               className={styles.textInput}
@@ -753,206 +974,21 @@ export default function BulkRewriteTab({ dashboardTeamProfileId, selectedPiName 
               <button
                 className={styles.primaryButton}
                 type="button"
-                disabled={isWritingApproved || reviewPageUrl.trim() === ''}
+                disabled={isWritingApproved || reviewPageUrl.trim() === '' || reviewItems.length === 0}
                 onClick={handleWriteApprovedToJira}
               >
                 {isWritingApproved ? 'Writing…' : 'Write approved to Jira'}
               </button>
             </div>
-
-            {/* One set of documents, applied to every Feature in the batch.
-                The job people actually have is a new standard or a design decision that changes a
-                dozen Features at once. Without this the PO pasted the same material into a dozen
-                separate runs and hoped the answers came back consistent. */}
-            <section className={styles.panel}>
-              <h3 className={styles.panelTitle}>Shared material</h3>
-              <p className={styles.panelSubtitle}>
-                Documents every issue in this batch is re-written against. They ride in every prompt,
-                including the later parts of a batch too large for one.
+            {/* A disabled button with no reason given is how somebody ends up pasting a link into
+                whatever field will light something up (GH #376). */}
+            {reviewItems.length === 0 ? (
+              <p className={styles.helpText}>
+                Nothing to publish or write back yet — no issue in this batch has a re-write. Put your notes
+                in Step 1, then run Step 3 to draft them.
               </p>
+            ) : null}
 
-              {sourceError ? <p className={styles.errorBanner}>{sourceError}</p> : null}
-
-              <div className={styles.loadBar}>
-                <div className={styles.loadFieldWide}>
-                  <label className={styles.fieldLabel} htmlFor="shared-confluence-url">Confluence page URL</label>
-                  <input
-                    className={styles.textInput}
-                    id="shared-confluence-url"
-                    onChange={(changeEvent) => setConfluenceUrlInput(changeEvent.target.value)}
-                    placeholder="https://…/wiki/spaces/…"
-                    value={confluenceUrlInput}
-                  />
-                </div>
-                <button className={styles.secondaryButton} type="button" onClick={handleAddSharedConfluencePage}>
-                  Add page
-                </button>
-                <div className={styles.loadField}>
-                  <label className={styles.fieldLabel} htmlFor="shared-workbook">Spreadsheet</label>
-                  <input
-                    accept={WORKBOOK_FILE_ACCEPT}
-                    className={styles.textInput}
-                    id="shared-workbook"
-                    onChange={(changeEvent) => {
-                      const file = changeEvent.target.files?.[0];
-                      if (file) void handleAddSharedWorkbook(file);
-                    }}
-                    type="file"
-                  />
-                </div>
-              </div>
-
-              <div className={styles.loadBar}>
-                <div className={styles.loadField}>
-                  <label className={styles.fieldLabel} htmlFor="shared-paste-label">Note name</label>
-                  <input
-                    className={styles.textInput}
-                    id="shared-paste-label"
-                    onChange={(changeEvent) => setPasteLabelInput(changeEvent.target.value)}
-                    placeholder="Compliance note"
-                    value={pasteLabelInput}
-                  />
-                </div>
-                <div className={styles.loadFieldWide}>
-                  <label className={styles.fieldLabel} htmlFor="shared-paste">Pasted note</label>
-                  <textarea
-                    className={styles.textArea}
-                    id="shared-paste"
-                    onPaste={(pasteEvent) => {
-                      // A OneNote page in a Teams tab cannot be exported, so a paste is the only way
-                      // its content arrives — and its tables are the content. Read the HTML flavour
-                      // so a four-column grid does not land as an undifferentiated run of sentences.
-                      const pastedText = readPastedText(
-                        pasteEvent.clipboardData.getData('text/html'),
-                        pasteEvent.clipboardData.getData('text/plain'),
-                      );
-                      if (pastedText.trim() === '') return;
-                      pasteEvent.preventDefault();
-                      setPasteInput((currentText) => currentText + pastedText);
-                    }}
-                    onChange={(changeEvent) => setPasteInput(changeEvent.target.value)}
-                    value={pasteInput}
-                  />
-                </div>
-                <button className={styles.secondaryButton} type="button" onClick={handleAddSharedPaste}>
-                  Add note
-                </button>
-              </div>
-
-              {/* Point at a library and pick from it, rather than downloading a folder to find
-                  three documents. The walk runs through the relay -- the user's own authenticated
-                  SharePoint tab -- so nothing here holds a credential. */}
-              <div className={styles.loadBar}>
-                <div className={styles.loadFieldWide}>
-                  <label className={styles.fieldLabel} htmlFor="shared-library-folder">SharePoint library folder</label>
-                  <input
-                    className={styles.textInput}
-                    id="shared-library-folder"
-                    onChange={(changeEvent) => setLibraryFolderInput(changeEvent.target.value)}
-                    placeholder="/sites/Delivery/Shared Documents"
-                    value={libraryFolderInput}
-                  />
-                </div>
-                <button
-                  className={styles.secondaryButton}
-                  type="button"
-                  disabled={isBrowsingLibrary}
-                  onClick={handleBrowseLibrary}
-                >
-                  {isBrowsingLibrary ? 'Browsing…' : 'Browse library'}
-                </button>
-              </div>
-
-              {libraryBrowseResult !== null ? (
-                <>
-                  <p className={styles.panelSubtitle}>
-                    {libraryBrowseResult.documents.length} readable document(s) across{' '}
-                    {libraryBrowseResult.visitedFolderCount} folder(s).
-                  </p>
-
-                  {libraryBrowseResult.documents.length > 0 ? (
-                    <>
-                      <ul className={styles.noticeList} aria-label="Library documents">
-                        {libraryBrowseResult.documents.map((document) => (
-                          <li key={document.serverRelativeUrl}>
-                            <label>
-                              <input
-                                checked={selectedDocumentUrls.includes(document.serverRelativeUrl)}
-                                onChange={() => handleToggleDocument(document.serverRelativeUrl)}
-                                type="checkbox"
-                              />
-                              {' '}
-                              <strong>{document.name}</strong>
-                              {' — '}
-                              {document.folderPath}
-                              {document.modifiedAtIso ? ` · changed ${document.modifiedAtIso.slice(0, 10)}` : ''}
-                            </label>
-                          </li>
-                        ))}
-                      </ul>
-                      <button
-                        className={styles.primaryButton}
-                        type="button"
-                        disabled={isFetchingDocuments || selectedDocumentUrls.length === 0}
-                        onClick={handleAddSelectedDocuments}
-                      >
-                        {isFetchingDocuments
-                          ? 'Reading…'
-                          : `Add ${selectedDocumentUrls.length} selected document(s)`}
-                      </button>
-                    </>
-                  ) : null}
-
-                  {/* Both stated rather than filtered away: a listing that showed only what it could
-                      read would say "this is the whole library", which is the one thing it is not. */}
-                  {libraryBrowseResult.unreadable.length > 0 ? (
-                    <p className={styles.panelSubtitle}>
-                      Not readable: {libraryBrowseResult.unreadable.map((document) => document.name).join(', ')}.
-                      Export to .docx, .txt, .md or .html, or paste the content in.
-                    </p>
-                  ) : null}
-                  {libraryBrowseResult.skippedTooDeep.length > 0 ? (
-                    <p className={styles.panelSubtitle}>
-                      Not looked in (too deep): {libraryBrowseResult.skippedTooDeep.join(', ')}.
-                    </p>
-                  ) : null}
-                </>
-              ) : null}
-
-              {sharedSources.length === 0 ? (
-                <p className={styles.panelSubtitle}>
-                  No shared material yet — each issue will be re-written from its own text alone.
-                </p>
-              ) : (
-                <ul className={styles.noticeList} aria-label="Shared material">
-                  {sharedSources.map((source) => (
-                    <li key={source.id}>
-                      <strong>{describeSourceTitle(source)}</strong>
-                      {' — '}
-                      {describeSourceOrigin(source)}
-                      {' '}
-                      <button
-                        className={styles.dangerButton}
-                        type="button"
-                        onClick={() => handleRemoveSharedSource(source.id)}
-                      >
-                        Remove
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
-
-            {/* The corpus is usually far larger than any prompt. This is where it is read down to a
-                size a re-write can carry — and where two documents that disagree get named. */}
-            <CondenseMaterialPanel
-              sources={sharedSources}
-              extracts={batch.sourceExtracts ?? {}}
-              brief={batch.sharedBrief ?? null}
-              onExtractDocument={handleExtractDocument}
-              onBuildBrief={handleBuildBrief}
-            />
 
             {/* The half the "before" snapshot was always missing. Capturing an original and only ever
                 showing it leaves a PO worse off than never running the batch: the old wording is
