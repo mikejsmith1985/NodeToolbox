@@ -211,11 +211,18 @@ export default function BulkRewriteTab({ dashboardTeamProfileId, selectedPiName 
   const sharedSources = batch?.sharedSources ?? [];
   const prompts = useMemo(
     () => buildBulkRewritePrompts(
-      capturableItems.map((item) => ({ jiraKey: item.jiraKey, original: item.original })),
+      // The current proposal rides along so a re-run after adding notes EXTENDS the draft rather than
+      // re-deriving it from the original text.
+      capturableItems.map((item) => ({
+        jiraKey: item.jiraKey,
+        original: item.original,
+        proposed: item.proposed,
+      })),
       batch?.sharedSources ?? [],
       batch?.sharedBrief ?? null,
+      batch?.sourceExtracts ?? {},
     ),
-    [capturableItems, batch?.sharedSources, batch?.sharedBrief],
+    [capturableItems, batch?.sharedSources, batch?.sharedBrief, batch?.sourceExtracts],
   );
 
   /** Stores one document's extract. Keyed by source id, so re-condensing replaces rather than piles up. */

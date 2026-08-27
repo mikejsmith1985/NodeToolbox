@@ -133,3 +133,62 @@ describe('the enterprise Feature rules ride in every prompt', () => {
     expect(prompts[0]).toContain('CMDB Application');
   });
 });
+
+describe('buildBulkRewritePrompts — a second pass adds to the first', () => {
+  const original = {
+    summary: 'Review the OEC file specs',
+    description: 'A discovery feature for OEC file reviews.',
+    acceptanceCriteria: 'Inventory reviewed.',
+    capturedAtIso: '2026-08-21T00:00:00.000Z',
+  };
+
+  const working = {
+    description: 'Description:\nReview all available OEC file specifications and layouts.',
+    acceptanceCriteria: '- Inventory of OEC vendors and file sources reviewed.',
+    isEdited: false,
+  };
+
+  it('sends the current draft as the working text, not just the original', () => {
+    // Without this every re-run re-derived the nine sections from the original, and everything the
+    // first pass got right had to be got right a second time by luck (GH #376).
+    const [prompt] = buildBulkRewritePrompts([{ jiraKey: 'DENP-1437', original, proposed: working }]);
+
+    expect(prompt).toContain('WORKING DRAFT — extend this, do not start again');
+    expect(prompt).toContain('Review all available OEC file specifications and layouts.');
+  });
+
+  it('still sends the original beside it, so nothing is derived from the draft alone', () => {
+    const [prompt] = buildBulkRewritePrompts([{ jiraKey: 'DENP-1437', original, proposed: working }]);
+
+    expect(prompt).toContain('Original description:');
+    expect(prompt).toContain('A discovery feature for OEC file reviews.');
+  });
+
+  it('tells the assistant that a SHORTER draft losing agreed detail is wrong', () => {
+    const [prompt] = buildBulkRewritePrompts([{ jiraKey: 'DENP-1437', original, proposed: working }]);
+
+    expect(prompt).toContain('EXTEND it');
+    expect(prompt).toContain('loses detail already agreed is wrong');
+  });
+
+  it('says nothing about a working draft on a first pass', () => {
+    const [prompt] = buildBulkRewritePrompts([{ jiraKey: 'DENP-1437', original, proposed: null }]);
+
+    expect(prompt).not.toContain('WORKING DRAFT — extend this');
+  });
+
+  it('treats an empty draft as no draft rather than sending a blank section', () => {
+    const emptyDraft = { description: '   ', acceptanceCriteria: '', isEdited: false };
+
+    const [prompt] = buildBulkRewritePrompts([{ jiraKey: 'DENP-1437', original, proposed: emptyDraft }]);
+
+    expect(prompt).not.toContain('WORKING DRAFT — extend this');
+  });
+
+  it('builds the same prompt it always did for a caller that passes no proposal at all', () => {
+    const withoutField = buildBulkRewritePrompts([{ jiraKey: 'DENP-1437', original }]);
+    const withNull = buildBulkRewritePrompts([{ jiraKey: 'DENP-1437', original, proposed: null }]);
+
+    expect(withoutField).toEqual(withNull);
+  });
+});

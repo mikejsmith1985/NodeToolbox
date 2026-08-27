@@ -120,3 +120,84 @@ describe('buildSharedMaterialBlock — a consolidated brief', () => {
     expect(block).toContain('raw text');
   });
 });
+
+describe('buildSharedMaterialBlock — a document condensed but not consolidated', () => {
+  /** One document's extract, as the condense step produces it. */
+  function extractFor(sourceId: string, sourceTitle: string) {
+    return {
+      sourceId,
+      sourceTitle,
+      sourceOrigin: 'Confluence',
+      summary: 'The LOOP meeting notes.',
+      decisions: ['Payment History is the only billing report changing'],
+      requirements: ['Blue-branded Payment History report'],
+      openQuestions: ['Who owns runout?'],
+      facts: ['Cutover 2026-10-01'],
+      extractedAtIso: '2026-08-27T00:00:00.000Z',
+    };
+  }
+
+  it('sends the EXTRACT rather than the raw text it was condensed from', () => {
+    // A single long document never produces a brief — consolidation needs two things to consolidate —
+    // so without this the condense step built an extract, showed it, and was then ignored (GH #376).
+    const block = buildSharedMaterialBlock(
+      [pasteSource('paste-1', 'MAPD Loop Notes', 'x'.repeat(18069))],
+      null,
+      { 'paste-1': extractFor('paste-1', 'MAPD Loop Notes') },
+    );
+
+    expect(block).toContain('Payment History is the only billing report changing');
+    expect(block).not.toContain('x'.repeat(200));
+  });
+
+  it('is far smaller than the raw document was', () => {
+    const rawBlock = buildSharedMaterialBlock([pasteSource('paste-1', 'Notes', 'x'.repeat(18069))]);
+    const condensedBlock = buildSharedMaterialBlock(
+      [pasteSource('paste-1', 'Notes', 'x'.repeat(18069))],
+      null,
+      { 'paste-1': extractFor('paste-1', 'Notes') },
+    );
+
+    expect(condensedBlock.length).toBeLessThan(rawBlock.length);
+  });
+
+  it('carries a condensed document beside an un-condensed one', () => {
+    const block = buildSharedMaterialBlock(
+      [pasteSource('paste-1', 'Loop Notes', 'raw loop text'), pasteSource('paste-2', 'A short note', 'the short note')],
+      null,
+      { 'paste-1': extractFor('paste-1', 'Loop Notes') },
+    );
+
+    expect(block).toContain('Payment History is the only billing report changing');
+    expect(block).toContain('the short note');
+  });
+
+  it('never trims an extract, because a trimmed summary is a worse summary', () => {
+    const manyExtracts = Object.fromEntries(
+      Array.from({ length: 8 }, (_unused, index) => [`paste-${index}`, extractFor(`paste-${index}`, `Doc ${index}`)]),
+    );
+    const sources = Array.from({ length: 8 }, (_unused, index) => pasteSource(`paste-${index}`, `Doc ${index}`, 'raw'));
+
+    const block = buildSharedMaterialBlock(sources, null, manyExtracts);
+
+    expect(block).not.toContain('(truncated)');
+  });
+
+  it('prefers the brief when there is one, because it deduplicated across documents', () => {
+    const brief = {
+      overview: 'The consolidated view.',
+      decisions: [], requirements: [], openQuestions: [], conflicts: [],
+      extractCount: 2,
+      builtAtIso: '2026-08-27T00:00:00.000Z',
+    };
+
+    const block = buildSharedMaterialBlock(
+      [pasteSource('paste-1', 'Loop Notes', 'raw')],
+      brief,
+      { 'paste-1': extractFor('paste-1', 'Loop Notes') },
+    );
+
+    expect(block).toContain('The consolidated view.');
+    expect(block).not.toContain('Payment History is the only billing report changing');
+  });
+});

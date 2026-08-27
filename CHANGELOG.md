@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Condensing a single document did nothing.** A corpus of one long document &mdash; a Confluence page
+  of meeting notes, say &mdash; was split, condensed part by part, and merged into one extract, exactly
+  as intended. Then it was ignored. Consolidation into a brief needs at least two documents to
+  consolidate, and only a brief was ever carried into the re-write prompt; with one document there was
+  no brief, so the prompt fell back to the opening few thousand characters of the RAW text. The extract
+  was built, shown on screen, and silently discarded.
+  A condensed document now travels as its **extract** whether or not a brief exists. Extracts are never
+  trimmed &mdash; a trimmed summary is a worse summary, not a shorter document &mdash; and the raw
+  budget is what remains after them, so a condensed and an un-condensed document can ride together. A
+  brief still wins where there is one, because it deduplicated across documents and named their
+  conflicts.
+- **A second pass replaced the first instead of building on it.** Adding more notes and re-running is
+  the whole point of the refine loop, but every run re-derived all nine sections from the ORIGINAL
+  issue text. Everything the first pass got right had to be got right a second time by luck, and a
+  draft could come back shorter than the one it replaced.
+  The current draft is now sent as a **WORKING DRAFT**, with the instruction to extend it: keep what is
+  still correct, fold the new material in, and drop a line only where the new material actually
+  contradicts it. Returning a shorter draft that loses agreed detail is called out as wrong. The
+  original still rides alongside, so nothing is ever derived from the draft alone. Each pass is
+  additive &mdash; there is no need to approve and start over between sets of notes.
+
 ### Added
 - **A Check-in tab in My Issues: the message you were going to write anyway.** The persona picker
   already answers &ldquo;whose work?&rdquo;. This takes that answer, gathers the detail a status

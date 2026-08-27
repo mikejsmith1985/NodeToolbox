@@ -11,6 +11,7 @@ import { buildSharedMaterialBlock } from './sharedMaterial.ts';
 import { describeEnterpriseFeatureRules } from '../../../../domain/featureStateGates.ts';
 import type { ReferencedSource } from '../../sources/sourceModel.ts';
 import type { CorpusBrief } from './corpusBrief.ts';
+import type { DocumentExtract } from './documentExtract.ts';
 
 export const BULK_REWRITE_REPLY_KIND = 'featureRewriteBatch';
 
@@ -25,13 +26,25 @@ function capSource(text: string): string {
 }
 
 /** The per-issue block handed to the assistant. */
-function buildIssueBlock(jiraKey: string, original: CapturedOriginal): string {
-  return [
+function buildIssueBlock(jiraKey: string, original: CapturedOriginal, working: ProposedRewrite | null): string {
+  const lines = [
     `--- ${jiraKey} ---`,
     `Current summary: ${original.summary}`,
-    `Current description:\n${capSource(original.description)}`,
-    `Current acceptance criteria:\n${capSource(original.acceptanceCriteria)}`,
-  ].join('\n');
+    `Original description:\n${capSource(original.description)}`,
+    `Original acceptance criteria:\n${capSource(original.acceptanceCriteria)}`,
+  ];
+
+  // Sent so a second pass EXTENDS the draft rather than re-deriving it. Without this, every re-run
+  // started from the original text again, and everything the first pass got right had to be got
+  // right a second time by luck.
+  if (working !== null && working.description.trim() !== '') {
+    lines.push(
+      `WORKING DRAFT — extend this, do not start again:\n${capSource(working.description)}`,
+      `Working acceptance criteria:\n${capSource(working.acceptanceCriteria)}`,
+    );
+  }
+
+  return lines.join('\n');
 }
 
 /** The fixed instruction header + reply template wrapping the issue blocks (part N of M). */
@@ -44,6 +57,11 @@ function buildPromptShell(blocks: string[], partIndex: number, partCount: number
     `  ${VALIDATION_MARKER.business}  |  ${VALIDATION_MARKER.technical}  |  ${VALIDATION_MARKER.both}`,
     'Put the FULL acceptance criteria both in the description\'s "Acceptance Criteria" section AND in the item\'s acceptanceCriteria.',
     'Never state or imply that any of this was written, generated, or drafted by AI — a marker means information is missing, not AI authorship.',
+    // A PO who adds a second set of notes expects the draft to GROW. Getting back a shorter one that
+    // lost last week's agreed detail is the failure this instruction exists to prevent.
+    'Where an issue shows a WORKING DRAFT, treat that as the current text and EXTEND it: keep what is',
+    'still correct and fold the new material in. Drop a line only where the material actually',
+    'contradicts it. Returning a shorter draft that loses detail already agreed is wrong.',
     describeEnterpriseFeatureRules(),
     '',
     // Repeated in EVERY part, deliberately. A large batch is split across prompts, and material
@@ -79,7 +97,7 @@ function partitionBlocks(blocks: string[], shellOverhead: number): string[][] {
 
 /** Builds an ordered set of prompts covering every issue (one when the batch fits the cap). */
 export function buildBulkRewritePrompts(
-  items: { jiraKey: string; original: CapturedOriginal }[],
+  items: { jiraKey: string; original: CapturedOriginal; proposed?: ProposedRewrite | null }[],
   /**
    * Documents that apply to the WHOLE batch — a new standard, a compliance note, a design decision.
    *
@@ -92,12 +110,19 @@ export function buildBulkRewritePrompts(
    * Optional, so a batch whose material already fits builds exactly the prompt it always did.
    */
   sharedBrief: CorpusBrief | null = null,
+  /**
+   * Per-document extracts, for material condensed but not consolidated.
+   *
+   * A single long document never produces a brief — consolidation needs two things to consolidate —
+   * so without this its extract would be built, shown, and then ignored.
+   */
+  sharedExtracts: Readonly<Record<string, DocumentExtract>> = {},
 ): string[] {
   if (items.length === 0) {
     return [];
   }
-  const sharedMaterialBlock = buildSharedMaterialBlock(sharedSources, sharedBrief);
-  const blocks = items.map((each) => buildIssueBlock(each.jiraKey, each.original));
+  const sharedMaterialBlock = buildSharedMaterialBlock(sharedSources, sharedBrief, sharedExtracts);
+  const blocks = items.map((each) => buildIssueBlock(each.jiraKey, each.original, each.proposed ?? null));
   // The material counts against the budget: it rides in every part, so ignoring its size here would
   // build parts that overflow the cap by exactly the length of the documents.
   const shellOverhead = buildPromptShell([], 1, 1, sharedMaterialBlock).length;

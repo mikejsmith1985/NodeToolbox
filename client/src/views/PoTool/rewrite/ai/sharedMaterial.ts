@@ -17,6 +17,8 @@ import { describeSourceTitle, readSourceText } from '../../sources/sourceModel.t
 import type { ReferencedSource } from '../../sources/sourceModel.ts';
 import { renderCorpusBrief } from './corpusBrief.ts';
 import type { CorpusBrief } from './corpusBrief.ts';
+import { renderDocumentExtract } from './documentExtract.ts';
+import type { DocumentExtract } from './documentExtract.ts';
 
 /**
  * The most shared material one prompt will carry.
@@ -52,6 +54,15 @@ export function buildSharedMaterialBlock(
    * in beside it would restore the problem the consolidation just solved.
    */
   brief: CorpusBrief | null = null,
+  /**
+   * Per-document extracts, keyed by source id, for the documents that were condensed.
+   *
+   * The brief is the better answer when there IS one, but a corpus of a single long document never
+   * produces one — consolidation needs at least two things to consolidate. Without this, condensing
+   * that document did nothing at all: the extract was built, shown, and then quietly ignored while
+   * the prompt carried the opening few thousand characters of the raw text instead.
+   */
+  extractsBySourceId: Readonly<Record<string, DocumentExtract>> = {},
 ): string {
   if (brief !== null) {
     return [
@@ -61,17 +72,34 @@ export function buildSharedMaterialBlock(
     ].join('\n');
   }
 
+  // A condensed document travels as its EXTRACT. That is what condensing it was for, and the extract
+  // is both smaller and denser than the opening few thousand characters of the raw text ever were.
+  const condensedBlocks = sources
+    .map((source) => extractsBySourceId[source.id])
+    .filter((extract): extract is DocumentExtract => extract !== undefined)
+    .map((extract) => renderDocumentExtract(extract));
+
   const documentsWithText = sources
+    .filter((source) => extractsBySourceId[source.id] === undefined)
     .map((source) => ({ title: describeSourceTitle(source), text: readSourceText(source).trim() }))
     .filter((document) => document.text !== '');
 
-  if (documentsWithText.length === 0) {
+  if (documentsWithText.length === 0 && condensedBlocks.length === 0) {
     return '';
   }
 
-  const budgetPerDocument = Math.floor(MAX_SHARED_MATERIAL_CHARS / documentsWithText.length);
-  const renderedDocuments = documentsWithText.map((document) =>
-    [`### ${document.title}`, capDocumentText(document.text, budgetPerDocument)].join('\n'));
+  // The budget is what is LEFT after the extracts, which are already small by construction and are
+  // never trimmed — trimming a summary produces a worse summary, not a shorter document.
+  const condensedChars = condensedBlocks.join('').length;
+  const remainingBudget = Math.max(0, MAX_SHARED_MATERIAL_CHARS - condensedChars);
+  const budgetPerDocument = documentsWithText.length === 0
+    ? 0
+    : Math.floor(remainingBudget / documentsWithText.length);
+  const renderedDocuments = [
+    ...condensedBlocks,
+    ...documentsWithText.map((document) =>
+      [`### ${document.title}`, capDocumentText(document.text, budgetPerDocument)].join('\n')),
+  ];
 
   return [
     'Shared material — this applies to EVERY issue in this prompt, not just the first:',
