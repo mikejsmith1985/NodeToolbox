@@ -1744,6 +1744,24 @@
   background: color-mix(in srgb, var(--color-accent) 3%, var(--color-surface-1));
 }
 
+/* A Feature heading spanning the whole table, so the rows beneath it read as one Feature's worth of
+   the release. Not sticky: several of these scroll past, and a stack of pinned headings would cover
+   the rows they describe. */
+.releaseNotesGroupRow th {
+  position: static;
+  background: var(--color-surface-3, var(--color-surface-2));
+  border-bottom: 2px solid var(--color-border);
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+}
+
+.releaseNotesGroupNarrative {
+  display: block;
+  margin-top: 4px;
+  color: var(--color-text-secondary);
+  font-weight: 400;
+}
+
 .releaseNotesItemCell {
   display: grid;
   gap: 6px;

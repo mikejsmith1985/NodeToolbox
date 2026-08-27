@@ -8,7 +8,7 @@
 // Hygiene (dedicated issue-health checks), Feature Review (team-level feature rollup and hygiene),
 // PI Review (team-level Confluence authoring), and Releases (readiness by fix version).
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
 import {
   CartesianGrid,
@@ -41,6 +41,17 @@ import {
 import { copyElementReportToClipboard } from '../../utils/downloadElementImage.ts';
 import { useCopyFeedback } from '../../hooks/useCopyFeedback.ts';
 import { normalizeRichTextToPlainText } from '../../utils/richTextPlainText.ts';
+import {
+  extractFeatureKeyFromIssueFields,
+  featureLinkCandidateFieldIds,
+  loadConfiguredFeatureLinkFieldId,
+} from '../../utils/featureLink.ts';
+import {
+  groupReleaseRowsByFeature,
+  isGroupingWorthShowing,
+  describeGroupHeading,
+} from './hooks/releaseNotesGrouping.ts';
+import type { ReleaseNotesGroup } from './hooks/releaseNotesGrouping.ts';
 import { useAiAssist } from '../SnowHub/hooks/useAiAssist.ts';
 import {
   calculateCompositeScore,
@@ -97,6 +108,7 @@ import {
   parseReleaseAiAssistResponse,
   type ReleaseAiAssistPromptInput,
   type ReleaseAiAssistTableDocument,
+  type ReleaseAiAssistTableRow,
 } from './hooks/releaseAiAssistNotes.ts';
 import {
   buildDevSkipRiskAssistPrompt,
@@ -168,8 +180,19 @@ const JIRA_BROWSE_URL_PREFIX = 'https://jira.healthspring-jira-prod.aws.zilverto
 const OVERVIEW_GROUP_ORDER = ['In Progress', 'To Do', 'Done'] as const;
 const BLOCKERS_FILTER_LABEL = 'Show:';
 
-const RELEASE_FIELDS =
-  'summary,status,assignee,priority,issuetype,fixVersions,description,customfield_10200,comment';
+const RELEASE_BASE_FIELDS =
+  'summary,status,assignee,priority,issuetype,fixVersions,description,customfield_10200,comment,parent';
+
+/**
+ * The fields a release fetch asks for, including whichever field this Jira uses to link an issue to
+ * its Feature.
+ *
+ * Built rather than written out, because the feature-link field is configurable: naming one id here
+ * would work on this Jira and quietly return nothing on the next one.
+ */
+function buildReleaseFields(featureLinkFieldId: string): string {
+  return [RELEASE_BASE_FIELDS, ...featureLinkCandidateFieldIds(featureLinkFieldId)].join(',');
+}
 const RELEASE_MAX_RESULTS = 50;
 const POINTING_AI_ASSIST_ENHANCE_BUTTON_LABEL = '✦ Enhance with AI';
 const POINTING_AI_ASSIST_COPY_BUTTON_LABEL = '📋 Copy Prompt';
@@ -782,6 +805,10 @@ type ReleaseBucketId = (typeof RELEASE_BUCKETS)[number]['id'];
 interface ReleaseRadarEntry {
   version: JiraVersion;
   issues: JiraIssue[];
+  /** Which Feature each issue delivers, resolved from Jira. Null for work nothing could be filed under. */
+  featureKeyByIssueKey: Map<string, string | null>;
+  /** Those Features' own summaries, so a heading can read as more than a key. */
+  featureSummaryByKey: Map<string, string>;
   doneCount: number;
   progressCount: number;
   todoCount: number;
@@ -925,16 +952,29 @@ function buildReleasePromptInput(projectKey: string, releaseEntry: ReleaseRadarE
     doneCount: releaseEntry.doneCount,
     progressCount: releaseEntry.progressCount,
     todoCount: releaseEntry.todoCount,
-    issues: releaseEntry.issues.map((issue) => ({
-      issueKey: issue.key,
-      summary: issue.fields.summary,
-      statusName: readIssueStatusName(issue),
-      assigneeName: issue.fields.assignee?.displayName ?? null,
-      priorityName: issue.fields.priority?.name ?? null,
-      issueTypeName: issue.fields.issuetype?.name ?? null,
-      description: issue.fields.description,
-      acceptanceCriteria: issue.fields.customfield_10200,
-    })),
+    // Ordered by Feature so a Feature's items read together in the prompt. The assistant is never
+    // asked to decide the grouping — it is already settled here, from Jira's own link fields.
+    issues: [...releaseEntry.issues]
+      .sort((leftIssue, rightIssue) => {
+        const leftFeatureKey = releaseEntry.featureKeyByIssueKey.get(leftIssue.key) ?? '￿';
+        const rightFeatureKey = releaseEntry.featureKeyByIssueKey.get(rightIssue.key) ?? '￿';
+        return leftFeatureKey.localeCompare(rightFeatureKey);
+      })
+      .map((issue) => {
+        const featureKey = releaseEntry.featureKeyByIssueKey.get(issue.key) ?? null;
+        return {
+          issueKey: issue.key,
+          summary: issue.fields.summary,
+          statusName: readIssueStatusName(issue),
+          assigneeName: issue.fields.assignee?.displayName ?? null,
+          priorityName: issue.fields.priority?.name ?? null,
+          issueTypeName: issue.fields.issuetype?.name ?? null,
+          description: issue.fields.description,
+          acceptanceCriteria: issue.fields.customfield_10200,
+          featureKey,
+          featureSummary: featureKey === null ? '' : releaseEntry.featureSummaryByKey.get(featureKey) ?? '',
+        };
+      }),
   };
 }
 
@@ -5700,6 +5740,36 @@ function ReleasesTab({
 
     let isMounted = true;
 
+    const featureLinkFieldId = loadConfiguredFeatureLinkFieldId();
+
+    /**
+     * Reads the summaries of the Features this release's items were filed under.
+     *
+     * One request for the whole set: a heading reading "ENCUC-1359" says far less than one reading
+     * "ENCUC-1359 — Online enrollment intake", and asking per issue would be dozens of round trips for
+     * a handful of distinct Features. A failure here loses the summaries, never the grouping — the keys
+     * came from the issues themselves and are already known.
+     */
+    async function loadFeatureSummaries(
+      featureKeyByIssueKey: ReadonlyMap<string, string | null>,
+    ): Promise<Map<string, string>> {
+      const featureKeys = [...new Set([...featureKeyByIssueKey.values()].filter((key): key is string => key !== null))];
+      if (featureKeys.length === 0) {
+        return new Map<string, string>();
+      }
+
+      try {
+        const keyList = featureKeys.map((key) => `"${escapeJqlValue(key)}"`).join(',');
+        const featureResponse = await jiraGet<{ issues?: JiraIssue[] }>(
+          `/rest/api/2/search?jql=${encodeURIComponent(`key in (${keyList})`)}`
+            + `&maxResults=${featureKeys.length}&fields=summary`,
+        );
+        return new Map((featureResponse.issues ?? []).map((issue) => [issue.key, issue.fields.summary ?? '']));
+      } catch {
+        return new Map<string, string>();
+      }
+    }
+
     async function loadReleaseRadar() {
       setIsLoadingReleaseRadar(true);
       setReleaseRadarError(null);
@@ -5739,7 +5809,7 @@ function ReleasesTab({
 
             try {
               const searchResponse = await jiraGet<{ issues?: JiraIssue[] }>(
-                `/rest/api/2/search?jql=${encodeURIComponent(releaseJql)}&maxResults=${RELEASE_MAX_RESULTS}&fields=${RELEASE_FIELDS}`,
+                `/rest/api/2/search?jql=${encodeURIComponent(releaseJql)}&maxResults=${RELEASE_MAX_RESULTS}&fields=${buildReleaseFields(featureLinkFieldId)}`,
               );
               const versionIssues = searchResponse.issues ?? [];
 
@@ -5757,6 +5827,17 @@ function ReleasesTab({
                 }
               }
 
+              // Which Feature each item delivers, read from Jira's own link fields. Resolved here
+              // rather than asked of the assistant: a release note that misattributes work is worse
+              // than one that never grouped at all.
+              const featureKeyByIssueKey = new Map<string, string | null>(
+                versionIssues.map((issue) => [
+                  issue.key,
+                  extractFeatureKeyFromIssueFields(issue.fields as never, featureLinkFieldId),
+                ]),
+              );
+              const featureSummaryByKey = await loadFeatureSummaries(featureKeyByIssueKey);
+
               const totalCount = versionIssues.length;
               const completionPercentage = totalCount === 0
                 ? 0
@@ -5769,6 +5850,8 @@ function ReleasesTab({
               return {
                 version,
                 issues: versionIssues,
+                featureKeyByIssueKey,
+                featureSummaryByKey,
                 doneCount,
                 progressCount,
                 todoCount,
@@ -5782,6 +5865,8 @@ function ReleasesTab({
               return {
                 version,
                 issues: [],
+                featureKeyByIssueKey: new Map<string, string | null>(),
+                featureSummaryByKey: new Map<string, string>(),
                 doneCount: 0,
                 progressCount: 0,
                 todoCount: 0,
@@ -5947,6 +6032,7 @@ function ReleasesTab({
     versionId: string,
     fixVersionName: string,
     releaseDocument: ReleaseAiAssistTableDocument,
+    releaseGroups: readonly ReleaseNotesGroup[],
   ) => {
     const releaseNotesSectionElement = releaseNotesSectionRefs.current[versionId];
     if (!releaseNotesSectionElement) {
@@ -5963,7 +6049,7 @@ function ReleasesTab({
 
     try {
       const reportHeading = buildReleaseNotesHeading(teamName, fixVersionName);
-      const reportHtml = buildReleaseNotesHtml(reportHeading, releaseDocument);
+      const reportHtml = buildReleaseNotesHtml(reportHeading, releaseDocument, releaseGroups);
       await copyElementReportToClipboard(
         releaseNotesSectionElement,
         reportHtml,
@@ -6045,6 +6131,48 @@ function ReleasesTab({
                   const releaseExportError = releaseExportErrorByVersionId[entry.version.id] ?? '';
                   const releaseCopyConfirmation = releaseCopyConfirmationByVersionId[entry.version.id] ?? '';
                   const issueByKey = new Map(entry.issues.map((issue) => [issue.key, issue]));
+                  // Grouped from what JIRA said, never from what the assistant said. The narratives are
+                  // the assistant's only contribution here, and one naming a Feature nothing was filed
+                  // under simply does not appear.
+                  const releaseNotesGroups = importedReleaseNotes
+                    ? groupReleaseRowsByFeature(
+                      importedReleaseNotes.items,
+                      entry.featureKeyByIssueKey,
+                      entry.featureSummaryByKey,
+                      new Map((importedReleaseNotes.featureNarratives ?? []).map(
+                        (featureNarrative) => [featureNarrative.featureKey, featureNarrative.narrative],
+                      )),
+                    )
+                    : [];
+
+                  /** One release-notes row, rendered the same whether it sits flat or under a Feature. */
+                  const renderReleaseNotesRow = (
+                    releaseEntry: ReleaseRadarEntry,
+                    releaseItem: ReleaseAiAssistTableRow,
+                  ) => {
+                    const matchingIssue = issueByKey.get(releaseItem.issueKey) ?? null;
+                    return (
+                      <tr key={`${releaseEntry.version.id}-${releaseItem.issueKey}`}>
+                        <td>
+                          <div className={styles.releaseNotesItemCell}>
+                            <strong>{releaseItem.issueKey}</strong>
+                            <span>{releaseItem.title}</span>
+                            {matchingIssue ? (
+                              <div className={styles.releaseNotesMetaRow}>
+                                <span className={styles.statusBadge}>{readIssueStatusName(matchingIssue)}</span>
+                                <span className={styles.statusBadge}>{readAssigneeName(matchingIssue)}</span>
+                              </div>
+                            ) : null}
+                          </div>
+                        </td>
+                        <td>{releaseItem.releaseNote}</td>
+                        <td>{releaseItem.customerImpact}</td>
+                        <td>{releaseItem.technicalDetails}</td>
+                        <td>{releaseItem.risks}</td>
+                        <td>{releaseItem.validation}</td>
+                      </tr>
+                    );
+                  };
                   // Only releases with linked issues can expand; when they can, the
                   // whole header bar toggles the issue list (the labeled button below stays too).
                   const canExpandRelease = entry.totalCount > 0;
@@ -6201,7 +6329,12 @@ function ReleasesTab({
                               <button
                                 className={styles.releaseNotesExportButton}
                                 data-export-exclude="true"
-                                onClick={() => void handleCopyReleaseNotes(entry.version.id, entry.version.name, importedReleaseNotes)}
+                                onClick={() => void handleCopyReleaseNotes(
+                                  entry.version.id,
+                                  entry.version.name,
+                                  importedReleaseNotes,
+                                  releaseNotesGroups,
+                                )}
                                 type="button"
                               >
                                 {COPY_RELEASE_NOTES_BUTTON_LABEL}
@@ -6227,31 +6360,21 @@ function ReleasesTab({
                                 </tr>
                               </thead>
                               <tbody>
-                                {importedReleaseNotes.items.map((releaseItem) => {
-                                  const matchingIssue = issueByKey.get(releaseItem.issueKey) ?? null;
-
-                                  return (
-                                    <tr key={`${entry.version.id}-${releaseItem.issueKey}`}>
-                                      <td>
-                                        <div className={styles.releaseNotesItemCell}>
-                                          <strong>{releaseItem.issueKey}</strong>
-                                          <span>{releaseItem.title}</span>
-                                          {matchingIssue ? (
-                                            <div className={styles.releaseNotesMetaRow}>
-                                              <span className={styles.statusBadge}>{readIssueStatusName(matchingIssue)}</span>
-                                              <span className={styles.statusBadge}>{readAssigneeName(matchingIssue)}</span>
-                                            </div>
+                                {isGroupingWorthShowing(releaseNotesGroups)
+                                  ? releaseNotesGroups.map((releaseGroup) => (
+                                    <Fragment key={`${entry.version.id}-${releaseGroup.featureKey ?? 'no-feature'}`}>
+                                      <tr className={styles.releaseNotesGroupRow}>
+                                        <th colSpan={6} scope="colgroup">
+                                          {describeGroupHeading(releaseGroup)}
+                                          {releaseGroup.narrative ? (
+                                            <span className={styles.releaseNotesGroupNarrative}>{releaseGroup.narrative}</span>
                                           ) : null}
-                                        </div>
-                                      </td>
-                                      <td>{releaseItem.releaseNote}</td>
-                                      <td>{releaseItem.customerImpact}</td>
-                                      <td>{releaseItem.technicalDetails}</td>
-                                      <td>{releaseItem.risks}</td>
-                                      <td>{releaseItem.validation}</td>
-                                    </tr>
-                                  );
-                                })}
+                                        </th>
+                                      </tr>
+                                      {releaseGroup.rows.map((releaseItem) => renderReleaseNotesRow(entry, releaseItem))}
+                                    </Fragment>
+                                  ))
+                                  : importedReleaseNotes.items.map((releaseItem) => renderReleaseNotesRow(entry, releaseItem))}
                               </tbody>
                             </table>
                           </div>

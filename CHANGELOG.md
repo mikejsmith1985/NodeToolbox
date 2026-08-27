@@ -8,6 +8,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Release notes now carry the Feature each item delivers, and group by it.** A release read as a flat
+  list of twenty Jira keys is a list of twenty unrelated-looking changes. The people it gets sent to
+  &mdash; a release manager, a CAB, a stakeholder &mdash; do not think in stories; they think in the
+  handful of Features the release moves forward, and they want to know which of those landed.
+  Each item&#39;s Feature is now read from Jira&#39;s own link fields, stated in the prompt, and used to
+  arrange both the on-screen table and the HTML that gets pasted into email. The assistant is asked for
+  one thing it is genuinely better at: a sentence on what each Feature amounts to in this release.
+  **The grouping is resolved by Toolbox, never by the assistant** &mdash; and the prompt says so
+  outright. Toolbox already knows each item&#39;s Feature; an assistant asked to group as well could
+  quietly disagree, and a release note that misattributes work is worse than one that never grouped at
+  all. A narrative naming a Feature nothing was filed under is simply not shown.
+  Groups appear in the order their first item did, so the arrangement follows the release&#39;s own
+  ordering rather than an alphabetical one nobody chose. Work that could not be attributed is filed
+  under **No Feature** and shown **last** &mdash; never dropped, because a release note that hid what it
+  could not file would lie about what shipped. A release that turns out to sit under a single Feature
+  renders the flat table it always did: a heading repeated once over every row says nothing.
+  The feature-link field is **discovered rather than named**, so this works on a Jira whose field ids
+  differ. A failed lookup of the Feature summaries costs the wording in a heading, never the grouping
+  &mdash; the keys came from the issues themselves and are already known.
+
+### Added
 - **PDFs and saved Outlook emails go straight into the material a batch is written from.** The record
   of what a Feature has to do is very often a stack of PDFs and a folder of `.msg` files somebody
   dragged out of Outlook. Until now the only route in was to open each one, select all, and paste.

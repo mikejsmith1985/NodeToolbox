@@ -44,6 +44,8 @@ const SAMPLE_PROMPT_INPUT: ReleaseAiAssistPromptInput = {
       assigneeName: 'Alice',
       priorityName: 'High',
       issueTypeName: 'Story',
+      featureKey: 'TBX-1',
+      featureSummary: 'Release note generation',
       description: '<p>Generate the release note payload.</p>',
       acceptanceCriteria: {
         type: 'doc',
@@ -236,5 +238,158 @@ describe('releaseAiAssistNotes', () => {
       releaseName: 'Release 26.3',
       releaseSummary: 'Missing items array.',
     }))).toThrow('AI Assist response must include an items array.');
+  });
+});
+
+describe('release notes carry the Feature each item delivers', () => {
+  it('states each item\'s Feature in the prompt, so a Feature\'s work reads together', () => {
+    const prompt = buildReleaseAiAssistPrompt(SAMPLE_PROMPT_INPUT);
+
+    expect(prompt).toContain('Feature: TBX-1 — Release note generation');
+    expect(prompt).toContain('grouped by the Feature they deliver');
+  });
+
+  it('names an item with no Feature rather than leaving the line blank', () => {
+    const prompt = buildReleaseAiAssistPrompt({
+      ...SAMPLE_PROMPT_INPUT,
+      issues: [{ ...SAMPLE_PROMPT_INPUT.issues[0], featureKey: null, featureSummary: '' }],
+    });
+
+    expect(prompt).toContain('Feature: (none — this item is not linked to a Feature)');
+  });
+
+  it('falls back to the bare key when the Feature summary could not be read', () => {
+    const prompt = buildReleaseAiAssistPrompt({
+      ...SAMPLE_PROMPT_INPUT,
+      issues: [{ ...SAMPLE_PROMPT_INPUT.issues[0], featureKey: 'TBX-1', featureSummary: '' }],
+    });
+
+    expect(prompt).toContain('Feature: TBX-1');
+  });
+
+  it('forbids the assistant from regrouping, because that is already settled', () => {
+    // Toolbox resolved each item's Feature from Jira. An assistant that regrouped could quietly
+    // disagree, and a release note that misattributes work is worse than one that never grouped.
+    const prompt = buildReleaseAiAssistPrompt(SAMPLE_PROMPT_INPUT);
+
+    expect(prompt).toContain('Do NOT decide which item belongs to which Feature');
+    expect(prompt).toContain('featureNarratives');
+  });
+});
+
+describe('parseReleaseAiAssistResponse — per-Feature narratives', () => {
+  /** A minimal valid reply, plus whatever the test adds. */
+  function replyWith(extraFields: Record<string, unknown>): string {
+    return JSON.stringify({
+      releaseName: 'Release 26.3',
+      releaseSummary: 'A summary of the release.',
+      items: [{
+        issueKey: 'TBX-101',
+        title: 'A title',
+        releaseNote: 'What changed.',
+        customerImpact: 'Why it matters.',
+        technicalDetails: 'How it works.',
+        risks: 'None.',
+        validation: 'Validated.',
+      }],
+      ...extraFields,
+    });
+  }
+
+  it('reads a narrative per Feature', () => {
+    const parsed = parseReleaseAiAssistResponse(replyWith({
+      featureNarratives: [{ featureKey: 'TBX-1', narrative: 'Completes intake for batch senders.' }],
+    }));
+
+    expect(parsed.featureNarratives).toEqual([
+      { featureKey: 'TBX-1', narrative: 'Completes intake for batch senders.' },
+    ]);
+  });
+
+  it('imports a reply that carried no narratives at all', () => {
+    // A reply pasted before this existed, or from an assistant that skipped the section, must still
+    // produce the table it always did.
+    expect(parseReleaseAiAssistResponse(replyWith({})).featureNarratives).toEqual([]);
+  });
+
+  it('skips a malformed narrative rather than losing the whole table to it', () => {
+    // The narratives are commentary on a table that is already complete without them.
+    const parsed = parseReleaseAiAssistResponse(replyWith({
+      featureNarratives: [{ featureKey: '', narrative: 'No key' }, { featureKey: 'TBX-1', narrative: 'Good one.' }],
+    }));
+
+    expect(parsed.featureNarratives).toEqual([{ featureKey: 'TBX-1', narrative: 'Good one.' }]);
+    expect(parsed.items).toHaveLength(1);
+  });
+
+  it('keeps the first narrative when a Feature was described twice', () => {
+    const parsed = parseReleaseAiAssistResponse(replyWith({
+      featureNarratives: [
+        { featureKey: 'TBX-1', narrative: 'First.' },
+        { featureKey: 'TBX-1', narrative: 'Second.' },
+      ],
+    }));
+
+    expect(parsed.featureNarratives).toEqual([{ featureKey: 'TBX-1', narrative: 'First.' }]);
+  });
+});
+
+describe('buildReleaseNotesHtml — grouped for email', () => {
+  const releaseDocument = {
+    releaseName: 'Release 26.3',
+    releaseSummary: 'A summary.',
+    items: [
+      { issueKey: 'TBX-1', title: 'One', releaseNote: 'a', customerImpact: 'b', technicalDetails: 'c', risks: 'd', validation: 'e' },
+      { issueKey: 'TBX-2', title: 'Two', releaseNote: 'a', customerImpact: 'b', technicalDetails: 'c', risks: 'd', validation: 'e' },
+    ],
+  };
+
+  const groups = [
+    {
+      featureKey: 'FEAT-10',
+      featureSummary: 'Online enrollment intake',
+      narrative: 'Completes intake.',
+      rows: [releaseDocument.items[0]],
+    },
+    { featureKey: 'FEAT-20', featureSummary: '', narrative: '', rows: [releaseDocument.items[1]] },
+  ];
+
+  it('heads each group with its Feature, and carries the narrative under it', () => {
+    const html = buildReleaseNotesHtml('Team 06/23/2026 Release Notes', releaseDocument, groups);
+
+    expect(html).toContain('FEAT-10 — Online enrollment intake');
+    expect(html).toContain('Completes intake.');
+    expect(html).toContain('FEAT-20');
+  });
+
+  it('spans the heading across every column so the rows read as one Feature\'s worth', () => {
+    const html = buildReleaseNotesHtml('Heading', releaseDocument, groups);
+
+    expect(html).toContain('colspan="6"');
+  });
+
+  it('renders the flat table it always did when there is nothing to group by', () => {
+    const html = buildReleaseNotesHtml('Heading', releaseDocument, []);
+
+    expect(html).not.toContain('colspan="6"');
+    expect(html).toContain('TBX-1');
+    expect(html).toContain('TBX-2');
+  });
+
+  it('shows every item exactly once when grouped', () => {
+    const html = buildReleaseNotesHtml('Heading', releaseDocument, groups);
+
+    expect(html.match(/<strong>TBX-1<\/strong>/g)).toHaveLength(1);
+    expect(html.match(/<strong>TBX-2<\/strong>/g)).toHaveLength(1);
+  });
+
+  it('escapes a Feature summary so it cannot break out of the table', () => {
+    const html = buildReleaseNotesHtml('Heading', releaseDocument, [
+      { ...groups[0], featureSummary: '<script>alert(1)</script>' },
+      groups[1],
+    ]);
+
+    expect(html).not.toContain('<script>');
+    expect(html).toContain('&lt;script&gt;');
   });
 });
