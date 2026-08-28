@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **A Delivery Health dashboard: where the work is, and what it is costing, on one screen.** Four
+  reports on four tabs, each with its own scope box, is four answers somebody has to hold in their head
+  and reconcile &mdash; and a table only hands over the data. &ldquo;I can get the data by running a
+  query; understanding it requires visualisation&rdquo; is the right complaint about a report that
+  tabulates and stops.
+  This is one scope, read **once**, drawn four ways: where open work is piling up, who is holding it,
+  what came back after reaching delivery, and which stage sent it back. Because every panel is built
+  from the same single fetch, no two figures on the screen can describe different moments.
+  **The constraint is discovered, not configured.** The existing bottleneck panel asked which statuses
+  count as internal testing and then measured the wait in those &mdash; but a report that has to be told
+  where the bottleneck is cannot tell you where the bottleneck is; it can only confirm the guess, and
+  the guess was the hard part. Every status the work is actually sitting in is now measured and ranked,
+  so the constraint is found whatever it happens to be called on this board.
+  Stages rank by **accumulated waiting**, never by count: thirty issues that arrived yesterday are not a
+  bottleneck and four that have sat a month are, and a count cannot tell those apart. The wait is
+  calendar days, because a ticket untouched over a weekend has still been waiting. An issue whose
+  history could not be read is reported separately rather than aged at zero, which would have dragged a
+  stage&#39;s median down and made a queue look healthier than it is.
+  The visual language is the **PI Review capacity panel** this app baselines on &mdash; stat cards,
+  meters with a threshold line, and a distribution bar with a legend &mdash; drawn as CSS meters rather
+  than a charting library, so they inherit the app&#39;s own theme and are correct in light and dark
+  without a second palette to keep in step. Tone rides on the figure, never the whole card: a wall of
+  red says only that somebody chose red, while one red number among four says which to look at.
+
 ### Fixed
 - **The Rework report counted things that were not rework, and led with a number that was zero.** Its
   first run on real data reported 21 issues, 376 working days and &ldquo;0 points affected&rdquo;. Every

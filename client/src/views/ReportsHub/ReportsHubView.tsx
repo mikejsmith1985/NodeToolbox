@@ -18,6 +18,7 @@ import { HygieneReportTab } from './HygieneReportTab.tsx'
 import { PersonalFlowTab } from './PersonalFlowTab.tsx'
 import { IssueAgingTab } from './IssueAgingTab.tsx'
 import ReworkTab from './ReworkTab.tsx'
+import DeliveryHealthTab from './DeliveryHealthTab.tsx'
 import { IssueFlowTab } from './IssueFlowTab.tsx'
 import { findDefaultPiNameForDate } from '../ArtView/hooks/artHelpers.ts'
 import type {
@@ -44,6 +45,7 @@ const VIEW_TITLE = '📈 Reports Hub'
 const VIEW_SUBTITLE = 'Director & RTE reporting dashboard for PI planning.'
 
 const TAB_OPTIONS: { key: ReportsHubTab; label: string }[] = [
+  { key: 'deliveryHealth', label: '❤️ Delivery Health' },
   { key: 'dashboard', label: '🧭 Defect Dashboard' },
   { key: 'features', label: '🏛️ Feature Report' },
   { key: 'defects', label: '🔴 Defect Tracker' },
@@ -182,6 +184,13 @@ const TAB_DESCRIPTIONS: Record<ReportsHubTab, string[]> = {
     'Lead time, cycle time and the pre-work wait are always shown together, in working days; stage durations sum exactly to the totals, so the figures can be checked by hand against Jira history.',
     'Time an issue spent unassigned appears as its own Unassigned stage and is never charged to whoever picked it up next.',
     'Use for: finding where delivery actually stalls, separating queue time from hands-on work, and validating the per-person Personal Flow figures.',
+  ],
+  deliveryHealth: [
+    'Delivery Health: one read of Jira drawn four ways — where open work is piling up, who is holding it, what came back after reaching delivery, and which stage sent it back.',
+    'The constraint is DISCOVERED, not configured: every status the work is actually sitting in is measured and ranked, so a bottleneck is found whatever it happens to be called on this board.',
+    'Stages rank by ACCUMULATED waiting rather than by issue count — thirty issues that arrived yesterday are not a bottleneck; four that have sat a month are.',
+    'Every panel is built from the same single fetch, so no two figures on the screen can describe different moments.',
+    'Use for: naming the constraint with evidence, showing where a queue has a person’s name on it, and pricing what late defect discovery costs in days.',
   ],
   rework: [
     'Rework report: every issue that reached the team’s delivery line (“Ready for QA” or beyond) and then moved back out of it, read from Jira changelog history.',
@@ -2634,6 +2643,8 @@ export default function ReportsHubView() {
         return <IssueAgingTab />
       case 'rework':
         return <ReworkTab />
+      case 'deliveryHealth':
+        return <DeliveryHealthTab />
       default:
         return null
     }
