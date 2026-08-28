@@ -23,6 +23,24 @@ import type { JiraIssue } from '../../../types/jira.ts';
 /** Open work only, newest activity first. A check-in is about what is live, not what shipped. */
 const CHECK_IN_JQL_SUFFIX = ' AND statusCategory != Done ORDER BY updated DESC';
 
+/**
+ * Builds the JQL a check-in runs, from either a person or an arbitrary query.
+ *
+ * The tab was built around "whose work?", which answers most check-ins and not all of them. "Every
+ * defect in this project, whoever holds it" is a real question with no single assignee, and so is any
+ * hand-picked set somebody wants summarised. A custom query answers those without needing a second
+ * surface that does the same job.
+ *
+ * The custom clause is bracketed so an OR inside it cannot escape the open-work filter — without it,
+ * `a OR b AND statusCategory != Done` returns every issue matching a, closed ones included.
+ */
+export function buildCheckInJql(assigneeClause: string, customJql: string): string {
+  const trimmedCustom = customJql.trim();
+  return trimmedCustom === ''
+    ? `${assigneeClause}${CHECK_IN_JQL_SUFFIX}`
+    : `(${trimmedCustom})${CHECK_IN_JQL_SUFFIX}`;
+}
+
 /** More than one person can hold and still have a conversation about. */
 const MAX_CHECK_IN_ISSUES = 60;
 
@@ -70,6 +88,13 @@ export function useCheckInIssues(
   /** The Dashboard's configured story-point field, when there is one. Empty falls back to the
    *  resolver's own defaults, which is the right answer on a Jira that uses them. */
   storyPointsFieldId = '',
+  /**
+   * A query to use INSTEAD of the person. Empty means check in on whoever the picker holds.
+   *
+   * Replaces rather than narrows: "every defect in the project" is not a subset of one person's work,
+   * and anding the two would silently return nothing whenever they did not overlap.
+   */
+  customJql = '',
 ): CheckInIssuesState {
   const [issues, setIssues] = useState<CheckInIssue[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -120,7 +145,7 @@ export function useCheckInIssues(
       ].join(',');
 
       try {
-        const jql = `${assigneeClause}${CHECK_IN_JQL_SUFFIX}`;
+        const jql = buildCheckInJql(assigneeClause, customJql);
         const response = await jiraGet<{ issues?: JiraIssue[] }>(
           `/rest/api/2/search?jql=${encodeURIComponent(jql)}`
             + `&maxResults=${MAX_CHECK_IN_ISSUES}&fields=${requestedFields}`,
@@ -170,7 +195,7 @@ export function useCheckInIssues(
     return () => {
       isMounted = false;
     };
-  }, [assigneeClause, storyPointsFieldId, reloadCount]);
+  }, [assigneeClause, customJql, storyPointsFieldId, reloadCount]);
 
   return { issues, isLoading, error, reload };
 }

@@ -7,7 +7,7 @@ const { mockJiraGet } = vi.hoisted(() => ({ mockJiraGet: vi.fn() }));
 
 vi.mock('../../../services/jiraApi.ts', () => ({ jiraGet: mockJiraGet }));
 
-import { useCheckInIssues } from './useCheckInIssues.ts';
+import { buildCheckInJql, useCheckInIssues } from './useCheckInIssues.ts';
 import { FEATURE_LINK_DEFAULT_FIELD } from '../../../utils/featureLink.ts';
 import type { ReportSubject } from '../myIssuesRoleLens.ts';
 
@@ -127,5 +127,66 @@ describe('useCheckInIssues', () => {
 
     await waitFor(() => expect(result.current.error).toBe('Jira is unreachable'));
     expect(result.current.issues).toEqual([]);
+  });
+});
+
+// ── A custom set, not just a person (GH #376) ──────────────────────────────
+
+describe('buildCheckInJql', () => {
+  it('checks in on the person when no query was given', () => {
+    expect(buildCheckInJql('assignee = currentUser()', ''))
+      .toBe('assignee = currentUser() AND statusCategory != Done ORDER BY updated DESC');
+  });
+
+  it('REPLACES the person with the query rather than narrowing to both', () => {
+    // "Every defect in the project" is not a subset of one person's work, and anding the two would
+    // silently return nothing whenever they did not overlap.
+    const jql = buildCheckInJql('assignee = currentUser()', 'project = ENCUC AND issuetype = Defect');
+
+    expect(jql).not.toContain('assignee');
+    expect(jql).toContain('project = ENCUC AND issuetype = Defect');
+  });
+
+  it('brackets the query so an OR inside it cannot escape the open-work filter', () => {
+    // Without it, "a OR b AND statusCategory != Done" returns every issue matching a, closed included.
+    expect(buildCheckInJql('assignee = currentUser()', 'project = A OR project = B'))
+      .toBe('(project = A OR project = B) AND statusCategory != Done ORDER BY updated DESC');
+  });
+
+  it('keeps the open-work filter whichever way it was scoped', () => {
+    expect(buildCheckInJql('assignee = currentUser()', 'issuetype = Defect'))
+      .toContain('statusCategory != Done');
+  });
+
+  it('ignores whitespace somebody left in the box', () => {
+    expect(buildCheckInJql('assignee = currentUser()', '   ')).toContain('assignee = currentUser()');
+  });
+});
+
+describe('useCheckInIssues — a custom query', () => {
+  beforeEach(() => {
+    mockJiraGet.mockReset();
+  });
+
+  it('asks Jira for the custom set instead of the person', async () => {
+    mockJiraGet.mockResolvedValue({ issues: [] });
+
+    renderHook(() => useCheckInIssues(SIMULATED_USER, [], '', 'project = ENCUC AND issuetype = Defect'));
+
+    await waitFor(() => expect(mockJiraGet).toHaveBeenCalled());
+    // The JQL only: "assignee" also appears in the requested FIELDS, which is not the scope.
+    const jql = decodeURIComponent(requestedUrl(0).split('jql=')[1].split('&')[0]);
+
+    expect(jql).toContain('project = ENCUC AND issuetype = Defect');
+    expect(jql).not.toContain('assignee');
+  });
+
+  it('goes back to the person when the query is cleared', async () => {
+    mockJiraGet.mockResolvedValue({ issues: [] });
+
+    renderHook(() => useCheckInIssues(SIMULATED_USER, [], '', ''));
+
+    await waitFor(() => expect(mockJiraGet).toHaveBeenCalled());
+    expect(decodeURIComponent(requestedUrl(0))).toContain('assignee = "557058:ab-12"');
   });
 });

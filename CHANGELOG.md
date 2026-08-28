@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **The Check-in can now run on any set of issues, not just one person&#39;s.** The tab was built around
+  &ldquo;whose work?&rdquo;, which answers most check-ins and not all of them. &ldquo;Every defect in
+  this project, whoever holds it&rdquo; is a real question with no single assignee, and so is any
+  hand-picked set somebody wants summarised.
+  A JQL box beside the person **replaces** it rather than narrowing to both &mdash; a project&#39;s
+  defects are not a subset of one person&#39;s work, and anding the two would silently return nothing
+  whenever they did not overlap. The query is bracketed so an `OR` inside it cannot escape the
+  open-work filter, and the open-work filter is kept either way, because a check-in is about what is
+  live.
+  The heading and the prompt follow: a custom set is addressed as the team rather than as a person,
+  since asking an assistant to write a message to somebody who does not exist produces a message nobody
+  can send. What was actually queried is stated above the results rather than left to a box somebody
+  may have edited since, and an empty result says nothing matched rather than blaming the person whose
+  name is still on the picker.
+
 ### Changed
 - **Flow Analysis, Aging and Rework now draw the same way the dashboard does.** The shared visual
   language shipped with Delivery Health and stopped there; the other three stayed tables. A table is

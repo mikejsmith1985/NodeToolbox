@@ -48,13 +48,21 @@ function describeTiming(issue: CheckInIssue): string {
 
 /** The check-in workspace: the plate, the gated prompt round trip, and the message to send. */
 export default function CheckInTab({ subject, memberIdentifiers, subjectName }: CheckInTabProps) {
-  const { issues, isLoading, error, reload } = useCheckInIssues(subject, memberIdentifiers);
+  const [customJql, setCustomJql] = useState('');
+  // Held apart from the box so an edit mid-typing does not re-query on every keystroke.
+  const [appliedJql, setAppliedJql] = useState('');
+  const { issues, isLoading, error, reload } = useCheckInIssues(
+    subject, memberIdentifiers, '', appliedJql,
+  );
   const [reply, setReply] = useState<CheckInReply | null>(null);
   const [ingestError, setIngestError] = useState<string | null>(null);
   const [editedMessage, setEditedMessage] = useState<string | null>(null);
   const { hasCopied, confirmCopy } = useCopyFeedback();
 
-  const prompt = useMemo(() => buildCheckInPrompt(subjectName, issues), [subjectName, issues]);
+  // A custom query has no single owner, so the prompt addresses the SET rather than a person — asking
+  // an assistant to write a message to somebody who does not exist produces a message nobody can send.
+  const promptSubject = appliedJql === '' ? subjectName : 'the team';
+  const prompt = useMemo(() => buildCheckInPrompt(promptSubject, issues), [promptSubject, issues]);
 
   // The edited text wins once it exists: the sender's own wording is the whole point of showing it.
   const messageText = editedMessage ?? (reply === null ? '' : buildCheckInMessage(reply, issues));
@@ -74,7 +82,9 @@ export default function CheckInTab({ subject, memberIdentifiers, subjectName }: 
   return (
     <div className={styles.settingsSection}>
       <div className={styles.toolbar}>
-        <h3 className={styles.settingsSectionTitle}>{`Status check-in — ${subjectName}`}</h3>
+        <h3 className={styles.settingsSectionTitle}>
+          {appliedJql === '' ? `Status check-in — ${subjectName}` : 'Status check-in — custom query'}
+        </h3>
         <button className={styles.refreshButton} type="button" onClick={reload} disabled={isLoading}>
           {isLoading ? 'Loading…' : 'Refresh'}
         </button>
@@ -88,12 +98,45 @@ export default function CheckInTab({ subject, memberIdentifiers, subjectName }: 
         {'where things actually are. Nothing is written to Jira and nothing sends itself.'}
       </p>
 
+      {/* "Whose work?" answers most check-ins and not all of them. Every defect in a project, whoever
+          holds it, is a real question with no single assignee. */}
+      <div className={styles.toolbar}>
+        <label className={styles.fieldLabel} htmlFor="check-in-jql">
+          Or check in on a custom set (JQL — replaces the person above)
+        </label>
+        <input
+          className={styles.textInput}
+          id="check-in-jql"
+          onChange={(changeEvent) => setCustomJql(changeEvent.target.value)}
+          placeholder='project = ENCUC AND issuetype = Defect'
+          value={customJql}
+        />
+        <button className={styles.pillButton} type="button" onClick={() => setAppliedJql(customJql)}>
+          Use this query
+        </button>
+        {appliedJql === '' ? null : (
+          <button
+            className={styles.pillButton}
+            type="button"
+            onClick={() => { setCustomJql(''); setAppliedJql(''); }}
+          >
+            {`Back to ${subjectName}`}
+          </button>
+        )}
+      </div>
+
+      {/* Says what was actually asked for, so a stale box never misrepresents what is on screen. */}
+      {appliedJql === '' ? null : (
+        <p className={styles.expandHint}>{`Showing issues matching: ${appliedJql}`}</p>
+      )}
+
       {error ? <p className={styles.errorMessage}>{error}</p> : null}
 
       {!isLoading && issues.length === 0 && error === null ? (
         <p className={styles.emptyIssueList}>
-          {subjectName}
-          {' has no open assigned work, so there is nothing to check in on.'}
+          {appliedJql === ''
+            ? `${subjectName} has no open assigned work, so there is nothing to check in on.`
+            : 'Nothing open matched that query, so there is nothing to check in on.'}
         </p>
       ) : null}
 

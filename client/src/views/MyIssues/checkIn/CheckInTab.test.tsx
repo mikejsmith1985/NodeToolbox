@@ -183,3 +183,90 @@ describe('CheckInTab', () => {
     expect(await screen.findByText('Jira is unreachable')).toBeInTheDocument();
   });
 });
+
+// ── Checking in on a set rather than a person (GH #376) ────────────────────
+
+describe('CheckInTab custom query', () => {
+  beforeEach(() => {
+    mockJiraGet.mockReset();
+    setAiAssistUnlocked(true);
+  });
+
+  it('offers a query box beside the person', async () => {
+    // "Every defect in the project, whoever holds it" is a real question with no single assignee.
+    mockJiraGet.mockResolvedValue({ issues: [] });
+
+    renderTab();
+
+    expect(await screen.findByLabelText(/custom set/i)).toBeInTheDocument();
+  });
+
+  it('runs the query instead of the person once applied', async () => {
+    const user = userEvent.setup();
+    mockJiraGet.mockResolvedValue({ issues: [jiraIssue('ENCUC-1')] });
+
+    renderTab();
+    await screen.findByLabelText('Work to check in on');
+
+    await user.type(await screen.findByLabelText(/custom set/i), 'issuetype = Defect');
+    await user.click(screen.getByRole('button', { name: 'Use this query' }));
+
+    await waitFor(() => {
+      const lastCall = decodeURIComponent(String(mockJiraGet.mock.calls.at(-1)?.[0]));
+      expect(lastCall).toContain('issuetype = Defect');
+    });
+  });
+
+  it('says which query the figures describe, not what is typed in the box', async () => {
+    const user = userEvent.setup();
+    mockJiraGet.mockResolvedValue({ issues: [jiraIssue('ENCUC-1')] });
+
+    renderTab();
+    await screen.findByLabelText('Work to check in on');
+
+    await user.type(await screen.findByLabelText(/custom set/i), 'issuetype = Defect');
+    await user.click(screen.getByRole('button', { name: 'Use this query' }));
+
+    expect(await screen.findByText(/Showing issues matching: issuetype = Defect/)).toBeInTheDocument();
+  });
+
+  it('titles the run as a custom query rather than as a person', async () => {
+    const user = userEvent.setup();
+    mockJiraGet.mockResolvedValue({ issues: [jiraIssue('ENCUC-1')] });
+
+    renderTab();
+    await screen.findByLabelText('Work to check in on');
+
+    await user.type(await screen.findByLabelText(/custom set/i), 'issuetype = Defect');
+    await user.click(screen.getByRole('button', { name: 'Use this query' }));
+
+    expect(await screen.findByText(/Status check-in — custom query/)).toBeInTheDocument();
+  });
+
+  it('offers a way back to the person', async () => {
+    const user = userEvent.setup();
+    mockJiraGet.mockResolvedValue({ issues: [jiraIssue('ENCUC-1')] });
+
+    renderTab();
+    await screen.findByLabelText('Work to check in on');
+
+    await user.type(await screen.findByLabelText(/custom set/i), 'issuetype = Defect');
+    await user.click(screen.getByRole('button', { name: 'Use this query' }));
+    await user.click(await screen.findByRole('button', { name: /Back to Reynolds, Kevin/ }));
+
+    expect(await screen.findByText(/Status check-in — Reynolds, Kevin/)).toBeInTheDocument();
+  });
+
+  it('says nothing matched, rather than blaming the person', async () => {
+    const user = userEvent.setup();
+    mockJiraGet.mockResolvedValueOnce({ issues: [jiraIssue('ENCUC-1')] }).mockResolvedValue({ issues: [] });
+
+    renderTab();
+    await screen.findByLabelText('Work to check in on');
+
+    await user.type(await screen.findByLabelText(/custom set/i), 'issuetype = Defect');
+    await user.click(screen.getByRole('button', { name: 'Use this query' }));
+
+    expect(await screen.findByText(/Nothing open matched that query/)).toBeInTheDocument();
+  });
+});
