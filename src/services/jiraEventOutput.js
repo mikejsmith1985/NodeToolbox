@@ -299,7 +299,13 @@ function postJiraCommentForEvent(jiraIssueKey, commentText, eventTypeName, repoF
         // The transition's outcome is REPORTED, not just logged: a refusal (an ambiguous "Done"
         // that could have meant Cancelled) otherwise looked identical to a rule that did nothing.
         const transitionPromise = requestedTransition
-          ? fireJiraTransition(jiraIssueKey, requestedTransition, configuration).then((outcome) => {
+          // Off unless the rule says outright that cancelling is what it is for.
+          ? fireJiraTransition(
+            jiraIssueKey,
+            requestedTransition,
+            configuration,
+            resolvedOptions.isDiscardAllowed === true,
+          ).then((outcome) => {
             recordResult({
               repo:      repoFullPath,
               eventType: eventTypeName,
@@ -349,17 +355,38 @@ function postJiraCommentForEvent(jiraIssueKey, commentText, eventTypeName, repoF
  *
  * Pure, so the ambiguity rule is directly testable.
  *
+ * A discard status is refused on BOTH paths unless the caller opts in. Inferring a cancellation was
+ * already refused; naming one is now refused too, because the status picker offers "Cancelled" beside
+ * every other status and one wrong choice arms a rule that throws work away on every future email.
+ *
  * @param {Array<object>} availableTransitions - Jira's /transitions payload entries.
  * @param {string} requestedStatusName
+ * @param {boolean} [isDiscardAllowed] - True only when the rule explicitly permits cancelling.
  * @returns {{ transition: object|null, reason: string }}
  */
-function selectTransitionForStatus(availableTransitions, requestedStatusName) {
+function selectTransitionForStatus(availableTransitions, requestedStatusName, isDiscardAllowed = false) {
   const normalizedRequest = String(requestedStatusName || '').trim().toLowerCase();
   const transitions = Array.isArray(availableTransitions) ? availableTransitions : [];
 
   const exactNameMatch = transitions.find((transition) =>
     transition.to && transition.to.name && transition.to.name.trim().toLowerCase() === normalizedRequest);
   if (exactNameMatch) {
+    // The category guard below refused an INFERRED cancellation and left the exact-name path wide
+    // open, on the reasoning that naming "Cancelled" outright must be deliberate. It is not: the
+    // status picker offers Cancelled like any other status, and choosing it once quietly arms a rule
+    // that discards live development work on every future merge email. Seven issues were cancelled in
+    // three days that way, each one rescued by hand afterwards (GH #376).
+    //
+    // No branch, commit, PR or merge means "throw this work away". Refused unless the rule says
+    // outright that it means it.
+    if (isDiscardTransition(exactNameMatch) && !isDiscardAllowed) {
+      return {
+        transition: null,
+        reason: 'refusing to discard work — "' + exactNameMatch.to.name + '" abandons the issue rather than '
+          + 'advancing it, and no branch, commit, pull request or merge means the work should be thrown '
+          + 'away. Turn on "allow this rule to cancel issues" if that is really what this rule is for.',
+      };
+    }
     return { transition: exactNameMatch, reason: 'matched status name' };
   }
 
@@ -461,7 +488,7 @@ function wasStatusReversedByPerson(changelogHistories, requestedStatusName, auto
  * @param {object} configuration
  * @returns {Promise<{ didMove: boolean, toStatusName: string|null, reason: string }>}
  */
-function fireJiraTransition(jiraIssueKey, requestedStatusName, configuration) {
+function fireJiraTransition(jiraIssueKey, requestedStatusName, configuration, isDiscardAllowed = false) {
   const isTlsVerified = configuration.sslVerify !== false;
 
   // Read the issue's own history first. A person who has already moved this issue out of the status
@@ -486,7 +513,9 @@ function fireJiraTransition(jiraIssueKey, requestedStatusName, configuration) {
       if (reversalVerdict.wasReversed) {
         return { didMove: false, toStatusName: null, reason: reversalVerdict.reason };
       }
-      return fireResolvedJiraTransition(jiraIssueKey, requestedStatusName, configuration, isTlsVerified);
+      return fireResolvedJiraTransition(
+        jiraIssueKey, requestedStatusName, configuration, isTlsVerified, isDiscardAllowed,
+      );
     });
 }
 
@@ -500,9 +529,12 @@ function fireJiraTransition(jiraIssueKey, requestedStatusName, configuration) {
  * @param {string} requestedStatusName
  * @param {object} configuration
  * @param {boolean} isTlsVerified
+ * @param {boolean} [isDiscardAllowed] - True only when the rule explicitly permits cancelling.
  * @returns {Promise<{ didMove: boolean, toStatusName: string|null, reason: string }>}
  */
-function fireResolvedJiraTransition(jiraIssueKey, requestedStatusName, configuration, isTlsVerified) {
+function fireResolvedJiraTransition(
+  jiraIssueKey, requestedStatusName, configuration, isTlsVerified, isDiscardAllowed = false,
+) {
   return makeJiraApiRequest(
     'GET',
     '/rest/api/2/issue/' + encodeURIComponent(jiraIssueKey) + '/transitions',
@@ -512,7 +544,8 @@ function fireResolvedJiraTransition(jiraIssueKey, requestedStatusName, configura
   )
     .then((transitionsResponse) => {
       const availableTransitions = (transitionsResponse.body && transitionsResponse.body.transitions) || [];
-      const { transition: matchingTransition, reason } = selectTransitionForStatus(availableTransitions, requestedStatusName);
+      const { transition: matchingTransition, reason } =
+        selectTransitionForStatus(availableTransitions, requestedStatusName, isDiscardAllowed);
 
       if (matchingTransition) {
         const transitionPath = '/rest/api/2/issue/' + encodeURIComponent(jiraIssueKey) + '/transitions';

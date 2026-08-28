@@ -32,7 +32,8 @@ describe('selectTransitionForStatus — exact name', () => {
   });
 
   test('matching ignores case and surrounding whitespace', () => {
-    const { transition } = selectTransitionForStatus([CANCELLED, WORKING], '  cancelled ');
+    // Opted in, because a named discard is now refused by default (GH #376).
+    const { transition } = selectTransitionForStatus([CANCELLED, WORKING], '  cancelled ', true);
     expect(transition).toBe(CANCELLED);
   });
 });
@@ -88,8 +89,10 @@ describe('selectTransitionForStatus — a cancellation is never INFERRED', () =>
   });
 
   test('an operator who types "Cancelled" still gets exactly that', () => {
-    // Refusing the inference must not remove the ability. Asked for by name, it fires.
-    const { transition } = selectTransitionForStatus([CANCELLED, WORKING], 'Cancelled');
+    // Refusing the inference must not remove the ability — but naming it is no longer enough on its
+    // own. The status picker offers Cancelled beside every other status, and one wrong choice armed a
+    // rule that discarded live work on every future merge email (GH #376). The rule must opt in.
+    const { transition } = selectTransitionForStatus([CANCELLED, WORKING], 'Cancelled', true);
     expect(transition).toBe(CANCELLED);
   });
 
@@ -111,5 +114,61 @@ describe('selectTransitionForStatus — a cancellation is never INFERRED', () =>
     // guard written after a real incident, and the safe answer when two end states are on offer is
     // still to refuse and ask. This rule only ever removes options, never adds one back.
     expect(selectTransitionForStatus([CANCELLED, CLOSED, WORKING], 'Done').transition).toBeNull();
+  });
+});
+
+// ── Never throw work away on a merge email (GH #376) ──────────────────────
+
+describe('selectTransitionForStatus — refusing to discard work', () => {
+  const cancelTransition = { id: '9', to: { name: 'Cancelled', statusCategory: { name: 'Done' } } };
+  const doneTransition = { id: '1', to: { name: 'Done', statusCategory: { name: 'Done' } } };
+
+  it('refuses a rule that names Cancelled outright', () => {
+    // The status picker offers Cancelled beside every other status, and choosing it once quietly arms
+    // a rule that discards live development work on every future merge email.
+    const result = selectTransitionForStatus([cancelTransition], 'Cancelled');
+
+    expect(result.transition).toBeNull();
+    expect(result.reason).toMatch(/refusing to discard work/);
+  });
+
+  it('says what to turn on if cancelling really is what the rule is for', () => {
+    const result = selectTransitionForStatus([cancelTransition], 'Cancelled');
+
+    expect(result.reason).toMatch(/allow this rule to cancel issues/);
+  });
+
+  it('allows it when the rule explicitly opted in', () => {
+    const result = selectTransitionForStatus([cancelTransition], 'Cancelled', true);
+
+    expect(result.transition).toBe(cancelTransition);
+  });
+
+  it('refuses every other way of saying discarded', () => {
+    ['Rejected', 'Abandoned', 'Withdrawn', 'Duplicate'].forEach((discardName) => {
+      const discardTransition = { id: '9', to: { name: discardName, statusCategory: { name: 'Done' } } };
+
+      expect(selectTransitionForStatus([discardTransition], discardName).transition).toBeNull();
+    });
+  });
+
+  it('still moves an issue to a status that COMPLETES it', () => {
+    // The guard must not stop the automation doing its actual job.
+    const result = selectTransitionForStatus([doneTransition, cancelTransition], 'Done');
+
+    expect(result.transition).toBe(doneTransition);
+  });
+
+  it('still refuses to INFER a cancellation, as it did before', () => {
+    const result = selectTransitionForStatus([cancelTransition], 'Done');
+
+    expect(result.transition).toBeNull();
+  });
+
+  it('does not let opting in turn an INFERRED cancellation on as well', () => {
+    // The opt-in says "this rule may cancel", not "guess whether it meant to".
+    const result = selectTransitionForStatus([cancelTransition], 'Done', true);
+
+    expect(result.transition).toBeNull();
   });
 });

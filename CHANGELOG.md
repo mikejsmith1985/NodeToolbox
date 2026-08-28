@@ -8,6 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **The GitHub intake could cancel live development work, and did.** Seven issues were moved to
+  Cancelled in three days &mdash; from Ready for Testing, from Working &mdash; every one of them
+  rescued by hand afterwards.
+  A guard already refused to INFER a cancellation: a rule asking for &ldquo;Done&rdquo; on a project
+  whose only Done-category status was Cancelled was stopped. But naming the status outright was treated
+  as deliberate and allowed. It is not deliberate. The status picker offers **Cancelled beside every
+  other status**, and choosing it once quietly arms a rule that throws work away on every future merge
+  email.
+  No branch, no commit, no pull request and no merge means &ldquo;discard this work&rdquo;. A discard
+  status &mdash; Cancelled, Rejected, Abandoned, Withdrawn, Duplicate, Won&#39;t Do &mdash; is now
+  refused on **both** paths, named or inferred, unless the rule explicitly opts in. The refusal says
+  what to turn on if cancelling really is what a rule is for, and reaches the run log rather than being
+  logged silently. Inferring a cancellation stays refused even for a rule that opted in: the opt-in
+  says &ldquo;this rule may cancel&rdquo;, not &ldquo;guess whether it meant to&rdquo;.
+
+### Fixed
 - **The SharePoint relay blamed the VPN for a bookmarklet clicked in the wrong tab.** The bookmarklet
   builds every request as `location.origin + path` and sends it with that tab&#39;s cookies, so the tab
   it was clicked in decides where requests actually go. Click it on `contoso-my.sharepoint.com` while
