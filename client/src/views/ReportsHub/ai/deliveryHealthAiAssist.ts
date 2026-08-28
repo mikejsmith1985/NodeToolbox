@@ -22,11 +22,26 @@ import { describeReworkScan, type ReworkScanResult } from '../reworkScan.ts';
 
 export const DELIVERY_HEALTH_REPLY_KIND = 'deliveryHealthPlan';
 
+/**
+ * Which panel a finding or action belongs beside.
+ *
+ * The reading used to land in one block under the report, which nobody reads: a wall of text at the
+ * bottom is a second document somebody has to reconcile with the first. Tagged, each observation sits
+ * INSIDE the panel holding the evidence it rests on, where it is read at the moment the figure is.
+ */
+export type DeliveryHealthTopic = 'constraint' | 'backlog' | 'holders' | 'rework' | 'overall';
+
+/** Every topic, so the prompt lists exactly what the parser will accept. */
+export const DELIVERY_HEALTH_TOPICS: readonly DeliveryHealthTopic[] =
+  ['constraint', 'backlog', 'holders', 'rework', 'overall'];
+
 /** Stages and holders named in the prompt. Enough to see the shape, not a transcript. */
 const MAX_PROMPT_ROWS = 8;
 
 /** One thing the reply concluded, and the figure it rests on. */
 export interface DeliveryHealthFinding {
+  /** The panel this belongs beside. Anything unrecognised falls to 'overall' rather than vanishing. */
+  topic: DeliveryHealthTopic;
   observation: string;
   /** The number from the dashboard this rests on — what makes it checkable rather than plausible. */
   evidence: string;
@@ -35,6 +50,7 @@ export interface DeliveryHealthFinding {
 
 /** One thing to do about it. */
 export interface DeliveryHealthAction {
+  topic: DeliveryHealthTopic;
   action: string;
   rationale: string;
   effort: 'small' | 'medium' | 'large';
@@ -117,12 +133,14 @@ export function buildDeliveryHealthPrompt(
     '  4. Judge the SYSTEM, never the people. Naming who holds a queue is describing a workload; saying',
     '     anything about how they work is not supported by anything here.',
     '  5. Use only the figures above. Do not invent a number, a name, or a date.',
+    `  6. Tag every finding and action with the part of the report it is about: ${DELIVERY_HEALTH_TOPICS.join(', ')}.`,
+    '     Each one is shown beside the figures it rests on, so a wrong tag puts it next to the wrong evidence.',
     '',
     'Reply with ONLY this JSON:',
     `{"kind":"${DELIVERY_HEALTH_REPLY_KIND}",`,
     '"diagnosis":"What is actually happening here, in three or four sentences",',
-    '"findings":[{"observation":"...","evidence":"the figure it rests on","confidence":"high"}],',
-    '"actions":[{"action":"...","rationale":"...","effort":"small","whoDecides":"..."}],',
+    '"findings":[{"topic":"constraint","observation":"...","evidence":"the figure it rests on","confidence":"high"}],',
+    '"actions":[{"topic":"constraint","action":"...","rationale":"...","effort":"small","whoDecides":"..."}],',
     '"questionsToAsk":["What the data cannot answer and somebody should be asked"]}',
   ].join('\n');
 }
@@ -151,6 +169,9 @@ function readFindings(value: unknown): DeliveryHealthFinding[] {
     .map((entry): DeliveryHealthFinding => {
       const record = (entry && typeof entry === 'object' ? entry : {}) as Record<string, unknown>;
       return {
+        // Unrecognised topics fall to 'overall', which is shown: a finding filed under a panel that
+        // does not exist would otherwise be silently dropped from a report somebody is relying on.
+        topic: readEnum(record.topic, DELIVERY_HEALTH_TOPICS, 'overall'),
         observation: readTrimmedString(record.observation),
         evidence: readTrimmedString(record.evidence),
         // Unstated confidence reads as MEDIUM, never high: an unqualified claim should not be promoted
@@ -170,6 +191,7 @@ function readActions(value: unknown): DeliveryHealthAction[] {
     .map((entry): DeliveryHealthAction => {
       const record = (entry && typeof entry === 'object' ? entry : {}) as Record<string, unknown>;
       return {
+        topic: readEnum(record.topic, DELIVERY_HEALTH_TOPICS, 'overall'),
         action: readTrimmedString(record.action),
         rationale: readTrimmedString(record.rationale),
         effort: readEnum(record.effort, ['small', 'medium', 'large'] as const, 'medium'),

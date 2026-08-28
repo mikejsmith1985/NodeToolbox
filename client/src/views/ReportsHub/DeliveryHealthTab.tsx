@@ -48,7 +48,9 @@ import {
   buildDeliveryHealthPrompt,
   parseDeliveryHealthReply,
   type DeliveryHealthPlan,
+  type DeliveryHealthTopic,
 } from './ai/deliveryHealthAiAssist.ts';
+import { readTeamContext, writeTeamContext } from './ai/teamContextStore.ts';
 import styles from './ReportsHubView.module.css';
 
 /** How far back to read. A quarter is long enough to be evidence and short enough to be current. */
@@ -133,6 +135,46 @@ function buildHolderRows(queue: QueueScanResult): MeterRowData[] {
   }));
 }
 
+/**
+ * What the assistant said about ONE part of the report, drawn inside that part.
+ *
+ * A reading collected at the bottom of the page is a second document somebody has to reconcile with
+ * the first, and nobody reads it. Beside the figure it rests on, it is read at the moment the figure is.
+ */
+function PlanNotes({ plan, topic }: { plan: DeliveryHealthPlan | null; topic: DeliveryHealthTopic }) {
+  if (plan === null) {
+    return null;
+  }
+  const findings = plan.findings.filter((finding) => finding.topic === topic);
+  const actions = plan.actions.filter((action) => action.topic === topic);
+  if (findings.length === 0 && actions.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className={styles.verdictSection}>
+      {findings.map((finding) => (
+        <p className={styles.captionText} key={finding.observation}>
+          <strong>{finding.observation}</strong>
+          {finding.evidence === '' ? '' : ` — ${finding.evidence}`}
+          {' '}
+          <span className={styles.statusBadge}>{finding.confidence}</span>
+        </p>
+      ))}
+      {actions.map((action) => (
+        <p className={styles.captionText} key={action.action}>
+          {`→ ${action.action}`}
+          {action.rationale === '' ? '' : ` — ${action.rationale}`}
+          {' '}
+          <span className={styles.statusBadge}>{action.effort}</span>
+          {' '}
+          <span className={styles.statusBadge}>{action.whoDecides}</span>
+        </p>
+      ))}
+    </div>
+  );
+}
+
 /** The dashboard: one scope, one read, four views of it. */
 export default function DeliveryHealthTab() {
   const [projectKey, setProjectKey] = useState('');
@@ -143,7 +185,8 @@ export default function DeliveryHealthTab() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const jiraBaseUrl = useConnectionStore((state) => state.proxyStatus?.jira?.baseUrl ?? null);
-  const [teamContext, setTeamContext] = useState('');
+  // Restored on mount: it describes the TEAM rather than the run, so nobody should type it twice.
+  const [teamContext, setTeamContext] = useState(() => readTeamContext());
   const [plan, setPlan] = useState<DeliveryHealthPlan | null>(null);
   const [planError, setPlanError] = useState<string | null>(null);
 
@@ -248,6 +291,7 @@ export default function DeliveryHealthTab() {
                   rows={buildStageRows(readInFlightStages(report.queue))}
                 />
               )}
+            <PlanNotes plan={plan} topic="constraint" />
             {report.queue.undatedCount > 0 ? (
               <p className={styles.captionText}>
                 {`${report.queue.undatedCount} issue(s) had no readable history, so they are not aged here `}
@@ -263,6 +307,7 @@ export default function DeliveryHealthTab() {
             {readBacklogStages(report.queue).length === 0
               ? <EmptyNote>Everything open has been started.</EmptyNote>
               : <MeterList rows={buildStageRows(readBacklogStages(report.queue))} />}
+            <PlanNotes plan={plan} topic="backlog" />
           </ReportPanel>
 
           <ReportPanel
@@ -272,6 +317,7 @@ export default function DeliveryHealthTab() {
             {report.queue.holders.length === 0
               ? <EmptyNote>Nobody is holding open work in this scope.</EmptyNote>
               : <MeterList rows={buildHolderRows(report.queue)} />}
+            <PlanNotes plan={plan} topic="holders" />
           </ReportPanel>
 
           <ReportPanel
@@ -291,6 +337,7 @@ export default function DeliveryHealthTab() {
             {describeReworkExclusions(report.rework) === '' ? null : (
               <p className={styles.captionText}>{describeReworkExclusions(report.rework)}</p>
             )}
+            <PlanNotes plan={plan} topic="rework" />
           </ReportPanel>
 
           {/* The dashboard says WHERE work is stuck. It cannot say why, and it certainly cannot say
@@ -310,7 +357,10 @@ export default function DeliveryHealthTab() {
             <textarea
               className={styles.aiTextarea}
               id="delivery-health-context"
-              onChange={(changeEvent) => setTeamContext(changeEvent.target.value)}
+              onChange={(changeEvent) => {
+                setTeamContext(changeEvent.target.value);
+                writeTeamContext(changeEvent.target.value);
+              }}
               placeholder="e.g. nine developers, one shift-left tester, two-week sprints, dev stories stay open until release"
               rows={3}
               value={teamContext}
@@ -320,38 +370,9 @@ export default function DeliveryHealthTab() {
               <div className={styles.verdictSection}>
                 <p className={styles.coachingSummary}>{plan.diagnosis}</p>
 
-                {plan.findings.length === 0 ? null : (
-                  <>
-                    <h5 className={styles.coachingSectionTitle}>What the figures show</h5>
-                    <ul className={styles.coachingList}>
-                      {plan.findings.map((finding) => (
-                        <li key={finding.observation}>
-                          <strong>{finding.observation}</strong>
-                          {/* The evidence rides beside the claim: a diagnosis without it is an opinion. */}
-                          {finding.evidence === '' ? null : <div className={styles.captionText}>{finding.evidence}</div>}
-                          <span className={styles.statusBadge}>{`confidence: ${finding.confidence}`}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </>
-                )}
-
-                {plan.actions.length === 0 ? null : (
-                  <>
-                    <h5 className={styles.coachingSectionTitle}>What to do</h5>
-                    <ul className={styles.coachingList}>
-                      {plan.actions.map((action) => (
-                        <li key={action.action}>
-                          <strong>{action.action}</strong>
-                          {action.rationale === '' ? null : <div className={styles.captionText}>{action.rationale}</div>}
-                          <span className={styles.statusBadge}>{`effort: ${action.effort}`}</span>
-                          {' '}
-                          <span className={styles.statusBadge}>{`decided by: ${action.whoDecides}`}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </>
-                )}
+                {/* Everything tagged to a panel is drawn there instead, beside its evidence. Only what
+                    belongs to no single part of the report is left here. */}
+                <PlanNotes plan={plan} topic="overall" />
 
                 {plan.questionsToAsk.length === 0 ? null : (
                   <>
@@ -361,6 +382,10 @@ export default function DeliveryHealthTab() {
                     </ul>
                   </>
                 )}
+
+                <p className={styles.captionText}>
+                  The rest of this reading is drawn beside the figures it rests on, in the panels below.
+                </p>
               </div>
             )}
           </ReportAiPanel>

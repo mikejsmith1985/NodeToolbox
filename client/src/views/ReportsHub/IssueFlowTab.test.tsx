@@ -526,20 +526,54 @@ describe('IssueFlowTab — project scope (feature: #218)', () => {
     });
   });
 
-  it('shows work from every project by default, and offers each as a filter', async () => {
+  it('opens on the project the run is mostly about, not on a mixed view', async () => {
+    // Mixing projects distorts every figure below — a testing project's tickets skew a delivery
+    // project's coverage — so a mixed view is a deliberate choice rather than a silent default.
     render(<IssueFlowTab teamFilter="Team Rocket" />);
     fireEvent.click(screen.getByRole('button', { name: /run flow analysis/i }));
 
     await waitFor(() => expect(screen.getByText('ENCUC delivery work')).toBeInTheDocument());
-    expect(screen.getByText('A testing-project ticket')).toBeInTheDocument();
-    // Both projects are offered in the dropdown.
-    expect(screen.getByRole('option', { name: 'ENCUC' })).toBeInTheDocument();
-    expect(screen.getByRole('option', { name: 'INTTEST' })).toBeInTheDocument();
+    expect(screen.queryByText('A testing-project ticket')).not.toBeInTheDocument();
+  });
+
+  it('counts each project in the dropdown, so which one the run is about is readable', async () => {
+    // A bare list of keys says nothing about which of them the report is really about.
+    render(<IssueFlowTab teamFilter="Team Rocket" />);
+    fireEvent.click(screen.getByRole('button', { name: /run flow analysis/i }));
+
+    await waitFor(() => expect(screen.getByText('ENCUC delivery work')).toBeInTheDocument());
+
+    expect(screen.getByRole('option', { name: /^ENCUC \(\d+\)$/ })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /^INTTEST \(\d+\)$/ })).toBeInTheDocument();
+  });
+
+  it('says what the figures below describe', async () => {
+    // Without it, a number is silently either one project's or several.
+    render(<IssueFlowTab teamFilter="Team Rocket" />);
+    fireEvent.click(screen.getByRole('button', { name: /run flow analysis/i }));
+
+    await waitFor(() => expect(screen.getByText(/ENCUC only/)).toBeInTheDocument());
+  });
+
+  it('offers a mixed view, and says plainly that it mixes projects', async () => {
+    render(<IssueFlowTab teamFilter="Team Rocket" />);
+    fireEvent.click(screen.getByRole('button', { name: /run flow analysis/i }));
+    await waitFor(() => expect(screen.getByText('ENCUC delivery work')).toBeInTheDocument());
+
+    fireEvent.change(screen.getByRole('combobox', { name: /project/i }), { target: { value: '' } });
+
+    await waitFor(() => expect(screen.getByText('A testing-project ticket')).toBeInTheDocument());
+    // The option says it too, so match the caption that describes what is drawn.
+    expect(screen.getByText(/figures below combine projects/)).toBeInTheDocument();
   });
 
   it('narrows to one project without a second Jira query', async () => {
     render(<IssueFlowTab teamFilter="Team Rocket" />);
     fireEvent.click(screen.getByRole('button', { name: /run flow analysis/i }));
+    await waitFor(() => expect(screen.getByText('ENCUC delivery work')).toBeInTheDocument());
+
+    // Start from the mixed view, so narrowing is what the test actually measures.
+    fireEvent.change(screen.getByRole('combobox', { name: /project/i }), { target: { value: '' } });
     await waitFor(() => expect(screen.getByText('A testing-project ticket')).toBeInTheDocument());
 
     const searchCallsBefore = mockJiraGet.mock.calls.filter((call) => String(call[0]).includes('/rest/api/2/search')).length;
@@ -557,10 +591,14 @@ describe('IssueFlowTab — project scope (feature: #218)', () => {
     fireEvent.click(screen.getByRole('button', { name: /run flow analysis/i }));
     await waitFor(() => expect(screen.getByText('Flow summary')).toBeInTheDocument());
 
-    // All projects: 2 delivered.
     let summaryValues = () => Array.from(
       (screen.getByText('Delivered issues').closest('table') as HTMLElement).querySelectorAll('tbody td'),
     ).map((cell) => cell.textContent);
+    // Opens on ENCUC, the project the run is mostly about: 1 delivered.
+    expect(summaryValues()[0]).toBe('1');
+
+    // Mixed: both projects, 2 delivered.
+    fireEvent.change(screen.getByRole('combobox', { name: /project/i }), { target: { value: '' } });
     expect(summaryValues()[0]).toBe('2');
 
     fireEvent.change(screen.getByRole('combobox', { name: /project/i }), { target: { value: 'ENCUC' } });

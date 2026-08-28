@@ -7,7 +7,14 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { ALL_PROJECTS, collectProjectKeys, extractProjectKey, filterByProject } from './projectScope.ts';
+import {
+  ALL_PROJECTS,
+  collectProjectCounts,
+  collectProjectKeys,
+  extractProjectKey,
+  filterByProject,
+  readDefaultProjectKey,
+} from './projectScope.ts';
 
 describe('extractProjectKey', () => {
   it('reads the project key from an issue key', () => {
@@ -58,5 +65,49 @@ describe('filterByProject', () => {
 
   it('returns nothing when the project is absent', () => {
     expect(filterByProject(items, 'NOPE')).toEqual([]);
+  });
+});
+
+// ── Which project is this run really about? (GH #376) ──────────────────────
+
+describe('collectProjectCounts', () => {
+  it('counts each project and puts the largest first', () => {
+    // A bare list of keys says nothing about which of them the report is really about.
+    const counts = collectProjectCounts(['INTTEST-1', 'ENCUC-1', 'ENCUC-2', 'ENCUC-3']);
+
+    expect(counts).toEqual([
+      { projectKey: 'ENCUC', issueCount: 3 },
+      { projectKey: 'INTTEST', issueCount: 1 },
+    ]);
+  });
+
+  it('breaks a tie alphabetically, so the order never shifts between runs', () => {
+    const counts = collectProjectCounts(['ZED-1', 'ABC-1']);
+
+    expect(counts.map((entry) => entry.projectKey)).toEqual(['ABC', 'ZED']);
+  });
+
+  it('ignores a key with no project in it', () => {
+    expect(collectProjectCounts(['', 'ENCUC-1'])).toEqual([{ projectKey: 'ENCUC', issueCount: 1 }]);
+  });
+
+  it('returns nothing for a run that produced nothing', () => {
+    expect(collectProjectCounts([])).toEqual([]);
+  });
+});
+
+describe('readDefaultProjectKey', () => {
+  it('opens on the project holding most of the run', () => {
+    // Mixing projects distorts every figure — a testing project's tickets skew a delivery project's
+    // coverage — so a mixed view is a deliberate choice rather than a silent default.
+    expect(readDefaultProjectKey(['INTTEST-1', 'ENCUC-1', 'ENCUC-2'])).toBe('ENCUC');
+  });
+
+  it('says every project when a run produced nothing, which is the only honest answer', () => {
+    expect(readDefaultProjectKey([])).toBe(ALL_PROJECTS);
+  });
+
+  it('opens on the only project when a run touched just one', () => {
+    expect(readDefaultProjectKey(['ENCUC-1', 'ENCUC-2'])).toBe('ENCUC');
   });
 });

@@ -251,8 +251,8 @@ describe('DeliveryHealthTab constraint and plan', () => {
     expect(screen.queryByLabelText('Explain this, and propose a plan prompt')).not.toBeInTheDocument();
   });
 
-  it('shows each finding beside the figure it rests on', async () => {
-    // A diagnosis without its evidence is an opinion, and the first challenge in a meeting wins.
+  it('draws each finding INSIDE the panel holding its evidence', async () => {
+    // A reading collected at the bottom of the page is a second document nobody reads.
     const user = userEvent.setup();
     mockJiraGet.mockResolvedValue({ issues: [stuckInTesting('SL-1')] });
 
@@ -264,8 +264,19 @@ describe('DeliveryHealthTab constraint and plan', () => {
         value: JSON.stringify({
           kind: 'deliveryHealthPlan',
           diagnosis: 'Work stalls after development.',
-          findings: [{ observation: 'Testing is the constraint.', evidence: '557 waiting days', confidence: 'high' }],
-          actions: [{ action: 'Split the SL story.', rationale: 'Frees the dev story.', effort: 'small', whoDecides: 'The PO' }],
+          findings: [{
+            topic: 'constraint',
+            observation: 'Testing is the constraint.',
+            evidence: '557 waiting days',
+            confidence: 'high',
+          }],
+          actions: [{
+            topic: 'rework',
+            action: 'Split the SL story.',
+            rationale: 'Frees the dev story.',
+            effort: 'small',
+            whoDecides: 'The PO',
+          }],
           questionsToAsk: ['What changed after 26.3.1?'],
         }),
       },
@@ -273,8 +284,11 @@ describe('DeliveryHealthTab constraint and plan', () => {
     await user.click(screen.getByRole('button', { name: /read the plan/i }));
 
     expect(await screen.findByText('Work stalls after development.')).toBeInTheDocument();
-    expect(screen.getByText('557 waiting days')).toBeInTheDocument();
-    expect(screen.getByText('decided by: The PO')).toBeInTheDocument();
+    // The constraint finding lands in the constraint panel, and the rework action in the rework one.
+    expect(within(panelWithTitle('Where work is piling up')).getByText(/557 waiting days/))
+      .toBeInTheDocument();
+    expect(within(panelWithTitle('What came back after reaching delivery')).getByText(/Split the SL story/))
+      .toBeInTheDocument();
     expect(screen.getByText('What changed after 26.3.1?')).toBeInTheDocument();
   });
 

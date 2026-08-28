@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildDeliveryHealthPrompt,
   DELIVERY_HEALTH_REPLY_KIND,
+  DELIVERY_HEALTH_TOPICS,
   parseDeliveryHealthReply,
 } from './deliveryHealthAiAssist.ts';
 import { scanQueues, type QueueIssueInput } from '../queueScan.ts';
@@ -131,8 +132,8 @@ describe('buildDeliveryHealthPrompt', () => {
 describe('parseDeliveryHealthReply', () => {
   it('reads the diagnosis, findings, actions and questions', () => {
     const plan = parseDeliveryHealthReply(reply({
-      findings: [{ observation: 'Testing is the constraint.', evidence: '557 waiting days', confidence: 'high' }],
-      actions: [{ action: 'Split the SL story.', rationale: 'Frees the dev story.', effort: 'small', whoDecides: 'The PO' }],
+      findings: [{ topic: 'constraint', observation: 'Testing is the constraint.', evidence: '557 waiting days', confidence: 'high' }],
+      actions: [{ topic: 'constraint', action: 'Split the SL story.', rationale: 'Frees the dev story.', effort: 'small', whoDecides: 'The PO' }],
       questionsToAsk: ['What changed after 26.3.1?'],
     }));
 
@@ -192,5 +193,57 @@ describe('parseDeliveryHealthReply', () => {
     const wrapped = `Sure!\n\`\`\`json\n${reply({})}\n\`\`\`\nHope that helps.`;
 
     expect(parseDeliveryHealthReply(wrapped).diagnosis).toBe('A reading.');
+  });
+});
+
+// ── Tagged to the panel it belongs beside (GH #376) ────────────────────────
+
+describe('parseDeliveryHealthReply — topics', () => {
+  it('keeps the panel each finding belongs beside', () => {
+    // A reading collected at the bottom is a second document nobody reads.
+    const plan = parseDeliveryHealthReply(reply({
+      findings: [{ topic: 'rework', observation: 'Returns land in Working.' }],
+    }));
+
+    expect(plan.findings[0].topic).toBe('rework');
+  });
+
+  it('files an untagged finding under overall rather than dropping it', () => {
+    const plan = parseDeliveryHealthReply(reply({ findings: [{ observation: 'Something.' }] }));
+
+    expect(plan.findings[0].topic).toBe('overall');
+  });
+
+  it('files a finding tagged to a panel that does not exist under overall', () => {
+    // Silently dropping it from a report somebody is relying on would be the worse failure.
+    const plan = parseDeliveryHealthReply(reply({
+      findings: [{ topic: 'velocity', observation: 'Something.' }],
+    }));
+
+    expect(plan.findings[0].topic).toBe('overall');
+  });
+
+  it('tags actions the same way', () => {
+    const plan = parseDeliveryHealthReply(reply({
+      actions: [{ topic: 'holders', action: 'Spread the queue.' }],
+    }));
+
+    expect(plan.actions[0].topic).toBe('holders');
+  });
+});
+
+describe('buildDeliveryHealthPrompt — topics', () => {
+  it('lists exactly the topics the parser will accept', () => {
+    const { queue, rework } = buildScans();
+
+    const prompt = buildDeliveryHealthPrompt(queue, rework, '');
+
+    DELIVERY_HEALTH_TOPICS.forEach((topic) => expect(prompt).toContain(topic));
+  });
+
+  it('says a wrong tag puts a reading beside the wrong evidence', () => {
+    const { queue, rework } = buildScans();
+
+    expect(buildDeliveryHealthPrompt(queue, rework, '')).toContain('next to the wrong evidence');
   });
 });

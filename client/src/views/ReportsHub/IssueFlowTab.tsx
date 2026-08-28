@@ -36,7 +36,12 @@ import { computeDeliveryTotals, summariseStageRollups } from './issueFlowRollup.
 import { classifyIssueScope } from './issueScope.ts';
 import { readBottleneckSettings } from './internalTestingStatuses.ts';
 import { summariseInternalTestingCoverage } from './internalTestingCoverage.ts';
-import { ALL_PROJECTS, collectProjectKeys, filterByProject } from './projectScope.ts';
+import {
+  ALL_PROJECTS,
+  collectProjectCounts,
+  filterByProject,
+  readDefaultProjectKey,
+} from './projectScope.ts';
 import { buildFlowAnalysisDocument } from './flowAnalysisDocument.ts';
 import { readToolVersion } from './readToolVersion.ts';
 import { copyToClipboard as copyToClipboardWithResult } from '../JiraTemplateMaker/lib/copyToClipboard.ts';
@@ -340,10 +345,15 @@ function FlowResultsView({ outcome }: { outcome: FlowRunOutcome }): React.JSX.El
   // touches. The dropdown is built from the projects that actually appear in the results, and the
   // filter narrows the already-fetched flows — no second Jira query — so everything below recomputes
   // for the chosen project alone.
-  const [selectedProject, setSelectedProject] = useState<string>(ALL_PROJECTS);
-  const availableProjects = useMemo(
-    () => collectProjectKeys(outcome.issueFlows.map((issueFlow) => issueFlow.issueKey)),
+  const projectCounts = useMemo(
+    () => collectProjectCounts(outcome.issueFlows.map((issueFlow) => issueFlow.issueKey)),
     [outcome.issueFlows],
+  );
+  // Opens on the project the run is mostly about. Mixing projects distorts every figure below — a
+  // testing project's tickets skew a delivery project's coverage — so a mixed view is a deliberate
+  // choice rather than what somebody gets without asking.
+  const [selectedProject, setSelectedProject] = useState<string>(
+    () => readDefaultProjectKey(outcome.issueFlows.map((issueFlow) => issueFlow.issueKey)),
   );
   const visibleIssueFlows = useMemo(
     () => filterByProject(outcome.issueFlows, selectedProject),
@@ -414,26 +424,40 @@ function FlowResultsView({ outcome }: { outcome: FlowRunOutcome }): React.JSX.El
         </p>
       )}
 
-      {availableProjects.length > 1 && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-          <label>
-            Project{' '}
-            <select value={selectedProject} onChange={(event) => setSelectedProject(event.target.value)}>
-              <option value={ALL_PROJECTS}>All projects ({outcome.issueFlows.length})</option>
-              {availableProjects.map((projectKey) => (
-                <option key={projectKey} value={projectKey}>{projectKey}</option>
-              ))}
-            </select>
-          </label>
-          <span className={styles.captionText}>
-            The report follows the roster across every project they work in. Narrow to one to see just that
-            project’s flow.
-          </span>
+      {projectCounts.length > 1 && (
+        <div className={styles.controlRow}>
+          <label className={styles.controlLabel} htmlFor="issue-flow-project">Project</label>
+          <select
+            className={styles.filterSelect}
+            id="issue-flow-project"
+            onChange={(event) => setSelectedProject(event.target.value)}
+            value={selectedProject}
+          >
+            {/* Counted, and ordered largest first, so which project this run is really about is
+                readable without opening the list and guessing. */}
+            {projectCounts.map((project) => (
+              <option key={project.projectKey} value={project.projectKey}>
+                {`${project.projectKey} (${project.issueCount})`}
+              </option>
+            ))}
+            <option value={ALL_PROJECTS}>
+              {`All projects mixed together (${outcome.issueFlows.length})`}
+            </option>
+          </select>
         </div>
       )}
 
+      {/* Says what the figures below describe. The report follows PEOPLE across every project they
+          work in, so without this line a number is silently either one project's or several. */}
+      <p className={styles.captionText}>
+        {selectedProject === ALL_PROJECTS
+          ? `Showing all ${outcome.issueFlows.length} flow(s), from ${projectCounts.length} project(s) mixed `
+            + 'together — figures below combine projects and are not one project’s flow.'
+          : `Showing ${visibleIssueFlows.length} of ${outcome.issueFlows.length} flow(s) — ${selectedProject} only.`}
+      </p>
+
       {visibleIssueFlows.length === 0 ? (
-        <p className={styles.captionText}>No delivered issues in {selectedProject} for this run.</p>
+        <p className={styles.captionText}>No delivered issues in {selectedProject || 'any project'} for this run.</p>
       ) : (
         <>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>

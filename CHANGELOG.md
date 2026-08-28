@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Flow Analysis says which project its figures describe, and opens on the right one.** The report
+  follows PEOPLE across every project they work in, so a run returns work from the team&#39;s own
+  project, a testing project, and anywhere else the roster touched. It then opened on all of them mixed
+  together, with an unstyled dropdown below the results offering bare project keys and no counts &mdash;
+  so a number on screen was silently either one project&#39;s or several.
+  It now opens on the project holding **most** of the run, because mixing distorts every figure below
+  &mdash; a testing project&#39;s tickets skew a delivery project&#39;s coverage &mdash; and a mixed
+  view should be a deliberate choice rather than what somebody gets without asking. Each option carries
+  its **issue count**, largest first, so which project the run is really about is readable without
+  opening the list and guessing. A line above the figures always states what they describe, and the
+  mixed option says outright that it combines projects.
+
+### Added
+- **The dashboard&#39;s AI reading is now drawn inside the report rather than under it.** A plan
+  collected in one block at the bottom is a second document somebody has to reconcile with the first,
+  which is a wall of text nobody reads. Every finding and action is now tagged with the part of the
+  report it is about and drawn **inside that panel**, beside the figures it rests on, where it is read
+  at the moment the figure is. Only the diagnosis, the open questions, and anything belonging to no
+  single panel stay in the AI panel itself. A finding tagged to a panel that does not exist falls to
+  &ldquo;overall&rdquo; and is still shown &mdash; silently dropping it from a report somebody is
+  relying on would be the worse failure.
+- **What you tell the assistant about your team is remembered.** It lived in component state, so
+  toggling AI Assist off unmounted the panel and took the typing with it. It describes the team rather
+  than the run &mdash; it is the same next week &mdash; and retyping three sentences on every run is the
+  kind of friction that stops a feature being used at all. It is capped, so context can never crowd the
+  report out of its own prompt, and a browser that refuses storage degrades to session-only rather than
+  to an error.
+
 ### Fixed
 - **The dashboard named the backlog as the constraint.** Its first real run reported &ldquo;To Do&rdquo;
   &mdash; 62 issues holding 3,540 waiting days, 62% of everything. True, and useless: work nobody has
