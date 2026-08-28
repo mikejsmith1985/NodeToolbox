@@ -93,6 +93,15 @@ function createBridgeChannel() {
     lastRegisteredAt:    null,
     lastDeregisteredAt:  null,
     lastPolledAt:        null,
+    /**
+     * Which site the bookmarklet is running on, as it reported at registration.
+     *
+     * The bookmarklet builds every request as `location.origin + path`, so the tab it was clicked in
+     * decides where requests go. Without this, a bookmarklet clicked on the wrong SharePoint site is
+     * indistinguishable from a dropped VPN — and Toolbox told somebody with a working VPN to
+     * reconnect it (GH #376).
+     */
+    relayOrigin: null,
     // True when the SNow bookmarklet found g_ck and can send X-UserToken
     hasSessionToken:     false,
     /**
@@ -187,6 +196,11 @@ router.post('/register', (req, res) => {
   channel.isActive = true;
   channel.lastRegisteredAt = Date.now();
   channel.hasSessionToken = req.query.gck === '1' || req.body?.hasSessionToken === true;
+  // Absent for a bookmarklet from before this existed, which reads as "not known" rather than as a
+  // mismatch — guessing either way would be worse than saying nothing.
+  channel.relayOrigin = typeof req.query.origin === 'string' && req.query.origin !== ''
+    ? req.query.origin
+    : null;
   // Flush stale queued items — they were meant for the previous bookmarklet session
   channel.pendingRequests = [];
   channel.pendingResults  = {};
@@ -253,6 +267,7 @@ router.get('/status', (req, res) => {
       isConnected: false,
       isAuthorized: true,
       lastUnauthorizedAt: null,
+      relayOrigin: null,
       system: sys,
       lastPingAt: null,
       version: null,
@@ -266,6 +281,8 @@ router.get('/status', (req, res) => {
     lastUnauthorizedAt: channel.lastUnauthorizedAt !== null
       ? new Date(channel.lastUnauthorizedAt).toISOString()
       : null,
+    // Where the bookmarklet is running, so the panel can tell a wrong tab from a dropped VPN.
+    relayOrigin: channel.relayOrigin,
     system:      sys,
     hasSessionToken: channel.hasSessionToken,
     // lastPolledAt is a millisecond timestamp — convert to ISO string for the client.

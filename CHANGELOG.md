@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **The SharePoint relay blamed the VPN for a bookmarklet clicked in the wrong tab.** The bookmarklet
+  builds every request as `location.origin + path` and sends it with that tab&#39;s cookies, so the tab
+  it was clicked in decides where requests actually go. Click it on `contoso-my.sharepoint.com` while
+  the configured library lives on `contoso.sharepoint.com` and the request reaches the right path on
+  the wrong site &mdash; SharePoint answers &ldquo;unauthorized&rdquo;, indistinguishable from an
+  expired session.
+  Toolbox could not tell those apart, so it guessed, and told somebody with a working VPN and a live
+  SharePoint tab to reconnect their VPN. A message naming the wrong cause is worse than one admitting
+  it does not know, because it sends people to fix something that was never broken.
+  The bookmarklet now reports which site it is running on, and the panel says the cause it can
+  **prove**: &ldquo;the bookmarklet is running on X, but the library you configured is on Y &mdash;
+  open Y and click the bookmarklet in THAT tab.&rdquo; Where the origins agree, the VPN is offered as a
+  possibility rather than a diagnosis: the relay cannot see a VPN and should not claim to. A
+  bookmarklet from before this change reports nothing, which reads as &ldquo;not known&rdquo; rather
+  than as a mismatch.
+
 ### Changed
 - **Flow Analysis says which project its figures describe, and opens on the right one.** The report
   follows PEOPLE across every project they work in, so a run returns work from the team&#39;s own

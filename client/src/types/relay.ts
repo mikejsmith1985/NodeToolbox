@@ -25,6 +25,13 @@ export interface RelayBridgeStatus {
   isAuthorized?: boolean;
   /** When the far system last refused us, so the panel can say how long it has been broken. */
   lastUnauthorizedAt?: string | null;
+  /**
+   * Which site the bookmarklet is running on, as it reported at registration.
+   *
+   * Optional: a bookmarklet from before this existed reports nothing, and that reads as "not known"
+   * rather than as a mismatch.
+   */
+  relayOrigin?: string | null;
 }
 
 /** Relay channel registration metadata returned by the backend. */

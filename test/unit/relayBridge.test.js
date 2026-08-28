@@ -100,6 +100,51 @@ describe('POST /api/relay-bridge/register', () => {
   });
 });
 
+describe('POST /api/relay-bridge/register — which site the bookmarklet is on', () => {
+  it('records the origin the bookmarklet reported', async () => {
+    // The bookmarklet builds every request as location.origin + path, so the tab it was clicked in
+    // decides where requests actually go (GH #376).
+    const app = buildTestApp();
+    await request(app)
+      .post('/api/relay-bridge/register?sys=sharepoint&origin=' + encodeURIComponent('https://contoso.sharepoint.com'))
+      .send({});
+
+    const statusResponse = await request(app).get('/api/relay-bridge/status?sys=sharepoint');
+
+    expect(statusResponse.body.relayOrigin).toBe('https://contoso.sharepoint.com');
+  });
+
+  it('reports nothing rather than guessing when an older bookmarklet sends no origin', async () => {
+    // Guessing either way would be worse than saying nothing.
+    const app = buildTestApp();
+    await request(app).post('/api/relay-bridge/register?sys=sharepoint').send({});
+
+    const statusResponse = await request(app).get('/api/relay-bridge/status?sys=sharepoint');
+
+    expect(statusResponse.body.relayOrigin).toBeNull();
+  });
+
+  it('replaces the origin when the bookmarklet is clicked in a different tab', async () => {
+    const app = buildTestApp();
+    await request(app)
+      .post('/api/relay-bridge/register?sys=sharepoint&origin=' + encodeURIComponent('https://a.sharepoint.com'))
+      .send({});
+    await request(app)
+      .post('/api/relay-bridge/register?sys=sharepoint&origin=' + encodeURIComponent('https://b.sharepoint.com'))
+      .send({});
+
+    const statusResponse = await request(app).get('/api/relay-bridge/status?sys=sharepoint');
+
+    expect(statusResponse.body.relayOrigin).toBe('https://b.sharepoint.com');
+  });
+
+  it('reports no origin for a relay system nobody has registered', async () => {
+    const statusResponse = await request(buildTestApp()).get('/api/relay-bridge/status?sys=nonexistent');
+
+    expect(statusResponse.body.relayOrigin).toBeNull();
+  });
+});
+
 describe('POST /api/relay-bridge/session-token', () => {
   it('updates hasSessionToken without requiring a fresh registration', async () => {
     const testApp = buildTestApp();

@@ -9,6 +9,7 @@ import { useState, useRef, useEffect, useCallback, type MouseEvent as ReactMouse
 
 import { BookmarkletInstallLink } from '../BookmarkletInstallLink/index.tsx';
 import { openSharePointRelay, openSnowRelay, SHAREPOINT_RELAY_BOOKMARKLET_CODE, SNOW_RELAY_BOOKMARKLET_CODE } from '../../services/browserRelay.ts';
+import { compareRelayOrigin, describeRefusal } from '../../services/relayOriginMatch.ts';
 import { readSharePointSiteUrl } from '../../services/sharePointSiteUrl.ts';
 import { useAdminStore } from '../../store/adminStore.ts';
 import { useConnectionStore } from '../../store/connectionStore.ts';
@@ -246,6 +247,8 @@ interface SharePointPanelProps {
    */
   isRelayAliveButRefused?: boolean;
   lastUnauthorizedAt?: string | null;
+  /** Where the bookmarklet is running, so a wrong tab can be told from a dropped VPN. */
+  relayOrigin?: string | null;
 }
 
 /**
@@ -258,6 +261,7 @@ function SharePointPanel({
   lastPingAt,
   isRelayAliveButRefused = false,
   lastUnauthorizedAt = null,
+  relayOrigin = null,
 }: SharePointPanelProps) {
   const lastPingText = lastPingAt !== null ? new Date(lastPingAt).toLocaleTimeString() : null;
   const refusedAtText = lastUnauthorizedAt !== null ? new Date(lastUnauthorizedAt).toLocaleTimeString() : null;
@@ -291,14 +295,11 @@ function SharePointPanel({
       </p>
 
       {isRelayAliveButRefused && (
-        // Named specifically, because the fix is different from the one below. The bookmarklet is
-        // fine; the connection to SharePoint itself is not, and reconnecting the VPN is usually all
-        // it takes.
+        // Says the cause it can PROVE — a bookmarklet on the wrong site — and offers the VPN only as
+        // a possibility otherwise. The old wording asserted a dropped VPN, which sent somebody with a
+        // working one off to fix something that was never broken (GH #376).
         <p className={styles.panelLabel}>
-          The bookmarklet is still running and reaching this machine. SharePoint itself is returning
-          &ldquo;unauthorized&rdquo;, which normally means the VPN has dropped or the SharePoint
-          session has expired. Reconnect the VPN, reload the SharePoint tab, then click the
-          bookmarklet again.
+          {describeRefusal(compareRelayOrigin(relayOrigin, sharePointSiteUrl))}
         </p>
       )}
 
@@ -499,6 +500,7 @@ export function ConnectionBar() {
               isSharePointConnected={isSharePointConnected}
               isRelayAliveButRefused={isSharePointRelayAliveButRefused}
               lastUnauthorizedAt={sharePointRelayStatus?.lastUnauthorizedAt ?? null}
+              relayOrigin={sharePointRelayStatus?.relayOrigin ?? null}
               lastPingAt={sharePointLastPingAt}
             />
           )}
