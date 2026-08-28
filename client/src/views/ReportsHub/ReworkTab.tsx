@@ -17,7 +17,12 @@ import { useConnectionStore } from '../../store/connectionStore.ts';
 import JiraProjectPicker from '../../components/JiraProjectPicker/index.tsx';
 import { buildScopeClause, describeFetchFailure } from './reworkScope.ts';
 import { fetchReworkIssues, MAX_REWORK_ISSUES } from './reworkFetch.ts';
-import { describeReworkScan, scanRework, type ReworkScanResult } from './reworkScan.ts';
+import {
+  describeReworkExclusions,
+  describeReworkScan,
+  scanRework,
+  type ReworkScanResult,
+} from './reworkScan.ts';
 import styles from './ReportsHubView.module.css';
 
 /** How far back to look. A quarter is long enough to be evidence and short enough to be current. */
@@ -121,12 +126,27 @@ export default function ReworkTab() {
 
           {result.reworkedCount === 0 ? null : (
             <>
+              {/* The median settled return leads, because that is the figure the report exists to
+                  produce: what coming back costs to recover. */}
               <div className={styles.summaryBar}>
+                {result.medianSettledWorkingDays === null ? null : (
+                  <span className={styles.summaryBarItem}>
+                    {`${result.medianSettledWorkingDays} working days to recover (median)`}
+                  </span>
+                )}
                 <span className={styles.summaryBarItem}>{`${result.reworkedCount} issues came back`}</span>
-                <span className={styles.summaryBarItem}>{`${result.totalRounds} return trips`}</span>
-                <span className={styles.summaryBarItem}>{formatWorkingDays(result.totalWorkingDays)}</span>
-                <span className={styles.summaryBarItem}>{`${result.reworkedPoints} points affected`}</span>
+                <span className={styles.summaryBarItem}>{`${result.settledRounds} returns resolved`}</span>
+                {result.stillOutRounds > 0 ? (
+                  <span className={styles.summaryBarItem}>
+                    {`${result.stillOutRounds} still out · ${formatWorkingDays(result.stillOutWorkingDays)}`}
+                  </span>
+                ) : null}
               </div>
+
+              {/* Stated, never silently applied: an exclusion nobody can see is a number nobody can check. */}
+              {describeReworkExclusions(result) === '' ? null : (
+                <p className={styles.captionText}>{describeReworkExclusions(result)}</p>
+              )}
 
               <h4 className={styles.tabSectionHeading}>Which stage sent work back</h4>
               <p className={styles.captionText}>

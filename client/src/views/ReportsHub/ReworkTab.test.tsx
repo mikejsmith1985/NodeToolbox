@@ -24,7 +24,7 @@ function statusChange(fromName: string, toName: string, dayOfMonth: number) {
 }
 
 /** One issue with the history the test is about. */
-function issue(key: string, histories: ReturnType<typeof statusChange>[], points = 5) {
+function issue(key: string, histories: ReturnType<typeof statusChange>[], points: number | null = 5) {
   return {
     key,
     fields: {
@@ -78,17 +78,43 @@ describe('ReworkTab', () => {
 
     await runReport();
 
-    expect(await screen.findByText(/1 of 2 issues that reached delivery came back/)).toBeInTheDocument();
+    expect(await screen.findByText(/50% of the work that reached delivery came back/)).toBeInTheDocument();
   });
 
-  it('says the points are a scale, not a measurement', async () => {
-    // Nobody re-estimated the second pass, and a number presented as exact is the first thing
-    // challenged in the room.
+  it('leads with what a return costs to recover', async () => {
+    // The first version led with a points total, which was zero, because nobody points defects.
     mockJiraGet.mockResolvedValue({ issues: [wentBackAndForth('ENCUC-1')] });
 
     await runReport();
 
-    expect(await screen.findByText(/the second pass was never sized/)).toBeInTheDocument();
+    expect(await screen.findByText(/working days to recover \(median\)/)).toBeInTheDocument();
+  });
+
+  it('says outright that nothing which came back carried points', async () => {
+    mockJiraGet.mockResolvedValue({ issues: [issue('ENCUC-1', [
+      statusChange('To Do', 'Ready for QA', 3),
+      statusChange('Ready for QA', 'In Progress', 5),
+      statusChange('In Progress', 'Ready for QA', 12),
+    ], null)] });
+
+    await runReport();
+
+    expect(await screen.findByText(/recorded nowhere at all/)).toBeInTheDocument();
+  });
+
+  it('states what it chose NOT to count, rather than applying it silently', async () => {
+    // An exclusion nobody can see is a number nobody can check.
+    mockJiraGet.mockResolvedValue({ issues: [
+      wentBackAndForth('ENCUC-1'),
+      issue('ENCUC-2', [
+        statusChange('To Do', 'Ready for QA', 3),
+        statusChange('Ready for QA', 'Cancelled', 5),
+      ]),
+    ] });
+
+    await runReport();
+
+    expect(await screen.findByText(/abandoned, not redone/)).toBeInTheDocument();
   });
 
   it('names which stage sent work back', async () => {
@@ -148,6 +174,7 @@ describe('ReworkTab', () => {
 
     await runReport();
 
-    await waitFor(() => expect(screen.getByText(/still out/)).toBeInTheDocument());
+    // Said twice on purpose: once as an open total in the summary, once against the row it belongs to.
+    await waitFor(() => expect(screen.getAllByText(/still out/).length).toBeGreaterThan(1));
   });
 });

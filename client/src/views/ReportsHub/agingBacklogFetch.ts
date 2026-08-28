@@ -17,6 +17,7 @@ import {
   type FeatureLinkFields,
 } from '../../utils/featureLink.ts';
 import type { AgingTriageIssue } from './agingTriage.ts';
+import { buildScopedJql } from './reportScopeJql.ts';
 import type { IssueAgingIssueInput } from './issueAging.ts';
 import { readConfiguredStoryPointsFieldId, readStoryPoints } from './storyPointsField.ts';
 
@@ -96,7 +97,7 @@ export interface AgingBacklogFetchResult {
  * string is BOTH queried and shown to the user, guaranteeing the displayed JQL never drifts from what ran.
  */
 export function buildAgingJql(scopeJql: string): string {
-  return `(${scopeJql}) AND statusCategory != Done ORDER BY created ASC`;
+  return buildScopedJql(scopeJql, 'statusCategory != Done ORDER BY created ASC');
 }
 
 /** Wraps the aging JQL with the requested fields and the page window into a single search request path. */

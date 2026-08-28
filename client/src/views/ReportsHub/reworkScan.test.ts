@@ -2,7 +2,14 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { describeReworkScan, findReworkRounds, scanRework, type ReworkIssue } from './reworkScan.ts';
+import {
+  describeReworkExclusions,
+  describeReworkScan,
+  findReworkRounds,
+  isAbandonedStatusName,
+  scanRework,
+  type ReworkIssue,
+} from './reworkScan.ts';
 
 const TODAY_MS = Date.parse('2026-08-28T12:00:00.000Z');
 
@@ -205,16 +212,29 @@ describe('describeReworkScan', () => {
 
     const sentence = describeReworkScan(result);
 
-    expect(sentence).toContain('1 of 2 issues that reached delivery came back');
-    expect(sentence).toContain('50%');
+    expect(sentence).toContain('50% of the work that reached delivery came back');
+    expect(sentence).toContain('1 of 2 issues');
   });
 
-  it('says plainly that the points are a scale, not a measurement', () => {
-    // Nobody re-estimated the second pass — that is the whole problem — and a number presented as
-    // exact would be the first thing challenged in the room.
+  it('leads with what a return costs to RECOVER, the figure the report exists for', () => {
+    // The first version led with a points total, which was zero, because the issues that come back
+    // are defects and nobody points defects. A cost argument resting on a zero is worse than none.
     const result = scanRework([issue('A-1', [['Ready for QA', 3], ['In Progress', 5], ['Ready for QA', 12]])], TODAY_MS);
 
-    expect(describeReworkScan(result)).toContain('the second pass was never sized');
+    expect(describeReworkScan(result)).toContain('working days to recover');
+  });
+
+  it('says outright when NOTHING that came back carried points', () => {
+    const unpointed = issue('A-1', [['Ready for QA', 3], ['In Progress', 5], ['Ready for QA', 12]], { storyPoints: null });
+
+    expect(describeReworkScan(scanRework([unpointed], TODAY_MS)))
+      .toContain('recorded nowhere at all');
+  });
+
+  it('reports what is still out separately, because its clock has not stopped', () => {
+    const result = scanRework([issue('A-1', [['Ready for QA', 3], ['In Progress', 5]])], TODAY_MS);
+
+    expect(describeReworkScan(result)).toContain('still out');
   });
 
   it('says nothing came back rather than reporting a zero rate', () => {
@@ -227,5 +247,110 @@ describe('describeReworkScan', () => {
     const result = scanRework([issue('A-1', [['In Progress', 3]])], TODAY_MS);
 
     expect(describeReworkScan(result)).toContain('none could have come back');
+  });
+});
+
+// ── The counting rules that make the figure mean something (GH #376) ───────
+
+describe('scanRework — what does not count as rework', () => {
+  it('does NOT count an issue that was cancelled', () => {
+    // Falling into Cancelled means the work stopped, not that it was done again. Counting it put days
+    // into the total that nobody ever spent redoing anything.
+    const result = scanRework([issue('A-1', [['Ready for QA', 3], ['Cancelled', 5]])], TODAY_MS);
+
+    expect(result.reworkedCount).toBe(0);
+    expect(result.excludedAbandonedRounds).toBe(1);
+  });
+
+  it('treats rejected, withdrawn and duplicate the same way', () => {
+    ['Rejected', 'Withdrawn', 'Duplicate'].forEach((abandonedStatus) => {
+      const result = scanRework([issue('A-1', [['Ready for QA', 3], [abandonedStatus, 5]])], TODAY_MS);
+
+      expect(result.reworkedCount).toBe(0);
+    });
+  });
+
+  it('is not fooled by the casing somebody configured', () => {
+    expect(isAbandonedStatusName('CANCELLED')).toBe(true);
+    expect(isAbandonedStatusName('  cancelled  ')).toBe(true);
+    expect(isAbandonedStatusName('In Progress')).toBe(false);
+  });
+
+  it('does NOT count a bounce that came back the same day', () => {
+    // Somebody fixing a mis-click in Jira, not a developer doing the job twice. Eight rows of zeroes
+    // were going into a table that was supposed to be evidence.
+    const result = scanRework([issue('A-1', [['Ready for QA', 3], ['In Progress', 3], ['Ready for QA', 3]])], TODAY_MS);
+
+    expect(result.reworkedCount).toBe(0);
+    expect(result.excludedShortRounds).toBe(1);
+  });
+
+  it('still counts a bounce that took longer than half a working day', () => {
+    const result = scanRework([issue('A-1', [['Ready for QA', 3], ['In Progress', 3], ['Ready for QA', 6]])], TODAY_MS);
+
+    expect(result.reworkedCount).toBe(1);
+  });
+
+  it('never excludes a still-open round as too short — its clock has not stopped', () => {
+    const result = scanRework([issue('A-1', [['Ready for QA', 28], ['In Progress', 28]])], TODAY_MS);
+
+    expect(result.excludedShortRounds).toBe(0);
+    expect(result.stillOutRounds).toBe(1);
+  });
+
+  it('keeps the excluded counts so nothing is silently dropped', () => {
+    const result = scanRework([
+      issue('A-1', [['Ready for QA', 3], ['Cancelled', 5]]),
+      issue('A-2', [['Ready for QA', 3], ['In Progress', 3], ['Ready for QA', 3]]),
+    ], TODAY_MS);
+
+    expect(describeReworkExclusions(result)).toContain('abandoned, not redone');
+    expect(describeReworkExclusions(result)).toContain('a correction, not rework');
+  });
+
+  it('says nothing about exclusions when there were none', () => {
+    const result = scanRework([issue('A-1', [['Ready for QA', 3], ['In Progress', 5], ['Ready for QA', 12]])], TODAY_MS);
+
+    expect(describeReworkExclusions(result)).toBe('');
+  });
+});
+
+describe('scanRework — settled against still out', () => {
+  it('measures the median on SETTLED rounds only', () => {
+    // Averaging an open round in with completed ones produces a cost-per-return no return ever cost.
+    const result = scanRework([
+      issue('A-1', [['Ready for QA', 3], ['In Progress', 3], ['Ready for QA', 6]]),
+      issue('A-2', [['Ready for QA', 3], ['In Progress', 3]]),
+    ], TODAY_MS);
+
+    expect(result.settledRounds).toBe(1);
+    expect(result.stillOutRounds).toBe(1);
+    expect(result.medianSettledWorkingDays).toBeLessThan(result.stillOutWorkingDays);
+  });
+
+  it('uses the MEDIAN, so one long outlier is not reported as typical', () => {
+    const result = scanRework([
+      issue('A-1', [['Ready for QA', 3], ['In Progress', 3], ['Ready for QA', 6]]),
+      issue('A-2', [['Ready for QA', 3], ['In Progress', 3], ['Ready for QA', 7]]),
+      issue('A-3', [['Ready for QA', 3], ['In Progress', 3], ['Ready for QA', 28]]),
+    ], TODAY_MS);
+
+    expect(result.medianSettledWorkingDays).toBeLessThan(10);
+  });
+
+  it('reports no median when every round is still open', () => {
+    const result = scanRework([issue('A-1', [['Ready for QA', 3], ['In Progress', 5]])], TODAY_MS);
+
+    expect(result.medianSettledWorkingDays).toBeNull();
+  });
+
+  it('counts how many reworked issues carried no points at all', () => {
+    const result = scanRework([
+      issue('A-1', [['Ready for QA', 3], ['In Progress', 5], ['Ready for QA', 12]], { storyPoints: null }),
+      issue('A-2', [['Ready for QA', 3], ['In Progress', 5], ['Ready for QA', 12]]),
+    ], TODAY_MS);
+
+    expect(result.unpointedCount).toBe(1);
+    expect(result.reworkedPoints).toBe(5);
   });
 });

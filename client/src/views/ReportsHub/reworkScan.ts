@@ -5,26 +5,42 @@
 // fixes it inside the open ticket; no points are added, no new item is created, and the cost of that
 // round trip is recorded precisely nowhere. Nobody hid it — the process never asked for it.
 //
-// The effect is that a team cannot say what late defect discovery costs them, because on paper it
-// costs nothing. That makes the case for testing capacity impossible to argue and the case for
-// closing stories early impossible to win.
-//
 // The evidence, though, is already sitting in the changelog. An issue that reached delivery — the
 // team's own line, "Ready for QA" or beyond — and then moved BACKWARDS out of it went round again.
-// Each of those returns is a piece of rework, and the changelog says when it happened, how long the
-// issue then spent before getting back, and which status sent it back.
 //
-// Two rules keep the count honest:
+// What the report is FOR decides what counts. The useful question is not "how many tickets moved
+// backwards" but "when work comes back, what does it cost to recover" — a flow figure, in days. Three
+// rules keep that figure honest, and each of them exists because the first version reported a number
+// that was true and useless:
 //
-//   - ONLY A RETURN FROM DELIVERY COUNTS. Moving between two in-progress statuses is ordinary work,
-//     not rework, and counting it would inflate the number until nobody believed any of it.
-//   - AN ISSUE STILL IN REWORK IS COUNTED, AND SAID TO BE OPEN. Waiting for it to come back before
-//     admitting it went away would under-report exactly the worst cases.
+//   - AN ABANDONED ISSUE IS NOT REWORK. Falling into Cancelled means the work stopped, not that it was
+//     done again. Counting it inflated the total with work nobody ever redid.
+//   - A SAME-DAY BOUNCE IS NOT REWORK. A ticket corrected minutes after a mis-click is somebody fixing
+//     a mistake in Jira, not a developer doing the job twice.
+//   - WORK STILL OUT IS REPORTED SEPARATELY. Its clock is still running, so averaging it in with
+//     settled round trips produces a "cost per return" that no completed return ever cost.
 //
 // Pure: no fetch, no storage, and the clock is passed in.
 
 import { businessMillisBetween, MILLISECONDS_PER_DAY, parseIsoOrNull } from './issueTimeline.ts';
 import { isDeliveredWorkflowStatusName } from '../../utils/workflowDelivery.ts';
+
+/**
+ * Statuses that mean the work STOPPED rather than went round again.
+ *
+ * An issue moving into one of these has been abandoned. It is not rework, and counting it was putting
+ * days into the total that nobody ever spent redoing anything.
+ */
+const ABANDONED_STATUS_NAMES = ['cancelled', 'canceled', 'rejected', 'withdrawn', 'duplicate', "won't do", 'wont do'];
+
+/**
+ * Round trips shorter than this are corrections, not rework.
+ *
+ * Half a working day. A ticket that fell out of delivery and climbed back the same afternoon is
+ * somebody fixing a mis-click; treating it as a developer doing the job twice put eight rows of zeroes
+ * into a table that was supposed to be evidence.
+ */
+export const MINIMUM_REWORK_WORKING_DAYS = 0.5;
 
 /** One status change from an issue's changelog: the status it moved TO, and when. */
 export interface ReworkStatusTransition {
@@ -43,6 +59,9 @@ export interface ReworkIssue {
   /** Status changes in any order — they are sorted here. */
   statusTransitions: readonly ReworkStatusTransition[];
 }
+
+/** Why a round trip was not counted, so an excluded one is never silently dropped. */
+export type ExcludedReworkReason = 'abandoned' | 'too-short';
 
 /** One round trip: the issue left delivery, and either came back or has not yet. */
 export interface ReworkRound {
@@ -79,14 +98,37 @@ export interface ReworkScanResult {
   deliveredCount: number;
   /** Issues that fell back at least once. */
   reworkedCount: number;
-  /** Every round across every issue. */
+  /** Every counted round across every issue. */
   totalRounds: number;
-  /** Working days of rework across every round. */
+  /** Working days of rework across every counted round. */
   totalWorkingDays: number;
-  /** Story points carried by the reworked issues — the effort that was done at least twice. */
+
+  /** Rounds that finished — the issue came back. These are what "cost per return" is measured on. */
+  settledRounds: number;
+  /** The middle settled round trip, in working days. The number worth saying out loud. */
+  medianSettledWorkingDays: number | null;
+  /** Rounds whose clock is still running. */
+  stillOutRounds: number;
+  /** Working days those open rounds have run so far. */
+  stillOutWorkingDays: number;
+
+  /** Story points carried by the reworked issues that HAVE points. */
   reworkedPoints: number;
-  /** Which status the returns fell into, and how many, worst first. */
+  /** Reworked issues with no points at all, so a zero total is never read as no cost. */
+  unpointedCount: number;
+
+  /** Round trips left out because the work was abandoned rather than redone. */
+  excludedAbandonedRounds: number;
+  /** Round trips left out as same-day corrections. */
+  excludedShortRounds: number;
+
+  /** Which status the counted returns fell into, and how many, worst first. */
   returnsByStatus: { statusName: string; count: number }[];
+}
+
+/** True when a status means the work stopped rather than went round again. */
+export function isAbandonedStatusName(statusName: string): boolean {
+  return ABANDONED_STATUS_NAMES.includes(statusName.trim().toLowerCase());
 }
 
 /** Sorts transitions oldest first, dropping any whose timestamp cannot be read. */
@@ -97,18 +139,12 @@ function readSortedTransitions(issue: ReworkIssue): { toStatusName: string; atMs
     .sort((first, second) => first.atMs - second.atMs);
 }
 
-/** Whole working days between two moments, rounded to one decimal so short trips are not lost. */
+/** Whole working days between two moments, to one decimal so short trips are not lost. */
 function workingDaysBetween(startMs: number, endMs: number): number {
   return Math.round((businessMillisBetween(startMs, endMs) / MILLISECONDS_PER_DAY) * 10) / 10;
 }
 
-/**
- * Walks one issue's history and reports every time it fell out of delivery.
- *
- * Delivery is the team's own line, not Jira's: "Ready for QA" or beyond. That matters because a story
- * that reaches Ready for QA and is pushed back to In Progress has unmistakably been done twice, while
- * one that never got there is simply still being done the first time.
- */
+/** Every round trip an issue took, before the counting rules are applied. */
 export function findReworkRounds(issue: ReworkIssue, todayMs: number): ReworkRound[] {
   const transitions = readSortedTransitions(issue);
   const rounds: ReworkRound[] = [];
@@ -121,7 +157,6 @@ export function findReworkRounds(issue: ReworkIssue, todayMs: number): ReworkRou
     const isNowDelivered = isDeliveredWorkflowStatusName(transition.toStatusName);
 
     if (isDelivered && !isNowDelivered) {
-      // Fell out of delivery: the round trip starts here, named by where it landed.
       openRound = { leftAtMs: transition.atMs, fellBackToStatus: transition.toStatusName };
     } else if (!isDelivered && isNowDelivered && openRound !== null) {
       const round: { leftAtMs: number; fellBackToStatus: string } = openRound;
@@ -138,8 +173,6 @@ export function findReworkRounds(issue: ReworkIssue, todayMs: number): ReworkRou
     isDelivered = isNowDelivered;
   });
 
-  // Still out. Counted, and said to be open: waiting for it to come back before admitting it went
-  // away would under-report exactly the worst cases.
   if (openRound !== null) {
     const round: { leftAtMs: number; fellBackToStatus: string } = openRound;
     rounds.push({
@@ -152,6 +185,19 @@ export function findReworkRounds(issue: ReworkIssue, todayMs: number): ReworkRou
   }
 
   return rounds;
+}
+
+/** Why this round trip does not count, or null when it does. */
+export function readExclusionReason(round: ReworkRound): ExcludedReworkReason | null {
+  if (isAbandonedStatusName(round.fellBackToStatus)) {
+    return 'abandoned';
+  }
+  // A still-open round is never too short: its clock has not stopped, and today's reading is a
+  // snapshot rather than a duration.
+  if (!round.isStillOut && round.workingDays < MINIMUM_REWORK_WORKING_DAYS) {
+    return 'too-short';
+  }
+  return null;
 }
 
 /** True when the issue reached the delivery line at least once — the only ones that could rework. */
@@ -176,20 +222,46 @@ function countReturnsByStatus(issues: readonly ReworkIssueResult[]): { statusNam
     .sort((first, second) => second.count - first.count || first.statusName.localeCompare(second.statusName));
 }
 
+/** The middle value, or null for an empty set. Median, not mean: one 108-day outlier is not typical. */
+function readMedian(values: readonly number[]): number | null {
+  if (values.length === 0) {
+    return null;
+  }
+  const sorted = [...values].sort((first, second) => first - second);
+  const middleIndex = Math.floor(sorted.length / 2);
+  const median = sorted.length % 2 === 0
+    ? (sorted[middleIndex - 1] + sorted[middleIndex]) / 2
+    : sorted[middleIndex];
+  return Math.round(median * 10) / 10;
+}
+
 /**
- * Scans a set of issues and reports what rework cost.
+ * Scans a set of issues and reports what coming back costs.
  *
- * The denominator reported is the DELIVERED count, not the examined count. A rate of "12 of 145" is
- * misleading when a hundred of those never reached delivery and so had no opportunity to come back;
- * "12 of 45 that got there" is the number somebody can act on.
+ * The denominator is the DELIVERED count, not the examined count. A rate of "21 of 208" is misleading
+ * when most of those never reached delivery and so had no opportunity to come back.
  */
 export function scanRework(issues: readonly ReworkIssue[], todayMs: number): ReworkScanResult {
   const deliveredIssues = issues.filter((issue) => hasEverBeenDelivered(issue));
 
   const results: ReworkIssueResult[] = [];
+  let excludedAbandonedRounds = 0;
+  let excludedShortRounds = 0;
+
   deliveredIssues.forEach((issue) => {
-    const rounds = findReworkRounds(issue, todayMs);
-    if (rounds.length === 0) {
+    const countedRounds: ReworkRound[] = [];
+    findReworkRounds(issue, todayMs).forEach((round) => {
+      const exclusionReason = readExclusionReason(round);
+      if (exclusionReason === 'abandoned') {
+        excludedAbandonedRounds += 1;
+      } else if (exclusionReason === 'too-short') {
+        excludedShortRounds += 1;
+      } else {
+        countedRounds.push(round);
+      }
+    });
+
+    if (countedRounds.length === 0) {
       return;
     }
     results.push({
@@ -197,34 +269,44 @@ export function scanRework(issues: readonly ReworkIssue[], todayMs: number): Rew
       summary: issue.summary,
       storyPoints: issue.storyPoints,
       assigneeName: issue.assigneeName,
-      rounds,
-      totalWorkingDays: Math.round(rounds.reduce((total, round) => total + round.workingDays, 0) * 10) / 10,
+      rounds: countedRounds,
+      totalWorkingDays: Math.round(countedRounds.reduce((total, round) => total + round.workingDays, 0) * 10) / 10,
     });
   });
 
-  // Worst first: the longest round trips are the ones worth reading out.
   results.sort((first, second) => second.totalWorkingDays - first.totalWorkingDays
     || first.key.localeCompare(second.key));
+
+  const allRounds = results.flatMap((issue) => issue.rounds);
+  const settled = allRounds.filter((round) => !round.isStillOut);
+  const stillOut = allRounds.filter((round) => round.isStillOut);
 
   return {
     issues: results,
     examinedCount: issues.length,
     deliveredCount: deliveredIssues.length,
     reworkedCount: results.length,
-    totalRounds: results.reduce((total, issue) => total + issue.rounds.length, 0),
-    totalWorkingDays: Math.round(results.reduce((total, issue) => total + issue.totalWorkingDays, 0) * 10) / 10,
+    totalRounds: allRounds.length,
+    totalWorkingDays: Math.round(allRounds.reduce((total, round) => total + round.workingDays, 0) * 10) / 10,
+    settledRounds: settled.length,
+    medianSettledWorkingDays: readMedian(settled.map((round) => round.workingDays)),
+    stillOutRounds: stillOut.length,
+    stillOutWorkingDays: Math.round(stillOut.reduce((total, round) => total + round.workingDays, 0) * 10) / 10,
     reworkedPoints: results.reduce((total, issue) => total + (issue.storyPoints ?? 0), 0),
+    unpointedCount: results.filter((issue) => issue.storyPoints === null).length,
+    excludedAbandonedRounds,
+    excludedShortRounds,
     returnsByStatus: countReturnsByStatus(results),
   };
 }
 
 /**
- * States what the scan found in one sentence, for the top of a report or a slide.
+ * States what the scan found, as the sentence somebody reads out.
  *
- * Deliberately says what it does NOT know: the points figure is the size of the issues that came back,
- * which is an upper bound on the rework effort rather than a measurement of it. Nobody re-estimated
- * the second pass — that is the whole problem — and a number presented as exact would be the first
- * thing challenged in the room.
+ * Leads with the FLOW figure — how long a return takes to recover — because that is the number the
+ * report exists to produce. The first version led with a points total, which was zero, because the
+ * issues that come back are defects and nobody points defects. A cost argument resting on a zero is
+ * worse than no argument at all.
  */
 export function describeReworkScan(result: ReworkScanResult): string {
   if (result.deliveredCount === 0) {
@@ -235,9 +317,38 @@ export function describeReworkScan(result: ReworkScanResult): string {
   }
 
   const percentage = Math.round((result.reworkedCount / result.deliveredCount) * 100);
-  return `${result.reworkedCount} of ${result.deliveredCount} issues that reached delivery came back — `
-    + `${percentage}%, across ${result.totalRounds} return(s) and ${result.totalWorkingDays} working days. `
-    + `Those issues carry ${result.reworkedPoints} points, which were estimated once and delivered at `
-    + 'least twice; the second pass was never sized, so this is the scale of the cost rather than a '
-    + 'measurement of it.';
+  const sentences = [
+    `${percentage}% of the work that reached delivery came back — ${result.reworkedCount} of `
+      + `${result.deliveredCount} issues, across ${result.totalRounds} returns.`,
+  ];
+
+  if (result.medianSettledWorkingDays !== null) {
+    sentences.push(`A return that has since been resolved took a median of ${result.medianSettledWorkingDays} `
+      + `working days to recover, over ${result.settledRounds} of them.`);
+  }
+  if (result.stillOutRounds > 0) {
+    sentences.push(`${result.stillOutRounds} more are still out, and have been for `
+      + `${result.stillOutWorkingDays} working days so far.`);
+  }
+
+  // Said plainly, because a zero here is the whole point rather than an absence of one.
+  sentences.push(result.unpointedCount === result.reworkedCount
+    ? 'None of these carried story points, so the cost of coming back is recorded nowhere at all — '
+      + 'which is why it has to be read out of history like this.'
+    : `${result.unpointedCount} of them carried no story points, so the ${result.reworkedPoints} points `
+      + 'shown are only the part of this that was ever sized.');
+
+  return sentences.join(' ');
+}
+
+/** What the scan chose not to count, so an exclusion is stated rather than silently applied. */
+export function describeReworkExclusions(result: ReworkScanResult): string {
+  const parts: string[] = [];
+  if (result.excludedAbandonedRounds > 0) {
+    parts.push(`${result.excludedAbandonedRounds} moved into a cancelled or rejected status — abandoned, not redone`);
+  }
+  if (result.excludedShortRounds > 0) {
+    parts.push(`${result.excludedShortRounds} came back within half a working day — a correction, not rework`);
+  }
+  return parts.length === 0 ? '' : `Not counted: ${parts.join('; ')}.`;
 }

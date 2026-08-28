@@ -9,6 +9,7 @@
 
 import { jiraGet } from '../../services/jiraApi.ts';
 import { resolveStoryPointsFieldIds } from '../Hygiene/checks/storyPointsField.ts';
+import { buildScopedJql } from './reportScopeJql.ts';
 import type { ReworkIssue, ReworkStatusTransition } from './reworkScan.ts';
 
 /** One page of issues per request. Jira caps this well below what a quarter of history returns. */
@@ -35,24 +36,9 @@ interface RawIssue {
   changelog?: { histories?: RawHistory[] };
 }
 
-/** A bare project key: letters and digits, no operator anywhere in it. */
-const BARE_PROJECT_KEY_PATTERN = /^[A-Za-z][A-Za-z0-9_]*$/;
-
-/**
- * The JQL a rework scan runs: everything touched in the window, newest activity first.
- *
- * A bare project key is read as one. Somebody typing `ENCUC` into a box labelled "scope" has said
- * exactly what they meant, and wrapping it as `(ENCUC) AND updated >= …` produced a Jira parse error
- * blaming them for it (GH #376). The picker beside the box is the real answer; this is the courtesy
- * for anyone who types instead.
- */
+/** The JQL a rework scan runs: everything touched in the window, newest activity first. */
 export function buildReworkJql(scopeJql: string, windowDays: number): string {
-  const trimmedScope = scopeJql.trim();
-  const scopeExpression = BARE_PROJECT_KEY_PATTERN.test(trimmedScope)
-    ? `project = ${trimmedScope}`
-    : trimmedScope;
-  const scopeClause = scopeExpression === '' ? '' : `(${scopeExpression}) AND `;
-  return `${scopeClause}updated >= -${windowDays}d ORDER BY updated DESC`;
+  return buildScopedJql(scopeJql, `updated >= -${windowDays}d ORDER BY updated DESC`);
 }
 
 /** The search path, with the changelog expanded and one page requested. */

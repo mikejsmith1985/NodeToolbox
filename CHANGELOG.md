@@ -8,6 +8,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **The Rework report counted things that were not rework, and led with a number that was zero.** Its
+  first run on real data reported 21 issues, 376 working days and &ldquo;0 points affected&rdquo;. Every
+  part of that was true and none of it was useful.
+  Three counting rules now decide what a return means. An issue that fell into **Cancelled** is
+  **abandoned, not redone** &mdash; the work stopped, and counting it put days into the total nobody
+  ever spent. A bounce that came back within **half a working day** is somebody fixing a mis-click in
+  Jira, not a developer doing the job twice; eight rows of zeroes were going into a table meant to be
+  evidence. And work **still out** is reported separately, because its clock is still running and
+  averaging it in produces a cost-per-return that no completed return ever cost.
+  The headline now leads with the figure the report exists to produce: **how long a return takes to
+  recover**, as a median over settled rounds, so one 108-day outlier is not reported as typical. The
+  points total no longer leads, because the issues that come back are defects and nobody points
+  defects &mdash; when none of them carried points the report says so outright, since that silence is
+  the finding rather than an absence of one. Everything excluded is stated on screen: an exclusion
+  nobody can see is a number nobody can check.
+- **Typing a project key into a report&#39;s scope box no longer fails.** `ENCUC` in a box labelled
+  Scope is exactly what that box invites, and both the Rework and Aging reports wrapped it as
+  `(ENCUC) AND …`, then handed back Jira&#39;s parse error naming a character position in a query nobody
+  wrote. It read as the operator&#39;s mistake; the brackets came from us. A bare key &mdash; or a list
+  of them &mdash; is now read as the project it obviously is, by one shared rule, so no report can be
+  fixed while another is not.
+
+### Fixed
 - **The Rework report asked for JQL and blamed you for answering.** Its scope box was a free-text
   field. Typing `ENCUC` into a box labelled &ldquo;scope&rdquo; is exactly what it invites, and the
   report wrapped it as `(ENCUC) AND updated >= …` and handed back Jira&#39;s parse error naming a
