@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Flow Analysis, Aging and Rework now draw the same way the dashboard does.** The shared visual
+  language shipped with Delivery Health and stopped there; the other three stayed tables. A table is
+  the data, and the reader still has to do the understanding.
+  All three now lead with **stat cards**, and each carries the chart its own numbers were asking for:
+  - **Rework** &mdash; the return rate, the median days to recover, and what is **still out** kept as
+    its own figure because its clock has not stopped. A distribution bar shows which stage sent work
+    back; the worst round trips are bars against a ten-day line, and an issue still out says so on its
+    own bar.
+  - **Aging** &mdash; the four age bands as one distribution, which is the shape of a backlog: heavy on
+    the left when healthy, growing a tail on the right when stalled. Types rank by **average age, not
+    count**, because ten fresh bugs are not an aging problem and one year-old story is. The oldest item
+    and the over-90-day share join the headline, since an average of 40 days says nothing about the
+    item sitting at 400.
+  - **Flow Analysis** &mdash; lead time, cycle time and the pre-work wait as cards, with the wait
+    called out in red when it is **longer than the work itself**. A distribution splits waiting from
+    working and states that share in one sentence, and the stage rollup is bars with every waiting
+    stage coloured.
+  The tables stay underneath. The bars answer &ldquo;where should I look&rdquo;; the exact medians and
+  counts answer &ldquo;what do I say about it&rdquo;, and a review needs both.
+
 ### Fixed
 - **The GitHub intake could cancel live development work, and did.** Seven issues were moved to
   Cancelled in three days &mdash; from Ready for Testing, from Working &mdash; every one of them

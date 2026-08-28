@@ -87,7 +87,9 @@ describe('ReworkTab', () => {
 
     await runReport();
 
-    expect(await screen.findByText(/working days to recover \(median\)/)).toBeInTheDocument();
+    // Now a stat card: the label carries the unit, the value carries the number.
+    expect(await screen.findByText('Days to recover a return')).toBeInTheDocument();
+    expect(screen.getByText(/median over \d+ resolved return/)).toBeInTheDocument();
   });
 
   it('says outright that nothing which came back carried points', async () => {

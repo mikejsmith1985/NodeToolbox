@@ -13,6 +13,14 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 
 import { jiraGet } from '../../services/jiraApi.ts';
 import { useSettingsStore } from '../../store/settingsStore.ts';
+import {
+  DistributionBar,
+  EmptyNote,
+  MeterList,
+  ReportPanel,
+  StatCards,
+  type MeterRowData,
+} from './visuals/ReportVisuals.tsx';
 import styles from './ReportsHubView.module.css';
 import {
   buildAssigneeWasClauseFromValues,
@@ -494,47 +502,98 @@ function FlowSummarySection({
   const averageOf = (read: (issueFlow: IssueFlow) => number) =>
     issueFlows.reduce((total, issueFlow) => total + read(issueFlow), 0) / issueFlows.length;
 
+  const averageLeadTime = averageOf((issueFlow) => issueFlow.leadTimeWorkingDays);
+  const averageCycleTime = averageOf((issueFlow) => issueFlow.cycleTimeWorkingDays);
+  const averagePreWorkWait = averageOf((issueFlow) => issueFlow.preWorkWaitWorkingDays);
+
   return (
     <section>
       <h4 className={styles.tabSectionHeading}>Flow summary</h4>
-      <p className={styles.captionText} style={{ marginTop: 0 }}>
+      <StatCards
+        stats={[
+          { label: 'Delivered issues', value: String(deliveryTotals.deliveredIssueCount) },
+          { label: 'Story points', value: formatDays(deliveryTotals.deliveredStoryPoints) },
+          {
+            label: 'Avg lead time',
+            value: formatDays(averageLeadTime),
+            context: 'working days, from created to delivered',
+          },
+          {
+            label: 'Avg cycle time',
+            value: formatDays(averageCycleTime),
+            context: 'working days, once work started',
+          },
+          {
+            label: 'Avg pre-work wait',
+            value: formatDays(averagePreWorkWait),
+            // Shown as its own figure rather than left as a subtraction: the gap IS the finding when
+            // it is larger than the work.
+            context: averagePreWorkWait > averageCycleTime
+              ? 'longer than the work itself'
+              : 'working days before anyone started',
+            tone: averagePreWorkWait > averageCycleTime ? 'bad' : 'neutral',
+          },
+        ]}
+      />
+      <p className={styles.captionText}>
         Lead and cycle time are shown together deliberately. Cycle time alone hides a backlog that sat
         for weeks; lead time alone lets backlog age mask a slow delivery system. The gap between them
         is the pre-work wait, shown as its own figure rather than left as a subtraction.
       </p>
-      <div className={styles.tableWrapper}>
-        <table className={styles.reportTable}>
-          <thead>
-            <tr>
-              <th>Delivered issues</th><th>Story points</th><th>Avg lead time (working days)</th>
-              <th>Avg cycle time (working days)</th><th>Avg pre-work wait (working days)</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td>{deliveryTotals.deliveredIssueCount}</td>
-              <td>{formatDays(deliveryTotals.deliveredStoryPoints)}</td>
-              <td>{formatDays(averageOf((issueFlow) => issueFlow.leadTimeWorkingDays))}</td>
-              <td>{formatDays(averageOf((issueFlow) => issueFlow.cycleTimeWorkingDays))}</td>
-              <td>{formatDays(averageOf((issueFlow) => issueFlow.preWorkWaitWorkingDays))}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
     </section>
   );
 }
 
+/** Turns the stage rollups into bars, with waiting called out as the thing worth seeing. */
+function buildStageRows(rollups: readonly StageRollup[]): MeterRowData[] {
+  return rollups.map((rollup): MeterRowData => ({
+    name: `${rollup.statusName} (${rollup.flowClass})`,
+    value: rollup.totalWorkingDays,
+    valueLabel: `${rollup.totalWorkingDays}d total · ${rollup.medianWorkingDays}d median · `
+      + `p85 ${rollup.p85WorkingDays}d · ${rollup.issueCount} issue(s)`,
+    // Waiting is coloured, active work is not: time spent working is the job, and time spent waiting
+    // is the thing a flow report exists to surface.
+    tone: rollup.flowClass === 'waiting' ? 'bad' : 'neutral',
+  }));
+}
+
 /** Where the time accumulated, largest first, with waiting kept separate from active work. */
 function StageRollupSection({ rollups }: { rollups: readonly StageRollup[] }): React.JSX.Element {
+  const waitingDays = rollups
+    .filter((rollup) => rollup.flowClass === 'waiting')
+    .reduce((total, rollup) => total + rollup.totalWorkingDays, 0);
+  const allDays = rollups.reduce((total, rollup) => total + rollup.totalWorkingDays, 0);
+
   return (
-    <section style={{ marginTop: 16 }}>
-      <h4 className={styles.tabSectionHeading}>Where the time goes</h4>
-      <p className={styles.captionText} style={{ marginTop: 0 }}>
-        Largest contributor first. The median is the typical case; p85 is the tail — 85% of issues
-        cleared the status in that time or less. A mean is not shown, because one issue stuck for
-        months would describe a healthy stage as broken. Waiting time is usually a property of the
-        system, not of whoever was holding the issue.
+    <section>
+      <ReportPanel
+        title="Waiting against working"
+        caption={allDays === 0
+          ? 'No time could be attributed to any status.'
+          : `${Math.round((waitingDays / allDays) * 100)}% of all the elapsed time was spent waiting `
+            + 'rather than being worked on. That share is the flow problem, stated in one number.'}
+      >
+        <DistributionBar
+          slices={rollups.map((rollup) => ({
+            name: `${rollup.statusName} (${rollup.flowClass})`,
+            count: Math.round(rollup.totalWorkingDays),
+          }))}
+        />
+      </ReportPanel>
+
+      <ReportPanel
+        title="Where the time goes"
+        caption={'Largest contributor first, waiting stages coloured. The median is the typical case; '
+          + 'p85 is the tail — 85% of issues cleared the status in that time or less. A mean is not '
+          + 'shown, because one issue stuck for months would describe a healthy stage as broken.'}
+      >
+        {rollups.length === 0
+          ? <EmptyNote>No status held any measurable time in this run.</EmptyNote>
+          : <MeterList rows={buildStageRows(rollups)} />}
+      </ReportPanel>
+
+      <p className={styles.captionText}>
+        Waiting time is usually a property of the system, not of whoever was holding the issue.
       </p>
       <div className={styles.tableWrapper}>
         <table className={styles.reportTable}>

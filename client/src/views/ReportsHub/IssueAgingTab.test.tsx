@@ -94,18 +94,22 @@ describe('IssueAgingTab', () => {
     // The overall headline KPI cards name the total open count and the overall average age (3+20+120)/3 ≈ 47.67.
     await waitFor(() => expect(screen.getByText('Open issues')).toBeInTheDocument());
     expect(screen.getByText('Open issues').nextElementSibling?.textContent).toBe('3');
-    expect(screen.getByText(/overall avg age/i).nextElementSibling?.textContent).toBe('47.67');
+    // Exact, because the meter rows carry the phrase too now.
+    expect(screen.getByText('Average age').nextElementSibling?.textContent).toBe('47.67');
 
     // Columns: Type | Count | Avg | Median | Oldest | 0–7d | 8–30d | 31–90d | 90+d.
     // The Bug row (oldest average, sorts first): its Oldest cell shows the age AND the issue key.
-    const bugRow = screen.getByText('Bug').closest('tr') as HTMLElement;
+    // Found in the TABLE: the meter rows name each type too, so a document-wide match is ambiguous.
+    const bugRow = Array.from(document.querySelectorAll('tr'))
+      .find((tableRow) => tableRow.querySelector('td')?.textContent === 'Bug') as HTMLElement;
     const bugCells = Array.from(bugRow.querySelectorAll('td')).map((cell) => cell.textContent ?? '');
     expect(bugCells[1]).toBe('1');
     expect(bugCells[2]).toBe('120');
     expect(bugCells[4]).toBe('120d · ENCUC-9'); // Oldest cell carries the oldest issue's key
     expect(bugCells[8]).toBe('1'); // 90+d bucket
 
-    const storyRow = screen.getByText('Story').closest('tr') as HTMLElement;
+    const storyRow = Array.from(document.querySelectorAll('tr'))
+      .find((tableRow) => tableRow.querySelector('td')?.textContent === 'Story') as HTMLElement;
     const storyCells = Array.from(storyRow.querySelectorAll('td')).map((cell) => cell.textContent ?? '');
     expect(storyCells[1]).toBe('2');
     expect(storyCells[5]).toBe('1'); // 0–7d bucket

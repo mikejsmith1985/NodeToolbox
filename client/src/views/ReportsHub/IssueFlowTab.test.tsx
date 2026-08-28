@@ -112,6 +112,11 @@ beforeEach(() => {
   });
 });
 
+/** Reads one flow-summary stat card by its label. The summary is cards now, not a table. */
+function readStat(label: string): string {
+  return screen.getByText(label).nextElementSibling?.textContent ?? '';
+}
+
 describe('IssueFlowTab — the query', () => {
   it('searches for issues the roster HELD AT ANY POINT, not ones they hold now', async () => {
     render(<IssueFlowTab teamFilter="Team Rocket" />);
@@ -244,9 +249,9 @@ describe('IssueFlowTab — what it renders', () => {
 
     // Neither clock is meaningful alone: cycle time hides a backlog that sat for weeks, lead time
     // lets backlog age mask a slow delivery system.
-    expect(screen.getByText(/avg lead time \(working days\)/i)).toBeInTheDocument();
-    expect(screen.getByText(/avg cycle time \(working days\)/i)).toBeInTheDocument();
-    expect(screen.getByText(/avg pre-work wait \(working days\)/i)).toBeInTheDocument();
+    expect(screen.getByText('Avg lead time')).toBeInTheDocument();
+    expect(screen.getByText('Avg cycle time')).toBeInTheDocument();
+    expect(screen.getByText('Avg pre-work wait')).toBeInTheDocument();
   });
 
   it('labels every duration as working days', async () => {
@@ -286,9 +291,7 @@ describe('IssueFlowTab — what it renders', () => {
 
     await waitFor(() => expect(screen.getByText('Flow summary')).toBeInTheDocument());
 
-    const summaryRow = screen.getByText('Delivered issues').closest('table') as HTMLElement;
-    const values = Array.from(summaryRow.querySelectorAll('tbody td')).map((cell) => cell.textContent);
-    expect(values[0]).toBe('1');
+    expect(readStat('Delivered issues')).toBe('1');
   });
 
   it('says so plainly when nothing was delivered rather than rendering empty tables', async () => {
@@ -343,9 +346,7 @@ describe('IssueFlowTab — sub-tasks (feature 027)', () => {
 
     await waitFor(() => expect(screen.getByText('Flow summary')).toBeInTheDocument());
 
-    const summaryTable = screen.getByText('Delivered issues').closest('table') as HTMLElement;
-    const values = Array.from(summaryTable.querySelectorAll('tbody td')).map((cell) => cell.textContent);
-    expect(values[0]).toBe('1');
+    expect(readStat('Delivered issues')).toBe('1');
     expect(screen.queryByText('A sub-task of it')).not.toBeInTheDocument();
   });
 
@@ -591,10 +592,9 @@ describe('IssueFlowTab — project scope (feature: #218)', () => {
     fireEvent.click(screen.getByRole('button', { name: /run flow analysis/i }));
     await waitFor(() => expect(screen.getByText('Flow summary')).toBeInTheDocument());
 
-    let summaryValues = () => Array.from(
-      (screen.getByText('Delivered issues').closest('table') as HTMLElement).querySelectorAll('tbody td'),
-    ).map((cell) => cell.textContent);
     // Opens on ENCUC, the project the run is mostly about: 1 delivered.
+    const summaryValues = () => [readStat('Delivered issues')];
+
     expect(summaryValues()[0]).toBe('1');
 
     // Mixed: both projects, 2 delivered.

@@ -16,6 +16,14 @@ import {
   type IssueAgingResult,
   type IssueTypeAging,
 } from './issueAging.ts';
+import {
+  DistributionBar,
+  EmptyNote,
+  MeterList,
+  ReportPanel,
+  StatCards,
+  type MeterRowData,
+} from './visuals/ReportVisuals.tsx';
 import styles from './ReportsHubView.module.css';
 
 // ── Named constants ──────────────────────────────────────────────────────────
@@ -81,20 +89,59 @@ function QueriedJqlBlock({ jql }: { jql: string }): React.JSX.Element {
   );
 }
 
-/** The aging headline as two KPI cards: the total open-issue count and the overall average age in days. */
+/** An age past this reads as stale rather than as a backlog doing its job. */
+const STALE_AGE_DAY_THRESHOLD = 90;
+
+/**
+ * The aging headline.
+ *
+ * The oldest item and the over-90-day count join the totals, because an average hides exactly the
+ * thing a backlog review is for: an average of 40 days says nothing about the item sitting at 400.
+ */
 function AgingHeadline({ result }: { result: IssueAgingResult }): React.JSX.Element {
+  const staleCount = result.overall.buckets.ageOverNinety;
+
   return (
-    <div className={styles.kpiGrid} style={{ marginTop: 12 }}>
-      <div className={styles.kpiCard}>
-        <span className={styles.kpiLabel}>Open issues</span>
-        <span className={styles.kpiValue}>{result.totalCount}</span>
-      </div>
-      <div className={styles.kpiCard}>
-        <span className={styles.kpiLabel}>Overall avg age (days)</span>
-        <span className={styles.kpiValue}>{formatNullableDays(result.overallAverageAgeDays)}</span>
-      </div>
-    </div>
+    <StatCards
+      stats={[
+        { label: 'Open issues', value: String(result.totalCount) },
+        {
+          label: 'Average age',
+          value: formatNullableDays(result.overallAverageAgeDays),
+          context: `median ${formatNullableDays(result.overall.medianAgeDays)} days`,
+        },
+        {
+          label: 'Oldest',
+          value: formatNullableDays(result.overall.oldestAgeDays),
+          context: result.overall.oldestIssueKey === null
+            ? 'No issue could be aged.'
+            : `${result.overall.oldestIssueKey}, in days`,
+          tone: (result.overall.oldestAgeDays ?? 0) > STALE_AGE_DAY_THRESHOLD ? 'bad' : 'neutral',
+        },
+        {
+          label: `Older than ${STALE_AGE_DAY_THRESHOLD} days`,
+          value: String(staleCount),
+          context: result.totalCount === 0
+            ? 'Nothing open.'
+            : `${Math.round((staleCount / result.totalCount) * 100)}% of the open backlog`,
+          tone: staleCount > 0 ? 'warn' : 'good',
+        },
+      ]}
+    />
   );
+}
+
+/** Turns the per-type rows into bars, coloured by how old the typical issue in each is. */
+function buildAgingRows(result: IssueAgingResult): MeterRowData[] {
+  return result.byType.map((typeRow): MeterRowData => ({
+    name: typeRow.issueType,
+    // Ranked by AVERAGE rather than count: ten fresh bugs are not an aging problem and one
+    // year-old story is, and a count cannot tell those apart.
+    value: typeRow.averageAgeDays ?? 0,
+    valueLabel: `${typeRow.count} open · avg ${formatNullableDays(typeRow.averageAgeDays)}d · `
+      + `oldest ${formatNullableDays(typeRow.oldestAgeDays)}d`,
+    tone: (typeRow.averageAgeDays ?? 0) > STALE_AGE_DAY_THRESHOLD ? 'bad' : 'neutral',
+  }));
 }
 
 /**
@@ -133,30 +180,65 @@ function AgingRowCells({ row }: { row: IssueTypeAging }): React.JSX.Element {
  */
 function AgingByTypeTable({ result }: { result: IssueAgingResult }): React.JSX.Element {
   return (
-    <div className={styles.tableWrapper} style={{ marginTop: 12 }}>
-      <table className={styles.reportTable}>
-        <thead>
-          <tr>
-            <th>Issue Type</th><th>Count</th><th>Avg Age (days)</th><th>Median</th><th>Oldest</th>
-            <th>0–7d</th><th>8–30d</th><th>31–90d</th><th>90+d</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr className={styles.emphasisRow}>
-            <AgingRowCells row={result.overall} />
-          </tr>
-          {result.byType.map((typeRow) => (
-            <tr key={typeRow.issueType}>
-              <AgingRowCells row={typeRow} />
+    <>
+      <ReportPanel
+        title="How old the backlog is"
+        caption={'Every open issue by how long it has existed. The four bands are the shape of a backlog: '
+          + 'a healthy one is heavy on the left, and a stalled one grows a tail on the right.'}
+      >
+        <DistributionBar
+          slices={[
+            { name: '0–7 days', count: result.overall.buckets.ageZeroToSeven },
+            { name: '8–30 days', count: result.overall.buckets.ageEightToThirty },
+            { name: '31–90 days', count: result.overall.buckets.ageThirtyOneToNinety },
+            { name: 'Over 90 days', count: result.overall.buckets.ageOverNinety },
+          ]}
+        />
+      </ReportPanel>
+
+      <ReportPanel
+        title="Which kinds of work age"
+        caption={'Ranked by AVERAGE age, not by count: ten fresh bugs are not an aging problem and one '
+          + 'year-old story is, and a count cannot tell those apart.'}
+      >
+        {result.byType.length === 0
+          ? <EmptyNote>No open issues were found, so nothing is ageing.</EmptyNote>
+          : (
+            <MeterList
+              markerLabel={`${STALE_AGE_DAY_THRESHOLD} days`}
+              markerValue={STALE_AGE_DAY_THRESHOLD}
+              rows={buildAgingRows(result)}
+            />
+          )}
+      </ReportPanel>
+
+      {/* The table stays. The bars answer "where should I look"; the exact medians and bucket counts
+          answer "what do I say about it", and a review needs both. */}
+      <div className={styles.tableWrapper}>
+        <table className={styles.reportTable}>
+          <thead>
+            <tr>
+              <th>Issue Type</th><th>Count</th><th>Avg Age (days)</th><th>Median</th><th>Oldest</th>
+              <th>0–7d</th><th>8–30d</th><th>31–90d</th><th>90+d</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
-      <p className={styles.captionText}>
-        <code>90+d</code> counts issues older than 90 days. The bold <strong>All</strong> row aggregates
-        every issue type. Ages are calendar days since each issue was created.
-      </p>
-    </div>
+          </thead>
+          <tbody>
+            <tr className={styles.emphasisRow}>
+              <AgingRowCells row={result.overall} />
+            </tr>
+            {result.byType.map((typeRow) => (
+              <tr key={typeRow.issueType}>
+                <AgingRowCells row={typeRow} />
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <p className={styles.captionText}>
+          <code>90+d</code> counts issues older than 90 days. The bold <strong>All</strong> row aggregates
+          every issue type. Ages are calendar days since each issue was created.
+        </p>
+      </div>
+    </>
   );
 }
 

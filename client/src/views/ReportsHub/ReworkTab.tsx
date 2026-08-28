@@ -23,6 +23,15 @@ import {
   scanRework,
   type ReworkScanResult,
 } from './reworkScan.ts';
+import {
+  DistributionBar,
+  EmptyNote,
+  MeterList,
+  ReportPanel,
+  StatCards,
+  type MeterRowData,
+  type StatCardData,
+} from './visuals/ReportVisuals.tsx';
 import styles from './ReportsHubView.module.css';
 
 /** How far back to look. A quarter is long enough to be evidence and short enough to be current. */
@@ -31,9 +40,59 @@ const WINDOW_DAY_OPTIONS = [30, 60, 90, 180];
 /** Rows shown before the table stops. The worst are first, and nobody reads past twenty-five. */
 const MAX_ROWS_SHOWN = 25;
 
-/** Formats a working-day count the way somebody says it aloud. */
-function formatWorkingDays(workingDays: number): string {
-  return workingDays === 1 ? '1 working day' : `${workingDays} working days`;
+/** A wait past this reads as a problem rather than a round trip doing its job. */
+const LONG_RECOVERY_DAY_THRESHOLD = 10;
+
+/** The headline figures, in the order somebody reads them out. */
+function buildReworkStats(result: ReworkScanResult): StatCardData[] {
+  const returnRate = result.deliveredCount === 0
+    ? null
+    : Math.round((result.reworkedCount / result.deliveredCount) * 100);
+
+  return [
+    {
+      label: 'Came back after delivery',
+      value: returnRate === null ? '—' : `${returnRate}%`,
+      context: returnRate === null
+        ? 'Nothing reached delivery in this window.'
+        : `${result.reworkedCount} of ${result.deliveredCount} that reached delivery`,
+      tone: result.reworkedCount > 0 ? 'warn' : 'good',
+    },
+    {
+      label: 'Days to recover a return',
+      value: result.medianSettledWorkingDays === null ? '—' : String(result.medianSettledWorkingDays),
+      context: result.medianSettledWorkingDays === null
+        ? 'No return has been resolved yet.'
+        : `median over ${result.settledRounds} resolved return(s)`,
+      tone: result.medianSettledWorkingDays !== null
+        && result.medianSettledWorkingDays > LONG_RECOVERY_DAY_THRESHOLD ? 'bad' : 'neutral',
+    },
+    {
+      label: 'Return trips',
+      value: String(result.totalRounds),
+      context: `${result.totalWorkingDays} working days out of delivery in total`,
+    },
+    {
+      label: 'Still out',
+      value: String(result.stillOutRounds),
+      // The open cost, kept apart from the settled one: its clock has not stopped.
+      context: result.stillOutRounds === 0
+        ? 'Everything that came back has been resolved.'
+        : `${result.stillOutWorkingDays} working days so far, and counting`,
+      tone: result.stillOutRounds > 0 ? 'bad' : 'good',
+    },
+  ];
+}
+
+/** Turns the worst round trips into bars on one shared scale. */
+function buildReworkRows(result: ReworkScanResult): MeterRowData[] {
+  return result.issues.slice(0, MAX_ROWS_SHOWN).map((issue): MeterRowData => ({
+    name: `${issue.key} — ${issue.summary}`,
+    value: issue.totalWorkingDays,
+    valueLabel: `${issue.rounds.length} return(s) · ${issue.totalWorkingDays}d`
+      + `${issue.rounds.some((round) => round.isStillOut) ? ' · still out' : ''}`,
+    tone: issue.rounds.some((round) => round.isStillOut) ? 'bad' : 'neutral',
+  }));
 }
 
 /** The rework report: what came back, how often, from where, and for how long. */
@@ -128,83 +187,61 @@ export default function ReworkTab() {
             <>
               {/* The median settled return leads, because that is the figure the report exists to
                   produce: what coming back costs to recover. */}
-              <div className={styles.summaryBar}>
-                {result.medianSettledWorkingDays === null ? null : (
-                  <span className={styles.summaryBarItem}>
-                    {`${result.medianSettledWorkingDays} working days to recover (median)`}
-                  </span>
+              <StatCards stats={buildReworkStats(result)} />
+
+              <ReportPanel
+                title="Which stage sent work back"
+                caption={'The status each issue fell INTO — the closest the changelog gets to naming who '
+                  + 'returned it. A stage that appears often is where defects are being found late.'}
+              >
+                <DistributionBar
+                  slices={result.returnsByStatus.map((entry) => ({ name: entry.statusName, count: entry.count }))}
+                />
+                {describeReworkExclusions(result) === '' ? null : (
+                  <p className={styles.captionText}>{describeReworkExclusions(result)}</p>
                 )}
-                <span className={styles.summaryBarItem}>{`${result.reworkedCount} issues came back`}</span>
-                <span className={styles.summaryBarItem}>{`${result.settledRounds} returns resolved`}</span>
-                {result.stillOutRounds > 0 ? (
-                  <span className={styles.summaryBarItem}>
-                    {`${result.stillOutRounds} still out · ${formatWorkingDays(result.stillOutWorkingDays)}`}
-                  </span>
-                ) : null}
-              </div>
+              </ReportPanel>
 
-              {/* Stated, never silently applied: an exclusion nobody can see is a number nobody can check. */}
-              {describeReworkExclusions(result) === '' ? null : (
-                <p className={styles.captionText}>{describeReworkExclusions(result)}</p>
-              )}
-
-              <h4 className={styles.tabSectionHeading}>Which stage sent work back</h4>
-              <p className={styles.captionText}>
-                The status each issue fell INTO &mdash; the closest the changelog gets to naming who
-                returned it. A stage that appears often is where defects are being found late.
-              </p>
-              <div className={styles.tableWrapper}>
-                <table className={styles.actionTable}>
-                  <thead>
-                    <tr><th scope="col">Fell back into</th><th scope="col">Returns</th></tr>
-                  </thead>
-                  <tbody>
-                    {result.returnsByStatus.map((entry) => (
-                      <tr key={entry.statusName}>
-                        <td>{entry.statusName}</td>
-                        <td>{entry.count}</td>
+              <ReportPanel
+                title="Worst round trips"
+                caption="Longest first. An issue still out has an open cost, and its bar says so."
+              >
+                {result.issues.length === 0
+                  ? <EmptyNote>Nothing came back in this window.</EmptyNote>
+                  : (
+                    <MeterList
+                      markerLabel={`${LONG_RECOVERY_DAY_THRESHOLD} working days`}
+                      markerValue={LONG_RECOVERY_DAY_THRESHOLD}
+                      rows={buildReworkRows(result)}
+                    />
+                  )}
+                <div className={styles.tableWrapper}>
+                  <table className={styles.actionTable}>
+                    <thead>
+                      <tr>
+                        <th scope="col">Issue</th>
+                        <th scope="col">Assignee</th>
+                        <th scope="col">Points</th>
+                        <th scope="col">Sent back from</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              <h4 className={styles.tabSectionHeading}>Worst round trips</h4>
-              <div className={styles.tableWrapper}>
-                <table className={styles.actionTable}>
-                  <thead>
-                    <tr>
-                      <th scope="col">Issue</th>
-                      <th scope="col">Assignee</th>
-                      <th scope="col">Points</th>
-                      <th scope="col">Returns</th>
-                      <th scope="col">Working days out</th>
-                      <th scope="col">Sent back from</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {result.issues.slice(0, MAX_ROWS_SHOWN).map((issue) => (
-                      <tr key={issue.key}>
-                        <td>
-                          <a href={buildJiraIssueNavigatorUrl([issue.key], jiraBaseUrl)} rel="noreferrer" target="_blank">
-                            {issue.key}
-                          </a>
-                          {` ${issue.summary}`}
-                        </td>
-                        <td>{issue.assigneeName ?? 'Unassigned'}</td>
-                        <td>{issue.storyPoints ?? '—'}</td>
-                        <td>{issue.rounds.length}</td>
-                        <td>
-                          {issue.totalWorkingDays}
-                          {/* An issue still out has an OPEN cost, and saying so stops it reading as settled. */}
-                          {issue.rounds.some((round) => round.isStillOut) ? ' (still out)' : ''}
-                        </td>
-                        <td>{[...new Set(issue.rounds.map((round) => round.fellBackToStatus))].join(', ')}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {result.issues.slice(0, MAX_ROWS_SHOWN).map((issue) => (
+                        <tr key={issue.key}>
+                          <td>
+                            <a href={buildJiraIssueNavigatorUrl([issue.key], jiraBaseUrl)} rel="noreferrer" target="_blank">
+                              {issue.key}
+                            </a>
+                          </td>
+                          <td>{issue.assigneeName ?? 'Unassigned'}</td>
+                          <td>{issue.storyPoints ?? '—'}</td>
+                          <td>{[...new Set(issue.rounds.map((round) => round.fellBackToStatus))].join(', ')}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </ReportPanel>
 
               {result.issues.length > MAX_ROWS_SHOWN ? (
                 <p className={styles.captionText}>
