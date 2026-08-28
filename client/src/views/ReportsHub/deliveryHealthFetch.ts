@@ -157,6 +157,8 @@ export function toDeliveryHealthData(
         assigneeName: issue.fields?.assignee?.displayName ?? null,
         enteredStatusIso: readCurrentStatusEntryIso(issue),
         storyPoints,
+        // Jira's own classification, so "has this been started" needs no configuration from anyone.
+        statusCategoryKey: issue.fields?.status?.statusCategory?.key ?? 'new',
       });
     }
   });

@@ -1,6 +1,6 @@
 // DeliveryHealthTab.test.tsx — Where the work is, and what it costs, on one screen.
 
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -9,6 +9,7 @@ const { mockJiraGet } = vi.hoisted(() => ({ mockJiraGet: vi.fn() }));
 vi.mock('../../services/jiraApi.ts', () => ({ jiraGet: mockJiraGet }));
 
 import DeliveryHealthTab from './DeliveryHealthTab.tsx';
+import { setAiAssistUnlocked } from '../../store/aiAssistStore.ts';
 import { resolveStoryPointsFieldIds } from '../Hygiene/checks/storyPointsField.ts';
 
 const [STORY_POINTS_FIELD] = resolveStoryPointsFieldIds('');
@@ -50,6 +51,16 @@ function stuckInTesting(key: string, assigneeName = 'Phatate, Smita') {
     statusChange('To Do', 'In Progress', 45),
     statusChange('In Progress', 'Ready for Testing', 30),
   ], assigneeName);
+}
+
+/**
+ * The panel with the given heading.
+ *
+ * Scoped rather than searched document-wide because the AI prompt textarea carries every caption
+ * verbatim, and React renders a textarea's value as its text content.
+ */
+function panelWithTitle(title: string): HTMLElement {
+  return screen.getByText(title).closest('section') as HTMLElement;
 }
 
 /** Runs the dashboard. */
@@ -128,7 +139,7 @@ describe('DeliveryHealthTab', () => {
 
     await runDashboard();
 
-    expect(await screen.findByText(/No open work was found/)).toBeInTheDocument();
+    expect(await screen.findByText(/Nothing that has been started is waiting anywhere/)).toBeInTheDocument();
   });
 
   it('draws the rework panel from the same read', async () => {
@@ -169,5 +180,114 @@ describe('DeliveryHealthTab', () => {
 
     // The label says it too, so match the message that NAMES it as the cause.
     expect(await screen.findByText(/Check the "Narrow it further" box/)).toBeInTheDocument();
+  });
+});
+
+// ── The backlog is not the bottleneck, and the plan round trip (GH #376) ───
+
+describe('DeliveryHealthTab constraint and plan', () => {
+  beforeEach(() => {
+    mockJiraGet.mockReset();
+    setAiAssistUnlocked(true);
+  });
+
+  /** An issue nobody has picked up. */
+  function backlogIssue(key: string) {
+    return issue(key, 'To Do', 'new', [], null);
+  }
+
+  it('does NOT name the backlog as the constraint', async () => {
+    // A first run named "To Do" on 62 issues holding 3,540 days. That is inventory, not a bottleneck,
+    // and it drowned the items in shift-left testing that were the actual finding.
+    const backlog = Array.from({ length: 20 }, (_unused, index) => backlogIssue(`TODO-${index}`));
+    mockJiraGet.mockResolvedValue({ issues: [...backlog, stuckInTesting('SL-1'), stuckInTesting('SL-2')] });
+
+    await runDashboard();
+
+    await waitFor(() => expect(screen.getByText('The constraint')).toBeInTheDocument());
+    const panel = panelWithTitle('Where work is piling up');
+
+    expect(within(panel).getByText(/Of the work that has been started/)).toBeInTheDocument();
+    expect(within(panel).queryByText(/piling up most in To Do/)).not.toBeInTheDocument();
+  });
+
+  it('reports the backlog in its own panel, as inventory', async () => {
+    mockJiraGet.mockResolvedValue({ issues: [backlogIssue('TODO-1'), stuckInTesting('SL-1')] });
+
+    await runDashboard();
+
+    expect(await screen.findByText('Not started yet')).toBeInTheDocument();
+
+    expect(within(panelWithTitle('Not started yet')).getByText(/inventory rather than a bottleneck/))
+      .toBeInTheDocument();
+  });
+
+  it('says so plainly when nothing has been started at all', async () => {
+    mockJiraGet.mockResolvedValue({ issues: [backlogIssue('TODO-1')] });
+
+    await runDashboard();
+
+    await screen.findByText('The constraint');
+
+    expect(within(panelWithTitle('Where work is piling up')).getByText(/Nothing has been started/))
+      .toBeInTheDocument();
+  });
+
+  it('offers the plan round trip once there is something to explain', async () => {
+    mockJiraGet.mockResolvedValue({ issues: [stuckInTesting('SL-1')] });
+
+    await runDashboard();
+
+    expect(await screen.findByLabelText('Explain this, and propose a plan prompt')).toBeInTheDocument();
+  });
+
+  it('renders nothing of the plan round trip while AI Assist is locked', async () => {
+    setAiAssistUnlocked(false);
+    mockJiraGet.mockResolvedValue({ issues: [stuckInTesting('SL-1')] });
+
+    await runDashboard();
+
+    await screen.findByText('The constraint');
+    expect(screen.queryByLabelText('Explain this, and propose a plan prompt')).not.toBeInTheDocument();
+  });
+
+  it('shows each finding beside the figure it rests on', async () => {
+    // A diagnosis without its evidence is an opinion, and the first challenge in a meeting wins.
+    const user = userEvent.setup();
+    mockJiraGet.mockResolvedValue({ issues: [stuckInTesting('SL-1')] });
+
+    await runDashboard();
+    await screen.findByLabelText('Explain this, and propose a plan prompt');
+
+    fireEvent.change(screen.getByRole('textbox', { name: /plan reply/i }), {
+      target: {
+        value: JSON.stringify({
+          kind: 'deliveryHealthPlan',
+          diagnosis: 'Work stalls after development.',
+          findings: [{ observation: 'Testing is the constraint.', evidence: '557 waiting days', confidence: 'high' }],
+          actions: [{ action: 'Split the SL story.', rationale: 'Frees the dev story.', effort: 'small', whoDecides: 'The PO' }],
+          questionsToAsk: ['What changed after 26.3.1?'],
+        }),
+      },
+    });
+    await user.click(screen.getByRole('button', { name: /read the plan/i }));
+
+    expect(await screen.findByText('Work stalls after development.')).toBeInTheDocument();
+    expect(screen.getByText('557 waiting days')).toBeInTheDocument();
+    expect(screen.getByText('decided by: The PO')).toBeInTheDocument();
+    expect(screen.getByText('What changed after 26.3.1?')).toBeInTheDocument();
+  });
+
+  it('surfaces a plan it could not read instead of failing quietly', async () => {
+    const user = userEvent.setup();
+    mockJiraGet.mockResolvedValue({ issues: [stuckInTesting('SL-1')] });
+
+    await runDashboard();
+    await screen.findByLabelText('Explain this, and propose a plan prompt');
+
+    fireEvent.change(screen.getByRole('textbox', { name: /plan reply/i }), { target: { value: 'nope' } });
+    await user.click(screen.getByRole('button', { name: /read the plan/i }));
+
+    await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument());
   });
 });

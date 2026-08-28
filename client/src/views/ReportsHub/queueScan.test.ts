@@ -2,7 +2,16 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { calendarDaysWaiting, describeConstraint, scanQueues, type QueueIssueInput } from './queueScan.ts';
+import {
+  calendarDaysWaiting,
+  describeBacklog,
+  describeConstraint,
+  readBacklogStages,
+  readConstraintStage,
+  readInFlightStages,
+  scanQueues,
+  type QueueIssueInput,
+} from './queueScan.ts';
 
 const NOW_MS = Date.parse('2026-08-28T12:00:00.000Z');
 
@@ -25,6 +34,8 @@ function issue(
     assigneeName: 'Reynolds, Kevin',
     enteredStatusIso: daysAgo(waitedDays),
     storyPoints: 5,
+    // In flight by default: a test about queueing is about work somebody has started.
+    statusCategoryKey: 'indeterminate',
     ...overrides,
   };
 }
@@ -159,5 +170,77 @@ describe('describeConstraint', () => {
 
   it('says nothing is waiting rather than naming a stage that does not exist', () => {
     expect(describeConstraint(scanQueues([], NOW_MS))).toContain('Nothing is waiting');
+  });
+});
+
+// ── The backlog is not the bottleneck (GH #376) ────────────────────────────
+
+describe('scanQueues — started work against the backlog', () => {
+  /** An issue nobody has picked up. */
+  function notStarted(key: string, statusName: string, waitedDays: number) {
+    return issue(key, statusName, waitedDays, { statusCategoryKey: 'new' });
+  }
+
+  it('does NOT let the backlog name itself the constraint', () => {
+    // A first run named "To Do" on 62 issues holding 3,540 days. That is inventory, not a bottleneck,
+    // and it drowned the twelve items in shift-left testing that were the actual finding.
+    const backlog = Array.from({ length: 62 }, (_unused, index) => notStarted(`TODO-${index}`, 'To Do', 40));
+    const inFlight = Array.from({ length: 12 }, (_unused, index) => issue(`SL-${index}`, 'Ready for Testing', 40));
+
+    const result = scanQueues([...backlog, ...inFlight], NOW_MS);
+
+    expect(readConstraintStage(result)?.statusName).toBe('Ready for Testing');
+  });
+
+  it('states the share against the waiting INSIDE the flow', () => {
+    // A backlog five times the size of the work in progress would otherwise make a real bottleneck
+    // look like a rounding error.
+    const result = scanQueues([
+      ...Array.from({ length: 50 }, (_unused, index) => notStarted(`TODO-${index}`, 'To Do', 40)),
+      issue('SL-1', 'Ready for Testing', 40),
+    ], NOW_MS);
+
+    expect(describeConstraint(result)).toContain('100% of all the waiting inside the flow');
+  });
+
+  it('keeps the backlog stages, measured but unranked', () => {
+    const result = scanQueues([
+      notStarted('TODO-1', 'To Do', 40),
+      issue('SL-1', 'Ready for Testing', 5),
+    ], NOW_MS);
+
+    expect(readBacklogStages(result).map((stage) => stage.statusName)).toEqual(['To Do']);
+    expect(readInFlightStages(result).map((stage) => stage.statusName)).toEqual(['Ready for Testing']);
+  });
+
+  it('counts what has not been started, and how long the oldest has sat', () => {
+    const result = scanQueues([notStarted('TODO-1', 'To Do', 180), notStarted('TODO-2', 'To Do', 3)], NOW_MS);
+
+    expect(result.notStartedCount).toBe(2);
+    expect(result.notStartedOldestDays).toBe(180);
+  });
+
+  it('says so plainly when nothing has been started at all', () => {
+    const result = scanQueues([notStarted('TODO-1', 'To Do', 40)], NOW_MS);
+
+    expect(readConstraintStage(result)).toBeNull();
+    expect(describeConstraint(result)).toContain('Nothing has been started');
+  });
+
+  it('says the backlog is inventory rather than a bottleneck', () => {
+    const result = scanQueues([notStarted('TODO-1', 'To Do', 40), issue('SL-1', 'Ready for Testing', 5)], NOW_MS);
+
+    expect(describeBacklog(result)).toContain('inventory rather than a bottleneck');
+  });
+
+  it('says everything is started when the backlog is empty', () => {
+    expect(describeBacklog(scanQueues([issue('SL-1', 'Ready for Testing', 5)], NOW_MS)))
+      .toBe('Everything open has been started.');
+  });
+
+  it('still counts backlog waiting in the overall total, which is a real number', () => {
+    const result = scanQueues([notStarted('TODO-1', 'To Do', 10), issue('SL-1', 'Ready for Testing', 10)], NOW_MS);
+
+    expect(result.totalWaitingDays).toBe(20);
   });
 });

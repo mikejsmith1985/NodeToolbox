@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **The dashboard named the backlog as the constraint.** Its first real run reported &ldquo;To Do&rdquo;
+  &mdash; 62 issues holding 3,540 waiting days, 62% of everything. True, and useless: work nobody has
+  started is **inventory**, not a bottleneck, and it drowned the twelve items sitting in shift-left
+  testing that were the actual finding.
+  A bottleneck is a queue INSIDE the flow, so the constraint is now ranked among started work only,
+  using Jira&#39;s own status category &mdash; discovered, not configured. Its share is stated against
+  the waiting inside the flow, so a backlog five times the size of the work in progress cannot make a
+  real bottleneck look like a rounding error. The backlog gets its own panel with its own count and its
+  oldest item, because it is a real problem &mdash; just a different one, with a different fix.
+
+### Added
+- **The dashboard can now explain itself and propose a plan.** It says where work is stuck; it cannot
+  say why, and it certainly cannot say what to do &mdash; that needs the shape of the team and the
+  workflow it is bound by, neither of which is in a changelog.
+  A gated, propose-only round trip hands over every figure on the screen, alongside anything you tell
+  it about the team, and reads back a diagnosis, findings, actions and the questions the data cannot
+  answer. **Every finding must cite the figure it rests on**, because a diagnosis without its evidence
+  is an opinion and the first challenge in a meeting wins it. **Every action must say who decides**,
+  because a recommendation nobody owns is one nobody takes. It is told to judge the system and never
+  the people: naming who holds a queue describes a workload, and nothing here supports saying anything
+  about how they work.
+  An unstated confidence reads as medium rather than high &mdash; an unqualified claim should not be
+  promoted by the parser that read it &mdash; and an unowned action says &ldquo;Not stated&rdquo;
+  rather than going quiet. Running the report again clears any previous plan, which described figures
+  no longer on the screen.
+
 ### Added
 - **A Delivery Health dashboard: where the work is, and what it is costing, on one screen.** Four
   reports on four tabs, each with its own scope box, is four answers somebody has to hold in their head

@@ -22,7 +22,16 @@ import JiraProjectPicker from '../../components/JiraProjectPicker/index.tsx';
 import { buildJiraIssueNavigatorUrl } from '../Hygiene/utils/buildHygieneJqlUrl.ts';
 import { useConnectionStore } from '../../store/connectionStore.ts';
 import { fetchDeliveryHealth, MAX_DELIVERY_HEALTH_ISSUES, type DeliveryHealthData } from './deliveryHealthFetch.ts';
-import { describeConstraint, scanQueues, type QueueScanResult } from './queueScan.ts';
+import {
+  describeBacklog,
+  describeConstraint,
+  readBacklogStages,
+  readConstraintStage,
+  readInFlightStages,
+  scanQueues,
+  type QueueScanResult,
+  type QueueStage,
+} from './queueScan.ts';
 import { describeReworkExclusions, describeReworkScan, scanRework, type ReworkScanResult } from './reworkScan.ts';
 import { buildScopeClause, describeFetchFailure } from './reworkScope.ts';
 import {
@@ -34,6 +43,12 @@ import {
   type MeterRowData,
   type StatCardData,
 } from './visuals/ReportVisuals.tsx';
+import { ReportAiPanel } from './ReportAiPanel.tsx';
+import {
+  buildDeliveryHealthPrompt,
+  parseDeliveryHealthReply,
+  type DeliveryHealthPlan,
+} from './ai/deliveryHealthAiAssist.ts';
 import styles from './ReportsHubView.module.css';
 
 /** How far back to read. A quarter is long enough to be evidence and short enough to be current. */
@@ -57,22 +72,24 @@ interface DeliveryHealthReport {
 
 /** The headline figures, in the order somebody reads them out. */
 function buildHeadlineStats(report: DeliveryHealthReport): StatCardData[] {
-  const constraintStage = report.queue.stages[0];
+  const constraintStage = readConstraintStage(report.queue);
   const medianRecovery = report.rework.medianSettledWorkingDays;
 
   return [
     {
       label: 'The constraint',
       value: constraintStage?.statusName ?? '—',
-      context: constraintStage === undefined
-        ? 'Nothing is waiting in this scope.'
+      context: constraintStage === null
+        ? 'Nothing that has been started is waiting.'
         : `${constraintStage.issueCount} issue(s), ${constraintStage.totalWaitingDays} waiting days`,
-      tone: constraintStage === undefined ? 'neutral' : 'bad',
+      tone: constraintStage === null ? 'neutral' : 'bad',
     },
     {
-      label: 'Open work waiting',
-      value: String(report.queue.totalIssueCount),
-      context: `${report.queue.totalWaitingDays} days of waiting in total`,
+      label: 'Started and waiting',
+      value: String(report.queue.totalIssueCount - report.queue.notStartedCount),
+      // The backlog rides in the context rather than the figure: it is a real number and a different
+      // problem, and adding it in would put the flow's constraint back under a pile of inventory.
+      context: `${report.queue.notStartedCount} more have not been started at all`,
     },
     {
       label: 'Came back after delivery',
@@ -95,9 +112,9 @@ function buildHeadlineStats(report: DeliveryHealthReport): StatCardData[] {
   ];
 }
 
-/** Turns the ranked stages into bars, coloured by how long the middle issue has been sitting. */
-function buildStageRows(queue: QueueScanResult): MeterRowData[] {
-  return queue.stages.slice(0, MAX_ROWS_SHOWN).map((stage): MeterRowData => ({
+/** Turns a set of stages into bars, coloured by how long the middle issue has been sitting. */
+function buildStageRows(stages: readonly QueueStage[]): MeterRowData[] {
+  return stages.slice(0, MAX_ROWS_SHOWN).map((stage): MeterRowData => ({
     name: stage.statusName,
     value: stage.totalWaitingDays,
     valueLabel: `${stage.issueCount} issue(s) · ${stage.totalWaitingDays}d total · ${stage.medianWaitingDays}d median`,
@@ -126,6 +143,9 @@ export default function DeliveryHealthTab() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const jiraBaseUrl = useConnectionStore((state) => state.proxyStatus?.jira?.baseUrl ?? null);
+  const [teamContext, setTeamContext] = useState('');
+  const [plan, setPlan] = useState<DeliveryHealthPlan | null>(null);
+  const [planError, setPlanError] = useState<string | null>(null);
 
   async function handleRun(): Promise<void> {
     setIsLoading(true);
@@ -135,6 +155,8 @@ export default function DeliveryHealthTab() {
       const nowMs = Date.now();
       const data = await fetchDeliveryHealth(scopeClause, windowDays);
       setReport({ queue: scanQueues(data.queueIssues, nowMs), rework: scanRework(data.reworkIssues, nowMs), data });
+      // A plan read from the previous run would describe figures no longer on the screen.
+      setPlan(null);
       // Recorded at RUN time, so the line above the panels always describes what is drawn below it
       // rather than what the controls happen to say now.
       setScopeShown(scopeClause === '' ? 'every project you can see' : scopeClause);
@@ -143,6 +165,16 @@ export default function DeliveryHealthTab() {
       setError(describeFetchFailure(caughtError));
     } finally {
       setIsLoading(false);
+    }
+  }
+
+  /** Reads a pasted plan, keeping the parse failure beside the panel that produced it. */
+  function handleIngestPlan(responseText: string): void {
+    try {
+      setPlan(parseDeliveryHealthReply(responseText));
+      setPlanError(null);
+    } catch (caughtError) {
+      setPlanError(caughtError instanceof Error ? caughtError.message : 'That reply could not be read.');
     }
   }
 
@@ -208,12 +240,12 @@ export default function DeliveryHealthTab() {
             title="Where work is piling up"
             caption={describeConstraint(report.queue)}
           >
-            {report.queue.stages.length === 0
-              ? <EmptyNote>No open work was found, so nothing is waiting anywhere.</EmptyNote>
+            {readInFlightStages(report.queue).length === 0
+              ? <EmptyNote>Nothing that has been started is waiting anywhere.</EmptyNote>
               : (
                 <MeterList
                   markerLabel={`${LONG_WAIT_DAY_THRESHOLD} days`}
-                  rows={buildStageRows(report.queue)}
+                  rows={buildStageRows(readInFlightStages(report.queue))}
                 />
               )}
             {report.queue.undatedCount > 0 ? (
@@ -222,6 +254,15 @@ export default function DeliveryHealthTab() {
                 {'rather than being counted as having waited no time at all.'}
               </p>
             ) : null}
+          </ReportPanel>
+
+          {/* Kept apart from the constraint on purpose. Ranked together the backlog wins every time and
+              names itself the bottleneck, which is true and useless: inventory is a different problem
+              with a different fix. */}
+          <ReportPanel title="Not started yet" caption={describeBacklog(report.queue)}>
+            {readBacklogStages(report.queue).length === 0
+              ? <EmptyNote>Everything open has been started.</EmptyNote>
+              : <MeterList rows={buildStageRows(readBacklogStages(report.queue))} />}
           </ReportPanel>
 
           <ReportPanel
@@ -251,6 +292,78 @@ export default function DeliveryHealthTab() {
               <p className={styles.captionText}>{describeReworkExclusions(report.rework)}</p>
             )}
           </ReportPanel>
+
+          {/* The dashboard says WHERE work is stuck. It cannot say why, and it certainly cannot say
+              what to do — that needs the shape of the team and the workflow it is bound by, neither of
+              which is in a changelog. Gated, propose-only, and it writes nothing. */}
+          <ReportAiPanel
+            error={planError}
+            ingestLabel="Read the plan"
+            onIngest={handleIngestPlan}
+            prompt={buildDeliveryHealthPrompt(report.queue, report.rework, teamContext)}
+            title="Explain this, and propose a plan"
+          >
+            <label className={styles.controlLabel} htmlFor="delivery-health-context">
+              What the assistant should know about your team (optional, but the numbers alone give a
+              generic answer)
+            </label>
+            <textarea
+              className={styles.aiTextarea}
+              id="delivery-health-context"
+              onChange={(changeEvent) => setTeamContext(changeEvent.target.value)}
+              placeholder="e.g. nine developers, one shift-left tester, two-week sprints, dev stories stay open until release"
+              rows={3}
+              value={teamContext}
+            />
+
+            {plan === null ? null : (
+              <div className={styles.verdictSection}>
+                <p className={styles.coachingSummary}>{plan.diagnosis}</p>
+
+                {plan.findings.length === 0 ? null : (
+                  <>
+                    <h5 className={styles.coachingSectionTitle}>What the figures show</h5>
+                    <ul className={styles.coachingList}>
+                      {plan.findings.map((finding) => (
+                        <li key={finding.observation}>
+                          <strong>{finding.observation}</strong>
+                          {/* The evidence rides beside the claim: a diagnosis without it is an opinion. */}
+                          {finding.evidence === '' ? null : <div className={styles.captionText}>{finding.evidence}</div>}
+                          <span className={styles.statusBadge}>{`confidence: ${finding.confidence}`}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                )}
+
+                {plan.actions.length === 0 ? null : (
+                  <>
+                    <h5 className={styles.coachingSectionTitle}>What to do</h5>
+                    <ul className={styles.coachingList}>
+                      {plan.actions.map((action) => (
+                        <li key={action.action}>
+                          <strong>{action.action}</strong>
+                          {action.rationale === '' ? null : <div className={styles.captionText}>{action.rationale}</div>}
+                          <span className={styles.statusBadge}>{`effort: ${action.effort}`}</span>
+                          {' '}
+                          <span className={styles.statusBadge}>{`decided by: ${action.whoDecides}`}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                )}
+
+                {plan.questionsToAsk.length === 0 ? null : (
+                  <>
+                    <h5 className={styles.coachingSectionTitle}>What the data cannot answer</h5>
+                    <ul className={styles.coachingList}>
+                      {plan.questionsToAsk.map((question) => <li key={question}>{question}</li>)}
+                    </ul>
+                  </>
+                )}
+              </div>
+            )}
+          </ReportAiPanel>
 
           <ReportPanel
             title="Waiting longest right now"

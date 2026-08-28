@@ -24,6 +24,19 @@ const MILLISECONDS_PER_DAY = 86_400_000;
 /** Shown in the holder rollup when nobody is assigned, so the column never reads blank. */
 const UNASSIGNED_LABEL = 'Unassigned';
 
+/**
+ * Jira's own category for work that has not been picked up yet.
+ *
+ * The distinction is load-bearing rather than cosmetic. Ranked together, the BACKLOG wins every time:
+ * a first run named "To Do" as the constraint on the strength of 62 issues holding 3,540 waiting days,
+ * which is not a bottleneck at all — it is inventory, and it drowned the twelve items sitting in
+ * shift-left testing that were the actual finding.
+ *
+ * A bottleneck is a queue INSIDE the flow. Work nobody has started is a different problem with a
+ * different fix, so it is measured, reported, and kept out of the ranking.
+ */
+const NOT_STARTED_CATEGORY_KEY = 'new';
+
 /** One issue sitting somewhere, with how long it has been there. */
 export interface QueueIssueInput {
   key: string;
@@ -33,6 +46,8 @@ export interface QueueIssueInput {
   /** When it entered its current status. Null when history did not say, and then it is not aged. */
   enteredStatusIso: string | null;
   storyPoints: number | null;
+  /** Jira's own status category: 'new' has not been started, anything else is in flight. */
+  statusCategoryKey: string;
 }
 
 /** One issue's wait, once measured. */
@@ -43,6 +58,8 @@ export interface QueuedIssue {
   assigneeName: string;
   waitingDays: number;
   storyPoints: number | null;
+  /** False while nobody has picked it up — backlog rather than a queue in the flow. */
+  hasStarted: boolean;
 }
 
 /** One stage's queue. */
@@ -56,6 +73,8 @@ export interface QueueStage {
   /** The longest wait in the stage — the one worth naming out loud. */
   longestWaitingDays: number;
   storyPoints: number;
+  /** False for a backlog stage, which is measured but never ranked as the constraint. */
+  hasStarted: boolean;
 }
 
 /** One person's share of the waiting, across every stage. */
@@ -77,6 +96,10 @@ export interface QueueScanResult {
   totalWaitingDays: number;
   /** Issues whose entry date history did not give, so they could not be aged. */
   undatedCount: number;
+  /** Work nobody has started: a real problem, but a different one from a queue in the flow. */
+  notStartedCount: number;
+  /** The longest anything has sat unstarted — the age of the oldest thing in the backlog. */
+  notStartedOldestDays: number;
 }
 
 /** Calendar days since a moment, or null when the timestamp is missing or unreadable. */
@@ -125,6 +148,7 @@ function buildStages(issues: readonly QueuedIssue[]): QueueStage[] {
     medianWaitingDays: readMedian(stageIssues.map((issue) => issue.waitingDays)),
     longestWaitingDays: roundDays(Math.max(...stageIssues.map((issue) => issue.waitingDays))),
     storyPoints: stageIssues.reduce((total, issue) => total + (issue.storyPoints ?? 0), 0),
+    hasStarted: stageIssues[0].hasStarted,
   }));
 
   // Ranked by ACCUMULATED waiting: thirty issues that arrived yesterday are not a bottleneck, and four
@@ -175,11 +199,14 @@ export function scanQueues(issues: readonly QueueIssueInput[], nowMs: number): Q
       assigneeName: issue.assigneeName ?? UNASSIGNED_LABEL,
       waitingDays,
       storyPoints: issue.storyPoints,
+      hasStarted: issue.statusCategoryKey !== NOT_STARTED_CATEGORY_KEY,
     });
   });
 
   measured.sort((first, second) => second.waitingDays - first.waitingDays
     || first.key.localeCompare(second.key));
+
+  const notStarted = measured.filter((issue) => !issue.hasStarted);
 
   return {
     stages: buildStages(measured),
@@ -188,27 +215,67 @@ export function scanQueues(issues: readonly QueueIssueInput[], nowMs: number): Q
     totalIssueCount: measured.length,
     totalWaitingDays: roundDays(measured.reduce((total, issue) => total + issue.waitingDays, 0)),
     undatedCount,
+    notStartedCount: notStarted.length,
+    notStartedOldestDays: notStarted.length === 0
+      ? 0
+      : roundDays(Math.max(...notStarted.map((issue) => issue.waitingDays))),
   };
+}
+
+/** Stages that are actually in the flow — the only ones that can be a bottleneck. */
+export function readInFlightStages(result: QueueScanResult): QueueStage[] {
+  return result.stages.filter((stage) => stage.hasStarted);
+}
+
+/** Stages holding work nobody has started — the backlog, measured but never ranked. */
+export function readBacklogStages(result: QueueScanResult): QueueStage[] {
+  return result.stages.filter((stage) => !stage.hasStarted);
+}
+
+/**
+ * The stage the flow is actually stuck in, or null when nothing has been started.
+ *
+ * Read from the IN-FLIGHT stages only. Ranked against the backlog, the backlog wins every time and
+ * names itself the constraint, which is both true and useless: work nobody has started is inventory,
+ * and the fix for inventory is not the fix for a queue.
+ */
+export function readConstraintStage(result: QueueScanResult): QueueStage | null {
+  return readInFlightStages(result)[0] ?? null;
 }
 
 /**
  * Names the constraint, in one sentence.
  *
- * States the stage's SHARE of all the waiting, because "112 days in Ready for Testing" means nothing
- * on its own and "41% of every waiting day on this board" is the whole finding.
+ * The share is stated against the waiting IN THE FLOW rather than against everything, so a backlog
+ * five times the size of the work in progress cannot make a real bottleneck look like a rounding error.
  */
 export function describeConstraint(result: QueueScanResult): string {
-  if (result.stages.length === 0) {
-    return 'Nothing is waiting — no open work was found in this scope.';
+  const constraintStage = readConstraintStage(result);
+  if (constraintStage === null) {
+    return result.notStartedCount > 0
+      ? `Nothing has been started — all ${result.notStartedCount} open issue(s) are still waiting to be `
+        + 'picked up, so there is no queue in the flow to be stuck in.'
+      : 'Nothing is waiting — no open work was found in this scope.';
   }
 
-  const [worstStage] = result.stages;
-  const sharePercent = result.totalWaitingDays > 0
-    ? Math.round((worstStage.totalWaitingDays / result.totalWaitingDays) * 100)
+  const inFlightWaitingDays = readInFlightStages(result)
+    .reduce((total, stage) => total + stage.totalWaitingDays, 0);
+  const sharePercent = inFlightWaitingDays > 0
+    ? Math.round((constraintStage.totalWaitingDays / inFlightWaitingDays) * 100)
     : 0;
 
-  return `Work is piling up most in ${worstStage.statusName}: ${worstStage.issueCount} issue(s) holding `
-    + `${worstStage.totalWaitingDays} waiting days — ${sharePercent}% of all the waiting in this scope. `
-    + `The middle one has been there ${worstStage.medianWaitingDays} days; the oldest, `
-    + `${worstStage.longestWaitingDays}.`;
+  return `Of the work that has been started, it is piling up most in ${constraintStage.statusName}: `
+    + `${constraintStage.issueCount} issue(s) holding ${constraintStage.totalWaitingDays} waiting days — `
+    + `${sharePercent}% of all the waiting inside the flow. The middle one has been there `
+    + `${constraintStage.medianWaitingDays} days; the oldest, ${constraintStage.longestWaitingDays}.`;
+}
+
+/** Says what is sitting unstarted, which is a real finding but not the constraint. */
+export function describeBacklog(result: QueueScanResult): string {
+  if (result.notStartedCount === 0) {
+    return 'Everything open has been started.';
+  }
+  return `${result.notStartedCount} open issue(s) have not been started at all; the oldest has been `
+    + `waiting ${result.notStartedOldestDays} days. That is inventory rather than a bottleneck — it is `
+    + 'not ranked above, because the fix for a backlog is not the fix for a queue.';
 }
