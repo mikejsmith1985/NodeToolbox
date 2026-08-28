@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **The Rework report asked for JQL and blamed you for answering.** Its scope box was a free-text
+  field. Typing `ENCUC` into a box labelled &ldquo;scope&rdquo; is exactly what it invites, and the
+  report wrapped it as `(ENCUC) AND updated >= …` and handed back Jira&#39;s parse error naming a
+  character position in a query nobody wrote.
+  Scope is now a **project picker**, loaded from Jira&#39;s own list, with an optional box beside it for
+  a JQL condition that narrows it further. A value that has to match Jira exactly is picked, never
+  typed &mdash; a text box accepts a typo that saves cleanly and fails confusingly at the far end.
+  A bare project key typed anyway is now read as one, because somebody who types `ENCUC` has said
+  exactly what they meant. The extra JQL is bracketed separately so an `OR` inside it cannot escape the
+  project it was meant to narrow. And a JQL failure now points at the control that caused it and says
+  what that box is for, with Jira&#39;s own words kept underneath rather than shown alone.
+
 ### Added
 - **A Rework report, in Reports Hub: what the work done twice actually cost.** A story that stays open
   until the whole downstream chain finishes absorbs its own rework for free. A defect comes back from

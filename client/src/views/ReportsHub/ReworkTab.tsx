@@ -14,6 +14,8 @@ import { useState } from 'react';
 
 import { buildJiraIssueNavigatorUrl } from '../Hygiene/utils/buildHygieneJqlUrl.ts';
 import { useConnectionStore } from '../../store/connectionStore.ts';
+import JiraProjectPicker from '../../components/JiraProjectPicker/index.tsx';
+import { buildScopeClause, describeFetchFailure } from './reworkScope.ts';
 import { fetchReworkIssues, MAX_REWORK_ISSUES } from './reworkFetch.ts';
 import { describeReworkScan, scanRework, type ReworkScanResult } from './reworkScan.ts';
 import styles from './ReportsHubView.module.css';
@@ -31,7 +33,10 @@ function formatWorkingDays(workingDays: number): string {
 
 /** The rework report: what came back, how often, from where, and for how long. */
 export default function ReworkTab() {
-  const [scopeJql, setScopeJql] = useState('');
+  // Picked, not typed: a project key has to match Jira exactly, and a box that accepts anything
+  // accepts a typo that fails confusingly at the far end.
+  const [projectKey, setProjectKey] = useState('');
+  const [extraJql, setExtraJql] = useState('');
   const [windowDays, setWindowDays] = useState(90);
   const [result, setResult] = useState<ReworkScanResult | null>(null);
   const [wasTruncated, setWasTruncated] = useState(false);
@@ -45,12 +50,12 @@ export default function ReworkTab() {
     setIsLoading(true);
     setError(null);
     try {
-      const fetched = await fetchReworkIssues(scopeJql, windowDays);
+      const fetched = await fetchReworkIssues(buildScopeClause(projectKey, extraJql), windowDays);
       setResult(scanRework(fetched.issues, Date.now()));
       setWasTruncated(fetched.wasTruncated);
     } catch (caughtError) {
       setResult(null);
-      setError(caughtError instanceof Error ? caughtError.message : 'Could not read the issue history.');
+      setError(describeFetchFailure(caughtError));
     } finally {
       setIsLoading(false);
     }
@@ -66,15 +71,22 @@ export default function ReworkTab() {
       </p>
 
       <div className={styles.controlRow}>
-        <label className={styles.controlLabel} htmlFor="rework-scope">
-          Scope (JQL &mdash; leave empty for everything you can see)
+        <JiraProjectPicker
+          id="rework-project"
+          label="Project"
+          onChange={setProjectKey}
+          placeholder="Every project you can see"
+          value={projectKey}
+        />
+        <label className={styles.controlLabel} htmlFor="rework-extra-jql">
+          Narrow it further (optional JQL)
         </label>
         <input
           className={styles.textInput}
-          id="rework-scope"
-          onChange={(changeEvent) => setScopeJql(changeEvent.target.value)}
-          placeholder='project = ENCUC AND issuetype in (Story, Task)'
-          value={scopeJql}
+          id="rework-extra-jql"
+          onChange={(changeEvent) => setExtraJql(changeEvent.target.value)}
+          placeholder="issuetype in (Story, Task)"
+          value={extraJql}
         />
         <label className={styles.controlLabel} htmlFor="rework-window">Look back</label>
         <select

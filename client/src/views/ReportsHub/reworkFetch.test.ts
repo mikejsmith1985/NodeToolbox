@@ -169,3 +169,24 @@ describe('fetchReworkIssues', () => {
     expect(mockJiraGet).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('buildReworkJql — a bare project key (GH #376)', () => {
+  it('reads a bare project key as a project clause', () => {
+    // Somebody typing ENCUC into a box labelled "scope" has said exactly what they meant. Wrapping it
+    // as "(ENCUC) AND updated >= …" produced a Jira parse error that blamed them for it.
+    expect(buildReworkJql('ENCUC', 90)).toBe('(project = ENCUC) AND updated >= -90d ORDER BY updated DESC');
+  });
+
+  it('leaves a real JQL condition exactly as written', () => {
+    expect(buildReworkJql('issuetype = Story', 90))
+      .toBe('(issuetype = Story) AND updated >= -90d ORDER BY updated DESC');
+  });
+
+  it('does not mistake a clause that merely starts with a word for a project key', () => {
+    expect(buildReworkJql('project in (A, B)', 30)).toContain('(project in (A, B))');
+  });
+
+  it('trims a key somebody pasted with spaces around it', () => {
+    expect(buildReworkJql('  ENCUC  ', 90)).toContain('project = ENCUC');
+  });
+});
