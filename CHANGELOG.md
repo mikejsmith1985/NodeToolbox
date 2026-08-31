@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **The Feature-link search now asks Jira what issue types exist instead of assuming.** Every search
+  in the Missing-Feature-Link fix &mdash; typing a word, pasting a key, anything &mdash; came back
+  empty, and after the previous fix surfaced Jira&#39;s own words the reason was finally visible:
+  `The value &#39;Epic&#39; does not exist for the field &#39;issuetype&#39;`.
+  The query named two issue types, `Feature` and `Epic`. This instance defines only the first. Jira
+  does not quietly ignore the value it cannot resolve &mdash; it rejects the **whole query** with a
+  400, so a clause meant to narrow the results removed all of them. The search was never matching
+  anything and never could.
+  The feature-level types are now read from the connected instance once per session and only the ones
+  it actually defines are named. If none are, the restriction is dropped rather than sent: a broader
+  search that returns issues is more use than a precise one Jira refuses. If the instance cannot be
+  reached, it falls back to `Feature` alone &mdash; the one name the PI Review and Readiness queries
+  already prove resolves here. This also means the search keeps working when the instance moves,
+  which a hard-coded pair of names would not.
+  The same two-name clause was prefilled into the **Feature Canvas** custom query, where it failed the
+  same way and left the canvas empty; it now names one type, and the box stays editable for anyone
+  whose Jira does have Epics.
+
 ### Added
 - **The Check-in can now run on any set of issues, not just one person&#39;s.** The tab was built around
   &ldquo;whose work?&rdquo;, which answers most check-ins and not all of them. &ldquo;Every defect in

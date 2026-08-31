@@ -8,6 +8,7 @@
 import { useEffect, useState } from 'react';
 
 import { jiraGet } from '../../services/jiraApi.ts';
+import { buildIssueTypeClause, loadFeatureIssueTypeNames } from '../../services/jiraIssueTypes.ts';
 import { TransitionRequiredFields } from '../../components/TransitionRequiredFields/index.tsx';
 import {
   areTransitionSelectionsComplete,
@@ -715,9 +716,17 @@ function toFixChoiceOptions(selectOptions: FeatureReviewSelectOption[]): FixChoi
   return selectOptions.map((selectOption) => ({ label: selectOption.label, value: selectOption.value }));
 }
 
-/** Searches Jira for issues that can be linked, restricting to Feature/Epic types for feature links. */
+/**
+ * Searches Jira for issues that can be linked, restricting a feature link to the feature-level issue
+ * types the connected instance actually defines.
+ *
+ * The types are looked up rather than assumed: naming one the instance does not have made Jira
+ * reject the whole query, so every Feature search came back empty (GH #376). The lookup is cached,
+ * so typing does not re-ask.
+ */
 async function searchLinkableIssues(query: string, isFeatureLink: boolean, projectKey: string): Promise<FixChoiceOption[]> {
-  const searchJql = buildLinkSearchJql(query, isFeatureLink, projectKey);
+  const featureIssueTypeNames = isFeatureLink ? await loadFeatureIssueTypeNames() : [];
+  const searchJql = buildLinkSearchJql(query, isFeatureLink, projectKey, featureIssueTypeNames);
   if (searchJql === null) {
     // Nothing usable survived the reserved characters. Running the query anyway would ask Jira a
     // question with no terms in it and get back either everything or an error.
@@ -775,10 +784,22 @@ function buildIssueTextMatchTerms(query: string): string | null {
   return [...terms.slice(0, -1), wildcardedLastTerm].join(' ');
 }
 
-/** Builds the JQL for a link search: match by key when the query looks like one, else by summary. */
-export function buildLinkSearchJql(query: string, isFeatureLink: boolean, projectKey: string): string | null {
+/**
+ * Builds the JQL for a link search: match by key when the query looks like one, else by summary.
+ *
+ * `featureIssueTypeNames` are the feature-level types the instance was found to define. An empty
+ * list produces no restriction at all, which is deliberate — see `buildIssueTypeClause`. Pure: the
+ * lookup happens in the caller so this stays directly testable.
+ */
+export function buildLinkSearchJql(
+  query: string,
+  isFeatureLink: boolean,
+  projectKey: string,
+  featureIssueTypeNames: string[],
+): string | null {
   const trimmedQuery = query.trim();
-  const issueTypeClause = isFeatureLink ? 'issuetype in (Feature, Epic) AND ' : '';
+  const featureTypeClause = isFeatureLink ? buildIssueTypeClause(featureIssueTypeNames) : '';
+  const issueTypeClause = featureTypeClause === '' ? '' : `${featureTypeClause} AND `;
   // A FEATURE never lives in the team's own project — that separation is the whole reason a Feature
   // Link field exists. Constraining the search to the issue's project meant a Feature search could
   // never match anything, whatever was typed. A parent link IS same-project, so it keeps the clause.

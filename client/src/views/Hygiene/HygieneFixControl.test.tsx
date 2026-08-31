@@ -248,27 +248,46 @@ describe('buildLinkSearchJql — where a Feature can actually be found', () => {
     // Features live in a portfolio project, never the team's own — that separation is the whole
     // reason a Feature Link field exists. Scoping to the issue's project meant no query could match,
     // whatever was typed, which is exactly what was reported.
-    const jql = buildLinkSearchJql('Transformers', true, 'ENFCT');
+    const jql = buildLinkSearchJql('Transformers', true, 'ENFCT', ['Feature', 'Epic']);
 
-    expect(jql).toContain('issuetype in (Feature, Epic)');
+    expect(jql).toContain('issuetype in ("Feature", "Epic")');
     // Wildcarded: `~` matches whole words, so a term still being typed matches nothing without it.
     expect(jql).toContain('summary ~ "Transformers*"');
     expect(jql).not.toContain('project = ENFCT');
   });
 
   it('still restricts a PARENT search to the same project, where a parent really does live', () => {
-    const jql = buildLinkSearchJql('anything', false, 'ENFCT');
+    const jql = buildLinkSearchJql('anything', false, 'ENFCT', ['Feature', 'Epic']);
 
     expect(jql).toContain('project = ENFCT');
-    expect(jql).not.toContain('issuetype in (Feature, Epic)');
+    expect(jql).not.toContain('issuetype');
   });
 
   it('looks a pasted key up directly, without any project clause', () => {
-    expect(buildLinkSearchJql('denp-1414', true, 'ENFCT')).toBe('issuetype in (Feature, Epic) AND key = DENP-1414');
+    expect(buildLinkSearchJql('denp-1414', true, 'ENFCT', ['Feature', 'Epic']))
+      .toBe('issuetype in ("Feature", "Epic") AND key = DENP-1414');
+  });
+
+  it('never names an issue type the instance does not define', () => {
+    // The reported defect: Jira rejects the WHOLE query with a 400 when one value in an
+    // `in (...)` list is unknown, so `issuetype in (Feature, Epic)` on an instance with no Epic
+    // returned nothing for every search term typed (GH #376).
+    const jql = buildLinkSearchJql('vul', true, 'ENCUC', ['Feature']);
+
+    expect(jql).toContain('issuetype = "Feature"');
+    expect(jql).not.toContain('Epic');
+  });
+
+  it('drops the restriction rather than run a query Jira will refuse', () => {
+    // No feature-level type exists here at all. A broad search that returns issues beats a precise
+    // one that 400s.
+    const jql = buildLinkSearchJql('vul', true, 'ENCUC', []);
+
+    expect(jql).toBe('summary ~ "vul*" ORDER BY updated DESC');
   });
 
   it('strips a quote rather than escaping it — Jira-s text index treats it as an operator', () => {
-    const jql = buildLinkSearchJql('say "hi"', true, 'ENFCT');
+    const jql = buildLinkSearchJql('say "hi"', true, 'ENFCT', ['Feature']);
 
     expect(jql).toContain('summary ~ "say hi*"');
   });
@@ -341,7 +360,7 @@ describe('HygieneFixControl — the date pills own the dates now', () => {
 describe('the match terms — why the search never found anything', () => {
   /** The terms the JQL ends up carrying, read back through the only exported entry point. */
   function readMatchTerms(query: string): string | null {
-    const jql = buildLinkSearchJql(query, true, 'ENFCT');
+    const jql = buildLinkSearchJql(query, true, 'ENFCT', ['Feature']);
     return jql === null ? null : /summary ~ "([^"]*)"/.exec(jql)?.[1] ?? null;
   }
 
@@ -379,11 +398,12 @@ describe('the match terms — why the search never found anything', () => {
 
 describe('buildLinkSearchJql — a query that cannot match is not run', () => {
   it('returns no JQL at all when nothing usable survives', () => {
-    expect(buildLinkSearchJql('***', true, 'ENFCT')).toBeNull();
+    expect(buildLinkSearchJql('***', true, 'ENFCT', ['Feature'])).toBeNull();
   });
 
   it('still looks a pasted key up, reserved hyphen and all', () => {
-    expect(buildLinkSearchJql('DENP-1414', true, 'ENFCT')).toBe('issuetype in (Feature, Epic) AND key = DENP-1414');
+    expect(buildLinkSearchJql('DENP-1414', true, 'ENFCT', ['Feature']))
+      .toBe('issuetype = "Feature" AND key = DENP-1414');
   });
 });
 
