@@ -156,8 +156,8 @@ try {
 // githubEmailEngine bundle; a missing bundle disables the routes rather than crashing startup.
 try {
   app.use(require('./src/routes/githubEmailIntake')(configuration));
-  // Change auto-schedule sweeper routes — plain Express + relay, no generated bundle to depend on.
-  app.use(require('./src/routes/changeAutoSchedule')(configuration));
+  // Booked change moves — plain Express + relay, no generated bundle to depend on.
+  app.use(require('./src/routes/changeMoves')());
   app.use(require('./src/routes/sharePointDocuments')());
 } catch (githubEmailIntakeRouteError) {
   console.error('  ⚠ GitHub Email Intake routes unavailable: ' + githubEmailIntakeRouteError.message);
@@ -694,12 +694,12 @@ async function launchServer() {
     console.error('  ⚠ Monthly Delivery scheduler unavailable: ' + monthlyDeliverySchedulerError.message);
   }
 
-  // Change auto-schedule sweeper — moves a ServiceNow change to Scheduled once its planned start
-  // arrives. Disabled until switched on in the Admin Hub, so starting it costs nothing.
+  // Booked change moves — performs the ServiceNow state moves booked in the Admin Hub, at the
+  // moment each was booked for. Does nothing at all until somebody books one.
   try {
-    require('./src/services/changeAutoScheduleScheduler').startChangeAutoScheduleScheduler(configuration);
-  } catch (changeAutoScheduleError) {
-    console.error('  ⚠ Change auto-schedule scheduler unavailable: ' + changeAutoScheduleError.message);
+    require('./src/services/changeMoveScheduler').startChangeMoveScheduler();
+  } catch (changeMoveSchedulerError) {
+    console.error('  ⚠ Booked change moves runner unavailable: ' + changeMoveSchedulerError.message);
   }
 
   // GitHub Email Intake scheduler — parses GitHub notification emails from a local drop folder and

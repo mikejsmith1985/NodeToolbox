@@ -189,15 +189,6 @@ function saveConfigToDisk(configuration) {
         triggerUrl:         (configuration.scheduler.monthlyDelivery || {}).triggerUrl         || '',
         triggerSecret:      (configuration.scheduler.monthlyDelivery || {}).triggerSecret      || '',
       },
-      // Change auto-schedule sweeper — moves a ServiceNow change to "Scheduled" when its planned
-      // start arrives. No credential fields: every ServiceNow call rides the relay bookmarklet under
-      // the signed-in user's own session, so there is nothing here to obfuscate.
-      changeAutoSchedule: {
-        isEnabled:       !!(configuration.scheduler.changeAutoSchedule || {}).isEnabled,
-        isDryRun:        !!(configuration.scheduler.changeAutoSchedule || {}).isDryRun,
-        intervalMin:     ((configuration.scheduler.changeAutoSchedule || {}).intervalMin ?? 5),
-        leadTimeMinutes: ((configuration.scheduler.changeAutoSchedule || {}).leadTimeMinutes ?? 0),
-      },
       // GitHub Email Intake — a deterministic (non-AI) engine that parses GitHub notification emails
       // saved to a local drop folder and drives Jira comments/transitions, replacing the GitHub-API
       // repo monitor where API access is blocked. No credential fields (Jira auth reuses

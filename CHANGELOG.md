@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Change moves are now booked, not swept for.** The sweeper decided for itself which changes were
+  due by reading a whole list and inferring from each change&#39;s state. Every fault it had came from
+  that inference &mdash; the wrong state pair, the wrong way of identifying you, and no way to say
+  &ldquo;this one, to that state, at that time&rdquo;.
+  **Admin Hub &rarr; 🗓 Change Moves** now takes a booking: pick one of your changes, pick the state to
+  move it to, pick the moment. That move happens then, whether or not the page is open, and **nothing
+  else happens** &mdash; no list is swept and no state is inferred. Both pickers are fed from
+  ServiceNow&#39;s own values rather than typed, because a mistyped change number or state saves cleanly
+  and then silently does nothing.
+  Bookings are listed with their outcome. A failed one stays visible carrying the reason, one refusal
+  does not abandon the rest, and a booking that comes due while the relay bookmarklet is closed stays
+  **pending** and runs as soon as it is back &mdash; late, never lost. Pending bookings can be withdrawn,
+  and **Run Due Now** performs anything outstanding immediately.
+  The polling sweeper, its settings and its config block are removed.
+
 ### Fixed
 - **Auto-start Changes moves Scheduled &rarr; Implement, which is the move that was wanted.** It
   shipped moving Submitted &rarr; Scheduled &mdash; the wrong hop. A change whose planned start has
