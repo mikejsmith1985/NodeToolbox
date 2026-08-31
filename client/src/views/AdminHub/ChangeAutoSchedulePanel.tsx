@@ -1,6 +1,6 @@
-// ChangeAutoSchedulePanel.tsx — Admin Hub panel for the change auto-schedule sweeper.
+// ChangeAutoSchedulePanel.tsx — Admin Hub panel for the change auto-start sweeper.
 //
-// Configures the server-side sweep that moves a ServiceNow change from Submitted to Scheduled once
+// Configures the server-side sweep that moves a ServiceNow change from Scheduled to Implement once
 // its planned start arrives, triggers a sweep on demand, and shows what the recent sweeps actually
 // did — including the sweeps that could not act, and why.
 
@@ -68,7 +68,7 @@ async function requestSweepNow(): Promise<{ ok: boolean; message?: string; run?:
 function describeRun(run: ChangeAutoScheduleRun): string {
   if (run.skipReason) return run.skipReason
   if (run.scheduledChangeNumbers.length === 0) return `Nothing was due (${run.consideredCount} change(s) checked).`
-  const verb = run.isDryRun ? 'Would have scheduled' : 'Scheduled'
+  const verb = run.isDryRun ? 'Would have started' : 'Started'
   return `${verb} ${run.scheduledChangeNumbers.join(', ')}.`
 }
 
@@ -80,7 +80,7 @@ function formatRunTimestamp(ranAtIso: string): string {
 
 // ── Component ──
 
-/** Admin Hub panel that configures and triggers the change auto-schedule sweeper. */
+/** Admin Hub panel that configures and triggers the change auto-start sweeper. */
 export function ChangeAutoSchedulePanel() {
   const [config, setConfig] = useState<ChangeAutoScheduleConfig | null>(null)
   const [recentRuns, setRecentRuns] = useState<ChangeAutoScheduleRun[]>([])
@@ -178,16 +178,16 @@ export function ChangeAutoSchedulePanel() {
   }
 
   if (isLoading) {
-    return <p>Loading the change auto-schedule sweeper…</p>
+    return <p>Loading the change auto-start sweeper…</p>
   }
 
   // Load finished but produced no config — a failure state, never a permanent "Loading…".
   if (config === null) {
     return (
       <div className={styles.panelSection}>
-        <h2>🗓 Auto-schedule Changes</h2>
+        <h2>🗓 Auto-start Changes</h2>
         <p role="status" className={styles.panelStatusLine}>
-          Could not load the change auto-schedule sweeper: {statusMessage || 'unknown error'}.
+          Could not load the change auto-start sweeper: {statusMessage || 'unknown error'}.
         </p>
         <button type="button" className={styles.actionButton} onClick={handleRetryLoad}>Retry</button>
       </div>
@@ -196,12 +196,12 @@ export function ChangeAutoSchedulePanel() {
 
   return (
     <div className={styles.panelSection}>
-      <h2>🗓 Auto-schedule Changes</h2>
+      <h2>🗓 Auto-start Changes</h2>
       <p>
-        Moves each of your ServiceNow changes from <strong>Submitted</strong> to <strong>Scheduled</strong> once its
+        Moves each of your ServiceNow changes from <strong>Scheduled</strong> to <strong>Implement</strong> once its
         planned start arrives, so nobody has to sit and watch the clock. Only changes
-        <strong> assigned to you</strong> are touched, and only from Submitted — a Draft change is reported, never
-        advanced past the approval it has not had.
+        <strong> assigned to you</strong> are touched, and only from Scheduled — a change that has not got that far
+        is reported, never advanced past the steps it has not had.
       </p>
       <p className={styles.panelStatusLine}>
         ServiceNow writes ride the <strong>relay bookmarklet</strong>, so a sweep can only act while it is registered.
@@ -213,7 +213,7 @@ export function ChangeAutoSchedulePanel() {
           <label>
             <input
               type="checkbox"
-              aria-label="Enable auto-scheduling"
+              aria-label="Enable auto-start"
               checked={config.isEnabled}
               disabled={isSaving}
               onChange={(event) => void handleToggleEnabled(event.target.checked)}

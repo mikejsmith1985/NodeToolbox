@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Auto-start Changes moves Scheduled &rarr; Implement, which is the move that was wanted.** It
+  shipped moving Submitted &rarr; Scheduled &mdash; the wrong hop. A change whose planned start has
+  arrived should be **started**, not scheduled; scheduling already happened.
+  The sweep now reads only **Scheduled** changes and writes them to **Implement**, matching
+  ServiceNow&#39;s own Scheduled &rarr; Implement transition. A change that has not reached Scheduled is
+  reported, never advanced past the steps it has not had. The panel is renamed to match.
+
+### Fixed
 - **The auto-schedule sweep can now tell who you are.** Every sweep stopped with &ldquo;Could not
   identify the signed-in ServiceNow user&rdquo; and moved nothing.
   It looked the user up first, asking `sys_user` for `user_name=javascript:gs.getUserID()`. That call

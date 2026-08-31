@@ -1,8 +1,8 @@
 // changeAutoSchedule.test.js — The decision core: which changes may move to Scheduled, and why not.
 
 const {
-  SUBMITTED_STATE_VALUE,
   SCHEDULED_STATE_VALUE,
+  IMPLEMENT_STATE_VALUE,
   parseServiceNowDateTime,
   decideChangeScheduleAction,
   listChangeScheduleDecisions,
@@ -13,7 +13,7 @@ function buildChange(overrides = {}) {
   return {
     number:     'CHG0046897',
     sys_id:     'chg-sys-001',
-    state:      SUBMITTED_STATE_VALUE,
+    state:      SCHEDULED_STATE_VALUE,
     start_date: '2026-08-31 09:00:00',
     ...overrides,
   };
@@ -38,7 +38,7 @@ describe('parseServiceNowDateTime', () => {
 });
 
 describe('decideChangeScheduleAction — what may move, and what may not', () => {
-  it('schedules a submitted change whose planned start has arrived', () => {
+  it('implements a scheduled change whose planned start has arrived', () => {
     const decision = decideChangeScheduleAction(buildChange(), NINE_AM_MS, 0);
 
     expect(decision.shouldSchedule).toBe(true);
@@ -46,7 +46,7 @@ describe('decideChangeScheduleAction — what may move, and what may not', () =>
     expect(decision.changeSysId).toBe('chg-sys-001');
   });
 
-  it('leaves a submitted change alone until its planned start', () => {
+  it('leaves a scheduled change alone until its planned start', () => {
     const decision = decideChangeScheduleAction(buildChange(), NINE_AM_MS - 60_000, 0);
 
     expect(decision.shouldSchedule).toBe(false);
@@ -59,17 +59,17 @@ describe('decideChangeScheduleAction — what may move, and what may not', () =>
     expect(decision.shouldSchedule).toBe(true);
   });
 
-  it('refuses a Draft change and says why, rather than forcing it past approval', () => {
-    // ServiceNow's own transition map only allows Submitted → Scheduled. Advancing a Draft change
-    // here would step around the approval it has not had.
-    const decision = decideChangeScheduleAction(buildChange({ state: '-5' }), NINE_AM_MS, 0);
+  it('refuses a change that has not reached Scheduled, and says why', () => {
+    // ServiceNow's own transition map allows Scheduled → Implement. A Submitted change has not been
+    // through what precedes Scheduled, so advancing it here would skip that.
+    const decision = decideChangeScheduleAction(buildChange({ state: '-4' }), NINE_AM_MS, 0);
 
     expect(decision.shouldSchedule).toBe(false);
-    expect(decision.reason).toMatch(/not awaiting scheduling/i);
+    expect(decision.reason).toMatch(/not awaiting implementation/i);
   });
 
-  it('leaves a change that is already Scheduled', () => {
-    const decision = decideChangeScheduleAction(buildChange({ state: SCHEDULED_STATE_VALUE }), NINE_AM_MS, 0);
+  it('leaves a change that is already in Implement', () => {
+    const decision = decideChangeScheduleAction(buildChange({ state: IMPLEMENT_STATE_VALUE }), NINE_AM_MS, 0);
 
     expect(decision.shouldSchedule).toBe(false);
   });
@@ -89,7 +89,7 @@ describe('decideChangeScheduleAction — what may move, and what may not', () =>
 
   it('reads a field ServiceNow returned as a display-value object', () => {
     const change = buildChange({
-      state:      { value: SUBMITTED_STATE_VALUE, display_value: 'Submitted' },
+      state:      { value: SCHEDULED_STATE_VALUE, display_value: 'Scheduled' },
       start_date: { value: '2026-08-31 09:00:00', display_value: '31/08/2026 09:00:00' },
     });
 
@@ -101,7 +101,7 @@ describe('listChangeScheduleDecisions — every change gets a verdict', () => {
   it('returns one decision per change, due ones included', () => {
     const changes = [
       buildChange({ number: 'CHG1', sys_id: 'a' }),
-      buildChange({ number: 'CHG2', sys_id: 'b', state: '-5' }),
+      buildChange({ number: 'CHG2', sys_id: 'b', state: '-4' }),
       buildChange({ number: 'CHG3', sys_id: 'c', start_date: '2026-09-30 09:00:00' }),
     ];
 

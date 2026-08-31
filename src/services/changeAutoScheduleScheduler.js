@@ -1,4 +1,4 @@
-// changeAutoScheduleScheduler.js — Moves a ServiceNow change to "Scheduled" when its planned start
+// changeAutoScheduleScheduler.js — Moves a ServiceNow change to "Implement" when its planned start
 // arrives, without anybody having to be watching.
 //
 // The tick chassis is the one every other NodeToolbox scheduler uses: a 60-second interval reading
@@ -17,7 +17,7 @@ const path = require('path');
 const os = require('os');
 
 const relayBridge = require('../routes/relayBridge');
-const { SCHEDULED_STATE_VALUE, SUBMITTED_STATE_VALUE, listChangeScheduleDecisions } = require('./changeAutoSchedule');
+const { SCHEDULED_STATE_VALUE, IMPLEMENT_STATE_VALUE, listChangeScheduleDecisions } = require('./changeAutoSchedule');
 
 // ── Constants ──
 
@@ -101,10 +101,10 @@ function readSchedulerConfig(configuration) {
  */
 const ASSIGNED_TO_CURRENT_USER_CLAUSE = 'assigned_to=javascript:gs.getUserID()';
 
-/** Asks ServiceNow for the current user's submitted changes, so a sweep never touches anyone else's. */
+/** Asks ServiceNow for the current user's scheduled changes, so a sweep never touches anyone else's. */
 async function fetchSubmittedChangesForCurrentUser(submitRelayRequest) {
   const queryParts = [
-    'state=' + SUBMITTED_STATE_VALUE,
+    'state=' + SCHEDULED_STATE_VALUE,
     ASSIGNED_TO_CURRENT_USER_CLAUSE,
   ];
   const changesResponse = await submitRelayRequest('snow', {
@@ -118,12 +118,12 @@ async function fetchSubmittedChangesForCurrentUser(submitRelayRequest) {
   return { changes: (changesResponse && changesResponse.result) || [], skipReason: '' };
 }
 
-/** Writes one change into the Scheduled state. */
-async function moveChangeToScheduled(submitRelayRequest, changeSysId) {
+/** Writes one change into the Implement state. */
+async function moveChangeToImplement(submitRelayRequest, changeSysId) {
   await submitRelayRequest('snow', {
     method: 'PATCH',
     url: '/api/now/v2/table/change_request/' + changeSysId,
-    body: { state: SCHEDULED_STATE_VALUE },
+    body: { state: IMPLEMENT_STATE_VALUE },
   }, RELAY_TIMEOUT_MS);
 }
 
@@ -185,9 +185,9 @@ async function runChangeAutoScheduleSweep(configuration, deps = {}) {
     }
     try {
       // eslint-disable-next-line no-await-in-loop -- changes are moved one at a time to bound relay load
-      await moveChangeToScheduled(submitRelayRequest, decision.changeSysId);
+      await moveChangeToImplement(submitRelayRequest, decision.changeSysId);
       runSummary.scheduledChangeNumbers.push(decision.changeNumber);
-      console.log('  🗓  Change ' + decision.changeNumber + ' moved to Scheduled at its planned start');
+      console.log('  🗓  Change ' + decision.changeNumber + ' moved to Implement at its planned start');
     } catch (updateError) {
       // One refusal must not abandon the rest of the list — the others are still due.
       runSummary.failures.push({ changeNumber: decision.changeNumber, message: updateError.message });

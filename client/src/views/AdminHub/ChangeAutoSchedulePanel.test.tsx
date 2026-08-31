@@ -1,4 +1,4 @@
-// ChangeAutoSchedulePanel.test.tsx — The Admin Hub panel for the change auto-schedule sweeper.
+// ChangeAutoSchedulePanel.test.tsx — The Admin Hub panel for the change auto-start sweeper.
 
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -51,7 +51,7 @@ describe('ChangeAutoSchedulePanel', () => {
 
     render(<ChangeAutoSchedulePanel />)
 
-    await waitFor(() => expect(screen.getByLabelText('Enable auto-scheduling')).toBeChecked())
+    await waitFor(() => expect(screen.getByLabelText('Enable auto-start')).toBeChecked())
     expect(screen.getByLabelText('Sweep interval in minutes')).toHaveValue(15)
     expect(screen.getByLabelText('Lead time in minutes')).toHaveValue(30)
   })
@@ -61,16 +61,16 @@ describe('ChangeAutoSchedulePanel', () => {
 
     render(<ChangeAutoSchedulePanel />)
 
-    await waitFor(() => expect(screen.getByLabelText('Enable auto-scheduling')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByLabelText('Enable auto-start')).toBeInTheDocument())
     expect(screen.getByText(/relay bookmarklet/i)).toBeInTheDocument()
   })
 
   it('saves the enabled toggle immediately, without a separate Save click', async () => {
     const fetchMock = mockEndpoints()
     render(<ChangeAutoSchedulePanel />)
-    await waitFor(() => expect(screen.getByLabelText('Enable auto-scheduling')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByLabelText('Enable auto-start')).toBeInTheDocument())
 
-    await userEvent.click(screen.getByLabelText('Enable auto-scheduling'))
+    await userEvent.click(screen.getByLabelText('Enable auto-start'))
 
     await waitFor(() => {
       const savePosts = fetchMock.mock.calls.filter(([url, init]) =>
@@ -98,7 +98,7 @@ describe('ChangeAutoSchedulePanel', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Sweep Now' }))
 
-    expect(await screen.findByText(/Scheduled CHG0046897/)).toBeInTheDocument()
+    expect(await screen.findByText(/Started CHG0046897/)).toBeInTheDocument()
   })
 
   it('blocks Sweep Now while the form holds unsaved edits, since a sweep reads the SAVED config', async () => {
@@ -122,7 +122,7 @@ describe('ChangeAutoSchedulePanel', () => {
 
     render(<ChangeAutoSchedulePanel />)
 
-    expect(await screen.findByText(/Scheduled CHG1/)).toBeInTheDocument()
+    expect(await screen.findByText(/Started CHG1/)).toBeInTheDocument()
     expect(screen.getByText(/Nothing was due \(2 change\(s\) checked\)/)).toBeInTheDocument()
   })
 

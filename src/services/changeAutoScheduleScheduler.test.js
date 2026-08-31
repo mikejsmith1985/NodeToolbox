@@ -27,10 +27,10 @@ function buildRelayStub(changeRecords) {
   return { submitRelayRequest, patchedUrls };
 }
 
-/** One submitted change due at 09:00. */
+/** One scheduled change due at 09:00. */
 function buildDueChange(overrides = {}) {
   return Object.assign({
-    sys_id: 'chg-sys-1', number: 'CHG0046897', state: '-4', start_date: '2026-08-31 09:00:00',
+    sys_id: 'chg-sys-1', number: 'CHG0046897', state: '-2', start_date: '2026-08-31 09:00:00',
   }, overrides);
 }
 
@@ -64,6 +64,8 @@ describe('runChangeAutoScheduleSweep', () => {
 
     expect(summary.scheduledChangeNumbers).toEqual(['CHG0046897']);
     expect(relay.patchedUrls).toEqual(['/api/now/v2/table/change_request/chg-sys-1']);
+    const patchBody = relay.submitRelayRequest.mock.calls.find(([, request]) => request.method === 'PATCH')[1].body;
+    expect(patchBody).toEqual({ state: '1' });
   });
 
   it('scopes to the signed-in user with the clause the shipped surfaces already use', async () => {
@@ -83,6 +85,7 @@ describe('runChangeAutoScheduleSweep', () => {
     const readRequests = relay.submitRelayRequest.mock.calls.filter(([, request]) => request.method === 'GET');
     expect(readRequests).toHaveLength(1);
     expect(readRequests[0][1].url).toContain(encodeURIComponent('assigned_to=javascript:gs.getUserID()'));
+    expect(readRequests[0][1].url).toContain(encodeURIComponent('state=-2'));
     expect(readRequests[0][1].url).not.toContain('sys_user');
   });
 

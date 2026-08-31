@@ -84,7 +84,7 @@ const ADMIN_HUB_TAB_OPTIONS: { key: AdminHubTab; label: string }[] = [
   { key: 'standup-briefing', label: '📋 Standup' },
   { key: 'pi-review-scheduler', label: '🗓️ PI Review Sync' },
   { key: 'monthly-delivery', label: '📅 Monthly Delivery' },
-  { key: 'change-auto-schedule', label: '🗓 Auto-schedule Changes' },
+  { key: 'change-auto-schedule', label: '🗓 Auto-start Changes' },
   { key: 'confluence-docs', label: '📄 Confluence Docs' },
   { key: 'sprint-release', label: '🚀 Sprint Release' },
   { key: 'component-manager', label: '🧩 Components' },
@@ -2895,7 +2895,7 @@ export default function AdminHubView() {
 
       {activeAdminTab === 'change-auto-schedule' && (
         <section id="admin-hub-change-auto-schedule-panel" role="tabpanel" aria-labelledby="admin-hub-change-auto-schedule-tab">
-          {/* Moves a ServiceNow change to Scheduled at its planned start, so nobody watches the clock. */}
+          {/* Moves a ServiceNow change to Implement at its planned start, so nobody watches the clock. */}
           <ChangeAutoSchedulePanel />
         </section>
       )}

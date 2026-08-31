@@ -1,22 +1,21 @@
-// changeAutoSchedule.js — Decides which ServiceNow change requests are due to move to "Scheduled".
+// changeAutoSchedule.js — Decides which ServiceNow change requests are due to move to "Implement".
 //
-// A change sits in Submitted until somebody remembers to schedule it at its planned start. That is a
-// clerical act on a clock, which is what a scheduler is for. This module is the decision half and is
-// deliberately pure: it takes change records and a timestamp and returns a verdict per change, so
-// every rule below is testable without ServiceNow, a relay, or a clock.
+// A change sits in Scheduled until its planned start arrives and somebody remembers to start it.
+// That is a clerical act on a clock, which is what a scheduler is for. This module is the decision
+// half and is deliberately pure: it takes change records and a timestamp and returns a verdict per
+// change, so every rule below is testable without ServiceNow, a relay, or a clock.
 //
-// The one rule worth stating out loud: only a SUBMITTED change is advanced. ServiceNow's own
-// transition map allows Submitted → Scheduled and nothing else into that state, so advancing a Draft
-// change would be stepping around the approval it has not yet had. A Draft change at its planned
-// start is reported, never moved.
+// The one rule worth stating out loud: only a SCHEDULED change is advanced. ServiceNow's own
+// transition map allows Scheduled → Implement, so a change that has not reached Scheduled has not
+// been through what precedes it. Such a change at its planned start is reported, never moved.
 
 'use strict';
 
-/** ServiceNow's raw `state` value for a change awaiting scheduling. */
-const SUBMITTED_STATE_VALUE = '-4';
-
-/** ServiceNow's raw `state` value for a scheduled change — where a due change is moved to. */
+/** ServiceNow's raw `state` value for a Scheduled change — the only state advanced from. */
 const SCHEDULED_STATE_VALUE = '-2';
+
+/** ServiceNow's raw `state` value for Implement — where a change whose start has arrived is moved. */
+const IMPLEMENT_STATE_VALUE = '1';
 
 /**
  * Reads a ServiceNow field that may arrive as a plain string or as a `{value, display_value}` pair.
@@ -54,7 +53,7 @@ function parseServiceNowDateTime(dateTimeText) {
 }
 
 /**
- * Decides whether one change should be moved to Scheduled now, and says why when it should not.
+ * Decides whether one change should be moved to Implement now, and says why when it should not.
  *
  * `leadTimeMinutes` moves the action that many minutes ahead of the planned start, for teams who
  * want the change scheduled before the window rather than exactly on it.
@@ -70,9 +69,9 @@ function decideChangeScheduleAction(changeRecord, currentTimeMs, leadTimeMinutes
   }
 
   const currentStateValue = readFieldValue(record.state);
-  if (currentStateValue !== SUBMITTED_STATE_VALUE) {
+  if (currentStateValue !== SCHEDULED_STATE_VALUE) {
     return Object.assign({}, baseDecision, {
-      reason: 'State ' + currentStateValue + ' is not awaiting scheduling — only a Submitted change is advanced.',
+      reason: 'State ' + currentStateValue + ' is not awaiting implementation — only a Scheduled change is advanced.',
     });
   }
 
@@ -100,8 +99,8 @@ function listChangeScheduleDecisions(changeRecords, currentTimeMs, leadTimeMinut
 }
 
 module.exports = {
-  SUBMITTED_STATE_VALUE,
   SCHEDULED_STATE_VALUE,
+  IMPLEMENT_STATE_VALUE,
   readFieldValue,
   parseServiceNowDateTime,
   decideChangeScheduleAction,
