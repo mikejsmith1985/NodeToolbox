@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ALL_CHG_STATES, CHG_STATE_TRANSITIONS } from '../hooks/useReleaseManagement.ts';
 import { useReleaseManagement } from '../hooks/useReleaseManagement.ts';
 import { CabPrepSection } from '../cabPrep/CabPrepSection.tsx';
+import { ScheduledMovesSection } from '../scheduledMoves/ScheduledMovesSection.tsx';
 import styles from './ReleaseManagementTab.module.css';
 
 const TAB_TITLE = 'Release Management';
@@ -347,6 +348,9 @@ export default function ReleaseManagementTab() {
       ) : null}
       <AlertMonitorSettingsSection actions={actions} state={state} />
       <ActiveChangesSection actions={actions} state={state} />
+      {/* Booking sits directly under the active-change list it books against, and reuses that list
+          rather than fetching its own — the change you can see is the change you can schedule. */}
+      <ScheduledMovesSection activeChanges={state.myActiveChanges} styles={styles} />
       <ActivityLogSection actions={actions} state={state} />
     </div>
   );

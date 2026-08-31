@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Scheduling a change move now lives in SNow Hub, where changes are worked.** It shipped as an Admin
+  Hub panel &mdash; the wrong place. Booking a move is one more thing to do with a change you are
+  already looking at, not a separate screen to go and find.
+  **Release Management** gains a **Scheduled Moves** section, directly beneath the active-change list it
+  books against. It **reuses that list** rather than fetching its own, so the change you can see is the
+  change you can schedule, and it offers only the states ServiceNow will actually accept from that
+  change&#39;s current one &mdash; picking a different change clears a target that no longer applies. The
+  booked moves are listed with their outcome, pending ones can be withdrawn, and **Run Due Now** performs
+  anything outstanding.
+  The Admin Hub panel and its tab are removed: one home for one thing.
+
+### Changed
 - **Change moves are now booked, not swept for.** The sweeper decided for itself which changes were
   due by reading a whole list and inferring from each change&#39;s state. Every fault it had came from
   that inference &mdash; the wrong state pair, the wrong way of identifying you, and no way to say

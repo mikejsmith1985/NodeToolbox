@@ -221,9 +221,15 @@ vi.mock('./hooks/usePrbState.ts', () => ({
   usePrbState: () => ({ state: mockPrbState, actions: mockPrbActions }),
 }));
 
-vi.mock('./hooks/useReleaseManagement.ts', () => ({
-  useReleaseManagement: () => ({ state: mockReleaseState, actions: mockReleaseActions }),
-}));
+// The state vocabulary is a real export of this module, not part of the hook — Release Management
+// and the Scheduled Moves section both read it during render, so the mock must supply it.
+vi.mock('./hooks/useReleaseManagement.ts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./hooks/useReleaseManagement.ts')>();
+  return {
+    ...actual,
+    useReleaseManagement: () => ({ state: mockReleaseState, actions: mockReleaseActions }),
+  };
+});
 
 vi.mock('./hooks/useSnowSyncEngine.ts', () => ({
   useSnowSyncEngine: () => ({ state: mockSyncEngineState, actions: mockSyncEngineActions }),
