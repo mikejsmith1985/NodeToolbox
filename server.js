@@ -156,6 +156,8 @@ try {
 // githubEmailEngine bundle; a missing bundle disables the routes rather than crashing startup.
 try {
   app.use(require('./src/routes/githubEmailIntake')(configuration));
+  // Change auto-schedule sweeper routes — plain Express + relay, no generated bundle to depend on.
+  app.use(require('./src/routes/changeAutoSchedule')(configuration));
   app.use(require('./src/routes/sharePointDocuments')());
 } catch (githubEmailIntakeRouteError) {
   console.error('  ⚠ GitHub Email Intake routes unavailable: ' + githubEmailIntakeRouteError.message);
@@ -690,6 +692,14 @@ async function launchServer() {
     require('./src/services/monthlyDeliveryScheduler').startMonthlyDeliveryScheduler(configuration);
   } catch (monthlyDeliverySchedulerError) {
     console.error('  ⚠ Monthly Delivery scheduler unavailable: ' + monthlyDeliverySchedulerError.message);
+  }
+
+  // Change auto-schedule sweeper — moves a ServiceNow change to Scheduled once its planned start
+  // arrives. Disabled until switched on in the Admin Hub, so starting it costs nothing.
+  try {
+    require('./src/services/changeAutoScheduleScheduler').startChangeAutoScheduleScheduler(configuration);
+  } catch (changeAutoScheduleError) {
+    console.error('  ⚠ Change auto-schedule scheduler unavailable: ' + changeAutoScheduleError.message);
   }
 
   // GitHub Email Intake scheduler — parses GitHub notification emails from a local drop folder and

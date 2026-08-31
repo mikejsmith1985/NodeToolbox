@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **A change now moves itself to Scheduled when its planned start arrives.** Release Management could
+  already alert you that a change had passed its planned start without being scheduled, and it could
+  transition one on a click &mdash; but the step in between, the one that is pure clock-watching, was
+  still a person&#39;s job.
+  A new **Admin Hub &rarr; 🗓 Auto-schedule Changes** panel runs a server-side sweep on a configurable
+  interval. Each sweep reads **your own** submitted changes and moves the ones whose planned start has
+  arrived into **Scheduled**. A lead time can bring the move forward by a set number of minutes, and a
+  **dry run** names what it would move while changing nothing, so the scope can be proved before it is
+  switched on. Every sweep is recorded, and the panel shows what moved and what did not.
+  **Only a Submitted change is advanced.** ServiceNow&#39;s own transition map allows Submitted &rarr;
+  Scheduled and nothing else into that state, so a Draft change sitting at its planned start is
+  reported rather than pushed past the approval it has not had. One change ServiceNow refuses does not
+  abandon the rest of the list.
+  **The honest limit**: ServiceNow writes ride the relay bookmarklet &mdash; there is no credentialed
+  write path &mdash; so a sweep can only act while the relay is registered. A sweep that finds it closed
+  changes nothing, says exactly that, and leaves the work due for the next one. Nothing is ever recorded
+  as done that did not happen.
+
 ### Fixed
 - **A new CHG no longer arrives with each of its standard CTASKs made twice.** A single PFIX came back
   carrying two Technical Checkouts and two Implementations, and one of the Implementations named

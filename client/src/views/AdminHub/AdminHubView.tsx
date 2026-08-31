@@ -20,6 +20,7 @@ import { SprintReleasePanel } from './SprintReleasePanel.tsx'
 import { StandupBriefingPanel } from './StandupBriefingPanel.tsx'
 import { PiReviewSchedulerPanel } from './PiReviewSchedulerPanel.tsx'
 import { MonthlyDeliveryPanel } from './MonthlyDeliveryPanel.tsx'
+import { ChangeAutoSchedulePanel } from './ChangeAutoSchedulePanel.tsx'
 import { ConfluenceDocLinksPanel } from './confluenceDocLinks/ConfluenceDocLinksPanel.tsx'
 import { ConfigBackupPanel } from './ConfigBackupPanel.tsx'
 import { FieldMappingPanel } from './FieldMappingPanel.tsx'
@@ -74,7 +75,7 @@ const VIEW_SUBTITLE = 'Proxy configuration, PI field mappings, feature flags, an
 
 const TERMINAL_COMMAND = 'python "%USERPROFILE%\\Downloads\\toolbox-server.py"'
 
-type AdminHubTab = 'main' | 'repo-monitor' | 'reports-config' | 'standup-briefing' | 'pi-review-scheduler' | 'monthly-delivery' | 'confluence-docs' | 'component-manager' | 'dev-panel' | 'sprint-release' | 'subtask-promotion' | 'change-audit' | 'settings-backup' | 'field-mapping'
+type AdminHubTab = 'main' | 'repo-monitor' | 'reports-config' | 'standup-briefing' | 'pi-review-scheduler' | 'monthly-delivery' | 'change-auto-schedule' | 'confluence-docs' | 'component-manager' | 'dev-panel' | 'sprint-release' | 'subtask-promotion' | 'change-audit' | 'settings-backup' | 'field-mapping'
 
 const ADMIN_HUB_TAB_OPTIONS: { key: AdminHubTab; label: string }[] = [
   { key: 'main', label: '⚙️ Config' },
@@ -83,6 +84,7 @@ const ADMIN_HUB_TAB_OPTIONS: { key: AdminHubTab; label: string }[] = [
   { key: 'standup-briefing', label: '📋 Standup' },
   { key: 'pi-review-scheduler', label: '🗓️ PI Review Sync' },
   { key: 'monthly-delivery', label: '📅 Monthly Delivery' },
+  { key: 'change-auto-schedule', label: '🗓 Auto-schedule Changes' },
   { key: 'confluence-docs', label: '📄 Confluence Docs' },
   { key: 'sprint-release', label: '🚀 Sprint Release' },
   { key: 'component-manager', label: '🧩 Components' },
@@ -2888,6 +2890,13 @@ export default function AdminHubView() {
       {activeAdminTab === 'monthly-delivery' && (
         <section id="admin-hub-monthly-delivery-panel" role="tabpanel" aria-labelledby="admin-hub-monthly-delivery-tab">
           <MonthlyDeliveryPanel />
+        </section>
+      )}
+
+      {activeAdminTab === 'change-auto-schedule' && (
+        <section id="admin-hub-change-auto-schedule-panel" role="tabpanel" aria-labelledby="admin-hub-change-auto-schedule-tab">
+          {/* Moves a ServiceNow change to Scheduled at its planned start, so nobody watches the clock. */}
+          <ChangeAutoSchedulePanel />
         </section>
       )}
 
