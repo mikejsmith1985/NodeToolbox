@@ -6,6 +6,7 @@ import { jiraGet } from '../../../services/jiraApi.ts';
 import { snowFetch } from '../../../services/snowApi.ts';
 import { CRG_WIZARD_STORAGE_KEY } from './crgStorageKeys.ts';
 import { inferEnvironmentKeyFromValue } from './environmentKeyInference.ts';
+import { listStagedCtasksToCreate, type AdoptedCtaskRole } from './ctaskDuplicates.ts';
 import type { JiraIssue } from '../../../types/jira.ts';
 import { useCrgSubmissionDebugStore } from '../../../hooks/useCrgSubmissionDebugStore.ts';
 
@@ -1326,15 +1327,25 @@ export async function reconcileStagedChangeTasks(
   return stagedTasks.length;
 }
 
+/**
+ * Renames the CTASKs ServiceNow auto-created to the team's convention for this change.
+ *
+ * Returns the roles it actually renamed. The caller needs that to avoid creating a staged copy of a
+ * task that now exists — which is how a single PFIX change ended up with two Implementations and two
+ * Technical Checkouts (GH #376). ServiceNow does not always spawn both, so this reports what it
+ * found rather than what it expected.
+ */
 async function updateAutoCreatedChangeTasks(
   changeSysId: string,
   state: CrgState,
   environmentKey: EnvironmentKey | null,
-): Promise<void> {
+): Promise<AdoptedCtaskRole[]> {
   const autoCreatedTasks = await fetchAutoCreatedChangeTasks(changeSysId);
   if (autoCreatedTasks.length === 0) {
-    return;
+    return [];
   }
+
+  const adoptedRoles: AdoptedCtaskRole[] = [];
 
   const implementationTaskSysId = extractReferenceSysId(autoCreatedTasks[0]?.sys_id);
   if (implementationTaskSysId) {
@@ -1343,6 +1354,7 @@ async function updateAutoCreatedChangeTasks(
     await patchChangeTaskBySysId(implementationTaskSysId, {
       short_description: `${implementationTaskPrefix} - ${environmentLabel}`,
     });
+    adoptedRoles.push('implementation');
   }
 
   const technicalCheckoutTaskSysId = extractReferenceSysId(autoCreatedTasks[1]?.sys_id);
@@ -1351,7 +1363,10 @@ async function updateAutoCreatedChangeTasks(
       short_description: AUTO_TECHNICAL_CHECKOUT_CTASK_SHORT_DESCRIPTION,
       description:       AUTO_TECHNICAL_CHECKOUT_CTASK_DESCRIPTION,
     });
+    adoptedRoles.push('technicalCheckout');
   }
+
+  return adoptedRoles;
 }
 
 function buildProjectSearchPath(projectKey: string, fixVersion: string): string {
@@ -2281,9 +2296,11 @@ export function useCrgState(options?: UseCrgStateOptions): { state: CrgState; ac
             });
           }
         } else {
-          // Default mode: the team-specific auto-CTASK rename, then create all staged as new.
+          // Default mode: the team-specific auto-CTASK rename, then create the staged tasks that
+          // the rename did not already account for.
+          let adoptedCtaskRoles: AdoptedCtaskRole[] = [];
           try {
-            await updateAutoCreatedChangeTasks(changeSysId, state, changeSubmissionTarget.environmentKey);
+            adoptedCtaskRoles = await updateAutoCreatedChangeTasks(changeSysId, state, changeSubmissionTarget.environmentKey);
           } catch (unknownError) {
             const errorMessage = unknownError instanceof Error ? unknownError.message : 'Auto-created CTASK updates failed';
             throw new Error(`${changeNumber} created, but auto-created CTASK updates failed. Check ServiceNow before retrying: ${errorMessage}`, {
@@ -2291,12 +2308,20 @@ export function useCrgState(options?: UseCrgStateOptions): { state: CrgState; ac
             });
           }
 
-          if (state.changeTasks.length > 0) {
+          // A staged Implementation or Technical Checkout is the SAME task ServiceNow already made
+          // and the rename above just corrected. Creating it again is what produced the duplicate
+          // pair, one of them still naming a previous release's environment (GH #376).
+          const ctasksToCreate = listStagedCtasksToCreate(
+            state.changeTasks,
+            adoptedCtaskRoles,
+            resolveImplementationCtaskPrefix(state),
+          );
+          if (ctasksToCreate.length > 0) {
             try {
-              await createChangeTasks(changeSysId, state.changeTasks);
+              await createChangeTasks(changeSysId, ctasksToCreate);
             } catch (unknownError) {
               const errorMessage = unknownError instanceof Error ? unknownError.message : 'CTASK creation failed';
-              const taskLabel = formatCtaskCount(state.changeTasks.length);
+              const taskLabel = formatCtaskCount(ctasksToCreate.length);
               throw new Error(`${changeNumber} created, but ${taskLabel} did not fully complete. Check ServiceNow before retrying: ${errorMessage}`, {
                 cause: unknownError,
               });

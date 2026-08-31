@@ -1278,6 +1278,75 @@ describe('useCrgState', () => {
       expect(typeof technicalCheckoutPatchBody.description).toBe('string');
     });
 
+    it('does not create a staged copy of a CTASK ServiceNow already made', async () => {
+      // The reported defect (GH #376): a single PFIX change came back with two Implementations —
+      // one still naming PRD, from a template saved during an earlier release — and two Technical
+      // Checkouts, because the rename and the staged create both ran.
+      vi.mocked(snowFetch)
+        .mockResolvedValueOnce({ result: { number: 'CHG0001234', sys_id: 'chg-sys-001' } } as never)
+        .mockResolvedValueOnce({
+          result: [
+            { sys_id: 'auto-ctask-001', number: 'CTASK0002001' },
+            { sys_id: 'auto-ctask-002', number: 'CTASK0002002' },
+          ],
+        } as never)
+        .mockResolvedValue({ result: { number: 'CTASK0002001' } } as never);
+
+      const { result } = await advanceToChangeDetailsStep();
+
+      act(() => {
+        result.current.actions.addChangeTask(createMockCtaskTemplate({
+          id: 'staged-implementation', shortDescription: 'Enrollment - AWS - PRD',
+        }));
+        result.current.actions.addChangeTask(createMockCtaskTemplate({
+          id: 'staged-checkout', shortDescription: 'Technical Checkout',
+        }));
+      });
+
+      await act(async () => {
+        await result.current.actions.createChg();
+      });
+
+      // Two PATCHes renaming the auto-created pair, and no POST creating them a second time.
+      const changeTaskPosts = vi.mocked(snowFetch).mock.calls.filter(
+        ([path, requestInit]) => path === '/api/now/table/change_task'
+          && (requestInit as RequestInit | undefined)?.method === 'POST',
+      );
+      expect(changeTaskPosts).toHaveLength(0);
+    });
+
+    it('still creates a staged CTASK that is not one of the auto-created two', async () => {
+      vi.mocked(snowFetch)
+        .mockResolvedValueOnce({ result: { number: 'CHG0001234', sys_id: 'chg-sys-001' } } as never)
+        .mockResolvedValueOnce({
+          result: [
+            { sys_id: 'auto-ctask-001', number: 'CTASK0002001' },
+            { sys_id: 'auto-ctask-002', number: 'CTASK0002002' },
+          ],
+        } as never)
+        .mockResolvedValue({ result: { number: 'CTASK0002003' } } as never);
+
+      const { result } = await advanceToChangeDetailsStep();
+
+      act(() => {
+        result.current.actions.addChangeTask(createMockCtaskTemplate({
+          id: 'staged-smoke', shortDescription: 'Smoke test the enrolment journey',
+        }));
+      });
+
+      await act(async () => {
+        await result.current.actions.createChg();
+      });
+
+      const changeTaskPosts = vi.mocked(snowFetch).mock.calls.filter(
+        ([path, requestInit]) => path === '/api/now/table/change_task'
+          && (requestInit as RequestInit | undefined)?.method === 'POST',
+      );
+      expect(changeTaskPosts).toHaveLength(1);
+      const createdBody = JSON.parse((changeTaskPosts[0][1] as RequestInit).body as string) as Record<string, unknown>;
+      expect(createdBody.short_description).toBe('Smoke test the enrolment journey');
+    });
+
     it('clears the persisted draft after successful CHG creation so future visits start fresh', async () => {
       const STORAGE_KEY = 'ntbx-crg-state';
       vi.mocked(snowFetch)

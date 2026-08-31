@@ -8,6 +8,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **A new CHG no longer arrives with each of its standard CTASKs made twice.** A single PFIX came back
+  carrying two Technical Checkouts and two Implementations, and one of the Implementations named
+  **PRD** &mdash; an environment that change had nothing to do with.
+  Both halves had the same cause. ServiceNow auto-spawns an Implementation and a Technical Checkout
+  on a new change; the wizard renamed those two to the team&#39;s convention for this change&#39;s
+  environment, and then **also** created every staged CTASK as a new task on top. Anyone whose staged
+  list holds the two standard tasks &mdash; which is everyone, since that is what they are for &mdash;
+  got each of them twice. The stray PRD was the staged template still carrying the environment it was
+  saved under during an earlier release, sitting next to the auto-created one that had just been
+  correctly renamed to PFIX.
+  A staged Implementation or Technical Checkout is now recognised as the task ServiceNow already made
+  and is not created again. The Implementation is matched on its name&#39;s prefix rather than its full
+  text, because the environment is precisely the part that goes stale. Only the roles actually renamed
+  are skipped, so a Technical Checkout that ServiceNow did not spawn is still created &mdash; and
+  anything else staged, a smoke test or a rollback step, is untouched.
+
+### Fixed
 - **The Feature-link search now asks Jira what issue types exist instead of assuming.** Every search
   in the Missing-Feature-Link fix &mdash; typing a word, pasting a key, anything &mdash; came back
   empty, and after the previous fix surfaced Jira&#39;s own words the reason was finally visible:
