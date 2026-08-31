@@ -91,16 +91,21 @@ function readSchedulerConfig(configuration) {
 
 // ── ServiceNow access (every call goes through the relay) ──
 
+/**
+ * The clause that scopes a query to whoever is signed in, evaluated by ServiceNow itself.
+ *
+ * This is the form Release Management, Modify CHG and My Issues all already use, and it needs no
+ * user lookup at all. The first attempt here looked the user up first and asked sys_user for
+ * `user_name=javascript:gs.getUserID()` — but gs.getUserID() returns a sys_id, not a user name, so
+ * it matched nothing and every sweep gave up saying it could not identify the signed-in user.
+ */
+const ASSIGNED_TO_CURRENT_USER_CLAUSE = 'assigned_to=javascript:gs.getUserID()';
+
 /** Asks ServiceNow for the current user's submitted changes, so a sweep never touches anyone else's. */
 async function fetchSubmittedChangesForCurrentUser(submitRelayRequest) {
-  const currentUserSysId = await fetchCurrentUserSysId(submitRelayRequest);
-  if (!currentUserSysId) {
-    return { changes: [], skipReason: 'Could not identify the signed-in ServiceNow user.' };
-  }
-
   const queryParts = [
     'state=' + SUBMITTED_STATE_VALUE,
-    'assigned_to=' + currentUserSysId,
+    ASSIGNED_TO_CURRENT_USER_CLAUSE,
   ];
   const changesResponse = await submitRelayRequest('snow', {
     method: 'GET',
@@ -111,17 +116,6 @@ async function fetchSubmittedChangesForCurrentUser(submitRelayRequest) {
   }, RELAY_TIMEOUT_MS);
 
   return { changes: (changesResponse && changesResponse.result) || [], skipReason: '' };
-}
-
-/** Resolves the signed-in ServiceNow user's sys_id, or an empty string when it cannot be read. */
-async function fetchCurrentUserSysId(submitRelayRequest) {
-  const userResponse = await submitRelayRequest('snow', {
-    method: 'GET',
-    url: '/api/now/v2/table/sys_user?sysparm_query=user_name=javascript:gs.getUserID()&sysparm_fields=sys_id',
-    headers: { 'X-User-Override': 'true' },
-  }, RELAY_TIMEOUT_MS);
-  const firstUser = userResponse && userResponse.result && userResponse.result[0];
-  return (firstUser && firstUser.sys_id) || '';
 }
 
 /** Writes one change into the Scheduled state. */

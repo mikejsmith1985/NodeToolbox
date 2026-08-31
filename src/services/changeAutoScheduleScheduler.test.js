@@ -14,13 +14,10 @@ function buildConfiguration(overrides = {}) {
   return { scheduler: { changeAutoSchedule: Object.assign({ isEnabled: true }, overrides) } };
 }
 
-/** A relay stub: answers the user lookup, then the change query, and records every PATCH. */
+/** A relay stub: answers the change query, and records every PATCH. */
 function buildRelayStub(changeRecords) {
   const patchedUrls = [];
   const submitRelayRequest = jest.fn(async (_system, request) => {
-    if (request.url.includes('sys_user')) {
-      return { result: [{ sys_id: 'user-sys-1' }] };
-    }
     if (request.method === 'PATCH') {
       patchedUrls.push(request.url);
       return {};
@@ -67,6 +64,40 @@ describe('runChangeAutoScheduleSweep', () => {
 
     expect(summary.scheduledChangeNumbers).toEqual(['CHG0046897']);
     expect(relay.patchedUrls).toEqual(['/api/now/v2/table/change_request/chg-sys-1']);
+  });
+
+  it('scopes to the signed-in user with the clause the shipped surfaces already use', async () => {
+    // The reported defect: this asked sys_user for `user_name=javascript:gs.getUserID()`, but
+    // gs.getUserID() returns a sys_id, not a user name — so nothing matched and every sweep gave up
+    // with "Could not identify the signed-in ServiceNow user". Release Management, Modify CHG and My
+    // Issues all scope the change query itself with assigned_to, and never look a user up at all.
+    const relay = buildRelayStub([buildDueChange()]);
+
+    await runChangeAutoScheduleSweep(buildConfiguration(), {
+      submitRelayRequest: relay.submitRelayRequest,
+      isRelayConnected: () => true,
+      currentTimeMs: NINE_AM_MS,
+      recordRun: () => {},
+    });
+
+    const readRequests = relay.submitRelayRequest.mock.calls.filter(([, request]) => request.method === 'GET');
+    expect(readRequests).toHaveLength(1);
+    expect(readRequests[0][1].url).toContain(encodeURIComponent('assigned_to=javascript:gs.getUserID()'));
+    expect(readRequests[0][1].url).not.toContain('sys_user');
+  });
+
+  it('never asks for changes without an assignee clause, which would sweep the whole instance', async () => {
+    const relay = buildRelayStub([buildDueChange()]);
+
+    await runChangeAutoScheduleSweep(buildConfiguration(), {
+      submitRelayRequest: relay.submitRelayRequest,
+      isRelayConnected: () => true,
+      currentTimeMs: NINE_AM_MS,
+      recordRun: () => {},
+    });
+
+    const readRequests = relay.submitRelayRequest.mock.calls.filter(([, request]) => request.method === 'GET');
+    expect(readRequests[0][1].url).toContain(encodeURIComponent('assigned_to='));
   });
 
   it('writes nothing and says why when the relay bookmarklet is not registered', async () => {
@@ -119,7 +150,6 @@ describe('runChangeAutoScheduleSweep', () => {
       buildDueChange({ sys_id: 'chg-sys-2', number: 'CHG2' }),
     ]);
     relay.submitRelayRequest.mockImplementation(async (_system, request) => {
-      if (request.url.includes('sys_user')) return { result: [{ sys_id: 'user-sys-1' }] };
       if (request.method === 'PATCH') {
         if (request.url.endsWith('chg-sys-1')) throw new Error('ServiceNow said no');
         return {};

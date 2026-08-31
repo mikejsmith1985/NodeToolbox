@@ -1234,37 +1234,17 @@ function createApiRouter(configuration, lifecycleHandlers = {}) {
 
   router.get('/api/snow-relay/my-changes', async (req, res) => {
    try {
-     // Fetch the current user to get their sys_id for filtering changes
-     const userRelayRequest = {
-       method: 'GET',
-       url: '/api/now/v2/table/sys_user?sysparm_query=user_name=javascript:gs.getUserID()&sysparm_fields=sys_id,user_name,name',
-       headers: { 'X-User-Override': 'true' },
-     };
-
-     let currentUser;
-     try {
-       const userResponse = await relayBridge.submitRelayRequest('snow', userRelayRequest, 30000);
-       if (!userResponse || !userResponse.result || userResponse.result.length === 0) {
-         return res.status(500).json({
-           error: 'User not found',
-           message: 'Could not determine current ServiceNow user. Ensure you are logged in to ServiceNow.',
-         });
-       }
-       currentUser = userResponse.result[0];
-     } catch (userFetchError) {
-       // Fall back to querying by assignment_group instead of individual user
-       currentUser = null;
-     }
-
      // Default state filter: open (1), pending (2), in progress (3)
      const stateFilter = (req.query.state || '1,2,3').trim();
 
-     // Query for changes: ordered by state and last modified, showing most recent first
+     // Scoped to whoever is signed in, evaluated by ServiceNow itself — the same clause Release
+     // Management, Modify CHG and My Issues all use. This previously looked the user up first by
+     // asking sys_user for `user_name=javascript:gs.getUserID()`, but gs.getUserID() returns a
+     // sys_id, not a user name, so the lookup matched nothing and the route silently fell back to
+     // ORDERBYDESCpriority — which is every open change in the instance, not "my changes".
      const changeQueryParts = [
        `state=${encodeURIComponent(stateFilter)}`,
-       currentUser
-         ? `assigned_to=${encodeURIComponent(currentUser.sys_id)}`
-         : 'ORDERBYDESCpriority',
+       'assigned_to=javascript:gs.getUserID()',
      ];
 
      const changesRelayRequest = {

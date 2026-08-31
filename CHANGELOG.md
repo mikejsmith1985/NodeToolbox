@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **The auto-schedule sweep can now tell who you are.** Every sweep stopped with &ldquo;Could not
+  identify the signed-in ServiceNow user&rdquo; and moved nothing.
+  It looked the user up first, asking `sys_user` for `user_name=javascript:gs.getUserID()`. That call
+  returns a **sys_id**, not a user name, so it matched nobody. The sweep now scopes the change query
+  itself with `assigned_to=javascript:gs.getUserID()` &mdash; the clause Release Management, Modify CHG
+  and My Issues already use &mdash; and looks nobody up at all.
+  The same broken lookup sat in the `my-changes` relay route, where a failure fell back to
+  `ORDERBYDESCpriority`: every open change in the instance, presented as yours. It now carries the same
+  assignee clause, with no fallback that widens the scope.
+
 ### Added
 - **A change now moves itself to Scheduled when its planned start arrives.** Release Management could
   already alert you that a change had passed its planned start without being scheduled, and it could
