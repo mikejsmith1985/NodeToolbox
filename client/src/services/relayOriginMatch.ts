@@ -1,5 +1,10 @@
 // relayOriginMatch.ts — Telling a wrong-tab relay apart from a dropped VPN.
 //
+// Written for SharePoint and now shared with ServiceNow, which had the identical blind spot: its
+// bookmarklet never reported where it was running, so a relay clicked on a different instance
+// registered, polled happily, and showed "ServiceNow reachable" while every call it relayed went
+// somewhere that could not answer (GH #377).
+//
 // The bookmarklet builds every request as `location.origin + path` and sends it with the tab's own
 // cookies. That makes the tab it was clicked in load-bearing: click it on `contoso-my.sharepoint.com`
 // while the configured library lives on `contoso.sharepoint.com`, and the request goes to the right
@@ -62,23 +67,49 @@ export function compareRelayOrigin(
   return { kind: 'mismatch', relayOrigin: readRelayOrigin, configuredOrigin: readConfiguredOrigin };
 }
 
+/** The system a relay talks to, named as the reader knows it. */
+export type RelaySystemLabel = 'SharePoint' | 'ServiceNow';
+
+/**
+ * Says a mismatch out loud, before anything has failed.
+ *
+ * A mismatched relay is provably broken: every request is going to a site that cannot answer it.
+ * Waiting for a refusal to say so IS the false positive — the panel reads "connected" the whole
+ * time, because the bookmarklet really is polling. Returns null when there is nothing to warn about.
+ */
+export function describeOriginMismatch(
+  verdict: RelayOriginVerdict,
+  systemLabel: RelaySystemLabel,
+): string | null {
+  if (verdict.kind !== 'mismatch') {
+    return null;
+  }
+
+  return `The relay bookmarklet is running on ${verdict.relayOrigin}, but ${systemLabel} is `
+    + `configured as ${verdict.configuredOrigin}. Every request is sent to wherever the bookmarklet `
+    + 'is, so it is reaching the wrong place entirely — the relay will look connected and every call '
+    + `will fail. Open ${verdict.configuredOrigin}, and click the bookmarklet in THAT tab.`;
+}
+
 /**
  * Says why the last request was refused, in terms of what is actually known.
  *
- * A mismatch is stated as the cause because it certainly is one: the request never reached the site
- * that holds the documents. Everything else keeps the old advice, but as a possibility rather than a
- * diagnosis — the relay cannot see a VPN, and should not claim to.
+ * A mismatch is stated as the cause because it certainly is one: the request never reached the
+ * system that holds the data. Everything else keeps the old advice, but as a possibility rather
+ * than a diagnosis — the relay cannot see a VPN, and should not claim to.
  */
-export function describeRefusal(verdict: RelayOriginVerdict): string {
-  if (verdict.kind === 'mismatch') {
-    return 'The bookmarklet is running on '
-      + `${verdict.relayOrigin}, but the library you configured is on ${verdict.configuredOrigin}. `
-      + 'Every request is being sent to the site the bookmarklet is on, so it is reaching the wrong '
-      + `place entirely. Open ${verdict.configuredOrigin}, and click the bookmarklet in THAT tab.`;
+export function describeRefusal(
+  verdict: RelayOriginVerdict,
+  systemLabel: RelaySystemLabel = 'SharePoint',
+): string {
+  const mismatchMessage = describeOriginMismatch(verdict, systemLabel);
+  if (mismatchMessage !== null) {
+    return mismatchMessage;
   }
 
   return 'The bookmarklet is still running and reaching this machine, so the relay itself is fine — '
-    + 'SharePoint is refusing the request. That is usually a dropped VPN or an expired SharePoint '
-    + 'session, though it can also mean the tab you clicked the bookmarklet in no longer has access. '
-    + 'Reload the SharePoint tab, click the bookmarklet again, and check the VPN if that does not fix it.';
+    + `${systemLabel} is refusing the request. That is usually a dropped VPN or an expired `
+    + `${systemLabel} session, though it can also mean the tab you clicked the bookmarklet in no `
+    + `longer has access. Reload the ${systemLabel} tab, click the bookmarklet again, and check the `
+    + 'VPN if that does not fix it.';
 }

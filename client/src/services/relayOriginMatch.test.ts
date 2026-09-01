@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { compareRelayOrigin, describeRefusal, readOrigin } from './relayOriginMatch.ts';
+import { compareRelayOrigin, describeOriginMismatch, describeRefusal, readOrigin } from './relayOriginMatch.ts';
 
 describe('readOrigin', () => {
   it('reads the origin of a full SharePoint URL', () => {
@@ -100,5 +100,32 @@ describe('describeRefusal', () => {
 
   it('says the same careful thing when it could not compare at all', () => {
     expect(describeRefusal({ kind: 'unknown' })).toContain('SharePoint is refusing the request');
+  });
+});
+
+describe('describeOriginMismatch — warning before anything has failed', () => {
+  it('names the system the reader configured, not always SharePoint', () => {
+    // ServiceNow had the identical blind spot and must be able to say so in its own words.
+    const message = describeOriginMismatch(
+      { kind: 'mismatch', relayOrigin: 'https://acme-dev.service-now.com', configuredOrigin: 'https://acme.service-now.com' },
+      'ServiceNow',
+    );
+
+    expect(message).toContain('ServiceNow is configured as https://acme.service-now.com');
+    expect(message).toContain('https://acme-dev.service-now.com');
+  });
+
+  it('says the relay will LOOK connected, because that is the whole false positive', () => {
+    const message = describeOriginMismatch(
+      { kind: 'mismatch', relayOrigin: 'https://a.service-now.com', configuredOrigin: 'https://b.service-now.com' },
+      'ServiceNow',
+    );
+
+    expect(message).toContain('look connected and every call will fail');
+  });
+
+  it('stays silent when the origins agree or could not be compared, rather than crying wolf', () => {
+    expect(describeOriginMismatch({ kind: 'match' }, 'ServiceNow')).toBeNull();
+    expect(describeOriginMismatch({ kind: 'unknown' }, 'ServiceNow')).toBeNull();
   });
 });

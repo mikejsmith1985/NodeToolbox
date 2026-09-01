@@ -21,17 +21,57 @@ const RELAY_RETURN_ROUTE_TTL_MS = 5 * 60 * 1000;
  */
 export const RELAY_RETURN_ROUTE_KEY = 'ntbx-relay-return-route';
 
+/** Hostname fragments that identify each system, so ONE bookmarklet can choose its own relay. */
+const SNOW_HOSTNAME_FRAGMENTS = ['service-now', 'servicenow'];
+const SHAREPOINT_HOSTNAME_FRAGMENT = 'sharepoint.com';
+
+/**
+ * The lines both relay bodies open with: where NodeToolbox is, what page this is, and the on-page
+ * status badge. Shared so the two bodies can sit inside ONE bookmarklet without either re-declaring
+ * what the other already did.
+ */
+const RELAY_PREAMBLE = [
+  `var relayServer="${LOCAL_RELAY_SERVER_URL}";`,
+  'var currentHostname=location.hostname.toLowerCase();',
+  'var relayStatusBadge=null;function showRelayStatus(message,backgroundColor){if(!relayStatusBadge||!relayStatusBadge.isConnected){relayStatusBadge=document.createElement("div");relayStatusBadge.onclick=function(){relayStatusBadge.remove();};document.body.appendChild(relayStatusBadge);}relayStatusBadge.style="position:fixed;bottom:16px;right:16px;background:"+backgroundColor+";color:#fff;padding:10px 16px;border-radius:8px;font:600 13px sans-serif;z-index:2147483647;box-shadow:0 4px 16px rgba(0,0,0,.4);cursor:pointer;max-width:440px";relayStatusBadge.textContent=message;return relayStatusBadge;}',
+].join('');
+
+/**
+ * Marks the tab as the relay tab and asks before it is closed.
+ *
+ * A browser tab cannot pin itself; that needs an extension. So this does the two things a page
+ * genuinely can: it renames the tab so it is findable among twenty others, and it raises the
+ * browser's own "Leave site?" prompt on close, which is what stops an accidental one. Pinning
+ * removes the close button outright, and only a person can do that, so the badge asks them to.
+ */
+const RELAY_TAB_GUARD = [
+  'try{if(document.title.indexOf("RELAY -")!==0)document.title="RELAY - "+document.title;}catch(titleError){}',
+  'window.addEventListener("beforeunload",function(unloadEvent){if(!isRunning)return;unloadEvent.preventDefault();unloadEvent.returnValue="";});',
+].join('');
+
+/** Refuses politely when clicked somewhere that is not the system it relays. */
+function buildWrongPageGuard(systemLabel: string, whereToClickIt: string): string {
+  return `if(!(${whereToClickIt})){alert("\\u26a0\\ufe0f NodeToolbox Relay\\n\\nClick this bookmarklet on ${systemLabel}.\\n\\nCurrent domain: "+currentHostname);return;}`;
+}
+
+/** Wraps a relay body as a complete, self-contained `javascript:` bookmarklet. */
+function buildBookmarklet(bodyCode: string): string {
+  return `javascript:(function(){${bodyCode}})()`;
+}
+
+const SNOW_PAGE_TEST = SNOW_HOSTNAME_FRAGMENTS
+  .map((hostnameFragment) => `currentHostname.indexOf("${hostnameFragment}")>=0`)
+  .join('||');
+const SHAREPOINT_PAGE_TEST = `currentHostname.indexOf("${SHAREPOINT_HOSTNAME_FRAGMENT}")>=0`;
+
 /**
  * Bookmarklet users drag into their browser toolbar, then click on an authenticated
  * ServiceNow page. It registers with the local bridge, polls for queued requests,
  * executes them on the ServiceNow origin, and posts results back to NodeToolbox.
  */
-export const SNOW_RELAY_BOOKMARKLET_CODE = [
-  'javascript:(function(){',
-  `var relayServer="${LOCAL_RELAY_SERVER_URL}";`,
-  'var currentHostname=location.hostname.toLowerCase();',
-  'var relayStatusBadge=null;function showRelayStatus(message,backgroundColor){if(!relayStatusBadge||!relayStatusBadge.isConnected){relayStatusBadge=document.createElement("div");relayStatusBadge.onclick=function(){relayStatusBadge.remove();};document.body.appendChild(relayStatusBadge);}relayStatusBadge.style="position:fixed;bottom:16px;right:16px;background:"+backgroundColor+";color:#fff;padding:10px 16px;border-radius:8px;font:600 13px sans-serif;z-index:2147483647;box-shadow:0 4px 16px rgba(0,0,0,.4);cursor:pointer;max-width:440px";relayStatusBadge.textContent=message;return relayStatusBadge;}',
-  'if(currentHostname.indexOf("service-now")<0&&currentHostname.indexOf("servicenow")<0){alert("\\u26a0\\ufe0f NodeToolbox Relay\\n\\nThis bookmarklet should be clicked on a ServiceNow page.\\n\\nCurrent domain: "+currentHostname);return;}',
+const SNOW_RELAY_BODY = [
+  RELAY_PREAMBLE,
+  RELAY_TAB_GUARD,
   'window.__crg_active=true;',
   'var sys="snow";',
   'var isRunning=true;',
@@ -40,7 +80,7 @@ export const SNOW_RELAY_BOOKMARKLET_CODE = [
   'async function reportSessionTokenReady(){if(hasReportedSessionToken)return;var currentToken=resolveUserToken();if(!currentToken)return;hasReportedSessionToken=true;try{var tokenResponse=await fetch(relayServer+"/api/relay-bridge/session-token?sys="+sys+"&gck=1",{method:"POST",mode:"cors",cache:"no-store"});if(!tokenResponse.ok)hasReportedSessionToken=false;}catch(tokenRefreshError){hasReportedSessionToken=false;}}',
   'async function postRelayResult(resultPayload){await fetch(relayServer+"/api/relay-bridge/result",{method:"POST",mode:"cors",headers:{"Content-Type":"application/json"},body:JSON.stringify(resultPayload)});}',
   'async function executeRelayRequest(relayRequest){try{var requestHeaders={"Content-Type":"application/json","Accept":"application/json","X-Requested-With":"XMLHttpRequest"};var requestToken=resolveUserToken();if(requestToken)requestHeaders["X-UserToken"]=requestToken;if(relayRequest.authHeader)requestHeaders["Authorization"]=relayRequest.authHeader;var requestController=new AbortController();var timeoutId=setTimeout(function(){requestController.abort();},25000);var requestOptions={method:relayRequest.method||"GET",credentials:relayRequest.authHeader?"omit":"include",headers:requestHeaders,signal:requestController.signal};if(relayRequest.body!=null)requestOptions.body=JSON.stringify(relayRequest.body);var targetUrl=location.origin+relayRequest.path;var serviceNowResponse=await fetch(targetUrl,requestOptions);clearTimeout(timeoutId);var responseText=await serviceNowResponse.text();await postRelayResult({id:relayRequest.id,sys:sys,ok:serviceNowResponse.ok,status:serviceNowResponse.status,data:responseText,error:null});}catch(requestError){await postRelayResult({id:relayRequest.id,sys:sys,ok:false,status:0,data:null,error:requestError.message});}}',
-  'async function reannounceIfAsked(pollPayload){if(!pollPayload||!pollPayload.shouldReregister)return;var currentToken=resolveUserToken();hasReportedSessionToken=!!currentToken;try{await fetch(relayServer+"/api/relay-bridge/register?sys="+sys+"&gck="+(currentToken?"1":"0"),{method:"POST",mode:"cors",cache:"no-store"});showRelayStatus("\uD83D\uDD0C Relay reconnected \u2014 NodeToolbox restarted","#238636");}catch(reregisterError){}}async function pollRelayLoop(){while(isRunning){try{await reportSessionTokenReady();var pollResponse=await fetch(relayServer+"/api/relay-bridge/poll?sys="+sys,{method:"GET",mode:"cors",cache:"no-store"});var pollPayload=await pollResponse.json();await reannounceIfAsked(pollPayload);if(pollPayload&&pollPayload.request){await executeRelayRequest(pollPayload.request);}}catch(pollError){showRelayStatus("NodeToolbox relay polling failed - "+pollError.message,"#991b1b");await new Promise(function(resolve){setTimeout(resolve,2000);});}}}',
+  'async function reannounceIfAsked(pollPayload){if(!pollPayload||!pollPayload.shouldReregister)return;var currentToken=resolveUserToken();hasReportedSessionToken=!!currentToken;try{await fetch(relayServer+"/api/relay-bridge/register?sys="+sys+"&gck="+(currentToken?"1":"0"),+"&origin="+encodeURIComponent(location.origin),{method:"POST",mode:"cors",cache:"no-store"});showRelayStatus("\uD83D\uDD0C Relay reconnected \u2014 NodeToolbox restarted","#238636");}catch(reregisterError){}}async function pollRelayLoop(){while(isRunning){try{await reportSessionTokenReady();var pollResponse=await fetch(relayServer+"/api/relay-bridge/poll?sys="+sys,{method:"GET",mode:"cors",cache:"no-store"});var pollPayload=await pollResponse.json();await reannounceIfAsked(pollPayload);if(pollPayload&&pollPayload.request){await executeRelayRequest(pollPayload.request);}}catch(pollError){showRelayStatus("NodeToolbox relay polling failed - "+pollError.message,"#991b1b");await new Promise(function(resolve){setTimeout(resolve,2000);});}}}',
   'window.addEventListener("pagehide",function(){isRunning=false;try{navigator.sendBeacon(relayServer+"/api/relay-bridge/deregister?sys="+sys);}catch(beaconError){}});',
   // Focus the NodeToolbox window by name WITHOUT navigating it.
   // window.open("", "toolbox") finds the existing window and brings it to the foreground;
@@ -48,9 +88,13 @@ export const SNOW_RELAY_BOOKMARKLET_CODE = [
   // keeps running exactly where it was — no reload, no state loss, no blank dropdown delay.
   // Previously this passed relayServer as the URL which caused Chrome to navigate NodeToolbox
   // to the root URL, reloading the entire React app and wiping all in-progress form data.
-  '(async function(){try{var initialToken=resolveUserToken();hasReportedSessionToken=!!initialToken;var registerResponse=await fetch(relayServer+"/api/relay-bridge/register?sys="+sys+"&gck="+(initialToken?"1":"0"),{method:"POST",mode:"cors",cache:"no-store"});if(!registerResponse.ok){throw new Error("HTTP "+registerResponse.status);}var label=initialToken?"\\u2713 g_ck found":"\\u26a0 no g_ck";showRelayStatus("\\uD83D\\uDD0C Relay Active \\u2014 "+label+" \\u2014 NodeToolbox Connected",initialToken?"#238636":"#b08800");try{window.open("","toolbox");}catch(focusError){}pollRelayLoop();}catch(registerError){showRelayStatus("NodeToolbox relay failed - cannot reach local bridge: "+registerError.message,"#991b1b");alert("\\u274c NodeToolbox Relay\\n\\nCould not reach NodeToolbox at "+relayServer+".\\n\\nMake sure NodeToolbox is running, then click the bookmark again.\\n\\nDetails: "+registerError.message);}})();',
-  '})()',
+  '(async function(){try{var initialToken=resolveUserToken();hasReportedSessionToken=!!initialToken;var registerResponse=await fetch(relayServer+"/api/relay-bridge/register?sys="+sys+"&gck="+(initialToken?"1":"0"),+"&origin="+encodeURIComponent(location.origin),{method:"POST",mode:"cors",cache:"no-store"});if(!registerResponse.ok){throw new Error("HTTP "+registerResponse.status);}var label=initialToken?"\\u2713 g_ck found":"\\u26a0 no g_ck";showRelayStatus("\\uD83D\\uDD0C Relay Active \\u2014 "+label+" \\u2014 NodeToolbox Connected",initialToken?"#238636":"#b08800");try{window.open("","toolbox");}catch(focusError){}pollRelayLoop();}catch(registerError){showRelayStatus("NodeToolbox relay failed - cannot reach local bridge: "+registerError.message,"#991b1b");alert("\\u274c NodeToolbox Relay\\n\\nCould not reach NodeToolbox at "+relayServer+".\\n\\nMake sure NodeToolbox is running, then click the bookmark again.\\n\\nDetails: "+registerError.message);}})();',
 ].join('');
+
+/** The ServiceNow-only bookmarklet, still working for anyone who already has it in their bar. */
+export const SNOW_RELAY_BOOKMARKLET_CODE = buildBookmarklet(
+  RELAY_PREAMBLE + buildWrongPageGuard('a ServiceNow page', SNOW_PAGE_TEST) + SNOW_RELAY_BODY,
+);
 
 /**
  * Opens ServiceNow in the same named relay tab used by the original ToolBox flow.
@@ -93,12 +137,9 @@ export function openSnowRelay(snowBaseUrl: string): boolean {
 const SHAREPOINT_RELAY_WINDOW_NAME = '__crg_sharepoint';
 
 /** Bookmarklet users click on an authenticated SharePoint page to relay List reads to NodeToolbox. */
-export const SHAREPOINT_RELAY_BOOKMARKLET_CODE = [
-  'javascript:(function(){',
-  `var relayServer="${LOCAL_RELAY_SERVER_URL}";`,
-  'var currentHostname=location.hostname.toLowerCase();',
-  'var relayStatusBadge=null;function showRelayStatus(message,backgroundColor){if(!relayStatusBadge||!relayStatusBadge.isConnected){relayStatusBadge=document.createElement("div");relayStatusBadge.onclick=function(){relayStatusBadge.remove();};document.body.appendChild(relayStatusBadge);}relayStatusBadge.style="position:fixed;bottom:16px;right:16px;background:"+backgroundColor+";color:#fff;padding:10px 16px;border-radius:8px;font:600 13px sans-serif;z-index:2147483647;box-shadow:0 4px 16px rgba(0,0,0,.4);cursor:pointer;max-width:440px";relayStatusBadge.textContent=message;return relayStatusBadge;}',
-  'if(currentHostname.indexOf("sharepoint.com")<0){alert("\\u26a0\\ufe0f NodeToolbox Relay\\n\\nClick this bookmarklet on your SharePoint site tab.\\n\\nCurrent domain: "+currentHostname);return;}',
+const SHAREPOINT_RELAY_BODY = [
+  RELAY_PREAMBLE,
+  RELAY_TAB_GUARD,
   'var sys="sharepoint";',
   'var isRunning=true;',
   'async function postRelayResult(resultPayload){await fetch(relayServer+"/api/relay-bridge/result",{method:"POST",mode:"cors",headers:{"Content-Type":"application/json"},body:JSON.stringify(resultPayload)});}',
@@ -121,8 +162,29 @@ export const SHAREPOINT_RELAY_BOOKMARKLET_CODE = [
   // main.tsx) WITHOUT navigating it — identical to the ServiceNow bookmarklet. The empty URL means
   // no blank tab is created and Toolbox is not reloaded; the user is simply returned to it.
   '(async function(){try{var registerResponse=await fetch(relayServer+"/api/relay-bridge/register?sys="+sys+"&origin="+encodeURIComponent(location.origin),{method:"POST",mode:"cors",cache:"no-store"});if(!registerResponse.ok){throw new Error("HTTP "+registerResponse.status);}showRelayStatus("\\uD83D\\uDD0C SharePoint Relay Active \\u2014 NodeToolbox Connected","#238636");try{window.open("","toolbox");}catch(focusError){}pollRelayLoop();}catch(registerError){showRelayStatus("NodeToolbox relay failed - cannot reach local bridge: "+registerError.message,"#991b1b");alert("\\u274c NodeToolbox Relay\\n\\nCould not reach NodeToolbox at "+relayServer+".\\n\\nMake sure NodeToolbox is running, then click the bookmark again.\\n\\nDetails: "+registerError.message);}})();',
-  '})();',
 ].join('');
+
+/** The SharePoint-only bookmarklet, still working for anyone who already has it in their bar. */
+export const SHAREPOINT_RELAY_BOOKMARKLET_CODE = buildBookmarklet(
+  RELAY_PREAMBLE + buildWrongPageGuard('your SharePoint site tab', SHAREPOINT_PAGE_TEST) + SHAREPOINT_RELAY_BODY,
+);
+
+/**
+ * ONE bookmarklet for both systems, choosing by the tab it is clicked in.
+ *
+ * Two bookmarks was never a requirement; it was an accident of the two being written months apart.
+ * The page already knows which system it is, so the bookmark does not need to. The same click works
+ * on ServiceNow and on SharePoint, and clicking the wrong one stops being possible.
+ *
+ * Each body runs inside its OWN function, so the two can share a preamble without either one seeing
+ * the other's declarations.
+ */
+export const UNIFIED_RELAY_BOOKMARKLET_CODE = buildBookmarklet(
+  RELAY_PREAMBLE
+  + `if(${SNOW_PAGE_TEST}){(function(){${SNOW_RELAY_BODY}})();}`
+  + `else if(${SHAREPOINT_PAGE_TEST}){(function(){${SHAREPOINT_RELAY_BODY}})();}`
+  + 'else{alert("\\u26a0\\ufe0f NodeToolbox Relay\\n\\nClick this on a ServiceNow or SharePoint tab.\\n\\nCurrent domain: "+currentHostname);}',
+);
 
 /** Opens (or focuses) the SharePoint site in a named tab so the user can click the bookmarklet there. */
 export function openSharePointRelay(sharePointSiteUrl: string): boolean {

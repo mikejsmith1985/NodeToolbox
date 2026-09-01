@@ -11,6 +11,7 @@ import {
   resetBrowserRelayForTests,
   SHAREPOINT_RELAY_BOOKMARKLET_CODE,
   SNOW_RELAY_BOOKMARKLET_CODE,
+  UNIFIED_RELAY_BOOKMARKLET_CODE,
 } from './browserRelay.ts';
 
 describe('browserRelay', () => {
@@ -165,6 +166,40 @@ describe('the bookmarklets parse as JavaScript', () => {
 
   it('the ServiceNow relay bookmarklet parses', () => {
     expect(() => assertBookmarkletParses(SNOW_RELAY_BOOKMARKLET_CODE)).not.toThrow();
+  });
+
+  it('the one bookmarklet for both systems parses', () => {
+    expect(() => assertBookmarkletParses(UNIFIED_RELAY_BOOKMARKLET_CODE)).not.toThrow();
+  });
+
+  it('the one bookmarklet carries BOTH relays and picks by the tab it is clicked in', () => {
+    // Two bookmarks was an accident of the two being written months apart, not a requirement.
+    expect(UNIFIED_RELAY_BOOKMARKLET_CODE).toContain('var sys="snow"');
+    expect(UNIFIED_RELAY_BOOKMARKLET_CODE).toContain('var sys="sharepoint"');
+    expect(UNIFIED_RELAY_BOOKMARKLET_CODE).toContain('service-now');
+    expect(UNIFIED_RELAY_BOOKMARKLET_CODE).toContain('sharepoint.com');
+  });
+
+  it('runs each relay in its own function, so the two cannot collide', () => {
+    // Both bodies declare showRelayStatus, sys, isRunning and a poll loop. Sharing one scope would
+    // be a redeclaration, and the whole bookmarklet would do nothing at all.
+    expect(UNIFIED_RELAY_BOOKMARKLET_CODE).toContain('{(function(){');
+  });
+
+  it('every bookmarklet names the tab and guards it against an accidental close', () => {
+    // A tab cannot pin itself, so it does the two things it can: be findable, and ask before closing.
+    for (const bookmarkletCode of [
+      SNOW_RELAY_BOOKMARKLET_CODE, SHAREPOINT_RELAY_BOOKMARKLET_CODE, UNIFIED_RELAY_BOOKMARKLET_CODE,
+    ]) {
+      expect(bookmarkletCode).toContain('"RELAY - "+document.title');
+      expect(bookmarkletCode).toContain('beforeunload');
+    }
+  });
+
+  it('the ServiceNow relay reports where it is running, so a wrong-instance tab is nameable', () => {
+    // Without this the relay registers, polls, and reads "connected" while every call it relays
+    // lands on whichever instance the tab happened to be on (GH #377).
+    expect(SNOW_RELAY_BOOKMARKLET_CODE).toContain('&origin="+encodeURIComponent(location.origin)');
   });
 
   it('neither carries a regex literal, which cannot survive being written inside a string', () => {

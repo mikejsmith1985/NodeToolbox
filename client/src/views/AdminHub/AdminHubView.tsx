@@ -10,7 +10,7 @@ import { BookmarkletInstallLink } from '../../components/BookmarkletInstallLink/
 import ConfirmDialog from '../../components/ConfirmDialog/index.tsx'
 import { PrimaryTabs } from '../../components/PrimaryTabs/PrimaryTabs.tsx'
 import ViewFrame from '../../components/ViewFrame/ViewFrame.tsx'
-import { SNOW_RELAY_BOOKMARKLET_CODE } from '../../services/browserRelay.ts'
+import { UNIFIED_RELAY_BOOKMARKLET_CODE } from '../../services/browserRelay.ts'
 import { listGitHubAppInstallations, type GitHubAppInstallation } from '../../services/connectivityConfigApi.ts'
 import { useConnectionStore } from '../../store/connectionStore'
 import DevPanelView from '../DevPanel/DevPanelView.tsx'
@@ -1752,8 +1752,8 @@ function RelayActivationSection() {
   function handleBookmarkletClick(clickEvent: ReactMouseEvent<HTMLAnchorElement>) {
     clickEvent.preventDefault()
     window.alert(
-      'Drag "NodeToolbox SNow Relay" to your browser bookmarks bar first. ' +
-      'After ServiceNow opens, click that bookmark from the ServiceNow tab.',
+      'Drag "NodeToolbox Relay" to your browser bookmarks bar first. ' +
+      'Then click it from the ServiceNow or SharePoint tab you want to relay.',
     )
   }
 
@@ -1777,18 +1777,18 @@ function RelayActivationSection() {
       <ol className={styles.relayInstructions}>
         <li>Drag the button below to your browser bookmarks bar.</li>
         <li>Open any ServiceNow page while logged in.</li>
-        <li>Click the <strong>NodeToolbox SNow Relay</strong> bookmark.</li>
+        <li>Click the <strong>NodeToolbox Relay</strong> bookmark — it works on ServiceNow and SharePoint alike.</li>
         <li>The relay indicator above will turn green automatically.</li>
       </ol>
 
       <div className={styles.devUtilitiesRow}>
         <BookmarkletInstallLink
-          bookmarkletCode={SNOW_RELAY_BOOKMARKLET_CODE}
+          bookmarkletCode={UNIFIED_RELAY_BOOKMARKLET_CODE}
           className={`${styles.actionButton} ${styles.bookmarkletLink}`}
           title="Drag this to your bookmarks bar to install the relay"
           onClick={handleBookmarkletClick}
         >
-          🔖 Drag to bookmarks: NodeToolbox SNow Relay
+          🔖 Drag to bookmarks: NodeToolbox Relay
         </BookmarkletInstallLink>
       </div>
 

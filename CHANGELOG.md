@@ -8,6 +8,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **The ServiceNow relay can no longer read &ldquo;connected&rdquo; while every call it relays fails
+  (GH #377).** The bookmarklet never reported *where* it was running, so one clicked on a different
+  instance registered, polled perfectly, and showed **ServiceNow reachable** while every request went
+  to a site that could not answer it. SharePoint had the identical blind spot and was fixed months
+  ago; ServiceNow now reports its origin the same way.
+  The warning is also raised **on sight** rather than after a call fails &mdash; for both systems. A
+  mismatched relay is provably broken, and waiting for a refusal to say so *was* the false positive:
+  the panel reads connected the whole time, because the bookmarklet really is polling.
+
+### Changed
+- **One relay bookmarklet instead of two.** It picks ServiceNow or SharePoint from the tab it is
+  clicked in, so clicking the wrong one stops being possible. Two bookmarks was never a requirement
+  &mdash; it was an accident of the two being written months apart. Each relay still runs in its own
+  function, so they cannot collide, and both single-system bookmarklets keep working for anyone who
+  already has one installed.
+- **The relay tab defends itself against an accidental close.** It renames itself **RELAY -&nbsp;&hellip;**
+  so it is findable among twenty tabs, and asks before closing. A page cannot pin itself &mdash; that
+  needs a browser extension &mdash; so the setup steps now say to right-click and **Pin tab**, which
+  removes the close button outright.
+
+### Fixed
 - **Hygiene no longer shows three different kinds of zero as if they were the same number (GH #377).**
   A tile reading `0` meant any of: every issue passed, no issue in scope was the kind the check
   governs, or the Jira field it reads does not exist on this instance. Rendered identically, a grid

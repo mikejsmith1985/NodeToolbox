@@ -8,8 +8,8 @@
 import { useState, useRef, useEffect, useCallback, type MouseEvent as ReactMouseEvent } from 'react';
 
 import { BookmarkletInstallLink } from '../BookmarkletInstallLink/index.tsx';
-import { openSharePointRelay, openSnowRelay, SHAREPOINT_RELAY_BOOKMARKLET_CODE, SNOW_RELAY_BOOKMARKLET_CODE } from '../../services/browserRelay.ts';
-import { compareRelayOrigin, describeRefusal } from '../../services/relayOriginMatch.ts';
+import { openSharePointRelay, openSnowRelay, UNIFIED_RELAY_BOOKMARKLET_CODE } from '../../services/browserRelay.ts';
+import { compareRelayOrigin, describeOriginMismatch, describeRefusal } from '../../services/relayOriginMatch.ts';
 import { readSharePointSiteUrl } from '../../services/sharePointSiteUrl.ts';
 import { useAdminStore } from '../../store/adminStore.ts';
 import { useConnectionStore } from '../../store/connectionStore.ts';
@@ -67,6 +67,8 @@ interface SnowPanelProps {
   lastPingAt: string | null;
   /** True once the bookmarklet has detected ServiceNow's g_ck token for write APIs. */
   hasSessionToken: boolean;
+  /** Where the bookmarklet is running, so a relay on the wrong instance can be named as one. */
+  relayOrigin?: string | null;
 }
 
 /**
@@ -83,10 +85,17 @@ function SnowPanel({
   snowBaseUrl,
   lastPingAt,
   hasSessionToken,
+  relayOrigin = null,
 }: SnowPanelProps) {
   const lastPingText = lastPingAt !== null
     ? new Date(lastPingAt).toLocaleTimeString()
     : null;
+  // A relay clicked on a different instance polls perfectly and answers nothing. Said on sight
+  // rather than after a failure: waiting for a call to fail IS the false positive (GH #377).
+  const originMismatchMessage = describeOriginMismatch(
+    compareRelayOrigin(relayOrigin, snowBaseUrl),
+    'ServiceNow',
+  );
 
   /** Opens the ServiceNow instance in a named relay tab so the bookmarklet can activate. */
   function handleOpenSnowPage() {
@@ -101,8 +110,8 @@ function SnowPanel({
   function handleBookmarkletClick(clickEvent: ReactMouseEvent<HTMLAnchorElement>) {
     clickEvent.preventDefault();
     window.alert(
-      'Drag "NodeToolbox SNow Relay" to your browser bookmarks bar first. ' +
-      'After ServiceNow opens, click that bookmark from the ServiceNow tab.',
+      'Drag "NodeToolbox Relay" to your browser bookmarks bar first. ' +
+      'Then click it from the ServiceNow or SharePoint tab you want to relay.',
     );
   }
 
@@ -125,10 +134,15 @@ function SnowPanel({
         )}
       </p>
       <p className={styles.panelLabel}>Method: {getConnectionMethodText()}</p>
+      {originMismatchMessage !== null && (
+        <p className={styles.panelWarning} role="alert">
+          <WarningIcon /> {originMismatchMessage}
+        </p>
+      )}
       {isRelayActive && !hasSessionToken ? (
         <p className={styles.panelWarning} role="alert">
           <WarningIcon /> Relay is connected, but the ServiceNow session token is not ready yet. Wait for the SNow page to finish
-          loading, then click the latest NodeToolbox SNow Relay bookmarklet again.
+          loading, then click the latest NodeToolbox Relay bookmarklet again.
         </p>
       ) : null}
 
@@ -141,7 +155,7 @@ function SnowPanel({
                 ? <>Click <strong>Open ServiceNow</strong> below, or navigate to any SNow page while logged in</>
                 : 'Navigate to any ServiceNow page while logged in'}
             </li>
-            <li>Click <strong>NodeToolbox SNow Relay</strong> in your bookmarks bar</li>
+            <li>Click <strong>NodeToolbox Relay</strong> in your bookmarks bar</li>
             <li>The relay will activate and return focus to this tab automatically</li>
           </ol>
 
@@ -152,17 +166,19 @@ function SnowPanel({
               </button>
             )}
             <BookmarkletInstallLink
-              bookmarkletCode={SNOW_RELAY_BOOKMARKLET_CODE}
+              bookmarkletCode={UNIFIED_RELAY_BOOKMARKLET_CODE}
               className={styles.bookmarkletLink}
               title="Drag this to your bookmarks bar"
               onClick={handleBookmarkletClick}
             >
-              🔖 Drag to bookmarks: NodeToolbox SNow Relay
+              🔖 Drag to bookmarks: NodeToolbox Relay
             </BookmarkletInstallLink>
           </div>
 
           <p className={styles.panelHint}>
             ⚠️ Do not click the bookmarklet here. Drag it to the bookmarks bar, then click it from the ServiceNow tab.
+            {' '}Right-click that tab and <strong>Pin tab</strong> — a pinned tab has no close button, so the relay
+            cannot be shut by accident.
           </p>
         </>
       )}
@@ -267,11 +283,17 @@ function SharePointPanel({
   const refusedAtText = lastUnauthorizedAt !== null ? new Date(lastUnauthorizedAt).toLocaleTimeString() : null;
   // The full site URL is configured in Jira Intake settings and bridged via localStorage.
   const sharePointSiteUrl = readSharePointSiteUrl();
+  // Named before anything fails, for the same reason ServiceNow does: a mismatched relay is
+  // provably broken, and a panel reading "connected" until a call fails is the false positive.
+  const sharePointOriginMismatchMessage = describeOriginMismatch(
+    compareRelayOrigin(relayOrigin, sharePointSiteUrl),
+    'SharePoint',
+  );
 
   function handleBookmarkletClick(clickEvent: ReactMouseEvent<HTMLAnchorElement>) {
     clickEvent.preventDefault();
     window.alert(
-      'Drag "NodeToolbox SharePoint Relay" to your browser bookmarks bar first. ' +
+      'Drag "NodeToolbox Relay" to your browser bookmarks bar first. ' +
       'After your SharePoint site opens, click that bookmark from the SharePoint tab.',
     );
   }
@@ -294,6 +316,12 @@ function SharePointPanel({
             : '❌ SharePoint relay not connected'}
       </p>
 
+      {!isRelayAliveButRefused && sharePointOriginMismatchMessage !== null && (
+        <p className={styles.panelLabel} role="alert">
+          {sharePointOriginMismatchMessage}
+        </p>
+      )}
+
       {isRelayAliveButRefused && (
         // Says the cause it can PROVE — a bookmarklet on the wrong site — and offers the VPN only as
         // a possibility otherwise. The old wording asserted a dropped VPN, which sent somebody with a
@@ -312,7 +340,7 @@ function SharePointPanel({
                 ? <>Click <strong>Open SharePoint</strong> below (the site with the intake list), or open it yourself while logged in</>
                 : 'Open your SharePoint site (where the intake list lives) while logged in'}
             </li>
-            <li>Drag <strong>NodeToolbox SharePoint Relay</strong> to your bookmarks bar</li>
+            <li>Drag <strong>NodeToolbox Relay</strong> to your bookmarks bar</li>
             <li>Click that bookmark from the SharePoint tab; this indicator turns green</li>
           </ol>
 
@@ -323,12 +351,12 @@ function SharePointPanel({
               </button>
             )}
             <BookmarkletInstallLink
-              bookmarkletCode={SHAREPOINT_RELAY_BOOKMARKLET_CODE}
+              bookmarkletCode={UNIFIED_RELAY_BOOKMARKLET_CODE}
               className={styles.bookmarkletLink}
               title="Drag this to your bookmarks bar"
               onClick={handleBookmarkletClick}
             >
-              🔖 Drag to bookmarks: NodeToolbox SharePoint Relay
+              🔖 Drag to bookmarks: NodeToolbox Relay
             </BookmarkletInstallLink>
           </div>
 
@@ -487,6 +515,7 @@ export function ConnectionBar() {
               snowBaseUrl={snowBaseUrl}
               lastPingAt={lastPingAt}
               hasSessionToken={hasSessionToken}
+              relayOrigin={relayBridgeStatus?.relayOrigin ?? null}
             />
           )}
           {activePanel === 'confluence' && (

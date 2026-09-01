@@ -18,6 +18,8 @@ const { openSnowRelayMock, openSharePointRelayMock } = vi.hoisted(() => ({
 vi.mock('../../services/browserRelay.ts', () => ({
   SNOW_RELAY_BOOKMARKLET_CODE: 'javascript:mockRelay()',
   SHAREPOINT_RELAY_BOOKMARKLET_CODE: 'javascript:mockSharePointRelay()',
+  // One bookmarklet now serves both systems; the panels install this rather than a per-system one.
+  UNIFIED_RELAY_BOOKMARKLET_CODE: 'javascript:mockUnifiedRelay()',
   openSnowRelay: openSnowRelayMock,
   openSharePointRelay: openSharePointRelayMock,
 }));
@@ -148,6 +150,41 @@ describe('ConnectionBar', () => {
     expect(screen.getByText(/session token is not ready/i)).toBeInTheDocument();
   });
 
+  it('names a relay running on a different ServiceNow instance, while it still reads connected (GH #377)', () => {
+    // The whole false positive: the bookmarklet polls perfectly from the wrong tab, so the panel
+    // says reachable while every call it relays lands somewhere that cannot answer.
+    useAdminStore.setState({ isAdminUnlocked: true });
+    useConnectionStore.setState({
+      proxyStatus: buildProxyStatusWithSnowUrl('https://acme.service-now.com'),
+      relayBridgeStatus: {
+        isConnected: true, lastPingAt: null, system: 'snow', version: null,
+        hasSessionToken: true, relayOrigin: 'https://acme-dev.service-now.com',
+      },
+    });
+
+    render(<ConnectionBar />);
+    fireEvent.click(screen.getByText('SNow'));
+
+    expect(screen.getByRole('alert').textContent).toMatch(/acme-dev\.service-now\.com/);
+    expect(screen.getByRole('alert').textContent).toMatch(/look connected and every call will fail/i);
+  });
+
+  it('stays quiet when the relay is on the instance ServiceNow is configured as', () => {
+    useAdminStore.setState({ isAdminUnlocked: true });
+    useConnectionStore.setState({
+      proxyStatus: buildProxyStatusWithSnowUrl('https://acme.service-now.com'),
+      relayBridgeStatus: {
+        isConnected: true, lastPingAt: null, system: 'snow', version: null,
+        hasSessionToken: true, relayOrigin: 'https://acme.service-now.com',
+      },
+    });
+
+    render(<ConnectionBar />);
+    fireEvent.click(screen.getByText('SNow'));
+
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
   it('opens the SNow panel when the SNow indicator is clicked', () => {
     useAdminStore.setState({ isAdminUnlocked: true });
 
@@ -206,9 +243,9 @@ describe('ConnectionBar', () => {
 
     render(<ConnectionBar />);
     fireEvent.click(screen.getByText('SNow'));
-    fireEvent.click(screen.getByRole('link', { name: /NodeToolbox SNow Relay/i }));
+    fireEvent.click(screen.getByRole('link', { name: /NodeToolbox Relay/i }));
 
-    expect(window.alert).toHaveBeenCalledWith(expect.stringMatching(/Drag "NodeToolbox SNow Relay"/));
+    expect(window.alert).toHaveBeenCalledWith(expect.stringMatching(/Drag "NodeToolbox Relay"/));
   });
 
   it('keeps the real bookmarklet URL available for browser drag-to-bookmarks install', () => {
@@ -217,9 +254,9 @@ describe('ConnectionBar', () => {
     render(<ConnectionBar />);
     fireEvent.click(screen.getByText('SNow'));
 
-    const bookmarkletLink = screen.getByRole('link', { name: /NodeToolbox SNow Relay/i });
+    const bookmarkletLink = screen.getByRole('link', { name: /NodeToolbox Relay/i });
 
-    expect(bookmarkletLink.getAttribute('href')).toBe('javascript:mockRelay()');
+    expect(bookmarkletLink.getAttribute('href')).toBe('javascript:mockUnifiedRelay()');
   });
 
   it('does not show Open ServiceNow button when relay is already active', () => {
@@ -343,7 +380,7 @@ describe('ConnectionBar', () => {
 
     const panel = screen.getByRole('region', { name: 'Connection details' });
     expect(panel.textContent).toMatch(/not connected/i);
-    expect(screen.getByRole('link', { name: /NodeToolbox SharePoint Relay/i })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /NodeToolbox Relay/i })).toBeInTheDocument();
   });
 
   it('reflects the SharePoint relay connected state from the per-system store', () => {
