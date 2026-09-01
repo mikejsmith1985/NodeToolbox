@@ -350,15 +350,15 @@ describe('AdminHubView', () => {
     const user = userEvent.setup();
     renderAdminHubView();
 
-    await user.click(screen.getByRole('link', { name: /NodeToolbox Relay/i }));
+    await user.click(screen.getByRole('link', { name: /Toolbox Relay/i }));
 
-    expect(window.alert).toHaveBeenCalledWith(expect.stringMatching(/Drag "NodeToolbox Relay"/));
+    expect(window.alert).toHaveBeenCalledWith(expect.stringMatching(/Drag "Toolbox Relay"/));
   });
 
   it('keeps the real bookmarklet URL available for browser drag-to-bookmarks install', () => {
     renderAdminHubView();
 
-    const bookmarkletLink = screen.getByRole('link', { name: /NodeToolbox Relay/i });
+    const bookmarkletLink = screen.getByRole('link', { name: /Toolbox Relay/i });
 
     expect(bookmarkletLink.getAttribute('href')).toMatch(/^javascript:\(function\(\)\{/);
   });

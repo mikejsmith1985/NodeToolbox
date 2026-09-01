@@ -91,7 +91,7 @@ export async function snowFetch<ResponseBody>(
 
   if (!isRelayActive) {
     throw new Error(
-      'SNow relay not connected. Click Relay -> Open ServiceNow, then click the NodeToolbox SNow Relay bookmarklet.',
+      'SNow relay not connected. Click Relay -> Open ServiceNow, then click the Toolbox Relay bookmarklet.',
     );
   }
 
@@ -114,7 +114,7 @@ async function snowRelayFetch<ResponseBody>(
 
   if (method !== 'GET' && !hasSessionToken) {
     throw new Error(
-      'SNow session token (g_ck) not ready. Wait for ServiceNow to finish loading, then click the NodeToolbox SNow Relay bookmarklet again.',
+      'SNow session token (g_ck) not ready. Wait for ServiceNow to finish loading, then click the Toolbox Relay bookmarklet again.',
     );
   }
 

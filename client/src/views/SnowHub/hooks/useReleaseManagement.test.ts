@@ -146,7 +146,7 @@ describe('useReleaseManagement', () => {
 
   it('stores the relay guidance when loading active changes fails before ServiceNow is connected', async () => {
     vi.mocked(snowFetch).mockRejectedValue(
-      new Error('SNow relay not connected. Click Relay -> Open ServiceNow, then click the NodeToolbox SNow Relay bookmarklet.'),
+      new Error('SNow relay not connected. Click Relay -> Open ServiceNow, then click the Toolbox Relay bookmarklet.'),
     );
     const { result } = renderHook(() => useReleaseManagement());
 

@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **The ServiceNow relay could not register at all in v0.260.0.** The change that made the
+  bookmarklet report its origin spliced the URL fragment in as a THIRD argument to `fetch`, so the
+  `{method:"POST"}` options were silently ignored and registration went out as a GET. The
+  bookmarklet still parsed perfectly, which is why nothing caught it &mdash; two regression tests now
+  pin the registration call's exact shape and reject a comma-then-plus anywhere in a bookmarklet.
+
+### Changed
+- **The bookmarklet is called Toolbox Relay.** One bookmark works on ServiceNow and SharePoint
+  alike, so naming it after either was describing a bookmark that no longer exists. Every label,
+  instruction, on-page badge and error message now says the same thing.
+
+### Fixed
 - **The ServiceNow relay can no longer read &ldquo;connected&rdquo; while every call it relays fails
   (GH #377).** The bookmarklet never reported *where* it was running, so one clicked on a different
   instance registered, polled perfectly, and showed **ServiceNow reachable** while every request went

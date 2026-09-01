@@ -243,9 +243,9 @@ describe('ConnectionBar', () => {
 
     render(<ConnectionBar />);
     fireEvent.click(screen.getByText('SNow'));
-    fireEvent.click(screen.getByRole('link', { name: /NodeToolbox Relay/i }));
+    fireEvent.click(screen.getByRole('link', { name: /Toolbox Relay/i }));
 
-    expect(window.alert).toHaveBeenCalledWith(expect.stringMatching(/Drag "NodeToolbox Relay"/));
+    expect(window.alert).toHaveBeenCalledWith(expect.stringMatching(/Drag "Toolbox Relay"/));
   });
 
   it('keeps the real bookmarklet URL available for browser drag-to-bookmarks install', () => {
@@ -254,7 +254,7 @@ describe('ConnectionBar', () => {
     render(<ConnectionBar />);
     fireEvent.click(screen.getByText('SNow'));
 
-    const bookmarkletLink = screen.getByRole('link', { name: /NodeToolbox Relay/i });
+    const bookmarkletLink = screen.getByRole('link', { name: /Toolbox Relay/i });
 
     expect(bookmarkletLink.getAttribute('href')).toBe('javascript:mockUnifiedRelay()');
   });
@@ -380,7 +380,7 @@ describe('ConnectionBar', () => {
 
     const panel = screen.getByRole('region', { name: 'Connection details' });
     expect(panel.textContent).toMatch(/not connected/i);
-    expect(screen.getByRole('link', { name: /NodeToolbox Relay/i })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Toolbox Relay/i })).toBeInTheDocument();
   });
 
   it('reflects the SharePoint relay connected state from the per-system store', () => {

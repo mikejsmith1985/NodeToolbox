@@ -202,6 +202,25 @@ describe('the bookmarklets parse as JavaScript', () => {
     expect(SNOW_RELAY_BOOKMARKLET_CODE).toContain('&origin="+encodeURIComponent(location.origin)');
   });
 
+  it('registers with exactly two arguments, so the POST options are not silently dropped', () => {
+    // The shape this pins: fetch(url, init). An extra comma before a URL fragment turns the init
+    // into a THIRD argument, which fetch ignores — the registration then goes out as a GET and the
+    // relay cannot register at all, while the bookmarklet still parses perfectly.
+    for (const bookmarkletCode of [SNOW_RELAY_BOOKMARKLET_CODE, UNIFIED_RELAY_BOOKMARKLET_CODE]) {
+      expect(bookmarkletCode).toContain(
+        '(initialToken?"1":"0")+"&origin="+encodeURIComponent(location.origin),{method:"POST"',
+      );
+    }
+  });
+
+  it('carries no comma-then-plus, which is never intentional and always a spliced argument', () => {
+    for (const bookmarkletCode of [
+      SNOW_RELAY_BOOKMARKLET_CODE, SHAREPOINT_RELAY_BOOKMARKLET_CODE, UNIFIED_RELAY_BOOKMARKLET_CODE,
+    ]) {
+      expect(bookmarkletCode).not.toContain(',+"');
+    }
+  });
+
   it('neither carries a regex literal, which cannot survive being written inside a string', () => {
     // The rule this enforces: build patterns from string operations, or from `new RegExp("…")` where a
     // pattern is genuinely needed. A bare /…/ literal in a quoted bookmarklet line is a latent break.

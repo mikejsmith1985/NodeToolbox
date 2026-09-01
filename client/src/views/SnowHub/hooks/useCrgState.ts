@@ -1982,7 +1982,7 @@ export function useCrgState(options?: UseCrgStateOptions): { state: CrgState; ac
     } catch (unknownError) {
       let errorMessage = unknownError instanceof Error ? unknownError.message : 'Failed to load CHG';
       if (errorMessage.includes('401')) {
-        errorMessage = 'SNow returned 401 — the relay is connected, but ServiceNow rejected the relayed API call. Refresh a full ServiceNow form or list page, click the latest NodeToolbox SNow Relay bookmarklet, then try again.';
+        errorMessage = 'SNow returned 401 — the relay is connected, but ServiceNow rejected the relayed API call. Refresh a full ServiceNow form or list page, click the latest Toolbox Relay bookmarklet, then try again.';
       }
       setState((previousState) => ({ ...previousState, isCloning: false, cloneError: errorMessage }));
     }
@@ -2181,7 +2181,7 @@ export function useCrgState(options?: UseCrgStateOptions): { state: CrgState; ac
     } catch (unknownError) {
       const errorMessage = unknownError instanceof Error ? unknownError.message : 'CTASK clone failed';
       if (errorMessage.includes('401')) {
-        throw new Error('SNow returned 401 while cloning the CTASK. Refresh a full ServiceNow form or list page, click the latest NodeToolbox SNow Relay bookmarklet, then try again.', {
+        throw new Error('SNow returned 401 while cloning the CTASK. Refresh a full ServiceNow form or list page, click the latest Toolbox Relay bookmarklet, then try again.', {
           cause: unknownError,
         });
       }

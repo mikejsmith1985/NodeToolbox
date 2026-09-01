@@ -15,11 +15,11 @@ describe('BookmarkletInstallLink', () => {
         title="Drag this to your bookmarks bar"
         onClick={() => undefined}
       >
-        NodeToolbox SNow Relay
+        Toolbox Relay
       </BookmarkletInstallLink>,
     );
 
-    expect(screen.getByRole('link', { name: /NodeToolbox SNow Relay/i })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: /Toolbox Relay/i })).toHaveAttribute(
       'href',
       'javascript:mockRelay()',
     );
@@ -36,11 +36,11 @@ describe('BookmarkletInstallLink', () => {
         title="Drag this to your bookmarks bar"
         onClick={handleBookmarkletClick}
       >
-        NodeToolbox SNow Relay
+        Toolbox Relay
       </BookmarkletInstallLink>,
     );
 
-    await user.click(screen.getByRole('link', { name: /NodeToolbox SNow Relay/i }));
+    await user.click(screen.getByRole('link', { name: /Toolbox Relay/i }));
 
     expect(handleBookmarkletClick).toHaveBeenCalledTimes(1);
   });

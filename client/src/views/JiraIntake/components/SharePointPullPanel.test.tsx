@@ -28,7 +28,7 @@ describe('SharePointPullPanel', () => {
     expect(screen.getByRole('button', { name: /refresh from sharepoint/i })).toBeDisabled();
     expect(screen.getByText(/connect the sharepoint relay from the/i)).toBeInTheDocument();
     // Connect UI (bookmarklet) now lives in the Connection Bar, not this panel.
-    expect(screen.queryByRole('link', { name: /NodeToolbox SharePoint Relay/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /Toolbox Relay/i })).not.toBeInTheDocument();
   });
 
   it('fires onPull when connected and Pull is clicked', () => {

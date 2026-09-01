@@ -1467,7 +1467,7 @@ function ChangeDetailsStep({
       ) : isRelayConnected && !hasRelaySessionToken && !isFetchFailed ? (
         <p className={styles.choiceUnavailableWarning} role="alert">
           <WarningIcon /> SNow relay is connected, but ServiceNow has not exposed the session token yet. Wait for the SNow page
-          to fully load, then click the latest NodeToolbox SNow Relay bookmarklet again.
+          to fully load, then click the latest Toolbox Relay bookmarklet again.
         </p>
       ) : isFetchFailed ? (
         <p className={styles.choiceUnavailableWarning} role="alert">
@@ -1604,7 +1604,7 @@ function PlanningStep({
       ) : isRelayConnected && !hasRelaySessionToken && !isFetchFailed ? (
         <p className={styles.choiceUnavailableWarning} role="alert">
           <WarningIcon /> SNow relay is connected, but ServiceNow has not exposed the session token yet. Wait for the SNow page
-          to fully load, then click the latest NodeToolbox SNow Relay bookmarklet again.
+          to fully load, then click the latest Toolbox Relay bookmarklet again.
         </p>
       ) : isFetchFailed ? (
         <p className={styles.choiceUnavailableWarning} role="alert">

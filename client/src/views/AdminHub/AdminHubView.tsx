@@ -1752,7 +1752,7 @@ function RelayActivationSection() {
   function handleBookmarkletClick(clickEvent: ReactMouseEvent<HTMLAnchorElement>) {
     clickEvent.preventDefault()
     window.alert(
-      'Drag "NodeToolbox Relay" to your browser bookmarks bar first. ' +
+      'Drag "Toolbox Relay" to your browser bookmarks bar first. ' +
       'Then click it from the ServiceNow or SharePoint tab you want to relay.',
     )
   }
@@ -1763,7 +1763,7 @@ function RelayActivationSection() {
 
       <div className={styles.adminAccessUnlocked}>
         <span className={isRelayActive ? styles.adminUnlockedLabel : styles.adminDescription}>
-          {isRelayActive ? '🟢 SNow Relay: active' : '🔴 SNow Relay: inactive'}
+          {isRelayActive ? '🟢 Toolbox Relay: active' : '🔴 Toolbox Relay: inactive'}
         </span>
       </div>
 
@@ -1777,7 +1777,7 @@ function RelayActivationSection() {
       <ol className={styles.relayInstructions}>
         <li>Drag the button below to your browser bookmarks bar.</li>
         <li>Open any ServiceNow page while logged in.</li>
-        <li>Click the <strong>NodeToolbox Relay</strong> bookmark — it works on ServiceNow and SharePoint alike.</li>
+        <li>Click the <strong>Toolbox Relay</strong> bookmark — it works on ServiceNow and SharePoint alike.</li>
         <li>The relay indicator above will turn green automatically.</li>
       </ol>
 
@@ -1788,7 +1788,7 @@ function RelayActivationSection() {
           title="Drag this to your bookmarks bar to install the relay"
           onClick={handleBookmarkletClick}
         >
-          🔖 Drag to bookmarks: NodeToolbox Relay
+          🔖 Drag to bookmarks: Toolbox Relay
         </BookmarkletInstallLink>
       </div>
 

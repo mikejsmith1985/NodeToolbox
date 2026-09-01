@@ -110,7 +110,7 @@ function SnowPanel({
   function handleBookmarkletClick(clickEvent: ReactMouseEvent<HTMLAnchorElement>) {
     clickEvent.preventDefault();
     window.alert(
-      'Drag "NodeToolbox Relay" to your browser bookmarks bar first. ' +
+      'Drag "Toolbox Relay" to your browser bookmarks bar first. ' +
       'Then click it from the ServiceNow or SharePoint tab you want to relay.',
     );
   }
@@ -142,7 +142,7 @@ function SnowPanel({
       {isRelayActive && !hasSessionToken ? (
         <p className={styles.panelWarning} role="alert">
           <WarningIcon /> Relay is connected, but the ServiceNow session token is not ready yet. Wait for the SNow page to finish
-          loading, then click the latest NodeToolbox Relay bookmarklet again.
+          loading, then click the latest Toolbox Relay bookmarklet again.
         </p>
       ) : null}
 
@@ -155,7 +155,7 @@ function SnowPanel({
                 ? <>Click <strong>Open ServiceNow</strong> below, or navigate to any SNow page while logged in</>
                 : 'Navigate to any ServiceNow page while logged in'}
             </li>
-            <li>Click <strong>NodeToolbox Relay</strong> in your bookmarks bar</li>
+            <li>Click <strong>Toolbox Relay</strong> in your bookmarks bar</li>
             <li>The relay will activate and return focus to this tab automatically</li>
           </ol>
 
@@ -171,7 +171,7 @@ function SnowPanel({
               title="Drag this to your bookmarks bar"
               onClick={handleBookmarkletClick}
             >
-              🔖 Drag to bookmarks: NodeToolbox Relay
+              🔖 Drag to bookmarks: Toolbox Relay
             </BookmarkletInstallLink>
           </div>
 
@@ -293,7 +293,7 @@ function SharePointPanel({
   function handleBookmarkletClick(clickEvent: ReactMouseEvent<HTMLAnchorElement>) {
     clickEvent.preventDefault();
     window.alert(
-      'Drag "NodeToolbox Relay" to your browser bookmarks bar first. ' +
+      'Drag "Toolbox Relay" to your browser bookmarks bar first. ' +
       'After your SharePoint site opens, click that bookmark from the SharePoint tab.',
     );
   }
@@ -340,7 +340,7 @@ function SharePointPanel({
                 ? <>Click <strong>Open SharePoint</strong> below (the site with the intake list), or open it yourself while logged in</>
                 : 'Open your SharePoint site (where the intake list lives) while logged in'}
             </li>
-            <li>Drag <strong>NodeToolbox Relay</strong> to your bookmarks bar</li>
+            <li>Drag <strong>Toolbox Relay</strong> to your bookmarks bar</li>
             <li>Click that bookmark from the SharePoint tab; this indicator turns green</li>
           </ol>
 
@@ -356,7 +356,7 @@ function SharePointPanel({
               title="Drag this to your bookmarks bar"
               onClick={handleBookmarkletClick}
             >
-              🔖 Drag to bookmarks: NodeToolbox Relay
+              🔖 Drag to bookmarks: Toolbox Relay
             </BookmarkletInstallLink>
           </div>
 
