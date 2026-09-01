@@ -69,15 +69,13 @@ const EMPTY_SCOPE_SCORE_LABEL = '—';
 const NEVER_RUN_MESSAGE =
   'Hygiene has not been run for this scope yet — the zeros below are not results. '
   + 'Press Run Hygiene to check it.';
-// The checks that have NO default field and silently skip themselves when the instance has no
-// matching field. Their tiles must say "not configured", because a bare 0 from a check that never
-// ran reads exactly like a clean result — the same lie as the empty-scope perfect score (GH #167).
-const FIELD_DEPENDENT_CHECKS: ReadonlyArray<{ checkId: string; fieldConfigKey: keyof HygieneFieldConfig }> = [
-  { checkId: 'missing-product-owner', fieldConfigKey: 'productOwnerFieldIds' },
-  { checkId: 'missing-initiative-type', fieldConfigKey: 'initiativeTypeFieldIds' },
-  { checkId: 'missing-application', fieldConfigKey: 'applicationFieldIds' },
-];
 const NOT_CONFIGURED_TILE_LABEL = 'not checked — no matching Jira field';
+// Shown when the check ran but no issue in scope was the kind of issue it governs — a Feature rule
+// against a board of Stories, say. Previously this rendered as a clean 0, indistinguishable from
+// "checked them all and they were fine", which is what made a grid of zeros unreadable (GH #377).
+const NOT_APPLICABLE_TILE_LABEL = 'no issues in scope this applies to';
+// Appended to the scanned count on the personal surface, where the scan is assignee-filtered.
+const PERSONAL_SCOPE_NOTE = ' · assigned to you only';
 // Visible marks for findings settled during a cleanup session; untouched rows carry none.
 const SESSION_OUTCOME_MARKS: Record<HygieneSessionOutcome, string> = {
   fixed: '✓ fixed',
@@ -287,6 +285,20 @@ export default function HygieneView({
             All my projects
           </label>
         )}
+        {/* Standalone only: widen past the viewer's own issues to audit the whole project. Offered
+            beside the project key because that is where the expectation is set — somebody who types
+            a project key is usually asking about the project, not about their share of it. */}
+        {!isTeamMode && !hygieneState.isAllProjectsScope && (
+          <label className={styles.scopeToggleLabel}>
+            <input
+              type="checkbox"
+              aria-label="Everyone's issues in this project"
+              checked={hygieneState.isWholeProjectScope}
+              onChange={(changeEvent) => hygieneState.setWholeProjectScope(changeEvent.target.checked)}
+            />
+            Everyone&apos;s issues
+          </label>
+        )}
         <label className={styles.fieldLabel}>
           Extra JQL (optional)
           <input
@@ -347,6 +359,8 @@ export default function HygieneView({
             {hygieneState.scannedIssueCount !== null
               ? ` · ${hygieneState.scannedIssueCount}${hygieneState.isTruncated ? ` of ${hygieneState.totalMatchingCount}` : ''} scanned`
               : ' total'}
+            {/* Whose issues these are. Without it the scanned count reads as the project's total. */}
+            {hygieneState.isPersonalScope ? PERSONAL_SCOPE_NOTE : ''}
           </span>
         </button>
         {hygieneState.availableCheckIds.map((checkId) =>
@@ -562,12 +576,13 @@ function renderSummaryTile(
   const checkLabel = hygieneState.checkLabelsById[checkId] ?? checkId;
   const hasCopyableIssues = issueCount > 0;
   const justCopied = copiedCheckId === checkId;
-  // A check whose instance field does not exist never ran — its tile must not show a clean 0.
-  const fieldDependency = FIELD_DEPENDENT_CHECKS.find((dependency) => dependency.checkId === checkId);
-  const isCheckUnconfigured = fieldDependency !== undefined
-    && (hygieneState.fieldConfig[fieldDependency.fieldConfigKey] ?? []).length === 0;
+  // What this check actually looked at. A count with no denominator cannot say which of the three
+  // zeros it is, and a reader who cannot tell stops believing all of them.
+  const applicability = hygieneState.checkApplicability[checkId];
+  const hasRunThisScope = applicability !== undefined;
 
-  if (isCheckUnconfigured) {
+  // A check whose instance field does not exist never ran — its tile must not show a clean 0.
+  if (hasRunThisScope && !applicability.isFieldConfigured) {
     return (
       <div key={checkId} className={styles.summaryTile} aria-label={`${checkLabel} not configured`}>
         <strong>{EMPTY_SCOPE_SCORE_LABEL}</strong>
@@ -576,6 +591,20 @@ function renderSummaryTile(
       </div>
     );
   }
+
+  // Nothing in scope was the kind of issue this check governs — also not a clean result.
+  if (hasRunThisScope && applicability.eligibleIssueCount === 0) {
+    return (
+      <div key={checkId} className={styles.summaryTile} aria-label={`${checkLabel} not applicable`}>
+        <strong>{EMPTY_SCOPE_SCORE_LABEL}</strong>
+        <span>{checkLabel}</span>
+        <span className={styles.tileHint}>{NOT_APPLICABLE_TILE_LABEL}</span>
+      </div>
+    );
+  }
+
+  // A real zero, and now provably one: N issues were eligible and none of them failed.
+  const checkedHint = hasRunThisScope ? `of ${applicability.eligibleIssueCount} checked` : '';
 
   function handleTileKeyDown(keyEvent: React.KeyboardEvent) {
     // Same guard as the finding row: the tile holds an "open in Jira" link, and Enter on that link
@@ -599,6 +628,8 @@ function renderSummaryTile(
     >
       <strong>{issueCount}</strong>
       <span>{checkLabel}</span>
+      {/* The denominator, said out loud. "0 of 12 checked" is a result; a bare "0" is a guess. */}
+      {checkedHint !== '' && <span className={styles.tileHint}>{checkedHint}</span>}
       {/* Open the exact Jira search behind this number (GH #200): the family's semantic JQL within the scan's
           scope, so a user can validate Toolbox's count against Jira. Present even at 0, so "0" is verifiable. */}
       <a

@@ -20,6 +20,7 @@ import {
   type HygieneSummary,
 } from '../checks/hygieneChecks.ts';
 import { buildHygieneScopeJql, DEFAULT_ASSIGNEE_CLAUSE, rescanSingleHygieneIssue, runHygieneScan } from './hygieneScan.ts';
+import type { HygieneCheckApplicability } from '../checks/hygieneEligibility.ts';
 
 // The scan pipeline moved to hygieneScan.ts so the Today dashboard can run the exact same scan;
 // these re-exports keep every existing import of this module working unchanged.
@@ -61,6 +62,13 @@ export interface HygieneState {
   checkLabelsById: Record<string, string>;
   /** Resolved Jira field-id lists so the inline fix controls can target the right custom fields. */
   fieldConfig: HygieneFieldConfig;
+  /**
+   * Per check, how many scanned issues it governs and whether its field exists on this instance.
+   *
+   * Empty before the first run. A tile reads its own denominator from here so a zero can say which
+   * kind of zero it is — clean, inapplicable, or never checked at all.
+   */
+  checkApplicability: Record<string, HygieneCheckApplicability>;
   isLoading: boolean;
   loadError: string | null;
   /**
@@ -75,6 +83,17 @@ export interface HygieneState {
   isTruncated: boolean;
   /** Standalone-only: search across every project the user is assigned in, matching the Today card. */
   isAllProjectsScope: boolean;
+  /**
+   * True when the scan was narrowed to the viewer's OWN issues rather than the whole project.
+   *
+   * The standalone Hygiene tab has always applied `assignee = currentUser()` and never said so, so
+   * "ENCUC · 12 scanned" read as "this project has twelve open issues" instead of "twelve of them
+   * are yours". A screen that misstates its own scope by an order of magnitude cannot be trusted on
+   * anything else it says (GH #377).
+   */
+  isPersonalScope: boolean;
+  /** Standalone-only: audit every issue in the project, not just the viewer's own. */
+  isWholeProjectScope: boolean;
 }
 
 export interface HygieneActions {
@@ -82,6 +101,7 @@ export interface HygieneActions {
   setExtraJql: (extraJql: string) => void;
   selectFilter: (checkId: string | null) => void;
   setAllProjectsScope: (isAllProjects: boolean) => void;
+  setWholeProjectScope: (isWholeProject: boolean) => void;
   loadHygiene: () => Promise<void>;
   /**
    * Re-checks ONE issue after a fix and updates just its row — or drops the row when it comes back
@@ -151,6 +171,11 @@ export function useHygieneState(options: useHygieneStateOptions = {}): HygieneSt
   // "All my projects" is a standalone-only scope: team mode audits one team's project, and an
   // unscoped team query (no project, no assignee) would scan the whole instance.
   const [isAllProjectsScope, setAllProjectsScope] = useState<boolean>(initialAllProjects && !isTeamMode);
+  // Standalone only. The tab has always audited the viewer's OWN issues, which is the right default
+  // for a personal surface and the wrong one for "is project ENCUC healthy?" — a question people
+  // were asking it by typing a project key. Offering the wider scope is what stops the answer having
+  // to be re-derived in Jira (GH #377).
+  const [isWholeProjectScope, setWholeProjectScope] = useState<boolean>(false);
   const [scannedIssueCount, setScannedIssueCount] = useState<number | null>(null);
   // Kept beside the scanned count because the pair is the honest statement: "200 of 240 scanned"
   // means something a bare "200 scanned" does not.
@@ -166,6 +191,7 @@ export function useHygieneState(options: useHygieneStateOptions = {}): HygieneSt
   // The resolved field config powers the inline fix controls; it starts at defaults and is replaced
   // with the Jira-name-resolved config once a Hygiene load completes.
   const [fieldConfig, setFieldConfig] = useState<HygieneFieldConfig>(() => resolveHygieneFieldConfig());
+  const [checkApplicability, setCheckApplicability] = useState<Record<string, HygieneCheckApplicability>>({});
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   // How the LAST scan evaluated, kept in a ref so a single-issue re-check is judged by exactly the
@@ -209,6 +235,7 @@ export function useHygieneState(options: useHygieneStateOptions = {}): HygieneSt
     if (!normalizedProjectKey && !isAllProjectsScope) {
       setFindings([]);
       setScannedIssueCount(null);
+      setCheckApplicability({});
       setLoadError(null);
       return;
     }
@@ -222,11 +249,12 @@ export function useHygieneState(options: useHygieneStateOptions = {}): HygieneSt
       const scanOutcome = await runHygieneScan({
         projectKey: normalizedProjectKey,
         extraJql,
-        assigneeClause: isTeamMode ? null : personalAssigneeClause,
+        assigneeClause: isTeamMode || isWholeProjectScope ? null : personalAssigneeClause,
         activeTeamProfileId: activeDashboardTeamProfileId,
       });
 
       setFieldConfig(scanOutcome.fieldConfig);
+      setCheckApplicability(scanOutcome.checkApplicability);
       setAvailableCheckIds(scanOutcome.enabledCheckDefinitions.map((checkDefinition) => checkDefinition.checkId));
       setCheckLabelsById(buildCheckLabelsById(scanOutcome.enabledCheckDefinitions));
       setScannedIssueCount(scanOutcome.scannedIssueCount);
@@ -245,7 +273,7 @@ export function useHygieneState(options: useHygieneStateOptions = {}): HygieneSt
     } finally {
       setIsLoading(false);
     }
-  }, [activeDashboardTeamProfileId, extraJql, isAllProjectsScope, isTeamMode, projectKey, personalAssigneeClause]);
+  }, [activeDashboardTeamProfileId, extraJql, isAllProjectsScope, isTeamMode, isWholeProjectScope, projectKey, personalAssigneeClause]);
 
   /**
    * Re-checks one issue after a fix, and touches nothing else.
@@ -282,7 +310,7 @@ export function useHygieneState(options: useHygieneStateOptions = {}): HygieneSt
   const scopeJql = buildHygieneScopeJql(
     isAllProjectsScope ? '' : projectKey.trim(),
     extraJql,
-    isTeamMode ? null : personalAssigneeClause,
+    isTeamMode || isWholeProjectScope ? null : personalAssigneeClause,
   );
 
   return {
@@ -296,18 +324,22 @@ export function useHygieneState(options: useHygieneStateOptions = {}): HygieneSt
     availableCheckIds,
     checkLabelsById,
     fieldConfig,
+    checkApplicability,
     isLoading,
     loadError,
     scannedIssueCount,
     totalMatchingCount,
     isTruncated,
     isAllProjectsScope,
+    isPersonalScope: !isTeamMode && !isWholeProjectScope && Boolean(personalAssigneeClause.trim()),
+    isWholeProjectScope,
     setProjectKey: isProjectKeyControlled
       ? (nextProjectKey: string) => setTeamProjectKeyOverride(nextProjectKey)
       : setStandaloneProjectKey,
     setExtraJql,
     selectFilter,
     setAllProjectsScope,
+    setWholeProjectScope,
     loadHygiene,
     refreshIssue,
   };

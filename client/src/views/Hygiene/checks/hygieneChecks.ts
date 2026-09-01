@@ -264,7 +264,7 @@ export function checkMissingSummary(issue: JiraIssue): HygieneFlag | null {
 
 /** Flags delivery issues that are missing the feature link required for roll-up and planning. */
 export function checkMissingFeatureLink(issue: JiraIssue, fieldConfig: HygieneFieldConfig): HygieneFlag | null {
-  if (!FEATURE_LINK_REQUIRED_ISSUE_TYPE_NAMES.has(readIssueTypeName(issue))) {
+  if (!requiresFeatureLink(issue)) {
     return null;
   }
 
@@ -525,11 +525,7 @@ export function checkMissingChildStoryPoints(
  * the modern and legacy built-in fields.
  */
 export function checkMissingStoryPoints(issue: JiraIssue, customStoryPointsFieldId?: string): HygieneFlag | null {
-  const issueTypeName = readIssueTypeName(issue);
-  // Skip issue types that do not have a story-points field on their Jira screen at all.
-  if (STORY_POINTS_UNSUPPORTED_ISSUE_TYPE_NAMES.has(issueTypeName)) return null;
-  const shouldCheckStoryPoints = issueTypeName === 'story' || issueTypeName === 'task';
-  if (!shouldCheckStoryPoints) return null;
+  if (!carriesStoryPoints(issue)) return null;
 
   // An estimate in ANY of the resolved fields means the issue is pointed. Judging it against one
   // field reported forty-one pointed issues as missing points, because the field being read was not
@@ -563,8 +559,7 @@ export function checkNoAssignee(issue: JiraIssue): HygieneFlag | null {
 
 /** Flags stories and features whose acceptance criteria field is blank or only contains a placeholder. */
 export function checkNoAcceptanceCriteria(issue: JiraIssue, fieldConfig: HygieneFieldConfig): HygieneFlag | null {
-  const issueTypeName = readIssueTypeName(issue);
-  if (issueTypeName !== 'story' && !isFeatureLikeIssue(issue)) {
+  if (!carriesAcceptanceCriteria(issue)) {
     return null;
   }
 
@@ -595,6 +590,31 @@ export function isFeatureLikeIssue(issue: JiraIssue): boolean {
 /** True for the delivery issue types expected to carry a release fix version (see DELIVERY_ISSUE_TYPE_NAMES). */
 export function carriesFixVersion(issue: JiraIssue): boolean {
   return DELIVERY_ISSUE_TYPE_NAMES.has(readIssueTypeName(issue));
+}
+
+/**
+ * True for the issue types that must carry a feature link for roll-up to work.
+ *
+ * Exported because the summary needs to count how many issues in scope a check even APPLIES to.
+ * A check gated behind a private set can only report how many it flagged, and "0 flagged" then
+ * reads identically whether twelve issues passed or none were ever looked at.
+ */
+export function requiresFeatureLink(issue: JiraIssue): boolean {
+  return FEATURE_LINK_REQUIRED_ISSUE_TYPE_NAMES.has(readIssueTypeName(issue));
+}
+
+/** True for the issue types that have a story-points field on their Jira screen at all. */
+export function carriesStoryPoints(issue: JiraIssue): boolean {
+  const issueTypeName = readIssueTypeName(issue);
+  if (STORY_POINTS_UNSUPPORTED_ISSUE_TYPE_NAMES.has(issueTypeName)) {
+    return false;
+  }
+  return issueTypeName === 'story' || issueTypeName === 'task';
+}
+
+/** True for the issue types expected to state acceptance criteria. */
+export function carriesAcceptanceCriteria(issue: JiraIssue): boolean {
+  return readIssueTypeName(issue) === 'story' || isFeatureLikeIssue(issue);
 }
 
 /**

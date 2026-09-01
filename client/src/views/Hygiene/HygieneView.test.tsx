@@ -21,7 +21,8 @@ vi.mock('../../services/jiraApi.ts', () => ({
 
 import HygieneView from './HygieneView.tsx';
 import { useHygieneState } from './hooks/useHygieneState.ts';
-import { resolveHygieneFieldConfig, type HygieneFinding, type HygieneSummary } from './checks/hygieneChecks.ts';
+import { HYGIENE_CHECK_IDS, resolveHygieneFieldConfig, type HygieneFinding, type HygieneSummary } from './checks/hygieneChecks.ts';
+import { summarizeCheckApplicability } from './checks/hygieneEligibility.ts';
 
 const mockUseHygieneState = vi.mocked(useHygieneState);
 const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -43,6 +44,9 @@ interface OverrideHookState {
   totalMatchingCount?: number | null;
   isTruncated?: boolean;
   isAllProjectsScope?: boolean;
+  isPersonalScope?: boolean;
+  isWholeProjectScope?: boolean;
+  checkApplicability?: ReturnType<typeof useHygieneState>['checkApplicability'];
 }
 
 function buildDateDaysAgo(dayCount: number): string {
@@ -79,6 +83,14 @@ function buildSummary(overrides: Partial<HygieneSummary> = {}): HygieneSummary {
   };
 }
 
+/** A minimal issue of a given type — only its issue type decides check eligibility. */
+function buildApplicabilitySampleIssue(issueTypeName: string) {
+  return {
+    key: `TBX-${issueTypeName}`,
+    fields: { summary: 'Sample', issuetype: { name: issueTypeName } },
+  };
+}
+
 function buildFinding(): HygieneFinding {
   return {
     issue: {
@@ -109,6 +121,17 @@ function buildHookState(overrides: OverrideHookState = {}): ReturnType<typeof us
     availableCheckIds: overrides.availableCheckIds ?? Object.keys((overrides.summary ?? buildSummary()).countByCheck),
     checkLabelsById: overrides.checkLabelsById ?? {},
     fieldConfig: resolveHygieneFieldConfig(),
+    // Derived through the real summariser rather than hand-written, so the view's tests exercise
+    // the same eligibility rules the scan applies. One Story and one Feature is enough to make
+    // every type-gated check eligible for something.
+    checkApplicability: overrides.checkApplicability ?? summarizeCheckApplicability(
+      [buildApplicabilitySampleIssue('Story'), buildApplicabilitySampleIssue('Feature')],
+      resolveHygieneFieldConfig(),
+      overrides.availableCheckIds ?? HYGIENE_CHECK_IDS,
+    ),
+    isPersonalScope: overrides.isPersonalScope ?? false,
+    isWholeProjectScope: overrides.isWholeProjectScope ?? false,
+    setWholeProjectScope: vi.fn(),
     isLoading: overrides.isLoading ?? false,
     loadError: overrides.loadError ?? null,
     // Default to "scanned some issues" so pre-existing tests keep exercising the healthy path; the
@@ -255,6 +278,56 @@ describe('HygieneView', () => {
     const tile = screen.getByLabelText('Missing Product Owner not configured');
     expect(tile).toHaveTextContent('—');
     expect(tile).toHaveTextContent(/not checked — no matching Jira field/i);
+  });
+
+  it('says a check found nothing to look at rather than showing it as a clean 0 (GH #377)', () => {
+    // Every Feature-only rule reports 0 against a board of Stories, which reads identically to
+    // "checked and clean" — the wall of zeros that made the whole screen untrustworthy.
+    mockUseHygieneState.mockReturnValue(buildHookState({
+      projectKey: 'TBX',
+      summary: buildSummary(),
+      availableCheckIds: ['missing-pi'],
+      checkLabelsById: { 'missing-pi': 'Missing PI' },
+      checkApplicability: { 'missing-pi': { eligibleIssueCount: 0, isFieldConfigured: true } },
+    }));
+
+    render(<HygieneView />);
+
+    const tile = screen.getByLabelText('Missing PI not applicable');
+    expect(tile).toHaveTextContent('—');
+    expect(tile).toHaveTextContent(/no issues in scope this applies to/i);
+  });
+
+  it('states the denominator behind a genuine zero, so it can be believed (GH #377)', () => {
+    mockUseHygieneState.mockReturnValue(buildHookState({
+      projectKey: 'TBX',
+      summary: buildSummary(),
+      availableCheckIds: ['missing-fix-version'],
+      checkLabelsById: { 'missing-fix-version': 'Missing Fix Version' },
+      checkApplicability: { 'missing-fix-version': { eligibleIssueCount: 12, isFieldConfigured: true } },
+    }));
+
+    render(<HygieneView />);
+
+    expect(screen.getByText('of 12 checked')).toBeInTheDocument();
+  });
+
+  it('says the scan read only the viewer own issues, so the count is not read as the project total', () => {
+    mockUseHygieneState.mockReturnValue(buildHookState({
+      projectKey: 'ENCUC', scannedIssueCount: 12, isPersonalScope: true,
+    }));
+
+    render(<HygieneView />);
+
+    expect(screen.getByText(/assigned to you only/i)).toBeInTheDocument();
+  });
+
+  it('offers auditing the whole project, not only the viewer own issues (GH #377)', () => {
+    mockUseHygieneState.mockReturnValue(buildHookState({ projectKey: 'ENCUC' }));
+
+    render(<HygieneView />);
+
+    expect(screen.getByLabelText(/Everyone's issues in this project/i)).toBeInTheDocument();
   });
 
   it('surfaces the scanned-issue count on the summary tile', () => {

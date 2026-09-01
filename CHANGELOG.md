@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Hygiene no longer shows three different kinds of zero as if they were the same number (GH #377).**
+  A tile reading `0` meant any of: every issue passed, no issue in scope was the kind the check
+  governs, or the Jira field it reads does not exist on this instance. Rendered identically, a grid
+  of zeros beside a real backlog read as a tool that had checked nothing &mdash; and a number you
+  cannot interpret has to be re-derived in Jira, which is slower than not using the tool at all.
+  Every check now reports its **denominator**. A genuine zero says **&ldquo;of 12 checked&rdquo;**; a
+  check nothing in scope applies to says **&ldquo;no issues in scope this applies to&rdquo;**; a check
+  whose field is absent keeps saying **&ldquo;not checked &mdash; no matching Jira field&rdquo;** and now
+  does so for every field-dependent check rather than three hand-listed ones.
+  Eligibility is counted over the **same issue list the findings came from**, and each check&#39;s
+  population is declared by the **same exported predicate its own gate calls**, so the count and its
+  denominator cannot describe different populations. A property test proves no check raises a flag
+  against an issue the summary counts as ineligible.
+- **The Hygiene tab now says whose issues it read.** The standalone tab has always applied
+  `assignee = currentUser()` and never stated it, so &ldquo;ENCUC &middot; 12 scanned&rdquo; read as
+  &ldquo;this project has twelve open issues&rdquo; rather than &ldquo;twelve of them are yours&rdquo;
+  &mdash; wrong by an order of magnitude, which is enough to discredit everything else on the screen.
+  The scanned count now carries **&ldquo;assigned to you only&rdquo;** when that filter is applied.
+
+### Added
+- **Hygiene can audit the whole project, not just your own issues.** An **Everyone&#39;s issues**
+  toggle beside the project key drops the assignee filter. Somebody who types a project key is
+  usually asking about the project; until now the only honest answer to that question was to go and
+  ask Jira.
+
 ### Changed
 - **Scheduling a change move now lives in SNow Hub, where changes are worked.** It shipped as an Admin
   Hub panel &mdash; the wrong place. Booking a move is one more thing to do with a change you are

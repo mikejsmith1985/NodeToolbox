@@ -11,6 +11,7 @@ import { resolveStoryPointsFieldIds, resolveStoryPointsWriteFieldId } from '../c
 import { jiraGet } from '../../../services/jiraApi.ts';
 import { fetchIssuesPaged } from '../../../services/fetchIssuesPaged.ts';
 import { buildJqlFieldReference, loadHygieneFieldConfig } from '../checks/hygieneFieldConfig.ts';
+import { summarizeCheckApplicability, type HygieneCheckApplicability } from '../checks/hygieneEligibility.ts';
 import {
   loadEnterpriseRulesFromStorage,
   readEnabledBuiltInCheckIds,
@@ -95,6 +96,14 @@ export interface HygieneScanOutcome {
   totalMatchingCount: number;
   /** True when in-scope issues were genuinely left unscanned, so every count below is a floor. */
   isTruncated: boolean;
+  /**
+   * Per check, how many scanned issues it governs and whether its Jira field exists here.
+   *
+   * The denominator behind every tile. Without it a "0" cannot be told apart from "no issue in
+   * scope was the kind this check governs" or "the field it reads is not on this instance", and a
+   * grid of zeros beside a real backlog reads as a tool that checked nothing (GH #377).
+   */
+  checkApplicability: Record<string, HygieneCheckApplicability>;
   fieldConfig: HygieneFieldConfig;
   enabledCheckDefinitions: EnabledCheckDefinitions;
   /**
@@ -251,6 +260,13 @@ export async function runHygieneScan(options: HygieneScanOptions): Promise<Hygie
     scannedIssueCount: loadedIssues.length,
     totalMatchingCount: searchOutcome.totalMatchingCount,
     isTruncated: searchOutcome.isTruncated,
+    // Counted over the SAME issue list the findings were evaluated from, so a tile's count and its
+    // denominator can never describe different populations.
+    checkApplicability: summarizeCheckApplicability(
+      loadedIssues,
+      hygieneFieldConfig,
+      enabledCheckDefinitions.map((checkDefinition) => checkDefinition.checkId),
+    ),
     fieldConfig: hygieneFieldConfig,
     enabledCheckDefinitions,
     evaluationContext: runEvaluationContext,
