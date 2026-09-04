@@ -118,6 +118,7 @@ import {
   type ReleaseDevSkipRiskPromptInput,
 } from './hooks/releaseDevSkipRisk.ts';
 import { renderMarkdownReport } from '../../utils/markdownReport.tsx';
+import { ReleasePriorityPanel } from './releasePriority/ReleasePriorityPanel.tsx';
 import { useSprintData } from './hooks/useSprintData.ts';
 import type { DashboardScopeMode, DashboardTab } from './hooks/useSprintData.ts';
 import styles from './SprintDashboardView.module.css';
@@ -210,6 +211,7 @@ const COPY_RELEASE_NOTES_BUTTON_LABEL = '📋 Copy Release Notes';
 // testing without a Dev-environment test pass. Stored per release version, like the release notes.
 const RELEASE_DEV_SKIP_RISK_STORAGE_KEY_PREFIX = 'tbx-release-dev-skip-risk';
 const RELEASE_DEV_SKIP_RISK_BUTTON_LABEL = '✦ Assess Dev-Skip Risk';
+const RELEASE_PRIORITY_BUTTON_LABEL = '✦ Prioritise Release';
 // Shown briefly after a successful clipboard copy so the user knows the image is ready to paste.
 const RELEASE_NOTES_COPIED_CONFIRMATION = 'Copied to clipboard — paste it into your email or chat.';
 const RELEASE_BUCKETS = [
@@ -5698,6 +5700,9 @@ function ReleasesTab({
   );
   const [devSkipRiskPromptModalState, setDevSkipRiskPromptModalState] = useState<ReleasePromptModalState | null>(null);
   const [devSkipRiskReplyText, setDevSkipRiskReplyText] = useState<string>('');
+  // Prioritise-release round trip: which release's order is being proposed, or none. The panel owns
+  // the prompt, the pasted reply and the Status Summary writes; the tab only opens and closes it.
+  const [releasePriorityEntry, setReleasePriorityEntry] = useState<ReleaseRadarEntry | null>(null);
   // "✓ Copied!" confirmations — one per modal so each copy button reports its own click.
   const { hasCopied: hasCopiedReleasePrompt, confirmCopy: confirmReleasePromptCopy } = useCopyFeedback();
   const { hasCopied: hasCopiedDevSkipPrompt, confirmCopy: confirmDevSkipPromptCopy } = useCopyFeedback();
@@ -5712,6 +5717,7 @@ function ReleasesTab({
     setReleaseImportModalState(null);
     setDevSkipRiskPromptModalState(null);
     setDevSkipRiskReplyText('');
+    setReleasePriorityEntry(null);
   }, [projectKey]);
 
   useEffect(() => {
@@ -6284,6 +6290,15 @@ function ReleasesTab({
                           >
                             {RELEASE_DEV_SKIP_RISK_BUTTON_LABEL}
                           </button>
+                          {entry.totalCount > 0 && (
+                            <button
+                              className={styles.secondaryButton}
+                              onClick={() => setReleasePriorityEntry(entry)}
+                              type="button"
+                            >
+                              {RELEASE_PRIORITY_BUTTON_LABEL}
+                            </button>
+                          )}
                         </div>
                       )}
 
@@ -6443,6 +6458,19 @@ function ReleasesTab({
           })}
         </>
       )}
+
+      {releasePriorityEntry ? (
+        <ReleasePriorityPanel
+          featureKeyByIssueKey={releasePriorityEntry.featureKeyByIssueKey}
+          featureSummaryByKey={releasePriorityEntry.featureSummaryByKey}
+          issues={releasePriorityEntry.issues}
+          key={releasePriorityEntry.version.id}
+          onClose={() => setReleasePriorityEntry(null)}
+          projectKey={projectKey.trim().toUpperCase()}
+          releaseDate={releasePriorityEntry.releaseDate}
+          versionName={releasePriorityEntry.version.name}
+        />
+      ) : null}
 
       {releasePromptModalState ? (
         <div

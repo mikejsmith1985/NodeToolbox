@@ -172,9 +172,28 @@ describe('describeMappingHealth', () => {
       ['customfield_3', 'Acceptance Criteria'],
       ['customfield_4', 'Epic Link'],
       ['customfield_5', 'ServiceNow Reference'],
+      ['customfield_9', 'Status Summary'],
     ), {});
 
     expect(describeMappingHealth(resolutions)).toContain('resolve cleanly');
+  });
+});
+
+describe('the Status Summary mapping — where a release priority order is written', () => {
+  // The Releases tab writes "01", "02", … into this field. A ranking written to the wrong field
+  // reports success and changes nothing anybody reads, so the id lives here and nowhere else.
+  beforeEach(() => localStorage.clear());
+
+  it('is discovered by its Jira name', () => {
+    const resolution = resolveAllFieldMappings(buildFields(['customfield_42', 'Status Summary']), {})
+      .find((candidate) => candidate.entry.settingsKey === 'statusSummaryFieldId');
+
+    expect(resolution?.effectiveFieldId).toBe('customfield_42');
+    expect(resolution?.source).toBe('discovered');
+  });
+
+  it('falls back to the field this instance uses today', () => {
+    expect(resolveConfiguredFieldIds('statusSummaryFieldId', localStorage)).toEqual(['customfield_10206']);
   });
 });
 

@@ -26,7 +26,8 @@ export type FieldMappingImportance = 'critical' | 'important';
 export interface FieldMappingEntry {
   /** The key inside the ART settings this override is saved under. */
   settingsKey: 'featureLinkField' | 'spFieldId' | 'piFieldId' | 'piReviewTargetStartFieldId'
-    | 'piReviewTargetEndFieldId' | 'acFieldId' | 'epicLinkFieldId' | 'snowRefFieldId';
+    | 'piReviewTargetEndFieldId' | 'acFieldId' | 'epicLinkFieldId' | 'snowRefFieldId'
+    | 'statusSummaryFieldId';
   label: string;
   /** Older fields the same value may sit in. Read as a fallback, never written to. */
   alternateReadFieldIds?: string[];
@@ -115,6 +116,15 @@ export const FIELD_MAPPING_ENTRIES: FieldMappingEntry[] = [
     whatItDrives: 'matching a Jira defect or story to its ServiceNow record',
     namePattern: /service.?now|\bsnow\b/i,
     hardDefaultFieldId: 'customfield_11203',
+    importance: 'important',
+  },
+  {
+    settingsKey: 'statusSummaryFieldId',
+    label: 'Status Summary',
+    whatItDrives: 'the release priority order — "01" is the most important item in a release, and the '
+      + 'Releases tab writes the accepted ranking here',
+    namePattern: /status summary/i,
+    hardDefaultFieldId: 'customfield_10206',
     importance: 'important',
   },
 ];

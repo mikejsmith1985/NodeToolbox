@@ -1,6 +1,6 @@
 // SprintDashboardView.test.tsx — Unit tests for the Sprint Dashboard tabbed view component.
 
-import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import React from 'react';
 
@@ -1143,6 +1143,28 @@ describe('SprintDashboardView', () => {
     fireEvent.click(await screen.findByRole('button', { name: /Assess Dev-Skip Risk/i }));
     fireEvent.click(screen.getByRole('button', { name: '📋 Copy Prompt' }));
     expect(await screen.findByRole('button', { name: '✓ Copied!' })).toBeInTheDocument();
+  });
+
+  it('offers Prioritise Release once AI Assist is unlocked, and opens its prompt for that release', async () => {
+    mockState.activeTab = 'releases';
+    installSingleReleaseFixtures();
+
+    render(<SprintDashboardView />);
+    expect(await screen.findByText('Release 24.1')).toBeInTheDocument();
+
+    // Locked: no AI affordance at all, so the button cannot be found by name.
+    expect(screen.queryByRole('button', { name: /Prioritise Release/i })).not.toBeInTheDocument();
+    act(() => setAiAssistUnlocked(true));
+
+    fireEvent.click(await screen.findByRole('button', { name: /Prioritise Release/i }));
+
+    expect(await screen.findByRole('heading', { name: 'Prioritise release Release 24.1' })).toBeInTheDocument();
+    const promptField = await screen.findByLabelText('Release priority prompt') as HTMLTextAreaElement;
+    await waitFor(() => expect(promptField.value).toContain('Issue keys you must rank: TBX-99'));
+    expect(screen.queryByRole('button', { name: /Run via AI Assist \(auto\)/i })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    expect(screen.queryByLabelText('Release priority prompt')).not.toBeInTheDocument();
   });
 
   it('renders the dev-skip risk report from a pasted AI Assist reply', async () => {

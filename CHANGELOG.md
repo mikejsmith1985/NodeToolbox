@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Prioritise Release &mdash; an AI-assisted top-to-bottom order for one fix version, written into
+  Status Summary.** The Releases tab gains a fourth AI Assist action beside the release-notes and
+  dev-skip prompts. It builds one prompt laying every signal beside every item &mdash; the Jira
+  Priority (the driver, which the assistant may overrule for a stated reason), the item's age and
+  due date, its status and type, and the linked Feature's own target end and due date &mdash; and
+  reads the pasted reply back as a complete order: every item exactly once, top first, with the
+  assistant's one-line reason per row. The preview shows the current Status Summary beside the new
+  one, and nothing is written until **Write Status Summary to Jira** is pressed; then `01` goes to
+  the top item and the numbering continues to the bottom of the list, one issue at a time, with a
+  per-row result so a refused write is named rather than rounded away. An item the assistant
+  forgot is appended at the bottom and **flagged**, never silently demoted. The field is written as
+  text or as a select option according to its own edit screen.
+- **Status Summary joins the Jira field mapping.** It is discovered by name and falls back to the
+  field this instance uses today, and the Admin Hub field-mapping panel lists it with the others
+  &mdash; so a re-pointed Jira is one choice, not a code change.
+
 ### Fixed
 - **The ServiceNow relay could not register at all in v0.260.0.** The change that made the
   bookmarklet report its origin spliced the URL fragment in as a THIRD argument to `fetch`, so the
