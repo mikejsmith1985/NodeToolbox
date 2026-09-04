@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **The Prioritise Release modal no longer grows past the screen (GH #377).** A twenty-row ranking
+  made the modal taller than the viewport, and the fixed overlay never scrolls &mdash; so the title
+  was clipped off the top and the **Write Status Summary to Jira** button sat unreachable below the
+  bottom. The modal now fits the viewport and scrolls inside itself, the prompt and reply boxes take
+  the height a paste needs rather than a read, and each row's reason sits under its item instead of
+  in a column pushed off the right edge by the release-notes table width.
+
 ### Added
 - **Prioritise Release &mdash; an AI-assisted top-to-bottom order for one fix version, written into
   Status Summary.** The Releases tab gains a fourth AI Assist action beside the release-notes and

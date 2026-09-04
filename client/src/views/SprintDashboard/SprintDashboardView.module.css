@@ -1850,6 +1850,38 @@
   align-items: center;
 }
 
+/* Prioritise-release modal. A ranked release is a long table, so unlike the prompt-only modals this
+   one must fit the viewport and scroll INSIDE itself — the overlay is fixed and never scrolls, and a
+   modal taller than the screen loses both its title and its write button (GH #377). */
+.releasePriorityModal {
+  width: min(960px, 94vw);
+  max-height: calc(100vh - 2 * var(--spacing-lg));
+  overflow-y: auto;
+}
+
+/* The prompt and the reply are pasted, not read, so they need far less height than the release-notes
+   prompt does — the table beneath them is what the person is here to look at. */
+.releasePriorityTextArea {
+  min-height: 140px;
+}
+
+/* No release-notes minimum width: five columns of that width push the reason and the write result
+   off the right edge, where a scrollbar nobody notices is the only sign they exist. */
+.releasePriorityTable {
+  min-width: 0;
+}
+
+.releasePriorityRankCell {
+  white-space: nowrap;
+}
+
+.releasePriorityRationale {
+  display: block;
+  margin-top: 4px;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs, 11px);
+}
+
 /* ── Standup tab ── */
 
 .standupLayout {

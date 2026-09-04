@@ -206,7 +206,7 @@ export function ReleasePriorityPanel({ onClose, todayIso = new Date().toISOStrin
 
   return (
     <div aria-modal="true" className={styles.releasePromptOverlay} role="dialog">
-      <div className={styles.releasePromptWideModal}>
+      <div className={`${styles.releasePromptWideModal} ${styles.releasePriorityModal}`}>
         <h3 className={styles.releasePromptTitle}>Prioritise release {versionName}</h3>
         <p className={styles.releasePromptInstructions}>{INSTRUCTIONS}</p>
         {run.contextState === 'loading' && <p className={styles.releasePromptInstructions}>{CONTEXT_LOADING_MESSAGE}</p>}
@@ -214,7 +214,7 @@ export function ReleasePriorityPanel({ onClose, todayIso = new Date().toISOStrin
 
         <textarea
           aria-label="Release priority prompt"
-          className={styles.releasePromptTextArea}
+          className={`${styles.releasePromptTextArea} ${styles.releasePriorityTextArea}`}
           readOnly
           value={isPromptReady ? run.prompt : ''}
         />
@@ -235,7 +235,7 @@ export function ReleasePriorityPanel({ onClose, todayIso = new Date().toISOStrin
         </label>
         <textarea
           aria-label="Release priority reply"
-          className={styles.releasePromptTextArea}
+          className={`${styles.releasePromptTextArea} ${styles.releasePriorityTextArea}`}
           id="release-priority-reply"
           onChange={(changeEvent) => run.setReplyText(changeEvent.target.value)}
           value={run.replyText}
@@ -309,13 +309,12 @@ function RankingPreview({ rankResult, plan, context, summaryByKey, outcomeByKey,
         </p>
       )}
       <div className={styles.releaseNotesTableShell}>
-        <table className={styles.releaseNotesTable}>
+        <table className={`${styles.releaseNotesTable} ${styles.releasePriorityTable}`}>
           <thead>
             <tr>
               <th scope="col">New</th>
               <th scope="col">Current</th>
-              <th scope="col">Issue</th>
-              <th scope="col">Why</th>
+              <th scope="col">Issue and why it sits here</th>
               <th scope="col">Written</th>
             </tr>
           </thead>
@@ -325,17 +324,23 @@ function RankingPreview({ rankResult, plan, context, summaryByKey, outcomeByKey,
               const outcome = outcomeByKey[planEntry.issueKey];
               return (
                 <tr key={planEntry.issueKey}>
-                  <td><strong>{planEntry.value}</strong></td>
-                  <td>{context.issueContextByKey.get(planEntry.issueKey)?.currentStatusSummary ?? '—'}</td>
+                  <td className={styles.releasePriorityRankCell}><strong>{planEntry.value}</strong></td>
+                  <td className={styles.releasePriorityRankCell}>
+                    {context.issueContextByKey.get(planEntry.issueKey)?.currentStatusSummary ?? '—'}
+                  </td>
                   <td>
                     <strong>{planEntry.issueKey}</strong> {summaryByKey.get(planEntry.issueKey) ?? ''}
-                  </td>
-                  <td>
+                    {/* The reason sits under the item rather than in its own column, so a 720px modal
+                        shows it without a horizontal scrollbar hiding it off the right edge. */}
                     {rankedItem?.wasRankedByAssistant === false
-                      ? <span className={styles.statusBadge}>{UNRANKED_ROW_NOTE}</span>
-                      : rankedItem?.rationale ?? ''}
+                      ? <span className={styles.releasePriorityRationale}><span className={styles.statusBadge}>{UNRANKED_ROW_NOTE}</span></span>
+                      : rankedItem?.rationale
+                        ? <span className={styles.releasePriorityRationale}>{rankedItem.rationale}</span>
+                        : null}
                   </td>
-                  <td>{outcome ? (outcome.isWritten ? '✓' : `⚠ ${outcome.errorMessage ?? 'failed'}`) : ''}</td>
+                  <td className={styles.releasePriorityRankCell}>
+                    {outcome ? (outcome.isWritten ? '✓' : `⚠ ${outcome.errorMessage ?? 'failed'}`) : ''}
+                  </td>
                 </tr>
               );
             })}

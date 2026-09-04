@@ -200,6 +200,18 @@ describe('ReleasePriorityPanel', () => {
     expect(screen.getByText('⚠ Field cannot be set')).toBeInTheDocument();
   });
 
+  it('scrolls inside itself instead of growing past the screen once a long ranking is loaded', () => {
+    // GH #377: a twenty-row table made the modal taller than the viewport, and the fixed overlay
+    // never scrolls — so the title was clipped and the write button was unreachable.
+    installContextFixtures();
+    renderPanel();
+
+    const modalElement = screen.getByRole('dialog').firstElementChild as HTMLElement;
+
+    expect(modalElement.className).toContain('releasePriorityModal');
+    expect(modalElement.className).toContain('releasePromptWideModal');
+  });
+
   it('closes on Close', () => {
     installContextFixtures();
     const onClose = vi.fn();
