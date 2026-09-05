@@ -133,6 +133,28 @@ describe('ReleaseManagementTab', () => {
     expect(screen.getByText('Casey Engineer')).toBeInTheDocument();
   });
 
+  it('offers to attach test evidence once a change is loaded, and not before', () => {
+    // Evidence is gathered onto a change that exists, so the section rides with the loaded card.
+    const { rerender } = render(<ReleaseManagementTab />);
+    expect(screen.queryByRole('button', { name: /Attach to CHG/ })).not.toBeInTheDocument();
+
+    mockState.loadedChg = {
+      sysId: 'change-1',
+      number: 'CHG0001234',
+      shortDescription: 'Release the payment patch',
+      state: 'Implement',
+      stateValue: '1',
+      assignedTo: null,
+      plannedStartDate: '',
+      plannedEndDate: '',
+      risk: 'Moderate',
+      impact: 'Medium',
+    };
+    rerender(<ReleaseManagementTab />);
+
+    expect(screen.getByRole('button', { name: 'Attach to CHG0001234' })).toBeInTheDocument();
+  });
+
   it('shows activity log entries when the activity log is non-empty', () => {
     mockState.activityLog = [
       { timestamp: '2026-05-01T10:00:00.000Z', message: 'Loaded change CHG0001234.', level: 'success' },

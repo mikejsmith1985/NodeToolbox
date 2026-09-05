@@ -7,6 +7,7 @@ import { ALL_CHG_STATES, CHG_STATE_TRANSITIONS } from '../hooks/useReleaseManage
 import { useReleaseManagement } from '../hooks/useReleaseManagement.ts';
 import { CabPrepSection } from '../cabPrep/CabPrepSection.tsx';
 import { ScheduledMovesSection } from '../scheduledMoves/ScheduledMovesSection.tsx';
+import { TestEvidenceSection } from '../testEvidence/TestEvidenceSection.tsx';
 import styles from './ReleaseManagementTab.module.css';
 
 const TAB_TITLE = 'Release Management';
@@ -345,6 +346,11 @@ export default function ReleaseManagementTab() {
           survive into a change they do not describe. */}
       {state.loadedChg !== null ? (
         <CabPrepSection key={state.loadedChg.number} loadedChange={state.loadedChg} styles={styles} />
+      ) : null}
+      {/* Test evidence is gathered onto the change AFTER it exists, once QE has attached its reports
+          to the Jira issues — so it sits with the loaded change too, keyed the same way. */}
+      {state.loadedChg !== null ? (
+        <TestEvidenceSection key={`evidence-${state.loadedChg.number}`} loadedChange={state.loadedChg} styles={styles} />
       ) : null}
       <AlertMonitorSettingsSection actions={actions} state={state} />
       <ActiveChangesSection actions={actions} state={state} />

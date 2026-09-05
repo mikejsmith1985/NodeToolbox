@@ -55,6 +55,16 @@ export interface RelayRequest {
   body?: unknown;
   /** Optional bearer/PAT auth header; ServiceNow normally uses g_ck from the bookmarklet instead. */
   authHeader?: string | null;
+  /**
+   * How `body` is carried. Absent means a JSON object the bookmarklet re-serializes; `base64` means
+   * `body` is base64 text the bookmarklet decodes to raw bytes and sends as-is — the only way a
+   * file (a zip of test evidence) can cross the JSON relay envelope.
+   */
+  bodyEncoding?: 'base64' | null;
+  /** The Content-Type the far system should see for a base64 body, e.g. `application/zip`. */
+  contentType?: string | null;
+  /** How long the bookmarklet waits for the far system; absent means its default. Uploads need more. */
+  timeoutMs?: number | null;
 }
 
 /** Result posted by the bookmarklet after executing a relay request. */

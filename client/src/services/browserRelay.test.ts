@@ -49,6 +49,21 @@ describe('browserRelay', () => {
     expect(executeRequestSnippet).not.toBeNull();
   });
 
+  it('sends a base64 body as raw bytes with the caller\'s Content-Type, so a file can cross the relay', () => {
+    // A zip of test evidence is not JSON. Re-serializing it would attach a JSON string to the
+    // change, and ServiceNow would file that under the zip's name.
+    for (const bookmarkletCode of [SNOW_RELAY_BOOKMARKLET_CODE, UNIFIED_RELAY_BOOKMARKLET_CODE]) {
+      expect(bookmarkletCode).toContain('relayRequest.bodyEncoding==="base64"');
+      expect(bookmarkletCode).toContain('function decodeBase64Body(encodedText){var binaryText=atob(encodedText)');
+      expect(bookmarkletCode).toContain('isBinaryBody?(relayRequest.contentType||"application/octet-stream"):"application/json"');
+      expect(bookmarkletCode).toContain('isBinaryBody?decodeBase64Body(relayRequest.body):JSON.stringify(relayRequest.body)');
+    }
+  });
+
+  it('lets a request ask for a longer wait, because an upload outlasts a table read', () => {
+    expect(SNOW_RELAY_BOOKMARKLET_CODE).toContain('relayRequest.timeoutMs||25000');
+  });
+
   it('uses an amber bookmarklet badge when g_ck is not ready yet', () => {
     expect(SNOW_RELAY_BOOKMARKLET_CODE).toContain('#b08800');
     expect(SNOW_RELAY_BOOKMARKLET_CODE).toContain('no g_ck');

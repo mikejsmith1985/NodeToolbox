@@ -4,6 +4,9 @@ import type { RelayBridgeStatus, RelayRequest, RelayResult, RelaySystem } from '
 
 const RELAY_BASE = '/api/relay-bridge';
 const JSON_CONTENT_TYPE = 'application/json';
+/** The server's own result-poll window when no timeout is asked for; mirrored here for the message. */
+const DEFAULT_RESULT_TIMEOUT_MS = 30_000;
+const MILLISECONDS_PER_SECOND = 1000;
 
 function assertSuccessfulResponse(response: Response, messagePrefix: string): void {
   if (!response.ok) {
@@ -69,13 +72,21 @@ export async function postRelayRequest(request: RelayRequest): Promise<void> {
  * Long-polls for the result of a specific relay request.
  * Resolves once the bookmarklet posts the result; throws on timeout (408) or server error.
  */
-export async function waitForRelayResult(requestId: string, system: RelaySystem): Promise<RelayResult> {
-  const response = await fetch(`${RELAY_BASE}/result/${requestId}?sys=${system}`);
+export async function waitForRelayResult(
+  requestId: string,
+  system: RelaySystem,
+  timeoutMs?: number,
+): Promise<RelayResult> {
+  // A file upload takes longer than a table read, so the caller may ask the server to hold the
+  // result poll open longer than its default. Omitted for every existing caller.
+  const timeoutQuery = timeoutMs === undefined ? '' : `&timeoutMs=${Math.round(timeoutMs)}`;
+  const response = await fetch(`${RELAY_BASE}/result/${requestId}?sys=${system}${timeoutQuery}`);
 
-  // 408 means the bookmarklet did not respond within the server's 30-second window
+  // 408 means the bookmarklet did not respond within the server's wait window
   if (response.status === 408) {
+    const waitedSeconds = Math.round((timeoutMs ?? DEFAULT_RESULT_TIMEOUT_MS) / MILLISECONDS_PER_SECOND);
     throw new Error(
-      'Relay bridge timed out (30 seconds). Is the bookmarklet still active on the ServiceNow page?',
+      `Relay bridge timed out (${waitedSeconds} seconds). Is the bookmarklet still active on the ServiceNow page?`,
     );
   }
   if (!response.ok) {

@@ -50,6 +50,13 @@ const DEFAULT_PORT = 5555;
 /** Version string read from package.json — single source of truth shared with api.js */
 const APP_VERSION = require('./package.json').version;
 
+/**
+ * Body limit for a relay request that carries a file. The client refuses to attach a bundle over
+ * 75 MB; base64 adds a third, and the JSON envelope a little more. Nothing else on this server
+ * comes near this, which is why it applies to exactly one path.
+ */
+const RELAY_UPLOAD_BODY_LIMIT = '110mb';
+
 /** Hidden launch flag used to identify updater-driven restart handoffs. */
 const RESTART_HANDOFF_ARGUMENT = '--restart-handoff';
 
@@ -103,6 +110,12 @@ const app = express();
 // Compress all responses with gzip/deflate — reduces React bundle + API response sizes.
 // Must be registered before any route or middleware that sends responses.
 app.use(compression());
+
+// A relay request that carries a FILE (a zip of test evidence bound for a ServiceNow change) is
+// base64 inside JSON, so it is far larger than any other body this server sees. This parser runs
+// first for that one path with a limit sized for the client's 75 MB attachment ceiling plus base64
+// overhead; body-parser marks the body as read, so the general 1 MB parser below leaves it alone.
+app.use('/api/relay-bridge/request', express.json({ limit: RELAY_UPLOAD_BODY_LIMIT }));
 
 // Parse JSON request bodies — required for POST /api/proxy-config and /api/snow-session
 app.use(express.json({ limit: '1mb' }));

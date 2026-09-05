@@ -216,6 +216,110 @@ describe('POST /api/relay-bridge/request', () => {
       .send({ sys: 'snow', method: 'GET', path: '/api/now/table/incident' });
     expect(response.status).toBe(400);
   });
+
+  it('keeps a plain JSON request envelope byte-identical — no upload fields appear uninvited', async () => {
+    const app = buildTestApp();
+    await request(app)
+      .post('/api/relay-bridge/request')
+      .send({ sys: 'snow', id: 'plain-1', method: 'PATCH', path: '/api/now/table/x', body: { a: 1 } });
+
+    const pollResponse = await request(app).get('/api/relay-bridge/poll?sys=snow');
+
+    expect(pollResponse.body.request).toEqual({
+      id: 'plain-1', sys: 'snow', method: 'PATCH', path: '/api/now/table/x', body: { a: 1 }, authHeader: null,
+    });
+  });
+
+  it('hands the bookmarklet a base64 upload with its content type and a bounded wait', async () => {
+    // A zip of test evidence bound for a ServiceNow change: the bookmarklet must know to decode
+    // the body rather than JSON-encode it, and what Content-Type to send it as.
+    const app = buildTestApp();
+    await request(app)
+      .post('/api/relay-bridge/request')
+      .send({
+        sys: 'snow', id: 'upload-1', method: 'POST', path: '/api/now/attachment/file?table_name=change_request',
+        body: 'UEsDBA==', bodyEncoding: 'base64', contentType: 'application/zip', timeoutMs: 999999,
+      });
+
+    const pollResponse = await request(app).get('/api/relay-bridge/poll?sys=snow');
+
+    expect(pollResponse.body.request).toMatchObject({
+      body: 'UEsDBA==', bodyEncoding: 'base64', contentType: 'application/zip',
+    });
+    // Clamped: an unbounded wait would let one abandoned upload pin the bookmarklet.
+    expect(pollResponse.body.request.timeoutMs).toBe(180000);
+  });
+
+  it('ignores an unknown body encoding rather than forwarding it', async () => {
+    const app = buildTestApp();
+    await request(app)
+      .post('/api/relay-bridge/request')
+      .send({ sys: 'snow', id: 'enc-1', method: 'POST', path: '/x', body: 'abc', bodyEncoding: 'hex' });
+
+    const pollResponse = await request(app).get('/api/relay-bridge/poll?sys=snow');
+
+    expect(pollResponse.body.request.bodyEncoding).toBeUndefined();
+  });
+});
+
+// ── Upload body limit ─────────────────────────────────────────────────────────
+
+describe('a file-sized relay request body', () => {
+  it('is accepted when the upload parser is mounted for that path ahead of the general 1 MB parser', async () => {
+    // Mirrors server.js: body-parser marks a body as read, so the path-specific parser wins and
+    // the general one leaves it alone. A 2 MB base64 body would be a 413 under the general limit.
+    const app = express();
+    app.use('/api/relay-bridge/request', express.json({ limit: '110mb' }));
+    app.use(express.json({ limit: '1mb' }));
+    app.use('/api/relay-bridge', relayBridgeRouter);
+    const twoMegabytesOfBase64 = 'A'.repeat(2 * 1024 * 1024);
+
+    const response = await request(app)
+      .post('/api/relay-bridge/request')
+      .send({ sys: 'snow', id: 'big-1', method: 'POST', path: '/api/now/attachment/file', body: twoMegabytesOfBase64, bodyEncoding: 'base64' });
+
+    expect(response.status).toBe(200);
+    expect(response.body.ok).toBe(true);
+  });
+
+  it('is refused with 413 by the general parser alone, which is why server.js mounts the other first', async () => {
+    const app = express();
+    app.use(express.json({ limit: '1mb' }));
+    app.use('/api/relay-bridge', relayBridgeRouter);
+    const twoMegabytesOfBase64 = 'A'.repeat(2 * 1024 * 1024);
+
+    const response = await request(app)
+      .post('/api/relay-bridge/request')
+      .send({ sys: 'snow', id: 'big-2', method: 'POST', path: '/api/now/attachment/file', body: twoMegabytesOfBase64 });
+
+    expect(response.status).toBe(413);
+  });
+});
+
+// ── Result wait window ────────────────────────────────────────────────────────
+
+describe('GET /api/relay-bridge/result/:id wait window', () => {
+  it('names the wait it was actually given when it times out', async () => {
+    // The default is 30s; an upload asks for more. The 408 message must say which window elapsed,
+    // or the operator reads "30s" on a request that waited three minutes.
+    const app = buildTestApp();
+    const collectResponse = await request(app).get('/api/relay-bridge/result/never-1?sys=snow&timeoutMs=50');
+
+    expect(collectResponse.status).toBe(408);
+    expect(collectResponse.body.error).toContain('timed out (0s)');
+  });
+
+  it('still delivers an already-posted result immediately whatever wait was asked for', async () => {
+    const app = buildTestApp();
+    await request(app)
+      .post('/api/relay-bridge/result')
+      .send({ id: 'ready-1', sys: 'snow', ok: true, status: 201, data: '{"result":{"sys_id":"att1"}}' });
+
+    const collectResponse = await request(app).get('/api/relay-bridge/result/ready-1?sys=snow&timeoutMs=180000');
+
+    expect(collectResponse.status).toBe(200);
+    expect(collectResponse.body.result.status).toBe(201);
+  });
 });
 
 // ── Result submission ─────────────────────────────────────────────────────────

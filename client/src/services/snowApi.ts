@@ -5,11 +5,19 @@
 // provide because the server process does not have a browser session.
 
 import { useConnectionStore } from '../store/connectionStore.ts';
+import { encodeBytesToBase64 } from '../utils/base64Bytes.ts';
 import { postRelayRequest, waitForRelayResult } from './relayBridgeApi.ts';
-import type { RelaySystem } from '../types/relay.ts';
+import type { RelayResult, RelaySystem } from '../types/relay.ts';
 
 const SNOW_PROXY_BASE = '/snow-proxy';
 const SNOW_RELAY_SYSTEM: RelaySystem = 'snow';
+/**
+ * How long a file upload may take end to end. A table read finishes in a second; a zip of
+ * screenshots crossing the relay as base64 and then reaching ServiceNow can take a couple of
+ * minutes on a slow VPN, and a premature timeout would report a failure for an upload that landed.
+ */
+const FILE_UPLOAD_TIMEOUT_MS = 180_000;
+const HTTP_POST_METHOD = 'POST';
 
 /** Additional fetch options accepted by the ServiceNow proxy client. */
 export interface SnowFetchOptions extends RequestInit {
@@ -139,7 +147,15 @@ async function snowRelayFetch<ResponseBody>(
   });
 
   const result = await waitForRelayResult(requestId, SNOW_RELAY_SYSTEM);
+  return readRelayResponse<ResponseBody>(path, result);
+}
 
+/**
+ * Turns a relay result into the parsed response body, or throws with everything ServiceNow said.
+ * Shared by the JSON and file-upload paths so a refused upload is explained the same way a
+ * refused PATCH is.
+ */
+function readRelayResponse<ResponseBody>(path: string, result: RelayResult): ResponseBody {
   if (!result.ok) {
     const relayErrorDetail = result.error !== null ? ` — ${result.error}` : '';
     const snowErrorDetail = extractSnowErrorDetail(result.data);
@@ -161,4 +177,47 @@ async function snowRelayFetch<ResponseBody>(
     }
   }
   return result.data as ResponseBody;
+}
+
+/**
+ * Uploads raw bytes to ServiceNow through the browser relay — the only path that can, because
+ * the server-side proxy has no Okta session.
+ *
+ * The bytes travel as base64 inside the relay envelope and the bookmarklet turns them back into a
+ * body with the given Content-Type. Requires the bookmarklet version that understands
+ * `bodyEncoding`; an older one would post the base64 text as JSON and ServiceNow would file that
+ * text under the file's name, which is why the response is checked by the caller.
+ */
+export async function snowUploadFile<ResponseBody>(
+  path: string,
+  fileBytes: Uint8Array,
+  contentType: string,
+): Promise<ResponseBody> {
+  const relayBridgeStatus = useConnectionStore.getState().relayBridgeStatus;
+  if (!(relayBridgeStatus?.isConnected ?? false)) {
+    throw new Error(
+      'SNow relay not connected. Click Relay -> Open ServiceNow, then click the Toolbox Relay bookmarklet.',
+    );
+  }
+  if (!(relayBridgeStatus?.hasSessionToken ?? false)) {
+    throw new Error(
+      'SNow session token (g_ck) not ready. Wait for ServiceNow to finish loading, then click the Toolbox Relay bookmarklet again.',
+    );
+  }
+
+  const requestId = crypto.randomUUID();
+  await postRelayRequest({
+    sys: SNOW_RELAY_SYSTEM,
+    id: requestId,
+    method: HTTP_POST_METHOD,
+    path,
+    body: encodeBytesToBase64(fileBytes),
+    bodyEncoding: 'base64',
+    contentType,
+    timeoutMs: FILE_UPLOAD_TIMEOUT_MS,
+    authHeader: null,
+  });
+
+  const result = await waitForRelayResult(requestId, SNOW_RELAY_SYSTEM, FILE_UPLOAD_TIMEOUT_MS);
+  return readRelayResponse<ResponseBody>(path, result);
 }

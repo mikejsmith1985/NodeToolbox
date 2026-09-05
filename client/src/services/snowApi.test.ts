@@ -3,7 +3,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useConnectionStore } from '../store/connectionStore.ts';
-import { snowFetch } from './snowApi.ts';
+import { snowFetch, snowUploadFile } from './snowApi.ts';
 
 vi.mock('./relayBridgeApi.ts', () => ({
   postRelayRequest: vi.fn(),
@@ -177,5 +177,62 @@ describe('snowApi — relay active before token readiness', () => {
     ).rejects.toThrow('SNow session token (g_ck) not ready');
 
     expect(postRelayRequest).not.toHaveBeenCalled();
+  });
+});
+
+// ── File upload through the relay ────────────────────────────────────────────
+
+describe('snowApi — snowUploadFile', () => {
+  const UPLOAD_PATH = '/api/now/attachment/file?table_name=change_request&table_sys_id=abc&file_name=evidence.zip';
+  const FILE_BYTES = new Uint8Array([80, 75, 3, 4]);
+
+  function activateRelay(hasSessionToken: boolean): void {
+    useConnectionStore.setState({
+      relayBridgeStatus: { system: 'snow', isConnected: true, lastPingAt: null, version: null, hasSessionToken },
+    });
+  }
+
+  it('refuses when the relay is not connected — the server proxy has no Okta session to fall back to', async () => {
+    await expect(snowUploadFile(UPLOAD_PATH, FILE_BYTES, 'application/zip')).rejects.toThrow('SNow relay not connected');
+    expect(postRelayRequest).not.toHaveBeenCalled();
+  });
+
+  it('refuses before g_ck is ready, because an upload is a write', async () => {
+    activateRelay(false);
+
+    await expect(snowUploadFile(UPLOAD_PATH, FILE_BYTES, 'application/zip')).rejects.toThrow('g_ck');
+    expect(postRelayRequest).not.toHaveBeenCalled();
+  });
+
+  it('carries the bytes as base64 with the content type and a longer wait', async () => {
+    activateRelay(true);
+    vi.mocked(waitForRelayResult).mockResolvedValue({ id: 'test-uuid-relay-001', ok: true, status: 201, data: '{"result":{"sys_id":"att1"}}', error: null });
+
+    const uploadResult = await snowUploadFile<{ result: { sys_id: string } }>(UPLOAD_PATH, FILE_BYTES, 'application/zip');
+
+    expect(postRelayRequest).toHaveBeenCalledWith({
+      sys: 'snow',
+      id: 'test-uuid-relay-001',
+      method: 'POST',
+      path: UPLOAD_PATH,
+      body: btoa(String.fromCharCode(80, 75, 3, 4)),
+      bodyEncoding: 'base64',
+      contentType: 'application/zip',
+      timeoutMs: 180_000,
+      authHeader: null,
+    });
+    expect(waitForRelayResult).toHaveBeenCalledWith('test-uuid-relay-001', 'snow', 180_000);
+    expect(uploadResult.result.sys_id).toBe('att1');
+  });
+
+  it("explains a refused upload with ServiceNow's own words", async () => {
+    activateRelay(true);
+    vi.mocked(waitForRelayResult).mockResolvedValue({
+      id: 'test-uuid-relay-001', ok: false, status: 413,
+      data: '{"error":{"message":"Attachment too large","detail":"limit 50MB"}}', error: null,
+    });
+
+    await expect(snowUploadFile(UPLOAD_PATH, FILE_BYTES, 'application/zip'))
+      .rejects.toThrow('413 — ServiceNow says: Attachment too large · limit 50MB');
   });
 });

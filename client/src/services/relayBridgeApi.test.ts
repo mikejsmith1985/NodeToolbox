@@ -134,6 +134,16 @@ describe('waitForRelayResult', () => {
     );
   });
 
+  it('asks the server to wait longer when the caller says so, and reports that wait on timeout', async () => {
+    // A file upload outlasts the default window; the message must name the wait that was actually given.
+    vi.mocked(fetch).mockResolvedValue({ ok: false, status: 408 } as Response);
+
+    await expect(waitForRelayResult('req-001', 'snow', 180_000)).rejects.toThrow(
+      'Relay bridge timed out (180 seconds)',
+    );
+    expect(fetch).toHaveBeenCalledWith('/api/relay-bridge/result/req-001?sys=snow&timeoutMs=180000');
+  });
+
   it('throws the server-provided disconnect message when the relay session ends', async () => {
     vi.mocked(fetch).mockResolvedValue({
       ok: false,

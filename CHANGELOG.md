@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Attach test evidence &mdash; every file on a release's Jira issues, zipped onto the ServiceNow
+  change.** The Release Management tab gains an **Attach test evidence** section beneath a loaded
+  change, beside CAB preparation. Its scope is the same editable key list CAB prep uses, seeded from
+  the keys the change itself names. **Find attachments** reads every attachment on those issues in
+  one Jira search and lists them &mdash; file, size, who added it &mdash; naming the issues that
+  carry nothing and the keys Jira could not find, before a single byte is fetched. **Attach to
+  CHG&hellip;** then downloads each file through the Jira proxy, zips them as
+  `Test-Evidence_<CHG>_<date>.zip` with one folder per issue and a `MANIFEST.txt` headed *Test
+  evidence for release &hellip;*, and attaches the zip to the change through the browser relay;
+  **Download zip** gives the same archive locally. A bundle over 75 MB is refused for attaching
+  (download it and attach by hand) and the reason is shown. Two same-named files on one issue are
+  kept apart by attachment id rather than one overwriting the other.
+  **The relay now carries files.** The Toolbox Relay bookmarklet gains a base64 body path: the
+  bytes cross the local bridge inside the JSON envelope and are decoded back into a raw body with
+  the caller's Content-Type inside the ServiceNow tab, with a longer wait for uploads. **Re-install
+  the bookmarklet from the Relay panel once** &mdash; an older one would post the base64 text as
+  JSON, and the upload checks the size ServiceNow recorded against the bytes sent so that mistake
+  is named ("re-install the bookmarklet") rather than left as a corrupt zip on the change. No new
+  dependency: the zip is written by `cfb`, which the app already ships.
+
 ### Fixed
 - **The Prioritise Release modal no longer grows past the screen (GH #377).** A twenty-row ranking
   made the modal taller than the viewport, and the fixed overlay never scrolls &mdash; so the title

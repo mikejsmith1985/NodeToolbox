@@ -43,6 +43,13 @@ const POLL_TIMEOUT_MS = 28000;
 const RESULT_TIMEOUT_MS = 30000;
 
 /**
+ * The longest a front-end may ask a result poll to be held open (?timeoutMs=). A file upload —
+ * a zip of test evidence crossing the relay as base64 — genuinely outlasts the default window,
+ * but an unbounded wait would let one abandoned poll pin a connection for the life of the process.
+ */
+const MAX_RESULT_TIMEOUT_MS = 180000;
+
+/**
  * Long-poll check-ins should happen roughly every POLL_TIMEOUT_MS. This wider window
  * lets one slow browser poll roll over without making the UI flicker disconnected.
  */
@@ -301,7 +308,7 @@ router.get('/status', (req, res) => {
  * If the bookmarklet is already waiting in a long-poll, delivers the request immediately.
  *
  * POST /api/relay-bridge/request
- * Body: { sys, id, method, path, body, authHeader }
+ * Body: { sys, id, method, path, body, authHeader, bodyEncoding?, contentType?, timeoutMs? }
  */
 router.post('/request', (req, res) => {
   const { sys = 'snow', id, method, path: apiPath, body, authHeader } = req.body;
@@ -322,6 +329,10 @@ router.post('/request', (req, res) => {
     body:       body       || null,
     authHeader: authHeader || null,
   };
+  // A file upload rides the same envelope as a JSON call, with three extra fields the bookmarklet
+  // reads: how the body is encoded, what Content-Type to send it as, and how long to wait. They
+  // are copied only when present so every existing JSON request's envelope stays byte-identical.
+  copyBinaryUploadFields(req.body, entry);
 
   if (channel.pollWaiters.length > 0) {
     // Bookmarklet is already waiting — deliver the request without queueing
@@ -451,16 +462,52 @@ router.get('/result/:id', (req, res) => {
   }
 
   // Long-poll: wait for the bookmarklet to post the result
+  const resultTimeoutMs = resolveResultTimeoutMs(req.query.timeoutMs);
   const waiter = { res, timer: null };
   waiter.timer = setTimeout(() => {
     delete channel.resultWaiters[id];
     res.status(408).json({
-      error: 'Relay bridge timed out (30s). The relay bookmarklet may have navigated away or closed.',
+      error: 'Relay bridge timed out (' + Math.round(resultTimeoutMs / 1000) + 's). The relay bookmarklet may have navigated away or closed.',
     });
-  }, RESULT_TIMEOUT_MS);
+  }, resultTimeoutMs);
 
   channel.resultWaiters[id] = waiter;
 });
+
+/**
+ * Copies the optional binary-upload fields from a request body onto a relay envelope entry.
+ * Only fields that are actually present are copied, so a plain JSON request's envelope is unchanged.
+ *
+ * @param {object} requestBody - The parsed POST body from the front-end.
+ * @param {object} entry       - The envelope the bookmarklet will receive; mutated in place.
+ */
+function copyBinaryUploadFields(requestBody, entry) {
+  if (requestBody.bodyEncoding === 'base64') {
+    entry.bodyEncoding = 'base64';
+  }
+  if (typeof requestBody.contentType === 'string' && requestBody.contentType !== '') {
+    entry.contentType = requestBody.contentType;
+  }
+  const requestedTimeout = Number(requestBody.timeoutMs);
+  if (Number.isFinite(requestedTimeout) && requestedTimeout > 0) {
+    entry.timeoutMs = Math.min(requestedTimeout, MAX_RESULT_TIMEOUT_MS);
+  }
+}
+
+/**
+ * Decides how long a result poll is held open: the caller's ask, clamped to the ceiling, or the
+ * default when nothing (or nonsense) was asked for.
+ *
+ * @param {string|undefined} requestedTimeoutQuery - The raw ?timeoutMs= value.
+ * @returns {number} Milliseconds to wait.
+ */
+function resolveResultTimeoutMs(requestedTimeoutQuery) {
+  const requestedTimeout = Number(requestedTimeoutQuery);
+  if (!Number.isFinite(requestedTimeout) || requestedTimeout <= 0) {
+    return RESULT_TIMEOUT_MS;
+  }
+  return Math.min(requestedTimeout, MAX_RESULT_TIMEOUT_MS);
+}
 
 module.exports = router;
 
