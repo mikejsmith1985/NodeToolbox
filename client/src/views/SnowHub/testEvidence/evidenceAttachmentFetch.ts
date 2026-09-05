@@ -5,6 +5,7 @@
 // Mirrors cabScopeFetch: one search for the whole key list, and the keys Jira did not return are
 // reported rather than silently dropped.
 
+import { fetchIssuesPaged } from '../../../services/fetchIssuesPaged.ts';
 import { jiraGet } from '../../../services/jiraApi.ts';
 import type { EvidenceAttachment, EvidenceIssue } from './evidenceBundle.ts';
 
@@ -14,6 +15,10 @@ const JIRA_PROXY_BASE = '/jira-proxy';
 const RELEASE_ATTACHMENT_FIELDS = ['summary', 'attachment'];
 /** A base only used to parse a path-only content value; its host is never sent anywhere. */
 const PATH_PARSE_BASE = 'http://placeholder.invalid';
+/** How many issues one page of a fix-version search asks for. */
+const RELEASE_SEARCH_PAGE_SIZE = 100;
+/** The most issues a single release scan will hold; a release past this is reported, not truncated silently. */
+const RELEASE_SEARCH_CEILING = 500;
 
 /** One attachment record as Jira returns it. Loose because Data Center and Cloud disagree on details. */
 interface JiraAttachmentRecord {
@@ -26,21 +31,33 @@ interface JiraAttachmentRecord {
   content?: string;
 }
 
+/** One issue as the release search returns it: key, summary, attachments. */
+interface ReleaseSearchIssue {
+  key: string;
+  fields?: {
+    summary?: string;
+    attachment?: JiraAttachmentRecord[];
+  };
+}
+
 /** How Jira answers the release search. */
 interface ReleaseSearchResponse {
-  issues?: Array<{
-    key: string;
-    fields?: {
-      summary?: string;
-      attachment?: JiraAttachmentRecord[];
-    };
-  }>;
+  issues?: ReleaseSearchIssue[];
+  total?: number;
 }
 
 /** What the release search produced, and which keys it could not find. */
 export interface ReleaseAttachmentOutcome {
   issues: EvidenceIssue[];
   missingKeys: string[];
+}
+
+/** What a fix-version scan produced, and whether the release was bigger than one scan holds. */
+export interface FixVersionAttachmentOutcome {
+  issues: EvidenceIssue[];
+  /** Jira's count of everything in the release, which exceeds `issues.length` only when truncated. */
+  totalMatchingCount: number;
+  isTruncated: boolean;
 }
 
 /** Escapes a key for a quoted JQL list entry. */
@@ -79,16 +96,43 @@ export async function loadReleaseAttachments(issueKeys: readonly string[]): Prom
     + `&fields=${RELEASE_ATTACHMENT_FIELDS.join(',')}&maxResults=${issueKeys.length}`,
   );
 
-  const issues: EvidenceIssue[] = (response.issues ?? []).map((jiraIssue) => ({
-    key: jiraIssue.key,
-    summary: jiraIssue.fields?.summary ?? '',
-    attachments: (jiraIssue.fields?.attachment ?? []).map(toEvidenceAttachment),
-  }));
+  const issues = (response.issues ?? []).map(toEvidenceIssue);
 
   const returnedKeys = new Set(issues.map((evidenceIssue) => evidenceIssue.key));
   const missingKeys = issueKeys.filter((issueKey) => !returnedKeys.has(issueKey));
 
   return { issues, missingKeys };
+}
+
+/** Shapes one search result into the planner's input. */
+function toEvidenceIssue(jiraIssue: ReleaseSearchIssue): EvidenceIssue {
+  return {
+    key: jiraIssue.key,
+    summary: jiraIssue.fields?.summary ?? '',
+    attachments: (jiraIssue.fields?.attachment ?? []).map(toEvidenceAttachment),
+  };
+}
+
+/**
+ * Loads the attachment list of every issue a JQL names — the fix-version path.
+ *
+ * Paged, because a release is not bounded the way a typed key list is: a hundred-story release
+ * would otherwise be silently cut to whatever one page holds. The ceiling is reported, never hidden.
+ */
+export async function loadReleaseAttachmentsByJql(jql: string): Promise<FixVersionAttachmentOutcome> {
+  const pagedOutcome = await fetchIssuesPaged<ReleaseSearchIssue>(
+    (startAt, pageSize) => jiraGet<ReleaseSearchResponse>(
+      `/rest/api/2/search?jql=${encodeURIComponent(jql)}`
+      + `&fields=${RELEASE_ATTACHMENT_FIELDS.join(',')}&startAt=${startAt}&maxResults=${pageSize}`,
+    ),
+    { pageSize: RELEASE_SEARCH_PAGE_SIZE, ceiling: RELEASE_SEARCH_CEILING },
+  );
+
+  return {
+    issues: pagedOutcome.issues.map(toEvidenceIssue),
+    totalMatchingCount: pagedOutcome.totalMatchingCount,
+    isTruncated: pagedOutcome.isTruncated,
+  };
 }
 
 /**

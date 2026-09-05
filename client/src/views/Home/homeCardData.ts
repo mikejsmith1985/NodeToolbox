@@ -120,9 +120,9 @@ export const APP_CARDS: AppCardDef[] = [
       'ServiceNow workspace for change generation, PRB conversion, release management, configuration, and Jira-SNow sync monitoring.',
     tags: ['ServiceNow', 'Jira', 'Change Request', 'PRB'],
     sectionKey: 'insights-admin',
-    // ServiceNow connectivity is admin-controlled: the card exists only while this tab holds
-    // the Admin Hub unlock (spec 020 FR-001) — absent, never greyed.
-    gateKind: 'admin-unlock',
+    // The Admin Hub unlock gate (spec 020 FR-001, `gateKind: 'admin-unlock'`) is PAUSED by
+    // decision on 2026-09-05: SNow Hub is daily release work, and the unlock was friction rather
+    // than protection. Re-add the one line to restore it; the mechanism is intact.
   },
   {
     id: 'code-walkthrough',

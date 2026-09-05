@@ -347,16 +347,17 @@ describe('App shell', () => {
 
   // ── Spec 020 US1: honest route gating ──
 
-  it('lands direct /snow-hub navigation on the home page while Admin Hub is locked (FR-002)', async () => {
+  it('admits /snow-hub without the admin unlock — the FR-002 gate is paused (2026-09-05)', async () => {
+    useAdminStore.setState({ isAdminUnlocked: false });
+
     renderApp('/snow-hub');
 
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: 'Your personal utility belt' })).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'SNow Hub Mock' })).toBeInTheDocument();
     });
-    expect(screen.queryByRole('heading', { name: 'SNow Hub Mock' })).not.toBeInTheDocument();
   });
 
-  it('admits /snow-hub while the session holds the admin unlock', async () => {
+  it('still admits /snow-hub while the session holds the admin unlock', async () => {
     useAdminStore.setState({ isAdminUnlocked: true });
 
     renderApp('/snow-hub');

@@ -28,9 +28,10 @@ describe('homeCardData', () => {
     }
   });
 
-  it('gates only the SNow Hub card behind the admin unlock', () => {
+  it('gates no card behind the admin unlock while the SNow Hub gate is paused (2026-09-05)', () => {
+    // The mechanism outlives its one user: re-adding gateKind to snow-hub restores the gate.
     const gatedCardIds = APP_CARDS.filter((appCard) => appCard.gateKind === 'admin-unlock').map((appCard) => appCard.id);
-    expect(gatedCardIds).toEqual(['snow-hub']);
+    expect(gatedCardIds).toEqual([]);
   });
 
   it('resolves every retired tool id to its successor in the recent-links strip', () => {

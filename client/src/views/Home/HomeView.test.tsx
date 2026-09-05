@@ -67,13 +67,13 @@ describe('HomeView', () => {
 
   // ── Spec 020 US1: honest gating ──
 
-  it('hides the SNow Hub card and its recents chip while Admin Hub is locked', () => {
+  it('shows the SNow Hub card and its recents chip while Admin Hub is locked — the gate is paused (2026-09-05)', () => {
     useSettingsStore.setState({ recentViews: ['snow-hub'] });
 
     renderHomeView();
 
-    expect(screen.queryByRole('heading', { name: 'SNow Hub' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: '❄️ SNow Hub' })).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'SNow Hub' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: '❄️ SNow Hub' })).toBeInTheDocument();
   });
 
   it('shows the SNow Hub card while Admin Hub is unlocked in this session', () => {

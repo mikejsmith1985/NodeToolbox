@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **SNow Hub no longer sits behind the Admin Hub unlock.** The home card, the `/snow-hub` route
+  and the SNow connection indicator are open without unlocking Admin Hub &mdash; SNow Hub is daily
+  release work and the unlock was friction, not protection. Paused by decision, not removed: the
+  gate mechanism (spec 020) is intact and one line on the card and one prop on the route restore
+  it. GitHub's indicator stays behind the unlock.
+
+### Fixed
+- **Attach test evidence can now pick the release by fix version (GH #377).** A change whose text
+  names no Jira keys left the section with an empty scope and nothing to gather. The section now
+  starts with a **Project key** (remembered, and seeded from the CHG Generator's draft) and a **Fix
+  version** dropdown fed from Jira's own list &mdash; unreleased versions first, released ones
+  marked, archived ones absent &mdash; and reads the whole release page by page. The key list stays
+  as an addition to the fix version (the CHG Generator's own "pull a version, then add a story"
+  pattern), or the whole scope when no version is picked; an issue named by both is counted once.
+  The manifest headline names the fix version. Scanning with neither a version nor a key is refused
+  with a message rather than silently finding nothing.
+
 ### Added
 - **Attach test evidence &mdash; every file on a release's Jira issues, zipped onto the ServiceNow
   change.** The Release Management tab gains an **Attach test evidence** section beneath a loaded

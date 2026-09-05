@@ -251,11 +251,12 @@ export default function App() {
             <Routes>
           <Route path={HOME_ROUTE} element={<HomeView />} />
           <Route path={SETTINGS_ROUTE} element={<SettingsView />} />
-          {/* SNow connectivity is admin-controlled: entry requires the session unlock (spec 020 FR-002). */}
+          {/* The admin-unlock entry gate (spec 020 FR-002, `requiresAdminUnlock`) is PAUSED by decision
+              on 2026-09-05 — SNow Hub is daily release work. Re-add the prop to restore it. */}
           <Route
             path={SNOW_HUB_ROUTE}
             element={(
-              <GatedToolRoute cardId="snow-hub" requiresAdminUnlock>
+              <GatedToolRoute cardId="snow-hub">
                 <SnowHubView />
               </GatedToolRoute>
             )}

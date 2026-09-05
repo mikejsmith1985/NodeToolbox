@@ -10,6 +10,7 @@ import {
   buildAttachmentProxyPath,
   downloadAttachmentBytes,
   loadReleaseAttachments,
+  loadReleaseAttachmentsByJql,
 } from './evidenceAttachmentFetch.ts';
 
 function issueResult(key: string, attachments: unknown[] = []) {
@@ -103,6 +104,36 @@ describe('loadReleaseAttachments', () => {
 
     expect(outcome.issues[0].attachments[0]).toMatchObject({ attachmentId: '9', sizeBytes: 10, filename: 'x.png' });
     expect(outcome.issues[0].attachments[0].authorName).toBeUndefined();
+  });
+});
+
+describe('loadReleaseAttachmentsByJql', () => {
+  it('reads the whole release page by page, so a big release is not cut to one page', async () => {
+    // Page 1 full (100), page 2 short — the loop stops on the short page.
+    const firstPage = Array.from({ length: 100 }, (_unused, index) => issueResult(`ENCUC-${index + 1}`));
+    mockJiraGet
+      .mockResolvedValueOnce({ issues: firstPage, total: 101 })
+      .mockResolvedValueOnce({ issues: [issueResult('ENCUC-101', [jiraAttachment()])], total: 101 });
+
+    const outcome = await loadReleaseAttachmentsByJql('project = "ENCUC" AND fixVersion = "2026.09.1"');
+
+    expect(mockJiraGet).toHaveBeenCalledTimes(2);
+    expect(decodeURIComponent(String(mockJiraGet.mock.calls[0][0]))).toContain('fixVersion = "2026.09.1"');
+    expect(String(mockJiraGet.mock.calls[0][0])).toContain('startAt=0&maxResults=100');
+    expect(String(mockJiraGet.mock.calls[1][0])).toContain('startAt=100&maxResults=100');
+    expect(outcome.issues).toHaveLength(101);
+    expect(outcome.issues[100].attachments[0].filename).toBe('regression-run.pdf');
+    expect(outcome.isTruncated).toBe(false);
+    expect(outcome.totalMatchingCount).toBe(101);
+  });
+
+  it('reports an empty release as empty, with one request', async () => {
+    mockJiraGet.mockResolvedValue({ issues: [], total: 0 });
+
+    const outcome = await loadReleaseAttachmentsByJql('project = "X" AND fixVersion = "none"');
+
+    expect(mockJiraGet).toHaveBeenCalledTimes(1);
+    expect(outcome).toEqual({ issues: [], totalMatchingCount: 0, isTruncated: false });
   });
 });
 

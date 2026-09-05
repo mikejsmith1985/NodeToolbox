@@ -71,11 +71,20 @@ describe('ConnectionBar', () => {
     expect(screen.getByText('Confluence')).toBeInTheDocument();
   });
 
-  it('hides SNow and GitHub indicators when admin is not unlocked', () => {
+  it('shows the SNow indicator without the admin unlock — its gate is paused (2026-09-05) — but still hides GitHub', () => {
+    // A SNow Hub you can open needs the relay panel that connects it.
     render(<ConnectionBar />);
 
-    expect(screen.queryByText('SNow')).not.toBeInTheDocument();
+    expect(screen.getByText('SNow')).toBeInTheDocument();
     expect(screen.queryByText('GitHub')).not.toBeInTheDocument();
+  });
+
+  it('opens the SNow panel without the admin unlock', () => {
+    render(<ConnectionBar />);
+
+    fireEvent.click(screen.getByText('SNow'));
+
+    expect(screen.getByRole('region', { name: 'Connection details' })).toBeInTheDocument();
   });
 
   it('shows SNow and GitHub indicators when admin is unlocked', () => {

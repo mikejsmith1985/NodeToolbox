@@ -455,7 +455,9 @@ export function ConnectionBar() {
   const [wasAdminUnlocked, setWasAdminUnlocked] = useState(isAdminUnlocked);
   if (wasAdminUnlocked !== isAdminUnlocked) {
     setWasAdminUnlocked(isAdminUnlocked);
-    if (!isAdminUnlocked && (activePanel === 'snow' || activePanel === 'github')) {
+    // Only GitHub still hides on lock: the SNow indicator's admin gate is paused (2026-09-05), so
+    // its panel stays where the operator left it.
+    if (!isAdminUnlocked && activePanel === 'github') {
       setActivePanel(null);
     }
   }
@@ -470,15 +472,15 @@ export function ConnectionBar() {
           panelId="conn-panel-jira"
           onClick={() => handleIndicatorClick('jira')}
         />
-        {isAdminUnlocked && (
-          <ConnectionIndicatorButton
-            label="SNow"
-            isReady={isSnowActive}
-            isExpanded={activePanel === 'snow'}
-            panelId="conn-panel-snow"
-            onClick={() => handleIndicatorClick('snow')}
-          />
-        )}
+        {/* Not behind the admin unlock: SNow Hub's own gate is paused (2026-09-05), and a hub you can
+            open needs the relay panel that connects it. */}
+        <ConnectionIndicatorButton
+          label="SNow"
+          isReady={isSnowActive}
+          isExpanded={activePanel === 'snow'}
+          panelId="conn-panel-snow"
+          onClick={() => handleIndicatorClick('snow')}
+        />
         <ConnectionIndicatorButton
           label="Confluence"
           isReady={isConfluenceReady}
@@ -507,7 +509,7 @@ export function ConnectionBar() {
       {activePanel !== null && (
         <div className={styles.connectPanel} role="region" aria-label="Connection details">
           {activePanel === 'jira' && <JiraPanel isJiraReady={isJiraReady} />}
-          {activePanel === 'snow' && isAdminUnlocked && (
+          {activePanel === 'snow' && (
             <SnowPanel
               isSnowActive={isSnowActive}
               isRelayActive={isRelayActive}

@@ -3,22 +3,30 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { mockLoadReleaseAttachments, mockDownloadAttachmentBytes, mockCreateZipArchive, mockAttachFileToChange } = vi.hoisted(() => ({
+const {
+  mockLoadReleaseAttachments, mockLoadReleaseAttachmentsByJql, mockDownloadAttachmentBytes,
+  mockCreateZipArchive, mockAttachFileToChange, mockFetchFixVersions,
+} = vi.hoisted(() => ({
   mockLoadReleaseAttachments: vi.fn(),
+  mockLoadReleaseAttachmentsByJql: vi.fn(),
   mockDownloadAttachmentBytes: vi.fn(),
   mockCreateZipArchive: vi.fn(),
   mockAttachFileToChange: vi.fn(),
+  mockFetchFixVersions: vi.fn(),
 }));
 
 vi.mock('./evidenceAttachmentFetch.ts', () => ({
   loadReleaseAttachments: mockLoadReleaseAttachments,
+  loadReleaseAttachmentsByJql: mockLoadReleaseAttachmentsByJql,
   downloadAttachmentBytes: mockDownloadAttachmentBytes,
 }));
 vi.mock('./zipArchive.ts', () => ({ createZipArchive: mockCreateZipArchive }));
 vi.mock('./snowAttachmentUpload.ts', () => ({ attachFileToChange: mockAttachFileToChange }));
+vi.mock('../../ArtView/piPlan/piPlanReleaseSchedule.ts', () => ({ fetchPiWindowFixVersions: mockFetchFixVersions }));
 
 import { TestEvidenceSection } from './TestEvidenceSection.tsx';
 import { MAX_ATTACHABLE_BUNDLE_BYTES } from './evidenceBundle.ts';
+import { TEST_EVIDENCE_PROJECT_KEY_STORAGE_KEY } from './testEvidenceScope.ts';
 import type { ChangeRequest } from '../../../types/snow.ts';
 
 /** Class names are irrelevant here; the host tab supplies its own. */
@@ -59,6 +67,9 @@ async function findAttachments(): Promise<void> {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  window.localStorage.clear();
+  mockFetchFixVersions.mockResolvedValue([]);
+  mockLoadReleaseAttachmentsByJql.mockResolvedValue({ issues: [], totalMatchingCount: 0, isTruncated: false });
   mockLoadReleaseAttachments.mockResolvedValue({ issues: [], missingKeys: [] });
   mockDownloadAttachmentBytes.mockResolvedValue(new Uint8Array([1, 2, 3]));
   mockCreateZipArchive.mockReturnValue(ZIP_BYTES);
@@ -73,8 +84,115 @@ describe('TestEvidenceSection', () => {
   it('seeds the release scope from the keys the change itself names', () => {
     render(<TestEvidenceSection loadedChange={change()} styles={STYLES} />);
 
-    const scopeField = screen.getByLabelText(/Jira issues in this release/) as HTMLTextAreaElement;
+    const scopeField = screen.getByLabelText('Jira issues') as HTMLTextAreaElement;
     expect(scopeField.value).toBe('ENCUC-2213 ENCUC-2358');
+  });
+
+  it('refuses to scan with neither a fix version nor a key, and says so', async () => {
+    render(<TestEvidenceSection loadedChange={change({ description: 'no keys here' })} styles={STYLES} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Find attachments' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Pick a fix version, or enter at least one Jira key.');
+    expect(mockLoadReleaseAttachments).not.toHaveBeenCalled();
+    expect(mockLoadReleaseAttachmentsByJql).not.toHaveBeenCalled();
+  });
+
+  it("starts from the CHG Generator's project and offers that project's fix versions as a dropdown", async () => {
+    // GH #377: the change text named no keys, so the operator needs to pick the release — from
+    // Jira's own list, never a typed value that would scan cleanly and find nothing.
+    window.localStorage.setItem('ntbx-crg-state', JSON.stringify({ projectKey: 'encuc' }));
+    mockFetchFixVersions.mockResolvedValue([
+      { name: '2026.09.1' },
+      { name: '2026.08.1', released: true },
+      { name: '2026.01.1', archived: true },
+    ]);
+    render(<TestEvidenceSection loadedChange={change()} styles={STYLES} />);
+
+    expect((screen.getByLabelText('Project key') as HTMLInputElement).value).toBe('ENCUC');
+    await waitFor(() => expect(mockFetchFixVersions).toHaveBeenCalledWith('ENCUC'));
+    const versionSelect = await screen.findByLabelText('Fix version') as HTMLSelectElement;
+    await waitFor(() => expect(versionSelect).toBeEnabled());
+    expect(Array.from(versionSelect.options).map((option) => option.textContent)).toEqual([
+      'Select fix version…', '2026.09.1', '2026.08.1 (released)',
+    ]);
+  });
+
+  it('remembers a typed project key and reloads the versions for it', async () => {
+    render(<TestEvidenceSection loadedChange={change()} styles={STYLES} />);
+
+    fireEvent.change(screen.getByLabelText('Project key'), { target: { value: 'denp' } });
+
+    await waitFor(() => expect(mockFetchFixVersions).toHaveBeenCalledWith('DENP'));
+    expect(window.localStorage.getItem(TEST_EVIDENCE_PROJECT_KEY_STORAGE_KEY)).toBe('DENP');
+  });
+
+  it('scans the picked fix version and adds typed keys to it without counting one issue twice', async () => {
+    window.localStorage.setItem(TEST_EVIDENCE_PROJECT_KEY_STORAGE_KEY, 'ENCUC');
+    mockFetchFixVersions.mockResolvedValue([{ name: '2026.09.1' }]);
+    mockLoadReleaseAttachmentsByJql.mockResolvedValue({
+      issues: [
+        { key: 'ENCUC-2213', summary: 'Feed', attachments: [attachment('1', 'a.png')] },
+        { key: 'ENCUC-3000', summary: 'Portal', attachments: [] },
+      ],
+      totalMatchingCount: 2,
+      isTruncated: false,
+    });
+    mockLoadReleaseAttachments.mockResolvedValue({
+      issues: [{ key: 'ENCUC-2358', summary: 'Extra', attachments: [attachment('2', 'b.png')] }],
+      missingKeys: [],
+    });
+    render(<TestEvidenceSection loadedChange={change()} styles={STYLES} />);
+    const versionSelect = await screen.findByLabelText('Fix version');
+    await waitFor(() => expect(versionSelect).toBeEnabled());
+    fireEvent.change(versionSelect, { target: { value: '2026.09.1' } });
+
+    await findAttachments();
+
+    expect(mockLoadReleaseAttachmentsByJql).toHaveBeenCalledWith('project = "ENCUC" AND fixVersion = "2026.09.1" ORDER BY key ASC');
+    // ENCUC-2213 came back from the fix version, so only ENCUC-2358 is fetched by key.
+    expect(mockLoadReleaseAttachments).toHaveBeenCalledWith(['ENCUC-2358']);
+    expect(await screen.findByText('2 file(s) across 3 issue(s), 2.0 KB in total.')).toBeInTheDocument();
+    expect(screen.getByText('No attachments on: ENCUC-3000.')).toBeInTheDocument();
+  });
+
+  it('names the release by its fix version in the manifest', async () => {
+    window.localStorage.setItem(TEST_EVIDENCE_PROJECT_KEY_STORAGE_KEY, 'ENCUC');
+    mockFetchFixVersions.mockResolvedValue([{ name: '2026.09.1' }]);
+    mockLoadReleaseAttachmentsByJql.mockResolvedValue({
+      issues: [{ key: 'ENCUC-2213', summary: 'Feed', attachments: [attachment('1', 'a.png')] }],
+      totalMatchingCount: 1,
+      isTruncated: false,
+    });
+    render(<TestEvidenceSection loadedChange={change({ description: 'no keys' })} styles={STYLES} />);
+    const versionSelect = await screen.findByLabelText('Fix version');
+    await waitFor(() => expect(versionSelect).toBeEnabled());
+    fireEvent.change(versionSelect, { target: { value: '2026.09.1' } });
+    await findAttachments();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Attach to CHG0041298' }));
+    await waitFor(() => expect(mockAttachFileToChange).toHaveBeenCalledTimes(1));
+
+    const zipEntries = mockCreateZipArchive.mock.calls[0][0] as Array<{ path: string; bytes: Uint8Array }>;
+    expect(new TextDecoder().decode(zipEntries[1].bytes)).toContain('Test evidence for release 2026.09.1 (CHG0041298)');
+  });
+
+  it('says when a release was bigger than one scan holds', async () => {
+    window.localStorage.setItem(TEST_EVIDENCE_PROJECT_KEY_STORAGE_KEY, 'ENCUC');
+    mockFetchFixVersions.mockResolvedValue([{ name: '2026.09.1' }]);
+    mockLoadReleaseAttachmentsByJql.mockResolvedValue({
+      issues: [{ key: 'ENCUC-1', summary: 'One', attachments: [] }],
+      totalMatchingCount: 900,
+      isTruncated: true,
+    });
+    render(<TestEvidenceSection loadedChange={change({ description: 'no keys' })} styles={STYLES} />);
+    const versionSelect = await screen.findByLabelText('Fix version');
+    await waitFor(() => expect(versionSelect).toBeEnabled());
+    fireEvent.change(versionSelect, { target: { value: '2026.09.1' } });
+
+    await findAttachments();
+
+    expect(await screen.findByText(/Only the first 1 of 900 issues in 2026\.09\.1 were read\./)).toBeInTheDocument();
   });
 
   it('does nothing to Jira or ServiceNow until asked', () => {
