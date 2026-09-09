@@ -872,6 +872,74 @@ function buildCtaskTemplateDataFromRecord(ctaskRecord: Record<string, unknown>):
   };
 }
 
+/** What ServiceNow handed back for one created change_task, read off the POST response. */
+export interface CreatedChangeTaskRecord {
+  sysId: string;
+  number: string;
+  /** sys_id of the change ServiceNow actually stored on the task; '' when it was left detached. */
+  changeRequestSysId: string;
+}
+
+/** One change_task as the attached-tasks read-back lists it. */
+export interface AttachedChangeTaskRecord {
+  sysId: string;
+  number: string;
+}
+
+const CHANGE_TASK_TABLE_PATH = '/api/now/table/change_task';
+/** A change carries a handful of tasks; this bound only guards against a runaway query. */
+const ATTACHED_CHANGE_TASK_FETCH_LIMIT = 200;
+/** How much of an unexpected reply to quote back when ServiceNow answered OK without a record. */
+const UNEXPECTED_REPLY_PREVIEW_LENGTH = 200;
+
+/** Returns the single record a Table API create/read reply carries, or null when it carries none. */
+function readRecordFromTableReply(replyData: unknown): Record<string, unknown> | null {
+  if (typeof replyData !== 'object' || replyData === null) return null;
+  const replyRecord = (replyData as { result?: unknown }).result;
+  if (typeof replyRecord !== 'object' || replyRecord === null || Array.isArray(replyRecord)) return null;
+  return replyRecord as Record<string, unknown>;
+}
+
+/** Quotes the start of a reply that was not a record, so the operator can see what came back. */
+function describeUnexpectedReply(replyData: unknown): string {
+  const replyText = typeof replyData === 'string' ? replyData : JSON.stringify(replyData ?? null);
+  return replyText.slice(0, UNEXPECTED_REPLY_PREVIEW_LENGTH);
+}
+
+/**
+ * Creates one change_task under the given change and returns the record ServiceNow says it
+ * created. A 2xx that carries no record (a sign-in page, an empty body) is an error, not a
+ * success — the status code alone proved nothing (GH #377).
+ *
+ * @param changeSysId - sys_id of the change_request the task belongs to.
+ * @param template    - The staged CTASK to create.
+ * @returns The created task's sys_id, number, and the change ServiceNow stored on it.
+ */
+export async function createChangeTask(changeSysId: string, template: CtaskTemplate): Promise<CreatedChangeTaskRecord> {
+  const replyData = await snowFetch<unknown>(
+    CHANGE_TASK_TABLE_PATH,
+    {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify(buildChangeTaskPayload(changeSysId, template)),
+    },
+  );
+
+  const createdRecord = readRecordFromTableReply(replyData);
+  if (!createdRecord) {
+    throw new Error(
+      'ServiceNow accepted the change_task request but returned no task record: '
+      + describeUnexpectedReply(replyData),
+    );
+  }
+
+  return {
+    sysId:              extractReferenceSysId(createdRecord.sys_id),
+    number:             extractStringValue(createdRecord.number),
+    changeRequestSysId: extractReferenceSysId(createdRecord.change_request),
+  };
+}
+
 /**
  * Creates one change_task record per staged CTASK under the given change.
  *
@@ -885,17 +953,32 @@ function buildCtaskTemplateDataFromRecord(ctaskRecord: Record<string, unknown>):
  */
 export async function createChangeTasks(changeSysId: string, templates: CtaskTemplate[]): Promise<number> {
   for (const template of templates) {
-    await snowFetch(
-      '/api/now/table/change_task',
-      {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify(buildChangeTaskPayload(changeSysId, template)),
-      },
-    );
+    await createChangeTask(changeSysId, template);
   }
 
   return templates.length;
+}
+
+/**
+ * Lists the change_tasks ServiceNow itself says are attached to a change — the read-back that
+ * turns "ServiceNow answered 201" into proof the task is on the change (GH #377).
+ *
+ * @param changeSysId - sys_id of the change_request to list tasks for.
+ * @returns Each attached task's sys_id and number; empty when ServiceNow lists none.
+ */
+export async function fetchChangeTasksAttachedToChange(changeSysId: string): Promise<AttachedChangeTaskRecord[]> {
+  const encodedQuery = encodeURIComponent(`change_request=${changeSysId}`);
+  const replyData = await snowFetch<{ result?: unknown }>(
+    `${CHANGE_TASK_TABLE_PATH}?sysparm_query=${encodedQuery}&sysparm_fields=sys_id,number&sysparm_limit=${ATTACHED_CHANGE_TASK_FETCH_LIMIT}`,
+    { method: 'GET' },
+  );
+  const taskRecords = replyData?.result;
+  if (!Array.isArray(taskRecords)) return [];
+
+  return taskRecords.map((taskRecord) => {
+    const taskFields = (taskRecord ?? {}) as Record<string, unknown>;
+    return { sysId: extractReferenceSysId(taskFields.sys_id), number: extractStringValue(taskFields.number) };
+  });
 }
 
 /**

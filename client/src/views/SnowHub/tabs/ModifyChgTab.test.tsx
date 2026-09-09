@@ -558,7 +558,7 @@ describe('ModifyChgTab - Start Over rebuild', () => {
   });
 });
 
-describe('ModifyChgTab - Save creates the staged CTASKs (GH #377)', () => {
+describe('ModifyChgTab - Save creates the staged CTASKs and proves they are attached (GH #377)', () => {
   const CHANGE_TASK_TABLE_PATH = '/api/now/table/change_task';
   const MOCK_CTASK_TEMPLATE = {
     id: 'ctask-template-1',
@@ -601,6 +601,54 @@ describe('ModifyChgTab - Save creates the staged CTASKs (GH #377)', () => {
       .map(([, requestInit]) => JSON.parse(String((requestInit as RequestInit).body)) as Record<string, unknown>);
   }
 
+  interface FakeServiceNowOptions {
+    /** What change_request ServiceNow stores on each created task (default: what was sent). */
+    storedChangeRequestSysId?: string;
+    /** When set, the Nth POST (1-based) rejects with this error instead of creating. */
+    failOnPostNumber?: number;
+    /** When set, every POST answers 2xx with this non-record body. */
+    postReplyOverride?: unknown;
+    /** When true, the read-back query rejects. */
+    isReadBackBroken?: boolean;
+  }
+
+  /**
+   * A tiny ServiceNow: POSTs create numbered tasks, the read-back returns only the tasks whose
+   * stored change_request matches the change being asked about.
+   */
+  function installFakeServiceNow(options: FakeServiceNowOptions = {}): void {
+    const createdTasks: Array<{ sys_id: string; number: string; change_request: string }> = [];
+    let postCount = 0;
+    mockSnowFetch.mockImplementation(async (path: unknown, requestInit?: RequestInit) => {
+      const requestPath = String(path);
+      if (requestPath === CHANGE_TASK_TABLE_PATH && requestInit?.method === 'POST') {
+        postCount += 1;
+        if (options.failOnPostNumber === postCount) {
+          throw new Error('ServiceNow relay returned 403');
+        }
+        if (options.postReplyOverride !== undefined) {
+          return options.postReplyOverride;
+        }
+        const sentPayload = JSON.parse(String(requestInit.body)) as { change_request: string };
+        const createdTask = {
+          sys_id: `ctask-sys-${postCount}`,
+          number: `CTASK000900${postCount}`,
+          change_request: options.storedChangeRequestSysId ?? sentPayload.change_request,
+        };
+        createdTasks.push(createdTask);
+        return { result: createdTask };
+      }
+      if (requestPath.startsWith(`${CHANGE_TASK_TABLE_PATH}?`)) {
+        if (options.isReadBackBroken) {
+          throw new Error('read-back timed out');
+        }
+        const askedChangeSysId = decodeURIComponent(requestPath).match(/change_request=([^&^]+)/)?.[1];
+        return { result: createdTasks.filter((task) => task.change_request === askedChangeSysId) };
+      }
+      return { result: [MOCK_CHANGE_RECORD] };
+    });
+  }
+
   async function loadChangeAndOpenReviewStep(
     changeRecord: Record<string, unknown> = MOCK_CHANGE_RECORD,
   ): Promise<ReturnType<typeof userEvent.setup>> {
@@ -627,15 +675,21 @@ describe('ModifyChgTab - Save creates the staged CTASKs (GH #377)', () => {
     expect(screen.getByText(`Change Tasks (${count})`)).toBeInTheDocument();
   }
 
-  it('creates one change_task per staged CTASK against the loaded change after the CHG is saved', async () => {
+  async function clickSave(user: ReturnType<typeof userEvent.setup>): Promise<void> {
+    await user.click(screen.getByRole('button', { name: /Save Changes to ServiceNow/i }));
+  }
+
+  it('creates one change_task per staged CTASK, reads them back, and names the CTASK numbers', async () => {
     const user = await loadChangeAndOpenReviewStep();
     await stageCtasks(user, 2);
-    mockSnowFetch.mockResolvedValue({ result: { sys_id: 'ctask-new' } });
+    installFakeServiceNow();
 
-    await user.click(screen.getByRole('button', { name: /Save Changes to ServiceNow/i }));
+    await clickSave(user);
 
     await waitFor(() => {
-      expect(screen.getByRole('status')).toHaveTextContent('Change CHG0001234 saved successfully! 2 change tasks created.');
+      expect(screen.getByRole('status')).toHaveTextContent(
+        'Change CHG0001234 saved successfully! 2 change tasks created and attached: CTASK0009001, CTASK0009002.',
+      );
     });
     const createPayloads = listChangeTaskCreatePayloads();
     expect(createPayloads).toHaveLength(2);
@@ -653,15 +707,15 @@ describe('ModifyChgTab - Save creates the staged CTASKs (GH #377)', () => {
   it('clears the staged list once the tasks exist so saving again cannot create duplicates', async () => {
     const user = await loadChangeAndOpenReviewStep();
     await stageCtasks(user, 1);
-    mockSnowFetch.mockResolvedValue({ result: { sys_id: 'ctask-new' } });
+    installFakeServiceNow();
 
-    await user.click(screen.getByRole('button', { name: /Save Changes to ServiceNow/i }));
+    await clickSave(user);
     await waitFor(() => {
-      expect(screen.getByRole('status')).toHaveTextContent('1 change task created.');
+      expect(screen.getByRole('status')).toHaveTextContent('1 change task created and attached: CTASK0009001.');
     });
     expect(screen.queryByText(/^Change Tasks \(/)).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: /Save Changes to ServiceNow/i }));
+    await clickSave(user);
     await waitFor(() => {
       expect(screen.getByRole('status')).toHaveTextContent('Change CHG0001234 saved successfully!');
     });
@@ -671,23 +725,22 @@ describe('ModifyChgTab - Save creates the staged CTASKs (GH #377)', () => {
 
   it('saves the change without touching change_task when nothing is staged', async () => {
     const user = await loadChangeAndOpenReviewStep();
+    installFakeServiceNow();
 
-    await user.click(screen.getByRole('button', { name: /Save Changes to ServiceNow/i }));
+    await clickSave(user);
 
     await waitFor(() => {
       expect(screen.getByRole('status')).toHaveTextContent('Change CHG0001234 saved successfully!');
     });
-    expect(listChangeTaskCreatePayloads()).toHaveLength(0);
+    expect(mockSnowFetch.mock.calls.filter(([path]) => String(path).startsWith(CHANGE_TASK_TABLE_PATH))).toHaveLength(0);
   });
 
   it('reports a task that failed to create without claiming the whole save succeeded, keeping only the uncreated tasks staged', async () => {
     const user = await loadChangeAndOpenReviewStep();
     await stageCtasks(user, 2);
-    mockSnowFetch
-      .mockResolvedValueOnce({ result: { sys_id: 'ctask-new' } })
-      .mockRejectedValueOnce(new Error('ServiceNow relay returned 403'));
+    installFakeServiceNow({ failOnPostNumber: 2 });
 
-    await user.click(screen.getByRole('button', { name: /Save Changes to ServiceNow/i }));
+    await clickSave(user);
 
     await waitFor(() => {
       expect(screen.getByRole('alert')).toHaveTextContent(/Change CHG0001234 was saved, but change task 2 of 2/i);
@@ -699,12 +752,61 @@ describe('ModifyChgTab - Save creates the staged CTASKs (GH #377)', () => {
     expect(screen.getByText('Change Tasks (1)')).toBeInTheDocument();
   });
 
+  it('treats a 2xx with no task record as a failure and leaves the task staged', async () => {
+    const user = await loadChangeAndOpenReviewStep();
+    await stageCtasks(user, 1);
+    installFakeServiceNow({ postReplyOverride: '<html>Sign in</html>' });
+
+    await clickSave(user);
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toHaveTextContent(/returned no task record/i);
+    });
+    expect(screen.getByRole('alert')).toHaveTextContent('<html>Sign in</html>');
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(screen.getByText('Change Tasks (1)')).toBeInTheDocument();
+  });
+
+  it('reports a task ServiceNow created but did not attach to the change, naming the number and what it stored', async () => {
+    const user = await loadChangeAndOpenReviewStep();
+    await stageCtasks(user, 1);
+    installFakeServiceNow({ storedChangeRequestSysId: '' });
+
+    await clickSave(user);
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toHaveTextContent(/CTASK0009001/);
+    });
+    const alertText = screen.getByRole('alert').textContent ?? '';
+    expect(alertText).toMatch(/created .*but .*not attached to CHG0001234/i);
+    expect(alertText).toContain('change-1');
+    expect(alertText).toMatch(/stored change_request ""/i);
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    // The task exists in ServiceNow, so it must not stay staged — a retry would create another orphan.
+    expect(screen.queryByText(/^Change Tasks \(/)).not.toBeInTheDocument();
+  });
+
+  it('does not claim success when the read-back itself fails', async () => {
+    const user = await loadChangeAndOpenReviewStep();
+    await stageCtasks(user, 1);
+    installFakeServiceNow({ isReadBackBroken: true });
+
+    await clickSave(user);
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toHaveTextContent(/could not confirm/i);
+    });
+    expect(screen.getByRole('alert')).toHaveTextContent('CTASK0009001');
+    expect(screen.getByRole('alert')).toHaveTextContent('read-back timed out');
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+
   it('refuses to create tasks when the loaded change carries no sys_id, and says so', async () => {
     const { sys_id: _omittedSysId, ...recordWithoutSysId } = MOCK_CHANGE_RECORD;
     const user = await loadChangeAndOpenReviewStep(recordWithoutSysId);
     await stageCtasks(user, 1);
 
-    await user.click(screen.getByRole('button', { name: /Save Changes to ServiceNow/i }));
+    await clickSave(user);
 
     await waitFor(() => {
       expect(screen.getByRole('alert')).toHaveTextContent(/no sys_id/i);

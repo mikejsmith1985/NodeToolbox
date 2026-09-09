@@ -15,6 +15,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   it. GitHub's indicator stays behind the unlock.
 
 ### Fixed
+- **Modify Change now proves its CTASKs are attached instead of trusting the status code (GH #377,
+  follow-up).** v0.262.2 reported "2 change tasks created" while the change in ServiceNow showed
+  none: a 2xx from the relay was being counted as a created task. The save now reads the record
+  ServiceNow returns for each task (number, sys_id, and the change_request it actually stored),
+  treats a 2xx with no record as a failure that leaves the task staged, then reads the change's
+  tasks back and confirms every created one is on it. Success names the CTASK numbers. A task
+  ServiceNow created but did not attach is reported by number with the change_request it stored
+  and the sys_id that was sent, and is dropped from the staged list so a retry cannot create
+  another orphan; a read-back that fails is reported, never counted as success.
 - **Modify Change now actually creates the CTASKs it lists (GH #377).** Save Changes to
   ServiceNow PATCHed the change and reported success while the staged change tasks were
   validated and then thrown away &mdash; nothing ever reached the change_task table. The save

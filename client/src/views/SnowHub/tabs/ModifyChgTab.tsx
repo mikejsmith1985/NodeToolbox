@@ -16,7 +16,8 @@ import type {
   CtaskTemplate,
   SnowReference,
 } from '../hooks/useCrgState.ts';
-import { createChangeTasks } from '../hooks/useCrgState.ts';
+import type { AttachedChangeTaskRecord, CreatedChangeTaskRecord } from '../hooks/useCrgState.ts';
+import { createChangeTask, fetchChangeTasksAttachedToChange } from '../hooks/useCrgState.ts';
 import { inferEnvironmentKeyFromValue } from '../hooks/environmentKeyInference.ts';
 import { useCtaskTemplates } from '../hooks/useCtaskTemplates.ts';
 import type { SnowChoiceOptionMap } from '../hooks/useSnowChoiceOptions.ts';
@@ -596,10 +597,21 @@ async function saveChangeToSnow(changeKey: string, changeData: EditableChange): 
   console.log(`${MODIFY_CHG_LOG_PREFIX} Successfully saved change`, { changeKey });
 }
 
-/** Outcome of creating the staged CTASKs: how many landed, and why it stopped if it did. */
+/** Outcome of creating the staged CTASKs: what ServiceNow created, and why it stopped if it did. */
 interface StagedChangeTaskCreationResult {
-  createdCount: number;
+  createdTasks: CreatedChangeTaskRecord[];
   failureMessage: string | null;
+}
+
+/** What the status line and the alert get after the change and its tasks are saved. */
+interface ChangeTaskSaveOutcome {
+  successMessage: string | null;
+  failureMessage: string | null;
+}
+
+/** Names tasks by CTASK number, falling back to sys_id when ServiceNow returned no number. */
+function listChangeTaskNames(tasks: CreatedChangeTaskRecord[]): string {
+  return tasks.map((task) => task.number || task.sysId).join(', ');
 }
 
 /**
@@ -618,23 +630,42 @@ function buildPartialChangeTaskFailureMessage(
     + 'The tasks still listed were not created; save again to retry them.';
 }
 
-/** Builds the success line, counting the tasks created so the operator can see they exist. */
-function buildSaveSuccessMessage(changeKey: string, createdTaskCount: number): string {
+/**
+ * Names the tasks ServiceNow created but did not attach to the change, and what it stored
+ * instead — the exact shape GH #377 reported as "2 created but nothing in ServiceNow".
+ */
+function buildDetachedChangeTasksMessage(
+  changeKey: string,
+  changeSysId: string,
+  detachedTasks: CreatedChangeTaskRecord[],
+): string {
+  const detachedDetail = detachedTasks
+    .map((task) => `${task.number || task.sysId} (stored change_request "${task.changeRequestSysId}")`)
+    .join(', ');
+  const subjectPhrase = detachedTasks.length === 1 ? 'it is' : 'they are';
+  return `Change ${changeKey} was saved and ServiceNow created ${detachedDetail}, but ${subjectPhrase} not `
+    + `attached to ${changeKey} (sys_id "${changeSysId}" was sent). The tasks exist in ServiceNow and were `
+    + 'removed from the staged list so saving again cannot create more; open them in ServiceNow and set '
+    + 'their Change Request by hand.';
+}
+
+/** Builds the success line, naming the tasks so the operator can find them on the change. */
+function buildSaveSuccessMessage(changeKey: string, createdTasks: CreatedChangeTaskRecord[]): string {
   const baseMessage = `Change ${changeKey} saved successfully!`;
-  if (createdTaskCount === 0) {
+  if (createdTasks.length === 0) {
     return baseMessage;
   }
-  const taskNoun = createdTaskCount === 1 ? 'change task' : 'change tasks';
-  return `${baseMessage} ${createdTaskCount} ${taskNoun} created.`;
+  const taskNoun = createdTasks.length === 1 ? 'change task' : 'change tasks';
+  return `${baseMessage} ${createdTasks.length} ${taskNoun} created and attached: ${listChangeTaskNames(createdTasks)}.`;
 }
 
 /**
  * Creates the staged CTASKs one at a time under the saved change (GH #377).
  *
- * Each task is handed back through onTaskCreated the moment ServiceNow accepts it, so a
- * failure part-way leaves only the uncreated tasks staged; a retry cannot duplicate one
- * that already exists. Reuses the CHG Generator's own writer so both flows write the
- * identical change_task payload.
+ * Each task is handed back through onTaskCreated the moment ServiceNow returns its record, so a
+ * failure part-way leaves only the uncreated tasks staged; a retry cannot duplicate one that
+ * already exists. Reuses the CHG Generator's own writer so both flows write the identical
+ * change_task payload.
  */
 async function createStagedChangeTasks(
   changeKey: string,
@@ -642,10 +673,11 @@ async function createStagedChangeTasks(
   stagedTasks: CtaskTemplate[],
   onTaskCreated: (taskId: string) => void,
 ): Promise<StagedChangeTaskCreationResult> {
+  const createdTasks: CreatedChangeTaskRecord[] = [];
   for (let taskIndex = 0; taskIndex < stagedTasks.length; taskIndex += 1) {
     const stagedTask = stagedTasks[taskIndex];
     try {
-      await createChangeTasks(changeSysId, [stagedTask]);
+      createdTasks.push(await createChangeTask(changeSysId, stagedTask));
     } catch (error) {
       const causeMessage = error instanceof Error ? error.message : 'Failed to create change task';
       console.error(`${MODIFY_CHG_LOG_PREFIX} Change task creation failed`, {
@@ -658,7 +690,7 @@ async function createStagedChangeTasks(
       });
       const failedTaskLabel = stagedTask.shortDescription || stagedTask.name;
       return {
-        createdCount: taskIndex,
+        createdTasks,
         failureMessage: buildPartialChangeTaskFailureMessage(
           changeKey, taskIndex, stagedTasks.length, failedTaskLabel, causeMessage,
         ),
@@ -667,8 +699,72 @@ async function createStagedChangeTasks(
     onTaskCreated(stagedTask.id);
   }
 
-  console.log(`${MODIFY_CHG_LOG_PREFIX} Created staged change tasks`, { changeKey, count: stagedTasks.length });
-  return { createdCount: stagedTasks.length, failureMessage: null };
+  console.log(`${MODIFY_CHG_LOG_PREFIX} Created staged change tasks`, { changeKey, changeSysId, createdTasks });
+  return { createdTasks, failureMessage: null };
+}
+
+/** True when ServiceNow's attached-task list contains this created task, by sys_id or number. */
+function isChangeTaskListed(createdTask: CreatedChangeTaskRecord, attachedTasks: AttachedChangeTaskRecord[]): boolean {
+  return attachedTasks.some((attachedTask) =>
+    (createdTask.sysId !== '' && attachedTask.sysId === createdTask.sysId)
+    || (createdTask.number !== '' && attachedTask.number === createdTask.number));
+}
+
+/**
+ * Proves the created tasks are on the change by reading ServiceNow's own list back (Article X).
+ * Returns null when every task is listed; otherwise a message naming what is missing and what
+ * ServiceNow stored on it. A read-back that fails is reported too — it is not a success.
+ */
+async function verifyChangeTasksAttached(
+  changeKey: string,
+  changeSysId: string,
+  createdTasks: CreatedChangeTaskRecord[],
+): Promise<string | null> {
+  if (createdTasks.length === 0) {
+    return null;
+  }
+
+  let attachedTasks: AttachedChangeTaskRecord[];
+  try {
+    attachedTasks = await fetchChangeTasksAttachedToChange(changeSysId);
+  } catch (error) {
+    const causeMessage = error instanceof Error ? error.message : 'read-back failed';
+    console.error(`${MODIFY_CHG_LOG_PREFIX} Change task read-back failed`, { changeKey, changeSysId, createdTasks, cause: error });
+    return `Change ${changeKey} was saved and ServiceNow reported creating ${listChangeTaskNames(createdTasks)}, `
+      + `but the read-back could not confirm they are attached: ${causeMessage}. `
+      + 'Check the change in ServiceNow before adding them again.';
+  }
+
+  const detachedTasks = createdTasks.filter((createdTask) => !isChangeTaskListed(createdTask, attachedTasks));
+  if (detachedTasks.length === 0) {
+    return null;
+  }
+  console.error(`${MODIFY_CHG_LOG_PREFIX} Created change tasks are not attached to the change`, {
+    changeKey, changeSysId, detachedTasks, attachedTasks,
+  });
+  return buildDetachedChangeTasksMessage(changeKey, changeSysId, detachedTasks);
+}
+
+/**
+ * Runs the whole task step after the change is saved: create the staged tasks, then prove they
+ * are attached. Both a creation failure and an attachment failure are reported together, because
+ * a task created before the failure can still be an orphan.
+ */
+async function createAndVerifyStagedChangeTasks(
+  changeKey: string,
+  changeSysId: string,
+  stagedTasks: CtaskTemplate[],
+  onTaskCreated: (taskId: string) => void,
+): Promise<ChangeTaskSaveOutcome> {
+  const taskCreation = await createStagedChangeTasks(changeKey, changeSysId, stagedTasks, onTaskCreated);
+  const attachmentFailure = await verifyChangeTasksAttached(changeKey, changeSysId, taskCreation.createdTasks);
+  const failureMessages = [taskCreation.failureMessage, attachmentFailure]
+    .filter((message): message is string => message !== null);
+
+  if (failureMessages.length > 0) {
+    return { successMessage: null, failureMessage: failureMessages.join(' ') };
+  }
+  return { successMessage: buildSaveSuccessMessage(changeKey, taskCreation.createdTasks), failureMessage: null };
 }
 
 /**
@@ -1505,8 +1601,8 @@ export default function ModifyChgTab(): React.ReactElement {
     try {
       if (!modifyState.change) throw new Error('No change data to save');
       await saveChangeToSnow(modifyState.changeKey, modifyState.change);
-      // The change is saved; now the staged CTASKs are created against it (GH #377).
-      const taskCreation = await createStagedChangeTasks(
+      // The change is saved; now the staged CTASKs are created against it and read back (GH #377).
+      const saveOutcome = await createAndVerifyStagedChangeTasks(
         modifyState.changeKey,
         modifyState.change.sysId,
         modifyState.changeTasks,
@@ -1515,10 +1611,8 @@ export default function ModifyChgTab(): React.ReactElement {
       setModifyState((prev) => ({
         ...prev,
         isSaving: false,
-        saveError: taskCreation.failureMessage,
-        saveSuccess: taskCreation.failureMessage
-          ? null
-          : buildSaveSuccessMessage(modifyState.changeKey, taskCreation.createdCount),
+        saveError: saveOutcome.failureMessage,
+        saveSuccess: saveOutcome.successMessage,
       }));
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to save change';

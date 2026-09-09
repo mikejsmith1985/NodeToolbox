@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { jiraGet } from '../../../services/jiraApi.ts';
 import { snowFetch } from '../../../services/snowApi.ts';
 import type { CrgTemplate, CtaskTemplate, CtaskTemplateData } from './useCrgState.ts';
-import { formatSnowDateTimeForApi, listEnvironmentDateOrderErrors, NO_ENABLED_ENVIRONMENT_MESSAGE, reconcileStagedChangeTasks, useCrgState } from './useCrgState.ts';
+import { createChangeTask, fetchChangeTasksAttachedToChange, formatSnowDateTimeForApi, listEnvironmentDateOrderErrors, NO_ENABLED_ENVIRONMENT_MESSAGE, reconcileStagedChangeTasks, useCrgState } from './useCrgState.ts';
 
 vi.mock('../../../services/jiraApi.ts', () => ({
   jiraGet: vi.fn(),
@@ -2049,12 +2049,21 @@ describe('useCrgState', () => {
   describe('reconcileStagedChangeTasks', () => {
     const noopSleep = () => Promise.resolve();
 
-    /** Routes the mocked snowFetch by method: GET returns auto-created CTASKs, others succeed. */
+    /**
+     * Routes the mocked snowFetch by method: GET returns auto-created CTASKs, a POST answers with
+     * the record ServiceNow would create (the writer now refuses a 2xx without one — GH #377),
+     * and a PATCH succeeds.
+     */
     function mockSnowForAutoCtasks(autoCtasks: Array<{ sys_id: string }>) {
+      let createdTaskCount = 0;
       vi.mocked(snowFetch).mockImplementation((async (path: string, options?: { method?: string }) => {
         const method = options?.method ?? 'GET';
         if (method === 'GET' && path.includes('change_task?')) {
           return { result: autoCtasks };
+        }
+        if (method === 'POST') {
+          createdTaskCount += 1;
+          return { result: { sys_id: `created-${createdTaskCount}`, number: `CTASK000800${createdTaskCount}` } };
         }
         return {};
       }) as never);
@@ -2652,5 +2661,88 @@ describe('formatSnowDateTimeForApi', () => {
 
   it('passes unrecognized values through untouched rather than fabricating a date', () => {
     expect(formatSnowDateTimeForApi('not-a-date')).toBe('not-a-date');
+  });
+});
+
+describe('createChangeTask (GH #377 — trust the record, not the status code)', () => {
+  const STAGED_TASK: CtaskTemplate = {
+    id: 'staged-1',
+    name: 'Ad-hoc job',
+    createdAt: '2026-09-01T00:00:00.000Z',
+    shortDescription: 'Run the ad-hoc job',
+    description: '',
+    assignmentGroup: { sysId: 'group-9', displayName: 'Delivery' },
+    assignedTo: { sysId: '', displayName: '' },
+    plannedStartDate: '',
+    plannedEndDate: '',
+    closeNotes: '',
+  };
+
+  beforeEach(() => {
+    vi.mocked(snowFetch).mockReset();
+  });
+
+  it('returns the created task as ServiceNow described it, including the change it was attached to', async () => {
+    vi.mocked(snowFetch).mockResolvedValue({
+      result: { sys_id: 'ctask-sys-1', number: 'CTASK0009001', change_request: { value: 'chg-sys-1', link: 'https://x' } },
+    } as never);
+
+    const createdTask = await createChangeTask('chg-sys-1', STAGED_TASK);
+
+    expect(createdTask).toEqual({ sysId: 'ctask-sys-1', number: 'CTASK0009001', changeRequestSysId: 'chg-sys-1' });
+    expect(vi.mocked(snowFetch)).toHaveBeenCalledWith(
+      '/api/now/table/change_task',
+      expect.objectContaining({ method: 'POST', body: expect.stringContaining('"change_request":"chg-sys-1"') }),
+    );
+  });
+
+  it('reads a detached task honestly — an empty change_request comes back empty, not invented', async () => {
+    vi.mocked(snowFetch).mockResolvedValue({
+      result: { sys_id: 'ctask-sys-2', number: 'CTASK0009002', change_request: '' },
+    } as never);
+
+    const createdTask = await createChangeTask('chg-sys-1', STAGED_TASK);
+
+    expect(createdTask.changeRequestSysId).toBe('');
+    expect(createdTask.number).toBe('CTASK0009002');
+  });
+
+  it('throws when ServiceNow answers OK without a task record, quoting what it did send', async () => {
+    vi.mocked(snowFetch).mockResolvedValue('<html>Sign in</html>' as never);
+
+    await expect(createChangeTask('chg-sys-1', STAGED_TASK)).rejects.toThrow(
+      /ServiceNow accepted the change_task request but returned no task record.*<html>Sign in<\/html>/,
+    );
+  });
+});
+
+describe('fetchChangeTasksAttachedToChange (GH #377 read-back)', () => {
+  beforeEach(() => {
+    vi.mocked(snowFetch).mockReset();
+  });
+
+  it('queries change_task by change_request and returns sys_id + number pairs', async () => {
+    vi.mocked(snowFetch).mockResolvedValue({
+      result: [
+        { sys_id: 'ctask-sys-1', number: 'CTASK0009001' },
+        { sys_id: { value: 'ctask-sys-2' }, number: { display_value: 'CTASK0009002' } },
+      ],
+    } as never);
+
+    const attachedTasks = await fetchChangeTasksAttachedToChange('chg-sys-1');
+
+    expect(attachedTasks).toEqual([
+      { sysId: 'ctask-sys-1', number: 'CTASK0009001' },
+      { sysId: 'ctask-sys-2', number: 'CTASK0009002' },
+    ]);
+    const requestPath = String(vi.mocked(snowFetch).mock.calls[0][0]);
+    expect(requestPath).toContain('/api/now/table/change_task?');
+    expect(requestPath).toContain(encodeURIComponent('change_request=chg-sys-1'));
+  });
+
+  it('returns an empty list when ServiceNow returns no result array', async () => {
+    vi.mocked(snowFetch).mockResolvedValue({} as never);
+
+    expect(await fetchChangeTasksAttachedToChange('chg-sys-1')).toEqual([]);
   });
 });
