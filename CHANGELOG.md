@@ -15,6 +15,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   it. GitHub's indicator stays behind the unlock.
 
 ### Fixed
+- **Modify Change now actually creates the CTASKs it lists (GH #377).** Save Changes to
+  ServiceNow PATCHed the change and reported success while the staged change tasks were
+  validated and then thrown away &mdash; nothing ever reached the change_task table. The save
+  now creates each staged task against the loaded change's sys_id through the CHG Generator's
+  own writer, so a task added to an existing change carries the identical payload as one created
+  with a new change. The status line counts the tasks created, the staged list empties as each
+  one lands so a second save cannot duplicate them, a task that fails part-way is reported as
+  "the change was saved, but task N of M was not" with only the uncreated tasks left staged for
+  the retry, and a loaded record with no sys_id is refused before ServiceNow is touched.
 - **Attach test evidence can now pick the release by fix version (GH #377).** A change whose text
   names no Jira keys left the section with an empty scope and nothing to gather. The section now
   starts with a **Project key** (remembered, and seeded from the CHG Generator's draft) and a **Fix

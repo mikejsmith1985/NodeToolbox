@@ -16,6 +16,7 @@ import type {
   CtaskTemplate,
   SnowReference,
 } from '../hooks/useCrgState.ts';
+import { createChangeTasks } from '../hooks/useCrgState.ts';
 import { inferEnvironmentKeyFromValue } from '../hooks/environmentKeyInference.ts';
 import { useCtaskTemplates } from '../hooks/useCtaskTemplates.ts';
 import type { SnowChoiceOptionMap } from '../hooks/useSnowChoiceOptions.ts';
@@ -31,6 +32,9 @@ const MY_ACTIVE_CHANGE_QUERY = 'assigned_to=javascript:gs.getUserID()^active=tru
 const MY_ACTIVE_CHANGE_FIELDS = 'number,short_description';
 const MY_ACTIVE_CHANGE_LIMIT = 100;
 const MODIFY_CHG_LOG_PREFIX = '[CRG Modify CHG]';
+/** Refusal shown when tasks are staged but the loaded record has no sys_id to attach them to. */
+const MISSING_CHANGE_SYS_ID_MESSAGE =
+  'The loaded change has no sys_id, so its change tasks cannot be created. Fetch the change again before saving.';
 const EMPTY_SNOW_REFERENCE: SnowReference = { sysId: '', displayName: '' };
 const SNOW_DATE_TIME_INPUT_PATTERN = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2})(?::\d{2})?/;
 
@@ -592,6 +596,81 @@ async function saveChangeToSnow(changeKey: string, changeData: EditableChange): 
   console.log(`${MODIFY_CHG_LOG_PREFIX} Successfully saved change`, { changeKey });
 }
 
+/** Outcome of creating the staged CTASKs: how many landed, and why it stopped if it did. */
+interface StagedChangeTaskCreationResult {
+  createdCount: number;
+  failureMessage: string | null;
+}
+
+/**
+ * Names exactly what reached ServiceNow when CTASK creation stopped part-way (GH #377).
+ * The change itself was already saved, so the message must never read as a total failure.
+ */
+function buildPartialChangeTaskFailureMessage(
+  changeKey: string,
+  failedTaskIndex: number,
+  totalTaskCount: number,
+  failedTaskLabel: string,
+  causeMessage: string,
+): string {
+  return `Change ${changeKey} was saved, but change task ${failedTaskIndex + 1} of ${totalTaskCount} `
+    + `("${failedTaskLabel}") was not created: ${causeMessage}. `
+    + 'The tasks still listed were not created; save again to retry them.';
+}
+
+/** Builds the success line, counting the tasks created so the operator can see they exist. */
+function buildSaveSuccessMessage(changeKey: string, createdTaskCount: number): string {
+  const baseMessage = `Change ${changeKey} saved successfully!`;
+  if (createdTaskCount === 0) {
+    return baseMessage;
+  }
+  const taskNoun = createdTaskCount === 1 ? 'change task' : 'change tasks';
+  return `${baseMessage} ${createdTaskCount} ${taskNoun} created.`;
+}
+
+/**
+ * Creates the staged CTASKs one at a time under the saved change (GH #377).
+ *
+ * Each task is handed back through onTaskCreated the moment ServiceNow accepts it, so a
+ * failure part-way leaves only the uncreated tasks staged; a retry cannot duplicate one
+ * that already exists. Reuses the CHG Generator's own writer so both flows write the
+ * identical change_task payload.
+ */
+async function createStagedChangeTasks(
+  changeKey: string,
+  changeSysId: string,
+  stagedTasks: CtaskTemplate[],
+  onTaskCreated: (taskId: string) => void,
+): Promise<StagedChangeTaskCreationResult> {
+  for (let taskIndex = 0; taskIndex < stagedTasks.length; taskIndex += 1) {
+    const stagedTask = stagedTasks[taskIndex];
+    try {
+      await createChangeTasks(changeSysId, [stagedTask]);
+    } catch (error) {
+      const causeMessage = error instanceof Error ? error.message : 'Failed to create change task';
+      console.error(`${MODIFY_CHG_LOG_PREFIX} Change task creation failed`, {
+        changeKey,
+        changeSysId,
+        taskIndex,
+        totalTaskCount: stagedTasks.length,
+        error: causeMessage,
+        cause: error,
+      });
+      const failedTaskLabel = stagedTask.shortDescription || stagedTask.name;
+      return {
+        createdCount: taskIndex,
+        failureMessage: buildPartialChangeTaskFailureMessage(
+          changeKey, taskIndex, stagedTasks.length, failedTaskLabel, causeMessage,
+        ),
+      };
+    }
+    onTaskCreated(stagedTask.id);
+  }
+
+  console.log(`${MODIFY_CHG_LOG_PREFIX} Created staged change tasks`, { changeKey, count: stagedTasks.length });
+  return { createdCount: stagedTasks.length, failureMessage: null };
+}
+
 /**
  * Fetches user's open changes from ServiceNow using the relay bridge.
  * Returns array of changes with key and summary.
@@ -651,6 +730,9 @@ function validateChangeBeforeSave(state: ModifyChgState): string | null {
 
   // Check CTASKs are valid if present
   if (state.changeTasks && state.changeTasks.length > 0) {
+    if (!state.change.sysId) {
+      return MISSING_CHANGE_SYS_ID_MESSAGE;
+    }
     for (let i = 0; i < state.changeTasks.length; i += 1) {
       const ctask = state.changeTasks[i];
       if (!ctask.shortDescription?.trim()) {
@@ -1423,10 +1505,20 @@ export default function ModifyChgTab(): React.ReactElement {
     try {
       if (!modifyState.change) throw new Error('No change data to save');
       await saveChangeToSnow(modifyState.changeKey, modifyState.change);
+      // The change is saved; now the staged CTASKs are created against it (GH #377).
+      const taskCreation = await createStagedChangeTasks(
+        modifyState.changeKey,
+        modifyState.change.sysId,
+        modifyState.changeTasks,
+        handleRemoveCtask,
+      );
       setModifyState((prev) => ({
         ...prev,
         isSaving: false,
-        saveSuccess: `Change ${modifyState.changeKey} saved successfully!`,
+        saveError: taskCreation.failureMessage,
+        saveSuccess: taskCreation.failureMessage
+          ? null
+          : buildSaveSuccessMessage(modifyState.changeKey, taskCreation.createdCount),
       }));
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to save change';
@@ -1437,7 +1529,7 @@ export default function ModifyChgTab(): React.ReactElement {
       });
       setModifyState((prev) => ({ ...prev, isSaving: false, saveError: errorMessage }));
     }
-  }, [modifyState]);
+  }, [modifyState, handleRemoveCtask]);
 
   const handleStepSelect = useCallback((step: 1 | 2 | 3 | 4 | 5) => {
     if (step === 1 || modifyState.change) {

@@ -872,7 +872,18 @@ function buildCtaskTemplateDataFromRecord(ctaskRecord: Record<string, unknown>):
   };
 }
 
-async function createChangeTasks(changeSysId: string, templates: CtaskTemplate[]): Promise<number> {
+/**
+ * Creates one change_task record per staged CTASK under the given change.
+ *
+ * Shared by the CHG creation flows here and by Modify Change (GH #377), so both surfaces
+ * write the identical payload — a CTASK added to an existing CHG must look exactly like
+ * one created with a new CHG.
+ *
+ * @param changeSysId - sys_id of the change_request the tasks belong to.
+ * @param templates   - The staged CTASKs, created in list order.
+ * @returns The number of tasks created.
+ */
+export async function createChangeTasks(changeSysId: string, templates: CtaskTemplate[]): Promise<number> {
   for (const template of templates) {
     await snowFetch(
       '/api/now/table/change_task',
