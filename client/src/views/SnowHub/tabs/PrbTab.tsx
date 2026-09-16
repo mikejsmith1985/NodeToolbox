@@ -5,6 +5,7 @@ import { useState, type ChangeEvent } from 'react';
 import { usePrbState } from '../hooks/usePrbState.ts';
 import PrbWizard from './PrbWizard.tsx';
 import styles from './PrbTab.module.css';
+import { PrbRequiredFields } from '../components/PrbRequiredFields.tsx';
 
 const TAB_TITLE = 'PRB Generator';
 const TAB_SUBTITLE = 'Load a ServiceNow problem record, review the details, and create paired Jira issues.';
@@ -153,6 +154,12 @@ function IssueCreationForm({ state, actions }: IssueFormProps) {
               />
             </label>
           ) : null}
+          <PrbRequiredFields
+            isDisabled={state.isCreatingIssues}
+            onSelectionChange={actions.setRequiredFieldSelection}
+            requiredFieldsByIssueType={state.requiredFieldsByIssueType}
+            selectionByFieldId={state.requiredFieldSelectionByFieldId}
+          />
           <div className={styles.buttonRow}>
             <button className={styles.primaryButton} onClick={() => void actions.createJiraIssues()} type="button">Create Jira Issues</button>
             <button className={styles.secondaryButton} onClick={() => actions.reset()} type="button">Start Over</button>
