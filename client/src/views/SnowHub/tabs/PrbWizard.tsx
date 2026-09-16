@@ -13,6 +13,7 @@ import { useState, type ChangeEvent } from 'react';
 import type { usePrbState } from '../hooks/usePrbState.ts';
 import { LoadedIcon } from '../../../components/AppIcons/index.tsx';
 import styles from './PrbTab.module.css';
+import { PrbRequiredFields } from '../components/PrbRequiredFields.tsx';
 
 const STEP_TITLES = ['Pick PRB', 'Issue', 'SL Story', 'Review'] as const;
 const TOTAL_STEPS = STEP_TITLES.length;
@@ -171,6 +172,12 @@ function renderStepBody(currentStep: number, props: PrbWizardProps): React.React
           </div>
         ) : null}
       </div>
+      <PrbRequiredFields
+        isDisabled={state.isCreatingIssues}
+        onSelectionChange={actions.setRequiredFieldSelection}
+        requiredFieldsByIssueType={state.requiredFieldsByIssueType}
+        selectionByFieldId={state.requiredFieldSelectionByFieldId}
+      />
       <div className={styles.buttonRow}>
         <button className={styles.primaryButton} onClick={() => void actions.createJiraIssues()} type="button">
           Create Jira Issues

@@ -1,6 +1,6 @@
 // PrbTab.test.tsx — Unit tests for the PRB-to-Jira generator tab.
 
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { mockState, mockActions } = vi.hoisted(() => ({
@@ -28,6 +28,8 @@ const { mockState, mockActions } = vi.hoisted(() => ({
       isCreatingIssues: false,
       createError: null as string | null,
       createdIssueKeys: [] as string[],
+      requiredFieldsByIssueType: {} as Record<string, Array<{ fieldId: string; name: string; schemaType: string; allowedValues: Array<{ id: string; value: string }> }>>,
+      requiredFieldSelectionByFieldId: {} as Record<string, { optionId?: string; text?: string }>,
     },
     mockActions: {
       setPrbNumber: vi.fn(),
@@ -39,6 +41,7 @@ const { mockState, mockActions } = vi.hoisted(() => ({
       setCreateSlAsSubtask: vi.fn(),
       setSlSubtaskIssueTypeName: vi.fn(),
       createJiraIssues: vi.fn().mockResolvedValue(undefined),
+      setRequiredFieldSelection: vi.fn(),
       reset: vi.fn(),
     },
   }));
@@ -65,6 +68,8 @@ function resetMockState(): void {
     isCreatingIssues: false,
     createError: null,
     createdIssueKeys: [],
+    requiredFieldsByIssueType: {},
+    requiredFieldSelectionByFieldId: {},
   });
 }
 
@@ -190,5 +195,29 @@ describe('PrbTab', () => {
     expect(descriptionPreviews.length).toBeGreaterThanOrEqual(1);
     // SL Story label present in preview heading
     expect(screen.getByText('Issue 2 — SL Story')).toBeInTheDocument();
+  });
+
+  it('asks for the fields the create screen requires, beside the create button', () => {
+    // GH #384: the Defect needed a field the generator never asked for. The hook discovers it and the
+    // tab must offer a picker for it, on both the quick and wizard paths.
+    mockState.prbData = {
+      sysId: 'problem-1',
+      number: 'PRB0001234',
+      incidentNumber: 'INC0012345',
+      shortDescription: 'Checkout flow fails under load',
+      description: 'Users are unable to complete checkout.',
+      state: 'Open',
+      severity: '2 - High',
+      assignedTo: null,
+    };
+    mockState.requiredFieldsByIssueType = {
+      Defect: [{ fieldId: 'customfield_10001', name: 'Defect Root Cause', schemaType: 'option', allowedValues: [{ id: '10', value: 'Code' }] }],
+    };
+    render(<PrbTab />);
+
+    fireEvent.change(screen.getByLabelText('Defect Root Cause'), { target: { value: '10' } });
+
+    expect(screen.getByText(/Defect needs: Defect Root Cause/)).toBeInTheDocument();
+    expect(mockActions.setRequiredFieldSelection).toHaveBeenCalledWith('customfield_10001', { optionId: '10' });
   });
 });

@@ -15,6 +15,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   it. GitHub's indicator stays behind the unlock.
 
 ### Fixed
+- **PRB Generator asks for what the create screen requires before posting, creates the primary
+  first, and skips the SL issue when the primary fails (GH #384).** The Defect was refused with
+  "This field is required" while the SL Story ENFCT-2109 was created anyway, because the two went
+  out in parallel and the generator never asked what the Defect screen wanted. Create now checks each
+  issue type's create screen through the same createmeta endpoints the Template Maker uses; a required
+  field the fixed payload does not carry is offered as a picker beside the button, using the shared
+  required-fields control, and nothing is posted until it is answered. A project with no issue type
+  by the configured name is refused up front. The primary is always created before the SL issue, and
+  a failed primary skips the SL issue and says so, on the standalone-Story path as the sub-task path
+  always did. A field the picker cannot render (a user, a date) no longer blocks: the POST is tried
+  and Jira's refusal names it. Every Jira field error now carries the field key, so
+  "customfield_10001: This field is required" replaces a bare "This field is required" everywhere.
 - **Hygiene's one-click date fix now counts only what it can write, names what it cannot, and says
   why a write failed (GH #384).** "Fix 5 blank or mismatched date(s)" wrote to none of them: three had
   no dated release, which the scan could already see, and the two it did try were reported as "could

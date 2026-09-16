@@ -97,7 +97,9 @@ describe('jiraApi', () => {
     } as unknown as Response);
 
     await expect(jiraPost(JIRA_CREATE_PATH, JIRA_CREATE_BODY)).rejects.toThrow(
-      'Jira POST /rest/api/3/issue failed: 400 — The reporter specified is not a user.; Issue Type is required.',
+      // The field KEY rides along: a bare "This field is required" on a custom field names nothing
+      // the reader can act on (GH #384).
+      'Jira POST /rest/api/3/issue failed: 400 — The reporter specified is not a user.; issuetype: Issue Type is required.',
     );
   });
 

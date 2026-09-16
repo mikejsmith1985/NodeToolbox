@@ -53,9 +53,13 @@ async function assertSuccessfulResponse(response: Response, messagePrefix: strin
       const jiraErrorMessages = Array.isArray(errorBody.errorMessages)
         ? (errorBody.errorMessages as unknown[]).filter((msg): msg is string => typeof msg === 'string')
         : [];
+      // The field KEY rides along with its message. Jira's "This field is required" on a custom
+      // field names nothing on its own, and the key is the one thing that lets somebody find the
+      // field on the screen (GH #384).
       const jiraFieldErrors =
         errorBody.errors !== null && typeof errorBody.errors === 'object'
-          ? Object.values(errorBody.errors as Record<string, string>)
+          ? Object.entries(errorBody.errors as Record<string, string>)
+            .map(([fieldKey, fieldMessage]) => `${fieldKey}: ${fieldMessage}`)
           : [];
       const allJiraErrors = [...jiraErrorMessages, ...jiraFieldErrors].filter(Boolean);
       if (allJiraErrors.length > 0) {
