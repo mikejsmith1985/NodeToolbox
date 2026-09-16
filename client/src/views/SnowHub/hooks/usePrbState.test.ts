@@ -1,15 +1,34 @@
 // usePrbState.test.ts — Unit tests for the PRB generator state hook.
 
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { jiraPost } from '../../../services/jiraApi.ts';
+import { getIssueTypeFields, getProjectIssueTypes, jiraPost } from '../../../services/jiraApi.ts';
 import { snowFetch } from '../../../services/snowApi.ts';
 import { usePrbState } from './usePrbState.ts';
 
 vi.mock('../../../services/jiraApi.ts', () => ({
   jiraPost: vi.fn(),
+  getProjectIssueTypes: vi.fn(),
+  getIssueTypeFields: vi.fn(),
 }));
+
+/** The create screens Jira describes by default: every type exists and none needs anything extra. */
+const MOCK_PROJECT_ISSUE_TYPES = {
+  values: [
+    { id: '1', name: 'Defect', subtask: false },
+    { id: '2', name: 'Story', subtask: false },
+    { id: '3', name: 'Sub-task', subtask: true },
+  ],
+};
+
+const DEFECT_ROOT_CAUSE_FIELD = {
+  fieldId: 'customfield_10001',
+  name: 'Defect Root Cause',
+  required: true,
+  schema: { type: 'option' },
+  allowedValues: [{ id: '10', value: 'Code' }],
+};
 
 vi.mock('../../../services/snowApi.ts', () => ({
   snowFetch: vi.fn(),
@@ -49,6 +68,14 @@ const MOCK_SERVICE_NOW_INCIDENT_RESPONSE = {
 };
 
 describe('usePrbState', () => {
+  beforeEach(() => {
+    // Reset, not clear: a queued once-value left behind by a test whose primary failed (and whose
+    // SL issue was therefore never posted) would otherwise be consumed by the next test's first POST.
+    vi.mocked(jiraPost).mockReset();
+    vi.mocked(getProjectIssueTypes).mockReset().mockResolvedValue(MOCK_PROJECT_ISSUE_TYPES);
+    vi.mocked(getIssueTypeFields).mockReset().mockResolvedValue({ values: [] });
+  });
+
   afterEach(() => {
     vi.clearAllMocks();
     // The SL sub-task preferences persist to localStorage; clear them so tests stay isolated.
@@ -271,6 +298,11 @@ describe('usePrbState', () => {
     vi.mocked(jiraPost)
       .mockResolvedValueOnce({ key: 'ABC-101' })
       .mockResolvedValueOnce({ key: 'ABC-102' });
+    // The project must actually offer the configured type — a name it lacks is now refused before
+    // any POST, which is the point of the pre-create check.
+    vi.mocked(getProjectIssueTypes).mockResolvedValue({
+      values: [...MOCK_PROJECT_ISSUE_TYPES.values, { id: '4', name: 'SL Task', subtask: true }],
+    });
     const { result } = renderHook(() => usePrbState());
 
     act(() => {
@@ -382,6 +414,172 @@ describe('usePrbState', () => {
       expect(result.current.state.createError).toContain('Primary issue');
       expect(result.current.state.createError).toContain('skipped because the primary issue was not created');
     });
+  });
+
+  it('creates the primary first and skips the standalone SL Story when the primary fails', async () => {
+    // GH #384: both went out at once, the Defect was refused, and the SL Story ENFCT-2109 was created
+    // anyway — an orphan the next attempt would duplicate.
+    vi.mocked(snowFetch)
+      .mockResolvedValueOnce(MOCK_SERVICE_NOW_PROBLEM_RESPONSE)
+      .mockResolvedValueOnce(MOCK_SERVICE_NOW_INCIDENT_RESPONSE);
+    vi.mocked(jiraPost).mockRejectedValueOnce(new Error('Jira POST /rest/api/2/issue failed: 400 — customfield_10001: This field is required'));
+    const { result } = renderHook(() => usePrbState());
+
+    act(() => {
+      result.current.actions.setPrbNumber('PRB0001234');
+      result.current.actions.setJiraProjectKey('ABC');
+      result.current.actions.setCreateSlAsSubtask(false);
+    });
+    await act(async () => {
+      await result.current.actions.fetchPrb();
+    });
+    await waitFor(() => expect(result.current.state.prbData).not.toBeNull());
+    await act(async () => {
+      await result.current.actions.createJiraIssues();
+    });
+
+    expect(vi.mocked(jiraPost)).toHaveBeenCalledTimes(1);
+    expect(result.current.state.createdIssueKeys).toEqual([]);
+    expect(result.current.state.createError).toContain('customfield_10001: This field is required');
+    expect(result.current.state.createError).toContain('SL Story: skipped because the primary issue was not created');
+  });
+
+  it('stops before any POST and lists what the create screen still needs', async () => {
+    vi.mocked(snowFetch)
+      .mockResolvedValueOnce(MOCK_SERVICE_NOW_PROBLEM_RESPONSE)
+      .mockResolvedValueOnce(MOCK_SERVICE_NOW_INCIDENT_RESPONSE);
+    vi.mocked(getIssueTypeFields).mockImplementation((_projectKey: string, issueTypeId: string) =>
+      Promise.resolve({ values: issueTypeId === '1' ? [DEFECT_ROOT_CAUSE_FIELD] : [] }));
+    const { result } = renderHook(() => usePrbState());
+
+    act(() => {
+      result.current.actions.setPrbNumber('PRB0001234');
+      result.current.actions.setJiraProjectKey('ABC');
+    });
+    await act(async () => {
+      await result.current.actions.fetchPrb();
+    });
+    await waitFor(() => expect(result.current.state.prbData).not.toBeNull());
+    await act(async () => {
+      await result.current.actions.createJiraIssues();
+    });
+
+    expect(vi.mocked(jiraPost)).not.toHaveBeenCalled();
+    expect(result.current.state.requiredFieldsByIssueType.Defect.map((field) => field.name)).toEqual(['Defect Root Cause']);
+    expect(result.current.state.createError).toContain('Defect needs: Defect Root Cause');
+    expect(result.current.state.isCreatingIssues).toBe(false);
+  });
+
+  it('carries the answered required field into the primary payload and creates both', async () => {
+    vi.mocked(snowFetch)
+      .mockResolvedValueOnce(MOCK_SERVICE_NOW_PROBLEM_RESPONSE)
+      .mockResolvedValueOnce(MOCK_SERVICE_NOW_INCIDENT_RESPONSE);
+    vi.mocked(getIssueTypeFields).mockImplementation((_projectKey: string, issueTypeId: string) =>
+      Promise.resolve({ values: issueTypeId === '1' ? [DEFECT_ROOT_CAUSE_FIELD] : [] }));
+    vi.mocked(jiraPost)
+      .mockResolvedValueOnce({ key: 'ABC-101' })
+      .mockResolvedValueOnce({ key: 'ABC-102' });
+    const { result } = renderHook(() => usePrbState());
+
+    act(() => {
+      result.current.actions.setPrbNumber('PRB0001234');
+      result.current.actions.setJiraProjectKey('ABC');
+      result.current.actions.setRequiredFieldSelection('customfield_10001', { optionId: '10' });
+    });
+    await act(async () => {
+      await result.current.actions.fetchPrb();
+    });
+    await waitFor(() => expect(result.current.state.prbData).not.toBeNull());
+    await act(async () => {
+      await result.current.actions.createJiraIssues();
+    });
+
+    const primaryPayload = vi.mocked(jiraPost).mock.calls[0][1] as { fields: Record<string, unknown> };
+    expect(primaryPayload.fields.customfield_10001).toEqual({ id: '10' });
+    // The sub-task's screen did not ask for it, so it is not sent there.
+    const subtaskPayload = vi.mocked(jiraPost).mock.calls[1][1] as { fields: Record<string, unknown> };
+    expect(subtaskPayload.fields.customfield_10001).toBeUndefined();
+    expect(result.current.state.createdIssueKeys).toEqual(['ABC-101', 'ABC-102']);
+    expect(result.current.state.createError).toBeNull();
+  });
+
+  it('refuses before posting when the project has no issue type by that name', async () => {
+    vi.mocked(snowFetch)
+      .mockResolvedValueOnce(MOCK_SERVICE_NOW_PROBLEM_RESPONSE)
+      .mockResolvedValueOnce(MOCK_SERVICE_NOW_INCIDENT_RESPONSE);
+    vi.mocked(getProjectIssueTypes).mockResolvedValue({ values: [{ id: '2', name: 'Story', subtask: false }] });
+    const { result } = renderHook(() => usePrbState());
+
+    act(() => {
+      result.current.actions.setPrbNumber('PRB0001234');
+      result.current.actions.setJiraProjectKey('ABC');
+    });
+    await act(async () => {
+      await result.current.actions.fetchPrb();
+    });
+    await waitFor(() => expect(result.current.state.prbData).not.toBeNull());
+    await act(async () => {
+      await result.current.actions.createJiraIssues();
+    });
+
+    expect(vi.mocked(jiraPost)).not.toHaveBeenCalled();
+    expect(result.current.state.createError).toContain('Project ABC has no issue type named "Defect"');
+  });
+
+  it('still creates when Jira cannot describe the create screen', async () => {
+    // Older Jira, or no browse permission on createmeta: the check is a courtesy, not a gate. The
+    // POST itself remains the authority and reports its own reason if it fails.
+    vi.mocked(snowFetch)
+      .mockResolvedValueOnce(MOCK_SERVICE_NOW_PROBLEM_RESPONSE)
+      .mockResolvedValueOnce(MOCK_SERVICE_NOW_INCIDENT_RESPONSE);
+    vi.mocked(getProjectIssueTypes).mockRejectedValue(new Error('Jira GET failed: 404'));
+    vi.mocked(jiraPost)
+      .mockResolvedValueOnce({ key: 'ABC-101' })
+      .mockResolvedValueOnce({ key: 'ABC-102' });
+    const { result } = renderHook(() => usePrbState());
+
+    act(() => {
+      result.current.actions.setPrbNumber('PRB0001234');
+      result.current.actions.setJiraProjectKey('ABC');
+    });
+    await act(async () => {
+      await result.current.actions.fetchPrb();
+    });
+    await waitFor(() => expect(result.current.state.prbData).not.toBeNull());
+    await act(async () => {
+      await result.current.actions.createJiraIssues();
+    });
+
+    expect(result.current.state.createdIssueKeys).toEqual(['ABC-101', 'ABC-102']);
+  });
+
+  it('attempts the create when the only missing field cannot be collected here, so Jira names it', async () => {
+    // A user picker or date the inline control cannot render must not block forever; the POST is
+    // tried and Jira's own refusal, which now names the field, is what the operator reads.
+    vi.mocked(snowFetch)
+      .mockResolvedValueOnce(MOCK_SERVICE_NOW_PROBLEM_RESPONSE)
+      .mockResolvedValueOnce(MOCK_SERVICE_NOW_INCIDENT_RESPONSE);
+    vi.mocked(getIssueTypeFields).mockImplementation((_projectKey: string, issueTypeId: string) =>
+      Promise.resolve({ values: issueTypeId === '1'
+        ? [{ fieldId: 'customfield_10009', name: 'Tester', required: true, schema: { type: 'user' } }]
+        : [] }));
+    vi.mocked(jiraPost).mockRejectedValueOnce(new Error('Jira POST /rest/api/2/issue failed: 400 — customfield_10009: This field is required'));
+    const { result } = renderHook(() => usePrbState());
+
+    act(() => {
+      result.current.actions.setPrbNumber('PRB0001234');
+      result.current.actions.setJiraProjectKey('ABC');
+    });
+    await act(async () => {
+      await result.current.actions.fetchPrb();
+    });
+    await waitFor(() => expect(result.current.state.prbData).not.toBeNull());
+    await act(async () => {
+      await result.current.actions.createJiraIssues();
+    });
+
+    expect(vi.mocked(jiraPost)).toHaveBeenCalledTimes(1);
+    expect(result.current.state.createError).toContain('customfield_10009: This field is required');
   });
 
   it('resets the PRB state back to its initial values', async () => {
