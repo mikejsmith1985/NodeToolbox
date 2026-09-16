@@ -8,14 +8,16 @@
 // "Ready to Work", and the scan does not fetch changelogs for every issue it reads. So it is fetched
 // HERE, per issue, only for the issues actually being fixed.
 //
-// Every write goes through the shipped `saveFeatureReviewSimpleField`, so a date set from Hygiene
-// and the same date set from Feature Review produce identical requests.
+// Every write goes through the shipped `saveFeatureReviewSimpleFields`, so a date set from Hygiene
+// and the same date set from Feature Review produce identical requests — and each issue's dates go
+// in ONE request, so an issue is dated wholly or not at all.
 
 import { jiraGet } from '../../services/jiraApi.ts';
-import { saveFeatureReviewSimpleField } from '../SprintDashboard/featureReviewFixes.ts';
+import { saveFeatureReviewSimpleFields } from '../SprintDashboard/featureReviewFixes.ts';
 import type { HygieneFieldConfig, HygieneFinding, JiraIssue } from './checks/hygieneChecks.ts';
 import {
   deriveIssueDates,
+  explainMissingDrivingFixVersion,
   READY_TO_WORK_STATUS_NAME,
   WORKING_STATUS_NAME,
   type DerivedIssueDates,
@@ -167,6 +169,25 @@ export async function planDerivedDateWrites(
     workingCalendar: context?.workingCalendar,
   });
 
+  const targetStartWrite = derived.mismatchedFieldNames.includes('Target Start') && derived.targetStart && targetStartFieldId
+    ? { fieldId: targetStartFieldId, fieldName: 'Target Start', value: derived.targetStart }
+    : null;
+
+  return {
+    issueKey: issue.key,
+    writes: [...buildReleaseDateWrites(derived, targetEndFieldId), ...(targetStartWrite ? [targetStartWrite] : [])],
+    undecidedReasons: derived.undecidedReasons,
+    targetStartBasis: derived.targetStartBasis,
+  };
+}
+
+/**
+ * The writes that follow from the RELEASE alone: Due Date and Target End.
+ *
+ * Kept apart from Target Start because these two need nothing the scan does not already hold, which
+ * is what lets the button work out at scan time whether it can honestly promise them.
+ */
+function buildReleaseDateWrites(derived: DerivedIssueDates, targetEndFieldId: string | null): DerivedDateWrite[] {
   const candidateWrites: Array<DerivedDateWrite | null> = [
     derived.mismatchedFieldNames.includes('Due Date') && derived.dueDate
       ? { fieldId: 'duedate', fieldName: 'Due Date', value: derived.dueDate }
@@ -174,17 +195,27 @@ export async function planDerivedDateWrites(
     derived.mismatchedFieldNames.includes('Target End') && derived.targetEnd && targetEndFieldId
       ? { fieldId: targetEndFieldId, fieldName: 'Target End', value: derived.targetEnd }
       : null,
-    derived.mismatchedFieldNames.includes('Target Start') && derived.targetStart && targetStartFieldId
-      ? { fieldId: targetStartFieldId, fieldName: 'Target Start', value: derived.targetStart }
-      : null,
   ];
+  return candidateWrites.filter((write): write is DerivedDateWrite => write !== null);
+}
 
-  return {
-    issueKey: issue.key,
-    writes: candidateWrites.filter((write): write is DerivedDateWrite => write !== null),
-    undecidedReasons: derived.undecidedReasons,
-    targetStartBasis: derived.targetStartBasis,
-  };
+/**
+ * The release-derived writes an issue needs, judged from the scan's own data and nothing else.
+ *
+ * The same policy the fix runs, minus the changelog it has not fetched yet. Target Start is passed
+ * as already-agreeing so it never appears here; this answers only "does the release date anything".
+ */
+function readScanVisibleReleaseWrites(issue: JiraIssue, fieldConfig: HygieneFieldConfig): DerivedDateWrite[] {
+  const targetEndFieldId = readFirstFieldId(fieldConfig.targetEndFieldIds);
+  const derived = deriveIssueDates({
+    fixVersions: issue.fields.fixVersions ?? [],
+    readyToWorkEnteredIso: null,
+    workingEnteredIso: null,
+    currentDueDate: readFieldText(issue, 'duedate'),
+    currentTargetEnd: targetEndFieldId ? readFieldText(issue, targetEndFieldId) : null,
+    currentTargetStart: null,
+  });
+  return buildReleaseDateWrites(derived, targetEndFieldId);
 }
 
 /**
@@ -207,9 +238,6 @@ export async function applyDerivedDates(
   for (const issue of issues) {
     try {
       const plan = await planDerivedDateWrites(issue, fieldConfig, context);
-      if (plan.writes.some((write) => write.fieldName === 'Target Start') && plan.targetStartBasis) {
-        targetStartBasisCounts[plan.targetStartBasis] = (targetStartBasisCounts[plan.targetStartBasis] ?? 0) + 1;
-      }
       if (plan.writes.length === 0) {
         // Nothing to write is an ANSWER, not a non-event: the policy could not derive a value, and
         // the reason is the only thing that tells a user whether to wait, fix Jira, or look again.
@@ -221,10 +249,14 @@ export async function applyDerivedDates(
         });
         continue;
       }
-      for (const write of plan.writes) {
-        await saveFeatureReviewSimpleField(issue.key, write.fieldId, write.value);
-      }
+      // One request for the whole issue: three separate writes could land the due date and then be
+      // refused on Target End, leaving it half-dated and reported as a failure (GH #384).
+      const fieldValuesById = Object.fromEntries(plan.writes.map((write) => [write.fieldId, write.value]));
+      await saveFeatureReviewSimpleFields(issue.key, fieldValuesById);
       updatedIssueKeys.push(issue.key);
+      // Counted AFTER the write: a basis tallied for a date that never reached Jira produced
+      // "Updated 0 issue(s) … Target Start: 2 from the day work began", which claims the opposite.
+      recordTargetStartBasis(plan, targetStartBasisCounts);
     } catch (caughtError) {
       failures.push({
         issueKey: issue.key,
@@ -234,6 +266,14 @@ export async function applyDerivedDates(
   }
 
   return { updatedIssueKeys, failures, undecided, targetStartBasisCounts };
+}
+
+/** Tallies which rule produced a Target Start that actually landed. */
+function recordTargetStartBasis(plan: DerivedDatePlan, targetStartBasisCounts: Record<string, number>): void {
+  if (!plan.writes.some((write) => write.fieldName === 'Target Start') || !plan.targetStartBasis) {
+    return;
+  }
+  targetStartBasisCounts[plan.targetStartBasis] = (targetStartBasisCounts[plan.targetStartBasis] ?? 0) + 1;
 }
 
 /**
@@ -286,18 +326,75 @@ export function countUnfixableDateIssues(findings: readonly HygieneFinding[]): n
     && !finding.flags.some((flag) => DETERMINISTIC_DATE_CHECK_IDS.includes(flag.checkId))).length;
 }
 
+/** The date flags whose value is derived FROM the release, and so cannot be written without one. */
+const RELEASE_DERIVED_DATE_CHECK_IDS = ['missing-due-date', 'missing-target-end', 'dates-out-of-sync'];
+
+/** The one date flag whose value comes from the changelog rather than the release. */
+const TARGET_START_CHECK_ID = 'missing-target-start';
+
+/** The reason given when a release dates the issue but no field is configured to receive the date. */
+const NO_DATE_FIELD_CONFIGURED_REASON = 'no Target End field is configured to receive the date';
+
+/** True when the finding carries any flag the bulk fix is willing to act on. */
+function hasDeterministicDateFlag(finding: HygieneFinding): boolean {
+  return finding.flags.some((flag) => DETERMINISTIC_DATE_CHECK_IDS.includes(flag.checkId));
+}
+
+/**
+ * True when the scan already holds everything needed to write at least one of this issue's dates.
+ *
+ * "Fix 5 blank or mismatched date(s)" wrote to none of them: three had no dated release, which the
+ * scan could see without fetching anything (GH #384). A flag says a date is missing; only the policy
+ * says whether one can be derived, so the policy is what decides the count — the same arithmetic the
+ * fix runs, on the same data, minus the changelog.
+ *
+ * Target Start is the exception: it comes from the changelog, which the scan does not fetch, so a
+ * missing one is always offered and only the fix — changelog in hand — can say no, and says why.
+ */
+function canWriteFromScanData(finding: HygieneFinding, fieldConfig: HygieneFieldConfig): boolean {
+  const checkIds = finding.flags.map((flag) => flag.checkId);
+  if (checkIds.includes(TARGET_START_CHECK_ID)) {
+    return true;
+  }
+  if (!checkIds.some((checkId) => RELEASE_DERIVED_DATE_CHECK_IDS.includes(checkId))) {
+    return false;
+  }
+  return readScanVisibleReleaseWrites(finding.issue, fieldConfig).length > 0;
+}
+
 /**
  * The issues a bulk derived-date write would actually change, each listed once.
  *
- * Pure and separately testable because it decides the number shown on the button, and a count that
- * disagrees with what the button then writes is worse than no count.
+ * Pure and separately testable because it decides the number shown on the button AND on the stat
+ * band, and a count that disagrees with what the button then writes is worse than no count.
  */
 export function readDeterministicDateFixCandidates(
   findings: readonly HygieneFinding[],
+  fieldConfig: HygieneFieldConfig,
 ): JiraIssue[] {
   return findings
-    .filter((finding) => finding.flags.some((flag) => DETERMINISTIC_DATE_CHECK_IDS.includes(flag.checkId)))
+    .filter((finding) => hasDeterministicDateFlag(finding) && canWriteFromScanData(finding, fieldConfig))
     .map((finding) => finding.issue);
+}
+
+/**
+ * The date-flagged issues the button leaves out because the scan can already see they cannot be
+ * dated, each with the policy's own reason.
+ *
+ * They are not allowed to vanish: three of five silently dropping off the count is the same
+ * broken-button reading GH #384 started with, one step earlier. Named here, before the click, they
+ * tell the operator what to fix in Jira first — a fix version, or a release date on one.
+ */
+export function readUndatableDateIssues(
+  findings: readonly HygieneFinding[],
+  fieldConfig: HygieneFieldConfig,
+): Array<{ issueKey: string; reasons: string[] }> {
+  return findings
+    .filter((finding) => hasDeterministicDateFlag(finding) && !canWriteFromScanData(finding, fieldConfig))
+    .map((finding) => ({
+      issueKey: finding.issue.key,
+      reasons: [explainMissingDrivingFixVersion(finding.issue.fields.fixVersions ?? []) ?? NO_DATE_FIELD_CONFIGURED_REASON],
+    }));
 }
 
 /** How many issue keys one reason lists before it summarises the rest. */

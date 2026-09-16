@@ -15,6 +15,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   it. GitHub's indicator stays behind the unlock.
 
 ### Fixed
+- **Hygiene's one-click date fix now counts only what it can write, names what it cannot, and says
+  why a write failed (GH #384).** "Fix 5 blank or mismatched date(s)" wrote to none of them: three had
+  no dated release, which the scan could already see, and the two it did try were reported as "could
+  not be written" with no reason. The button and the DATES FIXABLE figure now come from one selection
+  that runs the date policy on the scan's own data, so an issue with no fix version, or a release with
+  no date, is never promised. Those issues are named beside the button with the policy's reason, before
+  the click, so the operator knows what to fix in Jira first. A failed write now carries Jira's own
+  message. Each issue's dates go to Jira in one request, so an issue is dated wholly or not at all
+  instead of half-landing and being reported as a failure. The Target Start basis tally counts only
+  writes that landed.
 - **Modify Change now proves its CTASKs are attached instead of trusting the status code (GH #377,
   follow-up).** v0.262.2 reported "2 change tasks created" while the change in ServiceNow showed
   none: a 2xx from the relay was being counted as a created task. The save now reads the record

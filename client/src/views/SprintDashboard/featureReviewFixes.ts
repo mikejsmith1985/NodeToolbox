@@ -397,10 +397,20 @@ export function buildTransitionFieldsPayload(
 
 /** Saves a plain text or date Jira field from the Feature Review quick-fix panel. */
 export async function saveFeatureReviewSimpleField(issueKey: string, fieldId: string, value: string): Promise<void> {
+  await saveFeatureReviewSimpleFields(issueKey, { [fieldId]: value });
+}
+
+/**
+ * Saves several plain Jira fields on one issue in ONE request.
+ *
+ * Jira applies a single edit wholly or not at all. Writing three dates as three requests could land
+ * the first and be refused on the third, leaving an issue half-dated that the caller then reports
+ * as "could not be written" — and the next scan offers it again forever (GH #384). The one-field
+ * writer delegates here, so a date set alone and a date set with its neighbours are the same request.
+ */
+export async function saveFeatureReviewSimpleFields(issueKey: string, fieldValuesById: Record<string, string>): Promise<void> {
   await jiraPut(`/rest/api/2/issue/${encodeURIComponent(issueKey)}`, {
-    fields: {
-      [fieldId]: value,
-    },
+    fields: { ...fieldValuesById },
   });
 }
 

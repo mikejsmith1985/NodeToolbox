@@ -22,6 +22,8 @@ import {
   saveFeatureReviewTransition,
   saveFeatureReviewUserField,
   searchFeatureReviewUsers,
+  saveFeatureReviewSimpleField,
+  saveFeatureReviewSimpleFields,
   saveFeatureReviewStoryPoints,
 } from './featureReviewFixes.ts';
 
@@ -387,5 +389,32 @@ describe('featureReviewFixes', () => {
 
       await expect(fetchFeatureReviewFixVersions('ENCUC')).resolves.toEqual([]);
     });
+  });
+});
+
+describe('saveFeatureReviewSimpleFields', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockJiraPut.mockResolvedValue(undefined);
+  });
+
+  it('writes every field in ONE request, so an issue is dated wholly or not at all', async () => {
+    // Three dates as three PUTs could land the first and fail the third, leaving an issue half-dated
+    // that the caller then reports as "could not be written" (GH #384). One request cannot half-land.
+    await saveFeatureReviewSimpleFields('ENCUC-1', { duedate: '2026-10-08', customfield_10102: '2026-09-17' });
+
+    expect(mockJiraPut).toHaveBeenCalledTimes(1);
+    expect(mockJiraPut).toHaveBeenCalledWith('/rest/api/2/issue/ENCUC-1', {
+      fields: { duedate: '2026-10-08', customfield_10102: '2026-09-17' },
+    });
+  });
+
+  it('sends exactly the request the one-field writer always sent', async () => {
+    await saveFeatureReviewSimpleField('ENCUC-1', 'duedate', '2026-10-08');
+    const [singleFieldRequest] = mockJiraPut.mock.calls;
+    await saveFeatureReviewSimpleFields('ENCUC-1', { duedate: '2026-10-08' });
+    const [, multiFieldRequest] = mockJiraPut.mock.calls;
+
+    expect(multiFieldRequest).toEqual(singleFieldRequest);
   });
 });

@@ -20,6 +20,7 @@ vi.mock('../../services/jiraApi.ts', () => ({
 }));
 
 import HygieneView from './HygieneView.tsx';
+import { jiraPut } from '../../services/jiraApi.ts';
 import { useHygieneState } from './hooks/useHygieneState.ts';
 import { HYGIENE_CHECK_IDS, resolveHygieneFieldConfig, type HygieneFinding, type HygieneSummary } from './checks/hygieneChecks.ts';
 import { summarizeCheckApplicability } from './checks/hygieneEligibility.ts';
@@ -1245,15 +1246,21 @@ describe('HygieneView — the PI Review treatment', () => {
 });
 
 describe('HygieneView — the date button says what it will NOT do', () => {
-  function findingWith(issueKey: string, checkIds: string[]): HygieneFinding {
+  const DATED_RELEASE = [{ name: 'R1', releaseDate: '2026-10-08', released: false }];
+
+  function findingWith(issueKey: string, checkIds: string[], fieldOverrides: Record<string, unknown> = {}): HygieneFinding {
     return {
       issue: {
         key: issueKey,
         fields: {
           summary: `Summary ${issueKey}`,
+          issuetype: { name: 'Story' },
           status: { name: 'To Do', statusCategory: { key: 'new' } },
           created: buildDateDaysAgo(3),
           updated: buildDateDaysAgo(3),
+          fixVersions: DATED_RELEASE,
+          duedate: null,
+          ...fieldOverrides,
         },
       },
       flags: checkIds.map((checkId) => ({ checkId, label: checkId, severity: 'warn' as const })),
@@ -1286,6 +1293,50 @@ describe('HygieneView — the date button says what it will NOT do', () => {
 
     expect(screen.queryByRole('button', { name: /blank or mismatched date/ })).toBeNull();
     expect(screen.getByText(/None can be auto-fixed/)).toBeInTheDocument();
+  });
+
+  it('names the date-flagged issues it cannot date yet, instead of counting them as one click', () => {
+    // "Fix 5 blank or mismatched date(s)" wrote to none of them: three had no dated release, which the
+    // scan could already see (GH #384). The button counts only what it can write, and the rest are
+    // named with the reason — the same reason the fix itself would have given after the click.
+    mockUseHygieneState.mockReturnValue(buildHookState({
+      findings: [
+        findingWith('ENFCT-1', ['missing-target-end']),
+        findingWith('ENFCT-2', ['missing-due-date'], { fixVersions: [] }),
+        findingWith('ENFCT-3', ['missing-due-date'], { fixVersions: [{ name: 'R-TBD', released: false }] }),
+      ],
+    }));
+    render(<HygieneView />);
+
+    expect(screen.getByRole('button', { name: /Fix 1 blank or mismatched date/ })).toBeInTheDocument();
+    const undatableNote = screen.getByText(/2 cannot be dated until Jira is fixed/);
+    expect(undatableNote.textContent).toContain('no fix version set on the issue (1): ENFCT-2');
+    expect(undatableNote.textContent).toContain('fix version has no release date in Jira (R-TBD) (1): ENFCT-3');
+  });
+
+  it('still names the undatable issues when there is nothing left to click', () => {
+    mockUseHygieneState.mockReturnValue(buildHookState({
+      findings: [findingWith('ENFCT-2', ['missing-due-date'], { fixVersions: [] })],
+    }));
+    render(<HygieneView />);
+
+    expect(screen.queryByRole('button', { name: /blank or mismatched date/ })).toBeNull();
+    expect(screen.getByText(/1 cannot be dated until Jira is fixed/).textContent).toContain('ENFCT-2');
+  });
+
+  it("shows Jira's own reason when a write fails, not just the issue key", async () => {
+    // "2 could not be written: ENCUC-2377, ENCUC-2296" gave the operator nowhere to go (GH #384).
+    // The reason was already captured by the engine and then dropped on the way to the screen.
+    vi.mocked(jiraPut).mockRejectedValueOnce(
+      new Error("Jira PUT /rest/api/2/issue/ENFCT-1 failed: 400 — Field 'Target End' cannot be set. It is not on the appropriate screen, or unknown."),
+    );
+    mockUseHygieneState.mockReturnValue(buildHookState({ findings: [findingWith('ENFCT-1', ['missing-target-end'])] }));
+    render(<HygieneView />);
+
+    fireEvent.click(screen.getByRole('button', { name: /Fix 1 blank or mismatched date/ }));
+
+    await waitFor(() => expect(screen.getByText(/could not be written/)).toBeInTheDocument());
+    expect(screen.getByText(/could not be written/).textContent).toContain("ENFCT-1 (Jira PUT /rest/api/2/issue/ENFCT-1 failed: 400 — Field 'Target End' cannot be set");
   });
 
   it('says nothing at all when there are no date problems of either kind', () => {

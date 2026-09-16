@@ -2,20 +2,21 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { mockJiraGet, mockSaveField } = vi.hoisted(() => ({
+const { mockJiraGet, mockSaveFields } = vi.hoisted(() => ({
   mockJiraGet: vi.fn(),
-  mockSaveField: vi.fn(),
+  mockSaveFields: vi.fn(),
 }));
 
 vi.mock('../../services/jiraApi.ts', () => ({ jiraGet: mockJiraGet }));
 vi.mock('../SprintDashboard/featureReviewFixes.ts', () => ({
-  saveFeatureReviewSimpleField: mockSaveField,
+  saveFeatureReviewSimpleFields: mockSaveFields,
 }));
 
 import {
   applyDerivedDates,
   planDerivedDateWrites,
   readDeterministicDateFixCandidates,
+  readUndatableDateIssues,
   countUnfixableDateIssues,
   summariseUndecidedDates,
 } from './derivedDateFix.ts';
@@ -40,7 +41,7 @@ function buildIssue(overrides: Record<string, unknown> = {}, issueKey = 'ENCUC-1
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockSaveField.mockResolvedValue(undefined);
+  mockSaveFields.mockResolvedValue(undefined);
   mockJiraGet.mockResolvedValue({ changelog: { histories: [] } });
 });
 
@@ -133,8 +134,10 @@ describe('applyDerivedDates', () => {
   it('writes every planned field through the shipped writer', async () => {
     const outcome = await applyDerivedDates([buildIssue()], FIELD_CONFIG);
 
-    expect(mockSaveField).toHaveBeenCalledWith('ENCUC-1', 'duedate', '2026-10-08');
-    expect(mockSaveField).toHaveBeenCalledWith('ENCUC-1', 'customfield_10102', '2026-09-17');
+    // ONE request per issue. Two separate writes could land the due date and then fail on Target
+    // End, leaving an issue half-dated that the outcome reports as "could not be written" (GH #384).
+    expect(mockSaveFields).toHaveBeenCalledTimes(1);
+    expect(mockSaveFields).toHaveBeenCalledWith('ENCUC-1', { duedate: '2026-10-08', customfield_10102: '2026-09-17' });
     expect(outcome.updatedIssueKeys).toEqual(['ENCUC-1']);
     expect(outcome.failures).toEqual([]);
   });
@@ -142,7 +145,7 @@ describe('applyDerivedDates', () => {
   it('keeps going after one issue fails and reports which one', async () => {
     // A run over a hundred issues must not be undone by one locked field; the honest outcome names
     // what landed and what did not, rather than reporting a whole-run success or failure.
-    mockSaveField.mockRejectedValueOnce(new Error('Field is not on the screen'));
+    mockSaveFields.mockRejectedValueOnce(new Error('Field is not on the screen'));
     const issues = [buildIssue(), buildIssue({}, 'ENCUC-2')];
 
     const outcome = await applyDerivedDates(issues, FIELD_CONFIG);
@@ -157,7 +160,7 @@ describe('applyDerivedDates', () => {
       FIELD_CONFIG,
     );
 
-    expect(mockSaveField).not.toHaveBeenCalled();
+    expect(mockSaveFields).not.toHaveBeenCalled();
     expect(outcome.updatedIssueKeys).toEqual([]);
   });
 });
@@ -166,9 +169,25 @@ describe('readDeterministicDateFixCandidates', () => {
   // The bulk button was gated to `dates-out-of-sync` alone, so an issue simply MISSING a date was
   // never offered to it — the one case there was most of. Nothing about those dates needs a person
   // or a model: the policy derives them, and the changelog supplies the start (GH #375).
-  function findingWith(issueKey: string, checkIds: string[]): HygieneFinding {
+  //
+  // But a flag is not a fix. "Fix 5 blank or mismatched date(s)" wrote to none of them, because
+  // three had no dated release — something the scan could already see (GH #384). The candidate list
+  // therefore runs the same policy on the scan's own data and offers only what it can write.
+  const DATED_RELEASE = [{ name: 'R1', releaseDate: '2026-10-08', released: false }];
+
+  function findingWith(issueKey: string, checkIds: string[], fieldOverrides: Record<string, unknown> = {}): HygieneFinding {
     return {
-      issue: { key: issueKey, fields: {} },
+      issue: {
+        key: issueKey,
+        fields: {
+          summary: issueKey,
+          issuetype: { name: 'Story' },
+          status: { name: 'Working', statusCategory: { key: 'indeterminate' } },
+          fixVersions: DATED_RELEASE,
+          duedate: null,
+          ...fieldOverrides,
+        },
+      },
       flags: checkIds.map((checkId) => ({ checkId, label: checkId, severity: 'warn' })),
     } as unknown as HygieneFinding;
   }
@@ -178,8 +197,8 @@ describe('readDeterministicDateFixCandidates', () => {
       findingWith('TBX-1', ['missing-target-start']),
       findingWith('TBX-2', ['missing-due-date']),
       findingWith('TBX-3', ['missing-target-end']),
-      findingWith('TBX-4', ['dates-out-of-sync']),
-    ]);
+      findingWith('TBX-4', ['dates-out-of-sync'], { duedate: '2026-01-01' }),
+    ], FIELD_CONFIG);
 
     expect(candidates.map((issue) => issue.key)).toEqual(['TBX-1', 'TBX-2', 'TBX-3', 'TBX-4']);
   });
@@ -187,13 +206,13 @@ describe('readDeterministicDateFixCandidates', () => {
   it('counts an issue once however many date flags it carries', () => {
     const candidates = readDeterministicDateFixCandidates([
       findingWith('TBX-1', ['missing-due-date', 'missing-target-end', 'dates-out-of-sync']),
-    ]);
+    ], FIELD_CONFIG);
 
     expect(candidates).toHaveLength(1);
   });
 
   it('leaves out an issue with no date flag', () => {
-    const candidates = readDeterministicDateFixCandidates([findingWith('TBX-1', ['missing-sp', 'no-ac'])]);
+    const candidates = readDeterministicDateFixCandidates([findingWith('TBX-1', ['missing-sp', 'no-ac'])], FIELD_CONFIG);
 
     expect(candidates).toEqual([]);
   });
@@ -203,9 +222,81 @@ describe('readDeterministicDateFixCandidates', () => {
     // Rewriting the date to make the warning go away is the one thing that must never be automatic.
     const candidates = readDeterministicDateFixCandidates([
       findingWith('TBX-1', ['due-date-overdue', 'target-end-overdue', 'target-start-ready']),
-    ]);
+    ], FIELD_CONFIG);
 
     expect(candidates).toEqual([]);
+  });
+
+  it('leaves out an issue whose only date flags need a release it does not have', () => {
+    // Due Date and Target End are derived FROM the fix version. With none set there is nothing to
+    // derive, and the scan can see that without fetching anything — so the button must not count it.
+    const candidates = readDeterministicDateFixCandidates([
+      findingWith('TBX-1', ['missing-due-date', 'missing-target-end'], { fixVersions: [] }),
+    ], FIELD_CONFIG);
+
+    expect(candidates).toEqual([]);
+  });
+
+  it('leaves out an issue whose release has no date yet', () => {
+    const candidates = readDeterministicDateFixCandidates([
+      findingWith('TBX-1', ['missing-due-date'], { fixVersions: [{ name: 'R-TBD', released: false }] }),
+    ], FIELD_CONFIG);
+
+    expect(candidates).toEqual([]);
+  });
+
+  it('keeps an issue missing only its Target Start even without a release', () => {
+    // Target Start comes from the changelog, not the release, so a missing fix version says nothing
+    // about whether it can be written. Only the fix itself, with the changelog in hand, can tell.
+    const candidates = readDeterministicDateFixCandidates([
+      findingWith('TBX-1', ['missing-target-start'], { fixVersions: [] }),
+    ], FIELD_CONFIG);
+
+    expect(candidates.map((issue) => issue.key)).toEqual(['TBX-1']);
+  });
+});
+
+describe('readUndatableDateIssues', () => {
+  // The issues the button leaves out are not allowed to vanish: three of five silently dropping off
+  // the count is the same broken-button reading GH #384 started with, one step earlier.
+  function findingWith(issueKey: string, checkIds: string[], fieldOverrides: Record<string, unknown> = {}): HygieneFinding {
+    return {
+      issue: {
+        key: issueKey,
+        fields: {
+          summary: issueKey,
+          issuetype: { name: 'Story' },
+          status: { name: 'Working', statusCategory: { key: 'indeterminate' } },
+          fixVersions: [{ name: 'R1', releaseDate: '2026-10-08', released: false }],
+          duedate: null,
+          ...fieldOverrides,
+        },
+      },
+      flags: checkIds.map((checkId) => ({ checkId, label: checkId, severity: 'warn' })),
+    } as unknown as HygieneFinding;
+  }
+
+  it("names each excluded issue with the policy's own reason", () => {
+    const undatable = readUndatableDateIssues([
+      findingWith('TBX-1', ['missing-due-date'], { fixVersions: [] }),
+      findingWith('TBX-2', ['missing-target-end'], { fixVersions: [{ name: 'R-TBD', released: false }] }),
+    ], FIELD_CONFIG);
+
+    expect(undatable).toEqual([
+      { issueKey: 'TBX-1', reasons: ['no fix version set on the issue'] },
+      { issueKey: 'TBX-2', reasons: ['fix version has no release date in Jira (R-TBD)'] },
+    ]);
+  });
+
+  it('does not list an issue the button will write to', () => {
+    expect(readUndatableDateIssues([findingWith('TBX-1', ['missing-due-date'])], FIELD_CONFIG)).toEqual([]);
+  });
+
+  it('does not list an issue with no fixable date flag at all', () => {
+    expect(readUndatableDateIssues([
+      findingWith('TBX-1', ['missing-sp'], { fixVersions: [] }),
+      findingWith('TBX-2', ['due-date-overdue'], { fixVersions: [] }),
+    ], FIELD_CONFIG)).toEqual([]);
   });
 });
 
@@ -351,7 +442,7 @@ describe('the forecast context', () => {
 
   it('reports how many Target Starts each rule produced', async () => {
     mockJiraGet.mockResolvedValue({ changelog: { histories: [] } });
-    mockSaveField.mockResolvedValue(undefined);
+    mockSaveFields.mockResolvedValue(undefined);
 
     const outcome = await applyDerivedDates(
       [buildIssue({}, 'ENCUC-1'), buildIssue({}, 'ENCUC-2')],
@@ -362,6 +453,20 @@ describe('the forecast context', () => {
     // One date worked back from real effort, one issue that could not be dated at all. Reporting
     // only "2 updated" would hide the difference between a plan and a placeholder.
     expect(outcome.targetStartBasisCounts['back-calculated']).toBe(1);
+  });
+
+  it('counts a Target Start basis only when the write actually landed', async () => {
+    // "Updated 0 issue(s) … Target Start: 2 from the day work began" (GH #384): the two were counted
+    // before their writes failed, so the report claimed dates that never reached Jira.
+    mockJiraGet.mockResolvedValue({
+      changelog: { histories: [{ created: '2026-08-03T09:00:00.000Z', items: [{ field: 'status', toString: 'Working' }] }] },
+    });
+    mockSaveFields.mockRejectedValue(new Error('Jira PUT failed: 400 — Field cannot be set'));
+
+    const outcome = await applyDerivedDates([buildIssue()], FIELD_CONFIG);
+
+    expect(outcome.failures).toEqual([{ issueKey: 'ENCUC-1', reason: 'Jira PUT failed: 400 — Field cannot be set' }]);
+    expect(outcome.targetStartBasisCounts).toEqual({});
   });
 
   it('behaves exactly as before when no context is given at all', async () => {

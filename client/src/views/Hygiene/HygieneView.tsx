@@ -21,6 +21,7 @@ import {
   applyDerivedDates,
   countUnfixableDateIssues,
   readDeterministicDateFixCandidates,
+  readUndatableDateIssues,
   summariseUndecidedDates,
 } from './derivedDateFix.ts';
 import { AgeBadge } from '../../components/IssueMeta/AgeBadge.tsx';
@@ -382,7 +383,7 @@ export default function HygieneView({
           clears, and how much of the board is fine. */}
       {hasLoadedFindings && (
         <div className={styles.statBand} data-testid="hygiene-stat-band">
-          {buildHygieneStatBand(hygieneState.findings, hygieneState.scannedIssueCount ?? 0).map((stat) => (
+          {buildHygieneStatBand(hygieneState.findings, hygieneState.scannedIssueCount ?? 0, hygieneState.fieldConfig).map((stat) => (
             <div className={styles[`statCard_${stat.tone}`]} key={stat.id}>
               <span className={styles.statCardLabel}>{stat.label}</span>
               <strong className={styles.statCardValue}>{stat.count}</strong>
@@ -833,17 +834,23 @@ function BulkDateFixButton({ hygieneState }: { hygieneState: ReturnType<typeof u
   // Every issue a derived write would change, not just the ones whose dates DISAGREE with the
   // release. Missing dates were the majority case and the button could never see them, so the
   // deterministic fix sat one click away from a hundred issues and was offered to almost none.
-  const datedIssues = readDeterministicDateFixCandidates(hygieneState.findings);
+  const datedIssues = readDeterministicDateFixCandidates(hygieneState.findings, hygieneState.fieldConfig);
+  // The date-flagged issues the scan can already see cannot be dated — no fix version, or a release
+  // with no date. Left off the button's count, but never off the screen (GH #384).
+  const undatableIssues = readUndatableDateIssues(hygieneState.findings, hygieneState.fieldConfig);
   // Counted whether or not the button renders: "nothing here is auto-fixable" is itself the answer
   // on a board full of overdue dates, and returning null said nothing at all.
   const unfixableDateIssueCount = countUnfixableDateIssues(hygieneState.findings);
 
   if (datedIssues.length === 0) {
-    return unfixableDateIssueCount === 0 ? null : (
+    return unfixableDateIssueCount === 0 && undatableIssues.length === 0 ? null : (
       <div className={styles.bulkFixRow}>
-        <span className={styles.fixNote}>
-          {`${unfixableDateIssueCount} issue(s) have an overdue date. None can be auto-fixed — the dates are right and the work is late.`}
-        </span>
+        {unfixableDateIssueCount > 0 && (
+          <span className={styles.fixNote}>
+            {`${unfixableDateIssueCount} issue(s) have an overdue date. None can be auto-fixed — the dates are right and the work is late.`}
+          </span>
+        )}
+        <UndatableDateNote undatableIssues={undatableIssues} />
       </div>
     );
   }
@@ -864,19 +871,7 @@ function BulkDateFixButton({ hygieneState }: { hygieneState: ReturnType<typeof u
         featureLinkFieldIds: hygieneState.fieldConfig.featureLinkFieldIds ?? [],
       });
       const outcome = await applyDerivedDates(datedIssues, hygieneState.fieldConfig, forecastContext);
-      const failureNote = outcome.failures.length > 0
-        ? ` ${outcome.failures.length} could not be written: ${outcome.failures.map((failure) => failure.issueKey).join(', ')}.`
-        : '';
-      // Why nothing changed is the whole message when nothing changed. Reporting "Updated 0" alone
-      // for a run of nineteen reads exactly like a broken button, and did.
-      const undecidedSummary = summariseUndecidedDates(outcome.undecided);
-      const undecidedNote = undecidedSummary === ''
-        ? ''
-        : ` ${outcome.undecided.length} could not be dated — ${undecidedSummary}.`;
-      const basisNote = describeTargetStartBases(outcome.targetStartBasisCounts);
-      setResultMessage(
-        `Updated ${outcome.updatedIssueKeys.length} issue(s).${failureNote}${undecidedNote}${basisNote}`,
-      );
+      setResultMessage(describeDateFixOutcome(outcome));
       hygieneState.loadHygiene();
     } finally {
       setIsApplying(false);
@@ -901,9 +896,47 @@ function BulkDateFixButton({ hygieneState }: { hygieneState: ReturnType<typeof u
           {`${unfixableDateIssueCount} more have an overdue date — not auto-fixed, because the date is right and the work is late.`}
         </span>
       )}
+      <UndatableDateNote undatableIssues={undatableIssues} />
       {resultMessage && <span className={styles.fixNote} role="status">{resultMessage}</span>}
     </div>
   );
+}
+
+/**
+ * Names the date-flagged issues the button will not offer, and what to fix in Jira first.
+ *
+ * Grouped by reason through the same summariser the post-click report uses, so an issue reads the
+ * same before the click as it would have after it. Renders nothing when there are none.
+ */
+function UndatableDateNote({ undatableIssues }: { undatableIssues: ReadonlyArray<{ issueKey: string; reasons: string[] }> }) {
+  if (undatableIssues.length === 0) {
+    return null;
+  }
+  return (
+    <span className={styles.fixNote}>
+      {`${undatableIssues.length} cannot be dated until Jira is fixed — ${summariseUndecidedDates(undatableIssues)}.`}
+    </span>
+  );
+}
+
+/**
+ * Turns a bulk run's outcome into the one line the operator reads afterwards.
+ *
+ * Every failure carries Jira's own reason. "2 could not be written: ENCUC-2377, ENCUC-2296" gave
+ * the operator nowhere to go (GH #384); the reason had been captured by the engine and dropped here.
+ * Why nothing changed is likewise the whole message when nothing changed — "Updated 0" alone for a
+ * run of nineteen reads exactly like a broken button, and did.
+ */
+function describeDateFixOutcome(outcome: Awaited<ReturnType<typeof applyDerivedDates>>): string {
+  const failureNote = outcome.failures.length > 0
+    ? ` ${outcome.failures.length} could not be written: ${outcome.failures.map((failure) => `${failure.issueKey} (${failure.reason})`).join('; ')}.`
+    : '';
+  const undecidedSummary = summariseUndecidedDates(outcome.undecided);
+  const undecidedNote = undecidedSummary === ''
+    ? ''
+    : ` ${outcome.undecided.length} could not be dated — ${undecidedSummary}.`;
+  const basisNote = describeTargetStartBases(outcome.targetStartBasisCounts);
+  return `Updated ${outcome.updatedIssueKeys.length} issue(s).${failureNote}${undecidedNote}${basisNote}`;
 }
 
 /**

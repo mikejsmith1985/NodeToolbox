@@ -8,7 +8,8 @@
 // untidy, what the deterministic fix can clear without anyone deciding anything, and how much of the
 // board is clean. The daily forecast leads with the same shape for the same reason.
 
-import type { HygieneFinding } from './checks/hygieneChecks.ts';
+import type { HygieneFieldConfig, HygieneFinding } from './checks/hygieneChecks.ts';
+import { readDeterministicDateFixCandidates } from './derivedDateFix.ts';
 
 /** One figure on the band: what it counts, what to call it, and how loudly to say it. */
 export interface HygieneStat {
@@ -18,14 +19,6 @@ export interface HygieneStat {
   tone: 'bad' | 'warn' | 'good' | 'muted';
   count: number;
 }
-
-/** The date families a deterministic write can clear without anybody deciding anything. */
-const DETERMINISTIC_DATE_CHECK_IDS = [
-  'missing-due-date',
-  'missing-target-start',
-  'missing-target-end',
-  'dates-out-of-sync',
-];
 
 /**
  * Builds the band from the findings on the page.
@@ -37,16 +30,20 @@ const DETERMINISTIC_DATE_CHECK_IDS = [
  * An issue carrying both an error and a warning counts ONLY as an error. Counting it twice would
  * make the two figures sum to more than the board, and the more serious verdict is the one that
  * decides what happens to it.
+ *
+ * The fixable figure is the button's own candidate list, not a second count of the same flags. The
+ * band said "5 fixable, one click, no decisions" while the click wrote to none of them (GH #384);
+ * one selection feeding both is what stops the two from disagreeing again.
  */
 export function buildHygieneStatBand(
   findings: readonly HygieneFinding[],
   scannedIssueCount: number,
+  fieldConfig: HygieneFieldConfig,
 ): HygieneStat[] {
   const errorIssueCount = findings.filter((finding) =>
     finding.flags.some((flag) => flag.severity === 'error')).length;
   const warningIssueCount = findings.length - errorIssueCount;
-  const fixableDateIssueCount = findings.filter((finding) =>
-    finding.flags.some((flag) => DETERMINISTIC_DATE_CHECK_IDS.includes(flag.checkId))).length;
+  const fixableDateIssueCount = readDeterministicDateFixCandidates(findings, fieldConfig).length;
   // Never negative: a truncated scan can report fewer issues than it found findings for, and a
   // negative "clean" figure would be a nonsense the reader has to work out how to discount.
   const cleanIssueCount = Math.max(0, scannedIssueCount - findings.length);
