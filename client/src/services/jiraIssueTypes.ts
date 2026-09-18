@@ -7,6 +7,11 @@
 // `issuetype in (Feature, Epic)` was rejected outright and the dropdown never found anything
 // (GH #376). Asking the instance what it has costs one cached request and survives the move to a
 // different Jira, which hard-coded names do not.
+//
+// Update (feature 037, 2026-09): DENP has since renamed its Feature type to "Epic", so the premise
+// above is no longer true for DENP — which is exactly why names are discovered here, never assumed.
+// The Epic Intake resolves its type per project through `getProjectIssueTypes` instead of this list,
+// because the `PROVEN_FEATURE_ISSUE_TYPE_NAME` fallback below would name a type DENP no longer has.
 
 import { jiraGet } from './jiraApi.ts';
 

@@ -53,6 +53,8 @@ import {
 import { readDroppedWorkbookFile } from './sources/droppedWorkbookFile.ts';
 import { readWorkbookSource, WORKBOOK_FILE_ACCEPT, WorkbookReadError } from './sources/workbookSource';
 import styles from './FeatureCompositionTab.module.css';
+import CompositionModeSwitch, { type CompositionMode } from './intake/components/CompositionModeSwitch.tsx';
+import EpicIntakeWorkspace from './intake/EpicIntakeWorkspace.tsx';
 
 interface FeatureCompositionTabProps {
   /** The PO Tool's own team profile — scopes drafts and the hygiene rules applied. */
@@ -72,6 +74,9 @@ export default function FeatureCompositionTab({
 }: FeatureCompositionTabProps) {
   const { showToast } = useToast();
   const { evaluateDraft, fieldConfig, fieldConfigError } = usePoHygieneContext(dashboardTeamProfileId);
+  // The Epic Intake mode (spec 037) replaces the body below while shown; every composition hook above and
+  // below stays mounted, so switching back finds the draft exactly as it was left.
+  const [compositionMode, setCompositionMode] = useState<CompositionMode>('compose');
 
   const [newCompositionId] = useState(mintNewCompositionId);
   // Seeded at first render rather than by an effect: the team's project is known immediately, and the
@@ -440,6 +445,11 @@ export default function FeatureCompositionTab({
 
   return (
     <div className={styles.compositionTab}>
+      <CompositionModeSwitch mode={compositionMode} onModeChange={setCompositionMode} />
+      {compositionMode === 'intake' ? (
+        <EpicIntakeWorkspace dashboardTeamProfileId={dashboardTeamProfileId} />
+      ) : (
+      <>
       <div className={styles.loadBar}>
         <div className={styles.loadField}>
           <label className={styles.fieldLabel} htmlFor="composition-load-key">
@@ -825,6 +835,8 @@ export default function FeatureCompositionTab({
           ))}
         </ul>
       </section>
+      </>
+      )}
     </div>
   );
 }

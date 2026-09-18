@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Epic Intake mode in Feature Composition (feature 037).** Turns raw meeting notes into DENP Epics
+  through a guided exchange, the way twenty questions narrows to an answer: Toolbox keeps a fixed
+  checklist of decisions for every item in the notes and asks only the ones still open. Rules decide
+  first: the notes' own bullets group the items, stated T-shirt sizes decide Enrollment vs Fulfillment,
+  and an open Epic named in the notes is the match. The assistant can only fill in blanks Toolbox
+  defined, and never overrides an answer the PO gave.
+  - **Guarantees.** Every line of the notes ends up in exactly one item or is set aside with a reason,
+    and the intake will not move on until that holds. An answer may only name an Epic Toolbox actually
+    found for that item. Two unusable answers to one question hand it to the PO. A search that could
+    not run marks the item "not checked", which blocks it from being created; it never reads as "no
+    duplicate".
+  - **Ownership.** Stated sizes decide first (`XL Enrollment` vs `Fulfillment M` → Enrollment; both
+    spellings of Fulfil(l)ment). Otherwise an estimated Enrollment share of 60% or more decides
+    Enrollment, 40% or less decides Fulfillment, and anything between is the PO's call. Infra, Facets,
+    Vendor and Testing sizes are reported but never decide.
+  - **Creating.** Only Enrollment-owned work is searched and created, as Epics in DENP carrying a
+    `Roadmap` or `Stability` label that the PO confirms, with the nine-section description. Each draft
+    needs the PO's Accept before anything is written. The Epic type and a required Epic Name field
+    are read from the live create screen, never assumed, and any other required field is asked once
+    for the whole batch. Creation is one Epic at a time: a failure shows Jira's own reason, and a
+    retry never makes a second Epic.
+  - **Output.** A copyable summary table (item, owner, action, Jira key, label, stated T-shirt sizes,
+    reason) pastes as a real table into email, Teams or Confluence. Sizes are never written to Jira.
+  - **Everything else.** The intake is saved per team as it goes and resumes on the same step. It is
+    fully usable with the assistant locked; every question becomes a PO choice from a list. Switching
+    back to Compose leaves the Feature draft untouched.
+  - **Internal.** Hygiene's Jira text-search term builder moved to `utils/jqlTextTerms.ts` so both
+    surfaces share one sanitiser; Hygiene's behaviour is unchanged.
+  - **Known, tracked separately.** Four existing views still query `issuetype = Feature` and may come
+    back empty for DENP after its rename to Epic: PI Review pull, Readiness, PO Feature Review and PI
+    remap.
+
 ### Changed
 - **SNow Hub no longer sits behind the Admin Hub unlock.** The home card, the `/snow-hub` route
   and the SNow connection indicator are open without unlocking Admin Hub &mdash; SNow Hub is daily
@@ -15,6 +48,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   it. GitHub's indicator stays behind the unlock.
 
 ### Fixed
+- **A Hygiene test stopped failing on the calendar.** Its healthy baseline carried a fixed Target End of
+  2026-09-17, so from 2026-09-18 the baseline read as overdue and two tests failed with no code changed.
+  The test now pins "today" (only `Date`, so async waits are unaffected); nothing in the product changed.
 - **Hygiene's one-click date fix now counts only what it can write, names what it cannot, and says
   why a write failed (GH #384).** "Fix 5 blank or mismatched date(s)" wrote to none of them: three had
   no dated release, which the scan could already see, and the two it did try were reported as "could

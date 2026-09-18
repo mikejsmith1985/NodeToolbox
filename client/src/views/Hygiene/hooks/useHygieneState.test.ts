@@ -1,7 +1,7 @@
 // useHygieneState.test.ts — Hook tests for Hygiene Jira loading and persisted filters.
 
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   HYGIENE_FILTER_STORAGE_KEY,
@@ -63,9 +63,22 @@ function buildJiraIssue(overrides: Partial<JiraIssue['fields']> = {}, issueKey =
   };
 }
 
+/**
+ * The healthy baseline carries fixed policy dates (Target End 2026-09-17 for a 2026-10-08 release). On a real clock
+ * that baseline turned "overdue" on 2026-09-18 and these tests started failing with nothing changed. Freezing only
+ * `Date` — not timers, so `waitFor` still works — pins "today" before Target End, keeping the baseline healthy forever.
+ */
+const FIXTURE_TODAY = new Date('2026-09-10T12:00:00.000Z');
+
 beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(FIXTURE_TODAY);
   mockJiraGet.mockReset();
   window.localStorage.clear();
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe('useHygieneState helpers', () => {

@@ -43,8 +43,11 @@ export interface RunSplitCommitDependencies {
 
 const DEFAULT_DEPENDENCIES: RunSplitCommitDependencies = { createIssue, createIssueLink };
 
-/** Pulls a human-readable reason out of whatever was thrown. */
-function readFailureReason(thrownError: unknown): string {
+/**
+ * Pulls a human-readable reason out of whatever was thrown, so the PO sees Jira's own message
+ * rather than a generic "failed". Shared with the Epic Intake create loop.
+ */
+export function readFailureReason(thrownError: unknown): string {
   if (thrownError instanceof Error && thrownError.message.trim() !== '') {
     return thrownError.message;
   }

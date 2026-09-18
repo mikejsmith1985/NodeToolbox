@@ -1,0 +1,164 @@
+/* EpicIntakeWorkspace.module.css — The few styles the Epic Intake mode needs beyond the Feature Composition and
+   Bulk Re-write modules it reuses: the mode switch, the items table, the "who decided" badges and the summary. */
+
+/* ── Mode switch (Compose / Epic Intake) ── */
+
+.intakeModeSwitch {
+  display: inline-flex;
+  align-self: flex-start;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.intakeModeOption {
+  padding: 6px 14px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.intakeModeOption[aria-checked='true'] {
+  background: var(--color-accent);
+  color: var(--color-text-on-accent);
+  font-weight: 600;
+}
+
+/* ── Workspace ── */
+
+.intakeWorkspace {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.intakeActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.intakeCount {
+  font-size: var(--font-size-sm);
+  opacity: 0.8;
+}
+
+/* ── Items table ── */
+
+/* The table scrolls sideways inside its own box on a narrow window instead of pushing the page wider. */
+.intakeTableScroller {
+  overflow-x: auto;
+}
+
+.intakeTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-sm);
+}
+
+.intakeTable th,
+.intakeTable td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--color-border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.intakeTable th {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  opacity: 0.7;
+}
+
+.intakeLineList {
+  margin: 4px 0 0;
+  padding-left: 16px;
+  white-space: pre-wrap;
+  opacity: 0.85;
+}
+
+.intakeMuted {
+  opacity: 0.55;
+}
+
+/* ── Who decided: the badge beside every value ── */
+
+.intakeBadge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  font-size: 0.7rem;
+  font-weight: 600;
+  vertical-align: middle;
+}
+
+.intakeBadge_rule {
+  border-color: var(--color-tone-neutral-border, var(--color-border));
+}
+
+.intakeBadge_ai {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.intakeBadge_po {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: var(--color-text-on-accent);
+}
+
+.intakeBadge_open {
+  border-style: dashed;
+}
+
+/* ── Questions for the PO ── */
+
+.intakeQuestionList {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.intakeQuestion {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+}
+
+.intakeQuestionHint {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  opacity: 0.8;
+}
+
+/* ── Drafts ── */
+
+.intakeDraftCard {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+}
+
+/* ── Summary ── */
+
+.intakeSummaryGroupTitle {
+  margin: 8px 0 4px;
+  font-size: 0.85rem;
+  font-weight: 600;
+}

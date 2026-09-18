@@ -17,6 +17,37 @@
 > `po-pi-dropdown.spec.js`. Feature 024's spec inherited a false "do not run concurrently with 022" constraint from
 > these stale entries before the code was checked. **Verify against the codebase before trusting a status below.**
 
+- **037-guided-epic-intake** — *(**IMPLEMENTED** on `feature/037-guided-epic-intake` — 62/64 tasks; T063 full gates +
+  T064 PR remain; live-DENP quickstart V-01…V-14 is validated in production.)* Code: `client/src/views/PoTool/intake/`
+  (33 test files). Build lessons: plain-text paste is kept on purpose — the shared rich-paste reader folds a nested
+  `<li>` and its sub-bullets into one line; rejections are shown from `roundHistory`, not the paste panel, so they
+  survive the step moving on. an
+  **Epic Intake** mode inside PO Tool → **Feature Composition** (a toggle, not a new tab) that turns raw meeting notes
+  (GH #387) into **DENP Epics**: classify every line, decide Enrollment vs Fulfillment ownership, check DENP for an
+  **open** Epic already covering it, create only the missing **Enrollment** ones (label **Roadmap** or **Stability**),
+  and emit a copyable table (item · owner · action · key · label · stated T-shirt sizes). Plan:
+  `specs/037-guided-epic-intake/plan.md`. Contracts: `decision-engine.md`, `deterministic-rules.md`, `ai-rounds.md`,
+  `duplicate-search.md`, `epic-create.md`, `summary-and-store.md`, `composition-mode.md`.
+  **The design ("twenty questions")**: each item carries seven fixed decision slots (kind, owner, searchTerms,
+  duplicate, label, draftAccepted, outcome), each `open | settled{by rule|ai|po, reason} | notApplicable`; ONE pure
+  function `readIntakeNextStep(intake, isAiUnlocked)` derives the current step and whose turn it is — **no stored step
+  cursor**, so resume is correct by construction. **Rules outrank the AI**: an outline baseline groups `•`/`o` bullets
+  before any AI round; stated sizes decide the owner (`Enrollment XL vs Fulfillment M` → Enrollment; AI share only
+  when sizes don't decide, ≥60/≤40, the band goes to the PO); an open Epic named in the notes (`DENP-632`) is the
+  match; zero search hits = create-new. **The AI can only fill blanks**: it cannot mint items (ids come from the
+  baseline), cannot cite a key outside that item's own candidates, cannot touch a PO-settled slot, and two failures on
+  a slot hand it to the PO. Coverage (every line in exactly one item or set aside) is proven before advancing; a failed
+  search is **"not checked"**, never "no duplicate", and blocks create.
+  **Hard rules**: the Epic type is resolved live via `getProjectIssueTypes('DENP')` — **never**
+  `loadFeatureIssueTypeNames()` (its `['Feature']` fallback 400s after DENP's Feature→Epic rename); Epic Name is found
+  **by field name** from createmeta and filled from the summary (field-blind for the `fieldMappingBoundary` ratchet);
+  sizes/costs are **never** written to Jira; `FeatureCompositionTab.test.tsx` and `HygieneFixControl.test.tsx` pass
+  **unmodified**; `poToolWithoutAi.test.tsx` gets one **additive** locked-mode case (mode copy must avoid
+  AI/assistant/unlock/⚡/prompt/reply). **One recorded drift**: Hygiene's private `buildIssueTextMatchTerms` +
+  `JIRA_TEXT_RESERVED_PATTERN` **move** to `utils/jqlTextTerms.ts` (exporting in place trips fast-refresh).
+  **Adjacent defects found, not fixed** (R-014): four `issuetype = Feature` surfaces likely broken by the DENP rename;
+  `drafts/draftModel.ts:225` drops PDF/email/SharePoint sources on reload.
+
 - **036-delivery-forecast** — *(**PLANNED** — spec + plan + contracts complete, ready for `/speckit-tasks`.)* turn
   story points into time and time into a verdict, on **two clocks that do not coincide**: the **release clock**
   (can this be built, code-frozen, externally tested and shipped?) and the **PI clock** (can this Feature reach
