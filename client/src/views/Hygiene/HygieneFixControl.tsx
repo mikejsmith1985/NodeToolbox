@@ -8,6 +8,7 @@
 import { useEffect, useState } from 'react';
 
 import { jiraGet } from '../../services/jiraApi.ts';
+import { buildIssueTextMatchTerms } from '../../utils/jqlTextTerms.ts';
 import { buildIssueTypeClause, loadFeatureIssueTypeNames } from '../../services/jiraIssueTypes.ts';
 import { TransitionRequiredFields } from '../../components/TransitionRequiredFields/index.tsx';
 import {
@@ -739,49 +740,6 @@ async function searchLinkableIssues(query: string, isFeatureLink: boolean, proje
     label: `${foundIssue.key} — ${foundIssue.fields?.summary ?? ''}`.trim(),
     value: foundIssue.key,
   }));
-}
-
-/**
- * Characters Jira's text index treats as OPERATORS rather than as text.
- *
- * Left in, they are not merely ignored — they make the query invalid, and Jira answers a summary
- * like "ENCUC-1972: Critical Vulnerabilities" with a 400 rather than with that issue. Since a
- * Feature summary routinely carries a key and a colon, typing what you can see was the surest way
- * to get nothing back.
- */
-const JIRA_TEXT_RESERVED_PATTERN = /[+\-&|!(){}[\]^~*?\\:"]/g;
-
-/**
- * Turns what somebody typed into terms Jira's `~` operator will actually match.
- *
- * Two things were wrong with passing the raw text through. Reserved characters made the query
- * invalid. And `~` matches WHOLE WORDS — `summary ~ "crit"` finds nothing at all against "Critical
- * Vulnerabilities" — so anybody typing while they think, which is everybody, saw an empty dropdown
- * and concluded the search was broken. It was, for that input.
- *
- * The trailing term gets a wildcard because that is the one still being typed. Earlier terms are
- * left whole: somebody who typed a space has finished that word, and wildcarding it would widen the
- * match for no reason.
- *
- * Returns null when nothing usable survives, so the caller can say "keep typing" rather than run a
- * query that cannot match.
- *
- * Not exported: every behaviour here is observable through `buildLinkSearchJql`, and a second
- * non-component export from this file trips the fast-refresh rule for no gain.
- */
-function buildIssueTextMatchTerms(query: string): string | null {
-  const terms = query
-    .replace(JIRA_TEXT_RESERVED_PATTERN, ' ')
-    .split(/\s+/)
-    .filter((term) => term !== '');
-  if (terms.length === 0) {
-    return null;
-  }
-
-  const lastTerm = terms[terms.length - 1];
-  // One character plus a wildcard matches most of the instance, which is not a search result.
-  const wildcardedLastTerm = lastTerm.length >= 2 ? `${lastTerm}*` : lastTerm;
-  return [...terms.slice(0, -1), wildcardedLastTerm].join(' ');
 }
 
 /**
