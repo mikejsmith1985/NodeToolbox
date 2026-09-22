@@ -16,6 +16,7 @@ import {
 import {
   handStepToPo,
   isItemReadyToCreate,
+  listAvailableActions,
   listOpenDecisions,
   MAX_AI_ATTEMPTS_PER_DECISION,
   readIntakeNextStep,
@@ -312,6 +313,52 @@ describe('handStepToPo', () => {
     const sortingTurns = listOpenDecisions(handed, true).filter((openDecision) => openDecision.step === 'sortNotes');
     expect(sortingTurns.every((openDecision) => openDecision.turn === 'po')).toBe(true);
     expect(listOpenDecisions(handed, true).find((openDecision) => openDecision.slot === 'duplicate')?.turn).toBe('ai');
+  });
+});
+
+describe('listAvailableActions — independent items never wait on each other (GH #387 screenshot)', () => {
+  it('offers Check DENP for ready Enrollment items while other items still await an owner', () => {
+    const closeCall = buildItem(1, 'kind');
+    closeCall.decisions.searchTerms = settled(['x'], 'ai');
+    closeCall.decisions.owner = routeDecisionToPo(closeCall.decisions.owner, null, 'share 50% is a close call');
+    const readyForSearch = buildItem(2, 'terms');
+    const actions = listAvailableActions(buildIntake([closeCall, readyForSearch]), true);
+    expect(actions.hasSearchWork).toBe(true);
+    expect(actions.poQuestions.map((question) => question.itemId)).toEqual(['item-1']);
+  });
+
+  it('gathers PO questions from every step, not just the earliest', () => {
+    const ownerQuestion = buildItem(1, 'kind');
+    ownerQuestion.decisions.searchTerms = settled(['x'], 'ai');
+    ownerQuestion.decisions.owner = routeDecisionToPo(ownerQuestion.decisions.owner);
+    const labelQuestion = buildItem(2, 'createNew');
+    const actions = listAvailableActions(buildIntake([ownerQuestion, labelQuestion]), true);
+    expect(actions.poQuestions.map((question) => question.slot)).toEqual(['owner', 'label']);
+  });
+
+  it('keeps drafts and creation separate from the question list', () => {
+    const drafted = buildItem(1, 'drafted');
+    const accepted = buildItem(2, 'accepted');
+    const actions = listAvailableActions(buildIntake([drafted, accepted]), true);
+    expect(actions.draftReviewItemIds).toEqual(['item-1']);
+    expect(actions.hasCreateWork).toBe(true);
+    expect(actions.poQuestions).toEqual([]);
+  });
+
+  it('names the earliest step the assistant can help with, or none', () => {
+    expect(listAvailableActions(buildIntake([buildItem(1, 'labelled')]), true).assistantStep).toBe('draft');
+    expect(listAvailableActions(buildIntake([buildItem(1, 'labelled')]), false).assistantStep).toBeNull();
+  });
+
+  it('offers a PO draft when the assistant cannot write one', () => {
+    const actions = listAvailableActions(buildIntake([buildItem(1, 'labelled')]), false);
+    expect(actions.draftReviewItemIds).toEqual(['item-1']);
+  });
+
+  it('has nothing to offer once everything is done', () => {
+    expect(listAvailableActions(buildIntake([buildItem(1, 'created')]), true)).toEqual({
+      assistantStep: null, poQuestions: [], draftReviewItemIds: [], hasSearchWork: false, hasCreateWork: false,
+    });
   });
 });
 

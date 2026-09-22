@@ -239,6 +239,49 @@ export function listOpenDecisions(intake: EpicIntake, isAiUnlocked: boolean): Op
   ];
 }
 
+// ── Available actions ──
+
+/** Everything the PO can act on right now, across all steps — so no item waits on an unrelated one. */
+export interface AvailableActions {
+  /** The earliest step with a request the assistant can answer, or null when there is none (or it is locked). */
+  assistantStep: IntakeStepId | null;
+  /** Closed-choice questions for the PO from every step, in step order. Drafts are not questions. */
+  poQuestions: OpenDecision[];
+  /** Items whose draft is waiting for the PO to write, edit, accept or decline. */
+  draftReviewItemIds: string[];
+  /** True when at least one Enrollment item can be checked against DENP now. */
+  hasSearchWork: boolean;
+  /** True when at least one accepted draft is ready to become an Epic. */
+  hasCreateWork: boolean;
+}
+
+const TOOLBOX_SEARCH_SLOTS = new Set<OpenDecisionSlot>(['candidateSearch', 'searchTerms']);
+
+function isDraftDecision(openDecision: OpenDecision): boolean {
+  return openDecision.slot === 'draftAccepted';
+}
+
+/**
+ * Lists every action available now, not only the earliest step's. Steps are ordered per item, never across
+ * items: an Enrollment item whose owner is settled can be checked against DENP while another item's owner is
+ * still a close call, and a draft can be accepted while another item is still being matched. The progress strip
+ * still reports the earliest open step; this is what the PO can actually do meanwhile.
+ */
+export function listAvailableActions(intake: EpicIntake, isAiUnlocked: boolean): AvailableActions {
+  const openDecisions = listOpenDecisions(intake, isAiUnlocked);
+  const stepIndex = (step: IntakeStepId): number => INTAKE_STEP_ORDER.indexOf(step);
+  const byStep = (left: OpenDecision, right: OpenDecision): number => stepIndex(left.step) - stepIndex(right.step);
+  const assistantDecisions = openDecisions.filter((openDecision) => openDecision.turn === 'ai').sort(byStep);
+  const poDecisions = openDecisions.filter((openDecision) => openDecision.turn === 'po').sort(byStep);
+  return {
+    assistantStep: assistantDecisions[0]?.step ?? null,
+    poQuestions: poDecisions.filter((openDecision) => !isDraftDecision(openDecision)),
+    draftReviewItemIds: poDecisions.filter(isDraftDecision).map((openDecision) => openDecision.itemId as string),
+    hasSearchWork: openDecisions.some((openDecision) => openDecision.turn === 'toolbox' && TOOLBOX_SEARCH_SLOTS.has(openDecision.slot)),
+    hasCreateWork: openDecisions.some((openDecision) => openDecision.slot === 'creation'),
+  };
+}
+
 // ── Next step ──
 
 /** Plain-language next actions. None of them names the assistant, a prompt, or a reply (the no-AI copy scan). */

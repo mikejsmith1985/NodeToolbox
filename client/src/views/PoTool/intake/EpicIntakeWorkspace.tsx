@@ -4,7 +4,7 @@
 // The intake is saved after every change, so it can be resumed exactly where it was left. Where it stands — the
 // step, whose turn it is, how much is open — is always re-derived from the answers by the engine, never stored.
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 
 import { getIssueTypeFields } from '../../../services/jiraApi.ts';
 import { useAiAssistStore } from '../../../store/aiAssistStore';
@@ -84,6 +84,7 @@ export default function EpicIntakeWorkspace({ dashboardTeamProfileId, jiraDeps, 
   const [canSave] = useState(canPersistDrafts);
   const [intake, setIntake] = useState<EpicIntake | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const actionsRef = useRef<HTMLDivElement>(null);
   const { savedIntakes, refresh } = useSavedIntakes(dashboardTeamProfileId);
 
   const updateIntake = useCallback((nextIntake: EpicIntake) => {
@@ -119,9 +120,19 @@ export default function EpicIntakeWorkspace({ dashboardTeamProfileId, jiraDeps, 
       {loadError ? <p className={compositionStyles.errorBanner}>{loadError}</p> : null}
       {intake === null || nextStep === null ? <IntakeNotesPanel onStart={handleStart} /> : (
         <>
-          <IntakeJourneyStrip nextStep={nextStep} />
+          {/* Pinned while the long items table scrolls underneath, so the next step never scrolls out of sight. */}
+          <div className={styles.intakeStickyBar}>
+            <IntakeJourneyStrip nextStep={nextStep} />
+            {nextStep.turn !== 'done' ? (
+              <button type="button" className={compositionStyles.secondaryButton} onClick={() => actionsRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })}>
+                Show what to do ↓
+              </button>
+            ) : null}
+          </div>
           <LastRoundNotice intake={intake} />
-          <IntakeTurnPanel intake={intake} nextStep={nextStep} isAiUnlocked={isAiUnlocked} onChange={updateIntake} jiraDeps={resolvedJiraDeps} nowIso={nowIso} />
+          <div ref={actionsRef}>
+            <IntakeTurnPanel intake={intake} isAiUnlocked={isAiUnlocked} onChange={updateIntake} jiraDeps={resolvedJiraDeps} nowIso={nowIso} />
+          </div>
           <IntakeItemsTable intake={intake} />
           <IntakeSummaryTable intake={intake} jiraBaseUrl={jiraBaseUrl} />
         </>

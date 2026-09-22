@@ -13,7 +13,7 @@ import {
   type EpicIntake,
   type SourceLine,
 } from '../epicIntakeModel.ts';
-import { settleDecision, type IntakeNextStep } from '../intakeChecklist.ts';
+import { settleDecision } from '../intakeChecklist.ts';
 import IntakeTurnPanel, { type IntakeJiraDeps } from './IntakeTurnPanel.tsx';
 
 const NOW_ISO = '2026-09-18T12:00:00.000Z';
@@ -88,11 +88,9 @@ describe('IntakeTurnPanel', () => {
     });
 
     it('renders the assistant panel and "Answer these myself"', () => {
-      const nextStep: IntakeNextStep = { step: 'sortNotes', turn: 'ai', openCount: 1, nextAction: 'Copy the sorting request below.' };
       render(
         <IntakeTurnPanel
           intake={buildSortNotesIntake()}
-          nextStep={nextStep}
           isAiUnlocked
           onChange={vi.fn()}
           jiraDeps={buildJiraDepsStub()}
@@ -107,11 +105,9 @@ describe('IntakeTurnPanel', () => {
     it('"Answer these myself" hands the step\'s open questions to the PO', async () => {
       const user = userEvent.setup();
       const onChange = vi.fn();
-      const nextStep: IntakeNextStep = { step: 'sortNotes', turn: 'ai', openCount: 1, nextAction: 'Copy the sorting request below.' };
       render(
         <IntakeTurnPanel
           intake={buildSortNotesIntake()}
-          nextStep={nextStep}
           isAiUnlocked
           onChange={onChange}
           jiraDeps={buildJiraDepsStub()}
@@ -132,12 +128,10 @@ describe('IntakeTurnPanel', () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
     const jiraDeps = buildJiraDepsStub();
-    const nextStep: IntakeNextStep = { step: 'checkDenp', turn: 'toolbox', openCount: 1, nextAction: 'Check DENP for open Epics.' };
 
     render(
       <IntakeTurnPanel
         intake={buildCheckDenpIntake()}
-        nextStep={nextStep}
         isAiUnlocked={false}
         onChange={onChange}
         jiraDeps={jiraDeps}
@@ -155,11 +149,9 @@ describe('IntakeTurnPanel', () => {
   });
 
   it('renders the PO\'s own question list on the PO\'s turn', () => {
-    const nextStep: IntakeNextStep = { step: 'confirmLabels', turn: 'po', openCount: 1, nextAction: 'Confirm Roadmap or Stability.' };
     render(
       <IntakeTurnPanel
         intake={buildConfirmLabelsIntake()}
-        nextStep={nextStep}
         isAiUnlocked={false}
         onChange={vi.fn()}
         jiraDeps={buildJiraDepsStub()}
@@ -168,5 +160,23 @@ describe('IntakeTurnPanel', () => {
     );
 
     expect(screen.getByRole('combobox', { name: /Label for the new Epic/ })).toBeInTheDocument();
+  });
+
+  it('shows Check DENP for ready items alongside another item\'s open owner question (GH #387)', () => {
+    // The reported dead end: five close-call owners held back Check DENP for six items that were ready.
+    const readyItem = buildCheckDenpIntake().items[0];
+    const closeCall = createIntakeItem(2, 'EAM Upgrades', [2]);
+    closeCall.decisions.kind = settleDecision(closeCall.decisions.kind, 'work', 'ai', 'Sorted');
+    closeCall.decisions.searchTerms = settleDecision(closeCall.decisions.searchTerms, ['eam upgrades'], 'ai', 'Suggested');
+    closeCall.decisions.owner = { ...closeCall.decisions.owner, isAwaitingPo: true, aiReason: 'Estimated Enrollment share 50% is a close call' } as typeof closeCall.decisions.owner;
+    const intake = { ...buildBaseIntake(), lines: [buildLine(1, 'Member portal work'), buildLine(2, 'EAM Upgrades')], items: [readyItem, closeCall] };
+
+    render(
+      <IntakeTurnPanel intake={intake} isAiUnlocked={false} onChange={vi.fn()} jiraDeps={buildJiraDepsStub()} nowIso={() => NOW_ISO} />,
+    );
+
+    expect(screen.getByRole('button', { name: 'Check DENP' })).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: /Who owns "EAM Upgrades"/ })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Questions for you (1)' })).toBeInTheDocument();
   });
 });

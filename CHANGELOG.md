@@ -48,6 +48,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   it. GitHub's indicator stays behind the unlock.
 
 ### Fixed
+- **Epic Intake no longer dead-ends behind a close call (GH #387 feedback).** After the sorting
+  answer, five items whose Enrollment share landed in the 40–60% band were waiting on the PO — and
+  that held back Check DENP, drafting and Create for every other item, even the six already known to
+  be Enrollment's. The page then showed a long table with no way forward in view. Items now move
+  forward independently: every action that is possible right now is shown at once, in labelled
+  sections (Ask for help, Questions for you, Check DENP, Drafts to review, Create). The progress
+  strip and "Do this next" stay pinned while the table scrolls, with a "Show what to do" button.
 - **The Feature-level screens survive DENP's rename of Feature to Epic.** PI Review's pull, the
   Readiness tab, the PI remap dropdown, the PO Tool's Feature Review and the scheduled PI Review
   refresh all shipped `issuetype = Feature`. Jira validates that name, so once the type was renamed the

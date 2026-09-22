@@ -34,6 +34,20 @@
   gap: 16px;
 }
 
+/* The progress strip and "Do this next" stay pinned while the long items table scrolls underneath (GH #387). */
+.intakeStickyBar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg, var(--color-card-bg));
+}
+
 .intakeActions {
   display: flex;
   flex-wrap: wrap;
