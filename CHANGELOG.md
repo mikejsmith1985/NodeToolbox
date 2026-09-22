@@ -16,6 +16,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   shared showing which Epic covers which piece of scope.
 
 ### Fixed
+- **"Enrich an Existing Feature" now adds to the Feature instead of replacing it (GH #387).** Enriching a
+  Feature that already carried a full requirements document — objective, scope table, numbered rules,
+  migration filters, open questions — handed back a short nine-section rewrite, and everything else was
+  gone. Two changes fix it: the prompt now includes the Feature's existing description **whole** and asks
+  for only what should be **added**, and Toolbox merges the reply into the existing text rather than
+  overwriting it. Every original line survives word for word, in its own section; only genuinely new lines
+  are appended, and a line the Feature already had is not repeated even when the assistant rephrases its
+  spacing, bullet or capitalisation. A section the Feature never had is filled from the proposal.
+- **A description longer than Jira allows is now reported before saving, not after.** Jira refuses a
+  description over 32,767 characters. Enriching adds to what a Feature already says, so this is reachable
+  in ordinary use. Save is blocked with the number to remove: "The description is 33,104 characters. Jira
+  allows 32,767, so trim 337 before saving."
 - **Epic Intake's Create button no longer greys out behind "Reporter must be completed in Jira"
   (GH #387).** DENP's create screen requires a Reporter, and the batch field picker cannot show a
   person field, so Create was blocked. Toolbox now fills Reporter with the signed-in Jira user — as

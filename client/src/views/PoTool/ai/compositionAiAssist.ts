@@ -14,7 +14,8 @@ import { extractJsonPayload } from '../../../utils/extractJsonPayload.ts';
 import type { ReadinessCriterion } from '../coaching/definitionOfReady';
 import type { CompositionDraft } from '../drafts/draftModel';
 import { describeSourceOrigin, describeSourceTitle, readSourceText } from '../sources/sourceModel';
-import { normalizeFeatureDescription, stripAiAttribution, VALIDATION_MARKER } from './featureDocSections.ts';
+import { stripAiAttribution, VALIDATION_MARKER } from './featureDocSections.ts';
+import { mergeEnrichedDescription } from './featureEnrichMerge.ts';
 import type { AiIngestResult } from './splitAiAssist';
 import { describeEnterpriseFeatureRules } from '../../../domain/featureStateGates.ts';
 
@@ -40,6 +41,31 @@ function readTrimmedSourceText(sourceText: string): string {
     return sourceText;
   }
   return `${sourceText.slice(0, MAX_SOURCE_TEXT_LENGTH)}\n… (truncated — open the source for the rest)`;
+}
+
+/**
+ * What the prompt says when an existing Feature is being enriched rather than a new one written.
+ *
+ * The Feature's own description is included WHOLE — never trimmed — and marked as text to keep. A Feature already
+ * carrying a requirements document must come back with that document intact plus what was missing, not a summary
+ * of it (GH #387). Toolbox merges the answer into the existing text either way, so this is the polite version of a
+ * guarantee the code already enforces.
+ */
+function buildExistingFeatureBlock(draft: CompositionDraft): string[] {
+  const existingDescription = draft.description.trim();
+  if (draft.existingIssueKey === null || existingDescription === '') {
+    return [];
+  }
+  return [
+    `This Feature already exists as ${draft.existingIssueKey}, and it already says the following.`,
+    'KEEP every line of it. Do not rewrite it, shorten it, summarise it, or re-order it.',
+    'Return ONLY what should be ADDED: sections it is missing, and detail it does not yet state.',
+    'Anything already below will be kept automatically, so you do not need to repeat it.',
+    '--- the Feature as it stands ---',
+    existingDescription,
+    '--- end of the Feature as it stands ---',
+    '',
+  ];
 }
 
 /**
@@ -82,6 +108,7 @@ export function buildCompositionPrompt(
     '',
     draft.summary.trim() !== '' ? `Their current draft summary: ${draft.summary}` : 'They have no draft summary yet.',
     '',
+    ...buildExistingFeatureBlock(draft),
     sourceBlocks.length > 0
       ? `They have gathered the following material:\n\n${sourceBlocks.join('\n\n')}`
       : 'They have not gathered any supporting material.',
@@ -151,6 +178,12 @@ function readPayloadObject(responseText: string): { payload?: Record<string, unk
 export function parseCompositionIngest(
   responseText: string,
   writableFieldIds: readonly string[],
+  /**
+   * The Feature's description as it stands, when an existing Feature is being enriched. The proposal is MERGED
+   * into it — every existing line survives and only new lines are added — so enriching can never quietly rewrite
+   * a Feature that already carries a full requirements document (GH #387). Empty for a new Feature.
+   */
+  existingDescription = '',
 ): AiIngestResult<CompositionProposal> {
   const { payload, error } = readPayloadObject(responseText);
   if (!payload) {
@@ -187,9 +220,10 @@ export function parseCompositionIngest(
     });
   }
 
-  // Guarantee the description is the complete nine-section document (missing sections flagged for
-  // validation) and carries no AI self-attribution, whatever the model actually returned (FR-003, FR-004).
-  const description = stripAiAttribution(normalizeFeatureDescription(readTrimmedString(candidate.description)));
+  // Guarantee the description is the complete nine-section document (missing sections flagged for validation),
+  // carries no AI self-attribution (FR-003, FR-004), and — when enriching — still contains every line the Feature
+  // already had. The merge is what protects the existing text; the prompt only asks nicely (GH #387).
+  const description = stripAiAttribution(mergeEnrichedDescription(existingDescription, readTrimmedString(candidate.description)));
 
   return {
     items: [{

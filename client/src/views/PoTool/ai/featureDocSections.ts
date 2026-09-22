@@ -63,7 +63,7 @@ function matchLabelHeading(line: string): { label: SectionLabel; inlineContent: 
 }
 
 /** Parses a raw description into a label → content map. Text before the first heading folds into Description. */
-function parseSections(rawDescription: string): Map<SectionLabel, string> {
+export function parseSections(rawDescription: string): Map<SectionLabel, string> {
   const sections = new Map<SectionLabel, string>();
   let currentLabel: SectionLabel | null = null;
   let buffer: string[] = [];

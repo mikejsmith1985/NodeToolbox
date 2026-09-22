@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { CreateMetaFieldEntry } from '../../../types/jira.ts';
 import { createEmptyCompositionDraft, type CompositionDraft } from '../drafts/draftModel';
+import { MAX_JIRA_DESCRIPTION_CHARS } from '../ai/featureEnrichMerge.ts';
 import { buildCompositionCommit, canCommitComposition } from './buildCompositionCommit';
 
 function buildDraft(overrides: Partial<CompositionDraft> = {}): CompositionDraft {
@@ -275,5 +276,22 @@ describe('buildCompositionCommit — risk links (spec 029, US3)', () => {
       requiredFieldDescriptors: SELF_SUPPLIED_DESCRIPTORS,
     });
     expect(diff.riskLinkKeys).toEqual([]);
+  });
+});
+
+// ── Jira's description limit (GH #387) ──
+
+describe('a description Jira would refuse blocks the save, with the number to trim', () => {
+  it('blocks and says how much is over', () => {
+    const draft = buildDraft({ summary: 'Reconciliation report', description: 'x'.repeat(MAX_JIRA_DESCRIPTION_CHARS + 50) });
+    const diff = buildCompositionCommit({ draft, requiredFieldDescriptors: [] });
+    expect(diff.blockers.map((blocker) => blocker.reason).join(' ')).toMatch(/trim 50/);
+    expect(canCommitComposition(diff)).toBe(false);
+  });
+
+  it('allows a description at the limit', () => {
+    const draft = buildDraft({ summary: 'Reconciliation report', description: 'x'.repeat(MAX_JIRA_DESCRIPTION_CHARS) });
+    const diff = buildCompositionCommit({ draft, requiredFieldDescriptors: [] });
+    expect(diff.blockers.map((blocker) => blocker.reason).join(' ')).not.toMatch(/trim/);
   });
 });

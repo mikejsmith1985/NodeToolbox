@@ -346,7 +346,9 @@ export default function FeatureCompositionTab({
 
   /** Applies an AI proposal to the local draft. Nothing here touches Jira (FR-032, INV-J1). */
   function handleIngestCompositionProposal(responseText: string): { acceptedCount: number; errors: string[] } {
-    const { items, errors } = parseCompositionIngest(responseText, Object.keys(writableFieldNamesById));
+    // Enriching an existing Feature merges into what it already says; a new Feature has nothing to preserve.
+    const descriptionToPreserve = draft.existingIssueKey === null ? '' : draft.description;
+    const { items, errors } = parseCompositionIngest(responseText, Object.keys(writableFieldNamesById), descriptionToPreserve);
     const proposal = items[0];
     if (proposal) {
       // Merge the AI's fields, then deterministically prefill PI / PO / Application — only where still empty,

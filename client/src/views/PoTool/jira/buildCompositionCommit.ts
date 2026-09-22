@@ -8,6 +8,7 @@
 
 import type { CreateMetaFieldEntry } from '../../../types/jira.ts';
 import { extractRiskLinkKeys } from '../ai/featureDocSections.ts';
+import { checkDescriptionLength, MAX_JIRA_DESCRIPTION_CHARS } from '../ai/featureEnrichMerge.ts';
 import type { CompositionDraft } from '../drafts/draftModel';
 import type { CommitBlocker } from './buildSplitCommit';
 
@@ -129,6 +130,17 @@ export function buildCompositionCommit(input: BuildCompositionCommitInput): Comp
 
   if (draft.summary.trim() === '') {
     blockers.push({ scope: 'draft', reason: 'Give the Feature a summary.' });
+  }
+
+  // Jira refuses a longer description outright, so say so here — with the number to trim — rather than let the
+  // save fail after the fact. Enriching adds to what a Feature already says, which makes this reachable (GH #387).
+  const descriptionLength = checkDescriptionLength(draft.description);
+  if (descriptionLength.isOverLimit) {
+    blockers.push({
+      scope: 'draft',
+      reason: `The description is ${descriptionLength.length.toLocaleString()} characters. Jira allows `
+        + `${MAX_JIRA_DESCRIPTION_CHARS.toLocaleString()}, so trim ${descriptionLength.excessCharacters.toLocaleString()} before saving.`,
+    });
   }
 
   const draftFields = buildDraftFields(draft, acceptanceCriteriaFieldId);
