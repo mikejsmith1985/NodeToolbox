@@ -21,7 +21,7 @@ import {
 import { proveLineCoverage } from './notesOutline.ts';
 
 /** After this many unusable answers for one decision, the decision is handed to the PO instead (FR-007). */
-export const MAX_AI_ATTEMPTS_PER_DECISION = 2;
+export const MAX_AI_ATTEMPTS_PER_DECISION = 3;
 
 /** An open decision slot, plus the three pseudo-slots that are Toolbox or coverage work rather than a choice. */
 export type OpenDecisionSlot = DecisionSlot | 'lineCoverage' | 'candidateSearch' | 'creation';

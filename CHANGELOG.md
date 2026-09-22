@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Epic Intake is now just copy and paste (GH #387 feedback).** The intake is a loop: the next prompt
+  is on screen as soon as the notes are in, you copy it out and paste the answer back, and the next
+  prompt appears — until everything is answered and only **Create** is left. Toolbox checks DENP on
+  its own between prompts; nothing waits on a click. An answer that is wrong or missing is simply
+  asked again in the next prompt, never turned into a question for you; after three tries a safe
+  default is used (work, Shared, a new Epic, Roadmap, a plain draft) and the row says what was
+  assumed. Lines an answer drops are set aside rather than left for you to place, and a key the notes
+  named that cannot be used is noted on the row instead of asked. The item table is still there,
+  folded under "Show details", for anyone who wants to look.
 - **Epic Intake: the assistant does the work, you review once (GH #387 feedback).** The first version
   asked the PO about every close call, label, unsure match and draft — one run showed about twenty
   "does an open Epic cover this?" lists of twenty Epics each, which was more work than doing it by

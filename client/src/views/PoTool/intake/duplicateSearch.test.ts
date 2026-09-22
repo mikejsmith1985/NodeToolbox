@@ -315,19 +315,21 @@ describe('runDuplicateSearch — named keys', () => {
   it.each([
     ['Done', () => buildIssue('DENP-9', { category: 'done' }), 'done'],
     ['not an Epic', () => buildIssue('DENP-9', { type: 'Story' }), 'notEpic'],
-  ])('a named key that is %s hands the duplicate question to the PO, even when the search finds nothing', async (_label, buildFetched, expectedReason) => {
+  ])('a named key that is %s is noted on the row and becomes a new Epic when the search finds nothing', async (_label, buildFetched, expectedReason) => {
     const deps = buildDeps({ fetchIssueByKey: vi.fn(async () => buildFetched()) });
     const searchedItem = (await runDuplicateSearch(buildIntake([buildEnrollmentItem(1, 'Portal', [buildNamedKey('DENP-9')])]), deps)).items[0];
     expect(searchedItem.namedKeys[0].lookup).toMatchObject({ status: 'unusable', reason: expectedReason });
-    expect(searchedItem.decisions.duplicate).toMatchObject({ state: 'open', isAwaitingPo: true });
-    expect((searchedItem.decisions.duplicate as { aiReason: string }).aiReason).toContain('DENP-9');
+    // Copy-paste only (GH #387): an unusable named key is noted on the row, never put to the PO. With nothing found,
+    // the item becomes a new Epic by rule.
+    expect(searchedItem.decisions.duplicate).toMatchObject({ state: 'settled', value: { verdict: 'createNew' }, settledBy: 'rule' });
+    expect(searchedItem.reviewFlag).toContain('DENP-9');
     expect(searchedItem.searchStatus).toBe('ok');
   });
 
   it.each([
     ['Jira GET failed: 404', 'notFound'],
     ['Jira GET failed: 403', 'noPermission'],
-  ])('a named key whose fetch answers "%s" is %s and goes to the PO', async (errorMessage, expectedReason) => {
+  ])('a named key whose fetch answers "%s" is %s and is noted, not put to the PO', async (errorMessage, expectedReason) => {
     const deps = buildDeps({
       fetchIssueByKey: vi.fn(async () => {
         throw new Error(errorMessage);
@@ -335,14 +337,14 @@ describe('runDuplicateSearch — named keys', () => {
     });
     const searchedItem = (await runDuplicateSearch(buildIntake([buildEnrollmentItem(1, 'Portal', [buildNamedKey('DENP-9')])]), deps)).items[0];
     expect(searchedItem.namedKeys[0].lookup).toMatchObject({ status: 'unusable', reason: expectedReason });
-    expect(searchedItem.decisions.duplicate).toMatchObject({ state: 'open', isAwaitingPo: true });
+    expect(searchedItem.decisions.duplicate).toMatchObject({ state: 'settled', value: { verdict: 'createNew' } });
   });
 
-  it('a named key in another project is reported and handed to the PO', async () => {
+  it('a named key in another project is reported on the row, not put to the PO', async () => {
     const deps = buildDeps();
     const searchedItem = (await runDuplicateSearch(buildIntake([buildEnrollmentItem(1, 'Portal', [buildNamedKey('ENCUC-1972')])]), deps)).items[0];
     expect(searchedItem.namedKeys[0].lookup).toMatchObject({ status: 'unusable', reason: 'otherProject' });
-    expect(searchedItem.decisions.duplicate).toMatchObject({ state: 'open', isAwaitingPo: true });
+    expect(searchedItem.decisions.duplicate).toMatchObject({ state: 'settled', value: { verdict: 'createNew' } });
   });
 
   it('a named key that cannot be looked up for another reason fails the item\'s search', async () => {

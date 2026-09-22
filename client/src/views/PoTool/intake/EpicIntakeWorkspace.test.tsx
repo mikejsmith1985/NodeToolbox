@@ -45,8 +45,8 @@ describe('EpicIntakeWorkspace', () => {
     renderWorkspace();
     await startIntakeFromNotes();
 
-    await user.click(screen.getByRole('button', { name: 'Build the prompt' }));
-    const request = (screen.getByLabelText(/^Prompt/) as HTMLTextAreaElement).value;
+    // The loop shows the prompt straight away — nothing to click first.
+    const request = (screen.getByLabelText('Prompt to copy') as HTMLTextAreaElement).value;
     expect(request).toContain('Paperless Options');
 
     const answer = JSON.stringify({
@@ -57,9 +57,9 @@ describe('EpicIntakeWorkspace', () => {
         { id: 'item-99', kind: 'work' },
       ],
     });
-    await user.click(screen.getByLabelText(/Paste the assistant/));
+    await user.click(screen.getByLabelText('Paste the answer here'));
     await user.paste(answer);
-    await user.click(screen.getByRole('button', { name: 'Read the reply' }));
+    await user.click(screen.getByRole('button', { name: 'Read the answer' }));
 
     expect(screen.getAllByText(/item-99/).length).toBeGreaterThan(0);
     const review = screen.getByRole('region', { name: 'Review the items' });
@@ -69,18 +69,23 @@ describe('EpicIntakeWorkspace', () => {
     expect(screen.queryByRole('list', { name: 'Questions for you' })).not.toBeInTheDocument();
   });
 
-  it('saves as it goes and resumes on the same step after the tab is closed (US6-1)', async () => {
+  it('saves as it goes and resumes on the same prompt after the tab is closed (US6-1)', async () => {
     const firstRender = renderWorkspace();
     await startIntakeFromNotes();
-    await user.click(screen.getByRole('button', { name: 'Answer these myself' }));
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Kind for "Paperless Options"' }), 'Work');
+    const answer = JSON.stringify({ kind: 'epicIntakeClassify', items: [{ id: 'item-1', kind: 'work', owner: 'fulfillment', searchTerms: ['paperless'] }] });
+    await user.click(screen.getByLabelText('Paste the answer here'));
+    await user.paste(answer);
+    await user.click(screen.getByRole('button', { name: 'Read the answer' }));
     firstRender.unmount();
 
     renderWorkspace();
     const savedList = screen.getByRole('region', { name: 'Saved intakes' });
     await user.click(within(savedList).getByRole('button', { name: 'Resume' }));
-    expect(screen.getByRole('combobox', { name: 'Kind for "Paperless Options"' })).toHaveValue('work');
-    expect(screen.getByRole('combobox', { name: 'Kind for "Tech Debt/Performance Enhancements"' })).toHaveValue('');
+    // Paperless was answered and saved; the next prompt asks only about the item still open.
+    expect(screen.getByRole('region', { name: 'Prompt 2' })).toBeInTheDocument();
+    const promptText = (screen.getByLabelText('Prompt to copy') as HTMLTextAreaElement).value;
+    expect(promptText).toContain('item-2 — answer:');
+    expect(promptText).not.toContain('item-1 — answer:');
   });
 
   it('discards a saved intake only after confirmation', async () => {

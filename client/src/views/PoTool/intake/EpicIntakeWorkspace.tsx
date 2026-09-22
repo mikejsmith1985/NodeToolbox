@@ -14,6 +14,7 @@ import { canPersistDrafts } from '../drafts/splitDraftStorage.ts';
 import compositionStyles from '../FeatureCompositionTab.module.css';
 import type { ReferencedSource } from '../sources/sourceModel.ts';
 import IntakeJourneyStrip from './components/IntakeJourneyStrip.tsx';
+import IntakeLoopPanel from './components/IntakeLoopPanel.tsx';
 import IntakeNotesPanel from './components/IntakeNotesPanel.tsx';
 import IntakeResumeBar from './components/IntakeResumeBar.tsx';
 import IntakeReviewTable from './components/IntakeReviewTable.tsx';
@@ -119,7 +120,17 @@ export default function EpicIntakeWorkspace({ dashboardTeamProfileId, jiraDeps, 
       {!canSave ? <p className={compositionStyles.warningBanner}>This browser is not saving — finish in one sitting.</p> : null}
       <IntakeResumeBar savedIntakes={savedIntakes} activeIntakeId={intake?.id ?? null} onResume={handleResume} onDiscard={handleDiscard} onStartNew={() => setIntake(null)} />
       {loadError ? <p className={compositionStyles.errorBanner}>{loadError}</p> : null}
-      {intake === null || nextStep === null ? <IntakeNotesPanel onStart={handleStart} /> : (
+      {intake !== null && isAiUnlocked ? (
+        <>
+          {/* Copy-and-paste only (GH #387): the loop is the whole screen; the item table is there if wanted, folded away. */}
+          <IntakeLoopPanel intake={intake} onChange={updateIntake} jiraDeps={resolvedJiraDeps} nowIso={nowIso} />
+          <details>
+            <summary>Show details — every item and what was decided (optional)</summary>
+            <IntakeReviewTable intake={intake} isAiUnlocked={isAiUnlocked} jiraBaseUrl={jiraBaseUrl} onChange={updateIntake} nowIso={nowIso} />
+          </details>
+          <IntakeSummaryTable intake={intake} jiraBaseUrl={jiraBaseUrl} />
+        </>
+      ) : intake === null || nextStep === null ? <IntakeNotesPanel onStart={handleStart} /> : (
         <>
           {/* Pinned while the long review table scrolls underneath, so the next step never scrolls out of sight. */}
           <div className={styles.intakeStickyBar}>

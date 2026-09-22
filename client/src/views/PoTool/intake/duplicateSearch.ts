@@ -22,7 +22,7 @@ import {
   type NamedKey,
   type NamedKeyLookup,
 } from './epicIntakeModel.ts';
-import { isEnrollmentOwned, refreshApplicability, replaceIntakeItem, routeDecisionToPo, settleDecision } from './intakeChecklist.ts';
+import { isEnrollmentOwned, refreshApplicability, replaceIntakeItem, settleDecision } from './intakeChecklist.ts';
 
 // ── Constants ──
 
@@ -322,18 +322,21 @@ async function searchByText(
   }
 }
 
-/** After a clean search: nothing found settles "create new"; an unusable named key hands the question to the PO. */
+/**
+ * After a clean search: nothing found settles "create new". A key the notes named that cannot be used (done, not an
+ * Epic, missing) is noted on the row for the summary rather than put to the PO — the PO only copies and pastes
+ * (GH #387 feedback), so the assistant decides among what was found, and the note keeps the doubt visible.
+ */
 function settleOutcomeOfSearch(item: IntakeItem, projectKey: string, searchTerms: readonly string[], namedOutcome: NamedKeyOutcome): IntakeItem {
-  if (namedOutcome.unusableNotes.length > 0) {
-    const duplicate = routeDecisionToPo(item.decisions.duplicate, null, namedOutcome.unusableNotes.join(' '));
-    return { ...item, decisions: { ...item.decisions, duplicate } };
-  }
-  if (item.candidates.length > 0) {
-    return item;
+  const flaggedItem = namedOutcome.unusableNotes.length > 0
+    ? { ...item, reviewFlag: `Named key not used: ${namedOutcome.unusableNotes.join(' ')}` }
+    : item;
+  if (flaggedItem.candidates.length > 0) {
+    return flaggedItem;
   }
   const reason = `No open ${projectKey} Epic matched "${searchTerms.join(', ')}"`;
-  const duplicate = settleDecision(item.decisions.duplicate, { verdict: 'createNew' as const }, 'rule', reason);
-  return { ...item, decisions: { ...item.decisions, duplicate } };
+  const duplicate = settleDecision(flaggedItem.decisions.duplicate, { verdict: 'createNew' as const }, 'rule', reason);
+  return { ...flaggedItem, decisions: { ...flaggedItem.decisions, duplicate } };
 }
 
 async function searchOneItem(item: IntakeItem, intake: EpicIntake, epicTypeName: string, deps: DuplicateSearchDeps): Promise<IntakeItem> {
