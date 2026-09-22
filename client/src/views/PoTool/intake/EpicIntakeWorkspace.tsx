@@ -13,6 +13,7 @@ import { useConnectionStore } from '../../../store/connectionStore.ts';
 import { canPersistDrafts } from '../drafts/splitDraftStorage.ts';
 import compositionStyles from '../FeatureCompositionTab.module.css';
 import type { ReferencedSource } from '../sources/sourceModel.ts';
+import IntakeAnnotatedNotes from './components/IntakeAnnotatedNotes.tsx';
 import IntakeJourneyStrip from './components/IntakeJourneyStrip.tsx';
 import IntakeLoopPanel from './components/IntakeLoopPanel.tsx';
 import IntakeNotesPanel from './components/IntakeNotesPanel.tsx';
@@ -128,6 +129,7 @@ export default function EpicIntakeWorkspace({ dashboardTeamProfileId, jiraDeps, 
             <summary>Show details — every item and what was decided (optional)</summary>
             <IntakeReviewTable intake={intake} isAiUnlocked={isAiUnlocked} jiraBaseUrl={jiraBaseUrl} onChange={updateIntake} nowIso={nowIso} />
           </details>
+          <IntakeAnnotatedNotes intake={intake} jiraBaseUrl={jiraBaseUrl} />
           <IntakeSummaryTable intake={intake} jiraBaseUrl={jiraBaseUrl} />
         </>
       ) : intake === null || nextStep === null ? <IntakeNotesPanel onStart={handleStart} /> : (
@@ -146,6 +148,7 @@ export default function EpicIntakeWorkspace({ dashboardTeamProfileId, jiraDeps, 
             <IntakeTurnPanel intake={intake} isAiUnlocked={isAiUnlocked} onChange={updateIntake} jiraDeps={resolvedJiraDeps} nowIso={nowIso} />
           </div>
           <IntakeReviewTable intake={intake} isAiUnlocked={isAiUnlocked} jiraBaseUrl={jiraBaseUrl} onChange={updateIntake} nowIso={nowIso} />
+          <IntakeAnnotatedNotes intake={intake} jiraBaseUrl={jiraBaseUrl} />
           <IntakeSummaryTable intake={intake} jiraBaseUrl={jiraBaseUrl} />
         </>
       )}

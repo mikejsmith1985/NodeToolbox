@@ -7,8 +7,8 @@
 // item) and its `readFailureReason`; it does not reuse `runCompositionCommit`, which commits a single draft through
 // an update diff and writes no labels.
 
-import { createIssue } from '../../../services/jiraApi.ts';
-import type { CreateIssueRequest, CreateIssueResponse, CreateMetaFieldEntry, JiraIssue } from '../../../types/jira.ts';
+import { createIssue, getMyself } from '../../../services/jiraApi.ts';
+import type { CreateIssueRequest, CreateIssueResponse, CreateMetaFieldEntry, JiraIssue, JiraMyself } from '../../../types/jira.ts';
 import { escapeJqlValue } from '../../../utils/jqlValue.ts';
 import { buildIssueTextMatchTerms } from '../../../utils/jqlTextTerms.ts';
 import {
@@ -51,6 +51,11 @@ export interface EpicCreateScreenFields {
   epicNameFieldId: string | null;
   /** Every other required field without a default, asked of the PO once for the whole batch. */
   unanswered: TransitionRequiredField[];
+  /**
+   * True when the screen requires a Reporter. Toolbox fills it with the signed-in user rather than asking — the
+   * PO is who is creating these Epics, and a person field is not something the batch picker can show (GH #387).
+   */
+  isReporterRequired?: boolean;
 }
 
 /** The Jira calls and clock the create loop uses, injected so tests can stand in for them. */
@@ -58,11 +63,27 @@ export interface EpicCreateDeps {
   createIssue: (request: CreateIssueRequest) => Promise<CreateIssueResponse>;
   searchIssues: SearchIssuesFunction;
   nowIso: () => string;
+  /** The signed-in Jira user, read only when the create screen requires a Reporter. */
+  loadCurrentUser?: () => Promise<JiraMyself>;
 }
 
 /** The real Jira calls and clock, for the Create button. */
 export function createEpicCreateDeps(): EpicCreateDeps {
-  return { createIssue, searchIssues: searchJiraIssues, nowIso: () => new Date().toISOString() };
+  // The user is looked up only when a create actually needs a Reporter, never when the page renders.
+  return { createIssue, searchIssues: searchJiraIssues, nowIso: () => new Date().toISOString(), loadCurrentUser: () => getMyself() };
+}
+
+/** The create screen's Reporter field. Jira's own screen fills it with whoever creates the issue; so do we. */
+const REPORTER_FIELD_ID = 'reporter';
+
+/**
+ * The Reporter value for the signed-in user: Jira Cloud identifies people by `accountId`, Data Center by `name`.
+ * Throws a plain message when neither is known, so the PO sees why nothing was created.
+ */
+export function buildReporterValue(currentUser: JiraMyself): Record<string, string> {
+  if (currentUser.accountId) return { accountId: currentUser.accountId };
+  if (currentUser.name) return { name: currentUser.name };
+  throw new Error('Your Jira user could not be read, so the required Reporter field cannot be filled.');
 }
 
 // ── Pre-flight ──
@@ -89,15 +110,18 @@ function isUnsuppliedRequiredField(createField: CreateMetaFieldEntry): boolean {
  */
 export function readUnansweredEpicRequiredFields(createFields: readonly CreateMetaFieldEntry[]): EpicCreateScreenFields {
   let epicNameFieldId: string | null = null;
+  let isReporterRequired = false;
   const unanswered: TransitionRequiredField[] = [];
   for (const createField of createFields.filter(isUnsuppliedRequiredField)) {
-    if (epicNameFieldId === null && EPIC_NAME_FIELD_NAME_PATTERN.test(createField.name?.trim() ?? '')) {
+    if (createField.fieldId === REPORTER_FIELD_ID) {
+      isReporterRequired = true;
+    } else if (epicNameFieldId === null && EPIC_NAME_FIELD_NAME_PATTERN.test(createField.name?.trim() ?? '')) {
       epicNameFieldId = createField.fieldId;
     } else {
       unanswered.push(mapToRequiredField(createField));
     }
   }
-  return { epicNameFieldId, unanswered };
+  return { epicNameFieldId, unanswered, isReporterRequired };
 }
 
 /** Reads the PO's stored batch answers, keeping only entries shaped like a picker answer. */
@@ -127,6 +151,7 @@ export function buildEpicCreatePayload(
   intake: EpicIntake,
   epicNameFieldId: string | null,
   batchRequiredFields: readonly TransitionRequiredField[] = [],
+  reporter: Record<string, string> | null = null,
 ): CreateIssueRequest {
   const label = readSettledValue(item.decisions.label);
   if (!isItemReadyToCreate(item) || label === null || item.draft === null || intake.epicType.state !== 'resolved') {
@@ -142,6 +167,9 @@ export function buildEpicCreatePayload(
   };
   if (epicNameFieldId !== null) {
     fields[epicNameFieldId] = summary;
+  }
+  if (reporter !== null) {
+    fields[REPORTER_FIELD_ID] = reporter;
   }
   return { fields: { ...fields, ...buildTransitionFieldsPayload(batchRequiredFields, readBatchSelections(intake.batchRequiredFieldValues)) } };
 }
@@ -194,6 +222,7 @@ async function createOneEpic(
   screenFields: EpicCreateScreenFields,
   deps: EpicCreateDeps,
   onProgress: (intake: EpicIntake) => void,
+  reporter: Record<string, string> | null,
 ): Promise<EpicIntake> {
   const epicTypeName = intake.epicType.state === 'resolved' ? intake.epicType.name : '';
   try {
@@ -205,7 +234,7 @@ async function createOneEpic(
         return recordCreation(intake, item, { state: 'created', key: recoveredKey, createdAtIso: deps.nowIso() }, onProgress);
       }
     }
-    const payload = buildEpicCreatePayload(item, intake, screenFields.epicNameFieldId, screenFields.unanswered);
+    const payload = buildEpicCreatePayload(item, intake, screenFields.epicNameFieldId, screenFields.unanswered, reporter);
     const creatingIntake = recordCreation(intake, item, { state: 'creating', startedAtIso: deps.nowIso() }, onProgress);
     const createdIssue = await deps.createIssue(payload);
     return recordCreation(creatingIntake, item, { state: 'created', key: createdIssue.key, createdAtIso: deps.nowIso() }, onProgress);
@@ -244,9 +273,11 @@ export async function runEpicCreates(
 ): Promise<EpicIntake> {
   assertBatchCanStart(intake, screenFields);
   const creatableItems = intake.items.filter((item) => isItemReadyToCreate(item) && CREATABLE_STATES.has(item.creation.state));
+  // Read once for the whole batch, only when the screen needs it.
+  const reporter = screenFields.isReporterRequired && deps.loadCurrentUser ? buildReporterValue(await deps.loadCurrentUser()) : null;
   let workingIntake = intake;
   for (const item of creatableItems) {
-    workingIntake = await createOneEpic(workingIntake, item, screenFields, deps, onProgress);
+    workingIntake = await createOneEpic(workingIntake, item, screenFields, deps, onProgress, reporter);
   }
   return workingIntake;
 }

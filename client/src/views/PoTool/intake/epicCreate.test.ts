@@ -16,6 +16,7 @@ import {
 } from './epicIntakeModel.ts';
 import {
   buildEpicCreatePayload,
+  buildReporterValue,
   EPIC_NAME_FIELD_NAME_PATTERN,
   INTAKE_SUPPLIED_FIELD_IDS,
   readUnansweredEpicRequiredFields,
@@ -105,7 +106,7 @@ describe('readUnansweredEpicRequiredFields', () => {
       buildField('project', 'Project'),
       buildField(EPIC_NAME_FIELD_ID, 'Epic Name'),
     ]);
-    expect(screenFields).toEqual({ epicNameFieldId: EPIC_NAME_FIELD_ID, unanswered: [] });
+    expect(screenFields).toEqual({ epicNameFieldId: EPIC_NAME_FIELD_ID, unanswered: [], isReporterRequired: false });
   });
 
   it('asks once for any other required field without a default, mapped to the required-field picker shape', () => {
@@ -279,5 +280,41 @@ describe('runEpicCreates', () => {
   it('refuses to start without a resolved Epic type', async () => {
     const intake = { ...buildIntake([buildReadyItem(1, 'Portal')]), epicType: { state: 'missing' as const, offeredTypeNames: ['Feature'] } };
     await expect(runEpicCreates(intake, buildDeps(), () => undefined, NO_SCREEN_FIELDS)).rejects.toThrow();
+  });
+});
+
+// ── Reporter (GH #387: Create was greyed out behind "Reporter must be completed in Jira") ──
+
+describe('a required Reporter is filled with the signed-in user, never asked', () => {
+  it('is recognised on the create screen and kept out of the questions', () => {
+    const screenFields = readUnansweredEpicRequiredFields([buildField('reporter', 'Reporter', { schema: { type: 'user' } })]);
+    expect(screenFields).toMatchObject({ isReporterRequired: true, unanswered: [] });
+  });
+
+  it('uses the Cloud accountId when there is one, else the Data Center name', () => {
+    expect(buildReporterValue({ accountId: 'abc-123', name: 'jsmith' })).toEqual({ accountId: 'abc-123' });
+    expect(buildReporterValue({ name: 'jsmith' })).toEqual({ name: 'jsmith' });
+    expect(() => buildReporterValue({})).toThrow(/Reporter/);
+  });
+
+  it('reads the user once for the batch and puts Reporter on every Epic', async () => {
+    const loadCurrentUser = vi.fn(async () => ({ name: 'jsmith' }));
+    const deps = buildDeps({ loadCurrentUser });
+    const intake = buildIntake([buildReadyItem(1, 'First'), buildReadyItem(2, 'Second')]);
+
+    await runEpicCreates(intake, deps, vi.fn(), { ...NO_SCREEN_FIELDS, isReporterRequired: true });
+
+    expect(loadCurrentUser).toHaveBeenCalledTimes(1);
+    const createCalls = (deps.createIssue as ReturnType<typeof vi.fn>).mock.calls;
+    expect(createCalls).toHaveLength(2);
+    for (const [request] of createCalls) {
+      expect((request as { fields: Record<string, unknown> }).fields.reporter).toEqual({ name: 'jsmith' });
+    }
+  });
+
+  it('does not read the user when the screen does not require a Reporter', async () => {
+    const loadCurrentUser = vi.fn(async () => ({ name: 'jsmith' }));
+    await runEpicCreates(buildIntake([buildReadyItem(1, 'First')]), buildDeps({ loadCurrentUser }), vi.fn(), NO_SCREEN_FIELDS);
+    expect(loadCurrentUser).not.toHaveBeenCalled();
   });
 });

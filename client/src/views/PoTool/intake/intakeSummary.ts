@@ -33,8 +33,12 @@ export const SUMMARY_ACTION_LABELS: Record<SummaryAction, string> = {
   notActionable: 'Not actionable',
   declined: 'Declined',
   failed: 'Failed',
+  ready: 'Ready to create',
   open: 'Open',
 };
+
+/** A row whose only open step is the draft, and whose draft is written, waits on nothing but the Create click. */
+const READY_TO_CREATE_REASON = 'Ready — click Create';
 
 /** The step names shown in an "Open" row's reason, in the order a PO reads them. */
 const STEP_DISPLAY_NAMES: Record<string, string> = {
@@ -131,7 +135,10 @@ interface SummaryOutcome {
 /** The action table from the contract, first match wins. Never returns a key alongside `open`. */
 function deriveSummaryOutcome(item: IntakeItem, openSteps: readonly string[]): SummaryOutcome {
   if (openSteps.length > 0) {
-    return { action: 'open', key: null, reason: `Waiting on: ${describeOpenStep(openSteps[0])}` };
+    const isOnlyAwaitingCreate = item.draft !== null && openSteps.every((step) => step === 'draft');
+    return isOnlyAwaitingCreate
+      ? { action: 'ready', key: null, reason: READY_TO_CREATE_REASON }
+      : { action: 'open', key: null, reason: `Waiting on: ${describeOpenStep(openSteps[0])}` };
   }
 
   const kindDecision = item.decisions.kind;
@@ -273,15 +280,22 @@ export function renderSummaryHtml(rows: readonly SummaryRow[]): string {
  * plain-text targets). Falls back to plain text where the browser cannot write rich clipboard content.
  */
 export async function copySummaryTable(rows: readonly SummaryRow[]): Promise<void> {
-  const markdown = renderSummaryMarkdown(rows);
+  await copyHtmlAndText(renderSummaryHtml(rows), renderSummaryMarkdown(rows));
+}
+
+/**
+ * Puts both flavours on the clipboard: HTML for targets that keep formatting and links, plain text for the rest.
+ * Falls back to plain text where the browser cannot write rich clipboard content.
+ */
+export async function copyHtmlAndText(html: string, plainText: string): Promise<void> {
   if (typeof ClipboardItem === 'undefined' || typeof navigator.clipboard?.write !== 'function') {
-    await navigator.clipboard.writeText(markdown);
+    await navigator.clipboard.writeText(plainText);
     return;
   }
   await navigator.clipboard.write([
     new ClipboardItem({
-      'text/html': new Blob([renderSummaryHtml(rows)], { type: 'text/html' }),
-      'text/plain': new Blob([markdown], { type: 'text/plain' }),
+      'text/html': new Blob([html], { type: 'text/html' }),
+      'text/plain': new Blob([plainText], { type: 'text/plain' }),
     }),
   ]);
 }

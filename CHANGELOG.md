@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Epic Intake gives your notes back with the Epic keys in them (GH #387).** A new "Notes with Epic
+  keys" panel shows the notes exactly as pasted — bullets, tabs and order — with each item's Epic
+  written beside its line: "• AEP — DENP-905 (new Epic, Enrollment scope)", "• Core Integration —
+  DENP-632 (existing Epic)", or why an item has none ("Fulfillment — no Enrollment Epic"). **Copy
+  notes** pastes it into email, Teams or Confluence with the keys as links, so the notes can be
+  shared showing which Epic covers which piece of scope.
+
+### Fixed
+- **Epic Intake's Create button no longer greys out behind "Reporter must be completed in Jira"
+  (GH #387).** DENP's create screen requires a Reporter, and the batch field picker cannot show a
+  person field, so Create was blocked. Toolbox now fills Reporter with the signed-in Jira user — as
+  Jira's own screen does — and asks nothing. Rows waiting only for Create now say **Ready to create**
+  instead of "Open — waiting on reviewing the draft".
+
 ### Changed
 - **Epic Intake is now just copy and paste (GH #387 feedback).** The intake is a loop: the next prompt
   is on screen as soon as the notes are in, you copy it out and paste the answer back, and the next

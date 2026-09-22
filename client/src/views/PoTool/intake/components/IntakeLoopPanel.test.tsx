@@ -45,8 +45,15 @@ function createJiraDeps(createdRequests: CreateIssueRequest[]): IntakeJiraDeps {
       }),
       searchIssues: vi.fn(async () => []),
       nowIso: () => NOW_ISO,
+      loadCurrentUser: vi.fn(async () => ({ name: 'jsmith' })),
     },
-    loadCreateFields: vi.fn(async () => ({ values: [{ fieldId: 'summary', name: 'Summary', required: true, hasDefaultValue: false, schema: { type: 'string' } }] })) as unknown as IntakeJiraDeps['loadCreateFields'],
+    // DENP's real create screen requires a Reporter (GH #387: it greyed out Create until this was handled).
+    loadCreateFields: vi.fn(async () => ({
+      values: [
+        { fieldId: 'summary', name: 'Summary', required: true, hasDefaultValue: false, schema: { type: 'string' } },
+        { fieldId: 'reporter', name: 'Reporter', required: true, hasDefaultValue: false, schema: { type: 'user' } },
+      ],
+    })) as unknown as IntakeJiraDeps['loadCreateFields'],
   };
 }
 
@@ -103,7 +110,13 @@ describe('the copy-and-paste loop', () => {
     // Only Create is left.
     await user.click(await screen.findByRole('button', { name: 'Create 1 Epic(s)' }));
     await waitFor(() => expect(createdRequests).toHaveLength(1));
-    expect(createdRequests[0].fields).toMatchObject({ summary: 'Paperless options', labels: ['Roadmap'] });
+    expect(createdRequests[0].fields).toMatchObject({ summary: 'Paperless options', labels: ['Roadmap'], reporter: { name: 'jsmith' } });
+
+    // The notes come back with each item's Epic written beside it, ready to share.
+    const annotatedNotes = (screen.getByRole('textbox', { name: 'Notes with Epic keys' }) as HTMLTextAreaElement).value;
+    expect(annotatedNotes).toContain('•\tCore Integration (denp-632) — DENP-632 (existing Epic)');
+    expect(annotatedNotes).toContain('•\tPaperless Options — DENP-901 (new Epic)');
+    expect(annotatedNotes).toContain('•\tInvoice overhaul — Fulfillment — no Enrollment Epic');
 
     // No question was ever put to the PO.
     expect(screen.queryByRole('list', { name: 'Questions for you' })).not.toBeInTheDocument();

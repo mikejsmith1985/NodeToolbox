@@ -43,6 +43,7 @@ const BUCKET_SORT_ORDER: readonly ReviewBucket[] = ['needsLook', 'create', 'exis
 const FINAL_ACTION_BUCKETS: Partial<Record<SummaryAction, ReviewBucket>> = {
   existing: 'existing',
   created: 'create',
+  ready: 'create',
   skippedFulfillment: 'notCreated',
   notActionable: 'notCreated',
   declined: 'notCreated',

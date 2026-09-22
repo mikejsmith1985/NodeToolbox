@@ -275,6 +275,8 @@ export type SummaryAction =
   | 'notActionable'
   | 'declined'
   | 'failed'
+  /** Everything is decided and drafted; only the PO's Create click is left. */
+  | 'ready'
   | 'open';
 
 /** One row of the summary table. */
