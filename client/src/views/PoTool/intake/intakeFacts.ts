@@ -10,7 +10,7 @@ import {
   type NamedKey,
   type SourceLine,
 } from './epicIntakeModel.ts';
-import { refreshApplicability, routeDecisionToPo, settleDecision } from './intakeChecklist.ts';
+import { refreshApplicability, settleDecision } from './intakeChecklist.ts';
 import { findDeferralEvidence } from './deferralEvidence.ts';
 import { extractNamedKeys } from './namedKeys.ts';
 import { decideOwnerFromSizes, parseAreaSizes } from './ownershipRule.ts';
@@ -40,11 +40,11 @@ function settleOwnerFromSizes(item: IntakeItem): IntakeItem {
   if (sizeRule.owner === undefined || readSettledValue(item.decisions.owner) !== null) {
     return item;
   }
-  // Equal stated sizes mean both teams carry the same weight: suggest Shared, and let the PO decide.
-  const owner = sizeRule.owner === null
-    ? routeDecisionToPo(item.decisions.owner, 'shared', sizeRule.reason)
-    : settleDecision(item.decisions.owner, sizeRule.owner, 'rule', sizeRule.reason);
-  return { ...item, decisions: { ...item.decisions, owner } };
+  // Equal stated sizes mean both teams carry the same weight: that is Shared, decided here and flagged for
+  // review, never put to the PO as a question (GH #387 feedback).
+  const isTie = sizeRule.owner === null;
+  const owner = settleDecision(item.decisions.owner, sizeRule.owner ?? 'shared', 'rule', sizeRule.reason);
+  return { ...item, reviewFlag: isTie ? `Shared: ${sizeRule.reason}` : item.reviewFlag, decisions: { ...item.decisions, owner } };
 }
 
 /**

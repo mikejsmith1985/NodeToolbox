@@ -1,5 +1,6 @@
 // EpicIntakeWorkspace.test.tsx — The Epic Intake mode with the assistant unlocked: a pasted sorting answer is checked
-// and applied, and the intake survives the tab closing and resumes on the same step (spec 037, US1, US6).
+// and applied straight into the review table (a close call becomes Shared and is flagged, never asked), and the intake
+// survives the tab closing and resumes exactly as it was left (spec 037, US1, US6, GH #387 feedback).
 
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -40,7 +41,7 @@ async function startIntakeFromNotes(): Promise<void> {
 }
 
 describe('EpicIntakeWorkspace', () => {
-  it('builds the sorting request, applies a pasted answer, and hands the close call to the PO', async () => {
+  it('builds the sorting request, applies a pasted answer, and settles a close call as Shared with a flag', async () => {
     renderWorkspace();
     await startIntakeFromNotes();
 
@@ -60,23 +61,26 @@ describe('EpicIntakeWorkspace', () => {
     await user.paste(answer);
     await user.click(screen.getByRole('button', { name: 'Read the reply' }));
 
-    expect(screen.getByText(/item-99/)).toBeInTheDocument();
-    const questions = screen.getByRole('list', { name: 'Questions for you' });
-    expect(within(questions).getByLabelText(/Who owns "Tech Debt\/Performance Enhancements"/)).toBeInTheDocument();
-    expect(within(questions).getByText(/close call/)).toBeInTheDocument();
+    expect(screen.getAllByText(/item-99/).length).toBeGreaterThan(0);
+    const review = screen.getByRole('region', { name: 'Review the items' });
+    expect(within(review).getByRole('combobox', { name: 'Owner for "Tech Debt/Performance Enhancements"' })).toHaveValue('shared');
+    expect(within(review).getByRole('combobox', { name: 'Owner for "Paperless Options"' })).toHaveValue('enrollment');
+    expect(within(review).getByText(/⚠ Shared/)).toBeInTheDocument();
+    expect(screen.queryByRole('list', { name: 'Questions for you' })).not.toBeInTheDocument();
   });
 
   it('saves as it goes and resumes on the same step after the tab is closed (US6-1)', async () => {
     const firstRender = renderWorkspace();
     await startIntakeFromNotes();
     await user.click(screen.getByRole('button', { name: 'Answer these myself' }));
-    expect(screen.getByLabelText(/What is "Paperless Options"/)).toBeInTheDocument();
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Kind for "Paperless Options"' }), 'Work');
     firstRender.unmount();
 
     renderWorkspace();
     const savedList = screen.getByRole('region', { name: 'Saved intakes' });
     await user.click(within(savedList).getByRole('button', { name: 'Resume' }));
-    expect(screen.getByLabelText(/What is "Paperless Options"/)).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Kind for "Paperless Options"' })).toHaveValue('work');
+    expect(screen.getByRole('combobox', { name: 'Kind for "Tech Debt/Performance Enhancements"' })).toHaveValue('');
   });
 
   it('discards a saved intake only after confirmation', async () => {

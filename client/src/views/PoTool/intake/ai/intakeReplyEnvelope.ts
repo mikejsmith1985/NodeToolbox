@@ -3,6 +3,12 @@
 
 import { extractJsonPayload } from '../../../../utils/extractJsonPayload.ts';
 
+/** A request ready to copy out: its text, and the ids of the items it asks about (the only ids a reply may use). */
+export interface IntakeRoundRequest {
+  text: string;
+  itemIds: string[];
+}
+
 /** One raw item from a reply, not yet validated. */
 export type RawReplyItem = Record<string, unknown>;
 

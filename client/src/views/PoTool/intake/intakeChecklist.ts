@@ -189,6 +189,23 @@ export function isItemReadyToCreate(item: IntakeItem): boolean {
   return isEnrollmentWork && isNewEpic && isAccepted && item.searchStatus === 'ok' && item.creation.state !== 'created';
 }
 
+/**
+ * True when clicking Create would make this item an Epic: Enrollment-owned new work that was searched, has a
+ * label, was not declined, and is not already created — and whose draft is either written or cannot come from
+ * the assistant (Create then fills in the plain template). The Create click is the PO's single confirmation of
+ * everything the review table shows; there is no separate per-draft Accept any more (GH #387 feedback).
+ */
+export function isItemCreatableAfterReview(item: IntakeItem, isAiUnlocked: boolean): boolean {
+  const isEnrollmentWork = readSettledValue(item.decisions.kind) === 'work'
+    && isEnrollmentOwned(readSettledValue(item.decisions.owner));
+  const isNewEpic = readSettledValue(item.decisions.duplicate)?.verdict === 'createNew';
+  const isLabelled = readSettledValue(item.decisions.label) !== null;
+  const isDeclined = readSettledValue(item.decisions.draftAccepted) === 'declined';
+  const isDraftPending = item.draft === null && readAiOrPoTurn(item.decisions.draftAccepted, isAiUnlocked) === 'ai';
+  return isEnrollmentWork && isNewEpic && isLabelled && !isDeclined && !isDraftPending
+    && item.searchStatus === 'ok' && item.creation.state !== 'created';
+}
+
 // ── Open decisions ──
 
 /** The assistant's turn unless it is locked, the slot was handed to the PO, or it has failed too often. */
@@ -221,7 +238,8 @@ function listItemOpenDecisions(item: IntakeItem, isAiUnlocked: boolean): OpenDec
     if (item.searchStatus === 'ok') add('duplicate', 'match', readAiOrPoTurn(decisions.duplicate, isAiUnlocked));
     else add('candidateSearch', 'checkDenp', 'toolbox');
   }
-  if (isCreateNew && decisions.label.state === 'open') add('label', 'confirmLabels', 'po');
+  // The assistant sets the label too; the PO can change it in review, and answers it only when the assistant can't.
+  if (isCreateNew && decisions.label.state === 'open') add('label', 'confirmLabels', readAiOrPoTurn(decisions.label, isAiUnlocked));
   if (isCreateNew && decisions.draftAccepted.state === 'open') {
     add('draftAccepted', 'draft', item.draft === null ? readAiOrPoTurn(decisions.draftAccepted, isAiUnlocked) : 'po');
   }
@@ -287,7 +305,8 @@ export function listAvailableActions(intake: EpicIntake, isAiUnlocked: boolean):
     poQuestions: poDecisions.filter((openDecision) => !isDraftDecision(openDecision)),
     draftReviewItemIds: poDecisions.filter(isDraftDecision).map((openDecision) => openDecision.itemId as string),
     hasSearchWork: openDecisions.some((openDecision) => openDecision.turn === 'toolbox' && TOOLBOX_SEARCH_SLOTS.has(openDecision.slot)),
-    hasCreateWork: openDecisions.some((openDecision) => openDecision.slot === 'creation'),
+    hasCreateWork: openDecisions.some((openDecision) => openDecision.slot === 'creation')
+      || intake.items.some((item) => isItemCreatableAfterReview(item, isAiUnlocked)),
   };
 }
 
@@ -321,9 +340,9 @@ const NEXT_ACTION_TEXT: Record<IntakeStepId, Record<Exclude<IntakeTurn, 'done'>,
     po: 'Confirm Roadmap or Stability for each new Epic.',
   },
   draft: {
-    ai: 'Copy the drafting request below, then paste back the answer.',
-    toolbox: 'Review each Epic draft.',
-    po: 'Review each Epic draft, then accept or decline it.',
+    ai: 'Copy the request below, then paste back the answer.',
+    toolbox: 'Review the table, then click Create.',
+    po: 'Review the table — change any row you disagree with — then click Create.',
   },
   create: {
     ai: 'Create the accepted Epics in DENP.',

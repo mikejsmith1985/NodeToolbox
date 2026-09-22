@@ -14,13 +14,7 @@ import {
   type RoundRecord,
   type SetAsideLine,
 } from '../epicIntakeModel.ts';
-import {
-  recordAiProposal,
-  recordAiRejection,
-  refreshApplicability,
-  routeDecisionToPo,
-  settleDecision,
-} from '../intakeChecklist.ts';
+import { recordAiRejection, refreshApplicability, settleDecision } from '../intakeChecklist.ts';
 import { deriveItemFacts } from '../intakeFacts.ts';
 import { decideOwnerFromShare } from '../ownershipRule.ts';
 import { CLASSIFY_REPLY_KIND, type ClassifyAnswer, type ClassifyOutcome } from './intakeClassifyRound.ts';
@@ -105,19 +99,27 @@ function applyShare(item: IntakeItem, answer: ClassifyAnswer): IntakeItem {
   const { owner } = withShare.decisions;
   const isNotWork = (readSettledValue(withShare.decisions.kind) ?? 'work') !== 'work';
   if (owner.state !== 'open' || owner.isAwaitingPo || isNotWork) return withShare;
-  return { ...withShare, decisions: { ...withShare.decisions, owner: decideOwnerByShare(owner, answer) } };
+  // The answer's own owner wins over the share figure; stated sizes already settled the owner before we got here.
+  if (answer.owner !== null) {
+    const namedOwner = settleDecision(owner, answer.owner, 'ai', answer.reason ?? 'Decided from the notes');
+    return { ...withShare, decisions: { ...withShare.decisions, owner: namedOwner } };
+  }
+  const shareDecision = decideOwnerByShare(owner, answer);
+  // A close call is decided as Shared rather than put to the PO; the flag makes it easy to spot in review.
+  const reviewFlag = shareDecision.state === 'settled' && shareDecision.value === 'shared' ? `Shared: ${shareDecision.reason}` : withShare.reviewFlag;
+  return { ...withShare, reviewFlag, decisions: { ...withShare.decisions, owner: shareDecision } };
 }
 
-/** Applies the share thresholds to an open owner: settle, hand a close call to the PO, or count a bad answer. */
+/**
+ * Applies the share thresholds to an open owner: a clear share settles Enrollment or Fulfillment, a close call
+ * settles Shared (both teams have real work), and an unusable answer counts one attempt.
+ */
 function decideOwnerByShare(owner: Decision<ItemOwner>, answer: ClassifyAnswer): Decision<ItemOwner> {
   const shareRule = decideOwnerFromShare(answer.enrollmentShare);
   if (shareRule.owner === undefined) {
     return recordAiRejection(owner, answer.hasEnrollmentShare ? shareRule.reason : NO_ANSWER_REASON);
   }
-  // A close call is suggested as Shared: when neither team clearly owns it, both usually have real work in it.
-  return shareRule.owner === null
-    ? routeDecisionToPo(owner, 'shared', shareRule.reason)
-    : settleDecision(owner, shareRule.owner, 'ai', shareRule.reason);
+  return settleDecision(owner, shareRule.owner ?? 'shared', 'ai', shareRule.reason);
 }
 
 function applyTermsAndLabel(item: IntakeItem, answer: ClassifyAnswer): IntakeItem {
@@ -128,7 +130,8 @@ function applyTermsAndLabel(item: IntakeItem, answer: ClassifyAnswer): IntakeIte
       ? recordAiRejection(searchTerms, answer.fieldErrors.searchTerms ?? NO_ANSWER_REASON)
       : settleDecision(searchTerms, answer.searchTerms, 'ai', 'Terms suggested from the notes');
   }
-  const nextLabel = answer.labelProposal === null ? label : recordAiProposal(label, answer.labelProposal, answer.reason);
+  // The assistant sets the label; the PO changes it in review if they disagree (GH #387 feedback).
+  const nextLabel = answer.labelProposal === null ? label : settleDecision(label, answer.labelProposal, 'ai', answer.reason ?? 'Suggested from the notes');
   return { ...item, decisions: { ...item.decisions, searchTerms: nextTerms, label: nextLabel } };
 }
 

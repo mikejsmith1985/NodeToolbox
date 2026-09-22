@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Epic Intake: the assistant does the work, you review once (GH #387 feedback).** The first version
+  asked the PO about every close call, label, unsure match and draft — one run showed about twenty
+  "does an open Epic cover this?" lists of twenty Epics each, which was more work than doing it by
+  hand. Now the assistant decides the owner (including Shared), the Roadmap/Stability label, the
+  match and the draft, and everything lands pre-filled in **one review table**: change only the rows
+  you disagree with, then click **Create** — that click is the single confirmation. Close calls
+  become Shared and unsure matches are flagged ⚠ instead of becoming questions, and a match shows the
+  assistant's pick plus up to four alternatives rather than every Epic found. Matching and drafting
+  are now **one** request (split into parts when long), so a typical intake is two copy-and-paste
+  exchanges. A decision the assistant gets wrong twice is still handed to you.
+
 ### Added
 - **Epic Intake: "Shared" ownership.** "Who owns it?" was the wrong question for work like AEP, where
   Enrollment and Fulfillment both have real work of their own — any single answer was wrong. Items can

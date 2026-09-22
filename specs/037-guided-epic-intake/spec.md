@@ -54,6 +54,25 @@ state of play, not improvised.
   used to decide ownership.
 - Q: Where does this live? → A: As a **mode inside PO Tool's Feature Composition tab**, not a new tab.
 
+### Session 2026-09-22 — production feedback (GH #387)
+
+The first release put the PO in the driver's seat: close calls, labels, unsure matches and every draft were questions,
+and one run showed ~20 match dropdowns of ~20 Epics each — "more effort than doing it manually". Direction changed:
+
+- Q: Who decides? → A: **The assistant decides; the PO reviews once.** Owner (incl. Shared), label, match and draft
+  are all the assistant's answers, shown pre-filled in **one review table** the PO edits only where they disagree.
+  **Supersedes** FR-015's PO close-call question, FR-020's PO-only label, and US3-6's low-confidence hand-off.
+- Q: What about work both teams own (AEP)? → A: A **Shared** owner: Enrollment creates one Epic for **its part**,
+  summary suffixed "(Enrollment scope)" (Epic Name keeps it); the summary flags Fulfillment's part for hand-off. A
+  40–60% share or equal stated sizes **settles** Shared and is flagged ⚠ for review — never asked.
+- Q: Unsure matches? → A: The assistant still picks; the row is flagged ⚠. The match choice shows the assistant's pick
+  plus **up to 4 alternatives**, not every candidate.
+- Q: Draft acceptance? → A: **Clicking Create is the single confirmation** — no per-draft Accept (supersedes FR-022's
+  per-draft accept; nothing is still written before the PO clicks Create). Items without a written draft get the
+  plain template at Create.
+- Q: How many exchanges? → A: **Two** — sort the notes, then one combined match + draft request (split into parts
+  when long). FR-007 stands: a decision the assistant fails twice becomes the PO's.
+
 ## User Scenarios & Testing
 
 ### US1 — Turn raw notes into a list of classified items (P1)

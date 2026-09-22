@@ -1,5 +1,5 @@
 /* EpicIntakeWorkspace.module.css — The few styles the Epic Intake mode needs beyond the Feature Composition and
-   Bulk Re-write modules it reuses: the mode switch, the items table, the "who decided" badges and the summary. */
+   Bulk Re-write modules it reuses: the mode switch, the review table, its badges and the summary. */
 
 /* ── Mode switch (Compose / Epic Intake) ── */
 
@@ -100,7 +100,7 @@
   opacity: 0.55;
 }
 
-/* ── Who decided: the badge beside every value ── */
+/* ── Badges: "Needs your choice" beside a row ── */
 
 .intakeBadge {
   display: inline-block;
@@ -111,21 +111,6 @@
   font-size: 0.7rem;
   font-weight: 600;
   vertical-align: middle;
-}
-
-.intakeBadge_rule {
-  border-color: var(--color-tone-neutral-border, var(--color-border));
-}
-
-.intakeBadge_ai {
-  border-color: var(--color-accent);
-  color: var(--color-accent);
-}
-
-.intakeBadge_po {
-  background: var(--color-accent);
-  border-color: var(--color-accent);
-  color: var(--color-text-on-accent);
 }
 
 .intakeBadge_open {
@@ -158,15 +143,39 @@
   opacity: 0.8;
 }
 
-/* ── Drafts ── */
+/* ── Review table ── */
 
-.intakeDraftCard {
+.intakeReviewSection {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.intakeReviewCounts {
+  margin: 0;
+  font-weight: 600;
+}
+
+/* A row the PO should look at: a choice waiting for them, a flag, or a check that did not run. */
+.intakeReviewRowAttention > td:first-child {
+  box-shadow: inset 3px 0 0 var(--color-tone-warning-fg, var(--color-accent));
+}
+
+.intakeReviewFlag {
+  margin-top: 4px;
+  font-size: var(--font-size-sm);
+  color: var(--color-tone-warning-fg, inherit);
+}
+
+.intakeDraftEditor {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 10px;
-  border: 1px solid var(--color-border);
-  border-radius: 6px;
+  min-width: 240px;
+}
+
+.intakeDraftEditor[open] > summary {
+  margin-bottom: 6px;
 }
 
 /* ── Summary ── */

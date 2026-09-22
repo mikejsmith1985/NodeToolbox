@@ -8,12 +8,12 @@ import type { JiraIssue } from '../../../types/jira.ts';
 import type { ReferencedSource } from '../sources/sourceModel.ts';
 import { applyClassifyOutcome } from './ai/intakeClassifyApply.ts';
 import { buildClassifyRequests, parseClassifyReply } from './ai/intakeClassifyRound.ts';
-import { applyDraftOutcome, buildDraftRequest, parseDraftReply } from './ai/intakeDraftRound.ts';
+import { applyResolveOutcome, buildResolveRequests, parseResolveReply, RESOLVE_REPLY_KIND } from './ai/intakeResolveRound.ts';
 import { runDuplicateSearch, type DuplicateSearchDeps } from './duplicateSearch.ts';
-import { readItemDisplayTitle, readSettledValue, type EpicIntake } from './epicIntakeModel.ts';
+import { readItemDisplayTitle, readSettledValue, type EpicIntake, type IntakeItem } from './epicIntakeModel.ts';
 import { GH387_NOTES_TEXT } from './gh387Notes.fixture.ts';
-import { isItemReadyToCreate, listOpenDecisions, readIntakeNextStep } from './intakeChecklist.ts';
-import { acceptDraft, answerLabel } from './intakePoAnswers.ts';
+import { isEnrollmentOwned, isItemReadyToCreate, listOpenDecisions, readIntakeNextStep } from './intakeChecklist.ts';
+import { acceptReviewedDrafts } from './intakePoAnswers.ts';
 import { buildSummaryRows } from './intakeSummary.ts';
 import { proveLineCoverage } from './notesOutline.ts';
 import { startEpicIntake } from './startIntake.ts';
@@ -32,6 +32,13 @@ function answerFor(title: string): Record<string, unknown> {
     labelProposal: /upgrade|debt|compliance|performance/i.test(title) ? 'Stability' : 'Roadmap',
     reason: 'canned',
   };
+}
+
+/** A resolve answer: the first Epic found when there is one, otherwise a new Epic with its label and draft. */
+function resolveAnswerFor(item: IntakeItem): Record<string, unknown> {
+  const firstCandidate = item.candidates[0];
+  const verdict = firstCandidate === undefined ? { verdict: 'createNew' } : { verdict: 'existing', key: firstCandidate.key };
+  return { id: item.id, ...verdict, confidence: 'high', reason: 'canned', label: 'Roadmap', summary: `Epic for ${item.id}`, description: 'Description:\nFrom the notes.' };
 }
 
 function buildOpenEpic(issueKey: string): JiraIssue {
@@ -68,18 +75,14 @@ async function runGh387(): Promise<{ intake: EpicIntake; exchangeCount: number; 
     intake = { ...intake, items: intake.items.map((candidate) => (candidate.id === item.id ? { ...candidate, decisions: { ...candidate.decisions, owner: { state: 'settled', value: 'enrollment', settledBy: 'po', reason: 'PO', aiAttempts: 0 } } } : candidate)) };
   }
   intake = await runDuplicateSearch(intake, SEARCH_DEPS);
-  for (const item of intake.items.filter((candidate) => candidate.decisions.label.state === 'open' && readSettledValue(candidate.decisions.duplicate)?.verdict === 'createNew')) {
-    intake = answerLabel(intake, item.id, 'Roadmap', NOW_ISO);
-  }
-  const draftRequest = buildDraftRequest(intake);
-  if (draftRequest.itemIds.length > 0) {
-    const drafts = draftRequest.itemIds.map((itemId) => ({ id: itemId, summary: `Epic for ${itemId}`, description: 'Description:\nFrom the notes.' }));
-    intake = applyDraftOutcome(intake, parseDraftReply(JSON.stringify({ kind: 'epicIntakeDraft', items: drafts }), draftRequest.itemIds), draftRequest.itemIds, NOW_ISO);
+  // One resolve exchange (per part) answers every match, label and draft; the Create click then confirms them.
+  for (const request of buildResolveRequests(intake)) {
+    const items = request.itemIds.map((itemId) => resolveAnswerFor(intake.items.find((item) => item.id === itemId)!));
+    const outcome = parseResolveReply(JSON.stringify({ kind: RESOLVE_REPLY_KIND, items }), intake, request.itemIds);
+    intake = applyResolveOutcome(intake, outcome, request.itemIds, request, NOW_ISO);
     exchangeCount += 1;
   }
-  for (const item of intake.items.filter((candidate) => candidate.draft !== null && candidate.decisions.draftAccepted.state === 'open')) {
-    intake = acceptDraft(intake, item.id, item.draft!, NOW_ISO);
-  }
+  intake = acceptReviewedDrafts(intake, true, NOW_ISO);
   return { intake, exchangeCount, poQuestionCount };
 }
 
@@ -101,7 +104,8 @@ describe('GH #387 success criteria', () => {
     const { intake } = await runGh387();
     for (const item of intake.items.filter(isItemReadyToCreate)) {
       expect(readSettledValue(item.decisions.kind)).toBe('work');
-      expect(readSettledValue(item.decisions.owner)).toBe('enrollment');
+      // Enrollment's own work, or its part of Shared work — never Fulfillment's, never non-work.
+      expect(isEnrollmentOwned(readSettledValue(item.decisions.owner))).toBe(true);
     }
     const coreIntegration = intake.items.find((item) => item.title.startsWith('Core Integration'));
     expect(readSettledValue(coreIntegration!.decisions.duplicate)).toEqual({ verdict: 'existing', key: 'DENP-632' });

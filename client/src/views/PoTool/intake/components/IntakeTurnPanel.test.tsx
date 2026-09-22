@@ -1,6 +1,6 @@
-// IntakeTurnPanel.test.tsx — Renders whatever the current step needs and nothing else: the assistant's copy/paste
-// panel plus "Answer these myself" when it is the assistant's turn, the Check DENP button when it is Toolbox's
-// turn, and the PO's own questions otherwise.
+// IntakeTurnPanel.test.tsx — Renders what the PO can do besides the review table: the assistant's copy/paste panel
+// plus "Answer these myself" (the sorting request, then the resolve request), stray lines to place, the Check DENP
+// button, and Create. Kind, owner, match and label are never asked here — they live in the review table.
 
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -148,21 +148,42 @@ describe('IntakeTurnPanel', () => {
     expect(updatedIntake.items[0].searchStatus).not.toBe('notRun');
   });
 
-  it('renders the PO\'s own question list on the PO\'s turn', () => {
-    render(
-      <IntakeTurnPanel
-        intake={buildConfirmLabelsIntake()}
-        isAiUnlocked={false}
-        onChange={vi.fn()}
-        jiraDeps={buildJiraDepsStub()}
-        nowIso={() => NOW_ISO}
-      />,
-    );
+  it('asks for match, label and draft in one resolve request once the items have been checked', async () => {
+    const user = userEvent.setup();
+    useAiAssistStore.setState({ isAiAssistUnlocked: true });
+    const item = createIntakeItem(1, 'Member portal work', [1]);
+    item.decisions.kind = settleDecision(item.decisions.kind, 'work', 'rule', 'Notes say work');
+    item.decisions.owner = settleDecision(item.decisions.owner, 'enrollment', 'rule', 'Stated sizes');
+    item.decisions.searchTerms = settleDecision(item.decisions.searchTerms, ['member portal'], 'ai', 'Suggested');
+    const checkedItem = {
+      ...item,
+      searchStatus: 'ok' as const,
+      candidates: [{ key: 'DENP-10', summary: 'Member portal', statusName: 'Open', statusCategory: 'new', descriptionExcerpt: '', foundBy: 'search' as const }],
+    };
 
-    expect(screen.getByRole('combobox', { name: /Label for the new Epic/ })).toBeInTheDocument();
+    render(
+      <IntakeTurnPanel intake={{ ...buildBaseIntake(), items: [checkedItem] }} isAiUnlocked onChange={vi.fn()} jiraDeps={buildJiraDepsStub()} nowIso={() => NOW_ISO} />,
+    );
+    await user.click(screen.getByRole('button', { name: 'Build the prompt' }));
+
+    const request = (screen.getByLabelText(/^Prompt/) as HTMLTextAreaElement).value;
+    expect(request).toContain('item-1');
+    expect(request).toContain('DENP-10');
   });
 
-  it('shows Check DENP for ready items alongside another item\'s open owner question (GH #387)', () => {
+  it('asks only where a stray line belongs — never kind, owner or label questions', () => {
+    const intake = { ...buildConfirmLabelsIntake(), lines: [buildLine(1, 'Member portal work'), buildLine(2, 'A stray line')] };
+
+    render(
+      <IntakeTurnPanel intake={intake} isAiUnlocked={false} onChange={vi.fn()} jiraDeps={buildJiraDepsStub()} nowIso={() => NOW_ISO} />,
+    );
+
+    expect(screen.getByRole('region', { name: 'Lines to place' })).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: /Where does line 2 belong/ })).toBeInTheDocument();
+    expect(screen.queryByRole('combobox', { name: /Label for the new Epic/ })).not.toBeInTheDocument();
+  });
+
+  it('shows Check DENP for ready items while another item\'s owner is still open, without asking the owner here (GH #387)', () => {
     // The reported dead end: five close-call owners held back Check DENP for six items that were ready.
     const readyItem = buildCheckDenpIntake().items[0];
     const closeCall = createIntakeItem(2, 'EAM Upgrades', [2]);
@@ -176,7 +197,20 @@ describe('IntakeTurnPanel', () => {
     );
 
     expect(screen.getByRole('button', { name: 'Check DENP' })).toBeInTheDocument();
-    expect(screen.getByRole('combobox', { name: /Who owns "EAM Upgrades"/ })).toBeInTheDocument();
-    expect(screen.getByRole('region', { name: 'Questions for you (1)' })).toBeInTheDocument();
+    expect(screen.queryByRole('combobox', { name: /Who owns "EAM Upgrades"/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('list', { name: 'Questions for you' })).not.toBeInTheDocument();
+  });
+
+  it('shows Create once a reviewed row can be created', async () => {
+    const intake = buildConfirmLabelsIntake();
+    const item = intake.items[0];
+    item.decisions.label = settleDecision(item.decisions.label, 'Roadmap', 'ai', 'Suggested');
+    const reviewed = { ...intake, items: [{ ...item, searchStatus: 'ok' as const }] };
+
+    render(
+      <IntakeTurnPanel intake={reviewed} isAiUnlocked={false} onChange={vi.fn()} jiraDeps={buildJiraDepsStub()} nowIso={() => NOW_ISO} />,
+    );
+
+    expect(await screen.findByRole('button', { name: 'Create 1 Epic(s)' })).toBeEnabled();
   });
 });

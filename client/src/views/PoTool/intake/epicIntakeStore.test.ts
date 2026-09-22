@@ -94,6 +94,21 @@ describe('save / load — round trip', () => {
     expect(result.status === 'loaded' ? result.intake.items[0].decisions.owner : null).toMatchObject({ value: 'shared' });
   });
 
+  it('round-trips a resolve round beside the retired match and draft kinds', () => {
+    const roundBase = { partIndex: 0, partCount: 1, acceptedCount: 1, rejected: [], ingestedAtIso: '2026-09-18T01:00:00.000Z' };
+    const intake = buildRealisticIntake({
+      roundHistory: [
+        { ...roundBase, kind: 'epicIntakeResolve' },
+        { ...roundBase, kind: 'epicIntakeMatch' },
+        { ...roundBase, kind: 'epicIntakeDraft' },
+      ],
+    });
+    expect(saveEpicIntake(intake)).toBe(true);
+    const result = loadEpicIntake('team-alpha', 'intake-1');
+    expect(result.status === 'loaded' ? result.intake.roundHistory.map((round) => round.kind) : null)
+      .toEqual(['epicIntakeResolve', 'epicIntakeMatch', 'epicIntakeDraft']);
+  });
+
   it('reports missing for an absent key', () => {
     expect(loadEpicIntake('team-alpha', 'nope')).toEqual({ status: 'missing' });
   });

@@ -10,6 +10,7 @@ import { MAX_CHARS_PER_PROMPT } from '../../rewrite/ai/bulkRewriteAiAssist.ts';
 import {
   INTAKE_LABELS,
   ITEM_KINDS,
+  ITEM_OWNERS,
   SET_ASIDE_REASONS,
   type EpicIntake,
   type IngestOutcome,
@@ -17,12 +18,19 @@ import {
   type IntakeItem,
   type IntakeLabel,
   type ItemKind,
+  type ItemOwner,
   type SetAsideReason,
 } from '../epicIntakeModel.ts';
 import { listOpenDecisions, type OpenDecision } from '../intakeChecklist.ts';
 import { splitLinesIntoPromptParts } from '../notesOutline.ts';
-import type { IntakeRoundRequest } from './intakeMatchRound.ts';
-import { readBoundedString, readReplyEnvelope, readVocabularyValue, resolveItemId, type RawReplyItem } from './intakeReplyEnvelope.ts';
+import {
+  readBoundedString,
+  readReplyEnvelope,
+  readVocabularyValue,
+  resolveItemId,
+  type IntakeRoundRequest,
+  type RawReplyItem,
+} from './intakeReplyEnvelope.ts';
 
 export const CLASSIFY_REPLY_KIND = 'epicIntakeClassify';
 
@@ -49,6 +57,8 @@ export interface ClassifyAnswer {
   lineNumbers: number[] | null;
   title: string | null;
   kind: ItemKind | null;
+  /** The owner the answer named outright, which takes precedence over the share figure. Stated sizes still win. */
+  owner: ItemOwner | null;
   enrollmentShare: unknown;
   hasEnrollmentShare: boolean;
   searchTerms: string[] | null;
@@ -79,9 +89,9 @@ function describeAskedFields(item: IntakeItem, askedDecisions: readonly OpenDeci
   const askedSlots = new Set(askedDecisions.filter((openDecision) => openDecision.itemId === item.id).map((openDecision) => openDecision.slot));
   const fields: string[] = [];
   if (askedSlots.has('kind')) fields.push('kind');
-  if (item.decisions.owner.state === 'open' && !item.decisions.owner.isAwaitingPo) fields.push('enrollmentShare');
+  if (item.decisions.owner.state === 'open' && !item.decisions.owner.isAwaitingPo) fields.push('owner', 'enrollmentShare');
   if (askedSlots.has('searchTerms')) fields.push('searchTerms');
-  if (item.decisions.label.state === 'open') fields.push('labelProposal');
+  if (item.decisions.label.state === 'open') fields.push('label');
   return fields.join(', ');
 }
 
@@ -104,9 +114,11 @@ function buildClassifyText(items: readonly IntakeItem[], intake: EpicIntake, ask
     '',
     'Fields:',
     '- kind: work | risk | personAction (a to-do for a person) | deferred (explicitly not now) | noise',
+    '- owner: enrollment | shared (both Enrollment and Fulfillment have real work of their own) | fulfillment | notActionable.',
+    '  Decide it yourself — the Product Owner reviews your choices afterwards rather than answering questions.',
     '- enrollmentShare: whole number 0-100 — how much of the scope is Enrollment\'s; the rest is Fulfillment\'s',
     `- searchTerms: 1-${MAX_SEARCH_TERMS_PER_ITEM} short phrases (2-4 words) likely to appear in an existing Epic's summary for the same scope`,
-    '- labelProposal: Roadmap (new capability or funding ask) | Stability (upgrades, tech debt, compliance, performance)',
+    '- label: Roadmap (new capability or funding ask) | Stability (upgrades, tech debt, compliance, performance)',
     '- title: optional clearer title, under 120 characters',
     '- lines: optional — only when the grouping is wrong, every line number that belongs to the item.',
     '  Sizing lines ("XL Enrollment") and sub-scope lines stay with their parent item.',
@@ -115,7 +127,7 @@ function buildClassifyText(items: readonly IntakeItem[], intake: EpicIntake, ask
     'Rules: use only the item ids above; never invent an item; only move lines between the items above.',
     '',
     'Respond ONLY with valid JSON:',
-    `{"kind":"${CLASSIFY_REPLY_KIND}","items":[{"id":"item-1","kind":"work","enrollmentShare":70,"searchTerms":["core integration"],"labelProposal":"Roadmap","reason":"..."}],"setAside":[]}`,
+    `{"kind":"${CLASSIFY_REPLY_KIND}","items":[{"id":"item-1","kind":"work","owner":"enrollment","enrollmentShare":70,"searchTerms":["core integration"],"label":"Roadmap","reason":"..."}],"setAside":[]}`,
   ].join('\n');
 }
 
@@ -180,7 +192,9 @@ function readClassifyAnswer(rawItem: RawReplyItem, itemId: string, linePool: Rea
     enrollmentShare: rawItem.enrollmentShare,
     hasEnrollmentShare: rawItem.enrollmentShare !== undefined && rawItem.enrollmentShare !== null,
     searchTerms,
-    labelProposal: readVocabularyValue(rawItem.labelProposal, INTAKE_LABELS),
+    owner: readVocabularyValue(rawItem.owner, ITEM_OWNERS),
+    // "label" is what the request asks for; "labelProposal" is accepted too, from requests built before it changed.
+    labelProposal: readVocabularyValue(rawItem.label ?? rawItem.labelProposal, INTAKE_LABELS),
     reason: readBoundedString(rawItem.reason, MAX_REASON_CHARS),
     fieldErrors,
   };

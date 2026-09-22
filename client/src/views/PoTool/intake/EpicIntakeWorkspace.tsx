@@ -1,5 +1,6 @@
-// EpicIntakeWorkspace.tsx — The Epic Intake mode of Feature Composition: bring in notes, then answer only what is still
-// open until every item is decided, with the summary table for the call always visible (spec 037).
+// EpicIntakeWorkspace.tsx — The Epic Intake mode of Feature Composition: bring in notes, review one pre-filled table of
+// every item, change only what you disagree with, then click Create — with the summary for the call always visible
+// (spec 037, GH #387 feedback).
 //
 // The intake is saved after every change, so it can be resumed exactly where it was left. Where it stands — the
 // step, whose turn it is, how much is open — is always re-derived from the answers by the engine, never stored.
@@ -12,10 +13,10 @@ import { useConnectionStore } from '../../../store/connectionStore.ts';
 import { canPersistDrafts } from '../drafts/splitDraftStorage.ts';
 import compositionStyles from '../FeatureCompositionTab.module.css';
 import type { ReferencedSource } from '../sources/sourceModel.ts';
-import IntakeItemsTable from './components/IntakeItemsTable.tsx';
 import IntakeJourneyStrip from './components/IntakeJourneyStrip.tsx';
 import IntakeNotesPanel from './components/IntakeNotesPanel.tsx';
 import IntakeResumeBar from './components/IntakeResumeBar.tsx';
+import IntakeReviewTable from './components/IntakeReviewTable.tsx';
 import IntakeSummaryTable from './components/IntakeSummaryTable.tsx';
 import IntakeTurnPanel, { type IntakeJiraDeps } from './components/IntakeTurnPanel.tsx';
 import { createDuplicateSearchDeps } from './duplicateSearch.ts';
@@ -120,7 +121,7 @@ export default function EpicIntakeWorkspace({ dashboardTeamProfileId, jiraDeps, 
       {loadError ? <p className={compositionStyles.errorBanner}>{loadError}</p> : null}
       {intake === null || nextStep === null ? <IntakeNotesPanel onStart={handleStart} /> : (
         <>
-          {/* Pinned while the long items table scrolls underneath, so the next step never scrolls out of sight. */}
+          {/* Pinned while the long review table scrolls underneath, so the next step never scrolls out of sight. */}
           <div className={styles.intakeStickyBar}>
             <IntakeJourneyStrip nextStep={nextStep} />
             {nextStep.turn !== 'done' ? (
@@ -133,7 +134,7 @@ export default function EpicIntakeWorkspace({ dashboardTeamProfileId, jiraDeps, 
           <div ref={actionsRef}>
             <IntakeTurnPanel intake={intake} isAiUnlocked={isAiUnlocked} onChange={updateIntake} jiraDeps={resolvedJiraDeps} nowIso={nowIso} />
           </div>
-          <IntakeItemsTable intake={intake} />
+          <IntakeReviewTable intake={intake} isAiUnlocked={isAiUnlocked} jiraBaseUrl={jiraBaseUrl} onChange={updateIntake} nowIso={nowIso} />
           <IntakeSummaryTable intake={intake} jiraBaseUrl={jiraBaseUrl} />
         </>
       )}

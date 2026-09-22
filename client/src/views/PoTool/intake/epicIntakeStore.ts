@@ -19,6 +19,7 @@ import {
   type EpicIntake,
   type IntakeItem,
   type IntakeLabel,
+  type IntakeRoundKind,
   type ItemDecisions,
   type ItemKind,
   type ItemOwner,
@@ -362,6 +363,8 @@ function normalizeIntakeItem(raw: unknown): IntakeItem | null {
   if (candidate.aiEnrollmentShare !== null && typeof candidate.aiEnrollmentShare !== 'number') {
     return null;
   }
+  // Added after the first release: an older record has no flag, which simply means nothing to review.
+  const reviewFlag = typeof candidate.reviewFlag === 'string' ? candidate.reviewFlag : null;
   return {
     id: candidate.id,
     title: candidate.title,
@@ -371,6 +374,7 @@ function normalizeIntakeItem(raw: unknown): IntakeItem | null {
     namedKeys,
     deferralEvidence: candidate.deferralEvidence ? normalizeDeferralEvidence(candidate.deferralEvidence) : null,
     aiEnrollmentShare: candidate.aiEnrollmentShare ?? null,
+    reviewFlag,
     decisions,
     candidates,
     searchStatus: candidate.searchStatus,
@@ -509,6 +513,13 @@ function normalizeEpicType(raw: unknown): EpicIntake['epicType'] | null {
   return null;
 }
 
+/** Every reply kind an audit line may carry, including the retired match and draft kinds older intakes hold. */
+const ROUND_KINDS: readonly IntakeRoundKind[] = ['epicIntakeClassify', 'epicIntakeResolve', 'epicIntakeMatch', 'epicIntakeDraft'];
+
+function isRoundKind(kind: unknown): kind is IntakeRoundKind {
+  return (ROUND_KINDS as readonly unknown[]).includes(kind);
+}
+
 function normalizeRoundHistory(raw: unknown): EpicIntake['roundHistory'] | null {
   if (!Array.isArray(raw)) return null;
   const roundHistory: EpicIntake['roundHistory'] = [];
@@ -516,7 +527,7 @@ function normalizeRoundHistory(raw: unknown): EpicIntake['roundHistory'] | null 
     const candidate = entry as Partial<EpicIntake['roundHistory'][number]> | null;
     if (
       !candidate
-      || (candidate.kind !== 'epicIntakeClassify' && candidate.kind !== 'epicIntakeMatch' && candidate.kind !== 'epicIntakeDraft')
+      || !isRoundKind(candidate.kind)
       || typeof candidate.partIndex !== 'number'
       || typeof candidate.partCount !== 'number'
       || typeof candidate.acceptedCount !== 'number'

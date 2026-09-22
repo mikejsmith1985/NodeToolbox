@@ -85,13 +85,11 @@ beforeEach(() => {
   useAiAssistStore.setState({ isAiAssistUnlocked: false });
 });
 
-/** Answers one closed-choice question by its label, then saves it. */
-async function answerQuestion(questionLabel: RegExp, optionLabel: string): Promise<void> {
-  const questionList = screen.getByRole('list', { name: 'Questions for you' });
-  const select = within(questionList).getByLabelText(questionLabel);
+/** Changes one value in the review table by its select's accessible name. Each change is saved straight away. */
+async function chooseInReviewTable(selectName: RegExp, optionLabel: string): Promise<void> {
+  const reviewTable = screen.getByRole('region', { name: 'Review the items' });
+  const select = within(reviewTable).getByRole('combobox', { name: selectName });
   await user.selectOptions(select, within(select).getByRole('option', { name: optionLabel }));
-  const question = select.closest('li') as HTMLElement;
-  await user.click(within(question).getByRole('button', { name: 'Save' }));
 }
 
 describe('Epic Intake with the assistant locked', () => {
@@ -105,28 +103,27 @@ describe('Epic Intake with the assistant locked', () => {
     await user.click(screen.getByRole('button', { name: 'Start intake' }));
     expect(findAnyAiAffordance()).toEqual([]);
 
-    // Sort the notes: the deferred item was settled by rule, so only three kinds are asked.
-    await answerQuestion(/What is "Core Integration/, 'Work');
-    await answerQuestion(/What is "Paperless Options"/, 'Work');
-    await answerQuestion(/What is "Invoice overhaul"/, 'Work');
+    // Review the kinds: the deferred item was settled by rule, so only three kinds are open.
+    expect(screen.getByRole('combobox', { name: /Kind for "Mass ID Card Reissue/ })).toHaveValue('deferred');
+    await chooseInReviewTable(/Kind for "Core Integration/, 'Work');
+    await chooseInReviewTable(/Kind for "Paperless Options"/, 'Work');
+    await chooseInReviewTable(/Kind for "Invoice overhaul"/, 'Work');
     expect(findAnyAiAffordance()).toEqual([]);
 
-    // Decide owners: sizes decided Core and Invoice; only Paperless is asked.
-    expect(screen.queryByLabelText(/Who owns "Core Integration/)).not.toBeInTheDocument();
-    await answerQuestion(/Who owns "Paperless Options"/, 'Enrollment');
+    // Review the owners: sizes decided Core and Invoice; only Paperless is still open.
+    expect(screen.getByRole('combobox', { name: /Owner for "Core Integration/ })).toHaveValue('enrollment');
+    expect(screen.getByRole('combobox', { name: /Owner for "Invoice overhaul"/ })).toHaveValue('fulfillment');
+    await chooseInReviewTable(/Owner for "Paperless Options"/, 'Enrollment');
 
     // Check DENP: the named open Epic settles Core; the empty search makes Paperless a new Epic.
     await user.click(screen.getByRole('button', { name: 'Check DENP' }));
-    await screen.findByLabelText(/Label for the new Epic "Paperless Options"/);
+    await screen.findByRole('combobox', { name: /Label for "Paperless Options"/ });
+    expect(screen.getByRole('combobox', { name: /DENP Epic for "Core Integration/ })).toHaveValue('DENP-632');
     expect(findAnyAiAffordance()).toEqual([]);
-    await answerQuestion(/Label for the new Epic "Paperless Options"/, 'Roadmap');
+    await chooseInReviewTable(/Label for "Paperless Options"/, 'Roadmap');
 
-    // Draft: the manual draft is offered for editing and accepted.
-    const draft = screen.getByRole('article', { name: 'Draft for Paperless Options' });
-    expect(within(draft).getByLabelText(/Summary/)).toHaveValue('Paperless Options');
-    await user.click(within(draft).getByRole('button', { name: 'Accept' }));
-
-    // Create: Epic Name is filled from the summary, nothing else is asked.
+    // Draft: the plain template is shown pre-filled; Create is the single confirmation.
+    expect(screen.getByRole('textbox', { name: 'Epic summary for "Paperless Options"' })).toHaveValue('Paperless Options');
     await user.click(await screen.findByRole('button', { name: 'Create 1 Epic(s)' }));
     await screen.findByText(/Finished\./);
     expect(findAnyAiAffordance()).toEqual([]);

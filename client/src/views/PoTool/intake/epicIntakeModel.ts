@@ -63,8 +63,12 @@ export type IntakeStepId = (typeof INTAKE_STEP_ORDER)[number];
 /** Whose move it is: the assistant (copy/paste exchange), Toolbox (a Jira read or write), the PO, or nobody. */
 export type IntakeTurn = 'ai' | 'toolbox' | 'po' | 'done';
 
-/** The three reply kinds the assistant can be asked for. */
-export type IntakeRoundKind = 'epicIntakeClassify' | 'epicIntakeMatch' | 'epicIntakeDraft';
+/**
+ * The reply kinds recorded in an intake's audit trail. Today the assistant is asked to sort (`epicIntakeClassify`)
+ * and then to resolve matches, labels and drafts in one go (`epicIntakeResolve`); the separate match and draft
+ * kinds are kept so intakes saved before that change still load.
+ */
+export type IntakeRoundKind = 'epicIntakeClassify' | 'epicIntakeResolve' | 'epicIntakeMatch' | 'epicIntakeDraft';
 
 // ── Decisions ──
 
@@ -207,6 +211,11 @@ export interface IntakeItem {
   deferralEvidence: DeferralEvidence | null;
   /** The assistant's estimate of Enrollment's share of the scope (0–100), recorded even when sizes decided. */
   aiEnrollmentShare: number | null;
+  /**
+   * Why this row deserves a second look in the review table — an unsure match, a Shared split, a key the notes
+   * named that could not be used — or null when the assistant's answers can simply be trusted.
+   */
+  reviewFlag: string | null;
   decisions: ItemDecisions;
   candidates: DuplicateCandidate[];
   searchStatus: 'notRun' | 'ok' | 'failed';
@@ -312,6 +321,7 @@ export function createIntakeItem(itemNumber: number, title: string, lineNumbers:
     namedKeys: [],
     deferralEvidence: null,
     aiEnrollmentShare: null,
+    reviewFlag: null,
     decisions: createEmptyItemDecisions(),
     candidates: [],
     searchStatus: 'notRun',

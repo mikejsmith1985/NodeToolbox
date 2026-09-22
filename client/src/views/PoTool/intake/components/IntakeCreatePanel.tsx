@@ -1,6 +1,7 @@
-// IntakeCreatePanel.tsx — Creates the accepted Enrollment Epics in DENP. It first asks the Epic create screen what it
-// requires, asks the PO once for anything the intake cannot supply, then creates one Epic at a time and shows
-// Jira's own reason for any that fail (spec 037, contracts/epic-create.md).
+// IntakeCreatePanel.tsx — Creates the reviewed Enrollment Epics in DENP. It first asks the Epic create screen what it
+// requires, asks the PO once for anything the intake cannot supply, then — the Create click being the PO's single
+// confirmation of the review table — creates one Epic at a time and shows Jira's own reason for any that fail
+// (spec 037, contracts/epic-create.md, GH #387 feedback).
 
 import { useEffect, useState } from 'react';
 
@@ -17,13 +18,17 @@ import {
   type EpicCreateDeps,
   type EpicCreateScreenFields,
 } from '../epicCreate.ts';
-import { isItemReadyToCreate } from '../intakeChecklist.ts';
+import { isItemCreatableAfterReview } from '../intakeChecklist.ts';
+import { acceptReviewedDrafts } from '../intakePoAnswers.ts';
 import styles from '../EpicIntakeWorkspace.module.css';
 import type { CreateMetaFieldsResponse } from '../../../../types/jira.ts';
 
 interface IntakeCreatePanelProps {
   intake: EpicIntake;
+  /** Whether a draft can still come from a pasted answer — such an item waits for it rather than using the template. */
+  isAiUnlocked: boolean;
   onChange: (intake: EpicIntake) => void;
+  nowIso: () => string;
   createDeps: EpicCreateDeps;
   loadCreateFields: (projectKey: string, issueTypeId: string) => Promise<CreateMetaFieldsResponse>;
 }
@@ -73,12 +78,43 @@ function CreationResults({ intake }: { intake: EpicIntake }) {
   );
 }
 
-/** The pre-flight questions, the Create button, and each Epic's result. */
-export default function IntakeCreatePanel({ intake, onChange, createDeps, loadCreateFields }: IntakeCreatePanelProps) {
-  const screenState = useEpicCreateScreen(intake, loadCreateFields);
+interface CreateRun {
+  isCreating: boolean;
+  runError: string | null;
+  runCreates: (screenFields: EpicCreateScreenFields) => Promise<void>;
+}
+
+/**
+ * The Create click. It first records the PO's confirmation of every row the review table shows as "Create" (the
+ * written draft, or the plain template), and only then writes anything to Jira.
+ */
+function useCreateRun({ intake, isAiUnlocked, onChange, nowIso, createDeps }: IntakeCreatePanelProps): CreateRun {
   const [isCreating, setIsCreating] = useState(false);
   const [runError, setRunError] = useState<string | null>(null);
-  const readyItems = intake.items.filter(isItemReadyToCreate);
+
+  async function runCreates(screenFields: EpicCreateScreenFields): Promise<void> {
+    setIsCreating(true);
+    setRunError(null);
+    try {
+      const confirmed = acceptReviewedDrafts(intake, isAiUnlocked, nowIso());
+      onChange(confirmed);
+      onChange(await runEpicCreates(confirmed, createDeps, onChange, screenFields));
+    } catch (error) {
+      setRunError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsCreating(false);
+    }
+  }
+
+  return { isCreating, runError, runCreates };
+}
+
+/** The pre-flight questions, the Create button, and each Epic's result. */
+export default function IntakeCreatePanel(props: IntakeCreatePanelProps) {
+  const { intake, isAiUnlocked, onChange, loadCreateFields } = props;
+  const screenState = useEpicCreateScreen(intake, loadCreateFields);
+  const { isCreating, runError, runCreates } = useCreateRun(props);
+  const readyItems = intake.items.filter((item) => isItemCreatableAfterReview(item, isAiUnlocked));
   const failedItems = intake.items.filter((item) => item.creation.state === 'failed');
   const selections = intake.batchRequiredFieldValues as Record<string, TransitionFieldSelection>;
 
@@ -89,18 +125,6 @@ export default function IntakeCreatePanel({ intake, onChange, createDeps, loadCr
   }
   const { screenFields } = screenState;
   const isAnswered = areTransitionSelectionsComplete(screenFields.unanswered, selections);
-
-  async function handleCreate(): Promise<void> {
-    setIsCreating(true);
-    setRunError(null);
-    try {
-      onChange(await runEpicCreates(intake, createDeps, onChange, screenFields));
-    } catch (error) {
-      setRunError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setIsCreating(false);
-    }
-  }
 
   return (
     <section className={compositionStyles.panel} aria-label="Create Epics">
@@ -113,7 +137,7 @@ export default function IntakeCreatePanel({ intake, onChange, createDeps, loadCr
         onSelectionChange={(fieldId, selection) => onChange({ ...intake, batchRequiredFieldValues: { ...intake.batchRequiredFieldValues, [fieldId]: selection } })}
       />
       <div className={styles.intakeActions}>
-        <button type="button" className={compositionStyles.primaryButton} disabled={isCreating || !isAnswered || readyItems.length === 0} onClick={handleCreate}>
+        <button type="button" className={compositionStyles.primaryButton} disabled={isCreating || !isAnswered || readyItems.length === 0} onClick={() => { void runCreates(screenFields); }}>
           {describeCreateButton(isCreating, failedItems.length, readyItems.length)}
         </button>
       </div>

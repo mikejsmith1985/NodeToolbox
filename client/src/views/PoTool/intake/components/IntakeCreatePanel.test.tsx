@@ -1,6 +1,6 @@
 // IntakeCreatePanel.test.tsx — Reads what the live Epic create screen requires, asks the PO once for anything the
-// intake cannot supply, creates one Epic at a time, and shows Jira's own reason for a failure (spec 037,
-// contracts/epic-create.md). loadCreateFields and createDeps are mocked; the create loop itself is the real
+// intake cannot supply, treats the Create click as the PO's confirmation of the reviewed rows, creates one Epic at a
+// time, and shows Jira's own reason for a failure (spec 037, contracts/epic-create.md). loadCreateFields and createDeps are mocked; the create loop itself is the real
 // runEpicCreates, driven through a small stateful wrapper so onChange actually feeds back into the panel.
 
 import { useState } from 'react';
@@ -79,14 +79,17 @@ interface RenderPanelOptions {
   createDeps: EpicCreateDeps;
   loadCreateFields: (projectKey: string, issueTypeId: string) => Promise<{ values: CreateMetaFieldEntry[] }>;
   onChangeSpy?: (intake: EpicIntake) => void;
+  isAiUnlocked?: boolean;
 }
 
 /** A thin stateful wrapper so clicking Create (and answering required fields) actually feeds back into the panel. */
-function ControlledCreatePanel({ initialIntake, createDeps, loadCreateFields, onChangeSpy }: RenderPanelOptions) {
+function ControlledCreatePanel({ initialIntake, createDeps, loadCreateFields, onChangeSpy, isAiUnlocked = false }: RenderPanelOptions) {
   const [intake, setIntake] = useState(initialIntake);
   return (
     <IntakeCreatePanel
       intake={intake}
+      isAiUnlocked={isAiUnlocked}
+      nowIso={() => NOW_ISO}
       onChange={(nextIntake) => {
         setIntake(nextIntake);
         onChangeSpy?.(nextIntake);
@@ -178,5 +181,36 @@ describe('IntakeCreatePanel', () => {
 
     expect(screen.getByText(/run Check DENP first/)).toBeInTheDocument();
     expect(loadCreateFields).not.toHaveBeenCalled();
+  });
+
+  it('confirms a reviewed row with no written draft on Create, using the plain template as its draft', async () => {
+    const user = userEvent.setup();
+    const loadCreateFields = vi.fn(async () => ({ values: [] }));
+    const createIssue = vi.fn(async () => ({ id: '1', key: 'DENP-701', self: '' }));
+    const reviewedItem = buildReadyItem(1, 'Member portal');
+    reviewedItem.draft = null;
+    reviewedItem.decisions.draftAccepted = { state: 'open', aiAttempts: 0, isAwaitingPo: false, lastRejection: null, aiProposal: null, aiReason: null };
+    const intake = { ...buildIntake([reviewedItem]), lines: [{ lineNumber: 1, text: 'Member portal', rawText: 'Member portal', outlineLevel: 1 as const }] };
+    const onChangeSpy = vi.fn();
+
+    render(<ControlledCreatePanel initialIntake={intake} createDeps={buildCreateDeps({ createIssue })} loadCreateFields={loadCreateFields} onChangeSpy={onChangeSpy} />);
+
+    await user.click(await screen.findByRole('button', { name: 'Create 1 Epic(s)' }));
+
+    await waitFor(() => expect(createIssue).toHaveBeenCalledTimes(1));
+    const confirmedIntake = onChangeSpy.mock.calls[0][0] as EpicIntake;
+    expect(confirmedIntake.items[0].decisions.draftAccepted).toMatchObject({ state: 'settled', value: 'accepted' });
+    expect(confirmedIntake.items[0].draft?.summary).toBe('Member portal');
+  });
+
+  it('waits for a draft that can still be written when help is available, instead of counting the row', async () => {
+    const loadCreateFields = vi.fn(async () => ({ values: [] }));
+    const pendingItem = buildReadyItem(1, 'Member portal');
+    pendingItem.draft = null;
+    pendingItem.decisions.draftAccepted = { state: 'open', aiAttempts: 0, isAwaitingPo: false, lastRejection: null, aiProposal: null, aiReason: null };
+
+    render(<ControlledCreatePanel initialIntake={buildIntake([pendingItem])} createDeps={buildCreateDeps()} loadCreateFields={loadCreateFields} isAiUnlocked />);
+
+    expect(await screen.findByRole('button', { name: 'Create 0 Epic(s)' })).toBeDisabled();
   });
 });

@@ -6,6 +6,7 @@ import type { ReferencedSource } from '../sources/sourceModel.ts';
 import type { EpicIntake, IntakeItem } from './epicIntakeModel.ts';
 import {
   acceptDraft,
+  acceptReviewedDrafts,
   answerDuplicate,
   answerKind,
   answerLabel,
@@ -84,6 +85,36 @@ describe('drafts', () => {
     const alphaId = findItem(intake, 'Alpha').id;
     expect(findItem(acceptDraft(intake, alphaId, DRAFT, NOW_ISO), 'Alpha')).toMatchObject({ draft: DRAFT, decisions: { draftAccepted: { value: 'accepted' } } });
     expect(findItem(declineDraft(intake, alphaId, NOW_ISO), 'Alpha').decisions.draftAccepted).toMatchObject({ value: 'declined', settledBy: 'po' });
+  });
+});
+
+describe('acceptReviewedDrafts — what the Create click confirms', () => {
+  function readyForReview(intake: EpicIntake, itemId: string): EpicIntake {
+    const created = answerToCreateNew(intake, itemId);
+    const searched = { ...created, items: created.items.map((item) => (item.id === itemId ? { ...item, searchStatus: 'ok' as const } : item)) };
+    return answerLabel(searched, itemId, 'Roadmap', NOW_ISO);
+  }
+
+  it('accepts the written draft, and fills the template where there is none', () => {
+    const intake = startIntake();
+    const alphaId = findItem(intake, 'Alpha').id;
+    const betaId = findItem(intake, 'Beta').id;
+    const withDraft = editDraft(readyForReview(readyForReview(intake, alphaId), betaId), alphaId, DRAFT, NOW_ISO);
+
+    const accepted = acceptReviewedDrafts(withDraft, false, NOW_ISO);
+
+    expect(findItem(accepted, 'Alpha')).toMatchObject({ draft: { summary: 'S' }, decisions: { draftAccepted: { value: 'accepted', settledBy: 'po' } } });
+    expect(findItem(accepted, 'Beta').draft?.summary).toBe('Beta');
+    expect(findItem(accepted, 'Beta').decisions.draftAccepted).toMatchObject({ value: 'accepted' });
+  });
+
+  it('leaves declined and not-yet-ready items alone', () => {
+    const intake = startIntake();
+    const alphaId = findItem(intake, 'Alpha').id;
+    const declined = declineDraft(readyForReview(intake, alphaId), alphaId, NOW_ISO);
+    const accepted = acceptReviewedDrafts(declined, false, NOW_ISO);
+    expect(findItem(accepted, 'Alpha').decisions.draftAccepted).toMatchObject({ value: 'declined' });
+    expect(findItem(accepted, 'Gamma').decisions.draftAccepted.state).toBe('open');
   });
 });
 

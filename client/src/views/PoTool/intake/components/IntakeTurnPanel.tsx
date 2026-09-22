@@ -1,6 +1,6 @@
-// IntakeTurnPanel.tsx — Everything the PO can do right now, each in its own labelled section: the assistant request,
-// Check DENP, the PO's questions, drafts to review, and Create. Items move forward independently, so an item ready
-// for DENP is never held back by another item's open question (GH #387 feedback).
+// IntakeTurnPanel.tsx — Everything the PO can do right now besides the review table, each in its own labelled section:
+// asking for help, placing stray lines, Check DENP, and Create. Kind, owner, match, label and draft are not asked
+// here — they are pre-filled in the review table, where the PO changes only what they disagree with (GH #387).
 
 import { useRef, useState } from 'react';
 
@@ -8,15 +8,13 @@ import PoAiPanel from '../../ai/PoAiPanel.tsx';
 import compositionStyles from '../../FeatureCompositionTab.module.css';
 import { applyClassifyOutcome } from '../ai/intakeClassifyApply.ts';
 import { buildClassifyRequests, parseClassifyReply } from '../ai/intakeClassifyRound.ts';
-import { applyDraftOutcome, buildDraftRequest, parseDraftReply } from '../ai/intakeDraftRound.ts';
-import { applyMatchOutcome, buildMatchRequest, parseMatchReply } from '../ai/intakeMatchRound.ts';
+import { applyResolveOutcome, buildResolveRequests, parseResolveReply } from '../ai/intakeResolveRound.ts';
 import { runDuplicateSearch, type DuplicateSearchDeps } from '../duplicateSearch.ts';
 import type { EpicCreateDeps } from '../epicCreate.ts';
 import type { EpicIntake, IngestRejection, IntakeStepId } from '../epicIntakeModel.ts';
-import { handStepToPo, listAvailableActions, listOpenDecisions } from '../intakeChecklist.ts';
+import { handStepToPo, listAvailableActions, listOpenDecisions, type OpenDecision } from '../intakeChecklist.ts';
 import styles from '../EpicIntakeWorkspace.module.css';
 import IntakeCreatePanel from './IntakeCreatePanel.tsx';
-import IntakeDraftReview from './IntakeDraftReview.tsx';
 import IntakeQuestionList from './IntakeQuestionList.tsx';
 import type { CreateMetaFieldsResponse } from '../../../../types/jira.ts';
 
@@ -64,49 +62,77 @@ interface AssistantTurnProps extends IntakeTurnPanelProps {
   assistantStep: IntakeStepId;
 }
 
+/** One part of a request, with the text the PO copies out. */
+interface StepRequest extends AskedRequest {
+  text: string;
+}
+
+/** What one pasted answer did: the updated intake, how many answers were used, and what was not. */
+interface IngestResult {
+  updated: EpicIntake;
+  acceptedCount: number;
+  rejected: readonly IngestRejection[];
+}
+
+/** The requests for this step: the sorting request (sort + owners), or the resolve request (match, label, draft). */
+function buildStepRequests(intake: EpicIntake, isSorting: boolean): StepRequest[] {
+  return isSorting ? buildClassifyRequests(intake) : buildResolveRequests(intake);
+}
+
+/** Applies one pasted answer through the round it was asked in, and reports what was used and what was not. */
+function ingestStepReply(intake: EpicIntake, replyText: string, asked: AskedRequest, isSorting: boolean, nowIso: string): IngestResult {
+  const position = { partIndex: asked.partIndex, partCount: asked.partCount };
+  const updated = isSorting
+    ? applyClassifyOutcome(intake, parseClassifyReply(replyText, intake, asked.itemIds), asked.itemIds, position, nowIso)
+    : applyResolveOutcome(intake, parseResolveReply(replyText, intake, asked.itemIds), asked.itemIds, position, nowIso);
+  // Both rounds record the full picture — including per-field problems found while applying — in the round's audit
+  // line, so that line (not the parser's first pass) is what the PO is shown.
+  const roundRecord = updated.roundHistory[updated.roundHistory.length - 1];
+  return { updated, acceptedCount: roundRecord?.acceptedCount ?? 0, rejected: roundRecord?.rejected ?? [] };
+}
+
+/** Lets the PO pick which part of a long request to copy, when it had to be split. */
+function PartSelector({ requests, selectedPart, onSelect }: { requests: readonly AskedRequest[]; selectedPart: number; onSelect: (partIndex: number) => void }) {
+  if (requests.length < 2) {
+    return null;
+  }
+  return (
+    <label className={compositionStyles.fieldLabel}>
+      Part
+      <select className={compositionStyles.selectInput} value={selectedPart} onChange={(changeEvent) => onSelect(Number(changeEvent.target.value))}>
+        {requests.map((request) => <option key={request.partIndex} value={request.partIndex}>{`Part ${request.partIndex + 1} of ${request.partCount}`}</option>)}
+      </select>
+    </label>
+  );
+}
+
 /** The copy-out / paste-back panel for the earliest request the assistant can answer. Renders nothing when locked. */
 function AssistantTurn({ intake, assistantStep, onChange, nowIso }: AssistantTurnProps) {
   const askedRef = useRef<AskedRequest>({ itemIds: [], partIndex: 0, partCount: 1 });
   const [partIndex, setPartIndex] = useState(0);
   const isSorting = SORTING_STEPS.has(assistantStep);
-  const classifyRequests = isSorting ? buildClassifyRequests(intake) : [];
-  const selectedPart = Math.min(partIndex, Math.max(classifyRequests.length - 1, 0));
+  const requests = buildStepRequests(intake, isSorting);
+  const selectedPart = Math.min(partIndex, Math.max(requests.length - 1, 0));
 
   function buildPrompt(): string {
-    const request = isSorting ? classifyRequests[selectedPart] : assistantStep === 'match' ? buildMatchRequest(intake) : buildDraftRequest(intake);
-    askedRef.current = { itemIds: request.itemIds, partIndex: isSorting ? selectedPart : 0, partCount: isSorting ? classifyRequests.length : 1 };
+    const request = requests[selectedPart];
+    if (request === undefined) return '';
+    askedRef.current = { itemIds: request.itemIds, partIndex: request.partIndex, partCount: request.partCount };
     return request.text;
   }
 
   function ingest(replyText: string): { acceptedCount: number; errors: string[] } {
-    const asked = askedRef.current;
-    const now = nowIso();
-    if (isSorting) {
-      const outcome = parseClassifyReply(replyText, intake, asked.itemIds);
-      onChange(applyClassifyOutcome(intake, outcome, asked.itemIds, { partIndex: asked.partIndex, partCount: asked.partCount }, now));
-      return { acceptedCount: outcome.accepted.length, errors: describeRejections(outcome.rejected) };
-    }
-    const outcome = assistantStep === 'match' ? parseMatchReply(replyText, intake, asked.itemIds) : parseDraftReply(replyText, asked.itemIds);
-    const applied = assistantStep === 'match'
-      ? applyMatchOutcome(intake, outcome as ReturnType<typeof parseMatchReply>, asked.itemIds, now)
-      : applyDraftOutcome(intake, outcome as ReturnType<typeof parseDraftReply>, asked.itemIds, now);
-    onChange(applied);
-    return { acceptedCount: outcome.accepted.length, errors: describeRejections(outcome.rejected) };
+    const result = ingestStepReply(intake, replyText, askedRef.current, isSorting, nowIso());
+    onChange(result.updated);
+    return { acceptedCount: result.acceptedCount, errors: describeRejections(result.rejected) };
   }
 
   return (
     <div>
-      {classifyRequests.length > 1 ? (
-        <label className={compositionStyles.fieldLabel}>
-          Part
-          <select className={compositionStyles.selectInput} value={selectedPart} onChange={(changeEvent) => setPartIndex(Number(changeEvent.target.value))}>
-            {classifyRequests.map((request) => <option key={request.partIndex} value={request.partIndex}>{`Part ${request.partIndex + 1} of ${request.partCount}`}</option>)}
-          </select>
-        </label>
-      ) : null}
+      <PartSelector requests={requests} selectedPart={selectedPart} onSelect={setPartIndex} />
       <PoAiPanel
         // Keyed by the kind of request, not by every ingest, so the rejections from the last paste stay on screen.
-        key={`${isSorting ? 'sort' : assistantStep}-${selectedPart}`}
+        key={`${isSorting ? 'sort' : 'resolve'}-${selectedPart}`}
         title="Help with this step"
         buildPrompt={buildPrompt}
         onIngest={ingest}
@@ -160,10 +186,16 @@ function CheckDenpTurn({ intake, onChange, jiraDeps }: IntakeTurnPanelProps) {
 
 // ── The panel ──
 
+/** Only the stray-line questions are asked here; every item's own choices live in the review table. */
+function isLinePlacementQuestion(openDecision: OpenDecision): boolean {
+  return openDecision.slot === 'lineCoverage';
+}
+
 /** Renders every action available now. Sections appear and disappear as items move forward. */
 export default function IntakeTurnPanel(props: IntakeTurnPanelProps) {
   const { intake, isAiUnlocked, onChange, jiraDeps, nowIso } = props;
   const actions = listAvailableActions(intake, isAiUnlocked);
+  const lineQuestions = actions.poQuestions.filter(isLinePlacementQuestion);
   return (
     <div className={styles.intakeWorkspace}>
       {actions.assistantStep !== null && isAiUnlocked ? (
@@ -171,9 +203,9 @@ export default function IntakeTurnPanel(props: IntakeTurnPanelProps) {
           <AssistantTurn {...props} assistantStep={actions.assistantStep} />
         </ActionSection>
       ) : null}
-      {actions.poQuestions.length > 0 ? (
-        <ActionSection title={`Questions for you (${actions.poQuestions.length})`}>
-          <IntakeQuestionList intake={intake} questions={actions.poQuestions} onChange={onChange} nowIso={nowIso} />
+      {lineQuestions.length > 0 ? (
+        <ActionSection title="Lines to place">
+          <IntakeQuestionList intake={intake} questions={lineQuestions} onChange={onChange} nowIso={nowIso} />
         </ActionSection>
       ) : null}
       {actions.hasSearchWork ? (
@@ -181,13 +213,9 @@ export default function IntakeTurnPanel(props: IntakeTurnPanelProps) {
           <CheckDenpTurn {...props} />
         </ActionSection>
       ) : null}
-      {actions.draftReviewItemIds.length > 0 ? (
-        <ActionSection title={`Drafts to review (${actions.draftReviewItemIds.length})`}>
-          <IntakeDraftReview intake={intake} itemIds={actions.draftReviewItemIds} onChange={onChange} nowIso={nowIso} />
-        </ActionSection>
-      ) : null}
       {actions.hasCreateWork ? (
-        <IntakeCreatePanel intake={intake} onChange={onChange} createDeps={jiraDeps.create} loadCreateFields={jiraDeps.loadCreateFields} />
+        <IntakeCreatePanel intake={intake} isAiUnlocked={isAiUnlocked} onChange={onChange} nowIso={nowIso}
+          createDeps={jiraDeps.create} loadCreateFields={jiraDeps.loadCreateFields} />
       ) : null}
     </div>
   );

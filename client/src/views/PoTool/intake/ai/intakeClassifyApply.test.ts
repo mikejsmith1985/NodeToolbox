@@ -42,7 +42,7 @@ function applyReply(intake: EpicIntake, items: unknown[], setAside: unknown[] = 
 }
 
 describe('applyClassifyOutcome', () => {
-  it('settles kind, owner from a clear share, terms, and keeps the label as a proposal only', () => {
+  it('settles kind, owner from a clear share, terms and the label — the assistant decides, the PO reviews', () => {
     const intake = startIntake();
     const alpha = findItem(intake, 'Alpha');
     const applied = applyReply(intake, [{ id: alpha.id, kind: 'work', enrollmentShare: 75, searchTerms: ['alpha work'], labelProposal: 'Stability', reason: 'mostly enrollment' }]);
@@ -50,17 +50,32 @@ describe('applyClassifyOutcome', () => {
     expect(appliedAlpha.decisions.kind).toMatchObject({ state: 'settled', value: 'work', settledBy: 'ai' });
     expect(appliedAlpha.decisions.owner).toMatchObject({ state: 'settled', value: 'enrollment', settledBy: 'ai' });
     expect(appliedAlpha.decisions.searchTerms).toMatchObject({ state: 'settled', value: ['alpha work'] });
-    expect(appliedAlpha.decisions.label).toMatchObject({ state: 'open', aiProposal: 'Stability' });
+    expect(appliedAlpha.decisions.label).toMatchObject({ state: 'settled', value: 'Stability', settledBy: 'ai' });
     expect(appliedAlpha.aiEnrollmentShare).toBe(75);
     expect(applied.roundHistory).toHaveLength(1);
   });
 
-  it('hands a close-call share to the PO (US2-4)', () => {
+  it('settles a close-call share as Shared and flags it for review, instead of asking (GH #387 feedback)', () => {
     const intake = startIntake();
     const beta = findItem(intake, 'Beta');
     const applied = applyReply(intake, [{ id: beta.id, kind: 'work', enrollmentShare: 50, searchTerms: ['beta'] }]);
-    // A close call is suggested as Shared: both teams have real work, so Enrollment takes its own part.
-    expect(findItem(applied, 'Beta').decisions.owner).toMatchObject({ state: 'open', isAwaitingPo: true, aiProposal: 'shared' });
+    const appliedBeta = findItem(applied, 'Beta');
+    expect(appliedBeta.decisions.owner).toMatchObject({ state: 'settled', value: 'shared', settledBy: 'ai' });
+    expect(appliedBeta.reviewFlag).toMatch(/50%/);
+  });
+
+  it('takes the owner the answer names directly, including Shared, over the share figure', () => {
+    const intake = startIntake();
+    const beta = findItem(intake, 'Beta');
+    const applied = applyReply(intake, [{ id: beta.id, kind: 'work', owner: 'Shared', enrollmentShare: 80, searchTerms: ['beta'], reason: 'both teams build it' }]);
+    expect(findItem(applied, 'Beta').decisions.owner).toMatchObject({ state: 'settled', value: 'shared', settledBy: 'ai', reason: 'both teams build it' });
+  });
+
+  it('accepts "label" as well as "labelProposal"', () => {
+    const intake = startIntake();
+    const beta = findItem(intake, 'Beta');
+    const applied = applyReply(intake, [{ id: beta.id, kind: 'work', owner: 'enrollment', searchTerms: ['beta'], label: 'Roadmap' }]);
+    expect(findItem(applied, 'Beta').decisions.label).toMatchObject({ state: 'settled', value: 'Roadmap' });
   });
 
   it('keeps the size-rule owner and its reason even when the share disagrees (US2-1)', () => {

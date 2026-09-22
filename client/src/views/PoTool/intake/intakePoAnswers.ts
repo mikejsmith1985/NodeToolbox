@@ -15,7 +15,8 @@ import {
   type ItemOwner,
   type SetAsideReason,
 } from './epicIntakeModel.ts';
-import { refreshApplicability, replaceIntakeItem, settleDecision } from './intakeChecklist.ts';
+import { buildManualDraft } from './ai/intakeDraftRound.ts';
+import { isItemCreatableAfterReview, refreshApplicability, replaceIntakeItem, settleDecision } from './intakeChecklist.ts';
 import { deriveItemFacts } from './intakeFacts.ts';
 
 /** The reason recorded on every decision the PO makes. */
@@ -108,6 +109,26 @@ export function placeLine(intake: EpicIntake, lineNumber: number, placement: Lin
     setAsideLines.push({ lineNumber, reason: placement.setAsideReason, settledBy: 'po', note: null });
   }
   return { ...intake, items, setAsideLines, updatedAtIso: nowIso };
+}
+
+/**
+ * What clicking Create confirms: every item the review table shows as "Create" gets its draft accepted as the PO's —
+ * the written draft if there is one, otherwise the plain template built from its own lines. Items already accepted,
+ * declined or created are left alone. Nothing is written to Jira here; this only records the PO's confirmation.
+ */
+export function acceptReviewedDrafts(intake: EpicIntake, isAiUnlocked: boolean, nowIso: string): EpicIntake {
+  const items = intake.items.map((item) => {
+    if (!isItemCreatableAfterReview(item, isAiUnlocked) || item.decisions.draftAccepted.state === 'settled') {
+      return item;
+    }
+    const draft = item.draft ?? buildManualDraft(item, intake.lines);
+    return refreshApplicability({
+      ...item,
+      draft,
+      decisions: { ...item.decisions, draftAccepted: settleDecision(item.decisions.draftAccepted, 'accepted', 'po', 'Accepted at review') },
+    });
+  });
+  return { ...intake, items, updatedAtIso: nowIso };
 }
 
 /** True when the item still needs the PO's label — used to show only the questions that matter. */

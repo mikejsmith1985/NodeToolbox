@@ -29,9 +29,10 @@ describe('deriveItemFacts', () => {
     expect(item.decisions.owner).toMatchObject({ state: 'settled', value: 'fulfillment', settledBy: 'rule' });
   });
 
-  it('hands equal sizes to the PO', () => {
+  it('settles equal sizes as Shared by rule and flags it for review, instead of asking', () => {
     const { item } = findItemByTitle('Tie', '•\tTie\no\tEnrollment M\no\tFulfillment M');
-    expect(item.decisions.owner).toMatchObject({ state: 'open', isAwaitingPo: true, aiProposal: 'shared' });
+    expect(item.decisions.owner).toMatchObject({ state: 'settled', value: 'shared', settledBy: 'rule' });
+    expect(item.reviewFlag).toMatch(/equal/i);
   });
 
   it('leaves the owner open when no owning area size is stated', () => {

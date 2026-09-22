@@ -16,6 +16,7 @@ import {
 import {
   handStepToPo,
   isEnrollmentOwned,
+  isItemCreatableAfterReview,
   isItemReadyToCreate,
   listAvailableActions,
   listOpenDecisions,
@@ -122,8 +123,10 @@ describe('readIntakeNextStep — step derivation', () => {
     expect(isItemReadyToCreate(item)).toBe(false);
   });
 
-  it('asks the PO for a label on create-new items, never the assistant', () => {
-    expect(readIntakeNextStep(buildIntake([buildItem(1, 'createNew')]), true)).toMatchObject({ step: 'confirmLabels', turn: 'po' });
+  it('asks the assistant for a missing label on create-new items, and the PO only when it is locked', () => {
+    // AI-first (GH #387 feedback): the assistant sets Roadmap/Stability; the PO can still change it in review.
+    expect(readIntakeNextStep(buildIntake([buildItem(1, 'createNew')]), true)).toMatchObject({ step: 'confirmLabels', turn: 'ai' });
+    expect(readIntakeNextStep(buildIntake([buildItem(1, 'createNew')]), false)).toMatchObject({ step: 'confirmLabels', turn: 'po' });
   });
 
   it('asks the assistant for a draft when none exists, the PO to accept once one does', () => {
@@ -333,7 +336,8 @@ describe('listAvailableActions — independent items never wait on each other (G
     ownerQuestion.decisions.searchTerms = settled(['x'], 'ai');
     ownerQuestion.decisions.owner = routeDecisionToPo(ownerQuestion.decisions.owner);
     const labelQuestion = buildItem(2, 'createNew');
-    const actions = listAvailableActions(buildIntake([ownerQuestion, labelQuestion]), true);
+    // Locked, so the label is the PO's to answer (unlocked, the assistant sets it).
+    const actions = listAvailableActions(buildIntake([ownerQuestion, labelQuestion]), false);
     expect(actions.poQuestions.map((question) => question.slot)).toEqual(['owner', 'label']);
   });
 
@@ -384,6 +388,36 @@ describe('Shared ownership — both teams have work; Enrollment creates an Epic 
   it('keeps downstream slots open for Shared, unlike Fulfillment', () => {
     const shared = refreshApplicability(buildSharedItem('owner'));
     expect(shared.decisions.duplicate.state).toBe('open');
+  });
+});
+
+describe('isItemCreatableAfterReview — the Create click is the single confirmation', () => {
+  it('counts a labelled new Epic whose draft is written but not individually accepted', () => {
+    expect(isItemCreatableAfterReview(buildItem(1, 'drafted'), true)).toBe(true);
+  });
+
+  it('counts a labelled new Epic with no draft when the assistant cannot write one (Create fills it in)', () => {
+    expect(isItemCreatableAfterReview(buildItem(1, 'labelled'), false)).toBe(true);
+  });
+
+  it('waits while the assistant is still due to write the draft', () => {
+    expect(isItemCreatableAfterReview(buildItem(1, 'labelled'), true)).toBe(false);
+  });
+
+  it('never counts a declined, unlabelled, existing-Epic or already-created item', () => {
+    const declined = buildItem(1, 'drafted');
+    declined.decisions.draftAccepted = settled('declined', 'po');
+    const unlabelled = buildItem(2, 'createNew');
+    unlabelled.draft = { summary: 'S', description: 'D', source: 'ai', editedByPo: false };
+    const existing = buildItem(3, 'searched');
+    existing.decisions.duplicate = settled({ verdict: 'existing', key: 'DENP-1' });
+    for (const item of [declined, unlabelled, existing, buildItem(4, 'created')]) {
+      expect(isItemCreatableAfterReview(refreshApplicability(item), true)).toBe(false);
+    }
+  });
+
+  it('offers Create as soon as one item is creatable after review', () => {
+    expect(listAvailableActions(buildIntake([buildItem(1, 'drafted')]), true).hasCreateWork).toBe(true);
   });
 });
 
