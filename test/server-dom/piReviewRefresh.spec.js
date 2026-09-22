@@ -49,7 +49,7 @@ function dataRow(cells) {
 
 // A mock deps object: Confluence GET returns the page; PUT returns queued statuses and records payloads.
 // Jira: a "key in (...)" path returns the reconcile issue map; anything else returns the pulled features.
-function makeMocks({ storageValue, features = [], issueMap = {}, putStatuses = [200] }) {
+function makeMocks({ storageValue, features = [], issueMap = {}, putStatuses = [200], issueTypeNames = ['Feature'] }) {
   const calls = { get: 0, put: 0, putPayloads: [], jiraPaths: [] };
   const makeConfluenceApiRequest = async (method, _path, body) => {
     if (method === 'GET') {
@@ -63,6 +63,10 @@ function makeMocks({ storageValue, features = [], issueMap = {}, putStatuses = [
   };
   const makeJiraApiRequest = async (_method, path) => {
     calls.jiraPaths.push(path);
+    // The refresh asks the instance which feature-level types it has before it builds the Feature query.
+    if (path.includes('/rest/api/2/issuetype')) {
+      return { status: 200, body: issueTypeNames.map((name, index) => ({ id: String(index + 1), name, subtask: false })) };
+    }
     if (path.includes('key%20in')) {
       return { status: 200, body: { issues: Object.keys(issueMap).map((key) => issueMap[key]) } };
     }
@@ -367,4 +371,35 @@ test('GH #262: a failed delivery fetch preserves milestone cells already on the 
 
   assert.equal(result.status, 'no-op', 'nothing changed — the failed delivery fetch must not force a write');
   assert.equal(putCount, 0, 'must not PUT (which would have blanked the milestone cells)');
+});
+
+test('DENP rename: the Feature query names the type the instance defines, not a hard-coded "Feature"', async () => {
+  // The scheduled refresh used to ship `issuetype = Feature`. After DENP renamed that type to Epic,
+  // the query became a 400 and every weekly run left the page untouched with no useful reason.
+  const { deps, calls } = makeMocks({
+    storageValue: pageStorage(dataRow(['Yes', 'P1', 'ALPHA-9 - Kept Feature', '5', '', '', 'Yes', ''])),
+    features: [],
+    issueTypeNames: ['Epic'],
+  });
+
+  await refreshPiReviewPage({ page: PAGE, team: TEAM, deps, configuration: config() });
+
+  const featureQueryPath = calls.jiraPaths.map((path) => decodeURIComponent(path)).find((path) => path.includes('cf[10301]'));
+  assert.ok(featureQueryPath, 'the Feature query must have run');
+  assert.ok(featureQueryPath.includes('issuetype = "Epic"'), `expected the discovered type in: ${featureQueryPath}`);
+  assert.ok(!featureQueryPath.includes('issuetype = Feature'), 'must not name the renamed-away type');
+});
+
+test('an unanswerable issue-type lookup drops the type clause instead of blocking the refresh', async () => {
+  const { deps, calls } = makeMocks({
+    storageValue: pageStorage(dataRow(['Yes', 'P1', 'ALPHA-9 - Kept Feature', '5', '', '', 'Yes', ''])),
+    features: [],
+    issueTypeNames: [],
+  });
+
+  await refreshPiReviewPage({ page: PAGE, team: TEAM, deps, configuration: config() });
+
+  const featureQueryPath = calls.jiraPaths.map((path) => decodeURIComponent(path)).find((path) => path.includes('cf[10301]'));
+  assert.ok(featureQueryPath, 'the Feature query must still run');
+  assert.ok(!featureQueryPath.includes('issuetype'), `expected no type clause in: ${featureQueryPath}`);
 });

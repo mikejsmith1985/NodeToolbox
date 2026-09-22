@@ -7,6 +7,7 @@
 // grades the results.
 
 import { jiraGet } from '../../../services/jiraApi.ts';
+import { buildIssueTypeClause } from '../../../services/jiraIssueTypes.ts';
 import type { JiraIssue } from '../../../types/jira.ts';
 
 /** Same ceiling as the PI Review feature pull; hitting it is surfaced as a truncation note upstream. */
@@ -67,6 +68,7 @@ export function buildReadinessFeatureJql(
   piFieldId: string,
   scopeClause: string,
   excludedProjectKeys: readonly string[] = [],
+  featureIssueTypeNames: readonly string[] = [],
 ): string {
   const cleanPiNames = piNames.map((name) => name.trim()).filter(Boolean);
   if (cleanPiNames.length === 0) return '';
@@ -80,7 +82,10 @@ export function buildReadinessFeatureJql(
   const cleanExcluded = excludedProjectKeys.map((key) => key.trim()).filter(Boolean);
   const exclusionClause = cleanExcluded.length > 0 ? `project not in (${cleanExcluded.join(', ')})` : '';
 
-  return ['issuetype = Feature', piClause, scopeClause, exclusionClause].filter(Boolean).join(' AND ');
+  // Discovered from the instance, never assumed (DENP renamed Feature to Epic — naming a missing type
+  // is a 400 and an empty tab). No names known means no type clause: wider, but never blind.
+  const issueTypeClause = buildIssueTypeClause([...featureIssueTypeNames]);
+  return [issueTypeClause, piClause, scopeClause, exclusionClause].filter(Boolean).join(' AND ');
 }
 
 /** How deep the carryover history reaches — enough for realistic carryover without unbounded JQL. */

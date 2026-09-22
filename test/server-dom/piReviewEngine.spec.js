@@ -104,7 +104,23 @@ test('collapses stacked duplicate Team Capacity blocks to one on write (FR-012, 
 });
 
 test('exposes the pure Jira helpers (project-clause-free JQL + key extraction)', () => {
-  const jql = engine.buildDirectFeatureJql('PI 26.4', ['C73130'], 'customfield_10301');
-  assert.equal(jql, 'issuetype = Feature AND assignee = "C73130" AND cf[10301] = "PI 26.4"');
+  const jql = engine.buildDirectFeatureJql('PI 26.4', ['C73130'], 'customfield_10301', ['Feature']);
+  assert.equal(jql, 'issuetype = "Feature" AND assignee = "C73130" AND cf[10301] = "PI 26.4"');
   assert.equal(engine.extractPiReviewFeatureKey('ALPHA-1 - Feature One'), 'ALPHA-1');
+});
+
+test('names the issue type the instance defines, and drops the clause when it cannot be asked', () => {
+  // DENP renamed its Feature type to Epic. Shipping "Feature" would 400, and the scheduled refresh
+  // would leave the page untouched every week with no useful reason.
+  const availableNames = ['Story', 'Epic', 'Sub-task'];
+  const discovered = engine.pickAvailableIssueTypeNames(['Feature', 'Epic'], availableNames);
+  assert.deepEqual(discovered, ['Epic']);
+  assert.equal(
+    engine.buildDirectFeatureJql('PI 26.4', ['C73130'], 'customfield_10301', discovered),
+    'issuetype = "Epic" AND assignee = "C73130" AND cf[10301] = "PI 26.4"',
+  );
+  assert.equal(
+    engine.buildDirectFeatureJql('PI 26.4', ['C73130'], 'customfield_10301', []),
+    'assignee = "C73130" AND cf[10301] = "PI 26.4"',
+  );
 });

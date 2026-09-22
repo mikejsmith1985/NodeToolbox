@@ -71,12 +71,13 @@ describe('loadFeatureIssueTypeNames — asks the instance, once', () => {
     expect(mockJiraGet).toHaveBeenCalledTimes(1);
   });
 
-  it('falls back to Feature alone when the instance cannot be asked', async () => {
-    // Feature is the one name proven to exist here — the PI Review and Readiness queries both ship
-    // `issuetype = Feature` against this instance and work. Guessing wider would 400 again.
+  it('names nothing when the instance cannot be asked, so no query can name a missing type', async () => {
+    // The old fallback was "Feature", on the evidence that every feature-level query shipped it and
+    // worked. DENP's rename to Epic ended that: naming a type the instance no longer has is a 400 and
+    // an empty screen. Naming nothing widens the query instead — callers drop the type clause.
     mockJiraGet.mockRejectedValue(new Error('Jira unreachable'));
 
-    expect(await loadFeatureIssueTypeNames()).toEqual(['Feature']);
+    expect(await loadFeatureIssueTypeNames()).toEqual([]);
   });
 
   it('does not cache a failure, so a later attempt can still succeed', async () => {
@@ -86,7 +87,7 @@ describe('loadFeatureIssueTypeNames — asks the instance, once', () => {
       { id: '3', name: 'Epic', subtask: false },
     ]);
 
-    expect(await loadFeatureIssueTypeNames()).toEqual(['Feature']);
+    expect(await loadFeatureIssueTypeNames()).toEqual([]);
     expect(await loadFeatureIssueTypeNames()).toEqual(['Feature', 'Epic']);
   });
 });

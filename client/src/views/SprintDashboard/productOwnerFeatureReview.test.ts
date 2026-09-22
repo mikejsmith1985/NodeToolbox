@@ -17,6 +17,13 @@ vi.mock('./featureReview.ts', () => ({
   fetchFeatureReviewItemsByJql: mockFetchFeatureReviewItemsByJql,
 }));
 
+// The instance's feature-level type names are discovered at query time; stubbed here so these tests
+// assert the query text rather than a Jira lookup.
+vi.mock('../../services/jiraIssueTypes.ts', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../services/jiraIssueTypes.ts')>()),
+  loadFeatureIssueTypeNames: async () => ['Feature'],
+}));
+
 // The PI field id is read from ART settings in the real module; the JQL builder itself is NOT mocked,
 // so these tests assert against the genuine PI Review query text.
 vi.mock('../ArtView/piReviewPullFeatures.ts', async (importOriginal) => ({
@@ -103,7 +110,7 @@ describe('fetchFeatureReviewItemsWithProductOwnerFeatures', () => {
     await fetchFeatureReviewItemsWithProductOwnerFeatures(TEAM, 'PI 26.4', ['Smith, Jane (CTR)', 'Doe, John (CTR)']);
 
     expect(mockFetchFeatureReviewItemsByJql).toHaveBeenCalledWith(
-      'issuetype = Feature AND assignee in ("Smith, Jane (CTR)", "Doe, John (CTR)") AND cf[10301] = "PI 26.4"',
+      'issuetype = "Feature" AND assignee in ("Smith, Jane (CTR)", "Doe, John (CTR)") AND cf[10301] = "PI 26.4"',
       undefined,
       '',
     );

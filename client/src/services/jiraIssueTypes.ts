@@ -30,12 +30,15 @@ export interface JiraIssueTypeSummary {
 const FEATURE_LIKE_ISSUE_TYPE_CANDIDATES = ['Feature', 'Epic'];
 
 /**
- * The single name proven to exist on this instance, used when the instance cannot be asked.
+ * What an unanswerable lookup returns: no names at all.
  *
- * The PI Review pull and the Readiness scan both ship `issuetype = Feature` and return results, so
- * this is evidence rather than a guess. A wider fallback would risk reproducing the 400 it fixes.
+ * There used to be a "proven" fallback of `Feature`, on the evidence that every feature-level query
+ * shipped it and got results. DENP's rename to `Epic` ended that: naming a type the instance no longer
+ * defines makes the whole query a 400 and the screen silently empty — the exact failure this module
+ * exists to prevent. Naming nothing instead widens a query rather than breaking it, and every caller
+ * treats an empty list as "do not restrict by type".
  */
-const PROVEN_FEATURE_ISSUE_TYPE_NAME = 'Feature';
+const NO_KNOWN_FEATURE_ISSUE_TYPE_NAMES: string[] = [];
 
 /** Cached across the session: the instance's issue types do not change while somebody is searching. */
 let cachedFeatureTypeNamesPromise: Promise<string[]> | null = null;
@@ -85,7 +88,7 @@ export async function loadFeatureIssueTypeNames(): Promise<string[]> {
   try {
     return await cachedFeatureTypeNamesPromise;
   } catch {
-    return [PROVEN_FEATURE_ISSUE_TYPE_NAME];
+    return NO_KNOWN_FEATURE_ISSUE_TYPE_NAMES;
   }
 }
 

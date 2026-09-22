@@ -1,6 +1,6 @@
 // piReviewPullFeatures.ts — Populates a PI Review table with a team's Program Increment Features.
 //
-// Discovery is a single, direct Jira query: every `issuetype = Feature` in the page's PI that is
+// Discovery is a single, direct Jira query: every feature-level issue in the page's PI that is
 // assigned to the team's Product Owner (taken from the roster). This deliberately replaces the older
 // Blueprint bottom-up discovery + label/assignee filter combination — the PI plus the PO uniquely
 // scope a team's Features, so no extra filters are needed. Notably the query does NOT constrain by
@@ -11,6 +11,7 @@
 
 import { resolveWriteFieldId } from '../../services/jiraFieldMapping.ts';
 import { jiraGet } from '../../services/jiraApi.ts';
+import { buildIssueTypeClause, loadFeatureIssueTypeNames } from '../../services/jiraIssueTypes.ts';
 import type { JiraIssue } from '../../types/jira.ts';
 import { extractPiReviewFeatureKey } from './piReviewJira.ts';
 import { createEmptyPiReviewRow, type PiReviewRow } from './piReviewTable.ts';
@@ -78,6 +79,7 @@ export function buildDirectFeatureJql(
   piName: string,
   poAssigneeQueryValues: readonly string[],
   piFieldId: string,
+  featureIssueTypeNames: readonly string[] = [],
 ): string | null {
   const trimmedPiName = piName.trim();
   const assigneeClause = buildProductOwnerAssigneeClause(poAssigneeQueryValues);
@@ -86,11 +88,14 @@ export function buildDirectFeatureJql(
   }
 
   const piFieldNumber = piFieldId.replace('customfield_', '');
+  // The type names are discovered from the instance, never assumed: DENP renamed Feature to Epic, and
+  // a query naming a type Jira no longer defines is a 400 and an empty page. With no names known the
+  // clause is dropped — the PI and Product Owner still scope the pull, which is wider but never blind.
   return [
-    'issuetype = Feature',
+    buildIssueTypeClause([...featureIssueTypeNames]),
     assigneeClause,
     `cf[${piFieldNumber}] = ${quoteJqlValue(trimmedPiName)}`,
-  ].join(' AND ');
+  ].filter((clause) => clause !== '').join(' AND ');
 }
 
 /** Runs the direct Feature query and normalizes the issues into discovered Features. */
@@ -99,7 +104,8 @@ async function fetchDirectFeatures(
   poAssigneeQueryValues: readonly string[],
   piFieldId: string,
 ): Promise<DiscoveredFeature[]> {
-  const directFeatureJql = buildDirectFeatureJql(piName, poAssigneeQueryValues, piFieldId);
+  const featureIssueTypeNames = await loadFeatureIssueTypeNames();
+  const directFeatureJql = buildDirectFeatureJql(piName, poAssigneeQueryValues, piFieldId, featureIssueTypeNames);
   if (directFeatureJql === null) {
     return [];
   }

@@ -119,6 +119,32 @@ describe('load never throws (INV-1)', () => {
     expect(restored.sources).toHaveLength(1);
   });
 
+  it('keeps every source kind the workspace can add, including PDF, email and SharePoint', () => {
+    // These three arrived after the stored-kind list was written, so a reload silently dropped them —
+    // a PO who added a PDF brief, an Outlook thread and a SharePoint document lost all three.
+    window.localStorage.setItem(
+      'tbxPoFeatureCompositionDraft:profile-alpha:new:1',
+      JSON.stringify({
+        summary: 'Everything gathered',
+        sources: [
+          { kind: 'paste', id: 'paste-1', label: 'Teams thread', text: 'kept' },
+          { kind: 'confluence', id: 'confluence-1', title: 'Brief', text: 'kept' },
+          { kind: 'workbook', id: 'workbook-1', fileName: 'volumes.xlsx', rows: [] },
+          { kind: 'jira', id: 'jira-1', issueKey: 'ABC-1', summary: 'kept', status: 'To Do' },
+          { kind: 'pdf', id: 'pdf-1', fileName: 'brief.pdf', text: 'kept', pageCount: 3 },
+          { kind: 'email', id: 'email-1', subject: 'Re: scope', senderName: 'Alex', sentDate: '', text: 'kept' },
+          { kind: 'sharepoint', id: 'sharepoint-1', fileName: 'notes.docx', text: 'kept' },
+        ],
+      }),
+    );
+
+    const restored = loadCompositionDraft('profile-alpha', 'new:1');
+
+    expect(restored.sources.map((source) => source.kind)).toEqual([
+      'paste', 'confluence', 'workbook', 'jira', 'pdf', 'email', 'sharepoint',
+    ]);
+  });
+
   it('re-files a draft stored under the wrong identity', () => {
     window.localStorage.setItem(
       'tbxPoFeatureCompositionDraft:profile-alpha:new:1',

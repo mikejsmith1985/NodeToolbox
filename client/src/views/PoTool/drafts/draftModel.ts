@@ -213,6 +213,17 @@ export function createEmptyCompositionDraft(profileId: string, scopeKey: string)
   };
 }
 
+/**
+ * Every source kind a draft may hold.
+ *
+ * This list is the whole reason PDF, email and SharePoint sources used to disappear when a draft was
+ * reloaded: they were added to the workspace after the list was written, so a perfectly good source was
+ * read back and dropped as unrecognised. Adding a kind to `ReferencedSource` means adding it here too.
+ */
+const STORABLE_SOURCE_KINDS: readonly ReferencedSource['kind'][] = [
+  'confluence', 'workbook', 'jira', 'paste', 'sharepoint', 'pdf', 'email',
+];
+
 /** Keeps a stored source only if it still identifies itself; a shapeless one is dropped, not guessed at. */
 function normalizeSource(rawSource: unknown): ReferencedSource | null {
   if (typeof rawSource !== 'object' || rawSource === null) {
@@ -222,7 +233,7 @@ function normalizeSource(rawSource: unknown): ReferencedSource | null {
   if (!readString(candidate.id) || !readString(candidate.kind)) {
     return null;
   }
-  if (!['confluence', 'workbook', 'jira', 'paste'].includes(candidate.kind as string)) {
+  if (!(STORABLE_SOURCE_KINDS as readonly string[]).includes(candidate.kind as string)) {
     return null;
   }
   return candidate as ReferencedSource;

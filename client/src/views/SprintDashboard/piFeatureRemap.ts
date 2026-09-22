@@ -2,6 +2,7 @@
 
 import { resolveConfiguredFieldIds, resolveWriteFieldId } from '../../services/jiraFieldMapping.ts';
 import { jiraGet, jiraPut } from '../../services/jiraApi.ts';
+import { loadFeatureIssueTypeNames } from '../../services/jiraIssueTypes.ts';
 import type { JiraIssue } from '../../types/jira.ts';
 import { readArtFeatureScopeSettings } from '../ArtView/artFeatureScopeSettings.ts';
 import { findMostRecentlyEndedPiName, findPiNameForDate, parsePiDateRange } from '../ArtView/hooks/artHelpers.ts';
@@ -180,7 +181,13 @@ async function fetchPiFeatureOptions(
   poAssigneeQueryValues: readonly string[],
   featureRemapSettings: FeatureRemapSettings,
 ): Promise<FeatureRemapFeatureOption[]> {
-  const featureOptionsJql = buildDirectFeatureJql(piName ?? '', poAssigneeQueryValues, featureRemapSettings.piFieldId);
+  const featureIssueTypeNames = await loadFeatureIssueTypeNames();
+  const featureOptionsJql = buildDirectFeatureJql(
+    piName ?? '',
+    poAssigneeQueryValues,
+    featureRemapSettings.piFieldId,
+    featureIssueTypeNames,
+  );
   if (featureOptionsJql === null) {
     return [];
   }

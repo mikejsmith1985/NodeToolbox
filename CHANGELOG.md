@@ -48,6 +48,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   it. GitHub's indicator stays behind the unlock.
 
 ### Fixed
+- **The Feature-level screens survive DENP's rename of Feature to Epic.** PI Review's pull, the
+  Readiness tab, the PI remap dropdown, the PO Tool's Feature Review and the scheduled PI Review
+  refresh all shipped `issuetype = Feature`. Jira validates that name, so once the type was renamed the
+  whole query became a 400 and each screen went quietly empty — the worst kind of failure, because it
+  looks like "no Features this PI". They now ask the instance which feature-level types it actually
+  defines and name that. If the lookup itself cannot run, the type clause is dropped rather than
+  guessed: the PI and Product Owner still scope the query, so the result is wider, never blank.
+- **Feature Composition drafts keep every source on reload.** A draft holding a PDF, an Outlook
+  message or a SharePoint document lost them when it was reopened: those three kinds were added to the
+  workspace after the saved-source list was written, so they were read back and dropped as
+  unrecognised. All seven kinds are kept now.
 - **A Hygiene test stopped failing on the calendar.** Its healthy baseline carried a fixed Target End of
   2026-09-17, so from 2026-09-18 the baseline read as overdue and two tests failed with no code changed.
   The test now pins "today" (only `Date`, so async waits are unaffected); nothing in the product changed.

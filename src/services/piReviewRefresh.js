@@ -78,6 +78,28 @@ async function fetchConfluencePage(deps, confluenceConfig, pageId, shouldVerifyT
   };
 }
 
+/**
+ * Asks the instance which feature-level issue types it actually defines.
+ *
+ * The scheduled refresh used to ship `issuetype = Feature`. DENP renamed that type to `Epic`, which
+ * makes the whole query a 400 and leaves the page untouched with no useful reason. Returning [] when
+ * the lookup fails drops the type clause instead: wider, but the PI and Product Owner still scope it.
+ */
+async function loadFeatureIssueTypeNames(deps, engine, jiraConfig, shouldVerifyTls) {
+  try {
+    const response = await deps.makeJiraApiRequest('GET', '/rest/api/2/issuetype', null, jiraConfig, shouldVerifyTls);
+    if (!response || !isSuccessStatus(response.status) || !Array.isArray(response.body)) {
+      return [];
+    }
+    const availableNames = response.body
+      .filter((issueType) => issueType && issueType.subtask !== true)
+      .map((issueType) => String((issueType && issueType.name) || ''));
+    return engine.pickAvailableIssueTypeNames(['Feature', 'Epic'], availableNames);
+  } catch {
+    return [];
+  }
+}
+
 /** Runs the PO + PI Feature query and returns discovered {key, summary} pairs. */
 async function pullFeatures(deps, jiraConfig, featureJql, shouldVerifyTls) {
   const searchPath = `/rest/api/2/search?jql=${encodeURIComponent(featureJql)}&fields=summary&maxResults=200`;
@@ -301,7 +323,8 @@ async function refreshPiReviewPage({ page, team, deps, configuration }) {
   if (!pageId) {
     return makeResult('failed', pageReference, now(), 'PI Review page URL is invalid.');
   }
-  const featureJql = engine.buildDirectFeatureJql(piName, [productOwner], piFieldId);
+  const featureIssueTypeNames = await loadFeatureIssueTypeNames(deps, engine, jiraConfig, shouldVerifyTls);
+  const featureJql = engine.buildDirectFeatureJql(piName, [productOwner], piFieldId, featureIssueTypeNames);
   if (!featureJql) {
     return makeResult('skipped', pageReference, now(), 'PI or Product Owner missing — cannot scope the pull.');
   }

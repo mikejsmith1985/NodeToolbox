@@ -27,18 +27,29 @@ function createRowForFeature(featureCellValue: string): PiReviewRow {
 const PULL_SETTINGS = { piFieldId: DEFAULT_PI_FIELD_ID };
 
 describe('buildDirectFeatureJql', () => {
-  it('combines issuetype=Feature, a single-PO assignee equality, and PI — with no project clause', () => {
-    const jql = buildDirectFeatureJql('PI 26.4', ['C73130'], DEFAULT_PI_FIELD_ID);
+  it('combines the discovered feature type, a single-PO assignee equality, and PI — with no project clause', () => {
+    const jql = buildDirectFeatureJql('PI 26.4', ['C73130'], DEFAULT_PI_FIELD_ID, ['Feature']);
     expect(jql).toBe(
-      'issuetype = Feature AND assignee = "C73130" AND cf[10301] = "PI 26.4"',
+      'issuetype = "Feature" AND assignee = "C73130" AND cf[10301] = "PI 26.4"',
     );
   });
 
   it('uses an assignee IN clause when the roster has more than one Product Owner', () => {
-    const jql = buildDirectFeatureJql('PI 26.4', ['C73130', 'C99999'], DEFAULT_PI_FIELD_ID);
+    const jql = buildDirectFeatureJql('PI 26.4', ['C73130', 'C99999'], DEFAULT_PI_FIELD_ID, ['Feature']);
     expect(jql).toBe(
-      'issuetype = Feature AND assignee in ("C73130", "C99999") AND cf[10301] = "PI 26.4"',
+      'issuetype = "Feature" AND assignee in ("C73130", "C99999") AND cf[10301] = "PI 26.4"',
     );
+  });
+
+  it('names whatever type the instance defines, so a Feature renamed to Epic is still found', () => {
+    // The DENP rename is exactly this case: shipping "Feature" would 400 and return nothing at all.
+    const jql = buildDirectFeatureJql('PI 26.4', ['C73130'], DEFAULT_PI_FIELD_ID, ['Epic']);
+    expect(jql).toBe('issuetype = "Epic" AND assignee = "C73130" AND cf[10301] = "PI 26.4"');
+  });
+
+  it('drops the type clause when the instance could not be asked, rather than naming a missing type', () => {
+    const jql = buildDirectFeatureJql('PI 26.4', ['C73130'], DEFAULT_PI_FIELD_ID, []);
+    expect(jql).toBe('assignee = "C73130" AND cf[10301] = "PI 26.4"');
   });
 
   it('returns null without a PI (the page PI is required to scope the pull)', () => {

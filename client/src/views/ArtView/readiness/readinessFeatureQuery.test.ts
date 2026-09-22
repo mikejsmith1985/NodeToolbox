@@ -37,18 +37,18 @@ describe('resolveReadinessScopeClause — scope precedence', () => {
 
 describe('buildReadinessFeatureJql', () => {
   it('builds a single-PI equality clause with the derived cf reference and scope', () => {
-    const jql = buildReadinessFeatureJql(['PI 26.3'], 'customfield_10301', 'project in (PORT)');
-    expect(jql).toBe('issuetype = Feature AND cf[10301] = "PI 26.3" AND project in (PORT)');
+    const jql = buildReadinessFeatureJql(['PI 26.3'], 'customfield_10301', 'project in (PORT)', [], ['Feature']);
+    expect(jql).toBe('issuetype = "Feature" AND cf[10301] = "PI 26.3" AND project in (PORT)');
   });
 
   it('builds an IN clause for multiple carryover PIs', () => {
-    const jql = buildReadinessFeatureJql(['PI 26.2', 'PI 26.1'], 'customfield_10301', 'project in (PORT)');
-    expect(jql).toBe('issuetype = Feature AND cf[10301] in ("PI 26.2", "PI 26.1") AND project in (PORT)');
+    const jql = buildReadinessFeatureJql(['PI 26.2', 'PI 26.1'], 'customfield_10301', 'project in (PORT)', [], ['Feature']);
+    expect(jql).toBe('issuetype = "Feature" AND cf[10301] in ("PI 26.2", "PI 26.1") AND project in (PORT)');
   });
 
   it('omits the scope clause entirely when it is empty', () => {
-    const jql = buildReadinessFeatureJql(['PI 26.3'], 'customfield_10301', '');
-    expect(jql).toBe('issuetype = Feature AND cf[10301] = "PI 26.3"');
+    const jql = buildReadinessFeatureJql(['PI 26.3'], 'customfield_10301', '', [], ['Feature']);
+    expect(jql).toBe('issuetype = "Feature" AND cf[10301] = "PI 26.3"');
   });
 
   it('derives the cf number from a non-default PI field id', () => {
@@ -61,13 +61,24 @@ describe('buildReadinessFeatureJql', () => {
   });
 
   it('appends a project-exclusion clause for ignored projects', () => {
-    const jql = buildReadinessFeatureJql(['PI 26.3'], 'customfield_10301', 'project in (PORT)', ['OTHER', 'MISC']);
-    expect(jql).toBe('issuetype = Feature AND cf[10301] = "PI 26.3" AND project in (PORT) AND project not in (OTHER, MISC)');
+    const jql = buildReadinessFeatureJql(['PI 26.3'], 'customfield_10301', 'project in (PORT)', ['OTHER', 'MISC'], ['Feature']);
+    expect(jql).toBe('issuetype = "Feature" AND cf[10301] = "PI 26.3" AND project in (PORT) AND project not in (OTHER, MISC)');
   });
 
   it('excludes projects even when there is no positive scope clause', () => {
-    const jql = buildReadinessFeatureJql(['PI 26.3'], 'customfield_10301', '', ['OTHER']);
-    expect(jql).toBe('issuetype = Feature AND cf[10301] = "PI 26.3" AND project not in (OTHER)');
+    const jql = buildReadinessFeatureJql(['PI 26.3'], 'customfield_10301', '', ['OTHER'], ['Feature']);
+    expect(jql).toBe('issuetype = "Feature" AND cf[10301] = "PI 26.3" AND project not in (OTHER)');
+  });
+
+  it('names the type the instance actually defines, so a renamed Feature type still matches', () => {
+    // DENP renamed its Feature type to Epic; naming "Feature" would 400 and leave the tab empty.
+    const jql = buildReadinessFeatureJql(['PI 26.3'], 'customfield_10301', '', [], ['Epic']);
+    expect(jql).toBe('issuetype = "Epic" AND cf[10301] = "PI 26.3"');
+  });
+
+  it('drops the type clause when the instance could not be asked, rather than naming a missing type', () => {
+    const jql = buildReadinessFeatureJql(['PI 26.3'], 'customfield_10301', 'project in (PORT)', [], []);
+    expect(jql).toBe('cf[10301] = "PI 26.3" AND project in (PORT)');
   });
 });
 

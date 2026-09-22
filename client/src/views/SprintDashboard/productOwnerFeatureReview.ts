@@ -11,6 +11,7 @@
 // (blueprint-only), or an assignee but no stories yet (PO-only). Both are the PO's work.
 
 import type { ArtTeam } from '../ArtView/hooks/useArtData.ts';
+import { loadFeatureIssueTypeNames } from '../../services/jiraIssueTypes.ts';
 import { buildDirectFeatureJql, readPiReviewPullSettings } from '../ArtView/piReviewPullFeatures.ts';
 import type { HygieneFieldConfig } from '../Hygiene/checks/hygieneChecks.ts';
 import {
@@ -85,7 +86,13 @@ async function runProductOwnerFeatureQuery(
     return { items: [], warning: NO_PRODUCT_OWNER_WARNING };
   }
   const { piFieldId } = readPiReviewPullSettings();
-  const productOwnerFeatureJql = buildDirectFeatureJql(selectedPiName, productOwnerAssigneeQueryValues, piFieldId);
+  const featureIssueTypeNames = await loadFeatureIssueTypeNames();
+  const productOwnerFeatureJql = buildDirectFeatureJql(
+    selectedPiName,
+    productOwnerAssigneeQueryValues,
+    piFieldId,
+    featureIssueTypeNames,
+  );
   if (productOwnerFeatureJql === null) {
     return { items: [], warning: NO_PI_SELECTED_WARNING };
   }

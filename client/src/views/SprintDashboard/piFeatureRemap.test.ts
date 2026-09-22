@@ -86,7 +86,11 @@ describe('piFeatureRemap helpers', () => {
     mockJiraGet.mockReset();
     mockJiraGet.mockImplementation((path: string) => {
       const decodedPath = decodeURIComponent(path);
-      if (decodedPath.includes('issuetype = Feature')) {
+      // The dropdown asks the instance which feature-level type it defines before it queries.
+      if (decodedPath.includes('/rest/api/2/issuetype')) {
+        return Promise.resolve([{ id: '2', name: 'Feature', subtask: false }]);
+      }
+      if (decodedPath.includes('issuetype = "Feature"')) {
         capturedJql = decodedPath;
         return Promise.resolve({
           issues: [
@@ -102,7 +106,7 @@ describe('piFeatureRemap helpers', () => {
     const featureOptions = await fetchFeaturesForPi('PI 26.4', ['jsmith']);
 
     // The query is scoped by the Product Owner assignee AND the PI — never every Feature in the PI.
-    expect(capturedJql).toContain('issuetype = Feature');
+    expect(capturedJql).toContain('issuetype = "Feature"');
     expect(capturedJql).toContain('assignee = "jsmith"');
     expect(capturedJql).toContain('cf[10301] = "PI 26.4"');
     // Options are returned sorted by key, and a childless Feature is included.

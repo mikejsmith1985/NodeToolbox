@@ -24,6 +24,10 @@ export {
 } from './piReviewJira.ts';
 
 export { buildDirectFeatureJql } from './piReviewPullFeatures.ts';
+
+// The scheduled refresh builds the same Feature query as the browser, so it needs the same way of
+// naming this instance's feature-level issue types rather than assuming "Feature" (DENP renamed it).
+export { buildIssueTypeClause, pickAvailableIssueTypeNames } from '../../services/jiraIssueTypes.ts';
 export { computePiReviewLoadComparison } from './piReviewLoad.ts';
 
 // Delivery-milestone derivation (GH #262) — pure, shared with the browser so the scheduled refresh
