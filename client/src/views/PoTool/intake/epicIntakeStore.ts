@@ -140,11 +140,24 @@ function buildSummaryFromStoredValue(
   }
 }
 
-/** Recovers the intake id from a storage key of the form `tbxPoEpicIntake:<intakeId>:<scopedProfileId>`. */
-function readIntakeIdFromStorageKey(storageKey: string): string | null {
-  const withoutPrefix = storageKey.slice(`${EPIC_INTAKE_STORAGE_PREFIX}:`.length);
-  const lastColonIndex = withoutPrefix.lastIndexOf(':');
-  return lastColonIndex === -1 ? null : withoutPrefix.slice(0, lastColonIndex);
+/**
+ * Recovers the intake id from a storage key of the form `tbxPoEpicIntake:<intakeId>:<scopedProfileId>` — but only
+ * when the key belongs to exactly this team. Intake ids never contain a colon; team profile ids often do
+ * ("dashboard-team:ENCUC:123"). So the id is everything up to the FIRST colon after the prefix, and the rest must
+ * equal the team id exactly. Reading "up to the last colon" swallowed part of the team id, and Resume and Discard
+ * then used a key that did not exist (GH #387).
+ */
+function readIntakeIdFromStorageKey(storageKey: string, scopedProfileId: string): string | null {
+  const keyPrefix = `${EPIC_INTAKE_STORAGE_PREFIX}:`;
+  if (!storageKey.startsWith(keyPrefix)) {
+    return null;
+  }
+  const withoutPrefix = storageKey.slice(keyPrefix.length);
+  const firstColonIndex = withoutPrefix.indexOf(':');
+  if (firstColonIndex <= 0 || withoutPrefix.slice(firstColonIndex + 1) !== scopedProfileId) {
+    return null;
+  }
+  return withoutPrefix.slice(0, firstColonIndex);
 }
 
 /**
@@ -157,16 +170,13 @@ export function listEpicIntakes(teamProfileId: string): EpicIntakeSummary[] {
   if (!canPersistDrafts()) {
     return [];
   }
-  const keySuffix = `:${resolveTeamScopedStorageProfileId(teamProfileId)}`;
+  const scopedProfileId = resolveTeamScopedStorageProfileId(teamProfileId);
   const summaries: EpicIntakeSummary[] = [];
   try {
     for (let index = 0; index < window.localStorage.length; index += 1) {
       const storageKey = window.localStorage.key(index);
-      if (!storageKey || !storageKey.startsWith(`${EPIC_INTAKE_STORAGE_PREFIX}:`) || !storageKey.endsWith(keySuffix)) {
-        continue;
-      }
-      const intakeId = readIntakeIdFromStorageKey(storageKey);
-      const storedValue = window.localStorage.getItem(storageKey);
+      const intakeId = storageKey ? readIntakeIdFromStorageKey(storageKey, scopedProfileId) : null;
+      const storedValue = storageKey && intakeId !== null ? window.localStorage.getItem(storageKey) : null;
       if (intakeId === null || storedValue === null) {
         continue;
       }

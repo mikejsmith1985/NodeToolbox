@@ -235,6 +235,30 @@ describe('saveEpicIntake — failure paths', () => {
 
 // ── Delete ──
 
+describe('team ids that contain colons (GH #387 — Resume said "no longer saved", Discard did nothing)', () => {
+  // Real Team Dashboard profile ids look like "dashboard-team:ENCUC:123". The id used to be read as "everything
+  // before the last colon", which swallowed part of the team id, so Resume and Discard both used a wrong key.
+  const COLON_TEAM_ID = 'dashboard-team:ENCUC:123';
+
+  it('lists an intake under its real id, so Resume loads it and Discard removes it', () => {
+    const intake = buildRealisticIntake({ teamProfileId: COLON_TEAM_ID, id: 'intake-abc123' });
+    expect(saveEpicIntake(intake)).toBe(true);
+
+    const [listed] = listEpicIntakes(COLON_TEAM_ID);
+    expect(listed.id).toBe('intake-abc123');
+    expect(loadEpicIntake(COLON_TEAM_ID, listed.id).status).toBe('loaded');
+
+    deleteEpicIntake(COLON_TEAM_ID, listed.id);
+    expect(listEpicIntakes(COLON_TEAM_ID)).toEqual([]);
+  });
+
+  it('does not list another team whose id ends the same way', () => {
+    saveEpicIntake(buildRealisticIntake({ teamProfileId: 'other:dashboard-team:ENCUC:123', id: 'intake-other' }));
+    saveEpicIntake(buildRealisticIntake({ teamProfileId: COLON_TEAM_ID, id: 'intake-mine' }));
+    expect(listEpicIntakes(COLON_TEAM_ID).map((summary) => summary.id)).toEqual(['intake-mine']);
+  });
+});
+
 describe('deleteEpicIntake', () => {
   it('removes the record so a later load reports missing', () => {
     saveEpicIntake(buildRealisticIntake());

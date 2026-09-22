@@ -56,6 +56,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   it. GitHub's indicator stays behind the unlock.
 
 ### Fixed
+- **Epic Intake's Resume and Discard work for every team (GH #387).** Resume answered "That intake
+  is no longer saved" and Discard did nothing. Saved intakes are keyed by intake id and team id, and
+  real team ids contain colons ("dashboard-team:ENCUC:123"); the list read the intake id as everything
+  up to the last colon, so it picked up part of the team id and both buttons used a key that did not
+  exist. The id is now read exactly, and a team whose id merely ends the same way is no longer listed.
+  Intakes already saved are read correctly as they are — nothing is lost.
 - **Epic Intake no longer dead-ends behind a close call (GH #387 feedback).** After the sorting
   answer, five items whose Enrollment share landed in the 40–60% band were waiting on the PO — and
   that held back Check DENP, drafting and Create for every other item, even the six already known to
