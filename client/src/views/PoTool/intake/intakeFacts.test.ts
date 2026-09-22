@@ -31,7 +31,7 @@ describe('deriveItemFacts', () => {
 
   it('hands equal sizes to the PO', () => {
     const { item } = findItemByTitle('Tie', '•\tTie\no\tEnrollment M\no\tFulfillment M');
-    expect(item.decisions.owner).toMatchObject({ state: 'open', isAwaitingPo: true });
+    expect(item.decisions.owner).toMatchObject({ state: 'open', isAwaitingPo: true, aiProposal: 'shared' });
   });
 
   it('leaves the owner open when no owning area size is stated', () => {

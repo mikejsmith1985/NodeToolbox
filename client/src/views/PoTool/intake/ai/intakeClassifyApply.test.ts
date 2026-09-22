@@ -59,7 +59,8 @@ describe('applyClassifyOutcome', () => {
     const intake = startIntake();
     const beta = findItem(intake, 'Beta');
     const applied = applyReply(intake, [{ id: beta.id, kind: 'work', enrollmentShare: 50, searchTerms: ['beta'] }]);
-    expect(findItem(applied, 'Beta').decisions.owner).toMatchObject({ state: 'open', isAwaitingPo: true });
+    // A close call is suggested as Shared: both teams have real work, so Enrollment takes its own part.
+    expect(findItem(applied, 'Beta').decisions.owner).toMatchObject({ state: 'open', isAwaitingPo: true, aiProposal: 'shared' });
   });
 
   it('keeps the size-rule owner and its reason even when the share disagrees (US2-1)', () => {

@@ -51,10 +51,31 @@ function readItemLines(item: IntakeItem, lines: readonly SourceLine[]): SourceLi
   return lines.filter((line) => item.lineNumbers.includes(line.lineNumber));
 }
 
+/** Appended to a Shared item's Epic summary, so the Epic is plainly only Enrollment's part of the work. */
+export const SHARED_SCOPE_SUFFIX = ' (Enrollment scope)';
+
+function isSharedItem(item: IntakeItem): boolean {
+  return readSettledValue(item.decisions.owner) === 'shared';
+}
+
+/**
+ * Adds the Enrollment-scope suffix to a Shared item's summary — once, and within Jira's summary limit (the title
+ * is shortened, never the suffix). Toolbox applies it itself rather than trusting a pasted answer to include it.
+ */
+export function applySharedScopeSuffix(summary: string, isShared: boolean): string {
+  const trimmedSummary = summary.trim();
+  if (!isShared || trimmedSummary.endsWith(SHARED_SCOPE_SUFFIX.trim())) {
+    return trimmedSummary;
+  }
+  const roomForTitle = MAX_EPIC_SUMMARY_CHARS - SHARED_SCOPE_SUFFIX.length;
+  return `${trimmedSummary.slice(0, roomForTitle).trimEnd()}${SHARED_SCOPE_SUFFIX}`;
+}
+
 function describeItemForDraft(item: IntakeItem, intake: EpicIntake): string {
   const label = readSettledValue(item.decisions.label);
+  const sharedNote = isSharedItem(item) ? ' — shared with Fulfillment: write Enrollment\'s part only' : '';
   const itemLines = readItemLines(item, intake.lines).map((line) => `    ${line.rawText}`);
-  return [`${item.id}: ${readItemDisplayTitle(item)}${label ? ` (label: ${label})` : ''}`, '  Notes:', ...itemLines].join('\n');
+  return [`${item.id}: ${readItemDisplayTitle(item)}${label ? ` (label: ${label})` : ''}${sharedNote}`, '  Notes:', ...itemLines].join('\n');
 }
 
 /**
@@ -118,7 +139,7 @@ export function parseDraftReply(replyText: string, askedItemIds: readonly string
 export function buildManualDraft(item: IntakeItem, lines: readonly SourceLine[]): EpicDraft {
   const bulletList = readItemLines(item, lines).map((line) => `- ${line.text}`).join('\n');
   return {
-    summary: readItemDisplayTitle(item).slice(0, MAX_EPIC_SUMMARY_CHARS),
+    summary: applySharedScopeSuffix(readItemDisplayTitle(item).slice(0, MAX_EPIC_SUMMARY_CHARS), isSharedItem(item)),
     description: normalizeDraftDescription(`Description:\n${bulletList}`),
     source: 'po',
     editedByPo: false,
@@ -128,7 +149,8 @@ export function buildManualDraft(item: IntakeItem, lines: readonly SourceLine[])
 function applyDraftToItem(item: IntakeItem, answer: DraftAnswer | undefined, rejectionReason: string | null): IntakeItem {
   if (answer !== undefined) {
     // A draft the PO has already edited is theirs; a later answer never replaces it.
-    return item.draft?.editedByPo ? item : { ...item, draft: answer.draft };
+    const scopedDraft = { ...answer.draft, summary: applySharedScopeSuffix(answer.draft.summary, isSharedItem(item)) };
+    return item.draft?.editedByPo ? item : { ...item, draft: scopedDraft };
   }
   if (rejectionReason === null) {
     return item;

@@ -94,8 +94,20 @@ function groupOpenDecisionsByItemId(intake: EpicIntake): Map<string, string[]> {
 }
 
 /** Builds one row's action, key and reason by trying each rule in the contract's precedence order. */
+/** Added to a Shared item's row: Enrollment's Epic covers only its own part, so the rest needs a hand-off. */
+export const SHARED_HANDOFF_NOTE = "Shared — Fulfillment's part needs its own hand-off";
+
+/** Adds the hand-off note to a Shared item that reached an Epic, keeping any reason already there. */
+function addSharedHandoffNote(item: IntakeItem, outcome: SummaryOutcome): SummaryOutcome {
+  const isShared = readSettledValue(item.decisions.owner) === 'shared';
+  if (!isShared || (outcome.action !== 'created' && outcome.action !== 'existing')) {
+    return outcome;
+  }
+  return { ...outcome, reason: outcome.reason === '' ? SHARED_HANDOFF_NOTE : `${outcome.reason} · ${SHARED_HANDOFF_NOTE}` };
+}
+
 function buildSummaryRow(item: IntakeItem, jiraBaseUrl: string, openSteps: readonly string[]): SummaryRow {
-  const outcome = deriveSummaryOutcome(item, openSteps);
+  const outcome = addSharedHandoffNote(item, deriveSummaryOutcome(item, openSteps));
   return {
     itemId: item.id,
     itemTitle: readItemDisplayTitle(item),

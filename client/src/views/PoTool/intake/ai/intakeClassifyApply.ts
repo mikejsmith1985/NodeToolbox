@@ -114,8 +114,9 @@ function decideOwnerByShare(owner: Decision<ItemOwner>, answer: ClassifyAnswer):
   if (shareRule.owner === undefined) {
     return recordAiRejection(owner, answer.hasEnrollmentShare ? shareRule.reason : NO_ANSWER_REASON);
   }
+  // A close call is suggested as Shared: when neither team clearly owns it, both usually have real work in it.
   return shareRule.owner === null
-    ? routeDecisionToPo(owner, null, shareRule.reason)
+    ? routeDecisionToPo(owner, 'shared', shareRule.reason)
     : settleDecision(owner, shareRule.owner, 'ai', shareRule.reason);
 }
 

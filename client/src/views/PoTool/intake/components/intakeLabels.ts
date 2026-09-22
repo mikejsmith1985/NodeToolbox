@@ -25,6 +25,7 @@ export const ITEM_KIND_LABELS: Record<ItemKind, string> = {
 
 export const ITEM_OWNER_LABELS: Record<ItemOwner, string> = {
   enrollment: 'Enrollment',
+  shared: 'Shared — Enrollment takes its part',
   fulfillment: 'Fulfillment',
   notActionable: 'Not actionable',
 };

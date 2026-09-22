@@ -16,6 +16,7 @@ import {
   formatStatedSizes,
   renderSummaryHtml,
   renderSummaryMarkdown,
+  SHARED_HANDOFF_NOTE,
   SUMMARY_ACTION_LABELS,
 } from './intakeSummary.ts';
 
@@ -189,6 +190,19 @@ describe('buildSummaryRows — action derivation (first match wins)', () => {
     expect(workRows[0].jiraKey).toBe('DENP-777');
     expect(workRows[0].jiraUrl).toBe('https://jira.example.com/browse/DENP-777');
     expect(workRows[0].label).toBe('Stability');
+  });
+
+  it('created (Shared): flags that Fulfillment\'s part still needs its own hand-off', () => {
+    const item = buildWorkItem(1);
+    item.decisions.owner = settled('shared', 'Chosen by the PO', 'po');
+    item.decisions.searchTerms = settled(['aep'], 'Derived from title');
+    item.decisions.duplicate = settled({ verdict: 'createNew' }, 'No candidates');
+    item.decisions.label = settled('Roadmap', 'PO chose Roadmap', 'po');
+    item.decisions.draftAccepted = settled('accepted', 'PO accepted', 'po');
+    item.creation = { state: 'created', key: 'DENP-778', createdAtIso: '2026-09-18T00:00:00.000Z' };
+    const { workRows } = buildSummaryRows(buildIntake([item]), JIRA_BASE_URL);
+    expect(workRows[0]).toMatchObject({ action: 'created', owner: 'shared', jiraKey: 'DENP-778' });
+    expect(workRows[0].reason).toBe(SHARED_HANDOFF_NOTE);
   });
 
   it('label is null for every non-created action', () => {

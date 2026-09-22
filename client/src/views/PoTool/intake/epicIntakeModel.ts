@@ -29,8 +29,12 @@ export type SettledBy = 'rule' | 'ai' | 'po';
 export const ITEM_KINDS = ['work', 'risk', 'personAction', 'deferred', 'noise'] as const;
 export type ItemKind = (typeof ITEM_KINDS)[number];
 
-/** Which area owns an item's scope. Only Enrollment-owned work is searched and created. */
-export const ITEM_OWNERS = ['enrollment', 'fulfillment', 'notActionable'] as const;
+/**
+ * Which area owns an item's scope. Enrollment-owned work is searched and created. `shared` means both teams have
+ * real work of their own (AEP, say): Enrollment creates an Epic for its part only, and Fulfillment's part is
+ * reported for hand-off. Adding it is additive — every stored intake remains readable.
+ */
+export const ITEM_OWNERS = ['enrollment', 'shared', 'fulfillment', 'notActionable'] as const;
 export type ItemOwner = (typeof ITEM_OWNERS)[number];
 
 export type IntakeLabel = (typeof INTAKE_LABELS)[number];

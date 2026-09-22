@@ -86,6 +86,14 @@ describe('save / load — round trip', () => {
     }
   });
 
+  it('round-trips a Shared owner, so an intake that uses it can be resumed', () => {
+    const intake = buildRealisticIntake();
+    intake.items[0].decisions.owner = { state: 'settled', value: 'shared', settledBy: 'po', reason: 'Both teams have work', aiAttempts: 0 };
+    expect(saveEpicIntake(intake)).toBe(true);
+    const result = loadEpicIntake('team-alpha', 'intake-1');
+    expect(result.status === 'loaded' ? result.intake.items[0].decisions.owner : null).toMatchObject({ value: 'shared' });
+  });
+
   it('reports missing for an absent key', () => {
     expect(loadEpicIntake('team-alpha', 'nope')).toEqual({ status: 'missing' });
   });

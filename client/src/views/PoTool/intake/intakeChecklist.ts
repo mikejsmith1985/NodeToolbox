@@ -15,6 +15,7 @@ import {
   type IntakeItem,
   type IntakeStepId,
   type IntakeTurn,
+  type ItemOwner,
   type SettledBy,
 } from './epicIntakeModel.ts';
 import { proveLineCoverage } from './notesOutline.ts';
@@ -113,6 +114,14 @@ export function replaceIntakeItem(intake: EpicIntake, replacement: IntakeItem): 
 
 // ── Applicability ──
 
+/**
+ * True when Enrollment has work of its own in the item: it owns it outright, or shares it with Fulfillment. Both
+ * are searched, drafted and created; only the draft's scope differs. The single place this question is answered.
+ */
+export function isEnrollmentOwned(owner: ItemOwner | null): boolean {
+  return owner === 'enrollment' || owner === 'shared';
+}
+
 /** Why a downstream slot does not apply to this item, or null when it does. */
 interface ApplicabilityReasons {
   owner: string | null;
@@ -127,7 +136,7 @@ function readApplicabilityReasons(item: IntakeItem): ApplicabilityReasons {
   const owner = readSettledValue(item.decisions.owner);
   const duplicate = readSettledValue(item.decisions.duplicate);
   const notWorkReason = kind !== null && kind !== 'work' ? `Not work (${kind})` : null;
-  const notEnrollmentReason = owner !== null && owner !== 'enrollment' ? `Owned: ${owner}` : null;
+  const notEnrollmentReason = owner !== null && !isEnrollmentOwned(owner) ? `Owned: ${owner}` : null;
   const notNewReason = duplicate !== null && duplicate.verdict !== 'createNew' ? `Duplicate check: ${duplicate.verdict}` : null;
   const searchReason = notWorkReason ?? notEnrollmentReason;
   return {
@@ -174,7 +183,7 @@ export function refreshApplicability(item: IntakeItem): IntakeItem {
 /** True when the item is Enrollment-owned new work the PO accepted and it has not been created yet. */
 export function isItemReadyToCreate(item: IntakeItem): boolean {
   const isEnrollmentWork = readSettledValue(item.decisions.kind) === 'work'
-    && readSettledValue(item.decisions.owner) === 'enrollment';
+    && isEnrollmentOwned(readSettledValue(item.decisions.owner));
   const isNewEpic = readSettledValue(item.decisions.duplicate)?.verdict === 'createNew';
   const isAccepted = readSettledValue(item.decisions.draftAccepted) === 'accepted';
   return isEnrollmentWork && isNewEpic && isAccepted && item.searchStatus === 'ok' && item.creation.state !== 'created';
@@ -197,7 +206,7 @@ function listItemOpenDecisions(item: IntakeItem, isAiUnlocked: boolean): OpenDec
     openDecisions.push({ itemId: item.id, slot, step, turn });
   };
   const isWork = readSettledValue(decisions.kind) === 'work';
-  const isEnrollment = isWork && readSettledValue(decisions.owner) === 'enrollment';
+  const isEnrollment = isWork && isEnrollmentOwned(readSettledValue(decisions.owner));
   const isCreateNew = isEnrollment && readSettledValue(decisions.duplicate)?.verdict === 'createNew';
 
   if (decisions.kind.state === 'open') add('kind', 'sortNotes', readAiOrPoTurn(decisions.kind, isAiUnlocked));

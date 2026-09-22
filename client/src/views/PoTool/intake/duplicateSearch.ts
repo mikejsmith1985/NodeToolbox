@@ -22,7 +22,7 @@ import {
   type NamedKey,
   type NamedKeyLookup,
 } from './epicIntakeModel.ts';
-import { refreshApplicability, replaceIntakeItem, routeDecisionToPo, settleDecision } from './intakeChecklist.ts';
+import { isEnrollmentOwned, refreshApplicability, replaceIntakeItem, routeDecisionToPo, settleDecision } from './intakeChecklist.ts';
 
 // ── Constants ──
 
@@ -353,7 +353,7 @@ async function searchOneItem(item: IntakeItem, intake: EpicIntake, epicTypeName:
 /** True for Enrollment work whose duplicate question is still open and whose search has not already succeeded. */
 function isItemEligibleForSearch(item: IntakeItem): boolean {
   return readSettledValue(item.decisions.kind) === 'work'
-    && readSettledValue(item.decisions.owner) === 'enrollment'
+    && isEnrollmentOwned(readSettledValue(item.decisions.owner))
     && item.decisions.duplicate.state === 'open'
     && item.searchStatus !== 'ok';
 }

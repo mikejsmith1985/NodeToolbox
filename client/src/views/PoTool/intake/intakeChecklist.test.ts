@@ -15,6 +15,7 @@ import {
 } from './epicIntakeModel.ts';
 import {
   handStepToPo,
+  isEnrollmentOwned,
   isItemReadyToCreate,
   listAvailableActions,
   listOpenDecisions,
@@ -359,6 +360,30 @@ describe('listAvailableActions — independent items never wait on each other (G
     expect(listAvailableActions(buildIntake([buildItem(1, 'created')]), true)).toEqual({
       assistantStep: null, poQuestions: [], draftReviewItemIds: [], hasSearchWork: false, hasCreateWork: false,
     });
+  });
+});
+
+describe('Shared ownership — both teams have work; Enrollment creates an Epic for its own part', () => {
+  function buildSharedItem(stage: Parameters<typeof buildItem>[1]): IntakeItem {
+    const item = buildItem(1, stage);
+    item.decisions.owner = settled('shared', 'po');
+    return item;
+  }
+
+  it('treats a Shared item as Enrollment work for the DENP check', () => {
+    expect(readIntakeNextStep(buildIntake([buildSharedItem('terms')]), true)).toMatchObject({ step: 'checkDenp', turn: 'toolbox' });
+    expect(isEnrollmentOwned('shared')).toBe(true);
+    expect(isEnrollmentOwned('fulfillment')).toBe(false);
+  });
+
+  it('asks for a label and a draft for a Shared item, then readies it for creation', () => {
+    expect(readIntakeNextStep(buildIntake([buildSharedItem('createNew')]), true)).toMatchObject({ step: 'confirmLabels' });
+    expect(isItemReadyToCreate(buildSharedItem('accepted'))).toBe(true);
+  });
+
+  it('keeps downstream slots open for Shared, unlike Fulfillment', () => {
+    const shared = refreshApplicability(buildSharedItem('owner'));
+    expect(shared.decisions.duplicate.state).toBe('open');
   });
 });
 

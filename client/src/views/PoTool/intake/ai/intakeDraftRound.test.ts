@@ -15,11 +15,13 @@ import {
 import { listOpenDecisions } from '../intakeChecklist.ts';
 import {
   applyDraftOutcome,
+  applySharedScopeSuffix,
   buildDraftRequest,
   buildManualDraft,
   DRAFT_REPLY_KIND,
   MAX_EPIC_SUMMARY_CHARS,
   parseDraftReply,
+  SHARED_SCOPE_SUFFIX,
 } from './intakeDraftRound.ts';
 
 const NOW_ISO = '2026-09-18T12:00:00.000Z';
@@ -120,5 +122,32 @@ describe('buildManualDraft', () => {
     expect(draft.description).toContain('- Analysis');
     expect(draft.description).toContain('⚠ REQUIRES');
     expect(draft.source).toBe('po');
+  });
+});
+
+describe('Shared items — an Epic for Enrollment\'s part only', () => {
+  function buildSharedItem(): IntakeItem {
+    const item = buildNewEpicItem(1, 'AEP', [1]);
+    item.decisions.owner = settled('shared', 'po');
+    return item;
+  }
+
+  it('tells the assistant to write only Enrollment\'s part', () => {
+    const request = buildDraftRequest(buildIntake([buildSharedItem()]));
+    expect(request.text).toMatch(/item-1[^\n]*shared with Fulfillment[^\n]*Enrollment's part only/i);
+  });
+
+  it('adds the scope suffix to a drafted summary exactly once', () => {
+    const intake = buildIntake([buildSharedItem()]);
+    const applied = applyDraftOutcome(intake, parseDraftReply(reply([{ id: 'item-1', summary: 'AEP readiness', description: 'D' }]), ['item-1']), ['item-1'], NOW_ISO);
+    expect(applied.items[0].draft?.summary).toBe(`AEP readiness${SHARED_SCOPE_SUFFIX}`);
+    const again = applyDraftOutcome(intake, parseDraftReply(reply([{ id: 'item-1', summary: `AEP readiness${SHARED_SCOPE_SUFFIX}`, description: 'D' }]), ['item-1']), ['item-1'], NOW_ISO);
+    expect(again.items[0].draft?.summary).toBe(`AEP readiness${SHARED_SCOPE_SUFFIX}`);
+  });
+
+  it('adds the suffix to the manual draft and keeps it within Jira\'s summary limit', () => {
+    expect(buildManualDraft(buildSharedItem(), LINES).summary).toBe(`AEP${SHARED_SCOPE_SUFFIX}`);
+    expect(applySharedScopeSuffix('x'.repeat(MAX_EPIC_SUMMARY_CHARS), true)).toHaveLength(MAX_EPIC_SUMMARY_CHARS);
+    expect(applySharedScopeSuffix('Plain', false)).toBe('Plain');
   });
 });

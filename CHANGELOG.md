@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Epic Intake: "Shared" ownership.** "Who owns it?" was the wrong question for work like AEP, where
+  Enrollment and Fulfillment both have real work of their own — any single answer was wrong. Items can
+  now be **Shared**: Enrollment creates one Epic for its own part, the summary gets an
+  "(Enrollment scope)" suffix, the draft request asks for Enrollment's part only, and the summary
+  table flags that Fulfillment's part needs its own hand-off. Close calls (an estimated Enrollment
+  share of 40–60%, or equal stated sizes) now suggest Shared instead of leaving the choice blank.
+  Shared items are checked against DENP like any Enrollment item, so an existing Epic is found, not
+  recreated.
 - **Epic Intake mode in Feature Composition (feature 037).** Turns raw meeting notes into DENP Epics
   through a guided exchange, the way twenty questions narrows to an answer: Toolbox keeps a fixed
   checklist of decisions for every item in the notes and asks only the ones still open. Rules decide
