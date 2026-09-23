@@ -1393,7 +1393,66 @@ describe('useCrgState', () => {
       expect(bodyString.type).toBe('normal');
       expect(bodyString.assignment_group).toBe('grp-001');
       expect(bodyString.impact).toBe('2');
-      expect(bodyString.implementation_plan).toBe('Deploy via script');
+      // The plan keeps what was typed and now also carries the estimated-duration block the change approvers
+      // ask to see — rolled up from this change's CTASKs rather than typed a second time (GH #387).
+      expect(bodyString.implementation_plan).toContain('Deploy via script');
+      expect(bodyString.implementation_plan).toContain('--- Estimated duration ---');
+    });
+
+    it('rolls the CTASK estimates up onto the CHG, so the approver sees one total they can check', async () => {
+      vi.mocked(snowFetch).mockResolvedValue({ result: { number: 'CHG0005678' } } as never);
+
+      const { result } = await advanceToChangeDetailsStep();
+
+      act(() => {
+        result.current.actions.setChgPlanningContent({ implementationPlan: 'Deploy via script' });
+        result.current.actions.addChangeTask(createMockCtaskTemplate({
+          durationEstimates: { implementationMinutes: '30', validationMinutes: '15', backoutMinutes: '20' },
+        }));
+        result.current.actions.addChangeTask(createMockCtaskTemplate({
+          id: 'ctask-template-002',
+          durationEstimates: { implementationMinutes: '30', validationMinutes: '15', backoutMinutes: '10' },
+        }));
+      });
+
+      await act(async () => {
+        await result.current.actions.createChg();
+      });
+
+      const createdChangeBody = JSON.parse(
+        (vi.mocked(snowFetch).mock.calls[0][1] as RequestInit).body as string,
+      ) as Record<string, string>;
+
+      expect(createdChangeBody.implementation_plan).toContain('• Implementation: 1 hour');
+      expect(createdChangeBody.implementation_plan).toContain('• Post-deployment validation/monitoring: 30 minutes');
+      expect(createdChangeBody.implementation_plan).toContain('• Backout/recovery and restoration validation: 30 minutes');
+    });
+
+    it('writes the estimated-duration block into every CTASK it creates', async () => {
+      vi.mocked(snowFetch).mockResolvedValue({ result: { number: 'CHG0005678', sys_id: 'chg-sys-001' } } as never);
+
+      const { result } = await advanceToChangeDetailsStep();
+
+      act(() => {
+        result.current.actions.addChangeTask(createMockCtaskTemplate({
+          durationEstimates: { implementationMinutes: '45', validationMinutes: '15', backoutMinutes: '30' },
+        }));
+      });
+
+      await act(async () => {
+        await result.current.actions.createChg();
+      });
+
+      const changeTaskPost = vi.mocked(snowFetch).mock.calls.find(
+        ([requestPath, requestInit]) => String(requestPath).includes('/api/now/table/change_task')
+          && (requestInit as RequestInit | undefined)?.method === 'POST',
+      );
+      const createdTaskBody = JSON.parse((changeTaskPost![1] as RequestInit).body as string) as Record<string, string>;
+
+      expect(createdTaskBody.description).toContain('Confirm smoke tests pass after deployment.');
+      expect(createdTaskBody.description).toContain('• Implementation: 45 minutes');
+      // The CTASK's own hour-long window does not hold 1 hour 30 minutes of work, and the block says so.
+      expect(createdTaskBody.description).toContain('SHORT');
     });
 
     it('uses the mapped environment impacted persons aware value in the POST body', async () => {
@@ -1552,7 +1611,8 @@ describe('useCrgState', () => {
       expect(patchBody.short_description).toBe('Enrollment - Transformers - fixVersion');
       expect(patchBody.impact).toBe('2');
       expect(patchBody.u_change_tested).toBe('yes');
-      expect(patchBody.implementation_plan).toBe('Run deployment script.');
+      expect(patchBody.implementation_plan).toContain('Run deployment script.');
+      expect(patchBody.implementation_plan).toContain('• Backout/recovery and restoration validation:');
       expect(patchBody.backout_plan).toBe('Rollback package.');
       expect(patchBody.test_plan).toBe('Validate smoke tests.');
       expect(result.current.state.submitResult).toBe('CHG0001234 updated');
@@ -1735,6 +1795,47 @@ describe('useCrgState', () => {
         plannedStartDate: expectedLocalInputFor('2026-01-01T10:00:00'),
         plannedEndDate:   expectedLocalInputFor('2026-01-01T11:00:00'),
         closeNotes:       'Validation complete.',
+        // This CTASK's description carries no estimated-duration block, so nothing is recovered.
+        durationEstimates: { implementationMinutes: '', validationMinutes: '', backoutMinutes: '' },
+      });
+    });
+
+    /** A CTASK description as ServiceNow holds it once Toolbox has written the estimated-duration block. */
+    const CLONED_DESCRIPTION_WITH_ESTIMATES = [
+      'Run smoke tests.',
+      '',
+      '--- Estimated duration ---',
+      '• Implementation: 45 minutes',
+      '• Post-deployment validation/monitoring: 1 hour',
+      '• Backout/recovery and restoration validation: 30 minutes',
+      '--- end estimated duration ---',
+    ].join('\n');
+
+    it('recovers the estimated durations a cloned CTASK already recorded in its description', async () => {
+      // A real CTASK carries its estimates only as the text block Toolbox wrote last time. Losing them on clone
+      // would quietly reset an engineer's numbers to "not estimated" the next time the CHG was submitted.
+      vi.mocked(snowFetch).mockResolvedValueOnce({
+        result: [
+          {
+            short_description: { value: 'Validate release', display_value: 'Validate release' },
+            description:       {
+              value: CLONED_DESCRIPTION_WITH_ESTIMATES,
+              display_value: CLONED_DESCRIPTION_WITH_ESTIMATES,
+            },
+          },
+        ],
+      } as never);
+      const { result } = renderHook(() => useCrgState());
+      let clonedTemplateData: CtaskTemplateData | null = null;
+
+      await act(async () => {
+        clonedTemplateData = await result.current.actions.cloneCtaskTemplate('CTASK0001234');
+      });
+
+      expect(clonedTemplateData!.durationEstimates).toEqual({
+        implementationMinutes: '45',
+        validationMinutes:     '60',
+        backoutMinutes:        '30',
       });
     });
 

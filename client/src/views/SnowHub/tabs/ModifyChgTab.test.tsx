@@ -696,10 +696,13 @@ describe('ModifyChgTab - Save creates the staged CTASKs and proves they are atta
     expect(createPayloads[0]).toMatchObject({
       change_request: 'change-1',
       short_description: MOCK_CTASK_TEMPLATE.shortDescription,
-      description: MOCK_CTASK_TEMPLATE.description,
+      // The description keeps what the task said and now also carries the estimated-duration block the change
+      // approvers ask for on every CTASK — unestimated phases say so rather than being left out.
+      description: expect.stringContaining(MOCK_CTASK_TEMPLATE.description) as unknown as string,
       assignment_group: 'group-9',
       assigned_to: 'user-9',
     });
+    expect(createPayloads[0].description).toContain('• Backout/recovery and restoration validation:');
     // The CHG itself is still saved through the relay PATCH, before any task is created.
     expect(fetchSpy).toHaveBeenCalledWith('/api/snow-relay/change/CHG0001234', expect.objectContaining({ method: 'PATCH' }));
   });

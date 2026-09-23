@@ -165,6 +165,8 @@ const {
     updateEnvironment: vi.fn(),
     addChangeTask: vi.fn(),
     removeChangeTask: vi.fn(),
+    updateChangeTask: vi.fn(),
+    duplicateChangeTask: vi.fn(),
     appendTasksToExistingChg: vi.fn().mockResolvedValue(undefined),
     updateExistingChg: vi.fn().mockResolvedValue(undefined),
     cloneCtaskTemplate: vi.fn().mockResolvedValue({
@@ -666,7 +668,7 @@ describe('CreateChgTab', () => {
     render(<CreateChgTab />);
 
     await user.selectOptions(screen.getByRole('combobox', { name: 'Select CTASK template for review' }), 'ctask-template-001');
-    await user.click(screen.getByRole('button', { name: 'Add CTASK to Change' }));
+    await user.click(screen.getByRole('button', { name: 'Add to this change' }));
 
     expect(mockActions.addChangeTask).toHaveBeenCalledWith(DEFAULT_CTASK_TEMPLATE);
   });
@@ -697,7 +699,7 @@ describe('CreateChgTab', () => {
     render(<CreateChgTab mode="configuration" />);
 
     await user.selectOptions(screen.getByRole('combobox', { name: 'Select CTASK template' }), 'ctask-template-001');
-    await user.click(screen.getByRole('button', { name: 'Add CTASK to Change' }));
+    await user.click(screen.getByRole('button', { name: 'Add to this change' }));
 
     expect(mockActions.addChangeTask).toHaveBeenCalledWith(DEFAULT_CTASK_TEMPLATE);
   });
@@ -707,7 +709,7 @@ describe('CreateChgTab', () => {
 
     render(<CreateChgTab mode="configuration" />);
 
-    await user.click(screen.getByRole('button', { name: '+ Create CTASK template' }));
+    await user.click(screen.getByRole('button', { name: '+ New CTASK template' }));
     await user.type(screen.getByRole('textbox', { name: 'CTASK template name' }), 'Smoke Test');
     await user.type(screen.getByRole('textbox', { name: 'CTASK short description' }), 'Run smoke tests');
     await user.click(screen.getByRole('button', { name: 'Save CTASK Template' }));
@@ -728,6 +730,55 @@ describe('CreateChgTab', () => {
     await user.click(screen.getByRole('button', { name: 'Remove CTASK Validate production deployment' }));
 
     expect(mockActions.removeChangeTask).toHaveBeenCalledWith('ctask-template-001');
+  });
+
+  // ── A staged CTASK is editable where it sits (GH #387 — "easier to add or modify CTASKs") ──
+
+  it('opens a staged CTASK for editing in place and saves the change through updateChangeTask', async () => {
+    const user = userEvent.setup();
+    mockState.changeTasks = [DEFAULT_CTASK_TEMPLATE];
+
+    render(<CreateChgTab mode="configuration" />);
+    await user.click(screen.getByRole('button', { name: 'Edit CTASK Validate production deployment' }));
+
+    fireEvent.change(screen.getByLabelText('Implementation estimated minutes'), { target: { value: '30' } });
+
+    expect(mockActions.updateChangeTask).toHaveBeenCalledWith(
+      'ctask-template-001',
+      expect.objectContaining({ durationEstimates: expect.objectContaining({ implementationMinutes: '30' }) }),
+    );
+  });
+
+  it('copies a staged CTASK for the near-identical task next door', async () => {
+    const user = userEvent.setup();
+    mockState.changeTasks = [DEFAULT_CTASK_TEMPLATE];
+
+    render(<CreateChgTab mode="configuration" />);
+    await user.click(screen.getByRole('button', { name: 'Duplicate CTASK Validate production deployment' }));
+
+    expect(mockActions.duplicateChangeTask).toHaveBeenCalledWith('ctask-template-001');
+  });
+
+  it('says on the card which duration estimates the approvers are still missing', () => {
+    mockState.changeTasks = [DEFAULT_CTASK_TEMPLATE];
+
+    render(<CreateChgTab mode="configuration" />);
+
+    expect(screen.getByText(/Not estimated: Implementation/)).toBeInTheDocument();
+  });
+
+  it('warns on the card when the planned window cannot hold the estimated work', () => {
+    // One hour of window against two hours of estimated work.
+    mockState.changeTasks = [{
+      ...DEFAULT_CTASK_TEMPLATE,
+      plannedStartDate: '2026-10-01T09:00',
+      plannedEndDate:   '2026-10-01T10:00',
+      durationEstimates: { implementationMinutes: '60', validationMinutes: '30', backoutMinutes: '30' },
+    }];
+
+    render(<CreateChgTab mode="configuration" />);
+
+    expect(screen.getByText(/Window 1 hour too short/)).toBeInTheDocument();
   });
 
   it('adds staged CTASKs to an existing CHG from configuration mode, with task-first labels', async () => {
@@ -1054,7 +1105,7 @@ describe('CreateChgTab', () => {
     render(<CreateChgTab mode="configuration" />);
 
     await user.selectOptions(screen.getByRole('combobox', { name: 'Select CHG template' }), 'tpl-001');
-    await user.click(screen.getAllByRole('button', { name: 'Update selected' })[0]);
+    await user.click(screen.getByRole('button', { name: 'Save this CHG over the template' }));
 
     expect(mockTemplateActions.updateTemplate).toHaveBeenCalledWith(
       'tpl-001',

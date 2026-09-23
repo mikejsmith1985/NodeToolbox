@@ -62,11 +62,12 @@ const mockTemplates = [
   },
 ];
 
-function createDefaultProps(): CtaskEditFormProps {
+function createDefaultProps(overrides: Partial<CtaskEditFormProps> = {}): CtaskEditFormProps {
   return {
     ctaskData: defaultCtaskData,
     templates: mockTemplates,
     onDataChange: vi.fn(),
+    ...overrides,
   };
 }
 
@@ -444,6 +445,54 @@ describe('CtaskEditForm', () => {
       expect(screen.getByLabelText('CTASK planned start date')).toHaveAttribute('aria-label');
       expect(screen.getByLabelText('CTASK planned end date')).toHaveAttribute('aria-label');
       expect(screen.getByLabelText('CTASK close notes')).toHaveAttribute('aria-label');
+    });
+  });
+  // ── Estimated duration (change approvers' work note, 2026-09-22) ──
+
+  describe('estimated duration', () => {
+    it('asks for all three phases the approvers named', () => {
+      render(<CtaskEditForm {...createDefaultProps()} />);
+
+      expect(screen.getByLabelText('Implementation estimated minutes')).toBeInTheDocument();
+      expect(screen.getByLabelText('Post-deployment validation/monitoring estimated minutes')).toBeInTheDocument();
+      expect(screen.getByLabelText('Backout/recovery and restoration validation estimated minutes')).toBeInTheDocument();
+    });
+
+    it('reports an estimate without losing the other two', async () => {
+      const onDataChange = vi.fn();
+      render(<CtaskEditForm {...createDefaultProps({
+        ctaskData: { ...populatedCtaskData, durationEstimates: { implementationMinutes: '30', validationMinutes: '15', backoutMinutes: '' } },
+        onDataChange,
+      })} />);
+
+      fireEvent.change(screen.getByLabelText('Backout/recovery and restoration validation estimated minutes'), { target: { value: '45' } });
+
+      expect(onDataChange).toHaveBeenCalledWith(expect.objectContaining({
+        durationEstimates: { implementationMinutes: '30', validationMinutes: '15', backoutMinutes: '45' },
+      }));
+    });
+
+    it('confirms a window that holds the work, in the terms the approver used', () => {
+      // 08:00 → 09:00 against 45 minutes of work.
+      render(<CtaskEditForm {...createDefaultProps({
+        ctaskData: { ...populatedCtaskData, durationEstimates: { implementationMinutes: '20', validationMinutes: '15', backoutMinutes: '10' } },
+      })} />);
+
+      expect(screen.getByLabelText('Planned window verdict')).toHaveTextContent('sufficient for implementation and validation');
+    });
+
+    it('says plainly when the planned window is too short', () => {
+      render(<CtaskEditForm {...createDefaultProps({
+        ctaskData: { ...populatedCtaskData, durationEstimates: { implementationMinutes: '60', validationMinutes: '30', backoutMinutes: '30' } },
+      })} />);
+
+      expect(screen.getByLabelText('Planned window verdict')).toHaveTextContent('SHORT');
+    });
+
+    it('shows nothing rather than zeros for a template saved before estimates existed', () => {
+      render(<CtaskEditForm {...createDefaultProps({ ctaskData: populatedCtaskData })} />);
+
+      expect(screen.getByLabelText('Implementation estimated minutes')).toHaveValue(null);
     });
   });
 });

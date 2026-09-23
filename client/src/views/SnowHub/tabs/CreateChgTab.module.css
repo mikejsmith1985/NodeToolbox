@@ -435,6 +435,54 @@
   align-items: center;
 }
 
+/* A staged CTASK is now editable in place, so its card holds a header row, a facts line and an editor. */
+.ctaskCardHeader {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--spacing-sm);
+  align-items: center;
+}
+
+.ctaskCardActions {
+  display: flex;
+  gap: var(--spacing-sm);
+  align-items: center;
+}
+
+.ctaskCardFacts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+/* The one fact an approver sends a change back for: the window does not hold the work. */
+.ctaskCardWarning {
+  color: var(--color-danger, #d9534f);
+  font-weight: 600;
+}
+
+.durationSection {
+  display: grid;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+}
+
+.durationInputs {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--spacing-md);
+}
+
+/* Inline editing inside a card: one column, so the form does not fight the card's own grid. */
+.compactForm {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .clonePanel,
 .environmentMappingPanel {
   display: flex;

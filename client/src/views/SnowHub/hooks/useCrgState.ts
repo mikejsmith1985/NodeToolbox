@@ -7,6 +7,13 @@ import { snowFetch } from '../../../services/snowApi.ts';
 import { CRG_WIZARD_STORAGE_KEY } from './crgStorageKeys.ts';
 import { inferEnvironmentKeyFromValue } from './environmentKeyInference.ts';
 import { listStagedCtasksToCreate, type AdoptedCtaskRole } from './ctaskDuplicates.ts';
+import {
+  applyDurationBlock,
+  normalizeEstimates,
+  readEstimatesFromText,
+  rollUpEstimates,
+  type DurationEstimates,
+} from '../ctaskDurations.ts';
 import type { JiraIssue } from '../../../types/jira.ts';
 import { useCrgSubmissionDebugStore } from '../../../hooks/useCrgSubmissionDebugStore.ts';
 
@@ -361,6 +368,11 @@ export interface CtaskTemplate {
   plannedEndDate: string;
   closeNotes: string;
   /**
+   * How long implementation, post-deployment validation and backout are each expected to take. Optional because
+   * templates saved before the CAB asked for these carry none; every read goes through normalizeEstimates.
+   */
+  durationEstimates?: DurationEstimates;
+  /**
    * When a queued CTASK was auto-staged from a CHG template's link, this records
    * the source CTASK-template id so re-applying the same template does not stack
    * duplicate copies. Absent on saved templates and manually added CTASKs.
@@ -470,6 +482,10 @@ interface CrgActions {
   applyTemplate: (template: CrgTemplate, availableCtaskTemplates?: CtaskTemplate[]) => void;
   addChangeTask: (template: CtaskTemplate) => void;
   removeChangeTask: (taskId: string) => void;
+  /** Edits a staged CTASK in place — the list is editable, not just add-and-delete. */
+  updateChangeTask: (taskId: string, taskData: CtaskTemplateData) => void;
+  /** Copies a staged CTASK directly beneath itself, for the near-identical task next door. */
+  duplicateChangeTask: (taskId: string) => void;
   /** Sets which CTASK templates are linked to the CHG template currently being edited. */
   setLinkedCtaskTemplateIds: (ctaskTemplateIds: string[]) => void;
   /** Toggles whether CHG creation reconciles staged CTASKs with auto-created ones. */
@@ -787,7 +803,15 @@ function buildChangeTaskPayload(changeSysId: string, template: CtaskTemplate): R
     short_description:  template.shortDescription || template.name || CTASK_DEFAULT_SHORT_DESCRIPTION,
   };
 
-  if (template.description) ctaskPayload.description = template.description;
+  // Every CTASK carries the estimated-duration block the CAB asks for, whether or not anyone filled it in —
+  // an unestimated phase reads "not estimated", which is the question being asked rather than a silent gap.
+  const describedWork = applyDurationBlock(
+    template.description,
+    normalizeEstimates(template.durationEstimates),
+    template.plannedStartDate,
+    template.plannedEndDate,
+  );
+  ctaskPayload.description = describedWork;
   if (template.assignmentGroup.sysId) ctaskPayload.assignment_group = template.assignmentGroup.sysId;
   if (template.assignedTo.sysId) ctaskPayload.assigned_to = template.assignedTo.sysId;
   if (template.plannedStartDate) ctaskPayload.planned_start_date = formatSnowDateTimeForApi(template.plannedStartDate);
@@ -861,9 +885,14 @@ export function formatSnowDateTimeForApi(inputValue: string): string {
 }
 
 function buildCtaskTemplateDataFromRecord(ctaskRecord: Record<string, unknown>): CtaskTemplateData {
+  const recordDescription = extractStringValue(ctaskRecord.description);
+
   return {
     shortDescription: extractStringValue(ctaskRecord.short_description),
-    description:      extractStringValue(ctaskRecord.description),
+    description:      recordDescription,
+    // A CTASK cloned out of ServiceNow carries its estimates only as text in the description; read them back so
+    // re-submitting keeps the numbers an engineer already recorded instead of resetting them to "not estimated".
+    durationEstimates: readEstimatesFromText(recordDescription),
     assignmentGroup:  extractSnowReference(ctaskRecord.assignment_group),
     assignedTo:       extractSnowReference(ctaskRecord.assigned_to),
     plannedStartDate: normalizeSnowDateTimeForInput(ctaskRecord.planned_start_date),
@@ -1067,10 +1096,24 @@ function buildChangeRequestPayload(
   if (state.chgPlanningAssessment.successProbability)            changeRequestPayload.u_success_probability    = state.chgPlanningAssessment.successProbability;
   if (state.chgPlanningAssessment.canBeBackedOut)                changeRequestPayload.u_can_be_backed_out     = state.chgPlanningAssessment.canBeBackedOut;
 
-  if (state.chgPlanningContent.implementationPlan) changeRequestPayload.implementation_plan = state.chgPlanningContent.implementationPlan;
+  // The change as a whole carries the same estimated-duration block, rolled up from its CTASKs and checked against
+  // the window this submission is actually asking for — so the approver sees on the CHG what they asked each CTASK
+  // to state, without anyone typing a second set of numbers that could disagree with the first.
+  const implementationPlanWithDurations = applyDurationBlock(
+    state.chgPlanningContent.implementationPlan,
+    rollUpEstimates(state.changeTasks.map((changeTask) => changeTask.durationEstimates)),
+    changeSubmissionTarget.plannedStartDate,
+    changeSubmissionTarget.plannedEndDate,
+  );
+  changeRequestPayload.implementation_plan = implementationPlanWithDurations;
   if (state.chgPlanningContent.backoutPlan)        changeRequestPayload.backout_plan        = state.chgPlanningContent.backoutPlan;
   if (state.chgPlanningContent.testPlan)           changeRequestPayload.test_plan           = state.chgPlanningContent.testPlan;
-  applyDynamicPlanningAliasValues(changeRequestPayload, state, changeSubmissionTarget.impactedPersonsAware);
+  applyDynamicPlanningAliasValues(
+    changeRequestPayload,
+    state,
+    changeSubmissionTarget.impactedPersonsAware,
+    implementationPlanWithDurations,
+  );
 
   return changeRequestPayload;
 }
@@ -1241,6 +1284,12 @@ function applyDynamicPlanningAliasValues(
   changeRequestPayload: Record<string, unknown>,
   state: CrgState,
   impactedPersonsAwareOverride?: string,
+  /**
+   * The implementation plan as it should actually be written — the typed plan plus the estimated-duration block.
+   * This writer runs last and writes every alias, so without the override it would put the plain plan back over
+   * the block and the approver would never see the estimates on the CHG.
+   */
+  implementationPlanOverride?: string,
 ): void {
   const mappedImpactedPersonsAware = (impactedPersonsAwareOverride ?? readPrimaryChangeSubmissionTarget(state).impactedPersonsAware).trim();
   const planningAssessmentValueByKey: Record<keyof ChgPlanningAssessment, string> = {
@@ -1262,8 +1311,14 @@ function applyDynamicPlanningAliasValues(
     }
   }
 
+  const planningContentValueByKey: Record<keyof ChgPlanningContent, string> = {
+    implementationPlan: implementationPlanOverride ?? state.chgPlanningContent.implementationPlan,
+    backoutPlan:        state.chgPlanningContent.backoutPlan,
+    testPlan:           state.chgPlanningContent.testPlan,
+  };
+
   for (const [contentKey, apiFieldNames] of Object.entries(PLANNING_CONTENT_ALIAS_FIELD_NAMES_BY_STATE_KEY)) {
-    const planningContentValue = state.chgPlanningContent[contentKey as keyof ChgPlanningContent].trim();
+    const planningContentValue = planningContentValueByKey[contentKey as keyof ChgPlanningContent].trim();
     if (!planningContentValue) continue;
     // Write to every known alias — SNow ignores fields it doesn't recognise
     for (const apiFieldName of apiFieldNames) {
@@ -2139,6 +2194,41 @@ export function useCrgState(options?: UseCrgStateOptions): { state: CrgState; ac
     }));
   }, []);
 
+  /** Edits one staged CTASK in place, so a task can be corrected without deleting and re-adding it. */
+  const updateChangeTask = useCallback((taskId: string, taskData: CtaskTemplateData) => {
+    setState((previousState) => ({
+      ...previousState,
+      changeTasks: previousState.changeTasks.map((task) => (
+        task.id === taskId ? { ...task, ...taskData, id: task.id, name: task.name, createdAt: task.createdAt } : task
+      )),
+    }));
+  }, []);
+
+  /**
+   * Copies a staged CTASK, placing the copy directly after it.
+   *
+   * The copy deliberately drops sourceTemplateId: it is a task of its own now, and leaving the link would make
+   * re-applying the CHG template treat the copy as the template's already-staged instance.
+   */
+  const duplicateChangeTask = useCallback((taskId: string) => {
+    setState((previousState) => {
+      const sourceIndex = previousState.changeTasks.findIndex((task) => task.id === taskId);
+      if (sourceIndex === -1) {
+        return previousState;
+      }
+      const sourceTask = previousState.changeTasks[sourceIndex];
+      const copiedTask: CtaskTemplate = {
+        ...sourceTask,
+        id: crypto.randomUUID(),
+        shortDescription: sourceTask.shortDescription ? `${sourceTask.shortDescription} (copy)` : sourceTask.shortDescription,
+        sourceTemplateId: undefined,
+      };
+      const nextChangeTasks = [...previousState.changeTasks];
+      nextChangeTasks.splice(sourceIndex + 1, 0, copiedTask);
+      return { ...previousState, changeTasks: nextChangeTasks };
+    });
+  }, []);
+
   const appendTasksToExistingChg = useCallback(async (chgNumber: string) => {
     const normalizedChangeNumber = chgNumber.trim().toUpperCase();
     if (!normalizedChangeNumber) {
@@ -2483,6 +2573,8 @@ export function useCrgState(options?: UseCrgStateOptions): { state: CrgState; ac
       applyTemplate,
       addChangeTask,
       removeChangeTask,
+      updateChangeTask,
+      duplicateChangeTask,
       setLinkedCtaskTemplateIds,
       setReconcileAutoCtasks,
       appendTasksToExistingChg,
@@ -2500,6 +2592,7 @@ export function useCrgState(options?: UseCrgStateOptions): { state: CrgState; ac
     setChgBasicInfo, setChgPlanningAssessment, setChgPlanningContent,
     pinCustomSnowField, removeCustomSnowField,
     setCloneChgNumber, cloneFromChg, applyTemplate, addChangeTask, removeChangeTask,
+    updateChangeTask, duplicateChangeTask,
     setLinkedCtaskTemplateIds, setReconcileAutoCtasks,
     appendTasksToExistingChg, cloneCtaskTemplate, updateEnvironment, goToStep, reset, createChg,
     updateExistingChg,

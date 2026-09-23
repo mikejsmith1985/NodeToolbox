@@ -24,6 +24,13 @@ import { parseAiAssistChgResponse, useAiAssist } from '../hooks/useAiAssist.ts';
 import { useCopyFeedback } from '../../../hooks/useCopyFeedback.ts';
 import type { SnowChoiceOptionMap } from '../hooks/useSnowChoiceOptions.ts';
 import { useSnowChoiceOptions } from '../hooks/useSnowChoiceOptions.ts';
+import {
+  checkWindowCoversEstimates,
+  EMPTY_DURATION_ESTIMATES,
+  formatMinutes,
+  listMissingEstimateLabels,
+  normalizeEstimates,
+} from '../ctaskDurations.ts';
 import { CtaskEditForm } from '../components/CtaskEditForm.tsx';
 import { SnowLookupField } from '../components/SnowLookupField.tsx';
 import {
@@ -227,6 +234,7 @@ function createEmptyCtaskTemplateData(): CtaskTemplateData {
     plannedStartDate: '',
     plannedEndDate:   '',
     closeNotes:       '',
+    durationEstimates: { ...EMPTY_DURATION_ESTIMATES },
   };
 }
 
@@ -239,6 +247,8 @@ function buildCtaskTemplateData(template: CtaskTemplate): CtaskTemplateData {
     plannedStartDate: template.plannedStartDate,
     plannedEndDate:   template.plannedEndDate,
     closeNotes:       template.closeNotes,
+    // Normalized because templates saved before the CAB asked for estimates carry none.
+    durationEstimates: normalizeEstimates(template.durationEstimates),
   };
 }
 
@@ -902,18 +912,24 @@ function CrgWorkspacePanel({
                 ))}
               </select>
               <button className={styles.secondaryButton} disabled={!selectedTemplate} onClick={handleApplyTemplate} type="button">
-                Apply to CRG defaults
+                Load into this CHG
               </button>
               <button className={styles.secondaryButton} disabled={!selectedTemplateId} onClick={handleUpdateTemplate} type="button">
-                Update selected
+                Save this CHG over the template
               </button>
               <button className={styles.linkButton} disabled={!selectedTemplateId} onClick={handleDeleteTemplate} type="button">
-                Delete
+                Delete template
               </button>
             </div>
           ) : (
             <p className={styles.panelHint}>No CHG templates saved yet.</p>
           )}
+          {selectedTemplate ? (
+            <p className={styles.panelHint}>
+              {`“${selectedTemplate.name}” is selected. Load into this CHG fills the form from it; `
+                + 'Save this CHG over the template replaces what the template holds with the form as it stands now.'}
+            </p>
+          ) : null}
 
           <div className={styles.linkedCtaskSection}>
             <h5 className={styles.panelSectionTitle}>Linked CTASKs</h5>
@@ -2005,6 +2021,81 @@ function buildConsolidatedResult(state: CrgStateData): string {
   ].join('\n');
 }
 
+/** One staged CTASK in the list: what it is, whether its window holds the work, and the controls to change it. */
+interface StagedCtaskCardProps {
+  task: CtaskTemplate;
+  templates: CtaskTemplate[];
+  onUpdate: (taskData: CtaskTemplateData) => void;
+  onDuplicate: () => void;
+  onRemove: () => void;
+}
+
+/**
+ * Renders a staged CTASK as a card that can be opened and edited where it sits.
+ *
+ * Before this, a staged CTASK could only be removed and re-added from a template, so correcting one date meant
+ * rebuilding the task. The card also states the two facts an approver sends a change back for: the phases still
+ * unestimated, and a planned window too short to hold the work.
+ */
+function StagedCtaskCard({ task, templates, onUpdate, onDuplicate, onRemove }: StagedCtaskCardProps) {
+  const [isEditing, setIsEditing] = useState<boolean>(false);
+  const taskLabel = task.shortDescription || task.name || 'Untitled CTASK';
+  const durationEstimates = normalizeEstimates(task.durationEstimates);
+  const windowCoverage = checkWindowCoversEstimates(durationEstimates, task.plannedStartDate, task.plannedEndDate);
+  const missingEstimateLabels = listMissingEstimateLabels(durationEstimates);
+
+  return (
+    <div className={styles.ctaskCard}>
+      <div className={styles.ctaskCardHeader} style={{ gridColumn: 'span 2' }}>
+        <strong>{taskLabel}</strong>
+        <div className={styles.ctaskCardActions}>
+          <button
+            aria-label={`${isEditing ? 'Close' : 'Edit'} CTASK ${taskLabel}`}
+            className={styles.secondaryButton}
+            onClick={() => setIsEditing((wasEditing) => !wasEditing)}
+            type="button"
+          >
+            {isEditing ? 'Done' : 'Edit'}
+          </button>
+          <button
+            aria-label={`Duplicate CTASK ${taskLabel}`}
+            className={styles.secondaryButton}
+            onClick={onDuplicate}
+            type="button"
+          >
+            Duplicate
+          </button>
+          <button aria-label={`Remove CTASK ${taskLabel}`} className={styles.linkButton} onClick={onRemove} type="button">
+            Remove
+          </button>
+        </div>
+      </div>
+
+      <div className={styles.ctaskCardFacts} style={{ gridColumn: 'span 2' }}>
+        <span>{task.assignmentGroup.displayName || 'No assignment group selected'}</span>
+        {missingEstimateLabels.length > 0 ? (
+          <span className={styles.ctaskCardWarning}>
+            {`Not estimated: ${missingEstimateLabels.join(', ')}`}
+          </span>
+        ) : (
+          <span>{`Estimated total ${formatMinutes(windowCoverage.totalEstimatedMinutes)}`}</span>
+        )}
+        {windowCoverage.windowMinutes !== null && !windowCoverage.isSufficient && windowCoverage.totalEstimatedMinutes > 0 ? (
+          <span className={styles.ctaskCardWarning}>
+            {`Window ${formatMinutes(windowCoverage.shortfallMinutes)} too short`}
+          </span>
+        ) : null}
+      </div>
+
+      {isEditing ? (
+        <div style={{ gridColumn: 'span 2' }}>
+          <CtaskEditForm ctaskData={buildCtaskTemplateData(task)} isCompact onDataChange={onUpdate} templates={templates} />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function CtaskTemplatePanel({ state, actions, templates, saveTemplate, updateTemplate, deleteTemplate }: CrgStepProps & CtaskTemplateExtras) {
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
   const [isEditorVisible, setIsEditorVisible] = useState<boolean>(false);
@@ -2025,6 +2116,17 @@ function CtaskTemplatePanel({ state, actions, templates, saveTemplate, updateTem
 
     setTemplateName(nextTemplate.name);
     setCtaskDraft(buildCtaskTemplateData(nextTemplate));
+    // Show the fields straight away. Selecting a template used to load it invisibly, so "Update selected"
+    // saved edits nobody could see they were making.
+    setIsEditorVisible(true);
+  }
+
+  /** Clears the editor back to a blank CTASK, so "new" is a button rather than a de-selection trick. */
+  function handleStartBlankTemplate(): void {
+    setSelectedTemplateId('');
+    setTemplateName('');
+    setCtaskDraft(createEmptyCtaskTemplateData());
+    setIsEditorVisible(true);
   }
 
   function handleSaveTemplate(): void {
@@ -2112,21 +2214,26 @@ function CtaskTemplatePanel({ state, actions, templates, saveTemplate, updateTem
           {templates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}
         </select>
         <button className={styles.secondaryButton} disabled={!selectedTemplate} onClick={() => selectedTemplate && actions.addChangeTask(selectedTemplate)} type="button">
-          Add CTASK to Change
+          Add to this change
         </button>
         <button className={styles.secondaryButton} disabled={!selectedTemplateId} onClick={handleUpdateTemplate} type="button">
-          Update selected
+          Save edits to template
         </button>
         <button className={styles.linkButton} disabled={!selectedTemplateId} onClick={() => deleteTemplate(selectedTemplateId)} type="button">
-          Delete
+          Delete template
         </button>
       </div>
 
-      <button className={styles.linkButton} onClick={() => setIsEditorVisible((wasVisible) => !wasVisible)} type="button">
-        + Create CTASK template
+      <button className={styles.linkButton} onClick={handleStartBlankTemplate} type="button">
+        + New CTASK template
       </button>
       {isEditorVisible ? (
         <div>
+          <p className={styles.panelHint}>
+            {selectedTemplate
+              ? `Editing the saved template “${selectedTemplate.name}”. Changes are kept when you choose Save edits to template.`
+              : 'A new CTASK template. Give it a name, then choose Save CTASK Template.'}
+          </p>
           <label className={styles.fieldGroup}>
             <span className={styles.fieldLabel}>CTASK template name</span>
             <input
@@ -2141,23 +2248,30 @@ function CtaskTemplatePanel({ state, actions, templates, saveTemplate, updateTem
             templates={[]}
             onDataChange={setCtaskDraft}
           />
-          <button className={styles.primaryButton} onClick={handleSaveTemplate} type="button">
-            Save CTASK Template
-          </button>
+          <div className={styles.buttonRow}>
+            <button className={styles.primaryButton} onClick={handleSaveTemplate} type="button">
+              Save CTASK Template
+            </button>
+            <button className={styles.linkButton} onClick={() => setIsEditorVisible(false)} type="button">
+              Close editor
+            </button>
+          </div>
         </div>
       ) : null}
 
+      <h4 className={styles.panelSectionTitle}>CTASKs on this change ({state.changeTasks.length})</h4>
       <div className={styles.ctaskList}>
         {state.changeTasks.length === 0 ? (
           <p className={styles.panelHint}>No CTASKs selected for this change.</p>
         ) : state.changeTasks.map((task) => (
-          <div className={styles.ctaskCard} key={task.id}>
-            <strong>{task.shortDescription || task.name}</strong>
-            <span>{task.assignmentGroup.displayName || 'No assignment group selected'}</span>
-            <button className={styles.linkButton} onClick={() => actions.removeChangeTask(task.id)} type="button" aria-label={`Remove CTASK ${task.shortDescription || task.name}`}>
-              Remove
-            </button>
-          </div>
+          <StagedCtaskCard
+            key={task.id}
+            onDuplicate={() => actions.duplicateChangeTask(task.id)}
+            onRemove={() => actions.removeChangeTask(task.id)}
+            onUpdate={(taskData) => actions.updateChangeTask(task.id, taskData)}
+            task={task}
+            templates={templates}
+          />
         ))}
       </div>
 
@@ -2240,7 +2354,7 @@ function ResultsStep({ state, actions, ctaskTemplates, environmentValueByKey, is
                 onClick={() => selectedCtaskTemplate && actions.addChangeTask(selectedCtaskTemplate)}
                 type="button"
               >
-                Add CTASK to Change
+                Add to this change
               </button>
             </div>
           ) : null}

@@ -5,6 +5,13 @@ import type { ChangeEvent } from 'react';
 import { useState } from 'react';
 
 import type { CtaskTemplateData, SnowReference } from '../hooks/useCrgState.ts';
+import {
+  checkWindowCoversEstimates,
+  describeWindowCoverage,
+  DURATION_PHASES,
+  normalizeEstimates,
+  type DurationEstimates,
+} from '../ctaskDurations.ts';
 import { SnowLookupField } from './SnowLookupField.tsx';
 import styles from '../tabs/CreateChgTab.module.css';
 
@@ -20,6 +27,8 @@ export interface CtaskTemplate {
   plannedStartDate: string;
   plannedEndDate: string;
   closeNotes: string;
+  /** How long implementation, validation and backout are each expected to take (the CAB asks for all three). */
+  durationEstimates?: DurationEstimates;
 }
 
 /** Props for CtaskEditForm component. */
@@ -96,6 +105,7 @@ export function CtaskEditForm({
       plannedStartDate: nextTemplate.plannedStartDate,
       plannedEndDate: nextTemplate.plannedEndDate,
       closeNotes: nextTemplate.closeNotes,
+      durationEstimates: normalizeEstimates(nextTemplate.durationEstimates),
     };
     onDataChange(templateData);
     setSelectedTemplateId('');
@@ -108,6 +118,23 @@ export function CtaskEditForm({
     setSaveAsTemplateName('');
     setShowSaveAsTemplate(false);
   }
+
+  // Changes one of the three duration estimates, keeping the other two as they were.
+  function handleEstimateChange(phaseKey: keyof DurationEstimates, typedMinutes: string): void {
+    onDataChange({
+      ...ctaskData,
+      durationEstimates: { ...normalizeEstimates(ctaskData.durationEstimates), [phaseKey]: typedMinutes },
+    });
+  }
+
+  const durationEstimates = normalizeEstimates(ctaskData.durationEstimates);
+  // The approver's actual question — does the planned window hold implementation, validation AND a full backout —
+  // answered live, in the form, rather than in a work note three days after submission.
+  const windowCoverage = checkWindowCoversEstimates(
+    durationEstimates,
+    ctaskData.plannedStartDate,
+    ctaskData.plannedEndDate,
+  );
 
   const formClassName = isCompact ? `${styles.ctaskEditorGrid} ${styles.compactForm}` : styles.ctaskEditorGrid;
 
@@ -190,6 +217,32 @@ export function CtaskEditForm({
           value={ctaskData.plannedEndDate}
         />
       </label>
+
+      {/* Estimated duration — required on every CTASK by the change approvers (work note, 2026-09-22) */}
+      <div className={styles.durationSection} style={{ gridColumn: 'span 2' }}>
+        <span className={styles.fieldLabel}>Estimated duration (minutes)</span>
+        <div className={styles.durationInputs}>
+          {DURATION_PHASES.map((phase) => (
+            <label className={styles.fieldGroup} key={phase.key}>
+              <span className={styles.fieldLabel}>{phase.label}</span>
+              <input
+                aria-label={`${phase.label} estimated minutes`}
+                className={styles.input}
+                min="0"
+                onChange={(event) => handleEstimateChange(phase.key, event.target.value)}
+                placeholder="e.g. 45"
+                type="number"
+                value={durationEstimates[phase.key]}
+              />
+            </label>
+          ))}
+        </div>
+        {/* Deliberately not role="status": several surfaces already own the page's one status line, and this
+            verdict is read where it sits rather than announced over whatever else just happened. */}
+        <p aria-label="Planned window verdict" className={windowCoverage.isSufficient ? styles.successText : styles.panelHint}>
+          {describeWindowCoverage(windowCoverage)}
+        </p>
+      </div>
 
       {/* Close Notes */}
       <label className={styles.fieldGroup}>

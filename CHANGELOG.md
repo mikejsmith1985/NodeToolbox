@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Every CTASK and CHG now states its estimated durations (GH #387, CAB work note).** The change approvers
+  asked each CTASK to document **Implementation**, **Post-deployment validation/monitoring** and
+  **Backout/recovery and restoration validation**, and to confirm the planned window allows for all three.
+  The CTASK form now asks for those three estimates and answers the window question live — *"Planned window:
+  4 hours — sufficient for implementation and validation while preserving enough time for complete recovery
+  and restoration validation if backout is required"*, or *"1 hour 15 minutes SHORT of the 2 hours 30 minutes
+  estimated. Extend the window before submitting."* The same block is written into every CTASK's description,
+  and onto the CHG's implementation plan **added up from its own CTASKs** — so the change and its tasks can
+  never quote different numbers. A phase nobody estimated says *"not estimated"* rather than being left out,
+  re-generating replaces the block instead of stacking copies, and a CTASK cloned from ServiceNow keeps the
+  estimates it already recorded.
 - **Epic Intake gives your notes back with the Epic keys in them (GH #387).** A new "Notes with Epic
   keys" panel shows the notes exactly as pasted — bullets, tabs and order — with each item's Epic
   written beside its line: "• AEP — DENP-905 (new Epic, Enrollment scope)", "• Core Integration —
@@ -16,6 +27,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   shared showing which Epic covers which piece of scope.
 
 ### Fixed
+- **The CHG's planning aliases no longer overwrite the implementation plan's own content.** The alias writer
+  runs last and re-writes every known field name for a plan, so anything added to the implementation plan after
+  it was first set was silently discarded before reaching ServiceNow. It is now given the final text to write.
 - **"Enrich an Existing Feature" now adds to the Feature instead of replacing it (GH #387).** Enriching a
   Feature that already carried a full requirements document — objective, scope table, numbered rules,
   migration filters, open questions — handed back a short nine-section rewrite, and everything else was
@@ -35,6 +49,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   instead of "Open — waiting on reviewing the draft".
 
 ### Changed
+- **Staged CTASKs can be edited where they sit (GH #387).** A CTASK added to a change used to be removable and
+  nothing else, so fixing one date meant deleting it and rebuilding it from a template. Each now has **Edit**
+  (the full form, opened in place), **Duplicate** (for the near-identical task next door) and **Remove**, under
+  a heading that counts them. Each card states the phases still unestimated and warns when the planned window
+  is too short for the work — the two things a change gets sent back for.
+- **CTASK and CHG template buttons now say what they do.** "Update selected" is **Save edits to template** /
+  **Save this CHG over the template**, "Apply to CRG defaults" is **Load into this CHG**, and "Delete" is
+  **Delete template**. Picking a CTASK template opens its fields immediately — it used to load invisibly, so
+  "Update selected" saved edits nobody could see they were making. **+ New CTASK template** clears the editor,
+  and the template being edited is named on screen.
 - **Epic Intake is now just copy and paste (GH #387 feedback).** The intake is a loop: the next prompt
   is on screen as soon as the notes are in, you copy it out and paste the answer back, and the next
   prompt appears — until everything is answered and only **Create** is left. Toolbox checks DENP on
