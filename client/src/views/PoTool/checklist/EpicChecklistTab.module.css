@@ -1,0 +1,145 @@
+/* EpicChecklistTab.module.css — Layout for the Epic checklist review: load bar, the Epic's progress,
+   then one row per open item with what was found beneath it.
+   Class names follow FeatureCompositionTab.module.css so both PO Tool tabs read as one surface. */
+
+.checklistTab {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* ── Load bar ── */
+
+.loadBar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.loadField {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.fieldLabel {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  opacity: 0.7;
+}
+
+.textInput {
+  padding: 6px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-field-bg);
+  color: inherit;
+  font: inherit;
+}
+
+.primaryButton {
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--color-accent);
+  background: var(--color-accent);
+  color: var(--color-text-on-accent);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.primaryButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── Messages ── */
+
+.errorBanner,
+.infoBanner {
+  padding: 8px 12px;
+  border-radius: 6px;
+  border-left: 4px solid;
+  font-size: 0.85rem;
+}
+
+.errorBanner {
+  border-color: var(--color-tone-danger-fg);
+  background: var(--color-tone-danger-bg);
+}
+
+.infoBanner {
+  border-color: var(--color-accent);
+  background: var(--color-tone-info-bg);
+}
+
+.panelTitle {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.panelHint {
+  margin: 0;
+  font-size: 0.85rem;
+  opacity: 0.75;
+}
+
+/* ── The Epic being checked ── */
+
+.epicSummary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: baseline;
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-card-bg);
+  font-size: 0.9rem;
+}
+
+/* ── One row per open checklist item ── */
+
+.reviewList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.reviewRow {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-card-bg);
+}
+
+.reviewRowHeader {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+/* The grounds for the tick, which is the part a sceptical reader actually needs. */
+.reviewRowMeta {
+  margin: 0;
+  padding-left: 24px;
+  font-size: 0.8rem;
+  opacity: 0.75;
+}
+
+.applyRow {
+  display: flex;
+  justify-content: flex-start;
+}

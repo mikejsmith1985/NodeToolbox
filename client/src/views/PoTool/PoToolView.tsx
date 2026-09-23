@@ -19,6 +19,7 @@ import { PlannerTab } from '../ArtView/piPlan/PlannerTab.tsx';
 import FeatureCompositionTab from './FeatureCompositionTab';
 import FeatureSplitterTab from './FeatureSplitterTab';
 import BulkRewriteTab from './rewrite/BulkRewriteTab.tsx';
+import EpicChecklistTab from './checklist/EpicChecklistTab.tsx';
 import FeatureReviewTab from '../SprintDashboard/FeatureReviewTab.tsx';
 import { useStandupRosterStore } from '../SprintDashboard/hooks/useStandupRosterStore';
 import { buildArtTeamFromProfile } from './poToolArtTeam';
@@ -33,6 +34,7 @@ const PO_TOOL_TAB_DEFINITIONS: PrimaryTabOption<PoToolTab>[] = [
   { key: 'splitter', label: 'Feature Splitter' },
   { key: 'composition', label: 'Feature Composition' },
   { key: 'rewrite', label: 'Bulk Re-write' },
+  { key: 'checklist', label: 'Epic Checklist' },
 ];
 
 /** Matches the ids PrimaryTabs generates, so each panel is announced with its tab. */
@@ -116,6 +118,12 @@ export default function PoToolView() {
     if (activeTab === 'splitter') {
       // Keyed by team: a draft belongs to one team, so switching team starts a clean workspace.
       return <FeatureSplitterTab key={selectedTeamProfileId} dashboardTeamProfileId={selectedTeamProfileId} />;
+    }
+
+    if (activeTab === 'checklist') {
+      // Checks one Epic against its own Definition of Ready / Done checklist. It works from an Epic key rather
+      // than the team selection, so it is deliberately not keyed by team.
+      return <EpicChecklistTab />;
     }
 
     if (activeTab === 'rewrite') {

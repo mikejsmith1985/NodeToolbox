@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **PO Tool → Epic Checklist: have an Epic checked against its own Definition of Ready and Done (GH #387).**
+  Load an Epic by key and Toolbox reads its Smart Checklist — the `CUC - DoR` and `CUC - DoD` items, under their
+  own group headers — and shows how many are already ticked. With AI Assist unlocked, one prompt covers every
+  open item at once; the reply says which the Epic satisfies **and quotes the words in the Epic that satisfy
+  them**, so each proposed tick is shown with its grounds. An item claimed as satisfied with nothing quoted is
+  never ticked. Untick anything you disagree with, then one button ticks the rest on the Epic.
+  **What it will not do**: it writes the Epic's own checklist only — the shared template the Epic was created
+  from is never touched — and a save rewrites the field with every line it did not tick byte for byte, so
+  headers, notes, item metadata and your own wording all survive. The checklist field is found by name on your
+  instance rather than hard-coded; when there is no such field it says so instead of showing an empty checklist.
 - **Every CTASK and CHG now states its estimated durations (GH #387, CAB work note).** The change approvers
   asked each CTASK to document **Implementation**, **Post-deployment validation/monitoring** and
   **Backout/recovery and restoration validation**, and to confirm the planned window allows for all three.
