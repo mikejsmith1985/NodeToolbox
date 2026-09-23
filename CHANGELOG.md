@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Readiness review across a whole JQL query (GH #387).** The tab now asks which question you are putting:
+  **One Epic**, or **A JQL query**. In query mode, paste any JQL — `project = DENP AND issuetype = Epic AND
+  statusCategory != Done` — and every Epic it returns is reviewed in **one round trip**, producing a single
+  document: a table of where each Epic stands (Definition of Ready, Definition of Done, how many criteria are
+  outstanding), then each Epic's criteria with the evidence and what is still needed. Click any Epic key in the
+  table to read its detail; **Copy full report** puts the whole thing on the clipboard as markdown for a planning
+  agenda. A large batch is split into numbered parts and says so — an Epic whose part was never pasted is
+  reported as **not reviewed**, never as ready. Loading is two Jira requests for the whole batch, not two per
+  Epic, and a query matching more than 25 Epics says how many it matched and reviews the first 25.
+  In this mode every Epic is judged against the **same** standard criteria, so the table compares like with like,
+  and **nothing is written to Jira** — ticking stays in single-Epic mode, where you can see what you are changing.
+
 ### Changed
 - **Epic Checklist is now a readiness review, not a checklist ticker (GH #387 feedback).** The tab's output is a
   **report**: every Definition of Ready and Definition of Done criterion comes back **Satisfied / Partly

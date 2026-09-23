@@ -10,6 +10,7 @@
 
 import { useState } from 'react';
 
+import BatchReadinessPanel from './BatchReadinessPanel.tsx';
 import PoAiPanel from '../ai/PoAiPanel.tsx';
 import { loadHygieneFieldConfig } from '../../Hygiene/checks/hygieneFieldConfig.ts';
 import { jiraGet } from '../../../services/jiraApi.ts';
@@ -66,8 +67,12 @@ async function fetchChildSummaryLines(issueKey: string): Promise<string[]> {
   }
 }
 
-/** The Product Owner's readiness review of one Epic. */
+/** Which question is being asked: about one Epic, or about everything a query returns. */
+type ReviewMode = 'singleEpic' | 'jqlBatch';
+
+/** The Product Owner's readiness review. */
 export default function EpicChecklistTab() {
+  const [reviewMode, setReviewMode] = useState<ReviewMode>('singleEpic');
   const [issueKeyInput, setIssueKeyInput] = useState('');
   const [loadedEpic, setLoadedEpic] = useState<LoadedEpic | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -262,10 +267,32 @@ export default function EpicChecklistTab() {
     <section className={styles.checklistTab}>
       <h3 className={styles.panelTitle}>Readiness Review</h3>
       <p className={styles.panelHint}>
-        Check an Epic against the team&apos;s Definition of Ready and Definition of Done. The review says what is
+        Check Epics against the team&apos;s Definition of Ready and Definition of Done. The review says what is
         satisfied, what is only partly there, and what still has to be written down — with the evidence for each.
       </p>
 
+      <div className={styles.modeSwitch} role="group" aria-label="What to review">
+        <button
+          aria-pressed={reviewMode === 'singleEpic'}
+          className={reviewMode === 'singleEpic' ? styles.modeButtonActive : styles.modeButton}
+          onClick={() => setReviewMode('singleEpic')}
+          type="button"
+        >
+          One Epic
+        </button>
+        <button
+          aria-pressed={reviewMode === 'jqlBatch'}
+          className={reviewMode === 'jqlBatch' ? styles.modeButtonActive : styles.modeButton}
+          onClick={() => setReviewMode('jqlBatch')}
+          type="button"
+        >
+          A JQL query
+        </button>
+      </div>
+
+      {reviewMode === 'jqlBatch' ? <BatchReadinessPanel /> : null}
+
+      {reviewMode === 'singleEpic' ? (
       <div className={styles.loadBar}>
         <label className={styles.loadField}>
           <span className={styles.fieldLabel}>Epic key</span>
@@ -282,10 +309,11 @@ export default function EpicChecklistTab() {
           {isLoading ? 'Loading…' : 'Load Epic'}
         </button>
       </div>
+      ) : null}
 
-      {loadError ? <p className={styles.errorBanner} role="alert">{loadError}</p> : null}
+      {reviewMode === 'singleEpic' && loadError ? <p className={styles.errorBanner} role="alert">{loadError}</p> : null}
 
-      {loadedEpic ? (
+      {reviewMode === 'singleEpic' && loadedEpic ? (
         <>
           <div className={styles.epicSummary}>
             <strong>{`${loadedEpic.source.issueKey} — ${loadedEpic.source.summary}`}</strong>

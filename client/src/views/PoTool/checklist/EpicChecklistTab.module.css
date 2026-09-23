@@ -146,6 +146,70 @@
   justify-content: flex-start;
 }
 
+/* ── Which question is being asked: one Epic, or a whole query ── */
+
+.modeSwitch {
+  display: flex;
+  gap: 4px;
+}
+
+.modeButton,
+.modeButtonActive {
+  padding: 4px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-card-bg);
+  color: inherit;
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.modeButtonActive {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: var(--color-text-on-accent);
+  font-weight: 600;
+}
+
+/* JQL needs room to be read back, unlike a six-character issue key. */
+.jqlField {
+  flex: 1 1 420px;
+}
+
+/* ── The batch summary: where every Epic stands, at a glance ── */
+
+.summaryTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.summaryTable th,
+.summaryTable td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--color-border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.summaryTable th {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  opacity: 0.7;
+}
+
+.linkButton {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--color-accent);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
 /* The verdict on a whole definition — the line a PO reads before anything else. */
 .verdictLine {
   margin: 0 0 8px;
