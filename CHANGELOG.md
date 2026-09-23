@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Epic Checklist is now a readiness review, not a checklist ticker (GH #387 feedback).** The tab's output is a
+  **report**: every Definition of Ready and Definition of Done criterion comes back **Satisfied / Partly
+  satisfied / Missing**, with the words in the Epic that support the verdict and — the part you can act on —
+  **what still has to be written down**. Each definition carries a one-line verdict ("Definition of Ready: NOT
+  MET — 3 of 6 satisfied, 3 still outstanding"), and **Copy report** puts the whole thing on the clipboard as
+  markdown for a refinement agenda, a Jira comment or Teams. A criterion the review did not answer is reported
+  as unanswered and the definition is called "not fully checked" — it is never counted as a pass.
+  Ticking the Smart Checklist is still offered, but only for criteria the review marked satisfied, and only when
+  the Epic's checklist could actually be read.
+
+### Fixed
+- **An Epic showing 0 / 11 in Jira no longer reports "0 of 0 checklist items" (GH #387).** Two causes, both
+  handled. The checklist is now recognised by **its own syntax in any field** rather than trusting the field
+  named "Smart Checklist" to hold it, with the issue's properties tried as a further fallback. And when the
+  checklist still cannot be read as text — which is what happens when it comes from a **linked template**, as
+  `CUC - DoR` and `CUC - DoD` do — the review no longer gives up: it runs against the team's standard DoR/DoD
+  criteria instead, and says on screen and in the report which of the two it used.
+
 ### Added
 - **PO Tool → Epic Checklist: have an Epic checked against its own Definition of Ready and Done (GH #387).**
   Load an Epic by key and Toolbox reads its Smart Checklist — the `CUC - DoR` and `CUC - DoD` items, under their

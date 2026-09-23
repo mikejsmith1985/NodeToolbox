@@ -18,8 +18,14 @@ export interface ChecklistItem {
   /** The item's words, without the bullet, the checkbox, or trailing metadata. */
   text: string;
   state: ChecklistItemState;
-  /** The header it sits under ("Definition of Ready"), or '' when the checklist has no headers. */
+  /** The nearest header above it ("Business Readiness"), or '' when the checklist has no headers. */
   section: string;
+  /**
+   * The top-level header above it ("Definition of Ready (DoR)"), which is what says whether the item is a
+   * readiness criterion or a done criterion. Kept apart from `section` because the team's checklist nests the
+   * group inside the definition, and the group alone cannot tell them apart.
+   */
+  definitionHeading: string;
 }
 
 /** A parsed checklist: its items, and the exact text they came from. */
@@ -38,7 +44,7 @@ export interface ParsedChecklist {
 const ITEM_LINE_PATTERN = /^(\s*)(?:[-*+]\s*)?\[( |x|X|~|>)\]\s?(.*)$/;
 
 /** Header lines: Smart Checklist's `# Heading`, and the `---` separator form some teams use. */
-const HEADER_LINE_PATTERN = /^\s*(?:#+|---+)\s*(.+?)\s*$/;
+const HEADER_LINE_PATTERN = /^\s*(#+|---+)\s*(.+?)\s*$/;
 
 /** Item metadata Smart Checklist keeps after a `~` (due dates, assignees). Kept in the line, dropped from `text`. */
 const ITEM_METADATA_PATTERN = /\s+~\s.*$/;
@@ -56,7 +62,12 @@ const STATE_BY_MARKER: Record<string, ChecklistItemState> = {
 const DONE_MARKER = 'x';
 
 /** Reads one line's item, or null when the line is not an item. */
-function readItemLine(line: string, lineIndex: number, section: string): ChecklistItem | null {
+function readItemLine(
+  line: string,
+  lineIndex: number,
+  section: string,
+  definitionHeading: string,
+): ChecklistItem | null {
   const lineMatch = ITEM_LINE_PATTERN.exec(line);
   if (!lineMatch) {
     return null;
@@ -69,6 +80,7 @@ function readItemLine(line: string, lineIndex: number, section: string): Checkli
     text: itemBody.replace(ITEM_METADATA_PATTERN, '').trim(),
     state: STATE_BY_MARKER[marker] ?? 'open',
     section,
+    definitionHeading,
   };
 }
 
@@ -81,16 +93,23 @@ function readItemLine(line: string, lineIndex: number, section: string): Checkli
 export function parseSmartChecklist(fieldText: string): ParsedChecklist {
   const items: ChecklistItem[] = [];
   let currentSection = '';
+  let currentDefinitionHeading = '';
 
   fieldText.split('\n').forEach((line, lineIndex) => {
-    const item = readItemLine(line, lineIndex, currentSection);
+    const item = readItemLine(line, lineIndex, currentSection, currentDefinitionHeading);
     if (item) {
       items.push(item);
       return;
     }
     const headerMatch = HEADER_LINE_PATTERN.exec(line);
-    if (headerMatch) {
-      currentSection = headerMatch[1].trim();
+    if (!headerMatch) {
+      return;
+    }
+    const [, headerMarker, headerText] = headerMatch;
+    currentSection = headerText.trim();
+    // A single `#`, or a `---` separator, opens a definition; deeper headers are groups inside it.
+    if (headerMarker === '#' || headerMarker.startsWith('---')) {
+      currentDefinitionHeading = headerText.trim();
     }
   });
 

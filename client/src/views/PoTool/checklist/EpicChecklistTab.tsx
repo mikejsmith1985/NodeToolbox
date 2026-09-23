@@ -1,49 +1,51 @@
-// EpicChecklistTab.tsx — Checks an Epic against its own Definition of Ready / Definition of Done checklist and
-// ticks the items it already satisfies.
+// EpicChecklistTab.tsx — Validates an Epic against the team's Definition of Ready and Definition of Done, and
+// reports what is satisfied, what is only half-there, and what is missing.
 //
-// The shape of the screen follows what it is safe to do: read the Epic's checklist, have every open item judged
-// with quoted evidence, show the PO exactly which ticks are proposed and on what grounds, and write only when
-// they say so — in ONE save that rewrites the field with every other line untouched.
+// The report is the product. A PO asking "is this Epic ready?" needs the reasons, the evidence, and the list of
+// things still to write down — something they can paste into a refinement agenda or a Jira comment. Ticking the
+// Epic's Smart Checklist is offered afterwards, and only when the checklist is genuinely readable and writable
+// on this instance; it is a convenience, not the point.
 //
-// Nothing here touches the shared checklist template the Epic was created from. Ticking an item on one Epic must
-// never tick it for every Epic that shares the template.
+// Nothing here touches the shared checklist template the Epic was created from.
 
 import { useState } from 'react';
 
 import PoAiPanel from '../ai/PoAiPanel.tsx';
 import { loadHygieneFieldConfig } from '../../Hygiene/checks/hygieneFieldConfig.ts';
 import { jiraGet } from '../../../services/jiraApi.ts';
+import { buildChecklistPrompt, parseChecklistIngest } from './checklistAiAssist.ts';
 import {
-  buildChecklistPrompt,
-  listSatisfiedItemIds,
-  parseChecklistIngest,
-  type ChecklistVerdict,
-} from './checklistAiAssist.ts';
-import {
+  fetchChecklistFromIssueProperties,
   fetchEpicChecklistSource,
   loadChecklistField,
   saveEpicChecklist,
   type EpicChecklistSource,
 } from './checklistField.ts';
+import { DEFINITION_LABELS, resolveCriteria, type ReadinessCriterion, type ReadinessDefinition } from './dorCriteria.ts';
 import {
-  applyChecklistCompletions,
-  countCompletedItems,
-  listOpenItems,
-  parseSmartChecklist,
-  type ChecklistItem,
-  type ParsedChecklist,
-} from './smartChecklist.ts';
+  buildReadinessReport,
+  describeDefinitionVerdict,
+  formatReadinessReportMarkdown,
+  STATUS_LABELS,
+  type ReadinessReport,
+  type ReportRow,
+} from './readinessReport.ts';
+import { applyChecklistCompletions, listOpenItems, parseSmartChecklist, type ParsedChecklist } from './smartChecklist.ts';
 import styles from './EpicChecklistTab.module.css';
 
 /** How many children to list as evidence. A long Epic's tail says nothing the first thirty do not. */
 const MAX_CHILDREN_LISTED = 30;
 
-/** What the screen is showing right now. */
+/** What the screen is working from once an Epic is loaded. */
 interface LoadedEpic {
   source: EpicChecklistSource;
   checklist: ParsedChecklist;
-  checklistFieldId: string;
-  checklistFieldName: string;
+  criteria: ReadinessCriterion[];
+  criteriaSource: 'issueChecklist' | 'standardTemplate';
+  /** The field the checklist text came out of, or null when it could not be found. */
+  checklistFieldId: string | null;
+  /** What the instance calls the field that was looked for, for saying where Toolbox looked. */
+  searchedFieldName: string | null;
   childSummaryLines: string[];
 }
 
@@ -64,58 +66,60 @@ async function fetchChildSummaryLines(issueKey: string): Promise<string[]> {
   }
 }
 
-/** The Product Owner's check of one Epic against the team's Definition of Ready and Done. */
+/** The Product Owner's readiness review of one Epic. */
 export default function EpicChecklistTab() {
   const [issueKeyInput, setIssueKeyInput] = useState('');
   const [loadedEpic, setLoadedEpic] = useState<LoadedEpic | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [verdictsByItemId, setVerdictsByItemId] = useState<Record<string, ChecklistVerdict>>({});
-  const [itemIdsToTick, setItemIdsToTick] = useState<string[]>([]);
-  const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  const [report, setReport] = useState<ReadinessReport | null>(null);
+  const [criterionIdsToTick, setCriterionIdsToTick] = useState<string[]>([]);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [hasCopiedReport, setHasCopiedReport] = useState(false);
 
-  const openItems = loadedEpic ? listOpenItems(loadedEpic.checklist) : [];
-  const progress = loadedEpic ? countCompletedItems(loadedEpic.checklist) : { doneCount: 0, totalCount: 0 };
+  /** Whether ticking is possible at all: the checklist has to have been found in a writable field. */
+  const canTickChecklist = Boolean(loadedEpic?.checklistFieldId) && loadedEpic?.criteriaSource === 'issueChecklist';
 
-  /** Loads the Epic, its checklist field, and its children. */
+  /** Loads the Epic, works out which criteria to judge it against, and clears any previous review. */
   async function handleLoadEpic(): Promise<void> {
     const normalizedIssueKey = issueKeyInput.trim().toUpperCase();
     if (normalizedIssueKey === '') {
-      setLoadError('Enter an Epic key, for example DENP-905.');
+      setLoadError('Enter an Epic key, for example DENP-1436.');
       return;
     }
 
     setIsLoading(true);
     setLoadError(null);
-    setSaveMessage(null);
-    setVerdictsByItemId({});
-    setItemIdsToTick([]);
+    setStatusMessage(null);
+    setReport(null);
+    setCriterionIdsToTick([]);
 
     try {
       const checklistField = await loadChecklistField();
-      if (!checklistField.fieldId) {
-        setLoadedEpic(null);
-        setLoadError(
-          'This Jira has no checklist field Toolbox can read, so there is nothing to check. '
-          + 'Expected a field named Smart Checklist, Checklist Text, or Checklist.',
-        );
-        return;
-      }
-
       const hygieneFieldConfig = await loadHygieneFieldConfig();
       const [acceptanceCriteriaFieldId] = hygieneFieldConfig.acceptanceCriteriaFieldIds;
+
       const source = await fetchEpicChecklistSource(
         normalizedIssueKey,
         checklistField.fieldId,
         acceptanceCriteriaFieldId ?? null,
       );
 
+      // A checklist that is not on any field may still be in the issue's properties on some versions.
+      const checklistText = source.checklistText !== ''
+        ? source.checklistText
+        : await fetchChecklistFromIssueProperties(normalizedIssueKey);
+      const checklist = parseSmartChecklist(checklistText);
+      const { criteria, source: criteriaSource } = resolveCriteria(checklist.items);
+
       setLoadedEpic({
         source,
-        checklist: parseSmartChecklist(source.checklistText),
-        checklistFieldId: checklistField.fieldId,
-        checklistFieldName: checklistField.fieldName ?? checklistField.fieldId,
+        checklist,
+        criteria,
+        criteriaSource,
+        checklistFieldId: source.checklistLocation.fieldId,
+        searchedFieldName: checklistField.fieldName,
         childSummaryLines: await fetchChildSummaryLines(normalizedIssueKey),
       });
     } catch (unknownError) {
@@ -126,52 +130,77 @@ export default function EpicChecklistTab() {
     }
   }
 
-  /** Takes the reviewed answer and pre-selects the items it says are satisfied. */
+  /** Turns the reviewed answer into the report. */
   function handleIngest(responseText: string): { acceptedCount: number; errors: string[] } {
     if (!loadedEpic) {
       return { acceptedCount: 0, errors: ['Load an Epic first.'] };
     }
-    const { verdicts, errors } = parseChecklistIngest(responseText, openItems.map((item) => item.id));
+    const { verdicts, errors } = parseChecklistIngest(responseText, loadedEpic.criteria.map((criterion) => criterion.id));
 
-    setVerdictsByItemId(Object.fromEntries(verdicts.map((verdict) => [verdict.itemId, verdict])));
-    setItemIdsToTick(listSatisfiedItemIds(verdicts));
-    setSaveMessage(null);
+    const builtReport = buildReadinessReport({
+      issueKey: loadedEpic.source.issueKey,
+      issueSummary: loadedEpic.source.summary,
+      criteria: loadedEpic.criteria,
+      verdicts,
+      criteriaSource: loadedEpic.criteriaSource,
+    });
+    setReport(builtReport);
+    setCriterionIdsToTick(canTickChecklist ? listTickableCriterionIds(builtReport, loadedEpic.checklist) : []);
+    setStatusMessage(null);
+    setHasCopiedReport(false);
 
     return { acceptedCount: verdicts.length, errors };
   }
 
+  /** The satisfied criteria that are also unticked checklist items — the only ones a save could tick. */
+  function listTickableCriterionIds(builtReport: ReadinessReport, checklist: ParsedChecklist): string[] {
+    const openItemIds = new Set(listOpenItems(checklist).map((item) => item.id));
+    return builtReport.rows
+      .filter((row) => row.verdict?.status === 'satisfied' && openItemIds.has(row.criterion.id))
+      .map((row) => row.criterion.id);
+  }
+
   /** Includes or excludes one proposed tick. The PO's judgement outranks the review. */
-  function handleToggleItem(itemId: string): void {
-    setItemIdsToTick((previousIds) => (
-      previousIds.includes(itemId)
-        ? previousIds.filter((selectedId) => selectedId !== itemId)
-        : [...previousIds, itemId]
+  function handleToggleCriterion(criterionId: string): void {
+    setCriterionIdsToTick((previousIds) => (
+      previousIds.includes(criterionId)
+        ? previousIds.filter((selectedId) => selectedId !== criterionId)
+        : [...previousIds, criterionId]
     ));
   }
 
-  /** Writes the ticked checklist back in one save, then re-reads what Jira now holds. */
+  /** Copies the report as markdown, for a Jira comment, Teams, or a refinement agenda. */
+  async function handleCopyReport(): Promise<void> {
+    if (!report) {
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(formatReadinessReportMarkdown(report));
+      setHasCopiedReport(true);
+    } catch {
+      // Clipboard access can be denied; the report is on screen and selectable either way.
+      setHasCopiedReport(false);
+    }
+  }
+
+  /** Writes the ticked checklist back in one save, keeping every line it did not tick. */
   async function handleApplyTicks(): Promise<void> {
-    if (!loadedEpic || itemIdsToTick.length === 0) {
+    if (!loadedEpic?.checklistFieldId || criterionIdsToTick.length === 0) {
       return;
     }
     setIsSaving(true);
-    setSaveMessage(null);
+    setStatusMessage(null);
 
     try {
-      const updatedChecklistText = applyChecklistCompletions(loadedEpic.checklist, itemIdsToTick);
+      const updatedChecklistText = applyChecklistCompletions(loadedEpic.checklist, criterionIdsToTick);
       await saveEpicChecklist(loadedEpic.source.issueKey, loadedEpic.checklistFieldId, updatedChecklistText);
 
-      const tickedCount = itemIdsToTick.length;
-      setLoadedEpic({
-        ...loadedEpic,
-        source: { ...loadedEpic.source, checklistText: updatedChecklistText },
-        checklist: parseSmartChecklist(updatedChecklistText),
-      });
-      setVerdictsByItemId({});
-      setItemIdsToTick([]);
-      setSaveMessage(`${tickedCount} item(s) ticked on ${loadedEpic.source.issueKey}.`);
+      const tickedCount = criterionIdsToTick.length;
+      setLoadedEpic({ ...loadedEpic, checklist: parseSmartChecklist(updatedChecklistText) });
+      setCriterionIdsToTick([]);
+      setStatusMessage(`${tickedCount} checklist item(s) ticked on ${loadedEpic.source.issueKey}.`);
     } catch (unknownError) {
-      setSaveMessage(
+      setStatusMessage(
         unknownError instanceof Error
           ? `Nothing was saved: ${unknownError.message}`
           : 'Nothing was saved. Jira refused the change.',
@@ -181,39 +210,60 @@ export default function EpicChecklistTab() {
     }
   }
 
-  /** One checklist item as the review lists it: its words, what was found, and whether it will be ticked. */
-  function renderReviewRow(item: ChecklistItem) {
-    const verdict = verdictsByItemId[item.id];
-    const isSelected = itemIdsToTick.includes(item.id);
+  /** One criterion in the report: the verdict, the evidence, and what is still needed. */
+  function renderReportRow(row: ReportRow) {
+    const { criterion, verdict } = row;
+    const isTickable = canTickChecklist && verdict?.status === 'satisfied';
 
     return (
-      <li className={styles.reviewRow} key={item.id}>
-        <label className={styles.reviewRowHeader}>
-          <input
-            aria-label={`Tick ${item.text}`}
-            checked={isSelected}
-            disabled={!verdict}
-            onChange={() => handleToggleItem(item.id)}
-            type="checkbox"
-          />
-          <span>{item.text}</span>
-        </label>
-        <p className={styles.reviewRowMeta}>
-          {item.section === '' ? '' : `${item.section} · `}
-          {verdict
-            ? `${verdict.isSatisfied ? 'Satisfied' : 'Not yet'} — ${verdict.evidence}`
-            : 'Not reviewed yet.'}
-        </p>
+      <li className={styles.reviewRow} key={criterion.id}>
+        <div className={styles.reviewRowHeader}>
+          {isTickable ? (
+            <input
+              aria-label={`Tick ${criterion.text}`}
+              checked={criterionIdsToTick.includes(criterion.id)}
+              onChange={() => handleToggleCriterion(criterion.id)}
+              type="checkbox"
+            />
+          ) : null}
+          <span className={verdict ? styles[`status_${verdict.status}`] : styles.status_unanswered}>
+            {verdict ? STATUS_LABELS[verdict.status] : 'Not answered'}
+          </span>
+          <span>{criterion.text}</span>
+        </div>
+        {verdict?.evidence ? <p className={styles.reviewRowMeta}>{`Evidence: ${verdict.evidence}`}</p> : null}
+        {verdict?.whatIsMissing ? (
+          <p className={styles.reviewRowMeta}>{`Still needed: ${verdict.whatIsMissing}`}</p>
+        ) : null}
       </li>
+    );
+  }
+
+  /** One definition's section of the report: its verdict line, then its criteria. */
+  function renderDefinitionSection(definition: ReadinessDefinition) {
+    if (!report) {
+      return null;
+    }
+    const definitionRows = report.rows.filter((row) => row.criterion.definition === definition);
+    if (definitionRows.length === 0) {
+      return null;
+    }
+
+    return (
+      <section key={definition}>
+        <h4 className={styles.panelTitle}>{DEFINITION_LABELS[definition]}</h4>
+        <p className={styles.verdictLine}>{describeDefinitionVerdict(report.totals[definition], definition)}</p>
+        <ul className={styles.reviewList}>{definitionRows.map(renderReportRow)}</ul>
+      </section>
     );
   }
 
   return (
     <section className={styles.checklistTab}>
-      <h3 className={styles.panelTitle}>Epic Checklist</h3>
+      <h3 className={styles.panelTitle}>Readiness Review</h3>
       <p className={styles.panelHint}>
-        Check an Epic against its own Definition of Ready and Definition of Done, then tick the items it already
-        satisfies. Only this Epic&apos;s checklist is changed — the shared template it came from is never touched.
+        Check an Epic against the team&apos;s Definition of Ready and Definition of Done. The review says what is
+        satisfied, what is only partly there, and what still has to be written down — with the evidence for each.
       </p>
 
       <div className={styles.loadBar}>
@@ -224,7 +274,7 @@ export default function EpicChecklistTab() {
             className={styles.textInput}
             disabled={isLoading}
             onChange={(event) => setIssueKeyInput(event.target.value.toUpperCase())}
-            placeholder="DENP-905"
+            placeholder="DENP-1436"
             value={issueKeyInput}
           />
         </label>
@@ -239,49 +289,55 @@ export default function EpicChecklistTab() {
         <>
           <div className={styles.epicSummary}>
             <strong>{`${loadedEpic.source.issueKey} — ${loadedEpic.source.summary}`}</strong>
-            <span>{`${progress.doneCount} of ${progress.totalCount} checklist items done`}</span>
-            <span>{`Read from “${loadedEpic.checklistFieldName}”`}</span>
+            <span>{`${loadedEpic.criteria.length} criteria to check`}</span>
+            <span>
+              {loadedEpic.criteriaSource === 'issueChecklist'
+                ? 'Using this Epic’s own checklist'
+                : 'Using the team’s standard Definition of Ready and Done'}
+            </span>
           </div>
 
-          {progress.totalCount === 0 ? (
+          {loadedEpic.criteriaSource === 'standardTemplate' ? (
             <p className={styles.panelHint}>
-              This Epic has no checklist items yet. Apply your Definition of Ready or Done template to it in Jira
-              first, then load it again.
+              {`This Epic’s checklist could not be read as text${loadedEpic.searchedFieldName ? ` (looked in “${loadedEpic.searchedFieldName}” and every other field)` : ''}`}
+              {' — most likely because it comes from a linked template. The review still runs against the team’s '}
+              standard criteria; ticking items in Jira stays manual for this Epic.
             </p>
           ) : null}
 
-          {openItems.length > 0 ? (
-            <PoAiPanel
-              buildPrompt={() => buildChecklistPrompt(loadedEpic.source, openItems, loadedEpic.childSummaryLines)}
-              helpText={
-                'Each item comes back with the words in the Epic that satisfy it. Nothing is written to Jira until '
-                + 'you choose to tick the items below.'
-              }
-              onIngest={handleIngest}
-              title="Check this Epic against its checklist"
-            />
-          ) : (
-            <p className={styles.panelHint}>Every checklist item on this Epic is already ticked.</p>
-          )}
+          <PoAiPanel
+            buildPrompt={() => buildChecklistPrompt(loadedEpic.source, loadedEpic.criteria, loadedEpic.childSummaryLines)}
+            helpText={
+              'Every criterion comes back with a verdict, the words in the Epic that support it, and what is still '
+              + 'needed. Nothing is written to Jira by this panel.'
+            }
+            onIngest={handleIngest}
+            title="Review this Epic against Definition of Ready and Done"
+          />
 
-          {openItems.length > 0 ? (
+          {report ? (
             <>
-              <h4 className={styles.panelTitle}>{`Open items (${openItems.length})`}</h4>
-              <ul className={styles.reviewList}>{openItems.map(renderReviewRow)}</ul>
-              <div className={styles.applyRow}>
-                <button
-                  className={styles.primaryButton}
-                  disabled={itemIdsToTick.length === 0 || isSaving}
-                  onClick={() => void handleApplyTicks()}
-                  type="button"
-                >
-                  {isSaving ? 'Saving…' : `Tick ${itemIdsToTick.length} item(s) on ${loadedEpic.source.issueKey}`}
+              <div className={styles.reportActions}>
+                <button className={styles.primaryButton} onClick={() => void handleCopyReport()} type="button">
+                  {hasCopiedReport ? '✓ Copied' : 'Copy report'}
                 </button>
+                {canTickChecklist ? (
+                  <button
+                    className={styles.primaryButton}
+                    disabled={criterionIdsToTick.length === 0 || isSaving}
+                    onClick={() => void handleApplyTicks()}
+                    type="button"
+                  >
+                    {isSaving ? 'Saving…' : `Tick ${criterionIdsToTick.length} item(s) on ${loadedEpic.source.issueKey}`}
+                  </button>
+                ) : null}
               </div>
+              {renderDefinitionSection('dor')}
+              {renderDefinitionSection('dod')}
             </>
           ) : null}
 
-          {saveMessage ? <p className={styles.infoBanner} role="status">{saveMessage}</p> : null}
+          {statusMessage ? <p className={styles.infoBanner} role="status">{statusMessage}</p> : null}
         </>
       ) : null}
     </section>

@@ -11,7 +11,9 @@ vi.mock('../../SprintDashboard/featureReviewFixes.ts', () => ({
 import { jiraGet } from '../../../services/jiraApi.ts';
 import { saveFeatureReviewSimpleField } from '../../SprintDashboard/featureReviewFixes.ts';
 import {
+  fetchChecklistFromIssueProperties,
   fetchEpicChecklistSource,
+  findChecklistFieldInIssue,
   loadChecklistField,
   resolveChecklistField,
   saveEpicChecklist,
@@ -63,14 +65,39 @@ describe('loadChecklistField', () => {
   });
 });
 
+describe('findChecklistFieldInIssue — the checklist is recognised by its own syntax', () => {
+  it('prefers the field that was looked for when it holds a checklist', () => {
+    const found = findChecklistFieldInIssue(
+      { [CHECKLIST_FIELD_ID]: '- [ ] Major dependencies are identified', other: '- [x] Something else' },
+      CHECKLIST_FIELD_ID,
+    );
+
+    expect(found).toEqual({ fieldId: CHECKLIST_FIELD_ID, text: '- [ ] Major dependencies are identified' });
+  });
+
+  it('finds the checklist in another field when the named one is empty', () => {
+    // The reported defect: Jira showed 0/11 while the named field held nothing, so the review saw no items.
+    const found = findChecklistFieldInIssue(
+      { [CHECKLIST_FIELD_ID]: '', customfield_99999: '# DoR\n- [ ] Major dependencies are identified' },
+      CHECKLIST_FIELD_ID,
+    );
+
+    expect(found?.fieldId).toBe('customfield_99999');
+  });
+
+  it('finds nothing when no field holds anything checklist-shaped', () => {
+    expect(findChecklistFieldInIssue({ summary: 'An Epic', description: 'Some prose.' }, CHECKLIST_FIELD_ID)).toBeNull();
+  });
+});
+
 describe('fetchEpicChecklistSource', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('asks for the checklist and the acceptance criteria in one request', async () => {
+  it('asks for every field, because the checklist is not always where its name suggests', async () => {
     vi.mocked(jiraGet).mockResolvedValue({
-      key: 'DENP-905',
+      key: 'DENP-1436',
       fields: {
-        summary: 'AEP enrollment intake',
+        summary: 'Preprocessor MBI History Enhancement',
         status: { name: 'In Progress' },
         description: 'Stakeholders signed off.',
         customfield_ac: 'Given a member enrols…',
@@ -78,26 +105,46 @@ describe('fetchEpicChecklistSource', () => {
       },
     } as never);
 
-    const source = await fetchEpicChecklistSource('DENP-905', CHECKLIST_FIELD_ID, 'customfield_ac');
+    const source = await fetchEpicChecklistSource('DENP-1436', CHECKLIST_FIELD_ID, 'customfield_ac');
 
-    expect(vi.mocked(jiraGet).mock.calls[0][0]).toContain(CHECKLIST_FIELD_ID);
-    expect(source).toEqual({
-      issueKey: 'DENP-905',
-      summary: 'AEP enrollment intake',
-      status: 'In Progress',
-      description: 'Stakeholders signed off.',
-      acceptanceCriteria: 'Given a member enrols…',
-      checklistText: '- [ ] Major dependencies are identified',
-    });
+    expect(vi.mocked(jiraGet).mock.calls[0][0]).toContain('fields=*all');
+    expect(source.checklistText).toBe('- [ ] Major dependencies are identified');
+    expect(source.checklistLocation.fieldId).toBe(CHECKLIST_FIELD_ID);
+    expect(source.acceptanceCriteria).toBe('Given a member enrols…');
   });
 
-  it('leaves acceptance criteria empty when this instance has no such field', async () => {
-    vi.mocked(jiraGet).mockResolvedValue({ key: 'DENP-905', fields: {} } as never);
+  it('reports no checklist location rather than pretending, when no field holds one', async () => {
+    vi.mocked(jiraGet).mockResolvedValue({ key: 'DENP-1436', fields: { summary: 'An Epic' } } as never);
 
-    const source = await fetchEpicChecklistSource('DENP-905', CHECKLIST_FIELD_ID, null);
+    const source = await fetchEpicChecklistSource('DENP-1436', CHECKLIST_FIELD_ID, null);
 
-    expect(source.acceptanceCriteria).toBe('');
     expect(source.checklistText).toBe('');
+    expect(source.checklistLocation.fieldId).toBeNull();
+  });
+});
+
+describe('fetchChecklistFromIssueProperties — the fallback for versions that store it there', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('reads a checklist out of the matching issue property', async () => {
+    vi.mocked(jiraGet)
+      .mockResolvedValueOnce({ keys: [{ key: 'com.example.smartchecklist' }] } as never)
+      .mockResolvedValueOnce({ value: '- [ ] Major dependencies are identified' } as never);
+
+    await expect(fetchChecklistFromIssueProperties('DENP-1436')).resolves
+      .toBe('- [ ] Major dependencies are identified');
+  });
+
+  it('returns nothing when the instance has no such property', async () => {
+    vi.mocked(jiraGet).mockResolvedValueOnce({ keys: [{ key: 'com.example.other' }] } as never);
+
+    await expect(fetchChecklistFromIssueProperties('DENP-1436')).resolves.toBe('');
+  });
+
+  it('costs a fallback rather than the whole review when the endpoint refuses', async () => {
+    vi.mocked(jiraGet).mockRejectedValueOnce(new Error('403'));
+
+    await expect(fetchChecklistFromIssueProperties('DENP-1436')).resolves.toBe('');
   });
 });
 

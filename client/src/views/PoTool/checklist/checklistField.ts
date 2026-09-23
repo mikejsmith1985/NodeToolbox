@@ -73,27 +73,57 @@ function readFieldAsText(fieldValue: unknown): string {
   return '';
 }
 
+/** Lines that mean "this value is a checklist", used to recognise one wherever it turns out to live. */
+const CHECKLIST_MARKDOWN_PATTERN = /^\s*(?:[-*+]\s*)?\[( |x|X|~|>)\]/m;
+
+/** Does this value look like a Smart Checklist, whatever field or property it came out of? */
+function looksLikeChecklist(value: unknown): boolean {
+  return typeof value === 'string' && CHECKLIST_MARKDOWN_PATTERN.test(value);
+}
+
 /**
- * Fetches the Epic and its checklist text in one request.
+ * Finds the checklist among ALL of the issue's fields.
  *
- * The acceptance-criteria field is requested when this instance has one, because "scope and acceptance criteria
- * are understood" is a checklist item the AI cannot judge without seeing them.
+ * The named field is only a good guess. On this instance the checklist arrives from a linked template, and the
+ * field that carries its text is not necessarily the one called "Smart Checklist" — which is how an Epic showing
+ * 0/11 in Jira was reported as having no checklist items at all. Recognising the checklist by its own syntax
+ * finds it wherever it actually is, and the screen then says which field that was.
+ */
+export function findChecklistFieldInIssue(
+  issueFields: Record<string, unknown>,
+  preferredFieldId: string | null,
+): { fieldId: string; text: string } | null {
+  if (preferredFieldId && looksLikeChecklist(issueFields[preferredFieldId])) {
+    return { fieldId: preferredFieldId, text: issueFields[preferredFieldId] as string };
+  }
+  const matchingEntry = Object.entries(issueFields).find(([, fieldValue]) => looksLikeChecklist(fieldValue));
+  return matchingEntry ? { fieldId: matchingEntry[0], text: matchingEntry[1] as string } : null;
+}
+
+/** Where the checklist text was eventually found, so the screen can say so and the tick knows where to write. */
+export interface ChecklistLocation {
+  /** The field id holding the checklist, or null when it was not found in any field. */
+  fieldId: string | null;
+  text: string;
+}
+
+/**
+ * Fetches the Epic and its checklist in one request.
+ *
+ * Every field is requested rather than a named few: the checklist is recognised by its own syntax, which is the
+ * only way to find one that lives somewhere other than where its field name suggests.
  */
 export async function fetchEpicChecklistSource(
   issueKey: string,
-  checklistFieldId: string,
+  checklistFieldId: string | null,
   acceptanceCriteriaFieldId: string | null,
-): Promise<EpicChecklistSource> {
-  const requestedFieldIds = ['summary', 'status', 'description', checklistFieldId];
-  if (acceptanceCriteriaFieldId) {
-    requestedFieldIds.push(acceptanceCriteriaFieldId);
-  }
-
+): Promise<EpicChecklistSource & { checklistLocation: ChecklistLocation }> {
   const issue = await jiraGet<{ key: string; fields: Record<string, unknown> }>(
-    `/rest/api/2/issue/${encodeURIComponent(issueKey)}?fields=${requestedFieldIds.join(',')}`,
+    `/rest/api/2/issue/${encodeURIComponent(issueKey)}?fields=*all`,
   );
   const issueFields = issue.fields ?? {};
   const statusValue = issueFields.status as { name?: string } | undefined;
+  const foundChecklist = findChecklistFieldInIssue(issueFields, checklistFieldId);
 
   return {
     issueKey: issue.key ?? issueKey,
@@ -101,8 +131,37 @@ export async function fetchEpicChecklistSource(
     status: statusValue?.name ?? '',
     description: readFieldAsText(issueFields.description),
     acceptanceCriteria: acceptanceCriteriaFieldId ? readFieldAsText(issueFields[acceptanceCriteriaFieldId]) : '',
-    checklistText: readFieldAsText(issueFields[checklistFieldId]),
+    checklistText: foundChecklist?.text ?? '',
+    checklistLocation: { fieldId: foundChecklist?.fieldId ?? null, text: foundChecklist?.text ?? '' },
   };
+}
+
+/**
+ * Looks for the checklist in the issue's properties, where some versions of the app keep it instead of a field.
+ *
+ * Returns empty rather than failing: an instance that refuses the properties endpoint should cost the PO a
+ * fallback, not the whole review.
+ */
+export async function fetchChecklistFromIssueProperties(issueKey: string): Promise<string> {
+  try {
+    const propertyKeys = await jiraGet<{ keys?: Array<{ key: string }> }>(
+      `/rest/api/2/issue/${encodeURIComponent(issueKey)}/properties`,
+    );
+    const checklistKey = (propertyKeys.keys ?? []).find((propertyKey) => /checklist/i.test(propertyKey.key));
+    if (!checklistKey) {
+      return '';
+    }
+    const property = await jiraGet<{ value?: unknown }>(
+      `/rest/api/2/issue/${encodeURIComponent(issueKey)}/properties/${encodeURIComponent(checklistKey.key)}`,
+    );
+    if (looksLikeChecklist(property.value)) {
+      return property.value as string;
+    }
+    // Some versions store an object; its JSON still carries the item text, which the parser can read.
+    return typeof property.value === 'object' && property.value !== null ? JSON.stringify(property.value) : '';
+  } catch {
+    return '';
+  }
 }
 
 /**

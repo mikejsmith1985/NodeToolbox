@@ -139,7 +139,50 @@
   opacity: 0.75;
 }
 
-.applyRow {
+.applyRow,
+.reportActions {
   display: flex;
+  gap: 8px;
   justify-content: flex-start;
+}
+
+/* The verdict on a whole definition — the line a PO reads before anything else. */
+.verdictLine {
+  margin: 0 0 8px;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+/* Status chips carry their word as well as their colour, so the report survives being read in greyscale. */
+.status_satisfied,
+.status_partial,
+.status_missing,
+.status_unanswered {
+  flex: 0 0 auto;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.status_satisfied {
+  background: var(--color-tone-success-bg);
+  color: var(--color-tone-success-fg);
+}
+
+.status_partial {
+  background: var(--color-tone-warning-bg);
+  color: var(--color-tone-warning-fg);
+}
+
+.status_missing {
+  background: var(--color-tone-danger-bg);
+  color: var(--color-tone-danger-fg);
+}
+
+.status_unanswered {
+  background: var(--color-tone-info-bg);
+  color: var(--color-text-secondary);
 }

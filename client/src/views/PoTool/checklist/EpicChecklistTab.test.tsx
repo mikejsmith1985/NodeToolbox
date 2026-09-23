@@ -1,5 +1,6 @@
-// EpicChecklistTab.test.tsx — The tab writes to a real Epic's checklist, so these prove the two things that
-// matter: nothing reaches Jira until the PO clicks, and what reaches it keeps every line it did not tick.
+// EpicChecklistTab.test.tsx — The tab produces a readiness verdict a team acts on and can write to a real Epic,
+// so these prove: the report is the output, an unreadable checklist still gets validated, and a tick keeps the
+// rest of the checklist intact.
 
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -7,24 +8,17 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import EpicChecklistTab from './EpicChecklistTab.tsx';
 import { setAiAssistUnlocked } from '../../../store/aiAssistStore.ts';
+import { DEFAULT_DOR_CRITERIA } from './dorCriteria.ts';
 
-vi.mock('../../../services/jiraApi.ts', () => ({
-  jiraGet: vi.fn(),
-  jiraPut: vi.fn(),
-}));
-
+vi.mock('../../../services/jiraApi.ts', () => ({ jiraGet: vi.fn(), jiraPut: vi.fn() }));
 vi.mock('../../SprintDashboard/featureReviewFixes.ts', () => ({
   saveFeatureReviewSimpleField: vi.fn().mockResolvedValue(undefined),
 }));
-
 vi.mock('../../Hygiene/checks/hygieneFieldConfig.ts', async () => {
   const actualModule = await vi.importActual<typeof import('../../Hygiene/checks/hygieneFieldConfig.ts')>(
     '../../Hygiene/checks/hygieneFieldConfig.ts',
   );
-  return {
-    ...actualModule,
-    loadHygieneFieldConfig: vi.fn().mockResolvedValue({ acceptanceCriteriaFieldIds: ['customfield_ac'] }),
-  };
+  return { ...actualModule, loadHygieneFieldConfig: vi.fn().mockResolvedValue({ acceptanceCriteriaFieldIds: ['customfield_ac'] }) };
 });
 
 import { jiraGet } from '../../../services/jiraApi.ts';
@@ -32,6 +26,7 @@ import { saveFeatureReviewSimpleField } from '../../SprintDashboard/featureRevie
 
 const CHECKLIST_FIELD_ID = 'customfield_22222';
 
+/** The Epic's own checklist, in the team's real shape. */
 const EPIC_CHECKLIST_TEXT = [
   '# Definition of Ready (DoR)',
   '## Business Readiness',
@@ -40,23 +35,24 @@ const EPIC_CHECKLIST_TEXT = [
   '- [ ] Scope and acceptance criteria are understood',
 ].join('\n');
 
-/** Answers each Jira read the tab makes, in whatever order it makes them. */
-function installJira(options: { hasChecklistField?: boolean; checklistText?: string } = {}): void {
-  const { hasChecklistField = true, checklistText = EPIC_CHECKLIST_TEXT } = options;
+/** Answers every Jira read the tab makes. `checklistText: ''` is the linked-template case. */
+function installJira(options: { checklistText?: string } = {}): void {
+  const { checklistText = EPIC_CHECKLIST_TEXT } = options;
 
   vi.mocked(jiraGet).mockImplementation((path: string) => {
     if (path === '/rest/api/2/field') {
-      return Promise.resolve(hasChecklistField
-        ? [{ id: CHECKLIST_FIELD_ID, name: 'Smart Checklist' }, { id: 'summary', name: 'Summary' }]
-        : [{ id: 'summary', name: 'Summary' }]) as never;
+      return Promise.resolve([{ id: CHECKLIST_FIELD_ID, name: 'Smart Checklist' }]) as never;
+    }
+    if (path.includes('/properties')) {
+      return Promise.resolve({ keys: [] }) as never;
     }
     if (path.includes('/rest/api/2/search')) {
-      return Promise.resolve({ issues: [{ key: 'DENP-906', fields: { summary: 'Build intake', status: { name: 'Done' } } }] }) as never;
+      return Promise.resolve({ issues: [{ key: 'DENP-1437', fields: { summary: 'Build intake', status: { name: 'Done' } } }] }) as never;
     }
     return Promise.resolve({
-      key: 'DENP-905',
+      key: 'DENP-1436',
       fields: {
-        summary: 'AEP enrollment intake',
+        summary: '[GIPM] - Preprocessor MBI History Enhancement',
         status: { name: 'In Progress' },
         description: 'Stakeholders signed off the objective on 12 August.',
         customfield_ac: 'Given a member enrols…',
@@ -66,20 +62,27 @@ function installJira(options: { hasChecklistField?: boolean; checklistText?: str
   });
 }
 
-/** Loads DENP-905 into the tab. */
 async function loadEpic(user: ReturnType<typeof userEvent.setup>): Promise<void> {
-  await user.type(screen.getByLabelText('Epic key'), 'denp-905');
+  await user.type(screen.getByLabelText('Epic key'), 'denp-1436');
   await user.click(screen.getByRole('button', { name: 'Load Epic' }));
-  await waitFor(() => expect(screen.getByText(/DENP-905 — AEP enrollment intake/)).toBeInTheDocument());
+  await waitFor(() => expect(screen.getByText(/DENP-1436 — \[GIPM\]/)).toBeInTheDocument());
 }
 
-/** The reply an assistant would paste back, satisfying the first item only. */
-function buildReply(): string {
+/** Pastes a reply through the panel, as the PO does. */
+async function pasteReply(user: ReturnType<typeof userEvent.setup>, replyText: string): Promise<void> {
+  await user.click(screen.getByRole('button', { name: 'Build the prompt' }));
+  await user.click(screen.getByLabelText(/Paste the assistant/i));
+  await user.paste(replyText);
+  await user.click(screen.getByRole('button', { name: 'Read the reply' }));
+}
+
+/** A reply against the Epic's own checklist ids: the first satisfied, the second only partly. */
+function buildChecklistReply(): string {
   return JSON.stringify({
-    kind: 'epicChecklistReview',
+    kind: 'epicReadinessReview',
     items: [
-      { itemId: 'line-2', isSatisfied: true, evidence: 'Stakeholders signed off the objective on 12 August.' },
-      { itemId: 'line-4', isSatisfied: false, evidence: 'The Epic does not state the scope.' },
+      { criterionId: 'line-2', status: 'satisfied', evidence: 'Stakeholders signed off the objective on 12 August.', whatIsMissing: '' },
+      { criterionId: 'line-4', status: 'partial', evidence: 'Acceptance criteria cover enrolment only.', whatIsMissing: 'Acceptance criteria for the rejection path.' },
     ],
   });
 }
@@ -90,81 +93,87 @@ describe('EpicChecklistTab', () => {
     setAiAssistUnlocked(true);
   });
 
-  it('shows the Epic, which field the checklist came from, and how far along it is', async () => {
+  it('validates against the Epic’s own checklist when it can be read', async () => {
     installJira();
     render(<EpicChecklistTab />);
 
     await loadEpic(userEvent.setup());
 
-    expect(screen.getByText('0 of 2 checklist items done')).toBeInTheDocument();
-    expect(screen.getByText(/Smart Checklist/)).toBeInTheDocument();
-    expect(screen.getByText(/Open items \(2\)/)).toBeInTheDocument();
+    expect(screen.getByText('2 criteria to check')).toBeInTheDocument();
+    expect(screen.getByText(/Using this Epic’s own checklist/)).toBeInTheDocument();
   });
 
-  it('says plainly when the instance has no checklist field, rather than showing an empty checklist', async () => {
-    installJira({ hasChecklistField: false });
-    const user = userEvent.setup();
-    render(<EpicChecklistTab />);
-
-    await user.type(screen.getByLabelText('Epic key'), 'DENP-905');
-    await user.click(screen.getByRole('button', { name: 'Load Epic' }));
-
-    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/no checklist field/i));
-  });
-
-  it('proposes only the items the review found evidence for, and writes nothing yet', async () => {
-    installJira();
-    const user = userEvent.setup();
-    render(<EpicChecklistTab />);
-    await loadEpic(user);
-
-    await user.click(screen.getByRole('button', { name: 'Build the prompt' }));
-    await user.click(screen.getByLabelText(/Paste the assistant/i));
-    await user.paste(buildReply());
-    await user.click(screen.getByRole('button', { name: 'Read the reply' }));
-
-    // The review is on screen and one tick is queued, but Jira has not been touched.
-    await waitFor(() => expect(screen.getByRole('button', { name: /Tick 1 item/ })).toBeEnabled());
-    expect(saveFeatureReviewSimpleField).not.toHaveBeenCalled();
-  });
-
-  it('ticks only the selected item and keeps every other line of the checklist', async () => {
-    installJira();
-    const user = userEvent.setup();
-    render(<EpicChecklistTab />);
-    await loadEpic(user);
-
-    // Paste the reviewed answer through the panel's own textbox, as the PO does.
-    await user.click(screen.getByRole('button', { name: 'Build the prompt' }));
-    await user.click(screen.getByLabelText(/Paste the assistant/i));
-    await user.paste(buildReply());
-    await user.click(screen.getByRole('button', { name: 'Read the reply' }));
-
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: /Tick 1 item\(s\) on DENP-905/ })).toBeEnabled();
-    });
-    await user.click(screen.getByRole('button', { name: /Tick 1 item\(s\) on DENP-905/ }));
-
-    await waitFor(() => expect(saveFeatureReviewSimpleField).toHaveBeenCalledTimes(1));
-    const [issueKey, fieldId, savedText] = vi.mocked(saveFeatureReviewSimpleField).mock.calls[0];
-
-    expect(issueKey).toBe('DENP-905');
-    expect(fieldId).toBe(CHECKLIST_FIELD_ID);
-    expect(savedText).toBe([
-      '# Definition of Ready (DoR)',
-      '## Business Readiness',
-      '- [x] Business objective, success criteria, and stakeholder alignment are established',
-      '## Requirements Readiness',
-      '- [ ] Scope and acceptance criteria are understood',
-    ].join('\n'));
-  });
-
-  it('says so when the Epic carries no checklist items at all', async () => {
+  it('still validates when the checklist cannot be read, and says which criteria it used', async () => {
+    // The reported defect: Jira shows 0/11 from a linked template, but the issue's own fields hold no text.
     installJira({ checklistText: '' });
     render(<EpicChecklistTab />);
 
     await loadEpic(userEvent.setup());
 
-    expect(screen.getByText(/has no checklist items yet/i)).toBeInTheDocument();
+    expect(screen.getByText(`${DEFAULT_DOR_CRITERIA.length + 5} criteria to check`)).toBeInTheDocument();
+    expect(screen.getByText(/standard Definition of Ready and Done/)).toBeInTheDocument();
+    expect(screen.getByText(/comes from a linked template/)).toBeInTheDocument();
+  });
+
+  it('reports a verdict per definition, with the evidence and what is still needed', async () => {
+    installJira();
+    const user = userEvent.setup();
+    render(<EpicChecklistTab />);
+    await loadEpic(user);
+
+    await pasteReply(user, buildChecklistReply());
+
+    await waitFor(() => expect(screen.getByText(/NOT MET — 1 of 2 satisfied/)).toBeInTheDocument());
+    expect(screen.getByText(/Evidence: Stakeholders signed off/)).toBeInTheDocument();
+    expect(screen.getByText(/Still needed: Acceptance criteria for the rejection path./)).toBeInTheDocument();
+    expect(screen.getByText('Partly satisfied')).toBeInTheDocument();
+  });
+
+  it('writes nothing to Jira from reading a reply', async () => {
+    installJira();
+    const user = userEvent.setup();
+    render(<EpicChecklistTab />);
+    await loadEpic(user);
+
+    await pasteReply(user, buildChecklistReply());
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Copy report' })).toBeInTheDocument());
+    expect(saveFeatureReviewSimpleField).not.toHaveBeenCalled();
+  });
+
+  it('ticks only the satisfied criterion, keeping every other line of the checklist', async () => {
+    installJira();
+    const user = userEvent.setup();
+    render(<EpicChecklistTab />);
+    await loadEpic(user);
+    await pasteReply(user, buildChecklistReply());
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /Tick 1 item/ })).toBeEnabled());
+    await user.click(screen.getByRole('button', { name: /Tick 1 item/ }));
+
+    await waitFor(() => expect(saveFeatureReviewSimpleField).toHaveBeenCalledTimes(1));
+    const [issueKey, fieldId, savedText] = vi.mocked(saveFeatureReviewSimpleField).mock.calls[0];
+
+    expect(issueKey).toBe('DENP-1436');
+    expect(fieldId).toBe(CHECKLIST_FIELD_ID);
+    expect(savedText).toBe(EPIC_CHECKLIST_TEXT.replace(
+      '- [ ] Business objective',
+      '- [x] Business objective',
+    ));
+  });
+
+  it('offers no ticking at all when the checklist could not be read', async () => {
+    installJira({ checklistText: '' });
+    const user = userEvent.setup();
+    render(<EpicChecklistTab />);
+    await loadEpic(user);
+
+    await pasteReply(user, JSON.stringify({
+      kind: 'epicReadinessReview',
+      items: [{ criterionId: DEFAULT_DOR_CRITERIA[0].id, status: 'satisfied', evidence: 'Signed off.', whatIsMissing: '' }],
+    }));
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Copy report' })).toBeInTheDocument());
+    expect(screen.queryByRole('button', { name: /Tick/ })).not.toBeInTheDocument();
   });
 });
