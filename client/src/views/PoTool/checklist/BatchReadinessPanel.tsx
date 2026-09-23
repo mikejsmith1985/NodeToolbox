@@ -14,6 +14,7 @@ import PoAiPanel from '../ai/PoAiPanel.tsx';
 import { loadHygieneFieldConfig } from '../../Hygiene/checks/hygieneFieldConfig.ts';
 import {
   buildBatchReadinessPrompts,
+  DEFAULT_MAX_VERDICTS_PER_PART,
   buildBatchReadinessReport,
   buildBatchSummary,
   formatBatchReportMarkdown,
@@ -50,6 +51,11 @@ export default function BatchReadinessPanel() {
   const [verdictsByIssueKey, setVerdictsByIssueKey] = useState<Record<string, CriterionVerdict[]>>({});
   const [expandedIssueKey, setExpandedIssueKey] = useState<string | null>(null);
   const [hasCopiedReport, setHasCopiedReport] = useState(false);
+  // How many Epics one reply must cover. The binding limit is what the assistant will write in one go, not what
+  // it will read, so this is the control that matters when replies come back cut off (GH #387).
+  const [epicsPerPrompt, setEpicsPerPrompt] = useState(
+    Math.max(1, Math.floor(DEFAULT_MAX_VERDICTS_PER_PART / DEFAULT_READINESS_CRITERIA.length)),
+  );
 
   /**
    * The prompts, packed once per loaded batch.
@@ -58,8 +64,14 @@ export default function BatchReadinessPanel() {
    * remaining Epics and make part two's panel move out from under an in-flight review.
    */
   const prompts = useMemo(
-    () => (loadedBatch ? buildBatchReadinessPrompts(loadedBatch.epics, DEFAULT_READINESS_CRITERIA) : []),
-    [loadedBatch],
+    () => (loadedBatch
+      ? buildBatchReadinessPrompts(
+        loadedBatch.epics,
+        DEFAULT_READINESS_CRITERIA,
+        epicsPerPrompt * DEFAULT_READINESS_CRITERIA.length,
+      )
+      : []),
+    [loadedBatch, epicsPerPrompt],
   );
 
   /** The report, rebuilt whenever a reply lands. */
@@ -209,6 +221,21 @@ export default function BatchReadinessPanel() {
             value={jqlInput}
           />
         </label>
+        <label className={styles.loadField}>
+          <span className={styles.fieldLabel}>Epics per prompt</span>
+          <select
+            aria-label="Epics per prompt"
+            className={styles.textInput}
+            onChange={(event) => setEpicsPerPrompt(Number(event.target.value))}
+            value={epicsPerPrompt}
+          >
+            {[1, 2, 3, 5].map((epicCount) => (
+              <option key={epicCount} value={epicCount}>
+                {`${epicCount} (${epicCount * DEFAULT_READINESS_CRITERIA.length} answers per reply)`}
+              </option>
+            ))}
+          </select>
+        </label>
         <button className={styles.primaryButton} disabled={isLoading} onClick={() => void handleRunQuery()} type="button">
           {isLoading ? 'Running…' : 'Run query'}
         </button>
@@ -227,8 +254,10 @@ export default function BatchReadinessPanel() {
 
           {prompts.length > 1 ? (
             <p className={styles.panelHint}>
-              {`This batch is split into ${prompts.length} parts. Run each part and paste every reply back — an `}
-              Epic whose part was never pasted is reported as not reviewed.
+              {`This batch is split into ${prompts.length} parts, each asking for `}
+              {`${epicsPerPrompt * DEFAULT_READINESS_CRITERIA.length} answers. Run each part and paste every reply `}
+              back — an Epic whose part was never pasted is reported as not reviewed. If a reply still comes back
+              cut off, lower &quot;Epics per prompt&quot; and run the parts again.
             </p>
           ) : null}
 

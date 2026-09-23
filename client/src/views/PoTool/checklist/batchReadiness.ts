@@ -25,10 +25,20 @@ const BATCH_INGEST_KIND = 'epicReadinessBatch';
 /**
  * How large one prompt may get before the batch is split.
  *
- * The same cap the bulk re-write uses, for the same reason: a prompt an assistant silently truncates produces a
- * confident review of the Epics it happened to read and says nothing about the rest.
+ * A secondary guard only. The binding constraint turned out to be the REPLY, not the prompt: a part holding six
+ * Epics fits comfortably in any prompt and then asks for sixty-six verdicts of JSON, which an assistant cuts off
+ * part way through. So parts are packed by how much answer they ask for, and this cap only catches the rare Epic
+ * whose own text is enormous.
  */
 export const MAX_CHARS_PER_PROMPT = 9000;
+
+/**
+ * How many verdicts one reply may be asked for.
+ *
+ * One verdict is one Epic judged against one criterion, and each carries two sentences of prose. Twenty-two — two
+ * Epics against the team's eleven criteria — is a reply an assistant finishes rather than truncates.
+ */
+export const DEFAULT_MAX_VERDICTS_PER_PART = 22;
 
 /** How much of one Epic's description a batch prompt carries. A batch trades depth per Epic for breadth. */
 const MAX_DESCRIPTION_CHARS_PER_EPIC = 1500;
@@ -94,6 +104,8 @@ function buildPromptShell(criteria: readonly ReadinessCriterion[], partLabel: st
     '  • Judge only what is written here. An Epic\'s status, its age and the existence of children are not',
     '    evidence on their own.',
     '  • Answer every Epic in this part against every criterion. Use only the keys and ids given.',
+    '  • Keep "evidence" and "whatIsMissing" under 25 words each. A long answer that gets cut off part way',
+    '    through is worth less than a short one that finishes.',
     '',
     'Epics:',
     '',
@@ -114,10 +126,16 @@ function buildPromptShell(criteria: readonly ReadinessCriterion[], partLabel: st
 export function buildBatchReadinessPrompts(
   epics: readonly BatchEpic[],
   criteria: readonly ReadinessCriterion[],
+  /** How many verdicts one part may ask for. Lower it for an assistant that cuts long replies short. */
+  maxVerdictsPerPart: number = DEFAULT_MAX_VERDICTS_PER_PART,
 ): string[] {
   if (epics.length === 0) {
     return [];
   }
+
+  // How many Epics one reply can carry: the verdict budget divided by the criteria each Epic is judged against.
+  // At least one, always — a team with more criteria than the budget still gets one Epic per part rather than none.
+  const maxEpicsPerPart = Math.max(1, Math.floor(maxVerdictsPerPart / Math.max(1, criteria.length)));
 
   const epicBlocks = epics.map(buildEpicBlock);
   const shellLength = buildPromptShell(criteria, 'Part 99 of 99.', '').length;
@@ -126,7 +144,9 @@ export function buildBatchReadinessPrompts(
   let currentLength = shellLength;
 
   epicBlocks.forEach((epicBlock) => {
-    if (currentGroup.length > 0 && currentLength + epicBlock.length > MAX_CHARS_PER_PROMPT) {
+    const isOverEpicBudget = currentGroup.length >= maxEpicsPerPart;
+    const isOverCharBudget = currentLength + epicBlock.length > MAX_CHARS_PER_PROMPT;
+    if (currentGroup.length > 0 && (isOverEpicBudget || isOverCharBudget)) {
       groupedBlocks.push(currentGroup);
       currentGroup = [];
       currentLength = shellLength;

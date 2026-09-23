@@ -32,6 +32,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the Epic's checklist could actually be read.
 
 ### Fixed
+- **A JQL readiness review no longer asks for more answers than an assistant will write in one go (GH #387).**
+  An eighteen-Epic query produced three parts, the first holding six Epics — which fitted the prompt easily and
+  then asked for **66 verdicts** of JSON, so the reply came back cut off. Parts are now sized by what the *reply*
+  has to contain rather than by how long the prompt is: the default is **2 Epics (22 answers) per part**, and a
+  new **Epics per prompt** control drops it to 1 for an assistant with a shorter leash, or raises it to 3 or 5.
+  The prompt also asks for evidence and gaps under 25 words each — a short answer that finishes is worth more
+  than a long one that stops half way. Epic descriptions are stripped of rendered HTML before they go in, so the
+  prompt spends its room on the Epic instead of on `<p dir="auto">` markup.
 - **An Epic showing 0 / 11 in Jira no longer reports "0 of 0 checklist items" (GH #387).** Two causes, both
   handled. The checklist is now recognised by **its own syntax in any field** rather than trusting the field
   named "Smart Checklist" to hold it, with the issue's properties tried as a further fallback. And when the

@@ -8,11 +8,12 @@ import {
   buildBatchReadinessReport,
   buildBatchSummary,
   formatBatchReportMarkdown,
+  DEFAULT_MAX_VERDICTS_PER_PART,
   MAX_CHARS_PER_PROMPT,
   parseBatchReadinessIngest,
   type BatchEpic,
 } from './batchReadiness.ts';
-import { DEFAULT_DOR_CRITERIA } from './dorCriteria.ts';
+import { DEFAULT_DOR_CRITERIA, DEFAULT_READINESS_CRITERIA } from './dorCriteria.ts';
 import type { CriterionVerdict } from './readinessReport.ts';
 
 const FIRST_CRITERION_ID = DEFAULT_DOR_CRITERIA[0].id;
@@ -204,5 +205,40 @@ describe('the batch report', () => {
     expect(markdown).toContain('## DENP-2 — DENP-2 summary');
     expect(markdown).toContain('Still needed: State the objective.');
     expect(markdown).toContain('Epics reviewed: 2 of 2');
+  });
+});
+
+// ── Parts are sized by the REPLY, not the prompt (GH #387) ──
+
+describe('how a batch is split', () => {
+  /** The reported case: eighteen Epics against the team's eleven criteria. */
+  const EIGHTEEN_EPICS = Array.from({ length: 18 }, (_unusedEntry, index) => buildEpic(`DENP-${index + 1}`));
+
+  it('asks for no more answers per part than an assistant will finish', () => {
+    // Six Epics fitted the old character cap and then asked for sixty-six verdicts, which came back truncated.
+    const prompts = buildBatchReadinessPrompts(EIGHTEEN_EPICS, DEFAULT_READINESS_CRITERIA);
+    const epicsPerPart = prompts.map((prompt) => (prompt.match(/^### DENP-/gm) ?? []).length);
+
+    expect(Math.max(...epicsPerPart) * DEFAULT_READINESS_CRITERIA.length)
+      .toBeLessThanOrEqual(DEFAULT_MAX_VERDICTS_PER_PART);
+    expect(epicsPerPart.reduce((total, count) => total + count, 0)).toBe(18);
+  });
+
+  it('honours a smaller budget for an assistant that writes shorter replies', () => {
+    const prompts = buildBatchReadinessPrompts(EIGHTEEN_EPICS, DEFAULT_READINESS_CRITERIA, DEFAULT_READINESS_CRITERIA.length);
+
+    expect(prompts).toHaveLength(18);
+    expect((prompts[0].match(/^### DENP-/gm) ?? [])).toHaveLength(1);
+  });
+
+  it('still puts one Epic in a part when the criteria alone exceed the budget', () => {
+    const prompts = buildBatchReadinessPrompts(EIGHTEEN_EPICS, DEFAULT_READINESS_CRITERIA, 3);
+
+    expect(prompts).toHaveLength(18);
+  });
+
+  it('asks for short answers, because a truncated long one is worth less than a finished short one', () => {
+    expect(buildBatchReadinessPrompts([buildEpic('DENP-1')], DEFAULT_READINESS_CRITERIA)[0])
+      .toContain('under 25 words');
   });
 });

@@ -31,7 +31,7 @@ function installSearchResults(options: { total?: number } = {}): void {
           fields: {
             summary: 'First Epic',
             status: { name: 'In Progress' },
-            description: 'Signed off in August.',
+            description: '<p dir="auto">Signed off in August.</p>',
             customfield_ac: 'Given a member enrols…',
             [CHECKLIST_FIELD_ID]: '- [ ] Major dependencies are identified',
           },
@@ -61,6 +61,8 @@ describe('fetchEpicsForReview', () => {
 
     expect(result.epics.map((epic) => epic.source.issueKey)).toEqual(['DENP-1', 'DENP-2']);
     expect(result.epics[0].source.acceptanceCriteria).toBe('Given a member enrols…');
+    // Rendered HTML is stripped: a prompt carrying markup spends its budget on markup, not on the Epic.
+    expect(result.epics[0].source.description).toBe('Signed off in August.');
     expect(vi.mocked(jiraGet).mock.calls[0][0]).toContain(`maxResults=${MAX_EPICS_PER_REVIEW}`);
     expect(vi.mocked(jiraGet).mock.calls[0][0]).toContain('fields=*all');
   });

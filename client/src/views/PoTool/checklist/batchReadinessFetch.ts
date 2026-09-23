@@ -5,6 +5,7 @@
 // would hammer an instance that is already the slowest thing in the loop.
 
 import { jiraGet } from '../../../services/jiraApi.ts';
+import { normalizeRichTextToPlainText } from '../../../utils/richTextPlainText.ts';
 import { findChecklistFieldInIssue, type EpicChecklistSource } from './checklistField.ts';
 import type { BatchEpic } from './batchReadiness.ts';
 
@@ -55,8 +56,12 @@ function buildEpicSource(
     issueKey: issue.key,
     summary: readFieldAsText(issueFields.summary),
     status: statusValue?.name ?? '',
-    description: readFieldAsText(issueFields.description),
-    acceptanceCriteria: acceptanceCriteriaFieldId ? readFieldAsText(issueFields[acceptanceCriteriaFieldId]) : '',
+    // Stripped to plain text: this instance returns rendered HTML, and a prompt carrying
+    // `<p dir="auto">` markup spends its budget on markup instead of on the Epic.
+    description: normalizeRichTextToPlainText(issueFields.description),
+    acceptanceCriteria: acceptanceCriteriaFieldId
+      ? normalizeRichTextToPlainText(issueFields[acceptanceCriteriaFieldId])
+      : '',
     checklistText: foundChecklist?.text ?? '',
     checklistFieldId: foundChecklist?.fieldId ?? null,
   };
