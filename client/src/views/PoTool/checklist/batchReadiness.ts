@@ -100,7 +100,10 @@ function buildPromptShell(criteria: readonly ReadinessCriterion[], partLabel: st
     'Rules:',
     '  • "evidence" must quote or closely paraphrase words from THAT Epic. A criterion cannot be "satisfied"',
     '    without evidence, and evidence from one Epic never counts for another.',
-    '  • "whatIsMissing" says what would have to be added to that Epic. Leave it empty for a satisfied criterion.',
+    '  • "whatIsMissing" is the useful half of this review, so make it an instruction the Product Owner can act',
+    '    on without asking you a follow-up question. Start it with a verb and name the specific thing to write:',
+    '    "Name the two upstream systems this depends on", not "dependencies should be identified". Leave it',
+    '    empty ONLY for a satisfied criterion.',
     '  • Judge only what is written here. An Epic\'s status, its age and the existence of children are not',
     '    evidence on their own.',
     '  • Answer every Epic in this part against every criterion. Use only the keys and ids given.',
@@ -112,7 +115,8 @@ function buildPromptShell(criteria: readonly ReadinessCriterion[], partLabel: st
     epicBlocks,
     '',
     'Reply with ONLY this JSON (every Epic in this part, keyed by its Jira key):',
-    `{"kind":"${BATCH_INGEST_KIND}","items":[{"key":"DENP-1436","criterionId":"dor-business-objective",`
+    // The example quotes a criterion id that is actually in this prompt, so it cannot suggest one that is not.
+    `{"kind":"${BATCH_INGEST_KIND}","items":[{"key":"DENP-1436","criterionId":"${criteria[0]?.id ?? 'criterion-id'}",`
       + '"status":"partial","evidence":"...","whatIsMissing":"..."}]}',
   ].filter((line) => line !== '').join('\n');
 }
@@ -297,7 +301,12 @@ export interface BatchSummaryRow {
   isReviewed: boolean;
 }
 
-/** Short form of a definition's state for the summary table. */
+/**
+ * A definition's state, said in words rather than packed into a fraction.
+ *
+ * "1/6 (1 unanswered)" made a reader work out for themselves how many criteria were actually a problem, and left
+ * it ambiguous whether the unanswered one counted. Naming met, gaps and unanswered separately removes the sum.
+ */
 function summariseDefinition(report: ReadinessReport, definition: 'dor' | 'dod'): string {
   const totals = report.totals[definition];
   if (totals.total === 0) {
@@ -306,10 +315,16 @@ function summariseDefinition(report: ReadinessReport, definition: 'dor' | 'dod')
   if (totals.unanswered === totals.total) {
     return 'not reviewed';
   }
-  if (totals.unanswered > 0) {
-    return `${totals.satisfied}/${totals.total} (${totals.unanswered} unanswered)`;
+  if (totals.satisfied === totals.total) {
+    return `MET — all ${totals.total}`;
   }
-  return totals.satisfied === totals.total ? `MET ${totals.total}/${totals.total}` : `${totals.satisfied}/${totals.total}`;
+
+  const gapCount = totals.partial + totals.missing;
+  return [
+    `${totals.satisfied} of ${totals.total} met`,
+    gapCount > 0 ? `${gapCount} gap${gapCount === 1 ? '' : 's'}` : '',
+    totals.unanswered > 0 ? `${totals.unanswered} unanswered` : '',
+  ].filter((part) => part !== '').join(' · ');
 }
 
 /** The summary a PO reads before opening anything: which Epics are ready, and how far off the rest are. */
@@ -321,7 +336,9 @@ export function buildBatchSummary(batch: BatchReadinessReport): BatchSummaryRow[
       issueSummary: report.issueSummary,
       dorVerdict: summariseDefinition(report, 'dor'),
       dodVerdict: summariseDefinition(report, 'dod'),
-      outstandingCount: report.rows.filter((row) => row.verdict && row.verdict.status !== 'satisfied').length,
+      // An unanswered criterion counts as outstanding. It is certainly not met, and a count that quietly left it
+      // out read as "nine outstanding" beside "one unanswered" and invited exactly the right question.
+      outstandingCount: report.rows.filter((row) => !row.verdict || row.verdict.status !== 'satisfied').length,
       isReviewed: answeredRows.length > 0,
     };
   });

@@ -60,6 +60,29 @@ function buildPartialReply(): string {
   });
 }
 
+/** A reply that finds real gaps, with the instruction a PO acts on. */
+function buildGapReply(): string {
+  return JSON.stringify({
+    kind: 'epicReadinessBatch',
+    items: [
+      {
+        key: 'DENP-1',
+        criterionId: DEFAULT_DOR_CRITERIA[0].id,
+        status: 'missing',
+        evidence: '',
+        whatIsMissing: 'State the business objective and how success will be measured.',
+      },
+      {
+        key: 'DENP-1',
+        criterionId: DEFAULT_DOR_CRITERIA[2].id,
+        status: 'partial',
+        evidence: 'Mentions ESI but names no upstream systems.',
+        whatIsMissing: 'Name the two upstream systems this depends on.',
+      },
+    ],
+  });
+}
+
 describe('BatchReadinessPanel', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -108,13 +131,14 @@ describe('BatchReadinessPanel', () => {
 
     await waitFor(() => expect(screen.getByRole('table')).toBeInTheDocument());
     const summaryTable = screen.getByRole('table');
-    // DENP-1's Definition of Ready is met; its Definition of Done and the whole of DENP-2 were never answered,
-    // and each of those reads "not reviewed" rather than being counted as anything.
-    expect(within(summaryTable).getByText('MET 6/6')).toBeInTheDocument();
-    expect(within(summaryTable).getAllByText('not reviewed')).toHaveLength(3);
+    // DENP-1's Definition of Ready is met; DENP-2 was never answered and reads "not reviewed" rather than
+    // being counted as anything. Definition of Done is not being checked in this mode by default.
+    expect(within(summaryTable).getByText('MET — all 6')).toBeInTheDocument();
+    expect(within(summaryTable).getAllByText('not reviewed').length).toBeGreaterThan(0);
   });
 
-  it('opens one Epic’s detail from its row', async () => {
+  it('writes the gaps out under the table, without anyone having to click', async () => {
+    // The reported complaint: the table said "9 outstanding" and kept the nine to itself.
     installJira();
     const user = userEvent.setup();
     render(<BatchReadinessPanel />);
@@ -122,14 +146,55 @@ describe('BatchReadinessPanel', () => {
 
     await user.click(screen.getByRole('button', { name: 'Build the prompt' }));
     await user.click(screen.getByLabelText(/Paste the assistant/i));
-    await user.paste(buildPartialReply());
+    await user.paste(buildGapReply());
     await user.click(screen.getByRole('button', { name: 'Read the reply' }));
+
     await waitFor(() => expect(screen.getByRole('table')).toBeInTheDocument());
+    expect(screen.getByText('Add: State the business objective and how success will be measured.')).toBeInTheDocument();
+    expect(screen.getByText('Add: Name the two upstream systems this depends on.')).toBeInTheDocument();
+    expect(screen.getByText(/What the Epic says: Mentions ESI/)).toBeInTheDocument();
+  });
 
-    await user.click(within(screen.getByRole('table')).getByRole('button', { name: 'DENP-1' }));
+  it('says which findings are waiting on a reply that has not been pasted', async () => {
+    installJira();
+    const user = userEvent.setup();
+    render(<BatchReadinessPanel />);
+    await runQuery(user);
 
-    expect(screen.getByText(/MET — all 6 criteria are satisfied/)).toBeInTheDocument();
-    expect(screen.getAllByText(/Evidence: Signed off in August./).length).toBeGreaterThan(0);
+    await user.click(screen.getByRole('button', { name: 'Build the prompt' }));
+    await user.click(screen.getByLabelText(/Paste the assistant/i));
+    await user.paste(buildGapReply());
+    await user.click(screen.getByRole('button', { name: 'Read the reply' }));
+
+    await waitFor(() => expect(screen.getByRole('table')).toBeInTheDocument());
+    expect(screen.getAllByText(/has not been pasted back yet/).length).toBeGreaterThan(0);
+  });
+
+  it('checks Definition of Ready only by default, so a funnel Epic is not judged against Done', async () => {
+    installJira();
+    const user = userEvent.setup();
+    render(<BatchReadinessPanel />);
+    await runQuery(user);
+
+    await user.click(screen.getByRole('button', { name: 'Build the prompt' }));
+
+    const promptText = (screen.getByLabelText(/read it, then copy it/i) as HTMLTextAreaElement).value;
+    expect(promptText).toContain('dor-business-objective');
+    expect(promptText).not.toContain('dod-closure-decision');
+  });
+
+  it('checks Definition of Done when that is what is being asked', async () => {
+    installJira();
+    const user = userEvent.setup();
+    render(<BatchReadinessPanel />);
+    await runQuery(user);
+
+    await user.selectOptions(screen.getByLabelText('Which definition to check'), 'dod');
+    await user.click(screen.getByRole('button', { name: 'Build the prompt' }));
+
+    const promptText = (screen.getByLabelText(/read it, then copy it/i) as HTMLTextAreaElement).value;
+    expect(promptText).toContain('dod-closure-decision');
+    expect(promptText).not.toContain('dor-business-objective');
   });
 
   it('never writes to Jira — this mode only reports', async () => {

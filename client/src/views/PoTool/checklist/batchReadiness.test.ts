@@ -175,13 +175,19 @@ describe('the batch report', () => {
     expect(buildBatch().reports.map((report) => report.issueKey)).toEqual(['DENP-1', 'DENP-2']);
   });
 
-  it('summarises each Epic: met, part-met, and what is outstanding', () => {
+  it('summarises each Epic in words rather than a fraction to decode', () => {
     const [firstRow, secondRow] = buildBatchSummary(buildBatch());
 
-    expect(firstRow.dorVerdict).toBe('MET 2/2');
+    expect(firstRow.dorVerdict).toBe('MET — all 2');
     expect(firstRow.outstandingCount).toBe(0);
-    expect(secondRow.dorVerdict).toContain('1 unanswered');
-    expect(secondRow.outstandingCount).toBe(1);
+    expect(secondRow.dorVerdict).toBe('0 of 2 met · 1 gap · 1 unanswered');
+  });
+
+  it('counts an unanswered criterion as outstanding, because it is certainly not met', () => {
+    // The reported oddity: nine outstanding reported beside one unanswered, which did not add up.
+    const [, secondRow] = buildBatchSummary(buildBatch());
+
+    expect(secondRow.outstandingCount).toBe(2);
   });
 
   it('says an Epic nobody reviewed was not reviewed, rather than counting it as ready', () => {
@@ -201,7 +207,7 @@ describe('the batch report', () => {
 
     expect(markdown).toContain('Query: `project = DENP AND issuetype = Epic`');
     expect(markdown).toContain('| Epic | Summary | Definition of Ready | Definition of Done | Outstanding |');
-    expect(markdown).toContain('| DENP-1 | DENP-1 summary | MET 2/2 |');
+    expect(markdown).toContain('| DENP-1 | DENP-1 summary | MET — all 2 |');
     expect(markdown).toContain('## DENP-2 — DENP-2 summary');
     expect(markdown).toContain('Still needed: State the objective.');
     expect(markdown).toContain('Epics reviewed: 2 of 2');
@@ -240,5 +246,12 @@ describe('how a batch is split', () => {
   it('asks for short answers, because a truncated long one is worth less than a finished short one', () => {
     expect(buildBatchReadinessPrompts([buildEpic('DENP-1')], DEFAULT_READINESS_CRITERIA)[0])
       .toContain('under 25 words');
+  });
+
+  it('demands the gap be written as an instruction the PO can act on', () => {
+    const prompt = buildBatchReadinessPrompts([buildEpic('DENP-1')], DEFAULT_READINESS_CRITERIA)[0];
+
+    expect(prompt).toContain('Start it with a verb and name the specific thing to write');
+    expect(prompt).toContain('not "dependencies should be identified"');
   });
 });

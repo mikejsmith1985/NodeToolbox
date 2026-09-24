@@ -14,7 +14,6 @@ import PoAiPanel from '../ai/PoAiPanel.tsx';
 import { loadHygieneFieldConfig } from '../../Hygiene/checks/hygieneFieldConfig.ts';
 import {
   buildBatchReadinessPrompts,
-  DEFAULT_MAX_VERDICTS_PER_PART,
   buildBatchReadinessReport,
   buildBatchSummary,
   formatBatchReportMarkdown,
@@ -25,7 +24,13 @@ import {
 import { fetchEpicsForReview, MAX_EPICS_PER_REVIEW } from './batchReadinessFetch.ts';
 import { loadChecklistField } from './checklistField.ts';
 import { DEFAULT_READINESS_CRITERIA, type ReadinessCriterion } from './dorCriteria.ts';
-import { describeDefinitionVerdict, STATUS_LABELS, type CriterionVerdict } from './readinessReport.ts';
+import {
+  describeDefinitionVerdict,
+  listOutstandingRows,
+  STATUS_LABELS,
+  type CriterionVerdict,
+  type ReadinessReport,
+} from './readinessReport.ts';
 import styles from './EpicChecklistTab.module.css';
 
 /** The criteria one Epic is judged against, and where they came from. */
@@ -49,12 +54,22 @@ export default function BatchReadinessPanel() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [verdictsByIssueKey, setVerdictsByIssueKey] = useState<Record<string, CriterionVerdict[]>>({});
-  const [expandedIssueKey, setExpandedIssueKey] = useState<string | null>(null);
+  // Findings are open by default; this holds the ones the reader has folded away.
+  const [collapsedIssueKeys, setCollapsedIssueKeys] = useState<string[]>([]);
   const [hasCopiedReport, setHasCopiedReport] = useState(false);
   // How many Epics one reply must cover. The binding limit is what the assistant will write in one go, not what
   // it will read, so this is the control that matters when replies come back cut off (GH #387).
-  const [epicsPerPrompt, setEpicsPerPrompt] = useState(
-    Math.max(1, Math.floor(DEFAULT_MAX_VERDICTS_PER_PART / DEFAULT_READINESS_CRITERIA.length)),
+  const [epicsPerPrompt, setEpicsPerPrompt] = useState(2);
+  // Which definition is being asked about. Definition of Ready by default: judging Definition of Done on an Epic
+  // that has not started produces five confident "missing" verdicts that tell the PO nothing they did not know.
+  const [checkedDefinitions, setCheckedDefinitions] = useState<'dor' | 'dod' | 'both'>('dor');
+
+  /** The criteria this review judges against — one definition, or both. */
+  const activeCriteria = useMemo(
+    () => (checkedDefinitions === 'both'
+      ? DEFAULT_READINESS_CRITERIA
+      : DEFAULT_READINESS_CRITERIA.filter((criterion) => criterion.definition === checkedDefinitions)),
+    [checkedDefinitions],
   );
 
   /**
@@ -65,13 +80,9 @@ export default function BatchReadinessPanel() {
    */
   const prompts = useMemo(
     () => (loadedBatch
-      ? buildBatchReadinessPrompts(
-        loadedBatch.epics,
-        DEFAULT_READINESS_CRITERIA,
-        epicsPerPrompt * DEFAULT_READINESS_CRITERIA.length,
-      )
+      ? buildBatchReadinessPrompts(loadedBatch.epics, activeCriteria, epicsPerPrompt * activeCriteria.length)
       : []),
-    [loadedBatch, epicsPerPrompt],
+    [loadedBatch, epicsPerPrompt, activeCriteria],
   );
 
   /** The report, rebuilt whenever a reply lands. */
@@ -100,7 +111,7 @@ export default function BatchReadinessPanel() {
     setIsLoading(true);
     setLoadError(null);
     setVerdictsByIssueKey({});
-    setExpandedIssueKey(null);
+    setCollapsedIssueKeys([]);
     setHasCopiedReport(false);
 
     try {
@@ -125,14 +136,14 @@ export default function BatchReadinessPanel() {
       // rubrics compares nothing. Single-Epic mode still prefers that Epic's own checklist.
       const criteriaByIssueKey: CriteriaByIssueKey = Object.fromEntries(fetched.epics.map((epic) => [
         epic.source.issueKey,
-        { criteria: [...DEFAULT_READINESS_CRITERIA], source: 'standardTemplate' as const },
+        { criteria: [...activeCriteria], source: 'standardTemplate' as const },
       ]));
 
       setLoadedBatch({
         jql: trimmedJql,
         epics: fetched.epics,
         criteriaByIssueKey,
-        allCriterionIds: DEFAULT_READINESS_CRITERIA.map((criterion) => criterion.id),
+        allCriterionIds: activeCriteria.map((criterion) => criterion.id),
         totalMatching: fetched.totalMatching,
         wasTruncated: fetched.wasTruncated,
       });
@@ -175,30 +186,70 @@ export default function BatchReadinessPanel() {
     }
   }
 
-  /** One Epic's detail, shown when its summary row is opened. */
-  function renderEpicDetail(issueKey: string) {
-    const report = batchReport?.reports.find((candidate) => candidate.issueKey === issueKey);
-    if (!report) {
-      return null;
-    }
+  /**
+   * One Epic's findings, written out under the table.
+   *
+   * Shown rather than hidden behind a click: the numbers in the table say how much work there is, and this says
+   * WHAT the work is. A review that reports "9 outstanding" and makes the reader hunt for the nine has kept the
+   * only genuinely useful half of itself to itself (GH #387).
+   */
+  function renderEpicFindings(report: ReadinessReport) {
+    const outstandingRows = listOutstandingRows(report);
+    const isCollapsed = collapsedIssueKeys.includes(report.issueKey);
 
     return (
-      <ul className={styles.reviewList}>
-        {report.rows.map((row) => (
-          <li className={styles.reviewRow} key={row.criterion.id}>
-            <div className={styles.reviewRowHeader}>
-              <span className={row.verdict ? styles[`status_${row.verdict.status}`] : styles.status_unanswered}>
-                {row.verdict ? STATUS_LABELS[row.verdict.status] : 'Not answered'}
-              </span>
-              <span>{row.criterion.text}</span>
-            </div>
-            {row.verdict?.evidence ? <p className={styles.reviewRowMeta}>{`Evidence: ${row.verdict.evidence}`}</p> : null}
-            {row.verdict?.whatIsMissing ? (
-              <p className={styles.reviewRowMeta}>{`Still needed: ${row.verdict.whatIsMissing}`}</p>
-            ) : null}
-          </li>
-        ))}
-      </ul>
+      <section className={styles.findingsCard} key={report.issueKey}>
+        <div className={styles.reviewRowHeader}>
+          <button
+            aria-expanded={!isCollapsed}
+            className={styles.linkButton}
+            onClick={() => setCollapsedIssueKeys((previousKeys) => (
+              previousKeys.includes(report.issueKey)
+                ? previousKeys.filter((collapsedKey) => collapsedKey !== report.issueKey)
+                : [...previousKeys, report.issueKey]
+            ))}
+            type="button"
+          >
+            {`${isCollapsed ? '▸' : '▾'} ${report.issueKey} — ${report.issueSummary}`}
+          </button>
+        </div>
+
+        {(['dor', 'dod'] as const)
+          .filter((definition) => report.totals[definition].total > 0)
+          .map((definition) => (
+            <p className={styles.verdictLine} key={definition}>
+              {describeDefinitionVerdict(report.totals[definition], definition)}
+            </p>
+          ))}
+
+        {isCollapsed ? null : (
+          <ul className={styles.reviewList}>
+            {outstandingRows.length === 0
+              ? <li className={styles.panelHint}>Nothing outstanding.</li>
+              : outstandingRows.map((row) => (
+                <li className={styles.reviewRow} key={row.criterion.id}>
+                  <div className={styles.reviewRowHeader}>
+                    <span className={row.verdict ? styles[`status_${row.verdict.status}`] : styles.status_unanswered}>
+                      {row.verdict ? STATUS_LABELS[row.verdict.status] : 'Not answered'}
+                    </span>
+                    <span>{row.criterion.text}</span>
+                  </div>
+                  {row.verdict?.whatIsMissing ? (
+                    <p className={styles.reviewRowAction}>{`Add: ${row.verdict.whatIsMissing}`}</p>
+                  ) : null}
+                  {row.verdict?.evidence ? (
+                    <p className={styles.reviewRowMeta}>{`What the Epic says: ${row.verdict.evidence}`}</p>
+                  ) : null}
+                  {!row.verdict ? (
+                    <p className={styles.reviewRowMeta}>
+                      This criterion was in a part whose reply has not been pasted back yet.
+                    </p>
+                  ) : null}
+                </li>
+              ))}
+          </ul>
+        )}
+      </section>
     );
   }
 
@@ -222,6 +273,19 @@ export default function BatchReadinessPanel() {
           />
         </label>
         <label className={styles.loadField}>
+          <span className={styles.fieldLabel}>Check</span>
+          <select
+            aria-label="Which definition to check"
+            className={styles.textInput}
+            onChange={(event) => setCheckedDefinitions(event.target.value as 'dor' | 'dod' | 'both')}
+            value={checkedDefinitions}
+          >
+            <option value="dor">Definition of Ready</option>
+            <option value="dod">Definition of Done</option>
+            <option value="both">Both</option>
+          </select>
+        </label>
+        <label className={styles.loadField}>
           <span className={styles.fieldLabel}>Epics per prompt</span>
           <select
             aria-label="Epics per prompt"
@@ -231,7 +295,7 @@ export default function BatchReadinessPanel() {
           >
             {[1, 2, 3, 5].map((epicCount) => (
               <option key={epicCount} value={epicCount}>
-                {`${epicCount} (${epicCount * DEFAULT_READINESS_CRITERIA.length} answers per reply)`}
+                {`${epicCount} (${epicCount * activeCriteria.length} answers per reply)`}
               </option>
             ))}
           </select>
@@ -255,7 +319,7 @@ export default function BatchReadinessPanel() {
           {prompts.length > 1 ? (
             <p className={styles.panelHint}>
               {`This batch is split into ${prompts.length} parts, each asking for `}
-              {`${epicsPerPrompt * DEFAULT_READINESS_CRITERIA.length} answers. Run each part and paste every reply `}
+              {`${epicsPerPrompt * activeCriteria.length} answers. Run each part and paste every reply `}
               back — an Epic whose part was never pasted is reported as not reviewed. If a reply still comes back
               cut off, lower &quot;Epics per prompt&quot; and run the parts again.
             </p>
@@ -297,17 +361,7 @@ export default function BatchReadinessPanel() {
                 <tbody>
                   {summaryRows.map((summaryRow) => (
                     <tr key={summaryRow.issueKey}>
-                      <td>
-                        <button
-                          className={styles.linkButton}
-                          onClick={() => setExpandedIssueKey(
-                            expandedIssueKey === summaryRow.issueKey ? null : summaryRow.issueKey,
-                          )}
-                          type="button"
-                        >
-                          {summaryRow.issueKey}
-                        </button>
-                      </td>
+                      <td>{summaryRow.issueKey}</td>
                       <td>{summaryRow.issueSummary}</td>
                       <td>{summaryRow.dorVerdict}</td>
                       <td>{summaryRow.dodVerdict}</td>
@@ -317,23 +371,11 @@ export default function BatchReadinessPanel() {
                 </tbody>
               </table>
 
-              {expandedIssueKey && batchReport ? (
-                <section>
-                  <h4 className={styles.panelTitle}>{expandedIssueKey}</h4>
-                  {(['dor', 'dod'] as const).map((definition) => {
-                    const report = batchReport.reports.find((candidate) => candidate.issueKey === expandedIssueKey);
-                    if (!report || report.totals[definition].total === 0) {
-                      return null;
-                    }
-                    return (
-                      <p className={styles.verdictLine} key={definition}>
-                        {describeDefinitionVerdict(report.totals[definition], definition)}
-                      </p>
-                    );
-                  })}
-                  {renderEpicDetail(expandedIssueKey)}
-                </section>
-              ) : null}
+              {batchReport
+                ? batchReport.reports
+                  .filter((report) => report.rows.length > 0)
+                  .map(renderEpicFindings)
+                : null}
             </>
           ) : null}
         </>

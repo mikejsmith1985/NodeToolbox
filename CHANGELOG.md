@@ -31,7 +31,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Ticking the Smart Checklist is still offered, but only for criteria the review marked satisfied, and only when
   the Epic's checklist could actually be read.
 
+### Changed
+- **The readiness review now shows the findings, not just the score (GH #387 feedback).** A table reading
+  "9 outstanding" kept the useful half of the review to itself. Every reviewed Epic's outstanding criteria are
+  now written out **under the table, open by default**, each led by the instruction to act on — *"Add: Name the
+  two upstream systems this depends on"* — with what the Epic currently says beneath it, and criteria still
+  waiting on an unpasted reply saying so. Fold an Epic away by clicking its heading. The prompt now demands that
+  guidance be a concrete instruction starting with a verb, naming the specific thing to write, rather than a
+  restatement of the criterion.
+- **Choose which definition to check.** A new **Check** control reviews **Definition of Ready** (the default),
+  **Definition of Done**, or both. Judging Done on an Epic still in the funnel produced five confident "missing"
+  verdicts that told a PO nothing, and cost half of every reply to produce; checking Ready alone nearly halves
+  the number of prompts for the same query.
+
 ### Fixed
+- **"9 outstanding" beside "1 unanswered" now adds up.** The outstanding count left unanswered criteria out,
+  though an unanswered criterion is certainly not met. It counts them, and each definition's column now reads in
+  words — *"1 of 6 met · 4 gaps · 1 unanswered"* — instead of a fraction the reader had to decode.
+- **A Definition-of-Done-only prompt no longer shows a Definition-of-Ready id in its example.** The reply format
+  example quoted a fixed criterion id, which was not one of the criteria when only one definition was being
+  checked. It now quotes an id from that prompt's own list.
 - **A JQL readiness review no longer asks for more answers than an assistant will write in one go (GH #387).**
   An eighteen-Epic query produced three parts, the first holding six Epics — which fitted the prompt easily and
   then asked for **66 verdicts** of JSON, so the reply came back cut off. Parts are now sized by what the *reply*
