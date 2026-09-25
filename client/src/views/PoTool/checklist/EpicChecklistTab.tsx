@@ -280,7 +280,9 @@ export default function EpicChecklistTab() {
     setStatusMessage(null);
 
     try {
-      await postEpicComment(loadedEpic.source.issueKey, formatReadinessReport(report, 'html'));
+      // A comment renders WIKI MARKUP on this Jira, while a description renders HTML — the same instance,
+      // two different fields. Sending HTML here showed the tags themselves (GH #387).
+      await postEpicComment(loadedEpic.source.issueKey, formatReadinessReport(report, 'jira'));
       setStatusMessage(`The review is now a comment on ${loadedEpic.source.issueKey}.`);
     } catch (unknownError) {
       setStatusMessage(

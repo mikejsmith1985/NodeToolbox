@@ -31,6 +31,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Ticking the Smart Checklist is still offered, but only for criteria the review marked satisfied, and only when
   the Epic's checklist could actually be read.
 
+### Fixed
+- **A posted review no longer shows its own HTML tags in the comment (GH #387).** On this Jira a **description**
+  renders HTML while a **comment** renders wiki markup — the same instance, two different fields — and the
+  comment was being sent the description's flavour, so it arrived as `<h1>` and `<strong>` in plain sight. Comments
+  are now written in wiki markup and descriptions stay HTML, each getting what it actually renders.
+
 ### Added
 - **The readiness review carries its date, and can be posted as a comment (GH #387).** A readiness verdict has a
   shelf life — an Epic reviewed in July and untouched since is a different thing from one reviewed this morning —

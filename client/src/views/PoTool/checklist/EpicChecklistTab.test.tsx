@@ -236,7 +236,10 @@ describe('EpicChecklistTab', () => {
     const [commentPath, commentPayload] = vi.mocked(jiraPost).mock.calls[0];
 
     expect(commentPath).toBe('/rest/api/2/issue/DENP-1436/comment');
-    expect((commentPayload as { body: string }).body).toContain('<h1>Readiness review');
-    expect((commentPayload as { body: string }).body).toMatch(/Reviewed \d{1,2} \w+ \d{4}/);
+    // A comment renders wiki markup on this Jira, unlike a description, which renders HTML.
+    const commentBody = (commentPayload as { body: string }).body;
+    expect(commentBody).toContain('h1. Readiness review');
+    expect(commentBody).not.toContain('<h1>');
+    expect(commentBody).toMatch(/Reviewed \d{1,2} \w+ \d{4}/);
   });
 });

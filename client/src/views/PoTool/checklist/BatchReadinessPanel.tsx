@@ -248,7 +248,9 @@ export default function BatchReadinessPanel() {
     setWritingIssueKey(issueKey);
 
     try {
-      await postEpicComment(issueKey, formatReadinessReport(report, 'html'));
+      // A comment renders WIKI MARKUP on this Jira, while a description renders HTML — the same instance,
+      // two different fields. Sending HTML here showed the tags themselves (GH #387).
+      await postEpicComment(issueKey, formatReadinessReport(report, 'jira'));
       setWriteMessageByIssueKey((previous) => ({
         ...previous,
         [issueKey]: `The review is now a comment on ${issueKey}.`,
