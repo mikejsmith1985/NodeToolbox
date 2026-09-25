@@ -13,6 +13,7 @@ import { DEFINITION_LABELS, type ReadinessCriterion } from './dorCriteria.ts';
 import {
   buildReadinessReport,
   describeDefinitionVerdict,
+  formatReviewDate,
   STATUS_LABELS,
   type CriterionVerdict,
   type ReadinessReport,
@@ -380,7 +381,12 @@ function formatEpicSection(report: ReadinessReport, markup: ReportMarkup): strin
  * The table leads because that is how the document gets used — a PO scans it, picks the Epics that are not
  * ready, and reads only those sections.
  */
-export function formatBatchReport(batch: BatchReadinessReport, flavour: ReportFlavour = 'markdown'): string {
+export function formatBatchReport(
+  batch: BatchReadinessReport,
+  flavour: ReportFlavour = 'markdown',
+  /** When the review was run. Injected so the report is the same text every time a test asks for it. */
+  reviewedAt: Date = new Date(),
+): string {
   const markup = buildReportMarkup(flavour);
   const summaryRows = buildBatchSummary(batch);
   const headerCells = ['Epic', 'Summary', 'Definition of Ready', 'Definition of Done', 'Outstanding'];
@@ -388,6 +394,7 @@ export function formatBatchReport(batch: BatchReadinessReport, flavour: ReportFl
   return markup.finalize([
     markup.heading(1, 'Readiness review'),
     '',
+    `Reviewed ${formatReviewDate(reviewedAt)}.`,
     `Query: ${markup.code(batch.jql)}`,
     `Epics reviewed: ${summaryRows.filter((row) => row.isReviewed).length} of ${summaryRows.length}`,
     '',

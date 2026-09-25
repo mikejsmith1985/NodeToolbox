@@ -8,7 +8,7 @@
 // exactly like an Epic whose checklist is already complete.
 
 import { matchFieldIdsByName } from '../../Hygiene/checks/hygieneFieldConfig.ts';
-import { jiraGet } from '../../../services/jiraApi.ts';
+import { jiraGet, jiraPost } from '../../../services/jiraApi.ts';
 import { saveFeatureReviewSimpleField } from '../../SprintDashboard/featureReviewFixes.ts';
 import type { JiraField } from '../../../types/jira.ts';
 
@@ -195,4 +195,14 @@ export async function fetchRawDescription(issueKey: string): Promise<string> {
 /** Writes the Epic's description. The caller has already decided what the whole field should say. */
 export async function saveEpicDescription(issueKey: string, description: string): Promise<void> {
   await saveFeatureReviewSimpleField(issueKey, 'description', description);
+}
+
+/**
+ * Posts the review as a comment on the Epic.
+ *
+ * A comment is the permanent half of the pair: the description carries the current review and is replaced each
+ * time, while comments accumulate, so an Epic ends up with a dated trail of how its readiness changed.
+ */
+export async function postEpicComment(issueKey: string, commentBody: string): Promise<void> {
+  await jiraPost(`/rest/api/2/issue/${encodeURIComponent(issueKey)}/comment`, { body: commentBody });
 }

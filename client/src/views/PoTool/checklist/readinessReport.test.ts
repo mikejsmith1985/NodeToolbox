@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_DOR_CRITERIA, DEFAULT_READINESS_CRITERIA } from './dorCriteria.ts';
 import {
   buildReadinessReport,
+  formatReviewDate,
   describeDefinitionVerdict,
   formatReadinessReport,
   listOutstandingRows,
@@ -180,5 +181,37 @@ describe('formatReadinessReport — Jira', () => {
 
   it('still writes Markdown when Markdown is what is wanted', () => {
     expect(formatReadinessReport(buildReport(), 'markdown')).toContain('## Definition of Ready');
+  });
+});
+
+// ── A readiness verdict has a shelf life, so it carries its date (GH #387) ──
+
+describe('the review date', () => {
+  const REVIEWED_AT = new Date('2026-09-25T09:30:00Z');
+
+  function buildDatedReport() {
+    return buildReadinessReport({
+      issueKey: 'DENP-1440',
+      issueSummary: 'An Epic',
+      criteria: DEFAULT_DOR_CRITERIA.slice(0, 1),
+      verdicts: [],
+      criteriaSource: 'standardTemplate',
+    });
+  }
+
+  it('says when the review was run, the way a person reads a date', () => {
+    expect(formatReviewDate(REVIEWED_AT)).toBe('25 September 2026');
+  });
+
+  it('puts the date at the top of the report, beside which criteria were used', () => {
+    const report = formatReadinessReport(buildDatedReport(), 'markdown', REVIEWED_AT);
+
+    expect(report).toContain('Reviewed 25 September 2026.');
+    expect(report).toContain('standard Definition of Ready and Definition of Done');
+  });
+
+  it('dates the Jira and HTML copies too, since those are the ones that land on the Epic', () => {
+    expect(formatReadinessReport(buildDatedReport(), 'jira', REVIEWED_AT)).toContain('Reviewed 25 September 2026');
+    expect(formatReadinessReport(buildDatedReport(), 'html', REVIEWED_AT)).toContain('Reviewed 25 September 2026');
   });
 });

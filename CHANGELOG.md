@@ -31,6 +31,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Ticking the Smart Checklist is still offered, but only for criteria the review marked satisfied, and only when
   the Epic's checklist could actually be read.
 
+### Added
+- **The readiness review carries its date, and can be posted as a comment (GH #387).** A readiness verdict has a
+  shelf life — an Epic reviewed in July and untouched since is a different thing from one reviewed this morning —
+  so every report now opens with **"Reviewed 25 September 2026."** And the two places a review can live now both
+  exist, because they do different jobs: **Add review to description** keeps the **current** review where nobody
+  can miss it, replacing itself each run, while **Post review as comment** leaves a **permanent, dated trail** of
+  how the Epic's readiness changed over time. Both are on the single-Epic review and on each Epic's card in a
+  JQL review.
+
 ### Changed
 - **The review no longer tells the Epic's readers about Toolbox's own plumbing.** The header said "Checked
   against the team's standard criteria (this Epic's checklist could not be read)" — whether Toolbox could read

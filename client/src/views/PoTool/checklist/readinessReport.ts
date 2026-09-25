@@ -50,6 +50,17 @@ export interface ReadinessTotals {
   total: number;
 }
 
+/**
+ * The review's date, written the way a person reads one.
+ *
+ * On the report because a readiness verdict has a shelf life: an Epic reviewed in July and untouched since is
+ * a different thing from one reviewed this morning, and a comment trail of undated reviews says nothing about
+ * which came first.
+ */
+export function formatReviewDate(reviewedAt: Date): string {
+  return reviewedAt.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+}
+
 /** What each status is called on screen and in the copied report. */
 export const STATUS_LABELS: Record<CriterionStatus, string> = {
   satisfied: 'Satisfied',
@@ -184,7 +195,12 @@ function formatDefinitionSection(
  * The header says which criteria were used, because a report checked against the standard template rather than
  * this Epic's own checklist is a slightly different claim, and the reader is entitled to know which it is.
  */
-export function formatReadinessReport(report: ReadinessReport, flavour: ReportFlavour = 'markdown'): string {
+export function formatReadinessReport(
+  report: ReadinessReport,
+  flavour: ReportFlavour = 'markdown',
+  /** When the review was run. Injected so the report is the same text every time a test asks for it. */
+  reviewedAt: Date = new Date(),
+): string {
   const markup = buildReportMarkup(flavour);
   // Says which criteria were used and stops there. Whether Toolbox could read the Epic's own checklist is its
   // own plumbing, and a reader of the Epic has no use for it.
@@ -195,7 +211,7 @@ export function formatReadinessReport(report: ReadinessReport, flavour: ReportFl
   return markup.finalize([
     markup.heading(1, `Readiness review — ${report.issueKey}: ${report.issueSummary}`),
     '',
-    sourceNote,
+    `Reviewed ${formatReviewDate(reviewedAt)}. ${sourceNote}`,
     ...formatDefinitionSection(report, 'dor', markup),
     ...formatDefinitionSection(report, 'dod', markup),
     '',

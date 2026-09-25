@@ -10,7 +10,11 @@ import EpicChecklistTab from './EpicChecklistTab.tsx';
 import { setAiAssistUnlocked } from '../../../store/aiAssistStore.ts';
 import { DEFAULT_DOR_CRITERIA } from './dorCriteria.ts';
 
-vi.mock('../../../services/jiraApi.ts', () => ({ jiraGet: vi.fn(), jiraPut: vi.fn() }));
+vi.mock('../../../services/jiraApi.ts', () => ({
+  jiraGet: vi.fn(),
+  jiraPut: vi.fn(),
+  jiraPost: vi.fn().mockResolvedValue(undefined),
+}));
 vi.mock('../../SprintDashboard/featureReviewFixes.ts', () => ({
   saveFeatureReviewSimpleField: vi.fn().mockResolvedValue(undefined),
 }));
@@ -21,7 +25,7 @@ vi.mock('../../Hygiene/checks/hygieneFieldConfig.ts', async () => {
   return { ...actualModule, loadHygieneFieldConfig: vi.fn().mockResolvedValue({ acceptanceCriteriaFieldIds: ['customfield_ac'] }) };
 });
 
-import { jiraGet } from '../../../services/jiraApi.ts';
+import { jiraGet, jiraPost } from '../../../services/jiraApi.ts';
 import { saveFeatureReviewSimpleField } from '../../SprintDashboard/featureReviewFixes.ts';
 
 const CHECKLIST_FIELD_ID = 'customfield_22222';
@@ -216,5 +220,23 @@ describe('EpicChecklistTab', () => {
     await waitFor(() => {
       expect(screen.getByRole('status')).toHaveTextContent(/now at the end of DENP-1436/);
     });
+  });
+
+  it('posts the review as a comment, which is the copy that stays', async () => {
+    installJira();
+    const user = userEvent.setup();
+    render(<EpicChecklistTab />);
+    await loadEpic(user);
+    await pasteReply(user, buildChecklistReply());
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Post review as comment' })).toBeInTheDocument());
+    await user.click(screen.getByRole('button', { name: 'Post review as comment' }));
+
+    await waitFor(() => expect(jiraPost).toHaveBeenCalled());
+    const [commentPath, commentPayload] = vi.mocked(jiraPost).mock.calls[0];
+
+    expect(commentPath).toBe('/rest/api/2/issue/DENP-1436/comment');
+    expect((commentPayload as { body: string }).body).toContain('<h1>Readiness review');
+    expect((commentPayload as { body: string }).body).toMatch(/Reviewed \d{1,2} \w+ \d{4}/);
   });
 });

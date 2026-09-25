@@ -20,6 +20,7 @@ import {
   fetchEpicChecklistSource,
   fetchRawDescription,
   loadChecklistField,
+  postEpicComment,
   saveEpicChecklist,
   saveEpicDescription,
   type EpicChecklistSource,
@@ -86,6 +87,7 @@ export default function EpicChecklistTab() {
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isWritingToDescription, setIsWritingToDescription] = useState(false);
+  const [isPostingComment, setIsPostingComment] = useState(false);
   const [copiedFlavour, setCopiedFlavour] = useState<ReportFlavour | null>(null);
   // One definition at a time: "ready to start?" and "finished?" are different questions, asked at different
   // moments, and a report answering both leaves the reader to sort out which half they wanted.
@@ -264,6 +266,33 @@ export default function EpicChecklistTab() {
     }
   }
 
+  /**
+   * Posts the review as a comment on the Epic.
+   *
+   * The permanent half of the pair: the description always carries the current review and is replaced each
+   * time, while comments accumulate into a dated trail of how this Epic's readiness changed.
+   */
+  async function handlePostComment(): Promise<void> {
+    if (!report || !loadedEpic) {
+      return;
+    }
+    setIsPostingComment(true);
+    setStatusMessage(null);
+
+    try {
+      await postEpicComment(loadedEpic.source.issueKey, formatReadinessReport(report, 'html'));
+      setStatusMessage(`The review is now a comment on ${loadedEpic.source.issueKey}.`);
+    } catch (unknownError) {
+      setStatusMessage(
+        unknownError instanceof Error
+          ? `Nothing was posted: ${unknownError.message}`
+          : 'Nothing was posted. Jira refused the comment.',
+      );
+    } finally {
+      setIsPostingComment(false);
+    }
+  }
+
   /** One criterion in the report: the verdict, the evidence, and what is still needed. */
   function renderReportRow(row: ReportRow) {
     const { criterion, verdict } = row;
@@ -416,6 +445,14 @@ export default function EpicChecklistTab() {
                   {isWritingToDescription
                     ? 'Writing…'
                     : `Add review to ${loadedEpic.source.issueKey} description`}
+                </button>
+                <button
+                  className={styles.primaryButton}
+                  disabled={isPostingComment}
+                  onClick={() => void handlePostComment()}
+                  type="button"
+                >
+                  {isPostingComment ? 'Posting…' : 'Post review as comment'}
                 </button>
                 {(['jira', 'markdown'] as const).map((flavour) => (
                   <button

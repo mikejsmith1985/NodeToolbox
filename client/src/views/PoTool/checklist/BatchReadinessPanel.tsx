@@ -22,7 +22,12 @@ import {
   type BatchReadinessReport,
 } from './batchReadiness.ts';
 import { fetchEpicsForReview, MAX_EPICS_PER_REVIEW } from './batchReadinessFetch.ts';
-import { fetchRawDescription, loadChecklistField, saveEpicDescription } from './checklistField.ts';
+import {
+  fetchRawDescription,
+  loadChecklistField,
+  postEpicComment,
+  saveEpicDescription,
+} from './checklistField.ts';
 import { appendReviewToDescription, describeWriteRefusal } from './reviewToDescription.ts';
 import { formatReadinessReport } from './readinessReport.ts';
 import { DEFAULT_READINESS_CRITERIA, DEFINITION_LABELS, type ReadinessCriterion, type ReadinessDefinition } from './dorCriteria.ts';
@@ -234,6 +239,32 @@ export default function BatchReadinessPanel() {
     }
   }
 
+  /** Posts one Epic's findings as a comment — the dated trail beside the description's current copy. */
+  async function handlePostComment(issueKey: string): Promise<void> {
+    const report = batchReport?.reports.find((candidate) => candidate.issueKey === issueKey);
+    if (!report) {
+      return;
+    }
+    setWritingIssueKey(issueKey);
+
+    try {
+      await postEpicComment(issueKey, formatReadinessReport(report, 'html'));
+      setWriteMessageByIssueKey((previous) => ({
+        ...previous,
+        [issueKey]: `The review is now a comment on ${issueKey}.`,
+      }));
+    } catch (unknownError) {
+      setWriteMessageByIssueKey((previous) => ({
+        ...previous,
+        [issueKey]: unknownError instanceof Error
+          ? `Nothing was posted: ${unknownError.message}`
+          : 'Nothing was posted. Jira refused the comment.',
+      }));
+    } finally {
+      setWritingIssueKey(null);
+    }
+  }
+
   /**
    * One Epic's findings, written out under the table.
    *
@@ -269,7 +300,17 @@ export default function BatchReadinessPanel() {
               onClick={() => void handleWriteToDescription(report.issueKey)}
               type="button"
             >
-              {writingIssueKey === report.issueKey ? 'Writing…' : 'Add to description'}
+              {writingIssueKey === report.issueKey ? 'Working…' : 'Add to description'}
+            </button>
+          ) : null}
+          {isReviewed ? (
+            <button
+              className={styles.secondaryButton}
+              disabled={writingIssueKey !== null}
+              onClick={() => void handlePostComment(report.issueKey)}
+              type="button"
+            >
+              Post as comment
             </button>
           ) : null}
         </div>
