@@ -31,7 +31,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Ticking the Smart Checklist is still offered, but only for criteria the review marked satisfied, and only when
   the Epic's checklist could actually be read.
 
+### Added
+- **Copy the readiness report in Jira's own markup (GH #387).** The report was written in Markdown and pasted
+  into a Jira comment, where `## Definition of Ready` and `**Business objective**` appeared exactly like that —
+  Jira Data Center renders **wiki markup**, not Markdown. Both review modes now offer **Copy for Jira**
+  (`h2.` headings, single-asterisk emphasis, `*`/`**` nested bullets, `||header||` tables) and **Copy as
+  Markdown** for Teams, Confluence and GitHub. The two are written from one set of shaping decisions, so they
+  cannot drift apart, and a summary containing a pipe no longer shifts every column after it.
+
 ### Changed
+- **Definition of Ready and Definition of Done are never checked at the same time.** They are different
+  questions asked at different moments, and one report answering both left the reader sorting out which half
+  they wanted. Both modes now carry a **Check** control naming one or the other — the "Both" option is gone, and
+  the single-Epic review gained the same control. Defaults to Definition of Ready.
 - **The readiness review now shows the findings, not just the score (GH #387 feedback).** A table reading
   "9 outstanding" kept the useful half of the review to itself. Every reviewed Epic's outstanding criteria are
   now written out **under the table, open by default**, each led by the instruction to act on — *"Add: Name the

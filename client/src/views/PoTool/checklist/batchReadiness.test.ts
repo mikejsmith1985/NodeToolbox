@@ -7,7 +7,7 @@ import {
   buildBatchReadinessPrompts,
   buildBatchReadinessReport,
   buildBatchSummary,
-  formatBatchReportMarkdown,
+  formatBatchReport,
   DEFAULT_MAX_VERDICTS_PER_PART,
   MAX_CHARS_PER_PROMPT,
   parseBatchReadinessIngest,
@@ -203,7 +203,7 @@ describe('the batch report', () => {
   });
 
   it('writes one document: the query, a summary table, then each Epic in detail', () => {
-    const markdown = formatBatchReportMarkdown(buildBatch());
+    const markdown = formatBatchReport(buildBatch());
 
     expect(markdown).toContain('Query: `project = DENP AND issuetype = Epic`');
     expect(markdown).toContain('| Epic | Summary | Definition of Ready | Definition of Done | Outstanding |');
@@ -253,5 +253,42 @@ describe('how a batch is split', () => {
 
     expect(prompt).toContain('Start it with a verb and name the specific thing to write');
     expect(prompt).toContain('not "dependencies should be identified"');
+  });
+});
+
+describe('formatBatchReport — Jira', () => {
+  it('writes a table and headings Jira renders, with no Markdown left in it', () => {
+    const batch = buildBatchReadinessReport({
+      jql: 'project = DENP AND issuetype = Epic',
+      epics: [buildEpic('DENP-1')],
+      criteriaByIssueKey: { 'DENP-1': { criteria: DEFAULT_DOR_CRITERIA.slice(0, 1), source: 'standardTemplate' } },
+      verdictsByIssueKey: {
+        'DENP-1': [{
+          criterionId: FIRST_CRITERION_ID,
+          status: 'missing',
+          evidence: '',
+          whatIsMissing: 'State the objective.',
+        }],
+      },
+    });
+    const jiraReport = formatBatchReport(batch, 'jira');
+
+    expect(jiraReport).toContain('||Epic||Summary||Definition of Ready||Definition of Done||Outstanding||');
+    expect(jiraReport).toContain('h2. DENP-1 — DENP-1 summary');
+    expect(jiraReport).toContain('{{project = DENP AND issuetype = Epic}}');
+    expect(jiraReport).toContain('** Still needed: State the objective.');
+    expect(jiraReport).not.toContain('| --- |');
+    expect(jiraReport).not.toContain('**Definition');
+  });
+
+  it('keeps a pipe in a summary from shifting the table’s columns', () => {
+    const batch = buildBatchReadinessReport({
+      jql: 'x',
+      epics: [buildEpic('DENP-1', { summary: 'Enrollment | Transformers' })],
+      criteriaByIssueKey: { 'DENP-1': { criteria: DEFAULT_DOR_CRITERIA.slice(0, 1), source: 'standardTemplate' } },
+      verdictsByIssueKey: {},
+    });
+
+    expect(formatBatchReport(batch, 'markdown')).toContain('Enrollment \\| Transformers');
   });
 });

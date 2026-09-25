@@ -208,7 +208,7 @@ describe('BatchReadinessPanel', () => {
     await user.paste(buildPartialReply());
     await user.click(screen.getByRole('button', { name: 'Read the reply' }));
 
-    await waitFor(() => expect(screen.getByRole('button', { name: /Copy full report/ })).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Copy for Jira' })).toBeInTheDocument());
     expect(screen.queryByRole('button', { name: /Tick/ })).not.toBeInTheDocument();
   });
 });

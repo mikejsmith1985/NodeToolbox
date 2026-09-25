@@ -7,7 +7,7 @@ import { DEFAULT_DOR_CRITERIA, DEFAULT_READINESS_CRITERIA } from './dorCriteria.
 import {
   buildReadinessReport,
   describeDefinitionVerdict,
-  formatReadinessReportMarkdown,
+  formatReadinessReport,
   listOutstandingRows,
   type CriterionVerdict,
 } from './readinessReport.ts';
@@ -100,7 +100,7 @@ describe('listOutstandingRows', () => {
   });
 });
 
-describe('formatReadinessReportMarkdown', () => {
+describe('formatReadinessReport', () => {
   it('reads as a report: the Epic, the verdict, then the criteria with evidence and gaps', () => {
     const report = buildReadinessReport({
       issueKey: 'DENP-1436',
@@ -112,12 +112,12 @@ describe('formatReadinessReportMarkdown', () => {
       ],
       criteriaSource: 'issueChecklist',
     });
-    const markdown = formatReadinessReportMarkdown(report);
+    const markdown = formatReadinessReport(report);
 
     expect(markdown).toContain('# Readiness review — DENP-1436: Preprocessor MBI History Enhancement');
     expect(markdown).toContain('## Definition of Ready');
     expect(markdown).toContain('### Business Readiness');
-    expect(markdown).toContain('Evidence: Signed off on 12 August.');
+    expect(markdown).toContain('What the Epic says: Signed off on 12 August.');
     expect(markdown).toContain('Still needed: Write the acceptance criteria.');
     expect(markdown).toContain('❔');
   });
@@ -131,8 +131,51 @@ describe('formatReadinessReportMarkdown', () => {
       criteriaSource: 'standardTemplate',
     });
 
-    expect(formatReadinessReportMarkdown(standardReport)).toContain('standard Definition of Ready and Done');
-    expect(formatReadinessReportMarkdown({ ...standardReport, criteriaSource: 'issueChecklist' }))
+    expect(formatReadinessReport(standardReport)).toContain('standard criteria');
+    expect(formatReadinessReport({ ...standardReport, criteriaSource: 'issueChecklist' }))
       .toContain('this Epic’s own checklist');
+  });
+});
+
+// ── The same report, in the markup of wherever it is pasted (GH #387) ──
+
+describe('formatReadinessReport — Jira', () => {
+  function buildReport() {
+    return buildReadinessReport({
+      issueKey: 'DENP-1440',
+      issueSummary: 'EGWP - Disable SmartyAddress Validation',
+      criteria: DEFAULT_DOR_CRITERIA.slice(0, 1),
+      verdicts: [{
+        criterionId: DEFAULT_DOR_CRITERIA[0].id,
+        status: 'partial',
+        evidence: 'Business reported inconsistent behaviour.',
+        whatIsMissing: 'Define measurable success criteria.',
+      }],
+      criteriaSource: 'standardTemplate',
+    });
+  }
+
+  it('writes headings and emphasis the way Jira renders them', () => {
+    const jiraReport = formatReadinessReport(buildReport(), 'jira');
+
+    expect(jiraReport).toContain('h1. Readiness review — DENP-1440');
+    expect(jiraReport).toContain('h2. Definition of Ready');
+    expect(jiraReport).toContain('h3. Business Readiness');
+    expect(jiraReport).not.toContain('## ');
+    // Jira emphasises with one asterisk; two would be Markdown's bold, shown literally in a Jira comment.
+    // (Two asterisks at the START of a line are Jira's nested bullet, which is why this checks the text itself.)
+    expect(jiraReport).not.toContain(`**${DEFAULT_DOR_CRITERIA[0].text}**`);
+    expect(jiraReport).toContain(`*${DEFAULT_DOR_CRITERIA[0].text}*`);
+  });
+
+  it('nests the detail with repeated bullets, which is how Jira nests', () => {
+    const jiraReport = formatReadinessReport(buildReport(), 'jira');
+
+    expect(jiraReport).toContain('** Still needed: Define measurable success criteria.');
+    expect(jiraReport).toContain('** What the Epic says: Business reported inconsistent behaviour.');
+  });
+
+  it('still writes Markdown when Markdown is what is wanted', () => {
+    expect(formatReadinessReport(buildReport(), 'markdown')).toContain('## Definition of Ready');
   });
 });

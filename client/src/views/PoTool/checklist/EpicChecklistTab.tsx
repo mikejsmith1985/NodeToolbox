@@ -23,10 +23,11 @@ import {
   type EpicChecklistSource,
 } from './checklistField.ts';
 import { DEFINITION_LABELS, resolveCriteria, type ReadinessCriterion, type ReadinessDefinition } from './dorCriteria.ts';
+import { FLAVOUR_LABELS, type ReportFlavour } from './reportMarkup.ts';
 import {
   buildReadinessReport,
   describeDefinitionVerdict,
-  formatReadinessReportMarkdown,
+  formatReadinessReport,
   STATUS_LABELS,
   type ReadinessReport,
   type ReportRow,
@@ -81,7 +82,10 @@ export default function EpicChecklistTab() {
   const [criterionIdsToTick, setCriterionIdsToTick] = useState<string[]>([]);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
-  const [hasCopiedReport, setHasCopiedReport] = useState(false);
+  const [copiedFlavour, setCopiedFlavour] = useState<ReportFlavour | null>(null);
+  // One definition at a time: "ready to start?" and "finished?" are different questions, asked at different
+  // moments, and a report answering both leaves the reader to sort out which half they wanted.
+  const [checkedDefinition, setCheckedDefinition] = useState<ReadinessDefinition>('dor');
 
   /** Whether ticking is possible at all: the checklist has to have been found in a writable field. */
   const canTickChecklist = Boolean(loadedEpic?.checklistFieldId) && loadedEpic?.criteriaSource === 'issueChecklist';
@@ -99,6 +103,7 @@ export default function EpicChecklistTab() {
     setStatusMessage(null);
     setReport(null);
     setCriterionIdsToTick([]);
+    setCopiedFlavour(null);
 
     try {
       const checklistField = await loadChecklistField();
@@ -116,7 +121,9 @@ export default function EpicChecklistTab() {
         ? source.checklistText
         : await fetchChecklistFromIssueProperties(normalizedIssueKey);
       const checklist = parseSmartChecklist(checklistText);
-      const { criteria, source: criteriaSource } = resolveCriteria(checklist.items);
+      // Only the chosen definition's criteria: never both at once.
+      const { criteria: allCriteria, source: criteriaSource } = resolveCriteria(checklist.items);
+      const criteria = allCriteria.filter((criterion) => criterion.definition === checkedDefinition);
 
       setLoadedEpic({
         source,
@@ -152,7 +159,7 @@ export default function EpicChecklistTab() {
     setReport(builtReport);
     setCriterionIdsToTick(canTickChecklist ? listTickableCriterionIds(builtReport, loadedEpic.checklist) : []);
     setStatusMessage(null);
-    setHasCopiedReport(false);
+    setCopiedFlavour(null);
 
     return { acceptedCount: verdicts.length, errors };
   }
@@ -174,17 +181,17 @@ export default function EpicChecklistTab() {
     ));
   }
 
-  /** Copies the report as markdown, for a Jira comment, Teams, or a refinement agenda. */
-  async function handleCopyReport(): Promise<void> {
+  /** Copies the report in the markup of wherever it is being pasted. */
+  async function handleCopyReport(flavour: ReportFlavour): Promise<void> {
     if (!report) {
       return;
     }
     try {
-      await navigator.clipboard.writeText(formatReadinessReportMarkdown(report));
-      setHasCopiedReport(true);
+      await navigator.clipboard.writeText(formatReadinessReport(report, flavour));
+      setCopiedFlavour(flavour);
     } catch {
       // Clipboard access can be denied; the report is on screen and selectable either way.
-      setHasCopiedReport(false);
+      setCopiedFlavour(null);
     }
   }
 
@@ -305,6 +312,18 @@ export default function EpicChecklistTab() {
             value={issueKeyInput}
           />
         </label>
+        <label className={styles.loadField}>
+          <span className={styles.fieldLabel}>Check</span>
+          <select
+            aria-label="Which definition to check"
+            className={styles.textInput}
+            onChange={(event) => setCheckedDefinition(event.target.value as ReadinessDefinition)}
+            value={checkedDefinition}
+          >
+            <option value="dor">{DEFINITION_LABELS.dor}</option>
+            <option value="dod">{DEFINITION_LABELS.dod}</option>
+          </select>
+        </label>
         <button className={styles.primaryButton} disabled={isLoading} onClick={() => void handleLoadEpic()} type="button">
           {isLoading ? 'Loading…' : 'Load Epic'}
         </button>
@@ -317,7 +336,7 @@ export default function EpicChecklistTab() {
         <>
           <div className={styles.epicSummary}>
             <strong>{`${loadedEpic.source.issueKey} — ${loadedEpic.source.summary}`}</strong>
-            <span>{`${loadedEpic.criteria.length} criteria to check`}</span>
+            <span>{`${loadedEpic.criteria.length} ${DEFINITION_LABELS[checkedDefinition]} criteria to check`}</span>
             <span>
               {loadedEpic.criteriaSource === 'issueChecklist'
                 ? 'Using this Epic’s own checklist'
@@ -346,9 +365,16 @@ export default function EpicChecklistTab() {
           {report ? (
             <>
               <div className={styles.reportActions}>
-                <button className={styles.primaryButton} onClick={() => void handleCopyReport()} type="button">
-                  {hasCopiedReport ? '✓ Copied' : 'Copy report'}
-                </button>
+                {(['jira', 'markdown'] as const).map((flavour) => (
+                  <button
+                    className={styles.primaryButton}
+                    key={flavour}
+                    onClick={() => void handleCopyReport(flavour)}
+                    type="button"
+                  >
+                    {copiedFlavour === flavour ? '✓ Copied' : FLAVOUR_LABELS[flavour]}
+                  </button>
+                ))}
                 {canTickChecklist ? (
                   <button
                     className={styles.primaryButton}

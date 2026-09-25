@@ -99,7 +99,7 @@ describe('EpicChecklistTab', () => {
 
     await loadEpic(userEvent.setup());
 
-    expect(screen.getByText('2 criteria to check')).toBeInTheDocument();
+    expect(screen.getByText('2 Definition of Ready criteria to check')).toBeInTheDocument();
     expect(screen.getByText(/Using this Epic’s own checklist/)).toBeInTheDocument();
   });
 
@@ -110,7 +110,8 @@ describe('EpicChecklistTab', () => {
 
     await loadEpic(userEvent.setup());
 
-    expect(screen.getByText(`${DEFAULT_DOR_CRITERIA.length + 5} criteria to check`)).toBeInTheDocument();
+    // Definition of Ready only, by default: the two definitions are never checked at the same time.
+    expect(screen.getByText(`${DEFAULT_DOR_CRITERIA.length} Definition of Ready criteria to check`)).toBeInTheDocument();
     expect(screen.getByText(/standard Definition of Ready and Done/)).toBeInTheDocument();
     expect(screen.getByText(/comes from a linked template/)).toBeInTheDocument();
   });
@@ -137,7 +138,7 @@ describe('EpicChecklistTab', () => {
 
     await pasteReply(user, buildChecklistReply());
 
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Copy report' })).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Copy for Jira' })).toBeInTheDocument());
     expect(saveFeatureReviewSimpleField).not.toHaveBeenCalled();
   });
 
@@ -173,7 +174,7 @@ describe('EpicChecklistTab', () => {
       items: [{ criterionId: DEFAULT_DOR_CRITERIA[0].id, status: 'satisfied', evidence: 'Signed off.', whatIsMissing: '' }],
     }));
 
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Copy report' })).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Copy for Jira' })).toBeInTheDocument());
     expect(screen.queryByRole('button', { name: /Tick/ })).not.toBeInTheDocument();
   });
 });

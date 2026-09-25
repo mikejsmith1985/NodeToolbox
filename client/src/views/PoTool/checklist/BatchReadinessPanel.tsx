@@ -16,14 +16,15 @@ import {
   buildBatchReadinessPrompts,
   buildBatchReadinessReport,
   buildBatchSummary,
-  formatBatchReportMarkdown,
+  formatBatchReport,
   parseBatchReadinessIngest,
   type BatchEpic,
   type BatchReadinessReport,
 } from './batchReadiness.ts';
 import { fetchEpicsForReview, MAX_EPICS_PER_REVIEW } from './batchReadinessFetch.ts';
 import { loadChecklistField } from './checklistField.ts';
-import { DEFAULT_READINESS_CRITERIA, type ReadinessCriterion } from './dorCriteria.ts';
+import { DEFAULT_READINESS_CRITERIA, DEFINITION_LABELS, type ReadinessCriterion, type ReadinessDefinition } from './dorCriteria.ts';
+import { FLAVOUR_LABELS, type ReportFlavour } from './reportMarkup.ts';
 import {
   describeDefinitionVerdict,
   listOutstandingRows,
@@ -56,20 +57,23 @@ export default function BatchReadinessPanel() {
   const [verdictsByIssueKey, setVerdictsByIssueKey] = useState<Record<string, CriterionVerdict[]>>({});
   // Findings are open by default; this holds the ones the reader has folded away.
   const [collapsedIssueKeys, setCollapsedIssueKeys] = useState<string[]>([]);
-  const [hasCopiedReport, setHasCopiedReport] = useState(false);
   // How many Epics one reply must cover. The binding limit is what the assistant will write in one go, not what
   // it will read, so this is the control that matters when replies come back cut off (GH #387).
   const [epicsPerPrompt, setEpicsPerPrompt] = useState(2);
   // Which definition is being asked about. Definition of Ready by default: judging Definition of Done on an Epic
   // that has not started produces five confident "missing" verdicts that tell the PO nothing they did not know.
-  const [checkedDefinitions, setCheckedDefinitions] = useState<'dor' | 'dod' | 'both'>('dor');
+  const [checkedDefinition, setCheckedDefinition] = useState<ReadinessDefinition>('dor');
+  const [copiedFlavour, setCopiedFlavour] = useState<ReportFlavour | null>(null);
 
-  /** The criteria this review judges against — one definition, or both. */
+  /**
+   * The criteria this review judges against — ONE definition.
+   *
+   * Never both at once: "is this ready to start?" and "is this finished?" are different questions asked at
+   * different moments, and a report answering both makes the reader sort out which half they wanted.
+   */
   const activeCriteria = useMemo(
-    () => (checkedDefinitions === 'both'
-      ? DEFAULT_READINESS_CRITERIA
-      : DEFAULT_READINESS_CRITERIA.filter((criterion) => criterion.definition === checkedDefinitions)),
-    [checkedDefinitions],
+    () => DEFAULT_READINESS_CRITERIA.filter((criterion) => criterion.definition === checkedDefinition),
+    [checkedDefinition],
   );
 
   /**
@@ -112,7 +116,7 @@ export default function BatchReadinessPanel() {
     setLoadError(null);
     setVerdictsByIssueKey({});
     setCollapsedIssueKeys([]);
-    setHasCopiedReport(false);
+    setCopiedFlavour(null);
 
     try {
       const checklistField = await loadChecklistField();
@@ -167,22 +171,22 @@ export default function BatchReadinessPanel() {
     );
 
     setVerdictsByIssueKey((previousVerdicts) => ({ ...previousVerdicts, ...partVerdicts }));
-    setHasCopiedReport(false);
+    setCopiedFlavour(null);
 
     return { acceptedCount: Object.values(partVerdicts).flat().length, errors };
   }
 
-  /** Copies the whole review as one markdown document. */
-  async function handleCopyReport(): Promise<void> {
+  /** Copies the whole review in the markup of wherever it is being pasted. */
+  async function handleCopyReport(flavour: ReportFlavour): Promise<void> {
     if (!batchReport) {
       return;
     }
     try {
-      await navigator.clipboard.writeText(formatBatchReportMarkdown(batchReport));
-      setHasCopiedReport(true);
+      await navigator.clipboard.writeText(formatBatchReport(batchReport, flavour));
+      setCopiedFlavour(flavour);
     } catch {
       // Clipboard access can be denied; the report is on screen and selectable either way.
-      setHasCopiedReport(false);
+      setCopiedFlavour(null);
     }
   }
 
@@ -277,12 +281,11 @@ export default function BatchReadinessPanel() {
           <select
             aria-label="Which definition to check"
             className={styles.textInput}
-            onChange={(event) => setCheckedDefinitions(event.target.value as 'dor' | 'dod' | 'both')}
-            value={checkedDefinitions}
+            onChange={(event) => setCheckedDefinition(event.target.value as ReadinessDefinition)}
+            value={checkedDefinition}
           >
-            <option value="dor">Definition of Ready</option>
-            <option value="dod">Definition of Done</option>
-            <option value="both">Both</option>
+            <option value="dor">{DEFINITION_LABELS.dor}</option>
+            <option value="dod">{DEFINITION_LABELS.dod}</option>
           </select>
         </label>
         <label className={styles.loadField}>
@@ -343,9 +346,16 @@ export default function BatchReadinessPanel() {
           {summaryRows.length > 0 ? (
             <>
               <div className={styles.reportActions}>
-                <button className={styles.primaryButton} onClick={() => void handleCopyReport()} type="button">
-                  {hasCopiedReport ? '✓ Copied' : 'Copy full report'}
-                </button>
+                {(['jira', 'markdown'] as const).map((flavour) => (
+                  <button
+                    className={styles.primaryButton}
+                    key={flavour}
+                    onClick={() => void handleCopyReport(flavour)}
+                    type="button"
+                  >
+                    {copiedFlavour === flavour ? '✓ Copied' : FLAVOUR_LABELS[flavour]}
+                  </button>
+                ))}
               </div>
 
               <table className={styles.summaryTable}>

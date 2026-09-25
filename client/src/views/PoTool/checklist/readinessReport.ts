@@ -8,6 +8,7 @@
 // any checkbox it later ticks are all reading one computation (the surfaces-agree-by-construction rule).
 
 import { DEFINITION_LABELS, type CriteriaSource, type ReadinessCriterion, type ReadinessDefinition } from './dorCriteria.ts';
+import { buildReportMarkup, type ReportFlavour, type ReportMarkup } from './reportMarkup.ts';
 
 /** How well the Epic meets one criterion. Three states, because "partly" is the answer that usually matters. */
 export type CriterionStatus = 'satisfied' | 'partial' | 'missing';
@@ -129,61 +130,72 @@ export function listOutstandingRows(report: ReadinessReport): ReportRow[] {
   return report.rows.filter((row) => !row.verdict || row.verdict.status !== 'satisfied');
 }
 
-/** Writes one row as the copied report shows it. */
-function formatReportRow(row: ReportRow): string[] {
+/** Writes one row as the copied report shows it, in the markup of wherever it is going. */
+function formatReportRow(row: ReportRow, markup: ReportMarkup): string[] {
   if (!row.verdict) {
-    return [`- ❔ **${row.criterion.text}** — not answered.`];
+    return [markup.bullet(1, `❔ ${markup.bold(row.criterion.text)} — not answered.`)];
   }
   const lines = [
-    `- ${STATUS_MARKERS[row.verdict.status]} **${row.criterion.text}** — ${STATUS_LABELS[row.verdict.status]}`,
+    markup.bullet(1, `${STATUS_MARKERS[row.verdict.status]} ${markup.bold(row.criterion.text)} — ${STATUS_LABELS[row.verdict.status]}`),
   ];
-  if (row.verdict.evidence !== '') {
-    lines.push(`  - Evidence: ${row.verdict.evidence}`);
-  }
   if (row.verdict.whatIsMissing !== '') {
-    lines.push(`  - Still needed: ${row.verdict.whatIsMissing}`);
+    lines.push(markup.bullet(2, `Still needed: ${row.verdict.whatIsMissing}`));
+  }
+  if (row.verdict.evidence !== '') {
+    lines.push(markup.bullet(2, `What the Epic says: ${row.verdict.evidence}`));
   }
   return lines;
 }
 
 /** Groups a definition's rows under their section headers, in the order they were given. */
-function formatDefinitionSection(report: ReadinessReport, definition: ReadinessDefinition): string[] {
+function formatDefinitionSection(
+  report: ReadinessReport,
+  definition: ReadinessDefinition,
+  markup: ReportMarkup,
+): string[] {
   const definitionRows = report.rows.filter((row) => row.criterion.definition === definition);
   if (definitionRows.length === 0) {
     return [];
   }
 
-  const lines = ['', `## ${DEFINITION_LABELS[definition]}`, '', describeDefinitionVerdict(report.totals[definition], definition), ''];
+  const lines = [
+    '',
+    markup.heading(2, DEFINITION_LABELS[definition]),
+    '',
+    describeDefinitionVerdict(report.totals[definition], definition),
+    '',
+  ];
   let lastSection = '';
 
   definitionRows.forEach((row) => {
     if (row.criterion.section !== lastSection && row.criterion.section !== '') {
-      lines.push(`### ${row.criterion.section}`);
+      lines.push(markup.heading(3, row.criterion.section));
       lastSection = row.criterion.section;
     }
-    lines.push(...formatReportRow(row));
+    lines.push(...formatReportRow(row, markup));
   });
 
   return lines;
 }
 
 /**
- * Writes the report as markdown, for pasting into a Jira comment, Teams or Confluence.
+ * Writes the report for pasting into Jira, Teams or Confluence.
  *
  * The header says which criteria were used, because a report checked against the standard template rather than
  * this Epic's own checklist is a slightly different claim, and the reader is entitled to know which it is.
  */
-export function formatReadinessReportMarkdown(report: ReadinessReport): string {
+export function formatReadinessReport(report: ReadinessReport, flavour: ReportFlavour = 'markdown'): string {
+  const markup = buildReportMarkup(flavour);
   const sourceNote = report.criteriaSource === 'issueChecklist'
     ? 'Checked against this Epic’s own checklist.'
-    : 'Checked against the team’s standard Definition of Ready and Done (this Epic’s checklist could not be read).';
+    : 'Checked against the team’s standard criteria (this Epic’s checklist could not be read).';
 
   return [
-    `# Readiness review — ${report.issueKey}: ${report.issueSummary}`,
+    markup.heading(1, `Readiness review — ${report.issueKey}: ${report.issueSummary}`),
     '',
     sourceNote,
-    ...formatDefinitionSection(report, 'dor'),
-    ...formatDefinitionSection(report, 'dod'),
+    ...formatDefinitionSection(report, 'dor', markup),
+    ...formatDefinitionSection(report, 'dod', markup),
     '',
   ].join('\n');
 }

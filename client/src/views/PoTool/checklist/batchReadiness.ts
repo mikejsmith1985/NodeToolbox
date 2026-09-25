@@ -18,6 +18,7 @@ import {
   type ReadinessReport,
 } from './readinessReport.ts';
 import type { EpicChecklistSource } from './checklistField.ts';
+import { buildReportMarkup, escapeTableCell, type ReportFlavour, type ReportMarkup } from './reportMarkup.ts';
 
 /** The discriminator a batch reply must echo. Distinct from the single-Epic one, so a reply cannot be crossed over. */
 const BATCH_INGEST_KIND = 'epicReadinessBatch';
@@ -344,27 +345,27 @@ export function buildBatchSummary(batch: BatchReadinessReport): BatchSummaryRow[
   });
 }
 
-/** Writes one Epic's detail into the batch document. */
-function formatEpicSection(report: ReadinessReport): string[] {
-  const lines = [`## ${report.issueKey} — ${report.issueSummary}`, ''];
+/** Writes one Epic's detail into the batch document, in the markup of wherever it is going. */
+function formatEpicSection(report: ReadinessReport, markup: ReportMarkup): string[] {
+  const lines = [markup.heading(2, `${report.issueKey} — ${report.issueSummary}`), ''];
 
   (['dor', 'dod'] as const).forEach((definition) => {
     const definitionRows = report.rows.filter((row) => row.criterion.definition === definition);
     if (definitionRows.length === 0) {
       return;
     }
-    lines.push(`**${describeDefinitionVerdict(report.totals[definition], definition)}**`, '');
+    lines.push(markup.bold(describeDefinitionVerdict(report.totals[definition], definition)), '');
     definitionRows.forEach((row) => {
       if (!row.verdict) {
-        lines.push(`- ❔ ${row.criterion.text} — not answered.`);
+        lines.push(markup.bullet(1, `${row.criterion.text} — not answered.`));
         return;
       }
-      lines.push(`- ${STATUS_LABELS[row.verdict.status]}: ${row.criterion.text}`);
-      if (row.verdict.evidence !== '') {
-        lines.push(`  - Evidence: ${row.verdict.evidence}`);
-      }
+      lines.push(markup.bullet(1, `${STATUS_LABELS[row.verdict.status]}: ${row.criterion.text}`));
       if (row.verdict.whatIsMissing !== '') {
-        lines.push(`  - Still needed: ${row.verdict.whatIsMissing}`);
+        lines.push(markup.bullet(2, `Still needed: ${row.verdict.whatIsMissing}`));
+      }
+      if (row.verdict.evidence !== '') {
+        lines.push(markup.bullet(2, `What the Epic says: ${row.verdict.evidence}`));
       }
     });
     lines.push('');
@@ -374,26 +375,32 @@ function formatEpicSection(report: ReadinessReport): string[] {
 }
 
 /**
- * Writes the whole batch as one markdown document: the query, a summary table, then every Epic in detail.
+ * Writes the whole batch as one document: the query, a summary table, then every Epic in detail.
  *
- * The table leads because that is how the document gets used — a PO scans it, picks the Epics that are not ready,
- * and reads only those sections.
+ * The table leads because that is how the document gets used — a PO scans it, picks the Epics that are not
+ * ready, and reads only those sections.
  */
-export function formatBatchReportMarkdown(batch: BatchReadinessReport): string {
+export function formatBatchReport(batch: BatchReadinessReport, flavour: ReportFlavour = 'markdown'): string {
+  const markup = buildReportMarkup(flavour);
   const summaryRows = buildBatchSummary(batch);
+  const headerCells = ['Epic', 'Summary', 'Definition of Ready', 'Definition of Done', 'Outstanding'];
 
   return [
-    '# Readiness review',
+    markup.heading(1, 'Readiness review'),
     '',
-    `Query: \`${batch.jql}\``,
+    `Query: ${markup.code(batch.jql)}`,
     `Epics reviewed: ${summaryRows.filter((row) => row.isReviewed).length} of ${summaryRows.length}`,
     '',
-    '| Epic | Summary | Definition of Ready | Definition of Done | Outstanding |',
-    '| --- | --- | --- | --- | --- |',
-    ...summaryRows.map((row) => (
-      `| ${row.issueKey} | ${row.issueSummary} | ${row.dorVerdict} | ${row.dodVerdict} | ${row.outstandingCount} |`
-    )),
+    markup.tableHeader(headerCells),
+    ...markup.tableSeparator(headerCells.length),
+    ...summaryRows.map((row) => markup.tableRow([
+      row.issueKey,
+      escapeTableCell(row.issueSummary),
+      row.dorVerdict,
+      row.dodVerdict,
+      String(row.outstandingCount),
+    ])),
     '',
-    ...batch.reports.flatMap(formatEpicSection),
+    ...batch.reports.flatMap((report) => formatEpicSection(report, markup)),
   ].join('\n');
 }
