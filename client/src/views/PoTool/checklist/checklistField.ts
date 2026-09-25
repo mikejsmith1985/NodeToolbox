@@ -177,3 +177,22 @@ export async function saveEpicChecklist(
 ): Promise<void> {
   await saveFeatureReviewSimpleField(issueKey, checklistFieldId, checklistText);
 }
+
+/**
+ * Reads the Epic's description exactly as Jira holds it, moments before it is written back.
+ *
+ * Read fresh rather than reused from the load: a description edited in Jira while the review was being run
+ * would otherwise be overwritten with the copy Toolbox happened to fetch first, which is how a tool eats
+ * somebody's afternoon.
+ */
+export async function fetchRawDescription(issueKey: string): Promise<string> {
+  const issue = await jiraGet<{ fields?: Record<string, unknown> }>(
+    `/rest/api/2/issue/${encodeURIComponent(issueKey)}?fields=description`,
+  );
+  return readFieldAsText(issue.fields?.description);
+}
+
+/** Writes the Epic's description. The caller has already decided what the whole field should say. */
+export async function saveEpicDescription(issueKey: string, description: string): Promise<void> {
+  await saveFeatureReviewSimpleField(issueKey, 'description', description);
+}

@@ -385,7 +385,7 @@ export function formatBatchReport(batch: BatchReadinessReport, flavour: ReportFl
   const summaryRows = buildBatchSummary(batch);
   const headerCells = ['Epic', 'Summary', 'Definition of Ready', 'Definition of Done', 'Outstanding'];
 
-  return [
+  return markup.finalize([
     markup.heading(1, 'Readiness review'),
     '',
     `Query: ${markup.code(batch.jql)}`,
@@ -402,5 +402,5 @@ export function formatBatchReport(batch: BatchReadinessReport, flavour: ReportFl
     ])),
     '',
     ...batch.reports.flatMap((report) => formatEpicSection(report, markup)),
-  ].join('\n');
+  ]);
 }

@@ -22,7 +22,9 @@ import {
   type BatchReadinessReport,
 } from './batchReadiness.ts';
 import { fetchEpicsForReview, MAX_EPICS_PER_REVIEW } from './batchReadinessFetch.ts';
-import { loadChecklistField } from './checklistField.ts';
+import { fetchRawDescription, loadChecklistField, saveEpicDescription } from './checklistField.ts';
+import { appendReviewToDescription, describeWriteRefusal } from './reviewToDescription.ts';
+import { formatReadinessReport } from './readinessReport.ts';
 import { DEFAULT_READINESS_CRITERIA, DEFINITION_LABELS, type ReadinessCriterion, type ReadinessDefinition } from './dorCriteria.ts';
 import { FLAVOUR_LABELS, type ReportFlavour } from './reportMarkup.ts';
 import {
@@ -64,6 +66,9 @@ export default function BatchReadinessPanel() {
   // that has not started produces five confident "missing" verdicts that tell the PO nothing they did not know.
   const [checkedDefinition, setCheckedDefinition] = useState<ReadinessDefinition>('dor');
   const [copiedFlavour, setCopiedFlavour] = useState<ReportFlavour | null>(null);
+  // Which Epic is being written to Jira, and what happened to the last one written.
+  const [writingIssueKey, setWritingIssueKey] = useState<string | null>(null);
+  const [writeMessageByIssueKey, setWriteMessageByIssueKey] = useState<Record<string, string>>({});
 
   /**
    * The criteria this review judges against — ONE definition.
@@ -191,6 +196,45 @@ export default function BatchReadinessPanel() {
   }
 
   /**
+   * Writes one Epic's findings onto the end of its own description.
+   *
+   * One Epic at a time, from the card showing what is about to be written — a button that rewrote twenty
+   * descriptions at once would be asking for a great deal of trust in a single click.
+   */
+  async function handleWriteToDescription(issueKey: string): Promise<void> {
+    const report = batchReport?.reports.find((candidate) => candidate.issueKey === issueKey);
+    if (!report) {
+      return;
+    }
+    setWritingIssueKey(issueKey);
+
+    try {
+      const currentDescription = await fetchRawDescription(issueKey);
+      const reviewHtml = formatReadinessReport(report, 'html');
+      const refusal = describeWriteRefusal(currentDescription, reviewHtml);
+
+      if (refusal) {
+        setWriteMessageByIssueKey((previous) => ({ ...previous, [issueKey]: `Nothing was written. ${refusal}` }));
+        return;
+      }
+      await saveEpicDescription(issueKey, appendReviewToDescription(currentDescription, reviewHtml));
+      setWriteMessageByIssueKey((previous) => ({
+        ...previous,
+        [issueKey]: `The review is now at the end of ${issueKey}'s description.`,
+      }));
+    } catch (unknownError) {
+      setWriteMessageByIssueKey((previous) => ({
+        ...previous,
+        [issueKey]: unknownError instanceof Error
+          ? `Nothing was written: ${unknownError.message}`
+          : 'Nothing was written. Jira refused the change.',
+      }));
+    } finally {
+      setWritingIssueKey(null);
+    }
+  }
+
+  /**
    * One Epic's findings, written out under the table.
    *
    * Shown rather than hidden behind a click: the numbers in the table say how much work there is, and this says
@@ -200,6 +244,8 @@ export default function BatchReadinessPanel() {
   function renderEpicFindings(report: ReadinessReport) {
     const outstandingRows = listOutstandingRows(report);
     const isCollapsed = collapsedIssueKeys.includes(report.issueKey);
+    // Only an Epic that was actually reviewed has anything worth putting on its description.
+    const isReviewed = report.rows.some((row) => row.verdict !== null);
 
     return (
       <section className={styles.findingsCard} key={report.issueKey}>
@@ -216,7 +262,21 @@ export default function BatchReadinessPanel() {
           >
             {`${isCollapsed ? '▸' : '▾'} ${report.issueKey} — ${report.issueSummary}`}
           </button>
+          {isReviewed ? (
+            <button
+              className={styles.secondaryButton}
+              disabled={writingIssueKey !== null}
+              onClick={() => void handleWriteToDescription(report.issueKey)}
+              type="button"
+            >
+              {writingIssueKey === report.issueKey ? 'Writing…' : 'Add to description'}
+            </button>
+          ) : null}
         </div>
+
+        {writeMessageByIssueKey[report.issueKey] ? (
+          <p className={styles.infoBanner} role="status">{writeMessageByIssueKey[report.issueKey]}</p>
+        ) : null}
 
         {(['dor', 'dod'] as const)
           .filter((definition) => report.totals[definition].total > 0)

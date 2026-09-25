@@ -18,10 +18,13 @@ import { buildChecklistPrompt, parseChecklistIngest } from './checklistAiAssist.
 import {
   fetchChecklistFromIssueProperties,
   fetchEpicChecklistSource,
+  fetchRawDescription,
   loadChecklistField,
   saveEpicChecklist,
+  saveEpicDescription,
   type EpicChecklistSource,
 } from './checklistField.ts';
+import { appendReviewToDescription, describeWriteRefusal } from './reviewToDescription.ts';
 import { DEFINITION_LABELS, resolveCriteria, type ReadinessCriterion, type ReadinessDefinition } from './dorCriteria.ts';
 import { FLAVOUR_LABELS, type ReportFlavour } from './reportMarkup.ts';
 import {
@@ -82,6 +85,7 @@ export default function EpicChecklistTab() {
   const [criterionIdsToTick, setCriterionIdsToTick] = useState<string[]>([]);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [isWritingToDescription, setIsWritingToDescription] = useState(false);
   const [copiedFlavour, setCopiedFlavour] = useState<ReportFlavour | null>(null);
   // One definition at a time: "ready to start?" and "finished?" are different questions, asked at different
   // moments, and a report answering both leaves the reader to sort out which half they wanted.
@@ -219,6 +223,44 @@ export default function EpicChecklistTab() {
       );
     } finally {
       setIsSaving(false);
+    }
+  }
+
+  /**
+   * Writes the review onto the end of the Epic's own description.
+   *
+   * The description is re-read first and written whole, so everything the Epic already said survives and a
+   * review written earlier is replaced rather than stacked (GH #387).
+   */
+  async function handleWriteToDescription(): Promise<void> {
+    if (!report || !loadedEpic) {
+      return;
+    }
+    setIsWritingToDescription(true);
+    setStatusMessage(null);
+
+    try {
+      const currentDescription = await fetchRawDescription(loadedEpic.source.issueKey);
+      const reviewHtml = formatReadinessReport(report, 'html');
+      const refusal = describeWriteRefusal(currentDescription, reviewHtml);
+
+      if (refusal) {
+        setStatusMessage(`Nothing was written. ${refusal}`);
+        return;
+      }
+      await saveEpicDescription(
+        loadedEpic.source.issueKey,
+        appendReviewToDescription(currentDescription, reviewHtml),
+      );
+      setStatusMessage(`The review is now at the end of ${loadedEpic.source.issueKey}'s description.`);
+    } catch (unknownError) {
+      setStatusMessage(
+        unknownError instanceof Error
+          ? `Nothing was written: ${unknownError.message}`
+          : 'Nothing was written. Jira refused the change.',
+      );
+    } finally {
+      setIsWritingToDescription(false);
     }
   }
 
@@ -365,6 +407,16 @@ export default function EpicChecklistTab() {
           {report ? (
             <>
               <div className={styles.reportActions}>
+                <button
+                  className={styles.primaryButton}
+                  disabled={isWritingToDescription}
+                  onClick={() => void handleWriteToDescription()}
+                  type="button"
+                >
+                  {isWritingToDescription
+                    ? 'Writing…'
+                    : `Add review to ${loadedEpic.source.issueKey} description`}
+                </button>
                 {(['jira', 'markdown'] as const).map((flavour) => (
                   <button
                     className={styles.primaryButton}

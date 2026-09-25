@@ -64,3 +64,50 @@ describe('the copy buttons', () => {
     expect(FLAVOUR_LABELS.markdown).toBe('Copy as Markdown');
   });
 });
+
+// ── HTML: what this Jira's rich-text editor actually stores (GH #387) ──
+
+describe('HTML', () => {
+  const html = buildReportMarkup('html');
+
+  it('writes real elements, not characters that look like markup', () => {
+    expect(html.heading(2, 'Definition of Ready')).toBe('<h2>Definition of Ready</h2>');
+    expect(html.bold('Business objective')).toBe('<strong>Business objective</strong>');
+  });
+
+  it('gathers a run of bullets into one list', () => {
+    const document = html.finalize([
+      html.heading(2, 'Definition of Ready'),
+      html.bullet(1, 'Major dependencies are identified'),
+      html.bullet(1, 'Scope is understood'),
+    ]);
+
+    expect(document).toBe('<h2>Definition of Ready</h2><ul><li>Major dependencies are identified</li>'
+      + '<li>Scope is understood</li></ul>');
+  });
+
+  it('nests a deeper bullet inside its own list, and closes both', () => {
+    const document = html.finalize([
+      html.bullet(1, 'Major dependencies are identified'),
+      html.bullet(2, 'Still needed: name them'),
+      html.heading(3, 'Team Commitment'),
+    ]);
+
+    expect(document).toBe('<ul><li>Major dependencies are identified</li><ul><li>Still needed: name them</li>'
+      + '</ul></ul><h3>Team Commitment</h3>');
+  });
+
+  it('gathers table rows into one table', () => {
+    const document = html.finalize([html.tableHeader(['Epic', 'Summary']), html.tableRow(['DENP-1', 'A summary'])]);
+
+    expect(document).toBe('<table><tr><th>Epic</th><th>Summary</th></tr><tr><td>DENP-1</td><td>A summary</td></tr></table>');
+  });
+
+  it('wraps plain prose in a paragraph and drops blank lines', () => {
+    expect(html.finalize(['Definition of Ready: NOT MET', ''])).toBe('<p>Definition of Ready: NOT MET</p>');
+  });
+
+  it('escapes text that would otherwise be read as markup inside the description', () => {
+    expect(html.heading(2, 'Scope <script> & more')).toBe('<h2>Scope &lt;script&gt; &amp; more</h2>');
+  });
+});

@@ -190,12 +190,12 @@ export function formatReadinessReport(report: ReadinessReport, flavour: ReportFl
     ? 'Checked against this Epic’s own checklist.'
     : 'Checked against the team’s standard criteria (this Epic’s checklist could not be read).';
 
-  return [
+  return markup.finalize([
     markup.heading(1, `Readiness review — ${report.issueKey}: ${report.issueSummary}`),
     '',
     sourceNote,
     ...formatDefinitionSection(report, 'dor', markup),
     ...formatDefinitionSection(report, 'dod', markup),
     '',
-  ].join('\n');
+  ]);
 }

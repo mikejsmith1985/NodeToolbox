@@ -177,4 +177,44 @@ describe('EpicChecklistTab', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'Copy for Jira' })).toBeInTheDocument());
     expect(screen.queryByRole('button', { name: /Tick/ })).not.toBeInTheDocument();
   });
+
+  // ── Toolbox writes the review onto the Epic, because pasting it never rendered (GH #387) ──
+
+  it('appends the review to the end of the Epic’s own description, as HTML', async () => {
+    installJira();
+    const user = userEvent.setup();
+    render(<EpicChecklistTab />);
+    await loadEpic(user);
+    await pasteReply(user, buildChecklistReply());
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /Add review to DENP-1436 description/ })).toBeInTheDocument());
+    await user.click(screen.getByRole('button', { name: /Add review to DENP-1436 description/ }));
+
+    await waitFor(() => expect(saveFeatureReviewSimpleField).toHaveBeenCalled());
+    const [issueKey, fieldId, writtenDescription] = vi.mocked(saveFeatureReviewSimpleField).mock.calls
+      .find((call) => call[1] === 'description')!;
+
+    expect(issueKey).toBe('DENP-1436');
+    expect(fieldId).toBe('description');
+    // What the Epic already said survives, and the review is real HTML rather than markup characters.
+    expect(writtenDescription).toContain('Stakeholders signed off the objective on 12 August.');
+    expect(writtenDescription).toContain('<h1>Readiness review');
+    expect(writtenDescription).toContain('<ul><li>');
+    expect(writtenDescription).not.toContain('## ');
+  });
+
+  it('says so on screen once the review is on the Epic', async () => {
+    installJira();
+    const user = userEvent.setup();
+    render(<EpicChecklistTab />);
+    await loadEpic(user);
+    await pasteReply(user, buildChecklistReply());
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /Add review to DENP-1436 description/ })).toBeInTheDocument());
+    await user.click(screen.getByRole('button', { name: /Add review to DENP-1436 description/ }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('status')).toHaveTextContent(/now at the end of DENP-1436/);
+    });
+  });
 });

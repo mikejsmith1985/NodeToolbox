@@ -51,9 +51,21 @@
   cursor: pointer;
 }
 
-.primaryButton:disabled {
+.primaryButton:disabled,
+.secondaryButton:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.secondaryButton {
+  padding: 4px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-card-bg);
+  color: inherit;
+  font: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
 }
 
 /* ── Messages ── */

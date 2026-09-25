@@ -32,6 +32,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the Epic's checklist could actually be read.
 
 ### Added
+- **Toolbox writes the readiness review onto the Epic for you (GH #387).** Copying and pasting never rendered:
+  this Jira's rich-text editor stores **HTML**, so Markdown and wiki markup both arrived as the characters
+  themselves. **Add review to description** now appends the review to the end of the Epic's own description as
+  real HTML — proper headings, nested lists, a table — with no clipboard involved. Available on the single-Epic
+  review and on each Epic's card in a JQL review, one Epic at a time, from the card showing what is about to be
+  written.
+  **What it will not do**: the description is re-read from Jira immediately before writing and written back
+  whole, so anything added since the review was run survives; a review written earlier is **replaced**, not
+  stacked, so an Epic never accumulates contradictory reviews; and a write that would push the description past
+  Jira's 32,767 characters is refused with the number that would have to come out first.
 - **Copy the readiness report in Jira's own markup (GH #387).** The report was written in Markdown and pasted
   into a Jira comment, where `## Definition of Ready` and `**Business objective**` appeared exactly like that —
   Jira Data Center renders **wiki markup**, not Markdown. Both review modes now offer **Copy for Jira**
