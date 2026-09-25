@@ -131,7 +131,10 @@ describe('formatReadinessReport', () => {
       criteriaSource: 'standardTemplate',
     });
 
-    expect(formatReadinessReport(standardReport)).toContain('standard criteria');
+    expect(formatReadinessReport(standardReport))
+      .toContain('standard Definition of Ready and Definition of Done');
+    // How Toolbox obtained the criteria is its own business, not something a reader of the Epic needs.
+    expect(formatReadinessReport(standardReport)).not.toContain('could not be read');
     expect(formatReadinessReport({ ...standardReport, criteriaSource: 'issueChecklist' }))
       .toContain('this Epic’s own checklist');
   });

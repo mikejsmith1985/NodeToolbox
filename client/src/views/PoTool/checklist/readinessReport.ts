@@ -186,9 +186,11 @@ function formatDefinitionSection(
  */
 export function formatReadinessReport(report: ReadinessReport, flavour: ReportFlavour = 'markdown'): string {
   const markup = buildReportMarkup(flavour);
+  // Says which criteria were used and stops there. Whether Toolbox could read the Epic's own checklist is its
+  // own plumbing, and a reader of the Epic has no use for it.
   const sourceNote = report.criteriaSource === 'issueChecklist'
     ? 'Checked against this Epic’s own checklist.'
-    : 'Checked against the team’s standard criteria (this Epic’s checklist could not be read).';
+    : 'Checked against the team’s standard Definition of Ready and Definition of Done.';
 
   return markup.finalize([
     markup.heading(1, `Readiness review — ${report.issueKey}: ${report.issueSummary}`),

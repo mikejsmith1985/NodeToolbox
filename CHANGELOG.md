@@ -31,6 +31,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Ticking the Smart Checklist is still offered, but only for criteria the review marked satisfied, and only when
   the Epic's checklist could actually be read.
 
+### Changed
+- **The review no longer tells the Epic's readers about Toolbox's own plumbing.** The header said "Checked
+  against the team's standard criteria (this Epic's checklist could not be read)" — whether Toolbox could read
+  the checklist field is its business, not something anyone reading the Epic needs. It now says which criteria
+  were used and stops there.
+
 ### Added
 - **Toolbox writes the readiness review onto the Epic for you (GH #387).** Copying and pasting never rendered:
   this Jira's rich-text editor stores **HTML**, so Markdown and wiki markup both arrived as the characters
