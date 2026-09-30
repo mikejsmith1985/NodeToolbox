@@ -2353,16 +2353,32 @@
   border: 0;
 }
 
-/* The per-person PI capacity estimate, sitting under the role toggles on a roster card. */
-.rosterCapacityField {
-  display: flex;
-  align-items: center;
+/* The per-person PI points and capacity % under the role toggles: two equal columns that always fit the
+   card (GH #392 — side-by-side caption + fixed-width box overflowed into the neighbouring card). */
+.rosterCapacityRow {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--spacing-sm);
   padding-top: var(--spacing-xs);
 }
 
+/* Caption stacked above its box, so a narrow card never wraps the caption across lines. */
+.rosterCapacityField {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.rosterCapacityField > span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .rosterCapacityInput {
-  width: 6.5rem;
+  width: 100%;
+  min-width: 0;
   padding: var(--spacing-xs) var(--spacing-sm);
   font-size: var(--font-size-sm);
 }

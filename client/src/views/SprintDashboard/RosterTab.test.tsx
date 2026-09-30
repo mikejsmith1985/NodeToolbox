@@ -163,6 +163,14 @@ describe('RosterTab', () => {
 
     render(<RosterTab issues={[]} projectKey="TBX" />);
 
+    // Short visible captions (GH #392): long ones wrapped to three lines and pushed the % box off the card.
+    expect(screen.getByText('PI points').closest('label')).toContainElement(
+      screen.getByLabelText('PI capacity estimate (points) for Alice Adams'),
+    );
+    expect(screen.getByText('Capacity %').closest('label')).toContainElement(
+      screen.getByLabelText('Capacity percentage for Alice Adams'),
+    );
+
     const percentageInput = screen.getByLabelText('Capacity percentage for Alice Adams');
     fireEvent.change(percentageInput, { target: { value: '50' } });
     expect(useStandupRosterStore.getState().rosterMembers[0].capacityPercentage).toBe(50);

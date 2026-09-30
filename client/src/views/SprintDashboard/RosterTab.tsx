@@ -464,9 +464,9 @@ function readOptionalNumberInput(rawValue: string): number | undefined {
  */
 function RosterCapacityControl({ rosterMember, onCapacityChange, onPercentageChange }: RosterCapacityControlProps) {
   return (
-    <div className={styles.rosterCapacityField}>
+    <div className={styles.rosterCapacityRow}>
       <label className={styles.rosterCapacityField}>
-        <span className={styles.rosterRoleLegend}>PI capacity (pts)</span>
+        <span className={styles.rosterRoleLegend}>PI points</span>
         <input
           aria-label={`PI capacity estimate (points) for ${rosterMember.displayName}`}
           className={`${styles.settingsInput} ${styles.rosterCapacityInput}`}

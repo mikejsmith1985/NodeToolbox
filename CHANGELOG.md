@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Roster capacity fields fit their card (GH #392).** The **PI points** and **Capacity %** boxes now sit in two
+  equal columns with a short caption above each, sized to the card. Previously the long side-by-side captions
+  wrapped to three lines and pushed the Capacity % box out of its card and over the next one.
+
 ### Added
 - **Capacity % per person on the roster.** Beside each person's **PI capacity (pts)**, a **Capacity %** field
   records the share of their time they give the team (0–100; blank means 100%). **Use roster capacity
