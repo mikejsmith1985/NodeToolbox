@@ -22,7 +22,7 @@ import { useCrgTemplates } from '../hooks/useCrgTemplates.ts';
 import type { AiAssistGeneratedFields } from '../hooks/useAiAssist.ts';
 import { parseAiAssistChgResponse, useAiAssist } from '../hooks/useAiAssist.ts';
 import { buildChgContextText, type ChgPromptContext } from '../chgFormula/chgPromptContext.ts';
-import { buildChgRiskCheckPrompt } from '../chgFormula/chgRiskCheckPrompt.ts';
+import { buildChgRiskCheckPrompt, splitRiskCheckReply } from '../chgFormula/chgRiskCheckPrompt.ts';
 import { renderFormulaGuidanceForField } from '../chgFormula/formulaCard.ts';
 import { useCopyFeedback } from '../../../hooks/useCopyFeedback.ts';
 import type { SnowChoiceOptionMap } from '../hooks/useSnowChoiceOptions.ts';
@@ -2769,7 +2769,7 @@ export default function CrgTab({ mode = 'wizard', targetChangeNumber }: CrgTabPr
   const applyParsedChgFields = useCallback((
     replyText: string,
     allowedFieldKeys: ReadonlyArray<keyof AiAssistGeneratedFields>,
-  ): { statusMessage: string; wasApplied: boolean } => {
+  ): { statusMessage: string; wasApplied: boolean; appliedFieldCount: number } => {
     const parsedFields = parseAiAssistChgResponse(replyText);
     const appliedFieldKeys = allowedFieldKeys.filter((fieldKey) => Boolean(parsedFields[fieldKey]));
     const planningUpdate: Partial<Record<'implementationPlan' | 'testPlan' | 'backoutPlan', string>> = {};
@@ -2788,6 +2788,7 @@ export default function CrgTab({ mode = 'wizard', targetChangeNumber }: CrgTabPr
 
     return {
       wasApplied: appliedFieldKeys.length > 0,
+      appliedFieldCount: appliedFieldKeys.length,
       statusMessage: appliedFieldKeys.length > 0
         ? `Applied ${appliedFieldKeys.length} field(s) from the pasted reply.`
         : NO_RECOGNISABLE_FIELDS_MESSAGE,
@@ -2862,15 +2863,25 @@ export default function CrgTab({ mode = 'wizard', targetChangeNumber }: CrgTabPr
       promptText: riskPrompt,
       applyButtonLabel: 'Use this review',
       applyReply: (replyText) => {
-        const trimmedReview = replyText.trim();
-        if (!trimmedReview) {
+        const { reviewText, revisedFieldsText } = splitRiskCheckReply(replyText);
+        if (!reviewText && !revisedFieldsText) {
           return { statusMessage: 'The pasted review is empty.', wasApplied: false };
         }
-        setRiskCheckReviewText(trimmedReview);
-        return { statusMessage: 'Risk review captured — it is shown on the Results step.', wasApplied: true };
+        setRiskCheckReviewText(reviewText);
+        // The corrected fields the review asked for are written straight into the change, so a gap is
+        // fixed by pasting the reply rather than by retyping each suggestion.
+        const correctedFieldCount = revisedFieldsText
+          ? applyParsedChgFields(revisedFieldsText, ENHANCE_PROMPT_FIELD_KEYS).appliedFieldCount
+          : 0;
+        return {
+          statusMessage: correctedFieldCount > 0
+            ? `Risk review captured and ${correctedFieldCount} field(s) corrected from it — the review is shown on the Results step.`
+            : 'Risk review captured — it is shown on the Results step.',
+          wasApplied: true,
+        };
       },
     });
-  }, [state, setAiAssistPromptSession, setRiskCheckReviewText]);
+  }, [state, applyParsedChgFields, setAiAssistPromptSession, setRiskCheckReviewText]);
 
   // Consumes the pasted reply through the active session and reports the outcome.
   const handleApplyAiAssistReply = useCallback(() => {

@@ -37,8 +37,8 @@ function renderChangeText(fieldValues: ChgTextFieldValues): string {
   }).join('\n\n');
 }
 
-// The reply format. One line per card field keeps the review scannable and makes every gap point at the
-// exact text box it must be fixed in.
+// The review part of the reply. One line per card field keeps the review scannable and makes every gap
+// point at the exact text box it must be fixed in.
 const REPLY_FORMAT_LINES: readonly string[] = [
   'Reply in plain text, in exactly this format and card order, with no other commentary:',
   'One line per Formula Card field (sections 1-7), each starting with one of:',
@@ -46,9 +46,59 @@ const REPLY_FORMAT_LINES: readonly string[] = [
   'GAP | <field> — <what is missing or wrong> — Fix: <the specific text to add, and which change field it belongs in>',
   'N/A | <field> — <why this field does not apply to this change>',
   'Then one line per Front-Page Quality Gate question: YES | <question> or NO | <question> — <why>.',
-  'Finish with exactly one line: VERDICT: READY FOR APPROVAL, or VERDICT: NOT READY — <number> gap(s).',
+  'Then exactly one line: VERDICT: READY FOR APPROVAL, or VERDICT: NOT READY — <number> gap(s).',
   'Treat any [CONFIRM: ...] placeholder as a GAP until it is filled in.',
 ];
+
+/**
+ * Marks where the review ends and the corrected fields begin. The app applies everything after it, so a
+ * gap is fixed by pasting the reply rather than by retyping each suggested fix (GH #395 follow-up).
+ */
+export const REVISED_FIELDS_HEADING = '=== REVISED FIELDS ===';
+
+// The corrections section. It comes LAST because each field's value runs to the next field marker or the
+// end of the reply, so nothing may follow it.
+const REVISED_FIELDS_FORMAT_LINES: readonly string[] = [
+  '',
+  `After the VERDICT line, write a line reading exactly ${REVISED_FIELDS_HEADING} and then, for every text field `
+    + 'that has at least one GAP, its complete replacement text with every fix applied, using these markers in '
+    + 'this order (leave out any field that has no gap):',
+  'SHORT_DESCRIPTION:',
+  'DESCRIPTION:',
+  'JUSTIFICATION:',
+  'RISK_AND_IMPACT:',
+  'IMPLEMENTATION_PLAN:',
+  'TEST_PLAN:',
+  'BACKOUT_PLAN:',
+  'Each is the whole field as it should now read, not just the added sentence. Keep every fact already in it, keep '
+    + '[CONFIRM: ...] for anything you still cannot know, and write nothing after the last field.',
+  'Gaps in record fields (configuration item, category, assignment group, owner, dates) cannot be corrected here — '
+    + 'leave those to the GAP line.',
+];
+
+/** A pasted review split into what a person reads and what the app writes back into the change. */
+export interface RiskCheckReplyParts {
+  reviewText: string;
+  revisedFieldsText: string;
+}
+
+// The corrections heading, tolerating the bold / heading markup an assistant likes to wrap lines in.
+const REVISED_FIELDS_HEADING_PATTERN = /^[\s*#_>`-]*=== REVISED FIELDS ===[\s*#_`-]*$/im;
+
+/**
+ * Splits a pasted risk-check reply at the corrections heading. With no heading, the whole reply is review
+ * — an assistant that found no gaps, or ignored the instruction, still has its review shown.
+ */
+export function splitRiskCheckReply(replyText: string): RiskCheckReplyParts {
+  const headingMatch = REVISED_FIELDS_HEADING_PATTERN.exec(replyText);
+  if (headingMatch === null) {
+    return { reviewText: replyText.trim(), revisedFieldsText: '' };
+  }
+  return {
+    reviewText: replyText.slice(0, headingMatch.index).trim(),
+    revisedFieldsText: replyText.slice(headingMatch.index + headingMatch[0].length).trim(),
+  };
+}
 
 /**
  * The whole pre-approval check as one prompt: the record facts and delivery path, all seven text fields,
@@ -69,5 +119,6 @@ export function buildChgRiskCheckPrompt(context: ChgPromptContext, fieldValues: 
     renderFormulaCardChecklist(),
     '',
     ...REPLY_FORMAT_LINES,
+    ...REVISED_FIELDS_FORMAT_LINES,
   ].join('\n');
 }

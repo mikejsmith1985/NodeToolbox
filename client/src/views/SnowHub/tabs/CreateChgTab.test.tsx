@@ -1565,6 +1565,40 @@ describe('CreateChgTab', () => {
     expect(screen.getByText(/No backout procedure documented/)).toBeInTheDocument();
   });
 
+  it('Risk check applies the corrected fields from the pasted reply, so gaps are fixed without retyping', async () => {
+    const user = userEvent.setup();
+    mockState.currentStep = 6;
+    render(<CreateChgTab />);
+    act(() => setAiAssistUnlocked(true));
+
+    await user.click(await screen.findByRole('button', { name: /Risk check with AI Assist/i }));
+    fireEvent.change(screen.getByRole('textbox', { name: "Paste the assistant's reply here" }), {
+      target: {
+        value: [
+          'GAP | Justification — no deferral consequence — Fix: add it',
+          'GAP | Backout Plan — no trigger — Fix: add triggers',
+          'VERDICT: NOT READY — 2 gap(s).',
+          '=== REVISED FIELDS ===',
+          'JUSTIFICATION: Needed for the October release; deferring slips it a month.',
+          'BACKOUT_PLAN: 1. Trigger: smoke test fails.',
+        ].join('\n'),
+      },
+    });
+    await user.click(screen.getByRole('button', { name: 'Use this review' }));
+
+    expect(mockActions.updateGeneratedField).toHaveBeenCalledWith(
+      'justification',
+      'Needed for the October release; deferring slips it a month.',
+    );
+    expect(mockActions.setChgPlanningContent).toHaveBeenCalledWith({ backoutPlan: '1. Trigger: smoke test fails.' });
+    expect(screen.getByRole('status')).toHaveTextContent('2 field(s) corrected');
+
+    await user.click(screen.getByRole('button', { name: 'Close' }));
+    // The Results step shows the review a person reads, not the raw corrections.
+    expect(await screen.findByText(/no deferral consequence/)).toBeInTheDocument();
+    expect(screen.queryByText(/REVISED FIELDS/)).not.toBeInTheDocument();
+  });
+
   it('Create CHG button remains available at step 6 after Risk check with AI Assist', async () => {
     const user = userEvent.setup();
     mockState.currentStep = 6;

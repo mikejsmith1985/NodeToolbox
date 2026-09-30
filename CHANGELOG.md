@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Risk check with AI Assist now fixes what it finds.** The review still lists `PASS` / `GAP` / `N/A` per
+  Formula Card field and a `VERDICT`, but the prompt now also asks for a `=== REVISED FIELDS ===` section with
+  the complete corrected text of every field that had a gap. Pasting the reply shows the review on the Results
+  step **and writes the corrections straight into the change** — details and plans alike — so there is no
+  retyping. Record fields (configuration item, owner, dates…) and `[CONFIRM: …]` placeholders still need a
+  person, and stay in the review.
+
 ### Added
 - **Create CHG AI Assist writes to the Release Manager's Change Request Formula Card (GH #395).**
   - **Enhance with prompt** (Step 4) now drafts all **seven** fields — Short Description, Description,
