@@ -44,10 +44,26 @@ function createAtlassianDocumentNode(text: string): unknown {
 }
 
 const EMPTY_CURRENT_FIELDS = {
-  shortDescription: '',
-  description:      '',
-  justification:    '',
-  riskImpact:       '',
+  shortDescription:   '',
+  description:        '',
+  justification:      '',
+  riskImpact:         '',
+  implementationPlan: '',
+  testPlan:           '',
+  backoutPlan:        '',
+};
+
+/** The change record's own facts, as the Create CHG wizard hands them to the prompt. */
+const SAMPLE_CHANGE_CONTEXT = {
+  categoryLabel: 'Software',
+  changeTypeLabel: 'Normal',
+  isExpedited: false,
+  configItemLabel: 'Enrollment Web',
+  assignmentGroupLabel: 'Enrollment Dev',
+  changeOwnerLabel: 'Smith, Mike',
+  environmentLines: ['REL: Enabled — 2026-10-14 20:00 → 2026-10-14 22:00 — Config Item: Enrollment Web'],
+  assessmentLines: [],
+  changeTaskLines: [],
 };
 
 describe('useAiAssist', () => {
@@ -199,6 +215,7 @@ describe('useAiAssist', () => {
   it('buildPrompt includes existing field values when they are non-empty', () => {
     const { result } = renderHook(() => useAiAssist());
     const existingFields = {
+      ...EMPTY_CURRENT_FIELDS,
       shortDescription: 'Deploy TOOL 2.0.0',
       description:      'Deploys the new version',
       justification:    'Planned release',
@@ -220,9 +237,66 @@ describe('useAiAssist', () => {
 
     expect(prompt).not.toContain('Existing content to refine');
   });
+
+  it('buildPrompt asks for all seven CHG fields, including the three plans (GH #395)', () => {
+    const { result } = renderHook(() => useAiAssist());
+
+    const prompt = result.current.buildPrompt([createMockJiraIssue('TOOL-1', 'Fix')], EMPTY_CURRENT_FIELDS, SAMPLE_CHANGE_CONTEXT);
+
+    ['SHORT_DESCRIPTION:', 'DESCRIPTION:', 'JUSTIFICATION:', 'RISK_AND_IMPACT:', 'IMPLEMENTATION_PLAN:', 'TEST_PLAN:', 'BACKOUT_PLAN:']
+      .forEach((marker) => expect(prompt).toContain(marker));
+  });
+
+  it('buildPrompt writes the Release Manager Formula Card rules into each field it asks for', () => {
+    const { result } = renderHook(() => useAiAssist());
+
+    const prompt = result.current.buildPrompt([], EMPTY_CURRENT_FIELDS, SAMPLE_CHANGE_CONTEXT);
+
+    expect(prompt).toContain('Current state + what changes + how it changes + what does not change + why now.');
+    expect(prompt).toContain('Trigger + decision owner + restoration steps + recovery source + duration + validation.');
+    expect(prompt).toContain('Numbered steps with actor + action + expected result + verification + time + checkpoints.');
+  });
+
+  it('buildPrompt gives the record facts, the Dev → INT → REL → PROD path and the no-invention rule', () => {
+    const { result } = renderHook(() => useAiAssist());
+
+    const prompt = result.current.buildPrompt([], EMPTY_CURRENT_FIELDS, SAMPLE_CHANGE_CONTEXT);
+
+    expect(prompt).toContain('Change owner: Smith, Mike');
+    expect(prompt).toContain('deploy to INT and test there');
+    expect(prompt).toContain('[CONFIRM:');
+  });
+
+  it('buildPrompt offers existing plans for refinement', () => {
+    const { result } = renderHook(() => useAiAssist());
+
+    const prompt = result.current.buildPrompt([], { ...EMPTY_CURRENT_FIELDS, backoutPlan: 'Redeploy 26.9.' }, SAMPLE_CHANGE_CONTEXT);
+
+    expect(prompt).toContain('Current Backout Plan: Redeploy 26.9.');
+  });
 });
 
 describe('parseAiAssistChgResponse', () => {
+  it('parses the three plans after the four text fields (GH #395)', () => {
+    const response = [
+      'SHORT_DESCRIPTION: Deploy TOOL 2.0',
+      'DESCRIPTION: Rolls out the new release',
+      'JUSTIFICATION: Planned PI work',
+      'RISK_AND_IMPACT: Low risk',
+      'IMPLEMENTATION_PLAN: 1. Open the bridge',
+      '2. Deploy',
+      'TEST_PLAN: Tested in Dev and INT',
+      'BACKOUT_PLAN: Redeploy the prior version',
+    ].join('\n');
+
+    expect(parseAiAssistChgResponse(response)).toEqual(expect.objectContaining({
+      riskImpact: 'Low risk',
+      implementationPlan: '1. Open the bridge\n2. Deploy',
+      testPlan: 'Tested in Dev and INT',
+      backoutPlan: 'Redeploy the prior version',
+    }));
+  });
+
   it('parses all four fields from the deterministic block', () => {
     const response = [
       'SHORT_DESCRIPTION: Deploy TOOL 2.0',

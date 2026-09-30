@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Create CHG AI Assist writes to the Release Manager's Change Request Formula Card (GH #395).**
+  - **Enhance with prompt** (Step 4) now drafts all **seven** fields — Short Description, Description,
+    Justification, Risk & Impact and the **Implementation, Test and Backout plans** — and one pasted reply fills
+    them all. Each field is written to the Formula Card rules it must pass: the formula, the minimum acceptable
+    answer and the reviewer's question (a Test Plan carries success criteria and monitoring, a Backout Plan its
+    triggers, recovery point and post-backout checks, and so on).
+  - The prompt carries the change's **own facts** — environments and dates, category, owner, assessment answers,
+    CTASKs with their minutes — so the text agrees with the record, and the team's delivery path: **deploy and
+    test in Dev, then INT, then a change to deploy and test in REL, and only then PROD.**
+  - Where the card asks for something the record and Jira issues do not say (a name, a time, a count), the
+    reply writes **`[CONFIRM: …]`** instead of inventing it.
+  - **Draft with AI Assist** (Step 3) uses the same card rules for its two fields.
+  - **Risk check with AI Assist** (Step 6) now reviews the **whole** change — all seven fields plus the record
+    facts — against **every** Formula Card field (sections 1–7) and the five-question Front-Page Quality Gate,
+    answering `PASS` / `GAP … Fix:` / `N/A` per field and a final `VERDICT`. It stays a copy-prompt, paste-reply
+    round trip, and it never blocks submission.
+  - The card lives once in `SnowHub/chgFormula/formulaCard.ts`, so drafting and checking always apply the same rules.
+
 ### Fixed
 - **Roster PTO days now reach the capacity planner (GH #397).** The per-person roster box was labelled
   **PI points** and read as story points, but it holds the days each person is off during the PI. It is now

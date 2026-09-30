@@ -7,28 +7,36 @@ import { useCallback } from 'react';
 import { setAiAssistUnlocked, useAiAssistStore } from '../../../store/aiAssistStore.ts';
 import type { JiraIssue } from '../../../types/jira.ts';
 import { normalizeRichTextToPlainText } from '../../../utils/richTextPlainText.ts';
+import { buildChgContextText, type ChgPromptContext } from '../chgFormula/chgPromptContext.ts';
+import {
+  CHG_TEXT_FIELD_LABELS,
+  renderFormulaGuidanceForField,
+  type ChgTextFieldKey,
+} from '../chgFormula/formulaCard.ts';
 
 // SHA-256 hex digest of the activation passphrase ("unlock").
 // The raw passphrase is never stored in source — only the digest is kept.
 // To reproduce: node -e "const c=require('crypto');console.log(c.createHash('sha256').update('<passphrase>').digest('hex'))"
 const ACTIVATION_DIGEST = '787600ebe6d6c75b6bc0b2db0bfd6aeec78897b67d3192e2208bc8b714237841';
 
-/** The four CHG text fields that the generated prompt targets. */
-export interface AiAssistGeneratedFields {
-  shortDescription: string;
-  description: string;
-  justification: string;
-  riskImpact: string;
-}
+/**
+ * The seven CHG text fields the generated prompt targets: the four change-detail fields and the three
+ * Planning-step plans (GH #395 — the plans used to be left for the user to write by hand).
+ */
+export type AiAssistGeneratedFields = Record<ChgTextFieldKey, string>;
 
 export interface UseAiAssistResult {
   isUnlocked: boolean;
   /** Hashes the passphrase and compares it to the stored digest. Sets isUnlocked on success. */
   verifyPassphrase: (passphrase: string) => Promise<boolean>;
-  /** Builds a prompt string the user can paste into AI Assist to generate all four CHG fields. */
+  /**
+   * Builds a prompt string the user can paste into AI Assist to generate all seven CHG fields. The change
+   * record's own facts, when given, go in first so the drafted text agrees with the record.
+   */
   buildPrompt: (
     selectedIssues: JiraIssue[],
     currentFields: AiAssistGeneratedFields,
+    changeContext?: ChgPromptContext,
   ) => string;
 }
 
@@ -89,52 +97,75 @@ function buildIssueDetailText(selectedIssues: JiraIssue[]): string {
     .join('\n\n');
 }
 
-/**
- * Builds the complete prompt text to paste into AI Assist.
- * Any currently-populated CHG fields are included so AI Assist can refine them.
- */
-function buildAiAssistPromptText(selectedIssues: JiraIssue[], currentFields: AiAssistGeneratedFields): string {
-  const issueListText = buildIssueListText(selectedIssues);
-  const issueDetailText = buildIssueDetailText(selectedIssues);
+// The reply markers, in the order the prompt asks for them. The parser relies on this order: each value
+// runs from its marker up to the next LATER marker, so a new field must be added here in sequence.
+const AI_ASSIST_RESPONSE_MARKERS: ReadonlyArray<{ marker: string; field: ChgTextFieldKey }> = [
+  { marker: 'SHORT_DESCRIPTION',   field: 'shortDescription' },
+  { marker: 'DESCRIPTION',         field: 'description' },
+  { marker: 'JUSTIFICATION',       field: 'justification' },
+  { marker: 'RISK_AND_IMPACT',     field: 'riskImpact' },
+  { marker: 'IMPLEMENTATION_PLAN', field: 'implementationPlan' },
+  { marker: 'TEST_PLAN',           field: 'testPlan' },
+  { marker: 'BACKOUT_PLAN',        field: 'backoutPlan' },
+];
 
-  // Only include existing content if at least one field is non-empty.
-  const existingContent = [
-    currentFields.shortDescription && `Current Short Description: ${currentFields.shortDescription}`,
-    currentFields.description      && `Current Description: ${currentFields.description}`,
-    currentFields.justification    && `Current Justification: ${currentFields.justification}`,
-    currentFields.riskImpact       && `Current Risk & Impact: ${currentFields.riskImpact}`,
-  ].filter(Boolean).join('\n');
+/** The fields already written, so AI Assist refines them instead of starting over. Empty when none are. */
+function buildExistingContentText(currentFields: AiAssistGeneratedFields): string {
+  // `?? ''` because a caller built before the plans were added may still hand over only four fields.
+  return AI_ASSIST_RESPONSE_MARKERS
+    .filter(({ field }) => (currentFields[field] ?? '').trim() !== '')
+    .map(({ field }) => `Current ${CHG_TEXT_FIELD_LABELS[field]}: ${currentFields[field]}`)
+    .join('\n');
+}
+
+/** Each field's reply marker followed by the Release Manager's Formula Card rules it must satisfy. */
+function buildFieldRulesText(): string {
+  return AI_ASSIST_RESPONSE_MARKERS
+    .map(({ marker, field }) => `${marker} (${CHG_TEXT_FIELD_LABELS[field]}) must satisfy:\n${renderFormulaGuidanceForField(field)}`)
+    .join('\n\n');
+}
+
+/**
+ * Builds the complete prompt text to paste into AI Assist: the record facts and delivery path, the Jira
+ * issues, any fields already written, the Formula Card rules for each field, then the exact reply format.
+ */
+function buildAiAssistPromptText(
+  selectedIssues: JiraIssue[],
+  currentFields: AiAssistGeneratedFields,
+  changeContext?: ChgPromptContext,
+): string {
+  const existingContent = buildExistingContentText(currentFields);
 
   return [
     'You are assisting with a ServiceNow Change Request for a planned software release.',
+    'Write every field so it passes the Release Manager\'s Change Request Formula Card review first time.',
     '',
+    changeContext ? `${buildChgContextText(changeContext)}\n` : '',
     'Jira issues included in this release:',
-    issueListText,
+    buildIssueListText(selectedIssues),
     '',
     'Jira issue details for better CHG drafting:',
-    issueDetailText,
+    buildIssueDetailText(selectedIssues),
     '',
     existingContent ? `Existing content to refine:\n${existingContent}\n` : '',
-    'Generate the following four CHG fields. Respond ONLY in this exact format with no extra commentary:',
+    'Formula Card rules for each field:',
+    buildFieldRulesText(),
     '',
-    'SHORT_DESCRIPTION: [one-line summary under 100 characters]',
-    'DESCRIPTION: [multi-line description of what is being deployed and why]',
-    'JUSTIFICATION: [business justification for this change]',
-    'RISK_AND_IMPACT: [risk assessment and business impact analysis]',
+    'Generate all seven CHG fields. Respond ONLY in this exact format with no extra commentary. Each value may',
+    'span several lines; write the plans as numbered steps.',
+    '',
+    'SHORT_DESCRIPTION: [one line: domain | action | object | version or scope | environment]',
+    'DESCRIPTION: [current state, what changes, how, what does not change, why now]',
+    'JUSTIFICATION: [driver, benefit or risk avoided, consequence of deferral]',
+    'RISK_AND_IMPACT: [risk rating and rationale, failure impact, failure modes, blast radius, dependencies, conflicts]',
+    'IMPLEMENTATION_PLAN: [numbered steps: actor, action, expected result, verification, time, checkpoints]',
+    'TEST_PLAN: [Dev and INT testing done, testing in this environment, success criteria, monitoring, validation owner]',
+    'BACKOUT_PLAN: [triggers, decision owner, restoration steps, recovery point and time, post-backout validation]',
   ].join('\n');
 }
 
-// Maps each deterministic response marker to the CHG field it populates. The
-// prompt forces AI Assist to emit exactly these markers, so parsing is reliable.
-const AI_ASSIST_RESPONSE_MARKERS: ReadonlyArray<{ marker: string; field: keyof AiAssistGeneratedFields }> = [
-  { marker: 'SHORT_DESCRIPTION', field: 'shortDescription' },
-  { marker: 'DESCRIPTION',       field: 'description' },
-  { marker: 'JUSTIFICATION',     field: 'justification' },
-  { marker: 'RISK_AND_IMPACT',   field: 'riskImpact' },
-];
-
 /**
- * Parses AI Assist's deterministic "KEY: value" response into the four CHG fields.
+ * Parses AI Assist's deterministic "KEY: value" response into the seven CHG fields.
  * Each value runs from its marker up to the next marker (so multi-line values are
  * preserved). A leading line boundary on each marker prevents the "DESCRIPTION"
  * marker from matching inside "SHORT_DESCRIPTION". Missing fields are omitted.
@@ -190,8 +221,9 @@ export function useAiAssist(): UseAiAssistResult {
   const buildPrompt = useCallback((
     selectedIssues: JiraIssue[],
     currentFields: AiAssistGeneratedFields,
+    changeContext?: ChgPromptContext,
   ): string => {
-    return buildAiAssistPromptText(selectedIssues, currentFields);
+    return buildAiAssistPromptText(selectedIssues, currentFields, changeContext);
   }, []);
 
   return { isUnlocked, verifyPassphrase, buildPrompt };

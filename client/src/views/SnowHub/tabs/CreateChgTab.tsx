@@ -21,6 +21,9 @@ import { useCtaskTemplates } from '../hooks/useCtaskTemplates.ts';
 import { useCrgTemplates } from '../hooks/useCrgTemplates.ts';
 import type { AiAssistGeneratedFields } from '../hooks/useAiAssist.ts';
 import { parseAiAssistChgResponse, useAiAssist } from '../hooks/useAiAssist.ts';
+import { buildChgContextText, type ChgPromptContext } from '../chgFormula/chgPromptContext.ts';
+import { buildChgRiskCheckPrompt } from '../chgFormula/chgRiskCheckPrompt.ts';
+import { renderFormulaGuidanceForField } from '../chgFormula/formulaCard.ts';
 import { useCopyFeedback } from '../../../hooks/useCopyFeedback.ts';
 import type { SnowChoiceOptionMap } from '../hooks/useSnowChoiceOptions.ts';
 import { useSnowChoiceOptions } from '../hooks/useSnowChoiceOptions.ts';
@@ -2001,6 +2004,51 @@ function buildEnvironmentSummary(state: CrgStateData): string[] {
   });
 }
 
+/** One CTASK as the prompts describe it: its name and the minutes it needs to implement, validate and back out. */
+function describeChangeTaskForPrompt(changeTask: CrgStateData['changeTasks'][number]): string {
+  const taskLabel = [changeTask.name, changeTask.shortDescription].filter((part) => part.trim() !== '').join(' — ');
+  const estimates = changeTask.durationEstimates;
+  if (!estimates) {
+    return taskLabel;
+  }
+  return `${taskLabel} — implementation ${estimates.implementationMinutes || '?'} min, `
+    + `validation ${estimates.validationMinutes || '?'} min, backout ${estimates.backoutMinutes || '?'} min`;
+}
+
+/**
+ * The change record's own facts, for the AI Assist prompts (GH #395): the drafted text must agree with
+ * the record, and the risk check reviews the text against it.
+ */
+function buildChgPromptContextFromState(state: CrgStateData): ChgPromptContext {
+  const basicInfo = state.chgBasicInfo;
+  return {
+    categoryLabel: basicInfo.category,
+    changeTypeLabel: basicInfo.changeType,
+    isExpedited: basicInfo.isExpedited,
+    configItemLabel: basicInfo.configItem.displayName,
+    assignmentGroupLabel: basicInfo.assignmentGroup.displayName,
+    changeOwnerLabel: basicInfo.assignedTo.displayName,
+    environmentLines: buildEnvironmentSummary(state).filter((summaryLine) => summaryLine.includes(': Enabled')),
+    assessmentLines: PLANNING_ASSESSMENT_ROWS
+      .filter((assessmentRow) => state.chgPlanningAssessment[assessmentRow.fieldKey].trim() !== '')
+      .map((assessmentRow) => `${assessmentRow.label}: ${state.chgPlanningAssessment[assessmentRow.fieldKey]}`),
+    changeTaskLines: state.changeTasks.map((changeTask) => describeChangeTaskForPrompt(changeTask)),
+  };
+}
+
+/** The seven text fields as the change currently holds them. */
+function readChgTextFields(state: CrgStateData): AiAssistGeneratedFields {
+  return {
+    shortDescription: state.generatedShortDescription,
+    description: state.generatedDescription,
+    justification: state.generatedJustification,
+    riskImpact: state.generatedRiskImpact,
+    implementationPlan: state.chgPlanningContent.implementationPlan,
+    testPlan: state.chgPlanningContent.testPlan,
+    backoutPlan: state.chgPlanningContent.backoutPlan,
+  };
+}
+
 function buildConsolidatedResult(state: CrgStateData): string {
   const environmentSummary = buildEnvironmentSummary(state).join('\n');
 
@@ -2545,14 +2593,25 @@ interface AiAssistPromptSession {
 }
 
 // The CHG fields each prompt round trip is allowed to fill: the Planning "Enhance" prompt
-// asks for all four, while the Step 3 draft prompt asks only for the first two — a reply
-// carrying extra markers must not overwrite fields its prompt never requested.
-const ENHANCE_PROMPT_FIELD_KEYS: ReadonlyArray<keyof AiAssistGeneratedFields> = ['shortDescription', 'description', 'justification', 'riskImpact'];
+// asks for all seven (the three plans included — GH #395), while the Step 3 draft prompt asks only for
+// the first two — a reply carrying extra markers must not overwrite fields its prompt never requested.
+const ENHANCE_PROMPT_FIELD_KEYS: ReadonlyArray<keyof AiAssistGeneratedFields> = [
+  'shortDescription',
+  'description',
+  'justification',
+  'riskImpact',
+  'implementationPlan',
+  'testPlan',
+  'backoutPlan',
+];
+// The three reply fields that belong to the Planning step's plans rather than the change details.
+const PLANNING_CONTENT_FIELD_KEYS: ReadonlyArray<keyof AiAssistGeneratedFields> = ['implementationPlan', 'testPlan', 'backoutPlan'];
 const DRAFT_PROMPT_FIELD_KEYS: ReadonlyArray<keyof AiAssistGeneratedFields> = ['shortDescription', 'description'];
 
 const APPLY_FIELDS_BUTTON_LABEL = 'Apply reply to fields';
 const NO_RECOGNISABLE_FIELDS_MESSAGE =
-  'No recognisable fields found — the reply must use the SHORT_DESCRIPTION / DESCRIPTION / JUSTIFICATION / RISK_AND_IMPACT markers.';
+  'No recognisable fields found — the reply must use the SHORT_DESCRIPTION / DESCRIPTION / JUSTIFICATION / '
+  + 'RISK_AND_IMPACT / IMPLEMENTATION_PLAN / TEST_PLAN / BACKOUT_PLAN markers.';
 
 /** Names the surface so an operator always knows whether they are creating or overwriting. */
 function resolveTabTitle(mode: CrgTabProps['mode'], rebuildTargetNumber: string): string {
@@ -2713,9 +2772,19 @@ export default function CrgTab({ mode = 'wizard', targetChangeNumber }: CrgTabPr
   ): { statusMessage: string; wasApplied: boolean } => {
     const parsedFields = parseAiAssistChgResponse(replyText);
     const appliedFieldKeys = allowedFieldKeys.filter((fieldKey) => Boolean(parsedFields[fieldKey]));
+    const planningUpdate: Partial<Record<'implementationPlan' | 'testPlan' | 'backoutPlan', string>> = {};
     appliedFieldKeys.forEach((fieldKey) => {
-      actions.updateGeneratedField(fieldKey, parsedFields[fieldKey] as string);
+      const parsedValue = parsedFields[fieldKey] as string;
+      if (fieldKey === 'implementationPlan' || fieldKey === 'testPlan' || fieldKey === 'backoutPlan') {
+        planningUpdate[fieldKey] = parsedValue;
+        return;
+      }
+      actions.updateGeneratedField(fieldKey, parsedValue);
     });
+    // The plans are written in one update so the Planning step never shows a half-applied reply.
+    if (PLANNING_CONTENT_FIELD_KEYS.some((fieldKey) => fieldKey in planningUpdate)) {
+      actions.setChgPlanningContent(planningUpdate);
+    }
 
     return {
       wasApplied: appliedFieldKeys.length > 0,
@@ -2725,23 +2794,18 @@ export default function CrgTab({ mode = 'wizard', targetChangeNumber }: CrgTabPr
     };
   }, [actions]);
 
-  // Step 4 Planning: the full four-field prompt, seeded with any existing content to refine.
+  // Step 4 Planning: the full seven-field prompt — change details and all three plans — written to the
+  // Release Manager's Formula Card and seeded with the record's facts and any content to refine (GH #395).
   const handleEnhanceWithAiAssist = useCallback(() => {
     const selectedIssues = state.fetchedIssues.filter((issue) =>
       state.selectedIssueKeys.has(issue.key),
     );
 
-    const currentFields = {
-      shortDescription: state.generatedShortDescription,
-      description:      state.generatedDescription,
-      justification:    state.generatedJustification,
-      riskImpact:       state.generatedRiskImpact,
-    };
-
     setAiAssistPromptSession({
       instructions:
-        'Copy this prompt and paste it into AI Assist to generate the four CHG field values, then paste the reply below to fill the fields automatically.',
-      promptText: buildPrompt(selectedIssues, currentFields),
+        'Copy this prompt and paste it into AI Assist to generate all seven CHG fields — details and the '
+        + 'Implementation, Test and Backout plans — then paste the reply below to fill them automatically.',
+      promptText: buildPrompt(selectedIssues, readChgTextFields(state), buildChgPromptContextFromState(state)),
       applyButtonLabel: APPLY_FIELDS_BUTTON_LABEL,
       applyReply: (replyText) => applyParsedChgFields(replyText, ENHANCE_PROMPT_FIELD_KEYS),
     });
@@ -2758,10 +2822,19 @@ export default function CrgTab({ mode = 'wizard', targetChangeNumber }: CrgTabPr
       : '(no issues selected)';
     const draftPrompt = [
       'You are assisting with a ServiceNow Change Request.',
-      'Based on the Jira issues listed below, generate a Short Description and Description.',
+      'Based on the Jira issues listed below, generate a Short Description and Description that pass the '
+        + "Release Manager's Change Request Formula Card review.",
+      '',
+      buildChgContextText(buildChgPromptContextFromState(state)),
+      '',
+      'SHORT_DESCRIPTION must satisfy:',
+      renderFormulaGuidanceForField('shortDescription'),
+      'DESCRIPTION must satisfy:',
+      renderFormulaGuidanceForField('description'),
+      '',
       'Respond ONLY in this exact format with no extra commentary:',
-      'SHORT_DESCRIPTION: [one-line summary under 100 characters]',
-      'DESCRIPTION: [multi-line description of what is being deployed and why]',
+      'SHORT_DESCRIPTION: [one line: domain | action | object | version or scope | environment]',
+      'DESCRIPTION: [current state, what changes, how, what does not change, why now]',
       '',
       'Jira issues:',
       issueLines,
@@ -2774,25 +2847,18 @@ export default function CrgTab({ mode = 'wizard', targetChangeNumber }: CrgTabPr
       applyButtonLabel: APPLY_FIELDS_BUTTON_LABEL,
       applyReply: (replyText) => applyParsedChgFields(replyText, DRAFT_PROMPT_FIELD_KEYS),
     });
-  }, [state.fetchedIssues, state.selectedIssueKeys, applyParsedChgFields, setAiAssistPromptSession]);
+  }, [state, applyParsedChgFields, setAiAssistPromptSession]);
 
-  // Step 6: the pre-submission risk-review prompt. The pasted review is displayed on the
-  // Results step as-is — the user may still submit regardless of what it flags (FR-005).
+  // Step 6: the Release Manager's pre-approval check — the whole change, record facts included, against
+  // every Formula Card field (GH #395). The pasted review is displayed on the Results step as-is — the
+  // user may still submit regardless of what it flags (FR-005).
   const handleOpenRiskCheckPrompt = useCallback(() => {
-    const riskPrompt = [
-      'You are reviewing a ServiceNow Change Request before submission.',
-      'Identify gaps, risks, or missing fields that need attention.',
-      'List each issue on its own line starting with "GAP: ".',
-      '',
-      `Short Description: ${state.generatedShortDescription || '(not set)'}`,
-      `Description: ${state.generatedDescription || '(not set)'}`,
-      `Justification: ${state.generatedJustification || '(not set)'}`,
-      `Risk & Impact: ${state.generatedRiskImpact || '(not set)'}`,
-    ].join('\n');
+    const riskPrompt = buildChgRiskCheckPrompt(buildChgPromptContextFromState(state), readChgTextFields(state));
 
     setAiAssistPromptSession({
       instructions:
-        'Copy this prompt and paste it into AI Assist to review the CHG for gaps, then paste the reply below — the review is shown on the Results step.',
+        'Copy this prompt and paste it into AI Assist to check the CHG against the Release Manager\'s Formula '
+        + 'Card, then paste the reply below — the review is shown on the Results step.',
       promptText: riskPrompt,
       applyButtonLabel: 'Use this review',
       applyReply: (replyText) => {
@@ -2804,14 +2870,7 @@ export default function CrgTab({ mode = 'wizard', targetChangeNumber }: CrgTabPr
         return { statusMessage: 'Risk review captured — it is shown on the Results step.', wasApplied: true };
       },
     });
-  }, [
-    state.generatedShortDescription,
-    state.generatedDescription,
-    state.generatedJustification,
-    state.generatedRiskImpact,
-    setAiAssistPromptSession,
-    setRiskCheckReviewText,
-  ]);
+  }, [state, setAiAssistPromptSession, setRiskCheckReviewText]);
 
   // Consumes the pasted reply through the active session and reports the outcome.
   const handleApplyAiAssistReply = useCallback(() => {
