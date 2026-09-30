@@ -69,7 +69,6 @@ import { getStoryPointsCandidateFieldIds, readIssueStoryPointsDisplayValue } fro
 import { estimateCarryoverRemainingPoints } from './carryoverEstimate.ts';
 import { fetchCarryoverChildrenByFeature } from './carryoverEstimateFetch.ts';
 import { useStandupRosterStore } from '../SprintDashboard/hooks/useStandupRosterStore.ts';
-import { buildRosterCapacitySummary, countRosterCapacityEstimates } from '../SprintDashboard/rosterCapacity.ts';
 import { pullPiReviewFeatures, readPiReviewPullSettings } from './piReviewPullFeatures.ts';
 import {
   addIgnoredPiReviewFeatureKey,
@@ -837,11 +836,7 @@ function PiReviewPagePanel({
   const loadedSnapshotRef = useRef<PiReviewLoadedSnapshot | null>(null);
   const [hasLoadedSnapshot, setHasLoadedSnapshot] = useState(false);
   const pagePanelRef = useRef<HTMLElement>(null);
-  // Roster capacity estimates adopted on request ("Use roster capacity estimates"). Never applied on its
-  // own: the roster total is one standing number, and only the person planning this PI decides it fits.
-  const [rosterCapacitySummary, setRosterCapacitySummary] = useState<CapacitySummary | null>(null);
-  const rosterCapacityEstimateCount = useMemo(() => countRosterCapacityEstimates(rosterMembers), [rosterMembers]);
-  const liveCapacitySummary = rosterCapacitySummary ?? capacitySummaryOverride;
+  const liveCapacitySummary = capacitySummaryOverride;
   const displayedCapacitySummary = liveCapacitySummary ?? savedCapacitySummary;
   // Board load vs the team's recommended (80%) capacity: the total of every Feature's points and the
   // committed subset, each compared to the 80% target so the PO can see the plan's fit at a glance.
@@ -2700,19 +2695,6 @@ function PiReviewPagePanel({
               This snapshot comes from the PI Review planning workspace and is saved into Confluence above the PI Review table.
             </p>
           </div>
-          {mode !== 'readout' ? (
-            <button
-              className={joinClassNames(styles.actionButton, styles.actionButtonSecondary)}
-              disabled={rosterCapacityEstimateCount === 0}
-              onClick={() => setRosterCapacitySummary(buildRosterCapacitySummary(rosterMembers, displayedCapacitySummary))}
-              title={rosterCapacityEstimateCount === 0
-                ? 'Enter PI capacity estimates on the Team Dashboard Roster tab first'
-                : `Replace this snapshot with the roster total from ${rosterCapacityEstimateCount} people`}
-              type="button"
-            >
-              Use roster capacity estimates
-            </button>
-          ) : null}
         </div>
         {displayedCapacitySummary ? (
           <>

@@ -2,8 +2,8 @@
 //
 // The roster stores each person's structured role capabilities and their capacity %; the capacity
 // calculator uses its own role codes and groups people into rows of the same role AND allocation. This
-// module maps the two so a planner can auto-fill the team makeup (roles, head counts, allocation) from the
-// roster and then enter PTO by hand. Coordination roles that add no delivery capacity — Scrum Master,
+// module maps the two so a planner can auto-fill the team makeup (roles, head counts, allocation, PTO days)
+// straight from the roster. Coordination roles that add no delivery capacity — Scrum Master,
 // Product Owner, Solution Architect, Release Train Engineer — are deliberately excluded, matching the
 // Feature Canvas re-allocation planner's rule.
 
@@ -11,9 +11,15 @@ import { ALL_TEAM_ROLES, generateCapacityRowId } from './capacityModel.ts';
 import type { CapacityRow, TeamRole } from './capacityModel.ts';
 import type { RosterRoleCapabilities, StandupRosterMember } from './hooks/useStandupRosterStore.ts';
 
-// A person with no capacity % on the roster is fully on the team; PTO is always entered by hand.
+// A person with no capacity % on the roster is fully on the team; one with no PTO days has none.
 const DEFAULT_SEEDED_CAPACITY_PERCENTAGE = 100;
 const DEFAULT_SEEDED_PTO_DAYS = 0;
+
+/** One Team Composition row in the making: how many people share it and their PTO days between them. */
+interface SeededRowTotals {
+  memberCount: number;
+  totalPtoDays: number;
+}
 
 /**
  * Ordered map of roster capabilities that DO count toward capacity, paired with their capacity code.
@@ -51,16 +57,16 @@ export function resolveMemberCapacityRole(member: StandupRosterMember): TeamRole
 
 /**
  * Builds capacity Team Composition rows from a roster: one row per distinct counting role AND capacity %,
- * with the head count of people in it. Splitting by allocation is what lets one half-time developer sit
- * beside seven full-time ones — a single "Developer" row can only carry one percentage. Rows come back in
- * the calculator's canonical role order, highest allocation first within a role. PTO starts at zero for
- * the planner to fill in. `createRowId` is injectable purely so tests stay deterministic.
+ * with the head count of people in it and the sum of their roster PTO days. Splitting by allocation is what
+ * lets one half-time developer sit beside seven full-time ones — a single "Developer" row can only carry
+ * one percentage. Rows come back in the calculator's canonical role order, highest allocation first within
+ * a role. `createRowId` is injectable purely so tests stay deterministic.
  */
 export function seedCapacityRowsFromRoster(
   rosterMembers: readonly StandupRosterMember[],
   createRowId: () => string = generateCapacityRowId,
 ): CapacityRow[] {
-  const headCountByPercentageByRole = new Map<TeamRole, Map<number, number>>();
+  const rowTotalsByPercentageByRole = new Map<TeamRole, Map<number, SeededRowTotals>>();
   for (const rosterMember of rosterMembers) {
     const capacityRole = resolveMemberCapacityRole(rosterMember);
     if (capacityRole === null) {
@@ -68,24 +74,28 @@ export function seedCapacityRowsFromRoster(
     }
 
     const capacityPercentage = rosterMember.capacityPercentage ?? DEFAULT_SEEDED_CAPACITY_PERCENTAGE;
-    const headCountByPercentage = headCountByPercentageByRole.get(capacityRole) ?? new Map<number, number>();
-    headCountByPercentage.set(capacityPercentage, (headCountByPercentage.get(capacityPercentage) ?? 0) + 1);
-    headCountByPercentageByRole.set(capacityRole, headCountByPercentage);
+    const rowTotalsByPercentage = rowTotalsByPercentageByRole.get(capacityRole) ?? new Map<number, SeededRowTotals>();
+    const rowTotals = rowTotalsByPercentage.get(capacityPercentage) ?? { memberCount: 0, totalPtoDays: 0 };
+    rowTotalsByPercentage.set(capacityPercentage, {
+      memberCount: rowTotals.memberCount + 1,
+      totalPtoDays: rowTotals.totalPtoDays + (rosterMember.ptoDays ?? DEFAULT_SEEDED_PTO_DAYS),
+    });
+    rowTotalsByPercentageByRole.set(capacityRole, rowTotalsByPercentage);
   }
 
   return ALL_TEAM_ROLES.flatMap((teamRole) => {
-    const headCountByPercentage = headCountByPercentageByRole.get(teamRole);
-    if (headCountByPercentage === undefined) {
+    const rowTotalsByPercentage = rowTotalsByPercentageByRole.get(teamRole);
+    if (rowTotalsByPercentage === undefined) {
       return [];
     }
-    return [...headCountByPercentage.entries()]
+    return [...rowTotalsByPercentage.entries()]
       .sort(([firstPercentage], [secondPercentage]) => secondPercentage - firstPercentage)
-      .map(([capacityPercentage, memberCount]) => ({
+      .map(([capacityPercentage, rowTotals]) => ({
         id: createRowId(),
         role: teamRole,
-        memberCount,
+        memberCount: rowTotals.memberCount,
         capacityPercentage,
-        totalPtoDays: DEFAULT_SEEDED_PTO_DAYS,
+        totalPtoDays: rowTotals.totalPtoDays,
       }));
   });
 }

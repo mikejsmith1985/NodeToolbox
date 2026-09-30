@@ -526,7 +526,7 @@ describe('useStandupRosterStore', () => {
   });
 });
 
-describe('roster PI capacity estimate', () => {
+describe('roster PTO days', () => {
   beforeEach(() => {
     localStorage.clear();
     useStandupRosterStore.setState({ dashboardTeamProfileId: 'legacy-default', rosterMembers: [] });
@@ -536,33 +536,33 @@ describe('roster PI capacity estimate', () => {
     ]);
   });
 
-  it('sets one member\'s estimate and persists it', () => {
-    useStandupRosterStore.getState().setRosterMemberPiCapacity('roster-member:alice adams', 40);
+  it('sets one member\'s PTO days and persists them', () => {
+    useStandupRosterStore.getState().setRosterMemberPtoDays('roster-member:alice adams', 40);
 
     const rosterMembers = useStandupRosterStore.getState().rosterMembers;
-    expect(rosterMembers.find((rosterMember) => rosterMember.id === 'roster-member:alice adams')?.piCapacityPoints).toBe(40);
-    expect(rosterMembers.find((rosterMember) => rosterMember.id === 'roster-member:bob brown')?.piCapacityPoints).toBeUndefined();
+    expect(rosterMembers.find((rosterMember) => rosterMember.id === 'roster-member:alice adams')?.ptoDays).toBe(40);
+    expect(rosterMembers.find((rosterMember) => rosterMember.id === 'roster-member:bob brown')?.ptoDays).toBeUndefined();
     expect(readStoredStandupRosterMembers()
-      .find((rosterMember) => rosterMember.id === 'roster-member:alice adams')?.piCapacityPoints).toBe(40);
+      .find((rosterMember) => rosterMember.id === 'roster-member:alice adams')?.ptoDays).toBe(40);
   });
 
-  it('clears an estimate when it is removed', () => {
-    useStandupRosterStore.getState().setRosterMemberPiCapacity('roster-member:alice adams', 40);
-    useStandupRosterStore.getState().setRosterMemberPiCapacity('roster-member:alice adams', undefined);
+  it('clears PTO days when they are removed', () => {
+    useStandupRosterStore.getState().setRosterMemberPtoDays('roster-member:alice adams', 40);
+    useStandupRosterStore.getState().setRosterMemberPtoDays('roster-member:alice adams', undefined);
 
     expect(readStoredStandupRosterMembers()
-      .find((rosterMember) => rosterMember.id === 'roster-member:alice adams')?.piCapacityPoints).toBeUndefined();
+      .find((rosterMember) => rosterMember.id === 'roster-member:alice adams')?.ptoDays).toBeUndefined();
   });
 
-  it('keeps the estimate when the same person is re-imported from Jira', () => {
-    useStandupRosterStore.getState().setRosterMemberPiCapacity('roster-member:alice adams', 40);
+  it('keeps PTO days when the same person is re-imported from Jira', () => {
+    useStandupRosterStore.getState().setRosterMemberPtoDays('roster-member:alice adams', 40);
 
     useStandupRosterStore.getState().upsertRosterMembers([
       { displayName: 'Alice Adams', assigneeQueryValue: 'Alice Adams', jiraAccountId: 'acc-1' },
     ]);
 
     expect(useStandupRosterStore.getState().rosterMembers
-      .find((rosterMember) => rosterMember.id === 'roster-member:alice adams')?.piCapacityPoints).toBe(40);
+      .find((rosterMember) => rosterMember.id === 'roster-member:alice adams')?.ptoDays).toBe(40);
   });
 
   it('sets, persists and clears one member\'s capacity percentage', () => {
@@ -596,10 +596,10 @@ describe('roster PI capacity estimate', () => {
       .find((rosterMember) => rosterMember.id === 'roster-member:alice adams')?.capacityPercentage).toBe(50);
   });
 
-  it('shows PI points that were saved before the field was briefly removed (v0.279.2)', () => {
+  it('loads numbers saved under the old "PI points" label as PTO days (GH #397)', () => {
     // Start from empty storage: this group's setup already saved a roster, which would be read instead.
     localStorage.clear();
-    // v0.279.2 hid the field but never erased the stored numbers; restoring it must bring them back.
+    // The box was labelled "PI points" but people typed PTO days into it; those numbers must carry over.
     localStorage.setItem('tbxSprintDashboardRoster', JSON.stringify({
       rosterMembers: [
         { id: 'roster-member:a', displayName: 'A', assigneeQueryValue: 'A', piCapacityPoints: 17, capacityPercentage: 50 },
@@ -608,11 +608,11 @@ describe('roster PI capacity estimate', () => {
 
     const [loadedMember] = readStoredStandupRosterMembers();
 
-    expect(loadedMember.piCapacityPoints).toBe(17);
+    expect(loadedMember.ptoDays).toBe(17);
     expect(loadedMember.capacityPercentage).toBe(50);
   });
 
-  it('drops a malformed stored estimate but still loads the member', () => {
+  it('drops malformed stored PTO days but still loads the member', () => {
     // Start from empty storage: this group's setup already saved a roster, which would be read instead.
     localStorage.clear();
     localStorage.setItem('tbxSprintDashboardRoster', JSON.stringify({
@@ -625,7 +625,7 @@ describe('roster PI capacity estimate', () => {
     const loadedMembers = readStoredStandupRosterMembers();
 
     expect(loadedMembers).toHaveLength(2);
-    expect(loadedMembers[0].piCapacityPoints).toBeUndefined();
-    expect(loadedMembers[1].piCapacityPoints).toBeUndefined();
+    expect(loadedMembers[0].ptoDays).toBeUndefined();
+    expect(loadedMembers[1].ptoDays).toBeUndefined();
   });
 });

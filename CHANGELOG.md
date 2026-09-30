@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Roster PTO days now reach the capacity planner (GH #397).** The per-person roster box was labelled
+  **PI points** and read as story points, but it holds the days each person is off during the PI. It is now
+  **PTO days**, and **Seed from Roster** on the PI Review's **Team Composition** adds them up into each row's
+  **PTO Days** — `Developer × 8 @ 100%` carries the total of those eight people's days. Numbers already typed
+  into the old box carry over as PTO days; nothing needs re-entering. Click **Seed from Roster** again to pull
+  them in. The PI Review's **Use roster capacity estimates** button is removed: it treated those same numbers
+  as story points and produced a wrong capacity total.
+
 ### Internal
 - **Six SNow Hub lint errors cleared.** `listTargetStatesForChange` moved out of `ScheduledMovesSection.tsx` into
   `scheduledMoves/changeTargetStates.ts` (a component file that also exports helpers breaks fast refresh), and the

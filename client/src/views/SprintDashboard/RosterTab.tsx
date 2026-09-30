@@ -444,7 +444,7 @@ function RosterRoleControls({ rosterMember, onRolesChange }: RosterRoleControlsP
 
 interface RosterCapacityControlProps {
   rosterMember: StandupRosterMember;
-  onCapacityChange: (piCapacityPoints: number | undefined) => void;
+  onPtoDaysChange: (ptoDays: number | undefined) => void;
   onPercentageChange: (capacityPercentage: number | undefined) => void;
 }
 
@@ -458,23 +458,23 @@ function readOptionalNumberInput(rawValue: string): number | undefined {
 }
 
 /**
- * Two numbers per person: how many points they can deliver in a PI, and the share of their time they
- * give this team. Both are standing values, not per-PI records; a PI Review adopts the scaled roster
- * total only when someone asks it to there.
+ * Two numbers per person: the days they are off during the PI, and the share of their time they give
+ * this team. Both are standing values, not per-PI records; "Seed from Roster" on the capacity planner
+ * carries them into its Team Composition rows.
  */
-function RosterCapacityControl({ rosterMember, onCapacityChange, onPercentageChange }: RosterCapacityControlProps) {
+function RosterCapacityControl({ rosterMember, onPtoDaysChange, onPercentageChange }: RosterCapacityControlProps) {
   return (
     <div className={styles.rosterCapacityRow}>
       <label className={styles.rosterCapacityField}>
-        <span className={styles.rosterRoleLegend}>PI points</span>
+        <span className={styles.rosterRoleLegend}>PTO days</span>
         <input
-          aria-label={`PI capacity estimate (points) for ${rosterMember.displayName}`}
+          aria-label={`PTO days for ${rosterMember.displayName}`}
           className={`${styles.settingsInput} ${styles.rosterCapacityInput}`}
           min={0}
-          onChange={(changeEvent) => onCapacityChange(readOptionalNumberInput(changeEvent.target.value))}
-          placeholder="-"
+          onChange={(changeEvent) => onPtoDaysChange(readOptionalNumberInput(changeEvent.target.value))}
+          placeholder="0"
           type="number"
-          value={rosterMember.piCapacityPoints ?? ''}
+          value={rosterMember.ptoDays ?? ''}
         />
       </label>
       <label className={styles.rosterCapacityField}>
@@ -664,7 +664,7 @@ export default function RosterTab({ issues, projectKey }: RosterTabProps) {
   const addRosterMember = useStandupRosterStore((state) => state.addRosterMember);
   const removeRosterMember = useStandupRosterStore((state) => state.removeRosterMember);
   const setRosterMemberRoles = useStandupRosterStore((state) => state.setRosterMemberRoles);
-  const setRosterMemberPiCapacity = useStandupRosterStore((state) => state.setRosterMemberPiCapacity);
+  const setRosterMemberPtoDays = useStandupRosterStore((state) => state.setRosterMemberPtoDays);
   const setRosterMemberCapacityPercentage = useStandupRosterStore((state) => state.setRosterMemberCapacityPercentage);
   const upsertRosterMembers = useStandupRosterStore((state) => state.upsertRosterMembers);
   const isSnowRelayConnected = useConnectionStore((state) => state.relayBridgeStatus?.isConnected ?? false);
@@ -1362,7 +1362,7 @@ export default function RosterTab({ issues, projectKey }: RosterTabProps) {
                   rosterMember={rosterMember}
                 />
                 <RosterCapacityControl
-                  onCapacityChange={(piCapacityPoints) => setRosterMemberPiCapacity(rosterMember.id, piCapacityPoints)}
+                  onPtoDaysChange={(ptoDays) => setRosterMemberPtoDays(rosterMember.id, ptoDays)}
                   onPercentageChange={(capacityPercentage) =>
                     setRosterMemberCapacityPercentage(rosterMember.id, capacityPercentage)}
                   rosterMember={rosterMember}

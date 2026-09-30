@@ -52,13 +52,13 @@ export interface StandupRosterMember {
   lanId?: string;
   workingHours?: string;
   /**
-   * How many story points this person can deliver in a PI — one standing estimate, always taken as
-   * current rather than kept per PI. Only reaches a PI Review when someone asks for it there.
+   * Days this person is off during the PI — one standing value, always taken as current rather than
+   * kept per PI. "Seed from Roster" adds it into the capacity planner's PTO Days for their row.
    */
-  piCapacityPoints?: number;
+  ptoDays?: number;
   /**
-   * The share of their time this person gives the team (0-100). Scales their PI capacity estimate when
-   * a PI Review pulls the roster in; absent means 100%.
+   * The share of their time this person gives the team (0-100). "Seed from Roster" groups people by it;
+   * absent means 100%.
    */
   capacityPercentage?: number;
 }
@@ -77,7 +77,7 @@ export interface StandupRosterMemberDraft {
   locationTimeZone?: string;
   lanId?: string;
   workingHours?: string;
-  piCapacityPoints?: number;
+  ptoDays?: number;
   capacityPercentage?: number;
 }
 
@@ -93,8 +93,8 @@ interface StandupRosterState extends PersistedStandupRosterState {
   replaceRosterMembers: (memberDrafts: StandupRosterMemberDraft[]) => void;
   removeRosterMember: (memberId: string) => void;
   setRosterMemberRoles: (memberId: string, capabilities: RosterRoleCapabilities) => void;
-  /** Sets (or, with undefined, clears) one person's PI capacity estimate in points. */
-  setRosterMemberPiCapacity: (memberId: string, piCapacityPoints: number | undefined) => void;
+  /** Sets (or, with undefined, clears) one person's PTO days for the PI. */
+  setRosterMemberPtoDays: (memberId: string, ptoDays: number | undefined) => void;
   /** Sets (or, with undefined, clears) one person's capacity percentage (0-100). */
   setRosterMemberCapacityPercentage: (memberId: string, capacityPercentage: number | undefined) => void;
 }
@@ -151,8 +151,8 @@ function isValidRoleCapabilities(value: unknown): value is RosterRoleCapabilitie
   );
 }
 
-/** A usable capacity estimate: a finite, non-negative number of points. */
-function isValidPiCapacityPoints(value: unknown): value is number {
+/** A usable PTO figure: a finite, non-negative number of days. */
+function isValidPtoDays(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0;
 }
 
@@ -171,9 +171,15 @@ function isStandupRosterMember(value: unknown): value is StandupRosterMember {
 
   const candidate = value as Record<string, unknown>;
 
-  // Same tolerance for the capacity estimate: a bad value is dropped, never the person.
-  if (candidate.piCapacityPoints !== undefined && !isValidPiCapacityPoints(candidate.piCapacityPoints)) {
-    delete candidate.piCapacityPoints;
+  // Rosters saved while this box was (wrongly) labelled "PI points" hold the PTO days people typed under
+  // that old key (GH #397); carry them over so nothing has to be re-entered.
+  if (candidate.ptoDays === undefined && candidate.piCapacityPoints !== undefined) {
+    candidate.ptoDays = candidate.piCapacityPoints;
+  }
+  delete candidate.piCapacityPoints;
+  // Same tolerance for PTO days: a bad value is dropped, never the person.
+  if (candidate.ptoDays !== undefined && !isValidPtoDays(candidate.ptoDays)) {
+    delete candidate.ptoDays;
   }
   if (candidate.capacityPercentage !== undefined && !isValidCapacityPercentage(candidate.capacityPercentage)) {
     delete candidate.capacityPercentage;
@@ -277,7 +283,7 @@ function createRosterMember(memberDraft: StandupRosterMemberDraft): StandupRoste
     // Role capabilities are carried through verbatim so a draft→member rebuild (e.g. upsert, SNow
     // linking) never silently drops a person's roles. Absent stays absent (treated as "no roles").
     roleCapabilities: memberDraft.roleCapabilities,
-    piCapacityPoints: isValidPiCapacityPoints(memberDraft.piCapacityPoints) ? memberDraft.piCapacityPoints : undefined,
+    ptoDays: isValidPtoDays(memberDraft.ptoDays) ? memberDraft.ptoDays : undefined,
     capacityPercentage: isValidCapacityPercentage(memberDraft.capacityPercentage)
       ? memberDraft.capacityPercentage
       : undefined,
@@ -339,7 +345,7 @@ function mergePreservedRosterFields(
     ...incomingDraft,
     roleCapabilities: incomingDraft.roleCapabilities ?? existingMember.roleCapabilities,
     githubAccountId: incomingDraft.githubAccountId ?? existingMember.githubAccountId,
-    piCapacityPoints: incomingDraft.piCapacityPoints ?? existingMember.piCapacityPoints,
+    ptoDays: incomingDraft.ptoDays ?? existingMember.ptoDays,
     capacityPercentage: incomingDraft.capacityPercentage ?? existingMember.capacityPercentage,
   };
 }
@@ -554,10 +560,10 @@ export const useStandupRosterStore = create<StandupRosterState>((setState, getSt
     setState({ rosterMembers });
     writeStoredStandupRosterMembers(rosterMembers, getState().dashboardTeamProfileId);
   },
-  setRosterMemberPiCapacity: (memberId, piCapacityPoints) => {
-    const nextPiCapacityPoints = isValidPiCapacityPoints(piCapacityPoints) ? piCapacityPoints : undefined;
+  setRosterMemberPtoDays: (memberId, ptoDays) => {
+    const nextPtoDays = isValidPtoDays(ptoDays) ? ptoDays : undefined;
     const rosterMembers = getState().rosterMembers.map((rosterMember) =>
-      rosterMember.id === memberId ? { ...rosterMember, piCapacityPoints: nextPiCapacityPoints } : rosterMember,
+      rosterMember.id === memberId ? { ...rosterMember, ptoDays: nextPtoDays } : rosterMember,
     );
     setState({ rosterMembers });
     writeStoredStandupRosterMembers(rosterMembers, getState().dashboardTeamProfileId);

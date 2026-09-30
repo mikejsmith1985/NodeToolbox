@@ -128,4 +128,25 @@ describe('seedCapacityRowsFromRoster', () => {
       ['Developer', 1, 50],
     ]);
   });
+
+  it('fills each row\'s PTO Days with the total of its people\'s roster PTO days (GH #397)', () => {
+    const developerWithSixDays = { ...buildRosterMember({ canDevelop: true } as RosterRoleCapabilities), ptoDays: 6 };
+    const developerWithSevenDays = { ...buildRosterMember({ canDevelop: true } as RosterRoleCapabilities), ptoDays: 7 };
+    const developerWithNoPto = buildRosterMember({ canDevelop: true } as RosterRoleCapabilities);
+    const halfTimeTesterWithTwoDays = {
+      ...buildRosterMember({ canInternalTest: true } as RosterRoleCapabilities),
+      ptoDays: 2,
+      capacityPercentage: 50,
+    };
+
+    const rows = seedCapacityRowsFromRoster(
+      [developerWithSixDays, developerWithSevenDays, developerWithNoPto, halfTimeTesterWithTwoDays],
+      buildSequentialRowId(),
+    );
+
+    expect(rows.map((row) => [row.role, row.memberCount, row.capacityPercentage, row.totalPtoDays])).toEqual([
+      ['Developer', 3, 100, 13],
+      ['Internal Tester', 1, 50, 2],
+    ]);
+  });
 });
