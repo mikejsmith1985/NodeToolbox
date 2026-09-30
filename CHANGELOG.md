@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **AI Assist replies still work when copying drops their line breaks (GH #395).** Chat assistants display replies
+  as formatted text, and copying it joins the lines into one paragraph — so the Risk check's
+  `=== REVISED FIELDS ===` section was never found (nothing was corrected) and its fifty review lines read as one
+  ("0 gaps · 1 passed"). Two fixes: every CHG prompt (Draft, Enhance, Risk check) now asks for the whole reply
+  inside one **```text code block**, whose line breaks survive copying; and the app puts each `PASS |` / `GAP |` /
+  `VERDICT:` line, the corrections heading and every field marker back on its own line before reading, so a
+  flattened paste still applies. Code-fence lines are ignored, so the closing ``` never lands in a field.
 - **The risk-check review is readable (GH #395).** It was shown as one unwrapped block — its styles did not exist —
   so long lines ran off the Results step and their start was cut off. It is now laid out: the **verdict** first
   (green when ready, red when not), a count of gaps / passes / not-applicable, a **"Still to confirm"** line naming

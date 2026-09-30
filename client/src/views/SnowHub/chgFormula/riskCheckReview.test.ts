@@ -54,6 +54,18 @@ describe('parseRiskCheckReview', () => {
     expect(parseRiskCheckReview(SAMPLE_REVIEW).unparsedLines).toEqual(['Overall the change is close.']);
   });
 
+  it('reads every finding from a review whose line breaks were lost in copying (GH #395)', () => {
+    const flattened = 'PASS | Short Description — Clear. GAP | Blast Radius — Missing. — Fix: Add consumers. '
+      + 'N/A | Irreversibility Point — Nothing deleted. NO | Can the team detect failure quickly? — No thresholds. '
+      + 'VERDICT: NOT READY — 1 gap(s).';
+
+    const review = parseRiskCheckReview(flattened);
+
+    expect(review.findings.map((finding) => finding.status)).toEqual(['PASS', 'GAP', 'N/A', 'NO']);
+    expect(review.findings[1]).toEqual({ status: 'GAP', field: 'Blast Radius', detail: 'Missing.', fix: 'Add consumers.' });
+    expect(review.verdict).toBe('NOT READY — 1 gap(s).');
+  });
+
   it('recognises a ready verdict', () => {
     const review = parseRiskCheckReview('PASS | Risk — Rated with rationale.\nVERDICT: READY FOR APPROVAL');
 

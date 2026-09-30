@@ -6,6 +6,7 @@
 // their replies (bullets, bold), so the reading is tolerant — and any line it cannot read is kept as a
 // note, never dropped.
 
+import { restoreMarkerLineBreaks, stripCodeFences } from './assistantReplyText.ts';
 import { CHG_TEXT_FIELD_LABELS, type ChgTextFieldKey } from './formulaCard.ts';
 
 /** PASS / GAP / N/A answer a card field; YES / NO answer a quality-gate question. */
@@ -35,6 +36,10 @@ export interface ConfirmPlaceholderCount {
   fieldLabel: string;
   placeholderCount: number;
 }
+
+// What begins each review line. Copying can flatten the review into one paragraph, so these are put back
+// at line starts before reading.
+const REVIEW_LINE_MARKERS: readonly string[] = ['PASS', 'GAP', 'N/A', 'YES', 'NO', 'VERDICT'];
 
 // A finding line: its status, then a "|" or ":" separator, then the rest.
 const FINDING_LINE_PATTERN = /^(PASS|GAP|N\/A|NA|YES|NO)\s*[|:]\s*(.+)$/i;
@@ -72,7 +77,8 @@ function readFindingBody(findingBody: string): Pick<RiskCheckFinding, 'field' | 
 /** Reads a pasted review — the part before any corrections — into its verdict, findings and notes. */
 export function parseRiskCheckReview(reviewText: string): RiskCheckReview {
   const review: RiskCheckReview = { verdict: null, isReady: false, findings: [], unparsedLines: [] };
-  for (const rawLine of reviewText.split(/\r?\n/)) {
+  const restoredReview = restoreMarkerLineBreaks(stripCodeFences(reviewText), REVIEW_LINE_MARKERS);
+  for (const rawLine of restoredReview.split(/\r?\n/)) {
     const line = stripLineMarkup(rawLine);
     if (line === '') {
       continue;

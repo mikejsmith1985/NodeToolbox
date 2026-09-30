@@ -7,6 +7,12 @@ import { useCallback } from 'react';
 import { setAiAssistUnlocked, useAiAssistStore } from '../../../store/aiAssistStore.ts';
 import type { JiraIssue } from '../../../types/jira.ts';
 import { normalizeRichTextToPlainText } from '../../../utils/richTextPlainText.ts';
+import {
+  CHG_FIELD_REPLY_MARKERS,
+  CODE_BLOCK_REPLY_INSTRUCTION,
+  restoreMarkerLineBreaks,
+  stripCodeFences,
+} from '../chgFormula/assistantReplyText.ts';
 import { buildChgContextText, type ChgPromptContext } from '../chgFormula/chgPromptContext.ts';
 import {
   CHG_TEXT_FIELD_LABELS,
@@ -161,6 +167,8 @@ function buildAiAssistPromptText(
     'IMPLEMENTATION_PLAN: [numbered steps: actor, action, expected result, verification, time, checkpoints]',
     'TEST_PLAN: [Dev and INT testing done, testing in this environment, success criteria, monitoring, validation owner]',
     'BACKOUT_PLAN: [triggers, decision owner, restoration steps, recovery point and time, post-backout validation]',
+    '',
+    CODE_BLOCK_REPLY_INSTRUCTION,
   ].join('\n');
 }
 
@@ -178,6 +186,8 @@ export function parseAiAssistChgResponse(responseText: string): Partial<AiAssist
   if (typeof responseText !== 'string') {
     return parsedFields;
   }
+  // A code-block reply loses its fences, and a flattened paste gets its markers back on their own lines.
+  const restoredResponse = restoreMarkerLineBreaks(stripCodeFences(responseText), CHG_FIELD_REPLY_MARKERS);
 
   for (let markerIndex = 0; markerIndex < AI_ASSIST_RESPONSE_MARKERS.length; markerIndex += 1) {
     const { marker, field } = AI_ASSIST_RESPONSE_MARKERS[markerIndex];
@@ -187,7 +197,7 @@ export function parseAiAssistChgResponse(responseText: string): Partial<AiAssist
     const stopAhead = laterMarkers.length > 0 ? `(?=\\n\\s*(?:${laterMarkers.join('|')})\\s*:|$)` : '$';
     const fieldRegExp = new RegExp(`(?:^|\\n)\\s*${marker}\\s*:\\s*([\\s\\S]*?)${stopAhead}`, 'i');
 
-    const match = responseText.match(fieldRegExp);
+    const match = restoredResponse.match(fieldRegExp);
     if (match && match[1].trim()) {
       parsedFields[field] = match[1].trim();
     }

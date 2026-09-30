@@ -5,6 +5,12 @@
 // facts. This builds that review as one prompt the user copies out and whose reply they paste back — the
 // same round trip every AI Assist surface uses; nothing is sent anywhere automatically.
 
+import {
+  CHG_FIELD_REPLY_MARKERS,
+  CODE_BLOCK_REPLY_INSTRUCTION,
+  restoreMarkerLineBreaks,
+  stripCodeFences,
+} from './assistantReplyText.ts';
 import { buildChgContextText, type ChgPromptContext } from './chgPromptContext.ts';
 import {
   CHG_TEXT_FIELD_LABELS,
@@ -82,21 +88,25 @@ export interface RiskCheckReplyParts {
   revisedFieldsText: string;
 }
 
-// The corrections heading, tolerating the bold / heading markup an assistant likes to wrap lines in.
-const REVISED_FIELDS_HEADING_PATTERN = /^[\s*#_>`-]*=== REVISED FIELDS ===[\s*#_`-]*$/im;
+// The corrections heading, tolerating the bold / heading markup an assistant likes to wrap it in. Not tied
+// to a line start: when copying flattened the reply, the heading sits mid-line after the verdict.
+const REVISED_FIELDS_HEADING_PATTERN = /[*#_>`-]*=== REVISED FIELDS ===[*#_`-]*/i;
 
 /**
  * Splits a pasted risk-check reply at the corrections heading. With no heading, the whole reply is review
  * — an assistant that found no gaps, or ignored the instruction, still has its review shown.
  */
 export function splitRiskCheckReply(replyText: string): RiskCheckReplyParts {
-  const headingMatch = REVISED_FIELDS_HEADING_PATTERN.exec(replyText);
+  const cleanedReply = stripCodeFences(replyText);
+  const headingMatch = REVISED_FIELDS_HEADING_PATTERN.exec(cleanedReply);
   if (headingMatch === null) {
-    return { reviewText: replyText.trim(), revisedFieldsText: '' };
+    return { reviewText: cleanedReply, revisedFieldsText: '' };
   }
+  const correctionsText = cleanedReply.slice(headingMatch.index + headingMatch[0].length).trim();
   return {
-    reviewText: replyText.slice(0, headingMatch.index).trim(),
-    revisedFieldsText: replyText.slice(headingMatch.index + headingMatch[0].length).trim(),
+    reviewText: cleanedReply.slice(0, headingMatch.index).trim(),
+    // Each field marker back on its own line, in case copying flattened the corrections too.
+    revisedFieldsText: restoreMarkerLineBreaks(correctionsText, CHG_FIELD_REPLY_MARKERS),
   };
 }
 
@@ -120,5 +130,7 @@ export function buildChgRiskCheckPrompt(context: ChgPromptContext, fieldValues: 
     '',
     ...REPLY_FORMAT_LINES,
     ...REVISED_FIELDS_FORMAT_LINES,
+    '',
+    CODE_BLOCK_REPLY_INSTRUCTION,
   ].join('\n');
 }

@@ -1599,6 +1599,25 @@ describe('CreateChgTab', () => {
     expect(screen.queryByText(/REVISED FIELDS/)).not.toBeInTheDocument();
   });
 
+  it('Risk check still applies corrections when the pasted reply lost its line breaks (GH #395)', async () => {
+    const user = userEvent.setup();
+    mockState.currentStep = 6;
+    render(<CreateChgTab />);
+    act(() => setAiAssistUnlocked(true));
+
+    await user.click(await screen.findByRole('button', { name: /Risk check with AI Assist/i }));
+    fireEvent.change(screen.getByRole('textbox', { name: "Paste the assistant's reply here" }), {
+      target: {
+        value: 'GAP | Backout Plan — no trigger. — Fix: add triggers. VERDICT: NOT READY — 1 gap(s). '
+          + '=== REVISED FIELDS === BACKOUT_PLAN: 1. Trigger: smoke test fails.',
+      },
+    });
+    await user.click(screen.getByRole('button', { name: 'Use this review' }));
+
+    expect(mockActions.setChgPlanningContent).toHaveBeenCalledWith({ backoutPlan: '1. Trigger: smoke test fails.' });
+    expect(screen.getByRole('status')).toHaveTextContent('1 field(s) corrected');
+  });
+
   it('Create CHG button remains available at step 6 after Risk check with AI Assist', async () => {
     const user = userEvent.setup();
     mockState.currentStep = 6;

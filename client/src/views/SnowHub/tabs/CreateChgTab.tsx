@@ -21,6 +21,7 @@ import { useCtaskTemplates } from '../hooks/useCtaskTemplates.ts';
 import { useCrgTemplates } from '../hooks/useCrgTemplates.ts';
 import type { AiAssistGeneratedFields } from '../hooks/useAiAssist.ts';
 import { parseAiAssistChgResponse, useAiAssist } from '../hooks/useAiAssist.ts';
+import { CODE_BLOCK_REPLY_INSTRUCTION } from '../chgFormula/assistantReplyText.ts';
 import { buildChgContextText, type ChgPromptContext } from '../chgFormula/chgPromptContext.ts';
 import { buildChgRiskCheckPrompt, splitRiskCheckReply } from '../chgFormula/chgRiskCheckPrompt.ts';
 import { renderFormulaGuidanceForField } from '../chgFormula/formulaCard.ts';
@@ -2837,6 +2838,8 @@ export default function CrgTab({ mode = 'wizard', targetChangeNumber }: CrgTabPr
       '',
       'Jira issues:',
       issueLines,
+      '',
+      CODE_BLOCK_REPLY_INSTRUCTION,
     ].join('\n');
 
     setAiAssistPromptSession({

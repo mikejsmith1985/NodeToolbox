@@ -90,6 +90,26 @@ describe('splitRiskCheckReply', () => {
     });
   });
 
+  it('still splits a reply whose line breaks were lost in copying (GH #395)', () => {
+    const flattened = `GAP | Backout Plan — no trigger. VERDICT: NOT READY — 1 gap(s). ${REVISED_FIELDS_HEADING} `
+      + 'DESCRIPTION: Current state. BACKOUT_PLAN: 1. Trigger: smoke test fails.';
+
+    expect(splitRiskCheckReply(flattened)).toEqual({
+      reviewText: 'GAP | Backout Plan — no trigger. VERDICT: NOT READY — 1 gap(s).',
+      revisedFieldsText: 'DESCRIPTION: Current state.\nBACKOUT_PLAN: 1. Trigger: smoke test fails.',
+    });
+  });
+
+  it('reads a reply wrapped in a code block', () => {
+    const reply = `\`\`\`text\nVERDICT: READY FOR APPROVAL\n${REVISED_FIELDS_HEADING}\nTEST_PLAN: Tested.\n\`\`\``;
+
+    expect(splitRiskCheckReply(reply)).toEqual({ reviewText: 'VERDICT: READY FOR APPROVAL', revisedFieldsText: 'TEST_PLAN: Tested.' });
+  });
+
+  it('asks for the reply inside one code block', () => {
+    expect(buildChgRiskCheckPrompt(SAMPLE_CONTEXT, SAMPLE_FIELDS)).toContain('```text');
+  });
+
   it('finds the heading even when the assistant decorates it', () => {
     const reply = `VERDICT: NOT READY — 1 gap(s).\n**${REVISED_FIELDS_HEADING}**\nTEST_PLAN: Tested in Dev and INT.`;
 

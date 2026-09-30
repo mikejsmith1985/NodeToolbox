@@ -277,6 +277,35 @@ describe('useAiAssist', () => {
 });
 
 describe('parseAiAssistChgResponse', () => {
+  it('parses a reply whose line breaks were lost in copying (GH #395)', () => {
+    const flattened = 'SHORT_DESCRIPTION: Deploy TOOL 2.0 DESCRIPTION: Rolls out the release. '
+      + 'JUSTIFICATION: Planned work. RISK_AND_IMPACT: Low. IMPLEMENTATION_PLAN: 1. Deploy. '
+      + 'TEST_PLAN: Tested in Dev and INT. BACKOUT_PLAN: Redeploy.';
+
+    expect(parseAiAssistChgResponse(flattened)).toEqual({
+      shortDescription: 'Deploy TOOL 2.0',
+      description: 'Rolls out the release.',
+      justification: 'Planned work.',
+      riskImpact: 'Low.',
+      implementationPlan: '1. Deploy.',
+      testPlan: 'Tested in Dev and INT.',
+      backoutPlan: 'Redeploy.',
+    });
+  });
+
+  it('parses a reply wrapped in a code block without the closing fence ending up in the last field', () => {
+    expect(parseAiAssistChgResponse('```text\nSHORT_DESCRIPTION: Deploy\nBACKOUT_PLAN: Redeploy\n```')).toEqual({
+      shortDescription: 'Deploy',
+      backoutPlan: 'Redeploy',
+    });
+  });
+
+  it('buildPrompt asks for the reply inside one code block', () => {
+    const { result } = renderHook(() => useAiAssist());
+
+    expect(result.current.buildPrompt([], EMPTY_CURRENT_FIELDS)).toContain('```text');
+  });
+
   it('parses the three plans after the four text fields (GH #395)', () => {
     const response = [
       'SHORT_DESCRIPTION: Deploy TOOL 2.0',
