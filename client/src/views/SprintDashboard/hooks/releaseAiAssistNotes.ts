@@ -92,12 +92,12 @@ const HTML_GROUP_CELL_STYLE = 'background:#eaeef2;border:1px solid #d0d7de;paddi
 const HTML_GROUP_NARRATIVE_STYLE = 'font-weight:400;color:#57606a;margin-top:4px;';
 
 // The report columns, in display order, mirroring the on-screen release-notes table.
-const RELEASE_NOTES_HTML_COLUMN_LABELS = [
+export const RELEASE_NOTES_HTML_COLUMN_LABELS = [
   'Release Item', 'Release Note', 'Customer Impact', 'Technical Details', 'Risks', 'Validation',
 ];
 
 /** Escapes the characters that would otherwise break out of HTML text content or attributes. */
-function escapeHtml(rawText: string): string {
+export function escapeHtml(rawText: string): string {
   return rawText
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')

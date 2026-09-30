@@ -1265,6 +1265,10 @@ describe('SprintDashboardView', () => {
     expect(reportHtml).toContain('Release 24.1 Release Notes');
     expect(reportHtml).toContain('<strong>TBX-99</strong>');
     expect(await screen.findByText(/copied to clipboard/i)).toBeInTheDocument();
+
+    // The rendered notes can also be posted to Confluence; that control stays out of the copied image.
+    const postButton = screen.getByRole('button', { name: /post to confluence/i });
+    expect(postButton.closest('[data-export-exclude="true"]')).not.toBeNull();
   });
 
   // ── New feature tests ──

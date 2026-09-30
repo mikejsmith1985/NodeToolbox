@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Post release notes to Confluence.** Once a release's notes are rendered on the Team Dashboard **Releases**
+  tab, paste a Confluence **parent page** link and click **📤 Post to Confluence**: the notes are posted as their
+  own child page, titled like the heading ("Transformers 10/14/2026 Release Notes"), with the summary and the
+  same Feature-grouped table. The parent page is remembered per project, so the monthly run is one click.
+  Posting a release again **updates** its existing page instead of creating a duplicate, and the result links
+  straight to the page. Uses the same Confluence connection as PI Review's "Save to Confluence".
 - **Readiness review across a whole JQL query (GH #387).** The tab now asks which question you are putting:
   **One Epic**, or **A JQL query**. In query mode, paste any JQL — `project = DENP AND issuetype = Epic AND
   statusCategory != Done` — and every Epic it returns is reviewed in **one round trip**, producing a single

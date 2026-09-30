@@ -1679,6 +1679,27 @@
   transform: translateY(-1px);
 }
 
+/* Parent-page link and "Post to Confluence" button, on one line beneath the release-notes header. */
+.releaseNotesConfluenceRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  align-items: center;
+  margin-top: var(--spacing-sm);
+}
+
+.releaseNotesConfluenceRow .settingsInput {
+  flex: 1 1 280px;
+  width: auto;
+  font-size: var(--font-size-sm);
+}
+
+.releaseNotesExportButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  transform: none;
+}
+
 /* Transient success note shown after the release notes are copied to the clipboard. */
 .releaseNotesCopyConfirmation {
   margin: var(--spacing-xs) 0 0;

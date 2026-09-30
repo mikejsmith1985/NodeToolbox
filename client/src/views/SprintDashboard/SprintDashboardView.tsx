@@ -119,6 +119,8 @@ import {
 } from './hooks/releaseDevSkipRisk.ts';
 import { renderMarkdownReport } from '../../utils/markdownReport.tsx';
 import { ReleasePriorityPanel } from './releasePriority/ReleasePriorityPanel.tsx';
+import { buildReleaseNotesConfluenceStorage } from './hooks/releaseNotesConfluence.ts';
+import { ReleaseNotesConfluencePublisher } from './releaseNotesConfluence/ReleaseNotesConfluencePublisher.tsx';
 import { useSprintData } from './hooks/useSprintData.ts';
 import type { DashboardScopeMode, DashboardTab } from './hooks/useSprintData.ts';
 import styles from './SprintDashboardView.module.css';
@@ -6386,6 +6388,11 @@ function ReleasesTab({
                               </button>
                             </div>
                           </div>
+                          <ReleaseNotesConfluencePublisher
+                            pageTitle={buildReleaseNotesHeading(teamName, entry.version.name)}
+                            projectKey={projectKey}
+                            storageValue={buildReleaseNotesConfluenceStorage(importedReleaseNotes, releaseNotesGroups)}
+                          />
                           {releaseExportError ? <p className={styles.errorMessage}>{releaseExportError}</p> : null}
                           {releaseCopyConfirmation ? (
                             <p className={styles.releaseNotesCopyConfirmation} data-export-exclude="true">

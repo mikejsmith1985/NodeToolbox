@@ -315,6 +315,79 @@ export async function updateConfluencePage({
   );
 }
 
+/** What is needed to create a new page as a child of an existing one. */
+export interface CreateConfluencePageInput {
+  spaceKey: string;
+  parentPageId: string;
+  pageTitle: string;
+  storageValue: string;
+}
+
+/** A page Confluence has just created, with the link a person would open. */
+export interface CreatedConfluencePage {
+  id: string;
+  title: string;
+  webUrl: string;
+}
+
+interface ConfluenceCreatedPageResponse {
+  id: string;
+  title?: string;
+  _links?: { base?: string; webui?: string };
+}
+
+/**
+ * Creates a new page beneath a parent page.
+ *
+ * Confluence keeps page titles unique within a space, so a caller that may post the same thing twice
+ * should look the title up first and update instead (see `findConfluencePageByTitle`).
+ */
+export async function createConfluencePage({
+  spaceKey,
+  parentPageId,
+  pageTitle,
+  storageValue,
+}: CreateConfluencePageInput): Promise<CreatedConfluencePage> {
+  const createdPage = await fetchConfluenceJson<ConfluenceCreatedPageResponse>(
+    `${CONFLUENCE_PROXY_BASE}/wiki/rest/api/content`,
+    `Confluence POST page "${pageTitle}" failed`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': JSON_CONTENT_TYPE },
+      body: JSON.stringify({
+        type: 'page',
+        title: pageTitle,
+        space: { key: spaceKey },
+        ancestors: [{ id: parentPageId }],
+        body: { storage: { value: storageValue, representation: 'storage' } },
+      }),
+    },
+  );
+
+  return {
+    id: createdPage.id,
+    title: createdPage.title ?? pageTitle,
+    webUrl: buildConfluenceWebUrl(createdPage._links?.base, createdPage._links?.webui, createdPage.id),
+  };
+}
+
+/**
+ * Reads which space a page lives in. A child page must be created in its parent's space, and people
+ * choose a parent by pasting its link — which does not always carry the space key.
+ */
+export async function fetchConfluencePageSpaceKey(pageId: string): Promise<string> {
+  const pageWithSpace = await fetchConfluenceJson<{ space?: { key?: string } }>(
+    `${CONFLUENCE_PROXY_BASE}/wiki/rest/api/content/${encodeURIComponent(pageId)}?expand=space`,
+    `Confluence GET page ${pageId} failed`,
+  );
+
+  const spaceKey = pageWithSpace.space?.key?.trim() ?? '';
+  if (spaceKey === '') {
+    throw new Error(`Confluence did not say which space page ${pageId} is in.`);
+  }
+  return spaceKey;
+}
+
 /** Creates a Confluence Database shell that NodeToolbox can use as a shared ART anchor. */
 export async function createConfluenceDatabase({
   spaceId,

@@ -6,8 +6,10 @@ import {
   BOARD_VOCABULARY_PROPERTY_KEY,
   ConfluenceRequestError,
   createConfluenceDatabase,
+  createConfluencePage,
   fetchConfluencePage,
   fetchConfluencePageByReference,
+  fetchConfluencePageSpaceKey,
   loadBoardVocabularyStore,
   loadSharedArtWorkspace,
   resolveConfluencePageIdFromReference,
@@ -515,5 +517,71 @@ describe('saveBoardVocabularyStore', () => {
     expect(requestBody.value.vocabularyByTeamProfileId['team-b']).toEqual(
       twoTeamStore.vocabularyByTeamProfileId['team-b'],
     );
+  });
+});
+
+describe('createConfluencePage', () => {
+  it('posts a storage-format page under the given parent in the given space', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({
+        id: '999',
+        title: 'Transformers 10/14/2026 Release Notes',
+        _links: { base: 'https://wiki.example.com', webui: '/pages/viewpage.action?pageId=999' },
+      }),
+    } as Response);
+
+    const createdPage = await createConfluencePage({
+      spaceKey: 'TEAM',
+      parentPageId: '555',
+      pageTitle: 'Transformers 10/14/2026 Release Notes',
+      storageValue: '<p>Notes</p>',
+    });
+
+    const [requestPath, requestInit] = fetchSpy.mock.calls[0];
+    expect(requestPath).toBe('/confluence-proxy/wiki/rest/api/content');
+    expect(requestInit?.method).toBe('POST');
+    const requestBody = JSON.parse(requestInit?.body as string);
+    expect(requestBody).toEqual({
+      type: 'page',
+      title: 'Transformers 10/14/2026 Release Notes',
+      space: { key: 'TEAM' },
+      ancestors: [{ id: '555' }],
+      body: { storage: { value: '<p>Notes</p>', representation: 'storage' } },
+    });
+    expect(createdPage).toEqual({
+      id: '999',
+      title: 'Transformers 10/14/2026 Release Notes',
+      webUrl: 'https://wiki.example.com/pages/viewpage.action?pageId=999',
+    });
+  });
+
+  it('throws a descriptive error when Confluence refuses the create', async () => {
+    mockFetchOnce({ message: 'No permission' }, false, 403);
+    await expect(createConfluencePage({
+      spaceKey: 'TEAM',
+      parentPageId: '555',
+      pageTitle: 'Notes',
+      storageValue: '<p>Notes</p>',
+    })).rejects.toThrow('Confluence POST page "Notes" failed: No permission');
+  });
+});
+
+describe('fetchConfluencePageSpaceKey', () => {
+  it('reads the space key a page lives in', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ id: '555', title: 'Release Notes', space: { key: 'TEAM' } }),
+    } as Response);
+
+    await expect(fetchConfluencePageSpaceKey('555')).resolves.toBe('TEAM');
+    expect(fetchSpy.mock.calls[0][0]).toBe('/confluence-proxy/wiki/rest/api/content/555?expand=space');
+  });
+
+  it('fails loudly when Confluence does not say which space the page is in', async () => {
+    mockFetchOnce({ id: '555', title: 'Release Notes' });
+    await expect(fetchConfluencePageSpaceKey('555')).rejects.toThrow(/space/i);
   });
 });
