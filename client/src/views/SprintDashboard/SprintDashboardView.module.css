@@ -2353,8 +2353,8 @@
   border: 0;
 }
 
-/* The per-person PI points and capacity % under the role toggles: two equal columns that always fit the
-   card (GH #392 — side-by-side caption + fixed-width box overflowed into the neighbouring card). */
+/* The per-person capacity % under the role toggles, in a column that always fits the card
+   (GH #392 — a side-by-side caption + fixed-width box overflowed into the neighbouring card). */
 .rosterCapacityRow {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

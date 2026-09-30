@@ -7,7 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+- **Roster "PI capacity (pts)" field and PI Review "Use roster capacity estimates" button.** They gave a second,
+  disagreeing capacity total beside the Team Composition planner (work days × allocation). The planner is now the
+  one source of truth: the roster keeps only **Capacity %**, which **Seed from Roster** carries into its rows.
+  Any points already typed on the roster are simply ignored.
+
 ### Fixed
+- **Seed from Roster now carries each person's Capacity % (GH #392).** The PI Review's **Team Composition**
+  seeding ignored the roster percentage and set every row to 100%. It now makes one row per role **and**
+  allocation level — seven full-time Developers and one at 50% seed as `Developer × 7 @ 100%` and
+  `Developer × 1 @ 50%` — so the 100% and 80% capacity figures reflect part-time people. A blank roster % still
+  seeds as 100%; PTO is still entered by hand.
 - **Roster capacity fields fit their card (GH #392).** The **PI points** and **Capacity %** boxes now sit in two
   equal columns with a short caption above each, sized to the card. Previously the long side-by-side captions
   wrapped to three lines and pushed the Capacity % box out of its card and over the next one.

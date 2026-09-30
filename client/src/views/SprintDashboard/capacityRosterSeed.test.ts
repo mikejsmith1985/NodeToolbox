@@ -97,12 +97,35 @@ describe('seedCapacityRowsFromRoster', () => {
     expect(rows.every((row) => row.memberCount === 1)).toBe(true);
   });
 
-  it('defaults allocation to 100% and PTO to 0 so capacity numbers stay a manual entry', () => {
+  it('defaults allocation to 100% and PTO to 0 when the roster gives no capacity %', () => {
     const rows = seedCapacityRowsFromRoster(
       [buildRosterMember({ canDevelop: true } as RosterRoleCapabilities)],
       buildSequentialRowId(),
     );
     expect(rows[0].capacityPercentage).toBe(100);
     expect(rows[0].totalPtoDays).toBe(0);
+  });
+
+  it('carries each person\'s roster capacity % by splitting a role into one row per allocation level', () => {
+    const halfTimeDeveloper = {
+      ...buildRosterMember({ canDevelop: true } as RosterRoleCapabilities),
+      capacityPercentage: 50,
+    };
+    const fullTimeDevelopers = Array.from({ length: 7 }, () => buildRosterMember({ canDevelop: true } as RosterRoleCapabilities));
+    const explicitFullTimeDeveloper = {
+      ...buildRosterMember({ canDevelop: true } as RosterRoleCapabilities),
+      capacityPercentage: 100,
+    };
+
+    const rows = seedCapacityRowsFromRoster(
+      [halfTimeDeveloper, ...fullTimeDevelopers, explicitFullTimeDeveloper],
+      buildSequentialRowId(),
+    );
+
+    // Blank and an explicit 100 are the same allocation, so they share a row; the 50% person gets their own.
+    expect(rows.map((row) => [row.role, row.memberCount, row.capacityPercentage])).toEqual([
+      ['Developer', 8, 100],
+      ['Developer', 1, 50],
+    ]);
   });
 });

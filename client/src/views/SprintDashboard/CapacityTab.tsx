@@ -229,8 +229,8 @@ export default function CapacityTab({ selectedPiName }: { selectedPiName: string
     });
   }, [addRow]);
 
-  // Auto-fills the team makeup (roles + head counts) from the roster. Capacity numbers stay manual, so
-  // a re-seed would wipe any allocation/PTO the planner already entered — hence the confirm guard.
+  // Auto-fills the team makeup (roles, head counts and each person's capacity %) from the roster. PTO stays
+  // manual, so a re-seed would wipe any PTO or hand-edited rows — hence the confirm guard.
   const handleSeedFromRoster = useCallback(() => {
     const seededRows = seedCapacityRowsFromRoster(rosterMembers);
     if (seededRows.length === 0) {
@@ -241,7 +241,7 @@ export default function CapacityTab({ selectedPiName }: { selectedPiName: string
       const shouldReplace = window.confirm(
         `Replace the current ${rows.length} team composition row${rows.length === 1 ? '' : 's'} with `
         + `${seededRows.length} row${seededRows.length === 1 ? '' : 's'} from the roster? `
-        + 'Capacity % and PTO Days will reset to defaults and must be re-entered.',
+        + 'Capacity % will come from the roster, and PTO Days will reset to 0 and must be re-entered.',
       );
       if (!shouldReplace) {
         return;
