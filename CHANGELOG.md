@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Capacity % per person on the roster.** Beside each person's **PI capacity (pts)**, a **Capacity %** field
+  records the share of their time they give the team (0–100; blank means 100%). **Use roster capacity
+  estimates** on the PI Review now scales each estimate by it — 60 pts at 50% counts as 30 — so the Team
+  Capacity total and its 80% target come out fully calculated. Survives a Jira re-import like the estimate does.
 - **PI capacity estimate per person on the roster.** Each person on the Team Dashboard **Roster** tab now has a
   **PI capacity (pts)** field — one standing estimate, always treated as current, not kept per PI. The PI Review's
   **Team Capacity** panel gains **Use roster capacity estimates**: only when you click it does the panel switch

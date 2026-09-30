@@ -1,8 +1,8 @@
 // rosterCapacity.ts — Turns the roster's per-person PI capacity estimates into a PI Review capacity snapshot.
 //
 // The Capacity tab derives capacity from role rows, allocation and PTO. This is the plainer route the
-// team asked for: each person carries one points estimate on the roster, and a PI Review can adopt the
-// sum on request. Producing the SAME `CapacitySummary` shape means the existing Team Capacity panel,
+// team asked for: each person carries one points estimate and the share of their time they give the
+// team (capacity %), and a PI Review can adopt the scaled sum on request. Producing the SAME `CapacitySummary` shape means the existing Team Capacity panel,
 // load comparison and Confluence save all work unchanged.
 
 import {
@@ -30,6 +30,15 @@ function readMembersWithEstimates(rosterMembers: readonly StandupRosterMember[])
   return rosterMembers.filter((rosterMember) => typeof rosterMember.piCapacityPoints === 'number');
 }
 
+// A blank capacity percentage means the person is fully on this team.
+const FULL_CAPACITY_PERCENTAGE = 100;
+
+/** A person's estimate scaled by their capacity percentage: what they actually bring to this PI. */
+function calculateEffectiveCapacityPoints(rosterMember: StandupRosterMember): number {
+  const capacityPercentage = rosterMember.capacityPercentage ?? FULL_CAPACITY_PERCENTAGE;
+  return (rosterMember.piCapacityPoints ?? 0) * (capacityPercentage / FULL_CAPACITY_PERCENTAGE);
+}
+
 /** How many people on the roster have a PI capacity estimate. */
 export function countRosterCapacityEstimates(rosterMembers: readonly StandupRosterMember[]): number {
   return readMembersWithEstimates(rosterMembers).length;
@@ -44,8 +53,8 @@ function resolveCreditedRole(rosterMember: StandupRosterMember): TeamRole | null
 }
 
 /**
- * Builds a capacity snapshot from the roster's estimates: the total at 100%, the 80% target, and a
- * per-role split. Dates and work days are carried over from the snapshot already on screen, because a
+ * Builds a capacity snapshot from the roster's estimates, each scaled by that person's capacity
+ * percentage: the total at 100%, the 80% target, and a per-role split. Dates and work days are carried over from the snapshot already on screen, because a
  * points estimate says nothing about the calendar. Returns null when nobody has an estimate.
  */
 export function buildRosterCapacitySummary(
@@ -60,7 +69,7 @@ export function buildRosterCapacitySummary(
   const roleCapacities = Object.fromEntries(ALL_TEAM_ROLES.map((teamRole) => [teamRole, 0])) as Record<TeamRole, number>;
   let totalCapacityPoints = 0;
   for (const rosterMember of membersWithEstimates) {
-    const estimatePoints = rosterMember.piCapacityPoints ?? 0;
+    const estimatePoints = calculateEffectiveCapacityPoints(rosterMember);
     totalCapacityPoints += estimatePoints;
     const creditedRole = resolveCreditedRole(rosterMember);
     if (creditedRole !== null) {

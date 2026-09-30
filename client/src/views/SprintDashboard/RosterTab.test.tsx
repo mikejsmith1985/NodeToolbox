@@ -156,6 +156,22 @@ describe('RosterTab', () => {
     expect(useStandupRosterStore.getState().rosterMembers[0].piCapacityPoints).toBeUndefined();
   });
 
+  it('records a capacity percentage per person and clears it when emptied', () => {
+    useStandupRosterStore.getState().replaceRosterMembers([
+      { displayName: 'Alice Adams', assigneeQueryValue: 'Alice Adams' },
+    ]);
+
+    render(<RosterTab issues={[]} projectKey="TBX" />);
+
+    const percentageInput = screen.getByLabelText('Capacity percentage for Alice Adams');
+    fireEvent.change(percentageInput, { target: { value: '50' } });
+    expect(useStandupRosterStore.getState().rosterMembers[0].capacityPercentage).toBe(50);
+    expect(percentageInput).toHaveValue(50);
+
+    fireEvent.change(percentageInput, { target: { value: '' } });
+    expect(useStandupRosterStore.getState().rosterMembers[0].capacityPercentage).toBeUndefined();
+  });
+
   it('adds sprint assignees to the roster from the quick-pick list', () => {
     render(<RosterTab issues={[buildIssue('TBX-1', 'Alice Adams'), buildIssue('TBX-2', 'Bob Brown')]} projectKey="TBX" />);
 

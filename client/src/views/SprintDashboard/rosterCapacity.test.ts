@@ -60,6 +60,22 @@ describe('buildRosterCapacitySummary', () => {
     }));
   });
 
+  it('scales each estimate by the person\'s capacity percentage, treating a blank percentage as 100%', () => {
+    const summary = buildRosterCapacitySummary([
+      buildMember('Alice', {
+        piCapacityPoints: 60,
+        capacityPercentage: 50,
+        roleCapabilities: { canDevelop: true, canInternalTest: false, canExternalTest: false },
+      }),
+      buildMember('Bob', { piCapacityPoints: 40 }),
+      buildMember('Cara', { piCapacityPoints: 30, capacityPercentage: 0 }),
+    ], null);
+
+    expect(summary?.totalCapacityPoints).toBe(70);
+    expect(summary?.recommendedCapacityPoints).toBe(56);
+    expect(summary?.roleCapacities.Developer).toBe(30);
+  });
+
   it('returns nothing when nobody on the roster has an estimate', () => {
     expect(buildRosterCapacitySummary([buildMember('Alice')], EXISTING_SUMMARY)).toBeNull();
   });

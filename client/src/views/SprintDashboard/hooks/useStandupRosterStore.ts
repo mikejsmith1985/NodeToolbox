@@ -56,6 +56,11 @@ export interface StandupRosterMember {
    * current rather than kept per PI. Only reaches a PI Review when someone asks for it there.
    */
   piCapacityPoints?: number;
+  /**
+   * The share of their time this person gives the team (0-100). Scales their PI capacity estimate when
+   * a PI Review pulls the roster in; absent means 100%.
+   */
+  capacityPercentage?: number;
 }
 
 export interface StandupRosterMemberDraft {
@@ -73,6 +78,7 @@ export interface StandupRosterMemberDraft {
   lanId?: string;
   workingHours?: string;
   piCapacityPoints?: number;
+  capacityPercentage?: number;
 }
 
 interface PersistedStandupRosterState {
@@ -89,6 +95,8 @@ interface StandupRosterState extends PersistedStandupRosterState {
   setRosterMemberRoles: (memberId: string, capabilities: RosterRoleCapabilities) => void;
   /** Sets (or, with undefined, clears) one person's PI capacity estimate in points. */
   setRosterMemberPiCapacity: (memberId: string, piCapacityPoints: number | undefined) => void;
+  /** Sets (or, with undefined, clears) one person's capacity percentage (0-100). */
+  setRosterMemberCapacityPercentage: (memberId: string, capacityPercentage: number | undefined) => void;
 }
 
 interface RosterTeamFilterOptions {
@@ -148,6 +156,14 @@ function isValidPiCapacityPoints(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0;
 }
 
+// A person cannot give the team more than all of their time.
+const MAX_CAPACITY_PERCENTAGE = 100;
+
+/** A usable capacity percentage: a finite number from 0 to 100. */
+function isValidCapacityPercentage(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= MAX_CAPACITY_PERCENTAGE;
+}
+
 function isStandupRosterMember(value: unknown): value is StandupRosterMember {
   if (typeof value !== 'object' || value === null) {
     return false;
@@ -158,6 +174,9 @@ function isStandupRosterMember(value: unknown): value is StandupRosterMember {
   // Same tolerance for the capacity estimate: a bad value is dropped, never the person.
   if (candidate.piCapacityPoints !== undefined && !isValidPiCapacityPoints(candidate.piCapacityPoints)) {
     delete candidate.piCapacityPoints;
+  }
+  if (candidate.capacityPercentage !== undefined && !isValidCapacityPercentage(candidate.capacityPercentage)) {
+    delete candidate.capacityPercentage;
   }
 
   // Tolerant read: a malformed persisted role-capabilities value is coerced to "no roles" (undefined)
@@ -259,6 +278,9 @@ function createRosterMember(memberDraft: StandupRosterMemberDraft): StandupRoste
     // linking) never silently drops a person's roles. Absent stays absent (treated as "no roles").
     roleCapabilities: memberDraft.roleCapabilities,
     piCapacityPoints: isValidPiCapacityPoints(memberDraft.piCapacityPoints) ? memberDraft.piCapacityPoints : undefined,
+    capacityPercentage: isValidCapacityPercentage(memberDraft.capacityPercentage)
+      ? memberDraft.capacityPercentage
+      : undefined,
   };
 }
 
@@ -302,7 +324,7 @@ function sortRosterMembers(rosterMembers: StandupRosterMember[]): StandupRosterM
 /**
  * Merges into an incoming draft the fields an existing member already has but the draft omits, so a
  * partial re-import never erases data. Only role capabilities, the GitHub id and the PI capacity
- * estimate are preserved this way: each is set through a dedicated roster flow and is absent from the
+ * estimate and percentage are preserved this way: each is set through a dedicated roster flow and is absent from the
  * Jira-sourced drafts that would otherwise overwrite it with nothing.
  */
 function mergePreservedRosterFields(
@@ -318,6 +340,7 @@ function mergePreservedRosterFields(
     roleCapabilities: incomingDraft.roleCapabilities ?? existingMember.roleCapabilities,
     githubAccountId: incomingDraft.githubAccountId ?? existingMember.githubAccountId,
     piCapacityPoints: incomingDraft.piCapacityPoints ?? existingMember.piCapacityPoints,
+    capacityPercentage: incomingDraft.capacityPercentage ?? existingMember.capacityPercentage,
   };
 }
 
@@ -535,6 +558,14 @@ export const useStandupRosterStore = create<StandupRosterState>((setState, getSt
     const nextPiCapacityPoints = isValidPiCapacityPoints(piCapacityPoints) ? piCapacityPoints : undefined;
     const rosterMembers = getState().rosterMembers.map((rosterMember) =>
       rosterMember.id === memberId ? { ...rosterMember, piCapacityPoints: nextPiCapacityPoints } : rosterMember,
+    );
+    setState({ rosterMembers });
+    writeStoredStandupRosterMembers(rosterMembers, getState().dashboardTeamProfileId);
+  },
+  setRosterMemberCapacityPercentage: (memberId, capacityPercentage) => {
+    const nextCapacityPercentage = isValidCapacityPercentage(capacityPercentage) ? capacityPercentage : undefined;
+    const rosterMembers = getState().rosterMembers.map((rosterMember) =>
+      rosterMember.id === memberId ? { ...rosterMember, capacityPercentage: nextCapacityPercentage } : rosterMember,
     );
     setState({ rosterMembers });
     writeStoredStandupRosterMembers(rosterMembers, getState().dashboardTeamProfileId);

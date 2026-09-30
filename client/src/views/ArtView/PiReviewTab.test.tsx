@@ -918,6 +918,26 @@ describe('PiReviewTab', () => {
     expect(within(alphaSection).getByRole('button', { name: /save to confluence/i })).toBeEnabled();
   });
 
+  it('applies each person\'s capacity percentage when the roster estimates are pulled in', async () => {
+    mockFetchConfluencePageByReference.mockResolvedValue(ALPHA_PAGE);
+    useStandupRosterStore.getState().replaceRosterMembers([
+      { displayName: 'Alice Adams', assigneeQueryValue: 'Alice Adams' },
+      { displayName: 'Bob Brown', assigneeQueryValue: 'Bob Brown' },
+    ]);
+    useStandupRosterStore.getState().setRosterMemberPiCapacity('roster-member:alice adams', 60);
+    useStandupRosterStore.getState().setRosterMemberCapacityPercentage('roster-member:alice adams', 50);
+    useStandupRosterStore.getState().setRosterMemberPiCapacity('roster-member:bob brown', 40);
+
+    renderPiReviewTab([DEFAULT_TEAMS[0]]);
+
+    const alphaSection = await screen.findByRole('region', { name: /alpha team pi review/i });
+    fireEvent.click(within(alphaSection).getByRole('button', { name: /use roster capacity estimates/i }));
+
+    // 60 × 50% + 40 × 100% = 70 at 100%, and 56 at the 80% target.
+    expect(within(alphaSection).getAllByText('70').length).toBeGreaterThan(0);
+    expect(within(alphaSection).getAllByText('56').length).toBeGreaterThan(0);
+  });
+
   it('disables the roster capacity button until someone on the roster has an estimate', async () => {
     mockFetchConfluencePageByReference.mockResolvedValue(ALPHA_PAGE);
     useStandupRosterStore.getState().replaceRosterMembers([

@@ -565,6 +565,37 @@ describe('roster PI capacity estimate', () => {
       .find((rosterMember) => rosterMember.id === 'roster-member:alice adams')?.piCapacityPoints).toBe(40);
   });
 
+  it('sets, persists and clears one member\'s capacity percentage', () => {
+    useStandupRosterStore.getState().setRosterMemberCapacityPercentage('roster-member:alice adams', 50);
+
+    expect(readStoredStandupRosterMembers()
+      .find((rosterMember) => rosterMember.id === 'roster-member:alice adams')?.capacityPercentage).toBe(50);
+    expect(useStandupRosterStore.getState().rosterMembers
+      .find((rosterMember) => rosterMember.id === 'roster-member:bob brown')?.capacityPercentage).toBeUndefined();
+
+    useStandupRosterStore.getState().setRosterMemberCapacityPercentage('roster-member:alice adams', undefined);
+    expect(readStoredStandupRosterMembers()
+      .find((rosterMember) => rosterMember.id === 'roster-member:alice adams')?.capacityPercentage).toBeUndefined();
+  });
+
+  it('refuses a percentage outside 0–100', () => {
+    useStandupRosterStore.getState().setRosterMemberCapacityPercentage('roster-member:alice adams', 150);
+
+    expect(useStandupRosterStore.getState().rosterMembers
+      .find((rosterMember) => rosterMember.id === 'roster-member:alice adams')?.capacityPercentage).toBeUndefined();
+  });
+
+  it('keeps the percentage when the same person is re-imported from Jira', () => {
+    useStandupRosterStore.getState().setRosterMemberCapacityPercentage('roster-member:alice adams', 50);
+
+    useStandupRosterStore.getState().upsertRosterMembers([
+      { displayName: 'Alice Adams', assigneeQueryValue: 'Alice Adams', jiraAccountId: 'acc-1' },
+    ]);
+
+    expect(useStandupRosterStore.getState().rosterMembers
+      .find((rosterMember) => rosterMember.id === 'roster-member:alice adams')?.capacityPercentage).toBe(50);
+  });
+
   it('drops a malformed stored estimate but still loads the member', () => {
     localStorage.setItem('tbxSprintDashboardRoster', JSON.stringify({
       rosterMembers: [
