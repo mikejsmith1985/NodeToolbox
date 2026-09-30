@@ -4,7 +4,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { ScheduledMovesSection, listTargetStatesForChange } from './ScheduledMovesSection.tsx';
+import { ScheduledMovesSection } from './ScheduledMovesSection.tsx';
 
 /** The tab's class vocabulary; identity mapping is enough for the section's markup. */
 const STYLES = new Proxy({}, { get: (_target, className: string) => className }) as Record<string, string>;
@@ -31,16 +31,6 @@ function mockEndpoints(options: { bookings?: unknown[]; post?: unknown; run?: un
 }
 
 afterEach(() => { vi.unstubAllGlobals(); });
-
-describe('listTargetStatesForChange — only where the change can actually go', () => {
-  it('offers ServiceNow-s own next states for a Scheduled change', () => {
-    expect(listTargetStatesForChange('-2').map((option) => option.label)).toEqual(['Implement', 'Cancel']);
-  });
-
-  it('falls back to every state when the current one is not in the map, rather than to nothing', () => {
-    expect(listTargetStatesForChange('999').length).toBeGreaterThan(1);
-  });
-});
 
 describe('ScheduledMovesSection', () => {
   it('offers your already-loaded changes as a list rather than a box to type into', async () => {

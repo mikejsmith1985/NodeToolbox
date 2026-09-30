@@ -2745,7 +2745,7 @@ export default function CrgTab({ mode = 'wizard', targetChangeNumber }: CrgTabPr
       applyButtonLabel: APPLY_FIELDS_BUTTON_LABEL,
       applyReply: (replyText) => applyParsedChgFields(replyText, ENHANCE_PROMPT_FIELD_KEYS),
     });
-  }, [state, buildPrompt, applyParsedChgFields]);
+  }, [state, buildPrompt, applyParsedChgFields, setAiAssistPromptSession]);
 
   // Step 3: a targeted prompt for Short Description and Description only — the full
   // four-field prompt (Step 4) is left to the Planning step so each step stays focused.
@@ -2774,7 +2774,7 @@ export default function CrgTab({ mode = 'wizard', targetChangeNumber }: CrgTabPr
       applyButtonLabel: APPLY_FIELDS_BUTTON_LABEL,
       applyReply: (replyText) => applyParsedChgFields(replyText, DRAFT_PROMPT_FIELD_KEYS),
     });
-  }, [state.fetchedIssues, state.selectedIssueKeys, applyParsedChgFields]);
+  }, [state.fetchedIssues, state.selectedIssueKeys, applyParsedChgFields, setAiAssistPromptSession]);
 
   // Step 6: the pre-submission risk-review prompt. The pasted review is displayed on the
   // Results step as-is — the user may still submit regardless of what it flags (FR-005).
@@ -2804,7 +2804,14 @@ export default function CrgTab({ mode = 'wizard', targetChangeNumber }: CrgTabPr
         return { statusMessage: 'Risk review captured — it is shown on the Results step.', wasApplied: true };
       },
     });
-  }, [state.generatedShortDescription, state.generatedDescription, state.generatedJustification, state.generatedRiskImpact]);
+  }, [
+    state.generatedShortDescription,
+    state.generatedDescription,
+    state.generatedJustification,
+    state.generatedRiskImpact,
+    setAiAssistPromptSession,
+    setRiskCheckReviewText,
+  ]);
 
   // Consumes the pasted reply through the active session and reports the outcome.
   const handleApplyAiAssistReply = useCallback(() => {
@@ -2815,7 +2822,7 @@ export default function CrgTab({ mode = 'wizard', targetChangeNumber }: CrgTabPr
     if (applyOutcome.wasApplied) {
       setAiAssistReplyText('');
     }
-  }, [aiAssistPromptSession, aiAssistReplyText]);
+  }, [aiAssistPromptSession, aiAssistReplyText, setAiAssistApplyStatus, setAiAssistReplyText]);
 
   const planningExtras: PlanningStepExtras = {
     isAiAssistUnlocked:    isUnlocked,

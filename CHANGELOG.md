@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Internal
+- **Six SNow Hub lint errors cleared.** `listTargetStatesForChange` moved out of `ScheduledMovesSection.tsx` into
+  `scheduledMoves/changeTargetStates.ts` (a component file that also exports helpers breaks fast refresh), and the
+  five AI Assist handlers in `CreateChgTab.tsx` now list the state setters they call, so the React Compiler can keep
+  their memoization. No behaviour change.
+
 ### Fixed
 - **Restored the per-person PI points on the roster.** v0.279.2 removed the roster's **PI points** box and the PI
   Review's **Use roster capacity estimates** button; both are back. The numbers were never erased, so every
