@@ -442,6 +442,35 @@ function RosterRoleControls({ rosterMember, onRolesChange }: RosterRoleControlsP
   );
 }
 
+interface RosterCapacityControlProps {
+  rosterMember: StandupRosterMember;
+  onCapacityChange: (piCapacityPoints: number | undefined) => void;
+}
+
+/**
+ * One number per person: how many points they can deliver in a PI. It is a standing estimate, not a
+ * per-PI record — a PI Review adopts the roster total only when someone asks it to there.
+ */
+function RosterCapacityControl({ rosterMember, onCapacityChange }: RosterCapacityControlProps) {
+  return (
+    <label className={styles.rosterCapacityField}>
+      <span className={styles.rosterRoleLegend}>PI capacity (pts)</span>
+      <input
+        aria-label={`PI capacity estimate (points) for ${rosterMember.displayName}`}
+        className={`${styles.settingsInput} ${styles.rosterCapacityInput}`}
+        min={0}
+        onChange={(changeEvent) => {
+          const enteredValue = changeEvent.target.value.trim();
+          onCapacityChange(enteredValue === '' ? undefined : Number(enteredValue));
+        }}
+        placeholder="—"
+        type="number"
+        value={rosterMember.piCapacityPoints ?? ''}
+      />
+    </label>
+  );
+}
+
 function RosterCard({
   rosterMember,
   actionAriaLabel,
@@ -612,6 +641,7 @@ export default function RosterTab({ issues, projectKey }: RosterTabProps) {
   const addRosterMember = useStandupRosterStore((state) => state.addRosterMember);
   const removeRosterMember = useStandupRosterStore((state) => state.removeRosterMember);
   const setRosterMemberRoles = useStandupRosterStore((state) => state.setRosterMemberRoles);
+  const setRosterMemberPiCapacity = useStandupRosterStore((state) => state.setRosterMemberPiCapacity);
   const upsertRosterMembers = useStandupRosterStore((state) => state.upsertRosterMembers);
   const isSnowRelayConnected = useConnectionStore((state) => state.relayBridgeStatus?.isConnected ?? false);
   const storedActiveTeamName = useSettingsStore((state) => state.sprintDashboardActiveTeam);
@@ -1305,6 +1335,10 @@ export default function RosterTab({ issues, projectKey }: RosterTabProps) {
               >
                 <RosterRoleControls
                   onRolesChange={(capabilities) => setRosterMemberRoles(rosterMember.id, capabilities)}
+                  rosterMember={rosterMember}
+                />
+                <RosterCapacityControl
+                  onCapacityChange={(piCapacityPoints) => setRosterMemberPiCapacity(rosterMember.id, piCapacityPoints)}
                   rosterMember={rosterMember}
                 />
                 <RosterLinkedWorkPanel

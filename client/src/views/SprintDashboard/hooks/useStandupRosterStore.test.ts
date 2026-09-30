@@ -525,3 +525,58 @@ describe('useStandupRosterStore', () => {
     });
   });
 });
+
+describe('roster PI capacity estimate', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    useStandupRosterStore.setState({ dashboardTeamProfileId: 'legacy-default', rosterMembers: [] });
+    useStandupRosterStore.getState().replaceRosterMembers([
+      { displayName: 'Alice Adams', assigneeQueryValue: 'Alice Adams' },
+      { displayName: 'Bob Brown', assigneeQueryValue: 'Bob Brown' },
+    ]);
+  });
+
+  it('sets one member\'s estimate and persists it', () => {
+    useStandupRosterStore.getState().setRosterMemberPiCapacity('roster-member:alice adams', 40);
+
+    const rosterMembers = useStandupRosterStore.getState().rosterMembers;
+    expect(rosterMembers.find((rosterMember) => rosterMember.id === 'roster-member:alice adams')?.piCapacityPoints).toBe(40);
+    expect(rosterMembers.find((rosterMember) => rosterMember.id === 'roster-member:bob brown')?.piCapacityPoints).toBeUndefined();
+    expect(readStoredStandupRosterMembers()
+      .find((rosterMember) => rosterMember.id === 'roster-member:alice adams')?.piCapacityPoints).toBe(40);
+  });
+
+  it('clears an estimate when it is removed', () => {
+    useStandupRosterStore.getState().setRosterMemberPiCapacity('roster-member:alice adams', 40);
+    useStandupRosterStore.getState().setRosterMemberPiCapacity('roster-member:alice adams', undefined);
+
+    expect(readStoredStandupRosterMembers()
+      .find((rosterMember) => rosterMember.id === 'roster-member:alice adams')?.piCapacityPoints).toBeUndefined();
+  });
+
+  it('keeps the estimate when the same person is re-imported from Jira', () => {
+    useStandupRosterStore.getState().setRosterMemberPiCapacity('roster-member:alice adams', 40);
+
+    useStandupRosterStore.getState().upsertRosterMembers([
+      { displayName: 'Alice Adams', assigneeQueryValue: 'Alice Adams', jiraAccountId: 'acc-1' },
+    ]);
+
+    expect(useStandupRosterStore.getState().rosterMembers
+      .find((rosterMember) => rosterMember.id === 'roster-member:alice adams')?.piCapacityPoints).toBe(40);
+  });
+
+  it('drops a malformed stored estimate but still loads the member', () => {
+    localStorage.setItem('tbxSprintDashboardRoster', JSON.stringify({
+      rosterMembers: [
+        { id: 'roster-member:a', displayName: 'A', assigneeQueryValue: 'A', piCapacityPoints: 'lots' },
+        { id: 'roster-member:b', displayName: 'B', assigneeQueryValue: 'B', piCapacityPoints: -5 },
+      ],
+    }));
+
+    const loadedMembers = readStoredStandupRosterMembers();
+
+    expect(loadedMembers).toHaveLength(2);
+    expect(loadedMembers[0].piCapacityPoints).toBeUndefined();
+    expect(loadedMembers[1].piCapacityPoints).toBeUndefined();
+  });
+});

@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **PI capacity estimate per person on the roster.** Each person on the Team Dashboard **Roster** tab now has a
+  **PI capacity (pts)** field — one standing estimate, always treated as current, not kept per PI. The PI Review's
+  **Team Capacity** panel gains **Use roster capacity estimates**: only when you click it does the panel switch
+  to the roster total (100%), its 80% target, and a per-role split (each person counted once, under their most
+  specific delivery role), keeping the snapshot's existing dates. **Save to Confluence** then writes it like any
+  other capacity snapshot. The estimate survives a Jira re-import of the same person.
 - **Post release notes to Confluence.** Once a release's notes are rendered on the Team Dashboard **Releases**
   tab, paste a Confluence **parent page** link and click **📤 Post to Confluence**: the notes are posted as their
   own child page, titled like the heading ("Transformers 10/14/2026 Release Notes"), with the summary and the

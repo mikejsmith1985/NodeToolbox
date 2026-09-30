@@ -2353,6 +2353,20 @@
   border: 0;
 }
 
+/* The per-person PI capacity estimate, sitting under the role toggles on a roster card. */
+.rosterCapacityField {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding-top: var(--spacing-xs);
+}
+
+.rosterCapacityInput {
+  width: 6.5rem;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  font-size: var(--font-size-sm);
+}
+
 .rosterRoleLegend {
   padding: 0;
   color: var(--color-text-secondary);

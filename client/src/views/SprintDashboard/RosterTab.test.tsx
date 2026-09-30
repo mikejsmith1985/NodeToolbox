@@ -140,6 +140,22 @@ describe('RosterTab', () => {
     expect(aliceAfterSm?.roleCapabilities?.canScrumMaster).toBe(true);
   });
 
+  it('records a PI capacity estimate per person and clears it when emptied', () => {
+    useStandupRosterStore.getState().replaceRosterMembers([
+      { displayName: 'Alice Adams', assigneeQueryValue: 'Alice Adams' },
+    ]);
+
+    render(<RosterTab issues={[]} projectKey="TBX" />);
+
+    const capacityInput = screen.getByLabelText('PI capacity estimate (points) for Alice Adams');
+    fireEvent.change(capacityInput, { target: { value: '40' } });
+    expect(useStandupRosterStore.getState().rosterMembers[0].piCapacityPoints).toBe(40);
+    expect(capacityInput).toHaveValue(40);
+
+    fireEvent.change(capacityInput, { target: { value: '' } });
+    expect(useStandupRosterStore.getState().rosterMembers[0].piCapacityPoints).toBeUndefined();
+  });
+
   it('adds sprint assignees to the roster from the quick-pick list', () => {
     render(<RosterTab issues={[buildIssue('TBX-1', 'Alice Adams'), buildIssue('TBX-2', 'Bob Brown')]} projectKey="TBX" />);
 
