@@ -526,7 +526,7 @@ describe('useStandupRosterStore', () => {
   });
 });
 
-describe('roster capacity percentage', () => {
+describe('roster PI capacity estimate', () => {
   beforeEach(() => {
     localStorage.clear();
     useStandupRosterStore.setState({ dashboardTeamProfileId: 'legacy-default', rosterMembers: [] });
@@ -534,6 +534,35 @@ describe('roster capacity percentage', () => {
       { displayName: 'Alice Adams', assigneeQueryValue: 'Alice Adams' },
       { displayName: 'Bob Brown', assigneeQueryValue: 'Bob Brown' },
     ]);
+  });
+
+  it('sets one member\'s estimate and persists it', () => {
+    useStandupRosterStore.getState().setRosterMemberPiCapacity('roster-member:alice adams', 40);
+
+    const rosterMembers = useStandupRosterStore.getState().rosterMembers;
+    expect(rosterMembers.find((rosterMember) => rosterMember.id === 'roster-member:alice adams')?.piCapacityPoints).toBe(40);
+    expect(rosterMembers.find((rosterMember) => rosterMember.id === 'roster-member:bob brown')?.piCapacityPoints).toBeUndefined();
+    expect(readStoredStandupRosterMembers()
+      .find((rosterMember) => rosterMember.id === 'roster-member:alice adams')?.piCapacityPoints).toBe(40);
+  });
+
+  it('clears an estimate when it is removed', () => {
+    useStandupRosterStore.getState().setRosterMemberPiCapacity('roster-member:alice adams', 40);
+    useStandupRosterStore.getState().setRosterMemberPiCapacity('roster-member:alice adams', undefined);
+
+    expect(readStoredStandupRosterMembers()
+      .find((rosterMember) => rosterMember.id === 'roster-member:alice adams')?.piCapacityPoints).toBeUndefined();
+  });
+
+  it('keeps the estimate when the same person is re-imported from Jira', () => {
+    useStandupRosterStore.getState().setRosterMemberPiCapacity('roster-member:alice adams', 40);
+
+    useStandupRosterStore.getState().upsertRosterMembers([
+      { displayName: 'Alice Adams', assigneeQueryValue: 'Alice Adams', jiraAccountId: 'acc-1' },
+    ]);
+
+    expect(useStandupRosterStore.getState().rosterMembers
+      .find((rosterMember) => rosterMember.id === 'roster-member:alice adams')?.piCapacityPoints).toBe(40);
   });
 
   it('sets, persists and clears one member\'s capacity percentage', () => {
@@ -567,18 +596,36 @@ describe('roster capacity percentage', () => {
       .find((rosterMember) => rosterMember.id === 'roster-member:alice adams')?.capacityPercentage).toBe(50);
   });
 
-  it('drops a malformed stored percentage but still loads the member', () => {
+  it('shows PI points that were saved before the field was briefly removed (v0.279.2)', () => {
+    // Start from empty storage: this group's setup already saved a roster, which would be read instead.
+    localStorage.clear();
+    // v0.279.2 hid the field but never erased the stored numbers; restoring it must bring them back.
     localStorage.setItem('tbxSprintDashboardRoster', JSON.stringify({
       rosterMembers: [
-        { id: 'roster-member:a', displayName: 'A', assigneeQueryValue: 'A', capacityPercentage: 'half' },
-        { id: 'roster-member:b', displayName: 'B', assigneeQueryValue: 'B', capacityPercentage: 150 },
+        { id: 'roster-member:a', displayName: 'A', assigneeQueryValue: 'A', piCapacityPoints: 17, capacityPercentage: 50 },
+      ],
+    }));
+
+    const [loadedMember] = readStoredStandupRosterMembers();
+
+    expect(loadedMember.piCapacityPoints).toBe(17);
+    expect(loadedMember.capacityPercentage).toBe(50);
+  });
+
+  it('drops a malformed stored estimate but still loads the member', () => {
+    // Start from empty storage: this group's setup already saved a roster, which would be read instead.
+    localStorage.clear();
+    localStorage.setItem('tbxSprintDashboardRoster', JSON.stringify({
+      rosterMembers: [
+        { id: 'roster-member:a', displayName: 'A', assigneeQueryValue: 'A', piCapacityPoints: 'lots' },
+        { id: 'roster-member:b', displayName: 'B', assigneeQueryValue: 'B', piCapacityPoints: -5 },
       ],
     }));
 
     const loadedMembers = readStoredStandupRosterMembers();
 
     expect(loadedMembers).toHaveLength(2);
-    expect(loadedMembers[0].capacityPercentage).toBeUndefined();
-    expect(loadedMembers[1].capacityPercentage).toBeUndefined();
+    expect(loadedMembers[0].piCapacityPoints).toBeUndefined();
+    expect(loadedMembers[1].piCapacityPoints).toBeUndefined();
   });
 });

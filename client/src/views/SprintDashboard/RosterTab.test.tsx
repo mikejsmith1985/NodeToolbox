@@ -140,6 +140,22 @@ describe('RosterTab', () => {
     expect(aliceAfterSm?.roleCapabilities?.canScrumMaster).toBe(true);
   });
 
+  it('records a PI capacity estimate per person and clears it when emptied', () => {
+    useStandupRosterStore.getState().replaceRosterMembers([
+      { displayName: 'Alice Adams', assigneeQueryValue: 'Alice Adams' },
+    ]);
+
+    render(<RosterTab issues={[]} projectKey="TBX" />);
+
+    const capacityInput = screen.getByLabelText('PI capacity estimate (points) for Alice Adams');
+    fireEvent.change(capacityInput, { target: { value: '40' } });
+    expect(useStandupRosterStore.getState().rosterMembers[0].piCapacityPoints).toBe(40);
+    expect(capacityInput).toHaveValue(40);
+
+    fireEvent.change(capacityInput, { target: { value: '' } });
+    expect(useStandupRosterStore.getState().rosterMembers[0].piCapacityPoints).toBeUndefined();
+  });
+
   it('records a capacity percentage per person and clears it when emptied', () => {
     useStandupRosterStore.getState().replaceRosterMembers([
       { displayName: 'Alice Adams', assigneeQueryValue: 'Alice Adams' },
@@ -147,7 +163,10 @@ describe('RosterTab', () => {
 
     render(<RosterTab issues={[]} projectKey="TBX" />);
 
-    // Short visible caption (GH #392): a long one wrapped to three lines and pushed the box off the card.
+    // Short visible captions (GH #392): long ones wrapped to three lines and pushed the % box off the card.
+    expect(screen.getByText('PI points').closest('label')).toContainElement(
+      screen.getByLabelText('PI capacity estimate (points) for Alice Adams'),
+    );
     expect(screen.getByText('Capacity %').closest('label')).toContainElement(
       screen.getByLabelText('Capacity percentage for Alice Adams'),
     );

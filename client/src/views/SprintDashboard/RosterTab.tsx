@@ -444,6 +444,7 @@ function RosterRoleControls({ rosterMember, onRolesChange }: RosterRoleControlsP
 
 interface RosterCapacityControlProps {
   rosterMember: StandupRosterMember;
+  onCapacityChange: (piCapacityPoints: number | undefined) => void;
   onPercentageChange: (capacityPercentage: number | undefined) => void;
 }
 
@@ -457,12 +458,25 @@ function readOptionalNumberInput(rawValue: string): number | undefined {
 }
 
 /**
- * The share of their time this person gives the team. A standing value, not a per-PI record; "Seed from
- * Roster" on the capacity planner groups people by it.
+ * Two numbers per person: how many points they can deliver in a PI, and the share of their time they
+ * give this team. Both are standing values, not per-PI records; a PI Review adopts the scaled roster
+ * total only when someone asks it to there.
  */
-function RosterCapacityControl({ rosterMember, onPercentageChange }: RosterCapacityControlProps) {
+function RosterCapacityControl({ rosterMember, onCapacityChange, onPercentageChange }: RosterCapacityControlProps) {
   return (
     <div className={styles.rosterCapacityRow}>
+      <label className={styles.rosterCapacityField}>
+        <span className={styles.rosterRoleLegend}>PI points</span>
+        <input
+          aria-label={`PI capacity estimate (points) for ${rosterMember.displayName}`}
+          className={`${styles.settingsInput} ${styles.rosterCapacityInput}`}
+          min={0}
+          onChange={(changeEvent) => onCapacityChange(readOptionalNumberInput(changeEvent.target.value))}
+          placeholder="-"
+          type="number"
+          value={rosterMember.piCapacityPoints ?? ''}
+        />
+      </label>
       <label className={styles.rosterCapacityField}>
         <span className={styles.rosterRoleLegend}>Capacity %</span>
         <input
@@ -650,6 +664,7 @@ export default function RosterTab({ issues, projectKey }: RosterTabProps) {
   const addRosterMember = useStandupRosterStore((state) => state.addRosterMember);
   const removeRosterMember = useStandupRosterStore((state) => state.removeRosterMember);
   const setRosterMemberRoles = useStandupRosterStore((state) => state.setRosterMemberRoles);
+  const setRosterMemberPiCapacity = useStandupRosterStore((state) => state.setRosterMemberPiCapacity);
   const setRosterMemberCapacityPercentage = useStandupRosterStore((state) => state.setRosterMemberCapacityPercentage);
   const upsertRosterMembers = useStandupRosterStore((state) => state.upsertRosterMembers);
   const isSnowRelayConnected = useConnectionStore((state) => state.relayBridgeStatus?.isConnected ?? false);
@@ -1347,6 +1362,7 @@ export default function RosterTab({ issues, projectKey }: RosterTabProps) {
                   rosterMember={rosterMember}
                 />
                 <RosterCapacityControl
+                  onCapacityChange={(piCapacityPoints) => setRosterMemberPiCapacity(rosterMember.id, piCapacityPoints)}
                   onPercentageChange={(capacityPercentage) =>
                     setRosterMemberCapacityPercentage(rosterMember.id, capacityPercentage)}
                   rosterMember={rosterMember}

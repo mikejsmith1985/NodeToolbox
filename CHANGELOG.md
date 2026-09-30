@@ -7,13 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Removed
-- **Roster "PI capacity (pts)" field and PI Review "Use roster capacity estimates" button.** They gave a second,
-  disagreeing capacity total beside the Team Composition planner (work days × allocation). The planner is now the
-  one source of truth: the roster keeps only **Capacity %**, which **Seed from Roster** carries into its rows.
-  Any points already typed on the roster are simply ignored.
-
 ### Fixed
+- **Restored the per-person PI points on the roster.** v0.279.2 removed the roster's **PI points** box and the PI
+  Review's **Use roster capacity estimates** button; both are back. The numbers were never erased, so every
+  person's points reappear as they were entered (unless that person was re-imported from Jira in the meantime).
+  The v0.279.2 **Seed from Roster** fix — one Team Composition row per role and Capacity % — is kept.
 - **Seed from Roster now carries each person's Capacity % (GH #392).** The PI Review's **Team Composition**
   seeding ignored the roster percentage and set every row to 100%. It now makes one row per role **and**
   allocation level — seven full-time Developers and one at 50% seed as `Developer × 7 @ 100%` and
