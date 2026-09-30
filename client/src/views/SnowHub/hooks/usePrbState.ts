@@ -6,6 +6,18 @@ import { jiraPost } from '../../../services/jiraApi.ts';
 import { snowFetch } from '../../../services/snowApi.ts';
 import type { SnowUser } from '../../../types/snow.ts';
 import { normalizeRichTextToPlainText } from '../../../utils/richTextPlainText.ts';
+import {
+  areTransitionSelectionsComplete,
+  buildTransitionFieldsPayload,
+  isTransitionFieldSupported,
+  type TransitionFieldSelection,
+  type TransitionRequiredField,
+} from '../../SprintDashboard/featureReviewFixes.ts';
+import {
+  describeRequiredFieldNeeds,
+  discoverRequiredFieldsByIssueType,
+  MissingIssueTypeError,
+} from '../prb/prbRequiredFields.ts';
 
 interface SnowPrbRecord {
   sysId: string;
@@ -50,6 +62,13 @@ interface PrbState {
   isCreatingIssues: boolean;
   createError: string | null;
   createdIssueKeys: string[];
+  /**
+   * What each issue type's create screen requires beyond the generator's own payload, keyed by the
+   * issue type name. Filled by the pre-create check so the tab can ask for the answers (GH #384).
+   */
+  requiredFieldsByIssueType: Record<string, TransitionRequiredField[]>;
+  /** The operator's answers, keyed by field id and shared across issue types that need the same field. */
+  requiredFieldSelectionByFieldId: Record<string, TransitionFieldSelection>;
 }
 
 interface PrbActions {
@@ -62,6 +81,7 @@ interface PrbActions {
   setCreateSlAsSubtask: (createSlAsSubtask: boolean) => void;
   setSlSubtaskIssueTypeName: (slSubtaskIssueTypeName: string) => void;
   createJiraIssues: () => Promise<void>;
+  setRequiredFieldSelection: (fieldId: string, selection: TransitionFieldSelection) => void;
   reset: () => void;
 }
 
@@ -135,6 +155,8 @@ function createInitialPrbState(): PrbState {
     isCreatingIssues: false,
     createError: null,
     createdIssueKeys: [],
+    requiredFieldsByIssueType: {},
+    requiredFieldSelectionByFieldId: {},
   };
 }
 
@@ -166,20 +188,26 @@ const PARTIAL_CREATE_SEPARATOR = ' | ';
 const PRIMARY_ISSUE_LABEL = 'Primary issue';
 const SL_STORY_LABEL = 'SL Story';
 const SL_SUBTASK_LABEL = 'SL sub-task';
-const SL_SUBTASK_SKIPPED_MESSAGE = 'skipped because the primary issue was not created';
+const SL_ISSUE_SKIPPED_MESSAGE = 'skipped because the primary issue was not created';
+const SL_STANDALONE_ISSUE_TYPE_NAME = 'Story';
+const REQUIRED_FIELDS_PREFIX = 'Jira will not create these issues without more —';
+const REQUIRED_FIELDS_SUFFIX = 'Fill them in below and create again.';
 
 /**
  * Builds a Jira create payload. When `parentIssueKey` is supplied the issue is created as a child of
  * that issue (a sub-task), which is what links the SL sub-task to its primary Story or Defect.
+ * `requiredFieldValues` carries whatever the create screen demanded beyond the fixed payload.
  */
 function buildIssuePayload(
   jiraProjectKey: string,
   summary: string,
   issueTypeName: string,
   problemRecord: SnowPrbRecord,
+  requiredFieldValues: Record<string, unknown>,
   parentIssueKey?: string,
 ) {
   const fields: Record<string, unknown> = {
+    ...requiredFieldValues,
     project: { key: jiraProjectKey },
     summary,
     issuetype: { name: issueTypeName },
@@ -192,9 +220,189 @@ function buildIssuePayload(
   return { fields };
 }
 
+/** What the pre-create check found: the screens' demands, and the message that stops the run if any is unanswered. */
+interface CreateScreenCheck {
+  requiredFieldsByIssueType: Record<string, TransitionRequiredField[]>;
+  blockingMessage: string | null;
+}
+
+/**
+ * Asks Jira what each create screen requires and whether the operator has answered it.
+ *
+ * Only a field the inline picker can honestly collect blocks the run. One it cannot render (a user
+ * picker, a date) is left to the POST, whose refusal now names the field — blocking on it here would
+ * stop the generator forever with no way through. A createmeta failure (older Jira, no permission)
+ * is a courtesy lost, not a gate closed: creation proceeds as it always did. A type the project does
+ * not offer, though, is refused here, before the other issue exists.
+ */
+async function checkCreateScreens(
+  jiraProjectKey: string,
+  issueTypeNames: readonly string[],
+  selectionByFieldId: Record<string, TransitionFieldSelection>,
+): Promise<CreateScreenCheck> {
+  let requiredFieldsByIssueType: Record<string, TransitionRequiredField[]>;
+  try {
+    requiredFieldsByIssueType = await discoverRequiredFieldsByIssueType(jiraProjectKey, issueTypeNames);
+  } catch (discoveryError) {
+    const blockingMessage = discoveryError instanceof MissingIssueTypeError ? discoveryError.message : null;
+    return { requiredFieldsByIssueType: {}, blockingMessage };
+  }
+
+  const unansweredByIssueType = Object.fromEntries(
+    Object.entries(requiredFieldsByIssueType)
+      .map(([issueTypeName, requiredFields]) => [
+        issueTypeName,
+        requiredFields.filter((requiredField) =>
+          isTransitionFieldSupported(requiredField)
+          && !areTransitionSelectionsComplete([requiredField], selectionByFieldId)),
+      ] as const)
+      .filter(([, unansweredFields]) => unansweredFields.length > 0),
+  );
+  const needsDescription = describeRequiredFieldNeeds(unansweredByIssueType);
+  return {
+    requiredFieldsByIssueType,
+    blockingMessage: needsDescription === '' ? null : `${REQUIRED_FIELDS_PREFIX} ${needsDescription} ${REQUIRED_FIELDS_SUFFIX}`,
+  };
+}
+
+/** One issue the generator will create: what to call it, what type it is, and what its screen demanded. */
+interface PlannedIssue {
+  summary: string;
+  issueTypeName: string;
+  requiredFieldValues: Record<string, unknown>;
+}
+
+/** The state while the run is in flight: nothing created yet, no stale error or keys on screen. */
+function markCreationStarted(previousState: PrbState): PrbState {
+  return { ...previousState, isCreatingIssues: true, createError: null, createdIssueKeys: [] };
+}
+
+/** The state when the pre-create check stops the run: what each screen needs is now on screen. */
+function markCreationBlocked(previousState: PrbState, screenCheck: CreateScreenCheck): PrbState {
+  return {
+    ...previousState,
+    isCreatingIssues: false,
+    createError: screenCheck.blockingMessage,
+    requiredFieldsByIssueType: screenCheck.requiredFieldsByIssueType,
+  };
+}
+
+/** The state after the run: the keys that exist, and every labelled reason for one that does not. */
+function markCreationFinished(previousState: PrbState, outcome: IssueCreationOutcome, screenCheck: CreateScreenCheck): PrbState {
+  return {
+    ...previousState,
+    isCreatingIssues: false,
+    createError: outcome.failureMessages.length > 0 ? outcome.failureMessages.join(PARTIAL_CREATE_SEPARATOR) : null,
+    createdIssueKeys: outcome.successfulKeys,
+    requiredFieldsByIssueType: screenCheck.requiredFieldsByIssueType,
+  };
+}
+
+/** The reason nothing can be created yet, or null when a PRB is loaded and a project is named. */
+function readCreatePrerequisiteError(state: PrbState): string | null {
+  if (state.prbData === null) return PRB_REQUIRED_FOR_CREATION_MESSAGE;
+  if (!state.jiraProjectKey) return PROJECT_REQUIRED_MESSAGE;
+  return null;
+}
+
+/**
+ * Pairs each issue with whatever its create screen demanded, from the operator's shared answers.
+ *
+ * Answers are keyed by field id and shared, but each payload carries only the fields ITS screen
+ * listed — a Defect root cause is not sent to a sub-task whose screen never asked for it.
+ */
+function planIssues(
+  state: PrbState,
+  primaryIssueTypeName: string,
+  slIssueTypeName: string,
+  requiredFieldsByIssueType: Record<string, TransitionRequiredField[]>,
+): { primaryIssue: PlannedIssue; slIssue: PlannedIssue } {
+  const readRequiredFieldValues = (issueTypeName: string): Record<string, unknown> => buildTransitionFieldsPayload(
+    requiredFieldsByIssueType[issueTypeName] ?? [],
+    state.requiredFieldSelectionByFieldId,
+  );
+  return {
+    primaryIssue: {
+      summary: state.primaryIssueSummaryTemplate,
+      issueTypeName: primaryIssueTypeName,
+      requiredFieldValues: readRequiredFieldValues(primaryIssueTypeName),
+    },
+    slIssue: {
+      summary: state.slStorySummaryTemplate,
+      issueTypeName: slIssueTypeName,
+      requiredFieldValues: readRequiredFieldValues(slIssueTypeName),
+    },
+  };
+}
+
+/** What a creation run produced: the keys that exist, and a labelled reason for each that does not. */
+interface IssueCreationOutcome {
+  successfulKeys: string[];
+  failureMessages: string[];
+}
+
 /** Reads a rejection reason as a human message, falling back to the generic create-failure text. */
 function readCreateFailureMessage(rejectionReason: unknown): string {
   return rejectionReason instanceof Error ? rejectionReason.message : ISSUE_CREATE_FAILURE_MESSAGE;
+}
+
+/** Posts one planned issue and returns its new key; `parentIssueKey` makes it a sub-task of that issue. */
+async function createOneIssue(
+  jiraProjectKey: string,
+  problemRecord: SnowPrbRecord,
+  plannedIssue: PlannedIssue,
+  parentIssueKey?: string,
+): Promise<string> {
+  const createdIssue = await jiraPost<{ key: string }>(
+    JIRA_ISSUE_CREATE_PATH,
+    buildIssuePayload(
+      jiraProjectKey,
+      plannedIssue.summary,
+      plannedIssue.issueTypeName,
+      problemRecord,
+      plannedIssue.requiredFieldValues,
+      parentIssueKey,
+    ),
+  );
+  return createdIssue.key;
+}
+
+/**
+ * Creates the primary issue, then the SL issue — never the other way round, never both at once.
+ *
+ * The two used to go out in parallel when the SL issue was a standalone Story, so a refused Defect
+ * left an SL Story behind that the next attempt would duplicate (GH #384). The SL issue is only ever
+ * meaningful beside its primary, so when the primary fails it is skipped and said to be skipped —
+ * exactly as the sub-task path always did, because a sub-task has nothing to parent to.
+ */
+async function createPrimaryThenSlIssue(
+  jiraProjectKey: string,
+  problemRecord: SnowPrbRecord,
+  primaryIssue: PlannedIssue,
+  slIssue: PlannedIssue,
+  isSlIssueSubtask: boolean,
+): Promise<IssueCreationOutcome> {
+  const successfulKeys: string[] = [];
+  const failureMessages: string[] = [];
+  const slIssueLabel = isSlIssueSubtask ? SL_SUBTASK_LABEL : SL_STORY_LABEL;
+
+  let primaryIssueKey: string;
+  try {
+    primaryIssueKey = await createOneIssue(jiraProjectKey, problemRecord, primaryIssue);
+    successfulKeys.push(primaryIssueKey);
+  } catch (primaryError) {
+    failureMessages.push(`${PRIMARY_ISSUE_LABEL}: ${readCreateFailureMessage(primaryError)}`);
+    failureMessages.push(`${slIssueLabel}: ${SL_ISSUE_SKIPPED_MESSAGE}`);
+    return { successfulKeys, failureMessages };
+  }
+
+  try {
+    const slIssueKey = await createOneIssue(jiraProjectKey, problemRecord, slIssue, isSlIssueSubtask ? primaryIssueKey : undefined);
+    successfulKeys.push(slIssueKey);
+  } catch (slIssueError) {
+    failureMessages.push(`${slIssueLabel}: ${readCreateFailureMessage(slIssueError)}`);
+  }
+  return { successfulKeys, failureMessages };
 }
 
 /**
@@ -374,104 +582,42 @@ export function usePrbState(): { state: PrbState; actions: PrbActions } {
     setState((previousState) => ({ ...previousState, slStorySummaryTemplate: summary }));
   }, []);
 
-  const createJiraIssues = useCallback(async () => {
-    if (!state.prbData) {
-      setState((previousState) => ({ ...previousState, createError: PRB_REQUIRED_FOR_CREATION_MESSAGE }));
-      return;
-    }
-
-    if (!state.jiraProjectKey) {
-      setState((previousState) => ({ ...previousState, createError: PROJECT_REQUIRED_MESSAGE }));
-      return;
-    }
-
+  const setRequiredFieldSelection = useCallback((fieldId: string, selection: TransitionFieldSelection) => {
     setState((previousState) => ({
       ...previousState,
-      isCreatingIssues: true,
-      createError: null,
-      createdIssueKeys: [],
+      requiredFieldSelectionByFieldId: { ...previousState.requiredFieldSelectionByFieldId, [fieldId]: selection },
     }));
+  }, []);
+
+  const createJiraIssues = useCallback(async () => {
+    const prerequisiteError = readCreatePrerequisiteError(state);
+    if (prerequisiteError !== null || state.prbData === null) {
+      setState((previousState) => ({ ...previousState, createError: prerequisiteError }));
+      return;
+    }
+    const problemRecord = state.prbData;
+
+    setState(markCreationStarted);
 
     const primaryIssueTypeName: 'Defect' | 'Story' = state.isPrimaryIssueDefect ? 'Defect' : 'Story';
-    const successfulKeys: string[] = [];
-    const failureMessages: string[] = [];
+    const slIssueTypeName = state.createSlAsSubtask ? state.slSubtaskIssueTypeName : SL_STANDALONE_ISSUE_TYPE_NAME;
 
-    if (state.createSlAsSubtask) {
-      // A Jira sub-task must reference an existing parent, so the primary is created FIRST and its key
-      // becomes the SL sub-task's parent. If the primary fails there is nothing to parent to, so the
-      // sub-task is reported as skipped rather than attempted and failed for a confusing reason.
-      let primaryIssueKey: string | null = null;
-      try {
-        const primaryIssue = await jiraPost<{ key: string }>(
-          JIRA_ISSUE_CREATE_PATH,
-          buildIssuePayload(state.jiraProjectKey, state.primaryIssueSummaryTemplate, primaryIssueTypeName, state.prbData),
-        );
-        primaryIssueKey = primaryIssue.key;
-        successfulKeys.push(primaryIssue.key);
-      } catch (primaryError) {
-        failureMessages.push(`${PRIMARY_ISSUE_LABEL}: ${readCreateFailureMessage(primaryError)}`);
-      }
-
-      if (primaryIssueKey !== null) {
-        try {
-          const slSubtask = await jiraPost<{ key: string }>(
-            JIRA_ISSUE_CREATE_PATH,
-            buildIssuePayload(
-              state.jiraProjectKey,
-              state.slStorySummaryTemplate,
-              state.slSubtaskIssueTypeName,
-              state.prbData,
-              primaryIssueKey,
-            ),
-          );
-          successfulKeys.push(slSubtask.key);
-        } catch (subtaskError) {
-          failureMessages.push(`${SL_SUBTASK_LABEL}: ${readCreateFailureMessage(subtaskError)}`);
-        }
-      } else {
-        failureMessages.push(`${SL_SUBTASK_LABEL}: ${SL_SUBTASK_SKIPPED_MESSAGE}`);
-      }
-    } else {
-      // Legacy behaviour: the SL issue is a standalone Story with no parent, so both can be created at
-      // once (a partial success still surfaces both outcomes).
-      const [primaryResult, storyResult] = await Promise.allSettled([
-        jiraPost<{ key: string }>(
-          JIRA_ISSUE_CREATE_PATH,
-          buildIssuePayload(state.jiraProjectKey, state.primaryIssueSummaryTemplate, primaryIssueTypeName, state.prbData),
-        ),
-        jiraPost<{ key: string }>(
-          JIRA_ISSUE_CREATE_PATH,
-          buildIssuePayload(state.jiraProjectKey, state.slStorySummaryTemplate, 'Story', state.prbData),
-        ),
-      ]);
-
-      if (primaryResult.status === 'fulfilled') {
-        successfulKeys.push(primaryResult.value.key);
-      } else {
-        failureMessages.push(`${PRIMARY_ISSUE_LABEL}: ${readCreateFailureMessage(primaryResult.reason)}`);
-      }
-      if (storyResult.status === 'fulfilled') {
-        successfulKeys.push(storyResult.value.key);
-      } else {
-        failureMessages.push(`${SL_STORY_LABEL}: ${readCreateFailureMessage(storyResult.reason)}`);
-      }
+    // Before a single POST: what does each screen want, and has the operator supplied it?
+    const screenCheck = await checkCreateScreens(
+      state.jiraProjectKey,
+      [primaryIssueTypeName, slIssueTypeName],
+      state.requiredFieldSelectionByFieldId,
+    );
+    if (screenCheck.blockingMessage !== null) {
+      setState((previousState) => markCreationBlocked(previousState, screenCheck));
+      return;
     }
 
-    setState((previousState) => ({
-      ...previousState,
-      isCreatingIssues: false,
-      createError: failureMessages.length > 0 ? failureMessages.join(PARTIAL_CREATE_SEPARATOR) : null,
-      createdIssueKeys: successfulKeys,
-    }));
-  }, [
-    state.createSlAsSubtask,
-    state.isPrimaryIssueDefect,
-    state.jiraProjectKey,
-    state.prbData,
-    state.primaryIssueSummaryTemplate,
-    state.slStorySummaryTemplate,
-    state.slSubtaskIssueTypeName,
-  ]);
+    const { primaryIssue, slIssue } = planIssues(state, primaryIssueTypeName, slIssueTypeName, screenCheck.requiredFieldsByIssueType);
+    const outcome = await createPrimaryThenSlIssue(state.jiraProjectKey, problemRecord, primaryIssue, slIssue, state.createSlAsSubtask);
+
+    setState((previousState) => markCreationFinished(previousState, outcome, screenCheck));
+  }, [state]);
 
   const setCreateSlAsSubtask = useCallback((createSlAsSubtask: boolean) => {
     writePreference(CREATE_SL_AS_SUBTASK_STORAGE_KEY, String(createSlAsSubtask));
@@ -499,6 +645,7 @@ export function usePrbState(): { state: PrbState; actions: PrbActions } {
       setCreateSlAsSubtask,
       setSlSubtaskIssueTypeName,
       createJiraIssues,
+      setRequiredFieldSelection,
       reset,
     };
   }, [
@@ -510,6 +657,7 @@ export function usePrbState(): { state: PrbState; actions: PrbActions } {
     setJiraProjectKey,
     setPrbNumber,
     setPrimaryIssueSummary,
+    setRequiredFieldSelection,
     setSlStorySummary,
     setSlSubtaskIssueTypeName,
   ]);

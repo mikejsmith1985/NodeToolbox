@@ -20,6 +20,7 @@ interface PrbStateOverrides {
   createError?: string | null;
   isFetchingPrb?: boolean;
   isCreatingIssues?: boolean;
+  requiredFieldsByIssueType?: Record<string, Array<{ fieldId: string; name: string; schemaType: string; allowedValues: Array<{ id: string; value: string }> }>>;
 }
 
 function buildFakePrbHook(overrides: PrbStateOverrides = {}) {
@@ -38,6 +39,8 @@ function buildFakePrbHook(overrides: PrbStateOverrides = {}) {
     isCreatingIssues: overrides.isCreatingIssues ?? false,
     createError: overrides.createError ?? null,
     createdIssueKeys: overrides.createdIssueKeys ?? [],
+    requiredFieldsByIssueType: overrides.requiredFieldsByIssueType ?? {},
+    requiredFieldSelectionByFieldId: {},
   };
   const actions = {
     setPrbNumber: vi.fn(),
