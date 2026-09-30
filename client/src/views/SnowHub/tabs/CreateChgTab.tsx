@@ -24,6 +24,7 @@ import { parseAiAssistChgResponse, useAiAssist } from '../hooks/useAiAssist.ts';
 import { buildChgContextText, type ChgPromptContext } from '../chgFormula/chgPromptContext.ts';
 import { buildChgRiskCheckPrompt, splitRiskCheckReply } from '../chgFormula/chgRiskCheckPrompt.ts';
 import { renderFormulaGuidanceForField } from '../chgFormula/formulaCard.ts';
+import { RiskCheckReviewPanel } from './RiskCheckReviewPanel.tsx';
 import { useCopyFeedback } from '../../../hooks/useCopyFeedback.ts';
 import type { SnowChoiceOptionMap } from '../hooks/useSnowChoiceOptions.ts';
 import { useSnowChoiceOptions } from '../hooks/useSnowChoiceOptions.ts';
@@ -2448,10 +2449,7 @@ function ResultsStep({ state, actions, ctaskTemplates, environmentValueByKey, is
             <AiAssistIcon /> Risk check with AI Assist
           </button>
           {riskCheckReviewText !== null ? (
-            <div className={styles.riskCheckResult}>
-              <p className={styles.riskCheckHeading}>AI Assist risk review:</p>
-              <pre className={styles.riskCheckText}>{riskCheckReviewText}</pre>
-            </div>
+            <RiskCheckReviewPanel fieldValues={readChgTextFields(state)} reviewText={riskCheckReviewText} />
           ) : null}
         </div>
       ) : null}

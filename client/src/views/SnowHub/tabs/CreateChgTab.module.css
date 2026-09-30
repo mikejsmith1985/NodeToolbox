@@ -834,3 +834,102 @@
     transition: none;
   }
 }
+
+/* ── Risk check review (GH #395) ──
+   The pasted review, read into findings: verdict first, gaps with their fixes, passes folded away.
+   Every block wraps — long reviewer sentences must never run off the edge of the Results step. */
+.riskCheckResult {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-md);
+  padding: var(--spacing-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+  min-width: 0;
+}
+
+.riskCheckHeading {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-weight: 600;
+}
+
+.riskVerdictReady,
+.riskVerdictNotReady {
+  margin: 0;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-radius: var(--radius-sm);
+  font-weight: 600;
+}
+
+.riskVerdictReady {
+  background: var(--color-tone-success-bg);
+  color: var(--color-tone-success-fg);
+}
+
+.riskVerdictNotReady {
+  background: var(--color-tone-danger-bg);
+  color: var(--color-tone-danger-fg);
+}
+
+.riskConfirmSummary {
+  margin: 0;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-radius: var(--radius-sm);
+  background: var(--color-tone-warning-bg);
+  color: var(--color-tone-warning-fg);
+  font-size: var(--font-size-sm);
+}
+
+.riskFindingList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.riskFindingItem {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-left: 3px solid var(--color-border);
+  overflow-wrap: anywhere;
+}
+
+.riskFindingField {
+  color: var(--color-text-primary);
+}
+
+.riskFindingDetail {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.riskFindingFix {
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+}
+
+.riskFindingFixLabel {
+  color: var(--color-accent);
+  font-weight: 600;
+}
+
+.riskFoldedFindings summary {
+  cursor: pointer;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.riskCheckText {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

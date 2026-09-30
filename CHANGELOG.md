@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **The risk-check review is readable (GH #395).** It was shown as one unwrapped block — its styles did not exist —
+  so long lines ran off the Results step and their start was cut off. It is now laid out: the **verdict** first
+  (green when ready, red when not), a count of gaps / passes / not-applicable, a **"Still to confirm"** line naming
+  each field that still holds `[CONFIRM: …]` placeholders and how many, then **each gap with the problem and its
+  fix**, the failed quality-gate questions, and the passed and not-applicable items folded away. Everything wraps.
+  A reply not in the checklist format is still shown, as wrapped text.
+
 ### Changed
 - **Risk check with AI Assist now fixes what it finds.** The review still lists `PASS` / `GAP` / `N/A` per
   Formula Card field and a `VERDICT`, but the prompt now also asks for a `=== REVISED FIELDS ===` section with
