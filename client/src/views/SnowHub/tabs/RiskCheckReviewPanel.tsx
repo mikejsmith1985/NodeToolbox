@@ -9,6 +9,12 @@ interface RiskCheckReviewPanelProps {
   reviewText: string;
   /** The seven drafted fields as they stand now, to show which still need a person's [CONFIRM: …] answers. */
   fieldValues: Readonly<Record<ChgTextFieldKey, string>>;
+  /** Opens the "fix these gaps" round. Omitted, no fix button is offered. */
+  onFixGaps?: () => void;
+  /** Opens a fresh risk check of the change as it now stands. */
+  onCheckAgain?: () => void;
+  /** True once fields changed after this review was taken, so its findings may no longer hold. */
+  isOutOfDate?: boolean;
 }
 
 /** "1 gap", "2 gaps": the summary line reads as a sentence, not a template. */
@@ -52,7 +58,13 @@ function FoldedFindings({ title, findings }: { title: string; findings: RiskChec
  * passes and not-applicable items folded away. A reply that is not in the checklist format is shown as
  * wrapped text rather than lost.
  */
-export function RiskCheckReviewPanel({ reviewText, fieldValues }: RiskCheckReviewPanelProps) {
+export function RiskCheckReviewPanel({
+  reviewText,
+  fieldValues,
+  onFixGaps,
+  onCheckAgain,
+  isOutOfDate = false,
+}: RiskCheckReviewPanelProps) {
   const review = parseRiskCheckReview(reviewText);
   const gapFindings = review.findings.filter((finding) => finding.status === 'GAP');
   const failedGateFindings = review.findings.filter((finding) => finding.status === 'NO');
@@ -63,6 +75,11 @@ export function RiskCheckReviewPanel({ reviewText, fieldValues }: RiskCheckRevie
   return (
     <div className={styles.riskCheckResult}>
       <p className={styles.riskCheckHeading}>AI Assist risk review</p>
+      {isOutOfDate ? (
+        <p className={styles.riskConfirmSummary}>
+          This review is out of date — the fields changed after it was taken. Check again to see what is left.
+        </p>
+      ) : null}
       {review.verdict ? (
         <p className={review.isReady ? styles.riskVerdictReady : styles.riskVerdictNotReady}>{review.verdict}</p>
       ) : null}
@@ -87,6 +104,20 @@ export function RiskCheckReviewPanel({ reviewText, fieldValues }: RiskCheckRevie
         <ul aria-label="Quality gate questions not met" className={styles.riskFindingList}>
           {failedGateFindings.map((finding) => <FindingItem finding={finding} key={`gate-${finding.field}`} />)}
         </ul>
+      ) : null}
+      {onFixGaps !== undefined || onCheckAgain !== undefined ? (
+        <div className={styles.riskLoopActions}>
+          {onFixGaps !== undefined && !review.isReady && (gapFindings.length > 0 || failedGateFindings.length > 0) ? (
+            <button className={styles.aiAssistButton} onClick={onFixGaps} type="button">
+              ✦ Fix these gaps with AI Assist
+            </button>
+          ) : null}
+          {onCheckAgain !== undefined ? (
+            <button className={styles.secondaryButton} onClick={onCheckAgain} type="button">
+              ↻ Check again
+            </button>
+          ) : null}
+        </div>
       ) : null}
       <FoldedFindings findings={passedFindings} title="Passed" />
       <FoldedFindings findings={notApplicableFindings} title="Not applicable" />

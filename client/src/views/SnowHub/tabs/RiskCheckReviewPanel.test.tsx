@@ -1,7 +1,7 @@
 // RiskCheckReviewPanel.test.tsx — The pasted risk-check review, shown so a person can actually read it (GH #395).
 
-import { render, screen, within } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { fireEvent, render, screen, within } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
 
 import { RiskCheckReviewPanel } from './RiskCheckReviewPanel.tsx';
 
@@ -62,6 +62,52 @@ describe('RiskCheckReviewPanel', () => {
     );
 
     expect(screen.getByText(/Still to confirm/)).toHaveTextContent('Test Plan (2)');
+  });
+
+  it('offers the next round of the loop: fix these gaps, then check again', () => {
+    const onFixGaps = vi.fn();
+    const onCheckAgain = vi.fn();
+    render(
+      <RiskCheckReviewPanel
+        fieldValues={EMPTY_FIELDS}
+        onCheckAgain={onCheckAgain}
+        onFixGaps={onFixGaps}
+        reviewText={SAMPLE_REVIEW}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /Fix these gaps with AI Assist/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Check again/ }));
+
+    expect(onFixGaps).toHaveBeenCalledTimes(1);
+    expect(onCheckAgain).toHaveBeenCalledTimes(1);
+  });
+
+  it('has nothing to fix once the change is ready', () => {
+    render(
+      <RiskCheckReviewPanel
+        fieldValues={EMPTY_FIELDS}
+        onCheckAgain={vi.fn()}
+        onFixGaps={vi.fn()}
+        reviewText={'PASS | Risk — Rated.\nVERDICT: READY FOR APPROVAL'}
+      />,
+    );
+
+    expect(screen.queryByRole('button', { name: /Fix these gaps/ })).not.toBeInTheDocument();
+  });
+
+  it('says the review is out of date once its gaps have been fixed', () => {
+    render(
+      <RiskCheckReviewPanel
+        fieldValues={EMPTY_FIELDS}
+        isOutOfDate
+        onCheckAgain={vi.fn()}
+        onFixGaps={vi.fn()}
+        reviewText={SAMPLE_REVIEW}
+      />,
+    );
+
+    expect(screen.getByText(/out of date/i)).toBeInTheDocument();
   });
 
   it('falls back to the raw text, wrapped, when the reply is not in the checklist format', () => {

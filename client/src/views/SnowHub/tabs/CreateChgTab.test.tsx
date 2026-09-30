@@ -1618,6 +1618,38 @@ describe('CreateChgTab', () => {
     expect(screen.getByRole('status')).toHaveTextContent('1 field(s) corrected');
   });
 
+  it('runs the loop: review, fix the gaps with a second prompt, then the review is marked out of date (GH #395)', async () => {
+    const user = userEvent.setup();
+    mockState.currentStep = 6;
+    render(<CreateChgTab />);
+    act(() => setAiAssistUnlocked(true));
+
+    // Round 1 — the review.
+    await user.click(await screen.findByRole('button', { name: /Risk check with AI Assist/i }));
+    fireEvent.change(screen.getByRole('textbox', { name: "Paste the assistant's reply here" }), {
+      target: { value: 'GAP | Backout Trigger — No trigger stated. — Fix: Add smoke-test failure.\nVERDICT: NOT READY — 1 gap(s).' },
+    });
+    await user.click(screen.getByRole('button', { name: 'Use this review' }));
+    await user.click(screen.getByRole('button', { name: 'Close' }));
+
+    // Round 2 — fix the gaps: the prompt carries them, and the reply rewrites the field.
+    await user.click(await screen.findByRole('button', { name: /Fix these gaps with AI Assist/ }));
+    const promptText = (screen.getByText(/Copy this prompt and paste it into AI Assist/).parentElement
+      ?.querySelector('textarea[readonly]') as HTMLTextAreaElement).value;
+    expect(promptText).toContain('Backout Trigger — No trigger stated. — Fix: Add smoke-test failure.');
+
+    fireEvent.change(screen.getByRole('textbox', { name: "Paste the assistant's reply here" }), {
+      target: { value: '```text\nBACKOUT_PLAN: 1. Trigger: the smoke test fails.\n```' },
+    });
+    await user.click(screen.getByRole('button', { name: 'Apply fixes to fields' }));
+
+    expect(mockActions.setChgPlanningContent).toHaveBeenCalledWith({ backoutPlan: '1. Trigger: the smoke test fails.' });
+    expect(screen.getByRole('status')).toHaveTextContent(/Fixed 1 field\(s\).*check again/i);
+
+    await user.click(screen.getByRole('button', { name: 'Close' }));
+    expect(screen.getByText(/out of date/i)).toBeInTheDocument();
+  });
+
   it('Create CHG button remains available at step 6 after Risk check with AI Assist', async () => {
     const user = userEvent.setup();
     mockState.currentStep = 6;

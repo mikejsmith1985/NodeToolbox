@@ -58,13 +58,12 @@ describe('buildChgRiskCheckPrompt', () => {
     expect(buildChgRiskCheckPrompt(SAMPLE_CONTEXT, SAMPLE_FIELDS)).toContain('deploy to INT and test there');
   });
 
-  it('asks for the corrected text of every field with a gap, after the verdict, in the field markers', () => {
+  it('asks for the review only — rewriting is its own round, so a long review is never cut short', () => {
     const prompt = buildChgRiskCheckPrompt(SAMPLE_CONTEXT, SAMPLE_FIELDS);
 
-    expect(prompt).toContain(REVISED_FIELDS_HEADING);
-    expect(prompt.indexOf('VERDICT:')).toBeLessThan(prompt.lastIndexOf(REVISED_FIELDS_HEADING));
-    ['SHORT_DESCRIPTION:', 'BACKOUT_PLAN:', 'IMPLEMENTATION_PLAN:'].forEach((marker) => expect(prompt).toContain(marker));
-    expect(prompt).toContain('complete replacement text');
+    expect(prompt).not.toContain(REVISED_FIELDS_HEADING);
+    expect(prompt).not.toContain('IMPLEMENTATION_PLAN:');
+    expect(prompt.trim().endsWith('Write nothing outside the code block.')).toBe(true);
   });
 });
 

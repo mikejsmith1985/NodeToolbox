@@ -35,8 +35,8 @@ const REVIEW_FIELD_ORDER: readonly ChgTextFieldKey[] = [
 // Shown for a text field that is still empty, so the reviewer flags it rather than skipping it.
 const EMPTY_FIELD_TEXT = '(not set)';
 
-/** Each text field under its form label, with the full text beneath it. */
-function renderChangeText(fieldValues: ChgTextFieldValues): string {
+/** Each text field under its form label, with the full text beneath it. Shared with the gap-fix round. */
+export function renderChangeText(fieldValues: ChgTextFieldValues): string {
   return REVIEW_FIELD_ORDER.map((fieldKey) => {
     const fieldText = fieldValues[fieldKey].trim();
     return `${CHG_TEXT_FIELD_LABELS[fieldKey]}:\n${fieldText === '' ? EMPTY_FIELD_TEXT : fieldText}`;
@@ -57,30 +57,12 @@ const REPLY_FORMAT_LINES: readonly string[] = [
 ];
 
 /**
- * Marks where the review ends and the corrected fields begin. The app applies everything after it, so a
- * gap is fixed by pasting the reply rather than by retyping each suggested fix (GH #395 follow-up).
+ * Marks corrected fields inside a pasted review. The risk-check prompt no longer asks for them — asking one
+ * reply to review fifty card fields AND rewrite seven fields made it long enough for assistants to cut short,
+ * so rewriting is now its own round (chgGapFixPrompt.ts). A reply that includes corrections anyway still has
+ * them applied.
  */
 export const REVISED_FIELDS_HEADING = '=== REVISED FIELDS ===';
-
-// The corrections section. It comes LAST because each field's value runs to the next field marker or the
-// end of the reply, so nothing may follow it.
-const REVISED_FIELDS_FORMAT_LINES: readonly string[] = [
-  '',
-  `After the VERDICT line, write a line reading exactly ${REVISED_FIELDS_HEADING} and then, for every text field `
-    + 'that has at least one GAP, its complete replacement text with every fix applied, using these markers in '
-    + 'this order (leave out any field that has no gap):',
-  'SHORT_DESCRIPTION:',
-  'DESCRIPTION:',
-  'JUSTIFICATION:',
-  'RISK_AND_IMPACT:',
-  'IMPLEMENTATION_PLAN:',
-  'TEST_PLAN:',
-  'BACKOUT_PLAN:',
-  'Each is the whole field as it should now read, not just the added sentence. Keep every fact already in it, keep '
-    + '[CONFIRM: ...] for anything you still cannot know, and write nothing after the last field.',
-  'Gaps in record fields (configuration item, category, assignment group, owner, dates) cannot be corrected here — '
-    + 'leave those to the GAP line.',
-];
 
 /** A pasted review split into what a person reads and what the app writes back into the change. */
 export interface RiskCheckReplyParts {
@@ -129,7 +111,6 @@ export function buildChgRiskCheckPrompt(context: ChgPromptContext, fieldValues: 
     renderFormulaCardChecklist(),
     '',
     ...REPLY_FORMAT_LINES,
-    ...REVISED_FIELDS_FORMAT_LINES,
     '',
     CODE_BLOCK_REPLY_INSTRUCTION,
   ].join('\n');

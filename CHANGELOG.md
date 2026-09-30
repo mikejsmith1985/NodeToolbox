@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **The CHG risk check is now a check → fix → check-again loop (GH #395).** Asking one reply to review all fifty
+  Formula Card fields *and* rewrite seven fields made it long enough for assistants to cut short, so the gaps were
+  reported but never fixed and the screen offered no next step. Now:
+  1. **Risk check with AI Assist** asks for the review only — short, and shown on the Results step.
+  2. **✦ Fix these gaps with AI Assist** (in the review) builds a second prompt carrying the gaps, their suggested
+     fixes, the change as it stands and the card rules; pasting its reply **writes the rewritten fields into the
+     change** — details and plans — with the status "Fixed N field(s) — … click Check again".
+  3. **↻ Check again** runs a fresh review. The earlier review is marked *out of date* as soon as fields change.
+  Repeat until the verdict is **READY FOR APPROVAL**. Gaps in record fields and `[CONFIRM: …]` facts still need a
+  person. A review reply that includes corrections anyway still has them applied.
+
 ### Fixed
 - **AI Assist replies still work when copying drops their line breaks (GH #395).** Chat assistants display replies
   as formatted text, and copying it joins the lines into one paragraph — so the Risk check's

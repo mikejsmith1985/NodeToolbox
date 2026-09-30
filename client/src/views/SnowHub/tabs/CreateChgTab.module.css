@@ -933,3 +933,10 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+/* The risk-check loop's next steps: fix the gaps, then check again. */
+.riskLoopActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+}

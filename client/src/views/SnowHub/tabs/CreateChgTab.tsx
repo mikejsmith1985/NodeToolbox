@@ -22,6 +22,8 @@ import { useCrgTemplates } from '../hooks/useCrgTemplates.ts';
 import type { AiAssistGeneratedFields } from '../hooks/useAiAssist.ts';
 import { parseAiAssistChgResponse, useAiAssist } from '../hooks/useAiAssist.ts';
 import { CODE_BLOCK_REPLY_INSTRUCTION } from '../chgFormula/assistantReplyText.ts';
+import { buildChgGapFixPrompt } from '../chgFormula/chgGapFixPrompt.ts';
+import { parseRiskCheckReview } from '../chgFormula/riskCheckReview.ts';
 import { buildChgContextText, type ChgPromptContext } from '../chgFormula/chgPromptContext.ts';
 import { buildChgRiskCheckPrompt, splitRiskCheckReply } from '../chgFormula/chgRiskCheckPrompt.ts';
 import { renderFormulaGuidanceForField } from '../chgFormula/formulaCard.ts';
@@ -664,6 +666,10 @@ interface ResultsStepExtras {
   onOpenRiskCheckPrompt: () => void;
   /** The pasted risk review to display, or null when no review has been captured yet. */
   riskCheckReviewText: string | null;
+  /** Opens the "fix these gaps" round of the risk-check loop. */
+  onOpenGapFixPrompt: () => void;
+  /** True once fields changed after the review was taken, so its findings may no longer hold. */
+  isRiskReviewOutOfDate: boolean;
   /** The change a rebuild will overwrite, or empty when a new change is being raised. */
   rebuildTargetNumber?: string;
 }
@@ -2339,7 +2345,7 @@ function CtaskTemplatePanel({ state, actions, templates, saveTemplate, updateTem
   );
 }
 
-function ResultsStep({ state, actions, ctaskTemplates, environmentValueByKey, isAiAssistUnlocked, onOpenRiskCheckPrompt, riskCheckReviewText, rebuildTargetNumber }: CrgStepProps & ResultsStepExtras) {
+function ResultsStep({ state, actions, ctaskTemplates, environmentValueByKey, isAiAssistUnlocked, onOpenRiskCheckPrompt, riskCheckReviewText, onOpenGapFixPrompt, isRiskReviewOutOfDate, rebuildTargetNumber }: CrgStepProps & ResultsStepExtras) {
   const [selectedCtaskTemplateId, setSelectedCtaskTemplateId] = useState('');
   const [existingChgNumber, setExistingChgNumber] = useState('');
   const selectedCtaskTemplate = ctaskTemplates.find((template) => template.id === selectedCtaskTemplateId) ?? null;
@@ -2450,7 +2456,13 @@ function ResultsStep({ state, actions, ctaskTemplates, environmentValueByKey, is
             <AiAssistIcon /> Risk check with AI Assist
           </button>
           {riskCheckReviewText !== null ? (
-            <RiskCheckReviewPanel fieldValues={readChgTextFields(state)} reviewText={riskCheckReviewText} />
+            <RiskCheckReviewPanel
+              fieldValues={readChgTextFields(state)}
+              isOutOfDate={isRiskReviewOutOfDate}
+              onCheckAgain={onOpenRiskCheckPrompt}
+              onFixGaps={onOpenGapFixPrompt}
+              reviewText={riskCheckReviewText}
+            />
           ) : null}
         </div>
       ) : null}
@@ -2608,6 +2620,7 @@ const PLANNING_CONTENT_FIELD_KEYS: ReadonlyArray<keyof AiAssistGeneratedFields> 
 const DRAFT_PROMPT_FIELD_KEYS: ReadonlyArray<keyof AiAssistGeneratedFields> = ['shortDescription', 'description'];
 
 const APPLY_FIELDS_BUTTON_LABEL = 'Apply reply to fields';
+const APPLY_FIXES_BUTTON_LABEL = 'Apply fixes to fields';
 const NO_RECOGNISABLE_FIELDS_MESSAGE =
   'No recognisable fields found — the reply must use the SHORT_DESCRIPTION / DESCRIPTION / JUSTIFICATION / '
   + 'RISK_AND_IMPACT / IMPLEMENTATION_PLAN / TEST_PLAN / BACKOUT_PLAN markers.';
@@ -2682,6 +2695,9 @@ export default function CrgTab({ mode = 'wizard', targetChangeNumber }: CrgTabPr
   const { hasCopied: hasCopiedPrompt, confirmCopy: confirmPromptCopy } = useCopyFeedback();
   // The pasted pre-submission risk review, displayed on the Results step.
   const [riskCheckReviewText, setRiskCheckReviewText] = useState<string | null>(null);
+  // Set once the fields change after the review was taken (by its own corrections or by the fix round), so
+  // the Results step says the review may no longer hold and offers a fresh check.
+  const [isRiskReviewOutOfDate, setIsRiskReviewOutOfDate] = useState(false);
 
   const issueCountSummary = useMemo(() => {
     if (mode === 'configuration') {
@@ -2874,6 +2890,7 @@ export default function CrgTab({ mode = 'wizard', targetChangeNumber }: CrgTabPr
         const correctedFieldCount = revisedFieldsText
           ? applyParsedChgFields(revisedFieldsText, ENHANCE_PROMPT_FIELD_KEYS).appliedFieldCount
           : 0;
+        setIsRiskReviewOutOfDate(correctedFieldCount > 0);
         return {
           statusMessage: correctedFieldCount > 0
             ? `Risk review captured and ${correctedFieldCount} field(s) corrected from it — the review is shown on the Results step.`
@@ -2882,7 +2899,36 @@ export default function CrgTab({ mode = 'wizard', targetChangeNumber }: CrgTabPr
         };
       },
     });
-  }, [state, applyParsedChgFields, setAiAssistPromptSession, setRiskCheckReviewText]);
+  }, [state, applyParsedChgFields, setAiAssistPromptSession, setRiskCheckReviewText, setIsRiskReviewOutOfDate]);
+
+  // The loop's second round: hand the review's gaps back with the change as it stands, and apply the
+  // rewritten fields from the pasted reply. Then "Check again" runs a fresh review (GH #395).
+  const handleOpenGapFixPrompt = useCallback(() => {
+    const gapFindings = parseRiskCheckReview(riskCheckReviewText ?? '').findings
+      .filter((finding) => finding.status === 'GAP' || finding.status === 'NO');
+    if (gapFindings.length === 0) {
+      return;
+    }
+
+    setAiAssistPromptSession({
+      instructions:
+        'Copy this prompt and paste it into AI Assist to rewrite the fields that close the gaps, then paste the '
+        + 'reply below — the fixes are written into the fields automatically.',
+      promptText: buildChgGapFixPrompt(buildChgPromptContextFromState(state), readChgTextFields(state), gapFindings),
+      applyButtonLabel: APPLY_FIXES_BUTTON_LABEL,
+      applyReply: (replyText) => {
+        const fixOutcome = applyParsedChgFields(replyText, ENHANCE_PROMPT_FIELD_KEYS);
+        if (!fixOutcome.wasApplied) {
+          return fixOutcome;
+        }
+        setIsRiskReviewOutOfDate(true);
+        return {
+          wasApplied: true,
+          statusMessage: `Fixed ${fixOutcome.appliedFieldCount} field(s) — close this and click Check again to confirm the gaps are closed.`,
+        };
+      },
+    });
+  }, [state, riskCheckReviewText, applyParsedChgFields, setAiAssistPromptSession, setIsRiskReviewOutOfDate]);
 
   // Consumes the pasted reply through the active session and reports the outcome.
   const handleApplyAiAssistReply = useCallback(() => {
@@ -2972,6 +3018,8 @@ export default function CrgTab({ mode = 'wizard', targetChangeNumber }: CrgTabPr
     isAiAssistUnlocked: isUnlocked,
     onOpenRiskCheckPrompt: handleOpenRiskCheckPrompt,
     riskCheckReviewText,
+    onOpenGapFixPrompt: handleOpenGapFixPrompt,
+    isRiskReviewOutOfDate,
     rebuildTargetNumber: isRebuildMode ? rebuildTargetNumber : undefined,
   };
 
