@@ -22,7 +22,8 @@ import { useCrgTemplates } from '../hooks/useCrgTemplates.ts';
 import type { AiAssistGeneratedFields } from '../hooks/useAiAssist.ts';
 import { parseAiAssistChgResponse, useAiAssist } from '../hooks/useAiAssist.ts';
 import { CODE_BLOCK_REPLY_INSTRUCTION } from '../chgFormula/assistantReplyText.ts';
-import { buildChgGapFixPrompt } from '../chgFormula/chgGapFixPrompt.ts';
+import { buildChgGapFixPrompt, resolveFixableFields } from '../chgFormula/chgGapFixPrompt.ts';
+import { buildGapRecheckPrompt, countRecheckOutcome, mergeRecheckIntoReview } from '../chgFormula/gapFocus.ts';
 import { parseRiskCheckReview } from '../chgFormula/riskCheckReview.ts';
 import { buildChgContextText, type ChgPromptContext } from '../chgFormula/chgPromptContext.ts';
 import { buildChgRiskCheckPrompt, splitRiskCheckReply } from '../chgFormula/chgRiskCheckPrompt.ts';
@@ -668,6 +669,8 @@ interface ResultsStepExtras {
   riskCheckReviewText: string | null;
   /** Opens the "fix these gaps" round of the risk-check loop. */
   onOpenGapFixPrompt: () => void;
+  /** Opens the targeted re-check of only the gaps the last review left open. */
+  onOpenGapRecheckPrompt: () => void;
   /** True once fields changed after the review was taken, so its findings may no longer hold. */
   isRiskReviewOutOfDate: boolean;
   /** The change a rebuild will overwrite, or empty when a new change is being raised. */
@@ -2345,7 +2348,7 @@ function CtaskTemplatePanel({ state, actions, templates, saveTemplate, updateTem
   );
 }
 
-function ResultsStep({ state, actions, ctaskTemplates, environmentValueByKey, isAiAssistUnlocked, onOpenRiskCheckPrompt, riskCheckReviewText, onOpenGapFixPrompt, isRiskReviewOutOfDate, rebuildTargetNumber }: CrgStepProps & ResultsStepExtras) {
+function ResultsStep({ state, actions, ctaskTemplates, environmentValueByKey, isAiAssistUnlocked, onOpenRiskCheckPrompt, riskCheckReviewText, onOpenGapFixPrompt, onOpenGapRecheckPrompt, isRiskReviewOutOfDate, rebuildTargetNumber }: CrgStepProps & ResultsStepExtras) {
   const [selectedCtaskTemplateId, setSelectedCtaskTemplateId] = useState('');
   const [existingChgNumber, setExistingChgNumber] = useState('');
   const selectedCtaskTemplate = ctaskTemplates.find((template) => template.id === selectedCtaskTemplateId) ?? null;
@@ -2459,7 +2462,7 @@ function ResultsStep({ state, actions, ctaskTemplates, environmentValueByKey, is
             <RiskCheckReviewPanel
               fieldValues={readChgTextFields(state)}
               isOutOfDate={isRiskReviewOutOfDate}
-              onCheckAgain={onOpenRiskCheckPrompt}
+              onCheckAgain={onOpenGapRecheckPrompt}
               onFixGaps={onOpenGapFixPrompt}
               reviewText={riskCheckReviewText}
             />
@@ -2621,6 +2624,7 @@ const DRAFT_PROMPT_FIELD_KEYS: ReadonlyArray<keyof AiAssistGeneratedFields> = ['
 
 const APPLY_FIELDS_BUTTON_LABEL = 'Apply reply to fields';
 const APPLY_FIXES_BUTTON_LABEL = 'Apply fixes to fields';
+const USE_RECHECK_BUTTON_LABEL = 'Use this re-check';
 const NO_RECOGNISABLE_FIELDS_MESSAGE =
   'No recognisable fields found — the reply must use the SHORT_DESCRIPTION / DESCRIPTION / JUSTIFICATION / '
   + 'RISK_AND_IMPACT / IMPLEMENTATION_PLAN / TEST_PLAN / BACKOUT_PLAN markers.';
@@ -2917,7 +2921,8 @@ export default function CrgTab({ mode = 'wizard', targetChangeNumber }: CrgTabPr
       promptText: buildChgGapFixPrompt(buildChgPromptContextFromState(state), readChgTextFields(state), gapFindings),
       applyButtonLabel: APPLY_FIXES_BUTTON_LABEL,
       applyReply: (replyText) => {
-        const fixOutcome = applyParsedChgFields(replyText, ENHANCE_PROMPT_FIELD_KEYS);
+        // Only the fields the prompt showed may change — a reply that rewrites more is not trusted with it.
+        const fixOutcome = applyParsedChgFields(replyText, resolveFixableFields(gapFindings));
         if (!fixOutcome.wasApplied) {
           return fixOutcome;
         }
@@ -2929,6 +2934,38 @@ export default function CrgTab({ mode = 'wizard', targetChangeNumber }: CrgTabPr
       },
     });
   }, [state, riskCheckReviewText, applyParsedChgFields, setAiAssistPromptSession, setIsRiskReviewOutOfDate]);
+
+  // The loop's third round: re-check only the gaps the last review left open, and fold the answers into that
+  // review so the verdict reflects the whole change. With nothing open, a full check runs instead.
+  const handleOpenGapRecheckPrompt = useCallback(() => {
+    const previousReviewText = riskCheckReviewText ?? '';
+    const openFindings = parseRiskCheckReview(previousReviewText).findings
+      .filter((finding) => finding.status === 'GAP' || finding.status === 'NO');
+    if (openFindings.length === 0) {
+      handleOpenRiskCheckPrompt();
+      return;
+    }
+
+    setAiAssistPromptSession({
+      instructions:
+        'Copy this prompt and paste it into AI Assist to re-check just the open gaps, then paste the reply below — '
+        + 'the answers are folded into the review.',
+      promptText: buildGapRecheckPrompt(buildChgPromptContextFromState(state), readChgTextFields(state), openFindings),
+      applyButtonLabel: USE_RECHECK_BUTTON_LABEL,
+      applyReply: (replyText) => {
+        const { closedCount, stillOpenCount } = countRecheckOutcome(replyText);
+        if (closedCount + stillOpenCount === 0) {
+          return { wasApplied: false, statusMessage: 'No PASS / GAP lines found in the pasted re-check.' };
+        }
+        setRiskCheckReviewText(mergeRecheckIntoReview(previousReviewText, replyText));
+        setIsRiskReviewOutOfDate(false);
+        return {
+          wasApplied: true,
+          statusMessage: `Re-checked: ${closedCount} closed, ${stillOpenCount} still open — the review is updated.`,
+        };
+      },
+    });
+  }, [state, riskCheckReviewText, handleOpenRiskCheckPrompt, setAiAssistPromptSession, setRiskCheckReviewText, setIsRiskReviewOutOfDate]);
 
   // Consumes the pasted reply through the active session and reports the outcome.
   const handleApplyAiAssistReply = useCallback(() => {
@@ -3019,6 +3056,7 @@ export default function CrgTab({ mode = 'wizard', targetChangeNumber }: CrgTabPr
     onOpenRiskCheckPrompt: handleOpenRiskCheckPrompt,
     riskCheckReviewText,
     onOpenGapFixPrompt: handleOpenGapFixPrompt,
+    onOpenGapRecheckPrompt: handleOpenGapRecheckPrompt,
     isRiskReviewOutOfDate,
     rebuildTargetNumber: isRebuildMode ? rebuildTargetNumber : undefined,
   };

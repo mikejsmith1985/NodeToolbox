@@ -1648,6 +1648,23 @@ describe('CreateChgTab', () => {
 
     await user.click(screen.getByRole('button', { name: 'Close' }));
     expect(screen.getByText(/out of date/i)).toBeInTheDocument();
+
+    // Round 3 — check again: only the open gap is re-checked, and the answer is merged into the review.
+    await user.click(screen.getByRole('button', { name: /Check again/ }));
+    const recheckPrompt = (screen.getByText(/Copy this prompt and paste it into AI Assist/).parentElement
+      ?.querySelector('textarea[readonly]') as HTMLTextAreaElement).value;
+    expect(recheckPrompt).toContain('Backout Trigger');
+    expect(recheckPrompt).not.toContain('Blast Radius');
+
+    fireEvent.change(screen.getByRole('textbox', { name: "Paste the assistant's reply here" }), {
+      target: { value: 'PASS | Backout Trigger — Smoke-test failure is a trigger.\nVERDICT: READY FOR APPROVAL' },
+    });
+    await user.click(screen.getByRole('button', { name: 'Use this re-check' }));
+    expect(screen.getByRole('status')).toHaveTextContent(/1 closed, 0 still open/);
+    await user.click(screen.getByRole('button', { name: 'Close' }));
+
+    expect(screen.getByText('READY FOR APPROVAL')).toBeInTheDocument();
+    expect(screen.queryByText(/out of date/i)).not.toBeInTheDocument();
   });
 
   it('Create CHG button remains available at step 6 after Risk check with AI Assist', async () => {

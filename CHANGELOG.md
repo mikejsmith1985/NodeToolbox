@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **After the first review, the risk-check loop only carries the open gaps (GH #395).** Re-sending the whole change
+  and the whole fifty-field card every round was slow and unfocused.
+  - **✦ Fix these gaps** now shows only the **fields the gaps live in** and only **their** card rules, and the pasted
+    reply may rewrite only those fields.
+  - **↻ Check again** re-checks **only the gaps still open**, each against its own card rule (or quality-gate pass
+    standard), and folds the answers into the existing review — re-checked lines replace their earlier ones, the
+    rest stay, and the verdict is recalculated ("Re-checked: 2 closed, 1 still open").
+  - **Risk check with AI Assist** still runs the full fifty-field review — use it once at the end to catch anything
+    a rewrite newly broke. Each gap is matched to its field by the card's name, preferring an exact match.
+
+### Changed
 - **The CHG risk check is now a check → fix → check-again loop (GH #395).** Asking one reply to review all fifty
   Formula Card fields *and* rewrite seven fields made it long enough for assistants to cut short, so the gaps were
   reported but never fixed and the screen offered no next step. Now:
