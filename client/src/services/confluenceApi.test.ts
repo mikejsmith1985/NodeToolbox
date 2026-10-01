@@ -117,6 +117,12 @@ describe('resolveConfluencePageIdFromReference', () => {
     ).toBe('910360840');
   });
 
+  it('takes the id after /pages/, not a page title that is itself a number (GH #395)', () => {
+    expect(
+      resolveConfluencePageIdFromReference('https://zilverton.atlassian.net/wiki/spaces/MAVertical/pages/461013017/2026'),
+    ).toBe('461013017');
+  });
+
   it('returns null when the reference does not contain a supported page ID', () => {
     expect(resolveConfluencePageIdFromReference('https://example.atlassian.net/wiki/spaces/ART')).toBeNull();
   });

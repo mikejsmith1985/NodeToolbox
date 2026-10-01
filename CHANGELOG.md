@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **A Confluence page whose title is a number no longer breaks its link (GH #395).** Pasting
+  `…/pages/461013017/2026` read the title `2026` as the page ID, so the Release Doc tab failed with
+  "No content found with id: 2026". The ID straight after `/pages/` is now used; edit links such as
+  `/pages/edit-v2/910360840` still work. This applies to every place that accepts a pasted Confluence link.
+
 ### Added
 - **Release Doc tab on the Team Dashboard (GH #395).** One Confluence page per unreleased release, created beneath a
   per-team parent page and titled by release date (**YYYYMMMDD**, e.g. `2026Oct14`).

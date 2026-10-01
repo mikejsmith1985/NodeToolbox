@@ -260,10 +260,11 @@ export function resolveConfluencePageIdFromReference(pageReference: string): str
     return pageIdFromQuery;
   }
 
-  // Match the page id in the path, allowing one optional segment after /pages/ so edit/draft links like
-  // /pages/edit-v2/910360840 (and the standard /pages/910360840/Title) both resolve. The query string
-  // (e.g. ?draftShareId=…) is already dropped by URL parsing.
-  const pagePathMatch = parsedUrl.pathname.match(/\/pages\/(?:[^/]+\/)?(\d+)(?:\/|$)/i);
+  // Match the page id in the path. Standard links are /pages/910360840/Title; edit/draft links put one
+  // non-numeric segment first (/pages/edit-v2/910360840). The skipped segment must contain a non-digit,
+  // otherwise a page TITLED with a number (/pages/461013017/2026) would be read as id 2026. The query
+  // string (e.g. ?draftShareId=…) is already dropped by URL parsing.
+  const pagePathMatch = parsedUrl.pathname.match(/\/pages\/(?:[^/]*\D[^/]*\/)?(\d+)(?:\/|$)/i);
   if (pagePathMatch) {
     return pagePathMatch[1];
   }
