@@ -80,6 +80,7 @@ import FeatureReviewTab from './FeatureReviewTab.tsx';
 import { BacklogRemediationPanel } from './backlogRemediation/BacklogRemediationPanel.tsx';
 import RollupBoardTab from './rollupBoard/RollupBoardTab.tsx';
 import ForecastTab from './forecast/ForecastTab.tsx';
+import { ReleaseDocumentTab } from './releaseDocument/ReleaseDocumentTab.tsx';
 import MoveToSprintButton from './MoveToSprintButton.tsx';
 import RosterTab from './RosterTab.tsx';
 import SprintDashboardPiReviewTab from './SprintDashboardPiReviewTab.tsx';
@@ -159,6 +160,7 @@ const TAB_OPTIONS: { key: DashboardTab; label: string }[] = [
   { key: 'rollupboard', label: 'Roll-Up Board' },
   { key: 'forecast', label: 'Forecast' },
   { key: 'releases', label: 'Releases' },
+  { key: 'releasedoc', label: 'Release Doc' },
   { key: 'settings', label: 'Settings' },
 ];
 
@@ -7020,6 +7022,16 @@ export default function SprintDashboardView() {
           scopedIssues={state.sprintIssues}
           selectedPiValue={state.selectedPiValue}
           teamProfileId={activeDashboardTeamProfileId}
+        />
+      );
+    }
+
+    if (activeTab === 'releasedoc') {
+      return (
+        <ReleaseDocumentTab
+          projectKey={state.projectKey}
+          teamName={activeDashboardTeamProfile?.name ?? ''}
+          teamProfileId={activeDashboardTeamProfile?.id ?? ''}
         />
       );
     }

@@ -80,7 +80,8 @@ export type DashboardTab =
   | 'featurereview'
   | 'backlogremediation'
   | 'rollupboard'
-  | 'forecast';
+  | 'forecast'
+  | 'releasedoc';
 
 export type DashboardScopeMode =
   | typeof DASHBOARD_SCOPE_MODE_SPRINT

@@ -4320,3 +4320,55 @@
 .laneScheduleSwatch_due { background: linear-gradient(135deg, #f59e0b, #fbbf24); }
 .laneScheduleSwatch_good { background: linear-gradient(135deg, #22c55e, #10b981); }
 .laneScheduleSwatch_unknown { background: linear-gradient(135deg, #94a3b8, #64748b); }
+
+/* ── Release Doc tab (feature 038) ── */
+.releaseDocumentPanel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.releaseDocumentToolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  align-items: flex-end;
+}
+
+.releaseDocumentToolbar .settingsInput {
+  flex: 1 1 260px;
+  width: auto;
+}
+
+.releaseCheckFlag {
+  color: var(--color-tone-warning-fg);
+  font-size: var(--font-size-sm);
+}
+
+.deploymentStepsEditor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.deploymentStepCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+}
+
+.deploymentStepHeader {
+  display: flex;
+  gap: var(--spacing-sm);
+  align-items: center;
+}
+
+.deploymentStepGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: var(--spacing-sm);
+}

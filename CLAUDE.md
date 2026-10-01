@@ -17,6 +17,24 @@
 > `po-pi-dropdown.spec.js`. Feature 024's spec inherited a false "do not run concurrently with 022" constraint from
 > these stale entries before the code was checked. **Verify against the codebase before trusting a status below.**
 
+- **038-release-document** — *(**IMPLEMENTED** on `feature/038-release-document` — 35/36 tasks; T036 live quickstart
+  is validated in production.)* Code: `client/src/views/SprintDashboard/releaseDocument/`. GH #395: a Team Dashboard **Release Doc** tab keeping one Confluence page per **unreleased**
+  fixVersion (title `YYYYMMMDD`, e.g. `2026Oct14`) under a per-team parent page (`tbxReleaseDocumentParents`). Page =
+  Epic rows with their team-project children (key, summary, type, status, assignee, **Release check** flag, hand-entered
+  **Notes**) + a hand-entered **Deployment Steps** table (PR, Repo, Workflow run, Branch, Job type, Application,
+  Environment, Repository, Tag, Task, Module, Log level). Plan: `specs/038-release-document/plan.md`. Contracts:
+  `gather.md`, `page-storage.md`, `page-sync.md`, `release-doc-tab.md`.
+  **Cross-project Epics are the crux**: children come from the team project (ENCUC / ENFCT) via `fetchIssuesPaged`
+  (never the Releases tab's 50-cap search); Epics via `extractFeatureKeyFromIssueFields` into DASP / DENP, plus a
+  **per-project** same-name fixVersion search (a missing version 400s per project — skip, don't fail) kept only when the
+  Epic has a team-project child. **No issue-type filter** (DENP's Feature→Epic rename; never `loadFeatureIssueTypeNames`).
+  fixVersions compare **by name** (per-project versions).
+  **Hand-entered data is never lost**: every save reads the page, parses Deployment Steps + Notes (tables found by
+  header labels — Confluence strips `data-` attributes), merges, then writes; "Sync all" collects Notes across all
+  unreleased pages so an item's note moves with it. Released versions are never listed, so never touched.
+  **Drift**: the release-notes publisher overwrites the page body (unusable as-is); PI Review's version-conflict check
+  is private, so a small shared `services/confluenceVersionConflict.ts`. `SprintDashboardView.tsx` gets additive edits only.
+
 - **037-guided-epic-intake** — *(**IMPLEMENTED** on `feature/037-guided-epic-intake` — 62/64 tasks; T063 full gates +
   T064 PR remain; live-DENP quickstart V-01…V-14 is validated in production.)* Code: `client/src/views/PoTool/intake/`
   (33 test files). Build lessons: plain-text paste is kept on purpose — the shared rich-paste reader folds a nested

@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Release Doc tab on the Team Dashboard (GH #395).** One Confluence page per unreleased release, created beneath a
+  per-team parent page and titled by release date (**YYYYMMMDD**, e.g. `2026Oct14`).
+  - **Release items** — every Epic (wherever it lives: DASP, DENP, …) followed by the team project's children in that
+    release, with key, summary, type, status, assignee, a **Release check** flag and a hand-entered **Notes** column.
+  - **Release check** flags fixVersion misalignment by name: an Epic with no or another version, and an Epic's team
+    children sitting outside the release.
+  - **Deployment Steps** — a hand-entered table (PR, Repo, Workflow run, Branch, Job type, Application, Environment,
+    Repository, Tag, Task, Module, Log level); nothing is pulled from GitHub.
+  - **↻ Pull from Jira** / **📤 Save to Confluence** read the page first, so notes and deployment steps are never
+    lost; a clash with someone else's save re-reads and retries once.
+  - **⇅ Sync all releases** refreshes every unreleased release's page at once; an item that changed release moves to
+    its new page with its notes. Released and archived versions are never touched; a release with no date is reported.
+
 ### Changed
 - **After the first review, the risk-check loop only carries the open gaps (GH #395).** Re-sending the whole change
   and the whole fifty-field card every round was slow and unfocused.
