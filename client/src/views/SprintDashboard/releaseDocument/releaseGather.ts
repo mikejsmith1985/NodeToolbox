@@ -122,6 +122,11 @@ function toReleaseItem(issue: GatherIssue, featureLinkField: string): ReleaseIte
 
 // ── Jira queries ──
 
+/** A thrown value's message, for a warning. */
+function readErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 /** Splits keys into lookup-sized batches. */
 function chunkKeys(issueKeys: readonly string[]): string[][] {
   const chunks: string[][] = [];
@@ -154,29 +159,50 @@ async function searchSameNameEpics(
         `project = "${escapeJqlValue(projectKey)}" AND fixVersion = "${escapeJqlValue(input.versionName)}"`,
       ));
     } catch (searchError) {
-      const reason = searchError instanceof Error ? searchError.message : String(searchError);
-      warnings.push(`Could not search ${projectKey} for "${input.versionName}": ${reason}`);
+      warnings.push(`Could not search ${projectKey} for "${input.versionName}": ${readErrorMessage(searchError)}`);
     }
   }
   return { epics, warnings };
 }
 
-/** Every team-project child of the given Epics, through `parent` and the Epic Link field. */
+/** The team-project children of one batch of Epics, through `parent` and, when configured, the Epic Link field. */
+function buildEpicChildrenJql(teamProjectKey: string, keyList: string, epicLinkReference: string | null): string {
+  const linkClauses = [`parent in (${keyList})`, ...(epicLinkReference ? [`${epicLinkReference} in (${keyList})`] : [])];
+  return `project = "${escapeJqlValue(teamProjectKey)}" AND (${linkClauses.join(' OR ')})`;
+}
+
+/**
+ * Every team-project child of the given Epics. The configured Epic Link field may not exist on this Jira
+ * (Jira Cloud links Epics through `parent`, and a field it does not know makes it reject the whole query), so a
+ * rejected lookup is retried with `parent` alone. These children only feed the misalignment flags, so a lookup
+ * that still fails becomes a warning rather than failing the release.
+ */
 async function searchTeamChildrenOfEpics(
   input: ReleaseGatherInput,
   epicKeys: readonly string[],
   deps: ReleaseGatherDeps,
-): Promise<GatherIssue[]> {
+): Promise<{ children: GatherIssue[]; warnings: string[] }> {
   const epicLinkReference = toJqlCustomFieldReference(input.epicLinkFieldId);
   const children: GatherIssue[] = [];
+  const warnings: string[] = [];
   for (const keyChunk of chunkKeys(epicKeys)) {
     const keyList = keyChunk.join(', ');
-    const linkClauses = [`parent in (${keyList})`, ...(epicLinkReference ? [`${epicLinkReference} in (${keyList})`] : [])];
-    children.push(...await deps.searchAll(
-      `project = "${escapeJqlValue(input.teamProjectKey)}" AND (${linkClauses.join(' OR ')})`,
-    ));
+    try {
+      children.push(...await deps.searchAll(buildEpicChildrenJql(input.teamProjectKey, keyList, epicLinkReference)));
+      continue;
+    } catch (searchError) {
+      if (!epicLinkReference) {
+        warnings.push(`Could not check the Epics' other children for misalignment: ${readErrorMessage(searchError)}`);
+        continue;
+      }
+    }
+    try {
+      children.push(...await deps.searchAll(buildEpicChildrenJql(input.teamProjectKey, keyList, null)));
+    } catch (retryError) {
+      warnings.push(`Could not check the Epics' other children for misalignment: ${readErrorMessage(retryError)}`);
+    }
   }
-  return children;
+  return { children, warnings };
 }
 
 // ── Assembly ──
@@ -230,7 +256,10 @@ export async function gatherRelease(
   const releaseEpicKeys = [...epicIssueByKey.values()]
     .filter((epicIssue) => isInRelease(readFixVersionNames(epicIssue), input.versionName))
     .map((epicIssue) => epicIssue.key);
-  const epicChildren = releaseEpicKeys.length > 0 ? await searchTeamChildrenOfEpics(input, releaseEpicKeys, deps) : [];
+  const { children: epicChildren, warnings: childLookupWarnings } = releaseEpicKeys.length > 0
+    ? await searchTeamChildrenOfEpics(input, releaseEpicKeys, deps)
+    : { children: [], warnings: [] };
+  warnings.push(...childLookupWarnings);
 
   const groupsByKey = new Map<string | null, EpicGroup>();
   const ensureGroup = (epicKey: string | null): EpicGroup => {

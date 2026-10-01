@@ -150,6 +150,34 @@ describe('gatherRelease', () => {
     expect(groups.find((group) => group.epicKey === 'DASP-10')?.misalignments).toEqual([]);
   });
 
+  it('retries the Epic-children lookup with parent only when Jira rejects the Epic Link field', async () => {
+    const deps = buildDeps();
+    const answerSearch = vi.mocked(deps.searchAll).getMockImplementation()!;
+    deps.searchAll = vi.fn(async (jql: string) => {
+      if (jql.includes('cf[90002]')) throw new Error("400 — Field 'cf[90002]' does not exist or you do not have permission to view it.");
+      return answerSearch(jql);
+    });
+
+    const { groups, warnings } = await gatherRelease(BASE_INPUT, deps);
+
+    expect(groups.find((group) => group.epicKey === 'DENP-30')?.outsideItems.map((item) => item.key)).toEqual(['ENCUC-9']);
+    expect(warnings).toEqual([]);
+  });
+
+  it('keeps the release when the Epic-children lookup fails outright, with a warning', async () => {
+    const deps = buildDeps();
+    const answerSearch = vi.mocked(deps.searchAll).getMockImplementation()!;
+    deps.searchAll = vi.fn(async (jql: string) => {
+      if (jql.startsWith('project = "ENCUC" AND (')) throw new Error('Jira timed out');
+      return answerSearch(jql);
+    });
+
+    const { groups, warnings } = await gatherRelease(BASE_INPUT, deps);
+
+    expect(groups.find((group) => group.epicKey === 'DASP-10')?.items.map((item) => item.key)).toEqual(['ENCUC-1']);
+    expect(warnings).toEqual([expect.stringContaining('Jira timed out')]);
+  });
+
   it('orders Epic groups by key', async () => {
     const { groups } = await gatherRelease(BASE_INPUT, buildDeps());
 

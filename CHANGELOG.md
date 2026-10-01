@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Release Doc no longer fails when the Epic Link field does not exist on this Jira (GH #395).** Finding an Epic's
+  other children asked Jira about `cf[10014]`, which this instance does not have, and Jira rejected the whole query
+  ("Field 'cf[10014]' does not exist"). The lookup now retries with `parent` alone — how Jira Cloud links Epics — and
+  if it still fails the release loads with a warning, since that lookup only feeds the misalignment flags.
+
+### Fixed
 - **A Confluence page whose title is a number no longer breaks its link (GH #395).** Pasting
   `…/pages/461013017/2026` read the title `2026` as the page ID, so the Release Doc tab failed with
   "No content found with id: 2026". The ID straight after `/pages/` is now used; edit links such as
