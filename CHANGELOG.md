@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Modify Existing CHG now offers Save and the risk check on every step (GH #395).** Both lived only on step 5
+  (Review & Save), and fetching a change lands on step 2 — so it looked as if there was no way to save or check.
+  Steps 2–4 now carry **💾 Save Changes to ServiceNow** (with its result shown right there) and **🛡️ Risk check
+  CHG + CTASKs**, which opens the check on the review step.
+
 ### Added
 - **Risk-check an existing CHG together with all its CTASKs (GH #395).** Modify Existing CHG → Review & Save now has
   **🛡️ Risk check this change and its CTASKs**, so the check runs after the ticket is created and covers every task

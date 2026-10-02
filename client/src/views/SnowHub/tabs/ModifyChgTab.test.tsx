@@ -853,3 +853,47 @@ describe('ModifyChgTab - risk check of the change and its CTASKs (GH #395)', () 
     expect(screen.getByRole('button', { name: /Set CI to Recon Service on 1 task/ })).toBeInTheDocument();
   });
 });
+
+describe('ModifyChgTab - Save and risk check reachable from every step', () => {
+  let consoleLogSpy: ReturnType<typeof vi.spyOn>;
+  let fetchSpy: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    mockSnowFetch.mockReset();
+    fetchSpy = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: 'OK', text: async () => '' });
+    vi.stubGlobal('fetch', fetchSpy);
+    consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    consoleLogSpy.mockRestore();
+  });
+
+  async function loadChange(): Promise<ReturnType<typeof userEvent.setup>> {
+    const user = userEvent.setup();
+    mockSnowFetch.mockResolvedValue({ result: [MOCK_CHANGE_RECORD] });
+    render(<ModifyChgTab />);
+    await user.type(screen.getByLabelText(/Change Request number/i), 'chg0001234');
+    await user.click(screen.getAllByRole('button', { name: /Fetch Change/i })[1]);
+    await waitFor(() => expect(screen.getByDisplayValue('Update network infrastructure')).toBeInTheDocument());
+    return user;
+  }
+
+  it('saves straight from the Change Details step', async () => {
+    const user = await loadChange();
+
+    await user.click(screen.getByRole('button', { name: /Save Changes to ServiceNow/i }));
+
+    await waitFor(() => expect(fetchSpy).toHaveBeenCalledWith('/api/snow-relay/change/CHG0001234', expect.objectContaining({ method: 'PATCH' })));
+    expect(await screen.findByRole('status')).toHaveTextContent(/saved successfully/i);
+  });
+
+  it('opens the CHG + CTASK risk check from the Change Details step', async () => {
+    const user = await loadChange();
+
+    await user.click(screen.getByRole('button', { name: /Risk check CHG \+ CTASKs/i }));
+
+    expect(await screen.findByText('Risk check — this change and its CTASKs')).toBeInTheDocument();
+  });
+});

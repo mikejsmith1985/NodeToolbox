@@ -1500,6 +1500,32 @@ function ReviewSaveStep({ state, ctaskTemplates, onAddCtask, onRemoveCtask, onSa
 }
 
 /**
+ * Save and the CHG + CTASK risk check, on the editing steps. Both used to exist only on step 5, so someone
+ * editing details on step 2 saw no way to save or check at all; this bar puts them on every step once a change
+ * is loaded. Step 5 keeps its own Save, so the bar is not shown there.
+ */
+function ChangeActionBar({ state, onSaveClick, onOpenRiskCheck }: {
+  state: ModifyChgState;
+  onSaveClick: () => void;
+  onOpenRiskCheck: () => void;
+}) {
+  return (
+    <div className={styles.clonePanel}>
+      <div className={styles.buttonRow}>
+        <button className={styles.primaryButton} disabled={state.isSaving} onClick={onSaveClick} type="button">
+          {state.isSaving ? 'Saving…' : '💾 Save Changes to ServiceNow'}
+        </button>
+        <button className={styles.secondaryButton} onClick={onOpenRiskCheck} type="button">
+          🛡️ Risk check CHG + CTASKs
+        </button>
+      </div>
+      {state.saveError && <p className={styles.errorText} role="alert">{state.saveError}</p>}
+      {state.saveSuccess && <p className={styles.successText} role="status">{state.saveSuccess}</p>}
+    </div>
+  );
+}
+
+/**
  * ModifyChgTab — Modify existing ServiceNow Changes using a 5-step wizard.
  */
 export default function ModifyChgTab(): React.ReactElement {
@@ -1810,6 +1836,17 @@ export default function ModifyChgTab(): React.ReactElement {
             </button>
           </div>
         </div>
+      )}
+
+      {modifyState.change && modifyState.currentStep >= 2 && modifyState.currentStep <= 4 && (
+        <ChangeActionBar
+          onOpenRiskCheck={() => {
+            setIsRiskCheckOpen(true);
+            handleStepSelect(5);
+          }}
+          onSaveClick={() => void handleSaveChange()}
+          state={modifyState}
+        />
       )}
 
       {modifyState.isRebuildConfirmationOpen && (
