@@ -706,7 +706,7 @@ function createInitialCrgState(storageKey: string): CrgState {
  * With sysparm_display_value=all, SNow wraps all fields as { value, display_value }.
  * Text fields use display_value; choice fields also use display_value for the label.
  */
-function extractStringValue(field: unknown): string {
+export function extractStringValue(field: unknown): string {
   if (!field) return EMPTY_VALUE;
   if (typeof field === 'string') return field;
   if (typeof field === 'object' && field !== null) {
@@ -721,7 +721,7 @@ function extractStringValue(field: unknown): string {
  * Extracts the stored SNow value for choice fields. Choice dropdowns submit the internal
  * value (not the display label), so cloned CHGs must populate state with the same value.
  */
-function extractChoiceValue(field: unknown): string {
+export function extractChoiceValue(field: unknown): string {
   if (!field) return EMPTY_VALUE;
   if (typeof field === 'string') return field;
   if (typeof field === 'object' && field !== null) {
@@ -740,7 +740,7 @@ function extractChoiceValue(field: unknown): string {
  * SNow returns { value: sys_id, display_value: displayName } for reference fields
  * when sysparm_display_value=all is included in the request.
  */
-function extractSnowReference(field: unknown): SnowReference {
+export function extractSnowReference(field: unknown): SnowReference {
   if (typeof field === 'string') {
     return { sysId: EMPTY_VALUE, displayName: field };
   }

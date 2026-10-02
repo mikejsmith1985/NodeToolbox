@@ -22,6 +22,19 @@ export interface ChgPromptContext {
   changeTaskLines: readonly string[];
 }
 
+/**
+ * More of the record for a prompt to cover — a change's tasks, when an existing change is checked with them.
+ * Each risk-check builder takes one optionally; left out, the prompt is exactly the change-only prompt.
+ */
+export interface ExtraPromptPart {
+  /** What the assistant is shown: the extra records and the rule they are judged by. */
+  contextLines: readonly string[];
+  /** Extra gaps for a fix or re-check round to work on. */
+  gapLines?: readonly string[];
+  /** Extra reply lines or markers the assistant must answer with. */
+  replyLines: readonly string[];
+}
+
 /** How every release moves to production. The Test Plan must be written against this path. */
 export const DELIVERY_PATH_STEPS: readonly string[] = [
   '1. First, deploy to Dev and test there.',

@@ -6,7 +6,7 @@
 // direct reply that assistants do not cut off.
 
 import { CODE_BLOCK_REPLY_INSTRUCTION } from './assistantReplyText.ts';
-import { buildChgContextText, type ChgPromptContext } from './chgPromptContext.ts';
+import { buildChgContextText, type ChgPromptContext, type ExtraPromptPart } from './chgPromptContext.ts';
 import type { ChgTextFieldValues } from './chgRiskCheckPrompt.ts';
 import {
   CHG_TEXT_FIELD_LABELS,
@@ -51,33 +51,36 @@ function renderFieldRules(fieldKeys: readonly ChgTextFieldKey[]): string {
 
 /**
  * The rewrite round: the record facts, only the fields the gaps live in, the gaps, those fields' card rules,
- * and a reply format of whole rewritten fields in the same markers the drafting prompt uses.
+ * and a reply format of whole rewritten fields in the same markers the drafting prompt uses. An extra part
+ * (the change's tasks) adds its records, gaps and markers; with no change gaps beside it, no change field is
+ * offered at all — a task-only round must not invite a rewrite of the change.
  */
 export function buildChgGapFixPrompt(
   context: ChgPromptContext,
   fieldValues: ChgTextFieldValues,
   gapFindings: readonly RiskCheckFinding[],
+  extraPart?: ExtraPromptPart,
 ): string {
-  const fixableFieldKeys = resolveFixableFields(gapFindings);
+  const fixableFieldKeys = gapFindings.length === 0 && extraPart ? [] : resolveFixableFields(gapFindings);
+  const hasChangeFields = fixableFieldKeys.length > 0;
   return [
     'You are fixing a ServiceNow Change Request so it passes the Release Manager\'s Change Request Formula Card review.',
     'A review of the change found the gaps listed below. Rewrite the change\'s text fields to close every gap you '
       + 'can from the information here.',
     '',
     buildChgContextText(context),
-    '',
-    'The fields to fix, as they now read:',
-    renderSelectedChangeText(fieldValues, fixableFieldKeys),
+    ...(hasChangeFields ? ['', 'The fields to fix, as they now read:', renderSelectedChangeText(fieldValues, fixableFieldKeys)] : []),
+    ...(extraPart ? ['', ...extraPart.contextLines] : []),
     '',
     'Gaps to close:',
     ...gapFindings.map((finding) => renderGapLine(finding)),
-    '',
-    'Formula Card rules for these fields:',
-    renderFieldRules(fixableFieldKeys),
+    ...(extraPart?.gapLines ?? []),
+    ...(hasChangeFields ? ['', 'Formula Card rules for these fields:', renderFieldRules(fixableFieldKeys)] : []),
     '',
     'Reply with the complete rewritten text of each field you changed, using these markers in this order, and '
       + 'leave out any field you did not change:',
     ...FIELD_MARKERS.filter(({ fieldKey }) => fixableFieldKeys.includes(fieldKey)).map(({ marker }) => `${marker}:`),
+    ...(extraPart?.replyLines ?? []),
     'Each is the whole field as it should now read, not just the added sentence. Keep every correct fact already '
       + 'in it. A gap in a record field (configuration item, category, assignment group, owner, dates) cannot be '
       + 'fixed in text — skip it. Where the fix needs a fact you do not have, write [CONFIRM: <what is needed>].',

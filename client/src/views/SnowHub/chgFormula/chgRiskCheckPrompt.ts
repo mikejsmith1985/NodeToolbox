@@ -11,7 +11,7 @@ import {
   restoreMarkerLineBreaks,
   stripCodeFences,
 } from './assistantReplyText.ts';
-import { buildChgContextText, type ChgPromptContext } from './chgPromptContext.ts';
+import { buildChgContextText, type ChgPromptContext, type ExtraPromptPart } from './chgPromptContext.ts';
 import {
   CHG_TEXT_FIELD_LABELS,
   renderFormulaCardChecklist,
@@ -94,9 +94,14 @@ export function splitRiskCheckReply(replyText: string): RiskCheckReplyParts {
 
 /**
  * The whole pre-approval check as one prompt: the record facts and delivery path, all seven text fields,
- * then the Formula Card checklist and the reply format.
+ * then the Formula Card checklist and the reply format. An extra part (the change's tasks) adds its records
+ * after the change and its reply lines after the format.
  */
-export function buildChgRiskCheckPrompt(context: ChgPromptContext, fieldValues: ChgTextFieldValues): string {
+export function buildChgRiskCheckPrompt(
+  context: ChgPromptContext,
+  fieldValues: ChgTextFieldValues,
+  extraPart?: ExtraPromptPart,
+): string {
   return [
     'You are a Release Manager reviewing a ServiceNow Change Request before it enters approval.',
     'Review it strictly against the Change Request Formula Card below. Apply each reviewer test literally; '
@@ -106,11 +111,13 @@ export function buildChgRiskCheckPrompt(context: ChgPromptContext, fieldValues: 
     '',
     'The change as written:',
     renderChangeText(fieldValues),
+    ...(extraPart ? ['', ...extraPart.contextLines] : []),
     '',
     'Change Request Formula Card:',
     renderFormulaCardChecklist(),
     '',
     ...REPLY_FORMAT_LINES,
+    ...(extraPart ? extraPart.replyLines : []),
     '',
     CODE_BLOCK_REPLY_INSTRUCTION,
   ].join('\n');

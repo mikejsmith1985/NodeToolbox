@@ -7,7 +7,7 @@
 // pass that would catch anything a rewrite newly broke.
 
 import { CODE_BLOCK_REPLY_INSTRUCTION } from './assistantReplyText.ts';
-import { buildChgContextText, type ChgPromptContext } from './chgPromptContext.ts';
+import { buildChgContextText, type ChgPromptContext, type ExtraPromptPart } from './chgPromptContext.ts';
 import {
   CHG_TEXT_FIELD_FORMULA_FIELDS,
   CHG_TEXT_FIELD_LABELS,
@@ -104,6 +104,7 @@ export function buildGapRecheckPrompt(
   context: ChgPromptContext,
   fieldValues: ChgTextFieldValues,
   gapFindings: readonly RiskCheckFinding[],
+  extraPart?: ExtraPromptPart,
 ): string {
   const gapFieldKeys = resolveGapTextFields(gapFindings);
   return [
@@ -114,9 +115,11 @@ export function buildGapRecheckPrompt(
     '',
     gapFieldKeys.length > 0 ? 'The fields these gaps live in, as they now read:' : '',
     gapFieldKeys.length > 0 ? renderSelectedChangeText(fieldValues, gapFieldKeys) : '',
+    ...(extraPart ? ['', ...extraPart.contextLines] : []),
     '',
     'Gaps to re-check:',
     ...gapFindings.map((finding) => renderGapWithRule(finding)),
+    ...(extraPart?.gapLines ?? []),
     '',
     'Reply with exactly one line per gap above, using its exact name, each starting with one of:',
     'PASS | <name> — <why it now meets the minimum acceptable>',
@@ -137,14 +140,24 @@ function renderFindingLine(finding: RiskCheckFinding): string {
 }
 
 /** True for a finding that still needs work: an open gap or a failed quality-gate question. */
-function isStillOpen(finding: RiskCheckFinding): boolean {
+export function isOpenFinding(finding: RiskCheckFinding): boolean {
   return finding.status === 'GAP' || finding.status === 'NO';
+}
+
+/**
+ * A set of findings as review text, with the verdict counted from what is still open — the one place a
+ * verdict is recalculated, so every way of combining reviews agrees on it.
+ */
+export function renderReviewText(findings: readonly RiskCheckFinding[]): string {
+  const openCount = findings.filter((finding) => isOpenFinding(finding)).length;
+  const verdictLine = openCount === 0 ? 'VERDICT: READY FOR APPROVAL' : `VERDICT: NOT READY — ${openCount} gap(s).`;
+  return [...findings.map((finding) => renderFindingLine(finding)), verdictLine].join('\n');
 }
 
 /** How a re-check went: how many of the gaps it judged are now closed, and how many are still open. */
 export function countRecheckOutcome(recheckReplyText: string): { closedCount: number; stillOpenCount: number } {
   const recheckFindings = parseRiskCheckReview(recheckReplyText).findings;
-  const stillOpenCount = recheckFindings.filter((finding) => isStillOpen(finding)).length;
+  const stillOpenCount = recheckFindings.filter((finding) => isOpenFinding(finding)).length;
   return { closedCount: recheckFindings.length - stillOpenCount, stillOpenCount };
 }
 
@@ -159,7 +172,5 @@ export function mergeRecheckIntoReview(previousReviewText: string, recheckReplyT
   const mergedFindings = previousReview.findings.map((previousFinding) =>
     recheckFindings.find((recheckFinding) => normaliseName(recheckFinding.field) === normaliseName(previousFinding.field))
       ?? previousFinding);
-  const openCount = mergedFindings.filter((finding) => isStillOpen(finding)).length;
-  const verdictLine = openCount === 0 ? 'VERDICT: READY FOR APPROVAL' : `VERDICT: NOT READY — ${openCount} gap(s).`;
-  return [...mergedFindings.map((finding) => renderFindingLine(finding)), verdictLine].join('\n');
+  return renderReviewText(mergedFindings);
 }

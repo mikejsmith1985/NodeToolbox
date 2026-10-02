@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Risk-check an existing CHG together with all its CTASKs (GH #395).** Modify Existing CHG → Review & Save now has
+  **🛡️ Risk check this change and its CTASKs**, so the check runs after the ticket is created and covers every task
+  in one pass.
+  - Two CTASK rules: every task's **configuration item must be the change's**, and every **implementation** task needs
+    a **detailed backout plan** (trigger, steps, who, how long, how the restore is verified).
+  - The CI rule is checked by Toolbox itself — no AI needed — and **Set CI to … on N tasks** fixes them in ServiceNow.
+  - **Risk check CHG + CTASKs with AI Assist** sends one prompt for the change and every task; the review shows the
+    change's gaps and each task's (`CTASK0012345 · Backout plan`) together.
+  - **Fix these gaps** rewrites the change fields (into the form, saved with the change) and each task's backout plan
+    (staged, then **Write N CTASK fixes to ServiceNow**). **Check again** re-reads the tasks and re-checks only what is open.
+  - A task's backout plan is written to the instance's own backout field when the change task has one, otherwise to a
+    marked **Backout plan** section of its description.
+- The copy-out / paste-back AI Assist modal is now one shared component used by both Create CHG and Modify CHG.
+
 ### Fixed
 - **Release Doc no longer fails when the Epic Link field does not exist on this Jira (GH #395).** Finding an Epic's
   other children asked Jira about `cf[10014]`, which this instance does not have, and Jira rejected the whole query

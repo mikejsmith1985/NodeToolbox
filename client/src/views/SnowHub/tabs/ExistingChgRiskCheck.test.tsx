@@ -1,0 +1,118 @@
+// ExistingChgRiskCheck.test.tsx — Risk-checking an existing CHG and its CTASKs in one pass, and fixing both (GH #395).
+
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { fetchReviewedCtasks, saveCtaskFix } from '../chgFormula/ctaskReviewApi.ts';
+import type { ReviewedCtask } from '../chgFormula/ctaskReviewRecord.ts';
+import { useAiAssist } from '../hooks/useAiAssist.ts';
+import { ExistingChgRiskCheck } from './ExistingChgRiskCheck.tsx';
+
+vi.mock('../chgFormula/ctaskReviewApi.ts', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../chgFormula/ctaskReviewApi.ts')>()),
+  fetchReviewedCtasks: vi.fn(),
+  saveCtaskFix: vi.fn(),
+}));
+vi.mock('../hooks/useAiAssist.ts', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../hooks/useAiAssist.ts')>()),
+  useAiAssist: vi.fn(),
+}));
+
+const CHANGE_CI = { sysId: 'ci-recon', displayName: 'Recon Service' };
+const FIELD_VALUES = {
+  shortDescription: 'Recon | deploy v1.5 | REL',
+  description: 'Deploys v1.5.',
+  justification: 'Fixes LIS mismatch.',
+  riskImpact: 'Low.',
+  implementationPlan: 'Run pipeline.',
+  testPlan: 'Smoke test.',
+  backoutPlan: 'Redeploy v1.4.',
+};
+
+const MISALIGNED_TASK: ReviewedCtask = {
+  sysId: 'task-1',
+  number: 'CTASK0012345',
+  shortDescription: 'Deploy recon service',
+  description: 'Run the pipeline.',
+  typeLabel: 'Implementation',
+  isImplementation: true,
+  configItem: { sysId: 'ci-other', displayName: 'Billing' },
+  backoutPlan: 'Revert.',
+  backoutFieldName: 'u_backout_plan',
+};
+
+function renderPanel(onApplyChangeFields = vi.fn(() => 1)) {
+  render(
+    <ExistingChgRiskCheck
+      changeConfigItem={CHANGE_CI}
+      changeSysId="chg-1"
+      fieldValues={FIELD_VALUES}
+      onApplyChangeFields={onApplyChangeFields}
+      promptContext={{
+        categoryLabel: 'Software', changeTypeLabel: 'Normal', isExpedited: false, configItemLabel: 'Recon Service',
+        assignmentGroupLabel: 'Cleanup Crew', changeOwnerLabel: 'Smith, Mike', environmentLines: [], assessmentLines: [],
+        changeTaskLines: [],
+      }}
+    />,
+  );
+  return onApplyChangeFields;
+}
+
+/** Opens the AI round behind a button, pastes a reply into the modal and uses it. */
+function pasteReply(buttonName: RegExp, replyText: string, useButtonName: RegExp) {
+  fireEvent.click(screen.getByRole('button', { name: buttonName }));
+  fireEvent.change(screen.getByLabelText(/Paste the assistant/), { target: { value: replyText } });
+  fireEvent.click(screen.getByRole('button', { name: useButtonName }));
+  fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+}
+
+describe('ExistingChgRiskCheck', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(fetchReviewedCtasks).mockResolvedValue([MISALIGNED_TASK]);
+    vi.mocked(saveCtaskFix).mockResolvedValue(undefined);
+    vi.mocked(useAiAssist).mockReturnValue({ isUnlocked: true } as ReturnType<typeof useAiAssist>);
+  });
+
+  it('reads the change\'s tasks and flags a task on another CI, with no AI needed', async () => {
+    vi.mocked(useAiAssist).mockReturnValue({ isUnlocked: false } as ReturnType<typeof useAiAssist>);
+    renderPanel();
+
+    expect(await screen.findByText(/CTASK0012345 · Configuration item/)).toBeInTheDocument();
+    expect(fetchReviewedCtasks).toHaveBeenCalledWith('chg-1');
+    expect(screen.queryByRole('button', { name: /Risk check CHG \+ CTASKs/ })).not.toBeInTheDocument();
+  });
+
+  it('sets a misaligned task\'s CI to the change\'s in ServiceNow, then reads the tasks again', async () => {
+    renderPanel();
+
+    fireEvent.click(await screen.findByRole('button', { name: /Set CI to Recon Service on 1 task/ }));
+
+    await waitFor(() => expect(saveCtaskFix).toHaveBeenCalledWith(MISALIGNED_TASK, { configItemSysId: 'ci-recon' }));
+    await waitFor(() => expect(fetchReviewedCtasks).toHaveBeenCalledTimes(2));
+  });
+
+  it('checks the change and its tasks in one prompt and shows one review with the CI rule folded in', async () => {
+    renderPanel();
+    await screen.findByText(/CTASK0012345 · Configuration item/);
+
+    fireEvent.click(screen.getByRole('button', { name: /Risk check CHG \+ CTASKs/ }));
+    expect(screen.getByDisplayValue(/CTASK0012345 — Deploy recon service/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    pasteReply(/Risk check CHG \+ CTASKs/, 'PASS | Backout Plan — clear.\nGAP | CTASK0012345 · Backout plan — only says Revert. — Fix: name the steps.\nVERDICT: NOT READY — 1 gap(s).', /Use this review/);
+
+    expect(await screen.findByText(/NOT READY — 2 gap/)).toBeInTheDocument();
+  });
+
+  it('applies a fix round to the change fields and stages the task\'s new backout plan to write', async () => {
+    const onApplyChangeFields = renderPanel();
+    await screen.findByText(/CTASK0012345 · Configuration item/);
+    pasteReply(/Risk check CHG \+ CTASKs/, 'GAP | Backout Plan — no timing. — Fix: add timing.\nGAP | CTASK0012345 · Backout plan — only says Revert.\nVERDICT: NOT READY — 2 gap(s).', /Use this review/);
+
+    pasteReply(/Fix these gaps/, 'BACKOUT_PLAN:\nRedeploy v1.4 within 15 minutes.\nCTASK0012345_BACKOUT_PLAN:\n1. Stop the job.\n2. Redeploy v1.4.', /Apply/);
+
+    expect(onApplyChangeFields).toHaveBeenCalledWith({ backoutPlan: 'Redeploy v1.4 within 15 minutes.' });
+    fireEvent.click(await screen.findByRole('button', { name: /Write 1 CTASK fix to ServiceNow/ }));
+    await waitFor(() => expect(saveCtaskFix).toHaveBeenCalledWith(MISALIGNED_TASK, { backoutPlan: '1. Stop the job.\n2. Redeploy v1.4.' }));
+  });
+});

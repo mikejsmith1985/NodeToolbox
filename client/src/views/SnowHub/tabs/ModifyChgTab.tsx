@@ -3,11 +3,15 @@
 // Steps 2-4: Edit change details, planning, and environments
 // Step 5: Review, add CTASKs via templates, and save
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 
 import { snowFetch } from '../../../services/snowApi.ts';
 import { normalizeRichTextToPlainText } from '../../../utils/richTextPlainText.ts';
 import { SnowLookupField } from '../components/SnowLookupField.tsx';
+import type { ChgPromptContext } from '../chgFormula/chgPromptContext.ts';
+import type { ChgTextFieldValues } from '../chgFormula/chgRiskCheckPrompt.ts';
+import type { ChgTextFieldKey } from '../chgFormula/formulaCard.ts';
+import { ExistingChgRiskCheck } from './ExistingChgRiskCheck.tsx';
 import CreateChgTab from './CreateChgTab.tsx';
 import type {
   ChgBasicInfo,
@@ -433,6 +437,70 @@ function readRebuildBlockedWarning(loadedChange: EditableChange | null): string 
 
   return `${loadedChange?.number} is ${loadedChange?.stateLabel} and is no longer editable — `
     + 'ServiceNow will most likely refuse a rebuild. Check the change before spending the effort.';
+}
+
+// ── Risk check of the change and its CTASKs (GH #395) ──
+
+/** Where each drafted text field lives on the loaded change, so an AI fix round can write it into the form. */
+const CHANGE_TEXT_FIELD_PATHS: Readonly<Record<ChgTextFieldKey, string>> = {
+  shortDescription: 'shortDescription',
+  description: 'description',
+  justification: 'justification',
+  riskImpact: 'riskImpactAnalysis',
+  implementationPlan: 'chgPlanningContent.implementationPlan',
+  testPlan: 'chgPlanningContent.testPlan',
+  backoutPlan: 'chgPlanningContent.backoutPlan',
+};
+
+/** The seven drafted text fields as the loaded change holds them. */
+function readChangeTextFields(change: EditableChange): ChgTextFieldValues {
+  return {
+    shortDescription: change.shortDescription,
+    description: change.description,
+    justification: change.justification,
+    riskImpact: change.riskImpactAnalysis,
+    implementationPlan: change.chgPlanningContent.implementationPlan,
+    testPlan: change.chgPlanningContent.testPlan,
+    backoutPlan: change.chgPlanningContent.backoutPlan,
+  };
+}
+
+/** The CI the change is saved with — its enabled environment's, else the record's own (the save route's rule). */
+function readChangeConfigItem(change: EditableChange): SnowReference {
+  const enabledEnvironment = ENVIRONMENT_ROW_DEFINITIONS
+    .map((environmentRow) => change[environmentRow.stateKey])
+    .find((environmentState) => environmentState.isEnabled && (environmentState.configItem.sysId || environmentState.configItem.displayName));
+  return enabledEnvironment?.configItem ?? change.chgBasicInfo.configItem;
+}
+
+/** A stored choice value as its form label, falling back to the value itself. */
+function readChoiceLabel(choiceOptions: SnowChoiceOptionMap, fieldName: string, storedValue: string): string {
+  return (choiceOptions[fieldName] ?? []).find((option) => option.value === storedValue)?.label ?? storedValue;
+}
+
+/** The loaded change's record facts as the risk-check prompts read them; task lines are added by the check. */
+function buildPromptContextFromChange(change: EditableChange, choiceOptions: SnowChoiceOptionMap): ChgPromptContext {
+  const basicInfo = change.chgBasicInfo;
+  return {
+    categoryLabel: readChoiceLabel(choiceOptions, 'category', basicInfo.category),
+    changeTypeLabel: readChoiceLabel(choiceOptions, 'type', basicInfo.changeType),
+    isExpedited: basicInfo.isExpedited,
+    configItemLabel: readChangeConfigItem(change).displayName,
+    assignmentGroupLabel: basicInfo.assignmentGroup.displayName,
+    changeOwnerLabel: basicInfo.assignedTo.displayName,
+    environmentLines: ENVIRONMENT_ROW_DEFINITIONS
+      .filter((environmentRow) => change[environmentRow.stateKey].isEnabled)
+      .map((environmentRow) => {
+        const environmentState = change[environmentRow.stateKey];
+        return `${environmentRow.label}: Enabled — ${environmentState.plannedStartDate || '(no start)'} → `
+          + `${environmentState.plannedEndDate || '(no end)'} — Config Item: ${environmentState.configItem.displayName || '(not set)'}`;
+      }),
+    assessmentLines: PLANNING_ASSESSMENT_ROWS
+      .filter((assessmentRow) => change.chgPlanningAssessment[assessmentRow.fieldKey].trim() !== '')
+      .map((assessmentRow) => `${assessmentRow.label}: ${readChoiceLabel(
+        choiceOptions, assessmentRow.snowFieldName, change.chgPlanningAssessment[assessmentRow.fieldKey])}`),
+    changeTaskLines: [],
+  };
 }
 
 function mapServiceNowChangeRecord(changeRecord: ServiceNowChangeRecord): EditableChange {
@@ -1455,6 +1523,9 @@ export default function ModifyChgTab(): React.ReactElement {
     rebuildTargetNumber: null,
   });
 
+  // Whether the CHG + CTASK risk check is showing on the review step; it is opened on request only.
+  const [isRiskCheckOpen, setIsRiskCheckOpen] = useState(false);
+
   const handleChangeKeyChange = useCallback((key: string) => {
     setModifyState((prev) => ({ ...prev, changeKey: key, fetchError: null }));
   }, []);
@@ -1675,6 +1746,22 @@ export default function ModifyChgTab(): React.ReactElement {
     }
   }, []);
 
+  // The risk check reads these on every render; memoising keeps its rule findings from being recomputed needlessly.
+  const loadedChange = modifyState.change;
+  const riskCheckPromptContext = useMemo(
+    () => (loadedChange ? buildPromptContextFromChange(loadedChange, choiceOptions) : null),
+    [loadedChange, choiceOptions],
+  );
+  const riskCheckFieldValues = useMemo(() => (loadedChange ? readChangeTextFields(loadedChange) : null), [loadedChange]);
+  const riskCheckConfigItem = useMemo(() => (loadedChange ? readChangeConfigItem(loadedChange) : null), [loadedChange]);
+
+  // An AI fix round's rewritten change fields go straight into this form; Save writes them with the change.
+  const handleApplyChangeFields = useCallback((fields: Partial<Record<ChgTextFieldKey, string>>): number => {
+    const fieldEntries = Object.entries(fields) as Array<[ChgTextFieldKey, string]>;
+    fieldEntries.forEach(([fieldKey, fieldText]) => handleFieldChange(CHANGE_TEXT_FIELD_PATHS[fieldKey], fieldText));
+    return fieldEntries.length;
+  }, [handleFieldChange]);
+
   const rebuildBlockedWarning = readRebuildBlockedWarning(modifyState.change);
 
   // A confirmed rebuild replaces this tab's body with the change builder, bound to the loaded
@@ -1815,6 +1902,26 @@ export default function ModifyChgTab(): React.ReactElement {
 
       {modifyState.currentStep === 5 && (
         <>
+          {/* Opt-in: the check reads every CTASK from ServiceNow, so it runs only when asked for. It sits
+              above Save because change-field fixes land in this form and are written by that Save. */}
+          {loadedChange?.sysId && riskCheckPromptContext && riskCheckFieldValues && riskCheckConfigItem ? (
+            isRiskCheckOpen ? (
+              <ExistingChgRiskCheck
+                changeConfigItem={riskCheckConfigItem}
+                changeSysId={loadedChange.sysId}
+                fieldValues={riskCheckFieldValues}
+                key={loadedChange.sysId}
+                onApplyChangeFields={handleApplyChangeFields}
+                promptContext={riskCheckPromptContext}
+              />
+            ) : (
+              <div className={styles.buttonRow}>
+                <button className={styles.secondaryButton} onClick={() => setIsRiskCheckOpen(true)} type="button">
+                  🛡️ Risk check this change and its CTASKs
+                </button>
+              </div>
+            )
+          ) : null}
           <ReviewSaveStep
             state={modifyState}
             ctaskTemplates={ctaskTemplates.templates}

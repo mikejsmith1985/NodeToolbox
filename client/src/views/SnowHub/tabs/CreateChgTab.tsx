@@ -28,8 +28,8 @@ import { parseRiskCheckReview } from '../chgFormula/riskCheckReview.ts';
 import { buildChgContextText, type ChgPromptContext } from '../chgFormula/chgPromptContext.ts';
 import { buildChgRiskCheckPrompt, splitRiskCheckReply } from '../chgFormula/chgRiskCheckPrompt.ts';
 import { renderFormulaGuidanceForField } from '../chgFormula/formulaCard.ts';
+import { AiAssistPromptModal, type AiAssistPromptSession } from './AiAssistPromptModal.tsx';
 import { RiskCheckReviewPanel } from './RiskCheckReviewPanel.tsx';
-import { useCopyFeedback } from '../../../hooks/useCopyFeedback.ts';
 import type { SnowChoiceOptionMap } from '../hooks/useSnowChoiceOptions.ts';
 import { useSnowChoiceOptions } from '../hooks/useSnowChoiceOptions.ts';
 import {
@@ -43,8 +43,6 @@ import { CtaskEditForm } from '../components/CtaskEditForm.tsx';
 import { SnowLookupField } from '../components/SnowLookupField.tsx';
 import {
   AiAssistIcon,
-  CheckIcon,
-  ClipboardIcon,
   PinIcon,
   WarningIcon,
 } from '../../../components/AppIcons/index.tsx';
@@ -2590,22 +2588,6 @@ export interface CrgTabProps {
   targetChangeNumber?: string;
 }
 
-/**
- * A copy-out / paste-back round trip shown in the shared prompt modal. Each AI Assist
- * affordance (Enhance, Draft, Risk check) opens a session carrying its own instructions,
- * prompt text, and reply handling, so one modal serves all three without any automated exchange.
- */
-interface AiAssistPromptSession {
-  /** Sentence shown above the prompt telling the user what this round trip produces. */
-  instructions: string;
-  /** The prompt text the user copies into their assistant. */
-  promptText: string;
-  /** Label for the button that consumes the pasted reply. */
-  applyButtonLabel: string;
-  /** Consumes the pasted reply. Returns the status to show and whether the reply was used. */
-  applyReply: (replyText: string) => { statusMessage: string; wasApplied: boolean };
-}
-
 // The CHG fields each prompt round trip is allowed to fill: the Planning "Enhance" prompt
 // asks for all seven (the three plans included — GH #395), while the Step 3 draft prompt asks only for
 // the first two — a reply carrying extra markers must not overwrite fields its prompt never requested.
@@ -2691,12 +2673,6 @@ export default function CrgTab({ mode = 'wizard', targetChangeNumber }: CrgTabPr
 
   // Prompt modal state — the active copy-out / paste-back session, or null when closed.
   const [aiAssistPromptSession, setAiAssistPromptSession] = useState<AiAssistPromptSession | null>(null);
-  // Paste-back state — the assistant's reply the user pastes into the modal, plus the
-  // outcome message shown after the reply is consumed.
-  const [aiAssistReplyText, setAiAssistReplyText] = useState<string>('');
-  const [aiAssistApplyStatus, setAiAssistApplyStatus] = useState<string | null>(null);
-  // The "Copied!" confirmation for the prompt modal's copy button.
-  const { hasCopied: hasCopiedPrompt, confirmCopy: confirmPromptCopy } = useCopyFeedback();
   // The pasted pre-submission risk review, displayed on the Results step.
   const [riskCheckReviewText, setRiskCheckReviewText] = useState<string | null>(null);
   // Set once the fields change after the review was taken (by its own corrections or by the fix round), so
@@ -2967,17 +2943,6 @@ export default function CrgTab({ mode = 'wizard', targetChangeNumber }: CrgTabPr
     });
   }, [state, riskCheckReviewText, handleOpenRiskCheckPrompt, setAiAssistPromptSession, setRiskCheckReviewText, setIsRiskReviewOutOfDate]);
 
-  // Consumes the pasted reply through the active session and reports the outcome.
-  const handleApplyAiAssistReply = useCallback(() => {
-    if (!aiAssistPromptSession) return;
-    const applyOutcome = aiAssistPromptSession.applyReply(aiAssistReplyText);
-    setAiAssistApplyStatus(applyOutcome.statusMessage);
-    // Clear a successfully-consumed reply so a second paste starts clean.
-    if (applyOutcome.wasApplied) {
-      setAiAssistReplyText('');
-    }
-  }, [aiAssistPromptSession, aiAssistReplyText, setAiAssistApplyStatus, setAiAssistReplyText]);
-
   const planningExtras: PlanningStepExtras = {
     isAiAssistUnlocked:    isUnlocked,
     onEnhanceWithAiAssist: handleEnhanceWithAiAssist,
@@ -3098,60 +3063,11 @@ export default function CrgTab({ mode = 'wizard', targetChangeNumber }: CrgTabPr
       {/* Prompt modal — copy-out / paste-back round trip: copy the active session's prompt
           into the user's assistant, then paste the reply back to be consumed by the session. */}
       {aiAssistPromptSession !== null ? (
-        <div className={styles.passphraseOverlay}>
-          <div className={styles.promptModal}>
-            <p className={styles.promptInstructions}>{aiAssistPromptSession.instructions}</p>
-            <textarea
-              className={styles.promptTextArea}
-              readOnly
-              value={aiAssistPromptSession.promptText}
-            />
-            <div className={styles.promptActions}>
-              <button
-                className={styles.aiAssistButton}
-                onClick={() => confirmPromptCopy(aiAssistPromptSession.promptText)}
-                type="button"
-              >
-                {hasCopiedPrompt
-                  ? <><CheckIcon /> Copied!</>
-                  : <><ClipboardIcon /> Copy to Clipboard</>}
-              </button>
-              <button
-                className={styles.linkButton}
-                onClick={() => {
-                  setAiAssistPromptSession(null);
-                  setAiAssistReplyText('');
-                  setAiAssistApplyStatus(null);
-                }}
-                type="button"
-              >
-                Close
-              </button>
-            </div>
-            <label className={styles.promptInstructions} htmlFor="crg-ai-assist-reply">
-              Paste the assistant&apos;s reply here
-            </label>
-            <textarea
-              className={styles.promptTextArea}
-              id="crg-ai-assist-reply"
-              onChange={(changeEvent) => setAiAssistReplyText(changeEvent.target.value)}
-              value={aiAssistReplyText}
-            />
-            <div className={styles.promptActions}>
-              <button
-                className={styles.aiAssistButton}
-                disabled={aiAssistReplyText.trim() === ''}
-                onClick={handleApplyAiAssistReply}
-                type="button"
-              >
-                <CheckIcon /> {aiAssistPromptSession.applyButtonLabel}
-              </button>
-            </div>
-            {aiAssistApplyStatus !== null ? (
-              <p className={styles.promptInstructions} role="status">{aiAssistApplyStatus}</p>
-            ) : null}
-          </div>
-        </div>
+        <AiAssistPromptModal
+          key={aiAssistPromptSession.promptText}
+          onClose={() => setAiAssistPromptSession(null)}
+          session={aiAssistPromptSession}
+        />
       ) : null}
     </div>
   );
