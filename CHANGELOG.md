@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **A PI Review page with no table now offers to start one right where it says so (GH #413).** On a page whose
+  contents were cleared, **Edit PI Review** is unavailable and the only way forward sat in a card far below the
+  capacity panels, so editing looked broken for that team. **Start a PI Review table here** now sits beside the
+  message and opens a fresh table for editing; nothing is written to Confluence until you save.
+
 ### Added
 - **Plan Epic dates on PI Review.** In edit mode, **📅 Plan Epic dates** turns each Epic's Point Estimate and the team's
   capacity into a **Target Start** (development starts) and a **Target End** (the day after development completes —

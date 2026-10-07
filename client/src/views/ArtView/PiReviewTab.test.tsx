@@ -2442,6 +2442,15 @@ describe('the Edit PI Review button explains why it cannot be used', () => {
     expect(await screen.findByText('📅 Plan Epic dates')).toBeInTheDocument();
   });
 
+  it('offers to start a table right where it says the page has none, and opens it for editing (GH #413)', async () => {
+    renderWithPage(PAGE_WITHOUT_TABLE);
+
+    fireEvent.click(await screen.findByRole('button', { name: /start a pi review table here/i }));
+
+    expect(await screen.findByRole('button', { name: /done editing/i })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /pull features from jira/i })).toBeInTheDocument();
+  });
+
   it('carries no such excuse when the page really does have a table', async () => {
     renderWithPage(ALPHA_PAGE);
 

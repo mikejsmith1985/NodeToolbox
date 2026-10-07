@@ -2672,8 +2672,23 @@ function PiReviewPagePanel({
           </div>
         </fieldset>
       )}
+      {/* The way forward sits beside the message (GH #413): the recovery card is far below the capacity
+          panels, so a page with no table read as "editing is broken". Starting a draft writes nothing to
+          Confluence until Save, and a page with no table has nothing to lose. */}
       {isPiReviewTemplateRequired ? (
-        <p className={styles.syncedHelperText}>{PI_REVIEW_TEMPLATE_REQUIRED_MESSAGE}</p>
+        <div className={styles.toolbar} data-export-exclude="true">
+          <p className={styles.syncedHelperText}>{PI_REVIEW_TEMPLATE_REQUIRED_MESSAGE}</p>
+          {pageVersionNumber !== null && resolvedPageId !== '' ? (
+            <button
+              className={joinClassNames(styles.actionButton, styles.actionButtonPrimary)}
+              disabled={isToolbarBusy}
+              onClick={handleLoadToolboxTemplateDraft}
+              type="button"
+            >
+              Start a PI Review table here
+            </button>
+          ) : null}
+        </div>
       ) : null}
 
       <div className={styles.documentStats}>
