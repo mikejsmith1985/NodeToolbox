@@ -2420,6 +2420,17 @@ describe('the Edit PI Review button explains why it cannot be used', () => {
     expect(editButton.getAttribute('title')).toMatch(/no PI Review table/i);
   });
 
+  it('keeps the page\'s table editable when Jira cannot be reached, and says Jira data is missing', async () => {
+    // A Jira hiccup used to throw away the table just read from Confluence and disable Edit.
+    mockJiraGet.mockRejectedValue(new Error('Jira GET /rest/api/2/search failed: 503'));
+    renderWithPage(ALPHA_PAGE_WITH_FEATURE_KEY);
+
+    const editButton = await screen.findByRole('button', { name: /edit pi review/i });
+    await waitFor(() => expect(editButton).toBeEnabled());
+    expect(screen.getByText(/Jira could not be reached/i)).toHaveTextContent(/503/);
+    expect(screen.queryByText(/No Confluence table was found/i)).not.toBeInTheDocument();
+  });
+
   it('carries no such excuse when the page really does have a table', async () => {
     renderWithPage(ALPHA_PAGE);
 

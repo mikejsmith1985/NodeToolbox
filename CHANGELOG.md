@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **PI Review stays editable when Jira cannot be reached.** Loading a PI Review page looks every Feature up in Jira;
+  when that lookup failed (VPN, timeout, 5xx) the whole load failed — the table just read from Confluence was thrown
+  away and **Edit PI Review** was disabled. The table now loads as saved, Edit works, and a warning says the
+  Jira-backed columns show what was last saved until Jira is back.
+
+### Fixed
 - **Modify Existing CHG now offers Save and the risk check on every step (GH #395).** Both lived only on step 5
   (Review & Save), and fetching a change lands on step 2 — so it looked as if there was no way to save or check.
   Steps 2–4 now carry **💾 Save Changes to ServiceNow** (with its result shown right there) and **🛡️ Risk check

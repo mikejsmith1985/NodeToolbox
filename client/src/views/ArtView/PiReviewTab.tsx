@@ -788,6 +788,9 @@ function PiReviewPagePanel({
   const [tableBinding, setTableBinding] = useState<PiReviewTableBinding | null>(null);
   const [confidenceTableBinding, setConfidenceTableBinding] = useState<ConfidenceVoteTableBinding | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  // Set when the page's table loaded but its Features could not be looked up in Jira — the table stays
+  // usable, and this says why its Jira-backed columns show what was last saved.
+  const [jiraLoadWarning, setJiraLoadWarning] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isExportingImage, setIsExportingImage] = useState(false);
@@ -941,10 +944,23 @@ function PiReviewPagePanel({
       const parsedCapacitySummary = parsePiReviewCapacitySummary(confluencePage.body.storage.value);
       // The delivery-evidence fetch needs only KEYS, so it runs in parallel with the feature fetch
       // instead of after it — the two together were the page-load long pole.
-      const [nextJiraIssueMap, deliveryEvidence] = await Promise.all([
-        fetchPiReviewFeatureIssues(parsedPiReviewTable.rows),
+      // A failed Feature lookup must not throw away the table just read from Confluence: the rows load
+      // as saved (reconciling against an empty map changes nothing) and the failure is shown as a warning.
+      const [featureLookup, deliveryEvidence] = await Promise.all([
+        fetchPiReviewFeatureIssues(parsedPiReviewTable.rows).then(
+          (jiraIssueMap) => ({ jiraIssueMap, failureMessage: null }),
+          (lookupError: unknown) => ({
+            jiraIssueMap: {} as Awaited<ReturnType<typeof fetchPiReviewFeatureIssues>>,
+            failureMessage: lookupError instanceof Error ? lookupError.message : String(lookupError),
+          }),
+        ),
         fetchPiReviewDeliveryEvidence(collectPiReviewFeatureKeys(parsedPiReviewTable.rows)),
       ]);
+      const nextJiraIssueMap = featureLookup.jiraIssueMap;
+      setJiraLoadWarning(featureLookup.failureMessage === null
+        ? null
+        : `Jira could not be reached, so the Jira-backed columns show what was last saved on the page. `
+          + `Reload from Confluence once Jira is back. (${featureLookup.failureMessage})`);
       const jiraReconciliationResult = reconcilePiReviewRowsWithJira(parsedPiReviewTable.rows, nextJiraIssueMap, {
         deliveryDatesByFeatureKey: buildPiReviewDeliveryDates(nextJiraIssueMap, deliveryEvidence),
       });
@@ -2819,6 +2835,7 @@ function PiReviewPagePanel({
         )}
       </section>
 
+      {jiraLoadWarning && !loadError && <p className={styles.errorText} role="alert">{jiraLoadWarning}</p>}
       {loadError && (
         <div className={styles.recoveryCard}>
           <p className={styles.errorText}>{loadError}</p>
