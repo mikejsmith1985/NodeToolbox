@@ -568,6 +568,18 @@ export function formatPiReviewFeatureDisplayValue(featureCellValue: string, jira
   return jiraSummary ? `${featureKey} - ${jiraSummary}` : featureKey;
 }
 
+/** A Feature's Target Start and Target End as Jira holds them, read from the configured PI Review date fields. */
+export function readPiReviewTargetDates(jiraIssue: JiraIssue | undefined): { targetStart: string | null; targetEnd: string | null } {
+  if (!jiraIssue) {
+    return { targetStart: null, targetEnd: null };
+  }
+  const { targetStartFieldId, targetEndFieldId } = readPiReviewDateFieldIds();
+  return {
+    targetStart: readConfiguredDateFieldValue(jiraIssue, targetStartFieldId),
+    targetEnd: readConfiguredDateFieldValue(jiraIssue, targetEndFieldId),
+  };
+}
+
 /** Builds the Feature-column date pills from Jira so PI Review can surface planned dates without extra board-hopping. */
 export function readPiReviewFeatureDatePills(jiraIssue: JiraIssue | undefined): PiReviewFeatureDatePill[] {
   if (!jiraIssue) {

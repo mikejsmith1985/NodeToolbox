@@ -36,6 +36,7 @@ import {
   formatPiReviewFeatureDisplayValue,
   parsePiReviewFeatureDateUpdates,
   readPiReviewFeatureDatePills,
+  readPiReviewTargetDates,
   reconcilePiReviewRowsWithJira,
   savePiReviewFeatureDates,
   savePiReviewFeatureEstimates,
@@ -107,6 +108,21 @@ describe('piReviewJira', () => {
       { label: 'Due Date', value: '2026-06-12' },
       { label: 'Fix Version', value: '26.3' },
     ]);
+  });
+
+  it('reads a Feature\'s Target Start and Target End from the configured fields', () => {
+    localStorage.setItem('tbxARTSettings', JSON.stringify({
+      piReviewTargetStartFieldId: 'customfield_12345',
+      piReviewTargetEndFieldId: 'customfield_12346',
+    }));
+    const jiraIssue = {
+      id: '10001',
+      key: 'DENP-1352',
+      fields: { customfield_12345: '2026-05-30', customfield_12346: '2026-06-10T00:00:00.000Z' },
+    } as unknown as JiraIssue;
+
+    expect(readPiReviewTargetDates(jiraIssue)).toEqual({ targetStart: '2026-05-30', targetEnd: '2026-06-10' });
+    expect(readPiReviewTargetDates(undefined)).toEqual({ targetStart: null, targetEnd: null });
   });
 
   it('reads the default target-date field IDs when ART settings are blank', () => {

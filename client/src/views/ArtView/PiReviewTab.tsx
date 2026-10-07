@@ -61,6 +61,7 @@ import {
   readPiReviewFeatureDatePills,
   reconcilePiReviewRowsWithJira,
   savePiReviewFeatureDates,
+  type PiReviewFeatureDateUpdate,
   savePiReviewFeatureEstimates,
   savePiReviewFeatureTransition,
   savePiReviewTransitionRequiredFields,
@@ -77,6 +78,7 @@ import {
 } from './piReviewIgnoredFeatures.ts';
 import { computePiReviewLoadComparison } from './piReviewLoad.ts';
 import { doPiNamesMatch } from './piNameMatch.ts';
+import { EpicDatePlanPanel } from './epicDatePlan/EpicDatePlanPanel.tsx';
 import styles from './PiReviewTab.module.css';
 
 const LONG_TEXT_COLUMNS = new Set<PiReviewColumnKey>(['dependency', 'risks', 'notes']);
@@ -769,7 +771,7 @@ function PiReviewPagePanel({
   const effectivePiName = target.piName.trim() || selectedPiName;
   // The PI's working window, parsed from the PI label's embedded date range (null when it has none).
   // Feeds the AI Assist's rule-based Target Start suggestions; the panel hides them when this is null.
-  const aiStartDateWindow = useMemo(() => {
+  const piDateWindow = useMemo(() => {
     const parsedRange = parsePiDateRange(effectivePiName);
     if (parsedRange === null) {
       return null;
@@ -2182,16 +2184,11 @@ function PiReviewPagePanel({
    * the visible Jira data so the Feature's date chip reflects the new value immediately. Only Target
    * Start is written — Target End / Due are left as they are.
    */
-  async function handleApplyAiStartDate(issueKey: string, startIso: string) {
-    try {
-      await savePiReviewFeatureDates([{ featureKey: issueKey, targetStart: startIso, targetEnd: null, dueDate: null }]);
-      await refreshVisibleJiraIssueMap();
-      showToast(`Set Target Start ${startIso} on ${issueKey}.`, 'success');
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to set Target Start.';
-      showToast(errorMessage, 'error');
-      throw error; // let the panel clear its "writing…" state without marking the row applied
-    }
+  // Writes the Epic date plan's accepted Target Start / Target End pairs, then re-reads them from Jira.
+  async function handleWriteEpicPlanDates(dateUpdates: PiReviewFeatureDateUpdate[]) {
+    await savePiReviewFeatureDates(dateUpdates);
+    await refreshVisibleJiraIssueMap();
+    showToast(`Wrote Target Start and Target End for ${dateUpdates.length} Epic${dateUpdates.length === 1 ? '' : 's'}.`, 'success');
   }
 
   async function handleApplyPastedJiraDates() {
@@ -2597,11 +2594,20 @@ function PiReviewPagePanel({
               hasTestSupportColumn: visibleOptionalColumns.has('testSupport'),
             }}
             onApplySuggestion={handleApplyAiSuggestion}
-            onApplyStartDate={handleApplyAiStartDate}
-            piWindow={aiStartDateWindow}
             rows={rows}
           />
         </div>
+      )}
+      {canEditContent && (
+        <EpicDatePlanPanel
+          capacitySummary={displayedCapacitySummary}
+          jiraIssueMap={jiraIssueMap}
+          onWriteDates={handleWriteEpicPlanDates}
+          piName={effectivePiName}
+          piWindow={piDateWindow}
+          rows={rows}
+          todayIso={formatLocalIsoDate(new Date())}
+        />
       )}
       {jiraLoadDeltaDetails.length > 0 && (
         <details className={styles.deltaBanner} data-export-exclude="true">

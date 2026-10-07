@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Plan Epic dates on PI Review.** In edit mode, **📅 Plan Epic dates** turns each Epic's Point Estimate and the team's
+  capacity into a **Target Start** (development starts) and a **Target End** (the day after development completes —
+  code to INT).
+  - The team's speed is its 80% PI capacity spread over the PI's work days; up to **N Epics run at once** (default 3)
+    sharing it, and the next Epic in priority order starts as soon as a slot frees. Weekends are skipped.
+  - An Epic not yet started never starts before the PI's first day; one already **Implementing or beyond** keeps its
+    Target Start and gets a Target End from its remaining points, and holds its slot first.
+  - Each proposal is shown beside what Jira holds now, flagged when it lands in INT after the PI ends; only the rows
+    you accept are written to Jira.
+  - **AI Assist** proposes only the **order** and how many Epics run at once (respecting dependencies and risks);
+    Toolbox calculates every date. A key the reply invents is rejected.
+
+### Changed
+- The AI Assistance panel's one-person, one-point-a-day **Target Start** suggestions are replaced by **Plan Epic
+  dates**, so PI Review has one rule for those dates rather than two that disagree.
+
 ### Fixed
 - **PI Review stays editable when Jira cannot be reached.** Loading a PI Review page looks every Feature up in Jira;
   when that lookup failed (VPN, timeout, 5xx) the whole load failed — the table just read from Confluence was thrown

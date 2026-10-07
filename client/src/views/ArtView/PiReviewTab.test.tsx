@@ -2431,6 +2431,17 @@ describe('the Edit PI Review button explains why it cannot be used', () => {
     expect(screen.queryByText(/No Confluence table was found/i)).not.toBeInTheDocument();
   });
 
+  it('offers the Epic date plan once editing', async () => {
+    renderWithPage(ALPHA_PAGE);
+    const editButton = await screen.findByRole('button', { name: /edit pi review/i });
+    await waitFor(() => expect(editButton).toBeEnabled());
+
+    expect(screen.queryByText('📅 Plan Epic dates')).not.toBeInTheDocument();
+    fireEvent.click(editButton);
+
+    expect(await screen.findByText('📅 Plan Epic dates')).toBeInTheDocument();
+  });
+
   it('carries no such excuse when the page really does have a table', async () => {
     renderWithPage(ALPHA_PAGE);
 
