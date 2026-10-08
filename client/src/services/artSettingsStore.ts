@@ -53,6 +53,11 @@ export interface ArtSettings {
   sharedArtDatabaseId: string;
   sharedArtSpaceId: string;
   sharedArtParentId: string;
+  /**
+   * How a PI pull matches the roster's Product Owners to Epics: Jira's Product Owner field (the default)
+   * or Assignee. One choice for every team and every pull.
+   */
+  piPullOwnerMatch: 'productOwnerField' | 'assignee';
 }
 
 /**
@@ -76,6 +81,7 @@ export const DEFAULT_ART_SETTINGS: ArtSettings = {
   sharedArtDatabaseId: '684163133',
   sharedArtSpaceId: '256344064',
   sharedArtParentId: '685473797',
+  piPullOwnerMatch: 'productOwnerField',
 };
 
 /** Reads a stored string, treating blank as absent — a half-finished edit is not a choice. */
@@ -196,7 +202,26 @@ export function readArtSettings(storage?: Storage): ArtSettings {
     sharedArtDatabaseId: readStoredText(storedSettings.sharedArtDatabaseId, DEFAULT_ART_SETTINGS.sharedArtDatabaseId),
     sharedArtSpaceId: readStoredText(storedSettings.sharedArtSpaceId, DEFAULT_ART_SETTINGS.sharedArtSpaceId),
     sharedArtParentId: readStoredText(storedSettings.sharedArtParentId, DEFAULT_ART_SETTINGS.sharedArtParentId),
+    // Only Assignee is a different choice; anything else stored is not one this app made.
+    piPullOwnerMatch: storedSettings.piPullOwnerMatch === 'assignee' ? 'assignee' : DEFAULT_ART_SETTINGS.piPullOwnerMatch,
   };
+}
+
+/**
+ * Saves one ART setting, keeping every other stored key exactly as it was — including keys this store
+ * does not model, which other screens still own.
+ */
+export function writeArtSetting<SettingKey extends keyof ArtSettings>(
+  settingKey: SettingKey,
+  settingValue: ArtSettings[SettingKey],
+  storage?: Storage,
+): void {
+  const resolvedStorage = storage ?? (typeof window === 'undefined' ? undefined : window.localStorage);
+  if (!resolvedStorage) {
+    return;
+  }
+  const nextSettings = { ...readStoredSettingsObject(resolvedStorage), [settingKey]: settingValue };
+  resolvedStorage.setItem(ART_SETTINGS_STORAGE_KEY, JSON.stringify(nextSettings));
 }
 
 /**

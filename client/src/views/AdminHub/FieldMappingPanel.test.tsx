@@ -31,6 +31,7 @@ describe('FieldMappingPanel', () => {
       ['customfield_4', 'Epic Link'],
       ['customfield_5', 'ServiceNow Reference'],
       ['customfield_9', 'Status Summary'],
+      ['customfield_10', 'Product Owner'],
     );
     render(<FieldMappingPanel />);
 

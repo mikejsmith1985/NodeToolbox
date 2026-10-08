@@ -27,7 +27,7 @@ export interface FieldMappingEntry {
   /** The key inside the ART settings this override is saved under. */
   settingsKey: 'featureLinkField' | 'spFieldId' | 'piFieldId' | 'piReviewTargetStartFieldId'
     | 'piReviewTargetEndFieldId' | 'acFieldId' | 'epicLinkFieldId' | 'snowRefFieldId'
-    | 'statusSummaryFieldId';
+    | 'statusSummaryFieldId' | 'productOwnerFieldId';
   label: string;
   /** Older fields the same value may sit in. Read as a fallback, never written to. */
   alternateReadFieldIds?: string[];
@@ -38,6 +38,11 @@ export interface FieldMappingEntry {
   /** The id used when nothing better is found. The dangerous step, which is why it is reported. */
   hardDefaultFieldId: string;
   importance: FieldMappingImportance;
+  /**
+   * For a field with no built-in default (hardDefaultFieldId ''): what happens when none is found, in the
+   * reader's terms. Such a field is optional — the app has a fallback — so "not working" would be untrue.
+   */
+  missingNote?: string;
 }
 
 /**
@@ -126,6 +131,18 @@ export const FIELD_MAPPING_ENTRIES: FieldMappingEntry[] = [
     namePattern: /status summary/i,
     hardDefaultFieldId: 'customfield_10206',
     importance: 'important',
+  },
+  {
+    settingsKey: 'productOwnerFieldId',
+    label: 'Product Owner',
+    whatItDrives: 'whose Epics PI Review and the PI Planner pull in — matched against the roster\'s Product Owners',
+    namePattern: /product owner/i,
+    // No default: this field's id differs on every instance, and guessing one would pull the wrong
+    // people's Epics. With none found, the pull matches the roster's Product Owners by Assignee instead.
+    hardDefaultFieldId: '',
+    importance: 'important',
+    missingNote: 'No field on this Jira is named like "Product Owner", so Pull Features matches the roster\'s '
+      + 'Product Owners by Assignee. Choose the field here to pull by Product Owner instead.',
   },
 ];
 
@@ -228,6 +245,18 @@ export function resolveFieldMapping(
         ? null
         : `${discoveredFieldIds.length} fields on this Jira are named like "${entry.label}". The first `
           + 'is being used; choose one so it is not left to the order Jira happens to return them in.',
+    };
+  }
+
+  // An optional field with no default: nothing is read, and the app falls back to its own alternative.
+  if (entry.hardDefaultFieldId === '') {
+    return {
+      entry,
+      chosenFieldId: null,
+      discoveredFieldIds: [],
+      effectiveFieldId: '',
+      source: 'missing',
+      riskNote: availableFields.length > 0 ? (entry.missingNote ?? `No field on this Jira is named like "${entry.label}".`) : null,
     };
   }
 

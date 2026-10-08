@@ -1,7 +1,8 @@
 // piReviewPullFeatures.ts — Populates a PI Review table with a team's Program Increment Features.
 //
-// Discovery is a single, direct Jira query: every feature-level issue in the page's PI that is
-// assigned to the team's Product Owner (taken from the roster). This deliberately replaces the older
+// Discovery is a single, direct Jira query: every feature-level issue in the page's PI that belongs to
+// the team's Product Owner (taken from the roster) — matched against the Jira Product Owner field by
+// default, or against Assignee when that is the saved choice or the instance has no such field. This deliberately replaces the older
 // Blueprint bottom-up discovery + label/assignee filter combination — the PI plus the PO uniquely
 // scope a team's Features, so no extra filters are needed. Notably the query does NOT constrain by
 // project: a team's Features often live in a different (portfolio/program) project than the team's
@@ -9,7 +10,8 @@
 // Discovered Features are de-duplicated against the rows already in the table so a pull only ever
 // appends genuinely new Features.
 
-import { resolveWriteFieldId } from '../../services/jiraFieldMapping.ts';
+import { readArtSettings, writeArtSetting } from '../../services/artSettingsStore.ts';
+import { resolveConfiguredFieldIds, resolveWriteFieldId } from '../../services/jiraFieldMapping.ts';
 import { jiraGet } from '../../services/jiraApi.ts';
 import { buildIssueTypeClause, loadFeatureIssueTypeNames } from '../../services/jiraIssueTypes.ts';
 import type { JiraIssue } from '../../types/jira.ts';
@@ -23,7 +25,15 @@ const DIRECT_FEATURE_FIELD_IDS = ['summary', 'status', 'assignee'];
 /** ART settings needed to scope the Feature query; resolved from localStorage by default. */
 export interface PiReviewPullSettings {
   piFieldId: string;
+  /** The Product Owner field the roster's POs are matched against; null matches them by Assignee. */
+  productOwnerFieldId: string | null;
 }
+
+/** How a pull matches the roster's Product Owners to Epics. */
+export type PiPullOwnerMatch = 'productOwnerField' | 'assignee';
+
+// The Jira field name the Product Owner field is found by when none has been chosen in Field Mapping.
+const PRODUCT_OWNER_FIELD_NAME_PATTERN = /^\s*product owner\s*$/i;
 
 /** Outcome of a pull: the new rows to append plus counts for user feedback. */
 export interface PullPiReviewFeaturesResult {
@@ -42,11 +52,50 @@ interface DiscoveredFeature {
   summary: string;
 }
 
-/** Reads the PI field id from ART settings, falling back to the safe default. */
+/** How pulls match Product Owners: by the Product Owner field unless Assignee was chosen (saved app-wide). */
+export function readPiPullOwnerMatch(): PiPullOwnerMatch {
+  return readArtSettings().piPullOwnerMatch;
+}
+
+/** Saves how pulls match Product Owners, alongside the other ART settings and without disturbing them. */
+export function writePiPullOwnerMatch(ownerMatch: PiPullOwnerMatch): void {
+  writeArtSetting('piPullOwnerMatch', ownerMatch);
+}
+
+/**
+ * Reads the pull settings without asking Jira: the PI field, and the Product Owner field when one was
+ * chosen in Field Mapping. Use resolvePiReviewPullSettings to also find the field by name.
+ */
 export function readPiReviewPullSettings(): PiReviewPullSettings {
   // Delegated: the override-then-default chain lives in the mapping module, and a local copy of it
   // is one more thing to keep in step with the field it is trying to name.
-  return { piFieldId: resolveWriteFieldId('piFieldId', window.localStorage) };
+  return {
+    piFieldId: resolveWriteFieldId('piFieldId', window.localStorage),
+    productOwnerFieldId: readPiPullOwnerMatch() === 'assignee'
+      ? null
+      : resolveConfiguredFieldIds('productOwnerFieldId', window.localStorage)[0] ?? null,
+  };
+}
+
+/**
+ * The pull settings with the Product Owner field resolved: the one chosen in Field Mapping, else the
+ * field this Jira names "Product Owner", else none — and none means the roster's POs are matched by
+ * Assignee, so a Jira without the field still pulls rather than finding nothing.
+ */
+export async function resolvePiReviewPullSettings(): Promise<PiReviewPullSettings> {
+  const savedSettings = readPiReviewPullSettings();
+  if (readPiPullOwnerMatch() === 'assignee' || savedSettings.productOwnerFieldId !== null) {
+    return savedSettings;
+  }
+  const availableFields = await jiraGet<Array<{ id?: unknown; name?: unknown }>>('/rest/api/2/field');
+  const productOwnerField = (Array.isArray(availableFields) ? availableFields : [])
+    .find((field) => typeof field.name === 'string' && PRODUCT_OWNER_FIELD_NAME_PATTERN.test(field.name));
+  return { ...savedSettings, productOwnerFieldId: productOwnerField ? String(productOwnerField.id) : null };
+}
+
+/** What a pull matches the roster's Product Owners against, in words for the page. */
+export function describePullOwnerMatch(settings: PiReviewPullSettings): string {
+  return settings.productOwnerFieldId === null ? 'Assignee' : 'the Product Owner field';
 }
 
 /** Wraps a JQL value in quotes, escaping embedded quotes the same way the roster clause builder does. */
@@ -55,18 +104,19 @@ function quoteJqlValue(value: string): string {
 }
 
 /**
- * Builds the assignee clause for the Product Owner(s): `assignee = "x"` for a single PO, or
- * `assignee in ("x", "y")` when a team lists more than one. Returns null when no PO is supplied.
+ * Builds the owner clause for the Product Owner(s) — against the Product Owner field (`cf[NNN]`) or, with
+ * none, Assignee: `= "x"` for a single PO, `in ("x", "y")` for several. Null when no PO is supplied.
  */
-function buildProductOwnerAssigneeClause(poAssigneeQueryValues: readonly string[]): string | null {
-  const assigneeValues = poAssigneeQueryValues.map((assignee) => assignee.trim()).filter(Boolean);
-  if (assigneeValues.length === 0) {
+function buildProductOwnerClause(poQueryValues: readonly string[], productOwnerFieldId: string | null): string | null {
+  const ownerValues = poQueryValues.map((ownerValue) => ownerValue.trim()).filter(Boolean);
+  if (ownerValues.length === 0) {
     return null;
   }
-  if (assigneeValues.length === 1) {
-    return `assignee = ${quoteJqlValue(assigneeValues[0])}`;
+  const fieldReference = productOwnerFieldId === null ? 'assignee' : `cf[${productOwnerFieldId.replace('customfield_', '')}]`;
+  if (ownerValues.length === 1) {
+    return `${fieldReference} = ${quoteJqlValue(ownerValues[0])}`;
   }
-  return `assignee in (${assigneeValues.map(quoteJqlValue).join(', ')})`;
+  return `${fieldReference} in (${ownerValues.map(quoteJqlValue).join(', ')})`;
 }
 
 /**
@@ -80,9 +130,10 @@ export function buildDirectFeatureJql(
   poAssigneeQueryValues: readonly string[],
   piFieldId: string,
   featureIssueTypeNames: readonly string[] = [],
+  productOwnerFieldId: string | null = null,
 ): string | null {
   const trimmedPiName = piName.trim();
-  const assigneeClause = buildProductOwnerAssigneeClause(poAssigneeQueryValues);
+  const assigneeClause = buildProductOwnerClause(poAssigneeQueryValues, productOwnerFieldId);
   if (trimmedPiName === '' || assigneeClause === null) {
     return null;
   }
@@ -102,10 +153,12 @@ export function buildDirectFeatureJql(
 async function fetchDirectFeatures(
   piName: string,
   poAssigneeQueryValues: readonly string[],
-  piFieldId: string,
+  settings: PiReviewPullSettings,
 ): Promise<DiscoveredFeature[]> {
   const featureIssueTypeNames = await loadFeatureIssueTypeNames();
-  const directFeatureJql = buildDirectFeatureJql(piName, poAssigneeQueryValues, piFieldId, featureIssueTypeNames);
+  const directFeatureJql = buildDirectFeatureJql(
+    piName, poAssigneeQueryValues, settings.piFieldId, featureIssueTypeNames, settings.productOwnerFieldId,
+  );
   if (directFeatureJql === null) {
     return [];
   }
@@ -143,7 +196,7 @@ export async function pullPiReviewFeatures(
   settings: PiReviewPullSettings = readPiReviewPullSettings(),
   ignoredFeatureKeys: ReadonlySet<string> = new Set<string>(),
 ): Promise<PullPiReviewFeaturesResult> {
-  const discoveredFeatures = await fetchDirectFeatures(piName, poAssigneeQueryValues, settings.piFieldId);
+  const discoveredFeatures = await fetchDirectFeatures(piName, poAssigneeQueryValues, settings);
 
   // De-duplicate discovered Features by upper-cased key (Jira can, in theory, echo a key twice).
   const discoveredFeaturesByKey = new Map<string, DiscoveredFeature>();

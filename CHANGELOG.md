@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Pull Features now finds a team's Epics by the Product Owner field.** PI Review's and the PI Planner's pull used to
+  match the roster's Product Owners against **Assignee**; it now matches them against Jira's **Product Owner** field
+  by default.
+  - **Match roster Product Owners by** beside **Pull Features from Jira** switches between *Product Owner field* and
+    *Assignee*; the choice is saved app-wide.
+  - Which field counts as Product Owner is set in **Admin Hub → Field Mapping** (a new **Product Owner** row, picked
+    from Jira's own field list); with nothing chosen, the field named "Product Owner" is used, and on a Jira with no
+    such field the pull falls back to Assignee.
+
 ### Fixed
 - **A PI Review page with no table now offers to start one right where it says so (GH #413).** On a page whose
   contents were cleared, **Edit PI Review** is unavailable and the only way forward sat in a card far below the

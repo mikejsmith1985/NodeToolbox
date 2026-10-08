@@ -23,6 +23,7 @@ const {
   mockPullPiReviewFeatures,
   mockResolveConfluencePageIdFromReference,
   mockUpdateConfluencePage,
+  mockWritePiPullOwnerMatch,
 } = vi.hoisted(() => ({
   mockDownloadPiReviewPanelImage: vi.fn(),
   mockFetchConfluencePageByReference: vi.fn(),
@@ -33,6 +34,7 @@ const {
   mockPullPiReviewFeatures: vi.fn(),
   mockResolveConfluencePageIdFromReference: vi.fn(),
   mockUpdateConfluencePage: vi.fn(),
+  mockWritePiPullOwnerMatch: vi.fn(),
 }));
 
 vi.mock('../../services/confluenceApi.ts', () => ({
@@ -52,7 +54,13 @@ vi.mock('./piReviewPullFeatures.ts', () => ({
   pullPiReviewFeatures: mockPullPiReviewFeatures,
   // The tab reads the pull settings to pass them through explicitly; the real reader just wraps
   // localStorage, so a fixed default keeps these tests deterministic.
-  readPiReviewPullSettings: () => ({ piFieldId: 'customfield_10301' }),
+  readPiReviewPullSettings: () => ({ piFieldId: 'customfield_10301', productOwnerFieldId: null }),
+  // Pulls resolve the Product Owner field before querying; a fixed field keeps the tests deterministic.
+  resolvePiReviewPullSettings: async () => ({ piFieldId: 'customfield_10301', productOwnerFieldId: 'customfield_20002' }),
+  readPiPullOwnerMatch: () => 'productOwnerField',
+  writePiPullOwnerMatch: mockWritePiPullOwnerMatch,
+  describePullOwnerMatch: (settings: { productOwnerFieldId: string | null }) =>
+    (settings.productOwnerFieldId === null ? 'Assignee' : 'the Product Owner field'),
 }));
 
 vi.mock('./piReviewPdf.ts', () => ({
@@ -528,6 +536,34 @@ describe('PiReviewTab', () => {
       );
     });
     expect(await screen.findByText(/added 1 feature for pi 26\.3/i)).toBeInTheDocument();
+  });
+
+  it('pulls by the Product Owner field, and lets the match be switched to Assignee', async () => {
+    mockFetchConfluencePageByReference.mockResolvedValue(ALPHA_PAGE);
+    useStandupRosterStore.getState().replaceRosterMembers([{
+      displayName: 'Pat Owner',
+      assigneeQueryValue: 'C73130',
+      roleCapabilities: { canDevelop: false, canInternalTest: false, canExternalTest: false, canProductOwner: true },
+    }]);
+    mockPullPiReviewFeatures.mockResolvedValue({ rows: [], discoveredCount: 0, addedCount: 0, ignoredCount: 0 });
+    renderPiReviewTab([{
+      id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: 'ALPHA',
+      piReviewPages: [{ piName: 'PI 26.3', pageUrl: 'https://example.atlassian.net/wiki/pages/12345/Alpha' }],
+      sprintIssues: [], isLoading: false, loadError: null,
+    }]);
+    const alphaSection = await screen.findByRole('region', { name: /pi 26\.3 pi review/i });
+    enterEditMode(alphaSection);
+
+    expect(within(alphaSection).getByText(/whose Product Owner field is/i)).toBeInTheDocument();
+    fireEvent.click(within(alphaSection).getByRole('button', { name: /pull features from jira/i }));
+    await waitFor(() => expect(mockPullPiReviewFeatures).toHaveBeenCalledWith(
+      'PI 26.3', ['C73130'], expect.any(Array),
+      { piFieldId: 'customfield_10301', productOwnerFieldId: 'customfield_20002' }, expect.any(Set),
+    ));
+
+    fireEvent.change(within(alphaSection).getByLabelText(/Match roster Product Owners by/i), { target: { value: 'assignee' } });
+    expect(mockWritePiPullOwnerMatch).toHaveBeenCalledWith('assignee');
+    expect(within(alphaSection).getByText(/assigned to/i)).toBeInTheDocument();
   });
 
   it('pulls Features for the WHOLE roster when “Include full roster” is ticked', async () => {

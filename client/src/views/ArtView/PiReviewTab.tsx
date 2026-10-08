@@ -70,7 +70,13 @@ import { getStoryPointsCandidateFieldIds, readIssueStoryPointsDisplayValue } fro
 import { estimateCarryoverRemainingPoints } from './carryoverEstimate.ts';
 import { fetchCarryoverChildrenByFeature } from './carryoverEstimateFetch.ts';
 import { useStandupRosterStore } from '../SprintDashboard/hooks/useStandupRosterStore.ts';
-import { pullPiReviewFeatures, readPiReviewPullSettings } from './piReviewPullFeatures.ts';
+import {
+  pullPiReviewFeatures,
+  readPiPullOwnerMatch,
+  resolvePiReviewPullSettings,
+  writePiPullOwnerMatch,
+  type PiPullOwnerMatch,
+} from './piReviewPullFeatures.ts';
 import {
   addIgnoredPiReviewFeatureKey,
   readIgnoredPiReviewFeatureKeys,
@@ -812,6 +818,9 @@ function PiReviewPagePanel({
   // When on, a pull includes Features assigned to ANY roster member, not just the Product Owner(s) —
   // for teams where Features sit with the person doing the work rather than the PO.
   const [includeFullRoster, setIncludeFullRoster] = useState(false);
+  // Whether a pull matches the roster's Product Owners by the Product Owner field or by Assignee — one
+  // app-wide choice, saved with the ART settings.
+  const [pullOwnerMatch, setPullOwnerMatch] = useState<PiPullOwnerMatch>(() => readPiPullOwnerMatch());
   // "Refresh from Jira" re-reads the rows already on the page without discovering new Features.
   const [isRefreshingFromJira, setIsRefreshingFromJira] = useState(false);
   // Feature keys the user marked Ignore — persisted, and handed to every pull so the pull skips them.
@@ -1230,7 +1239,7 @@ function PiReviewPagePanel({
         effectivePiName,
         pullAssigneeQueryValues,
         rows,
-        readPiReviewPullSettings(),
+        await resolvePiReviewPullSettings(),
         ignoredFeatureKeys,
       );
       if (pullResult.addedCount === 0) {
@@ -2479,6 +2488,22 @@ function PiReviewPagePanel({
               />
               Include full roster
             </label>
+            <label className={styles.pullFeaturesHint} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              Match roster Product Owners by
+              <select
+                aria-label="Match roster Product Owners by"
+                disabled={isToolbarBusy}
+                onChange={(changeEvent) => {
+                  const nextOwnerMatch = changeEvent.target.value as PiPullOwnerMatch;
+                  setPullOwnerMatch(nextOwnerMatch);
+                  writePiPullOwnerMatch(nextOwnerMatch);
+                }}
+                value={pullOwnerMatch}
+              >
+                <option value="productOwnerField">Product Owner field</option>
+                <option value="assignee">Assignee</option>
+              </select>
+            </label>
             <button
               className={joinClassNames(styles.actionButton, styles.actionButtonSecondary)}
               disabled={isToolbarBusy || !tableBinding}
@@ -2542,7 +2567,7 @@ function PiReviewPagePanel({
             rosterMembers.length > 0 ? (
               <>
                 <strong>Pull Features from Jira</strong> adds every Feature in{' '}
-                <strong>{effectivePiName.trim() || 'the selected PI'}</strong> assigned to <strong>any of the
+                <strong>{effectivePiName.trim() || 'the selected PI'}</strong>{pullOwnerMatch === 'assignee' ? ' assigned to ' : ' whose Product Owner field is '}<strong>any of the
                 {' '}{rosterMembers.length} roster members</strong> — including Features held by whoever is doing the
                 work, not just the Product Owner. Safe to re-run: new Features are appended and your Carry-Over,
                 Committed and Notes entries are never touched.
@@ -2553,7 +2578,7 @@ function PiReviewPagePanel({
           ) : productOwners.length > 0 ? (
             <>
               <strong>Pull Features from Jira</strong> adds every Feature in{' '}
-              <strong>{effectivePiName.trim() || 'the selected PI'}</strong> assigned to{' '}
+              <strong>{effectivePiName.trim() || 'the selected PI'}</strong>{pullOwnerMatch === 'assignee' ? ' assigned to ' : ' whose Product Owner field is '}
               <strong>{productOwners.map((productOwner) => productOwner.displayName).join(', ')}</strong>. Missing
               Features assigned to others? Tick <strong>Include full roster</strong>. Safe to re-run: new Features
               are appended and your Carry-Over, Committed and Notes entries are never touched.

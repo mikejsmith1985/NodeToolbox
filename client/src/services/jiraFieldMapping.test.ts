@@ -173,6 +173,7 @@ describe('describeMappingHealth', () => {
       ['customfield_4', 'Epic Link'],
       ['customfield_5', 'ServiceNow Reference'],
       ['customfield_9', 'Status Summary'],
+      ['customfield_10', 'Product Owner'],
     ), {});
 
     expect(describeMappingHealth(resolutions)).toContain('resolve cleanly');
@@ -279,5 +280,33 @@ describe('the Program Increment field is a mapped field like any other', () => {
     const piEntry = FIELD_MAPPING_ENTRIES.find((entry) => entry.settingsKey === 'piFieldId');
 
     expect(piEntry?.importance).toBe('critical');
+  });
+});
+
+describe('the Product Owner mapping — whose Epics a PI pull brings in', () => {
+  beforeEach(() => localStorage.clear());
+  afterEach(() => localStorage.clear());
+
+  it('is discovered by its Jira name', () => {
+    const resolution = resolveAllFieldMappings(buildFields(['customfield_77', 'Product Owner']), {})
+      .find((candidate) => candidate.entry.settingsKey === 'productOwnerFieldId');
+
+    expect(resolution?.effectiveFieldId).toBe('customfield_77');
+    expect(resolution?.source).toBe('discovered');
+  });
+
+  it('has no built-in default, and says the pull falls back to Assignee when nothing matches', () => {
+    const resolution = resolveAllFieldMappings(buildFields(['customfield_1', 'Summary']), {})
+      .find((candidate) => candidate.entry.settingsKey === 'productOwnerFieldId');
+
+    expect(resolution?.source).toBe('missing');
+    expect(resolution?.riskNote).toMatch(/Assignee/);
+    expect(resolution?.riskNote).not.toMatch(/\(\)/);
+  });
+
+  it('resolves synchronously to a saved choice, or to nothing at all', () => {
+    expect(resolveConfiguredFieldIds('productOwnerFieldId', localStorage)).toEqual([]);
+    localStorage.setItem('tbxARTSettings', JSON.stringify({ productOwnerFieldId: 'customfield_77' }));
+    expect(resolveConfiguredFieldIds('productOwnerFieldId', localStorage)).toEqual(['customfield_77']);
   });
 });

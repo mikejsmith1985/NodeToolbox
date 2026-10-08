@@ -69,7 +69,7 @@ export function FieldMappingPanel(): React.JSX.Element {
     <div className={styles.panelCard} data-testid="field-mapping-panel">
       <h3 className={styles.sectionTitle}>Jira field mapping</h3>
       <p className={styles.fieldLabel}>
-        These five custom fields drive most of what this app works out. Field ids differ between Jira
+        These custom fields drive most of what this app works out. Field ids differ between Jira
         instances, so each is found by NAME — and where the name finds nothing, a built-in default is
         read instead, which on a different Jira may belong to something else entirely. Anything below
         that is not simply <strong>found by name</strong> is worth a look.

@@ -16,7 +16,7 @@ import { useCapacityStore } from '../../SprintDashboard/hooks/useCapacityStore.t
 import { useStandupRosterStore } from '../../SprintDashboard/hooks/useStandupRosterStore.ts';
 import { parsePiDateRange } from '../hooks/artHelpers.ts';
 import { fetchPiReviewFeatureIssues, reconcilePiReviewRowsWithJira } from '../piReviewJira.ts';
-import { pullPiReviewFeatures } from '../piReviewPullFeatures.ts';
+import { pullPiReviewFeatures, resolvePiReviewPullSettings } from '../piReviewPullFeatures.ts';
 import { buildPersonCapacities } from './piPlanCapacity.ts';
 import { assemblePromptContext } from './piPlanAiFetch.ts';
 import { resolvePiPlanFieldIds } from './piPlanFields.ts';
@@ -113,7 +113,7 @@ export function PlannerTab({ boardId, projectKey, selectedPiName, teamProfileId 
     let isActive = true;
     (async () => {
       try {
-        const pulled = await pullPiReviewFeatures(selectedPiName, poAssigneeQueryValues, []);
+        const pulled = await pullPiReviewFeatures(selectedPiName, poAssigneeQueryValues, [], await resolvePiReviewPullSettings());
         const jiraIssueMap = await fetchPiReviewFeatureIssues(pulled.rows);
         const reconciled = reconcilePiReviewRowsWithJira(pulled.rows, jiraIssueMap);
         // Enrich each Feature with the repo components it carries (filtered to the current allowlist), so

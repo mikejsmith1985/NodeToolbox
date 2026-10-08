@@ -12,9 +12,17 @@ vi.mock('../../services/jiraApi.ts', () => ({
   jiraPut: vi.fn(),
 }));
 
+import { ART_SETTINGS_STORAGE_KEY } from '../../services/artSettingsStore.ts';
 import type { PiReviewRow } from './piReviewTable.ts';
 import { createEmptyPiReviewRow } from './piReviewTable.ts';
-import { buildDirectFeatureJql, pullPiReviewFeatures } from './piReviewPullFeatures.ts';
+import {
+  buildDirectFeatureJql,
+  describePullOwnerMatch,
+  pullPiReviewFeatures,
+  readPiPullOwnerMatch,
+  resolvePiReviewPullSettings,
+  writePiPullOwnerMatch,
+} from './piReviewPullFeatures.ts';
 
 const DEFAULT_PI_FIELD_ID = 'customfield_10301';
 
@@ -24,7 +32,7 @@ function createRowForFeature(featureCellValue: string): PiReviewRow {
   return row;
 }
 
-const PULL_SETTINGS = { piFieldId: DEFAULT_PI_FIELD_ID };
+const PULL_SETTINGS = { piFieldId: DEFAULT_PI_FIELD_ID, productOwnerFieldId: null };
 
 describe('buildDirectFeatureJql', () => {
   it('combines the discovered feature type, a single-PO assignee equality, and PI — with no project clause', () => {
@@ -195,5 +203,57 @@ describe('pullPiReviewFeatures', () => {
 
     expect(result.ignoredCount).toBe(0);
     expect(result.addedCount).toBe(1);
+  });
+});
+
+describe('pulling by the Product Owner field', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockJiraGet.mockReset();
+  });
+  afterEach(() => localStorage.clear());
+
+  it('matches the roster Product Owners against the Product Owner field instead of Assignee', () => {
+    const jql = buildDirectFeatureJql('PI 26.4', ['C73130', 'C99999'], DEFAULT_PI_FIELD_ID, ['Epic'], 'customfield_20002');
+
+    expect(jql).toContain('cf[20002] in ("C73130", "C99999")');
+    expect(jql).not.toContain('assignee');
+  });
+
+  it('defaults to the Product Owner field found by name on this Jira', async () => {
+    mockJiraGet.mockResolvedValue([{ id: 'customfield_1', name: 'Summary' }, { id: 'customfield_20002', name: 'Product Owner' }]);
+
+    const settings = await resolvePiReviewPullSettings();
+
+    expect(settings.productOwnerFieldId).toBe('customfield_20002');
+    expect(describePullOwnerMatch(settings)).toBe('the Product Owner field');
+  });
+
+  it('prefers the field chosen in Field Mapping, without asking Jira', async () => {
+    localStorage.setItem(ART_SETTINGS_STORAGE_KEY, JSON.stringify({ productOwnerFieldId: 'customfield_55' }));
+
+    const settings = await resolvePiReviewPullSettings();
+
+    expect(settings.productOwnerFieldId).toBe('customfield_55');
+    expect(mockJiraGet).not.toHaveBeenCalled();
+  });
+
+  it('falls back to Assignee when this Jira has no Product Owner field', async () => {
+    mockJiraGet.mockResolvedValue([{ id: 'customfield_1', name: 'Summary' }]);
+
+    const settings = await resolvePiReviewPullSettings();
+
+    expect(settings.productOwnerFieldId).toBeNull();
+    expect(describePullOwnerMatch(settings)).toBe('Assignee');
+  });
+
+  it('uses Assignee when that is the saved choice', async () => {
+    writePiPullOwnerMatch('assignee');
+
+    const settings = await resolvePiReviewPullSettings();
+
+    expect(readPiPullOwnerMatch()).toBe('assignee');
+    expect(settings.productOwnerFieldId).toBeNull();
+    expect(mockJiraGet).not.toHaveBeenCalled();
   });
 });

@@ -7,7 +7,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { ART_SETTINGS_STORAGE_KEY, DEFAULT_ART_SETTINGS, readArtSettings } from './artSettingsStore.ts';
+import { ART_SETTINGS_STORAGE_KEY, DEFAULT_ART_SETTINGS, readArtSettings, writeArtSetting } from './artSettingsStore.ts';
 
 function storeSettings(settings: Record<string, unknown>): void {
   localStorage.setItem(ART_SETTINGS_STORAGE_KEY, JSON.stringify(settings));
@@ -160,5 +160,29 @@ describe('the delivery forecast settings', () => {
   it('refuses a negative tolerance', () => {
     storeSettings({ featureSizingTolerancePercent: -1 });
     expect(readArtSettings(localStorage).featureSizingTolerancePercent).toBe(0);
+  });
+});
+
+describe('how a PI pull matches Product Owners', () => {
+  it('defaults to the Product Owner field and reads a saved Assignee choice', () => {
+    expect(readArtSettings(localStorage).piPullOwnerMatch).toBe('productOwnerField');
+    storeSettings({ piPullOwnerMatch: 'assignee' });
+    expect(readArtSettings(localStorage).piPullOwnerMatch).toBe('assignee');
+  });
+
+  it('ignores a stored value it does not recognise', () => {
+    storeSettings({ piPullOwnerMatch: 'reporter' });
+    expect(readArtSettings(localStorage).piPullOwnerMatch).toBe('productOwnerField');
+  });
+});
+
+describe('writeArtSetting', () => {
+  it('saves one setting without disturbing the others, including ones this store does not know', () => {
+    storeSettings({ staleDays: 12, someOtherScreenKey: 'kept' });
+
+    writeArtSetting('piPullOwnerMatch', 'assignee', localStorage);
+
+    expect(JSON.parse(localStorage.getItem(ART_SETTINGS_STORAGE_KEY) ?? '{}'))
+      .toEqual({ staleDays: 12, someOtherScreenKey: 'kept', piPullOwnerMatch: 'assignee' });
   });
 });
