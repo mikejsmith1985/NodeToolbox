@@ -171,6 +171,8 @@ describe('ExistingChgRiskCheck', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /Risk check CHG \+ CTASKs/ }));
     expect(screen.getByDisplayValue(/CTASK0012345 — Deploy recon service/)).toBeInTheDocument();
+    // The task's own instructions are the deployment facts a plan is built from — given in full (GH #415).
+    expect(screen.getByDisplayValue(/Change task instructions[^\n]*:\s+CTASK0012345: Run the pipeline\./)).toBeInTheDocument();
     // The task's assignee is who deploys it — given as a record fact, never asked for (GH #415).
     expect(screen.getByDisplayValue(/CTASK0012345 — Deploy recon service \(Implementation\) — assigned to Jane Smith \(group: Platform Team\)/))
       .toBeInTheDocument();

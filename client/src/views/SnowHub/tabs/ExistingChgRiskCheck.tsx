@@ -89,6 +89,8 @@ function withTaskLines(
     jiraSourceText: jiraStories.length > 0 ? buildIssueDetailText([...jiraStories]) : '',
     attachmentFileNames,
     changeTaskLines: ctasks.map((ctask) => describeTaskLine(ctask)),
+    changeTaskInstructionLines: ctasks.map((ctask) => `${ctask.number}: ${ctask.description.trim()}`)
+      .filter((_instructionLine, taskIndex) => ctasks[taskIndex].description.trim() !== ''),
     durationEstimates: readTaskDurationEstimates(ctasks),
   };
 }

@@ -1749,6 +1749,8 @@ describe('CreateChgTab', () => {
     const promptText = (screen.getByText(/Copy this prompt and paste it into AI Assist/).parentElement
       ?.querySelector('textarea[readonly]') as HTMLTextAreaElement).value;
     expect(promptText).toContain('assigned to Jane Smith (group: Platform Team)');
+    // Its instructions in full — the deployment facts a plan must quote rather than generalise.
+    expect(promptText).toMatch(/Change task instructions[^\n]*:\n {2}Deployment Validation: Confirm smoke tests pass after deployment\./);
   });
 
   it('runs the loop: review, fix the gaps with a second prompt, then the review is marked out of date (GH #395)', async () => {

@@ -7,6 +7,7 @@
 // REL / PRD / PFIX changes, not the Dev and INT testing that must come before them.
 
 import { describeEstimatesForPrompt, type DurationEstimates } from '../ctaskDurations.ts';
+import { EVIDENCE_RULE_LINES } from './evidenceRules.ts';
 import { readTeamStandards, type TeamStandard } from './teamStandardsStore.ts';
 
 /** The facts about the change that the wizard already holds, already turned into readable labels. */
@@ -33,6 +34,11 @@ export interface ChgPromptContext {
   jiraSourceText?: string;
   /** The names of the files attached to the change (test evidence, approvals), when the change exists. */
   attachmentFileNames?: readonly string[];
+  /**
+   * Each change task's own instructions in full ("CTASK…: repo …, PR …, job …") — the deployment facts an
+   * implementation plan is built from, so it can quote them instead of writing generic steps.
+   */
+  changeTaskInstructionLines?: readonly string[];
   /** The CTASK estimates added up — the change's implementation, validation and backout durations. */
   durationEstimates?: DurationEstimates;
 }
@@ -80,6 +86,14 @@ function renderAttachments(attachmentFileNames: readonly string[] | undefined): 
 function renderTeamStandards(durationEstimates: DurationEstimates | undefined): string[] {
   const durationLine = durationEstimates ? describeDurationFacts(durationEstimates) : '';
   return ['', ...buildTeamStandardLines(readTeamStandards()), ...(durationLine ? [durationLine] : [])];
+}
+
+/** The tasks' own instructions, when any task has them — the facts its implementation steps come from. */
+function renderTaskInstructions(instructionLines: readonly string[] | undefined): string[] {
+  const usableLines = (instructionLines ?? []).filter((instructionLine) => instructionLine.trim() !== '');
+  return usableLines.length === 0
+    ? []
+    : [renderFactList('Change task instructions (the deployment facts — quote them, do not generalise them)', usableLines, '')];
 }
 
 /** A change task's people as one phrase for the prompt — and plainly what is missing when they are not set. */
@@ -185,6 +199,7 @@ export function buildChgContextText(context: ChgPromptContext): string {
     renderFactList('Environments', context.environmentLines, '(none enabled)'),
     renderFactList('Planning assessment', context.assessmentLines, '(not answered)'),
     renderFactList('Change tasks', context.changeTaskLines, '(none)'),
+    ...renderTaskInstructions(context.changeTaskInstructionLines),
     ...renderAttachments(context.attachmentFileNames),
     RECORD_ANSWERS_ARE_FACTS_RULE,
     TASK_ASSIGNEES_ARE_THE_TEAM_RULE,
@@ -199,5 +214,7 @@ export function buildChgContextText(context: ChgPromptContext): string {
       + "change's own environment.",
     '',
     CONFIRM_PLACEHOLDER_RULE,
+    '',
+    ...EVIDENCE_RULE_LINES,
   ].join('\n');
 }

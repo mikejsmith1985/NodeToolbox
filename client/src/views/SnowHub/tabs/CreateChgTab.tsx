@@ -2073,6 +2073,9 @@ function buildChgPromptContextFromState(state: CrgStateData, choiceOptions: Snow
       .map((assessmentRow) => `${assessmentRow.label}: ${readChoiceOptionLabel(
         choiceOptions, assessmentRow.snowFieldName, state.chgPlanningAssessment[assessmentRow.fieldKey])}`),
     changeTaskLines: state.changeTasks.map((changeTask) => describeChangeTaskForPrompt(changeTask)),
+    changeTaskInstructionLines: state.changeTasks
+      .filter((changeTask) => changeTask.description.trim() !== '')
+      .map((changeTask) => `${changeTask.name || changeTask.shortDescription}: ${changeTask.description.trim()}`),
     durationEstimates: readChangeDurationEstimates(state),
   };
 }

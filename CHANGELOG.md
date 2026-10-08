@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **CHG prompts write only what the evidence supports (GH #415).** Told an implementation plan was "generic", the
+  assistant wrote plausible health checks and validations no CTASK, story or record mentioned — invented filler a
+  Release Manager rejects. Every CHG prompt now carries strict **evidence rules**: facts may be copied, reworded,
+  combined or turned into numbered steps; health checks, monitoring, commands, validations or rollback steps not in
+  the evidence are never added; more detail comes only from facts elsewhere in the change package; a missing fact
+  is named, never filled in. Each CTASK's **instructions** (repos, PRs, jobs, environments) are now given in full,
+  so a plan quotes the real deployment facts instead of generalising them.
+
 ### Added
 - **Create New CHG creates the planned outage for Production changes.** Each PRD / PFIX change is now created with
   its planned outage record — on that change's CI, for its planned window, linked to it — and the result names it
