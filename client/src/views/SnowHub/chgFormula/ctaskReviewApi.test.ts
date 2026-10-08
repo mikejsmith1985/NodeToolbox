@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { snowFetch } from '../../../services/snowApi.ts';
 import type { ReviewedCtask } from './ctaskReviewRecord.ts';
-import { buildCtaskFixPatch, fetchChangeAttachmentFileNames, fetchReviewedCtasks, saveCtaskFix } from './ctaskReviewApi.ts';
+import { buildCtaskFixPatch, fetchChangeAttachmentFileNames, fetchReviewedCtasks, saveCtaskFix, saveCtaskPlannedDates } from './ctaskReviewApi.ts';
 
 vi.mock('../../../services/snowApi.ts', () => ({ snowFetch: vi.fn() }));
 
@@ -98,3 +98,22 @@ describe('fetchChangeAttachmentFileNames', () => {
     expect(vi.mocked(snowFetch).mock.calls[0][0]).toContain('table_name%3Dchange_request%5Etable_sys_id%3Dchg-1');
   });
 });
+
+describe('saveCtaskPlannedDates', () => {
+  beforeEach(() => {
+    vi.mocked(snowFetch).mockReset();
+  });
+
+  it('writes the task\'s planned start and end in the format the Table API stores', async () => {
+    vi.mocked(snowFetch).mockResolvedValue({ result: {} });
+
+    await saveCtaskPlannedDates(buildCtask(), '2026-10-10T05:00', '2026-10-10T05:45');
+
+    expect(vi.mocked(snowFetch).mock.calls[0][0]).toBe('/api/now/table/change_task/task-1');
+    expect(JSON.parse(String((vi.mocked(snowFetch).mock.calls[0][1] as RequestInit).body))).toEqual({
+      planned_start_date: '2026-10-10 05:00:00',
+      planned_end_date: '2026-10-10 05:45:00',
+    });
+  });
+});
+

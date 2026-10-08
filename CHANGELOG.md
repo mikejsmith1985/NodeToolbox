@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **CTASK timeline (Modify Existing CHG → Review & Save).** Each CTASK's planned start and end now follow the real
+  order of operations. **✦ Plan the CTASK timeline with AI Assist** reads every task — type, instructions,
+  estimates — and the assistant decides the order and each task's minutes (backout held in reserve). Toolbox holds
+  it to **Implementation → Review Technical Checkout → Review Business Checkout**, dates the tasks back to back
+  from the change's planned start, shows the timeline (warning if it runs past the planned end or a task was left
+  out), and **Write CTASK dates to ServiceNow** sets each task's planned start and end. The tasks are read only
+  when planning starts.
+
 ### Changed
 - **CHG prompts write only what the evidence supports (GH #415).** Told an implementation plan was "generic", the
   assistant wrote plausible health checks and validations no CTASK, story or record mentioned — invented filler a

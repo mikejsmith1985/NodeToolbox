@@ -35,6 +35,7 @@ import { ClipboardIcon, StartOverIcon } from '../../../components/AppIcons/index
 import { ChangeOutagePanel } from '../outage/ChangeOutagePanel.tsx';
 import type { PlannedOutageInput } from '../outage/changeOutageRecord.ts';
 import { AddJiraIssuePanel } from './AddJiraIssueControl.tsx';
+import { CtaskTimelinePanel } from './CtaskTimelinePanel.tsx';
 import styles from './CreateChgTab.module.css';
 
 const TAB_TITLE = 'Modify Change';
@@ -1438,6 +1439,14 @@ function ReviewSaveStep({ state, ctaskTemplates, onAddCtask, onRemoveCtask, onSa
       <StepHeading currentStep={5} />
       <AddJiraIssuePanel {...buildAddIssuePanelProps(state.change, onFieldChange)} />
       <ChangeOutagePanel key={state.change.sysId} {...readOutageSetup(state.change)} />
+      <CtaskTimelinePanel
+        changeSysId={state.change.sysId}
+        changeWindow={{
+          startUtc: readOutageSetup(state.change).outageInput.plannedStartUtc,
+          endUtc: readOutageSetup(state.change).outageInput.plannedEndUtc,
+        }}
+        key={`timeline-${state.change.sysId}`}
+      />
       
       <div className={styles.clonePanel}>
         <h4 className={styles.panelSectionTitle}>Add Change Tasks (CTASKs)</h4>

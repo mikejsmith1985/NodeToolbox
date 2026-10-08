@@ -6,6 +6,7 @@
 
 import { snowFetch } from '../../../services/snowApi.ts';
 import { readReviewedCtask, upsertBackoutSection, type ReviewedCtask } from './ctaskReviewRecord.ts';
+import { toSnowUtcDateTime } from '../outage/changeOutageRecord.ts';
 
 /** What to change on one task: its CI, its backout plan, or both. */
 export interface CtaskFix {
@@ -79,3 +80,19 @@ export async function saveCtaskFix(ctask: ReviewedCtask, fix: CtaskFix): Promise
     body: JSON.stringify(patchBody),
   });
 }
+
+/**
+ * Writes a task's planned start and end — the place the change's timeline gave it. Dates arrive as the Modify form
+ * holds them (UTC) and go to the Table API in the format it stores.
+ */
+export async function saveCtaskPlannedDates(ctask: ReviewedCtask, plannedStartUtc: string, plannedEndUtc: string): Promise<void> {
+  await snowFetch(`${CHANGE_TASK_TABLE_PATH}/${ctask.sysId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      planned_start_date: toSnowUtcDateTime(plannedStartUtc),
+      planned_end_date: toSnowUtcDateTime(plannedEndUtc),
+    }),
+  });
+}
+
