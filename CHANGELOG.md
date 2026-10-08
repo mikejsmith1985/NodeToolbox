@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Create New CHG's prompts now see the CTASKs ServiceNow creates itself (GH #415).** With no CTASK staged, the
+  assistant said *"no change tasks were provided… no CTASK content"* — yet every change gets ServiceNow's
+  **Implementation** task and the **Technical Checkout** this builder fills in. Both are now listed in Create's
+  prompts, with the Technical Checkout's full instructions, so checkout and validation steps are drawn from them.
+- **Create's prompts named no configuration item** when the CI was set on the environment rather than the change —
+  they now fall back to the enabled environment's CI.
+
 ### Added
 - **Create New CHG plans the CTASK timeline too.** On **Review & Create**, **✦ Plan the CTASK timeline with AI
   Assist** plans the order of operations over the tasks the change will get — the staged ones plus the

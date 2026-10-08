@@ -1421,7 +1421,24 @@ function resolveAutoCreatedCtaskEnvironmentLabel(state: CrgState, environmentKey
   return 'ENV';
 }
 
-function resolveImplementationCtaskPrefix(state: CrgState): string {
+/**
+ * The CTASKs ServiceNow creates itself on a new change — the Implementation task (renamed per environment) and the
+ * Technical Checkout this builder fills in. They exist on every change built without reconcile mode, so prompts must
+ * see them: with none staged, the assistant otherwise concluded the change had no tasks at all (GH #415).
+ */
+export function describeAutoCreatedChangeTasks(
+  state: Pick<CrgState, 'reconcileAutoCtasks' | 'shortDescriptionConfig'>,
+): Array<{ label: string; description: string }> {
+  if (state.reconcileAutoCtasks) {
+    return [];
+  }
+  return [
+    { label: `${resolveImplementationCtaskPrefix(state)} - <environment> (Implementation, created by ServiceNow)`, description: '' },
+    { label: `${AUTO_TECHNICAL_CHECKOUT_CTASK_SHORT_DESCRIPTION} (created by ServiceNow)`, description: AUTO_TECHNICAL_CHECKOUT_CTASK_DESCRIPTION },
+  ];
+}
+
+function resolveImplementationCtaskPrefix(state: Pick<CrgState, 'shortDescriptionConfig'>): string {
   const configuredApplicationName = state.shortDescriptionConfig.application.trim();
   if (!configuredApplicationName) return AUTO_IMPLEMENTATION_CTASK_PREFIX;
   return `${configuredApplicationName} - AWS`;

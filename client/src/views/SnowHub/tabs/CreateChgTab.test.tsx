@@ -1740,6 +1740,30 @@ describe('CreateChgTab', () => {
     expect(screen.queryByRole('list', { name: 'Questions for you' })).not.toBeInTheDocument();
   });
 
+  it('gives the risk check the CTASKs ServiceNow creates itself, and the environment\'s CI (GH #415)', async () => {
+    const user = userEvent.setup();
+    mockState.currentStep = 6;
+    mockState.changeTasks = [];
+    mockState.reconcileAutoCtasks = false;
+    mockState.prdEnvironment = {
+      ...mockState.prdEnvironment,
+      isEnabled: true,
+      configItem: { sysId: 'ci-prd', displayName: 'DMOM Enrollment - AWS - Production' },
+    };
+    render(<CreateChgTab />);
+    act(() => setAiAssistUnlocked(true));
+
+    await user.click(await screen.findByRole('button', { name: /Risk check with AI Assist/i }));
+
+    const promptText = (screen.getByText(/Copy this prompt and paste it into AI Assist/).parentElement
+      ?.querySelector('textarea[readonly]') as HTMLTextAreaElement).value;
+    // No CTASK was staged, but the change still gets ServiceNow's Implementation and Technical Checkout tasks.
+    expect(promptText).toMatch(/Change tasks:\n {2}[^\n]*Implementation[^\n]*created by ServiceNow/);
+    expect(promptText).toMatch(/Change task instructions[^\n]*:[\s\S]*Technical Checkout[^\n]*: Objective:/);
+    expect(promptText).toContain('Version Verification');
+    expect(promptText).toContain('Configuration item: DMOM Enrollment - AWS - Production');
+  });
+
   it('tells the risk check who deploys: each CTASK\'s assignee and group (GH #415)', async () => {
     const user = userEvent.setup();
     mockState.currentStep = 6;
@@ -1753,7 +1777,7 @@ describe('CreateChgTab', () => {
       ?.querySelector('textarea[readonly]') as HTMLTextAreaElement).value;
     expect(promptText).toContain('assigned to Jane Smith (group: Platform Team)');
     // Its instructions in full — the deployment facts a plan must quote rather than generalise.
-    expect(promptText).toMatch(/Change task instructions[^\n]*:\n {2}Deployment Validation: Confirm smoke tests pass after deployment\./);
+    expect(promptText).toMatch(/Change task instructions[^\n]*:[\s\S]*\n {2}Deployment Validation: Confirm smoke tests pass after deployment\./);
   });
 
   it('runs the loop: review, fix the gaps with a second prompt, then the review is marked out of date (GH #395)', async () => {

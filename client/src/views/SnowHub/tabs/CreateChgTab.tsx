@@ -16,7 +16,7 @@ import type {
 import type { CrgPinnedField, CrgPinnedFieldInput } from '../hooks/useCrgFieldPins.ts';
 import { useCrgFieldPins } from '../hooks/useCrgFieldPins.ts';
 import { buildRebuildStorageKey } from '../hooks/crgStorageKeys.ts';
-import { listEnvironmentDateOrderErrors, listRebuildEnvironmentRefusal, useCrgState } from '../hooks/useCrgState.ts';
+import { describeAutoCreatedChangeTasks, listEnvironmentDateOrderErrors, listRebuildEnvironmentRefusal, useCrgState } from '../hooks/useCrgState.ts';
 import { useCtaskTemplates } from '../hooks/useCtaskTemplates.ts';
 import { useCrgTemplates } from '../hooks/useCrgTemplates.ts';
 import type { AiAssistGeneratedFields } from '../hooks/useAiAssist.ts';
@@ -2065,7 +2065,11 @@ function buildChgPromptContextFromState(state: CrgStateData, choiceOptions: Snow
     categoryLabel: readChoiceOptionLabel(choiceOptions, 'category', basicInfo.category),
     changeTypeLabel: readChoiceOptionLabel(choiceOptions, 'type', basicInfo.changeType),
     isExpedited: basicInfo.isExpedited,
-    configItemLabel: basicInfo.configItem.displayName,
+    // The change-level CI, else the CI of the environment the change targets — a PRD change often sets it there.
+    configItemLabel: basicInfo.configItem.displayName
+      || [state.prdEnvironment, state.pfixEnvironment, state.relEnvironment]
+        .find((environment) => environment.isEnabled && environment.configItem.displayName)?.configItem.displayName
+      || '',
     assignmentGroupLabel: basicInfo.assignmentGroup.displayName,
     changeOwnerLabel: basicInfo.assignedTo.displayName,
     environmentLines: buildEnvironmentSummary(state).filter((summaryLine) => summaryLine.includes(': Enabled')),
@@ -2073,10 +2077,16 @@ function buildChgPromptContextFromState(state: CrgStateData, choiceOptions: Snow
       .filter((assessmentRow) => state.chgPlanningAssessment[assessmentRow.fieldKey].trim() !== '')
       .map((assessmentRow) => `${assessmentRow.label}: ${readChoiceOptionLabel(
         choiceOptions, assessmentRow.snowFieldName, state.chgPlanningAssessment[assessmentRow.fieldKey])}`),
-    changeTaskLines: state.changeTasks.map((changeTask) => describeChangeTaskForPrompt(changeTask)),
-    changeTaskInstructionLines: state.changeTasks
-      .filter((changeTask) => changeTask.description.trim() !== '')
-      .map((changeTask) => `${changeTask.name || changeTask.shortDescription}: ${changeTask.description.trim()}`),
+    changeTaskLines: [
+      ...describeAutoCreatedChangeTasks(state).map((autoTask) => autoTask.label),
+      ...state.changeTasks.map((changeTask) => describeChangeTaskForPrompt(changeTask)),
+    ],
+    changeTaskInstructionLines: [
+      ...describeAutoCreatedChangeTasks(state).map((autoTask) => ({ label: autoTask.label, description: autoTask.description })),
+      ...state.changeTasks.map((changeTask) => ({ label: changeTask.name || changeTask.shortDescription, description: changeTask.description })),
+    ]
+      .filter((task) => task.description.trim() !== '')
+      .map((task) => `${task.label}: ${task.description.trim()}`),
     durationEstimates: readChangeDurationEstimates(state),
   };
 }
