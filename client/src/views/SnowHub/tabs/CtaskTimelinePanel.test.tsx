@@ -29,6 +29,13 @@ const CHECKOUT_TASK: ReviewedCtask = {
 };
 const WINDOW = { startUtc: '2026-10-10T05:00', endUtc: '2026-10-10T07:00' };
 
+/** A UTC form date-time as this machine's wall clock, "YYYY-MM-DD HH:mm" — what the panel shows. */
+function localTimeFor(formDateTimeUtc: string): string {
+  const instant = new Date(`${formDateTimeUtc}:00Z`);
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${instant.getFullYear()}-${pad(instant.getMonth() + 1)}-${pad(instant.getDate())} ${pad(instant.getHours())}:${pad(instant.getMinutes())}`;
+}
+
 /** Opens the planning round (which reads the tasks), pastes a timeline and uses it. */
 async function pasteTimeline(replyText: string) {
   fireEvent.click(screen.getByRole('button', { name: /Plan the CTASK timeline with AI Assist/ }));
@@ -52,8 +59,8 @@ describe('CtaskTimelinePanel', () => {
 
     await pasteTimeline('TIMELINE:\nCTASK0000002 | 20\nCTASK0000001 | 45');
 
-    expect(await screen.findByText(/CTASK0000001 · 2026-10-10 05:00 → 2026-10-10 05:45 \(45 min\)/)).toBeInTheDocument();
-    expect(screen.getByText(/CTASK0000002 · 2026-10-10 05:45 → 2026-10-10 06:05 \(20 min\)/)).toBeInTheDocument();
+    expect(await screen.findByText(new RegExp(`CTASK0000001 · ${localTimeFor('2026-10-10T05:00')} → ${localTimeFor('2026-10-10T05:45')} \\(45 min\\)`))).toBeInTheDocument();
+    expect(screen.getByText(new RegExp(`CTASK0000002 · ${localTimeFor('2026-10-10T05:45')} → ${localTimeFor('2026-10-10T06:05')} \\(20 min\\)`))).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Write CTASK dates to ServiceNow' }));
 
     await waitFor(() => expect(saveCtaskPlannedDates).toHaveBeenCalledWith(BASE_TASK, '2026-10-10T05:00', '2026-10-10T05:45'));
@@ -68,6 +75,19 @@ describe('CtaskTimelinePanel', () => {
 
     expect(await screen.findByText(/runs past the change's planned end/)).toBeInTheDocument();
     expect(screen.getByText(/The reply left out CTASK0000002/)).toBeInTheDocument();
+  });
+
+  it('shows ServiceNow\'s own reason when it refuses a task\'s dates', async () => {
+    vi.mocked(saveCtaskPlannedDates).mockImplementation(async (ctask) => {
+      if (ctask.number === 'CTASK0000001') throw new Error('Data Policy Exception: Planned start date must be within the change window');
+    });
+    render(<CtaskTimelinePanel changeSysId="chg-1" changeWindow={WINDOW} />);
+    await pasteTimeline('TIMELINE:\nCTASK0000001 | 45\nCTASK0000002 | 20');
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Write CTASK dates to ServiceNow' }));
+
+    expect(await screen.findByText(/CTASK0000001: Data Policy Exception: Planned start date must be within the change window/)).toBeInTheDocument();
+    expect(screen.getByText(/Wrote planned dates to 1 CTASK\./)).toBeInTheDocument();
   });
 
   it('asks for the change\'s planned start first when it has none', async () => {

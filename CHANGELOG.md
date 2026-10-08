@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **CTASK timeline: ServiceNow's reason for a refused task is shown (GH #415).** *"ServiceNow did not accept the dates
+  for CTASK…"* gave nothing to fix — each refused task now shows ServiceNow's own message (ACL, data policy,
+  business rule).
+- **CTASK timeline times are shown in your own time zone**, as ServiceNow shows the change and its outage — they
+  were shown in UTC, so 00:00 on the timeline was 19:00/20:00 in ServiceNow. The dates written are unchanged.
+
+### Fixed
 - **Create New CHG's prompts now see the CTASKs ServiceNow creates itself (GH #415).** With no CTASK staged, the
   assistant said *"no change tasks were provided… no CTASK content"* — yet every change gets ServiceNow's
   **Implementation** task and the **Technical Checkout** this builder fills in. Both are now listed in Create's

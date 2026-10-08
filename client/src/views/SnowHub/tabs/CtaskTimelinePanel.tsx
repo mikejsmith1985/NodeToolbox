@@ -26,9 +26,18 @@ interface CtaskTimelinePanelProps {
   changeWindow: ChangeWindow;
 }
 
-/** "2026-10-10T05:00" as "2026-10-10 05:00". */
+/**
+ * A UTC form date-time ("2026-10-10T05:00") as the viewer's own wall clock ("2026-10-10 00:00") — how ServiceNow
+ * shows dates, so the timeline reads the same as the change and its outage.
+ */
 function formatFormDateTime(formDateTimeUtc: string): string {
-  return formDateTimeUtc.replace('T', ' ');
+  const instant = new Date(`${formDateTimeUtc}:00Z`);
+  if (Number.isNaN(instant.getTime())) {
+    return formDateTimeUtc.replace('T', ' ');
+  }
+  const padTwo = (value: number) => String(value).padStart(2, '0');
+  return `${instant.getFullYear()}-${padTwo(instant.getMonth() + 1)}-${padTwo(instant.getDate())} `
+    + `${padTwo(instant.getHours())}:${padTwo(instant.getMinutes())}`;
 }
 
 /** "1 CTASK", "2 CTASKs". */
@@ -121,16 +130,17 @@ export function CtaskTimelinePanel({ changeSysId, changeWindow }: CtaskTimelineP
       return;
     }
     setIsWriting(true);
-    const failedNumbers: string[] = [];
+    // ServiceNow's own reason is kept for each refused task — a bare "not accepted" gave the owner nothing to fix.
+    const refusals: string[] = [];
     for (const entry of plannedTimeline.schedule) {
       try {
         await saveCtaskPlannedDates(entry.ctask, entry.startUtc, entry.endUtc);
-      } catch {
-        failedNumbers.push(entry.ctask.number);
+      } catch (writeError) {
+        refusals.push(`${entry.ctask.number}: ${writeError instanceof Error ? writeError.message : 'ServiceNow refused the dates'}`);
       }
     }
-    setErrorMessage(failedNumbers.length > 0 ? `ServiceNow did not accept the dates for ${failedNumbers.join(', ')}.` : '');
-    setStatusMessage(`Wrote planned dates to ${countTasks(plannedTimeline.schedule.length - failedNumbers.length)}.`);
+    setErrorMessage(refusals.length > 0 ? `ServiceNow did not accept the dates — ${refusals.join('; ')}` : '');
+    setStatusMessage(`Wrote planned dates to ${countTasks(plannedTimeline.schedule.length - refusals.length)}.`);
     setIsWriting(false);
   };
 
@@ -138,7 +148,8 @@ export function CtaskTimelinePanel({ changeSysId, changeWindow }: CtaskTimelineP
     <div className={styles.clonePanel}>
       <h4 className={styles.panelSectionTitle}>CTASK timeline</h4>
       <p className={styles.panelHint}>
-        Sets each CTASK&apos;s planned start and end in the order of operations: Implementation → Review Technical Checkout
+        Times are shown in your own time zone, as ServiceNow shows them. Sets each CTASK&apos;s planned start and end
+        in the order of operations: Implementation → Review Technical Checkout
         → Review Business Checkout, back to back from the change&apos;s planned start.
       </p>
       {!hasWindow ? <p className={styles.errorText}>Set the change&apos;s planned start and end first — the timeline is dated within them.</p> : null}
