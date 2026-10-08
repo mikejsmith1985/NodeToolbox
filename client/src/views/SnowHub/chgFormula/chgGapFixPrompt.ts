@@ -5,7 +5,7 @@
 // just those fields rewritten, which the app applies from the pasted reply. A small prompt gets a short,
 // direct reply that assistants do not cut off.
 
-import { CODE_BLOCK_REPLY_INSTRUCTION } from './assistantReplyText.ts';
+import { CONVERSATIONAL_REPLY_INSTRUCTION } from './assistantReplyText.ts';
 import { buildChgContextText, type ChgPromptContext, type ExtraPromptPart } from './chgPromptContext.ts';
 import type { ChgTextFieldValues } from './chgRiskCheckPrompt.ts';
 import {
@@ -109,6 +109,6 @@ export function buildChgGapFixPrompt(
       + 'fixed in text — skip it. Where the fix needs a fact you do not have, ask me for it here in this chat — '
       + 'in this round, never write [CONFIRM: ...] and never invent it.',
     '',
-    CODE_BLOCK_REPLY_INSTRUCTION,
+    CONVERSATIONAL_REPLY_INSTRUCTION,
   ].join('\n');
 }

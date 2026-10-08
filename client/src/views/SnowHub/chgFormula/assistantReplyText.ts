@@ -11,6 +11,29 @@ export const CODE_BLOCK_REPLY_INSTRUCTION =
   'Put your ENTIRE reply inside ONE code block that starts with ```text and ends with ```, so its line breaks '
   + 'survive when it is copied. Write nothing outside the code block.';
 
+/**
+ * The reply rule for a round where the assistant may ask the owner questions first. Under the plain rule ("write
+ * nothing outside the code block") it put its question in a code block too — and the owner pasted the question
+ * back as if it were the reply (GH #415).
+ */
+export const CONVERSATIONAL_REPLY_INSTRUCTION =
+  'Ask your questions as normal chat messages — never in a code block. When every question is answered, only your '
+  + 'FINAL reply — the fields — goes in ONE code block that starts with ```text and ends with ```, so its line '
+  + 'breaks survive when it is copied.';
+
+/** What to tell the owner when the pasted text is the assistant's question rather than its final reply. */
+export const PASTED_QUESTION_MESSAGE =
+  'That is the assistant\'s question — answer it in the AI chat, then paste its final reply (the fields) here.';
+
+// A reply's field marker at a line start, e.g. "BACKOUT_PLAN:" or "CTASK0012345_BACKOUT_PLAN:".
+const FIELD_MARKER_LINE_PATTERN = /^\s*[A-Z][A-Z0-9_]+:/m;
+
+/** True when pasted text holds no field markers but asks something — the assistant's question, not its reply. */
+export function isAssistantQuestion(replyText: string): boolean {
+  const pastedText = stripCodeFences(replyText);
+  return !FIELD_MARKER_LINE_PATTERN.test(pastedText) && pastedText.includes('?');
+}
+
 /** The seven field markers a drafting or correcting reply uses, in the order the prompts ask for them. */
 export const CHG_FIELD_REPLY_MARKERS: readonly string[] = [
   'SHORT_DESCRIPTION',

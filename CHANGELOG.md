@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Modify never loaded the change's Assigned to (GH #415).** Every risk check on an existing change was told
+  *"Change owner (Assigned to): (not set)"* — so it kept flagging Change Owner and asking for validation and
+  escalation people the record already named. Assigned to is now read with the change, and Change Owner settles.
+- **The AI's question pasted back as its reply (GH #415).** The fix round told the assistant to write *everything*
+  in a code block, so it put its question there too, and the question looked like the reply to paste. Questions
+  now go in plain chat; only the final fields go in the code block. A pasted question is recognised: *"That is the
+  assistant's question — answer it in the AI chat, then paste its final reply"*. The fix-round instructions say so.
+
+### Changed
+- **Add Jira issues is now a panel on Review & Save too** — styled like **Add Change Tasks**, at the top of step 5
+  as well as on Change Details, so a late story is as easy to add as a task.
+
+### Fixed
 - **The CTASK backout-plan loop on Modify's risk check (GH #415).** A fixed backout plan kept coming back as
   *"is an implementation task with no backout plan"*:
   - The fix round **stages** a CTASK's new plan behind **Write 1 CTASK fix to ServiceNow**; **Check again** re-read

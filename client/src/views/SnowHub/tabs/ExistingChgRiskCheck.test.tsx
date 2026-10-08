@@ -260,3 +260,27 @@ describe('ExistingChgRiskCheck — staged CTASK fixes reach ServiceNow (GH #415)
     expect(await screen.findByText(/ServiceNow did not keep the backout plan on CTASK0012345/)).toBeInTheDocument();
   });
 });
+
+describe('ExistingChgRiskCheck — a pasted question is not a reply (GH #415)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(fetchReviewedCtasks).mockResolvedValue([]);
+    vi.mocked(fetchChangeJiraStories).mockResolvedValue([]);
+    vi.mocked(fetchChangeAttachmentFileNames).mockResolvedValue([]);
+    vi.mocked(useAiAssist).mockReturnValue({ isUnlocked: true } as ReturnType<typeof useAiAssist>);
+  });
+
+  it('says to answer the assistant in its chat when its question is pasted in place of the fields', async () => {
+    renderPanel();
+    await waitFor(() => expect(fetchReviewedCtasks).toHaveBeenCalled());
+    pasteReply(/Risk check CHG \+ CTASKs/, 'GAP | Backout Plan — no timing. — Fix: add timing.\nVERDICT: NOT READY — 1 gap(s).', /Use this review/);
+
+    fireEvent.click(screen.getByRole('button', { name: /Fix these gaps/ }));
+    fireEvent.change(screen.getByLabelText(/Paste the assistant/), {
+      target: { value: 'Conflicts — Were change calendar and CI conflict checks completed with no unresolved collisions?' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Apply/ }));
+
+    expect(await screen.findByText(/That is the assistant's question — answer it in the AI chat/)).toBeInTheDocument();
+  });
+});

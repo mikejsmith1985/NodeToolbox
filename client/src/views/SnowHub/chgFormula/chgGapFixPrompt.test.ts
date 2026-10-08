@@ -86,3 +86,15 @@ describe('the fix round asks the owner in its own chat (GH #415)', () => {
     expect(prompt).toMatch(/never write \[CONFIRM/i);
   });
 });
+
+describe('questions are asked in the chat, not in the code block (GH #415)', () => {
+  it('keeps questions out of the code block, so the owner never pastes a question back as the reply', () => {
+    const prompt = buildChgGapFixPrompt(SAMPLE_CONTEXT, SAMPLE_FIELDS, [
+      { status: 'INFO', field: 'Conflicts', detail: 'Were calendar and CI conflict checks completed?', fix: '' },
+    ]);
+
+    expect(prompt).toMatch(/Ask your questions as normal chat messages — never in a code block/);
+    expect(prompt).toMatch(/only your FINAL reply — the fields — goes in ONE code block/i);
+    expect(prompt).not.toContain('Write nothing outside the code block.');
+  });
+});

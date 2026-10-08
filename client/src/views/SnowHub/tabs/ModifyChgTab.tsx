@@ -32,7 +32,7 @@ import type { SnowChoiceOptionMap } from '../hooks/useSnowChoiceOptions.ts';
 import { useSnowChoiceOptions } from '../hooks/useSnowChoiceOptions.ts';
 
 import { ClipboardIcon, StartOverIcon } from '../../../components/AppIcons/index.tsx';
-import { AddJiraIssueControl } from './AddJiraIssueControl.tsx';
+import { AddJiraIssuePanel } from './AddJiraIssueControl.tsx';
 import styles from './CreateChgTab.module.css';
 
 const TAB_TITLE = 'Modify Change';
@@ -104,6 +104,7 @@ const CHANGE_LOOKUP_FIELDS = Array.from(new Set([
   'type',
   'requested_by',
   'assignment_group',
+  'assigned_to',
   'u_environment',
   'cmdb_ci',
   'risk',
@@ -575,6 +576,8 @@ function mapServiceNowChangeRecord(changeRecord: ServiceNowChangeRecord): Editab
       requestedBy: extractServiceNowReference(changeRecord.requested_by),
       configItem: loadedConfigItem,
       assignmentGroup: extractServiceNowReference(changeRecord.assignment_group),
+      // The change owner. Not loaded before, so every risk check was told "Change owner: (not set)" (GH #415).
+      assignedTo: extractServiceNowReference(changeRecord.assigned_to),
     },
     chgPlanningAssessment: {
       ...createEmptyChgPlanningAssessment(),
@@ -1073,6 +1076,22 @@ function FetchChangeStep({ state, onChangeKeyChange, onFetchClick, onLoadMyChang
 /**
  * Step 2: Change Details — Edit summary, description, justification, risk/impact
  */
+/** The Add Jira issues panel's text and write-back, wired to the Modify form's own field changes. */
+function buildAddIssuePanelProps(change: EditableChange, onFieldChange: (field: string, value: string) => void) {
+  return {
+    changeText: {
+      description: change.description,
+      justification: change.justification,
+      riskImpactAnalysis: change.riskImpactAnalysis,
+    },
+    onApplyFields: (fields: { description: string; justification: string; riskImpactAnalysis: string }) => {
+      onFieldChange('description', fields.description);
+      onFieldChange('justification', fields.justification);
+      onFieldChange('riskImpactAnalysis', fields.riskImpactAnalysis);
+    },
+  };
+}
+
 function ChangeDetailsStep({ state, onFieldChange }: {
   state: ModifyChgState;
   onFieldChange: (field: string, value: string) => void;
@@ -1099,18 +1118,7 @@ function ChangeDetailsStep({ state, onFieldChange }: {
             value={state.change.description}
           />
         </label>
-        <AddJiraIssueControl
-          changeText={{
-            description: state.change.description,
-            justification: state.change.justification,
-            riskImpactAnalysis: state.change.riskImpactAnalysis,
-          }}
-          onApplyFields={(fields) => {
-            onFieldChange('description', fields.description);
-            onFieldChange('justification', fields.justification);
-            onFieldChange('riskImpactAnalysis', fields.riskImpactAnalysis);
-          }}
-        />
+        <AddJiraIssuePanel {...buildAddIssuePanelProps(state.change, onFieldChange)} />
         <label className={styles.fieldGroup}>
           <span className={styles.fieldLabel}>Justification</span>
           <textarea
@@ -1388,7 +1396,8 @@ function EnvironmentsStep({ state, onFieldChange, onEnvironmentToggle, onEnviron
 /**
  * Step 5: Review & Save — Show summary and CTASK template picker
  */
-function ReviewSaveStep({ state, ctaskTemplates, onAddCtask, onRemoveCtask, onSaveClick, onCtaskFieldChange }: {
+function ReviewSaveStep({ state, ctaskTemplates, onAddCtask, onRemoveCtask, onSaveClick, onCtaskFieldChange, onFieldChange }: {
+  onFieldChange: (field: string, value: string) => void;
   state: ModifyChgState;
   ctaskTemplates: CtaskTemplate[];
   onAddCtask: (template: CtaskTemplate) => void;
@@ -1405,6 +1414,7 @@ function ReviewSaveStep({ state, ctaskTemplates, onAddCtask, onRemoveCtask, onSa
   return (
     <section className={styles.section}>
       <StepHeading currentStep={5} />
+      <AddJiraIssuePanel {...buildAddIssuePanelProps(state.change, onFieldChange)} />
       
       <div className={styles.clonePanel}>
         <h4 className={styles.panelSectionTitle}>Add Change Tasks (CTASKs)</h4>
@@ -2046,6 +2056,7 @@ export default function ModifyChgTab(): React.ReactElement {
             )
           ) : null}
           <ReviewSaveStep
+            onFieldChange={handleFieldChange}
             state={modifyState}
             ctaskTemplates={ctaskTemplates.templates}
             onAddCtask={handleAddCtask}

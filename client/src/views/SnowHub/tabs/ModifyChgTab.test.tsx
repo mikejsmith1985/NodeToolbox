@@ -910,6 +910,20 @@ describe('ModifyChgTab - Save and risk check reachable from every step', () => {
       .toContain('The following Jira issues are included in this release:\n\n- [ENCUC-77] Correct member counts');
   });
 
+  it('offers the same Add Jira issues panel on Review & Save, where the change is finished off', async () => {
+    mockFetchChangeJiraStories.mockResolvedValueOnce([{ key: 'ENCUC-78', fields: { summary: 'Fix the export' } }]);
+    const user = await loadChange();
+    await user.click(screen.getByRole('button', { name: /5\. Review & Save/i }));
+
+    expect(screen.getByRole('heading', { name: 'Add Jira issues to this change' })).toBeInTheDocument();
+    await user.type(screen.getByLabelText('Jira issue to add'), 'ENCUC-78');
+    await user.click(screen.getByRole('button', { name: 'Add issue to change' }));
+
+    expect(await screen.findByText(/Added ENCUC-78/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /2\. Change Details/i }));
+    expect((screen.getByLabelText('Description') as HTMLTextAreaElement).value).toContain('- [ENCUC-78] Fix the export');
+  });
+
   it('says so when Jira has no issue for the typed key, and changes nothing', async () => {
     const user = await loadChange();
 
@@ -1013,6 +1027,7 @@ describe('ModifyChgTab - the risk check is given the record\'s own answers (GH #
       ...MOCK_CHANGE_RECORD,
       impact: { value: '1', display_value: '1-High - Change with significant (10% or > 250 users or > 25 customers) impact' },
       risk: { value: '2', display_value: 'Moderate' },
+      assigned_to: { value: 'user-77', display_value: 'Smith, Michael' },
     };
     mockSnowFetch.mockImplementation(async (requestPath: string) => (String(requestPath).startsWith('/api/now/table/change_task')
       ? { result: [] }
@@ -1029,6 +1044,8 @@ describe('ModifyChgTab - the risk check is given the record\'s own answers (GH #
     const promptText = (document.querySelector('textarea[readonly]') as HTMLTextAreaElement).value;
     expect(promptText).toContain('Impact: 1-High - Change with significant (10% or > 250 users or > 25 customers) impact');
     expect(promptText).toContain('Risk: Moderate');
+    // The change owner is the change's Assigned to — it was never loaded, so every check said "(not set)".
+    expect(promptText).toContain('Change owner (Assigned to): Smith, Michael');
   });
 });
 

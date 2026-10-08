@@ -9,6 +9,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import type { JiraIssue } from '../../../types/jira.ts';
+import { isAssistantQuestion, PASTED_QUESTION_MESSAGE } from '../chgFormula/assistantReplyText.ts';
 import { fetchChangeJiraStories, findJiraKeysInChangeText } from '../chgFormula/changeJiraStories.ts';
 import { describeTaskPeople, type ChgPromptContext } from '../chgFormula/chgPromptContext.ts';
 import { buildChgGapFixPrompt, resolveFixableFields } from '../chgFormula/chgGapFixPrompt.ts';
@@ -300,8 +301,8 @@ export function ExistingChgRiskCheck({
     }
     const askedNumbers = backoutGaps.map((gap) => readCtaskFindingTarget(gap.field)?.ctaskNumber ?? '');
     setPromptSession({
-      instructions: 'Copy this prompt into AI Assist to rewrite what closes the gaps, then paste the reply below — change '
-        + 'fields go into this form, CTASK backout plans are staged for you to write to ServiceNow.',
+      instructions: 'Copy this prompt into AI Assist. Answer any questions it asks in its chat, then paste only its final '
+        + 'reply (the fields) below — change fields go into this form, CTASK backout plans are written on Check again.',
       promptText: buildChgGapFixPrompt(withTaskLines(promptContext, ctasks, jiraStories, attachmentFileNames), fieldValues, changeGaps,
         backoutGaps.length > 0 ? buildCtaskFixPart(ctasks, backoutGaps) : undefined),
       applyButtonLabel: 'Apply the fixes',
@@ -310,7 +311,10 @@ export function ExistingChgRiskCheck({
         const changeFields = changeGaps.length > 0 ? pickChangeFields(changeReplyText, resolveFixableFields(changeGaps)) : {};
         const changeFieldCount = Object.keys(changeFields).length > 0 ? onApplyChangeFields(changeFields) : 0;
         if (changeFieldCount === 0 && backoutPlansByNumber.size === 0) {
-          return { statusMessage: 'No fixes were recognised in the pasted reply.', wasApplied: false };
+          return {
+            statusMessage: isAssistantQuestion(replyText) ? PASTED_QUESTION_MESSAGE : 'No fixes were recognised in the pasted reply.',
+            wasApplied: false,
+          };
         }
         setPendingPlans((currentPlans) => new Map([...currentPlans, ...backoutPlansByNumber]));
         setIsReviewOutOfDate(true);

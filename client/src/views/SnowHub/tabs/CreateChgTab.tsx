@@ -21,7 +21,7 @@ import { useCtaskTemplates } from '../hooks/useCtaskTemplates.ts';
 import { useCrgTemplates } from '../hooks/useCrgTemplates.ts';
 import type { AiAssistGeneratedFields } from '../hooks/useAiAssist.ts';
 import { buildIssueDetailText, parseAiAssistChgResponse, useAiAssist } from '../hooks/useAiAssist.ts';
-import { CODE_BLOCK_REPLY_INSTRUCTION } from '../chgFormula/assistantReplyText.ts';
+import { CODE_BLOCK_REPLY_INSTRUCTION, isAssistantQuestion, PASTED_QUESTION_MESSAGE } from '../chgFormula/assistantReplyText.ts';
 import { buildChgGapFixPrompt, resolveFixableFields } from '../chgFormula/chgGapFixPrompt.ts';
 import {
   buildGapRecheckPrompt,
@@ -2974,15 +2974,15 @@ export default function CrgTab({ mode = 'wizard', targetChangeNumber }: CrgTabPr
 
     setAiAssistPromptSession({
       instructions:
-        'Copy this prompt and paste it into AI Assist to rewrite the fields that close the gaps, then paste the '
-        + 'reply below — the fixes are written into the fields automatically.',
+        'Copy this prompt and paste it into AI Assist. Answer any questions it asks in its chat, then paste only its '
+        + 'final reply (the fields) below — the fixes are written into the fields automatically.',
       promptText: buildChgGapFixPrompt(buildRiskCheckContextFromState(state, choiceOptions), readChgTextFields(state), gapFindings),
       applyButtonLabel: APPLY_FIXES_BUTTON_LABEL,
       applyReply: (replyText) => {
         // Only the fields the prompt showed may change — a reply that rewrites more is not trusted with it.
         const fixOutcome = applyParsedChgFields(replyText, resolveFixableFields(gapFindings));
         if (!fixOutcome.wasApplied) {
-          return fixOutcome;
+          return isAssistantQuestion(replyText) ? { ...fixOutcome, statusMessage: PASTED_QUESTION_MESSAGE } : fixOutcome;
         }
         setIsRiskReviewOutOfDate(true);
         return {

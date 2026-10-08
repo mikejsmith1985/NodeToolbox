@@ -75,3 +75,21 @@ export function AddJiraIssueControl({ changeText, onApplyFields }: AddJiraIssueC
     </div>
   );
 }
+
+/**
+ * The control as its own titled panel, styled like Modify's "Add Change Tasks" panel, so adding a late story is
+ * as easy to find as adding a task — on Change Details and on Review & Save alike.
+ */
+export function AddJiraIssuePanel(props: AddJiraIssueControlProps) {
+  return (
+    <div className={styles.clonePanel}>
+      <h4 className={styles.panelSectionTitle}>Add Jira issues to this change</h4>
+      <p className={styles.panelHint}>
+        Adds the issue to the description&apos;s issue list and counts it in the justification and risk text. Save the
+        change to write it to ServiceNow.
+      </p>
+      <AddJiraIssueControl {...props} />
+    </div>
+  );
+}
+
