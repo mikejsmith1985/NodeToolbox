@@ -18,6 +18,7 @@ describe('ReportAiPanel', () => {
   });
 
   it('renders nothing while AI Assist is locked', () => {
+    act(() => setAiAssistUnlocked(false)); // AI Assist is on by default now — lock it for the locked case.
     const { container } = render(
       <ReportAiPanel title="AI triage" prompt="PROMPT" ingestLabel="Ingest" onIngest={vi.fn()} error={null} />,
     );

@@ -27,6 +27,7 @@ import ForecastTab from './ForecastTab.tsx';
 import { ART_SETTINGS_STORAGE_KEY } from '../../../services/artSettingsStore.ts';
 import { resolveStoryPointsFieldIds } from '../../Hygiene/checks/storyPointsField.ts';
 import type { JiraIssueLike } from './forecastAdapters.ts';
+import { setAiAssistUnlocked } from '../../../store/aiAssistStore.ts';
 
 /**
  * The field the tab will actually read, resolved the same way the tab resolves it.
@@ -74,6 +75,11 @@ afterEach(() => localStorage.clear());
 function renderTab(scopedIssues: JiraIssueLike[] = [issue('ENC-1')]) {
   return render(<ForecastTab projectKey="ENCUC" teamProfileId="team-a" scopedIssues={scopedIssues} />);
 }
+
+// AI Assist is on by default now; these tests read the tab's own copy, so its AI panel is kept out of the way.
+beforeEach(() => {
+  setAiAssistUnlocked(false);
+});
 
 describe('ForecastTab', () => {
   it('offers the version list Jira itself holds, never a typed name', async () => {

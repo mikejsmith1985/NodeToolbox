@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **AI Assist is always on — the passphrase lock is removed.** Every AI Assist affordance (risk checks, fix rounds,
+  CTASK timeline, PO Tool, Feature Canvas, reports) is available from the start; there is no Ctrl+Alt+Z passphrase
+  to enter. The lock state still exists in code (tests use it), but nothing starts locked.
+
 ### Fixed
 - **CTASK timeline: ServiceNow's reason for a refused task is shown (GH #415).** *"ServiceNow did not accept the dates
   for CTASK…"* gave nothing to fix — each refused task now shows ServiceNow's own message (ACL, data policy,

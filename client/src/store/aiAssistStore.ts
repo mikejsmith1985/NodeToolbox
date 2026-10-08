@@ -15,22 +15,15 @@ interface AiAssistStoreState {
   isAiAssistUnlocked: boolean;
 }
 
-/** Safely reads the AI Assist unlock flag from sessionStorage without throwing. */
-function readSessionAiAssistUnlocked(): boolean {
-  try {
-    return sessionStorage.getItem(AI_ASSIST_UNLOCK_SESSION_KEY) === '1';
-  } catch {
-    return false;
-  }
-}
-
 /**
  * Global store for the AI Assist capability unlock state.
  * Read this from any component that gates UI behind the AI Assist passphrase.
  * Write it via setAiAssistUnlocked (called by the passphrase verification flow).
  */
 export const useAiAssistStore = create<AiAssistStoreState>(() => ({
-  isAiAssistUnlocked: readSessionAiAssistUnlocked(),
+  // On from the start: the passphrase lock was removed at the owner's request. setAiAssistUnlocked(false) still
+  // turns it off, which the locked-state tests rely on.
+  isAiAssistUnlocked: true,
 }));
 
 /**

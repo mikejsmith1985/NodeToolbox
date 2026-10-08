@@ -8,9 +8,9 @@ describe('aiAssistStore', () => {
     vi.resetModules(); // re-evaluate the module so init reads fresh sessionStorage
   });
 
-  it('defaults isAiAssistUnlocked to false when no session flag is set', async () => {
+  it('starts with AI Assist on — there is no passphrase to enter', async () => {
     const { useAiAssistStore } = await import('./aiAssistStore.ts');
-    expect(useAiAssistStore.getState().isAiAssistUnlocked).toBe(false);
+    expect(useAiAssistStore.getState().isAiAssistUnlocked).toBe(true);
   });
 
   it('initialises isAiAssistUnlocked to true when the session flag is "1"', async () => {
@@ -19,10 +19,10 @@ describe('aiAssistStore', () => {
     expect(useAiAssistStore.getState().isAiAssistUnlocked).toBe(true);
   });
 
-  it('ignores any session value other than "1"', async () => {
-    sessionStorage.setItem('tbxAiAssistUnlocked', 'true');
+  it('stays on whatever an earlier session stored', async () => {
+    sessionStorage.setItem('tbxAiAssistUnlocked', 'false');
     const { useAiAssistStore } = await import('./aiAssistStore.ts');
-    expect(useAiAssistStore.getState().isAiAssistUnlocked).toBe(false);
+    expect(useAiAssistStore.getState().isAiAssistUnlocked).toBe(true);
   });
 
   it('setAiAssistUnlocked(true) updates state and persists to sessionStorage', async () => {

@@ -12,6 +12,7 @@ describe('NlToJqlControl', () => {
   });
 
   it('renders nothing when AI Assist is locked (manual parity)', () => {
+    act(() => setAiAssistUnlocked(false)); // AI Assist is on by default now — lock it for the locked case.
     const { container } = render(<NlToJqlControl projectKey="ENCUC" piName="PI 26.3" onAcceptJql={vi.fn()} />);
     expect(container).toBeEmptyDOMElement();
   });

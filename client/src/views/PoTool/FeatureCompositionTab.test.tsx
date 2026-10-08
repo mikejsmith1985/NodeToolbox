@@ -118,6 +118,7 @@ describe('FeatureCompositionTab — coaching (SC-005, SC-013)', () => {
   });
 
   it('renders no AI control, because the gate is locked', () => {
+    setAiAssistUnlocked(false); // AI Assist is on by default now — lock it for the locked case.
     renderTab();
 
     expect(screen.queryByText(/\bAI\b/)).toBeNull();

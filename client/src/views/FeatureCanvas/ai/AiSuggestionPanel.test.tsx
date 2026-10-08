@@ -40,6 +40,7 @@ describe('AiSuggestionPanel', () => {
   });
 
   it('renders nothing when AI Assist is locked (manual parity)', () => {
+    act(() => setAiAssistUnlocked(false)); // AI Assist is on by default now — lock it for the locked case.
     const { container } = render(<AiSuggestionPanel canvasNodes={NODES} controller={buildController()} wip={WIP} piName="PI 26.3 (05/21/26 - 07/29/26)" onClose={vi.fn()} />);
     expect(container).toBeEmptyDOMElement();
   });
