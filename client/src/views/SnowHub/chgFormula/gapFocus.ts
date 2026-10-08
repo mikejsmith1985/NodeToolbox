@@ -39,7 +39,7 @@ function normaliseName(name: string): string {
 }
 
 /** True when a reviewer's name for a field is the card's name, allowing a light rewording either way. */
-function isSameName(reviewerName: string, cardName: string): boolean {
+export function isSameName(reviewerName: string, cardName: string): boolean {
   const reviewerKey = normaliseName(reviewerName);
   const cardKey = normaliseName(cardName);
   return reviewerKey !== '' && (reviewerKey === cardKey || reviewerKey.includes(cardKey) || cardKey.includes(reviewerKey));

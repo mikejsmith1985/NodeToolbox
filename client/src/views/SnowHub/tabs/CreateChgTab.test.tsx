@@ -1722,6 +1722,23 @@ describe('CreateChgTab', () => {
     expect(promptText).toContain('Description: Affects 300 enrolled members.');
   });
 
+  it('settles the team\'s standing answers in the review instead of asking them (GH #415)', async () => {
+    const user = userEvent.setup();
+    mockState.currentStep = 6;
+    render(<CreateChgTab />);
+    act(() => setAiAssistUnlocked(true));
+
+    await user.click(await screen.findByRole('button', { name: /Risk check with AI Assist/i }));
+    fireEvent.change(screen.getByRole('textbox', { name: "Paste the assistant's reply here" }), {
+      target: { value: 'INFO | Test Results — What are the REL results?\nINFO | Escalation Path — Who escalates?\nVERDICT: NOT READY — no text gaps.' },
+    });
+    await user.click(screen.getByRole('button', { name: 'Use this review' }));
+    await user.click(screen.getByRole('button', { name: 'Close' }));
+
+    expect(screen.queryByLabelText(/Answer for Test Results/)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/Answer for Escalation Path/)).not.toBeInTheDocument();
+  });
+
   it('tells the risk check who deploys: each CTASK\'s assignee and group (GH #415)', async () => {
     const user = userEvent.setup();
     mockState.currentStep = 6;

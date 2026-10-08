@@ -31,6 +31,7 @@ import {
   mergeRecheckIntoReview,
 } from '../chgFormula/gapFocus.ts';
 import { parseRiskCheckReview } from '../chgFormula/riskCheckReview.ts';
+import { applyTeamStandards } from '../chgFormula/teamStandards.ts';
 import { buildChgContextText, describeTaskPeople, type ChgPromptContext } from '../chgFormula/chgPromptContext.ts';
 import { buildChgRiskCheckPrompt, splitRiskCheckReply } from '../chgFormula/chgRiskCheckPrompt.ts';
 import { renderFormulaGuidanceForField } from '../chgFormula/formulaCard.ts';
@@ -49,7 +50,9 @@ import {
   formatMinutes,
   listMissingEstimateLabels,
   normalizeEstimates,
+  rollUpEstimates,
   sumEstimateMinutes,
+  type DurationEstimates,
 } from '../ctaskDurations.ts';
 import { CtaskEditForm } from '../components/CtaskEditForm.tsx';
 import { SnowLookupField } from '../components/SnowLookupField.tsx';
@@ -2071,7 +2074,13 @@ function buildChgPromptContextFromState(state: CrgStateData, choiceOptions: Snow
       .map((assessmentRow) => `${assessmentRow.label}: ${readChoiceOptionLabel(
         choiceOptions, assessmentRow.snowFieldName, state.chgPlanningAssessment[assessmentRow.fieldKey])}`),
     changeTaskLines: state.changeTasks.map((changeTask) => describeChangeTaskForPrompt(changeTask)),
+    durationEstimates: readChangeDurationEstimates(state),
   };
+}
+
+/** The change's durations: its CTASKs' estimates added up — what the duration card fields are settled from. */
+function readChangeDurationEstimates(state: CrgStateData): DurationEstimates {
+  return rollUpEstimates(state.changeTasks.map((changeTask) => changeTask.durationEstimates));
 }
 
 /**
@@ -2937,7 +2946,7 @@ export default function CrgTab({ mode = 'wizard', targetChangeNumber }: CrgTabPr
         if (!reviewText && !revisedFieldsText) {
           return { statusMessage: 'The pasted review is empty.', wasApplied: false };
         }
-        setRiskCheckReviewText(reviewText);
+        setRiskCheckReviewText(applyTeamStandards(reviewText, readChangeDurationEstimates(state)));
         // The corrected fields the review asked for are written straight into the change, so a gap is
         // fixed by pasting the reply rather than by retyping each suggestion.
         const correctedFieldCount = revisedFieldsText
@@ -3010,7 +3019,7 @@ export default function CrgTab({ mode = 'wizard', targetChangeNumber }: CrgTabPr
         if (closedCount + stillOpenCount === 0) {
           return { wasApplied: false, statusMessage: 'No PASS / GAP lines found in the pasted re-check.' };
         }
-        setRiskCheckReviewText(mergeRecheckIntoReview(previousReviewText, replyText));
+        setRiskCheckReviewText(applyTeamStandards(mergeRecheckIntoReview(previousReviewText, replyText), readChangeDurationEstimates(state)));
         setIsRiskReviewOutOfDate(false);
         return {
           wasApplied: true,

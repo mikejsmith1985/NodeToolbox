@@ -124,6 +124,31 @@ describe('ExistingChgRiskCheck', () => {
       .toBeInTheDocument();
   });
 
+  it('settles the team\'s standing answers and the CTASK durations itself, whatever the review asks (GH #415)', async () => {
+    vi.mocked(fetchReviewedCtasks).mockResolvedValue([{
+      ...MISALIGNED_TASK,
+      configItem: CHANGE_CI,
+      description: 'Run the pipeline.\nImplementation: 30 minutes',
+    }]);
+    renderPanel();
+    await screen.findByText(/CTASK checks pass/);
+
+    fireEvent.click(screen.getByRole('button', { name: /Risk check CHG \+ CTASKs/ }));
+    expect(screen.getByDisplayValue(/Team standards[\s\S]*Estimated durations \(the CTASK estimates added up\): implementation 30 min/))
+      .toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    pasteReply(/Risk check CHG \+ CTASKs/, [
+      'INFO | Bridge or Command Center — What bridge will be used?',
+      'INFO | Implementation Duration — How long will it take?',
+      'INFO | Business Validation — Who validates?',
+      'VERDICT: NOT READY — no text gaps.',
+    ].join('\n'), /Use this review/);
+
+    expect(await screen.findByLabelText(/Answer for Business Validation/)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/Answer for Bridge or Command Center/)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/Answer for Implementation Duration/)).not.toBeInTheDocument();
+  });
+
   it('sets a misaligned task\'s CI to the change\'s in ServiceNow, then reads the tasks again', async () => {
     renderPanel();
 

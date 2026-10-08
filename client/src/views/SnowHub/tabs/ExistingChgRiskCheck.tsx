@@ -32,7 +32,8 @@ import {
   mergeRecheckIntoReview,
 } from '../chgFormula/gapFocus.ts';
 import { parseRiskCheckReview, type RiskCheckFinding } from '../chgFormula/riskCheckReview.ts';
-import { describeEstimatesForPrompt, readEstimatesFromText } from '../ctaskDurations.ts';
+import { applyTeamStandards } from '../chgFormula/teamStandards.ts';
+import { describeEstimatesForPrompt, readEstimatesFromText, rollUpEstimates, type DurationEstimates } from '../ctaskDurations.ts';
 import { buildIssueDetailText, parseAiAssistChgResponse, useAiAssist } from '../hooks/useAiAssist.ts';
 import type { SnowReference } from '../hooks/useCrgState.ts';
 import { AiAssistPromptModal, type AiAssistPromptSession } from './AiAssistPromptModal.tsx';
@@ -85,7 +86,13 @@ function withTaskLines(
     jiraSourceText: jiraStories.length > 0 ? buildIssueDetailText([...jiraStories]) : '',
     attachmentFileNames,
     changeTaskLines: ctasks.map((ctask) => describeTaskLine(ctask)),
+    durationEstimates: readTaskDurationEstimates(ctasks),
   };
+}
+
+/** The change's durations: its tasks' estimates added up — what the duration card fields are settled from. */
+function readTaskDurationEstimates(ctasks: readonly ReviewedCtask[]): DurationEstimates {
+  return rollUpEstimates(ctasks.map((ctask) => readEstimatesFromText(ctask.description)));
 }
 
 /** One task as the prompt lists it: what it is, who does it, and its estimated minutes when it has them. */
@@ -277,7 +284,7 @@ export function ExistingChgRiskCheck({
         if (!pastedReview && !revisedFieldsText) {
           return { statusMessage: 'The pasted review is empty.', wasApplied: false };
         }
-        setReviewText(composeReviewWithRules(pastedReview, ruleFindings));
+        setReviewText(applyTeamStandards(composeReviewWithRules(pastedReview, ruleFindings), readTaskDurationEstimates(ctasks)));
         const correctedCount = revisedFieldsText ? onApplyChangeFields(pickChangeFields(revisedFieldsText, resolveFixableFields([]))) : 0;
         setIsReviewOutOfDate(correctedCount > 0);
         return { statusMessage: 'Review captured — it is shown below the CTASK checks.', wasApplied: true };
@@ -357,7 +364,10 @@ export function ExistingChgRiskCheck({
         if (closedCount + stillOpenCount === 0) {
           return { statusMessage: 'No PASS / GAP lines found in the pasted re-check.', wasApplied: false };
         }
-        setReviewText(composeReviewWithRules(mergeRecheckIntoReview(baseReview, replyText), freshRules));
+        setReviewText(applyTeamStandards(
+          composeReviewWithRules(mergeRecheckIntoReview(baseReview, replyText), freshRules),
+          readTaskDurationEstimates(freshTasks),
+        ));
         setIsReviewOutOfDate(false);
         return { statusMessage: `Re-checked: ${closedCount} closed, ${stillOpenCount} still open.`, wasApplied: true };
       },

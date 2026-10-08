@@ -6,6 +6,8 @@
 // Both also need the team's delivery path, which the ServiceNow record cannot express: it only knows the
 // REL / PRD / PFIX changes, not the Dev and INT testing that must come before them.
 
+import { describeEstimatesForPrompt, type DurationEstimates } from '../ctaskDurations.ts';
+
 /** The facts about the change that the wizard already holds, already turned into readable labels. */
 export interface ChgPromptContext {
   categoryLabel: string;
@@ -30,6 +32,8 @@ export interface ChgPromptContext {
   jiraSourceText?: string;
   /** The names of the files attached to the change (test evidence, approvals), when the change exists. */
   attachmentFileNames?: readonly string[];
+  /** The CTASK estimates added up — the change's implementation, validation and backout durations. */
+  durationEstimates?: DurationEstimates;
 }
 
 /**
@@ -71,6 +75,12 @@ function renderAttachments(attachmentFileNames: readonly string[] | undefined): 
   return [renderFactList('Files attached to the change', attachmentFileNames, ''), ATTACHED_EVIDENCE_RULE];
 }
 
+/** The team's standing answers, then the change's estimated durations when its CTASKs carry them. */
+function renderTeamStandards(durationEstimates: DurationEstimates | undefined): string[] {
+  const durationLine = durationEstimates ? describeDurationFacts(durationEstimates) : '';
+  return ['', ...TEAM_STANDARD_LINES, ...(durationLine ? [durationLine] : [])];
+}
+
 /** A change task's people as one phrase for the prompt — and plainly what is missing when they are not set. */
 export function describeTaskPeople(assignedToName: string, assignmentGroupName: string): string {
   const assigneeText = assignedToName.trim();
@@ -80,6 +90,26 @@ export function describeTaskPeople(assignedToName: string, assignmentGroupName: 
   }
   const assigneePart = assigneeText === '' ? 'no assignee' : `assigned to ${assigneeText}`;
   return `${assigneePart} (${groupText === '' ? 'no group' : `group: ${groupText}`})`;
+}
+
+/** The standing answers, stated to the assistant as facts in every risk-check, fix and re-check prompt. */
+export const TEAM_STANDARD_LINES: readonly string[] = [
+  'Team standards (facts for every change — never ask about them):',
+  '- Bridge or Command Center: the change owner schedules the bridge after the change is approved.',
+  '- Test Results: test evidence is always attached to the change.',
+  '- Escalation Path: escalation starts with the CI Director and progresses as required.',
+  '- Implementation, Validation and Backout Duration, and Recovery Time: calculate them from the estimated '
+    + 'durations below and the timed steps in the plans — never ask for them.',
+];
+
+/** The change's estimated durations as one fact line for the prompt, or '' when no CTASK carries an estimate. */
+export function describeDurationFacts(estimates: DurationEstimates): string {
+  const estimatesText = describeEstimatesForPrompt(estimates);
+  if (estimatesText === '') {
+    return '';
+  }
+  const recoveryText = estimates.backoutMinutes ? `; recovery time ${estimates.backoutMinutes} min` : '';
+  return `Estimated durations (the CTASK estimates added up): ${estimatesText}${recoveryText}.`;
 }
 
 /**
@@ -155,6 +185,7 @@ export function buildChgContextText(context: ChgPromptContext): string {
     RECORD_ANSWERS_ARE_FACTS_RULE,
     TASK_ASSIGNEES_ARE_THE_TEAM_RULE,
     CHANGE_OWNER_RULE,
+    ...renderTeamStandards(context.durationEstimates),
     ...renderJiraSource(context.jiraSourceText),
     '',
     'Delivery and testing path every release follows:',

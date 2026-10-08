@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **The CHG risk check settles the team's standing answers itself (GH #415).** Some card fields have the same
+  answer on every change, and the assistant kept asking them anyway. They are now **team standards**: stated to the
+  assistant as facts, and settled as PASS in the review **by rule, whatever the reply says**:
+  - **Implementation / Validation / Backout Duration** — the CTASK estimates added up; **Recovery Time** — the
+    backout-and-restoration estimate. (Left to the review only when no CTASK carries that estimate.)
+  - **Bridge or Command Center** — the change owner schedules the bridge after approval.
+  - **Test Results** — test evidence is always attached to the change.
+  - **Escalation Path** — starts with the CI Director and progresses as required.
 - **Check again no longer repeats the same questions (GH #415).** The re-check showed the assistant only the one or
   two fields each question "lived in" and replayed the old question verbatim, so it could not see the plans, CTASK
   minutes or files that answered it — and asked again. A re-check holding a question now shows the **whole
