@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Add one Jira issue to an existing change (Modify Existing CHG → Change Details).** Type a key and click
+  **Add issue to change**: Toolbox reads the issue from Jira (a typo'd or invisible key is caught before anything
+  changes), adds a `- [KEY] summary` line to the end of the description's issue list (or starts the list), and
+  counts it in the builder's *"N issue(s)"* phrases. A key the change already names is left alone. Save as usual —
+  CAB prep, test evidence and the risk check all pick the new issue up. No more hand-editing or Start Over.
+
 ### Fixed
 - **The CHG risk check settles the team's standing answers itself (GH #415).** Some card fields have the same
   answer on every change, and the assistant kept asking them anyway. They are now **team standards**: stated to the

@@ -21,6 +21,13 @@ vi.mock('../hooks/useCtaskTemplates.ts', () => ({
   useCtaskTemplates: () => mockCtaskTemplatesState,
 }));
 
+// Jira reads for the added issue and the risk check's named stories; none unless a test says otherwise.
+const mockFetchChangeJiraStories = vi.hoisted(() => vi.fn(async (_issueKeys: readonly string[]) => [] as unknown[]));
+vi.mock('../chgFormula/changeJiraStories.ts', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../chgFormula/changeJiraStories.ts')>()),
+  fetchChangeJiraStories: mockFetchChangeJiraStories,
+}));
+
 const mockSnowChoiceOptionsState = vi.hoisted(() => ({
   choiceOptions: {
     impact: [{ value: '', label: '' }, { value: '3', label: '3 - Low' }],
@@ -888,6 +895,29 @@ describe('ModifyChgTab - Save and risk check reachable from every step', () => {
 
     await waitFor(() => expect(fetchSpy).toHaveBeenCalledWith('/api/snow-relay/change/CHG0001234', expect.objectContaining({ method: 'PATCH' })));
     expect(await screen.findByRole('status')).toHaveTextContent(/saved successfully/i);
+  });
+
+  it('adds one Jira issue to the change\'s issue list from the Change Details step', async () => {
+    mockFetchChangeJiraStories.mockResolvedValueOnce([{ key: 'ENCUC-77', fields: { summary: 'Correct member counts' } }]);
+    const user = await loadChange();
+
+    await user.type(screen.getByLabelText('Jira issue to add'), 'encuc-77');
+    await user.click(screen.getByRole('button', { name: 'Add issue to change' }));
+
+    expect(await screen.findByText(/Added ENCUC-77/)).toBeInTheDocument();
+    expect(mockFetchChangeJiraStories).toHaveBeenCalledWith(['ENCUC-77']);
+    expect((screen.getByLabelText('Description') as HTMLTextAreaElement).value)
+      .toContain('The following Jira issues are included in this release:\n\n- [ENCUC-77] Correct member counts');
+  });
+
+  it('says so when Jira has no issue for the typed key, and changes nothing', async () => {
+    const user = await loadChange();
+
+    await user.type(screen.getByLabelText('Jira issue to add'), 'ENCUC-404');
+    await user.click(screen.getByRole('button', { name: 'Add issue to change' }));
+
+    expect(await screen.findByText(/Jira has no issue ENCUC-404/)).toBeInTheDocument();
+    expect(screen.getByLabelText('Description')).toHaveValue('Detailed rollout plan');
   });
 
   it('opens the CHG + CTASK risk check from the Change Details step', async () => {

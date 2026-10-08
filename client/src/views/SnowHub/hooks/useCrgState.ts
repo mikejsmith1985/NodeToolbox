@@ -16,6 +16,7 @@ import {
 } from '../ctaskDurations.ts';
 import type { JiraIssue } from '../../../types/jira.ts';
 import { useCrgSubmissionDebugStore } from '../../../hooks/useCrgSubmissionDebugStore.ts';
+import { ISSUE_LIST_HEADING } from '../chgFormula/changeIssueList.ts';
 
 // Step 3 was added (Change Details) so the wizard now runs 1 through 6.
 type CrgStep = 1 | 2 | 3 | 4 | 5 | 6;
@@ -1984,7 +1985,7 @@ export function useCrgState(options?: UseCrgStateOptions): { state: CrgState; ac
       return {
         ...previousState,
         generatedShortDescription,
-        generatedDescription:      `The following Jira issues are included in this release:\n\n${issueList}`,
+        generatedDescription:      `${ISSUE_LIST_HEADING}\n\n${issueList}`,
         generatedJustification:    `Planned release of ${releaseLabel} containing ${selectedIssues.length} issue(s).`,
         generatedRiskImpact:       `Standard deployment risk. ${selectedIssues.length} issue(s) included. Follow standard runbook.`,
         // Advance to Change Details (step 3) so the user can fill in basic info before editing docs.

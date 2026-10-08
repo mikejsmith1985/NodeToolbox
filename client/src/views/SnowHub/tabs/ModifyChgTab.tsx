@@ -32,6 +32,7 @@ import type { SnowChoiceOptionMap } from '../hooks/useSnowChoiceOptions.ts';
 import { useSnowChoiceOptions } from '../hooks/useSnowChoiceOptions.ts';
 
 import { ClipboardIcon, StartOverIcon } from '../../../components/AppIcons/index.tsx';
+import { AddJiraIssueControl } from './AddJiraIssueControl.tsx';
 import styles from './CreateChgTab.module.css';
 
 const TAB_TITLE = 'Modify Change';
@@ -1098,6 +1099,18 @@ function ChangeDetailsStep({ state, onFieldChange }: {
             value={state.change.description}
           />
         </label>
+        <AddJiraIssueControl
+          changeText={{
+            description: state.change.description,
+            justification: state.change.justification,
+            riskImpactAnalysis: state.change.riskImpactAnalysis,
+          }}
+          onApplyFields={(fields) => {
+            onFieldChange('description', fields.description);
+            onFieldChange('justification', fields.justification);
+            onFieldChange('riskImpactAnalysis', fields.riskImpactAnalysis);
+          }}
+        />
         <label className={styles.fieldGroup}>
           <span className={styles.fieldLabel}>Justification</span>
           <textarea
