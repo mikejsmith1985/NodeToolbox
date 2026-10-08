@@ -108,11 +108,18 @@ function isSameCtaskTarget(firstTarget: CtaskFindingTarget | null, secondTarget:
  */
 export function composeReviewWithRules(aiReviewText: string, ruleFindings: readonly RiskCheckFinding[]): string {
   const ruleTargets = ruleFindings.map((ruleFinding) => readCtaskFindingTarget(ruleFinding.field));
+  // Rules about the change itself (its outage record) replace any earlier line of the same name.
+  const changeRuleFieldNames = new Set(ruleFindings
+    .filter((ruleFinding) => readCtaskFindingTarget(ruleFinding.field) === null)
+    .map((ruleFinding) => ruleFinding.field.trim().toLowerCase()));
   const keptAiFindings = parseRiskCheckReview(aiReviewText).findings.filter((aiFinding) => {
     const aiTarget = readCtaskFindingTarget(aiFinding.field);
     // The rules' own lines are always rebuilt from the tasks as they now are. Kept from an earlier review, a
     // "no backout plan" line outlived the plan being written — and the check could never pass (GH #415).
     if (aiTarget?.aspect === 'configItem' || aiFinding.detail === MISSING_BACKOUT_PLAN_DETAIL) {
+      return false;
+    }
+    if (changeRuleFieldNames.has(aiFinding.field.trim().toLowerCase())) {
       return false;
     }
     return !ruleTargets.some((ruleTarget) => isSameCtaskTarget(ruleTarget, aiTarget));

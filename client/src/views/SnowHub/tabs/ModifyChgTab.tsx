@@ -32,6 +32,8 @@ import type { SnowChoiceOptionMap } from '../hooks/useSnowChoiceOptions.ts';
 import { useSnowChoiceOptions } from '../hooks/useSnowChoiceOptions.ts';
 
 import { ClipboardIcon, StartOverIcon } from '../../../components/AppIcons/index.tsx';
+import { ChangeOutagePanel } from '../outage/ChangeOutagePanel.tsx';
+import type { PlannedOutageInput } from '../outage/changeOutageRecord.ts';
 import { AddJiraIssuePanel } from './AddJiraIssueControl.tsx';
 import styles from './CreateChgTab.module.css';
 
@@ -486,6 +488,26 @@ function readChangeConfigItem(change: EditableChange): SnowReference {
     .map((environmentRow) => change[environmentRow.stateKey])
     .find((environmentState) => environmentState.isEnabled && (environmentState.configItem.sysId || environmentState.configItem.displayName));
   return enabledEnvironment?.configItem ?? change.chgBasicInfo.configItem;
+}
+
+/**
+ * What the outage record needs from the change: whether it is Production (PRD / PFIX need an outage record), and
+ * the CI, short description and planned window a planned outage is created from — the environment's own window
+ * when it has one, so the outage covers exactly the change.
+ */
+function readOutageSetup(change: EditableChange): { isProduction: boolean; outageInput: PlannedOutageInput } {
+  const environmentKey = inferEnvironmentKeyFromValue(change.chgBasicInfo.environment);
+  const environmentConfig = environmentKey ? change[getEnvironmentStateKey(environmentKey)] : null;
+  return {
+    isProduction: environmentKey === 'prd' || environmentKey === 'pfix',
+    outageInput: {
+      changeSysId: change.sysId,
+      configItemSysId: readChangeConfigItem(change).sysId,
+      shortDescription: change.shortDescription,
+      plannedStartUtc: environmentConfig?.plannedStartDate ?? '',
+      plannedEndUtc: environmentConfig?.plannedEndDate ?? '',
+    },
+  };
 }
 
 /**
@@ -1415,6 +1437,7 @@ function ReviewSaveStep({ state, ctaskTemplates, onAddCtask, onRemoveCtask, onSa
     <section className={styles.section}>
       <StepHeading currentStep={5} />
       <AddJiraIssuePanel {...buildAddIssuePanelProps(state.change, onFieldChange)} />
+      <ChangeOutagePanel key={state.change.sysId} {...readOutageSetup(state.change)} />
       
       <div className={styles.clonePanel}>
         <h4 className={styles.panelSectionTitle}>Add Change Tasks (CTASKs)</h4>
@@ -2043,6 +2066,7 @@ export default function ModifyChgTab(): React.ReactElement {
                 changeConfigItem={riskCheckConfigItem}
                 changeSysId={loadedChange.sysId}
                 fieldValues={riskCheckFieldValues}
+                isProduction={readOutageSetup(loadedChange).isProduction}
                 key={loadedChange.sysId}
                 onApplyChangeFields={handleApplyChangeFields}
                 promptContext={riskCheckPromptContext}

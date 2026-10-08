@@ -23,6 +23,10 @@ vi.mock('../hooks/useCtaskTemplates.ts', () => ({
 
 // Jira reads for the added issue and the risk check's named stories; none unless a test says otherwise.
 const mockFetchChangeJiraStories = vi.hoisted(() => vi.fn(async (_issueKeys: readonly string[]) => [] as unknown[]));
+vi.mock('../outage/changeOutageRecord.ts', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../outage/changeOutageRecord.ts')>()),
+  fetchChangeOutages: vi.fn(async () => []),
+}));
 vi.mock('../chgFormula/changeJiraStories.ts', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../chgFormula/changeJiraStories.ts')>()),
   fetchChangeJiraStories: mockFetchChangeJiraStories,
@@ -922,6 +926,13 @@ describe('ModifyChgTab - Save and risk check reachable from every step', () => {
     expect(await screen.findByText(/Added ENCUC-78/)).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /2\. Change Details/i }));
     expect((screen.getByLabelText('Description') as HTMLTextAreaElement).value).toContain('- [ENCUC-78] Fix the export');
+  });
+
+  it('shows the change\'s outage record on Review & Save', async () => {
+    const user = await loadChange();
+    await user.click(screen.getByRole('button', { name: /5\. Review & Save/i }));
+
+    expect(screen.getByRole('heading', { name: 'Outage record' })).toBeInTheDocument();
   });
 
   it('says so when Jira has no issue for the typed key, and changes nothing', async () => {

@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Outage record for Production changes (Modify Existing CHG).** A Production change was rejected at approval for
+  having no outage record — and nothing in Toolbox read, checked or created one.
+  - **Review & Save** now has an **Outage record** panel listing the outages linked to the change
+    (`cmdb_ci_outage`, linked by the change). A Production (PRD / PFIX) change with none shows *"it will not be
+    approved without one"* and a **Create planned outage record** button, filled from the change's CI, short
+    description and planned start/end; the record is read back after it is created.
+  - The **risk check** settles **Outage Record** itself from what ServiceNow holds: a Production change with none is
+    a form field to set (never READY), one with a linked outage passes. Rule lines are replaced, never stacked.
+
 ### Fixed
 - **Modify never loaded the change's Assigned to (GH #415).** Every risk check on an existing change was told
   *"Change owner (Assigned to): (not set)"* — so it kept flagging Change Owner and asking for validation and

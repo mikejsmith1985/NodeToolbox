@@ -118,3 +118,14 @@ describe('composeReviewWithRules — a rule that stops firing leaves the review 
   });
 });
 
+describe('composeReviewWithRules — rule lines from other checks are replaced, not stacked', () => {
+  it('keeps one Outage Record line: the fresh rule\'s', () => {
+    const earlierReview = 'RECORD | Outage Record — none linked.\nVERDICT: NOT READY — no text gaps; 1 record field to set.';
+    const freshOutageRule = { status: 'PASS' as const, field: 'Outage Record', detail: 'OUT0005678 is linked to the change.', fix: '' };
+
+    const composedReview = composeReviewWithRules(earlierReview, [freshOutageRule]);
+
+    expect(composedReview.match(/Outage Record/g)).toHaveLength(1);
+    expect(composedReview).toContain('PASS | Outage Record — OUT0005678 is linked to the change.');
+  });
+});

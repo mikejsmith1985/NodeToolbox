@@ -33,6 +33,7 @@ import {
 } from '../chgFormula/gapFocus.ts';
 import { parseRiskCheckReview, type RiskCheckFinding } from '../chgFormula/riskCheckReview.ts';
 import { applyTeamStandards } from '../chgFormula/teamStandards.ts';
+import { checkOutageRule, fetchChangeOutages, type ChangeOutage } from '../outage/changeOutageRecord.ts';
 import { describeEstimatesForPrompt, readEstimatesFromText, rollUpEstimates, type DurationEstimates } from '../ctaskDurations.ts';
 import { buildIssueDetailText, parseAiAssistChgResponse, useAiAssist } from '../hooks/useAiAssist.ts';
 import type { SnowReference } from '../hooks/useCrgState.ts';
@@ -47,6 +48,8 @@ interface ExistingChgRiskCheckProps {
   /** The change's record facts; its task lines are filled in here from the tasks read. */
   promptContext: ChgPromptContext;
   fieldValues: ChgTextFieldValues;
+  /** Production (PRD / PFIX) changes need an outage record; the rule is checked here, never by the assistant. */
+  isProduction?: boolean;
   /** Writes rewritten change fields into the Modify form; returns how many were applied. */
   onApplyChangeFields: (fields: Partial<Record<ChgTextFieldKey, string>>) => number;
 }
@@ -165,10 +168,12 @@ export function ExistingChgRiskCheck({
   promptContext,
   fieldValues,
   onApplyChangeFields,
+  isProduction = false,
 }: ExistingChgRiskCheckProps) {
   const { isUnlocked } = useAiAssist();
   const [ctasks, setCtasks] = useState<ReviewedCtask[]>([]);
   const [attachmentFileNames, setAttachmentFileNames] = useState<string[]>([]);
+  const [outages, setOutages] = useState<ChangeOutage[]>([]);
   // The stories read, with the keys they were read for — stories for keys the change no longer names are not used.
   const [loadedStories, setLoadedStories] = useState<{ storyKeysText: string; stories: JiraIssue[] }>({
     storyKeysText: '',
@@ -182,7 +187,12 @@ export function ExistingChgRiskCheck({
   const [statusMessage, setStatusMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
 
-  const ruleFindings = useMemo(() => checkCtaskRules(ctasks, changeConfigItem), [ctasks, changeConfigItem]);
+  // Every rule Toolbox settles itself: the CTASK rules, and the outage record a Production change needs.
+  const readRuleFindings = useCallback(
+    (tasks: readonly ReviewedCtask[]) => [...checkCtaskRules(tasks, changeConfigItem), ...checkOutageRule(isProduction, outages)],
+    [changeConfigItem, isProduction, outages],
+  );
+  const ruleFindings = useMemo(() => readRuleFindings(ctasks), [readRuleFindings, ctasks]);
   const misalignedTasks = ctasks.filter((ctask) =>
     ruleFindings.some((finding) => finding.status === 'GAP' && readCtaskFindingTarget(finding.field)?.ctaskNumber === ctask.number
       && readCtaskFindingTarget(finding.field)?.aspect === 'configItem'));
@@ -209,6 +219,19 @@ export function ExistingChgRiskCheck({
       .catch((loadError: unknown) => {
         if (!isStale) setErrorMessage(loadError instanceof Error ? loadError.message : 'Could not read the change tasks.');
       });
+    return () => {
+      isStale = true;
+    };
+  }, [changeSysId]);
+
+  // The outage records linked to the change. A failed read leaves the list empty — the rule then asks for one.
+  useEffect(() => {
+    let isStale = false;
+    fetchChangeOutages(changeSysId)
+      .then((linkedOutages) => {
+        if (!isStale) setOutages(linkedOutages);
+      })
+      .catch(() => undefined);
     return () => {
       isStale = true;
     };
@@ -268,10 +291,10 @@ export function ExistingChgRiskCheck({
     const freshTasks = await reloadCtasks();
     setReviewText((currentReview) => (currentReview === null
       ? null
-      : composeReviewWithRules(currentReview, checkCtaskRules(freshTasks, changeConfigItem))));
+      : composeReviewWithRules(currentReview, readRuleFindings(freshTasks))));
     setStatusMessage(`Set the CI on ${pluralise(misalignedTasks.length, 'task', 'tasks')} to ${changeConfigItem.displayName}.`);
     setIsWriting(false);
-  }, [misalignedTasks, changeConfigItem, writeTaskFixes, reloadCtasks]);
+  }, [misalignedTasks, changeConfigItem, writeTaskFixes, reloadCtasks, readRuleFindings]);
 
   const handleOpenRiskCheck = useCallback(() => {
     setPromptSession({
@@ -349,9 +372,9 @@ export function ExistingChgRiskCheck({
     // The task rules are re-judged from what ServiceNow now holds, so a fixed task's gap closes at once.
     setReviewText((currentReview) => (currentReview === null
       ? null
-      : composeReviewWithRules(currentReview, checkCtaskRules(freshTasks, changeConfigItem))));
+      : composeReviewWithRules(currentReview, readRuleFindings(freshTasks))));
     return freshTasks;
-  }, [pendingPlans, ctasks, writeTaskFixes, reloadCtasks, changeConfigItem]);
+  }, [pendingPlans, ctasks, writeTaskFixes, reloadCtasks, readRuleFindings]);
 
   const handleWritePendingPlans = useCallback(async () => {
     setIsWriting(true);
@@ -362,7 +385,7 @@ export function ExistingChgRiskCheck({
   const handleCheckAgain = useCallback(async () => {
     // Staged backout plans are written first: re-checking what ServiceNow holds without them only finds the same gap.
     const freshTasks = pendingPlans.size > 0 ? await writePendingPlans() : await reloadCtasks();
-    const freshRules = checkCtaskRules(freshTasks, changeConfigItem);
+    const freshRules = readRuleFindings(freshTasks);
     const baseReview = composeReviewWithRules(reviewText ?? '', freshRules);
     // Questions for the owner (INFO) and form fields (RECORD) are re-judged too, so an answered one can close.
     const { changeGaps, backoutGaps } = readOpenGaps(baseReview, isUnsettledFinding);
@@ -392,7 +415,7 @@ export function ExistingChgRiskCheck({
         return { statusMessage: `Re-checked: ${closedCount} closed, ${stillOpenCount} still open.`, wasApplied: true };
       },
     });
-  }, [pendingPlans, writePendingPlans, reloadCtasks, changeConfigItem, reviewText, promptContext, jiraStories, attachmentFileNames, fieldValues]);
+  }, [pendingPlans, writePendingPlans, reloadCtasks, readRuleFindings, reviewText, promptContext, jiraStories, attachmentFileNames, fieldValues]);
 
   return (
     <section className={styles.section}>

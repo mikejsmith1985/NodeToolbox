@@ -4,6 +4,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { fetchChangeJiraStories } from '../chgFormula/changeJiraStories.ts';
+import { fetchChangeOutages } from '../outage/changeOutageRecord.ts';
 import { fetchChangeAttachmentFileNames, fetchReviewedCtasks, saveCtaskFix } from '../chgFormula/ctaskReviewApi.ts';
 import type { ReviewedCtask } from '../chgFormula/ctaskReviewRecord.ts';
 import { useAiAssist } from '../hooks/useAiAssist.ts';
@@ -18,6 +19,10 @@ vi.mock('../chgFormula/ctaskReviewApi.ts', async (importOriginal) => ({
 vi.mock('../chgFormula/changeJiraStories.ts', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../chgFormula/changeJiraStories.ts')>()),
   fetchChangeJiraStories: vi.fn(),
+}));
+vi.mock('../outage/changeOutageRecord.ts', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../outage/changeOutageRecord.ts')>()),
+  fetchChangeOutages: vi.fn(async () => []),
 }));
 vi.mock('../hooks/useAiAssist.ts', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../hooks/useAiAssist.ts')>()),
@@ -49,12 +54,13 @@ const MISALIGNED_TASK: ReviewedCtask = {
   backoutFieldName: 'u_backout_plan',
 };
 
-function renderPanel(onApplyChangeFields = vi.fn(() => 1), fieldValues = FIELD_VALUES) {
+function renderPanel(onApplyChangeFields = vi.fn(() => 1), fieldValues = FIELD_VALUES, isProduction = false) {
   render(
     <ExistingChgRiskCheck
       changeConfigItem={CHANGE_CI}
       changeSysId="chg-1"
       fieldValues={fieldValues}
+      isProduction={isProduction}
       onApplyChangeFields={onApplyChangeFields}
       promptContext={{
         categoryLabel: 'Software', changeTypeLabel: 'Normal', isExpedited: false, configItemLabel: 'Recon Service',
@@ -282,5 +288,27 @@ describe('ExistingChgRiskCheck — a pasted question is not a reply (GH #415)', 
     fireEvent.click(screen.getByRole('button', { name: /Apply/ }));
 
     expect(await screen.findByText(/That is the assistant's question — answer it in the AI chat/)).toBeInTheDocument();
+  });
+});
+
+describe('ExistingChgRiskCheck — the outage record (a Production change was rejected without one)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(fetchReviewedCtasks).mockResolvedValue([]);
+    vi.mocked(fetchChangeJiraStories).mockResolvedValue([]);
+    vi.mocked(fetchChangeAttachmentFileNames).mockResolvedValue([]);
+    vi.mocked(useAiAssist).mockReturnValue({ isUnlocked: true } as ReturnType<typeof useAiAssist>);
+  });
+
+  it('lists a missing outage record among the form fields to set, whatever the review says', async () => {
+    vi.mocked(fetchChangeOutages).mockResolvedValue([]);
+    renderPanel(undefined, FIELD_VALUES, true);
+    await waitFor(() => expect(fetchChangeOutages).toHaveBeenCalledWith('chg-1'));
+
+    pasteReply(/Risk check CHG \+ CTASKs/, 'PASS | Backout Plan — clear.\nVERDICT: READY FOR APPROVAL', /Use this review/);
+
+    const formFieldList = await screen.findByRole('list', { name: 'Fix in the change form' });
+    expect(within(formFieldList).getByText('Outage Record')).toBeInTheDocument();
+    expect(screen.queryByText('VERDICT: READY FOR APPROVAL')).not.toBeInTheDocument();
   });
 });
