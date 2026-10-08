@@ -215,3 +215,48 @@ describe('ExistingChgRiskCheck — questions for the owner', () => {
     expect(screen.getByDisplayValue(/Questions to settle with me first:\s+- Support Coverage — Who is on call\?/)).toBeInTheDocument();
   });
 });
+
+describe('ExistingChgRiskCheck — staged CTASK fixes reach ServiceNow (GH #415)', () => {
+  const NO_PLAN_TASK: ReviewedCtask = { ...MISALIGNED_TASK, configItem: CHANGE_CI, backoutPlan: '' };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(fetchChangeJiraStories).mockResolvedValue([]);
+    vi.mocked(fetchChangeAttachmentFileNames).mockResolvedValue([]);
+    vi.mocked(useAiAssist).mockReturnValue({ isUnlocked: true } as ReturnType<typeof useAiAssist>);
+  });
+
+  /** Reviews the change, then applies a fix round that stages a backout plan for the task. */
+  async function stageBackoutPlan() {
+    renderPanel();
+    await screen.findByText(/CTASK0012345 · Backout plan/);
+    pasteReply(/Risk check CHG \+ CTASKs/, 'PASS | Backout Plan — clear.\nVERDICT: NOT READY — 1 gap(s).', /Use this review/);
+    pasteReply(/Fix these gaps/, 'CTASK0012345_BACKOUT_PLAN:\n1. Stop the job.\n2. Redeploy v1.4.', /Apply/);
+    await screen.findByRole('button', { name: /Write 1 CTASK fix to ServiceNow/ });
+  }
+
+  it('writes a staged backout plan before Check again, so the re-check reads what was fixed', async () => {
+    let isPlanWritten = false;
+    vi.mocked(saveCtaskFix).mockImplementation(async () => {
+      isPlanWritten = true;
+    });
+    vi.mocked(fetchReviewedCtasks).mockImplementation(async () => [isPlanWritten ? { ...NO_PLAN_TASK, backoutPlan: '1. Stop the job.' } : NO_PLAN_TASK]);
+    await stageBackoutPlan();
+
+    fireEvent.click(screen.getByRole('button', { name: /Check again/ }));
+
+    await waitFor(() => expect(saveCtaskFix).toHaveBeenCalledWith(NO_PLAN_TASK, { backoutPlan: '1. Stop the job.\n2. Redeploy v1.4.' }));
+    await waitFor(() => expect(screen.queryByRole('button', { name: /Write 1 CTASK fix/ })).not.toBeInTheDocument());
+    expect(screen.queryByText(/is an implementation task with no backout plan/)).not.toBeInTheDocument();
+  });
+
+  it('says so when ServiceNow accepts a backout plan but does not keep it, instead of looping', async () => {
+    vi.mocked(saveCtaskFix).mockResolvedValue(undefined);
+    vi.mocked(fetchReviewedCtasks).mockResolvedValue([NO_PLAN_TASK]);
+    await stageBackoutPlan();
+
+    fireEvent.click(screen.getByRole('button', { name: /Write 1 CTASK fix to ServiceNow/ }));
+
+    expect(await screen.findByText(/ServiceNow did not keep the backout plan on CTASK0012345/)).toBeInTheDocument();
+  });
+});

@@ -11,6 +11,15 @@ import { isSameName, renderReviewText } from './gapFocus.ts';
 import { parseRiskCheckReview, type RiskCheckFinding } from './riskCheckReview.ts';
 import { readTeamStandards, type TeamStandard } from './teamStandardsStore.ts';
 
+/**
+ * The change owner is the change's Assigned to (the team's rule). When that is set, the Change Owner field is
+ * settled; the assistant kept flagging it as a record field to set even with the person named on the record.
+ */
+function readChangeOwnerAnswer(changeOwnerName: string): ReadonlyArray<{ fieldName: string; detail: string }> {
+  const ownerName = changeOwnerName.trim();
+  return ownerName === '' ? [] : [{ fieldName: 'Change Owner', detail: `${ownerName} (the change's Assigned to)` }];
+}
+
 /** Each kept standard as the PASS detail the review is given for its field. */
 function readStandingAnswers(standards: readonly TeamStandard[]): ReadonlyArray<{ fieldName: string; detail: string }> {
   return standards.map((standard) => ({ fieldName: standard.fieldName, detail: `${standard.answer} (team standard)` }));
@@ -52,8 +61,13 @@ export function applyTeamStandards(
   reviewText: string,
   estimates: DurationEstimates,
   standards: readonly TeamStandard[] = readTeamStandards(),
+  changeOwnerName = '',
 ): string {
-  const standingAnswers = [...readStandingAnswers(standards), ...readDurationAnswers(estimates)];
+  const standingAnswers = [
+    ...readStandingAnswers(standards),
+    ...readDurationAnswers(estimates),
+    ...readChangeOwnerAnswer(changeOwnerName),
+  ];
   const reviewFindings = parseRiskCheckReview(reviewText).findings;
   const settledFindings = reviewFindings.map((finding) => settleFinding(finding, standingAnswers));
   const wasAnySettled = settledFindings.some((finding, findingIndex) => finding !== reviewFindings[findingIndex]);

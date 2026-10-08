@@ -283,7 +283,7 @@ export function ExistingChgRiskCheck({
         if (!pastedReview && !revisedFieldsText) {
           return { statusMessage: 'The pasted review is empty.', wasApplied: false };
         }
-        setReviewText(applyTeamStandards(composeReviewWithRules(pastedReview, ruleFindings), readTaskDurationEstimates(ctasks)));
+        setReviewText(applyTeamStandards(composeReviewWithRules(pastedReview, ruleFindings), readTaskDurationEstimates(ctasks), undefined, promptContext.changeOwnerLabel));
         const correctedCount = revisedFieldsText ? onApplyChangeFields(pickChangeFields(revisedFieldsText, resolveFixableFields([]))) : 0;
         setIsReviewOutOfDate(correctedCount > 0);
         return { statusMessage: 'Review captured — it is shown below the CTASK checks.', wasApplied: true };
@@ -323,20 +323,41 @@ export function ExistingChgRiskCheck({
     });
   }, [reviewText, promptContext, ctasks, jiraStories, attachmentFileNames, fieldValues, onApplyChangeFields]);
 
-  const handleWritePendingPlans = useCallback(async () => {
-    setIsWriting(true);
+  // Writes every staged backout plan, then reads the tasks back to prove each one stuck. A plan ServiceNow accepted
+  // but did not keep (a read-only field) is named, rather than left to fail the next check without a reason.
+  const writePendingPlans = useCallback(async (): Promise<ReviewedCtask[]> => {
     const fixes = [...pendingPlans.entries()]
       .map(([ctaskNumber, backoutPlan]) => ({ ctask: ctasks.find((ctask) => ctask.number === ctaskNumber), fix: { backoutPlan } }))
       .filter((entry): entry is { ctask: ReviewedCtask; fix: { backoutPlan: string } } => entry.ctask !== undefined);
     const failedNumbers = await writeTaskFixes(fixes);
     setPendingPlans((currentPlans) => new Map([...currentPlans].filter(([ctaskNumber]) => failedNumbers.includes(ctaskNumber))));
-    await reloadCtasks();
-    setStatusMessage(`Wrote ${pluralise(fixes.length - failedNumbers.length, 'CTASK fix', 'CTASK fixes')} to ServiceNow — Check again to confirm.`);
+    const freshTasks = await reloadCtasks();
+    const unkeptNumbers = fixes
+      .map(({ ctask }) => ctask.number)
+      .filter((ctaskNumber) => !failedNumbers.includes(ctaskNumber))
+      .filter((ctaskNumber) => (freshTasks.find((freshTask) => freshTask.number === ctaskNumber)?.backoutPlan ?? '').trim() === '');
+    if (unkeptNumbers.length > 0) {
+      setErrorMessage(`ServiceNow did not keep the backout plan on ${unkeptNumbers.join(', ')} — the write was accepted but `
+        + 'the field reads back empty. Check that field on the CTASK in ServiceNow.');
+    }
+    const keptCount = fixes.length - failedNumbers.length - unkeptNumbers.length;
+    setStatusMessage(`Wrote ${pluralise(keptCount, 'CTASK fix', 'CTASK fixes')} to ServiceNow.`);
+    // The task rules are re-judged from what ServiceNow now holds, so a fixed task's gap closes at once.
+    setReviewText((currentReview) => (currentReview === null
+      ? null
+      : composeReviewWithRules(currentReview, checkCtaskRules(freshTasks, changeConfigItem))));
+    return freshTasks;
+  }, [pendingPlans, ctasks, writeTaskFixes, reloadCtasks, changeConfigItem]);
+
+  const handleWritePendingPlans = useCallback(async () => {
+    setIsWriting(true);
+    await writePendingPlans();
     setIsWriting(false);
-  }, [pendingPlans, ctasks, writeTaskFixes, reloadCtasks]);
+  }, [writePendingPlans]);
 
   const handleCheckAgain = useCallback(async () => {
-    const freshTasks = await reloadCtasks();
+    // Staged backout plans are written first: re-checking what ServiceNow holds without them only finds the same gap.
+    const freshTasks = pendingPlans.size > 0 ? await writePendingPlans() : await reloadCtasks();
     const freshRules = checkCtaskRules(freshTasks, changeConfigItem);
     const baseReview = composeReviewWithRules(reviewText ?? '', freshRules);
     // Questions for the owner (INFO) and form fields (RECORD) are re-judged too, so an answered one can close.
@@ -360,12 +381,14 @@ export function ExistingChgRiskCheck({
         setReviewText(applyTeamStandards(
           composeReviewWithRules(mergeRecheckIntoReview(baseReview, replyText), freshRules),
           readTaskDurationEstimates(freshTasks),
+          undefined,
+          promptContext.changeOwnerLabel,
         ));
         setIsReviewOutOfDate(false);
         return { statusMessage: `Re-checked: ${closedCount} closed, ${stillOpenCount} still open.`, wasApplied: true };
       },
     });
-  }, [reloadCtasks, changeConfigItem, reviewText, promptContext, jiraStories, attachmentFileNames, fieldValues]);
+  }, [pendingPlans, writePendingPlans, reloadCtasks, changeConfigItem, reviewText, promptContext, jiraStories, attachmentFileNames, fieldValues]);
 
   return (
     <section className={styles.section}>

@@ -55,6 +55,9 @@ function isSameConfigItem(firstItem: SnowReference, secondItem: SnowReference): 
   return firstName !== '' && firstName === secondItem.displayName.trim().toLowerCase();
 }
 
+// What the backout rule says of an implementation task with no plan. Composing finds its own earlier lines by this.
+const MISSING_BACKOUT_PLAN_DETAIL = 'is an implementation task with no backout plan.';
+
 /** The CI rule for one task. */
 function checkConfigItem(ctask: ReviewedCtask, changeConfigItem: SnowReference): RiskCheckFinding {
   const field = buildCtaskFindingField(ctask.number, 'configItem');
@@ -85,7 +88,7 @@ export function checkCtaskRules(ctasks: readonly ReviewedCtask[], changeConfigIt
       ruleFindings.push({
         status: 'GAP',
         field: buildCtaskFindingField(ctask.number, 'backoutPlan'),
-        detail: 'is an implementation task with no backout plan.',
+        detail: MISSING_BACKOUT_PLAN_DETAIL,
         fix: BACKOUT_FIX_TEXT,
       });
     }
@@ -107,7 +110,9 @@ export function composeReviewWithRules(aiReviewText: string, ruleFindings: reado
   const ruleTargets = ruleFindings.map((ruleFinding) => readCtaskFindingTarget(ruleFinding.field));
   const keptAiFindings = parseRiskCheckReview(aiReviewText).findings.filter((aiFinding) => {
     const aiTarget = readCtaskFindingTarget(aiFinding.field);
-    if (aiTarget?.aspect === 'configItem') {
+    // The rules' own lines are always rebuilt from the tasks as they now are. Kept from an earlier review, a
+    // "no backout plan" line outlived the plan being written — and the check could never pass (GH #415).
+    if (aiTarget?.aspect === 'configItem' || aiFinding.detail === MISSING_BACKOUT_PLAN_DETAIL) {
       return false;
     }
     return !ruleTargets.some((ruleTarget) => isSameCtaskTarget(ruleTarget, aiTarget));

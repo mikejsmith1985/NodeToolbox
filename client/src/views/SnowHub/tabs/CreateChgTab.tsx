@@ -2945,7 +2945,7 @@ export default function CrgTab({ mode = 'wizard', targetChangeNumber }: CrgTabPr
         if (!reviewText && !revisedFieldsText) {
           return { statusMessage: 'The pasted review is empty.', wasApplied: false };
         }
-        setRiskCheckReviewText(applyTeamStandards(reviewText, readChangeDurationEstimates(state)));
+        setRiskCheckReviewText(applyTeamStandards(reviewText, readChangeDurationEstimates(state), undefined, state.chgBasicInfo.assignedTo.displayName));
         // The corrected fields the review asked for are written straight into the change, so a gap is
         // fixed by pasting the reply rather than by retyping each suggestion.
         const correctedFieldCount = revisedFieldsText
@@ -3015,7 +3015,7 @@ export default function CrgTab({ mode = 'wizard', targetChangeNumber }: CrgTabPr
         if (closedCount + stillOpenCount === 0) {
           return { wasApplied: false, statusMessage: 'No PASS / GAP lines found in the pasted re-check.' };
         }
-        setRiskCheckReviewText(applyTeamStandards(mergeRecheckIntoReview(previousReviewText, replyText), readChangeDurationEstimates(state)));
+        setRiskCheckReviewText(applyTeamStandards(mergeRecheckIntoReview(previousReviewText, replyText), readChangeDurationEstimates(state), undefined, state.chgBasicInfo.assignedTo.displayName));
         setIsRiskReviewOutOfDate(false);
         return {
           wasApplied: true,

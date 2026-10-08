@@ -105,3 +105,14 @@ describe('edited standards (Admin Hub)', () => {
     expect(standardsText).not.toContain('CI Director');
   });
 });
+
+describe('the change owner (GH #415)', () => {
+  it('passes Change Owner when the change has an Assigned to — the owner is that person', () => {
+    const reviewText = 'RECORD | Change Owner — Set the Assigned To field to the accountable owner.\nVERDICT: NOT READY — no text gaps.';
+
+    const settledText = applyTeamStandards(reviewText, NO_ESTIMATES, DEFAULT_TEAM_STANDARDS, 'Smith, Mike');
+
+    expect(settledText).toContain('PASS | Change Owner — Smith, Mike (the change\'s Assigned to)');
+    expect(readStatus(applyTeamStandards(reviewText, NO_ESTIMATES, DEFAULT_TEAM_STANDARDS, ''), 'Change Owner')).toBe('RECORD');
+  });
+});

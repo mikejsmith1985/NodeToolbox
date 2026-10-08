@@ -101,3 +101,20 @@ describe('composeReviewWithRules', () => {
     expect(review.isReady).toBe(true);
   });
 });
+
+describe('composeReviewWithRules — a rule that stops firing leaves the review (GH #415)', () => {
+  it('drops an earlier "no backout plan" finding once the task has a plan, instead of keeping it forever', () => {
+    const earlierReview = [
+      'PASS | Backout Plan — clear.',
+      'GAP | CTASK0012345 · Backout plan — is an implementation task with no backout plan. — Fix: Write the steps.',
+      'VERDICT: NOT READY — 1 gap(s).',
+    ].join('\n');
+    const taskWithPlan = buildCtask({ configItem: CHANGE_CI, backoutPlan: '1. Stop the job.' });
+
+    const composedReview = composeReviewWithRules(earlierReview, checkCtaskRules([taskWithPlan], CHANGE_CI));
+
+    expect(composedReview).not.toContain('no backout plan');
+    expect(composedReview).toContain('VERDICT: READY FOR APPROVAL');
+  });
+});
+

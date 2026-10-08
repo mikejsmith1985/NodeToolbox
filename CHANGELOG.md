@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **The CTASK backout-plan loop on Modify's risk check (GH #415).** A fixed backout plan kept coming back as
+  *"is an implementation task with no backout plan"*:
+  - The fix round **stages** a CTASK's new plan behind **Write 1 CTASK fix to ServiceNow**; **Check again** re-read
+    the CTASK without it and raised the same gap. Check again now **writes staged plans first**.
+  - The rule's own "no backout plan" line, once in the review, was never removed — even after the plan existed. Rule
+    lines are now always rebuilt from the CTASKs as they are, and a write re-judges them at once.
+  - After a write the CTASK is read back; if ServiceNow accepted the plan but the field reads back empty, Toolbox
+    says so (*"ServiceNow did not keep the backout plan on CTASK…"*) instead of looping.
+  - **Change Owner** is settled as PASS when the change's Assigned to is set — the owner *is* that person.
+
 ### Added
 - **CHG risk check — Team Standards are editable in Admin Hub.** A new **📐 CHG Risk Check — Team Standards** panel
   (under the RCP rules) lists the answers that hold for every change — pick a Formula Card field, write the
