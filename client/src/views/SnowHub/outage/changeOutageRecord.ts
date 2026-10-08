@@ -7,7 +7,6 @@
 
 import { snowFetch } from '../../../services/snowApi.ts';
 import type { RiskCheckFinding } from '../chgFormula/riskCheckReview.ts';
-import { extractStringValue } from '../hooks/useCrgState.ts';
 
 /** One outage record linked to the change, as the panel shows it. */
 export interface ChangeOutage {
@@ -33,8 +32,17 @@ const OUTAGE_FIELDS = 'sys_id,number,type,begin,end,cmdb_ci,short_description';
 const PLANNED_OUTAGE_TYPE = 'planned';
 // The card name the rule reports under, so the review lists it beside the other record fields.
 const OUTAGE_FINDING_FIELD = 'Outage Record';
-// The form keeps "YYYY-MM-DDTHH:mm"; the Table API stores "YYYY-MM-DD HH:mm:ss".
-const FORM_DATE_TIME_PATTERN = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/;
+// The Modify form keeps "YYYY-MM-DDTHH:mm" and the change builder sends "YYYY-MM-DD HH:mm:ss" (both UTC); the
+// Table API stores the second.
+const FORM_DATE_TIME_PATTERN = /^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})/;
+
+/** A Table API field as text: its display value when the reply carries one, else its stored value. */
+function extractStringValue(fieldValue: unknown): string {
+  if (typeof fieldValue === 'string') return fieldValue;
+  if (typeof fieldValue !== 'object' || fieldValue === null) return '';
+  const tableField = fieldValue as { display_value?: unknown; value?: unknown };
+  return String(tableField.display_value ?? tableField.value ?? '');
+}
 
 /** The outage records linked to the change, oldest first. */
 export async function fetchChangeOutages(changeSysId: string): Promise<ChangeOutage[]> {

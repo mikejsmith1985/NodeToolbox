@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { jiraGet } from '../../../services/jiraApi.ts';
 import { snowFetch } from '../../../services/snowApi.ts';
+import { createPlannedOutage } from '../outage/changeOutageRecord.ts';
 import type { CrgTemplate, CtaskTemplate, CtaskTemplateData } from './useCrgState.ts';
 import { createChangeTask, fetchChangeTasksAttachedToChange, formatSnowDateTimeForApi, listEnvironmentDateOrderErrors, NO_ENABLED_ENVIRONMENT_MESSAGE, reconcileStagedChangeTasks, useCrgState } from './useCrgState.ts';
 
@@ -14,6 +15,12 @@ vi.mock('../../../services/jiraApi.ts', () => ({
 
 vi.mock('../../../services/snowApi.ts', () => ({
   snowFetch: vi.fn(),
+}));
+
+// The planned outage a Production change is created with; its own module is tested on its own.
+vi.mock('../outage/changeOutageRecord.ts', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../outage/changeOutageRecord.ts')>()),
+  createPlannedOutage: vi.fn(async () => 'OUT0009001'),
 }));
 
 /** The UTC string ServiceNow should receive for a wall clock typed in this machine's timezone. */
@@ -1181,7 +1188,44 @@ describe('useCrgState', () => {
       expect(pfixPayload.start_date).toBe(expectedUtcFor('2025-02-03T08:00'));
       expect(pfixPayload.end_date).toBe(expectedUtcFor('2025-02-03T09:00'));
       expect(result.current.state.submitResult).toBe(
-        '3 CHGs created: REL CHG0002001, PRD CHG0002002, PFIX CHG0002003',
+        '3 CHGs created: REL CHG0002001, PRD CHG0002002 (outage OUT0009001), PFIX CHG0002003 (outage OUT0009001)',
+      );
+      // A Production change is approved only with an outage record, so PRD and PFIX each get their planned outage
+      // — on that change's CI and window — and REL gets none.
+      expect(createPlannedOutage).toHaveBeenCalledTimes(2);
+      expect(createPlannedOutage).toHaveBeenCalledWith({
+        changeSysId: 'chg-prd-001',
+        configItemSysId: 'ci-prd-001',
+        shortDescription: prdPayload.short_description,
+        plannedStartUtc: expectedUtcFor('2025-02-02T08:00'),
+        plannedEndUtc: expectedUtcFor('2025-02-02T09:00'),
+      });
+    });
+
+    it('still reports a Production change as created when its outage record cannot be, and says what to do', async () => {
+      vi.mocked(createPlannedOutage).mockRejectedValueOnce(new Error('Insufficient rights to insert into cmdb_ci_outage'));
+      vi.mocked(snowFetch)
+        .mockResolvedValueOnce({ result: { number: 'CHG0002002', sys_id: 'chg-prd-001' } } as never)
+        .mockResolvedValueOnce({ result: [] } as never);
+      const { result } = await advanceToChangeDetailsStep();
+      act(() => {
+        result.current.actions.updateEnvironment('prd', {
+          isEnabled: true,
+          configItem: { sysId: 'ci-prd-001', displayName: 'PRD CI' },
+          impactedPersonsAware: 'prd-aware',
+          plannedStartDate: '2025-02-02T08:00',
+          plannedEndDate: '2025-02-02T09:00',
+        });
+      });
+
+      await act(async () => {
+        await result.current.actions.createChg({ prd: 'prd-env' });
+      });
+
+      // The changes are still reported as created — the outage failure is added, never in their place.
+      expect(result.current.state.submitResult).toMatch(/^\d+ CHGs created: REL CHG\d+, PRD CHG\d+;/);
+      expect(result.current.state.submitResult).toMatch(
+        /the outage record was not created \(Insufficient rights to insert into cmdb_ci_outage\) — create it in Modify Existing CHG → Review & Save/,
       );
     });
 

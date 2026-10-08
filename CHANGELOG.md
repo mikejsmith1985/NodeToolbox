@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Create New CHG creates the planned outage for Production changes.** Each PRD / PFIX change is now created with
+  its planned outage record — on that change's CI, for its planned window, linked to it — and the result names it
+  (*"CHG… created with 2 CTASKs and outage OUT…"*). If ServiceNow refuses the outage, the change is still reported
+  as created and the message says why and to create it in **Modify Existing CHG → Review & Save**.
+
+### Added
 - **Outage record for Production changes (Modify Existing CHG).** A Production change was rejected at approval for
   having no outage record — and nothing in Toolbox read, checked or created one.
   - **Review & Save** now has an **Outage record** panel listing the outages linked to the change

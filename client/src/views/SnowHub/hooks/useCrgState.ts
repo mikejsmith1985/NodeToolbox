@@ -17,6 +17,7 @@ import {
 import type { JiraIssue } from '../../../types/jira.ts';
 import { useCrgSubmissionDebugStore } from '../../../hooks/useCrgSubmissionDebugStore.ts';
 import { ISSUE_LIST_HEADING } from '../chgFormula/changeIssueList.ts';
+import { createPlannedOutage } from '../outage/changeOutageRecord.ts';
 
 // Step 3 was added (Change Details) so the wizard now runs 1 through 6.
 type CrgStep = 1 | 2 | 3 | 4 | 5 | 6;
@@ -539,6 +540,39 @@ interface ChangeSubmissionTarget {
 interface CreatedChangeRecord {
   environmentLabel: string | null;
   changeNumber: string;
+  /** The planned outage created with a Production change. */
+  outageNumber?: string;
+  /** Why a Production change's outage could not be created — the change itself still was. */
+  outageFailure?: string;
+}
+
+// Production changes are approved only with an outage record, so they are created with a planned one.
+const PRODUCTION_OUTAGE_ENVIRONMENT_KEYS = new Set(['prd', 'pfix']);
+
+/**
+ * Creates the planned outage for a Production change, on that change's CI and window. A failure is returned, not
+ * thrown: the change exists either way, and the outage can still be created from Modify's Review & Save.
+ */
+async function createOutageForProductionChange(
+  changeSysId: string,
+  changeSubmissionTarget: ChangeSubmissionTarget,
+  shortDescription: string,
+): Promise<Pick<CreatedChangeRecord, 'outageNumber' | 'outageFailure'>> {
+  if (!PRODUCTION_OUTAGE_ENVIRONMENT_KEYS.has(changeSubmissionTarget.environmentKey ?? '')) {
+    return {};
+  }
+  try {
+    const outageNumber = await createPlannedOutage({
+      changeSysId,
+      configItemSysId: changeSubmissionTarget.configItem.sysId,
+      shortDescription,
+      plannedStartUtc: formatSnowDateTimeForApi(changeSubmissionTarget.plannedStartDate),
+      plannedEndUtc: formatSnowDateTimeForApi(changeSubmissionTarget.plannedEndDate),
+    });
+    return { outageNumber: outageNumber || 'created' };
+  } catch (unknownError) {
+    return { outageFailure: unknownError instanceof Error ? unknownError.message : 'ServiceNow did not create it' };
+  }
 }
 
 /**
@@ -1337,26 +1371,44 @@ function formatCreatedChangeSummary(
   createdChangeRecords: CreatedChangeRecord[],
   queuedTaskCount: number,
 ): string {
+  return `${formatCreatedChangeList(createdChangeRecords, queuedTaskCount)}${formatOutageFailures(createdChangeRecords)}`;
+}
+
+/** The created changes, with each Production change's outage beside it. */
+function formatCreatedChangeList(createdChangeRecords: CreatedChangeRecord[], queuedTaskCount: number): string {
   if (createdChangeRecords.length === 1) {
     const onlyCreatedChange = createdChangeRecords[0];
     if (!onlyCreatedChange) {
       return 'CHG created';
     }
+    const outageText = onlyCreatedChange.outageNumber ? ` and outage ${onlyCreatedChange.outageNumber}` : '';
     return queuedTaskCount > 0
-      ? `${onlyCreatedChange.changeNumber} created with ${formatCtaskCount(queuedTaskCount)}`
-      : `${onlyCreatedChange.changeNumber} created`;
+      ? `${onlyCreatedChange.changeNumber} created with ${formatCtaskCount(queuedTaskCount)}${outageText}`
+      : `${onlyCreatedChange.changeNumber} created${outageText}`;
   }
 
   const createdChangeList = createdChangeRecords
-    .map((createdChangeRecord) =>
-      createdChangeRecord.environmentLabel
+    .map((createdChangeRecord) => {
+      const changeLabel = createdChangeRecord.environmentLabel
         ? `${createdChangeRecord.environmentLabel} ${createdChangeRecord.changeNumber}`
-        : createdChangeRecord.changeNumber)
+        : createdChangeRecord.changeNumber;
+      return createdChangeRecord.outageNumber ? `${changeLabel} (outage ${createdChangeRecord.outageNumber})` : changeLabel;
+    })
     .join(', ');
 
   return queuedTaskCount > 0
     ? `${createdChangeRecords.length} CHGs created with ${formatCtaskCount(queuedTaskCount)} each: ${createdChangeList}`
     : `${createdChangeRecords.length} CHGs created: ${createdChangeList}`;
+}
+
+/** Each Production change whose outage could not be created, and where to create it — or '' when none failed. */
+function formatOutageFailures(createdChangeRecords: CreatedChangeRecord[]): string {
+  const isOnlyChange = createdChangeRecords.length === 1;
+  return createdChangeRecords
+    .filter((createdChangeRecord) => createdChangeRecord.outageFailure)
+    .map((createdChangeRecord) => `; ${isOnlyChange ? '' : `${createdChangeRecord.changeNumber}: `}the outage record was not `
+      + `created (${createdChangeRecord.outageFailure}) — create it in Modify Existing CHG → Review & Save`)
+    .join('');
 }
 
 function resolveAutoCreatedCtaskEnvironmentLabel(state: CrgState, environmentKey: EnvironmentKey | null): string {
@@ -2464,10 +2516,11 @@ export function useCrgState(options?: UseCrgStateOptions): { state: CrgState; ac
 
         const changeNumber = responseData.result.number;
         const changeSysId = extractReferenceSysId(responseData.result.sys_id) || await fetchChangeSysIdByNumber(changeNumber);
-        createdChangeRecords.push({
+        const createdChangeRecord: CreatedChangeRecord = {
           environmentLabel: changeSubmissionTarget.environmentLabel,
           changeNumber,
-        });
+        };
+        createdChangeRecords.push(createdChangeRecord);
 
         // Reconcile mode (per-template): update the CTASKs ServiceNow auto-created to
         // match the staged ones by order, then create the remainder — for teams whose
@@ -2514,6 +2567,12 @@ export function useCrgState(options?: UseCrgStateOptions): { state: CrgState; ac
             }
           }
         }
+
+        Object.assign(createdChangeRecord, await createOutageForProductionChange(
+          changeSysId,
+          changeSubmissionTarget,
+          String(chgPayload.short_description ?? ''),
+        ));
 
         latestSubmissionDebug = buildSubmissionDebugData(
           'create',

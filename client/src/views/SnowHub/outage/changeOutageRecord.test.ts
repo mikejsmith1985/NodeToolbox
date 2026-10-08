@@ -56,6 +56,8 @@ describe('buildPlannedOutagePayload', () => {
 
   it('writes the form\'s UTC date-time in the format the Table API stores', () => {
     expect(toSnowUtcDateTime('2026-10-10T05:00')).toBe('2026-10-10 05:00:00');
+    // The change builder's own API format passes straight through.
+    expect(toSnowUtcDateTime('2026-10-10 05:00:00')).toBe('2026-10-10 05:00:00');
     expect(toSnowUtcDateTime('')).toBe('');
   });
 });
