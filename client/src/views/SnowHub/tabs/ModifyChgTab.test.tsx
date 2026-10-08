@@ -915,6 +915,34 @@ describe('ModifyChgTab - RCP production rules (GH #415)', () => {
     localStorage.clear();
   });
 
+  it('moves the change to the next approved window and mirrors the new dates into the form', async () => {
+    const user = userEvent.setup();
+    const daytimeRecord = {
+      ...MOCK_CHANGE_RECORD,
+      u_environment: { value: 'prd', display_value: 'PRD' },
+      start_date: { value: '2026-10-08 15:00:00', display_value: '10/08/2026 10:00:00 AM' },
+      end_date: { value: '2026-10-08 17:00:00', display_value: '10/08/2026 12:00:00 PM' },
+    };
+    mockSnowFetch.mockImplementation(async (requestPath: string) => (String(requestPath).startsWith('/api/now/table/change_request/')
+      ? { result: daytimeRecord }
+      : { result: String(requestPath).startsWith('/api/now/table/change_request?') ? [daytimeRecord] : [] }));
+    render(<ModifyChgTab />);
+    await user.type(screen.getByLabelText(/Change Request number/i), 'chg0001234');
+    await user.click(screen.getAllByRole('button', { name: /Fetch Change/i })[1]);
+    await waitFor(() => expect(screen.getByDisplayValue('Update network infrastructure')).toBeInTheDocument());
+    await user.click(screen.getByRole('button', { name: /5\. Review & Save/i }));
+    await user.click(screen.getByRole('button', { name: /Check the RCP production rules/ }));
+
+    await user.click(await screen.findByRole('button', { name: /Move to the next approved window/ }));
+
+    await waitFor(() => expect(mockSnowFetch).toHaveBeenCalledWith('/api/now/table/change_request/change-1', expect.objectContaining({
+      method: 'PATCH',
+      body: JSON.stringify({ start_date: '2026-10-10 00:00:00', end_date: '2026-10-10 02:00:00' }),
+    })));
+    await user.click(screen.getByRole('button', { name: /4\. Environments/i }));
+    expect(screen.getByDisplayValue('2026-10-10T00:00')).toBeInTheDocument();
+  });
+
   it('offers the in-flight sweep on step 1 and the RCP checklist on request on the review step', async () => {
     const user = userEvent.setup();
     const productionRecord = { ...MOCK_CHANGE_RECORD, u_environment: { value: 'prd', display_value: 'PRD' } };

@@ -23,6 +23,15 @@ interface RcpChecklistProps {
   results: readonly RcpCheckResult[];
   /** The facts the approval email is written from; null hides the draft. */
   emailContext: RcpApprovalEmailContext | null;
+  /** A fix per rule, offered beside that rule while it is not met. */
+  fixActions?: Partial<Record<RcpCheckResult['ruleId'], RcpFixAction>>;
+}
+
+/** One rule's fix: what the button says, and what it does. */
+export interface RcpFixAction {
+  label: string;
+  onFix: () => void;
+  isDisabled?: boolean;
 }
 
 const STATUS_ICONS: Readonly<Record<RcpCheckStatus, string>> = { pass: '✅', fail: '❌', check: '⚠️' };
@@ -45,7 +54,7 @@ function DraftedEmail({ emailText, wordCount }: { emailText: string; wordCount: 
 }
 
 /** The RCP checklist for one Production change. */
-export function RcpChecklist({ results, emailContext }: RcpChecklistProps) {
+export function RcpChecklist({ results, emailContext, fixActions = {} }: RcpChecklistProps) {
   const isAiAssistUnlocked = useAiAssistStore((storeState) => storeState.isAiAssistUnlocked);
   const [promptSession, setPromptSession] = useState<AiAssistPromptSession | null>(null);
   const [draftedEmail, setDraftedEmail] = useState<{ emailText: string; wordCount: number } | null>(null);
@@ -73,6 +82,18 @@ export function RcpChecklist({ results, emailContext }: RcpChecklistProps) {
           <li className={styles.riskFindingItem} key={result.ruleId}>
             <strong className={styles.riskFindingField}>{`${STATUS_ICONS[result.status]} ${result.title}`}</strong>
             <span className={styles.riskFindingDetail}>{result.detail}</span>
+            {result.status !== 'pass' && fixActions[result.ruleId] ? (
+              <span>
+                <button
+                  className={styles.secondaryButton}
+                  disabled={fixActions[result.ruleId]?.isDisabled}
+                  onClick={fixActions[result.ruleId]?.onFix}
+                  type="button"
+                >
+                  {fixActions[result.ruleId]?.label}
+                </button>
+              </span>
+            ) : null}
           </li>
         ))}
       </ul>

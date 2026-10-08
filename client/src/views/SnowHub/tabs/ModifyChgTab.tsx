@@ -12,7 +12,7 @@ import type { ChgPromptContext } from '../chgFormula/chgPromptContext.ts';
 import type { ChgTextFieldValues } from '../chgFormula/chgRiskCheckPrompt.ts';
 import type { ChgTextFieldKey } from '../chgFormula/formulaCard.ts';
 import { ExistingChgRiskCheck } from './ExistingChgRiskCheck.tsx';
-import { ExistingChgRcpCheck } from '../rcp/ExistingChgRcpCheck.tsx';
+import { ExistingChgRcpCheck, type RcpFormUpdate } from '../rcp/ExistingChgRcpCheck.tsx';
 import { RcpInFlightSweep } from '../rcp/RcpInFlightSweep.tsx';
 import { readRcpRulesEnabled } from '../rcp/rcpApprovalEmail.ts';
 import { isRcpPeriodActive, readCentralTodayIso } from '../rcp/rcpRules.ts';
@@ -46,6 +46,8 @@ const MISSING_CHANGE_SYS_ID_MESSAGE =
   'The loaded change has no sys_id, so its change tasks cannot be created. Fetch the change again before saving.';
 const EMPTY_SNOW_REFERENCE: SnowReference = { sysId: '', displayName: '' };
 const SNOW_DATE_TIME_INPUT_PATTERN = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2})(?::\d{2})?/;
+// "YYYY-MM-DDTHH:mm": the date-time shape the form's inputs hold.
+const SNOW_FORM_DATE_TIME_LENGTH = 16;
 
 type EnvironmentKey = 'rel' | 'prd' | 'pfix';
 
@@ -1794,6 +1796,18 @@ export default function ModifyChgTab(): React.ReactElement {
     return fieldEntries.length;
   }, [handleFieldChange]);
 
+  // An RCP fix is written straight to ServiceNow; mirroring it here stops a later Save writing the old value back.
+  // Dates go to the environment the change is saved with, in the form's own stored (UTC) "YYYY-MM-DDTHH:mm" shape.
+  const handleRcpFixSaved = useCallback((formUpdate: RcpFormUpdate) => {
+    if (formUpdate.justification !== undefined) handleFieldChange('justification', formUpdate.justification);
+    if (formUpdate.requestedBy) handleFieldChange('chgBasicInfo.requestedBy', formUpdate.requestedBy);
+    const enabledEnvironment = ENVIRONMENT_ROW_DEFINITIONS.find((environmentRow) => loadedChange?.[environmentRow.stateKey].isEnabled);
+    if (enabledEnvironment && formUpdate.plannedStartUtc && formUpdate.plannedEndUtc) {
+      handleFieldChange(`${enabledEnvironment.stateKey}.plannedStartDate`, formUpdate.plannedStartUtc.slice(0, SNOW_FORM_DATE_TIME_LENGTH));
+      handleFieldChange(`${enabledEnvironment.stateKey}.plannedEndDate`, formUpdate.plannedEndUtc.slice(0, SNOW_FORM_DATE_TIME_LENGTH));
+    }
+  }, [handleFieldChange, loadedChange]);
+
   const rebuildBlockedWarning = readRebuildBlockedWarning(modifyState.change);
 
   // A confirmed rebuild replaces this tab's body with the change builder, bound to the loaded
@@ -1951,7 +1965,7 @@ export default function ModifyChgTab(): React.ReactElement {
               Offered only while the RCP rules are switched on and the period has not ended. */}
           {loadedChange?.sysId && isRcpPeriodActive(readRcpRulesEnabled(), readCentralTodayIso()) ? (
             isRcpCheckOpen ? (
-              <ExistingChgRcpCheck changeSysId={loadedChange.sysId} key={`rcp-${loadedChange.sysId}`} />
+              <ExistingChgRcpCheck changeSysId={loadedChange.sysId} key={`rcp-${loadedChange.sysId}`} onFixSaved={handleRcpFixSaved} />
             ) : (
               <div className={styles.buttonRow}>
                 <button className={styles.secondaryButton} onClick={() => setIsRcpCheckOpen(true)} type="button">

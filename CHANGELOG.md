@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **The RCP checklist now fixes what it finds (GH #415).** On Modify Existing CHG, each unmet rule offers its fix,
+  written straight to the change in ServiceNow, mirrored into the form (so a later Save cannot undo it), then re-checked:
+  - **Move to the next approved window** — the next Friday, Saturday or Sunday 7 PM CT night long enough for the
+    implementation, validation and backout estimates, and three business days out for Moderate / High risk. Exact
+    date arithmetic, never guessed.
+  - **Set Requested By to the CI owner** — written directly, because Modify's Save does not write Requested By.
+  - **✦ Fix the justification with AI Assist** — rewritten to cover why during RCP, the impact of waiting until
+    after Jan 19, and the time-sensitive need, without inventing facts.
+  - The Director's approval stays yours: AI Assist drafts the email; you send it and attach the reply in ServiceNow.
+
+### Added
 - **RCP production-change rules checklist (GH #415).** Through **Jan 19, 2027**, every Production (PRD / PFIX) change
   is checked against Change Management's restricted-change-period rules, each with a pass / fail / confirm verdict
   and the reason:

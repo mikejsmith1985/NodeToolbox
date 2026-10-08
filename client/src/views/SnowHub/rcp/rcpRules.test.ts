@@ -9,6 +9,7 @@ import {
   checkLeadTime,
   checkRequestedByIsDirector,
   describeCentralWindow,
+  findNextApprovedWindow,
   isRcpPeriodActive,
 } from './rcpRules.ts';
 
@@ -158,5 +159,28 @@ describe('describeCentralWindow', () => {
   it('words a planned window in Central Time, with the date', () => {
     expect(describeCentralWindow(FRIDAY_7_30_PM_CT, SATURDAY_3_AM_CT)).toBe('Fri 2026-10-09 7:30 PM → Sat 2026-10-10 3:00 AM CT');
     expect(describeCentralWindow(null, SATURDAY_3_AM_CT)).toBe('');
+  });
+});
+
+describe('findNextApprovedWindow', () => {
+  it('picks the next Friday, Saturday or Sunday 7 PM CT that is still ahead', () => {
+    // Thursday 8 Oct, 10 AM CT: the next allowed night is Friday 9 Oct, 7 PM CT (00:00 UTC Saturday).
+    expect(findNextApprovedWindow({ nowUtc: '2026-10-08T15:00:00Z', durationMinutes: 150, riskLabel: 'Low' }))
+      .toEqual({ plannedStartUtc: '2026-10-10T00:00:00Z', plannedEndUtc: '2026-10-10T02:30:00Z' });
+  });
+
+  it('leaves three business days of review for a Moderate or High change', () => {
+    expect(findNextApprovedWindow({ nowUtc: '2026-10-08T15:00:00Z', durationMinutes: 150, riskLabel: 'Moderate' }))
+      .toEqual({ plannedStartUtc: '2026-10-17T00:00:00Z', plannedEndUtc: '2026-10-17T02:30:00Z' });
+  });
+
+  it('follows Central Time across the change to standard time', () => {
+    // Tuesday 1 Dec: Friday 4 Dec 7 PM CST is 01:00 UTC Saturday.
+    expect(findNextApprovedWindow({ nowUtc: '2026-12-01T15:00:00Z', durationMinutes: 60, riskLabel: 'Low' })?.plannedStartUtc)
+      .toBe('2026-12-05T01:00:00Z');
+  });
+
+  it('finds no window for work longer than one night', () => {
+    expect(findNextApprovedWindow({ nowUtc: '2026-10-08T15:00:00Z', durationMinutes: 700, riskLabel: 'Low' })).toBeNull();
   });
 });

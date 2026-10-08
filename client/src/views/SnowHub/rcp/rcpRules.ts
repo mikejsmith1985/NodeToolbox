@@ -28,6 +28,7 @@ const ALLOWED_NIGHT_WEEKDAYS = new Set(['Fri', 'Sat', 'Sun']);
 const NIGHT_START_HOUR = 19;
 const NIGHT_END_HOUR = 5;
 const MILLISECONDS_PER_MINUTE = 60_000;
+const MILLISECONDS_PER_HOUR = 3_600_000;
 const LEAD_TIME_BUSINESS_DAYS = 3;
 // Risk levels that need Change Management's extra review time.
 const EARLY_SUBMISSION_RISK_PATTERN = /moderate|high/i;
@@ -192,6 +193,52 @@ export function checkLeadTime(input: { riskLabel: string; todayIso: string; plan
   return businessDays >= LEAD_TIME_BUSINESS_DAYS
     ? { ruleId: 'leadTime', title, status: 'pass', detail: `${input.riskLabel} risk with ${businessDays} business days of review before it starts.` }
     : { ruleId: 'leadTime', title, status: 'fail', detail: `${input.riskLabel} risk with only ${businessDays} business days before it starts — ${LEAD_TIME_BUSINESS_DAYS} are needed.` };
+}
+
+// How far ahead to look for an approved night before giving up.
+const MAX_WINDOW_SEARCH_DAYS = 60;
+// The longest work one night can hold: 7 PM to 5 AM.
+const MAX_NIGHT_MINUTES = 10 * 60;
+// Central Time is UTC-5 in daylight time and UTC-6 in standard time.
+const CENTRAL_UTC_OFFSET_HOURS = [5, 6];
+
+/** The UTC instant of a Central Time wall-clock hour on a calendar day, whichever offset is in force. */
+function readCentralWallTimeAsUtc(dateIso: string, hour: number): string {
+  const toInstant = (offsetHours: number) =>
+    new Date(Date.parse(`${dateIso}T00:00:00Z`) + (hour + offsetHours) * MILLISECONDS_PER_HOUR).toISOString().replace('.000Z', 'Z');
+  const matchingInstant = CENTRAL_UTC_OFFSET_HOURS.map(toInstant).find((candidateIso) => {
+    const centralParts = readCentralTimeParts(candidateIso);
+    return centralParts.dateIso === dateIso && centralParts.hour === hour;
+  });
+  return matchingInstant ?? toInstant(CENTRAL_UTC_OFFSET_HOURS[0]);
+}
+
+/**
+ * The next approved window that holds the work: a Friday, Saturday or Sunday night starting 7 PM CT that is
+ * still ahead, and — for a Moderate or High change — at least three business days out. Null when the work
+ * cannot fit inside one night, or no such night is found within two months.
+ */
+export function findNextApprovedWindow(input: {
+  nowUtc: string;
+  durationMinutes: number;
+  riskLabel: string;
+}): { plannedStartUtc: string; plannedEndUtc: string } | null {
+  if (input.durationMinutes <= 0 || input.durationMinutes > MAX_NIGHT_MINUTES) {
+    return null;
+  }
+  const todayIso = readCentralTimeParts(input.nowUtc).dateIso;
+  const needsReviewTime = EARLY_SUBMISSION_RISK_PATTERN.test(input.riskLabel);
+  for (let dayOffset = 0; dayOffset <= MAX_WINDOW_SEARCH_DAYS; dayOffset += 1) {
+    const nightDateIso = shiftCalendarDay(todayIso, dayOffset);
+    const plannedStartUtc = readCentralWallTimeAsUtc(nightDateIso, NIGHT_START_HOUR);
+    const isAllowedNight = ALLOWED_NIGHT_WEEKDAYS.has(readWeekday(nightDateIso)) && plannedStartUtc > input.nowUtc;
+    const hasReviewTime = !needsReviewTime || countBusinessDaysBetween(todayIso, nightDateIso) >= LEAD_TIME_BUSINESS_DAYS;
+    if (isAllowedNight && hasReviewTime) {
+      const plannedEndUtc = new Date(Date.parse(plannedStartUtc) + input.durationMinutes * MILLISECONDS_PER_MINUTE).toISOString().replace('.000Z', 'Z');
+      return { plannedStartUtc, plannedEndUtc };
+    }
+  }
+  return null;
 }
 
 /** A planned window in Central Time with its dates — "Fri 2026-10-09 7:30 PM → Sat 2026-10-10 3:00 AM CT". */

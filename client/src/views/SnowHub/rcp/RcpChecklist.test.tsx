@@ -1,7 +1,7 @@
 // RcpChecklist.test.tsx — The RCP checklist panel and its Director approval email draft (GH #415).
 
 import { fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { useAiAssistStore } from '../../../store/aiAssistStore.ts';
 import type { RcpApprovalEmailContext } from './rcpApprovalEmail.ts';
@@ -50,5 +50,21 @@ describe('RcpChecklist', () => {
 
     expect(screen.getByRole('button', { name: /Copy email/ })).toBeInTheDocument();
     expect(screen.getByText(/212 words — trim it to 200/)).toBeInTheDocument();
+  });
+});
+
+describe('RcpChecklist fix buttons', () => {
+  it('offers a rule\'s fix beside it while the rule is not met, and runs it', () => {
+    const onFix = vi.fn();
+    render(<RcpChecklist
+      emailContext={null}
+      fixActions={{ approval: { label: 'Do the impossible', onFix }, window: { label: 'Never shown', onFix } }}
+      results={RESULTS}
+    />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Do the impossible' }));
+
+    expect(onFix).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('button', { name: 'Never shown' })).not.toBeInTheDocument();
   });
 });
