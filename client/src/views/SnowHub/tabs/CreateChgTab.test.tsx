@@ -131,6 +131,7 @@ const {
     changeTasks: [] as unknown[],
     ctaskTemplateIds: [] as string[],
     reconcileAutoCtasks: false,
+    ctaskTimelinePlan: [] as Array<{ taskLabel: string; minutes: number }>,
     isSubmitting: false,
     submitResult: null as string | null,
     submissionDebug: null as null | {
@@ -164,6 +165,7 @@ const {
     applyTemplate: vi.fn(),
     updateEnvironment: vi.fn(),
     addChangeTask: vi.fn(),
+    setCtaskTimelinePlan: vi.fn(),
     removeChangeTask: vi.fn(),
     updateChangeTask: vi.fn(),
     duplicateChangeTask: vi.fn(),
@@ -341,6 +343,7 @@ function resetMockState(): void {
     changeTasks: [],
     ctaskTemplateIds: [],
     reconcileAutoCtasks: false,
+    ctaskTimelinePlan: [] as Array<{ taskLabel: string; minutes: number }>,
     isSubmitting: false,
     submitResult: null,
     submissionDebug: null,

@@ -17,7 +17,10 @@ import {
 import type { JiraIssue } from '../../../types/jira.ts';
 import { useCrgSubmissionDebugStore } from '../../../hooks/useCrgSubmissionDebugStore.ts';
 import { ISSUE_LIST_HEADING } from '../chgFormula/changeIssueList.ts';
+import { extractChoiceValue, extractSnowReference, extractStringValue } from './snowFieldValues.ts';
 import { createPlannedOutage } from '../outage/changeOutageRecord.ts';
+import { fetchReviewedCtasks, saveCtaskPlannedDates } from '../chgFormula/ctaskReviewApi.ts';
+import { scheduleCreatedCtasks, toFormUtcFromApi, type CtaskTimelinePlanStep } from '../chgFormula/createdCtaskTimeline.ts';
 
 // Step 3 was added (Change Details) so the wizard now runs 1 through 6.
 type CrgStep = 1 | 2 | 3 | 4 | 5 | 6;
@@ -41,6 +44,10 @@ interface EnvironmentConfig {
  * A reference to a ServiceNow record (user, group, or CI) identified by its sys_id
  * and surfaced to the user via a human-readable display name.
  */
+// The ServiceNow field readers live in their own module (no import of this hook), so modules this hook
+// imports can use them without an import cycle. Re-exported for every existing importer.
+export { extractChoiceValue, extractSnowReference, extractStringValue };
+
 export interface SnowReference {
   sysId: string;
   displayName: string;
@@ -451,6 +458,8 @@ interface CrgState {
   ctaskTemplateIds: string[];
   /** When true, reconcile staged CTASKs with ServiceNow's auto-created ones on CHG create. */
   reconcileAutoCtasks: boolean;
+  /** The CTASK order of operations planned with AI Assist before create — each new change's tasks are dated from it. */
+  ctaskTimelinePlan: CtaskTimelinePlanStep[];
   isSubmitting: boolean;
   submitResult: string | null;
   submissionDebug: ChgSubmissionDebug | null;
@@ -493,6 +502,8 @@ interface CrgActions {
   setLinkedCtaskTemplateIds: (ctaskTemplateIds: string[]) => void;
   /** Toggles whether CHG creation reconciles staged CTASKs with auto-created ones. */
   setReconcileAutoCtasks: (reconcileAutoCtasks: boolean) => void;
+  /** Keeps the CTASK timeline planned with AI Assist, for the change about to be created. */
+  setCtaskTimelinePlan: (ctaskTimelinePlan: CtaskTimelinePlanStep[]) => void;
   appendTasksToExistingChg: (chgNumber: string) => Promise<void>;
   updateExistingChg: (chgNumber: string, options?: UpdateExistingChgOptions) => Promise<void>;
   cloneCtaskTemplate: (ctaskNumber: string) => Promise<CtaskTemplateData>;
@@ -544,6 +555,33 @@ interface CreatedChangeRecord {
   outageNumber?: string;
   /** Why a Production change's outage could not be created — the change itself still was. */
   outageFailure?: string;
+  /** Why the change's CTASKs could not be dated — the change and its tasks still exist. */
+  timelineFailure?: string;
+}
+
+/**
+ * Dates the new change's CTASKs back to back from its planned start: the AI-planned order and minutes when there
+ * is a plan, else each task's own estimates. A failure is returned, not thrown — the change exists either way, and
+ * the timeline can still be planned on Modify's Review & Save.
+ */
+async function dateCreatedChangeTasks(
+  changeSysId: string,
+  changeSubmissionTarget: ChangeSubmissionTarget,
+  ctaskTimelinePlan: readonly CtaskTimelinePlanStep[],
+): Promise<Pick<CreatedChangeRecord, 'timelineFailure'>> {
+  const windowStartUtc = toFormUtcFromApi(formatSnowDateTimeForApi(changeSubmissionTarget.plannedStartDate));
+  if (windowStartUtc === '') {
+    return {};
+  }
+  try {
+    const schedule = scheduleCreatedCtasks(await fetchReviewedCtasks(changeSysId), ctaskTimelinePlan, windowStartUtc);
+    for (const scheduledTask of schedule) {
+      await saveCtaskPlannedDates(scheduledTask.ctask, scheduledTask.startUtc, scheduledTask.endUtc);
+    }
+    return {};
+  } catch (unknownError) {
+    return { timelineFailure: unknownError instanceof Error ? unknownError.message : 'ServiceNow did not take the dates' };
+  }
 }
 
 // Production changes are approved only with an outage record, so they are created with a planned one.
@@ -611,6 +649,7 @@ function createDefaultCrgState(): CrgState {
     changeTasks: [],
     ctaskTemplateIds: [],
     reconcileAutoCtasks: false,
+    ctaskTimelinePlan: [],
     isSubmitting: false,
     submitResult: null,
     submissionDebug: null,
@@ -736,57 +775,6 @@ function createInitialCrgState(storageKey: string): CrgState {
 }
 
 // ── SNow field extraction helpers (used when cloning from an existing CHG) ──
-
-/**
- * Extracts a human-readable string from a SNow field.
- * With sysparm_display_value=all, SNow wraps all fields as { value, display_value }.
- * Text fields use display_value; choice fields also use display_value for the label.
- */
-export function extractStringValue(field: unknown): string {
-  if (!field) return EMPTY_VALUE;
-  if (typeof field === 'string') return field;
-  if (typeof field === 'object' && field !== null) {
-    const snowField = field as Record<string, unknown>;
-    if ('display_value' in snowField) return String(snowField.display_value ?? EMPTY_VALUE);
-    if ('value' in snowField) return String(snowField.value ?? EMPTY_VALUE);
-  }
-  return EMPTY_VALUE;
-}
-
-/**
- * Extracts the stored SNow value for choice fields. Choice dropdowns submit the internal
- * value (not the display label), so cloned CHGs must populate state with the same value.
- */
-export function extractChoiceValue(field: unknown): string {
-  if (!field) return EMPTY_VALUE;
-  if (typeof field === 'string') return field;
-  if (typeof field === 'object' && field !== null) {
-    const snowField = field as Record<string, unknown>;
-    const internalValue = String(snowField.value ?? EMPTY_VALUE).trim();
-    if (internalValue) return internalValue;
-
-    const displayValue = String(snowField.display_value ?? EMPTY_VALUE).trim();
-    if (displayValue) return displayValue;
-  }
-  return EMPTY_VALUE;
-}
-
-/**
- * Extracts a SnowReference (sys_id + display name) from a SNow reference field.
- * SNow returns { value: sys_id, display_value: displayName } for reference fields
- * when sysparm_display_value=all is included in the request.
- */
-export function extractSnowReference(field: unknown): SnowReference {
-  if (typeof field === 'string') {
-    return { sysId: EMPTY_VALUE, displayName: field };
-  }
-  if (!field || typeof field !== 'object') return { ...EMPTY_SNOW_REFERENCE };
-  const snowField = field as Record<string, unknown>;
-  const sysId = String(snowField.value ?? EMPTY_VALUE);
-  const displayName = String(snowField.display_value ?? EMPTY_VALUE);
-  if (!sysId && !displayName) return { ...EMPTY_SNOW_REFERENCE };
-  return { sysId, displayName };
-}
 
 function extractSnowReferenceFromFieldAliases(
   record: Record<string, unknown>,
@@ -1371,7 +1359,8 @@ function formatCreatedChangeSummary(
   createdChangeRecords: CreatedChangeRecord[],
   queuedTaskCount: number,
 ): string {
-  return `${formatCreatedChangeList(createdChangeRecords, queuedTaskCount)}${formatOutageFailures(createdChangeRecords)}`;
+  return `${formatCreatedChangeList(createdChangeRecords, queuedTaskCount)}${formatOutageFailures(createdChangeRecords)}`
+    + formatTimelineFailures(createdChangeRecords);
 }
 
 /** The created changes, with each Production change's outage beside it. */
@@ -1399,6 +1388,15 @@ function formatCreatedChangeList(createdChangeRecords: CreatedChangeRecord[], qu
   return queuedTaskCount > 0
     ? `${createdChangeRecords.length} CHGs created with ${formatCtaskCount(queuedTaskCount)} each: ${createdChangeList}`
     : `${createdChangeRecords.length} CHGs created: ${createdChangeList}`;
+}
+
+/** Each change whose CTASKs could not be dated, and where to plan them — or '' when none failed. */
+function formatTimelineFailures(createdChangeRecords: CreatedChangeRecord[]): string {
+  return createdChangeRecords
+    .filter((createdChangeRecord) => createdChangeRecord.timelineFailure)
+    .map((createdChangeRecord) => `; ${createdChangeRecord.changeNumber}: the CTASK dates were not set `
+      + `(${createdChangeRecord.timelineFailure}) — plan them in Modify Existing CHG → Review & Save`)
+    .join('');
 }
 
 /** Each Production change whose outage could not be created, and where to create it — or '' when none failed. */
@@ -1847,6 +1845,7 @@ export function useCrgState(options?: UseCrgStateOptions): { state: CrgState; ac
       changeTasks:               state.changeTasks,
       ctaskTemplateIds:          state.ctaskTemplateIds,
       reconcileAutoCtasks:       state.reconcileAutoCtasks,
+      ctaskTimelinePlan:         state.ctaskTimelinePlan,
     };
 
     try {
@@ -2229,6 +2228,10 @@ export function useCrgState(options?: UseCrgStateOptions): { state: CrgState; ac
     setState((previousState) => ({ ...previousState, reconcileAutoCtasks }));
   }, []);
 
+  const setCtaskTimelinePlan = useCallback((ctaskTimelinePlan: CtaskTimelinePlanStep[]) => {
+    setState((previousState) => ({ ...previousState, ctaskTimelinePlan }));
+  }, []);
+
   const addChangeTask = useCallback((template: CtaskTemplate) => {
     const queuedTask: CtaskTemplate = {
       ...template,
@@ -2568,6 +2571,7 @@ export function useCrgState(options?: UseCrgStateOptions): { state: CrgState; ac
           }
         }
 
+        Object.assign(createdChangeRecord, await dateCreatedChangeTasks(changeSysId, changeSubmissionTarget, state.ctaskTimelinePlan));
         Object.assign(createdChangeRecord, await createOutageForProductionChange(
           changeSysId,
           changeSubmissionTarget,
@@ -2638,6 +2642,7 @@ export function useCrgState(options?: UseCrgStateOptions): { state: CrgState; ac
       duplicateChangeTask,
       setLinkedCtaskTemplateIds,
       setReconcileAutoCtasks,
+      setCtaskTimelinePlan,
       appendTasksToExistingChg,
       updateExistingChg,
       cloneCtaskTemplate,
@@ -2654,7 +2659,7 @@ export function useCrgState(options?: UseCrgStateOptions): { state: CrgState; ac
     pinCustomSnowField, removeCustomSnowField,
     setCloneChgNumber, cloneFromChg, applyTemplate, addChangeTask, removeChangeTask,
     updateChangeTask, duplicateChangeTask,
-    setLinkedCtaskTemplateIds, setReconcileAutoCtasks,
+    setLinkedCtaskTemplateIds, setReconcileAutoCtasks, setCtaskTimelinePlan,
     appendTasksToExistingChg, cloneCtaskTemplate, updateEnvironment, goToStep, reset, createChg,
     updateExistingChg,
   ]);

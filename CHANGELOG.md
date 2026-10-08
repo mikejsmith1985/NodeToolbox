@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Create New CHG plans the CTASK timeline too.** On **Review & Create**, **✦ Plan the CTASK timeline with AI
+  Assist** plans the order of operations over the tasks the change will get — the staged ones plus the
+  Implementation and Technical Checkout ServiceNow creates itself — and keeps the plan with the draft. On create,
+  each new change's real CTASKs are matched to the plan (by name, else by stage) and dated back to back from that
+  environment's planned start; without a plan they are dated from their own estimates. A change whose tasks could
+  not be dated is still reported as created, with a note to plan them in Modify → Review & Save.
+
+### Changed
+- The ServiceNow field readers (`extractStringValue`, `extractChoiceValue`, `extractSnowReference`) moved to
+  `hooks/snowFieldValues.ts` (still re-exported from `useCrgState`) so the change builder can use the CTASK reader
+  without an import cycle.
+
+### Added
 - **CTASK timeline (Modify Existing CHG → Review & Save).** Each CTASK's planned start and end now follow the real
   order of operations. **✦ Plan the CTASK timeline with AI Assist** reads every task — type, instructions,
   estimates — and the assistant decides the order and each task's minutes (backout held in reserve). Toolbox holds

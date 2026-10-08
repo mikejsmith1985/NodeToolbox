@@ -5,7 +5,8 @@
 // change task — an instance that wants one adds its own (u_backout_plan and the like) — so the field is found
 // by name on the record itself, and where none exists the plan lives in a marked section of the description.
 
-import { extractStringValue, extractSnowReference, type SnowReference } from '../hooks/useCrgState.ts';
+import { extractSnowReference, extractStringValue } from '../hooks/snowFieldValues.ts';
+import type { SnowReference } from '../hooks/useCrgState.ts';
 
 /** One change task as the risk check reads it. */
 export interface ReviewedCtask {

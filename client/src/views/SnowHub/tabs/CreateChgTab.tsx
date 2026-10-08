@@ -34,6 +34,7 @@ import { applyTeamStandards } from '../chgFormula/teamStandards.ts';
 import { buildChgContextText, describeTaskPeople, type ChgPromptContext } from '../chgFormula/chgPromptContext.ts';
 import { buildChgRiskCheckPrompt, splitRiskCheckReply } from '../chgFormula/chgRiskCheckPrompt.ts';
 import { renderFormulaGuidanceForField } from '../chgFormula/formulaCard.ts';
+import { NewChangeTimelineSection } from './NewChangeTimelineSection.tsx';
 import { AiAssistPromptModal, type AiAssistPromptSession } from './AiAssistPromptModal.tsx';
 import { RiskCheckReviewPanel } from './RiskCheckReviewPanel.tsx';
 import { readRcpRulesEnabled } from '../rcp/rcpApprovalEmail.ts';
@@ -2551,6 +2552,7 @@ function ResultsStep({ state, actions, ctaskTemplates, environmentValueByKey, is
       {/* RCP (GH #415): a Production change is checked against the restricted-period rules before it is created.
           Shown only while the rules are switched on and the period has not ended. */}
       <NewChangeRcpSection state={state} />
+      <NewChangeTimelineSection isAiAssistUnlocked={isAiAssistUnlocked} onSetPlan={actions.setCtaskTimelinePlan} state={state} />
       {state.submitResult ? <p className={styles.successText}>{state.submitResult}</p> : null}
       {state.isSubmitting ? <p className={styles.loadingText}>Submitting change request...</p> : null}
       {/* A rebuild is bound to the change it was started from — typing another number here would

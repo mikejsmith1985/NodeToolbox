@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { jiraGet } from '../../../services/jiraApi.ts';
 import { snowFetch } from '../../../services/snowApi.ts';
 import { createPlannedOutage } from '../outage/changeOutageRecord.ts';
+import { fetchReviewedCtasks, saveCtaskPlannedDates } from '../chgFormula/ctaskReviewApi.ts';
 import type { CrgTemplate, CtaskTemplate, CtaskTemplateData } from './useCrgState.ts';
 import { createChangeTask, fetchChangeTasksAttachedToChange, formatSnowDateTimeForApi, listEnvironmentDateOrderErrors, NO_ENABLED_ENVIRONMENT_MESSAGE, reconcileStagedChangeTasks, useCrgState } from './useCrgState.ts';
 
@@ -15,6 +16,13 @@ vi.mock('../../../services/jiraApi.ts', () => ({
 
 vi.mock('../../../services/snowApi.ts', () => ({
   snowFetch: vi.fn(),
+}));
+
+// The created change's tasks, read back to date them; none unless a test says otherwise.
+vi.mock('../chgFormula/ctaskReviewApi.ts', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../chgFormula/ctaskReviewApi.ts')>()),
+  fetchReviewedCtasks: vi.fn(async () => []),
+  saveCtaskPlannedDates: vi.fn(async () => undefined),
 }));
 
 // The planned outage a Production change is created with; its own module is tested on its own.
@@ -1200,6 +1208,46 @@ describe('useCrgState', () => {
         plannedStartUtc: expectedUtcFor('2025-02-02T08:00'),
         plannedEndUtc: expectedUtcFor('2025-02-02T09:00'),
       });
+    });
+
+    it('dates the new change\'s CTASKs from the planned timeline, back to back from its planned start', async () => {
+      vi.mocked(snowFetch)
+        .mockResolvedValueOnce({ result: { number: 'CHG0002002', sys_id: 'chg-prd-001' } } as never)
+        .mockResolvedValueOnce({ result: [] } as never);
+      const implementationTask = {
+        sysId: 't1', number: 'CTASK0000101', shortDescription: 'Enrollment - AWS - PRD', description: '', typeLabel: '',
+        isImplementation: true, configItem: { sysId: '', displayName: '' }, assignedTo: { sysId: '', displayName: '' },
+        assignmentGroup: { sysId: '', displayName: '' }, backoutPlan: '', backoutFieldName: null,
+      };
+      const checkoutTask = { ...implementationTask, sysId: 't2', number: 'CTASK0000102', shortDescription: 'Technical Checkout', isImplementation: false };
+      vi.mocked(fetchReviewedCtasks).mockResolvedValueOnce([checkoutTask, implementationTask]);
+      const { result } = await advanceToChangeDetailsStep();
+      act(() => {
+        result.current.actions.updateEnvironment('rel', { isEnabled: false });
+        result.current.actions.updateEnvironment('prd', {
+          isEnabled: true,
+          configItem: { sysId: 'ci-prd-001', displayName: 'PRD CI' },
+          impactedPersonsAware: 'prd-aware',
+          plannedStartDate: '2025-02-02T08:00',
+          plannedEndDate: '2025-02-02T10:00',
+        });
+        result.current.actions.setCtaskTimelinePlan([
+          { taskLabel: 'Implementation (created by ServiceNow)', minutes: 45 },
+          { taskLabel: 'Technical Checkout (created by ServiceNow)', minutes: 15 },
+        ]);
+      });
+
+      await act(async () => {
+        await result.current.actions.createChg({ prd: 'prd-env' });
+      });
+
+      const windowStart = expectedUtcFor("2025-02-02T08:00").replace(' ', 'T').slice(0, 16);
+      expect(fetchReviewedCtasks).toHaveBeenCalledWith('chg-prd-001');
+      expect(saveCtaskPlannedDates).toHaveBeenCalledWith(implementationTask, windowStart, expect.any(String));
+      const [, implementationStart, implementationEnd] = vi.mocked(saveCtaskPlannedDates).mock.calls[0];
+      const [, checkoutStart] = vi.mocked(saveCtaskPlannedDates).mock.calls[1];
+      expect(implementationStart).toBe(windowStart);
+      expect(checkoutStart).toBe(implementationEnd);
     });
 
     it('still reports a Production change as created when its outage record cannot be, and says what to do', async () => {
