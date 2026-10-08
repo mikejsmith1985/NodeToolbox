@@ -43,17 +43,44 @@ export function renderChangeText(fieldValues: ChgTextFieldValues): string {
   }).join('\n\n');
 }
 
+/**
+ * The bar every check and re-check holds a field to, and the five answers it may give. Shared so the full
+ * check and the targeted re-check never disagree about what passes.
+ *
+ * Why it is shaped this way: the loop used to judge each field against the card's IDEAL (its full formula
+ * and evidence — named people, contacts, test records) and to count every [CONFIRM: …] as a gap, while the fix
+ * round was told to write [CONFIRM: …] wherever a fact was missing. Each fix therefore created new gaps, and
+ * record fields no rewrite can touch failed forever — so the gap count never reached zero. Now a field passes
+ * at its Minimum acceptable; a fact only the owner has is INFO (a question, not a gap); a record field is
+ * RECORD (set it in the form). Only what a rewrite of the text can close is a GAP.
+ */
+export const REVIEW_STATUS_RULES: readonly string[] = [
+  'PASS when the field meets its Minimum acceptable. The Formula, Reviewer test and Evidence describe what good '
+    + 'looks like — do not fail a field for lacking them.',
+  'N/A when the field\'s [when required] condition does not apply to this change (for example a Moderate/High-only '
+    + 'field on a Low-risk change).',
+  'GAP only when the change text itself falls short of the minimum and can be rewritten from the facts given here.',
+  'INFO when meeting the minimum needs a fact that is not given here (a name, time, count, contact or test result): '
+    + 'ask it as one short question. Any [CONFIRM: ...] placeholder is INFO — it needs the owner, not a rewrite.',
+  'RECORD when the problem is a record field (configuration item, category, environment, assignment group, change '
+    + 'owner, risk, impact, planned start or end): say what to set in the change form.',
+  'Answer lines:',
+  'PASS | <name> — <why it meets the minimum acceptable>',
+  'GAP | <name> — <what falls short> — Fix: <the specific text to add, and which change field it belongs in>',
+  'N/A | <name> — <why it does not apply to this change>',
+  'INFO | <name> — <the one question the owner must answer>',
+  'RECORD | <name> — <what to set in the change form>',
+];
+
 // The review part of the reply. One line per card field keeps the review scannable and makes every gap
 // point at the exact text box it must be fixed in.
 const REPLY_FORMAT_LINES: readonly string[] = [
-  'Reply in plain text, in exactly this format and card order, with no other commentary:',
-  'One line per Formula Card field (sections 1-7), each starting with one of:',
-  'PASS | <field> — <why it meets the minimum acceptable>',
-  'GAP | <field> — <what is missing or wrong> — Fix: <the specific text to add, and which change field it belongs in>',
-  'N/A | <field> — <why this field does not apply to this change>',
+  'Reply in plain text, in exactly this format and card order, with no other commentary.',
+  'One line per Formula Card field (sections 1-7), judged by these rules:',
+  ...REVIEW_STATUS_RULES,
   'Then one line per Front-Page Quality Gate question: YES | <question> or NO | <question> — <why>.',
-  'Then exactly one line: VERDICT: READY FOR APPROVAL, or VERDICT: NOT READY — <number> gap(s).',
-  'Treat any [CONFIRM: ...] placeholder as a GAP until it is filled in.',
+  'Then exactly one line: VERDICT: READY FOR APPROVAL, or VERDICT: NOT READY — <number> gap(s), counting only GAP '
+    + 'and NO lines.',
 ];
 
 /**
@@ -104,8 +131,8 @@ export function buildChgRiskCheckPrompt(
 ): string {
   return [
     'You are a Release Manager reviewing a ServiceNow Change Request before it enters approval.',
-    'Review it strictly against the Change Request Formula Card below. Apply each reviewer test literally; '
-      + 'vague wording such as "implement change", "monitor", "validate" or "revert the change" does not pass.',
+    'Review it against the Change Request Formula Card below. Vague wording such as "implement change", "monitor", '
+      + '"validate" or "revert the change" does not meet a minimum.',
     '',
     buildChgContextText(context),
     '',

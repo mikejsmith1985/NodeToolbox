@@ -23,7 +23,13 @@ import type { AiAssistGeneratedFields } from '../hooks/useAiAssist.ts';
 import { parseAiAssistChgResponse, useAiAssist } from '../hooks/useAiAssist.ts';
 import { CODE_BLOCK_REPLY_INSTRUCTION } from '../chgFormula/assistantReplyText.ts';
 import { buildChgGapFixPrompt, resolveFixableFields } from '../chgFormula/chgGapFixPrompt.ts';
-import { buildGapRecheckPrompt, countRecheckOutcome, mergeRecheckIntoReview } from '../chgFormula/gapFocus.ts';
+import {
+  buildAnsweredFindings,
+  buildGapRecheckPrompt,
+  countRecheckOutcome,
+  isUnsettledFinding,
+  mergeRecheckIntoReview,
+} from '../chgFormula/gapFocus.ts';
 import { parseRiskCheckReview } from '../chgFormula/riskCheckReview.ts';
 import { buildChgContextText, type ChgPromptContext } from '../chgFormula/chgPromptContext.ts';
 import { buildChgRiskCheckPrompt, splitRiskCheckReply } from '../chgFormula/chgRiskCheckPrompt.ts';
@@ -671,7 +677,7 @@ interface ResultsStepExtras {
   /** The pasted risk review to display, or null when no review has been captured yet. */
   riskCheckReviewText: string | null;
   /** Opens the "fix these gaps" round of the risk-check loop. */
-  onOpenGapFixPrompt: () => void;
+  onOpenGapFixPrompt: (answersByField: Record<string, string>) => void;
   /** Opens the targeted re-check of only the gaps the last review left open. */
   onOpenGapRecheckPrompt: () => void;
   /** True once fields changed after the review was taken, so its findings may no longer hold. */
@@ -2932,9 +2938,13 @@ export default function CrgTab({ mode = 'wizard', targetChangeNumber }: CrgTabPr
 
   // The loop's second round: hand the review's gaps back with the change as it stands, and apply the
   // rewritten fields from the pasted reply. Then "Check again" runs a fresh review (GH #395).
-  const handleOpenGapFixPrompt = useCallback(() => {
-    const gapFindings = parseRiskCheckReview(riskCheckReviewText ?? '').findings
-      .filter((finding) => finding.status === 'GAP' || finding.status === 'NO');
+  const handleOpenGapFixPrompt = useCallback((answersByField: Record<string, string> = {}) => {
+    const reviewFindings = parseRiskCheckReview(riskCheckReviewText ?? '').findings;
+    // The gaps, plus every question the owner answered — the answer becomes the fact the rewrite writes in.
+    const gapFindings = [
+      ...reviewFindings.filter((finding) => finding.status === 'GAP' || finding.status === 'NO'),
+      ...buildAnsweredFindings(reviewFindings, answersByField),
+    ];
     if (gapFindings.length === 0) {
       return;
     }
@@ -2964,8 +2974,8 @@ export default function CrgTab({ mode = 'wizard', targetChangeNumber }: CrgTabPr
   // review so the verdict reflects the whole change. With nothing open, a full check runs instead.
   const handleOpenGapRecheckPrompt = useCallback(() => {
     const previousReviewText = riskCheckReviewText ?? '';
-    const openFindings = parseRiskCheckReview(previousReviewText).findings
-      .filter((finding) => finding.status === 'GAP' || finding.status === 'NO');
+    // Questions for the owner (INFO) and form fields (RECORD) are re-judged too, so an answered one can close.
+    const openFindings = parseRiskCheckReview(previousReviewText).findings.filter((finding) => isUnsettledFinding(finding));
     if (openFindings.length === 0) {
       handleOpenRiskCheckPrompt();
       return;

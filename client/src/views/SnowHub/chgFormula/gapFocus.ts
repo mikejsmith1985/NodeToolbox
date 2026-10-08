@@ -15,6 +15,7 @@ import {
   FORMULA_CARD_QUALITY_GATE,
   type ChgTextFieldKey,
 } from './formulaCard.ts';
+import { REVIEW_STATUS_RULES } from './chgRiskCheckPrompt.ts';
 import { parseRiskCheckReview, type RiskCheckFinding } from './riskCheckReview.ts';
 
 /** The seven drafted text fields as the change currently holds them. */
@@ -121,13 +122,11 @@ export function buildGapRecheckPrompt(
     ...gapFindings.map((finding) => renderGapWithRule(finding)),
     ...(extraPart?.gapLines ?? []),
     '',
-    'Reply with exactly one line per gap above, using its exact name, each starting with one of:',
-    'PASS | <name> — <why it now meets the minimum acceptable>',
-    'GAP | <name> — <what is still missing> — Fix: <the specific text to add, and which change field it belongs in>',
-    'N/A | <name> — <why it does not apply to this change>',
+    'Reply with exactly one line per item above, using its exact name, judged by these rules:',
+    ...REVIEW_STATUS_RULES,
     'For a quality-gate question, answer YES | <question> or NO | <question> — <why>.',
-    'Then exactly one line: VERDICT: READY FOR APPROVAL, or VERDICT: NOT READY — <number> gap(s).',
-    'Treat any [CONFIRM: ...] placeholder as a GAP until it is filled in.',
+    'Then exactly one line: VERDICT: READY FOR APPROVAL, or VERDICT: NOT READY — <number> gap(s), counting only GAP '
+      + 'and NO lines.',
     '',
     CODE_BLOCK_REPLY_INSTRUCTION,
   ].join('\n');
@@ -145,13 +144,59 @@ export function isOpenFinding(finding: RiskCheckFinding): boolean {
 }
 
 /**
+ * True for anything not yet settled: a gap or failed gate, a fact still needed from the owner (INFO), or a
+ * record field still to set (RECORD). Check again re-judges all of these, so an answered question can close.
+ */
+export function isUnsettledFinding(finding: RiskCheckFinding): boolean {
+  return isOpenFinding(finding) || finding.status === 'INFO' || finding.status === 'RECORD';
+}
+
+/**
+ * The questions the owner has answered, as gaps for the fix round: each carries the owner's answer as the fix,
+ * so the rewrite puts that fact into the field the question belongs to. This is how the loop becomes a
+ * conversation — the check asks, the owner answers in the app, the fix round writes the answers in.
+ */
+export function buildAnsweredFindings(
+  questionFindings: readonly RiskCheckFinding[],
+  answersByField: Readonly<Record<string, string>>,
+): RiskCheckFinding[] {
+  return questionFindings
+    .filter((finding) => finding.status === 'INFO' && (answersByField[finding.field] ?? '').trim() !== '')
+    .map((finding) => ({
+      status: 'GAP',
+      field: finding.field,
+      detail: finding.detail,
+      fix: `Write in the owner's answer: ${answersByField[finding.field].trim()}`,
+    }));
+}
+
+/** "1 fact", "2 facts" — the verdict reads as a sentence. */
+function countWithNoun(count: number, singular: string, plural: string): string {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
+/** The verdict from what is still unsettled: ready only when nothing is, otherwise each kind counted apart. */
+function buildVerdictLine(findings: readonly RiskCheckFinding[]): string {
+  const gapCount = findings.filter((finding) => isOpenFinding(finding)).length;
+  const infoCount = findings.filter((finding) => finding.status === 'INFO').length;
+  const recordCount = findings.filter((finding) => finding.status === 'RECORD').length;
+  if (gapCount + infoCount + recordCount === 0) {
+    return 'VERDICT: READY FOR APPROVAL';
+  }
+  const verdictParts = [
+    gapCount > 0 ? `${gapCount} gap(s)` : 'no text gaps',
+    ...(infoCount > 0 ? [`${countWithNoun(infoCount, 'fact', 'facts')} needed from you`] : []),
+    ...(recordCount > 0 ? [`${countWithNoun(recordCount, 'record field', 'record fields')} to set`] : []),
+  ];
+  return `VERDICT: NOT READY — ${verdictParts.join('; ')}.`;
+}
+
+/**
  * A set of findings as review text, with the verdict counted from what is still open — the one place a
  * verdict is recalculated, so every way of combining reviews agrees on it.
  */
 export function renderReviewText(findings: readonly RiskCheckFinding[]): string {
-  const openCount = findings.filter((finding) => isOpenFinding(finding)).length;
-  const verdictLine = openCount === 0 ? 'VERDICT: READY FOR APPROVAL' : `VERDICT: NOT READY — ${openCount} gap(s).`;
-  return [...findings.map((finding) => renderFindingLine(finding)), verdictLine].join('\n');
+  return [...findings.map((finding) => renderFindingLine(finding)), buildVerdictLine(findings)].join('\n');
 }
 
 /** How a re-check went: how many of the gaps it judged are now closed, and how many are still open. */

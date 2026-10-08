@@ -116,3 +116,40 @@ describe('RiskCheckReviewPanel', () => {
     expect(screen.getByText('The change looks mostly fine.')).toBeInTheDocument();
   });
 });
+
+describe('RiskCheckReviewPanel — questions and record fields', () => {
+  const REVIEW_WITH_QUESTIONS = [
+    'PASS | Short Description — Clear.',
+    'INFO | Support Coverage — Who is on call during the window?',
+    'RECORD | Configuration Item — Set the CI to Enrollment Web.',
+    'VERDICT: NOT READY — no text gaps; 1 fact needed from you; 1 record field to set.',
+  ].join('\n');
+
+  it('lists the facts needed from the owner and the form fields to set, apart from the gaps', () => {
+    render(<RiskCheckReviewPanel fieldValues={EMPTY_FIELDS} reviewText={REVIEW_WITH_QUESTIONS} />);
+
+    expect(within(screen.getByRole('list', { name: 'Questions for you' })).getByText('Support Coverage')).toBeInTheDocument();
+    expect(within(screen.getByRole('list', { name: 'Fix in the change form' })).getByText('Configuration Item')).toBeInTheDocument();
+  });
+
+  it('offers no AI fix round when only questions and record fields remain', () => {
+    render(<RiskCheckReviewPanel fieldValues={EMPTY_FIELDS} onCheckAgain={vi.fn()} onFixGaps={vi.fn()} reviewText={REVIEW_WITH_QUESTIONS} />);
+
+    expect(screen.queryByRole('button', { name: /Fix these gaps/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Check again/ })).toBeInTheDocument();
+  });
+});
+
+describe('RiskCheckReviewPanel — answering the questions', () => {
+  it('takes an answer under each question and hands the answers to the fix round, even with no text gaps', () => {
+    const onFixGaps = vi.fn();
+    const reviewText = 'INFO | Support Coverage — Who is on call?\nVERDICT: NOT READY — no text gaps; 1 fact needed from you.';
+    render(<RiskCheckReviewPanel fieldValues={EMPTY_FIELDS} onFixGaps={onFixGaps} reviewText={reviewText} />);
+
+    expect(screen.queryByRole('button', { name: /Fix these gaps/ })).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Answer for Support Coverage'), { target: { value: 'Jordan Lee, PagerDuty' } });
+    fireEvent.click(screen.getByRole('button', { name: /Fix these gaps with AI Assist \(using 1 answer\)/ }));
+
+    expect(onFixGaps).toHaveBeenCalledWith({ 'Support Coverage': 'Jordan Lee, PagerDuty' });
+  });
+});

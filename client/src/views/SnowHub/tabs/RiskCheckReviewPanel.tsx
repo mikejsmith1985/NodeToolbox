@@ -1,5 +1,7 @@
 // RiskCheckReviewPanel.tsx — The pasted risk-check review, laid out so a person can read it (GH #395).
 
+import { useState } from 'react';
+
 import { countConfirmPlaceholders, parseRiskCheckReview, type RiskCheckFinding } from '../chgFormula/riskCheckReview.ts';
 import type { ChgTextFieldKey } from '../chgFormula/formulaCard.ts';
 import styles from './CreateChgTab.module.css';
@@ -9,8 +11,11 @@ interface RiskCheckReviewPanelProps {
   reviewText: string;
   /** The seven drafted fields as they stand now, to show which still need a person's [CONFIRM: …] answers. */
   fieldValues: Readonly<Record<ChgTextFieldKey, string>>;
-  /** Opens the "fix these gaps" round. Omitted, no fix button is offered. */
-  onFixGaps?: () => void;
+  /**
+   * Opens the "fix these gaps" round, with the owner's answers to the review's questions keyed by field.
+   * Omitted, no fix button is offered.
+   */
+  onFixGaps?: (answersByField: Record<string, string>) => void;
   /** Opens a fresh risk check of the change as it now stands. */
   onCheckAgain?: () => void;
   /** True once fields changed after this review was taken, so its findings may no longer hold. */
@@ -70,7 +75,14 @@ export function RiskCheckReviewPanel({
   const failedGateFindings = review.findings.filter((finding) => finding.status === 'NO');
   const passedFindings = review.findings.filter((finding) => finding.status === 'PASS' || finding.status === 'YES');
   const notApplicableFindings = review.findings.filter((finding) => finding.status === 'N/A');
+  // Facts only the owner has, and record fields to set in the form — neither is an AI rewrite, so neither is a gap.
+  const infoFindings = review.findings.filter((finding) => finding.status === 'INFO');
+  const recordFindings = review.findings.filter((finding) => finding.status === 'RECORD');
   const confirmCounts = countConfirmPlaceholders(fieldValues);
+  // The owner's answers to the questions, kept by field so they survive a re-check that still asks the question.
+  const [answersByField, setAnswersByField] = useState<Record<string, string>>({});
+  const answeredCount = infoFindings.filter((finding) => (answersByField[finding.field] ?? '').trim() !== '').length;
+  const canFix = !review.isReady && (gapFindings.length > 0 || failedGateFindings.length > 0 || answeredCount > 0);
 
   return (
     <div className={styles.riskCheckResult}>
@@ -85,8 +97,13 @@ export function RiskCheckReviewPanel({
       ) : null}
       {review.findings.length > 0 ? (
         <p className={styles.fieldLabel}>
-          {`${pluralise(gapFindings.length, 'gap', 'gaps')} · ${passedFindings.filter((finding) => finding.status === 'PASS').length} passed · `
-            + `${notApplicableFindings.length} not applicable`}
+          {[
+            pluralise(gapFindings.length, 'gap', 'gaps'),
+            ...(infoFindings.length > 0 ? [`${pluralise(infoFindings.length, 'question', 'questions')} for you`] : []),
+            ...(recordFindings.length > 0 ? [pluralise(recordFindings.length, 'form field', 'form fields')] : []),
+            `${passedFindings.filter((finding) => finding.status === 'PASS').length} passed`,
+            `${notApplicableFindings.length} not applicable`,
+          ].join(' · ')}
         </p>
       ) : null}
       {confirmCounts.length > 0 ? (
@@ -105,11 +122,45 @@ export function RiskCheckReviewPanel({
           {failedGateFindings.map((finding) => <FindingItem finding={finding} key={`gate-${finding.field}`} />)}
         </ul>
       ) : null}
+      {infoFindings.length > 0 ? (
+        <>
+          <p className={styles.fieldLabel}>Questions for you — answer them here and the fix round writes your answers in:</p>
+          <ul aria-label="Questions for you" className={styles.riskFindingList}>
+            {infoFindings.map((finding) => (
+              <li className={styles.riskFindingItem} key={`info-${finding.field}`}>
+                <strong className={styles.riskFindingField}>{finding.field}</strong>
+                {finding.detail ? <span className={styles.riskFindingDetail}>{finding.detail}</span> : null}
+                <textarea
+                  aria-label={`Answer for ${finding.field}`}
+                  className={styles.promptTextArea}
+                  onChange={(changeEvent) => {
+                    const nextAnswer = changeEvent.target.value;
+                    setAnswersByField((currentAnswers) => ({ ...currentAnswers, [finding.field]: nextAnswer }));
+                  }}
+                  placeholder="Your answer — the fix round writes it into the change"
+                  rows={2}
+                  value={answersByField[finding.field] ?? ''}
+                />
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : null}
+      {recordFindings.length > 0 ? (
+        <>
+          <p className={styles.fieldLabel}>Fix in the change form — record fields AI Assist cannot rewrite:</p>
+          <ul aria-label="Fix in the change form" className={styles.riskFindingList}>
+            {recordFindings.map((finding) => <FindingItem finding={finding} key={`record-${finding.field}`} />)}
+          </ul>
+        </>
+      ) : null}
       {onFixGaps !== undefined || onCheckAgain !== undefined ? (
         <div className={styles.riskLoopActions}>
-          {onFixGaps !== undefined && !review.isReady && (gapFindings.length > 0 || failedGateFindings.length > 0) ? (
-            <button className={styles.aiAssistButton} onClick={onFixGaps} type="button">
-              ✦ Fix these gaps with AI Assist
+          {onFixGaps !== undefined && canFix ? (
+            <button className={styles.aiAssistButton} onClick={() => onFixGaps(answersByField)} type="button">
+              {answeredCount > 0
+                ? `✦ Fix these gaps with AI Assist (using ${pluralise(answeredCount, 'answer', 'answers')})`
+                : '✦ Fix these gaps with AI Assist'}
             </button>
           ) : null}
           {onCheckAgain !== undefined ? (

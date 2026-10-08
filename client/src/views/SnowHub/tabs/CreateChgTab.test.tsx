@@ -1649,6 +1649,47 @@ describe('CreateChgTab', () => {
     expect(screen.getByRole('status')).toHaveTextContent('1 field(s) corrected');
   });
 
+  it('re-checks a question for the owner on Check again, rather than starting a full review (GH #395)', async () => {
+    const user = userEvent.setup();
+    mockState.currentStep = 6;
+    render(<CreateChgTab />);
+    act(() => setAiAssistUnlocked(true));
+    await user.click(await screen.findByRole('button', { name: /Risk check with AI Assist/i }));
+    fireEvent.change(screen.getByRole('textbox', { name: "Paste the assistant's reply here" }), {
+      target: { value: 'PASS | Short Description — Clear.\nINFO | Support Coverage — Who is on call?\nVERDICT: NOT READY — 0 gap(s).' },
+    });
+    await user.click(screen.getByRole('button', { name: 'Use this review' }));
+    await user.click(screen.getByRole('button', { name: 'Close' }));
+
+    expect(screen.queryByRole('button', { name: /Fix these gaps with AI Assist/ })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Check again/ }));
+
+    const recheckPrompt = (screen.getByText(/Copy this prompt and paste it into AI Assist/).parentElement
+      ?.querySelector('textarea[readonly]') as HTMLTextAreaElement).value;
+    expect(recheckPrompt).toContain('re-checking specific gaps');
+    expect(recheckPrompt).toContain('Support Coverage');
+  });
+
+  it('sends the owner\'s answers to the fix round as facts to write in (GH #395)', async () => {
+    const user = userEvent.setup();
+    mockState.currentStep = 6;
+    render(<CreateChgTab />);
+    act(() => setAiAssistUnlocked(true));
+    await user.click(await screen.findByRole('button', { name: /Risk check with AI Assist/i }));
+    fireEvent.change(screen.getByRole('textbox', { name: "Paste the assistant's reply here" }), {
+      target: { value: 'INFO | Support Coverage — Who is on call?\nVERDICT: NOT READY — no text gaps; 1 fact needed from you.' },
+    });
+    await user.click(screen.getByRole('button', { name: 'Use this review' }));
+    await user.click(screen.getByRole('button', { name: 'Close' }));
+
+    fireEvent.change(screen.getByLabelText('Answer for Support Coverage'), { target: { value: 'Jordan Lee, PagerDuty' } });
+    await user.click(screen.getByRole('button', { name: /Fix these gaps with AI Assist \(using 1 answer\)/ }));
+
+    const fixPrompt = (screen.getByText(/Copy this prompt and paste it into AI Assist/).parentElement
+      ?.querySelector('textarea[readonly]') as HTMLTextAreaElement).value;
+    expect(fixPrompt).toContain("Support Coverage — Who is on call? — Fix: Write in the owner's answer: Jordan Lee, PagerDuty");
+  });
+
   it('runs the loop: review, fix the gaps with a second prompt, then the review is marked out of date (GH #395)', async () => {
     const user = userEvent.setup();
     mockState.currentStep = 6;

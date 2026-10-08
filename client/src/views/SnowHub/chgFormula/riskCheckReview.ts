@@ -9,8 +9,12 @@
 import { restoreMarkerLineBreaks, stripCodeFences } from './assistantReplyText.ts';
 import { CHG_TEXT_FIELD_LABELS, type ChgTextFieldKey } from './formulaCard.ts';
 
-/** PASS / GAP / N/A answer a card field; YES / NO answer a quality-gate question. */
-export type RiskCheckFindingStatus = 'PASS' | 'GAP' | 'N/A' | 'YES' | 'NO';
+/**
+ * PASS / GAP / N/A answer a card field; YES / NO answer a quality-gate question. INFO is a fact only the
+ * owner has (a name, a time, a test result — and every [CONFIRM: …]); RECORD is a record field to set in the
+ * change form. Neither is something an AI rewrite of the text can close, so neither is a gap.
+ */
+export type RiskCheckFindingStatus = 'PASS' | 'GAP' | 'N/A' | 'YES' | 'NO' | 'INFO' | 'RECORD';
 
 /** One line of the review: which field or question, and what the reviewer found. */
 export interface RiskCheckFinding {
@@ -39,10 +43,10 @@ export interface ConfirmPlaceholderCount {
 
 // What begins each review line. Copying can flatten the review into one paragraph, so these are put back
 // at line starts before reading.
-const REVIEW_LINE_MARKERS: readonly string[] = ['PASS', 'GAP', 'N/A', 'YES', 'NO', 'VERDICT'];
+const REVIEW_LINE_MARKERS: readonly string[] = ['PASS', 'GAP', 'N/A', 'YES', 'NO', 'NEEDS INFO', 'INFO', 'RECORD', 'VERDICT'];
 
 // A finding line: its status, then a "|" or ":" separator, then the rest.
-const FINDING_LINE_PATTERN = /^(PASS|GAP|N\/A|NA|YES|NO)\s*[|:]\s*(.+)$/i;
+const FINDING_LINE_PATTERN = /^(PASS|GAP|N\/A|NA|YES|NEEDS INFO|INFO|RECORD|NO)\s*[|:]\s*(.+)$/i;
 const VERDICT_LINE_PATTERN = /^VERDICT\s*:\s*(.+)$/i;
 // The "— Fix: …" tail of a gap line; any dash style the assistant used.
 const FIX_SEPARATOR_PATTERN = /\s+[—–-]+\s*Fix\s*:\s*/i;
@@ -57,10 +61,12 @@ function stripLineMarkup(rawLine: string): string {
   return rawLine.replace(LEADING_MARKUP_PATTERN, '').replace(/\*\*|__/g, '').trim();
 }
 
-/** "NA" and "n/a" are the same answer as "N/A". */
+/** "NA" and "n/a" are the same answer as "N/A"; "NEEDS INFO" is the same answer as "INFO". */
 function normaliseStatus(rawStatus: string): RiskCheckFindingStatus {
   const upperStatus = rawStatus.toUpperCase();
-  return (upperStatus === 'NA' ? 'N/A' : upperStatus) as RiskCheckFindingStatus;
+  if (upperStatus === 'NA') return 'N/A';
+  if (upperStatus === 'NEEDS INFO') return 'INFO';
+  return upperStatus as RiskCheckFindingStatus;
 }
 
 /** Splits "<field> — <detail> — Fix: <fix>" into its three parts; missing parts come back empty. */

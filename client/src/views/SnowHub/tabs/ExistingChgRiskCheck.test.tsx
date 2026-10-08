@@ -116,3 +116,33 @@ describe('ExistingChgRiskCheck', () => {
     await waitFor(() => expect(saveCtaskFix).toHaveBeenCalledWith(MISALIGNED_TASK, { backoutPlan: '1. Stop the job.\n2. Redeploy v1.4.' }));
   });
 });
+
+describe('ExistingChgRiskCheck — questions for the owner', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(fetchReviewedCtasks).mockResolvedValue([]);
+    vi.mocked(useAiAssist).mockReturnValue({ isUnlocked: true } as ReturnType<typeof useAiAssist>);
+  });
+
+  it('re-checks a question on Check again instead of offering an AI rewrite', async () => {
+    renderPanel();
+    await waitFor(() => expect(fetchReviewedCtasks).toHaveBeenCalled());
+    pasteReply(/Risk check CHG \+ CTASKs/, 'PASS | Short Description — Clear.\nINFO | Support Coverage — Who is on call?\nVERDICT: NOT READY — 0 gap(s).', /Use this review/);
+
+    expect(screen.queryByRole('button', { name: /Fix these gaps/ })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Check again/ }));
+
+    expect(await screen.findByDisplayValue(/re-checking specific gaps[\s\S]*Support Coverage/)).toBeInTheDocument();
+  });
+
+  it('sends the owner\'s answers to the fix round', async () => {
+    renderPanel();
+    await waitFor(() => expect(fetchReviewedCtasks).toHaveBeenCalled());
+    pasteReply(/Risk check CHG \+ CTASKs/, 'INFO | Support Coverage — Who is on call?\nVERDICT: NOT READY — no text gaps; 1 fact needed from you.', /Use this review/);
+
+    fireEvent.change(screen.getByLabelText('Answer for Support Coverage'), { target: { value: 'Jordan Lee, PagerDuty' } });
+    fireEvent.click(screen.getByRole('button', { name: /Fix these gaps with AI Assist \(using 1 answer\)/ }));
+
+    expect(screen.getByDisplayValue(/Write in the owner's answer: Jordan Lee, PagerDuty/)).toBeInTheDocument();
+  });
+});

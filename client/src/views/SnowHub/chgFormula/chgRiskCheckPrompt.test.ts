@@ -115,3 +115,27 @@ describe('splitRiskCheckReply', () => {
     expect(splitRiskCheckReply(reply).revisedFieldsText).toBe('TEST_PLAN: Tested in Dev and INT.');
   });
 });
+
+describe('the pass bar the check holds a change to', () => {
+  const prompt = buildChgRiskCheckPrompt(SAMPLE_CONTEXT, SAMPLE_FIELDS);
+
+  it('passes a field that meets its Minimum acceptable, treating the formula and evidence as guidance', () => {
+    expect(prompt).toMatch(/PASS when .*Minimum acceptable/i);
+    expect(prompt).toMatch(/do not fail a field for lacking them/i);
+    expect(prompt).not.toMatch(/literally/i);
+  });
+
+  it('marks a field N/A when its "when required" condition does not apply', () => {
+    expect(prompt).toMatch(/N\/A when .*when required/i);
+  });
+
+  it('asks for facts only the owner has as INFO, never as a gap — including [CONFIRM] placeholders', () => {
+    expect(prompt).toContain('INFO |');
+    expect(prompt).toMatch(/\[CONFIRM: \.\.\.\] placeholder is INFO/i);
+    expect(prompt).not.toMatch(/placeholder as a GAP/i);
+  });
+
+  it('sends record fields to the change form, never to a text rewrite', () => {
+    expect(prompt).toContain('RECORD |');
+  });
+});

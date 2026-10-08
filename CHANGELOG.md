@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **The CHG risk check can now reach "ready" (GH #395).** After three rounds a change could still show 27 gaps,
+  because the loop could never converge:
+  - It judged every field against the Formula Card's IDEAL (named people, contacts, test evidence) — a field now
+    **passes at its Minimum acceptable**; the formula and evidence are guidance.
+  - The fix round wrote `[CONFIRM: …]` for missing facts and the check counted each one as a gap. A fact only you
+    have is now **NEEDS INFO** — listed as **Questions for you**, never a gap and never sent to an AI rewrite.
+  - Record fields (CI, category, assignment group, dates…) failed forever because no text rewrite can set them —
+    they are now **RECORD**, listed under **Fix in the change form**.
+  - Fields whose "when required" condition does not apply (e.g. Moderate/High-only on a Low-risk change) are **N/A**.
+  - The verdict counts each kind apart — *"NOT READY — no text gaps; 2 facts needed from you; 1 record field to
+    set."* — and **Check again** re-judges questions and form fields too, so an answered one closes.
+  - **The check now talks with you:** each question has an answer box. **✦ Fix these gaps with AI Assist (using N
+    answers)** sends your answers to the fix round as facts, and the rewrite puts them into the right field —
+    check, answer, fix, check again.
+
 ### Added
 - **The RCP checklist now fixes what it finds (GH #415).** On Modify Existing CHG, each unmet rule offers its fix,
   written straight to the change in ServiceNow, mirrored into the form (so a later Save cannot undo it), then re-checked:

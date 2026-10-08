@@ -91,3 +91,19 @@ describe('countConfirmPlaceholders', () => {
     ]);
   });
 });
+
+describe('facts only the owner has, and record fields', () => {
+  it('reads NEEDS INFO and RECORD lines as their own statuses', () => {
+    const review = parseRiskCheckReview([
+      'INFO | Support Coverage — Who is on call during the window?',
+      'NEEDS INFO | Test Results — What did the REL smoke test show?',
+      'RECORD | Configuration Item — Set the CI to the service being changed.',
+    ].join('\n'));
+
+    expect(review.findings.map((finding) => [finding.status, finding.field])).toEqual([
+      ['INFO', 'Support Coverage'],
+      ['INFO', 'Test Results'],
+      ['RECORD', 'Configuration Item'],
+    ]);
+  });
+});

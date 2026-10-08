@@ -2,7 +2,14 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { buildGapRecheckPrompt, mergeRecheckIntoReview, resolveGapTextFields } from './gapFocus.ts';
+import {
+  buildAnsweredFindings,
+  buildGapRecheckPrompt,
+  isUnsettledFinding,
+  mergeRecheckIntoReview,
+  renderReviewText,
+  resolveGapTextFields,
+} from './gapFocus.ts';
 import type { RiskCheckFinding } from './riskCheckReview.ts';
 
 const SAMPLE_CONTEXT = {
@@ -106,5 +113,58 @@ describe('mergeRecheckIntoReview', () => {
 
   it('matches re-checked findings to the earlier ones regardless of case', () => {
     expect(mergeRecheckIntoReview(PREVIOUS_REVIEW, 'PASS | backout trigger — Stated.')).not.toContain('GAP | Backout Trigger');
+  });
+});
+
+describe('the verdict counts only what text can fix as gaps', () => {
+  const finding = (status: RiskCheckFinding['status'], field: string): RiskCheckFinding => ({ status, field, detail: '', fix: '' });
+
+  it('is ready only when nothing is left: no gaps, no questions, no record fields', () => {
+    expect(renderReviewText([finding('PASS', 'Short Description')])).toContain('VERDICT: READY FOR APPROVAL');
+  });
+
+  it('says how many facts and record fields remain when the text itself has no gaps', () => {
+    const verdict = renderReviewText([finding('INFO', 'Support Coverage'), finding('INFO', 'Test Results'), finding('RECORD', 'Configuration Item')]);
+
+    expect(verdict).toContain('VERDICT: NOT READY — no text gaps; 2 facts needed from you; 1 record field to set.');
+  });
+
+  it('leads with the text gaps when there are some', () => {
+    expect(renderReviewText([finding('GAP', 'Backout Plan'), finding('INFO', 'Support Coverage')]))
+      .toContain('VERDICT: NOT READY — 1 gap(s); 1 fact needed from you.');
+  });
+
+  it('treats questions and record fields as unsettled, so Check again can close them once answered', () => {
+    expect(['GAP', 'NO', 'INFO', 'RECORD', 'PASS', 'N/A', 'YES'].map((status) => isUnsettledFinding(finding(status as RiskCheckFinding['status'], 'x'))))
+      .toEqual([true, true, true, true, false, false, false]);
+  });
+});
+
+describe('the re-check holds the same bar as the full check', () => {
+  it('judges against the minimum acceptable and allows INFO and RECORD answers', () => {
+    const prompt = buildGapRecheckPrompt(SAMPLE_CONTEXT, SAMPLE_FIELDS, [{ status: 'GAP', field: 'Backout Plan', detail: '', fix: '' }]);
+
+    expect(prompt).toMatch(/PASS when .*Minimum acceptable/i);
+    expect(prompt).toContain('INFO |');
+    expect(prompt).toContain('RECORD |');
+    expect(prompt).not.toMatch(/placeholder as a GAP/i);
+  });
+});
+
+describe('buildAnsweredFindings', () => {
+  it('turns each answered question into a gap the fix round writes the owner\'s answer into', () => {
+    const questions: RiskCheckFinding[] = [
+      { status: 'INFO', field: 'Support Coverage', detail: 'Who is on call during the window?', fix: '' },
+      { status: 'INFO', field: 'Test Results', detail: 'What did REL testing show?', fix: '' },
+    ];
+
+    expect(buildAnsweredFindings(questions, { 'Support Coverage': '  Jordan Lee, on call via PagerDuty  ', 'Test Results': '   ' })).toEqual([
+      {
+        status: 'GAP',
+        field: 'Support Coverage',
+        detail: 'Who is on call during the window?',
+        fix: 'Write in the owner\'s answer: Jordan Lee, on call via PagerDuty',
+      },
+    ]);
   });
 });

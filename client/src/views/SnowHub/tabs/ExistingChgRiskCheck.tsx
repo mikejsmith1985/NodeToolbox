@@ -21,7 +21,14 @@ import {
 } from '../chgFormula/ctaskReviewPrompt.ts';
 import { checkCtaskRules, composeReviewWithRules, readCtaskFindingTarget } from '../chgFormula/ctaskReviewRules.ts';
 import type { ChgTextFieldKey } from '../chgFormula/formulaCard.ts';
-import { buildGapRecheckPrompt, countRecheckOutcome, isOpenFinding, mergeRecheckIntoReview } from '../chgFormula/gapFocus.ts';
+import {
+  buildAnsweredFindings,
+  buildGapRecheckPrompt,
+  countRecheckOutcome,
+  isOpenFinding,
+  isUnsettledFinding,
+  mergeRecheckIntoReview,
+} from '../chgFormula/gapFocus.ts';
 import { parseRiskCheckReview, type RiskCheckFinding } from '../chgFormula/riskCheckReview.ts';
 import { parseAiAssistChgResponse, useAiAssist } from '../hooks/useAiAssist.ts';
 import type { SnowReference } from '../hooks/useCrgState.ts';
@@ -52,8 +59,8 @@ function pluralise(count: number, singular: string, plural: string): string {
 }
 
 /** The open gaps an AI round can work on: change-field gaps and task backout gaps (CI gaps are fixed by button). */
-function readOpenGaps(reviewText: string): OpenGaps {
-  const openFindings = parseRiskCheckReview(reviewText).findings.filter((finding) => isOpenFinding(finding));
+function readOpenGaps(reviewText: string, isIncluded: (finding: RiskCheckFinding) => boolean = isOpenFinding): OpenGaps {
+  const openFindings = parseRiskCheckReview(reviewText).findings.filter((finding) => isIncluded(finding));
   return {
     changeGaps: openFindings.filter((finding) => readCtaskFindingTarget(finding.field) === null),
     backoutGaps: openFindings.filter((finding) => readCtaskFindingTarget(finding.field)?.aspect === 'backoutPlan'),
@@ -215,8 +222,15 @@ export function ExistingChgRiskCheck({
     });
   }, [promptContext, ctasks, fieldValues, ruleFindings, onApplyChangeFields]);
 
-  const handleOpenFixRound = useCallback(() => {
-    const { changeGaps, backoutGaps } = readOpenGaps(reviewText ?? '');
+  const handleOpenFixRound = useCallback((answersByField: Record<string, string> = {}) => {
+    const openGaps = readOpenGaps(reviewText ?? '');
+    // Every question the owner answered joins the round, its answer the fact to write into its field or task.
+    const answeredFindings = buildAnsweredFindings(parseRiskCheckReview(reviewText ?? '').findings, answersByField);
+    const changeGaps = [...openGaps.changeGaps, ...answeredFindings.filter((finding) => readCtaskFindingTarget(finding.field) === null)];
+    const backoutGaps = [
+      ...openGaps.backoutGaps,
+      ...answeredFindings.filter((finding) => readCtaskFindingTarget(finding.field)?.aspect === 'backoutPlan'),
+    ];
     if (changeGaps.length === 0 && backoutGaps.length === 0) {
       setStatusMessage('Only CI gaps are left — use the Set CI button.');
       return;
@@ -262,7 +276,8 @@ export function ExistingChgRiskCheck({
     const freshTasks = await reloadCtasks();
     const freshRules = checkCtaskRules(freshTasks, changeConfigItem);
     const baseReview = composeReviewWithRules(reviewText ?? '', freshRules);
-    const { changeGaps, backoutGaps } = readOpenGaps(baseReview);
+    // Questions for the owner (INFO) and form fields (RECORD) are re-judged too, so an answered one can close.
+    const { changeGaps, backoutGaps } = readOpenGaps(baseReview, isUnsettledFinding);
     if (changeGaps.length === 0 && backoutGaps.length === 0) {
       setReviewText(baseReview);
       setIsReviewOutOfDate(false);
