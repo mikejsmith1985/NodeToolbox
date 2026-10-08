@@ -54,6 +54,12 @@ export function renderChangeText(fieldValues: ChgTextFieldValues): string {
  * at its Minimum acceptable; a fact only the owner has is INFO (a question, not a gap); a record field is
  * RECORD (set it in the form). Only what a rewrite of the text can close is a GAP.
  */
+/**
+ * The most questions one review may put to the owner. Fifteen-plus questions on a change whose plans already
+ * answered them taught the owner to ignore the list; a short list is one they will actually answer (GH #415).
+ */
+export const MAX_OWNER_QUESTIONS = 5;
+
 export const REVIEW_STATUS_RULES: readonly string[] = [
   'PASS when the field meets its Minimum acceptable. The Formula, Reviewer test and Evidence describe what good '
     + 'looks like — do not fail a field for lacking them.',
@@ -65,6 +71,9 @@ export const REVIEW_STATUS_RULES: readonly string[] = [
   'INFO only when nothing given here meets the minimum (a name, time, count, contact or test result): ask it as one '
     + 'short question. Never ask for more detail than the Minimum acceptable — contact methods, response commitments, '
     + 'test dates, volumes or extra named roles are not minimums. Any [CONFIRM: ...] placeholder is INFO.',
+  'The Formula and Evidence lines describe an ideal answer — never turn them into questions. Ask at most '
+    + `${MAX_OWNER_QUESTIONS} INFO questions in all, only for facts whose absence would block approval; judge every `
+    + 'other field at its minimum from what is given.',
   'RECORD when the problem is a record field (configuration item, category, environment, assignment group, change '
     + 'owner, risk, impact, planned start or end): say what to set in the change form.',
   'Answer lines:',

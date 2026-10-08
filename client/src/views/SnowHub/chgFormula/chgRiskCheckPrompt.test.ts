@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { buildChgRiskCheckPrompt, REVIEW_STATUS_RULES, REVISED_FIELDS_HEADING, splitRiskCheckReply } from './chgRiskCheckPrompt.ts';
+import { buildChgRiskCheckPrompt, MAX_OWNER_QUESTIONS, REVIEW_STATUS_RULES, REVISED_FIELDS_HEADING, splitRiskCheckReply } from './chgRiskCheckPrompt.ts';
 
 const SAMPLE_CONTEXT = {
   categoryLabel: 'Software',
@@ -146,5 +146,12 @@ describe('the review bar (GH #415)', () => {
 
     expect(rulesText).toMatch(/fact stated anywhere/i);
     expect(rulesText).toMatch(/never ask for more detail than the Minimum acceptable/i);
+  });
+
+  it('never turns the Formula or Evidence lines into questions, and asks at most a few', () => {
+    const rulesText = REVIEW_STATUS_RULES.join('\n');
+
+    expect(rulesText).toMatch(/Formula and Evidence lines describe an ideal answer — never turn them into questions/i);
+    expect(rulesText).toContain(`at most ${MAX_OWNER_QUESTIONS} INFO questions`);
   });
 });

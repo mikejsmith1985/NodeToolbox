@@ -15,7 +15,7 @@ import {
   FORMULA_CARD_QUALITY_GATE,
   type ChgTextFieldKey,
 } from './formulaCard.ts';
-import { REVIEW_STATUS_RULES } from './chgRiskCheckPrompt.ts';
+import { renderChangeText, REVIEW_STATUS_RULES } from './chgRiskCheckPrompt.ts';
 import { parseRiskCheckReview, type RiskCheckFinding } from './riskCheckReview.ts';
 
 /** The seven drafted text fields as the change currently holds them. */
@@ -85,8 +85,10 @@ export function renderSelectedChangeText(fieldValues: ChgTextFieldValues, fieldK
 
 /** One open gap with the rule it is judged against: the card field's formula, or the gate's pass standard. */
 function renderGapWithRule(finding: RiskCheckFinding): string {
-  const gapLine = `- ${[finding.field, finding.detail, finding.fix ? `Earlier suggested fix: ${finding.fix}` : '']
-    .filter((part) => part !== '').join(' — ')}`;
+  const gapLine = finding.status === 'INFO'
+    ? renderEarlierQuestionLine(finding)
+    : `- ${[finding.field, finding.detail, finding.fix ? `Earlier suggested fix: ${finding.fix}` : '']
+      .filter((part) => part !== '').join(' — ')}`;
   const [matchingCardName] = findMatchingCardNames(finding.field);
   const cardField = FORMULA_CARD_FIELDS.find((entry) => entry.field === matchingCardName);
   if (cardField) {
@@ -107,13 +109,18 @@ export function buildGapRecheckPrompt(
   gapFindings: readonly RiskCheckFinding[],
   extraPart?: ExtraPromptPart,
 ): string {
-  const gapFieldKeys = resolveGapTextFields(gapFindings);
+  // A question's answer can be in any field (a duration in the implementation plan, a validator in the test plan),
+  // so a re-check that holds one is shown the whole change; text-only gaps keep the short, focused prompt.
+  const isWholeChangeShown = hasQuestionOrRecordFinding(gapFindings);
+  const gapFieldKeys = isWholeChangeShown ? [] : resolveGapTextFields(gapFindings);
   return [
     'You are a Release Manager re-checking specific gaps in a ServiceNow Change Request against the Change '
       + 'Request Formula Card. Judge ONLY the gaps listed below; nothing else is in question.',
     '',
     buildChgContextText(context),
     '',
+    isWholeChangeShown ? 'The change as it now reads:' : '',
+    isWholeChangeShown ? renderChangeText(fieldValues) : '',
     gapFieldKeys.length > 0 ? 'The fields these gaps live in, as they now read:' : '',
     gapFieldKeys.length > 0 ? renderSelectedChangeText(fieldValues, gapFieldKeys) : '',
     ...(extraPart ? ['', ...extraPart.contextLines] : []),
@@ -130,6 +137,19 @@ export function buildGapRecheckPrompt(
     '',
     CODE_BLOCK_REPLY_INSTRUCTION,
   ].join('\n');
+}
+
+/**
+ * An earlier question, framed as something to close rather than a premise to repeat. Shown bare, the assistant
+ * asked the very same question again — even with the answer in the change in front of it (GH #415).
+ */
+function renderEarlierQuestionLine(finding: RiskCheckFinding): string {
+  return `- ${finding.field} — Earlier question: ${finding.detail} — PASS it if anything given here meets the minimum.`;
+}
+
+/** True when a re-check holds a question or a record field, whose answer can sit in any part of the change. */
+function hasQuestionOrRecordFinding(findings: readonly RiskCheckFinding[]): boolean {
+  return findings.some((finding) => finding.status === 'INFO' || finding.status === 'RECORD');
 }
 
 /** One finding as a review line, in the same format the review prompt asks for. */

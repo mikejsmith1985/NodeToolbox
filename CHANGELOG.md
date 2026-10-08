@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Check again no longer repeats the same questions (GH #415).** The re-check showed the assistant only the one or
+  two fields each question "lived in" and replayed the old question verbatim, so it could not see the plans, CTASK
+  minutes or files that answered it — and asked again. A re-check holding a question now shows the **whole
+  change**, frames each as *"Earlier question: … — PASS it if anything given here meets the minimum"*, and every
+  review asks **at most 5 questions** (facts whose absence would block approval), never turning the card's
+  Formula or Evidence lines into questions.
 - **The CHG risk check stops asking for what the change already holds (GH #415).** A run still raised 16
   questions — contacts, durations, test results, validators — on a change whose AI-written plans, CTASKs and
   attached test evidence already answered them:

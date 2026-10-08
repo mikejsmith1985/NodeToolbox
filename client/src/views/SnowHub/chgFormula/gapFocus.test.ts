@@ -76,6 +76,19 @@ describe('buildGapRecheckPrompt', () => {
     expect(prompt).not.toContain('Blast Radius');
   });
 
+  it('shows the whole change when a question is re-checked, since its answer can be in any field (GH #415)', () => {
+    const durationQuestion: RiskCheckFinding = {
+      status: 'INFO', field: 'Implementation Duration', detail: 'What is the estimated implementation duration?', fix: '',
+    };
+
+    const prompt = buildGapRecheckPrompt(SAMPLE_CONTEXT, SAMPLE_FIELDS, [durationQuestion]);
+
+    expect(prompt).toContain('Deploys the October release.');
+    expect(prompt).toContain('Redeploy 26.9.');
+    expect(prompt).toMatch(/Earlier question: What is the estimated implementation duration\?/);
+    expect(prompt).toMatch(/PASS it if anything given here meets the minimum/i);
+  });
+
   it('asks for one verdict line per gap and a verdict, in a code block', () => {
     const prompt = buildGapRecheckPrompt(SAMPLE_CONTEXT, SAMPLE_FIELDS, [backoutTriggerGap]);
 
