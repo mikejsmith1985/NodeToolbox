@@ -897,3 +897,39 @@ describe('ModifyChgTab - Save and risk check reachable from every step', () => {
     expect(await screen.findByText('Risk check — this change and its CTASKs')).toBeInTheDocument();
   });
 });
+
+describe('ModifyChgTab - RCP production rules (GH #415)', () => {
+  let consoleLogSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    // Freeze only the date: the RCP rules apply through 19 Jan 2027, and this test must not expire with them.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-08T15:00:00Z'));
+    mockSnowFetch.mockReset();
+    consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    consoleLogSpy.mockRestore();
+    localStorage.clear();
+  });
+
+  it('offers the in-flight sweep on step 1 and the RCP checklist on request on the review step', async () => {
+    const user = userEvent.setup();
+    const productionRecord = { ...MOCK_CHANGE_RECORD, u_environment: { value: 'prd', display_value: 'PRD' } };
+    mockSnowFetch.mockImplementation(async (requestPath: string) => (String(requestPath).startsWith('/api/now/table/change_request/')
+      ? { result: productionRecord }
+      : { result: String(requestPath).startsWith('/api/now/table/change_request?') ? [productionRecord] : [] }));
+    render(<ModifyChgTab />);
+
+    expect(screen.getByRole('button', { name: /Check my in-flight Production changes/ })).toBeInTheDocument();
+    await user.type(screen.getByLabelText(/Change Request number/i), 'chg0001234');
+    await user.click(screen.getAllByRole('button', { name: /Fetch Change/i })[1]);
+    await waitFor(() => expect(screen.getByDisplayValue('Update network infrastructure')).toBeInTheDocument());
+    await user.click(screen.getByRole('button', { name: /5\. Review & Save/i }));
+    await user.click(screen.getByRole('button', { name: /Check the RCP production rules/ }));
+
+    expect(await screen.findByText(/RCP rules met/)).toBeInTheDocument();
+  });
+});

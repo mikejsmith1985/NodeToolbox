@@ -12,6 +12,10 @@ import type { ChgPromptContext } from '../chgFormula/chgPromptContext.ts';
 import type { ChgTextFieldValues } from '../chgFormula/chgRiskCheckPrompt.ts';
 import type { ChgTextFieldKey } from '../chgFormula/formulaCard.ts';
 import { ExistingChgRiskCheck } from './ExistingChgRiskCheck.tsx';
+import { ExistingChgRcpCheck } from '../rcp/ExistingChgRcpCheck.tsx';
+import { RcpInFlightSweep } from '../rcp/RcpInFlightSweep.tsx';
+import { readRcpRulesEnabled } from '../rcp/rcpApprovalEmail.ts';
+import { isRcpPeriodActive, readCentralTodayIso } from '../rcp/rcpRules.ts';
 import CreateChgTab from './CreateChgTab.tsx';
 import type {
   ChgBasicInfo,
@@ -1551,6 +1555,8 @@ export default function ModifyChgTab(): React.ReactElement {
 
   // Whether the CHG + CTASK risk check is showing on the review step; it is opened on request only.
   const [isRiskCheckOpen, setIsRiskCheckOpen] = useState(false);
+  // Whether the RCP production-rules checklist is showing on the review step (GH #415); opened on request.
+  const [isRcpCheckOpen, setIsRcpCheckOpen] = useState(false);
 
   const handleChangeKeyChange = useCallback((key: string) => {
     setModifyState((prev) => ({ ...prev, changeKey: key, fetchError: null }));
@@ -1882,6 +1888,8 @@ export default function ModifyChgTab(): React.ReactElement {
           onMyChangeSelect={handleMyChangeSelect}
         />
       )}
+      {/* RCP (GH #415): bring every in-flight Production change up to the new rules; Open loads it here. */}
+      {modifyState.currentStep === 1 && <RcpInFlightSweep onOpenChange={(changeNumber) => void handleMyChangeSelect(changeNumber)} />}
 
       {modifyState.currentStep === 2 && (
         <>
@@ -1939,6 +1947,19 @@ export default function ModifyChgTab(): React.ReactElement {
 
       {modifyState.currentStep === 5 && (
         <>
+          {/* RCP (GH #415): opt-in like the risk check, because it reads the change and its CTASKs from ServiceNow.
+              Offered only while the RCP rules are switched on and the period has not ended. */}
+          {loadedChange?.sysId && isRcpPeriodActive(readRcpRulesEnabled(), readCentralTodayIso()) ? (
+            isRcpCheckOpen ? (
+              <ExistingChgRcpCheck changeSysId={loadedChange.sysId} key={`rcp-${loadedChange.sysId}`} />
+            ) : (
+              <div className={styles.buttonRow}>
+                <button className={styles.secondaryButton} onClick={() => setIsRcpCheckOpen(true)} type="button">
+                  🗓️ Check the RCP production rules
+                </button>
+              </div>
+            )
+          ) : null}
           {/* Opt-in: the check reads every CTASK from ServiceNow, so it runs only when asked for. It sits
               above Save because change-field fixes land in this form and are written by that Save. */}
           {loadedChange?.sysId && riskCheckPromptContext && riskCheckFieldValues && riskCheckConfigItem ? (

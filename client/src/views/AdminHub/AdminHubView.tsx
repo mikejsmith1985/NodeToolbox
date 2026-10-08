@@ -23,6 +23,7 @@ import { MonthlyDeliveryPanel } from './MonthlyDeliveryPanel.tsx'
 import { ConfluenceDocLinksPanel } from './confluenceDocLinks/ConfluenceDocLinksPanel.tsx'
 import { ConfigBackupPanel } from './ConfigBackupPanel.tsx'
 import { FieldMappingPanel } from './FieldMappingPanel.tsx'
+import { RcpRulesPanel } from './RcpRulesPanel.tsx'
 import { ComponentManagerPanel } from './ComponentManagerPanel.tsx'
 import { SubtaskPromotionPanel } from './SubtaskPromotionPanel.tsx'
 import { useAdminHubState } from './hooks/useAdminHubState.ts'
@@ -2727,6 +2728,8 @@ function AdminHubMainContent({ state, actions }: AdminHubMainContentProps) {
       <RelayActivationSection />
 
       <EnterpriseStandardsPanel />
+      {/* Temporary: the RCP production-change rules (GH #415), switchable and self-expiring. */}
+      <RcpRulesPanel />
       <CredentialManagementSection />
 
       <HygieneRulesSection

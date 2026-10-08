@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **RCP production-change rules checklist (GH #415).** Through **Jan 19, 2027**, every Production (PRD / PFIX) change
+  is checked against Change Management's restricted-change-period rules, each with a pass / fail / confirm verdict
+  and the reason:
+  - **Window** — Friday, Saturday or Sunday nights only, never 5:00 AM–7:00 PM CT, with implementation, validation
+    and backout (from the CTASK estimates) fitting inside it. Dates are read from ServiceNow in UTC and judged in CT.
+  - **Director as Requested By** — compared with the CI's owner in the CMDB; a mismatch asks you to confirm.
+  - **Director approval attached** — an .msg, .eml or .pdf on the change.
+  - **Justification** — covers why during RCP, the impact of waiting until after Jan 19, and the time-sensitive need.
+  - **Submitted early** — Moderate and High risk need 3 business days before the planned start.
+  - Where: **Create CHG → Results** (before the change exists), **Modify Existing CHG → Review & Save →
+    🗓️ Check the RCP production rules**, and **🗓️ Check my in-flight Production changes** on Modify's first step,
+    which checks every change of yours in Assess, Authorize or Scheduled at once.
+  - **✉️ Draft the Director approval email with AI Assist** — a punchy email under 200 words built only from the
+    change's facts.
+  - **Admin Hub → RCP Production-Change Rules** switches it off; it also stops by itself after Jan 19, 2027.
+
 ### Changed
 - **Pull Features now finds a team's Epics by the Product Owner field.** PI Review's and the PI Planner's pull used to
   match the roster's Product Owners against **Assignee**; it now matches them against Jira's **Product Owner** field

@@ -24,7 +24,9 @@ function buildCtask(overrides: Partial<ReviewedCtask> = {}): ReviewedCtask {
 }
 
 describe('fetchReviewedCtasks', () => {
-  beforeEach(() => vi.mocked(snowFetch).mockReset());
+  beforeEach(() => {
+    vi.mocked(snowFetch).mockReset();
+  });
 
   it('reads every field of the change\'s tasks, so the backout field can be found', async () => {
     vi.mocked(snowFetch).mockResolvedValue({ result: [{ sys_id: 'task-1', number: 'CTASK0012345', u_backout_plan: 'Redeploy.' }] });

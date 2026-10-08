@@ -1516,6 +1516,37 @@ describe('CreateChgTab', () => {
     expect(screen.getByRole('button', { name: /Next/i })).toBeEnabled();
   });
 
+  // ── Step 6: RCP production-change rules (GH #415) ──
+
+  it('shows the RCP checklist at step 6 for a Production change while the RCP rules apply', () => {
+    // Freeze only the date: the RCP rules end 19 Jan 2027, and this test must not expire with them.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-05T15:00:00Z'));
+    try {
+      mockState.currentStep = 6;
+      mockState.prdEnvironment = { isEnabled: true, plannedStartDate: '2026-10-09T19:30', plannedEndDate: '2026-10-10T03:00', configItem: { ...EMPTY_SNOW_REFERENCE }, impactedPersonsAware: '', snowEnvironmentValue: '' };
+      render(<CreateChgTab />);
+
+      expect(screen.getByText(/RCP rules met/)).toBeInTheDocument();
+      expect(screen.getByText(/once the change is created/i)).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('shows no RCP checklist for a change that is not for Production', () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-05T15:00:00Z'));
+    try {
+      mockState.currentStep = 6;
+      render(<CreateChgTab />);
+
+      expect(screen.queryByText(/RCP rules met/)).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   // ── Step 6: Risk check with AI Assist (T013, US2, FR-005, SC-007) ──
 
   it('hides Risk check with AI Assist at step 6 when the gate is locked', () => {

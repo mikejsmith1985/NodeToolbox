@@ -30,6 +30,10 @@ import { buildChgRiskCheckPrompt, splitRiskCheckReply } from '../chgFormula/chgR
 import { renderFormulaGuidanceForField } from '../chgFormula/formulaCard.ts';
 import { AiAssistPromptModal, type AiAssistPromptSession } from './AiAssistPromptModal.tsx';
 import { RiskCheckReviewPanel } from './RiskCheckReviewPanel.tsx';
+import { readRcpRulesEnabled } from '../rcp/rcpApprovalEmail.ts';
+import { RcpChecklist } from '../rcp/RcpChecklist.tsx';
+import { evaluateNewChangeRcp, readLocalDateTimeAsUtc, type NewChangeRcpInput } from '../rcp/rcpNewChange.ts';
+import { isRcpPeriodActive, readCentralTodayIso } from '../rcp/rcpRules.ts';
 import type { SnowChoiceOptionMap } from '../hooks/useSnowChoiceOptions.ts';
 import { useSnowChoiceOptions } from '../hooks/useSnowChoiceOptions.ts';
 import {
@@ -38,6 +42,7 @@ import {
   formatMinutes,
   listMissingEstimateLabels,
   normalizeEstimates,
+  sumEstimateMinutes,
 } from '../ctaskDurations.ts';
 import { CtaskEditForm } from '../components/CtaskEditForm.tsx';
 import { SnowLookupField } from '../components/SnowLookupField.tsx';
@@ -2045,6 +2050,47 @@ function buildChgPromptContextFromState(state: CrgStateData): ChgPromptContext {
   };
 }
 
+/**
+ * What the RCP rules judge about the change being built (GH #415): its Production environment (PRD, else PFIX)
+ * with the typed dates read as local time, its CTASK estimates, and its people and text.
+ */
+function buildNewChangeRcpInput(state: CrgStateData): NewChangeRcpInput {
+  const productionEntry = ([['PRD', state.prdEnvironment], ['PFIX', state.pfixEnvironment]] as const)
+    .find(([, environment]) => environment.isEnabled);
+  const totalEstimateMinutes = state.changeTasks
+    .reduce((runningTotal, changeTask) => runningTotal + sumEstimateMinutes(normalizeEstimates(changeTask.durationEstimates)), 0);
+  return {
+    productionEnvironment: productionEntry ? {
+      label: productionEntry[0],
+      plannedStartUtc: readLocalDateTimeAsUtc(productionEntry[1].plannedStartDate),
+      plannedEndUtc: readLocalDateTimeAsUtc(productionEntry[1].plannedEndDate),
+      configItem: productionEntry[1].configItem,
+    } : null,
+    totalEstimateMinutes: totalEstimateMinutes > 0 ? totalEstimateMinutes : null,
+    requestedBy: state.chgBasicInfo.requestedBy,
+    justification: state.generatedJustification,
+    shortDescription: state.generatedShortDescription,
+    backoutPlan: state.chgPlanningContent.backoutPlan,
+    todayIso: readCentralTodayIso(),
+  };
+}
+
+/** The RCP checklist for the change being built — nothing when the rules are off or it is not for Production. */
+function NewChangeRcpSection({ state }: { state: CrgStateData }) {
+  const newChangeRcp = isRcpPeriodActive(readRcpRulesEnabled(), readCentralTodayIso())
+    ? evaluateNewChangeRcp(buildNewChangeRcpInput(state))
+    : null;
+  if (newChangeRcp === null) {
+    return null;
+  }
+  return (
+    <div className={styles.clonePanel}>
+      <h4 className={styles.panelSectionTitle}>RCP production-change rules</h4>
+      <RcpChecklist emailContext={newChangeRcp.emailContext} results={newChangeRcp.results} />
+    </div>
+  );
+}
+
 /** The seven text fields as the change currently holds them. */
 function readChgTextFields(state: CrgStateData): AiAssistGeneratedFields {
   return {
@@ -2467,6 +2513,9 @@ function ResultsStep({ state, actions, ctaskTemplates, environmentValueByKey, is
           ) : null}
         </div>
       ) : null}
+      {/* RCP (GH #415): a Production change is checked against the restricted-period rules before it is created.
+          Shown only while the rules are switched on and the period has not ended. */}
+      <NewChangeRcpSection state={state} />
       {state.submitResult ? <p className={styles.successText}>{state.submitResult}</p> : null}
       {state.isSubmitting ? <p className={styles.loadingText}>Submitting change request...</p> : null}
       {/* A rebuild is bound to the change it was started from — typing another number here would
