@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Modify Existing CHG's risk check now reads the Jira stories the change names (GH #415).** Any Jira key in the
+  change's text (e.g. *"Deploys ENCUC-77"*) is read from Jira — summary, description, acceptance criteria — and
+  given to the risk check, fix and re-check rounds, as Create already does. The panel says which stories it read;
+  a key Jira cannot find (a look-alike such as `SHA-256`) is skipped. At most 25 keys are read per change.
 - **The CHG risk check is given everything the ticket already says (GH #415).** It kept asking questions the
   change already answered:
   - Planning answers went out as codes — Impact "1" instead of *"1-High … > 250 users or > 25 customers"*. They are

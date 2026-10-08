@@ -8,6 +8,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
+import type { JiraIssue } from '../../../types/jira.ts';
+import { fetchChangeJiraStories, findJiraKeysInChangeText } from '../chgFormula/changeJiraStories.ts';
 import { describeTaskPeople, type ChgPromptContext } from '../chgFormula/chgPromptContext.ts';
 import { buildChgGapFixPrompt, resolveFixableFields } from '../chgFormula/chgGapFixPrompt.ts';
 import { buildChgRiskCheckPrompt, splitRiskCheckReply, type ChgTextFieldValues } from '../chgFormula/chgRiskCheckPrompt.ts';
@@ -30,7 +32,7 @@ import {
   mergeRecheckIntoReview,
 } from '../chgFormula/gapFocus.ts';
 import { parseRiskCheckReview, type RiskCheckFinding } from '../chgFormula/riskCheckReview.ts';
-import { parseAiAssistChgResponse, useAiAssist } from '../hooks/useAiAssist.ts';
+import { buildIssueDetailText, parseAiAssistChgResponse, useAiAssist } from '../hooks/useAiAssist.ts';
 import type { SnowReference } from '../hooks/useCrgState.ts';
 import { AiAssistPromptModal, type AiAssistPromptSession } from './AiAssistPromptModal.tsx';
 import { RiskCheckReviewPanel } from './RiskCheckReviewPanel.tsx';
@@ -67,10 +69,18 @@ function readOpenGaps(reviewText: string, isIncluded: (finding: RiskCheckFinding
   };
 }
 
-/** The record facts with one line per task, so every round sees the tasks the change really has. */
-function withTaskLines(promptContext: ChgPromptContext, ctasks: readonly ReviewedCtask[]): ChgPromptContext {
+/**
+ * The record facts with one line per task, so every round sees the tasks the change really has — and the Jira
+ * stories the change names, so the check does not ask for what those stories already state.
+ */
+function withTaskLines(
+  promptContext: ChgPromptContext,
+  ctasks: readonly ReviewedCtask[],
+  jiraStories: readonly JiraIssue[],
+): ChgPromptContext {
   return {
     ...promptContext,
+    jiraSourceText: jiraStories.length > 0 ? buildIssueDetailText([...jiraStories]) : '',
     changeTaskLines: ctasks.map((ctask) => `${ctask.number} — ${ctask.shortDescription} (${ctask.typeLabel || 'type not recorded'})`
       + ` — ${describeTaskPeople(ctask.assignedTo.displayName, ctask.assignmentGroup.displayName)}`),
   };
@@ -139,6 +149,11 @@ export function ExistingChgRiskCheck({
 }: ExistingChgRiskCheckProps) {
   const { isUnlocked } = useAiAssist();
   const [ctasks, setCtasks] = useState<ReviewedCtask[]>([]);
+  // The stories read, with the keys they were read for — stories for keys the change no longer names are not used.
+  const [loadedStories, setLoadedStories] = useState<{ storyKeysText: string; stories: JiraIssue[] }>({
+    storyKeysText: '',
+    stories: [],
+  });
   const [reviewText, setReviewText] = useState<string | null>(null);
   const [isReviewOutOfDate, setIsReviewOutOfDate] = useState(false);
   const [pendingPlans, setPendingPlans] = useState<Map<string, string>>(new Map());
@@ -179,6 +194,27 @@ export function ExistingChgRiskCheck({
     };
   }, [changeSysId]);
 
+  // The Jira keys the change's text names, as one string so the stories are read again only when the keys change.
+  const storyKeysText = useMemo(() => findJiraKeysInChangeText(Object.values(fieldValues)).join(','), [fieldValues]);
+  const jiraStories = useMemo(
+    () => (loadedStories.storyKeysText === storyKeysText ? loadedStories.stories : []),
+    [loadedStories, storyKeysText],
+  );
+
+  // Reads the named stories; a change switched away from mid-read is not written into this one.
+  useEffect(() => {
+    if (storyKeysText === '') {
+      return undefined;
+    }
+    let isStale = false;
+    void fetchChangeJiraStories(storyKeysText.split(',')).then((stories) => {
+      if (!isStale) setLoadedStories({ storyKeysText, stories });
+    });
+    return () => {
+      isStale = true;
+    };
+  }, [storyKeysText]);
+
   // Writes one fix per task, one at a time, and reports any that ServiceNow refused.
   const writeTaskFixes = useCallback(async (fixes: Array<{ ctask: ReviewedCtask; fix: Parameters<typeof saveCtaskFix>[1] }>) => {
     const failedNumbers: string[] = [];
@@ -208,7 +244,7 @@ export function ExistingChgRiskCheck({
     setPromptSession({
       instructions: 'Copy this prompt into AI Assist to check the change AND every CTASK against the Release Manager\'s '
         + 'rules, then paste the reply below — one review covers them all.',
-      promptText: buildChgRiskCheckPrompt(withTaskLines(promptContext, ctasks), fieldValues, buildCtaskCheckPart(ctasks)),
+      promptText: buildChgRiskCheckPrompt(withTaskLines(promptContext, ctasks, jiraStories), fieldValues, buildCtaskCheckPart(ctasks)),
       applyButtonLabel: 'Use this review',
       applyReply: (replyText) => {
         const { reviewText: pastedReview, revisedFieldsText } = splitRiskCheckReply(replyText);
@@ -221,7 +257,7 @@ export function ExistingChgRiskCheck({
         return { statusMessage: 'Review captured — it is shown below the CTASK checks.', wasApplied: true };
       },
     });
-  }, [promptContext, ctasks, fieldValues, ruleFindings, onApplyChangeFields]);
+  }, [promptContext, ctasks, jiraStories, fieldValues, ruleFindings, onApplyChangeFields]);
 
   const handleOpenFixRound = useCallback((answersByField: Record<string, string> = {}) => {
     const openGaps = readOpenGaps(reviewText ?? '');
@@ -240,7 +276,7 @@ export function ExistingChgRiskCheck({
     setPromptSession({
       instructions: 'Copy this prompt into AI Assist to rewrite what closes the gaps, then paste the reply below — change '
         + 'fields go into this form, CTASK backout plans are staged for you to write to ServiceNow.',
-      promptText: buildChgGapFixPrompt(withTaskLines(promptContext, ctasks), fieldValues, changeGaps,
+      promptText: buildChgGapFixPrompt(withTaskLines(promptContext, ctasks, jiraStories), fieldValues, changeGaps,
         backoutGaps.length > 0 ? buildCtaskFixPart(ctasks, backoutGaps) : undefined),
       applyButtonLabel: 'Apply the fixes',
       applyReply: (replyText) => {
@@ -259,7 +295,7 @@ export function ExistingChgRiskCheck({
         };
       },
     });
-  }, [reviewText, promptContext, ctasks, fieldValues, onApplyChangeFields]);
+  }, [reviewText, promptContext, ctasks, jiraStories, fieldValues, onApplyChangeFields]);
 
   const handleWritePendingPlans = useCallback(async () => {
     setIsWriting(true);
@@ -287,7 +323,7 @@ export function ExistingChgRiskCheck({
     }
     setPromptSession({
       instructions: 'Copy this prompt into AI Assist to re-check just the open gaps, then paste the reply below.',
-      promptText: buildGapRecheckPrompt(withTaskLines(promptContext, freshTasks), fieldValues, changeGaps,
+      promptText: buildGapRecheckPrompt(withTaskLines(promptContext, freshTasks, jiraStories), fieldValues, changeGaps,
         backoutGaps.length > 0 ? buildCtaskRecheckPart(freshTasks, backoutGaps) : undefined),
       applyButtonLabel: 'Use this re-check',
       applyReply: (replyText) => {
@@ -300,7 +336,7 @@ export function ExistingChgRiskCheck({
         return { statusMessage: `Re-checked: ${closedCount} closed, ${stillOpenCount} still open.`, wasApplied: true };
       },
     });
-  }, [reloadCtasks, changeConfigItem, reviewText, promptContext, fieldValues]);
+  }, [reloadCtasks, changeConfigItem, reviewText, promptContext, jiraStories, fieldValues]);
 
   return (
     <section className={styles.section}>
@@ -310,6 +346,12 @@ export function ExistingChgRiskCheck({
           {`Every CTASK must be on the change's CI${changeConfigItem.displayName ? ` (${changeConfigItem.displayName})` : ''}, `
             + 'and every implementation CTASK needs a detailed backout plan.'}
         </p>
+        {jiraStories.length > 0 ? (
+          <p className={styles.panelHint}>
+            {`Read ${pluralise(jiraStories.length, 'Jira story', 'Jira stories')} named in the change: `
+              + `${jiraStories.map((story) => story.key).join(', ')} — the risk check is given them in full.`}
+          </p>
+        ) : null}
         <CtaskRuleSummary ruleFindings={ruleFindings} />
         <div className={styles.buttonRow}>
           {misalignedTasks.length > 0 && changeConfigItem.sysId ? (

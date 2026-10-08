@@ -3,6 +3,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { fetchChangeJiraStories } from '../chgFormula/changeJiraStories.ts';
 import { fetchReviewedCtasks, saveCtaskFix } from '../chgFormula/ctaskReviewApi.ts';
 import type { ReviewedCtask } from '../chgFormula/ctaskReviewRecord.ts';
 import { useAiAssist } from '../hooks/useAiAssist.ts';
@@ -12,6 +13,10 @@ vi.mock('../chgFormula/ctaskReviewApi.ts', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../chgFormula/ctaskReviewApi.ts')>()),
   fetchReviewedCtasks: vi.fn(),
   saveCtaskFix: vi.fn(),
+}));
+vi.mock('../chgFormula/changeJiraStories.ts', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../chgFormula/changeJiraStories.ts')>()),
+  fetchChangeJiraStories: vi.fn(),
 }));
 vi.mock('../hooks/useAiAssist.ts', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../hooks/useAiAssist.ts')>()),
@@ -43,12 +48,12 @@ const MISALIGNED_TASK: ReviewedCtask = {
   backoutFieldName: 'u_backout_plan',
 };
 
-function renderPanel(onApplyChangeFields = vi.fn(() => 1)) {
+function renderPanel(onApplyChangeFields = vi.fn(() => 1), fieldValues = FIELD_VALUES) {
   render(
     <ExistingChgRiskCheck
       changeConfigItem={CHANGE_CI}
       changeSysId="chg-1"
-      fieldValues={FIELD_VALUES}
+      fieldValues={fieldValues}
       onApplyChangeFields={onApplyChangeFields}
       promptContext={{
         categoryLabel: 'Software', changeTypeLabel: 'Normal', isExpedited: false, configItemLabel: 'Recon Service',
@@ -73,6 +78,7 @@ describe('ExistingChgRiskCheck', () => {
     vi.clearAllMocks();
     vi.mocked(fetchReviewedCtasks).mockResolvedValue([MISALIGNED_TASK]);
     vi.mocked(saveCtaskFix).mockResolvedValue(undefined);
+    vi.mocked(fetchChangeJiraStories).mockResolvedValue([]);
     vi.mocked(useAiAssist).mockReturnValue({ isUnlocked: true } as ReturnType<typeof useAiAssist>);
   });
 
@@ -83,6 +89,20 @@ describe('ExistingChgRiskCheck', () => {
     expect(await screen.findByText(/CTASK0012345 · Configuration item/)).toBeInTheDocument();
     expect(fetchReviewedCtasks).toHaveBeenCalledWith('chg-1');
     expect(screen.queryByRole('button', { name: /Risk check CHG \+ CTASKs/ })).not.toBeInTheDocument();
+  });
+
+  it('reads the Jira stories the change names and gives them to the risk check (GH #415)', async () => {
+    vi.mocked(fetchChangeJiraStories).mockResolvedValue([
+      { key: 'ENCUC-77', fields: { summary: 'Fix recon totals', description: 'Affects 300 enrolled members.' } },
+    ] as Awaited<ReturnType<typeof fetchChangeJiraStories>>);
+    renderPanel(undefined, { ...FIELD_VALUES, description: 'Deploys v1.5 for ENCUC-77.' });
+
+    expect(await screen.findByText(/Read 1 Jira story named in the change: ENCUC-77/)).toBeInTheDocument();
+    expect(fetchChangeJiraStories).toHaveBeenCalledWith(['ENCUC-77']);
+
+    fireEvent.click(screen.getByRole('button', { name: /Risk check CHG \+ CTASKs/ }));
+    expect(screen.getByDisplayValue(/Jira work this change delivers[\s\S]*Description: Affects 300 enrolled members\./))
+      .toBeInTheDocument();
   });
 
   it('sets a misaligned task\'s CI to the change\'s in ServiceNow, then reads the tasks again', async () => {

@@ -148,7 +148,8 @@ export const NO_ENABLED_ENVIRONMENT_MESSAGE =
 const REQUIRED_JQL_MESSAGE = 'A JQL query is required.';
 const FETCH_FAILURE_MESSAGE = 'Failed to fetch issues';
 const DEFAULT_MAX_RESULTS = 100;
-const ISSUE_FIELD_LIST = 'summary,status,priority,issuetype,assignee,description,customfield_10200';
+/** The Jira fields every CHG prompt reads from a story: summary, status, description and acceptance criteria. */
+export const CRG_ISSUE_FIELD_LIST = 'summary,status,priority,issuetype,assignee,description,customfield_10200';
 const CTASK_DEFAULT_SHORT_DESCRIPTION = 'Change task';
 const AUTO_IMPLEMENTATION_CTASK_PREFIX = 'Enrollment - AWS';
 const AUTO_TECHNICAL_CHECKOUT_CTASK_SHORT_DESCRIPTION = 'Technical Checkout';
@@ -1521,7 +1522,7 @@ async function updateAutoCreatedChangeTasks(
 function buildProjectSearchPath(projectKey: string, fixVersion: string): string {
   const jql = `project = "${projectKey}" AND fixVersion = "${fixVersion}" ORDER BY priority ASC`;
   const encodedJql = encodeURIComponent(jql);
-  return `/rest/api/2/search?jql=${encodedJql}&maxResults=${DEFAULT_MAX_RESULTS}&fields=${ISSUE_FIELD_LIST}`;
+  return `/rest/api/2/search?jql=${encodedJql}&maxResults=${DEFAULT_MAX_RESULTS}&fields=${CRG_ISSUE_FIELD_LIST}`;
 }
 
 /**
@@ -1529,7 +1530,7 @@ function buildProjectSearchPath(projectKey: string, fixVersion: string): string 
  */
 function buildJqlSearchPath(customJql: string): string {
   const encodedJql = encodeURIComponent(customJql);
-  return `/rest/api/2/search?jql=${encodedJql}&maxResults=${DEFAULT_MAX_RESULTS}&fields=${ISSUE_FIELD_LIST}`;
+  return `/rest/api/2/search?jql=${encodedJql}&maxResults=${DEFAULT_MAX_RESULTS}&fields=${CRG_ISSUE_FIELD_LIST}`;
 }
 
 function buildIssueList(selectedIssues: JiraIssue[]): string {
