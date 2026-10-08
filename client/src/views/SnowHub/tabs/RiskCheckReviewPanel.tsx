@@ -1,7 +1,5 @@
 // RiskCheckReviewPanel.tsx — The pasted risk-check review, laid out so a person can read it (GH #395).
 
-import { useState } from 'react';
-
 import { countConfirmPlaceholders, parseRiskCheckReview, type RiskCheckFinding } from '../chgFormula/riskCheckReview.ts';
 import type { ChgTextFieldKey } from '../chgFormula/formulaCard.ts';
 import styles from './CreateChgTab.module.css';
@@ -12,10 +10,10 @@ interface RiskCheckReviewPanelProps {
   /** The seven drafted fields as they stand now, to show which still need a person's [CONFIRM: …] answers. */
   fieldValues: Readonly<Record<ChgTextFieldKey, string>>;
   /**
-   * Opens the "fix these gaps" round, with the owner's answers to the review's questions keyed by field.
+   * Opens the "fix these gaps" round. The review's questions go with it, for the assistant to ask in its chat.
    * Omitted, no fix button is offered.
    */
-  onFixGaps?: (answersByField: Record<string, string>) => void;
+  onFixGaps?: () => void;
   /** Opens a fresh risk check of the change as it now stands. */
   onCheckAgain?: () => void;
   /** True once fields changed after this review was taken, so its findings may no longer hold. */
@@ -79,10 +77,7 @@ export function RiskCheckReviewPanel({
   const infoFindings = review.findings.filter((finding) => finding.status === 'INFO');
   const recordFindings = review.findings.filter((finding) => finding.status === 'RECORD');
   const confirmCounts = countConfirmPlaceholders(fieldValues);
-  // The owner's answers to the questions, kept by field so they survive a re-check that still asks the question.
-  const [answersByField, setAnswersByField] = useState<Record<string, string>>({});
-  const answeredCount = infoFindings.filter((finding) => (answersByField[finding.field] ?? '').trim() !== '').length;
-  const canFix = !review.isReady && (gapFindings.length > 0 || failedGateFindings.length > 0 || answeredCount > 0);
+  const canFix = !review.isReady && (gapFindings.length > 0 || failedGateFindings.length > 0 || infoFindings.length > 0);
 
   return (
     <div className={styles.riskCheckResult}>
@@ -124,25 +119,9 @@ export function RiskCheckReviewPanel({
       ) : null}
       {infoFindings.length > 0 ? (
         <>
-          <p className={styles.fieldLabel}>Questions for you — answer them here and the fix round writes your answers in:</p>
+          <p className={styles.fieldLabel}>Questions for you — AI Assist asks you these in its chat when you fix the gaps:</p>
           <ul aria-label="Questions for you" className={styles.riskFindingList}>
-            {infoFindings.map((finding) => (
-              <li className={styles.riskFindingItem} key={`info-${finding.field}`}>
-                <strong className={styles.riskFindingField}>{finding.field}</strong>
-                {finding.detail ? <span className={styles.riskFindingDetail}>{finding.detail}</span> : null}
-                <textarea
-                  aria-label={`Answer for ${finding.field}`}
-                  className={styles.promptTextArea}
-                  onChange={(changeEvent) => {
-                    const nextAnswer = changeEvent.target.value;
-                    setAnswersByField((currentAnswers) => ({ ...currentAnswers, [finding.field]: nextAnswer }));
-                  }}
-                  placeholder="Your answer — the fix round writes it into the change"
-                  rows={2}
-                  value={answersByField[finding.field] ?? ''}
-                />
-              </li>
-            ))}
+            {infoFindings.map((finding) => <FindingItem finding={finding} key={`info-${finding.field}`} />)}
           </ul>
         </>
       ) : null}
@@ -157,9 +136,9 @@ export function RiskCheckReviewPanel({
       {onFixGaps !== undefined || onCheckAgain !== undefined ? (
         <div className={styles.riskLoopActions}>
           {onFixGaps !== undefined && canFix ? (
-            <button className={styles.aiAssistButton} onClick={() => onFixGaps(answersByField)} type="button">
-              {answeredCount > 0
-                ? `✦ Fix these gaps with AI Assist (using ${pluralise(answeredCount, 'answer', 'answers')})`
+            <button className={styles.aiAssistButton} onClick={onFixGaps} type="button">
+              {infoFindings.length > 0
+                ? `✦ Fix with AI Assist — it will ask you ${pluralise(infoFindings.length, 'question', 'questions')}`
                 : '✦ Fix these gaps with AI Assist'}
             </button>
           ) : null}

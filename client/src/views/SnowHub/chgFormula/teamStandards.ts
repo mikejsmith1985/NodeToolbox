@@ -9,13 +9,12 @@
 import type { DurationEstimates } from '../ctaskDurations.ts';
 import { isSameName, renderReviewText } from './gapFocus.ts';
 import { parseRiskCheckReview, type RiskCheckFinding } from './riskCheckReview.ts';
+import { readTeamStandards, type TeamStandard } from './teamStandardsStore.ts';
 
-// The card fields a standing answer settles, and the answer the review is given for each.
-const STANDING_ANSWERS: ReadonlyArray<{ fieldName: string; detail: string }> = [
-  { fieldName: 'Bridge or Command Center', detail: 'The change owner schedules the bridge after approval (team standard).' },
-  { fieldName: 'Test Results', detail: 'Test evidence is always attached to the change (team standard).' },
-  { fieldName: 'Escalation Path', detail: 'Escalation starts with the CI Director and progresses as required (team standard).' },
-];
+/** Each kept standard as the PASS detail the review is given for its field. */
+function readStandingAnswers(standards: readonly TeamStandard[]): ReadonlyArray<{ fieldName: string; detail: string }> {
+  return standards.map((standard) => ({ fieldName: standard.fieldName, detail: `${standard.answer} (team standard)` }));
+}
 
 // The statuses a standing answer replaces. PASS and N/A are already settled and are left as the review gave them.
 const SETTLEABLE_STATUSES = new Set(['GAP', 'INFO', 'RECORD']);
@@ -49,8 +48,12 @@ function settleFinding(
  * The review with every field a team standard answers settled as PASS, and its verdict recounted. A review that
  * needs no settling is returned exactly as given.
  */
-export function applyTeamStandards(reviewText: string, estimates: DurationEstimates): string {
-  const standingAnswers = [...STANDING_ANSWERS, ...readDurationAnswers(estimates)];
+export function applyTeamStandards(
+  reviewText: string,
+  estimates: DurationEstimates,
+  standards: readonly TeamStandard[] = readTeamStandards(),
+): string {
+  const standingAnswers = [...readStandingAnswers(standards), ...readDurationAnswers(estimates)];
   const reviewFindings = parseRiskCheckReview(reviewText).findings;
   const settledFindings = reviewFindings.map((finding) => settleFinding(finding, standingAnswers));
   const wasAnySettled = settledFindings.some((finding, findingIndex) => finding !== reviewFindings[findingIndex]);

@@ -24,7 +24,6 @@ import { buildIssueDetailText, parseAiAssistChgResponse, useAiAssist } from '../
 import { CODE_BLOCK_REPLY_INSTRUCTION } from '../chgFormula/assistantReplyText.ts';
 import { buildChgGapFixPrompt, resolveFixableFields } from '../chgFormula/chgGapFixPrompt.ts';
 import {
-  buildAnsweredFindings,
   buildGapRecheckPrompt,
   countRecheckOutcome,
   isUnsettledFinding,
@@ -681,7 +680,7 @@ interface ResultsStepExtras {
   /** The pasted risk review to display, or null when no review has been captured yet. */
   riskCheckReviewText: string | null;
   /** Opens the "fix these gaps" round of the risk-check loop. */
-  onOpenGapFixPrompt: (answersByField: Record<string, string>) => void;
+  onOpenGapFixPrompt: () => void;
   /** Opens the targeted re-check of only the gaps the last review left open. */
   onOpenGapRecheckPrompt: () => void;
   /** True once fields changed after the review was taken, so its findings may no longer hold. */
@@ -2965,13 +2964,10 @@ export default function CrgTab({ mode = 'wizard', targetChangeNumber }: CrgTabPr
 
   // The loop's second round: hand the review's gaps back with the change as it stands, and apply the
   // rewritten fields from the pasted reply. Then "Check again" runs a fresh review (GH #395).
-  const handleOpenGapFixPrompt = useCallback((answersByField: Record<string, string> = {}) => {
-    const reviewFindings = parseRiskCheckReview(riskCheckReviewText ?? '').findings;
-    // The gaps, plus every question the owner answered — the answer becomes the fact the rewrite writes in.
-    const gapFindings = [
-      ...reviewFindings.filter((finding) => finding.status === 'GAP' || finding.status === 'NO'),
-      ...buildAnsweredFindings(reviewFindings, answersByField),
-    ];
+  const handleOpenGapFixPrompt = useCallback(() => {
+    // The gaps, plus every question for the owner — the assistant asks those in its own chat, then writes them in.
+    const gapFindings = parseRiskCheckReview(riskCheckReviewText ?? '').findings
+      .filter((finding) => finding.status === 'GAP' || finding.status === 'NO' || finding.status === 'INFO');
     if (gapFindings.length === 0) {
       return;
     }

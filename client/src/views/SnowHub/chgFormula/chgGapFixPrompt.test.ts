@@ -74,3 +74,15 @@ describe('buildChgGapFixPrompt', () => {
     expect(prompt).toContain('Trigger + decision owner + restoration steps + recovery source + duration + validation.');
   });
 });
+
+describe('the fix round asks the owner in its own chat (GH #415)', () => {
+  it('lists the questions and tells the assistant to ask them here, one at a time, before writing', () => {
+    const prompt = buildChgGapFixPrompt(SAMPLE_CONTEXT, SAMPLE_FIELDS, [
+      { status: 'INFO', field: 'Business Validation', detail: 'Who validates in production?', fix: '' },
+    ]);
+
+    expect(prompt).toMatch(/Questions to settle with me first:\n- Business Validation — Who validates in production\?/);
+    expect(prompt).toMatch(/ask me these questions here in this chat, one at a time/i);
+    expect(prompt).toMatch(/never write \[CONFIRM/i);
+  });
+});

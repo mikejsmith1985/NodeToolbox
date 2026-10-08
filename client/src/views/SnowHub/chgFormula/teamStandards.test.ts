@@ -3,8 +3,9 @@
 import { describe, expect, it } from 'vitest';
 
 import { parseRiskCheckReview } from './riskCheckReview.ts';
-import { describeDurationFacts, TEAM_STANDARD_LINES } from './chgPromptContext.ts';
+import { buildTeamStandardLines, describeDurationFacts } from './chgPromptContext.ts';
 import { applyTeamStandards } from './teamStandards.ts';
+import { DEFAULT_TEAM_STANDARDS } from './teamStandardsStore.ts';
 
 const ESTIMATES = { implementationMinutes: '30', validationMinutes: '20', backoutMinutes: '25' };
 const NO_ESTIMATES = { implementationMinutes: '', validationMinutes: '', backoutMinutes: '' };
@@ -65,7 +66,7 @@ describe('applyTeamStandards', () => {
 
 describe('the standards as prompt facts', () => {
   it('states each standing answer and that durations and recovery time are calculated, never asked', () => {
-    const standardsText = TEAM_STANDARD_LINES.join('\n');
+    const standardsText = buildTeamStandardLines(DEFAULT_TEAM_STANDARDS).join('\n');
 
     expect(standardsText).toMatch(/bridge[\s\S]*after the change is approved/i);
     expect(standardsText).toMatch(/test evidence is always attached/i);
@@ -79,5 +80,28 @@ describe('the standards as prompt facts', () => {
         + 'recovery time 25 min.',
     );
     expect(describeDurationFacts(NO_ESTIMATES)).toBe('');
+  });
+});
+
+describe('edited standards (Admin Hub)', () => {
+  it('settles a field with the edited answer, and leaves a removed standard to the review', () => {
+    const editedStandards = [{ fieldName: 'Escalation Path', answer: 'Start with the on-call lead.' }];
+    const reviewText = [
+      'INFO | Escalation Path — Who escalates?',
+      'INFO | Bridge or Command Center — What bridge?',
+      'VERDICT: NOT READY — no text gaps.',
+    ].join('\n');
+
+    const settledText = applyTeamStandards(reviewText, NO_ESTIMATES, editedStandards);
+
+    expect(settledText).toContain('PASS | Escalation Path — Start with the on-call lead. (team standard)');
+    expect(readStatus(settledText, 'Bridge or Command Center')).toBe('INFO');
+  });
+
+  it('states the edited answers to the assistant', () => {
+    const standardsText = buildTeamStandardLines([{ fieldName: 'Bridge or Command Center', answer: 'Teams call at 8 PM.' }]).join('\n');
+
+    expect(standardsText).toContain('- Bridge or Command Center: Teams call at 8 PM.');
+    expect(standardsText).not.toContain('CI Director');
   });
 });

@@ -33,6 +33,24 @@ function renderGapLine(finding: RiskCheckFinding): string {
 }
 
 /**
+ * The owner's questions and how to put them: here, in the assistant's chat, one at a time, before any field is
+ * written — skipping any the facts above already answer. Nothing when the review left no questions.
+ */
+function renderQuestionSection(questionFindings: readonly RiskCheckFinding[]): string[] {
+  if (questionFindings.length === 0) {
+    return [];
+  }
+  return [
+    'Questions to settle with me first:',
+    ...questionFindings.map((finding) => `- ${finding.field} — ${finding.detail}`),
+    'Before you reply with any field, ask me these questions here in this chat, one at a time, and wait for each '
+      + 'answer. Skip any the facts and team standards above already answer. Then write each answer into the field '
+      + 'it belongs in.',
+    '',
+  ];
+}
+
+/**
  * The fields this round may rewrite: those the gaps live in. When none can be placed (a reviewer named a
  * field the card does not know), all seven are offered rather than none.
  */
@@ -63,6 +81,10 @@ export function buildChgGapFixPrompt(
 ): string {
   const fixableFieldKeys = gapFindings.length === 0 && extraPart ? [] : resolveFixableFields(gapFindings);
   const hasChangeFields = fixableFieldKeys.length > 0;
+  // Questions only the owner can answer are asked in the assistant's own chat — it knows what it needs and can
+  // follow up — rather than through a form the owner fills in before the round starts.
+  const questionFindings = gapFindings.filter((finding) => finding.status === 'INFO');
+  const textGapFindings = gapFindings.filter((finding) => finding.status !== 'INFO');
   return [
     'You are fixing a ServiceNow Change Request so it passes the Release Manager\'s Change Request Formula Card review.',
     'A review of the change found the gaps listed below. Rewrite the change\'s text fields to close every gap you '
@@ -72,8 +94,9 @@ export function buildChgGapFixPrompt(
     ...(hasChangeFields ? ['', 'The fields to fix, as they now read:', renderSelectedChangeText(fieldValues, fixableFieldKeys)] : []),
     ...(extraPart ? ['', ...extraPart.contextLines] : []),
     '',
+    ...renderQuestionSection(questionFindings),
     'Gaps to close:',
-    ...gapFindings.map((finding) => renderGapLine(finding)),
+    ...textGapFindings.map((finding) => renderGapLine(finding)),
     ...(extraPart?.gapLines ?? []),
     ...(hasChangeFields ? ['', 'Formula Card rules for these fields:', renderFieldRules(fixableFieldKeys)] : []),
     '',
@@ -83,7 +106,8 @@ export function buildChgGapFixPrompt(
     ...(extraPart?.replyLines ?? []),
     'Each is the whole field as it should now read, not just the added sentence. Keep every correct fact already '
       + 'in it. A gap in a record field (configuration item, category, assignment group, owner, dates) cannot be '
-      + 'fixed in text — skip it. Where the fix needs a fact you do not have, write [CONFIRM: <what is needed>].',
+      + 'fixed in text — skip it. Where the fix needs a fact you do not have, ask me for it here in this chat — '
+      + 'in this round, never write [CONFIRM: ...] and never invent it.',
     '',
     CODE_BLOCK_REPLY_INSTRUCTION,
   ].join('\n');

@@ -1,6 +1,6 @@
 // ExistingChgRiskCheck.test.tsx — Risk-checking an existing CHG and its CTASKs in one pass, and fixing both (GH #395).
 
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { fetchChangeJiraStories } from '../chgFormula/changeJiraStories.ts';
@@ -144,9 +144,10 @@ describe('ExistingChgRiskCheck', () => {
       'VERDICT: NOT READY — no text gaps.',
     ].join('\n'), /Use this review/);
 
-    expect(await screen.findByLabelText(/Answer for Business Validation/)).toBeInTheDocument();
-    expect(screen.queryByLabelText(/Answer for Bridge or Command Center/)).not.toBeInTheDocument();
-    expect(screen.queryByLabelText(/Answer for Implementation Duration/)).not.toBeInTheDocument();
+    const questionList = await screen.findByRole('list', { name: 'Questions for you' });
+    expect(within(questionList).getByText('Business Validation')).toBeInTheDocument();
+    expect(within(questionList).queryByText('Bridge or Command Center')).not.toBeInTheDocument();
+    expect(within(questionList).queryByText('Implementation Duration')).not.toBeInTheDocument();
   });
 
   it('sets a misaligned task\'s CI to the change\'s in ServiceNow, then reads the tasks again', async () => {
@@ -193,25 +194,24 @@ describe('ExistingChgRiskCheck — questions for the owner', () => {
     vi.mocked(useAiAssist).mockReturnValue({ isUnlocked: true } as ReturnType<typeof useAiAssist>);
   });
 
-  it('re-checks a question on Check again instead of offering an AI rewrite', async () => {
+  it('re-checks a question on Check again, beside the fix round that would ask it', async () => {
     renderPanel();
     await waitFor(() => expect(fetchReviewedCtasks).toHaveBeenCalled());
     pasteReply(/Risk check CHG \+ CTASKs/, 'PASS | Short Description — Clear.\nINFO | Support Coverage — Who is on call?\nVERDICT: NOT READY — 0 gap(s).', /Use this review/);
 
-    expect(screen.queryByRole('button', { name: /Fix these gaps/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Fix with AI Assist — it will ask you 1 question/ })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /Check again/ }));
 
     expect(await screen.findByDisplayValue(/re-checking specific gaps[\s\S]*Support Coverage/)).toBeInTheDocument();
   });
 
-  it('sends the owner\'s answers to the fix round', async () => {
+  it('sends the questions to the fix round for the assistant to ask in its chat', async () => {
     renderPanel();
     await waitFor(() => expect(fetchReviewedCtasks).toHaveBeenCalled());
     pasteReply(/Risk check CHG \+ CTASKs/, 'INFO | Support Coverage — Who is on call?\nVERDICT: NOT READY — no text gaps; 1 fact needed from you.', /Use this review/);
 
-    fireEvent.change(screen.getByLabelText('Answer for Support Coverage'), { target: { value: 'Jordan Lee, PagerDuty' } });
-    fireEvent.click(screen.getByRole('button', { name: /Fix these gaps with AI Assist \(using 1 answer\)/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Fix with AI Assist — it will ask you 1 question/ }));
 
-    expect(screen.getByDisplayValue(/Write in the owner's answer: Jordan Lee, PagerDuty/)).toBeInTheDocument();
+    expect(screen.getByDisplayValue(/Questions to settle with me first:\s+- Support Coverage — Who is on call\?/)).toBeInTheDocument();
   });
 });

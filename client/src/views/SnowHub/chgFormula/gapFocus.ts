@@ -171,25 +171,6 @@ export function isUnsettledFinding(finding: RiskCheckFinding): boolean {
   return isOpenFinding(finding) || finding.status === 'INFO' || finding.status === 'RECORD';
 }
 
-/**
- * The questions the owner has answered, as gaps for the fix round: each carries the owner's answer as the fix,
- * so the rewrite puts that fact into the field the question belongs to. This is how the loop becomes a
- * conversation — the check asks, the owner answers in the app, the fix round writes the answers in.
- */
-export function buildAnsweredFindings(
-  questionFindings: readonly RiskCheckFinding[],
-  answersByField: Readonly<Record<string, string>>,
-): RiskCheckFinding[] {
-  return questionFindings
-    .filter((finding) => finding.status === 'INFO' && (answersByField[finding.field] ?? '').trim() !== '')
-    .map((finding) => ({
-      status: 'GAP',
-      field: finding.field,
-      detail: finding.detail,
-      fix: `Write in the owner's answer: ${answersByField[finding.field].trim()}`,
-    }));
-}
-
 /** "1 fact", "2 facts" — the verdict reads as a sentence. */
 function countWithNoun(count: number, singular: string, plural: string): string {
   return `${count} ${count === 1 ? singular : plural}`;

@@ -132,24 +132,24 @@ describe('RiskCheckReviewPanel — questions and record fields', () => {
     expect(within(screen.getByRole('list', { name: 'Fix in the change form' })).getByText('Configuration Item')).toBeInTheDocument();
   });
 
-  it('offers no AI fix round when only questions and record fields remain', () => {
+  it('offers the AI fix round for questions too — the assistant asks them in its own chat', () => {
     render(<RiskCheckReviewPanel fieldValues={EMPTY_FIELDS} onCheckAgain={vi.fn()} onFixGaps={vi.fn()} reviewText={REVIEW_WITH_QUESTIONS} />);
 
-    expect(screen.queryByRole('button', { name: /Fix these gaps/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Fix with AI Assist — it will ask you 1 question/ })).toBeInTheDocument();
+    expect(screen.getByText(/AI Assist asks you these in its chat/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Check again/ })).toBeInTheDocument();
   });
 });
 
-describe('RiskCheckReviewPanel — answering the questions', () => {
-  it('takes an answer under each question and hands the answers to the fix round, even with no text gaps', () => {
+describe('RiskCheckReviewPanel — questions go to the assistant\'s chat', () => {
+  it('has no answer boxes; the fix round is opened for the questions', () => {
     const onFixGaps = vi.fn();
     const reviewText = 'INFO | Support Coverage — Who is on call?\nVERDICT: NOT READY — no text gaps; 1 fact needed from you.';
     render(<RiskCheckReviewPanel fieldValues={EMPTY_FIELDS} onFixGaps={onFixGaps} reviewText={reviewText} />);
 
-    expect(screen.queryByRole('button', { name: /Fix these gaps/ })).not.toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText('Answer for Support Coverage'), { target: { value: 'Jordan Lee, PagerDuty' } });
-    fireEvent.click(screen.getByRole('button', { name: /Fix these gaps with AI Assist \(using 1 answer\)/ }));
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Fix with AI Assist — it will ask you 1 question/ }));
 
-    expect(onFixGaps).toHaveBeenCalledWith({ 'Support Coverage': 'Jordan Lee, PagerDuty' });
+    expect(onFixGaps).toHaveBeenCalledTimes(1);
   });
 });

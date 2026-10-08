@@ -7,6 +7,7 @@
 // REL / PRD / PFIX changes, not the Dev and INT testing that must come before them.
 
 import { describeEstimatesForPrompt, type DurationEstimates } from '../ctaskDurations.ts';
+import { readTeamStandards, type TeamStandard } from './teamStandardsStore.ts';
 
 /** The facts about the change that the wizard already holds, already turned into readable labels. */
 export interface ChgPromptContext {
@@ -78,7 +79,7 @@ function renderAttachments(attachmentFileNames: readonly string[] | undefined): 
 /** The team's standing answers, then the change's estimated durations when its CTASKs carry them. */
 function renderTeamStandards(durationEstimates: DurationEstimates | undefined): string[] {
   const durationLine = durationEstimates ? describeDurationFacts(durationEstimates) : '';
-  return ['', ...TEAM_STANDARD_LINES, ...(durationLine ? [durationLine] : [])];
+  return ['', ...buildTeamStandardLines(readTeamStandards()), ...(durationLine ? [durationLine] : [])];
 }
 
 /** A change task's people as one phrase for the prompt — and plainly what is missing when they are not set. */
@@ -92,15 +93,18 @@ export function describeTaskPeople(assignedToName: string, assignmentGroupName: 
   return `${assigneePart} (${groupText === '' ? 'no group' : `group: ${groupText}`})`;
 }
 
-/** The standing answers, stated to the assistant as facts in every risk-check, fix and re-check prompt. */
-export const TEAM_STANDARD_LINES: readonly string[] = [
-  'Team standards (facts for every change — never ask about them):',
-  '- Bridge or Command Center: the change owner schedules the bridge after the change is approved.',
-  '- Test Results: test evidence is always attached to the change.',
-  '- Escalation Path: escalation starts with the CI Director and progresses as required.',
-  '- Implementation, Validation and Backout Duration, and Recovery Time: calculate them from the estimated '
-    + 'durations below and the timed steps in the plans — never ask for them.',
-];
+/**
+ * The standing answers, stated to the assistant as facts in every risk-check, fix and re-check prompt: the ones
+ * the team keeps in Admin Hub, then the duration rule, which is always worked out from the CTASK estimates.
+ */
+export function buildTeamStandardLines(standards: readonly TeamStandard[]): string[] {
+  return [
+    'Team standards (facts for every change — never ask about them):',
+    ...standards.map((standard) => `- ${standard.fieldName}: ${standard.answer}`),
+    '- Implementation, Validation and Backout Duration, and Recovery Time: calculate them from the estimated '
+      + 'durations below and the timed steps in the plans — never ask for them.',
+  ];
+}
 
 /** The change's estimated durations as one fact line for the prompt, or '' when no CTASK carries an estimate. */
 export function describeDurationFacts(estimates: DurationEstimates): string {

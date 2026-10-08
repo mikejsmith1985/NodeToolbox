@@ -23,6 +23,7 @@ import { MonthlyDeliveryPanel } from './MonthlyDeliveryPanel.tsx'
 import { ConfluenceDocLinksPanel } from './confluenceDocLinks/ConfluenceDocLinksPanel.tsx'
 import { ConfigBackupPanel } from './ConfigBackupPanel.tsx'
 import { FieldMappingPanel } from './FieldMappingPanel.tsx'
+import { ChgTeamStandardsPanel } from './ChgTeamStandardsPanel.tsx'
 import { RcpRulesPanel } from './RcpRulesPanel.tsx'
 import { ComponentManagerPanel } from './ComponentManagerPanel.tsx'
 import { SubtaskPromotionPanel } from './SubtaskPromotionPanel.tsx'
@@ -2730,6 +2731,8 @@ function AdminHubMainContent({ state, actions }: AdminHubMainContentProps) {
       <EnterpriseStandardsPanel />
       {/* Temporary: the RCP production-change rules (GH #415), switchable and self-expiring. */}
       <RcpRulesPanel />
+      {/* The team's standing answers to the CHG risk check (GH #415) — settled without asking. */}
+      <ChgTeamStandardsPanel />
       <CredentialManagementSection />
 
       <HygieneRulesSection

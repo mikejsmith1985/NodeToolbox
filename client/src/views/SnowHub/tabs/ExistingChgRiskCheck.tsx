@@ -24,7 +24,6 @@ import {
 import { checkCtaskRules, composeReviewWithRules, readCtaskFindingTarget } from '../chgFormula/ctaskReviewRules.ts';
 import type { ChgTextFieldKey } from '../chgFormula/formulaCard.ts';
 import {
-  buildAnsweredFindings,
   buildGapRecheckPrompt,
   countRecheckOutcome,
   isOpenFinding,
@@ -292,15 +291,9 @@ export function ExistingChgRiskCheck({
     });
   }, [promptContext, ctasks, jiraStories, attachmentFileNames, fieldValues, ruleFindings, onApplyChangeFields]);
 
-  const handleOpenFixRound = useCallback((answersByField: Record<string, string> = {}) => {
-    const openGaps = readOpenGaps(reviewText ?? '');
-    // Every question the owner answered joins the round, its answer the fact to write into its field or task.
-    const answeredFindings = buildAnsweredFindings(parseRiskCheckReview(reviewText ?? '').findings, answersByField);
-    const changeGaps = [...openGaps.changeGaps, ...answeredFindings.filter((finding) => readCtaskFindingTarget(finding.field) === null)];
-    const backoutGaps = [
-      ...openGaps.backoutGaps,
-      ...answeredFindings.filter((finding) => readCtaskFindingTarget(finding.field)?.aspect === 'backoutPlan'),
-    ];
+  const handleOpenFixRound = useCallback(() => {
+    // The gaps, plus every question for the owner — the assistant asks those in its own chat, then writes them in.
+    const { changeGaps, backoutGaps } = readOpenGaps(reviewText ?? '', (finding) => isOpenFinding(finding) || finding.status === 'INFO');
     if (changeGaps.length === 0 && backoutGaps.length === 0) {
       setStatusMessage('Only CI gaps are left — use the Set CI button.');
       return;

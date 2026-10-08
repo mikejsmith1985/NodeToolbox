@@ -3,7 +3,6 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  buildAnsweredFindings,
   buildGapRecheckPrompt,
   isUnsettledFinding,
   mergeRecheckIntoReview,
@@ -161,23 +160,5 @@ describe('the re-check holds the same bar as the full check', () => {
     expect(prompt).toContain('INFO |');
     expect(prompt).toContain('RECORD |');
     expect(prompt).not.toMatch(/placeholder as a GAP/i);
-  });
-});
-
-describe('buildAnsweredFindings', () => {
-  it('turns each answered question into a gap the fix round writes the owner\'s answer into', () => {
-    const questions: RiskCheckFinding[] = [
-      { status: 'INFO', field: 'Support Coverage', detail: 'Who is on call during the window?', fix: '' },
-      { status: 'INFO', field: 'Test Results', detail: 'What did REL testing show?', fix: '' },
-    ];
-
-    expect(buildAnsweredFindings(questions, { 'Support Coverage': '  Jordan Lee, on call via PagerDuty  ', 'Test Results': '   ' })).toEqual([
-      {
-        status: 'GAP',
-        field: 'Support Coverage',
-        detail: 'Who is on call during the window?',
-        fix: 'Write in the owner\'s answer: Jordan Lee, on call via PagerDuty',
-      },
-    ]);
   });
 });

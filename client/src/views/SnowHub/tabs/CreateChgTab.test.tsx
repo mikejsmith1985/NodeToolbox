@@ -1661,7 +1661,7 @@ describe('CreateChgTab', () => {
     await user.click(screen.getByRole('button', { name: 'Use this review' }));
     await user.click(screen.getByRole('button', { name: 'Close' }));
 
-    expect(screen.queryByRole('button', { name: /Fix these gaps with AI Assist/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Fix with AI Assist — it will ask you 1 question/ })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /Check again/ }));
 
     const recheckPrompt = (screen.getByText(/Copy this prompt and paste it into AI Assist/).parentElement
@@ -1670,7 +1670,7 @@ describe('CreateChgTab', () => {
     expect(recheckPrompt).toContain('Support Coverage');
   });
 
-  it('sends the owner\'s answers to the fix round as facts to write in (GH #395)', async () => {
+  it('sends the questions to the fix round, for the assistant to ask in its chat (GH #415)', async () => {
     const user = userEvent.setup();
     mockState.currentStep = 6;
     render(<CreateChgTab />);
@@ -1682,12 +1682,11 @@ describe('CreateChgTab', () => {
     await user.click(screen.getByRole('button', { name: 'Use this review' }));
     await user.click(screen.getByRole('button', { name: 'Close' }));
 
-    fireEvent.change(screen.getByLabelText('Answer for Support Coverage'), { target: { value: 'Jordan Lee, PagerDuty' } });
-    await user.click(screen.getByRole('button', { name: /Fix these gaps with AI Assist \(using 1 answer\)/ }));
+    await user.click(screen.getByRole('button', { name: /Fix with AI Assist — it will ask you 1 question/ }));
 
     const fixPrompt = (screen.getByText(/Copy this prompt and paste it into AI Assist/).parentElement
       ?.querySelector('textarea[readonly]') as HTMLTextAreaElement).value;
-    expect(fixPrompt).toContain("Support Coverage — Who is on call? — Fix: Write in the owner's answer: Jordan Lee, PagerDuty");
+    expect(fixPrompt).toContain('Questions to settle with me first:\n- Support Coverage — Who is on call?');
   });
 
   it('gives the risk check the planning answers and category by their labels, not their codes (GH #415)', async () => {
@@ -1735,8 +1734,7 @@ describe('CreateChgTab', () => {
     await user.click(screen.getByRole('button', { name: 'Use this review' }));
     await user.click(screen.getByRole('button', { name: 'Close' }));
 
-    expect(screen.queryByLabelText(/Answer for Test Results/)).not.toBeInTheDocument();
-    expect(screen.queryByLabelText(/Answer for Escalation Path/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('list', { name: 'Questions for you' })).not.toBeInTheDocument();
   });
 
   it('tells the risk check who deploys: each CTASK\'s assignee and group (GH #415)', async () => {

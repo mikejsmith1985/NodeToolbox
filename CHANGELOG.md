@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **CHG risk check — Team Standards are editable in Admin Hub.** A new **📐 CHG Risk Check — Team Standards** panel
+  (under the RCP rules) lists the answers that hold for every change — pick a Formula Card field, write the
+  team's answer, add or remove rows, **Reset to defaults**. The risk check states them to the assistant and
+  settles their fields as PASS. Durations are not listed: they always come from the CTASK estimates. Saved under
+  `tbxChgTeamStandards`, so Settings Backup carries it.
+
+### Changed
+- **The CHG fix round now asks its questions in the assistant's own chat (GH #415).** The review still lists
+  **Questions for you**, but the answer boxes are gone: **✦ Fix with AI Assist — it will ask you N questions**
+  sends them with the gaps, and the assistant asks them in its chat one at a time (skipping any the change or the
+  team standards already answer) before writing each answer into its field. In this round it never writes
+  `[CONFIRM: …]`.
+
+### Added
 - **Add one Jira issue to an existing change (Modify Existing CHG → Change Details).** Type a key and click
   **Add issue to change**: Toolbox reads the issue from Jira (a typo'd or invisible key is caught before anything
   changes), adds a `- [KEY] summary` line to the end of the description's issue list (or starts the list), and
