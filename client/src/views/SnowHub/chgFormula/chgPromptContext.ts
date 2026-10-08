@@ -28,6 +28,8 @@ export interface ChgPromptContext {
    * facts the stories already state.
    */
   jiraSourceText?: string;
+  /** The names of the files attached to the change (test evidence, approvals), when the change exists. */
+  attachmentFileNames?: readonly string[];
 }
 
 /**
@@ -45,6 +47,29 @@ const RECORD_ANSWERS_ARE_FACTS_RULE =
 const TASK_ASSIGNEES_ARE_THE_TEAM_RULE =
   'The change task assignees and groups are the people who deploy, validate and back out this change — name them '
   + 'where the Formula Card asks who does the work. Do not ask who they are.';
+
+/**
+ * The change owner is the change's Assigned to person. Without this, the check asked for a validation owner, a
+ * decision-maker and escalation contacts beside a record that already names the accountable person.
+ */
+const CHANGE_OWNER_RULE =
+  'The change owner (the change\'s Assigned to) is accountable for this change: unless the text names someone else, '
+  + 'they are the validation owner, the decision-maker and the technical escalation contact.';
+
+/**
+ * Release Management attaches the release's test evidence to the change before approval. Without this, the check
+ * asked for test results the attached evidence already holds.
+ */
+const ATTACHED_EVIDENCE_RULE =
+  'Attached test evidence documents the test results — do not ask for results it holds.';
+
+/** The files on the change and the rule that they count, or nothing when no file is known. */
+function renderAttachments(attachmentFileNames: readonly string[] | undefined): string[] {
+  if (!attachmentFileNames || attachmentFileNames.length === 0) {
+    return [];
+  }
+  return [renderFactList('Files attached to the change', attachmentFileNames, ''), ATTACHED_EVIDENCE_RULE];
+}
 
 /** A change task's people as one phrase for the prompt — and plainly what is missing when they are not set. */
 export function describeTaskPeople(assignedToName: string, assignmentGroupName: string): string {
@@ -121,13 +146,15 @@ export function buildChgContextText(context: ChgPromptContext): string {
     `Expedited: ${context.isExpedited ? 'Yes' : 'No'}`,
     renderFactLine('Configuration item', context.configItemLabel),
     renderFactLine('Assignment group', context.assignmentGroupLabel),
-    renderFactLine('Change owner', context.changeOwnerLabel),
+    renderFactLine('Change owner (Assigned to)', context.changeOwnerLabel),
     ...(context.riskLabel !== undefined ? [renderFactLine('Risk', context.riskLabel)] : []),
     renderFactList('Environments', context.environmentLines, '(none enabled)'),
     renderFactList('Planning assessment', context.assessmentLines, '(not answered)'),
     renderFactList('Change tasks', context.changeTaskLines, '(none)'),
+    ...renderAttachments(context.attachmentFileNames),
     RECORD_ANSWERS_ARE_FACTS_RULE,
     TASK_ASSIGNEES_ARE_THE_TEAM_RULE,
+    CHANGE_OWNER_RULE,
     ...renderJiraSource(context.jiraSourceText),
     '',
     'Delivery and testing path every release follows:',

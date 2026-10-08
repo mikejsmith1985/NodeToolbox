@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { buildChgRiskCheckPrompt, REVISED_FIELDS_HEADING, splitRiskCheckReply } from './chgRiskCheckPrompt.ts';
+import { buildChgRiskCheckPrompt, REVIEW_STATUS_RULES, REVISED_FIELDS_HEADING, splitRiskCheckReply } from './chgRiskCheckPrompt.ts';
 
 const SAMPLE_CONTEXT = {
   categoryLabel: 'Software',
@@ -34,7 +34,7 @@ describe('buildChgRiskCheckPrompt', () => {
     expect(prompt).toContain('Test Plan:\nTested in Dev and INT.');
     expect(prompt).toContain('Backout Plan:\n(not set)');
     expect(prompt).toContain('Justification:\n(not set)');
-    expect(prompt).toContain('Change owner: Smith, Mike');
+    expect(prompt).toContain('Change owner (Assigned to): Smith, Mike');
   });
 
   it('checks the change against every Formula Card field and the quality gate', () => {
@@ -137,5 +137,14 @@ describe('the pass bar the check holds a change to', () => {
 
   it('sends record fields to the change form, never to a text rewrite', () => {
     expect(prompt).toContain('RECORD |');
+  });
+});
+
+describe('the review bar (GH #415)', () => {
+  it('never asks for more than the minimum, and counts a fact stated anywhere in the change', () => {
+    const rulesText = REVIEW_STATUS_RULES.join('\n');
+
+    expect(rulesText).toMatch(/fact stated anywhere/i);
+    expect(rulesText).toMatch(/never ask for more detail than the Minimum acceptable/i);
   });
 });

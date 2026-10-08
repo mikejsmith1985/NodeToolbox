@@ -60,8 +60,11 @@ export const REVIEW_STATUS_RULES: readonly string[] = [
   'N/A when the field\'s [when required] condition does not apply to this change (for example a Moderate/High-only '
     + 'field on a Low-risk change).',
   'GAP only when the change text itself falls short of the minimum and can be rewritten from the facts given here.',
-  'INFO when meeting the minimum needs a fact that is not given here (a name, time, count, contact or test result): '
-    + 'ask it as one short question. Any [CONFIRM: ...] placeholder is INFO — it needs the owner, not a rewrite.',
+  'A fact stated anywhere — any change field, the record facts, the change tasks (their people and minutes), the '
+    + 'Jira work or the attached files — counts for every card field it serves. Read it in other words too.',
+  'INFO only when nothing given here meets the minimum (a name, time, count, contact or test result): ask it as one '
+    + 'short question. Never ask for more detail than the Minimum acceptable — contact methods, response commitments, '
+    + 'test dates, volumes or extra named roles are not minimums. Any [CONFIRM: ...] placeholder is INFO.',
   'RECORD when the problem is a record field (configuration item, category, environment, assignment group, change '
     + 'owner, risk, impact, planned start or end): say what to set in the change form.',
   'Answer lines:',

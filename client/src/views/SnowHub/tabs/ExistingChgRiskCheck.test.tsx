@@ -4,7 +4,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { fetchChangeJiraStories } from '../chgFormula/changeJiraStories.ts';
-import { fetchReviewedCtasks, saveCtaskFix } from '../chgFormula/ctaskReviewApi.ts';
+import { fetchChangeAttachmentFileNames, fetchReviewedCtasks, saveCtaskFix } from '../chgFormula/ctaskReviewApi.ts';
 import type { ReviewedCtask } from '../chgFormula/ctaskReviewRecord.ts';
 import { useAiAssist } from '../hooks/useAiAssist.ts';
 import { ExistingChgRiskCheck } from './ExistingChgRiskCheck.tsx';
@@ -12,6 +12,7 @@ import { ExistingChgRiskCheck } from './ExistingChgRiskCheck.tsx';
 vi.mock('../chgFormula/ctaskReviewApi.ts', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../chgFormula/ctaskReviewApi.ts')>()),
   fetchReviewedCtasks: vi.fn(),
+  fetchChangeAttachmentFileNames: vi.fn(),
   saveCtaskFix: vi.fn(),
 }));
 vi.mock('../chgFormula/changeJiraStories.ts', async (importOriginal) => ({
@@ -79,6 +80,7 @@ describe('ExistingChgRiskCheck', () => {
     vi.mocked(fetchReviewedCtasks).mockResolvedValue([MISALIGNED_TASK]);
     vi.mocked(saveCtaskFix).mockResolvedValue(undefined);
     vi.mocked(fetchChangeJiraStories).mockResolvedValue([]);
+    vi.mocked(fetchChangeAttachmentFileNames).mockResolvedValue([]);
     vi.mocked(useAiAssist).mockReturnValue({ isUnlocked: true } as ReturnType<typeof useAiAssist>);
   });
 
@@ -102,6 +104,23 @@ describe('ExistingChgRiskCheck', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /Risk check CHG \+ CTASKs/ }));
     expect(screen.getByDisplayValue(/Jira work this change delivers[\s\S]*Description: Affects 300 enrolled members\./))
+      .toBeInTheDocument();
+  });
+
+  it('gives the risk check the files on the change and each task\'s estimated minutes (GH #415)', async () => {
+    vi.mocked(fetchChangeAttachmentFileNames).mockResolvedValue(['CHG0012345-test-evidence.zip']);
+    vi.mocked(fetchReviewedCtasks).mockResolvedValue([{
+      ...MISALIGNED_TASK,
+      description: 'Run the pipeline.\nImplementation: 30 minutes\nPost-deployment validation/monitoring: 20 minutes',
+    }]);
+    renderPanel();
+    await screen.findByText(/CTASK0012345 · Configuration item/);
+    await waitFor(() => expect(fetchChangeAttachmentFileNames).toHaveBeenCalledWith('chg-1'));
+
+    fireEvent.click(screen.getByRole('button', { name: /Risk check CHG \+ CTASKs/ }));
+
+    expect(screen.getByDisplayValue(/Files attached to the change:\s+CHG0012345-test-evidence\.zip/)).toBeInTheDocument();
+    expect(screen.getByDisplayValue(/CTASK0012345 — [^\n]*implementation 30 min, validation 20 min, backout \? min/))
       .toBeInTheDocument();
   });
 

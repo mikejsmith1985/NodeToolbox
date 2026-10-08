@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { snowFetch } from '../../../services/snowApi.ts';
 import type { ReviewedCtask } from './ctaskReviewRecord.ts';
-import { buildCtaskFixPatch, fetchReviewedCtasks, saveCtaskFix } from './ctaskReviewApi.ts';
+import { buildCtaskFixPatch, fetchChangeAttachmentFileNames, fetchReviewedCtasks, saveCtaskFix } from './ctaskReviewApi.ts';
 
 vi.mock('../../../services/snowApi.ts', () => ({ snowFetch: vi.fn() }));
 
@@ -83,5 +83,18 @@ describe('saveCtaskFix', () => {
 
     await expect(saveCtaskFix(buildCtask(), {})).rejects.toThrow(/nothing to write/i);
     expect(snowFetch).not.toHaveBeenCalled();
+  });
+});
+
+describe('fetchChangeAttachmentFileNames', () => {
+  beforeEach(() => {
+    vi.mocked(snowFetch).mockReset();
+  });
+
+  it('reads the names of the files attached to the change', async () => {
+    vi.mocked(snowFetch).mockResolvedValue({ result: [{ file_name: 'CHG0012345-test-evidence.zip' }, { file_name: '' }] });
+
+    expect(await fetchChangeAttachmentFileNames('chg-1')).toEqual(['CHG0012345-test-evidence.zip']);
+    expect(vi.mocked(snowFetch).mock.calls[0][0]).toContain('table_name%3Dchange_request%5Etable_sys_id%3Dchg-1');
   });
 });

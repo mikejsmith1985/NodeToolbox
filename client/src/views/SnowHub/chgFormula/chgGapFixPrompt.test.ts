@@ -55,7 +55,7 @@ describe('buildChgGapFixPrompt', () => {
     const prompt = buildChgGapFixPrompt(SAMPLE_CONTEXT, SAMPLE_FIELDS, SAMPLE_GAPS);
 
     expect(prompt).toContain('Backout Plan:\nRedeploy 26.9.');
-    expect(prompt).toContain('Change owner: Smith, Mike');
+    expect(prompt).toContain('Change owner (Assigned to): Smith, Mike');
   });
 
   it('asks for whole rewritten fields in the field markers, only for fields it changes, in a code block', () => {

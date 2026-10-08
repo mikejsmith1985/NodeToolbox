@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **The CHG risk check stops asking for what the change already holds (GH #415).** A run still raised 16
+  questions — contacts, durations, test results, validators — on a change whose AI-written plans, CTASKs and
+  attached test evidence already answered them:
+  - **The bar:** a fact stated anywhere (any change field, the record, the CTASKs' people and minutes, the Jira
+    work, the attached files) now counts for every card field it serves, and the check **never asks for more
+    than the Minimum acceptable** — contact methods, response commitments, test dates and volumes are not minimums.
+  - **Change owner = Assigned to:** the prompt names the owner as the change's Assigned to, and that person is the
+    validation owner, decision-maker and technical escalation contact unless the text names someone else.
+  - **Attached test evidence:** on Modify, the files on the change (e.g. the Release Management test-evidence
+    bundle) are listed, and attached evidence counts as documented test results.
+  - **CTASK durations:** Modify now states each CTASK's implementation / validation / backout minutes, as Create does.
 - **Modify Existing CHG's risk check now reads the Jira stories the change names (GH #415).** Any Jira key in the
   change's text (e.g. *"Deploys ENCUC-77"*) is read from Jira — summary, description, acceptance criteria — and
   given to the risk check, fix and re-check rounds, as Create already does. The panel says which stories it read;

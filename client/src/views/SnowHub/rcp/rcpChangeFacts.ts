@@ -6,7 +6,7 @@
 // reported as unknown so its rule asks a person to confirm, rather than failing the whole checklist.
 
 import { snowFetch } from '../../../services/snowApi.ts';
-import { fetchReviewedCtasks } from '../chgFormula/ctaskReviewApi.ts';
+import { fetchChangeAttachmentFileNames, fetchReviewedCtasks } from '../chgFormula/ctaskReviewApi.ts';
 import { readEstimatesFromText, sumEstimateMinutes } from '../ctaskDurations.ts';
 import { inferEnvironmentKeyFromValue } from '../hooks/environmentKeyInference.ts';
 import { extractChoiceValue, extractSnowReference, extractStringValue, type SnowReference } from '../hooks/useCrgState.ts';
@@ -77,11 +77,7 @@ async function fetchCiOwner(ciSysId: string): Promise<SnowReference | null> {
 /** The names of the files attached to a change, or null when they could not be read. */
 async function fetchAttachmentFileNames(changeSysId: string): Promise<string[] | null> {
   try {
-    const attachmentQuery = encodeURIComponent(`table_name=change_request^table_sys_id=${changeSysId}`);
-    const reply = await snowFetch<{ result?: unknown }>(`/api/now/attachment?sysparm_query=${attachmentQuery}&sysparm_fields=file_name`, { method: 'GET' });
-    return Array.isArray(reply?.result)
-      ? reply.result.map((attachment) => extractStringValue((attachment as Record<string, unknown>).file_name)).filter(Boolean)
-      : [];
+    return await fetchChangeAttachmentFileNames(changeSysId);
   } catch {
     return null;
   }

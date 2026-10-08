@@ -262,7 +262,7 @@ describe('useAiAssist', () => {
 
     const prompt = result.current.buildPrompt([], EMPTY_CURRENT_FIELDS, SAMPLE_CHANGE_CONTEXT);
 
-    expect(prompt).toContain('Change owner: Smith, Mike');
+    expect(prompt).toContain('Change owner (Assigned to): Smith, Mike');
     expect(prompt).toContain('deploy to INT and test there');
     expect(prompt).toContain('[CONFIRM:');
   });

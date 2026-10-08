@@ -17,6 +17,21 @@ const CHANGE_TASK_TABLE_PATH = '/api/now/table/change_task';
 // A change carries a handful of tasks; this bound only guards against a runaway query.
 const CHANGE_TASK_FETCH_LIMIT = 200;
 
+/** The names of the files attached to the change — test evidence and approvals — read for the risk check. */
+export async function fetchChangeAttachmentFileNames(changeSysId: string): Promise<string[]> {
+  const attachmentQuery = encodeURIComponent(`table_name=change_request^table_sys_id=${changeSysId}`);
+  const replyData = await snowFetch<{ result?: unknown }>(
+    `/api/now/attachment?sysparm_query=${attachmentQuery}&sysparm_fields=file_name`,
+    { method: 'GET' },
+  );
+  if (!Array.isArray(replyData?.result)) {
+    return [];
+  }
+  return replyData.result
+    .map((attachment) => String((attachment as Record<string, unknown> | null)?.file_name ?? '').trim())
+    .filter((fileName) => fileName !== '');
+}
+
 /** Every task attached to the change, oldest number first, read for the risk check. */
 export async function fetchReviewedCtasks(changeSysId: string): Promise<ReviewedCtask[]> {
   const encodedQuery = encodeURIComponent(`change_request=${changeSysId}^ORDERBYnumber`);

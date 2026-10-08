@@ -44,6 +44,7 @@ import type { SnowChoiceOptionMap } from '../hooks/useSnowChoiceOptions.ts';
 import { useSnowChoiceOptions } from '../hooks/useSnowChoiceOptions.ts';
 import {
   checkWindowCoversEstimates,
+  describeEstimatesForPrompt,
   EMPTY_DURATION_ESTIMATES,
   formatMinutes,
   listMissingEstimateLabels,
@@ -2040,12 +2041,8 @@ function buildRiskCheckContextFromState(state: CrgStateData, choiceOptions: Snow
 function describeChangeTaskForPrompt(changeTask: CrgStateData['changeTasks'][number]): string {
   const taskLabel = [changeTask.name, changeTask.shortDescription].filter((part) => part.trim() !== '').join(' — ');
   const peopleText = describeTaskPeople(changeTask.assignedTo?.displayName ?? '', changeTask.assignmentGroup?.displayName ?? '');
-  const estimates = changeTask.durationEstimates;
-  if (!estimates) {
-    return `${taskLabel} — ${peopleText}`;
-  }
-  return `${taskLabel} — ${peopleText} — implementation ${estimates.implementationMinutes || '?'} min, `
-    + `validation ${estimates.validationMinutes || '?'} min, backout ${estimates.backoutMinutes || '?'} min`;
+  const estimatesText = changeTask.durationEstimates ? describeEstimatesForPrompt(changeTask.durationEstimates) : '';
+  return estimatesText ? `${taskLabel} — ${peopleText} — ${estimatesText}` : `${taskLabel} — ${peopleText}`;
 }
 
 /** A stored choice value as the label ServiceNow shows for it, falling back to the value itself. */

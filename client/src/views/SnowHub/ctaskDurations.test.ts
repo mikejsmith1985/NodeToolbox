@@ -4,6 +4,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  describeEstimatesForPrompt,
   applyDurationBlock,
   buildDurationBlock,
   checkWindowCoversEstimates,
@@ -169,5 +170,16 @@ describe('readEstimatesFromText — cloning a CTASK keeps the numbers it already
   it('leaves a phase recorded as "not estimated" empty', () => {
     const description = applyDurationBlock('', { ...FULL_ESTIMATES, validationMinutes: '' }, '', '');
     expect(readEstimatesFromText(description).validationMinutes).toBe('');
+  });
+});
+
+describe('describeEstimatesForPrompt', () => {
+  it('states each phase in minutes, with ? for one not estimated', () => {
+    expect(describeEstimatesForPrompt({ implementationMinutes: '30', validationMinutes: '', backoutMinutes: '20' }))
+      .toBe('implementation 30 min, validation ? min, backout 20 min');
+  });
+
+  it('says nothing when no phase is estimated', () => {
+    expect(describeEstimatesForPrompt({ implementationMinutes: '', validationMinutes: '', backoutMinutes: '' })).toBe('');
   });
 });

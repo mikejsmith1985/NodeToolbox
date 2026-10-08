@@ -248,3 +248,15 @@ export function readEstimatesFromText(text: string): DurationEstimates {
 
   return recovered;
 }
+
+/**
+ * A task's estimates as the AI prompts state them ("implementation 30 min, validation ? min, backout 20 min"), or ''
+ * when none is estimated. Durations are on the record — the risk check must see them rather than ask for them.
+ */
+export function describeEstimatesForPrompt(estimates: DurationEstimates): string {
+  if (sumEstimateMinutes(estimates) === 0) {
+    return '';
+  }
+  return `implementation ${estimates.implementationMinutes || '?'} min, `
+    + `validation ${estimates.validationMinutes || '?'} min, backout ${estimates.backoutMinutes || '?'} min`;
+}

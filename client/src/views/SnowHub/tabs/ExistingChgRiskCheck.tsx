@@ -13,7 +13,7 @@ import { fetchChangeJiraStories, findJiraKeysInChangeText } from '../chgFormula/
 import { describeTaskPeople, type ChgPromptContext } from '../chgFormula/chgPromptContext.ts';
 import { buildChgGapFixPrompt, resolveFixableFields } from '../chgFormula/chgGapFixPrompt.ts';
 import { buildChgRiskCheckPrompt, splitRiskCheckReply, type ChgTextFieldValues } from '../chgFormula/chgRiskCheckPrompt.ts';
-import { fetchReviewedCtasks, saveCtaskFix } from '../chgFormula/ctaskReviewApi.ts';
+import { fetchChangeAttachmentFileNames, fetchReviewedCtasks, saveCtaskFix } from '../chgFormula/ctaskReviewApi.ts';
 import type { ReviewedCtask } from '../chgFormula/ctaskReviewRecord.ts';
 import {
   buildCtaskCheckPart,
@@ -32,6 +32,7 @@ import {
   mergeRecheckIntoReview,
 } from '../chgFormula/gapFocus.ts';
 import { parseRiskCheckReview, type RiskCheckFinding } from '../chgFormula/riskCheckReview.ts';
+import { describeEstimatesForPrompt, readEstimatesFromText } from '../ctaskDurations.ts';
 import { buildIssueDetailText, parseAiAssistChgResponse, useAiAssist } from '../hooks/useAiAssist.ts';
 import type { SnowReference } from '../hooks/useCrgState.ts';
 import { AiAssistPromptModal, type AiAssistPromptSession } from './AiAssistPromptModal.tsx';
@@ -77,13 +78,24 @@ function withTaskLines(
   promptContext: ChgPromptContext,
   ctasks: readonly ReviewedCtask[],
   jiraStories: readonly JiraIssue[],
+  attachmentFileNames: readonly string[],
 ): ChgPromptContext {
   return {
     ...promptContext,
     jiraSourceText: jiraStories.length > 0 ? buildIssueDetailText([...jiraStories]) : '',
-    changeTaskLines: ctasks.map((ctask) => `${ctask.number} — ${ctask.shortDescription} (${ctask.typeLabel || 'type not recorded'})`
-      + ` — ${describeTaskPeople(ctask.assignedTo.displayName, ctask.assignmentGroup.displayName)}`),
+    attachmentFileNames,
+    changeTaskLines: ctasks.map((ctask) => describeTaskLine(ctask)),
   };
+}
+
+/** One task as the prompt lists it: what it is, who does it, and its estimated minutes when it has them. */
+function describeTaskLine(ctask: ReviewedCtask): string {
+  const estimatesText = describeEstimatesForPrompt(readEstimatesFromText(ctask.description));
+  return [
+    `${ctask.number} — ${ctask.shortDescription} (${ctask.typeLabel || 'type not recorded'})`,
+    describeTaskPeople(ctask.assignedTo.displayName, ctask.assignmentGroup.displayName),
+    ...(estimatesText ? [estimatesText] : []),
+  ].join(' — ');
 }
 
 /** Only the allowed change fields a reply rewrote, so a reply is never trusted with a field it was not shown. */
@@ -149,6 +161,7 @@ export function ExistingChgRiskCheck({
 }: ExistingChgRiskCheckProps) {
   const { isUnlocked } = useAiAssist();
   const [ctasks, setCtasks] = useState<ReviewedCtask[]>([]);
+  const [attachmentFileNames, setAttachmentFileNames] = useState<string[]>([]);
   // The stories read, with the keys they were read for — stories for keys the change no longer names are not used.
   const [loadedStories, setLoadedStories] = useState<{ storyKeysText: string; stories: JiraIssue[] }>({
     storyKeysText: '',
@@ -189,6 +202,19 @@ export function ExistingChgRiskCheck({
       .catch((loadError: unknown) => {
         if (!isStale) setErrorMessage(loadError instanceof Error ? loadError.message : 'Could not read the change tasks.');
       });
+    return () => {
+      isStale = true;
+    };
+  }, [changeSysId]);
+
+  // The files on the change — the test evidence Release Management attached. A failed read only leaves them out.
+  useEffect(() => {
+    let isStale = false;
+    fetchChangeAttachmentFileNames(changeSysId)
+      .then((fileNames) => {
+        if (!isStale) setAttachmentFileNames(fileNames);
+      })
+      .catch(() => undefined);
     return () => {
       isStale = true;
     };
@@ -244,7 +270,7 @@ export function ExistingChgRiskCheck({
     setPromptSession({
       instructions: 'Copy this prompt into AI Assist to check the change AND every CTASK against the Release Manager\'s '
         + 'rules, then paste the reply below — one review covers them all.',
-      promptText: buildChgRiskCheckPrompt(withTaskLines(promptContext, ctasks, jiraStories), fieldValues, buildCtaskCheckPart(ctasks)),
+      promptText: buildChgRiskCheckPrompt(withTaskLines(promptContext, ctasks, jiraStories, attachmentFileNames), fieldValues, buildCtaskCheckPart(ctasks)),
       applyButtonLabel: 'Use this review',
       applyReply: (replyText) => {
         const { reviewText: pastedReview, revisedFieldsText } = splitRiskCheckReply(replyText);
@@ -257,7 +283,7 @@ export function ExistingChgRiskCheck({
         return { statusMessage: 'Review captured — it is shown below the CTASK checks.', wasApplied: true };
       },
     });
-  }, [promptContext, ctasks, jiraStories, fieldValues, ruleFindings, onApplyChangeFields]);
+  }, [promptContext, ctasks, jiraStories, attachmentFileNames, fieldValues, ruleFindings, onApplyChangeFields]);
 
   const handleOpenFixRound = useCallback((answersByField: Record<string, string> = {}) => {
     const openGaps = readOpenGaps(reviewText ?? '');
@@ -276,7 +302,7 @@ export function ExistingChgRiskCheck({
     setPromptSession({
       instructions: 'Copy this prompt into AI Assist to rewrite what closes the gaps, then paste the reply below — change '
         + 'fields go into this form, CTASK backout plans are staged for you to write to ServiceNow.',
-      promptText: buildChgGapFixPrompt(withTaskLines(promptContext, ctasks, jiraStories), fieldValues, changeGaps,
+      promptText: buildChgGapFixPrompt(withTaskLines(promptContext, ctasks, jiraStories, attachmentFileNames), fieldValues, changeGaps,
         backoutGaps.length > 0 ? buildCtaskFixPart(ctasks, backoutGaps) : undefined),
       applyButtonLabel: 'Apply the fixes',
       applyReply: (replyText) => {
@@ -295,7 +321,7 @@ export function ExistingChgRiskCheck({
         };
       },
     });
-  }, [reviewText, promptContext, ctasks, jiraStories, fieldValues, onApplyChangeFields]);
+  }, [reviewText, promptContext, ctasks, jiraStories, attachmentFileNames, fieldValues, onApplyChangeFields]);
 
   const handleWritePendingPlans = useCallback(async () => {
     setIsWriting(true);
@@ -323,7 +349,7 @@ export function ExistingChgRiskCheck({
     }
     setPromptSession({
       instructions: 'Copy this prompt into AI Assist to re-check just the open gaps, then paste the reply below.',
-      promptText: buildGapRecheckPrompt(withTaskLines(promptContext, freshTasks, jiraStories), fieldValues, changeGaps,
+      promptText: buildGapRecheckPrompt(withTaskLines(promptContext, freshTasks, jiraStories, attachmentFileNames), fieldValues, changeGaps,
         backoutGaps.length > 0 ? buildCtaskRecheckPart(freshTasks, backoutGaps) : undefined),
       applyButtonLabel: 'Use this re-check',
       applyReply: (replyText) => {
@@ -336,7 +362,7 @@ export function ExistingChgRiskCheck({
         return { statusMessage: `Re-checked: ${closedCount} closed, ${stillOpenCount} still open.`, wasApplied: true };
       },
     });
-  }, [reloadCtasks, changeConfigItem, reviewText, promptContext, jiraStories, fieldValues]);
+  }, [reloadCtasks, changeConfigItem, reviewText, promptContext, jiraStories, attachmentFileNames, fieldValues]);
 
   return (
     <section className={styles.section}>
