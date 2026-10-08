@@ -1690,6 +1690,52 @@ describe('CreateChgTab', () => {
     expect(fixPrompt).toContain("Support Coverage — Who is on call? — Fix: Write in the owner's answer: Jordan Lee, PagerDuty");
   });
 
+  it('gives the risk check the planning answers and category by their labels, not their codes (GH #415)', async () => {
+    const user = userEvent.setup();
+    mockState.currentStep = 6;
+    mockState.chgBasicInfo = { ...mockState.chgBasicInfo, category: 'software' };
+    mockState.chgPlanningAssessment = { ...mockState.chgPlanningAssessment, impact: '3' };
+    render(<CreateChgTab />);
+    act(() => setAiAssistUnlocked(true));
+
+    await user.click(await screen.findByRole('button', { name: /Risk check with AI Assist/i }));
+
+    const promptText = (screen.getByText(/Copy this prompt and paste it into AI Assist/).parentElement
+      ?.querySelector('textarea[readonly]') as HTMLTextAreaElement).value;
+    expect(promptText).toContain('Impact: 3 - Low');
+    expect(promptText).toContain('Category: Software');
+  });
+
+  it('gives the risk check the selected Jira stories, as the Enhance prompt has them (GH #415)', async () => {
+    const user = userEvent.setup();
+    mockState.currentStep = 6;
+    mockState.fetchedIssues = [{ key: 'ENCUC-77', fields: { summary: 'Fix recon totals', description: 'Affects 300 enrolled members.' } }];
+    mockState.selectedIssueKeys = new Set(['ENCUC-77']);
+    render(<CreateChgTab />);
+    act(() => setAiAssistUnlocked(true));
+
+    await user.click(await screen.findByRole('button', { name: /Risk check with AI Assist/i }));
+
+    const promptText = (screen.getByText(/Copy this prompt and paste it into AI Assist/).parentElement
+      ?.querySelector('textarea[readonly]') as HTMLTextAreaElement).value;
+    expect(promptText).toContain('[ENCUC-77] Fix recon totals');
+    expect(promptText).toContain('Description: Affects 300 enrolled members.');
+  });
+
+  it('tells the risk check who deploys: each CTASK\'s assignee and group (GH #415)', async () => {
+    const user = userEvent.setup();
+    mockState.currentStep = 6;
+    mockState.changeTasks = [DEFAULT_CTASK_TEMPLATE];
+    render(<CreateChgTab />);
+    act(() => setAiAssistUnlocked(true));
+
+    await user.click(await screen.findByRole('button', { name: /Risk check with AI Assist/i }));
+
+    const promptText = (screen.getByText(/Copy this prompt and paste it into AI Assist/).parentElement
+      ?.querySelector('textarea[readonly]') as HTMLTextAreaElement).value;
+    expect(promptText).toContain('assigned to Jane Smith (group: Platform Team)');
+  });
+
   it('runs the loop: review, fix the gaps with a second prompt, then the review is marked out of date (GH #395)', async () => {
     const user = userEvent.setup();
     mockState.currentStep = 6;

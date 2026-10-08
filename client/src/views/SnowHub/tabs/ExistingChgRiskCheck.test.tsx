@@ -37,6 +37,8 @@ const MISALIGNED_TASK: ReviewedCtask = {
   typeLabel: 'Implementation',
   isImplementation: true,
   configItem: { sysId: 'ci-other', displayName: 'Billing' },
+  assignedTo: { sysId: 'usr-1', displayName: 'Jane Smith' },
+  assignmentGroup: { sysId: 'grp-1', displayName: 'Platform Team' },
   backoutPlan: 'Revert.',
   backoutFieldName: 'u_backout_plan',
 };
@@ -98,6 +100,9 @@ describe('ExistingChgRiskCheck', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /Risk check CHG \+ CTASKs/ }));
     expect(screen.getByDisplayValue(/CTASK0012345 — Deploy recon service/)).toBeInTheDocument();
+    // The task's assignee is who deploys it — given as a record fact, never asked for (GH #415).
+    expect(screen.getByDisplayValue(/CTASK0012345 — Deploy recon service \(Implementation\) — assigned to Jane Smith \(group: Platform Team\)/))
+      .toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Close' }));
     pasteReply(/Risk check CHG \+ CTASKs/, 'PASS | Backout Plan — clear.\nGAP | CTASK0012345 · Backout plan — only says Revert. — Fix: name the steps.\nVERDICT: NOT READY — 1 gap(s).', /Use this review/);
 

@@ -8,7 +8,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import type { ChgPromptContext } from '../chgFormula/chgPromptContext.ts';
+import { describeTaskPeople, type ChgPromptContext } from '../chgFormula/chgPromptContext.ts';
 import { buildChgGapFixPrompt, resolveFixableFields } from '../chgFormula/chgGapFixPrompt.ts';
 import { buildChgRiskCheckPrompt, splitRiskCheckReply, type ChgTextFieldValues } from '../chgFormula/chgRiskCheckPrompt.ts';
 import { fetchReviewedCtasks, saveCtaskFix } from '../chgFormula/ctaskReviewApi.ts';
@@ -71,7 +71,8 @@ function readOpenGaps(reviewText: string, isIncluded: (finding: RiskCheckFinding
 function withTaskLines(promptContext: ChgPromptContext, ctasks: readonly ReviewedCtask[]): ChgPromptContext {
   return {
     ...promptContext,
-    changeTaskLines: ctasks.map((ctask) => `${ctask.number} — ${ctask.shortDescription} (${ctask.typeLabel || 'type not recorded'})`),
+    changeTaskLines: ctasks.map((ctask) => `${ctask.number} — ${ctask.shortDescription} (${ctask.typeLabel || 'type not recorded'})`
+      + ` — ${describeTaskPeople(ctask.assignedTo.displayName, ctask.assignmentGroup.displayName)}`),
   };
 }
 

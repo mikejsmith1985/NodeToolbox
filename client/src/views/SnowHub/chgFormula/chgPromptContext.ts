@@ -18,8 +18,43 @@ export interface ChgPromptContext {
   environmentLines: readonly string[];
   /** One line per planning-assessment answer, e.g. "Impact: 3 - Low". */
   assessmentLines: readonly string[];
-  /** One line per change task, with its implementation / validation / backout minutes. */
+  /** One line per change task: its minutes and who it is assigned to. */
   changeTaskLines: readonly string[];
+  /** The record's risk level ("Moderate"), when it has one — several card fields apply only at Moderate/High. */
+  riskLabel?: string;
+  /**
+   * The Jira stories the change delivers — summary, description and acceptance criteria — when they are known.
+   * The Enhance prompt writes the fields from these; the risk check needs them too, or it asks the owner for
+   * facts the stories already state.
+   */
+  jiraSourceText?: string;
+}
+
+/**
+ * The planning answers are the owner's own statements about the change. Without this, the assistant asked for
+ * facts the record already held — "what is the affected population?" beside an Impact of "> 250 users".
+ */
+const RECORD_ANSWERS_ARE_FACTS_RULE =
+  'The planning assessment answers are the owner\'s own answers — treat them as facts (for example, the Impact '
+  + 'band states the affected population). Do not ask for what they, or any other record fact above, already say.';
+
+/**
+ * Who deploys is already on the record: each change task names its assignee and group. Without this, the
+ * assistant asked "who will deploy, validate and back out?" beside tasks that already said so.
+ */
+const TASK_ASSIGNEES_ARE_THE_TEAM_RULE =
+  'The change task assignees and groups are the people who deploy, validate and back out this change — name them '
+  + 'where the Formula Card asks who does the work. Do not ask who they are.';
+
+/** A change task's people as one phrase for the prompt — and plainly what is missing when they are not set. */
+export function describeTaskPeople(assignedToName: string, assignmentGroupName: string): string {
+  const assigneeText = assignedToName.trim();
+  const groupText = assignmentGroupName.trim();
+  if (assigneeText === '' && groupText === '') {
+    return 'no assignee or group';
+  }
+  const assigneePart = assigneeText === '' ? 'no assignee' : `assigned to ${assigneeText}`;
+  return `${assigneePart} (${groupText === '' ? 'no group' : `group: ${groupText}`})`;
 }
 
 /**
@@ -66,6 +101,14 @@ function renderFactList(label: string, lines: readonly string[], emptyText: stri
   return lines.length === 0 ? `${label}: ${emptyText}` : [`${label}:`, ...lines.map((line) => `  ${line}`)].join('\n');
 }
 
+/** The Jira work behind the change as given facts, or nothing when none is known. */
+function renderJiraSource(jiraSourceText: string | undefined): string[] {
+  const trimmedSource = (jiraSourceText ?? '').trim();
+  return trimmedSource === ''
+    ? []
+    : ['', 'Jira work this change delivers (the source the fields were written from — what it states counts as given):', trimmedSource];
+}
+
 /**
  * The record facts, the delivery path and the no-invention rule, as one block for either prompt. The
  * facts come first so the model reads the record before it reads anything it is asked to write.
@@ -79,9 +122,13 @@ export function buildChgContextText(context: ChgPromptContext): string {
     renderFactLine('Configuration item', context.configItemLabel),
     renderFactLine('Assignment group', context.assignmentGroupLabel),
     renderFactLine('Change owner', context.changeOwnerLabel),
+    ...(context.riskLabel !== undefined ? [renderFactLine('Risk', context.riskLabel)] : []),
     renderFactList('Environments', context.environmentLines, '(none enabled)'),
     renderFactList('Planning assessment', context.assessmentLines, '(not answered)'),
     renderFactList('Change tasks', context.changeTaskLines, '(none)'),
+    RECORD_ANSWERS_ARE_FACTS_RULE,
+    TASK_ASSIGNEES_ARE_THE_TEAM_RULE,
+    ...renderJiraSource(context.jiraSourceText),
     '',
     'Delivery and testing path every release follows:',
     ...DELIVERY_PATH_STEPS,

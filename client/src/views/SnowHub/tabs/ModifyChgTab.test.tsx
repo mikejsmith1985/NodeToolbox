@@ -5,6 +5,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import { useAiAssistStore } from '../../../store/aiAssistStore.ts';
 import ModifyChgTab from './ModifyChgTab.tsx';
 
 // Mock the child tabs and hooks. The templates list is hoisted so a test can seed the
@@ -961,3 +962,43 @@ describe('ModifyChgTab - RCP production rules (GH #415)', () => {
     expect(await screen.findByText(/RCP rules met/)).toBeInTheDocument();
   });
 });
+
+describe('ModifyChgTab - the risk check is given the record\'s own answers (GH #415)', () => {
+  let consoleLogSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    mockSnowFetch.mockReset();
+    consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    useAiAssistStore.setState({ isAiAssistUnlocked: true });
+  });
+
+  afterEach(() => {
+    consoleLogSpy.mockRestore();
+    useAiAssistStore.setState({ isAiAssistUnlocked: false });
+  });
+
+  it('sends planning answers by their ServiceNow label, and the risk, even when the form has no such choice', async () => {
+    const user = userEvent.setup();
+    const highImpactRecord = {
+      ...MOCK_CHANGE_RECORD,
+      impact: { value: '1', display_value: '1-High - Change with significant (10% or > 250 users or > 25 customers) impact' },
+      risk: { value: '2', display_value: 'Moderate' },
+    };
+    mockSnowFetch.mockImplementation(async (requestPath: string) => (String(requestPath).startsWith('/api/now/table/change_task')
+      ? { result: [] }
+      : { result: [highImpactRecord] }));
+    render(<ModifyChgTab />);
+    await user.type(screen.getByLabelText(/Change Request number/i), 'chg0001234');
+    await user.click(screen.getAllByRole('button', { name: /Fetch Change/i })[1]);
+    await waitFor(() => expect(screen.getByDisplayValue('Update network infrastructure')).toBeInTheDocument());
+    await user.click(screen.getByRole('button', { name: /5\. Review & Save/i }));
+    await user.click(screen.getByRole('button', { name: /Risk check this change and its CTASKs/i }));
+
+    await user.click(await screen.findByRole('button', { name: /Risk check CHG \+ CTASKs with AI Assist/ }));
+
+    const promptText = (document.querySelector('textarea[readonly]') as HTMLTextAreaElement).value;
+    expect(promptText).toContain('Impact: 1-High - Change with significant (10% or > 250 users or > 25 customers) impact');
+    expect(promptText).toContain('Risk: Moderate');
+  });
+});
+

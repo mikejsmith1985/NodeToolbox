@@ -17,6 +17,9 @@ export interface ReviewedCtask {
   typeLabel: string;
   isImplementation: boolean;
   configItem: SnowReference;
+  /** Who the task is assigned to, and their group — the people who deploy, validate or back out the change. */
+  assignedTo: SnowReference;
+  assignmentGroup: SnowReference;
   backoutPlan: string;
   /** The instance's own backout field, or null when the plan is kept in the description. */
   backoutFieldName: string | null;
@@ -82,6 +85,8 @@ export function readReviewedCtask(record: Readonly<Record<string, unknown>>): Re
     typeLabel: TASK_TYPE_FIELD_NAME in record ? extractStringValue(record[TASK_TYPE_FIELD_NAME]) : '',
     isImplementation: readIsImplementation(record, shortDescription),
     configItem: extractSnowReference(record.cmdb_ci),
+    assignedTo: extractSnowReference(record.assigned_to),
+    assignmentGroup: extractSnowReference(record.assignment_group),
     backoutPlan: backoutFieldName
       ? extractStringValue(record[backoutFieldName]).trim()
       : readBackoutSectionFromDescription(description),

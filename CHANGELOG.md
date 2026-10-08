@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **The CHG risk check is given everything the ticket already says (GH #415).** It kept asking questions the
+  change already answered:
+  - Planning answers went out as codes — Impact "1" instead of *"1-High … > 250 users or > 25 customers"*. They are
+    now sent **by their ServiceNow labels** (category and type too), with the record's **Risk**, and the assistant
+    is told the owner's planning answers are facts, not things to ask about.
+  - **Who deploys** is now on the record: each CTASK is listed with its **assignee and group**, and the assistant is
+    told those are the people who deploy, validate and back out the change.
+  - On **Create New CHG**, the risk check, fix and re-check rounds now carry the **selected Jira stories** —
+    summary, description, acceptance criteria — exactly as the Enhance prompt has them.
 - **The CHG risk check can now reach "ready" (GH #395).** After three rounds a change could still show 27 gaps,
   because the loop could never converge:
   - It judged every field against the Formula Card's IDEAL (named people, contacts, test evidence) — a field now

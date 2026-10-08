@@ -2,7 +2,12 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { buildChgContextText, CONFIRM_PLACEHOLDER_RULE, DELIVERY_PATH_STEPS } from './chgPromptContext.ts';
+import {
+  buildChgContextText,
+  CONFIRM_PLACEHOLDER_RULE,
+  DELIVERY_PATH_STEPS,
+  describeTaskPeople,
+} from './chgPromptContext.ts';
 
 const SAMPLE_CONTEXT = {
   categoryLabel: 'Software',
@@ -46,5 +51,43 @@ describe('buildChgContextText', () => {
 
     expect(contextText).toContain('Change owner: (not set)');
     expect(contextText).toContain('Environments: (none enabled)');
+  });
+});
+
+describe('the record\'s own answers are facts', () => {
+  it('states the risk when the record has one', () => {
+    expect(buildChgContextText({ ...SAMPLE_CONTEXT, riskLabel: 'Moderate' })).toContain('Risk: Moderate');
+  });
+
+  it('tells the assistant not to ask for what the planning answers already say', () => {
+    expect(buildChgContextText(SAMPLE_CONTEXT)).toMatch(/planning assessment answers are the owner's own answers[\s\S]*do not ask for/i);
+  });
+
+  it('says the change task assignees are the people who deploy, validate and back out the change', () => {
+    expect(buildChgContextText(SAMPLE_CONTEXT)).toMatch(/change task assignees[\s\S]*deploy, validate and back out/i);
+  });
+});
+
+describe('the Jira work behind the change', () => {
+  it('gives the stories the fields were written from, and says their facts count as given', () => {
+    const contextText = buildChgContextText({ ...SAMPLE_CONTEXT, jiraSourceText: '[ENCUC-1] Fix recon\nDescription: 300 members affected.' });
+
+    expect(contextText).toMatch(/Jira work this change delivers[\s\S]*\[ENCUC-1\] Fix recon\nDescription: 300 members affected\./);
+  });
+
+  it('leaves the section out when no Jira work is known', () => {
+    expect(buildChgContextText(SAMPLE_CONTEXT)).not.toMatch(/Jira work this change delivers/);
+  });
+});
+
+describe('describeTaskPeople', () => {
+  it('names the assignee and the group', () => {
+    expect(describeTaskPeople('Jane Smith', 'Platform Team')).toBe('assigned to Jane Smith (group: Platform Team)');
+  });
+
+  it('says plainly what is missing', () => {
+    expect(describeTaskPeople('', 'Platform Team')).toBe('no assignee (group: Platform Team)');
+    expect(describeTaskPeople('Jane Smith', ' ')).toBe('assigned to Jane Smith (no group)');
+    expect(describeTaskPeople('', '')).toBe('no assignee or group');
   });
 });

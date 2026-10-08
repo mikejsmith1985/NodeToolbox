@@ -105,6 +105,7 @@ const CHANGE_LOOKUP_FIELDS = Array.from(new Set([
   'assignment_group',
   'u_environment',
   'cmdb_ci',
+  'risk',
   'start_date',
   'end_date',
   ...Object.values(PLANNING_ASSESSMENT_ALIAS_FIELD_NAMES_BY_STATE_KEY).flat(),
@@ -142,6 +143,12 @@ interface EditableChange {
   relEnvironment: EnvironmentConfig;
   prdEnvironment: EnvironmentConfig;
   pfixEnvironment: EnvironmentConfig;
+  /**
+   * Each loaded field's stored value and the label ServiceNow showed for it ("1" → "1-High - … > 250 users …").
+   * The form keeps only values, but the risk check needs the words: an Impact of "1" told the assistant nothing,
+   * so it asked for the affected population the label already stated.
+   */
+  recordChoiceLabels: Record<string, { value: string; label: string }>;
 }
 
 interface ModifyChgState {
@@ -479,17 +486,32 @@ function readChangeConfigItem(change: EditableChange): SnowReference {
   return enabledEnvironment?.configItem ?? change.chgBasicInfo.configItem;
 }
 
-/** A stored choice value as its form label, falling back to the value itself. */
-function readChoiceLabel(choiceOptions: SnowChoiceOptionMap, fieldName: string, storedValue: string): string {
-  return (choiceOptions[fieldName] ?? []).find((option) => option.value === storedValue)?.label ?? storedValue;
+/**
+ * A stored choice value in words: the label ServiceNow showed for it when the change was loaded (while the
+ * value is unchanged — under any of the field's names), else the form's choice label, else the value itself.
+ */
+function readChoiceLabel(
+  change: EditableChange,
+  choiceOptions: SnowChoiceOptionMap,
+  fieldNames: readonly string[],
+  storedValue: string,
+): string {
+  const recordLabel = fieldNames
+    .map((fieldName) => change.recordChoiceLabels[fieldName])
+    .find((choiceLabel) => choiceLabel !== undefined && choiceLabel.value === storedValue && choiceLabel.label.trim() !== '');
+  const optionLabel = fieldNames
+    .map((fieldName) => (choiceOptions[fieldName] ?? []).find((option) => option.value === storedValue)?.label)
+    .find((label) => label !== undefined && label.trim() !== '');
+  return recordLabel?.label ?? optionLabel ?? storedValue;
 }
 
 /** The loaded change's record facts as the risk-check prompts read them; task lines are added by the check. */
 function buildPromptContextFromChange(change: EditableChange, choiceOptions: SnowChoiceOptionMap): ChgPromptContext {
   const basicInfo = change.chgBasicInfo;
   return {
-    categoryLabel: readChoiceLabel(choiceOptions, 'category', basicInfo.category),
-    changeTypeLabel: readChoiceLabel(choiceOptions, 'type', basicInfo.changeType),
+    categoryLabel: readChoiceLabel(change, choiceOptions, ['category'], basicInfo.category),
+    changeTypeLabel: readChoiceLabel(change, choiceOptions, ['type'], basicInfo.changeType),
+    riskLabel: change.recordChoiceLabels.risk?.label ?? '',
     isExpedited: basicInfo.isExpedited,
     configItemLabel: readChangeConfigItem(change).displayName,
     assignmentGroupLabel: basicInfo.assignmentGroup.displayName,
@@ -504,9 +526,24 @@ function buildPromptContextFromChange(change: EditableChange, choiceOptions: Sno
     assessmentLines: PLANNING_ASSESSMENT_ROWS
       .filter((assessmentRow) => change.chgPlanningAssessment[assessmentRow.fieldKey].trim() !== '')
       .map((assessmentRow) => `${assessmentRow.label}: ${readChoiceLabel(
-        choiceOptions, assessmentRow.snowFieldName, change.chgPlanningAssessment[assessmentRow.fieldKey])}`),
+        change,
+        choiceOptions,
+        [assessmentRow.snowFieldName, ...PLANNING_ASSESSMENT_ALIAS_FIELD_NAMES_BY_STATE_KEY[assessmentRow.fieldKey]],
+        change.chgPlanningAssessment[assessmentRow.fieldKey],
+      )}`),
     changeTaskLines: [],
   };
+}
+
+/** Every loaded field's stored value with the label ServiceNow displayed for it. */
+function readRecordChoiceLabels(changeRecord: ServiceNowChangeRecord): Record<string, { value: string; label: string }> {
+  const choiceLabels: Record<string, { value: string; label: string }> = {};
+  Object.entries(changeRecord).forEach(([fieldName, fieldValue]) => {
+    if (typeof fieldValue === 'object' && fieldValue !== null && fieldValue.display_value !== undefined) {
+      choiceLabels[fieldName] = { value: String(fieldValue.value ?? ''), label: String(fieldValue.display_value ?? '') };
+    }
+  });
+  return choiceLabels;
 }
 
 function mapServiceNowChangeRecord(changeRecord: ServiceNowChangeRecord): EditableChange {
@@ -521,6 +558,7 @@ function mapServiceNowChangeRecord(changeRecord: ServiceNowChangeRecord): Editab
   const loadedPlannedEndDate = normalizeSnowDateTimeForInput(changeRecord.end_date);
 
   return {
+    recordChoiceLabels: readRecordChoiceLabels(changeRecord),
     sysId: extractServiceNowTextValue(changeRecord.sys_id),
     number: extractServiceNowTextValue(changeRecord.number),
     stateLabel: extractServiceNowTextValue(changeRecord.state),

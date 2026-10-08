@@ -20,7 +20,7 @@ import { listEnvironmentDateOrderErrors, listRebuildEnvironmentRefusal, useCrgSt
 import { useCtaskTemplates } from '../hooks/useCtaskTemplates.ts';
 import { useCrgTemplates } from '../hooks/useCrgTemplates.ts';
 import type { AiAssistGeneratedFields } from '../hooks/useAiAssist.ts';
-import { parseAiAssistChgResponse, useAiAssist } from '../hooks/useAiAssist.ts';
+import { buildIssueDetailText, parseAiAssistChgResponse, useAiAssist } from '../hooks/useAiAssist.ts';
 import { CODE_BLOCK_REPLY_INSTRUCTION } from '../chgFormula/assistantReplyText.ts';
 import { buildChgGapFixPrompt, resolveFixableFields } from '../chgFormula/chgGapFixPrompt.ts';
 import {
@@ -31,7 +31,7 @@ import {
   mergeRecheckIntoReview,
 } from '../chgFormula/gapFocus.ts';
 import { parseRiskCheckReview } from '../chgFormula/riskCheckReview.ts';
-import { buildChgContextText, type ChgPromptContext } from '../chgFormula/chgPromptContext.ts';
+import { buildChgContextText, describeTaskPeople, type ChgPromptContext } from '../chgFormula/chgPromptContext.ts';
 import { buildChgRiskCheckPrompt, splitRiskCheckReply } from '../chgFormula/chgRiskCheckPrompt.ts';
 import { renderFormulaGuidanceForField } from '../chgFormula/formulaCard.ts';
 import { AiAssistPromptModal, type AiAssistPromptSession } from './AiAssistPromptModal.tsx';
@@ -2025,25 +2025,45 @@ function buildEnvironmentSummary(state: CrgStateData): string[] {
 }
 
 /** One CTASK as the prompts describe it: its name and the minutes it needs to implement, validate and back out. */
+/**
+ * The record facts plus the selected Jira stories, for the risk check and its fix and re-check rounds. The
+ * Enhance prompt wrote the fields from those stories; without them the check asked for facts they state.
+ */
+function buildRiskCheckContextFromState(state: CrgStateData, choiceOptions: SnowChoiceOptionMap): ChgPromptContext {
+  const selectedIssues = state.fetchedIssues.filter((issue) => state.selectedIssueKeys.has(issue.key));
+  return {
+    ...buildChgPromptContextFromState(state, choiceOptions),
+    jiraSourceText: selectedIssues.length > 0 ? buildIssueDetailText(selectedIssues) : '',
+  };
+}
+
 function describeChangeTaskForPrompt(changeTask: CrgStateData['changeTasks'][number]): string {
   const taskLabel = [changeTask.name, changeTask.shortDescription].filter((part) => part.trim() !== '').join(' — ');
+  const peopleText = describeTaskPeople(changeTask.assignedTo?.displayName ?? '', changeTask.assignmentGroup?.displayName ?? '');
   const estimates = changeTask.durationEstimates;
   if (!estimates) {
-    return taskLabel;
+    return `${taskLabel} — ${peopleText}`;
   }
-  return `${taskLabel} — implementation ${estimates.implementationMinutes || '?'} min, `
+  return `${taskLabel} — ${peopleText} — implementation ${estimates.implementationMinutes || '?'} min, `
     + `validation ${estimates.validationMinutes || '?'} min, backout ${estimates.backoutMinutes || '?'} min`;
 }
 
+/** A stored choice value as the label ServiceNow shows for it, falling back to the value itself. */
+function readChoiceOptionLabel(choiceOptions: SnowChoiceOptionMap, fieldName: string, storedValue: string): string {
+  const optionLabel = (choiceOptions[fieldName] ?? []).find((option) => option.value === storedValue)?.label;
+  return optionLabel && optionLabel.trim() !== '' ? optionLabel : storedValue;
+}
+
 /**
- * The change record's own facts, for the AI Assist prompts (GH #395): the drafted text must agree with
- * the record, and the risk check reviews the text against it.
+ * The change record's own facts, for the AI Assist prompts (GH #395): the drafted text must agree with the record,
+ * and the risk check reviews the text against it. Choice fields go by their LABELS — an Impact of "3"
+ * tells the assistant nothing, while "3 - Low" (or "1-High - … > 250 users") answers what it would otherwise ask.
  */
-function buildChgPromptContextFromState(state: CrgStateData): ChgPromptContext {
+function buildChgPromptContextFromState(state: CrgStateData, choiceOptions: SnowChoiceOptionMap = {}): ChgPromptContext {
   const basicInfo = state.chgBasicInfo;
   return {
-    categoryLabel: basicInfo.category,
-    changeTypeLabel: basicInfo.changeType,
+    categoryLabel: readChoiceOptionLabel(choiceOptions, 'category', basicInfo.category),
+    changeTypeLabel: readChoiceOptionLabel(choiceOptions, 'type', basicInfo.changeType),
     isExpedited: basicInfo.isExpedited,
     configItemLabel: basicInfo.configItem.displayName,
     assignmentGroupLabel: basicInfo.assignmentGroup.displayName,
@@ -2051,7 +2071,8 @@ function buildChgPromptContextFromState(state: CrgStateData): ChgPromptContext {
     environmentLines: buildEnvironmentSummary(state).filter((summaryLine) => summaryLine.includes(': Enabled')),
     assessmentLines: PLANNING_ASSESSMENT_ROWS
       .filter((assessmentRow) => state.chgPlanningAssessment[assessmentRow.fieldKey].trim() !== '')
-      .map((assessmentRow) => `${assessmentRow.label}: ${state.chgPlanningAssessment[assessmentRow.fieldKey]}`),
+      .map((assessmentRow) => `${assessmentRow.label}: ${readChoiceOptionLabel(
+        choiceOptions, assessmentRow.snowFieldName, state.chgPlanningAssessment[assessmentRow.fieldKey])}`),
     changeTaskLines: state.changeTasks.map((changeTask) => describeChangeTaskForPrompt(changeTask)),
   };
 }
@@ -2856,11 +2877,11 @@ export default function CrgTab({ mode = 'wizard', targetChangeNumber }: CrgTabPr
       instructions:
         'Copy this prompt and paste it into AI Assist to generate all seven CHG fields — details and the '
         + 'Implementation, Test and Backout plans — then paste the reply below to fill them automatically.',
-      promptText: buildPrompt(selectedIssues, readChgTextFields(state), buildChgPromptContextFromState(state)),
+      promptText: buildPrompt(selectedIssues, readChgTextFields(state), buildChgPromptContextFromState(state, choiceOptions)),
       applyButtonLabel: APPLY_FIELDS_BUTTON_LABEL,
       applyReply: (replyText) => applyParsedChgFields(replyText, ENHANCE_PROMPT_FIELD_KEYS),
     });
-  }, [state, buildPrompt, applyParsedChgFields, setAiAssistPromptSession]);
+  }, [state, choiceOptions, buildPrompt, applyParsedChgFields, setAiAssistPromptSession]);
 
   // Step 3: a targeted prompt for Short Description and Description only — the full
   // four-field prompt (Step 4) is left to the Planning step so each step stays focused.
@@ -2876,7 +2897,7 @@ export default function CrgTab({ mode = 'wizard', targetChangeNumber }: CrgTabPr
       'Based on the Jira issues listed below, generate a Short Description and Description that pass the '
         + "Release Manager's Change Request Formula Card review.",
       '',
-      buildChgContextText(buildChgPromptContextFromState(state)),
+      buildChgContextText(buildChgPromptContextFromState(state, choiceOptions)),
       '',
       'SHORT_DESCRIPTION must satisfy:',
       renderFormulaGuidanceForField('shortDescription'),
@@ -2900,13 +2921,13 @@ export default function CrgTab({ mode = 'wizard', targetChangeNumber }: CrgTabPr
       applyButtonLabel: APPLY_FIELDS_BUTTON_LABEL,
       applyReply: (replyText) => applyParsedChgFields(replyText, DRAFT_PROMPT_FIELD_KEYS),
     });
-  }, [state, applyParsedChgFields, setAiAssistPromptSession]);
+  }, [state, choiceOptions, applyParsedChgFields, setAiAssistPromptSession]);
 
   // Step 6: the Release Manager's pre-approval check — the whole change, record facts included, against
   // every Formula Card field (GH #395). The pasted review is displayed on the Results step as-is — the
   // user may still submit regardless of what it flags (FR-005).
   const handleOpenRiskCheckPrompt = useCallback(() => {
-    const riskPrompt = buildChgRiskCheckPrompt(buildChgPromptContextFromState(state), readChgTextFields(state));
+    const riskPrompt = buildChgRiskCheckPrompt(buildRiskCheckContextFromState(state, choiceOptions), readChgTextFields(state));
 
     setAiAssistPromptSession({
       instructions:
@@ -2934,7 +2955,7 @@ export default function CrgTab({ mode = 'wizard', targetChangeNumber }: CrgTabPr
         };
       },
     });
-  }, [state, applyParsedChgFields, setAiAssistPromptSession, setRiskCheckReviewText, setIsRiskReviewOutOfDate]);
+  }, [state, choiceOptions, applyParsedChgFields, setAiAssistPromptSession, setRiskCheckReviewText, setIsRiskReviewOutOfDate]);
 
   // The loop's second round: hand the review's gaps back with the change as it stands, and apply the
   // rewritten fields from the pasted reply. Then "Check again" runs a fresh review (GH #395).
@@ -2953,7 +2974,7 @@ export default function CrgTab({ mode = 'wizard', targetChangeNumber }: CrgTabPr
       instructions:
         'Copy this prompt and paste it into AI Assist to rewrite the fields that close the gaps, then paste the '
         + 'reply below — the fixes are written into the fields automatically.',
-      promptText: buildChgGapFixPrompt(buildChgPromptContextFromState(state), readChgTextFields(state), gapFindings),
+      promptText: buildChgGapFixPrompt(buildRiskCheckContextFromState(state, choiceOptions), readChgTextFields(state), gapFindings),
       applyButtonLabel: APPLY_FIXES_BUTTON_LABEL,
       applyReply: (replyText) => {
         // Only the fields the prompt showed may change — a reply that rewrites more is not trusted with it.
@@ -2968,7 +2989,7 @@ export default function CrgTab({ mode = 'wizard', targetChangeNumber }: CrgTabPr
         };
       },
     });
-  }, [state, riskCheckReviewText, applyParsedChgFields, setAiAssistPromptSession, setIsRiskReviewOutOfDate]);
+  }, [state, choiceOptions, riskCheckReviewText, applyParsedChgFields, setAiAssistPromptSession, setIsRiskReviewOutOfDate]);
 
   // The loop's third round: re-check only the gaps the last review left open, and fold the answers into that
   // review so the verdict reflects the whole change. With nothing open, a full check runs instead.
@@ -2985,7 +3006,7 @@ export default function CrgTab({ mode = 'wizard', targetChangeNumber }: CrgTabPr
       instructions:
         'Copy this prompt and paste it into AI Assist to re-check just the open gaps, then paste the reply below — '
         + 'the answers are folded into the review.',
-      promptText: buildGapRecheckPrompt(buildChgPromptContextFromState(state), readChgTextFields(state), openFindings),
+      promptText: buildGapRecheckPrompt(buildRiskCheckContextFromState(state, choiceOptions), readChgTextFields(state), openFindings),
       applyButtonLabel: USE_RECHECK_BUTTON_LABEL,
       applyReply: (replyText) => {
         const { closedCount, stillOpenCount } = countRecheckOutcome(replyText);
@@ -3000,7 +3021,7 @@ export default function CrgTab({ mode = 'wizard', targetChangeNumber }: CrgTabPr
         };
       },
     });
-  }, [state, riskCheckReviewText, handleOpenRiskCheckPrompt, setAiAssistPromptSession, setRiskCheckReviewText, setIsRiskReviewOutOfDate]);
+  }, [state, choiceOptions, riskCheckReviewText, handleOpenRiskCheckPrompt, setAiAssistPromptSession, setRiskCheckReviewText, setIsRiskReviewOutOfDate]);
 
   const planningExtras: PlanningStepExtras = {
     isAiAssistUnlocked:    isUnlocked,

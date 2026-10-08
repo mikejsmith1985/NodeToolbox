@@ -94,7 +94,11 @@ function buildIssueDetailLines(issue: JiraIssue): string[] {
   return detailLines;
 }
 
-function buildIssueDetailText(selectedIssues: JiraIssue[]): string {
+/**
+ * The selected Jira issues in full — summary, description, acceptance criteria — as the Enhance prompt shows
+ * them. Exported so the risk check reads the same source the fields were written from.
+ */
+export function buildIssueDetailText(selectedIssues: JiraIssue[]): string {
   if (selectedIssues.length === 0) {
     return '(no issue details available)';
   }

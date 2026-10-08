@@ -6,7 +6,7 @@
 // each task's rewritten backout plan out of a pasted fix reply.
 
 import { CHG_FIELD_REPLY_MARKERS, restoreMarkerLineBreaks, stripCodeFences } from './assistantReplyText.ts';
-import type { ExtraPromptPart } from './chgPromptContext.ts';
+import { describeTaskPeople, type ExtraPromptPart } from './chgPromptContext.ts';
 import type { ReviewedCtask } from './ctaskReviewRecord.ts';
 import { buildCtaskFindingField, readCtaskFindingTarget } from './ctaskReviewRules.ts';
 import type { RiskCheckFinding } from './riskCheckReview.ts';
@@ -39,6 +39,7 @@ function renderCtaskBlock(ctask: ReviewedCtask): string {
     `${ctask.number} — ${ctask.shortDescription.trim() || NOT_SET_TEXT}`,
     `  Type: ${typeText}`,
     `  Configuration item: ${ctask.configItem.displayName.trim() || NOT_SET_TEXT}`,
+    `  People: ${describeTaskPeople(ctask.assignedTo.displayName, ctask.assignmentGroup.displayName)}`,
     `  Description: ${ctask.description.trim() || NOT_SET_TEXT}`,
     `  Backout plan: ${ctask.backoutPlan.trim() || NOT_SET_TEXT}`,
   ].join('\n');

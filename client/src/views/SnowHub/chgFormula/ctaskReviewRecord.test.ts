@@ -18,6 +18,8 @@ function buildRecord(overrides: Record<string, unknown> = {}): Record<string, un
     description: { value: 'Run the pipeline.', display_value: 'Run the pipeline.' },
     change_task_type: { value: 'implementation', display_value: 'Implementation' },
     cmdb_ci: { value: 'ci-recon', display_value: 'Recon Service' },
+    assigned_to: { value: 'usr-1', display_value: 'Jane Smith' },
+    assignment_group: { value: 'grp-1', display_value: 'Platform Team' },
     ...overrides,
   };
 }
@@ -43,6 +45,8 @@ describe('readReviewedCtask', () => {
       typeLabel: 'Implementation',
       isImplementation: true,
       configItem: { sysId: 'ci-recon', displayName: 'Recon Service' },
+      assignedTo: { sysId: 'usr-1', displayName: 'Jane Smith' },
+      assignmentGroup: { sysId: 'grp-1', displayName: 'Platform Team' },
       backoutPlan: 'Redeploy v1.4.',
       backoutFieldName: 'u_backout_plan',
     }));

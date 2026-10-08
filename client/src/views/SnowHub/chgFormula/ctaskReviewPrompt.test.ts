@@ -44,6 +44,8 @@ function buildCtask(overrides: Partial<ReviewedCtask> = {}): ReviewedCtask {
     description: 'Run the pipeline.',
     typeLabel: 'Implementation',
     isImplementation: true,
+    assignedTo: { sysId: 'usr-1', displayName: 'Jane Smith' },
+    assignmentGroup: { sysId: 'grp-1', displayName: 'Platform Team' },
     configItem: { sysId: 'ci-recon', displayName: 'Recon Service' },
     backoutPlan: 'Revert.',
     backoutFieldName: 'u_backout_plan',

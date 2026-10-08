@@ -21,6 +21,8 @@ function buildCtask(overrides: Partial<ReviewedCtask> = {}): ReviewedCtask {
     description: '',
     typeLabel: 'Implementation',
     isImplementation: true,
+    assignedTo: { sysId: 'usr-1', displayName: 'Jane Smith' },
+    assignmentGroup: { sysId: 'grp-1', displayName: 'Platform Team' },
     configItem: CHANGE_CI,
     backoutPlan: 'Redeploy v1.4 from the pipeline, then confirm the health check.',
     backoutFieldName: 'u_backout_plan',
