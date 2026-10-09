@@ -1439,3 +1439,58 @@ export function exportPiReviewRowsToCsv(rows: PiReviewRow[]): string {
   );
   return [headerRow, ...dataRows].join('\n');
 }
+
+/**
+ * The page's storage with the PI Review tables in place: a blank page — or one whose table was deleted — gets the
+ * standard tables (after any content it already has), so Toolbox can fill them and Save can write them. Before,
+ * a page without the table stopped at load with "No Confluence table was found…" and could never be saved (GH #415).
+ */
+export function ensurePiReviewPageTables(
+  storageValue: string,
+  capacitySummary: CapacitySummary | null,
+): { storageValue: string; wasCreated: boolean } {
+  if (locatePiReviewTableBinding(buildStorageDocument(storageValue)) !== null) {
+    return { storageValue, wasCreated: false };
+  }
+  const existingContent = storageValue.trim();
+  const initialStorage = createInitialPiReviewPageStorage(capacitySummary);
+  return { storageValue: existingContent === '' ? initialStorage : `${existingContent}\n${initialStorage}`, wasCreated: true };
+}
+
+// Confluence drops data- attributes from saved storage, so a saved page is read back from its visible text.
+const DATA_ATTRIBUTE_PATTERN = /\sdata-[a-z0-9-]+="[^"]*"/gi;
+
+/** A capacity summary as the page shows it: rounded, zero-point roles left out — what reading the page back gives. */
+function readCapacitySummaryAsShown(capacitySummary: CapacitySummary | null): CapacitySummary | null {
+  if (capacitySummary === null) {
+    return null;
+  }
+  const shownStorage = createPiReviewCapacitySectionHtml(capacitySummary).replace(DATA_ATTRIBUTE_PATTERN, '');
+  return parseFallbackCapacitySummary(locateFallbackCapacityElements(buildStorageDocument(shownStorage)));
+}
+
+/** A summary as one comparable string, roles in name order. */
+function describeCapacitySummary(capacitySummary: CapacitySummary | null): string {
+  if (capacitySummary === null) {
+    return 'none';
+  }
+  const sortedRoles = Object.entries(capacitySummary.roleCapacities).sort(([firstRole], [secondRole]) => firstRole.localeCompare(secondRole));
+  return JSON.stringify({ ...capacitySummary, roleCapacities: sortedRoles });
+}
+
+/**
+ * True when two capacity summaries read the same on the page. The live summary carries full precision and every
+ * role; the saved one is read back from the page's text, rounded and without zero roles — compared exactly, they
+ * never matched, and the page said "Unsaved changes" forever after every save (GH #415).
+ */
+export function areCapacitySummariesEqualOnPage(leftSummary: CapacitySummary | null, rightSummary: CapacitySummary | null): boolean {
+  return describeCapacitySummary(readCapacitySummaryAsShown(leftSummary)) === describeCapacitySummary(readCapacitySummaryAsShown(rightSummary));
+}
+
+// Markup and spacing that carry no content: tags, non-breaking spaces and whitespace.
+const EMPTY_PAGE_MARKUP_PATTERN = /<[^>]*>|&nbsp;|&#160;|\s/gi;
+
+/** True for a page with nothing on it — empty, or only empty paragraphs — which Toolbox may fill without asking. */
+export function isBlankConfluencePage(storageValue: string): boolean {
+  return storageValue.replace(EMPTY_PAGE_MARKUP_PATTERN, '') === '';
+}

@@ -66,6 +66,16 @@ describe('scheduleEpicDates', () => {
       .toEqual(expect.objectContaining({ targetStart: '2026-10-15', targetEnd: '2026-10-16' }));
   });
 
+  it('never keeps a started Epic\'s Target Start that lies in the future — its end would land before it (GH #415)', () => {
+    const [proposal] = scheduleEpicDates(
+      [buildEpic('DENP-1493', 20, { isStarted: true, existingTargetStart: '2026-11-16' })],
+      { ...SETTINGS, today: '2026-10-14' },
+    );
+
+    expect(proposal.targetStart).toBe('2026-10-14');
+    expect((proposal.targetEnd as string) > (proposal.targetStart as string)).toBe(true);
+  });
+
   it('leaves an Epic with no points unscheduled, without taking a slot', () => {
     const proposals = scheduleEpicDates([buildEpic('DENP-9', null), buildEpic('DENP-1', 10)], { ...SETTINGS, maxParallelEpics: 1 });
 

@@ -11,7 +11,7 @@ import {
   resolveConfluencePageIdFromReference,
   updateConfluencePage,
 } from '../../services/confluenceApi.ts';
-import { areCapacitySummariesEqual, type CapacitySummary } from '../SprintDashboard/capacityModel.ts';
+import type { CapacitySummary } from '../SprintDashboard/capacityModel.ts';
 import type { JiraIssue, JiraTransition } from '../../types/jira.ts';
 import type { ArtTeam } from './hooks/useArtData.ts';
 import { parsePiDateRange } from './hooks/artHelpers.ts';
@@ -25,7 +25,10 @@ import {
   CORE_PI_REVIEW_COLUMN_KEYS,
   OPTIONAL_PI_REVIEW_COLUMN_KEYS,
   PI_REVIEW_COLUMN_LABELS,
+  areCapacitySummariesEqualOnPage,
   createInitialPiReviewPageStorage,
+  ensurePiReviewPageTables,
+  isBlankConfluencePage,
   createEmptyConfidenceVoteRow,
   buildCarryOverRows,
   createEmptyPiReviewRow,
@@ -890,7 +893,9 @@ function PiReviewPagePanel({
     () => mode !== 'readout'
       && hasLoadedSnapshot
       && liveCapacitySummary !== null
-      && !areCapacitySummariesEqual(liveCapacitySummary, savedCapacitySummary),
+      // Compared as the page shows them: the saved summary is read back from the page's text (Confluence strips the
+      // exact copy), so an exact compare never matched and "Unsaved changes" never cleared (GH #415).
+      && !areCapacitySummariesEqualOnPage(liveCapacitySummary, savedCapacitySummary),
     [mode, hasLoadedSnapshot, liveCapacitySummary, savedCapacitySummary],
   );
   // The team's Product Owner(s) — roster members flagged with the Product Owner capability. Their
@@ -945,14 +950,19 @@ function PiReviewPagePanel({
     try {
       const confluencePage = await fetchConfluencePageByReference(target.pageReference);
       hasLoadedConfluencePage = true;
-      setStorageValue(confluencePage.body.storage.value);
+      // A blank page gets the standard tables, ready to fill and save — no table has to exist first (GH #415). A page
+      // with other content but no table keeps the explicit "Start a PI Review table here" choice (GH #413).
+      const { storageValue: pageStorageValue, wasCreated: wasTableCreated } = isBlankConfluencePage(confluencePage.body.storage.value)
+        ? ensurePiReviewPageTables(confluencePage.body.storage.value, null)
+        : { storageValue: confluencePage.body.storage.value, wasCreated: false };
+      setStorageValue(pageStorageValue);
       setPageTitle(confluencePage.title);
       setResolvedPageId(confluencePage.id || resolvedPageIdFromReference);
       setPageVersionNumber(confluencePage.version.number);
 
-      const parsedPiReviewTable = parsePiReviewTable(confluencePage.body.storage.value);
-      const parsedConfidenceTable = parseConfidenceVoteTable(confluencePage.body.storage.value);
-      const parsedCapacitySummary = parsePiReviewCapacitySummary(confluencePage.body.storage.value);
+      const parsedPiReviewTable = parsePiReviewTable(pageStorageValue);
+      const parsedConfidenceTable = parseConfidenceVoteTable(pageStorageValue);
+      const parsedCapacitySummary = parsePiReviewCapacitySummary(pageStorageValue);
       // The delivery-evidence fetch needs only KEYS, so it runs in parallel with the feature fetch
       // instead of after it — the two together were the page-load long pole.
       // A failed Feature lookup must not throw away the table just read from Confluence: the rows load
@@ -986,7 +996,8 @@ function PiReviewPagePanel({
         commitmentBoundaryIndex: parsedPiReviewTable.commitmentBoundaryIndex,
         customGroupingLines: parsedPiReviewTable.customGroupingLines,
         jiraIssueMap: nextJiraIssueMap,
-        hasUnsavedChanges: jiraReconciliationResult.hasChanges,
+        // A page given its tables just now has nothing saved yet.
+        hasUnsavedChanges: jiraReconciliationResult.hasChanges || wasTableCreated,
       };
       loadedSnapshotRef.current = nextLoadedSnapshot;
       setHasLoadedSnapshot(true);
@@ -2131,13 +2142,16 @@ function PiReviewPagePanel({
         }
 
         const latestConfluencePage = await fetchConfluencePageByReference(target.pageReference);
-        const latestPiReviewTable = parsePiReviewTable(latestConfluencePage.body.storage.value);
-        const latestConfidenceTable = parseConfidenceVoteTable(latestConfluencePage.body.storage.value);
+        // The page changed since it was loaded — cleared, perhaps. Whatever is there now gets the tables, so the save
+        // goes through instead of failing with "No Confluence table was found" (GH #415).
+        const latestStorageValue = ensurePiReviewPageTables(latestConfluencePage.body.storage.value, null).storageValue;
+        const latestPiReviewTable = parsePiReviewTable(latestStorageValue);
+        const latestConfidenceTable = parseConfidenceVoteTable(latestStorageValue);
         updatedPage = await updateConfluencePage({
           pageId: latestConfluencePage.id || resolvedPageId,
           pageTitle: latestConfluencePage.title || pageTitle || target.targetLabel,
           storageValue: buildNextPiReviewStorageValue(
-            latestConfluencePage.body.storage.value,
+            latestStorageValue,
             latestPiReviewTable.tableBinding,
             latestConfidenceTable.tableBinding,
             capacitySummaryForSave,

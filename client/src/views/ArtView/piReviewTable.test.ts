@@ -3,6 +3,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  areCapacitySummariesEqualOnPage,
+  ensurePiReviewPageTables,
+  isBlankConfluencePage,
   buildCarryOverRows,
   createInitialPiReviewPageStorage,
   createEmptyConfidenceVoteRow,
@@ -1372,5 +1375,51 @@ describe('stripToolboxPiReviewTitleSection', () => {
 
     expect(stripToolboxPiReviewTitleSection(storageValue)).toContain('Team Capacity');
     expect(stripToolboxPiReviewTitleSection(storageValue)).toContain('No banner here');
+  });
+});
+
+describe('isBlankConfluencePage', () => {
+  it('treats an empty page, or one of empty paragraphs, as blank — and anything with words as not', () => {
+    expect(isBlankConfluencePage('')).toBe(true);
+    expect(isBlankConfluencePage('<p></p><p>&nbsp;</p>\n')).toBe(true);
+    expect(isBlankConfluencePage('<p>Nothing here yet.</p>')).toBe(false);
+  });
+});
+
+describe('a page without a PI Review table (GH #415)', () => {
+  it('gives a blank page the standard PI Review tables, ready to save', () => {
+    const { storageValue, wasCreated } = ensurePiReviewPageTables('', null);
+
+    expect(wasCreated).toBe(true);
+    expect(() => parsePiReviewTable(storageValue)).not.toThrow();
+  });
+
+  it('keeps a page\'s own content and adds the tables after it', () => {
+    const { storageValue, wasCreated } = ensurePiReviewPageTables('<p>Team notes stay.</p>', null);
+
+    expect(wasCreated).toBe(true);
+    expect(storageValue.startsWith('<p>Team notes stay.</p>')).toBe(true);
+    expect(() => parsePiReviewTable(storageValue)).not.toThrow();
+  });
+
+  it('leaves a page that already has the table unchanged', () => {
+    const existingStorage = createInitialPiReviewPageStorage(null);
+
+    expect(ensurePiReviewPageTables(existingStorage, null)).toEqual({ storageValue: existingStorage, wasCreated: false });
+  });
+});
+
+describe('capacity on the page (GH #415 — "Unsaved changes" never cleared)', () => {
+  it('counts a summary as saved when the page shows the same thing, even after Confluence strips its data', () => {
+    const liveSummary = {
+      summaryLabel: 'PI 26.5', startDate: '2026-10-08', endDate: '2026-12-30', workDayCount: 60,
+      totalCapacityPoints: 821.37, recommendedCapacityPoints: 657.096,
+      roleCapacities: { Developer: 600.5, 'Internal Tester': 24, 'External Tester': 0 },
+    } as unknown as Parameters<typeof areCapacitySummariesEqualOnPage>[0];
+    // Confluence drops data- attributes from storage, so the saved page is read back from its visible text.
+    const savedStorage = createInitialPiReviewPageStorage(liveSummary).replace(/\sdata-[a-z-]+="[^"]*"/g, '');
+    const savedSummary = parsePiReviewCapacitySummary(savedStorage);
+
+    expect(areCapacitySummariesEqualOnPage(liveSummary, savedSummary)).toBe(true);
   });
 });

@@ -81,6 +81,16 @@ function spendDailyCapacity(activeEpics: readonly EpicInFlight[], dailyCapacityP
   }
 }
 
+/**
+ * The day an Epic is shown starting: a started Epic keeps its Jira Target Start when that is on or before the day
+ * its work is scheduled from; otherwise it starts that day. A started Epic with a FUTURE Target Start was kept as
+ * is while its work ran from today — its end landed before its start and Jira refused the dates (GH #415).
+ */
+function readStartingDay(epic: EpicToSchedule, currentDay: string): string {
+  const existingStart = epic.existingTargetStart;
+  return epic.isStarted && existingStart !== null && existingStart <= currentDay ? existingStart : currentDay;
+}
+
 /** Works the queue day by day until every Epic is in INT or the horizon runs out. */
 function simulateWorkingDays(queue: EpicInFlight[], settings: EpicScheduleSettings): void {
   const firstWorkDay = rollToWorkingDay(laterOf(settings.today, settings.piStartDate), settings.calendar);
@@ -89,7 +99,7 @@ function simulateWorkingDays(queue: EpicInFlight[], settings: EpicScheduleSettin
   for (let dayIndex = 0; dayIndex < MAX_SIMULATED_WORKING_DAYS; dayIndex += 1) {
     while (activeEpics.length < settings.maxParallelEpics && queue.length > 0) {
       const startingEpic = queue.shift() as EpicInFlight;
-      startingEpic.targetStart = startingEpic.epic.isStarted ? (startingEpic.epic.existingTargetStart ?? currentDay) : currentDay;
+      startingEpic.targetStart = readStartingDay(startingEpic.epic, currentDay);
       activeEpics.push(startingEpic);
     }
     if (activeEpics.length === 0) {

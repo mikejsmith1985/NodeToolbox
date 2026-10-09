@@ -2185,6 +2185,34 @@ describe('PiReviewTab', () => {
     expect(mockUpdateConfluencePage.mock.calls[1][0].storageValue).toContain('Retry after conflict');
   });
 
+  it('saves onto a page that was cleared in Confluence meanwhile, rebuilding its tables (GH #415)', async () => {
+    mockFetchConfluencePageByReference
+      .mockResolvedValueOnce(ALPHA_PAGE)
+      .mockResolvedValueOnce({ ...ALPHA_PAGE, version: { number: 19 }, body: { storage: { value: '', representation: 'storage' } } });
+    mockUpdateConfluencePage
+      .mockRejectedValueOnce(new Error('Version must be incremented on update. Current version is: 19'))
+      .mockImplementationOnce((savePayload: { storageValue: string; nextVersionNumber: number }) =>
+        Promise.resolve({
+          ...ALPHA_PAGE,
+          version: { number: savePayload.nextVersionNumber },
+          body: { storage: { value: savePayload.storageValue, representation: 'storage' } },
+        }),
+      );
+
+    renderPiReviewTab([DEFAULT_TEAMS[0]]);
+
+    const alphaSection = await screen.findByRole('region', { name: /alpha team pi review/i });
+    enterEditMode(alphaSection);
+    fireEvent.change(within(alphaSection).getByLabelText(/notes for alpha team row 1/i), {
+      target: { value: 'Saved onto a cleared page' },
+    });
+    fireEvent.click(within(alphaSection).getByRole('button', { name: /save to confluence/i }));
+
+    await waitFor(() => expect(mockUpdateConfluencePage).toHaveBeenCalledTimes(2));
+    expect(mockUpdateConfluencePage.mock.calls[1][0].storageValue).toContain('Saved onto a cleared page');
+    expect(screen.queryByText(/No Confluence table was found/i)).not.toBeInTheDocument();
+  });
+
   it('reloads an existing hard-commit boundary and keeps it on the next save', async () => {
     const alphaPageWithBoundary = createAlphaPageWithExtraPiReviewRows(`
             <tr data-node-toolbox-pi-review-boundary="hard-commit">
@@ -2485,6 +2513,14 @@ describe('the Edit PI Review button explains why it cannot be used', () => {
 
     expect(await screen.findByRole('button', { name: /done editing/i })).toBeEnabled();
     expect(screen.getByRole('button', { name: /pull features from jira/i })).toBeInTheDocument();
+  });
+
+  it('gives a blank page the PI Review tables on load, ready to save — no table has to exist (GH #415)', async () => {
+    renderWithPage({ ...PAGE_WITHOUT_TABLE, body: { storage: { value: '' } } });
+
+    const editButton = await screen.findByRole('button', { name: /edit pi review/i });
+    await waitFor(() => expect(editButton).toBeEnabled());
+    expect(screen.queryByText(/No Confluence table was found/i)).not.toBeInTheDocument();
   });
 
   it('carries no such excuse when the page really does have a table', async () => {

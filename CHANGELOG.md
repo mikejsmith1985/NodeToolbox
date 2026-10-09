@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **PI Review saves onto a blank page — no table has to exist (GH #415).** A blank page now gets the standard PI
+  Review tables when it loads, ready to fill and save. Saving after the page changed in Confluence (cleared, say)
+  re-read it and failed with *"No Confluence table was found with the required PI Review headers"*; the save now
+  rebuilds the tables on whatever the page holds and goes through. A page with other content keeps the explicit
+  **Start a PI Review table here** choice.
+- **"Unsaved changes" now clears after saving.** Confluence strips the exact capacity data Toolbox wrote, so the
+  saved summary is read back from the page's text — rounded, zero roles left out — and never matched the live
+  one. They are now compared as the page shows them.
+- **Epic date plan: no more Target End before Target Start.** A started Epic kept a Jira Target Start that lay in
+  the future (DENP-1493: start 11-16) while its work was scheduled from today, so its end landed first and Jira
+  refused the write. A started Epic now keeps its start only when it is on or before the day its work begins.
+
 ### Changed
 - **AI Assist is always on — the passphrase lock is removed.** Every AI Assist affordance (risk checks, fix rounds,
   CTASK timeline, PO Tool, Feature Canvas, reports) is available from the start; there is no Ctrl+Alt+Z passphrase
