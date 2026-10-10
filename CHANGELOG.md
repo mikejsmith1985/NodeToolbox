@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **PRB scan and link for changes.** Toolbox now finds the ServiceNow problems (PRBs) a change's Jira issues
+  mention — in the summary, description, comments or ServiceNow reference field — and links each to the change
+  through the problem's **Change request** field, so the change's Problems list shows it.
+  - **Modify Existing CHG → Review & Save → Problems (PRBs):** **Scan Jira issues for PRBs** lists each PRB with
+    its state, the issues that mention it and where it is linked now; **Link N PRBs to CHG…** links the unlinked
+    ones. A PRB already linked to another change is left alone (a problem holds one change).
+  - **Create New CHG** links them automatically once the change exists — to the Production change when several
+    are created — and the result line says which PRBs were linked and which were not, and why.
+
 ### Fixed
 - **PI Review saves onto a blank page — no table has to exist (GH #415).** A blank page now gets the standard PI
   Review tables when it loads, ready to fill and save. Saving after the page changed in Confluence (cleared, say)

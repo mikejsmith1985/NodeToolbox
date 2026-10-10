@@ -19,6 +19,7 @@ import { useCrgSubmissionDebugStore } from '../../../hooks/useCrgSubmissionDebug
 import { ISSUE_LIST_HEADING } from '../chgFormula/changeIssueList.ts';
 import { extractChoiceValue, extractSnowReference, extractStringValue } from './snowFieldValues.ts';
 import { createPlannedOutage } from '../outage/changeOutageRecord.ts';
+import { linkProblemsToNewChange } from '../problems/changeProblems.ts';
 import { fetchReviewedCtasks, saveCtaskPlannedDates } from '../chgFormula/ctaskReviewApi.ts';
 import { scheduleCreatedCtasks, toFormUtcFromApi, type CtaskTimelinePlanStep } from '../chgFormula/createdCtaskTimeline.ts';
 
@@ -551,6 +552,9 @@ interface ChangeSubmissionTarget {
 interface CreatedChangeRecord {
   environmentLabel: string | null;
   changeNumber: string;
+  /** The change's record id and environment — the PRBs its issues mention are linked to the Production one. */
+  changeSysId?: string;
+  environmentKey?: EnvironmentKey | null;
   /** The planned outage created with a Production change. */
   outageNumber?: string;
   /** Why a Production change's outage could not be created — the change itself still was. */
@@ -1388,6 +1392,29 @@ function formatCreatedChangeList(createdChangeRecords: CreatedChangeRecord[], qu
   return queuedTaskCount > 0
     ? `${createdChangeRecords.length} CHGs created with ${formatCtaskCount(queuedTaskCount)} each: ${createdChangeList}`
     : `${createdChangeRecords.length} CHGs created: ${createdChangeList}`;
+}
+
+/**
+ * Links the PRBs the change's Jira issues mention to the change that fixes them. A problem holds one change, so
+ * when several are created (REL, PRD…) the Production one takes them. Returns the note for the result line; a
+ * failure is reported there, never thrown — the changes exist either way and Modify can link them later.
+ */
+async function linkProblemsToCreatedChanges(createdChangeRecords: readonly CreatedChangeRecord[], issueKeys: readonly string[]): Promise<string> {
+  const targetChange = createdChangeRecords.find((createdChangeRecord) => PRODUCTION_OUTAGE_ENVIRONMENT_KEYS.has(createdChangeRecord.environmentKey ?? ''))
+    ?? createdChangeRecords[0];
+  if (!targetChange?.changeSysId) {
+    return '';
+  }
+  try {
+    const { linkedNumbers, skipped } = await linkProblemsToNewChange(targetChange.changeSysId, issueKeys);
+    return [
+      ...(linkedNumbers.length > 0 ? [`${linkedNumbers.join(', ')} linked to ${targetChange.changeNumber}`] : []),
+      ...skipped.map((skippedPrb) => `${skippedPrb.prbNumber} not linked (${skippedPrb.reason})`),
+    ].map((notePart) => `; ${notePart}`).join('');
+  } catch (unknownError) {
+    const errorMessage = unknownError instanceof Error ? unknownError.message : 'ServiceNow refused the link';
+    return `; the PRBs were not linked (${errorMessage}) — link them in Modify Existing CHG → Review & Save`;
+  }
 }
 
 /** Each change whose CTASKs could not be dated, and where to plan them — or '' when none failed. */
@@ -2539,6 +2566,8 @@ export function useCrgState(options?: UseCrgStateOptions): { state: CrgState; ac
         const createdChangeRecord: CreatedChangeRecord = {
           environmentLabel: changeSubmissionTarget.environmentLabel,
           changeNumber,
+          changeSysId,
+          environmentKey: changeSubmissionTarget.environmentKey,
         };
         createdChangeRecords.push(createdChangeRecord);
 
@@ -2605,7 +2634,8 @@ export function useCrgState(options?: UseCrgStateOptions): { state: CrgState; ac
         );
       }
 
-      const creationSummary = formatCreatedChangeSummary(createdChangeRecords, state.changeTasks.length);
+      const problemNote = await linkProblemsToCreatedChanges(createdChangeRecords, [...state.selectedIssueKeys]);
+      const creationSummary = `${formatCreatedChangeSummary(createdChangeRecords, state.changeTasks.length)}${problemNote}`;
       // Clear persisted progress after a successful submission — the next change starts fresh.
       justResetRef.current = true;
       try { localStorage.removeItem(draftStorageKey); } catch { /* non-fatal */ }

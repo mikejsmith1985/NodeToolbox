@@ -935,6 +935,13 @@ describe('ModifyChgTab - Save and risk check reachable from every step', () => {
     expect(screen.getByRole('heading', { name: 'Outage record' })).toBeInTheDocument();
   });
 
+  it('offers the PRB scan on Review & Save', async () => {
+    const user = await loadChange();
+    await user.click(screen.getByRole('button', { name: /5\. Review & Save/i }));
+
+    expect(screen.getByRole('heading', { name: 'Problems (PRBs)' })).toBeInTheDocument();
+  });
+
   it('offers the CTASK timeline on Review & Save', async () => {
     const user = await loadChange();
     await user.click(screen.getByRole('button', { name: /5\. Review & Save/i }));

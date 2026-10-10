@@ -33,6 +33,8 @@ import { useSnowChoiceOptions } from '../hooks/useSnowChoiceOptions.ts';
 
 import { ClipboardIcon, StartOverIcon } from '../../../components/AppIcons/index.tsx';
 import { ChangeOutagePanel } from '../outage/ChangeOutagePanel.tsx';
+import { ChangeProblemsPanel } from '../problems/ChangeProblemsPanel.tsx';
+import { findJiraKeysInChangeText } from '../chgFormula/changeJiraStories.ts';
 import type { PlannedOutageInput } from '../outage/changeOutageRecord.ts';
 import { AddJiraIssuePanel } from './AddJiraIssueControl.tsx';
 import { CtaskTimelinePanel } from './CtaskTimelinePanel.tsx';
@@ -1439,6 +1441,12 @@ function ReviewSaveStep({ state, ctaskTemplates, onAddCtask, onRemoveCtask, onSa
       <StepHeading currentStep={5} />
       <AddJiraIssuePanel {...buildAddIssuePanelProps(state.change, onFieldChange)} />
       <ChangeOutagePanel key={state.change.sysId} {...readOutageSetup(state.change)} />
+      <ChangeProblemsPanel
+        changeNumber={state.change.number}
+        changeSysId={state.change.sysId}
+        issueKeys={findJiraKeysInChangeText([state.change.shortDescription, state.change.description])}
+        key={`problems-${state.change.sysId}`}
+      />
       <CtaskTimelinePanel
         changeSysId={state.change.sysId}
         changeWindow={{

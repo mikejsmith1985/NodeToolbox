@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { jiraGet } from '../../../services/jiraApi.ts';
 import { snowFetch } from '../../../services/snowApi.ts';
 import { createPlannedOutage } from '../outage/changeOutageRecord.ts';
+import { linkProblemsToNewChange } from '../problems/changeProblems.ts';
 import { fetchReviewedCtasks, saveCtaskPlannedDates } from '../chgFormula/ctaskReviewApi.ts';
 import type { CrgTemplate, CtaskTemplate, CtaskTemplateData } from './useCrgState.ts';
 import { createChangeTask, fetchChangeTasksAttachedToChange, formatSnowDateTimeForApi, listEnvironmentDateOrderErrors, NO_ENABLED_ENVIRONMENT_MESSAGE, reconcileStagedChangeTasks, useCrgState } from './useCrgState.ts';
@@ -23,6 +24,12 @@ vi.mock('../chgFormula/ctaskReviewApi.ts', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../chgFormula/ctaskReviewApi.ts')>()),
   fetchReviewedCtasks: vi.fn(async () => []),
   saveCtaskPlannedDates: vi.fn(async () => undefined),
+}));
+
+// The PRBs a new change's Jira issues mention, linked to it; its own module is tested on its own.
+vi.mock('../problems/changeProblems.ts', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../problems/changeProblems.ts')>()),
+  linkProblemsToNewChange: vi.fn(async () => ({ linkedNumbers: [], skipped: [] })),
 }));
 
 // The planned outage a Production change is created with; its own module is tested on its own.
@@ -1248,6 +1255,32 @@ describe('useCrgState', () => {
       const [, checkoutStart] = vi.mocked(saveCtaskPlannedDates).mock.calls[1];
       expect(implementationStart).toBe(windowStart);
       expect(checkoutStart).toBe(implementationEnd);
+    });
+
+    it('links the PRBs its Jira issues mention to the Production change, and says so', async () => {
+      vi.mocked(linkProblemsToNewChange).mockResolvedValueOnce({
+        linkedNumbers: ['PRB0000001'],
+        skipped: [{ prbNumber: 'PRB0000002', reason: 'already linked to CHG0009999' }],
+      });
+      const { result } = await advanceToChangeDetailsStep();
+      act(() => {
+        result.current.actions.updateEnvironment('prd', {
+          isEnabled: true,
+          configItem: { sysId: 'ci-prd-001', displayName: 'PRD CI' },
+          impactedPersonsAware: 'prd-aware',
+          plannedStartDate: '2025-02-02T08:00',
+          plannedEndDate: '2025-02-02T09:00',
+        });
+      });
+
+      await act(async () => {
+        await result.current.actions.createChg({ rel: 'rel-env', prd: 'prd-env' });
+      });
+
+      // A problem holds one change: it goes to the Production change, not the REL one.
+      expect(linkProblemsToNewChange).toHaveBeenCalledTimes(1);
+      expect(result.current.state.submitResult).toMatch(/PRB0000001 linked to CHG/);
+      expect(result.current.state.submitResult).toMatch(/PRB0000002 not linked \(already linked to CHG0009999\)/);
     });
 
     it('still reports a Production change as created when its outage record cannot be, and says what to do', async () => {
