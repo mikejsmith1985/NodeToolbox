@@ -12,6 +12,8 @@ interface PrbStateOverrides {
   isPrimaryIssueDefect?: boolean;
   primaryIssueSummaryTemplate?: string;
   slStorySummaryTemplate?: string;
+  qeIssueSummaryTemplate?: string;
+  shouldCreateQeIssue?: boolean;
   createSlAsSubtask?: boolean;
   slSubtaskIssueTypeName?: string;
   createdIssueKeys?: string[];
@@ -34,6 +36,8 @@ function buildFakePrbHook(overrides: PrbStateOverrides = {}) {
     isPrimaryIssueDefect: overrides.isPrimaryIssueDefect ?? true,
     primaryIssueSummaryTemplate: overrides.primaryIssueSummaryTemplate ?? '',
     slStorySummaryTemplate: overrides.slStorySummaryTemplate ?? '',
+    qeIssueSummaryTemplate: overrides.qeIssueSummaryTemplate ?? '',
+    shouldCreateQeIssue: overrides.shouldCreateQeIssue ?? true,
     createSlAsSubtask: overrides.createSlAsSubtask ?? false,
     slSubtaskIssueTypeName: overrides.slSubtaskIssueTypeName ?? 'Sub-task',
     isCreatingIssues: overrides.isCreatingIssues ?? false,
@@ -49,6 +53,8 @@ function buildFakePrbHook(overrides: PrbStateOverrides = {}) {
     setIsPrimaryIssueDefect: vi.fn(),
     setPrimaryIssueSummary: vi.fn(),
     setSlStorySummary: vi.fn(),
+    setQeIssueSummary: vi.fn(),
+    setShouldCreateQeIssue: vi.fn(),
     setCreateSlAsSubtask: vi.fn(),
     setSlSubtaskIssueTypeName: vi.fn(),
     createJiraIssues: vi.fn().mockResolvedValue(undefined),
@@ -132,6 +138,7 @@ describe('PrbWizard', () => {
       isPrimaryIssueDefect: true,
       primaryIssueSummaryTemplate: 'INC0012345: PRB1: "foo"',
       slStorySummaryTemplate: '[SL] INC0012345: PRB1: "foo"',
+      qeIssueSummaryTemplate: '[QE] INC0012345: PRB1: "foo"',
     });
 
     render(<PrbWizard actions={actions as never} state={state as never} />);
@@ -147,11 +154,31 @@ describe('PrbWizard', () => {
     // SL Story preview card
     expect(screen.getByText('Issue 2 — SL Story')).toBeInTheDocument();
     expect(screen.getByText('[SL] INC0012345: PRB1: "foo"')).toBeInTheDocument();
+    // QE preview card — the third issue
+    expect(screen.getByText('Issue 3 — QE Story')).toBeInTheDocument();
+    expect(screen.getByText('[QE] INC0012345: PRB1: "foo"')).toBeInTheDocument();
     // Description preview should include the PRB number
     expect(screen.getAllByText(/PRB1[\s\S]*Full description here/).length).toBeGreaterThanOrEqual(1);
     // Action button
     fireEvent.click(screen.getByRole('button', { name: 'Create Jira Issues' }));
     expect(actions.createJiraIssues).toHaveBeenCalled();
+  });
+
+  it('will not leave the SL & QE step while the QE issue is on and its summary is empty', () => {
+    const { state, actions } = buildFakePrbHook({
+      prbData: { number: 'PRB1', incidentNumber: 'INC1', shortDescription: 's', description: 'd', state: 'Open', severity: '2', assignedTo: null, sysId: 'x' },
+      jiraProjectKey: 'PROJ',
+      primaryIssueSummaryTemplate: 'INC1: PRB1: "s"',
+      slStorySummaryTemplate: '[SL] INC1: PRB1: "s"',
+      qeIssueSummaryTemplate: '',
+    });
+
+    render(<PrbWizard actions={actions as never} state={state as never} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+
+    expect(screen.getByText(/Step 3 of 4: SL & QE/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
   });
 
   it('shows a partial success with created key and error message when one issue creation fails', () => {
@@ -160,6 +187,7 @@ describe('PrbWizard', () => {
       jiraProjectKey: 'PROJ',
       primaryIssueSummaryTemplate: 'INC1: PRB1: "s"',
       slStorySummaryTemplate: '[SL] INC1: PRB1: "s"',
+      qeIssueSummaryTemplate: '[QE] INC1: PRB1: "s"',
       // Simulate partial success: one key created, one error
       createdIssueKeys: ['PROJ-42'],
       createError: 'SL Story: Jira POST failed: 400 — Issue Type is required.',

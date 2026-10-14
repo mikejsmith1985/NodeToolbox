@@ -277,7 +277,7 @@ export async function createIssueLink(input: CreateIssueLinkInput): Promise<void
 
 // ── Jira Template Maker helpers ──
 
-// A high page size that covers any realistic project's issue-type / field count in one request.
+// The page size asked for. Jira may serve fewer per page (Data Center does), so field lists are still paged.
 const CREATE_META_PAGE_SIZE = 200;
 
 /**
@@ -292,19 +292,39 @@ export async function getProjectIssueTypes(projectKey: string): Promise<CreateMe
   );
 }
 
+// A runaway guard: no create screen has this many pages, so a Jira that never says "last" cannot loop us forever.
+const CREATE_META_MAX_PAGES = 50;
+
+/** True when a createmeta page says more fields follow it. Silence means it was the last page. */
+function hasMoreCreateMetaPages(fieldsPage: CreateMetaFieldsResponse, collectedCount: number): boolean {
+  if (fieldsPage.isLast === true) return false;
+  if (typeof fieldsPage.total === 'number') return collectedCount < fieldsPage.total;
+  return fieldsPage.isLast === false;
+}
+
 /**
  * Lists the create-screen fields (with allowed option values) for one issue type in a project,
  * using the modern createmeta endpoint.
+ *
+ * Every page is read. Jira Data Center serves fewer fields per page than asked for, so a field past
+ * the first page was invisible — the PRB generator's pre-create check never saw a required field and
+ * Jira refused the Defect over it (GH #439).
  */
 export async function getIssueTypeFields(
   projectKey: string,
   issueTypeId: string,
 ): Promise<CreateMetaFieldsResponse> {
-  const encodedProjectKey = encodeURIComponent(projectKey);
-  const encodedIssueTypeId = encodeURIComponent(issueTypeId);
-  return jiraGet<CreateMetaFieldsResponse>(
-    `/rest/api/2/issue/createmeta/${encodedProjectKey}/issuetypes/${encodedIssueTypeId}?maxResults=${CREATE_META_PAGE_SIZE}`,
-  );
+  const fieldsPath = `/rest/api/2/issue/createmeta/${encodeURIComponent(projectKey)}/issuetypes/${encodeURIComponent(issueTypeId)}`;
+  const collectedFields: CreateMetaFieldsResponse['values'] = [];
+  for (let pageIndex = 0; pageIndex < CREATE_META_MAX_PAGES; pageIndex++) {
+    const startAtQuery = collectedFields.length > 0 ? `&startAt=${collectedFields.length}` : '';
+    const fieldsPage = await jiraGet<CreateMetaFieldsResponse>(`${fieldsPath}?maxResults=${CREATE_META_PAGE_SIZE}${startAtQuery}`);
+    const pageFields = fieldsPage?.values ?? [];
+    collectedFields.push(...pageFields);
+    // An empty page ends the walk too, whatever the totals claim — it can only repeat itself.
+    if (pageFields.length === 0 || !hasMoreCreateMetaPages(fieldsPage, collectedFields.length)) break;
+  }
+  return { values: collectedFields, total: collectedFields.length, isLast: true };
 }
 
 /** Creates a Jira issue from a built field payload and returns its id/key/self link. */

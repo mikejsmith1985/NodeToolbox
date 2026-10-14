@@ -45,6 +45,35 @@ describe('Template Maker Jira wrappers', () => {
     expect(calledUrl).toContain('/jira-proxy/rest/api/2/issue/createmeta/ABC/issuetypes/10001');
   });
 
+  it('getIssueTypeFields follows every page, so a field past the first page is not missed (GH #439)', async () => {
+    // Jira Data Center caps createmeta pages below the size asked for; a required field on page two
+    // was invisible to the PRB generator's pre-create check and Jira refused the Defect.
+    const pages = [
+      { values: [{ fieldId: 'summary', required: true, name: 'Summary' }], startAt: 0, maxResults: 1, total: 2, isLast: false },
+      { values: [{ fieldId: 'customfield_10253', required: true, name: 'Severity' }], startAt: 1, maxResults: 1, total: 2, isLast: true },
+    ];
+    const fetchSpy = vi.fn(async (_url: string) => new Response(JSON.stringify(pages.shift()), {
+      status: 200, headers: { 'content-type': 'application/json' },
+    }));
+    vi.stubGlobal('fetch', fetchSpy);
+
+    const fieldsResponse = await getIssueTypeFields('ABC', '10001');
+
+    expect(fieldsResponse.values.map((field) => field.fieldId)).toEqual(['summary', 'customfield_10253']);
+    expect(fetchSpy.mock.calls[1][0]).toContain('startAt=1');
+  });
+
+  it('getIssueTypeFields stops after one page when Jira says nothing about more', async () => {
+    const fetchSpy = vi.fn(async (_url: string) => new Response(JSON.stringify({ values: [{ fieldId: 'summary' }] }), {
+      status: 200, headers: { 'content-type': 'application/json' },
+    }));
+    vi.stubGlobal('fetch', fetchSpy);
+
+    await getIssueTypeFields('ABC', '10001');
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
   it('createIssue POSTs to /rest/api/2/issue and returns the created key', async () => {
     mockFetchOnce({ id: '100', key: 'ABC-1', self: 'https://jira/issue/100' });
     const result = await createIssue({ fields: { summary: 'Hi' } });

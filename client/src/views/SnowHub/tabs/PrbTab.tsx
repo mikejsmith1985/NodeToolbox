@@ -15,6 +15,10 @@ const ISSUE_PREVIEW_SECTION_TITLE = 'Issue Preview';
 const EMPTY_ASSIGNEE_LABEL = 'Unassigned';
 const EMPTY_INCIDENT_LABEL = 'No linked incident found';
 const SUCCESS_SECTION_TITLE = 'Created Jira Issues';
+/** Shared by the SL and QE issues: both are children of the primary, or both standalone Stories. */
+const SUBTASK_TOGGLE_LABEL = 'Create SL and QE issues as sub-tasks of the primary';
+const SUBTASK_TYPE_LABEL = 'SL / QE sub-task issue type';
+const QE_TOGGLE_LABEL = 'Also create a QE issue';
 
 type PrbMode = 'quick' | 'wizard';
 
@@ -91,6 +95,32 @@ function IssuePreviewCard({ label, issueTypeName, summary, description }: IssueP
   );
 }
 
+/** The third issue: a toggle, and — when on — the `[QE]` summary the operator can edit. */
+function QeIssueFields({ state, actions }: IssueFormProps) {
+  return (
+    <>
+      <label className={styles.checkboxLabel}>
+        <input
+          checked={state.shouldCreateQeIssue}
+          onChange={(event: ChangeEvent<HTMLInputElement>) => actions.setShouldCreateQeIssue(event.target.checked)}
+          type="checkbox"
+        />
+        <span>{QE_TOGGLE_LABEL}</span>
+      </label>
+      {state.shouldCreateQeIssue ? (
+        <label className={styles.fieldGroup}>
+          <span className={styles.fieldLabel}>QE Issue Summary</span>
+          <input
+            className={styles.input}
+            onChange={(event: ChangeEvent<HTMLInputElement>) => actions.setQeIssueSummary(event.target.value)}
+            value={state.qeIssueSummaryTemplate}
+          />
+        </label>
+      ) : null}
+    </>
+  );
+}
+
 function IssueCreationForm({ state, actions }: IssueFormProps) {
   if (!state.prbData) {
     return null;
@@ -120,7 +150,9 @@ function IssueCreationForm({ state, actions }: IssueFormProps) {
     actions.setSlSubtaskIssueTypeName(event.target.value);
   }
 
-  const slIssueTypeLabel = state.createSlAsSubtask ? state.slSubtaskIssueTypeName : 'Story';
+  const followUpIssueTypeLabel = state.createSlAsSubtask ? state.slSubtaskIssueTypeName : 'Story';
+  const followUpLabelSuffix = state.createSlAsSubtask ? 'sub-task (child of the primary)' : 'Story';
+  const issueDescription = `${state.prbData.number}\n\n${state.prbData.description}`;
 
   return (
     <>
@@ -140,13 +172,14 @@ function IssueCreationForm({ state, actions }: IssueFormProps) {
             <span className={styles.fieldLabel}>SL Issue Summary</span>
             <input className={styles.input} onChange={handleSlStorySummaryChange} value={state.slStorySummaryTemplate} />
           </label>
+          <QeIssueFields actions={actions} state={state} />
           <label className={styles.checkboxLabel}>
             <input checked={state.createSlAsSubtask} onChange={handleCreateSlAsSubtaskChange} type="checkbox" />
-            <span>Create SL issue as a sub-task of the primary</span>
+            <span>{SUBTASK_TOGGLE_LABEL}</span>
           </label>
           {state.createSlAsSubtask ? (
             <label className={styles.fieldGroup}>
-              <span className={styles.fieldLabel}>SL sub-task issue type</span>
+              <span className={styles.fieldLabel}>{SUBTASK_TYPE_LABEL}</span>
               <input
                 className={styles.input}
                 onChange={handleSlSubtaskIssueTypeNameChange}
@@ -178,17 +211,25 @@ function IssueCreationForm({ state, actions }: IssueFormProps) {
         <div className={styles.sectionHeader}><h3 className={styles.sectionTitle}>{ISSUE_PREVIEW_SECTION_TITLE}</h3></div>
         <div className={styles.sectionBody}>
           <IssuePreviewCard
-            description={`${state.prbData.number}\n\n${state.prbData.description}`}
+            description={issueDescription}
             issueTypeName={state.isPrimaryIssueDefect ? 'Defect' : 'Story'}
             label="Issue 1 — Primary"
             summary={state.primaryIssueSummaryTemplate}
           />
           <IssuePreviewCard
-            description={`${state.prbData.number}\n\n${state.prbData.description}`}
-            issueTypeName={slIssueTypeLabel}
-            label={state.createSlAsSubtask ? 'Issue 2 — SL sub-task (child of the primary)' : 'Issue 2 — SL Story'}
+            description={issueDescription}
+            issueTypeName={followUpIssueTypeLabel}
+            label={`Issue 2 — SL ${followUpLabelSuffix}`}
             summary={state.slStorySummaryTemplate}
           />
+          {state.shouldCreateQeIssue ? (
+            <IssuePreviewCard
+              description={issueDescription}
+              issueTypeName={followUpIssueTypeLabel}
+              label={`Issue 3 — QE ${followUpLabelSuffix}`}
+              summary={state.qeIssueSummaryTemplate}
+            />
+          ) : null}
         </div>
       </section>
     </>

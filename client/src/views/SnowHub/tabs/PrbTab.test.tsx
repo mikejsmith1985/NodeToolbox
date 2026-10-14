@@ -23,6 +23,8 @@ const { mockState, mockActions } = vi.hoisted(() => ({
       isPrimaryIssueDefect: true,
       primaryIssueSummaryTemplate: '',
       slStorySummaryTemplate: '',
+      qeIssueSummaryTemplate: '',
+      shouldCreateQeIssue: true,
       createSlAsSubtask: false,
       slSubtaskIssueTypeName: 'Sub-task',
       isCreatingIssues: false,
@@ -38,6 +40,8 @@ const { mockState, mockActions } = vi.hoisted(() => ({
       setIsPrimaryIssueDefect: vi.fn(),
       setPrimaryIssueSummary: vi.fn(),
       setSlStorySummary: vi.fn(),
+      setQeIssueSummary: vi.fn(),
+      setShouldCreateQeIssue: vi.fn(),
       setCreateSlAsSubtask: vi.fn(),
       setSlSubtaskIssueTypeName: vi.fn(),
       createJiraIssues: vi.fn().mockResolvedValue(undefined),
@@ -63,6 +67,8 @@ function resetMockState(): void {
     isPrimaryIssueDefect: true,
     primaryIssueSummaryTemplate: '',
     slStorySummaryTemplate: '',
+    qeIssueSummaryTemplate: '',
+    shouldCreateQeIssue: true,
     createSlAsSubtask: false,
     slSubtaskIssueTypeName: 'Sub-task',
     isCreatingIssues: false,
@@ -128,8 +134,52 @@ describe('PrbTab', () => {
     expect(screen.getByLabelText('Issue Summary')).toBeInTheDocument();
     expect(screen.getByLabelText('Create primary issue as Defect')).toBeInTheDocument();
     expect(screen.getByLabelText('SL Issue Summary')).toBeInTheDocument();
-    expect(screen.getByLabelText('Create SL issue as a sub-task of the primary')).toBeInTheDocument();
+    expect(screen.getByLabelText('QE Issue Summary')).toBeInTheDocument();
+    expect(screen.getByLabelText('Also create a QE issue')).toBeInTheDocument();
+    expect(screen.getByLabelText('Create SL and QE issues as sub-tasks of the primary')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Create Jira Issues' })).toBeInTheDocument();
+  });
+
+  it('previews the [QE] issue third and hands edits and the toggle to the hook', () => {
+    mockState.prbData = {
+      sysId: 'problem-1',
+      number: 'PRB0001234',
+      incidentNumber: 'INC0012345',
+      shortDescription: 'Orders fail during deployment',
+      description: 'Deployment issues impact order creation',
+      state: 'Open',
+      severity: '2 - High',
+      assignedTo: null,
+    };
+    mockState.qeIssueSummaryTemplate = '[QE] INC0012345: PRB0001234: "Orders fail during deployment"';
+
+    render(<PrbTab />);
+
+    expect(screen.getByText('Issue 3 — QE Story')).toBeInTheDocument();
+    expect(screen.getAllByText('[QE] INC0012345: PRB0001234: "Orders fail during deployment"').length).toBeGreaterThanOrEqual(1);
+    fireEvent.change(screen.getByLabelText('QE Issue Summary'), { target: { value: '[QE] edited' } });
+    expect(mockActions.setQeIssueSummary).toHaveBeenCalledWith('[QE] edited');
+    fireEvent.click(screen.getByLabelText('Also create a QE issue'));
+    expect(mockActions.setShouldCreateQeIssue).toHaveBeenCalledWith(false);
+  });
+
+  it('hides the QE summary and preview when the QE issue is turned off', () => {
+    mockState.prbData = {
+      sysId: 'problem-1',
+      number: 'PRB0001234',
+      incidentNumber: 'INC0012345',
+      shortDescription: 'Orders fail during deployment',
+      description: 'Deployment issues impact order creation',
+      state: 'Open',
+      severity: '2 - High',
+      assignedTo: null,
+    };
+    mockState.shouldCreateQeIssue = false;
+
+    render(<PrbTab />);
+
+    expect(screen.queryByLabelText('QE Issue Summary')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Issue 3 — QE/)).not.toBeInTheDocument();
   });
 
   it('shows the SL sub-task issue-type field and preview when the sub-task option is on', () => {
@@ -148,8 +198,9 @@ describe('PrbTab', () => {
 
     render(<PrbTab />);
 
-    expect(screen.getByLabelText('SL sub-task issue type')).toBeInTheDocument();
+    expect(screen.getByLabelText('SL / QE sub-task issue type')).toBeInTheDocument();
     expect(screen.getByText('Issue 2 — SL sub-task (child of the primary)')).toBeInTheDocument();
+    expect(screen.getByText('Issue 3 — QE sub-task (child of the primary)')).toBeInTheDocument();
   });
 
   it('shows the created issue keys after success', () => {

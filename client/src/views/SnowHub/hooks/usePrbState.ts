@@ -17,6 +17,9 @@ import {
   describeRequiredFieldNeeds,
   discoverRequiredFieldsByIssueType,
   MissingIssueTypeError,
+  readRefusedRequiredFieldIds,
+  readRememberedRefusedFieldIds,
+  rememberRefusedFieldIds,
 } from '../prb/prbRequiredFields.ts';
 
 interface SnowPrbRecord {
@@ -55,7 +58,11 @@ interface PrbState {
   isPrimaryIssueDefect: boolean;
   primaryIssueSummaryTemplate: string;
   slStorySummaryTemplate: string;
-  /** When true, the SL issue is created as a sub-task of the primary issue rather than a standalone Story. */
+  /** The `[QE]` companion issue's summary: the work Quality Engineering does to prove the fix. */
+  qeIssueSummaryTemplate: string;
+  /** When true, a third `[QE]` issue is created beside the SL issue. Persisted per browser. */
+  shouldCreateQeIssue: boolean;
+  /** When true, the SL and QE issues are created as sub-tasks of the primary issue rather than standalone Stories. */
   createSlAsSubtask: boolean;
   /** The Jira issue-type name used for the SL sub-task; configurable because instances name it differently. */
   slSubtaskIssueTypeName: string;
@@ -78,6 +85,8 @@ interface PrbActions {
   setIsPrimaryIssueDefect: (isPrimaryIssueDefect: boolean) => void;
   setPrimaryIssueSummary: (summary: string) => void;
   setSlStorySummary: (summary: string) => void;
+  setQeIssueSummary: (summary: string) => void;
+  setShouldCreateQeIssue: (shouldCreateQeIssue: boolean) => void;
   setCreateSlAsSubtask: (createSlAsSubtask: boolean) => void;
   setSlSubtaskIssueTypeName: (slSubtaskIssueTypeName: string) => void;
   createJiraIssues: () => Promise<void>;
@@ -107,6 +116,7 @@ const LOWEST_PRIORITY_NAME = 'Lowest';
 
 // The SL sub-task preferences persist so a team's chosen behaviour sticks across sessions.
 const CREATE_SL_AS_SUBTASK_STORAGE_KEY = 'tbxPrbCreateSlAsSubtask';
+const CREATE_QE_ISSUE_STORAGE_KEY = 'tbxPrbCreateQeIssue';
 const SL_SUBTASK_ISSUE_TYPE_STORAGE_KEY = 'tbxPrbSlSubtaskIssueTypeName';
 const DEFAULT_SL_SUBTASK_ISSUE_TYPE_NAME = 'Sub-task';
 
@@ -149,6 +159,8 @@ function createInitialPrbState(): PrbState {
     isPrimaryIssueDefect: true,
     primaryIssueSummaryTemplate: EMPTY_VALUE,
     slStorySummaryTemplate: EMPTY_VALUE,
+    qeIssueSummaryTemplate: EMPTY_VALUE,
+    shouldCreateQeIssue: readBooleanPreference(CREATE_QE_ISSUE_STORAGE_KEY, true),
     // Default to a sub-task of the primary — the behaviour teams asked for — but keep it configurable.
     createSlAsSubtask: readBooleanPreference(CREATE_SL_AS_SUBTASK_STORAGE_KEY, true),
     slSubtaskIssueTypeName: readStringPreference(SL_SUBTASK_ISSUE_TYPE_STORAGE_KEY, DEFAULT_SL_SUBTASK_ISSUE_TYPE_NAME),
@@ -160,9 +172,13 @@ function createInitialPrbState(): PrbState {
   };
 }
 
+const SL_SUMMARY_PREFIX = '[SL]';
+const QE_SUMMARY_PREFIX = '[QE]';
+
+/** `INC…: PRB…: "statement"`, led by a team tag (`[SL]`, `[QE]`) when one is given. */
 function buildFormattedIssueSummary(
   problemRecord: SnowPrbRecord,
-  shouldIncludeSlPrefix: boolean,
+  teamPrefix?: string,
 ): string {
   const summarySegments = [problemRecord.incidentNumber, problemRecord.number].filter(
     (segmentValue) => segmentValue.length > 0,
@@ -173,23 +189,18 @@ function buildFormattedIssueSummary(
     ? `${summaryPrefix}: ${quotedProblemStatement}`
     : quotedProblemStatement;
 
-  return shouldIncludeSlPrefix ? `[SL] ${summaryBody}` : summaryBody;
-}
-
-function createPrimaryIssueSummary(problemRecord: SnowPrbRecord): string {
-  return buildFormattedIssueSummary(problemRecord, false);
-}
-
-function createSlStorySummary(problemRecord: SnowPrbRecord): string {
-  return buildFormattedIssueSummary(problemRecord, true);
+  return teamPrefix ? `${teamPrefix} ${summaryBody}` : summaryBody;
 }
 
 const PARTIAL_CREATE_SEPARATOR = ' | ';
 const PRIMARY_ISSUE_LABEL = 'Primary issue';
 const SL_STORY_LABEL = 'SL Story';
 const SL_SUBTASK_LABEL = 'SL sub-task';
-const SL_ISSUE_SKIPPED_MESSAGE = 'skipped because the primary issue was not created';
-const SL_STANDALONE_ISSUE_TYPE_NAME = 'Story';
+const QE_STORY_LABEL = 'QE Story';
+const QE_SUBTASK_LABEL = 'QE sub-task';
+const FOLLOW_UP_SKIPPED_MESSAGE = 'skipped because the primary issue was not created';
+/** The type the SL and QE issues take when they are not sub-tasks of the primary. */
+const FOLLOW_UP_STANDALONE_ISSUE_TYPE_NAME = 'Story';
 const REQUIRED_FIELDS_PREFIX = 'Jira will not create these issues without more —';
 const REQUIRED_FIELDS_SUFFIX = 'Fill them in below and create again.';
 
@@ -231,7 +242,8 @@ interface CreateScreenCheck {
  *
  * Only a field the inline picker can honestly collect blocks the run. One it cannot render (a user
  * picker, a date) is left to the POST, whose refusal now names the field — blocking on it here would
- * stop the generator forever with no way through. A createmeta failure (older Jira, no permission)
+ * stop the generator forever with no way through. Fields Jira refused this project and type over
+ * before are asked for too, even where the screen calls them optional (GH #439). A createmeta failure (older Jira, no permission)
  * is a courtesy lost, not a gate closed: creation proceeds as it always did. A type the project does
  * not offer, though, is refused here, before the other issue exists.
  */
@@ -242,7 +254,11 @@ async function checkCreateScreens(
 ): Promise<CreateScreenCheck> {
   let requiredFieldsByIssueType: Record<string, TransitionRequiredField[]>;
   try {
-    requiredFieldsByIssueType = await discoverRequiredFieldsByIssueType(jiraProjectKey, issueTypeNames);
+    requiredFieldsByIssueType = await discoverRequiredFieldsByIssueType(
+      jiraProjectKey,
+      issueTypeNames,
+      readRememberedRefusedFieldIds(jiraProjectKey),
+    );
   } catch (discoveryError) {
     const blockingMessage = discoveryError instanceof MissingIssueTypeError ? discoveryError.message : null;
     return { requiredFieldsByIssueType: {}, blockingMessage };
@@ -270,6 +286,12 @@ interface PlannedIssue {
   summary: string;
   issueTypeName: string;
   requiredFieldValues: Record<string, unknown>;
+}
+
+/** An issue created only beside the primary (SL, QE): how messages name it, and whether it is the primary's child. */
+interface PlannedFollowUpIssue extends PlannedIssue {
+  label: string;
+  isSubtaskOfPrimary: boolean;
 }
 
 /** The state while the run is in flight: nothing created yet, no stale error or keys on screen. */
@@ -314,31 +336,40 @@ function readCreatePrerequisiteError(state: PrbState): string | null {
 function planIssues(
   state: PrbState,
   primaryIssueTypeName: string,
-  slIssueTypeName: string,
+  followUpIssueTypeName: string,
   requiredFieldsByIssueType: Record<string, TransitionRequiredField[]>,
-): { primaryIssue: PlannedIssue; slIssue: PlannedIssue } {
+): { primaryIssue: PlannedIssue; followUpIssues: PlannedFollowUpIssue[] } {
   const readRequiredFieldValues = (issueTypeName: string): Record<string, unknown> => buildTransitionFieldsPayload(
     requiredFieldsByIssueType[issueTypeName] ?? [],
     state.requiredFieldSelectionByFieldId,
   );
+  const planFollowUp = (summary: string, subtaskLabel: string, storyLabel: string): PlannedFollowUpIssue => ({
+    summary,
+    issueTypeName: followUpIssueTypeName,
+    requiredFieldValues: readRequiredFieldValues(followUpIssueTypeName),
+    label: state.createSlAsSubtask ? subtaskLabel : storyLabel,
+    isSubtaskOfPrimary: state.createSlAsSubtask,
+  });
+  const followUpIssues = [planFollowUp(state.slStorySummaryTemplate, SL_SUBTASK_LABEL, SL_STORY_LABEL)];
+  if (state.shouldCreateQeIssue) {
+    followUpIssues.push(planFollowUp(state.qeIssueSummaryTemplate, QE_SUBTASK_LABEL, QE_STORY_LABEL));
+  }
   return {
     primaryIssue: {
       summary: state.primaryIssueSummaryTemplate,
       issueTypeName: primaryIssueTypeName,
       requiredFieldValues: readRequiredFieldValues(primaryIssueTypeName),
     },
-    slIssue: {
-      summary: state.slStorySummaryTemplate,
-      issueTypeName: slIssueTypeName,
-      requiredFieldValues: readRequiredFieldValues(slIssueTypeName),
-    },
+    followUpIssues,
   };
 }
 
-/** What a creation run produced: the keys that exist, and a labelled reason for each that does not. */
+/** What a creation run produced: the keys that exist, a labelled reason for each that does not, and what Jira refused. */
 interface IssueCreationOutcome {
   successfulKeys: string[];
   failureMessages: string[];
+  /** The fields Jira said each refused issue type required, keyed by issue type name. */
+  refusedFieldIdsByIssueType: Record<string, string[]>;
 }
 
 /** Reads a rejection reason as a human message, falling back to the generic create-failure text. */
@@ -367,42 +398,69 @@ async function createOneIssue(
   return createdIssue.key;
 }
 
+/** Records one refused create: its labelled message, and any required fields the refusal names. */
+function recordCreateFailure(outcome: IssueCreationOutcome, label: string, issueTypeName: string, rejectionReason: unknown): void {
+  const failureMessage = readCreateFailureMessage(rejectionReason);
+  outcome.failureMessages.push(`${label}: ${failureMessage}`);
+  const refusedFieldIds = readRefusedRequiredFieldIds(failureMessage);
+  if (refusedFieldIds.length > 0) {
+    outcome.refusedFieldIdsByIssueType[issueTypeName] = refusedFieldIds;
+  }
+}
+
 /**
- * Creates the primary issue, then the SL issue — never the other way round, never both at once.
+ * Creates the primary issue, then each follow-up issue (SL, then QE) — in order, never at once.
  *
- * The two used to go out in parallel when the SL issue was a standalone Story, so a refused Defect
- * left an SL Story behind that the next attempt would duplicate (GH #384). The SL issue is only ever
- * meaningful beside its primary, so when the primary fails it is skipped and said to be skipped —
- * exactly as the sub-task path always did, because a sub-task has nothing to parent to.
+ * The SL issue used to go out in parallel when it was a standalone Story, so a refused Defect left an
+ * SL Story behind that the next attempt would duplicate (GH #384). A follow-up is only meaningful
+ * beside its primary, so when the primary fails every follow-up is skipped and said to be skipped.
  */
-async function createPrimaryThenSlIssue(
+async function createPrimaryThenFollowUpIssues(
   jiraProjectKey: string,
   problemRecord: SnowPrbRecord,
   primaryIssue: PlannedIssue,
-  slIssue: PlannedIssue,
-  isSlIssueSubtask: boolean,
+  followUpIssues: readonly PlannedFollowUpIssue[],
 ): Promise<IssueCreationOutcome> {
-  const successfulKeys: string[] = [];
-  const failureMessages: string[] = [];
-  const slIssueLabel = isSlIssueSubtask ? SL_SUBTASK_LABEL : SL_STORY_LABEL;
+  const outcome: IssueCreationOutcome = { successfulKeys: [], failureMessages: [], refusedFieldIdsByIssueType: {} };
 
   let primaryIssueKey: string;
   try {
     primaryIssueKey = await createOneIssue(jiraProjectKey, problemRecord, primaryIssue);
-    successfulKeys.push(primaryIssueKey);
+    outcome.successfulKeys.push(primaryIssueKey);
   } catch (primaryError) {
-    failureMessages.push(`${PRIMARY_ISSUE_LABEL}: ${readCreateFailureMessage(primaryError)}`);
-    failureMessages.push(`${slIssueLabel}: ${SL_ISSUE_SKIPPED_MESSAGE}`);
-    return { successfulKeys, failureMessages };
+    recordCreateFailure(outcome, PRIMARY_ISSUE_LABEL, primaryIssue.issueTypeName, primaryError);
+    outcome.failureMessages.push(...followUpIssues.map((followUpIssue) => `${followUpIssue.label}: ${FOLLOW_UP_SKIPPED_MESSAGE}`));
+    return outcome;
   }
 
-  try {
-    const slIssueKey = await createOneIssue(jiraProjectKey, problemRecord, slIssue, isSlIssueSubtask ? primaryIssueKey : undefined);
-    successfulKeys.push(slIssueKey);
-  } catch (slIssueError) {
-    failureMessages.push(`${slIssueLabel}: ${readCreateFailureMessage(slIssueError)}`);
+  for (const followUpIssue of followUpIssues) {
+    try {
+      const parentIssueKey = followUpIssue.isSubtaskOfPrimary ? primaryIssueKey : undefined;
+      outcome.successfulKeys.push(await createOneIssue(jiraProjectKey, problemRecord, followUpIssue, parentIssueKey));
+    } catch (followUpError) {
+      recordCreateFailure(outcome, followUpIssue.label, followUpIssue.issueTypeName, followUpError);
+    }
   }
-  return { successfulKeys, failureMessages };
+  return outcome;
+}
+
+/**
+ * Remembers every field Jira refused a type over, then asks the screens again so those fields show
+ * as pickers straight away — the operator answers and clicks once more, instead of decoding an id.
+ */
+async function learnFromRefusals(
+  jiraProjectKey: string,
+  issueTypeNames: readonly string[],
+  outcome: IssueCreationOutcome,
+  previousScreenCheck: CreateScreenCheck,
+  selectionByFieldId: Record<string, TransitionFieldSelection>,
+): Promise<CreateScreenCheck> {
+  const refusedEntries = Object.entries(outcome.refusedFieldIdsByIssueType);
+  if (refusedEntries.length === 0) return previousScreenCheck;
+  for (const [issueTypeName, refusedFieldIds] of refusedEntries) {
+    rememberRefusedFieldIds(jiraProjectKey, issueTypeName, refusedFieldIds);
+  }
+  return checkCreateScreens(jiraProjectKey, issueTypeNames, selectionByFieldId);
 }
 
 /**
@@ -550,8 +608,9 @@ export function usePrbState(): { state: PrbState; actions: PrbActions } {
         ...previousState,
         prbData: problemRecord,
         fetchWarning: incidentFetchWarning,
-        primaryIssueSummaryTemplate: createPrimaryIssueSummary(problemRecord),
-        slStorySummaryTemplate: createSlStorySummary(problemRecord),
+        primaryIssueSummaryTemplate: buildFormattedIssueSummary(problemRecord),
+        slStorySummaryTemplate: buildFormattedIssueSummary(problemRecord, SL_SUMMARY_PREFIX),
+        qeIssueSummaryTemplate: buildFormattedIssueSummary(problemRecord, QE_SUMMARY_PREFIX),
         isFetchingPrb: false,
         fetchError: null,
       }));
@@ -582,6 +641,15 @@ export function usePrbState(): { state: PrbState; actions: PrbActions } {
     setState((previousState) => ({ ...previousState, slStorySummaryTemplate: summary }));
   }, []);
 
+  const setQeIssueSummary = useCallback((summary: string) => {
+    setState((previousState) => ({ ...previousState, qeIssueSummaryTemplate: summary }));
+  }, []);
+
+  const setShouldCreateQeIssue = useCallback((shouldCreateQeIssue: boolean) => {
+    writePreference(CREATE_QE_ISSUE_STORAGE_KEY, String(shouldCreateQeIssue));
+    setState((previousState) => ({ ...previousState, shouldCreateQeIssue }));
+  }, []);
+
   const setRequiredFieldSelection = useCallback((fieldId: string, selection: TransitionFieldSelection) => {
     setState((previousState) => ({
       ...previousState,
@@ -600,23 +668,23 @@ export function usePrbState(): { state: PrbState; actions: PrbActions } {
     setState(markCreationStarted);
 
     const primaryIssueTypeName: 'Defect' | 'Story' = state.isPrimaryIssueDefect ? 'Defect' : 'Story';
-    const slIssueTypeName = state.createSlAsSubtask ? state.slSubtaskIssueTypeName : SL_STANDALONE_ISSUE_TYPE_NAME;
+    const followUpIssueTypeName = state.createSlAsSubtask ? state.slSubtaskIssueTypeName : FOLLOW_UP_STANDALONE_ISSUE_TYPE_NAME;
+    const issueTypeNames = [primaryIssueTypeName, followUpIssueTypeName];
 
     // Before a single POST: what does each screen want, and has the operator supplied it?
-    const screenCheck = await checkCreateScreens(
-      state.jiraProjectKey,
-      [primaryIssueTypeName, slIssueTypeName],
-      state.requiredFieldSelectionByFieldId,
-    );
+    const screenCheck = await checkCreateScreens(state.jiraProjectKey, issueTypeNames, state.requiredFieldSelectionByFieldId);
     if (screenCheck.blockingMessage !== null) {
       setState((previousState) => markCreationBlocked(previousState, screenCheck));
       return;
     }
 
-    const { primaryIssue, slIssue } = planIssues(state, primaryIssueTypeName, slIssueTypeName, screenCheck.requiredFieldsByIssueType);
-    const outcome = await createPrimaryThenSlIssue(state.jiraProjectKey, problemRecord, primaryIssue, slIssue, state.createSlAsSubtask);
+    const { primaryIssue, followUpIssues } = planIssues(state, primaryIssueTypeName, followUpIssueTypeName, screenCheck.requiredFieldsByIssueType);
+    const outcome = await createPrimaryThenFollowUpIssues(state.jiraProjectKey, problemRecord, primaryIssue, followUpIssues);
+    const learnedScreenCheck = await learnFromRefusals(
+      state.jiraProjectKey, issueTypeNames, outcome, screenCheck, state.requiredFieldSelectionByFieldId,
+    );
 
-    setState((previousState) => markCreationFinished(previousState, outcome, screenCheck));
+    setState((previousState) => markCreationFinished(previousState, outcome, learnedScreenCheck));
   }, [state]);
 
   const setCreateSlAsSubtask = useCallback((createSlAsSubtask: boolean) => {
@@ -642,6 +710,8 @@ export function usePrbState(): { state: PrbState; actions: PrbActions } {
       setIsPrimaryIssueDefect,
       setPrimaryIssueSummary,
       setSlStorySummary,
+      setQeIssueSummary,
+      setShouldCreateQeIssue,
       setCreateSlAsSubtask,
       setSlSubtaskIssueTypeName,
       createJiraIssues,
@@ -657,7 +727,9 @@ export function usePrbState(): { state: PrbState; actions: PrbActions } {
     setJiraProjectKey,
     setPrbNumber,
     setPrimaryIssueSummary,
+    setQeIssueSummary,
     setRequiredFieldSelection,
+    setShouldCreateQeIssue,
     setSlStorySummary,
     setSlSubtaskIssueTypeName,
   ]);

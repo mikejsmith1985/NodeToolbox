@@ -224,7 +224,8 @@ describe('usePrbState', () => {
       .mockResolvedValueOnce(MOCK_SERVICE_NOW_INCIDENT_RESPONSE);
     vi.mocked(jiraPost)
       .mockResolvedValueOnce({ key: 'ABC-101' })
-      .mockResolvedValueOnce({ key: 'ABC-102' });
+      .mockResolvedValueOnce({ key: 'ABC-102' })
+      .mockResolvedValueOnce({ key: 'ABC-103' });
     const { result } = renderHook(() => usePrbState());
 
     act(() => {
@@ -259,7 +260,8 @@ describe('usePrbState', () => {
         priority: { name: 'High' },
       },
     });
-    expect(result.current.state.createdIssueKeys).toEqual(['ABC-101', 'ABC-102']);
+    expect(result.current.state.createdIssueKeys).toEqual(['ABC-101', 'ABC-102', 'ABC-103']);
+    expect(result.current.state.createError).toBeNull();
   });
 
   it('creates a standalone SL Story (no parent) when the sub-task option is turned off', async () => {
@@ -470,7 +472,7 @@ describe('usePrbState', () => {
     expect(result.current.state.isCreatingIssues).toBe(false);
   });
 
-  it('carries the answered required field into the primary payload and creates both', async () => {
+  it('carries the answered required field into the primary payload and creates all three', async () => {
     vi.mocked(snowFetch)
       .mockResolvedValueOnce(MOCK_SERVICE_NOW_PROBLEM_RESPONSE)
       .mockResolvedValueOnce(MOCK_SERVICE_NOW_INCIDENT_RESPONSE);
@@ -478,7 +480,8 @@ describe('usePrbState', () => {
       Promise.resolve({ values: issueTypeId === '1' ? [DEFECT_ROOT_CAUSE_FIELD] : [] }));
     vi.mocked(jiraPost)
       .mockResolvedValueOnce({ key: 'ABC-101' })
-      .mockResolvedValueOnce({ key: 'ABC-102' });
+      .mockResolvedValueOnce({ key: 'ABC-102' })
+      .mockResolvedValueOnce({ key: 'ABC-103' });
     const { result } = renderHook(() => usePrbState());
 
     act(() => {
@@ -499,7 +502,7 @@ describe('usePrbState', () => {
     // The sub-task's screen did not ask for it, so it is not sent there.
     const subtaskPayload = vi.mocked(jiraPost).mock.calls[1][1] as { fields: Record<string, unknown> };
     expect(subtaskPayload.fields.customfield_10001).toBeUndefined();
-    expect(result.current.state.createdIssueKeys).toEqual(['ABC-101', 'ABC-102']);
+    expect(result.current.state.createdIssueKeys).toEqual(['ABC-101', 'ABC-102', 'ABC-103']);
     expect(result.current.state.createError).toBeNull();
   });
 
@@ -580,6 +583,155 @@ describe('usePrbState', () => {
 
     expect(vi.mocked(jiraPost)).toHaveBeenCalledTimes(1);
     expect(result.current.state.createError).toContain('customfield_10009: This field is required');
+  });
+
+  /** Loads the mock PRB into a fresh hook with the given project, ready for createJiraIssues. */
+  async function renderLoadedHook(projectKey = 'ABC') {
+    vi.mocked(snowFetch)
+      .mockResolvedValueOnce(MOCK_SERVICE_NOW_PROBLEM_RESPONSE)
+      .mockResolvedValueOnce(MOCK_SERVICE_NOW_INCIDENT_RESPONSE);
+    const rendered = renderHook(() => usePrbState());
+    act(() => {
+      rendered.result.current.actions.setPrbNumber('PRB0001234');
+      rendered.result.current.actions.setJiraProjectKey(projectKey);
+    });
+    await act(async () => {
+      await rendered.result.current.actions.fetchPrb();
+    });
+    await waitFor(() => expect(rendered.result.current.state.prbData).not.toBeNull());
+    return rendered;
+  }
+
+  const SEVERITY_FIELD_THE_SCREEN_CALLS_OPTIONAL = {
+    fieldId: 'customfield_10253',
+    name: 'Severity',
+    required: false,
+    schema: { type: 'option' },
+    allowedValues: [{ id: '7', value: 'S2' }],
+  };
+  const SEVERITY_REFUSAL = 'Jira POST /rest/api/2/issue failed: 400 — customfield_10253: This field is required';
+
+  it('turns a refusal over a field the screen called optional into a picker, then sends the answer (GH #439)', async () => {
+    vi.mocked(getIssueTypeFields).mockImplementation((_projectKey: string, issueTypeId: string) =>
+      Promise.resolve({ values: issueTypeId === '1' ? [SEVERITY_FIELD_THE_SCREEN_CALLS_OPTIONAL] : [] }));
+    vi.mocked(jiraPost)
+      .mockRejectedValueOnce(new Error(SEVERITY_REFUSAL))
+      .mockResolvedValueOnce({ key: 'ABC-101' })
+      .mockResolvedValueOnce({ key: 'ABC-102' })
+      .mockResolvedValueOnce({ key: 'ABC-103' });
+    const { result } = await renderLoadedHook();
+
+    await act(async () => {
+      await result.current.actions.createJiraIssues();
+    });
+
+    // The refused Defect now asks for Severity by name, beside the button.
+    expect(result.current.state.requiredFieldsByIssueType.Defect.map((field) => field.name)).toEqual(['Severity']);
+    expect(result.current.state.createdIssueKeys).toEqual([]);
+
+    act(() => {
+      result.current.actions.setRequiredFieldSelection('customfield_10253', { optionId: '7' });
+    });
+    await act(async () => {
+      await result.current.actions.createJiraIssues();
+    });
+
+    const retriedPrimaryPayload = vi.mocked(jiraPost).mock.calls[1][1] as { fields: Record<string, unknown> };
+    expect(retriedPrimaryPayload.fields.customfield_10253).toEqual({ id: '7' });
+    expect(result.current.state.createdIssueKeys).toEqual(['ABC-101', 'ABC-102', 'ABC-103']);
+    expect(result.current.state.createError).toBeNull();
+  });
+
+  it('asks before posting on the next PRB once Jira has refused that project and type', async () => {
+    vi.mocked(getIssueTypeFields).mockImplementation((_projectKey: string, issueTypeId: string) =>
+      Promise.resolve({ values: issueTypeId === '1' ? [SEVERITY_FIELD_THE_SCREEN_CALLS_OPTIONAL] : [] }));
+    vi.mocked(jiraPost).mockRejectedValueOnce(new Error(SEVERITY_REFUSAL));
+    const firstSession = await renderLoadedHook();
+    await act(async () => {
+      await firstSession.result.current.actions.createJiraIssues();
+    });
+    firstSession.unmount();
+    vi.mocked(jiraPost).mockClear();
+
+    const { result } = await renderLoadedHook();
+    await act(async () => {
+      await result.current.actions.createJiraIssues();
+    });
+
+    expect(vi.mocked(jiraPost)).not.toHaveBeenCalled();
+    expect(result.current.state.createError).toContain('Defect needs: Severity');
+  });
+
+  it('creates a [QE] issue as a third sub-task of the primary by default', async () => {
+    vi.mocked(jiraPost)
+      .mockResolvedValueOnce({ key: 'ABC-101' })
+      .mockResolvedValueOnce({ key: 'ABC-102' })
+      .mockResolvedValueOnce({ key: 'ABC-103' });
+    const { result } = await renderLoadedHook();
+
+    expect(result.current.state.qeIssueSummaryTemplate).toBe('[QE] INC0012345: PRB0001234: "Checkout flow fails under load"');
+    await act(async () => {
+      await result.current.actions.createJiraIssues();
+    });
+
+    expect(vi.mocked(jiraPost).mock.calls[2][1]).toMatchObject({
+      fields: {
+        summary: '[QE] INC0012345: PRB0001234: "Checkout flow fails under load"',
+        issuetype: { name: 'Sub-task' },
+        parent: { key: 'ABC-101' },
+      },
+    });
+    expect(result.current.state.createdIssueKeys).toEqual(['ABC-101', 'ABC-102', 'ABC-103']);
+  });
+
+  it('creates the QE issue as a standalone Story when sub-tasks are turned off', async () => {
+    vi.mocked(jiraPost)
+      .mockResolvedValueOnce({ key: 'ABC-101' })
+      .mockResolvedValueOnce({ key: 'ABC-102' })
+      .mockResolvedValueOnce({ key: 'ABC-103' });
+    const { result } = await renderLoadedHook();
+    act(() => {
+      result.current.actions.setCreateSlAsSubtask(false);
+      result.current.actions.setQeIssueSummary('[QE] edited');
+    });
+
+    await act(async () => {
+      await result.current.actions.createJiraIssues();
+    });
+
+    const qePayload = vi.mocked(jiraPost).mock.calls[2][1] as { fields: Record<string, unknown> };
+    expect(qePayload.fields).toMatchObject({ summary: '[QE] edited', issuetype: { name: 'Story' } });
+    expect(qePayload.fields.parent).toBeUndefined();
+  });
+
+  it('creates only the primary and SL issues when the QE issue is turned off, and remembers that', async () => {
+    vi.mocked(jiraPost)
+      .mockResolvedValueOnce({ key: 'ABC-101' })
+      .mockResolvedValueOnce({ key: 'ABC-102' });
+    const { result } = await renderLoadedHook();
+    act(() => {
+      result.current.actions.setShouldCreateQeIssue(false);
+    });
+
+    await act(async () => {
+      await result.current.actions.createJiraIssues();
+    });
+
+    expect(vi.mocked(jiraPost)).toHaveBeenCalledTimes(2);
+    expect(result.current.state.createdIssueKeys).toEqual(['ABC-101', 'ABC-102']);
+    expect(renderHook(() => usePrbState()).result.current.state.shouldCreateQeIssue).toBe(false);
+  });
+
+  it('skips the QE issue too, and says so, when the primary cannot be created', async () => {
+    vi.mocked(jiraPost).mockRejectedValueOnce(new Error('Jira POST failed: 400'));
+    const { result } = await renderLoadedHook();
+
+    await act(async () => {
+      await result.current.actions.createJiraIssues();
+    });
+
+    expect(vi.mocked(jiraPost)).toHaveBeenCalledTimes(1);
+    expect(result.current.state.createError).toContain('QE sub-task: skipped because the primary issue was not created');
   });
 
   it('resets the PRB state back to its initial values', async () => {

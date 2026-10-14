@@ -16,8 +16,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     ones. A PRB already linked to another change is left alone (a problem holds one change).
   - **Create New CHG** links them automatically once the change exists — to the Production change when several
     are created — and the result line says which PRBs were linked and which were not, and why.
+- **PRB Generator creates a third, `[QE]` issue.** Beside the primary and the `[SL]` issue, it now creates a
+  `[QE] INC…: PRB…: "…"` issue for Quality Engineering, with an editable summary and an **Also create a QE issue**
+  toggle (on by default, remembered). It follows the same sub-task setting as the SL issue — both are children of
+  the primary, or both are standalone Stories — and is skipped, and said to be skipped, when the primary fails.
 
 ### Fixed
+- **PRB Generator: a field Jira demands is now asked for, not just reported (GH #439).** Creating the Defect failed
+  with *"customfield_10253: This field is required"* although the pre-create check found nothing to ask. Two causes,
+  both closed: the create-screen field list was read one page only, and Jira Data Center serves it in smaller pages
+  than asked for, so a field past page one was never seen; and a create validator can demand a field the screen
+  calls optional. Every page is now read (the Template Maker gains this too), and when Jira still refuses over a
+  field, that field appears by name as a picker beside **Create Jira Issues** — answer it and create again. The
+  refusal is remembered per project and issue type, so the next PRB asks before posting.
 - **PI Review saves onto a blank page — no table has to exist (GH #415).** A blank page now gets the standard PI
   Review tables when it loads, ready to fill and save. Saving after the page changed in Confluence (cleared, say)
   re-read it and failed with *"No Confluence table was found with the required PI Review headers"*; the save now

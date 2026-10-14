@@ -16,7 +16,10 @@ import type { CreateMetaFieldEntry } from '../../../types/jira.ts';
 import {
   discoverRequiredFieldsByIssueType,
   PRB_SUPPLIED_FIELD_IDS,
+  readRefusedRequiredFieldIds,
+  readRememberedRefusedFieldIds,
   readUnansweredRequiredFields,
+  rememberRefusedFieldIds,
 } from './prbRequiredFields.ts';
 
 function buildField(overrides: Partial<CreateMetaFieldEntry> & { fieldId: string }): CreateMetaFieldEntry {
@@ -25,6 +28,7 @@ function buildField(overrides: Partial<CreateMetaFieldEntry> & { fieldId: string
 
 beforeEach(() => {
   vi.clearAllMocks();
+  localStorage.clear();
 });
 
 describe('readUnansweredRequiredFields', () => {
@@ -61,6 +65,16 @@ describe('readUnansweredRequiredFields', () => {
 
     expect(unanswered[0].schemaType).toBe('option-with-child');
     expect(unanswered[0].allowedValues).toEqual([{ id: '100', value: 'Web' }]);
+  });
+
+  it('treats a field Jira refused the create over as required, even when the screen calls it optional (GH #439)', () => {
+    // A create validator can demand a field the screen lists as optional; the refusal is the truth.
+    const unanswered = readUnansweredRequiredFields([
+      buildField({ fieldId: 'customfield_10253', name: 'Severity', required: false, hasDefaultValue: true }),
+      buildField({ fieldId: 'customfield_10002', name: 'Optional note', required: false }),
+    ], PRB_SUPPLIED_FIELD_IDS, ['customfield_10253']);
+
+    expect(unanswered.map((field) => field.name)).toEqual(['Severity']);
   });
 
   it('names a field by its id when Jira gives it no name', () => {
@@ -103,9 +117,52 @@ describe('discoverRequiredFieldsByIssueType', () => {
       .rejects.toThrow('Project ENFCT has no issue type named "Bug"');
   });
 
+  it('asks for a field the screen calls optional once Jira has refused that type over it', async () => {
+    mockGetIssueTypeFields.mockResolvedValue({
+      values: [buildField({ fieldId: 'customfield_10253', name: 'Severity', required: false, allowedValues: [{ id: '7', value: 'S2' }] })],
+    });
+
+    const requiredByType = await discoverRequiredFieldsByIssueType('ENFCT', ['Defect', 'Story'], { Defect: ['customfield_10253'] });
+
+    expect(requiredByType.Defect.map((field) => field.name)).toEqual(['Severity']);
+    expect(requiredByType.Story).toEqual([]);
+  });
+
   it('asks Jira for the project once, however many types are checked', async () => {
     await discoverRequiredFieldsByIssueType('ENFCT', ['Defect', 'Story']);
 
     expect(mockGetProjectIssueTypes).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('readRefusedRequiredFieldIds', () => {
+  it('reads every field Jira said is required out of a create refusal', () => {
+    const refusedIds = readRefusedRequiredFieldIds(
+      'Jira POST /rest/api/2/issue failed: 400 — customfield_10253: This field is required; components: Component/s is required.; customfield_1: Too long',
+    );
+
+    expect(refusedIds).toEqual(['customfield_10253', 'components']);
+  });
+
+  it('reads nothing from a refusal that names no required field', () => {
+    expect(readRefusedRequiredFieldIds('Jira POST /rest/api/2/issue failed: 500')).toEqual([]);
+    expect(readRefusedRequiredFieldIds('Issue Type is required.')).toEqual([]);
+  });
+});
+
+describe('remembered refusals', () => {
+  it('keeps what each project and type was refused over, so the next PRB asks first', () => {
+    rememberRefusedFieldIds('ENFCT', 'Defect', ['customfield_10253']);
+    rememberRefusedFieldIds('ENFCT', 'Defect', ['customfield_10253', 'components']);
+    rememberRefusedFieldIds('OTHER', 'Story', ['customfield_1']);
+
+    expect(readRememberedRefusedFieldIds('ENFCT')).toEqual({ Defect: ['customfield_10253', 'components'] });
+    expect(readRememberedRefusedFieldIds('NONE')).toEqual({});
+  });
+
+  it('reads nothing when storage holds something unreadable', () => {
+    localStorage.setItem('tbxPrbRefusedRequiredFields', '{not json');
+
+    expect(readRememberedRefusedFieldIds('ENFCT')).toEqual({});
   });
 });

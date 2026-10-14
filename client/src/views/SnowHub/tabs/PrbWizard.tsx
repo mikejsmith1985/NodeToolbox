@@ -5,8 +5,8 @@
 // guides users step-by-step:
 //   1. Pick Problem Record  — load the PRB
 //   2. Issue Details        — choose Jira project, issue type, and primary summary
-//   3. SL Story Details     — edit the companion story summary
-//   4. Review & Create      — confirm and create both Jira issues
+//   3. SL & QE Details      — edit the companion SL and QE issue summaries
+//   4. Review & Create      — confirm and create the Jira issues
 
 import { useState, type ChangeEvent } from 'react';
 
@@ -15,7 +15,7 @@ import { LoadedIcon } from '../../../components/AppIcons/index.tsx';
 import styles from './PrbTab.module.css';
 import { PrbRequiredFields } from '../components/PrbRequiredFields.tsx';
 
-const STEP_TITLES = ['Pick PRB', 'Issue', 'SL Story', 'Review'] as const;
+const STEP_TITLES = ['Pick PRB', 'Issue', 'SL & QE', 'Review'] as const;
 const TOTAL_STEPS = STEP_TITLES.length;
 const FIRST_STEP_INDEX = 0;
 const LAST_STEP_INDEX = TOTAL_STEPS - 1;
@@ -107,11 +107,29 @@ function renderStepBody(currentStep: number, props: PrbWizardProps): React.React
             onChange={(event: ChangeEvent<HTMLInputElement>) => actions.setCreateSlAsSubtask(event.target.checked)}
             type="checkbox"
           />
-          <span>Create SL issue as a sub-task of the primary</span>
+          <span>Create SL and QE issues as sub-tasks of the primary</span>
         </label>
+        <label className={styles.checkboxLabel}>
+          <input
+            checked={state.shouldCreateQeIssue}
+            onChange={(event: ChangeEvent<HTMLInputElement>) => actions.setShouldCreateQeIssue(event.target.checked)}
+            type="checkbox"
+          />
+          <span>Also create a QE issue</span>
+        </label>
+        {state.shouldCreateQeIssue ? (
+          <label className={styles.fieldGroup}>
+            <span className={styles.fieldLabel}>QE Issue Summary</span>
+            <input
+              className={styles.input}
+              onChange={(event: ChangeEvent<HTMLInputElement>) => actions.setQeIssueSummary(event.target.value)}
+              value={state.qeIssueSummaryTemplate}
+            />
+          </label>
+        ) : null}
         {state.createSlAsSubtask ? (
           <label className={styles.fieldGroup}>
-            <span className={styles.fieldLabel}>SL sub-task issue type</span>
+            <span className={styles.fieldLabel}>SL / QE sub-task issue type</span>
             <input
               className={styles.input}
               onChange={(event: ChangeEvent<HTMLInputElement>) => actions.setSlSubtaskIssueTypeName(event.target.value)}
@@ -172,6 +190,21 @@ function renderStepBody(currentStep: number, props: PrbWizardProps): React.React
           </div>
         ) : null}
       </div>
+      {state.shouldCreateQeIssue ? (
+        <div className={styles.detailCard}>
+          <p className={styles.detailLabel}>{state.createSlAsSubtask ? 'Issue 3 — QE sub-task' : 'Issue 3 — QE Story'}</p>
+          <div className={styles.detailGrid}>
+            <div>
+              <span className={styles.detailLabel}>Issue Type</span>
+              <p className={styles.detailValue}>{state.createSlAsSubtask ? state.slSubtaskIssueTypeName : 'Story'}</p>
+            </div>
+            <div>
+              <span className={styles.detailLabel}>Summary</span>
+              <p className={styles.detailValue}>{state.qeIssueSummaryTemplate}</p>
+            </div>
+          </div>
+        </div>
+      ) : null}
       <PrbRequiredFields
         isDisabled={state.isCreatingIssues}
         onSelectionChange={actions.setRequiredFieldSelection}
@@ -201,7 +234,8 @@ function canAdvanceFromStep(currentStep: number, state: PrbHookResult['state']):
     return state.jiraProjectKey.length > 0 && state.primaryIssueSummaryTemplate.length > 0;
   }
   if (currentStep === 2) {
-    return state.slStorySummaryTemplate.length > 0;
+    return state.slStorySummaryTemplate.length > 0
+      && (!state.shouldCreateQeIssue || state.qeIssueSummaryTemplate.length > 0);
   }
   return false;
 }
