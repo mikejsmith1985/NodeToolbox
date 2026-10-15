@@ -21,6 +21,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   toggle (on by default, remembered). It follows the same sub-task setting as the SL issue — both are children of
   the primary, or both are standalone Stories — and is skipped, and said to be skipped, when the primary fails.
 
+### Changed
+- **The RCP approval email now follows Change Management's template (GH #441).** The AI Assist draft in the RCP
+  checklist is the *RCP Director and/or Process Owner Approval Request*, word for word. Toolbox fills the change
+  number and title, CI, CI owner, Central Time window and risk itself. AI Assist writes only the narrative
+  sections (why during RCP, the impact of deferring, the expected impact). Anything unknown is left as
+  `[CONFIRM: …]`.
+  - The *Why Monday - Friday?* / *impact of a weekend* questions are included only when the window starts on a
+    Monday–Thursday night, or when the start is not known yet.
+  - The email is addressed to the Director **and** the Change Process Owner. That owner is set in **Admin Hub →
+    RCP Production-Change Rules** and defaults to Ben Labout.
+  - The 200-word cap and its "trim it" warning are gone, because the template itself is longer.
+
 ### Fixed
 - **PRB Generator: a field Jira demands is now asked for, not just reported (GH #439).** Creating the Defect failed
   with *"customfield_10253: This field is required"* although the pre-create check found nothing to ask. Two causes,

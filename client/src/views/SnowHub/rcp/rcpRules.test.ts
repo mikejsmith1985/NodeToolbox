@@ -11,6 +11,7 @@ import {
   describeCentralWindow,
   findNextApprovedWindow,
   isRcpPeriodActive,
+  readWindowStartWeekday,
 } from './rcpRules.ts';
 
 // October 2026 is daylight time: Central Time is UTC-5. Friday 9 Oct 19:00 CT is 10 Oct 00:00 UTC.
@@ -159,6 +160,17 @@ describe('describeCentralWindow', () => {
   it('words a planned window in Central Time, with the date', () => {
     expect(describeCentralWindow(FRIDAY_7_30_PM_CT, SATURDAY_3_AM_CT)).toBe('Fri 2026-10-09 7:30 PM → Sat 2026-10-10 3:00 AM CT');
     expect(describeCentralWindow(null, SATURDAY_3_AM_CT)).toBe('');
+  });
+});
+
+describe('readWindowStartWeekday', () => {
+  it('names the Central Time night a window starts on, counting a small-hours start as the night before', () => {
+    expect(readWindowStartWeekday(FRIDAY_7_30_PM_CT)).toBe('Fri');
+    // Saturday 1 AM CT is still Friday night.
+    expect(readWindowStartWeekday('2026-10-10T06:00:00Z')).toBe('Fri');
+    // Tuesday 13 Oct, 7:30 PM CT.
+    expect(readWindowStartWeekday('2026-10-14T00:30:00Z')).toBe('Tue');
+    expect(readWindowStartWeekday(null)).toBeNull();
   });
 });
 

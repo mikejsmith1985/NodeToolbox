@@ -254,6 +254,18 @@ export function describeCentralWindow(plannedStartUtc: string | null, plannedEnd
   return `${describeInstant(plannedStartUtc)} → ${describeInstant(plannedEndUtc)} CT`;
 }
 
+/**
+ * The Central Time night a window starts on — "Fri" for a Friday 7:30 PM start, and also "Fri" for a 1 AM
+ * Saturday start, because that is still Friday night. Null when there is no start yet.
+ */
+export function readWindowStartWeekday(plannedStartUtc: string | null): string | null {
+  if (!plannedStartUtc) {
+    return null;
+  }
+  const startParts = readCentralTimeParts(plannedStartUtc);
+  return startParts.hour < NIGHT_END_HOUR ? readWeekday(shiftCalendarDay(startParts.dateIso, -1)) : startParts.weekday;
+}
+
 /** True while the RCP rules apply: switched on, and on or before their last day. */
 export function isRcpPeriodActive(isEnabled: boolean, todayIso: string): boolean {
   return isEnabled && todayIso <= RCP_LAST_DAY_ISO;

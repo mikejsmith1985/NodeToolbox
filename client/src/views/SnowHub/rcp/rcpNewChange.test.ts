@@ -31,7 +31,8 @@ describe('evaluateNewChangeRcp', () => {
       ['leadTime', 'check'],
     ]);
     expect(evaluation?.results.find((result) => result.ruleId === 'approval')?.detail).toMatch(/once the change is created/i);
-    expect(evaluation?.emailContext).toEqual(expect.objectContaining({ directorName: 'Lee, Jordan', configItemName: 'Recon Service', environmentLabel: 'PRD' }));
+    expect(evaluation?.emailContext).toEqual(expect.objectContaining({ directorName: 'Lee, Jordan', configItemName: 'Recon Service', environmentLabel: 'PRD', ciOwnerName: '' }));
+    expect(evaluation?.emailContext.plannedStartUtc).toBe('2026-10-10T00:30:00Z');
   });
 
   it('does not apply when no Production environment is enabled', () => {

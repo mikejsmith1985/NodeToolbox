@@ -16,7 +16,7 @@ const RESULTS: RcpCheckResult[] = [
   { ruleId: 'leadTime', title: 'Submitted early enough', status: 'pass', detail: 'Moderate risk, 3 business days.' },
 ];
 const EMAIL_CONTEXT: RcpApprovalEmailContext = {
-  changeNumber: 'CHG0012345', shortDescription: 'Recon deploy', environmentLabel: 'PRD', windowText: 'Fri → Sat CT',
+  changeNumber: 'CHG0012345', shortDescription: 'Recon deploy', environmentLabel: 'PRD', windowText: 'Fri → Sat CT', plannedStartUtc: null, ciOwnerName: 'Lee, Jordan',
   configItemName: 'Recon Service', directorName: 'Lee, Jordan', riskLabel: 'Moderate', justification: 'Deadline.', backoutPlan: 'Redeploy.',
 };
 
@@ -38,18 +38,18 @@ describe('RcpChecklist', () => {
     expect(screen.queryByRole('button', { name: /Director approval email/ })).not.toBeInTheDocument();
   });
 
-  it('drafts the Director approval email through AI Assist and flags a draft over 200 words', () => {
+  it('drafts the RCP approval request email through AI Assist from the template, with no word cap', () => {
     useAiAssistStore.setState({ isAiAssistUnlocked: true });
     render(<RcpChecklist emailContext={EMAIL_CONTEXT} results={RESULTS} />);
 
     fireEvent.click(screen.getByRole('button', { name: /Draft the Director approval email/ }));
-    expect(screen.getByDisplayValue(/CHG0012345/)).toBeInTheDocument();
+    expect(screen.getByDisplayValue(/Change number and title: CHG0012345/)).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText(/Paste the assistant/), { target: { value: `Subject: Approval\n\n${'word '.repeat(210)}` } });
     fireEvent.click(screen.getByRole('button', { name: /Use this email/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Close' }));
 
     expect(screen.getByRole('button', { name: /Copy email/ })).toBeInTheDocument();
-    expect(screen.getByText(/212 words — trim it to 200/)).toBeInTheDocument();
+    expect(screen.queryByText(/trim it to/)).not.toBeInTheDocument();
   });
 });
 

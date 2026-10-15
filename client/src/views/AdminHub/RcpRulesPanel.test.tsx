@@ -3,7 +3,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { readRcpRulesEnabled } from '../SnowHub/rcp/rcpApprovalEmail.ts';
+import { readRcpProcessOwnerName, readRcpRulesEnabled } from '../SnowHub/rcp/rcpApprovalEmail.ts';
 import { RcpRulesPanel } from './RcpRulesPanel.tsx';
 
 describe('RcpRulesPanel', () => {
@@ -19,5 +19,15 @@ describe('RcpRulesPanel', () => {
 
     expect(toggle).not.toBeChecked();
     expect(readRcpRulesEnabled()).toBe(false);
+  });
+
+  it('names the Change Process Owner the approval email is addressed to, and saves a change', () => {
+    render(<RcpRulesPanel />);
+    const ownerInput = screen.getByLabelText(/Change Process Owner/);
+
+    expect(ownerInput).toHaveValue('Ben Labout');
+    fireEvent.change(ownerInput, { target: { value: 'Smith, Pat' } });
+
+    expect(readRcpProcessOwnerName()).toBe('Smith, Pat');
   });
 });

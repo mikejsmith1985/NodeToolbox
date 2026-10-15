@@ -104,6 +104,8 @@ describe('buildRcpApprovalEmailContext', () => {
       directorName: 'Lee, Jordan',
       windowText: 'Fri 2026-10-09 7:30 PM → Sat 2026-10-10 3:00 AM CT',
       configItemName: 'Recon Service',
+      ciOwnerName: 'Lee, Jordan',
+      plannedStartUtc: '2026-10-10T00:30:00Z',
       environmentLabel: 'PRD',
     }));
   });

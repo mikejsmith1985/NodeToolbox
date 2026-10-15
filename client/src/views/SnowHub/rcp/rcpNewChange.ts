@@ -73,7 +73,10 @@ export function evaluateNewChangeRcp(input: NewChangeRcpInput): NewChangeRcpEval
       shortDescription: input.shortDescription,
       environmentLabel: environment.label,
       windowText: describeCentralWindow(environment.plannedStartUtc, environment.plannedEndUtc),
+      plannedStartUtc: environment.plannedStartUtc,
       configItemName: environment.configItem.displayName,
+      // The CI's owner is only read once the change exists; the template marks it [CONFIRM].
+      ciOwnerName: '',
       directorName: input.requestedBy.displayName,
       riskLabel: '',
       justification: input.justification,

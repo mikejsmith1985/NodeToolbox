@@ -2,7 +2,7 @@
 //
 // Leads with how many of the five rules are met, then each rule with its verdict and the reason, so the owner
 // sees at a glance what still stands between the change and approval. When AI Assist is unlocked it also drafts
-// the short approval email the Director must reply to — the one rule Toolbox cannot satisfy on its own.
+// the RCP approval request email (Change Management's template) the Director must reply to — the one rule Toolbox cannot satisfy on its own.
 
 import { useState } from 'react';
 
@@ -13,8 +13,8 @@ import { AiAssistPromptModal, type AiAssistPromptSession } from '../tabs/AiAssis
 import styles from '../tabs/CreateChgTab.module.css';
 import {
   buildRcpApprovalEmailPrompt,
-  RCP_MAX_EMAIL_WORDS,
   readApprovalEmailReply,
+  readRcpProcessOwnerName,
   type RcpApprovalEmailContext,
 } from './rcpApprovalEmail.ts';
 import type { RcpCheckResult, RcpCheckStatus } from './rcpRules.ts';
@@ -36,16 +36,13 @@ export interface RcpFixAction {
 
 const STATUS_ICONS: Readonly<Record<RcpCheckStatus, string>> = { pass: '✅', fail: '❌', check: '⚠️' };
 
-/** The drafted email, with its copy button and a warning when it runs long. */
-function DraftedEmail({ emailText, wordCount }: { emailText: string; wordCount: number }) {
+/** The drafted email, with its copy button. */
+function DraftedEmail({ emailText }: { emailText: string }) {
   const { hasCopied, confirmCopy } = useCopyFeedback();
   return (
     <div className={styles.environmentCard}>
-      <h5 className={styles.panelSectionTitle}>Director approval email</h5>
+      <h5 className={styles.panelSectionTitle}>RCP approval request email</h5>
       <p className={styles.riskCheckText}>{emailText}</p>
-      {wordCount > RCP_MAX_EMAIL_WORDS ? (
-        <p className={styles.errorText}>{`${wordCount} words — trim it to ${RCP_MAX_EMAIL_WORDS} or fewer before sending.`}</p>
-      ) : null}
       <button className={styles.secondaryButton} onClick={() => confirmCopy(emailText)} type="button">
         {hasCopied ? <><CheckIcon /> Copied!</> : <><ClipboardIcon /> Copy email</>}
       </button>
@@ -61,8 +58,8 @@ export function RcpChecklist({ results, emailContext, fixActions = {} }: RcpChec
   const metCount = results.filter((result) => result.status === 'pass').length;
 
   const handleDraftEmail = (context: RcpApprovalEmailContext) => setPromptSession({
-    instructions: 'Copy this prompt into AI Assist to draft the Director approval email, then paste the email below.',
-    promptText: buildRcpApprovalEmailPrompt(context),
+    instructions: 'Copy this prompt into AI Assist to complete the RCP approval request email from the Change Management template, then paste the email below.',
+    promptText: buildRcpApprovalEmailPrompt(context, readRcpProcessOwnerName()),
     applyButtonLabel: 'Use this email',
     applyReply: (replyText) => {
       const emailReply = readApprovalEmailReply(replyText);
@@ -104,7 +101,7 @@ export function RcpChecklist({ results, emailContext, fixActions = {} }: RcpChec
           </button>
         </div>
       ) : null}
-      {draftedEmail !== null ? <DraftedEmail emailText={draftedEmail.emailText} wordCount={draftedEmail.wordCount} /> : null}
+      {draftedEmail !== null ? <DraftedEmail emailText={draftedEmail.emailText} /> : null}
       {promptSession !== null ? (
         <AiAssistPromptModal key={promptSession.promptText} onClose={() => setPromptSession(null)} session={promptSession} />
       ) : null}
