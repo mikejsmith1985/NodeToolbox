@@ -53,7 +53,7 @@ const SNOW_UTC_DATE_TIME_PATTERN = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})/
 const PRODUCTION_ENVIRONMENT_KEYS = new Set(['prd', 'pfix']);
 
 /** A record's raw UTC date-time as an ISO instant, or null when it holds none. */
-function readUtcInstant(field: unknown): string | null {
+export function readUtcInstant(field: unknown): string | null {
   const rawValue = typeof field === 'object' && field !== null ? String((field as { value?: unknown }).value ?? '') : String(field ?? '');
   const dateTimeMatch = SNOW_UTC_DATE_TIME_PATTERN.exec(rawValue.trim());
   return dateTimeMatch ? `${dateTimeMatch[1]}T${dateTimeMatch[2]}Z` : null;

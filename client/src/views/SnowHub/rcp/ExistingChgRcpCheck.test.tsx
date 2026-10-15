@@ -37,6 +37,7 @@ describe('ExistingChgRcpCheck', () => {
 
     expect(await screen.findByText(/RCP rules met/)).toBeInTheDocument();
     expect(screen.getByText(/❌ Director approval attached/)).toBeInTheDocument();
+    expect(screen.getByText('Change plan PDF for the approval email')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /Re-check/ }));
     await waitFor(() => expect(fetchRcpChangeFacts).toHaveBeenCalledTimes(2));
@@ -47,6 +48,7 @@ describe('ExistingChgRcpCheck', () => {
     render(<ExistingChgRcpCheck changeSysId="chg-1" todayIso="2026-10-05" />);
 
     expect(await screen.findByText(/apply to Production changes only/)).toBeInTheDocument();
+    expect(screen.queryByText('Change plan PDF for the approval email')).toBeNull();
   });
 
   it('shows nothing when the RCP rules are switched off or over', () => {

@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Change plan PDF for the RCP approval email (GH #441).** Change Management's approval template asks the
+  approver to "review the attached PDF". On **Modify Existing CHG**, beside the approval email, a Production
+  change now offers two ways to make that PDF:
+  - **Open ServiceNow PDF** opens ServiceNow's own PDF export of the change form.
+  - **Print-ready plan (with tasks)** reads the change fresh from ServiceNow and opens a printable page:
+    summary, description, justification, implementation plan, risk and impact analysis, backout plan, testing,
+    and every change task with its group, assignee, CI and window in Central Time. Choose **Save as PDF** in the
+    print dialog; the suggested file name is `CHG… change plan`. Empty sections print as "Not provided in
+    ServiceNow." so a gap shows before the email goes out.
+  - **Create New CHG**'s RCP checklist points to Modify CHG for the PDF, because a change that isn't created yet
+    has nothing to print.
 - **CTASK template manager.** On **Create New CHG**, CTASK templates are now kept in one place. Saved templates are
   listed beside an editor, and each shows its type, assignment group and timing. This replaces the old select
   box, four buttons and hidden editor.

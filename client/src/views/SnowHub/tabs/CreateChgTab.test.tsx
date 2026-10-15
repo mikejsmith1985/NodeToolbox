@@ -1532,6 +1532,7 @@ describe('CreateChgTab', () => {
 
       expect(screen.getByText(/RCP rules met/)).toBeInTheDocument();
       expect(screen.getByText(/once the change is created/i)).toBeInTheDocument();
+      expect(screen.getByText(/open it in Modify CHG to get that PDF/)).toBeInTheDocument();
     } finally {
       vi.useRealTimers();
     }

@@ -33,8 +33,11 @@ export async function fetchChangeAttachmentFileNames(changeSysId: string): Promi
     .filter((fileName) => fileName !== '');
 }
 
-/** Every task attached to the change, oldest number first, read for the risk check. */
-export async function fetchReviewedCtasks(changeSysId: string): Promise<ReviewedCtask[]> {
+/**
+ * Every task attached to the change as ServiceNow holds it (every field, display and raw values), oldest number
+ * first — for readers that need fields the risk check does not keep, such as the tasks' planned dates.
+ */
+export async function fetchChangeTaskRecords(changeSysId: string): Promise<Record<string, unknown>[]> {
   const encodedQuery = encodeURIComponent(`change_request=${changeSysId}^ORDERBYnumber`);
   const replyData = await snowFetch<{ result?: unknown }>(
     `${CHANGE_TASK_TABLE_PATH}?sysparm_query=${encodedQuery}&sysparm_display_value=all&sysparm_limit=${CHANGE_TASK_FETCH_LIMIT}`,
@@ -44,9 +47,12 @@ export async function fetchReviewedCtasks(changeSysId: string): Promise<Reviewed
   if (!Array.isArray(taskRecords)) {
     return [];
   }
-  return taskRecords
-    .filter((taskRecord): taskRecord is Record<string, unknown> => typeof taskRecord === 'object' && taskRecord !== null)
-    .map((taskRecord) => readReviewedCtask(taskRecord));
+  return taskRecords.filter((taskRecord): taskRecord is Record<string, unknown> => typeof taskRecord === 'object' && taskRecord !== null);
+}
+
+/** Every task attached to the change, oldest number first, read for the risk check. */
+export async function fetchReviewedCtasks(changeSysId: string): Promise<ReviewedCtask[]> {
+  return (await fetchChangeTaskRecords(changeSysId)).map((taskRecord) => readReviewedCtask(taskRecord));
 }
 
 /**

@@ -22,6 +22,7 @@ import {
   type RcpChangeFix,
 } from './rcpChangeFixes.ts';
 import { buildRcpApprovalEmailContext, evaluateRcpChecklist, fetchRcpChangeFacts, type RcpChangeFacts } from './rcpChangeFacts.ts';
+import { ChangePlanPdfActions } from './ChangePlanPdfActions.tsx';
 import { RcpChecklist, type RcpFixAction } from './RcpChecklist.tsx';
 import { describeCentralWindow, isRcpPeriodActive, readCentralTodayIso, type RcpCheckResult } from './rcpRules.ts';
 
@@ -185,6 +186,7 @@ export function ExistingChgRcpCheck({
             results={results}
           />
         ) : null}
+        {facts !== null && facts.isProduction ? <ChangePlanPdfActions facts={facts} /> : null}
         <div className={styles.buttonRow}>
           <button className={styles.secondaryButton} disabled={isLoading} onClick={reRead} type="button">
             ↻ Re-check
