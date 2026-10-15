@@ -101,4 +101,41 @@ describe('useCtaskTemplates', () => {
 
     expect(result.current.templates).toHaveLength(0);
   });
+
+  it('renames a template when saving it with a new name, keeping its identity', () => {
+    localStorage.setItem(CTASK_TEMPLATES_STORAGE_KEY, JSON.stringify([createCtaskTemplate()]));
+    const { result } = renderHook(() => useCtaskTemplates());
+
+    act(() => {
+      result.current.updateTemplate('ctask-template-001', createCtaskTemplateData(createCtaskTemplate()), 'Smoke Test');
+    });
+
+    expect(result.current.templates[0]).toMatchObject({ id: 'ctask-template-001', name: 'Smoke Test' });
+  });
+
+  it('duplicates a template as a new, separately named copy placed after it', () => {
+    localStorage.setItem(CTASK_TEMPLATES_STORAGE_KEY, JSON.stringify([createCtaskTemplate()]));
+    const { result } = renderHook(() => useCtaskTemplates());
+    let copyId = '';
+
+    act(() => {
+      copyId = result.current.duplicateTemplate('ctask-template-001');
+    });
+
+    expect(result.current.templates).toHaveLength(2);
+    expect(result.current.templates[1]).toMatchObject({ id: copyId, name: 'Deploy Validation (copy)', shortDescription: 'Validate production deployment' });
+    expect(copyId).not.toBe('ctask-template-001');
+  });
+
+  it('keeps up to 100 templates, so saving a new one no longer evicts an old one at 20', () => {
+    const existingTemplates = Array.from({ length: 25 }, (_unused, index) => createCtaskTemplate({ id: `t-${index}`, name: `Template ${index}` }));
+    localStorage.setItem(CTASK_TEMPLATES_STORAGE_KEY, JSON.stringify(existingTemplates));
+    const { result } = renderHook(() => useCtaskTemplates());
+
+    act(() => {
+      result.current.saveTemplate('One more', createCtaskTemplateData(createCtaskTemplate()));
+    });
+
+    expect(result.current.templates).toHaveLength(26);
+  });
 });

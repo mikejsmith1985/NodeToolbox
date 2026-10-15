@@ -410,6 +410,66 @@
   gap: var(--spacing-sm);
 }
 
+/* ── CTASK template manager ──
+   Saved templates down the left, the open one's editor on the right; one column when the panel is narrow. */
+.templateManagerLayout {
+  display: grid;
+  grid-template-columns: minmax(200px, 280px) minmax(0, 1fr);
+  gap: var(--spacing-md);
+  align-items: start;
+}
+
+@media (max-width: 720px) {
+  .templateManagerLayout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.templateList {
+  display: grid;
+  gap: var(--spacing-xs);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.templateListItem {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  padding: var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised);
+  color: var(--color-text-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.templateListItem:hover {
+  background: var(--surface-raised-hover);
+}
+
+.templateListItem[aria-pressed='true'] {
+  border-color: var(--color-accent);
+  box-shadow: inset 3px 0 0 var(--color-accent);
+}
+
+.templateListMeta {
+  color: var(--color-text-secondary);
+  font-size: 0.85em;
+}
+
+.templateEditorHeader {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+}
+
 .ctaskCard,
 .pinnedFieldCard {
   display: grid;

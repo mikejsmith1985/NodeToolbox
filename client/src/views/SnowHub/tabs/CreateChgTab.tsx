@@ -46,7 +46,6 @@ import { useSnowChoiceOptions } from '../hooks/useSnowChoiceOptions.ts';
 import {
   checkWindowCoversEstimates,
   describeEstimatesForPrompt,
-  EMPTY_DURATION_ESTIMATES,
   formatMinutes,
   listMissingEstimateLabels,
   normalizeEstimates,
@@ -55,6 +54,7 @@ import {
   type DurationEstimates,
 } from '../ctaskDurations.ts';
 import { CtaskEditForm } from '../components/CtaskEditForm.tsx';
+import { CtaskTemplateManager } from '../components/CtaskTemplateManager.tsx';
 import { SnowLookupField } from '../components/SnowLookupField.tsx';
 import {
   AiAssistIcon,
@@ -244,19 +244,6 @@ function formatPinnedFieldValue(value: CrgPinnedField['value']): string {
   }
 
   return value.displayName || value.sysId || 'No value';
-}
-
-function createEmptyCtaskTemplateData(): CtaskTemplateData {
-  return {
-    shortDescription: '',
-    description:      '',
-    assignmentGroup:  { sysId: '', displayName: '' },
-    assignedTo:       { sysId: '', displayName: '' },
-    plannedStartDate: '',
-    plannedEndDate:   '',
-    closeNotes:       '',
-    durationEstimates: { ...EMPTY_DURATION_ESTIMATES },
-  };
 }
 
 function buildCtaskTemplateData(template: CtaskTemplate): CtaskTemplateData {
@@ -668,7 +655,8 @@ interface ChangeDetailsExtras {
 interface CtaskTemplateExtras {
   templates: CtaskTemplate[];
   saveTemplate: (name: string, data: CtaskTemplateData) => string;
-  updateTemplate: (templateId: string, data: CtaskTemplateData) => void;
+  updateTemplate: (templateId: string, data: CtaskTemplateData, name?: string) => void;
+  duplicateTemplate: (templateId: string) => string;
   deleteTemplate: (templateId: string) => void;
 }
 
@@ -2246,168 +2234,29 @@ function StagedCtaskCard({ task, templates, onUpdate, onDuplicate, onRemove }: S
   );
 }
 
-function CtaskTemplatePanel({ state, actions, templates, saveTemplate, updateTemplate, deleteTemplate }: CrgStepProps & CtaskTemplateExtras) {
-  const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
-  const [isEditorVisible, setIsEditorVisible] = useState<boolean>(false);
-  const [templateName, setTemplateName] = useState<string>('');
-  const [ctaskDraft, setCtaskDraft] = useState<CtaskTemplateData>(() => createEmptyCtaskTemplateData());
+/**
+ * The CTASK step: the template manager (saved templates beside one editor), the CTASKs staged on this change,
+ * and adding the staged CTASKs to a change that already exists.
+ */
+function CtaskTemplatePanel({ state, actions, templates, saveTemplate, updateTemplate, duplicateTemplate, deleteTemplate }: CrgStepProps & CtaskTemplateExtras) {
   const [appendChgNumber, setAppendChgNumber] = useState<string>('');
-  const [ctaskCloneNumber, setCtaskCloneNumber] = useState<string>('');
-  const [isCloningCtask, setIsCloningCtask] = useState<boolean>(false);
-  const [ctaskCloneError, setCtaskCloneError] = useState<string | null>(null);
-  const [ctaskCloneStatus, setCtaskCloneStatus] = useState<string | null>(null);
-  const selectedTemplate = templates.find((template) => template.id === selectedTemplateId);
-
-  function handleSelectedCtaskTemplateChange(event: ChangeEvent<HTMLSelectElement>): void {
-    const nextTemplateId = event.target.value;
-    setSelectedTemplateId(nextTemplateId);
-    const nextTemplate = templates.find((template) => template.id === nextTemplateId);
-    if (!nextTemplate) return;
-
-    setTemplateName(nextTemplate.name);
-    setCtaskDraft(buildCtaskTemplateData(nextTemplate));
-    // Show the fields straight away. Selecting a template used to load it invisibly, so "Update selected"
-    // saved edits nobody could see they were making.
-    setIsEditorVisible(true);
-  }
-
-  /** Clears the editor back to a blank CTASK, so "new" is a button rather than a de-selection trick. */
-  function handleStartBlankTemplate(): void {
-    setSelectedTemplateId('');
-    setTemplateName('');
-    setCtaskDraft(createEmptyCtaskTemplateData());
-    setIsEditorVisible(true);
-  }
-
-  function handleSaveTemplate(): void {
-    if (!templateName) {
-      console.warn('Template name is required to save');
-      return;
-    }
-    saveTemplate(templateName, ctaskDraft);
-    setTemplateName('');
-    setCtaskDraft(createEmptyCtaskTemplateData());
-    setIsEditorVisible(false);
-  }
-
-  function handleUpdateTemplate(): void {
-    if (selectedTemplateId) updateTemplate(selectedTemplateId, ctaskDraft);
-  }
 
   function handleAppendTasks(): void {
     void actions.appendTasksToExistingChg(appendChgNumber.trim().toUpperCase());
   }
 
-  async function handleCloneCtaskTemplate(): Promise<void> {
-    const normalizedCtaskNumber = ctaskCloneNumber.trim().toUpperCase();
-    if (!normalizedCtaskNumber) {
-      setCtaskCloneError('Enter a CTASK number before cloning a template.');
-      setCtaskCloneStatus(null);
-      return;
-    }
-
-    setIsCloningCtask(true);
-    setCtaskCloneError(null);
-    setCtaskCloneStatus(null);
-
-    try {
-      const clonedTemplateData = await actions.cloneCtaskTemplate(normalizedCtaskNumber);
-      setSelectedTemplateId('');
-      setTemplateName(clonedTemplateData.shortDescription || normalizedCtaskNumber);
-      setCtaskDraft(clonedTemplateData);
-      setIsEditorVisible(true);
-      setCtaskCloneNumber(normalizedCtaskNumber);
-      setCtaskCloneStatus(`${normalizedCtaskNumber} loaded into the CTASK template editor.`);
-    } catch (unknownError) {
-      const errorMessage = unknownError instanceof Error ? unknownError.message : 'Failed to clone CTASK template.';
-      setCtaskCloneError(errorMessage);
-    } finally {
-      setIsCloningCtask(false);
-    }
-  }
-
   return (
     <div className={styles.clonePanel}>
-      <h4 className={styles.panelSectionTitle}>CTASK Templates</h4>
       <p className={styles.panelHint}>Stage reusable Change Tasks for the CHG you&apos;re building — or add them straight onto a CHG that already exists in ServiceNow using the control below.</p>
-      <div className={styles.cloneInputRow}>
-        <label className={styles.fieldGroup}>
-          <span className={styles.fieldLabel}>Existing CTASK for template clone</span>
-          <input
-            aria-label="Existing CTASK for template clone"
-            className={styles.input}
-            disabled={isCloningCtask}
-            onChange={(event) => setCtaskCloneNumber(event.target.value.toUpperCase())}
-            placeholder="CTASK0001234"
-            value={ctaskCloneNumber}
-          />
-        </label>
-        <button
-          className={styles.secondaryButton}
-          disabled={isCloningCtask}
-          onClick={() => void handleCloneCtaskTemplate()}
-          type="button"
-        >
-          {isCloningCtask ? 'Loading CTASK…' : 'Load CTASK as Template'}
-        </button>
-      </div>
-      {ctaskCloneError ? <p className={styles.errorText} role="alert">{ctaskCloneError}</p> : null}
-      {ctaskCloneStatus ? <p className={styles.successText} role="status">{ctaskCloneStatus}</p> : null}
-      <div className={styles.cloneInputRow}>
-        <select
-          aria-label="Select CTASK template"
-          className={styles.input}
-          onChange={handleSelectedCtaskTemplateChange}
-          value={selectedTemplateId}
-        >
-          <option value="">Select a CTASK template…</option>
-          {templates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}
-        </select>
-        <button className={styles.secondaryButton} disabled={!selectedTemplate} onClick={() => selectedTemplate && actions.addChangeTask(selectedTemplate)} type="button">
-          Add to this change
-        </button>
-        <button className={styles.secondaryButton} disabled={!selectedTemplateId} onClick={handleUpdateTemplate} type="button">
-          Save edits to template
-        </button>
-        <button className={styles.linkButton} disabled={!selectedTemplateId} onClick={() => deleteTemplate(selectedTemplateId)} type="button">
-          Delete template
-        </button>
-      </div>
-
-      <button className={styles.linkButton} onClick={handleStartBlankTemplate} type="button">
-        + New CTASK template
-      </button>
-      {isEditorVisible ? (
-        <div>
-          <p className={styles.panelHint}>
-            {selectedTemplate
-              ? `Editing the saved template “${selectedTemplate.name}”. Changes are kept when you choose Save edits to template.`
-              : 'A new CTASK template. Give it a name, then choose Save CTASK Template.'}
-          </p>
-          <label className={styles.fieldGroup}>
-            <span className={styles.fieldLabel}>CTASK template name</span>
-            <input
-              aria-label="CTASK template name"
-              className={styles.input}
-              onChange={(event) => setTemplateName(event.target.value)}
-              value={templateName}
-            />
-          </label>
-          <CtaskEditForm
-            ctaskData={ctaskDraft}
-            templates={[]}
-            onDataChange={setCtaskDraft}
-          />
-          <div className={styles.buttonRow}>
-            <button className={styles.primaryButton} onClick={handleSaveTemplate} type="button">
-              Save CTASK Template
-            </button>
-            <button className={styles.linkButton} onClick={() => setIsEditorVisible(false)} type="button">
-              Close editor
-            </button>
-          </div>
-        </div>
-      ) : null}
+      <CtaskTemplateManager
+        onAddToChange={actions.addChangeTask}
+        onCloneCtask={actions.cloneCtaskTemplate}
+        onCreateTemplate={saveTemplate}
+        onDeleteTemplate={deleteTemplate}
+        onDuplicateTemplate={duplicateTemplate}
+        onUpdateTemplate={updateTemplate}
+        templates={templates}
+      />
 
       <h4 className={styles.panelSectionTitle}>CTASKs on this change ({state.changeTasks.length})</h4>
       <div className={styles.ctaskList}>
@@ -3105,6 +2954,7 @@ export default function CrgTab({ mode = 'wizard', targetChangeNumber }: CrgTabPr
     templates:      ctaskTemplates.templates,
     saveTemplate:   ctaskTemplates.saveTemplate,
     updateTemplate: ctaskTemplates.updateTemplate,
+    duplicateTemplate: ctaskTemplates.duplicateTemplate,
     deleteTemplate: ctaskTemplates.deleteTemplate,
   };
 

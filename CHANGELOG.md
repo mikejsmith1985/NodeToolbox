@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **CTASK template manager.** On **Create New CHG**, CTASK templates are now kept in one place. Saved templates are
+  listed beside an editor, and each shows its type, assignment group and timing. This replaces the old select
+  box, four buttons and hidden editor.
+  - Choosing a template opens it. Edits are marked **Unsaved changes** until saved, and saving can rename it.
+  - **Duplicate**, **Add to this change**, and **Delete template** are all there. Delete asks for confirmation
+    first.
+  - **Timing is relative now.** A template says when its CTASK runs in minutes after the change starts, and how
+    long it runs. It is placed onto each change it is used on, and never runs past the change's end. Blank means
+    with the change, or to its end. The fixed date pickers stay on each CTASK staged on a change, not on the
+    template.
+  - **Load CTASK as Template** opens an existing ServiceNow CTASK as a new, unsaved template.
+  - Up to 100 templates are kept. The old limit of 20 silently dropped the oldest when a new one was saved.
 - **PRB scan and link for changes.** Toolbox now finds the ServiceNow problems (PRBs) a change's Jira issues
   mention — in the summary, description, comments or ServiceNow reference field — and links each to the change
   through the problem's **Change request** field, so the change's Problems list shows it.

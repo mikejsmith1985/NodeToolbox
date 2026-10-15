@@ -701,7 +701,7 @@ describe('CreateChgTab', () => {
 
     render(<CreateChgTab mode="configuration" />);
 
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Select CTASK template' }), 'ctask-template-001');
+    await user.click(screen.getByRole('button', { name: /Deployment Validation/ }));
     await user.click(screen.getByRole('button', { name: 'Add to this change' }));
 
     expect(mockActions.addChangeTask).toHaveBeenCalledWith(DEFAULT_CTASK_TEMPLATE);

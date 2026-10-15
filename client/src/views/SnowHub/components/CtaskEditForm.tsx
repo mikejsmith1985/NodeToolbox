@@ -33,6 +33,9 @@ export interface CtaskTemplate {
   durationEstimates?: DurationEstimates;
   /** The ServiceNow change_task_type value, picked from ServiceNow's own list. */
   changeTaskType?: string;
+  /** When the CTASK runs relative to its change, in minutes (see ctaskParentDefaults.ts). */
+  startOffsetMinutes?: string;
+  durationMinutes?: string;
 }
 
 /** Props for CtaskEditForm component. */
@@ -47,6 +50,12 @@ export interface CtaskEditFormProps {
   onSaveAsTemplate?: (templateName: string) => void;
   /** Optional flag for compact layout (inline editing or embedded contexts). */
   isCompact?: boolean;
+  /**
+   * Editing a reusable template rather than a CTASK on a change: the fixed date pickers and the window verdict
+   * are hidden, because a template's timing is set relative to whichever change it is used on, and there is no
+   * "load from template" inside a template.
+   */
+  isTemplateEditor?: boolean;
 }
 
 // The empty option leaves the type to ServiceNow's own default, which is what templates saved before the
@@ -103,6 +112,7 @@ export function CtaskEditForm({
   onDataChange,
   onSaveAsTemplate,
   isCompact = false,
+  isTemplateEditor = false,
 }: CtaskEditFormProps) {
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
   const [showSaveAsTemplate, setShowSaveAsTemplate] = useState<boolean>(false);
@@ -142,6 +152,8 @@ export function CtaskEditForm({
       closeNotes: nextTemplate.closeNotes,
       durationEstimates: normalizeEstimates(nextTemplate.durationEstimates),
       changeTaskType: nextTemplate.changeTaskType,
+      startOffsetMinutes: nextTemplate.startOffsetMinutes,
+      durationMinutes: nextTemplate.durationMinutes,
     };
     onDataChange(templateData);
     setSelectedTemplateId('');
@@ -177,17 +189,19 @@ export function CtaskEditForm({
   return (
     <div className={formClassName}>
       {/* Template picker — load a saved template */}
-      <label className={styles.fieldGroup}>
-        <span className={styles.fieldLabel}>Load from template</span>
-        <select aria-label="Load CTASK template" className={styles.input} onChange={handleTemplateChange} value={selectedTemplateId}>
-          <option value="">Select a CTASK template…</option>
-          {templates.map((template) => (
-            <option key={template.id} value={template.id}>
-              {template.name}
-            </option>
-          ))}
-        </select>
-      </label>
+      {isTemplateEditor ? null : (
+        <label className={styles.fieldGroup}>
+          <span className={styles.fieldLabel}>Load from template</span>
+          <select aria-label="Load CTASK template" className={styles.input} onChange={handleTemplateChange} value={selectedTemplateId}>
+            <option value="">Select a CTASK template…</option>
+            {templates.map((template) => (
+              <option key={template.id} value={template.id}>
+                {template.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
 
       {/* Short Description */}
       <label className={styles.fieldGroup}>
@@ -235,29 +249,33 @@ export function CtaskEditForm({
         value={ctaskData.assignedTo}
       />
 
-      {/* Planned Start Date */}
-      <label className={styles.fieldGroup}>
-        <span className={styles.fieldLabel}>Planned start date</span>
-        <input
-          aria-label="CTASK planned start date"
-          className={styles.input}
-          onChange={(event) => handleStringFieldChange('plannedStartDate', event.target.value)}
-          type="datetime-local"
-          value={ctaskData.plannedStartDate}
-        />
-      </label>
+      {isTemplateEditor ? null : (
+        <>
+          {/* Planned Start Date */}
+          <label className={styles.fieldGroup}>
+            <span className={styles.fieldLabel}>Planned start date</span>
+            <input
+              aria-label="CTASK planned start date"
+              className={styles.input}
+              onChange={(event) => handleStringFieldChange('plannedStartDate', event.target.value)}
+              type="datetime-local"
+              value={ctaskData.plannedStartDate}
+            />
+          </label>
 
-      {/* Planned End Date */}
-      <label className={styles.fieldGroup}>
-        <span className={styles.fieldLabel}>Planned end date</span>
-        <input
-          aria-label="CTASK planned end date"
-          className={styles.input}
-          onChange={(event) => handleStringFieldChange('plannedEndDate', event.target.value)}
-          type="datetime-local"
-          value={ctaskData.plannedEndDate}
-        />
-      </label>
+          {/* Planned End Date */}
+          <label className={styles.fieldGroup}>
+            <span className={styles.fieldLabel}>Planned end date</span>
+            <input
+              aria-label="CTASK planned end date"
+              className={styles.input}
+              onChange={(event) => handleStringFieldChange('plannedEndDate', event.target.value)}
+              type="datetime-local"
+              value={ctaskData.plannedEndDate}
+            />
+          </label>
+        </>
+      )}
 
       {/* Estimated duration — required on every CTASK by the change approvers (work note, 2026-09-22) */}
       <div className={styles.durationSection} style={{ gridColumn: 'span 2' }}>
@@ -280,9 +298,11 @@ export function CtaskEditForm({
         </div>
         {/* Deliberately not role="status": several surfaces already own the page's one status line, and this
             verdict is read where it sits rather than announced over whatever else just happened. */}
-        <p aria-label="Planned window verdict" className={windowCoverage.isSufficient ? styles.successText : styles.panelHint}>
-          {describeWindowCoverage(windowCoverage)}
-        </p>
+        {isTemplateEditor ? null : (
+          <p aria-label="Planned window verdict" className={windowCoverage.isSufficient ? styles.successText : styles.panelHint}>
+            {describeWindowCoverage(windowCoverage)}
+          </p>
+        )}
       </div>
 
       {/* Close Notes */}

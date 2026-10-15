@@ -5,7 +5,9 @@ import { useCallback, useEffect, useState } from 'react';
 import type { CtaskTemplate, CtaskTemplateData } from './useCrgState.ts';
 
 const CTASK_TEMPLATES_STORAGE_KEY = 'ntbx-ctask-templates';
-const MAX_CTASK_TEMPLATES = 20;
+// Generous enough that saving a template never quietly evicts one a team still uses; the old cap of 20 did.
+const MAX_CTASK_TEMPLATES = 100;
+const DUPLICATE_NAME_SUFFIX = ' (copy)';
 
 function loadCtaskTemplatesFromStorage(): CtaskTemplate[] {
   try {
@@ -30,7 +32,10 @@ function saveCtaskTemplatesToStorage(templates: CtaskTemplate[]): void {
 interface UseCtaskTemplatesResult {
   templates: CtaskTemplate[];
   saveTemplate: (name: string, templateData: CtaskTemplateData) => string;
-  updateTemplate: (templateId: string, templateData: CtaskTemplateData) => void;
+  /** Saves edits to a template; a name, when given, renames it. */
+  updateTemplate: (templateId: string, templateData: CtaskTemplateData, name?: string) => void;
+  /** Copies a template, placing the copy right after it, and returns the copy's id. */
+  duplicateTemplate: (templateId: string) => string;
   deleteTemplate: (templateId: string) => void;
 }
 
@@ -63,7 +68,7 @@ export function useCtaskTemplates(): UseCtaskTemplatesResult {
     return newTemplate.id;
   }, []);
 
-  const updateTemplate = useCallback((templateId: string, templateData: CtaskTemplateData) => {
+  const updateTemplate = useCallback((templateId: string, templateData: CtaskTemplateData, name?: string) => {
     setTemplates((previousTemplates) =>
       previousTemplates.map((template) =>
         template.id === templateId
@@ -71,12 +76,29 @@ export function useCtaskTemplates(): UseCtaskTemplatesResult {
             ...template,
             ...templateData,
             id:        template.id,
-            name:      template.name,
+            name:      name?.trim() || template.name,
             createdAt: template.createdAt,
           }
           : template,
       ),
     );
+  }, []);
+
+  const duplicateTemplate = useCallback((templateId: string): string => {
+    const copyId = crypto.randomUUID();
+    setTemplates((previousTemplates) => {
+      const sourceIndex = previousTemplates.findIndex((template) => template.id === templateId);
+      if (sourceIndex < 0) return previousTemplates;
+      const sourceTemplate = previousTemplates[sourceIndex];
+      const templateCopy: CtaskTemplate = {
+        ...sourceTemplate,
+        id:        copyId,
+        name:      `${sourceTemplate.name}${DUPLICATE_NAME_SUFFIX}`,
+        createdAt: new Date().toISOString(),
+      };
+      return [...previousTemplates.slice(0, sourceIndex + 1), templateCopy, ...previousTemplates.slice(sourceIndex + 1)];
+    });
+    return copyId;
   }, []);
 
   const deleteTemplate = useCallback((templateId: string) => {
@@ -85,5 +107,5 @@ export function useCtaskTemplates(): UseCtaskTemplatesResult {
     );
   }, []);
 
-  return { templates, saveTemplate, updateTemplate, deleteTemplate };
+  return { templates, saveTemplate, updateTemplate, duplicateTemplate, deleteTemplate };
 }

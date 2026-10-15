@@ -385,6 +385,13 @@ export interface CtaskTemplate {
    */
   changeTaskType?: string;
   /**
+   * When the CTASK runs, relative to its change: minutes after the change starts, and how long it runs. A
+   * template is reused across changes, so this is placed onto each change's window instead of fixed dates.
+   * Blank means "with the change" / "to the change's end".
+   */
+  startOffsetMinutes?: string;
+  durationMinutes?: string;
+  /**
    * How long implementation, post-deployment validation and backout are each expected to take. Optional because
    * templates saved before the CAB asked for these carry none; every read goes through normalizeEstimates.
    */
