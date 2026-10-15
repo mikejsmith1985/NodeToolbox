@@ -650,6 +650,9 @@ describe('ModifyChgTab - Save creates the staged CTASKs and proves they are atta
         createdTasks.push(createdTask);
         return { result: createdTask };
       }
+      if (requestPath.startsWith('/api/now/table/change_request/change-1?')) {
+        return { result: { cmdb_ci: 'ci-from-change', start_date: '2026-10-17 00:00:00', end_date: '2026-10-17 04:00:00' } };
+      }
       if (requestPath.startsWith(`${CHANGE_TASK_TABLE_PATH}?`)) {
         if (options.isReadBackBroken) {
           throw new Error('read-back timed out');
@@ -717,6 +720,23 @@ describe('ModifyChgTab - Save creates the staged CTASKs and proves they are atta
     expect(createPayloads[0].description).toContain('• Backout/recovery and restoration validation:');
     // The CHG itself is still saved through the relay PATCH, before any task is created.
     expect(fetchSpy).toHaveBeenCalledWith('/api/snow-relay/change/CHG0001234', expect.objectContaining({ method: 'PATCH' }));
+  });
+
+  it('gives each added CTASK the CI and planned window read from the change record itself', async () => {
+    const user = await loadChangeAndOpenReviewStep();
+    await stageCtasks(user, 1);
+    installFakeServiceNow();
+
+    await clickSave(user);
+
+    await waitFor(() => {
+      expect(listChangeTaskCreatePayloads()).toHaveLength(1);
+    });
+    expect(listChangeTaskCreatePayloads()[0]).toMatchObject({
+      cmdb_ci: 'ci-from-change',
+      planned_start_date: '2026-10-17 00:00:00',
+      planned_end_date: '2026-10-17 04:00:00',
+    });
   });
 
   it('clears the staged list once the tasks exist so saving again cannot create duplicates', async () => {

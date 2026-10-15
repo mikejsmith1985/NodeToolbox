@@ -270,6 +270,7 @@ function buildCtaskTemplateData(template: CtaskTemplate): CtaskTemplateData {
     closeNotes:       template.closeNotes,
     // Normalized because templates saved before the CAB asked for estimates carry none.
     durationEstimates: normalizeEstimates(template.durationEstimates),
+    changeTaskType:   template.changeTaskType,
   };
 }
 

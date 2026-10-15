@@ -22,6 +22,7 @@ import { createPlannedOutage } from '../outage/changeOutageRecord.ts';
 import { linkProblemsToNewChange } from '../problems/changeProblems.ts';
 import { fetchReviewedCtasks, saveCtaskPlannedDates } from '../chgFormula/ctaskReviewApi.ts';
 import { scheduleCreatedCtasks, toFormUtcFromApi, type CtaskTimelinePlanStep } from '../chgFormula/createdCtaskTimeline.ts';
+import { EMPTY_CHANGE_TASK_DEFAULTS, resolveCtaskPlannedWindow, type ChangeTaskDefaults } from '../ctaskParentDefaults.ts';
 
 // Step 3 was added (Change Details) so the wizard now runs 1 through 6.
 type CrgStep = 1 | 2 | 3 | 4 | 5 | 6;
@@ -183,7 +184,7 @@ const AUTO_TECHNICAL_CHECKOUT_CTASK_DESCRIPTION = [
 ].join('\n');
 const CTASK_CLONE_FIELDS = [
   'number', 'short_description', 'description', 'assignment_group', 'assigned_to',
-  'planned_start_date', 'planned_end_date', 'close_notes',
+  'planned_start_date', 'planned_end_date', 'close_notes', 'change_task_type',
 ].join(',');
 // Upper bound on how many of a cloned CHG's change tasks to copy. A single change never
 // realistically has more tasks than this, so it doubles as a safety cap on the query.
@@ -378,6 +379,11 @@ export interface CtaskTemplate {
   plannedStartDate: string;
   plannedEndDate: string;
   closeNotes: string;
+  /**
+   * The ServiceNow change_task_type value ("planning", "implementation", "testing", …), picked from ServiceNow's
+   * own choice list. Optional because templates saved before it existed carry none; then ServiceNow's default applies.
+   */
+  changeTaskType?: string;
   /**
    * How long implementation, post-deployment validation and backout are each expected to take. Optional because
    * templates saved before the CAB asked for these carry none; every read goes through normalizeEstimates.
@@ -825,25 +831,36 @@ function extractReferenceSysId(field: unknown): string {
   return EMPTY_VALUE;
 }
 
-function buildChangeTaskPayload(changeSysId: string, template: CtaskTemplate): Record<string, unknown> {
+/**
+ * The change_task record for one staged CTASK. Its CI is always the change's, and its planned window is the
+ * template's only when that sits inside the change's window (see ctaskParentDefaults.ts).
+ */
+function buildChangeTaskPayload(
+  changeSysId: string,
+  template: CtaskTemplate,
+  changeDefaults: ChangeTaskDefaults = EMPTY_CHANGE_TASK_DEFAULTS,
+): Record<string, unknown> {
   const ctaskPayload: Record<string, unknown> = {
     change_request:     changeSysId,
     short_description:  template.shortDescription || template.name || CTASK_DEFAULT_SHORT_DESCRIPTION,
   };
+  const plannedWindow = resolveCtaskPlannedWindow(template, changeDefaults);
 
   // Every CTASK carries the estimated-duration block the CAB asks for, whether or not anyone filled it in —
   // an unestimated phase reads "not estimated", which is the question being asked rather than a silent gap.
   const describedWork = applyDurationBlock(
     template.description,
     normalizeEstimates(template.durationEstimates),
-    template.plannedStartDate,
-    template.plannedEndDate,
+    plannedWindow.plannedStartDate,
+    plannedWindow.plannedEndDate,
   );
   ctaskPayload.description = describedWork;
+  if (changeDefaults.configItemSysId) ctaskPayload.cmdb_ci = changeDefaults.configItemSysId;
+  if (template.changeTaskType) ctaskPayload.change_task_type = template.changeTaskType;
   if (template.assignmentGroup.sysId) ctaskPayload.assignment_group = template.assignmentGroup.sysId;
   if (template.assignedTo.sysId) ctaskPayload.assigned_to = template.assignedTo.sysId;
-  if (template.plannedStartDate) ctaskPayload.planned_start_date = formatSnowDateTimeForApi(template.plannedStartDate);
-  if (template.plannedEndDate) ctaskPayload.planned_end_date = formatSnowDateTimeForApi(template.plannedEndDate);
+  if (plannedWindow.plannedStartDate) ctaskPayload.planned_start_date = formatSnowDateTimeForApi(plannedWindow.plannedStartDate);
+  if (plannedWindow.plannedEndDate) ctaskPayload.planned_end_date = formatSnowDateTimeForApi(plannedWindow.plannedEndDate);
   if (template.closeNotes) ctaskPayload.close_notes = template.closeNotes;
 
   return ctaskPayload;
@@ -926,6 +943,7 @@ function buildCtaskTemplateDataFromRecord(ctaskRecord: Record<string, unknown>):
     plannedStartDate: normalizeSnowDateTimeForInput(ctaskRecord.planned_start_date),
     plannedEndDate:   normalizeSnowDateTimeForInput(ctaskRecord.planned_end_date),
     closeNotes:       extractStringValue(ctaskRecord.close_notes),
+    changeTaskType:   extractChoiceValue(ctaskRecord.change_task_type),
   };
 }
 
@@ -944,6 +962,8 @@ export interface AttachedChangeTaskRecord {
 }
 
 const CHANGE_TASK_TABLE_PATH = '/api/now/table/change_task';
+/** The change_request fields a new CTASK inherits from: its CI and planned window. */
+const CHANGE_TASK_DEFAULT_FIELDS = 'cmdb_ci,start_date,end_date';
 /** A change carries a handful of tasks; this bound only guards against a runaway query. */
 const ATTACHED_CHANGE_TASK_FETCH_LIMIT = 200;
 /** How much of an unexpected reply to quote back when ServiceNow answered OK without a record. */
@@ -970,15 +990,20 @@ function describeUnexpectedReply(replyData: unknown): string {
  *
  * @param changeSysId - sys_id of the change_request the task belongs to.
  * @param template    - The staged CTASK to create.
+ * @param changeDefaults - The change's CI and planned window, which the task inherits.
  * @returns The created task's sys_id, number, and the change ServiceNow stored on it.
  */
-export async function createChangeTask(changeSysId: string, template: CtaskTemplate): Promise<CreatedChangeTaskRecord> {
+export async function createChangeTask(
+  changeSysId: string,
+  template: CtaskTemplate,
+  changeDefaults: ChangeTaskDefaults = EMPTY_CHANGE_TASK_DEFAULTS,
+): Promise<CreatedChangeTaskRecord> {
   const replyData = await snowFetch<unknown>(
     CHANGE_TASK_TABLE_PATH,
     {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify(buildChangeTaskPayload(changeSysId, template)),
+      body:    JSON.stringify(buildChangeTaskPayload(changeSysId, template, changeDefaults)),
     },
   );
 
@@ -1006,11 +1031,16 @@ export async function createChangeTask(changeSysId: string, template: CtaskTempl
  *
  * @param changeSysId - sys_id of the change_request the tasks belong to.
  * @param templates   - The staged CTASKs, created in list order.
+ * @param changeDefaults - The change's CI and planned window, which every task inherits.
  * @returns The number of tasks created.
  */
-export async function createChangeTasks(changeSysId: string, templates: CtaskTemplate[]): Promise<number> {
+export async function createChangeTasks(
+  changeSysId: string,
+  templates: CtaskTemplate[],
+  changeDefaults: ChangeTaskDefaults = EMPTY_CHANGE_TASK_DEFAULTS,
+): Promise<number> {
   for (const template of templates) {
-    await createChangeTask(changeSysId, template);
+    await createChangeTask(changeSysId, template, changeDefaults);
   }
 
   return templates.length;
@@ -1071,6 +1101,46 @@ async function fetchClonedChangeTasks(sourceChgSysId: string): Promise<CtaskTemp
   );
 
   return (responseData?.result ?? []).map(buildStagedChangeTaskFromRecord);
+}
+
+/** The change's CI and planned window, read off a change_request row (UTC values become the form's local clock). */
+function readChangeTaskDefaultsFromRecord(changeRecord: Record<string, unknown> | undefined): ChangeTaskDefaults {
+  if (!changeRecord) return EMPTY_CHANGE_TASK_DEFAULTS;
+  return {
+    configItemSysId:  extractReferenceSysId(changeRecord.cmdb_ci),
+    plannedStartDate: normalizeSnowDateTimeForInput(changeRecord.start_date),
+    plannedEndDate:   normalizeSnowDateTimeForInput(changeRecord.end_date),
+  };
+}
+
+/**
+ * Reads the change's CI and planned window straight from the change record, so a CTASK added to an existing
+ * change inherits them. A failed read gives no defaults rather than blocking the CTASK.
+ */
+export async function fetchChangeTaskDefaults(changeSysId: string): Promise<ChangeTaskDefaults> {
+  try {
+    const replyData = await snowFetch<unknown>(
+      `/api/now/table/change_request/${encodeURIComponent(changeSysId)}?sysparm_fields=${CHANGE_TASK_DEFAULT_FIELDS}&sysparm_display_value=false`,
+    );
+    return readChangeTaskDefaultsFromRecord(readRecordFromTableReply(replyData) ?? undefined);
+  } catch {
+    return EMPTY_CHANGE_TASK_DEFAULTS;
+  }
+}
+
+/** Finds a change by number with the CI and window its CTASKs inherit, in one read. */
+async function fetchChangeTaskTargetByNumber(changeNumber: string): Promise<{ changeSysId: string; changeDefaults: ChangeTaskDefaults }> {
+  const normalizedChangeNumber = changeNumber.trim().toUpperCase();
+  const encodedQuery = encodeURIComponent(`number=${normalizedChangeNumber}`);
+  const responseData = await snowFetch<{ result: Array<Record<string, unknown>> }>(
+    `/api/now/table/change_request?sysparm_query=${encodedQuery}&sysparm_fields=sys_id,${CHANGE_TASK_DEFAULT_FIELDS}&sysparm_limit=1`,
+  );
+  const changeRecord = responseData.result[0];
+  const changeSysId = extractReferenceSysId(changeRecord?.sys_id);
+  if (!changeSysId) {
+    throw new Error(`${normalizedChangeNumber} was not found in ServiceNow.`);
+  }
+  return { changeSysId, changeDefaults: readChangeTaskDefaultsFromRecord(changeRecord) };
 }
 
 async function fetchChangeSysIdByNumber(changeNumber: string): Promise<string> {
@@ -1541,12 +1611,14 @@ async function fetchAutoCreatedChangeTasksStable(
  * @param changeSysId - The new CHG's sys_id.
  * @param stagedTasks - The CTASKs queued from the linked templates, in order.
  * @param sleep       - Delay function for the poll (overridable in tests).
+ * @param changeDefaults - The change's CI and planned window, which every task inherits.
  * @returns The number of staged CTASKs processed (updated + created).
  */
 export async function reconcileStagedChangeTasks(
   changeSysId: string,
   stagedTasks: CtaskTemplate[],
   sleep: (milliseconds: number) => Promise<void> = delayMs,
+  changeDefaults: ChangeTaskDefaults = EMPTY_CHANGE_TASK_DEFAULTS,
 ): Promise<number> {
   if (stagedTasks.length === 0) {
     return 0;
@@ -1559,14 +1631,14 @@ export async function reconcileStagedChangeTasks(
   for (let index = 0; index < updateCount; index += 1) {
     const autoCreatedSysId = extractReferenceSysId(autoCreatedTasks[index]?.sys_id);
     if (autoCreatedSysId) {
-      await patchChangeTaskBySysId(autoCreatedSysId, buildChangeTaskPayload(changeSysId, stagedTasks[index]));
+      await patchChangeTaskBySysId(autoCreatedSysId, buildChangeTaskPayload(changeSysId, stagedTasks[index], changeDefaults));
     }
   }
 
   // Create new CTASKs for any staged templates beyond the auto-created count.
   const remainingTasks = stagedTasks.slice(updateCount);
   if (remainingTasks.length > 0) {
-    await createChangeTasks(changeSysId, remainingTasks);
+    await createChangeTasks(changeSysId, remainingTasks, changeDefaults);
   }
 
   return stagedTasks.length;
@@ -2348,8 +2420,8 @@ export function useCrgState(options?: UseCrgStateOptions): { state: CrgState; ac
       submissionDebug: null,
     }));
     try {
-      const changeSysId = await fetchChangeSysIdByNumber(normalizedChangeNumber);
-      await createChangeTasks(changeSysId, state.changeTasks);
+      const { changeSysId, changeDefaults } = await fetchChangeTaskTargetByNumber(normalizedChangeNumber);
+      await createChangeTasks(changeSysId, state.changeTasks, changeDefaults);
       setState((previousState) => ({
         ...previousState,
         isSubmitting: false,
@@ -2570,13 +2642,18 @@ export function useCrgState(options?: UseCrgStateOptions): { state: CrgState; ac
           environmentKey: changeSubmissionTarget.environmentKey,
         };
         createdChangeRecords.push(createdChangeRecord);
+        const ctaskChangeDefaults: ChangeTaskDefaults = {
+          configItemSysId:  changeSubmissionTarget.configItem.sysId,
+          plannedStartDate: changeSubmissionTarget.plannedStartDate,
+          plannedEndDate:   changeSubmissionTarget.plannedEndDate,
+        };
 
         // Reconcile mode (per-template): update the CTASKs ServiceNow auto-created to
         // match the staged ones by order, then create the remainder — for teams whose
         // change process auto-spawns CTASKs.
         if (state.reconcileAutoCtasks) {
           try {
-            await reconcileStagedChangeTasks(changeSysId, state.changeTasks);
+            await reconcileStagedChangeTasks(changeSysId, state.changeTasks, undefined, ctaskChangeDefaults);
           } catch (unknownError) {
             const errorMessage = unknownError instanceof Error ? unknownError.message : 'CTASK reconcile failed';
             throw new Error(`${changeNumber} created, but reconciling CTASKs did not fully complete. Check ServiceNow before retrying: ${errorMessage}`, {
@@ -2606,7 +2683,7 @@ export function useCrgState(options?: UseCrgStateOptions): { state: CrgState; ac
           );
           if (ctasksToCreate.length > 0) {
             try {
-              await createChangeTasks(changeSysId, ctasksToCreate);
+              await createChangeTasks(changeSysId, ctasksToCreate, ctaskChangeDefaults);
             } catch (unknownError) {
               const errorMessage = unknownError instanceof Error ? unknownError.message : 'CTASK creation failed';
               const taskLabel = formatCtaskCount(ctasksToCreate.length);

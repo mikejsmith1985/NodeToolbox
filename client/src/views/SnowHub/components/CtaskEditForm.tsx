@@ -12,6 +12,8 @@ import {
   normalizeEstimates,
   type DurationEstimates,
 } from '../ctaskDurations.ts';
+import { useChangeTaskTypeOptions } from '../hooks/useChangeTaskTypeOptions.ts';
+import type { SnowChoiceOption } from '../hooks/useSnowChoiceOptions.ts';
 import { SnowLookupField } from './SnowLookupField.tsx';
 import styles from '../tabs/CreateChgTab.module.css';
 
@@ -29,6 +31,8 @@ export interface CtaskTemplate {
   closeNotes: string;
   /** How long implementation, validation and backout are each expected to take (the CAB asks for all three). */
   durationEstimates?: DurationEstimates;
+  /** The ServiceNow change_task_type value, picked from ServiceNow's own list. */
+  changeTaskType?: string;
 }
 
 /** Props for CtaskEditForm component. */
@@ -45,11 +49,42 @@ export interface CtaskEditFormProps {
   isCompact?: boolean;
 }
 
+// The empty option leaves the type to ServiceNow's own default, which is what templates saved before the
+// picker existed have always done.
+const SERVICENOW_DEFAULT_TYPE_LABEL = 'ServiceNow default';
+
+/** ServiceNow's choices, plus the saved value when the list is unavailable or no longer offers it. */
+function listTypeChoices(typeOptions: readonly SnowChoiceOption[], savedValue: string): SnowChoiceOption[] {
+  const isSavedValueListed = savedValue === '' || typeOptions.some((typeOption) => typeOption.value === savedValue);
+  return isSavedValueListed ? [...typeOptions] : [...typeOptions, { value: savedValue, label: savedValue }];
+}
+
+/** The CTASK type picker. A type is always picked from ServiceNow's list, never typed. */
+function ChangeTaskTypeField({ value, onChange }: { value: string; onChange: (changeTaskType: string) => void }) {
+  const { typeOptions, isLoading, loadErrorMessage } = useChangeTaskTypeOptions();
+  return (
+    <label className={styles.fieldGroup}>
+      <span className={styles.fieldLabel}>CTASK type</span>
+      <select aria-label="CTASK type" className={styles.input} onChange={(event) => onChange(event.target.value)} value={value}>
+        <option value="">{SERVICENOW_DEFAULT_TYPE_LABEL}</option>
+        {listTypeChoices(typeOptions, value).map((typeOption) => (
+          <option key={typeOption.value} value={typeOption.value}>{typeOption.label}</option>
+        ))}
+      </select>
+      {isLoading ? <span className={styles.panelHint}>Loading CTASK types from ServiceNow…</span> : null}
+      {loadErrorMessage ? (
+        <span className={styles.panelHint}>{`CTASK types could not be loaded from ServiceNow: ${loadErrorMessage}`}</span>
+      ) : null}
+    </label>
+  );
+}
+
 /**
  * CtaskEditForm — Renders an editable CTASK form with all standard ServiceNow fields.
  *
  * Displays:
  * - Short Description (text input)
+ * - CTASK type (picked from ServiceNow's own list)
  * - Description (textarea)
  * - Assignment Group (SNow lookup typeahead)
  * - Assigned To (SNow lookup typeahead)
@@ -106,6 +141,7 @@ export function CtaskEditForm({
       plannedEndDate: nextTemplate.plannedEndDate,
       closeNotes: nextTemplate.closeNotes,
       durationEstimates: normalizeEstimates(nextTemplate.durationEstimates),
+      changeTaskType: nextTemplate.changeTaskType,
     };
     onDataChange(templateData);
     setSelectedTemplateId('');
@@ -165,6 +201,11 @@ export function CtaskEditForm({
           value={ctaskData.shortDescription}
         />
       </label>
+
+      <ChangeTaskTypeField
+        onChange={(changeTaskType) => onDataChange({ ...ctaskData, changeTaskType })}
+        value={ctaskData.changeTaskType ?? ''}
+      />
 
       {/* Description */}
       <label className={styles.fieldGroup}>

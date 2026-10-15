@@ -141,12 +141,16 @@ function extractFieldChoices(fieldCandidate: unknown): SnowChoiceOption[] {
   return [];
 }
 
+/** Names the map key a form field's choices are stored under, or null to skip that field. */
+type ChoiceFieldNameResolver = (fieldName: string) => string | null;
+
 function assignChoicesFromNamedField(
   fieldName: string,
   fieldCandidate: unknown,
   choiceOptions: SnowChoiceOptionMap,
+  resolveFieldName: ChoiceFieldNameResolver,
 ): void {
-  const canonicalFieldName = resolveCanonicalChoiceFieldName(fieldName);
+  const canonicalFieldName = resolveFieldName(fieldName);
   if (canonicalFieldName === null) {
     return;
   }
@@ -157,12 +161,16 @@ function assignChoicesFromNamedField(
   }
 }
 
-function collectChoicesFromFields(fieldsCandidate: unknown, choiceOptions: SnowChoiceOptionMap): void {
+function collectChoicesFromFields(
+  fieldsCandidate: unknown,
+  choiceOptions: SnowChoiceOptionMap,
+  resolveFieldName: ChoiceFieldNameResolver,
+): void {
   if (Array.isArray(fieldsCandidate)) {
     for (const fieldCandidate of fieldsCandidate) {
       if (!isObjectRecord(fieldCandidate)) continue;
       const fieldName = readStringProperty(fieldCandidate, ['name', 'element', 'fieldName']);
-      if (fieldName) assignChoicesFromNamedField(fieldName, fieldCandidate, choiceOptions);
+      if (fieldName) assignChoicesFromNamedField(fieldName, fieldCandidate, choiceOptions, resolveFieldName);
     }
     return;
   }
@@ -172,24 +180,28 @@ function collectChoicesFromFields(fieldsCandidate: unknown, choiceOptions: SnowC
   }
 
   for (const [fieldName, fieldCandidate] of Object.entries(fieldsCandidate)) {
-    assignChoicesFromNamedField(fieldName, fieldCandidate, choiceOptions);
+    assignChoicesFromNamedField(fieldName, fieldCandidate, choiceOptions, resolveFieldName);
     if (isObjectRecord(fieldCandidate)) {
       const nestedFieldName = readStringProperty(fieldCandidate, ['name', 'element', 'fieldName']);
-      if (nestedFieldName) assignChoicesFromNamedField(nestedFieldName, fieldCandidate, choiceOptions);
+      if (nestedFieldName) assignChoicesFromNamedField(nestedFieldName, fieldCandidate, choiceOptions, resolveFieldName);
     }
   }
 }
 
-function collectChoicesFromSections(sectionsCandidate: unknown, choiceOptions: SnowChoiceOptionMap): void {
+function collectChoicesFromSections(
+  sectionsCandidate: unknown,
+  choiceOptions: SnowChoiceOptionMap,
+  resolveFieldName: ChoiceFieldNameResolver,
+): void {
   if (!Array.isArray(sectionsCandidate)) {
     return;
   }
 
   for (const sectionCandidate of sectionsCandidate) {
     if (!isObjectRecord(sectionCandidate)) continue;
-    collectChoicesFromFields(sectionCandidate.fields, choiceOptions);
-    collectChoicesFromFields(sectionCandidate.columns, choiceOptions);
-    collectChoicesFromSections(sectionCandidate.sections, choiceOptions);
+    collectChoicesFromFields(sectionCandidate.fields, choiceOptions, resolveFieldName);
+    collectChoicesFromFields(sectionCandidate.columns, choiceOptions, resolveFieldName);
+    collectChoicesFromSections(sectionCandidate.sections, choiceOptions, resolveFieldName);
   }
 }
 
@@ -330,19 +342,31 @@ function loadStoredExtractorChoiceOptions(): SnowChoiceOptionMap {
  * Extracts choice lists from the UI Form API response. The parser accepts both record-shaped
  * and section-shaped payloads because SNow versions expose form metadata differently.
  */
-function extractChoicesFromUiForm(responseData: unknown): SnowChoiceOptionMap {
+function extractChoicesFromUiForm(
+  responseData: unknown,
+  resolveFieldName: ChoiceFieldNameResolver = resolveCanonicalChoiceFieldName,
+): SnowChoiceOptionMap {
   const responseRecord = isObjectRecord(responseData) ? responseData : {};
   const resultCandidate = responseRecord.result ?? responseData;
   const resultRecord = isObjectRecord(resultCandidate) ? resultCandidate : {};
   const choiceOptions: SnowChoiceOptionMap = {};
 
-  collectChoicesFromFields(resultRecord.fields, choiceOptions);
-  collectChoicesFromFields(resultRecord._fields, choiceOptions);
-  collectChoicesFromFields(resultRecord.columns, choiceOptions);
-  collectChoicesFromSections(resultRecord.sections, choiceOptions);
-  collectChoicesFromSections(resultRecord._sections, choiceOptions);
+  collectChoicesFromFields(resultRecord.fields, choiceOptions, resolveFieldName);
+  collectChoicesFromFields(resultRecord._fields, choiceOptions, resolveFieldName);
+  collectChoicesFromFields(resultRecord.columns, choiceOptions, resolveFieldName);
+  collectChoicesFromSections(resultRecord.sections, choiceOptions, resolveFieldName);
+  collectChoicesFromSections(resultRecord._sections, choiceOptions, resolveFieldName);
 
   return choiceOptions;
+}
+
+/**
+ * One field's selectable choices from any table's UI Form or UI Meta reply, without its leading blank —
+ * the same parser the change_request choices use, so every SNow picker reads choice metadata one way.
+ */
+export function readUiFormChoicesForField(responseData: unknown, fieldName: string): SnowChoiceOption[] {
+  const fieldChoices = extractChoicesFromUiForm(responseData, (candidateName) => (candidateName === fieldName ? fieldName : null));
+  return (fieldChoices[fieldName] ?? []).filter((fieldChoice) => fieldChoice.value !== '');
 }
 
 /** Loads live change_request choice metadata from UI endpoints only. */

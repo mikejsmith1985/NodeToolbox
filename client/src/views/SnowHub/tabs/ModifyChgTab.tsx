@@ -25,7 +25,7 @@ import type {
   SnowReference,
 } from '../hooks/useCrgState.ts';
 import type { AttachedChangeTaskRecord, CreatedChangeTaskRecord } from '../hooks/useCrgState.ts';
-import { createChangeTask, fetchChangeTasksAttachedToChange } from '../hooks/useCrgState.ts';
+import { createChangeTask, fetchChangeTaskDefaults, fetchChangeTasksAttachedToChange } from '../hooks/useCrgState.ts';
 import { inferEnvironmentKeyFromValue } from '../hooks/environmentKeyInference.ts';
 import { useCtaskTemplates } from '../hooks/useCtaskTemplates.ts';
 import type { SnowChoiceOptionMap } from '../hooks/useSnowChoiceOptions.ts';
@@ -815,10 +815,12 @@ async function createStagedChangeTasks(
   onTaskCreated: (taskId: string) => void,
 ): Promise<StagedChangeTaskCreationResult> {
   const createdTasks: CreatedChangeTaskRecord[] = [];
+  // Every task inherits the change's own CI and planned window, read once from the change record.
+  const changeDefaults = await fetchChangeTaskDefaults(changeSysId);
   for (let taskIndex = 0; taskIndex < stagedTasks.length; taskIndex += 1) {
     const stagedTask = stagedTasks[taskIndex];
     try {
-      createdTasks.push(await createChangeTask(changeSysId, stagedTask));
+      createdTasks.push(await createChangeTask(changeSysId, stagedTask, changeDefaults));
     } catch (error) {
       const causeMessage = error instanceof Error ? error.message : 'Failed to create change task';
       console.error(`${MODIFY_CHG_LOG_PREFIX} Change task creation failed`, {

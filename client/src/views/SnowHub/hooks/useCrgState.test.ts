@@ -9,7 +9,7 @@ import { createPlannedOutage } from '../outage/changeOutageRecord.ts';
 import { linkProblemsToNewChange } from '../problems/changeProblems.ts';
 import { fetchReviewedCtasks, saveCtaskPlannedDates } from '../chgFormula/ctaskReviewApi.ts';
 import type { CrgTemplate, CtaskTemplate, CtaskTemplateData } from './useCrgState.ts';
-import { createChangeTask, fetchChangeTasksAttachedToChange, formatSnowDateTimeForApi, listEnvironmentDateOrderErrors, NO_ENABLED_ENVIRONMENT_MESSAGE, reconcileStagedChangeTasks, useCrgState } from './useCrgState.ts';
+import { createChangeTask, fetchChangeTaskDefaults, fetchChangeTasksAttachedToChange, formatSnowDateTimeForApi, listEnvironmentDateOrderErrors, NO_ENABLED_ENVIRONMENT_MESSAGE, reconcileStagedChangeTasks, useCrgState } from './useCrgState.ts';
 
 vi.mock('../../../services/jiraApi.ts', () => ({
   jiraGet: vi.fn(),
@@ -1341,6 +1341,34 @@ describe('useCrgState', () => {
       expect(result.current.state.submitResult).toBe('CHG0001234 created with 1 CTASK');
     });
 
+    it('gives every created CTASK the change\'s CI and planned window', async () => {
+      vi.mocked(snowFetch)
+        .mockResolvedValueOnce({ result: { number: 'CHG0001234', sys_id: 'chg-sys-001' } } as never)
+        .mockResolvedValueOnce({ result: [] } as never)
+        .mockResolvedValueOnce({ result: { number: 'CTASK0001001' } } as never);
+      const { result } = await advanceToChangeDetailsStep();
+      act(() => {
+        result.current.actions.updateEnvironment('rel', {
+          isEnabled: true,
+          configItem: { sysId: 'ci-sys-7', displayName: 'Recon Service' },
+          plannedStartDate: '2026-10-16T19:00',
+          plannedEndDate: '2026-10-16T23:00',
+        });
+        result.current.actions.addChangeTask(createMockCtaskTemplate({ plannedStartDate: '', plannedEndDate: '' }));
+      });
+
+      await act(async () => {
+        await result.current.actions.createChg();
+      });
+
+      const ctaskCall = vi.mocked(snowFetch).mock.calls.find(([requestPath, requestInit]) =>
+        requestPath === '/api/now/table/change_task' && (requestInit as RequestInit | undefined)?.method === 'POST');
+      const ctaskBody = JSON.parse((ctaskCall?.[1] as RequestInit).body as string) as Record<string, unknown>;
+      expect(ctaskBody.cmdb_ci).toBe('ci-sys-7');
+      expect(ctaskBody.planned_start_date).toBe(formatSnowDateTimeForApi('2026-10-16T19:00'));
+      expect(ctaskBody.planned_end_date).toBe(formatSnowDateTimeForApi('2026-10-16T23:00'));
+    });
+
     it('reports partial success when CHG creation succeeds but CTASK creation fails', async () => {
       vi.mocked(snowFetch)
         .mockResolvedValueOnce({ result: { number: 'CHG0001234', sys_id: 'chg-sys-001' } } as never)
@@ -1887,6 +1915,28 @@ describe('useCrgState', () => {
       expect(result.current.state.submitResult).toBe('1 CTASK appended to CHG0001234');
     });
 
+    it('appended CTASKs take the change\'s own CI and, when their dates fall outside it, the change\'s window', async () => {
+      vi.mocked(snowFetch)
+        .mockResolvedValueOnce({ result: [{
+          sys_id: 'chg-sys-001', cmdb_ci: 'ci-sys-9', start_date: '2026-10-17 00:00:00', end_date: '2026-10-17 04:00:00',
+        }] } as never)
+        .mockResolvedValueOnce({ result: { number: 'CTASK0001001' } } as never);
+      const { result } = renderHook(() => useCrgState());
+      act(() => {
+        result.current.actions.addChangeTask(createMockCtaskTemplate());
+      });
+
+      await act(async () => {
+        await result.current.actions.appendTasksToExistingChg('chg0001234');
+      });
+
+      expect(vi.mocked(snowFetch).mock.calls[0][0]).toContain('sysparm_fields=sys_id,cmdb_ci,start_date,end_date');
+      const ctaskBody = JSON.parse((vi.mocked(snowFetch).mock.calls[1][1] as RequestInit).body as string) as Record<string, unknown>;
+      expect(ctaskBody.cmdb_ci).toBe('ci-sys-9');
+      expect(ctaskBody.planned_start_date).toBe('2026-10-17 00:00:00');
+      expect(ctaskBody.planned_end_date).toBe('2026-10-17 04:00:00');
+    });
+
     it('builds a CTASK template draft by cloning an existing CTASK number', async () => {
       vi.mocked(snowFetch).mockResolvedValueOnce({
         result: [
@@ -1898,6 +1948,7 @@ describe('useCrgState', () => {
             planned_start_date: { value: '2026-01-01 10:00:00', display_value: '2026-01-01 10:00:00' },
             planned_end_date:   { value: '2026-01-01T11:00:00', display_value: '2026-01-01T11:00:00' },
             close_notes:        { value: 'Validation complete.', display_value: 'Validation complete.' },
+            change_task_type:   { value: 'testing', display_value: 'Testing' },
           },
         ],
       } as never);
@@ -1920,6 +1971,7 @@ describe('useCrgState', () => {
         plannedStartDate: expectedLocalInputFor('2026-01-01T10:00:00'),
         plannedEndDate:   expectedLocalInputFor('2026-01-01T11:00:00'),
         closeNotes:       'Validation complete.',
+        changeTaskType:   'testing',
         // This CTASK's description carries no estimated-duration block, so nothing is recovered.
         durationEstimates: { implementationMinutes: '', validationMinutes: '', backoutMinutes: '' },
       });
@@ -2933,12 +2985,59 @@ describe('createChangeTask (GH #377 — trust the record, not the status code)',
     expect(createdTask.number).toBe('CTASK0009002');
   });
 
+  it('sends the CTASK type the template carries', async () => {
+    vi.mocked(snowFetch).mockResolvedValue({ result: { sys_id: 'ctask-sys-3', number: 'CTASK0009003' } } as never);
+
+    await createChangeTask('chg-sys-1', { ...STAGED_TASK, changeTaskType: 'testing' });
+
+    const ctaskBody = JSON.parse((vi.mocked(snowFetch).mock.calls[0][1] as RequestInit).body as string) as Record<string, unknown>;
+    expect(ctaskBody.change_task_type).toBe('testing');
+  });
+
+  it('sends the change\'s CI and window when handed the change\'s defaults', async () => {
+    vi.mocked(snowFetch).mockResolvedValue({ result: { sys_id: 'ctask-sys-4', number: 'CTASK0009004' } } as never);
+
+    await createChangeTask('chg-sys-1', STAGED_TASK, {
+      configItemSysId: 'ci-sys-1', plannedStartDate: '2026-10-16T19:00', plannedEndDate: '2026-10-16T23:00',
+    });
+
+    const ctaskBody = JSON.parse((vi.mocked(snowFetch).mock.calls[0][1] as RequestInit).body as string) as Record<string, unknown>;
+    expect(ctaskBody.cmdb_ci).toBe('ci-sys-1');
+    expect(ctaskBody.planned_start_date).toBe(formatSnowDateTimeForApi('2026-10-16T19:00'));
+    expect(ctaskBody.planned_end_date).toBe(formatSnowDateTimeForApi('2026-10-16T23:00'));
+  });
+
   it('throws when ServiceNow answers OK without a task record, quoting what it did send', async () => {
     vi.mocked(snowFetch).mockResolvedValue('<html>Sign in</html>' as never);
 
     await expect(createChangeTask('chg-sys-1', STAGED_TASK)).rejects.toThrow(
       /ServiceNow accepted the change_task request but returned no task record.*<html>Sign in<\/html>/,
     );
+  });
+});
+
+describe('fetchChangeTaskDefaults', () => {
+  beforeEach(() => {
+    vi.mocked(snowFetch).mockReset();
+  });
+
+  it('reads the change\'s CI and planned window straight from the change record', async () => {
+    vi.mocked(snowFetch).mockResolvedValue({
+      result: { cmdb_ci: { value: 'ci-sys-1' }, start_date: '2026-10-17 00:00:00', end_date: '2026-10-17 04:00:00' },
+    } as never);
+
+    const defaults = await fetchChangeTaskDefaults('chg-sys-1');
+
+    expect(vi.mocked(snowFetch).mock.calls[0][0]).toContain('/api/now/table/change_request/chg-sys-1?sysparm_fields=cmdb_ci,start_date,end_date');
+    expect(defaults.configItemSysId).toBe('ci-sys-1');
+    expect(formatSnowDateTimeForApi(defaults.plannedStartDate)).toBe('2026-10-17 00:00:00');
+    expect(formatSnowDateTimeForApi(defaults.plannedEndDate)).toBe('2026-10-17 04:00:00');
+  });
+
+  it('returns no defaults rather than failing when the change cannot be read', async () => {
+    vi.mocked(snowFetch).mockRejectedValue(new Error('403'));
+
+    expect(await fetchChangeTaskDefaults('chg-sys-1')).toEqual({ configItemSysId: '', plannedStartDate: '', plannedEndDate: '' });
   });
 });
 

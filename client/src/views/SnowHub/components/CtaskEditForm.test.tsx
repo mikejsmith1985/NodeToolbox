@@ -8,6 +8,18 @@ import { CtaskEditForm } from './CtaskEditForm';
 import type { CtaskEditFormProps } from './CtaskEditForm';
 import type { CtaskTemplateData, SnowReference } from '../hooks/useCrgState';
 
+const mockTypeOptionsState = vi.hoisted(() => ({
+  typeOptions: [
+    { value: 'implementation', label: 'Implementation' },
+    { value: 'testing', label: 'Testing' },
+  ],
+  loadErrorMessage: null as string | null,
+}));
+
+vi.mock('../hooks/useChangeTaskTypeOptions.ts', () => ({
+  useChangeTaskTypeOptions: () => ({ ...mockTypeOptionsState, isLoading: false }),
+}));
+
 // Test fixtures — reusable data structures for tests.
 
 const emptySnowReference: SnowReference = {
@@ -493,6 +505,41 @@ describe('CtaskEditForm', () => {
       render(<CtaskEditForm {...createDefaultProps({ ctaskData: populatedCtaskData })} />);
 
       expect(screen.getByLabelText('Implementation estimated minutes')).toHaveValue(null);
+    });
+  });
+
+  describe('CTASK type', () => {
+    it("offers ServiceNow's own CTASK types to pick from, and records the pick", () => {
+      const onDataChange = vi.fn();
+      render(<CtaskEditForm {...createDefaultProps({ onDataChange })} />);
+
+      const typeSelect = screen.getByLabelText('CTASK type') as HTMLSelectElement;
+      expect(Array.from(typeSelect.options).map((option) => option.textContent))
+        .toEqual(['ServiceNow default', 'Implementation', 'Testing']);
+      fireEvent.change(typeSelect, { target: { value: 'testing' } });
+
+      expect(onDataChange).toHaveBeenCalledWith(expect.objectContaining({ changeTaskType: 'testing' }));
+    });
+
+    it("keeps a saved type visible even when ServiceNow's list could not be loaded, and says why", () => {
+      mockTypeOptionsState.typeOptions = [];
+      mockTypeOptionsState.loadErrorMessage = 'relay offline';
+      render(<CtaskEditForm {...createDefaultProps({ ctaskData: { ...defaultCtaskData, changeTaskType: 'testing' } })} />);
+
+      expect(screen.getByLabelText('CTASK type')).toHaveValue('testing');
+      expect(screen.getByText(/CTASK types could not be loaded from ServiceNow: relay offline/)).toBeInTheDocument();
+      mockTypeOptionsState.typeOptions = [{ value: 'implementation', label: 'Implementation' }, { value: 'testing', label: 'Testing' }];
+      mockTypeOptionsState.loadErrorMessage = null;
+    });
+
+    it("loads a template's CTASK type with the rest of the template", () => {
+      const onDataChange = vi.fn();
+      const typedTemplates = [{ ...mockTemplates[0], changeTaskType: 'implementation' }];
+      render(<CtaskEditForm {...createDefaultProps({ onDataChange, templates: typedTemplates })} />);
+
+      fireEvent.change(screen.getByLabelText('Load CTASK template'), { target: { value: 'template1' } });
+
+      expect(onDataChange).toHaveBeenCalledWith(expect.objectContaining({ changeTaskType: 'implementation' }));
     });
   });
 });

@@ -34,6 +34,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - The 200-word cap and its "trim it" warning are gone, because the template itself is longer.
 
 ### Fixed
+- **CTASKs now get their type, their CI and dates inside the change's window.** Created CTASKs were missing all three:
+  - **Type:** the CTASK form has a **CTASK type** picker, filled from ServiceNow's own `change_task` type list. The
+    type is saved on the template, sent on every CTASK, and kept when a CTASK is cloned. *ServiceNow default* leaves
+    it to ServiceNow, as before.
+  - **Configuration item:** every CTASK now takes the change's own CI on every path: Create, reconcile, append to an
+    existing CHG, and Modify Existing CHG. Append and Modify read the CI straight from the change record.
+  - **Dates:** a CTASK keeps its template's planned dates only when they sit inside the change's window. Otherwise
+    it gets the change's window, which applies to undated tasks, stale reused templates and clones of an old
+    change. The timeline step that dates tasks after Create still refines them.
 - **PRB Generator: a field Jira demands is now asked for, not just reported (GH #439).** Creating the Defect failed
   with *"customfield_10253: This field is required"* although the pre-create check found nothing to ask. Two causes,
   both closed: the create-screen field list was read one page only, and Jira Data Center serves it in smaller pages
