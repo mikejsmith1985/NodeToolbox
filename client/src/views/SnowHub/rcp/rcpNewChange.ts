@@ -69,7 +69,8 @@ export function evaluateNewChangeRcp(input: NewChangeRcpInput): NewChangeRcpEval
   return {
     results,
     emailContext: {
-      changeNumber: '[CONFIRM: change number once created]',
+      // No number until the change is created; the email asks the sender for it.
+      changeNumber: '',
       shortDescription: input.shortDescription,
       environmentLabel: environment.label,
       windowText: describeCentralWindow(environment.plannedStartUtc, environment.plannedEndUtc),

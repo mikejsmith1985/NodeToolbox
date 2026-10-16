@@ -66,9 +66,122 @@ export function writeRcpProcessOwnerName(processOwnerName: string, storage: Stor
   storage.setItem(RCP_PROCESS_OWNER_STORAGE_KEY, processOwnerName.trim());
 }
 
-/** A fact as the template shows it, or a [CONFIRM: …] naming what is missing. */
-function fillOrConfirm(value: string, missingDescription: string): string {
-  return value.trim() || `[CONFIRM: ${missingDescription}]`;
+// ── The sender's answers ──
+
+/** Every question the email can need answered by the sender before it is drafted. */
+export type RcpEmailQuestionId =
+  | 'directorName' | 'changeNumber' | 'shortDescription' | 'configItemName' | 'ciOwnerName' | 'windowText' | 'riskLabel'
+  | 'expectedImpact' | 'whyDuringRcp' | 'deferralImpact' | 'whyWeekday' | 'weekendImpact' | 'senderName' | 'senderContact';
+
+/** One question put to the sender, with an answer box. */
+export interface RcpEmailQuestion {
+  id: RcpEmailQuestionId;
+  /** The answer box's label. */
+  label: string;
+  /** What a good answer holds, or where to find it. */
+  hint: string;
+  /** A paragraph rather than a single line. */
+  isLongAnswer: boolean;
+}
+
+/** The sender's answers, by question. */
+export type RcpEmailAnswers = Partial<Record<RcpEmailQuestionId, string>>;
+
+/** The sender's own name and contact block, remembered for every email they send. */
+export interface RcpSenderDetails {
+  senderName: string;
+  senderContact: string;
+}
+
+const RCP_SENDER_NAME_STORAGE_KEY = 'tbxRcpSenderName';
+const RCP_SENDER_CONTACT_STORAGE_KEY = 'tbxRcpSenderContact';
+
+// A change fact the email shows; asked only when ServiceNow did not have it.
+const FACT_QUESTIONS: readonly (RcpEmailQuestion & { id: keyof RcpApprovalEmailContext & RcpEmailQuestionId })[] = [
+  { id: 'changeNumber', label: 'Change number', hint: 'The CHG number, once the change is created.', isLongAnswer: false },
+  { id: 'shortDescription', label: 'Change title', hint: 'The change\'s short description.', isLongAnswer: false },
+  { id: 'configItemName', label: 'Affected service and CI(s)', hint: 'The service and configuration items the change touches.', isLongAnswer: false },
+  { id: 'ciOwnerName', label: 'CI owner', hint: 'The owner of the affected configuration item.', isLongAnswer: false },
+  { id: 'windowText', label: 'Proposed implementation window', hint: 'Date, start time and end time, in Central Time.', isLongAnswer: false },
+  { id: 'riskLabel', label: 'Risk level', hint: 'The change\'s risk, as ServiceNow will show it.', isLongAnswer: false },
+];
+
+/** The questions only the sender can answer: no ServiceNow field holds them. */
+function buildNarrativeQuestions(isWeekday: boolean): RcpEmailQuestion[] {
+  return [
+    { id: 'expectedImpact', label: 'Affected users or services, and any expected outage or degradation', hint: 'Who notices, and for how long. Say "none" if nobody is affected.', isLongAnswer: true },
+    { id: 'whyDuringRcp', label: 'Why this must occur during RCP', hint: 'The business or operational need, and any deadline or obligation.', isLongAnswer: true },
+    { id: 'deferralImpact', label: 'Impact of deferring until after RCP', hint: 'What happens if this waits until after January 19, 2027, 7:00 p.m. CT — with dates or evidence.', isLongAnswer: true },
+    ...(isWeekday ? [
+      { id: 'whyWeekday', label: 'Why must this occur Monday - Friday?', hint: 'Why it cannot run on a Friday, Saturday or Sunday night.', isLongAnswer: true },
+      { id: 'weekendImpact', label: 'What is the impact of deploying on a weekend?', hint: 'What moving it to a weekend night would cost or risk.', isLongAnswer: true },
+    ] satisfies RcpEmailQuestion[] : []),
+  ];
+}
+
+/**
+ * Every question the email needs the sender to answer before it is drafted: the Director (always — the
+ * approver is chosen by a person, not read from a field), any change fact ServiceNow did not have, the
+ * sections only the sender can know, and who is sending it. Nothing the email shows is left to a guess.
+ */
+export function listRcpEmailQuestions(context: RcpApprovalEmailContext): RcpEmailQuestion[] {
+  const ownerHint = context.ciOwnerName.trim() ? ` The CI owner is ${context.ciOwnerName.trim()}.` : '';
+  return [
+    { id: 'directorName', label: 'Director name', hint: `The director-level approver in the CI owner's leadership chain.${ownerHint}`, isLongAnswer: false },
+    ...FACT_QUESTIONS.filter((question) => String(context[question.id] ?? '').trim() === ''),
+    ...buildNarrativeQuestions(isWeekdayRequest(context.plannedStartUtc)),
+    { id: 'senderName', label: 'Your name', hint: 'How you sign the email. Remembered for next time.', isLongAnswer: false },
+    { id: 'senderContact', label: 'Your team and contact details', hint: 'Team, phone or email. Remembered for next time.', isLongAnswer: false },
+  ];
+}
+
+/** The answers to start from: the Director on the change, its justification, and the sender last used. */
+export function buildInitialRcpEmailAnswers(context: RcpApprovalEmailContext, storage: Storage = window.localStorage): RcpEmailAnswers {
+  const initialAnswers: RcpEmailAnswers = { ...readRcpSenderDetails(storage) };
+  if (context.directorName.trim()) initialAnswers.directorName = context.directorName.trim();
+  if (context.justification.trim()) initialAnswers.whyDuringRcp = context.justification.trim();
+  return Object.fromEntries(Object.entries(initialAnswers).filter(([, answer]) => answer !== '')) as RcpEmailAnswers;
+}
+
+/** The questions still blank — while any remain, the email cannot be drafted. */
+export function listUnansweredRcpEmailQuestions(questions: readonly RcpEmailQuestion[], answers: RcpEmailAnswers): RcpEmailQuestion[] {
+  return questions.filter((question) => (answers[question.id] ?? '').trim() === '');
+}
+
+/** The sender's remembered name and contact block; blank until first saved. */
+export function readRcpSenderDetails(storage: Storage = window.localStorage): RcpSenderDetails {
+  try {
+    return {
+      senderName: storage.getItem(RCP_SENDER_NAME_STORAGE_KEY)?.trim() ?? '',
+      senderContact: storage.getItem(RCP_SENDER_CONTACT_STORAGE_KEY)?.trim() ?? '',
+    };
+  } catch {
+    return { senderName: '', senderContact: '' };
+  }
+}
+
+/** Remembers the sender's name and contact block for the next email. */
+export function writeRcpSenderDetails(senderDetails: RcpSenderDetails, storage: Storage = window.localStorage): void {
+  try {
+    storage.setItem(RCP_SENDER_NAME_STORAGE_KEY, senderDetails.senderName.trim());
+    storage.setItem(RCP_SENDER_CONTACT_STORAGE_KEY, senderDetails.senderContact.trim());
+  } catch {
+    // Remembering the sender is a convenience; the email is drafted either way.
+  }
+}
+
+// ── The template ──
+
+/** A fact as the template shows it: the sender's answer, else ServiceNow's value, else a [CONFIRM: …]. */
+function fillOrConfirm(value: string, missingDescription: string, answer?: string): string {
+  return answer?.trim() || value.trim() || `[CONFIRM: ${missingDescription}]`;
+}
+
+/** A section AI Assist writes, carrying the sender's own notes for it so nothing is made up. */
+function buildWriteMarker(sectionDescription: string, senderNotes?: string): string {
+  return senderNotes?.trim()
+    ? `[WRITE: ${sectionDescription}, using only these notes from the sender: "${senderNotes.trim()}"]`
+    : `[WRITE: ${sectionDescription}]`;
 }
 
 /** Whether the template's "why Monday - Friday" questions belong in this email; kept when the start is unknown. */
@@ -77,55 +190,60 @@ function isWeekdayRequest(plannedStartUtc: string | null): boolean {
   return startWeekday === null || WEEKDAY_REQUEST_NIGHTS.has(startWeekday);
 }
 
-/** The template's change summary block, filled from the change. */
-function buildChangeSummaryLines(context: RcpApprovalEmailContext, changeNumber: string, windowText: string): string[] {
+/** The template's change summary block, filled from the change and the sender's answers. */
+function buildChangeSummaryLines(context: RcpApprovalEmailContext, answers: RcpEmailAnswers, changeNumber: string, windowText: string): string[] {
   return [
     'Change summary',
-    `Change number and title: ${changeNumber} — ${fillOrConfirm(context.shortDescription, 'change title')}`,
-    `Affected service and CI(s): ${fillOrConfirm(context.configItemName, 'service and configuration items')}`,
-    `CI owner: ${fillOrConfirm(context.ciOwnerName, 'CI owner')}`,
+    `Change number and title: ${changeNumber} — ${fillOrConfirm(context.shortDescription, 'change title', answers.shortDescription)}`,
+    `Affected service and CI(s): ${fillOrConfirm(context.configItemName, 'service and configuration items', answers.configItemName)}`,
+    `CI owner: ${fillOrConfirm(context.ciOwnerName, 'CI owner', answers.ciOwnerName)}`,
     `Proposed implementation window: ${windowText}`,
-    `Risk and expected impact: ${fillOrConfirm(context.riskLabel, 'risk level')} — `
-      + '[WRITE: affected users or services, and any expected outage or degradation]',
+    `Risk and expected impact: ${fillOrConfirm(context.riskLabel, 'risk level', answers.riskLabel)} — `
+      + buildWriteMarker('affected users or services, and any expected outage or degradation', answers.expectedImpact),
   ];
 }
 
 /** The template's two weekday questions, for a window that starts Monday to Thursday night. */
-function buildWeekdayRequestLines(): string[] {
+function buildWeekdayRequestLines(answers: RcpEmailAnswers): string[] {
   return [
     '',
     'Why must this occur during Monday - Friday?',
-    '[WRITE: why this cannot run on a Friday, Saturday or Sunday night]',
+    buildWriteMarker('why this cannot run on a Friday, Saturday or Sunday night', answers.whyWeekday),
     '',
     'What is the impact of deploying on a weekend?',
-    '[WRITE: the impact of moving this to a weekend night]',
+    buildWriteMarker('the impact of moving this to a weekend night', answers.weekendImpact),
   ];
 }
 
 /**
- * Change Management's RCP approval request email (GH #441), with every fact Toolbox holds filled in.
- * Sections only a person or AI Assist can write are marked [WRITE: …]; missing facts are [CONFIRM: …].
+ * Change Management's RCP approval request email (GH #441), with every fact filled in — from the sender's
+ * answers first, then ServiceNow. Sections AI Assist writes are [WRITE: …] carrying the sender's notes; a
+ * fact nobody has supplied yet is [CONFIRM: …], which Toolbox asks about before the email can be copied.
  */
-export function buildRcpApprovalEmailTemplate(context: RcpApprovalEmailContext, processOwnerName: string): string {
-  const changeNumber = fillOrConfirm(context.changeNumber, 'change number');
-  const windowText = fillOrConfirm(context.windowText, 'date, start time and end time — Central Time');
+export function buildRcpApprovalEmailTemplate(
+  context: RcpApprovalEmailContext,
+  processOwnerName: string,
+  answers: RcpEmailAnswers = {},
+): string {
+  const changeNumber = fillOrConfirm(context.changeNumber, 'change number', answers.changeNumber);
+  const windowText = fillOrConfirm(context.windowText, 'date, start time and end time — Central Time', answers.windowText);
   return [
     `Subject: RCP approval request — ${changeNumber}`,
     '',
-    `Hello ${fillOrConfirm(context.directorName, 'Director name')} and ${processOwnerName},`,
+    `Hello ${fillOrConfirm(context.directorName, 'Director name', answers.directorName)} and ${processOwnerName},`,
     '',
     `Please review the attached PDF of change ${changeNumber} and reply with your approval before I submit it for Change Management review.`,
     '',
     'You are the director-level approver identified through the affected configuration item (CI) owner’s leadership chain.',
     '',
-    ...buildChangeSummaryLines(context, changeNumber, windowText),
+    ...buildChangeSummaryLines(context, answers, changeNumber, windowText),
     '',
     'Why this must occur during RCP',
-    '[WRITE: the business or operational need and any time-sensitive deadline or obligation]',
+    buildWriteMarker('the business or operational need and any time-sensitive deadline or obligation', answers.whyDuringRcp),
     '',
     'Impact of deferring until after RCP',
-    '[WRITE: the consequence of waiting until after January 19, 2027, at 7:00 p.m. Central Time, with supporting dates or evidence]',
-    ...(isWeekdayRequest(context.plannedStartUtc) ? buildWeekdayRequestLines() : []),
+    buildWriteMarker('the consequence of waiting until after January 19, 2027, at 7:00 p.m. Central Time, with supporting dates or evidence', answers.deferralImpact),
+    ...(isWeekdayRequest(context.plannedStartUtc) ? buildWeekdayRequestLines(answers) : []),
     '',
     'The attached PDF contains the implementation plan, risk and impact analysis, backout plan, and pre-production and post-implementation testing details. The proposed window includes live work, testing and backout within permitted hours on one calendar day.',
     '',
@@ -138,8 +256,8 @@ export function buildRcpApprovalEmailTemplate(context: RcpApprovalEmailContext, 
     'I will attach your approval email to the change record before submission. Implementation remains subject to the remaining required reviews and authorization.',
     '',
     'Thank you,',
-    '[CONFIRM: your name]',
-    '[CONFIRM: team / contact information]',
+    fillOrConfirm('', 'your name', answers.senderName),
+    fillOrConfirm('', 'team / contact information', answers.senderContact),
     '',
     `Attachment: ${changeNumber} — Change Record.pdf`,
   ].join('\n');
@@ -151,28 +269,79 @@ function renderFact(label: string, value: string): string {
 }
 
 /** The prompt that has AI Assist complete the RCP approval request email from Change Management's template. */
-export function buildRcpApprovalEmailPrompt(context: RcpApprovalEmailContext, processOwnerName: string): string {
+export function buildRcpApprovalEmailPrompt(
+  context: RcpApprovalEmailContext,
+  processOwnerName: string,
+  answers: RcpEmailAnswers = {},
+): string {
   return [
     `Complete this RCP approval request email for a ${context.environmentLabel || 'Production'} change during the `
       + `Restricted Change Period (RCP, through January 19, 2027). It goes to the Director and/or the Change Process Owner.`,
     '',
     'Facts about the change:',
-    renderFact('What changes', context.shortDescription),
+    renderFact('What changes', answers.shortDescription || context.shortDescription),
     renderFact('Why now (justification)', context.justification),
-    renderFact('Risk', context.riskLabel),
+    renderFact('Risk', answers.riskLabel || context.riskLabel),
     renderFact('Backout', context.backoutPlan),
     '',
     'Rules:',
     '- Keep every line of the template word for word, in the same order. Do not add, remove or reword anything outside the [WRITE: …] markers.',
-    '- Replace each [WRITE: …] marker with one to three plain sentences, using only the facts above.',
-    '- Where the facts do not cover a [WRITE: …] marker, replace it with [CONFIRM: <what is needed>] — never invent names, dates, counts or impacts.',
-    '- Leave every [CONFIRM: …] marker exactly as it is, for the sender to fill in.',
+    '- Replace each [WRITE: …] marker with one to three plain, professional sentences built only from the sender\'s notes inside it and the facts above.',
+    '- Never invent names, dates, counts, impacts or evidence, and never soften or exaggerate what the notes say.',
+    '- If something a sentence needs is genuinely missing, write [CONFIRM: <a short question to the sender>] there instead — Toolbox will ask the sender and fill it in before the email can be sent.',
+    '- Leave every [CONFIRM: …] marker exactly as it is.',
     '',
     'Template:',
-    buildRcpApprovalEmailTemplate(context, processOwnerName),
+    buildRcpApprovalEmailTemplate(context, processOwnerName, answers),
     '',
     CODE_BLOCK_REPLY_INSTRUCTION,
   ].join('\n');
+}
+
+// ── Gaps left in the drafted email ──
+
+/** One placeholder still in the email, and the question it asks the sender. */
+export interface RcpEmailGap {
+  placeholderText: string;
+  questionText: string;
+}
+
+// Any [bracketed] text is a placeholder: the finished template has no brackets of its own.
+const BRACKETED_PLACEHOLDER_PATTERN = /\[([^\]\n]+)\]/g;
+const PLACEHOLDER_PREFIX_PATTERN = /^\s*(?:CONFIRM|WRITE)\s*:\s*/i;
+// Filler words a draft uses where a fact belongs.
+const FILLER_PLACEHOLDERS = ['(not set)', 'TBD', 'TBA'];
+
+/** True when a filler word stands alone in the email, not inside a longer word. */
+function containsFiller(emailText: string, fillerText: string): boolean {
+  const escapedFiller = fillerText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(^|[^A-Za-z])${escapedFiller}([^A-Za-z]|$)`).test(emailText);
+}
+
+/**
+ * Every placeholder still in the drafted email, once each, in the order found: [CONFIRM: …], [WRITE: …],
+ * any other [bracketed] text, then filler such as "(not set)" or "TBD". While any remain, the email is not
+ * ready to send — each becomes a question for the sender.
+ */
+export function findRcpEmailGaps(emailText: string): RcpEmailGap[] {
+  const gapsByPlaceholder = new Map<string, RcpEmailGap>();
+  for (const placeholderMatch of emailText.matchAll(BRACKETED_PLACEHOLDER_PATTERN)) {
+    const placeholderText = placeholderMatch[0];
+    if (!gapsByPlaceholder.has(placeholderText)) {
+      gapsByPlaceholder.set(placeholderText, { placeholderText, questionText: placeholderMatch[1].replace(PLACEHOLDER_PREFIX_PATTERN, '').trim() });
+    }
+  }
+  for (const fillerText of FILLER_PLACEHOLDERS) {
+    if (containsFiller(emailText, fillerText)) {
+      gapsByPlaceholder.set(fillerText, { placeholderText: fillerText, questionText: `A value the email shows as "${fillerText}"` });
+    }
+  }
+  return [...gapsByPlaceholder.values()];
+}
+
+/** The email with the sender's answer in place of every copy of one placeholder. */
+export function fillRcpEmailGap(emailText: string, placeholderText: string, answer: string): string {
+  return emailText.split(placeholderText).join(answer.trim());
 }
 
 /** The pasted email, out of its code block, with its word count. */

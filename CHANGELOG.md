@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **The RCP approval email can't go out with a gap in it.** One leftover "[CONFIRM: …]" in an email to a Director
+  makes it look unread, so the draft now asks first and checks afterwards:
+  - **Before drafting**, Toolbox asks for everything ServiceNow doesn't hold: the Director (always shown to
+    confirm, with the CI owner named as a hint), any missing change fact (number, title, CI, CI owner, window,
+    risk), the expected impact, why it must happen during RCP, the impact of deferring, the two weekday answers
+    for a Monday–Thursday night, and your name and contact details (remembered for next time). **Continue to AI
+    Assist** stays off until every one is answered. AI Assist only phrases your answers; it is told never to
+    invent anything, and to write a question in brackets instead of guessing.
+  - **After pasting**, the email is editable, and every `[…]`, "(not set)", "TBD" or "TBA" left in it is listed
+    as a question with an answer box. **Fill in** puts the answer everywhere that gap appears. **Copy email**
+    stays off until no gaps remain, and it re-checks as you edit by hand.
+
 ### Added
 - **Change plan PDF for the RCP approval email (GH #441).** Change Management's approval template asks the
   approver to "review the attached PDF". On **Modify Existing CHG**, beside the approval email, a Production
