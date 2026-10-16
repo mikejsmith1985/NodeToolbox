@@ -27,7 +27,7 @@ export interface FieldMappingEntry {
   /** The key inside the ART settings this override is saved under. */
   settingsKey: 'featureLinkField' | 'spFieldId' | 'piFieldId' | 'piReviewTargetStartFieldId'
     | 'piReviewTargetEndFieldId' | 'acFieldId' | 'epicLinkFieldId' | 'snowRefFieldId'
-    | 'statusSummaryFieldId' | 'productOwnerFieldId';
+    | 'statusSummaryFieldId' | 'productOwnerFieldId' | 'estimateNfFieldId';
   label: string;
   /** Older fields the same value may sit in. Read as a fallback, never written to. */
   alternateReadFieldIds?: string[];
@@ -143,6 +143,16 @@ export const FIELD_MAPPING_ENTRIES: FieldMappingEntry[] = [
     importance: 'important',
     missingNote: 'No field on this Jira is named like "Product Owner", so Pull Features matches the roster\'s '
       + 'Product Owners by Assignee. Choose the field here to pull by Product Owner instead.',
+  },
+  {
+    settingsKey: 'estimateNfFieldId',
+    label: 'Estimate (NF)',
+    whatItDrives: 'each Epic\'s size in the PI Review — it replaces story points there (GH #449)',
+    // The exact name only: a loose "estimate" would also catch Jira's own Original Estimate.
+    namePattern: /^\s*estimate\s*\(nf\)\s*$/i,
+    // The id this org's Jira gives the field (seen on the Epic edit screen, GH #449).
+    hardDefaultFieldId: 'customfield_11900',
+    importance: 'important',
   },
 ];
 

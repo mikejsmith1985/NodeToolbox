@@ -69,7 +69,7 @@ import {
   savePiReviewFeatureTransition,
   savePiReviewTransitionRequiredFields,
 } from './piReviewJira.ts';
-import { getStoryPointsCandidateFieldIds, readIssueStoryPointsDisplayValue } from '../SprintDashboard/featureReviewFixes.ts';
+import { readEstimateNfFieldId, readIssueFeatureEstimateDisplayValue } from '../SprintDashboard/featureReviewFixes.ts';
 import { estimateCarryoverRemainingPoints } from './carryoverEstimate.ts';
 import { fetchCarryoverChildrenByFeature } from './carryoverEstimateFetch.ts';
 import { useStandupRosterStore } from '../SprintDashboard/hooks/useStandupRosterStore.ts';
@@ -88,6 +88,8 @@ import {
 import { computePiReviewLoadComparison } from './piReviewLoad.ts';
 import { doPiNamesMatch } from './piNameMatch.ts';
 import { EpicDatePlanPanel } from './epicDatePlan/EpicDatePlanPanel.tsx';
+import { createEstimateNfMigrationWriters, loadEstimateNfMigrationPlans, runEstimateNfMigration } from './estimateNfMigration.ts';
+import { EstimateNfMigrationPanel } from './EstimateNfMigrationPanel.tsx';
 import styles from './PiReviewTab.module.css';
 
 const LONG_TEXT_COLUMNS = new Set<PiReviewColumnKey>(['dependency', 'risks', 'notes']);
@@ -1626,7 +1628,7 @@ function PiReviewPagePanel({
         const carriedPoints = carriedPointsByRowId.get(rowId) ?? '';
         const featurePointsText = carriedPoints !== ''
           ? carriedPoints
-          : readIssueStoryPointsDisplayValue(jiraIssueMap[featureKey] ?? { fields: {} });
+          : readIssueFeatureEstimateDisplayValue(jiraIssueMap[featureKey] ?? { fields: {} });
         const featurePointsNumber = Number(featurePointsText);
         const estimate = estimateCarryoverRemainingPoints(
           featurePointsText.trim() === '' || !Number.isFinite(featurePointsNumber) ? null : featurePointsNumber,
@@ -2101,14 +2103,13 @@ function PiReviewPagePanel({
           continue;
         }
 
-        // Reflect the just-written estimate into the primary story-points field so the final
-        // reconcile sees Jira as now populated — the SAME field the reader checks, not the old
-        // numeric one it no longer reads.
+        // Reflect the just-written estimate into Estimate (NF) so the final reconcile sees Jira as now
+        // populated — the SAME field the estimate was written to (GH #449).
         finalJiraIssueMap[estimateUpdate.featureKey] = {
           ...currentIssue,
           fields: {
             ...currentIssue.fields,
-            [getStoryPointsCandidateFieldIds()[0]]: estimateUpdate.estimate,
+            [readEstimateNfFieldId()]: estimateUpdate.estimate,
           },
         };
       }
@@ -2601,6 +2602,17 @@ function PiReviewPagePanel({
             'No Product Owner is flagged in the team roster. Mark a roster member as Product Owner, or tick “Include full roster”, to enable Pull Features from Jira.'
           )}
         </p>
+      )}
+      {/* GH #449: Estimate (NF) replaces story points for Epics — move each Epic's points across, then clear them. */}
+      {canEditContent && (
+        <EstimateNfMigrationPanel
+          loadPlans={() => loadEstimateNfMigrationPlans(
+            (includeFullRoster ? rosterMembers : productOwners)
+              .map((rosterMember) => rosterMember.assigneeQueryValue.trim())
+              .filter((assigneeQueryValue) => assigneeQueryValue !== ''),
+          )}
+          runPlans={(migrationPlans) => runEstimateNfMigration(migrationPlans, createEstimateNfMigrationWriters())}
+        />
       )}
       {canEditContent && ignoredFeatureKeys.size > 0 && (
         <p className={styles.pullFeaturesHint} data-export-exclude="true">

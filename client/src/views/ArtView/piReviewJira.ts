@@ -6,8 +6,9 @@ import type { JiraIssue, JiraIssueLink, JiraTransition } from '../../types/jira.
 import type { PiReviewRow } from './piReviewTable.ts';
 import {
   getStoryPointsCandidateFieldIds,
-  readIssueStoryPointsDisplayValue,
-  saveFeatureReviewStoryPoints,
+  readEstimateNfFieldId,
+  readIssueFeatureEstimateDisplayValue,
+  saveFeatureEstimateNf,
 } from '../SprintDashboard/featureReviewFixes.ts';
 import {
   DEFAULT_DEV_START_STATUS_NAME,
@@ -201,6 +202,9 @@ function createFeatureQueryFields(): string {
     new Set([
       ...DEFAULT_LINK_FIELDS,
       ...getStoryPointsCandidateFieldIds(),
+      // Estimate (NF) replaces story points in the PI Review (GH #449); story points stay readable as the
+      // fallback until each Epic is reconciled.
+      readEstimateNfFieldId(),
       targetStartFieldId,
       targetEndFieldId,
       // Components carry the repo mapping the PI Planner turns into one Story per repo (spec 031); an extra
@@ -448,7 +452,9 @@ function reconcileSinglePiReviewRow(
   // Read the point estimate from the app-wide Story Points (Selection) field — the SAME field the
   // whole app reads and writes — not the raw numeric field the PI Review used to target. That
   // mismatch was why an estimate typed in Toolbox left Jira's story-points field blank.
-  const jiraStoryPoints = readIssueStoryPointsDisplayValue(jiraIssue);
+  // Estimate (NF) first — it replaces story points in the PI Review (GH #449) — with story points as the
+  // fallback until the Epic is reconciled.
+  const jiraStoryPoints = readIssueFeatureEstimateDisplayValue(jiraIssue as unknown as { fields: Record<string, unknown> });
   const jiraHasStoryPoints = jiraStoryPoints.trim() !== '';
 
   // A carried-over Feature's estimate is its REMAINING effort, which is deliberately NOT the Feature's
@@ -842,10 +848,8 @@ export function reconcilePiReviewRowsWithJira(
  * Saves any backfilled PI Review estimates into Jira so future PI Review loads can trust Jira as the
  * source of truth.
  *
- * Delegates to `saveFeatureReviewStoryPoints` — the one app-wide helper that discovers the right
- * story-points field for this instance AND writes the correct shape (a dropdown option object where
- * the field is a Select, a raw number where it is numeric). Writing a bare number to the wrong field,
- * as this used to, left Jira's story-points field untouched.
+ * Writes Estimate (NF), which replaces story points in the PI Review (GH #449). `saveFeatureEstimateNf` reads
+ * the field's type from the Epic's edit screen, so it is sent as a number or as text, whichever Jira expects.
  */
 export async function savePiReviewFeatureEstimates(estimateUpdates: PiReviewEstimateUpdate[]): Promise<void> {
   const uniqueEstimateUpdates = new Map<string, PiReviewEstimateUpdate>();
@@ -854,7 +858,7 @@ export async function savePiReviewFeatureEstimates(estimateUpdates: PiReviewEsti
   }
 
   for (const estimateUpdate of uniqueEstimateUpdates.values()) {
-    await saveFeatureReviewStoryPoints(estimateUpdate.featureKey, estimateUpdate.estimate);
+    await saveFeatureEstimateNf(estimateUpdate.featureKey, estimateUpdate.estimate);
   }
 }
 

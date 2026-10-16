@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Estimate (NF) replaces story points for Epics in the PI Review, with a reconciliation to move them across
+  (GH #449).**
+  - **PI Review** reads each Epic's size from **Estimate (NF)**. Story points stay the fallback until an Epic is
+    reconciled, so nothing reads blank in the meantime.
+    - A size typed into the PI Review is written to Estimate (NF), never to story points. It is sent as a number
+      or as text, whichever the field's type on the Epic's edit screen says.
+    - Carryover estimates read Estimate (NF) too.
+  - **Move story points to Estimate (NF)** (PI Review toolbar) finds every Epic your Product Owners own, in every
+    PI, that still holds story points, and previews what will happen before anything is written.
+    - Each value is copied into Estimate (NF) and read back to confirm it landed. Only then are story points
+      cleared, in every field that held them.
+    - An Epic whose Estimate (NF) already holds the **same** value just has its story points cleared. A
+      **different** value is left alone and flagged for you.
+    - One Epic's failure is reported against that Epic and never stops the rest.
+  - **Field Mapping** gains **Estimate (NF)**. It is found by its exact name, so Jira's own "Original Estimate"
+    never matches, and defaults to `customfield_11900`.
+
 ### Fixed
 - **The RCP approval email no longer greets a Change Process Owner nobody named (GH #449).** The template says
   "Director's name and/or Change Process Owner (Ben Labout)". Toolbox had made Ben Labout a default recipient on

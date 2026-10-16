@@ -107,7 +107,7 @@ function quoteJqlValue(value: string): string {
  * Builds the owner clause for the Product Owner(s) — against the Product Owner field (`cf[NNN]`) or, with
  * none, Assignee: `= "x"` for a single PO, `in ("x", "y")` for several. Null when no PO is supplied.
  */
-function buildProductOwnerClause(poQueryValues: readonly string[], productOwnerFieldId: string | null): string | null {
+export function buildProductOwnerClause(poQueryValues: readonly string[], productOwnerFieldId: string | null): string | null {
   const ownerValues = poQueryValues.map((ownerValue) => ownerValue.trim()).filter(Boolean);
   if (ownerValues.length === 0) {
     return null;

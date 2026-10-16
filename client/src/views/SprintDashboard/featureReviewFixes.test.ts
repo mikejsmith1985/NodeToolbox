@@ -25,7 +25,13 @@ import {
   saveFeatureReviewSimpleField,
   saveFeatureReviewSimpleFields,
   saveFeatureReviewStoryPoints,
+  clearFeatureReviewFields,
+  readEstimateNfFieldId,
+  readIssueEstimateNfValue,
+  readIssueFeatureEstimateDisplayValue,
+  saveFeatureEstimateNf,
 } from './featureReviewFixes.ts';
+import { writeFieldMappingOverride } from '../../services/jiraFieldMapping.ts';
 
 describe('featureReviewFixes', () => {
   beforeEach(() => {
@@ -416,5 +422,48 @@ describe('saveFeatureReviewSimpleFields', () => {
     const [, multiFieldRequest] = mockJiraPut.mock.calls;
 
     expect(multiFieldRequest).toEqual(singleFieldRequest);
+  });
+});
+
+describe('the Estimate (NF) field', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    localStorage.clear();
+  });
+
+  it('is customfield_11900 unless Field Mapping chose another', () => {
+    expect(readEstimateNfFieldId()).toBe('customfield_11900');
+    writeFieldMappingOverride(localStorage, 'estimateNfFieldId', 'customfield_12345');
+    expect(readEstimateNfFieldId()).toBe('customfield_12345');
+  });
+
+  it('is read before story points, which stay the fallback until an Epic is reconciled', () => {
+    expect(readIssueFeatureEstimateDisplayValue({ fields: { customfield_11900: 8, customfield_10028: { value: '5' } } })).toBe('8');
+    expect(readIssueFeatureEstimateDisplayValue({ fields: { customfield_11900: null, customfield_10028: { value: '5' } } })).toBe('5');
+    expect(readIssueEstimateNfValue({ fields: { customfield_11900: '13' } })).toBe('13');
+    expect(readIssueEstimateNfValue({ fields: {} })).toBe('');
+  });
+
+  it('is written as a number when Jira says the field is a number, else as text', async () => {
+    mockJiraGet.mockResolvedValueOnce({ fields: { customfield_11900: { name: 'Estimate (NF)', schema: { type: 'number' } } } });
+    mockJiraPut.mockResolvedValue(undefined);
+    await saveFeatureEstimateNf('DENP-1', '8');
+    expect(mockJiraPut).toHaveBeenLastCalledWith('/rest/api/2/issue/DENP-1', { fields: { customfield_11900: 8 } });
+
+    mockJiraGet.mockResolvedValueOnce({ fields: { customfield_11900: { name: 'Estimate (NF)', schema: { type: 'string' } } } });
+    await saveFeatureEstimateNf('DENP-2', '8');
+    expect(mockJiraPut).toHaveBeenLastCalledWith('/rest/api/2/issue/DENP-2', { fields: { customfield_11900: '8' } });
+  });
+
+  it('refuses to write when the field is not on the Epic\'s edit screen, rather than failing silently', async () => {
+    mockJiraGet.mockResolvedValueOnce({ fields: {} });
+    await expect(saveFeatureEstimateNf('DENP-1', '8')).rejects.toThrow(/Estimate \(NF\).*edit screen/);
+    expect(mockJiraPut).not.toHaveBeenCalled();
+  });
+
+  it('clears fields by setting them to null in one request', async () => {
+    mockJiraPut.mockResolvedValue(undefined);
+    await clearFeatureReviewFields('DENP-1', ['customfield_10236', 'customfield_10028']);
+    expect(mockJiraPut).toHaveBeenCalledWith('/rest/api/2/issue/DENP-1', { fields: { customfield_10236: null, customfield_10028: null } });
   });
 });

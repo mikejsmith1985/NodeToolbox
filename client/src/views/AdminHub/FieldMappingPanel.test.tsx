@@ -32,6 +32,7 @@ describe('FieldMappingPanel', () => {
       ['customfield_5', 'ServiceNow Reference'],
       ['customfield_9', 'Status Summary'],
       ['customfield_10', 'Product Owner'],
+      ['customfield_11', 'Estimate (NF)'],
     );
     render(<FieldMappingPanel />);
 

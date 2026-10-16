@@ -174,6 +174,7 @@ describe('describeMappingHealth', () => {
       ['customfield_5', 'ServiceNow Reference'],
       ['customfield_9', 'Status Summary'],
       ['customfield_10', 'Product Owner'],
+      ['customfield_11', 'Estimate (NF)'],
     ), {});
 
     expect(describeMappingHealth(resolutions)).toContain('resolve cleanly');
@@ -308,5 +309,17 @@ describe('the Product Owner mapping — whose Epics a PI pull brings in', () => 
     expect(resolveConfiguredFieldIds('productOwnerFieldId', localStorage)).toEqual([]);
     localStorage.setItem('tbxARTSettings', JSON.stringify({ productOwnerFieldId: 'customfield_77' }));
     expect(resolveConfiguredFieldIds('productOwnerFieldId', localStorage)).toEqual(['customfield_77']);
+  });
+});
+
+describe('the Estimate (NF) mapping', () => {
+  it('finds the field by its exact name, never "Original Estimate", and defaults to the id the org uses', () => {
+    const estimateEntry = FIELD_MAPPING_ENTRIES.find((entry) => entry.settingsKey === 'estimateNfFieldId');
+
+    expect(estimateEntry?.label).toBe('Estimate (NF)');
+    expect(estimateEntry?.hardDefaultFieldId).toBe('customfield_11900');
+    expect(estimateEntry?.namePattern.test('Estimate (NF)')).toBe(true);
+    expect(estimateEntry?.namePattern.test('Original Estimate')).toBe(false);
+    expect(estimateEntry?.namePattern.test('Estimate')).toBe(false);
   });
 });

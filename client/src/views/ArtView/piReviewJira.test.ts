@@ -18,13 +18,13 @@ vi.mock('../../services/jiraApi.ts', () => ({
 // The estimate write delegates to the app-wide story-points helper, which owns field discovery and
 // the dropdown-vs-number payload (covered by featureReviewFixes.test.ts). Mock just that one function
 // so this file can assert the delegation; keep the real read + candidate-field helpers.
-const { mockSaveStoryPoints } = vi.hoisted(() => ({ mockSaveStoryPoints: vi.fn() }));
+const { mockSaveStoryPoints, mockSaveEstimateNf } = vi.hoisted(() => ({ mockSaveStoryPoints: vi.fn(), mockSaveEstimateNf: vi.fn() }));
 
 vi.mock('../SprintDashboard/featureReviewFixes.ts', async () => {
   const actual = await vi.importActual<typeof import('../SprintDashboard/featureReviewFixes.ts')>(
     '../SprintDashboard/featureReviewFixes.ts',
   );
-  return { ...actual, saveFeatureReviewStoryPoints: mockSaveStoryPoints };
+  return { ...actual, saveFeatureReviewStoryPoints: mockSaveStoryPoints, saveFeatureEstimateNf: mockSaveEstimateNf };
 });
 
 import {
@@ -438,18 +438,18 @@ describe('piReviewJira', () => {
     expect(issueMap['DENP-1352'].fields.summary).toBe('26.3 Enrollment Support');
   });
 
-  it('writes queued estimates through the app-wide story-points helper, deduped per feature', async () => {
-    mockSaveStoryPoints.mockResolvedValue(undefined);
+  it('writes queued estimates to Estimate (NF), deduped per feature — never to story points', async () => {
+    mockSaveEstimateNf.mockResolvedValue(undefined);
 
     await savePiReviewFeatureEstimates([
       { featureKey: 'DENP-1352', estimate: '8' },
       { featureKey: 'DENP-1352', estimate: '8' },
     ]);
 
-    // One call for the one feature — the helper owns the correct field id and the dropdown-vs-number
-    // payload, so PI Review no longer writes a raw number to a hardcoded field.
-    expect(mockSaveStoryPoints).toHaveBeenCalledTimes(1);
-    expect(mockSaveStoryPoints).toHaveBeenCalledWith('DENP-1352', '8');
+    // Estimate (NF) replaces story points in the PI Review (GH #449).
+    expect(mockSaveEstimateNf).toHaveBeenCalledTimes(1);
+    expect(mockSaveEstimateNf).toHaveBeenCalledWith('DENP-1352', '8');
+    expect(mockSaveStoryPoints).not.toHaveBeenCalled();
   });
 
   it('fetches available Jira transitions for PI Review status changes', async () => {
@@ -799,3 +799,42 @@ function makeMinimalFeatureIssue(issueKey: string): JiraIssue {
     },
   } as unknown as JiraIssue;
 }
+
+describe('PI Review and Estimate (NF)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    localStorage.clear();
+  });
+
+  it('requests Estimate (NF) with the Features', async () => {
+    mockJiraGet.mockResolvedValue({ issues: [] });
+    await fetchPiReviewFeatureIssues([{ ...createEmptyPiReviewRow(), feature: 'DENP-1352' }]);
+
+    expect(mockJiraGet.mock.calls[0][0]).toContain('customfield_11900');
+  });
+
+  it('shows Estimate (NF) over story points when both are set', () => {
+    const piReviewRow = { ...createEmptyPiReviewRow(), feature: 'DENP-1352', pointEstimate: '' };
+    const reconciliationResult = reconcilePiReviewRowsWithJira([piReviewRow], {
+      'DENP-1352': {
+        id: '1',
+        key: 'DENP-1352',
+        fields: {
+          summary: 'Epic',
+          status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } },
+          priority: null,
+          assignee: null,
+          reporter: null,
+          issuetype: { name: 'Epic' },
+          created: '2026-01-01T00:00:00.000+0000',
+          updated: '2026-01-01T00:00:00.000+0000',
+          description: null,
+          customfield_11900: 21,
+          customfield_10028: { value: '5' } as unknown as number,
+        } as never,
+      },
+    });
+
+    expect(reconciliationResult.rows[0].pointEstimate).toBe('21');
+  });
+});

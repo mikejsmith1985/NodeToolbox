@@ -1,5 +1,6 @@
 // featureReviewFixes.ts — Jira mutation helpers that power direct hygiene fixes inside Team Dashboard Feature Review.
 
+import { FIELD_MAPPING_ENTRIES, resolveWriteFieldId } from '../../services/jiraFieldMapping.ts';
 import { jiraGet, jiraPost, jiraPut } from '../../services/jiraApi.ts';
 import type { JiraIssue, JiraTransition } from '../../types/jira.ts';
 
@@ -648,6 +649,65 @@ export function readIssueStoryPointsDisplayValue(issue: { fields: Record<string,
     }
   }
   return '';
+}
+
+// ── Estimate (NF): the Epic size that replaces story points in the PI Review (GH #449) ──
+
+const ESTIMATE_NF_LABEL = 'Estimate (NF)';
+
+/**
+ * The Estimate (NF) field id: Field Mapping's choice, else the org's id. Falls back to the built-in id when
+ * there is no browser storage — the PI Review engine also runs on the server, where there is none.
+ */
+export function readEstimateNfFieldId(): string {
+  const builtInFieldId = FIELD_MAPPING_ENTRIES.find((entry) => entry.settingsKey === 'estimateNfFieldId')?.hardDefaultFieldId ?? '';
+  try {
+    return resolveWriteFieldId('estimateNfFieldId', window.localStorage) || builtInFieldId;
+  } catch {
+    return builtInFieldId;
+  }
+}
+
+/** The Estimate (NF) an issue holds, as text; '' when it holds none. */
+export function readIssueEstimateNfValue(issue: { fields: Record<string, unknown> }): string {
+  const rawFieldValue = issue.fields[readEstimateNfFieldId()];
+  return typeof rawFieldValue === 'number' || (typeof rawFieldValue === 'string' && rawFieldValue.trim() !== '')
+    ? String(rawFieldValue).trim()
+    : '';
+}
+
+/**
+ * The size an Epic shows in the PI Review: Estimate (NF), else its story points. Story points stay the fallback
+ * only until the Epic is reconciled, so nothing reads blank in the meantime.
+ */
+export function readIssueFeatureEstimateDisplayValue(issue: { fields: Record<string, unknown> }): string {
+  return readIssueEstimateNfValue(issue) || readIssueStoryPointsDisplayValue(issue);
+}
+
+/**
+ * Writes an Epic's Estimate (NF). The field's type is read from the Epic's edit screen, so a number field gets a
+ * number and a text field gets text — Jira rejects the wrong shape. A field missing from the screen is refused
+ * up front, rather than sent and silently ignored.
+ */
+export async function saveFeatureEstimateNf(issueKey: string, estimate: string): Promise<void> {
+  const estimateFieldId = readEstimateNfFieldId();
+  const editMetaField = (await fetchFeatureReviewEditMeta(issueKey))[estimateFieldId];
+  if (!editMetaField) {
+    throw new Error(`${ESTIMATE_NF_LABEL} (${estimateFieldId}) is not on ${issueKey}'s edit screen, so it cannot be written.`);
+  }
+  const trimmedEstimate = estimate.trim();
+  const fieldValue = editMetaField.schema?.type === 'number' ? Number(trimmedEstimate) : trimmedEstimate;
+  if (typeof fieldValue === 'number' && !Number.isFinite(fieldValue)) {
+    throw new Error(`"${trimmedEstimate}" is not a number, and ${ESTIMATE_NF_LABEL} only takes numbers.`);
+  }
+  await jiraPut(`/rest/api/2/issue/${encodeURIComponent(issueKey)}`, { fields: { [estimateFieldId]: fieldValue } });
+}
+
+/** Empties several fields on one issue in ONE request — a select field is cleared by setting it to null. */
+export async function clearFeatureReviewFields(issueKey: string, fieldIds: readonly string[]): Promise<void> {
+  await jiraPut(`/rest/api/2/issue/${encodeURIComponent(issueKey)}`, {
+    fields: Object.fromEntries(fieldIds.map((fieldId) => [fieldId, null])),
+  });
 }
 
 /** Reads the Jira project key from an issue key such as DENP-1370. */
