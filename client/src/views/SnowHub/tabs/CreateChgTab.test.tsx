@@ -1532,7 +1532,8 @@ describe('CreateChgTab', () => {
 
       expect(screen.getByText(/RCP rules met/)).toBeInTheDocument();
       expect(screen.getByText(/once the change is created/i)).toBeInTheDocument();
-      expect(screen.getByText(/AI Assist writes the change plan PDF the approval email attaches/)).toBeInTheDocument();
+      // The PDF is ServiceNow's own Change Record export now, not an AI-written plan.
+      expect(screen.queryByText(/AI Assist writes the change plan PDF/)).toBeNull();
     } finally {
       vi.useRealTimers();
     }

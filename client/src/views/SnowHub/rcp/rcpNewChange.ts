@@ -53,6 +53,16 @@ export function readLocalDateTimeAsUtc(localDateTime: string): string | null {
   return Number.isNaN(parsedTime) ? null : new Date(parsedTime).toISOString();
 }
 
+// Pads a calendar or clock part to two digits, as the builder's date fields write them.
+const padTwoDigits = (datePart: number) => String(datePart).padStart(2, '0');
+
+/** An instant as the local date-time the builder's date fields hold ("2026-10-16T19:00"), for writing a window back. */
+export function formatUtcAsLocalDateTime(instantIso: string): string {
+  const localDate = new Date(instantIso);
+  return `${localDate.getFullYear()}-${padTwoDigits(localDate.getMonth() + 1)}-${padTwoDigits(localDate.getDate())}`
+    + `T${padTwoDigits(localDate.getHours())}:${padTwoDigits(localDate.getMinutes())}`;
+}
+
 /** The RCP checklist for a change still being built; null when it is not a Production change. */
 export function evaluateNewChangeRcp(input: NewChangeRcpInput): NewChangeRcpEvaluation | null {
   const environment = input.productionEnvironment;
@@ -80,6 +90,7 @@ export function evaluateNewChangeRcp(input: NewChangeRcpInput): NewChangeRcpEval
       environmentLabel: environment.label,
       windowText: describeCentralWindow(environment.plannedStartUtc, environment.plannedEndUtc),
       plannedStartUtc: environment.plannedStartUtc,
+      plannedEndUtc: environment.plannedEndUtc,
       configItemName: environment.configItem.displayName,
       // The CI's owner is only read once the change exists; the template marks it [CONFIRM].
       ciOwnerName: '',

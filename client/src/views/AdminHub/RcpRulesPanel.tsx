@@ -1,8 +1,9 @@
 // RcpRulesPanel.tsx — The Admin Hub switch for the temporary RCP production-change rules (GH #415).
 //
 // The restricted change period is not permanent, so its checklist can be turned off here; it also stops on its
-// own after the period's last day, so nobody has to remember to switch it off. The Change Process Owner named
-// here is who the RCP approval request email is addressed to, beside the Director (GH #441).
+// own after the period's last day, so nobody has to remember to switch it off. A Change Process Owner named
+// here is added to the RCP approval request email beside the Director (GH #441); the template makes them
+// optional ("and/or"), so nobody is named until someone is set here.
 
 import { useState } from 'react';
 
@@ -44,7 +45,7 @@ export function RcpRulesPanel(): React.JSX.Element {
         {' '}Check Production changes against the RCP rules
       </label>
       <label className={styles.fieldLabel} htmlFor="rcp-process-owner-name">
-        Change Process Owner (named in the RCP approval request email)
+        Change Process Owner (optional — added to the approval email beside the Director only when named)
       </label>
       <input
         className={styles.inputField}

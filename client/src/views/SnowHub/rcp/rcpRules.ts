@@ -202,10 +202,11 @@ const MAX_NIGHT_MINUTES = 10 * 60;
 // Central Time is UTC-5 in daylight time and UTC-6 in standard time.
 const CENTRAL_UTC_OFFSET_HOURS = [5, 6];
 
-/** The UTC instant of a Central Time wall-clock hour on a calendar day, whichever offset is in force. */
-function readCentralWallTimeAsUtc(dateIso: string, hour: number): string {
+/** The UTC instant of a Central Time wall-clock time on a calendar day, whichever offset is in force. */
+export function readCentralDateTimeAsUtc(dateIso: string, hour: number, minute = 0): string {
   const toInstant = (offsetHours: number) =>
-    new Date(Date.parse(`${dateIso}T00:00:00Z`) + (hour + offsetHours) * MILLISECONDS_PER_HOUR).toISOString().replace('.000Z', 'Z');
+    new Date(Date.parse(`${dateIso}T00:00:00Z`) + (hour + offsetHours) * MILLISECONDS_PER_HOUR + minute * MILLISECONDS_PER_MINUTE)
+      .toISOString().replace('.000Z', 'Z');
   const matchingInstant = CENTRAL_UTC_OFFSET_HOURS.map(toInstant).find((candidateIso) => {
     const centralParts = readCentralTimeParts(candidateIso);
     return centralParts.dateIso === dateIso && centralParts.hour === hour;
@@ -230,7 +231,7 @@ export function findNextApprovedWindow(input: {
   const needsReviewTime = EARLY_SUBMISSION_RISK_PATTERN.test(input.riskLabel);
   for (let dayOffset = 0; dayOffset <= MAX_WINDOW_SEARCH_DAYS; dayOffset += 1) {
     const nightDateIso = shiftCalendarDay(todayIso, dayOffset);
-    const plannedStartUtc = readCentralWallTimeAsUtc(nightDateIso, NIGHT_START_HOUR);
+    const plannedStartUtc = readCentralDateTimeAsUtc(nightDateIso, NIGHT_START_HOUR);
     const isAllowedNight = ALLOWED_NIGHT_WEEKDAYS.has(readWeekday(nightDateIso)) && plannedStartUtc > input.nowUtc;
     const hasReviewTime = !needsReviewTime || countBusinessDaysBetween(todayIso, nightDateIso) >= LEAD_TIME_BUSINESS_DAYS;
     if (isAllowedNight && hasReviewTime) {

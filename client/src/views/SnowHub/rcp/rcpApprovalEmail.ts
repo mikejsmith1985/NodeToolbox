@@ -3,13 +3,16 @@
 // Every Production change in the restricted change period needs the Director's (and/or the Change Process
 // Owner's) email approval attached. Change Management publishes one template for that request (GH #441).
 // Toolbox fills in every fact it holds and hands AI Assist everything else known about the change, so AI
-// Assist can work out each remaining section itself — and write the change plan the email says is attached. Only what truly cannot be worked out is asked — by AI
+// Assist can work out each remaining section itself. Only what truly cannot be worked out is asked — by AI
 // Assist, in its own chat, with its best guess — and an email that still has a gap cannot be copied.
+// The window is the exception: AI Assist confirms it with the sender every time, and sends the confirmed window
+// back in a form Toolbox can read, so a corrected window is written to the change before its Change Record PDF
+// (ServiceNow's own export, the attachment the template names) is downloaded.
 //
 // The switch lives here too: the RCP rules are temporary, so the whole checklist can be turned off.
 
 import { CONVERSATIONAL_REPLY_INSTRUCTION, stripCodeFences } from '../chgFormula/assistantReplyText.ts';
-import { RCP_LAST_DAY_ISO, readWindowStartWeekday } from './rcpRules.ts';
+import { RCP_LAST_DAY_ISO, readCentralDateTimeAsUtc, readWindowStartWeekday } from './rcpRules.ts';
 
 /** The change facts the approval email is written from. */
 export interface RcpApprovalEmailContext {
@@ -20,6 +23,8 @@ export interface RcpApprovalEmailContext {
   windowText: string;
   /** The planned start as an ISO instant, to tell a weekday request from a weekend one; null when not set. */
   plannedStartUtc: string | null;
+  /** The planned end as an ISO instant, to tell whether the window confirmed with the sender is the change's. */
+  plannedEndUtc?: string | null;
   configItemName: string;
   /** The configuration item's owner; empty when it could not be read. */
   ciOwnerName: string;
@@ -44,8 +49,6 @@ export interface RcpApprovalEmailContext {
 
 const RCP_RULES_ENABLED_STORAGE_KEY = 'tbxRcpRulesEnabled';
 const RCP_PROCESS_OWNER_STORAGE_KEY = 'tbxRcpProcessOwnerName';
-/** The Change Process Owner Change Management's template names, used until Admin Hub names someone else. */
-export const DEFAULT_RCP_PROCESS_OWNER_NAME = 'Ben Labout';
 const NOT_SET_TEXT = '(not set)';
 // Monday–Thursday nights are outside the normal Friday–Sunday RCP nights, so the template's weekday
 // questions apply to them. A Friday-night window is a normal RCP night and does not need them.
@@ -65,16 +68,19 @@ export function writeRcpRulesEnabled(isEnabled: boolean, storage: Storage = wind
   storage.setItem(RCP_RULES_ENABLED_STORAGE_KEY, String(isEnabled));
 }
 
-/** The Change Process Owner the approval email is addressed to, beside the Director. */
+/**
+ * The Change Process Owner the email is also addressed to; blank unless named in Admin Hub. The template says
+ * "Director and/or Change Process Owner", so the Process Owner is optional and never added on its own.
+ */
 export function readRcpProcessOwnerName(storage: Storage = window.localStorage): string {
   try {
-    return storage.getItem(RCP_PROCESS_OWNER_STORAGE_KEY)?.trim() || DEFAULT_RCP_PROCESS_OWNER_NAME;
+    return storage.getItem(RCP_PROCESS_OWNER_STORAGE_KEY)?.trim() ?? '';
   } catch {
-    return DEFAULT_RCP_PROCESS_OWNER_NAME;
+    return '';
   }
 }
 
-/** Names the Change Process Owner; a blank name goes back to the template's default. */
+/** Names the Change Process Owner; a blank name addresses the email to the Director alone. */
 export function writeRcpProcessOwnerName(processOwnerName: string, storage: Storage = window.localStorage): void {
   storage.setItem(RCP_PROCESS_OWNER_STORAGE_KEY, processOwnerName.trim());
 }
@@ -183,7 +189,7 @@ export function buildRcpApprovalEmailTemplate(context: RcpApprovalEmailContext, 
   return [
     `Subject: RCP approval request — ${changeNumber}`,
     '',
-    `Hello ${fillOrConfirm(context.directorName, 'Director name')} and ${processOwnerName},`,
+    `Hello ${fillOrConfirm(context.directorName, 'Director name')}${processOwnerName.trim() ? ` and ${processOwnerName.trim()}` : ''},`,
     '',
     `Please review the attached PDF of change ${changeNumber} and reply with your approval before I submit it for Change Management review.`,
     '',
@@ -212,7 +218,7 @@ export function buildRcpApprovalEmailTemplate(context: RcpApprovalEmailContext, 
     fillOrConfirm(context.senderName, 'your name'),
     fillOrConfirm(context.senderContact, 'team / contact information'),
     '',
-    `Attachment: ${buildRcpAttachmentTitle(context.changeNumber || changeNumber)}.pdf`,
+    `Attachment: ${changeNumber} — Change Record.pdf`,
   ].join('\n');
 }
 
@@ -256,6 +262,7 @@ const EMAIL_RULES = [
     + 'the Requested By person, or the CI owner\'s director; the expected impact and any outage come from the risk and '
     + 'impact analysis, the implementation plan and the task windows; why it must happen during RCP and the impact of '
     + 'deferring come from the justification and description; the weekday answers come from the justification and the window.',
+  '- Use the window I confirm (see below) everywhere the email names the window.',
   '- Write each [WRITE: …] section as one to three plain, professional sentences. Never invent names, dates, counts, '
     + 'impacts or evidence the facts do not support.',
   '- Only when something truly cannot be worked out from the facts, ask me — in ONE chat message, as a short numbered '
@@ -263,63 +270,91 @@ const EMAIL_RULES = [
   '- The finished email must contain no [ ] markers, no placeholders and nothing marked TBD.',
 ];
 
-// ── The attachment ──
+// ── The window, confirmed every time ──
 
+/** The line that starts the confirmed window in AI Assist's reply. */
+export const RCP_WINDOW_MARKER = '=== WINDOW ===';
 /** The line that starts the email in AI Assist's reply. */
 export const RCP_EMAIL_MARKER = '=== EMAIL ===';
-/** The line that starts the attachment in AI Assist's reply. */
-export const RCP_ATTACHMENT_MARKER = '=== ATTACHMENT ===';
-const MISSING_ATTACHMENT_PLACEHOLDER = '(no attachment)';
-// The sections the email promises the attachment holds, in the order Change Management reads them.
-const ATTACHMENT_HEADINGS = [
-  'Change summary',
-  'Implementation plan',
-  'Risk and impact analysis',
-  'Backout plan',
-  'Pre-production and post-implementation testing',
-  'Change tasks',
-];
+const UNCONFIRMED_WINDOW_PLACEHOLDER = '(window not confirmed)';
+// One end of the confirmed window: "Start: 2026-10-16 19:00", Central Time, 24-hour clock.
+const WINDOW_START_PATTERN = /^\s*Start:\s*(\d{4}-\d{2}-\d{2})[ T](\d{1,2}):(\d{2})/im;
+const WINDOW_END_PATTERN = /^\s*End:\s*(\d{4}-\d{2}-\d{2})[ T](\d{1,2}):(\d{2})/im;
+const MILLISECONDS_PER_MINUTE = 60_000;
 
-/** The attachment's name, without ".pdf" — also the print window's title, so "Save as PDF" suggests it. */
-export function buildRcpAttachmentTitle(changeNumber: string): string {
-  return changeNumber.trim() === '' ? 'Change plan' : `${changeNumber.trim()} change plan`;
+/** A window as two ISO instants. */
+export interface RcpConfirmedWindow {
+  plannedStartUtc: string;
+  plannedEndUtc: string;
 }
 
-/** How AI Assist writes the attachment: the change's own plan, faithfully, under fixed headings. */
-function buildAttachmentRules(context: RcpApprovalEmailContext): string[] {
+/** The question AI Assist asks about the window, every time: the change's own window, or when it should be. */
+function buildWindowQuestion(context: RcpApprovalEmailContext): string {
+  return context.windowText.trim()
+    ? `"The window for this change is ${context.windowText.trim()}. Is this correct? If not, when?"`
+    : '"This change has no window yet. When should it be?"';
+}
+
+/**
+ * The window rules: AI Assist confirms the window with the sender every time — the approval names it, and a wrong
+ * window is easy to miss — then sends the confirmed window back where Toolbox can read it and update the change.
+ */
+function buildWindowRules(context: RcpApprovalEmailContext): string[] {
   return [
-    `The attachment — "${buildRcpAttachmentTitle(context.changeNumber)}.pdf", which the email says is attached:`,
-    '- Write it under exactly these headings, in this order:',
-    ...ATTACHMENT_HEADINGS.map((heading) => `  ## ${heading}`),
-    '- Change summary: one line each for change number and title, environment, CI and CI owner, Requested By, '
-      + 'assignment group, window (Central Time), risk and impact.',
-    '- Copy the implementation plan, risk and impact analysis, backout plan and test plan word for word from the change '
-      + 'facts — tidy the layout only. Never add, drop or reword a step. The approver checks them against the record.',
-    '- Change tasks: one line per task — number, type, summary, group / assignee, window.',
-    '- Where the facts hold nothing for a section, work it out from the other facts or ask me, as for the email.',
-    '- The attachment must contain no [ ] markers, no placeholders and nothing marked TBD.',
+    'The window — confirm it with me every time, even when nothing else is unclear:',
+    `- Before writing the final email, ask me: ${buildWindowQuestion(context)} Put it first in your one chat message of questions.`,
+    '- Use the window I confirm or give you everywhere in the email, worded like the template\'s window line.',
+    `- In your final reply, put the confirmed window under ${RCP_WINDOW_MARKER} as two lines, Central Time, 24-hour clock:`,
+    '  Start: YYYY-MM-DD HH:MM',
+    '  End: YYYY-MM-DD HH:MM',
   ];
 }
 
-/** The final reply's shape: the email and the attachment, each under its own marker line, in one code block. */
+/** The final reply's shape: the confirmed window, then the email, each under its marker line, in one code block. */
 function buildReplyFormatLines(): string[] {
   return [
     'Your final reply holds both, in ONE code block, each under its marker line:',
+    RCP_WINDOW_MARKER,
+    'Start: YYYY-MM-DD HH:MM',
+    'End: YYYY-MM-DD HH:MM',
     RCP_EMAIL_MARKER,
     '<the whole email>',
-    RCP_ATTACHMENT_MARKER,
-    '<the whole attachment>',
     '',
-    CONVERSATIONAL_REPLY_INSTRUCTION.replace('the fields', 'the email and the attachment'),
+    CONVERSATIONAL_REPLY_INSTRUCTION.replace('the fields', 'the window and the email'),
   ];
+}
+
+/** One end of the window as a UTC instant, or null when the line is missing or not a real time. */
+function readWindowEnd(windowText: string, endPattern: RegExp): string | null {
+  const endMatch = endPattern.exec(windowText);
+  if (endMatch === null) return null;
+  const [, dateIso, hourText, minuteText] = endMatch;
+  const hour = Number(hourText);
+  const minute = Number(minuteText);
+  return hour > 23 || minute > 59 ? null : readCentralDateTimeAsUtc(dateIso, hour, minute);
+}
+
+/** The window the sender confirmed, from the reply's window section; null when it is missing or ends before it starts. */
+export function readRcpConfirmedWindow(windowText: string): RcpConfirmedWindow | null {
+  const plannedStartUtc = readWindowEnd(windowText, WINDOW_START_PATTERN);
+  const plannedEndUtc = readWindowEnd(windowText, WINDOW_END_PATTERN);
+  if (plannedStartUtc === null || plannedEndUtc === null || plannedEndUtc <= plannedStartUtc) return null;
+  return { plannedStartUtc, plannedEndUtc };
+}
+
+/** True when the change already holds the confirmed window, to the minute. */
+export function doesRcpWindowMatchChange(confirmedWindow: RcpConfirmedWindow, plannedStartUtc: string | null | undefined, plannedEndUtc: string | null | undefined): boolean {
+  const toMinute = (instantIso: string | null | undefined) => (instantIso ? Math.floor(Date.parse(instantIso) / MILLISECONDS_PER_MINUTE) : Number.NaN);
+  return toMinute(confirmedWindow.plannedStartUtc) === toMinute(plannedStartUtc)
+    && toMinute(confirmedWindow.plannedEndUtc) === toMinute(plannedEndUtc);
 }
 
 /** The prompt that has AI Assist complete the RCP approval request email, asking the sender only what it must. */
 export function buildRcpApprovalEmailPrompt(context: RcpApprovalEmailContext, processOwnerName: string): string {
   return [
     `Complete this RCP approval request email for a ${context.environmentLabel || 'Production'} change during the `
-      + 'Restricted Change Period (RCP, through January 19, 2027), and write the change plan it says is attached. Both go '
-      + 'to the Director and/or the Change Process Owner, so they must be complete and correct — no gaps.',
+      + 'Restricted Change Period (RCP, through January 19, 2027). It goes to the Director and/or the Change Process '
+      + 'Owner, so it must be complete and correct — no gaps.',
     '',
     ...renderChangeFacts(context),
     '',
@@ -328,7 +363,7 @@ export function buildRcpApprovalEmailPrompt(context: RcpApprovalEmailContext, pr
     'Template:',
     buildRcpApprovalEmailTemplate(context, processOwnerName),
     '',
-    ...buildAttachmentRules(context),
+    ...buildWindowRules(context),
     '',
     ...buildReplyFormatLines(),
   ].join('\n');
@@ -376,16 +411,14 @@ export function findRcpEmailGaps(emailText: string): RcpEmailGap[] {
 }
 
 /**
- * Every gap in what goes to the approver: the email's placeholders, the attachment's, and a missing attachment —
- * the email says one is attached, so it is not ready without it.
+ * Every gap in what goes to the approver: the email's placeholders, and a window that was not confirmed — the
+ * approval names the window, so the email is not ready until the sender has confirmed it.
  */
-export function findRcpDraftGaps(emailText: string, attachmentText: string): RcpEmailGap[] {
-  const missingAttachmentGaps = attachmentText.trim() === ''
-    ? [{ placeholderText: MISSING_ATTACHMENT_PLACEHOLDER, questionText: 'The change plan attachment the email says is attached' }]
+export function findRcpDraftGaps(emailText: string, windowText: string): RcpEmailGap[] {
+  const windowGaps = readRcpConfirmedWindow(windowText) === null
+    ? [{ placeholderText: UNCONFIRMED_WINDOW_PLACEHOLDER, questionText: 'The change window, confirmed with you' }]
     : [];
-  const attachmentGaps = findRcpEmailGaps(attachmentText)
-    .filter((attachmentGap) => !findRcpEmailGaps(emailText).some((emailGap) => emailGap.placeholderText === attachmentGap.placeholderText));
-  return [...findRcpEmailGaps(emailText), ...attachmentGaps, ...missingAttachmentGaps];
+  return [...findRcpEmailGaps(emailText), ...windowGaps];
 }
 
 /**
@@ -397,36 +430,39 @@ export function isRcpEmailQuestionReply(replyText: string): boolean {
   return !SUBJECT_LINE_PATTERN.test(pastedText) && pastedText.includes('?');
 }
 
-/** The follow-up prompt for an email or attachment that came back with gaps: work each out, or ask, then resend both. */
-export function buildRcpEmailGapPrompt(emailText: string, attachmentText: string, gaps: readonly RcpEmailGap[]): string {
+/** The follow-up prompt for an email that came back with gaps: work each out, or ask, then resend it with its window. */
+export function buildRcpEmailGapPrompt(emailText: string, windowText: string, gaps: readonly RcpEmailGap[]): string {
   return [
-    'The RCP approval email and its attachment below still have gaps the Director must not see:',
-    ...gaps.map((gap) => `- ${gap.placeholderText}${gap.placeholderText === MISSING_ATTACHMENT_PLACEHOLDER ? ' — write the change plan attachment' : ''}`),
+    'The RCP approval email below still has gaps the Director must not see:',
+    ...gaps.map((gap) => `- ${gap.placeholderText}${gap.placeholderText === UNCONFIRMED_WINDOW_PLACEHOLDER ? ' — confirm the window with me' : ''}`),
     '',
     'Work out each one from the change facts earlier in this chat. Only if one truly cannot be worked out, ask me in '
       + 'ONE chat message — a short numbered list, each with your best guess so I can reply "yes".',
-    'Then send both again, unchanged apart from the gaps, with no [ ] markers, placeholders or TBD left.',
+    'Then send it again, unchanged apart from the gaps, with no [ ] markers, placeholders or TBD left.',
     '',
+    RCP_WINDOW_MARKER,
+    windowText,
     RCP_EMAIL_MARKER,
     emailText,
-    RCP_ATTACHMENT_MARKER,
-    attachmentText,
     '',
     ...buildReplyFormatLines(),
   ].join('\n');
 }
 
 /**
- * The email and its attachment out of AI Assist's reply. A reply without the marker lines is taken as the email
- * alone, with an empty attachment — which the gap check then asks for.
+ * The confirmed window and the email out of AI Assist's reply. A reply without the marker lines is taken as the
+ * email alone, with no window — which the gap check then asks AI Assist to confirm.
  */
-export function readRcpEmailReply(replyText: string): { emailText: string; attachmentText: string } {
+export function readRcpEmailReply(replyText: string): { windowText: string; emailText: string } {
   const replyBody = stripCodeFences(replyText);
-  const attachmentIndex = replyBody.indexOf(RCP_ATTACHMENT_MARKER);
-  const emailPart = attachmentIndex === -1 ? replyBody : replyBody.slice(0, attachmentIndex);
+  const windowIndex = replyBody.indexOf(RCP_WINDOW_MARKER);
+  const emailIndex = replyBody.indexOf(RCP_EMAIL_MARKER);
+  if (emailIndex === -1) {
+    return { windowText: '', emailText: replyBody.replace(RCP_WINDOW_MARKER, '').trim() };
+  }
   return {
-    emailText: emailPart.replace(RCP_EMAIL_MARKER, '').trim(),
-    attachmentText: attachmentIndex === -1 ? '' : replyBody.slice(attachmentIndex + RCP_ATTACHMENT_MARKER.length).trim(),
+    windowText: windowIndex === -1 || windowIndex > emailIndex ? '' : replyBody.slice(windowIndex + RCP_WINDOW_MARKER.length, emailIndex).trim(),
+    emailText: replyBody.slice(emailIndex + RCP_EMAIL_MARKER.length).trim(),
   };
 }
 

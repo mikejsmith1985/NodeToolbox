@@ -39,7 +39,7 @@ import { AiAssistPromptModal, type AiAssistPromptSession } from './AiAssistPromp
 import { RiskCheckReviewPanel } from './RiskCheckReviewPanel.tsx';
 import { readRcpRulesEnabled } from '../rcp/rcpApprovalEmail.ts';
 import { RcpChecklist } from '../rcp/RcpChecklist.tsx';
-import { evaluateNewChangeRcp, readLocalDateTimeAsUtc, type NewChangeRcpInput } from '../rcp/rcpNewChange.ts';
+import { evaluateNewChangeRcp, formatUtcAsLocalDateTime, readLocalDateTimeAsUtc, type NewChangeRcpInput } from '../rcp/rcpNewChange.ts';
 import { isRcpPeriodActive, readCentralTodayIso } from '../rcp/rcpRules.ts';
 import type { SnowChoiceOptionMap } from '../hooks/useSnowChoiceOptions.ts';
 import { useSnowChoiceOptions } from '../hooks/useSnowChoiceOptions.ts';
@@ -2115,7 +2115,10 @@ function buildNewChangeRcpInput(state: CrgStateData): NewChangeRcpInput {
 }
 
 /** The RCP checklist for the change being built — nothing when the rules are off or it is not for Production. */
-function NewChangeRcpSection({ state }: { state: CrgStateData }) {
+function NewChangeRcpSection({ state, onUpdateEnvironment }: {
+  state: CrgStateData;
+  onUpdateEnvironment: (environmentKey: 'prd' | 'pfix', update: { plannedStartDate: string; plannedEndDate: string }) => void;
+}) {
   const newChangeRcp = isRcpPeriodActive(readRcpRulesEnabled(), readCentralTodayIso())
     ? evaluateNewChangeRcp(buildNewChangeRcpInput(state))
     : null;
@@ -2125,10 +2128,15 @@ function NewChangeRcpSection({ state }: { state: CrgStateData }) {
   return (
     <div className={styles.clonePanel}>
       <h4 className={styles.panelSectionTitle}>RCP production-change rules</h4>
-      <RcpChecklist emailContext={newChangeRcp.emailContext} results={newChangeRcp.results} />
-      <p className={styles.panelHint}>
-        AI Assist writes the change plan PDF the approval email attaches, along with the email. Once the change exists, Modify CHG can also print ServiceNow's own copy.
-      </p>
+      <RcpChecklist
+        emailContext={newChangeRcp.emailContext}
+        // A window corrected while drafting the email goes back into the Production dates being built.
+        onApplyWindow={(confirmedWindow) => onUpdateEnvironment(state.prdEnvironment.isEnabled ? 'prd' : 'pfix', {
+          plannedStartDate: formatUtcAsLocalDateTime(confirmedWindow.plannedStartUtc),
+          plannedEndDate: formatUtcAsLocalDateTime(confirmedWindow.plannedEndUtc),
+        })}
+        results={newChangeRcp.results}
+      />
     </div>
   );
 }
@@ -2418,7 +2426,7 @@ function ResultsStep({ state, actions, ctaskTemplates, environmentValueByKey, is
       ) : null}
       {/* RCP (GH #415): a Production change is checked against the restricted-period rules before it is created.
           Shown only while the rules are switched on and the period has not ended. */}
-      <NewChangeRcpSection state={state} />
+      <NewChangeRcpSection onUpdateEnvironment={actions.updateEnvironment} state={state} />
       <NewChangeTimelineSection isAiAssistUnlocked={isAiAssistUnlocked} onSetPlan={actions.setCtaskTimelinePlan} state={state} />
       {state.submitResult ? <p className={styles.successText}>{state.submitResult}</p> : null}
       {state.isSubmitting ? <p className={styles.loadingText}>Submitting change request...</p> : null}

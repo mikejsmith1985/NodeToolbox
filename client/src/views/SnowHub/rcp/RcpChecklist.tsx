@@ -7,7 +7,7 @@
 
 import { useAiAssistStore } from '../../../store/aiAssistStore.ts';
 import styles from '../tabs/CreateChgTab.module.css';
-import type { RcpApprovalEmailContext } from './rcpApprovalEmail.ts';
+import type { RcpApprovalEmailContext, RcpConfirmedWindow } from './rcpApprovalEmail.ts';
 import { RcpEmailDraft } from './RcpEmailDraft.tsx';
 import type { RcpCheckResult, RcpCheckStatus } from './rcpRules.ts';
 
@@ -19,6 +19,10 @@ interface RcpChecklistProps {
   loadFullEmailContext?: () => Promise<RcpApprovalEmailContext>;
   /** A fix per rule, offered beside that rule while it is not met. */
   fixActions?: Partial<Record<RcpCheckResult['ruleId'], RcpFixAction>>;
+  /** Writes the window confirmed while drafting the email to the change (or the change being built). */
+  onApplyWindow?: (confirmedWindow: RcpConfirmedWindow) => Promise<void> | void;
+  /** ServiceNow's PDF export of the change — the attachment the email names; absent until the change exists. */
+  changeRecordPdfUrl?: string | null;
 }
 
 /** One rule's fix: what the button says, and what it does. */
@@ -31,7 +35,7 @@ export interface RcpFixAction {
 const STATUS_ICONS: Readonly<Record<RcpCheckStatus, string>> = { pass: '✅', fail: '❌', check: '⚠️' };
 
 /** The RCP checklist for one Production change. */
-export function RcpChecklist({ results, emailContext, loadFullEmailContext, fixActions = {} }: RcpChecklistProps) {
+export function RcpChecklist({ results, emailContext, loadFullEmailContext, fixActions = {}, onApplyWindow, changeRecordPdfUrl }: RcpChecklistProps) {
   const isAiAssistUnlocked = useAiAssistStore((storeState) => storeState.isAiAssistUnlocked);
   const metCount = results.filter((result) => result.status === 'pass').length;
 
@@ -58,7 +62,14 @@ export function RcpChecklist({ results, emailContext, loadFullEmailContext, fixA
           </li>
         ))}
       </ul>
-      {isAiAssistUnlocked && emailContext !== null ? <RcpEmailDraft emailContext={emailContext} loadFullEmailContext={loadFullEmailContext} /> : null}
+      {isAiAssistUnlocked && emailContext !== null ? (
+        <RcpEmailDraft
+          changeRecordPdfUrl={changeRecordPdfUrl}
+          emailContext={emailContext}
+          loadFullEmailContext={loadFullEmailContext}
+          onApplyWindow={onApplyWindow}
+        />
+      ) : null}
     </div>
   );
 }

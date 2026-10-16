@@ -7,7 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **The RCP approval email no longer greets a Change Process Owner nobody named (GH #449).** The template says
+  "Director's name and/or Change Process Owner (Ben Labout)". Toolbox had made Ben Labout a default recipient on
+  every email. The Process Owner is optional, so the email now greets the **Director only**. Someone is added
+  beside the Director only when you name them in **Admin Hub → RCP Production-Change Rules**.
+
 ### Changed
+- **The RCP approval email confirms its window every time, and attaches ServiceNow's own Change Record PDF
+  (GH #449).**
+  - AI Assist always asks first, even when nothing else is unclear: "The window for this change is … Is this
+    correct? If not, when?" It uses the window you confirm throughout the email and sends it back in a form
+    Toolbox reads.
+  - If you gave a different window, Toolbox shows both and offers **Update the change to this window**.
+    - On **Modify Existing CHG** this writes the planned start and end to ServiceNow and re-checks.
+    - On **Create New CHG** it updates the Production dates being built.
+    - **Copy email** stays blocked until the change and the email agree.
+  - The attachment is the one the template names, `CHG… — Change Record.pdf`, which is ServiceNow's export of
+    the change. **Download the Change Record PDF** appears next to the email once it is ready, so the PDF
+    carries the corrected dates.
+  - The AI-written change plan attachment from v0.301.0 is removed. The approver signs off on the record "as
+    described in the attached PDF", so the PDF must be the record itself.
 - **The RCP approval email now comes with its attachment.** The email says "see the attached PDF", but the
   prompt never asked for that document. Now AI Assist writes both in one reply: the email, and the change plan
   it attaches, under fixed headings. The headings are change summary, implementation plan, risk and impact

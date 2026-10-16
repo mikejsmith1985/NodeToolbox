@@ -5,9 +5,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   buildRcpApprovalEmailPrompt,
   buildRcpApprovalEmailTemplate,
-  buildRcpAttachmentTitle,
   buildRcpEmailGapPrompt,
-  DEFAULT_RCP_PROCESS_OWNER_NAME,
+  doesRcpWindowMatchChange,
   findRcpDraftGaps,
   findRcpEmailGaps,
   isRcpEmailQuestionReply,
@@ -15,6 +14,7 @@ import {
   readRcpSenderFromEmail,
   writeRcpSenderDetails,
   readApprovalEmailReply,
+  readRcpConfirmedWindow,
   readRcpEmailReply,
   readRcpProcessOwnerName,
   readRcpRulesEnabled,
@@ -34,6 +34,7 @@ const EMAIL_CONTEXT: RcpApprovalEmailContext = {
   environmentLabel: 'PRD',
   windowText: 'Fri 2026-10-09 7:30 PM → Sat 2026-10-10 3:00 AM CT',
   plannedStartUtc: FRIDAY_NIGHT_START_UTC,
+  plannedEndUtc: '2026-10-10T08:00:00Z',
   configItemName: 'Recon Service',
   ciOwnerName: 'Lee, Jordan',
   directorName: 'Lee, Jordan',
@@ -44,15 +45,15 @@ const EMAIL_CONTEXT: RcpApprovalEmailContext = {
 
 describe('buildRcpApprovalEmailTemplate', () => {
   it('signs off with the sender learned from their last email, else asks AI Assist to find out', () => {
-    expect(buildRcpApprovalEmailTemplate({ ...EMAIL_CONTEXT, senderName: 'Smith, Mike', senderContact: 'ext 1234' }, 'Ben Labout'))
+    expect(buildRcpApprovalEmailTemplate({ ...EMAIL_CONTEXT, senderName: 'Smith, Mike', senderContact: 'ext 1234' }, ''))
       .toContain('Thank you,\nSmith, Mike\next 1234');
-    expect(buildRcpApprovalEmailTemplate(EMAIL_CONTEXT, 'Ben Labout')).toContain('Thank you,\n[CONFIRM: your name]');
+    expect(buildRcpApprovalEmailTemplate(EMAIL_CONTEXT, '')).toContain('Thank you,\n[CONFIRM: your name]');
   });
 
   it('fills the template\'s change summary from the change\'s own facts', () => {
-    const template = buildRcpApprovalEmailTemplate(EMAIL_CONTEXT, 'Ben Labout');
+    const template = buildRcpApprovalEmailTemplate(EMAIL_CONTEXT, '');
 
-    expect(template).toContain('Hello Lee, Jordan and Ben Labout,');
+    expect(template).toContain('Hello Lee, Jordan,');
     expect(template).toContain('Please review the attached PDF of change CHG0012345 and reply with your approval');
     expect(template).toContain('Change number and title: CHG0012345 — Recon | deploy v1.5 | PRD');
     expect(template).toContain('Affected service and CI(s): Recon Service');
@@ -62,37 +63,37 @@ describe('buildRcpApprovalEmailTemplate', () => {
     expect(template).toContain('Why this must occur during RCP');
     expect(template).toContain('Impact of deferring until after RCP');
     expect(template).toContain('“I approve the RCP request for change CHG0012345, as described in the attached PDF, for the proposed window of Fri 2026-10-09 7:30 PM → Sat 2026-10-10 3:00 AM CT.”');
-    expect(template).toContain('Attachment: CHG0012345 change plan.pdf');
+    expect(template).toContain('Attachment: CHG0012345 — Change Record.pdf');
   });
 
   it('marks every fact it does not have for the sender to confirm, rather than inventing one', () => {
     const template = buildRcpApprovalEmailTemplate({
       ...EMAIL_CONTEXT, ciOwnerName: '', riskLabel: '', windowText: '', plannedStartUtc: null, directorName: '',
-    }, 'Ben Labout');
+    }, '');
 
-    expect(template).toContain('Hello [CONFIRM: Director name] and Ben Labout,');
+    expect(template).toContain('Hello [CONFIRM: Director name],');
     expect(template).toContain('CI owner: [CONFIRM: CI owner]');
     expect(template).toContain('Proposed implementation window: [CONFIRM: date, start time and end time — Central Time]');
     expect(template).toContain('Risk and expected impact: [CONFIRM: risk level]');
   });
 
   it('asks why the work must run on a weekday only when the window starts Monday to Thursday', () => {
-    expect(buildRcpApprovalEmailTemplate(EMAIL_CONTEXT, 'Ben Labout')).not.toContain('Why must this occur during Monday - Friday?');
+    expect(buildRcpApprovalEmailTemplate(EMAIL_CONTEXT, '')).not.toContain('Why must this occur during Monday - Friday?');
 
-    const weekdayTemplate = buildRcpApprovalEmailTemplate({ ...EMAIL_CONTEXT, plannedStartUtc: TUESDAY_NIGHT_START_UTC }, 'Ben Labout');
+    const weekdayTemplate = buildRcpApprovalEmailTemplate({ ...EMAIL_CONTEXT, plannedStartUtc: TUESDAY_NIGHT_START_UTC }, '');
     expect(weekdayTemplate).toContain('Why must this occur during Monday - Friday?');
     expect(weekdayTemplate).toContain('What is the impact of deploying on a weekend?');
   });
 
   it('keeps the weekday questions when the window is not known yet, so they are not lost', () => {
-    expect(buildRcpApprovalEmailTemplate({ ...EMAIL_CONTEXT, plannedStartUtc: null }, 'Ben Labout'))
+    expect(buildRcpApprovalEmailTemplate({ ...EMAIL_CONTEXT, plannedStartUtc: null }, ''))
       .toContain('Why must this occur during Monday - Friday?');
   });
 });
 
 describe('buildRcpApprovalEmailPrompt', () => {
   it('hands AI Assist the filled template and the facts, and lets it write only the marked sections', () => {
-    const prompt = buildRcpApprovalEmailPrompt(EMAIL_CONTEXT, 'Ben Labout');
+    const prompt = buildRcpApprovalEmailPrompt(EMAIL_CONTEXT, '');
 
     expect(prompt).toContain('Change number and title: CHG0012345 — Recon | deploy v1.5 | PRD');
     expect(prompt).toContain('Fixes premiums before the Nov 1 regulatory deadline.');
@@ -113,7 +114,7 @@ describe('buildRcpApprovalEmailPrompt', () => {
       changeTaskLines: ['CTASK0001 — Implementation — Deploy Recon — Fri 7:30 PM → 8:30 PM CT'],
       senderName: 'Smith, Mike',
       senderContact: 'Recon Devs — ext 1234',
-    }, 'Ben Labout');
+    }, '');
 
     for (const fact of ['Park, Alex', 'Deploy v1.5 through the pipeline.', 'Recon is read-only for 20 minutes.', 'Regression suite in REL.', 'CTASK0001 — Implementation', 'Smith, Mike — Recon Devs — ext 1234']) {
       expect(prompt).toContain(fact);
@@ -135,16 +136,16 @@ describe('readApprovalEmailReply', () => {
 describe('the Change Process Owner setting', () => {
   afterEach(() => localStorage.clear());
 
-  it('names Ben Labout until changed, and remembers the change', () => {
-    expect(readRcpProcessOwnerName()).toBe(DEFAULT_RCP_PROCESS_OWNER_NAME);
-    expect(DEFAULT_RCP_PROCESS_OWNER_NAME).toBe('Ben Labout');
+  it('names nobody until set — the template makes the Process Owner optional ("and/or")', () => {
+    expect(readRcpProcessOwnerName()).toBe('');
     writeRcpProcessOwnerName('Smith, Pat');
     expect(readRcpProcessOwnerName()).toBe('Smith, Pat');
+    writeRcpProcessOwnerName('   ');
+    expect(readRcpProcessOwnerName()).toBe('');
   });
 
-  it('falls back to the default when cleared to blank', () => {
-    writeRcpProcessOwnerName('   ');
-    expect(readRcpProcessOwnerName()).toBe(DEFAULT_RCP_PROCESS_OWNER_NAME);
+  it('adds a named Process Owner to the greeting beside the Director', () => {
+    expect(buildRcpApprovalEmailTemplate(EMAIL_CONTEXT, 'Smith, Pat')).toContain('Hello Lee, Jordan and Smith, Pat,');
   });
 });
 
@@ -186,15 +187,15 @@ describe('findRcpEmailGaps', () => {
 describe('buildRcpEmailGapPrompt', () => {
   it('names each gap and has AI Assist work it out, or ask with a best guess, then resend the whole email', () => {
     const emailText = 'Subject: RCP\n\nHello [CONFIRM: Director name],';
-    const attachmentText = '## Implementation plan\nDeploy v1.5.';
-    const prompt = buildRcpEmailGapPrompt(emailText, attachmentText, findRcpDraftGaps(emailText, attachmentText));
+    const windowText = 'Start: 2026-10-09 19:30\nEnd: 2026-10-10 03:00';
+    const prompt = buildRcpEmailGapPrompt(emailText, windowText, findRcpDraftGaps(emailText, windowText));
 
     expect(prompt).toContain('- [CONFIRM: Director name]');
     expect(prompt).toContain(emailText);
-    expect(prompt).toContain(attachmentText);
-    expect(prompt).toContain('=== ATTACHMENT ===');
+    expect(prompt).toContain('=== WINDOW ===');
+    expect(prompt).toContain(windowText);
     expect(prompt).toMatch(/best guess/);
-    expect(prompt).toMatch(/send both again/);
+    expect(prompt).toMatch(/send it again/);
   });
 });
 
@@ -214,40 +215,60 @@ describe('the sender', () => {
   });
 });
 
-describe('the attachment AI Assist writes with the email', () => {
-  it('is asked for in the prompt: the change plan the email says is attached, from the change\'s own text', () => {
-    const prompt = buildRcpApprovalEmailPrompt({ ...EMAIL_CONTEXT, implementationPlan: 'Deploy v1.5 through the pipeline.' }, 'Ben Labout');
+describe('the change window, confirmed every time', () => {
+  it('has AI Assist ask about the window first, every time, even when nothing else is unclear', () => {
+    const prompt = buildRcpApprovalEmailPrompt(EMAIL_CONTEXT, '');
 
+    expect(prompt).toContain('"The window for this change is Fri 2026-10-09 7:30 PM → Sat 2026-10-10 3:00 AM CT. Is this correct? If not, when?"');
+    expect(prompt).toMatch(/every time/i);
+    expect(prompt).toContain('=== WINDOW ===');
     expect(prompt).toContain('=== EMAIL ===');
-    expect(prompt).toContain('=== ATTACHMENT ===');
-    for (const heading of ['## Change summary', '## Implementation plan', '## Risk and impact analysis', '## Backout plan', '## Pre-production and post-implementation testing', '## Change tasks']) {
-      expect(prompt).toContain(heading);
-    }
-    expect(prompt).toMatch(/word for word from the change/i);
-    expect(prompt).toContain('CHG0012345 change plan.pdf');
   });
 
-  it('is read out of the reply apart from the email', () => {
-    const replyText = '```text\n=== EMAIL ===\nSubject: RCP\n\nHello.\n=== ATTACHMENT ===\n## Implementation plan\nDeploy v1.5.\n```';
-
-    expect(readRcpEmailReply(replyText)).toEqual({ emailText: 'Subject: RCP\n\nHello.', attachmentText: '## Implementation plan\nDeploy v1.5.' });
+  it('asks when the window should be when the change has none yet', () => {
+    expect(buildRcpApprovalEmailPrompt({ ...EMAIL_CONTEXT, windowText: '', plannedStartUtc: null }, ''))
+      .toContain('"This change has no window yet. When should it be?"');
   });
 
-  it('is empty when the reply holds only an email, so the gap check can ask for it', () => {
-    expect(readRcpEmailReply('Subject: RCP\n\nHello.')).toEqual({ emailText: 'Subject: RCP\n\nHello.', attachmentText: '' });
+  it('no longer has AI Assist write the attachment — the PDF is ServiceNow\'s own export of the change', () => {
+    const prompt = buildRcpApprovalEmailPrompt(EMAIL_CONTEXT, '');
+
+    expect(prompt).not.toContain('=== ATTACHMENT ===');
+    expect(prompt).not.toContain('## Implementation plan');
   });
 
-  it('counts as a gap when missing, and its own placeholders count too', () => {
+  it('reads the confirmed window and the email out of the reply', () => {
+    const replyText = '```text\n=== WINDOW ===\nStart: 2026-10-09 19:30\nEnd: 2026-10-10 03:00\n=== EMAIL ===\nSubject: RCP\n\nHello.\n```';
+
+    expect(readRcpEmailReply(replyText)).toEqual({ windowText: 'Start: 2026-10-09 19:30\nEnd: 2026-10-10 03:00', emailText: 'Subject: RCP\n\nHello.' });
+    expect(readRcpEmailReply('Subject: RCP\n\nHello.')).toEqual({ windowText: '', emailText: 'Subject: RCP\n\nHello.' });
+  });
+
+  it('turns the confirmed Central Time window into UTC, in daylight and standard time', () => {
+    expect(readRcpConfirmedWindow('Start: 2026-10-09 19:30\nEnd: 2026-10-10 03:00'))
+      .toEqual({ plannedStartUtc: '2026-10-10T00:30:00Z', plannedEndUtc: '2026-10-10T08:00:00Z' });
+    expect(readRcpConfirmedWindow('Start: 2026-11-13 19:00\nEnd: 2026-11-13 23:15'))
+      .toEqual({ plannedStartUtc: '2026-11-14T01:00:00Z', plannedEndUtc: '2026-11-14T05:15:00Z' });
+  });
+
+  it('reads no window from text it cannot use, or an end before the start', () => {
+    expect(readRcpConfirmedWindow('')).toBeNull();
+    expect(readRcpConfirmedWindow('Start: Friday night')).toBeNull();
+    expect(readRcpConfirmedWindow('Start: 2026-10-10 03:00\nEnd: 2026-10-09 19:30')).toBeNull();
+  });
+
+  it('counts an unconfirmed window as a gap', () => {
     expect(findRcpDraftGaps('Subject: RCP', '')).toEqual([
-      { placeholderText: '(no attachment)', questionText: 'The change plan attachment the email says is attached' },
+      { placeholderText: '(window not confirmed)', questionText: 'The change window, confirmed with you' },
     ]);
-    expect(findRcpDraftGaps('Subject: RCP', '## Backout plan\n[CONFIRM: backout steps]')).toEqual([
-      { placeholderText: '[CONFIRM: backout steps]', questionText: 'backout steps' },
-    ]);
+    expect(findRcpDraftGaps('Subject: RCP', 'Start: 2026-10-09 19:30\nEnd: 2026-10-10 03:00')).toEqual([]);
   });
 
-  it('is named after the change, the same name the email gives it', () => {
-    expect(buildRcpAttachmentTitle('CHG0012345')).toBe('CHG0012345 change plan');
-    expect(buildRcpAttachmentTitle('')).toBe('Change plan');
+  it('tells whether the confirmed window is what the change holds, to the minute', () => {
+    const confirmedWindow = { plannedStartUtc: '2026-10-10T00:30:00Z', plannedEndUtc: '2026-10-10T08:00:00Z' };
+
+    expect(doesRcpWindowMatchChange(confirmedWindow, '2026-10-10T00:30:00.000Z', '2026-10-10T08:00:00Z')).toBe(true);
+    expect(doesRcpWindowMatchChange(confirmedWindow, '2026-10-17T00:00:00Z', '2026-10-17T06:00:00Z')).toBe(false);
+    expect(doesRcpWindowMatchChange(confirmedWindow, null, null)).toBe(false);
   });
 });

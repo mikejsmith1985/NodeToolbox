@@ -10,6 +10,7 @@
 import { useEffect, useState } from 'react';
 
 import { useAiAssistStore } from '../../../store/aiAssistStore.ts';
+import { useConnectionStore } from '../../../store/connectionStore.ts';
 import type { SnowReference } from '../hooks/useCrgState.ts';
 import { AiAssistPromptModal, type AiAssistPromptSession } from '../tabs/AiAssistPromptModal.tsx';
 import styles from '../tabs/CreateChgTab.module.css';
@@ -23,7 +24,7 @@ import {
 } from './rcpChangeFixes.ts';
 import { buildRcpApprovalEmailContext, evaluateRcpChecklist, fetchRcpChangeFacts, type RcpChangeFacts } from './rcpChangeFacts.ts';
 import { ChangePlanPdfActions } from './ChangePlanPdfActions.tsx';
-import { enrichRcpEmailContextWithPlan, fetchChangePlan } from './changePlanDocument.ts';
+import { buildServiceNowChangePdfUrl, enrichRcpEmailContextWithPlan, fetchChangePlan } from './changePlanDocument.ts';
 import { RcpChecklist, type RcpFixAction } from './RcpChecklist.tsx';
 import { describeCentralWindow, isRcpPeriodActive, readCentralTodayIso, type RcpCheckResult } from './rcpRules.ts';
 
@@ -89,6 +90,7 @@ export function ExistingChgRcpCheck({
 }: ExistingChgRcpCheckProps) {
   const isActive = isRcpPeriodActive(readRcpRulesEnabled(), todayIso);
   const isAiAssistUnlocked = useAiAssistStore((storeState) => storeState.isAiAssistUnlocked);
+  const snowBaseUrl = useConnectionStore((storeState) => storeState.proxyStatus?.snow?.baseUrl ?? null);
   const [facts, setFacts] = useState<RcpChangeFacts | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
   const [statusMessage, setStatusMessage] = useState('');
@@ -177,6 +179,7 @@ export function ExistingChgRcpCheck({
         ) : null}
         {facts !== null && facts.isProduction ? (
           <RcpChecklist
+            changeRecordPdfUrl={buildServiceNowChangePdfUrl(snowBaseUrl, facts.changeSysId)}
             emailContext={buildRcpApprovalEmailContext(facts)}
             loadFullEmailContext={async () => enrichRcpEmailContextWithPlan(buildRcpApprovalEmailContext(facts), await fetchChangePlan(facts))}
             fixActions={buildFixActions(facts, results, nowUtc, {
@@ -185,6 +188,7 @@ export function ExistingChgRcpCheck({
               isBusy: isSaving || isLoading,
               isAiAssistUnlocked,
             })}
+            onApplyWindow={(confirmedWindow) => applyFix(confirmedWindow, confirmedWindow)}
             results={results}
           />
         ) : null}

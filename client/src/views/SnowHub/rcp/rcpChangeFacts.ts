@@ -175,6 +175,7 @@ export function buildRcpApprovalEmailContext(facts: RcpChangeFacts): RcpApproval
     environmentLabel: facts.environmentLabel,
     windowText: describeCentralWindow(facts.plannedStartUtc, facts.plannedEndUtc),
     plannedStartUtc: facts.plannedStartUtc,
+    plannedEndUtc: facts.plannedEndUtc,
     configItemName: facts.configItem.displayName,
     ciOwnerName: facts.ciOwner?.displayName ?? '',
     directorName: facts.ciOwner?.displayName || facts.requestedBy.displayName,

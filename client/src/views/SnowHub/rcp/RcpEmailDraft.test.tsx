@@ -4,22 +4,20 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { writeRcpSenderDetails, type RcpApprovalEmailContext } from './rcpApprovalEmail.ts';
-import { openChangePlanForPrinting } from './changePlanDocument.ts';
 import { RcpEmailDraft } from './RcpEmailDraft.tsx';
 
-vi.mock('./changePlanDocument.ts', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('./changePlanDocument.ts')>()),
-  openChangePlanForPrinting: vi.fn(() => true),
-}));
 
 const EMAIL_CONTEXT: RcpApprovalEmailContext = {
   changeNumber: 'CHG0012345', shortDescription: 'Recon deploy', environmentLabel: 'PRD', windowText: 'Fri → Sat CT',
-  plannedStartUtc: '2026-10-10T00:30:00Z', ciOwnerName: 'Lee, Jordan', configItemName: 'Recon Service',
+  plannedStartUtc: '2026-10-10T00:30:00Z', plannedEndUtc: '2026-10-10T08:00:00Z', ciOwnerName: 'Lee, Jordan', configItemName: 'Recon Service',
   directorName: 'Lee, Jordan', riskLabel: 'Moderate', justification: 'Deadline.', backoutPlan: 'Redeploy.',
 };
 const FINISHED_EMAIL = 'Subject: RCP approval request — CHG0012345\n\nHello Lee, Jordan,\nPlease approve.\n\nThank you,\nSmith, Mike\next 1234';
-const FINISHED_ATTACHMENT = '## Implementation plan\nDeploy v1.5.\n\n## Backout plan\nRedeploy v1.4.';
-const FINISHED_REPLY = `=== EMAIL ===\n${FINISHED_EMAIL}\n=== ATTACHMENT ===\n${FINISHED_ATTACHMENT}`;
+// The window the change already holds: Fri 9 Oct 7:30 PM → Sat 10 Oct 3:00 AM CT.
+const SAME_WINDOW = '=== WINDOW ===\nStart: 2026-10-09 19:30\nEnd: 2026-10-10 03:00';
+const MOVED_WINDOW = '=== WINDOW ===\nStart: 2026-10-16 19:00\nEnd: 2026-10-17 01:00';
+const FINISHED_REPLY = `${SAME_WINDOW}\n=== EMAIL ===\n${FINISHED_EMAIL}`;
+const PDF_URL = 'https://snow.example.com/change_request.do?PDF&sys_id=abc';
 
 /** Opens the draft and waits for the prompt. */
 async function openDraft() {
@@ -76,12 +74,12 @@ describe('RcpEmailDraft', () => {
   it('holds an email with a gap and builds the follow-up that has AI Assist finish it', async () => {
     render(<RcpEmailDraft emailContext={EMAIL_CONTEXT} />);
     await openDraft();
-    pasteReply(`=== EMAIL ===\nSubject: RCP\n\nHello [CONFIRM: Director name],\nPlease approve.\n=== ATTACHMENT ===\n${FINISHED_ATTACHMENT}`);
+    pasteReply(`${SAME_WINDOW}\n=== EMAIL ===\nSubject: RCP\n\nHello [CONFIRM: Director name],\nPlease approve.`);
 
     expect(screen.getByRole('button', { name: /Copy email/ })).toBeDisabled();
     fireEvent.click(screen.getByRole('button', { name: /Ask AI Assist to finish it/ }));
 
-    expect(screen.getByDisplayValue(/still have gaps the Director must not see: - \[CONFIRM: Director name\]/)).toBeInTheDocument();
+    expect(screen.getByDisplayValue(/still has gaps the Director must not see: - \[CONFIRM: Director name\]/)).toBeInTheDocument();
   });
 
   it('lets a finished email be copied, re-checks hand edits, and learns the sender\'s sign-off', async () => {
@@ -97,29 +95,43 @@ describe('RcpEmailDraft', () => {
   });
 });
 
-describe('RcpEmailDraft attachment', () => {
+describe('RcpEmailDraft window and Change Record PDF', () => {
   afterEach(() => localStorage.clear());
 
-  it('shows the attachment beside the email and saves it as the PDF the email names', async () => {
-    render(<RcpEmailDraft emailContext={EMAIL_CONTEXT} />);
+  it('offers ServiceNow\'s Change Record PDF beside the email once the confirmed window matches the change', async () => {
+    render(<RcpEmailDraft changeRecordPdfUrl={PDF_URL} emailContext={EMAIL_CONTEXT} />);
     await openDraft();
     pasteReply(FINISHED_REPLY);
 
-    expect(screen.getByLabelText(/Attachment — CHG0012345 change plan\.pdf/)).toHaveValue(FINISHED_ATTACHMENT);
-    fireEvent.click(screen.getByRole('button', { name: /Save attachment as PDF/ }));
-
-    expect(openChangePlanForPrinting).toHaveBeenCalledWith(expect.stringContaining('<title>CHG0012345 change plan</title>'));
+    expect(screen.getByText(/Window confirmed: Fri 2026-10-09 7:30 PM → Sat 2026-10-10 3:00 AM CT/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Download the Change Record PDF/ })).toHaveAttribute('href', PDF_URL);
+    expect(screen.getByRole('button', { name: /Copy email/ })).toBeEnabled();
   });
 
-  it('holds the email when the reply has no attachment, and asks AI Assist for it', async () => {
+  it('holds the email and the PDF when you gave a different window, and updates the change to it', async () => {
+    const onApplyWindow = vi.fn().mockResolvedValue(undefined);
+    render(<RcpEmailDraft changeRecordPdfUrl={PDF_URL} emailContext={EMAIL_CONTEXT} onApplyWindow={onApplyWindow} />);
+    await openDraft();
+    pasteReply(`${MOVED_WINDOW}
+=== EMAIL ===
+${FINISHED_EMAIL}`);
+
+    expect(screen.getByText(/The change still says Fri → Sat CT/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Copy email/ })).toBeDisabled();
+    expect(screen.queryByRole('link', { name: /Download the Change Record PDF/ })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /Update the change to this window/ }));
+
+    expect(onApplyWindow).toHaveBeenCalledWith({ plannedStartUtc: '2026-10-17T00:00:00Z', plannedEndUtc: '2026-10-17T06:00:00Z' });
+  });
+
+  it('treats a reply without the confirmed window as a gap, and asks AI Assist to confirm it with you', async () => {
     render(<RcpEmailDraft emailContext={EMAIL_CONTEXT} />);
     await openDraft();
     pasteReply(FINISHED_EMAIL);
 
     expect(screen.getByRole('button', { name: /Copy email/ })).toBeDisabled();
-    expect(screen.getByRole('button', { name: /Save attachment as PDF/ })).toBeDisabled();
     fireEvent.click(screen.getByRole('button', { name: /Ask AI Assist to finish it/ }));
 
-    expect(screen.getByDisplayValue(/- \(no attachment\)/)).toBeInTheDocument();
+    expect(screen.getByDisplayValue(/- \(window not confirmed\)/)).toBeInTheDocument();
   });
 });

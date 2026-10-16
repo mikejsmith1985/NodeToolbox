@@ -223,44 +223,6 @@ export function buildChangePlanDocumentHtml(plan: ChangePlan, generatedOnLabel: 
   ].join('');
 }
 
-// A "## Heading" line in AI Assist's attachment starts a section.
-const ATTACHMENT_HEADING_PATTERN = /^##\s+(.+)$/;
-
-/** The attachment's sections: each "## Heading" with the text under it; text before any heading has none. */
-function splitAttachmentSections(attachmentText: string): { heading: string; sectionText: string }[] {
-  const sections: { heading: string; sectionLines: string[] }[] = [{ heading: '', sectionLines: [] }];
-  for (const attachmentLine of attachmentText.split(/\r?\n/)) {
-    const headingMatch = ATTACHMENT_HEADING_PATTERN.exec(attachmentLine.trim());
-    if (headingMatch) {
-      sections.push({ heading: headingMatch[1].trim(), sectionLines: [] });
-    } else {
-      sections[sections.length - 1].sectionLines.push(attachmentLine);
-    }
-  }
-  return sections
-    .map(({ heading, sectionLines }) => ({ heading, sectionText: sectionLines.join('\n').trim() }))
-    .filter(({ heading, sectionText }) => heading !== '' || sectionText !== '');
-}
-
-/**
- * The change plan AI Assist wrote for the approval email, as a print-ready page in the same layout as the
- * plan read from ServiceNow. Its title is the file name the email gives the attachment.
- */
-export function buildAttachmentDocumentHtml(documentTitle: string, attachmentText: string, generatedOnLabel: string): string {
-  const sectionsHtml = splitAttachmentSections(attachmentText).map(({ heading, sectionText }) => {
-    const headingHtml = heading === '' ? '' : `<h2>${escapeHtml(heading)}</h2>`;
-    return `<section>${headingHtml}<div class="text">${escapeHtml(sectionText)}</div></section>`;
-  });
-  return [
-    '<!doctype html><html lang="en"><head><meta charset="utf-8">',
-    `<title>${escapeHtml(documentTitle)}</title><style>${DOCUMENT_STYLES}</style></head><body>`,
-    `<h1>${escapeHtml(documentTitle)}</h1>`,
-    `<p class="meta">${escapeHtml(`Prepared ${generatedOnLabel} for the RCP approval request.`)}</p>`,
-    ...sectionsHtml,
-    '</body></html>',
-  ].join('');
-}
-
 /** Opens a window the browser lets the page write into; null when a pop-up blocker stops it. */
 type OpenPrintWindow = () => Window | null;
 

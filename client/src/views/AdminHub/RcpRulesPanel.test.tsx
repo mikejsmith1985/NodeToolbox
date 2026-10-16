@@ -25,7 +25,8 @@ describe('RcpRulesPanel', () => {
     render(<RcpRulesPanel />);
     const ownerInput = screen.getByLabelText(/Change Process Owner/);
 
-    expect(ownerInput).toHaveValue('Ben Labout');
+    // Optional in the template ("and/or"), so nobody is named until someone is set here.
+    expect(ownerInput).toHaveValue('');
     fireEvent.change(ownerInput, { target: { value: 'Smith, Pat' } });
 
     expect(readRcpProcessOwnerName()).toBe('Smith, Pat');

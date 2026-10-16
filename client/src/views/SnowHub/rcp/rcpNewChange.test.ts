@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { evaluateNewChangeRcp, readLocalDateTimeAsUtc, type NewChangeRcpInput } from './rcpNewChange.ts';
+import { evaluateNewChangeRcp, formatUtcAsLocalDateTime, readLocalDateTimeAsUtc, type NewChangeRcpInput } from './rcpNewChange.ts';
 
 const INPUT: NewChangeRcpInput = {
   productionEnvironment: {
@@ -33,6 +33,7 @@ describe('evaluateNewChangeRcp', () => {
     expect(evaluation?.results.find((result) => result.ruleId === 'approval')?.detail).toMatch(/once the change is created/i);
     expect(evaluation?.emailContext).toEqual(expect.objectContaining({ directorName: 'Lee, Jordan', configItemName: 'Recon Service', environmentLabel: 'PRD', ciOwnerName: '' }));
     expect(evaluation?.emailContext.plannedStartUtc).toBe('2026-10-10T00:30:00Z');
+    expect(evaluation?.emailContext.plannedEndUtc).toBe('2026-10-10T08:00:00Z');
   });
 
   it('hands the draft\'s plan text and Requested By to the approval email, and leaves the change number for AI Assist', () => {
@@ -60,5 +61,13 @@ describe('readLocalDateTimeAsUtc', () => {
     expect(readLocalDateTimeAsUtc('2026-10-09T19:30')).toBe(new Date('2026-10-09T19:30').toISOString());
     expect(readLocalDateTimeAsUtc('')).toBeNull();
     expect(readLocalDateTimeAsUtc('not a date')).toBeNull();
+  });
+});
+
+describe('formatUtcAsLocalDateTime', () => {
+  it('writes an instant back as the local date-time the builder\'s date fields hold', () => {
+    const typedLocalDateTime = '2026-10-16T19:00';
+
+    expect(formatUtcAsLocalDateTime(new Date(typedLocalDateTime).toISOString())).toBe(typedLocalDateTime);
   });
 });
