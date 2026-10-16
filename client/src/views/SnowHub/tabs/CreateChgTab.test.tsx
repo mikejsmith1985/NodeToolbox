@@ -1532,7 +1532,7 @@ describe('CreateChgTab', () => {
 
       expect(screen.getByText(/RCP rules met/)).toBeInTheDocument();
       expect(screen.getByText(/once the change is created/i)).toBeInTheDocument();
-      expect(screen.getByText(/open it in Modify CHG to get that PDF/)).toBeInTheDocument();
+      expect(screen.getByText(/AI Assist writes the change plan PDF the approval email attaches/)).toBeInTheDocument();
     } finally {
       vi.useRealTimers();
     }

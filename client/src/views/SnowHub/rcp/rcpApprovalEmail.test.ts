@@ -5,14 +5,17 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   buildRcpApprovalEmailPrompt,
   buildRcpApprovalEmailTemplate,
+  buildRcpAttachmentTitle,
   buildRcpEmailGapPrompt,
   DEFAULT_RCP_PROCESS_OWNER_NAME,
+  findRcpDraftGaps,
   findRcpEmailGaps,
   isRcpEmailQuestionReply,
   readRcpSenderDetails,
   readRcpSenderFromEmail,
   writeRcpSenderDetails,
   readApprovalEmailReply,
+  readRcpEmailReply,
   readRcpProcessOwnerName,
   readRcpRulesEnabled,
   writeRcpProcessOwnerName,
@@ -59,7 +62,7 @@ describe('buildRcpApprovalEmailTemplate', () => {
     expect(template).toContain('Why this must occur during RCP');
     expect(template).toContain('Impact of deferring until after RCP');
     expect(template).toContain('“I approve the RCP request for change CHG0012345, as described in the attached PDF, for the proposed window of Fri 2026-10-09 7:30 PM → Sat 2026-10-10 3:00 AM CT.”');
-    expect(template).toContain('Attachment: CHG0012345 — Change Record.pdf');
+    expect(template).toContain('Attachment: CHG0012345 change plan.pdf');
   });
 
   it('marks every fact it does not have for the sender to confirm, rather than inventing one', () => {
@@ -183,12 +186,15 @@ describe('findRcpEmailGaps', () => {
 describe('buildRcpEmailGapPrompt', () => {
   it('names each gap and has AI Assist work it out, or ask with a best guess, then resend the whole email', () => {
     const emailText = 'Subject: RCP\n\nHello [CONFIRM: Director name],';
-    const prompt = buildRcpEmailGapPrompt(emailText, findRcpEmailGaps(emailText));
+    const attachmentText = '## Implementation plan\nDeploy v1.5.';
+    const prompt = buildRcpEmailGapPrompt(emailText, attachmentText, findRcpDraftGaps(emailText, attachmentText));
 
     expect(prompt).toContain('- [CONFIRM: Director name]');
     expect(prompt).toContain(emailText);
+    expect(prompt).toContain(attachmentText);
+    expect(prompt).toContain('=== ATTACHMENT ===');
     expect(prompt).toMatch(/best guess/);
-    expect(prompt).toMatch(/send the whole email again/);
+    expect(prompt).toMatch(/send both again/);
   });
 });
 
@@ -205,5 +211,43 @@ describe('the sender', () => {
     expect(readRcpSenderDetails()).toEqual({ senderName: '', senderContact: '' });
     writeRcpSenderDetails({ senderName: ' Smith, Mike ', senderContact: 'ext 1234' });
     expect(readRcpSenderDetails()).toEqual({ senderName: 'Smith, Mike', senderContact: 'ext 1234' });
+  });
+});
+
+describe('the attachment AI Assist writes with the email', () => {
+  it('is asked for in the prompt: the change plan the email says is attached, from the change\'s own text', () => {
+    const prompt = buildRcpApprovalEmailPrompt({ ...EMAIL_CONTEXT, implementationPlan: 'Deploy v1.5 through the pipeline.' }, 'Ben Labout');
+
+    expect(prompt).toContain('=== EMAIL ===');
+    expect(prompt).toContain('=== ATTACHMENT ===');
+    for (const heading of ['## Change summary', '## Implementation plan', '## Risk and impact analysis', '## Backout plan', '## Pre-production and post-implementation testing', '## Change tasks']) {
+      expect(prompt).toContain(heading);
+    }
+    expect(prompt).toMatch(/word for word from the change/i);
+    expect(prompt).toContain('CHG0012345 change plan.pdf');
+  });
+
+  it('is read out of the reply apart from the email', () => {
+    const replyText = '```text\n=== EMAIL ===\nSubject: RCP\n\nHello.\n=== ATTACHMENT ===\n## Implementation plan\nDeploy v1.5.\n```';
+
+    expect(readRcpEmailReply(replyText)).toEqual({ emailText: 'Subject: RCP\n\nHello.', attachmentText: '## Implementation plan\nDeploy v1.5.' });
+  });
+
+  it('is empty when the reply holds only an email, so the gap check can ask for it', () => {
+    expect(readRcpEmailReply('Subject: RCP\n\nHello.')).toEqual({ emailText: 'Subject: RCP\n\nHello.', attachmentText: '' });
+  });
+
+  it('counts as a gap when missing, and its own placeholders count too', () => {
+    expect(findRcpDraftGaps('Subject: RCP', '')).toEqual([
+      { placeholderText: '(no attachment)', questionText: 'The change plan attachment the email says is attached' },
+    ]);
+    expect(findRcpDraftGaps('Subject: RCP', '## Backout plan\n[CONFIRM: backout steps]')).toEqual([
+      { placeholderText: '[CONFIRM: backout steps]', questionText: 'backout steps' },
+    ]);
+  });
+
+  it('is named after the change, the same name the email gives it', () => {
+    expect(buildRcpAttachmentTitle('CHG0012345')).toBe('CHG0012345 change plan');
+    expect(buildRcpAttachmentTitle('')).toBe('Change plan');
   });
 });

@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **The RCP approval email now comes with its attachment.** The email says "see the attached PDF", but the
+  prompt never asked for that document. Now AI Assist writes both in one reply: the email, and the change plan
+  it attaches, under fixed headings. The headings are change summary, implementation plan, risk and impact
+  analysis, backout plan, pre-production and post-implementation testing, and change tasks.
+  - The plan text is copied word for word from the change, with only the layout tidied, because the approver
+    checks it against the record. Missing sections are worked out from the other facts, or asked about in the AI
+    chat like the email.
+  - The attachment shows next to the email and can be edited. **Save attachment as PDF** opens it ready to
+    print, already named `CHG… change plan`, which is the file name the email gives it. Choose **Save as PDF**.
+  - A missing attachment, or a placeholder in it, blocks both **Copy email** and the PDF. **Ask AI Assist to
+    finish it** builds the follow-up prompt.
+  - This works on **Create New CHG** too; it no longer has to wait until the change exists. Modify CHG can still
+    print ServiceNow's own copy.
 - **The RCP approval email: AI Assist works it out and asks you, with no form to fill.** This replaces the
   question form added in v0.299.0.
   - **Draft** opens the prompt straight away. On **Modify Existing CHG** it first reads the whole change into

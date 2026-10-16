@@ -2127,7 +2127,7 @@ function NewChangeRcpSection({ state }: { state: CrgStateData }) {
       <h4 className={styles.panelSectionTitle}>RCP production-change rules</h4>
       <RcpChecklist emailContext={newChangeRcp.emailContext} results={newChangeRcp.results} />
       <p className={styles.panelHint}>
-        The approval email asks for the change plan PDF. After you create the change, open it in Modify CHG to get that PDF.
+        AI Assist writes the change plan PDF the approval email attaches, along with the email. Once the change exists, Modify CHG can also print ServiceNow's own copy.
       </p>
     </div>
   );

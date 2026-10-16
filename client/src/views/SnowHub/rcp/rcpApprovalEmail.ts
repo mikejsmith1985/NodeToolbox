@@ -3,7 +3,7 @@
 // Every Production change in the restricted change period needs the Director's (and/or the Change Process
 // Owner's) email approval attached. Change Management publishes one template for that request (GH #441).
 // Toolbox fills in every fact it holds and hands AI Assist everything else known about the change, so AI
-// Assist can work out each remaining section itself. Only what truly cannot be worked out is asked — by AI
+// Assist can work out each remaining section itself — and write the change plan the email says is attached. Only what truly cannot be worked out is asked — by AI
 // Assist, in its own chat, with its best guess — and an email that still has a gap cannot be copied.
 //
 // The switch lives here too: the RCP rules are temporary, so the whole checklist can be turned off.
@@ -212,7 +212,7 @@ export function buildRcpApprovalEmailTemplate(context: RcpApprovalEmailContext, 
     fillOrConfirm(context.senderName, 'your name'),
     fillOrConfirm(context.senderContact, 'team / contact information'),
     '',
-    `Attachment: ${changeNumber} — Change Record.pdf`,
+    `Attachment: ${buildRcpAttachmentTitle(context.changeNumber || changeNumber)}.pdf`,
   ].join('\n');
 }
 
@@ -263,12 +263,63 @@ const EMAIL_RULES = [
   '- The finished email must contain no [ ] markers, no placeholders and nothing marked TBD.',
 ];
 
+// ── The attachment ──
+
+/** The line that starts the email in AI Assist's reply. */
+export const RCP_EMAIL_MARKER = '=== EMAIL ===';
+/** The line that starts the attachment in AI Assist's reply. */
+export const RCP_ATTACHMENT_MARKER = '=== ATTACHMENT ===';
+const MISSING_ATTACHMENT_PLACEHOLDER = '(no attachment)';
+// The sections the email promises the attachment holds, in the order Change Management reads them.
+const ATTACHMENT_HEADINGS = [
+  'Change summary',
+  'Implementation plan',
+  'Risk and impact analysis',
+  'Backout plan',
+  'Pre-production and post-implementation testing',
+  'Change tasks',
+];
+
+/** The attachment's name, without ".pdf" — also the print window's title, so "Save as PDF" suggests it. */
+export function buildRcpAttachmentTitle(changeNumber: string): string {
+  return changeNumber.trim() === '' ? 'Change plan' : `${changeNumber.trim()} change plan`;
+}
+
+/** How AI Assist writes the attachment: the change's own plan, faithfully, under fixed headings. */
+function buildAttachmentRules(context: RcpApprovalEmailContext): string[] {
+  return [
+    `The attachment — "${buildRcpAttachmentTitle(context.changeNumber)}.pdf", which the email says is attached:`,
+    '- Write it under exactly these headings, in this order:',
+    ...ATTACHMENT_HEADINGS.map((heading) => `  ## ${heading}`),
+    '- Change summary: one line each for change number and title, environment, CI and CI owner, Requested By, '
+      + 'assignment group, window (Central Time), risk and impact.',
+    '- Copy the implementation plan, risk and impact analysis, backout plan and test plan word for word from the change '
+      + 'facts — tidy the layout only. Never add, drop or reword a step. The approver checks them against the record.',
+    '- Change tasks: one line per task — number, type, summary, group / assignee, window.',
+    '- Where the facts hold nothing for a section, work it out from the other facts or ask me, as for the email.',
+    '- The attachment must contain no [ ] markers, no placeholders and nothing marked TBD.',
+  ];
+}
+
+/** The final reply's shape: the email and the attachment, each under its own marker line, in one code block. */
+function buildReplyFormatLines(): string[] {
+  return [
+    'Your final reply holds both, in ONE code block, each under its marker line:',
+    RCP_EMAIL_MARKER,
+    '<the whole email>',
+    RCP_ATTACHMENT_MARKER,
+    '<the whole attachment>',
+    '',
+    CONVERSATIONAL_REPLY_INSTRUCTION.replace('the fields', 'the email and the attachment'),
+  ];
+}
+
 /** The prompt that has AI Assist complete the RCP approval request email, asking the sender only what it must. */
 export function buildRcpApprovalEmailPrompt(context: RcpApprovalEmailContext, processOwnerName: string): string {
   return [
     `Complete this RCP approval request email for a ${context.environmentLabel || 'Production'} change during the `
-      + 'Restricted Change Period (RCP, through January 19, 2027). It goes to the Director and/or the Change Process Owner, '
-      + 'so it must be complete and correct — no gaps.',
+      + 'Restricted Change Period (RCP, through January 19, 2027), and write the change plan it says is attached. Both go '
+      + 'to the Director and/or the Change Process Owner, so they must be complete and correct — no gaps.',
     '',
     ...renderChangeFacts(context),
     '',
@@ -277,7 +328,9 @@ export function buildRcpApprovalEmailPrompt(context: RcpApprovalEmailContext, pr
     'Template:',
     buildRcpApprovalEmailTemplate(context, processOwnerName),
     '',
-    CONVERSATIONAL_REPLY_INSTRUCTION.replace('the fields', 'the whole email'),
+    ...buildAttachmentRules(context),
+    '',
+    ...buildReplyFormatLines(),
   ].join('\n');
 }
 
@@ -323,6 +376,19 @@ export function findRcpEmailGaps(emailText: string): RcpEmailGap[] {
 }
 
 /**
+ * Every gap in what goes to the approver: the email's placeholders, the attachment's, and a missing attachment —
+ * the email says one is attached, so it is not ready without it.
+ */
+export function findRcpDraftGaps(emailText: string, attachmentText: string): RcpEmailGap[] {
+  const missingAttachmentGaps = attachmentText.trim() === ''
+    ? [{ placeholderText: MISSING_ATTACHMENT_PLACEHOLDER, questionText: 'The change plan attachment the email says is attached' }]
+    : [];
+  const attachmentGaps = findRcpEmailGaps(attachmentText)
+    .filter((attachmentGap) => !findRcpEmailGaps(emailText).some((emailGap) => emailGap.placeholderText === attachmentGap.placeholderText));
+  return [...findRcpEmailGaps(emailText), ...attachmentGaps, ...missingAttachmentGaps];
+}
+
+/**
  * True when the pasted text is AI Assist's question rather than the email — it has no Subject line and asks
  * something. The question is answered in the AI chat; only the finished email comes back here.
  */
@@ -331,21 +397,37 @@ export function isRcpEmailQuestionReply(replyText: string): boolean {
   return !SUBJECT_LINE_PATTERN.test(pastedText) && pastedText.includes('?');
 }
 
-/** The follow-up prompt for an email that came back with gaps: work each out, or ask the sender, then resend. */
-export function buildRcpEmailGapPrompt(emailText: string, gaps: readonly RcpEmailGap[]): string {
+/** The follow-up prompt for an email or attachment that came back with gaps: work each out, or ask, then resend both. */
+export function buildRcpEmailGapPrompt(emailText: string, attachmentText: string, gaps: readonly RcpEmailGap[]): string {
   return [
-    'The RCP approval email below still has gaps the Director must not see:',
-    ...gaps.map((gap) => `- ${gap.placeholderText}`),
+    'The RCP approval email and its attachment below still have gaps the Director must not see:',
+    ...gaps.map((gap) => `- ${gap.placeholderText}${gap.placeholderText === MISSING_ATTACHMENT_PLACEHOLDER ? ' — write the change plan attachment' : ''}`),
     '',
     'Work out each one from the change facts earlier in this chat. Only if one truly cannot be worked out, ask me in '
       + 'ONE chat message — a short numbered list, each with your best guess so I can reply "yes".',
-    'Then send the whole email again, unchanged apart from the gaps, with no [ ] markers, placeholders or TBD left.',
+    'Then send both again, unchanged apart from the gaps, with no [ ] markers, placeholders or TBD left.',
     '',
-    'Email:',
+    RCP_EMAIL_MARKER,
     emailText,
+    RCP_ATTACHMENT_MARKER,
+    attachmentText,
     '',
-    CONVERSATIONAL_REPLY_INSTRUCTION.replace('the fields', 'the whole email'),
+    ...buildReplyFormatLines(),
   ].join('\n');
+}
+
+/**
+ * The email and its attachment out of AI Assist's reply. A reply without the marker lines is taken as the email
+ * alone, with an empty attachment — which the gap check then asks for.
+ */
+export function readRcpEmailReply(replyText: string): { emailText: string; attachmentText: string } {
+  const replyBody = stripCodeFences(replyText);
+  const attachmentIndex = replyBody.indexOf(RCP_ATTACHMENT_MARKER);
+  const emailPart = attachmentIndex === -1 ? replyBody : replyBody.slice(0, attachmentIndex);
+  return {
+    emailText: emailPart.replace(RCP_EMAIL_MARKER, '').trim(),
+    attachmentText: attachmentIndex === -1 ? '' : replyBody.slice(attachmentIndex + RCP_ATTACHMENT_MARKER.length).trim(),
+  };
 }
 
 /** The pasted email, out of its code block, with its word count. */

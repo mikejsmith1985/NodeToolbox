@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { snowFetch } from '../../../services/snowApi.ts';
 import {
+  buildAttachmentDocumentHtml,
   buildChangePlanDocumentHtml,
   buildServiceNowChangePdfUrl,
   enrichRcpEmailContextWithPlan,
@@ -173,5 +174,18 @@ describe('enrichRcpEmailContextWithPlan', () => {
       assignmentGroupName: 'Recon Devs',
       changeTaskLines: ['CTASK0001 — Implementation — Deploy Recon — Recon Devs / Doe, Sam — Fri 2026-10-09 7:30 PM → Fri 2026-10-09 8:30 PM CT'],
     }));
+  });
+});
+
+describe('buildAttachmentDocumentHtml', () => {
+  it('turns AI Assist\'s attachment into a print-ready page named after the change', () => {
+    const documentHtml = buildAttachmentDocumentHtml('CHG0012345 change plan', '## Implementation plan\nStep 1 <deploy>\n- verify\n\n## Backout plan\nRedeploy v1.4.', 'Oct 16, 2026');
+
+    expect(documentHtml).toContain('<title>CHG0012345 change plan</title>');
+    expect(documentHtml).toContain('<h1>CHG0012345 change plan</h1>');
+    expect(documentHtml).toContain('<h2>Implementation plan</h2>');
+    expect(documentHtml).toContain('Step 1 &lt;deploy&gt;\n- verify');
+    expect(documentHtml).toContain('<h2>Backout plan</h2>');
+    expect(documentHtml).toContain('Oct 16, 2026');
   });
 });
