@@ -41,73 +41,15 @@ describe('RcpChecklist', () => {
     expect(screen.queryByRole('button', { name: /Director approval email/ })).not.toBeInTheDocument();
   });
 
-  it('asks for every missing answer before the prompt can be copied, then drafts from them', () => {
+  it('drafts the RCP approval request email through AI Assist from the template in one click', async () => {
     useAiAssistStore.setState({ isAiAssistUnlocked: true });
     render(<RcpChecklist emailContext={EMAIL_CONTEXT} results={RESULTS} />);
 
     fireEvent.click(screen.getByRole('button', { name: /Draft the Director approval email/ }));
-    const continueButton = screen.getByRole('button', { name: /Continue to AI Assist/ });
-    expect(continueButton).toBeDisabled();
-    expect(screen.getByText(/4 answers still needed/)).toBeInTheDocument();
 
-    answerAllQuestions();
-    expect(continueButton).toBeEnabled();
-    fireEvent.click(continueButton);
-
-    expect(screen.getByDisplayValue(/Change number and title: CHG0012345/)).toBeInTheDocument();
-    expect(screen.getByDisplayValue(/notes from the sender: "Recon is read-only for 20 minutes/)).toBeInTheDocument();
-    expect(localStorage.getItem('tbxRcpSenderName')).toBe('Smith, Mike');
-  });
-
-  it('will not copy an email that still has a gap, and asks for each one', () => {
-    useAiAssistStore.setState({ isAiAssistUnlocked: true });
-    render(<RcpChecklist emailContext={EMAIL_CONTEXT} results={RESULTS} />);
-
-    pasteDraftedEmail('Subject: Approval\n\nHello [CONFIRM: Director name],\nPlease approve.');
-
-    expect(screen.getByRole('button', { name: /Copy email/ })).toBeDisabled();
-    expect(screen.getByText(/1 gap left/)).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText('Director name'), { target: { value: 'Park, Alex' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Fill in' }));
-
-    expect(screen.getByLabelText('RCP approval request email')).toHaveValue('Subject: Approval\n\nHello Park, Alex,\nPlease approve.');
-    expect(screen.getByRole('button', { name: /Copy email/ })).toBeEnabled();
-  });
-
-  it('re-checks for gaps as the email is edited by hand', () => {
-    useAiAssistStore.setState({ isAiAssistUnlocked: true });
-    render(<RcpChecklist emailContext={EMAIL_CONTEXT} results={RESULTS} />);
-
-    pasteDraftedEmail('Subject: Approval\n\nHello Lee, Jordan,\nPlease approve.');
-    expect(screen.getByRole('button', { name: /Copy email/ })).toBeEnabled();
-
-    fireEvent.change(screen.getByLabelText('RCP approval request email'), { target: { value: 'Hello TBD' } });
-    expect(screen.getByRole('button', { name: /Copy email/ })).toBeDisabled();
+    expect(await screen.findByDisplayValue(/Change number and title: CHG0012345/)).toBeInTheDocument();
   });
 });
-
-/** Answers every question the draft asks for this change that is not yet answered. */
-function answerAllQuestions() {
-  const answers: Record<string, string> = {
-    'Affected users or services, and any expected outage or degradation': 'Recon is read-only for 20 minutes; no customer outage.',
-    'Impact of deferring until after RCP': 'Premiums stay wrong for 11 weeks.',
-    'Your name': 'Smith, Mike',
-    'Your team and contact details': 'Recon Devs — ext 1234',
-  };
-  for (const [label, answer] of Object.entries(answers)) {
-    fireEvent.change(screen.getByLabelText(label), { target: { value: answer } });
-  }
-}
-
-/** Answers the questions, opens AI Assist, and pastes this email as its reply. */
-function pasteDraftedEmail(emailText: string) {
-  fireEvent.click(screen.getByRole('button', { name: /Draft the Director approval email/ }));
-  answerAllQuestions();
-  fireEvent.click(screen.getByRole('button', { name: /Continue to AI Assist/ }));
-  fireEvent.change(screen.getByLabelText(/Paste the assistant/), { target: { value: emailText } });
-  fireEvent.click(screen.getByRole('button', { name: /Use this email/ }));
-  fireEvent.click(screen.getByRole('button', { name: 'Close' }));
-}
 
 describe('RcpChecklist fix buttons', () => {
   it('offers a rule\'s fix beside it while the rule is not met, and runs it', () => {

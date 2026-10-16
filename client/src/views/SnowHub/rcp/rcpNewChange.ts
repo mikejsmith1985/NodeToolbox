@@ -30,6 +30,11 @@ export interface NewChangeRcpInput {
   justification: string;
   shortDescription: string;
   backoutPlan: string;
+  /** The draft's own plan text, for AI Assist to work the email out from; optional for older callers. */
+  description?: string;
+  implementationPlan?: string;
+  riskImpactAnalysis?: string;
+  testPlan?: string;
   todayIso: string;
 }
 
@@ -82,6 +87,11 @@ export function evaluateNewChangeRcp(input: NewChangeRcpInput): NewChangeRcpEval
       riskLabel: '',
       justification: input.justification,
       backoutPlan: input.backoutPlan,
+      description: input.description,
+      implementationPlan: input.implementationPlan,
+      riskImpactAnalysis: input.riskImpactAnalysis,
+      testPlan: input.testPlan,
+      requestedByName: input.requestedBy.displayName,
     },
   };
 }

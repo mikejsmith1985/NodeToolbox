@@ -6,11 +6,12 @@ import { snowFetch } from '../../../services/snowApi.ts';
 import {
   buildChangePlanDocumentHtml,
   buildServiceNowChangePdfUrl,
+  enrichRcpEmailContextWithPlan,
   fetchChangePlan,
   openChangePlanForPrinting,
   type ChangePlan,
 } from './changePlanDocument.ts';
-import type { RcpChangeFacts } from './rcpChangeFacts.ts';
+import { buildRcpApprovalEmailContext, type RcpChangeFacts } from './rcpChangeFacts.ts';
 
 vi.mock('../../../services/snowApi.ts', () => ({ snowFetch: vi.fn() }));
 
@@ -155,5 +156,22 @@ describe('openChangePlanForPrinting', () => {
 
   it('reports a blocked pop-up rather than failing silently', () => {
     expect(openChangePlanForPrinting('<html></html>', () => null)).toBe(false);
+  });
+});
+
+describe('enrichRcpEmailContextWithPlan', () => {
+  it('adds the plan text, the people and one line per task for AI Assist to work the email out from', () => {
+    const emailContext = enrichRcpEmailContextWithPlan(buildRcpApprovalEmailContext(FACTS), PLAN);
+
+    expect(emailContext).toEqual(expect.objectContaining({
+      changeNumber: 'CHG0012345',
+      implementationPlan: 'Step 1 <deploy>\nStep 2 verify',
+      riskImpactAnalysis: 'Low risk.',
+      testPlan: 'Tested in REL.',
+      impactLabel: '3 - Low',
+      requestedByName: 'Lee, Jordan',
+      assignmentGroupName: 'Recon Devs',
+      changeTaskLines: ['CTASK0001 — Implementation — Deploy Recon — Recon Devs / Doe, Sam — Fri 2026-10-09 7:30 PM → Fri 2026-10-09 8:30 PM CT'],
+    }));
   });
 });

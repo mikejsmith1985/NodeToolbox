@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **The RCP approval email: AI Assist works it out and asks you, with no form to fill.** This replaces the
+  question form added in v0.299.0.
+  - **Draft** opens the prompt straight away. On **Modify Existing CHG** it first reads the whole change into
+    the prompt: description, justification, implementation plan, risk and impact analysis, test plan, backout,
+    impact, Requested By, CI owner, assignment group, and every CTASK with its window. On **Create New CHG** it
+    uses the draft's own text.
+  - AI Assist is told to work out every section itself. For example, the Director normally comes from Requested
+    By, the expected impact from the risk analysis and task windows, and the deferral impact from the
+    justification. It asks only what it truly can't work out: in its own chat, in one message, each question
+    with its best guess so you can reply "yes". Paste back only the finished email. If you paste its question
+    by mistake, Toolbox says so.
+  - Your sign-off is learned from your first finished email and filled in after that.
+  - An email that still has a `[…]`, "(not set)", "TBD" or "TBA" still can't be copied. **Ask AI Assist to
+    finish it** builds the follow-up prompt, so there are no answer boxes to fill.
 - **The RCP approval email can't go out with a gap in it.** One leftover "[CONFIRM: …]" in an email to a Director
   makes it look unread, so the draft now asks first and checks afterwards:
   - **Before drafting**, Toolbox asks for everything ServiceNow doesn't hold: the Director (always shown to

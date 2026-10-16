@@ -23,6 +23,7 @@ import {
 } from './rcpChangeFixes.ts';
 import { buildRcpApprovalEmailContext, evaluateRcpChecklist, fetchRcpChangeFacts, type RcpChangeFacts } from './rcpChangeFacts.ts';
 import { ChangePlanPdfActions } from './ChangePlanPdfActions.tsx';
+import { enrichRcpEmailContextWithPlan, fetchChangePlan } from './changePlanDocument.ts';
 import { RcpChecklist, type RcpFixAction } from './RcpChecklist.tsx';
 import { describeCentralWindow, isRcpPeriodActive, readCentralTodayIso, type RcpCheckResult } from './rcpRules.ts';
 
@@ -177,6 +178,7 @@ export function ExistingChgRcpCheck({
         {facts !== null && facts.isProduction ? (
           <RcpChecklist
             emailContext={buildRcpApprovalEmailContext(facts)}
+            loadFullEmailContext={async () => enrichRcpEmailContextWithPlan(buildRcpApprovalEmailContext(facts), await fetchChangePlan(facts))}
             fixActions={buildFixActions(facts, results, nowUtc, {
               applyFix: (fix, formUpdate) => void applyFix(fix, formUpdate),
               openJustificationFix,

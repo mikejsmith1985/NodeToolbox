@@ -15,6 +15,8 @@ interface RcpChecklistProps {
   results: readonly RcpCheckResult[];
   /** The facts the approval email is written from; null hides the draft. */
   emailContext: RcpApprovalEmailContext | null;
+  /** Reads the rest of the change for AI Assist when the email is drafted (Modify CHG only). */
+  loadFullEmailContext?: () => Promise<RcpApprovalEmailContext>;
   /** A fix per rule, offered beside that rule while it is not met. */
   fixActions?: Partial<Record<RcpCheckResult['ruleId'], RcpFixAction>>;
 }
@@ -29,7 +31,7 @@ export interface RcpFixAction {
 const STATUS_ICONS: Readonly<Record<RcpCheckStatus, string>> = { pass: '✅', fail: '❌', check: '⚠️' };
 
 /** The RCP checklist for one Production change. */
-export function RcpChecklist({ results, emailContext, fixActions = {} }: RcpChecklistProps) {
+export function RcpChecklist({ results, emailContext, loadFullEmailContext, fixActions = {} }: RcpChecklistProps) {
   const isAiAssistUnlocked = useAiAssistStore((storeState) => storeState.isAiAssistUnlocked);
   const metCount = results.filter((result) => result.status === 'pass').length;
 
@@ -56,7 +58,7 @@ export function RcpChecklist({ results, emailContext, fixActions = {} }: RcpChec
           </li>
         ))}
       </ul>
-      {isAiAssistUnlocked && emailContext !== null ? <RcpEmailDraft emailContext={emailContext} /> : null}
+      {isAiAssistUnlocked && emailContext !== null ? <RcpEmailDraft emailContext={emailContext} loadFullEmailContext={loadFullEmailContext} /> : null}
     </div>
   );
 }

@@ -35,6 +35,21 @@ describe('evaluateNewChangeRcp', () => {
     expect(evaluation?.emailContext.plannedStartUtc).toBe('2026-10-10T00:30:00Z');
   });
 
+  it('hands the draft\'s plan text and Requested By to the approval email, and leaves the change number for AI Assist', () => {
+    const evaluation = evaluateNewChangeRcp({
+      ...INPUT, implementationPlan: 'Deploy v1.5.', riskImpactAnalysis: 'Read-only for 20 minutes.', testPlan: 'REL regression.', description: 'Recon v1.5',
+    });
+
+    expect(evaluation?.emailContext).toEqual(expect.objectContaining({
+      changeNumber: '',
+      implementationPlan: 'Deploy v1.5.',
+      riskImpactAnalysis: 'Read-only for 20 minutes.',
+      testPlan: 'REL regression.',
+      description: 'Recon v1.5',
+      requestedByName: INPUT.requestedBy.displayName,
+    }));
+  });
+
   it('does not apply when no Production environment is enabled', () => {
     expect(evaluateNewChangeRcp({ ...INPUT, productionEnvironment: null })).toBeNull();
   });

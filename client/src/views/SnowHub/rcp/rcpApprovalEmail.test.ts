@@ -3,17 +3,15 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
 import {
-  buildInitialRcpEmailAnswers,
   buildRcpApprovalEmailPrompt,
   buildRcpApprovalEmailTemplate,
+  buildRcpEmailGapPrompt,
   DEFAULT_RCP_PROCESS_OWNER_NAME,
-  fillRcpEmailGap,
   findRcpEmailGaps,
-  listRcpEmailQuestions,
-  listUnansweredRcpEmailQuestions,
+  isRcpEmailQuestionReply,
   readRcpSenderDetails,
+  readRcpSenderFromEmail,
   writeRcpSenderDetails,
-  type RcpEmailAnswers,
   readApprovalEmailReply,
   readRcpProcessOwnerName,
   readRcpRulesEnabled,
@@ -42,6 +40,12 @@ const EMAIL_CONTEXT: RcpApprovalEmailContext = {
 };
 
 describe('buildRcpApprovalEmailTemplate', () => {
+  it('signs off with the sender learned from their last email, else asks AI Assist to find out', () => {
+    expect(buildRcpApprovalEmailTemplate({ ...EMAIL_CONTEXT, senderName: 'Smith, Mike', senderContact: 'ext 1234' }, 'Ben Labout'))
+      .toContain('Thank you,\nSmith, Mike\next 1234');
+    expect(buildRcpApprovalEmailTemplate(EMAIL_CONTEXT, 'Ben Labout')).toContain('Thank you,\n[CONFIRM: your name]');
+  });
+
   it('fills the template\'s change summary from the change\'s own facts', () => {
     const template = buildRcpApprovalEmailTemplate(EMAIL_CONTEXT, 'Ben Labout');
 
@@ -95,6 +99,27 @@ describe('buildRcpApprovalEmailPrompt', () => {
     expect(prompt).toMatch(/\[CONFIRM:/);
     expect(prompt).not.toMatch(/200 words/);
   });
+
+  it('hands AI Assist everything known about the change, and has it work each section out before asking', () => {
+    const prompt = buildRcpApprovalEmailPrompt({
+      ...EMAIL_CONTEXT,
+      requestedByName: 'Park, Alex',
+      implementationPlan: 'Deploy v1.5 through the pipeline.',
+      riskImpactAnalysis: 'Recon is read-only for 20 minutes.',
+      testPlan: 'Regression suite in REL.',
+      changeTaskLines: ['CTASK0001 — Implementation — Deploy Recon — Fri 7:30 PM → 8:30 PM CT'],
+      senderName: 'Smith, Mike',
+      senderContact: 'Recon Devs — ext 1234',
+    }, 'Ben Labout');
+
+    for (const fact of ['Park, Alex', 'Deploy v1.5 through the pipeline.', 'Recon is read-only for 20 minutes.', 'Regression suite in REL.', 'CTASK0001 — Implementation', 'Smith, Mike — Recon Devs — ext 1234']) {
+      expect(prompt).toContain(fact);
+    }
+    expect(prompt).toMatch(/Work out every marker yourself/);
+    expect(prompt).toMatch(/best guess so I can simply reply "yes"/);
+    expect(prompt).toMatch(/Ask your questions as normal chat messages/);
+    expect(prompt).toMatch(/no \[ \] markers/);
+  });
 });
 
 describe('readApprovalEmailReply', () => {
@@ -130,96 +155,16 @@ describe('the RCP rules switch', () => {
   });
 });
 
-// Every answer the sender gives for a Friday-night change whose facts are all in ServiceNow.
-const COMPLETE_ANSWERS: RcpEmailAnswers = {
-  directorName: 'Lee, Jordan',
-  expectedImpact: 'Recon is read-only for 20 minutes; no customer outage.',
-  whyDuringRcp: 'The Nov 1 regulatory deadline.',
-  deferralImpact: 'Premiums stay wrong for 11 weeks; a fine is likely.',
-  senderName: 'Smith, Mike',
-  senderContact: 'Recon Devs — ext 1234',
-};
 
-describe('listRcpEmailQuestions', () => {
-  it('always asks who the Director is, the sections only the sender can know, and who is sending it', () => {
-    expect(listRcpEmailQuestions(EMAIL_CONTEXT).map((question) => question.id))
-      .toEqual(['directorName', 'expectedImpact', 'whyDuringRcp', 'deferralImpact', 'senderName', 'senderContact']);
-  });
-
-  it('asks the two weekday questions only for a Monday-to-Thursday night', () => {
-    const questionIds = listRcpEmailQuestions({ ...EMAIL_CONTEXT, plannedStartUtc: TUESDAY_NIGHT_START_UTC }).map((question) => question.id);
-
-    expect(questionIds).toContain('whyWeekday');
-    expect(questionIds).toContain('weekendImpact');
-  });
-
-  it('asks for every change fact ServiceNow did not have', () => {
-    const questionIds = listRcpEmailQuestions({ ...EMAIL_CONTEXT, changeNumber: '', ciOwnerName: '', windowText: '', riskLabel: '' })
-      .map((question) => question.id);
-
-    expect(questionIds).toEqual(expect.arrayContaining(['changeNumber', 'ciOwnerName', 'windowText', 'riskLabel']));
-    expect(questionIds).not.toContain('configItemName');
-  });
-
-  it('names the CI owner in the Director question, since the Director is in the owner\'s leadership chain', () => {
-    const directorQuestion = listRcpEmailQuestions(EMAIL_CONTEXT).find((question) => question.id === 'directorName');
-
-    expect(directorQuestion?.hint).toContain('Lee, Jordan');
-  });
-});
-
-describe('buildInitialRcpEmailAnswers', () => {
-  afterEach(() => localStorage.clear());
-
-  it('starts from what is known — the Director on the change, the justification, and the sender last used', () => {
-    writeRcpSenderDetails({ senderName: 'Smith, Mike', senderContact: 'ext 1234' });
-
-    expect(buildInitialRcpEmailAnswers(EMAIL_CONTEXT)).toEqual({
-      directorName: 'Lee, Jordan',
-      whyDuringRcp: 'Fixes premiums before the Nov 1 regulatory deadline.',
-      senderName: 'Smith, Mike',
-      senderContact: 'ext 1234',
-    });
-  });
-});
-
-describe('listUnansweredRcpEmailQuestions', () => {
-  it('lists every question still blank, so the draft cannot start with a gap', () => {
-    const questions = listRcpEmailQuestions(EMAIL_CONTEXT);
-
-    expect(listUnansweredRcpEmailQuestions(questions, { ...COMPLETE_ANSWERS, deferralImpact: '  ' }).map((question) => question.id))
-      .toEqual(['deferralImpact']);
-    expect(listUnansweredRcpEmailQuestions(questions, COMPLETE_ANSWERS)).toEqual([]);
-  });
-});
-
-describe('buildRcpApprovalEmailTemplate with the sender\'s answers', () => {
-  it('leaves no [CONFIRM: …] once every question is answered, and hands each section its notes', () => {
-    const template = buildRcpApprovalEmailTemplate({ ...EMAIL_CONTEXT, ciOwnerName: '' }, 'Ben Labout', {
-      ...COMPLETE_ANSWERS, ciOwnerName: 'Doe, Sam', directorName: 'Park, Alex',
-    });
-
-    expect(template).not.toContain('[CONFIRM:');
-    expect(template).toContain('Hello Park, Alex and Ben Labout,');
-    expect(template).toContain('CI owner: Doe, Sam');
-    expect(template).toContain('The Nov 1 regulatory deadline.');
-    expect(template).toContain('Premiums stay wrong for 11 weeks; a fine is likely.');
-    expect(template).toContain('Smith, Mike\nRecon Devs — ext 1234');
-  });
-});
-
-describe('buildRcpApprovalEmailPrompt with the sender\'s answers', () => {
-  it('forbids guessing and has any remaining gap written as a question Toolbox will ask', () => {
-    const prompt = buildRcpApprovalEmailPrompt(EMAIL_CONTEXT, 'Ben Labout', COMPLETE_ANSWERS);
-
-    expect(prompt).toContain('Recon is read-only for 20 minutes; no customer outage.');
-    expect(prompt).toMatch(/never invent/i);
-    expect(prompt).toMatch(/Toolbox will ask the sender/);
+describe('isRcpEmailQuestionReply', () => {
+  it('tells AI Assist\'s question apart from the finished email', () => {
+    expect(isRcpEmailQuestionReply('1. Is Park, Alex the Director? (my guess: yes)')).toBe(true);
+    expect(isRcpEmailQuestionReply('```text\nSubject: RCP approval request — CHG1\n\nHello Park, Alex — any questions?\n```')).toBe(false);
   });
 });
 
 describe('findRcpEmailGaps', () => {
-  it('finds every placeholder left in the email, once each, as a question for the sender', () => {
+  it('finds every placeholder left in the email, once each', () => {
     const emailText = 'Hello [CONFIRM: Director name],\nCI owner: (not set)\nWindow: TBD\n[WRITE: impact of a weekend]\nAgain [CONFIRM: Director name].';
 
     expect(findRcpEmailGaps(emailText)).toEqual([
@@ -235,17 +180,28 @@ describe('findRcpEmailGaps', () => {
   });
 });
 
-describe('fillRcpEmailGap', () => {
-  it('puts the answer everywhere that placeholder appears', () => {
-    expect(fillRcpEmailGap('Hi [CONFIRM: Director name]. Thanks [CONFIRM: Director name].', '[CONFIRM: Director name]', ' Lee, Jordan '))
-      .toBe('Hi Lee, Jordan. Thanks Lee, Jordan.');
+describe('buildRcpEmailGapPrompt', () => {
+  it('names each gap and has AI Assist work it out, or ask with a best guess, then resend the whole email', () => {
+    const emailText = 'Subject: RCP\n\nHello [CONFIRM: Director name],';
+    const prompt = buildRcpEmailGapPrompt(emailText, findRcpEmailGaps(emailText));
+
+    expect(prompt).toContain('- [CONFIRM: Director name]');
+    expect(prompt).toContain(emailText);
+    expect(prompt).toMatch(/best guess/);
+    expect(prompt).toMatch(/send the whole email again/);
   });
 });
 
-describe('the sender details', () => {
+describe('the sender', () => {
   afterEach(() => localStorage.clear());
 
-  it('are blank until saved, then remembered for the next email', () => {
+  it('is read from a finished email\'s sign-off, stopping at the attachment line', () => {
+    expect(readRcpSenderFromEmail('Please approve.\n\nThank you,\nSmith, Mike\nRecon Devs — ext 1234\n\nAttachment: CHG1 — Change Record.pdf'))
+      .toEqual({ senderName: 'Smith, Mike', senderContact: 'Recon Devs — ext 1234' });
+    expect(readRcpSenderFromEmail('Please approve.')).toBeNull();
+  });
+
+  it('is blank until remembered, then kept for the next email', () => {
     expect(readRcpSenderDetails()).toEqual({ senderName: '', senderContact: '' });
     writeRcpSenderDetails({ senderName: ' Smith, Mike ', senderContact: 'ext 1234' });
     expect(readRcpSenderDetails()).toEqual({ senderName: 'Smith, Mike', senderContact: 'ext 1234' });

@@ -2106,6 +2106,10 @@ function buildNewChangeRcpInput(state: CrgStateData): NewChangeRcpInput {
     justification: state.generatedJustification,
     shortDescription: state.generatedShortDescription,
     backoutPlan: state.chgPlanningContent.backoutPlan,
+    description: state.generatedDescription,
+    implementationPlan: state.chgPlanningContent.implementationPlan,
+    riskImpactAnalysis: state.generatedRiskImpact,
+    testPlan: state.chgPlanningContent.testPlan,
     todayIso: readCentralTodayIso(),
   };
 }

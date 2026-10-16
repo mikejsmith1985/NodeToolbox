@@ -14,6 +14,7 @@ import { fetchChangeTaskRecords } from '../chgFormula/ctaskReviewApi.ts';
 import { readReviewedCtask } from '../chgFormula/ctaskReviewRecord.ts';
 import { extractStringValue } from '../hooks/useCrgState.ts';
 import { readUtcInstant, type RcpChangeFacts } from './rcpChangeFacts.ts';
+import type { RcpApprovalEmailContext } from './rcpApprovalEmail.ts';
 import { describeCentralWindow } from './rcpRules.ts';
 
 /** One change task as the plan shows it. */
@@ -243,4 +244,32 @@ export function openChangePlanForPrinting(
   printWindow.focus();
   printWindow.print();
   return true;
+}
+
+// ── Feeding the approval email ──
+
+/** One change task as a single line for AI Assist: number, type, summary, who, and when. */
+function describeChangePlanTask(task: ChangePlanTask): string {
+  const assigneeText = [task.assignmentGroupName, task.assignedToName].filter((name) => name.trim() !== '').join(' / ');
+  return [task.number, task.typeLabel, task.shortDescription, assigneeText, task.windowText]
+    .filter((part) => part.trim() !== '')
+    .join(' — ');
+}
+
+/**
+ * The approval email's facts with the full change plan added — the plan text, the people and every task — so
+ * AI Assist can work out each section of the email instead of asking the sender.
+ */
+export function enrichRcpEmailContextWithPlan(context: RcpApprovalEmailContext, plan: ChangePlan): RcpApprovalEmailContext {
+  return {
+    ...context,
+    description: plan.description,
+    implementationPlan: plan.implementationPlan,
+    riskImpactAnalysis: plan.riskImpactAnalysis,
+    testPlan: plan.testPlan,
+    impactLabel: plan.impactLabel,
+    requestedByName: plan.requestedByName,
+    assignmentGroupName: plan.assignmentGroupName,
+    changeTaskLines: plan.tasks.map(describeChangePlanTask),
+  };
 }
