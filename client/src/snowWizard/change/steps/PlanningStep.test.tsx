@@ -33,6 +33,17 @@ describe('PlanningStep', () => {
     expect(observed.latestImpact).toBe('3');
   });
 
+  it('lets the AI write all three plans right here, so nothing is left blocking Next', () => {
+    render(<Harness />);
+    expect(screen.getByText(/Let AI write it/)).toBeTruthy();
+    fireEvent.change(screen.getByLabelText(/Paste the assistant/), {
+      target: { value: 'IMPLEMENTATION_PLAN: 1. Release v2\nTEST_PLAN: 1. Smoke test\nBACKOUT_PLAN: 1. Redeploy v1' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Read the reply' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Fill in 3 fields' }));
+    expect(observed.latestGaps).toEqual([]);
+  });
+
   it('never shows an internal field name', () => {
     render(<Harness />);
     expect(document.body.textContent).not.toMatch(/u_[a-z]|cmdb_ci|customfield_|sys_id/);

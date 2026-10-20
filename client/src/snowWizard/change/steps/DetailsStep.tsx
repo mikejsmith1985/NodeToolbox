@@ -9,6 +9,7 @@ import { SnowLookupField } from '../../../views/SnowHub/components/SnowLookupFie
 import { useCrgTemplates } from '../../../views/SnowHub/hooks/useCrgTemplates.ts';
 import { useCtaskTemplates } from '../../../views/SnowHub/hooks/useCtaskTemplates.ts';
 import type { SnowChoiceOptionMap } from '../../../views/SnowHub/hooks/useSnowChoiceOptions.ts';
+import AiFillPanel from '../AiFillPanel.tsx';
 import ChoiceSelect from '../ChoiceSelect.tsx';
 import type { ChangeStepProps } from '../changeWizardSession.ts';
 import styles from '../ChangeWizard.module.css';
@@ -74,13 +75,15 @@ function MoreDetails({ crg }: Pick<ChangeStepProps, 'crg'>) {
 }
 
 /** Step 2: the change's own details. */
-export default function DetailsStep({ crg, choiceOptions }: DetailsStepProps) {
+export default function DetailsStep(props: DetailsStepProps) {
+  const { crg, choiceOptions } = props;
   const { state, actions } = crg;
   const basicInfo = state.chgBasicInfo;
   return (
     <div>
       <p className={styles.stepIntro}>Tell us what this change is and who it belongs to. Values marked “needed” must be set.</p>
       <TemplatePicker crg={crg} />
+      <AiFillPanel {...props} isOpenAtStart={state.generatedShortDescription.trim() === ''} />
       <TextEntry label="Title (needed)" value={state.generatedShortDescription} onChange={(text) => actions.updateGeneratedField('shortDescription', text)} />
       <div className={styles.fieldRow}>
         <ChoiceSelect label="Category" isRequired options={choiceOptions.category ?? []} value={basicInfo.category} onChange={(value) => actions.setChgBasicInfo({ category: value })} />

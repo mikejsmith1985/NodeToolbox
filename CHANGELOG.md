@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **SNow Wizard: the AI can write the plans right on the plans screen.** "How will it go?" (implementation, test and
+  backout plans) and "Tell us about the change" now each carry **✨ Don't want to type this? Let AI write it**. It's the
+  same copy-prompt / paste-reply round as the "Let AI write it" step, and it opens by itself while those fields are
+  empty. Before this, someone on the plans screen saw no AI option and couldn't press Next without typing all three
+  plans.
+
 ### Added
 - **SNow Wizard: "Let AI write it", right after you choose the Jira work.** It used to sit after Details and Planning,
   and Next was blocked until those were filled in by hand, so the AI came too late to help.

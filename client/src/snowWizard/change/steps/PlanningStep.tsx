@@ -6,6 +6,7 @@ import { useId } from 'react';
 
 import type { SnowChoiceOptionMap } from '../../../views/SnowHub/hooks/useSnowChoiceOptions.ts';
 import { MAIN_ASSESSMENT_QUESTIONS, MORE_ASSESSMENT_QUESTIONS, type AssessmentQuestion } from '../assessmentQuestions.ts';
+import AiFillPanel from '../AiFillPanel.tsx';
 import ChoiceSelect from '../ChoiceSelect.tsx';
 import type { ChangeStepProps } from '../changeWizardSession.ts';
 import styles from '../ChangeWizard.module.css';
@@ -48,9 +49,11 @@ function AssessmentQuestions({ crg, choiceOptions, questions }: PlanningStepProp
 export default function PlanningStep(props: PlanningStepProps) {
   const { state, actions } = props.crg;
   const plans = state.chgPlanningContent;
+  const hasEmptyPlan = [plans.implementationPlan, plans.testPlan, plans.backoutPlan].some((planText) => planText.trim() === '');
   return (
     <div>
       <p className={styles.stepIntro}>Write how the change will be done, how you will know it worked, and how to undo it.</p>
+      <AiFillPanel {...props} isOpenAtStart={hasEmptyPlan} />
       <PlanEntry label="Implementation plan (needed)" hint="Numbered steps: who does what, and how they check it worked." value={plans.implementationPlan} onChange={(text) => actions.setChgPlanningContent({ implementationPlan: text })} />
       <PlanEntry label="Test plan (needed)" hint="What was tested before, and what will be checked after the change." value={plans.testPlan} onChange={(text) => actions.setChgPlanningContent({ testPlan: text })} />
       <PlanEntry label="Backout plan (needed)" hint="When you would undo it, who decides, and the steps to put things back." value={plans.backoutPlan} onChange={(text) => actions.setChgPlanningContent({ backoutPlan: text })} />

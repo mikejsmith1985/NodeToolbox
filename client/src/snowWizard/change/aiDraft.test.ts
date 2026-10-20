@@ -72,6 +72,12 @@ describe('readAiDraftReply', () => {
     expect(writers.setChgPlanningContent).toHaveBeenCalledWith({ implementationPlan: '1. Deploy' });
   });
 
+  it('reads all three plans from a reply that holds only the plans', () => {
+    const plansOnlyReply = 'IMPLEMENTATION_PLAN: 1. Deploy\nTEST_PLAN: 1. Smoke test\nBACKOUT_PLAN: 1. Roll back';
+    const draftReply = readAiDraftReply(plansOnlyReply, buildDraft(), CHOICE_OPTIONS);
+    expect(draftReply.suggestions.map((suggestion) => suggestion.suggestedText)).toEqual(['1. Deploy', '1. Smoke test', '1. Roll back']);
+  });
+
   it('skips anything that already says the same thing', () => {
     const draft = buildDraft({ generatedDescription: 'Fixes login.' } as Partial<CrgDraftState>);
     const draftReply = readAiDraftReply(FULL_REPLY, draft, CHOICE_OPTIONS);
