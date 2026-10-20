@@ -11,3 +11,6 @@ export const DEFAULT_JIRA_URL = 'https://jira.healthspring-jira-prod.aws.zilvert
 
 /** The channel the Wizard window, its ServiceNow tab and its Jira tab talk on (the probe used its own). */
 export const WIZARD_CHANNEL_NAME = 'snowWizard';
+
+/** The Web Lock an open Wizard window holds, so a second bookmark click never opens a second Wizard. */
+export const WIZARD_PRESENCE_LOCK_NAME = 'snowWizard:open';

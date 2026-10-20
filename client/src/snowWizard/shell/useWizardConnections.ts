@@ -10,6 +10,7 @@ import { createJiraOpenerTransport } from '../transport/jiraOpenerTransport.ts';
 import { createSnowSameOriginTransport, requestTokenOverChannel, type TokenRequestChannel } from '../transport/snowSameOriginTransport.ts';
 import { installWizardTransports } from '../transport/wizardTransports.ts';
 import { useWizardConnectionStore } from './wizardConnectionStore.ts';
+import { flagWizardTab } from './wizardPresence.ts';
 
 /** What the bookmark handed the Wizard window when it opened it. */
 export interface WizardBoot {
@@ -72,6 +73,7 @@ function listenToServiceNowTab(boot: WizardBoot, dependencies: WizardAppDependen
   tabChannel.addEventListener('message', (messageEvent: MessageEvent) => {
     const messageData = messageEvent.data;
     if (messageData?.kind === 'ping') tabChannel.postMessage({ kind: 'pong' });
+    if (messageData?.kind === 'attention') flagWizardTab(document);
     if (messageData?.kind === 'token' && messageData.token) {
       snowTransport.updateToken(String(messageData.token));
       const snowState = useWizardConnectionStore.getState().snow;

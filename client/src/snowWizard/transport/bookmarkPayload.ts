@@ -25,11 +25,31 @@ export interface BookmarkConfig {
   jiraUrl?: string;
   isReadOnly?: boolean;
   allowedRequesterHostFragments?: readonly string[];
+  /**
+   * The Web Lock an open Wizard window holds for its whole life. The browser itself answers "is it held?", so a Wizard
+   * tab the browser has put to sleep still counts as open. Absent for the probe.
+   */
+  presenceLockName?: string;
 }
 
 /** Badge helper handed to the runtimes (they cannot import it — see the file header). */
 export interface BookmarkTools {
   showBadge: (message: string, backgroundColor: string) => void;
+  readIsLockHeld: (lockName: string | undefined) => Promise<boolean>;
+}
+
+/**
+ * True while some window of this site holds the named Web Lock. The browser answers, not the holder, so a sleeping
+ * Wizard tab still counts. Runs inside the bookmark, so it uses nothing outside itself.
+ */
+export async function readIsPresenceLockHeld(lockName: string | undefined): Promise<boolean> {
+  if (!lockName || !navigator.locks) return false;
+  try {
+    const lockSnapshot = await navigator.locks.query();
+    return (lockSnapshot.held ?? []).some((heldLock) => heldLock.name === lockName);
+  } catch {
+    return false;
+  }
 }
 
 /** The subset of the config the Jira agent reads. */
@@ -78,7 +98,7 @@ export function showWizardBadge(message: string, backgroundColor: string): void 
   badgeElement.textContent = message;
 }
 
-const DEFAULT_AGENT_TOOLS: BookmarkTools = { showBadge: showWizardBadge };
+const DEFAULT_AGENT_TOOLS: BookmarkTools = { showBadge: showWizardBadge, readIsLockHeld: readIsPresenceLockHeld };
 
 /**
  * Jira agent: answers the Wizard window that opened this Jira tab. Runs each request on Jira's own origin with the
@@ -178,12 +198,18 @@ export function runSnowLauncher(
       openedWindow ? '#238636' : '#991b1b',
     );
   };
+  const refreshOpenWizard = () => {
+    tokenChannel.postMessage({ kind: 'token', token: resolveUserToken() });
+    tokenChannel.postMessage({ kind: 'attention' });
+    tools.showBadge('The SNow Wizard is already open — switch to the tab named "SNow Wizard". Its ServiceNow connection was refreshed.', '#238636');
+  };
   tokenChannel.postMessage({ kind: 'ping' });
   // A short wait for a "pong"; the click still counts as the user's action when the window opens after it.
   setTimeout(() => {
-    if (!isWizardAlreadyOpen) return openWizardWindow();
-    tokenChannel.postMessage({ kind: 'token', token: resolveUserToken() });
-    tools.showBadge('The SNow Wizard is already open in its own window — switch to it. Its ServiceNow connection was refreshed.', '#238636');
+    // The ServiceNow tab and the Wizard sit in separate window groups (ServiceNow's pop-up isolation header), so
+    // window.open can never find the Wizard by name. The presence lock is the reliable check; the pong covers Wizard
+    // windows from before the lock existed.
+    void tools.readIsLockHeld(config.presenceLockName).then((isLockHeld) => (isLockHeld || isWizardAlreadyOpen ? refreshOpenWizard() : openWizardWindow()));
   }, config.pingWaitMs ?? 400);
 }
 
@@ -195,8 +221,9 @@ export function runBookmark(
   jiraAgent: typeof runJiraAgent,
   showBadge: typeof showWizardBadge,
   resolveUserToken: () => string,
+  readIsLockHeld: typeof readIsPresenceLockHeld,
 ): void {
-  const tools = { showBadge };
+  const tools = { showBadge, readIsLockHeld };
   const bookmarkRole = detectRole(location.hostname, config.snowHostnameFragments, config.jiraHostname, Boolean(window.opener));
   if (bookmarkRole === 'snowLauncher') {
     snowLauncher(config, resolveUserToken, tools);
@@ -217,7 +244,7 @@ export function buildBookmarkSource(config: BookmarkConfig): string {
     bootPlaceholder: BOOT_PLACEHOLDER,
     snowHostnameFragments: SNOW_HOSTNAME_FRAGMENTS,
   };
-  const runtimeArguments = [JSON.stringify(frozenConfig), detectBookmarkRole, runSnowLauncher, runJiraAgent, showWizardBadge, 'resolveUserToken'];
+  const runtimeArguments = [JSON.stringify(frozenConfig), detectBookmarkRole, runSnowLauncher, runJiraAgent, showWizardBadge, 'resolveUserToken', readIsPresenceLockHeld];
   return `(function(){${SNOW_TOKEN_RESOLVER_SOURCE};(${runBookmark})(${runtimeArguments.join(',')});})();`;
 }
 

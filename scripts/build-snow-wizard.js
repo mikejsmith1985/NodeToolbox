@@ -23,7 +23,7 @@ const BROWSER_TARGET = 'es2022';
 const WIZARD_SOURCE_ROOT = path.join(CLIENT_SOURCE_ROOT, 'snowWizard');
 
 const WIZARD_BUILD = {
-  title: 'SNow Wizard',
+  title: 'Install SNow Wizard',
   launcherEntry: path.join(WIZARD_SOURCE_ROOT, 'launcher', 'launcher.entry.ts'),
   appEntry: path.join(WIZARD_SOURCE_ROOT, 'main.entry.tsx'),
   styleFiles: [

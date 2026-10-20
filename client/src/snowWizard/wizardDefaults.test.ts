@@ -5,7 +5,7 @@ import { resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { DEFAULT_JIRA_URL, DEFAULT_SNOW_URL, WIZARD_CHANNEL_NAME } from './wizardDefaults.ts';
+import { DEFAULT_JIRA_URL, DEFAULT_SNOW_URL, WIZARD_CHANNEL_NAME, WIZARD_PRESENCE_LOCK_NAME } from './wizardDefaults.ts';
 
 describe('wizardDefaults', () => {
   it('uses the ServiceNow address the owner gave (GH #449)', () => {
@@ -19,5 +19,9 @@ describe('wizardDefaults', () => {
 
   it('talks on a channel distinct from the probe\'s', () => {
     expect(WIZARD_CHANNEL_NAME).toBe('snowWizard');
+  });
+
+  it('names one presence lock shared by the bookmark and the Wizard window', () => {
+    expect(WIZARD_PRESENCE_LOCK_NAME).toBe('snowWizard:open');
   });
 });

@@ -8,6 +8,7 @@ import {
   buildBookmarkHref,
   buildBookmarkSource,
   detectBookmarkRole,
+  readIsPresenceLockHeld,
   runJiraAgent,
   runSnowLauncher,
 } from './bookmarkPayload.ts';
@@ -209,7 +210,7 @@ describe('runSnowLauncher', () => {
 
   it('opens the Wizard window with boot data in which "<" can never close the script', async () => {
     const openSpy = vi.spyOn(window, 'open').mockReturnValue({} as Window);
-    runSnowLauncher(launcherConfig, () => 'tok<en', { showBadge: vi.fn() });
+    runSnowLauncher(launcherConfig, () => 'tok<en', { showBadge: vi.fn(), readIsLockHeld: readIsPresenceLockHeld });
     await vi.advanceTimersByTimeAsync(11);
 
     expect(openSpy).toHaveBeenCalledWith('blob:https://acme.service-now.com/abc', 'snowWizardApp');
@@ -221,11 +222,53 @@ describe('runSnowLauncher', () => {
     answerPingWithPong = true;
     const openSpy = vi.spyOn(window, 'open');
     const showBadge = vi.fn();
-    runSnowLauncher(launcherConfig, () => 'fresh-token', { showBadge });
+    runSnowLauncher(launcherConfig, () => 'fresh-token', { showBadge, readIsLockHeld: readIsPresenceLockHeld });
     await vi.advanceTimersByTimeAsync(11);
 
     expect(openSpy).not.toHaveBeenCalled();
     expect(channelPosts).toContainEqual({ kind: 'token', token: 'fresh-token' });
     expect(showBadge.mock.calls[0][0]).toContain('already open');
+  });
+
+  it('never opens a second Wizard while its presence lock is held, even if that tab is asleep and cannot answer', async () => {
+    vi.stubGlobal('navigator', { locks: { query: vi.fn(async () => ({ held: [{ name: 'snowWizard:open' }], pending: [] })) } });
+    const openSpy = vi.spyOn(window, 'open');
+    const showBadge = vi.fn();
+    runSnowLauncher({ ...launcherConfig, presenceLockName: 'snowWizard:open' }, () => 'fresh-token', { showBadge, readIsLockHeld: readIsPresenceLockHeld });
+    await vi.advanceTimersByTimeAsync(11);
+
+    expect(openSpy).not.toHaveBeenCalled();
+    expect(channelPosts).toContainEqual({ kind: 'token', token: 'fresh-token' });
+    expect(channelPosts).toContainEqual({ kind: 'attention' });
+    expect(showBadge.mock.calls[0][0]).toContain('already open');
+  });
+
+  it('opens the Wizard when no one holds the presence lock and no one answers', async () => {
+    vi.stubGlobal('navigator', { locks: { query: vi.fn(async () => ({ held: [], pending: [] })) } });
+    const openSpy = vi.spyOn(window, 'open').mockReturnValue({} as Window);
+    runSnowLauncher({ ...launcherConfig, presenceLockName: 'snowWizard:open' }, () => 'token', { showBadge: vi.fn(), readIsLockHeld: readIsPresenceLockHeld });
+    await vi.advanceTimersByTimeAsync(11);
+
+    expect(openSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('readIsPresenceLockHeld', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('is false with no lock name, so the probe never consults locks', async () => {
+    expect(await readIsPresenceLockHeld(undefined)).toBe(false);
+  });
+
+  it('is false where the browser has no Web Locks, and when the query fails', async () => {
+    vi.stubGlobal('navigator', {});
+    expect(await readIsPresenceLockHeld('snowWizard:open')).toBe(false);
+    vi.stubGlobal('navigator', { locks: { query: vi.fn(async () => { throw new Error('denied'); }) } });
+    expect(await readIsPresenceLockHeld('snowWizard:open')).toBe(false);
+  });
+
+  it('is true only for the exact lock name', async () => {
+    vi.stubGlobal('navigator', { locks: { query: vi.fn(async () => ({ held: [{ name: 'other' }], pending: [] })) } });
+    expect(await readIsPresenceLockHeld('snowWizard:open')).toBe(false);
   });
 });

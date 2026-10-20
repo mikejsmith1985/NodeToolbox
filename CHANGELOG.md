@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **SNow Wizard: a second bookmark click no longer opens a second Wizard tab (GH #449).** ServiceNow's pop-up
+  isolation puts the Wizard in its own window group, so the ServiceNow tab could never find it by name, and a Wizard tab
+  the browser had put to sleep could not answer "are you open?". The open Wizard now holds a browser Web Lock that the
+  bookmark checks first. That check works even when the Wizard tab is asleep. Clicking again refreshes the Wizard's
+  ServiceNow session and marks its tab "👉 SNow Wizard — over here". The installer page is now titled
+  **Install SNow Wizard**, so it can't be mistaken for the Wizard. One-time step: close any Wizard tabs left over from
+  v0.304.0, because they don't hold the lock.
+
 ### Added
 - **SNow Wizard — the shareable one-file SNow Hub (feature 040, Phase B: install and connect).**
   - **`snow-hub-wizard.html`** is attached to every GitHub Release. Open it once, drag **SNow Wizard** to the bookmarks

@@ -5,7 +5,7 @@ import { SNOW_HOSTNAME_FRAGMENTS } from '../../services/snowRelayShared.ts';
 import { buildSnowWindowHtml, type SnowWindowPageOptions } from '../probe/probeAssets.ts';
 import { createNode, createStep } from '../probe/probeDom.ts';
 import { buildBookmarkHref } from '../transport/bookmarkPayload.ts';
-import { DEFAULT_SNOW_URL, WIZARD_CHANNEL_NAME } from '../wizardDefaults.ts';
+import { DEFAULT_SNOW_URL, WIZARD_CHANNEL_NAME, WIZARD_PRESENCE_LOCK_NAME } from '../wizardDefaults.ts';
 
 // Replaced with string literals by esbuild `define` in scripts/build-snow-wizard.js. Absent under test.
 declare const __WIZARD_APP_SOURCE__: string | undefined;
@@ -46,6 +46,7 @@ export function buildWizardBookmarkHref(assets: LauncherBuildInputs): string {
     channelName: WIZARD_CHANNEL_NAME,
     isReadOnly: false,
     allowedRequesterHostFragments: SNOW_HOSTNAME_FRAGMENTS,
+    presenceLockName: WIZARD_PRESENCE_LOCK_NAME,
   });
 }
 

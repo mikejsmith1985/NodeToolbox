@@ -6,6 +6,8 @@ import { createRoot } from 'react-dom/client';
 import WizardApp from './shell/WizardApp.tsx';
 import type { WizardAppDependencies, WizardBoot } from './shell/useWizardConnections.ts';
 import { SCRIPT_BLOCKED_NOTICE_ID } from './probe/probeAssets.ts';
+import { holdWizardPresenceLock } from './shell/wizardPresence.ts';
+import { WIZARD_PRESENCE_LOCK_NAME } from './wizardDefaults.ts';
 
 // Replaced with the release version by esbuild `define` in scripts/build-snow-wizard.js.
 declare const __WIZARD_VERSION__: string | undefined;
@@ -43,6 +45,7 @@ document.getElementById(SCRIPT_BLOCKED_NOTICE_ID)?.remove();
 const wizardBoot = readBoot();
 const mountRoot = resolveMountRoot();
 if (wizardBoot) {
+  holdWizardPresenceLock(WIZARD_PRESENCE_LOCK_NAME, navigator.locks);
   const appVersion = typeof __WIZARD_VERSION__ === 'string' ? __WIZARD_VERSION__ : 'dev';
   createRoot(mountRoot).render(<WizardApp boot={wizardBoot} dependencies={WIZARD_DEPENDENCIES} appVersion={appVersion} />);
 } else {
