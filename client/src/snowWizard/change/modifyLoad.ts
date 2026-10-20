@@ -1,8 +1,8 @@
 // modifyLoad.ts — Reads the change a modify starts from: whether it can still be edited, its window, its tasks, and a snapshot.
 //
 // The draft itself is filled by Toolbox's own load path (useCrgState.cloneFromChg). This adds only what that path
-// does not keep: the change's state (closed changes go to Review), its planned window, the tasks it already has
-// (shown, never re-created), and the snapshot the save-time conflict check compares against.
+// does not keep: the change's state (closed changes go to Review), its planned window, the ids of the tasks it already
+// has (so an edited task is rewritten, never re-created), and the snapshot the save-time conflict check compares against.
 
 import { snowFetch } from '../../services/snowApi.ts';
 import { fetchChangeTaskRecords } from '../../views/SnowHub/chgFormula/ctaskReviewApi.ts';
@@ -73,12 +73,20 @@ export async function fetchChangeSnapshot(changeNumber: string): Promise<Record<
   return readRecordSnapshot(await fetchChangeRecord(changeNumber));
 }
 
-/** The names of the tasks the change already has; none when they cannot be read. */
-export async function fetchExistingTaskNames(changeSysId: string): Promise<string[]> {
+/** One task the change already has: its id, its number, and "number — short description" to show. */
+export interface ExistingTaskSummary {
+  sysId: string;
+  number: string;
+  label: string;
+}
+
+/** The tasks the change already has; none when they cannot be read. */
+export async function fetchExistingTasks(changeSysId: string): Promise<ExistingTaskSummary[]> {
   try {
     return (await fetchChangeTaskRecords(changeSysId)).map((taskRecord) => {
       const reviewedTask = readReviewedCtask(taskRecord);
-      return reviewedTask.shortDescription ? `${reviewedTask.number} — ${reviewedTask.shortDescription}` : reviewedTask.number;
+      const label = reviewedTask.shortDescription ? `${reviewedTask.number} — ${reviewedTask.shortDescription}` : reviewedTask.number;
+      return { sysId: reviewedTask.sysId, number: reviewedTask.number, label };
     });
   } catch {
     return [];

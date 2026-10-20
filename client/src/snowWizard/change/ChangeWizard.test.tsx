@@ -1,5 +1,5 @@
-// ChangeWizard.test.tsx — Proves the new-change job end to end on its key screens: Business Checkout starts on PRD and not
-// REL, a failing check gives one reason and one fix that returns to the right step, "could not check" holds the job until
+// ChangeWizard.test.tsx — Proves the new-change job end to end on its key screens: the tasks are the user's own cards,
+// each on every change in use until unticked, a failing check gives one reason and one fix that returns to the right step, "could not check" holds the job until
 // acknowledged, and the AI step is shown to everyone and can be skipped.
 
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -68,14 +68,18 @@ describe('ChangeWizard — new change', () => {
     useWizardJobStore.setState({ jobs: {} });
     render(<ChangeWizard onExit={vi.fn()} />);
     fireEvent.click(screen.getByRole('button', { name: /New change/ }));
-    expect(screen.getByRole('heading', { name: 'Step 1 of 12 — What\'s in this change?' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Step 1 of 11 — What\'s in this change?' })).toBeTruthy();
   });
 
-  it('starts Business Checkout ticked for PRD and not for REL', async () => {
-    openJobAt('taskEnvironments');
-    expect(screen.getByRole('heading', { name: 'Step 9 of 12 — Which environment needs each task?' })).toBeTruthy();
+  it('shows the user’s own task as a card, on every change in use until the user unticks one', async () => {
+    openJobAt('tasks');
+    expect(screen.getByRole('heading', { name: 'Step 8 of 11 — Build the tasks' })).toBeTruthy();
     expect(((await screen.findByLabelText('Business Checkout on PRD')) as HTMLInputElement).checked).toBe(true);
+    const relTick = screen.getByLabelText('Business Checkout on REL') as HTMLInputElement;
+    expect(relTick.checked).toBe(true);
+    fireEvent.click(relTick);
     expect((screen.getByLabelText('Business Checkout on REL') as HTMLInputElement).checked).toBe(false);
+    expect(document.body.textContent).not.toMatch(/by ServiceNow|ServiceNow adds/);
   });
 
   it('shows the AI step to everyone, with no unlock, and lets it be skipped', () => {
@@ -83,7 +87,7 @@ describe('ChangeWizard — new change', () => {
     expect(screen.getByRole('button', { name: 'Copy the review prompt' })).toBeTruthy();
     expect(document.body.textContent).not.toMatch(/passphrase|unlock/i);
     fireEvent.click(screen.getByRole('button', { name: 'Skip — nothing to change' }));
-    expect(screen.getByRole('heading', { name: 'Step 7 of 12 — Add proof' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Step 7 of 11 — Add proof' })).toBeTruthy();
   });
 
   it('gives a failing check one reason and one fix that returns to the step that fixes it', async () => {
@@ -92,7 +96,7 @@ describe('ChangeWizard — new change', () => {
     expect(within(screen.getByRole('list', { name: 'Checks' })).getByText(/Backout Plan still has facts marked to confirm/)).toBeTruthy();
     expect(readNextButton().disabled).toBe(true);
     fireEvent.click(fixButton);
-    expect(screen.getByRole('heading', { name: 'Step 4 of 12 — How will it go?' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Step 4 of 11 — How will it go?' })).toBeTruthy();
   });
 
   it('holds the job on "could not check" until the user acknowledges it', async () => {
@@ -120,7 +124,7 @@ describe('ChangeWizard — templates', () => {
     render(<ChangeWizard onExit={vi.fn()} />);
     fireEvent.change(screen.getByLabelText('Change number'), { target: { value: 'chg0001234' } });
     fireEvent.click(screen.getByRole('button', { name: 'Start from an existing change' }));
-    expect(screen.getByRole('heading', { name: 'Step 1 of 12 — What\'s in this change?' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Step 1 of 11 — What\'s in this change?' })).toBeTruthy();
     expect(await screen.findByText(/Copied CHG0001234 into a new change/)).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Save as template' })).toBeNull();
     vi.mocked(snowFetch).mockImplementation(async () => ({ result: [] }) as never);

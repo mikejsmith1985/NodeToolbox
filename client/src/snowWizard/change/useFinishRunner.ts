@@ -1,8 +1,9 @@
 // useFinishRunner.ts — Runs the last step: create the changes (or save the edited one), attach evidence, and retry what is missing.
 //
-// Every write is Toolbox's own: createChg (with the per-environment task plan — drift 1), updateExistingChg and
-// appendTasksToExistingChg. Those report their outcome through the hook's `submitResult`, so this runner starts a
-// write, then settles it when the hook's state shows the write has finished. Local state only changes in handlers
+// Every write is Toolbox's own: createChg (with the per-environment task plan — drift 1 — and reconcile mode, so the
+// user's tasks overwrite the ones ServiceNow makes in order and only the rest are created), updateExistingChg, and
+// for a modify's tasks Toolbox's task writers (modifyTasks.ts). The change writes report through the hook's
+// `submitResult`, so this runner starts a write, then settles it when the hook's state shows the write has finished. Local state only changes in handlers
 // and async continuations (react-hooks/set-state-in-effect); what has been settled is tracked in a ref.
 
 import { useEffect, useEffectEvent, useRef, useState } from 'react';
@@ -11,11 +12,12 @@ import type { EnvironmentValueByKey } from '../../views/SnowHub/hooks/useCrgStat
 import { DRAFT_ENVIRONMENTS, readEnabledPlanEnvironments, type CrgHook } from './changeDraft.ts';
 import type { ChangeWizardSession } from './changeWizardSession.ts';
 import { mergeCreatedChanges, readCreateOutcome, type CreatedChangeSummary } from './createOutcome.ts';
-import type { CtaskEnvironmentPlan, PlanEnvironmentKey } from './ctaskEnvironmentPlan.ts';
+import { listTaskLabelsByEnvironment, type CtaskEnvironmentPlan, type PlanEnvironmentKey } from './ctaskEnvironmentPlan.ts';
 import { attachAllEvidenceToChanges } from './evidenceUpload.ts';
 import type { JiraEvidenceAttachment } from './jiraEvidence.ts';
 import { detectRemoteConflicts, type RemoteConflict } from './modifyDiff.ts';
 import { fetchChangeSnapshot } from './modifyLoad.ts';
+import { saveModifyTasks } from './modifyTasks.ts';
 import type { ChangeWizardStepId } from './changeWizardSteps.ts';
 
 /** What the last step is doing now. */
@@ -52,12 +54,10 @@ export interface FinishRunner {
 
 /** A write that has been started and not yet settled. */
 interface PendingWrite {
-  kind: 'create' | 'update' | 'append';
+  kind: 'create' | 'update';
   attempted: PlanEnvironmentKey[];
   previousResult: string | null;
   hasSeenSubmitting: boolean;
-  /** The update's own result, carried into the task append that follows it. */
-  updateText?: string;
 }
 
 const ERROR_PREFIX = 'Error';
@@ -99,10 +99,12 @@ export function useFinishRunner(input: FinishRunnerInput): FinishRunner {
     void runWrite();
   }
 
-  /** Creates one change per environment asked for, each with only its own tasks. */
+  /** Creates one change per environment asked for, each with only its own tasks, which overwrite ServiceNow's in order. */
   function createFor(attempted: PlanEnvironmentKey[]) {
+    const attemptedTaskNames = listTaskLabelsByEnvironment(crg.state.changeTasks, attempted);
+    updateSession({ taskNamesByEnvironment: { ...session.taskNamesByEnvironment, ...attemptedTaskNames } });
     beginWrite({ kind: 'create', attempted }, 'Creating your changes in ServiceNow…',
-      () => crg.actions.createChg(input.environmentValueByKey, { ctaskEnvironmentPlan: input.ctaskEnvironmentPlan }));
+      () => crg.actions.createChg(input.environmentValueByKey, { ctaskEnvironmentPlan: input.ctaskEnvironmentPlan, reconcileAutoCtasks: true }));
   }
 
   /** Records a create attempt's outcome, then attaches evidence to the changes it made. */
@@ -117,27 +119,42 @@ export function useFinishRunner(input: FinishRunnerInput): FinishRunner {
     void attachEvidenceAndFinish(outcome.createdChanges.map((createdChange) => createdChange.changeNumber), outcome.isComplete, outcomeNotes);
   }
 
-  /** Records a modify's save, chaining the new tasks after the update when there are any. */
-  function settleSave(pendingWrite: PendingWrite, resultText: string) {
+  /** Records a modify's outcome, attaching evidence to the change when the change itself was saved. */
+  function finishSave(outcomeNotes: string[], failureText: string | null, wasChangeSaved: boolean) {
     const changeNumber = session.modify?.changeNumber ?? '';
-    const isFailure = resultText.startsWith(ERROR_PREFIX);
-    if (pendingWrite.kind === 'update' && !isFailure && crg.state.changeTasks.length > 0) {
-      beginWrite({ kind: 'append', attempted: [], updateText: resultText }, 'Adding the new tasks…', () => crg.actions.appendTasksToExistingChg(changeNumber));
+    const savedChange: CreatedChangeSummary = { environmentLabel: readEnabledPlanEnvironments(crg.state)[0] ?? null, changeNumber };
+    updateSession({ createdChanges: wasChangeSaved ? [savedChange] : [], outcomeNotes, failureText });
+    void attachEvidenceAndFinish(wasChangeSaved ? [changeNumber] : [], failureText === null, outcomeNotes);
+  }
+
+  /** Once the change itself is saved: rewrites the tasks the user edited and adds the ones they built. */
+  async function saveTasksThenFinish(updateText: string) {
+    const modifySession = session.modify;
+    setPhase({ kind: 'working', message: 'Saving your tasks…' });
+    try {
+      const tasksText = await saveModifyTasks({
+        changeNumber: modifySession?.changeNumber ?? '', changeSysId: modifySession?.changeSysId,
+        draftTasks: crg.state.changeTasks, links: modifySession?.existingTasks ?? [],
+      });
+      finishSave(tasksText ? [updateText, tasksText] : [updateText], null, true);
+    } catch (taskError) {
+      const reason = taskError instanceof Error ? taskError.message : String(taskError);
+      finishSave([updateText], `The change was saved, but not all of its tasks were (${reason}). Check its tasks in ServiceNow before trying again.`, true);
+    }
+  }
+
+  /** Records a modify's save of the change itself, then saves its tasks. */
+  function settleSave(resultText: string) {
+    if (resultText.startsWith(ERROR_PREFIX)) {
+      finishSave([], resultText.replace(/^Error:\s*/, ''), false);
       return;
     }
-    const savedChange: CreatedChangeSummary = { environmentLabel: readEnabledPlanEnvironments(crg.state)[0] ?? null, changeNumber };
-    const outcomeNotes = [pendingWrite.updateText, resultText].filter((noteText): noteText is string => Boolean(noteText) && !noteText?.startsWith(ERROR_PREFIX));
-    updateSession({
-      createdChanges: isFailure && pendingWrite.kind === 'update' ? [] : [savedChange],
-      outcomeNotes,
-      failureText: isFailure ? resultText.replace(/^Error:\s*/, '') : null,
-    });
-    void attachEvidenceAndFinish(isFailure && pendingWrite.kind === 'update' ? [] : [changeNumber], !isFailure, outcomeNotes);
+    void saveTasksThenFinish(resultText);
   }
 
   const settlePendingWrite = useEffectEvent((pendingWrite: PendingWrite, resultText: string) => {
     if (pendingWrite.kind === 'create') settleCreate(pendingWrite, resultText);
-    else settleSave(pendingWrite, resultText);
+    else settleSave(resultText);
   });
 
   useEffect(() => {

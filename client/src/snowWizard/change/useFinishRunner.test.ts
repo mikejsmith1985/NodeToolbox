@@ -11,12 +11,14 @@ import { createChangeWizardSession, type ChangeWizardSession } from './changeWiz
 import { attachAllEvidenceToChanges } from './evidenceUpload.ts';
 import type { JiraEvidenceAttachment } from './jiraEvidence.ts';
 import { fetchChangeSnapshot } from './modifyLoad.ts';
+import { saveModifyTasks } from './modifyTasks.ts';
 import { useFinishRunner } from './useFinishRunner.ts';
 
 vi.mock('../../services/jiraApi.ts', () => ({ jiraGet: vi.fn(async () => []) }));
 vi.mock('../../services/snowApi.ts', () => ({ snowFetch: vi.fn() }));
 vi.mock('./evidenceUpload.ts', () => ({ attachAllEvidenceToChanges: vi.fn(async () => ({ results: {}, problems: [] })) }));
 vi.mock('./modifyLoad.ts', () => ({ fetchChangeSnapshot: vi.fn() }));
+vi.mock('./modifyTasks.ts', () => ({ saveModifyTasks: vi.fn() }));
 
 const PLAN = { 'Business Checkout': { REL: false, PRD: true, PFIX: true } };
 const EVIDENCE_FILE = { name: 'results.pdf', size: 10 } as File;
@@ -37,7 +39,7 @@ function buildDraft(hasNewTask = false): CrgDraftState {
 function renderRunner(initialDraft: CrgDraftState, initialSession: ChangeWizardSession, onFinished = vi.fn(), evidenceFiles: File[] = [EVIDENCE_FILE], jiraEvidence: JiraEvidenceAttachment[] = []) {
   const actions = {
     createChg: vi.fn(async () => undefined), updateExistingChg: vi.fn(async () => undefined),
-    appendTasksToExistingChg: vi.fn(async () => undefined), updateEnvironment: vi.fn(),
+    updateEnvironment: vi.fn(),
   };
   const hookResult = renderHook(() => {
     const [draft, setDraft] = useState(initialDraft);
@@ -65,7 +67,7 @@ describe('useFinishRunner — create', () => {
   it('creates with the task plan, records each change, attaches evidence and finishes', async () => {
     const { hookResult, actions, onFinished } = renderRunner(buildDraft(), createChangeWizardSession('create'));
     act(() => hookResult.result.current.runner.startCreate());
-    expect(actions.createChg).toHaveBeenCalledWith({ rel: 'rel-env', prd: 'prd-env' }, { ctaskEnvironmentPlan: PLAN });
+    expect(actions.createChg).toHaveBeenCalledWith({ rel: 'rel-env', prd: 'prd-env' }, { ctaskEnvironmentPlan: PLAN, reconcileAutoCtasks: true });
 
     finishWrite(hookResult.result.current.setDraft, '2 CHGs created: REL CHG1, PRD CHG2');
 
@@ -75,6 +77,12 @@ describe('useFinishRunner — create', () => {
     ]);
     expect(attachAllEvidenceToChanges).toHaveBeenCalledWith({ localFiles: [EVIDENCE_FILE], jiraAttachments: [] }, ['CHG1', 'CHG2'], expect.objectContaining({ onProgress: expect.any(Function) }));
     expect(onFinished).toHaveBeenCalled();
+  });
+
+  it('remembers each change’s tasks as the user built them, for the result screen', () => {
+    const { hookResult } = renderRunner(buildDraft(true), createChangeWizardSession('create'));
+    act(() => hookResult.result.current.runner.startCreate());
+    expect(hookResult.result.current.session.taskNamesByEnvironment).toEqual({ REL: ['New'], PRD: ['New'] });
   });
 
   it('attaches ticked Jira files on their own, showing progress and noting a file that could not be fetched', async () => {
@@ -117,23 +125,36 @@ describe('useFinishRunner — modify', () => {
   function buildModifySession(): ChangeWizardSession {
     return {
       ...createChangeWizardSession('modify'),
-      modify: { changeNumber: 'CHG9', stateLabel: 'New', loadedSnapshot: { backout_plan: 'Old' }, loadedStepValues: {}, existingTaskNames: [] },
+      modify: { changeNumber: 'CHG9', stateLabel: 'New', loadedSnapshot: { backout_plan: 'Old' }, loadedStepValues: {}, existingTaskNames: [], changeSysId: 'chg-sys-9' },
     };
   }
 
-  it('saves, then adds the new tasks, when ServiceNow has not changed meanwhile', async () => {
+  it('saves, then saves the tasks the user edited or built, when ServiceNow has not changed meanwhile', async () => {
     vi.mocked(fetchChangeSnapshot).mockResolvedValueOnce({ backout_plan: 'Old' });
+    vi.mocked(saveModifyTasks).mockResolvedValueOnce('1 task added on CHG9.');
     const { hookResult, actions } = renderRunner(buildDraft(true), buildModifySession());
     act(() => hookResult.result.current.runner.startSave());
     await waitFor(() => expect(actions.updateExistingChg).toHaveBeenCalledWith('CHG9'));
 
     finishWrite(hookResult.result.current.setDraft, 'CHG9 updated');
-    await waitFor(() => expect(actions.appendTasksToExistingChg).toHaveBeenCalledWith('CHG9'));
-    finishWrite(hookResult.result.current.setDraft, '1 CTASK appended to CHG9');
 
     await waitFor(() => expect(hookResult.result.current.runner.phase.kind).toBe('done'));
-    expect(hookResult.result.current.session.outcomeNotes).toEqual(['CHG9 updated', '1 CTASK appended to CHG9']);
+    expect(vi.mocked(saveModifyTasks).mock.calls[0][0]).toMatchObject({ changeNumber: 'CHG9', changeSysId: 'chg-sys-9', links: [] });
+    expect(vi.mocked(saveModifyTasks).mock.calls[0][0].draftTasks.map((task) => task.shortDescription)).toEqual(['New']);
+    expect(hookResult.result.current.session.outcomeNotes).toEqual(['CHG9 updated', '1 task added on CHG9.']);
     expect(hookResult.result.current.session.failureText).toBeNull();
+  });
+
+  it('reports the change as saved but the tasks as not, when a task write fails', async () => {
+    vi.mocked(fetchChangeSnapshot).mockResolvedValueOnce({ backout_plan: 'Old' });
+    vi.mocked(saveModifyTasks).mockRejectedValueOnce(new Error('HTTP 403'));
+    const { hookResult } = renderRunner(buildDraft(true), buildModifySession());
+    act(() => hookResult.result.current.runner.startSave());
+    await waitFor(() => expect(hookResult.result.current.runner.phase.kind).toBe('working'));
+    finishWrite(hookResult.result.current.setDraft, 'CHG9 updated');
+
+    await waitFor(() => expect(hookResult.result.current.session.failureText).toMatch(/not all of its tasks were \(HTTP 403\)/));
+    expect(hookResult.result.current.session.createdChanges.map((change) => change.changeNumber)).toEqual(['CHG9']);
   });
 
   it('stops and shows both values when ServiceNow changed something, writing only once confirmed', async () => {

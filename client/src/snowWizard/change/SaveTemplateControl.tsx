@@ -5,7 +5,7 @@
 import { useId, useState } from 'react';
 
 import styles from './ChangeWizard.module.css';
-import { useTemplateLibrary, type TemplateDraft } from './useTemplateLibrary.ts';
+import type { TemplateDraft, TemplateLibrary } from './useTemplateLibrary.ts';
 
 type ControlPhase = { kind: 'closed' } | { kind: 'naming' } | { kind: 'clash'; templateId: string; existingName: string } | { kind: 'saved'; templateName: string };
 
@@ -38,9 +38,8 @@ function ClashQuestion({ existingName, onReplace, onRename }: { existingName: st
   );
 }
 
-/** "Save as template" for the change being built or edited. */
-export default function SaveTemplateControl({ draft }: { draft: TemplateDraft }) {
-  const library = useTemplateLibrary();
+/** "Save as template" for the change being built or edited, saving through the job's one template library. */
+export default function SaveTemplateControl({ draft, library }: { draft: TemplateDraft; library: TemplateLibrary }) {
   const [phase, setPhase] = useState<ControlPhase>({ kind: 'closed' });
   const [name, setName] = useState('');
 

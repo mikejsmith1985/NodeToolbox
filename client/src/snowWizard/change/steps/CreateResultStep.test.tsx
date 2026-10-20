@@ -12,33 +12,35 @@ import CreateResultStep from './CreateResultStep.tsx';
 const CRG = {
   state: { relEnvironment: { isEnabled: true }, prdEnvironment: { isEnabled: true }, pfixEnvironment: { isEnabled: false }, changeTasks: [] } as unknown as CrgDraftState,
 } as CrgHook;
-const PLAN = { 'Business Checkout': { REL: false, PRD: true, PFIX: true } };
+const TASK_NAMES = { REL: ['Deploy'], PRD: ['Deploy', 'Business Checkout'] };
 
 function buildRunner(overrides: Partial<FinishRunner> = {}): FinishRunner {
   return { phase: { kind: 'idle' }, startCreate: vi.fn(), retryMissing: vi.fn(), startSave: vi.fn(), confirmSave: vi.fn(), cancelSave: vi.fn(), ...overrides };
 }
 
 function renderStep(session: ChangeWizardSession, runner: FinishRunner) {
-  render(<CreateResultStep crg={CRG} session={session} updateSession={vi.fn()} goToStep={vi.fn()} runner={runner} ctaskEnvironmentPlan={PLAN} editedStepIds={['planning']} evidenceFileCount={1} />);
+  render(<CreateResultStep crg={CRG} session={session} updateSession={vi.fn()} goToStep={vi.fn()} runner={runner} taskNamesByEnvironment={TASK_NAMES} editedStepIds={['planning']} evidenceFileCount={1} />);
 }
 
 describe('CreateResultStep', () => {
-  it('previews each environment\'s change with only its own tasks', () => {
+  it('previews each environment\'s change with only the tasks the user built for it', () => {
     renderStep(createChangeWizardSession('create'), buildRunner());
-    expect(screen.getByText('Tasks: Implementation, Technical Checkout')).toBeTruthy();
-    expect(screen.getByText('Tasks: Implementation, Technical Checkout, Business Checkout')).toBeTruthy();
+    expect(screen.getByText('Tasks: Deploy')).toBeTruthy();
+    expect(screen.getByText('Tasks: Deploy, Business Checkout')).toBeTruthy();
+    expect(document.body.textContent).not.toMatch(/Implementation|Technical Checkout|by ServiceNow/);
   });
 
   it('reports a partial create with links, evidence and a retry of only what is missing', () => {
     const runner = buildRunner();
     const session: ChangeWizardSession = {
       ...createChangeWizardSession('create'),
-      createdChanges: [{ environmentLabel: 'REL', changeNumber: 'CHG1' }],
+      createdChanges: [{ environmentLabel: 'REL', changeNumber: 'CHG1' }], taskNamesByEnvironment: { REL: ['Smoke test'] },
       outcomeNotes: ['PRB1 linked to CHG1'], failureText: 'HTTP 500', evidenceResults: { CHG1: 'attached' },
     };
     renderStep(session, runner);
     expect((screen.getByRole('link', { name: 'CHG1' }) as HTMLAnchorElement).href).toContain('number%3DCHG1');
     expect(screen.getByText('Evidence: attached.')).toBeTruthy();
+    expect(screen.getByText('Tasks: Smoke test')).toBeTruthy();
     expect(screen.getByText('• PRB1 linked to CHG1')).toBeTruthy();
     expect(screen.getByText('Not everything worked: HTTP 500')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Retry what\'s missing' }));

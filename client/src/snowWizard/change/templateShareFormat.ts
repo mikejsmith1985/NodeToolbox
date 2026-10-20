@@ -4,6 +4,7 @@
 // every known value must be the right kind, anything unknown is dropped, and any problem stops with a plain reason.
 
 import type { CrgTemplate, CtaskTemplate } from '../../views/SnowHub/hooks/useCrgState.ts';
+import { PLAN_ENVIRONMENT_KEYS, type PlanEnvironmentKey } from './ctaskEnvironmentPlan.ts';
 
 /** Thrown inside this module only; decodeTemplateShare turns it into a plain-English answer for the user. */
 export class TemplateShareFormatError extends Error {}
@@ -109,12 +110,19 @@ export function readSharedTemplate(value: unknown, sharedTaskIds: ReadonlySet<st
   };
 }
 
+/** The environments a task goes on: only REL / PRD / PFIX are kept; anything that is not a list of words stops the import. */
+function readEnvironmentKeys(value: unknown): PlanEnvironmentKey[] {
+  if (!Array.isArray(value) || value.some((environmentKey) => typeof environmentKey !== 'string')) throw new TemplateShareFormatError(DAMAGED_TEMPLATE_MESSAGE);
+  return PLAN_ENVIRONMENT_KEYS.filter((environmentKey) => (value as string[]).includes(environmentKey));
+}
+
 /** One task template rebuilt from known fields only; the id is kept just long enough to relink it. */
 function readSharedTask(value: unknown): CtaskTemplate {
   if (!isPlainObject(value) || typeof value.id !== 'string' || value.id === '') throw new TemplateShareFormatError(DAMAGED_TEMPLATE_MESSAGE);
   const sharedTask: PlainObject = { id: value.id, name: readName(value.name), createdAt: '', ...readSpecObject(value, TASK_SPEC) };
   for (const optionalKey of OPTIONAL_TASK_TEXTS) if (value[optionalKey] !== undefined) sharedTask[optionalKey] = readField(value[optionalKey], 'text');
   if (value.durationEstimates !== undefined) sharedTask.durationEstimates = readSpecObject(value.durationEstimates, ESTIMATES_SPEC);
+  if (value.environmentKeys !== undefined) sharedTask.environmentKeys = readEnvironmentKeys(value.environmentKeys);
   return sharedTask as unknown as CtaskTemplate;
 }
 

@@ -25,9 +25,7 @@ import {
   buildShellSteps, deriveChangeWizardStep, evaluateStepCompletion, listChangeWizardStepIds, readPaperworkNeed, readStepTitle,
   resolveResumeStep, type ChangeWizardMode, type ChangeWizardProgress, type ChangeWizardStepId, type PaperworkNeed,
 } from './changeWizardSteps.ts';
-import {
-  listPlanErrors, loadSavedCtaskEnvironmentDefaults, readCtaskPlanKey, seedCtaskEnvironmentPlan, type CtaskEnvironmentPlan, type PlanEnvironmentKey,
-} from './ctaskEnvironmentPlan.ts';
+import { buildCtaskEnvironmentPlan, listTaskLabelsByEnvironment, type CtaskEnvironmentPlan, type PlanEnvironmentKey } from './ctaskEnvironmentPlan.ts';
 import type { JiraEvidenceAttachment } from './jiraEvidence.ts';
 import { useTickedJiraEvidence } from './jiraEvidenceChoiceStore.ts';
 import { listEditedSteps, readStepValues } from './modifyDiff.ts';
@@ -44,14 +42,14 @@ import EvidenceStep from './steps/EvidenceStep.tsx';
 import PlanningStep from './steps/PlanningStep.tsx';
 import ProductionPaperworkStep from './steps/ProductionPaperworkStep.tsx';
 import ScopeStep from './steps/ScopeStep.tsx';
-import TaskEnvironmentsStep from './steps/TaskEnvironmentsStep.tsx';
 import TasksStep from './steps/TasksStep.tsx';
 import WhichChangeStep from './steps/WhichChangeStep.tsx';
+import { listTaskProblems } from './taskCards.ts';
 import TemplatesScreen from './TemplatesScreen.tsx';
 import { useDraftReadiness } from './useDraftReadiness.ts';
 import { useFinishRunner, type FinishRunner } from './useFinishRunner.ts';
 import { useStartingPoint, type ChangeStartingPoint, type StartingPointHandle } from './useStartingPoint.ts';
-import { useTemplateLibrary } from './useTemplateLibrary.ts';
+import { useTemplateLibrary, type TemplateLibrary } from './useTemplateLibrary.ts';
 import shellStyles from '../shell/WizardShell.module.css';
 
 const CHANGE_JOB_KINDS: readonly WizardJobKind[] = ['newChange', 'modifyChange'];
@@ -78,6 +76,8 @@ interface StepExtras {
   jiraEvidence: JiraEvidenceAttachment[];
   jobId: string;
   onExit: () => void;
+  /** The job's one template library, shared by every part that saves a template. */
+  library: TemplateLibrary;
 }
 
 /** The screen for one step. */
@@ -92,17 +92,21 @@ function renderStep(stepId: ChangeWizardStepId, stepProps: ChangeStepProps, extr
     environments: () => <EnvironmentsStep {...withChoices} />,
     aiEnhance: () => <AiEnhanceStep {...stepProps} />,
     evidence: () => <EvidenceStep {...stepProps} jobId={extras.jobId} evidenceFiles={extras.evidenceFiles} onEvidenceFilesChange={extras.setEvidenceFiles} />,
-    tasks: () => <TasksStep {...stepProps} />,
-    taskEnvironments: () => <TaskEnvironmentsStep {...stepProps} ctaskEnvironmentPlan={extras.ctaskEnvironmentPlan} />,
+    tasks: () => <TasksStep {...stepProps} library={extras.library} />,
     checks: () => <ChecksStep {...stepProps} items={extras.items} />,
     paperwork: () => <ProductionPaperworkStep {...stepProps} paperworkNeed={extras.paperworkNeed} />,
-    finish: () => <CreateResultStep {...stepProps} runner={extras.runner} ctaskEnvironmentPlan={extras.ctaskEnvironmentPlan} editedStepIds={extras.editedStepIds} evidenceFileCount={extras.evidenceFiles.length + extras.jiraEvidence.length} />,
+    finish: () => <CreateResultStep {...stepProps} runner={extras.runner} taskNamesByEnvironment={readTaskNamesByEnvironment(stepProps.crg.state)} editedStepIds={extras.editedStepIds} evidenceFileCount={extras.evidenceFiles.length + extras.jiraEvidence.length} />,
   };
   return stepScreens[stepId]();
 }
 
+/** Each environment's tasks as the cards stand now. */
+function readTaskNamesByEnvironment(draft: CrgDraftState) {
+  return listTaskLabelsByEnvironment(draft.changeTasks, readEnabledPlanEnvironments(draft));
+}
+
 /** The done-when facts for the draft in hand. */
-function buildProgress(crg: CrgHook, session: ChangeWizardSession, plan: CtaskEnvironmentPlan, items: ReadinessItem[] | null, paperworkNeed: PaperworkNeed): ChangeWizardProgress {
+function buildProgress(crg: CrgHook, session: ChangeWizardSession, items: ReadinessItem[] | null, paperworkNeed: PaperworkNeed): ChangeWizardProgress {
   return {
     mode: session.mode,
     isChangeLoaded: session.modify !== null,
@@ -110,7 +114,7 @@ function buildProgress(crg: CrgHook, session: ChangeWizardSession, plan: CtaskEn
     detailsGaps: readDetailsGaps(crg.state),
     planningGaps: readPlanningGaps(crg.state),
     environmentProblems: readEnvironmentProblems(crg.state),
-    planErrors: listPlanErrors(plan, readEnabledPlanEnvironments(crg.state)),
+    taskProblems: listTaskProblems(crg.state.changeTasks, readEnabledPlanEnvironments(crg.state), session.mode),
     reviewedStepIds: session.reviewedStepIds,
     isChecksSatisfied: session.areChecksAcknowledged || (items ? isReady(items) : session.wereChecksReady),
     paperworkNeed,
@@ -139,11 +143,9 @@ function markEditedSteps(shellSteps: GuidedFlowStep[], editedStepIds: readonly C
   return shellSteps.map((shellStep) => (editedStepIds.includes(shellStep.id as ChangeWizardStepId) ? { ...shellStep, title: `${shellStep.title}${EDITED_MARK}` } : shellStep));
 }
 
-/** The task × environment plan for a draft: matched to the tasks and environments it holds, keeping the user's ticks. */
-function buildTaskPlan(draft: CrgDraftState, session: ChangeWizardSession): CtaskEnvironmentPlan {
-  return seedCtaskEnvironmentPlan(
-    draft.changeTasks.map(readCtaskPlanKey), readEnabledPlanEnvironments(draft), loadSavedCtaskEnvironmentDefaults(), session.ctaskEnvironmentPlan,
-  );
+/** Which environment's change each task goes on, from the ticks on each card. */
+function buildTaskPlan(draft: CrgDraftState): CtaskEnvironmentPlan {
+  return buildCtaskEnvironmentPlan(draft.changeTasks, readEnabledPlanEnvironments(draft));
 }
 
 /** The job's session from the store, and the way to change it. */
@@ -202,16 +204,17 @@ function ChangeJob({ job, startingPoint, onExit }: { job: WizardJob; startingPoi
   const [evidenceFiles, setEvidenceFiles] = useState<File[]>([]);
   const jiraEvidence = useTickedJiraEvidence(job.jobId, crg.state.selectedIssueKeys);
   useRestoreEnvironments(crg, session);
-  const ctaskEnvironmentPlan = useMemo(() => buildTaskPlan(crg.state, session), [crg.state, session]);
+  const library = useTemplateLibrary();
+  const ctaskEnvironmentPlan = useMemo(() => buildTaskPlan(crg.state), [crg.state]);
   const editedStepIds = session.modify ? listEditedSteps(session.modify.loadedStepValues, readStepValues(crg.state)) : [];
   const stepIds = listChangeWizardStepIds(mode);
   const paperworkNeed = readPaperworkNeed({ hasProduction: hasProductionEnvironment(crg.state), isRcpActive: isRcpPeriodActive(readRcpRulesEnabled(), readCentralTodayIso()) });
   // A resumed job is judged as it will be once its environment ticks are back.
   const restoredCrg = { ...crg, state: applySavedEnvironments(crg.state, session.enabledEnvironments) };
-  const navigationProgress = buildProgress(restoredCrg, session, buildTaskPlan(restoredCrg.state, session), null, paperworkNeed);
+  const navigationProgress = buildProgress(restoredCrg, session, null, paperworkNeed);
   const { currentStepId, goToStep } = useStepNavigation(job, crg, session, updateSession, navigationProgress);
   const { items } = useDraftReadiness(crg.state, session, stepIds.indexOf(currentStepId) >= stepIds.indexOf('checks'));
-  const progress = buildProgress(crg, session, ctaskEnvironmentPlan, items, paperworkNeed);
+  const progress = buildProgress(crg, session, items, paperworkNeed);
   const runner = useFinishRunner({
     crg, session, updateSession, ctaskEnvironmentPlan, environmentValueByKey: buildEnvironmentValueByKey(choiceOptions.u_environment ?? []),
     evidenceFiles, jiraEvidence, editedStepIds, onFinished: () => useWizardJobStore.getState().finishJob(job.kind, Date.now()),
@@ -221,7 +224,7 @@ function ChangeJob({ job, startingPoint, onExit }: { job: WizardJob; startingPoi
     <ChangeJobShell
       job={job} crg={crg} session={session} updateSession={updateSession} progress={progress} currentStepId={currentStepId} goToStep={goToStep}
       startingPoint={startingPointHandle}
-      extras={{ choiceOptions, ctaskEnvironmentPlan, items, paperworkNeed, runner, editedStepIds, evidenceFiles, setEvidenceFiles, jiraEvidence, jobId: job.jobId, onExit }}
+      extras={{ choiceOptions, ctaskEnvironmentPlan, items, paperworkNeed, runner, editedStepIds, evidenceFiles, setEvidenceFiles, jiraEvidence, jobId: job.jobId, onExit, library }}
     />
   );
 }
@@ -248,10 +251,10 @@ interface ChangeJobShellProps {
 }
 
 /** The frame's top-right buttons: "Save as template" once the change has details, and "Save and leave". */
-function JobFrameActions({ crg, isTemplateReady, onExit }: { crg: CrgHook; isTemplateReady: boolean; onExit: () => void }) {
+function JobFrameActions({ crg, library, isTemplateReady, onExit }: { crg: CrgHook; library: TemplateLibrary; isTemplateReady: boolean; onExit: () => void }) {
   return (
     <>
-      {isTemplateReady ? <SaveTemplateControl draft={crg.state} /> : null}
+      {isTemplateReady ? <SaveTemplateControl draft={crg.state} library={library} /> : null}
       <button type="button" className={shellStyles.secondaryButton} onClick={onExit}>Save and leave</button>
     </>
   );
@@ -289,7 +292,7 @@ function ChangeJobShell({ crg, session, updateSession, progress, currentStepId, 
       onNext={handleNext}
       onBack={() => goToStep(stepIds[Math.max(0, currentIndex - 1)])}
       onSkip={moveForward}
-      advancedAction={<JobFrameActions crg={crg} isTemplateReady={currentIndex >= stepIds.indexOf('details')} onExit={extras.onExit} />}
+      advancedAction={<JobFrameActions crg={crg} library={extras.library} isTemplateReady={currentIndex >= stepIds.indexOf('details')} onExit={extras.onExit} />}
     >
       <StartingPointNotice startingPoint={startingPoint} />
       {renderStep(currentStepId, { crg, session, updateSession, goToStep: (stepId) => goToStep(stepId) }, extras)}

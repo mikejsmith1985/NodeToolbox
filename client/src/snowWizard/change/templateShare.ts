@@ -4,6 +4,7 @@
 // email, or the same payload as a downloadable `.snow-template.json` file. Reading one back never throws to the
 // screen — every problem comes back as a plain sentence — and an import always gets fresh ids and a free name.
 
+import { decodeBase64Url, encodeBase64Url } from '../../views/SnowHub/ctaskTemplateShare.ts';
 import type { CrgTemplateData } from '../../views/SnowHub/hooks/crgTemplateData.ts';
 import type { CrgTemplate, CtaskTemplate, CtaskTemplateData } from '../../views/SnowHub/hooks/useCrgState.ts';
 import {
@@ -19,7 +20,6 @@ const FALLBACK_FILE_NAME = 'change-template';
 // Far above any real template; stops a pasted novel from freezing the page.
 const MAX_SHARE_TEXT_LENGTH = 1_000_000;
 const JSON_INDENT_SPACES = 2;
-const BASE64_BLOCK_LENGTH = 4;
 const SHARED_NAME_SUFFIX = 'shared';
 const FIRST_NUMBERED_COPY = 2;
 const NEWER_VERSION_MESSAGE = 'This template was made by a newer version of the Wizard. Update the Wizard, then try again.';
@@ -42,21 +42,6 @@ export interface TemplateImportSinks {
 }
 
 // ── Encoding ──
-
-/** Text → URL-safe base64 that survives accents and symbols (UTF-8 first, then base64). */
-function encodeBase64Url(plainText: string): string {
-  let binaryText = '';
-  for (const byte of new TextEncoder().encode(plainText)) binaryText += String.fromCharCode(byte);
-  return btoa(binaryText).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-}
-
-/** URL-safe base64 → text; throws on anything that is not valid base64 or UTF-8. */
-function decodeBase64Url(encodedText: string): string {
-  const standardText = encodedText.replace(/-/g, '+').replace(/_/g, '/');
-  const paddedText = standardText + '='.repeat((BASE64_BLOCK_LENGTH - (standardText.length % BASE64_BLOCK_LENGTH)) % BASE64_BLOCK_LENGTH);
-  const bytes = Uint8Array.from(atob(paddedText), (character) => character.charCodeAt(0));
-  return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-}
 
 /** The payload for one template: only known fields, and only the task templates it links to. */
 function buildPayload(template: CrgTemplate, linkedCtaskTemplates: readonly CtaskTemplate[]): SharedTemplatePayload {
@@ -139,4 +124,24 @@ export function importSharedTemplate(payload: SharedTemplatePayload, sinks: Temp
   const templateName = pickUniqueTemplateName(payload.template.name, sinks.existingTemplateNames);
   const templateId = sinks.saveCrgTemplate(templateName, { ...stripIdentity(payload.template), ctaskTemplateIds: relinkedIds });
   return { templateId, templateName };
+}
+
+/** Where a task import saves to — the task template hook's own save function and the names already in use. */
+export interface CtaskImportSinks {
+  existingTaskNames: readonly string[];
+  saveCtaskTemplate: (name: string, templateData: CtaskTemplateData) => string;
+}
+
+/**
+ * Saves shared task templates as the user's own: each under a new id, and renamed "<name> (shared)" when the name
+ * is already taken (including by another task in the same code). Returns the names they were saved under.
+ */
+export function importSharedCtaskTemplates(ctaskTemplates: readonly CtaskTemplate[], sinks: CtaskImportSinks): string[] {
+  const takenNames = [...sinks.existingTaskNames];
+  return ctaskTemplates.map((sharedTask) => {
+    const taskName = pickUniqueTemplateName(sharedTask.name, takenNames);
+    takenNames.push(taskName);
+    sinks.saveCtaskTemplate(taskName, stripIdentity(sharedTask));
+    return taskName;
+  });
 }

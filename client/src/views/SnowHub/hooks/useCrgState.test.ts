@@ -9,7 +9,7 @@ import { createPlannedOutage } from '../outage/changeOutageRecord.ts';
 import { linkProblemsToNewChange } from '../problems/changeProblems.ts';
 import { fetchReviewedCtasks, saveCtaskPlannedDates } from '../chgFormula/ctaskReviewApi.ts';
 import type { CrgTemplate, CtaskTemplate, CtaskTemplateData } from './useCrgState.ts';
-import { createChangeTask, fetchChangeTaskDefaults, fetchChangeTasksAttachedToChange, formatSnowDateTimeForApi, listEnvironmentDateOrderErrors, NO_ENABLED_ENVIRONMENT_MESSAGE, reconcileStagedChangeTasks, useCrgState } from './useCrgState.ts';
+import { createChangeTask, fetchChangeTaskDefaults, fetchChangeTasksAttachedToChange, formatSnowDateTimeForApi, listEnvironmentDateOrderErrors, NO_ENABLED_ENVIRONMENT_MESSAGE, reconcileStagedChangeTasks, updateChangeTaskRecord, useCrgState } from './useCrgState.ts';
 
 vi.mock('../../../services/jiraApi.ts', () => ({
   jiraGet: vi.fn(),
@@ -3146,5 +3146,86 @@ describe('useCrgState — createChg with a CTASK environment plan', () => {
       'sys-rel-env': ['Business Checkout', 'Smoke test'],
       'sys-prd-env': ['Business Checkout', 'Smoke test'],
     });
+  });
+});
+
+// ── SNow Wizard task cards: reorder, rewrite an existing task, and reconcile on request ──
+//
+// The Wizard builds every task itself: its cards can be reordered, an existing task is rewritten with the very
+// payload a new one gets, and create always overwrites ServiceNow's own tasks in order before adding the rest.
+describe('useCrgState — Wizard task cards', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.clearAllMocks();
+    localStorage.clear();
+  });
+
+  it('moveChangeTask swaps a task with its neighbour and ignores a move off either end', () => {
+    const { result } = renderHook(() => useCrgState({ storageKey: 'snowWizard:change:move-test' }));
+    act(() => {
+      result.current.actions.addChangeTask(createMockCtaskTemplate({ shortDescription: 'First' }));
+      result.current.actions.addChangeTask(createMockCtaskTemplate({ shortDescription: 'Second' }));
+    });
+    const [firstTask] = result.current.state.changeTasks;
+    act(() => result.current.actions.moveChangeTask(firstTask.id, 1));
+    expect(result.current.state.changeTasks.map((task) => task.shortDescription)).toEqual(['Second', 'First']);
+    act(() => result.current.actions.moveChangeTask(firstTask.id, 1));
+    expect(result.current.state.changeTasks.map((task) => task.shortDescription)).toEqual(['Second', 'First']);
+  });
+
+  it('updateChangeTaskRecord rewrites the task with the change’s CI, its type, group and assignee', async () => {
+    vi.mocked(snowFetch).mockResolvedValue({} as never);
+    await updateChangeTaskRecord('ctask-sys-9', 'chg-sys-9', createMockCtaskTemplate({
+      shortDescription: 'Smoke test', changeTaskType: 'testing',
+      assignmentGroup: { sysId: 'grp-9', displayName: 'Ops' }, assignedTo: { sysId: 'usr-9', displayName: 'Pat' },
+    }), { configItemSysId: 'ci-9', plannedStartDate: '', plannedEndDate: '' });
+    const [requestPath, init] = vi.mocked(snowFetch).mock.calls[0];
+    expect(requestPath).toBe('/api/now/table/change_task/ctask-sys-9');
+    expect((init as RequestInit).method).toBe('PATCH');
+    expect(JSON.parse(String((init as RequestInit).body))).toMatchObject({
+      change_request: 'chg-sys-9', short_description: 'Smoke test', cmdb_ci: 'ci-9', change_task_type: 'testing', assignment_group: 'grp-9', assigned_to: 'usr-9',
+    });
+  });
+
+  it('createChg with reconcileAutoCtasks overwrites each change’s own tasks in order, then adds the rest', async () => {
+    vi.useFakeTimers();
+    vi.mocked(snowFetch).mockImplementation((async (path: string, init?: RequestInit) => {
+      const method = init?.method ?? 'GET';
+      if (method === 'GET' && path.includes('/api/now/table/change_task?')) {
+        const changeSysId = path.includes('sys-rel-env') ? 'rel' : 'prd';
+        return { result: [{ sys_id: `${changeSysId}-auto-1` }, { sys_id: `${changeSysId}-auto-2` }] };
+      }
+      if (method === 'PATCH') return {};
+      if (path === '/api/now/table/change_task') return { result: { number: 'CTASK1', sys_id: 'created-task' } };
+      if (path.includes('/api/now/table/change_request?')) return { result: [{ sys_id: 'chg-sys' }] };
+      const changeBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return { result: { number: `CHG-${String(changeBody.u_environment)}`, sys_id: `sys-${String(changeBody.u_environment)}` } };
+    }) as never);
+    const { result } = renderHook(() => useCrgState({ storageKey: 'snowWizard:change:reconcile-test' }));
+    act(() => {
+      result.current.actions.updateEnvironment('rel', { isEnabled: true, plannedStartDate: '2026-11-01T08:00', plannedEndDate: '2026-11-01T09:00' });
+      result.current.actions.updateEnvironment('prd', { isEnabled: true, plannedStartDate: '2026-11-02T08:00', plannedEndDate: '2026-11-02T09:00' });
+      for (const shortDescription of ['Deploy', 'Business Checkout', 'Smoke test']) {
+        result.current.actions.addChangeTask(createMockCtaskTemplate({ shortDescription }));
+      }
+    });
+    const [deployTask, checkoutTask, smokeTask] = result.current.state.changeTasks;
+    const plan = {
+      [deployTask.id]: { REL: true, PRD: true, PFIX: false },
+      [checkoutTask.id]: { REL: false, PRD: true, PFIX: false },
+      [smokeTask.id]: { REL: true, PRD: true, PFIX: false },
+    };
+    await act(async () => {
+      const createPromise = result.current.actions.createChg({ rel: 'rel-env', prd: 'prd-env' }, { ctaskEnvironmentPlan: plan, reconcileAutoCtasks: true });
+      await vi.runAllTimersAsync();
+      await createPromise;
+    });
+    const taskWrites = vi.mocked(snowFetch).mock.calls
+      .filter(([path, init]) => String(path).startsWith('/api/now/table/change_task') && ['PATCH', 'POST'].includes(String((init as RequestInit | undefined)?.method)))
+      .map(([path, init]) => `${String((init as RequestInit).method)} ${String(path).replace('/api/now/table/change_task', '')} ${String(JSON.parse(String((init as RequestInit).body)).short_description)}`);
+    expect(taskWrites).toEqual([
+      'PATCH /rel-auto-1 Deploy', 'PATCH /rel-auto-2 Smoke test',
+      'PATCH /prd-auto-1 Deploy', 'PATCH /prd-auto-2 Business Checkout', 'POST  Smoke test',
+    ]);
   });
 });

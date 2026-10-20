@@ -407,6 +407,11 @@ export interface CtaskTemplate {
    * duplicate copies. Absent on saved templates and manually added CTASKs.
    */
   sourceTemplateId?: string;
+  /**
+   * Which environments' changes this task goes on (the SNow Wizard raises one change per environment). Absent means
+   * every environment the change uses. Toolbox's own create ignores it unless a CTASK environment plan is passed.
+   */
+  environmentKeys?: PlanEnvironmentKey[];
 }
 
 /** Editable CTASK fields stored in a reusable template before ids and metadata are assigned. */
@@ -517,6 +522,8 @@ interface CrgActions {
   updateChangeTask: (taskId: string, taskData: CtaskTemplateData) => void;
   /** Copies a staged CTASK directly beneath itself, for the near-identical task next door. */
   duplicateChangeTask: (taskId: string) => void;
+  /** Moves a staged CTASK one place up (-1) or down (+1); the order is the order tasks are written in. */
+  moveChangeTask: (taskId: string, offset: -1 | 1) => void;
   /** Sets which CTASK templates are linked to the CHG template currently being edited. */
   setLinkedCtaskTemplateIds: (ctaskTemplateIds: string[]) => void;
   /** Toggles whether CHG creation reconciles staged CTASKs with auto-created ones. */
@@ -540,6 +547,12 @@ export interface CreateChgOptions {
    * is created on every environment's change, exactly as before.
    */
   ctaskEnvironmentPlan?: CtaskEnvironmentPlan;
+  /**
+   * Overrides the draft's own reconcile preference for this create: true makes each environment's staged CTASKs
+   * update the ones ServiceNow made by itself (paired in list order) and create only the rest. Absent ⇒ the
+   * draft's `reconcileAutoCtasks` decides, exactly as before.
+   */
+  reconcileAutoCtasks?: boolean;
 }
 
 /** Options accepted by the CRG state hook. */
@@ -1065,6 +1078,24 @@ export async function createChangeTasks(
   }
 
   return templates.length;
+}
+
+/**
+ * Rewrites one change_task that already exists with a staged CTASK's values — the same payload a new task gets, so
+ * an edited task carries the change's CI and a window inside the change's, exactly like one created with it.
+ *
+ * @param changeTaskSysId - sys_id of the change_task to rewrite.
+ * @param changeSysId - sys_id of the change_request the task belongs to.
+ * @param template - The staged CTASK holding the values to write.
+ * @param changeDefaults - The change's CI and planned window, which the task inherits.
+ */
+export async function updateChangeTaskRecord(
+  changeTaskSysId: string,
+  changeSysId: string,
+  template: CtaskTemplate,
+  changeDefaults: ChangeTaskDefaults = EMPTY_CHANGE_TASK_DEFAULTS,
+): Promise<void> {
+  await patchChangeTaskBySysId(changeTaskSysId, buildChangeTaskPayload(changeSysId, template, changeDefaults));
 }
 
 /**
@@ -2423,6 +2454,17 @@ export function useCrgState(options?: UseCrgStateOptions): { state: CrgState; ac
     });
   }, []);
 
+  const moveChangeTask = useCallback((taskId: string, offset: -1 | 1) => {
+    setState((previousState) => {
+      const sourceIndex = previousState.changeTasks.findIndex((task) => task.id === taskId);
+      const targetIndex = sourceIndex + offset;
+      if (sourceIndex === -1 || targetIndex < 0 || targetIndex >= previousState.changeTasks.length) return previousState;
+      const nextChangeTasks = [...previousState.changeTasks];
+      [nextChangeTasks[sourceIndex], nextChangeTasks[targetIndex]] = [nextChangeTasks[targetIndex], nextChangeTasks[sourceIndex]];
+      return { ...previousState, changeTasks: nextChangeTasks };
+    });
+  }, []);
+
   const appendTasksToExistingChg = useCallback(async (chgNumber: string) => {
     const normalizedChangeNumber = chgNumber.trim().toUpperCase();
     if (!normalizedChangeNumber) {
@@ -2681,7 +2723,7 @@ export function useCrgState(options?: UseCrgStateOptions): { state: CrgState; ac
         // Reconcile mode (per-template): update the CTASKs ServiceNow auto-created to
         // match the staged ones by order, then create the remainder — for teams whose
         // change process auto-spawns CTASKs.
-        if (state.reconcileAutoCtasks) {
+        if (options?.reconcileAutoCtasks ?? state.reconcileAutoCtasks) {
           try {
             await reconcileStagedChangeTasks(changeSysId, targetChangeTasks, undefined, ctaskChangeDefaults);
           } catch (unknownError) {
@@ -2794,6 +2836,7 @@ export function useCrgState(options?: UseCrgStateOptions): { state: CrgState; ac
       removeChangeTask,
       updateChangeTask,
       duplicateChangeTask,
+      moveChangeTask,
       setLinkedCtaskTemplateIds,
       setReconcileAutoCtasks,
       setCtaskTimelinePlan,
@@ -2812,7 +2855,7 @@ export function useCrgState(options?: UseCrgStateOptions): { state: CrgState; ac
     setChgBasicInfo, setChgPlanningAssessment, setChgPlanningContent,
     pinCustomSnowField, removeCustomSnowField,
     setCloneChgNumber, cloneFromChg, applyTemplate, addChangeTask, removeChangeTask,
-    updateChangeTask, duplicateChangeTask,
+    updateChangeTask, duplicateChangeTask, moveChangeTask,
     setLinkedCtaskTemplateIds, setReconcileAutoCtasks, setCtaskTimelinePlan,
     appendTasksToExistingChg, cloneCtaskTemplate, updateEnvironment, goToStep, reset, createChg,
     updateExistingChg,

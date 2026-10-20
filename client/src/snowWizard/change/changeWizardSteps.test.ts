@@ -21,8 +21,8 @@ function buildCompleteProgress(overrides: Partial<ChangeWizardProgress> = {}): C
     detailsGaps: [],
     planningGaps: [],
     environmentProblems: [],
-    planErrors: [],
-    reviewedStepIds: ['scope', 'aiDraft', 'details', 'planning', 'environments', 'aiEnhance', 'evidence', 'tasks', 'taskEnvironments', 'checks', 'paperwork'],
+    taskProblems: [],
+    reviewedStepIds: ['scope', 'aiDraft', 'details', 'planning', 'environments', 'aiEnhance', 'evidence', 'tasks', 'checks', 'paperwork'],
     isChecksSatisfied: true,
     paperworkNeed: { isNeeded: false, reason: 'No Production environment is in this change.' },
     isPaperworkDone: false,
@@ -31,16 +31,16 @@ function buildCompleteProgress(overrides: Partial<ChangeWizardProgress> = {}): C
 }
 
 describe('listChangeWizardStepIds', () => {
-  it('runs the twelve create steps in order, with "Let AI write it" before any typing', () => {
+  it('runs the eleven create steps in order, with "Let AI write it" before any typing', () => {
     expect(listChangeWizardStepIds('create')).toEqual([
-      'scope', 'aiDraft', 'details', 'planning', 'environments', 'aiEnhance', 'evidence', 'tasks', 'taskEnvironments', 'checks', 'paperwork', 'finish',
+      'scope', 'aiDraft', 'details', 'planning', 'environments', 'aiEnhance', 'evidence', 'tasks', 'checks', 'paperwork', 'finish',
     ]);
   });
 
-  it('starts a modify with "Which change?" and has no per-environment task grid (one change is one environment)', () => {
+  it('starts a modify with "Which change?" and builds its tasks on the same step as a new change', () => {
     const modifyStepIds = listChangeWizardStepIds('modify');
     expect(modifyStepIds[0]).toBe('whichChange');
-    expect(modifyStepIds).not.toContain('taskEnvironments');
+    expect(modifyStepIds).toContain('tasks');
     expect(modifyStepIds.at(-1)).toBe('finish');
   });
 });
@@ -58,11 +58,11 @@ describe('evaluateStepCompletion', () => {
     expect(evaluateStepCompletion('planning', buildCompleteProgress({ planningGaps: ['the backout plan'] })).canGoNext).toBe(false);
   });
 
-  it('holds Environments and the task grid on their first problem', () => {
+  it('holds Environments and the task cards on their first problem', () => {
     expect(evaluateStepCompletion('environments', buildCompleteProgress({ environmentProblems: ['Tick at least one environment.'] })).blockedReason)
       .toBe('Tick at least one environment.');
-    expect(evaluateStepCompletion('taskEnvironments', buildCompleteProgress({ planErrors: ['Testing is not ticked for any environment.'] })).canGoNext)
-      .toBe(false);
+    expect(evaluateStepCompletion('tasks', buildCompleteProgress({ taskProblems: ['Task 1 needs a short description.'] })).blockedReason)
+      .toBe('Task 1 needs a short description.');
   });
 
   it('lets the optional AI and evidence steps go on at any time, done only once passed', () => {

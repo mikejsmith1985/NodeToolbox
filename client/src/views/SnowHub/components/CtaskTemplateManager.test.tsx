@@ -4,6 +4,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
+import { CTASK_SHARE_FILE_NAME, CTASK_SHARE_PREFIX, decodeCtaskTemplatesShare } from '../ctaskTemplateShare.ts';
 import type { CtaskTemplate } from '../hooks/useCrgState.ts';
 import { CtaskTemplateManager, type CtaskTemplateManagerProps } from './CtaskTemplateManager.tsx';
 
@@ -151,5 +152,50 @@ describe('CtaskTemplateManager', () => {
     expect(onCloneCtask).toHaveBeenCalledWith('CTASK0001234');
     expect(screen.getByRole('textbox', { name: 'CTASK template name' })).toHaveValue('Cloned task');
     expect(screen.getByRole('button', { name: 'Save CTASK Template' })).toBeEnabled();
+  });
+});
+
+describe('CtaskTemplateManager — sharing every template with the SNow Wizard', () => {
+  it('copies one code holding every template', async () => {
+    const { user } = renderManager();
+    // user-event installs its own clipboard on setup, so the test's own goes in after it.
+    const writeText = vi.fn(async (_copiedText: string) => undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+
+    await user.click(screen.getByRole('button', { name: 'Share all' }));
+
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Code for all 1 templates copied'));
+    const copiedCode = writeText.mock.calls[0]?.[0] ?? '';
+    expect(copiedCode.startsWith(CTASK_SHARE_PREFIX)).toBe(true);
+    const decoded = decodeCtaskTemplatesShare(copiedCode);
+    expect(decoded.isValid && decoded.ctaskTemplates.map((template) => template.name)).toEqual(['Deploy Validation']);
+  });
+
+  it('shows the code to copy by hand when the clipboard refuses', async () => {
+    const { user } = renderManager();
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText: vi.fn(async () => { throw new Error('denied'); }) }, configurable: true });
+
+    await user.click(screen.getByRole('button', { name: 'Share all' }));
+
+    const codeBox = await screen.findByRole('textbox', { name: /Copy this code/ });
+    expect((codeBox as HTMLTextAreaElement).value.startsWith(CTASK_SHARE_PREFIX)).toBe(true);
+  });
+
+  it('downloads every template as one file', async () => {
+    const createObjectURL = vi.fn(() => 'blob:tasks');
+    Object.assign(URL, { createObjectURL, revokeObjectURL: vi.fn() });
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+    const { user } = renderManager();
+
+    await user.click(screen.getByRole('button', { name: 'Download' }));
+
+    expect((clickSpy.mock.instances[0] as unknown as HTMLAnchorElement).download).toBe(CTASK_SHARE_FILE_NAME);
+    expect(screen.getByRole('status')).toHaveTextContent('File downloaded');
+    clickSpy.mockRestore();
+  });
+
+  it('offers no sharing when there is nothing to share', () => {
+    renderManager({ templates: [] });
+    expect(screen.queryByRole('button', { name: 'Share all' })).toBeNull();
   });
 });

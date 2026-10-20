@@ -12,7 +12,7 @@ export type ChangeWizardMode = 'create' | 'modify';
 /** Every step the change wizard can show (contracts/change-wizard.md). */
 export type ChangeWizardStepId =
   | 'whichChange' | 'scope' | 'aiDraft' | 'details' | 'planning' | 'environments' | 'aiEnhance' | 'evidence'
-  | 'tasks' | 'taskEnvironments' | 'checks' | 'paperwork' | 'finish';
+  | 'tasks' | 'checks' | 'paperwork' | 'finish';
 
 /** Whether the approval email and change plan PDF are needed, and if not, why not. */
 export interface PaperworkNeed {
@@ -28,7 +28,8 @@ export interface ChangeWizardProgress {
   detailsGaps: string[];
   planningGaps: string[];
   environmentProblems: string[];
-  planErrors: string[];
+  /** What the task cards still need: a short description, or (new change) an environment. */
+  taskProblems: string[];
   /** Steps the user has moved past with Next or Skip. */
   reviewedStepIds: ChangeWizardStepId[];
   isChecksSatisfied: boolean;
@@ -44,9 +45,8 @@ export interface StepCompletion {
 }
 
 const CREATE_STEP_IDS: readonly ChangeWizardStepId[] = [
-  'scope', 'aiDraft', 'details', 'planning', 'environments', 'aiEnhance', 'evidence', 'tasks', 'taskEnvironments', 'checks', 'paperwork', 'finish',
+  'scope', 'aiDraft', 'details', 'planning', 'environments', 'aiEnhance', 'evidence', 'tasks', 'checks', 'paperwork', 'finish',
 ];
-// A modify edits ONE change, which is one environment, so the per-environment task grid has nothing to decide.
 const MODIFY_STEP_IDS: readonly ChangeWizardStepId[] = [
   'whichChange', 'scope', 'aiDraft', 'details', 'planning', 'environments', 'aiEnhance', 'evidence', 'tasks', 'checks', 'paperwork', 'finish',
 ];
@@ -61,8 +61,7 @@ export const CHANGE_WIZARD_STEP_TITLES: Readonly<Record<ChangeWizardStepId, stri
   environments: 'Where and when?',
   aiEnhance: 'Make it better with AI',
   evidence: 'Add proof',
-  tasks: 'Which tasks are needed?',
-  taskEnvironments: 'Which environment needs each task?',
+  tasks: 'Build the tasks',
   checks: 'Will it pass review?',
   paperwork: 'Production paperwork',
   finish: 'Create the change',
@@ -96,7 +95,7 @@ function evaluateStepGate(stepId: ChangeWizardStepId, progress: ChangeWizardProg
     case 'details': return gateOnProblems(progress.detailsGaps, 'Still needed: ');
     case 'planning': return gateOnProblems(progress.planningGaps, 'Still needed: ');
     case 'environments': return gateOnProblems(progress.environmentProblems);
-    case 'taskEnvironments': return gateOnProblems(progress.planErrors);
+    case 'tasks': return gateOnProblems(progress.taskProblems);
     case 'checks':
       return progress.isChecksSatisfied ? { canGoNext: true }
         : { canGoNext: false, blockedReason: 'Fix the items above, or tick that you understand and want to go on anyway.' };

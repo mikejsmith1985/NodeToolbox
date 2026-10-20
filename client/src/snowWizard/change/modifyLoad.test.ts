@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { snowFetch } from '../../services/snowApi.ts';
 import { fetchChangeTaskRecords } from '../../views/SnowHub/chgFormula/ctaskReviewApi.ts';
-import { fetchChangeForModify, fetchChangeSnapshot, fetchExistingTaskNames, normalizeChangeNumber } from './modifyLoad.ts';
+import { fetchChangeForModify, fetchChangeSnapshot, fetchExistingTasks, normalizeChangeNumber } from './modifyLoad.ts';
 
 vi.mock('../../services/snowApi.ts', () => ({ snowFetch: vi.fn() }));
 vi.mock('../../views/SnowHub/chgFormula/ctaskReviewApi.ts', () => ({ fetchChangeTaskRecords: vi.fn() }));
@@ -52,11 +52,11 @@ describe('fetchChangeForModify', () => {
   });
 });
 
-describe('fetchExistingTaskNames', () => {
-  it('names each task the change already has, and none when they cannot be read', async () => {
-    vi.mocked(fetchChangeTaskRecords).mockResolvedValueOnce([{ number: 'CTASK1', short_description: 'Business Checkout' }]);
-    expect(await fetchExistingTaskNames('sys-1')).toEqual(['CTASK1 — Business Checkout']);
+describe('fetchExistingTasks', () => {
+  it('lists each task the change already has with its id, and none when they cannot be read', async () => {
+    vi.mocked(fetchChangeTaskRecords).mockResolvedValueOnce([{ sys_id: 'task-sys-1', number: 'CTASK1', short_description: 'Business Checkout' }]);
+    expect(await fetchExistingTasks('sys-1')).toEqual([{ sysId: 'task-sys-1', number: 'CTASK1', label: 'CTASK1 — Business Checkout' }]);
     vi.mocked(fetchChangeTaskRecords).mockRejectedValueOnce(new Error('403'));
-    expect(await fetchExistingTaskNames('sys-1')).toEqual([]);
+    expect(await fetchExistingTasks('sys-1')).toEqual([]);
   });
 });

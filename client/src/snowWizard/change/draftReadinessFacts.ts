@@ -12,6 +12,7 @@ import { isRcpPeriodActive } from '../../views/SnowHub/rcp/rcpRules.ts';
 import { DRAFT_ENVIRONMENTS, readChangeTextFields, readProductionEnvironmentKey, type CrgDraftState } from './changeDraft.ts';
 import type { ChangeWizardMode, ChangeWizardStepId } from './changeWizardSteps.ts';
 import { evaluateDraftRcp } from './draftChangePlan.ts';
+import { isExistingTaskEdited, type ExistingTaskLink } from './modifyTasks.ts';
 
 /** Everything the facts are built from. */
 export interface DraftReadinessInput {
@@ -28,6 +29,8 @@ export interface DraftReadinessInput {
   prbFailureReason?: string;
   /** Modify only: what ServiceNow holds for the change, as 039's gatherer read it. */
   existingFacts?: ChangeReadinessFacts | null;
+  /** Modify only: which cards are the change's own tasks, so an untouched one is judged as ServiceNow holds it. */
+  existingTaskLinks?: readonly ExistingTaskLink[];
 }
 
 type DraftEnvironment = CrgDraftState['relEnvironment'];
@@ -100,12 +103,33 @@ function buildNewChangeFacts(input: DraftReadinessInput, isRcpActive: boolean): 
   };
 }
 
+/**
+ * A modify's tasks: an untouched task the change already has, as ServiceNow judged it; an edited or new card, as the
+ * save will write it (the change's configuration item, and a window inside the change's). Tasks ServiceNow lists that
+ * are not on any card are kept as they are.
+ */
+function readModifyCtasks(input: DraftReadinessInput, existingCtasks: ChangeReadinessFacts['ctasks']): ChangeReadinessFacts['ctasks'] {
+  if (existingCtasks === null) return null;
+  const { draft } = input;
+  const links = input.existingTaskLinks ?? [];
+  const hasChangeConfigItem = readDraftConfigItem(draft).sysId !== '';
+  const hasChangeWindow = readDraftWindow(draft)?.plannedStartUtc !== null;
+  const linkedNumbers = new Set(links.map((link) => link.number));
+  const cardCtasks = draft.changeTasks.map((task) => {
+    const link = links.find((existingLink) => existingLink.taskId === task.id);
+    const untouchedCtask = link && !isExistingTaskEdited(task, link) ? existingCtasks.find((ctask) => ctask.number === link.number) : undefined;
+    return untouchedCtask ?? readStagedCtask(task, hasChangeConfigItem, hasChangeWindow);
+  });
+  return [...existingCtasks.filter((ctask) => !linkedNumbers.has(ctask.number)), ...cardCtasks];
+}
+
 /** The facts for an existing change: what ServiceNow holds, with the user's unsaved edits laid on top. */
 function buildExistingChangeFacts(input: DraftReadinessInput, existingFacts: ChangeReadinessFacts): ChangeReadinessFacts {
   const { draft } = input;
   const attachedFileNames = existingFacts.attachmentFileNames;
   return {
     ...existingFacts,
+    ctasks: readModifyCtasks(input, existingFacts.ctasks),
     change: existingFacts.change === null ? null : {
       ...existingFacts.change,
       ownerName: draft.chgBasicInfo.assignedTo.displayName || existingFacts.change.ownerName,

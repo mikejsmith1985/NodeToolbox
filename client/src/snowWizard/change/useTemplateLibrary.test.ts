@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 import type { CtaskTemplate } from '../../views/SnowHub/hooks/useCrgState.ts';
 import { decodeTemplateShare, encodeTemplateShareCode } from './templateShare.ts';
+import { buildTaskTemplateData } from './templateSave.ts';
 import { useTemplateLibrary, type TemplateDraft } from './useTemplateLibrary.ts';
 
 const BLANK = { sysId: '', displayName: '' };
@@ -68,5 +69,15 @@ describe('useTemplateLibrary', () => {
     expect(result.current.listLinkedTasks(imported)).toHaveLength(1);
     act(() => result.current.deleteTemplate(imported.id));
     expect(result.current.templates.map((template) => template.name)).toEqual(['Monthly']);
+  });
+
+  it('saves, imports (renaming clashes) and deletes task templates', () => {
+    const { result } = renderHook(() => useTemplateLibrary());
+    act(() => { result.current.saveCtaskTemplate('Smoke test', buildTaskTemplateData(buildTask({ shortDescription: 'Smoke test' }))); });
+    act(() => { result.current.importSharedTasks([buildTask({ name: 'Smoke test' }), buildTask({ name: 'Deploy' })]); });
+    expect(result.current.ctaskTemplates.map((task) => task.name).sort()).toEqual(['Deploy', 'Smoke test', 'Smoke test (shared)']);
+    const deployId = result.current.ctaskTemplates.find((task) => task.name === 'Deploy')?.id ?? '';
+    act(() => result.current.deleteCtaskTemplate(deployId));
+    expect(result.current.ctaskTemplates.map((task) => task.name)).not.toContain('Deploy');
   });
 });

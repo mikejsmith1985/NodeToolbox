@@ -1,8 +1,9 @@
 // CreateResultStep.tsx — The last step: what will be created (or saved), then every record made, every failure, and Retry.
 //
 // The writes themselves run in useFinishRunner; this screen only shows them. Each change links to ServiceNow, lists
-// the tasks it carries, its evidence result and the notes the create path reported (outages, PRB links), and a
-// partial create offers "Retry what's missing", which never makes a second change for an environment.
+// the tasks it carries exactly as the user built them, its evidence result and the notes the create path reported
+// (outages, PRB links), and a partial create offers "Retry what's missing", which never makes a second change for an
+// environment.
 
 import { readEnabledPlanEnvironments } from '../changeDraft.ts';
 import type { ChangeStepProps } from '../changeWizardSession.ts';
@@ -10,45 +11,53 @@ import type { ChangeWizardStepId } from '../changeWizardSteps.ts';
 import { CHANGE_WIZARD_STEP_TITLES } from '../changeWizardSteps.ts';
 import styles from '../ChangeWizard.module.css';
 import { buildChangeLink, type CreatedChangeSummary } from '../createOutcome.ts';
-import type { CtaskEnvironmentPlan, PlanEnvironmentKey } from '../ctaskEnvironmentPlan.ts';
+import type { PlanEnvironmentKey } from '../ctaskEnvironmentPlan.ts';
 import { EVIDENCE_ATTACHED } from '../evidenceUpload.ts';
+import { planModifyTaskWrites } from '../modifyTasks.ts';
 import type { FinishRunner } from '../useFinishRunner.ts';
 
-/** The last step also needs the runner, the plan, the edited steps and the files chosen. */
+/** Each environment's tasks, as the user built them, in their order. */
+export type TaskNamesByEnvironment = Partial<Record<PlanEnvironmentKey, string[]>>;
+
+/** The last step also needs the runner, each change's tasks, the edited steps and the files chosen. */
 export interface CreateResultStepProps extends ChangeStepProps {
   runner: FinishRunner;
-  ctaskEnvironmentPlan: CtaskEnvironmentPlan;
+  /** The tasks each environment's change will carry, from the cards as they stand now. */
+  taskNamesByEnvironment: TaskNamesByEnvironment;
   editedStepIds: readonly ChangeWizardStepId[];
   evidenceFileCount: number;
 }
 
-const SERVICENOW_TASKS = ['Implementation', 'Technical Checkout'];
 const TEMPLATE_TIP = 'Doing one like this again? Press “Save as template” at the top, so your next change starts from this one.';
 
-/** The tasks one environment's change carries. */
-function listTasksFor(environmentLabel: PlanEnvironmentKey | null, plan: CtaskEnvironmentPlan): string[] {
-  const plannedTasks = Object.entries(plan).filter(([, ticks]) => (environmentLabel ? ticks[environmentLabel] : true)).map(([taskLabel]) => taskLabel);
-  return [...SERVICENOW_TASKS, ...plannedTasks];
+/** "Tasks: Deploy, Smoke test", or that the change has none. */
+function describeTasks(taskNames: readonly string[] | undefined): string {
+  return taskNames && taskNames.length > 0 ? `Tasks: ${taskNames.join(', ')}` : 'Tasks: none';
+}
+
+/** What saving a modify will do. */
+function ModifySummary({ crg, session, editedStepIds, evidenceFileCount }: CreateResultStepProps) {
+  const editedTitles = editedStepIds.map((stepId) => CHANGE_WIZARD_STEP_TITLES[stepId]);
+  const taskWrites = planModifyTaskWrites(crg.state.changeTasks, session.modify?.existingTasks ?? []);
+  return (
+    <div className={styles.card}>
+      <h3 className={styles.cardTitle}>{`Save to ${session.modify?.changeNumber ?? ''}`}</h3>
+      <p className={styles.hint}>{editedTitles.length > 0 ? `Steps you changed: ${editedTitles.join(', ')}.` : 'You have not changed any step.'}</p>
+      <p className={styles.hint}>{`Tasks to update: ${taskWrites.updates.length}. New tasks to add: ${taskWrites.creates.length}. Evidence files: ${evidenceFileCount}.`}</p>
+    </div>
+  );
 }
 
 /** What pressing the button will do. */
-function PlanSummary({ crg, session, ctaskEnvironmentPlan, editedStepIds, evidenceFileCount }: CreateResultStepProps) {
-  if (session.mode === 'modify') {
-    const editedTitles = editedStepIds.map((stepId) => CHANGE_WIZARD_STEP_TITLES[stepId]);
-    return (
-      <div className={styles.card}>
-        <h3 className={styles.cardTitle}>{`Save to ${session.modify?.changeNumber ?? ''}`}</h3>
-        <p className={styles.hint}>{editedTitles.length > 0 ? `Steps you changed: ${editedTitles.join(', ')}.` : 'You have not changed any step.'}</p>
-        <p className={styles.hint}>{`New tasks to add: ${crg.state.changeTasks.length}. Evidence files: ${evidenceFileCount}.`}</p>
-      </div>
-    );
-  }
+function PlanSummary(props: CreateResultStepProps) {
+  const { crg, session, taskNamesByEnvironment, evidenceFileCount } = props;
+  if (session.mode === 'modify') return <ModifySummary {...props} />;
   return (
     <ul className={styles.itemList} aria-label="Changes to create">
       {readEnabledPlanEnvironments(crg.state).map((environmentLabel) => (
         <li key={environmentLabel} className={styles.card}>
           <h3 className={styles.cardTitle}>{`${environmentLabel} change`}</h3>
-          <p className={styles.hint}>{`Tasks: ${listTasksFor(environmentLabel, ctaskEnvironmentPlan).join(', ')}`}</p>
+          <p className={styles.hint}>{describeTasks(taskNamesByEnvironment[environmentLabel])}</p>
           <p className={styles.hint}>{evidenceFileCount > 0 ? `Evidence: ${evidenceFileCount} file(s) attached once created.` : 'Evidence: none chosen.'}</p>
         </li>
       ))}
@@ -56,16 +65,17 @@ function PlanSummary({ crg, session, ctaskEnvironmentPlan, editedStepIds, eviden
   );
 }
 
-/** One change that now exists, with its link, tasks and evidence. */
-function CreatedChangeCard({ createdChange, session, ctaskEnvironmentPlan }: { createdChange: CreatedChangeSummary } & Pick<CreateResultStepProps, 'session' | 'ctaskEnvironmentPlan'>) {
+/** One change that now exists, with its link, the tasks it was made with, and evidence. */
+function CreatedChangeCard({ createdChange, session }: { createdChange: CreatedChangeSummary } & Pick<CreateResultStepProps, 'session'>) {
   const evidenceResult = session.evidenceResults[createdChange.changeNumber];
+  const builtTaskNames = createdChange.environmentLabel ? session.taskNamesByEnvironment?.[createdChange.environmentLabel] : undefined;
   return (
     <li className={styles.card}>
       <h3 className={styles.cardTitle}>
         {`${createdChange.environmentLabel ?? 'Change'}: `}
         <a href={buildChangeLink(window.location.origin, createdChange.changeNumber)} target="_blank" rel="noreferrer">{createdChange.changeNumber}</a>
       </h3>
-      {session.mode === 'create' ? <p className={styles.hint}>{`Tasks: ${listTasksFor(createdChange.environmentLabel, ctaskEnvironmentPlan).join(', ')}`}</p> : null}
+      {session.mode === 'create' ? <p className={styles.hint}>{describeTasks(builtTaskNames)}</p> : null}
       <p className={styles.hint}>{evidenceResult === undefined ? 'Evidence: none attached.' : evidenceResult === EVIDENCE_ATTACHED ? 'Evidence: attached.' : `Evidence not attached: ${evidenceResult}`}</p>
     </li>
   );
@@ -81,7 +91,7 @@ function OutcomeReport(props: CreateResultStepProps) {
       {session.failureText === null ? <p className={styles.successText}>All done. Everything below is in ServiceNow.</p> : null}
       {session.failureText === null ? <p className={styles.hint}>{TEMPLATE_TIP}</p> : null}
       <ul className={styles.itemList} aria-label="What was made">
-        {session.createdChanges.map((createdChange) => <CreatedChangeCard key={createdChange.changeNumber} createdChange={createdChange} session={session} ctaskEnvironmentPlan={props.ctaskEnvironmentPlan} />)}
+        {session.createdChanges.map((createdChange) => <CreatedChangeCard key={createdChange.changeNumber} createdChange={createdChange} session={session} />)}
       </ul>
       {session.outcomeNotes.map((outcomeNote) => <p key={outcomeNote} className={styles.hint}>{`• ${outcomeNote}`}</p>)}
       {session.failureText !== null ? (

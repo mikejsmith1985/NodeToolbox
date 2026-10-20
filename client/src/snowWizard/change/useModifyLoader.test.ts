@@ -13,7 +13,7 @@ vi.mock('../../services/snowApi.ts', () => ({ snowFetch: vi.fn() }));
 vi.mock('./modifyLoad.ts', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./modifyLoad.ts')>()),
   fetchChangeForModify: vi.fn(),
-  fetchExistingTaskNames: vi.fn(async () => []),
+  fetchExistingTasks: vi.fn(async () => [{ sysId: 'task-sys-1', number: 'CTASK0001', label: 'CTASK0001 — Deploy' }]),
 }));
 
 const LOADED_CHANGE = {
@@ -49,11 +49,15 @@ describe('useModifyLoader', () => {
   it('records the loaded change with its snapshot and step values', async () => {
     vi.mocked(fetchChangeForModify).mockResolvedValueOnce(LOADED_CHANGE);
     vi.mocked(snowFetch).mockImplementation(async (path: string) => (path.includes('/change_request?')
-      ? { result: [{ sys_id: { value: 'sys-1' }, short_description: 'Loaded title' }] } : { result: [] }) as never);
+      ? { result: [{ sys_id: { value: 'sys-1' }, short_description: 'Loaded title' }] }
+      : { result: [{ number: 'CTASK0001', short_description: 'Deploy' }] }) as never);
     const { hookResult, onLoaded } = renderLoader();
     act(() => hookResult.result.current.loader.lookUp());
     await waitFor(() => expect(onLoaded).toHaveBeenCalled());
-    expect(onLoaded.mock.calls[0][0]).toMatchObject({ changeNumber: 'CHG0002', stateLabel: 'Assess', existingTaskNames: [] });
+    expect(onLoaded.mock.calls[0][0]).toMatchObject({ changeNumber: 'CHG0002', stateLabel: 'Assess', changeSysId: 'sys-1', existingTaskNames: ['CTASK0001 — Deploy'] });
     expect(onLoaded.mock.calls[0][0].loadedStepValues.details.Title).toBe('Loaded title');
+    // The change's own task stays on the draft as a card, linked to the task it came from.
+    expect(hookResult.result.current.crg.state.changeTasks.map((task) => task.shortDescription)).toEqual(['Deploy']);
+    expect(onLoaded.mock.calls[0][0].existingTasks).toEqual([expect.objectContaining({ sysId: 'task-sys-1', number: 'CTASK0001' })]);
   });
 });

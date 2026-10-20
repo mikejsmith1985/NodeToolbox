@@ -4,7 +4,8 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { CrgTemplate, CtaskTemplate } from '../../views/SnowHub/hooks/useCrgState.ts';
 import {
-  TEMPLATE_SHARE_PREFIX, buildTemplateShareFile, decodeTemplateShare, encodeTemplateShareCode, importSharedTemplate, pickUniqueTemplateName,
+  TEMPLATE_SHARE_PREFIX, buildTemplateShareFile, decodeTemplateShare, encodeTemplateShareCode, importSharedCtaskTemplates, importSharedTemplate,
+  pickUniqueTemplateName,
 } from './templateShare.ts';
 
 const REFERENCE = { sysId: 'grp-1', displayName: 'Paiements équipe ✓' };
@@ -110,5 +111,17 @@ describe('importSharedTemplate', () => {
     expect(imported).toEqual({ templateId: 'new-tpl-1', templateName: 'Payments — monthly ✓ (shared)' });
     expect(saveCtaskTemplate).toHaveBeenCalledWith('Business Checkout', expect.not.objectContaining({ id: expect.anything() }));
     expect(saveCrgTemplate).toHaveBeenCalledWith('Payments — monthly ✓ (shared)', expect.objectContaining({ ctaskTemplateIds: ['new-ctask-1'] }));
+  });
+});
+
+describe('importSharedCtaskTemplates', () => {
+  it('saves each task as the user’s own, renaming clashes — including clashes inside the same code', () => {
+    const saveCtaskTemplate = vi.fn(() => 'new-id');
+    const savedNames = importSharedCtaskTemplates(
+      [buildCtaskTemplate(), buildCtaskTemplate({ id: 'ctask-2' }), buildCtaskTemplate({ id: 'ctask-3', name: 'Smoke test' })],
+      { existingTaskNames: ['Business Checkout'], saveCtaskTemplate },
+    );
+    expect(savedNames).toEqual(['Business Checkout (shared)', 'Business Checkout (shared 2)', 'Smoke test']);
+    expect(saveCtaskTemplate).toHaveBeenCalledWith('Smoke test', expect.not.objectContaining({ id: expect.anything() }));
   });
 });

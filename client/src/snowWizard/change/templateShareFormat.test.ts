@@ -37,6 +37,12 @@ describe('readSharedTasks', () => {
     expect(readSharedTasks(undefined)).toEqual([]);
   });
 
+  it('keeps only known environments a task goes on, and refuses environments that are not a list of words', () => {
+    expect(readSharedTasks([{ id: 't1', name: 'Checkout', environmentKeys: ['PRD', 'MARS', 'REL'] }])[0].environmentKeys).toEqual(['REL', 'PRD']);
+    expect(readSharedTasks([{ id: 't1', name: 'Checkout' }])[0]).not.toHaveProperty('environmentKeys');
+    expect(() => readSharedTasks([{ id: 't1', name: 'Checkout', environmentKeys: 'PRD' }])).toThrow(TemplateShareFormatError);
+  });
+
   it('refuses something that is not a list', () => {
     expect(() => readSharedTasks({})).toThrow(TemplateShareFormatError);
     expect(isPlainObject([])).toBe(false);

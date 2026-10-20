@@ -7,6 +7,7 @@ import { buildChangeReadiness, type ChangeReadinessFacts, type ReadinessAction }
 import { useCrgState } from '../../views/SnowHub/hooks/useCrgState.ts';
 import type { CrgDraftState } from './changeDraft.ts';
 import { buildDraftReadinessFacts, resolveFixStepId, type DraftReadinessInput } from './draftReadinessFacts.ts';
+import { buildTaskFingerprint } from './modifyTasks.ts';
 
 vi.mock('../../services/jiraApi.ts', () => ({ jiraGet: vi.fn(async () => []) }));
 vi.mock('../../services/snowApi.ts', () => ({ snowFetch: vi.fn() }));
@@ -90,6 +91,20 @@ describe('buildDraftReadinessFacts — an existing change', () => {
     expect(facts.textFields?.description).toBe('What');
     expect(facts.attachmentFileNames).toBeNull();
     expect(facts.riskReview).toEqual({ isReady: true });
+  });
+
+  it('judges the user’s task cards: an untouched task as ServiceNow holds it, an edited one as it will be saved', () => {
+    const draft = buildProductionDraft();
+    const loadedTask = { ...draft.changeTasks[0], id: 'card-1', name: 'CTASK0001', description: '' };
+    const links = [{ taskId: 'card-1', sysId: 'sys-1', number: 'CTASK0001', loadedFingerprint: buildTaskFingerprint(loadedTask) }];
+    const serviceNowCtask = { number: 'CTASK0001', isImplementation: false, isConfigItemMatching: false, hasBackoutPlan: false, hasPlannedDates: true };
+    const factsWith = (changeTasks: CrgDraftState['changeTasks']) => buildDraftReadinessFacts(buildInput({
+      mode: 'modify', draft: { ...draft, changeTasks }, existingFacts: { ...existingFacts, ctasks: [serviceNowCtask] }, existingTaskLinks: links,
+    }));
+    expect(factsWith([loadedTask]).ctasks).toEqual([serviceNowCtask]);
+    expect(factsWith([{ ...loadedTask, shortDescription: 'Checkout v2' }]).ctasks).toEqual([
+      { number: 'Checkout v2', isImplementation: false, isConfigItemMatching: true, hasBackoutPlan: false, hasPlannedDates: true },
+    ]);
   });
 });
 

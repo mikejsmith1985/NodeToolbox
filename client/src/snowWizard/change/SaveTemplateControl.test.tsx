@@ -4,7 +4,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import SaveTemplateControl from './SaveTemplateControl.tsx';
-import type { TemplateDraft } from './useTemplateLibrary.ts';
+import { useTemplateLibrary, type TemplateDraft } from './useTemplateLibrary.ts';
 
 const BLANK = { sysId: '', displayName: '' };
 const DRAFT = {
@@ -25,18 +25,23 @@ function saveAs(templateName: string) {
   fireEvent.click(screen.getByRole('button', { name: 'Save template' }));
 }
 
+/** The control with one library, the way the change job hands it one. */
+function Harness() {
+  return <SaveTemplateControl draft={DRAFT} library={useTemplateLibrary()} />;
+}
+
 describe('SaveTemplateControl', () => {
   beforeEach(() => localStorage.clear());
 
   it('saves under the name given and says so', () => {
-    render(<SaveTemplateControl draft={DRAFT} />);
+    render(<Harness />);
     saveAs('Monthly release');
     expect(screen.getByRole('status').textContent).toContain('Saved ✓');
     expect(readSavedNames()).toEqual(['Monthly release']);
   });
 
   it('will not save without a name', () => {
-    render(<SaveTemplateControl draft={DRAFT} />);
+    render(<Harness />);
     fireEvent.click(screen.getByRole('button', { name: 'Save as template' }));
     expect((screen.getByRole('button', { name: 'Save template' }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
@@ -44,7 +49,7 @@ describe('SaveTemplateControl', () => {
   });
 
   it('offers to replace a template with the same name instead of making a second one', () => {
-    render(<SaveTemplateControl draft={DRAFT} />);
+    render(<Harness />);
     saveAs('Monthly release');
     saveAs('monthly release');
     expect(screen.getByText(/already have a template called/)).toBeTruthy();
@@ -54,7 +59,7 @@ describe('SaveTemplateControl', () => {
   });
 
   it('lets the user pick another name after a clash', () => {
-    render(<SaveTemplateControl draft={DRAFT} />);
+    render(<Harness />);
     saveAs('Monthly release');
     saveAs('Monthly release');
     fireEvent.click(screen.getByRole('button', { name: 'Use another name' }));

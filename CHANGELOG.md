@@ -21,8 +21,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ticked files are fetched one by one (with progress shown), zipped the same way Toolbox does (one folder per issue
   plus a list of contents) and attached; a file that can't be fetched is named and left out, and the rest still go on.
   **Re-install the Wizard bookmark** (drag it to your bookmarks bar again) so the Jira tab can send files.
+- **Toolbox: share every CTASK template with the SNow Wizard.** The CTASK Templates panel has **Share all** (copies
+  one code holding every template) and **Download** (the same as a file). Paste the code, or choose the file, in the
+  Wizard under "Your templates". Only the task's own values travel — type, group, assignee, timing, text.
+- **SNow Wizard: saved tasks you can share.** "Your templates" now lists **Your saved tasks**, each with Share (a
+  code), Download (a file) and Delete (asked first on the page). "Add something someone shared" takes a change
+  template code **or** a task code, including Toolbox's "Share all"; a name you already use becomes "name (shared)".
 
 ### Changed
+- **SNow Wizard: build your own tasks.** "Build the tasks" is now a blank page: **Add a task** gives an empty card,
+  **Add from a saved task** gives a filled-in one. Each card has a short description, a description, the task type
+  (picked from ServiceNow's own list), an assignment group and an assignee (looked up in ServiceNow), and which
+  environments' changes get it — every change in use until you untick one. The configuration item always comes from
+  the change. Cards can be moved up or down, removed, or saved as a task template. The task-type tick boxes and the
+  separate "Which environment needs each task?" step are gone (11 steps now). When the changes are created, your
+  tasks take the place of the ones ServiceNow starts every change with, in your order, and any extra tasks are
+  added; the result lists each change's tasks exactly as you built them. Editing an existing change shows its tasks
+  as cards: edits update those tasks, and new cards are added to the change.
 - **SNow Wizard: "Where and when?" is easier.** Each ticked environment's **configuration item** now sits in its own
   card instead of under "More options", because it's set on every change (templates still fill it in). Start and end
   times are now a **day picker plus an Hour list and a Minutes list (00 / 15 / 30 / 45)**, with minutes starting at

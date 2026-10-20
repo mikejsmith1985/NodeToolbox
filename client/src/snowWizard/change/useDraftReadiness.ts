@@ -68,9 +68,9 @@ export function useDraftReadiness(draft: CrgDraftState, session: ChangeWizardSes
     return buildChangeReadiness(buildDraftReadinessFacts({
       mode: session.mode, draft, riskReview: session.riskReview, isRcpRulesEnabled, todayIso: readCentralTodayIso(),
       evidenceFileNames: session.evidenceFileNames, prbRows: readAnswer.prbRows, prbFailureReason: readAnswer.prbFailureReason,
-      existingFacts: readAnswer.existingFacts,
+      existingFacts: readAnswer.existingFacts, existingTaskLinks: session.modify?.existingTasks,
     }));
-  }, [readAnswer, requestKey, session.mode, draft, session.riskReview, isRcpRulesEnabled, session.evidenceFileNames]);
+  }, [readAnswer, requestKey, session.mode, draft, session.riskReview, isRcpRulesEnabled, session.evidenceFileNames, session.modify?.existingTasks]);
 
   return { items };
 }

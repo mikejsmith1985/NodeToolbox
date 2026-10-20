@@ -3,6 +3,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { encodeCtaskTemplatesShareCode } from '../../views/SnowHub/ctaskTemplateShare.ts';
 import type { CrgTemplate, CtaskTemplate } from '../../views/SnowHub/hooks/useCrgState.ts';
 import TemplatesScreen from './TemplatesScreen.tsx';
 import { TEMPLATE_SHARE_PREFIX, encodeTemplateShareCode } from './templateShare.ts';
@@ -85,6 +86,22 @@ describe('TemplatesScreen', () => {
     const sharedFile = new File([encodeTemplateShareCode({ ...TEMPLATE, name: 'Hotfix' }, [TASK])], 'Hotfix.snow-template.json', { type: 'application/json' });
     fireEvent.change(screen.getByLabelText('Or choose a template file'), { target: { files: [sharedFile] } });
     await waitFor(() => expect(screen.getByRole('heading', { name: 'Hotfix' })).toBeTruthy());
+  });
+
+  it('adds the tasks from a task code copied in Toolbox, renaming a clash', () => {
+    render(<Harness />);
+    const toolboxCode = encodeCtaskTemplatesShareCode([TASK, { ...TASK, id: 'ctask-2', name: 'Deploy', shortDescription: 'Deploy' }]);
+    fireEvent.change(screen.getByLabelText('Paste a template code'), { target: { value: toolboxCode } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add this template' }));
+    expect(screen.getByRole('status').textContent).toBe('Added “Checkout (shared)” and “Deploy” to your saved tasks ✓');
+    expect(screen.getByRole('heading', { name: 'Deploy' })).toBeTruthy();
+  });
+
+  it('explains a damaged task code in plain words', () => {
+    render(<Harness />);
+    fireEvent.change(screen.getByLabelText('Paste a template code'), { target: { value: 'SNOWWIZ-CTASKS-1:@@@' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add this template' }));
+    expect(screen.getByRole('alert').textContent).toMatch(/damaged/);
   });
 
   it('says what to do when there are no templates yet', () => {

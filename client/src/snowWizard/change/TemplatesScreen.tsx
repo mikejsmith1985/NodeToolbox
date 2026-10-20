@@ -1,13 +1,16 @@
 // TemplatesScreen.tsx — "Your templates": start a change from one, share it as a code or a file, delete it, or add one someone shared.
 //
 // Sharing needs no server: a template travels as a code people paste into Teams or an email, or as a downloaded file.
+// The same place takes a task code — from another Wizard, or from Toolbox's "Share all" — and lists the saved tasks.
 
 import { useId, useState, type ChangeEvent } from 'react';
 
+import { decodeCtaskTemplatesShare, downloadShareFile, isCtaskTemplatesShareText } from '../../views/SnowHub/ctaskTemplateShare.ts';
 import type { CrgTemplate } from '../../views/SnowHub/hooks/useCrgState.ts';
 import CopyButton from '../shell/CopyButton.tsx';
 import shellStyles from '../shell/WizardShell.module.css';
 import styles from './ChangeWizard.module.css';
+import TaskTemplatesSection from './TaskTemplatesSection.tsx';
 import { buildTemplateShareFile, decodeTemplateShare, encodeTemplateShareCode } from './templateShare.ts';
 import type { TemplateLibrary } from './useTemplateLibrary.ts';
 
@@ -17,22 +20,31 @@ interface TemplatesScreenProps {
   onBack: () => void;
 }
 
-type ImportOutcome = { kind: 'idle' } | { kind: 'added'; templateName: string } | { kind: 'failed'; message: string };
-
-// The object URL is released once the browser has started the download.
-const DOWNLOAD_URL_RELEASE_MS = 1000;
+type ImportOutcome = { kind: 'idle' } | { kind: 'added'; message: string } | { kind: 'failed'; message: string };
 
 /** Saves the template as a `.snow-template.json` file through the browser's own download. */
 function downloadTemplateFile(template: CrgTemplate, library: TemplateLibrary): void {
-  const { fileName, blob } = buildTemplateShareFile(template, library.listLinkedTasks(template));
-  const objectUrl = URL.createObjectURL(blob);
-  const downloadLink = document.createElement('a');
-  downloadLink.href = objectUrl;
-  downloadLink.download = fileName;
-  document.body.append(downloadLink);
-  downloadLink.click();
-  downloadLink.remove();
-  setTimeout(() => URL.revokeObjectURL(objectUrl), DOWNLOAD_URL_RELEASE_MS);
+  downloadShareFile(buildTemplateShareFile(template, library.listLinkedTasks(template)));
+}
+
+/** "Added “Deploy” and “Smoke test” to your saved tasks ✓". */
+function describeAddedTasks(taskNames: readonly string[]): string {
+  const quotedNames = taskNames.map((taskName) => `“${taskName}”`);
+  const namesText = quotedNames.length > 1 ? `${quotedNames.slice(0, -1).join(', ')} and ${quotedNames.at(-1)}` : quotedNames[0];
+  return `Added ${namesText} to your saved tasks ✓`;
+}
+
+/** Reads a pasted code or file's text — a change template, or saved tasks — and saves it; returns what happened. */
+function importSharedText(sharedText: string, library: TemplateLibrary): ImportOutcome {
+  if (isCtaskTemplatesShareText(sharedText)) {
+    const decodedTasks = decodeCtaskTemplatesShare(sharedText);
+    return decodedTasks.isValid
+      ? { kind: 'added', message: describeAddedTasks(library.importSharedTasks(decodedTasks.ctaskTemplates)) }
+      : { kind: 'failed', message: decodedTasks.errorMessage };
+  }
+  const decoded = decodeTemplateShare(sharedText);
+  if (!decoded.isValid) return { kind: 'failed', message: decoded.errorMessage };
+  return { kind: 'added', message: `Added “${library.importShared(decoded.payload).templateName}” to your templates ✓` };
 }
 
 /** "Saved 1 Oct 2026 · 2 tasks" for one template. */
@@ -87,13 +99,9 @@ function TemplateCard({ template, library, onUseTemplate }: { template: CrgTempl
 function useTemplateImport(library: TemplateLibrary) {
   const [outcome, setOutcome] = useState<ImportOutcome>({ kind: 'idle' });
   function importText(sharedText: string): boolean {
-    const decoded = decodeTemplateShare(sharedText);
-    if (!decoded.isValid) {
-      setOutcome({ kind: 'failed', message: decoded.errorMessage });
-      return false;
-    }
-    setOutcome({ kind: 'added', templateName: library.importShared(decoded.payload).templateName });
-    return true;
+    const importOutcome = importSharedText(sharedText, library);
+    setOutcome(importOutcome);
+    return importOutcome.kind === 'added';
   }
   function importFile(changeEvent: ChangeEvent<HTMLInputElement>) {
     const chosenFile = changeEvent.target.files?.[0];
@@ -104,7 +112,7 @@ function useTemplateImport(library: TemplateLibrary) {
   return { outcome, importText, importFile };
 }
 
-/** "Add a template someone shared": paste a code, or choose a file. */
+/** "Add something someone shared": paste a change template code or a task code, or choose either kind of file. */
 function ImportPanel({ library }: { library: TemplateLibrary }) {
   const codeFieldId = useId();
   const fileFieldId = useId();
@@ -112,15 +120,16 @@ function ImportPanel({ library }: { library: TemplateLibrary }) {
   const { outcome, importText, importFile } = useTemplateImport(library);
   return (
     <div className={styles.card}>
-      <h3 className={styles.cardTitle}>Add a template someone shared</h3>
+      <h3 className={styles.cardTitle}>Add something someone shared</h3>
+      <p className={styles.hint}>A change template code, or a task code — including the one Toolbox copies with “Share all”.</p>
       <label className={styles.fieldLabel} htmlFor={codeFieldId}>Paste a template code</label>
-      <textarea id={codeFieldId} className={styles.textArea} value={pastedText} placeholder="SNOWWIZ-TEMPLATE-1:…" onChange={(changeEvent) => setPastedText(changeEvent.target.value)} />
+      <textarea id={codeFieldId} className={styles.textArea} value={pastedText} placeholder="SNOWWIZ-TEMPLATE-1:… or SNOWWIZ-CTASKS-1:…" onChange={(changeEvent) => setPastedText(changeEvent.target.value)} />
       <div className={styles.buttonRow}>
         <button type="button" className={styles.actionButton} onClick={() => { if (importText(pastedText)) setPastedText(''); }}>Add this template</button>
       </div>
       <label className={styles.fieldLabel} htmlFor={fileFieldId}>Or choose a template file</label>
       <input id={fileFieldId} type="file" accept=".json,application/json" onChange={importFile} />
-      {outcome.kind === 'added' ? <p className={styles.successText} role="status">{`Added “${outcome.templateName}” to your templates ✓`}</p> : null}
+      {outcome.kind === 'added' ? <p className={styles.successText} role="status">{outcome.message}</p> : null}
       {outcome.kind === 'failed' ? <p className={styles.errorText} role="alert">{outcome.message}</p> : null}
     </div>
   );
@@ -138,6 +147,7 @@ export default function TemplatesScreen({ library, onUseTemplate, onBack }: Temp
       <ul className={styles.itemList} aria-label="Saved templates">
         {library.templates.map((template) => <TemplateCard key={template.id} template={template} library={library} onUseTemplate={onUseTemplate} />)}
       </ul>
+      <TaskTemplatesSection library={library} />
       <ImportPanel library={library} />
       <div className={styles.buttonRow}><button type="button" className={shellStyles.secondaryButton} onClick={onBack}>Back</button></div>
     </section>

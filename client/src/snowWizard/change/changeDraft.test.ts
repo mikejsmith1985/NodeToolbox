@@ -7,8 +7,6 @@ import { useCrgState } from '../../views/SnowHub/hooks/useCrgState.ts';
 import {
   applyChangeTextField,
   buildEnvironmentValueByKey,
-  buildStagedChangeTask,
-  isServiceNowAddedTaskType,
   hasProductionEnvironment,
   readChangeTextFields,
   readDetailsGaps,
@@ -115,20 +113,5 @@ describe('buildEnvironmentValueByKey', () => {
       { value: 'prod_fix', label: 'Production Fix' },
       { value: 'prod2', label: 'Production 2' },
     ])).toEqual({ rel: 'pre_prod', prd: 'production', pfix: 'prod_fix' });
-  });
-});
-
-describe('task types', () => {
-  it('knows which tasks ServiceNow adds to every change itself', () => {
-    expect(isServiceNowAddedTaskType('Implementation')).toBe(true);
-    expect(isServiceNowAddedTaskType('Technical Checkout')).toBe(true);
-    expect(isServiceNowAddedTaskType('Business Checkout')).toBe(false);
-  });
-
-  it('stages a task named by its type and assigned like the change', () => {
-    const draft = readBlankDraft();
-    const owner = { sysId: 'u1', displayName: 'Pat' };
-    const stagedTask = buildStagedChangeTask({ value: 'review', label: 'Business Checkout' }, { ...draft, chgBasicInfo: { ...draft.chgBasicInfo, assignedTo: owner } });
-    expect(stagedTask).toMatchObject({ shortDescription: 'Business Checkout', name: 'Business Checkout', changeTaskType: 'review', assignedTo: owner });
   });
 });

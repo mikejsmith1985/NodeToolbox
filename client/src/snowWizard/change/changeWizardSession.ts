@@ -1,7 +1,7 @@
 // changeWizardSession.ts — What the change wizard remembers per job beyond the change draft itself: step, reviews, plan, results.
 //
 // The change's own values live in useCrgState under `snowWizard:change:<jobId>`. Everything the wizard adds on top
-// (which steps were passed, the task × environment plan, the AI verdict, the create results) is kept here, with
+// (which steps were passed, the tasks each change was made with, the AI verdict, the create results) is kept here, with
 // zustand's own persist middleware — the same framework the shell's job store uses — so a reload resumes the job.
 
 import { create } from 'zustand';
@@ -10,8 +10,9 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 import type { CrgHook } from './changeDraft.ts';
 import type { ChangeWizardMode, ChangeWizardStepId } from './changeWizardSteps.ts';
 import type { CreatedChangeSummary } from './createOutcome.ts';
-import type { CtaskEnvironmentPlan, PlanEnvironmentKey } from './ctaskEnvironmentPlan.ts';
+import type { PlanEnvironmentKey } from './ctaskEnvironmentPlan.ts';
 import type { StepValueMap } from './modifyDiff.ts';
+import type { ExistingTaskLink } from './modifyTasks.ts';
 import type { ReviewLoopSession } from './reviewLoop.ts';
 
 /** A modify's memory of the change as it was loaded. */
@@ -22,8 +23,12 @@ export interface ModifySession {
   loadedSnapshot: Record<string, string>;
   /** The draft's step values at load, for marking which steps were edited. */
   loadedStepValues: StepValueMap;
-  /** The tasks the change already has; shown, never re-created. */
+  /** The tasks the change had when loaded, as "number — short description". */
   existingTaskNames: string[];
+  /** The change's own id, so its tasks can be saved without looking it up again (absent in older jobs). */
+  changeSysId?: string;
+  /** Which cards are the change's own tasks, so saving rewrites only edited ones (absent in older jobs). */
+  existingTasks?: ExistingTaskLink[];
 }
 
 /** Everything one change job remembers. */
@@ -31,7 +36,8 @@ export interface ChangeWizardSession {
   mode: ChangeWizardMode;
   currentStepId: ChangeWizardStepId;
   reviewedStepIds: ChangeWizardStepId[];
-  ctaskEnvironmentPlan: CtaskEnvironmentPlan;
+  /** Each environment's tasks as the user built them, kept when the changes are made so the result can list them. */
+  taskNamesByEnvironment?: Partial<Record<PlanEnvironmentKey, string[]>>;
   riskReview: { isReady: boolean } | null;
   /** The "Make it better with AI" loop's rounds; null until it starts (and absent in jobs saved before it existed). */
   reviewLoop: ReviewLoopSession | null;
@@ -75,7 +81,6 @@ export function createChangeWizardSession(mode: ChangeWizardMode): ChangeWizardS
     mode,
     currentStepId: mode === 'modify' ? 'whichChange' : 'scope',
     reviewedStepIds: [],
-    ctaskEnvironmentPlan: {},
     riskReview: null,
     reviewLoop: null,
     areChecksAcknowledged: false,

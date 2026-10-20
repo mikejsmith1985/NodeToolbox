@@ -1,69 +1,52 @@
-// ctaskEnvironmentPlan.test.ts — Proves the CTASK × environment rules: defaults, saved overlay, errors and per-change filtering.
+// ctaskEnvironmentPlan.test.ts — Proves each task goes on the environments the user ticked (all in use by default), and per-change filtering.
 
-import { beforeEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import {
-  CTASK_ENV_DEFAULTS_STORAGE_KEY,
+  buildCtaskEnvironmentPlan,
   filterStagedCtasksForEnvironment,
-  listPlanErrors,
-  loadSavedCtaskEnvironmentDefaults,
-  normalizeCtaskLabel,
-  saveCtaskEnvironmentDefault,
-  seedCtaskEnvironmentPlan,
-  toggleCtaskEnvironment,
+  listTaskLabelsByEnvironment,
+  readTaskEnvironmentTicks,
+  toggleTaskEnvironment,
   type CtaskEnvironmentPlan,
 } from './ctaskEnvironmentPlan.ts';
 
-const ALL_ENVIRONMENTS = ['REL', 'PRD', 'PFIX'] as const;
-
-describe('seedCtaskEnvironmentPlan', () => {
-  it('ticks Business Checkout for PRD and PFIX but not REL, and every environment for the others', () => {
-    const plan = seedCtaskEnvironmentPlan(['Implementation', 'Technical Checkout', 'Business Checkout', 'Smoke test'], [...ALL_ENVIRONMENTS], {});
-    expect(plan['Business Checkout']).toEqual({ REL: false, PRD: true, PFIX: true });
-    expect(plan.Implementation).toEqual({ REL: true, PRD: true, PFIX: true });
-    expect(plan['Technical Checkout']).toEqual({ REL: true, PRD: true, PFIX: true });
-    expect(plan['Smoke test']).toEqual({ REL: true, PRD: true, PFIX: true });
+describe('readTaskEnvironmentTicks', () => {
+  it('ticks every environment in use when the task has made no choice', () => {
+    expect(readTaskEnvironmentTicks({ shortDescription: 'Business Checkout' }, ['REL', 'PRD'])).toEqual({ REL: true, PRD: true, PFIX: false });
   });
 
-  it('never ticks an environment the change does not use', () => {
-    const plan = seedCtaskEnvironmentPlan(['Business Checkout', 'Testing'], ['REL', 'PRD'], {});
-    expect(plan['Business Checkout']).toEqual({ REL: false, PRD: true, PFIX: false });
-    expect(plan.Testing).toEqual({ REL: true, PRD: true, PFIX: false });
-  });
-
-  it('lets a saved default win over the built-in rule', () => {
-    const plan = seedCtaskEnvironmentPlan(['Business Checkout'], [...ALL_ENVIRONMENTS], {
-      businesscheckout: { REL: true, PRD: true, PFIX: false },
-    });
-    expect(plan['Business Checkout']).toEqual({ REL: true, PRD: true, PFIX: false });
-  });
-
-  it('keeps the ticks the user already chose, dropping removed tasks', () => {
-    const existingPlan: CtaskEnvironmentPlan = { Testing: { REL: false, PRD: true, PFIX: false }, Gone: { REL: true, PRD: true, PFIX: true } };
-    const plan = seedCtaskEnvironmentPlan(['Testing'], ['REL', 'PRD'], {}, existingPlan);
-    expect(plan).toEqual({ Testing: { REL: false, PRD: true, PFIX: false } });
-  });
-
-  it('re-seeds a kept row that lost every tick when its environments were switched off', () => {
-    const existingPlan: CtaskEnvironmentPlan = { Testing: { REL: true, PRD: false, PFIX: false } };
-    expect(seedCtaskEnvironmentPlan(['Testing'], ['PRD'], {}, existingPlan).Testing).toEqual({ REL: false, PRD: true, PFIX: false });
+  it('keeps the user\'s own choice, never ticking an environment the change does not use', () => {
+    expect(readTaskEnvironmentTicks({ environmentKeys: ['PRD', 'PFIX'] }, ['REL', 'PRD'])).toEqual({ REL: false, PRD: true, PFIX: false });
   });
 });
 
-describe('listPlanErrors', () => {
-  it('names a task with no environment and a tick on an environment the change does not use', () => {
-    const plan: CtaskEnvironmentPlan = {
-      Testing: { REL: false, PRD: false, PFIX: false },
-      'Business Checkout': { REL: false, PRD: true, PFIX: true },
-    };
-    expect(listPlanErrors(plan, ['REL', 'PRD'])).toEqual([
-      'Testing is not ticked for any environment.',
-      'Business Checkout is ticked for PFIX, which this change does not use.',
-    ]);
+describe('toggleTaskEnvironment', () => {
+  it('switches one environment off from the default of all, and back on', () => {
+    const task = { environmentKeys: undefined };
+    const switchedOff = toggleTaskEnvironment(task, 'REL', ['REL', 'PRD']);
+    expect(switchedOff).toEqual(['PRD']);
+    expect(toggleTaskEnvironment({ environmentKeys: switchedOff }, 'REL', ['REL', 'PRD'])).toEqual(['REL', 'PRD']);
+  });
+});
+
+describe('buildCtaskEnvironmentPlan / listTaskLabelsByEnvironment', () => {
+  const tasks = [
+    { id: 'one', shortDescription: 'Deploy', environmentKeys: undefined },
+    { id: 'two', shortDescription: 'Business Checkout', environmentKeys: ['PRD' as const] },
+    { id: 'three', shortDescription: '' },
+  ];
+
+  it('keys each task\'s ticks by its id', () => {
+    expect(buildCtaskEnvironmentPlan(tasks, ['REL', 'PRD'])).toEqual({
+      one: { REL: true, PRD: true, PFIX: false },
+      two: { REL: false, PRD: true, PFIX: false },
+      three: { REL: true, PRD: true, PFIX: false },
+    });
   });
 
-  it('is empty for a sound plan', () => {
-    expect(listPlanErrors({ Testing: { REL: true, PRD: false, PFIX: false } }, ['REL'])).toEqual([]);
+  it('lists each change\'s tasks in the user\'s order, naming an untitled one by its place', () => {
+    expect(listTaskLabelsByEnvironment(tasks, ['REL', 'PRD'])).toEqual({ REL: ['Deploy', 'Task 3'], PRD: ['Deploy', 'Business Checkout', 'Task 3'] });
   });
 });
 
@@ -73,45 +56,23 @@ describe('filterStagedCtasksForEnvironment', () => {
     { id: 'two', shortDescription: 'Testing' },
     { id: 'three', shortDescription: '', name: 'Unplanned task' },
   ];
-  const plan: CtaskEnvironmentPlan = {
-    'Business Checkout': { REL: false, PRD: true, PFIX: true },
-    Testing: { REL: true, PRD: true, PFIX: false },
-  };
 
-  it('keeps only the tasks ticked for that environment, and keeps tasks the plan does not mention', () => {
+  it('finds a task by its id first', () => {
+    const plan: CtaskEnvironmentPlan = { one: { REL: false, PRD: true, PFIX: false }, two: { REL: true, PRD: false, PFIX: false } };
     expect(filterStagedCtasksForEnvironment(stagedTasks, plan, 'REL').map((task) => task.id)).toEqual(['two', 'three']);
-    expect(filterStagedCtasksForEnvironment(stagedTasks, plan, 'PRD').map((task) => task.id)).toEqual(['one', 'two', 'three']);
+    expect(filterStagedCtasksForEnvironment(stagedTasks, plan, 'PRD').map((task) => task.id)).toEqual(['one', 'three']);
+  });
+
+  it('still reads a plan keyed by label, keeping tasks the plan does not mention', () => {
+    const plan: CtaskEnvironmentPlan = {
+      'Business Checkout': { REL: false, PRD: true, PFIX: true },
+      Testing: { REL: true, PRD: true, PFIX: false },
+    };
+    expect(filterStagedCtasksForEnvironment(stagedTasks, plan, 'REL').map((task) => task.id)).toEqual(['two', 'three']);
     expect(filterStagedCtasksForEnvironment(stagedTasks, plan, 'PFIX').map((task) => task.id)).toEqual(['one', 'three']);
   });
 
   it('returns the very same list when there is no plan', () => {
     expect(filterStagedCtasksForEnvironment(stagedTasks, undefined, 'REL')).toBe(stagedTasks);
-  });
-});
-
-describe('toggleCtaskEnvironment', () => {
-  it('flips one tick and leaves the rest', () => {
-    const plan: CtaskEnvironmentPlan = { Testing: { REL: true, PRD: false, PFIX: false } };
-    expect(toggleCtaskEnvironment(plan, 'Testing', 'PRD')).toEqual({ Testing: { REL: true, PRD: true, PFIX: false } });
-    expect(plan.Testing.PRD).toBe(false);
-  });
-});
-
-describe('saved defaults', () => {
-  beforeEach(() => localStorage.clear());
-
-  it('remembers a default under the Wizard key and reads it back by its plain label', () => {
-    saveCtaskEnvironmentDefault('Business Checkout', { REL: true, PRD: true, PFIX: true });
-    expect(localStorage.getItem(CTASK_ENV_DEFAULTS_STORAGE_KEY)).toContain('businesscheckout');
-    expect(loadSavedCtaskEnvironmentDefaults()).toEqual({ businesscheckout: { REL: true, PRD: true, PFIX: true } });
-  });
-
-  it('reads nothing from a damaged entry', () => {
-    localStorage.setItem(CTASK_ENV_DEFAULTS_STORAGE_KEY, '{not json');
-    expect(loadSavedCtaskEnvironmentDefaults()).toEqual({});
-  });
-
-  it('normalises labels so spacing and case do not matter', () => {
-    expect(normalizeCtaskLabel(' Business  Check-out ')).toBe('businesscheckout');
   });
 });

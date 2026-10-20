@@ -4,9 +4,11 @@
 // stale the moment a template was reused. Here every saved template is visible with its type, group and timing;
 // choosing one opens it; edits are marked unsaved until saved; it can be renamed, duplicated or (after a
 // confirmation) deleted; and its timing is minutes after the change starts, placed onto each change it is used on.
+// "Share all" and "Download" carry every template to the SNow Wizard, whose browser storage is separate from this one.
 
 import { useState } from 'react';
 
+import { buildCtaskTemplatesShareFile, downloadShareFile, encodeCtaskTemplatesShareCode } from '../ctaskTemplateShare.ts';
 import { describeCtaskTiming } from '../ctaskParentDefaults.ts';
 import { EMPTY_DURATION_ESTIMATES, normalizeEstimates } from '../ctaskDurations.ts';
 import { useChangeTaskTypeOptions } from '../hooks/useChangeTaskTypeOptions.ts';
@@ -145,6 +147,42 @@ function TemplateTimingFields({ data, onChange }: { data: CtaskTemplateData; onC
   );
 }
 
+/** What the last "Share all" did: copied, or shown for copying by hand when the clipboard refused. */
+type ShareAllOutcome = { kind: 'copied' } | { kind: 'manual'; shareCode: string } | { kind: 'downloaded' } | null;
+
+/** "Share all" copies one code holding every template; "Download" saves the same as a file. Both open in the SNow Wizard. */
+function ShareAllTemplatesActions({ templates }: { templates: CtaskTemplate[] }) {
+  const [outcome, setOutcome] = useState<ShareAllOutcome>(null);
+  if (templates.length === 0) return null;
+
+  async function copyShareCode(): Promise<void> {
+    const shareCode = encodeCtaskTemplatesShareCode(templates);
+    try {
+      await navigator.clipboard.writeText(shareCode);
+      setOutcome({ kind: 'copied' });
+    } catch {
+      setOutcome({ kind: 'manual', shareCode });
+    }
+  }
+
+  return (
+    <>
+      <div className={styles.buttonRow}>
+        <button className={styles.secondaryButton} onClick={() => void copyShareCode()} type="button">Share all</button>
+        <button className={styles.secondaryButton} onClick={() => { downloadShareFile(buildCtaskTemplatesShareFile(templates)); setOutcome({ kind: 'downloaded' }); }} type="button">Download</button>
+      </div>
+      {outcome?.kind === 'copied' ? <p className={styles.successText} role="status">{`Code for all ${templates.length} templates copied. Paste it into the SNow Wizard under “Your templates”.`}</p> : null}
+      {outcome?.kind === 'downloaded' ? <p className={styles.successText} role="status">File downloaded. Choose it in the SNow Wizard under “Your templates”.</p> : null}
+      {outcome?.kind === 'manual' ? (
+        <label className={styles.fieldGroup}>
+          <span className={styles.fieldLabel}>Copy this code (the clipboard was not available)</span>
+          <textarea className={styles.textArea} readOnly value={outcome.shareCode} />
+        </label>
+      ) : null}
+    </>
+  );
+}
+
 /** Loads an existing ServiceNow CTASK as the starting point for a new template. */
 function CloneCtaskRow({ onCloned, onCloneCtask }: {
   onCloned: (ctaskNumber: string, clonedData: CtaskTemplateData) => void;
@@ -257,6 +295,7 @@ export function CtaskTemplateManager(props: CtaskTemplateManagerProps) {
         <h4 className={styles.panelSectionTitle}>CTASK Templates</h4>
         <button className={styles.secondaryButton} onClick={() => startNewTemplate()} type="button">+ New CTASK template</button>
       </div>
+      <ShareAllTemplatesActions templates={templates} />
       <CloneCtaskRow onCloneCtask={onCloneCtask} onCloned={(ctaskNumber, clonedData) => startNewTemplate(clonedData.shortDescription || ctaskNumber, { ...createEmptyTemplateData(), ...clonedData })} />
       <div className={styles.templateManagerLayout}>
         <TemplateList onSelect={openTemplate} selectedTemplateId={selectedTemplateId} templates={templates} />

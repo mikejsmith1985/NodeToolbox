@@ -8,7 +8,7 @@ import type { ChgTextFieldKey } from '../../views/SnowHub/chgFormula/formulaCard
 import { inferEnvironmentKeyFromValue } from '../../views/SnowHub/hooks/environmentKeyInference.ts';
 import { listEnvironmentDateOrderErrors, type EnvironmentValueByKey, type useCrgState } from '../../views/SnowHub/hooks/useCrgState.ts';
 import type { SnowChoiceOption } from '../../views/SnowHub/hooks/useSnowChoiceOptions.ts';
-import { normalizeCtaskLabel, type PlanEnvironmentKey } from './ctaskEnvironmentPlan.ts';
+import type { PlanEnvironmentKey } from './ctaskEnvironmentPlan.ts';
 
 /** The whole hook, as the steps receive it. */
 export type CrgHook = ReturnType<typeof useCrgState>;
@@ -121,33 +121,4 @@ export function buildEnvironmentValueByKey(environmentChoices: readonly SnowChoi
     if (environmentKey && !environmentValueByKey[environmentKey]) environmentValueByKey[environmentKey] = environmentChoice.value;
   }
   return environmentValueByKey;
-}
-
-// ServiceNow makes these two tasks on every new change itself (useCrgState updateAutoCreatedChangeTasks renames
-// them); staging them again would create duplicates (GH #376), so the wizard shows them as always present.
-const SERVICENOW_ADDED_TASK_LABELS = new Set(['implementation', 'technicalcheckout']);
-
-/** True for a task type ServiceNow adds to every change by itself. */
-export function isServiceNowAddedTaskType(taskTypeLabel: string): boolean {
-  return SERVICENOW_ADDED_TASK_LABELS.has(normalizeCtaskLabel(taskTypeLabel));
-}
-
-/**
- * A staged task for one ServiceNow task type: named by the type's label (the name the plan and the reviewer see),
- * typed by its value, and assigned to the change's own group and owner.
- */
-export function buildStagedChangeTask(typeOption: SnowChoiceOption, draft: CrgDraftState): CrgDraftState['changeTasks'][number] {
-  return {
-    id: '',
-    name: typeOption.label,
-    createdAt: new Date().toISOString(),
-    shortDescription: typeOption.label,
-    description: '',
-    assignmentGroup: draft.chgBasicInfo.assignmentGroup,
-    assignedTo: draft.chgBasicInfo.assignedTo,
-    plannedStartDate: '',
-    plannedEndDate: '',
-    closeNotes: '',
-    changeTaskType: typeOption.value,
-  };
 }

@@ -8,7 +8,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { snowFetch } from '../../../services/snowApi.ts';
 import { useCrgState } from '../../../views/SnowHub/hooks/useCrgState.ts';
 import { createChangeWizardSession } from '../changeWizardSession.ts';
-import { fetchChangeForModify, fetchExistingTaskNames } from '../modifyLoad.ts';
+import { fetchChangeForModify, fetchExistingTasks } from '../modifyLoad.ts';
 import WhichChangeStep from './WhichChangeStep.tsx';
 
 vi.mock('../../../services/jiraApi.ts', () => ({ jiraGet: vi.fn(async () => []) }));
@@ -16,7 +16,7 @@ vi.mock('../../../services/snowApi.ts', () => ({ snowFetch: vi.fn() }));
 vi.mock('../modifyLoad.ts', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../modifyLoad.ts')>()),
   fetchChangeForModify: vi.fn(),
-  fetchExistingTaskNames: vi.fn(async () => ['CTASK1 — Smoke test']),
+  fetchExistingTasks: vi.fn(async () => [{ sysId: 'task-1', number: 'CTASK1', label: 'CTASK1 — Smoke test' }]),
 }));
 
 const LOADED_CHANGE = {
@@ -47,7 +47,7 @@ function mockCloneReads() {
 describe('WhichChangeStep', () => {
   beforeEach(() => localStorage.clear());
 
-  it('loads an editable change, clears its copied tasks, and sets its window', async () => {
+  it('loads an editable change, keeps its tasks as cards to edit, and sets its window', async () => {
     vi.mocked(fetchChangeForModify).mockResolvedValueOnce(LOADED_CHANGE);
     mockCloneReads();
     render(<Harness onExit={vi.fn()} />);
@@ -55,8 +55,8 @@ describe('WhichChangeStep', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Look it up' }));
 
     await waitFor(() => expect(screen.getByText(/CHG0001 \(New\) is loaded/)).toBeTruthy());
-    expect(fetchExistingTaskNames).toHaveBeenCalledWith('sys-1');
-    expect(observed.latestTaskCount).toBe(0);
+    expect(fetchExistingTasks).toHaveBeenCalledWith('sys-1');
+    expect(observed.latestTaskCount).toBe(1);
     expect(observed.latestPrdStart).toBe('2026-11-02T19:00');
   });
 
