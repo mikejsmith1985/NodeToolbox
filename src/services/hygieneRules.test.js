@@ -232,6 +232,9 @@ describe('evaluateHygieneRules — result shape', () => {
   });
 
   it('returns an empty array when the issue has no violations', () => {
+    const DAYS_UNTIL_HEALTHY_DUE_DATE = 30;
+    const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000;
+    const HEALTHY_FUTURE_DATE = new Date(Date.now() + DAYS_UNTIL_HEALTHY_DUE_DATE * MILLISECONDS_PER_DAY).toISOString().slice(0, 10);
     const issue = buildStory({
       assignee: { displayName: 'Alice' },
       updated: new Date().toISOString(),
@@ -240,8 +243,9 @@ describe('evaluateHygieneRules — result shape', () => {
       // fixture must carry one — otherwise this "no violations" case is never actually clean. The
       // date policy applies to Stories too now, so it carries its due date as well; the target
       // dates ride custom fields, which EMPTY_FIELD_CONFIG leaves unconfigured and unchecked.
-      fixVersions: [{ name: '2026.7', releaseDate: '2026-10-08', released: false }],
-      duedate: '2026-10-08',
+      // Dated relative to today: a fixed date here silently became "overdue" once the calendar passed it.
+      fixVersions: [{ name: '2026.7', releaseDate: HEALTHY_FUTURE_DATE, released: false }],
+      duedate: HEALTHY_FUTURE_DATE,
     });
     // Use an empty field config so no custom-field checks fire.
     const flags = evaluateHygieneRules(issue, EMPTY_FIELD_CONFIG);

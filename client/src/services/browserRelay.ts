@@ -21,8 +21,11 @@ const RELAY_RETURN_ROUTE_TTL_MS = 5 * 60 * 1000;
  */
 export const RELAY_RETURN_ROUTE_KEY = 'ntbx-relay-return-route';
 
-/** Hostname fragments that identify each system, so ONE bookmarklet can choose its own relay. */
-const SNOW_HOSTNAME_FRAGMENTS = ['service-now', 'servicenow'];
+/**
+ * Hostname fragments that identify each system, so ONE bookmarklet can choose its own relay.
+ * Exported for the standalone SNow Wizard (feature 040), whose bookmark recognises ServiceNow the same way.
+ */
+export const SNOW_HOSTNAME_FRAGMENTS: readonly string[] = ['service-now', 'servicenow'];
 const SHAREPOINT_HOSTNAME_FRAGMENT = 'sharepoint.com';
 
 /**
@@ -65,6 +68,14 @@ const SNOW_PAGE_TEST = SNOW_HOSTNAME_FRAGMENTS
 const SHAREPOINT_PAGE_TEST = `currentHostname.indexOf("${SHAREPOINT_HOSTNAME_FRAGMENT}")>=0`;
 
 /**
+ * Finds the ServiceNow session token (`g_ck`) on the page the bookmarklet is clicked on, trying each place
+ * ServiceNow is known to keep it. Exported so the standalone SNow Wizard (feature 040) runs the very same lookup
+ * instead of a copy that could drift.
+ */
+export const SNOW_TOKEN_RESOLVER_SOURCE =
+  'function resolveUserToken(){var token="";try{token=window.g_ck||"";}catch(e){}if(!token){try{token=(window.NOW&&window.NOW.GlideConfig&&window.NOW.GlideConfig.g_ck)||"";}catch(e){}}if(!token){try{var tokenInput=document.querySelector("input[name=\'sysparm_ck\']");if(tokenInput)token=tokenInput.value||"";}catch(e){}}if(!token){try{var tokenMeta=document.querySelector("meta[name=\'g_ck\'],meta[name=\'csrf-token\']");if(tokenMeta)token=tokenMeta.getAttribute("content")||"";}catch(e){}}return token;}';
+
+/**
  * Bookmarklet users drag into their browser toolbar, then click on an authenticated
  * ServiceNow page. It registers with the local bridge, polls for queued requests,
  * executes them on the ServiceNow origin, and posts results back to NodeToolbox.
@@ -76,7 +87,7 @@ const SNOW_RELAY_BODY = [
   'var sys="snow";',
   'var isRunning=true;',
   'var hasReportedSessionToken=false;',
-  'function resolveUserToken(){var token="";try{token=window.g_ck||"";}catch(e){}if(!token){try{token=(window.NOW&&window.NOW.GlideConfig&&window.NOW.GlideConfig.g_ck)||"";}catch(e){}}if(!token){try{var tokenInput=document.querySelector("input[name=\'sysparm_ck\']");if(tokenInput)token=tokenInput.value||"";}catch(e){}}if(!token){try{var tokenMeta=document.querySelector("meta[name=\'g_ck\'],meta[name=\'csrf-token\']");if(tokenMeta)token=tokenMeta.getAttribute("content")||"";}catch(e){}}return token;}',
+  SNOW_TOKEN_RESOLVER_SOURCE,
   'async function reportSessionTokenReady(){if(hasReportedSessionToken)return;var currentToken=resolveUserToken();if(!currentToken)return;hasReportedSessionToken=true;try{var tokenResponse=await fetch(relayServer+"/api/relay-bridge/session-token?sys="+sys+"&gck=1",{method:"POST",mode:"cors",cache:"no-store"});if(!tokenResponse.ok)hasReportedSessionToken=false;}catch(tokenRefreshError){hasReportedSessionToken=false;}}',
   'async function postRelayResult(resultPayload){await fetch(relayServer+"/api/relay-bridge/result",{method:"POST",mode:"cors",headers:{"Content-Type":"application/json"},body:JSON.stringify(resultPayload)});}',
   // A base64 body is a FILE (a zip of test evidence) crossing the JSON envelope: it is decoded back to

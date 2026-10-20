@@ -17,6 +17,23 @@
 > `po-pi-dropdown.spec.js`. Feature 024's spec inherited a false "do not run concurrently with 022" constraint from
 > these stale entries before the code was checked. **Verify against the codebase before trusting a status below.**
 
+- **040-snow-hub-wizard** — *(**IN PROGRESS** on `feature/040-snow-hub-wizard` — Phase A (T001–T011): the read-only
+  connection probe `dist/snow-wizard-probe.html` (`npm run build:snow-wizard-probe`, code `client/src/snowWizard/probe/`)
+  ships as a release asset. **T012 gate: nothing after it starts until the owner pastes the production probe result.**)* A **standalone, single-HTML-file** SNow Hub with three child-simple wizards: Create/Modify a CHG
+  (scope → details → planning → environments → optional AI → evidence → CTASKs → **CTASK × environment** (Business
+  Checkout PRD not REL) → checks → Production email/PDF → create), **PRB → Defect + SL + QE** (shared Epic link, both
+  Stories `Relates` to the Defect, idempotent via `prb-<n>` label), and **RM Review** (same checks, read-only,
+  plain-English coaching note for the creator). Plan: `specs/040-snow-hub-wizard/plan.md`. Contracts: `relay-probe.md`,
+  `wizard-transport.md`, `single-file-build.md`, `wizard-shell.md`, `change-wizard.md`, `checks-and-coaching.md`,
+  `prb-to-jira.md`. **The gate**: owner chose *no server, no Toolbox* — but Chrome severs tab messaging under
+  ServiceNow's COOP (why Toolbox moved to its local HTTP bridge). **Phase A is a live Relay Probe** the owner runs in
+  production; nothing else is built until its matrix picks the transport. Target design: one bookmark, two roles — on
+  a SNow tab it opens the app as a **`blob:` window in ServiceNow's own origin** (same-origin calls, no relay); on a
+  Jira tab it is the **Jira agent** answering `window.opener` (works only if Jira DC sends no COOP). **Reuse without
+  touching Toolbox**: esbuild `alias` swaps `relayBridgeApi.ts`, esbuild `inject` routes `/jira-proxy` fetches, so
+  `snowApi`/`jiraApi`/`useCrgState` run unchanged. Checks = **039's readiness engine** (built in 039's location if 039
+  hasn't shipped). **One drift**: optional `ctaskEnvironmentPlan` on `useCrgState.createChg` (absent ⇒ byte-identical).
+
 - **038-release-document** — *(**IMPLEMENTED** on `feature/038-release-document` — 35/36 tasks; T036 live quickstart
   is validated in production.)* Code: `client/src/views/SprintDashboard/releaseDocument/`. GH #395: a Team Dashboard **Release Doc** tab keeping one Confluence page per **unreleased**
   fixVersion (title `YYYYMMMDD`, e.g. `2026Oct14`) under a per-team parent page (`tbxReleaseDocumentParents`). Page =

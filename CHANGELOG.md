@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **SNow Wizard connection probe — a one-file test of whether a Toolbox-free SNow Hub can reach ServiceNow and Jira
+  (feature 040, Phase A).**
+  - The planned standalone SNow Wizard is one HTML file with no install and no server. Chrome cuts tab-to-tab
+    messaging on ServiceNow, which is why Toolbox needs its local bridge. So before any Wizard screen is built, this
+    probe proves in production which connection path actually works.
+  - **`snow-wizard-probe.html`** is attached to every GitHub Release. Open it, drag its bookmark to the bar, and follow
+    the numbered steps. It ends with two copyable result lines, one from the probe page and one from the window it
+    opens inside ServiceNow.
+  - **Everything is read-only.** The probe only asks ServiceNow who you are and reads one change number, and only
+    asks Jira who you are. Your session token is used but never shown.
+  - Toolbox's own relay bookmarklet is unchanged byte for byte. Its token lookup is now shared with the Wizard so the
+    two cannot drift.
 - **Estimate (NF) replaces story points for Epics in the PI Review, with a reconciliation to move them across
   (GH #449).**
   - **PI Review** reads each Epic's size from **Estimate (NF)**. Story points stay the fallback until an Epic is

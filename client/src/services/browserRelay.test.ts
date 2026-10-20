@@ -1,5 +1,7 @@
 // browserRelay.test.ts — Unit tests for the ServiceNow relay bookmarklet helper.
 
+import { createHash } from 'node:crypto';
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useConnectionStore } from '../store/connectionStore.ts';
@@ -10,7 +12,9 @@ import {
   RELAY_RETURN_ROUTE_KEY,
   resetBrowserRelayForTests,
   SHAREPOINT_RELAY_BOOKMARKLET_CODE,
+  SNOW_HOSTNAME_FRAGMENTS,
   SNOW_RELAY_BOOKMARKLET_CODE,
+  SNOW_TOKEN_RESOLVER_SOURCE,
   UNIFIED_RELAY_BOOKMARKLET_CODE,
 } from './browserRelay.ts';
 
@@ -256,5 +260,27 @@ describe('the bookmarklets parse as JavaScript', () => {
     expect(siteRootOfPath('/teams/Alpha/Docs')).toBe('/teams/Alpha');
     expect(siteRootOfPath('/Shared Documents/Mail')).toBe('');
     expect(siteRootOfPath('')).toBe('');
+  });
+});
+
+// Feature 040: the standalone SNow Wizard reuses the token resolver and host fragments. Exporting them must not change a
+// single byte of the bookmarklets users already have in their bars — these fingerprints were taken before the export.
+describe('shared pieces exported for the SNow Wizard (feature 040)', () => {
+  function fingerprint(sourceText: string): string {
+    return createHash('sha256').update(sourceText).digest('hex');
+  }
+
+  it('leaves both existing bookmarklets byte-identical', () => {
+    expect(fingerprint(SNOW_RELAY_BOOKMARKLET_CODE)).toBe('8787759255de13bd04547a7522805f7c8a540e472861767efa6e2ea8347a106c');
+    expect(fingerprint(UNIFIED_RELAY_BOOKMARKLET_CODE)).toBe('2abdce9e9c917061c7cffd8c0d9c1315afe98e2c16e210c586c90a5a7050d4c7');
+  });
+
+  it('exports the exact token resolver the ServiceNow bookmarklet runs', () => {
+    expect(SNOW_TOKEN_RESOLVER_SOURCE.startsWith('function resolveUserToken(){')).toBe(true);
+    expect(SNOW_RELAY_BOOKMARKLET_CODE).toContain(SNOW_TOKEN_RESOLVER_SOURCE);
+  });
+
+  it('exports the ServiceNow host fragments', () => {
+    expect(SNOW_HOSTNAME_FRAGMENTS).toEqual(['service-now', 'servicenow']);
   });
 });

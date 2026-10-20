@@ -330,6 +330,23 @@ try {
 }
 Write-Host "       ✅ Engine bundles built (src/services/generated/)"
 
+# Step 3.8: Build the standalone SNow Wizard files (feature 040). Each is ONE self-contained HTML file attached to
+# the GitHub Release so it can be shared by email or a shared drive — no Toolbox install needed. dist\ was wiped in
+# step 2, so they are rebuilt here every release.
+Write-Host "  [3.8/6] Building standalone SNow Wizard files..."
+Push-Location $RepoRoot
+try {
+    npm run build:snow-wizard-probe --silent
+    if ($LASTEXITCODE -ne 0) { throw "SNow Wizard probe build failed with exit code $LASTEXITCODE" }
+} finally {
+    Pop-Location
+}
+# @( ) keeps this an array even when only one file exists, so splatting it into gh passes each path separately.
+$SnowWizardAssetPaths = @(@('snow-wizard-probe.html', 'snow-hub-wizard.html') |
+    ForEach-Object { Join-Path $DistDir $_ } |
+    Where-Object { Test-Path $_ })
+Write-Host "       ✅ SNow Wizard files built ($($SnowWizardAssetPaths.Count))"
+
 # Step 4: Build the single-file Windows exe using @yao-pkg/pkg.
 # Bundles the Node.js runtime + all app code + public assets into one .exe.
 # End users can run NodeToolbox without any extraction or npm install step.
@@ -475,7 +492,8 @@ try {
 
     # Create the GitHub Release with one asset so first-time users have exactly
     # one obvious download. The zip contains stable launchers plus the versioned exe.
-    gh release create $GitTag $ReleaseZipOutputPath `
+    # The SNow Wizard HTML files (step 3.8) ride along as extra assets; the zip stays the one Toolbox download.
+    gh release create $GitTag $ReleaseZipOutputPath @SnowWizardAssetPaths `
         --title "NodeToolbox $GitTag" `
         --generate-notes `
         --latest
