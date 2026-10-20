@@ -73,9 +73,9 @@ describe('ChangeWizard — change an existing one', () => {
 
   it('leaves a skipped step unedited, and marks a step once something in it changes', async () => {
     openModifyAt('details');
-    expect(screen.getByRole('heading', { name: 'Step 3 of 11 — Tell us about the change' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Step 4 of 12 — Tell us about the change' })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Skip — nothing to change' }));
-    expect(screen.getByRole('heading', { name: 'Step 4 of 11 — How will it go?' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Step 5 of 12 — How will it go?' })).toBeTruthy();
     await waitFor(() => expect(screen.queryByText(/\(edited\)/)).toBeNull());
 
     fireEvent.change(screen.getByLabelText('Backout plan (needed)'), { target: { value: '1. Restore the previous build' } });
@@ -103,7 +103,7 @@ describe('ChangeWizard — change an existing one', () => {
     });
     vi.mocked(fetchChangeSnapshot).mockResolvedValueOnce({ ...LOADED_SNAPSHOT, backout_plan: 'Edited in ServiceNow' });
     openModifyAt('finish');
-    expect(screen.getByRole('heading', { name: 'Step 11 of 11 — Save the change' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Step 12 of 12 — Save the change' })).toBeTruthy();
 
     const saveButton = await screen.findByRole('button', { name: 'Save the change' });
     await waitFor(() => expect((saveButton as HTMLButtonElement).disabled).toBe(false));

@@ -11,7 +11,7 @@ export type ChangeWizardMode = 'create' | 'modify';
 
 /** Every step the change wizard can show (contracts/change-wizard.md). */
 export type ChangeWizardStepId =
-  | 'whichChange' | 'scope' | 'details' | 'planning' | 'environments' | 'aiEnhance' | 'evidence'
+  | 'whichChange' | 'scope' | 'aiDraft' | 'details' | 'planning' | 'environments' | 'aiEnhance' | 'evidence'
   | 'tasks' | 'taskEnvironments' | 'checks' | 'paperwork' | 'finish';
 
 /** Whether the approval email and change plan PDF are needed, and if not, why not. */
@@ -44,17 +44,18 @@ export interface StepCompletion {
 }
 
 const CREATE_STEP_IDS: readonly ChangeWizardStepId[] = [
-  'scope', 'details', 'planning', 'environments', 'aiEnhance', 'evidence', 'tasks', 'taskEnvironments', 'checks', 'paperwork', 'finish',
+  'scope', 'aiDraft', 'details', 'planning', 'environments', 'aiEnhance', 'evidence', 'tasks', 'taskEnvironments', 'checks', 'paperwork', 'finish',
 ];
 // A modify edits ONE change, which is one environment, so the per-environment task grid has nothing to decide.
 const MODIFY_STEP_IDS: readonly ChangeWizardStepId[] = [
-  'whichChange', 'scope', 'details', 'planning', 'environments', 'aiEnhance', 'evidence', 'tasks', 'checks', 'paperwork', 'finish',
+  'whichChange', 'scope', 'aiDraft', 'details', 'planning', 'environments', 'aiEnhance', 'evidence', 'tasks', 'checks', 'paperwork', 'finish',
 ];
 
 /** The plain verb phrase each step is headed with. */
 export const CHANGE_WIZARD_STEP_TITLES: Readonly<Record<ChangeWizardStepId, string>> = {
   whichChange: 'Which change?',
   scope: 'What\'s in this change?',
+  aiDraft: 'Let AI write it',
   details: 'Tell us about the change',
   planning: 'How will it go?',
   environments: 'Where and when?',

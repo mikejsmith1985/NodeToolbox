@@ -4,8 +4,8 @@
 
 import { useId } from 'react';
 
-import type { ChgPlanningAssessment } from '../../../views/SnowHub/hooks/useCrgState.ts';
 import type { SnowChoiceOptionMap } from '../../../views/SnowHub/hooks/useSnowChoiceOptions.ts';
+import { MAIN_ASSESSMENT_QUESTIONS, MORE_ASSESSMENT_QUESTIONS, type AssessmentQuestion } from '../assessmentQuestions.ts';
 import ChoiceSelect from '../ChoiceSelect.tsx';
 import type { ChangeStepProps } from '../changeWizardSession.ts';
 import styles from '../ChangeWizard.module.css';
@@ -14,26 +14,6 @@ import styles from '../ChangeWizard.module.css';
 export interface PlanningStepProps extends ChangeStepProps {
   choiceOptions: SnowChoiceOptionMap;
 }
-
-/** Each planning answer: its plain question, and which ServiceNow list feeds it. */
-interface AssessmentQuestion {
-  stateKey: keyof ChgPlanningAssessment;
-  choiceListName: string;
-  question: string;
-}
-
-const MAIN_QUESTIONS: readonly AssessmentQuestion[] = [
-  { stateKey: 'impact', choiceListName: 'impact', question: 'How many people does it affect?' },
-  { stateKey: 'hasBeenTested', choiceListName: 'u_change_tested', question: 'Has it been tested?' },
-  { stateKey: 'canBeBackedOut', choiceListName: 'u_can_be_backed_out', question: 'Can it be backed out?' },
-  { stateKey: 'successProbability', choiceListName: 'u_success_probability', question: 'How likely is it to succeed?' },
-];
-
-const MORE_QUESTIONS: readonly AssessmentQuestion[] = [
-  { stateKey: 'systemAvailabilityImplication', choiceListName: 'u_availability_impact', question: 'Will systems be unavailable?' },
-  { stateKey: 'hasBeenPerformedPreviously', choiceListName: 'u_performed_previously', question: 'Has this been done before?' },
-  { stateKey: 'impactedPersonsAware', choiceListName: 'u_impacted_persons_aware', question: 'Are the people affected ready for checkout?' },
-];
 
 /** One plan's text area. */
 function PlanEntry({ label, hint, value, onChange }: { label: string; hint: string; value: string; onChange: (value: string) => void }) {
@@ -74,10 +54,10 @@ export default function PlanningStep(props: PlanningStepProps) {
       <PlanEntry label="Implementation plan (needed)" hint="Numbered steps: who does what, and how they check it worked." value={plans.implementationPlan} onChange={(text) => actions.setChgPlanningContent({ implementationPlan: text })} />
       <PlanEntry label="Test plan (needed)" hint="What was tested before, and what will be checked after the change." value={plans.testPlan} onChange={(text) => actions.setChgPlanningContent({ testPlan: text })} />
       <PlanEntry label="Backout plan (needed)" hint="When you would undo it, who decides, and the steps to put things back." value={plans.backoutPlan} onChange={(text) => actions.setChgPlanningContent({ backoutPlan: text })} />
-      <AssessmentQuestions {...props} questions={MAIN_QUESTIONS} />
+      <AssessmentQuestions {...props} questions={MAIN_ASSESSMENT_QUESTIONS} />
       <details className={styles.moreOptions}>
         <summary>More options</summary>
-        <AssessmentQuestions {...props} questions={MORE_QUESTIONS} />
+        <AssessmentQuestions {...props} questions={MORE_ASSESSMENT_QUESTIONS} />
       </details>
     </div>
   );

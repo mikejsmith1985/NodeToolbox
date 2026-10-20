@@ -31,6 +31,7 @@ import {
 import { listEditedSteps, readStepValues } from './modifyDiff.ts';
 import SaveTemplateControl from './SaveTemplateControl.tsx';
 import StartingPointNotice from './StartingPointNotice.tsx';
+import AiDraftStep from './steps/AiDraftStep.tsx';
 import AiEnhanceStep from './steps/AiEnhanceStep.tsx';
 import ChecksStep from './steps/ChecksStep.tsx';
 import ChooseModeStep from './steps/ChooseModeStep.tsx';
@@ -53,8 +54,8 @@ import shellStyles from '../shell/WizardShell.module.css';
 
 const CHANGE_JOB_KINDS: readonly WizardJobKind[] = ['newChange', 'modifyChange'];
 // "Skip — nothing to change": every pre-filled step of a modify, and the two optional steps of a new change.
-const MODIFY_SKIPPABLE_STEPS = new Set<ChangeWizardStepId>(['scope', 'details', 'planning', 'environments', 'aiEnhance', 'evidence', 'tasks']);
-const CREATE_SKIPPABLE_STEPS = new Set<ChangeWizardStepId>(['aiEnhance', 'evidence']);
+const MODIFY_SKIPPABLE_STEPS = new Set<ChangeWizardStepId>(['scope', 'aiDraft', 'details', 'planning', 'environments', 'aiEnhance', 'evidence', 'tasks']);
+const CREATE_SKIPPABLE_STEPS = new Set<ChangeWizardStepId>(['aiDraft', 'aiEnhance', 'evidence']);
 const EDITED_MARK = ' (edited)';
 
 /** The mode a job kind runs in. */
@@ -81,6 +82,7 @@ function renderStep(stepId: ChangeWizardStepId, stepProps: ChangeStepProps, extr
   const stepScreens: Record<ChangeWizardStepId, () => ReactElement> = {
     whichChange: () => <WhichChangeStep {...stepProps} onExit={extras.onExit} />,
     scope: () => <ScopeStep {...stepProps} />,
+    aiDraft: () => <AiDraftStep {...withChoices} />,
     details: () => <DetailsStep {...withChoices} />,
     planning: () => <PlanningStep {...withChoices} />,
     environments: () => <EnvironmentsStep {...withChoices} />,

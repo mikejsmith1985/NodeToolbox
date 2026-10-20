@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **SNow Wizard: "Let AI write it", right after you choose the Jira work.** It used to sit after Details and Planning,
+  and Next was blocked until those were filled in by hand, so the AI came too late to help.
+  - **How it works:** one prompt to copy into your AI assistant. Paste its reply back and every field it filled appears
+    ticked; untick any you don't want, then **Fill in N fields**.
+  - **What it fills:** the title, description, justification, risk and impact, and the implementation, test and
+    backout plans (Toolbox's own Formula Card prompt), plus category, change type and the seven planning questions.
+  - **Pick lists are safe:** the AI may answer a pick-from-a-list question only with a value on ServiceNow's own list.
+    Anything else is shown as "left for you" and never written.
+  - **Still entered by you:** people, group and configuration-item lookups, which the AI can't look up.
+
 ### Fixed
 - **SNow Wizard: open dropdown lists are readable again (GH #456).** The option list painted light text on a white
   background, because the Wizard file never carried Toolbox's dropdown color rule. The Wizard's own styles now set it,

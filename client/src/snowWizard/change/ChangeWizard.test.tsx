@@ -68,12 +68,12 @@ describe('ChangeWizard — new change', () => {
     useWizardJobStore.setState({ jobs: {} });
     render(<ChangeWizard onExit={vi.fn()} />);
     fireEvent.click(screen.getByRole('button', { name: /New change/ }));
-    expect(screen.getByRole('heading', { name: 'Step 1 of 11 — What\'s in this change?' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Step 1 of 12 — What\'s in this change?' })).toBeTruthy();
   });
 
   it('starts Business Checkout ticked for PRD and not for REL', async () => {
     openJobAt('taskEnvironments');
-    expect(screen.getByRole('heading', { name: 'Step 8 of 11 — Which environment needs each task?' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Step 9 of 12 — Which environment needs each task?' })).toBeTruthy();
     expect(((await screen.findByLabelText('Business Checkout on PRD')) as HTMLInputElement).checked).toBe(true);
     expect((screen.getByLabelText('Business Checkout on REL') as HTMLInputElement).checked).toBe(false);
   });
@@ -83,7 +83,7 @@ describe('ChangeWizard — new change', () => {
     expect(screen.getByRole('button', { name: 'Copy the review prompt' })).toBeTruthy();
     expect(document.body.textContent).not.toMatch(/passphrase|unlock/i);
     fireEvent.click(screen.getByRole('button', { name: 'Skip — nothing to change' }));
-    expect(screen.getByRole('heading', { name: 'Step 6 of 11 — Add proof' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Step 7 of 12 — Add proof' })).toBeTruthy();
   });
 
   it('gives a failing check one reason and one fix that returns to the step that fixes it', async () => {
@@ -92,7 +92,7 @@ describe('ChangeWizard — new change', () => {
     expect(within(screen.getByRole('list', { name: 'Checks' })).getByText(/Backout Plan still has facts marked to confirm/)).toBeTruthy();
     expect(readNextButton().disabled).toBe(true);
     fireEvent.click(fixButton);
-    expect(screen.getByRole('heading', { name: 'Step 3 of 11 — How will it go?' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Step 4 of 12 — How will it go?' })).toBeTruthy();
   });
 
   it('holds the job on "could not check" until the user acknowledges it', async () => {
@@ -120,7 +120,7 @@ describe('ChangeWizard — templates', () => {
     render(<ChangeWizard onExit={vi.fn()} />);
     fireEvent.change(screen.getByLabelText('Change number'), { target: { value: 'chg0001234' } });
     fireEvent.click(screen.getByRole('button', { name: 'Start from an existing change' }));
-    expect(screen.getByRole('heading', { name: 'Step 1 of 11 — What\'s in this change?' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Step 1 of 12 — What\'s in this change?' })).toBeTruthy();
     expect(await screen.findByText(/Copied CHG0001234 into a new change/)).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Save as template' })).toBeNull();
     vi.mocked(snowFetch).mockImplementation(async () => ({ result: [] }) as never);

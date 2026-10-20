@@ -22,7 +22,7 @@ function buildCompleteProgress(overrides: Partial<ChangeWizardProgress> = {}): C
     planningGaps: [],
     environmentProblems: [],
     planErrors: [],
-    reviewedStepIds: ['scope', 'details', 'planning', 'environments', 'aiEnhance', 'evidence', 'tasks', 'taskEnvironments', 'checks', 'paperwork'],
+    reviewedStepIds: ['scope', 'aiDraft', 'details', 'planning', 'environments', 'aiEnhance', 'evidence', 'tasks', 'taskEnvironments', 'checks', 'paperwork'],
     isChecksSatisfied: true,
     paperworkNeed: { isNeeded: false, reason: 'No Production environment is in this change.' },
     isPaperworkDone: false,
@@ -31,9 +31,9 @@ function buildCompleteProgress(overrides: Partial<ChangeWizardProgress> = {}): C
 }
 
 describe('listChangeWizardStepIds', () => {
-  it('runs the eleven create steps in the contract order', () => {
+  it('runs the twelve create steps in order, with "Let AI write it" before any typing', () => {
     expect(listChangeWizardStepIds('create')).toEqual([
-      'scope', 'details', 'planning', 'environments', 'aiEnhance', 'evidence', 'tasks', 'taskEnvironments', 'checks', 'paperwork', 'finish',
+      'scope', 'aiDraft', 'details', 'planning', 'environments', 'aiEnhance', 'evidence', 'tasks', 'taskEnvironments', 'checks', 'paperwork', 'finish',
     ]);
   });
 
@@ -116,10 +116,11 @@ describe('readPaperworkNeed', () => {
 
 describe('buildShellSteps', () => {
   it('marks done, current and to-do steps with plain titles', () => {
-    const shellSteps = buildShellSteps('create', 'details', buildCompleteProgress({ reviewedStepIds: ['scope'] }));
+    const shellSteps = buildShellSteps('create', 'details', buildCompleteProgress({ reviewedStepIds: ['scope', 'aiDraft'] }));
     expect(shellSteps[0]).toEqual({ id: 'scope', title: 'What\'s in this change?', state: 'done' });
-    expect(shellSteps[1]).toEqual({ id: 'details', title: 'Tell us about the change', state: 'current' });
-    expect(shellSteps[2].state).toBe('todo');
+    expect(shellSteps[1]).toEqual({ id: 'aiDraft', title: 'Let AI write it', state: 'done' });
+    expect(shellSteps[2]).toEqual({ id: 'details', title: 'Tell us about the change', state: 'current' });
+    expect(shellSteps[3].state).toBe('todo');
     expect(shellSteps.at(-1)?.title).toBe('Create the change');
   });
 
