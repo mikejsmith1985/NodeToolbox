@@ -78,30 +78,17 @@ function Acknowledgement({ items, session, updateSession }: Pick<ChecksStepProps
   );
 }
 
-/**
- * When the AI review is the only check left and it has already been run, say so: an AI review rarely answers
- * "ready", so without this the checks kept sending people back to step 6 (owner feedback).
- */
-function readOnlyAiReviewLeftNote(items: readonly ReadinessItem[], session: ChecksStepProps['session']): string | null {
-  const needsActionIds = items.filter((item) => item.state === 'needsAction').map((item) => item.id);
-  const reviewLoop = session.reviewLoop;
-  if (needsActionIds.length !== 1 || needsActionIds[0] !== 'riskCheck' || !reviewLoop?.latestReview) return null;
-  const roundCount = reviewLoop.roundNumber;
-  return `Only the AI review is left — you have run it ${roundCount} ${roundCount === 1 ? 'time' : 'times'}. Its suggestions are optional: tick “Go on anyway” below to continue.`;
-}
-
 /** Step 9: the Release Management checks. */
 export default function ChecksStep({ crg, session, updateSession, goToStep, items }: ChecksStepProps) {
   if (items === null) return <p className={styles.hint} role="status">Checking your change…</p>;
   const needsActionCount = items.filter((item) => item.state === 'needsAction').length;
   const isAllReady = isReady(items);
-  const aiReviewLeftNote = readOnlyAiReviewLeftNote(items, session);
   return (
     <div>
       <p className={styles.stepIntro}>These are the checks Release Management makes before approving a change.</p>
       {isAllReady
         ? <p className={styles.successText}>Everything that applies is done. This change should pass review.</p>
-        : <p className={styles.noticeText}>{aiReviewLeftNote ?? `${needsActionCount} check(s) need action. Each one has a button that takes you to the fix.`}</p>}
+        : <p className={styles.noticeText}>{`${needsActionCount} check(s) need action. Each one has a button that takes you to the fix.`}</p>}
       <ul className={styles.itemList} aria-label="Checks">
         {items.map((item) => <CheckLine key={item.id} item={item} onFix={(fixItem) => fixItem.action && goToStep(resolveFixStepId(fixItem.action))} />)}
       </ul>

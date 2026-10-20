@@ -5,6 +5,7 @@
 // (outages, PRB links), and a partial create offers "Retry what's missing", which never makes a second change for an
 // environment.
 
+import { buildEvidenceArchiveName } from '../../../views/SnowHub/testEvidence/evidenceBundle.ts';
 import { readEnabledPlanEnvironments } from '../changeDraft.ts';
 import type { ChangeStepProps } from '../changeWizardSession.ts';
 import type { ChangeWizardStepId } from '../changeWizardSteps.ts';
@@ -76,7 +77,7 @@ function CreatedChangeCard({ createdChange, session }: { createdChange: CreatedC
         <a href={buildChangeLink(window.location.origin, createdChange.changeNumber)} target="_blank" rel="noreferrer">{createdChange.changeNumber}</a>
       </h3>
       {session.mode === 'create' ? <p className={styles.hint}>{describeTasks(builtTaskNames)}</p> : null}
-      <p className={styles.hint}>{evidenceResult === undefined ? 'Evidence: none attached.' : evidenceResult === EVIDENCE_ATTACHED ? 'Evidence: attached.' : `Evidence not attached: ${evidenceResult}`}</p>
+      <p className={styles.hint}>{evidenceResult === undefined ? 'Evidence: none attached.' : evidenceResult === EVIDENCE_ATTACHED ? `Test evidence: attached as ${buildEvidenceArchiveName(createdChange.changeNumber, new Date())}.` : `Evidence not attached: ${evidenceResult}`}</p>
     </li>
   );
 }

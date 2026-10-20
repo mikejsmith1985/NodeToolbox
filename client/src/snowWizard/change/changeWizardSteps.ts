@@ -59,7 +59,7 @@ export const CHANGE_WIZARD_STEP_TITLES: Readonly<Record<ChangeWizardStepId, stri
   details: 'Tell us about the change',
   planning: 'How will it go?',
   environments: 'Where and when?',
-  aiEnhance: 'Make it better with AI',
+  aiEnhance: 'Make it pass review',
   evidence: 'Add proof',
   tasks: 'Build the tasks',
   checks: 'Will it pass review?',

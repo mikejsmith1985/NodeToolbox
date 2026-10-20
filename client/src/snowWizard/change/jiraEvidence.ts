@@ -84,6 +84,28 @@ export function chooseDefaultTicks(attachments: readonly JiraEvidenceAttachment[
   return tickChoice;
 }
 
+/** What the last step needs to settle which Jira files go in the evidence zip. */
+export interface FinishJiraEvidenceInput {
+  tickedEvidence: readonly JiraEvidenceAttachment[];
+  /** True once the evidence step has listed the files and recorded the user's ticks. */
+  hasChoice: boolean;
+  issueKeys: readonly string[];
+  /** Local files already chosen, which share ServiceNow's size limit. */
+  localBytes: number;
+}
+
+/**
+ * The Jira files for the evidence zip: the user's ticks when the evidence step recorded them; otherwise every file on
+ * the change's issues, ticked exactly as the step would have (Toolbox gathers them all), so skipping the step never
+ * silently leaves the test evidence out (owner feedback).
+ */
+export async function resolveJiraEvidenceAtFinish(input: FinishJiraEvidenceInput): Promise<JiraEvidenceAttachment[]> {
+  if (input.hasChoice) return [...input.tickedEvidence];
+  const listing = await listJiraEvidence(input.issueKeys);
+  const tickedIds = new Set(chooseDefaultTicks(listing.attachments, [], input.localBytes).tickedIds);
+  return listing.attachments.filter((evidence) => tickedIds.has(evidence.attachment.attachmentId));
+}
+
 /** The kind of file in plain words, from its ending ("PDF", "PNG"), or "File" when it has none. */
 export function describeFileType(filename: string): string {
   const dotIndex = filename.lastIndexOf('.');

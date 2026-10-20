@@ -82,9 +82,9 @@ describe('ChangeWizard — new change', () => {
     expect(document.body.textContent).not.toMatch(/by ServiceNow|ServiceNow adds/);
   });
 
-  it('shows the AI step to everyone, with no unlock, and lets it be skipped', () => {
+  it('shows the AI step to everyone, with no unlock, and lets it be skipped', async () => {
     openJobAt('aiEnhance');
-    expect(screen.getByRole('button', { name: 'Copy the review prompt' })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: 'Copy the prompt' })).toBeTruthy();
     expect(document.body.textContent).not.toMatch(/passphrase|unlock/i);
     fireEvent.click(screen.getByRole('button', { name: 'Skip — nothing to change' }));
     expect(screen.getByRole('heading', { name: 'Step 7 of 11 — Add proof' })).toBeTruthy();

@@ -27,7 +27,7 @@ import {
 } from './changeWizardSteps.ts';
 import { buildCtaskEnvironmentPlan, listTaskLabelsByEnvironment, type CtaskEnvironmentPlan, type PlanEnvironmentKey } from './ctaskEnvironmentPlan.ts';
 import type { JiraEvidenceAttachment } from './jiraEvidence.ts';
-import { useTickedJiraEvidence } from './jiraEvidenceChoiceStore.ts';
+import { useJiraEvidenceChoiceStore, useTickedJiraEvidence } from './jiraEvidenceChoiceStore.ts';
 import { listEditedSteps, readStepValues } from './modifyDiff.ts';
 import SaveTemplateControl from './SaveTemplateControl.tsx';
 import StartingPointNotice from './StartingPointNotice.tsx';
@@ -91,7 +91,7 @@ function renderStep(stepId: ChangeWizardStepId, stepProps: ChangeStepProps, extr
     details: () => <DetailsStep {...withChoices} />,
     planning: () => <PlanningStep {...withChoices} />,
     environments: () => <EnvironmentsStep {...withChoices} />,
-    aiEnhance: () => <AiEnhanceStep {...stepProps} />,
+    aiEnhance: () => <AiEnhanceStep {...stepProps} items={extras.items} />,
     evidence: () => <EvidenceStep {...stepProps} jobId={extras.jobId} evidenceFiles={extras.evidenceFiles} onEvidenceFilesChange={extras.setEvidenceFiles} />,
     tasks: () => <TasksStep {...stepProps} library={extras.library} />,
     checks: () => <ChecksStep {...stepProps} items={extras.items} />,
@@ -204,6 +204,7 @@ function ChangeJob({ job, startingPoint, onExit }: { job: WizardJob; startingPoi
   const { choiceOptions } = useSnowChoiceOptions();
   const [evidenceFiles, setEvidenceFiles] = useState<File[]>([]);
   const jiraEvidence = useTickedJiraEvidence(job.jobId, crg.state.selectedIssueKeys);
+  const hasJiraEvidenceChoice = useJiraEvidenceChoiceStore((state) => Boolean(state.choices[job.jobId]));
   useRestoreEnvironments(crg, session);
   const library = useTemplateLibrary();
   const ctaskEnvironmentPlan = useMemo(() => buildTaskPlan(crg.state), [crg.state]);
@@ -215,11 +216,11 @@ function ChangeJob({ job, startingPoint, onExit }: { job: WizardJob; startingPoi
   const navigationProgress = buildProgress(restoredCrg, session, null, paperworkNeed);
   const { currentStepId, goToStep } = useStepNavigation(job, crg, session, updateSession, navigationProgress);
   useImplementationBackout(crg);
-  const { items } = useDraftReadiness(crg.state, session, stepIds.indexOf(currentStepId) >= stepIds.indexOf('checks'));
+  const { items } = useDraftReadiness(crg.state, session, stepIds.indexOf(currentStepId) >= stepIds.indexOf('aiEnhance'));
   const progress = buildProgress(crg, session, items, paperworkNeed);
   const runner = useFinishRunner({
     crg, session, updateSession, ctaskEnvironmentPlan, environmentValueByKey: buildEnvironmentValueByKey(choiceOptions.u_environment ?? []),
-    evidenceFiles, jiraEvidence, editedStepIds, onFinished: () => useWizardJobStore.getState().finishJob(job.kind, Date.now()),
+    evidenceFiles, jiraEvidence, hasJiraEvidenceChoice, selectedIssueKeys: [...crg.state.selectedIssueKeys], editedStepIds, onFinished: () => useWizardJobStore.getState().finishJob(job.kind, Date.now()),
   });
   useRememberChecksVerdict(items, session, updateSession);
   return (

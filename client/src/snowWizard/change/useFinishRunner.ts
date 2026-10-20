@@ -14,7 +14,7 @@ import type { ChangeWizardSession } from './changeWizardSession.ts';
 import { mergeCreatedChanges, readCreateOutcome, type CreatedChangeSummary } from './createOutcome.ts';
 import { listTaskLabelsByEnvironment, type CtaskEnvironmentPlan, type PlanEnvironmentKey } from './ctaskEnvironmentPlan.ts';
 import { attachAllEvidenceToChanges } from './evidenceUpload.ts';
-import type { JiraEvidenceAttachment } from './jiraEvidence.ts';
+import { resolveJiraEvidenceAtFinish, type JiraEvidenceAttachment } from './jiraEvidence.ts';
 import { detectRemoteConflicts, type RemoteConflict } from './modifyDiff.ts';
 import { fetchChangeSnapshot } from './modifyLoad.ts';
 import { saveModifyTasks } from './modifyTasks.ts';
@@ -37,6 +37,10 @@ export interface FinishRunnerInput {
   evidenceFiles: readonly File[];
   /** The ticked Jira files, downloaded and zipped with the local files once the changes exist. */
   jiraEvidence: readonly JiraEvidenceAttachment[];
+  /** True once the evidence step recorded the user's ticks; otherwise every Jira file is gathered at create. */
+  hasJiraEvidenceChoice: boolean;
+  /** The change's Jira issues, whose files make up the test evidence. */
+  selectedIssueKeys: readonly string[];
   editedStepIds: readonly ChangeWizardStepId[];
   /** Called once the job has fully succeeded. */
   onFinished: () => void;
@@ -61,6 +65,7 @@ interface PendingWrite {
 }
 
 const ERROR_PREFIX = 'Error';
+const JIRA_EVIDENCE_LIST_FAILED = 'The test evidence could not be collected from Jira, so only files from this computer were attached.';
 
 /** The hook's result line once the pending write has finished, or null while it is still running. */
 function readSettledResult(pendingWrite: PendingWrite, crgState: CrgHook['state']): string | null {
@@ -76,16 +81,29 @@ export function useFinishRunner(input: FinishRunnerInput): FinishRunner {
   const pendingWriteRef = useRef<PendingWrite | null>(null);
   const pendingRetryRef = useRef<PlanEnvironmentKey[] | null>(null);
 
+  /** The Jira files for the zip; a failed listing is noted and the local files still go. */
+  async function gatherJiraEvidence(outcomeNotes: string[]): Promise<JiraEvidenceAttachment[]> {
+    try {
+      setPhase({ kind: 'working', message: 'Collecting the test evidence from Jira…' });
+      const localBytes = input.evidenceFiles.reduce((runningTotal, file) => runningTotal + file.size, 0);
+      return await resolveJiraEvidenceAtFinish({ tickedEvidence: input.jiraEvidence, hasChoice: input.hasJiraEvidenceChoice, issueKeys: input.selectedIssueKeys, localBytes });
+    } catch {
+      outcomeNotes.push(JIRA_EVIDENCE_LIST_FAILED);
+      return [];
+    }
+  }
+
   /**
    * Attaches the evidence to the given changes, showing each step, records each result (and any Jira file that could
    * not be fetched, after `outcomeNotes`), and reports the job finished when it is.
    */
   async function attachEvidenceAndFinish(changeNumbers: string[], isJobComplete: boolean, outcomeNotes: string[]) {
-    const hasEvidence = input.evidenceFiles.length > 0 || input.jiraEvidence.length > 0;
+    const jiraEvidence = changeNumbers.length > 0 ? await gatherJiraEvidence(outcomeNotes) : [];
+    const hasEvidence = input.evidenceFiles.length > 0 || jiraEvidence.length > 0;
     if (hasEvidence && changeNumbers.length > 0) {
-      setPhase({ kind: 'working', message: 'Attaching your evidence…' });
+      setPhase({ kind: 'working', message: 'Zipping your test evidence…' });
       const onProgress = (message: string) => setPhase({ kind: 'working', message });
-      const evidenceOutcome = await attachAllEvidenceToChanges({ localFiles: input.evidenceFiles, jiraAttachments: input.jiraEvidence }, changeNumbers, { onProgress });
+      const evidenceOutcome = await attachAllEvidenceToChanges({ localFiles: input.evidenceFiles, jiraAttachments: jiraEvidence }, changeNumbers, { onProgress });
       updateSession({ evidenceResults: { ...session.evidenceResults, ...evidenceOutcome.results }, outcomeNotes: [...outcomeNotes, ...evidenceOutcome.problems] });
     }
     setPhase({ kind: 'done' });

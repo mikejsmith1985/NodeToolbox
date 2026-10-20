@@ -39,7 +39,7 @@ describe('CreateResultStep', () => {
     };
     renderStep(session, runner);
     expect((screen.getByRole('link', { name: 'CHG1' }) as HTMLAnchorElement).href).toContain('number%3DCHG1');
-    expect(screen.getByText('Evidence: attached.')).toBeTruthy();
+    expect(screen.getByText(/^Test evidence: attached as Test-Evidence_CHG/)).toBeTruthy();
     expect(screen.getByText('Tasks: Smoke test')).toBeTruthy();
     expect(screen.getByText('• PRB1 linked to CHG1')).toBeTruthy();
     expect(screen.getByText('Not everything worked: HTTP 500')).toBeTruthy();

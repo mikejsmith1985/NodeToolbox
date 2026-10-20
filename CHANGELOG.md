@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **SNow Wizard step 6 is now "Make it pass review", and it agrees with step 9.** The old step 6 asked an AI for a
+  "ready for approval" verdict, which step 9's real checks then contradicted. It also looped round by round and sent
+  people back through the wizard.
+  - **Same checks as step 9:** step 6 now shows step 9's own "needs action" list, live.
+  - **One AI round, aimed at the flagged writing:** each proposed change is shown as **Now / AI suggests**, and one
+    **Apply** button writes them right there, with no leaving the step.
+  - **Values, not writing:** checks that need a value (such as task dates) get a direct button to the step that holds
+    that value.
+  - **Removed:** the rounds, the AI's own verdict and the "Go to step" loop.
+- **SNow Wizard test evidence is always zipped, like Toolbox.** At create, every file on the change's Jira issues
+  (ticked the way Toolbox ticks them) and any files from your computer go into one **Test-Evidence_<change>_<date>.zip**
+  on each change. Before, Jira files were included only if you had opened the evidence step. The evidence and result
+  screens now name the zip.
+
 ### Fixed
 - **SNow Wizard: no more loop back to step 6, and every fix in one go.**
   - **Task backout plans:** the "Task backout plans" check wants each Implementation task to carry a backout plan. Its

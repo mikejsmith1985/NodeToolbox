@@ -45,7 +45,9 @@ export default function EvidenceStep({ jobId, crg, session, updateSession, evide
   return (
     <div>
       <p className={styles.stepIntro}>
-        Add the files that show this change was tested (optional). They are put on each change as soon as it is created.
+        The test evidence. Every file attached to your Jira issues is ticked, just like Toolbox. Everything ticked, plus any
+        files you add from this computer, is zipped into one file named “Test-Evidence_&lt;change&gt;_&lt;date&gt;.zip” and put
+        on each change as soon as it is created.
       </p>
       <JiraEvidencePicker jobId={jobId} issueKeys={readIssueKeys(crg.state.selectedIssueKeys)} localBytes={localBytes} />
       <div className={styles.card}>

@@ -13,7 +13,6 @@ import type { CreatedChangeSummary } from './createOutcome.ts';
 import type { PlanEnvironmentKey } from './ctaskEnvironmentPlan.ts';
 import type { StepValueMap } from './modifyDiff.ts';
 import type { ExistingTaskLink } from './modifyTasks.ts';
-import type { ReviewLoopSession } from './reviewLoop.ts';
 
 /** A modify's memory of the change as it was loaded. */
 export interface ModifySession {
@@ -39,8 +38,6 @@ export interface ChangeWizardSession {
   /** Each environment's tasks as the user built them, kept when the changes are made so the result can list them. */
   taskNamesByEnvironment?: Partial<Record<PlanEnvironmentKey, string[]>>;
   riskReview: { isReady: boolean } | null;
-  /** The "Make it better with AI" loop's rounds; null until it starts (and absent in jobs saved before it existed). */
-  reviewLoop: ReviewLoopSession | null;
   areChecksAcknowledged: boolean;
   isPaperworkDone: boolean;
   evidenceFileNames: string[];
@@ -82,7 +79,6 @@ export function createChangeWizardSession(mode: ChangeWizardMode): ChangeWizardS
     currentStepId: mode === 'modify' ? 'whichChange' : 'scope',
     reviewedStepIds: [],
     riskReview: null,
-    reviewLoop: null,
     areChecksAcknowledged: false,
     isPaperworkDone: false,
     evidenceFileNames: [],

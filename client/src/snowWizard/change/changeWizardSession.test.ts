@@ -9,7 +9,6 @@ import {
   markStepReviewed,
   useChangeWizardSessionStore,
 } from './changeWizardSession.ts';
-import { createReviewLoop } from './reviewLoop.ts';
 
 describe('changeWizardSession', () => {
   beforeEach(() => {
@@ -48,15 +47,6 @@ describe('changeWizardSession', () => {
     store.removeSession('job-a');
     expect(useChangeWizardSessionStore.getState().sessions['job-a']).toBeUndefined();
     expect(localStorage.getItem(buildChangeStorageKey('job-a'))).toBeNull();
-  });
-
-  it('starts with no review loop, and keeps a loop\'s rounds in the browser', () => {
-    expect(createChangeWizardSession('create').reviewLoop).toBeNull();
-    const store = useChangeWizardSessionStore.getState();
-    store.ensureSession('job-a', 'create');
-    store.updateSession('job-a', { reviewLoop: { ...createReviewLoop(), roundNumber: 2, history: [{ roundNumber: 1, isReady: false, thingsToFixCount: 3 }] } });
-    expect(useChangeWizardSessionStore.getState().sessions['job-a'].reviewLoop?.roundNumber).toBe(2);
-    expect(localStorage.getItem(CHANGE_SESSION_STORAGE_KEY)).toContain('thingsToFixCount');
   });
 
   it('names the draft slot the way the contract says', () => {

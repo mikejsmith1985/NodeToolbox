@@ -5,7 +5,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { downloadAttachmentBytes, loadReleaseAttachments } from '../../views/SnowHub/testEvidence/evidenceAttachmentFetch.ts';
 import type { EvidenceAttachment } from '../../views/SnowHub/testEvidence/evidenceBundle.ts';
 import {
-  chooseDefaultTicks, describeFileType, downloadJiraEvidence, listJiraEvidence, sumJiraEvidenceBytes, type JiraEvidenceAttachment,
+  chooseDefaultTicks, describeFileType, downloadJiraEvidence, listJiraEvidence, resolveJiraEvidenceAtFinish, sumJiraEvidenceBytes,
+  type JiraEvidenceAttachment,
 } from './jiraEvidence.ts';
 
 vi.mock('../../views/SnowHub/testEvidence/evidenceAttachmentFetch.ts', () => ({
@@ -48,6 +49,25 @@ describe('listJiraEvidence', () => {
   it('asks Jira nothing when the change has no issues', async () => {
     expect(await listJiraEvidence([])).toEqual({ attachments: [], issuesWithoutFiles: [], missingKeys: [] });
     expect(loadReleaseAttachments).not.toHaveBeenCalled();
+  });
+});
+
+describe('resolveJiraEvidenceAtFinish', () => {
+  beforeEach(() => vi.mocked(loadReleaseAttachments).mockReset());
+
+  it('uses the ticks the user made on the evidence step', async () => {
+    const ticked = [buildEvidence('ENCUC-9', '1', 'report.pdf')];
+    expect(await resolveJiraEvidenceAtFinish({ tickedEvidence: ticked, hasChoice: true, issueKeys: ['ENCUC-9'], localBytes: 0 })).toEqual(ticked);
+    expect(loadReleaseAttachments).not.toHaveBeenCalled();
+  });
+
+  it('gathers every Jira file like Toolbox when the evidence step was never opened', async () => {
+    vi.mocked(loadReleaseAttachments).mockResolvedValue({
+      issues: [{ key: 'ENCUC-9', summary: 'Nine', attachments: [buildAttachment('1', 'report.pdf'), buildAttachment('2', 'shot.png')] }],
+      missingKeys: [],
+    });
+    const gathered = await resolveJiraEvidenceAtFinish({ tickedEvidence: [], hasChoice: false, issueKeys: ['ENCUC-9'], localBytes: 0 });
+    expect(gathered.map((evidence) => evidence.attachment.filename)).toEqual(['report.pdf', 'shot.png']);
   });
 });
 
