@@ -1,0 +1,93 @@
+/* PrbWizard.module.css — The few looks the problem job needs beyond WizardShell.module.css: pick lists, detail rows,
+   draft cards and the result list. Same tokens and vocabulary as the Wizard's frame. */
+
+.searchRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm, 8px);
+  align-items: center;
+}
+
+.searchRow > input {
+  flex: 1 1 240px;
+}
+
+.pickList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs, 4px);
+  margin: var(--spacing-sm, 8px) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pickButton {
+  width: 100%;
+  padding: 10px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-card-bg);
+  color: var(--color-text-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.pickButton[aria-pressed='true'] {
+  border-color: var(--color-accent);
+  box-shadow: inset 4px 0 0 var(--color-accent);
+  font-weight: 600;
+}
+
+.detailList {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--spacing-xs, 4px) var(--spacing-md, 16px);
+  margin: 0;
+}
+
+.detailList dt {
+  font-weight: 600;
+}
+
+.detailList dd {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.textArea {
+  min-height: 140px;
+  resize: vertical;
+}
+
+.attention {
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
+  background: var(--color-tone-warning-bg);
+  color: var(--color-text-primary);
+}
+
+.resultList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm, 8px);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.resultItem[data-outcome='done']::before {
+  content: '✓ ';
+  color: var(--color-tone-success-fg);
+}
+
+.resultItem[data-outcome='failed']::before {
+  content: '• ';
+  color: var(--color-tone-warning-fg);
+}
+
+.checkboxLine {
+  display: flex;
+  gap: var(--spacing-sm, 8px);
+  align-items: flex-start;
+}

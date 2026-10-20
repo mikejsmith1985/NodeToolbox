@@ -23,6 +23,11 @@ import { linkProblemsToNewChange } from '../problems/changeProblems.ts';
 import { fetchReviewedCtasks, saveCtaskPlannedDates } from '../chgFormula/ctaskReviewApi.ts';
 import { scheduleCreatedCtasks, toFormUtcFromApi, type CtaskTimelinePlanStep } from '../chgFormula/createdCtaskTimeline.ts';
 import { EMPTY_CHANGE_TASK_DEFAULTS, resolveCtaskPlannedWindow, type ChangeTaskDefaults } from '../ctaskParentDefaults.ts';
+import {
+  filterStagedCtasksForEnvironment,
+  type CtaskEnvironmentPlan,
+  type PlanEnvironmentKey,
+} from '../../../snowWizard/change/ctaskEnvironmentPlan.ts';
 
 // Step 3 was added (Change Details) so the wizard now runs 1 through 6.
 type CrgStep = 1 | 2 | 3 | 4 | 5 | 6;
@@ -525,7 +530,16 @@ interface CrgActions {
   goToStep: (step: CrgStep) => void;
   reset: () => void;
   /** POSTs all CHG fields to ServiceNow and stores the resulting CHG number. */
-  createChg: (environmentValueByKey?: EnvironmentValueByKey) => Promise<void>;
+  createChg: (environmentValueByKey?: EnvironmentValueByKey, options?: CreateChgOptions) => Promise<void>;
+}
+
+/** Options accepted when creating changes. Every one is optional; leaving them out keeps today's behaviour. */
+export interface CreateChgOptions {
+  /**
+   * Which staged CTASKs belong on which environment's change (SNow Wizard, spec 040). Absent ⇒ every staged CTASK
+   * is created on every environment's change, exactly as before.
+   */
+  ctaskEnvironmentPlan?: CtaskEnvironmentPlan;
 }
 
 /** Options accepted by the CRG state hook. */
@@ -2585,7 +2599,7 @@ export function useCrgState(options?: UseCrgStateOptions): { state: CrgState; ac
    * Optional fields (empty strings, unselected refs) are omitted from the
    * payload to avoid SNow validation errors on non-required fields.
    */
-  const createChg = useCallback(async (environmentValueByKey: EnvironmentValueByKey = {}) => {
+  const createChg = useCallback(async (environmentValueByKey: EnvironmentValueByKey = {}, options?: CreateChgOptions) => {
     // Environments are required: a release must target at least one enabled environment. Without this
     // guard the wizard silently created a single "no environment" change request, so a user who never
     // enabled an environment on the Environments step ended up with unexpected CHGs (GH report).
@@ -2655,12 +2669,21 @@ export function useCrgState(options?: UseCrgStateOptions): { state: CrgState; ac
           plannedEndDate:   changeSubmissionTarget.plannedEndDate,
         };
 
+        // Framework-First drift (feature 040, drift 1): the create path staged the same CTASKs on every
+        // environment's change, but Business Checkout belongs on Production and not on REL. Rather than fork
+        // this release-critical loop into the SNow Wizard, an optional plan narrows the staged list per
+        // target. With no plan (every Toolbox caller) the filter returns the very same list, so behaviour is
+        // byte-identical.
+        const targetChangeTasks = changeSubmissionTarget.environmentLabel
+          ? filterStagedCtasksForEnvironment(state.changeTasks, options?.ctaskEnvironmentPlan, changeSubmissionTarget.environmentLabel as PlanEnvironmentKey)
+          : state.changeTasks;
+
         // Reconcile mode (per-template): update the CTASKs ServiceNow auto-created to
         // match the staged ones by order, then create the remainder — for teams whose
         // change process auto-spawns CTASKs.
         if (state.reconcileAutoCtasks) {
           try {
-            await reconcileStagedChangeTasks(changeSysId, state.changeTasks, undefined, ctaskChangeDefaults);
+            await reconcileStagedChangeTasks(changeSysId, targetChangeTasks, undefined, ctaskChangeDefaults);
           } catch (unknownError) {
             const errorMessage = unknownError instanceof Error ? unknownError.message : 'CTASK reconcile failed';
             throw new Error(`${changeNumber} created, but reconciling CTASKs did not fully complete. Check ServiceNow before retrying: ${errorMessage}`, {
@@ -2684,7 +2707,7 @@ export function useCrgState(options?: UseCrgStateOptions): { state: CrgState; ac
           // and the rename above just corrected. Creating it again is what produced the duplicate
           // pair, one of them still naming a previous release's environment (GH #376).
           const ctasksToCreate = listStagedCtasksToCreate(
-            state.changeTasks,
+            targetChangeTasks,
             adoptedCtaskRoles,
             resolveImplementationCtaskPrefix(state),
           );

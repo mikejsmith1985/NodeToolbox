@@ -1,0 +1,107 @@
+// ChangeWizard.test.tsx — Proves the new-change job end to end on its key screens: Business Checkout starts on PRD and not
+// REL, a failing check gives one reason and one fix that returns to the right step, "could not check" holds the job until
+// acknowledged, and the AI step is shown to everyone and can be skipped.
+
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { scanIssuesForProblems } from '../../views/SnowHub/problems/changeProblems.ts';
+import { useWizardJobStore } from '../shell/wizardJobStore.ts';
+import ChangeWizard from './ChangeWizard.tsx';
+import { buildChangeStorageKey, createChangeWizardSession, useChangeWizardSessionStore } from './changeWizardSession.ts';
+import { listChangeWizardStepIds, type ChangeWizardStepId } from './changeWizardSteps.ts';
+
+vi.mock('../../services/jiraApi.ts', () => ({ jiraGet: vi.fn(async () => []) }));
+vi.mock('../../services/snowApi.ts', () => ({ snowFetch: vi.fn(async () => ({ result: [] })) }));
+vi.mock('../../views/SnowHub/problems/changeProblems.ts', () => ({ scanIssuesForProblems: vi.fn(async () => []) }));
+
+const JOB_ID = 'job-new-1';
+const PERSON = { sysId: 'usr-1', displayName: 'Pat Owner' };
+const BLANK_PERSON = { sysId: '', displayName: '' };
+
+/** A draft with every step's values written, REL and PRD windows, and Business Checkout staged. */
+function buildSavedDraft(backoutPlan: string) {
+  const window = (day: string) => ({ plannedStartDate: `2026-11-0${day}T19:00`, plannedEndDate: `2026-11-0${day}T21:00` });
+  return {
+    fetchedIssues: [{ id: 'ABC-1', key: 'ABC-1', fields: { summary: 'Login' } }],
+    selectedIssueKeys: ['ABC-1'],
+    generatedShortDescription: 'Payments 1.2', generatedDescription: 'What changes', generatedJustification: 'Why now', generatedRiskImpact: 'Low',
+    chgBasicInfo: {
+      category: 'software', changeType: 'normal', environment: '', requestedBy: PERSON, configItem: { sysId: 'ci-1', displayName: 'Payments API' },
+      assignmentGroup: { sysId: 'grp-1', displayName: 'Payments' }, assignedTo: PERSON, changeManager: BLANK_PERSON, tester: BLANK_PERSON,
+      serviceManager: BLANK_PERSON, isExpedited: false,
+    },
+    chgPlanningContent: { implementationPlan: '1. Deploy', backoutPlan, testPlan: '1. Smoke test' },
+    relEnvironment: window('1'), prdEnvironment: window('2'),
+    changeTasks: [{
+      id: 'task-1', name: 'Business Checkout', createdAt: '', shortDescription: 'Business Checkout', description: '', assignmentGroup: PERSON,
+      assignedTo: PERSON, plannedStartDate: '', plannedEndDate: '', closeNotes: '', changeTaskType: 'review',
+    }],
+  };
+}
+
+/** Puts a job waiting on `stepId`, with every earlier step passed, then opens the wizard and continues it. */
+function openJobAt(stepId: ChangeWizardStepId, backoutPlan = '1. Roll back') {
+  const stepIds = listChangeWizardStepIds('create');
+  localStorage.setItem(buildChangeStorageKey(JOB_ID), JSON.stringify(buildSavedDraft(backoutPlan)));
+  useWizardJobStore.setState({ jobs: { newChange: { jobId: JOB_ID, kind: 'newChange', stepId, status: 'inProgress', updatedAt: Date.now(), payloadKey: 'draft' } } });
+  useChangeWizardSessionStore.setState({ sessions: { [JOB_ID]: {
+    ...createChangeWizardSession('create'), currentStepId: stepId, reviewedStepIds: stepIds.slice(0, stepIds.indexOf(stepId)), enabledEnvironments: ['REL', 'PRD'],
+  } } });
+  render(<ChangeWizard onExit={vi.fn()} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+}
+
+/** The primary button of the guided frame. */
+function readNextButton(): HTMLButtonElement {
+  return screen.getAllByRole('button').find((button) => button.className.includes('primaryButton') && button.closest('section')) as HTMLButtonElement;
+}
+
+describe('ChangeWizard — new change', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    // The restricted change period switch is off here, so Production paperwork is not part of these screens.
+    localStorage.setItem('tbxRcpRulesEnabled', 'false');
+  });
+
+  it('starts with the choice of a new change or an existing one', () => {
+    useWizardJobStore.setState({ jobs: {} });
+    render(<ChangeWizard onExit={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: /New change/ }));
+    expect(screen.getByRole('heading', { name: 'Step 1 of 11 — What\'s in this change?' })).toBeTruthy();
+  });
+
+  it('starts Business Checkout ticked for PRD and not for REL', async () => {
+    openJobAt('taskEnvironments');
+    expect(screen.getByRole('heading', { name: 'Step 8 of 11 — Which environment needs each task?' })).toBeTruthy();
+    expect(((await screen.findByLabelText('Business Checkout on PRD')) as HTMLInputElement).checked).toBe(true);
+    expect((screen.getByLabelText('Business Checkout on REL') as HTMLInputElement).checked).toBe(false);
+  });
+
+  it('shows the AI step to everyone, with no unlock, and lets it be skipped', () => {
+    openJobAt('aiEnhance');
+    expect(screen.getByRole('button', { name: 'Copy the review prompt' })).toBeTruthy();
+    expect(document.body.textContent).not.toMatch(/passphrase|unlock/i);
+    fireEvent.click(screen.getByRole('button', { name: 'Skip — nothing to change' }));
+    expect(screen.getByRole('heading', { name: 'Step 6 of 11 — Add proof' })).toBeTruthy();
+  });
+
+  it('gives a failing check one reason and one fix that returns to the step that fixes it', async () => {
+    openJobAt('checks', '[CONFIRM: who decides] Roll back');
+    const fixButton = await screen.findByRole('button', { name: 'Write the Backout Plan' });
+    expect(within(screen.getByRole('list', { name: 'Checks' })).getByText(/Backout Plan still has facts marked to confirm/)).toBeTruthy();
+    expect(readNextButton().disabled).toBe(true);
+    fireEvent.click(fixButton);
+    expect(screen.getByRole('heading', { name: 'Step 3 of 11 — How will it go?' })).toBeTruthy();
+  });
+
+  it('holds the job on "could not check" until the user acknowledges it', async () => {
+    vi.mocked(scanIssuesForProblems).mockRejectedValueOnce(new Error('HTTP 403'));
+    openJobAt('checks');
+    await screen.findByText('Not checked: Could not read the problem records named in the chosen issues.');
+    expect(readNextButton().disabled).toBe(true);
+    expect(screen.getByText(/Create stays locked/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('checkbox'));
+    await waitFor(() => expect(readNextButton().disabled).toBe(false));
+  });
+});

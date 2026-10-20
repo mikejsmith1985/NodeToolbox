@@ -101,25 +101,25 @@ second click does not open a second window. Jira from the Wizard is proven by th
 
 ### Tests first
 
-- [ ] T033 [P] [US1] Failing tests `client/src/snowWizard/change/ctaskEnvironmentPlan.test.ts`: defaults (Business Checkout PRD+PFIX not REL; Implementation/Technical Checkout/unknown → all), saved-default overlay, `listPlanErrors` (task with no env; tick on disabled env), `filterStagedCtasksForEnvironment`
-- [ ] T034 [P] [US1] Failing tests in `client/src/views/SnowHub/hooks/useCrgState.test.ts` (new cases only): `createChg(env, { ctaskEnvironmentPlan })` stages only that env's CTASKs per target; omitted option ⇒ every staged CTASK on every target. **All existing cases pass unmodified.**
-- [ ] T035 [P] [US1] Failing tests `client/src/snowWizard/change/changeWizardSteps.test.ts`: pure `deriveChangeWizardStep(state)` — steps 1–11 per `contracts/change-wizard.md`, done-when rules, step 10 skipped with reason when not Production or no approval required (`rcpRules`)
-- [ ] T036 [P] [US1] Failing component tests `client/src/snowWizard/change/ChangeWizard.test.tsx`: Business Checkout pre-ticked PRD/unticked REL; failing check shows one-sentence reason + one fix that returns to the right step; `couldNotCheck` blocks Create until acknowledged; AI step visible with no unlock and skippable
+- [X] T033 [P] [US1] Failing tests `client/src/snowWizard/change/ctaskEnvironmentPlan.test.ts`: defaults (Business Checkout PRD+PFIX not REL; Implementation/Technical Checkout/unknown → all), saved-default overlay, `listPlanErrors` (task with no env; tick on disabled env), `filterStagedCtasksForEnvironment`
+- [X] T034 [P] [US1] Failing tests in `client/src/views/SnowHub/hooks/useCrgState.test.ts` (new cases only): `createChg(env, { ctaskEnvironmentPlan })` stages only that env's CTASKs per target; omitted option ⇒ every staged CTASK on every target. **All existing cases pass unmodified.**
+- [X] T035 [P] [US1] Failing tests `client/src/snowWizard/change/changeWizardSteps.test.ts`: pure `deriveChangeWizardStep(state)` — steps 1–11 per `contracts/change-wizard.md`, done-when rules, step 10 skipped with reason when not Production or no approval required (`rcpRules`)
+- [X] T036 [P] [US1] Failing component tests `client/src/snowWizard/change/ChangeWizard.test.tsx`: Business Checkout pre-ticked PRD/unticked REL; failing check shows one-sentence reason + one fix that returns to the right step; `couldNotCheck` blocks Create until acknowledged; AI step visible with no unlock and skippable
 
 ### Implementation
 
-- [ ] T037 [P] [US1] Implement `client/src/snowWizard/change/ctaskEnvironmentPlan.ts` (constant `CTASK_ENVIRONMENT_DEFAULTS`, saved overlay key `snowWizard:ctaskEnvDefaults`)
-- [ ] T038 [US1] Add optional `options?: { ctaskEnvironmentPlan?: CtaskEnvironmentPlan }` to `createChg` in `client/src/views/SnowHub/hooks/useCrgState.ts` using `filterStagedCtasksForEnvironment`; record the drift comment at the change (Art VII)
-- [ ] T039 [P] [US1] Implement `client/src/snowWizard/change/changeWizardSteps.ts`
-- [ ] T040 [P] [US1] Implement steps 1–4 in `client/src/snowWizard/change/steps/ScopeStep.tsx`, `DetailsStep.tsx`, `PlanningStep.tsx`, `EnvironmentsStep.tsx` over `useCrgState` actions; every exact-match value a `<select>` fed by ServiceNow choices
-- [ ] T041 [P] [US1] Implement `client/src/snowWizard/change/steps/AiEnhanceStep.tsx` reusing `chgRiskCheckPrompt` + the `AiAssistPromptModal` copy/paste/accept pattern, **without** the `useAiAssist` unlock gate; never AI-attributed
-- [ ] T042 [P] [US1] Implement `client/src/snowWizard/change/steps/EvidenceStep.tsx` reusing `client/src/views/SnowHub/testEvidence/*` (attach after create; size limit refused up front)
-- [ ] T043 [P] [US1] Implement `client/src/snowWizard/change/steps/TasksStep.tsx` + `TaskEnvironmentsStep.tsx` (CTASK types from `useChangeTaskTypeOptions`; grid of task × enabled env)
-- [ ] T044 [US1] Implement `client/src/snowWizard/change/steps/ChecksStep.tsx` over `buildChangeReadiness`; fixes = `chgGapFixPrompt` (propose-only) or jump-to-step
-- [ ] T045 [US1] Implement `client/src/snowWizard/change/steps/ProductionPaperworkStep.tsx` reusing `rcp/rcpApprovalEmail.ts` and `rcp/ChangePlanPdfActions.tsx`/`changePlanDocument.ts`
-- [ ] T046 [US1] Implement `client/src/snowWizard/change/steps/CreateResultStep.tsx` (per-env CHG links, CTASKs, outage, PRBs, evidence, failures + Retry what's missing)
-- [ ] T047 [US1] Implement `client/src/snowWizard/change/ChangeWizard.tsx` (mode `create`, `useCrgState({ storageKey: 'snowWizard:change:<jobId>' })`, resume via `wizardJobStore`) and register it on Home
-- [ ] T048 [US1] Rebuild the HTML; CHANGELOG entry; minor release with `dist/snow-hub-wizard.html` attached
+- [X] T037 [P] [US1] Implement `client/src/snowWizard/change/ctaskEnvironmentPlan.ts` (constant `CTASK_ENVIRONMENT_DEFAULTS`, saved overlay key `snowWizard:ctaskEnvDefaults`)
+- [X] T038 [US1] Add optional `options?: { ctaskEnvironmentPlan?: CtaskEnvironmentPlan }` to `createChg` in `client/src/views/SnowHub/hooks/useCrgState.ts` using `filterStagedCtasksForEnvironment`; record the drift comment at the change (Art VII)
+- [X] T039 [P] [US1] Implement `client/src/snowWizard/change/changeWizardSteps.ts`
+- [X] T040 [P] [US1] Implement steps 1–4 in `client/src/snowWizard/change/steps/ScopeStep.tsx`, `DetailsStep.tsx`, `PlanningStep.tsx`, `EnvironmentsStep.tsx` over `useCrgState` actions; every exact-match value a `<select>` fed by ServiceNow choices
+- [X] T041 [P] [US1] Implement `client/src/snowWizard/change/steps/AiEnhanceStep.tsx` reusing `chgRiskCheckPrompt` + the `AiAssistPromptModal` copy/paste/accept pattern, **without** the `useAiAssist` unlock gate; never AI-attributed
+- [X] T042 [P] [US1] Implement `client/src/snowWizard/change/steps/EvidenceStep.tsx` reusing `client/src/views/SnowHub/testEvidence/*` (attach after create; size limit refused up front)
+- [X] T043 [P] [US1] Implement `client/src/snowWizard/change/steps/TasksStep.tsx` + `TaskEnvironmentsStep.tsx` (CTASK types from `useChangeTaskTypeOptions`; grid of task × enabled env)
+- [X] T044 [US1] Implement `client/src/snowWizard/change/steps/ChecksStep.tsx` over `buildChangeReadiness`; fixes = `chgGapFixPrompt` (propose-only) or jump-to-step
+- [X] T045 [US1] Implement `client/src/snowWizard/change/steps/ProductionPaperworkStep.tsx` reusing `rcp/rcpApprovalEmail.ts` and `rcp/ChangePlanPdfActions.tsx`/`changePlanDocument.ts`
+- [X] T046 [US1] Implement `client/src/snowWizard/change/steps/CreateResultStep.tsx` (per-env CHG links, CTASKs, outage, PRBs, evidence, failures + Retry what's missing)
+- [X] T047 [US1] Implement `client/src/snowWizard/change/ChangeWizard.tsx` (mode `create`, `useCrgState({ storageKey: 'snowWizard:change:<jobId>' })`, resume via `wizardJobStore`) and register it on Home
+- [X] T048 [US1] Rebuild the HTML; CHANGELOG entry; minor release with `dist/snow-hub-wizard.html` attached
 
 **Checkpoint**: MVP — a first-time user creates a REL+PRD change end-to-end.
 
@@ -130,11 +130,11 @@ second click does not open a second window. Jira from the Wizard is proven by th
 **Goal**: same steps pre-filled from an existing CHG; save only edited steps; conflict warning.
 **Independent Test**: quickstart V-07…V-09.
 
-- [ ] T049 [P] [US2] Failing tests `client/src/snowWizard/change/modifyDiff.test.ts`: pure `listEditedSteps(loaded, current)`; `detectRemoteConflicts(loadedSnapshot, freshRecord, edits)` returns field pairs changed remotely
-- [ ] T050 [P] [US2] Failing component tests `client/src/snowWizard/change/ChangeWizardModify.test.tsx`: "Skip — nothing to change" leaves step unwritten; closed/cancelled CHG routes to Review; conflict dialog shows both values
-- [ ] T051 [US2] Implement `client/src/snowWizard/change/modifyDiff.ts`
-- [ ] T052 [US2] Add `WhichChangeStep.tsx` (number → load via `useCrgState` load-existing path) in `client/src/snowWizard/change/steps/`, and mode `modify` in `ChangeWizard.tsx` (edited-step markers; Save = `updateExistingChg` after re-read + conflict check)
-- [ ] T053 [US2] CHANGELOG entry; minor release
+- [X] T049 [P] [US2] Failing tests `client/src/snowWizard/change/modifyDiff.test.ts`: pure `listEditedSteps(loaded, current)`; `detectRemoteConflicts(loadedSnapshot, freshRecord, edits)` returns field pairs changed remotely
+- [X] T050 [P] [US2] Failing component tests `client/src/snowWizard/change/ChangeWizardModify.test.tsx`: "Skip — nothing to change" leaves step unwritten; closed/cancelled CHG routes to Review; conflict dialog shows both values
+- [X] T051 [US2] Implement `client/src/snowWizard/change/modifyDiff.ts`
+- [X] T052 [US2] Add `WhichChangeStep.tsx` (number → load via `useCrgState` load-existing path) in `client/src/snowWizard/change/steps/`, and mode `modify` in `ChangeWizard.tsx` (edited-step markers; Save = `updateExistingChg` after re-read + conflict check)
+- [X] T053 [US2] CHANGELOG entry; minor release
 
 ---
 
@@ -143,13 +143,13 @@ second click does not open a second window. Jira from the Wizard is proven by th
 **Goal**: one project, one Epic, Defect + SL + QE, Stories "Relates to" Defect, idempotent retry.
 **Independent Test**: quickstart V-10…V-12.
 
-- [ ] T054 [P] [US3] Failing tests `client/src/snowWizard/prb/prbJiraPlan.test.ts`: `buildPrbJiraDrafts(prb, epicKey, projectKey)` — three drafts, same project, summaries per contract, PRB number + link in every description, label `prb-<n>`
-- [ ] T055 [P] [US3] Failing tests `client/src/snowWizard/prb/prbJiraCreate.test.ts` (mocked `jiraApi`): order Defect → SL → QE; Epic link field resolved by name via `services/jiraFieldMapping.ts` (no `customfield_` literal — `fieldMappingBoundary.test.ts` stays green); "Relates" link per Story; existing-label search makes retry create only missing roles/links; never a second Defect without explicit confirmation
-- [ ] T056 [P] [US3] Failing component tests `client/src/snowWizard/prb/PrbWizard.test.tsx`: project `<select>` from Jira's project list with remembered default `snowWizard:prbProject`; Epic search; editable drafts; partial-failure result with Retry the rest
-- [ ] T057 [US3] Implement `client/src/snowWizard/prb/prbJiraPlan.ts`
-- [ ] T058 [US3] Implement `client/src/snowWizard/prb/prbJiraCreate.ts` (issue type names from live create metadata)
-- [ ] T059 [US3] Implement `client/src/snowWizard/prb/PrbWizard.tsx` (steps per `contracts/prb-to-jira.md`, PRB search via existing `usePrbState` readers) and register on Home
-- [ ] T060 [US3] CHANGELOG entry; minor release
+- [X] T054 [P] [US3] Failing tests `client/src/snowWizard/prb/prbJiraPlan.test.ts`: `buildPrbJiraDrafts(prb, epicKey, projectKey)` — three drafts, same project, summaries per contract, PRB number + link in every description, label `prb-<n>`
+- [X] T055 [P] [US3] Failing tests `client/src/snowWizard/prb/prbJiraCreate.test.ts` (mocked `jiraApi`): order Defect → SL → QE; Epic link field resolved by name via `services/jiraFieldMapping.ts` (no `customfield_` literal — `fieldMappingBoundary.test.ts` stays green); "Relates" link per Story; existing-label search makes retry create only missing roles/links; never a second Defect without explicit confirmation
+- [X] T056 [P] [US3] Failing component tests `client/src/snowWizard/prb/PrbWizard.test.tsx`: project `<select>` from Jira's project list with remembered default `snowWizard:prbProject`; Epic search; editable drafts; partial-failure result with Retry the rest
+- [X] T057 [US3] Implement `client/src/snowWizard/prb/prbJiraPlan.ts`
+- [X] T058 [US3] Implement `client/src/snowWizard/prb/prbJiraCreate.ts` (issue type names from live create metadata)
+- [X] T059 [US3] Implement `client/src/snowWizard/prb/PrbWizard.tsx` (steps per `contracts/prb-to-jira.md`, PRB search via existing `usePrbState` readers) and register on Home
+- [X] T060 [US3] CHANGELOG entry; minor release
 
 ---
 
@@ -158,13 +158,13 @@ second click does not open a second window. Jira from the Wizard is proven by th
 **Goal**: read-only checks identical to US1, plain-English coaching note, Copy / Open as email.
 **Independent Test**: quickstart V-13…V-15.
 
-- [ ] T061 [P] [US4] Failing tests `client/src/snowWizard/review/coachingNote.test.ts`: one item per `needsAction` in engine order; `couldNotCheck` → `notCheckedLabels` only; all-pass → ready note; `COACHING_PHRASES` covers every readiness item id (test enumerates the engine's ids); no field names in output
-- [ ] T062 [P] [US4] Failing tests `client/src/snowWizard/review/readOnlyTransport.test.ts`: wrapper throws `ReviewIsReadOnlyError` on any non-GET; a full mocked review run sends zero writes
+- [X] T061 [P] [US4] Failing tests `client/src/snowWizard/review/coachingNote.test.ts`: one item per `needsAction` in engine order; `couldNotCheck` → `notCheckedLabels` only; all-pass → ready note; `COACHING_PHRASES` covers every readiness item id (test enumerates the engine's ids); no field names in output
+- [X] T062 [P] [US4] Failing tests `client/src/snowWizard/review/readOnlyTransport.test.ts`: wrapper throws `ReviewIsReadOnlyError` on any non-GET; a full mocked review run sends zero writes
 - [ ] T063 [P] [US4] Failing parity test `client/src/snowWizard/review/checksParity.test.ts`: one fixture through ChecksStep's facts path and Review's facts path yields identical item ids + states (SC-005)
-- [ ] T064 [US4] Implement `client/src/snowWizard/review/coachingNote.ts` (`buildCoachingNote`, `renderCoachingNoteText`, `buildCoachingMailto` with subject `CHG <number> — changes needed before approval`)
-- [ ] T065 [US4] Implement `client/src/snowWizard/review/readOnlyTransport.ts`
-- [ ] T066 [US4] Implement `client/src/snowWizard/review/ReviewWizard.tsx` (number → checks → editable note → Copy / Open as email) and register on Home
-- [ ] T067 [US4] CHANGELOG entry; minor release
+- [X] T064 [US4] Implement `client/src/snowWizard/review/coachingNote.ts` (`buildCoachingNote`, `renderCoachingNoteText`, `buildCoachingMailto` with subject `CHG <number> — changes needed before approval`)
+- [X] T065 [US4] Implement `client/src/snowWizard/review/readOnlyTransport.ts`
+- [X] T066 [US4] Implement `client/src/snowWizard/review/ReviewWizard.tsx` (number → checks → editable note → Copy / Open as email) and register on Home
+- [X] T067 [US4] CHANGELOG entry; minor release
 
 ---
 
@@ -172,7 +172,7 @@ second click does not open a second window. Jira from the Wizard is proven by th
 
 - [ ] T068 [P] Edge-case tests + fixes across wizards: relay tab closed mid-step (V-16), refresh resume (V-17), zero-issue release, task with no environment, malformed AI reply rejected with nothing applied, oversize evidence refused, PRB with empty description highlighted
 - [ ] T069 [P] Accessibility pass on all wizard screens: focus moves to step heading on Next/Back, every control labelled, text beside every colour signal (`client/src/snowWizard/**`)
-- [ ] T070 Run full gates: `npm test`, `npm run test:dom`, `cd client && npx vitest run`, `cd client && npx tsc -b`, `npm run build:snow-wizard`; confirm `useCrgState`, `browserRelay`, `fieldMappingBoundary` existing tests pass unmodified
+- [X] T070 Run full gates: `npm test`, `npm run test:dom`, `cd client && npx vitest run`, `cd client && npx tsc -b`, `npm run build:snow-wizard`; confirm `useCrgState`, `browserRelay`, `fieldMappingBoundary` existing tests pass unmodified
 - [ ] T071 Owner runs `specs/040-snow-hub-wizard/quickstart.md` V-01…V-17 in production (validation happens in production; release is not held for it)
 
 ---

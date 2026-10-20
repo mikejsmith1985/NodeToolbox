@@ -1,0 +1,242 @@
+/* ChangeWizard.module.css — Look of the change wizard's step contents; built on the app tokens and the same vocabulary as
+   WizardShell.module.css (card, fieldLabel, inputField, hint) so every Wizard screen reads as one product. */
+
+.stepIntro {
+  margin: 0 0 var(--spacing-md, 16px);
+  color: var(--color-text-secondary);
+  font-size: 1.05rem;
+}
+
+.fieldGroup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs, 4px);
+  margin-bottom: var(--spacing-md, 16px);
+}
+
+.fieldLabel {
+  font-weight: 600;
+}
+
+.inputField,
+.textArea,
+.selectField {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--field-elevation-border);
+  border-radius: var(--radius-md);
+  background: var(--field-elevation-bg);
+  box-shadow: var(--field-elevation-shadow);
+  color: var(--color-text-primary);
+  font: inherit;
+}
+
+.textArea {
+  min-height: 120px;
+  resize: vertical;
+}
+
+.fieldRow {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--spacing-md, 16px);
+}
+
+.checkboxRow {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm, 8px);
+  padding: 8px 0;
+  font-size: 1.05rem;
+}
+
+.checkboxRow input {
+  width: 20px;
+  height: 20px;
+}
+
+.choiceRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm, 8px);
+  margin-bottom: var(--spacing-md, 16px);
+}
+
+.choiceButton,
+.choiceButtonSelected {
+  padding: 10px 18px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-2);
+  color: var(--color-text-primary);
+  font: 600 1rem/1.2 inherit;
+  cursor: pointer;
+}
+
+.choiceButtonSelected {
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+  color: var(--color-text-on-accent);
+}
+
+.actionButton,
+.secondaryButton {
+  padding: 10px 18px;
+  border-radius: var(--radius-md);
+  font: 600 1rem/1.2 inherit;
+  cursor: pointer;
+}
+
+.actionButton {
+  border: 0;
+  background: var(--color-accent);
+  color: var(--color-text-on-accent);
+}
+
+.secondaryButton {
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-surface-2);
+  color: var(--color-text-primary);
+}
+
+.actionButton:disabled,
+.secondaryButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.buttonRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm, 8px);
+  margin: var(--spacing-sm, 8px) 0;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm, 8px);
+  margin: var(--spacing-sm, 8px) 0;
+  padding: var(--spacing-md, 16px);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-card-bg);
+}
+
+.cardTitle {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.hint {
+  margin: 0;
+  color: var(--color-text-secondary);
+}
+
+.errorText {
+  margin: 0;
+  color: var(--color-tone-danger-fg, var(--color-tone-warning-fg));
+  font-weight: 600;
+}
+
+.noticeText {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
+  background: var(--color-tone-warning-bg);
+}
+
+.successText {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
+  background: var(--color-tone-success-bg);
+}
+
+.itemList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs, 4px);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.checkItem {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs, 4px);
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-card-bg);
+}
+
+.checkHeader {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-sm, 8px);
+  font-weight: 600;
+}
+
+.statePill {
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: var(--color-surface-2);
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.statePill[data-state='done'] {
+  background: var(--color-tone-success-bg);
+}
+
+.statePill[data-state='needsAction'],
+.statePill[data-state='couldNotCheck'] {
+  background: var(--color-tone-warning-bg);
+}
+
+.moreOptions {
+  margin: var(--spacing-sm, 8px) 0 var(--spacing-md, 16px);
+}
+
+.moreOptions > summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.compareGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--spacing-sm, 8px);
+}
+
+.compareText {
+  margin: 0;
+  padding: 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-2);
+  white-space: pre-wrap;
+  max-height: 220px;
+  overflow: auto;
+}
+
+.gridTable {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.gridTable th,
+.gridTable td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--color-border);
+  text-align: left;
+}
+
+.gridTable td input {
+  width: 20px;
+  height: 20px;
+}

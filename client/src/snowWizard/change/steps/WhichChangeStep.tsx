@@ -1,0 +1,49 @@
+// WhichChangeStep.tsx — Modify's first step "Which change?": type the number, load the change, or be sent to Review if it is closed.
+
+import { useId } from 'react';
+
+import type { ChangeStepProps } from '../changeWizardSession.ts';
+import styles from '../ChangeWizard.module.css';
+import { useModifyLoader } from '../useModifyLoader.ts';
+
+/** Which Change also needs the way home, for a change that can only be reviewed. */
+export interface WhichChangeStepProps extends ChangeStepProps {
+  onExit: () => void;
+}
+
+/** The message for a change that can no longer be edited, pointing to Review. */
+function RefusedNotice({ stateLabel, onExit }: { stateLabel: string; onExit: () => void }) {
+  return (
+    <div className={styles.card}>
+      <p className={styles.noticeText}>{`This change is ${stateLabel}, so it can no longer be changed.`}</p>
+      <p className={styles.hint}>To check it against Release Management&apos;s rules, go back home and choose “Review a change”.</p>
+      <div className={styles.buttonRow}><button type="button" className={styles.secondaryButton} onClick={onExit}>Back to home to review it</button></div>
+    </div>
+  );
+}
+
+/** Modify step 1: the change to edit. */
+export default function WhichChangeStep({ crg, session, updateSession, onExit }: WhichChangeStepProps) {
+  const numberFieldId = useId();
+  const loader = useModifyLoader(crg, (modifySession) => updateSession({ modify: modifySession }));
+  const loadedChange = session.modify;
+  return (
+    <div>
+      <p className={styles.stepIntro}>Type the number of the change you want to edit, then look it up.</p>
+      <div className={styles.fieldGroup}>
+        <label className={styles.fieldLabel} htmlFor={numberFieldId}>Change number</label>
+        <div className={styles.buttonRow}>
+          <input id={numberFieldId} className={styles.inputField} value={crg.state.cloneChgNumber} placeholder="CHG0012345"
+            onChange={(changeEvent) => crg.actions.setCloneChgNumber(changeEvent.target.value.trim().toUpperCase())} />
+          <button type="button" className={styles.actionButton} disabled={loader.status.kind === 'working'} onClick={loader.lookUp}>Look it up</button>
+        </div>
+      </div>
+      {loader.status.kind === 'working' ? <p className={styles.hint} role="status">Loading the change…</p> : null}
+      {loader.status.kind === 'failed' ? <p className={styles.errorText}>{loader.status.message}</p> : null}
+      {loader.status.kind === 'refused' ? <RefusedNotice stateLabel={loader.status.stateLabel} onExit={onExit} /> : null}
+      {loadedChange && loader.status.kind === 'idle' ? (
+        <p className={styles.successText}>{`${loadedChange.changeNumber} (${loadedChange.stateLabel}) is loaded. Press Next to walk through it — every step is filled in.`}</p>
+      ) : null}
+    </div>
+  );
+}

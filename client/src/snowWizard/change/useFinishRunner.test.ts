@@ -1,0 +1,141 @@
+// useFinishRunner.test.ts — Proves the last step creates per environment with the task plan, retries only what is missing,
+// attaches evidence, and on a modify checks for remote edits before saving.
+
+import { act, renderHook, waitFor } from '@testing-library/react';
+import { useState } from 'react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { useCrgState } from '../../views/SnowHub/hooks/useCrgState.ts';
+import type { CrgDraftState, CrgHook } from './changeDraft.ts';
+import { createChangeWizardSession, type ChangeWizardSession } from './changeWizardSession.ts';
+import { attachEvidenceToChanges } from './evidenceUpload.ts';
+import { fetchChangeSnapshot } from './modifyLoad.ts';
+import { useFinishRunner } from './useFinishRunner.ts';
+
+vi.mock('../../services/jiraApi.ts', () => ({ jiraGet: vi.fn(async () => []) }));
+vi.mock('../../services/snowApi.ts', () => ({ snowFetch: vi.fn() }));
+vi.mock('./evidenceUpload.ts', () => ({ attachEvidenceToChanges: vi.fn(async () => ({})) }));
+vi.mock('./modifyLoad.ts', () => ({ fetchChangeSnapshot: vi.fn() }));
+
+const PLAN = { 'Business Checkout': { REL: false, PRD: true, PFIX: true } };
+const EVIDENCE_FILE = { name: 'results.pdf', size: 10 } as File;
+
+/** A REL + PRD draft from the real hook, with a staged task when asked. */
+function buildDraft(hasNewTask = false): CrgDraftState {
+  const draft = renderHook(() => useCrgState({ storageKey: 'snowWizard:change:runner-test' })).result.current.state;
+  return {
+    ...draft,
+    relEnvironment: { ...draft.relEnvironment, isEnabled: true },
+    prdEnvironment: { ...draft.prdEnvironment, isEnabled: true },
+    changeTasks: hasNewTask ? [{ ...draft.changeTasks[0], id: 'n', name: 'New', shortDescription: 'New' } as CrgDraftState['changeTasks'][number]] : [],
+  };
+}
+
+/** The runner over a draft and session the test can drive, with spy actions. */
+function renderRunner(initialDraft: CrgDraftState, initialSession: ChangeWizardSession, onFinished = vi.fn()) {
+  const actions = {
+    createChg: vi.fn(async () => undefined), updateExistingChg: vi.fn(async () => undefined),
+    appendTasksToExistingChg: vi.fn(async () => undefined), updateEnvironment: vi.fn(),
+  };
+  const hookResult = renderHook(() => {
+    const [draft, setDraft] = useState(initialDraft);
+    const [session, setSession] = useState(initialSession);
+    const crg = { state: draft, actions } as unknown as CrgHook;
+    const runner = useFinishRunner({
+      crg, session, updateSession: (update) => setSession((previous) => ({ ...previous, ...update })),
+      ctaskEnvironmentPlan: PLAN, environmentValueByKey: { rel: 'rel-env', prd: 'prd-env' },
+      evidenceFiles: [EVIDENCE_FILE], editedStepIds: ['planning'], onFinished,
+    });
+    return { runner, session, setDraft };
+  });
+  return { hookResult, actions, onFinished };
+}
+
+/** Plays the hook finishing a write: submitting, then the result line. */
+function finishWrite(setDraft: (update: (previous: CrgDraftState) => CrgDraftState) => void, resultText: string) {
+  act(() => setDraft((previous) => ({ ...previous, isSubmitting: true, submitResult: null })));
+  act(() => setDraft((previous) => ({ ...previous, isSubmitting: false, submitResult: resultText })));
+}
+
+describe('useFinishRunner — create', () => {
+  beforeEach(() => vi.mocked(attachEvidenceToChanges).mockClear());
+
+  it('creates with the task plan, records each change, attaches evidence and finishes', async () => {
+    const { hookResult, actions, onFinished } = renderRunner(buildDraft(), createChangeWizardSession('create'));
+    act(() => hookResult.result.current.runner.startCreate());
+    expect(actions.createChg).toHaveBeenCalledWith({ rel: 'rel-env', prd: 'prd-env' }, { ctaskEnvironmentPlan: PLAN });
+
+    finishWrite(hookResult.result.current.setDraft, '2 CHGs created: REL CHG1, PRD CHG2');
+
+    await waitFor(() => expect(hookResult.result.current.runner.phase.kind).toBe('done'));
+    expect(hookResult.result.current.session.createdChanges).toEqual([
+      { environmentLabel: 'REL', changeNumber: 'CHG1' }, { environmentLabel: 'PRD', changeNumber: 'CHG2' },
+    ]);
+    expect(attachEvidenceToChanges).toHaveBeenCalledWith([EVIDENCE_FILE], ['CHG1', 'CHG2']);
+    expect(onFinished).toHaveBeenCalled();
+  });
+
+  it('after a partial create, retries only the missing environment', async () => {
+    const { hookResult, actions, onFinished } = renderRunner(buildDraft(), createChangeWizardSession('create'));
+    act(() => hookResult.result.current.runner.startCreate());
+    finishWrite(hookResult.result.current.setDraft, 'CHG1 created; then a later submission failed: HTTP 500');
+    await waitFor(() => expect(hookResult.result.current.session.failureText).toBe('HTTP 500'));
+    expect(onFinished).not.toHaveBeenCalled();
+
+    act(() => hookResult.result.current.runner.retryMissing());
+    expect(actions.updateEnvironment).toHaveBeenCalledWith('rel', { isEnabled: false });
+    act(() => hookResult.result.current.setDraft((previous) => ({ ...previous, relEnvironment: { ...previous.relEnvironment, isEnabled: false } })));
+    expect(actions.createChg).toHaveBeenCalledTimes(2);
+
+    finishWrite(hookResult.result.current.setDraft, 'CHG2 created');
+    await waitFor(() => expect(onFinished).toHaveBeenCalled());
+    expect(hookResult.result.current.session.createdChanges.map((change) => change.changeNumber)).toEqual(['CHG1', 'CHG2']);
+    expect(hookResult.result.current.session.createdChanges[1].environmentLabel).toBe('PRD');
+  });
+});
+
+describe('useFinishRunner — modify', () => {
+  /** A modify session loaded with one snapshot value. */
+  function buildModifySession(): ChangeWizardSession {
+    return {
+      ...createChangeWizardSession('modify'),
+      modify: { changeNumber: 'CHG9', stateLabel: 'New', loadedSnapshot: { backout_plan: 'Old' }, loadedStepValues: {}, existingTaskNames: [] },
+    };
+  }
+
+  it('saves, then adds the new tasks, when ServiceNow has not changed meanwhile', async () => {
+    vi.mocked(fetchChangeSnapshot).mockResolvedValueOnce({ backout_plan: 'Old' });
+    const { hookResult, actions } = renderRunner(buildDraft(true), buildModifySession());
+    act(() => hookResult.result.current.runner.startSave());
+    await waitFor(() => expect(actions.updateExistingChg).toHaveBeenCalledWith('CHG9'));
+
+    finishWrite(hookResult.result.current.setDraft, 'CHG9 updated');
+    await waitFor(() => expect(actions.appendTasksToExistingChg).toHaveBeenCalledWith('CHG9'));
+    finishWrite(hookResult.result.current.setDraft, '1 CTASK appended to CHG9');
+
+    await waitFor(() => expect(hookResult.result.current.runner.phase.kind).toBe('done'));
+    expect(hookResult.result.current.session.outcomeNotes).toEqual(['CHG9 updated', '1 CTASK appended to CHG9']);
+    expect(hookResult.result.current.session.failureText).toBeNull();
+  });
+
+  it('stops and shows both values when ServiceNow changed something, writing only once confirmed', async () => {
+    vi.mocked(fetchChangeSnapshot).mockResolvedValueOnce({ backout_plan: 'Edited in ServiceNow' });
+    const { hookResult, actions } = renderRunner(buildDraft(), buildModifySession());
+    act(() => hookResult.result.current.runner.startSave());
+    await waitFor(() => expect(hookResult.result.current.runner.phase.kind).toBe('conflicts'));
+    expect(actions.updateExistingChg).not.toHaveBeenCalled();
+    const phase = hookResult.result.current.runner.phase;
+    expect(phase.kind === 'conflicts' && phase.conflicts[0]).toMatchObject({ loadedValue: 'Old', serviceNowValue: 'Edited in ServiceNow' });
+
+    act(() => hookResult.result.current.runner.confirmSave());
+    expect(actions.updateExistingChg).toHaveBeenCalledWith('CHG9');
+  });
+
+  it('writes nothing when the change cannot be re-read', async () => {
+    vi.mocked(fetchChangeSnapshot).mockRejectedValueOnce(new Error('HTTP 401'));
+    const { hookResult, actions } = renderRunner(buildDraft(), buildModifySession());
+    act(() => hookResult.result.current.runner.startSave());
+    await waitFor(() => expect(hookResult.result.current.session.failureText).toMatch(/Nothing was saved/));
+    expect(actions.updateExistingChg).not.toHaveBeenCalled();
+  });
+});

@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **SNow Wizard: all three Home buttons now work (feature 040, US1–US4).** Each job runs one step per screen, with
+  Next held back and the reason shown until the step is done.
+  - **Make or change a change.**
+    - *New change:* scope → details → planning → environments → optional AI (copy the prompt, paste the reply, accept
+      item by item; no unlock) → evidence → tasks → a **task × environment grid** (Business Checkout ticked for PRD,
+      not REL) → checks → Production approval email and PDF when needed → create, with a per-environment result and
+      "Retry what's missing".
+    - *Change an existing one:* load it by number. Only the edited steps are marked. Saving re-reads the change first
+      and shows any value someone else changed in the meantime, next to yours.
+    - Exact-match values are picked from ServiceNow's own lists. `useCrgState.createChg` gains an optional
+      `ctaskEnvironmentPlan`; without it, Toolbox behaves exactly as before.
+  - **Turn a problem into Jira work.** Find the PRB, pick one Jira project from Jira's own list (remembered), and pick
+    the Epic from a search. Then check three editable drafts and create the **Defect, SL story and QE story** on that
+    Epic, with each story set to "Relates to" the Defect.
+    - Running it again for the same PRB creates only what's missing (label `prb-<number>`). It never makes a second
+      Defect unless you confirm it.
+  - **Review a change.** Type a change number to run the same checks used when creating a change. It is strictly
+    read-only: any attempt to write is refused before it leaves the Wizard. The result is an editable, plain-English
+    note for the change's creator, with **Copy** and **Open as email**. Review leaves out the author-only "risk check"
+    item, which a reviewer can't see.
+
 ### Fixed
 - **SNow Wizard: a second bookmark click no longer opens a second Wizard tab (GH #449).** ServiceNow's pop-up
   isolation puts the Wizard in its own window group, so the ServiceNow tab could never find it by name, and a Wizard tab

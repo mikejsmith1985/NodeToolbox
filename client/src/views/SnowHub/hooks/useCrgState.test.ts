@@ -3071,3 +3071,80 @@ describe('fetchChangeTasksAttachedToChange (GH #377 read-back)', () => {
     expect(await fetchChangeTasksAttachedToChange('chg-sys-1')).toEqual([]);
   });
 });
+
+// ── createChg with a CTASK environment plan (spec 040, drift 1) ──
+//
+// The SNow Wizard raises one change per environment and needs Business Checkout on the Production change only.
+// The option is additive: without it every staged CTASK still goes on every environment's change.
+describe('useCrgState — createChg with a CTASK environment plan', () => {
+  beforeEach(() => {
+    vi.mocked(snowFetch).mockReset();
+    vi.mocked(snowFetch).mockImplementation(async (path, init) => {
+      const requestPath = String(path);
+      if (requestPath.includes('/api/now/table/change_task?')) return { result: [] } as never;
+      if (requestPath.includes('/api/now/table/change_task')) {
+        const ctaskBody = JSON.parse(String((init as RequestInit).body)) as Record<string, unknown>;
+        return { result: { number: `CTASK-${String(ctaskBody.short_description)}`, sys_id: 'ctask-sys' } } as never;
+      }
+      if (requestPath.includes('/api/now/table/change_request?')) return { result: [{ sys_id: 'chg-sys' }] } as never;
+      const changeBody = JSON.parse(String((init as RequestInit).body)) as Record<string, unknown>;
+      return { result: { number: `CHG-${String(changeBody.u_environment)}`, sys_id: `sys-${String(changeBody.u_environment)}` } } as never;
+    });
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+    localStorage.clear();
+  });
+
+  /** A hook with REL and PRD enabled and two staged CTASKs: Business Checkout and Smoke test. */
+  function renderTwoEnvironmentChange() {
+    const hookResult = renderHook(() => useCrgState({ storageKey: 'snowWizard:change:plan-test' }));
+    act(() => {
+      hookResult.result.current.actions.updateEnvironment('rel', { isEnabled: true, plannedStartDate: '2026-11-01T08:00', plannedEndDate: '2026-11-01T09:00' });
+      hookResult.result.current.actions.updateEnvironment('prd', { isEnabled: true, plannedStartDate: '2026-11-02T08:00', plannedEndDate: '2026-11-02T09:00' });
+      hookResult.result.current.actions.addChangeTask(createMockCtaskTemplate({ shortDescription: 'Business Checkout' }));
+      hookResult.result.current.actions.addChangeTask(createMockCtaskTemplate({ shortDescription: 'Smoke test' }));
+    });
+    return hookResult;
+  }
+
+  /** Each change's created CTASK short descriptions, keyed by the change's sys_id. */
+  function readCreatedTasksByChange(): Record<string, string[]> {
+    const tasksByChange: Record<string, string[]> = {};
+    for (const [requestPath, init] of vi.mocked(snowFetch).mock.calls) {
+      if (requestPath !== '/api/now/table/change_task') continue;
+      const ctaskBody = JSON.parse(String((init as RequestInit).body)) as Record<string, unknown>;
+      const changeSysId = String(ctaskBody.change_request);
+      tasksByChange[changeSysId] = [...(tasksByChange[changeSysId] ?? []), String(ctaskBody.short_description)];
+    }
+    return tasksByChange;
+  }
+
+  it('stages only each environment\'s own CTASKs when a plan is given', async () => {
+    const { result } = renderTwoEnvironmentChange();
+    await act(async () => {
+      await result.current.actions.createChg({ rel: 'rel-env', prd: 'prd-env' }, {
+        ctaskEnvironmentPlan: {
+          'Business Checkout': { REL: false, PRD: true, PFIX: true },
+          'Smoke test': { REL: true, PRD: true, PFIX: false },
+        },
+      });
+    });
+    expect(readCreatedTasksByChange()).toEqual({
+      'sys-rel-env': ['Smoke test'],
+      'sys-prd-env': ['Business Checkout', 'Smoke test'],
+    });
+  });
+
+  it('stages every CTASK on every environment when the option is left out', async () => {
+    const { result } = renderTwoEnvironmentChange();
+    await act(async () => {
+      await result.current.actions.createChg({ rel: 'rel-env', prd: 'prd-env' });
+    });
+    expect(readCreatedTasksByChange()).toEqual({
+      'sys-rel-env': ['Business Checkout', 'Smoke test'],
+      'sys-prd-env': ['Business Checkout', 'Smoke test'],
+    });
+  });
+});

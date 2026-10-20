@@ -1,0 +1,92 @@
+/* ReviewWizard.module.css — Look of the Review job's checklist and coaching note; extends WizardShell.module.css with
+   the same tokens, and pairs every verdict colour with its words. */
+
+.checkList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm, 8px);
+  margin: var(--spacing-sm, 8px) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.checkRow {
+  display: grid;
+  grid-template-columns: minmax(130px, auto) 1fr;
+  gap: var(--spacing-xs, 4px) var(--spacing-md, 16px);
+  align-items: start;
+  padding: var(--spacing-sm, 8px) var(--spacing-md, 16px);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-card-bg);
+}
+
+.verdict {
+  justify-self: start;
+  padding: 2px 10px;
+  border-radius: var(--radius-lg);
+  background: var(--color-tone-neutral-bg);
+  color: var(--color-tone-neutral-fg);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.verdict[data-state='done'] {
+  background: var(--color-tone-success-bg);
+  color: var(--color-tone-success-fg);
+}
+
+.verdict[data-state='needsAction'] {
+  background: var(--color-tone-danger-bg);
+  color: var(--color-tone-danger-fg);
+}
+
+.verdict[data-state='couldNotCheck'] {
+  background: var(--color-tone-warning-bg);
+  color: var(--color-tone-warning-fg);
+}
+
+.checkText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.checkLabel {
+  font-weight: 600;
+}
+
+.checkReason {
+  color: var(--color-text-secondary);
+}
+
+.summaryLine {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.problem {
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  background: var(--color-tone-warning-bg);
+  color: var(--color-text-primary);
+}
+
+.noteField {
+  min-height: 320px;
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.emailLink {
+  display: inline-block;
+  text-decoration: none;
+}
+
+@media (max-width: 560px) {
+  .checkRow {
+    grid-template-columns: 1fr;
+  }
+}

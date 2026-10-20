@@ -50,6 +50,24 @@ describe('WizardApp', () => {
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Open Jira' })).toBeNull());
   });
 
+  it('opens each job from Home once both systems are connected, and every job leads back home', async () => {
+    render(<WizardApp boot={BOOT} dependencies={createDependencies()} appVersion="v1" />);
+    await waitFor(() => expect(useWizardConnectionStore.getState().snow.status).toBe('connected'));
+    useWizardConnectionStore.getState().setConnection('jira', { status: 'connected', identity: 'Smith, Jane' });
+    const firstScreenByJob: ReadonlyArray<[string, RegExp]> = [
+      ['Make or change a change', /^New change$/],
+      ['Turn a problem into Jira work', /Step 1 of/],
+      ['Review a change', /Step 1 of/],
+    ];
+    for (const [jobTitle, firstScreenText] of firstScreenByJob) {
+      fireEvent.click(await screen.findByRole('button', { name: new RegExp(jobTitle) }));
+      expect(await screen.findByText(firstScreenText)).toBeTruthy();
+      expect(document.body.textContent).not.toMatch(INTERNAL_NAME_PATTERN);
+      fireEvent.click(screen.getAllByRole('button', { name: /home/i })[0]);
+      expect(await screen.findByText('What would you like to do?')).toBeTruthy();
+    }
+  });
+
   it('opens Settings from Home and goes back', async () => {
     render(<WizardApp boot={BOOT} dependencies={createDependencies()} appVersion="v1" />);
     fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
