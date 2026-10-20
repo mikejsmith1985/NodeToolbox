@@ -76,3 +76,12 @@ describe('createModuleReplacementPlugin', () => {
     expect(resolveHandler({ path: './snowApi.ts', resolveDir: path.resolve('client/src/services') })).toBeUndefined();
   });
 });
+
+describe('Wizard base styles', () => {
+  // The Wizard does not inline Toolbox's global.css, so the open-dropdown colour fix must live in its own base sheet
+  // (GH #456: the open option list painted light text on a white list).
+  it('paints every open dropdown list with the dark input background and readable text', () => {
+    const baseCss = require('fs').readFileSync(path.join(__dirname, '../../client/src/snowWizard/probe/probePage.css'), 'utf8');
+    expect(baseCss).toMatch(/select option,\s*select optgroup\s*\{[^}]*background-color:\s*var\(--color-input-bg\)[^}]*color:\s*var\(--color-text-primary\)/);
+  });
+});

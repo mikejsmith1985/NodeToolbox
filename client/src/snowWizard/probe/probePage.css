@@ -7,6 +7,19 @@ body {
   font: 15px/1.5 system-ui, -apple-system, 'Segoe UI', sans-serif;
 }
 
+/* Open dropdown lists (GH #456). The tokens set `color-scheme: dark`, but a control given its own background drops
+   out of that scheme, so the open list painted light text on a white list. Same pair Toolbox pins in global.css,
+   which the Wizard does not carry. Element selectors, so any component class still wins. */
+select {
+  color: var(--color-text-primary);
+}
+
+select option,
+select optgroup {
+  background-color: var(--color-input-bg);
+  color: var(--color-text-primary);
+}
+
 main {
   max-width: 760px;
   margin: 0 auto;

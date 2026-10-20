@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **SNow Wizard: open dropdown lists are readable again (GH #456).** The option list painted light text on a white
+  background, because the Wizard file never carried Toolbox's dropdown color rule. The Wizard's own styles now set it,
+  and a build test keeps it there.
+
 ### Added
 - **SNow Wizard: all three Home buttons now work (feature 040, US1–US4).** Each job runs one step per screen, with
   Next held back and the reason shown until the step is done.
