@@ -11,6 +11,18 @@ Built on 039's `components/GuidedFlow/GuidedFlowShell` (shared; built there if 0
 - **ConnectionBanner**: on every screen; turns amber on `expired` with the one action that fixes it; the current step is
   kept.
 
+## Installer page and windows (owner's probe findings)
+
+- The HTML file is the **installer**: it shows the bookmark to drag and three pictures (drag → open ServiceNow → click).
+  It says plainly that it can be closed once the bookmark is in place.
+- The Wizard always opens in **one named window**; a second click reuses it. The ServiceNow tab must stay open; the
+  Wizard says so on its banner.
+- After the Jira bookmark click, focus returns to the Wizard window automatically.
+- **Every copy action confirms**: the button reads "Copied ✓" for 2 s; if the clipboard is unavailable the text is
+  selected and the button reads "Press Ctrl+C".
+- **Settings** (Home): Jira address, pre-filled from the build default, remembered, and checked live with a test read
+  when it is changed.
+
 ## Step rules (every wizard)
 
 | Rule | Check |

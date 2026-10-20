@@ -2,7 +2,7 @@
 // SNow Wizard can reach ServiceNow and Jira with no server (feature 040, contracts/relay-probe.md). Read-only throughout.
 
 import { buildBookmarkHref } from '../transport/bookmarkPayload.ts';
-import { sendAgentRequest, waitForAgentHello } from './agentChannel.ts';
+import { sendAgentRequest, waitForAgentHello } from '../transport/agentChannel.ts';
 import { buildSnowWindowHtml, type ProbeBuildInputs } from './probeAssets.ts';
 import { createNode, createResultPanel, createStep, type ResultPanel } from './probeDom.ts';
 import { FILE_PAGE_PROBE_IDS, PROBE_CHANNEL_NAME, describeBrowser } from './probeResult.ts';

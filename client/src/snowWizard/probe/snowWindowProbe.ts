@@ -1,7 +1,7 @@
 // snowWindowProbe.ts — The checks run inside the window the bookmark opens in ServiceNow's own origin: can this window
 // call ServiceNow directly, refresh its token, reach Jira, and remember the Wizard file? (feature 040, relay-probe.md)
 
-import { sendAgentRequest, waitForAgentHello } from './agentChannel.ts';
+import { sendAgentRequest, waitForAgentHello } from '../transport/agentChannel.ts';
 import { SCRIPT_BLOCKED_NOTICE_ID } from './probeAssets.ts';
 import { createNode, createResultPanel, createStep, type ResultPanel } from './probeDom.ts';
 import { PROBE_CHANNEL_NAME, SNOW_WINDOW_PROBE_IDS, describeBrowser } from './probeResult.ts';

@@ -36,3 +36,12 @@ describe('buildSnowWindowHtml', () => {
     expect(windowHtml.match(/<\/script>/g)?.length).toBe(2);
   });
 });
+
+describe('buildSnowWindowHtml page options', () => {
+  it('lets the Wizard use its own title, notice and mount point', () => {
+    const windowHtml = buildSnowWindowHtml('run()', '', { title: 'SNow Wizard', blockedNotice: 'Blocked.', rootMarkup: '<div id="wizard-root"></div>' });
+    expect(windowHtml).toContain('<title>SNow Wizard</title>');
+    expect(windowHtml).toContain('<div id="wizard-root"></div>');
+    expect(windowHtml).not.toContain('<main>');
+  });
+});

@@ -46,9 +46,9 @@ release so the owner can run it in production.
 - [X] T009 Implement `client/src/snowWizard/transport/bookmarkPayload.ts` (runtimes serialized with `.toString()`; role switch, blob launcher, Jira agent listener with origin checks and `/rest/` path guard per `contracts/wizard-transport.md`)
 - [X] T010 Implement `client/src/snowWizard/probe/relayProbe.entry.ts` + `filePageProbe.ts` (file page) and `snowWindowProbe.entry.ts` + `snowWindowProbe.ts` (window opened inside ServiceNow), with `agentChannel.ts`, `snowProbes.ts`, `probeAssets.ts`, `probeDom.ts`, `probePage.css`: numbered steps UI for P-HEADERS, P-SNOW-BLOB, P-SNOW-WRITE-SAFE, P-SNOW-BROADCAST, P-JIRA-OPENER-FROM-BLOB, P-JIRA-OPENER-FROM-FILE, P-SNOW-OPENER-FROM-FILE, P-BOOKMARK-SIZE (1.5 MB padded bookmark), P-FILE-HANDLE, P-BROWSER; read-only calls only; copy button for the result block
 - [X] T011 Build `dist/snow-wizard-probe.html` with `npm run build:snow-wizard-probe`; add a CHANGELOG `[Unreleased]` entry; release as a patch via `scripts/local-release.ps1` with the probe HTML attached as a release asset (additive step in `scripts/local-release.ps1`)
-- [ ] T012 **GATE**: record the owner's probe result block in `specs/040-snow-hub-wizard/research.md` § R-001, mark the chosen branch (T1+T2 / T1+hand-off / stop), and revise `contracts/wizard-transport.md` if the branch is not T1+T2. **No task below starts until this is done.**
+- [X] T012 **GATE**: record the owner's probe result block in `specs/040-snow-hub-wizard/research.md` § R-001, mark the chosen branch (T1+T2 / T1+hand-off / stop), and revise `contracts/wizard-transport.md` if the branch is not T1+T2. **No task below starts until this is done.**
 
-**Checkpoint**: transport branch chosen with live evidence.
+**Checkpoint**: transport branch chosen with live evidence — **T1 + T2 confirmed 2026-10-20** (research R-001 RESULT).
 
 ---
 
@@ -58,31 +58,39 @@ release so the owner can run it in production.
 
 ### Tests first
 
-- [ ] T013 [P] Failing tests `client/src/snowWizard/transport/snowSameOriginTransport.test.ts`: GET/POST/PATCH with `X-UserToken`, JSON + base64 bodies; one token refresh over `BroadcastChannel` on 401 then `expired`
-- [ ] T014 [P] Failing tests `client/src/snowWizard/transport/jiraOpenerTransport.test.ts`: request/response by `requestId`, origin rejection, 30 s timeout → `status 0`; hand-off mode (if R-001 chose it) produces a `pendingHandOff` instead of posting
-- [ ] T015 [P] Failing tests `client/src/snowWizard/transport/relayBridgeShim.test.ts`: exports match `client/src/services/relayBridgeApi.ts` names/signatures; `snow` → same-origin transport, `jira` → opener transport
-- [ ] T016 [P] Failing tests `client/src/snowWizard/transport/jiraProxyFetch.test.ts`: `/jira-proxy/rest/...` routed to Jira transport and re-wrapped as a `Response`; any other URL passes to `globalThis.fetch` untouched
-- [ ] T017 [P] Failing tests `client/src/components/GuidedFlow/GuidedFlowShell.test.tsx`: "Step N of M — title", single primary Next disabled with visible reason, Back keeps entries
-- [ ] T018 [P] Failing tests `client/src/views/SnowHub/guided/changeReadiness.test.ts` per `specs/039-guided-flows/contracts/readiness-engine.md` (every item rule, null fact → `couldNotCheck`, `isReady` rule) plus formula quality-gate items from `client/src/views/SnowHub/chgFormula/formulaCard.ts`
-- [ ] T019 [P] Failing tests `client/src/snowWizard/shell/wizardJobStore.test.ts`: one in-progress job per kind, resume/discard, finished jobs pruned after `FINISHED_JOB_RETENTION_DAYS = 7`, keys prefixed `snowWizard:`
-- [ ] T020 [P] Failing tests `client/src/snowWizard/shell/ConnectStep.test.tsx` + `ConnectionBanner.test.tsx`: jobs disabled until both systems `connected` via a live read; banner amber on `expired` with one fix action; current step kept
-- [ ] T021 [P] Failing test `client/src/snowWizard/shell/wizardCopyScan.test.tsx`: renders every wizard screen and fails on `u_[a-z]`, `cmdb_ci`, `customfield_`, `sys_id` in visible text (pattern of `poToolWithoutAi.test.tsx`)
+- [X] T013 [P] Failing tests `client/src/snowWizard/transport/snowSameOriginTransport.test.ts`: GET/POST/PATCH with `X-UserToken`, JSON + base64 bodies; one token refresh over `BroadcastChannel` on 401 then `expired`
+- [X] T014 [P] Failing tests `client/src/snowWizard/transport/jiraOpenerTransport.test.ts` + new cases in `bookmarkPayload.test.ts` (agent role on any non-ServiceNow page with an opener, answers only ServiceNow-host `event.origin`, calls `opener.focus()`, no frozen Jira hostname — R-011): request/response by `requestId`, origin rejection, 30 s timeout → `status 0`; hand-off mode (if R-001 chose it) produces a `pendingHandOff` instead of posting
+- [X] T015 [P] Failing tests `client/src/snowWizard/transport/relayBridgeShim.test.ts`: exports match `client/src/services/relayBridgeApi.ts` names/signatures; `snow` → same-origin transport, `jira` → opener transport
+- [X] T016 [P] Failing tests `client/src/snowWizard/transport/jiraProxyFetch.test.ts`: `/jira-proxy/rest/...` routed to Jira transport and re-wrapped as a `Response`; any other URL passes to `globalThis.fetch` untouched
+- [X] T017 [P] Failing tests `client/src/components/GuidedFlow/GuidedFlowShell.test.tsx`: "Step N of M — title", single primary Next disabled with visible reason, Back keeps entries
+- [X] T018 [P] Failing tests `client/src/views/SnowHub/guided/changeReadiness.test.ts` per `specs/039-guided-flows/contracts/readiness-engine.md` (every item rule, null fact → `couldNotCheck`, `isReady` rule) plus formula quality-gate items from `client/src/views/SnowHub/chgFormula/formulaCard.ts`
+- [X] T019 [P] Failing tests `client/src/snowWizard/shell/wizardJobStore.test.ts`: one in-progress job per kind, resume/discard, finished jobs pruned after `FINISHED_JOB_RETENTION_DAYS = 7`, keys prefixed `snowWizard:`
+- [X] T020 [P] Failing tests `client/src/snowWizard/shell/ConnectStep.test.tsx` + `ConnectionBanner.test.tsx` + `SettingsStep.test.tsx`: jobs disabled until both systems `connected` via a live read; banner amber on `expired` with one fix action; current step kept; Jira address pre-filled from the build default, changeable, remembered, verified by a test read (R-011); every Copy confirms "Copied ✓" or falls back to "Press Ctrl+C"
+- [X] T021 [P] Failing test `client/src/snowWizard/shell/wizardCopyScan.test.tsx`: renders every wizard screen and fails on `u_[a-z]`, `cmdb_ci`, `customfield_`, `sys_id` in visible text (pattern of `poToolWithoutAi.test.tsx`)
 
 ### Implementation
 
-- [ ] T022 [P] Implement `client/src/snowWizard/transport/snowSameOriginTransport.ts`
-- [ ] T023 [P] Implement `client/src/snowWizard/transport/jiraOpenerTransport.ts` (and hand-off mode only if T012 selected it)
-- [ ] T024 Implement `client/src/snowWizard/transport/relayBridgeShim.ts` (depends T022, T023)
-- [ ] T025 Implement `client/src/snowWizard/transport/jiraProxyFetch.ts` (depends T023)
-- [ ] T026 Wire esbuild `alias` (`client/src/services/relayBridgeApi.ts` → shim) and `inject` (`jiraProxyFetch`) in `scripts/build-snow-wizard.js`; add a build test asserting the bundle contains no `/api/relay-bridge` string
-- [ ] T027 [P] Implement `client/src/components/GuidedFlow/GuidedFlowShell.tsx` + `GuidedFlowShell.module.css` (shared with 039)
-- [ ] T028 [P] Implement `client/src/views/SnowHub/guided/changeReadiness.ts` (PURE, field-blind) and `changeReadinessFacts.ts` (gathers facts from existing readers: `rcpChangeFacts`, `changeOutageRecord`, `ctaskReviewApi`, `changeProblems`, risk-check review)
-- [ ] T029 [P] Implement `client/src/snowWizard/shell/wizardJobStore.ts` (zustand + guarded browser storage)
-- [ ] T030 Implement `client/src/snowWizard/shell/ConnectStep.tsx`, `ConnectionBanner.tsx`, `WizardHome.tsx` (three large choices + resume cards) with `client/src/snowWizard/shell/WizardShell.module.css`
-- [ ] T031 Implement `client/src/snowWizard/main.entry.tsx` (React root, Home → job routing) and `client/src/snowWizard/launcher/launcherPage.ts` (version, draggable bookmark, picture-led numbered instructions)
-- [ ] T032 Build `dist/snow-hub-wizard.html`; verify bookmark size under budget and that Toolbox's `cd client && npx vite build` output is unchanged (no `snowWizard` in its manifest)
+- [X] T022 [P] Implement `client/src/snowWizard/transport/snowSameOriginTransport.ts`
+- [X] T023 [P] Implement `client/src/snowWizard/transport/jiraOpenerTransport.ts` (and hand-off mode only if T012 selected it)
+- [X] T024 Implement `client/src/snowWizard/transport/relayBridgeShim.ts` (depends T022, T023)
+- [X] T025 Implement `client/src/snowWizard/transport/jiraProxyFetch.ts` (depends T023)
+- [X] T026 Wire esbuild `alias` (`client/src/services/relayBridgeApi.ts` → shim) and `inject` (`jiraProxyFetch`) in `scripts/build-snow-wizard.js`; add a build test asserting the bundle contains no `/api/relay-bridge` string
+- [X] T027 [P] Implement `client/src/components/GuidedFlow/GuidedFlowShell.tsx` + `GuidedFlowShell.module.css` (shared with 039)
+- [X] T028 [P] Implement `client/src/views/SnowHub/guided/changeReadiness.ts` (PURE, field-blind) and `changeReadinessFacts.ts` (gathers facts from existing readers: `rcpChangeFacts`, `changeOutageRecord`, `ctaskReviewApi`, `changeProblems`, risk-check review)
+- [X] T029 [P] Implement `client/src/snowWizard/shell/wizardJobStore.ts` (zustand + guarded browser storage)
+- [X] T030 Implement `client/src/snowWizard/shell/ConnectStep.tsx`, `ConnectionBanner.tsx`, `WizardHome.tsx` (three large choices + resume cards) with `client/src/snowWizard/shell/WizardShell.module.css`
+- [X] T031 Implement `client/src/snowWizard/main.entry.tsx` (React root, Home → job routing) and `client/src/snowWizard/launcher/launcherPage.ts` (installer: version, draggable bookmark, picture-led numbered instructions, "you can close this page", Open ServiceNow button using `DEFAULT_SNOW_URL`) plus `client/src/snowWizard/wizardDefaults.ts` + test (`DEFAULT_SNOW_URL = 'https://zilverton.service-now.com'`, `DEFAULT_JIRA_URL` equal to `src/config/loader.js`'s default — test asserts they match)
+- [X] T032 Build `dist/snow-hub-wizard.html`; verify bookmark size under budget and that Toolbox's `cd client && npx vite build` output is unchanged (no `snowWizard` in its manifest)
 
 **Checkpoint**: file opens, bookmark drags, Home + Connect show "connected as <you>" for both systems (quickstart V-01).
+
+**Phase 3 notes (2026-10-20)**: hand-off mode dropped (probe chose T1+T2). `agentChannel.ts` moved from `probe/` to
+`transport/`. The shared relay pieces moved to `services/snowRelayShared.ts` (Toolbox bookmarklets still byte-identical)
+so the Wizard bundle carries none of Toolbox's relay. esbuild `alias` cannot map project files, so T026 uses a small
+module-replacement plugin plus `inject`. Screens got one test file each (pre-commit hook). `GuidedFlowShell` props differ
+from 039's draft contract (`advancedAction` slot, no clickable strip) — reconcile 039's contract before its tasks.
+Local rehearsal (Edge, mock systems): installer → bookmark → Wizard window in ServiceNow's origin, connected, styled; a
+second click does not open a second window. Jira from the Wizard is proven by the production probe (R-001).
 
 ---
 

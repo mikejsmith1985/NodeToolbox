@@ -10,6 +10,13 @@
 4. Writes `dist/snow-hub-wizard.html` — the **launcher page**: product name, version, the draggable bookmark button, and
    numbered, picture-led instructions (drag → open ServiceNow → click → open Jira from the app → click again).
 
+## Built-in defaults
+
+`client/src/snowWizard/wizardDefaults.ts` is the one place for instance addresses baked into the file:
+`DEFAULT_SNOW_URL = 'https://zilverton.service-now.com'` (installer's Open ServiceNow button) and `DEFAULT_JIRA_URL`
+(same value as `src/config/loader.js`, pre-fills the Jira setting). The Wizard never needs the ServiceNow default at run
+time — it runs inside ServiceNow.
+
 ## Rules
 
 - Output is **one file**, no external URL of any kind (no CDN, no font links).

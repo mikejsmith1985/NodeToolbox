@@ -1,0 +1,190 @@
+/* GuidedFlowShell.module.css — Styles for the shared guided-flow frame; reuses the app's design tokens and the Create CHG stepper vocabulary. */
+
+.shell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  padding: var(--spacing-lg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--color-accent) 8%, transparent), transparent 72%),
+    var(--surface-recessed, var(--color-surface-1));
+  color: var(--color-text-primary);
+}
+
+.shellHeader {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+}
+
+.advancedSlot {
+  margin-left: auto;
+}
+
+/* ── Steps strip (mirrors CreateChgTab .stepIndicator / .stepBadge) ── */
+
+.stepsStrip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.stepChip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-xs) var(--spacing-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-1);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.stepMark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.5em;
+  height: 1.5em;
+  border-radius: 50%;
+  background: var(--color-tone-neutral-bg);
+  color: var(--color-tone-neutral-fg);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+}
+
+.stepTitle {
+  font-weight: 500;
+}
+
+.stepStateText {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
+}
+
+.stepStateText::before {
+  content: '· ';
+}
+
+.step_done .stepMark {
+  background: var(--color-tone-success-bg);
+  color: var(--color-tone-success-fg);
+}
+
+.step_current {
+  border-color: var(--color-accent);
+  background: var(--color-surface-2);
+  color: var(--color-accent);
+}
+
+.step_current .stepMark {
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+}
+
+/* ── Step heading and body ── */
+
+.stepHeading {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-lg);
+}
+
+.stepHeading:focus {
+  outline: none;
+}
+
+.stepHeading:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: var(--spacing-xs);
+}
+
+.stepBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+/* ── Navigation ── */
+
+.navigationBar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  padding-top: var(--spacing-md);
+  border-top: 1px solid var(--color-border);
+}
+
+.forwardGroup {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--spacing-xs);
+  margin-left: auto;
+}
+
+.forwardButtons {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--spacing-sm);
+}
+
+.primaryButton,
+.secondaryButton {
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-md);
+  cursor: pointer;
+}
+
+.primaryButton {
+  border: 1px solid var(--color-accent);
+  background: var(--color-accent);
+  color: var(--color-text-on-accent);
+  font-weight: 600;
+}
+
+.secondaryButton {
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-2);
+  color: var(--color-text-primary);
+}
+
+.primaryButton:focus-visible,
+.secondaryButton:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.primaryButton:disabled,
+.secondaryButton:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.blockedReason {
+  margin: 0;
+  max-width: 40ch;
+  color: var(--color-tone-warning-fg);
+  font-size: var(--font-size-sm);
+  text-align: right;
+}
+
+@media (prefers-contrast: more) {
+  .stepChip,
+  .primaryButton,
+  .secondaryButton {
+    border-width: 2px;
+  }
+}

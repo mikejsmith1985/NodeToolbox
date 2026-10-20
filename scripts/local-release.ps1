@@ -338,6 +338,8 @@ Push-Location $RepoRoot
 try {
     npm run build:snow-wizard-probe --silent
     if ($LASTEXITCODE -ne 0) { throw "SNow Wizard probe build failed with exit code $LASTEXITCODE" }
+    npm run build:snow-wizard --silent
+    if ($LASTEXITCODE -ne 0) { throw "SNow Wizard build failed with exit code $LASTEXITCODE" }
 } finally {
     Pop-Location
 }

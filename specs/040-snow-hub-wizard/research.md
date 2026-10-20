@@ -37,6 +37,28 @@ recorded in the CHANGELOG.
 **Alternatives rejected**: Jira PAT from the file (CORS blocks `file://`/foreign origins; also violates "no stored
 credentials"); browser extension (not "HTML", needs install); ServiceNow UI Page hosting (needs admin, not shareable).
 
+### R-001 RESULT — live production probe (owner, 2026-10-20, Edge 155, posted on GH #449)
+
+`PROBE v1 | snow-window | Edge 155 | P-SNOW-BLOB=pass(signed in as <owner>) | P-SNOW-WRITE-SAFE=pass(change table
+readable (HTTP 200)) | P-SNOW-BROADCAST=pass(token received from the ServiceNow tab) | P-JIRA-OPENER-FROM-BLOB=pass(Jira
+answered this window) | P-FILE-HANDLE=pass(read … again from memory)`
+
+**Branch chosen: T1 + T2 (the target design).** ServiceNow's content policy allowed the blob window's script, the window
+called ServiceNow directly with the session token, token refresh over BroadcastChannel works, and Jira answered the
+blob window through the opener. No hand-off fallback is needed. The file-page line was not posted; it no longer decides
+anything (it only tested paths the design does not use).
+
+**Owner's UX findings from the run (fold into Phase B):**
+1. Clicking the bookmark on ServiceNow opened the app in a new tab, so the probe page and the app were both open. The
+   Wizard must explain that the HTML file is only the *installer* (drag the bookmark once), and that from then on the
+   Wizard opens from ServiceNow. The window is reused by name, never stacked.
+2. After clicking the bookmark on Jira, the user stayed on the Jira tab. The Jira agent must return focus to the
+   Wizard window (`opener.focus()` under the click's user activation) and its badge must say "you can go back".
+3. "Copy result" gave no feedback. Every copy action must confirm ("Copied ✓", 2 s), and fall back to selecting the
+   text with "Press Ctrl+C" when the clipboard is unavailable.
+4. Pre-fill the ServiceNow and Jira addresses, with a way to change Jira's (a new Jira instance arrives next month).
+   See R-011.
+
 ## R-002 — Reusing Toolbox code without touching it
 
 **Decision**: esbuild `alias` maps `client/src/services/relayBridgeApi.ts` → `snowWizard/transport/relayBridgeShim.ts`
@@ -100,3 +122,18 @@ copy-paste prompt pattern, always visible (no unlock gate — clarified).
 **Decision**: reuse `rcpApprovalEmail.ts` and `changePlanDocument.ts`. "Needed" = Production environment **and**
 `rcpRules` reports approval required. The PDF is ServiceNow's own `?PDF` export, else the print-ready HTML plan saved via
 the browser's "Save as PDF" (same as Toolbox).
+
+## R-011 — Instance addresses and the Jira move
+
+**Decision**: the Wizard needs no ServiceNow address, because it runs inside ServiceNow (`location.origin`). The Jira
+address is a **Wizard setting**, pre-filled from the build default (the same default as `src/config/loader.js`),
+changeable on Home → Settings, and remembered in the Wizard's own storage. The **bookmark freezes no Jira hostname**:
+on any non-ServiceNow page with an opener it acts as the Jira agent, and it answers only requests whose `event.origin`
+is a ServiceNow host. So moving to the new Jira means changing one setting, with no new file and no re-dragging the
+bookmark. The installer page's "Open ServiceNow" button uses a **built-in ServiceNow address, `https://zilverton.service-now.com`**
+(owner's decision 2026-10-20, GH #449 — public repo accepted, matching the Jira default already in `loader.js`).
+Both build defaults live in ONE module (`client/src/snowWizard/wizardDefaults.ts`) so the Jira move is a one-line change
+for future files, while existing users change the setting.
+**Rationale**: the owner expects a Jira URL change next month; a frozen hostname would force every user to re-install.
+**Security**: the origin check replaces the hostname check, so a page that opens a user's Jira tab cannot read Jira
+through the agent unless it is itself ServiceNow.

@@ -2,8 +2,11 @@
 
 'use strict';
 
+const path = require('path');
+
 const {
   WIZARD_BOOKMARK_BUDGET_BYTES,
+  createModuleReplacementPlugin,
   assertWithinBookmarkBudget,
   escapeInlineScript,
   findExternalReferences,
@@ -49,5 +52,27 @@ describe('assertWithinBookmarkBudget', () => {
 
   it('fails the build, naming both sizes, when the bookmark is over budget', () => {
     expect(() => assertWithinBookmarkBudget(WIZARD_BOOKMARK_BUDGET_BYTES + 1)).toThrow(/over the 1572864-byte budget/);
+  });
+});
+
+describe('createModuleReplacementPlugin', () => {
+  function captureResolver(replacedModules) {
+    let resolveHandler = null;
+    createModuleReplacementPlugin(replacedModules).setup({ onResolve: (_options, handler) => { resolveHandler = handler; } });
+    return resolveHandler;
+  }
+
+  const originalFile = path.resolve('client/src/services/relayBridgeApi.ts');
+  const replacementFile = path.resolve('client/src/snowWizard/transport/relayBridgeShim.ts');
+
+  it('swaps an import that resolves to the original file, however it is written', () => {
+    const resolveHandler = captureResolver([{ original: originalFile, replacement: replacementFile }]);
+    expect(resolveHandler({ path: './relayBridgeApi.ts', resolveDir: path.resolve('client/src/services') })).toEqual({ path: replacementFile });
+    expect(resolveHandler({ path: '../services/relayBridgeApi.ts', resolveDir: path.resolve('client/src/hooks') })).toEqual({ path: replacementFile });
+  });
+
+  it('leaves every other import to esbuild', () => {
+    const resolveHandler = captureResolver([{ original: originalFile, replacement: replacementFile }]);
+    expect(resolveHandler({ path: './snowApi.ts', resolveDir: path.resolve('client/src/services') })).toBeUndefined();
   });
 });

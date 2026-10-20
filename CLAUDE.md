@@ -17,9 +17,10 @@
 > `po-pi-dropdown.spec.js`. Feature 024's spec inherited a false "do not run concurrently with 022" constraint from
 > these stale entries before the code was checked. **Verify against the codebase before trusting a status below.**
 
-- **040-snow-hub-wizard** — *(**IN PROGRESS** on `feature/040-snow-hub-wizard` — Phase A (T001–T011): the read-only
-  connection probe `dist/snow-wizard-probe.html` (`npm run build:snow-wizard-probe`, code `client/src/snowWizard/probe/`)
-  ships as a release asset. **T012 gate: nothing after it starts until the owner pastes the production probe result.**)* A **standalone, single-HTML-file** SNow Hub with three child-simple wizards: Create/Modify a CHG
+- **040-snow-hub-wizard** — *(**IN PROGRESS** on `feature/040-snow-hub-wizard` — Phases A+B shipped (T001–T032): probe passed in
+  production (research R-001 RESULT: T1+T2), `dist/snow-hub-wizard.html` (`npm run build:snow-wizard`) = installer +
+  Wizard window with Connect/Settings/Home. Next: US1 New change (T033+). Shared 039 engine `views/SnowHub/guided/` and
+  `components/GuidedFlow/` now exist.)* A **standalone, single-HTML-file** SNow Hub with three child-simple wizards: Create/Modify a CHG
   (scope → details → planning → environments → optional AI → evidence → CTASKs → **CTASK × environment** (Business
   Checkout PRD not REL) → checks → Production email/PDF → create), **PRB → Defect + SL + QE** (shared Epic link, both
   Stories `Relates` to the Defect, idempotent via `prb-<n>` label), and **RM Review** (same checks, read-only,

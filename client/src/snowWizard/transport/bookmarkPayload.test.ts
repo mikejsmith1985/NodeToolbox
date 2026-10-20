@@ -2,13 +2,14 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { SNOW_HOSTNAME_FRAGMENTS, SNOW_TOKEN_RESOLVER_SOURCE } from '../../services/browserRelay.ts';
+import { SNOW_HOSTNAME_FRAGMENTS, SNOW_TOKEN_RESOLVER_SOURCE } from '../../services/snowRelayShared.ts';
 import {
   BOOT_PLACEHOLDER,
   buildBookmarkHref,
   buildBookmarkSource,
   detectBookmarkRole,
   runJiraAgent,
+  runSnowLauncher,
 } from './bookmarkPayload.ts';
 
 const JIRA_HOSTNAME = 'jira.example.com';
@@ -29,6 +30,11 @@ describe('detectBookmarkRole', () => {
 
   it('never treats an empty configured Jira host as matching every page', () => {
     expect(detectBookmarkRole('intranet.example.com', SNOW_HOSTNAME_FRAGMENTS, '')).toBe('unknown');
+  });
+
+  it('with no frozen Jira host, acts as the agent on any non-ServiceNow tab the Wizard opened (R-011)', () => {
+    expect(detectBookmarkRole('jira-new.example.com', SNOW_HOSTNAME_FRAGMENTS, '', true)).toBe('jiraAgent');
+    expect(detectBookmarkRole('acme.service-now.com', SNOW_HOSTNAME_FRAGMENTS, '', true)).toBe('snowLauncher');
   });
 });
 
@@ -120,6 +126,38 @@ describe('runJiraAgent', () => {
     expect(openerPostMessage).toHaveBeenLastCalledWith(expect.objectContaining({ kind: 'response', status: 0 }), '*');
   });
 
+  it('sends the user back to the Wizard window after connecting', () => {
+    const openerFocus = vi.fn();
+    Object.defineProperty(window, 'opener', { configurable: true, value: { postMessage: openerPostMessage, focus: openerFocus } });
+    startAgent();
+    expect(openerFocus).toHaveBeenCalled();
+  });
+
+  it('serves only ServiceNow windows when restricted, replying to that exact origin', async () => {
+    fetchMock.mockResolvedValue(new Response('{}', { status: 201 }));
+    stopAgents.push(runJiraAgent({ channelName: CHANNEL_NAME, isReadOnly: false, allowedRequesterHostFragments: ['service-now'] }));
+    const requesterWindow = { postMessage: vi.fn() };
+
+    window.dispatchEvent(new MessageEvent('message', {
+      data: { channel: CHANNEL_NAME, kind: 'request', requestId: 'evil', method: 'GET', path: '/rest/api/2/myself' },
+      origin: 'https://evil.example.com',
+      source: requesterWindow as unknown as MessageEventSource,
+    }));
+    window.dispatchEvent(new MessageEvent('message', {
+      data: { channel: CHANNEL_NAME, kind: 'request', requestId: 'r2', method: 'POST', path: '/rest/api/2/issue', body: '{"fields":{}}' },
+      origin: 'https://acme.service-now.com',
+      source: requesterWindow as unknown as MessageEventSource,
+    }));
+
+    await vi.waitFor(() => expect(requesterWindow.postMessage).toHaveBeenCalledTimes(1));
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][1]).toEqual(expect.objectContaining({ method: 'POST', body: '{"fields":{}}' }));
+    expect(requesterWindow.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ requestId: 'r2', status: 201 }),
+      'https://acme.service-now.com',
+    );
+  });
+
   it('ignores messages from other channels', () => {
     startAgent();
     window.dispatchEvent(new MessageEvent('message', { data: { channel: 'other', kind: 'request' } }));
@@ -130,5 +168,64 @@ describe('runJiraAgent', () => {
     Object.defineProperty(window, 'opener', { configurable: true, value: null });
     startAgent();
     expect(document.body.textContent).toContain('cut the link');
+  });
+});
+
+describe('runSnowLauncher', () => {
+  const channelPosts: unknown[] = [];
+  let answerPingWithPong = false;
+  let openedHtml = '';
+
+  class FakeBroadcastChannel {
+    onmessage: ((messageEvent: MessageEvent) => void) | null = null;
+    postMessage(message: { kind: string }) {
+      channelPosts.push(message);
+      if (message.kind === 'ping' && answerPingWithPong) queueMicrotask(() => this.onmessage?.(new MessageEvent('message', { data: { kind: 'pong' } })));
+    }
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    channelPosts.length = 0;
+    answerPingWithPong = false;
+    vi.stubGlobal('BroadcastChannel', FakeBroadcastChannel);
+    vi.stubGlobal('Blob', class { constructor(parts: string[]) { openedHtml = parts.join(''); } });
+    URL.createObjectURL = vi.fn(() => 'blob:https://acme.service-now.com/abc');
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  const launcherConfig = {
+    snowWindowHtml: `<script>window.__SNOW_WIZARD_BOOT__=${BOOT_PLACEHOLDER};</script>`,
+    jiraHostname: '',
+    channelName: 'snowWizard',
+    bootPlaceholder: BOOT_PLACEHOLDER,
+    pingWaitMs: 10,
+  };
+
+  it('opens the Wizard window with boot data in which "<" can never close the script', async () => {
+    const openSpy = vi.spyOn(window, 'open').mockReturnValue({} as Window);
+    runSnowLauncher(launcherConfig, () => 'tok<en', { showBadge: vi.fn() });
+    await vi.advanceTimersByTimeAsync(11);
+
+    expect(openSpy).toHaveBeenCalledWith('blob:https://acme.service-now.com/abc', 'snowWizardApp');
+    expect(openedHtml).toContain(`tok${String.fromCharCode(92)}u003cen`);
+    expect(openedHtml).not.toContain('tok<en');
+  });
+
+  it('does not open a second Wizard when one answers, and refreshes its token instead', async () => {
+    answerPingWithPong = true;
+    const openSpy = vi.spyOn(window, 'open');
+    const showBadge = vi.fn();
+    runSnowLauncher(launcherConfig, () => 'fresh-token', { showBadge });
+    await vi.advanceTimersByTimeAsync(11);
+
+    expect(openSpy).not.toHaveBeenCalled();
+    expect(channelPosts).toContainEqual({ kind: 'token', token: 'fresh-token' });
+    expect(showBadge.mock.calls[0][0]).toContain('already open');
   });
 });

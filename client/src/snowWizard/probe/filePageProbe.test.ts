@@ -84,6 +84,7 @@ describe('mountFilePageProbe', () => {
     const agentWindow = { postMessage: vi.fn((message: { requestId: string }) => {
       queueMicrotask(() => window.dispatchEvent(new MessageEvent('message', {
         data: { channel: CHANNEL_NAME, kind: 'response', requestId: message.requestId, status: 200, body: '{"displayName":"Smith, Jane"}' },
+        origin: 'https://jira.example.com',
       })));
     }) };
     window.dispatchEvent(new MessageEvent('message', { data: { channel: CHANNEL_NAME, kind: 'hello', system: 'jira' }, origin: 'https://jira.example.com', source: agentWindow as unknown as MessageEventSource }));

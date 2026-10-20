@@ -49,6 +49,7 @@ export function waitForAgentHello(
   channelName: string,
   timeoutMs: number,
   expectedSystem?: 'jira' | 'snow',
+  expectedOrigin?: string,
 ): Promise<AgentAddress> {
   return new Promise((resolve, reject) => {
     const timeoutId = setTimeout(() => {
@@ -61,6 +62,8 @@ export function waitForAgentHello(
       if (!messageData || messageData.channel !== channelName || messageData.kind !== 'hello' || !messageEvent.source) return;
       // The ServiceNow and Jira agents share one channel; a waiting step only accepts the system it opened.
       if (expectedSystem && messageData.system !== expectedSystem) return;
+      // The Wizard only trusts the Jira it was told about (the Jira address setting).
+      if (expectedOrigin && messageEvent.origin !== expectedOrigin) return;
       clearTimeout(timeoutId);
       listenerTarget.removeEventListener('message', handleMessage);
       resolve({ agentSource: messageEvent.source, agentOrigin: messageEvent.origin });
@@ -70,7 +73,9 @@ export function waitForAgentHello(
   });
 }
 
-/** Sends one request to the agent and resolves with its matching answer, or status 0 "timeout" — never hangs. */
+/**
+ * Sends one request to the agent and resolves with its matching answer, or status 0 "timeout" — never hangs.
+ */
 export function sendAgentRequest(
   listenerTarget: MessageListenerTarget,
   agentSource: MessageEventSource,
@@ -89,6 +94,8 @@ export function sendAgentRequest(
     function handleMessage(messageEvent: MessageEvent): void {
       const messageData = messageEvent.data;
       if (!messageData || messageData.channel !== channelName || messageData.kind !== 'response' || messageData.requestId !== requestId) return;
+      // Answers count only from the agent's own origin (a file:// agent's "null" origin cannot be checked).
+      if (agentOrigin !== OPAQUE_ORIGIN && agentOrigin !== '' && messageEvent.origin !== agentOrigin) return;
       clearTimeout(timeoutId);
       listenerTarget.removeEventListener('message', handleMessage);
       resolve({ status: Number(messageData.status) || 0, body: String(messageData.body ?? '') });

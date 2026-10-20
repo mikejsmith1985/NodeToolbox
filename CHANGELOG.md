@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **SNow Wizard — the shareable one-file SNow Hub (feature 040, Phase B: install and connect).**
+  - **`snow-hub-wizard.html`** is attached to every GitHub Release. Open it once, drag **SNow Wizard** to the bookmarks
+    bar, and close it. From then on, click SNow Wizard on any ServiceNow tab: the Wizard opens in its own window and
+    talks to ServiceNow directly. Nothing to install and no Toolbox needed.
+  - **Connect** shows ServiceNow already connected and walks you through **Open Jira**. After you click the bookmark
+    on Jira, it sends you straight back to the Wizard.
+  - **A second click never opens a second Wizard.** It refreshes the open Wizard's ServiceNow session instead.
+  - **Settings** holds the Jira address. It is pre-filled and can be changed, so the coming Jira move needs no new file
+    and no new bookmark. The Jira side only answers windows that are ServiceNow.
+  - **Every copy button now confirms** "Copied ✓", or selects the text and says "Press Ctrl+C".
+  - The three jobs (change, problem to Jira, review) appear on Home and open in the next updates.
+  - Under the hood, the Wizard reuses Toolbox's own ServiceNow and Jira code unchanged. It also ships the shared
+    **readiness checks** and the **guided step frame** that feature 039 will use too.
 - **SNow Wizard connection probe — a one-file test of whether a Toolbox-free SNow Hub can reach ServiceNow and Jira
   (feature 040, Phase A).**
   - The planned standalone SNow Wizard is one HTML file with no install and no server. Chrome cuts tab-to-tab

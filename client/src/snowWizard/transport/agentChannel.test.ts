@@ -34,6 +34,15 @@ describe('waitForAgentHello', () => {
     await expect(helloPromise).rejects.toThrow('no hello');
   });
 
+  it('ignores a hello from an unexpected origin when one origin is expected', async () => {
+    vi.useFakeTimers();
+    const agentWindow = { postMessage: vi.fn() } as unknown as MessageEventSource;
+    const helloPromise = waitForAgentHello(window, CHANNEL_NAME, 1000, 'jira', 'https://jira.example.com');
+    postFromAgent({ channel: CHANNEL_NAME, kind: 'hello', system: 'jira' }, agentWindow, 'https://other.example.com');
+    vi.advanceTimersByTime(1001);
+    await expect(helloPromise).rejects.toThrow('no hello');
+  });
+
   it('rejects with a plain reason when no hello arrives in time', async () => {
     vi.useFakeTimers();
     const helloPromise = waitForAgentHello(window, CHANNEL_NAME, 1000);
@@ -55,6 +64,7 @@ describe('sendAgentRequest', () => {
       'https://jira.example.com',
     );
     postFromAgent({ channel: CHANNEL_NAME, kind: 'response', requestId: 'not-mine', status: 500, body: 'x' });
+    postFromAgent({ channel: CHANNEL_NAME, kind: 'response', requestId: sentRequest.requestId, status: 200, body: 'ok' }, null, 'https://impostor.example.com');
     postFromAgent({ channel: CHANNEL_NAME, kind: 'response', requestId: sentRequest.requestId, status: 200, body: 'ok' });
 
     await expect(responsePromise).resolves.toEqual({ status: 200, body: 'ok' });

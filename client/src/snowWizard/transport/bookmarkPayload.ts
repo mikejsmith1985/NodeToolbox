@@ -9,7 +9,7 @@
 // someone else's page. They must not reference any import or module-level value; everything they need arrives as
 // arguments.
 
-import { SNOW_HOSTNAME_FRAGMENTS, SNOW_TOKEN_RESOLVER_SOURCE } from '../../services/browserRelay.ts';
+import { SNOW_HOSTNAME_FRAGMENTS, SNOW_TOKEN_RESOLVER_SOURCE } from '../../services/snowRelayShared.ts';
 
 /** Placeholder in the Wizard window's HTML that the launcher replaces with the boot data (origin, token, channel). */
 export const BOOT_PLACEHOLDER = '__SNOW_WIZARD_BOOT_JSON__';
@@ -19,10 +19,12 @@ export type BookmarkRole = 'snowLauncher' | 'jiraAgent' | 'unknown';
 /** Everything the bookmark needs, frozen into it when the owner drags it to the bookmarks bar. */
 export interface BookmarkConfig {
   snowWindowHtml: string;
+  /** The probe freezes the Jira host; the Wizard leaves it empty so a Jira move needs no new bookmark (R-011). */
   jiraHostname: string;
   channelName: string;
   jiraUrl?: string;
   isReadOnly?: boolean;
+  allowedRequesterHostFragments?: readonly string[];
 }
 
 /** Badge helper handed to the runtimes (they cannot import it — see the file header). */
@@ -34,19 +36,32 @@ export interface BookmarkTools {
 export interface JiraAgentConfig {
   channelName: string;
   isReadOnly?: boolean;
+  /**
+   * When set, only windows on these hosts may send requests (the Wizard runs inside ServiceNow, so this is the
+   * ServiceNow host fragments). Absent only for the probe, whose file page has no host to check.
+   */
+  allowedRequesterHostFragments?: readonly string[];
 }
 
 // ── Runtimes (serialized into the bookmark) ──────────────────────────────────
 
-/** Decides what the bookmark does from the page it was clicked on. */
-export function detectBookmarkRole(hostname: string, snowHostnameFragments: readonly string[], jiraHostname: string): BookmarkRole {
+/**
+ * Decides what the bookmark does from the page it was clicked on. With a frozen Jira host (the probe) only that host
+ * is an agent; without one (the Wizard) any non-ServiceNow tab that the Wizard opened is — its requests are then
+ * accepted only from ServiceNow windows, so the Jira address can change without re-installing the bookmark.
+ */
+export function detectBookmarkRole(
+  hostname: string,
+  snowHostnameFragments: readonly string[],
+  jiraHostname: string,
+  hasOpener = false,
+): BookmarkRole {
   const normalizedHostname = hostname.toLowerCase();
   const isServiceNowPage = snowHostnameFragments.some((hostnameFragment) => normalizedHostname.indexOf(hostnameFragment) >= 0);
   if (isServiceNowPage) return 'snowLauncher';
   const normalizedJiraHostname = jiraHostname.trim().toLowerCase();
-  // An empty configured Jira host must never match: that would turn every unknown page into a Jira agent.
-  if (normalizedJiraHostname !== '' && normalizedHostname === normalizedJiraHostname) return 'jiraAgent';
-  return 'unknown';
+  if (normalizedJiraHostname !== '') return normalizedHostname === normalizedJiraHostname ? 'jiraAgent' : 'unknown';
+  return hasOpener ? 'jiraAgent' : 'unknown';
 }
 
 /** Shows a small status badge on the page the bookmark was clicked on (click to dismiss). */
@@ -78,14 +93,29 @@ export function runJiraAgent(config: JiraAgentConfig, tools: BookmarkTools = DEF
     return () => undefined;
   }
   openerWindow.postMessage({ channel: config.channelName, kind: 'hello', system: 'jira' }, '*');
-  tools.showBadge('SNow Wizard is connected to this Jira tab — keep it open.', '#238636');
+  tools.showBadge('SNow Wizard is connected to this Jira tab — keep it open; you are back in the Wizard.', '#238636');
+  // The bookmark click is a user action, which is what lets this tab hand focus back to the Wizard window.
+  try {
+    openerWindow.focus();
+  } catch {
+    // Some browsers refuse; the badge still tells the user where to go.
+  }
+  const allowedFragments = config.allowedRequesterHostFragments;
+  const isRequesterAllowed = (requesterOrigin: string) => {
+    if (!allowedFragments) return true;
+    const requesterHostname = requesterOrigin.replace(/^[a-z]+:\/\//i, '').split(':')[0].toLowerCase();
+    return allowedFragments.some((hostFragment) => requesterHostname.indexOf(hostFragment) >= 0);
+  };
 
   const handleWizardRequest = async (messageEvent: MessageEvent) => {
     const requestData = messageEvent.data;
     if (!requestData || requestData.channel !== config.channelName || requestData.kind !== 'request') return;
+    // A page that is not ServiceNow gets no answer at all — not even a refusal carrying Jira data.
+    if (!isRequesterAllowed(messageEvent.origin)) return;
     const replyTarget = (messageEvent.source as Window | null) ?? openerWindow;
+    const replyOrigin = messageEvent.origin && messageEvent.origin !== 'null' ? messageEvent.origin : '*';
     const reply = (status: number, body: string) => replyTarget.postMessage(
-      { channel: config.channelName, kind: 'response', requestId: requestData.requestId, status, body }, '*');
+      { channel: config.channelName, kind: 'response', requestId: requestData.requestId, status, body }, replyOrigin);
 
     const requestMethod = String(requestData.method || 'GET').toUpperCase();
     if (typeof requestData.path !== 'string' || requestData.path.indexOf('/rest/') !== 0) {
@@ -101,7 +131,8 @@ export function runJiraAgent(config: JiraAgentConfig, tools: BookmarkTools = DEF
         method: requestMethod,
         credentials: 'include',
         headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
-        body: requestData.body == null ? undefined : JSON.stringify(requestData.body),
+        // Bodies travel as the exact text Jira should receive; objects (older callers) are serialized once.
+        body: requestData.body == null ? undefined : (typeof requestData.body === 'string' ? requestData.body : JSON.stringify(requestData.body)),
       });
       reply(jiraResponse.status, await jiraResponse.text());
     } catch (requestError) {
@@ -115,11 +146,12 @@ export function runJiraAgent(config: JiraAgentConfig, tools: BookmarkTools = DEF
 
 /**
  * ServiceNow launcher: opens the Wizard window as a blob: document created by this ServiceNow page, so the window
- * belongs to ServiceNow's origin and calls ServiceNow directly. Also says hello to a window that opened this tab (the
- * probe's file-page test) and answers fresh-token requests over a same-origin BroadcastChannel.
+ * belongs to ServiceNow's origin and calls ServiceNow directly. If a Wizard window is already open (it answers a "ping"
+ * on the same-origin channel) it is NOT opened twice — the owner's probe finding — it just receives a fresh session
+ * token. Also says hello to a window that opened this tab (the probe's file-page test).
  */
 export function runSnowLauncher(
-  config: BookmarkConfig & { bootPlaceholder: string },
+  config: BookmarkConfig & { bootPlaceholder: string; pingWaitMs?: number },
   resolveUserToken: () => string,
   tools: BookmarkTools,
 ): void {
@@ -128,23 +160,31 @@ export function runSnowLauncher(
   } catch {
     // A severed opener throws on some browsers; the probe records the missing hello instead.
   }
+  let isWizardAlreadyOpen = false;
   const tokenChannel = new BroadcastChannel(config.channelName);
   tokenChannel.onmessage = (messageEvent: MessageEvent) => {
-    if (messageEvent.data && messageEvent.data.kind === 'tokenRequest') {
-      tokenChannel.postMessage({ kind: 'token', token: resolveUserToken() });
-    }
+    if (messageEvent.data?.kind === 'tokenRequest') tokenChannel.postMessage({ kind: 'token', token: resolveUserToken() });
+    if (messageEvent.data?.kind === 'pong') isWizardAlreadyOpen = true;
   };
-  const bootData = { instanceOrigin: location.origin, userToken: resolveUserToken(), channelName: config.channelName, jiraUrl: config.jiraUrl ?? '' };
-  // "<" is escaped so the boot data can never close the window's <script> element early.
-  const bootJson = JSON.stringify(bootData).split('<').join('\\u003c');
-  const windowHtml = config.snowWindowHtml.split(config.bootPlaceholder).join(bootJson);
-  const windowUrl = URL.createObjectURL(new Blob([windowHtml], { type: 'text/html' }));
-  // A fixed window name, so a second click reuses the Wizard window instead of stacking new ones.
-  const openedWindow = window.open(windowUrl, 'snowWizardApp');
-  tools.showBadge(
-    openedWindow ? 'SNow Wizard opened — keep this ServiceNow tab open.' : 'The browser blocked the Wizard window — allow pop-ups for this site, then click again.',
-    openedWindow ? '#238636' : '#991b1b',
-  );
+  const openWizardWindow = () => {
+    const bootData = { instanceOrigin: location.origin, userToken: resolveUserToken(), channelName: config.channelName, jiraUrl: config.jiraUrl ?? '' };
+    // Every "<" becomes its JSON escape (backslash, then u003c; the backslash is built from char 92 so no escaping layer
+    // can eat it), so the boot data can never close the window's <script> element early.
+    const bootJson = JSON.stringify(bootData).split('<').join(String.fromCharCode(92) + 'u003c');
+    const windowHtml = config.snowWindowHtml.split(config.bootPlaceholder).join(bootJson);
+    const openedWindow = window.open(URL.createObjectURL(new Blob([windowHtml], { type: 'text/html' })), 'snowWizardApp');
+    tools.showBadge(
+      openedWindow ? 'SNow Wizard opened in its own window — keep this ServiceNow tab open.' : 'The browser blocked the Wizard window — allow pop-ups for this site, then click again.',
+      openedWindow ? '#238636' : '#991b1b',
+    );
+  };
+  tokenChannel.postMessage({ kind: 'ping' });
+  // A short wait for a "pong"; the click still counts as the user's action when the window opens after it.
+  setTimeout(() => {
+    if (!isWizardAlreadyOpen) return openWizardWindow();
+    tokenChannel.postMessage({ kind: 'token', token: resolveUserToken() });
+    tools.showBadge('The SNow Wizard is already open in its own window — switch to it. Its ServiceNow connection was refreshed.', '#238636');
+  }, config.pingWaitMs ?? 400);
 }
 
 /** Entry point inside the bookmark: pick a role, then run it. */
@@ -157,7 +197,7 @@ export function runBookmark(
   resolveUserToken: () => string,
 ): void {
   const tools = { showBadge };
-  const bookmarkRole = detectRole(location.hostname, config.snowHostnameFragments, config.jiraHostname);
+  const bookmarkRole = detectRole(location.hostname, config.snowHostnameFragments, config.jiraHostname, Boolean(window.opener));
   if (bookmarkRole === 'snowLauncher') {
     snowLauncher(config, resolveUserToken, tools);
   } else if (bookmarkRole === 'jiraAgent') {

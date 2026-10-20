@@ -1,0 +1,153 @@
+/* WizardShell.module.css — Look of the SNow Wizard's frame (home, connect, settings, banner); built on the app's shared
+   tokens (tokens.css is inlined ahead of this in the Wizard file) and the GuidedFlowShell vocabulary. */
+
+.page {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: var(--spacing-lg, 24px) 16px 48px;
+  color: var(--color-text-primary);
+}
+
+.pageTitle {
+  margin: 0 0 var(--spacing-md, 16px);
+  font-size: 1.6rem;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm, 8px);
+  margin: var(--spacing-md, 16px) 0;
+  padding: var(--spacing-lg, 24px);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-card-bg);
+}
+
+.cardTitle {
+  margin: 0 0 var(--spacing-sm, 8px);
+  font-size: 1.2rem;
+}
+
+.connectionLine {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.connectionLine[data-status='connected']::before {
+  content: '✓ ';
+  color: var(--color-tone-success-fg);
+}
+
+.connectionLine[data-status='expired']::before,
+.connectionLine[data-status='notConnected']::before {
+  content: '• ';
+  color: var(--color-tone-warning-fg);
+}
+
+.hint {
+  margin: 0;
+  color: var(--color-text-secondary);
+}
+
+.numberedSteps {
+  margin: var(--spacing-sm, 8px) 0;
+  padding-left: 1.4em;
+  line-height: 1.7;
+}
+
+.fieldLabel {
+  font-weight: 600;
+}
+
+.inputField {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--field-elevation-border);
+  border-radius: var(--radius-md);
+  background: var(--field-elevation-bg);
+  box-shadow: var(--field-elevation-shadow);
+  color: var(--color-text-primary);
+  font: inherit;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm, 8px);
+}
+
+.primaryButton,
+.secondaryButton,
+.bannerButton {
+  padding: 10px 18px;
+  border-radius: var(--radius-md);
+  font: 600 1rem/1.2 inherit;
+  cursor: pointer;
+}
+
+.primaryButton {
+  align-self: flex-start;
+  border: 0;
+  background: var(--color-accent);
+  color: var(--color-text-on-accent);
+}
+
+.secondaryButton,
+.bannerButton {
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-surface-2);
+  color: var(--color-text-primary);
+}
+
+.banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-sm, 8px);
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  background: var(--color-tone-success-bg);
+  color: var(--color-text-primary);
+}
+
+.banner[data-tone='warning'] {
+  background: var(--color-tone-warning-bg);
+}
+
+.choiceGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--spacing-md, 16px);
+  margin: var(--spacing-md, 16px) 0;
+}
+
+.choiceCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs, 4px);
+  min-height: 150px;
+  padding: var(--spacing-lg, 24px);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--color-card-bg);
+  color: var(--color-text-primary);
+  text-align: left;
+  cursor: pointer;
+}
+
+.choiceCard:disabled {
+  cursor: not-allowed;
+  opacity: 0.75;
+}
+
+.choiceTitle {
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+
+.choiceDescription {
+  color: var(--color-text-secondary);
+}
