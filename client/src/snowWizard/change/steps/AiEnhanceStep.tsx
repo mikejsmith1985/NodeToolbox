@@ -126,12 +126,16 @@ function useReviewLoopActions({ crg, session, updateSession }: Pick<ChangeStepPr
     saveLoop(recordSuggestionDecision(loop, suggestion.fieldKey, decision));
   }
 
-  return { loop, fixFindings, readReview, readFixes, decide, writeFixes: () => saveLoop(startFixRound(loop)), reviewAgain: () => saveLoop(startNextReview(loop)) };
+  function decideAll(suggestions: FieldSuggestion[], decision: SuggestionDecision) {
+    saveLoop(suggestions.reduce((nextLoop, suggestion) => recordSuggestionDecision(nextLoop, suggestion.fieldKey, decision), loop));
+  }
+
+  return { loop, fixFindings, readReview, readFixes, decide, decideAll, writeFixes: () => saveLoop(startFixRound(loop)), reviewAgain: () => saveLoop(startNextReview(loop)) };
 }
 
 /** Step 6: an optional AI review of the whole change, repeated until it is ready. */
 export default function AiEnhanceStep({ crg, session, updateSession, goToStep }: ChangeStepProps) {
-  const { loop, fixFindings, readReview, readFixes, decide, writeFixes, reviewAgain } = useReviewLoopActions({ crg, session, updateSession });
+  const { loop, fixFindings, readReview, readFixes, decide, decideAll, writeFixes, reviewAgain } = useReviewLoopActions({ crg, session, updateSession });
   const isFixStage = loop.stage === 'fix';
   const promptText = useMemo(
     () => (isFixStage ? buildReviewFixPrompt(crg.state, fixFindings) : buildEnhancePrompt(crg.state)),
@@ -154,7 +158,7 @@ export default function AiEnhanceStep({ crg, session, updateSession, goToStep }:
         readButtonLabel={isFixStage ? 'Read the fixes' : 'Read the reply'}
         onReadReply={isFixStage ? readFixes : readReview}
       />
-      <SuggestionList suggestions={loop.suggestions} decisions={loop.decisions} onDecide={decide}
+      <SuggestionList suggestions={loop.suggestions} decisions={loop.decisions} onDecide={decide} onDecideAll={decideAll}
         onAccept={(suggestion) => applyChangeTextField(crg.actions, suggestion.fieldKey, suggestion.suggestedText)} />
       <ReviewOutcome loop={loop} mode={session.mode} goToStep={goToStep} onWriteFixes={writeFixes} onReviewAgain={reviewAgain} />
     </div>

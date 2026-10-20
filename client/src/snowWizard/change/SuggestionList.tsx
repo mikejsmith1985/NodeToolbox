@@ -18,10 +18,12 @@ interface SuggestionListProps {
   /** Decisions kept by the caller; when given, the caller records each new one through onDecide. */
   decisions?: DecisionMap;
   onDecide?: (suggestion: FieldSuggestion, decision: SuggestionDecision) => void;
+  /** Records several decisions at once (Accept all) — needed when the caller keeps the decisions. */
+  onDecideAll?: (suggestions: FieldSuggestion[], decision: SuggestionDecision) => void;
 }
 
 /** The suggestions, each decided once. */
-export default function SuggestionList({ suggestions, onAccept, decisions, onDecide }: SuggestionListProps) {
+export default function SuggestionList({ suggestions, onAccept, decisions, onDecide, onDecideAll }: SuggestionListProps) {
   const [ownDecisions, setOwnDecisions] = useState<DecisionMap>({});
   const shownDecisions = decisions ?? ownDecisions;
 
@@ -31,8 +33,25 @@ export default function SuggestionList({ suggestions, onAccept, decisions, onDec
     else setOwnDecisions((previousDecisions) => ({ ...previousDecisions, [suggestion.fieldKey]: decision }));
   }
 
+  // One click writes every fix still waiting — the owner wants all problems solved at once, not one at a time.
+  function acceptAll() {
+    const waitingSuggestions = suggestions.filter((suggestion) => !shownDecisions[suggestion.fieldKey]);
+    waitingSuggestions.forEach(onAccept);
+    if (onDecideAll) onDecideAll(waitingSuggestions, 'accepted');
+    else if (!decisions) {
+      setOwnDecisions((previousDecisions) => ({ ...previousDecisions, ...Object.fromEntries(waitingSuggestions.map((suggestion) => [suggestion.fieldKey, 'accepted'])) }));
+    }
+  }
+
   if (suggestions.length === 0) return null;
+  const waitingCount = suggestions.filter((suggestion) => !shownDecisions[suggestion.fieldKey]).length;
   return (
+    <>
+    {waitingCount > 1 ? (
+      <div className={styles.buttonRow}>
+        <button type="button" className={styles.actionButton} onClick={acceptAll}>{`Accept all ${waitingCount} fixes`}</button>
+      </div>
+    ) : null}
     <ul className={styles.itemList} aria-label="Suggested changes">
       {suggestions.map((suggestion) => (
         <li key={suggestion.fieldKey} className={styles.card}>
@@ -52,5 +71,6 @@ export default function SuggestionList({ suggestions, onAccept, decisions, onDec
         </li>
       ))}
     </ul>
+    </>
   );
 }

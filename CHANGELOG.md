@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **SNow Wizard: no more loop back to step 6, and every fix in one go.**
+  - **Task backout plans:** the "Task backout plans" check wants each Implementation task to carry a backout plan. Its
+    fix used to open the AI review, which rewrote the *change's* backout plan and could never clear the task check.
+    Implementation tasks now take the change's backout plan automatically (a task with its own different plan keeps
+    it), and the fix points to "How will it go?".
+  - **AI review:** the step 6 review is optional coaching and no longer counts in "Will it pass review?". The
+    change-text checks still judge the same writing.
+  - **All at once:** "Ask AI to fix all the writing at once" opens by itself, and every suggestion list has
+    **Accept all N fixes**.
+
+### Fixed
 - **SNow Wizard review loop: the round count now moves on, and the checks stop sending you round in circles.**
   - Every newly pasted review starts the next round. Before, only the Review again button did that, so it sat on
     "Round 1".

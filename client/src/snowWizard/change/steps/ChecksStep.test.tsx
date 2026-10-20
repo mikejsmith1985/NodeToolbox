@@ -31,7 +31,7 @@ describe('ChecksStep', () => {
     expect(screen.getByText('Needs action')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Write the Backout Plan' }));
     expect(goToStep).toHaveBeenCalledWith('planning');
-    expect(screen.getByText('Ask AI to fix the writing')).toBeTruthy();
+    expect(screen.getByText('Ask AI to fix all the writing at once')).toBeTruthy();
   });
 
   it('says plainly when the AI review is all that is left after a review has run, and offers to go on', () => {

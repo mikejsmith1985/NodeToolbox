@@ -26,6 +26,15 @@ describe('SuggestionList', () => {
     expect(screen.getByText('Declined — left as it was')).toBeTruthy();
   });
 
+  it('accepts every waiting fix with one click, and reports them together to a caller that keeps decisions', () => {
+    const onAccept = vi.fn();
+    const onDecideAll = vi.fn();
+    render(<SuggestionList suggestions={SUGGESTIONS} onAccept={onAccept} decisions={{}} onDecide={vi.fn()} onDecideAll={onDecideAll} />);
+    fireEvent.click(screen.getByRole('button', { name: `Accept all ${SUGGESTIONS.length} fixes` }));
+    expect(onAccept).toHaveBeenCalledTimes(SUGGESTIONS.length);
+    expect(onDecideAll).toHaveBeenCalledWith([...SUGGESTIONS], 'accepted');
+  });
+
   it('shows decisions kept elsewhere and reports each new one, so they survive leaving the step', () => {
     const onAccept = vi.fn();
     const onDecide = vi.fn();

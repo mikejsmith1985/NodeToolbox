@@ -52,8 +52,8 @@ function WritingFixRound({ crg, items }: Pick<ChecksStepProps, 'crg'> & { items:
   const promptText = useMemo(() => buildChecksFixPrompt(crg.state, items), [crg.state, items]);
   if (promptText === null) return null;
   return (
-    <details className={styles.moreOptions}>
-      <summary>Ask AI to fix the writing</summary>
+    <details className={styles.moreOptions} open>
+      <summary>Ask AI to fix all the writing at once</summary>
       <PromptRound promptText={promptText} copyLabel="Copy the fix prompt" readButtonLabel="Read the reply" onReadReply={(replyText) => {
         const readSuggestions = readFixReply(replyText, crg.state);
         setSuggestions(readSuggestions);

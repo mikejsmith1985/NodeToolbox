@@ -47,6 +47,7 @@ import WhichChangeStep from './steps/WhichChangeStep.tsx';
 import { listTaskProblems } from './taskCards.ts';
 import TemplatesScreen from './TemplatesScreen.tsx';
 import { useDraftReadiness } from './useDraftReadiness.ts';
+import { useImplementationBackout } from './useImplementationBackout.ts';
 import { useFinishRunner, type FinishRunner } from './useFinishRunner.ts';
 import { useStartingPoint, type ChangeStartingPoint, type StartingPointHandle } from './useStartingPoint.ts';
 import { useTemplateLibrary, type TemplateLibrary } from './useTemplateLibrary.ts';
@@ -213,6 +214,7 @@ function ChangeJob({ job, startingPoint, onExit }: { job: WizardJob; startingPoi
   const restoredCrg = { ...crg, state: applySavedEnvironments(crg.state, session.enabledEnvironments) };
   const navigationProgress = buildProgress(restoredCrg, session, null, paperworkNeed);
   const { currentStepId, goToStep } = useStepNavigation(job, crg, session, updateSession, navigationProgress);
+  useImplementationBackout(crg);
   const { items } = useDraftReadiness(crg.state, session, stepIds.indexOf(currentStepId) >= stepIds.indexOf('checks'));
   const progress = buildProgress(crg, session, items, paperworkNeed);
   const runner = useFinishRunner({

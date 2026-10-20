@@ -15,6 +15,15 @@ import type { CrgDraftState } from './changeDraft.ts';
 import type { ChangeWizardSession } from './changeWizardSession.ts';
 import { buildDraftReadinessFacts } from './draftReadinessFacts.ts';
 
+/**
+ * The Wizard's checks without the AI review item. The review (step 6) is optional coaching: an AI rarely answers
+ * "ready", so counting it kept sending people back to step 6 in a loop (owner feedback). The change-text checks still
+ * judge the same writing deterministically.
+ */
+function excludeOptionalAiReview(items: ReadinessItem[]): ReadinessItem[] {
+  return items.filter((item) => item.id !== 'riskCheck');
+}
+
 /** The checklist, or null while its reads are still running. */
 export interface DraftReadiness {
   items: ReadinessItem[] | null;
@@ -65,11 +74,11 @@ export function useDraftReadiness(draft: CrgDraftState, session: ChangeWizardSes
 
   const items = useMemo(() => {
     if (!readAnswer || readAnswer.requestKey !== requestKey) return null;
-    return buildChangeReadiness(buildDraftReadinessFacts({
+    return excludeOptionalAiReview(buildChangeReadiness(buildDraftReadinessFacts({
       mode: session.mode, draft, riskReview: session.riskReview, isRcpRulesEnabled, todayIso: readCentralTodayIso(),
       evidenceFileNames: session.evidenceFileNames, prbRows: readAnswer.prbRows, prbFailureReason: readAnswer.prbFailureReason,
       existingFacts: readAnswer.existingFacts, existingTaskLinks: session.modify?.existingTasks,
-    }));
+    })));
   }, [readAnswer, requestKey, session.mode, draft, session.riskReview, isRcpRulesEnabled, session.evidenceFileNames, session.modify?.existingTasks]);
 
   return { items };
