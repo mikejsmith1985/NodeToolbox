@@ -34,6 +34,22 @@ describe('ChecksStep', () => {
     expect(screen.getByText('Ask AI to fix the writing')).toBeTruthy();
   });
 
+  it('says plainly when the AI review is all that is left after a review has run, and offers to go on', () => {
+    const riskCheckGap: ReadinessItem = {
+      id: 'riskCheck', label: 'Risk check', state: 'needsAction', reason: 'The risk check found gaps that still need fixing.',
+      action: { kind: 'openStep', stepId: 'riskCheck', label: 'Run the risk check' },
+    };
+    const reviewedSession: ChangeWizardSession = {
+      ...createChangeWizardSession('create'),
+      reviewLoop: { roundNumber: 3, stage: 'review', latestReview: { isReady: false, openFindings: [] }, suggestions: [], decisions: {}, history: [] },
+    };
+    const updateSession = vi.fn();
+    render(<Harness items={[DONE_OWNER, riskCheckGap]} session={reviewedSession} goToStep={vi.fn()} updateSession={updateSession} />);
+    expect(screen.getByText(/Only the AI review is left — you have run it 3 times/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('checkbox'));
+    expect(updateSession).toHaveBeenCalledWith({ areChecksAcknowledged: true });
+  });
+
   it('asks for acknowledgement when a check could not be made', () => {
     const updateSession = vi.fn();
     render(<Harness items={[UNCHECKED_PRBS]} session={createChangeWizardSession('create')} goToStep={vi.fn()} updateSession={updateSession} />);

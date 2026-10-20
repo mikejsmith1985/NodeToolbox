@@ -68,16 +68,20 @@ export function countThingsToFix(openFindings: readonly RiskCheckFinding[]): num
   return openFindings.length;
 }
 
-/** The loop with this round's review recorded; a second paste in the same round replaces the first. */
+/**
+ * The loop with a pasted review recorded. A review pasted onto a round that already has one starts the NEXT round, so
+ * the count always moves on however the user gets back to this step (owner bug: it sat on "Round 1").
+ */
 export function recordReviewRound(loop: ReviewLoopSession, result: ReviewRoundResult): ReviewLoopSession {
-  const summary: ReviewRoundSummary = { roundNumber: loop.roundNumber, isReady: result.isReady, thingsToFixCount: countThingsToFix(result.openFindings) };
-  const earlierRounds = loop.history.filter((entry) => entry.roundNumber !== loop.roundNumber);
+  const roundLoop = loop.latestReview ? startNextReview(loop) : loop;
+  const summary: ReviewRoundSummary = { roundNumber: roundLoop.roundNumber, isReady: result.isReady, thingsToFixCount: countThingsToFix(result.openFindings) };
   return {
-    ...loop,
+    ...roundLoop,
+    stage: 'review',
     latestReview: { isReady: result.isReady, openFindings: result.openFindings },
     suggestions: result.suggestions,
     decisions: {},
-    history: [...earlierRounds, summary],
+    history: [...roundLoop.history.filter((entry) => entry.roundNumber !== roundLoop.roundNumber), summary],
   };
 }
 

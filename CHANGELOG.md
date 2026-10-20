@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **SNow Wizard review loop: the round count now moves on, and the checks stop sending you round in circles.**
+  - Every newly pasted review starts the next round. Before, only the Review again button did that, so it sat on
+    "Round 1".
+  - When the AI review is the only check left and you've already run it, "Will it pass review?" says so and points you
+    to "Go on anyway". An AI review rarely says "ready", so the checks kept sending people back to step 6.
+
 ### Added
 - **SNow Wizard: "Make it better with AI" now loops until the change is ready.** After the first review, a change that
   is not ready shows what to fix and two ways on: **Write fixes for these gaps** (a prompt that asks the assistant to

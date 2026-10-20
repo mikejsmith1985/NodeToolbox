@@ -33,10 +33,14 @@ describe('the review loop', () => {
     expect(loop.history).toEqual([{ roundNumber: 1, isReady: false, thingsToFixCount: 2 }]);
   });
 
-  it('replaces the round\'s history line when the same round\'s review is pasted again', () => {
+  it('starts the next round when another review is pasted, so the count always moves on (owner bug: stuck on Round 1)', () => {
     const firstRead = recordReviewRound(createReviewLoop(), { isReady: false, openFindings: [JUSTIFICATION_GAP], suggestions: [] });
     const secondRead = recordReviewRound(firstRead, { isReady: true, openFindings: [], suggestions: [] });
-    expect(secondRead.history).toEqual([{ roundNumber: 1, isReady: true, thingsToFixCount: 0 }]);
+    expect(secondRead.roundNumber).toBe(2);
+    expect(secondRead.history).toEqual([
+      { roundNumber: 1, isReady: false, thingsToFixCount: 1 },
+      { roundNumber: 2, isReady: true, thingsToFixCount: 0 },
+    ]);
   });
 
   it('moves to a fix round for the same gaps, and its reply replaces the suggestions with fresh decisions', () => {
