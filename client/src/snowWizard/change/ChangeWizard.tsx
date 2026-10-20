@@ -28,6 +28,8 @@ import {
 import {
   listPlanErrors, loadSavedCtaskEnvironmentDefaults, readCtaskPlanKey, seedCtaskEnvironmentPlan, type CtaskEnvironmentPlan, type PlanEnvironmentKey,
 } from './ctaskEnvironmentPlan.ts';
+import type { JiraEvidenceAttachment } from './jiraEvidence.ts';
+import { useTickedJiraEvidence } from './jiraEvidenceChoiceStore.ts';
 import { listEditedSteps, readStepValues } from './modifyDiff.ts';
 import SaveTemplateControl from './SaveTemplateControl.tsx';
 import StartingPointNotice from './StartingPointNotice.tsx';
@@ -73,6 +75,8 @@ interface StepExtras {
   editedStepIds: ChangeWizardStepId[];
   evidenceFiles: File[];
   setEvidenceFiles: (files: File[]) => void;
+  jiraEvidence: JiraEvidenceAttachment[];
+  jobId: string;
   onExit: () => void;
 }
 
@@ -87,12 +91,12 @@ function renderStep(stepId: ChangeWizardStepId, stepProps: ChangeStepProps, extr
     planning: () => <PlanningStep {...withChoices} />,
     environments: () => <EnvironmentsStep {...withChoices} />,
     aiEnhance: () => <AiEnhanceStep {...stepProps} />,
-    evidence: () => <EvidenceStep {...stepProps} evidenceFiles={extras.evidenceFiles} onEvidenceFilesChange={extras.setEvidenceFiles} />,
+    evidence: () => <EvidenceStep {...stepProps} jobId={extras.jobId} evidenceFiles={extras.evidenceFiles} onEvidenceFilesChange={extras.setEvidenceFiles} />,
     tasks: () => <TasksStep {...stepProps} />,
     taskEnvironments: () => <TaskEnvironmentsStep {...stepProps} ctaskEnvironmentPlan={extras.ctaskEnvironmentPlan} />,
     checks: () => <ChecksStep {...stepProps} items={extras.items} />,
     paperwork: () => <ProductionPaperworkStep {...stepProps} paperworkNeed={extras.paperworkNeed} />,
-    finish: () => <CreateResultStep {...stepProps} runner={extras.runner} ctaskEnvironmentPlan={extras.ctaskEnvironmentPlan} editedStepIds={extras.editedStepIds} evidenceFileCount={extras.evidenceFiles.length} />,
+    finish: () => <CreateResultStep {...stepProps} runner={extras.runner} ctaskEnvironmentPlan={extras.ctaskEnvironmentPlan} editedStepIds={extras.editedStepIds} evidenceFileCount={extras.evidenceFiles.length + extras.jiraEvidence.length} />,
   };
   return stepScreens[stepId]();
 }
@@ -196,6 +200,7 @@ function ChangeJob({ job, startingPoint, onExit }: { job: WizardJob; startingPoi
   const { session, updateSession } = useJobSession(job);
   const { choiceOptions } = useSnowChoiceOptions();
   const [evidenceFiles, setEvidenceFiles] = useState<File[]>([]);
+  const jiraEvidence = useTickedJiraEvidence(job.jobId, crg.state.selectedIssueKeys);
   useRestoreEnvironments(crg, session);
   const ctaskEnvironmentPlan = useMemo(() => buildTaskPlan(crg.state, session), [crg.state, session]);
   const editedStepIds = session.modify ? listEditedSteps(session.modify.loadedStepValues, readStepValues(crg.state)) : [];
@@ -209,14 +214,14 @@ function ChangeJob({ job, startingPoint, onExit }: { job: WizardJob; startingPoi
   const progress = buildProgress(crg, session, ctaskEnvironmentPlan, items, paperworkNeed);
   const runner = useFinishRunner({
     crg, session, updateSession, ctaskEnvironmentPlan, environmentValueByKey: buildEnvironmentValueByKey(choiceOptions.u_environment ?? []),
-    evidenceFiles, editedStepIds, onFinished: () => useWizardJobStore.getState().finishJob(job.kind, Date.now()),
+    evidenceFiles, jiraEvidence, editedStepIds, onFinished: () => useWizardJobStore.getState().finishJob(job.kind, Date.now()),
   });
   useRememberChecksVerdict(items, session, updateSession);
   return (
     <ChangeJobShell
       job={job} crg={crg} session={session} updateSession={updateSession} progress={progress} currentStepId={currentStepId} goToStep={goToStep}
       startingPoint={startingPointHandle}
-      extras={{ choiceOptions, ctaskEnvironmentPlan, items, paperworkNeed, runner, editedStepIds, evidenceFiles, setEvidenceFiles, onExit }}
+      extras={{ choiceOptions, ctaskEnvironmentPlan, items, paperworkNeed, runner, editedStepIds, evidenceFiles, setEvidenceFiles, jiraEvidence, jobId: job.jobId, onExit }}
     />
   );
 }

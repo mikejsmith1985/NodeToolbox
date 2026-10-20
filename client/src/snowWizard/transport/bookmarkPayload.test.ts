@@ -127,6 +127,31 @@ describe('runJiraAgent', () => {
     expect(openerPostMessage).toHaveBeenLastCalledWith(expect.objectContaining({ kind: 'response', status: 0 }), '*');
   });
 
+  it('sends an attachment file back as base64 so its bytes arrive unchanged', async () => {
+    const fileBytes = new Uint8Array([0, 255, 128, 37, 80, 68, 70]);
+    fetchMock.mockResolvedValue(new Response(fileBytes, { status: 200 }));
+    startAgent();
+
+    sendAgentRequest({ method: 'GET', path: '/secure/attachment/10001/report.pdf', responseEncoding: 'base64' });
+
+    await vi.waitFor(() => expect(openerPostMessage).toHaveBeenCalledTimes(2));
+    expect(fetchMock).toHaveBeenCalledWith(`${location.origin}/secure/attachment/10001/report.pdf`, expect.objectContaining({ credentials: 'include', method: 'GET' }));
+    const reply = openerPostMessage.mock.calls[1][0] as { status: number; body: string; bodyEncoding: string };
+    expect(reply.status).toBe(200);
+    expect(reply.bodyEncoding).toBe('base64');
+    expect(Uint8Array.from(atob(reply.body), (character) => character.charCodeAt(0))).toEqual(fileBytes);
+  });
+
+  it('serves attachment files only as reads', async () => {
+    stopAgents.push(runJiraAgent({ channelName: CHANNEL_NAME, isReadOnly: false }));
+
+    sendAgentRequest({ method: 'DELETE', path: '/secure/attachment/10001/report.pdf' });
+
+    await vi.waitFor(() => expect(openerPostMessage).toHaveBeenCalledTimes(2));
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(openerPostMessage).toHaveBeenLastCalledWith(expect.objectContaining({ kind: 'response', status: 0 }), '*');
+  });
+
   it('sends the user back to the Wizard window after connecting', () => {
     const openerFocus = vi.fn();
     Object.defineProperty(window, 'opener', { configurable: true, value: { postMessage: openerPostMessage, focus: openerFocus } });

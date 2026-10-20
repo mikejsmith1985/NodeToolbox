@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **SNow Wizard: "Make it better with AI" now loops until the change is ready.** After the first review, a change that
+  is not ready shows what to fix and two ways on: **Write fixes for these gaps** (a prompt that asks the assistant to
+  rewrite just those parts — it asks you any questions in its own chat) and **Review again** (a fresh review of the
+  change as it now reads). Each round is numbered, with a short list of how every round went. Things a rewrite can't
+  fix, like a missing configuration item or dates, get a **Go to** button for the step that fixes them, and the
+  rounds are remembered when you come back. It stops with a clear "ready for approval", and the step stays optional.
+- **SNow Wizard: "Add proof" pulls the files already on your Jira issues, like Toolbox's test evidence.** The step
+  lists every file attached to the change's Jira issues (issue, file name, size, type), all ticked to start — untick
+  any you don't want, and the ticks are remembered if you come back later. Files from your computer can still be
+  added too. A set too big for ServiceNow is refused up front with the limit stated. When the change is created the
+  ticked files are fetched one by one (with progress shown), zipped the same way Toolbox does (one folder per issue
+  plus a list of contents) and attached; a file that can't be fetched is named and left out, and the rest still go on.
+  **Re-install the Wizard bookmark** (drag it to your bookmarks bar again) so the Jira tab can send files.
+
 ### Changed
 - **SNow Wizard: "Where and when?" is easier.** Each ticked environment's **configuration item** now sits in its own
   card instead of under "More options", because it's set on every change (templates still fill it in). Start and end

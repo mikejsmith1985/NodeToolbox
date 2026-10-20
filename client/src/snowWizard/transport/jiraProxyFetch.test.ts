@@ -49,4 +49,32 @@ describe('wizardFetch', () => {
     await wizardFetch('https://acme.service-now.com/x', { method: 'GET' });
     expect(browserFetch).toHaveBeenCalledWith('https://acme.service-now.com/x', { method: 'GET' });
   });
+
+  it('fetches a Jira attachment as base64 through the Jira tab and returns the exact bytes', async () => {
+    const fileBytes = new Uint8Array([0, 255, 128, 37, 80, 68, 70]);
+    const execute = vi.fn(async () => ({ status: 200, body: btoa(String.fromCharCode(...fileBytes)), bodyEncoding: 'base64' as const }));
+    installWizardTransports({ jira: { execute } });
+
+    const fileResponse = await wizardFetch('/jira-proxy/secure/attachment/10001/report.pdf');
+
+    expect(execute).toHaveBeenCalledWith({ method: 'GET', path: '/secure/attachment/10001/report.pdf', body: undefined, responseEncoding: 'base64' });
+    expect(fileResponse.ok).toBe(true);
+    expect(new Uint8Array(await fileResponse.arrayBuffer())).toEqual(fileBytes);
+  });
+
+  it('passes an attachment error status through without decoding it', async () => {
+    installWizardTransports({ jira: { execute: vi.fn(async () => ({ status: 404, body: 'gone' })) } });
+    const fileResponse = await wizardFetch('/jira-proxy/secure/attachment/1/a.pdf');
+    expect(fileResponse.status).toBe(404);
+  });
+
+  it('says plainly to re-install the bookmark when the Jira tab runs an older one that cannot send files', async () => {
+    installWizardTransports({ jira: { execute: vi.fn(async () => ({ status: 0, body: 'refused: only /rest/ paths are served' })) } });
+    await expect(wizardFetch('/jira-proxy/secure/attachment/1/a.pdf')).rejects.toThrow(/bookmark is out of date/);
+  });
+
+  it('refuses a file the older bookmark sent as text, rather than keeping damaged bytes', async () => {
+    installWizardTransports({ jira: { execute: vi.fn(async () => ({ status: 200, body: '%PDF-garbled' })) } });
+    await expect(wizardFetch('/jira-proxy/secure/attachment/1/a.pdf')).rejects.toThrow(/bookmark is out of date/);
+  });
 });

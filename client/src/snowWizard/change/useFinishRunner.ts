@@ -12,7 +12,8 @@ import { DRAFT_ENVIRONMENTS, readEnabledPlanEnvironments, type CrgHook } from '.
 import type { ChangeWizardSession } from './changeWizardSession.ts';
 import { mergeCreatedChanges, readCreateOutcome, type CreatedChangeSummary } from './createOutcome.ts';
 import type { CtaskEnvironmentPlan, PlanEnvironmentKey } from './ctaskEnvironmentPlan.ts';
-import { attachEvidenceToChanges } from './evidenceUpload.ts';
+import { attachAllEvidenceToChanges } from './evidenceUpload.ts';
+import type { JiraEvidenceAttachment } from './jiraEvidence.ts';
 import { detectRemoteConflicts, type RemoteConflict } from './modifyDiff.ts';
 import { fetchChangeSnapshot } from './modifyLoad.ts';
 import type { ChangeWizardStepId } from './changeWizardSteps.ts';
@@ -32,6 +33,8 @@ export interface FinishRunnerInput {
   ctaskEnvironmentPlan: CtaskEnvironmentPlan;
   environmentValueByKey: EnvironmentValueByKey;
   evidenceFiles: readonly File[];
+  /** The ticked Jira files, downloaded and zipped with the local files once the changes exist. */
+  jiraEvidence: readonly JiraEvidenceAttachment[];
   editedStepIds: readonly ChangeWizardStepId[];
   /** Called once the job has fully succeeded. */
   onFinished: () => void;
@@ -73,12 +76,17 @@ export function useFinishRunner(input: FinishRunnerInput): FinishRunner {
   const pendingWriteRef = useRef<PendingWrite | null>(null);
   const pendingRetryRef = useRef<PlanEnvironmentKey[] | null>(null);
 
-  /** Attaches the evidence to the given changes, records each result, and reports the job finished when it is. */
-  async function attachEvidenceAndFinish(changeNumbers: string[], isJobComplete: boolean) {
-    if (input.evidenceFiles.length > 0 && changeNumbers.length > 0) {
+  /**
+   * Attaches the evidence to the given changes, showing each step, records each result (and any Jira file that could
+   * not be fetched, after `outcomeNotes`), and reports the job finished when it is.
+   */
+  async function attachEvidenceAndFinish(changeNumbers: string[], isJobComplete: boolean, outcomeNotes: string[]) {
+    const hasEvidence = input.evidenceFiles.length > 0 || input.jiraEvidence.length > 0;
+    if (hasEvidence && changeNumbers.length > 0) {
       setPhase({ kind: 'working', message: 'Attaching your evidence…' });
-      const evidenceResults = await attachEvidenceToChanges(input.evidenceFiles, changeNumbers);
-      updateSession({ evidenceResults: { ...session.evidenceResults, ...evidenceResults } });
+      const onProgress = (message: string) => setPhase({ kind: 'working', message });
+      const evidenceOutcome = await attachAllEvidenceToChanges({ localFiles: input.evidenceFiles, jiraAttachments: input.jiraEvidence }, changeNumbers, { onProgress });
+      updateSession({ evidenceResults: { ...session.evidenceResults, ...evidenceOutcome.results }, outcomeNotes: [...outcomeNotes, ...evidenceOutcome.problems] });
     }
     setPhase({ kind: 'done' });
     if (isJobComplete) input.onFinished();
@@ -100,12 +108,13 @@ export function useFinishRunner(input: FinishRunnerInput): FinishRunner {
   /** Records a create attempt's outcome, then attaches evidence to the changes it made. */
   function settleCreate(pendingWrite: PendingWrite, resultText: string) {
     const outcome = readCreateOutcome(resultText, pendingWrite.attempted);
+    const outcomeNotes = [...session.outcomeNotes, ...outcome.notes];
     updateSession({
       createdChanges: mergeCreatedChanges(session.createdChanges, outcome.createdChanges),
-      outcomeNotes: [...session.outcomeNotes, ...outcome.notes],
+      outcomeNotes,
       failureText: outcome.failureText,
     });
-    void attachEvidenceAndFinish(outcome.createdChanges.map((createdChange) => createdChange.changeNumber), outcome.isComplete);
+    void attachEvidenceAndFinish(outcome.createdChanges.map((createdChange) => createdChange.changeNumber), outcome.isComplete, outcomeNotes);
   }
 
   /** Records a modify's save, chaining the new tasks after the update when there are any. */
@@ -117,12 +126,13 @@ export function useFinishRunner(input: FinishRunnerInput): FinishRunner {
       return;
     }
     const savedChange: CreatedChangeSummary = { environmentLabel: readEnabledPlanEnvironments(crg.state)[0] ?? null, changeNumber };
+    const outcomeNotes = [pendingWrite.updateText, resultText].filter((noteText): noteText is string => Boolean(noteText) && !noteText?.startsWith(ERROR_PREFIX));
     updateSession({
       createdChanges: isFailure && pendingWrite.kind === 'update' ? [] : [savedChange],
-      outcomeNotes: [pendingWrite.updateText, resultText].filter((noteText): noteText is string => Boolean(noteText) && !noteText?.startsWith(ERROR_PREFIX)),
+      outcomeNotes,
       failureText: isFailure ? resultText.replace(/^Error:\s*/, '') : null,
     });
-    void attachEvidenceAndFinish(isFailure && pendingWrite.kind === 'update' ? [] : [changeNumber], !isFailure);
+    void attachEvidenceAndFinish(isFailure && pendingWrite.kind === 'update' ? [] : [changeNumber], !isFailure, outcomeNotes);
   }
 
   const settlePendingWrite = useEffectEvent((pendingWrite: PendingWrite, resultText: string) => {

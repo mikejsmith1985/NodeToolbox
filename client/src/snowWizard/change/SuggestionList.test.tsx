@@ -26,6 +26,16 @@ describe('SuggestionList', () => {
     expect(screen.getByText('Declined — left as it was')).toBeTruthy();
   });
 
+  it('shows decisions kept elsewhere and reports each new one, so they survive leaving the step', () => {
+    const onAccept = vi.fn();
+    const onDecide = vi.fn();
+    render(<SuggestionList suggestions={SUGGESTIONS} decisions={{ justification: 'accepted' }} onAccept={onAccept} onDecide={onDecide} />);
+    expect(screen.getByText('✓ Accepted')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Decline' }));
+    expect(onDecide).toHaveBeenCalledWith(SUGGESTIONS[1], 'declined');
+    expect(onAccept).not.toHaveBeenCalled();
+  });
+
   it('never says an AI wrote anything', () => {
     render(<SuggestionList suggestions={SUGGESTIONS} onAccept={vi.fn()} />);
     expect(document.body.textContent).not.toMatch(/\bAI\b|assistant/i);

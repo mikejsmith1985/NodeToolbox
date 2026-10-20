@@ -83,4 +83,17 @@ describe('sendAgentRequest', () => {
     void sendAgentRequest(window, { postMessage: agentPostMessage } as unknown as MessageEventSource, 'null', CHANNEL_NAME, { method: 'GET', path: '/rest/x' }, 10);
     expect(agentPostMessage.mock.calls[0][1]).toBe('*');
   });
+
+  it('asks for a file as base64 and hands back the note from the agent that the body is base64', async () => {
+    const agentPostMessage = vi.fn();
+    const agentSource = { postMessage: agentPostMessage } as unknown as MessageEventSource;
+    const responsePromise = sendAgentRequest(window, agentSource, 'https://jira.example.com', CHANNEL_NAME,
+      { method: 'GET', path: '/secure/attachment/1/a.pdf', responseEncoding: 'base64' }, 1000);
+    const sentRequest = agentPostMessage.mock.calls[0][0] as { requestId: string; responseEncoding: string };
+    expect(sentRequest.responseEncoding).toBe('base64');
+
+    postFromAgent({ channel: CHANNEL_NAME, kind: 'response', requestId: sentRequest.requestId, status: 200, body: 'AQI=', bodyEncoding: 'base64' });
+
+    await expect(responsePromise).resolves.toEqual({ status: 200, body: 'AQI=', bodyEncoding: 'base64' });
+  });
 });

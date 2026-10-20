@@ -17,12 +17,16 @@ export interface AgentRequest {
   method: 'GET' | 'POST' | 'PUT' | 'DELETE';
   path: string;
   body?: unknown;
+  /** "base64" asks the agent to send a file's raw bytes as base64 text, so binary content survives the trip. */
+  responseEncoding?: 'base64';
 }
 
 /** What the agent answered; status 0 means the request never reached the system (refused, timed out, or failed). */
 export interface AgentResponse {
   status: number;
   body: string;
+  /** Present only when the agent sent the body as base64 (a file); absent means plain text. */
+  bodyEncoding?: 'base64';
 }
 
 const MILLISECONDS_PER_SECOND = 1000;
@@ -98,7 +102,9 @@ export function sendAgentRequest(
       if (agentOrigin !== OPAQUE_ORIGIN && agentOrigin !== '' && messageEvent.origin !== agentOrigin) return;
       clearTimeout(timeoutId);
       listenerTarget.removeEventListener('message', handleMessage);
-      resolve({ status: Number(messageData.status) || 0, body: String(messageData.body ?? '') });
+      const agentResponse: AgentResponse = { status: Number(messageData.status) || 0, body: String(messageData.body ?? '') };
+      if (messageData.bodyEncoding === 'base64') agentResponse.bodyEncoding = 'base64';
+      resolve(agentResponse);
     }
 
     listenerTarget.addEventListener('message', handleMessage);

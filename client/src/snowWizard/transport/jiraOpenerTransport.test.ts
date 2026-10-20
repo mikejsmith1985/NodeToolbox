@@ -93,4 +93,25 @@ describe('createJiraOpenerTransport', () => {
     expect(transport.isConnected()).toBe(false);
     expect(onDisconnected).toHaveBeenCalled();
   });
+
+  it('gives a file download longer than an ordinary request before giving up', async () => {
+    const { transport } = createTransport();
+    const connectPromise = transport.connect(JIRA_URL);
+    const agentWindow = createAnsweringAgent(200, '{"displayName":"A"}');
+    sayHello(agentWindow);
+    await connectPromise;
+
+    let lastRequestId = '';
+    agentWindow.postMessage.mockImplementation((message: { requestId: string }) => { lastRequestId = message.requestId; });
+    vi.useFakeTimers();
+    const responsePromise = transport.execute({ method: 'GET', path: '/secure/attachment/1/a.pdf', responseEncoding: 'base64' });
+    vi.advanceTimersByTime(5000);
+    window.dispatchEvent(new MessageEvent('message', {
+      data: { channel: CHANNEL_NAME, kind: 'response', requestId: lastRequestId, status: 200, body: 'AQI=', bodyEncoding: 'base64' },
+      origin: JIRA_ORIGIN,
+    }));
+
+    await expect(responsePromise).resolves.toEqual({ status: 200, body: 'AQI=', bodyEncoding: 'base64' });
+    expect(transport.isConnected()).toBe(true);
+  });
 });

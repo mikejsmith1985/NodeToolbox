@@ -102,7 +102,8 @@ const DEFAULT_AGENT_TOOLS: BookmarkTools = { showBadge: showWizardBadge, readIsL
 
 /**
  * Jira agent: answers the Wizard window that opened this Jira tab. Runs each request on Jira's own origin with the
- * user's session, so no Jira password or token ever exists. Only `/rest/` paths are served, and only reads while
+ * user's session, so no Jira password or token ever exists. Only `/rest/` paths (plus reads of attachment files, sent
+ * back as base64) are served, and only reads while
  * read-only (the probe). The probe replies to `*` because a file:// opener has the origin "null"; the real Wizard pins
  * the opener's origin (wizard-transport.md).
  */
@@ -127,6 +128,16 @@ export function runJiraAgent(config: JiraAgentConfig, tools: BookmarkTools = DEF
     return allowedFragments.some((hostFragment) => requesterHostname.indexOf(hostFragment) >= 0);
   };
 
+  // Inside this function on purpose: the bookmark carries no imports. Sliced, because one giant spread overflows the stack.
+  const encodeBytesAsBase64 = (fileBytes: Uint8Array) => {
+    const sliceSize = 8192;
+    let binaryText = '';
+    for (let sliceStart = 0; sliceStart < fileBytes.length; sliceStart += sliceSize) {
+      binaryText += String.fromCharCode.apply(null, Array.from(fileBytes.subarray(sliceStart, sliceStart + sliceSize)));
+    }
+    return btoa(binaryText);
+  };
+
   const handleWizardRequest = async (messageEvent: MessageEvent) => {
     const requestData = messageEvent.data;
     if (!requestData || requestData.channel !== config.channelName || requestData.kind !== 'request') return;
@@ -134,27 +145,36 @@ export function runJiraAgent(config: JiraAgentConfig, tools: BookmarkTools = DEF
     if (!isRequesterAllowed(messageEvent.origin)) return;
     const replyTarget = (messageEvent.source as Window | null) ?? openerWindow;
     const replyOrigin = messageEvent.origin && messageEvent.origin !== 'null' ? messageEvent.origin : '*';
-    const reply = (status: number, body: string) => replyTarget.postMessage(
-      { channel: config.channelName, kind: 'response', requestId: requestData.requestId, status, body }, replyOrigin);
+    const reply = (status: number, body: string, bodyEncoding?: 'base64') => replyTarget.postMessage(
+      { channel: config.channelName, kind: 'response', requestId: requestData.requestId, status, body, ...(bodyEncoding ? { bodyEncoding } : {}) }, replyOrigin);
 
     const requestMethod = String(requestData.method || 'GET').toUpperCase();
-    if (typeof requestData.path !== 'string' || requestData.path.indexOf('/rest/') !== 0) {
-      reply(0, 'refused: only /rest/ paths are served');
+    const requestPath = typeof requestData.path === 'string' ? requestData.path : '';
+    // Jira serves attachment files outside /rest/, so that one folder is allowed too — and only ever read.
+    const isAttachmentRead = requestPath.indexOf('/secure/attachment/') === 0 && requestMethod === 'GET';
+    if (requestPath.indexOf('/rest/') !== 0 && !isAttachmentRead) {
+      reply(0, 'refused: only /rest/ paths and attachment reads are served');
       return;
     }
     if (config.isReadOnly && requestMethod !== 'GET') {
       reply(0, 'refused: this bookmark is read-only');
       return;
     }
+    const isBase64Reply = requestData.responseEncoding === 'base64';
     try {
-      const jiraResponse = await fetch(location.origin + requestData.path, {
+      const jiraResponse = await fetch(location.origin + requestPath, {
         method: requestMethod,
         credentials: 'include',
-        headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+        headers: isBase64Reply ? { Accept: '*/*' } : { Accept: 'application/json', 'Content-Type': 'application/json' },
         // Bodies travel as the exact text Jira should receive; objects (older callers) are serialized once.
         body: requestData.body == null ? undefined : (typeof requestData.body === 'string' ? requestData.body : JSON.stringify(requestData.body)),
       });
-      reply(jiraResponse.status, await jiraResponse.text());
+      if (!isBase64Reply) {
+        reply(jiraResponse.status, await jiraResponse.text());
+        return;
+      }
+      // A file's bytes would be damaged as text, so they cross as base64.
+      reply(jiraResponse.status, encodeBytesAsBase64(new Uint8Array(await jiraResponse.arrayBuffer())), 'base64');
     } catch (requestError) {
       reply(0, (requestError as Error).message);
     }

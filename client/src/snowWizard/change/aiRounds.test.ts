@@ -5,7 +5,9 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { ReadinessItem } from '../../views/SnowHub/guided/changeReadiness.ts';
 import { useCrgState } from '../../views/SnowHub/hooks/useCrgState.ts';
-import { buildChecksFixPrompt, buildEnhancePrompt, buildWizardPromptContext, readEnhanceReply, readFixReply } from './aiRounds.ts';
+import {
+  buildChecksFixPrompt, buildEnhancePrompt, buildReviewFixPrompt, buildWizardPromptContext, readEnhanceReply, readFixReply, readReviewFixReply,
+} from './aiRounds.ts';
 import type { CrgDraftState } from './changeDraft.ts';
 
 vi.mock('../../services/jiraApi.ts', () => ({ jiraGet: vi.fn(async () => []) }));
@@ -83,5 +85,26 @@ describe('the checks fix round', () => {
     expect(readFixReply('BACKOUT_PLAN: 1. Restore the previous build', buildDraft())).toEqual([
       { fieldKey: 'backoutPlan', fieldLabel: 'Backout Plan', currentText: '', suggestedText: '1. Restore the previous build' },
     ]);
+  });
+});
+
+describe('the review loop fix round', () => {
+  const justificationGap = { status: 'GAP' as const, field: 'Justification', detail: 'too vague', fix: 'name the driver' };
+
+  it('keeps every unsettled finding of a review for the loop, passes left out', () => {
+    const replyText = ['GAP | Justification — too vague', 'RECORD | Configuration Item — not set', 'INFO | Validation Owner — who?', 'PASS | Short Description — fine', 'VERDICT: NOT READY — 1 gap(s)'].join('\n');
+    expect(readEnhanceReply(replyText, buildDraft()).openFindings.map((finding) => finding.status)).toEqual(['GAP', 'RECORD', 'INFO']);
+  });
+
+  it('hands the gaps back with only the fields they live in', () => {
+    const promptText = buildReviewFixPrompt(buildDraft(), [justificationGap]);
+    expect(promptText).toContain('too vague');
+    expect(promptText).toContain('JUSTIFICATION:');
+    expect(promptText).not.toContain('BACKOUT_PLAN:');
+  });
+
+  it('turns the reply into suggestions only for the fields the prompt offered', () => {
+    const replyText = 'JUSTIFICATION: A clear driver\nBACKOUT_PLAN: Not asked for';
+    expect(readReviewFixReply(replyText, buildDraft(), [justificationGap]).map((suggestion) => suggestion.fieldKey)).toEqual(['justification']);
   });
 });

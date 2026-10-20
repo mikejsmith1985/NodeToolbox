@@ -8,17 +8,19 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useCrgState } from '../../views/SnowHub/hooks/useCrgState.ts';
 import type { CrgDraftState, CrgHook } from './changeDraft.ts';
 import { createChangeWizardSession, type ChangeWizardSession } from './changeWizardSession.ts';
-import { attachEvidenceToChanges } from './evidenceUpload.ts';
+import { attachAllEvidenceToChanges } from './evidenceUpload.ts';
+import type { JiraEvidenceAttachment } from './jiraEvidence.ts';
 import { fetchChangeSnapshot } from './modifyLoad.ts';
 import { useFinishRunner } from './useFinishRunner.ts';
 
 vi.mock('../../services/jiraApi.ts', () => ({ jiraGet: vi.fn(async () => []) }));
 vi.mock('../../services/snowApi.ts', () => ({ snowFetch: vi.fn() }));
-vi.mock('./evidenceUpload.ts', () => ({ attachEvidenceToChanges: vi.fn(async () => ({})) }));
+vi.mock('./evidenceUpload.ts', () => ({ attachAllEvidenceToChanges: vi.fn(async () => ({ results: {}, problems: [] })) }));
 vi.mock('./modifyLoad.ts', () => ({ fetchChangeSnapshot: vi.fn() }));
 
 const PLAN = { 'Business Checkout': { REL: false, PRD: true, PFIX: true } };
 const EVIDENCE_FILE = { name: 'results.pdf', size: 10 } as File;
+const JIRA_FILE: JiraEvidenceAttachment = { issueKey: 'A-1', issueSummary: '', attachment: { attachmentId: '1', filename: 'report.pdf', sizeBytes: 5, contentUrl: '' } };
 
 /** A REL + PRD draft from the real hook, with a staged task when asked. */
 function buildDraft(hasNewTask = false): CrgDraftState {
@@ -32,7 +34,7 @@ function buildDraft(hasNewTask = false): CrgDraftState {
 }
 
 /** The runner over a draft and session the test can drive, with spy actions. */
-function renderRunner(initialDraft: CrgDraftState, initialSession: ChangeWizardSession, onFinished = vi.fn()) {
+function renderRunner(initialDraft: CrgDraftState, initialSession: ChangeWizardSession, onFinished = vi.fn(), evidenceFiles: File[] = [EVIDENCE_FILE], jiraEvidence: JiraEvidenceAttachment[] = []) {
   const actions = {
     createChg: vi.fn(async () => undefined), updateExistingChg: vi.fn(async () => undefined),
     appendTasksToExistingChg: vi.fn(async () => undefined), updateEnvironment: vi.fn(),
@@ -44,7 +46,7 @@ function renderRunner(initialDraft: CrgDraftState, initialSession: ChangeWizardS
     const runner = useFinishRunner({
       crg, session, updateSession: (update) => setSession((previous) => ({ ...previous, ...update })),
       ctaskEnvironmentPlan: PLAN, environmentValueByKey: { rel: 'rel-env', prd: 'prd-env' },
-      evidenceFiles: [EVIDENCE_FILE], editedStepIds: ['planning'], onFinished,
+      evidenceFiles, jiraEvidence, editedStepIds: ['planning'], onFinished,
     });
     return { runner, session, setDraft };
   });
@@ -58,7 +60,7 @@ function finishWrite(setDraft: (update: (previous: CrgDraftState) => CrgDraftSta
 }
 
 describe('useFinishRunner — create', () => {
-  beforeEach(() => vi.mocked(attachEvidenceToChanges).mockClear());
+  beforeEach(() => vi.mocked(attachAllEvidenceToChanges).mockClear());
 
   it('creates with the task plan, records each change, attaches evidence and finishes', async () => {
     const { hookResult, actions, onFinished } = renderRunner(buildDraft(), createChangeWizardSession('create'));
@@ -71,8 +73,24 @@ describe('useFinishRunner — create', () => {
     expect(hookResult.result.current.session.createdChanges).toEqual([
       { environmentLabel: 'REL', changeNumber: 'CHG1' }, { environmentLabel: 'PRD', changeNumber: 'CHG2' },
     ]);
-    expect(attachEvidenceToChanges).toHaveBeenCalledWith([EVIDENCE_FILE], ['CHG1', 'CHG2']);
+    expect(attachAllEvidenceToChanges).toHaveBeenCalledWith({ localFiles: [EVIDENCE_FILE], jiraAttachments: [] }, ['CHG1', 'CHG2'], expect.objectContaining({ onProgress: expect.any(Function) }));
     expect(onFinished).toHaveBeenCalled();
+  });
+
+  it('attaches ticked Jira files on their own, showing progress and noting a file that could not be fetched', async () => {
+    vi.mocked(attachAllEvidenceToChanges).mockImplementationOnce(async (_evidence, _changeNumbers, options) => {
+      options?.onProgress?.('Getting file 1 of 1 from Jira: report.pdf…');
+      return { results: { CHG1: 'attached' }, problems: ['Could not get other.pdf from A-1 in Jira.'] };
+    });
+    const { hookResult } = renderRunner(buildDraft(), createChangeWizardSession('create'), vi.fn(), [], [JIRA_FILE]);
+    act(() => hookResult.result.current.runner.startCreate());
+
+    finishWrite(hookResult.result.current.setDraft, '1 CHG created: REL CHG1');
+
+    await waitFor(() => expect(hookResult.result.current.runner.phase.kind).toBe('done'));
+    expect(attachAllEvidenceToChanges).toHaveBeenCalledWith({ localFiles: [], jiraAttachments: [JIRA_FILE] }, ['CHG1'], expect.anything());
+    expect(hookResult.result.current.session.evidenceResults).toEqual({ CHG1: 'attached' });
+    expect(hookResult.result.current.session.outcomeNotes).toContain('Could not get other.pdf from A-1 in Jira.');
   });
 
   it('after a partial create, retries only the missing environment', async () => {

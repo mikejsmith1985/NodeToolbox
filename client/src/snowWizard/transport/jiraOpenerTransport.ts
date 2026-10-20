@@ -8,6 +8,8 @@ const HTTP_OK = 200;
 const JIRA_IDENTITY_PATH = '/rest/api/2/myself';
 /** The Jira tab is opened under one name, so reconnecting reuses it instead of stacking tabs. */
 const JIRA_WINDOW_NAME = 'snowWizardJira';
+/** A file from Jira can be tens of megabytes, so it gets up to five minutes instead of the ordinary request wait. */
+const FILE_DOWNLOAD_TIMEOUT_MS = 5 * 60 * 1000;
 
 /** What the transport needs from the Wizard window. */
 export interface JiraOpenerTransportOptions {
@@ -42,8 +44,10 @@ export function createJiraOpenerTransport(options: JiraOpenerTransportOptions): 
 
   const execute: JiraTransport['execute'] = async (jiraRequest) => {
     if (!agentLink) return { status: 0, body: 'Jira is not connected' };
+    const isFileDownload = jiraRequest.responseEncoding === 'base64';
+    const timeoutMs = isFileDownload ? Math.max(options.requestTimeoutMs, FILE_DOWNLOAD_TIMEOUT_MS) : options.requestTimeoutMs;
     const agentResponse = await sendAgentRequest(
-      options.listenerTarget, agentLink.agentSource, agentLink.agentOrigin, options.channelName, jiraRequest, options.requestTimeoutMs);
+      options.listenerTarget, agentLink.agentSource, agentLink.agentOrigin, options.channelName, jiraRequest, timeoutMs);
     if (agentResponse.status === 0) {
       agentLink = null;
       options.onDisconnected();
