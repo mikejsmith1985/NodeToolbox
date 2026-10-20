@@ -6,16 +6,13 @@
 
 import { useMemo, useState } from 'react';
 
-import type { SnowChoiceOptionMap } from '../../../views/SnowHub/hooks/useSnowChoiceOptions.ts';
 import { buildAiDraftPrompt, readAiDraftReply, type AiDraftReply } from '../aiDraft.ts';
 import type { ChangeStepProps } from '../changeWizardSession.ts';
 import styles from '../ChangeWizard.module.css';
 import PromptRound from '../PromptRound.tsx';
 
-/** The AI draft also needs ServiceNow's choice lists, so it can offer only listed values. */
-export interface AiDraftStepProps extends ChangeStepProps {
-  choiceOptions: SnowChoiceOptionMap;
-}
+/** The AI draft needs only the shared step props (it writes texts, never list values). */
+export type AiDraftStepProps = ChangeStepProps;
 
 /** The suggestions with a tick each, and one button that fills in the ticked ones. */
 function SuggestionPicker({ draftReply, onFill }: { draftReply: AiDraftReply; onFill: (suggestionIds: string[]) => void }) {
@@ -53,13 +50,13 @@ function SuggestionPicker({ draftReply, onFill }: { draftReply: AiDraftReply; on
 }
 
 /** Step: let the AI write the change from the chosen Jira work. */
-export default function AiDraftStep({ crg, choiceOptions }: AiDraftStepProps) {
+export default function AiDraftStep({ crg }: AiDraftStepProps) {
   const [draftReply, setDraftReply] = useState<AiDraftReply | null>(null);
   const [filledCount, setFilledCount] = useState<number | null>(null);
-  const promptText = useMemo(() => buildAiDraftPrompt(crg.state, choiceOptions), [crg.state, choiceOptions]);
+  const promptText = useMemo(() => buildAiDraftPrompt(crg.state), [crg.state]);
 
   function handleReadReply(replyText: string): string {
-    const readReply = readAiDraftReply(replyText, crg.state, choiceOptions);
+    const readReply = readAiDraftReply(replyText, crg.state);
     setFilledCount(null);
     setDraftReply(readReply.isUsable ? readReply : null);
     return readReply.message;
@@ -74,15 +71,11 @@ export default function AiDraftStep({ crg, choiceOptions }: AiDraftStepProps) {
   return (
     <div>
       <p className={styles.stepIntro}>
-        Optional, and the quickest way through. Your AI assistant writes the title, description, plans and answers from
-        the Jira work you chose. You check everything on the next screens. You can skip this step and type it yourself.
+        Optional, and the quickest way through. Your AI assistant writes the title, description, justification, risk
+        and the three plans from the Jira work you chose. Your dropdown choices stay as they are. You check everything
+        on the next screens, or skip this step and type it yourself.
       </p>
       <PromptRound promptText={promptText} copyLabel="Copy the prompt" readButtonLabel="Read the reply" onReadReply={handleReadReply} />
-      {draftReply && draftReply.rejectedPicks.length > 0 ? (
-        <ul className={styles.itemList} aria-label="Left for you">
-          {draftReply.rejectedPicks.map((rejectedPick) => <li key={rejectedPick} className={styles.noticeText}>{rejectedPick}</li>)}
-        </ul>
-      ) : null}
       {draftReply && draftReply.suggestions.length > 0 ? <SuggestionPicker draftReply={draftReply} onFill={fillTicked} /> : null}
       {filledCount !== null ? (
         <p className={styles.successText} role="status">{`✓ Filled in ${filledCount} ${filledCount === 1 ? 'field' : 'fields'}. Press Next to check them.`}</p>

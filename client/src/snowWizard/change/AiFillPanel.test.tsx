@@ -24,7 +24,7 @@ function buildCrg(): CrgHook {
 
 function renderPanel(isOpenAtStart: boolean) {
   const { container } = render(
-    <AiFillPanel isOpenAtStart={isOpenAtStart} crg={buildCrg()} session={{} as ChangeWizardSession} updateSession={vi.fn()} goToStep={vi.fn()} choiceOptions={{}} />,
+    <AiFillPanel isOpenAtStart={isOpenAtStart} crg={buildCrg()} session={{} as ChangeWizardSession} updateSession={vi.fn()} goToStep={vi.fn()} />,
   );
   return container.querySelector('details') as HTMLDetailsElement;
 }

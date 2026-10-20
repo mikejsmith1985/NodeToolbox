@@ -8,8 +8,6 @@ import type { CrgHook } from '../changeDraft.ts';
 import type { ChangeWizardSession } from '../changeWizardSession.ts';
 import AiDraftStep from './AiDraftStep.tsx';
 
-const CHOICE_OPTIONS = { category: [{ value: 'software', label: 'Software' }] };
-
 function buildCrg() {
   const emptyEnvironment = { isEnabled: false, plannedStartDate: '', plannedEndDate: '' };
   const state = {
@@ -25,7 +23,7 @@ function buildCrg() {
 }
 
 function renderStep(crg: CrgHook) {
-  render(<AiDraftStep crg={crg} session={{} as ChangeWizardSession} updateSession={vi.fn()} goToStep={vi.fn()} choiceOptions={CHOICE_OPTIONS} />);
+  render(<AiDraftStep crg={crg} session={{} as ChangeWizardSession} updateSession={vi.fn()} goToStep={vi.fn()} />);
 }
 
 function pasteReply(replyText: string) {
@@ -34,21 +32,22 @@ function pasteReply(replyText: string) {
 }
 
 describe('AiDraftStep', () => {
-  it('shows a prompt that asks for the picks and the texts', () => {
+  it('shows a prompt that asks for the texts only', () => {
     renderStep(buildCrg());
     const promptField = screen.getByLabelText(/Copy this and paste it/) as HTMLTextAreaElement;
-    expect(promptField.value).toContain('PICK category: one of Software');
+    expect(promptField.value).not.toContain('PICK ');
     expect(promptField.value).toContain('IMPLEMENTATION_PLAN:');
   });
 
   it('fills in only the ticked fields', () => {
     const crg = buildCrg();
     renderStep(crg);
-    pasteReply('PICK category: Software\nSHORT_DESCRIPTION: Portal login fix\nDESCRIPTION: Fixes login.');
+    pasteReply('SHORT_DESCRIPTION: Portal login fix\nDESCRIPTION: Fixes login.\nJUSTIFICATION: Customers cannot log in.');
     fireEvent.click(screen.getByRole('checkbox', { name: /^Description/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Fill in 2 fields' }));
 
-    expect(crg.actions.setChgBasicInfo).toHaveBeenCalledWith({ category: 'software' });
+    expect(crg.actions.updateGeneratedField).toHaveBeenCalledWith('justification', 'Customers cannot log in.');
+    expect(crg.actions.setChgBasicInfo).not.toHaveBeenCalled();
     expect(crg.actions.updateGeneratedField).toHaveBeenCalledWith('shortDescription', 'Portal login fix');
     expect(crg.actions.updateGeneratedField).not.toHaveBeenCalledWith('description', 'Fixes login.');
     expect(screen.getByText(/Filled in 2 fields/)).toBeTruthy();

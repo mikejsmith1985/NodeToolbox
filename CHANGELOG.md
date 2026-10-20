@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **SNow Wizard: the AI writes the text fields only.** These are the title, description, justification, risk and
+  impact, and the three plans. Dropdown answers (category, change type, planning questions) are no longer asked for or
+  touched. They stay exactly as you set them, and saving a template is the way to skip setting them each time. Your
+  dropdown choices still go into the prompt as facts, so the texts match them.
+
 ### Fixed
 - **SNow Wizard: the AI can write the plans right on the plans screen.** "How will it go?" (implementation, test and
   backout plans) and "Tell us about the change" now each carry **✨ Don't want to type this? Let AI write it**. It's the
