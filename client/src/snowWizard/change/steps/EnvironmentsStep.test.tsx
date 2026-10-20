@@ -28,9 +28,18 @@ describe('EnvironmentsStep', () => {
     render(<Harness />);
     expect(observed.latestProblems).toEqual(['Tick at least one environment.']);
     fireEvent.click(screen.getByLabelText('PRD — Production'));
-    fireEvent.change(screen.getByLabelText('PRD starts'), { target: { value: '2026-11-02T19:00' } });
-    fireEvent.change(screen.getByLabelText('PRD ends'), { target: { value: '2026-11-02T21:00' } });
+    fireEvent.change(screen.getByLabelText('PRD starts day'), { target: { value: '2026-11-02' } });
+    fireEvent.change(screen.getByLabelText('PRD starts hour'), { target: { value: '19' } });
+    fireEvent.change(screen.getByLabelText('PRD ends day'), { target: { value: '2026-11-02' } });
+    fireEvent.change(screen.getByLabelText('PRD ends hour'), { target: { value: '21' } });
     expect(observed.latestProblems).toEqual([]);
     expect(screen.getByText(/automatic: Production/)).toBeTruthy();
+  });
+
+  it('shows each ticked environment\'s configuration item in its own card, not folded away', () => {
+    render(<Harness />);
+    fireEvent.click(screen.getByLabelText('REL — the release (pre-production) environment'));
+    const configItemLabel = screen.getByText('REL configuration item');
+    expect(configItemLabel.closest('details')).toBeNull();
   });
 });

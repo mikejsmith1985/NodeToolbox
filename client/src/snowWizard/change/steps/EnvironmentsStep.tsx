@@ -3,11 +3,10 @@
 // One change is raised per environment ticked. The ServiceNow environment value is picked automatically from
 // ServiceNow's own list (or chosen under "More options"); it is never typed.
 
-import { useId } from 'react';
-
 import { SnowLookupField } from '../../../views/SnowHub/components/SnowLookupField.tsx';
 import type { SnowChoiceOptionMap } from '../../../views/SnowHub/hooks/useSnowChoiceOptions.ts';
 import ChoiceSelect from '../ChoiceSelect.tsx';
+import DateTimeField from '../DateTimeField.tsx';
 import { DRAFT_ENVIRONMENTS, buildEnvironmentValueByKey } from '../changeDraft.ts';
 import type { ChangeStepProps } from '../changeWizardSession.ts';
 import styles from '../ChangeWizard.module.css';
@@ -26,22 +25,17 @@ const ENVIRONMENT_DESCRIPTIONS: Readonly<Record<string, string>> = {
 };
 const MODIFY_ENVIRONMENT_NOTE = 'A change belongs to one environment. Keep only the one this change is for.';
 
-/** One environment's start and end. */
-function WindowFields({ crg, entry }: Pick<ChangeStepProps, 'crg'> & { entry: DraftEnvironmentEntry }) {
-  const startId = useId();
-  const endId = useId();
+/** One environment's start, end and configuration item — the values set for every change, so never folded away. */
+function EnvironmentFields({ crg, entry }: Pick<ChangeStepProps, 'crg'> & { entry: DraftEnvironmentEntry }) {
   const environment = crg.state[entry.stateKey];
   return (
-    <div className={styles.fieldRow}>
-      <div className={styles.fieldGroup}>
-        <label className={styles.fieldLabel} htmlFor={startId}>{`${entry.label} starts`}</label>
-        <input id={startId} type="datetime-local" className={styles.inputField} value={environment.plannedStartDate} onChange={(changeEvent) => crg.actions.updateEnvironment(entry.key, { plannedStartDate: changeEvent.target.value })} />
+    <>
+      <div className={styles.fieldRow}>
+        <DateTimeField label={`${entry.label} starts`} value={environment.plannedStartDate} onChange={(value) => crg.actions.updateEnvironment(entry.key, { plannedStartDate: value })} />
+        <DateTimeField label={`${entry.label} ends`} value={environment.plannedEndDate} onChange={(value) => crg.actions.updateEnvironment(entry.key, { plannedEndDate: value })} />
       </div>
-      <div className={styles.fieldGroup}>
-        <label className={styles.fieldLabel} htmlFor={endId}>{`${entry.label} ends`}</label>
-        <input id={endId} type="datetime-local" className={styles.inputField} value={environment.plannedEndDate} onChange={(changeEvent) => crg.actions.updateEnvironment(entry.key, { plannedEndDate: changeEvent.target.value })} />
-      </div>
-    </div>
+      <SnowLookupField label={`${entry.label} configuration item`} tableName="cmdb_ci" value={environment.configItem} onChange={(reference) => crg.actions.updateEnvironment(entry.key, { configItem: reference })} />
+    </>
   );
 }
 
@@ -50,7 +44,7 @@ function readChoiceLabel(environmentChoices: EnvironmentsStepProps['choiceOption
   return environmentChoices.find((environmentChoice) => environmentChoice.value === choiceValue)?.label ?? 'none found';
 }
 
-/** Per-environment overrides, folded away: the exact ServiceNow environment and a different configuration item. */
+/** Per-environment override, folded away: the exact ServiceNow environment (picked automatically otherwise). */
 function EnvironmentOverrides({ crg, choiceOptions }: EnvironmentsStepProps) {
   const environmentChoices = choiceOptions.u_environment ?? [];
   const automaticValues = buildEnvironmentValueByKey(environmentChoices);
@@ -66,7 +60,6 @@ function EnvironmentOverrides({ crg, choiceOptions }: EnvironmentsStepProps) {
             value={crg.state[entry.stateKey].snowEnvironmentValue}
             onChange={(value) => crg.actions.updateEnvironment(entry.key, { snowEnvironmentValue: value })}
           />
-          <SnowLookupField label={`${entry.label}: a different configuration item`} tableName="cmdb_ci" value={crg.state[entry.stateKey].configItem} onChange={(reference) => crg.actions.updateEnvironment(entry.key, { configItem: reference })} />
         </div>
       ))}
     </details>
@@ -78,7 +71,7 @@ export default function EnvironmentsStep(props: EnvironmentsStepProps) {
   const { crg, session } = props;
   return (
     <div>
-      <p className={styles.stepIntro}>Tick each environment this change goes to, then set when the work starts and ends.</p>
+      <p className={styles.stepIntro}>Tick each environment this change goes to, then set when the work starts and ends and its configuration item.</p>
       {session.mode === 'modify' ? <p className={styles.hint}>{MODIFY_ENVIRONMENT_NOTE}</p> : null}
       {DRAFT_ENVIRONMENTS.map((entry) => (
         <div key={entry.key} className={styles.card}>
@@ -86,7 +79,7 @@ export default function EnvironmentsStep(props: EnvironmentsStepProps) {
             <input type="checkbox" checked={crg.state[entry.stateKey].isEnabled} onChange={(changeEvent) => crg.actions.updateEnvironment(entry.key, { isEnabled: changeEvent.target.checked })} />
             {ENVIRONMENT_DESCRIPTIONS[entry.label]}
           </label>
-          {crg.state[entry.stateKey].isEnabled ? <WindowFields crg={crg} entry={entry} /> : null}
+          {crg.state[entry.stateKey].isEnabled ? <EnvironmentFields crg={crg} entry={entry} /> : null}
         </div>
       ))}
       <EnvironmentOverrides {...props} />

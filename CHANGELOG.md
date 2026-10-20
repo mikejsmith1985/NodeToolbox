@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **SNow Wizard: "Where and when?" is easier.** Each ticked environment's **configuration item** now sits in its own
+  card instead of under "More options", because it's set on every change (templates still fill it in). Start and end
+  times are now a **day picker plus an Hour list and a Minutes list (00 / 15 / 30 / 45)**, with minutes starting at
+  00. This replaces the browser's combined date-and-time popup, which had no confirm and made 00 minutes hard to reach.
+  A time saved earlier at an odd minute is kept.
+
+### Changed
 - **SNow Wizard: the AI writes the text fields only.** These are the title, description, justification, risk and
   impact, and the three plans. Dropdown answers (category, change type, planning questions) are no longer asked for or
   touched. They stay exactly as you set them, and saving a template is the way to skip setting them each time. Your
