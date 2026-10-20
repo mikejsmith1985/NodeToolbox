@@ -7,6 +7,7 @@ import { useId } from 'react';
 
 import { SnowLookupField } from '../../../views/SnowHub/components/SnowLookupField.tsx';
 import { useCrgTemplates } from '../../../views/SnowHub/hooks/useCrgTemplates.ts';
+import { useCtaskTemplates } from '../../../views/SnowHub/hooks/useCtaskTemplates.ts';
 import type { SnowChoiceOptionMap } from '../../../views/SnowHub/hooks/useSnowChoiceOptions.ts';
 import ChoiceSelect from '../ChoiceSelect.tsx';
 import type { ChangeStepProps } from '../changeWizardSession.ts';
@@ -30,9 +31,10 @@ function TextEntry({ label, value, isMultiline = false, onChange }: { label: str
   );
 }
 
-/** A saved change template to start from, when this browser has any. */
+/** A saved change template to start from, when this browser has any — its linked tasks staged with it. */
 function TemplatePicker({ crg }: Pick<ChangeStepProps, 'crg'>) {
   const { templates } = useCrgTemplates();
+  const { templates: ctaskTemplates } = useCtaskTemplates();
   const pickerId = useId();
   if (templates.length === 0) return null;
   return (
@@ -40,7 +42,7 @@ function TemplatePicker({ crg }: Pick<ChangeStepProps, 'crg'>) {
       <label className={styles.fieldLabel} htmlFor={pickerId}>Start from a saved template (optional)</label>
       <select id={pickerId} className={styles.selectField} value="" onChange={(changeEvent) => {
         const chosenTemplate = templates.find((template) => template.id === changeEvent.target.value);
-        if (chosenTemplate) crg.actions.applyTemplate(chosenTemplate);
+        if (chosenTemplate) crg.actions.applyTemplate(chosenTemplate, ctaskTemplates);
       }}>
         <option value="">Choose…</option>
         {templates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}

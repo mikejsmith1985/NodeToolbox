@@ -1,0 +1,145 @@
+// TemplatesScreen.tsx — "Your templates": start a change from one, share it as a code or a file, delete it, or add one someone shared.
+//
+// Sharing needs no server: a template travels as a code people paste into Teams or an email, or as a downloaded file.
+
+import { useId, useState, type ChangeEvent } from 'react';
+
+import type { CrgTemplate } from '../../views/SnowHub/hooks/useCrgState.ts';
+import CopyButton from '../shell/CopyButton.tsx';
+import shellStyles from '../shell/WizardShell.module.css';
+import styles from './ChangeWizard.module.css';
+import { buildTemplateShareFile, decodeTemplateShare, encodeTemplateShareCode } from './templateShare.ts';
+import type { TemplateLibrary } from './useTemplateLibrary.ts';
+
+interface TemplatesScreenProps {
+  library: TemplateLibrary;
+  onUseTemplate: (templateId: string) => void;
+  onBack: () => void;
+}
+
+type ImportOutcome = { kind: 'idle' } | { kind: 'added'; templateName: string } | { kind: 'failed'; message: string };
+
+// The object URL is released once the browser has started the download.
+const DOWNLOAD_URL_RELEASE_MS = 1000;
+
+/** Saves the template as a `.snow-template.json` file through the browser's own download. */
+function downloadTemplateFile(template: CrgTemplate, library: TemplateLibrary): void {
+  const { fileName, blob } = buildTemplateShareFile(template, library.listLinkedTasks(template));
+  const objectUrl = URL.createObjectURL(blob);
+  const downloadLink = document.createElement('a');
+  downloadLink.href = objectUrl;
+  downloadLink.download = fileName;
+  document.body.append(downloadLink);
+  downloadLink.click();
+  downloadLink.remove();
+  setTimeout(() => URL.revokeObjectURL(objectUrl), DOWNLOAD_URL_RELEASE_MS);
+}
+
+/** "Saved 1 Oct 2026 · 2 tasks" for one template. */
+function describeTemplate(template: CrgTemplate): string {
+  const savedDate = new Date(template.createdAt);
+  const taskCount = template.ctaskTemplateIds?.length ?? 0;
+  const savedText = Number.isNaN(savedDate.getTime()) ? '' : `Saved ${savedDate.toLocaleDateString()} · `;
+  return `${savedText}${taskCount} task${taskCount === 1 ? '' : 's'}`;
+}
+
+/** The code to pass on, ready to copy. */
+function SharePanel({ template, library }: { template: CrgTemplate; library: TemplateLibrary }) {
+  const codeFieldId = useId();
+  const shareCode = encodeTemplateShareCode(template, library.listLinkedTasks(template));
+  return (
+    <div className={styles.fieldGroup}>
+      <label className={styles.fieldLabel} htmlFor={codeFieldId}>{`Template code for “${template.name}”`}</label>
+      <textarea id={codeFieldId} className={styles.textArea} readOnly value={shareCode} />
+      <p className={styles.hint}>Copy it and paste it into Teams or an email. The other person pastes it under “Add a template someone shared”.</p>
+      <div className={styles.buttonRow}><CopyButton text={shareCode} label="Copy the code" fallbackTargetId={codeFieldId} /></div>
+    </div>
+  );
+}
+
+/** One template, with everything that can be done to it. */
+function TemplateCard({ template, library, onUseTemplate }: { template: CrgTemplate } & Pick<TemplatesScreenProps, 'library' | 'onUseTemplate'>) {
+  const [isSharing, setIsSharing] = useState(false);
+  const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
+  return (
+    <li className={styles.card}>
+      <h3 className={styles.cardTitle}>{template.name}</h3>
+      <p className={styles.hint}>{describeTemplate(template)}</p>
+      <div className={styles.buttonRow}>
+        <button type="button" className={styles.actionButton} onClick={() => onUseTemplate(template.id)}>Start a change from it</button>
+        <button type="button" className={styles.secondaryButton} aria-expanded={isSharing} onClick={() => setIsSharing(!isSharing)}>Share</button>
+        <button type="button" className={styles.secondaryButton} onClick={() => downloadTemplateFile(template, library)}>Download</button>
+        <button type="button" className={styles.secondaryButton} onClick={() => setIsConfirmingDelete(true)}>Delete</button>
+      </div>
+      {isSharing ? <SharePanel template={template} library={library} /> : null}
+      {isConfirmingDelete ? (
+        <div className={styles.buttonRow} role="alertdialog" aria-label={`Delete ${template.name}?`}>
+          <p className={styles.noticeText}>{`Delete “${template.name}”? This cannot be undone.`}</p>
+          <button type="button" className={styles.actionButton} onClick={() => library.deleteTemplate(template.id)}>Yes, delete it</button>
+          <button type="button" className={styles.secondaryButton} onClick={() => setIsConfirmingDelete(false)}>Keep it</button>
+        </div>
+      ) : null}
+    </li>
+  );
+}
+
+/** Reads a pasted code or a file's text and saves it as the user's own template. */
+function useTemplateImport(library: TemplateLibrary) {
+  const [outcome, setOutcome] = useState<ImportOutcome>({ kind: 'idle' });
+  function importText(sharedText: string): boolean {
+    const decoded = decodeTemplateShare(sharedText);
+    if (!decoded.isValid) {
+      setOutcome({ kind: 'failed', message: decoded.errorMessage });
+      return false;
+    }
+    setOutcome({ kind: 'added', templateName: library.importShared(decoded.payload).templateName });
+    return true;
+  }
+  function importFile(changeEvent: ChangeEvent<HTMLInputElement>) {
+    const chosenFile = changeEvent.target.files?.[0];
+    changeEvent.target.value = '';
+    if (!chosenFile) return;
+    chosenFile.text().then(importText, () => setOutcome({ kind: 'failed', message: 'That file could not be read. Try choosing it again.' }));
+  }
+  return { outcome, importText, importFile };
+}
+
+/** "Add a template someone shared": paste a code, or choose a file. */
+function ImportPanel({ library }: { library: TemplateLibrary }) {
+  const codeFieldId = useId();
+  const fileFieldId = useId();
+  const [pastedText, setPastedText] = useState('');
+  const { outcome, importText, importFile } = useTemplateImport(library);
+  return (
+    <div className={styles.card}>
+      <h3 className={styles.cardTitle}>Add a template someone shared</h3>
+      <label className={styles.fieldLabel} htmlFor={codeFieldId}>Paste a template code</label>
+      <textarea id={codeFieldId} className={styles.textArea} value={pastedText} placeholder="SNOWWIZ-TEMPLATE-1:…" onChange={(changeEvent) => setPastedText(changeEvent.target.value)} />
+      <div className={styles.buttonRow}>
+        <button type="button" className={styles.actionButton} onClick={() => { if (importText(pastedText)) setPastedText(''); }}>Add this template</button>
+      </div>
+      <label className={styles.fieldLabel} htmlFor={fileFieldId}>Or choose a template file</label>
+      <input id={fileFieldId} type="file" accept=".json,application/json" onChange={importFile} />
+      {outcome.kind === 'added' ? <p className={styles.successText} role="status">{`Added “${outcome.templateName}” to your templates ✓`}</p> : null}
+      {outcome.kind === 'failed' ? <p className={styles.errorText} role="alert">{outcome.message}</p> : null}
+    </div>
+  );
+}
+
+/** The "Your templates" screen. */
+export default function TemplatesScreen({ library, onUseTemplate, onBack }: TemplatesScreenProps) {
+  return (
+    <section aria-labelledby="templates-heading">
+      <h2 id="templates-heading" className={shellStyles.cardTitle}>Your templates</h2>
+      <p className={styles.stepIntro}>A template remembers a change’s details, plan, environments and tasks. Share one with your team by sending its code or file.</p>
+      {library.templates.length === 0
+        ? <p className={styles.hint}>You have no templates yet. Start from a change you’ve raised before, then press “Save as template”.</p>
+        : null}
+      <ul className={styles.itemList} aria-label="Saved templates">
+        {library.templates.map((template) => <TemplateCard key={template.id} template={template} library={library} onUseTemplate={onUseTemplate} />)}
+      </ul>
+      <ImportPanel library={library} />
+      <div className={styles.buttonRow}><button type="button" className={shellStyles.secondaryButton} onClick={onBack}>Back</button></div>
+    </section>
+  );
+}

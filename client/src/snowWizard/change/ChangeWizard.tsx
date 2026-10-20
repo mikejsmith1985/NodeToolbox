@@ -29,6 +29,8 @@ import {
   listPlanErrors, loadSavedCtaskEnvironmentDefaults, readCtaskPlanKey, seedCtaskEnvironmentPlan, type CtaskEnvironmentPlan, type PlanEnvironmentKey,
 } from './ctaskEnvironmentPlan.ts';
 import { listEditedSteps, readStepValues } from './modifyDiff.ts';
+import SaveTemplateControl from './SaveTemplateControl.tsx';
+import StartingPointNotice from './StartingPointNotice.tsx';
 import AiEnhanceStep from './steps/AiEnhanceStep.tsx';
 import ChecksStep from './steps/ChecksStep.tsx';
 import ChooseModeStep from './steps/ChooseModeStep.tsx';
@@ -42,8 +44,11 @@ import ScopeStep from './steps/ScopeStep.tsx';
 import TaskEnvironmentsStep from './steps/TaskEnvironmentsStep.tsx';
 import TasksStep from './steps/TasksStep.tsx';
 import WhichChangeStep from './steps/WhichChangeStep.tsx';
+import TemplatesScreen from './TemplatesScreen.tsx';
 import { useDraftReadiness } from './useDraftReadiness.ts';
 import { useFinishRunner, type FinishRunner } from './useFinishRunner.ts';
+import { useStartingPoint, type ChangeStartingPoint, type StartingPointHandle } from './useStartingPoint.ts';
+import { useTemplateLibrary } from './useTemplateLibrary.ts';
 import shellStyles from '../shell/WizardShell.module.css';
 
 const CHANGE_JOB_KINDS: readonly WizardJobKind[] = ['newChange', 'modifyChange'];
@@ -182,9 +187,10 @@ function useStepNavigation(job: WizardJob, crg: CrgHook, session: ChangeWizardSe
 }
 
 /** One change job, from its first step to its result. */
-function ChangeJob({ job, onExit }: { job: WizardJob; onExit: () => void }) {
+function ChangeJob({ job, startingPoint, onExit }: { job: WizardJob; startingPoint: ChangeStartingPoint | null; onExit: () => void }) {
   const mode = readJobMode(job.kind);
   const crg = useCrgState({ storageKey: buildChangeStorageKey(job.jobId) });
+  const startingPointHandle = useStartingPoint(crg, startingPoint);
   const { session, updateSession } = useJobSession(job);
   const { choiceOptions } = useSnowChoiceOptions();
   const [evidenceFiles, setEvidenceFiles] = useState<File[]>([]);
@@ -207,6 +213,7 @@ function ChangeJob({ job, onExit }: { job: WizardJob; onExit: () => void }) {
   return (
     <ChangeJobShell
       job={job} crg={crg} session={session} updateSession={updateSession} progress={progress} currentStepId={currentStepId} goToStep={goToStep}
+      startingPoint={startingPointHandle}
       extras={{ choiceOptions, ctaskEnvironmentPlan, items, paperworkNeed, runner, editedStepIds, evidenceFiles, setEvidenceFiles, onExit }}
     />
   );
@@ -229,11 +236,22 @@ interface ChangeJobShellProps {
   progress: ChangeWizardProgress;
   currentStepId: ChangeWizardStepId;
   goToStep: (stepId: ChangeWizardStepId, extraUpdate?: Partial<ChangeWizardSession>) => void;
+  startingPoint: StartingPointHandle;
   extras: StepExtras;
 }
 
+/** The frame's top-right buttons: "Save as template" once the change has details, and "Save and leave". */
+function JobFrameActions({ crg, isTemplateReady, onExit }: { crg: CrgHook; isTemplateReady: boolean; onExit: () => void }) {
+  return (
+    <>
+      {isTemplateReady ? <SaveTemplateControl draft={crg.state} /> : null}
+      <button type="button" className={shellStyles.secondaryButton} onClick={onExit}>Save and leave</button>
+    </>
+  );
+}
+
 /** The guided frame around the current step: Next / Back / Skip and the steps strip. */
-function ChangeJobShell({ crg, session, updateSession, progress, currentStepId, goToStep, extras }: ChangeJobShellProps) {
+function ChangeJobShell({ crg, session, updateSession, progress, currentStepId, goToStep, startingPoint, extras }: ChangeJobShellProps) {
   const stepIds = listChangeWizardStepIds(session.mode);
   const currentIndex = stepIds.indexOf(currentStepId);
   const isFinishStep = currentStepId === 'finish';
@@ -264,10 +282,39 @@ function ChangeJobShell({ crg, session, updateSession, progress, currentStepId, 
       onNext={handleNext}
       onBack={() => goToStep(stepIds[Math.max(0, currentIndex - 1)])}
       onSkip={moveForward}
-      advancedAction={<button type="button" className={shellStyles.secondaryButton} onClick={extras.onExit}>Save and leave</button>}
+      advancedAction={<JobFrameActions crg={crg} isTemplateReady={currentIndex >= stepIds.indexOf('details')} onExit={extras.onExit} />}
     >
+      <StartingPointNotice startingPoint={startingPoint} />
       {renderStep(currentStepId, { crg, session, updateSession, goToStep: (stepId) => goToStep(stepId) }, extras)}
     </GuidedFlowShell>
+  );
+}
+
+interface ChangeLandingProps {
+  resumableJobs: readonly WizardJob[];
+  openJob: (jobKind: WizardJobKind, startingPoint?: ChangeStartingPoint | null) => void;
+  startAgain: (job: WizardJob) => void;
+  onExit: () => void;
+}
+
+/**
+ * The screens before a job opens: the choice of how to start, and "Your templates". It owns the one template library
+ * for these screens and is gone once a job opens, so the job's own "Save as template" never races it.
+ */
+function ChangeLanding({ resumableJobs, openJob, startAgain, onExit }: ChangeLandingProps) {
+  const library = useTemplateLibrary();
+  const [isShowingTemplates, setIsShowingTemplates] = useState(false);
+
+  function startFromTemplate(templateId: string) {
+    const chosenTemplate = library.templates.find((template) => template.id === templateId);
+    if (chosenTemplate) openJob('newChange', { kind: 'template', template: chosenTemplate, ctaskTemplates: library.ctaskTemplates });
+  }
+
+  if (isShowingTemplates) return <TemplatesScreen library={library} onUseTemplate={startFromTemplate} onBack={() => setIsShowingTemplates(false)} />;
+  return (
+    <ChooseModeStep resumableJobs={resumableJobs} templates={library.templates} onChooseNew={() => openJob('newChange')} onChooseExisting={() => openJob('modifyChange')}
+      onContinue={(job) => openJob(job.kind)} onStartAgain={startAgain} onExit={onExit} onOpenTemplates={() => setIsShowingTemplates(true)}
+      onStartFromChange={(changeNumber) => openJob('newChange', { kind: 'existingChange', changeNumber })} onStartFromTemplate={startFromTemplate} />
   );
 }
 
@@ -275,12 +322,14 @@ function ChangeJobShell({ crg, session, updateSession, progress, currentStepId, 
 export default function ChangeWizard({ onExit }: WizardJobProps) {
   const jobs = useWizardJobStore((state) => state.jobs);
   const [activeJob, setActiveJob] = useState<WizardJob | null>(null);
+  const [startingPoint, setStartingPoint] = useState<ChangeStartingPoint | null>(null);
   const resumableJobs = CHANGE_JOB_KINDS.map((jobKind) => jobs[jobKind]).filter((job): job is WizardJob => job?.status === 'inProgress');
 
-  function openJob(jobKind: WizardJobKind) {
+  function openJob(jobKind: WizardJobKind, nextStartingPoint: ChangeStartingPoint | null = null) {
     const mode = readJobMode(jobKind);
     const { job } = useWizardJobStore.getState().startJob(jobKind, mode === 'modify' ? 'whichChange' : 'scope', Date.now());
     useChangeWizardSessionStore.getState().ensureSession(job.jobId, mode);
+    setStartingPoint(nextStartingPoint);
     setActiveJob(job);
   }
 
@@ -290,11 +339,6 @@ export default function ChangeWizard({ onExit }: WizardJobProps) {
     openJob(job.kind);
   }
 
-  if (!activeJob) {
-    return (
-      <ChooseModeStep resumableJobs={resumableJobs} onChooseNew={() => openJob('newChange')} onChooseExisting={() => openJob('modifyChange')}
-        onContinue={(job) => openJob(job.kind)} onStartAgain={startAgain} onExit={onExit} />
-    );
-  }
-  return <ChangeJob key={activeJob.jobId} job={activeJob} onExit={onExit} />;
+  if (!activeJob) return <ChangeLanding resumableJobs={resumableJobs} openJob={openJob} startAgain={startAgain} onExit={onExit} />;
+  return <ChangeJob key={activeJob.jobId} job={activeJob} startingPoint={startingPoint} onExit={onExit} />;
 }

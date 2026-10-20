@@ -55,4 +55,10 @@ describe('CreateResultStep', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save mine anyway' }));
     expect(runner.confirmSave).toHaveBeenCalled();
   });
+
+  it('after a clean create, suggests saving it as a template for next time', () => {
+    const session: ChangeWizardSession = { ...createChangeWizardSession('create'), createdChanges: [{ environmentLabel: 'REL', changeNumber: 'CHG1' }, { environmentLabel: 'PRD', changeNumber: 'CHG2' }] };
+    renderStep(session, buildRunner({ phase: { kind: 'done' } }));
+    expect(screen.getByText(/Press “Save as template” at the top/)).toBeTruthy();
+  });
 });

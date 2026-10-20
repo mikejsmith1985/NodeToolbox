@@ -2,7 +2,7 @@
 // REL, a failing check gives one reason and one fix that returns to the right step, "could not check" holds the job until
 // acknowledged, and the AI step is shown to everyone and can be skipped.
 
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { scanIssuesForProblems } from '../../views/SnowHub/problems/changeProblems.ts';
@@ -103,5 +103,58 @@ describe('ChangeWizard — new change', () => {
     expect(screen.getByText(/Create stays locked/)).toBeTruthy();
     fireEvent.click(screen.getByRole('checkbox'));
     await waitFor(() => expect(readNextButton().disabled).toBe(false));
+  });
+});
+
+describe('ChangeWizard — templates', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    localStorage.setItem('tbxRcpRulesEnabled', 'false');
+    useWizardJobStore.setState({ jobs: {} });
+  });
+
+  it('copies a change raised before into a new change, then recommends saving it as a template', async () => {
+    const { snowFetch } = await import('../../services/snowApi.ts');
+    const oldChange = { result: [{ sys_id: { value: 'chg-sys', display_value: 'chg-sys' }, short_description: { value: 'Payments 1.1', display_value: 'Payments 1.1' } }] };
+    vi.mocked(snowFetch).mockImplementation(async (path: string) => (path.includes('table/change_request') ? oldChange : { result: [] }) as never);
+    render(<ChangeWizard onExit={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText('Change number'), { target: { value: 'chg0001234' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Start from an existing change' }));
+    expect(screen.getByRole('heading', { name: 'Step 1 of 11 — What\'s in this change?' })).toBeTruthy();
+    expect(await screen.findByText(/Copied CHG0001234 into a new change/)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Save as template' })).toBeNull();
+    vi.mocked(snowFetch).mockImplementation(async () => ({ result: [] }) as never);
+  });
+
+  it('opens "Your templates" from the first screen and comes back', () => {
+    render(<ChangeWizard onExit={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Your templates' }));
+    expect(screen.getByRole('heading', { name: 'Your templates' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+    expect(screen.getByRole('heading', { name: 'Make or change a change' })).toBeTruthy();
+  });
+
+  it('offers "Save as template" from the details step on, and saves the change in hand', () => {
+    openJobAt('details');
+    fireEvent.click(screen.getByRole('button', { name: 'Save as template' }));
+    fireEvent.change(screen.getByLabelText('Name this template'), { target: { value: 'Payments release' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save template' }));
+    expect(screen.getByRole('status').textContent).toContain('Saved ✓');
+    const savedTemplates = JSON.parse(localStorage.getItem('ntbx-crg-templates') ?? '[]') as Array<{ name: string; ctaskTemplateIds: string[] }>;
+    expect(savedTemplates.map((template) => template.name)).toEqual(['Payments release']);
+    expect(savedTemplates[0].ctaskTemplateIds).toHaveLength(1);
+  });
+
+  it('starts a new change from a saved template', () => {
+    openJobAt('details');
+    fireEvent.click(screen.getByRole('button', { name: 'Save as template' }));
+    fireEvent.change(screen.getByLabelText('Name this template'), { target: { value: 'Payments release' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save template' }));
+    cleanup();
+    useWizardJobStore.setState({ jobs: {} });
+    render(<ChangeWizard onExit={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText('Your saved templates'), { target: { value: (JSON.parse(localStorage.getItem('ntbx-crg-templates') ?? '[]') as Array<{ id: string }>)[0].id } });
+    fireEvent.click(screen.getByRole('button', { name: 'Start from a template' }));
+    expect(screen.getByText(/Filled in from your template “Payments release”/)).toBeTruthy();
   });
 });

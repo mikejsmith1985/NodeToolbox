@@ -19,6 +19,7 @@ import { buildRebuildStorageKey } from '../hooks/crgStorageKeys.ts';
 import { describeAutoCreatedChangeTasks, listEnvironmentDateOrderErrors, listRebuildEnvironmentRefusal, useCrgState } from '../hooks/useCrgState.ts';
 import { useCtaskTemplates } from '../hooks/useCtaskTemplates.ts';
 import { useCrgTemplates } from '../hooks/useCrgTemplates.ts';
+import { buildCurrentTemplateData } from '../hooks/crgTemplateData.ts';
 import type { AiAssistGeneratedFields } from '../hooks/useAiAssist.ts';
 import { buildIssueDetailText, parseAiAssistChgResponse, useAiAssist } from '../hooks/useAiAssist.ts';
 import { CODE_BLOCK_REPLY_INSTRUCTION, isAssistantQuestion, PASTED_QUESTION_MESSAGE } from '../chgFormula/assistantReplyText.ts';
@@ -157,21 +158,6 @@ const PFIX_CONFIG_ITEM_PIN_KEY = 'pfixEnvironment.configItem';
 const REL_ENVIRONMENT_VALUE_PIN_KEY = 'relEnvironment.snowEnvironmentValue';
 const PRD_ENVIRONMENT_VALUE_PIN_KEY = 'prdEnvironment.snowEnvironmentValue';
 const PFIX_ENVIRONMENT_VALUE_PIN_KEY = 'pfixEnvironment.snowEnvironmentValue';
-function buildCurrentTemplateData(state: CrgStateData): Omit<CrgTemplate, 'id' | 'name' | 'createdAt'> {
-  return {
-    shortDescriptionConfig: state.shortDescriptionConfig,
-    chgBasicInfo:          state.chgBasicInfo,
-    chgPlanningAssessment: state.chgPlanningAssessment,
-    chgPlanningContent:    state.chgPlanningContent,
-    customSnowFields:      state.customSnowFields,
-    relEnvironment:        state.relEnvironment,
-    prdEnvironment:        state.prdEnvironment,
-    pfixEnvironment:       state.pfixEnvironment,
-    ctaskTemplateIds:      state.ctaskTemplateIds ?? [],
-    reconcileAutoCtasks:   state.reconcileAutoCtasks ?? false,
-  };
-}
-
 function resolvePlanningAssessmentPinKey(fieldKey: keyof ChgPlanningAssessment): string {
   switch (fieldKey) {
     case 'impact':

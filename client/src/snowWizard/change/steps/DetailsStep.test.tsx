@@ -15,11 +15,14 @@ vi.mock('../../../services/snowApi.ts', () => ({ snowFetch: vi.fn(async () => ({
 const CHOICES = { category: [{ value: 'software', label: 'Software' }], type: [{ value: 'normal', label: 'Normal' }] };
 
 /** What the harness last rendered, written after each render (never during it). */
-const observed = { latestGaps: [] as string[] };
+const observed = { latestGaps: [] as string[], latestTaskNames: [] as string[] };
 
 function Harness() {
   const crg = useCrgState({ storageKey: 'snowWizard:change:details-test' });
-  useEffect(() => { observed.latestGaps = readDetailsGaps(crg.state); });
+  useEffect(() => {
+    observed.latestGaps = readDetailsGaps(crg.state);
+    observed.latestTaskNames = crg.state.changeTasks.map((task) => task.shortDescription);
+  });
   return <DetailsStep crg={crg} session={createChangeWizardSession('create')} updateSession={vi.fn()} goToStep={vi.fn()} choiceOptions={CHOICES} />;
 }
 
@@ -36,5 +39,15 @@ describe('DetailsStep', () => {
     render(<Harness />);
     expect((screen.getByText('More options').closest('details') as HTMLDetailsElement).open).toBe(true);
     expect(document.body.textContent).not.toMatch(/u_[a-z]|cmdb_ci|customfield_|sys_id/);
+  });
+
+  it('starts from a saved template with its linked tasks staged', () => {
+    const blank = { sysId: '', displayName: '' };
+    localStorage.setItem('ntbx-ctask-templates', JSON.stringify([{ id: 'ctask-1', name: 'Checkout', createdAt: '', shortDescription: 'Checkout', description: '', assignmentGroup: blank, assignedTo: blank, plannedStartDate: '', plannedEndDate: '', closeNotes: '' }]));
+    localStorage.setItem('ntbx-crg-templates', JSON.stringify([{ id: 'tpl-1', name: 'Monthly', createdAt: '', chgBasicInfo: { category: 'software', changeType: '', environment: '', requestedBy: blank, configItem: blank, assignmentGroup: blank, assignedTo: blank, changeManager: blank, tester: blank, serviceManager: blank, isExpedited: false }, chgPlanningAssessment: {}, chgPlanningContent: {}, ctaskTemplateIds: ['ctask-1'] }]));
+    render(<Harness />);
+    fireEvent.change(screen.getByLabelText('Start from a saved template (optional)'), { target: { value: 'tpl-1' } });
+    expect(observed.latestTaskNames).toEqual(['Checkout']);
+    localStorage.clear();
   });
 });

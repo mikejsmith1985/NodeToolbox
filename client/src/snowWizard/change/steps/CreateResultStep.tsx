@@ -23,6 +23,7 @@ export interface CreateResultStepProps extends ChangeStepProps {
 }
 
 const SERVICENOW_TASKS = ['Implementation', 'Technical Checkout'];
+const TEMPLATE_TIP = 'Doing one like this again? Press “Save as template” at the top, so your next change starts from this one.';
 
 /** The tasks one environment's change carries. */
 function listTasksFor(environmentLabel: PlanEnvironmentKey | null, plan: CtaskEnvironmentPlan): string[] {
@@ -78,6 +79,7 @@ function OutcomeReport(props: CreateResultStepProps) {
   return (
     <div>
       {session.failureText === null ? <p className={styles.successText}>All done. Everything below is in ServiceNow.</p> : null}
+      {session.failureText === null ? <p className={styles.hint}>{TEMPLATE_TIP}</p> : null}
       <ul className={styles.itemList} aria-label="What was made">
         {session.createdChanges.map((createdChange) => <CreatedChangeCard key={createdChange.changeNumber} createdChange={createdChange} session={session} ctaskEnvironmentPlan={props.ctaskEnvironmentPlan} />)}
       </ul>

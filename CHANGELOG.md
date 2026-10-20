@@ -13,6 +13,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and a build test keeps it there.
 
 ### Added
+- **SNow Wizard: change templates you can save and share.** The "Make or change a change" screen now recommends the
+  fastest way in: start from a change you've raised before, tweak it, and save it as a template for next time.
+  - *Start from an existing change:* type its number and the Wizard copies it (tasks included) into a new change, using
+    Toolbox's own Clone CHG. *Start from a template* picks one of your saved templates, linked tasks included.
+  - *Save as template* sits at the top of every step from "Tell us about the change" on, and on the result screen. It
+    asks only for a name; a name already in use offers "Replace it" instead of a second copy. Tasks staged on the
+    change are kept with the template (an untouched task reuses the task template it came from).
+  - *Your templates* lists each template with Start, Share, Download and Delete (Delete asks on the page first).
+  - *Sharing needs no server:* Share gives a one-line code to paste into Teams or email; Download saves the same
+    template as a `.snow-template.json` file. "Add a template someone shared" takes either one, checks every value,
+    drops anything unknown, gives the copy fresh ids, and renames it "(shared)" if the name is taken. Personal field
+    pins never travel in a shared template.
+  - Templates are the same ones Toolbox's Create CHG tab uses. The Details step's template list now stages a
+    template's linked tasks too.
 - **SNow Wizard: all three Home buttons now work (feature 040, US1–US4).** Each job runs one step per screen, with
   Next held back and the reason shown until the step is done.
   - **Make or change a change.**
