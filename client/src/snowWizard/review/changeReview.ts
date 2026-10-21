@@ -28,7 +28,9 @@ export interface ChangeReviewOptions {
  * Toolbox, which no reviewer can see; the change-text checks cover the same content, so Review leaves it out rather
  * than flag every change as "needs action".
  */
-const AUTHOR_ONLY_ITEM_IDS: ReadonlySet<string> = new Set(['riskCheck']);
+// Problem records are linked to the change by ServiceNow itself (owner, GH #475), so they are never the author's work
+// and never belong in a coaching note.
+const AUTHOR_ONLY_ITEM_IDS: ReadonlySet<string> = new Set(['riskCheck', 'prbs']);
 
 /** Reviews one change by number, on the same checks used when a change is made (minus author-only ones). */
 export async function runChangeReview(changeNumber: string, options: ChangeReviewOptions = {}): Promise<ChangeReviewResult> {

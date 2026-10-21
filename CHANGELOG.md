@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **SNow Wizard: one-click final-check fixes run right there (GH #475, last comment).** "Set it on N tasks" and
+  "Create the planned outage" used to jump to "Tell us about the change", where neither can be fixed. They now run
+  on the change in ServiceNow with Toolbox's own writers (`saveCtaskFix`, `createPlannedOutage`), using the change's
+  own configuration item and window. They say what they did (✓ or ✗ with the reason), and the checks then read the
+  change again.
+- **SNow Wizard: no more problem-record work.** ServiceNow links problem records to the change itself, so the Wizard
+  no longer reads, checks or asks about them, and the Review job's coaching note leaves them out too.
+
 ### Changed
 - **SNow Wizard now follows Toolbox's own workflow, guided.** At the owner's request it keeps Toolbox's order and AI
   interaction, with more guidance for first-timers.

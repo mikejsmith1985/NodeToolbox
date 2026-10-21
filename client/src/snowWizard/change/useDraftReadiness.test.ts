@@ -32,14 +32,15 @@ describe('useDraftReadiness', () => {
     expect(scanIssuesForProblems).not.toHaveBeenCalled();
   });
 
-  it('scans the chosen issues for PRBs and builds the checklist for a new change', async () => {
-    vi.mocked(scanIssuesForProblems).mockResolvedValueOnce([{ prbNumber: 'PRB1', issueKey: 'ABC-1', problem: null } as never]);
+  it('builds a new change\'s checklist from the draft, with no problem-record check — ServiceNow links those itself', async () => {
+    vi.mocked(scanIssuesForProblems).mockClear();
     const draft = readDraftWithIssue();
     const session = createChangeWizardSession('create');
     const { result } = renderHook(() => useDraftReadiness(draft, session, true));
     await waitFor(() => expect(result.current.items).not.toBeNull());
-    expect(scanIssuesForProblems).toHaveBeenCalledWith(['ABC-1']);
-    expect(result.current.items?.find((item) => item.id === 'prbs')?.reason).toMatch(/PRB1/);
+    expect(scanIssuesForProblems).not.toHaveBeenCalled();
+    expect(result.current.items?.find((item) => item.id === 'prbs')).toBeUndefined();
+    expect(result.current.items?.find((item) => item.id === 'riskCheck')).toBeUndefined();
   });
 
   it('counts the Jira files ticked on "Add proof" as test evidence (GH #468)', async () => {

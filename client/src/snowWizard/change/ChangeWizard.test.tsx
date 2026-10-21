@@ -5,7 +5,6 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { scanIssuesForProblems } from '../../views/SnowHub/problems/changeProblems.ts';
 import { useWizardJobStore } from '../shell/wizardJobStore.ts';
 import ChangeWizard from './ChangeWizard.tsx';
 import { buildChangeStorageKey, createChangeWizardSession, useChangeWizardSessionStore } from './changeWizardSession.ts';
@@ -163,14 +162,10 @@ describe('ChangeWizard — new change', () => {
     vi.mocked(snowFetch).mockImplementation(async () => ({ result: [] }) as never);
   });
 
-  it('holds the job on "could not check" until the user acknowledges it', async () => {
-    vi.mocked(scanIssuesForProblems).mockRejectedValueOnce(new Error('HTTP 403'));
+  it('never asks the user about problem records — ServiceNow links them itself (GH #475)', async () => {
     openJobAt('checks');
-    await screen.findByText('Not checked: Could not read the problem records named in the chosen issues.');
-    expect(readNextButton().disabled).toBe(true);
-    expect(screen.getByText(/The last step stays locked/)).toBeTruthy();
-    fireEvent.click(screen.getByRole('checkbox'));
-    await waitFor(() => expect(readNextButton().disabled).toBe(false));
+    const checksList = await screen.findByRole('list', { name: 'Checks' });
+    expect(within(checksList).queryByText('Problem records')).toBeNull();
   });
 });
 

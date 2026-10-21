@@ -70,6 +70,8 @@ export interface ChangeWizardSession {
   saveFailureText?: string | null;
   /** The template this job was opened from (or last saved as), so saving updates it instead of making another. */
   linkedTemplate?: { id: string; name: string } | null;
+  /** Bumped after a one-click fix writes to ServiceNow, so the final checks read the change again. */
+  readinessRefreshCount?: number;
 }
 
 /** How a step asks to move: `shouldReturnHere` makes the next screen's Next lead straight back to this step. */

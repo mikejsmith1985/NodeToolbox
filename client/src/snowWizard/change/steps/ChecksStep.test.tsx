@@ -7,10 +7,12 @@ import { describe, expect, it, vi } from 'vitest';
 import type { ReadinessItem } from '../../../views/SnowHub/guided/changeReadiness.ts';
 import { useCrgState } from '../../../views/SnowHub/hooks/useCrgState.ts';
 import { createChangeWizardSession, type ChangeWizardSession } from '../changeWizardSession.ts';
+import { runReadinessFix } from '../readinessFixes.ts';
 import ChecksStep from './ChecksStep.tsx';
 
 vi.mock('../../../services/jiraApi.ts', () => ({ jiraGet: vi.fn(async () => []) }));
 vi.mock('../../../services/snowApi.ts', () => ({ snowFetch: vi.fn() }));
+vi.mock('../readinessFixes.ts', () => ({ runReadinessFix: vi.fn(async () => 'CHG9: set the configuration item on CTASK7.') }));
 
 const BACKOUT_GAP: ReadinessItem = {
   id: 'formulaBackout', label: 'Formula Card 7: Backout', state: 'needsAction', reason: 'Backout Plan is empty.',
@@ -62,5 +64,21 @@ describe('ChecksStep', () => {
     rerender(<Harness items={[DONE_OWNER]} session={createChangeWizardSession('create')} goToStep={vi.fn()} updateSession={vi.fn()} />);
     expect(screen.queryByRole('checkbox')).toBeNull();
     expect(screen.getByText(/should pass review/)).toBeTruthy();
+  });
+
+  it('runs a one-click fix right here on the change, says what it did, and has the checks read the change again (GH #475)', async () => {
+    const goToStep = vi.fn();
+    const updateSession = vi.fn();
+    const ciGap: ReadinessItem = {
+      id: 'ctaskCi', label: 'Task configuration items', state: 'needsAction', reason: 'CTASK7 does not match.',
+      action: { kind: 'fixNow', fixId: 'setCtaskConfigItems', label: 'Set it on 1 task', targetCount: 1 },
+    };
+    const session = { ...createChangeWizardSession('modify'), modify: { changeNumber: 'CHG9', stateLabel: 'New', loadedSnapshot: {}, loadedStepValues: {}, existingTaskNames: [], changeSysId: 'sys-9' } };
+    render(<Harness items={[ciGap]} session={session} goToStep={goToStep} updateSession={updateSession} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Set it on 1 task' }));
+    expect(await screen.findByText('✓ CHG9: set the configuration item on CTASK7.')).toBeTruthy();
+    expect(runReadinessFix).toHaveBeenCalledWith('setCtaskConfigItems', [{ changeNumber: 'CHG9', changeSysId: 'sys-9' }]);
+    expect(updateSession).toHaveBeenCalledWith({ readinessRefreshCount: 1 });
+    expect(goToStep).not.toHaveBeenCalled();
   });
 });

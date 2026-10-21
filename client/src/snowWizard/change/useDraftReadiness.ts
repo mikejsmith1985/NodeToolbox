@@ -1,14 +1,13 @@
 // useDraftReadiness.ts — The readiness checklist for the draft in hand, from 039's one shared engine.
 //
-// The only reads are the ones a draft cannot answer itself: which PRBs the chosen issues mention (a new change), or
-// what ServiceNow holds for the change being modified (039's own gatherer). Every state update happens in an async
+// The only read is the one a draft cannot answer itself: what ServiceNow holds for the change being modified (039's own
+// gatherer). A new change is judged from the draft alone. Every state update happens in an async
 // continuation, tagged with the request it answers, so a stale read is never shown (react-hooks/set-state-in-effect).
 
 import { useEffect, useMemo, useState } from 'react';
 
 import { buildChangeReadiness, type ChangeReadinessFacts, type ReadinessItem, type ReadinessPrb } from '../../views/SnowHub/guided/changeReadiness.ts';
-import { gatherChangeReadinessFacts, readPrbLinkStatus } from '../../views/SnowHub/guided/changeReadinessFacts.ts';
-import { scanIssuesForProblems } from '../../views/SnowHub/problems/changeProblems.ts';
+import { gatherChangeReadinessFacts } from '../../views/SnowHub/guided/changeReadinessFacts.ts';
 import { readRcpRulesEnabled } from '../../views/SnowHub/rcp/rcpApprovalEmail.ts';
 import { readCentralTodayIso } from '../../views/SnowHub/rcp/rcpRules.ts';
 import type { CrgDraftState } from './changeDraft.ts';
@@ -16,12 +15,15 @@ import type { ChangeWizardSession } from './changeWizardSession.ts';
 import { buildDraftReadinessFacts } from './draftReadinessFacts.ts';
 
 /**
- * The Wizard's checks without the AI review item. The review (step 6) is optional coaching: an AI rarely answers
- * "ready", so counting it kept sending people back to step 6 in a loop (owner feedback). The change-text checks still
- * judge the same writing deterministically.
+ * The checks the Wizard leaves out. The AI review verdict: Toolbox's Risk Check is run on the real ticket instead,
+ * and counting a verdict once looped people back (owner feedback). Problem records: ServiceNow links them to the change
+ * by itself, so they are never work for the user (owner, GH #475).
  */
-function excludeOptionalAiReview(items: ReadinessItem[]): ReadinessItem[] {
-  return items.filter((item) => item.id !== 'riskCheck');
+const WIZARD_SKIPPED_CHECK_IDS: ReadonlySet<string> = new Set(['riskCheck', 'prbs']);
+
+/** The checklist without the checks the Wizard leaves out. */
+function excludeSkippedChecks(items: ReadinessItem[]): ReadinessItem[] {
+  return items.filter((item) => !WIZARD_SKIPPED_CHECK_IDS.has(item.id));
 }
 
 /** The checklist, or null while its reads are still running. */
@@ -37,18 +39,6 @@ interface ReadAnswer {
   existingFacts: ChangeReadinessFacts | null;
 }
 
-const PRB_READ_FAILURE = 'Could not read the problem records named in the chosen issues.';
-
-/** The PRBs the issues mention, judged as for a change that does not exist yet. */
-async function readNewChangePrbs(issueKeys: readonly string[]): Promise<Pick<ReadAnswer, 'prbRows' | 'prbFailureReason'>> {
-  if (issueKeys.length === 0) return { prbRows: [] };
-  try {
-    return { prbRows: (await scanIssuesForProblems(issueKeys)).map((row) => ({ prbNumber: row.prbNumber, linkStatus: readPrbLinkStatus(row, '') })) };
-  } catch {
-    return { prbRows: null, prbFailureReason: PRB_READ_FAILURE };
-  }
-}
-
 const NO_JIRA_EVIDENCE: readonly string[] = [];
 
 /**
@@ -60,7 +50,7 @@ export function useDraftReadiness(draft: CrgDraftState, session: ChangeWizardSes
   const [readAnswer, setReadAnswer] = useState<ReadAnswer | null>(null);
   const issueKeys = useMemo(() => [...draft.selectedIssueKeys].sort(), [draft.selectedIssueKeys]);
   const changeNumber = session.modify?.changeNumber ?? '';
-  const requestKey = `${session.mode}|${changeNumber}|${issueKeys.join(',')}|${String(session.riskReview?.isReady ?? 'none')}`;
+  const requestKey = `${session.mode}|${changeNumber}|${issueKeys.join(',')}|${String(session.riskReview?.isReady ?? 'none')}|${session.readinessRefreshCount ?? 0}`;
   const isRcpRulesEnabled = readRcpRulesEnabled();
 
   useEffect(() => {
@@ -70,7 +60,8 @@ export function useDraftReadiness(draft: CrgDraftState, session: ChangeWizardSes
     const readPromise: Promise<Omit<ReadAnswer, 'requestKey'>> = session.mode === 'modify'
       ? gatherChangeReadinessFacts(changeNumber, { riskReview: session.riskReview, isRcpRulesEnabled, todayIso })
         .then((gathered) => ({ prbRows: [], existingFacts: gathered.facts }))
-      : readNewChangePrbs(issueKeys).then((prbAnswer) => ({ ...prbAnswer, existingFacts: null }));
+      // Problem records are not checked (ServiceNow links them itself), so a new change reads nothing first.
+      : Promise.resolve({ prbRows: [] as ReadinessPrb[], existingFacts: null });
     void readPromise.then((answer) => { if (isCurrent) setReadAnswer({ ...answer, requestKey }); });
     return () => { isCurrent = false; };
   }, [isActive, requestKey, session.mode, changeNumber, issueKeys, session.riskReview, isRcpRulesEnabled]);
@@ -78,7 +69,7 @@ export function useDraftReadiness(draft: CrgDraftState, session: ChangeWizardSes
   const evidenceFileNames = useMemo(() => [...session.evidenceFileNames, ...jiraEvidenceFileNames], [session.evidenceFileNames, jiraEvidenceFileNames]);
   const items = useMemo(() => {
     if (!readAnswer || readAnswer.requestKey !== requestKey) return null;
-    return excludeOptionalAiReview(buildChangeReadiness(buildDraftReadinessFacts({
+    return excludeSkippedChecks(buildChangeReadiness(buildDraftReadinessFacts({
       mode: session.mode, draft, riskReview: session.riskReview, isRcpRulesEnabled, todayIso: readCentralTodayIso(),
       evidenceFileNames, prbRows: readAnswer.prbRows, prbFailureReason: readAnswer.prbFailureReason,
       existingFacts: readAnswer.existingFacts, existingTaskLinks: session.modify?.existingTasks,
