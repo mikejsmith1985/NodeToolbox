@@ -22,10 +22,9 @@ import {
   type ChangeStepProps, type ChangeWizardSession, type StepMoveOptions,
 } from './changeWizardSession.ts';
 import {
-  buildShellSteps, deriveChangeWizardStep, evaluateStepCompletion, listChangeWizardStepIds, readPaperworkNeed, readStepTitle,
+  buildShellSteps, deriveChangeWizardStep, evaluateStepCompletion, listChangeWizardPhases, listChangeWizardStepIds, readPaperworkNeed, readStepTitle,
   resolveResumeStep, type ChangeWizardMode, type ChangeWizardProgress, type ChangeWizardStepId, type PaperworkNeed,
 } from './changeWizardSteps.ts';
-import { aiDraftPromptFor } from './aiDraft.ts';
 import { describeCreatedChangesForPrompt } from './createdChanges.ts';
 import { mergeCreatedChanges, type CreatedChangeSummary } from './createOutcome.ts';
 import { useCreatedDraftRecovery, useCreatedTaskNumbers, type DraftRecovery } from './createdDraftRecovery.ts';
@@ -35,8 +34,7 @@ import { useDefaultJiraEvidenceTicks, useJiraEvidenceChoiceStore, useTickedJiraE
 import { listEditedSteps, readStepValues } from './modifyDiff.ts';
 import SaveTemplateControl from './SaveTemplateControl.tsx';
 import StartingPointNotice from './StartingPointNotice.tsx';
-import AiDraftStep from './steps/AiDraftStep.tsx';
-import AiEnhanceStep from './steps/AiEnhanceStep.tsx';
+import AiWriteStep from './steps/AiWriteStep.tsx';
 import ChecksStep from './steps/ChecksStep.tsx';
 import ChooseModeStep from './steps/ChooseModeStep.tsx';
 import CreateNowStep from './steps/CreateNowStep.tsx';
@@ -57,11 +55,12 @@ import { useFinishRunner, type FinishRunner } from './useFinishRunner.ts';
 import { useStartingPoint, type ChangeStartingPoint, type StartingPointHandle } from './useStartingPoint.ts';
 import { useTemplateLibrary, type TemplateLibrary } from './useTemplateLibrary.ts';
 import shellStyles from '../shell/WizardShell.module.css';
+import styles from './ChangeWizard.module.css';
 
 const CHANGE_JOB_KINDS: readonly WizardJobKind[] = ['newChange', 'modifyChange'];
 // "Skip — nothing to change": every pre-filled step of a modify, and the two optional steps of a new change.
-const MODIFY_SKIPPABLE_STEPS = new Set<ChangeWizardStepId>(['scope', 'aiDraft', 'details', 'planning', 'environments', 'aiEnhance', 'evidence', 'tasks']);
-const CREATE_SKIPPABLE_STEPS = new Set<ChangeWizardStepId>(['aiEnhance', 'evidence']);
+const MODIFY_SKIPPABLE_STEPS = new Set<ChangeWizardStepId>(['scope', 'aiDraft', 'details', 'planning', 'environments', 'evidence', 'tasks']);
+const CREATE_SKIPPABLE_STEPS = new Set<ChangeWizardStepId>(['evidence']);
 const EDITED_MARK = ' (edited)';
 
 /** The mode a job kind runs in. */
@@ -94,11 +93,10 @@ function renderStep(stepId: ChangeWizardStepId, stepProps: ChangeStepProps, extr
   const stepScreens: Record<ChangeWizardStepId, () => ReactElement> = {
     whichChange: () => <WhichChangeStep {...stepProps} onExit={extras.onExit} />,
     scope: () => <ScopeStep {...stepProps} />,
-    aiDraft: () => <AiDraftStep {...withChoices} buildPrompt={aiDraftPromptFor(extras.createdChangeLines)} />,
+    aiDraft: () => <AiWriteStep {...withChoices} items={extras.items} createdChangeLines={extras.createdChangeLines} />,
     details: () => <DetailsStep {...withChoices} />,
     planning: () => <PlanningStep {...withChoices} />,
     environments: () => <EnvironmentsStep {...withChoices} />,
-    aiEnhance: () => <AiEnhanceStep {...stepProps} items={extras.items} createdChangeLines={extras.createdChangeLines} />,
     evidence: () => <EvidenceStep {...stepProps} jobId={extras.jobId} evidenceFiles={extras.evidenceFiles} onEvidenceFilesChange={extras.setEvidenceFiles} />,
     tasks: () => <TasksStep {...stepProps} library={extras.library} />,
     createChanges: () => <CreateNowStep {...stepProps} runner={extras.runner} taskNamesByEnvironment={readTaskNamesByEnvironment(stepProps.crg.state)} />,
@@ -146,11 +144,29 @@ function hasFinishAttempt(session: ChangeWizardSession, runner: FinishRunner): b
   return runner.phase.kind === 'done' || session.createdChanges.length > 0 || session.failureText !== null;
 }
 
-/** "Create in ServiceNow": Next makes the changes, then moves on once they all exist. */
-function readCreateNowGate(runner: FinishRunner, progress: ChangeWizardProgress) {
+/** "2 changes and 3 tasks" — what pressing Create will make, counted from the cards as they stand. */
+function describeCreateCount(draft: CrgDraftState): string {
+  const changeCount = readEnabledPlanEnvironments(draft).length;
+  const taskCount = Object.values(readTaskNamesByEnvironment(draft)).reduce((runningTotal, taskNames) => runningTotal + (taskNames?.length ?? 0), 0);
+  return `${changeCount} change${changeCount === 1 ? '' : 's'} and ${taskCount} task${taskCount === 1 ? '' : 's'}`;
+}
+
+/** "Create in ServiceNow": Next says exactly what it makes, makes it, then moves on once it all exists. */
+function readCreateNowGate(runner: FinishRunner, progress: ChangeWizardProgress, draft: CrgDraftState) {
   if (runner.phase.kind === 'working') return { canGoNext: false, nextBlockedReason: runner.phase.message, nextLabel: 'Working…' };
   if (progress.areChangesCreated) return { canGoNext: true, nextLabel: undefined };
-  return { canGoNext: true, nextLabel: 'Create them in ServiceNow' };
+  return { canGoNext: true, nextLabel: `Yes, create ${describeCreateCount(draft)}` };
+}
+
+/** The changes a new-change job made, while its finished work is not saved to them yet — said on every later step. */
+function UnsavedChangesBanner({ session, currentStepId }: { session: ChangeWizardSession; currentStepId: ChangeWizardStepId }) {
+  if (session.mode !== 'create' || session.createdChanges.length === 0 || session.hasSavedChanges || currentStepId === 'createChanges') return null;
+  const changeNumbers = session.createdChanges.map((createdChange) => createdChange.changeNumber).join(' and ');
+  return (
+    <p className={styles.noticeText} role="note">
+      {`⚠ ${changeNumbers} ${session.createdChanges.length === 1 ? 'is' : 'are'} in ServiceNow but not finished. Your text, plans, tasks and evidence go on ${session.createdChanges.length === 1 ? 'it' : 'them'} when you press “Save to ServiceNow” on the last step.`}
+    </p>
+  );
 }
 
 /** The Next button on the last step: run the write, or go home once it has run. */
@@ -241,7 +257,7 @@ function ChangeJob({ job, startingPoint, onExit }: { job: WizardJob; startingPoi
   const navigationProgress = buildProgress(restoredCrg, session, null, paperworkNeed);
   const { currentStepId, goToStep } = useStepNavigation(job, crg, session, updateSession, navigationProgress);
   useImplementationBackout(crg);
-  const isChecking = stepIds.indexOf(currentStepId) >= stepIds.indexOf('aiEnhance');
+  const isChecking = stepIds.indexOf(currentStepId) >= stepIds.indexOf('aiDraft');
   const issueKeys = useMemo(() => [...crg.state.selectedIssueKeys].sort(), [crg.state.selectedIssueKeys]);
   useDefaultJiraEvidenceTicks(job.jobId, issueKeys, isChecking);
   const jiraEvidenceFileNames = useMemo(() => jiraEvidence.map((evidence) => evidence.attachment.filename), [jiraEvidence]);
@@ -343,12 +359,17 @@ function ChangeJobFrame({ crg, session, updateSession, progress, currentStepId, 
   }, [goToStep, updateSession, restoredEnvironments]));
   const completion = evaluateStepCompletion(currentStepId, progress);
   const finishGate = isFinishStep ? readFinishGate(session, extras.runner, progress)
-    : currentStepId === 'createChanges' ? readCreateNowGate(extras.runner, progress) : null;
+    : currentStepId === 'createChanges' ? readCreateNowGate(extras.runner, progress, crg.state) : null;
   const moveForward = () => goToStep(stepIds[currentIndex + 1] ?? 'finish', { reviewedStepIds: markStepReviewed(session.reviewedStepIds, currentStepId) });
   // Opened from a fix button: Next goes straight back to where the fix was asked for (GH #468).
   const returnStepId = session.returnToStepId && session.returnToStepId !== currentStepId ? session.returnToStepId : null;
   const returnLabel = returnStepId ? `Back to “${readStepTitle(returnStepId, session.mode)}”` : undefined;
   const moveToStep = (stepId: ChangeWizardStepId, options?: StepMoveOptions) => goToStep(stepId, { returnToStepId: options?.shouldReturnHere ? currentStepId : null });
+  // A finished step's chip jumps to it; going back to one offers the way straight back here.
+  const jumpToStep = (stepId: string) => {
+    const targetStepId = stepId as ChangeWizardStepId;
+    goToStep(targetStepId, { returnToStepId: stepIds.indexOf(targetStepId) < currentIndex ? currentStepId : null });
+  };
 
   function handleNext() {
     if (returnStepId) {
@@ -374,6 +395,9 @@ function ChangeJobFrame({ crg, session, updateSession, progress, currentStepId, 
   return (
     <GuidedFlowShell
       steps={markEditedSteps(buildShellSteps(session.mode, currentStepId, progress), extras.editedStepIds)}
+      phases={listChangeWizardPhases(session.mode)}
+      onStepSelect={jumpToStep}
+      shouldOfferShowMe
       currentStepId={currentStepId}
       canGoNext={finishGate ? finishGate.canGoNext : completion.canGoNext}
       nextBlockedReason={finishGate ? finishGate.nextBlockedReason : completion.blockedReason}
@@ -386,6 +410,7 @@ function ChangeJobFrame({ crg, session, updateSession, progress, currentStepId, 
     >
       <StartingPointNotice startingPoint={startingPoint} />
       <RecoveryNotice recovery={recovery} session={session} />
+      <UnsavedChangesBanner session={session} currentStepId={currentStepId} />
       {session.mode === 'create' && session.createdChanges.length > 0 && (currentStepId === 'environments' || currentStepId === 'tasks')
         ? <p className={shellStyles.hint}>These changes are already in ServiceNow. Edits here are saved to them on the last step, but a newly ticked environment or a new task is not added.</p>
         : null}

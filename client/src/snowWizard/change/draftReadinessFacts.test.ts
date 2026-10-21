@@ -114,7 +114,7 @@ describe('resolveFixStepId', () => {
     [{ kind: 'openStep', stepId: 'changeText', label: '', focusField: 'backoutPlan' }, 'planning'],
     [{ kind: 'openStep', stepId: 'changeText', label: '', focusField: 'justification' }, 'details'],
     [{ kind: 'openStep', stepId: 'schedule', label: '' }, 'environments'],
-    [{ kind: 'openStep', stepId: 'riskCheck', label: '' }, 'aiEnhance'],
+    [{ kind: 'openStep', stepId: 'riskCheck', label: '' }, 'aiDraft'],
     [{ kind: 'openStep', stepId: 'rcpChecklist', label: '' }, 'paperwork'],
     [{ kind: 'openStep', stepId: 'ctaskTimeline', label: '' }, 'tasks'],
     [{ kind: 'openStep', stepId: 'problems', label: '' }, 'scope'],

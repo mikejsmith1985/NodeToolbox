@@ -73,9 +73,9 @@ describe('ChangeWizard — change an existing one', () => {
 
   it('leaves a skipped step unedited, and marks a step once something in it changes', async () => {
     openModifyAt('details');
-    expect(screen.getByRole('heading', { name: 'Step 3 of 12 — Tell us about the change' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Step 3 of 11 — Tell us about the change' })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Skip — nothing to change' }));
-    expect(screen.getByRole('heading', { name: 'Step 4 of 12 — How will it go?' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Step 4 of 11 — How will it go?' })).toBeTruthy();
     await waitFor(() => expect(screen.queryByText(/\(edited\)/)).toBeNull());
 
     fireEvent.change(screen.getByLabelText('Backout plan'), { target: { value: '1. Restore the previous build' } });
@@ -86,7 +86,7 @@ describe('ChangeWizard — change an existing one', () => {
     useWizardJobStore.setState({ jobs: {} });
     vi.mocked(snowFetch).mockResolvedValue({ result: [{ sys_id: { value: 'sys-9' }, number: { value: 'CHG0009' }, state: { value: '3', display_value: 'Closed' } }] } as never);
     render(<ChangeWizard onExit={vi.fn()} />);
-    fireEvent.click(screen.getByRole('button', { name: /Change an existing one/ }));
+    fireEvent.click(screen.getByRole('button', { name: /^Fix an existing change/ }));
     fireEvent.change(screen.getByLabelText('Change number'), { target: { value: 'CHG0009' } });
     fireEvent.click(screen.getByRole('button', { name: 'Look it up' }));
     await screen.findByText('This change is Closed, so it can no longer be changed.');
@@ -103,7 +103,7 @@ describe('ChangeWizard — change an existing one', () => {
     });
     vi.mocked(fetchChangeSnapshot).mockResolvedValueOnce({ ...LOADED_SNAPSHOT, backout_plan: 'Edited in ServiceNow' });
     openModifyAt('finish');
-    expect(screen.getByRole('heading', { name: 'Step 12 of 12 — Save the change' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Step 11 of 11 — Save the change' })).toBeTruthy();
 
     const saveButton = await screen.findByRole('button', { name: 'Save the change' });
     await waitFor(() => expect((saveButton as HTMLButtonElement).disabled).toBe(false));

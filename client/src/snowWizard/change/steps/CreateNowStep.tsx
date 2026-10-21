@@ -20,7 +20,13 @@ export interface CreateNowStepProps extends ChangeStepProps {
   taskNamesByEnvironment: TaskNamesByEnvironment;
 }
 
-/** What pressing "Create them in ServiceNow" will make. */
+/** "2 changes and 3 tasks", from the plan as it stands. */
+function describePlanCount(environmentCount: number, taskNamesByEnvironment: TaskNamesByEnvironment): string {
+  const taskCount = Object.values(taskNamesByEnvironment).reduce((runningTotal, taskNames) => runningTotal + (taskNames?.length ?? 0), 0);
+  return `${environmentCount} change${environmentCount === 1 ? '' : 's'} and ${taskCount} task${taskCount === 1 ? '' : 's'}`;
+}
+
+/** What pressing "Yes, create …" will make. */
 function CreatePlan({ crg, taskNamesByEnvironment }: Pick<CreateNowStepProps, 'crg' | 'taskNamesByEnvironment'>) {
   return (
     <ul className={styles.itemList} aria-label="Changes to create">
@@ -105,6 +111,7 @@ export default function CreateNowStep({ crg, session, runner, taskNamesByEnviron
         </ul>
       ) : (
         <>
+          <p className={styles.noticeText}>{`This makes ${describePlanCount(readEnabledPlanEnvironments(crg.state).length, taskNamesByEnvironment)} in ServiceNow. Nothing is made until you press the button below.`}</p>
           <CreatePlan crg={crg} taskNamesByEnvironment={taskNamesByEnvironment} />
           <ExistingChangesForm environmentLabels={readEnabledPlanEnvironments(crg.state)} runner={runner} />
         </>

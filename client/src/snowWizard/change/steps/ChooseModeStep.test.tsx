@@ -18,11 +18,14 @@ function buildHandlers() {
 }
 
 describe('ChooseModeStep', () => {
-  it('offers the two choices, your templates, and the way home', () => {
+  it('asks one question with three big choices, plus templates and the way home', () => {
     const handlers = buildHandlers();
     render(<ChooseModeStep resumableJobs={[]} templates={[]} {...handlers} />);
-    fireEvent.click(screen.getByRole('button', { name: /New change/ }));
-    fireEvent.click(screen.getByRole('button', { name: /Change an existing one/ }));
+    expect(screen.getByRole('heading', { name: 'What do you want to do?' })).toBeTruthy();
+    expect(screen.queryByLabelText('Change number')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /^New change/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Start blank' }));
+    fireEvent.click(screen.getByRole('button', { name: /^Fix an existing change/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Manage templates' }));
     fireEvent.click(screen.getByRole('button', { name: 'Back to home' }));
     expect(handlers.onChooseNew).toHaveBeenCalled();
@@ -31,9 +34,10 @@ describe('ChooseModeStep', () => {
     expect(handlers.onExit).toHaveBeenCalled();
   });
 
-  it('recommends starting from a change raised before, by its number', () => {
+  it('recommends starting from a change raised before, by its number, inside "New change"', () => {
     const handlers = buildHandlers();
     render(<ChooseModeStep resumableJobs={[]} templates={[]} {...handlers} />);
+    fireEvent.click(screen.getByRole('button', { name: /^New change/ }));
     expect(screen.getByText(/Fastest: start from a change you’ve raised before/).textContent).toContain('save it as a template for next time');
     const startButton = screen.getByRole('button', { name: 'Start from an existing change' }) as HTMLButtonElement;
     expect(startButton.disabled).toBe(true);
@@ -46,14 +50,16 @@ describe('ChooseModeStep', () => {
   it('offers a saved template to start from, picked from a list', () => {
     const handlers = buildHandlers();
     render(<ChooseModeStep resumableJobs={[]} templates={TEMPLATES} {...handlers} />);
+    fireEvent.click(screen.getByRole('button', { name: /^New change/ }));
     fireEvent.change(screen.getByLabelText('Your saved templates'), { target: { value: 'tpl-1' } });
     fireEvent.click(screen.getByRole('button', { name: 'Start from a template' }));
     expect(handlers.onStartFromTemplate).toHaveBeenCalledWith('tpl-1');
   });
 
-  it('offers to continue or restart a job already under way', () => {
+  it('opens "Finish one I started" straight away when a job is waiting, to continue or restart it', () => {
     const handlers = buildHandlers();
     render(<ChooseModeStep resumableJobs={[WAITING_JOB]} templates={TEMPLATES} {...handlers} />);
+    expect(screen.getByRole('button', { name: /^Finish one I started/ }).textContent).toContain('1 waiting');
     expect(screen.getByText(/Your new change is waiting/)).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
     fireEvent.click(screen.getByRole('button', { name: 'Start again' }));
@@ -64,6 +70,9 @@ describe('ChooseModeStep', () => {
   it('never leaves a dead quick-start button while a new change is open: copy into it, or start fresh', () => {
     const handlers = buildHandlers();
     render(<ChooseModeStep resumableJobs={[WAITING_JOB]} templates={TEMPLATES} {...handlers} />);
+    fireEvent.click(screen.getByRole('button', { name: /^New change/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Start blank (throws away the open one)' }));
+    expect(handlers.onStartAgain).toHaveBeenCalledWith(WAITING_JOB);
     fireEvent.change(screen.getByLabelText('Change number'), { target: { value: 'CHG0052017' } });
     fireEvent.click(screen.getByRole('button', { name: 'Copy it into my open change' }));
     fireEvent.click(screen.getByRole('button', { name: 'Start a fresh change from it' }));
@@ -77,6 +86,8 @@ describe('ChooseModeStep', () => {
   it('finishes changes already created from their numbers, never creating new ones', () => {
     const handlers = buildHandlers();
     render(<ChooseModeStep resumableJobs={[]} templates={[]} {...handlers} />);
+    fireEvent.click(screen.getByRole('button', { name: /^Finish one I started/ }));
+    expect(screen.getByText('Nothing is waiting in this browser.')).toBeTruthy();
     fireEvent.click(screen.getByText('Finish changes you already created'));
     const finishButton = screen.getByRole('button', { name: 'Finish these changes' }) as HTMLButtonElement;
     expect(finishButton.disabled).toBe(true);

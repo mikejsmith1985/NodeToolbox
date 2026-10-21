@@ -71,13 +71,14 @@ describe('ChangeWizard — new change', () => {
   it('starts with the choice of a new change or an existing one', () => {
     useWizardJobStore.setState({ jobs: {} });
     render(<ChangeWizard onExit={vi.fn()} />);
-    fireEvent.click(screen.getByRole('button', { name: /New change/ }));
-    expect(screen.getByRole('heading', { name: 'Step 1 of 12 — What\'s in this change?' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /^New change/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Start blank' }));
+    expect(screen.getByRole('heading', { name: 'Step 1 of 11 — What\'s in this change?' })).toBeTruthy();
   });
 
   it('shows the user’s own task as a card, on every change in use until the user unticks one', async () => {
     openJobAt('tasks');
-    expect(screen.getByRole('heading', { name: 'Step 5 of 12 — Build the tasks' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Step 5 of 11 — Build the tasks' })).toBeTruthy();
     expect(((await screen.findByLabelText('Business Checkout on PRD')) as HTMLInputElement).checked).toBe(true);
     const relTick = screen.getByLabelText('Business Checkout on REL') as HTMLInputElement;
     expect(relTick.checked).toBe(true);
@@ -86,12 +87,14 @@ describe('ChangeWizard — new change', () => {
     expect(document.body.textContent).not.toMatch(/by ServiceNow|ServiceNow adds/);
   });
 
-  it('shows the AI step to everyone, with no unlock, and lets it be skipped', async () => {
-    openJobAt('aiEnhance');
-    expect(await screen.findByRole('button', { name: 'Copy the prompt' })).toBeTruthy();
+  it('has ONE AI step for everyone, no unlock: part 1 writes, part 2 makes it pass review', async () => {
+    openJobAt('aiDraft');
+    expect(screen.getByRole('heading', { name: 'Step 7 of 11 — Let AI write it' })).toBeTruthy();
+    expect(screen.getByText('1 · AI writes it ✓ (open to write it again)')).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: '2 · Make it pass review' })).toBeTruthy();
     expect(document.body.textContent).not.toMatch(/passphrase|unlock/i);
-    fireEvent.click(screen.getByRole('button', { name: 'Skip — nothing to change' }));
-    expect(screen.getByRole('heading', { name: 'Step 9 of 12 — Add proof' })).toBeTruthy();
+    fireEvent.click(readNextButton());
+    expect(screen.getByRole('heading', { name: 'Step 8 of 11 — Add proof' })).toBeTruthy();
   });
 
   it('fixes a flagged plan with "Fix all with AI" on the checks step itself, and the check clears (GH #468)', async () => {
@@ -118,9 +121,10 @@ describe('ChangeWizard — new change', () => {
 
   it('creates the changes in ServiceNow before any writing, from its own step', () => {
     openJobAt('createChanges');
-    expect(screen.getByRole('heading', { name: 'Step 6 of 12 — Create in ServiceNow' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Step 6 of 11 — Create in ServiceNow' })).toBeTruthy();
     expect(screen.getByText('REL change')).toBeTruthy();
-    expect(readNextButton().textContent).toBe('Create them in ServiceNow');
+    expect(readNextButton().textContent).toBe('Yes, create 2 changes and 2 tasks');
+    expect(screen.getByText(/This makes 2 changes and 2 tasks in ServiceNow\. Nothing is made until you press the button below\./)).toBeTruthy();
   });
 
   it('offers to restore the picks of a job wiped when its changes were created (v0.312.0)', () => {
@@ -144,6 +148,7 @@ describe('ChangeWizard — new change', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save and leave' }));
     cleanup();
     render(<ChangeWizard onExit={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: /^New change/ }));
     fireEvent.change(screen.getByLabelText('Change number'), { target: { value: 'CHG0052017' } });
     fireEvent.click(screen.getByRole('button', { name: 'Copy it into my open change' }));
     await waitFor(() => expect((screen.getByLabelText('Title (needed)') as HTMLInputElement).value).toBe('Payments 1.1'));
@@ -180,9 +185,10 @@ describe('ChangeWizard — templates', () => {
     const oldChange = { result: [{ sys_id: { value: 'chg-sys', display_value: 'chg-sys' }, short_description: { value: 'Payments 1.1', display_value: 'Payments 1.1' } }] };
     vi.mocked(snowFetch).mockImplementation(async (path: string) => (path.includes('table/change_request') ? oldChange : { result: [] }) as never);
     render(<ChangeWizard onExit={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: /^New change/ }));
     fireEvent.change(screen.getByLabelText('Change number'), { target: { value: 'chg0001234' } });
     fireEvent.click(screen.getByRole('button', { name: 'Start from an existing change' }));
-    expect(screen.getByRole('heading', { name: 'Step 1 of 12 — What\'s in this change?' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Step 1 of 11 — What\'s in this change?' })).toBeTruthy();
     expect(await screen.findByText(/Copied CHG0001234 into a new change/)).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Save as template' })).toBeNull();
     vi.mocked(snowFetch).mockImplementation(async () => ({ result: [] }) as never);
@@ -195,7 +201,7 @@ describe('ChangeWizard — templates', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Replace with this change' }));
     expect(screen.getByText('“Monthly” now holds this change ✓')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Back' }));
-    expect(screen.getByRole('heading', { name: 'Step 2 of 12 — Tell us about the change' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Step 2 of 11 — Tell us about the change' })).toBeTruthy();
   });
 
   it('opens template management from the first screen and comes back', () => {
@@ -203,7 +209,7 @@ describe('ChangeWizard — templates', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Manage templates' }));
     expect(screen.getByRole('heading', { name: 'Your templates' })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Back' }));
-    expect(screen.getByRole('heading', { name: 'Make or change a change' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'What do you want to do?' })).toBeTruthy();
   });
 
   it('offers "Save as template" from the details step on, and saves the change in hand', () => {
@@ -225,6 +231,7 @@ describe('ChangeWizard — templates', () => {
     cleanup();
     useWizardJobStore.setState({ jobs: {} });
     render(<ChangeWizard onExit={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: /^New change/ }));
     fireEvent.change(screen.getByLabelText('Your saved templates'), { target: { value: (JSON.parse(localStorage.getItem('ntbx-crg-templates') ?? '[]') as Array<{ id: string }>)[0].id } });
     fireEvent.click(screen.getByRole('button', { name: 'Start from a template' }));
     expect(screen.getByText(/Filled in from your template “Payments release”/)).toBeTruthy();

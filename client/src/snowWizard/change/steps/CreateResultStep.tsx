@@ -7,6 +7,8 @@
 // (outages, PRB links), and a partial create offers "Retry what's missing", which never makes a second change for an
 // environment.
 
+import { useEffect, useState } from 'react';
+
 import { buildEvidenceArchiveName } from '../../../views/SnowHub/testEvidence/evidenceBundle.ts';
 import type { ChangeStepProps } from '../changeWizardSession.ts';
 import type { ChangeWizardStepId } from '../changeWizardSteps.ts';
@@ -16,6 +18,7 @@ import { buildChangeLink, type CreatedChangeSummary } from '../createOutcome.ts'
 import type { PlanEnvironmentKey } from '../ctaskEnvironmentPlan.ts';
 import { EVIDENCE_ATTACHED } from '../evidenceUpload.ts';
 import { planModifyTaskWrites } from '../modifyTasks.ts';
+import { readSavePreview, type SavePreviewRow } from '../savePreview.ts';
 import type { FinishRunner } from '../useFinishRunner.ts';
 
 /** Each environment's tasks, as the user built them, in their order. */
@@ -50,6 +53,53 @@ function ModifySummary({ crg, session, editedStepIds, evidenceFileCount }: Creat
   );
 }
 
+// Long writing is cut short in the table; the whole text is on hover and in the step that holds it.
+const PREVIEW_TEXT_LIMIT = 160;
+
+/** A long text cut to the table's width, marked as cut. */
+function shortenText(fullText: string): string {
+  return fullText.length > PREVIEW_TEXT_LIMIT ? `${fullText.slice(0, PREVIEW_TEXT_LIMIT)}…` : fullText;
+}
+
+/** What the read of one change's preview came back with, tagged with the draft it was made for. */
+interface PreviewAnswer {
+  rows: SavePreviewRow[] | null;
+  failureText: string;
+}
+
+/** Before saving: each piece of writing that will change on this change, as it is now beside what will be saved. */
+function SavePreview({ crg, createdChange }: Pick<CreateResultStepProps, 'crg'> & { createdChange: CreatedChangeSummary }) {
+  const [answer, setAnswer] = useState<PreviewAnswer>({ rows: null, failureText: '' });
+  const draft = crg.state;
+  useEffect(() => {
+    let isCurrent = true;
+    readSavePreview(draft, createdChange)
+      .then((rows) => { if (isCurrent) setAnswer({ rows, failureText: '' }); })
+      .catch((readError: unknown) => { if (isCurrent) setAnswer({ rows: [], failureText: readError instanceof Error ? readError.message : String(readError) }); });
+    return () => { isCurrent = false; };
+  }, [draft, createdChange]);
+  if (answer.failureText) return <p className={styles.hint}>{`Could not read ${createdChange.changeNumber} to preview it (${answer.failureText}). Saving still works.`}</p>;
+  if (answer.rows === null) return <p className={styles.hint}>Reading what is there now…</p>;
+  if (answer.rows.length === 0) return <p className={styles.hint}>The writing already matches — saving updates the tasks and evidence.</p>;
+  return (
+    <details open>
+      <summary className={styles.hint}>{`See what will change (${answer.rows.length})`}</summary>
+      <table className={styles.gridTable} aria-label={`What will change on ${createdChange.changeNumber}`}>
+        <thead><tr><th>Field</th><th>In ServiceNow now</th><th>After saving</th></tr></thead>
+        <tbody>
+          {answer.rows.map((row) => (
+            <tr key={row.label}>
+              <td>{row.label}</td>
+              <td title={row.nowText}>{row.nowText ? shortenText(row.nowText) : '(empty)'}</td>
+              <td title={row.afterText}>{row.afterText ? shortenText(row.afterText) : '(empty)'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </details>
+  );
+}
+
 /** What pressing the button will do. */
 function PlanSummary(props: CreateResultStepProps) {
   const { session, taskNamesByEnvironment, evidenceFileCount } = props;
@@ -61,6 +111,7 @@ function PlanSummary(props: CreateResultStepProps) {
           <h3 className={styles.cardTitle}>{`Save to ${createdChange.changeNumber} (${createdChange.environmentLabel ?? 'change'})`}</h3>
           <p className={styles.hint}>{`The text, plans, dates and ${describeTasks(createdChange.environmentLabel ? taskNamesByEnvironment[createdChange.environmentLabel] : undefined).toLowerCase()}`}</p>
           <p className={styles.hint}>{evidenceFileCount > 0 ? `Evidence: ${evidenceFileCount} file(s) zipped and attached.` : 'Evidence: every file on the Jira issues, zipped and attached.'}</p>
+          <SavePreview crg={props.crg} createdChange={createdChange} />
         </li>
       ))}
     </ul>

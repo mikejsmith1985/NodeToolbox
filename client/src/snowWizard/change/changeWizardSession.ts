@@ -7,6 +7,8 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
+import { useWizardJobStore } from '../shell/wizardJobStore.ts';
+
 import type { CrgHook } from './changeDraft.ts';
 import type { ChangeWizardMode, ChangeWizardStepId } from './changeWizardSteps.ts';
 import type { CreatedTasksByChange } from './createdChanges.ts';
@@ -138,3 +140,14 @@ export const useChangeWizardSessionStore = create<ChangeWizardSessionState>()(pe
     return { sessions: remainingSessions };
   }),
 }), { name: CHANGE_SESSION_STORAGE_KEY, storage: createJSONStorage(() => localStorage), partialize: (state) => ({ sessions: state.sessions }) }));
+
+/**
+ * The change numbers of a new change that exists in ServiceNow but whose finished work is not saved to it yet — for
+ * the reminder on Home, so half-written changes are never forgotten. Empty when there are none.
+ */
+export function useUnsavedCreatedChangeNumbers(): string[] {
+  const newChangeJob = useWizardJobStore((state) => state.jobs.newChange);
+  const jobSession = useChangeWizardSessionStore((state) => (newChangeJob ? state.sessions[newChangeJob.jobId] : undefined));
+  if (newChangeJob?.status !== 'inProgress' || !jobSession || jobSession.hasSavedChanges) return [];
+  return jobSession.createdChanges.map((createdChange) => createdChange.changeNumber);
+}

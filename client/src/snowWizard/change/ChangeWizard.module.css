@@ -255,3 +255,18 @@
   font-size: 0.85rem;
   font-weight: 700;
 }
+
+/* ── Checks score: "9 of 12 checks pass" with a meter ── */
+
+.checksScore {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.checksMeter {
+  flex: 1 1 12rem;
+  height: 0.6rem;
+  accent-color: var(--color-tone-success-fg, var(--color-accent));
+}

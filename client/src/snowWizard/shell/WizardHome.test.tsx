@@ -3,7 +3,9 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
+import { createChangeWizardSession, useChangeWizardSessionStore } from '../change/changeWizardSession.ts';
 import WizardHome from './WizardHome.tsx';
+import { useWizardJobStore } from './wizardJobStore.ts';
 
 describe('WizardHome', () => {
   it('offers the three jobs, held until both systems are connected', () => {
@@ -29,5 +31,20 @@ describe('WizardHome', () => {
     render(<WizardHome isReady onOpenSettings={onOpenSettings} onChooseJob={vi.fn()} />);
     fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
     expect(onOpenSettings).toHaveBeenCalled();
+  });
+
+  it('reminds the user of changes in ServiceNow that are not finished yet, and opens them in one click', () => {
+    useWizardJobStore.setState({ jobs: { newChange: { jobId: 'job-1', kind: 'newChange', stepId: 'aiDraft', status: 'inProgress', updatedAt: Date.now(), payloadKey: 'k' } } });
+    useChangeWizardSessionStore.setState({ sessions: { 'job-1': { ...createChangeWizardSession('create'), createdChanges: [{ environmentLabel: 'REL', changeNumber: 'CHG1' }, { environmentLabel: 'PRD', changeNumber: 'CHG2' }] } } });
+    const onChooseJob = vi.fn();
+    const { unmount } = render(<WizardHome isReady onOpenSettings={vi.fn()} onChooseJob={onChooseJob} />);
+    expect(screen.getByRole('note').textContent).toContain('CHG1 and CHG2 are in ServiceNow but not finished yet.');
+    fireEvent.click(screen.getByRole('button', { name: 'Finish them' }));
+    expect(onChooseJob).toHaveBeenCalledWith('change');
+    unmount();
+    useChangeWizardSessionStore.setState({ sessions: { 'job-1': { ...createChangeWizardSession('create'), hasSavedChanges: true, createdChanges: [{ environmentLabel: 'REL', changeNumber: 'CHG1' }] } } });
+    render(<WizardHome isReady onOpenSettings={vi.fn()} onChooseJob={vi.fn()} />);
+    expect(screen.queryByRole('note')).toBeNull();
+    useWizardJobStore.setState({ jobs: {} });
   });
 });

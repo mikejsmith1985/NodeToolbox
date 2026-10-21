@@ -1,5 +1,5 @@
-// ChooseModeStep.tsx — The change job's first screen: the recommended quick start (an old change or a template), a new
-// change, or change an existing one — plus any job to continue and the way to "Your templates".
+// ChooseModeStep.tsx — The change job's first screen: three big choices (New change, Finish one I started, Fix an
+// existing change), each opening only what belongs to it.
 
 import { useId, useState } from 'react';
 
@@ -135,26 +135,69 @@ function ResumableJobCards({ resumableJobs, onContinue, onStartAgain }: Pick<Cho
   ));
 }
 
-/** The first screen of the change job. */
-export default function ChooseModeStep(props: ChooseModeStepProps) {
-  // Only one new change is open at a time, so a quick start then copies into it (or starts fresh, discarding it).
-  const hasWaitingNewChange = props.resumableJobs.some((job) => job.kind === 'newChange');
+/** The three ways in, in the words the user would use. Only one panel is open at a time. */
+type FirstChoice = 'new' | 'finish' | null;
+
+/** "New change": start blank, copy a change raised before, or start from a template. */
+function NewChangePanel(props: ChooseModeStepProps & { waitingJob: WizardJob | undefined }) {
+  const { waitingJob } = props;
   return (
-    <section aria-labelledby="change-job-heading">
-      <h2 id="change-job-heading" className={styles.cardTitle}>Make or change a change</h2>
-      <ResumableJobCards resumableJobs={props.resumableJobs} onContinue={props.onContinue} onStartAgain={props.onStartAgain} />
-      <RecommendedStart templates={props.templates} isBlocked={hasWaitingNewChange} onStartFromChange={props.onStartFromChange} onStartFreshFromChange={props.onStartFreshFromChange} onStartFromTemplate={props.onStartFromTemplate} />
-      <FinishCreatedStart isBlocked={hasWaitingNewChange} onFinishCreatedChanges={props.onFinishCreatedChanges} />
-      <div className={styles.choiceGrid}>
-        <button type="button" className={styles.choiceCard} onClick={props.onChooseNew}>
-          <span className={styles.choiceTitle}>New change</span>
-          <span className={styles.choiceDescription}>Start from blank: raise a change for a release, one per environment.</span>
-        </button>
-        <button type="button" className={styles.choiceCard} onClick={props.onChooseExisting}>
-          <span className={styles.choiceTitle}>Change an existing one</span>
-          <span className={styles.choiceDescription}>Load a change by its number and fix what needs fixing.</span>
+    <div className={styles.card} aria-label="New change">
+      {waitingJob ? (
+        <p className={styles.hint}>You already have a new change open. Finish it under “Finish one I started”, or use the buttons here.</p>
+      ) : null}
+      <div className={ownStyles.buttonRow}>
+        <button type="button" className={styles.secondaryButton} onClick={() => (waitingJob ? props.onStartAgain(waitingJob) : props.onChooseNew())}>
+          {waitingJob ? 'Start blank (throws away the open one)' : 'Start blank'}
         </button>
       </div>
+      <RecommendedStart templates={props.templates} isBlocked={Boolean(waitingJob)} onStartFromChange={props.onStartFromChange} onStartFreshFromChange={props.onStartFreshFromChange} onStartFromTemplate={props.onStartFromTemplate} />
+    </div>
+  );
+}
+
+/** "Finish one I started": the job under way, and changes already made in ServiceNow. */
+function FinishPanel(props: ChooseModeStepProps & { waitingJob: WizardJob | undefined }) {
+  return (
+    <div className={styles.card} aria-label="Finish one I started">
+      {props.resumableJobs.length === 0 ? <p className={styles.hint}>Nothing is waiting in this browser.</p> : null}
+      <ResumableJobCards resumableJobs={props.resumableJobs} onContinue={props.onContinue} onStartAgain={props.onStartAgain} />
+      <FinishCreatedStart isBlocked={Boolean(props.waitingJob)} onFinishCreatedChanges={props.onFinishCreatedChanges} />
+    </div>
+  );
+}
+
+/** One of the three big choices. */
+function ChoiceCard({ title, description, isOpen, onChoose }: { title: string; description: string; isOpen?: boolean; onChoose: () => void }) {
+  return (
+    <button type="button" className={styles.choiceCard} aria-expanded={isOpen} onClick={onChoose}>
+      <span className={styles.choiceTitle}>{title}</span>
+      <span className={styles.choiceDescription}>{description}</span>
+    </button>
+  );
+}
+
+/**
+ * The first screen of the change job: three big choices — New change, Finish one I started, Fix an existing change.
+ * Everything else (old change, template, changes already in ServiceNow) sits inside the choice it belongs to, so
+ * there is one question to answer first (owner feedback: too many ways in).
+ */
+export default function ChooseModeStep(props: ChooseModeStepProps) {
+  const waitingJob = props.resumableJobs.find((job) => job.kind === 'newChange');
+  // A job under way opens its panel straight away — it is almost always what the user came back for.
+  const [openChoice, setOpenChoice] = useState<FirstChoice>(props.resumableJobs.length > 0 ? 'finish' : null);
+  const toggleChoice = (choice: FirstChoice) => setOpenChoice(openChoice === choice ? null : choice);
+  const waitingCount = props.resumableJobs.length;
+  return (
+    <section aria-labelledby="change-job-heading">
+      <h2 id="change-job-heading" className={styles.cardTitle}>What do you want to do?</h2>
+      <div className={styles.choiceGrid}>
+        <ChoiceCard title="New change" description="Start blank, copy a change you raised before, or use a template." isOpen={openChoice === 'new'} onChoose={() => toggleChoice('new')} />
+        <ChoiceCard title="Finish one I started" description={waitingCount > 0 ? `${waitingCount} waiting — pick up where you left off.` : 'Pick up a job, or changes already in ServiceNow.'} isOpen={openChoice === 'finish'} onChoose={() => toggleChoice('finish')} />
+        <ChoiceCard title="Fix an existing change" description="Load a change by its number and fix what needs fixing." onChoose={props.onChooseExisting} />
+      </div>
+      {openChoice === 'new' ? <NewChangePanel {...props} waitingJob={waitingJob} /> : null}
+      {openChoice === 'finish' ? <FinishPanel {...props} waitingJob={waitingJob} /> : null}
       <div className={ownStyles.buttonRow}>
         <button type="button" className={styles.secondaryButton} onClick={props.onOpenTemplates}>Manage templates</button>
         <button type="button" className={styles.secondaryButton} onClick={props.onExit}>Back to home</button>

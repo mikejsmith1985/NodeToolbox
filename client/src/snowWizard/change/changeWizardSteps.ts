@@ -4,14 +4,14 @@
 // a resumed job can never sit on a step whose prerequisites are missing. Each step's own data checks arrive here as
 // plain lists of gaps, so this module needs no ServiceNow or React and is unit-tested on its own.
 
-import type { GuidedFlowStep } from '../../components/GuidedFlow/GuidedFlowShell.tsx';
+import type { GuidedFlowPhase, GuidedFlowStep } from '../../components/GuidedFlow/GuidedFlowShell.tsx';
 
 /** Whether the job raises new changes or edits one that exists. */
 export type ChangeWizardMode = 'create' | 'modify';
 
 /** Every step the change wizard can show (contracts/change-wizard.md). */
 export type ChangeWizardStepId =
-  | 'whichChange' | 'scope' | 'aiDraft' | 'details' | 'planning' | 'environments' | 'aiEnhance' | 'evidence'
+  | 'whichChange' | 'scope' | 'aiDraft' | 'details' | 'planning' | 'environments' | 'evidence'
   | 'tasks' | 'createChanges' | 'checks' | 'paperwork' | 'finish';
 
 /** Whether the approval email and change plan PDF are needed, and if not, why not. */
@@ -48,13 +48,30 @@ export interface StepCompletion {
 
 // A new change is CREATED in ServiceNow once every pick is made (template, dropdowns, planning answers, environments,
 // tasks), so the writing that follows can quote its real CHG and CTASK numbers; the last step saves the finished work
-// to each change (owner's decision, GH #468). "Let AI write it" is the ONE place the AI writes, after every pick.
+// to each change (owner's decision, GH #468). "Let AI write it" is the ONE AI step: it writes, then makes it pass review.
 const CREATE_STEP_IDS: readonly ChangeWizardStepId[] = [
-  'scope', 'details', 'planning', 'environments', 'tasks', 'createChanges', 'aiDraft', 'aiEnhance', 'evidence', 'checks', 'paperwork', 'finish',
+  'scope', 'details', 'planning', 'environments', 'tasks', 'createChanges', 'aiDraft', 'evidence', 'checks', 'paperwork', 'finish',
 ];
 const MODIFY_STEP_IDS: readonly ChangeWizardStepId[] = [
-  'whichChange', 'scope', 'details', 'planning', 'environments', 'aiDraft', 'aiEnhance', 'evidence', 'tasks', 'checks', 'paperwork', 'finish',
+  'whichChange', 'scope', 'details', 'planning', 'environments', 'aiDraft', 'evidence', 'tasks', 'checks', 'paperwork', 'finish',
 ];
+
+// The steps as three stages, so eleven chips read as "where am I" at a glance.
+const CREATE_PHASES: readonly GuidedFlowPhase[] = [
+  { label: '① Pick', stepIds: ['scope', 'details', 'planning', 'environments', 'tasks'] },
+  { label: '② Create in ServiceNow', stepIds: ['createChanges'] },
+  { label: '③ Write, check & save', stepIds: ['aiDraft', 'evidence', 'checks', 'paperwork', 'finish'] },
+];
+const MODIFY_PHASES: readonly GuidedFlowPhase[] = [
+  { label: '① Load & pick', stepIds: ['whichChange', 'scope', 'details', 'planning', 'environments'] },
+  { label: '② Write & check', stepIds: ['aiDraft', 'evidence', 'tasks', 'checks', 'paperwork'] },
+  { label: '③ Save', stepIds: ['finish'] },
+];
+
+/** The stages of one mode, for the steps strip. */
+export function listChangeWizardPhases(mode: ChangeWizardMode): GuidedFlowPhase[] {
+  return (mode === 'modify' ? MODIFY_PHASES : CREATE_PHASES).map((phase) => ({ ...phase, stepIds: [...phase.stepIds] }));
+}
 
 /** The plain verb phrase each step is headed with. */
 export const CHANGE_WIZARD_STEP_TITLES: Readonly<Record<ChangeWizardStepId, string>> = {
@@ -64,7 +81,6 @@ export const CHANGE_WIZARD_STEP_TITLES: Readonly<Record<ChangeWizardStepId, stri
   details: 'Tell us about the change',
   planning: 'How will it go?',
   environments: 'Where and when?',
-  aiEnhance: 'Make it pass review',
   evidence: 'Add proof',
   tasks: 'Build the tasks',
   createChanges: 'Create in ServiceNow',

@@ -1,6 +1,7 @@
 // WizardHome.tsx — The Wizard's home: three large choices, one per job, held closed until ServiceNow and Jira are
 // connected, then each opens its own guided job.
 
+import { useUnsavedCreatedChangeNumbers } from '../change/changeWizardSession.ts';
 import type { WizardJobId } from './wizardJobProps.ts';
 import styles from './WizardShell.module.css';
 
@@ -27,8 +28,17 @@ interface WizardHomeProps {
 
 /** The home screen. */
 export default function WizardHome({ isReady, onOpenSettings, onChooseJob }: WizardHomeProps) {
+  const unsavedChangeNumbers = useUnsavedCreatedChangeNumbers();
   return (
     <section aria-labelledby="home-heading">
+      {unsavedChangeNumbers.length > 0 ? (
+        <div className={styles.card} role="note">
+          <p className={styles.connectionLine}>{`⚠ ${unsavedChangeNumbers.join(' and ')} ${unsavedChangeNumbers.length === 1 ? 'is' : 'are'} in ServiceNow but not finished yet.`}</p>
+          <div className={styles.actions}>
+            <button type="button" className={styles.primaryButton} disabled={!isReady} onClick={() => onChooseJob('change')}>Finish {unsavedChangeNumbers.length === 1 ? 'it' : 'them'}</button>
+          </div>
+        </div>
+      ) : null}
       <h2 id="home-heading" className={styles.cardTitle}>What would you like to do?</h2>
       <div className={styles.choiceGrid}>
         {WIZARD_JOB_CHOICES.map((jobChoice) => (

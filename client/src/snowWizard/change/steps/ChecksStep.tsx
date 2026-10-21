@@ -65,10 +65,16 @@ export default function ChecksStep({ items, createdChangeLines, ...stepProps }: 
   if (items === null) return <p className={styles.hint} role="status">Checking your change…</p>;
   const needsActionCount = items.filter((item) => item.state === 'needsAction').length;
   const hasWritingGap = items.some((item) => item.state === 'needsAction' && isWritingCheck(item));
+  // "Not needed" counts as passing: it is a check that does not apply to this change.
+  const passingCount = items.filter((item) => item.state === 'done' || item.state === 'notApplicable').length;
   const isAllReady = isReady(items);
   return (
     <div>
       <p className={styles.stepIntro}>These are the checks Release Management makes before approving a change.</p>
+      <div className={styles.checksScore}>
+        <span className={styles.cardTitle}>{`${passingCount} of ${items.length} checks pass`}</span>
+        <progress className={styles.checksMeter} value={passingCount} max={items.length} aria-label={`${passingCount} of ${items.length} checks pass`} />
+      </div>
       {isAllReady
         ? <p className={styles.successText}>Everything that applies is done. This change should pass review.</p>
         : <p className={styles.noticeText}>{`${needsActionCount} check(s) need action.`}</p>}

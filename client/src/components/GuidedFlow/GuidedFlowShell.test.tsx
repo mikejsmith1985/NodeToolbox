@@ -183,4 +183,24 @@ describe('GuidedFlowShell advanced action', () => {
     renderShell();
     expect(screen.queryByRole('button', { name: 'Advanced' })).not.toBeInTheDocument();
   });
+
+  it('groups the strip into named stages, makes finished steps clickable, and offers "Show me" when blocked', () => {
+    const onStepSelect = vi.fn();
+    render(
+      <GuidedFlowShell
+        steps={[{ id: 'pick', title: 'Pick', state: 'done' }, { id: 'write', title: 'Write', state: 'current' }]}
+        phases={[{ label: '① Choose', stepIds: ['pick'] }, { label: '② Write', stepIds: ['write'] }]}
+        currentStepId="write" canGoNext={false} nextBlockedReason="Still needed: a title." onNext={vi.fn()} onBack={vi.fn()}
+        onStepSelect={onStepSelect} shouldOfferShowMe
+      >
+        <label htmlFor="title-field">Title (needed)</label><input id="title-field" defaultValue="" />
+      </GuidedFlowShell>,
+    );
+    expect(screen.getByRole('list', { name: '① Choose' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /Pick/ }));
+    expect(onStepSelect).toHaveBeenCalledWith('pick');
+    expect(screen.queryByRole('button', { name: /^2Write/ })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Show me' }));
+    expect(document.activeElement?.id).toBe('title-field');
+  });
 });

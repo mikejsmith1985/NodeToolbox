@@ -3,6 +3,7 @@
 import { useEffect, useId, useRef, type ReactNode } from 'react';
 
 import styles from './GuidedFlowShell.module.css';
+import { pointToFirstMissingField } from './missingField.ts';
 
 // ── Types ──
 
@@ -14,6 +15,12 @@ export interface GuidedFlowStep {
   id: string;
   title: string;
   state: GuidedFlowStepState;
+}
+
+/** A named group of steps ("① Pick"), so a long flow reads as a few stages. */
+export interface GuidedFlowPhase {
+  label: string;
+  stepIds: string[];
 }
 
 /** Everything the shell needs; the caller owns all state, the shell only draws it. */
@@ -28,6 +35,12 @@ export interface GuidedFlowShellProps {
   onBack: () => void;
   onSkip?: () => void;
   advancedAction?: ReactNode;
+  /** Groups the strip into stages. Absent ⇒ one plain strip, as before. */
+  phases?: GuidedFlowPhase[];
+  /** Makes each finished step's chip a button that goes to it. Absent ⇒ chips are labels only, as before. */
+  onStepSelect?: (stepId: string) => void;
+  /** Offers "Show me" beside a blocked Next, pointing to the first field still needed. Absent ⇒ no link, as before. */
+  shouldOfferShowMe?: boolean;
   children: ReactNode;
 }
 
@@ -70,24 +83,51 @@ function useFocusHeadingOnStepChange(currentStepId: string) {
 
 // ── Pieces ──
 
-/** Shows every step with its number, title and state in words. */
-function GuidedFlowStepsStrip({ steps }: { steps: GuidedFlowStep[] }) {
+/** One step's chip: its number, title and state in words — a button to it when it is finished and the flow allows. */
+function StepChip({ step, stepNumber, onStepSelect }: { step: GuidedFlowStep; stepNumber: number; onStepSelect?: (stepId: string) => void }) {
+  const chipContent = (
+    <>
+      <span className={styles.stepMark} aria-hidden="true">{readStepMark(step.state, stepNumber)}</span>
+      <span className={styles.stepTitle}>{step.title}</span>
+      <span className={styles.stepStateText}>{STEP_STATE_TEXT[step.state]}</span>
+    </>
+  );
+  const isSelectable = Boolean(onStepSelect) && step.state === 'done';
   return (
-    <ol className={styles.stepsStrip} aria-label={STEPS_STRIP_LABEL}>
-      {steps.map((step, index) => (
-        <li
-          key={step.id}
-          className={`${styles.stepChip} ${styles[`step_${step.state}`] ?? ''}`}
-          aria-current={step.state === 'current' ? 'step' : undefined}
-        >
-          <span className={styles.stepMark} aria-hidden="true">
-            {readStepMark(step.state, index + 1)}
-          </span>
-          <span className={styles.stepTitle}>{step.title}</span>
-          <span className={styles.stepStateText}>{STEP_STATE_TEXT[step.state]}</span>
-        </li>
-      ))}
-    </ol>
+    <li className={`${styles.stepChip} ${styles[`step_${step.state}`] ?? ''}`} aria-current={step.state === 'current' ? 'step' : undefined}>
+      {isSelectable
+        ? <button type="button" className={styles.stepChipButton} title={`Go to “${step.title}”`} onClick={() => onStepSelect?.(step.id)}>{chipContent}</button>
+        : chipContent}
+    </li>
+  );
+}
+
+/** Shows every step with its number, title and state in words — grouped into stages when the flow names them. */
+function GuidedFlowStepsStrip({ steps, phases, onStepSelect }: { steps: GuidedFlowStep[]; phases?: GuidedFlowPhase[]; onStepSelect?: (stepId: string) => void }) {
+  const numberedSteps = steps.map((step, index) => ({ step, stepNumber: index + 1 }));
+  if (!phases || phases.length === 0) {
+    return (
+      <ol className={styles.stepsStrip} aria-label={STEPS_STRIP_LABEL}>
+        {numberedSteps.map(({ step, stepNumber }) => <StepChip key={step.id} step={step} stepNumber={stepNumber} onStepSelect={onStepSelect} />)}
+      </ol>
+    );
+  }
+  return (
+    <div className={styles.phaseStrip} role="group" aria-label={STEPS_STRIP_LABEL}>
+      {phases.map((phase) => {
+        const phaseSteps = numberedSteps.filter(({ step }) => phase.stepIds.includes(step.id));
+        if (phaseSteps.length === 0) return null;
+        const isCurrentPhase = phaseSteps.some(({ step }) => step.state === 'current');
+        return (
+          <div key={phase.label} className={`${styles.phaseGroup} ${isCurrentPhase ? styles.phaseCurrent : ''}`}>
+            <span className={styles.phaseLabel}>{phase.label}</span>
+            <ol className={styles.stepsStrip} aria-label={phase.label}>
+              {phaseSteps.map(({ step, stepNumber }) => <StepChip key={step.id} step={step} stepNumber={stepNumber} onStepSelect={onStepSelect} />)}
+            </ol>
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
@@ -100,6 +140,8 @@ interface NavigationBarProps {
   onNext: () => void;
   onBack: () => void;
   onSkip?: () => void;
+  /** "Show me": points to the first field still needed; absent ⇒ no link. */
+  onShowMe?: () => void;
 }
 
 /** The button row: Back on the left, then optional Skip, then the single primary Next with its reason beneath. */
@@ -126,7 +168,12 @@ function GuidedFlowNavigationBar(props: NavigationBarProps) {
             {props.nextLabel}
           </button>
         </div>
-        {shouldShowReason ? <p id={reasonId} className={styles.blockedReason}>{props.nextBlockedReason}</p> : null}
+        {shouldShowReason ? (
+          <p id={reasonId} className={styles.blockedReason}>
+            {props.nextBlockedReason}
+            {props.onShowMe ? <> <button type="button" className={styles.showMeButton} onClick={props.onShowMe}>Show me</button></> : null}
+          </p>
+        ) : null}
       </div>
     </div>
   );
@@ -141,18 +188,19 @@ function GuidedFlowNavigationBar(props: NavigationBarProps) {
  */
 export default function GuidedFlowShell(props: GuidedFlowShellProps) {
   const headingRef = useFocusHeadingOnStepChange(props.currentStepId);
+  const stepBodyRef = useRef<HTMLDivElement>(null);
   const currentIndex = Math.max(0, props.steps.findIndex((step) => step.id === props.currentStepId));
   const currentStep = props.steps[currentIndex];
   return (
     <section className={styles.shell}>
       <header className={styles.shellHeader}>
-        <GuidedFlowStepsStrip steps={props.steps} />
+        <GuidedFlowStepsStrip steps={props.steps} phases={props.phases} onStepSelect={props.onStepSelect} />
         {props.advancedAction ? <div className={styles.advancedSlot}>{props.advancedAction}</div> : null}
       </header>
       <h2 ref={headingRef} tabIndex={-1} className={styles.stepHeading}>
         {`Step ${currentIndex + 1} of ${props.steps.length} — ${currentStep?.title ?? ''}`}
       </h2>
-      <div className={styles.stepBody}>{props.children}</div>
+      <div ref={stepBodyRef} className={styles.stepBody}>{props.children}</div>
       <GuidedFlowNavigationBar
         isFirstStep={currentIndex === 0}
         canGoNext={props.canGoNext}
@@ -162,6 +210,7 @@ export default function GuidedFlowShell(props: GuidedFlowShellProps) {
         onNext={props.onNext}
         onBack={props.onBack}
         onSkip={props.onSkip}
+        onShowMe={props.shouldOfferShowMe ? () => { pointToFirstMissingField(stepBodyRef.current); } : undefined}
       />
     </section>
   );

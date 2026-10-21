@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **SNow Wizard UX pass: fewer choices, always know where you are.**
+  - **The first screen asks one question with three big choices:** *New change*, *Finish one I started* and *Fix an
+    existing change*. Copying an old change, templates and "changes already in ServiceNow" sit inside the choice they
+    belong to. A waiting job opens *Finish one I started* straight away.
+  - **The steps are grouped into three stages.** A new change runs ① Pick, ② Create in ServiceNow, ③ Write, check &
+    save. A modify runs ① Load & pick, ② Write & check, ③ Save. The current stage is highlighted.
+  - **One AI step instead of two (12 → 11 steps).** "Let AI write it" holds part 1, *AI writes it*, which folds away
+    once the plans exist, and part 2, *Make it pass review*, the live checklist with Fix all with AI.
+  - **Finished steps are clickable** in the strip, and going back to one offers **Back to …** straight to where you
+    were.
+  - **"Show me"** beside a blocked Next scrolls to the first field still needed, then focuses and highlights it.
+  - **Paste from clipboard** on every AI box reads the reply in one click. If the browser won't share the clipboard,
+    it says so plainly.
+  - **The unfinished-changes warning** shows on every step after create, and on Home with **Finish them**, until
+    "Save to ServiceNow".
+  - **Step 6 confirms what it makes:** "This makes 2 changes and 3 tasks in ServiceNow", and the button reads **Yes,
+    create 2 changes and 3 tasks**.
+  - **The checks show a score**, e.g. "9 of 12 checks pass", with a meter.
+  - **Preview before saving:** each CHG lists the writing that will change, as it is in ServiceNow now beside what
+    will be saved.
+  - **One verb each:** *Create* appears only on step 6, and *Save* only on the last step.
+  - The shared step frame (`GuidedFlowShell`) gains optional `phases`, `onStepSelect` and `shouldOfferShowMe`; the
+    PRB and Review wizards are unchanged.
+
 ### Fixed
 - **SNow Wizard: finishing changes that already exist is now proven end to end.**
   - **Each task is written only to its own CTASK.** Saving used to pair any unmatched card with a task by position,

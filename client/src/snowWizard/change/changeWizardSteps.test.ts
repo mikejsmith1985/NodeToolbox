@@ -6,6 +6,7 @@ import {
   buildShellSteps,
   deriveChangeWizardStep,
   evaluateStepCompletion,
+  listChangeWizardPhases,
   listChangeWizardStepIds,
   readPaperworkNeed,
   resolveResumeStep,
@@ -22,7 +23,7 @@ function buildCompleteProgress(overrides: Partial<ChangeWizardProgress> = {}): C
     planningGaps: [],
     environmentProblems: [],
     taskProblems: [],
-    reviewedStepIds: ['scope', 'details', 'planning', 'environments', 'tasks', 'createChanges', 'aiDraft', 'aiEnhance', 'evidence', 'checks', 'paperwork'],
+    reviewedStepIds: ['scope', 'details', 'planning', 'environments', 'tasks', 'createChanges', 'aiDraft', 'evidence', 'checks', 'paperwork'],
     isChecksSatisfied: true,
     paperworkNeed: { isNeeded: false, reason: 'No Production environment is in this change.' },
     isPaperworkDone: false,
@@ -32,10 +33,19 @@ function buildCompleteProgress(overrides: Partial<ChangeWizardProgress> = {}): C
 }
 
 describe('listChangeWizardStepIds', () => {
-  it('runs the twelve create steps in order: every pick, then create in ServiceNow, then the writing', () => {
+  it('runs the eleven create steps in order: every pick, then create in ServiceNow, then the one AI step', () => {
     expect(listChangeWizardStepIds('create')).toEqual([
-      'scope', 'details', 'planning', 'environments', 'tasks', 'createChanges', 'aiDraft', 'aiEnhance', 'evidence', 'checks', 'paperwork', 'finish',
+      'scope', 'details', 'planning', 'environments', 'tasks', 'createChanges', 'aiDraft', 'evidence', 'checks', 'paperwork', 'finish',
     ]);
+  });
+
+  it('groups every step of each mode into exactly one of three stages', () => {
+    for (const mode of ['create', 'modify'] as const) {
+      const phases = listChangeWizardPhases(mode);
+      expect(phases).toHaveLength(3);
+      expect(phases.flatMap((phase) => phase.stepIds).sort()).toEqual(listChangeWizardStepIds(mode).sort());
+    }
+    expect(listChangeWizardPhases('create')[1]).toEqual({ label: '② Create in ServiceNow', stepIds: ['createChanges'] });
   });
 
   it('holds "Create in ServiceNow" until every environment has its change', () => {
@@ -74,7 +84,7 @@ describe('evaluateStepCompletion', () => {
 
   it('lets the optional AI and evidence steps go on at any time, done only once passed', () => {
     const progress = buildCompleteProgress({ reviewedStepIds: [] });
-    expect(evaluateStepCompletion('aiEnhance', progress)).toEqual({ canGoNext: true, isDone: false });
+    expect(evaluateStepCompletion('evidence', progress)).toEqual({ canGoNext: true, isDone: false });
     expect(evaluateStepCompletion('evidence', progress).canGoNext).toBe(true);
   });
 

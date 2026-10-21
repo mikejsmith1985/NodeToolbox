@@ -155,6 +155,7 @@ async function restoreAndFinish() {
   await pressNext();
 
   await expectStep('Let AI write it');
+  expect(screen.getByText(/CHG0052017 and CHG0052018 are in ServiceNow but not finished/)).toBeTruthy();
   const promptText = (screen.getByLabelText(/Copy this and paste it/) as HTMLTextAreaElement).value;
   expect(promptText).toContain('PRD change CHG0052018 — tasks: CTASK0100002 (Enrollment - AWS - PRD), CTASK0100003 (Business Checkout)');
   expect(promptText).toContain('ENCUC-2334');
@@ -163,10 +164,11 @@ async function restoreAndFinish() {
   ].join('\n') } });
   fireEvent.click(screen.getByRole('button', { name: 'Read the reply' }));
   fireEvent.click(await screen.findByRole('button', { name: /^Fill in \d+ fields?$/ }));
-  await pressNext();
 
-  await expectStep('Make it pass review');
-  fireEvent.click(screen.getByRole('button', { name: 'Skip — nothing to change' }));
+  // The one AI step: part 2 (pass review) shows once the plans are written, on the same screen.
+  await screen.findByRole('heading', { name: '2 · Make it pass review' });
+  await expectStep('Let AI write it');
+  await pressNext();
   await expectStep('Add proof');
   fireEvent.click(screen.getByRole('button', { name: 'Skip — nothing to change' }));
   await expectStep('Will it pass review?');
@@ -229,6 +231,7 @@ describe('ChangeWizard — finishing changes that already exist', () => {
   it('path 2: "Finish changes you already created" from the first screen does the same, with no job open', async () => {
     const writeLog = startFakeServiceNow();
     render(<ChangeWizard onExit={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: /^Finish one I started/ }));
     fireEvent.click(screen.getByText('Finish changes you already created'));
     fireEvent.change(screen.getByLabelText('REL change number'), { target: { value: 'CHG0052017' } });
     fireEvent.change(screen.getByLabelText('PRD change number'), { target: { value: 'CHG0052018' } });
