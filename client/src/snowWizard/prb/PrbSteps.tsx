@@ -280,7 +280,7 @@ function ResultItem({ role, result, jiraUrl }: { role: PrbJiraRole; result: PrbC
   const failures = result.failures.filter((failure) => failure.role === role);
   return (
     <li className={styles.resultItem} data-outcome={issueKey && failures.length === 0 ? 'done' : 'failed'}>
-      {issueKey ? <>{`${PRB_ROLE_NAMES[role]}: `}<JiraKeyLink jiraUrl={jiraUrl} issueKey={issueKey} /></> : null}
+      {issueKey ? <>{`${PRB_ROLE_NAMES[role]}: `}<JiraKeyLink jiraUrl={jiraUrl} issueKey={issueKey} /></> : PRB_ROLE_NAMES[role]}
       {failures.map((failure) => <p key={failure.stage} className={shellStyles.hint}>{describeFailure(failure)}</p>)}
     </li>
   );

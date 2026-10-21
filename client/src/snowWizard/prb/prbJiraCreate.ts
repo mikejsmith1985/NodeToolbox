@@ -64,6 +64,9 @@ const PARENT_FIELD_ID = 'parent';
 const EPIC_LINK_SETTINGS_KEY = 'epicLinkFieldId';
 const DEFECT_TYPE_NAMES = ['defect', 'bug'];
 const STORY_TYPE_NAMES = ['story'];
+/** The Defect's environment: a PRB is always a problem found in Production (owner's rule). Found BY NAME on the form. */
+const DEFECT_ENVIRONMENT_FIELD_NAME = 'defect environment';
+const DEFECT_ENVIRONMENT_VALUE = 'production';
 const CHECK_EXISTING_FAILED = 'Could not check Jira for items already made for this problem, so nothing was created';
 const UNKNOWN_FAILURE = 'Jira refused the request';
 
@@ -125,6 +128,10 @@ export async function findExistingPrbWork(prbNumber: string): Promise<PrbCreateP
 interface EpicPlacement {
   issueTypeId: string;
   epicFieldId: string;
+  /** Fields this role always carries, already in Jira's write shape (the Defect's environment). */
+  fixedFields: Record<string, unknown>;
+  /** Field id → its name on the form, so a refusal can name the field instead of hiding its id. */
+  fieldNames: Record<string, string>;
 }
 
 // "Jira POST /rest/api/2/issue failed: " — the request line means nothing to the person reading it.
@@ -132,10 +139,19 @@ const REQUEST_PREFIX_PATTERN = /^Jira \w+ \S+ failed:\s*/;
 // "<internal field id>: " before Jira's own sentence — internal ids are never shown on screen.
 const INTERNAL_FIELD_ID_PATTERN = /\b\w*field_\d+:\s*/gi;
 
-/** Jira's refusal in its own words, without the request line or internal field ids. */
-export function describeJiraRefusal(caught: unknown): string {
+/**
+ * Jira's refusal in its own words, without the request line. An internal field id becomes the field's name on the form
+ * when it is known ("Defect Environment: This field is required"), and is dropped otherwise.
+ */
+export function describeJiraRefusal(caught: unknown, fieldNames: Record<string, string> = {}): string {
   if (!(caught instanceof Error) || caught.message.trim() === '') return UNKNOWN_FAILURE;
-  const plainMessage = caught.message.replace(REQUEST_PREFIX_PATTERN, '').replace(INTERNAL_FIELD_ID_PATTERN, '').trim();
+  const plainMessage = caught.message
+    .replace(REQUEST_PREFIX_PATTERN, '')
+    .replace(INTERNAL_FIELD_ID_PATTERN, (matchedText) => {
+      const fieldName = fieldNames[matchedText.replace(/:\s*$/, '')];
+      return fieldName ? `${fieldName}: ` : '';
+    })
+    .trim();
   return plainMessage === '' ? UNKNOWN_FAILURE : plainMessage;
 }
 
@@ -171,9 +187,27 @@ function findEpicFieldId(screenFields: readonly CreateMetaFieldEntry[], typeName
   throw new Error(`Jira's form for a new ${typeName} has no Epic Link, so it cannot be put on the Epic`);
 }
 
-async function readEpicPlacement(projectKey: string, issueType: CreateMetaIssueType): Promise<EpicPlacement> {
-  const screen = await getIssueTypeFields(projectKey, issueType.id);
-  return { issueTypeId: issueType.id, epicFieldId: findEpicFieldId(screen?.values ?? [], issueType.name) };
+/**
+ * The Defect Environment set to Production, when the Defect's form has that field. It is a cascading select, so only
+ * the parent option is written; a form without the field (or without a Production option) gets nothing, and Jira's
+ * own answer then says what it needs.
+ */
+export function buildDefectEnvironmentField(screenFields: readonly CreateMetaFieldEntry[]): Record<string, unknown> {
+  const environmentField = screenFields.find((field) => field.name.trim().toLowerCase() === DEFECT_ENVIRONMENT_FIELD_NAME);
+  const productionOption = (environmentField?.allowedValues ?? [])
+    .find((option) => (option.value ?? option.name ?? '').trim().toLowerCase() === DEFECT_ENVIRONMENT_VALUE);
+  if (!environmentField || !productionOption) return {};
+  return { [environmentField.fieldId]: { id: productionOption.id } };
+}
+
+async function readEpicPlacement(projectKey: string, issueType: CreateMetaIssueType, isDefect: boolean): Promise<EpicPlacement> {
+  const screenFields = (await getIssueTypeFields(projectKey, issueType.id))?.values ?? [];
+  return {
+    issueTypeId: issueType.id,
+    epicFieldId: findEpicFieldId(screenFields, issueType.name),
+    fixedFields: isDefect ? buildDefectEnvironmentField(screenFields) : {},
+    fieldNames: Object.fromEntries(screenFields.map((field) => [field.fieldId, field.name])),
+  };
 }
 
 /** Reads the project's live issue types and create screens, once, for the roles still to be made. */
@@ -182,8 +216,8 @@ async function readPlacements(projectKey: string, roles: readonly PrbJiraRole[])
   const defectType = roles.includes('defect') ? findIssueType(issueTypes, DEFECT_TYPE_NAMES, projectKey) : null;
   const needsStory = roles.some((role) => role !== 'defect');
   const storyType = needsStory ? findIssueType(issueTypes, STORY_TYPE_NAMES, projectKey) : null;
-  const defectPlacement = defectType ? await readEpicPlacement(projectKey, defectType) : null;
-  const storyPlacement = storyType ? await readEpicPlacement(projectKey, storyType) : null;
+  const defectPlacement = defectType ? await readEpicPlacement(projectKey, defectType, true) : null;
+  const storyPlacement = storyType ? await readEpicPlacement(projectKey, storyType, false) : null;
   const placements = new Map<PrbJiraRole, EpicPlacement>();
   for (const role of roles) {
     const placement = role === 'defect' ? defectPlacement : storyPlacement;
@@ -202,6 +236,7 @@ function buildIssueFields(draft: PrbJiraDraft, request: PrbCreateRequest, placem
     summary: draft.summary.trim(),
     description: draft.description,
     labels: draft.labels,
+    ...placement.fixedFields,
     [placement.epicFieldId]: epicValue,
   };
 }
@@ -220,7 +255,7 @@ async function createMissingIssues(
       const created = await createIssue({ fields: buildIssueFields(draft, request, placement) });
       progress.createdKeys[role] = created.key;
     } catch (caught) {
-      failures.push({ role, stage: 'create', message: describeJiraRefusal(caught) });
+      failures.push({ role, stage: 'create', message: describeJiraRefusal(caught, placement.fieldNames) });
     }
   }
   return failures;

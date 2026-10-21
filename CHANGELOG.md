@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **SNow Wizard: the PRB Defect sets Defect Environment to Production.** Jira refused the Defect with "This field is
+  required". The required cascading **Defect Environment** field is now found by name on the Defect's create form and
+  set to **Production**, because a PRB is always found in Production. A refused field is now named in the error
+  instead of being hidden, and a failed item's row shows its name instead of an empty bullet.
 - **SNow Wizard: a closed Jira tab now fails within half a second.** Before, the PRB job's "Checking Jira for work already
   made…" (and any Jira read) waited the full 30 seconds. Now, if the Jira tab has been closed, a request stops at
   once with "The Jira tab was closed", the banner offers **Open Jira again**, and the PRB panel says to reopen Jira

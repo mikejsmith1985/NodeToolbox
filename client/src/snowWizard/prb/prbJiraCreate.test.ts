@@ -13,7 +13,7 @@ const jiraApiMock = vi.hoisted(() => ({
 }));
 vi.mock('../../services/jiraApi.ts', () => jiraApiMock);
 
-import { createPrbJiraWork, describeJiraRefusal, EMPTY_PRB_PROGRESS, findExistingPrbWork } from './prbJiraCreate.ts';
+import { buildDefectEnvironmentField, createPrbJiraWork, describeJiraRefusal, EMPTY_PRB_PROGRESS, findExistingPrbWork } from './prbJiraCreate.ts';
 
 const EPIC_FIELD_ID = 'cf-epic-link';
 const DRAFTS = buildPrbJiraDrafts(
@@ -194,5 +194,37 @@ describe('describeJiraRefusal', () => {
 
   it('falls back to a plain sentence when there is nothing to show', () => {
     expect(describeJiraRefusal('odd')).toBe('Jira refused the request');
+  });
+
+  it('names a refused field by its name on the form when it is known', () => {
+    const refusal = new Error('Jira POST /rest/api/2/issue failed: 400 — env_field_9: This field is required');
+    expect(describeJiraRefusal(refusal, { env_field_9: 'Defect Environment' })).toBe('400 — Defect Environment: This field is required');
+  });
+});
+
+describe('Defect Environment', () => {
+  const ENVIRONMENT_FIELD = {
+    fieldId: 'env_field_9', name: 'Defect Environment', required: true,
+    allowedValues: [{ id: '501', value: 'Production' }, { id: '502', value: 'Non-Production - INT' }],
+  };
+
+  it('picks the Production option by name, writing only the parent of the cascading select', () => {
+    expect(buildDefectEnvironmentField([ENVIRONMENT_FIELD])).toEqual({ env_field_9: { id: '501' } });
+  });
+
+  it('writes nothing when the form has no such field or no Production option', () => {
+    expect(buildDefectEnvironmentField([])).toEqual({});
+    expect(buildDefectEnvironmentField([{ ...ENVIRONMENT_FIELD, allowedValues: [{ id: '502', value: 'Non-Production' }] }])).toEqual({});
+  });
+
+  it('sets Production on the Defect only, never on the stories', async () => {
+    jiraApiMock.getIssueTypeFields.mockResolvedValue({
+      values: [{ fieldId: EPIC_FIELD_ID, name: 'Epic Link', required: false }, ENVIRONMENT_FIELD],
+    });
+    arrangeCreatesInOrder('ENCUC-1', 'ENCUC-2', 'ENCUC-3');
+    await createPrbJiraWork(BASE_REQUEST);
+    expect(readCreatedFields(0).env_field_9).toEqual({ id: '501' });
+    expect(readCreatedFields(1).env_field_9).toBeUndefined();
+    expect(readCreatedFields(2).env_field_9).toBeUndefined();
   });
 });
