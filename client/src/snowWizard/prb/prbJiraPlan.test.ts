@@ -28,9 +28,9 @@ describe('buildPrbJiraDrafts', () => {
 
   it('names each item the agreed way', () => {
     const [defect, slStory, qeStory] = buildPrbJiraDrafts(PROBLEM, 'EPIC-7', 'ENCUC');
-    expect(defect.summary).toBe('PRB0012345 — Login page times out');
-    expect(slStory.summary).toBe('SL: Login page times out');
-    expect(qeStory.summary).toBe('QE: Login page times out');
+    expect(defect.summary).toBe('[DEV] PRB0012345 — Login page times out');
+    expect(slStory.summary).toBe('[SL] Login page times out');
+    expect(qeStory.summary).toBe('[QE] Login page times out');
   });
 
   it('puts the problem number and its link in every description', () => {

@@ -1,7 +1,7 @@
 // jiraOpenerTransport.ts — Reaches Jira through the Jira tab the Wizard opens: the Wizard bookmark clicked there answers
 // the Wizard's requests with the user's own Jira session (proven live by the probe, research R-001).
 
-import { sendAgentRequest, waitForAgentHello, type MessageListenerTarget } from './agentChannel.ts';
+import { AGENT_TAB_CLOSED_BODY, sendAgentRequest, waitForAgentHello, type MessageListenerTarget } from './agentChannel.ts';
 import type { JiraTransport } from './wizardTransports.ts';
 
 const HTTP_OK = 200;
@@ -18,8 +18,8 @@ export interface JiraOpenerTransportOptions {
   channelName: string;
   helloTimeoutMs: number;
   requestTimeoutMs: number;
-  /** Called when Jira stops answering, so the Wizard can show "open Jira again". */
-  onDisconnected: () => void;
+  /** Called when Jira stops answering (with why, when known), so the Wizard can show "open Jira again". */
+  onDisconnected: (reasonText?: string) => void;
 }
 
 interface AgentLink {
@@ -50,7 +50,7 @@ export function createJiraOpenerTransport(options: JiraOpenerTransportOptions): 
       options.listenerTarget, agentLink.agentSource, agentLink.agentOrigin, options.channelName, jiraRequest, timeoutMs);
     if (agentResponse.status === 0) {
       agentLink = null;
-      options.onDisconnected();
+      options.onDisconnected(agentResponse.body === AGENT_TAB_CLOSED_BODY ? AGENT_TAB_CLOSED_BODY : undefined);
     }
     return agentResponse;
   };

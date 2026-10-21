@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **SNow Wizard: a closed Jira tab now fails within half a second.** Before, the PRB job's "Checking Jira for work already
+  made…" (and any Jira read) waited the full 30 seconds. Now, if the Jira tab has been closed, a request stops at
+  once with "The Jira tab was closed", the banner offers **Open Jira again**, and the PRB panel says to reopen Jira
+  before **Try again**.
+- **SNow Wizard: PRB issue names use bracket tags.** The Defect is named `[DEV] PRB… — …`, and the stories
+  `[SL] …` / `[QE] …`, with no colon. Items made by hand are recognised under either the old or the new naming.
 - **SNow Wizard: the writing can always be edited by hand.** After AI Assist, the text was only shown as "AI suggests",
   with nowhere to change it before the change was created. A new `WritingEditor` puts all seven pieces of writing in
   editable boxes:

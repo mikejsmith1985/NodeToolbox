@@ -85,8 +85,9 @@ function readExistingRole(issue: ExistingIssue, prbNumber: string): PrbJiraRole 
   if (labelledRole) return labelledRole;
   if (DEFECT_TYPE_NAMES.includes((issue.fields?.issuetype?.name ?? '').toLowerCase())) return 'defect';
   const summary = (issue.fields?.summary ?? '').trim();
-  if (/^SL\b/i.test(summary)) return 'sl';
-  return /^QE\b/i.test(summary) ? 'qe' : null;
+  // Both the bracketed "[SL] …" naming and the older "SL: …" are recognised for items made by hand.
+  if (/^\[?SL\b/i.test(summary)) return 'sl';
+  return /^\[?QE\b/i.test(summary) ? 'qe' : null;
 }
 
 function isLinkedTo(issue: ExistingIssue, otherKey: string | undefined): boolean {

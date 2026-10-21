@@ -76,10 +76,13 @@ export function buildPrbRecordLink(instanceOrigin: string, prbNumber: string): s
 
 // ── Drafts ──
 
+/** The bracketed tag each summary opens with (owner's naming: "[DEV]", "[SL]", "[QE]", no colon after). */
+const SUMMARY_TAGS: Record<PrbJiraRole, string> = { defect: '[DEV]', sl: '[SL]', qe: '[QE]' };
+
 function buildSummary(role: PrbJiraRole, prb: PrbSource): string {
   const shortDescription = prb.shortDescription.trim();
-  if (role === 'defect') return `${prb.number} — ${shortDescription}`;
-  return `${role === 'sl' ? 'SL' : 'QE'}: ${shortDescription}`;
+  if (role === 'defect') return `${SUMMARY_TAGS.defect} ${prb.number} — ${shortDescription}`;
+  return `${SUMMARY_TAGS[role]} ${shortDescription}`;
 }
 
 function buildDescription(role: PrbJiraRole, prb: PrbSource): string {

@@ -135,6 +135,7 @@ function ExistingWorkPanel(props: PrbConfirmStepProps) {
     return (
       <div className={styles.attention} role="alert">
         <p>Jira could not be checked for work already made for this problem.</p>
+        <p>If the Jira tab was closed, press <strong>Open Jira again</strong> at the top first, then Try again.</p>
         <button type="button" className={shellStyles.secondaryButton} onClick={props.onRetryCheck}>Try again</button>
       </div>
     );

@@ -94,6 +94,19 @@ describe('createJiraOpenerTransport', () => {
     expect(onDisconnected).toHaveBeenCalled();
   });
 
+  it('tells the Wizard the Jira tab was closed, at once, when the user closed it', async () => {
+    const { transport, onDisconnected } = createTransport();
+    const connectPromise = transport.connect(JIRA_URL);
+    const agentWindow = { ...createAnsweringAgent(200, '{"displayName":"A"}'), closed: false };
+    sayHello(agentWindow);
+    await connectPromise;
+
+    agentWindow.closed = true;
+    await expect(transport.execute({ method: 'GET', path: '/rest/api/2/search' })).resolves.toEqual({ status: 0, body: 'The Jira tab was closed' });
+    expect(transport.isConnected()).toBe(false);
+    expect(onDisconnected).toHaveBeenCalledWith('The Jira tab was closed');
+  });
+
   it('gives a file download longer than an ordinary request before giving up', async () => {
     const { transport } = createTransport();
     const connectPromise = transport.connect(JIRA_URL);

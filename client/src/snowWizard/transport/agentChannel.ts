@@ -77,8 +77,24 @@ export function waitForAgentHello(
   });
 }
 
+/** How often a waiting request looks to see whether the agent's tab was closed. */
+export const AGENT_CLOSED_CHECK_INTERVAL_MS = 500;
+/** The answer given at once when the agent's tab is gone, instead of waiting out the whole request time. */
+export const AGENT_TAB_CLOSED_BODY = 'The Jira tab was closed';
+
+/** True when the agent's tab has been closed. `closed` stays readable across origins, so this is safe to ask. */
+function isAgentTabClosed(agentSource: MessageEventSource): boolean {
+  try {
+    return (agentSource as Window).closed === true;
+  } catch {
+    return false;
+  }
+}
+
 /**
- * Sends one request to the agent and resolves with its matching answer, or status 0 "timeout" — never hangs.
+ * Sends one request to the agent and resolves with its matching answer, or status 0 — never hangs. A closed agent tab
+ * answers within half a second (owner feedback: closing the Jira tab left "Checking Jira…" spinning for 30 seconds);
+ * an open tab that never answers still gets the full `timeoutMs`.
  */
 export function sendAgentRequest(
   listenerTarget: MessageListenerTarget,
@@ -89,19 +105,29 @@ export function sendAgentRequest(
   timeoutMs: number,
 ): Promise<AgentResponse> {
   const requestId = createRequestId();
+  if (isAgentTabClosed(agentSource)) return Promise.resolve({ status: 0, body: AGENT_TAB_CLOSED_BODY });
   return new Promise((resolve) => {
-    const timeoutId = setTimeout(() => {
+    const stopWaiting = (): void => {
+      clearTimeout(timeoutId);
+      clearInterval(closedCheckId);
       listenerTarget.removeEventListener('message', handleMessage);
+    };
+    const timeoutId = setTimeout(() => {
+      stopWaiting();
       resolve({ status: 0, body: 'timeout' });
     }, timeoutMs);
+    const closedCheckId = setInterval(() => {
+      if (!isAgentTabClosed(agentSource)) return;
+      stopWaiting();
+      resolve({ status: 0, body: AGENT_TAB_CLOSED_BODY });
+    }, AGENT_CLOSED_CHECK_INTERVAL_MS);
 
     function handleMessage(messageEvent: MessageEvent): void {
       const messageData = messageEvent.data;
       if (!messageData || messageData.channel !== channelName || messageData.kind !== 'response' || messageData.requestId !== requestId) return;
       // Answers count only from the agent's own origin (a file:// agent's "null" origin cannot be checked).
       if (agentOrigin !== OPAQUE_ORIGIN && agentOrigin !== '' && messageEvent.origin !== agentOrigin) return;
-      clearTimeout(timeoutId);
-      listenerTarget.removeEventListener('message', handleMessage);
+      stopWaiting();
       const agentResponse: AgentResponse = { status: Number(messageData.status) || 0, body: String(messageData.body ?? '') };
       if (messageData.bodyEncoding === 'base64') agentResponse.bodyEncoding = 'base64';
       resolve(agentResponse);

@@ -2,7 +2,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { sendAgentRequest, waitForAgentHello } from './agentChannel.ts';
+import { AGENT_CLOSED_CHECK_INTERVAL_MS, AGENT_TAB_CLOSED_BODY, sendAgentRequest, waitForAgentHello } from './agentChannel.ts';
 
 const CHANNEL_NAME = 'snowWizardProbe';
 
@@ -76,6 +76,23 @@ describe('sendAgentRequest', () => {
     const responsePromise = sendAgentRequest(window, agentSource, 'null', CHANNEL_NAME, { method: 'GET', path: '/rest/x' }, 500);
     vi.advanceTimersByTime(501);
     await expect(responsePromise).resolves.toEqual({ status: 0, body: 'timeout' });
+  });
+
+  it('answers at once, without posting, when the agent tab is already closed', async () => {
+    const agentPostMessage = vi.fn();
+    const agentSource = { postMessage: agentPostMessage, closed: true } as unknown as MessageEventSource;
+    await expect(sendAgentRequest(window, agentSource, 'null', CHANNEL_NAME, { method: 'GET', path: '/rest/x' }, 30000))
+      .resolves.toEqual({ status: 0, body: AGENT_TAB_CLOSED_BODY });
+    expect(agentPostMessage).not.toHaveBeenCalled();
+  });
+
+  it('gives up within half a second when the agent tab is closed mid-request, not after the full wait', async () => {
+    vi.useFakeTimers();
+    const agentSource = { postMessage: vi.fn(), closed: false };
+    const responsePromise = sendAgentRequest(window, agentSource as unknown as MessageEventSource, 'null', CHANNEL_NAME, { method: 'GET', path: '/rest/x' }, 30000);
+    agentSource.closed = true;
+    vi.advanceTimersByTime(AGENT_CLOSED_CHECK_INTERVAL_MS);
+    await expect(responsePromise).resolves.toEqual({ status: 0, body: AGENT_TAB_CLOSED_BODY });
   });
 
   it('addresses a file:// agent (origin "null") with "*" because "null" is not a valid target origin', () => {

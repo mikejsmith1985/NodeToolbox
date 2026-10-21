@@ -75,8 +75,8 @@ describe('createPrbJiraWork', () => {
     expect(result.isComplete).toBe(true);
     expect(result.progress.createdKeys).toEqual({ defect: 'ENCUC-1', sl: 'ENCUC-2', qe: 'ENCUC-3' });
     expect(readCreatedFields(0).issuetype).toEqual({ id: '10' });
-    expect(readCreatedFields(1).summary).toBe('SL: Broken login');
-    expect(readCreatedFields(2).summary).toBe('QE: Broken login');
+    expect(readCreatedFields(1).summary).toBe('[SL] Broken login');
+    expect(readCreatedFields(2).summary).toBe('[QE] Broken login');
     for (const callIndex of [0, 1, 2]) {
       expect(readCreatedFields(callIndex)[EPIC_FIELD_ID]).toBe('EPIC-7');
       expect(readCreatedFields(callIndex).project).toEqual({ key: 'ENCUC' });
@@ -103,7 +103,7 @@ describe('createPrbJiraWork', () => {
     const retryResult = await createPrbJiraWork({ ...BASE_REQUEST, startingProgress: firstResult.progress, shouldReuseExisting: false });
 
     expect(jiraApiMock.createIssue).toHaveBeenCalledTimes(1);
-    expect(readCreatedFields(0).summary).toBe('QE: Broken login');
+    expect(readCreatedFields(0).summary).toBe('[QE] Broken login');
     expect(jiraApiMock.createIssueLink).toHaveBeenCalledTimes(1);
     expect(retryResult.isComplete).toBe(true);
   });
@@ -116,7 +116,7 @@ describe('createPrbJiraWork', () => {
     const result = await createPrbJiraWork(BASE_REQUEST);
 
     expect(jiraApiMock.createIssue).toHaveBeenCalledTimes(2);
-    expect(readCreatedFields(0).summary).toBe('SL: Broken login');
+    expect(readCreatedFields(0).summary).toBe('[SL] Broken login');
     expect(result.progress.createdKeys.defect).toBe('ENCUC-9');
   });
 
@@ -172,6 +172,17 @@ describe('findExistingPrbWork', () => {
     expect(decodeURIComponent(jiraApiMock.jiraGet.mock.calls[0][0])).toContain('labels = "prb-prb001"');
     expect(existing.createdKeys).toEqual({ defect: 'A-1', sl: 'A-2', qe: 'A-3' });
     expect(existing.linkedRoles).toEqual(['sl']);
+  });
+
+  it('recognises hand-made items named with the bracketed "[SL]" / "[QE]" tags', async () => {
+    jiraApiMock.jiraGet.mockResolvedValue({
+      issues: [
+        { key: 'B-2', fields: { labels: ['prb-prb001'], issuetype: { name: 'Story' }, summary: '[SL] x', issuelinks: [] } },
+        { key: 'B-3', fields: { labels: ['prb-prb001'], issuetype: { name: 'Story' }, summary: '[QE] x', issuelinks: [] } },
+      ],
+    });
+    const existing = await findExistingPrbWork('PRB001');
+    expect(existing.createdKeys).toEqual({ sl: 'B-2', qe: 'B-3' });
   });
 });
 

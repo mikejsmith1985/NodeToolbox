@@ -60,7 +60,7 @@ function createTransports(boot: WizardBoot, dependencies: WizardAppDependencies)
     channelName: boot.channelName,
     helloTimeoutMs: dependencies.helloTimeoutMs,
     requestTimeoutMs: dependencies.requestTimeoutMs,
-    onDisconnected: () => setConnection('jira', { status: 'expired', detail: 'The Jira tab stopped answering.' }),
+    onDisconnected: (reasonText) => setConnection('jira', { status: 'expired', detail: reasonText ? `${reasonText}.` : 'The Jira tab stopped answering.' }),
   });
   installWizardTransports({ snow: snowTransport, jira: jiraTransport });
   markToolboxRelayConnected();
