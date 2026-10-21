@@ -34,7 +34,7 @@ type CrgStep = 1 | 2 | 3 | 4 | 5 | 6;
 // How the user wants to pull issues in Step 1: by project key + fix version, or a raw JQL query.
 type FetchMode = 'project' | 'jql';
 type GeneratedFieldKey = 'shortDescription' | 'description' | 'justification' | 'riskImpact';
-type EnvironmentKey = 'rel' | 'prd' | 'pfix';
+export type EnvironmentKey = 'rel' | 'prd' | 'pfix';
 export type EnvironmentValueByKey = Partial<Record<EnvironmentKey, string>>;
 
 interface EnvironmentConfig {
@@ -438,7 +438,7 @@ type PersistedCrgState = Omit<
   selectedIssueKeys: string[];
 };
 
-interface CrgState {
+export interface CrgState {
   currentStep: CrgStep;
   fetchMode: FetchMode;
   projectKey: string;
@@ -1894,18 +1894,39 @@ function buildChangeSubmissionTargets(
     }];
   }
 
-  return enabledEnvironmentKeys.map((environmentKey) => {
-    const environmentState = state[getEnvironmentStateKey(environmentKey)];
-    return {
-      environmentKey,
-      environmentLabel: readEnvironmentLabel(environmentKey),
-      environmentValue: environmentState.snowEnvironmentValue.trim() || environmentValueByKey[environmentKey]?.trim() || state.chgBasicInfo.environment,
-      configItem: environmentState.configItem.sysId ? environmentState.configItem : state.chgBasicInfo.configItem,
-      impactedPersonsAware: environmentState.impactedPersonsAware.trim() || state.chgPlanningAssessment.impactedPersonsAware,
-      plannedStartDate: environmentState.plannedStartDate,
-      plannedEndDate: environmentState.plannedEndDate,
-    };
-  });
+  return enabledEnvironmentKeys.map((environmentKey) => buildEnvironmentSubmissionTarget(state, environmentKey, environmentValueByKey));
+}
+
+/** One environment's change as it is submitted: its own environment value, CI, window and impacted-persons answer. */
+function buildEnvironmentSubmissionTarget(
+  state: CrgState,
+  environmentKey: EnvironmentKey,
+  environmentValueByKey: EnvironmentValueByKey,
+): ChangeSubmissionTarget {
+  const environmentState = state[getEnvironmentStateKey(environmentKey)];
+  return {
+    environmentKey,
+    environmentLabel: readEnvironmentLabel(environmentKey),
+    environmentValue: environmentState.snowEnvironmentValue.trim() || environmentValueByKey[environmentKey]?.trim() || state.chgBasicInfo.environment,
+    configItem: environmentState.configItem.sysId ? environmentState.configItem : state.chgBasicInfo.configItem,
+    impactedPersonsAware: environmentState.impactedPersonsAware.trim() || state.chgPlanningAssessment.impactedPersonsAware,
+    plannedStartDate: environmentState.plannedStartDate,
+    plannedEndDate: environmentState.plannedEndDate,
+  };
+}
+
+/**
+ * The change_request fields one environment's change is created with, built exactly as createChg builds them.
+ * Exported for the SNow Wizard (feature 040), which creates the changes first and writes the finished text to each
+ * one afterwards, so its CHG and CTASK numbers can be quoted; updateExistingChg cannot serve, because it writes only
+ * the first environment's values. Toolbox's own create and update paths are unchanged.
+ */
+export function buildEnvironmentChangePayload(
+  state: CrgState,
+  environmentKey: EnvironmentKey,
+  environmentValueByKey: EnvironmentValueByKey = {},
+): Record<string, unknown> {
+  return buildChangeRequestPayload(state, buildEnvironmentSubmissionTarget(state, environmentKey, environmentValueByKey));
 }
 
 function readPrimaryChangeSubmissionTarget(state: CrgState): ChangeSubmissionTarget {

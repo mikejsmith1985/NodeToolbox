@@ -12,7 +12,7 @@ export type ChangeWizardMode = 'create' | 'modify';
 /** Every step the change wizard can show (contracts/change-wizard.md). */
 export type ChangeWizardStepId =
   | 'whichChange' | 'scope' | 'aiDraft' | 'details' | 'planning' | 'environments' | 'aiEnhance' | 'evidence'
-  | 'tasks' | 'checks' | 'paperwork' | 'finish';
+  | 'tasks' | 'createChanges' | 'checks' | 'paperwork' | 'finish';
 
 /** Whether the approval email and change plan PDF are needed, and if not, why not. */
 export interface PaperworkNeed {
@@ -35,6 +35,8 @@ export interface ChangeWizardProgress {
   isChecksSatisfied: boolean;
   paperworkNeed: PaperworkNeed;
   isPaperworkDone: boolean;
+  /** A new change: every environment switched on already has its change in ServiceNow. */
+  areChangesCreated?: boolean;
 }
 
 /** Whether Next may be pressed, why not, and whether the step counts as done. */
@@ -44,11 +46,11 @@ export interface StepCompletion {
   blockedReason?: string;
 }
 
-// "Let AI write it" comes after every pick (template, dropdowns, planning answers, environments), so the prompt states
-// them as facts instead of "(not set)" — and it is the ONE place the AI writes, right before "Make it pass review"
-// (GH #468: it ran before the picks, then appeared again inside steps 3 and 4).
+// A new change is CREATED in ServiceNow once every pick is made (template, dropdowns, planning answers, environments,
+// tasks), so the writing that follows can quote its real CHG and CTASK numbers; the last step saves the finished work
+// to each change (owner's decision, GH #468). "Let AI write it" is the ONE place the AI writes, after every pick.
 const CREATE_STEP_IDS: readonly ChangeWizardStepId[] = [
-  'scope', 'details', 'planning', 'environments', 'aiDraft', 'aiEnhance', 'evidence', 'tasks', 'checks', 'paperwork', 'finish',
+  'scope', 'details', 'planning', 'environments', 'tasks', 'createChanges', 'aiDraft', 'aiEnhance', 'evidence', 'checks', 'paperwork', 'finish',
 ];
 const MODIFY_STEP_IDS: readonly ChangeWizardStepId[] = [
   'whichChange', 'scope', 'details', 'planning', 'environments', 'aiDraft', 'aiEnhance', 'evidence', 'tasks', 'checks', 'paperwork', 'finish',
@@ -65,9 +67,10 @@ export const CHANGE_WIZARD_STEP_TITLES: Readonly<Record<ChangeWizardStepId, stri
   aiEnhance: 'Make it pass review',
   evidence: 'Add proof',
   tasks: 'Build the tasks',
+  createChanges: 'Create in ServiceNow',
   checks: 'Will it pass review?',
   paperwork: 'Production paperwork',
-  finish: 'Create the change',
+  finish: 'Save to ServiceNow',
 };
 const MODIFY_FINISH_TITLE = 'Save the change';
 
@@ -100,6 +103,8 @@ function evaluateStepGate(stepId: ChangeWizardStepId, progress: ChangeWizardProg
     case 'aiDraft': return gateOnProblems(progress.planningGaps, 'Still needed: ');
     case 'environments': return gateOnProblems(progress.environmentProblems);
     case 'tasks': return gateOnProblems(progress.taskProblems);
+    case 'createChanges':
+      return progress.areChangesCreated ? { canGoNext: true } : { canGoNext: false, blockedReason: 'Create the changes in ServiceNow first.' };
     case 'checks':
       return progress.isChecksSatisfied ? { canGoNext: true }
         : { canGoNext: false, blockedReason: 'Fix the items above, or tick that you understand and want to go on anyway.' };

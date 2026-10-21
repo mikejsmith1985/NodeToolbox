@@ -9,7 +9,7 @@ import { createPlannedOutage } from '../outage/changeOutageRecord.ts';
 import { linkProblemsToNewChange } from '../problems/changeProblems.ts';
 import { fetchReviewedCtasks, saveCtaskPlannedDates } from '../chgFormula/ctaskReviewApi.ts';
 import type { CrgTemplate, CtaskTemplate, CtaskTemplateData } from './useCrgState.ts';
-import { createChangeTask, fetchChangeTaskDefaults, fetchChangeTasksAttachedToChange, formatSnowDateTimeForApi, listEnvironmentDateOrderErrors, NO_ENABLED_ENVIRONMENT_MESSAGE, reconcileStagedChangeTasks, updateChangeTaskRecord, useCrgState } from './useCrgState.ts';
+import { buildEnvironmentChangePayload, createChangeTask, fetchChangeTaskDefaults, fetchChangeTasksAttachedToChange, formatSnowDateTimeForApi, listEnvironmentDateOrderErrors, NO_ENABLED_ENVIRONMENT_MESSAGE, reconcileStagedChangeTasks, updateChangeTaskRecord, useCrgState } from './useCrgState.ts';
 
 vi.mock('../../../services/jiraApi.ts', () => ({
   jiraGet: vi.fn(),
@@ -3227,5 +3227,24 @@ describe('useCrgState — Wizard task cards', () => {
       'PATCH /rel-auto-1 Deploy', 'PATCH /rel-auto-2 Smoke test',
       'PATCH /prd-auto-1 Deploy', 'PATCH /prd-auto-2 Business Checkout', 'POST  Smoke test',
     ]);
+  });
+});
+
+describe('buildEnvironmentChangePayload', () => {
+  it('builds one environment\'s change exactly as create does, with that environment\'s own configuration item and window', () => {
+    const { result } = renderHook(() => useCrgState({ storageKey: 'crg-env-payload-test' }));
+    const state = {
+      ...result.current.state,
+      generatedShortDescription: 'Payments 1.2',
+      chgBasicInfo: { ...result.current.state.chgBasicInfo, configItem: { sysId: 'ci-main', displayName: 'Main' } },
+      relEnvironment: { ...result.current.state.relEnvironment, isEnabled: true, plannedStartDate: '2026-11-02T19:00', configItem: { sysId: 'ci-rel', displayName: 'Release' } },
+      prdEnvironment: { ...result.current.state.prdEnvironment, isEnabled: true },
+    };
+    const relPayload = buildEnvironmentChangePayload(state, 'rel', { rel: 'Release env' });
+    expect(relPayload.short_description).toBe('Payments 1.2');
+    expect(relPayload.cmdb_ci).toBe('ci-rel');
+    expect(relPayload.u_environment).toBe('Release env');
+    expect(relPayload.start_date).toBe(formatSnowDateTimeForApi('2026-11-02T19:00'));
+    expect(buildEnvironmentChangePayload(state, 'prd').cmdb_ci).toBe('ci-main');
   });
 });

@@ -1,0 +1,86 @@
+// CreateNowStep.tsx — "Create in ServiceNow": makes one change per environment, with its tasks, before any writing.
+//
+// Creating first gives the job real CHG and CTASK numbers for the AI and the text to quote (owner's decision, GH #468).
+// The write itself is the runner's (Toolbox's createChg); this screen says what will be made, then shows each change
+// with its task numbers, any notes, and "Retry what's missing" if one environment's change did not get made.
+
+import { readEnabledPlanEnvironments } from '../changeDraft.ts';
+import type { ChangeStepProps } from '../changeWizardSession.ts';
+import styles from '../ChangeWizard.module.css';
+import { buildChangeLink, type CreatedChangeSummary } from '../createOutcome.ts';
+import type { FinishRunner } from '../useFinishRunner.ts';
+import type { TaskNamesByEnvironment } from './CreateResultStep.tsx';
+
+/** The step also needs the runner and the tasks each environment's change will carry. */
+export interface CreateNowStepProps extends ChangeStepProps {
+  runner: FinishRunner;
+  taskNamesByEnvironment: TaskNamesByEnvironment;
+}
+
+/** What pressing "Create them in ServiceNow" will make. */
+function CreatePlan({ crg, taskNamesByEnvironment }: Pick<CreateNowStepProps, 'crg' | 'taskNamesByEnvironment'>) {
+  return (
+    <ul className={styles.itemList} aria-label="Changes to create">
+      {readEnabledPlanEnvironments(crg.state).map((environmentLabel) => {
+        const taskNames = taskNamesByEnvironment[environmentLabel] ?? [];
+        return (
+          <li key={environmentLabel} className={styles.card}>
+            <h3 className={styles.cardTitle}>{`${environmentLabel} change`}</h3>
+            <p className={styles.hint}>{taskNames.length > 0 ? `Tasks: ${taskNames.join(', ')}` : 'Tasks: none'}</p>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+/** One change now in ServiceNow, with the numbers of its tasks. */
+function CreatedChangeLine({ createdChange, session }: { createdChange: CreatedChangeSummary } & Pick<ChangeStepProps, 'session'>) {
+  const taskRecords = session.createdTasks?.[createdChange.changeNumber];
+  return (
+    <li className={styles.card}>
+      <h3 className={styles.cardTitle}>
+        {`${createdChange.environmentLabel ?? 'Change'}: `}
+        <a href={buildChangeLink(window.location.origin, createdChange.changeNumber)} target="_blank" rel="noreferrer">{createdChange.changeNumber}</a>
+      </h3>
+      <p className={styles.hint}>
+        {taskRecords === undefined ? 'Tasks: reading their numbers…'
+          : taskRecords.length === 0 ? 'Tasks: none'
+            : `Tasks: ${taskRecords.map((taskRecord) => `${taskRecord.number} ${taskRecord.shortDescription}`.trim()).join(', ')}`}
+      </p>
+    </li>
+  );
+}
+
+/** Step: create the changes in ServiceNow now. */
+export default function CreateNowStep({ crg, session, runner, taskNamesByEnvironment }: CreateNowStepProps) {
+  const createdLabels = new Set(session.createdChanges.map((createdChange) => createdChange.environmentLabel));
+  const hasMissing = readEnabledPlanEnvironments(crg.state).some((environmentLabel) => !createdLabels.has(environmentLabel));
+  const hasCreated = session.createdChanges.length > 0;
+  return (
+    <div>
+      <p className={styles.stepIntro}>
+        Your changes are made in ServiceNow now, before the writing, so the text can name their real change and task numbers.
+        The finished text, plans and test evidence are saved to them on the last step.
+      </p>
+      {runner.phase.kind === 'working' ? <p className={styles.hint} role="status">{runner.phase.message}</p> : null}
+      {hasCreated ? (
+        <ul className={styles.itemList} aria-label="Changes in ServiceNow">
+          {session.createdChanges.map((createdChange) => <CreatedChangeLine key={createdChange.changeNumber} createdChange={createdChange} session={session} />)}
+        </ul>
+      ) : <CreatePlan crg={crg} taskNamesByEnvironment={taskNamesByEnvironment} />}
+      {hasCreated && !hasMissing ? <p className={styles.successText}>Created. Press Next — the AI writes the text next, using these numbers.</p> : null}
+      {session.outcomeNotes.map((outcomeNote) => <p key={outcomeNote} className={styles.hint}>{`• ${outcomeNote}`}</p>)}
+      {session.failureText !== null && hasMissing ? (
+        <div className={styles.card}>
+          <p className={styles.errorText}>{`Not everything was created: ${session.failureText}`}</p>
+          {hasCreated ? (
+            <div className={styles.buttonRow}>
+              <button type="button" className={styles.actionButton} onClick={runner.retryMissing}>Retry what&apos;s missing</button>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}

@@ -14,6 +14,8 @@ import { FixAllWithAi } from './AiEnhanceStep.tsx';
 /** The checks also need the checklist, built once for the whole job. */
 export interface ChecksStepProps extends ChangeStepProps {
   items: ReadinessItem[] | null;
+  /** The changes already in ServiceNow, one line each, so the AI can quote their numbers. */
+  createdChangeLines?: readonly string[];
 }
 
 /** Each state in words, so it never depends on colour. */
@@ -48,7 +50,7 @@ function Acknowledgement({ items, session, updateSession }: Pick<ChecksStepProps
   const hasUnchecked = items.some((item) => item.state === 'couldNotCheck');
   return (
     <div className={styles.card}>
-      {hasUnchecked ? <p className={styles.noticeText}>Some checks could not be made. Create stays locked until you tick the box below.</p> : null}
+      {hasUnchecked ? <p className={styles.noticeText}>Some checks could not be made. The last step stays locked until you tick the box below.</p> : null}
       <label className={styles.checkboxRow}>
         <input type="checkbox" checked={session.areChecksAcknowledged} onChange={(changeEvent) => updateSession({ areChecksAcknowledged: changeEvent.target.checked })} />
         I understand these are not all done, and Release Management may send the change back. Go on anyway.
@@ -58,7 +60,7 @@ function Acknowledgement({ items, session, updateSession }: Pick<ChecksStepProps
 }
 
 /** Step 9: the Release Management checks. */
-export default function ChecksStep({ items, ...stepProps }: ChecksStepProps) {
+export default function ChecksStep({ items, createdChangeLines, ...stepProps }: ChecksStepProps) {
   const { session, updateSession, goToStep } = stepProps;
   if (items === null) return <p className={styles.hint} role="status">Checking your change…</p>;
   const needsActionCount = items.filter((item) => item.state === 'needsAction').length;
@@ -73,7 +75,7 @@ export default function ChecksStep({ items, ...stepProps }: ChecksStepProps) {
       {hasWritingGap ? (
         <section className={styles.card} aria-labelledby="fix-all-heading">
           <h3 id="fix-all-heading" className={styles.cardTitle}>✨ Fix all with AI</h3>
-          <FixAllWithAi {...stepProps} items={items} />
+          <FixAllWithAi {...stepProps} items={items} createdChangeLines={createdChangeLines} />
         </section>
       ) : null}
       <ul className={styles.itemList} aria-label="Checks">

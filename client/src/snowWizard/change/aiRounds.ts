@@ -76,6 +76,20 @@ export function buildMultiChangeNote(draft: CrgDraftState): string[] {
   ];
 }
 
+/**
+ * The changes already made in ServiceNow, with their task numbers, so the writing can quote them where the Formula
+ * Card asks (which CTASK does each step). Empty before the changes are created.
+ */
+export function buildCreatedRecordsNote(createdChangeLines: readonly string[]): string[] {
+  if (createdChangeLines.length === 0) return [];
+  return [
+    '',
+    'These change records already exist in ServiceNow. Use their real numbers where the text names a change or a task '
+      + '(for example, which CTASK carries out each implementation step) — never invent a number:',
+    ...createdChangeLines.map((createdChangeLine) => `  ${createdChangeLine}`),
+  ];
+}
+
 /** The failing checks that a rewrite of the change's writing can close, as review findings. */
 function readTextGapFindings(items: readonly ReadinessItem[]): RiskCheckFinding[] {
   return items.flatMap((item) => {
@@ -85,8 +99,11 @@ function readTextGapFindings(items: readonly ReadinessItem[]): RiskCheckFinding[
 }
 
 /** The fix-the-writing round for the failing checks, or null when no failing check is about the writing. */
-export function buildChecksFixPrompt(draft: CrgDraftState, items: readonly ReadinessItem[]): string | null {
+export function buildChecksFixPrompt(draft: CrgDraftState, items: readonly ReadinessItem[], createdChangeLines: readonly string[] = []): string | null {
   const gapFindings = readTextGapFindings(items);
   if (gapFindings.length === 0) return null;
-  return [buildChgGapFixPrompt(buildWizardPromptContext(draft), readChangeTextFields(draft), gapFindings), ...buildMultiChangeNote(draft)].join('\n');
+  return [
+    buildChgGapFixPrompt(buildWizardPromptContext(draft), readChangeTextFields(draft), gapFindings),
+    ...buildMultiChangeNote(draft), ...buildCreatedRecordsNote(createdChangeLines),
+  ].join('\n');
 }

@@ -1,4 +1,6 @@
-// CreateResultStep.tsx — The last step: what will be created (or saved), then every record made, every failure, and Retry.
+// CreateResultStep.tsx — The last step: what will be saved, then every change saved, every failure, and Try again.
+//
+// A new change was already created on "Create in ServiceNow"; here its finished work is saved to each change.
 //
 // The writes themselves run in useFinishRunner; this screen only shows them. Each change links to ServiceNow, lists
 // the tasks it carries exactly as the user built them, its evidence result and the notes the create path reported
@@ -6,7 +8,6 @@
 // environment.
 
 import { buildEvidenceArchiveName } from '../../../views/SnowHub/testEvidence/evidenceBundle.ts';
-import { readEnabledPlanEnvironments } from '../changeDraft.ts';
 import type { ChangeStepProps } from '../changeWizardSession.ts';
 import type { ChangeWizardStepId } from '../changeWizardSteps.ts';
 import { CHANGE_WIZARD_STEP_TITLES } from '../changeWizardSteps.ts';
@@ -51,15 +52,15 @@ function ModifySummary({ crg, session, editedStepIds, evidenceFileCount }: Creat
 
 /** What pressing the button will do. */
 function PlanSummary(props: CreateResultStepProps) {
-  const { crg, session, taskNamesByEnvironment, evidenceFileCount } = props;
+  const { session, taskNamesByEnvironment, evidenceFileCount } = props;
   if (session.mode === 'modify') return <ModifySummary {...props} />;
   return (
-    <ul className={styles.itemList} aria-label="Changes to create">
-      {readEnabledPlanEnvironments(crg.state).map((environmentLabel) => (
-        <li key={environmentLabel} className={styles.card}>
-          <h3 className={styles.cardTitle}>{`${environmentLabel} change`}</h3>
-          <p className={styles.hint}>{describeTasks(taskNamesByEnvironment[environmentLabel])}</p>
-          <p className={styles.hint}>{evidenceFileCount > 0 ? `Evidence: ${evidenceFileCount} file(s) attached once created.` : 'Evidence: none chosen.'}</p>
+    <ul className={styles.itemList} aria-label="Changes to save">
+      {session.createdChanges.map((createdChange) => (
+        <li key={createdChange.changeNumber} className={styles.card}>
+          <h3 className={styles.cardTitle}>{`Save to ${createdChange.changeNumber} (${createdChange.environmentLabel ?? 'change'})`}</h3>
+          <p className={styles.hint}>{`The text, plans, dates and ${describeTasks(createdChange.environmentLabel ? taskNamesByEnvironment[createdChange.environmentLabel] : undefined).toLowerCase()}`}</p>
+          <p className={styles.hint}>{evidenceFileCount > 0 ? `Evidence: ${evidenceFileCount} file(s) zipped and attached.` : 'Evidence: every file on the Jira issues, zipped and attached.'}</p>
         </li>
       ))}
     </ul>
@@ -84,23 +85,21 @@ function CreatedChangeCard({ createdChange, session }: { createdChange: CreatedC
 
 /** What happened: every record made, the notes, and any failure with its retry. */
 function OutcomeReport(props: CreateResultStepProps) {
-  const { session, runner, crg } = props;
-  const createdLabels = new Set(session.createdChanges.map((createdChange) => createdChange.environmentLabel));
-  const hasMissing = readEnabledPlanEnvironments(crg.state).some((environmentLabel) => !createdLabels.has(environmentLabel));
+  const { session, runner } = props;
+  const failureText = session.mode === 'create' ? session.saveFailureText ?? null : session.failureText;
   return (
     <div>
-      {session.failureText === null ? <p className={styles.successText}>All done. Everything below is in ServiceNow.</p> : null}
-      {session.failureText === null ? <p className={styles.hint}>{TEMPLATE_TIP}</p> : null}
+      {failureText === null ? <p className={styles.successText}>All done. Everything below is in ServiceNow.</p> : null}
+      {failureText === null ? <p className={styles.hint}>{TEMPLATE_TIP}</p> : null}
       <ul className={styles.itemList} aria-label="What was made">
         {session.createdChanges.map((createdChange) => <CreatedChangeCard key={createdChange.changeNumber} createdChange={createdChange} session={session} />)}
       </ul>
       {session.outcomeNotes.map((outcomeNote) => <p key={outcomeNote} className={styles.hint}>{`• ${outcomeNote}`}</p>)}
-      {session.failureText !== null ? (
+      {failureText !== null ? (
         <div className={styles.card}>
-          <p className={styles.errorText}>{`Not everything worked: ${session.failureText}`}</p>
+          <p className={styles.errorText}>{`Not everything worked: ${failureText}`}</p>
           <div className={styles.buttonRow}>
-            {session.mode === 'create' && hasMissing ? <button type="button" className={styles.actionButton} onClick={runner.retryMissing}>Retry what&apos;s missing</button> : null}
-            {session.mode === 'modify' ? <button type="button" className={styles.actionButton} onClick={runner.startSave}>Try saving again</button> : null}
+            <button type="button" className={styles.actionButton} onClick={session.mode === 'create' ? runner.startSaveCreated : runner.startSave}>Try saving again</button>
           </div>
         </div>
       ) : null}
@@ -133,7 +132,9 @@ function ConflictPanel({ runner }: Pick<CreateResultStepProps, 'runner'>) {
 /** The last step. */
 export default function CreateResultStep(props: CreateResultStepProps) {
   const { session, runner } = props;
-  const hasAttempted = session.createdChanges.length > 0 || session.failureText !== null;
+  const hasAttempted = session.mode === 'create'
+    ? Boolean(session.hasSavedChanges) || Boolean(session.saveFailureText)
+    : session.createdChanges.length > 0 || session.failureText !== null;
   return (
     <div>
       {runner.phase.kind === 'working' ? <p className={styles.hint} role="status">{runner.phase.message}</p> : null}

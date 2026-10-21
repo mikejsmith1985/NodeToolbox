@@ -54,7 +54,7 @@ describe('ChecksStep', () => {
   it('asks for acknowledgement when a check could not be made', () => {
     const updateSession = vi.fn();
     render(<Harness items={[UNCHECKED_PRBS]} session={createChangeWizardSession('create')} goToStep={vi.fn()} updateSession={updateSession} />);
-    expect(screen.getByText(/Create stays locked/)).toBeTruthy();
+    expect(screen.getByText(/The last step stays locked/)).toBeTruthy();
     fireEvent.click(screen.getByRole('checkbox'));
     expect(updateSession).toHaveBeenCalledWith({ areChecksAcknowledged: true });
   });

@@ -9,6 +9,7 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 
 import type { CrgHook } from './changeDraft.ts';
 import type { ChangeWizardMode, ChangeWizardStepId } from './changeWizardSteps.ts';
+import type { CreatedTasksByChange } from './createdChanges.ts';
 import type { CreatedChangeSummary } from './createOutcome.ts';
 import type { PlanEnvironmentKey } from './ctaskEnvironmentPlan.ts';
 import type { StepValueMap } from './modifyDiff.ts';
@@ -59,6 +60,12 @@ export interface ChangeWizardSession {
    * back instead of making the user press Next through every finished step (GH #468). Absent in older jobs.
    */
   returnToStepId?: ChangeWizardStepId | null;
+  /** A new change: the tasks ServiceNow holds on each created change, so the writing can quote their numbers. */
+  createdTasks?: CreatedTasksByChange;
+  /** A new change: the finished work has been saved to every created change. */
+  hasSavedChanges?: boolean;
+  /** A new change: why the last save to the created changes failed, or null. */
+  saveFailureText?: string | null;
 }
 
 /** How a step asks to move: `shouldReturnHere` makes the next screen's Next lead straight back to this step. */

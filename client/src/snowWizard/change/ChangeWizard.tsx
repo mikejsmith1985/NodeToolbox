@@ -25,6 +25,8 @@ import {
   buildShellSteps, deriveChangeWizardStep, evaluateStepCompletion, listChangeWizardStepIds, readPaperworkNeed, readStepTitle,
   resolveResumeStep, type ChangeWizardMode, type ChangeWizardProgress, type ChangeWizardStepId, type PaperworkNeed,
 } from './changeWizardSteps.ts';
+import { aiDraftPromptFor } from './aiDraft.ts';
+import { describeCreatedChangesForPrompt } from './createdChanges.ts';
 import { buildCtaskEnvironmentPlan, listTaskLabelsByEnvironment, type CtaskEnvironmentPlan, type PlanEnvironmentKey } from './ctaskEnvironmentPlan.ts';
 import type { JiraEvidenceAttachment } from './jiraEvidence.ts';
 import { useDefaultJiraEvidenceTicks, useJiraEvidenceChoiceStore, useTickedJiraEvidence } from './jiraEvidenceChoiceStore.ts';
@@ -35,6 +37,7 @@ import AiDraftStep from './steps/AiDraftStep.tsx';
 import AiEnhanceStep from './steps/AiEnhanceStep.tsx';
 import ChecksStep from './steps/ChecksStep.tsx';
 import ChooseModeStep from './steps/ChooseModeStep.tsx';
+import CreateNowStep from './steps/CreateNowStep.tsx';
 import CreateResultStep from './steps/CreateResultStep.tsx';
 import DetailsStep from './steps/DetailsStep.tsx';
 import EnvironmentsStep from './steps/EnvironmentsStep.tsx';
@@ -79,6 +82,8 @@ interface StepExtras {
   onExit: () => void;
   /** The job's one template library, shared by every part that saves a template. */
   library: TemplateLibrary;
+  /** The changes already made in ServiceNow, one line each with their task numbers, for the AI prompts. */
+  createdChangeLines: readonly string[];
 }
 
 /** The screen for one step. */
@@ -87,14 +92,15 @@ function renderStep(stepId: ChangeWizardStepId, stepProps: ChangeStepProps, extr
   const stepScreens: Record<ChangeWizardStepId, () => ReactElement> = {
     whichChange: () => <WhichChangeStep {...stepProps} onExit={extras.onExit} />,
     scope: () => <ScopeStep {...stepProps} />,
-    aiDraft: () => <AiDraftStep {...withChoices} />,
+    aiDraft: () => <AiDraftStep {...withChoices} buildPrompt={aiDraftPromptFor(extras.createdChangeLines)} />,
     details: () => <DetailsStep {...withChoices} />,
     planning: () => <PlanningStep {...withChoices} />,
     environments: () => <EnvironmentsStep {...withChoices} />,
-    aiEnhance: () => <AiEnhanceStep {...stepProps} items={extras.items} />,
+    aiEnhance: () => <AiEnhanceStep {...stepProps} items={extras.items} createdChangeLines={extras.createdChangeLines} />,
     evidence: () => <EvidenceStep {...stepProps} jobId={extras.jobId} evidenceFiles={extras.evidenceFiles} onEvidenceFilesChange={extras.setEvidenceFiles} />,
     tasks: () => <TasksStep {...stepProps} library={extras.library} />,
-    checks: () => <ChecksStep {...stepProps} items={extras.items} />,
+    createChanges: () => <CreateNowStep {...stepProps} runner={extras.runner} taskNamesByEnvironment={readTaskNamesByEnvironment(stepProps.crg.state)} />,
+    checks: () => <ChecksStep {...stepProps} items={extras.items} createdChangeLines={extras.createdChangeLines} />,
     paperwork: () => <ProductionPaperworkStep {...stepProps} paperworkNeed={extras.paperworkNeed} />,
     finish: () => <CreateResultStep {...stepProps} runner={extras.runner} taskNamesByEnvironment={readTaskNamesByEnvironment(stepProps.crg.state)} editedStepIds={extras.editedStepIds} evidenceFileCount={extras.evidenceFiles.length + extras.jiraEvidence.length} />,
   };
@@ -120,12 +126,29 @@ function buildProgress(crg: CrgHook, session: ChangeWizardSession, items: Readin
     isChecksSatisfied: session.areChecksAcknowledged || (items ? isReady(items) : session.wereChecksReady),
     paperworkNeed,
     isPaperworkDone: session.isPaperworkDone,
+    areChangesCreated: haveAllChangesBeenCreated(crg, session),
   };
+}
+
+/** A new change: every environment switched on already has its change in ServiceNow. */
+function haveAllChangesBeenCreated(crg: CrgHook, session: ChangeWizardSession): boolean {
+  const enabledEnvironments = readEnabledPlanEnvironments(crg.state);
+  const createdLabels = new Set(session.createdChanges.map((createdChange) => createdChange.environmentLabel));
+  return enabledEnvironments.length > 0 && enabledEnvironments.every((environmentLabel) => createdLabels.has(environmentLabel));
 }
 
 /** Whether the last step has already run (so its button now leads home). */
 function hasFinishAttempt(session: ChangeWizardSession, runner: FinishRunner): boolean {
+  // A new change's changes were made earlier; only saving the finished work to them ends the job.
+  if (session.mode === 'create') return Boolean(session.hasSavedChanges);
   return runner.phase.kind === 'done' || session.createdChanges.length > 0 || session.failureText !== null;
+}
+
+/** "Create in ServiceNow": Next makes the changes, then moves on once they all exist. */
+function readCreateNowGate(runner: FinishRunner, progress: ChangeWizardProgress) {
+  if (runner.phase.kind === 'working') return { canGoNext: false, nextBlockedReason: runner.phase.message, nextLabel: 'Working…' };
+  if (progress.areChangesCreated) return { canGoNext: true, nextLabel: undefined };
+  return { canGoNext: true, nextLabel: 'Create them in ServiceNow' };
 }
 
 /** The Next button on the last step: run the write, or go home once it has run. */
@@ -134,7 +157,7 @@ function readFinishGate(session: ChangeWizardSession, runner: FinishRunner, prog
   if (runner.phase.kind === 'conflicts') return { canGoNext: false, nextBlockedReason: 'Choose what to do about the values changed in ServiceNow.', nextLabel: 'Save the change' };
   if (hasFinishAttempt(session, runner)) return { canGoNext: true, nextLabel: 'Back to home' };
   const firstUnfinishedStepId = deriveChangeWizardStep({ ...progress, reviewedStepIds: [...progress.reviewedStepIds, 'finish'] });
-  const nextLabel = session.mode === 'modify' ? 'Save the change' : 'Create the changes';
+  const nextLabel = session.mode === 'modify' ? 'Save the change' : 'Save to ServiceNow';
   if (firstUnfinishedStepId !== 'finish') return { canGoNext: false, nextBlockedReason: `Finish “${readStepTitle(firstUnfinishedStepId, session.mode)}” first.`, nextLabel };
   return { canGoNext: true, nextLabel };
 }
@@ -227,11 +250,12 @@ function ChangeJob({ job, startingPoint, onExit }: { job: WizardJob; startingPoi
     evidenceFiles, jiraEvidence, hasJiraEvidenceChoice, selectedIssueKeys: [...crg.state.selectedIssueKeys], editedStepIds, onFinished: () => useWizardJobStore.getState().finishJob(job.kind, Date.now()),
   });
   useRememberChecksVerdict(items, session, updateSession);
+  const createdChangeLines = useMemo(() => describeCreatedChangesForPrompt(session.createdChanges, session.createdTasks), [session.createdChanges, session.createdTasks]);
   return (
     <ChangeJobShell
       job={job} crg={crg} session={session} updateSession={updateSession} progress={progress} currentStepId={currentStepId} goToStep={goToStep}
       startingPoint={startingPointHandle}
-      extras={{ choiceOptions, ctaskEnvironmentPlan, items, paperworkNeed, runner, editedStepIds, evidenceFiles, setEvidenceFiles, jiraEvidence, jobId: job.jobId, onExit, library }}
+      extras={{ choiceOptions, ctaskEnvironmentPlan, items, paperworkNeed, runner, editedStepIds, evidenceFiles, setEvidenceFiles, jiraEvidence, jobId: job.jobId, onExit, library, createdChangeLines }}
     />
   );
 }
@@ -290,7 +314,8 @@ function ChangeJobFrame({ crg, session, updateSession, progress, currentStepId, 
   const currentIndex = stepIds.indexOf(currentStepId);
   const isFinishStep = currentStepId === 'finish';
   const completion = evaluateStepCompletion(currentStepId, progress);
-  const finishGate = isFinishStep ? readFinishGate(session, extras.runner, progress) : null;
+  const finishGate = isFinishStep ? readFinishGate(session, extras.runner, progress)
+    : currentStepId === 'createChanges' ? readCreateNowGate(extras.runner, progress) : null;
   const moveForward = () => goToStep(stepIds[currentIndex + 1] ?? 'finish', { reviewedStepIds: markStepReviewed(session.reviewedStepIds, currentStepId) });
   // Opened from a fix button: Next goes straight back to where the fix was asked for (GH #468).
   const returnStepId = session.returnToStepId && session.returnToStepId !== currentStepId ? session.returnToStepId : null;
@@ -302,6 +327,11 @@ function ChangeJobFrame({ crg, session, updateSession, progress, currentStepId, 
       goToStep(returnStepId, { reviewedStepIds: markStepReviewed(session.reviewedStepIds, currentStepId), returnToStepId: null });
       return;
     }
+    if (currentStepId === 'createChanges' && !progress.areChangesCreated) {
+      if (session.createdChanges.length > 0) extras.runner.retryMissing();
+      else extras.runner.startCreate();
+      return;
+    }
     if (!isFinishStep) {
       if (currentStepId === 'scope' && session.mode === 'create' && crg.state.generatedShortDescription.trim() === '') crg.actions.generateDocs();
       moveForward();
@@ -309,7 +339,7 @@ function ChangeJobFrame({ crg, session, updateSession, progress, currentStepId, 
     }
     if (hasFinishAttempt(session, extras.runner)) extras.onExit();
     else if (session.mode === 'modify') extras.runner.startSave();
-    else extras.runner.startCreate();
+    else extras.runner.startSaveCreated();
   }
 
   const isSkippable = (session.mode === 'modify' ? MODIFY_SKIPPABLE_STEPS : CREATE_SKIPPABLE_STEPS).has(currentStepId);
@@ -327,6 +357,9 @@ function ChangeJobFrame({ crg, session, updateSession, progress, currentStepId, 
       advancedAction={<JobFrameActions crg={crg} library={extras.library} isTemplateReady={currentIndex >= stepIds.indexOf('details')} onManageTemplates={onManageTemplates} onExit={extras.onExit} />}
     >
       <StartingPointNotice startingPoint={startingPoint} />
+      {session.mode === 'create' && session.createdChanges.length > 0 && (currentStepId === 'environments' || currentStepId === 'tasks')
+        ? <p className={shellStyles.hint}>These changes are already in ServiceNow. Edits here are saved to them on the last step, but a newly ticked environment or a new task is not added.</p>
+        : null}
       {returnStepId ? <p className={shellStyles.hint}>{`Fix it here, then press “${returnLabel}” — no need to go through the other steps again.`}</p> : null}
       {renderStep(currentStepId, { crg, session, updateSession, goToStep: moveToStep }, extras)}
     </GuidedFlowShell>

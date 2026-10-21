@@ -1,4 +1,5 @@
-// useFinishRunner.ts — Runs the last step: create the changes (or save the edited one), attach evidence, and retry what is missing.
+// useFinishRunner.ts — Runs the writes: create the changes early (new change), save the finished work to them at the end
+// (or save the edited one, for a modify), attach evidence, and retry what is missing.
 //
 // Every write is Toolbox's own: createChg (with the per-environment task plan — drift 1 — and reconcile mode, so the
 // user's tasks overwrite the ones ServiceNow makes in order and only the rest are created), updateExistingChg, and
@@ -11,6 +12,7 @@ import { useEffect, useEffectEvent, useRef, useState } from 'react';
 import type { EnvironmentValueByKey } from '../../views/SnowHub/hooks/useCrgState.ts';
 import { DRAFT_ENVIRONMENTS, readEnabledPlanEnvironments, type CrgHook } from './changeDraft.ts';
 import type { ChangeWizardSession } from './changeWizardSession.ts';
+import { listCreatedChangeTasks, saveCreatedChange, type CreatedTasksByChange } from './createdChanges.ts';
 import { mergeCreatedChanges, readCreateOutcome, type CreatedChangeSummary } from './createOutcome.ts';
 import { listTaskLabelsByEnvironment, type CtaskEnvironmentPlan, type PlanEnvironmentKey } from './ctaskEnvironmentPlan.ts';
 import { attachAllEvidenceToChanges } from './evidenceUpload.ts';
@@ -49,8 +51,11 @@ export interface FinishRunnerInput {
 /** The actions the last step offers. */
 export interface FinishRunner {
   phase: FinishPhase;
+  /** A new change: create one change per environment now, so the writing can quote the numbers. */
   startCreate: () => void;
   retryMissing: () => void;
+  /** A new change: save the finished work to every created change, then attach the evidence. */
+  startSaveCreated: () => void;
   startSave: () => void;
   confirmSave: () => void;
   cancelSave: () => void;
@@ -125,16 +130,60 @@ export function useFinishRunner(input: FinishRunnerInput): FinishRunner {
       () => crg.actions.createChg(input.environmentValueByKey, { ctaskEnvironmentPlan: input.ctaskEnvironmentPlan, reconcileAutoCtasks: true }));
   }
 
-  /** Records a create attempt's outcome, then attaches evidence to the changes it made. */
+  /** Switches every environment that has a change back on (a retry switches them off to create only what is missing). */
+  function restoreCreatedEnvironments(createdChanges: readonly CreatedChangeSummary[]) {
+    const createdLabels = new Set(createdChanges.map((createdChange) => createdChange.environmentLabel));
+    for (const { key, stateKey, label } of DRAFT_ENVIRONMENTS) {
+      if (createdLabels.has(label) && !crg.state[stateKey].isEnabled) crg.actions.updateEnvironment(key, { isEnabled: true });
+    }
+  }
+
+  /** Reads back each created change's tasks, so the writing that follows can quote their numbers. */
+  async function loadCreatedTasks(createdChanges: readonly CreatedChangeSummary[]) {
+    setPhase({ kind: 'working', message: 'Reading back the task numbers…' });
+    const createdTasks: CreatedTasksByChange = { ...session.createdTasks };
+    for (const createdChange of createdChanges) {
+      try {
+        createdTasks[createdChange.changeNumber] = await listCreatedChangeTasks(createdChange.changeNumber);
+      } catch {
+        // The change exists either way; the writing simply cannot quote this change's task numbers.
+      }
+    }
+    updateSession({ createdTasks });
+    setPhase({ kind: 'done' });
+  }
+
+  /**
+   * Records a create attempt's outcome. The changes now exist, so the job goes on to the writing, which can quote
+   * their numbers; the finished work and the evidence are saved to them on the last step.
+   */
   function settleCreate(pendingWrite: PendingWrite, resultText: string) {
     const outcome = readCreateOutcome(resultText, pendingWrite.attempted);
-    const outcomeNotes = [...session.outcomeNotes, ...outcome.notes];
-    updateSession({
-      createdChanges: mergeCreatedChanges(session.createdChanges, outcome.createdChanges),
-      outcomeNotes,
-      failureText: outcome.failureText,
-    });
-    void attachEvidenceAndFinish(outcome.createdChanges.map((createdChange) => createdChange.changeNumber), outcome.isComplete, outcomeNotes);
+    const createdChanges = mergeCreatedChanges(session.createdChanges, outcome.createdChanges);
+    updateSession({ createdChanges, outcomeNotes: [...session.outcomeNotes, ...outcome.notes], failureText: outcome.failureText });
+    restoreCreatedEnvironments(createdChanges);
+    void loadCreatedTasks(createdChanges);
+  }
+
+  /** Saves the finished work to every created change, then attaches the evidence and finishes the job. */
+  async function saveCreatedThenFinish() {
+    const savedNotes: string[] = [];
+    try {
+      for (const createdChange of session.createdChanges) {
+        setPhase({ kind: 'working', message: `Saving ${createdChange.changeNumber} to ServiceNow…` });
+        savedNotes.push(await saveCreatedChange({
+          draft: crg.state, createdChange, environmentValueByKey: input.environmentValueByKey, ctaskEnvironmentPlan: input.ctaskEnvironmentPlan,
+        }));
+      }
+    } catch (saveError) {
+      const reason = saveError instanceof Error ? saveError.message : String(saveError);
+      updateSession({ saveFailureText: `Not everything was saved (${reason}). Press “Save to ServiceNow” to try again — it is safe to repeat.` });
+      setPhase({ kind: 'idle' });
+      return;
+    }
+    const outcomeNotes = [...session.outcomeNotes, ...savedNotes];
+    updateSession({ hasSavedChanges: true, saveFailureText: null, outcomeNotes });
+    void attachEvidenceAndFinish(session.createdChanges.map((createdChange) => createdChange.changeNumber), true, outcomeNotes);
   }
 
   /** Records a modify's outcome, attaching evidence to the change when the change itself was saved. */
@@ -237,6 +286,7 @@ export function useFinishRunner(input: FinishRunnerInput): FinishRunner {
     phase,
     startCreate: () => createFor(readEnabledPlanEnvironments(crg.state)),
     retryMissing,
+    startSaveCreated: () => { void saveCreatedThenFinish(); },
     startSave: () => { void checkConflictsThenSave(); },
     confirmSave,
     cancelSave: () => setPhase({ kind: 'idle' }),

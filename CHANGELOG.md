@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **SNow Wizard creates the changes first, then writes them (create-first).** Once every pick is made (scope, details,
+  planning answers, environments, tasks), the new step **Create in ServiceNow** makes one change per environment
+  with its CTASKs. The writing that follows uses the **real CHG and CTASK numbers**: the AI prompts list each change
+  and its task numbers and are told never to invent one. The last step, **Save to ServiceNow**, writes the finished
+  work to every change and then attaches the test-evidence zip:
+  - each change's own environment values, configuration item, window, text and plans;
+  - every task card, written to the CTASK made for it.
+
+  The save uses the same payload create builds, through a new additive Toolbox export, `buildEnvironmentChangePayload`.
+  If a save fails it says why, and **Try saving again** is safe to repeat. "Retry what's missing" stays on the create
+  step. Editing values after create still saves them, but a newly ticked environment or a new task card is not added
+  (the screen says so).
+
 ### Fixed
 - **SNow Wizard: the review flow no longer bounces you around (GH #468).**
   - **Test evidence counts your Jira files.** Step 9 said "nothing is attached" even with every Jira file ticked on

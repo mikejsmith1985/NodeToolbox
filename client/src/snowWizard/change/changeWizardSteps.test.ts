@@ -22,19 +22,25 @@ function buildCompleteProgress(overrides: Partial<ChangeWizardProgress> = {}): C
     planningGaps: [],
     environmentProblems: [],
     taskProblems: [],
-    reviewedStepIds: ['scope', 'details', 'planning', 'environments', 'aiDraft', 'aiEnhance', 'evidence', 'tasks', 'checks', 'paperwork'],
+    reviewedStepIds: ['scope', 'details', 'planning', 'environments', 'tasks', 'createChanges', 'aiDraft', 'aiEnhance', 'evidence', 'checks', 'paperwork'],
     isChecksSatisfied: true,
     paperworkNeed: { isNeeded: false, reason: 'No Production environment is in this change.' },
     isPaperworkDone: false,
+    areChangesCreated: true,
     ...overrides,
   };
 }
 
 describe('listChangeWizardStepIds', () => {
-  it('runs the eleven create steps in order, with "Let AI write it" after every pick', () => {
+  it('runs the twelve create steps in order: every pick, then create in ServiceNow, then the writing', () => {
     expect(listChangeWizardStepIds('create')).toEqual([
-      'scope', 'details', 'planning', 'environments', 'aiDraft', 'aiEnhance', 'evidence', 'tasks', 'checks', 'paperwork', 'finish',
+      'scope', 'details', 'planning', 'environments', 'tasks', 'createChanges', 'aiDraft', 'aiEnhance', 'evidence', 'checks', 'paperwork', 'finish',
     ]);
+  });
+
+  it('holds "Create in ServiceNow" until every environment has its change', () => {
+    expect(evaluateStepCompletion('createChanges', buildCompleteProgress({ areChangesCreated: false })).blockedReason).toBe('Create the changes in ServiceNow first.');
+    expect(evaluateStepCompletion('createChanges', buildCompleteProgress()).canGoNext).toBe(true);
   });
 
   it('starts a modify with "Which change?" and builds its tasks on the same step as a new change', () => {
@@ -122,7 +128,7 @@ describe('buildShellSteps', () => {
     expect(shellSteps[1]).toEqual({ id: 'details', title: 'Tell us about the change', state: 'done' });
     expect(shellSteps[2]).toEqual({ id: 'planning', title: 'How will it go?', state: 'current' });
     expect(shellSteps[3].state).toBe('todo');
-    expect(shellSteps.at(-1)?.title).toBe('Create the change');
+    expect(shellSteps.at(-1)?.title).toBe('Save to ServiceNow');
   });
 
   it('calls the last step Save on a modify', () => {

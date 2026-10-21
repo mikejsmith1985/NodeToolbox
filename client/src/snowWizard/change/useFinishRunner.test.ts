@@ -1,5 +1,5 @@
-// useFinishRunner.test.ts — Proves the last step creates per environment with the task plan, retries only what is missing,
-// attaches evidence, and on a modify checks for remote edits before saving.
+// useFinishRunner.test.ts — Proves a new change is created first (per environment, task numbers read back), then saved and
+// given its evidence at the end, retries only what is missing, and on a modify checks for remote edits before saving.
 
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { useState } from 'react';
@@ -8,6 +8,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useCrgState } from '../../views/SnowHub/hooks/useCrgState.ts';
 import type { CrgDraftState, CrgHook } from './changeDraft.ts';
 import { createChangeWizardSession, type ChangeWizardSession } from './changeWizardSession.ts';
+import { saveCreatedChange } from './createdChanges.ts';
 import { attachAllEvidenceToChanges } from './evidenceUpload.ts';
 import { resolveJiraEvidenceAtFinish, type JiraEvidenceAttachment } from './jiraEvidence.ts';
 import { fetchChangeSnapshot } from './modifyLoad.ts';
@@ -22,8 +23,10 @@ vi.mock('./jiraEvidence.ts', () => ({
   resolveJiraEvidenceAtFinish: vi.fn(async (input: { hasChoice: boolean; tickedEvidence: unknown[] }) => (input.hasChoice ? input.tickedEvidence : [])),
 }));
 vi.mock('./modifyTasks.ts', () => ({ saveModifyTasks: vi.fn() }));
+vi.mock('./createdChanges.ts', () => ({ listCreatedChangeTasks: vi.fn(async () => [TASK_RECORD]), saveCreatedChange: vi.fn() }));
 
 const PLAN = { 'Business Checkout': { REL: false, PRD: true, PFIX: true } };
+const TASK_RECORD = vi.hoisted(() => ({ sysId: 't1', number: 'CTASK1', shortDescription: 'Deploy' }));
 const EVIDENCE_FILE = { name: 'results.pdf', size: 10 } as File;
 const JIRA_FILE: JiraEvidenceAttachment = { issueKey: 'A-1', issueSummary: '', attachment: { attachmentId: '1', filename: 'report.pdf', sizeBytes: 5, contentUrl: '' } };
 
@@ -64,10 +67,18 @@ function finishWrite(setDraft: (update: (previous: CrgDraftState) => CrgDraftSta
   act(() => setDraft((previous) => ({ ...previous, isSubmitting: false, submitResult: resultText })));
 }
 
-describe('useFinishRunner — create', () => {
-  beforeEach(() => vi.mocked(attachAllEvidenceToChanges).mockClear());
+describe('useFinishRunner — create first, then save', () => {
+  beforeEach(() => {
+    vi.mocked(attachAllEvidenceToChanges).mockClear();
+    vi.mocked(saveCreatedChange).mockReset().mockImplementation(async ({ createdChange }) => `${createdChange.changeNumber} saved, with 1 task updated.`);
+  });
 
-  it('creates with the task plan, records each change, attaches evidence and finishes', async () => {
+  /** A create session whose REL and PRD changes already exist. */
+  function buildCreatedSession(): ChangeWizardSession {
+    return { ...createChangeWizardSession('create'), createdChanges: [{ environmentLabel: 'REL', changeNumber: 'CHG1' }, { environmentLabel: 'PRD', changeNumber: 'CHG2' }] };
+  }
+
+  it('creates with the task plan, records each change and reads back its task numbers — no evidence, not finished yet', async () => {
     const { hookResult, actions, onFinished } = renderRunner(buildDraft(), createChangeWizardSession('create'));
     act(() => hookResult.result.current.runner.startCreate());
     expect(actions.createChg).toHaveBeenCalledWith({ rel: 'rel-env', prd: 'prd-env' }, { ctaskEnvironmentPlan: PLAN, reconcileAutoCtasks: true });
@@ -78,8 +89,9 @@ describe('useFinishRunner — create', () => {
     expect(hookResult.result.current.session.createdChanges).toEqual([
       { environmentLabel: 'REL', changeNumber: 'CHG1' }, { environmentLabel: 'PRD', changeNumber: 'CHG2' },
     ]);
-    expect(attachAllEvidenceToChanges).toHaveBeenCalledWith({ localFiles: [EVIDENCE_FILE], jiraAttachments: [] }, ['CHG1', 'CHG2'], expect.objectContaining({ onProgress: expect.any(Function) }));
-    expect(onFinished).toHaveBeenCalled();
+    expect(hookResult.result.current.session.createdTasks).toEqual({ CHG1: [TASK_RECORD], CHG2: [TASK_RECORD] });
+    expect(attachAllEvidenceToChanges).not.toHaveBeenCalled();
+    expect(onFinished).not.toHaveBeenCalled();
   });
 
   it('remembers each change’s tasks as the user built them, for the result screen', () => {
@@ -88,15 +100,55 @@ describe('useFinishRunner — create', () => {
     expect(hookResult.result.current.session.taskNamesByEnvironment).toEqual({ REL: ['New'], PRD: ['New'] });
   });
 
+  it('after a partial create, retries only the missing environment and switches the made one back on', async () => {
+    const { hookResult, actions, onFinished } = renderRunner(buildDraft(), createChangeWizardSession('create'));
+    act(() => hookResult.result.current.runner.startCreate());
+    finishWrite(hookResult.result.current.setDraft, 'CHG1 created; then a later submission failed: HTTP 500');
+    await waitFor(() => expect(hookResult.result.current.session.failureText).toBe('HTTP 500'));
+
+    act(() => hookResult.result.current.runner.retryMissing());
+    expect(actions.updateEnvironment).toHaveBeenCalledWith('rel', { isEnabled: false });
+    act(() => hookResult.result.current.setDraft((previous) => ({ ...previous, relEnvironment: { ...previous.relEnvironment, isEnabled: false } })));
+    expect(actions.createChg).toHaveBeenCalledTimes(2);
+
+    finishWrite(hookResult.result.current.setDraft, 'CHG2 created');
+    await waitFor(() => expect(hookResult.result.current.session.createdChanges.map((change) => change.changeNumber)).toEqual(['CHG1', 'CHG2']));
+    expect(hookResult.result.current.session.createdChanges[1].environmentLabel).toBe('PRD');
+    expect(actions.updateEnvironment).toHaveBeenCalledWith('rel', { isEnabled: true });
+    expect(onFinished).not.toHaveBeenCalled();
+  });
+
+  it('saves the finished work to every created change, then attaches the evidence and finishes', async () => {
+    const { hookResult, onFinished } = renderRunner(buildDraft(), buildCreatedSession());
+    act(() => hookResult.result.current.runner.startSaveCreated());
+    await waitFor(() => expect(onFinished).toHaveBeenCalled());
+    expect(saveCreatedChange).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(saveCreatedChange).mock.calls[1][0]).toEqual(expect.objectContaining({
+      createdChange: { environmentLabel: 'PRD', changeNumber: 'CHG2' }, environmentValueByKey: { rel: 'rel-env', prd: 'prd-env' }, ctaskEnvironmentPlan: PLAN,
+    }));
+    expect(attachAllEvidenceToChanges).toHaveBeenCalledWith({ localFiles: [EVIDENCE_FILE], jiraAttachments: [] }, ['CHG1', 'CHG2'], expect.objectContaining({ onProgress: expect.any(Function) }));
+    expect(hookResult.result.current.session.hasSavedChanges).toBe(true);
+    expect(hookResult.result.current.session.outcomeNotes).toContain('CHG2 saved, with 1 task updated.');
+  });
+
+  it('says what failed and attaches nothing when a save fails, so pressing Save again is safe', async () => {
+    vi.mocked(saveCreatedChange).mockRejectedValueOnce(new Error('HTTP 403'));
+    const { hookResult, onFinished } = renderRunner(buildDraft(), buildCreatedSession());
+    act(() => hookResult.result.current.runner.startSaveCreated());
+    await waitFor(() => expect(hookResult.result.current.session.saveFailureText).toMatch(/HTTP 403/));
+    expect(attachAllEvidenceToChanges).not.toHaveBeenCalled();
+    expect(onFinished).not.toHaveBeenCalled();
+    expect(hookResult.result.current.session.hasSavedChanges).toBeFalsy();
+  });
+
   it('attaches ticked Jira files on their own, showing progress and noting a file that could not be fetched', async () => {
     vi.mocked(attachAllEvidenceToChanges).mockImplementationOnce(async (_evidence, _changeNumbers, options) => {
       options?.onProgress?.('Getting file 1 of 1 from Jira: report.pdf…');
       return { results: { CHG1: 'attached' }, problems: ['Could not get other.pdf from A-1 in Jira.'] };
     });
-    const { hookResult } = renderRunner(buildDraft(), createChangeWizardSession('create'), vi.fn(), [], [JIRA_FILE]);
-    act(() => hookResult.result.current.runner.startCreate());
-
-    finishWrite(hookResult.result.current.setDraft, '1 CHG created: REL CHG1');
+    const session = { ...createChangeWizardSession('create'), createdChanges: [{ environmentLabel: 'REL' as const, changeNumber: 'CHG1' }] };
+    const { hookResult } = renderRunner(buildDraft(), session, vi.fn(), [], [JIRA_FILE]);
+    act(() => hookResult.result.current.runner.startSaveCreated());
 
     await waitFor(() => expect(hookResult.result.current.runner.phase.kind).toBe('done'));
     expect(attachAllEvidenceToChanges).toHaveBeenCalledWith({ localFiles: [], jiraAttachments: [JIRA_FILE] }, ['CHG1'], expect.anything());
@@ -106,32 +158,13 @@ describe('useFinishRunner — create', () => {
 
   it('zips every Jira file like Toolbox when the evidence step was never opened', async () => {
     vi.mocked(resolveJiraEvidenceAtFinish).mockResolvedValueOnce([JIRA_FILE]);
-    const { hookResult } = renderRunner(buildDraft(), createChangeWizardSession('create'), vi.fn(), [], [], false);
-    act(() => hookResult.result.current.runner.startCreate());
-
-    finishWrite(hookResult.result.current.setDraft, '1 CHG created: REL CHG1');
+    const session = { ...createChangeWizardSession('create'), createdChanges: [{ environmentLabel: 'REL' as const, changeNumber: 'CHG1' }] };
+    const { hookResult } = renderRunner(buildDraft(), session, vi.fn(), [], [], false);
+    act(() => hookResult.result.current.runner.startSaveCreated());
 
     await waitFor(() => expect(hookResult.result.current.runner.phase.kind).toBe('done'));
     expect(resolveJiraEvidenceAtFinish).toHaveBeenCalledWith(expect.objectContaining({ hasChoice: false, issueKeys: ['A-1'] }));
     expect(attachAllEvidenceToChanges).toHaveBeenCalledWith({ localFiles: [], jiraAttachments: [JIRA_FILE] }, ['CHG1'], expect.anything());
-  });
-
-  it('after a partial create, retries only the missing environment', async () => {
-    const { hookResult, actions, onFinished } = renderRunner(buildDraft(), createChangeWizardSession('create'));
-    act(() => hookResult.result.current.runner.startCreate());
-    finishWrite(hookResult.result.current.setDraft, 'CHG1 created; then a later submission failed: HTTP 500');
-    await waitFor(() => expect(hookResult.result.current.session.failureText).toBe('HTTP 500'));
-    expect(onFinished).not.toHaveBeenCalled();
-
-    act(() => hookResult.result.current.runner.retryMissing());
-    expect(actions.updateEnvironment).toHaveBeenCalledWith('rel', { isEnabled: false });
-    act(() => hookResult.result.current.setDraft((previous) => ({ ...previous, relEnvironment: { ...previous.relEnvironment, isEnabled: false } })));
-    expect(actions.createChg).toHaveBeenCalledTimes(2);
-
-    finishWrite(hookResult.result.current.setDraft, 'CHG2 created');
-    await waitFor(() => expect(onFinished).toHaveBeenCalled());
-    expect(hookResult.result.current.session.createdChanges.map((change) => change.changeNumber)).toEqual(['CHG1', 'CHG2']);
-    expect(hookResult.result.current.session.createdChanges[1].environmentLabel).toBe('PRD');
   });
 });
 

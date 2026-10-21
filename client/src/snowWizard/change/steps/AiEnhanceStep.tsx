@@ -20,7 +20,11 @@ import AiDraftStep from './AiDraftStep.tsx';
 /** Step 6 also needs the live checklist, built once for the whole job. */
 export interface AiEnhanceStepProps extends ChangeStepProps {
   items: ReadinessItem[] | null;
+  /** The changes already in ServiceNow, one line each, so the AI can quote their numbers. */
+  createdChangeLines?: readonly string[];
 }
+
+const NO_CREATED_CHANGES: readonly string[] = [];
 
 /** The checks still flagged, split into the ones the AI fixes and the ones that need a value from the user. */
 function OpenChecks({ items, session, goToStep }: { items: ReadinessItem[] } & Pick<ChangeStepProps, 'session' | 'goToStep'>) {
@@ -53,22 +57,22 @@ function OpenChecks({ items, session, goToStep }: { items: ReadinessItem[] } & P
  * "Fix all with AI": one prompt for every flagged piece of writing, and one button that applies every rewrite in
  * place — no per-check trips to other steps (owner feedback, GH #468). Shared by step 6 and step 9.
  */
-export function FixAllWithAi({ items, ...stepProps }: ChangeStepProps & { items: ReadinessItem[] }) {
+export function FixAllWithAi({ items, createdChangeLines = NO_CREATED_CHANGES, ...stepProps }: ChangeStepProps & { items: ReadinessItem[]; createdChangeLines?: readonly string[] }) {
   // The prompt targets exactly the writing the checks flag; with none flagged it polishes the writing as a whole.
   const buildPrompt = useCallback(
-    (draft: CrgDraftState) => buildChecksFixPrompt(draft, items) ?? buildAiDraftPrompt(draft),
-    [items],
+    (draft: CrgDraftState) => buildChecksFixPrompt(draft, items, createdChangeLines) ?? buildAiDraftPrompt(draft, createdChangeLines),
+    [items, createdChangeLines],
   );
   return <AiDraftStep {...stepProps} purpose="polish" buildPrompt={buildPrompt} />;
 }
 
 /** Step 6: make the change pass the checks, in one round. */
-export default function AiEnhanceStep({ items, ...stepProps }: AiEnhanceStepProps) {
+export default function AiEnhanceStep({ items, createdChangeLines, ...stepProps }: AiEnhanceStepProps) {
   if (items === null) return <p className={styles.hint} role="status">Checking your change…</p>;
   return (
     <div>
       <OpenChecks items={items} session={stepProps.session} goToStep={stepProps.goToStep} />
-      <FixAllWithAi {...stepProps} items={items} />
+      <FixAllWithAi {...stepProps} items={items} createdChangeLines={createdChangeLines} />
     </div>
   );
 }
