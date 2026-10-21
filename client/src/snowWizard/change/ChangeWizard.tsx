@@ -19,7 +19,7 @@ import {
 } from './changeDraft.ts';
 import {
   buildChangeStorageKey, createChangeWizardSession, markStepReviewed, useChangeWizardSessionStore,
-  type ChangeStepProps, type ChangeWizardSession,
+  type ChangeStepProps, type ChangeWizardSession, type StepMoveOptions,
 } from './changeWizardSession.ts';
 import {
   buildShellSteps, deriveChangeWizardStep, evaluateStepCompletion, listChangeWizardStepIds, readPaperworkNeed, readStepTitle,
@@ -27,7 +27,7 @@ import {
 } from './changeWizardSteps.ts';
 import { buildCtaskEnvironmentPlan, listTaskLabelsByEnvironment, type CtaskEnvironmentPlan, type PlanEnvironmentKey } from './ctaskEnvironmentPlan.ts';
 import type { JiraEvidenceAttachment } from './jiraEvidence.ts';
-import { useJiraEvidenceChoiceStore, useTickedJiraEvidence } from './jiraEvidenceChoiceStore.ts';
+import { useDefaultJiraEvidenceTicks, useJiraEvidenceChoiceStore, useTickedJiraEvidence } from './jiraEvidenceChoiceStore.ts';
 import { listEditedSteps, readStepValues } from './modifyDiff.ts';
 import SaveTemplateControl from './SaveTemplateControl.tsx';
 import StartingPointNotice from './StartingPointNotice.tsx';
@@ -56,7 +56,7 @@ import shellStyles from '../shell/WizardShell.module.css';
 const CHANGE_JOB_KINDS: readonly WizardJobKind[] = ['newChange', 'modifyChange'];
 // "Skip — nothing to change": every pre-filled step of a modify, and the two optional steps of a new change.
 const MODIFY_SKIPPABLE_STEPS = new Set<ChangeWizardStepId>(['scope', 'aiDraft', 'details', 'planning', 'environments', 'aiEnhance', 'evidence', 'tasks']);
-const CREATE_SKIPPABLE_STEPS = new Set<ChangeWizardStepId>(['aiDraft', 'aiEnhance', 'evidence']);
+const CREATE_SKIPPABLE_STEPS = new Set<ChangeWizardStepId>(['aiEnhance', 'evidence']);
 const EDITED_MARK = ' (edited)';
 
 /** The mode a job kind runs in. */
@@ -216,7 +216,11 @@ function ChangeJob({ job, startingPoint, onExit }: { job: WizardJob; startingPoi
   const navigationProgress = buildProgress(restoredCrg, session, null, paperworkNeed);
   const { currentStepId, goToStep } = useStepNavigation(job, crg, session, updateSession, navigationProgress);
   useImplementationBackout(crg);
-  const { items } = useDraftReadiness(crg.state, session, stepIds.indexOf(currentStepId) >= stepIds.indexOf('aiEnhance'));
+  const isChecking = stepIds.indexOf(currentStepId) >= stepIds.indexOf('aiEnhance');
+  const issueKeys = useMemo(() => [...crg.state.selectedIssueKeys].sort(), [crg.state.selectedIssueKeys]);
+  useDefaultJiraEvidenceTicks(job.jobId, issueKeys, isChecking);
+  const jiraEvidenceFileNames = useMemo(() => jiraEvidence.map((evidence) => evidence.attachment.filename), [jiraEvidence]);
+  const { items } = useDraftReadiness(crg.state, session, isChecking, jiraEvidenceFileNames);
   const progress = buildProgress(crg, session, items, paperworkNeed);
   const runner = useFinishRunner({
     crg, session, updateSession, ctaskEnvironmentPlan, environmentValueByKey: buildEnvironmentValueByKey(choiceOptions.u_environment ?? []),
@@ -253,26 +257,51 @@ interface ChangeJobShellProps {
   extras: StepExtras;
 }
 
-/** The frame's top-right buttons: "Save as template" once the change has details, and "Save and leave". */
-function JobFrameActions({ crg, library, isTemplateReady, onExit }: { crg: CrgHook; library: TemplateLibrary; isTemplateReady: boolean; onExit: () => void }) {
+/** The frame's top-right buttons: "Save as template" once the change has details, "Manage templates", and "Save and leave". */
+function JobFrameActions({ crg, library, isTemplateReady, onManageTemplates, onExit }: { crg: CrgHook; library: TemplateLibrary; isTemplateReady: boolean; onManageTemplates: () => void; onExit: () => void }) {
   return (
     <>
       {isTemplateReady ? <SaveTemplateControl draft={crg.state} library={library} /> : null}
+      <button type="button" className={shellStyles.secondaryButton} onClick={onManageTemplates}>Manage templates</button>
       <button type="button" className={shellStyles.secondaryButton} onClick={onExit}>Save and leave</button>
     </>
   );
 }
 
-/** The guided frame around the current step: Next / Back / Skip and the steps strip. */
-function ChangeJobShell({ crg, session, updateSession, progress, currentStepId, goToStep, startingPoint, extras }: ChangeJobShellProps) {
+/** The guided frame around the current step, or the templates screen while it is open over the job. */
+function ChangeJobShell(props: ChangeJobShellProps) {
+  const [isManagingTemplates, setIsManagingTemplates] = useState(false);
+  const { crg, extras } = props;
+  if (isManagingTemplates) {
+    // The job stays as it is underneath; "Back" returns to the same step.
+    const useTemplateHere = (templateId: string) => {
+      const chosenTemplate = extras.library.templates.find((template) => template.id === templateId);
+      if (chosenTemplate) crg.actions.applyTemplate(chosenTemplate, extras.library.ctaskTemplates);
+      setIsManagingTemplates(false);
+    };
+    return <TemplatesScreen library={extras.library} draftInHand={crg.state} useLabel="Use it on this change" onUseTemplate={useTemplateHere} onBack={() => setIsManagingTemplates(false)} />;
+  }
+  return <ChangeJobFrame {...props} onManageTemplates={() => setIsManagingTemplates(true)} />;
+}
+
+/** The guided frame itself, around the current step. */
+function ChangeJobFrame({ crg, session, updateSession, progress, currentStepId, goToStep, startingPoint, extras, onManageTemplates }: ChangeJobShellProps & { onManageTemplates: () => void }) {
   const stepIds = listChangeWizardStepIds(session.mode);
   const currentIndex = stepIds.indexOf(currentStepId);
   const isFinishStep = currentStepId === 'finish';
   const completion = evaluateStepCompletion(currentStepId, progress);
   const finishGate = isFinishStep ? readFinishGate(session, extras.runner, progress) : null;
   const moveForward = () => goToStep(stepIds[currentIndex + 1] ?? 'finish', { reviewedStepIds: markStepReviewed(session.reviewedStepIds, currentStepId) });
+  // Opened from a fix button: Next goes straight back to where the fix was asked for (GH #468).
+  const returnStepId = session.returnToStepId && session.returnToStepId !== currentStepId ? session.returnToStepId : null;
+  const returnLabel = returnStepId ? `Back to “${readStepTitle(returnStepId, session.mode)}”` : undefined;
+  const moveToStep = (stepId: ChangeWizardStepId, options?: StepMoveOptions) => goToStep(stepId, { returnToStepId: options?.shouldReturnHere ? currentStepId : null });
 
   function handleNext() {
+    if (returnStepId) {
+      goToStep(returnStepId, { reviewedStepIds: markStepReviewed(session.reviewedStepIds, currentStepId), returnToStepId: null });
+      return;
+    }
     if (!isFinishStep) {
       if (currentStepId === 'scope' && session.mode === 'create' && crg.state.generatedShortDescription.trim() === '') crg.actions.generateDocs();
       moveForward();
@@ -290,15 +319,16 @@ function ChangeJobShell({ crg, session, updateSession, progress, currentStepId, 
       currentStepId={currentStepId}
       canGoNext={finishGate ? finishGate.canGoNext : completion.canGoNext}
       nextBlockedReason={finishGate ? finishGate.nextBlockedReason : completion.blockedReason}
-      nextLabel={finishGate?.nextLabel}
+      nextLabel={returnLabel ?? finishGate?.nextLabel}
       isSkippable={isSkippable}
       onNext={handleNext}
-      onBack={() => goToStep(stepIds[Math.max(0, currentIndex - 1)])}
-      onSkip={moveForward}
-      advancedAction={<JobFrameActions crg={crg} library={extras.library} isTemplateReady={currentIndex >= stepIds.indexOf('details')} onExit={extras.onExit} />}
+      onBack={() => goToStep(stepIds[Math.max(0, currentIndex - 1)], { returnToStepId: null })}
+      onSkip={returnStepId ? handleNext : moveForward}
+      advancedAction={<JobFrameActions crg={crg} library={extras.library} isTemplateReady={currentIndex >= stepIds.indexOf('details')} onManageTemplates={onManageTemplates} onExit={extras.onExit} />}
     >
       <StartingPointNotice startingPoint={startingPoint} />
-      {renderStep(currentStepId, { crg, session, updateSession, goToStep: (stepId) => goToStep(stepId) }, extras)}
+      {returnStepId ? <p className={shellStyles.hint}>{`Fix it here, then press “${returnLabel}” — no need to go through the other steps again.`}</p> : null}
+      {renderStep(currentStepId, { crg, session, updateSession, goToStep: moveToStep }, extras)}
     </GuidedFlowShell>
   );
 }

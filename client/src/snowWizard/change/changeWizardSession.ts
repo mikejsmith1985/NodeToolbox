@@ -54,6 +54,16 @@ export interface ChangeWizardSession {
    * so a resumed Wizard job puts them back from here.
    */
   enabledEnvironments: PlanEnvironmentKey[];
+  /**
+   * The step a fix button was pressed on ("Will it pass review?"), so the step it opened offers one button straight
+   * back instead of making the user press Next through every finished step (GH #468). Absent in older jobs.
+   */
+  returnToStepId?: ChangeWizardStepId | null;
+}
+
+/** How a step asks to move: `shouldReturnHere` makes the next screen's Next lead straight back to this step. */
+export interface StepMoveOptions {
+  shouldReturnHere?: boolean;
 }
 
 /** What every step screen receives: the draft hook, the job's session, and the way to move to another step. */
@@ -61,7 +71,7 @@ export interface ChangeStepProps {
   crg: CrgHook;
   session: ChangeWizardSession;
   updateSession: (update: Partial<ChangeWizardSession>) => void;
-  goToStep: (stepId: ChangeWizardStepId) => void;
+  goToStep: (stepId: ChangeWizardStepId, options?: StepMoveOptions) => void;
 }
 
 /** Where every job's session is kept in this browser. */
@@ -89,6 +99,7 @@ export function createChangeWizardSession(mode: ChangeWizardMode): ChangeWizardS
     modify: null,
     wereChecksReady: false,
     enabledEnvironments: [],
+    returnToStepId: null,
   };
 }
 

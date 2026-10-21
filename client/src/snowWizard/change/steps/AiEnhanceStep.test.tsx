@@ -60,7 +60,7 @@ describe('AiEnhanceStep', () => {
   it('offers a direct button for a check that needs a value rather than writing', () => {
     const { goToStep } = renderStep([DATES_GAP]);
     fireEvent.click(screen.getByRole('button', { name: /Task dates →/ }));
-    expect(goToStep).toHaveBeenCalledWith('tasks');
+    expect(goToStep).toHaveBeenCalledWith('tasks', { shouldReturnHere: true });
   });
 
   it('says so plainly when every check passes', () => {

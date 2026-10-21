@@ -44,11 +44,14 @@ export interface StepCompletion {
   blockedReason?: string;
 }
 
+// "Let AI write it" comes after every pick (template, dropdowns, planning answers, environments), so the prompt states
+// them as facts instead of "(not set)" — and it is the ONE place the AI writes, right before "Make it pass review"
+// (GH #468: it ran before the picks, then appeared again inside steps 3 and 4).
 const CREATE_STEP_IDS: readonly ChangeWizardStepId[] = [
-  'scope', 'aiDraft', 'details', 'planning', 'environments', 'aiEnhance', 'evidence', 'tasks', 'checks', 'paperwork', 'finish',
+  'scope', 'details', 'planning', 'environments', 'aiDraft', 'aiEnhance', 'evidence', 'tasks', 'checks', 'paperwork', 'finish',
 ];
 const MODIFY_STEP_IDS: readonly ChangeWizardStepId[] = [
-  'whichChange', 'scope', 'aiDraft', 'details', 'planning', 'environments', 'aiEnhance', 'evidence', 'tasks', 'checks', 'paperwork', 'finish',
+  'whichChange', 'scope', 'details', 'planning', 'environments', 'aiDraft', 'aiEnhance', 'evidence', 'tasks', 'checks', 'paperwork', 'finish',
 ];
 
 /** The plain verb phrase each step is headed with. */
@@ -93,7 +96,8 @@ function evaluateStepGate(stepId: ChangeWizardStepId, progress: ChangeWizardProg
       return progress.mode === 'modify' || progress.selectedIssueCount > 0
         ? { canGoNext: true } : { canGoNext: false, blockedReason: 'Choose at least one Jira issue for this change.' };
     case 'details': return gateOnProblems(progress.detailsGaps, 'Still needed: ');
-    case 'planning': return gateOnProblems(progress.planningGaps, 'Still needed: ');
+    // The plans may be left blank on "How will it go?" — the AI writes them two steps later, and that step holds Next.
+    case 'aiDraft': return gateOnProblems(progress.planningGaps, 'Still needed: ');
     case 'environments': return gateOnProblems(progress.environmentProblems);
     case 'tasks': return gateOnProblems(progress.taskProblems);
     case 'checks':

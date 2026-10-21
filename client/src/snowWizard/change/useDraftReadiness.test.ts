@@ -42,6 +42,21 @@ describe('useDraftReadiness', () => {
     expect(result.current.items?.find((item) => item.id === 'prbs')?.reason).toMatch(/PRB1/);
   });
 
+  it('counts the Jira files ticked on "Add proof" as test evidence (GH #468)', async () => {
+    vi.mocked(scanIssuesForProblems).mockResolvedValue([]);
+    const issueDraft = readDraftWithIssue();
+    // Test evidence is only asked of a Production change.
+    const draft = { ...issueDraft, prdEnvironment: { ...issueDraft.prdEnvironment, isEnabled: true } };
+    const session = createChangeWizardSession('create');
+    const withoutJira = renderHook(() => useDraftReadiness(draft, session, true));
+    await waitFor(() => expect(withoutJira.result.current.items).not.toBeNull());
+    expect(withoutJira.result.current.items?.find((item) => item.id === 'testEvidence')?.state).toBe('needsAction');
+    const jiraFileNames = ['ENCUC_2082_execution.xlsx'];
+    const withJira = renderHook(() => useDraftReadiness(draft, session, true, jiraFileNames));
+    await waitFor(() => expect(withJira.result.current.items).not.toBeNull());
+    expect(withJira.result.current.items?.find((item) => item.id === 'testEvidence')?.state).toBe('done');
+  });
+
   it('reads what ServiceNow holds for a change being modified', async () => {
     vi.mocked(gatherChangeReadinessFacts).mockResolvedValueOnce({
       facts: {

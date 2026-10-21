@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **SNow Wizard: the review flow no longer bounces you around (GH #468).**
+  - **Test evidence counts your Jira files.** Step 9 said "nothing is attached" even with every Jira file ticked on
+    "Add proof"; it only counted files from this computer. Ticked Jira files now count, and if "Add proof" was never
+    opened the files are ticked automatically when the checks run, just as create would attach them.
+  - **"Fix all with AI" on step 9.** Every writing gap (Formula Cards, `[CONFIRM: …]` markers) is fixed by one prompt
+    and one **Apply** right on the checks screen. Writing checks no longer send you off to other steps.
+  - **Straight back to the checks.** A check that needs a value (such as evidence or task dates) still has one button,
+    and that step's Next now reads **Back to "Will it pass review?"**. You no longer have to press Next through every
+    finished step.
+  - **AI writes once, after your picks.** "Let AI write it" now comes after details, planning answers and environments,
+    so its prompt states your real dropdown values instead of "(not set)". The duplicate AI panels inside steps 3 and 4
+    are gone. The plans can stay blank on "How will it go?"; the AI step holds Next until they are written. The AI is
+    told to ask in its chat instead of leaving `[CONFIRM: …]` placeholders.
+  - **Manage templates from anywhere.** A **Manage templates** button sits on every step of a change job. It can use a
+    template on the change in hand, **replace a template with this change**, and share, download, delete or import
+    templates; **Back** returns you to the same step.
+
 ### Changed
 - **SNow Wizard step 6 is now "Make it pass review", and it agrees with step 9.** The old step 6 asked an AI for a
   "ready for approval" verdict, which step 9's real checks then contradicted. It also looped round by round and sent

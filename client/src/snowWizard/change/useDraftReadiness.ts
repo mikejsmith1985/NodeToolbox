@@ -49,11 +49,14 @@ async function readNewChangePrbs(issueKeys: readonly string[]): Promise<Pick<Rea
   }
 }
 
+const NO_JIRA_EVIDENCE: readonly string[] = [];
+
 /**
  * The checklist for the draft. `isActive` holds the reads back until the checks matter (the Checks step and after),
- * so typing on an earlier step never fires them.
+ * so typing on an earlier step never fires them. `jiraEvidenceFileNames` are the Jira files ticked on "Add proof" —
+ * they go in the evidence zip at create, so they count as test evidence exactly like files from this computer.
  */
-export function useDraftReadiness(draft: CrgDraftState, session: ChangeWizardSession, isActive: boolean): DraftReadiness {
+export function useDraftReadiness(draft: CrgDraftState, session: ChangeWizardSession, isActive: boolean, jiraEvidenceFileNames: readonly string[] = NO_JIRA_EVIDENCE): DraftReadiness {
   const [readAnswer, setReadAnswer] = useState<ReadAnswer | null>(null);
   const issueKeys = useMemo(() => [...draft.selectedIssueKeys].sort(), [draft.selectedIssueKeys]);
   const changeNumber = session.modify?.changeNumber ?? '';
@@ -72,14 +75,15 @@ export function useDraftReadiness(draft: CrgDraftState, session: ChangeWizardSes
     return () => { isCurrent = false; };
   }, [isActive, requestKey, session.mode, changeNumber, issueKeys, session.riskReview, isRcpRulesEnabled]);
 
+  const evidenceFileNames = useMemo(() => [...session.evidenceFileNames, ...jiraEvidenceFileNames], [session.evidenceFileNames, jiraEvidenceFileNames]);
   const items = useMemo(() => {
     if (!readAnswer || readAnswer.requestKey !== requestKey) return null;
     return excludeOptionalAiReview(buildChangeReadiness(buildDraftReadinessFacts({
       mode: session.mode, draft, riskReview: session.riskReview, isRcpRulesEnabled, todayIso: readCentralTodayIso(),
-      evidenceFileNames: session.evidenceFileNames, prbRows: readAnswer.prbRows, prbFailureReason: readAnswer.prbFailureReason,
+      evidenceFileNames, prbRows: readAnswer.prbRows, prbFailureReason: readAnswer.prbFailureReason,
       existingFacts: readAnswer.existingFacts, existingTaskLinks: session.modify?.existingTasks,
     })));
-  }, [readAnswer, requestKey, session.mode, draft, session.riskReview, isRcpRulesEnabled, session.evidenceFileNames, session.modify?.existingTasks]);
+  }, [readAnswer, requestKey, session.mode, draft, session.riskReview, isRcpRulesEnabled, evidenceFileNames, session.modify?.existingTasks]);
 
   return { items };
 }

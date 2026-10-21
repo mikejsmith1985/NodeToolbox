@@ -1,28 +1,17 @@
-// aiRounds.ts — The wizard's copy-prompt / paste-reply AI rounds over a change draft: prompts out, suggestions back (pure).
+// aiRounds.ts — The wizard's copy-prompt AI fix round over a change draft: the prompt aimed at the flagged writing (pure).
 //
 // Framework-first: the prompt is Toolbox's own gap-fix round (chgGapFixPrompt), aimed at exactly the writing the
 // readiness checks flag, and replies are read with Toolbox's own parsers. Only the prompt CONTEXT is built here,
-// because Toolbox builds it inside its 3,000-line builder component, which the Wizard cannot carry. Nothing is ever
-// sent automatically and nothing is written until the user accepts a suggestion (propose-only, FR-008).
+// because Toolbox builds it inside its 3,000-line builder component, which the Wizard cannot carry. Replies are read by
+// aiDraft.ts; nothing is ever sent automatically and nothing is written until the user applies it (propose-only, FR-008).
 
 import { buildChgGapFixPrompt } from '../../views/SnowHub/chgFormula/chgGapFixPrompt.ts';
 import type { ChgPromptContext } from '../../views/SnowHub/chgFormula/chgPromptContext.ts';
-import { CHG_TEXT_FIELD_LABELS, type ChgTextFieldKey } from '../../views/SnowHub/chgFormula/formulaCard.ts';
+import { CHG_TEXT_FIELD_LABELS } from '../../views/SnowHub/chgFormula/formulaCard.ts';
 import type { RiskCheckFinding } from '../../views/SnowHub/chgFormula/riskCheckReview.ts';
 import type { ReadinessItem } from '../../views/SnowHub/guided/changeReadiness.ts';
-import { buildIssueDetailText, parseAiAssistChgResponse } from '../../views/SnowHub/hooks/useAiAssist.ts';
+import { buildIssueDetailText } from '../../views/SnowHub/hooks/useAiAssist.ts';
 import { DRAFT_ENVIRONMENTS, readChangeTextFields, readSelectedIssues, type CrgDraftState } from './changeDraft.ts';
-
-/** One proposed rewrite of one field, shown beside the current text for Accept / Decline. */
-export interface FieldSuggestion {
-  fieldKey: ChgTextFieldKey;
-  fieldLabel: string;
-  currentText: string;
-  suggestedText: string;
-}
-
-/** What the user chose for one suggestion. */
-export type SuggestionDecision = 'accepted' | 'declined';
 
 /** The assessment answers as "label: value" lines, skipping blanks. */
 function readAssessmentLines(draft: CrgDraftState): string[] {
@@ -50,14 +39,6 @@ export function buildWizardPromptContext(draft: CrgDraftState): ChgPromptContext
   };
 }
 
-/** Each parsed field that differs from the draft, as a suggestion. */
-function buildSuggestions(parsedFields: Partial<Record<ChgTextFieldKey, string>>, draft: CrgDraftState): FieldSuggestion[] {
-  const currentFields = readChangeTextFields(draft);
-  return (Object.entries(parsedFields) as Array<[ChgTextFieldKey, string]>)
-    .filter(([fieldKey, suggestedText]) => suggestedText.trim() !== currentFields[fieldKey].trim())
-    .map(([fieldKey, suggestedText]) => ({ fieldKey, fieldLabel: CHG_TEXT_FIELD_LABELS[fieldKey], currentText: currentFields[fieldKey], suggestedText }));
-}
-
 /** The failing checks that a rewrite of the change's writing can close, as review findings. */
 function readTextGapFindings(items: readonly ReadinessItem[]): RiskCheckFinding[] {
   return items.flatMap((item) => {
@@ -71,9 +52,4 @@ export function buildChecksFixPrompt(draft: CrgDraftState, items: readonly Readi
   const gapFindings = readTextGapFindings(items);
   if (gapFindings.length === 0) return null;
   return buildChgGapFixPrompt(buildWizardPromptContext(draft), readChangeTextFields(draft), gapFindings);
-}
-
-/** A pasted fix-round reply as suggestions. */
-export function readFixReply(replyText: string, draft: CrgDraftState): FieldSuggestion[] {
-  return buildSuggestions(parseAiAssistChgResponse(replyText), draft);
 }

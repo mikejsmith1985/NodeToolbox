@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { ReadinessItem } from '../../views/SnowHub/guided/changeReadiness.ts';
 import { useCrgState } from '../../views/SnowHub/hooks/useCrgState.ts';
-import { buildChecksFixPrompt, buildWizardPromptContext, readFixReply } from './aiRounds.ts';
+import { buildChecksFixPrompt, buildWizardPromptContext } from './aiRounds.ts';
 import type { CrgDraftState } from './changeDraft.ts';
 
 vi.mock('../../services/jiraApi.ts', () => ({ jiraGet: vi.fn(async () => []) }));
@@ -46,11 +46,5 @@ describe('the checks fix round', () => {
   it('offers no round when no failing check is about the writing', () => {
     const ownerGap: ReadinessItem = { ...textGap, id: 'owner', action: { kind: 'openStep', stepId: 'changeDetails', label: 'Choose an owner' } };
     expect(buildChecksFixPrompt(buildDraft(), [ownerGap])).toBeNull();
-  });
-
-  it('turns the reply into suggestions', () => {
-    expect(readFixReply('BACKOUT_PLAN: 1. Restore the previous build', buildDraft())).toEqual([
-      { fieldKey: 'backoutPlan', fieldLabel: 'Backout Plan', currentText: '', suggestedText: '1. Restore the previous build' },
-    ]);
   });
 });

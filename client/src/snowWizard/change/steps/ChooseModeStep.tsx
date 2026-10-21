@@ -115,7 +115,7 @@ export default function ChooseModeStep(props: ChooseModeStepProps) {
         </button>
       </div>
       <div className={ownStyles.buttonRow}>
-        <button type="button" className={styles.secondaryButton} onClick={props.onOpenTemplates}>Your templates</button>
+        <button type="button" className={styles.secondaryButton} onClick={props.onOpenTemplates}>Manage templates</button>
         <button type="button" className={styles.secondaryButton} onClick={props.onExit}>Back to home</button>
       </div>
     </section>

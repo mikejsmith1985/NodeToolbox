@@ -1,19 +1,15 @@
 // ChecksStep.tsx — Step 9 "Will it pass review?": every Release Management check, each with one fix.
 //
 // The verdicts are 039's shared engine (the same ones the Review job shows). A failing check says what is wrong and
-// offers one button that returns to the step that fixes it; writing gaps can also go to a propose-only AI fix round.
+// offers one fix: every writing gap is closed together by "Fix all with AI" (one prompt, one Apply, in place); a check
+// that needs a value gets one button to its step, whose Next then comes straight back here.
 // "Could not check" is never a pass: it holds Create until the user says they understand and want to go on.
 
-import { useMemo, useState } from 'react';
-
 import { isReady, type ReadinessItem, type ReadinessItemState } from '../../../views/SnowHub/guided/changeReadiness.ts';
-import { buildChecksFixPrompt, readFixReply, type FieldSuggestion } from '../aiRounds.ts';
-import { applyChangeTextField } from '../changeDraft.ts';
 import type { ChangeStepProps } from '../changeWizardSession.ts';
 import styles from '../ChangeWizard.module.css';
-import { resolveFixStepId } from '../draftReadinessFacts.ts';
-import PromptRound from '../PromptRound.tsx';
-import SuggestionList from '../SuggestionList.tsx';
+import { isWritingCheck, resolveFixStepId } from '../draftReadinessFacts.ts';
+import { FixAllWithAi } from './AiEnhanceStep.tsx';
 
 /** The checks also need the checklist, built once for the whole job. */
 export interface ChecksStepProps extends ChangeStepProps {
@@ -37,30 +33,13 @@ function CheckLine({ item, onFix }: { item: ReadinessItem; onFix: (item: Readine
         <span>{item.label}</span>
       </div>
       <p className={styles.hint}>{item.reason}</p>
-      {item.state === 'needsAction' && item.action ? (
+      {item.state === 'needsAction' && isWritingCheck(item) ? <p className={styles.hint}>“Fix all with AI” above rewrites this.</p> : null}
+      {item.state === 'needsAction' && item.action && !isWritingCheck(item) ? (
         <div className={styles.buttonRow}>
           <button type="button" className={styles.secondaryButton} onClick={() => onFix(item)}>{item.action.label}</button>
         </div>
       ) : null}
     </li>
-  );
-}
-
-/** The propose-only AI round for the checks a rewrite of the writing can close. */
-function WritingFixRound({ crg, items }: Pick<ChecksStepProps, 'crg'> & { items: ReadinessItem[] }) {
-  const [suggestions, setSuggestions] = useState<FieldSuggestion[]>([]);
-  const promptText = useMemo(() => buildChecksFixPrompt(crg.state, items), [crg.state, items]);
-  if (promptText === null) return null;
-  return (
-    <details className={styles.moreOptions} open>
-      <summary>Ask AI to fix all the writing at once</summary>
-      <PromptRound promptText={promptText} copyLabel="Copy the fix prompt" readButtonLabel="Read the reply" onReadReply={(replyText) => {
-        const readSuggestions = readFixReply(replyText, crg.state);
-        setSuggestions(readSuggestions);
-        return readSuggestions.length > 0 ? `${readSuggestions.length} suggested change(s) — accept or decline each one.` : 'That reply held no rewritten text to offer.';
-      }} />
-      <SuggestionList suggestions={suggestions} onAccept={(suggestion) => applyChangeTextField(crg.actions, suggestion.fieldKey, suggestion.suggestedText)} />
-    </details>
   );
 }
 
@@ -79,20 +58,27 @@ function Acknowledgement({ items, session, updateSession }: Pick<ChecksStepProps
 }
 
 /** Step 9: the Release Management checks. */
-export default function ChecksStep({ crg, session, updateSession, goToStep, items }: ChecksStepProps) {
+export default function ChecksStep({ items, ...stepProps }: ChecksStepProps) {
+  const { session, updateSession, goToStep } = stepProps;
   if (items === null) return <p className={styles.hint} role="status">Checking your change…</p>;
   const needsActionCount = items.filter((item) => item.state === 'needsAction').length;
+  const hasWritingGap = items.some((item) => item.state === 'needsAction' && isWritingCheck(item));
   const isAllReady = isReady(items);
   return (
     <div>
       <p className={styles.stepIntro}>These are the checks Release Management makes before approving a change.</p>
       {isAllReady
         ? <p className={styles.successText}>Everything that applies is done. This change should pass review.</p>
-        : <p className={styles.noticeText}>{`${needsActionCount} check(s) need action. Each one has a button that takes you to the fix.`}</p>}
+        : <p className={styles.noticeText}>{`${needsActionCount} check(s) need action.`}</p>}
+      {hasWritingGap ? (
+        <section className={styles.card} aria-labelledby="fix-all-heading">
+          <h3 id="fix-all-heading" className={styles.cardTitle}>✨ Fix all with AI</h3>
+          <FixAllWithAi {...stepProps} items={items} />
+        </section>
+      ) : null}
       <ul className={styles.itemList} aria-label="Checks">
-        {items.map((item) => <CheckLine key={item.id} item={item} onFix={(fixItem) => fixItem.action && goToStep(resolveFixStepId(fixItem.action))} />)}
+        {items.map((item) => <CheckLine key={item.id} item={item} onFix={(fixItem) => fixItem.action && goToStep(resolveFixStepId(fixItem.action), { shouldReturnHere: true })} />)}
       </ul>
-      <WritingFixRound crg={crg} items={items} />
       {isAllReady ? null : <Acknowledgement items={items} session={session} updateSession={updateSession} />}
     </div>
   );

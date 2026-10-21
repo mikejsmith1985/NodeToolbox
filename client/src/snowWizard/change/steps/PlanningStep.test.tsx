@@ -26,22 +26,18 @@ function Harness() {
 describe('PlanningStep', () => {
   it('writes each plan and an answer picked from ServiceNow\'s list', () => {
     render(<Harness />);
-    fireEvent.change(screen.getByLabelText('Implementation plan (needed)'), { target: { value: '1. Deploy' } });
-    fireEvent.change(screen.getByLabelText('Backout plan (needed)'), { target: { value: '1. Roll back' } });
+    fireEvent.change(screen.getByLabelText('Implementation plan'), { target: { value: '1. Deploy' } });
+    fireEvent.change(screen.getByLabelText('Backout plan'), { target: { value: '1. Roll back' } });
     fireEvent.change(screen.getByLabelText('How many people does it affect?'), { target: { value: '3' } });
     expect(observed.latestGaps).toEqual(['the test plan']);
     expect(observed.latestImpact).toBe('3');
   });
 
-  it('lets the AI write all three plans right here, so nothing is left blocking Next', () => {
+  it('asks the questions first and holds no AI round of its own — AI writes once, later (GH #468)', () => {
     render(<Harness />);
-    expect(screen.getByText(/Let AI write it/)).toBeTruthy();
-    fireEvent.change(screen.getByLabelText(/Paste the assistant/), {
-      target: { value: 'IMPLEMENTATION_PLAN: 1. Release v2\nTEST_PLAN: 1. Smoke test\nBACKOUT_PLAN: 1. Redeploy v1' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Read the reply' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Fill in 3 fields' }));
-    expect(observed.latestGaps).toEqual([]);
+    expect(screen.queryByLabelText(/Paste the assistant/)).toBeNull();
+    expect(screen.getByText(/AI writes them on “Let AI write it”/)).toBeTruthy();
+    expect(screen.getByText('Write the plans yourself (optional)')).toBeTruthy();
   });
 
   it('never shows an internal field name', () => {

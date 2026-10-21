@@ -27,9 +27,9 @@ export interface AiDraftStepProps extends ChangeStepProps {
 
 const PURPOSE_WORDS: Readonly<Record<AiDraftPurpose, { intro: string; applyVerb: string; doneVerb: string }>> = {
   write: {
-    intro: 'Optional, and the quickest way through. Your AI assistant writes the title, description, justification, risk '
-      + 'and the three plans from the Jira work you chose. Your dropdown choices stay as they are. You check everything on '
-      + 'the next screens, or skip this step and type it yourself.',
+    intro: 'The quickest way through. Your AI assistant writes the title, description, justification, risk and the three '
+      + 'plans from the Jira work you chose and every choice you made on the steps before. Those choices stay as they are. '
+      + 'You see each text next to what is there now. Already typed the plans yourself? Just press Next.',
     applyVerb: 'Fill in',
     doneVerb: 'Filled in',
   },

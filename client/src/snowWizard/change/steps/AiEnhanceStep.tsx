@@ -14,17 +14,12 @@ import type { CrgDraftState } from '../changeDraft.ts';
 import type { ChangeStepProps } from '../changeWizardSession.ts';
 import { readStepTitle } from '../changeWizardSteps.ts';
 import styles from '../ChangeWizard.module.css';
-import { resolveFixStepId } from '../draftReadinessFacts.ts';
+import { isWritingCheck, resolveFixStepId } from '../draftReadinessFacts.ts';
 import AiDraftStep from './AiDraftStep.tsx';
 
 /** Step 6 also needs the live checklist, built once for the whole job. */
 export interface AiEnhanceStepProps extends ChangeStepProps {
   items: ReadinessItem[] | null;
-}
-
-/** True for a check the AI can close by rewriting text. */
-function isWritingCheck(item: ReadinessItem): boolean {
-  return item.action?.kind === 'openStep' && Boolean(item.action.focusField);
 }
 
 /** The checks still flagged, split into the ones the AI fixes and the ones that need a value from the user. */
@@ -43,7 +38,7 @@ function OpenChecks({ items, session, goToStep }: { items: ReadinessItem[] } & P
           <p className={styles.hint}>These need a value from you, not writing:</p>
           <div className={styles.buttonRow}>
             {otherItems.map((item) => item.action ? (
-              <button key={item.id} type="button" className={styles.secondaryButton} onClick={() => item.action && goToStep(resolveFixStepId(item.action))}>
+              <button key={item.id} type="button" className={styles.secondaryButton} onClick={() => item.action && goToStep(resolveFixStepId(item.action), { shouldReturnHere: true })}>
                 {`${item.label} → ${readStepTitle(resolveFixStepId(item.action), session.mode)}`}
               </button>
             ) : null)}
@@ -54,18 +49,26 @@ function OpenChecks({ items, session, goToStep }: { items: ReadinessItem[] } & P
   );
 }
 
-/** Step 6: make the change pass the checks, in one round. */
-export default function AiEnhanceStep({ items, ...stepProps }: AiEnhanceStepProps) {
+/**
+ * "Fix all with AI": one prompt for every flagged piece of writing, and one button that applies every rewrite in
+ * place — no per-check trips to other steps (owner feedback, GH #468). Shared by step 6 and step 9.
+ */
+export function FixAllWithAi({ items, ...stepProps }: ChangeStepProps & { items: ReadinessItem[] }) {
   // The prompt targets exactly the writing the checks flag; with none flagged it polishes the writing as a whole.
   const buildPrompt = useCallback(
-    (draft: CrgDraftState) => (items ? buildChecksFixPrompt(draft, items) : null) ?? buildAiDraftPrompt(draft),
+    (draft: CrgDraftState) => buildChecksFixPrompt(draft, items) ?? buildAiDraftPrompt(draft),
     [items],
   );
+  return <AiDraftStep {...stepProps} purpose="polish" buildPrompt={buildPrompt} />;
+}
+
+/** Step 6: make the change pass the checks, in one round. */
+export default function AiEnhanceStep({ items, ...stepProps }: AiEnhanceStepProps) {
   if (items === null) return <p className={styles.hint} role="status">Checking your change…</p>;
   return (
     <div>
       <OpenChecks items={items} session={stepProps.session} goToStep={stepProps.goToStep} />
-      <AiDraftStep {...stepProps} purpose="polish" buildPrompt={buildPrompt} />
+      <FixAllWithAi {...stepProps} items={items} />
     </div>
   );
 }

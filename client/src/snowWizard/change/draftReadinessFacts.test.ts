@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { buildChangeReadiness, type ChangeReadinessFacts, type ReadinessAction } from '../../views/SnowHub/guided/changeReadiness.ts';
 import { useCrgState } from '../../views/SnowHub/hooks/useCrgState.ts';
 import type { CrgDraftState } from './changeDraft.ts';
-import { buildDraftReadinessFacts, resolveFixStepId, type DraftReadinessInput } from './draftReadinessFacts.ts';
+import { buildDraftReadinessFacts, isWritingCheck, resolveFixStepId, type DraftReadinessInput } from './draftReadinessFacts.ts';
 import { buildTaskFingerprint } from './modifyTasks.ts';
 
 vi.mock('../../services/jiraApi.ts', () => ({ jiraGet: vi.fn(async () => []) }));
@@ -124,5 +124,15 @@ describe('resolveFixStepId', () => {
 
   it.each(cases)('sends %o to %s', (action, expectedStepId) => {
     expect(resolveFixStepId(action)).toBe(expectedStepId);
+  });
+});
+
+describe('isWritingCheck', () => {
+  it('is true only for a check that names a text field to rewrite', () => {
+    const writingItem = { id: 'formulaBackout', label: 'Backout', state: 'needsAction', reason: '', action: { kind: 'openStep', stepId: 'changeText', label: 'Write it', focusField: 'backoutPlan' } } as const;
+    const valueItem = { id: 'ctaskDates', label: 'Task dates', state: 'needsAction', reason: '', action: { kind: 'openStep', stepId: 'ctaskTimeline', label: 'Set dates' } } as const;
+    expect(isWritingCheck(writingItem)).toBe(true);
+    expect(isWritingCheck(valueItem)).toBe(false);
+    expect(isWritingCheck({ ...valueItem, action: null })).toBe(false);
   });
 });

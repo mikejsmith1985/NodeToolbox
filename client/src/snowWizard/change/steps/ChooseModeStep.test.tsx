@@ -1,5 +1,5 @@
 // ChooseModeStep.test.tsx — Proves the first screen recommends starting from an old change or a template, offers a new change
-// or an existing one, a job to continue or restart, and the way to "Your templates".
+// or an existing one, a job to continue or restart, and the way to manage templates.
 
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
@@ -23,7 +23,7 @@ describe('ChooseModeStep', () => {
     render(<ChooseModeStep resumableJobs={[]} templates={[]} {...handlers} />);
     fireEvent.click(screen.getByRole('button', { name: /New change/ }));
     fireEvent.click(screen.getByRole('button', { name: /Change an existing one/ }));
-    fireEvent.click(screen.getByRole('button', { name: 'Your templates' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Manage templates' }));
     fireEvent.click(screen.getByRole('button', { name: 'Back to home' }));
     expect(handlers.onChooseNew).toHaveBeenCalled();
     expect(handlers.onChooseExisting).toHaveBeenCalled();

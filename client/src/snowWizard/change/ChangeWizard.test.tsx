@@ -90,13 +90,26 @@ describe('ChangeWizard — new change', () => {
     expect(screen.getByRole('heading', { name: 'Step 7 of 11 — Add proof' })).toBeTruthy();
   });
 
-  it('gives a failing check one reason and one fix that returns to the step that fixes it', async () => {
+  it('fixes a flagged plan with "Fix all with AI" on the checks step itself, and the check clears (GH #468)', async () => {
     openJobAt('checks', '[CONFIRM: who decides] Roll back');
-    const fixButton = await screen.findByRole('button', { name: 'Write the Backout Plan' });
+    await screen.findByRole('heading', { name: '✨ Fix all with AI' });
     expect(within(screen.getByRole('list', { name: 'Checks' })).getByText(/Backout Plan still has facts marked to confirm/)).toBeTruthy();
     expect(readNextButton().disabled).toBe(true);
-    fireEvent.click(fixButton);
-    expect(screen.getByRole('heading', { name: 'Step 4 of 11 — How will it go?' })).toBeTruthy();
+    fireEvent.change(screen.getByLabelText(/Paste the assistant/), { target: { value: 'BACKOUT_PLAN: 1. If login fails, the change owner redeploys v1.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Read the reply' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Apply 1 field' }));
+    await waitFor(() => expect(within(screen.getByRole('list', { name: 'Checks' })).queryByText(/Backout Plan still has facts marked to confirm/)).toBeNull());
+    expect(screen.getByRole('heading', { name: /Will it pass review\?/ })).toBeTruthy();
+  });
+
+  it('brings the user straight back to the checks from a value fix, without stepping through finished steps (GH #468)', async () => {
+    openJobAt('checks');
+    fireEvent.click(await screen.findByRole('button', { name: 'Attach test evidence' }));
+    expect(screen.getByRole('heading', { name: /Add proof/ })).toBeTruthy();
+    const backButton = screen.getByRole('button', { name: 'Back to “Will it pass review?”' });
+    fireEvent.click(backButton);
+    expect(screen.getByRole('heading', { name: /Will it pass review\?/ })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Back to “/ })).toBeNull();
   });
 
   it('holds the job on "could not check" until the user acknowledges it', async () => {
@@ -130,9 +143,19 @@ describe('ChangeWizard — templates', () => {
     vi.mocked(snowFetch).mockImplementation(async () => ({ result: [] }) as never);
   });
 
-  it('opens "Your templates" from the first screen and comes back', () => {
+  it('manages templates from inside a job, replacing one with the change in hand, and returns to the same step', () => {
+    localStorage.setItem('ntbx-crg-templates', JSON.stringify([{ id: 'tpl-1', name: 'Monthly', createdAt: '', chgBasicInfo: {}, chgPlanningAssessment: {}, chgPlanningContent: {}, ctaskTemplateIds: [] }]));
+    openJobAt('details');
+    fireEvent.click(screen.getByRole('button', { name: 'Manage templates' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Replace with this change' }));
+    expect(screen.getByText('“Monthly” now holds this change ✓')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+    expect(screen.getByRole('heading', { name: 'Step 2 of 11 — Tell us about the change' })).toBeTruthy();
+  });
+
+  it('opens template management from the first screen and comes back', () => {
     render(<ChangeWizard onExit={vi.fn()} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Your templates' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Manage templates' }));
     expect(screen.getByRole('heading', { name: 'Your templates' })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Back' }));
     expect(screen.getByRole('heading', { name: 'Make or change a change' })).toBeTruthy();

@@ -31,7 +31,10 @@ export interface AiDraftReply {
 
 const NOT_A_DRAFT_MESSAGE = 'That reply does not look like the AI draft. Copy the whole reply from the assistant and paste it again.';
 const NOTHING_NEW_MESSAGE = 'The reply is in, but everything it suggested is already written the same way.';
-const BEST_GUESS_INSTRUCTION = 'Make your best guess for every field from the facts above. Only if something essential is missing, ask me here in this chat first.';
+// Overrides the shared [CONFIRM: ...] rule for the Wizard: a marker left in the text fails the Formula Card checks and
+// sends the user hunting through steps to delete it (GH #468), so missing facts are asked for in the AI's own chat.
+const BEST_GUESS_INSTRUCTION = 'Make your best guess for every field from the facts above. Do not write [CONFIRM: ...] '
+  + 'placeholders in this round: if a fact you need is missing, ask me for it here in this chat first, then write the fields.';
 
 /**
  * The whole prompt: Toolbox's seven-field AI Assist prompt, seeded with the chosen Jira work, the change's own picks

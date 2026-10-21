@@ -8,9 +8,9 @@ import { useEffect, useEffectEvent, useState } from 'react';
 import { formatByteSize, MAX_ATTACHABLE_BUNDLE_BYTES } from '../../../views/SnowHub/testEvidence/evidenceBundle.ts';
 import styles from '../ChangeWizard.module.css';
 import {
-  chooseDefaultTicks, describeFileType, listJiraEvidence, sumJiraEvidenceBytes, type JiraEvidenceAttachment, type JiraEvidenceListing,
+  describeFileType, listJiraEvidence, sumJiraEvidenceBytes, type JiraEvidenceAttachment, type JiraEvidenceListing,
 } from '../jiraEvidence.ts';
-import { useJiraEvidenceChoiceStore, type JiraEvidenceChoice } from '../jiraEvidenceChoiceStore.ts';
+import { recordDefaultJiraTicks, useJiraEvidenceChoiceStore, type JiraEvidenceChoice } from '../jiraEvidenceChoiceStore.ts';
 
 /** What the picker needs: whose ticks, which issues, and how much the local files already weigh. */
 export interface JiraEvidencePickerProps {
@@ -24,18 +24,6 @@ interface LookResult {
   keysText: string;
   listing: JiraEvidenceListing | null;
   problem: string;
-}
-
-/** Ticks the listed files (keeping earlier unticks) and stores the choice; returns the files left out for size. */
-function applyDefaultTicks(jobId: string, listing: JiraEvidenceListing, localBytes: number): string[] {
-  const listedIds = new Set(listing.attachments.map((evidence) => evidence.attachment.attachmentId));
-  const storedUnticks = useJiraEvidenceChoiceStore.getState().choices[jobId]?.untickedAttachmentIds ?? [];
-  const untickedAttachmentIds = storedUnticks.filter((attachmentId) => listedIds.has(attachmentId));
-  const tickChoice = chooseDefaultTicks(listing.attachments, untickedAttachmentIds, localBytes);
-  const tickedIds = new Set(tickChoice.tickedIds);
-  const tickedAttachments = listing.attachments.filter((evidence) => tickedIds.has(evidence.attachment.attachmentId));
-  useJiraEvidenceChoiceStore.getState().saveChoice(jobId, { tickedAttachments, untickedAttachmentIds });
-  return tickChoice.leftOutForSize;
 }
 
 /** The choice after one file is ticked or unticked. */
@@ -55,7 +43,7 @@ function useJiraLook(jobId: string, issueKeys: readonly string[], localBytes: nu
   const [notice, setNotice] = useState('');
   const [lookCount, setLookCount] = useState(0);
   // Reads the local files' size at the moment the list arrives; adding a local file later must not re-tick anything.
-  const tickArrivedListing = useEffectEvent((listing: JiraEvidenceListing) => applyDefaultTicks(jobId, listing, localBytes));
+  const tickArrivedListing = useEffectEvent((listing: JiraEvidenceListing) => recordDefaultJiraTicks(jobId, listing, localBytes));
   useEffect(() => {
     if (keysText === '') return undefined;
     let isCancelled = false;

@@ -1,4 +1,5 @@
-// ChecksStep.test.tsx — Proves a failing check gives one sentence and one fix to the right step, and "could not check" needs acknowledging.
+// ChecksStep.test.tsx — Proves every writing gap is fixed together by "Fix all with AI" in place, a value gap gets one fix
+// button that comes back here, and "could not check" needs acknowledging.
 
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
@@ -15,6 +16,10 @@ const BACKOUT_GAP: ReadinessItem = {
   id: 'formulaBackout', label: 'Formula Card 7: Backout', state: 'needsAction', reason: 'Backout Plan is empty.',
   action: { kind: 'openStep', stepId: 'changeText', label: 'Write the Backout Plan', focusField: 'backoutPlan' },
 };
+const DATES_GAP: ReadinessItem = {
+  id: 'ctaskDates', label: 'Task dates', state: 'needsAction', reason: 'Deploy has no dates.',
+  action: { kind: 'openStep', stepId: 'ctaskTimeline', label: 'Set the task dates' },
+};
 const UNCHECKED_PRBS: ReadinessItem = { id: 'prbs', label: 'Problem records', state: 'couldNotCheck', reason: 'Not checked: Could not read.', action: null };
 const DONE_OWNER: ReadinessItem = { id: 'owner', label: 'Change owner', state: 'done', reason: 'Owned by Pat.', action: null };
 
@@ -24,14 +29,26 @@ function Harness({ items, session, goToStep, updateSession }: { items: Readiness
 }
 
 describe('ChecksStep', () => {
-  it('shows a failing check\'s reason and one fix that returns to the planning step', () => {
+  it('fixes every writing gap with one AI round right here — no button that leaves the step (GH #468)', () => {
     const goToStep = vi.fn();
     render(<Harness items={[DONE_OWNER, BACKOUT_GAP]} session={createChangeWizardSession('create')} goToStep={goToStep} updateSession={vi.fn()} />);
     expect(screen.getByText('Backout Plan is empty.')).toBeTruthy();
-    expect(screen.getByText('Needs action')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Write the Backout Plan' }));
-    expect(goToStep).toHaveBeenCalledWith('planning');
-    expect(screen.getByText('Ask AI to fix all the writing at once')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: '✨ Fix all with AI' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Write the Backout Plan' })).toBeNull();
+    expect((screen.getByLabelText(/Copy this and paste it/) as HTMLTextAreaElement).value).toContain('Backout Plan is empty.');
+    fireEvent.change(screen.getByLabelText(/Paste the assistant/), { target: { value: 'BACKOUT_PLAN: 1. Redeploy v1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Read the reply' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Apply 1 field' }));
+    expect(screen.getByText(/Applied 1 field/)).toBeTruthy();
+    expect(goToStep).not.toHaveBeenCalled();
+  });
+
+  it('gives a check that needs a value one button, which comes back here afterwards', () => {
+    const goToStep = vi.fn();
+    render(<Harness items={[DATES_GAP]} session={createChangeWizardSession('create')} goToStep={goToStep} updateSession={vi.fn()} />);
+    expect(screen.queryByRole('heading', { name: '✨ Fix all with AI' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Set the task dates' }));
+    expect(goToStep).toHaveBeenCalledWith('tasks', { shouldReturnHere: true });
   });
 
   it('asks for acknowledgement when a check could not be made', () => {

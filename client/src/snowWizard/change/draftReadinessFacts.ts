@@ -5,7 +5,7 @@
 // draft's facts are assembled here from the draft itself; a modify starts from what that gatherer read and lays the
 // user's edits on top. Every assumption about what Create will add is the create path's own behaviour, named below.
 
-import type { ChangeReadinessFacts, ReadinessAction, ReadinessCtask, ReadinessPrb } from '../../views/SnowHub/guided/changeReadiness.ts';
+import type { ChangeReadinessFacts, ReadinessAction, ReadinessCtask, ReadinessItem, ReadinessPrb } from '../../views/SnowHub/guided/changeReadiness.ts';
 import { readBackoutSectionFromDescription } from '../../views/SnowHub/chgFormula/ctaskReviewRecord.ts';
 import { readLocalDateTimeAsUtc } from '../../views/SnowHub/rcp/rcpNewChange.ts';
 import { isRcpPeriodActive } from '../../views/SnowHub/rcp/rcpRules.ts';
@@ -167,4 +167,9 @@ export function resolveFixStepId(action: ReadinessAction): ChangeWizardStepId {
   if (action.kind === 'fixNow') return STEP_FOR_ENGINE_SCREEN[action.fixId] ?? 'details';
   if (action.stepId === 'changeText') return action.focusField && PLANNING_TEXT_FIELDS.has(action.focusField) ? 'planning' : 'details';
   return STEP_FOR_ENGINE_SCREEN[action.stepId] ?? 'details';
+}
+
+/** True for a check the AI can close by rewriting text ("Fix all with AI" handles these together). */
+export function isWritingCheck(item: ReadinessItem): boolean {
+  return item.action?.kind === 'openStep' && Boolean(item.action.focusField);
 }

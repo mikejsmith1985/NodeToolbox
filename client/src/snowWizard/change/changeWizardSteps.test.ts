@@ -22,7 +22,7 @@ function buildCompleteProgress(overrides: Partial<ChangeWizardProgress> = {}): C
     planningGaps: [],
     environmentProblems: [],
     taskProblems: [],
-    reviewedStepIds: ['scope', 'aiDraft', 'details', 'planning', 'environments', 'aiEnhance', 'evidence', 'tasks', 'checks', 'paperwork'],
+    reviewedStepIds: ['scope', 'details', 'planning', 'environments', 'aiDraft', 'aiEnhance', 'evidence', 'tasks', 'checks', 'paperwork'],
     isChecksSatisfied: true,
     paperworkNeed: { isNeeded: false, reason: 'No Production environment is in this change.' },
     isPaperworkDone: false,
@@ -31,9 +31,9 @@ function buildCompleteProgress(overrides: Partial<ChangeWizardProgress> = {}): C
 }
 
 describe('listChangeWizardStepIds', () => {
-  it('runs the eleven create steps in order, with "Let AI write it" before any typing', () => {
+  it('runs the eleven create steps in order, with "Let AI write it" after every pick', () => {
     expect(listChangeWizardStepIds('create')).toEqual([
-      'scope', 'aiDraft', 'details', 'planning', 'environments', 'aiEnhance', 'evidence', 'tasks', 'checks', 'paperwork', 'finish',
+      'scope', 'details', 'planning', 'environments', 'aiDraft', 'aiEnhance', 'evidence', 'tasks', 'checks', 'paperwork', 'finish',
     ]);
   });
 
@@ -55,7 +55,8 @@ describe('evaluateStepCompletion', () => {
   it('names the missing details and planning values', () => {
     expect(evaluateStepCompletion('details', buildCompleteProgress({ detailsGaps: ['an owner', 'a category'] })).blockedReason)
       .toBe('Still needed: an owner, a category.');
-    expect(evaluateStepCompletion('planning', buildCompleteProgress({ planningGaps: ['the backout plan'] })).canGoNext).toBe(false);
+    expect(evaluateStepCompletion('planning', buildCompleteProgress({ planningGaps: ['the backout plan'] })).canGoNext).toBe(true);
+    expect(evaluateStepCompletion('aiDraft', buildCompleteProgress({ planningGaps: ['the backout plan'] })).blockedReason).toBe('Still needed: the backout plan.');
   });
 
   it('holds Environments and the task cards on their first problem', () => {
@@ -89,7 +90,7 @@ describe('evaluateStepCompletion', () => {
 
 describe('deriveChangeWizardStep and resolveResumeStep', () => {
   it('lands on the first step that is not done', () => {
-    expect(deriveChangeWizardStep(buildCompleteProgress({ planningGaps: ['the test plan'] }))).toBe('planning');
+    expect(deriveChangeWizardStep(buildCompleteProgress({ planningGaps: ['the test plan'] }))).toBe('aiDraft');
     expect(deriveChangeWizardStep(buildCompleteProgress())).toBe('finish');
   });
 
@@ -116,10 +117,10 @@ describe('readPaperworkNeed', () => {
 
 describe('buildShellSteps', () => {
   it('marks done, current and to-do steps with plain titles', () => {
-    const shellSteps = buildShellSteps('create', 'details', buildCompleteProgress({ reviewedStepIds: ['scope', 'aiDraft'] }));
+    const shellSteps = buildShellSteps('create', 'planning', buildCompleteProgress({ reviewedStepIds: ['scope', 'details'] }));
     expect(shellSteps[0]).toEqual({ id: 'scope', title: 'What\'s in this change?', state: 'done' });
-    expect(shellSteps[1]).toEqual({ id: 'aiDraft', title: 'Let AI write it', state: 'done' });
-    expect(shellSteps[2]).toEqual({ id: 'details', title: 'Tell us about the change', state: 'current' });
+    expect(shellSteps[1]).toEqual({ id: 'details', title: 'Tell us about the change', state: 'done' });
+    expect(shellSteps[2]).toEqual({ id: 'planning', title: 'How will it go?', state: 'current' });
     expect(shellSteps[3].state).toBe('todo');
     expect(shellSteps.at(-1)?.title).toBe('Create the change');
   });

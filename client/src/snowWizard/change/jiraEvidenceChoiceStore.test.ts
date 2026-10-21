@@ -1,11 +1,16 @@
 // jiraEvidenceChoiceStore.test.ts — Proves each job remembers which Jira files are ticked, offers only those still in scope, and forgets them when the job ends.
 
-import { act, renderHook } from '@testing-library/react';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { act, renderHook, waitFor } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useChangeWizardSessionStore } from './changeWizardSession.ts';
-import type { JiraEvidenceAttachment } from './jiraEvidence.ts';
-import { readTickedJiraEvidence, useJiraEvidenceChoiceStore, useTickedJiraEvidence } from './jiraEvidenceChoiceStore.ts';
+import { listJiraEvidence, type JiraEvidenceAttachment } from './jiraEvidence.ts';
+import { readTickedJiraEvidence, useDefaultJiraEvidenceTicks, useJiraEvidenceChoiceStore, useTickedJiraEvidence } from './jiraEvidenceChoiceStore.ts';
+
+vi.mock('./jiraEvidence.ts', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./jiraEvidence.ts')>()),
+  listJiraEvidence: vi.fn(),
+}));
 
 function buildEvidence(issueKey: string, attachmentId: string): JiraEvidenceAttachment {
   return { issueKey, issueSummary: '', attachment: { attachmentId, filename: `${attachmentId}.pdf`, sizeBytes: 1, contentUrl: '' } };
@@ -48,5 +53,19 @@ describe('useTickedJiraEvidence', () => {
     expect(result.current).toEqual([]);
     act(() => useJiraEvidenceChoiceStore.getState().saveChoice('job-1', { tickedAttachments: [buildEvidence('A-1', '1')], untickedAttachmentIds: [] }));
     expect(result.current.map((evidence) => evidence.attachment.attachmentId)).toEqual(['1']);
+  });
+
+  it('ticks the Jira files once the checks run, when "Add proof" was never opened', async () => {
+    vi.mocked(listJiraEvidence).mockResolvedValueOnce({ attachments: [buildEvidence('A-1', '1')], issuesWithoutFiles: [], missingKeys: [] });
+    renderHook(() => useDefaultJiraEvidenceTicks('job-1', ['A-1'], true));
+    await waitFor(() => expect(useJiraEvidenceChoiceStore.getState().choices['job-1']?.tickedAttachments).toHaveLength(1));
+  });
+
+  it('leaves a recorded choice alone and looks at nothing before the checks run', () => {
+    vi.mocked(listJiraEvidence).mockClear();
+    renderHook(() => useDefaultJiraEvidenceTicks('job-1', ['A-1'], false));
+    useJiraEvidenceChoiceStore.getState().saveChoice('job-2', { tickedAttachments: [], untickedAttachmentIds: ['1'] });
+    renderHook(() => useDefaultJiraEvidenceTicks('job-2', ['A-1'], true));
+    expect(listJiraEvidence).not.toHaveBeenCalled();
   });
 });
