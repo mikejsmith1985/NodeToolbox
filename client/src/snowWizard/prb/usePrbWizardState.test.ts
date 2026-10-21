@@ -11,7 +11,6 @@ const lookupsMock = vi.hoisted(() => ({
   searchExistingIssues: vi.fn(),
   readRememberedPrbProject: vi.fn(() => 'GONE'),
   rememberPrbProject: vi.fn(),
-  readSnowInstanceOrigin: vi.fn(() => 'https://snow.example.com'),
 }));
 const createMock = vi.hoisted(() => ({
   EMPTY_PRB_PROGRESS: { createdKeys: {}, linkedRoles: [], labelledRoles: [] },
@@ -22,6 +21,7 @@ const createMock = vi.hoisted(() => ({
 vi.mock('./prbLookups.ts', () => lookupsMock);
 vi.mock('./prbJiraCreate.ts', () => createMock);
 
+import { SNOW_URL_STORAGE_KEY } from '../shell/wizardSettings.ts';
 import { hasExistingWork, readActiveStepIds, readPrbStepGate, usePrbWizardState } from './usePrbWizardState.ts';
 
 const PROBLEM = { sysId: 's1', number: 'PRB1', shortDescription: 'Broken', description: 'Text', stateLabel: 'Assess' };
@@ -61,6 +61,16 @@ describe('usePrbWizardState', () => {
     const rendered = await walkToDrafts();
     expect(rendered.result.current.state.stepId).toBe('drafts');
     expect(lookupsMock.rememberPrbProject).toHaveBeenCalledWith('ENCUC');
+  });
+
+  it('links the drafts to the problem on the ServiceNow address saved in Settings', async () => {
+    localStorage.setItem(SNOW_URL_STORAGE_KEY, 'https://acme.service-now.com');
+    try {
+      const rendered = await walkToDrafts();
+      expect(JSON.stringify(rendered.result.current.state.drafts)).toContain('https://acme.service-now.com/');
+    } finally {
+      localStorage.removeItem(SNOW_URL_STORAGE_KEY);
+    }
   });
 
   it('keeps draft edits when going Back and Next again', async () => {

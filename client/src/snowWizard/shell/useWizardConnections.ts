@@ -1,110 +1,107 @@
-// useWizardConnections.ts — Opens the Wizard's two connections: ServiceNow straight away (the Wizard runs inside it)
-// and Jira when the user presses "Connect Jira". Installs them where Toolbox's snowApi and jiraApi will find them.
+// useWizardConnections.ts — Opens the Wizard's two connections when the user presses Connect: each opens its system in
+// a tab, the user clicks the relay bookmark there, and that tab answers the Wizard. Installs them where Toolbox's
+// snowApi and jiraApi will find them.
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 
 import { useConnectionStore } from '../../store/connectionStore.ts';
-import { SNOW_IDENTITY_PATH } from '../probe/snowProbes.ts';
 import type { MessageListenerTarget } from '../transport/agentChannel.ts';
-import { createJiraOpenerTransport } from '../transport/jiraOpenerTransport.ts';
-import { createSnowSameOriginTransport, requestTokenOverChannel, type TokenRequestChannel } from '../transport/snowSameOriginTransport.ts';
+import { createAgentTransport, type AgentTransport } from '../transport/agentTransport.ts';
+import { createSnowRelayTransport } from '../transport/snowRelayTransport.ts';
 import { installWizardTransports } from '../transport/wizardTransports.ts';
-import { useWizardConnectionStore } from './wizardConnectionStore.ts';
-import { flagWizardTab } from './wizardPresence.ts';
-
-/** What the bookmark handed the Wizard window when it opened it. */
-export interface WizardBoot {
-  instanceOrigin: string;
-  userToken: string;
-  channelName: string;
-}
+import { JIRA_IDENTITY_PATH, SNOW_IDENTITY_PATH, WIZARD_CHANNEL_NAME } from '../wizardDefaults.ts';
+import { useWizardConnectionStore, type WizardSystem } from './wizardConnectionStore.ts';
 
 /** Everything the Wizard touches outside itself, injected so the app can be tested without real windows. */
 export interface WizardAppDependencies {
-  fetchFn: (input: string, init?: RequestInit) => Promise<Response>;
-  createChannel: (channelName: string) => TokenRequestChannel;
   openWindow: (url: string, windowName: string) => Window | null;
   listenerTarget: MessageListenerTarget;
   helloTimeoutMs: number;
   requestTimeoutMs: number;
-  tokenTimeoutMs: number;
 }
 
-type SnowTransportHandle = ReturnType<typeof createSnowSameOriginTransport>;
-type JiraTransportHandle = ReturnType<typeof createJiraOpenerTransport>;
+/** The two actions the Connect screen and the banner call. */
+export interface WizardConnectActions {
+  connectSnow: (snowUrl: string) => void;
+  connectJira: (jiraUrl: string) => void;
+}
 
-function markToolboxRelayConnected(): void {
+type TransportPair = Record<WizardSystem, AgentTransport>;
+
+/**
+ * The tab names carry this page's own id: a reopened Wizard must never reuse a tab opened by an earlier, closed Wizard
+ * page, because the bookmark there would answer that old page.
+ */
+const PAGE_ID = Date.now().toString(36);
+const SNOW_WINDOW_NAME = `snowWizardServiceNow-${PAGE_ID}`;
+const JIRA_WINDOW_NAME = `snowWizardJira-${PAGE_ID}`;
+
+function readSnowIdentity(responseBody: string): string {
+  try {
+    return String((JSON.parse(responseBody) as { result?: Array<{ name?: unknown }> }).result?.[0]?.name ?? '');
+  } catch {
+    return '';
+  }
+}
+
+function readJiraIdentity(responseBody: string): string {
+  try {
+    return String((JSON.parse(responseBody) as { displayName?: unknown }).displayName ?? '');
+  } catch {
+    return '';
+  }
+}
+
+function setToolboxRelayConnected(isConnected: boolean): void {
   // Toolbox's snowApi refuses to send until its relay reports connected with a session token.
-  useConnectionStore.getState().setRelayBridgeStatus({ system: 'snow', isConnected: true, lastPingAt: new Date().toISOString(), version: 'snow-wizard', hasSessionToken: true });
-}
-
-async function readSnowIdentity(snowTransport: SnowTransportHandle): Promise<string> {
-  const identityResult = await snowTransport.execute({ sys: 'snow', id: crypto.randomUUID(), method: 'GET', path: SNOW_IDENTITY_PATH });
-  if (!identityResult.ok) throw new Error(`ServiceNow answered ${identityResult.status}${identityResult.error ? ` (${identityResult.error})` : ''}`);
-  const identityBody = JSON.parse(String(identityResult.data)) as { result?: Array<{ name?: string }> };
-  return identityBody.result?.[0]?.name ?? '';
-}
-
-function createTransports(boot: WizardBoot, dependencies: WizardAppDependencies) {
-  const { setConnection } = useWizardConnectionStore.getState();
-  const snowTransport = createSnowSameOriginTransport({
-    instanceOrigin: boot.instanceOrigin,
-    initialToken: boot.userToken,
-    fetchFn: dependencies.fetchFn,
-    requestFreshToken: () => requestTokenOverChannel(dependencies.createChannel, boot.channelName, dependencies.tokenTimeoutMs),
-    onSessionExpired: () => setConnection('snow', { status: 'expired' }),
+  useConnectionStore.getState().setRelayBridgeStatus({
+    system: 'snow', isConnected, lastPingAt: new Date().toISOString(), version: 'snow-wizard', hasSessionToken: isConnected,
   });
-  const jiraTransport = createJiraOpenerTransport({
+}
+
+function createTransports(dependencies: WizardAppDependencies): TransportPair {
+  const { setConnection } = useWizardConnectionStore.getState();
+  const sharedOptions = {
     listenerTarget: dependencies.listenerTarget,
     openWindow: dependencies.openWindow,
-    channelName: boot.channelName,
+    channelName: WIZARD_CHANNEL_NAME,
     helloTimeoutMs: dependencies.helloTimeoutMs,
     requestTimeoutMs: dependencies.requestTimeoutMs,
+  };
+  const snowTransport = createAgentTransport({
+    ...sharedOptions,
+    system: 'snow', systemLabel: 'ServiceNow', windowName: SNOW_WINDOW_NAME, identityPath: SNOW_IDENTITY_PATH, readIdentity: readSnowIdentity,
+    onDisconnected: (reasonText) => {
+      setToolboxRelayConnected(false);
+      setConnection('snow', { status: 'expired', detail: reasonText ? `${reasonText}.` : 'The ServiceNow tab stopped answering.' });
+    },
+  });
+  const jiraTransport = createAgentTransport({
+    ...sharedOptions,
+    system: 'jira', systemLabel: 'Jira', windowName: JIRA_WINDOW_NAME, identityPath: JIRA_IDENTITY_PATH, readIdentity: readJiraIdentity,
     onDisconnected: (reasonText) => setConnection('jira', { status: 'expired', detail: reasonText ? `${reasonText}.` : 'The Jira tab stopped answering.' }),
   });
-  installWizardTransports({ snow: snowTransport, jira: jiraTransport });
-  markToolboxRelayConnected();
-  return { snowTransport, jiraTransport };
+  installWizardTransports({ snow: createSnowRelayTransport(snowTransport), jira: jiraTransport });
+  return { snow: snowTransport, jira: jiraTransport };
 }
 
-/** Listens for the launcher (a new bookmark click): answers "are you open?" and takes the fresh token it pushes. */
-function listenToServiceNowTab(boot: WizardBoot, dependencies: WizardAppDependencies, snowTransport: SnowTransportHandle): () => void {
-  const tabChannel = dependencies.createChannel(boot.channelName);
-  tabChannel.addEventListener('message', (messageEvent: MessageEvent) => {
-    const messageData = messageEvent.data;
-    if (messageData?.kind === 'ping') tabChannel.postMessage({ kind: 'pong' });
-    if (messageData?.kind === 'attention') flagWizardTab(document);
-    if (messageData?.kind === 'token' && messageData.token) {
-      snowTransport.updateToken(String(messageData.token));
-      const snowState = useWizardConnectionStore.getState().snow;
-      if (snowState.status === 'expired') useWizardConnectionStore.getState().setConnection('snow', { status: 'connected', identity: snowState.identity });
-    }
-  });
-  return () => tabChannel.close();
-}
+/** Creates both connections once, and returns the Connect actions. */
+export function useWizardConnections(dependencies: WizardAppDependencies): WizardConnectActions {
+  // Created once for the page's life: a lazy state initializer runs on the first render only.
+  const [transports] = useState<TransportPair>(() => createTransports(dependencies));
 
-/** Connects ServiceNow on open and returns `openJira` for the Connect screen and the banner. */
-export function useWizardConnections(boot: WizardBoot, dependencies: WizardAppDependencies): { openJira: (jiraUrl: string) => void } {
-  // Created once for the window's life: a lazy state initializer runs on the first render only.
-  const [transports] = useState<{ snowTransport: SnowTransportHandle; jiraTransport: JiraTransportHandle }>(() => createTransports(boot, dependencies));
-
-  useEffect(() => {
-    const { snowTransport } = transports;
+  const connectSystem = useCallback((system: WizardSystem, systemUrl: string) => {
     const { setConnection } = useWizardConnectionStore.getState();
-    setConnection('snow', { status: 'connecting' });
-    readSnowIdentity(snowTransport)
-      .then((identity) => setConnection('snow', { status: 'connected', identity }))
-      .catch((connectError: Error) => setConnection('snow', { status: 'notConnected', detail: connectError.message }));
-    return listenToServiceNowTab(boot, dependencies, snowTransport);
-  }, [boot, dependencies, transports]);
-
-  const openJira = useCallback((jiraUrl: string) => {
-    const { setConnection } = useWizardConnectionStore.getState();
-    setConnection('jira', { status: 'connecting' });
-    transports.jiraTransport.connect(jiraUrl)
-      .then(({ displayName }) => setConnection('jira', { status: 'connected', identity: displayName }))
-      .catch((connectError: Error) => setConnection('jira', { status: 'notConnected', detail: connectError.message }));
+    setConnection(system, { status: 'connecting' });
+    transports[system].connect(systemUrl)
+      .then(({ displayName }) => {
+        if (system === 'snow') setToolboxRelayConnected(true);
+        setConnection(system, { status: 'connected', identity: displayName });
+      })
+      .catch((connectError: Error) => setConnection(system, { status: 'notConnected', detail: connectError.message }));
   }, [transports]);
 
-  return { openJira };
+  const connectSnow = useCallback((snowUrl: string) => connectSystem('snow', snowUrl), [connectSystem]);
+  const connectJira = useCallback((jiraUrl: string) => connectSystem('jira', jiraUrl), [connectSystem]);
+  return { connectSnow, connectJira };
 }

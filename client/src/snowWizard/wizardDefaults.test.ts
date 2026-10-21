@@ -5,7 +5,7 @@ import { resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { DEFAULT_JIRA_URL, DEFAULT_SNOW_URL, WIZARD_CHANNEL_NAME, WIZARD_PRESENCE_LOCK_NAME } from './wizardDefaults.ts';
+import { DEFAULT_JIRA_URL, DEFAULT_SNOW_URL, JIRA_IDENTITY_PATH, SNOW_IDENTITY_PATH, WIZARD_CHANNEL_NAME } from './wizardDefaults.ts';
 
 describe('wizardDefaults', () => {
   it('uses the ServiceNow address the owner gave (GH #449)', () => {
@@ -17,11 +17,17 @@ describe('wizardDefaults', () => {
     expect(toolboxConfigLoader).toContain(`baseUrl:  '${DEFAULT_JIRA_URL}'`);
   });
 
-  it('talks on a channel distinct from the probe\'s', () => {
+  it('talks on the Wizard\'s own channel', () => {
     expect(WIZARD_CHANNEL_NAME).toBe('snowWizard');
   });
 
-  it('names one presence lock shared by the bookmark and the Wizard window', () => {
-    expect(WIZARD_PRESENCE_LOCK_NAME).toBe('snowWizard:open');
+  it('asks each system who is signed in with a same-site read the relay bookmark will serve', () => {
+    for (const identityPath of [SNOW_IDENTITY_PATH, JIRA_IDENTITY_PATH]) {
+      expect(identityPath.startsWith('/')).toBe(true);
+      expect(identityPath.startsWith('//')).toBe(false);
+    }
+    expect(SNOW_IDENTITY_PATH).toContain('/api/now/table/sys_user');
+    expect(SNOW_IDENTITY_PATH).toContain('sysparm_limit=1');
+    expect(JIRA_IDENTITY_PATH).toBe('/rest/api/2/myself');
   });
 });

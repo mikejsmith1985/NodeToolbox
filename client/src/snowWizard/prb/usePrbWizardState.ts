@@ -4,6 +4,7 @@
 import { useCallback, useState, type Dispatch, type SetStateAction } from 'react';
 
 import type { JiraProject } from '../../types/jira.ts';
+import { loadSnowUrl } from '../shell/wizardSettings.ts';
 import { createPrbJiraWork, EMPTY_PRB_PROGRESS, findExistingPrbIssues, hasPrbWorkToDo, type PrbCreateResult } from './prbJiraCreate.ts';
 import {
   buildDefaultRoleChoices,
@@ -22,7 +23,6 @@ import {
 import {
   loadJiraProjects,
   readRememberedPrbProject,
-  readSnowInstanceOrigin,
   rememberPrbProject,
   searchExistingIssues,
   searchOpenEpics,
@@ -141,7 +141,7 @@ function withDraftsFor(state: PrbWizardState): PrbWizardState {
   const sourceKey = buildDraftsSourceKey(state);
   if (!state.chosenProblem || !state.chosenEpic || sourceKey === state.draftsSourceKey) return state;
   const problem = state.chosenProblem;
-  const source = { ...problem, link: buildPrbRecordLink(readSnowInstanceOrigin(), problem.number) };
+  const source = { ...problem, link: buildPrbRecordLink(loadSnowUrl(), problem.number) };
   return { ...state, drafts: buildPrbJiraDrafts(source, state.chosenEpic.key, state.projectKey), draftsSourceKey: sourceKey };
 }
 

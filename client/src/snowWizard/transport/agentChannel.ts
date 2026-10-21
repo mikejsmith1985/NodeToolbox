@@ -14,9 +14,15 @@ export interface AgentAddress {
 
 /** One request the agent runs on its own origin. */
 export interface AgentRequest {
-  method: 'GET' | 'POST' | 'PUT' | 'DELETE';
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   path: string;
   body?: unknown;
+  /** "base64" when `body` is a file's bytes as base64 text, which the agent turns back into bytes before sending. */
+  bodyEncoding?: 'base64';
+  /** The Content-Type the far system should see; absent means JSON. */
+  contentType?: string;
+  /** How long this request may take when it needs longer than the ordinary wait (an upload, a big write). */
+  timeoutMs?: number;
   /** "base64" asks the agent to send a file's raw bytes as base64 text, so binary content survives the trip. */
   responseEncoding?: 'base64';
 }
@@ -66,7 +72,7 @@ export function waitForAgentHello(
       if (!messageData || messageData.channel !== channelName || messageData.kind !== 'hello' || !messageEvent.source) return;
       // The ServiceNow and Jira agents share one channel; a waiting step only accepts the system it opened.
       if (expectedSystem && messageData.system !== expectedSystem) return;
-      // The Wizard only trusts the Jira it was told about (the Jira address setting).
+      // The Wizard only trusts the addresses it was given (the ServiceNow and Jira settings).
       if (expectedOrigin && messageEvent.origin !== expectedOrigin) return;
       clearTimeout(timeoutId);
       listenerTarget.removeEventListener('message', handleMessage);
@@ -80,7 +86,7 @@ export function waitForAgentHello(
 /** How often a waiting request looks to see whether the agent's tab was closed. */
 export const AGENT_CLOSED_CHECK_INTERVAL_MS = 500;
 /** The answer given at once when the agent's tab is gone, instead of waiting out the whole request time. */
-export const AGENT_TAB_CLOSED_BODY = 'The Jira tab was closed';
+export const AGENT_TAB_CLOSED_BODY = 'The tab was closed';
 
 /** True when the agent's tab has been closed. `closed` stays readable across origins, so this is safe to ask. */
 function isAgentTabClosed(agentSource: MessageEventSource): boolean {

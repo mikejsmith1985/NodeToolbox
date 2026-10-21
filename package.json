@@ -23,7 +23,6 @@
     "build:monthly-delivery-engine": "esbuild client/src/utils/monthlyDeliveryEngine.entry.ts --bundle --platform=node --format=cjs --outfile=src/services/generated/monthlyDeliveryEngine.cjs",
     "build:github-email-engine": "esbuild client/src/utils/githubEmailEngine.entry.ts --bundle --platform=node --format=cjs --outfile=src/services/generated/githubEmailEngine.cjs",
     "build:snow-wizard": "node scripts/build-snow-wizard.js",
-    "build:snow-wizard-probe": "node scripts/build-snow-wizard.js --probe",
     "prestart": "npm run build:pi-review-engine && npm run build:monthly-delivery-engine && npm run build:github-email-engine",
     "start": "node server.js",
     "start:open": "node server.js --open",

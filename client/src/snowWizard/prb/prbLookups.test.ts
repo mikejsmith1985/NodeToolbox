@@ -11,7 +11,6 @@ import {
   loadJiraProjects,
   PRB_PROJECT_STORAGE_KEY,
   readRememberedPrbProject,
-  readSnowInstanceOrigin,
   rememberPrbProject,
   searchOpenEpics,
   searchProblems,
@@ -99,12 +98,5 @@ describe('remembered project', () => {
     rememberPrbProject('ENCUC');
     expect(localStorage.getItem(PRB_PROJECT_STORAGE_KEY)).toBe('ENCUC');
     expect(readRememberedPrbProject()).toBe('ENCUC');
-  });
-});
-
-describe('readSnowInstanceOrigin', () => {
-  it('uses the page origin when it is a web address, else the built-in ServiceNow address', () => {
-    expect(readSnowInstanceOrigin('https://snow.example.com')).toBe('https://snow.example.com');
-    expect(readSnowInstanceOrigin('null')).toMatch(/^https:\/\//);
   });
 });

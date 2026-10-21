@@ -330,21 +330,19 @@ try {
 }
 Write-Host "       ✅ Engine bundles built (src/services/generated/)"
 
-# Step 3.8: Build the standalone SNow Wizard files (feature 040). Each is ONE self-contained HTML file attached to
-# the GitHub Release so it can be shared by email or a shared drive — no Toolbox install needed. dist\ was wiped in
-# step 2, so they are rebuilt here every release.
-Write-Host "  [3.8/6] Building standalone SNow Wizard files..."
+# Step 3.8: Build the standalone SNow Wizard (feature 040): ONE self-contained HTML file attached to the GitHub Release
+# so it can be shared by email or a shared drive — no Toolbox install needed. dist\ was wiped in step 2, so it is
+# rebuilt here every release.
+Write-Host "  [3.8/6] Building standalone SNow Wizard file..."
 Push-Location $RepoRoot
 try {
-    npm run build:snow-wizard-probe --silent
-    if ($LASTEXITCODE -ne 0) { throw "SNow Wizard probe build failed with exit code $LASTEXITCODE" }
     npm run build:snow-wizard --silent
     if ($LASTEXITCODE -ne 0) { throw "SNow Wizard build failed with exit code $LASTEXITCODE" }
 } finally {
     Pop-Location
 }
 # @( ) keeps this an array even when only one file exists, so splatting it into gh passes each path separately.
-$SnowWizardAssetPaths = @(@('snow-wizard-probe.html', 'snow-hub-wizard.html') |
+$SnowWizardAssetPaths = @(@('snow-hub-wizard.html') |
     ForEach-Object { Join-Path $DistDir $_ } |
     Where-Object { Test-Path $_ })
 Write-Host "       ✅ SNow Wizard files built ($($SnowWizardAssetPaths.Count))"

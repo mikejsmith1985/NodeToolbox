@@ -1,6 +1,6 @@
 // relayBridgeShim.ts — Inside the Wizard bundle this file REPLACES services/relayBridgeApi.ts (esbuild alias in
-// scripts/build-snow-wizard.js). Same exports, but requests run in the Wizard window itself instead of through Toolbox's
-// local server — so Toolbox's snowApi, and everything built on it, runs unchanged.
+// scripts/build-snow-wizard.js). Same exports, but requests go to the ServiceNow tab running the Wizard's bookmark
+// instead of through Toolbox's local server — so Toolbox's snowApi, and everything built on it, runs unchanged.
 //
 // Framework-first drift (Art VII): the bundler's own alias is the seam; no Toolbox file is edited to make room for it.
 
@@ -17,7 +17,7 @@ export async function fetchRelayStatus(system: RelaySystem): Promise<RelayBridge
   return { system, isConnected, lastPingAt: null, version: WIZARD_RELAY_VERSION, hasSessionToken: isConnected };
 }
 
-/** Nothing to register: the Wizard window is its own relay. */
+/** Nothing to register: the Wizard's ServiceNow tab is its relay. */
 export async function registerRelay(_system: RelaySystem): Promise<void> {
   return undefined;
 }
@@ -27,13 +27,13 @@ export async function pollRelay<ResponseBody>(_system: RelaySystem): Promise<{ r
   return { request: null };
 }
 
-/** Starts the request at once in the Wizard window; its result is collected by `waitForRelayResult`. */
+/** Starts the request at once in the ServiceNow tab; its result is collected by `waitForRelayResult`. */
 export async function postRelayRequest(request: RelayRequest): Promise<void> {
   const snowTransport = readSnowTransport();
   if (request.sys !== 'snow' || !snowTransport) {
     throw new Error(request.sys !== 'snow'
       ? `${request.sys} is not available in the SNow Wizard`
-      : 'ServiceNow is not connected yet — click the SNow Wizard bookmark on your ServiceNow tab.');
+      : 'ServiceNow is not connected yet — press "Connect ServiceNow" in the SNow Wizard.');
   }
   pendingResults.set(request.id, snowTransport.execute(request));
 }

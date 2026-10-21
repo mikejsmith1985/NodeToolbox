@@ -8,6 +8,7 @@ import { readEnabledPlanEnvironments } from '../changeDraft.ts';
 import type { ChangeStepProps } from '../changeWizardSession.ts';
 import styles from '../ChangeWizard.module.css';
 import { buildChangeLink, type CreatedChangeSummary } from '../createOutcome.ts';
+import { loadSnowUrl } from '../../shell/wizardSettings.ts';
 import { buildEvidenceArchiveName } from '../../../views/SnowHub/testEvidence/evidenceBundle.ts';
 import { EVIDENCE_ATTACHED } from '../evidenceUpload.ts';
 import type { JiraEvidenceAttachment } from '../jiraEvidence.ts';
@@ -69,7 +70,7 @@ function CreatedChangeLine({ createdChange, session }: { createdChange: CreatedC
     <li className={styles.card}>
       <h3 className={styles.cardTitle}>
         {`${createdChange.environmentLabel ?? 'Change'}: `}
-        <a href={buildChangeLink(window.location.origin, createdChange.changeNumber)} target="_blank" rel="noreferrer">{createdChange.changeNumber}</a>
+        <a href={buildChangeLink(loadSnowUrl(), createdChange.changeNumber)} target="_blank" rel="noreferrer">{createdChange.changeNumber}</a>
       </h3>
       <p className={styles.hint}>
         {taskRecords === undefined ? 'Tasks: reading their numbers…'

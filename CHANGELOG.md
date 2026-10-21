@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **SNow Wizard: the file is the app — no installer, no loader.** Owner feedback: the install page and loader bookmark
+  were unacceptable. Open `snow-hub-wizard.html` and you are in the Wizard. It now works like every other relay app:
+  - **Settings** holds the ServiceNow and Jira addresses and the **SNow Wizard bookmark** to drag to the bookmarks bar
+    once. The bookmark is a ~5 KB relay with no Wizard code in it, so new versions never need a new bookmark.
+  - **Connect ServiceNow** / **Connect Jira** each open that system in its own tab. Click the bookmark there, and that tab
+    answers the Wizard with your own signed-in session. ServiceNow's session token is read fresh for every request.
+  - The relay answers only the Wizard page that opened its tab, and only for paths on its own site.
+  - If the browser cuts the link to a tab (ServiceNow's pop-up isolation header), the Wizard says so within a second
+    instead of waiting.
+  - Removed: the blob window inside ServiceNow, the IndexedDB install, *Settings → Update the SNow Wizard*, the
+    presence lock, and the connection probe file (`snow-wizard-probe.html` is no longer released).
+  - Fixed along the way: the build swaps every bare `fetch` in the app for the Wizard's Jira-routing one, which broke the
+    relay code serialized into the bookmark (`d is not defined`). The relay now calls `window.fetch`.
+
 ### Added
 - **SNow Wizard PRB: choose what to make for each item.** A new **Choose what to make** step lets the Defect, the SL
   story and the QE story each be **made new**, **taken from Jira**, or **left out**. So you can add just the SL or QE story

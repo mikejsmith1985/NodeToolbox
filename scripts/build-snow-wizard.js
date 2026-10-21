@@ -1,7 +1,8 @@
-// build-snow-wizard.js — Builds the standalone SNow Wizard files as ONE self-contained HTML file each (feature 040).
+// build-snow-wizard.js — Builds the standalone SNow Wizard as ONE self-contained HTML file (feature 040).
 //
-// `node scripts/build-snow-wizard.js` writes dist/snow-hub-wizard.html: the installer page carrying the whole Wizard
-// inside its bookmark. `--probe` writes dist/snow-wizard-probe.html, the read-only connection probe (relay-probe.md).
+// `node scripts/build-snow-wizard.js` writes dist/snow-hub-wizard.html. The file IS the Wizard: open it and use it.
+// Its Settings hold the ServiceNow and Jira addresses and the relay bookmark; ServiceNow and Jira are reached through
+// the tabs it opens, where that bookmark answers.
 //
 // Framework-first: esbuild (already a dev dependency, used for three engine bundles) does all bundling; this script only
 // inlines the result into one page. Nothing here is loaded from another address — the file must work when emailed.
@@ -15,22 +16,19 @@ const REPO_ROOT = path.resolve(__dirname, '..');
 const CLIENT_SOURCE_ROOT = path.join(REPO_ROOT, 'client', 'src');
 const OUTPUT_DIRECTORY = path.join(REPO_ROOT, 'dist');
 
-/** The bookmark that carries the Wizard must stay under Chromium's 2 MB URL cap with room to spare (research R-004). */
-const WIZARD_BOOKMARK_BUDGET_BYTES = 1.5 * 1024 * 1024;
 /** Same modern-browser floor as the Toolbox client (tsconfig target es2023); Chrome/Edge only. */
 const BROWSER_TARGET = 'es2022';
 
 const WIZARD_SOURCE_ROOT = path.join(CLIENT_SOURCE_ROOT, 'snowWizard');
 
 const WIZARD_BUILD = {
-  title: 'Install SNow Wizard',
-  launcherEntry: path.join(WIZARD_SOURCE_ROOT, 'launcher', 'launcher.entry.ts'),
+  title: 'SNow Wizard',
   appEntry: path.join(WIZARD_SOURCE_ROOT, 'main.entry.tsx'),
   styleFiles: [
     path.join(CLIENT_SOURCE_ROOT, 'styles', 'tokens.css'),
-    path.join(WIZARD_SOURCE_ROOT, 'probe', 'probePage.css'),
+    path.join(WIZARD_SOURCE_ROOT, 'shell', 'wizardPage.css'),
   ],
-  // Toolbox's relay bridge talks to its local server; inside the Wizard the same API runs in the window itself.
+  // Toolbox's relay bridge talks to its local server; inside the Wizard the same API talks to the ServiceNow tab.
   replacedModules: [{
     original: path.join(CLIENT_SOURCE_ROOT, 'services', 'relayBridgeApi.ts'),
     replacement: path.join(WIZARD_SOURCE_ROOT, 'transport', 'relayBridgeShim.ts'),
@@ -40,17 +38,6 @@ const WIZARD_BUILD = {
   outputFile: path.join(OUTPUT_DIRECTORY, 'snow-hub-wizard.html'),
 };
 
-const PROBE_BUILD = {
-  title: 'SNow Wizard connection probe',
-  fileEntry: path.join(CLIENT_SOURCE_ROOT, 'snowWizard', 'probe', 'relayProbe.entry.ts'),
-  snowWindowEntry: path.join(CLIENT_SOURCE_ROOT, 'snowWizard', 'probe', 'snowWindowProbe.entry.ts'),
-  styleFiles: [
-    path.join(CLIENT_SOURCE_ROOT, 'styles', 'tokens.css'),
-    path.join(CLIENT_SOURCE_ROOT, 'snowWizard', 'probe', 'probePage.css'),
-  ],
-  outputFile: path.join(OUTPUT_DIRECTORY, 'snow-wizard-probe.html'),
-};
-
 // ── Pure helpers (unit-tested in test/unit/build-snow-wizard.test.js) ─────────
 
 /** Stops "</script>" inside inlined code from ending the script element early. */
@@ -58,8 +45,8 @@ function escapeInlineScript(scriptSource) {
   return scriptSource.replace(/<\/script/gi, '<\\/script');
 }
 
-/** One complete HTML document with the style and script inlined, and any data block (inert JSON) before the script. */
-function wrapHtmlDocument({ title, styleSource, scriptSource, dataBlock = '' }) {
+/** One complete HTML document with the style and script inlined. */
+function wrapHtmlDocument({ title, styleSource, scriptSource }) {
   return [
     '<!doctype html>',
     '<html lang="en"><head>',
@@ -68,25 +55,10 @@ function wrapHtmlDocument({ title, styleSource, scriptSource, dataBlock = '' }) 
     `<title>${title}</title>`,
     `<style>${styleSource}</style>`,
     '</head><body>',
-    dataBlock,
+    '<div id="wizard-root"></div>',
     `<script>${escapeInlineScript(scriptSource)}</script>`,
     '</body></html>',
   ].join('');
-}
-
-// Kept equal to INSTALL_STORE_CONFIG in client/src/snowWizard/install/wizardInstall.ts (a test checks).
-const INSTALL_PAYLOAD_ELEMENT_ID = 'snow-wizard-install';
-const INSTALL_PAYLOAD_KIND = 'snowWizardInstall';
-
-/**
- * The Wizard as an inert JSON block, read by the bookmark's install panel and by Settings → Update (wizardInstall.ts).
- * The code is pre-escaped for the <script> it is later placed in, and every "<" in the JSON becomes its escape so
- * nothing inside can end this block early.
- */
-function buildInstallPayloadBlock({ version, appSource, styleSource }) {
-  const payloadJson = JSON.stringify({ kind: INSTALL_PAYLOAD_KIND, version, appSource: escapeInlineScript(appSource), styleSource });
-  const safeJson = payloadJson.replace(/</g, '\\u003c');
-  return `<script type="application/json" id="${INSTALL_PAYLOAD_ELEMENT_ID}">${safeJson}</script>`;
 }
 
 const EXTERNAL_REFERENCE_PATTERNS = [
@@ -104,13 +76,6 @@ function findExternalReferences(pageHtml) {
     }
   });
   return foundReferences.sort((first, second) => first.position - second.position).map((reference) => reference.address);
-}
-
-/** Fails the build when a bookmark would be too large to drag and run reliably. */
-function assertWithinBookmarkBudget(bookmarkByteLength) {
-  if (bookmarkByteLength > WIZARD_BOOKMARK_BUDGET_BYTES) {
-    throw new Error(`The SNow Wizard bookmark is ${bookmarkByteLength} bytes, over the ${WIZARD_BOOKMARK_BUDGET_BYTES}-byte budget.`);
-  }
 }
 
 /**
@@ -153,13 +118,13 @@ async function bundleEntry(entryPoint, { defines = {}, plugins = [], injectedFil
   return { scriptSource: readOutput('.js'), moduleStyleSource: readOutput('.css') };
 }
 
-async function bundleToString(entryPoint, defines = {}) {
-  return (await bundleEntry(entryPoint, { defines })).scriptSource;
-}
-
 function readReleaseVersion() {
   const packageManifest = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'package.json'), 'utf8'));
   return `v${packageManifest.version}`;
+}
+
+function readStyleSource(styleFiles) {
+  return styleFiles.map((styleFile) => fs.readFileSync(styleFile, 'utf8')).join('\n');
 }
 
 function writeSelfContainedPage(outputFile, pageHtml) {
@@ -172,45 +137,21 @@ function writeSelfContainedPage(outputFile, pageHtml) {
   return { outputFile, byteLength: Buffer.byteLength(pageHtml) };
 }
 
-/** Builds the Wizard: the app (with its ServiceNow/Jira seams swapped), then the installer page that carries it. */
+/** Builds the Wizard: the app (with its ServiceNow/Jira seams swapped), inlined into one page with its look. */
 async function buildWizard() {
   const appVersion = readReleaseVersion();
-  const baseStyleSource = readStyleSource(WIZARD_BUILD.styleFiles);
   const appBundle = await bundleEntry(WIZARD_BUILD.appEntry, {
     defines: { __WIZARD_VERSION__: JSON.stringify(appVersion) },
     plugins: [createModuleReplacementPlugin(WIZARD_BUILD.replacedModules)],
     injectedFiles: WIZARD_BUILD.injectedFiles,
   });
-  const wizardStyleSource = `${baseStyleSource}\n${appBundle.moduleStyleSource}`;
-  // The bookmark is now a small loader; the Wizard travels in the page's install block and lives in ServiceNow's storage.
-  const launcherSource = await bundleToString(WIZARD_BUILD.launcherEntry, { __WIZARD_VERSION__: JSON.stringify(appVersion) });
-  const dataBlock = buildInstallPayloadBlock({ version: appVersion, appSource: appBundle.scriptSource, styleSource: wizardStyleSource });
-  const pageHtml = wrapHtmlDocument({ title: WIZARD_BUILD.title, styleSource: baseStyleSource, scriptSource: launcherSource, dataBlock });
+  const styleSource = `${readStyleSource(WIZARD_BUILD.styleFiles)}\n${appBundle.moduleStyleSource}`;
+  const pageHtml = wrapHtmlDocument({ title: WIZARD_BUILD.title, styleSource, scriptSource: appBundle.scriptSource });
   return writeSelfContainedPage(WIZARD_BUILD.outputFile, pageHtml);
 }
 
-function readStyleSource(styleFiles) {
-  return styleFiles.map((styleFile) => fs.readFileSync(styleFile, 'utf8')).join('\n');
-}
-
-/** Builds the probe: the ServiceNow-window script first, then the file page that carries it inside its bookmark. */
-async function buildProbe() {
-  const styleSource = readStyleSource(PROBE_BUILD.styleFiles);
-  const snowWindowSource = await bundleToString(PROBE_BUILD.snowWindowEntry);
-  // The bookmark carries the ServiceNow-window page percent-encoded; checking that size here keeps a too-big probe
-  // from ever being shipped.
-  assertWithinBookmarkBudget(Buffer.byteLength(encodeURIComponent(snowWindowSource + styleSource)));
-  const filePageSource = await bundleToString(PROBE_BUILD.fileEntry, {
-    __SNOW_WINDOW_APP_SOURCE__: JSON.stringify(snowWindowSource),
-    __PROBE_STYLE_SOURCE__: JSON.stringify(styleSource),
-  });
-  const pageHtml = wrapHtmlDocument({ title: PROBE_BUILD.title, styleSource, scriptSource: filePageSource });
-  return writeSelfContainedPage(PROBE_BUILD.outputFile, pageHtml);
-}
-
 async function runFromCommandLine() {
-  const isProbeBuild = process.argv.includes('--probe');
-  const { outputFile, byteLength } = isProbeBuild ? await buildProbe() : await buildWizard();
+  const { outputFile, byteLength } = await buildWizard();
   console.log(`✅ ${path.relative(REPO_ROOT, outputFile)} (${byteLength} bytes)`);
 }
 
@@ -222,12 +163,7 @@ if (require.main === module) {
 }
 
 module.exports = {
-  INSTALL_PAYLOAD_ELEMENT_ID,
-  INSTALL_PAYLOAD_KIND,
-  buildInstallPayloadBlock,
-  WIZARD_BOOKMARK_BUDGET_BYTES,
   createModuleReplacementPlugin,
-  assertWithinBookmarkBudget,
   escapeInlineScript,
   findExternalReferences,
   wrapHtmlDocument,

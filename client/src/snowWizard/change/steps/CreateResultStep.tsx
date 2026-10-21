@@ -15,6 +15,7 @@ import type { ChangeWizardStepId } from '../changeWizardSteps.ts';
 import { CHANGE_WIZARD_STEP_TITLES } from '../changeWizardSteps.ts';
 import styles from '../ChangeWizard.module.css';
 import { buildChangeLink, type CreatedChangeSummary } from '../createOutcome.ts';
+import { loadSnowUrl } from '../../shell/wizardSettings.ts';
 import type { PlanEnvironmentKey } from '../ctaskEnvironmentPlan.ts';
 import { EVIDENCE_ATTACHED } from '../evidenceUpload.ts';
 import { planModifyTaskWrites } from '../modifyTasks.ts';
@@ -146,7 +147,7 @@ function CreatedChangeCard({ createdChange, session }: { createdChange: CreatedC
     <li className={styles.card}>
       <h3 className={styles.cardTitle}>
         {`${createdChange.environmentLabel ?? 'Change'}: `}
-        <a href={buildChangeLink(window.location.origin, createdChange.changeNumber)} target="_blank" rel="noreferrer">{createdChange.changeNumber}</a>
+        <a href={buildChangeLink(loadSnowUrl(), createdChange.changeNumber)} target="_blank" rel="noreferrer">{createdChange.changeNumber}</a>
       </h3>
       {session.mode === 'create' ? <p className={styles.hint}>{describeTasks(builtTaskNames)}</p> : null}
       <p className={styles.hint}>{evidenceResult === undefined ? 'Evidence: none attached.' : evidenceResult === EVIDENCE_ATTACHED ? `Test evidence: attached as ${buildEvidenceArchiveName(createdChange.changeNumber, new Date())}.` : `Evidence not attached: ${evidenceResult}`}</p>

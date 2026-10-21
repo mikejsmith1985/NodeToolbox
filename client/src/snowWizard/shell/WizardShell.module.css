@@ -151,3 +151,27 @@
 .choiceDescription {
   color: var(--color-text-secondary);
 }
+
+/* The relay bookmark in Settings: looks like a button, but is dragged to the bookmarks bar rather than clicked. */
+.bookmarkLink {
+  align-self: flex-start;
+  display: inline-block;
+  padding: 10px 18px;
+  border-radius: var(--radius-md);
+  background: var(--color-accent);
+  color: var(--color-text-on-accent);
+  font: 600 1rem/1.2 inherit;
+  text-decoration: none;
+  cursor: grab;
+}
+
+/* A button that reads as an inline link, for a short "go to" inside a sentence. */
+.linkButton {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--color-accent);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}

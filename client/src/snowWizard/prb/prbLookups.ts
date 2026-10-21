@@ -10,7 +10,6 @@ import type { JiraProject } from '../../types/jira.ts';
 import { buildIssueTextMatchTerms } from '../../utils/jqlTextTerms.ts';
 import { escapeJqlValue } from '../../utils/jqlValue.ts';
 import { normalizeRichTextToPlainText } from '../../utils/richTextPlainText.ts';
-import { DEFAULT_SNOW_URL } from '../wizardDefaults.ts';
 import type { PrbExistingIssue } from './prbJiraPlan.ts';
 
 // ── Types ──
@@ -47,7 +46,6 @@ const PRB_NUMBER_PATTERN = /^PRB\d+$/i;
 const ISSUE_KEY_PATTERN = /^[A-Z][A-Z0-9]+-\d+$/i;
 // "^" separates conditions in a ServiceNow query, so it can never be part of the searched words.
 const SNOW_QUERY_SEPARATOR_PATTERN = /\^/g;
-const WEB_ORIGIN_PATTERN = /^https?:\/\//;
 
 // ── ServiceNow ──
 
@@ -81,13 +79,6 @@ export async function searchProblems(searchText: string): Promise<PrbSearchResul
   }));
 }
 
-/**
- * The ServiceNow address links should point at. The Wizard runs inside ServiceNow, so its own origin is the
- * instance; anywhere else (a test, a file page) falls back to the built-in address.
- */
-export function readSnowInstanceOrigin(pageOrigin: string = window.location.origin): string {
-  return WEB_ORIGIN_PATTERN.test(pageOrigin) ? pageOrigin : DEFAULT_SNOW_URL;
-}
 
 // ── Jira ──
 

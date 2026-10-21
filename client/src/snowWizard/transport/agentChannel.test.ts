@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { AGENT_CLOSED_CHECK_INTERVAL_MS, AGENT_TAB_CLOSED_BODY, sendAgentRequest, waitForAgentHello } from './agentChannel.ts';
 
-const CHANNEL_NAME = 'snowWizardProbe';
+const CHANNEL_NAME = 'snowWizard';
 
 function postFromAgent(data: unknown, source: MessageEventSource | null = null, origin = 'https://jira.example.com'): void {
   window.dispatchEvent(new MessageEvent('message', { data, origin, source }));

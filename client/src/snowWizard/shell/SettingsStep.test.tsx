@@ -1,28 +1,63 @@
-// SettingsStep.test.tsx — Proves the Jira address can be changed (a new Jira instance arrives soon) and a bad one is explained.
+// SettingsStep.test.tsx — Proves both addresses can be changed (a new Jira instance arrives soon), a bad one is explained,
+// and the relay bookmark is offered for dragging, never for clicking here.
 
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import SettingsStep from './SettingsStep.tsx';
+import type { SaveAddressResult } from './wizardSettings.ts';
+
+const SNOW_URL = 'https://acme.service-now.com';
+const JIRA_URL = 'https://jira.example.com';
+
+function acceptAddress(addressText: string): SaveAddressResult {
+  return { isSaved: true, address: addressText };
+}
+
+function renderSettings(onSaveSnowUrl = vi.fn(acceptAddress), onSaveJiraUrl = vi.fn(acceptAddress)) {
+  const onClose = vi.fn();
+  render(<SettingsStep snowUrl={SNOW_URL} jiraUrl={JIRA_URL} appVersion="v9.9.9" onSaveSnowUrl={onSaveSnowUrl} onSaveJiraUrl={onSaveJiraUrl} onClose={onClose} />);
+  return { onSaveSnowUrl, onSaveJiraUrl, onClose };
+}
 
 describe('SettingsStep', () => {
-  it('shows the current Jira address and saves a new one', () => {
-    const onSaveJiraUrl = vi.fn(() => ({ isSaved: true, jiraUrl: 'https://jira-new.example.com' }));
-    render(<SettingsStep jiraUrl="https://jira.example.com" onSaveJiraUrl={onSaveJiraUrl} onClose={vi.fn()} />);
-
+  it('shows both current addresses and saves a changed Jira address, saying it reconnects', () => {
+    const handlers = renderSettings();
+    expect((screen.getByLabelText('ServiceNow address') as HTMLInputElement).value).toBe(SNOW_URL);
     const jiraField = screen.getByLabelText('Jira address') as HTMLInputElement;
-    expect(jiraField.value).toBe('https://jira.example.com');
-    fireEvent.change(jiraField, { target: { value: 'https://jira-new.example.com' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Save and reconnect Jira' }));
+    expect(jiraField.value).toBe(JIRA_URL);
 
-    expect(onSaveJiraUrl).toHaveBeenCalledWith('https://jira-new.example.com');
-    expect(screen.getByText(/Saved/)).toBeTruthy();
+    fireEvent.change(jiraField, { target: { value: 'https://jira-new.example.com' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save addresses' }));
+
+    expect(handlers.onSaveSnowUrl).toHaveBeenCalledWith(SNOW_URL);
+    expect(handlers.onSaveJiraUrl).toHaveBeenCalledWith('https://jira-new.example.com');
+    const statusText = screen.getByRole('status').textContent;
+    expect(statusText).toContain('ServiceNow: saved.');
+    expect(statusText).toContain('Jira: saved — reconnecting.');
   });
 
   it('shows why an address was refused', () => {
-    const onSaveJiraUrl = vi.fn(() => ({ isSaved: false, jiraUrl: 'https://jira.example.com', problem: 'Enter the full Jira address, starting with https://' }));
-    render(<SettingsStep jiraUrl="https://jira.example.com" onSaveJiraUrl={onSaveJiraUrl} onClose={vi.fn()} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Save and reconnect Jira' }));
-    expect(screen.getByText(/starting with https:\/\//)).toBeTruthy();
+    const refuseAddress = vi.fn((): SaveAddressResult => ({ isSaved: false, address: SNOW_URL, problem: 'Enter the full address, starting with https://' }));
+    renderSettings(refuseAddress);
+    fireEvent.change(screen.getByLabelText('ServiceNow address'), { target: { value: 'acme' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save addresses' }));
+    expect(screen.getByRole('status').textContent).toContain('ServiceNow: Enter the full address, starting with https://');
+  });
+
+  it('offers the relay bookmark as a javascript: link that does nothing when clicked here', () => {
+    renderSettings();
+    const bookmarkLink = screen.getByText('SNow Wizard', { selector: 'a' });
+    expect(bookmarkLink.getAttribute('href')).toMatch(/^javascript:/);
+    const clickEvent = new MouseEvent('click', { bubbles: true, cancelable: true });
+    bookmarkLink.dispatchEvent(clickEvent);
+    expect(clickEvent.defaultPrevented).toBe(true);
+  });
+
+  it('shows the version and goes back', () => {
+    const handlers = renderSettings();
+    expect(screen.getByText('SNow Wizard v9.9.9')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+    expect(handlers.onClose).toHaveBeenCalled();
   });
 });
