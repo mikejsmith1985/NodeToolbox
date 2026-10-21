@@ -10,7 +10,10 @@ import { readEnabledPlanEnvironments } from '../changeDraft.ts';
 import type { ChangeStepProps } from '../changeWizardSession.ts';
 import styles from '../ChangeWizard.module.css';
 import { buildChangeLink, type CreatedChangeSummary } from '../createOutcome.ts';
+import { buildEvidenceArchiveName } from '../../../views/SnowHub/testEvidence/evidenceBundle.ts';
 import type { PlanEnvironmentKey } from '../ctaskEnvironmentPlan.ts';
+import { EVIDENCE_ATTACHED } from '../evidenceUpload.ts';
+import type { JiraEvidenceAttachment } from '../jiraEvidence.ts';
 import type { FinishRunner } from '../useFinishRunner.ts';
 import type { TaskNamesByEnvironment } from './CreateResultStep.tsx';
 
@@ -18,6 +21,23 @@ import type { TaskNamesByEnvironment } from './CreateResultStep.tsx';
 export interface CreateNowStepProps extends ChangeStepProps {
   runner: FinishRunner;
   taskNamesByEnvironment: TaskNamesByEnvironment;
+  /** Every file on the chosen Jira issues — the test-evidence zip that goes on each change as it is created. */
+  jiraEvidence: readonly JiraEvidenceAttachment[];
+}
+
+/** What the test-evidence zip will hold: every file on the chosen Jira issues. Nothing to choose. */
+function EvidenceZipSummary({ jiraEvidence }: { jiraEvidence: readonly JiraEvidenceAttachment[] }) {
+  if (jiraEvidence.length === 0) {
+    return <p className={styles.noticeText}>Test evidence: your Jira issues have no files attached, so no evidence zip goes on. Release Management checks for it — attach the test results to the Jira issues first if you can.</p>;
+  }
+  return (
+    <details className={styles.card}>
+      <summary className={styles.hint}>{`📎 Test evidence: one zip, “${buildEvidenceArchiveName('<change>', new Date())}”, with all ${jiraEvidence.length} file(s) from your Jira issues — attached as each change is created.`}</summary>
+      <ul className={styles.itemList} aria-label="Files in the evidence zip">
+        {jiraEvidence.map((evidence) => <li key={evidence.attachment.attachmentId} className={styles.hint}>{`${evidence.issueKey}: ${evidence.attachment.filename}`}</li>)}
+      </ul>
+    </details>
+  );
 }
 
 /** "2 changes and 3 tasks", from the plan as it stands. */
@@ -78,6 +98,7 @@ function ExistingChangesForm({ environmentLabels, runner }: { environmentLabels:
 /** One change now in ServiceNow, with the numbers of its tasks. */
 function CreatedChangeLine({ createdChange, session }: { createdChange: CreatedChangeSummary } & Pick<ChangeStepProps, 'session'>) {
   const taskRecords = session.createdTasks?.[createdChange.changeNumber];
+  const evidenceResult = session.evidenceResults[createdChange.changeNumber];
   return (
     <li className={styles.card}>
       <h3 className={styles.cardTitle}>
@@ -89,20 +110,25 @@ function CreatedChangeLine({ createdChange, session }: { createdChange: CreatedC
           : taskRecords.length === 0 ? 'Tasks: none'
             : `Tasks: ${taskRecords.map((taskRecord) => `${taskRecord.number} ${taskRecord.shortDescription}`.trim()).join(', ')}`}
       </p>
+      <p className={styles.hint}>
+        {evidenceResult === undefined ? 'Test evidence: not attached yet.'
+          : evidenceResult === EVIDENCE_ATTACHED ? `Test evidence: ✓ attached as ${buildEvidenceArchiveName(createdChange.changeNumber, new Date())}.`
+            : `Test evidence: ✗ not attached — ${evidenceResult}. Saving on the last step tries again.`}
+      </p>
     </li>
   );
 }
 
 /** Step: create the changes in ServiceNow now. */
-export default function CreateNowStep({ crg, session, runner, taskNamesByEnvironment }: CreateNowStepProps) {
+export default function CreateNowStep({ crg, session, runner, taskNamesByEnvironment, jiraEvidence }: CreateNowStepProps) {
   const createdLabels = new Set(session.createdChanges.map((createdChange) => createdChange.environmentLabel));
   const hasMissing = readEnabledPlanEnvironments(crg.state).some((environmentLabel) => !createdLabels.has(environmentLabel));
   const hasCreated = session.createdChanges.length > 0;
   return (
     <div>
       <p className={styles.stepIntro}>
-        Your changes are made in ServiceNow now, before the writing, so the text can name their real change and task numbers.
-        The finished text, plans and test evidence are saved to them on the last step.
+        Your changes are made in ServiceNow now — with their tasks and the test evidence — so the Risk Check and the final
+        checks run on the real ticket. Any fixes they make are saved to it on the last step.
       </p>
       {runner.phase.kind === 'working' ? <p className={styles.hint} role="status">{runner.phase.message}</p> : null}
       {hasCreated ? (
@@ -111,12 +137,13 @@ export default function CreateNowStep({ crg, session, runner, taskNamesByEnviron
         </ul>
       ) : (
         <>
-          <p className={styles.noticeText}>{`This makes ${describePlanCount(readEnabledPlanEnvironments(crg.state).length, taskNamesByEnvironment)} in ServiceNow. Nothing is made until you press the button below.`}</p>
+          <p className={styles.noticeText}>{`This makes ${describePlanCount(readEnabledPlanEnvironments(crg.state).length, taskNamesByEnvironment)} in ServiceNow, each with the test-evidence zip. Nothing is made until you press the button below.`}</p>
+          <EvidenceZipSummary jiraEvidence={jiraEvidence} />
           <CreatePlan crg={crg} taskNamesByEnvironment={taskNamesByEnvironment} />
           <ExistingChangesForm environmentLabels={readEnabledPlanEnvironments(crg.state)} runner={runner} />
         </>
       )}
-      {hasCreated && !hasMissing ? <p className={styles.successText}>Created. Press Next — the AI writes the text next, using these numbers.</p> : null}
+      {hasCreated && !hasMissing ? <p className={styles.successText}>Created. Press Next to run the Risk Check on the real ticket.</p> : null}
       {session.outcomeNotes.map((outcomeNote) => <p key={outcomeNote} className={styles.hint}>{`• ${outcomeNote}`}</p>)}
       {session.failureText !== null && hasMissing ? (
         <div className={styles.card}>

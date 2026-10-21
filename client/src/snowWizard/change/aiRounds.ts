@@ -1,17 +1,12 @@
-// aiRounds.ts — The wizard's copy-prompt AI fix round over a change draft: the prompt aimed at the flagged writing (pure).
+// aiRounds.ts — The record facts every Wizard AI prompt states, built from the change draft (pure).
 //
-// Framework-first: the prompt is Toolbox's own gap-fix round (chgGapFixPrompt), aimed at exactly the writing the
-// readiness checks flag, and replies are read with Toolbox's own parsers. Only the prompt CONTEXT is built here,
-// because Toolbox builds it inside its 3,000-line builder component, which the Wizard cannot carry. Replies are read by
-// aiDraft.ts; nothing is ever sent automatically and nothing is written until the user applies it (propose-only, FR-008).
+// Toolbox builds this context inside its 3,000-line builder component, which the Wizard cannot carry, so it is built
+// here from the draft — for AI Assist (aiDraft.ts) and for Toolbox's Risk Check (RiskCheckSection). Nothing is ever
+// sent automatically and nothing is written until the user applies it (propose-only, FR-008).
 
-import { buildChgGapFixPrompt } from '../../views/SnowHub/chgFormula/chgGapFixPrompt.ts';
 import type { ChgPromptContext } from '../../views/SnowHub/chgFormula/chgPromptContext.ts';
-import { CHG_TEXT_FIELD_LABELS } from '../../views/SnowHub/chgFormula/formulaCard.ts';
-import type { RiskCheckFinding } from '../../views/SnowHub/chgFormula/riskCheckReview.ts';
-import type { ReadinessItem } from '../../views/SnowHub/guided/changeReadiness.ts';
 import { buildIssueDetailText } from '../../views/SnowHub/hooks/useAiAssist.ts';
-import { DRAFT_ENVIRONMENTS, readChangeTextFields, readSelectedIssues, type CrgDraftState } from './changeDraft.ts';
+import { DRAFT_ENVIRONMENTS, readSelectedIssues, type CrgDraftState } from './changeDraft.ts';
 
 /** The assessment answers as "label: value" lines, skipping blanks. */
 function readAssessmentLines(draft: CrgDraftState): string[] {
@@ -74,36 +69,4 @@ export function buildMultiChangeNote(draft: CrgDraftState): string[] {
       + `(configuration item, window, the testing done in that environment), state it per environment, for example `
       + `"${environmentLabels.map((label) => `${label}: …`).join(' / ')}".`,
   ];
-}
-
-/**
- * The changes already made in ServiceNow, with their task numbers, so the writing can quote them where the Formula
- * Card asks (which CTASK does each step). Empty before the changes are created.
- */
-export function buildCreatedRecordsNote(createdChangeLines: readonly string[]): string[] {
-  if (createdChangeLines.length === 0) return [];
-  return [
-    '',
-    'These change records already exist in ServiceNow. Use their real numbers where the text names a change or a task '
-      + '(for example, which CTASK carries out each implementation step) — never invent a number:',
-    ...createdChangeLines.map((createdChangeLine) => `  ${createdChangeLine}`),
-  ];
-}
-
-/** The failing checks that a rewrite of the change's writing can close, as review findings. */
-function readTextGapFindings(items: readonly ReadinessItem[]): RiskCheckFinding[] {
-  return items.flatMap((item) => {
-    if (item.state !== 'needsAction' || item.action?.kind !== 'openStep' || !item.action.focusField) return [];
-    return [{ status: 'GAP' as const, field: CHG_TEXT_FIELD_LABELS[item.action.focusField], detail: item.reason, fix: '' }];
-  });
-}
-
-/** The fix-the-writing round for the failing checks, or null when no failing check is about the writing. */
-export function buildChecksFixPrompt(draft: CrgDraftState, items: readonly ReadinessItem[], createdChangeLines: readonly string[] = []): string | null {
-  const gapFindings = readTextGapFindings(items);
-  if (gapFindings.length === 0) return null;
-  return [
-    buildChgGapFixPrompt(buildWizardPromptContext(draft), readChangeTextFields(draft), gapFindings),
-    ...buildMultiChangeNote(draft), ...buildCreatedRecordsNote(createdChangeLines),
-  ].join('\n');
 }

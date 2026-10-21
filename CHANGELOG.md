@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **SNow Wizard now follows Toolbox's own workflow, guided.** At the owner's request it keeps Toolbox's order and AI
+  interaction, with more guidance for first-timers.
+  - **New-change steps (10):** ① Pick (scope, details, planning, environments, tasks) → ② **AI Assist** writes it,
+    using Toolbox's AI Assist prompt → ③ **Create in ServiceNow**: the changes, their CTASKs and the test-evidence zip,
+    together → ④ **Risk check & final checks** on the real ticket → paperwork → **Save to ServiceNow**.
+  - **The AI Risk Check is Toolbox's own** (`ExistingChgRiskCheck`, the same as Modify CHG), run on the created change
+    and its CTASKs, Production first. Its fixes to the writing land in the job and are saved on the last step;
+    backout plans for tasks go straight to ServiceNow. The Wizard's separate "Make it pass review" and "Fix all with
+    AI" rounds are gone, so there's one AI review, not two.
+  - **Evidence is simply every file on the chosen Jira issues, zipped.** The "Add proof" step is gone. The create step
+    lists what the zip holds, and it's attached **as each change is created**, so the Risk Check and the final checks
+    see the ticket with its evidence. The save step only retries a zip that didn't get attached.
+  - **Templates say exactly what happened.** A change opened from a template is **linked** to it, shown on every step.
+    **Update template “X”** asks once, naming what is overwritten, and never makes a duplicate. **Save as a new
+    template** asks for a name, and a taken name asks rather than overwriting. Every save is checked against the stored
+    list: "✓ Updated “X” at 10:42 — details, plan, environments and 3 tasks", or "✗ … was NOT saved", or "Nothing was
+    saved." Buttons read **Open template** and **Open it in a new change**.
+
 ### Added
 - **SNow Wizard: Start over** on every step. It asks once on the page, then clears the job and its draft and shows
   the first screen. If changes already exist in ServiceNow, it says they stay there and how to pick them up again.

@@ -63,7 +63,7 @@ function TemplateStart({ templates, isBlocked, onStartFromTemplate }: { template
           <option value="">Choose a template…</option>
           {templates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}
         </select>
-        <button type="button" className={styles.secondaryButton} disabled={chosenTemplateId === ''} onClick={() => onStartFromTemplate(chosenTemplateId)}>{isBlocked ? 'Use it on my open change' : 'Start from a template'}</button>
+        <button type="button" className={styles.secondaryButton} disabled={chosenTemplateId === ''} onClick={() => onStartFromTemplate(chosenTemplateId)}>{isBlocked ? 'Open it in my open change' : 'Open template'}</button>
       </div>
     </div>
   );

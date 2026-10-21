@@ -3,7 +3,7 @@
 // Category and type come from ServiceNow's own lists; people, groups and systems are picked from ServiceNow search
 // results (Toolbox's SnowLookupField). Up to seven inputs show; the rest wait under "More options".
 
-import { useId } from 'react';
+import { useId, useState } from 'react';
 
 import { SnowLookupField } from '../../../views/SnowHub/components/SnowLookupField.tsx';
 import { useCrgTemplates } from '../../../views/SnowHub/hooks/useCrgTemplates.ts';
@@ -31,22 +31,27 @@ function TextEntry({ label, value, isMultiline = false, onChange }: { label: str
   );
 }
 
-/** A saved change template to start from, when this browser has any — its linked tasks staged with it. */
-function TemplatePicker({ crg }: Pick<ChangeStepProps, 'crg'>) {
+/** A saved change template to open, when this browser has any — its linked tasks staged with it, and the job linked to it. */
+function TemplatePicker({ crg, updateSession }: Pick<ChangeStepProps, 'crg' | 'updateSession'>) {
   const { templates } = useCrgTemplates();
   const { templates: ctaskTemplates } = useCtaskTemplates();
   const pickerId = useId();
+  const [openedName, setOpenedName] = useState('');
   if (templates.length === 0) return null;
   return (
     <div className={styles.fieldGroup}>
-      <label className={styles.fieldLabel} htmlFor={pickerId}>Start from a saved template (optional)</label>
+      <label className={styles.fieldLabel} htmlFor={pickerId}>Open a saved template (optional)</label>
       <select id={pickerId} className={styles.selectField} value="" onChange={(changeEvent) => {
         const chosenTemplate = templates.find((template) => template.id === changeEvent.target.value);
-        if (chosenTemplate) crg.actions.applyTemplate(chosenTemplate, ctaskTemplates);
+        if (!chosenTemplate) return;
+        crg.actions.applyTemplate(chosenTemplate, ctaskTemplates);
+        updateSession({ linkedTemplate: { id: chosenTemplate.id, name: chosenTemplate.name } });
+        setOpenedName(chosenTemplate.name);
       }}>
         <option value="">Choose…</option>
         {templates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}
       </select>
+      {openedName ? <p className={styles.successText} role="status">{`✓ Opened template “${openedName}” — its values are filled in below.`}</p> : null}
     </div>
   );
 }
@@ -81,7 +86,7 @@ export default function DetailsStep(props: DetailsStepProps) {
   return (
     <div>
       <p className={styles.stepIntro}>Tell us what this change is and who it belongs to. Values marked “needed” must be set.</p>
-      <TemplatePicker crg={crg} />
+      <TemplatePicker crg={crg} updateSession={props.updateSession} />
       <TextEntry label="Title (needed)" value={state.generatedShortDescription} onChange={(text) => actions.updateGeneratedField('shortDescription', text)} />
       <div className={styles.fieldRow}>
         <ChoiceSelect label="Category" isRequired options={choiceOptions.category ?? []} value={basicInfo.category} onChange={(value) => actions.setChgBasicInfo({ category: value })} />

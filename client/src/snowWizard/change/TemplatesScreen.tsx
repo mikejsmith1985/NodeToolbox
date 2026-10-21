@@ -79,7 +79,7 @@ function SharePanel({ template, library }: { template: CrgTemplate; library: Tem
 /** One template, with everything that can be done to it. */
 type TemplateCardProps = { template: CrgTemplate } & Pick<TemplatesScreenProps, 'library' | 'onUseTemplate' | 'draftInHand' | 'useLabel'>;
 
-function TemplateCard({ template, library, onUseTemplate, draftInHand, useLabel = 'Start a change from it' }: TemplateCardProps) {
+function TemplateCard({ template, library, onUseTemplate, draftInHand, useLabel = 'Open it in a new change' }: TemplateCardProps) {
   const [isSharing, setIsSharing] = useState(false);
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
   const [wasReplaced, setWasReplaced] = useState(false);

@@ -33,7 +33,7 @@ describe('TemplatesScreen', () => {
     render(<Harness onUseTemplate={onUseTemplate} />);
     expect(screen.getByRole('heading', { name: 'Monthly' })).toBeTruthy();
     expect(screen.getByText(/1 task/)).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Start a change from it' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Open it in a new change' }));
     expect(onUseTemplate).toHaveBeenCalledWith('tpl-1');
   });
 

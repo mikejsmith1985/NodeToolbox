@@ -1,70 +1,91 @@
-// SaveTemplateControl.test.tsx — Proves "Save as template" asks only for a name, confirms, and offers Replace on a name clash.
+// SaveTemplateControl.test.tsx — Proves saving a template is never a guess: "Update “X”" asks once and updates that
+// template (no duplicate), "Save as a new template" asks for a name and never overwrites by surprise, and every outcome
+// — saved (checked against the stored list), cancelled, or a clash — is said plainly.
 
 import { fireEvent, render, screen } from '@testing-library/react';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { useState } from 'react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import SaveTemplateControl from './SaveTemplateControl.tsx';
+import SaveTemplateControl, { type LinkedTemplate } from './SaveTemplateControl.tsx';
 import { useTemplateLibrary, type TemplateDraft } from './useTemplateLibrary.ts';
 
 const BLANK = { sysId: '', displayName: '' };
+const TASK = { id: 'task-1', name: 'Deploy', createdAt: '', shortDescription: 'Deploy', description: '', assignmentGroup: BLANK, assignedTo: BLANK, plannedStartDate: '', plannedEndDate: '', closeNotes: '' };
 const DRAFT = {
   chgBasicInfo: { category: 'software', assignmentGroup: BLANK },
   chgPlanningAssessment: {},
   chgPlanningContent: { implementationPlan: '1. Deploy', backoutPlan: '', testPlan: '' },
-  changeTasks: [],
+  changeTasks: [TASK],
 } as unknown as TemplateDraft;
 const TEMPLATES_KEY = 'ntbx-crg-templates';
+const MONTHLY = { id: 'tpl-1', name: 'Monthly', createdAt: '', chgBasicInfo: {}, chgPlanningAssessment: {}, chgPlanningContent: {}, ctaskTemplateIds: [] };
 
-function readSavedNames(): string[] {
-  return (JSON.parse(localStorage.getItem(TEMPLATES_KEY) ?? '[]') as Array<{ name: string }>).map((template) => template.name);
+function readSaved(): Array<{ id: string; name: string; ctaskTemplateIds: string[] }> {
+  return JSON.parse(localStorage.getItem(TEMPLATES_KEY) ?? '[]') as Array<{ id: string; name: string; ctaskTemplateIds: string[] }>;
 }
 
-function saveAs(templateName: string) {
-  fireEvent.click(screen.getByRole('button', { name: 'Save as template' }));
-  fireEvent.change(screen.getByLabelText('Name this template'), { target: { value: templateName } });
-  fireEvent.click(screen.getByRole('button', { name: 'Save template' }));
+/** The control with one library and the job's linked template, the way the change job hands them over. */
+function Harness({ initialLink = null, onLink = vi.fn() }: { initialLink?: LinkedTemplate | null; onLink?: (template: LinkedTemplate) => void }) {
+  const [linkedTemplate, setLinkedTemplate] = useState<LinkedTemplate | null>(initialLink);
+  return <SaveTemplateControl draft={DRAFT} library={useTemplateLibrary()} linkedTemplate={linkedTemplate} onLinkTemplate={(template) => { setLinkedTemplate(template); onLink(template); }} />;
 }
 
-/** The control with one library, the way the change job hands it one. */
-function Harness() {
-  return <SaveTemplateControl draft={DRAFT} library={useTemplateLibrary()} />;
+/** Saves under a new name through the form. */
+function saveNewAs(templateName: string, buttonName = 'Save as template') {
+  fireEvent.click(screen.getByRole('button', { name: buttonName }));
+  fireEvent.change(screen.getByLabelText('Name the new template'), { target: { value: templateName } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save new template' }));
 }
 
 describe('SaveTemplateControl', () => {
   beforeEach(() => localStorage.clear());
 
-  it('saves under the name given and says so', () => {
-    render(<Harness />);
-    saveAs('Monthly release');
-    expect(screen.getByRole('status').textContent).toContain('Saved ✓');
-    expect(readSavedNames()).toEqual(['Monthly release']);
+  it('saves a new template, checks it is really stored, says so with what it holds, and links the job to it', async () => {
+    const onLink = vi.fn();
+    render(<Harness onLink={onLink} />);
+    saveNewAs('Payments release');
+    expect(await screen.findByText(/^✓ Saved new template “Payments release” at .+ — details, plan, environments and 1 task\.$/)).toBeTruthy();
+    expect(readSaved().map((template) => template.name)).toEqual(['Payments release']);
+    expect(onLink).toHaveBeenCalledWith(expect.objectContaining({ name: 'Payments release' }));
+    // Linked now: the next save offers to update it, not to make another.
+    expect(screen.getByRole('button', { name: 'Update template “Payments release”' })).toBeTruthy();
   });
 
-  it('will not save without a name', () => {
+  it('updates the template the job was opened from — asked once, no duplicate made', async () => {
+    localStorage.setItem(TEMPLATES_KEY, JSON.stringify([MONTHLY]));
+    render(<Harness initialLink={{ id: 'tpl-1', name: 'Monthly' }} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Update template “Monthly”' }));
+    expect(screen.getByRole('alertdialog', { name: 'Update Monthly?' }).textContent).toContain('replaced by this change’s (1 task)');
+    fireEvent.click(screen.getByRole('button', { name: 'Yes, update “Monthly”' }));
+    expect(await screen.findByText(/^✓ Updated “Monthly” at /)).toBeTruthy();
+    expect(readSaved()).toHaveLength(1);
+    expect(readSaved()[0].ctaskTemplateIds).toHaveLength(1);
+  });
+
+  it('says plainly that nothing was saved when the user cancels', () => {
+    render(<Harness initialLink={{ id: 'tpl-1', name: 'Monthly' }} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Update template “Monthly”' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.getByRole('status').textContent).toBe('Nothing was saved.');
+  });
+
+  it('will not save a new template without a name', () => {
     render(<Harness />);
     fireEvent.click(screen.getByRole('button', { name: 'Save as template' }));
-    expect((screen.getByRole('button', { name: 'Save template' }) as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-    expect(screen.queryByLabelText('Name this template')).toBeNull();
+    expect((screen.getByRole('button', { name: 'Save new template' }) as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it('offers to replace a template with the same name instead of making a second one', () => {
+  it('asks instead of duplicating when the new name is taken, and can update that template or take another name', async () => {
+    localStorage.setItem(TEMPLATES_KEY, JSON.stringify([MONTHLY]));
     render(<Harness />);
-    saveAs('Monthly release');
-    saveAs('monthly release');
-    expect(screen.getByText(/already have a template called/)).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Replace it' }));
-    expect(screen.getByRole('status').textContent).toContain('Saved ✓');
-    expect(readSavedNames()).toEqual(['Monthly release']);
-  });
-
-  it('lets the user pick another name after a clash', () => {
-    render(<Harness />);
-    saveAs('Monthly release');
-    saveAs('Monthly release');
+    saveNewAs('monthly');
+    expect(screen.getByRole('alertdialog', { name: 'Name already used' }).textContent).toContain('Nothing was saved yet.');
     fireEvent.click(screen.getByRole('button', { name: 'Use another name' }));
-    fireEvent.change(screen.getByLabelText('Name this template'), { target: { value: 'Hotfix' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Save template' }));
-    expect(readSavedNames()).toEqual(['Hotfix', 'Monthly release']);
+    expect(screen.getByLabelText('Name the new template')).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('Name the new template'), { target: { value: 'Monthly' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save new template' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Update “Monthly”' }));
+    expect(await screen.findByText(/^✓ Updated “Monthly”/)).toBeTruthy();
+    expect(readSaved()).toHaveLength(1);
   });
 });

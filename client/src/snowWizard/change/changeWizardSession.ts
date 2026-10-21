@@ -68,6 +68,8 @@ export interface ChangeWizardSession {
   hasSavedChanges?: boolean;
   /** A new change: why the last save to the created changes failed, or null. */
   saveFailureText?: string | null;
+  /** The template this job was opened from (or last saved as), so saving updates it instead of making another. */
+  linkedTemplate?: { id: string; name: string } | null;
 }
 
 /** How a step asks to move: `shouldReturnHere` makes the next screen's Next lead straight back to this step. */

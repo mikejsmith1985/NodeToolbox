@@ -157,7 +157,9 @@ const STEP_FOR_ENGINE_SCREEN: Readonly<Record<string, ChangeWizardStepId>> = {
   changeDetails: 'details', schedule: 'environments', riskCheck: 'aiDraft',
   // Task backout plans come from the change's own backout plan (useImplementationBackout), written on "How will it go?".
   riskCheckFixRound: 'planning',
-  rcpChecklist: 'paperwork', ctaskTimeline: 'tasks', problems: 'scope', testEvidence: 'evidence',
+  rcpChecklist: 'paperwork', ctaskTimeline: 'tasks', problems: 'scope',
+  // Test evidence is every file on the chosen Jira issues, so it is fixed by choosing issues that have the files.
+  testEvidence: 'scope',
   // One-click fixes Toolbox runs on an existing change; in the wizard each goes to the step that holds its data.
   createPlannedOutage: 'environments', setCtaskConfigItems: 'details', linkProblems: 'scope',
 };

@@ -1,5 +1,5 @@
-// ChecksStep.test.tsx — Proves every writing gap is fixed together by "Fix all with AI" in place, a value gap gets one fix
-// button that comes back here, and "could not check" needs acknowledging.
+// ChecksStep.test.tsx — Proves the Risk Check leads the step and owns the writing gaps, a value gap gets one fix button that
+// comes back here, and "could not check" needs acknowledging.
 
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
@@ -29,17 +29,14 @@ function Harness({ items, session, goToStep, updateSession }: { items: Readiness
 }
 
 describe('ChecksStep', () => {
-  it('fixes every writing gap with one AI round right here — no button that leaves the step (GH #468)', () => {
+  it('puts Toolbox\'s Risk Check first, and hands writing gaps to it instead of a second AI round', () => {
     const goToStep = vi.fn();
     render(<Harness items={[DONE_OWNER, BACKOUT_GAP]} session={createChangeWizardSession('create')} goToStep={goToStep} updateSession={vi.fn()} />);
+    expect(screen.getByRole('heading', { name: '🛡️ AI Risk Check — on the real ticket' })).toBeTruthy();
     expect(screen.getByText('Backout Plan is empty.')).toBeTruthy();
-    expect(screen.getByRole('heading', { name: '✨ Fix all with AI' })).toBeTruthy();
+    expect(screen.getByText('The Risk Check above rewrites this.')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Write the Backout Plan' })).toBeNull();
-    expect((screen.getByLabelText(/Copy this and paste it/) as HTMLTextAreaElement).value).toContain('Backout Plan is empty.');
-    fireEvent.change(screen.getByLabelText(/Paste the assistant/), { target: { value: 'BACKOUT_PLAN: 1. Redeploy v1' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Read the reply' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Apply 1 field' }));
-    expect(screen.getByText(/Applied 1 field/)).toBeTruthy();
+    expect(screen.queryByText(/Fix all with AI/)).toBeNull();
     expect(goToStep).not.toHaveBeenCalled();
   });
 

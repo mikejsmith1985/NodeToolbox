@@ -25,7 +25,6 @@ import {
   buildShellSteps, deriveChangeWizardStep, evaluateStepCompletion, listChangeWizardPhases, listChangeWizardStepIds, readPaperworkNeed, readStepTitle,
   resolveResumeStep, type ChangeWizardMode, type ChangeWizardProgress, type ChangeWizardStepId, type PaperworkNeed,
 } from './changeWizardSteps.ts';
-import { describeCreatedChangesForPrompt } from './createdChanges.ts';
 import { mergeCreatedChanges, type CreatedChangeSummary } from './createOutcome.ts';
 import { useCreatedDraftRecovery, useCreatedTaskNumbers, type DraftRecovery } from './createdDraftRecovery.ts';
 import { buildCtaskEnvironmentPlan, listTaskLabelsByEnvironment, type CtaskEnvironmentPlan, type PlanEnvironmentKey } from './ctaskEnvironmentPlan.ts';
@@ -35,14 +34,13 @@ import { listEditedSteps, readStepValues } from './modifyDiff.ts';
 import SaveTemplateControl from './SaveTemplateControl.tsx';
 import StartingPointNotice from './StartingPointNotice.tsx';
 import StartOverControl from './StartOverControl.tsx';
-import AiWriteStep from './steps/AiWriteStep.tsx';
+import AiDraftStep from './steps/AiDraftStep.tsx';
 import ChecksStep from './steps/ChecksStep.tsx';
 import ChooseModeStep from './steps/ChooseModeStep.tsx';
 import CreateNowStep from './steps/CreateNowStep.tsx';
 import CreateResultStep from './steps/CreateResultStep.tsx';
 import DetailsStep from './steps/DetailsStep.tsx';
 import EnvironmentsStep from './steps/EnvironmentsStep.tsx';
-import EvidenceStep from './steps/EvidenceStep.tsx';
 import PlanningStep from './steps/PlanningStep.tsx';
 import ProductionPaperworkStep from './steps/ProductionPaperworkStep.tsx';
 import ScopeStep from './steps/ScopeStep.tsx';
@@ -60,8 +58,10 @@ import styles from './ChangeWizard.module.css';
 
 const CHANGE_JOB_KINDS: readonly WizardJobKind[] = ['newChange', 'modifyChange'];
 // "Skip — nothing to change": every pre-filled step of a modify, and the two optional steps of a new change.
-const MODIFY_SKIPPABLE_STEPS = new Set<ChangeWizardStepId>(['scope', 'aiDraft', 'details', 'planning', 'environments', 'evidence', 'tasks']);
-const CREATE_SKIPPABLE_STEPS = new Set<ChangeWizardStepId>(['evidence']);
+const MODIFY_SKIPPABLE_STEPS = new Set<ChangeWizardStepId>(['scope', 'aiDraft', 'details', 'planning', 'environments', 'tasks']);
+const CREATE_SKIPPABLE_STEPS = new Set<ChangeWizardStepId>([]);
+// Evidence is every file on the chosen Jira issues (owner's decision), so no files are chosen from this computer.
+const NO_LOCAL_EVIDENCE_FILES: File[] = [];
 const EDITED_MARK = ' (edited)';
 
 /** The mode a job kind runs in. */
@@ -77,15 +77,11 @@ interface StepExtras {
   paperworkNeed: PaperworkNeed;
   runner: FinishRunner;
   editedStepIds: ChangeWizardStepId[];
-  evidenceFiles: File[];
-  setEvidenceFiles: (files: File[]) => void;
   jiraEvidence: JiraEvidenceAttachment[];
   jobId: string;
   onExit: () => void;
   /** The job's one template library, shared by every part that saves a template. */
   library: TemplateLibrary;
-  /** The changes already made in ServiceNow, one line each with their task numbers, for the AI prompts. */
-  createdChangeLines: readonly string[];
   /** Throws this job away and goes back to the first screen. */
   onStartOver: () => void;
 }
@@ -96,16 +92,15 @@ function renderStep(stepId: ChangeWizardStepId, stepProps: ChangeStepProps, extr
   const stepScreens: Record<ChangeWizardStepId, () => ReactElement> = {
     whichChange: () => <WhichChangeStep {...stepProps} onExit={extras.onExit} />,
     scope: () => <ScopeStep {...stepProps} />,
-    aiDraft: () => <AiWriteStep {...withChoices} items={extras.items} createdChangeLines={extras.createdChangeLines} />,
+    aiDraft: () => <AiDraftStep {...withChoices} />,
     details: () => <DetailsStep {...withChoices} />,
     planning: () => <PlanningStep {...withChoices} />,
     environments: () => <EnvironmentsStep {...withChoices} />,
-    evidence: () => <EvidenceStep {...stepProps} jobId={extras.jobId} evidenceFiles={extras.evidenceFiles} onEvidenceFilesChange={extras.setEvidenceFiles} />,
     tasks: () => <TasksStep {...stepProps} library={extras.library} />,
-    createChanges: () => <CreateNowStep {...stepProps} runner={extras.runner} taskNamesByEnvironment={readTaskNamesByEnvironment(stepProps.crg.state)} />,
-    checks: () => <ChecksStep {...stepProps} items={extras.items} createdChangeLines={extras.createdChangeLines} />,
+    createChanges: () => <CreateNowStep {...stepProps} runner={extras.runner} taskNamesByEnvironment={readTaskNamesByEnvironment(stepProps.crg.state)} jiraEvidence={extras.jiraEvidence} />,
+    checks: () => <ChecksStep {...stepProps} items={extras.items} />,
     paperwork: () => <ProductionPaperworkStep {...stepProps} paperworkNeed={extras.paperworkNeed} />,
-    finish: () => <CreateResultStep {...stepProps} runner={extras.runner} taskNamesByEnvironment={readTaskNamesByEnvironment(stepProps.crg.state)} editedStepIds={extras.editedStepIds} evidenceFileCount={extras.evidenceFiles.length + extras.jiraEvidence.length} />,
+    finish: () => <CreateResultStep {...stepProps} runner={extras.runner} taskNamesByEnvironment={readTaskNamesByEnvironment(stepProps.crg.state)} editedStepIds={extras.editedStepIds} evidenceFileCount={extras.jiraEvidence.length} />,
   };
   return stepScreens[stepId]();
 }
@@ -167,7 +162,7 @@ function UnsavedChangesBanner({ session, currentStepId }: { session: ChangeWizar
   const changeNumbers = session.createdChanges.map((createdChange) => createdChange.changeNumber).join(' and ');
   return (
     <p className={styles.noticeText} role="note">
-      {`⚠ ${changeNumbers} ${session.createdChanges.length === 1 ? 'is' : 'are'} in ServiceNow but not finished. Your text, plans, tasks and evidence go on ${session.createdChanges.length === 1 ? 'it' : 'them'} when you press “Save to ServiceNow” on the last step.`}
+      {`⚠ ${changeNumbers} ${session.createdChanges.length === 1 ? 'is' : 'are'} in ServiceNow but not finished. Fixes to the writing go on ${session.createdChanges.length === 1 ? 'it' : 'them'} when you press “Save to ServiceNow” on the last step.`}
     </p>
   );
 }
@@ -246,7 +241,6 @@ function ChangeJob({ job, startingPoint, onExit, onStartOver }: { job: WizardJob
   const startingPointHandle = useStartingPoint(crg, startingPoint);
   const { session, updateSession } = useJobSession(job);
   const { choiceOptions } = useSnowChoiceOptions();
-  const [evidenceFiles, setEvidenceFiles] = useState<File[]>([]);
   const jiraEvidence = useTickedJiraEvidence(job.jobId, crg.state.selectedIssueKeys);
   const hasJiraEvidenceChoice = useJiraEvidenceChoiceStore((state) => Boolean(state.choices[job.jobId]));
   useRestoreEnvironments(crg, session);
@@ -268,16 +262,15 @@ function ChangeJob({ job, startingPoint, onExit, onStartOver }: { job: WizardJob
   const progress = buildProgress(crg, session, items, paperworkNeed);
   const runner = useFinishRunner({
     crg, session, updateSession, ctaskEnvironmentPlan, environmentValueByKey: buildEnvironmentValueByKey(choiceOptions.u_environment ?? []),
-    evidenceFiles, jiraEvidence, hasJiraEvidenceChoice, selectedIssueKeys: [...crg.state.selectedIssueKeys], editedStepIds, onFinished: () => useWizardJobStore.getState().finishJob(job.kind, Date.now()),
+    evidenceFiles: NO_LOCAL_EVIDENCE_FILES, jiraEvidence, hasJiraEvidenceChoice, selectedIssueKeys: [...crg.state.selectedIssueKeys], editedStepIds, onFinished: () => useWizardJobStore.getState().finishJob(job.kind, Date.now()),
   });
   useRememberChecksVerdict(items, session, updateSession);
   useCreatedTaskNumbers(session, updateSession);
-  const createdChangeLines = useMemo(() => describeCreatedChangesForPrompt(session.createdChanges, session.createdTasks), [session.createdChanges, session.createdTasks]);
   return (
     <ChangeJobShell
       job={job} crg={crg} session={session} updateSession={updateSession} progress={progress} currentStepId={currentStepId} goToStep={goToStep}
       startingPoint={startingPointHandle}
-      extras={{ choiceOptions, ctaskEnvironmentPlan, items, paperworkNeed, runner, editedStepIds, evidenceFiles, setEvidenceFiles, jiraEvidence, jobId: job.jobId, onExit, library, createdChangeLines, onStartOver }}
+      extras={{ choiceOptions, ctaskEnvironmentPlan, items, paperworkNeed, runner, editedStepIds, jiraEvidence, jobId: job.jobId, onExit, library, onStartOver }}
     />
   );
 }
@@ -306,6 +299,8 @@ interface ChangeJobShellProps {
 /** What the frame's top-right buttons act on. */
 interface JobFrameActionsProps {
   crg: CrgHook;
+  session: ChangeWizardSession;
+  updateSession: (update: Partial<ChangeWizardSession>) => void;
   library: TemplateLibrary;
   isTemplateReady: boolean;
   createdChangeNumbers: readonly string[];
@@ -315,10 +310,12 @@ interface JobFrameActionsProps {
 }
 
 /** The frame's top-right buttons: "Save as template" once the change has details, "Manage templates", "Save and leave", "Start over". */
-function JobFrameActions({ crg, library, isTemplateReady, createdChangeNumbers, onManageTemplates, onExit, onStartOver }: JobFrameActionsProps) {
+function JobFrameActions({ crg, session, updateSession, library, isTemplateReady, createdChangeNumbers, onManageTemplates, onExit, onStartOver }: JobFrameActionsProps) {
   return (
     <>
-      {isTemplateReady ? <SaveTemplateControl draft={crg.state} library={library} /> : null}
+      {isTemplateReady || session.linkedTemplate ? (
+        <SaveTemplateControl draft={crg.state} library={library} linkedTemplate={session.linkedTemplate} onLinkTemplate={(linkedTemplate) => updateSession({ linkedTemplate })} />
+      ) : null}
       <button type="button" className={shellStyles.secondaryButton} onClick={onManageTemplates}>Manage templates</button>
       <button type="button" className={shellStyles.secondaryButton} onClick={onExit}>Save and leave</button>
       <StartOverControl createdChangeNumbers={createdChangeNumbers} onStartOver={onStartOver} />
@@ -334,7 +331,10 @@ function ChangeJobShell(props: ChangeJobShellProps) {
     // The job stays as it is underneath; "Back" returns to the same step.
     const useTemplateHere = (templateId: string) => {
       const chosenTemplate = extras.library.templates.find((template) => template.id === templateId);
-      if (chosenTemplate) crg.actions.applyTemplate(chosenTemplate, extras.library.ctaskTemplates);
+      if (chosenTemplate) {
+        crg.actions.applyTemplate(chosenTemplate, extras.library.ctaskTemplates);
+        props.updateSession({ linkedTemplate: { id: chosenTemplate.id, name: chosenTemplate.name } });
+      }
       setIsManagingTemplates(false);
     };
     return <TemplatesScreen library={extras.library} draftInHand={crg.state} useLabel="Use it on this change" onUseTemplate={useTemplateHere} onBack={() => setIsManagingTemplates(false)} />;
@@ -421,13 +421,16 @@ function ChangeJobFrame({ crg, session, updateSession, progress, currentStepId, 
       onNext={handleNext}
       onBack={() => goToStep(stepIds[Math.max(0, currentIndex - 1)], { returnToStepId: null })}
       onSkip={returnStepId ? handleNext : moveForward}
-      advancedAction={<JobFrameActions crg={crg} library={extras.library} isTemplateReady={currentIndex >= stepIds.indexOf('details')}
+      advancedAction={<JobFrameActions crg={crg} session={session} updateSession={updateSession} library={extras.library} isTemplateReady={currentIndex >= stepIds.indexOf('details')}
         createdChangeNumbers={session.hasSavedChanges ? [] : session.createdChanges.map((createdChange) => createdChange.changeNumber)}
         onManageTemplates={onManageTemplates} onExit={extras.onExit} onStartOver={extras.onStartOver} />}
     >
       <StartingPointNotice startingPoint={startingPoint} />
       <RecoveryNotice recovery={recovery} session={session} />
       <UnsavedChangesBanner session={session} currentStepId={currentStepId} />
+      {session.linkedTemplate ? (
+        <p className={styles.hint} role="note">{`📄 Working from template “${session.linkedTemplate.name}”. Your edits change only this change — the template changes only when you press “Update template “${session.linkedTemplate.name}”” at the top.`}</p>
+      ) : null}
       {session.mode === 'create' && session.createdChanges.length > 0 && (currentStepId === 'environments' || currentStepId === 'tasks')
         ? <p className={shellStyles.hint}>These changes are already in ServiceNow. Edits here are saved to them on the last step, but a newly ticked environment or a new task is not added.</p>
         : null}
@@ -482,6 +485,10 @@ export default function ChangeWizard({ onExit }: WizardJobProps) {
     const mode = readJobMode(jobKind);
     const { job } = useWizardJobStore.getState().startJob(jobKind, mode === 'modify' ? 'whichChange' : 'scope', Date.now());
     useChangeWizardSessionStore.getState().ensureSession(job.jobId, mode);
+    // Opened from a template: the job works from it, so "Update template" saves into it rather than making another.
+    if (nextStartingPoint?.kind === 'template') {
+      useChangeWizardSessionStore.getState().updateSession(job.jobId, { linkedTemplate: { id: nextStartingPoint.template.id, name: nextStartingPoint.template.name } });
+    }
     setStartingPoint(nextStartingPoint);
     setActiveJob(job);
   }

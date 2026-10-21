@@ -52,7 +52,7 @@ describe('ChooseModeStep', () => {
     render(<ChooseModeStep resumableJobs={[]} templates={TEMPLATES} {...handlers} />);
     fireEvent.click(screen.getByRole('button', { name: /^New change/ }));
     fireEvent.change(screen.getByLabelText('Your saved templates'), { target: { value: 'tpl-1' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Start from a template' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Open template' }));
     expect(handlers.onStartFromTemplate).toHaveBeenCalledWith('tpl-1');
   });
 
@@ -79,7 +79,7 @@ describe('ChooseModeStep', () => {
     expect(handlers.onStartFromChange).toHaveBeenCalledWith('CHG0052017');
     expect(handlers.onStartFreshFromChange).toHaveBeenCalledWith('CHG0052017');
     fireEvent.change(screen.getByLabelText('Your saved templates'), { target: { value: 'tpl-1' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Use it on my open change' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Open it in my open change' }));
     expect(handlers.onStartFromTemplate).toHaveBeenCalledWith('tpl-1');
   });
 

@@ -18,7 +18,7 @@ import { useFinishRunner } from './useFinishRunner.ts';
 
 vi.mock('../../services/jiraApi.ts', () => ({ jiraGet: vi.fn(async () => []) }));
 vi.mock('../../services/snowApi.ts', () => ({ snowFetch: vi.fn() }));
-vi.mock('./evidenceUpload.ts', () => ({ attachAllEvidenceToChanges: vi.fn(async () => ({ results: {}, problems: [] })) }));
+vi.mock('./evidenceUpload.ts', () => ({ EVIDENCE_ATTACHED: 'attached', attachAllEvidenceToChanges: vi.fn(async () => ({ results: {}, problems: [] })) }));
 vi.mock('./modifyLoad.ts', () => ({ fetchChangeSnapshot: vi.fn() }));
 vi.mock('./jiraEvidence.ts', () => ({
   resolveJiraEvidenceAtFinish: vi.fn(async (input: { hasChoice: boolean; tickedEvidence: unknown[] }) => (input.hasChoice ? input.tickedEvidence : [])),
@@ -80,7 +80,7 @@ describe('useFinishRunner — create first, then save', () => {
     return { ...createChangeWizardSession('create'), createdChanges: [{ environmentLabel: 'REL', changeNumber: 'CHG1' }, { environmentLabel: 'PRD', changeNumber: 'CHG2' }] };
   }
 
-  it('creates with the task plan, records each change and reads back its task numbers — no evidence, not finished yet', async () => {
+  it('creates with the task plan, reads back the task numbers and attaches the evidence zip at once — job not finished yet', async () => {
     const { hookResult, actions, onFinished } = renderRunner(buildDraft(), createChangeWizardSession('create'));
     act(() => hookResult.result.current.runner.startCreate());
     expect(actions.createChg).toHaveBeenCalledWith({ rel: 'rel-env', prd: 'prd-env' }, { ctaskEnvironmentPlan: PLAN, reconcileAutoCtasks: true, shouldKeepDraft: true });
@@ -92,7 +92,8 @@ describe('useFinishRunner — create first, then save', () => {
       { environmentLabel: 'REL', changeNumber: 'CHG1' }, { environmentLabel: 'PRD', changeNumber: 'CHG2' },
     ]);
     expect(hookResult.result.current.session.createdTasks).toEqual({ CHG1: [TASK_RECORD], CHG2: [TASK_RECORD] });
-    expect(attachAllEvidenceToChanges).not.toHaveBeenCalled();
+    // The evidence goes on as the changes are created, so the risk check sees the real ticket with it.
+    await waitFor(() => expect(attachAllEvidenceToChanges).toHaveBeenCalledWith({ localFiles: [EVIDENCE_FILE], jiraAttachments: [] }, ['CHG1', 'CHG2'], expect.anything()));
     expect(onFinished).not.toHaveBeenCalled();
   });
 
@@ -148,6 +149,13 @@ describe('useFinishRunner — create first, then save', () => {
     expect(attachAllEvidenceToChanges).toHaveBeenCalledWith({ localFiles: [EVIDENCE_FILE], jiraAttachments: [] }, ['CHG1', 'CHG2'], expect.objectContaining({ onProgress: expect.any(Function) }));
     expect(hookResult.result.current.session.hasSavedChanges).toBe(true);
     expect(hookResult.result.current.session.outcomeNotes).toContain('CHG2 saved, with 1 task updated.');
+  });
+
+  it('does not attach the evidence twice: a change whose zip went on at create gets none at save', async () => {
+    const { hookResult, onFinished } = renderRunner(buildDraft(), { ...buildCreatedSession(), evidenceResults: { CHG1: 'attached', CHG2: 'attached' } });
+    act(() => hookResult.result.current.runner.startSaveCreated());
+    await waitFor(() => expect(onFinished).toHaveBeenCalled());
+    expect(attachAllEvidenceToChanges).not.toHaveBeenCalled();
   });
 
   it('says what failed and attaches nothing when a save fails, so pressing Save again is safe', async () => {

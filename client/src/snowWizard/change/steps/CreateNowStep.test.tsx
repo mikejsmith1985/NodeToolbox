@@ -17,8 +17,10 @@ function buildRunner(overrides: Partial<FinishRunner> = {}): FinishRunner {
   return { phase: { kind: 'idle' }, startCreate: vi.fn(), retryMissing: vi.fn(), startSaveCreated: vi.fn(), adoptExistingChanges: vi.fn(), startSave: vi.fn(), confirmSave: vi.fn(), cancelSave: vi.fn(), ...overrides };
 }
 
+const JIRA_FILES = [{ issueKey: 'ENCUC-1', issueSummary: '', attachment: { attachmentId: 'a1', filename: 'results.xlsx', sizeBytes: 10, contentUrl: '' } }];
+
 function renderStep(session: ChangeWizardSession, runner = buildRunner()) {
-  render(<CreateNowStep crg={CRG} session={session} updateSession={vi.fn()} goToStep={vi.fn()} runner={runner} taskNamesByEnvironment={{ REL: ['Deploy'], PRD: ['Deploy', 'Business Checkout'] }} />);
+  render(<CreateNowStep crg={CRG} session={session} updateSession={vi.fn()} goToStep={vi.fn()} runner={runner} taskNamesByEnvironment={{ REL: ['Deploy'], PRD: ['Deploy', 'Business Checkout'] }} jiraEvidence={JIRA_FILES} />);
   return runner;
 }
 
@@ -27,7 +29,9 @@ describe('CreateNowStep', () => {
     renderStep(createChangeWizardSession('create'));
     expect(screen.getByText('PRD change')).toBeTruthy();
     expect(screen.getByText('Tasks: Deploy, Business Checkout')).toBeTruthy();
-    expect(screen.getByText(/so the text can name their real change and task numbers/)).toBeTruthy();
+    expect(screen.getByText(/This makes 2 changes and 3 tasks in ServiceNow, each with the test-evidence zip/)).toBeTruthy();
+    expect(screen.getByText(/with all 1 file\(s\) from your Jira issues — attached as each change is created/)).toBeTruthy();
+    expect(screen.getByText('ENCUC-1: results.xlsx')).toBeTruthy();
   });
 
   it('shows each change made, with its task numbers, and says what comes next', () => {
@@ -35,11 +39,14 @@ describe('CreateNowStep', () => {
       ...createChangeWizardSession('create'),
       createdChanges: [{ environmentLabel: 'REL', changeNumber: 'CHG1' }, { environmentLabel: 'PRD', changeNumber: 'CHG2' }],
       createdTasks: { CHG1: [{ sysId: 't1', number: 'CTASK1', shortDescription: 'Deploy' }], CHG2: [] },
+      evidenceResults: { CHG1: 'attached', CHG2: 'HTTP 413' },
     });
+    expect(screen.getByText(/^Test evidence: ✓ attached as Test-Evidence_CHG1_/)).toBeTruthy();
+    expect(screen.getByText('Test evidence: ✗ not attached — HTTP 413. Saving on the last step tries again.')).toBeTruthy();
     expect(screen.getByRole('link', { name: 'CHG1' })).toBeTruthy();
     expect(screen.getByText('Tasks: CTASK1 Deploy')).toBeTruthy();
     expect(screen.getByText('Tasks: none')).toBeTruthy();
-    expect(screen.getByText(/the AI writes the text next, using these numbers/)).toBeTruthy();
+    expect(screen.getByText(/Press Next to run the Risk Check on the real ticket/)).toBeTruthy();
   });
 
   it('uses changes already in ServiceNow instead of creating duplicates', () => {

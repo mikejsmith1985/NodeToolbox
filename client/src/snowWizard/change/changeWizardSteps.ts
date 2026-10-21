@@ -11,7 +11,7 @@ export type ChangeWizardMode = 'create' | 'modify';
 
 /** Every step the change wizard can show (contracts/change-wizard.md). */
 export type ChangeWizardStepId =
-  | 'whichChange' | 'scope' | 'aiDraft' | 'details' | 'planning' | 'environments' | 'evidence'
+  | 'whichChange' | 'scope' | 'aiDraft' | 'details' | 'planning' | 'environments'
   | 'tasks' | 'createChanges' | 'checks' | 'paperwork' | 'finish';
 
 /** Whether the approval email and change plan PDF are needed, and if not, why not. */
@@ -46,25 +46,26 @@ export interface StepCompletion {
   blockedReason?: string;
 }
 
-// A new change is CREATED in ServiceNow once every pick is made (template, dropdowns, planning answers, environments,
-// tasks), so the writing that follows can quote its real CHG and CTASK numbers; the last step saves the finished work
-// to each change (owner's decision, GH #468). "Let AI write it" is the ONE AI step: it writes, then makes it pass review.
+// Toolbox's own order, guided (owner's decision): every pick, then AI Assist writes the change, then the change is
+// CREATED in ServiceNow with its CTASKs and the test-evidence zip, then Toolbox's Risk Check and the final checks run
+// on the real ticket, and the last step saves the fixes. Evidence is simply every file on the chosen Jira issues.
 const CREATE_STEP_IDS: readonly ChangeWizardStepId[] = [
-  'scope', 'details', 'planning', 'environments', 'tasks', 'createChanges', 'aiDraft', 'evidence', 'checks', 'paperwork', 'finish',
+  'scope', 'details', 'planning', 'environments', 'tasks', 'aiDraft', 'createChanges', 'checks', 'paperwork', 'finish',
 ];
 const MODIFY_STEP_IDS: readonly ChangeWizardStepId[] = [
-  'whichChange', 'scope', 'details', 'planning', 'environments', 'aiDraft', 'evidence', 'tasks', 'checks', 'paperwork', 'finish',
+  'whichChange', 'scope', 'details', 'planning', 'environments', 'aiDraft', 'tasks', 'checks', 'paperwork', 'finish',
 ];
 
 // The steps as three stages, so eleven chips read as "where am I" at a glance.
 const CREATE_PHASES: readonly GuidedFlowPhase[] = [
   { label: '① Pick', stepIds: ['scope', 'details', 'planning', 'environments', 'tasks'] },
-  { label: '② Create in ServiceNow', stepIds: ['createChanges'] },
-  { label: '③ Write, check & save', stepIds: ['aiDraft', 'evidence', 'checks', 'paperwork', 'finish'] },
+  { label: '② AI writes it', stepIds: ['aiDraft'] },
+  { label: '③ Create in ServiceNow', stepIds: ['createChanges'] },
+  { label: '④ Risk check & save', stepIds: ['checks', 'paperwork', 'finish'] },
 ];
 const MODIFY_PHASES: readonly GuidedFlowPhase[] = [
   { label: '① Load & pick', stepIds: ['whichChange', 'scope', 'details', 'planning', 'environments'] },
-  { label: '② Write & check', stepIds: ['aiDraft', 'evidence', 'tasks', 'checks', 'paperwork'] },
+  { label: '② Write & risk check', stepIds: ['aiDraft', 'tasks', 'checks', 'paperwork'] },
   { label: '③ Save', stepIds: ['finish'] },
 ];
 
@@ -77,14 +78,13 @@ export function listChangeWizardPhases(mode: ChangeWizardMode): GuidedFlowPhase[
 export const CHANGE_WIZARD_STEP_TITLES: Readonly<Record<ChangeWizardStepId, string>> = {
   whichChange: 'Which change?',
   scope: 'What\'s in this change?',
-  aiDraft: 'Let AI write it',
+  aiDraft: 'AI Assist: let AI write it',
   details: 'Tell us about the change',
   planning: 'How will it go?',
   environments: 'Where and when?',
-  evidence: 'Add proof',
   tasks: 'Build the tasks',
   createChanges: 'Create in ServiceNow',
-  checks: 'Will it pass review?',
+  checks: 'Risk check & final checks',
   paperwork: 'Production paperwork',
   finish: 'Save to ServiceNow',
 };

@@ -115,7 +115,8 @@ function startFakeJira() {
 
 /** The primary button of the guided frame. */
 function readNextButton(): HTMLButtonElement {
-  return screen.getAllByRole('button').find((button) => button.className.includes('primaryButton') && button.closest('section')) as HTMLButtonElement;
+  // The frame's Next is the last primary button: steps (and Toolbox's Risk Check) have primary buttons of their own above it.
+  return screen.getAllByRole('button').filter((button) => button.className.includes('primaryButton') && button.closest('section')).at(-1) as HTMLButtonElement;
 }
 
 /** Waits for a step's heading, by its title. */
@@ -154,30 +155,28 @@ async function restoreAndFinish() {
   expect(screen.getByText(/Enrollment - AWS - PRD/)).toBeTruthy();
   await pressNext();
 
-  await expectStep('Create in ServiceNow');
-  expect(screen.getByRole('link', { name: 'CHG0052018' })).toBeTruthy();
-  expect(readNextButton().textContent).not.toMatch(/Create them/);
-  await pressNext();
-
-  await expectStep('Let AI write it');
+  // Toolbox's order: AI Assist writes the change before it is created (here the changes already exist).
+  await expectStep('AI Assist: let AI write it');
   expect(screen.getByText(/CHG0052017 and CHG0052018 are in ServiceNow but not finished/)).toBeTruthy();
   const promptText = (screen.getByLabelText(/Copy this and paste it/) as HTMLTextAreaElement).value;
-  expect(promptText).toContain('PRD change CHG0052018 — tasks: CTASK0100002 (Enrollment - AWS - PRD), CTASK0100003 (Business Checkout)');
   expect(promptText).toContain('ENCUC-2334');
   fireEvent.change(screen.getByLabelText(/Paste the assistant/), { target: { value: [
     'IMPLEMENTATION_PLAN: 1. SCM deploys the release (CTASK0100002).', 'TEST_PLAN: 1. Business checkout (CTASK0100003).', 'BACKOUT_PLAN: 1. If checkout fails, SCM redeploys the prior build.',
   ].join('\n') } });
   fireEvent.click(screen.getByRole('button', { name: 'Read the reply' }));
   fireEvent.click(await screen.findByRole('button', { name: /^Fill in \d+ fields?$/ }));
-
-  // The one AI step: part 2 (pass review) shows once the plans are written, on the same screen.
-  await screen.findByRole('heading', { name: '2 · Make it pass review' });
-  await expectStep('Let AI write it');
   await pressNext();
-  await expectStep('Add proof');
-  fireEvent.click(screen.getByRole('button', { name: 'Skip — nothing to change' }));
-  await expectStep('Will it pass review?');
+
+  await expectStep('Create in ServiceNow');
+  expect(screen.getByRole('link', { name: 'CHG0052018' })).toBeTruthy();
+  expect(screen.getByText(/CTASK0100002 Enrollment - AWS - PRD/)).toBeTruthy();
+  expect(readNextButton().textContent).not.toMatch(/Yes, create/);
+  await pressNext();
+
+  // Toolbox's Risk Check runs on the real ticket, above the final checks.
+  await expectStep('Risk check & final checks');
   await screen.findByRole('list', { name: 'Checks' });
+  expect(screen.getByRole('heading', { name: '🛡️ AI Risk Check — on the real ticket' })).toBeTruthy();
   if (readNextButton().disabled) fireEvent.click(within(screen.getByText(/I understand these are not all done/).closest('label') as HTMLElement).getByRole('checkbox'));
   await pressNext();
   await expectStep('Production paperwork');

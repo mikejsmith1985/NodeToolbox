@@ -16,7 +16,7 @@ import { listCreatedChangeTasks, saveCreatedChange, type CreatedTasksByChange } 
 import { restoreFromCreatedChanges } from './createdDraftRecovery.ts';
 import { mergeCreatedChanges, readCreateOutcome, type CreatedChangeSummary } from './createOutcome.ts';
 import { listTaskLabelsByEnvironment, type CtaskEnvironmentPlan, type PlanEnvironmentKey } from './ctaskEnvironmentPlan.ts';
-import { attachAllEvidenceToChanges } from './evidenceUpload.ts';
+import { attachAllEvidenceToChanges, EVIDENCE_ATTACHED } from './evidenceUpload.ts';
 import { resolveJiraEvidenceAtFinish, type JiraEvidenceAttachment } from './jiraEvidence.ts';
 import { detectRemoteConflicts, type RemoteConflict } from './modifyDiff.ts';
 import { fetchChangeSnapshot } from './modifyLoad.ts';
@@ -141,7 +141,7 @@ export function useFinishRunner(input: FinishRunnerInput): FinishRunner {
     }
   }
 
-  /** Reads back each created change's tasks, so the writing that follows can quote their numbers. */
+  /** Reads back each created change's tasks, so the screens that follow can name them. */
   async function loadCreatedTasks(createdChanges: readonly CreatedChangeSummary[]) {
     setPhase({ kind: 'working', message: 'Reading back the task numbers…' });
     const createdTasks: CreatedTasksByChange = { ...session.createdTasks };
@@ -163,9 +163,19 @@ export function useFinishRunner(input: FinishRunnerInput): FinishRunner {
   function settleCreate(pendingWrite: PendingWrite, resultText: string) {
     const outcome = readCreateOutcome(resultText, pendingWrite.attempted);
     const createdChanges = mergeCreatedChanges(session.createdChanges, outcome.createdChanges);
-    updateSession({ createdChanges, outcomeNotes: [...session.outcomeNotes, ...outcome.notes], failureText: outcome.failureText });
+    const outcomeNotes = [...session.outcomeNotes, ...outcome.notes];
+    updateSession({ createdChanges, outcomeNotes, failureText: outcome.failureText });
     restoreCreatedEnvironments(createdChanges);
-    void loadCreatedTasks(createdChanges);
+    void loadTasksThenAttachEvidence(createdChanges, outcome.createdChanges.map((createdChange) => createdChange.changeNumber), outcomeNotes);
+  }
+
+  /**
+   * The evidence zip goes on as each change is created (owner's decision), so the Risk Check and the final checks see
+   * the real ticket with its evidence. The job is not finished: the fixes are saved on the last step.
+   */
+  async function loadTasksThenAttachEvidence(createdChanges: readonly CreatedChangeSummary[], newChangeNumbers: string[], outcomeNotes: string[]) {
+    await loadCreatedTasks(createdChanges);
+    if (newChangeNumbers.length > 0) await attachEvidenceAndFinish(newChangeNumbers, false, outcomeNotes);
   }
 
   /**
@@ -204,7 +214,11 @@ export function useFinishRunner(input: FinishRunnerInput): FinishRunner {
     }
     const outcomeNotes = [...session.outcomeNotes, ...savedNotes];
     updateSession({ hasSavedChanges: true, saveFailureText: null, outcomeNotes });
-    void attachEvidenceAndFinish(session.createdChanges.map((createdChange) => createdChange.changeNumber), true, outcomeNotes);
+    // The evidence went on at create; only a change whose zip did not get there is tried again.
+    const changesWithoutEvidence = session.createdChanges
+      .map((createdChange) => createdChange.changeNumber)
+      .filter((changeNumber) => session.evidenceResults[changeNumber] !== EVIDENCE_ATTACHED);
+    void attachEvidenceAndFinish(changesWithoutEvidence, true, outcomeNotes);
   }
 
   /** Records a modify's outcome, attaching evidence to the change when the change itself was saved. */

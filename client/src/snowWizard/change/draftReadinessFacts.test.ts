@@ -118,7 +118,7 @@ describe('resolveFixStepId', () => {
     [{ kind: 'openStep', stepId: 'rcpChecklist', label: '' }, 'paperwork'],
     [{ kind: 'openStep', stepId: 'ctaskTimeline', label: '' }, 'tasks'],
     [{ kind: 'openStep', stepId: 'problems', label: '' }, 'scope'],
-    [{ kind: 'openStep', stepId: 'testEvidence', label: '' }, 'evidence'],
+    [{ kind: 'openStep', stepId: 'testEvidence', label: '' }, 'scope'],
     [{ kind: 'fixNow', fixId: 'createPlannedOutage', label: '', targetCount: 1 }, 'environments'],
   ];
 

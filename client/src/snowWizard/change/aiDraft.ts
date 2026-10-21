@@ -7,7 +7,7 @@
 
 import { CHG_TEXT_FIELD_LABELS, type ChgTextFieldKey } from '../../views/SnowHub/chgFormula/formulaCard.ts';
 import { buildAiAssistPromptText, parseAiAssistChgResponse } from '../../views/SnowHub/hooks/useAiAssist.ts';
-import { buildCreatedRecordsNote, buildMultiChangeNote, buildWizardPromptContext } from './aiRounds.ts';
+import { buildMultiChangeNote, buildWizardPromptContext } from './aiRounds.ts';
 import { applyChangeTextField, readChangeTextFields, readSelectedIssues, type CrgDraftState, type CrgHook } from './changeDraft.ts';
 
 /** The draft setters an accepted suggestion writes through — the same ones the screens use. */
@@ -40,14 +40,9 @@ const BEST_GUESS_INSTRUCTION = 'Make your best guess for every field from the fa
  * The whole prompt: Toolbox's seven-field AI Assist prompt, seeded with the chosen Jira work, the change's own picks
  * (category, type, environments, planning answers) as facts, and anything already written.
  */
-export function buildAiDraftPrompt(draft: CrgDraftState, createdChangeLines: readonly string[] = []): string {
+export function buildAiDraftPrompt(draft: CrgDraftState): string {
   const basePrompt = buildAiAssistPromptText(readSelectedIssues(draft), readChangeTextFields(draft), buildWizardPromptContext(draft));
-  return [basePrompt, ...buildMultiChangeNote(draft), ...buildCreatedRecordsNote(createdChangeLines), '', BEST_GUESS_INSTRUCTION].join('\n');
-}
-
-/** The draft prompt for a job whose changes may already exist, quoting their numbers (empty before they are created). */
-export function aiDraftPromptFor(createdChangeLines: readonly string[]): (draft: CrgDraftState) => string {
-  return (draft) => buildAiDraftPrompt(draft, createdChangeLines);
+  return [basePrompt, ...buildMultiChangeNote(draft), '', BEST_GUESS_INSTRUCTION].join('\n');
 }
 
 /** Reads a pasted reply into one suggestion per text, skipping any that already say the same thing. */
