@@ -8,6 +8,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **SNow Wizard: finishing changes that already exist is now proven end to end.**
+  - **Each task is written only to its own CTASK.** Saving used to pair any unmatched card with a task by position,
+    which could write a REL task over a PRD one, dates included. It now matches by CTASK number, then by exact title,
+    and leaves anything else alone (the result says which).
+  - **The restore rebuilds every task from every change.** Each task becomes one card on its own environment, named
+    by its CTASK number. Each environment also takes its own change's window, configuration item and environment
+    value. "Use existing changes" does the same, so a save never changes what those changes hold by accident.
+  - **Task numbers are always read back.** Changes picked up by number showed "reading their numbers…" forever, and
+    the AI prompt lacked their CTASK numbers.
+  - **New: "Finish changes you already created"** on the first screen. Type each environment's CHG number and the
+    job picks them up, restore included, without ever creating a change.
+  - **An end-to-end test** walks all 12 screens on both ways in, against an in-memory ServiceNow. It proves that no
+    change or task is created and that every write lands on the right record. Toolbox gains two additive pieces:
+    the `replaceChangeTasks` action and `fetchChangeTasksAsCards`.
+
 - **SNow Wizard: no dead quick-start button, and the restore offer actually shows.**
   - "Start from an existing change" was silently **disabled** while a new change was open. It now reads **Copy it
     into my open change**, with **Start a fresh change from it** beside it, which discards the open one. The template

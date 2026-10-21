@@ -9,14 +9,17 @@ import { useCallback, useEffect, useState } from 'react';
 
 import { snowFetch } from '../../services/snowApi.ts';
 import { extractChoiceValue, extractSnowReference } from '../../views/SnowHub/hooks/snowFieldValues.ts';
-import type { SnowReference } from '../../views/SnowHub/hooks/useCrgState.ts';
+import { fetchChangeTasksAsCards, type CtaskTemplate, type SnowReference } from '../../views/SnowHub/hooks/useCrgState.ts';
 import { readUtcInstant } from '../../views/SnowHub/rcp/rcpChangeFacts.ts';
 import { formatUtcAsLocalDateTime } from '../../views/SnowHub/rcp/rcpNewChange.ts';
 import { DRAFT_ENVIRONMENTS, readDetailsGaps, readEnabledPlanEnvironments, type CrgDraftState, type CrgHook } from './changeDraft.ts';
 import type { ChangeWizardSession } from './changeWizardSession.ts';
+import { listCreatedChangeTasks, type CreatedTasksByChange } from './createdChanges.ts';
+import type { CreatedChangeSummary } from './createOutcome.ts';
 
 /** One created change's own environment values, as the environment card holds them. */
 export interface CreatedEnvironmentValues {
+  changeSysId: string;
   configItem: SnowReference;
   plannedStartDate: string;
   plannedEndDate: string;
@@ -26,7 +29,7 @@ export interface CreatedEnvironmentValues {
 /** Where a recovery stands. */
 export type RecoveryPhase = 'idle' | 'waitingForNumber' | 'restoring' | 'done' | 'failed';
 
-const ENVIRONMENT_FIELDS = 'cmdb_ci,start_date,end_date,u_environment';
+const ENVIRONMENT_FIELDS = 'sys_id,cmdb_ci,start_date,end_date,u_environment';
 
 /**
  * True for a new-change job whose changes exist but whose draft has lost what they were made from — a required detail
@@ -55,11 +58,57 @@ export async function readCreatedEnvironmentValues(changeNumber: string): Promis
   const changeRecord = Array.isArray(reply?.result) ? reply.result[0] as Record<string, unknown> | undefined : undefined;
   if (!changeRecord) throw new Error(`ServiceNow has no change ${changeNumber}.`);
   return {
+    changeSysId: extractSnowReference(changeRecord.sys_id).sysId,
     configItem: extractSnowReference(changeRecord.cmdb_ci),
     plannedStartDate: readDateInput(changeRecord.start_date),
     plannedEndDate: readDateInput(changeRecord.end_date),
     snowEnvironmentValue: extractChoiceValue(changeRecord.u_environment),
   };
+}
+
+/**
+ * Makes the draft match changes that already exist: each environment switched on with its own change's window,
+ * configuration item and environment value, and the task cards rebuilt from every change's real tasks — one card per
+ * task, on its own environment, named by its CTASK number so saving writes each card back to exactly that task.
+ */
+export async function restoreFromCreatedChanges(
+  actions: Pick<CrgHook['actions'], 'updateEnvironment' | 'replaceChangeTasks'>,
+  createdChanges: readonly CreatedChangeSummary[],
+): Promise<void> {
+  const rebuiltCards: CtaskTemplate[] = [];
+  for (const createdChange of createdChanges) {
+    const environment = DRAFT_ENVIRONMENTS.find(({ label }) => label === createdChange.environmentLabel);
+    if (!environment) continue;
+    const { changeSysId, ...environmentValues } = await readCreatedEnvironmentValues(createdChange.changeNumber);
+    actions.updateEnvironment(environment.key, { isEnabled: true, ...environmentValues });
+    const changeCards = await fetchChangeTasksAsCards(changeSysId);
+    rebuiltCards.push(...changeCards.map((card) => ({ ...card, environmentKeys: [environment.label] })));
+  }
+  actions.replaceChangeTasks(rebuiltCards);
+}
+
+/**
+ * Reads the task numbers of any created change the job does not know them for yet — a change picked up by number, or
+ * a job from before they were kept — so the AI prompt and "Create in ServiceNow" always show them. One read per change.
+ */
+export function useCreatedTaskNumbers(session: ChangeWizardSession, updateSession: (update: Partial<ChangeWizardSession>) => void): void {
+  const missingNumbersText = session.createdChanges
+    .map((createdChange) => createdChange.changeNumber)
+    .filter((changeNumber) => session.createdTasks?.[changeNumber] === undefined)
+    .join(' ');
+  const knownTasks = session.createdTasks;
+  useEffect(() => {
+    if (missingNumbersText === '') return undefined;
+    let isCurrent = true;
+    void (async () => {
+      const readTasks: CreatedTasksByChange = {};
+      for (const changeNumber of missingNumbersText.split(' ')) {
+        try { readTasks[changeNumber] = await listCreatedChangeTasks(changeNumber); } catch { readTasks[changeNumber] = []; }
+      }
+      if (isCurrent) updateSession({ createdTasks: { ...knownTasks, ...readTasks } });
+    })();
+    return () => { isCurrent = false; };
+  }, [missingNumbersText, knownTasks, updateSession]);
 }
 
 /** The recovery for one job: whether it is needed, where it stands, and the button's action. */
@@ -74,26 +123,22 @@ export interface DraftRecovery {
 export function useCreatedDraftRecovery(crg: CrgHook, session: ChangeWizardSession, onRestored: () => void): DraftRecovery {
   const [phase, setPhase] = useState<RecoveryPhase>('idle');
   const [failureText, setFailureText] = useState('');
-  const { setCloneChgNumber, cloneFromChg, updateEnvironment } = crg.actions;
+  const { setCloneChgNumber, cloneFromChg, updateEnvironment, replaceChangeTasks } = crg.actions;
   const firstChangeNumber = session.createdChanges[0]?.changeNumber ?? '';
   const cloneNumberInDraft = crg.state.cloneChgNumber;
 
-  /** Copies the first change's values, then gives each environment its own change's window and item. */
+  /** Copies the first change's values, then each environment's own values and every change's real tasks. */
   const runRestore = useCallback(async () => {
     try {
       await cloneFromChg();
-      for (const createdChange of session.createdChanges) {
-        const environment = DRAFT_ENVIRONMENTS.find(({ label }) => label === createdChange.environmentLabel);
-        if (!environment) continue;
-        updateEnvironment(environment.key, { isEnabled: true, ...await readCreatedEnvironmentValues(createdChange.changeNumber) });
-      }
+      await restoreFromCreatedChanges({ updateEnvironment, replaceChangeTasks }, session.createdChanges);
       setPhase('done');
       onRestored();
     } catch (restoreError) {
       setFailureText(restoreError instanceof Error ? restoreError.message : String(restoreError));
       setPhase('failed');
     }
-  }, [cloneFromChg, updateEnvironment, session.createdChanges, onRestored]);
+  }, [cloneFromChg, updateEnvironment, replaceChangeTasks, session.createdChanges, onRestored]);
 
   // cloneFromChg reads the number from the draft, so the number goes in first and the copy runs once it is there.
   useEffect(() => {

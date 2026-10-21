@@ -52,11 +52,17 @@ describe('listCreatedChangeTasks', () => {
 });
 
 describe('matchTasksToCards', () => {
-  it('pairs by short description first, then the rest in order', () => {
-    const cards = [buildCard('c1', 'Deploy'), buildCard('c2', 'Smoke test')];
-    const records = [{ sysId: 'auto', number: 'CTASK1', shortDescription: 'Implementation' }, { sysId: 'dep', number: 'CTASK2', shortDescription: 'Deploy' }];
-    const matches = matchTasksToCards(cards, records);
-    expect(matches.map(({ card, taskRecord }) => `${card.id}:${taskRecord.sysId}`)).toEqual(['c1:dep', 'c2:auto']);
+  it('pairs by CTASK number first, then exact title, and never by position', () => {
+    const rebuiltCard = { ...buildCard('c1', 'Enrollment - AWS - PRD'), name: 'CTASK9' };
+    const cards = [rebuiltCard, buildCard('c2', 'Smoke test'), buildCard('c3', 'Enrollment - AWS - REL')];
+    const records = [
+      { sysId: 'smoke', number: 'CTASK8', shortDescription: 'Smoke test' },
+      { sysId: 'prd', number: 'CTASK9', shortDescription: 'Enrollment - AWS - PRD' },
+      { sysId: 'checkout', number: 'CTASK10', shortDescription: 'Business Checkout' },
+    ];
+    const { matches, unmatchedCards } = matchTasksToCards(cards, records);
+    expect(matches.map(({ card, taskRecord }) => `${card.id}:${taskRecord.sysId}`)).toEqual(['c1:prd', 'c2:smoke']);
+    expect(unmatchedCards.map((card) => card.id)).toEqual(['c3']);
   });
 });
 

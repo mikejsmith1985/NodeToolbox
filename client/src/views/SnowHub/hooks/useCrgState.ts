@@ -517,6 +517,8 @@ interface CrgActions {
    */
   applyTemplate: (template: CrgTemplate, availableCtaskTemplates?: CtaskTemplate[]) => void;
   addChangeTask: (template: CtaskTemplate) => void;
+  /** Replaces every staged CTASK at once (SNow Wizard rebuilding its cards from changes it already created). */
+  replaceChangeTasks: (tasks: CtaskTemplate[]) => void;
   removeChangeTask: (taskId: string) => void;
   /** Edits a staged CTASK in place — the list is editable, not just add-and-delete. */
   updateChangeTask: (taskId: string, taskData: CtaskTemplateData) => void;
@@ -1159,6 +1161,14 @@ async function fetchClonedChangeTasks(sourceChgSysId: string): Promise<CtaskTemp
   );
 
   return (responseData?.result ?? []).map(buildStagedChangeTaskFromRecord);
+}
+
+/**
+ * A change's tasks as staged cards, each named by its CTASK number — the same read a clone uses. Exported for the SNow
+ * Wizard, which rebuilds its cards from changes it already created so each card is tied to its own task.
+ */
+export async function fetchChangeTasksAsCards(changeSysId: string): Promise<CtaskTemplate[]> {
+  return fetchClonedChangeTasks(changeSysId);
 }
 
 /** The change's CI and planned window, read off a change_request row (UTC values become the form's local clock). */
@@ -2441,6 +2451,10 @@ export function useCrgState(options?: UseCrgStateOptions): { state: CrgState; ac
     }));
   }, []);
 
+  const replaceChangeTasks = useCallback((tasks: CtaskTemplate[]) => {
+    setState((previousState) => ({ ...previousState, changeTasks: [...tasks] }));
+  }, []);
+
   const removeChangeTask = useCallback((taskId: string) => {
     setState((previousState) => ({
       ...previousState,
@@ -2867,6 +2881,7 @@ export function useCrgState(options?: UseCrgStateOptions): { state: CrgState; ac
       cloneFromChg,
       applyTemplate,
       addChangeTask,
+      replaceChangeTasks,
       removeChangeTask,
       updateChangeTask,
       duplicateChangeTask,
@@ -2888,7 +2903,7 @@ export function useCrgState(options?: UseCrgStateOptions): { state: CrgState; ac
     setShortDescriptionConfig,
     setChgBasicInfo, setChgPlanningAssessment, setChgPlanningContent,
     pinCustomSnowField, removeCustomSnowField,
-    setCloneChgNumber, cloneFromChg, applyTemplate, addChangeTask, removeChangeTask,
+    setCloneChgNumber, cloneFromChg, applyTemplate, addChangeTask, replaceChangeTasks, removeChangeTask,
     updateChangeTask, duplicateChangeTask, moveChangeTask,
     setLinkedCtaskTemplateIds, setReconcileAutoCtasks, setCtaskTimelinePlan,
     appendTasksToExistingChg, cloneCtaskTemplate, updateEnvironment, goToStep, reset, createChg,

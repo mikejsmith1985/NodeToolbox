@@ -13,7 +13,7 @@ const TEMPLATES = [{ id: 'tpl-1', name: 'Monthly' }] as CrgTemplate[];
 function buildHandlers() {
   return {
     onChooseNew: vi.fn(), onChooseExisting: vi.fn(), onContinue: vi.fn(), onStartAgain: vi.fn(), onExit: vi.fn(),
-    onStartFromChange: vi.fn(), onStartFreshFromChange: vi.fn(), onStartFromTemplate: vi.fn(), onOpenTemplates: vi.fn(),
+    onStartFromChange: vi.fn(), onStartFreshFromChange: vi.fn(), onFinishCreatedChanges: vi.fn(), onStartFromTemplate: vi.fn(), onOpenTemplates: vi.fn(),
   };
 }
 
@@ -72,5 +72,20 @@ describe('ChooseModeStep', () => {
     fireEvent.change(screen.getByLabelText('Your saved templates'), { target: { value: 'tpl-1' } });
     fireEvent.click(screen.getByRole('button', { name: 'Use it on my open change' }));
     expect(handlers.onStartFromTemplate).toHaveBeenCalledWith('tpl-1');
+  });
+
+  it('finishes changes already created from their numbers, never creating new ones', () => {
+    const handlers = buildHandlers();
+    render(<ChooseModeStep resumableJobs={[]} templates={[]} {...handlers} />);
+    fireEvent.click(screen.getByText('Finish changes you already created'));
+    const finishButton = screen.getByRole('button', { name: 'Finish these changes' }) as HTMLButtonElement;
+    expect(finishButton.disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText('REL change number'), { target: { value: 'chg0052017' } });
+    fireEvent.change(screen.getByLabelText('PRD change number'), { target: { value: 'CHG005' } });
+    fireEvent.change(screen.getByLabelText('PRD change number'), { target: { value: 'CHG0052018' } });
+    fireEvent.click(finishButton);
+    expect(handlers.onFinishCreatedChanges).toHaveBeenCalledWith([
+      { environmentLabel: 'REL', changeNumber: 'CHG0052017' }, { environmentLabel: 'PRD', changeNumber: 'CHG0052018' },
+    ]);
   });
 });

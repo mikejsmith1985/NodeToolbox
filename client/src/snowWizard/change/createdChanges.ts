@@ -68,21 +68,34 @@ const DEFAULT_WRITERS: CreatedChangeWriters = {
   updateTask: updateChangeTaskRecord,
 };
 
+/** Which cards were paired with a task, and which found none (they are left alone, never guessed). */
+export interface TaskCardMatches {
+  matches: Array<{ card: CtaskTemplate; taskRecord: CreatedTaskRecord }>;
+  unmatchedCards: CtaskTemplate[];
+}
+
+/** The first unused task that passes the test, taken out of the pool. */
+function takeRecord(unusedRecords: CreatedTaskRecord[], isMatch: (taskRecord: CreatedTaskRecord) => boolean): CreatedTaskRecord | null {
+  const recordIndex = unusedRecords.findIndex(isMatch);
+  return recordIndex === -1 ? null : unusedRecords.splice(recordIndex, 1)[0];
+}
+
 /**
- * Pairs each task card with the ServiceNow task made for it: first by short description, then — for any left — in
- * order, since createChg overwrites ServiceNow's own tasks in order and adds the rest after them.
+ * Pairs each task card with ITS ServiceNow task: by CTASK number (a card rebuilt from a created change is named by its
+ * task's number), else by the exact short description (create wrote each card's own title). A card matching neither
+ * is left out — pairing by position could write one environment's task over another's, dates included.
  */
-export function matchTasksToCards(cards: readonly CtaskTemplate[], taskRecords: readonly CreatedTaskRecord[]): Array<{ card: CtaskTemplate; taskRecord: CreatedTaskRecord }> {
+export function matchTasksToCards(cards: readonly CtaskTemplate[], taskRecords: readonly CreatedTaskRecord[]): TaskCardMatches {
   const unusedRecords = [...taskRecords];
-  const unmatchedCards: CtaskTemplate[] = [];
-  const matches: Array<{ card: CtaskTemplate; taskRecord: CreatedTaskRecord }> = [];
+  const result: TaskCardMatches = { matches: [], unmatchedCards: [] };
   for (const card of cards) {
-    const recordIndex = unusedRecords.findIndex((taskRecord) => taskRecord.shortDescription.trim() !== '' && taskRecord.shortDescription.trim() === (card.shortDescription ?? '').trim());
-    if (recordIndex === -1) unmatchedCards.push(card);
-    else matches.push({ card, taskRecord: unusedRecords.splice(recordIndex, 1)[0] });
+    const cardTitle = (card.shortDescription ?? '').trim();
+    const taskRecord = takeRecord(unusedRecords, (record) => record.number !== '' && record.number === card.name.trim())
+      ?? takeRecord(unusedRecords, (record) => cardTitle !== '' && record.shortDescription.trim() === cardTitle);
+    if (taskRecord) result.matches.push({ card, taskRecord });
+    else result.unmatchedCards.push(card);
   }
-  unmatchedCards.forEach((card, cardIndex) => { if (unusedRecords[cardIndex]) matches.push({ card, taskRecord: unusedRecords[cardIndex] }); });
-  return matches;
+  return result;
 }
 
 /** "REL change CHG0012345 — tasks: CTASK001 (Deploy), CTASK002 (Checkout)", one line per created change. */
@@ -114,10 +127,13 @@ export async function saveCreatedChange(input: SaveCreatedChangeInput, writers: 
   const changeSysId = await writers.resolveChangeSysId(createdChange.changeNumber);
   await writers.patchChange(changeSysId, buildEnvironmentChangePayload(draft, environmentLabel.toLowerCase() as EnvironmentKey, input.environmentValueByKey));
   const cards = filterStagedCtasksForEnvironment([...draft.changeTasks], input.ctaskEnvironmentPlan, environmentLabel);
-  const matches = matchTasksToCards(cards, await writers.listTasks(createdChange.changeNumber));
+  const { matches, unmatchedCards } = matchTasksToCards(cards, await writers.listTasks(createdChange.changeNumber));
   if (matches.length > 0) {
     const changeDefaults = await writers.readChangeDefaults(changeSysId);
     for (const { card, taskRecord } of matches) await writers.updateTask(taskRecord.sysId, changeSysId, card, changeDefaults);
   }
-  return `${createdChange.changeNumber} saved, with ${matches.length} task${matches.length === 1 ? '' : 's'} updated.`;
+  const savedText = `${createdChange.changeNumber} saved, with ${matches.length} task${matches.length === 1 ? '' : 's'} updated.`;
+  if (unmatchedCards.length === 0) return savedText;
+  const skippedTitles = unmatchedCards.map((card) => `“${card.shortDescription || card.name}”`).join(', ');
+  return `${savedText} Not on it, so left alone: ${skippedTitles}.`;
 }

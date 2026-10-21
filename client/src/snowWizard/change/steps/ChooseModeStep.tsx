@@ -4,6 +4,8 @@
 import { useId, useState } from 'react';
 
 import type { CrgTemplate } from '../../../views/SnowHub/hooks/useCrgState.ts';
+import type { CreatedChangeSummary } from '../createOutcome.ts';
+import type { PlanEnvironmentKey } from '../ctaskEnvironmentPlan.ts';
 import styles from '../../shell/WizardShell.module.css';
 import type { WizardJob } from '../../shell/wizardJobStore.ts';
 import ownStyles from '../ChangeWizard.module.css';
@@ -22,6 +24,8 @@ interface ChooseModeStepProps {
   /** Throws away the open new change and starts a fresh one from an old change. */
   onStartFreshFromChange: (changeNumber: string) => void;
   onStartFromTemplate: (templateId: string) => void;
+  /** Picks up changes already in ServiceNow (one per environment) and finishes them — nothing new is created. */
+  onFinishCreatedChanges: (createdChanges: CreatedChangeSummary[]) => void;
   onOpenTemplates: () => void;
   onExit: () => void;
 }
@@ -86,6 +90,38 @@ function RecommendedStart({ templates, isBlocked, onStartFromChange, onStartFres
   );
 }
 
+const FINISH_ENVIRONMENTS: readonly PlanEnvironmentKey[] = ['REL', 'PRD', 'PFIX'];
+
+/**
+ * "Finish changes you already created": the change number for each environment that has one. Every typed number must
+ * look like a change number, and at least one is needed.
+ */
+function FinishCreatedStart({ isBlocked, onFinishCreatedChanges }: { isBlocked: boolean } & Pick<ChooseModeStepProps, 'onFinishCreatedChanges'>) {
+  const [typedNumbers, setTypedNumbers] = useState<Partial<Record<PlanEnvironmentKey, string>>>({});
+  const filledChanges = FINISH_ENVIRONMENTS
+    .map((environmentLabel) => ({ environmentLabel, changeNumber: normalizeChangeNumber(typedNumbers[environmentLabel] ?? '') }))
+    .filter((createdChange) => createdChange.changeNumber !== '');
+  const isValid = filledChanges.length > 0 && filledChanges.every((createdChange) => CHANGE_NUMBER_PATTERN.test(createdChange.changeNumber));
+  return (
+    <details className={styles.card}>
+      <summary className={styles.connectionLine}>Finish changes you already created</summary>
+      <p className={styles.hint}>Already made the changes in ServiceNow? Type each one&apos;s number. The Wizard fills your picks back in from them and saves your finished work to them — it never creates new ones.</p>
+      {FINISH_ENVIRONMENTS.map((environmentLabel) => (
+        <label key={environmentLabel} className={styles.fieldLabel}>
+          {`${environmentLabel} change number`}
+          <input className={ownStyles.inputField} value={typedNumbers[environmentLabel] ?? ''} placeholder={environmentLabel === 'PFIX' ? 'Only if you have one' : 'CHG0012345'}
+            onChange={(changeEvent) => setTypedNumbers({ ...typedNumbers, [environmentLabel]: changeEvent.target.value })} />
+        </label>
+      ))}
+      <div className={ownStyles.buttonRow}>
+        <button type="button" className={styles.primaryButton} disabled={!isValid} onClick={() => onFinishCreatedChanges(filledChanges)}>
+          {isBlocked ? 'Use them in my open change' : 'Finish these changes'}
+        </button>
+      </div>
+    </details>
+  );
+}
+
 /** A card per job already under way, to continue or start again. */
 function ResumableJobCards({ resumableJobs, onContinue, onStartAgain }: Pick<ChooseModeStepProps, 'resumableJobs' | 'onContinue' | 'onStartAgain'>) {
   return resumableJobs.map((job) => (
@@ -108,6 +144,7 @@ export default function ChooseModeStep(props: ChooseModeStepProps) {
       <h2 id="change-job-heading" className={styles.cardTitle}>Make or change a change</h2>
       <ResumableJobCards resumableJobs={props.resumableJobs} onContinue={props.onContinue} onStartAgain={props.onStartAgain} />
       <RecommendedStart templates={props.templates} isBlocked={hasWaitingNewChange} onStartFromChange={props.onStartFromChange} onStartFreshFromChange={props.onStartFreshFromChange} onStartFromTemplate={props.onStartFromTemplate} />
+      <FinishCreatedStart isBlocked={hasWaitingNewChange} onFinishCreatedChanges={props.onFinishCreatedChanges} />
       <div className={styles.choiceGrid}>
         <button type="button" className={styles.choiceCard} onClick={props.onChooseNew}>
           <span className={styles.choiceTitle}>New change</span>

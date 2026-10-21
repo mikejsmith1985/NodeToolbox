@@ -27,7 +27,8 @@ import {
 } from './changeWizardSteps.ts';
 import { aiDraftPromptFor } from './aiDraft.ts';
 import { describeCreatedChangesForPrompt } from './createdChanges.ts';
-import { useCreatedDraftRecovery, type DraftRecovery } from './createdDraftRecovery.ts';
+import { mergeCreatedChanges, type CreatedChangeSummary } from './createOutcome.ts';
+import { useCreatedDraftRecovery, useCreatedTaskNumbers, type DraftRecovery } from './createdDraftRecovery.ts';
 import { buildCtaskEnvironmentPlan, listTaskLabelsByEnvironment, type CtaskEnvironmentPlan, type PlanEnvironmentKey } from './ctaskEnvironmentPlan.ts';
 import type { JiraEvidenceAttachment } from './jiraEvidence.ts';
 import { useDefaultJiraEvidenceTicks, useJiraEvidenceChoiceStore, useTickedJiraEvidence } from './jiraEvidenceChoiceStore.ts';
@@ -251,6 +252,7 @@ function ChangeJob({ job, startingPoint, onExit }: { job: WizardJob; startingPoi
     evidenceFiles, jiraEvidence, hasJiraEvidenceChoice, selectedIssueKeys: [...crg.state.selectedIssueKeys], editedStepIds, onFinished: () => useWizardJobStore.getState().finishJob(job.kind, Date.now()),
   });
   useRememberChecksVerdict(items, session, updateSession);
+  useCreatedTaskNumbers(session, updateSession);
   const createdChangeLines = useMemo(() => describeCreatedChangesForPrompt(session.createdChanges, session.createdTasks), [session.createdChanges, session.createdTasks]);
   return (
     <ChangeJobShell
@@ -313,13 +315,13 @@ function ChangeJobShell(props: ChangeJobShellProps) {
 function RecoveryNotice({ recovery, session }: { recovery: DraftRecovery; session: ChangeWizardSession }) {
   const changeNumbers = session.createdChanges.map((createdChange) => createdChange.changeNumber).join(' and ');
   if (recovery.phase === 'done') {
-    return <p className={shellStyles.hint} role="status">{`✓ Your picks are back from ${changeNumbers}. Choose the Jira issues again here so the AI knows the release scope, then press Next through to "Let AI write it" — no new changes are made.`}</p>;
+    return <p className={shellStyles.hint} role="status">{`✓ Your picks are back from ${changeNumbers}. Choose the Jira issues here so the AI knows the release scope, then press Next through to "Let AI write it" — no new changes are made.`}</p>;
   }
   if (!recovery.isNeeded) return null;
   const isWorking = recovery.phase === 'restoring' || recovery.phase === 'waitingForNumber';
   return (
     <div className={shellStyles.card} role="alert">
-      <p>{`Your picks were cleared when ${changeNumbers} were created (a bug in v0.312.0, now fixed). The changes themselves are safe in ServiceNow and hold everything you picked.`}</p>
+      <p>{`${changeNumbers} already exist in ServiceNow, but this job's picks are missing (if you used v0.312.0, creating them cleared your picks — now fixed). The changes hold everything you picked.`}</p>
       {recovery.phase === 'failed' ? <p>{`The restore did not finish: ${recovery.failureText}`}</p> : null}
       <button type="button" className={shellStyles.primaryButton} disabled={isWorking} onClick={recovery.restore}>
         {isWorking ? 'Restoring…' : `Restore my picks from ${session.createdChanges[0]?.changeNumber ?? 'the change'}`}
@@ -334,7 +336,11 @@ function ChangeJobFrame({ crg, session, updateSession, progress, currentStepId, 
   const currentIndex = stepIds.indexOf(currentStepId);
   const isFinishStep = currentStepId === 'finish';
   // Restored picks still lack the Jira issues (a change does not record them), so the job goes back to choose them.
-  const recovery = useCreatedDraftRecovery(crg, session, useCallback(() => goToStep('scope', { returnToStepId: null }), [goToStep]));
+  const restoredEnvironments = session.createdChanges.flatMap((createdChange) => (createdChange.environmentLabel ? [createdChange.environmentLabel] : []));
+  const recovery = useCreatedDraftRecovery(crg, session, useCallback(() => {
+    goToStep('scope', { returnToStepId: null });
+    updateSession({ enabledEnvironments: restoredEnvironments });
+  }, [goToStep, updateSession, restoredEnvironments]));
   const completion = evaluateStepCompletion(currentStepId, progress);
   const finishGate = isFinishStep ? readFinishGate(session, extras.runner, progress)
     : currentStepId === 'createChanges' ? readCreateNowGate(extras.runner, progress) : null;
@@ -395,6 +401,8 @@ interface ChangeLandingProps {
   startAgain: (job: WizardJob) => void;
   /** Throws away the open job of this kind and opens a fresh one from the starting point. */
   startAgainFrom: (jobKind: WizardJobKind, startingPoint: ChangeStartingPoint) => void;
+  /** Opens the new-change job (the open one, or a fresh one) on changes already in ServiceNow. */
+  finishCreatedChanges: (createdChanges: CreatedChangeSummary[]) => void;
   onExit: () => void;
 }
 
@@ -402,7 +410,7 @@ interface ChangeLandingProps {
  * The screens before a job opens: the choice of how to start, and "Your templates". It owns the one template library
  * for these screens and is gone once a job opens, so the job's own "Save as template" never races it.
  */
-function ChangeLanding({ resumableJobs, openJob, startAgain, startAgainFrom, onExit }: ChangeLandingProps) {
+function ChangeLanding({ resumableJobs, openJob, startAgain, startAgainFrom, finishCreatedChanges, onExit }: ChangeLandingProps) {
   const library = useTemplateLibrary();
   const [isShowingTemplates, setIsShowingTemplates] = useState(false);
 
@@ -416,7 +424,8 @@ function ChangeLanding({ resumableJobs, openJob, startAgain, startAgainFrom, onE
     <ChooseModeStep resumableJobs={resumableJobs} templates={library.templates} onChooseNew={() => openJob('newChange')} onChooseExisting={() => openJob('modifyChange')}
       onContinue={(job) => openJob(job.kind)} onStartAgain={startAgain} onExit={onExit} onOpenTemplates={() => setIsShowingTemplates(true)}
       onStartFromChange={(changeNumber) => openJob('newChange', { kind: 'existingChange', changeNumber })}
-      onStartFreshFromChange={(changeNumber) => startAgainFrom('newChange', { kind: 'existingChange', changeNumber })} onStartFromTemplate={startFromTemplate} />
+      onStartFreshFromChange={(changeNumber) => startAgainFrom('newChange', { kind: 'existingChange', changeNumber })} onStartFromTemplate={startFromTemplate}
+      onFinishCreatedChanges={finishCreatedChanges} />
   );
 }
 
@@ -444,12 +453,26 @@ export default function ChangeWizard({ onExit }: WizardJobProps) {
     openJob(jobKind, nextStartingPoint);
   }
 
+  /**
+   * Ties the new-change job to changes already in ServiceNow, so it fills its picks back in from them (the restore
+   * offer) and saves to them — "Create in ServiceNow" then counts as done, so nothing is created twice.
+   */
+  function finishCreatedChanges(createdChanges: CreatedChangeSummary[]) {
+    const { job } = useWizardJobStore.getState().startJob('newChange', 'scope', Date.now());
+    const sessionStore = useChangeWizardSessionStore.getState();
+    sessionStore.ensureSession(job.jobId, 'create');
+    const jobSession = useChangeWizardSessionStore.getState().sessions[job.jobId];
+    sessionStore.updateSession(job.jobId, { createdChanges: mergeCreatedChanges(jobSession?.createdChanges ?? [], createdChanges), hasSavedChanges: false, failureText: null });
+    setStartingPoint(null);
+    setActiveJob(job);
+  }
+
   function startAgain(job: WizardJob) {
     useWizardJobStore.getState().discardJob(job.kind);
     useChangeWizardSessionStore.getState().removeSession(job.jobId);
     openJob(job.kind);
   }
 
-  if (!activeJob) return <ChangeLanding resumableJobs={resumableJobs} openJob={openJob} startAgain={startAgain} startAgainFrom={startAgainFrom} onExit={onExit} />;
+  if (!activeJob) return <ChangeLanding resumableJobs={resumableJobs} openJob={openJob} startAgain={startAgain} startAgainFrom={startAgainFrom} finishCreatedChanges={finishCreatedChanges} onExit={onExit} />;
   return <ChangeJob key={activeJob.jobId} job={activeJob} startingPoint={startingPoint} onExit={onExit} />;
 }

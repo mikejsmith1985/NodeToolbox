@@ -9,6 +9,7 @@ import { useCrgState } from '../../views/SnowHub/hooks/useCrgState.ts';
 import type { CrgDraftState, CrgHook } from './changeDraft.ts';
 import { createChangeWizardSession, type ChangeWizardSession } from './changeWizardSession.ts';
 import { saveCreatedChange } from './createdChanges.ts';
+import { restoreFromCreatedChanges } from './createdDraftRecovery.ts';
 import { attachAllEvidenceToChanges } from './evidenceUpload.ts';
 import { resolveJiraEvidenceAtFinish, type JiraEvidenceAttachment } from './jiraEvidence.ts';
 import { fetchChangeSnapshot } from './modifyLoad.ts';
@@ -23,6 +24,7 @@ vi.mock('./jiraEvidence.ts', () => ({
   resolveJiraEvidenceAtFinish: vi.fn(async (input: { hasChoice: boolean; tickedEvidence: unknown[] }) => (input.hasChoice ? input.tickedEvidence : [])),
 }));
 vi.mock('./modifyTasks.ts', () => ({ saveModifyTasks: vi.fn() }));
+vi.mock('./createdDraftRecovery.ts', () => ({ restoreFromCreatedChanges: vi.fn(async () => undefined) }));
 vi.mock('./createdChanges.ts', () => ({ listCreatedChangeTasks: vi.fn(async () => [TASK_RECORD]), saveCreatedChange: vi.fn() }));
 
 const PLAN = { 'Business Checkout': { REL: false, PRD: true, PFIX: true } };
@@ -124,6 +126,15 @@ describe('useFinishRunner — create first, then save', () => {
     await waitFor(() => expect(hookResult.result.current.session.createdTasks).toEqual({ CHG7: [TASK_RECORD] }));
     expect(hookResult.result.current.session.createdChanges).toEqual([{ environmentLabel: 'REL', changeNumber: 'CHG7' }]);
     expect(actions.createChg).not.toHaveBeenCalled();
+    expect(restoreFromCreatedChanges).toHaveBeenCalledWith(actions, [{ environmentLabel: 'REL', changeNumber: 'CHG7' }]);
+  });
+
+  it('adopts nothing when the changes cannot be read, and says to check the numbers', async () => {
+    vi.mocked(restoreFromCreatedChanges).mockRejectedValueOnce(new Error('ServiceNow has no change CHG8.'));
+    const { hookResult } = renderRunner(buildDraft(), createChangeWizardSession('create'));
+    act(() => hookResult.result.current.runner.adoptExistingChanges([{ environmentLabel: 'REL', changeNumber: 'CHG8' }]));
+    await waitFor(() => expect(hookResult.result.current.session.failureText).toMatch(/could not be read.*CHG8/));
+    expect(hookResult.result.current.session.createdChanges).toEqual([]);
   });
 
   it('saves the finished work to every created change, then attaches the evidence and finishes', async () => {

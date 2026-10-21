@@ -8,7 +8,7 @@ import { snowFetch } from '../../services/snowApi.ts';
 import { useCrgState } from '../../views/SnowHub/hooks/useCrgState.ts';
 import type { CrgDraftState, CrgHook } from './changeDraft.ts';
 import { createChangeWizardSession, type ChangeWizardSession } from './changeWizardSession.ts';
-import { needsDraftRecovery, readCreatedEnvironmentValues, useCreatedDraftRecovery } from './createdDraftRecovery.ts';
+import { needsDraftRecovery, readCreatedEnvironmentValues, useCreatedDraftRecovery, useCreatedTaskNumbers } from './createdDraftRecovery.ts';
 
 vi.mock('../../services/jiraApi.ts', () => ({ jiraGet: vi.fn(async () => []) }));
 vi.mock('../../services/snowApi.ts', () => ({ snowFetch: vi.fn() }));
@@ -23,8 +23,8 @@ function readBlankDraft(): CrgDraftState {
 }
 
 /** One change's environment fields as ServiceNow sends them with display values. */
-function buildEnvironmentReply(configItemSysId: string, startUtc: string) {
-  return { result: [{ cmdb_ci: { value: configItemSysId, display_value: `Item ${configItemSysId}` }, start_date: { value: startUtc, display_value: '' }, end_date: { value: '', display_value: '' }, u_environment: { value: 'prod', display_value: 'Production' } }] };
+function buildEnvironmentReply(configItemSysId: string, startUtc: string, changeSysId = 'chg-sys') {
+  return { result: [{ sys_id: { value: changeSysId, display_value: changeSysId }, cmdb_ci: { value: configItemSysId, display_value: `Item ${configItemSysId}` }, start_date: { value: startUtc, display_value: '' }, end_date: { value: '', display_value: '' }, u_environment: { value: 'prod', display_value: 'Production' } }] };
 }
 
 describe('needsDraftRecovery', () => {
@@ -56,9 +56,20 @@ describe('readCreatedEnvironmentValues', () => {
 
 describe('useCreatedDraftRecovery', () => {
   it('copies the first change back, then each environment\'s own values, and reports it restored', async () => {
+    // Each change has its own tasks: REL's deploy, PRD's deploy and Business Checkout.
+    const tasksBySysId: Record<string, Array<Record<string, unknown>>> = {
+      'sys-rel': [{ number: { value: 'CTASK1', display_value: 'CTASK1' }, short_description: { value: 'Enrollment - AWS - REL', display_value: 'Enrollment - AWS - REL' } }],
+      'sys-prd': [
+        { number: { value: 'CTASK2', display_value: 'CTASK2' }, short_description: { value: 'Enrollment - AWS - PRD', display_value: 'Enrollment - AWS - PRD' } },
+        { number: { value: 'CTASK3', display_value: 'CTASK3' }, short_description: { value: 'Business Checkout', display_value: 'Business Checkout' } },
+      ],
+    };
     vi.mocked(snowFetch).mockImplementation(async (path: string) => {
-      if (path.includes('change_task')) return { result: [] } as never;
-      if (path.includes('sysparm_fields=cmdb_ci')) return buildEnvironmentReply(path.includes('CHG2') ? 'ci-prd' : 'ci-rel', '2026-10-23 21:00:00') as never;
+      if (path.includes('change_task')) return { result: tasksBySysId[Object.keys(tasksBySysId).find((sysId) => decodeURIComponent(path).includes(sysId)) ?? ''] ?? [] } as never;
+      if (path.includes('u_environment')) {
+        const isPrd = path.includes('CHG2');
+        return buildEnvironmentReply(isPrd ? 'ci-prd' : 'ci-rel', '2026-10-23 21:00:00', isPrd ? 'sys-prd' : 'sys-rel') as never;
+      }
       return { result: [{ sys_id: { value: 'chg-1', display_value: 'chg-1' }, short_description: { value: 'Payments 1.2', display_value: 'Payments 1.2' }, category: { value: 'software', display_value: 'Software' } }] } as never;
     });
     const onRestored = vi.fn();
@@ -76,6 +87,21 @@ describe('useCreatedDraftRecovery', () => {
     expect(result.current.crg.state.relEnvironment.configItem.sysId).toBe('ci-rel');
     expect(result.current.crg.state.prdEnvironment.configItem.sysId).toBe('ci-prd');
     expect(result.current.crg.state.prdEnvironment.isEnabled).toBe(true);
+    // Every real task, on its own environment, named by its CTASK number.
+    expect(result.current.crg.state.changeTasks.map((card) => `${card.name}:${card.shortDescription}:${card.environmentKeys?.join('+')}`)).toEqual([
+      'CTASK1:Enrollment - AWS - REL:REL', 'CTASK2:Enrollment - AWS - PRD:PRD', 'CTASK3:Business Checkout:PRD',
+    ]);
     expect(result.current.recovery.isNeeded).toBe(false);
   });
+
+describe('useCreatedTaskNumbers', () => {
+  it('reads the task numbers of a change picked up by number, once, and leaves known ones alone', async () => {
+    vi.mocked(snowFetch).mockReset().mockResolvedValue({ result: [{ sys_id: 't9', number: 'CTASK9', short_description: 'Deploy' }] } as never);
+    const updateSession = vi.fn();
+    const session = { ...WIPED_SESSION, createdTasks: { CHG1: [] } };
+    renderHook(() => useCreatedTaskNumbers(session, updateSession));
+    await waitFor(() => expect(updateSession).toHaveBeenCalledWith({ createdTasks: { CHG1: [], CHG2: [{ sysId: 't9', number: 'CTASK9', shortDescription: 'Deploy' }] } }));
+    expect(snowFetch).toHaveBeenCalledTimes(1);
+  });
+});
 });

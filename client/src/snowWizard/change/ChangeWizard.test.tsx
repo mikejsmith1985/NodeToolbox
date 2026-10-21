@@ -131,7 +131,7 @@ describe('ChangeWizard — new change', () => {
     } } });
     render(<ChangeWizard onExit={vi.fn()} />);
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
-    expect(screen.getByRole('alert').textContent).toContain('CHG0052017 and CHG0052018 were created');
+    expect(screen.getByRole('alert').textContent).toContain('CHG0052017 and CHG0052018 already exist in ServiceNow');
     expect(screen.getByRole('button', { name: 'Restore my picks from CHG0052017' })).toBeTruthy();
   });
 

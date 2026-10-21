@@ -13,6 +13,7 @@ import type { EnvironmentValueByKey } from '../../views/SnowHub/hooks/useCrgStat
 import { DRAFT_ENVIRONMENTS, readEnabledPlanEnvironments, type CrgHook } from './changeDraft.ts';
 import type { ChangeWizardSession } from './changeWizardSession.ts';
 import { listCreatedChangeTasks, saveCreatedChange, type CreatedTasksByChange } from './createdChanges.ts';
+import { restoreFromCreatedChanges } from './createdDraftRecovery.ts';
 import { mergeCreatedChanges, readCreateOutcome, type CreatedChangeSummary } from './createOutcome.ts';
 import { listTaskLabelsByEnvironment, type CtaskEnvironmentPlan, type PlanEnvironmentKey } from './ctaskEnvironmentPlan.ts';
 import { attachAllEvidenceToChanges } from './evidenceUpload.ts';
@@ -167,6 +168,24 @@ export function useFinishRunner(input: FinishRunnerInput): FinishRunner {
     void loadCreatedTasks(createdChanges);
   }
 
+  /**
+   * Uses changes already in ServiceNow: the draft takes each one's own window, item and real tasks (so saving never
+   * changes what they hold by accident), then their task numbers are read back for the writing.
+   */
+  async function adoptThenLoad(existingChanges: CreatedChangeSummary[]) {
+    setPhase({ kind: 'working', message: 'Reading your changes from ServiceNow…' });
+    try {
+      await restoreFromCreatedChanges(crg.actions, existingChanges);
+    } catch (readError) {
+      updateSession({ failureText: `Those changes could not be read (${readError instanceof Error ? readError.message : String(readError)}). Check the numbers and try again.` });
+      setPhase({ kind: 'idle' });
+      return;
+    }
+    const createdChanges = mergeCreatedChanges(session.createdChanges, existingChanges);
+    updateSession({ createdChanges, failureText: null });
+    await loadCreatedTasks(createdChanges);
+  }
+
   /** Saves the finished work to every created change, then attaches the evidence and finishes the job. */
   async function saveCreatedThenFinish() {
     const savedNotes: string[] = [];
@@ -289,11 +308,7 @@ export function useFinishRunner(input: FinishRunnerInput): FinishRunner {
     startCreate: () => createFor(readEnabledPlanEnvironments(crg.state)),
     retryMissing,
     startSaveCreated: () => { void saveCreatedThenFinish(); },
-    adoptExistingChanges: (existingChanges) => {
-      const createdChanges = mergeCreatedChanges(session.createdChanges, existingChanges);
-      updateSession({ createdChanges, failureText: null });
-      void loadCreatedTasks(createdChanges);
-    },
+    adoptExistingChanges: (existingChanges) => { void adoptThenLoad(existingChanges); },
     startSave: () => { void checkConflictsThenSave(); },
     confirmSave,
     cancelSave: () => setPhase({ kind: 'idle' }),
