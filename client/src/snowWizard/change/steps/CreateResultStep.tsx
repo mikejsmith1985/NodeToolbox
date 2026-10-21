@@ -19,7 +19,10 @@ import type { PlanEnvironmentKey } from '../ctaskEnvironmentPlan.ts';
 import { EVIDENCE_ATTACHED } from '../evidenceUpload.ts';
 import { planModifyTaskWrites } from '../modifyTasks.ts';
 import { readSavePreview, type SavePreviewRow } from '../savePreview.ts';
+import SaveTemplateControl from '../SaveTemplateControl.tsx';
+import { buildPicksOnlyDraft, TEMPLATE_KEEPS_TEXT } from '../templatePicks.ts';
 import type { FinishRunner } from '../useFinishRunner.ts';
+import type { TemplateLibrary } from '../useTemplateLibrary.ts';
 
 /** Each environment's tasks, as the user built them, in their order. */
 export type TaskNamesByEnvironment = Partial<Record<PlanEnvironmentKey, string[]>>;
@@ -31,9 +34,26 @@ export interface CreateResultStepProps extends ChangeStepProps {
   taskNamesByEnvironment: TaskNamesByEnvironment;
   editedStepIds: readonly ChangeWizardStepId[];
   evidenceFileCount: number;
+  /** The template library, for saving this change's picks as a template — the one place templates are saved. */
+  library: TemplateLibrary;
 }
 
-const TEMPLATE_TIP = 'Doing one like this again? Press “Save as template” at the top, so your next change starts from this one.';
+const TEMPLATE_TIP = 'Doing one like this again? Save its picks as a template below, so your next change starts from them.';
+
+/**
+ * The one place a template is saved: this change's picks (never its writing or dates), into the template it was opened
+ * from ("Update “X”") or as a new one — each with a result read back from storage.
+ */
+function TemplateSaveCard({ crg, session, updateSession, library }: Pick<CreateResultStepProps, 'crg' | 'session' | 'updateSession' | 'library'>) {
+  return (
+    <section className={styles.card} aria-labelledby="template-save-heading">
+      <h3 id="template-save-heading" className={styles.cardTitle}>Save the picks as a template (optional)</h3>
+      <p className={styles.hint}>{TEMPLATE_KEEPS_TEXT}</p>
+      {session.linkedTemplate ? <p className={styles.hint}>{`This change was opened from “${session.linkedTemplate.name}”.`}</p> : null}
+      <SaveTemplateControl draft={buildPicksOnlyDraft(crg.state)} library={library} linkedTemplate={session.linkedTemplate} onLinkTemplate={(linkedTemplate) => updateSession({ linkedTemplate })} />
+    </section>
+  );
+}
 
 /** "Tasks: Deploy, Smoke test", or that the change has none. */
 function describeTasks(taskNames: readonly string[] | undefined): string {
@@ -191,6 +211,7 @@ export default function CreateResultStep(props: CreateResultStepProps) {
       {runner.phase.kind === 'working' ? <p className={styles.hint} role="status">{runner.phase.message}</p> : null}
       <ConflictPanel runner={runner} />
       {hasAttempted ? <OutcomeReport {...props} /> : <PlanSummary {...props} />}
+      <TemplateSaveCard crg={props.crg} session={session} updateSession={props.updateSession} library={props.library} />
     </div>
   );
 }

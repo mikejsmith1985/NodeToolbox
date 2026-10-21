@@ -2,7 +2,7 @@
 // each on every change in use until unticked, a failing check gives one reason and one fix that returns to the right step, "could not check" holds the job until
 // acknowledged, and the AI step is shown to everyone and can be skipped.
 
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useWizardJobStore } from '../shell/wizardJobStore.ts';
@@ -50,9 +50,11 @@ function openJobAt(stepId: ChangeWizardStepId, backoutPlan = '1. Roll back') {
   useChangeWizardSessionStore.setState({ sessions: { [JOB_ID]: {
     ...createChangeWizardSession('create'), currentStepId: stepId, reviewedStepIds: stepIds.slice(0, stepIds.indexOf(stepId)), enabledEnvironments: ['REL', 'PRD'],
     createdChanges, createdTasks: isPastCreate ? { CHG1: [{ sysId: 't1', number: 'CTASK1', shortDescription: 'Business Checkout' }], CHG2: [] } : undefined,
+    // Past the checks, they were passed (acknowledged), so the job resumes where it was left.
+    areChecksAcknowledged: stepIds.indexOf(stepId) > stepIds.indexOf('checks'),
   } } });
   render(<ChangeWizard onExit={vi.fn()} />);
-  fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+  fireEvent.click(screen.getByRole('button', { name: /^Create a new change/ }));
 }
 
 /** The primary button of the guided frame. */
@@ -71,9 +73,11 @@ describe('ChangeWizard — new change', () => {
   it('starts with the choice of a new change or an existing one', () => {
     useWizardJobStore.setState({ jobs: {} });
     render(<ChangeWizard onExit={vi.fn()} />);
-    fireEvent.click(screen.getByRole('button', { name: /^New change/ }));
-    fireEvent.click(screen.getByRole('button', { name: 'Start blank' }));
+    fireEvent.click(screen.getByRole('button', { name: /^Create a new change/ }));
     expect(screen.getByRole('heading', { name: 'Step 1 of 10 — What\'s in this change?' })).toBeTruthy();
+    expect(screen.getByText('Start from (optional)')).toBeTruthy();
+    // Templates are opened on step 1 and saved on the last step — never from the page header.
+    expect(screen.queryByRole('button', { name: /Save as template|Manage templates/ })).toBeNull();
   });
 
   it('shows the user’s own task as a card, on every change in use until the user unticks one', async () => {
@@ -134,32 +138,12 @@ describe('ChangeWizard — new change', () => {
     expect(localStorage.getItem(buildChangeStorageKey(JOB_ID))).toBeNull();
   });
 
-  it('offers to restore the picks of a job wiped when its changes were created (v0.312.0)', () => {
-    useWizardJobStore.setState({ jobs: { newChange: { jobId: JOB_ID, kind: 'newChange', stepId: 'aiDraft', status: 'inProgress', updatedAt: Date.now(), payloadKey: 'draft' } } });
-    useChangeWizardSessionStore.setState({ sessions: { [JOB_ID]: {
-      ...createChangeWizardSession('create'), currentStepId: 'aiDraft', enabledEnvironments: ['REL', 'PRD'],
-      createdChanges: [{ environmentLabel: 'REL', changeNumber: 'CHG0052017' }, { environmentLabel: 'PRD', changeNumber: 'CHG0052018' }],
-    } } });
-    render(<ChangeWizard onExit={vi.fn()} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
-    expect(screen.getByRole('alert').textContent).toContain('CHG0052017 and CHG0052018 already exist in ServiceNow');
-    expect(screen.getByRole('button', { name: 'Restore my picks from CHG0052017' })).toBeTruthy();
-  });
-
-  it('copies an old change into the new change already open, instead of a dead button', async () => {
-    const { snowFetch } = await import('../../services/snowApi.ts');
-    vi.mocked(snowFetch).mockImplementation(async (path: string) => (path.includes('table/change_request')
-      ? { result: [{ sys_id: { value: 'chg-sys', display_value: 'chg-sys' }, short_description: { value: 'Payments 1.1', display_value: 'Payments 1.1' } }] }
-      : { result: [] }) as never);
+  it('picks up the change already under way and says so, with Start over for a fresh one', () => {
     openJobAt('details');
-    fireEvent.click(screen.getByRole('button', { name: 'Save and leave' }));
-    cleanup();
-    render(<ChangeWizard onExit={vi.fn()} />);
-    fireEvent.click(screen.getByRole('button', { name: /^New change/ }));
-    fireEvent.change(screen.getByLabelText('Change number'), { target: { value: 'CHG0052017' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Copy it into my open change' }));
-    await waitFor(() => expect((screen.getByLabelText('Title (needed)') as HTMLInputElement).value).toBe('Payments 1.1'));
-    vi.mocked(snowFetch).mockImplementation(async () => ({ result: [] }) as never);
+    expect(screen.getByRole('status').textContent).toMatch(/Picking up where you left off \(0 minute\(s\) ago\)/);
+    fireEvent.click(screen.getByRole('button', { name: 'Got it' }));
+    expect(screen.queryByText(/Picking up where you left off/)).toBeNull();
+    expect(screen.getByRole('button', { name: 'Start over' })).toBeTruthy();
   });
 
   it('never asks the user about problem records — ServiceNow links them itself (GH #475)', async () => {
@@ -176,28 +160,16 @@ describe('ChangeWizard — templates', () => {
     useWizardJobStore.setState({ jobs: {} });
   });
 
-  it('copies a change raised before into a new change, then recommends saving it as a template', async () => {
+  it('copies the picks from a change raised before on step 1, leaving its writing out', async () => {
     const { snowFetch } = await import('../../services/snowApi.ts');
-    const oldChange = { result: [{ sys_id: { value: 'chg-sys', display_value: 'chg-sys' }, short_description: { value: 'Payments 1.1', display_value: 'Payments 1.1' } }] };
+    const oldChange = { result: [{ sys_id: { value: 'chg-sys', display_value: 'chg-sys' }, short_description: { value: 'Payments 1.1', display_value: 'Payments 1.1' }, category: { value: 'software', display_value: 'Software' } }] };
     vi.mocked(snowFetch).mockImplementation(async (path: string) => (path.includes('table/change_request') ? oldChange : { result: [] }) as never);
     render(<ChangeWizard onExit={vi.fn()} />);
-    fireEvent.click(screen.getByRole('button', { name: /^New change/ }));
-    fireEvent.change(screen.getByLabelText('Change number'), { target: { value: 'chg0001234' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Start from an existing change' }));
-    expect(screen.getByRole('heading', { name: 'Step 1 of 10 — What\'s in this change?' })).toBeTruthy();
-    expect(await screen.findByText(/Copied CHG0001234 into a new change/)).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Save as template' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /^Create a new change/ }));
+    fireEvent.change(screen.getByLabelText('Or copy the picks from a change you raised before'), { target: { value: 'chg0001234' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Copy its picks' }));
+    expect(await screen.findByText(/^✓ Copied the picks from CHG0001234 — its writing and dates are left out/)).toBeTruthy();
     vi.mocked(snowFetch).mockImplementation(async () => ({ result: [] }) as never);
-  });
-
-  it('manages templates from inside a job, replacing one with the change in hand, and returns to the same step', () => {
-    localStorage.setItem('ntbx-crg-templates', JSON.stringify([{ id: 'tpl-1', name: 'Monthly', createdAt: '', chgBasicInfo: {}, chgPlanningAssessment: {}, chgPlanningContent: {}, ctaskTemplateIds: [] }]));
-    openJobAt('details');
-    fireEvent.click(screen.getByRole('button', { name: 'Manage templates' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Replace with this change' }));
-    expect(screen.getByText('“Monthly” now holds this change ✓')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
-    expect(screen.getByRole('heading', { name: 'Step 2 of 10 — Tell us about the change' })).toBeTruthy();
   });
 
   it('opens template management from the first screen and comes back', () => {
@@ -208,31 +180,28 @@ describe('ChangeWizard — templates', () => {
     expect(screen.getByRole('heading', { name: 'What do you want to do?' })).toBeTruthy();
   });
 
-  it('offers "Save as template" from the details step on, saves the change in hand, and confirms it from storage', async () => {
-    openJobAt('details');
+  it('saves the picks as a template on the last step — never the writing — and confirms it from storage', async () => {
+    openJobAt('finish');
     fireEvent.click(screen.getByRole('button', { name: 'Save as template' }));
     fireEvent.change(screen.getByLabelText('Name the new template'), { target: { value: 'Payments release' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save new template' }));
     expect(await screen.findByText(/^✓ Saved new template “Payments release”/)).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Update template “Payments release”' })).toBeTruthy();
-    expect(screen.getByText(/Working from template “Payments release”/)).toBeTruthy();
-    const savedTemplates = JSON.parse(localStorage.getItem('ntbx-crg-templates') ?? '[]') as Array<{ name: string; ctaskTemplateIds: string[] }>;
+    const savedTemplates = JSON.parse(localStorage.getItem('ntbx-crg-templates') ?? '[]') as Array<{ name: string; ctaskTemplateIds: string[]; chgPlanningContent: Record<string, string> }>;
     expect(savedTemplates.map((template) => template.name)).toEqual(['Payments release']);
     expect(savedTemplates[0].ctaskTemplateIds).toHaveLength(1);
+    expect(savedTemplates[0].chgPlanningContent).toEqual({ implementationPlan: '', backoutPlan: '', testPlan: '' });
   });
 
-  it('opens a saved template in a new change, linked to it', async () => {
-    openJobAt('details');
-    fireEvent.click(screen.getByRole('button', { name: 'Save as template' }));
-    fireEvent.change(screen.getByLabelText('Name the new template'), { target: { value: 'Payments release' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Save new template' }));
-    await screen.findByText(/^✓ Saved new template/);
-    cleanup();
-    useWizardJobStore.setState({ jobs: {} });
+  it('opens a saved template in a new change with its picks only — the change keeps its own writing', async () => {
+    localStorage.setItem('ntbx-crg-templates', JSON.stringify([{
+      id: 'tpl-1', name: 'Monthly', createdAt: '', chgBasicInfo: buildSavedDraft('').chgBasicInfo, chgPlanningAssessment: {},
+      chgPlanningContent: { implementationPlan: 'OLD plan', backoutPlan: 'OLD backout', testPlan: 'OLD test' }, ctaskTemplateIds: [],
+    }]));
     render(<ChangeWizard onExit={vi.fn()} />);
-    fireEvent.click(screen.getByRole('button', { name: /^New change/ }));
-    fireEvent.change(screen.getByLabelText('Your saved templates'), { target: { value: (JSON.parse(localStorage.getItem('ntbx-crg-templates') ?? '[]') as Array<{ id: string }>)[0].id } });
-    fireEvent.click(screen.getByRole('button', { name: 'Open template' }));
-    expect(screen.getByText(/Filled in from your template “Payments release”/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Manage templates' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Open it in a new change' }));
+    expect(screen.getByText(/Filled in from your template “Monthly”/)).toBeTruthy();
+    expect(screen.queryByText('OLD plan')).toBeNull();
   });
 });

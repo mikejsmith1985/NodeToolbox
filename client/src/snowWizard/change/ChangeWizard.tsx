@@ -25,13 +25,11 @@ import {
   buildShellSteps, deriveChangeWizardStep, evaluateStepCompletion, listChangeWizardPhases, listChangeWizardStepIds, readPaperworkNeed, readStepTitle,
   resolveResumeStep, type ChangeWizardMode, type ChangeWizardProgress, type ChangeWizardStepId, type PaperworkNeed,
 } from './changeWizardSteps.ts';
-import { mergeCreatedChanges, type CreatedChangeSummary } from './createOutcome.ts';
-import { useCreatedDraftRecovery, useCreatedTaskNumbers, type DraftRecovery } from './createdDraftRecovery.ts';
+import { useCreatedTaskNumbers } from './useCreatedTaskNumbers.ts';
 import { buildCtaskEnvironmentPlan, listTaskLabelsByEnvironment, type CtaskEnvironmentPlan, type PlanEnvironmentKey } from './ctaskEnvironmentPlan.ts';
 import type { JiraEvidenceAttachment } from './jiraEvidence.ts';
 import { useDefaultJiraEvidenceTicks, useJiraEvidenceChoiceStore, useTickedJiraEvidence } from './jiraEvidenceChoiceStore.ts';
 import { listEditedSteps, readStepValues } from './modifyDiff.ts';
-import SaveTemplateControl from './SaveTemplateControl.tsx';
 import StartingPointNotice from './StartingPointNotice.tsx';
 import StartOverControl from './StartOverControl.tsx';
 import AiDraftStep from './steps/AiDraftStep.tsx';
@@ -84,6 +82,8 @@ interface StepExtras {
   library: TemplateLibrary;
   /** Throws this job away and goes back to the first screen. */
   onStartOver: () => void;
+  /** "2 hour(s) ago" when the job was reopened (it was already under way); null for a fresh job. */
+  resumedAgeText: string | null;
 }
 
 /** The screen for one step. */
@@ -100,7 +100,7 @@ function renderStep(stepId: ChangeWizardStepId, stepProps: ChangeStepProps, extr
     createChanges: () => <CreateNowStep {...stepProps} runner={extras.runner} taskNamesByEnvironment={readTaskNamesByEnvironment(stepProps.crg.state)} jiraEvidence={extras.jiraEvidence} />,
     checks: () => <ChecksStep {...stepProps} items={extras.items} />,
     paperwork: () => <ProductionPaperworkStep {...stepProps} paperworkNeed={extras.paperworkNeed} />,
-    finish: () => <CreateResultStep {...stepProps} runner={extras.runner} taskNamesByEnvironment={readTaskNamesByEnvironment(stepProps.crg.state)} editedStepIds={extras.editedStepIds} evidenceFileCount={extras.jiraEvidence.length} />,
+    finish: () => <CreateResultStep {...stepProps} library={extras.library} runner={extras.runner} taskNamesByEnvironment={readTaskNamesByEnvironment(stepProps.crg.state)} editedStepIds={extras.editedStepIds} evidenceFileCount={extras.jiraEvidence.length} />,
   };
   return stepScreens[stepId]();
 }
@@ -235,7 +235,7 @@ function useStepNavigation(job: WizardJob, crg: CrgHook, session: ChangeWizardSe
 }
 
 /** One change job, from its first step to its result. */
-function ChangeJob({ job, startingPoint, onExit, onStartOver }: { job: WizardJob; startingPoint: ChangeStartingPoint | null; onExit: () => void; onStartOver: () => void }) {
+function ChangeJob({ job, resumedAgeText, startingPoint, onExit, onStartOver }: { job: WizardJob; resumedAgeText: string | null; startingPoint: ChangeStartingPoint | null; onExit: () => void; onStartOver: () => void }) {
   const mode = readJobMode(job.kind);
   const crg = useCrgState({ storageKey: buildChangeStorageKey(job.jobId) });
   const startingPointHandle = useStartingPoint(crg, startingPoint);
@@ -270,7 +270,7 @@ function ChangeJob({ job, startingPoint, onExit, onStartOver }: { job: WizardJob
     <ChangeJobShell
       job={job} crg={crg} session={session} updateSession={updateSession} progress={progress} currentStepId={currentStepId} goToStep={goToStep}
       startingPoint={startingPointHandle}
-      extras={{ choiceOptions, ctaskEnvironmentPlan, items, paperworkNeed, runner, editedStepIds, jiraEvidence, jobId: job.jobId, onExit, library, onStartOver }}
+      extras={{ choiceOptions, ctaskEnvironmentPlan, items, paperworkNeed, runner, editedStepIds, jiraEvidence, jobId: job.jobId, onExit, library, onStartOver, resumedAgeText }}
     />
   );
 }
@@ -298,80 +298,53 @@ interface ChangeJobShellProps {
 
 /** What the frame's top-right buttons act on. */
 interface JobFrameActionsProps {
-  crg: CrgHook;
-  session: ChangeWizardSession;
-  updateSession: (update: Partial<ChangeWizardSession>) => void;
-  library: TemplateLibrary;
-  isTemplateReady: boolean;
   createdChangeNumbers: readonly string[];
-  onManageTemplates: () => void;
   onExit: () => void;
   onStartOver: () => void;
 }
 
-/** The frame's top-right buttons: "Save as template" once the change has details, "Manage templates", "Save and leave", "Start over". */
-function JobFrameActions({ crg, session, updateSession, library, isTemplateReady, createdChangeNumbers, onManageTemplates, onExit, onStartOver }: JobFrameActionsProps) {
+/** The frame's top-right buttons: "Save and leave" and "Start over". Templates are opened on step 1 and saved on the last step. */
+function JobFrameActions({ createdChangeNumbers, onExit, onStartOver }: JobFrameActionsProps) {
   return (
     <>
-      {isTemplateReady || session.linkedTemplate ? (
-        <SaveTemplateControl draft={crg.state} library={library} linkedTemplate={session.linkedTemplate} onLinkTemplate={(linkedTemplate) => updateSession({ linkedTemplate })} />
-      ) : null}
-      <button type="button" className={shellStyles.secondaryButton} onClick={onManageTemplates}>Manage templates</button>
       <button type="button" className={shellStyles.secondaryButton} onClick={onExit}>Save and leave</button>
       <StartOverControl createdChangeNumbers={createdChangeNumbers} onStartOver={onStartOver} />
     </>
   );
 }
 
-/** The guided frame around the current step, or the templates screen while it is open over the job. */
-function ChangeJobShell(props: ChangeJobShellProps) {
-  const [isManagingTemplates, setIsManagingTemplates] = useState(false);
-  const { crg, extras } = props;
-  if (isManagingTemplates) {
-    // The job stays as it is underneath; "Back" returns to the same step.
-    const useTemplateHere = (templateId: string) => {
-      const chosenTemplate = extras.library.templates.find((template) => template.id === templateId);
-      if (chosenTemplate) {
-        crg.actions.applyTemplate(chosenTemplate, extras.library.ctaskTemplates);
-        props.updateSession({ linkedTemplate: { id: chosenTemplate.id, name: chosenTemplate.name } });
-      }
-      setIsManagingTemplates(false);
-    };
-    return <TemplatesScreen library={extras.library} draftInHand={crg.state} useLabel="Use it on this change" onUseTemplate={useTemplateHere} onBack={() => setIsManagingTemplates(false)} />;
-  }
-  return <ChangeJobFrame {...props} onManageTemplates={() => setIsManagingTemplates(true)} />;
+const MINUTES_PER_HOUR = 60;
+const MILLISECONDS_PER_MINUTE = 60_000;
+
+/** "5 minute(s) ago" / "3 hour(s) ago": how long since a job was last worked on. */
+function describeJobAge(updatedAt: number, now: number): string {
+  const minutesAgo = Math.max(0, Math.round((now - updatedAt) / MILLISECONDS_PER_MINUTE));
+  return minutesAgo < MINUTES_PER_HOUR ? `${minutesAgo} minute(s) ago` : `${Math.round(minutesAgo / MINUTES_PER_HOUR)} hour(s) ago`;
 }
 
-/** The way back for a job whose picks were wiped when its changes were created (v0.312.0), with what is happening. */
-function RecoveryNotice({ recovery, session }: { recovery: DraftRecovery; session: ChangeWizardSession }) {
-  const changeNumbers = session.createdChanges.map((createdChange) => createdChange.changeNumber).join(' and ');
-  if (recovery.phase === 'done') {
-    return <p className={shellStyles.hint} role="status">{`✓ Your picks are back from ${changeNumbers}. Choose the Jira issues here so the AI knows the release scope, then press Next through to "Let AI write it" — no new changes are made.`}</p>;
-  }
-  if (!recovery.isNeeded) return null;
-  const isWorking = recovery.phase === 'restoring' || recovery.phase === 'waitingForNumber';
+/** The guided frame around the current step. */
+function ChangeJobShell(props: ChangeJobShellProps) {
+  return <ChangeJobFrame {...props} />;
+}
+
+/** A job that was opened again: where it picks up, and that "Start over" begins afresh. */
+function ResumeNotice({ resumedAgeText }: { resumedAgeText: string | null }) {
+  const [isDismissed, setIsDismissed] = useState(false);
+  if (resumedAgeText === null || isDismissed) return null;
+  const ageText = resumedAgeText;
   return (
-    <div className={shellStyles.card} role="alert">
-      <p>{`${changeNumbers} already exist in ServiceNow, but this job's picks are missing (if you used v0.312.0, creating them cleared your picks — now fixed). The changes hold everything you picked.`}</p>
-      {recovery.phase === 'failed' ? <p>{`The restore did not finish: ${recovery.failureText}`}</p> : null}
-      <button type="button" className={shellStyles.primaryButton} disabled={isWorking} onClick={recovery.restore}>
-        {isWorking ? 'Restoring…' : `Restore my picks from ${session.createdChanges[0]?.changeNumber ?? 'the change'}`}
-      </button>
-    </div>
+    <p className={styles.noticeText} role="status">
+      {`Picking up where you left off (${ageText}). To begin a fresh one instead, press “Start over” at the top. `}
+      <button type="button" className={styles.secondaryButton} onClick={() => setIsDismissed(true)}>Got it</button>
+    </p>
   );
 }
 
 /** The guided frame itself, around the current step. */
-function ChangeJobFrame({ crg, session, updateSession, progress, currentStepId, goToStep, startingPoint, extras, onManageTemplates }: ChangeJobShellProps & { onManageTemplates: () => void }) {
+function ChangeJobFrame({ crg, session, updateSession, progress, currentStepId, goToStep, startingPoint, extras }: ChangeJobShellProps) {
   const stepIds = listChangeWizardStepIds(session.mode);
   const currentIndex = stepIds.indexOf(currentStepId);
   const isFinishStep = currentStepId === 'finish';
-  // Restored picks still lack the Jira issues (a change does not record them), so the job goes back to choose them.
-  const restoredEnvironments = session.createdChanges.flatMap((createdChange) => (createdChange.environmentLabel ? [createdChange.environmentLabel] : []));
-  const recovery = useCreatedDraftRecovery(crg, session, useCallback(() => {
-    goToStep('scope', { returnToStepId: null });
-    updateSession({ enabledEnvironments: restoredEnvironments });
-  }, [goToStep, updateSession, restoredEnvironments]));
   const completion = evaluateStepCompletion(currentStepId, progress);
   const finishGate = isFinishStep ? readFinishGate(session, extras.runner, progress)
     : currentStepId === 'createChanges' ? readCreateNowGate(extras.runner, progress, crg.state) : null;
@@ -421,16 +394,12 @@ function ChangeJobFrame({ crg, session, updateSession, progress, currentStepId, 
       onNext={handleNext}
       onBack={() => goToStep(stepIds[Math.max(0, currentIndex - 1)], { returnToStepId: null })}
       onSkip={returnStepId ? handleNext : moveForward}
-      advancedAction={<JobFrameActions crg={crg} session={session} updateSession={updateSession} library={extras.library} isTemplateReady={currentIndex >= stepIds.indexOf('details')}
-        createdChangeNumbers={session.hasSavedChanges ? [] : session.createdChanges.map((createdChange) => createdChange.changeNumber)}
-        onManageTemplates={onManageTemplates} onExit={extras.onExit} onStartOver={extras.onStartOver} />}
+      advancedAction={<JobFrameActions createdChangeNumbers={session.hasSavedChanges ? [] : session.createdChanges.map((createdChange) => createdChange.changeNumber)}
+        onExit={extras.onExit} onStartOver={extras.onStartOver} />}
     >
+      <ResumeNotice resumedAgeText={extras.resumedAgeText} />
       <StartingPointNotice startingPoint={startingPoint} />
-      <RecoveryNotice recovery={recovery} session={session} />
       <UnsavedChangesBanner session={session} currentStepId={currentStepId} />
-      {session.linkedTemplate ? (
-        <p className={styles.hint} role="note">{`📄 Working from template “${session.linkedTemplate.name}”. Your edits change only this change — the template changes only when you press “Update template “${session.linkedTemplate.name}”” at the top.`}</p>
-      ) : null}
       {session.mode === 'create' && session.createdChanges.length > 0 && (currentStepId === 'environments' || currentStepId === 'tasks')
         ? <p className={shellStyles.hint}>These changes are already in ServiceNow. Edits here are saved to them on the last step, but a newly ticked environment or a new task is not added.</p>
         : null}
@@ -443,19 +412,14 @@ function ChangeJobFrame({ crg, session, updateSession, progress, currentStepId, 
 interface ChangeLandingProps {
   resumableJobs: readonly WizardJob[];
   openJob: (jobKind: WizardJobKind, startingPoint?: ChangeStartingPoint | null) => void;
-  startAgain: (job: WizardJob) => void;
-  /** Throws away the open job of this kind and opens a fresh one from the starting point. */
-  startAgainFrom: (jobKind: WizardJobKind, startingPoint: ChangeStartingPoint) => void;
-  /** Opens the new-change job (the open one, or a fresh one) on changes already in ServiceNow. */
-  finishCreatedChanges: (createdChanges: CreatedChangeSummary[]) => void;
   onExit: () => void;
 }
 
 /**
- * The screens before a job opens: the choice of how to start, and "Your templates". It owns the one template library
- * for these screens and is gone once a job opens, so the job's own "Save as template" never races it.
+ * The screens before a job opens: the two choices, and "Your templates". It owns the one template library for these
+ * screens and is gone once a job opens.
  */
-function ChangeLanding({ resumableJobs, openJob, startAgain, startAgainFrom, finishCreatedChanges, onExit }: ChangeLandingProps) {
+function ChangeLanding({ resumableJobs, openJob, onExit }: ChangeLandingProps) {
   const library = useTemplateLibrary();
   const [isShowingTemplates, setIsShowingTemplates] = useState(false);
 
@@ -466,11 +430,8 @@ function ChangeLanding({ resumableJobs, openJob, startAgain, startAgainFrom, fin
 
   if (isShowingTemplates) return <TemplatesScreen library={library} onUseTemplate={startFromTemplate} onBack={() => setIsShowingTemplates(false)} />;
   return (
-    <ChooseModeStep resumableJobs={resumableJobs} templates={library.templates} onChooseNew={() => openJob('newChange')} onChooseExisting={() => openJob('modifyChange')}
-      onContinue={(job) => openJob(job.kind)} onStartAgain={startAgain} onExit={onExit} onOpenTemplates={() => setIsShowingTemplates(true)}
-      onStartFromChange={(changeNumber) => openJob('newChange', { kind: 'existingChange', changeNumber })}
-      onStartFreshFromChange={(changeNumber) => startAgainFrom('newChange', { kind: 'existingChange', changeNumber })} onStartFromTemplate={startFromTemplate}
-      onFinishCreatedChanges={finishCreatedChanges} />
+    <ChooseModeStep resumableJobs={resumableJobs} onCreate={() => openJob('newChange')} onModify={() => openJob('modifyChange')}
+      onOpenTemplates={() => setIsShowingTemplates(true)} onExit={onExit} />
   );
 }
 
@@ -479,40 +440,20 @@ export default function ChangeWizard({ onExit }: WizardJobProps) {
   const jobs = useWizardJobStore((state) => state.jobs);
   const [activeJob, setActiveJob] = useState<WizardJob | null>(null);
   const [startingPoint, setStartingPoint] = useState<ChangeStartingPoint | null>(null);
+  // "2 hour(s) ago" when "Create" or "Modify" reopened a job already under way (there is only ever one of each).
+  const [resumedAgeText, setResumedAgeText] = useState<string | null>(null);
   const resumableJobs = CHANGE_JOB_KINDS.map((jobKind) => jobs[jobKind]).filter((job): job is WizardJob => job?.status === 'inProgress');
 
   function openJob(jobKind: WizardJobKind, nextStartingPoint: ChangeStartingPoint | null = null) {
     const mode = readJobMode(jobKind);
-    const { job } = useWizardJobStore.getState().startJob(jobKind, mode === 'modify' ? 'whichChange' : 'scope', Date.now());
+    const { job, isResumed: isReopened } = useWizardJobStore.getState().startJob(jobKind, mode === 'modify' ? 'whichChange' : 'scope', Date.now());
     useChangeWizardSessionStore.getState().ensureSession(job.jobId, mode);
+    setResumedAgeText(isReopened ? describeJobAge(job.updatedAt, Date.now()) : null);
     // Opened from a template: the job works from it, so "Update template" saves into it rather than making another.
     if (nextStartingPoint?.kind === 'template') {
       useChangeWizardSessionStore.getState().updateSession(job.jobId, { linkedTemplate: { id: nextStartingPoint.template.id, name: nextStartingPoint.template.name } });
     }
     setStartingPoint(nextStartingPoint);
-    setActiveJob(job);
-  }
-
-  function startAgainFrom(jobKind: WizardJobKind, nextStartingPoint: ChangeStartingPoint) {
-    const waitingJob = useWizardJobStore.getState().jobs[jobKind];
-    if (waitingJob) {
-      useWizardJobStore.getState().discardJob(jobKind);
-      useChangeWizardSessionStore.getState().removeSession(waitingJob.jobId);
-    }
-    openJob(jobKind, nextStartingPoint);
-  }
-
-  /**
-   * Ties the new-change job to changes already in ServiceNow, so it fills its picks back in from them (the restore
-   * offer) and saves to them — "Create in ServiceNow" then counts as done, so nothing is created twice.
-   */
-  function finishCreatedChanges(createdChanges: CreatedChangeSummary[]) {
-    const { job } = useWizardJobStore.getState().startJob('newChange', 'scope', Date.now());
-    const sessionStore = useChangeWizardSessionStore.getState();
-    sessionStore.ensureSession(job.jobId, 'create');
-    const jobSession = useChangeWizardSessionStore.getState().sessions[job.jobId];
-    sessionStore.updateSession(job.jobId, { createdChanges: mergeCreatedChanges(jobSession?.createdChanges ?? [], createdChanges), hasSavedChanges: false, failureText: null });
-    setStartingPoint(null);
     setActiveJob(job);
   }
 
@@ -524,12 +465,6 @@ export default function ChangeWizard({ onExit }: WizardJobProps) {
     setActiveJob(null);
   }
 
-  function startAgain(job: WizardJob) {
-    useWizardJobStore.getState().discardJob(job.kind);
-    useChangeWizardSessionStore.getState().removeSession(job.jobId);
-    openJob(job.kind);
-  }
-
-  if (!activeJob) return <ChangeLanding resumableJobs={resumableJobs} openJob={openJob} startAgain={startAgain} startAgainFrom={startAgainFrom} finishCreatedChanges={finishCreatedChanges} onExit={onExit} />;
-  return <ChangeJob key={activeJob.jobId} job={activeJob} startingPoint={startingPoint} onExit={onExit} onStartOver={() => startOver(activeJob)} />;
+  if (!activeJob) return <ChangeLanding resumableJobs={resumableJobs} openJob={openJob} onExit={onExit} />;
+  return <ChangeJob key={activeJob.jobId} job={activeJob} resumedAgeText={resumedAgeText} startingPoint={startingPoint} onExit={onExit} onStartOver={() => startOver(activeJob)} />;
 }

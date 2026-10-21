@@ -9,6 +9,7 @@ import { jiraGet } from '../../../services/jiraApi.ts';
 import { normaliseIssueKey } from '../../../views/SnowHub/chgFormula/changeIssueList.ts';
 import type { ChangeStepProps } from '../changeWizardSession.ts';
 import styles from '../ChangeWizard.module.css';
+import StartFromCard from './StartFromCard.tsx';
 
 interface JiraProjectOption {
   key: string;
@@ -157,7 +158,7 @@ function AddIssueByKey({ onAdd, isBusy }: { onAdd: (issueKey: string) => void; i
 }
 
 /** Step 1: the Jira work this change delivers. */
-export default function ScopeStep({ crg, session }: ChangeStepProps) {
+export default function ScopeStep({ crg, session, updateSession }: ChangeStepProps) {
   const [hasSearched, setHasSearched] = useState(false);
   const addIssueByKey = usePendingIssueAdd(crg);
   const isModify = session.mode === 'modify';
@@ -166,6 +167,7 @@ export default function ScopeStep({ crg, session }: ChangeStepProps) {
       <p className={styles.stepIntro}>
         {isModify ? 'Add any Jira issue this change now also covers. If nothing changed, skip this step.' : 'Choose the Jira work this change delivers.'}
       </p>
+      {isModify ? null : <StartFromCard crg={crg} updateSession={updateSession} />}
       {isModify ? null : <FindIssuesPanel crg={crg} onSearched={() => setHasSearched(true)} />}
       {crg.state.isFetchingIssues ? <p className={styles.hint} role="status">Looking in Jira…</p> : null}
       {crg.state.fetchError ? <p className={styles.errorText}>{crg.state.fetchError}</p> : null}

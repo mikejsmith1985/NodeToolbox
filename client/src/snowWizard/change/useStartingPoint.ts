@@ -4,6 +4,7 @@
 // once when the job opens. The status tells the job screen what to say: still copying, copied, failed, or filled in.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { buildPicksOnlyTemplate, keepTaskPicks } from './templatePicks.ts';
 
 import type { CrgTemplate, CtaskTemplate } from '../../views/SnowHub/hooks/useCrgState.ts';
 import type { CrgHook } from './changeDraft.ts';
@@ -42,6 +43,7 @@ export function useStartingPoint(crg: CrgHook, startingPoint: ChangeStartingPoin
   const [isDismissed, setIsDismissed] = useState(false);
   const { setCloneChgNumber, cloneFromChg, applyTemplate } = crg.actions;
   const cloneNumberInDraft = crg.state.cloneChgNumber;
+  const draftState = crg.state;
 
   const runCopy = useCallback(() => { void cloneFromChg().then(() => setHasCopyFinished(true)); }, [cloneFromChg]);
 
@@ -49,7 +51,8 @@ export function useStartingPoint(crg: CrgHook, startingPoint: ChangeStartingPoin
     if (!startingPoint || hasStartedRef.current) return;
     if (startingPoint.kind === 'template') {
       hasStartedRef.current = true;
-      applyTemplate(startingPoint.template, startingPoint.ctaskTemplates);
+      // Picks only: a template never brings writing or dates into a change (templatePicks.ts).
+      applyTemplate(buildPicksOnlyTemplate(startingPoint.template, draftState), startingPoint.ctaskTemplates.map(keepTaskPicks));
       return;
     }
     // cloneFromChg reads the number from the draft, so the number goes in first and the copy runs on the next pass.
@@ -59,7 +62,7 @@ export function useStartingPoint(crg: CrgHook, startingPoint: ChangeStartingPoin
     }
     hasStartedRef.current = true;
     runCopy();
-  }, [startingPoint, cloneNumberInDraft, applyTemplate, setCloneChgNumber, runCopy]);
+  }, [startingPoint, cloneNumberInDraft, applyTemplate, setCloneChgNumber, runCopy, draftState]);
 
   const dismiss = useCallback(() => setIsDismissed(true), []);
   if (!startingPoint || isDismissed) return { status: { kind: 'none' }, retry: runCopy, dismiss };

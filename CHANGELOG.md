@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **SNow Wizard: two choices, and templates hold only the picks.**
+  - **The first screen asks one thing:** *Create a new change* or *Modify a change in ServiceNow* (plus Manage
+    templates). A job already under way simply reopens where it was left; its button says so, the screen says
+    "Picking up where you left off", and **Start over** begins afresh. A change already in ServiceNow is finished
+    through *Modify*.
+  - **Removed:** "Finish one I started", "Use them in my open change", "Finish changes you already created", "Restore
+    my picks" and "Already created? Use them instead", along with the logic behind them.
+  - **Templates in two places only.** Open one on create step 1, in the new **Start from (optional)** card, which also
+    copies the picks from a change you raised before. Save on the **last step**, in **Save the picks as a template**.
+    "Save as template" and "Manage templates" are gone from the page header.
+  - **A template keeps only the picks:** category, type, groups, people, configuration items, planning answers,
+    environments and tasks. Never the writing, plans, dates or task descriptions, because every change's scope is its
+    own. Opening an older template that still holds text never brings that text into the change.
+
 ### Fixed
 - **SNow Wizard: one-click final-check fixes run right there (GH #475, last comment).** "Set it on N tasks" and
   "Create the planned outage" used to jump to "Tell us about the change", where neither can be fixed. They now run

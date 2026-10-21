@@ -1,8 +1,9 @@
-// ChangeWizardFinishCreated.test.tsx — End to end, through the real screens: a job whose changes already exist in
-// ServiceNow is finished without ever creating a change, and every write lands on the right record.
+// ChangeWizardSaveCreated.test.tsx — End to end, through the real screens: a new change whose CHGs are already created
+// is reopened, written by AI Assist, risk-checked with Toolbox's own Risk Check, and saved — creating nothing more, and
+// every write landing on its own record.
 //
-// A small in-memory ServiceNow answers every read and records every write, so the test proves the two ways the owner
-// finishes CHG0052017 (REL) and CHG0052018 (PRD): restoring a wiped job, and "Finish changes you already created".
+// A small in-memory ServiceNow answers every read and records every write, so the test proves the path the owner
+// takes after "Create in ServiceNow": REL CHG0052017 and PRD CHG0052018, each with its own CTASKs.
 
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -11,14 +12,14 @@ import { jiraGet } from '../../services/jiraApi.ts';
 import { snowFetch } from '../../services/snowApi.ts';
 import { useWizardJobStore } from '../shell/wizardJobStore.ts';
 import ChangeWizard from './ChangeWizard.tsx';
-import { createChangeWizardSession, useChangeWizardSessionStore } from './changeWizardSession.ts';
+import { buildChangeStorageKey, createChangeWizardSession, useChangeWizardSessionStore } from './changeWizardSession.ts';
 
 vi.mock('../../services/jiraApi.ts', () => ({ jiraGet: vi.fn() }));
 vi.mock('../../services/snowApi.ts', () => ({ snowFetch: vi.fn() }));
 vi.mock('../../views/SnowHub/problems/changeProblems.ts', () => ({ scanIssuesForProblems: vi.fn(async () => []) }));
 vi.mock('./evidenceUpload.ts', () => ({ EVIDENCE_ATTACHED: 'attached', attachAllEvidenceToChanges: vi.fn(async (_evidence: unknown, changeNumbers: string[]) => ({ results: Object.fromEntries(changeNumbers.map((changeNumber) => [changeNumber, 'attached'])), problems: [] })) }));
 
-const JOB_ID = 'job-finish-created';
+const JOB_ID = 'job-save-created';
 
 /** A ServiceNow field as it comes back with sysparm_display_value=all. */
 function both(value: string, displayValue = value) {
@@ -131,35 +132,55 @@ async function pressNext() {
 }
 
 /** Restores the picks, chooses the Jira issues, and walks every step to "Save to ServiceNow", then saves. */
-async function restoreAndFinish() {
-  fireEvent.click(await screen.findByRole('button', { name: 'Restore my picks from CHG0052017' }));
-  await screen.findByText(/Your picks are back from CHG0052017 and CHG0052018/);
+const PERSON = { sysId: 'usr-1', displayName: 'Smith, Michael' };
+const BLANK = { sysId: '', displayName: '' };
+const SCM = { sysId: 'grp-2', displayName: 'USGov ST - SCM' };
+const VAZQUEZ = { sysId: 'usr-3', displayName: 'Vazquez, Isaura Abigail' };
 
-  await expectStep('What\'s in this change?');
-  await waitFor(() => expect(screen.getByRole('option', { name: 'Enrollment (ENCUC)' })).toBeTruthy());
-  fireEvent.change(screen.getByLabelText('Jira project'), { target: { value: 'ENCUC' } });
-  await waitFor(() => expect(screen.getByRole('option', { name: '10232026' })).toBeTruthy());
-  fireEvent.change(screen.getByLabelText('Release'), { target: { value: '10232026' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Find the issues' }));
-  await screen.findByText('2 of 2 issues chosen');
-  await pressNext();
+/** One task card as the job built it: its own environment, title and people (the ones ServiceNow already holds). */
+function buildCard(cardId: string, shortDescription: string, environmentKeys: Array<'REL' | 'PRD'>) {
+  return {
+    id: cardId, name: shortDescription, createdAt: '', shortDescription, description: 'Production deployment', changeTaskType: 'implementation',
+    assignmentGroup: SCM, assignedTo: VAZQUEZ, plannedStartDate: '', plannedEndDate: '', closeNotes: '', environmentKeys,
+  };
+}
 
-  await expectStep('Tell us about the change');
-  expect((screen.getByLabelText('Title (needed)') as HTMLInputElement).value).toBe('Enrollment Integration Services | October release');
-  await pressNext();
-  await expectStep('How will it go?');
-  await pressNext();
-  await expectStep('Where and when?');
-  await pressNext();
-  await expectStep('Build the tasks');
-  expect(screen.getByText(/Enrollment - AWS - PRD/)).toBeTruthy();
-  await pressNext();
+/** The job's draft as it stood when its changes were created: every pick made, the plans still to write. */
+function buildCreatedDraft() {
+  return {
+    fetchedIssues: [{ id: '1', key: 'ENCUC-2334', fields: { summary: 'Duplicate MBI processing', status: { name: 'Done' }, issuetype: { name: 'Defect' } } }],
+    selectedIssueKeys: ['ENCUC-2334'],
+    generatedShortDescription: 'Enrollment Integration Services | October release', generatedDescription: 'Fixes ENCUC-2334', generatedJustification: 'Defects in production', generatedRiskImpact: 'Low',
+    chgBasicInfo: {
+      category: 'software', changeType: 'standard', environment: '', requestedBy: PERSON, configItem: { sysId: 'ci-rel', displayName: 'Release' },
+      assignmentGroup: { sysId: 'grp-1', displayName: 'MA Growth IT - Enrollment Integration Delivery' }, assignedTo: PERSON,
+      changeManager: BLANK, tester: BLANK, serviceManager: BLANK, isExpedited: false,
+    },
+    chgPlanningContent: { implementationPlan: '', backoutPlan: '', testPlan: '' },
+    relEnvironment: { isEnabled: true, plannedStartDate: '2026-10-22T18:00', plannedEndDate: '2026-10-22T20:00', configItem: { sysId: 'ci-rel', displayName: 'Release' }, impactedPersonsAware: '', snowEnvironmentValue: 'release' },
+    prdEnvironment: { isEnabled: true, plannedStartDate: '2026-10-23T21:00', plannedEndDate: '2026-10-24T06:00', configItem: { sysId: 'ci-prd', displayName: 'Production' }, impactedPersonsAware: '', snowEnvironmentValue: 'production' },
+    changeTasks: [buildCard('c1', 'Enrollment - AWS - REL', ['REL']), buildCard('c2', 'Enrollment - AWS - PRD', ['PRD']), buildCard('c3', 'Business Checkout', ['PRD'])],
+  };
+}
 
-  // Toolbox's order: AI Assist writes the change before it is created (here the changes already exist).
+/** A new-change job reopened right after "Create in ServiceNow" made REL CHG0052017 and PRD CHG0052018. */
+function openCreatedJob() {
+  const createdSteps = ['scope', 'details', 'planning', 'environments', 'tasks'];
+  localStorage.setItem(buildChangeStorageKey(JOB_ID), JSON.stringify(buildCreatedDraft()));
+  useWizardJobStore.setState({ jobs: { newChange: { jobId: JOB_ID, kind: 'newChange', stepId: 'aiDraft', status: 'inProgress', updatedAt: Date.now(), payloadKey: 'draft' } } });
+  useChangeWizardSessionStore.setState({ sessions: { [JOB_ID]: {
+    ...createChangeWizardSession('create'), currentStepId: 'aiDraft', reviewedStepIds: createdSteps as never, enabledEnvironments: ['REL', 'PRD'],
+    createdChanges: [{ environmentLabel: 'REL', changeNumber: 'CHG0052017' }, { environmentLabel: 'PRD', changeNumber: 'CHG0052018' }],
+  } } });
+  render(<ChangeWizard onExit={vi.fn()} />);
+  fireEvent.click(screen.getByRole('button', { name: /^Create a new change/ }));
+}
+
+/** AI Assist writes the plans, then the changes already exist, the Risk Check runs on the real ticket, and Save. */
+async function writeCheckAndSave() {
   await expectStep('AI Assist: let AI write it');
   expect(screen.getByText(/CHG0052017 and CHG0052018 are in ServiceNow but not finished/)).toBeTruthy();
-  const promptText = (screen.getByLabelText(/Copy this and paste it/) as HTMLTextAreaElement).value;
-  expect(promptText).toContain('ENCUC-2334');
+  expect((screen.getByLabelText(/Copy this and paste it/) as HTMLTextAreaElement).value).toContain('ENCUC-2334');
   fireEvent.change(screen.getByLabelText(/Paste the assistant/), { target: { value: [
     'IMPLEMENTATION_PLAN: 1. SCM deploys the release (CTASK0100002).', 'TEST_PLAN: 1. Business checkout (CTASK0100003).', 'BACKOUT_PLAN: 1. If checkout fails, SCM redeploys the prior build.',
   ].join('\n') } });
@@ -169,11 +190,10 @@ async function restoreAndFinish() {
 
   await expectStep('Create in ServiceNow');
   expect(screen.getByRole('link', { name: 'CHG0052018' })).toBeTruthy();
-  expect(screen.getByText(/CTASK0100002 Enrollment - AWS - PRD/)).toBeTruthy();
+  expect(await screen.findByText(/CTASK0100002 Enrollment - AWS - PRD/)).toBeTruthy();
   expect(readNextButton().textContent).not.toMatch(/Yes, create/);
   await pressNext();
 
-  // Toolbox's Risk Check runs on the real ticket, above the final checks.
   await expectStep('Risk check & final checks');
   await screen.findByRole('list', { name: 'Checks' });
   expect(screen.getByRole('heading', { name: '🛡️ AI Risk Check — on the real ticket' })).toBeTruthy();
@@ -183,6 +203,7 @@ async function restoreAndFinish() {
   await pressNext();
 
   await expectStep('Save to ServiceNow');
+  expect(screen.getByRole('heading', { name: 'Save the picks as a template (optional)' })).toBeTruthy();
   expect(readNextButton().textContent).toBe('Save to ServiceNow');
   fireEvent.click(readNextButton());
   await screen.findByText('All done. Everything below is in ServiceNow.', {}, { timeout: 5000 });
@@ -205,7 +226,7 @@ function expectEveryWriteOnItsOwnRecord(writeLog: WriteLog) {
   expect(writeLog.taskPatches).toHaveLength(3);
 }
 
-describe('ChangeWizard — finishing changes that already exist', () => {
+describe('ChangeWizard — after "Create in ServiceNow": write, risk check and save', () => {
   beforeEach(() => {
     localStorage.clear();
     localStorage.setItem('tbxRcpRulesEnabled', 'false');
@@ -215,33 +236,11 @@ describe('ChangeWizard — finishing changes that already exist', () => {
   });
   afterEach(() => cleanup());
 
-  it('path 1: a job wiped by v0.312.0 restores its picks and saves to CHG0052017/18 without creating anything', async () => {
+  it('saves the finished work to CHG0052017 and CHG0052018 — each with its own values and tasks — creating nothing', async () => {
     const writeLog = startFakeServiceNow();
-    useWizardJobStore.setState({ jobs: { newChange: { jobId: JOB_ID, kind: 'newChange', stepId: 'aiDraft', status: 'inProgress', updatedAt: Date.now(), payloadKey: 'draft' } } });
-    useChangeWizardSessionStore.setState({ sessions: { [JOB_ID]: {
-      ...createChangeWizardSession('create'), currentStepId: 'aiDraft',
-      reviewedStepIds: ['scope', 'details', 'planning', 'environments', 'tasks', 'createChanges'],
-      createdChanges: [{ environmentLabel: 'REL', changeNumber: 'CHG0052017' }, { environmentLabel: 'PRD', changeNumber: 'CHG0052018' }],
-      outcomeNotes: ['2 CHGs created: REL CHG0052017, PRD CHG0052018'],
-    } } });
-    render(<ChangeWizard onExit={vi.fn()} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    openCreatedJob();
 
-    await restoreAndFinish();
-
-    expectEveryWriteOnItsOwnRecord(writeLog);
-  }, 30_000);
-
-  it('path 2: "Finish changes you already created" from the first screen does the same, with no job open', async () => {
-    const writeLog = startFakeServiceNow();
-    render(<ChangeWizard onExit={vi.fn()} />);
-    fireEvent.click(screen.getByRole('button', { name: /^Finish one I started/ }));
-    fireEvent.click(screen.getByText('Finish changes you already created'));
-    fireEvent.change(screen.getByLabelText('REL change number'), { target: { value: 'CHG0052017' } });
-    fireEvent.change(screen.getByLabelText('PRD change number'), { target: { value: 'CHG0052018' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Finish these changes' }));
-
-    await restoreAndFinish();
+    await writeCheckAndSave();
 
     expectEveryWriteOnItsOwnRecord(writeLog);
   }, 30_000);

@@ -55,7 +55,7 @@ describe('WizardApp', () => {
     await waitFor(() => expect(useWizardConnectionStore.getState().snow.status).toBe('connected'));
     useWizardConnectionStore.getState().setConnection('jira', { status: 'connected', identity: 'Smith, Jane' });
     const firstScreenByJob: ReadonlyArray<[string, RegExp]> = [
-      ['Make or change a change', /^New change$/],
+      ['Make or change a change', /^Create a new change$/],
       ['Turn a problem into Jira work', /Step 1 of/],
       ['Review a change', /Step 1 of/],
     ];

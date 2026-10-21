@@ -60,7 +60,7 @@ function openModifyAt(stepId: ChangeWizardStepId) {
     modify: { changeNumber: 'CHG0009', stateLabel: 'New', loadedSnapshot: LOADED_SNAPSHOT, loadedStepValues: readLoadedStepValues(), existingTaskNames: [] },
   } } });
   render(<ChangeWizard onExit={vi.fn()} />);
-  fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+  fireEvent.click(screen.getByRole('button', { name: /^Modify a change in ServiceNow/ }));
 }
 
 describe('ChangeWizard — change an existing one', () => {
@@ -86,7 +86,7 @@ describe('ChangeWizard — change an existing one', () => {
     useWizardJobStore.setState({ jobs: {} });
     vi.mocked(snowFetch).mockResolvedValue({ result: [{ sys_id: { value: 'sys-9' }, number: { value: 'CHG0009' }, state: { value: '3', display_value: 'Closed' } }] } as never);
     render(<ChangeWizard onExit={vi.fn()} />);
-    fireEvent.click(screen.getByRole('button', { name: /^Fix an existing change/ }));
+    fireEvent.click(screen.getByRole('button', { name: /^Modify a change in ServiceNow/ }));
     fireEvent.change(screen.getByLabelText('Change number'), { target: { value: 'CHG0009' } });
     fireEvent.click(screen.getByRole('button', { name: 'Look it up' }));
     await screen.findByText('This change is Closed, so it can no longer be changed.');

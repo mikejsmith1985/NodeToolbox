@@ -4,14 +4,11 @@
 // The write itself is the runner's (Toolbox's createChg); this screen says what will be made, then shows each change
 // with its task numbers, any notes, and "Retry what's missing" if one environment's change did not get made.
 
-import { useState } from 'react';
-
 import { readEnabledPlanEnvironments } from '../changeDraft.ts';
 import type { ChangeStepProps } from '../changeWizardSession.ts';
 import styles from '../ChangeWizard.module.css';
 import { buildChangeLink, type CreatedChangeSummary } from '../createOutcome.ts';
 import { buildEvidenceArchiveName } from '../../../views/SnowHub/testEvidence/evidenceBundle.ts';
-import type { PlanEnvironmentKey } from '../ctaskEnvironmentPlan.ts';
 import { EVIDENCE_ATTACHED } from '../evidenceUpload.ts';
 import type { JiraEvidenceAttachment } from '../jiraEvidence.ts';
 import type { FinishRunner } from '../useFinishRunner.ts';
@@ -63,38 +60,6 @@ function CreatePlan({ crg, taskNamesByEnvironment }: Pick<CreateNowStepProps, 'c
   );
 }
 
-// A ServiceNow change number: "CHG" and its digits.
-const CHANGE_NUMBER_PATTERN = /^CHG\d+$/;
-
-/**
- * "Already created them?": one number per environment, so a job that lost track of its changes (or a fresh job for
- * changes made earlier) uses them instead of making duplicates.
- */
-function ExistingChangesForm({ environmentLabels, runner }: { environmentLabels: PlanEnvironmentKey[]; runner: FinishRunner }) {
-  const [typedNumbers, setTypedNumbers] = useState<Partial<Record<PlanEnvironmentKey, string>>>({});
-  const readNumber = (environmentLabel: PlanEnvironmentKey) => (typedNumbers[environmentLabel] ?? '').trim().toUpperCase();
-  const isComplete = environmentLabels.every((environmentLabel) => CHANGE_NUMBER_PATTERN.test(readNumber(environmentLabel)));
-  return (
-    <details className={styles.moreOptions}>
-      <summary>Already created these changes? Use them instead</summary>
-      <p className={styles.hint}>Type each change&apos;s number. Nothing new is created; the last step saves your work to these.</p>
-      {environmentLabels.map((environmentLabel) => (
-        <label key={environmentLabel} className={styles.fieldLabel}>
-          {`${environmentLabel} change number`}
-          <input className={styles.inputField} value={typedNumbers[environmentLabel] ?? ''} placeholder="CHG0012345"
-            onChange={(changeEvent) => setTypedNumbers({ ...typedNumbers, [environmentLabel]: changeEvent.target.value })} />
-        </label>
-      ))}
-      <div className={styles.buttonRow}>
-        <button type="button" className={styles.actionButton} disabled={!isComplete}
-          onClick={() => runner.adoptExistingChanges(environmentLabels.map((environmentLabel) => ({ environmentLabel, changeNumber: readNumber(environmentLabel) })))}>
-          Use these changes
-        </button>
-      </div>
-    </details>
-  );
-}
-
 /** One change now in ServiceNow, with the numbers of its tasks. */
 function CreatedChangeLine({ createdChange, session }: { createdChange: CreatedChangeSummary } & Pick<ChangeStepProps, 'session'>) {
   const taskRecords = session.createdTasks?.[createdChange.changeNumber];
@@ -140,7 +105,6 @@ export default function CreateNowStep({ crg, session, runner, taskNamesByEnviron
           <p className={styles.noticeText}>{`This makes ${describePlanCount(readEnabledPlanEnvironments(crg.state).length, taskNamesByEnvironment)} in ServiceNow, each with the test-evidence zip. Nothing is made until you press the button below.`}</p>
           <EvidenceZipSummary jiraEvidence={jiraEvidence} />
           <CreatePlan crg={crg} taskNamesByEnvironment={taskNamesByEnvironment} />
-          <ExistingChangesForm environmentLabels={readEnabledPlanEnvironments(crg.state)} runner={runner} />
         </>
       )}
       {hasCreated && !hasMissing ? <p className={styles.successText}>Created. Press Next to run the Risk Check on the real ticket.</p> : null}

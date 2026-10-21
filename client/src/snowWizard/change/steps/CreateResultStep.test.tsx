@@ -7,7 +7,8 @@ import { describe, expect, it, vi } from 'vitest';
 import type { CrgDraftState, CrgHook } from '../changeDraft.ts';
 import { createChangeWizardSession, type ChangeWizardSession } from '../changeWizardSession.ts';
 import type { FinishRunner } from '../useFinishRunner.ts';
-import CreateResultStep from './CreateResultStep.tsx';
+import { useTemplateLibrary } from '../useTemplateLibrary.ts';
+import CreateResultStep, { type CreateResultStepProps } from './CreateResultStep.tsx';
 
 const CRG = {
   state: { relEnvironment: { isEnabled: true }, prdEnvironment: { isEnabled: true }, pfixEnvironment: { isEnabled: false }, changeTasks: [] } as unknown as CrgDraftState,
@@ -15,11 +16,16 @@ const CRG = {
 const TASK_NAMES = { REL: ['Deploy'], PRD: ['Deploy', 'Business Checkout'] };
 
 function buildRunner(overrides: Partial<FinishRunner> = {}): FinishRunner {
-  return { phase: { kind: 'idle' }, startCreate: vi.fn(), retryMissing: vi.fn(), startSaveCreated: vi.fn(), adoptExistingChanges: vi.fn(), startSave: vi.fn(), confirmSave: vi.fn(), cancelSave: vi.fn(), ...overrides };
+  return { phase: { kind: 'idle' }, startCreate: vi.fn(), retryMissing: vi.fn(), startSaveCreated: vi.fn(), startSave: vi.fn(), confirmSave: vi.fn(), cancelSave: vi.fn(), ...overrides };
+}
+
+/** The step with one template library, as the change job hands it over. */
+function Harness(props: Omit<CreateResultStepProps, 'library'>) {
+  return <CreateResultStep {...props} library={useTemplateLibrary()} />;
 }
 
 function renderStep(session: ChangeWizardSession, runner: FinishRunner) {
-  render(<CreateResultStep crg={CRG} session={session} updateSession={vi.fn()} goToStep={vi.fn()} runner={runner} taskNamesByEnvironment={TASK_NAMES} editedStepIds={['planning']} evidenceFileCount={1} />);
+  render(<Harness crg={CRG} session={session} updateSession={vi.fn()} goToStep={vi.fn()} runner={runner} taskNamesByEnvironment={TASK_NAMES} editedStepIds={['planning']} evidenceFileCount={1} />);
 }
 
 describe('CreateResultStep', () => {
@@ -63,6 +69,7 @@ describe('CreateResultStep', () => {
   it('after a clean save, suggests saving it as a template for next time', () => {
     const session: ChangeWizardSession = { ...createChangeWizardSession('create'), hasSavedChanges: true, createdChanges: [{ environmentLabel: 'REL', changeNumber: 'CHG1' }, { environmentLabel: 'PRD', changeNumber: 'CHG2' }] };
     renderStep(session, buildRunner({ phase: { kind: 'done' } }));
-    expect(screen.getByText(/Press “Save as template” at the top/)).toBeTruthy();
+    expect(screen.getByText(/Save its picks as a template below/)).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Save the picks as a template (optional)' })).toBeTruthy();
   });
 });

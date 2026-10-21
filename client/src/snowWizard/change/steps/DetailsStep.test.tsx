@@ -40,16 +40,4 @@ describe('DetailsStep', () => {
     expect((screen.getByText('More options').closest('details') as HTMLDetailsElement).open).toBe(true);
     expect(document.body.textContent).not.toMatch(/u_[a-z]|cmdb_ci|customfield_|sys_id/);
   });
-
-  it('opens a saved template with its linked tasks staged, says so, and links the job to it', () => {
-    const blank = { sysId: '', displayName: '' };
-    localStorage.setItem('ntbx-ctask-templates', JSON.stringify([{ id: 'ctask-1', name: 'Checkout', createdAt: '', shortDescription: 'Checkout', description: '', assignmentGroup: blank, assignedTo: blank, plannedStartDate: '', plannedEndDate: '', closeNotes: '' }]));
-    localStorage.setItem('ntbx-crg-templates', JSON.stringify([{ id: 'tpl-1', name: 'Monthly', createdAt: '', chgBasicInfo: { category: 'software', changeType: '', environment: '', requestedBy: blank, configItem: blank, assignmentGroup: blank, assignedTo: blank, changeManager: blank, tester: blank, serviceManager: blank, isExpedited: false }, chgPlanningAssessment: {}, chgPlanningContent: {}, ctaskTemplateIds: ['ctask-1'] }]));
-    render(<Harness />);
-    fireEvent.change(screen.getByLabelText('Open a saved template (optional)'), { target: { value: 'tpl-1' } });
-    expect(observed.latestTaskNames).toEqual(['Checkout']);
-    expect(screen.getByRole('status').textContent).toBe('✓ Opened template “Monthly” — its values are filled in below.');
-    expect(observed.updateSession).toHaveBeenCalledWith({ linkedTemplate: { id: 'tpl-1', name: 'Monthly' } });
-    localStorage.clear();
-  });
 });

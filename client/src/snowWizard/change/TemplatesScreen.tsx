@@ -1,7 +1,4 @@
-// TemplatesScreen.tsx — "Your templates": use one, replace it with the change in hand, share it as a code or a file, delete it, or add one someone shared.
-//
-// It opens from the change job's first screen and from inside a job ("Manage templates"), so templates can be managed
-// at any point (GH #468).
+// TemplatesScreen.tsx — "Your templates": open one in a new change, share it as a code or a file, delete it, or add one someone shared.
 //
 // Sharing needs no server: a template travels as a code people paste into Teams or an email, or as a downloaded file.
 // The same place takes a task code — from another Wizard, or from Toolbox's "Share all" — and lists the saved tasks.
@@ -15,14 +12,12 @@ import shellStyles from '../shell/WizardShell.module.css';
 import styles from './ChangeWizard.module.css';
 import TaskTemplatesSection from './TaskTemplatesSection.tsx';
 import { buildTemplateShareFile, decodeTemplateShare, encodeTemplateShareCode } from './templateShare.ts';
-import type { TemplateDraft, TemplateLibrary } from './useTemplateLibrary.ts';
+import type { TemplateLibrary } from './useTemplateLibrary.ts';
 
 interface TemplatesScreenProps {
   library: TemplateLibrary;
   onUseTemplate: (templateId: string) => void;
   onBack: () => void;
-  /** Inside a job: the change in hand, so a template can be replaced with it. */
-  draftInHand?: TemplateDraft;
   /** The words on the use button ("Use it on this change" inside a job). */
   useLabel?: string;
 }
@@ -77,26 +72,21 @@ function SharePanel({ template, library }: { template: CrgTemplate; library: Tem
 }
 
 /** One template, with everything that can be done to it. */
-type TemplateCardProps = { template: CrgTemplate } & Pick<TemplatesScreenProps, 'library' | 'onUseTemplate' | 'draftInHand' | 'useLabel'>;
+type TemplateCardProps = { template: CrgTemplate } & Pick<TemplatesScreenProps, 'library' | 'onUseTemplate' | 'useLabel'>;
 
-function TemplateCard({ template, library, onUseTemplate, draftInHand, useLabel = 'Open it in a new change' }: TemplateCardProps) {
+function TemplateCard({ template, library, onUseTemplate, useLabel = 'Open it in a new change' }: TemplateCardProps) {
   const [isSharing, setIsSharing] = useState(false);
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
-  const [wasReplaced, setWasReplaced] = useState(false);
   return (
     <li className={styles.card}>
       <h3 className={styles.cardTitle}>{template.name}</h3>
       <p className={styles.hint}>{describeTemplate(template)}</p>
       <div className={styles.buttonRow}>
         <button type="button" className={styles.actionButton} onClick={() => onUseTemplate(template.id)}>{useLabel}</button>
-        {draftInHand ? (
-          <button type="button" className={styles.secondaryButton} onClick={() => { library.saveDraftAsTemplate(template.name, draftInHand, template.id); setWasReplaced(true); }}>Replace with this change</button>
-        ) : null}
         <button type="button" className={styles.secondaryButton} aria-expanded={isSharing} onClick={() => setIsSharing(!isSharing)}>Share</button>
         <button type="button" className={styles.secondaryButton} onClick={() => downloadTemplateFile(template, library)}>Download</button>
         <button type="button" className={styles.secondaryButton} onClick={() => setIsConfirmingDelete(true)}>Delete</button>
       </div>
-      {wasReplaced ? <p className={styles.successText} role="status">{`“${template.name}” now holds this change ✓`}</p> : null}
       {isSharing ? <SharePanel template={template} library={library} /> : null}
       {isConfirmingDelete ? (
         <div className={styles.buttonRow} role="alertdialog" aria-label={`Delete ${template.name}?`}>
@@ -150,7 +140,7 @@ function ImportPanel({ library }: { library: TemplateLibrary }) {
 }
 
 /** The "Your templates" screen. */
-export default function TemplatesScreen({ library, onUseTemplate, onBack, draftInHand, useLabel }: TemplatesScreenProps) {
+export default function TemplatesScreen({ library, onUseTemplate, onBack, useLabel }: TemplatesScreenProps) {
   return (
     <section aria-labelledby="templates-heading">
       <h2 id="templates-heading" className={shellStyles.cardTitle}>Your templates</h2>
@@ -159,7 +149,7 @@ export default function TemplatesScreen({ library, onUseTemplate, onBack, draftI
         ? <p className={styles.hint}>You have no templates yet. Start from a change you’ve raised before, then press “Save as template”.</p>
         : null}
       <ul className={styles.itemList} aria-label="Saved templates">
-        {library.templates.map((template) => <TemplateCard key={template.id} template={template} library={library} onUseTemplate={onUseTemplate} draftInHand={draftInHand} useLabel={useLabel} />)}
+        {library.templates.map((template) => <TemplateCard key={template.id} template={template} library={library} onUseTemplate={onUseTemplate} useLabel={useLabel} />)}
       </ul>
       <TaskTemplatesSection library={library} />
       <ImportPanel library={library} />
