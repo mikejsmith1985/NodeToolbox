@@ -34,6 +34,7 @@ import { useDefaultJiraEvidenceTicks, useJiraEvidenceChoiceStore, useTickedJiraE
 import { listEditedSteps, readStepValues } from './modifyDiff.ts';
 import SaveTemplateControl from './SaveTemplateControl.tsx';
 import StartingPointNotice from './StartingPointNotice.tsx';
+import StartOverControl from './StartOverControl.tsx';
 import AiWriteStep from './steps/AiWriteStep.tsx';
 import ChecksStep from './steps/ChecksStep.tsx';
 import ChooseModeStep from './steps/ChooseModeStep.tsx';
@@ -85,6 +86,8 @@ interface StepExtras {
   library: TemplateLibrary;
   /** The changes already made in ServiceNow, one line each with their task numbers, for the AI prompts. */
   createdChangeLines: readonly string[];
+  /** Throws this job away and goes back to the first screen. */
+  onStartOver: () => void;
 }
 
 /** The screen for one step. */
@@ -237,7 +240,7 @@ function useStepNavigation(job: WizardJob, crg: CrgHook, session: ChangeWizardSe
 }
 
 /** One change job, from its first step to its result. */
-function ChangeJob({ job, startingPoint, onExit }: { job: WizardJob; startingPoint: ChangeStartingPoint | null; onExit: () => void }) {
+function ChangeJob({ job, startingPoint, onExit, onStartOver }: { job: WizardJob; startingPoint: ChangeStartingPoint | null; onExit: () => void; onStartOver: () => void }) {
   const mode = readJobMode(job.kind);
   const crg = useCrgState({ storageKey: buildChangeStorageKey(job.jobId) });
   const startingPointHandle = useStartingPoint(crg, startingPoint);
@@ -274,7 +277,7 @@ function ChangeJob({ job, startingPoint, onExit }: { job: WizardJob; startingPoi
     <ChangeJobShell
       job={job} crg={crg} session={session} updateSession={updateSession} progress={progress} currentStepId={currentStepId} goToStep={goToStep}
       startingPoint={startingPointHandle}
-      extras={{ choiceOptions, ctaskEnvironmentPlan, items, paperworkNeed, runner, editedStepIds, evidenceFiles, setEvidenceFiles, jiraEvidence, jobId: job.jobId, onExit, library, createdChangeLines }}
+      extras={{ choiceOptions, ctaskEnvironmentPlan, items, paperworkNeed, runner, editedStepIds, evidenceFiles, setEvidenceFiles, jiraEvidence, jobId: job.jobId, onExit, library, createdChangeLines, onStartOver }}
     />
   );
 }
@@ -300,13 +303,25 @@ interface ChangeJobShellProps {
   extras: StepExtras;
 }
 
-/** The frame's top-right buttons: "Save as template" once the change has details, "Manage templates", and "Save and leave". */
-function JobFrameActions({ crg, library, isTemplateReady, onManageTemplates, onExit }: { crg: CrgHook; library: TemplateLibrary; isTemplateReady: boolean; onManageTemplates: () => void; onExit: () => void }) {
+/** What the frame's top-right buttons act on. */
+interface JobFrameActionsProps {
+  crg: CrgHook;
+  library: TemplateLibrary;
+  isTemplateReady: boolean;
+  createdChangeNumbers: readonly string[];
+  onManageTemplates: () => void;
+  onExit: () => void;
+  onStartOver: () => void;
+}
+
+/** The frame's top-right buttons: "Save as template" once the change has details, "Manage templates", "Save and leave", "Start over". */
+function JobFrameActions({ crg, library, isTemplateReady, createdChangeNumbers, onManageTemplates, onExit, onStartOver }: JobFrameActionsProps) {
   return (
     <>
       {isTemplateReady ? <SaveTemplateControl draft={crg.state} library={library} /> : null}
       <button type="button" className={shellStyles.secondaryButton} onClick={onManageTemplates}>Manage templates</button>
       <button type="button" className={shellStyles.secondaryButton} onClick={onExit}>Save and leave</button>
+      <StartOverControl createdChangeNumbers={createdChangeNumbers} onStartOver={onStartOver} />
     </>
   );
 }
@@ -406,7 +421,9 @@ function ChangeJobFrame({ crg, session, updateSession, progress, currentStepId, 
       onNext={handleNext}
       onBack={() => goToStep(stepIds[Math.max(0, currentIndex - 1)], { returnToStepId: null })}
       onSkip={returnStepId ? handleNext : moveForward}
-      advancedAction={<JobFrameActions crg={crg} library={extras.library} isTemplateReady={currentIndex >= stepIds.indexOf('details')} onManageTemplates={onManageTemplates} onExit={extras.onExit} />}
+      advancedAction={<JobFrameActions crg={crg} library={extras.library} isTemplateReady={currentIndex >= stepIds.indexOf('details')}
+        createdChangeNumbers={session.hasSavedChanges ? [] : session.createdChanges.map((createdChange) => createdChange.changeNumber)}
+        onManageTemplates={onManageTemplates} onExit={extras.onExit} onStartOver={extras.onStartOver} />}
     >
       <StartingPointNotice startingPoint={startingPoint} />
       <RecoveryNotice recovery={recovery} session={session} />
@@ -492,6 +509,14 @@ export default function ChangeWizard({ onExit }: WizardJobProps) {
     setActiveJob(job);
   }
 
+  /** "Start over" inside a job: the job and everything it held are thrown away, and the first screen shows again. */
+  function startOver(job: WizardJob) {
+    useWizardJobStore.getState().discardJob(job.kind);
+    useChangeWizardSessionStore.getState().removeSession(job.jobId);
+    setStartingPoint(null);
+    setActiveJob(null);
+  }
+
   function startAgain(job: WizardJob) {
     useWizardJobStore.getState().discardJob(job.kind);
     useChangeWizardSessionStore.getState().removeSession(job.jobId);
@@ -499,5 +524,5 @@ export default function ChangeWizard({ onExit }: WizardJobProps) {
   }
 
   if (!activeJob) return <ChangeLanding resumableJobs={resumableJobs} openJob={openJob} startAgain={startAgain} startAgainFrom={startAgainFrom} finishCreatedChanges={finishCreatedChanges} onExit={onExit} />;
-  return <ChangeJob key={activeJob.jobId} job={activeJob} startingPoint={startingPoint} onExit={onExit} />;
+  return <ChangeJob key={activeJob.jobId} job={activeJob} startingPoint={startingPoint} onExit={onExit} onStartOver={() => startOver(activeJob)} />;
 }

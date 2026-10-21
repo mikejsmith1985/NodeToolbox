@@ -33,8 +33,12 @@ function buildDraft(): CrgDraftState {
   };
 }
 
+const NOBODY = { assignmentGroup: { sysId: '', displayName: '' }, assignedTo: { sysId: '', displayName: '' } };
+
 function buildWriters(taskRecords = [{ sysId: 't1', number: 'CTASK1', shortDescription: 'Deploy' }]): CreatedChangeWriters {
   return {
+    readTaskAssignment: vi.fn(async () => NOBODY),
+    patchTaskAssignment: vi.fn(async () => undefined),
     resolveChangeSysId: vi.fn(async () => 'chg-sys'),
     patchChange: vi.fn(async () => undefined),
     listTasks: vi.fn(async () => taskRecords),
@@ -89,7 +93,7 @@ describe('saveCreatedChange', () => {
     expect(payload.short_description).toBe('Payments 1.2');
     expect(String(payload.implementation_plan)).toContain('1. Deploy (CTASK1)');
     expect(vi.mocked(writers.updateTask).mock.calls.map((call) => call[0])).toEqual(['t1', 't2']);
-    expect(summary).toBe('CHG2 saved, with 2 tasks updated.');
+    expect(summary).toBe('CHG2 saved, with 2 tasks updated and checked.');
   });
 
   it('leaves a task alone that is not on this environment\'s change', async () => {
@@ -106,4 +110,36 @@ describe('saveCreatedChange', () => {
     await expect(saveCreatedChange({ draft: buildDraft(), createdChange: { environmentLabel: null, changeNumber: 'CHG3' }, environmentValueByKey: {}, ctaskEnvironmentPlan: {} }, buildWriters()))
       .rejects.toThrow('CHG3 has no environment to save.');
   });
+
+describe('saveCreatedChange — the tasks end up with the group and person chosen on the card', () => {
+  const SCM = { sysId: 'grp-scm', displayName: 'USGov ST - SCM' };
+  const VAZQUEZ = { sysId: 'usr-vaz', displayName: 'Vazquez, Isaura Abigail' };
+  const OWNER = { assignmentGroup: { sysId: 'grp-mine', displayName: 'MA Growth IT' }, assignedTo: { sysId: 'usr-me', displayName: 'Smith, Michael' } };
+
+  function buildAssignedDraft(): CrgDraftState {
+    return { ...buildDraft(), changeTasks: [{ ...buildCard('c1', 'Deploy'), assignmentGroup: SCM, assignedTo: VAZQUEZ }] };
+  }
+
+  it('re-applies the chosen group and person when ServiceNow put the task back on the change\'s owner', async () => {
+    const writers = buildWriters();
+    vi.mocked(writers.readTaskAssignment).mockResolvedValueOnce(OWNER).mockResolvedValueOnce({ assignmentGroup: SCM, assignedTo: VAZQUEZ });
+    const summary = await saveCreatedChange({ draft: buildAssignedDraft(), createdChange: { environmentLabel: 'REL', changeNumber: 'CHG1' }, environmentValueByKey: {}, ctaskEnvironmentPlan: {} }, writers);
+    expect(writers.patchTaskAssignment).toHaveBeenCalledWith('t1', { assignment_group: 'grp-scm', assigned_to: 'usr-vaz' });
+    expect(summary).toBe('CHG1 saved, with 1 task updated and checked.');
+  });
+
+  it('says plainly when a ServiceNow rule keeps overriding the assignment', async () => {
+    const writers = buildWriters();
+    vi.mocked(writers.readTaskAssignment).mockResolvedValue(OWNER);
+    const summary = await saveCreatedChange({ draft: buildAssignedDraft(), createdChange: { environmentLabel: 'REL', changeNumber: 'CHG1' }, environmentValueByKey: {}, ctaskEnvironmentPlan: {} }, writers);
+    expect(summary).toContain('CTASK1: ServiceNow kept it on MA Growth IT / Smith, Michael instead of USGov ST - SCM / Vazquez, Isaura Abigail');
+  });
+
+  it('names tasks on the change that are not one of the user\'s cards, and leaves them alone', async () => {
+    const writers = buildWriters([{ sysId: 't1', number: 'CTASK1', shortDescription: 'Deploy' }, { sysId: 't9', number: 'CTASK9', shortDescription: 'Implementation' }]);
+    const summary = await saveCreatedChange({ draft: buildDraft(), createdChange: { environmentLabel: 'REL', changeNumber: 'CHG1' }, environmentValueByKey: {}, ctaskEnvironmentPlan: {} }, writers);
+    expect(summary).toContain('Also on CHG1, but not one of your task cards (ServiceNow made it; left as is): CTASK9 (Implementation).');
+    expect(vi.mocked(writers.updateTask).mock.calls.map((call) => call[0])).toEqual(['t1']);
+  });
+});
 });

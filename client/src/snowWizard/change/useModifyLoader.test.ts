@@ -9,6 +9,10 @@ import { fetchChangeForModify } from './modifyLoad.ts';
 import { useModifyLoader } from './useModifyLoader.ts';
 
 vi.mock('../../services/jiraApi.ts', () => ({ jiraGet: vi.fn(async () => []) }));
+vi.mock('../../views/SnowHub/chgFormula/changeJiraStories.ts', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../views/SnowHub/chgFormula/changeJiraStories.ts')>()),
+  fetchChangeJiraStories: vi.fn(async (issueKeys: string[]) => issueKeys.map((issueKey) => ({ id: issueKey, key: issueKey, fields: { summary: `Story ${issueKey}` } }))),
+}));
 vi.mock('../../services/snowApi.ts', () => ({ snowFetch: vi.fn() }));
 vi.mock('./modifyLoad.ts', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./modifyLoad.ts')>()),
@@ -59,5 +63,19 @@ describe('useModifyLoader', () => {
     // The change's own task stays on the draft as a card, linked to the task it came from.
     expect(hookResult.result.current.crg.state.changeTasks.map((task) => task.shortDescription)).toEqual(['Deploy']);
     expect(onLoaded.mock.calls[0][0].existingTasks).toEqual([expect.objectContaining({ sysId: 'task-sys-1', number: 'CTASK0001' })]);
+  });
+
+  it('chooses the Jira issues the change names, so its evidence and AI scope are there (GH #475)', async () => {
+    vi.mocked(fetchChangeForModify).mockResolvedValueOnce(LOADED_CHANGE);
+    vi.mocked(snowFetch).mockImplementation(async (path: string) => (path.includes('/change_request?')
+      ? { result: [{ sys_id: { value: 'sys-1' }, short_description: 'Fixes ENCUC-2334 and ENCUC-2082', description: 'Also ENCUC-2334' }] }
+      : { result: [{ number: 'CTASK0001', short_description: 'Deploy', description: 'repo for ENCUC-2453' }] }) as never);
+    const { hookResult, onLoaded } = renderLoader();
+    act(() => hookResult.result.current.loader.lookUp());
+    await waitFor(() => expect(onLoaded).toHaveBeenCalled());
+    await waitFor(() => expect([...hookResult.result.current.crg.state.selectedIssueKeys].sort()).toEqual(['ENCUC-2082', 'ENCUC-2334', 'ENCUC-2453']));
+    expect(hookResult.result.current.crg.state.fetchedIssues).toHaveLength(3);
+    // Chosen with the change, so the scope step is not marked as edited.
+    expect(onLoaded.mock.calls[0][0].loadedStepValues.scope.Issues).toBe('ENCUC-2082,ENCUC-2334,ENCUC-2453');
   });
 });

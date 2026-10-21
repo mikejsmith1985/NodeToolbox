@@ -2,11 +2,15 @@
 //
 // The draft is filled by Toolbox's own load path (useCrgState.cloneFromChg). That path copies the change's tasks as
 // cards; each is linked here to the task it came from, so saving rewrites an edited task instead of making a copy.
-// The change's planned window, which the load path does not copy, is set here.
+// The change's planned window, which the load path does not copy, is set here, and so are the Jira issues the change
+// names in its text (GH #475: the load path keeps no issues, so "Add proof" found none and the AI had no scope).
+// Toolbox's own reader finds them (changeJiraStories, the risk check's), and they are read back from Jira.
 
 import { useEffect, useEffectEvent, useRef, useState } from 'react';
 
-import { DRAFT_ENVIRONMENTS, type CrgDraftState, type CrgHook } from './changeDraft.ts';
+import { fetchChangeJiraStories, findJiraKeysInChangeText } from '../../views/SnowHub/chgFormula/changeJiraStories.ts';
+import type { JiraIssue } from '../../types/jira.ts';
+import { DRAFT_ENVIRONMENTS, readChangeTextFields, type CrgDraftState, type CrgHook } from './changeDraft.ts';
 import type { ModifySession } from './changeWizardSession.ts';
 import { readStepValues } from './modifyDiff.ts';
 import { fetchChangeForModify, fetchExistingTasks, normalizeChangeNumber, type LoadedChange } from './modifyLoad.ts';
@@ -39,16 +43,31 @@ function applyTidy(crg: CrgHook, loadedChange: LoadedChange): void {
   if (enabledEntry) crg.actions.updateEnvironment(enabledEntry.key, { plannedStartDate: loadedChange.plannedStartInput, plannedEndDate: loadedChange.plannedEndInput });
 }
 
+/** The Jira issues the change names — in its writing and its tasks' descriptions — read back; none when Jira cannot answer. */
+async function readNamedJiraIssues(draft: CrgDraftState): Promise<JiraIssue[]> {
+  const changeTexts = [...Object.values(readChangeTextFields(draft)), ...draft.changeTasks.map((task) => task.description)];
+  const issueKeys = findJiraKeysInChangeText(changeTexts);
+  if (issueKeys.length === 0) return [];
+  try {
+    return await fetchChangeJiraStories(issueKeys);
+  } catch {
+    return [];
+  }
+}
+
 /** The loader for one modify job; `onLoaded` receives the change as loaded. */
 export function useModifyLoader(crg: CrgHook, onLoaded: (modifySession: ModifySession) => void): ModifyLoader {
   const [status, setStatus] = useState<ModifyLoadStatus>({ kind: 'idle' });
   const clonedChangeRef = useRef<LoadedChange | null>(null);
 
   const finishLoad = useEffectEvent((loadedChange: LoadedChange, tidiedDraft: CrgDraftState) => {
-    void fetchExistingTasks(loadedChange.changeSysId).then((existingTasks) => {
+    void Promise.all([fetchExistingTasks(loadedChange.changeSysId), readNamedJiraIssues(tidiedDraft)]).then(([existingTasks, namedIssues]) => {
+      if (namedIssues.length > 0) crg.actions.adoptIssues(namedIssues);
+      // The issues come with the change, so the scope step starts unedited with them chosen.
+      const loadedDraft = { ...tidiedDraft, selectedIssueKeys: new Set([...tidiedDraft.selectedIssueKeys, ...namedIssues.map((jiraIssue) => jiraIssue.key)]) };
       onLoaded({
         changeNumber: loadedChange.changeNumber, stateLabel: loadedChange.stateLabel, loadedSnapshot: loadedChange.snapshot,
-        loadedStepValues: readStepValues(tidiedDraft), existingTaskNames: existingTasks.map((existingTask) => existingTask.label),
+        loadedStepValues: readStepValues(loadedDraft), existingTaskNames: existingTasks.map((existingTask) => existingTask.label),
         changeSysId: loadedChange.changeSysId, existingTasks: linkExistingTasks(tidiedDraft.changeTasks, existingTasks),
       });
       setStatus({ kind: 'idle' });

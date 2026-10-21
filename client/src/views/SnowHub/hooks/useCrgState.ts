@@ -517,6 +517,8 @@ interface CrgActions {
    */
   applyTemplate: (template: CrgTemplate, availableCtaskTemplates?: CtaskTemplate[]) => void;
   addChangeTask: (template: CtaskTemplate) => void;
+  /** Adds Jira issues already read to the loaded list, selected (SNow Wizard: the issues an existing change names). */
+  adoptIssues: (issues: JiraIssue[]) => void;
   /** Replaces every staged CTASK at once (SNow Wizard rebuilding its cards from changes it already created). */
   replaceChangeTasks: (tasks: CtaskTemplate[]) => void;
   removeChangeTask: (taskId: string) => void;
@@ -2451,6 +2453,16 @@ export function useCrgState(options?: UseCrgStateOptions): { state: CrgState; ac
     }));
   }, []);
 
+  const adoptIssues = useCallback((issues: JiraIssue[]) => {
+    setState((previousState) => {
+      const loadedIssueKeys = new Set(previousState.fetchedIssues.map((jiraIssue) => jiraIssue.key));
+      const newIssues = issues.filter((jiraIssue) => !loadedIssueKeys.has(jiraIssue.key));
+      const nextSelectedIssueKeys = new Set(previousState.selectedIssueKeys);
+      issues.forEach((jiraIssue) => nextSelectedIssueKeys.add(jiraIssue.key));
+      return { ...previousState, fetchedIssues: [...previousState.fetchedIssues, ...newIssues], selectedIssueKeys: nextSelectedIssueKeys };
+    });
+  }, []);
+
   const replaceChangeTasks = useCallback((tasks: CtaskTemplate[]) => {
     setState((previousState) => ({ ...previousState, changeTasks: [...tasks] }));
   }, []);
@@ -2881,6 +2893,7 @@ export function useCrgState(options?: UseCrgStateOptions): { state: CrgState; ac
       cloneFromChg,
       applyTemplate,
       addChangeTask,
+      adoptIssues,
       replaceChangeTasks,
       removeChangeTask,
       updateChangeTask,
@@ -2903,7 +2916,7 @@ export function useCrgState(options?: UseCrgStateOptions): { state: CrgState; ac
     setShortDescriptionConfig,
     setChgBasicInfo, setChgPlanningAssessment, setChgPlanningContent,
     pinCustomSnowField, removeCustomSnowField,
-    setCloneChgNumber, cloneFromChg, applyTemplate, addChangeTask, replaceChangeTasks, removeChangeTask,
+    setCloneChgNumber, cloneFromChg, applyTemplate, addChangeTask, adoptIssues, replaceChangeTasks, removeChangeTask,
     updateChangeTask, duplicateChangeTask, moveChangeTask,
     setLinkedCtaskTemplateIds, setReconcileAutoCtasks, setCtaskTimelinePlan,
     appendTasksToExistingChg, cloneCtaskTemplate, updateEnvironment, goToStep, reset, createChg,

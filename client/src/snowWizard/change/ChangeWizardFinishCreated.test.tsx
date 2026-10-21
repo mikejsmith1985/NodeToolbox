@@ -75,8 +75,13 @@ function startFakeServiceNow(): WriteLog {
     const patchMatch = /\/(change_request|change_task)\/([^/?]+)/.exec(path);
     if (method === 'PATCH' && patchMatch) {
       (patchMatch[1] === 'change_request' ? writeLog.changePatches : writeLog.taskPatches).push({ sysId: patchMatch[2], body });
+      const patchedTask = Object.values(TASKS).flat().find((task) => task.sys_id.value === patchMatch[2]);
+      if (patchedTask && typeof body.assignment_group === 'string') patchedTask.assignment_group = both(body.assignment_group, 'Group');
+      if (patchedTask && typeof body.assigned_to === 'string') patchedTask.assigned_to = both(body.assigned_to, 'Person');
       return { result: { sys_id: patchMatch[2] } } as never;
     }
+    const singleTask = /\/change_task\/(task-[a-z0-9-]+)/.exec(path);
+    if (singleTask) return { result: Object.values(TASKS).flat().find((task) => task.sys_id.value === singleTask[1]) } as never;
     if (method === 'POST') {
       (path.includes('change_task') ? writeLog.taskPosts : writeLog.changePosts).push(body);
       return { result: { number: 'CHG_DUPLICATE', sys_id: 'sys-duplicate' } } as never;

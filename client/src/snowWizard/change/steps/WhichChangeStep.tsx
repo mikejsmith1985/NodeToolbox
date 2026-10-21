@@ -3,6 +3,7 @@
 import { useId } from 'react';
 
 import type { ChangeStepProps } from '../changeWizardSession.ts';
+import MyOpenChangesPicker from '../MyOpenChangesPicker.tsx';
 import styles from '../ChangeWizard.module.css';
 import { useModifyLoader } from '../useModifyLoader.ts';
 
@@ -29,7 +30,7 @@ export default function WhichChangeStep({ crg, session, updateSession, onExit }:
   const loadedChange = session.modify;
   return (
     <div>
-      <p className={styles.stepIntro}>Type the number of the change you want to edit, then look it up.</p>
+      <p className={styles.stepIntro}>Type the number of the change you want to edit — or load your open changes and pick one — then look it up.</p>
       <div className={styles.fieldGroup}>
         <label className={styles.fieldLabel} htmlFor={numberFieldId}>Change number</label>
         <div className={styles.buttonRow}>
@@ -37,6 +38,7 @@ export default function WhichChangeStep({ crg, session, updateSession, onExit }:
             onChange={(changeEvent) => crg.actions.setCloneChgNumber(changeEvent.target.value.trim().toUpperCase())} />
           <button type="button" className={styles.actionButton} disabled={loader.status.kind === 'working'} onClick={loader.lookUp}>Look it up</button>
         </div>
+        <MyOpenChangesPicker onPick={(changeNumber) => crg.actions.setCloneChgNumber(changeNumber)} />
       </div>
       {loader.status.kind === 'working' ? <p className={styles.hint} role="status">Loading the change…</p> : null}
       {loader.status.kind === 'failed' ? <p className={styles.errorText}>{loader.status.message}</p> : null}

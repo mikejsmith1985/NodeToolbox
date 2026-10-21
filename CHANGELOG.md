@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **SNow Wizard: Start over** on every step. It asks once on the page, then clears the job and its draft and shows
+  the first screen. If changes already exist in ServiceNow, it says they stay there and how to pick them up again.
+- **SNow Wizard: Load my open changes**, the same read as Modify CHG's (assigned to you, active). The list is offered
+  on "Fix an existing change", "Copy a change you raised before" and "Finish changes you already created", so you pick
+  instead of typing CHG numbers. The read is a shared `views/SnowHub/myOpenChanges.ts`.
+
+### Fixed
+- **SNow Wizard: CTASKs keep the group and person chosen on each card.** "Save to ServiceNow" now reads every task
+  back after writing it. If ServiceNow put it on the change's own group and owner, the save re-applies the card's
+  choice; if a ServiceNow rule still overrides it, the save says so. Tasks on the change that aren't one of your cards
+  (ones ServiceNow made itself) are named and left alone.
+- **SNow Wizard: fixing an existing change finds its Jira issues (GH #475).** The load path kept no issues, so "Add
+  proof" showed none and the AI had no scope. Every Jira key named in the change's writing and its tasks' descriptions
+  is now read back from Jira and chosen, using Toolbox's own `changeJiraStories` reader. Toolbox gains an additive
+  `adoptIssues` action.
+
 ### Changed
 - **SNow Wizard UX pass: fewer choices, always know where you are.**
   - **The first screen asks one question with three big choices:** *New change*, *Finish one I started* and *Fix an

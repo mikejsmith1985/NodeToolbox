@@ -155,6 +155,18 @@ describe('ChangeWizard — new change', () => {
     vi.mocked(snowFetch).mockImplementation(async () => ({ result: [] }) as never);
   });
 
+  it('starts over from any step: asks once, clears the job and its draft, and shows the first screen', () => {
+    openJobAt('aiDraft');
+    fireEvent.click(screen.getByRole('button', { name: 'Start over' }));
+    expect(screen.getByText(/CHG1 and CHG2 stay in ServiceNow/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Yes, start over' }));
+    expect(screen.getByRole('heading', { name: 'What do you want to do?' })).toBeTruthy();
+    expect(useWizardJobStore.getState().jobs.newChange).toBeUndefined();
+    expect(useChangeWizardSessionStore.getState().sessions[JOB_ID]).toBeUndefined();
+    expect(localStorage.getItem(buildChangeStorageKey(JOB_ID))).toBeNull();
+    expect(screen.queryByText(/is waiting/)).toBeNull();
+  });
+
   it('gives the AI the real change and task numbers once the changes exist', () => {
     openJobAt('aiDraft');
     const promptText = (screen.getByLabelText(/Copy this and paste it/) as HTMLTextAreaElement).value;

@@ -26,8 +26,16 @@ export interface CreatedTaskRecord {
 /** Each created change's tasks, by change number. */
 export type CreatedTasksByChange = Record<string, CreatedTaskRecord[]>;
 
+/** Who a task is assigned to in ServiceNow, as ids and names. */
+export interface TaskAssignment {
+  assignmentGroup: { sysId: string; displayName: string };
+  assignedTo: { sysId: string; displayName: string };
+}
+
 /** The ServiceNow reads and writes a save goes through; replaceable in tests. */
 export interface CreatedChangeWriters {
+  readTaskAssignment: (taskSysId: string) => Promise<TaskAssignment>;
+  patchTaskAssignment: (taskSysId: string, assignment: Partial<Record<'assignment_group' | 'assigned_to', string>>) => Promise<void>;
   resolveChangeSysId: (changeNumber: string) => Promise<string>;
   patchChange: (changeSysId: string, payload: Record<string, unknown>) => Promise<void>;
   listTasks: (changeNumber: string) => Promise<CreatedTaskRecord[]>;
@@ -56,7 +64,31 @@ export async function listCreatedChangeTasks(changeNumber: string): Promise<Crea
   }));
 }
 
+/** One task's assignment as ServiceNow holds it now. */
+async function readTaskAssignment(taskSysId: string): Promise<TaskAssignment> {
+  const reply = await snowFetch<{ result?: Record<string, unknown> }>(
+    `/api/now/table/change_task/${encodeURIComponent(taskSysId)}?sysparm_fields=assignment_group,assigned_to&sysparm_display_value=all`,
+  );
+  const taskRecord = reply?.result ?? {};
+  return { assignmentGroup: readReference(taskRecord.assignment_group), assignedTo: readReference(taskRecord.assigned_to) };
+}
+
+/** A reference field's id and name, whatever shape ServiceNow sent. */
+function readReference(field: unknown): { sysId: string; displayName: string } {
+  if (typeof field === 'object' && field !== null) {
+    const fieldObject = field as { value?: unknown; display_value?: unknown };
+    return { sysId: String(fieldObject.value ?? ''), displayName: String(fieldObject.display_value ?? '') };
+  }
+  return { sysId: field === undefined || field === null ? '' : String(field), displayName: '' };
+}
+
 const DEFAULT_WRITERS: CreatedChangeWriters = {
+  readTaskAssignment,
+  patchTaskAssignment: async (taskSysId, assignment) => {
+    await snowFetch(`/api/now/table/change_task/${encodeURIComponent(taskSysId)}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(assignment),
+    });
+  },
   resolveChangeSysId: async (changeNumber) => (await fetchChangeForModify(changeNumber)).changeSysId,
   patchChange: async (changeSysId, payload) => {
     await snowFetch(`/api/now/table/change_request/${encodeURIComponent(changeSysId)}`, {
@@ -98,6 +130,17 @@ export function matchTasksToCards(cards: readonly CtaskTemplate[], taskRecords: 
   return result;
 }
 
+/**
+ * The tasks on a change that are not one of the user's cards — usually ones ServiceNow made by itself, which sit on
+ * the change's own group and owner. Named, so they are never mistaken for the user's own.
+ */
+function describeExtraTasks(changeNumber: string, taskRecords: readonly CreatedTaskRecord[], matchedSysIds: readonly string[]): string[] {
+  const extraTasks = taskRecords.filter((taskRecord) => !matchedSysIds.includes(taskRecord.sysId));
+  if (extraTasks.length === 0) return [];
+  const extraText = extraTasks.map((taskRecord) => `${taskRecord.number} (${taskRecord.shortDescription || 'no title'})`).join(', ');
+  return [`Also on ${changeNumber}, but not one of your task cards (ServiceNow made ${extraTasks.length === 1 ? 'it' : 'them'}; left as is): ${extraText}.`];
+}
+
 /** "REL change CHG0012345 — tasks: CTASK001 (Deploy), CTASK002 (Checkout)", one line per created change. */
 export function describeCreatedChangesForPrompt(createdChanges: readonly CreatedChangeSummary[], tasksByChange: CreatedTasksByChange | undefined): string[] {
   return createdChanges.map((createdChange) => {
@@ -106,6 +149,30 @@ export function describeCreatedChangesForPrompt(createdChanges: readonly Created
       ? taskRecords.map((taskRecord) => `${taskRecord.number} (${taskRecord.shortDescription || 'no title'})`).join(', ') : 'none';
     return `${createdChange.environmentLabel ?? 'Change'} change ${createdChange.changeNumber} — tasks: ${taskText}`;
   });
+}
+
+/** The assignment fields a card asks for that ServiceNow does not hold (only fields the card actually sets). */
+function listAssignmentDifferences(card: CtaskTemplate, heldAssignment: TaskAssignment): Partial<Record<'assignment_group' | 'assigned_to', string>> {
+  const differences: Partial<Record<'assignment_group' | 'assigned_to', string>> = {};
+  if (card.assignmentGroup.sysId && card.assignmentGroup.sysId !== heldAssignment.assignmentGroup.sysId) differences.assignment_group = card.assignmentGroup.sysId;
+  if (card.assignedTo.sysId && card.assignedTo.sysId !== heldAssignment.assignedTo.sysId) differences.assigned_to = card.assignedTo.sysId;
+  return differences;
+}
+
+/**
+ * Reads a written task back and makes its assignment the card's: the group and person the user chose. ServiceNow can
+ * put a task back on the change's own group and owner (its default, or a rule on the instance) — that was reported as
+ * "my tasks were assigned to me and my group". Re-applied once; if ServiceNow still overrides it, the note says so.
+ */
+async function enforceTaskAssignment(card: CtaskTemplate, taskRecord: CreatedTaskRecord, writers: CreatedChangeWriters): Promise<string | null> {
+  const differences = listAssignmentDifferences(card, await writers.readTaskAssignment(taskRecord.sysId));
+  if (Object.keys(differences).length === 0) return null;
+  await writers.patchTaskAssignment(taskRecord.sysId, differences);
+  const heldAfterRetry = await writers.readTaskAssignment(taskRecord.sysId);
+  if (Object.keys(listAssignmentDifferences(card, heldAfterRetry)).length === 0) return null;
+  const heldText = [heldAfterRetry.assignmentGroup.displayName, heldAfterRetry.assignedTo.displayName].filter(Boolean).join(' / ') || 'nobody';
+  const wantedText = [card.assignmentGroup.displayName, card.assignedTo.displayName].filter(Boolean).join(' / ');
+  return `${taskRecord.number}: ServiceNow kept it on ${heldText} instead of ${wantedText} — a rule in ServiceNow overrides the assignment, so set it there by hand.`;
 }
 
 /** What saving one created change needs. */
@@ -127,13 +194,21 @@ export async function saveCreatedChange(input: SaveCreatedChangeInput, writers: 
   const changeSysId = await writers.resolveChangeSysId(createdChange.changeNumber);
   await writers.patchChange(changeSysId, buildEnvironmentChangePayload(draft, environmentLabel.toLowerCase() as EnvironmentKey, input.environmentValueByKey));
   const cards = filterStagedCtasksForEnvironment([...draft.changeTasks], input.ctaskEnvironmentPlan, environmentLabel);
-  const { matches, unmatchedCards } = matchTasksToCards(cards, await writers.listTasks(createdChange.changeNumber));
+  const taskRecords = await writers.listTasks(createdChange.changeNumber);
+  const { matches, unmatchedCards } = matchTasksToCards(cards, taskRecords);
+  const assignmentNotes: string[] = [];
   if (matches.length > 0) {
     const changeDefaults = await writers.readChangeDefaults(changeSysId);
-    for (const { card, taskRecord } of matches) await writers.updateTask(taskRecord.sysId, changeSysId, card, changeDefaults);
+    for (const { card, taskRecord } of matches) {
+      await writers.updateTask(taskRecord.sysId, changeSysId, card, changeDefaults);
+      const assignmentNote = await enforceTaskAssignment(card, taskRecord, writers);
+      if (assignmentNote) assignmentNotes.push(assignmentNote);
+    }
   }
-  const savedText = `${createdChange.changeNumber} saved, with ${matches.length} task${matches.length === 1 ? '' : 's'} updated.`;
-  if (unmatchedCards.length === 0) return savedText;
-  const skippedTitles = unmatchedCards.map((card) => `“${card.shortDescription || card.name}”`).join(', ');
-  return `${savedText} Not on it, so left alone: ${skippedTitles}.`;
+  return [
+    `${createdChange.changeNumber} saved, with ${matches.length} task${matches.length === 1 ? '' : 's'} updated and checked.`,
+    unmatchedCards.length > 0 ? `Not on it, so left alone: ${unmatchedCards.map((card) => `“${card.shortDescription || card.name}”`).join(', ')}.` : '',
+    ...describeExtraTasks(createdChange.changeNumber, taskRecords, matches.map(({ taskRecord }) => taskRecord.sysId)),
+    ...assignmentNotes,
+  ].filter((notePart) => notePart !== '').join(' ');
 }

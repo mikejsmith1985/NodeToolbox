@@ -9,6 +9,8 @@ import type { PlanEnvironmentKey } from '../ctaskEnvironmentPlan.ts';
 import styles from '../../shell/WizardShell.module.css';
 import type { WizardJob } from '../../shell/wizardJobStore.ts';
 import ownStyles from '../ChangeWizard.module.css';
+import MyOpenChangesPicker, { MyOpenChangeSelect, MyOpenChangesLoader } from '../MyOpenChangesPicker.tsx';
+import { useMyOpenChanges } from '../useMyOpenChanges.ts';
 
 interface ChooseModeStepProps {
   /** In-progress jobs of this kind, offered to continue or start again. */
@@ -84,6 +86,7 @@ function RecommendedStart({ templates, isBlocked, onStartFromChange, onStartFres
         <button type="button" className={styles.primaryButton} disabled={!isNumberValid} onClick={() => onStartFromChange(changeNumber)}>{isBlocked ? 'Copy it into my open change' : 'Start from an existing change'}</button>
         {isBlocked ? <button type="button" className={styles.secondaryButton} disabled={!isNumberValid} onClick={() => onStartFreshFromChange(changeNumber)}>Start a fresh change from it</button> : null}
       </div>
+      <MyOpenChangesPicker onPick={setTypedNumber} />
       {typedNumber.trim() !== '' && !isNumberValid ? <p className={styles.hint}>A change number looks like CHG0012345.</p> : null}
       <TemplateStart templates={templates} isBlocked={isBlocked} onStartFromTemplate={onStartFromTemplate} />
     </div>
@@ -98,6 +101,7 @@ const FINISH_ENVIRONMENTS: readonly PlanEnvironmentKey[] = ['REL', 'PRD', 'PFIX'
  */
 function FinishCreatedStart({ isBlocked, onFinishCreatedChanges }: { isBlocked: boolean } & Pick<ChooseModeStepProps, 'onFinishCreatedChanges'>) {
   const [typedNumbers, setTypedNumbers] = useState<Partial<Record<PlanEnvironmentKey, string>>>({});
+  const myOpenChanges = useMyOpenChanges();
   const filledChanges = FINISH_ENVIRONMENTS
     .map((environmentLabel) => ({ environmentLabel, changeNumber: normalizeChangeNumber(typedNumbers[environmentLabel] ?? '') }))
     .filter((createdChange) => createdChange.changeNumber !== '');
@@ -105,12 +109,15 @@ function FinishCreatedStart({ isBlocked, onFinishCreatedChanges }: { isBlocked: 
   return (
     <details className={styles.card}>
       <summary className={styles.connectionLine}>Finish changes you already created</summary>
-      <p className={styles.hint}>Already made the changes in ServiceNow? Type each one&apos;s number. The Wizard fills your picks back in from them and saves your finished work to them — it never creates new ones.</p>
+      <p className={styles.hint}>Already made the changes in ServiceNow? Type each one&apos;s number, or load your open changes and pick them. The Wizard fills your picks back in from them and saves your finished work to them — it never creates new ones.</p>
+      <MyOpenChangesLoader loadState={myOpenChanges.loadState} onLoad={() => { void myOpenChanges.load(); }} />
       {FINISH_ENVIRONMENTS.map((environmentLabel) => (
         <label key={environmentLabel} className={styles.fieldLabel}>
           {`${environmentLabel} change number`}
           <input className={ownStyles.inputField} value={typedNumbers[environmentLabel] ?? ''} placeholder={environmentLabel === 'PFIX' ? 'Only if you have one' : 'CHG0012345'}
             onChange={(changeEvent) => setTypedNumbers({ ...typedNumbers, [environmentLabel]: changeEvent.target.value })} />
+          <MyOpenChangeSelect loadState={myOpenChanges.loadState} label={`Pick the ${environmentLabel} change`}
+            onPick={(changeNumber) => setTypedNumbers({ ...typedNumbers, [environmentLabel]: changeNumber })} />
         </label>
       ))}
       <div className={ownStyles.buttonRow}>
