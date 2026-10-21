@@ -21,7 +21,7 @@ export default function ConnectionBanner({ snowState, jiraState, onOpenJira }: C
       {isSnowExpired
         ? <span> Your ServiceNow session ended — click the SNow Wizard bookmark on your ServiceNow tab again.</span>
         : <span> Keep your ServiceNow tab open while you work.</span>}
-      {isJiraLost && <button type="button" className={styles.bannerButton} onClick={onOpenJira}>Open Jira again</button>}
+      {isJiraLost && <button type="button" className={styles.bannerButton} onClick={onOpenJira}>Connect Jira again</button>}
     </div>
   );
 }

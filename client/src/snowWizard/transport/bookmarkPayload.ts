@@ -10,6 +10,15 @@
 // arguments.
 
 import { SNOW_HOSTNAME_FRAGMENTS, SNOW_TOKEN_RESOLVER_SOURCE } from '../../services/snowRelayShared.ts';
+import {
+  assembleWizardHtml,
+  openInstallStore,
+  parseInstallFile,
+  readInstalledWizard,
+  writeInstalledWizard,
+  type InstallStoreConfig,
+  type InstalledWizard,
+} from '../install/installRuntime.ts';
 
 /** Placeholder in the Wizard window's HTML that the launcher replaces with the boot data (origin, token, channel). */
 export const BOOT_PLACEHOLDER = '__SNOW_WIZARD_BOOT_JSON__';
@@ -18,7 +27,12 @@ export type BookmarkRole = 'snowLauncher' | 'jiraAgent' | 'unknown';
 
 /** Everything the bookmark needs, frozen into it when the owner drags it to the bookmarks bar. */
 export interface BookmarkConfig {
-  snowWindowHtml: string;
+  /** The probe's window page, carried whole. The Wizard leaves it out: its code lives in ServiceNow's storage instead. */
+  snowWindowHtml?: string;
+  /** The Wizard window's page with marks for its code and look, filled from the installed Wizard (wizardInstall.ts). */
+  windowTemplate?: string;
+  /** Where the installed Wizard is kept; present only on the Wizard's loader bookmark. */
+  installStore?: InstallStoreConfig;
   /** The probe freezes the Jira host; the Wizard leaves it empty so a Jira move needs no new bookmark (R-011). */
   jiraHostname: string;
   channelName: string;
@@ -36,6 +50,25 @@ export interface BookmarkConfig {
 export interface BookmarkTools {
   showBadge: (message: string, backgroundColor: string) => void;
   readIsLockHeld: (lockName: string | undefined) => Promise<boolean>;
+  /** The install helpers (installRuntime.ts) and the install panel; present only on the Wizard's loader bookmark. */
+  install?: InstallTools;
+}
+
+/** The install helpers handed to the bookmark (they cannot be imported there — see the file header). */
+export interface InstallTools {
+  openStore: typeof openInstallStore;
+  readInstalled: typeof readInstalledWizard;
+  writeInstalled: typeof writeInstalledWizard;
+  parseFile: typeof parseInstallFile;
+  assemble: typeof assembleWizardHtml;
+  showInstallPanel: typeof showInstallPanel;
+}
+
+/** What one install attempt from a chosen file came to. */
+export interface InstallAttempt {
+  installedWizard: InstalledWizard | null;
+  /** False when the browser would not keep it: it still opens this once. */
+  isKept: boolean;
 }
 
 /**
@@ -96,6 +129,63 @@ export function showWizardBadge(message: string, backgroundColor: string): void 
   }
   badgeElement.setAttribute('style', `position:fixed;bottom:16px;right:16px;background:${backgroundColor};color:#fff;padding:10px 16px;border-radius:8px;font:600 13px sans-serif;z-index:2147483647;box-shadow:0 4px 16px rgba(0,0,0,.4);cursor:pointer;max-width:440px`);
   badgeElement.textContent = message;
+}
+
+/**
+ * The panel shown on the ServiceNow page when no Wizard is installed yet: choose the release file, then open the
+ * Wizard. A visible file chooser is used on purpose — the user's own click opens it, so no browser blocks it.
+ */
+export function showInstallPanel(installFromText: (fileText: string) => Promise<InstallAttempt>, openInstalled: (installedWizard: InstalledWizard) => void): void {
+  const panelId = 'snow-wizard-install-panel';
+  document.getElementById(panelId)?.remove();
+  const panel = document.createElement('div');
+  panel.id = panelId;
+  panel.setAttribute('style', 'position:fixed;top:80px;left:50%;transform:translateX(-50%);width:min(520px,92vw);background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:12px;padding:20px 24px;font:14px/1.5 sans-serif;z-index:2147483647;box-shadow:0 12px 40px rgba(0,0,0,.5)');
+  const addLine = (tagName: string, text: string, style: string) => {
+    const lineElement = document.createElement(tagName);
+    lineElement.textContent = text;
+    lineElement.setAttribute('style', style);
+    panel.appendChild(lineElement);
+    return lineElement;
+  };
+  addLine('h2', 'Install the SNow Wizard', 'margin:0 0 8px;font-size:18px');
+  addLine('p', 'Choose the snow-hub-wizard.html file you downloaded. You only do this once — after that the bookmark just '
+    + 'opens the Wizard. A newer version is installed from the Wizard’s Settings.', 'margin:0 0 12px');
+  const fileInput = document.createElement('input');
+  fileInput.type = 'file';
+  fileInput.accept = '.html,text/html';
+  panel.appendChild(fileInput);
+  const statusLine = addLine('p', '', 'margin:12px 0 0;font-weight:600');
+  const buttonStyle = 'margin:12px 8px 0 0;padding:8px 16px;border-radius:6px;border:0;font:600 14px sans-serif;cursor:pointer';
+  const closeButton = document.createElement('button');
+  closeButton.textContent = 'Not now';
+  closeButton.setAttribute('style', `${buttonStyle};background:#30363d;color:#e6edf3`);
+  closeButton.onclick = () => panel.remove();
+  fileInput.onchange = async () => {
+    const chosenFile = fileInput.files?.[0];
+    if (!chosenFile) return;
+    statusLine.textContent = 'Installing…';
+    const attempt = await installFromText(await chosenFile.text());
+    const installedWizard = attempt.installedWizard;
+    if (!installedWizard) {
+      statusLine.textContent = '✗ That is not the SNow Wizard file (snow-hub-wizard.html). Choose it again.';
+      return;
+    }
+    statusLine.textContent = attempt.isKept
+      ? `✓ SNow Wizard ${installedWizard.version} is installed.`
+      : `✓ SNow Wizard ${installedWizard.version} opens this time, but the browser would not keep it — you will be asked again.`;
+    fileInput.remove();
+    const openButton = document.createElement('button');
+    openButton.textContent = 'Open the SNow Wizard';
+    openButton.setAttribute('style', `${buttonStyle};background:#1f6feb;color:#fff`);
+    openButton.onclick = () => {
+      openInstalled(installedWizard);
+      panel.remove();
+    };
+    panel.insertBefore(openButton, closeButton);
+  };
+  panel.appendChild(closeButton);
+  document.body.appendChild(panel);
 }
 
 const DEFAULT_AGENT_TOOLS: BookmarkTools = { showBadge: showWizardBadge, readIsLockHeld: readIsPresenceLockHeld };
@@ -180,8 +270,27 @@ export function runJiraAgent(config: JiraAgentConfig, tools: BookmarkTools = DEF
     }
   };
   window.addEventListener('message', handleWizardRequest);
+  // When the Wizard window closes, this tab has no one left to serve (a new Wizard always opens its own Jira tab), so
+  // it closes itself instead of piling up. The Wizard opened it, which is what lets a script close it; if the browser
+  // still refuses, a badge says it can be closed.
+  const openerCheckId = setInterval(() => {
+    let isOpenerClosed: boolean;
+    try {
+      isOpenerClosed = openerWindow.closed === true;
+    } catch {
+      return;
+    }
+    if (!isOpenerClosed) return;
+    clearInterval(openerCheckId);
+    window.removeEventListener('message', handleWizardRequest);
+    window.close();
+    tools.showBadge('The SNow Wizard window was closed — you can close this Jira tab.', '#57606a');
+  }, 1000);
   // Returned so a caller (or a test) can stop serving; the bookmark itself serves until the tab closes.
-  return () => window.removeEventListener('message', handleWizardRequest);
+  return () => {
+    clearInterval(openerCheckId);
+    window.removeEventListener('message', handleWizardRequest);
+  };
 }
 
 /**
@@ -206,17 +315,43 @@ export function runSnowLauncher(
     if (messageEvent.data?.kind === 'tokenRequest') tokenChannel.postMessage({ kind: 'token', token: resolveUserToken() });
     if (messageEvent.data?.kind === 'pong') isWizardAlreadyOpen = true;
   };
-  const openWizardWindow = () => {
+  const buildBootJson = () => {
     const bootData = { instanceOrigin: location.origin, userToken: resolveUserToken(), channelName: config.channelName, jiraUrl: config.jiraUrl ?? '' };
     // Every "<" becomes its JSON escape (backslash, then u003c; the backslash is built from char 92 so no escaping layer
     // can eat it), so the boot data can never close the window's <script> element early.
-    const bootJson = JSON.stringify(bootData).split('<').join(String.fromCharCode(92) + 'u003c');
-    const windowHtml = config.snowWindowHtml.split(config.bootPlaceholder).join(bootJson);
+    return JSON.stringify(bootData).split('<').join(String.fromCharCode(92) + 'u003c');
+  };
+  const openWindowWithHtml = (windowHtml: string) => {
     const openedWindow = window.open(URL.createObjectURL(new Blob([windowHtml], { type: 'text/html' })), 'snowWizardApp');
     tools.showBadge(
       openedWindow ? 'SNow Wizard opened in its own window — keep this ServiceNow tab open.' : 'The browser blocked the Wizard window — allow pop-ups for this site, then click again.',
       openedWindow ? '#238636' : '#991b1b',
     );
+  };
+  const openWizardWindow = () => {
+    const install = tools.install;
+    const storeConfig = config.installStore;
+    const windowTemplate = config.windowTemplate;
+    // The probe carries its whole window page; the Wizard's loader reads the installed Wizard from ServiceNow's storage.
+    if (!install || !storeConfig || !windowTemplate) {
+      openWindowWithHtml((config.snowWindowHtml ?? '').split(config.bootPlaceholder).join(buildBootJson()));
+      return;
+    }
+    const openInstalled = (installedWizard: InstalledWizard) => openWindowWithHtml(install.assemble(windowTemplate, installedWizard, buildBootJson(), storeConfig));
+    const installFromText = async (fileText: string) => {
+      const installedWizard = install.parseFile(fileText, storeConfig);
+      if (!installedWizard) return { installedWizard: null, isKept: false };
+      try {
+        await install.writeInstalled(storeConfig, install.openStore, installedWizard);
+        return { installedWizard, isKept: true };
+      } catch {
+        return { installedWizard, isKept: false };
+      }
+    };
+    void install.readInstalled(storeConfig, install.openStore).then((installedWizard) => {
+      if (installedWizard) openInstalled(installedWizard);
+      else install.showInstallPanel(installFromText, openInstalled);
+    });
   };
   const refreshOpenWizard = () => {
     tokenChannel.postMessage({ kind: 'token', token: resolveUserToken() });
@@ -242,8 +377,9 @@ export function runBookmark(
   showBadge: typeof showWizardBadge,
   resolveUserToken: () => string,
   readIsLockHeld: typeof readIsPresenceLockHeld,
+  install?: InstallTools,
 ): void {
-  const tools = { showBadge, readIsLockHeld };
+  const tools = { showBadge, readIsLockHeld, install };
   const bookmarkRole = detectRole(location.hostname, config.snowHostnameFragments, config.jiraHostname, Boolean(window.opener));
   if (bookmarkRole === 'snowLauncher') {
     snowLauncher(config, resolveUserToken, tools);
@@ -264,7 +400,12 @@ export function buildBookmarkSource(config: BookmarkConfig): string {
     bootPlaceholder: BOOT_PLACEHOLDER,
     snowHostnameFragments: SNOW_HOSTNAME_FRAGMENTS,
   };
-  const runtimeArguments = [JSON.stringify(frozenConfig), detectBookmarkRole, runSnowLauncher, runJiraAgent, showWizardBadge, 'resolveUserToken', readIsPresenceLockHeld];
+  const runtimeArguments: unknown[] = [JSON.stringify(frozenConfig), detectBookmarkRole, runSnowLauncher, runJiraAgent, showWizardBadge, 'resolveUserToken', readIsPresenceLockHeld];
+  // Only the Wizard's loader carries the install helpers; the probe's bookmark stays as it was.
+  if (config.installStore) {
+    runtimeArguments.push(`{openStore:${openInstallStore},readInstalled:${readInstalledWizard},writeInstalled:${writeInstalledWizard},`
+      + `parseFile:${parseInstallFile},assemble:${assembleWizardHtml},showInstallPanel:${showInstallPanel}}`);
+  }
   return `(function(){${SNOW_TOKEN_RESOLVER_SOURCE};(${runBookmark})(${runtimeArguments.join(',')});})();`;
 }
 

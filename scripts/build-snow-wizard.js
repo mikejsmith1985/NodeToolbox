@@ -58,8 +58,8 @@ function escapeInlineScript(scriptSource) {
   return scriptSource.replace(/<\/script/gi, '<\\/script');
 }
 
-/** One complete HTML document with the style and script inlined. */
-function wrapHtmlDocument({ title, styleSource, scriptSource }) {
+/** One complete HTML document with the style and script inlined, and any data block (inert JSON) before the script. */
+function wrapHtmlDocument({ title, styleSource, scriptSource, dataBlock = '' }) {
   return [
     '<!doctype html>',
     '<html lang="en"><head>',
@@ -68,9 +68,25 @@ function wrapHtmlDocument({ title, styleSource, scriptSource }) {
     `<title>${title}</title>`,
     `<style>${styleSource}</style>`,
     '</head><body>',
+    dataBlock,
     `<script>${escapeInlineScript(scriptSource)}</script>`,
     '</body></html>',
   ].join('');
+}
+
+// Kept equal to INSTALL_STORE_CONFIG in client/src/snowWizard/install/wizardInstall.ts (a test checks).
+const INSTALL_PAYLOAD_ELEMENT_ID = 'snow-wizard-install';
+const INSTALL_PAYLOAD_KIND = 'snowWizardInstall';
+
+/**
+ * The Wizard as an inert JSON block, read by the bookmark's install panel and by Settings → Update (wizardInstall.ts).
+ * The code is pre-escaped for the <script> it is later placed in, and every "<" in the JSON becomes its escape so
+ * nothing inside can end this block early.
+ */
+function buildInstallPayloadBlock({ version, appSource, styleSource }) {
+  const payloadJson = JSON.stringify({ kind: INSTALL_PAYLOAD_KIND, version, appSource: escapeInlineScript(appSource), styleSource });
+  const safeJson = payloadJson.replace(/</g, '\\u003c');
+  return `<script type="application/json" id="${INSTALL_PAYLOAD_ELEMENT_ID}">${safeJson}</script>`;
 }
 
 const EXTERNAL_REFERENCE_PATTERNS = [
@@ -166,13 +182,10 @@ async function buildWizard() {
     injectedFiles: WIZARD_BUILD.injectedFiles,
   });
   const wizardStyleSource = `${baseStyleSource}\n${appBundle.moduleStyleSource}`;
-  assertWithinBookmarkBudget(Buffer.byteLength(encodeURIComponent(appBundle.scriptSource + wizardStyleSource)));
-  const launcherSource = await bundleToString(WIZARD_BUILD.launcherEntry, {
-    __WIZARD_APP_SOURCE__: JSON.stringify(appBundle.scriptSource),
-    __WIZARD_STYLE_SOURCE__: JSON.stringify(wizardStyleSource),
-    __WIZARD_VERSION__: JSON.stringify(appVersion),
-  });
-  const pageHtml = wrapHtmlDocument({ title: WIZARD_BUILD.title, styleSource: baseStyleSource, scriptSource: launcherSource });
+  // The bookmark is now a small loader; the Wizard travels in the page's install block and lives in ServiceNow's storage.
+  const launcherSource = await bundleToString(WIZARD_BUILD.launcherEntry, { __WIZARD_VERSION__: JSON.stringify(appVersion) });
+  const dataBlock = buildInstallPayloadBlock({ version: appVersion, appSource: appBundle.scriptSource, styleSource: wizardStyleSource });
+  const pageHtml = wrapHtmlDocument({ title: WIZARD_BUILD.title, styleSource: baseStyleSource, scriptSource: launcherSource, dataBlock });
   return writeSelfContainedPage(WIZARD_BUILD.outputFile, pageHtml);
 }
 
@@ -209,6 +222,9 @@ if (require.main === module) {
 }
 
 module.exports = {
+  INSTALL_PAYLOAD_ELEMENT_ID,
+  INSTALL_PAYLOAD_KIND,
+  buildInstallPayloadBlock,
   WIZARD_BOOKMARK_BUDGET_BYTES,
   createModuleReplacementPlugin,
   assertWithinBookmarkBudget,

@@ -6,31 +6,36 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_SNOW_URL } from '../wizardDefaults.ts';
 import { buildWizardBookmarkHref, mountLauncherPage, readLauncherBuildInputs, WIZARD_WINDOW_PAGE } from './launcherPage.ts';
 
-const ASSETS = { wizardAppSource: 'void 0', wizardStyleSource: '', appVersion: 'v0.304.0' };
+const ASSETS = { appVersion: 'v0.304.0' };
+/** The loader bookmark stays small because it carries no Wizard code — the reason it never needs re-installing. */
+const LOADER_BOOKMARK_MAX_BYTES = 64 * 1024;
 
 describe('readLauncherBuildInputs', () => {
   afterEach(() => vi.unstubAllGlobals());
 
-  it('reads the build-injected sources, empty under test', () => {
-    expect(readLauncherBuildInputs()).toEqual({ wizardAppSource: '', wizardStyleSource: '', appVersion: 'dev' });
-    vi.stubGlobal('__WIZARD_APP_SOURCE__', 'app');
-    vi.stubGlobal('__WIZARD_STYLE_SOURCE__', 'css');
+  it('reads the build-injected version, "dev" under test', () => {
+    expect(readLauncherBuildInputs()).toEqual({ appVersion: 'dev' });
     vi.stubGlobal('__WIZARD_VERSION__', 'v1');
-    expect(readLauncherBuildInputs()).toEqual({ wizardAppSource: 'app', wizardStyleSource: 'css', appVersion: 'v1' });
+    expect(readLauncherBuildInputs()).toEqual({ appVersion: 'v1' });
   });
 });
 
 describe('buildWizardBookmarkHref', () => {
   it('freezes no Jira address and serves only ServiceNow windows (R-011)', () => {
-    const bookmarkSource = decodeURIComponent(buildWizardBookmarkHref(ASSETS).slice('javascript:'.length));
+    const bookmarkSource = decodeURIComponent(buildWizardBookmarkHref().slice('javascript:'.length));
     expect(bookmarkSource).toContain('"jiraHostname":""');
     expect(bookmarkSource).toContain('"allowedRequesterHostFragments":["service-now","servicenow"]');
     expect(bookmarkSource).toContain('"isReadOnly":false');
   });
 
-  it('carries the Wizard window page', () => {
-    const bookmarkSource = decodeURIComponent(buildWizardBookmarkHref(ASSETS).slice('javascript:'.length));
+  it('is a small loader: the window template and install store, no Wizard code', () => {
+    const bookmarkHref = buildWizardBookmarkHref();
+    const bookmarkSource = decodeURIComponent(bookmarkHref.slice('javascript:'.length));
     expect(bookmarkSource).toContain(WIZARD_WINDOW_PAGE.title);
+    expect(bookmarkSource).toContain('"databaseName":"snowWizard"');
+    expect(bookmarkSource).toContain('Install the SNow Wizard');
+    expect(bookmarkHref.length).toBeLessThan(LOADER_BOOKMARK_MAX_BYTES);
+    expect(() => new Function(bookmarkSource)).not.toThrow();
   });
 });
 

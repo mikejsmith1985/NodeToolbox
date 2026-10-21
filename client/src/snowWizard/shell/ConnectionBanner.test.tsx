@@ -20,7 +20,7 @@ describe('ConnectionBanner', () => {
     const onOpenJira = vi.fn();
     render(<ConnectionBanner snowState={CONNECTED_SNOW} jiraState={EXPIRED} onOpenJira={onOpenJira} />);
     expect(screen.getByRole('status').getAttribute('data-tone')).toBe('warning');
-    fireEvent.click(screen.getByRole('button', { name: 'Open Jira again' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Connect Jira again' }));
     expect(onOpenJira).toHaveBeenCalled();
   });
 

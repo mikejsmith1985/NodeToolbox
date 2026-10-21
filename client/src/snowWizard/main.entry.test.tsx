@@ -21,6 +21,6 @@ describe('Wizard window entry', () => {
     Object.assign(window, { __SNOW_WIZARD_BOOT__: { instanceOrigin: 'https://acme.service-now.com', userToken: 't', channelName: 'snowWizard' } });
     await import('./main.entry.tsx');
     await waitFor(() => expect(document.body.textContent).toContain('SNow Wizard'));
-    expect(document.body.textContent).toContain('What would you like to do?');
+    expect(document.body.textContent).toContain('Connect to ServiceNow and Jira');
   });
 });

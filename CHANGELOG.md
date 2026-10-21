@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **SNow Wizard: install the bookmark once, ever.** Until now the bookmark carried the whole Wizard (~670 KB), so every
+  release meant deleting it and dragging a new one. It is now a **13 KB loader** that never changes:
+  - **First click** on ServiceNow shows an *Install the SNow Wizard* panel: choose `snow-hub-wizard.html` and the
+    Wizard is kept in ServiceNow's own browser storage (IndexedDB), then opens.
+  - **Every later click** opens the kept Wizard straight away.
+  - **New version:** download the new file, then go to **Settings → Update the SNow Wizard**, choose it and press
+    **Restart now**. Each step shows a ✓/✗ result, and any other file is refused with nothing changed.
+  - The release file carries the Wizard as an inert JSON block (`buildInstallPayloadBlock`), and the code that runs
+    inside the bookmark lives in the import-free `install/installRuntime.ts`.
+- **SNow Wizard: fewer steps to connect.** Until Jira answers, the screen shows only **Connect Jira**. Home suggests
+  keeping the Wizard window open: clicking the bookmark brings it back still connected. The Jira tab now closes
+  itself when its Wizard window closes, so Jira tabs no longer pile up.
+
 ### Fixed
 - **SNow Wizard: the PRB Defect sets Defect Environment to Production.** Jira refused the Defect with "This field is
   required". The required cascading **Defect Environment** field is now found by name on the Defect's create form and

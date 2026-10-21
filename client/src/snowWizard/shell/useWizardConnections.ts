@@ -1,5 +1,5 @@
 // useWizardConnections.ts — Opens the Wizard's two connections: ServiceNow straight away (the Wizard runs inside it)
-// and Jira when the user presses "Open Jira". Installs them where Toolbox's snowApi and jiraApi will find them.
+// and Jira when the user presses "Connect Jira". Installs them where Toolbox's snowApi and jiraApi will find them.
 
 import { useCallback, useEffect, useState } from 'react';
 

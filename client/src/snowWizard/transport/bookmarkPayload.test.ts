@@ -11,7 +11,9 @@ import {
   readIsPresenceLockHeld,
   runJiraAgent,
   runSnowLauncher,
+  showInstallPanel,
 } from './bookmarkPayload.ts';
+import { assembleWizardHtml } from '../install/installRuntime.ts';
 
 const JIRA_HOSTNAME = 'jira.example.com';
 const CHANNEL_NAME = 'snowWizardProbe';
@@ -100,6 +102,25 @@ describe('runJiraAgent', () => {
   it('says hello to the window that opened it', () => {
     startAgent();
     expect(openerPostMessage).toHaveBeenCalledWith({ channel: CHANNEL_NAME, kind: 'hello', system: 'jira' }, '*');
+  });
+
+  it('closes its own tab (or says it can be closed) once the Wizard window that opened it is closed', () => {
+    vi.useFakeTimers();
+    const opener = { postMessage: openerPostMessage, closed: false, focus: vi.fn() };
+    Object.defineProperty(window, 'opener', { configurable: true, value: opener });
+    const closeSpy = vi.spyOn(window, 'close').mockImplementation(() => undefined);
+    const showBadge = vi.fn();
+    stopAgents.push(runJiraAgent({ channelName: CHANNEL_NAME, isReadOnly: true }, { showBadge, readIsLockHeld: readIsPresenceLockHeld }));
+
+    vi.advanceTimersByTime(1000);
+    expect(closeSpy).not.toHaveBeenCalled();
+    opener.closed = true;
+    vi.advanceTimersByTime(1000);
+
+    expect(closeSpy).toHaveBeenCalledTimes(1);
+    expect(showBadge).toHaveBeenLastCalledWith('The SNow Wizard window was closed — you can close this Jira tab.', '#57606a');
+    closeSpy.mockRestore();
+    vi.useRealTimers();
   });
 
   it('runs a read request on its own origin with the user session and answers with status and body', async () => {
@@ -268,6 +289,57 @@ describe('runSnowLauncher', () => {
     expect(showBadge.mock.calls[0][0]).toContain('already open');
   });
 
+  describe('the loader (Wizard kept in ServiceNow storage)', () => {
+    const INSTALLED = { version: 'v2', appSource: 'startWizard()', styleSource: 'p{}' };
+    const STORE_CONFIG = {
+      databaseName: 'snowWizard', storeName: 'installedApp', recordKey: 'current', payloadElementId: 'snow-wizard-install',
+      payloadKind: 'snowWizardInstall', appPlaceholder: '__APP__', stylePlaceholder: '__STYLE__', bootPlaceholder: BOOT_PLACEHOLDER,
+    };
+    const loaderConfig = {
+      jiraHostname: '', channelName: 'snowWizard', bootPlaceholder: BOOT_PLACEHOLDER, pingWaitMs: 10,
+      windowTemplate: `<style>__STYLE__</style><script>window.__SNOW_WIZARD_BOOT__=${BOOT_PLACEHOLDER};</script><script>__APP__</script>`,
+      installStore: STORE_CONFIG,
+    };
+
+    function createInstallTools(installedWizard: typeof INSTALLED | null) {
+      return {
+        openStore: vi.fn(),
+        readInstalled: vi.fn(async () => installedWizard),
+        writeInstalled: vi.fn(async () => undefined),
+        parseFile: vi.fn((fileText: string) => (fileText === 'release-file' ? INSTALLED : null)),
+        assemble: assembleWizardHtml,
+        showInstallPanel: vi.fn(),
+      };
+    }
+
+    it('opens the installed Wizard straight away, filled with fresh boot data', async () => {
+      const openSpy = vi.spyOn(window, 'open').mockReturnValue({} as Window);
+      const install = createInstallTools(INSTALLED);
+      runSnowLauncher(loaderConfig, () => 'token-1', { showBadge: vi.fn(), readIsLockHeld: readIsPresenceLockHeld, install });
+      await vi.advanceTimersByTimeAsync(11);
+
+      expect(openSpy).toHaveBeenCalledTimes(1);
+      expect(openedHtml).toContain('<script>startWizard()</script>');
+      expect(openedHtml).toContain('"userToken":"token-1"');
+      expect(install.showInstallPanel).not.toHaveBeenCalled();
+    });
+
+    it('asks for the release file once when nothing is installed, keeps it, then opens it', async () => {
+      const openSpy = vi.spyOn(window, 'open').mockReturnValue({} as Window);
+      const install = createInstallTools(null);
+      runSnowLauncher(loaderConfig, () => 'token-1', { showBadge: vi.fn(), readIsLockHeld: readIsPresenceLockHeld, install });
+      await vi.advanceTimersByTimeAsync(11);
+      expect(openSpy).not.toHaveBeenCalled();
+
+      const [installFromText, openInstalled] = install.showInstallPanel.mock.calls[0];
+      expect(await installFromText('some other file')).toEqual({ installedWizard: null, isKept: false });
+      expect(await installFromText('release-file')).toEqual({ installedWizard: INSTALLED, isKept: true });
+      expect(install.writeInstalled).toHaveBeenCalledWith(STORE_CONFIG, install.openStore, INSTALLED);
+      openInstalled(INSTALLED);
+      expect(openedHtml).toContain('<script>startWizard()</script>');
+    });
+  });
+
   it('opens the Wizard when no one holds the presence lock and no one answers', async () => {
     vi.stubGlobal('navigator', { locks: { query: vi.fn(async () => ({ held: [], pending: [] })) } });
     const openSpy = vi.spyOn(window, 'open').mockReturnValue({} as Window);
@@ -275,6 +347,36 @@ describe('runSnowLauncher', () => {
     await vi.advanceTimersByTimeAsync(11);
 
     expect(openSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('showInstallPanel', () => {
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  function chooseFile(fileText: string): void {
+    const fileInput = document.querySelector('#snow-wizard-install-panel input[type="file"]') as HTMLInputElement;
+    Object.defineProperty(fileInput, 'files', { configurable: true, value: [{ text: async () => fileText }] });
+    fileInput.dispatchEvent(new Event('change'));
+  }
+
+  it('says ✗ for the wrong file, then ✓ and offers "Open the SNow Wizard" for the right one', async () => {
+    const installedWizard = { version: 'v2', appSource: 'x', styleSource: '' };
+    const installFromText = vi.fn(async (fileText: string) => (fileText === 'right' ? { installedWizard, isKept: true } : { installedWizard: null, isKept: false }));
+    const openInstalled = vi.fn();
+    showInstallPanel(installFromText, openInstalled);
+    const panel = document.getElementById('snow-wizard-install-panel') as HTMLElement;
+    expect(panel.textContent).toContain('Install the SNow Wizard');
+
+    chooseFile('wrong');
+    await vi.waitFor(() => expect(panel.textContent).toContain('✗ That is not the SNow Wizard file'));
+    chooseFile('right');
+    await vi.waitFor(() => expect(panel.textContent).toContain('✓ SNow Wizard v2 is installed.'));
+
+    (Array.from(panel.querySelectorAll('button')).find((buttonElement) => buttonElement.textContent === 'Open the SNow Wizard') as HTMLButtonElement).click();
+    expect(openInstalled).toHaveBeenCalledWith(installedWizard);
+    expect(document.getElementById('snow-wizard-install-panel')).toBeNull();
   });
 });
 

@@ -38,8 +38,9 @@ describe('WizardApp', () => {
   it('connects ServiceNow, shows Connect for Jira, and keeps the jobs closed', async () => {
     render(<WizardApp boot={BOOT} dependencies={createDependencies()} appVersion="v0.304.0" />);
     await waitFor(() => expect(screen.getByRole('status').textContent).toContain('ServiceNow: connected as Smith, Jane'));
-    expect(screen.getByRole('button', { name: 'Open Jira' })).toBeTruthy();
-    expect(screen.getAllByText('Connect ServiceNow and Jira first').length).toBe(3);
+    expect(screen.getByRole('button', { name: 'Connect Jira' })).toBeTruthy();
+    // Until Jira answers, Connect is the only thing to do: the job choices are not shown at all.
+    expect(screen.queryByText('What would you like to do?')).toBeNull();
     expect(screen.getByText('SNow Wizard v0.304.0')).toBeTruthy();
   });
 
@@ -47,7 +48,7 @@ describe('WizardApp', () => {
     render(<WizardApp boot={BOOT} dependencies={createDependencies()} appVersion="v1" />);
     await waitFor(() => expect(useWizardConnectionStore.getState().snow.status).toBe('connected'));
     useWizardConnectionStore.getState().setConnection('jira', { status: 'connected', identity: 'Smith, Jane' });
-    await waitFor(() => expect(screen.queryByRole('button', { name: 'Open Jira' })).toBeNull());
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Connect Jira' })).toBeNull());
   });
 
   it('opens each job from Home once both systems are connected, and every job leads back home', async () => {
@@ -68,10 +69,20 @@ describe('WizardApp', () => {
     }
   });
 
-  it('opens Settings from Home and goes back', async () => {
+  it('opens Settings before connecting and goes back to Connect', async () => {
     render(<WizardApp boot={BOOT} dependencies={createDependencies()} appVersion="v1" />);
     fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
     expect(screen.getByLabelText('Jira address')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Back to home' }));
+    expect(screen.getByRole('button', { name: 'Connect Jira' })).toBeTruthy();
+  });
+
+  it('opens Settings from Home once connected, and tells the user to keep the window open', async () => {
+    render(<WizardApp boot={BOOT} dependencies={createDependencies()} appVersion="v1" />);
+    await waitFor(() => expect(useWizardConnectionStore.getState().snow.status).toBe('connected'));
+    useWizardConnectionStore.getState().setConnection('jira', { status: 'connected', identity: 'Smith, Jane' });
+    expect(await screen.findByText(/keep this window open while you work/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
     fireEvent.click(screen.getByRole('button', { name: 'Back to home' }));
     expect(screen.getByText('What would you like to do?')).toBeTruthy();
   });

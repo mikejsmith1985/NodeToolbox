@@ -11,7 +11,7 @@ const ATTACHMENT_PATH_PREFIX = '/secure/attachment/';
 /** What an older Jira-tab bookmark answers when asked for a file it cannot send. */
 const OLD_BOOKMARK_REFUSAL = 'refused: only /rest/ paths are served';
 const OUTDATED_BOOKMARK_MESSAGE = 'The SNow Wizard bookmark is out of date, so it cannot fetch files from Jira. '
-  + 'Drag the new bookmark from the Wizard to your bookmarks bar, then press "Open Jira" again.';
+  + 'Drag the new bookmark from the Wizard to your bookmarks bar, then press "Connect Jira" again.';
 
 function readRequestUrl(input: RequestInfo | URL): string {
   if (typeof input === 'string') return input;
@@ -52,7 +52,7 @@ export async function wizardFetch(input: RequestInfo | URL, init?: RequestInit):
   if (!requestUrl.startsWith(JIRA_PROXY_PREFIX)) return globalThis.fetch(input, init);
 
   const jiraTransport = readJiraTransport();
-  if (!jiraTransport) throw new TypeError('Jira is not connected — press "Open Jira" in the SNow Wizard.');
+  if (!jiraTransport) throw new TypeError('Jira is not connected — press "Connect Jira" in the SNow Wizard.');
   const jiraPath = requestUrl.slice(JIRA_PROXY_PREFIX.length);
   if (jiraPath.startsWith(ATTACHMENT_PATH_PREFIX)) return fetchAttachmentFile(jiraTransport, jiraPath);
   const jiraResponse = await jiraTransport.execute({

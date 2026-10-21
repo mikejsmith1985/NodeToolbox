@@ -49,6 +49,10 @@ export default function WizardHome({ isReady, onOpenSettings, onChooseJob }: Wiz
           </button>
         ))}
       </div>
+      <p className={styles.hint}>
+        Tip: keep this window open while you work. Clicking the bookmark on ServiceNow brings you back here, still
+        connected — closing it means connecting Jira again next time.
+      </p>
       <button type="button" className={styles.secondaryButton} onClick={onOpenSettings}>Settings</button>
     </section>
   );

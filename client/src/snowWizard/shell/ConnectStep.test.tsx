@@ -15,8 +15,8 @@ describe('ConnectStep', () => {
     render(<ConnectStep snowState={CONNECTED_SNOW} jiraState={NOT_CONNECTED} jiraUrl="https://jira.example.com" onOpenJira={onOpenJira} />);
 
     expect(screen.getByText(/ServiceNow: connected as Smith, Jane/)).toBeTruthy();
-    expect(screen.getByText(/click the SNow Wizard bookmark on the Jira tab/i)).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Open Jira' }));
+    expect(screen.getByText(/click the SNow Wizard bookmark there/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Connect Jira' }));
     expect(onOpenJira).toHaveBeenCalled();
   });
 

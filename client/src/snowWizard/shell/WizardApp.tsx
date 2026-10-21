@@ -9,6 +9,7 @@ import ReviewWizard from '../review/ReviewWizard.tsx';
 import ConnectStep from './ConnectStep.tsx';
 import ConnectionBanner from './ConnectionBanner.tsx';
 import SettingsStep from './SettingsStep.tsx';
+import UpdateWizardSection from './UpdateWizardSection.tsx';
 import WizardHome from './WizardHome.tsx';
 import { isWizardReady, useWizardConnectionStore } from './wizardConnectionStore.ts';
 import type { WizardJobId, WizardJobProps } from './wizardJobProps.ts';
@@ -49,12 +50,21 @@ export default function WizardApp({ boot, dependencies, appVersion }: WizardAppP
   }
 
   function renderMainArea(): ReactElement {
-    if (isSettingsOpen) return <SettingsStep jiraUrl={jiraUrl} onSaveJiraUrl={handleSaveJiraUrl} onClose={() => setIsSettingsOpen(false)} />;
+    if (isSettingsOpen) {
+      return (
+        <>
+          <SettingsStep jiraUrl={jiraUrl} onSaveJiraUrl={handleSaveJiraUrl} onClose={() => setIsSettingsOpen(false)} />
+          <UpdateWizardSection boot={boot} appVersion={appVersion} />
+        </>
+      );
+    }
     // A job stays open even if a connection drops mid-step: the banner offers the reconnect and the step is kept.
     if (activeJobId) {
       const ActiveJobScreen = WIZARD_JOB_SCREENS[activeJobId];
       return <ActiveJobScreen onExit={() => setActiveJobId(null)} />;
     }
+    // Until both systems answer, Connect is the only thing on screen — one button, then Home.
+    if (!isReady) return <button type="button" className={styles.secondaryButton} onClick={() => setIsSettingsOpen(true)}>Settings</button>;
     return <WizardHome isReady={isReady} onOpenSettings={() => setIsSettingsOpen(true)} onChooseJob={setActiveJobId} />;
   }
 
