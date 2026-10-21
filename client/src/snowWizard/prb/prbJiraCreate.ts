@@ -1,8 +1,9 @@
-// prbJiraCreate.ts — Creates a problem's Defect, SL Story and QE Story in Jira, puts them on the Epic and links the
-// stories to the Defect — and on a retry makes only what is still missing.
+// prbJiraCreate.ts — Makes the problem's Jira work the user chose: creates the items wanted new (Defect, SL Story,
+// QE Story) on the Epic, labels any issue picked from Jira so it counts as this problem's, links each story to the
+// Defect — and on a retry does only what is still missing.
 //
-// Framework-first: every write goes through Toolbox's own jiraApi (createIssue, createIssueLink, createmeta readers)
-// and the Epic Link field is found BY NAME through jiraFieldMapping. What is custom is only the order and the
+// Framework-first: every write goes through Toolbox's own jiraApi (createIssue, createIssueLink, jiraPut, createmeta
+// readers) and the Epic Link field is found BY NAME through jiraFieldMapping. What is custom is only the order and the
 // "what already exists" bookkeeping, which Toolbox's PRB Generator (Defect + sub-tasks, no Epic, no retry) lacks.
 
 import {
@@ -11,24 +12,41 @@ import {
   getIssueTypeFields,
   getProjectIssueTypes,
   jiraGet,
+  jiraPut,
 } from '../../services/jiraApi.ts';
 import { FIELD_MAPPING_ENTRIES, readFieldMappingOverrides, resolveFieldMapping } from '../../services/jiraFieldMapping.ts';
 import type { CreateMetaFieldEntry, CreateMetaIssueType } from '../../types/jira.ts';
 import { escapeJqlValue } from '../../utils/jqlValue.ts';
-import { buildPrbLabel, PRB_JIRA_ROLES, readRoleFromLabels, type PrbJiraDraft, type PrbJiraRole } from './prbJiraPlan.ts';
+import {
+  buildPrbLabel,
+  buildPrbRoleLabel,
+  hasPrbRoleLabel,
+  PRB_JIRA_ROLES,
+  readNewRoles,
+  readRoleFromLabels,
+  type PrbExistingIssue,
+  type PrbJiraDraft,
+  type PrbJiraRole,
+  type PrbRoleChoices,
+} from './prbJiraPlan.ts';
+import { EXISTING_ISSUE_FIELDS, readExistingIssue, type JiraSearchIssue } from './prbLookups.ts';
 
 // ── Types ──
 
-/** What exists so far: the key made for each role, and which stories are already linked to the Defect. */
+/**
+ * What is done so far: the key for each item (made or picked), which stories are linked to the Defect, and which
+ * picked issues carry the problem's labels.
+ */
 export interface PrbCreateProgress {
   createdKeys: Partial<Record<PrbJiraRole, string>>;
   linkedRoles: PrbJiraRole[];
+  labelledRoles: PrbJiraRole[];
 }
 
 /** One thing that did not happen, in words the user can act on. */
 export interface PrbCreateFailure {
   role: PrbJiraRole;
-  stage: 'prepare' | 'create' | 'link';
+  stage: 'prepare' | 'create' | 'label' | 'link';
   message: string;
 }
 
@@ -45,21 +63,20 @@ export interface PrbCreateRequest {
   projectKey: string;
   epicKey: string;
   drafts: readonly PrbJiraDraft[];
-  /** What earlier presses already made (empty on the first). */
+  /** For each item: make it new, use an issue already in Jira, or leave it out. */
+  roleChoices: PrbRoleChoices;
+  /** What earlier presses already did (empty on the first). */
   startingProgress: PrbCreateProgress;
-  /** True to look Jira up for items already made for this problem and reuse them; false only for "make a new set". */
-  shouldReuseExisting: boolean;
 }
 
-/** Nothing made yet. */
-export const EMPTY_PRB_PROGRESS: PrbCreateProgress = { createdKeys: {}, linkedRoles: [] };
+/** Nothing done yet. */
+export const EMPTY_PRB_PROGRESS: PrbCreateProgress = { createdKeys: {}, linkedRoles: [], labelledRoles: [] };
 
 /** The Jira link type joining each story to the Defect. */
 export const RELATES_LINK_TYPE_NAME = 'Relates';
 
 const STORY_ROLES: readonly PrbJiraRole[] = ['sl', 'qe'];
 const EXISTING_SEARCH_MAX_RESULTS = 50;
-const EXISTING_SEARCH_FIELDS = 'labels,issuetype,summary,issuelinks';
 const PARENT_FIELD_ID = 'parent';
 const EPIC_LINK_SETTINGS_KEY = 'epicLinkFieldId';
 const DEFECT_TYPE_NAMES = ['defect', 'bug'];
@@ -67,59 +84,86 @@ const STORY_TYPE_NAMES = ['story'];
 /** The Defect's environment: a PRB is always a problem found in Production (owner's rule). Found BY NAME on the form. */
 const DEFECT_ENVIRONMENT_FIELD_NAME = 'defect environment';
 const DEFECT_ENVIRONMENT_VALUE = 'production';
-const CHECK_EXISTING_FAILED = 'Could not check Jira for items already made for this problem, so nothing was created';
 const UNKNOWN_FAILURE = 'Jira refused the request';
 
 // ── Existing work ──
 
-interface ExistingIssue {
-  key: string;
-  fields?: {
-    labels?: string[];
-    issuetype?: { name?: string };
-    summary?: string;
-    issuelinks?: Array<{ inwardIssue?: { key?: string }; outwardIssue?: { key?: string } }>;
-  };
-}
-
 /** Which role an existing item plays: its role label first, then its type and summary for items made by hand. */
-function readExistingRole(issue: ExistingIssue, prbNumber: string): PrbJiraRole | null {
-  const labelledRole = readRoleFromLabels(issue.fields?.labels ?? [], prbNumber);
+function readExistingRole(issue: PrbExistingIssue, prbNumber: string): PrbJiraRole | null {
+  const labelledRole = readRoleFromLabels(issue.labels, prbNumber);
   if (labelledRole) return labelledRole;
-  if (DEFECT_TYPE_NAMES.includes((issue.fields?.issuetype?.name ?? '').toLowerCase())) return 'defect';
-  const summary = (issue.fields?.summary ?? '').trim();
+  if (DEFECT_TYPE_NAMES.includes(issue.issueTypeName.toLowerCase())) return 'defect';
+  const summary = issue.summary.trim();
   // Both the bracketed "[SL] …" naming and the older "SL: …" are recognised for items made by hand.
   if (/^\[?SL\b/i.test(summary)) return 'sl';
   return /^\[?QE\b/i.test(summary) ? 'qe' : null;
 }
 
-function isLinkedTo(issue: ExistingIssue, otherKey: string | undefined): boolean {
-  if (!otherKey) return false;
-  return (issue.fields?.issuelinks ?? []).some((link) => link.inwardIssue?.key === otherKey || link.outwardIssue?.key === otherKey);
+/**
+ * Looks Jira up for items already made for this problem (by its `prb-<number>` label) and says which role each plays.
+ * The first item found for a role wins.
+ */
+export async function findExistingPrbIssues(prbNumber: string): Promise<Partial<Record<PrbJiraRole, PrbExistingIssue>>> {
+  const jql = `labels = "${escapeJqlValue(buildPrbLabel(prbNumber))}" ORDER BY created ASC`;
+  const response = await jiraGet<{ issues?: JiraSearchIssue[] }>(
+    `/rest/api/2/search?jql=${encodeURIComponent(jql)}&fields=${EXISTING_ISSUE_FIELDS}&maxResults=${EXISTING_SEARCH_MAX_RESULTS}`,
+  );
+  const foundIssues: Partial<Record<PrbJiraRole, PrbExistingIssue>> = {};
+  for (const issue of (response?.issues ?? []).map(readExistingIssue)) {
+    const role = readExistingRole(issue, prbNumber);
+    if (role && !foundIssues[role]) foundIssues[role] = issue;
+  }
+  return foundIssues;
+}
+
+// ── Progress from the choices ──
+
+function readPickedIssue(choices: PrbRoleChoices, role: PrbJiraRole): PrbExistingIssue | null {
+  const choice = choices[role];
+  return choice.mode === 'existing' ? choice.issue : null;
+}
+
+/** True when Jira already shows a link between the two picked issues, from either side. */
+function arePickedIssuesLinked(defectIssue: PrbExistingIssue | null, storyIssue: PrbExistingIssue | null): boolean {
+  if (!defectIssue || !storyIssue) return false;
+  return storyIssue.linkedKeys.includes(defectIssue.key) || defectIssue.linkedKeys.includes(storyIssue.key);
 }
 
 /**
- * Looks Jira up for items already made for this problem (by its `prb-<number>` label) and says which role each
- * plays and which stories are already linked to the Defect. The first item found for a role wins.
+ * Where a press starts: what earlier presses did, plus every issue the user picked from Jira — with the labels and
+ * links those picked issues already carry, so nothing is labelled or linked twice.
  */
-export async function findExistingPrbWork(prbNumber: string): Promise<PrbCreateProgress> {
-  const jql = `labels = "${escapeJqlValue(buildPrbLabel(prbNumber))}" ORDER BY created ASC`;
-  const response = await jiraGet<{ issues?: ExistingIssue[] }>(
-    `/rest/api/2/search?jql=${encodeURIComponent(jql)}&fields=${EXISTING_SEARCH_FIELDS}&maxResults=${EXISTING_SEARCH_MAX_RESULTS}`,
-  );
-  const issues = response?.issues ?? [];
-  const issueByRole = new Map<PrbJiraRole, ExistingIssue>();
-  for (const issue of issues) {
-    const role = readExistingRole(issue, prbNumber);
-    if (role && !issueByRole.has(role)) issueByRole.set(role, issue);
+export function buildStartingProgress(prbNumber: string, choices: PrbRoleChoices, earlierProgress: PrbCreateProgress): PrbCreateProgress {
+  const progress: PrbCreateProgress = {
+    createdKeys: { ...earlierProgress.createdKeys },
+    linkedRoles: [...earlierProgress.linkedRoles],
+    labelledRoles: [...earlierProgress.labelledRoles],
+  };
+  for (const role of PRB_JIRA_ROLES) {
+    const pickedIssue = readPickedIssue(choices, role);
+    if (!pickedIssue || progress.createdKeys[role]) continue;
+    progress.createdKeys[role] = pickedIssue.key;
+    if (hasPrbRoleLabel(pickedIssue, prbNumber, role)) progress.labelledRoles.push(role);
   }
-  const createdKeys: Partial<Record<PrbJiraRole, string>> = {};
-  issueByRole.forEach((issue, role) => { createdKeys[role] = issue.key; });
-  const linkedRoles = STORY_ROLES.filter((role) => {
-    const storyIssue = issueByRole.get(role);
-    return storyIssue !== undefined && isLinkedTo(storyIssue, createdKeys.defect);
-  });
-  return { createdKeys, linkedRoles };
+  const defectIssue = readPickedIssue(choices, 'defect');
+  for (const role of STORY_ROLES) {
+    if (!progress.linkedRoles.includes(role) && arePickedIssuesLinked(defectIssue, readPickedIssue(choices, role))) progress.linkedRoles.push(role);
+  }
+  return progress;
+}
+
+/** True when every chosen item is in Jira, every picked one is labelled, and every story is linked to the Defect. */
+export function isPrbWorkComplete(progress: PrbCreateProgress, choices: PrbRoleChoices): boolean {
+  const isEveryItemThere = PRB_JIRA_ROLES.every((role) => choices[role].mode === 'skip' || Boolean(progress.createdKeys[role]));
+  const isEveryPickLabelled = PRB_JIRA_ROLES.every((role) => choices[role].mode !== 'existing' || progress.labelledRoles.includes(role));
+  const isEveryStoryLinked = !progress.createdKeys.defect
+    || STORY_ROLES.every((role) => !progress.createdKeys[role] || progress.linkedRoles.includes(role));
+  return isEveryItemThere && isEveryPickLabelled && isEveryStoryLinked;
+}
+
+/** True when pressing Create would change anything in Jira — false when everything chosen is already done. */
+export function hasPrbWorkToDo(prbNumber: string, choices: PrbRoleChoices): boolean {
+  return !isPrbWorkComplete(buildStartingProgress(prbNumber, choices, EMPTY_PRB_PROGRESS), choices);
 }
 
 // ── Create screens ──
@@ -241,13 +285,30 @@ function buildIssueFields(draft: PrbJiraDraft, request: PrbCreateRequest, placem
   };
 }
 
+async function labelPickedIssues(request: PrbCreateRequest, progress: PrbCreateProgress): Promise<PrbCreateFailure[]> {
+  const failures: PrbCreateFailure[] = [];
+  for (const role of PRB_JIRA_ROLES) {
+    const issueKey = progress.createdKeys[role];
+    if (request.roleChoices[role].mode !== 'existing' || !issueKey || progress.labelledRoles.includes(role)) continue;
+    try {
+      // "add" keeps every label the issue already has; these two are how a later run finds it again.
+      const labelAdds = [buildPrbLabel(request.prbNumber), buildPrbRoleLabel(request.prbNumber, role)].map((label) => ({ add: label }));
+      await jiraPut(`/rest/api/2/issue/${encodeURIComponent(issueKey)}`, { update: { labels: labelAdds } });
+      progress.labelledRoles = [...progress.labelledRoles, role];
+    } catch (caught) {
+      failures.push({ role, stage: 'label', message: describeJiraRefusal(caught) });
+    }
+  }
+  return failures;
+}
+
 async function createMissingIssues(
   request: PrbCreateRequest,
   progress: PrbCreateProgress,
   placements: Map<PrbJiraRole, EpicPlacement>,
 ): Promise<PrbCreateFailure[]> {
   const failures: PrbCreateFailure[] = [];
-  for (const role of PRB_JIRA_ROLES) {
+  for (const role of readNewRoles(request.roleChoices)) {
     const draft = request.drafts.find((candidate) => candidate.role === role);
     const placement = placements.get(role);
     if (progress.createdKeys[role] || !draft || !placement) continue;
@@ -278,45 +339,27 @@ async function linkStoriesToDefect(progress: PrbCreateProgress): Promise<PrbCrea
   return failures;
 }
 
-function isProgressComplete(progress: PrbCreateProgress): boolean {
-  const hasEveryItem = PRB_JIRA_ROLES.every((role) => Boolean(progress.createdKeys[role]));
-  return hasEveryItem && STORY_ROLES.every((role) => progress.linkedRoles.includes(role));
-}
-
 function prepareFailures(roles: readonly PrbJiraRole[], message: string): PrbCreateFailure[] {
   return roles.map((role) => ({ role, stage: 'prepare', message }));
 }
 
-async function readStartingProgress(request: PrbCreateRequest): Promise<PrbCreateProgress> {
-  const startingCopy = { createdKeys: { ...request.startingProgress.createdKeys }, linkedRoles: [...request.startingProgress.linkedRoles] };
-  if (!request.shouldReuseExisting) return startingCopy;
-  const existing = await findExistingPrbWork(request.prbNumber);
-  return {
-    createdKeys: { ...existing.createdKeys, ...startingCopy.createdKeys },
-    linkedRoles: [...new Set([...existing.linkedRoles, ...startingCopy.linkedRoles])],
-  };
-}
-
 /**
- * Makes whatever is still missing for this problem, in order — Defect, SL Story, QE Story — each on the Epic, then
- * links each story to the Defect. Anything that fails is reported per item and left for "Retry the rest"; what
- * already exists is never made twice. If Jira cannot be checked first, nothing is created at all.
+ * Does what the user chose for this problem, in order: labels any issue picked from Jira, makes each item wanted new
+ * (Defect, SL Story, QE Story) on the Epic, then links each story to the Defect. Anything that fails is reported per
+ * item and left for "Retry the rest"; what is already done is never done twice.
  */
 export async function createPrbJiraWork(request: PrbCreateRequest): Promise<PrbCreateResult> {
-  let progress: PrbCreateProgress;
-  try {
-    progress = await readStartingProgress(request);
-  } catch {
-    return { progress: request.startingProgress, failures: prepareFailures(PRB_JIRA_ROLES, CHECK_EXISTING_FAILED), isComplete: false };
-  }
-  const missingRoles = PRB_JIRA_ROLES.filter((role) => !progress.createdKeys[role]);
+  const progress = buildStartingProgress(request.prbNumber, request.roleChoices, request.startingProgress);
+  const missingRoles = readNewRoles(request.roleChoices).filter((role) => !progress.createdKeys[role]);
   let placements = new Map<PrbJiraRole, EpicPlacement>();
   try {
     if (missingRoles.length > 0) placements = await readPlacements(request.projectKey, missingRoles);
   } catch (caught) {
     return { progress, failures: prepareFailures(missingRoles, describeJiraRefusal(caught)), isComplete: false };
   }
+  const labelFailures = await labelPickedIssues(request, progress);
   const createFailures = await createMissingIssues(request, progress, placements);
   const linkFailures = await linkStoriesToDefect(progress);
-  return { progress, failures: [...createFailures, ...linkFailures], isComplete: isProgressComplete(progress) };
+  const failures = [...labelFailures, ...createFailures, ...linkFailures];
+  return { progress, failures, isComplete: isPrbWorkComplete(progress, request.roleChoices) };
 }

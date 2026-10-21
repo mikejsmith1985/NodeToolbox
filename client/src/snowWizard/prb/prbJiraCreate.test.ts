@@ -2,7 +2,7 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { buildPrbJiraDrafts } from './prbJiraPlan.ts';
+import { buildDefaultRoleChoices, buildPrbJiraDrafts, type PrbExistingIssue, type PrbRoleChoices } from './prbJiraPlan.ts';
 
 const jiraApiMock = vi.hoisted(() => ({
   jiraGet: vi.fn(),
@@ -10,10 +10,18 @@ const jiraApiMock = vi.hoisted(() => ({
   createIssueLink: vi.fn(),
   getProjectIssueTypes: vi.fn(),
   getIssueTypeFields: vi.fn(),
+  jiraPut: vi.fn(),
 }));
 vi.mock('../../services/jiraApi.ts', () => jiraApiMock);
 
-import { buildDefectEnvironmentField, createPrbJiraWork, describeJiraRefusal, EMPTY_PRB_PROGRESS, findExistingPrbWork } from './prbJiraCreate.ts';
+import {
+  buildDefectEnvironmentField,
+  createPrbJiraWork,
+  describeJiraRefusal,
+  EMPTY_PRB_PROGRESS,
+  findExistingPrbIssues,
+  hasPrbWorkToDo,
+} from './prbJiraCreate.ts';
 
 const EPIC_FIELD_ID = 'cf-epic-link';
 const DRAFTS = buildPrbJiraDrafts(
@@ -50,14 +58,20 @@ function readCreatedFields(callIndex: number): Record<string, unknown> {
   return jiraApiMock.createIssue.mock.calls[callIndex][0].fields;
 }
 
+const ALL_NEW: PrbRoleChoices = buildDefaultRoleChoices({});
+
 const BASE_REQUEST = {
   prbNumber: 'PRB001',
   projectKey: 'ENCUC',
   epicKey: 'EPIC-7',
   drafts: DRAFTS,
+  roleChoices: ALL_NEW,
   startingProgress: EMPTY_PRB_PROGRESS,
-  shouldReuseExisting: true,
 };
+
+function buildPickedIssue(key: string, overrides: Partial<PrbExistingIssue> = {}): PrbExistingIssue {
+  return { key, summary: `${key} words`, issueTypeName: 'Story', statusName: 'Open', labels: [], linkedKeys: [], ...overrides };
+}
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -65,6 +79,7 @@ beforeEach(() => {
   arrangeCreateScreens([{ fieldId: 'summary', name: 'Summary' }, { fieldId: EPIC_FIELD_ID, name: 'Epic Link' }]);
   arrangeNoExistingWork();
   jiraApiMock.createIssueLink.mockResolvedValue(undefined);
+  jiraApiMock.jiraPut.mockResolvedValue(undefined);
 });
 
 describe('createPrbJiraWork', () => {
@@ -100,7 +115,7 @@ describe('createPrbJiraWork', () => {
 
     vi.clearAllMocks();
     arrangeCreatesInOrder('ENCUC-3');
-    const retryResult = await createPrbJiraWork({ ...BASE_REQUEST, startingProgress: firstResult.progress, shouldReuseExisting: false });
+    const retryResult = await createPrbJiraWork({ ...BASE_REQUEST, startingProgress: firstResult.progress });
 
     expect(jiraApiMock.createIssue).toHaveBeenCalledTimes(1);
     expect(readCreatedFields(0).summary).toBe('[QE] Broken login');
@@ -108,30 +123,67 @@ describe('createPrbJiraWork', () => {
     expect(retryResult.isComplete).toBe(true);
   });
 
-  it('reuses items Jira already holds for this problem instead of making a second Defect', async () => {
-    jiraApiMock.jiraGet.mockResolvedValue({
-      issues: [{ key: 'ENCUC-9', fields: { labels: ['prb-prb001', 'prb-prb001-defect'], issuetype: { name: 'Defect' }, summary: 'x', issuelinks: [] } }],
-    });
+  it('uses a Defect already in Jira: makes only the two stories and links them to it', async () => {
+    const labelledDefect = buildPickedIssue('ENCUC-9', { issueTypeName: 'Defect', labels: ['prb-prb001', 'prb-prb001-defect'] });
     arrangeCreatesInOrder('ENCUC-10', 'ENCUC-11');
-    const result = await createPrbJiraWork(BASE_REQUEST);
+    const result = await createPrbJiraWork({ ...BASE_REQUEST, roleChoices: { ...ALL_NEW, defect: { mode: 'existing', issue: labelledDefect } } });
 
     expect(jiraApiMock.createIssue).toHaveBeenCalledTimes(2);
     expect(readCreatedFields(0).summary).toBe('[SL] Broken login');
-    expect(result.progress.createdKeys.defect).toBe('ENCUC-9');
+    expect(jiraApiMock.jiraPut).not.toHaveBeenCalled();
+    expect(jiraApiMock.createIssueLink).toHaveBeenCalledWith({ type: { name: 'Relates' }, inwardIssue: { key: 'ENCUC-10' }, outwardIssue: { key: 'ENCUC-9' } });
+    expect(result.isComplete).toBe(true);
   });
 
-  it('makes a fresh set only when told to, ignoring what already exists', async () => {
-    arrangeCreatesInOrder('ENCUC-1', 'ENCUC-2', 'ENCUC-3');
-    await createPrbJiraWork({ ...BASE_REQUEST, shouldReuseExisting: false });
-    expect(jiraApiMock.jiraGet).not.toHaveBeenCalled();
-    expect(jiraApiMock.createIssue).toHaveBeenCalledTimes(3);
+  it('makes only the SL story when the QE story is left out, and links it to the existing Defect', async () => {
+    const defect = buildPickedIssue('ENCUC-9', { labels: ['prb-prb001-defect'] });
+    arrangeCreatesInOrder('ENCUC-10');
+    const result = await createPrbJiraWork({ ...BASE_REQUEST, roleChoices: { defect: { mode: 'existing', issue: defect }, sl: { mode: 'new' }, qe: { mode: 'skip' } } });
+
+    expect(jiraApiMock.createIssue).toHaveBeenCalledTimes(1);
+    expect(jiraApiMock.getProjectIssueTypes).toHaveBeenCalledTimes(1);
+    expect(result.progress.createdKeys).toEqual({ defect: 'ENCUC-9', sl: 'ENCUC-10' });
+    expect(jiraApiMock.createIssueLink).toHaveBeenCalledTimes(1);
+    expect(result.isComplete).toBe(true);
   });
 
-  it('creates nothing when Jira cannot be checked for existing items', async () => {
-    jiraApiMock.jiraGet.mockRejectedValue(new Error('offline'));
-    const result = await createPrbJiraWork(BASE_REQUEST);
+  it('uses stories made by hand: labels them for the problem, makes only the Defect, and links both to it', async () => {
+    arrangeCreatesInOrder('ENCUC-1');
+    const result = await createPrbJiraWork({
+      ...BASE_REQUEST,
+      roleChoices: { defect: { mode: 'new' }, sl: { mode: 'existing', issue: buildPickedIssue('X-2') }, qe: { mode: 'existing', issue: buildPickedIssue('X-3') } },
+    });
+
+    expect(jiraApiMock.createIssue).toHaveBeenCalledTimes(1);
+    expect(readCreatedFields(0).summary).toBe('[DEV] PRB001 — Broken login');
+    expect(jiraApiMock.jiraPut).toHaveBeenCalledWith('/rest/api/2/issue/X-2', { update: { labels: [{ add: 'prb-prb001' }, { add: 'prb-prb001-sl' }] } });
+    expect(jiraApiMock.jiraPut).toHaveBeenCalledWith('/rest/api/2/issue/X-3', { update: { labels: [{ add: 'prb-prb001' }, { add: 'prb-prb001-qe' }] } });
+    expect(jiraApiMock.createIssueLink).toHaveBeenCalledWith({ type: { name: 'Relates' }, inwardIssue: { key: 'X-3' }, outwardIssue: { key: 'ENCUC-1' } });
+    expect(result.progress.labelledRoles).toEqual(['sl', 'qe']);
+    expect(result.isComplete).toBe(true);
+  });
+
+  it('never re-links picked issues Jira already shows as linked', async () => {
+    const defect = buildPickedIssue('D-1', { labels: ['prb-prb001-defect'] });
+    const story = buildPickedIssue('S-1', { labels: ['prb-prb001-sl'], linkedKeys: ['D-1'] });
+    arrangeCreatesInOrder('ENCUC-3');
+    await createPrbJiraWork({ ...BASE_REQUEST, roleChoices: { defect: { mode: 'existing', issue: defect }, sl: { mode: 'existing', issue: story }, qe: { mode: 'new' } } });
+
+    expect(jiraApiMock.createIssueLink).toHaveBeenCalledTimes(1);
+    expect(jiraApiMock.createIssueLink.mock.calls[0][0].inwardIssue).toEqual({ key: 'ENCUC-3' });
+  });
+
+  it('reports a label that could not be added, and retries only that label', async () => {
+    jiraApiMock.jiraPut.mockRejectedValueOnce(new Error('No edit permission'));
+    const choices: PrbRoleChoices = { defect: { mode: 'skip' }, sl: { mode: 'existing', issue: buildPickedIssue('X-2') }, qe: { mode: 'skip' } };
+    const firstResult = await createPrbJiraWork({ ...BASE_REQUEST, roleChoices: choices });
+    expect(firstResult.failures).toEqual([{ role: 'sl', stage: 'label', message: 'No edit permission' }]);
+    expect(firstResult.isComplete).toBe(false);
+
+    const retryResult = await createPrbJiraWork({ ...BASE_REQUEST, roleChoices: choices, startingProgress: firstResult.progress });
+    expect(jiraApiMock.jiraPut).toHaveBeenCalledTimes(2);
     expect(jiraApiMock.createIssue).not.toHaveBeenCalled();
-    expect(result.failures[0].stage).toBe('prepare');
+    expect(retryResult.isComplete).toBe(true);
   });
 
   it('creates nothing when the create screen has no Epic Link, and says so plainly', async () => {
@@ -158,8 +210,8 @@ describe('createPrbJiraWork', () => {
   });
 });
 
-describe('findExistingPrbWork', () => {
-  it('searches by the problem label and reads roles and links', async () => {
+describe('findExistingPrbIssues', () => {
+  it('searches by the problem label and says which item each issue is, with its links', async () => {
     jiraApiMock.jiraGet.mockResolvedValue({
       issues: [
         { key: 'A-1', fields: { labels: ['prb-prb001'], issuetype: { name: 'Defect' }, summary: 'PRB001 — x', issuelinks: [] } },
@@ -167,11 +219,11 @@ describe('findExistingPrbWork', () => {
         { key: 'A-3', fields: { labels: ['prb-prb001', 'prb-prb001-qe'], issuetype: { name: 'Story' }, summary: 'edited', issuelinks: [] } },
       ],
     });
-    const existing = await findExistingPrbWork('PRB001');
+    const foundIssues = await findExistingPrbIssues('PRB001');
 
     expect(decodeURIComponent(jiraApiMock.jiraGet.mock.calls[0][0])).toContain('labels = "prb-prb001"');
-    expect(existing.createdKeys).toEqual({ defect: 'A-1', sl: 'A-2', qe: 'A-3' });
-    expect(existing.linkedRoles).toEqual(['sl']);
+    expect([foundIssues.defect?.key, foundIssues.sl?.key, foundIssues.qe?.key]).toEqual(['A-1', 'A-2', 'A-3']);
+    expect(foundIssues.sl?.linkedKeys).toEqual(['A-1']);
   });
 
   it('recognises hand-made items named with the bracketed "[SL]" / "[QE]" tags', async () => {
@@ -181,8 +233,18 @@ describe('findExistingPrbWork', () => {
         { key: 'B-3', fields: { labels: ['prb-prb001'], issuetype: { name: 'Story' }, summary: '[QE] x', issuelinks: [] } },
       ],
     });
-    const existing = await findExistingPrbWork('PRB001');
-    expect(existing.createdKeys).toEqual({ sl: 'B-2', qe: 'B-3' });
+    const foundIssues = await findExistingPrbIssues('PRB001');
+    expect(Object.keys(foundIssues)).toEqual(['sl', 'qe']);
+  });
+});
+
+describe('hasPrbWorkToDo', () => {
+  it('is false once every chosen item is in Jira, labelled and linked — and true while anything is left', () => {
+    const defect = buildPickedIssue('D-1', { labels: ['prb-prb001-defect'] });
+    const story = buildPickedIssue('S-1', { labels: ['prb-prb001-sl'], linkedKeys: ['D-1'] });
+    expect(hasPrbWorkToDo('PRB001', { defect: { mode: 'existing', issue: defect }, sl: { mode: 'existing', issue: story }, qe: { mode: 'skip' } })).toBe(false);
+    expect(hasPrbWorkToDo('PRB001', { defect: { mode: 'existing', issue: defect }, sl: { mode: 'existing', issue: buildPickedIssue('S-2') }, qe: { mode: 'skip' } })).toBe(true);
+    expect(hasPrbWorkToDo('PRB001', ALL_NEW)).toBe(true);
   });
 });
 

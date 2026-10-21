@@ -1,5 +1,5 @@
 // prbLookups.ts — The reads the problem job needs: find a ServiceNow problem, list Jira projects, find an open Epic,
-// and remember the project last chosen.
+// find an issue already in Jira to use for one of the three items, and remember the project last chosen.
 //
 // Framework-first: reads go through Toolbox's own snowFetch and jiraGet. The problem search is custom because
 // Toolbox's PRB reader (usePrbState) is private to its hook and only looks one number up — it cannot search words.
@@ -11,6 +11,7 @@ import { buildIssueTextMatchTerms } from '../../utils/jqlTextTerms.ts';
 import { escapeJqlValue } from '../../utils/jqlValue.ts';
 import { normalizeRichTextToPlainText } from '../../utils/richTextPlainText.ts';
 import { DEFAULT_SNOW_URL } from '../wizardDefaults.ts';
+import type { PrbExistingIssue } from './prbJiraPlan.ts';
 
 // ── Types ──
 
@@ -39,6 +40,9 @@ const PROBLEM_TABLE_PATH = '/api/now/table/problem';
 const PROBLEM_FIELDS = 'sys_id,number,short_description,description,state';
 const PROBLEM_SEARCH_LIMIT = 15;
 const EPIC_SEARCH_LIMIT = 20;
+const ISSUE_SEARCH_LIMIT = 20;
+/** What is read for an issue that may stand in for an item: enough to show it, label it and see its links. */
+export const EXISTING_ISSUE_FIELDS = 'summary,status,issuetype,labels,issuelinks';
 const PRB_NUMBER_PATTERN = /^PRB\d+$/i;
 const ISSUE_KEY_PATTERN = /^[A-Z][A-Z0-9]+-\d+$/i;
 // "^" separates conditions in a ServiceNow query, so it can never be part of the searched words.
@@ -112,6 +116,51 @@ export async function searchOpenEpics(searchText: string): Promise<EpicSearchRes
     summary: issue.fields?.summary ?? '',
     statusName: issue.fields?.status?.name ?? '',
   }));
+}
+
+/** One issue as Jira's search returns it, with only the fields an existing item needs. */
+export interface JiraSearchIssue {
+  key: string;
+  fields?: {
+    summary?: string;
+    status?: { name?: string };
+    issuetype?: { name?: string };
+    labels?: string[];
+    issuelinks?: Array<{ inwardIssue?: { key?: string }; outwardIssue?: { key?: string } }>;
+  };
+}
+
+/** Turns one searched issue into the shape the job keeps for an item already in Jira. */
+export function readExistingIssue(issue: JiraSearchIssue): PrbExistingIssue {
+  const linkedKeys = (issue.fields?.issuelinks ?? [])
+    .map((link) => link.inwardIssue?.key ?? link.outwardIssue?.key ?? '')
+    .filter((linkedKey) => linkedKey !== '');
+  return {
+    key: issue.key,
+    summary: issue.fields?.summary ?? '',
+    issueTypeName: issue.fields?.issuetype?.name ?? '',
+    statusName: issue.fields?.status?.name ?? '',
+    labels: issue.fields?.labels ?? [],
+    linkedKeys,
+  };
+}
+
+// No issue-type filter: a type name the instance lacks (e.g. "Bug") makes Jira refuse the whole search.
+function buildIssueSearchJql(searchText: string): string | null {
+  if (ISSUE_KEY_PATTERN.test(searchText)) return `key = "${escapeJqlValue(searchText.toUpperCase())}"`;
+  const matchTerms = buildIssueTextMatchTerms(searchText);
+  if (matchTerms === null) return null;
+  return `summary ~ "${escapeJqlValue(matchTerms)}" ORDER BY updated DESC`;
+}
+
+/** Finds any Jira issue by its key or by words in its summary, so one already made by hand can be used. */
+export async function searchExistingIssues(searchText: string): Promise<PrbExistingIssue[]> {
+  const jql = buildIssueSearchJql(searchText.trim());
+  if (jql === null) return [];
+  const reply = await jiraGet<{ issues?: JiraSearchIssue[] }>(
+    `/rest/api/2/search?jql=${encodeURIComponent(jql)}&fields=${EXISTING_ISSUE_FIELDS}&maxResults=${ISSUE_SEARCH_LIMIT}`,
+  );
+  return (reply?.issues ?? []).map(readExistingIssue);
 }
 
 // ── Remembered project ──

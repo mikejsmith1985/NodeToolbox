@@ -5,11 +5,20 @@ import type { FormEvent, ReactNode } from 'react';
 
 import type { JiraProject } from '../../types/jira.ts';
 import shellStyles from '../shell/WizardShell.module.css';
-import type { PrbCreateFailure, PrbCreateProgress, PrbCreateResult } from './prbJiraCreate.ts';
-import { MISSING_DESCRIPTION_TEXT, PRB_JIRA_ROLES, PRB_ROLE_NAMES, type PrbJiraDraft, type PrbJiraRole } from './prbJiraPlan.ts';
+import type { PrbCreateFailure, PrbCreateResult } from './prbJiraCreate.ts';
+import {
+  MISSING_DESCRIPTION_TEXT,
+  PRB_JIRA_ROLES,
+  PRB_ROLE_NAMES,
+  type PrbExistingIssue,
+  type PrbJiraDraft,
+  type PrbJiraRole,
+  type PrbRoleChoices,
+  type PrbRoleMode,
+} from './prbJiraPlan.ts';
 import type { EpicSearchResult, PrbSearchResult } from './prbLookups.ts';
 import styles from './PrbWizard.module.css';
-import type { ExistingWorkCheck, LoadedList, PrbDraftEdit } from './usePrbWizardState.ts';
+import { hasExistingWork, type ExistingWorkCheck, type LoadedList, type PrbDraftEdit, type RoleIssueSearch } from './usePrbWizardState.ts';
 
 // ── Shared pieces ──
 
@@ -112,18 +121,17 @@ export function PrbFindStep(props: PrbFindStepProps) {
 export interface PrbConfirmStepProps {
   problem: PrbSearchResult;
   existingWork: ExistingWorkCheck;
-  isNewSetConfirmed: boolean;
   jiraUrl: string;
-  onConfirmNewSet: (isConfirmed: boolean) => void;
   onRetryCheck: () => void;
 }
 
-function ExistingWorkList({ progress, jiraUrl }: { progress: PrbCreateProgress; jiraUrl: string }) {
+function ExistingWorkList({ existingWork, jiraUrl }: { existingWork: ExistingWorkCheck; jiraUrl: string }) {
   return (
     <ul className={styles.resultList} aria-label="Work already in Jira">
-      {PRB_JIRA_ROLES.filter((role) => progress.createdKeys[role]).map((role) => (
-        <li key={role}>{PRB_ROLE_NAMES[role]}: <JiraKeyLink jiraUrl={jiraUrl} issueKey={progress.createdKeys[role] as string} /></li>
-      ))}
+      {PRB_JIRA_ROLES.map((role) => {
+        const foundIssue = existingWork.foundIssues[role];
+        return foundIssue ? <li key={role}>{PRB_ROLE_NAMES[role]}: <JiraKeyLink jiraUrl={jiraUrl} issueKey={foundIssue.key} /></li> : null;
+      })}
     </ul>
   );
 }
@@ -140,15 +148,11 @@ function ExistingWorkPanel(props: PrbConfirmStepProps) {
       </div>
     );
   }
-  if (!Object.values(existingWork.progress.createdKeys).some(Boolean)) return <p className={shellStyles.hint}>Jira has no work for this problem yet.</p>;
+  if (!hasExistingWork(existingWork)) return <p className={shellStyles.hint}>Jira has no work for this problem yet.</p>;
   return (
     <div className={styles.attention}>
-      <p>Jira already has work for this problem. Next fills in only what is missing.</p>
-      <ExistingWorkList progress={existingWork.progress} jiraUrl={props.jiraUrl} />
-      <label className={styles.checkboxLine}>
-        <input type="checkbox" checked={props.isNewSetConfirmed} onChange={(changeEvent) => props.onConfirmNewSet(changeEvent.target.checked)} />
-        <span>Make a brand-new set anyway — this makes a second Defect for the same problem</span>
-      </label>
+      <p>Jira already has work for this problem. Next lets you choose what to keep and what to make.</p>
+      <ExistingWorkList existingWork={existingWork} jiraUrl={props.jiraUrl} />
     </div>
   );
 }
@@ -169,7 +173,87 @@ export function PrbConfirmStep(props: PrbConfirmStepProps) {
   );
 }
 
-// ── Step 3: place ──
+// ── Step 3: choose ──
+
+/** What the choose screen needs. */
+export interface PrbChooseStepProps {
+  roleChoices: PrbRoleChoices;
+  roleSearches: Record<PrbJiraRole, RoleIssueSearch>;
+  jiraUrl: string;
+  onChooseMode: (role: PrbJiraRole, mode: PrbRoleMode) => void;
+  onSearchTextChange: (role: PrbJiraRole, searchText: string) => void;
+  onSearch: (role: PrbJiraRole, searchText: string) => void;
+  onPickIssue: (role: PrbJiraRole, issue: PrbExistingIssue) => void;
+}
+
+/** The three ways each item can be handled, in the words the screen uses. */
+const ROLE_MODE_OPTIONS: ReadonlyArray<{ mode: PrbRoleMode; label: string }> = [
+  { mode: 'new', label: 'Make a new one' },
+  { mode: 'existing', label: 'Use one already in Jira' },
+  { mode: 'skip', label: "Don't make one" },
+];
+
+function describeExistingIssue(issue: PrbExistingIssue): string {
+  const detail = [issue.issueTypeName, issue.statusName].filter(Boolean).join(', ');
+  return detail ? `${issue.key} — ${issue.summary} (${detail})` : `${issue.key} — ${issue.summary}`;
+}
+
+function ExistingIssuePicker({ role, props }: { role: PrbJiraRole; props: PrbChooseStepProps }) {
+  const choice = props.roleChoices[role];
+  const roleSearch = props.roleSearches[role];
+  const pickedIssue = choice.mode === 'existing' ? choice.issue : null;
+  return (
+    <div>
+      {pickedIssue
+        ? <p className={shellStyles.hint}>Using <JiraKeyLink jiraUrl={props.jiraUrl} issueKey={pickedIssue.key} /> — {pickedIssue.summary}</p>
+        : <p className={shellStyles.hint}>Search for it below, then choose it from the list.</p>}
+      <SearchBox inputId={`prb-${role}-existing-search`} label={`Find the ${PRB_ROLE_NAMES[role]} in Jira (words or its key)`} searchText={roleSearch.searchText}
+        onSearchTextChange={(searchText) => props.onSearchTextChange(role, searchText)} onSearch={(searchText) => props.onSearch(role, searchText)} />
+      <ListStatus list={roleSearch.results} emptyText="No Jira issues match. Try other words or the key." failedText="Jira could not be searched. Check the connection and search again." />
+      <PickList
+        label={`Jira issues found for the ${PRB_ROLE_NAMES[role]}`}
+        items={roleSearch.results.items}
+        readKey={(issue) => issue.key}
+        readText={describeExistingIssue}
+        chosenKey={pickedIssue?.key}
+        onChoose={(issue) => props.onPickIssue(role, issue)}
+      />
+    </div>
+  );
+}
+
+function RoleChoiceCard({ role, props }: { role: PrbJiraRole; props: PrbChooseStepProps }) {
+  const currentMode = props.roleChoices[role].mode;
+  return (
+    <fieldset className={`${shellStyles.card} ${styles.choiceCard}`}>
+      <legend className={shellStyles.cardTitle}>{PRB_ROLE_NAMES[role]}</legend>
+      {ROLE_MODE_OPTIONS.map((option) => (
+        <label key={option.mode} className={styles.checkboxLine}>
+          <input type="radio" name={`prb-${role}-choice`} checked={currentMode === option.mode} onChange={() => props.onChooseMode(role, option.mode)} />
+          <span>{option.label}</span>
+        </label>
+      ))}
+      {currentMode === 'existing' ? <ExistingIssuePicker role={role} props={props} /> : null}
+    </fieldset>
+  );
+}
+
+/**
+ * Step 3: for each item, make a new one, use one already in Jira, or leave it out. An issue picked from Jira keeps its
+ * own Epic; it gets the problem's labels and is linked to the Defect.
+ */
+export function PrbChooseStep(props: PrbChooseStepProps) {
+  const isDefectLeftOut = props.roleChoices.defect.mode === 'skip';
+  return (
+    <div>
+      <p className={shellStyles.hint}>An issue you use from Jira keeps its own Epic. It gets this problem&apos;s label and is linked to the Defect.</p>
+      {isDefectLeftOut ? <p className={styles.attention}>With no Defect, the stories are not linked to one.</p> : null}
+      {PRB_JIRA_ROLES.map((role) => <RoleChoiceCard key={role} role={role} props={props} />)}
+    </div>
+  );
+}
+
+// ── Step 4: place ──
 
 /** What the place screen needs. */
 export interface PrbPlaceStepProps {
@@ -226,7 +310,7 @@ export function PrbPlaceStep(props: PrbPlaceStepProps) {
   );
 }
 
-// ── Step 4: drafts ──
+// ── Step 5: drafts ──
 
 /** What the drafts screen needs. */
 export interface PrbDraftsStepProps {
@@ -248,30 +332,33 @@ function DraftCard({ draft, onEdit }: { draft: PrbJiraDraft; onEdit: PrbDraftsSt
   );
 }
 
-/** Step 4: the three ready-to-create items, each editable; what is shown is what gets created. */
+/** Step 5: the items to be made new, each editable; what is shown is what gets created. */
 export function PrbDraftsStep({ drafts, onEdit }: PrbDraftsStepProps) {
   const firstDraft = drafts[0];
   return (
     <div>
-      {firstDraft ? <p className={shellStyles.hint}>{`All three go in ${firstDraft.projectKey} on Epic ${firstDraft.epicKey}. Both stories are linked to the Defect.`}</p> : null}
+      {firstDraft ? <p className={shellStyles.hint}>{`The new items go in ${firstDraft.projectKey} on Epic ${firstDraft.epicKey}. Stories are linked to the Defect.`}</p> : null}
       {drafts.map((draft) => <DraftCard key={draft.role} draft={draft} onEdit={onEdit} />)}
     </div>
   );
 }
 
-// ── Step 5: result ──
+// ── Step 6: result ──
 
 /** What the result screen needs. */
 export interface PrbResultStepProps {
   isCreating: boolean;
   createResult: PrbCreateResult | null;
   jiraUrl: string;
+  /** The items this run handles (made new or used from Jira), so a left-out item is not listed. */
+  keptRoles: readonly PrbJiraRole[];
   onRetry: () => void;
 }
 
 function describeFailure(failure: PrbCreateFailure): string {
   const roleName = PRB_ROLE_NAMES[failure.role];
-  if (failure.stage === 'link') return `${roleName} was made but not linked to the Defect — ${failure.message}`;
+  if (failure.stage === 'link') return `${roleName} is in Jira but not linked to the Defect — ${failure.message}`;
+  if (failure.stage === 'label') return `${roleName} is used, but the problem's label could not be added — ${failure.message}`;
   return `${roleName} was not created — ${failure.message}`;
 }
 
@@ -286,16 +373,23 @@ function ResultItem({ role, result, jiraUrl }: { role: PrbJiraRole; result: PrbC
   );
 }
 
-/** Step 5: the three keys as links, or exactly what failed with "Retry the rest". */
-export function PrbResultStep({ isCreating, createResult, jiraUrl, onRetry }: PrbResultStepProps) {
+function describeCompletion(createResult: PrbCreateResult): string {
+  const { createdKeys } = createResult.progress;
+  if (!createResult.isComplete) return 'Some of the work did not finish.';
+  const hasLinkedStory = Boolean(createdKeys.defect) && Boolean(createdKeys.sl || createdKeys.qe);
+  return hasLinkedStory ? 'Everything you chose is in Jira, and the stories are linked to the Defect.' : 'Everything you chose is in Jira.';
+}
+
+/** Step 6: each item's key as a link, or exactly what failed with "Retry the rest". */
+export function PrbResultStep({ isCreating, createResult, jiraUrl, keptRoles, onRetry }: PrbResultStepProps) {
   if (isCreating || !createResult) return <p className={shellStyles.hint} role="status">Creating the items in Jira…</p>;
   return (
     <div className={shellStyles.card}>
       <p className={shellStyles.connectionLine}>
-        {createResult.isComplete ? 'All three items are in Jira, on the Epic, and both stories are linked to the Defect.' : 'Some of the work did not finish.'}
+        {describeCompletion(createResult)}
       </p>
       <ul className={styles.resultList} aria-label="What was made">
-        {PRB_JIRA_ROLES.map((role) => <ResultItem key={role} role={role} result={createResult} jiraUrl={jiraUrl} />)}
+        {keptRoles.map((role) => <ResultItem key={role} role={role} result={createResult} jiraUrl={jiraUrl} />)}
       </ul>
       {createResult.isComplete ? null : <button type="button" className={shellStyles.primaryButton} onClick={onRetry}>Retry the rest</button>}
     </div>

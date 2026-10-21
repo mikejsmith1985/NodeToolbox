@@ -30,6 +30,29 @@ export interface PrbJiraDraft {
   isSourceDescriptionMissing: boolean;
 }
 
+/** One Jira issue that already exists and can stand in for one of the three items. */
+export interface PrbExistingIssue {
+  key: string;
+  summary: string;
+  issueTypeName: string;
+  statusName: string;
+  labels: string[];
+  /** Keys of every issue this one is already linked to. */
+  linkedKeys: string[];
+}
+
+/** What the user wants for one item: a new issue, one already in Jira (null until picked), or none at all. */
+export type PrbRoleChoice =
+  | { mode: 'new' }
+  | { mode: 'existing'; issue: PrbExistingIssue | null }
+  | { mode: 'skip' };
+
+/** The user's choice for each of the three items. */
+export type PrbRoleChoices = Record<PrbJiraRole, PrbRoleChoice>;
+
+/** The three ways an item can be handled, as the choose screen offers them. */
+export type PrbRoleMode = PrbRoleChoice['mode'];
+
 // ── Copy ──
 
 /** Put where the problem's own description would go when it has none. */
@@ -66,6 +89,32 @@ export function buildPrbRoleLabel(prbNumber: string, role: PrbJiraRole): string 
 /** Which role an existing item plays, read from its labels; null when it carries no role label. */
 export function readRoleFromLabels(labels: readonly string[], prbNumber: string): PrbJiraRole | null {
   return PRB_JIRA_ROLES.find((role) => labels.includes(buildPrbRoleLabel(prbNumber, role))) ?? null;
+}
+
+/** True when the issue already carries the label naming it as this role for this problem. */
+export function hasPrbRoleLabel(issue: PrbExistingIssue, prbNumber: string, role: PrbJiraRole): boolean {
+  return issue.labels.includes(buildPrbRoleLabel(prbNumber, role));
+}
+
+// ── Choices ──
+
+/** The starting choices: an item Jira already holds for the problem is used, everything else is made new. */
+export function buildDefaultRoleChoices(foundIssues: Partial<Record<PrbJiraRole, PrbExistingIssue>>): PrbRoleChoices {
+  const readChoice = (role: PrbJiraRole): PrbRoleChoice => {
+    const foundIssue = foundIssues[role];
+    return foundIssue ? { mode: 'existing', issue: foundIssue } : { mode: 'new' };
+  };
+  return { defect: readChoice('defect'), sl: readChoice('sl'), qe: readChoice('qe') };
+}
+
+/** The items the user wants made new, in creation order. */
+export function readNewRoles(choices: PrbRoleChoices): PrbJiraRole[] {
+  return PRB_JIRA_ROLES.filter((role) => choices[role].mode === 'new');
+}
+
+/** The items that end up in Jira one way or another (made new or already there), in creation order. */
+export function readKeptRoles(choices: PrbRoleChoices): PrbJiraRole[] {
+  return PRB_JIRA_ROLES.filter((role) => choices[role].mode !== 'skip');
 }
 
 /** A link that opens the problem record on the given ServiceNow instance. */

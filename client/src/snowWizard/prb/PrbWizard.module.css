@@ -91,3 +91,13 @@
   gap: var(--spacing-sm, 8px);
   align-items: flex-start;
 }
+
+/* A fieldset carrying the card look: drop the browser's own frame and minimum width so it wraps like a card. */
+.choiceCard {
+  min-width: 0;
+  margin: 0 0 var(--spacing-md, 16px);
+}
+
+.choiceCard > legend {
+  padding: 0 var(--spacing-xs, 4px);
+}

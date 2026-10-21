@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **SNow Wizard PRB: choose what to make for each item.** A new **Choose what to make** step lets the Defect, the SL
+  story and the QE story each be **made new**, **taken from Jira**, or **left out**. So you can add just the SL or QE story
+  to a Defect that already exists, or make only a new Defect for stories you already have.
+  - Items already labelled for the problem start out as *taken from Jira*. Any other issue can be found by its key or
+    by words in its summary.
+  - A taken issue keeps its own Epic. It gets the problem's `prb-<number>` labels, so later runs find it, and every
+    story is linked to the Defect. Links that already exist are never made twice.
+  - When nothing is made new, the Epic and drafts steps are skipped. **Create** then only adds the labels and links.
+  - Replaces the old *Make a brand-new set anyway* checkbox. To get a second item for a role, choose *Make a new one*
+    for that item.
 - **SNow Wizard: install the bookmark once, ever.** Until now the bookmark carried the whole Wizard (~670 KB), so every
   release meant deleting it and dragging a new one. It is now a **13 KB loader** that never changes:
   - **First click** on ServiceNow shows an *Install the SNow Wizard* panel: choose `snow-hub-wizard.html` and the

@@ -4,13 +4,27 @@
 import { useCallback, useState, type Dispatch, type SetStateAction } from 'react';
 
 import type { JiraProject } from '../../types/jira.ts';
-import { createPrbJiraWork, EMPTY_PRB_PROGRESS, findExistingPrbWork, type PrbCreateProgress, type PrbCreateResult } from './prbJiraCreate.ts';
-import { buildPrbJiraDrafts, buildPrbRecordLink, type PrbJiraDraft, type PrbJiraRole } from './prbJiraPlan.ts';
+import { createPrbJiraWork, EMPTY_PRB_PROGRESS, findExistingPrbIssues, hasPrbWorkToDo, type PrbCreateResult } from './prbJiraCreate.ts';
+import {
+  buildDefaultRoleChoices,
+  buildPrbJiraDrafts,
+  buildPrbRecordLink,
+  PRB_JIRA_ROLES,
+  PRB_ROLE_NAMES,
+  readNewRoles,
+  type PrbExistingIssue,
+  type PrbJiraDraft,
+  type PrbJiraRole,
+  type PrbRoleChoice,
+  type PrbRoleChoices,
+  type PrbRoleMode,
+} from './prbJiraPlan.ts';
 import {
   loadJiraProjects,
   readRememberedPrbProject,
   readSnowInstanceOrigin,
   rememberPrbProject,
+  searchExistingIssues,
   searchOpenEpics,
   searchProblems,
   type EpicSearchResult,
@@ -20,10 +34,13 @@ import {
 // ── Types ──
 
 /** The job's screens, in order. */
-export type PrbStepId = 'find' | 'confirm' | 'place' | 'drafts' | 'result';
+export type PrbStepId = 'find' | 'confirm' | 'choose' | 'place' | 'drafts' | 'result';
 
-/** The screens in the order they are walked. */
-export const PRB_STEP_IDS: readonly PrbStepId[] = ['find', 'confirm', 'place', 'drafts', 'result'];
+/** Every screen in the order it is walked; Place and Drafts are passed by when nothing is made new. */
+export const PRB_STEP_IDS: readonly PrbStepId[] = ['find', 'confirm', 'choose', 'place', 'drafts', 'result'];
+
+/** The screens only a new item needs: where it goes, and its wording. */
+const NEW_ITEM_STEP_IDS: readonly PrbStepId[] = ['place', 'drafts'];
 
 /** A list read from ServiceNow or Jira, and where that read stands. */
 export interface LoadedList<Item> {
@@ -31,10 +48,16 @@ export interface LoadedList<Item> {
   items: Item[];
 }
 
-/** Whether Jira has been checked for work already made for the chosen problem. */
+/** Whether Jira has been checked for work already made for the chosen problem, and what was found per item. */
 export interface ExistingWorkCheck {
   status: 'idle' | 'checking' | 'done' | 'failed';
-  progress: PrbCreateProgress;
+  foundIssues: Partial<Record<PrbJiraRole, PrbExistingIssue>>;
+}
+
+/** One item's search for an issue already in Jira to use. */
+export interface RoleIssueSearch {
+  searchText: string;
+  results: LoadedList<PrbExistingIssue>;
 }
 
 /** Everything the job holds. */
@@ -44,7 +67,8 @@ export interface PrbWizardState {
   problemSearch: LoadedList<PrbSearchResult>;
   chosenProblem: PrbSearchResult | null;
   existingWork: ExistingWorkCheck;
-  isNewSetConfirmed: boolean;
+  roleChoices: PrbRoleChoices;
+  roleSearches: Record<PrbJiraRole, RoleIssueSearch>;
   projectList: LoadedList<JiraProject>;
   projectKey: string;
   epicSearchText: string;
@@ -60,6 +84,12 @@ export interface PrbWizardState {
 export type PrbDraftEdit = Partial<Pick<PrbJiraDraft, 'summary' | 'description'>>;
 
 const IDLE_LIST = { status: 'idle', items: [] } as const;
+const NO_FOUND_ISSUES = {};
+
+function createIdleRoleSearches(): Record<PrbJiraRole, RoleIssueSearch> {
+  const idleSearch = (): RoleIssueSearch => ({ searchText: '', results: { ...IDLE_LIST, items: [] } });
+  return { defect: idleSearch(), sl: idleSearch(), qe: idleSearch() };
+}
 
 function createInitialState(): PrbWizardState {
   return {
@@ -67,8 +97,9 @@ function createInitialState(): PrbWizardState {
     problemSearchText: '',
     problemSearch: { ...IDLE_LIST, items: [] },
     chosenProblem: null,
-    existingWork: { status: 'idle', progress: EMPTY_PRB_PROGRESS },
-    isNewSetConfirmed: false,
+    existingWork: { status: 'idle', foundIssues: NO_FOUND_ISSUES },
+    roleChoices: buildDefaultRoleChoices(NO_FOUND_ISSUES),
+    roleSearches: createIdleRoleSearches(),
     projectList: { ...IDLE_LIST, items: [] },
     projectKey: readRememberedPrbProject(),
     epicSearchText: '',
@@ -85,7 +116,20 @@ function createInitialState(): PrbWizardState {
 
 /** True when Jira already holds at least one item for the chosen problem. */
 export function hasExistingWork(existingWork: ExistingWorkCheck): boolean {
-  return Object.values(existingWork.progress.createdKeys).some(Boolean);
+  return Object.values(existingWork.foundIssues).some(Boolean);
+}
+
+/** The screens this run walks: Place and Drafts only when at least one item is made new. */
+export function readActiveStepIds(state: PrbWizardState): PrbStepId[] {
+  const isAnyItemNew = readNewRoles(state.roleChoices).length > 0;
+  return PRB_STEP_IDS.filter((stepId) => isAnyItemNew || !NEW_ITEM_STEP_IDS.includes(stepId));
+}
+
+/** The screen after (offset 1) or before (offset -1) the current one, among the screens this run walks. */
+export function readNeighbourStep(state: PrbWizardState, offset: number): PrbStepId {
+  const activeStepIds = readActiveStepIds(state);
+  const nextIndex = activeStepIds.indexOf(state.stepId) + offset;
+  return activeStepIds[Math.min(Math.max(nextIndex, 0), activeStepIds.length - 1)];
 }
 
 function buildDraftsSourceKey(state: PrbWizardState): string {
@@ -99,11 +143,6 @@ function withDraftsFor(state: PrbWizardState): PrbWizardState {
   const problem = state.chosenProblem;
   const source = { ...problem, link: buildPrbRecordLink(readSnowInstanceOrigin(), problem.number) };
   return { ...state, drafts: buildPrbJiraDrafts(source, state.chosenEpic.key, state.projectKey), draftsSourceKey: sourceKey };
-}
-
-function readNeighbourStep(stepId: PrbStepId, offset: number): PrbStepId {
-  const nextIndex = PRB_STEP_IDS.indexOf(stepId) + offset;
-  return PRB_STEP_IDS[Math.min(Math.max(nextIndex, 0), PRB_STEP_IDS.length - 1)];
 }
 
 // ── Reads ──
@@ -120,12 +159,13 @@ function useProblemActions(setState: Dispatch<SetStateAction<PrbWizardState>>) {
   }, [setState]);
 
   const checkExistingWork = useCallback(async (prbNumber: string) => {
-    setState((previous) => ({ ...previous, existingWork: { status: 'checking', progress: EMPTY_PRB_PROGRESS } }));
+    setState((previous) => ({ ...previous, existingWork: { status: 'checking', foundIssues: NO_FOUND_ISSUES } }));
     try {
-      const progress = await findExistingPrbWork(prbNumber);
-      setState((previous) => ({ ...previous, existingWork: { status: 'done', progress } }));
+      const foundIssues = await findExistingPrbIssues(prbNumber);
+      // What Jira already holds starts out used; everything else starts out made new.
+      setState((previous) => ({ ...previous, existingWork: { status: 'done', foundIssues }, roleChoices: buildDefaultRoleChoices(foundIssues) }));
     } catch {
-      setState((previous) => ({ ...previous, existingWork: { status: 'failed', progress: EMPTY_PRB_PROGRESS } }));
+      setState((previous) => ({ ...previous, existingWork: { status: 'failed', foundIssues: NO_FOUND_ISSUES } }));
     }
   }, [setState]);
 
@@ -161,22 +201,61 @@ function useJiraPlaceActions(setState: Dispatch<SetStateAction<PrbWizardState>>)
   return { loadProjects, runEpicSearch };
 }
 
+// ── Choices ──
+
+function withRoleSearch(state: PrbWizardState, role: PrbJiraRole, patch: Partial<RoleIssueSearch>): PrbWizardState {
+  return { ...state, roleSearches: { ...state.roleSearches, [role]: { ...state.roleSearches[role], ...patch } } };
+}
+
+function useChoiceActions(setState: Dispatch<SetStateAction<PrbWizardState>>) {
+  const chooseRoleMode = useCallback((role: PrbJiraRole, mode: PrbRoleMode) => {
+    setState((previous) => {
+      const currentChoice = previous.roleChoices[role];
+      if (currentChoice.mode === mode) return previous;
+      // Switching to "use one already in Jira" starts on the item found for this problem, when there is one.
+      const nextChoice: PrbRoleChoice = mode === 'existing'
+        ? { mode: 'existing', issue: previous.existingWork.foundIssues[role] ?? null }
+        : { mode: mode === 'new' ? 'new' : 'skip' };
+      return { ...previous, roleChoices: { ...previous.roleChoices, [role]: nextChoice } };
+    });
+  }, [setState]);
+
+  const pickExistingIssue = useCallback((role: PrbJiraRole, issue: PrbExistingIssue) => {
+    setState((previous) => ({ ...previous, roleChoices: { ...previous.roleChoices, [role]: { mode: 'existing', issue } } }));
+  }, [setState]);
+
+  const changeRoleSearchText = useCallback((role: PrbJiraRole, searchText: string) => {
+    setState((previous) => withRoleSearch(previous, role, { searchText }));
+  }, [setState]);
+
+  const runRoleSearch = useCallback(async (role: PrbJiraRole, searchText: string) => {
+    setState((previous) => withRoleSearch(previous, role, { results: { status: 'loading', items: [] } }));
+    try {
+      const items = await searchExistingIssues(searchText);
+      setState((previous) => withRoleSearch(previous, role, { results: { status: 'ready', items } }));
+    } catch {
+      setState((previous) => withRoleSearch(previous, role, { results: { status: 'failed', items: [] } }));
+    }
+  }, [setState]);
+
+  return { chooseRoleMode, pickExistingIssue, changeRoleSearchText, runRoleSearch };
+}
+
 // ── Create ──
 
 function useCreateAction(setState: Dispatch<SetStateAction<PrbWizardState>>) {
   return useCallback(async (state: PrbWizardState) => {
-    if (!state.chosenProblem || !state.chosenEpic) return;
-    // After a first press, what it made is the starting point and Jira is not re-read: a retry makes only the rest.
+    if (!state.chosenProblem) return;
+    // After a first press, what it did is the starting point: a retry does only the rest.
     const startingProgress = state.createResult?.progress ?? EMPTY_PRB_PROGRESS;
-    const shouldReuseExisting = state.createResult === null && !state.isNewSetConfirmed;
     setState((previous) => ({ ...previous, stepId: 'result', isCreating: true }));
     const createResult = await createPrbJiraWork({
       prbNumber: state.chosenProblem.number,
       projectKey: state.projectKey,
-      epicKey: state.chosenEpic.key,
+      epicKey: state.chosenEpic?.key ?? '',
       drafts: state.drafts,
+      roleChoices: state.roleChoices,
       startingProgress,
-      shouldReuseExisting,
     });
     setState((previous) => ({ ...previous, isCreating: false, createResult }));
   }, [setState]);
@@ -189,10 +268,11 @@ export function usePrbWizardState() {
   const [state, setState] = useState<PrbWizardState>(createInitialState);
   const { runProblemSearch, checkExistingWork } = useProblemActions(setState);
   const { loadProjects, runEpicSearch } = useJiraPlaceActions(setState);
+  const choiceActions = useChoiceActions(setState);
   const createAll = useCreateAction(setState);
 
   const chooseProblem = useCallback((problem: PrbSearchResult) => {
-    setState((previous) => ({ ...previous, chosenProblem: problem, isNewSetConfirmed: false, createResult: null }));
+    setState((previous) => ({ ...previous, chosenProblem: problem, roleSearches: createIdleRoleSearches(), createResult: null }));
   }, []);
 
   const chooseProject = useCallback((projectKey: string) => {
@@ -210,15 +290,15 @@ export function usePrbWizardState() {
   const goNext = useCallback(() => {
     if (state.stepId === 'find' && state.chosenProblem) void checkExistingWork(state.chosenProblem.number);
     if (state.stepId === 'confirm' && state.projectList.status !== 'ready') void loadProjects();
-    if (state.stepId === 'drafts') {
+    if (readNeighbourStep(state, 1) === 'result') {
       void createAll(state);
       return;
     }
-    setState((previous) => withDraftsFor({ ...previous, stepId: readNeighbourStep(previous.stepId, 1) }));
+    setState((previous) => withDraftsFor({ ...previous, stepId: readNeighbourStep(previous, 1) }));
   }, [checkExistingWork, createAll, loadProjects, state]);
 
   const goBack = useCallback(() => {
-    setState((previous) => ({ ...previous, stepId: readNeighbourStep(previous.stepId, -1) }));
+    setState((previous) => ({ ...previous, stepId: readNeighbourStep(previous, -1) }));
   }, []);
 
   const patchState = useCallback((patch: Partial<PrbWizardState>) => {
@@ -231,7 +311,7 @@ export function usePrbWizardState() {
     state,
     actions: {
       patchState, runProblemSearch, chooseProblem, checkExistingWork, loadProjects, chooseProject,
-      runEpicSearch, updateDraft, goNext, goBack, retryRest,
+      runEpicSearch, updateDraft, goNext, goBack, retryRest, ...choiceActions,
     },
   };
 }
@@ -245,13 +325,36 @@ export interface PrbStepGate {
 }
 
 function readDraftsGate(state: PrbWizardState): PrbStepGate {
-  const isEverySummaryFilled = state.drafts.length > 0 && state.drafts.every((draft) => draft.summary.trim() !== '');
+  const newRoles = readNewRoles(state.roleChoices);
+  const newDrafts = state.drafts.filter((draft) => newRoles.includes(draft.role));
+  const isEverySummaryFilled = newDrafts.length > 0 && newDrafts.every((draft) => draft.summary.trim() !== '');
   return isEverySummaryFilled ? { canGoNext: true } : { canGoNext: false, blockedReason: 'Give every item a summary' };
 }
 
 function readConfirmGate(state: PrbWizardState): PrbStepGate {
   if (state.existingWork.status === 'checking') return { canGoNext: false, blockedReason: 'Checking Jira for work already made…' };
   if (state.existingWork.status !== 'done') return { canGoNext: false, blockedReason: 'Jira must be checked for work already made — press Try again' };
+  return { canGoNext: true };
+}
+
+function readPickedKeys(state: PrbWizardState): string[] {
+  return PRB_JIRA_ROLES.flatMap((role) => {
+    const choice = state.roleChoices[role];
+    return choice.mode === 'existing' && choice.issue ? [choice.issue.key] : [];
+  });
+}
+
+function readChooseGate(state: PrbWizardState): PrbStepGate {
+  const unpickedRole = PRB_JIRA_ROLES.find((role) => {
+    const choice = state.roleChoices[role];
+    return choice.mode === 'existing' && choice.issue === null;
+  });
+  if (unpickedRole) return { canGoNext: false, blockedReason: `Pick the ${PRB_ROLE_NAMES[unpickedRole]} from the search results` };
+  const pickedKeys = readPickedKeys(state);
+  if (new Set(pickedKeys).size !== pickedKeys.length) return { canGoNext: false, blockedReason: 'One Jira issue cannot be two of the items — pick a different one' };
+  if (!hasPrbWorkToDo(state.chosenProblem?.number ?? '', state.roleChoices)) {
+    return { canGoNext: false, blockedReason: 'Everything chosen is already in Jira and linked — choose "Make a new one" for an item, or go back to home' };
+  }
   return { canGoNext: true };
 }
 
@@ -262,6 +365,8 @@ export function readPrbStepGate(state: PrbWizardState): PrbStepGate {
       return state.chosenProblem ? { canGoNext: true } : { canGoNext: false, blockedReason: 'Choose a problem from the list' };
     case 'confirm':
       return readConfirmGate(state);
+    case 'choose':
+      return readChooseGate(state);
     case 'place':
       if (state.projectKey === '') return { canGoNext: false, blockedReason: 'Choose the Jira project' };
       return state.chosenEpic ? { canGoNext: true } : { canGoNext: false, blockedReason: 'Choose the Epic from the search results' };
