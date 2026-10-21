@@ -127,7 +127,7 @@ export function useFinishRunner(input: FinishRunnerInput): FinishRunner {
     const attemptedTaskNames = listTaskLabelsByEnvironment(crg.state.changeTasks, attempted);
     updateSession({ taskNamesByEnvironment: { ...session.taskNamesByEnvironment, ...attemptedTaskNames } });
     beginWrite({ kind: 'create', attempted }, 'Creating your changes in ServiceNow…',
-      () => crg.actions.createChg(input.environmentValueByKey, { ctaskEnvironmentPlan: input.ctaskEnvironmentPlan, reconcileAutoCtasks: true }));
+      () => crg.actions.createChg(input.environmentValueByKey, { ctaskEnvironmentPlan: input.ctaskEnvironmentPlan, reconcileAutoCtasks: true, shouldKeepDraft: true }));
   }
 
   /** Switches every environment that has a change back on (a retry switches them off to create only what is missing). */

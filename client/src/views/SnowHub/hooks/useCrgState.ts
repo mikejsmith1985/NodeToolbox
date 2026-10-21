@@ -553,6 +553,12 @@ export interface CreateChgOptions {
    * draft's `reconcileAutoCtasks` decides, exactly as before.
    */
   reconcileAutoCtasks?: boolean;
+  /**
+   * Keeps the draft after a successful create instead of clearing it for the next change. The SNow Wizard creates its
+   * changes part-way through a job and goes on writing them (spec 040, create-first), so clearing would wipe the job.
+   * Absent ⇒ the draft is cleared, exactly as before.
+   */
+  shouldKeepDraft?: boolean;
 }
 
 /** Options accepted by the CRG state hook. */
@@ -1993,6 +1999,8 @@ export function useCrgState(options?: UseCrgStateOptions): { state: CrgState; ac
   // Tracks when reset() was just called so the persistence effect doesn't immediately
   // re-write the cleared localStorage entry with default values.
   const justResetRef = useRef(false);
+  // True after a create that asked to keep its draft (SNow Wizard), so the draft goes on being saved for a reload.
+  const isDraftKeptAfterCreateRef = useRef(false);
 
   // ── Persistence — sync non-ephemeral wizard progress to localStorage ──
   // This ensures users can reconnect the SNow relay (which navigates away and back)
@@ -2004,7 +2012,7 @@ export function useCrgState(options?: UseCrgStateOptions): { state: CrgState; ac
       return;
     }
 
-    if (state.submitResult?.endsWith(' created')) {
+    if (state.submitResult?.endsWith(' created') && !isDraftKeptAfterCreateRef.current) {
       try { localStorage.removeItem(draftStorageKey); } catch { /* non-fatal */ }
       return;
     }
@@ -2806,10 +2814,15 @@ export function useCrgState(options?: UseCrgStateOptions): { state: CrgState; ac
 
       const problemNote = await linkProblemsToCreatedChanges(createdChangeRecords, [...state.selectedIssueKeys]);
       const creationSummary = `${formatCreatedChangeSummary(createdChangeRecords, state.changeTasks.length)}${problemNote}`;
+      useCrgSubmissionDebugStore.getState().updateLastSubmissionDebug(latestSubmissionDebug);
+      isDraftKeptAfterCreateRef.current = Boolean(options?.shouldKeepDraft);
+      if (options?.shouldKeepDraft) {
+        setState((previousState) => ({ ...previousState, isSubmitting: false, submitResult: creationSummary, submissionDebug: latestSubmissionDebug }));
+        return;
+      }
       // Clear persisted progress after a successful submission — the next change starts fresh.
       justResetRef.current = true;
       try { localStorage.removeItem(draftStorageKey); } catch { /* non-fatal */ }
-      useCrgSubmissionDebugStore.getState().updateLastSubmissionDebug(latestSubmissionDebug);
       setState(() => ({
         ...createDefaultCrgState(),
         isSubmitting: false,

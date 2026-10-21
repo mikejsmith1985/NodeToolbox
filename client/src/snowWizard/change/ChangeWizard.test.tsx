@@ -123,6 +123,18 @@ describe('ChangeWizard — new change', () => {
     expect(readNextButton().textContent).toBe('Create them in ServiceNow');
   });
 
+  it('offers to restore the picks of a job wiped when its changes were created (v0.312.0)', () => {
+    useWizardJobStore.setState({ jobs: { newChange: { jobId: JOB_ID, kind: 'newChange', stepId: 'aiDraft', status: 'inProgress', updatedAt: Date.now(), payloadKey: 'draft' } } });
+    useChangeWizardSessionStore.setState({ sessions: { [JOB_ID]: {
+      ...createChangeWizardSession('create'), currentStepId: 'aiDraft', enabledEnvironments: ['REL', 'PRD'],
+      createdChanges: [{ environmentLabel: 'REL', changeNumber: 'CHG0052017' }, { environmentLabel: 'PRD', changeNumber: 'CHG0052018' }],
+    } } });
+    render(<ChangeWizard onExit={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(screen.getByRole('alert').textContent).toContain('CHG0052017 and CHG0052018 were created');
+    expect(screen.getByRole('button', { name: 'Restore my picks from CHG0052017' })).toBeTruthy();
+  });
+
   it('gives the AI the real change and task numbers once the changes exist', () => {
     openJobAt('aiDraft');
     const promptText = (screen.getByLabelText(/Copy this and paste it/) as HTMLTextAreaElement).value;

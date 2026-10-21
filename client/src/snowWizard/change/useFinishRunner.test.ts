@@ -81,7 +81,7 @@ describe('useFinishRunner — create first, then save', () => {
   it('creates with the task plan, records each change and reads back its task numbers — no evidence, not finished yet', async () => {
     const { hookResult, actions, onFinished } = renderRunner(buildDraft(), createChangeWizardSession('create'));
     act(() => hookResult.result.current.runner.startCreate());
-    expect(actions.createChg).toHaveBeenCalledWith({ rel: 'rel-env', prd: 'prd-env' }, { ctaskEnvironmentPlan: PLAN, reconcileAutoCtasks: true });
+    expect(actions.createChg).toHaveBeenCalledWith({ rel: 'rel-env', prd: 'prd-env' }, { ctaskEnvironmentPlan: PLAN, reconcileAutoCtasks: true, shouldKeepDraft: true });
 
     finishWrite(hookResult.result.current.setDraft, '2 CHGs created: REL CHG1, PRD CHG2');
 

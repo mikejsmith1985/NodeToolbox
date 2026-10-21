@@ -27,6 +27,7 @@ import {
 } from './changeWizardSteps.ts';
 import { aiDraftPromptFor } from './aiDraft.ts';
 import { describeCreatedChangesForPrompt } from './createdChanges.ts';
+import { useCreatedDraftRecovery, type DraftRecovery } from './createdDraftRecovery.ts';
 import { buildCtaskEnvironmentPlan, listTaskLabelsByEnvironment, type CtaskEnvironmentPlan, type PlanEnvironmentKey } from './ctaskEnvironmentPlan.ts';
 import type { JiraEvidenceAttachment } from './jiraEvidence.ts';
 import { useDefaultJiraEvidenceTicks, useJiraEvidenceChoiceStore, useTickedJiraEvidence } from './jiraEvidenceChoiceStore.ts';
@@ -308,11 +309,32 @@ function ChangeJobShell(props: ChangeJobShellProps) {
   return <ChangeJobFrame {...props} onManageTemplates={() => setIsManagingTemplates(true)} />;
 }
 
+/** The way back for a job whose picks were wiped when its changes were created (v0.312.0), with what is happening. */
+function RecoveryNotice({ recovery, session }: { recovery: DraftRecovery; session: ChangeWizardSession }) {
+  const changeNumbers = session.createdChanges.map((createdChange) => createdChange.changeNumber).join(' and ');
+  if (recovery.phase === 'done') {
+    return <p className={shellStyles.hint} role="status">{`✓ Your picks are back from ${changeNumbers}. Choose the Jira issues again here so the AI knows the release scope, then press Next through to "Let AI write it" — no new changes are made.`}</p>;
+  }
+  if (!recovery.isNeeded) return null;
+  const isWorking = recovery.phase === 'restoring' || recovery.phase === 'waitingForNumber';
+  return (
+    <div className={shellStyles.card} role="alert">
+      <p>{`Your picks were cleared when ${changeNumbers} were created (a bug in v0.312.0, now fixed). The changes themselves are safe in ServiceNow and hold everything you picked.`}</p>
+      {recovery.phase === 'failed' ? <p>{`The restore did not finish: ${recovery.failureText}`}</p> : null}
+      <button type="button" className={shellStyles.primaryButton} disabled={isWorking} onClick={recovery.restore}>
+        {isWorking ? 'Restoring…' : `Restore my picks from ${session.createdChanges[0]?.changeNumber ?? 'the change'}`}
+      </button>
+    </div>
+  );
+}
+
 /** The guided frame itself, around the current step. */
 function ChangeJobFrame({ crg, session, updateSession, progress, currentStepId, goToStep, startingPoint, extras, onManageTemplates }: ChangeJobShellProps & { onManageTemplates: () => void }) {
   const stepIds = listChangeWizardStepIds(session.mode);
   const currentIndex = stepIds.indexOf(currentStepId);
   const isFinishStep = currentStepId === 'finish';
+  // Restored picks still lack the Jira issues (a change does not record them), so the job goes back to choose them.
+  const recovery = useCreatedDraftRecovery(crg, session, useCallback(() => goToStep('scope', { returnToStepId: null }), [goToStep]));
   const completion = evaluateStepCompletion(currentStepId, progress);
   const finishGate = isFinishStep ? readFinishGate(session, extras.runner, progress)
     : currentStepId === 'createChanges' ? readCreateNowGate(extras.runner, progress) : null;
@@ -357,6 +379,7 @@ function ChangeJobFrame({ crg, session, updateSession, progress, currentStepId, 
       advancedAction={<JobFrameActions crg={crg} library={extras.library} isTemplateReady={currentIndex >= stepIds.indexOf('details')} onManageTemplates={onManageTemplates} onExit={extras.onExit} />}
     >
       <StartingPointNotice startingPoint={startingPoint} />
+      <RecoveryNotice recovery={recovery} session={session} />
       {session.mode === 'create' && session.createdChanges.length > 0 && (currentStepId === 'environments' || currentStepId === 'tasks')
         ? <p className={shellStyles.hint}>These changes are already in ServiceNow. Edits here are saved to them on the last step, but a newly ticked environment or a new task is not added.</p>
         : null}

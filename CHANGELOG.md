@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **SNow Wizard: creating the changes no longer wipes the job (v0.312.0 regression).** Toolbox's `createChg` clears
+  the whole draft after a successful create ("the next change starts fresh"), and its save-to-browser step deleted
+  the stored draft while the result read "… created". The Wizard creates part-way through a job, so both wiped the
+  scope, dropdowns and environments: steps 1, 2 and 4 went back to "To do", and the AI prompt had nothing to write
+  from. `createChg` gains an opt-in `shouldKeepDraft` that the Wizard passes; Toolbox's own create behaves as before.
+  - **Recovery for wiped jobs.** A job whose changes exist but whose picks are gone shows **Restore my picks from
+    CHG…**. It copies the values back from the created change with Toolbox's own clone path, and gives each
+    environment its own change's window and configuration item. No new changes are made. Choose the Jira issues
+    again on step 1, because a change does not record them.
+
 ### Added
 - **SNow Wizard creates the changes first, then writes them (create-first).** Once every pick is made (scope, details,
   planning answers, environments, tasks), the new step **Create in ServiceNow** makes one change per environment

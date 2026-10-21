@@ -1519,6 +1519,26 @@ describe('useCrgState', () => {
       expect(freshHook.current.state.projectKey).toBe('');
     });
 
+    it('keeps the draft after a successful create when asked (SNow Wizard create-first), reporting the result', async () => {
+      const STORAGE_KEY = 'ntbx-crg-state';
+      vi.mocked(snowFetch)
+        .mockResolvedValueOnce({ result: { number: 'CHG0001234', sys_id: 'chg-sys-001' } } as never)
+        .mockResolvedValueOnce({ result: [] } as never);
+
+      const { result } = await advanceToChangeDetailsStep();
+      act(() => result.current.actions.setChgBasicInfo({ category: 'software' }));
+
+      await act(async () => {
+        await waitFor(() => expect(localStorage.getItem(STORAGE_KEY)).not.toBeNull());
+        await result.current.actions.createChg({}, { shouldKeepDraft: true });
+      });
+
+      expect(result.current.state.chgBasicInfo.category).toBe('software');
+      expect(result.current.state.submitResult).toContain('CHG0001234');
+      expect(result.current.state.isSubmitting).toBe(false);
+      expect(localStorage.getItem(STORAGE_KEY)).not.toBeNull();
+    });
+
     it('includes basic info and planning fields in the POST body when they are set', async () => {
       vi.mocked(snowFetch).mockResolvedValue({ result: { number: 'CHG0005678' } } as never);
 
