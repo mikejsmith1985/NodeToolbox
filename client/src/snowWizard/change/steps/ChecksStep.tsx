@@ -15,6 +15,7 @@ import { useState } from 'react';
 import { isWritingCheck, resolveFixStepId } from '../draftReadinessFacts.ts';
 import { fetchChangeForModify } from '../modifyLoad.ts';
 import { runReadinessFix, type ReadinessFixTarget } from '../readinessFixes.ts';
+import WritingEditor from '../WritingEditor.tsx';
 import RiskCheckSection from './RiskCheckSection.tsx';
 
 /** The checks also need the checklist, built once for the whole job. */
@@ -110,6 +111,7 @@ export default function ChecksStep({ items, ...stepProps }: ChecksStepProps) {
   return (
     <div>
       <RiskCheckSection crg={stepProps.crg} session={session} />
+      <WritingEditor crg={stepProps.crg} title="Edit the writing yourself (saved on the last step)" isOpenAtStart={false} />
       <h3 className={styles.cardTitle}>Final checks</h3>
       <p className={styles.stepIntro}>These are the checks Release Management makes before approving a change.</p>
       <div className={styles.checksScore}>

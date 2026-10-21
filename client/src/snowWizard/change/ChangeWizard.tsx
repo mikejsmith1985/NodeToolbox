@@ -33,6 +33,7 @@ import { listEditedSteps, readStepValues } from './modifyDiff.ts';
 import StartingPointNotice from './StartingPointNotice.tsx';
 import StartOverControl from './StartOverControl.tsx';
 import AiDraftStep from './steps/AiDraftStep.tsx';
+import WritingEditor from './WritingEditor.tsx';
 import ChecksStep from './steps/ChecksStep.tsx';
 import ChooseModeStep from './steps/ChooseModeStep.tsx';
 import CreateNowStep from './steps/CreateNowStep.tsx';
@@ -92,7 +93,8 @@ function renderStep(stepId: ChangeWizardStepId, stepProps: ChangeStepProps, extr
   const stepScreens: Record<ChangeWizardStepId, () => ReactElement> = {
     whichChange: () => <WhichChangeStep {...stepProps} onExit={extras.onExit} />,
     scope: () => <ScopeStep {...stepProps} />,
-    aiDraft: () => <AiDraftStep {...withChoices} />,
+    // The AI's text can always be edited by hand right here, before it goes into ServiceNow.
+    aiDraft: () => <><AiDraftStep {...withChoices} /><WritingEditor crg={stepProps.crg} /></>,
     details: () => <DetailsStep {...withChoices} />,
     planning: () => <PlanningStep {...withChoices} />,
     environments: () => <EnvironmentsStep {...withChoices} />,

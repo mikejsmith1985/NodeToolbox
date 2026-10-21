@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **SNow Wizard: the writing can always be edited by hand.** After AI Assist, the text was only shown as "AI suggests",
+  with nowhere to change it before the change was created. A new `WritingEditor` puts all seven pieces of writing in
+  editable boxes:
+  - on **AI Assist** (open);
+  - on **Create in ServiceNow** ("Last look at the writing before it goes in");
+  - on **Risk check & final checks** ("Edit the writing yourself", saved on the last step).
+
+  Every edit writes straight into the change.
+
 ### Changed
 - **SNow Wizard: two choices, and templates hold only the picks.**
   - **The first screen asks one thing:** *Create a new change* or *Modify a change in ServiceNow* (plus Manage

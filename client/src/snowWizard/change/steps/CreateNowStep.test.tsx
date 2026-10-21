@@ -10,7 +10,10 @@ import type { FinishRunner } from '../useFinishRunner.ts';
 import CreateNowStep from './CreateNowStep.tsx';
 
 const CRG = {
-  state: { relEnvironment: { isEnabled: true }, prdEnvironment: { isEnabled: true }, pfixEnvironment: { isEnabled: false }, changeTasks: [] } as unknown as CrgDraftState,
+  state: {
+    relEnvironment: { isEnabled: true }, prdEnvironment: { isEnabled: true }, pfixEnvironment: { isEnabled: false }, changeTasks: [],
+    generatedShortDescription: 'Payments', generatedDescription: '', generatedJustification: '', generatedRiskImpact: '', chgPlanningContent: { implementationPlan: '', testPlan: '', backoutPlan: '' },
+  } as unknown as CrgDraftState,
 } as CrgHook;
 
 function buildRunner(overrides: Partial<FinishRunner> = {}): FinishRunner {
@@ -32,6 +35,9 @@ describe('CreateNowStep', () => {
     expect(screen.getByText(/This makes 2 changes and 3 tasks in ServiceNow, each with the test-evidence zip/)).toBeTruthy();
     expect(screen.getByText(/with all 1 file\(s\) from your Jira issues — attached as each change is created/)).toBeTruthy();
     expect(screen.getByText('ENCUC-1: results.xlsx')).toBeTruthy();
+    // A last look at the writing, editable by hand, before anything is made.
+    expect(screen.getByText('Last look at the writing before it goes in — edit anything')).toBeTruthy();
+    expect((screen.getByLabelText('Short Description') as HTMLInputElement).value).toBe('Payments');
   });
 
   it('shows each change made, with its task numbers, and says what comes next', () => {

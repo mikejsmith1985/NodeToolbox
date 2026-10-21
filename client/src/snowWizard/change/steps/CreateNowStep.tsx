@@ -12,6 +12,7 @@ import { buildEvidenceArchiveName } from '../../../views/SnowHub/testEvidence/ev
 import { EVIDENCE_ATTACHED } from '../evidenceUpload.ts';
 import type { JiraEvidenceAttachment } from '../jiraEvidence.ts';
 import type { FinishRunner } from '../useFinishRunner.ts';
+import WritingEditor from '../WritingEditor.tsx';
 import type { TaskNamesByEnvironment } from './CreateResultStep.tsx';
 
 /** The step also needs the runner and the tasks each environment's change will carry. */
@@ -104,6 +105,7 @@ export default function CreateNowStep({ crg, session, runner, taskNamesByEnviron
         <>
           <p className={styles.noticeText}>{`This makes ${describePlanCount(readEnabledPlanEnvironments(crg.state).length, taskNamesByEnvironment)} in ServiceNow, each with the test-evidence zip. Nothing is made until you press the button below.`}</p>
           <EvidenceZipSummary jiraEvidence={jiraEvidence} />
+          <WritingEditor crg={crg} title="Last look at the writing before it goes in — edit anything" isOpenAtStart={false} />
           <CreatePlan crg={crg} taskNamesByEnvironment={taskNamesByEnvironment} />
         </>
       )}
