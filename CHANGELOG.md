@@ -21,6 +21,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     so its prompt states your real dropdown values instead of "(not set)". The duplicate AI panels inside steps 3 and 4
     are gone. The plans can stay blank on "How will it go?"; the AI step holds Next until they are written. The AI is
     told to ask in its chat instead of leaving `[CONFIRM: …]` placeholders.
+  - **REL and PRD written together.** The Wizard raises one change per environment from one set of texts. The AI
+    prompts now name each change's own configuration item and tell the AI the texts serve all of them, stating
+    differences per environment ("REL: … / PRD: …"). The AI no longer asks "is this the REL or the Production change?".
+    Toolbox's AI Assist gets the same fix next, once the Wizard is confirmed working.
   - **Manage templates from anywhere.** A **Manage templates** button sits on every step of a change job. It can use a
     template on the change in hand, **replace a template with this change**, and share, download, delete or import
     templates; **Back** returns you to the same step.
