@@ -12,7 +12,7 @@ import { extractChoiceValue, extractSnowReference } from '../../views/SnowHub/ho
 import type { SnowReference } from '../../views/SnowHub/hooks/useCrgState.ts';
 import { readUtcInstant } from '../../views/SnowHub/rcp/rcpChangeFacts.ts';
 import { formatUtcAsLocalDateTime } from '../../views/SnowHub/rcp/rcpNewChange.ts';
-import { DRAFT_ENVIRONMENTS, type CrgDraftState, type CrgHook } from './changeDraft.ts';
+import { DRAFT_ENVIRONMENTS, readDetailsGaps, readEnabledPlanEnvironments, type CrgDraftState, type CrgHook } from './changeDraft.ts';
 import type { ChangeWizardSession } from './changeWizardSession.ts';
 
 /** One created change's own environment values, as the environment card holds them. */
@@ -29,13 +29,15 @@ export type RecoveryPhase = 'idle' | 'waitingForNumber' | 'restoring' | 'done' |
 const ENVIRONMENT_FIELDS = 'cmdb_ci,start_date,end_date,u_environment';
 
 /**
- * True for a new-change job whose changes exist but whose draft holds none of the picks they were made from — the
- * mark of the v0.312.0 wipe. A job that has saved, or whose draft still has its details, never needs it.
+ * True for a new-change job whose changes exist but whose draft has lost what they were made from — a required detail
+ * is missing, or a created change's environment is no longer switched on (the mark of the v0.312.0 wipe; a title
+ * generated afterwards must not hide it). A job that has saved never needs it.
  */
 export function needsDraftRecovery(session: ChangeWizardSession, draft: CrgDraftState): boolean {
   if (session.mode !== 'create' || session.createdChanges.length === 0 || session.hasSavedChanges) return false;
-  const basicInfo = draft.chgBasicInfo;
-  return draft.generatedShortDescription.trim() === '' && basicInfo.category.trim() === '' && basicInfo.assignmentGroup.sysId === '';
+  const enabledEnvironments = readEnabledPlanEnvironments(draft);
+  const isCreatedEnvironmentOff = session.createdChanges.some((createdChange) => createdChange.environmentLabel !== null && !enabledEnvironments.includes(createdChange.environmentLabel));
+  return readDetailsGaps(draft).length > 0 || isCreatedEnvironmentOff;
 }
 
 /** A stored date-time as the date field's local value; '' when unset. */
@@ -105,5 +107,6 @@ export function useCreatedDraftRecovery(crg: CrgHook, session: ChangeWizardSessi
     setCloneChgNumber(firstChangeNumber);
   }, [setCloneChgNumber, firstChangeNumber]);
 
-  return { isNeeded: needsDraftRecovery(session, crg.state) || phase === 'restoring' || phase === 'waitingForNumber', phase, failureText, restore };
+  const isWorking = phase === 'restoring' || phase === 'waitingForNumber';
+  return { isNeeded: isWorking || (phase !== 'done' && needsDraftRecovery(session, crg.state)), phase, failureText, restore };
 }

@@ -15,7 +15,7 @@ const CRG = {
 const TASK_NAMES = { REL: ['Deploy'], PRD: ['Deploy', 'Business Checkout'] };
 
 function buildRunner(overrides: Partial<FinishRunner> = {}): FinishRunner {
-  return { phase: { kind: 'idle' }, startCreate: vi.fn(), retryMissing: vi.fn(), startSaveCreated: vi.fn(), startSave: vi.fn(), confirmSave: vi.fn(), cancelSave: vi.fn(), ...overrides };
+  return { phase: { kind: 'idle' }, startCreate: vi.fn(), retryMissing: vi.fn(), startSaveCreated: vi.fn(), adoptExistingChanges: vi.fn(), startSave: vi.fn(), confirmSave: vi.fn(), cancelSave: vi.fn(), ...overrides };
 }
 
 function renderStep(session: ChangeWizardSession, runner: FinishRunner) {

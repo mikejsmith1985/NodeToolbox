@@ -14,7 +14,7 @@ const CRG = {
 } as CrgHook;
 
 function buildRunner(overrides: Partial<FinishRunner> = {}): FinishRunner {
-  return { phase: { kind: 'idle' }, startCreate: vi.fn(), retryMissing: vi.fn(), startSaveCreated: vi.fn(), startSave: vi.fn(), confirmSave: vi.fn(), cancelSave: vi.fn(), ...overrides };
+  return { phase: { kind: 'idle' }, startCreate: vi.fn(), retryMissing: vi.fn(), startSaveCreated: vi.fn(), adoptExistingChanges: vi.fn(), startSave: vi.fn(), confirmSave: vi.fn(), cancelSave: vi.fn(), ...overrides };
 }
 
 function renderStep(session: ChangeWizardSession, runner = buildRunner()) {
@@ -40,6 +40,16 @@ describe('CreateNowStep', () => {
     expect(screen.getByText('Tasks: CTASK1 Deploy')).toBeTruthy();
     expect(screen.getByText('Tasks: none')).toBeTruthy();
     expect(screen.getByText(/the AI writes the text next, using these numbers/)).toBeTruthy();
+  });
+
+  it('uses changes already in ServiceNow instead of creating duplicates', () => {
+    const runner = renderStep(createChangeWizardSession('create'));
+    fireEvent.click(screen.getByText('Already created these changes? Use them instead'));
+    fireEvent.change(screen.getByLabelText('REL change number'), { target: { value: 'chg0052017' } });
+    expect((screen.getByRole('button', { name: 'Use these changes' }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText('PRD change number'), { target: { value: 'CHG0052018 ' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Use these changes' }));
+    expect(runner.adoptExistingChanges).toHaveBeenCalledWith([{ environmentLabel: 'REL', changeNumber: 'CHG0052017' }, { environmentLabel: 'PRD', changeNumber: 'CHG0052018' }]);
   });
 
   it('offers to retry only what is missing after a partial create', () => {

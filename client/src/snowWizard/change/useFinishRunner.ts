@@ -56,6 +56,8 @@ export interface FinishRunner {
   retryMissing: () => void;
   /** A new change: save the finished work to every created change, then attach the evidence. */
   startSaveCreated: () => void;
+  /** A new change: use changes already in ServiceNow (one per environment) instead of creating them again. */
+  adoptExistingChanges: (existingChanges: CreatedChangeSummary[]) => void;
   startSave: () => void;
   confirmSave: () => void;
   cancelSave: () => void;
@@ -287,6 +289,11 @@ export function useFinishRunner(input: FinishRunnerInput): FinishRunner {
     startCreate: () => createFor(readEnabledPlanEnvironments(crg.state)),
     retryMissing,
     startSaveCreated: () => { void saveCreatedThenFinish(); },
+    adoptExistingChanges: (existingChanges) => {
+      const createdChanges = mergeCreatedChanges(session.createdChanges, existingChanges);
+      updateSession({ createdChanges, failureText: null });
+      void loadCreatedTasks(createdChanges);
+    },
     startSave: () => { void checkConflictsThenSave(); },
     confirmSave,
     cancelSave: () => setPhase({ kind: 'idle' }),

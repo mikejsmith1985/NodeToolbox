@@ -393,6 +393,8 @@ interface ChangeLandingProps {
   resumableJobs: readonly WizardJob[];
   openJob: (jobKind: WizardJobKind, startingPoint?: ChangeStartingPoint | null) => void;
   startAgain: (job: WizardJob) => void;
+  /** Throws away the open job of this kind and opens a fresh one from the starting point. */
+  startAgainFrom: (jobKind: WizardJobKind, startingPoint: ChangeStartingPoint) => void;
   onExit: () => void;
 }
 
@@ -400,7 +402,7 @@ interface ChangeLandingProps {
  * The screens before a job opens: the choice of how to start, and "Your templates". It owns the one template library
  * for these screens and is gone once a job opens, so the job's own "Save as template" never races it.
  */
-function ChangeLanding({ resumableJobs, openJob, startAgain, onExit }: ChangeLandingProps) {
+function ChangeLanding({ resumableJobs, openJob, startAgain, startAgainFrom, onExit }: ChangeLandingProps) {
   const library = useTemplateLibrary();
   const [isShowingTemplates, setIsShowingTemplates] = useState(false);
 
@@ -413,7 +415,8 @@ function ChangeLanding({ resumableJobs, openJob, startAgain, onExit }: ChangeLan
   return (
     <ChooseModeStep resumableJobs={resumableJobs} templates={library.templates} onChooseNew={() => openJob('newChange')} onChooseExisting={() => openJob('modifyChange')}
       onContinue={(job) => openJob(job.kind)} onStartAgain={startAgain} onExit={onExit} onOpenTemplates={() => setIsShowingTemplates(true)}
-      onStartFromChange={(changeNumber) => openJob('newChange', { kind: 'existingChange', changeNumber })} onStartFromTemplate={startFromTemplate} />
+      onStartFromChange={(changeNumber) => openJob('newChange', { kind: 'existingChange', changeNumber })}
+      onStartFreshFromChange={(changeNumber) => startAgainFrom('newChange', { kind: 'existingChange', changeNumber })} onStartFromTemplate={startFromTemplate} />
   );
 }
 
@@ -432,12 +435,21 @@ export default function ChangeWizard({ onExit }: WizardJobProps) {
     setActiveJob(job);
   }
 
+  function startAgainFrom(jobKind: WizardJobKind, nextStartingPoint: ChangeStartingPoint) {
+    const waitingJob = useWizardJobStore.getState().jobs[jobKind];
+    if (waitingJob) {
+      useWizardJobStore.getState().discardJob(jobKind);
+      useChangeWizardSessionStore.getState().removeSession(waitingJob.jobId);
+    }
+    openJob(jobKind, nextStartingPoint);
+  }
+
   function startAgain(job: WizardJob) {
     useWizardJobStore.getState().discardJob(job.kind);
     useChangeWizardSessionStore.getState().removeSession(job.jobId);
     openJob(job.kind);
   }
 
-  if (!activeJob) return <ChangeLanding resumableJobs={resumableJobs} openJob={openJob} startAgain={startAgain} onExit={onExit} />;
+  if (!activeJob) return <ChangeLanding resumableJobs={resumableJobs} openJob={openJob} startAgain={startAgain} startAgainFrom={startAgainFrom} onExit={onExit} />;
   return <ChangeJob key={activeJob.jobId} job={activeJob} startingPoint={startingPoint} onExit={onExit} />;
 }

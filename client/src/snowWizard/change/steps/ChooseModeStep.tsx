@@ -17,7 +17,10 @@ interface ChooseModeStepProps {
   onChooseExisting: () => void;
   onContinue: (job: WizardJob) => void;
   onStartAgain: (job: WizardJob) => void;
+  /** Copies an old change into a new change — into the one already open, when there is one. */
   onStartFromChange: (changeNumber: string) => void;
+  /** Throws away the open new change and starts a fresh one from an old change. */
+  onStartFreshFromChange: (changeNumber: string) => void;
   onStartFromTemplate: (templateId: string) => void;
   onOpenTemplates: () => void;
   onExit: () => void;
@@ -54,14 +57,14 @@ function TemplateStart({ templates, isBlocked, onStartFromTemplate }: { template
           <option value="">Choose a template…</option>
           {templates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}
         </select>
-        <button type="button" className={styles.secondaryButton} disabled={isBlocked || chosenTemplateId === ''} onClick={() => onStartFromTemplate(chosenTemplateId)}>Start from a template</button>
+        <button type="button" className={styles.secondaryButton} disabled={chosenTemplateId === ''} onClick={() => onStartFromTemplate(chosenTemplateId)}>{isBlocked ? 'Use it on my open change' : 'Start from a template'}</button>
       </div>
     </div>
   );
 }
 
 /** The recommended way in: copy a change raised before (or a template), tweak it, save it as a template. */
-function RecommendedStart({ templates, isBlocked, onStartFromChange, onStartFromTemplate }: Pick<ChooseModeStepProps, 'templates' | 'onStartFromChange' | 'onStartFromTemplate'> & { isBlocked: boolean }) {
+function RecommendedStart({ templates, isBlocked, onStartFromChange, onStartFreshFromChange, onStartFromTemplate }: Pick<ChooseModeStepProps, 'templates' | 'onStartFromChange' | 'onStartFreshFromChange' | 'onStartFromTemplate'> & { isBlocked: boolean }) {
   const numberFieldId = useId();
   const [typedNumber, setTypedNumber] = useState('');
   const changeNumber = normalizeChangeNumber(typedNumber);
@@ -70,11 +73,12 @@ function RecommendedStart({ templates, isBlocked, onStartFromChange, onStartFrom
     <div className={`${styles.card} ${ownStyles.recommendedCard}`}>
       <span className={ownStyles.recommendedBadge}>Recommended</span>
       <p className={styles.connectionLine}>Fastest: start from a change you’ve raised before. Load it, tweak it, then save it as a template for next time.</p>
-      {isBlocked ? <p className={styles.hint}>A new change you began is still open above. Continue it, or press “Start again” to begin from an old change or a template.</p> : null}
+      {isBlocked ? <p className={styles.hint}>You have a new change open above. Copy an old change into it, or start a fresh change from it instead.</p> : null}
       <label className={styles.fieldLabel} htmlFor={numberFieldId}>Change number</label>
       <div className={ownStyles.buttonRow}>
         <input id={numberFieldId} className={ownStyles.inputField} value={typedNumber} placeholder="CHG0012345" onChange={(changeEvent) => setTypedNumber(changeEvent.target.value)} />
-        <button type="button" className={styles.primaryButton} disabled={isBlocked || !isNumberValid} onClick={() => onStartFromChange(changeNumber)}>Start from an existing change</button>
+        <button type="button" className={styles.primaryButton} disabled={!isNumberValid} onClick={() => onStartFromChange(changeNumber)}>{isBlocked ? 'Copy it into my open change' : 'Start from an existing change'}</button>
+        {isBlocked ? <button type="button" className={styles.secondaryButton} disabled={!isNumberValid} onClick={() => onStartFreshFromChange(changeNumber)}>Start a fresh change from it</button> : null}
       </div>
       {typedNumber.trim() !== '' && !isNumberValid ? <p className={styles.hint}>A change number looks like CHG0012345.</p> : null}
       <TemplateStart templates={templates} isBlocked={isBlocked} onStartFromTemplate={onStartFromTemplate} />
@@ -97,13 +101,13 @@ function ResumableJobCards({ resumableJobs, onContinue, onStartAgain }: Pick<Cho
 
 /** The first screen of the change job. */
 export default function ChooseModeStep(props: ChooseModeStepProps) {
-  // A quick start opens a NEW change, so it waits while another new change is still under way.
+  // Only one new change is open at a time, so a quick start then copies into it (or starts fresh, discarding it).
   const hasWaitingNewChange = props.resumableJobs.some((job) => job.kind === 'newChange');
   return (
     <section aria-labelledby="change-job-heading">
       <h2 id="change-job-heading" className={styles.cardTitle}>Make or change a change</h2>
       <ResumableJobCards resumableJobs={props.resumableJobs} onContinue={props.onContinue} onStartAgain={props.onStartAgain} />
-      <RecommendedStart templates={props.templates} isBlocked={hasWaitingNewChange} onStartFromChange={props.onStartFromChange} onStartFromTemplate={props.onStartFromTemplate} />
+      <RecommendedStart templates={props.templates} isBlocked={hasWaitingNewChange} onStartFromChange={props.onStartFromChange} onStartFreshFromChange={props.onStartFreshFromChange} onStartFromTemplate={props.onStartFromTemplate} />
       <div className={styles.choiceGrid}>
         <button type="button" className={styles.choiceCard} onClick={props.onChooseNew}>
           <span className={styles.choiceTitle}>New change</span>

@@ -4,10 +4,13 @@
 // The write itself is the runner's (Toolbox's createChg); this screen says what will be made, then shows each change
 // with its task numbers, any notes, and "Retry what's missing" if one environment's change did not get made.
 
+import { useState } from 'react';
+
 import { readEnabledPlanEnvironments } from '../changeDraft.ts';
 import type { ChangeStepProps } from '../changeWizardSession.ts';
 import styles from '../ChangeWizard.module.css';
 import { buildChangeLink, type CreatedChangeSummary } from '../createOutcome.ts';
+import type { PlanEnvironmentKey } from '../ctaskEnvironmentPlan.ts';
 import type { FinishRunner } from '../useFinishRunner.ts';
 import type { TaskNamesByEnvironment } from './CreateResultStep.tsx';
 
@@ -31,6 +34,38 @@ function CreatePlan({ crg, taskNamesByEnvironment }: Pick<CreateNowStepProps, 'c
         );
       })}
     </ul>
+  );
+}
+
+// A ServiceNow change number: "CHG" and its digits.
+const CHANGE_NUMBER_PATTERN = /^CHG\d+$/;
+
+/**
+ * "Already created them?": one number per environment, so a job that lost track of its changes (or a fresh job for
+ * changes made earlier) uses them instead of making duplicates.
+ */
+function ExistingChangesForm({ environmentLabels, runner }: { environmentLabels: PlanEnvironmentKey[]; runner: FinishRunner }) {
+  const [typedNumbers, setTypedNumbers] = useState<Partial<Record<PlanEnvironmentKey, string>>>({});
+  const readNumber = (environmentLabel: PlanEnvironmentKey) => (typedNumbers[environmentLabel] ?? '').trim().toUpperCase();
+  const isComplete = environmentLabels.every((environmentLabel) => CHANGE_NUMBER_PATTERN.test(readNumber(environmentLabel)));
+  return (
+    <details className={styles.moreOptions}>
+      <summary>Already created these changes? Use them instead</summary>
+      <p className={styles.hint}>Type each change&apos;s number. Nothing new is created; the last step saves your work to these.</p>
+      {environmentLabels.map((environmentLabel) => (
+        <label key={environmentLabel} className={styles.fieldLabel}>
+          {`${environmentLabel} change number`}
+          <input className={styles.inputField} value={typedNumbers[environmentLabel] ?? ''} placeholder="CHG0012345"
+            onChange={(changeEvent) => setTypedNumbers({ ...typedNumbers, [environmentLabel]: changeEvent.target.value })} />
+        </label>
+      ))}
+      <div className={styles.buttonRow}>
+        <button type="button" className={styles.actionButton} disabled={!isComplete}
+          onClick={() => runner.adoptExistingChanges(environmentLabels.map((environmentLabel) => ({ environmentLabel, changeNumber: readNumber(environmentLabel) })))}>
+          Use these changes
+        </button>
+      </div>
+    </details>
   );
 }
 
@@ -68,7 +103,12 @@ export default function CreateNowStep({ crg, session, runner, taskNamesByEnviron
         <ul className={styles.itemList} aria-label="Changes in ServiceNow">
           {session.createdChanges.map((createdChange) => <CreatedChangeLine key={createdChange.changeNumber} createdChange={createdChange} session={session} />)}
         </ul>
-      ) : <CreatePlan crg={crg} taskNamesByEnvironment={taskNamesByEnvironment} />}
+      ) : (
+        <>
+          <CreatePlan crg={crg} taskNamesByEnvironment={taskNamesByEnvironment} />
+          <ExistingChangesForm environmentLabels={readEnabledPlanEnvironments(crg.state)} runner={runner} />
+        </>
+      )}
       {hasCreated && !hasMissing ? <p className={styles.successText}>Created. Press Next — the AI writes the text next, using these numbers.</p> : null}
       {session.outcomeNotes.map((outcomeNote) => <p key={outcomeNote} className={styles.hint}>{`• ${outcomeNote}`}</p>)}
       {session.failureText !== null && hasMissing ? (

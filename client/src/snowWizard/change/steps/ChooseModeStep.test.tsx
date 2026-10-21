@@ -13,7 +13,7 @@ const TEMPLATES = [{ id: 'tpl-1', name: 'Monthly' }] as CrgTemplate[];
 function buildHandlers() {
   return {
     onChooseNew: vi.fn(), onChooseExisting: vi.fn(), onContinue: vi.fn(), onStartAgain: vi.fn(), onExit: vi.fn(),
-    onStartFromChange: vi.fn(), onStartFromTemplate: vi.fn(), onOpenTemplates: vi.fn(),
+    onStartFromChange: vi.fn(), onStartFreshFromChange: vi.fn(), onStartFromTemplate: vi.fn(), onOpenTemplates: vi.fn(),
   };
 }
 
@@ -51,14 +51,26 @@ describe('ChooseModeStep', () => {
     expect(handlers.onStartFromTemplate).toHaveBeenCalledWith('tpl-1');
   });
 
-  it('offers to continue or restart a job already under way, and holds the quick starts until then', () => {
+  it('offers to continue or restart a job already under way', () => {
     const handlers = buildHandlers();
     render(<ChooseModeStep resumableJobs={[WAITING_JOB]} templates={TEMPLATES} {...handlers} />);
     expect(screen.getByText(/Your new change is waiting/)).toBeTruthy();
-    expect((screen.getByRole('button', { name: 'Start from a template' }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
     fireEvent.click(screen.getByRole('button', { name: 'Start again' }));
     expect(handlers.onContinue).toHaveBeenCalledWith(WAITING_JOB);
     expect(handlers.onStartAgain).toHaveBeenCalledWith(WAITING_JOB);
+  });
+
+  it('never leaves a dead quick-start button while a new change is open: copy into it, or start fresh', () => {
+    const handlers = buildHandlers();
+    render(<ChooseModeStep resumableJobs={[WAITING_JOB]} templates={TEMPLATES} {...handlers} />);
+    fireEvent.change(screen.getByLabelText('Change number'), { target: { value: 'CHG0052017' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Copy it into my open change' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Start a fresh change from it' }));
+    expect(handlers.onStartFromChange).toHaveBeenCalledWith('CHG0052017');
+    expect(handlers.onStartFreshFromChange).toHaveBeenCalledWith('CHG0052017');
+    fireEvent.change(screen.getByLabelText('Your saved templates'), { target: { value: 'tpl-1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Use it on my open change' }));
+    expect(handlers.onStartFromTemplate).toHaveBeenCalledWith('tpl-1');
   });
 });

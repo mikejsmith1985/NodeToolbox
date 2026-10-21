@@ -33,7 +33,8 @@ describe('needsDraftRecovery', () => {
     expect(needsDraftRecovery(WIPED_SESSION, blankDraft)).toBe(true);
     expect(needsDraftRecovery({ ...WIPED_SESSION, hasSavedChanges: true }, blankDraft)).toBe(false);
     expect(needsDraftRecovery(createChangeWizardSession('create'), blankDraft)).toBe(false);
-    expect(needsDraftRecovery(WIPED_SESSION, { ...blankDraft, generatedShortDescription: 'Payments 1.2' })).toBe(false);
+    // A title generated after the wipe must not hide the offer.
+    expect(needsDraftRecovery(WIPED_SESSION, { ...blankDraft, generatedShortDescription: 'Payments 1.2' })).toBe(true);
   });
 });
 

@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **SNow Wizard: no dead quick-start button, and the restore offer actually shows.**
+  - "Start from an existing change" was silently **disabled** while a new change was open. It now reads **Copy it
+    into my open change**, with **Start a fresh change from it** beside it, which discards the open one. The template
+    quick start reads **Use it on my open change**.
+  - **Restore my picks** now shows whenever a created change's environment is switched off or a required detail is
+    missing. Before, a title generated after the wipe hid it.
+  - **Already created these changes? Use them instead** on "Create in ServiceNow" takes each environment's change
+    number and uses those changes, reading back their task numbers. A job that lost track of its CHGs never makes
+    duplicates.
+
 - **SNow Wizard: creating the changes no longer wipes the job (v0.312.0 regression).** Toolbox's `createChg` clears
   the whole draft after a successful create ("the next change starts fresh"), and its save-to-browser step deleted
   the stored draft while the result read "… created". The Wizard creates part-way through a job, so both wiped the

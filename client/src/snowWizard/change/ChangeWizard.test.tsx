@@ -135,6 +135,21 @@ describe('ChangeWizard — new change', () => {
     expect(screen.getByRole('button', { name: 'Restore my picks from CHG0052017' })).toBeTruthy();
   });
 
+  it('copies an old change into the new change already open, instead of a dead button', async () => {
+    const { snowFetch } = await import('../../services/snowApi.ts');
+    vi.mocked(snowFetch).mockImplementation(async (path: string) => (path.includes('table/change_request')
+      ? { result: [{ sys_id: { value: 'chg-sys', display_value: 'chg-sys' }, short_description: { value: 'Payments 1.1', display_value: 'Payments 1.1' } }] }
+      : { result: [] }) as never);
+    openJobAt('details');
+    fireEvent.click(screen.getByRole('button', { name: 'Save and leave' }));
+    cleanup();
+    render(<ChangeWizard onExit={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText('Change number'), { target: { value: 'CHG0052017' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Copy it into my open change' }));
+    await waitFor(() => expect((screen.getByLabelText('Title (needed)') as HTMLInputElement).value).toBe('Payments 1.1'));
+    vi.mocked(snowFetch).mockImplementation(async () => ({ result: [] }) as never);
+  });
+
   it('gives the AI the real change and task numbers once the changes exist', () => {
     openJobAt('aiDraft');
     const promptText = (screen.getByLabelText(/Copy this and paste it/) as HTMLTextAreaElement).value;

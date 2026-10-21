@@ -118,6 +118,14 @@ describe('useFinishRunner — create first, then save', () => {
     expect(onFinished).not.toHaveBeenCalled();
   });
 
+  it('uses changes already in ServiceNow and reads back their task numbers, creating nothing', async () => {
+    const { hookResult, actions } = renderRunner(buildDraft(), createChangeWizardSession('create'));
+    act(() => hookResult.result.current.runner.adoptExistingChanges([{ environmentLabel: 'REL', changeNumber: 'CHG7' }]));
+    await waitFor(() => expect(hookResult.result.current.session.createdTasks).toEqual({ CHG7: [TASK_RECORD] }));
+    expect(hookResult.result.current.session.createdChanges).toEqual([{ environmentLabel: 'REL', changeNumber: 'CHG7' }]);
+    expect(actions.createChg).not.toHaveBeenCalled();
+  });
+
   it('saves the finished work to every created change, then attaches the evidence and finishes', async () => {
     const { hookResult, onFinished } = renderRunner(buildDraft(), buildCreatedSession());
     act(() => hookResult.result.current.runner.startSaveCreated());
